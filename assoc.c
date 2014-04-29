@@ -47,6 +47,9 @@ static inline void *_get_prefix(prefix_t *prefix)
 
 ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
 {
+    /* To aid readability.  The caller zero'd the whole structure. */
+    engine->assoc.cursors_in_use = 0;
+    engine->assoc.cursor_blocking_expansion = false;
     engine->assoc.primary_hashtable = calloc(hashsize(engine->assoc.hashpower), sizeof(void *));
     if (engine->assoc.primary_hashtable == NULL) {
         return ENGINE_ENOMEM;
@@ -227,7 +230,10 @@ int assoc_insert(struct default_engine *engine, uint32_t hash, hash_item *it)
 
     engine->assoc.hash_items++;
     if (! engine->assoc.expanding && engine->assoc.hash_items > (hashsize(engine->assoc.hashpower) * 3) / 2) {
-        assoc_expand(engine);
+        if (engine->assoc.cursors_in_use == 0)
+            assoc_expand(engine);
+        else
+            engine->assoc.cursor_blocking_expansion = true;
     }
 
     MEMCACHED_ASSOC_INSERT(item_get_key(it), it->nkey, engine->assoc.hash_items);
@@ -665,4 +671,127 @@ ENGINE_ERROR_CODE assoc_get_prefix_stats(struct default_engine *engine,
     ret = do_assoc_get_prefix_stats(engine, prefix, nprefix, prefix_data);
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
+}
+
+/* Refer to items.c:item_scubber_main to see how we use the placeholder
+ * to walk the table.
+ */
+
+bool assoc_cursor_begin(struct default_engine *engine, struct assoc_cursor *c)
+{
+    if (engine->assoc.expanding)
+        return false;
+
+    engine->assoc.cursors_in_use++;
+    c->engine = engine;
+    c->bucket = 0;
+    c->init = true;
+    /* Insert the placeholder into the table */
+    c->it.refcount = 1;
+    c->it.nkey = 0;
+    c->it.nbytes = 0;
+    c->it.h_next = engine->assoc.primary_hashtable[0];
+    engine->assoc.primary_hashtable[0] = &c->it;
+    return true;
+}
+
+static void unlink_cursor(struct assoc_cursor *c)
+{
+    /* See assoc_delete... */
+    hash_item **p = &c->engine->assoc.primary_hashtable[c->bucket];
+    assert(*p != NULL);
+    while (*p != &c->it)
+        p = &((*p)->h_next);
+    *p = (*p)->h_next;
+}
+
+void assoc_cursor_end(struct assoc_cursor *c)
+{
+    struct default_engine *engine = c->engine;
+
+    if (!c->init)
+        return;
+
+    /* Remove the placeholder from the table. */
+    if (c->bucket > 0)
+        unlink_cursor(c);
+    c->bucket = -1;
+    c->init = false;
+    engine->assoc.cursors_in_use--;
+    /* Start expanding the table now if it's been blocked */
+    if (engine->assoc.cursors_in_use == 0 &&
+        engine->assoc.cursor_blocking_expansion) {
+        engine->assoc.cursor_blocking_expansion = false;
+        assoc_expand(engine);
+    }
+}
+
+hash_item *assoc_cursor_next(struct assoc_cursor *c)
+{
+    struct assoc *assoc;
+    hash_item *next;
+
+    assert(c->init == true);
+    assoc = &c->engine->assoc;
+    next = c->it.h_next;
+    unlink_cursor(c);
+    if (next == NULL) {
+        do {
+            c->bucket++;
+            if (c->bucket > hashsize(assoc->hashpower)) {
+                /* We've reached the end */
+                c->bucket = -1;
+                /* The user should call cursor_end... */
+                break;
+            }
+            next = assoc->primary_hashtable[c->bucket];
+        } while (next == NULL);
+        /* bucket -> next -> next.next */
+        /* bucket -> next -> cursor -> next.next */
+        if (next != NULL) {
+            c->it.h_next = next->h_next;
+            next->h_next = &c->it;
+        }
+    }
+    else {
+        /* cursor -> next -> next.next
+         * next -> cursor -> next.next
+         */
+        c->it.h_next = next->h_next;
+        next->h_next = &c->it;
+    }
+    return next;
+}
+
+bool assoc_cursor_in_visited_area(struct assoc_cursor *c, hash_item *it)
+{
+    struct assoc *assoc;
+    uint32_t hash, bucket;
+
+    assert(c->init == true);
+    assoc = &c->engine->assoc;
+    hash = c->engine->server.core->hash(item_get_key(it), it->nkey, 0);
+    bucket = hash & hashmask(assoc->hashpower);
+
+    /* The given item is in the visited area if
+     * (1) it's bucket < cursor's bucket
+     * (2) or, it comes before the cursor
+     */
+    if (bucket < c->bucket) {
+        return true;
+    }
+    else if (bucket == c->bucket) {
+        hash_item *p = assoc->primary_hashtable[c->bucket];
+        /* Do we hit "it" before the cursor? */
+        while (p != it) {
+            if (p == &c->it) {
+                /* No, we hit the cursor first */
+                return false;
+            }
+            p = p->h_next;
+        }
+        /* We hit it first */
+        return true;
+    }
+    return false;
 }

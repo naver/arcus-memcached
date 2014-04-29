@@ -103,6 +103,7 @@ struct config {
    bool   ignore_vbucket;
    char   prefix_delimiter;
    bool   vb0;
+   char  *replication_config_file;
 };
 
 MEMCACHED_PUBLIC_API
@@ -138,6 +139,10 @@ struct engine_scrubber {
    uint64_t        cleaned;
    time_t          started;
    time_t          stopped;
+   /* Replication graceful failover.  Do not run the scrub thread during
+    * failover.
+    */
+   bool            disable;
 };
 
 enum vbucket_state {
@@ -167,6 +172,12 @@ struct default_engine {
     * Is the engine initalized or not
     */
    volatile bool initialized;
+
+   /* Replication graceful failover.  The master thread uses these to stop
+    * collection_delete_thread.
+    */
+   bool coll_del_thread_disable;
+   bool coll_del_thread_stopped;
 
    struct assoc assoc;
    struct slabs slabs;

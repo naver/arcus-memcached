@@ -65,9 +65,14 @@
 #include <sysexits.h>
 #include <limits.h>
 #include "memcached/extension_loggers.h"
+#include "memcached/engine.h"
 #ifdef ENABLE_CLUSTER_AWARE
 #include "cluster_config.h"
 #endif
+#include "arcus_zk.h"
+
+/* Kill server if disconnected from zookeeper for too long */
+#define ENABLE_SUICIDE_UPON_DISCONNECT 0
 
 /* zookeeper.h unfortunately includes a lot of other headers.  One of
  * them (recordio.h) unconditionally defines htonll.  memcached.h also
@@ -97,10 +102,18 @@
 #define SYSLOGD_PORT    514     // UDP syslog port #
 #define MAX_HB_RETRY    (2*3)   // we want to retry 2 heartbeats every 1/3 of ZK session timeout
 
-static const char *zk_map_path   = "/cache_server_mapping";
-static const char *zk_log_path   = "/cache_server_log";
-static const char *zk_cache_path = "/cache_list";
+static const char *zk_map_path   = "cache_server_mapping";
+static const char *zk_log_path   = "cache_server_log";
+static const char *zk_cache_path = "cache_list";
+static const char *zk_group_path = "cache_server_group";
 static const char *mc_hb_cmd     = "set arcus-zk5:ping 1 0 1\r\n1\r\n";
+
+/* For 1.6: /arcus
+ * For 1.7: /arcus_1_7
+ */
+static const char *zk_root = NULL;
+static bool is_1_7;
+static bool zk_connected = false;
 
 static zhandle_t    *zh=NULL;
 static clientid_t   myid;
@@ -126,12 +139,21 @@ typedef struct {
     int     verbose;            // verbose output
     size_t  maxbytes;           // mc -M option
     EXTENSION_LOGGER_DESCRIPTOR *logger; // mc logger
+    char   *cluster_path;       // cache_list/svc
 #ifdef ENABLE_CLUSTER_AWARE
-    char   *cluster_path;       // cluster path for this memcached
     char   *self_hostport;      // host:port string for this memcached
     struct cluster_config *ch;  // cluster configuration handle
 #endif
     bool    init;               // is this structure initialized?
+    /* 1.7 */
+    char *mc_ipport_str;        // This server's memcached ip:port
+    char *groupname;
+    char *listen_addr_str;      // Replication ip:port
+    struct sockaddr_in listen_addr;
+    union {
+        ENGINE_HANDLE *v0;
+        ENGINE_HANDLE_V1 *v1;
+    } engine;
 } arcus_zk_conf;
 
 arcus_zk_conf arcus_conf = {
@@ -169,24 +191,164 @@ static void inc_count(int delta);
 static int  wait_count(int timeout);
 
 #ifdef ENABLE_CLUSTER_AWARE
-static void arcus_cluster_watcher(zhandle_t *zh, int type, int state,
-                                  const char *path, void *ctx);
+static void arcus_cache_list_watcher(zhandle_t *zh, int type, int state,
+    const char *path, void *ctx);
 #endif
 
 // declaration
-void arcus_zk_init(char *ensemble_list, int zk_to,
-                   EXTENSION_LOGGER_DESCRIPTOR *logger,
-                   int verbose, size_t maxbytes, int port);
-void arcus_shutdown(const char *msg);
 int  mc_hb(zhandle_t* zh, void *context);     // memcached self-heartbeat
 int  arcus_zk_set_ensemble(char *ensemble_list);
 int  arcus_zk_get_ensemble_str(char *buf, int size);
-int  arcus_zk_get_timeout(void);
 
-#ifdef ENABLE_CLUSTER_AWARE
-bool arcus_cluster_is_valid(void);
-bool arcus_key_is_mine(const char *key, size_t nkey);
-#endif
+/* Util functions used by 1.7 */
+static int fill_sockaddr(const char *host, struct sockaddr_in *addr);
+static int parse_hostport(const char *addr_str, struct sockaddr_in *addr, char **host_out);
+static int breakup_string(char *str, char *start[], char *end[], int vec_len);
+
+/* State machine thread.  It monitors ZK nodes and computes whether this
+ * server is the master or the slave.  It also performs all blocking
+ * ZK operations, including cluster_config.  We don't do blocking operations
+ * in the context of watcher callback any more.
+ */
+struct sm {
+    bool update_cache_list;
+    bool watch_cache_list;
+    bool update_lock;
+
+    /* The full lock znode path including the sequence number.
+     * See sm_create_lock_znode.
+     */
+    char *lock_znode_path;
+    char *lock_dir_path;
+    char *slave_name; /* group^S^ip:port-host */
+    char *master_name; /* group^M^ip:port-host */
+
+    int state; /* Tracks whether we are the master or the slave */
+
+    /* Cache of the latest version we pulled from ZK */
+    struct String_vector cache_list; /* from /cache_list */
+    struct String_vector lock_list; /* from /cache_server_group/.../lock */
+
+    /* Used to wake up the thread */
+    pthread_mutex_t lock;
+    pthread_cond_t cond;
+    bool notification;
+
+    bool running;
+    pthread_t tid;
+
+    /* A timer thread to fail-stop the server when it is disconnected from
+     * the ZK ensemble.
+     */
+    pthread_t timer_tid;
+
+    /* Remember the master's and the slave's listen address.
+     * See sm_get_master_lock_status.
+     */
+    char slave_laddr[128]; /* FIXME.  Magic number */
+    char master_laddr[128]; /* FIXME.  Magic number */
+} sm_info;
+
+#define SM_STATE_UNKNOWN        0
+#define SM_STATE_BECOME_MASTER  1
+#define SM_STATE_MASTER         2
+#define SM_STATE_BECOME_SLAVE   3
+#define SM_STATE_SLAVE          4
+#define SM_STATE_BECOME_UNKNOWN 5
+#define SM_STATE_MAX            5
+static const char *sm_state_str[] = {
+    "UNKNOWN",
+    "BECOME_MASTER",
+    "MASTER",
+    "BECOME_SLAVE",
+    "SLAVE",
+    "BECOME_UNKNOWN",
+};
+
+#define SM_MASTER_LOCK_STATUS_INVALID     0  // Do not use this status
+#define SM_MASTER_LOCK_STATUS_OWNER       1  // We own the lock
+#define SM_MASTER_LOCK_STATUS_NOT_OWNER   2  // Someone else owns the lock
+#define SM_MASTER_LOCK_STATUS_UNKNOWN     3  // Cannot tell who owns the lock
+#define SM_MASTER_LOCK_STATUS_MAX         3
+static const char *sm_master_lock_status_str[] = {
+    "INVALID",
+    "OWNER",
+    "NOT_OWNER",
+    "UNKNOWN",
+};
+
+/* Master/slave state machine
+ *
+ *  +--+          +---+            +--+
+ *  |  |          |   |            |  |
+ *  |  V          |   V            |  V
+ * Unknown ---> Become_master ---> Master
+ *   |  ^          |                |
+ *   |  |          |                |
+ *   |  +--Become_unknwon-----------+
+ *   |             |                |
+ *   +--------> Become_slave ---> Slave
+ *               ^  |             ^  |
+ *               |  |             |  |
+ *               +--+             +--+
+ *
+ * Threads:
+ * The ZK library has one thread that calls back our watchers.
+ *
+ * When we lose connection to ZK (CONNECTING), we run our own timer to
+ * detect the loss of the master lock.  We do this because session expiration
+ * only happens when we actually connect to ZK.  If we cannot connect to ZK
+ * due to partition, we never see session expiration events.
+ *
+ * We should not block in our watcher functions.  Otherwise, we may see
+ * session events too late, leading to two servers acting as masters.
+ *
+ * - ZK thread (created by the ZK library)
+ * It only receives events and passes them to the state machine thread.
+ * It does not block, at least in our code.
+ *
+ * - Timer thread
+ * It waits for "connection lost" event from the ZK thread.  Then it runs
+ * a timer and fail-stops this server.  "connected" event from the ZK thread
+ * cancels the timer.  This thread does nothing else.
+ *
+ * - State machine thread
+ * It waits for input events from the ZK thread and memcached threads, and
+ * runs the state machine.  It may block.
+ */
+
+static int sm_init(void);
+static void sm_lock(void);
+static void sm_unlock(void);
+static void sm_wakeup(bool locked);
+static int sm_check_dup_in_lock(void);
+static int sm_check_dup_in_cache_list(void);
+static int sm_create_lock_znode(void);
+
+/* These functions tell the engine to become master/slave. */
+static int
+arcus_memcached_slave_mode(const char *saddr, const char *maddr)
+{
+    ENGINE_ERROR_CODE ret;
+    ret = arcus_conf.engine.v1->rp_slave(arcus_conf.engine.v0, saddr, maddr);
+    return ret == ENGINE_SUCCESS ? 0 : -1;
+}
+
+static int
+arcus_memcached_master_mode(const char *addr)
+{
+    ENGINE_ERROR_CODE ret;
+    ret = arcus_conf.engine.v1->rp_master(arcus_conf.engine.v0, addr);
+    return ret == ENGINE_SUCCESS ? 0 : -1;
+}
+
+static int
+arcus_memcached_slave_address(const char *addr)
+{
+    ENGINE_ERROR_CODE ret;
+    ret = arcus_conf.engine.v1->rp_slave_addr(arcus_conf.engine.v0, addr);
+    return ret == ENGINE_SUCCESS ? 0 : -1;
+}
 
 // async routine synchronization
 static pthread_cond_t  azk_cond = PTHREAD_COND_INITIALIZER;
@@ -256,6 +418,8 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
     if (state == ZOO_CONNECTED_STATE) {
         const clientid_t *id = zoo_client_id(wzh);
 
+        zk_connected = true; /* 1.7 */
+
         if (arcus_conf.verbose > 2) {
             arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "ZK ensemble connected\n");
             arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
@@ -270,6 +434,17 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
 
         // finally connected to one of ZK ensemble. signal go.
         inc_count (-1);
+
+        /* Tell the thread to refresh the lock status, and the hash ring, just to be safe. */
+        if (arcus_conf.init) {
+            sm_lock();
+            sm_info.update_lock = true;
+            sm_info.update_cache_list = true;
+            /* This flags is strictly for sm_thread and cache_list_watcher. */
+            /* sm_info.watch_cache_list = true */
+            sm_wakeup(true);
+            sm_unlock();
+        }
     }
     else if (state == ZOO_AUTH_FAILED_STATE) {
 
@@ -302,57 +477,114 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
         // and if that's the case, we let heartbeat timeout algorithm decide
         // what to do.
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "CONNECTING.... \n");
+
+        /* The server is disconnected from ZK.  But we do not know how much
+         * time has elapsed from the last successful ZK ping.  A connection
+         * timeout (session timeout * 2/3) might have occurred.  Or, the
+         * TCP connection might have reset/closed (immediate).
+         * See sm_timer_thread.  For now, it is being conservative and dies
+         * in session timeout * 1/3.  Perhaps we should do our own ping, not
+         * rely on ZK session notifications.  FIXME
+         */
+        zk_connected = false; /* 1.7 */
     }
 }
 
 #ifdef ENABLE_CLUSTER_AWARE
 static void
-arcus_cluster_watch_servers(zhandle_t *zh, const char *path, watcher_fn fn)
+update_cluster_config(struct String_vector *strv)
 {
-    struct String_vector result;
-    int i, rc;
+    int i, j, count;
+    char **array;
 
-    /* Do not call zookeeper API if we are calling
-     * zookeeper_close.  See arcus_shutdown.
+    /* cache_list is empty.  In 1.7, this case is possible either during init
+     * or shutdown.
      */
-    pthread_mutex_lock(&zk_close_lock);
-    if (zk_closing) {
-        pthread_mutex_unlock(&zk_close_lock);
+    if (strv->count == 0)
         return;
-    }
-    else {
-        zk_watcher_running = true;
-    }
-    pthread_mutex_unlock(&zk_close_lock);
 
-    // get cache list
-    rc = zoo_wget_children(zh, path, arcus_cluster_watcher, NULL, &result);
+    if (arcus_conf.verbose > 0) {
+        for (i = 0; i < strv->count; i++) {
+            arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
+                "server[%d] = %s\n", i, strv->data[i]);
+        }
+    }
 
-    // update the cache list
-    if (rc == ZOK) {
+    if (is_1_7) {
+        /* In 1.7, group names appear on the hash ring.
+         * Extract them and remove duplicates before passing them
+         * to cluster_config.  Actually pass "group-bogushost" to
+         * cluster_config.  cluster_config removes "-hostname"...
+         */
+        char *start[1], *end[1], *s;
+
+        array = malloc(sizeof(char*) * strv->count);
+        memset(array, 0, sizeof(char*) * strv->count);
+        /* Let it crash if array == NULL.  We cannot continue anyway. */
+
+        count = 0;
+        for (i = 0; i < strv->count; i++) {
+            if (0 != breakup_string(strv->data[i], start, end, 1)) {
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Error while trying to re-compute the cluster hash ring."
+                    " An invalid server name in the cache list. znode=%s\n",
+                    strv->data[i]);
+                return;
+            }
+
+            /* group-bogushost */
+            s = malloc(end[0] - start[0] + sizeof("-bogushost"));
+            memcpy(s, start[0], end[0] - start[0]);
+            memcpy(s + (end[0] - start[0]), "-bogushost", sizeof("-bogushost"));
+            /* Let it crash if s == NULL */
+
+            /* Check duplicate */
+            for (j = 0; j < count; j++) {
+                if (0 == strcmp(s, array[j])) {
+                    free(s);
+                    s = NULL;
+                    break;
+                }
+            }
+            if (s)
+                array[count++] = s;
+        }
+
         if (arcus_conf.verbose > 0) {
-            for (i=0; i<result.count; i++) {
+            for (i = 0; i < count; i++) {
                 arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
-                                       "server[%d] = %s\n", i, result.data[i]);
+                    "1.7 group[%d] = %s\n", i, array[i]);
             }
         }
-        cluster_config_reconfigure(arcus_conf.ch, result.data, result.count);
-        deallocate_String_vector(&result);
-    } else {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                               "Could not get children from ZK. errno=%d\n", rc);
+    }
+    else {
+        array = strv->data;
+        count = strv->count;
     }
 
-    pthread_mutex_lock(&zk_close_lock);
-    zk_watcher_running = false;
-    pthread_mutex_unlock(&zk_close_lock);
+    cluster_config_reconfigure(arcus_conf.ch, array, count);
+
+    /* Clean up 1.7 strings */
+    if (is_1_7 && array) {
+        for (i = 0; i < count; i++)
+            free(array[i]);
+        free(array);
+    }
 }
+#endif
 
 static void
-arcus_cluster_watcher(zhandle_t *zh, int type, int state, const char *path, void *ctx)
+arcus_cache_list_watcher(zhandle_t *zh, int type, int state, const char *path,
+    void *ctx)
 {
     if (type == ZOO_CHILD_EVENT) {
-        arcus_cluster_watch_servers(zh, path, arcus_cluster_watcher);
+        /* arcus_cluster_watch_servers(zh, path, arcus_cluster_watcher); */
+
+        /* The ZK library has two threads of its own.  The completion thread
+         * calls watcher functions.
+         *
+         * Do not do operations that may block or fail in the watcher context.
+         */
     } else if (type == ZOO_SESSION_EVENT) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                                "ZOO_SESSION_EVENT from ZK: state=%d\n", state);
@@ -362,12 +594,38 @@ arcus_cluster_watcher(zhandle_t *zh, int type, int state, const char *path, void
                                "An unexpected event from ZK: type=%d, state=%d\n",
                                type, state);
     }
+
+    /* Just wake up the thread and update the ring.
+     * This may be a false positive (session event or others).
+     * But it is harmless.
+     */
+    sm_lock();
+    sm_info.update_cache_list = true;
+    sm_info.watch_cache_list = true; /* Register a watcher again */
+    sm_wakeup(true);
+    sm_unlock();
 }
-#endif
+
+static int
+read_cache_list(struct String_vector *strv, bool watch)
+{
+    int rc;
+
+    rc = zoo_wget_children(zh, arcus_conf.cluster_path,
+        watch ? arcus_cache_list_watcher : NULL, NULL, strv);
+    if (rc != ZOK) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Failed to get the list of znodes in the cache_list directory."
+            " Will try again. path=%s error=%d(%s)\n",
+            arcus_conf.cluster_path, rc, zerror(rc));
+    }
+    /* The caller must free strv */
+    return (rc == ZOK ? 0 : -1);
+}
 
 // callback for sync command
 static void
-arcus_zk_sync_cb(int rc, const char *name, const void *data)
+arcus_zk_sync_cb (int rc, const char *name, const void *data)
 {
     if (arcus_conf.verbose > 2)
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "arcus_zk_sync cb\n");
@@ -394,13 +652,13 @@ arcus_zk_log(zhandle_t *zh, const char *action)
     struct tm      *ltm;
     struct Stat    zstat;
 
-    if (!zh || zoo_state(zh) != ZOO_CONNECTED_STATE || !arcus_conf.init)
+    if (!zh || zoo_state(zh) != ZOO_CONNECTED_STATE || !arcus_conf.init || zk_root == NULL)
         return;
 
     gettimeofday(&now, 0);
     ltm = localtime (&now.tv_sec);
     strftime(sbuf, sizeof(sbuf), "%Y-%m-%d", ltm);
-    snprintf(zpath, sizeof(zpath), "%s/%s", zk_log_path, sbuf);
+    snprintf(zpath, sizeof(zpath), "%s/%s/%s", zk_root, zk_log_path, sbuf);
     rc = zoo_exists(zh, zpath, ZK_NOWATCH, &zstat);
 
     // if this "date" directory does not exist, create one
@@ -415,7 +673,7 @@ arcus_zk_log(zhandle_t *zh, const char *action)
 
     // if this znode already exist or the creation was successful
     if (rc == ZOK || rc == ZNODEEXISTS) {
-        snprintf(zpath, sizeof(zpath), "%s/%s/%s-", zk_log_path, sbuf, arcus_conf.zk_path);
+        snprintf(zpath, sizeof(zpath), "%s/%s/%s/%s-", zk_root, zk_log_path, sbuf, arcus_conf.zk_path);
         snprintf(sbuf,  sizeof(sbuf), "%s", action);
         rc = zoo_create (zh, zpath, sbuf, strlen(sbuf), &ZOO_OPEN_ACL_UNSAFE,
                          ZOO_SEQUENCE, rcbuf, sizeof(rcbuf));
@@ -429,48 +687,16 @@ arcus_zk_log(zhandle_t *zh, const char *action)
     }
 }
 
-
-// called from memcached main thread
-// this shutdown Zookeeper connection, ephemeral node, and leave a log
-//
+/* Close the ZK connection and die.  Do not do anything that may
+ * block here (e.g. ZK operations).
+ */
 void
 arcus_shutdown(const char *msg)
 {
-#if 0 // Remove the code of deleting the ephemeral znode. it'll be deleted, after closing a zookeeper session.
-    char zpath[200]="";
-    int  rc;
-
-    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "\nArcus memcached shutting down\n");
-
-    if (!zh)
-        exit (0);
-
-    if (zoo_state(zh) == ZOO_CONNECTED_STATE && arcus_conf.init) {
-
-        // delete "/cache_list/{svc}/ip:port-hostname" ephemeral znode
-        snprintf(zpath, sizeof(zpath), "%s/%s/%s",
-                 zk_cache_path, arcus_conf.svc, arcus_conf.zk_path);
-
-        // manually delete this znode with stored version number to allow immediate restart
-        // of memcached. Otherwise, need to wait until ZK remove this at session expiration
-        rc = zoo_delete (zh, zpath, arcus_conf.zk_path_ver);
-        if (rc) {
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "cannot remove %s (%s error)\n",
-                                   zpath, zerror(rc));
-            arcus_zk_log(zh, "leave-unclean");
-        }
-        else {
-            arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "Deleting cache_list entry manually\n");
-            // log this leave activity in /arcus/cache_server_log
-            arcus_zk_log(zh, "leave-clean");
-        }
-    }
-#else
     arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "\nArcus memcached shutting down - %s\n", msg);
 
     if (!zh)
         exit (0);
-#endif
 #ifdef ENABLE_HEART_BEAT_THREAD
     /* Just set a flag and do not wait for the thread to die.
      * hb_thread is probably sleeping.  And, if it is in the middle of
@@ -508,8 +734,7 @@ arcus_shutdown(const char *msg)
     arcus_exit (zh, EX_OK);
 }
 
-int arcus_zk_get_timeout(void)
-{
+int get_arcus_zk_timeout(void) {
     return (int)arcus_conf.zk_timeout;
 }
 
@@ -607,10 +832,81 @@ arcus_exit(zhandle_t *zh, int err)
     exit(err);
 }
 
+static void
+sync_map_path(const char *root)
+{
+    int rc;
+    char zpath[200];
+
+    snprintf(zpath, sizeof(zpath), "%s/%s", root, zk_map_path);
+    inc_count(1);
+    rc = zoo_async(zh, zpath, arcus_zk_sync_cb, NULL);
+    if (rc == ZOK) {
+        wait_count(0);
+        rc = last_rc; /* arcus_zk_sync_cb */
+    }
+    /* /arcus_1_7 may not exist.  So ignore ZNONODE */
+    if (rc != ZOK && rc != ZNONODE) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Failed to synchronize zpath. zpath=%s error=%s\n", zpath, zerror(rc));
+        arcus_exit(zh, EX_PROTOCOL);
+    }
+}
+
+static char *
+get_service_code(const char *root)
+{
+    int rc;
+    char zpath[200];
+    struct String_vector strv = { 0, NULL };
+    char *svc;
+
+    /* First check: /cache_server_mapping/ip:port */
+    snprintf(zpath, sizeof(zpath), "%s/%s/%s:%d", root, zk_map_path,
+        arcus_conf.hostip, arcus_conf.port);
+    rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
+    if (rc == ZNONODE) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Cannot find the server mapping. zpath=%s error=%d(%s)\n",
+            zpath, rc, zerror(rc));
+
+        /* Second check: /cache_server_mapping/ip */
+        snprintf(zpath, sizeof(zpath), "%s/%s/%s", root, zk_map_path,
+            arcus_conf.hostip);
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Checking the server mapping without the port number."
+            " zpath=%s\n", zpath);
+        rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
+    }
+    if (rc != ZOK) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Failed to read the server mapping. zpath=%s error=%d(%s)\n",
+            zpath, rc, zerror(rc));
+        return NULL;
+    }
+    // zoo_get_children returns ZOK even if no child exist
+    if (strv.count == 0) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "The server mapping exists but has no service code. zpath=%s\n",
+            zpath);
+        arcus_exit(zh, EX_PROTOCOL);
+    }
+    // get the first one. we could have more than one (meaning one server participating in
+    // more than one service in the cluster: not likely though)
+    svc = strdup(strv.data[0]);
+    if (svc == NULL) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Failed to allocate service code string\n");
+        arcus_exit(zh, EX_PROTOCOL);
+    }
+    deallocate_String_vector(&strv);
+    return svc;
+}
 
 void
 arcus_zk_init(char *ensemble_list, int zk_to, EXTENSION_LOGGER_DESCRIPTOR *logger,
-              int verbose, size_t maxbytes, int port)
+              int verbose, size_t maxbytes, int port,
+              ENGINE_HANDLE_V1 *engine)
 {
     int     rc;
     char    zpath[200] = "";
@@ -620,10 +916,10 @@ arcus_zk_init(char *ensemble_list, int zk_to, EXTENSION_LOGGER_DESCRIPTOR *logge
     char    myip[50] = "";
     char    *sep1=",", *sep2=":", *zip, *hlist;
     char    *hostp=NULL;
+    char    *service_code;
 
     struct timeval          start_time, end_time;
     struct tm               *ltm;
-    struct String_vector    strv = {0, NULL};
 
     int                 sock;
     socklen_t           socklen=16;
@@ -638,6 +934,7 @@ arcus_zk_init(char *ensemble_list, int zk_to, EXTENSION_LOGGER_DESCRIPTOR *logge
     if (!arcus_conf.init) {
         arcus_conf.port          = port;    // memcached liste port
         arcus_conf.logger        = logger;
+        arcus_conf.engine.v1     = engine;
         arcus_conf.verbose       = verbose;
         arcus_conf.maxbytes      = maxbytes;
         arcus_conf.ensemble_list = strdup(ensemble_list);
@@ -798,7 +1095,16 @@ arcus_zk_init(char *ensemble_list, int zk_to, EXTENSION_LOGGER_DESCRIPTOR *logge
         zoo_set_debug_level(ZOO_LOG_LEVEL_WARN);
     }
 
-    snprintf(zpath, sizeof(zpath), "%s/arcus", arcus_conf.ensemble_list);
+    /* Do not include the root path (i.e. /arcus or /arcus_1_7).
+     * zookeeper_init creates a session with the ensemble, which is an
+     * expensive quorum operation.
+     * There are no APIs to change the root after zookeeper_init.
+     * We would have to close the session and call zookeeper_init again.
+     * So, deal with the root path ourselves.  The ZK lib just string-copies
+     * and prepends the chroot anyway.  This is just a client-side library
+     * trick.  Nothing special.
+     */
+    snprintf(zpath, sizeof(zpath), "%s", arcus_conf.ensemble_list);
 
     // connect to ZK ensemble
     if (arcus_conf.verbose > 2)
@@ -821,6 +1127,76 @@ arcus_zk_init(char *ensemble_list, int zk_to, EXTENSION_LOGGER_DESCRIPTOR *logge
         arcus_exit (zh, EX_PROTOCOL);
     }
 
+    /* Retrieve the service code and figure out if we are in 1.7 or 1.6
+     * cluster.
+     */
+    /* Check 1.7 first */
+    arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+        "Checking to see if the server belongs to a 1.7 cluster...\n");
+    zk_root = "/arcus_1_7";
+    /* Do SYNC operation to bring the server up to date with the leader. */
+    sync_map_path(zk_root);
+    service_code = get_service_code(zk_root);
+    if (service_code) {
+        char *start[3], *end[3];
+
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "The server belongs to a 1.7 cluster.\n");
+
+        /* Parse svc, group, listen address.
+         * 1.7 service code={svc}^{group}^{listen_ip:port}^
+         */
+        memset(start, 0, sizeof(start));
+        if (0 != breakup_string(service_code, start, end, 3)) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "The server mapping seems to be invalid. service_code=%s\n",
+                service_code);
+            arcus_exit(zh, EX_PROTOCOL);
+        }
+        /* Null-terminate substrings */
+        *end[0] = '\0';
+        *end[1] = '\0';
+        *end[2] = '\0';
+        if (0 != parse_hostport(start[2], &arcus_conf.listen_addr, NULL)) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "The listen address seems to be invalid. listen_address=%s\n",
+                start[2]);
+            arcus_exit(zh, EX_PROTOCOL);
+        }
+        arcus_conf.svc = strdup(start[0]);
+        arcus_conf.groupname = strdup(start[1]);
+        arcus_conf.listen_addr_str = strdup(start[2]);
+        free(service_code);
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Found the valid server mapping. service_code=%s group=%s"
+            " listen_address=%s\n",
+            arcus_conf.svc, arcus_conf.groupname, arcus_conf.listen_addr_str);
+        is_1_7 = true;
+    }
+    else {
+        /* See if we belong to 1.6 */
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Checking to see if the server belongs to a 1.6 cluster...\n");
+        zk_root = "/arcus";
+        sync_map_path(zk_root);
+        service_code = get_service_code(zk_root);
+        if (service_code == NULL) {
+            /* Cannot find the server mapping in 1.7 or 1.6 */
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Cannot find the server mapping. Provision this server in"
+                " Arcus cluster.\n");
+            arcus_exit(zh, EX_PROTOCOL);
+        }
+        else {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Found the service code. The server belongs to a 1.6 cluster."
+                " service_code=%s\n",
+                service_code);
+            arcus_conf.svc = service_code;
+            is_1_7 = false;
+        }
+    }
+
 #ifdef ENABLE_HEART_BEAT_THREAD
 #else
     // Now register L7 ping
@@ -831,94 +1207,63 @@ arcus_zk_init(char *ensemble_list, int zk_to, EXTENSION_LOGGER_DESCRIPTOR *logge
     }
 #endif
 
-    // get service string for this cache
-    // first sync the zk server in ensemble to get latest
-    inc_count(1);
-    rc = zoo_async (zh, zk_map_path, arcus_zk_sync_cb, NULL);
-    if (rc) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "zoo_async() failed: %s\n", zerror(rc));
-        arcus_exit (zh, EX_PROTOCOL);
-    }
-
-    // wait until above sync callback is called
-    wait_count(0);
-
-    if (last_rc != ZOK) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "arcus_zk_sync failed with %s error\n",
-                                zerror(rc));
-        arcus_exit(zh, EX_PROTOCOL);
-    }
-
-    // from here and on, no async API used
-
-    // get children of "/cache_server_mapping/ip:port"
-    // the children includes service code in which this memcached participates
-    snprintf(zpath, sizeof(zpath), "%s/%s:%d", zk_map_path, arcus_conf.hostip, arcus_conf.port);
-    rc = zoo_get_children (zh, zpath, ZK_NOWATCH, &strv);
-    if (rc) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "%s not found (%s).\n", zpath, zerror(rc));
-        // Recheck: get children of "/cache_server_mapping/ip"
-        snprintf(zpath, sizeof(zpath), "%s/%s", zk_map_path, arcus_conf.hostip);
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "Recheck with %s\n", zpath);
-        rc = zoo_get_children (zh, zpath, ZK_NOWATCH, &strv);
-        if (rc) {
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "%s not found (%s). Provision this server in Arcus cluster\n",
-                    zpath, zerror(rc));
-            // tip: provision this cache server in Arcus cache cluster
-            arcus_exit (zh, EX_PROTOCOL);
-        }
-    }
-    if (strv.count == 0) { // zoo_get_children returns ZOK even if no child exist
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "Service code not found for this server (under %s/)\n", zpath);
-        // tip: provision this cache server for a service
-        arcus_exit (zh, EX_PROTOCOL);
-    }
-
-    // get the first one. we could have more than one (meaning one server participating in
-    // more than one service in the cluster: not likely though)
-    arcus_conf.svc = strdup(strv.data[0]);
-
-    // free returned strings
-    for(int i=0; i < strv.count; i++) {
-        free(strv.data[i]);
-    }
-    free(strv.data);
-
     // we need to keep ip:port-hostname tuple for later user (restart)
     snprintf(rcbuf, sizeof(rcbuf), "%s:%d-%s", arcus_conf.hostip, arcus_conf.port, hostp);
     arcus_conf.zk_path = strdup (rcbuf);
-    arcus_conf.init     = true;
 
-    // create "/cache_list/{svc}/ip:port-hostname" ephemeral znode
+    /* Also save ip:port.  We use it in 1.7 lock directory... */
+    snprintf(rcbuf, sizeof(rcbuf), "%s:%d", arcus_conf.hostip, arcus_conf.port);
+    arcus_conf.mc_ipport_str = strdup(rcbuf);
+
+    /* Initialize the state machine.  We do not know our role yet. */
+    if (0 != sm_init()) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Failed to initialize the state machine. Terminating.\n");
+        arcus_exit(zh, EX_CONFIG);
+    }
+
     snprintf(zpath, sizeof(zpath), "%s/%s/%s",
-             zk_cache_path, arcus_conf.svc, arcus_conf.zk_path);
-    sprintf(sbuf, "%ldMB", (long) arcus_conf.maxbytes/1024/1024);
-    rc = zoo_create (zh, zpath, sbuf, strlen(sbuf), &ZOO_OPEN_ACL_UNSAFE,
-                     ZOO_EPHEMERAL, rcbuf, sizeof(rcbuf));
-    if (rc) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "cannot create znode %s (%s error)\n",
-                       zpath, zerror(rc));
-        if (rc == ZNODEEXISTS) {
-            arcus_conf.logger->log( EXTENSION_LOG_DETAIL, NULL,
-                            "old session still exist. Wait a bit\n");
+        zk_root, zk_cache_path, arcus_conf.svc);
+    arcus_conf.cluster_path = strdup(zpath);
+
+    /* Connected to ZK, all strings are set, and so on...*/
+    arcus_conf.init = true;
+
+    /* 1.6: we store the server node in the cache list right away. */
+    if (!is_1_7) {
+        // create "/cache_list/{svc}/ip:port-hostname" ephemeral znode
+        snprintf(zpath, sizeof(zpath), "%s/%s/%s/%s",
+            zk_root, zk_cache_path, arcus_conf.svc, arcus_conf.zk_path);
+        sprintf(sbuf, "%ldMB", (long) arcus_conf.maxbytes/1024/1024);
+        rc = zoo_create (zh, zpath, sbuf, strlen(sbuf), &ZOO_OPEN_ACL_UNSAFE,
+            ZOO_EPHEMERAL, rcbuf, sizeof(rcbuf));
+        if (rc) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "cannot create znode %s (%s error)\n",
+                zpath, zerror(rc));
+            if (rc == ZNODEEXISTS) {
+                arcus_conf.logger->log( EXTENSION_LOG_DETAIL, NULL,
+                    "old session still exist. Wait a bit\n");
+            }
+            arcus_exit (zh, EX_PROTOCOL);
         }
-        arcus_exit (zh, EX_PROTOCOL);
-    }
-    else {
-        if (arcus_conf.verbose > 2)
-            arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "Joined Arcus cloud at %s\n", rcbuf);
-    }
+        else {
+            if (arcus_conf.verbose > 2)
+                arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "Joined Arcus cloud at %s\n", rcbuf);
+        }
 
-    rc = zoo_exists (zh, zpath, 0, &zstat);
-    if (rc) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "cannot find %s just created (%s error)\n",
-                       rcbuf, zerror(rc));
-        arcus_exit (zh, EX_PROTOCOL);
-    }
+        rc = zoo_exists (zh, zpath, 0, &zstat);
+        if (rc) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "cannot find %s just created (%s error)\n",
+                rcbuf, zerror(rc));
+            arcus_exit (zh, EX_PROTOCOL);
+        }
 
-    // store this version number, just in case we restart
-    arcus_conf.zk_path_ver = zstat.version;
+        // store this version number, just in case we restart
+        arcus_conf.zk_path_ver = zstat.version;
+    }
+    /* 1.7: we first determine the role (master/slave) and then
+     * store the server node in the cache list.
+     */
 
     gettimeofday(&end_time, 0);
     difftime_us = (end_time.tv_sec*1000000+end_time.tv_usec) -
@@ -943,25 +1288,58 @@ arcus_zk_init(char *ensemble_list, int zk_to, EXTENSION_LOGGER_DESCRIPTOR *logge
     arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "ZooKeeper session timeout: %d sec\n",
                     zoo_recv_timeout(zh)/1000);
 
-#ifdef ENABLE_CLUSTER_AWARE
-    char zpath_cluster[200];
-    snprintf(zpath_cluster, sizeof(zpath_cluster), "%s/%s", zk_cache_path, arcus_conf.svc);
-    arcus_conf.cluster_path = strndup(zpath_cluster, 200);
+    struct String_vector strv = { 0, NULL };
+    if (0 != read_cache_list(&strv, false /* do not register watcher */)) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Cannot complete the initialization without the cache list. "
+            "Terminating...\n");
+        arcus_exit(zh, EX_CONFIG);
+    }
 
+    if (is_1_7) {
+        /* Sanity check ephemeral znodes in lock and cache_list. */
+        if (0 != sm_check_dup_in_lock() || 0 != sm_check_dup_in_cache_list())
+            arcus_exit(zh, EX_CONFIG);
+
+        /* Create this server's node in the lock directory */
+        if (0 != sm_create_lock_znode())
+            arcus_exit(zh, EX_CONFIG);
+    }
+
+#ifdef ENABLE_CLUSTER_AWARE
     arcus_conf.ch = cluster_config_init(arcus_conf.logger, arcus_conf.verbose);
 
     char self_hostport[200];
-    snprintf(self_hostport, sizeof(self_hostport), "%s:%u", arcus_conf.hostip, arcus_conf.port);
+    if (is_1_7) {
+        /* In 1.7, the group name appears on the hash ring */
+        snprintf(self_hostport, sizeof(self_hostport), "%s",
+            arcus_conf.groupname);
+    }
+    else {
+        /* In 1.6, the server name "ip:port " appears on the hash ring */
+        snprintf(self_hostport, sizeof(self_hostport), "%s:%u",
+            arcus_conf.hostip, arcus_conf.port);
+    }
     cluster_config_set_hostport(arcus_conf.ch, self_hostport, 200);
-
-    // set a watch to the cache list this memcached belongs in
-    // (e.g. /arcus/cache_list/a_cluster)
-    arcus_cluster_watch_servers(zh, arcus_conf.cluster_path, arcus_cluster_watcher);
+    update_cluster_config(&strv);
 
     arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                            "Memcached is watching Arcus cache cloud for \"%s\"\n",
                            arcus_conf.cluster_path);
 #endif
+    deallocate_String_vector(&strv);
+
+    /* Wake up the state machine thread.
+     * Tell it to refresh the hash ring (cluster_config).
+     * It will also figure out master/slave role.
+     */
+    sm_lock();
+    /* Don't care if we just read the list above.  Do it again. */
+    sm_info.update_cache_list = true;
+    sm_info.watch_cache_list = true;
+    sm_info.update_lock = true;
+    sm_wakeup(true);
+    sm_unlock();
 
 #ifdef ENABLE_HEART_BEAT_THREAD
     start_hb_thread(ping_data);
@@ -1051,6 +1429,1283 @@ bool arcus_key_is_mine(const char *key, size_t nkey)
     return key_is_mine;
 }
 #endif
+
+/* Several 1.7 znode names use '^' as a delimiter.
+ * Example: svc^group^ip:port^
+ * Return pointers to the starting and ending ('^') characters.
+ */
+static int
+breakup_string(char *str, char *start[], char *end[], int vec_len)
+{
+    char *c = str;
+    int i = 0;
+    while (i < vec_len) {
+        start[i] = c;
+        while (*c != '\0') {
+            if (*c == '^')
+                break;
+            c++;
+        }
+        if (*c == '\0')
+            break;
+        if (start[i] == c)
+            break; /* empty */
+        end[i] = c++;
+        i++;
+    }
+    if (*c != '\0') {
+        /* There are leftover characters.
+         * Ignore them.
+         */
+    }
+    if (i != vec_len) {
+        /* There are fewer substrings than expected. */
+        return -1;
+    }
+    return 0;
+}
+
+/* This function's copied from util_common.c.  FIXME */
+static int
+fill_sockaddr(const char *host, struct sockaddr_in *addr)
+{
+    /* */
+    struct addrinfo hints;
+    struct addrinfo *res, *info;
+    int s;
+
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET; /* IPv4 */
+    res = NULL;
+    s = getaddrinfo(host, NULL, NULL, &res);
+    if (s == 0) {
+        info = res;
+        while (info) {
+            if (info->ai_family == AF_INET && info->ai_addr &&
+                info->ai_addrlen >= sizeof(*addr)) {
+                /* Use the first address we find */
+                struct sockaddr_in *in = (struct sockaddr_in*)info->ai_addr;
+                const char *ip;
+                char buf[INET_ADDRSTRLEN*2];
+
+                addr->sin_family = in->sin_family;
+                addr->sin_addr = in->sin_addr;
+
+                ip = inet_ntop(AF_INET, (const void*)&addr->sin_addr, buf, sizeof(buf));
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Address for host. host=%s addr=%s canonicalname=%s\n",
+                    host, ip ? ip : "null",
+                    info->ai_canonname ? info->ai_canonname : "null");
+                break;
+            }
+            info = info->ai_next;
+        }
+        if (info == NULL) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "No addresses for the host. host=%s\n", host);
+            s = -1;
+        }
+    }
+    else {
+        if (s == EAI_SYSTEM) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Failed to get the address of the host. host=%s\n",
+                host);
+        }
+        else {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Failed to get the address of the host. host=%s error=%s\n",
+                host, gai_strerror(s));
+        }
+        s = -1;
+    }
+
+    if (res)
+        freeaddrinfo(res);
+    return s;
+}
+
+/* This function's copied from util_common.c.  FIXME */
+static int
+parse_hostport(const char *addr_str, struct sockaddr_in *addr, char **host_out)
+{
+    char *host, *c, *dup;
+    int port, err = -1;
+
+    dup = strdup(addr_str);
+    if (dup == NULL) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "failed to allocate address buffer. len=%ld\n", strlen(addr_str));
+        goto exit;
+    }
+    c = dup;
+    host = c;
+    while (*c != ':' && *c != '\0')
+        c++;
+    if (*c == '\0') {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "bad address string %s\n", addr_str);
+        goto exit;
+    }
+    *c++ = '\0';
+    errno = 0;
+    port = strtol(c, NULL, 10);
+    if (errno != 0) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "error while parsing port number (strtol). address=%s\n", addr_str);
+        goto exit;
+    }
+    if (port <= 0 || port >= 64*1024) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "bad port %d in address string %s\n", port, addr_str);
+        goto exit;
+    }
+    memset(addr, 0, sizeof(*addr));
+    if (0 != fill_sockaddr(host, addr)) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "cannot find the address for host %s\n", host);
+        goto exit;
+    }
+    addr->sin_port = htons(port);
+    err = 0;
+exit:
+    if (err == 0 && host_out != NULL)
+        *host_out = host;
+    else if (dup)
+        free(dup);
+    return err;
+}
+
+/* This function's copied from util_common.c.  FIXME */
+static void
+gettime(uint64_t *msec, struct timeval *ptv, struct timespec *pts)
+{
+    struct timeval tv;
+    if (0 != gettimeofday(&tv, NULL)) {
+        /* Cannot fix this */
+        abort();
+    }
+    if (msec) {
+        *msec = ((uint64_t)tv.tv_sec * 1000 + (uint64_t)tv.tv_usec/1000);
+    }
+    if (ptv) {
+        *ptv = tv;
+    }
+    if (pts) {
+        pts->tv_sec = tv.tv_sec;
+        pts->tv_nsec = (long)tv.tv_usec * 1000;
+    }
+}
+
+static void
+sm_stop_slave(void)
+{
+    /* FIXME */
+}
+
+static void
+sm_become_master(bool *retry)
+{
+    int rc, i, groupname_len, slave_count;
+    char zpath[200];
+    char *sbuf = "0";
+    struct String_vector *cache_list;
+
+    /* 3-step process.
+     * 1. Create the master znode in cache_list.
+     * 2. Delete the slave znode in cache_list.
+     * 3. Tell memcached to start acting as the master.
+     *
+     * Between (1)-(2), cache_list has two znodes with this server's address,
+     * if it is failing over.  (1) and (2) may fail, and we may retry.
+     *
+     * We create the master znode first so that clients do not delete
+     * the group.
+     *
+     * Between (1)-(3), the server still thinks it's the slave, while clients
+     * may see it as the new master.  The server may receive write requests
+     * from clients.  These requests would fail.
+     */
+
+    sm_info.state = SM_STATE_BECOME_MASTER;
+
+    /* sm_check_dup_in_cache_list already checked that there are no znodes
+     * with this server's ip:port.  If we are failing over, there might be
+     * the slave znode.  Other than that, there are no other znodes with
+     * this server's address.  Aassume no one has created one in
+     * the meantime...
+     */
+
+    /* Make sure there are no master nodes in cache_list. */
+    cache_list = &sm_info.cache_list;
+    groupname_len = strlen(arcus_conf.groupname);
+    slave_count = 0;
+    for (i = 0; i < cache_list->count; i++) {
+        char *cur = cache_list->data[i];
+        int cur_len = strlen(cur);
+        if (strlen(cur) > groupname_len &&
+            0 == memcmp(cur, arcus_conf.groupname, groupname_len)) {
+            /* Have the same group name */
+            cur_len -= groupname_len;
+            if (cur_len < 3) {
+                /* No ^M^ or ^S^ */
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Trying to become the master. Found an invalid znode"
+                    " in the cache_list directory."
+                    " Terminating... path=%s\n",
+                    cache_list->data[i]);
+                arcus_exit(zh, EX_OK /* FIXME */);
+            }
+            cur = cur + groupname_len + 1; /* should point to M/S */
+            if (*cur == 'M') {
+                /* The master node.  Okay if it is ours.  If not, wait. */
+                if (0 != strcmp(cache_list->data[i], sm_info.master_name)) {
+                    arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "Trying to become the master. Found the master znode"
+                        " in the cache_list directory that is not the"
+                        " current server. Wait till it disappears."
+                        " path=%s\n",
+                        cache_list->data[i]);
+                    /* *retry = true; */
+                    return;
+                }
+            }
+            else if (*cur == 'S') {
+                /* There may be slave nodes.  Either ours or another
+                 * instance's.  Count nodes that are not ours.
+                 * There should be at most 1.
+                 */
+                if (0 != strcmp(cache_list->data[i], sm_info.slave_name))
+                    slave_count++;
+            }
+            else {
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Trying to become the master. Found an invalid znode"
+                    " in the cache_list directory."
+                    " Terminating... path=%s\n",
+                    cache_list->data[i]);
+                arcus_exit(zh, EX_OK /* FIXME */);
+            }
+        }
+    }
+    if (slave_count > 1) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Trying to become the master. Too many slave znodes"
+            " in the cache_list directory. Wait till there is at most one."
+            " slave_count=%d\n", slave_count);
+        /* *retry = true; */
+        return;
+    }
+
+    /* Create the znode for this server.
+     * name=group^M^ip:port-hostname
+     */
+    snprintf(zpath, sizeof(zpath), "%s/%s^M^%s", arcus_conf.cluster_path,
+        arcus_conf.groupname, arcus_conf.zk_path);
+    rc = zoo_create(zh, zpath, sbuf, strlen(sbuf), &ZOO_OPEN_ACL_UNSAFE,
+        ZOO_EPHEMERAL, NULL, 0);
+    if (rc == ZNODEEXISTS) {
+        /* Okay.  We must have created this znode previously, but received
+         * an error like operation timeout.
+         */
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Trying to become the master. The znode for this server already"
+            " exists in the cache_list directory. It is okay."
+            " path=%s error=%d(%s)\n",
+            zpath, rc, zerror(rc));
+    }
+    else if (rc == ZNOTHING || rc == ZSESSIONMOVED || rc == ZSESSIONEXPIRED ||
+        rc == ZOPERATIONTIMEOUT || rc == ZCONNECTIONLOSS) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Trying to become the master. Failed to create the znode"
+            " in the cache_list directory. Will try again..."
+            " path=%s error=%d(%s)\n",
+            zpath, rc, zerror(rc));
+        *retry = true;
+        return;
+    }
+    else if (rc != ZOK) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Trying to become the master. Failed to create the znode"
+            " in the cache_list directory with an unexpected error."
+            " Terminating... path=%s error=%d(%s)\n",
+            zpath, rc, zerror(rc));
+        arcus_exit(zh, EX_OK /* FIXME */);
+    }
+
+    /* Delete the slave znode if it exists. */
+    snprintf(zpath, sizeof(zpath), "%s/%s^S^%s", arcus_conf.cluster_path,
+        arcus_conf.groupname, arcus_conf.zk_path);
+    rc = zoo_delete(zh, zpath, -1);
+    if (rc == ZNONODE) {
+        /* Okay */
+    }
+    else if (rc == ZNOTHING || rc == ZSESSIONMOVED || rc == ZSESSIONEXPIRED ||
+        rc == ZOPERATIONTIMEOUT || rc == ZCONNECTIONLOSS) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Trying to become the master. Failed to delete the slave znode"
+            " in the cache_list directory. Will try again..."
+            " path=%s error=%d(%s)\n",
+            zpath, rc, zerror(rc));
+        *retry = true;
+        return;
+    }
+    else if (rc != ZOK) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Trying to become the master. Failed to delete the slave znode"
+            " in the cache_list directory with an unexpected error."
+            " Terminating... path=%s error=%d(%s)\n",
+            zpath, rc, zerror(rc));
+        arcus_exit(zh, EX_OK /* FIXME */);
+    }
+
+    arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+        "Committed to the master mode.");
+    sm_info.state = SM_STATE_MASTER;
+
+    /* Tell memcached to start acting as the master. */
+    if (0 != arcus_memcached_master_mode(arcus_conf.listen_addr_str)) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Failed to enable the master mode. Terminating...\n");
+        arcus_exit(zh, EX_OK);
+    }
+    if (0 != arcus_memcached_slave_address(sm_info.slave_laddr)) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Failed to set the slave's listen address. "
+            "Terminating...\n");
+        arcus_exit(zh, EX_OK);
+    }
+}
+
+static void
+sm_become_slave(bool *retry)
+{
+    int rc;
+    char zpath[200];
+    char *sbuf = "0";
+
+    sm_info.state = SM_STATE_BECOME_SLAVE;
+
+    /* sm_check_dup_in_cache_list already checked that there are no znodes
+     * with this server's ip:port.  Assume no one has created one in
+     * the meantime...
+     */
+
+    /* Create the znode for this server.
+     * name=group^S^ip:port-hostname
+     */
+    snprintf(zpath, sizeof(zpath), "%s/%s", arcus_conf.cluster_path,
+        sm_info.slave_name);
+    rc = zoo_create(zh, zpath, sbuf, strlen(sbuf), &ZOO_OPEN_ACL_UNSAFE,
+        ZOO_EPHEMERAL, NULL, 0);
+    if (rc == ZNODEEXISTS) {
+        /* Okay.  We must have created this znode previously, but received
+         * an error like operation timeout.
+         */
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Trying to become the slave. The znode for this server already"
+            " exists in the cache_list directory. It is okay."
+            " path=%s error=%d(%s)\n",
+            zpath, rc, zerror(rc));
+    }
+    else if (rc == ZNOTHING || rc == ZSESSIONMOVED || rc == ZSESSIONEXPIRED ||
+        rc == ZOPERATIONTIMEOUT || rc == ZCONNECTIONLOSS) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Trying to become the slave. Failed to create the znode"
+            " in the cache_list directory. Will try again..."
+            " path=%s error=%d(%s)\n",
+            zpath, rc, zerror(rc));
+        *retry = true;
+        return;
+    }
+    else if (rc != ZOK) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Trying to become the slave. Failed to create the znode"
+            " in the cache_list directory with an unexpected error."
+            " Terminating... path=%s error=%d(%s)\n",
+            zpath, rc, zerror(rc));
+        arcus_exit(zh, EX_OK /* FIXME */);
+    }
+
+    arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+        "Committed to the slave mode.");
+    sm_info.state = SM_STATE_SLAVE;
+
+    /* Tell memcached to start acting as the slave. */
+    if (0 != arcus_memcached_slave_mode(arcus_conf.listen_addr_str,
+            sm_info.master_laddr)) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Failed to enable the slave mode. Terminating...\n");
+        arcus_exit(zh, EX_OK);
+    }
+}
+
+static int
+sm_check_dup_in_cache_list(void)
+{
+    int i, rc;
+    char *zpath = arcus_conf.cluster_path;
+    char *start[2], *end[2], *c;
+    struct String_vector strv = { 0, NULL };
+
+    rc = zoo_wget_children(zh, zpath, NULL, NULL, &strv);
+    if (rc != ZOK) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Failed to get the list of znodes in the cache_list directory."
+            " path=%s error=%d(%s)\n", zpath, rc, zerror(rc));
+        return -1;
+    }
+
+    rc = 0;
+    for (i = 0; i < strv.count; i++) {
+        /* lock znode=group^{m,s}^ip:port-hostname */
+        if (0 != breakup_string(strv.data[i], start, end, 2)) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Error while checking the cache_list directory."
+                " The znode does not include group and/or role."
+                " znode=%s\n", strv.data[i]);
+            rc = -1;
+            break;
+        }
+        c = end[1];
+        while (*c != '\0') {
+            if (*c == '-')
+                break;
+            c++;
+        }
+        if (*c == '\0' || (c - end[1]) < 2) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Error while checking the cache_list directory."
+                " The node does not include ip:port."
+                " znode=%s\n", strv.data[i]);
+            rc = -1;
+            break;
+        }
+        *c = '\0';
+        if (0 == strcmp(arcus_conf.mc_ipport_str, end[1])) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "The cache_list directory includes a znode that has this"
+                " server's address. It might be from a previous instance"
+                " of this server. znode=%s\n", strv.data[i]);
+            rc = -1;
+            break;
+        }
+    }
+
+    deallocate_String_vector(&strv);
+    return rc;
+}
+
+static int
+sm_check_dup_in_lock(void)
+{
+    int i, rc;
+    char *zpath = sm_info.lock_dir_path;
+    struct String_vector strv = { 0, NULL };
+    char *start[1], *end[1];
+
+    rc = zoo_wget_children(zh, zpath, NULL, NULL, &strv);
+    if (rc != ZOK) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Failed to get the list of znodes in the lock directory."
+            " path=%s error=%d(%s)\n", zpath, rc, zerror(rc));
+        return -1;
+    }
+
+    rc = 0;
+    for (i = 0; i < strv.count; i++) {
+        /* lock znode=ip:port^ip2:port2^seq */
+        if (0 != breakup_string(strv.data[i], start, end, 1)) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Error while checking the lock directory."
+                " An invalid znode name. znode=%s\n", strv.data[i]);
+            rc = -1;
+            break;
+        }
+        end[0] = '\0';
+        if (0 == strcmp(arcus_conf.mc_ipport_str, start[0])) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "The lock directory includes a znode that has this server's"
+                " address. It might be from a previous instance of this"
+                " server. znode=%s\n", strv.data[i]);
+            rc = -1;
+            break;
+        }
+    }
+
+    deallocate_String_vector(&strv);
+    return rc;
+}
+
+/* Create the lock znode.  It is ephemeral and sequential. */
+static int
+sm_create_lock_znode(void)
+{
+    char zpath[256];
+    char rcbuf[256];
+    char *sbuf = "0";
+    int rc;
+
+    /* lock_dir/ip:port^ip2:port2^seq */
+    snprintf(zpath, sizeof(zpath), "%s/%s:%d^%s^", sm_info.lock_dir_path,
+        arcus_conf.hostip, arcus_conf.port, arcus_conf.listen_addr_str);
+
+    rc = zoo_create(zh, zpath, sbuf, strlen(sbuf), &ZOO_OPEN_ACL_UNSAFE,
+        ZOO_EPHEMERAL | ZOO_SEQUENCE, rcbuf, sizeof(rcbuf));
+    if (rc != ZOK) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Failed to create the lock znode. path=%s error=%d(%s)\n",
+            zpath, rc, zerror(rc));
+        return -1;
+    }
+
+    /* Save the actual path for later use.  This includes the sequence number
+     * that is automatically generated by ZK.
+     */
+    sm_info.lock_znode_path = strdup(rcbuf);
+    assert(sm_info.lock_znode_path != NULL);
+
+    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
+        "Created the lock znode. path=%s\n", sm_info.lock_znode_path);
+    return 0;
+}
+
+static void
+save_listen_address(char *node, char *buf, int buf_len)
+{
+    char *start[2], *end[2];
+    int len;
+
+    if (0 != breakup_string(node, start, end, 2)) {
+        /* We've done this sanity check above.  If it fails now, it's
+         * a program error...
+         */
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Fatal error. line=%d\n", __LINE__);
+        arcus_exit(zh, EX_OK);
+    }
+    len = end[1] - start[1];
+    if (len >= buf_len) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "The listen address is too long. length=%d path=%s\n",
+            len, node);
+    }
+    else {
+        memcpy(buf, start[1], len);
+        buf[len] = '\0';
+    }
+}
+
+/* From the list of children znodes in the lock directory,
+ * figure out if we are the lock owner.
+ */
+static int
+sm_get_master_lock_status(struct String_vector *node_list)
+{
+    int i, j, len, found, slave_count, slave_idx;
+    char *c;
+    uint64_t seq[16]; /* There should be at most two, usually */
+    char *start[2], *end[2];
+
+    /* Do not assume that node_list is sorted by the sequence number.
+     * Find our lock znode and get its sequence number.
+     * Then go over the list again and see if there are other znodes with
+     * lower sequence number than ours.
+     */
+    if (node_list->count <= 0)
+        return SM_MASTER_LOCK_STATUS_UNKNOWN; // Nothing in the list
+    if (node_list->count > 16) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Too many znodes in the lock directory. count=%d\n",
+            node_list->count);
+        return SM_MASTER_LOCK_STATUS_UNKNOWN;
+    }
+
+    found = -1;
+    for (i = 0; i < node_list->count; i++) {
+        c = node_list->data[i];
+        len = strlen(c);
+        if (len < 2) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "A znode in the lock directory appears to have an invalid"
+                " name. znode=%s\n", c);
+            return SM_MASTER_LOCK_STATUS_UNKNOWN;
+        }
+        /* Scan backwards looking for '^' */
+        c = c+len;  /* '\0' */
+        while (c >= node_list->data[i]) {
+            if (*c == '^')
+                break;
+            c--;
+        }
+        if (c < node_list->data[i] ||
+            (node_list->data[i]+len - c) < 2 /* too short */) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "A znode in the lock directory has no sequence number."
+                " znode=%s\n", node_list->data[i]);
+            return SM_MASTER_LOCK_STATUS_UNKNOWN;
+            /* Should never have these names.  The admin should look into
+             * the directory and see what is going on...
+             */
+        }
+        len = c - node_list->data[i];
+        if (len < 1) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "A znode in the lock directory has no server address."
+                " znode=%s\n", node_list->data[i]);
+            return SM_MASTER_LOCK_STATUS_UNKNOWN;
+        }
+
+        /* ip:port^ip2:port2^
+         * c points to the last '^'
+         * Grab the first ip:port and see if it matches our address.
+         */
+        start[0] = start[1] = end[0] = end[1] = NULL;
+        if (0 != breakup_string(node_list->data[i], start, end, 2)) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "A znode in the lock directory has an invalid name."
+                " znode=%s\n", node_list->data[i]);
+            return SM_MASTER_LOCK_STATUS_UNKNOWN;
+        }
+        len = end[0] - start[0];
+        if (strlen(arcus_conf.mc_ipport_str) == len &&
+            0 == memcmp(start[0], arcus_conf.mc_ipport_str, len)) {
+            if (found >= 0) {
+                /* Multiple znodes that have our server address
+                 * This can happen when memcached dies and then starts
+                 * again before ZK times out the old session.
+                 */
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Multiple znodes in the lock directory have the current"
+                    " server's address. prev_znode=%s current_znode=%s\n",
+                    node_list->data[found], node_list->data[i]);
+                return SM_MASTER_LOCK_STATUS_UNKNOWN;
+            }
+            else {
+                /* Remember the index */
+                found = i;
+            }
+        }
+
+        /* Parse the sequence number.  It is 32-bit decimal (base 10).
+         * For example, "0000000019".
+         */
+        c++;
+        seq[i] = 0;
+        while (*c != '\0') {
+            uint32_t num;
+            if (*c >= '0' && *c <= '9')
+                num = *c - '0';
+            else {
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "An invalid character in the sequence number."
+                    " znode=%s\n", node_list->data[i]);
+                return SM_MASTER_LOCK_STATUS_UNKNOWN;
+            }
+            seq[i] = seq[i] * 10 + num;
+            c++;
+        }
+
+        /* More sanity check.  Any duplicate sequence numbers? */
+        for (j = 0; j < i; j++) {
+            if (seq[i] == seq[j]) {
+                /* ZK is really broken... */
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Multiple znodes in the lock directory have the same"
+                    " sequence number. prev_znode=%s seq=%llu"
+                    " current_znode=%s seq=%llu\n",
+                    node_list->data[j], (unsigned long long)seq[j],
+                    node_list->data[i], (unsigned long long)seq[i]);
+                return SM_MASTER_LOCK_STATUS_UNKNOWN;
+            }
+        }
+
+        arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
+            "Parsed a znode in the lock directory. count=%d znode=%s"
+            " seq=%llu\n",
+            i, node_list->data[i], (unsigned long long)seq[i]);
+    }
+    if (found < 0) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Cannot find the current server's znode in the lock directory."
+            " server_ipport=%s\n", arcus_conf.mc_ipport_str);
+        return SM_MASTER_LOCK_STATUS_UNKNOWN;
+        /* Should not happen unless our ZK session has expired just now */
+    }
+
+    for (i = 0; i < node_list->count; i++) {
+        if (found != i && seq[found] > seq[i]) {
+            /* This znode has a lower sequence number than our znode.
+             * Find the master and save its listen address.
+             */
+            int master_idx = 0;
+            for (i = 1; i < node_list->count; i++) {
+                if (seq[master_idx] > seq[i])
+                    master_idx = i;
+            }
+            save_listen_address(node_list->data[master_idx],
+                sm_info.master_laddr, sizeof(sm_info.master_laddr));
+            return SM_MASTER_LOCK_STATUS_NOT_OWNER;
+        }
+    }
+
+    /* Great, we are the owner.
+     * Figure out the slave's listen address, if any.
+     */
+    memset(sm_info.slave_laddr, 0, sizeof(sm_info.slave_laddr));
+    slave_count = 0;
+    for (i = 0; i < node_list->count; i++) {
+        if (found != i) {
+            slave_idx = i;
+            slave_count++;
+        }
+    }
+    if (slave_count == 1) {
+        save_listen_address(node_list->data[slave_idx], sm_info.slave_laddr,
+            sizeof(sm_info.slave_laddr));
+    }
+    else {
+        /* Either too many slaves or no slaves at all.
+         * Check again later.
+         */
+    }
+    return SM_MASTER_LOCK_STATUS_OWNER;
+}
+
+static void
+arcus_lock_watcher(zhandle_t *zh, int type, int state, const char *path,
+    void *ctx)
+{
+    /* Just leave a message and let the sm thread deal with updating
+     * lock status.
+     */
+    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
+        "Event from the lock directory. type=%d state=%d path=%s\n",
+        type, state, path == NULL ? "null" : path);
+    sm_lock();
+    sm_info.update_lock = true;
+    sm_wakeup(true);
+    sm_unlock();
+}
+
+static int
+read_lock_list(struct String_vector *strv, bool watch)
+{
+    int rc;
+    char *zpath = sm_info.lock_dir_path;
+
+    rc = zoo_wget_children(zh, zpath, watch ? arcus_lock_watcher : NULL,
+        NULL, strv);
+    if (rc != ZOK) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Failed to get the list of znodes in the lock directory."
+            " path=%s error=%d(%s)\n", zpath, rc, zerror(rc));
+    }
+    /* The caller must free strv */
+    return (rc == ZOK ? 0 : -1);
+}
+
+static const char *
+sm_state_to_string(int state)
+{
+    if (state >= 0 && state <= SM_STATE_MAX)
+        return sm_state_str[state];
+    return "INVALID";
+}
+
+static int
+sm_run(int master_lock_status, bool *retry)
+{
+    assert(master_lock_status >= SM_MASTER_LOCK_STATUS_INVALID &&
+        master_lock_status <= SM_MASTER_LOCK_STATUS_MAX);
+    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
+        "sm_run enter: state=%d(%s) master_lock_status=%d(%s)\n",
+        sm_info.state, sm_state_to_string(sm_info.state),
+        master_lock_status, sm_master_lock_status_str[master_lock_status]);
+
+    switch (sm_info.state) {
+        case SM_STATE_UNKNOWN:
+        {
+            if (master_lock_status == SM_MASTER_LOCK_STATUS_OWNER)
+                sm_become_master(retry);
+            else if (master_lock_status == SM_MASTER_LOCK_STATUS_NOT_OWNER)
+                sm_become_slave(retry);
+        }
+        break;
+
+        case SM_STATE_BECOME_MASTER:
+        {
+            if (master_lock_status == SM_MASTER_LOCK_STATUS_NOT_OWNER) {
+                /* We were transitioning to the master mode, but did not
+                 * finish.  Now that we've lost the lock, we cannot become
+                 * the master.  We don't support master->slave transition.
+                 * So, fail-stop.
+                 */
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Lost the master lock in ZK while in state=BECOME_MASTER. "
+                    "Terminating...\n");
+                arcus_exit(zh, EX_OK);
+            }
+            else {
+                sm_become_master(retry);
+            }
+        }
+        break;
+
+        case SM_STATE_MASTER:
+        {
+            if (master_lock_status == SM_MASTER_LOCK_STATUS_NOT_OWNER) {
+                /* FIXME Lost the lock?  Can this happen?
+                 * The ephemeral znode in the lock directory does not
+                 * disappear unless our ZK session expires.  If the session
+                 * expires, we would have fail-stopped by now.
+                 */
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Lost the master lock in ZK while in state=MASTER. "
+                    "Terminating...\n");
+                arcus_exit(zh, EX_OK);
+            }
+            else {
+                /* We are the master.  Do sanity checks if necessary.
+                 * Pass the slave's listen address to the replication code.
+                 * It may be null.  It is okay.
+                 */
+                if (0 != arcus_memcached_slave_address(sm_info.slave_laddr)) {
+                    arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "Failed to set the slave's listen address. "
+                        "Terminating...\n");
+                    arcus_exit(zh, EX_OK);
+                }
+            }
+        }
+        break;
+
+        case SM_STATE_BECOME_SLAVE:
+        {
+            if (master_lock_status == SM_MASTER_LOCK_STATUS_OWNER) {
+                /* Have not finished transitioning to the slave.
+                 * But we've acquired the master lock.  So become the master.
+                 */
+                sm_become_master(retry);
+            }
+            else {
+                /* Did not finish transition to the slave mode before.
+                 * Try again now.
+                 */
+                sm_become_slave(retry);
+            }
+        }
+        break;
+
+        case SM_STATE_SLAVE:
+        {
+            if (master_lock_status == SM_MASTER_LOCK_STATUS_OWNER) {
+                /* Slave -> master.  This is the only failover case
+                 * we support.
+                 */
+                sm_stop_slave();
+                sm_become_master(retry);
+            }
+            else {
+                /* We are the slave.  Do sanity checks in the slave mode
+                 * if necessary.  Nothing to do now.
+                 */
+            }
+        }
+        break;
+
+        case SM_STATE_BECOME_UNKNOWN:
+        {
+            // Not used now
+        }
+        break;
+
+        default:
+        {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Program error. sm_run: invalid state. state=%d\n",
+                sm_info.state);
+            arcus_exit(zh, EX_SOFTWARE);
+        }
+        break;
+    }
+
+    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
+        "sm_run exit: state=%d(%s)\n",
+        sm_info.state, sm_state_to_string(sm_info.state));
+    return 0;
+}
+
+static void *
+sm_thread(void *arg)
+{
+    bool update_cache_list;
+    bool update_lock;
+    bool watch_cache_list;
+    bool retry = false;
+    int lock_status;
+    struct String_vector strv_cache_list, strv_lock;
+    bool strv_cache_list_valid;
+
+    // Run forever
+    while (sm_info.running) {
+        sm_lock();
+        while (!sm_info.notification) {
+            /* Poll if requested.  Otherwise, wait till the ZK watcher
+             * wakes us up.
+             */
+            if (retry) {
+                struct timespec ts;
+                uint64_t msec;
+                gettime(&msec, NULL, NULL);
+                msec += 1000; /* Wake up in 1 second.  Magic number.  FIXME */
+                ts.tv_sec = msec / 1000;
+                ts.tv_nsec = (msec % 1000) * 1000000;
+                pthread_cond_timedwait(&sm_info.cond, &sm_info.lock, &ts);
+                retry = false;
+                break;
+            }
+            else {
+                pthread_cond_wait(&sm_info.cond, &sm_info.lock);
+            }
+        }
+        sm_info.notification = 0; // Clear
+        update_cache_list = sm_info.update_cache_list;
+        watch_cache_list = sm_info.watch_cache_list;
+        update_lock = sm_info.update_lock;
+        sm_info.update_cache_list = false;
+        sm_info.watch_cache_list = false;
+        sm_info.update_lock = false;
+        sm_unlock();
+
+#ifndef ENABLE_CLUSTER_AWARE
+        /* Don't need to access cache_list unless we are using 1.7
+         * or 1.6+cluster_aware.
+         */
+        if (!is_1_7)
+            update_cache_list = false;
+#endif
+        /* Read the latest hash ring */
+        strv_cache_list.data = NULL;
+        strv_cache_list.count = 0;
+        strv_cache_list_valid = false;
+        if (update_cache_list) {
+            if (0 != read_cache_list(&strv_cache_list, watch_cache_list)) {
+                retry = true;
+                sm_lock();
+                sm_info.update_cache_list = true;
+                sm_info.watch_cache_list = watch_cache_list;
+                /* FIXME.  Don't actually need this watch flag...
+                 * We always want to set the watch.
+                 * This is the only place where we read cache_list.
+                 */
+                sm_unlock();
+                /* ZK operations can fail.  For example, when we are
+                 * disconnected from ZK, operations fail with connectionloss.
+                 * Or, we would see operation timeout.
+                 */
+            }
+            else {
+                strv_cache_list_valid = true;
+#ifdef ENABLE_CLUSTER_AWARE
+                update_cluster_config(&strv_cache_list);
+#endif
+            }
+        }
+        if (!is_1_7) {
+            deallocate_String_vector(&strv_cache_list);
+            continue;
+        }
+        /* Everything below is 1.7 specific */
+
+        /* Remember the latest cache list */
+        if (strv_cache_list_valid) {
+            deallocate_String_vector(&sm_info.cache_list);
+            sm_info.cache_list = strv_cache_list;
+            strv_cache_list.count = 0;
+            strv_cache_list.data = NULL;
+        }
+
+        /* Determine the master lock status */
+        lock_status = SM_MASTER_LOCK_STATUS_INVALID;
+        if (update_lock) {
+            strv_lock.count = 0;
+            strv_lock.data = NULL;
+            if (0 != read_lock_list(&strv_lock, true)) {
+                retry = true;
+                sm_info.update_lock = true; /* locking unnecessary */
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Cannot determine the master lock status."
+                    " Will try again.\n");
+            }
+            else {
+                /* Remember the latest lock list */
+                deallocate_String_vector(&sm_info.lock_list);
+                sm_info.lock_list = strv_lock;
+                strv_lock.count = 0;
+                strv_lock.data = NULL;
+
+                /* Compute the latest status */
+                lock_status = sm_get_master_lock_status(&sm_info.lock_list);
+                arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
+                    "Current master lock status=%s\n",
+                    sm_master_lock_status_str[lock_status]);
+            }
+        }
+
+        /* Make state ransitions based on the current lock status and
+         * the old state.
+         */
+        sm_run(lock_status, &retry);
+    }
+
+    return NULL;
+}
+
+#ifdef ENABLE_SUICIDE_UPON_DISCONNECT
+static void *
+sm_timer_thread(void *arg)
+{
+    uint64_t start_msec = 0, now_msec;
+
+    /* Run forever.
+     * When the ZK watcher says it lost connection to ZK, start running
+     * the timer.  If the timer expires, fail-stop.  If the ZK watcher
+     * says it re-connected to ZK, cancel the timer.
+     */
+    while (1) {
+        /* Keep the logic simple.  Poll once every 100msec. */
+        usleep(100000);
+        if (!zk_connected) {
+            /* Disconnected */
+            gettime(&now_msec, NULL, NULL);
+            if (start_msec == 0)
+                start_msec = now_msec;
+            if ((now_msec - start_msec) >= DEFAULT_ZK_TO/3 - 1000) {
+                /* We need to die slightly before our session times out
+                 * in ZK ensemble.  Otherwise, we might end up with multiple
+                 * masters.  It is very fragile...
+                 * FIXME
+                 */
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Disconnected from ZK for too long. Terminating..."
+                    " duration_msec=%llu\n",
+                    (long long unsigned)(now_msec - start_msec));
+                arcus_exit(zh, EX_TEMPFAIL);
+                /* Do we have to kill the slave too?  Or, only the master?
+                 * Also, make this fail-stop behavior a runtime option.
+                 * We may not want to kill the master even if it's partitioned
+                 * from ZK?  FIXME
+                 */
+            }
+        }
+        else {
+            /* Still connected to ZK */
+            start_msec = 0;
+        }
+    }
+    return NULL;
+}
+#endif /* ENABLE_SUICIDE_UPON_DISCONNECT */
+
+static int
+sm_init(void)
+{
+    pthread_attr_t attr;
+    char zpath[200];
+
+    memset(&sm_info, 0, sizeof(sm_info));
+
+    /* Do not know whether this server is the master or the slave. */
+    sm_info.state = SM_STATE_UNKNOWN;
+
+    /* /root/cache_server_group/{svc}/{group}/lock */
+    snprintf(zpath, sizeof(zpath), "%s/%s/%s/%s/lock",
+        zk_root, zk_group_path, arcus_conf.svc, arcus_conf.groupname);
+    sm_info.lock_dir_path = strdup(zpath);
+
+    snprintf(zpath, sizeof(zpath), "%s^S^%s",
+        arcus_conf.groupname, arcus_conf.zk_path);
+    sm_info.slave_name = strdup(zpath);
+
+    snprintf(zpath, sizeof(zpath), "%s^M^%s",
+        arcus_conf.groupname, arcus_conf.zk_path);
+    sm_info.master_name = strdup(zpath);
+
+    pthread_mutex_init(&sm_info.lock, NULL);
+    pthread_cond_init(&sm_info.cond, NULL);
+    sm_info.notification = false;
+    sm_info.running = true;
+    pthread_attr_init(&attr);
+    pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
+    pthread_create(&sm_info.tid, &attr, sm_thread, NULL);
+
+#ifdef ENABLE_SUICIDE_UPON_DISCONNECT
+    pthread_attr_init(&attr);
+    pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
+    pthread_create(&sm_info.timer_tid, &attr, sm_timer_thread, NULL);
+#endif
+    return 0;
+}
+
+static void
+sm_lock(void)
+{
+    pthread_mutex_lock(&sm_info.lock);
+}
+
+static void
+sm_unlock(void)
+{
+    pthread_mutex_unlock(&sm_info.lock);
+}
+
+static void
+sm_wakeup(bool locked)
+{
+    /* 'locked' is mostly to force the user to think about locking. */
+    if (!locked)
+        sm_lock();
+    if (!sm_info.notification) {
+        sm_info.notification = true;
+        pthread_cond_signal(&sm_info.cond);
+    }
+    if (!locked)
+        sm_unlock();
+}
+
+static void
+add_master_znode_blocking(void)
+{
+    bool done = false;
+    int rc;
+    char zpath[200];
+    char *sbuf = "0";
+
+    while (!done) {
+        /* Create the znode for this server.
+         * name=group^M^ip:port-hostname
+         */
+        snprintf(zpath, sizeof(zpath), "%s/%s^M^%s", arcus_conf.cluster_path,
+            arcus_conf.groupname, arcus_conf.zk_path);
+        rc = zoo_create(zh, zpath, sbuf, strlen(sbuf), &ZOO_OPEN_ACL_UNSAFE,
+            ZOO_EPHEMERAL, NULL, 0);
+        if (rc == ZNODEEXISTS) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Creating the master znode.  The znode for this server already"
+                " exists in the cache_list directory. It is okay."
+                " path=%s error=%d(%s)\n",
+                zpath, rc, zerror(rc));
+            done = true;
+        }
+        else if (rc == ZNOTHING || rc == ZSESSIONMOVED ||
+            rc == ZSESSIONEXPIRED || rc == ZOPERATIONTIMEOUT ||
+            rc == ZCONNECTIONLOSS) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Creating the master znode. Failed to create the znode"
+                " in the cache_list directory. Will try again..."
+                " path=%s error=%d(%s)\n",
+                zpath, rc, zerror(rc));
+        }
+        else if (rc != ZOK) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Creating the master znode. Failed to create the znode"
+                " in the cache_list directory with an unexpected error."
+                " Terminating... path=%s error=%d(%s)\n",
+                zpath, rc, zerror(rc));
+            arcus_exit(zh, EX_OK /* FIXME */);
+        }
+        else {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Created the master znode. path=%s error=%d(%s)\n",
+                zpath, rc, zerror(rc));
+            done = true;
+        }
+
+        /* If we get here and sleep, clients would start seeing timeouts.
+         * So, the above call needs to succeed in the first attempt for
+         * graceful failover to be really, well, graceful.
+         */
+        if (!done)
+            usleep(200000); /* Try again 200msec.  FIXME magic number */
+    }
+}
+
+static void *
+add_master_znode_thread(void *arg)
+{
+    int *complete = arg;
+    add_master_znode_blocking();
+    *complete = 1;
+    return NULL;
+}
+
+/* Create the master znode in the cache list.  Do not return until we know
+ * for sure that it succeeded or failed.  For error handling, see
+ * sm_become_master.  During graceful failover, the slave calls this function
+ * to add itself as the new master in the cache list.
+ */
+void
+arcus_zk_add_master_znode(int *async_complete)
+{
+    if (async_complete) {
+        pthread_attr_t attr;
+        pthread_t tid;
+        pthread_attr_init(&attr);
+        pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
+        pthread_create(&tid, &attr, add_master_znode_thread, async_complete);
+    }
+    else {
+        add_master_znode_blocking();
+        *async_complete = 1;
+    }
+}
+
+/* Remove the master znode from the cache list.  Do not return until we know
+ * it succeeded or failed.  During graceful failover, the master calls this
+ * function to remove itself from the cache list.
+ */
+void
+arcus_zk_remove_master_znode(void)
+{
+    bool done = false;
+    int rc;
+    char zpath[200];
+
+    while (!done) {
+        snprintf(zpath, sizeof(zpath), "%s/%s^M^%s", arcus_conf.cluster_path,
+            arcus_conf.groupname, arcus_conf.zk_path);
+        rc = zoo_delete(zh, zpath, -1);
+        if (rc == ZNONODE) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Deleting the master znode. It does not exist. This is okay."
+                " path=%s error=%d(%s)\n",
+                zpath, rc, zerror(rc));
+            done = true;
+        }
+        else if (rc == ZNOTHING || rc == ZSESSIONMOVED ||
+            rc == ZSESSIONEXPIRED || rc == ZOPERATIONTIMEOUT ||
+            rc == ZCONNECTIONLOSS) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Deleting the master znode. Failed to delete the znode"
+                " in the cache_list directory. Will try again..."
+                " path=%s error=%d(%s)\n",
+                zpath, rc, zerror(rc));
+        }
+        else if (rc != ZOK) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Deleting the master znode. Failed to delete the znode"
+                " in the cache_list directory with an unexpected error."
+                " Terminating... path=%s error=%d(%s)\n",
+                zpath, rc, zerror(rc));
+            arcus_exit(zh, EX_OK /* FIXME */);
+        }
+        else
+            done = true;
+
+        if (!done)
+            usleep(200000); /* Try again 200msec.  FIXME magic number */
+    }
+}
 
 #ifdef ENABLE_HEART_BEAT_THREAD
 static void *

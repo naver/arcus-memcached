@@ -107,9 +107,10 @@ memcached_LDFLAGS += -export-dynamic
 endif
 
 if BUILD_ZK_INTEGRATION
+memcached_SOURCES += arcus_zk.h
 memcached_LDADD += libarcuszk.a
 noinst_LIBRARIES = libarcuszk.a
-libarcuszk_a_SOURCES = arcus_zk.c cluster_config.c cluster_config.h
+libarcuszk_a_SOURCES = arcus_zk.c arcus_zk.h cluster_config.c cluster_config.h
 # Do not use AM_CFLAGS which includes -pedantic.  We do not want that flag
 # when compiling arcus_zk.c.
 libarcuszk_a_CFLAGS = @PROFILER_FLAGS@ @ARCUSZK_CFLAGS@
@@ -124,6 +125,12 @@ default_engine_la_SOURCES= \
                     assoc.h \
                     default_engine.c \
                     default_engine.h \
+                    replication.h \
+                    replication.c \
+                    util_common.h \
+                    util_common.c \
+                    msg_chan.h \
+                    msg_chan.c \
                     items.c \
                     items.h \
                     slabs.c \

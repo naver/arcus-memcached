@@ -70,6 +70,10 @@ struct assoc {
     * far we've gotten so far. Ranges from 0 .. hashsize(hashpower - 1) - 1.
     */
    unsigned int expand_bucket;
+
+   /* The number of cursors in use?  If there are cursors, do not expand */
+   int cursors_in_use;
+   bool cursor_blocking_expansion;
 };
 
 /* associative array */
@@ -93,4 +97,35 @@ void              assoc_prefix_unlink(struct default_engine *engine,
 ENGINE_ERROR_CODE assoc_get_prefix_stats(struct default_engine *engine,
                                     const char *prefix, const int nprefix,
                                     void *prefix_data);
+
+/* One-way cursor.  Right now, hash table expansion is disabled while cursors
+ * are is use.  Likewise, the user cannot get a new cursor while expansion
+ * is in progress.  The user must wait till expansion completes.
+ */
+
+struct assoc_cursor {
+  struct default_engine *engine;
+  int bucket;
+  bool init;
+  hash_item it; /* A placeholder.  See item_scrubber_main. */
+};
+
+/* Initialize the cursor.  Returns false if expansion is in progress and
+ * we cannot use cursors.
+ */
+bool assoc_cursor_begin(struct default_engine *engine, struct assoc_cursor *c);
+
+/* Indicate that this cursor is no longer used. */
+void assoc_cursor_end(struct assoc_cursor *c);
+
+/* Return the next item in the hash table and advance the cursor.
+ * NULL indicates the cursor has reached the end of the table.
+ */
+hash_item *assoc_cursor_next(struct assoc_cursor *c);
+
+/* Is the given hash item in the area of the hash table where the cursor
+ * has passed through?  The item must be in the hash table.
+ */
+bool assoc_cursor_in_visited_area(struct assoc_cursor *c, hash_item *it);
+
 #endif

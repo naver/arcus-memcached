@@ -848,7 +848,22 @@ extern "C" {
         size_t (*errinfo)(ENGINE_HANDLE *handle, const void* cookie,
                           char *buffer, size_t buffsz);
 
+        /**
+         * Commands to the replication module.
+         *
+         * @param handle the engine handle
+         * @param cmd The command string
+         *
+         * @return ENGINE_SUCCESS if all goes well
+         */
+        ENGINE_ERROR_CODE (*rp_cmd)(ENGINE_HANDLE* handle, const char* cmd);
 
+        ENGINE_ERROR_CODE (*rp_standalone)(ENGINE_HANDLE *handle);
+        ENGINE_ERROR_CODE (*rp_master)(ENGINE_HANDLE *handle, const char *addr);
+        ENGINE_ERROR_CODE (*rp_slave)(ENGINE_HANDLE *handle,
+                                      const char *saddr, const char *maddr);
+        ENGINE_ERROR_CODE (*rp_slave_addr)(ENGINE_HANDLE *handle,
+                                           const char *addr);
 
     } ENGINE_HANDLE_V1;
 

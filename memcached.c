@@ -32,6 +32,9 @@
 #include "config.h"
 #include "memcached.h"
 #include "memcached/extension_loggers.h"
+#ifdef ENABLE_ZK_INTEGRATION
+#include "arcus_zk.h"
+#endif
 
 #if defined(ENABLE_SASL) || defined(ENABLE_ISASL)
 #define SASL_ENABLED
@@ -146,9 +149,6 @@ static inline void item_set_cas(const void *cookie, item *it, uint64_t cas) {
 }
 
 volatile sig_atomic_t memcached_shutdown;
-#ifdef ENABLE_ZK_INTEGRATION
-extern volatile sig_atomic_t arcus_zk_shutdown;
-#endif
 
 /*
  * We keep the current time of day in a global variable that's updated by a
@@ -238,17 +238,8 @@ static enum transmit_result transmit(conn *c);
 #define REALTIME_MAXDELTA 60*60*24*30
 
 #ifdef ENABLE_ZK_INTEGRATION
-extern void arcus_shutdown(const char *);
-extern void arcus_zk_init(char *ensemble_list, int arcus_zk_to,
-                          EXTENSION_LOGGER_DESCRIPTOR *logger,
-                          int verbose, size_t maxbytes, int port);
 extern int arcus_zk_set_ensemble(char *ensemble_list);
 extern int arcus_zk_get_ensemble_str(char *buf, int size);
-extern int arcus_zk_get_timeout(void);
-#endif
-#ifdef ENABLE_CLUSTER_AWARE
-extern bool arcus_key_is_mine     (const char *key, size_t nkey);
-extern bool arcus_cluster_is_valid(void);
 #endif
 
 // Perform all callbacks of a given type for the given connection.
@@ -977,6 +968,10 @@ const char *state_text(STATE_FUNC state) {
         return "conn_pending_close";
     } else if (state == conn_immediate_close) {
         return "conn_immediate_close";
+    } else if (state == conn_finish_blocked_update) {
+        return "conn_finish_blocked_update";
+    } else if (state == conn_finish_blocked_op_success) {
+        return "conn_finish_blocked_op_success";
     } else {
         return "Unknown";
     }
@@ -1295,11 +1290,22 @@ static void process_lop_insert_complete(conn *c) {
             stats_prefix_record_lop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
         }
 
+        if (ret == ENGINE_SUCCESS || ret == ENGINE_EWOULDBLOCK) {
+            STATS_HITS(c, lop_insert, c->coll_key, c->coll_nkey);
+        }
+
         switch (ret) {
         case ENGINE_SUCCESS:
-            STATS_HITS(c, lop_insert, c->coll_key, c->coll_nkey);
             if (created == false) out_string(c, "STORED");
             else                  out_string(c, "CREATED_STORED");
+            break;
+        case ENGINE_EWOULDBLOCK:
+            /* Replication.  EWOULDBLOCk implies SUCCESS. */
+            if (created == false) c->orig_response = "STORED";
+            else                  c->orig_response = "CREATED_STORED";
+            c->ewouldblock = true;
+            /* conn_finish_blocked_op_success clears ewouldblock */
+            conn_set_state(c, conn_finish_blocked_op_success);
             break;
         case ENGINE_DISCONNECT:
             c->state = conn_closing;
@@ -1343,11 +1349,21 @@ static void process_sop_insert_complete(conn *c) {
             stats_prefix_record_sop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
         }
 
+        if (ret == ENGINE_SUCCESS || ret == ENGINE_EWOULDBLOCK) {
+            STATS_HITS(c, sop_insert, c->coll_key, c->coll_nkey);
+        }
+
         switch (ret) {
         case ENGINE_SUCCESS:
-            STATS_HITS(c, sop_insert, c->coll_key, c->coll_nkey);
             if (created == false) out_string(c, "STORED");
             else                  out_string(c, "CREATED_STORED");
+            break;
+        case ENGINE_EWOULDBLOCK:
+            /* Replication */
+            if (created == false) c->orig_response = "STORED";
+            else                  c->orig_response = "CREATED_STORED";
+            c->ewouldblock = true;
+            conn_set_state(c, conn_finish_blocked_op_success);
             break;
         case ENGINE_DISCONNECT:
             c->state = conn_closing;
@@ -1389,11 +1405,21 @@ static void process_sop_delete_complete(conn *c) {
                                            (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
         }
 
+        if (ret == ENGINE_SUCCESS || ret == ENGINE_EWOULDBLOCK) {
+            STATS_ELEM_HITS(c, sop_delete, c->coll_key, c->coll_nkey);
+        }
+
         switch (ret) {
         case ENGINE_SUCCESS:
-            STATS_ELEM_HITS(c, sop_delete, c->coll_key, c->coll_nkey);
             if (dropped == false) out_string(c, "DELETED");
             else                  out_string(c, "DELETED_DROPPED");
+            break;
+        case ENGINE_EWOULDBLOCK:
+            /* Replication */
+            if (dropped == false) c->orig_response = "DELETED";
+            else                  c->orig_response = "DELETED_DROPPED";
+            c->ewouldblock = true;
+            conn_set_state(c, conn_finish_blocked_op_success);
             break;
         case ENGINE_ELEM_ENOENT:
             STATS_NONE_HITS(c, sop_delete, c->coll_key, c->coll_nkey);
@@ -1518,9 +1544,14 @@ static void process_bop_insert_complete(conn *c) {
             stats_prefix_record_bop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
         }
 
+        if (ret == ENGINE_SUCCESS || ret == ENGINE_EWOULDBLOCK) {
+            /* This macro expands to quite a few statements.  So use it once here. */
+            STATS_HITS(c, bop_insert, c->coll_key, c->coll_nkey);
+        }
+
         switch (ret) {
         case ENGINE_SUCCESS:
-            STATS_HITS(c, bop_insert, c->coll_key, c->coll_nkey);
+        case ENGINE_EWOULDBLOCK:  /* Replication.  EWOULDBLOCK implies SUCCESS. */
             if (c->coll_drop && trim_result.elems != NULL) { /* getrim flag */
                 assert(trim_result.count == 1);
                 char  buffer[256];
@@ -1558,6 +1589,8 @@ static void process_bop_insert_complete(conn *c) {
                     out_string(c, "REPLACED");
                 }
             }
+            if (ret == ENGINE_EWOULDBLOCK)
+                c->ewouldblock = true;
             break;
         case ENGINE_DISCONNECT:
             c->state = conn_closing;
@@ -1612,10 +1645,19 @@ static void process_bop_update_complete(conn *c)
                                        (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
+    if (ret == ENGINE_SUCCESS || ret == ENGINE_EWOULDBLOCK) {
+        STATS_ELEM_HITS(c, bop_update, c->coll_key, c->coll_nkey);
+    }
+
     switch (ret) {
     case ENGINE_SUCCESS:
-        STATS_ELEM_HITS(c, bop_update, c->coll_key, c->coll_nkey);
         out_string(c, "UPDATED");
+        break;
+    case ENGINE_EWOULDBLOCK:
+        /* Replication.  EWOULDBLOCK implies SUCCESS. */
+        c->ewouldblock = true;
+        c->orig_response = "UPDATED";
+        conn_set_state(c, conn_finish_blocked_op_success);
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, bop_update, c->coll_key, c->coll_nkey);
@@ -2062,7 +2104,12 @@ static void complete_update_ascii(conn *c) {
             out_string(c, "SERVER_ERROR failure");
             break;
 
-        case ENGINE_EWOULDBLOCK: // Fall-through.
+        case ENGINE_EWOULDBLOCK:
+            /* Replication.  EWOULDBLOCK implies SUCCESS. */
+            c->orig_response = "STORED";
+            c->ewouldblock = true;
+            conn_set_state(c, conn_finish_blocked_op_success);
+            break;
         case ENGINE_WANT_MORE:
             assert(false);
             c->state = conn_closing;
@@ -7262,7 +7309,7 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("version", "%s", VERSION);
     APPEND_STAT("libevent", "%s", event_get_version());
 #ifdef ENABLE_ZK_INTEGRATION
-    APPEND_STAT("zk_timeout", "%d", arcus_zk_get_timeout());
+    APPEND_STAT("zk_timeout", "%d", get_arcus_zk_timeout());
 #endif
     APPEND_STAT("pointer_size", "%d", (int)(8 * sizeof(void *)));
 
@@ -7495,6 +7542,19 @@ static void process_stat_settings(ADD_STAT add_stats, void *c) {
          ptr = ptr->next) {
         APPEND_STAT("ascii_extension", "%s", ptr->get_name(ptr->cookie));
     }
+}
+
+/* Replication specific commands to default_engine */
+static void process_replication(conn *c, token_t *tokens, const size_t ntokens) {
+    const char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
+    ENGINE_ERROR_CODE ret;
+    assert(c != NULL);
+
+    ret = settings.engine.v1->rp_cmd(settings.engine.v0, subcommand);
+    if (ret == ENGINE_SUCCESS)
+        out_string(c, "OK");
+    else
+        out_string(c, "SERVER_ERROR");
 }
 
 static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
@@ -7980,6 +8040,7 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
     char temp[INCR_MAX_STORAGE_LEN];
     switch (ret) {
     case ENGINE_SUCCESS:
+    case ENGINE_EWOULDBLOCK: /* Replication */
         if (incr) {
             STATS_INCR(c, incr_hits, key, nkey);
         } else {
@@ -7987,6 +8048,8 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
         }
         snprintf(temp, sizeof(temp), "%"PRIu64, result);
         out_string(c, temp);
+        if (ret == ENGINE_EWOULDBLOCK)
+            c->ewouldblock = true;
         break;
     case ENGINE_KEY_ENOENT:
         if (incr) {
@@ -8061,6 +8124,12 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     if (ret == ENGINE_SUCCESS) {
         out_string(c, "DELETED");
         SLAB_INCR(c, delete_hits, key, nkey);
+    } else if (ret == ENGINE_EWOULDBLOCK) {
+        /* Replication.  EWOULDBLOCK implies SUCCESS. */
+        SLAB_INCR(c, delete_hits, key, nkey);
+        c->ewouldblock = true;
+        c->orig_response = "DELETED";
+        conn_set_state(c, conn_finish_blocked_op_success);
     } else {
         out_string(c, "NOT_FOUND");
         STATS_INCR(c, delete_misses, key, nkey);
@@ -8302,6 +8371,7 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
     bool     dropped;
     int      est_count;
     int      need_size;
+    bool     ewouldblock = false; /* replication */
 
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
@@ -8323,6 +8393,11 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
                                                 from_index, to_index,
                                                 delete, drop_if_empty,
                                                 elem_array, &elem_count, &flags, &dropped, 0);
+        /* Replication.  See process_bop_get. */
+        if (ret == ENGINE_EWOULDBLOCK) {
+            ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
     }
 
     if (settings.detail_enabled) {
@@ -8375,6 +8450,10 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
             c->coll_ecount = elem_count;
             c->coll_resps  = respbuf;
             c->coll_op     = OPERATION_LOP_GET;
+            if (ewouldblock) {
+                c->ewouldblock = true; /* replication */
+                /* conn_mwrite clears ewouldblock */
+            }
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
         } else { /* ENGINE_ENOMEM */
@@ -8475,13 +8554,22 @@ static void process_lop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         stats_prefix_record_lop_create(key, nkey);
     }
 
+    if (ret == ENGINE_SUCCESS || ret == ENGINE_EWOULDBLOCK) {
+        STATS_OKS(c, lop_create, key, nkey);
+    }
+
     switch (ret) {
     case ENGINE_SUCCESS:
-        STATS_OKS(c, lop_create, key, nkey);
         out_string(c, "CREATED");
         break;
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
+        break;
+    case ENGINE_EWOULDBLOCK:
+        /* Replication.  EWOULDBLOCk implies SUCCESS. */
+        c->orig_response = "CREATED";
+        c->ewouldblock = true;
+        conn_set_state(c, conn_finish_blocked_op_success);
         break;
     default:
         STATS_NOKEY(c, cmd_lop_create);
@@ -8507,11 +8595,20 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
         stats_prefix_record_lop_delete(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
+    if (ret == ENGINE_SUCCESS || ret == ENGINE_EWOULDBLOCK) {
+        STATS_ELEM_HITS(c, lop_delete, key, nkey);
+    }
+
     switch (ret) {
     case ENGINE_SUCCESS:
-        STATS_ELEM_HITS(c, lop_delete, key, nkey);
         if (dropped == false) out_string(c, "DELETED");
         else                  out_string(c, "DELETED_DROPPED");
+        break;
+    case ENGINE_EWOULDBLOCK:
+        if (dropped == false) c->orig_response = "DELETED";
+        else                  c->orig_response = "DELETED_DROPPED";
+        c->ewouldblock = true;
+        conn_set_state(c, conn_finish_blocked_op_success);
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, lop_delete, key, nkey);
@@ -8685,6 +8782,7 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
     uint32_t flags, i;
     bool     dropped;
     int      need_size;
+    bool     ewouldblock = false; /* replication */
 
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
@@ -8700,6 +8798,11 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
         ret = settings.engine.v1->set_elem_get(settings.engine.v0, c, key, nkey, req_count,
                                                delete, drop_if_empty, elem_array, &elem_count,
                                                &flags, &dropped, 0);
+        /* Replication.  See process_bop_get. */
+        if (ret == ENGINE_EWOULDBLOCK) {
+            ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
     }
 
     if (settings.detail_enabled) {
@@ -8752,6 +8855,8 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
             c->coll_ecount = elem_count;
             c->coll_resps  = respbuf;
             c->coll_op     = OPERATION_SOP_GET;
+            if (ewouldblock)
+                c->ewouldblock = true; /* replication */
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
         } else { /* ENGINE_ENOMEM */
@@ -8871,13 +8976,22 @@ static void process_sop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         stats_prefix_record_sop_create(key, nkey);
     }
 
+    if (ret == ENGINE_SUCCESS || ret == ENGINE_EWOULDBLOCK) {
+        STATS_OKS(c, sop_create, key, nkey);
+    }
+
     switch (ret) {
     case ENGINE_SUCCESS:
-        STATS_OKS(c, sop_create, key, nkey);
         out_string(c, "CREATED");
         break;
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
+        break;
+    case ENGINE_EWOULDBLOCK:
+        /* Replication.  EWOULDBLOCk implies SUCCESS. */
+        c->orig_response = "CREATED";
+        c->ewouldblock = true;
+        conn_set_state(c, conn_finish_blocked_op_success);
         break;
     default:
         STATS_NOKEY(c, cmd_sop_create);
@@ -9040,6 +9154,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
     bool     dropped_trimmed;
     int      est_count;
     int      need_size;
+    bool     ewouldblock = false; /* replication */
 
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
@@ -9060,6 +9175,13 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
                                                  delete, drop_if_empty,
                                                  elem_array, &elem_count,
                                                  &flags, &dropped_trimmed, 0);
+        if (ret == ENGINE_EWOULDBLOCK) {
+            ewouldblock = true;
+            /* See default_btree_elem_get (default_engine.c) and
+             * btree_elem_get (items.c).
+             */
+            ret = ENGINE_SUCCESS;
+        }
     }
 
     if (settings.detail_enabled) {
@@ -9116,6 +9238,13 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
             c->coll_ecount = elem_count;
             c->coll_resps  = respbuf;
             c->coll_op     = OPERATION_BOP_GET;
+            if (ewouldblock) {
+                c->ewouldblock = true;
+                /* Replication.  conn_parse_cmd blocks this request.
+                 * The worker thread will call conn_mwrite when the engine
+                 * completes the request.
+                 */
+            }
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
         } else { /* ENGINE_ENOMEM */
@@ -9586,6 +9715,13 @@ static void process_bop_create(conn *c, char *key, size_t nkey, item_attr *attrp
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
+    case ENGINE_EWOULDBLOCK:
+        /* Replication.  EWOULDBLOCk implies SUCCESS. */
+        STATS_OKS(c, bop_create, key, nkey);
+        c->orig_response = "CREATED";
+        c->ewouldblock = true;
+        conn_set_state(c, conn_finish_blocked_op_success);
+        break;
     default:
         STATS_NOKEY(c, cmd_bop_create);
         if (ret == ENGINE_KEY_EEXISTS) out_string(c, "EXISTS");
@@ -9613,9 +9749,15 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
 
     switch (ret) {
     case ENGINE_SUCCESS:
+    case ENGINE_EWOULDBLOCK:
+        /* Replication.  EWOULDBLOCK implies SUCCESS. */
         STATS_ELEM_HITS(c, bop_delete, key, nkey);
         if (dropped == false) out_string(c, "DELETED");
         else                  out_string(c, "DELETED_DROPPED");
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            /* See process_bop_get.  conn_parse_cmd blocks this request. */
+        }
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, bop_delete, key, nkey);
@@ -9649,14 +9791,16 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
 
     if (settings.detail_enabled) {
         if (incr) {
-            stats_prefix_record_bop_incr(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+            stats_prefix_record_bop_incr(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT || ret==ENGINE_EWOULDBLOCK));
         } else {
-            stats_prefix_record_bop_decr(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+            stats_prefix_record_bop_decr(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT || ret==ENGINE_EWOULDBLOCK));
         }
     }
 
     switch (ret) {
     case ENGINE_SUCCESS:
+    case ENGINE_EWOULDBLOCK:
+        /* Replication.  EWOULDBLOCK implies SUCCESS. */
         if (incr) {
             STATS_ELEM_HITS(c, bop_incr, key, nkey);
         } else {
@@ -9664,6 +9808,10 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
         }
         snprintf(temp, sizeof(temp), "%"PRIu64, result);
         out_string(c, temp);
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            /* See process_bop_get.  conn_parse_cmd blocks this request. */
+        }
         break;
     case ENGINE_KEY_ENOENT:
         if (incr) {
@@ -10720,8 +10868,11 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
 
     switch (ret) {
     case ENGINE_SUCCESS:
+    case ENGINE_EWOULDBLOCK: /* Replication */
         STATS_HITS(c, setattr, key, nkey);
         out_string(c, "OK");
+        if (ret == ENGINE_EWOULDBLOCK)
+            c->ewouldblock = true;
         break;
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
@@ -10847,6 +10998,10 @@ static void process_command(conn *c, char *command) {
             out_string(c, "OK");
         } else if (ret == ENGINE_ENOTSUP) {
             out_string(c, "SERVER_ERROR not supported");
+        } else if (ret == ENGINE_EWOULDBLOCK) { /* Replication */
+            c->orig_response = "OK";
+            c->ewouldblock = true;
+            conn_set_state(c, conn_finish_blocked_op_success);
         } else {
             out_string(c, "SERVER_ERROR failed to flush cache");
         }
@@ -10876,7 +11031,15 @@ static void process_command(conn *c, char *command) {
             nprefix = 0;
         }
 
+        bool block = false;
         ret = settings.engine.v1->flush_prefix(settings.engine.v0, c, prefix, nprefix, exptime);
+        if (ret == ENGINE_EWOULDBLOCK) { /* Replication */
+            ret = ENGINE_SUCCESS; /* prefix_delete checks SUCCESS */
+            block = true;
+            /* prefix_delete below overrides ret, so remember the fact that
+             * we got EWOULDBLOCK.
+             */
+        }
         if (settings.detail_enabled) {
             if (ret == ENGINE_SUCCESS || ret == ENGINE_PREFIX_ENOENT) {
                 if (stats_prefix_delete(prefix, nprefix) == 0) { /* found */
@@ -10886,7 +11049,16 @@ static void process_command(conn *c, char *command) {
         }
 
         if (ret == ENGINE_SUCCESS) {
-            out_string(c, "OK");
+            if (block) { /* Replication */
+                c->orig_response = "OK";
+                c->ewouldblock = true;
+                /* Do we really need this?  Can we just set ewouldblock=true?
+                 * conn_parse_cmd takes this connection out of the event loop.
+                 */
+                conn_set_state(c, conn_finish_blocked_op_success);
+            }
+            else
+                out_string(c, "OK");
         } else if (ret == ENGINE_DISCONNECT) {
             c->state = conn_closing;
         } else if (ret == ENGINE_PREFIX_ENOENT) {
@@ -10922,6 +11094,8 @@ static void process_command(conn *c, char *command) {
     } else if (ntokens == 2 && (strcmp(tokens[COMMAND_TOKEN].value, "quit") == 0)) {
 
         conn_set_state(c, conn_closing);
+    } else if (ntokens >= 3 && (strcmp(tokens[COMMAND_TOKEN].value, "replication") == 0)) {
+        process_replication(c, tokens, ntokens);
 #ifdef ENABLE_ZK_INTEGRATION
     } else if (ntokens == 3 && (strcmp(tokens[COMMAND_TOKEN].value, "set_zk_ensemble") == 0)) {
         /* The ensemble is a comma separated list of host:port addresses.
@@ -11601,6 +11775,31 @@ bool conn_parse_cmd(conn *c) {
         conn_set_state(c, conn_waiting);
     }
 
+    /* Replication.  try_read_command eventually calls process_bop_command
+     * and others.  These may return EWOULDBLOCK.  See conn_nread.
+     */
+    {
+        LIBEVENT_THREAD *t = c->thread;
+        bool block = false;
+
+        if (c->ewouldblock) {
+            LOCK_THREAD(t);
+            if (c->premature_notify_io_complete) {
+                /* notify_io_complete was called before we got here */
+                c->premature_notify_io_complete = false;
+            }
+            else {
+                event_del(&c->event);
+                c->blocked = true;
+                block = true;
+            }
+            UNLOCK_THREAD(t);
+            c->ewouldblock = false;
+        }
+        if (block)
+            return false;
+    }
+
     return true;
 }
 
@@ -11686,6 +11885,79 @@ bool conn_swallow(conn *c) {
 
 }
 
+/* A copy of complete_update_ascii minus collection.
+ * FIXME.  Remove this.  Do not need this any more.
+ */
+bool conn_finish_blocked_update(conn *c)
+{
+    ENGINE_ERROR_CODE ret = c->aiostat;
+    c->ewouldblock = false;
+
+    switch (ret) {
+        case ENGINE_SUCCESS:
+            out_string(c, "STORED");
+            break;
+        case ENGINE_KEY_EEXISTS:
+            out_string(c, "EXISTS");
+            break;
+        case ENGINE_KEY_ENOENT:
+            out_string(c, "NOT_FOUND");
+            break;
+        case ENGINE_NOT_STORED:
+            out_string(c, "NOT_STORED");
+            break;
+        case ENGINE_DISCONNECT:
+            c->state = conn_closing;
+            break;
+        case ENGINE_ENOTSUP:
+            out_string(c, "SERVER_ERROR not supported");
+            break;
+        case ENGINE_ENOMEM:
+            out_string(c, "SERVER_ERROR out of memory");
+            break;
+        case ENGINE_EINVAL:
+            out_string(c, "CLIENT_ERROR invalid arguments");
+            break;
+        case ENGINE_E2BIG:
+            out_string(c, "CLIENT_ERROR value too big");
+            break;
+        case ENGINE_EACCESS:
+            out_string(c, "CLIENt_ERROR access control violation");
+            break;
+        case ENGINE_NOT_MY_VBUCKET:
+            out_string(c, "SERVER_ERROR not my vbucket");
+            break;
+        case ENGINE_FAILED:
+            out_string(c, "SERVER_ERROR failure");
+            break;
+
+        case ENGINE_EWOULDBLOCK: // Fall-through.
+        case ENGINE_WANT_MORE:
+            assert(false);
+            c->state = conn_closing;
+            break;
+
+        default:
+            out_string(c, "SERVER_ERROR internal");
+    }
+
+    /* release the c->item reference */
+    settings.engine.v1->release(settings.engine.v0, c, c->item);
+    c->item = 0;
+    return true;
+}
+
+/* The worker thread already has called out_string.  Assume ENGINE_SUCCESS. */
+bool conn_finish_blocked_op_success(conn *c)
+{
+    c->ewouldblock = false;
+    out_string(c, c->orig_response);
+    /* We do not hold any reference to the item, so do not call
+     * release here.
+     */
+    return true;
+}
+
 bool conn_nread(conn *c) {
     ssize_t res;
 
@@ -11695,15 +11967,35 @@ bool conn_nread(conn *c) {
         bool block = c->ewouldblock = false;
         complete_nread(c);
         UNLOCK_THREAD(t);
+        /* It is not clear why we execute complete_nread with the thread
+         * locked.  It sometimes introduces a lot of delay when we replicate
+         * in SYNC mode.  The replication thread calls notify_io_complete to
+         * wake up/resume requests.  notify_io_complete acquires the thread
+         * lock too.  So it may block for a while till complete_nread
+         * returns.
+         *
+         * For replication we've changed the meaning of ewouldblock.  Since
+         * we broke it anyway, can we get rid of the thread locking above.
+         * FIXME.
+         */
+
         /* Breaking this into two, as complete_nread may have
            moved us to a different thread */
         t = c->thread;
-        LOCK_THREAD(t);
         if (c->ewouldblock) {
-            event_del(&c->event);
-            block = true;
+            LOCK_THREAD(t);
+            if (c->premature_notify_io_complete) {
+                /* notify_io_complete was called before we got here */
+                c->premature_notify_io_complete = false;
+            }
+            else {
+                event_del(&c->event);
+                c->blocked = true;
+                block = true;
+            }
+            UNLOCK_THREAD(t);
+            c->ewouldblock = false;
         }
-        UNLOCK_THREAD(t);
         return !block;
     }
 
@@ -11792,6 +12084,11 @@ bool conn_mwrite(conn *c) {
         conn_set_state(c, conn_closing);
         return true;
     }
+    /* Replication.  Clear the flag so that the next read command from
+     * the same connection does not falsely block and time out.
+     */
+    if (c->ewouldblock)
+        c->ewouldblock = false;
 
     switch (transmit(c)) {
     case TRANSMIT_COMPLETE:
@@ -12597,6 +12894,9 @@ static int get_socket_fd(const void *cookie) {
 
 static const char* get_client_ip(const void *cookie) {
     conn *c = (conn *)cookie;
+    /* Replication.  cookie is NULL on the slave. */
+    if (c == NULL)
+        return "null";
     return c->client_ip;
 }
 
@@ -12973,6 +13273,7 @@ static void set_log_level(EXTENSION_LOG_LEVEL severity)
     default:
         settings.verbose = 3;
     }
+    perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
 }
 
 /**
@@ -12998,7 +13299,11 @@ static SERVER_HANDLE_V1 *get_server_api(void)
         .is_zk_integrated = is_zk_integrated,
         .is_my_key = is_my_key,
 #endif
-        .shutdown = shutdown_server
+        .shutdown = shutdown_server,
+#ifdef ENABLE_ZK_INTEGRATION
+        .zk_add_master = arcus_zk_add_master_znode,
+        .zk_remove_master = arcus_zk_remove_master_znode,
+#endif
     };
 
     static SERVER_STAT_API server_stat_api = {
@@ -13517,10 +13822,18 @@ int main (int argc, char **argv) {
     }
 
     if (engine_config != NULL && strlen(old_options) > 0) {
+        /* If there is -e, just append it to the "old" options that we have
+         * accumulated so far.
+         */
+        old_opts += sprintf(old_opts, "%s", engine_config);
+        engine_config = NULL; /* So we set it to old_options below... */
+        /*
         settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "ERROR: You can't mix -e with the old options\n");
         return EX_USAGE;
-    } else if (engine_config == NULL && strlen(old_options) > 0) {
+        */
+    }
+    if (engine_config == NULL && strlen(old_options) > 0) {
         engine_config = old_options;
     }
 
@@ -13562,6 +13875,12 @@ int main (int argc, char **argv) {
         exit(EX_OSERR);
     } else {
         int maxfiles = settings.maxconns;
+
+        /* Replication.  Make room for arcus_zk and replication. */
+        maxfiles += 2; /* ZK */
+        maxfiles += 1; /* heartbeat */
+        maxfiles += 3; /* replication */
+
         if (rlim.rlim_cur < maxfiles)
             rlim.rlim_cur = maxfiles;
         if (rlim.rlim_max < rlim.rlim_cur)
@@ -13765,7 +14084,14 @@ int main (int argc, char **argv) {
     // initialize Arcus ZK cluster connection
     if (arcus_zk_cfg) {
         arcus_zk_init ( arcus_zk_cfg, arcus_zk_to, settings.extensions.logger,
-                        settings.verbose, settings.maxbytes, settings.port);
+                        settings.verbose, settings.maxbytes, settings.port,
+                        settings.engine.v1);
+    }
+    else {
+        /* No cluster manager (ZK).  The replication code runs according to
+         * its local configuration file.
+         */
+        settings.engine.v1->rp_standalone(settings.engine.v0);
     }
 #endif
 

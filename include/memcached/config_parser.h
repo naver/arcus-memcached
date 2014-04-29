@@ -25,6 +25,8 @@
 extern "C" {
 #endif
 
+#define ENABLE_DT_CHAR 1
+
 /**
  * The supported datatypes the config file parser can handle
  */

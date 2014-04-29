@@ -142,6 +142,17 @@ extern "C" {
          */
         void (*shutdown)(void);
 
+        /**
+         * Replication.  Add the server as the master in the cache list.
+         */
+        void (*zk_add_master)(int *async_complete);
+
+        /**
+         * Replication.  Remove the server from the cache list.  The server
+         * must be the current master.
+         */
+        void (*zk_remove_master)(void);
+
     } SERVER_CORE_API;
 
     typedef struct {

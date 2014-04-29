@@ -75,6 +75,10 @@ extern "C" {
 
         ENGINE_PREFIX_ENAME  = 0x51, /**< Invalid prefix name */
         ENGINE_PREFIX_ENOENT = 0x52, /**< Attribute not found */
+
+        /* Replication */
+        ENGINE_BLOCKED     = 0x60, /**< Blocked temporarily. Will retry */
+
         ENGINE_FAILED      = 0xff  /**< Generic failue. */
     } ENGINE_ERROR_CODE;
 

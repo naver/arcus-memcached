@@ -550,10 +550,15 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
 
     LOCK_THREAD(thr);
 
-    if (thr != conn->thread || conn->state == conn_closing || !conn->ewouldblock) {
+    if (thr != conn->thread || conn->state == conn_closing || /* !conn->ewouldblock */
+        !conn->blocked) {
+        conn->premature_notify_io_complete = true;
         UNLOCK_THREAD(thr);
+        settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+                                        "Premature notify_io_complete\n");
         return;
     }
+    conn->blocked = false;
 
     conn->aiostat = status;
 

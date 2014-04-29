@@ -27,6 +27,44 @@
 #include <sys/time.h> /* gettimeofday() */
 
 #include "default_engine.h"
+#include "replication.h"
+#include "util_common.h"
+
+/* Replication.
+ * rp_{btree,set,list}_elem_unlinked gets called deep in the call chain.
+ * At the call site, we have pointers to {btree,set,list}_meta_info,
+ * but not hash_item.  The replication code wants hash_item so it can
+ * get the key and increment refcount.  As is, we cannot get hash_item
+ * from meta_info.  There is a variable-length key between hash_item
+ * and meta_info.  Two options.
+ *
+ * 1. Add hash_item pointer to {btree,set,list}_meta_info.
+ * 2. Set the current collection item pointer in a global variable.
+ *    And pass that to the replication code.
+ * 3. Pass hash_item to all internal functions that may call
+ *    the replication code.
+ *
+ * (1) seems to be too much overhead: 8B per collection item.
+ * When we have 10M collection items, the pointers consume 80MB.
+ *
+ * (3) seems to require too many changes to functions.
+ *
+ * So, go with (2) but carefully examine all possible call chains
+ * to rp_{btree,set,list}_elem_unlinked...
+ * See "Removing rp_it" in replication.txt.
+ */
+static hash_item *rp_coll_it;
+/* When we call do_item_unlink, remember if it is to evict
+ * an expired or old (lru) item, or if it is due to an explicit user command.
+ * The replication code may ignore evictions and not send unlink events
+ * to the slave.  This behavior is configurable.
+ */
+static int rp_unlink_cause = RP_ITEM_UNLINKED_CAUSE_NORMAL;
+/* do_coll_all_elem_delete unlinks all elements just before unlinking the
+ * collection item itself.  Avoid calling rp_{btree,set,list}_elem_unlinked
+ * for every single element.  See do_coll_all_elem_delete.
+ */
+static bool rp_coll_delete_all = false;
 
 /* Forward Declarations */
 static void item_link_q(struct default_engine *engine, hash_item *it);
@@ -64,11 +102,6 @@ extern int  genhash_string_hash(const void* p, size_t nkey);
 #define IS_BTREE_ITEM(it) (((it)->iflag & ITEM_IFLAG_BTREE) != 0)
 #define IS_COLL_ITEM(it)  (((it)->iflag & ITEM_IFLAG_COLL) != 0)
 
-/* btree item status */
-#define BTREE_ITEM_STATUS_USED   2
-#define BTREE_ITEM_STATUS_UNLINK 1
-#define BTREE_ITEM_STATUS_FREE   0
-
 /* btree scan direction */
 #define BTREE_DIRECTION_PREV 2
 #define BTREE_DIRECTION_NEXT 1
@@ -90,13 +123,6 @@ extern int  genhash_string_hash(const void* p, size_t nkey);
 /* btree element item or btree node item */
 #define BTREE_GET_ELEM_ITEM(node, indx) ((btree_elem_item *)((node)->item[indx]))
 #define BTREE_GET_NODE_ITEM(node, indx) ((btree_indx_node *)((node)->item[indx]))
-
-/* get bkey real size */
-#define BTREE_REAL_NBKEY(nbkey) ((nbkey)==0 ? sizeof(uint64_t) : (nbkey))
-
-/* get btree element size */
-#define BTREE_ELEM_SIZE(elem) \
-        (sizeof(btree_elem_item_fixed) + BTREE_REAL_NBKEY(elem->nbkey) + elem->neflag + elem->nbytes)
 
 /* overflow type */
 #define OVFL_TYPE_NONE  0
@@ -254,6 +280,8 @@ static hash_item *do_item_reclaim(struct default_engine *engine, hash_item *it,
     if (lruid != LRU_CLSID_FOR_SMALL) {
         it->refcount = 1;
         slabs_adjust_mem_requested(engine, it->slabs_clsid, ITEM_ntotal(engine,it), ntotal);
+        /* replication */
+        rp_unlink_cause = RP_ITEM_UNLINKED_CAUSE_IMMEDIATE_RECYCLE;
         do_item_unlink(engine, it);
         /* Initialize the item block: */
         it->slabs_clsid = 0;
@@ -262,8 +290,11 @@ static hash_item *do_item_reclaim(struct default_engine *engine, hash_item *it,
     }
     /* collection item or small-sized kv item */
 #endif
-    if (IS_COLL_ITEM(it))
+    rp_unlink_cause = RP_ITEM_UNLINKED_CAUSE_EVICT; /* replication */
+    if (IS_COLL_ITEM(it)) {
+        rp_unlink_cause = RP_ITEM_UNLINKED_CAUSE_EVICT_DELETE_NOW;
         do_coll_all_elem_delete(engine, it);
+    }
     do_item_unlink(engine, it);
 
     /* allocate from slab allocator */
@@ -288,6 +319,7 @@ static void do_item_evict(struct default_engine *engine, hash_item *it,
         engine->server.stat->evicting(cookie, item_get_key(it), it->nkey);
     }
 
+    rp_unlink_cause = RP_ITEM_UNLINKED_CAUSE_EVICT; /* replication */
     /* unlink the item */
     if (IS_COLL_ITEM(it))
         do_coll_all_elem_delete(engine, it);
@@ -301,9 +333,12 @@ static void do_item_repair(struct default_engine *engine, hash_item *it,
     engine->items.itemstats[lruid].tailrepairs++;
     it->refcount = 0;
 
+    rp_unlink_cause = RP_ITEM_UNLINKED_CAUSE_EVICT; /* replication */
     /* unlink the item */
-    if (IS_COLL_ITEM(it))
+    if (IS_COLL_ITEM(it)) {
+        rp_unlink_cause = RP_ITEM_UNLINKED_CAUSE_EVICT_DELETE_NOW;
         do_coll_all_elem_delete(engine, it);
+    }
     do_item_unlink(engine, it);
 }
 
@@ -316,6 +351,7 @@ static void do_item_invalidate(struct default_engine *engine, hash_item *it,
     pthread_mutex_unlock(&engine->stats.lock);
     engine->items.itemstats[lruid].reclaimed++;
 
+    rp_unlink_cause = RP_ITEM_UNLINKED_CAUSE_EVICT; /* replication */
     /* it->refcount == 0 */
     do_item_unlink(engine, it);
 }
@@ -770,6 +806,9 @@ ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *it)
 
     item_link_q(engine, it);
 
+    /* Notify the replication code */
+    rp_item_linked(it);
+
     return ENGINE_SUCCESS;
 }
 
@@ -802,6 +841,11 @@ void do_item_unlink(struct default_engine *engine, hash_item *it)
         assoc_delete(engine, engine->server.core->hash(item_get_key(it), it->nkey, 0),
                      item_get_key(it), it->nkey);
         item_unlink_q(engine, it);
+
+        /* Notify the replication code */
+        rp_item_unlinked(it, rp_unlink_cause);
+        rp_unlink_cause = RP_ITEM_UNLINKED_CAUSE_NORMAL;
+
         if (it->refcount == 0) {
             item_free(engine, it);
         }
@@ -824,13 +868,15 @@ void do_item_update(struct default_engine *engine, hash_item *it)
 {
     rel_time_t current_time = engine->server.core->get_current_time();
     MEMCACHED_ITEM_UPDATE(item_get_key(it), it->nkey, it->nbytes);
-    if (it->time < current_time - ITEM_UPDATE_INTERVAL) {
+    if (it->time + ITEM_UPDATE_INTERVAL < current_time) {
         assert((it->iflag & ITEM_SLABBED) == 0);
 
         if ((it->iflag & ITEM_LINKED) != 0) {
             item_unlink_q(engine, it);
             it->time = current_time;
             item_link_q(engine, it);
+            /* Notify the replication code */
+            rp_lru_update(it);
         }
     }
 }
@@ -850,6 +896,12 @@ ENGINE_ERROR_CODE do_item_replace(struct default_engine *engine, hash_item *it, 
     MEMCACHED_ITEM_REPLACE(item_get_key(it), it->nkey, it->nbytes,
                            item_get_key(new_it), new_it->nkey, new_it->nbytes);
     assert((it->iflag & ITEM_SLABBED) == 0);
+
+    /* Replication.  Tell the replication code that this unlink event is
+     * due to replacement.  As an optimization, it may ignore this unlink
+     * event.
+     */
+    rp_unlink_cause = RP_ITEM_UNLINKED_CAUSE_REPLACE;
 
     do_item_unlink(engine, it);
     ENGINE_ERROR_CODE ret = do_item_link(engine, new_it);
@@ -1000,6 +1052,7 @@ hash_item *do_item_get(struct default_engine *engine, const char *key, const siz
 
     if (it != NULL) {
         if (do_item_isvalid(engine, it, current_time)==false) {
+            rp_unlink_cause = RP_ITEM_UNLINKED_CAUSE_EVICT; /* replication */
             do_item_unlink(engine, it); it = NULL;
         }
     }
@@ -1389,6 +1442,13 @@ static void do_list_elem_unlink(struct default_engine *engine,
         if (elem->refcount == 0) {
             do_list_elem_free(engine, elem);
         }
+
+        /* Replication.  We need the index of the element, but this unlink
+         * function does not have the index information.  There are only two
+         * places that call this function: do_list_elem_delete and
+         * do_list_elem_get.  So, call the replication code from those two
+         * functions instead.
+         */
     }
 }
 
@@ -1396,11 +1456,43 @@ static uint32_t do_list_elem_delete(struct default_engine *engine,
                                     list_meta_info *info, const int index, const uint32_t count)
 {
     uint32_t fcnt = 0;
+    int rindex = index; /* replication */
     list_elem_item *next;
     list_elem_item *elem = do_list_elem_find(info, index);
     while (elem != NULL) {
         next = elem->next;
         fcnt++;
+
+        /* Notify the replication code before unlinking/deleting the element.
+         * The index changes as we unlink elements and depends
+         * whether we use negative index (from tail) or positive (from head).
+         * E.g.
+         * forward.  index=1, count=2
+         * list.0: 0 -> 1 -> 2 -> 3.  Delete the element at index 1.
+         * list.1: 0 ->   -> 1 -> 2.  Delete the element at index 1.
+         * list.2: 0 ->   ->   -> 1.
+         *
+         * forward.  index=-3, count=2
+         * list.0: -4 <- -3 <- -2 <- -1.  Delete the element at index -3.
+         * list.1: -3 <-    <- -2 <- -1.  Delete the element at index -2.
+         * list.2: -2 <-    <-    <- -1.
+         *
+         * backward.  index=2, count=2
+         * list.0: 0 -> 1 -> 2 -> 3.  Delete the element at index 2.
+         * list.1: 0 -> 1 ->   -> 2.  Delete the element at index 1.
+         * list.2: 0 ->   ->   -> 1.
+         *
+         * backward.  index=-2, count=2
+         * list.0: -4 <- -3 <- -2 <- -1.  Delete the element at index -2.
+         * list.1: -3 <- -2 <-    <- -1.  Delete the element at index -2.
+         * list.1: -2 <-    <-    <- -1.
+         */
+        if (!rp_coll_delete_all)
+            rp_list_elem_unlinked(rp_coll_it, elem, rindex);
+        /* tail->next is NULL, head->prev is NULL */
+        if (index < 0)
+            rindex++;
+
         do_list_elem_unlink(engine, info, elem);
         if (count > 0 && fcnt >= count) break;
         elem = next;
@@ -1415,13 +1507,26 @@ static uint32_t do_list_elem_get(struct default_engine *engine,
                                  list_elem_item **elem_array)
 {
     uint32_t fcnt = 0; /* found count */
+    int rindex = index; /* replication */
     list_elem_item *tobe;
     list_elem_item *elem = do_list_elem_find(info, index);
     while (elem != NULL) {
         tobe = (forward ? elem->next : elem->prev);
         elem->refcount++;
         elem_array[fcnt++] = elem;
-        if (delete) do_list_elem_unlink(engine, info, elem);
+        if (delete) {
+            /* Notify the replication code before unlinking/deleting the element.
+             * Change the index according to the direction and the sign of the start index.
+             * See the comment in do_list_elem_delete.
+             */
+            rp_list_elem_unlinked(rp_coll_it, elem, rindex);
+            if (forward && index < 0)
+                rindex++;
+            else if (!forward && index >= 0)
+                rindex--;
+
+            do_list_elem_unlink(engine, info, elem);
+        }
         if (count > 0 && fcnt >= count) break;
         elem = tobe;
     }
@@ -1706,6 +1811,10 @@ static void do_set_elem_unlink(struct default_engine *engine,
     node->tot_elem_cnt -= 1;
 
     info->ccnt--;
+
+    /* Notify the replication code */
+    if (!rp_coll_delete_all)
+        rp_set_elem_unlinked(rp_coll_it, elem);
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(engine, (sizeof(set_elem_item)+elem->nbytes));
@@ -3317,6 +3426,10 @@ static void do_btree_elem_unlink(struct default_engine *engine,
         decrease_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
     }
 
+    /* Notify the replication code before we might free the item */
+    if (!rp_coll_delete_all)
+        rp_btree_elem_unlinked(rp_coll_it, elem);
+
     if (elem->refcount > 0) {
         elem->status = BTREE_ITEM_STATUS_UNLINK;
     } else  {
@@ -3358,6 +3471,11 @@ static ENGINE_ERROR_CODE do_btree_elem_replace(struct default_engine *engine, bt
         }
     }
 #endif
+
+    /* Replication.  The slave will call btree_elem_insert with replace=true.
+     * So, the net effect is the same as "replace".
+     */
+    rp_btree_elem_replaced(rp_coll_it, old_elem, new_elem);
 
     if (old_elem->refcount > 0) {
         old_elem->status = BTREE_ITEM_STATUS_UNLINK;
@@ -3429,6 +3547,10 @@ static ENGINE_ERROR_CODE do_btree_elem_update(struct default_engine *engine, btr
                 elem->nbytes = nbytes;
             }
             ret = ENGINE_SUCCESS;
+            /* Replication.  The slave will replace the existing element
+             * with the new one.
+             */
+            rp_btree_elem_replaced(rp_coll_it, elem, elem);
         } else {
             /* old body size != new body size */
             btree_elem_item *new_elem = do_btree_elem_alloc(engine, elem->nbkey, new_neflag, new_nbytes, cookie);
@@ -3508,6 +3630,10 @@ static uint32_t do_btree_elem_delete(struct default_engine *engine, btree_meta_i
             do {
                 if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
                     stotal += slabs_space_size(engine, BTREE_ELEM_SIZE(elem));
+
+                    /* Notify the replication code before we might free the item */
+                    if (!rp_coll_delete_all)
+                        rp_btree_elem_unlinked(rp_coll_it, elem);
 
                     if (elem->refcount > 0) {
                         elem->status = BTREE_ITEM_STATUS_UNLINK;
@@ -3802,6 +3928,9 @@ static ENGINE_ERROR_CODE do_btree_elem_link(struct default_engine *engine,
         if (ovfl_type != OVFL_TYPE_NONE) {
             do_btree_overflow_trim(engine, info, elem, ovfl_type, trimmed_elems, trimmed_count);
         }
+
+        /* Replication.  Notify the replication code. */
+        rp_btree_elem_inserted(rp_coll_it, elem);
     }
     else if (res == ENGINE_ELEM_EEXISTS) {
         if (replace_if_exist) {
@@ -3809,6 +3938,9 @@ static ENGINE_ERROR_CODE do_btree_elem_link(struct default_engine *engine,
             if (res == ENGINE_SUCCESS) {
                 *replaced = true;
             }
+            /* do_btree_elem_replace above calls the replication code.
+             * So do not call it again.
+             */
         }
     }
     return res;
@@ -3912,6 +4044,9 @@ static uint32_t do_btree_elem_get(struct default_engine *engine, btree_meta_info
                             stotal += slabs_space_size(engine, BTREE_ELEM_SIZE(elem));
                             elem->status = BTREE_ITEM_STATUS_UNLINK;
                             c_posi.node->item[c_posi.indx] = NULL;
+
+                            /* Notify the replication code */
+                            rp_btree_elem_unlinked(rp_coll_it, elem);
                         }
                         cur_fcnt++;
                         if (count > 0 && (tot_fcnt+cur_fcnt) >= count) break;
@@ -4095,6 +4230,10 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(struct default_engine *engine,
         if (elem->refcount == 0 && elem->nbytes == nlen) {
             memcpy(elem->data + real_nbkey + elem->neflag, nbuf, elem->nbytes);
             ret = ENGINE_SUCCESS;
+            /* Replication.  The slave will replace the existing element
+             * with the new one.
+             */
+            rp_btree_elem_replaced(rp_coll_it, elem, elem);
         } else {
             btree_elem_item *new_elem = do_btree_elem_alloc(engine, elem->nbkey, elem->neflag, nlen, cookie);
             if (new_elem == NULL) {
@@ -4630,6 +4769,18 @@ static int check_expired_collections(struct default_engine *engine, const int cl
 
 static void do_coll_all_elem_delete(struct default_engine *engine, hash_item *it)
 {
+    /* Replication.  Set rp_coll_delete_all=true so we do not call
+     * rp_{btree,set,list}_elem_unlinked.  This function is only used to
+     * evict collection items, just before calling do_item_unlink.
+     * Look for RP_ITEM_UNLINKED_CAUSE_EVICT_DELETE_NOW.
+     */
+    /* Do not clobber rp_coll_it.  We never call rp functions.  And, we might
+     * call this function in the middle of a collection function.
+     * For example, btree_elem_insert may allocate btree nodes, which evicts
+     * items.
+     */
+    /* rp_coll_it = it; */
+    rp_coll_delete_all = true;
     if (IS_LIST_ITEM(it)) {
         list_meta_info *info = (list_meta_info *)item_get_meta(it);
         (void)do_list_elem_delete(engine, info, 0, info->mcnt);
@@ -4645,6 +4796,7 @@ static void do_coll_all_elem_delete(struct default_engine *engine, hash_item *it
         (void)do_btree_elem_delete(engine, info, BKEY_RANGE_TYPE_ASC, &bkrange_space, NULL, info->mcnt);
         assert(info->root == NULL);
     }
+    rp_coll_delete_all = false; /* replication */
 }
 
 static void coll_del_thread_sleep(struct default_engine *engine)
@@ -4686,6 +4838,11 @@ static void *collection_delete_thread(void *arg)
     while (engine->initialized) {
         it = pop_coll_del_queue(engine);
         if (it == NULL) {
+            /* Replication graceful failover.  The master thread wants all
+             * background job threads to stop.
+             */
+            if (engine->coll_del_thread_disable)
+                break;
 #ifdef USE_SINGLE_LRU_LIST
             expired_cnt = check_expired_collections(engine, 1, &space_shortage_level);
 #else
@@ -4736,6 +4893,7 @@ static void *collection_delete_thread(void *arg)
             while (dropped == false) {
                 pthread_mutex_lock(&engine->cache_lock);
                 info = (list_meta_info *)item_get_meta(it);
+                rp_coll_it = it; /* replication */
                 //deleted_cnt = do_list_elem_delete(engine, info, 0, 30);
                 (void)do_list_elem_delete(engine, info, 0, 30);
                 if (info->ccnt == 0) {
@@ -4751,6 +4909,7 @@ static void *collection_delete_thread(void *arg)
             while (dropped == false) {
                 pthread_mutex_lock(&engine->cache_lock);
                 info = (set_meta_info *)item_get_meta(it);
+                rp_coll_it = it; /* replication */
                 //deleted_cnt = do_set_elem_delete(engine, info, 30);
                 (void)do_set_elem_delete(engine, info, 30);
                 if (info->ccnt == 0) {
@@ -4769,6 +4928,7 @@ static void *collection_delete_thread(void *arg)
             while (dropped == false) {
                 pthread_mutex_lock(&engine->cache_lock);
                 info = (btree_meta_info *)item_get_meta(it);
+                rp_coll_it = it; /* replication */
                 //deleted_cnt = do_btree_elem_delete(engine, info, BKEY_RANGE_TYPE_ASC, &bkrange_space, NULL, 100);
                 (void)do_btree_elem_delete(engine, info, BKEY_RANGE_TYPE_ASC, &bkrange_space, NULL, 100);
                 if (info->ccnt == 0) {
@@ -4780,6 +4940,7 @@ static void *collection_delete_thread(void *arg)
             }
         }
     }
+    engine->coll_del_thread_stopped = true;
     return NULL;
 }
 
@@ -4973,7 +5134,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
         oldest_live = pt->oldest_live;
 
         if (engine->config.verbose) {
-            logger->log(EXTENSION_LOG_INFO, NULL, "flush prefix=%s when=%u client_ip=%s",
+            logger->log(EXTENSION_LOG_INFO, NULL, "flush prefix=%s when=%u client_ip=%s\n",
                         ((prefix==NULL) ? "null" : prefix), (unsigned)when, engine->server.core->get_client_ip(cookie));
         }
     } else { /* flush all */
@@ -4985,7 +5146,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
         oldest_live = engine->config.oldest_live;
 
         if (engine->config.verbose) {
-            logger->log(EXTENSION_LOG_INFO, NULL, "flush all when=%u client_ip=%s",
+            logger->log(EXTENSION_LOG_INFO, NULL, "flush all when=%u client_ip=%s\n",
                                                   (unsigned)when, engine->server.core->get_client_ip(cookie));
         }
     }
@@ -5015,10 +5176,12 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
                                 found = true;
                         }
                         if (found == true && (iter->iflag & ITEM_SLABBED) == 0) {
+                            rp_unlink_cause = RP_ITEM_UNLINKED_CAUSE_EVICT;
                             do_item_unlink(engine, iter);
                         }
                     } else { /* flush all */
                         if ((iter->iflag & ITEM_SLABBED) == 0) {
+                            rp_unlink_cause = RP_ITEM_UNLINKED_CAUSE_EVICT;
                             do_item_unlink(engine, iter);
                         }
                     }
@@ -5047,10 +5210,12 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
                                 found = true;
                         }
                         if (found == true && (iter->iflag & ITEM_SLABBED) == 0) {
+                            rp_unlink_cause = RP_ITEM_UNLINKED_CAUSE_EVICT;
                             do_item_unlink(engine, iter);
                         }
                     } else { /* flush all */
                         if ((iter->iflag & ITEM_SLABBED) == 0) {
+                            rp_unlink_cause = RP_ITEM_UNLINKED_CAUSE_EVICT;
                             do_item_unlink(engine, iter);
                         }
                     }
@@ -5063,6 +5228,8 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
             }
 #endif
         }
+        /* replication */
+        rp_flush(prefix, nprefix, when);
     }
     return ENGINE_SUCCESS;
 }
@@ -5236,6 +5403,7 @@ ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
                     if ((-index) == info->mcnt)
                         index = 0;
                 }
+                rp_coll_it = it; /* replication */
                 if (index == 0 || index == -1) {
                     /* delete an element item of opposite side to make room */
                     uint32_t deleted = do_list_elem_delete(engine, info,
@@ -5280,6 +5448,12 @@ ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
                     it = NULL;
                 }
                 break;
+            }
+            else {
+                /* Replication.  The above is the only place that calls
+                 * do_list_elem_link.
+                 */
+                rp_list_elem_inserted(it, elem, index);
             }
         } else {
             /* ENGINE_KEY_ENOENT | ENGINE_EBADTYPE */
@@ -5342,6 +5516,7 @@ ENGINE_ERROR_CODE list_elem_delete(struct default_engine *engine,
                 index = to_index;
                 count = from_index - to_index + 1;
             }
+            rp_coll_it = it; /* replication */
             *del_count = do_list_elem_delete(engine, info, index, count);
             if (*del_count > 0) {
                 if (info->ccnt == 0 && drop_if_empty) {
@@ -5386,6 +5561,7 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
                 int  index = from_index;
                 uint32_t count = (forward ? (to_index - from_index + 1)
                                           : (from_index - to_index + 1));
+                rp_coll_it = it; /* replication */
                 *elem_count = do_list_elem_get(engine, info, index, count, forward, delete, elem_array);
                 if (*elem_count > 0) {
                     if (info->ccnt == 0 && drop_if_empty) {
@@ -5532,6 +5708,12 @@ ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key
                 }
                 break;
             }
+            else {
+                /* Replication.  The above is the only place that calls
+                 * do_set_elem_link.
+                 */
+                rp_set_elem_inserted(it, elem);
+            }
         } else {
             /* ENGINE_KEY_ENOENT | ENGINE_EBADTYPE */
         }
@@ -5557,6 +5739,7 @@ ENGINE_ERROR_CODE set_elem_delete(struct default_engine *engine,
     ret = do_set_item_find(engine, key, nkey, false, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         info = (set_meta_info *)item_get_meta(it);
+        rp_coll_it = it; /* replication */
         ret = do_set_elem_delete_with_value(engine, info, value, nbytes);
         if (ret == ENGINE_SUCCESS) {
             if (info->ccnt == 0 && drop_if_empty) {
@@ -5611,11 +5794,16 @@ ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
     pthread_mutex_lock(&engine->cache_lock);
     ret = do_set_item_find(engine, key, nkey, true, &it);
     if (ret == ENGINE_SUCCESS) {
+        /* Replication.  See btree_elem_get. */
+        uint64_t rph_before = RP_SEQ_NULL;
+
+        if (delete) rph_before = rp_seq();
         info = (set_meta_info *)item_get_meta(it);
         do {
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
             }
+            rp_coll_it = it; /* replication */
             *elem_count = do_set_elem_get(engine, info, count, delete, elem_array);
             if (*elem_count > 0) {
                 if (info->ccnt == 0 && drop_if_empty) {
@@ -5631,6 +5819,9 @@ ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
             }
         } while (0);
         do_item_release(engine, it);
+        /* Replication.  See btree_elem_get. */
+        if (delete && ret == ENGINE_SUCCESS && rph_before != rp_seq())
+            ret = ENGINE_EWOULDBLOCK;
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -5701,6 +5892,7 @@ ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     *created = false;
+    it = NULL;
     if (trimmed_elems != NULL) {
         /* initialize as no trimmed element */
         *trimmed_elems = NULL;
@@ -5750,6 +5942,7 @@ ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
                 do_btree_node_link(engine, info, r_node, NULL);
                 new_root_flag = true;
             }
+            rp_coll_it = it; /* replication */
             ret = do_btree_elem_link(engine, info, elem, replace_if_exist, replaced,
                                      trimmed_elems, trimmed_count, cookie);
             if (ret != ENGINE_SUCCESS) {
@@ -5802,6 +5995,7 @@ ENGINE_ERROR_CODE btree_elem_update(struct default_engine *engine,
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
+            rp_coll_it = it; /* replication */
             ret = do_btree_elem_update(engine, info, bkrtype, bkrange, eupdate, value, nbytes, cookie);
         } while(0);
         do_item_release(engine, it);
@@ -5833,6 +6027,7 @@ ENGINE_ERROR_CODE btree_elem_delete(struct default_engine *engine,
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
+            rp_coll_it = it; /* replication */
             *del_count = do_btree_elem_delete(engine, info, bkrtype, bkrange, efilter, req_count);
             if (*del_count > 0) {
                 if (info->ccnt == 0 && drop_if_empty) {
@@ -5870,8 +6065,8 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(struct default_engine *engine,
     pthread_mutex_lock(&engine->cache_lock);
     ret = do_btree_item_find(engine, key, nkey, false, &it);
     if (ret == ENGINE_SUCCESS) {
-        bool new_root_flag = false;
         info = (btree_meta_info *)item_get_meta(it);
+        bool new_root_flag = false;
         do {
             if (info->ccnt > 0 || info->maxbkeyrange.len != BKEY_NULL) {
                 if ((info->bktype == BKEY_TYPE_UINT64 && bkrange->from_nbkey >  0) ||
@@ -5888,6 +6083,7 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(struct default_engine *engine,
                 do_btree_node_link(engine, info, r_node, NULL);
                 new_root_flag = true;
             }
+            rp_coll_it = it; /* replication */
             ret = do_btree_elem_arithmetic(engine, info, bkrtype, bkrange, increment, create,
                                            delta, initial, eflagp, result, cookie);
             if (ret != ENGINE_SUCCESS) {
@@ -5920,7 +6116,15 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
     pthread_mutex_lock(&engine->cache_lock);
     ret = do_btree_item_find(engine, key, nkey, true, &it);
     if (ret == ENGINE_SUCCESS) {
+        uint64_t rph_before = RP_SEQ_NULL;
         info = (btree_meta_info *)item_get_meta(it);
+
+        /* If delete is true, we may make changes to the btree.  Compare seq
+         * to determine if there are changes to the btree.  If so, wait for
+         * replication to complete.  Since we acquire the cache lock,
+         * all changes are due to this operation.
+         */
+        if (delete) rph_before = rp_seq();
         do {
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
@@ -5932,6 +6136,7 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
+            rp_coll_it = it; /* replication */
             *elem_count = do_btree_elem_get(engine, info, bkrtype, bkrange, efilter, offset, req_count,
                                             delete, elem_array, &potentialbkeytrim);
             if (*elem_count > 0) {
@@ -5955,6 +6160,15 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
             }
         } while (0);
         do_item_release(engine, it);
+        /*  We could call rp_seq in default_btree_elem_get instead.
+         * But we acquire the cache lock in this function.  It's more accurate
+         * to compare seq numbers with the cache lock acquired.
+         *
+         * Do we want to let "delete" proceed in the background, without
+         * blocking this operation?  FIXME.
+         */
+        if (delete && ret == ENGINE_SUCCESS && rph_before != rp_seq())
+            ret = ENGINE_EWOULDBLOCK;
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -6232,6 +6446,7 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
         if (IS_COLL_ITEM(it)) {
             info = (coll_meta_info *)item_get_meta(it);
         }
+        rp_setattr_start(it, info); /* replication */
         for (i = 0; i < attr_count; i++) {
 #ifdef ENABLE_STICKY_ITEM
             if (attr_ids[i] == ATTR_EXPIRETIME) {
@@ -6376,6 +6591,9 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
                 }
             }
         }
+
+        rp_setattr_end(it, info); /* replication */
+
         do_item_release(engine, it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
@@ -6390,6 +6608,7 @@ static bool item_scrub(struct default_engine *engine, hash_item *item)
     engine->scrubber.visited++;
     rel_time_t current_time = engine->server.core->get_current_time();
     if (item->refcount == 0 && do_item_isvalid(engine, item, current_time) == false) {
+        rp_unlink_cause = RP_ITEM_UNLINKED_CAUSE_EVICT; /* replication */
         do_item_unlink(engine, item);
         engine->scrubber.cleaned++;
         return true;
@@ -6561,4 +6780,785 @@ bool item_start_scrub(struct default_engine *engine, int mode)
     pthread_mutex_unlock(&engine->scrubber.lock);
 
     return ret;
+}
+
+ENGINE_ERROR_CODE
+rp_apply_simple_item_link(struct default_engine *engine,
+    const char *key, uint32_t nkey, const char *value, uint32_t nbytes,
+    uint64_t cas, uint32_t flags, rel_time_t time, rel_time_t exptime)
+{
+    hash_item *it, *old;
+    ENGINE_ERROR_CODE ret;
+
+    if (rp_loglevel >= RP_LOGLEVEL_DEBUG)
+        print_log("rp_apply_simple_item_link. nkey=%u nbytes=%u",
+            nkey, nbytes);
+
+    pthread_mutex_lock(&engine->cache_lock);
+
+    /* See item_alloc. */
+    it = do_item_alloc(engine, key, nkey, flags, exptime, nbytes,
+        NULL /* cookie */);
+    if (it == NULL) {
+        print_log("rp_apply_simple_item_link failed. alloc failed. key=%s",
+            rp_printable_key(key, nkey));
+        ret = ENGINE_ENOMEM;
+        pthread_mutex_unlock(&engine->cache_lock);
+        return ret;
+    }
+
+    /* Assume data is small, and copying with lock held is okay */
+    memcpy(item_get_data(it), value, nbytes);
+
+    /* Now link the new item into the cache hash table */
+    old = do_item_get(engine, key, nkey, true);
+    if (old) {
+        /* For simple key/value, we replace the existing item with
+         * the new one.
+         */
+        ret = do_item_replace(engine, old, it);
+        do_item_release(engine, old); /* get incremented refcount */
+    }
+    else
+        ret = do_item_link(engine, it);
+    /* Override the cas with the master's cas.  item_set_cas checks
+     * iflag and sets the cas only if ITEM_WITH_CAS is set.
+     */
+    item_set_cas(NULL, NULL, it, cas);
+
+    do_item_release(engine, it); /* alloc incremented refcount */
+    pthread_mutex_unlock(&engine->cache_lock);
+    return ret;
+}
+
+ENGINE_ERROR_CODE
+rp_apply_btree_item_link(struct default_engine *engine, const char *key,
+    uint32_t nkey, btree_meta_info *meta, uint32_t flags, rel_time_t time,
+    rel_time_t exptime)
+{
+    hash_item *it, *old;
+    ENGINE_ERROR_CODE ret;
+    item_attr attr;
+    btree_meta_info *local_meta;
+
+    if (rp_loglevel >= RP_LOGLEVEL_DEBUG)
+        print_log("rp_apply_btree_item_link. bktype=%u mcnt=%d key=%s",
+            meta->bktype, meta->mcnt, rp_printable_key(key, nkey));
+
+    memset(&attr, 0, sizeof(attr));
+    attr.flags = flags;
+    attr.exptime = exptime;
+    /* The rest of attr can be dummy.  We overwrite the fields below. */
+
+    pthread_mutex_lock(&engine->cache_lock);
+
+    /* Allocate a btree item.  See btree_struct_create. */
+    it = do_btree_item_alloc(engine, key, nkey, &attr, NULL /* cookie */);
+    if (it == NULL) {
+        print_log("rp_apply_btree_item_link failed. alloc failed. key=%s",
+            rp_printable_key(key, nkey));
+        ret = ENGINE_ENOMEM;
+        pthread_mutex_unlock(&engine->cache_lock);
+        return ret;
+    }
+
+    /* Copy relevent fields in meta */
+    local_meta = (btree_meta_info*)item_get_meta(it);
+    local_meta->mcnt = meta->mcnt;
+    local_meta->ovflact = meta->ovflact;
+    local_meta->bktype = meta->bktype;
+    local_meta->maxbkeyrange = meta->maxbkeyrange;
+    local_meta->mflags = meta->mflags;
+
+    /* Now link the new item into the cache hash table */
+    old = do_item_get(engine, key, nkey, true);
+    if (old) {
+        /* Remove the old item first. */
+        do_item_unlink(engine, old);
+        do_item_release(engine, old); /* get incremented refcount */
+    }
+    ret = do_item_link(engine, it);
+
+    do_item_release(engine, it); /* alloc incremented refcount */
+    pthread_mutex_unlock(&engine->cache_lock);
+    if (ret != ENGINE_SUCCESS) {
+        print_log("rp_apply_btree_item_link failed. key=%s code=%d",
+            rp_printable_key(key, nkey), ret);
+    }
+    if (old != NULL && ret == ENGINE_SUCCESS) {
+        /* The caller wants to know if the old item has been replaced.
+         * This code still indicates success.
+         */
+        ret = ENGINE_KEY_EEXISTS;
+    }
+    return ret;
+}
+
+ENGINE_ERROR_CODE
+rp_apply_set_item_link(struct default_engine *engine, const char *key,
+    uint32_t nkey, set_meta_info *meta, uint32_t flags, rel_time_t time,
+    rel_time_t exptime)
+{
+    hash_item *it, *old;
+    ENGINE_ERROR_CODE ret;
+    item_attr attr;
+    set_meta_info *local_meta;
+
+    if (rp_loglevel >= RP_LOGLEVEL_DEBUG)
+        print_log("rp_apply_set_item_link. mcnt=%d key=%s",
+            meta->mcnt, rp_printable_key(key, nkey));
+
+    memset(&attr, 0, sizeof(attr));
+    attr.flags = flags;
+    attr.exptime = exptime;
+
+    pthread_mutex_lock(&engine->cache_lock);
+    it = do_set_item_alloc(engine, key, nkey, &attr, NULL /* cookie */);
+    if (it == NULL) {
+        print_log("rp_apply_set_item_link failed. alloc failed. key=%s",
+            rp_printable_key(key, nkey));
+        ret = ENGINE_ENOMEM;
+        pthread_mutex_unlock(&engine->cache_lock);
+        return ret;
+    }
+
+    local_meta = (set_meta_info*)item_get_meta(it);
+    local_meta->mcnt = meta->mcnt;
+    local_meta->ovflact = meta->ovflact;
+    local_meta->mflags = meta->mflags;
+
+    old = do_item_get(engine, key, nkey, true);
+    if (old) {
+        /* Remove the old item first. */
+        do_item_unlink(engine, old);
+        do_item_release(engine, old); /* get incremented refcount */
+    }
+    ret = do_item_link(engine, it);
+
+    do_item_release(engine, it); /* alloc incremented refcount */
+    pthread_mutex_unlock(&engine->cache_lock);
+    if (old != NULL && ret == ENGINE_SUCCESS) {
+        /* The caller wants to know if the old item has been replaced.
+         * This code still indicates success.
+         */
+        ret = ENGINE_KEY_EEXISTS;
+    }
+    return ret;
+}
+
+ENGINE_ERROR_CODE
+rp_apply_list_item_link(struct default_engine *engine, const char *key,
+    uint32_t nkey, list_meta_info *meta, uint32_t flags, rel_time_t time,
+    rel_time_t exptime)
+{
+    hash_item *it, *old;
+    ENGINE_ERROR_CODE ret;
+    item_attr attr;
+    list_meta_info *local_meta;
+
+    if (rp_loglevel >= RP_LOGLEVEL_DEBUG)
+        print_log("rp_apply_list_item_link. mcnt=%d ccnt=%d key=%s",
+            meta->mcnt, meta->ccnt, rp_printable_key(key, nkey));
+
+    memset(&attr, 0, sizeof(attr));
+    attr.flags = flags;
+    attr.exptime = exptime;
+
+    pthread_mutex_lock(&engine->cache_lock);
+
+    it = do_list_item_alloc(engine, key, nkey, &attr, NULL /* cookie */);
+    if (it == NULL) {
+        print_log("rp_apply_list_item_link failed. alloc failed. key=%s",
+            rp_printable_key(key, nkey));
+        ret = ENGINE_ENOMEM;
+        pthread_mutex_unlock(&engine->cache_lock);
+        return ret;
+    }
+
+    local_meta = (list_meta_info*)item_get_meta(it);
+    local_meta->mcnt = meta->mcnt;
+    local_meta->ovflact = meta->ovflact;
+    local_meta->mflags = meta->mflags;
+
+    old = do_item_get(engine, key, nkey, true);
+    if (old) {
+        /* Remove the old item first. */
+        do_item_unlink(engine, old);
+        do_item_release(engine, old); /* get incremented refcount */
+    }
+    ret = do_item_link(engine, it);
+
+    do_item_release(engine, it); /* alloc incremented refcount */
+    pthread_mutex_unlock(&engine->cache_lock);
+    if (old != NULL && ret == ENGINE_SUCCESS) {
+        /* The caller wants to know if the old item has been replaced.
+         * This code still indicates success.
+         */
+        ret = ENGINE_KEY_EEXISTS;
+    }
+    return ret;
+}
+
+ENGINE_ERROR_CODE
+rp_apply_item_unlink(struct default_engine *engine, const char *key,
+    uint32_t nkey, bool delete_now)
+{
+    hash_item *it;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    if (rp_loglevel >= RP_LOGLEVEL_DEBUG)
+        print_log("rp_apply_item_unlink");
+
+    pthread_mutex_lock(&engine->cache_lock);
+    it = do_item_get(engine, key, nkey, true);
+    if (it) {
+        if (delete_now && IS_COLL_ITEM(it))
+            do_coll_all_elem_delete(engine, it);
+        do_item_unlink(engine, it); /* must unlink first */
+        do_item_release(engine, it); /* get incremented refcount */
+    }
+    else
+        ret = ENGINE_KEY_ENOENT;
+    pthread_mutex_unlock(&engine->cache_lock);
+    /* Does not matter whether the key exists or not.
+     * The caller uses ENOENT for statistics purposes.
+     */
+    return ret;
+}
+
+ENGINE_ERROR_CODE
+rp_apply_btree_elem_insert(struct default_engine *engine, hash_item *it,
+    btree_elem_item *master_elem)
+{
+    const char *key;
+    btree_elem_item *elem;
+    bool created, replaced;
+    ENGINE_ERROR_CODE ret;
+
+    /* We already have hash_item, but don't have the btree api to use
+     * the pointer directly.  btree_elem_insert below does another
+     * hash table lookup.  Refactor a bit so we can avoid the unnecessary
+     * lookup.  FIXME
+     */
+
+    key = item_get_key(it);
+    if (rp_loglevel >= RP_LOGLEVEL_DEBUG)
+        print_log("rp_apply_btree_elem_insert. key=%s nbkey=%d bkey=%s",
+            rp_printable_key(key, it->nkey), master_elem->nbkey,
+            rp_printable_bkey(master_elem->data, master_elem->nbkey));
+
+    pthread_mutex_lock(&engine->cache_lock);
+    elem = do_btree_elem_alloc(engine, master_elem->nbkey, master_elem->neflag,
+        master_elem->nbytes, NULL);
+    pthread_mutex_unlock(&engine->cache_lock);
+    if (elem == NULL) {
+        print_log("rp_apply_btree_elem_insert failed. alloc failed. nbytes=%d",
+            master_elem->nbytes);
+        return ENGINE_ENOMEM;
+    }
+
+    memcpy(elem->data, master_elem->data, BTREE_REAL_NBKEY(elem->nbkey)
+        + elem->neflag + elem->nbytes);
+    ret = btree_elem_insert(engine, key, it->nkey, elem,
+        true /* replace_if_exist */, NULL /* attr */,
+        &replaced, &created, NULL, NULL, NULL, NULL);
+
+    pthread_mutex_lock(&engine->cache_lock);
+    do_btree_elem_release(engine, elem); /* alloc incremented refcount */
+    pthread_mutex_unlock(&engine->cache_lock);
+
+    if (ret != ENGINE_SUCCESS) {
+        print_log("rp_apply_btree_elem_insert failed."
+            " key=%s nbkey=%d bkey=%s code=%d",
+            rp_printable_key(key, it->nkey), master_elem->nbkey,
+            rp_printable_bkey(master_elem->data, master_elem->nbkey), ret);
+    }
+    return ret;
+}
+
+ENGINE_ERROR_CODE
+rp_apply_btree_elem_unlink(struct default_engine *engine, hash_item *it,
+    const char *bkey, uint32_t nbkey)
+{
+    const char *key;
+    uint32_t real_nbkey, del_count;
+    bool dropped;
+    bkey_range bkrange;
+    ENGINE_ERROR_CODE ret;
+
+    key = item_get_key(it);
+    if (rp_loglevel >= RP_LOGLEVEL_DEBUG)
+        print_log("rp_apply_btree_elem_unlink. key=%s bkey=%s",
+            rp_printable_key(key, it->nkey),
+            rp_printable_bkey((const unsigned char*)bkey, nbkey));
+
+    /* one-element range */
+    real_nbkey = BTREE_REAL_NBKEY(nbkey);
+    memcpy(bkrange.from_bkey, bkey, real_nbkey);
+    /* bkey_range.to_bkey */
+    bkrange.from_nbkey = nbkey;
+    bkrange.to_nbkey = BKEY_NULL;
+
+    ret = btree_elem_delete(engine, key, it->nkey, &bkrange, NULL, 0, false,
+        &del_count, &dropped);
+    if (ret != ENGINE_SUCCESS && rp_loglevel >= RP_LOGLEVEL_DEBUG) {
+        print_log("rp_apply_btree_elem_unlink failed. key=%s bkey=%s code=%d",
+            rp_printable_key(key, it->nkey),
+            rp_printable_bkey((const unsigned char*)bkey, nbkey),
+            ret);
+    }
+    return ret;
+}
+
+/* Scan the whole btree with the cache lock acquired.
+ * We only build the table of the current elements.
+ * See do_btree_elem_delete and do_btree_multi_elem_unlink.  They
+ * show how to traverse the btree.
+ *
+ * FIXME.  IS THIS STILL RIGHT AFTER THE MERGE?  do_btree_multi_elem_unlink is gone.
+ */
+int
+rp_btree_snapshot(struct default_engine *engine, hash_item *it)
+{
+    btree_meta_info *info;
+    btree_elem_item *elem;
+    bkey_range bkrange;
+    btree_elem_posi path[BTREE_MAX_DEPTH];
+    btree_elem_posi c_posi;
+    uint64_t begin_usec, end_usec;
+    int bkrtype;
+
+    begin_usec = 0; /* shut up compiler warning */
+    if (rp_loglevel >= RP_LOGLEVEL_DEBUG) {
+        print_log("rp_btree_snapshot. key=%s",
+            rp_printable_key(item_get_key(it), it->nkey));
+        begin_usec = getusec();
+    }
+
+    info = (btree_meta_info*)item_get_meta(it);
+    get_bkey_full_range(info->bktype, true, &bkrange);
+    bkrtype = do_btree_bkey_range_type(&bkrange);
+    elem = do_btree_find_first(info->root, bkrtype, &bkrange, path, true);
+    if (elem == NULL)
+        return 0; /* No elements */
+
+    c_posi = path[0];
+    elem = BTREE_GET_ELEM_ITEM(c_posi.node, c_posi.indx);
+    while (elem) {
+        /* cset increments refcount if necessary */
+        rp_snapshot_add_elem(it, elem);
+
+        /* Never have to go backward?  FIXME */
+        elem = do_btree_find_next(&c_posi, &bkrange);
+    }
+    if (rp_loglevel >= RP_LOGLEVEL_DEBUG) {
+        end_usec = getusec();
+        print_log("btree snapshot done. ccnt=%d usec=%llu", info->ccnt,
+            (long long unsigned)(end_usec - begin_usec));
+    }
+    return 0;
+}
+
+/* See do_set_elem_traverse_dfs and do_set_elem_link.  do_set_elem_traverse_dfs
+ * can visit all elements, but only supports get and delete operations.
+ * Do something similar and visit all elements.
+ */
+int
+rp_set_snapshot(struct default_engine *engine, hash_item *it)
+{
+    set_meta_info *info;
+    set_hash_node *node;
+    set_elem_item *elem;
+    uint64_t begin_usec, end_usec;
+    int cur_depth, i;
+    bool push;
+
+    /* Temporay stack we use to do dfs.  Static is ugly but is okay...
+     * This function runs with the cache lock acquired.
+     */
+    static int stack_max = 0;
+    static struct {
+        set_hash_node *node;
+        int idx;
+    } *stack = NULL;
+
+    begin_usec = 0; /* shut up compiler warning */
+    if (rp_loglevel >= RP_LOGLEVEL_DEBUG) {
+        print_log("rp_set_snapshot. key=%s",
+            rp_printable_key(item_get_key(it), it->nkey));
+        begin_usec = getusec();
+    }
+
+    info = (set_meta_info*)item_get_meta(it);
+
+    node = info->root;
+    cur_depth = 0;
+    push = true;
+    while (node != NULL) {
+        if (push) {
+            push = false;
+            if (stack_max <= cur_depth) {
+                stack_max += 16;
+                stack = realloc(stack, sizeof(*stack) * stack_max);
+            }
+            stack[cur_depth].node = node;
+            stack[cur_depth].idx = 0;
+        }
+
+        /* Scan the current node */
+        for (i = stack[cur_depth].idx; i < SET_HASHTAB_SIZE; i++) {
+            if (node->hcnt[i] >= 0) {
+                /* Hash chain.  Insert all elements on the chain into the
+                 * to-be-copied list.
+                 */
+                /* print_log("d=%d i=%d", cur_depth, i); */
+                for (elem = node->htab[i]; elem != NULL; elem = elem->next)
+                    rp_snapshot_add_elem(it, elem);
+            }
+            else if (node->htab[i] != NULL) {
+                /* Another hash node.  Go down */
+                stack[cur_depth].idx = i+1;
+                push = true;
+                node = node->htab[i];
+                cur_depth++;
+                break;
+            }
+        }
+
+        /* Scannned everything in this node.  Go up. */
+        if (i >= SET_HASHTAB_SIZE) {
+            cur_depth--;
+            if (cur_depth < 0)
+                node = NULL; /* done */
+            else
+                node = stack[cur_depth].node;
+        }
+    }
+    if (rp_loglevel >= RP_LOGLEVEL_DEBUG) {
+        end_usec = getusec();
+        print_log("set snapshot done. ccnt=%d usec=%llu", info->ccnt,
+            (long long unsigned)(end_usec - begin_usec));
+    }
+    return 0;
+}
+
+/* See do_list_elem_delete. */
+int
+rp_list_snapshot(struct default_engine *engine, hash_item *it)
+{
+    list_meta_info *info;
+    list_elem_item *elem;
+    uint64_t begin_usec, end_usec;
+
+    begin_usec = 0; /* shut up compiler warning */
+    if (rp_loglevel >= RP_LOGLEVEL_DEBUG) {
+        print_log("rp_list_snapshot. key=%s",
+            rp_printable_key(item_get_key(it), it->nkey));
+        begin_usec = getusec();
+    }
+
+    info = (list_meta_info*)item_get_meta(it);
+
+    elem = do_list_elem_find(info, 0);
+    while (elem != NULL) {
+        /* We add elements from the head, one by one, in order.
+         * The snapshot code increments the index each time we add an element
+         * to the snapshot.  So, no need to pass the index to this function.
+         */
+        rp_snapshot_add_elem(it, elem);
+        elem = elem->next;
+    }
+    if (rp_loglevel >= RP_LOGLEVEL_DEBUG) {
+        end_usec = getusec();
+        print_log("list snapshot done. ccnt=%d usec=%llu", info->ccnt,
+            (long long unsigned)(end_usec - begin_usec));
+    }
+    return 0;
+}
+
+void
+rp_release_item(struct default_engine *engine, hash_item *it)
+{
+    do_item_release(engine, it);
+}
+
+void
+rp_release_btree_elem(struct default_engine *engine, btree_elem_item *elem)
+{
+    do_btree_elem_release(engine, elem);
+}
+
+void
+rp_release_set_elem(struct default_engine *engine, set_elem_item *elem)
+{
+    do_set_elem_release(engine, elem);
+}
+
+void
+rp_release_list_elem(struct default_engine *engine, list_elem_item *elem)
+{
+    do_list_elem_release(engine, elem);
+}
+
+int
+rp_item_ntotal(struct default_engine *engine, hash_item *it)
+{
+    return ITEM_ntotal(engine, it);
+}
+
+ENGINE_ERROR_CODE
+rp_apply_set_elem_insert(struct default_engine *engine, hash_item *it,
+    const char *value, uint32_t nbytes)
+{
+    const char *key;
+    set_elem_item *elem;
+    bool created;
+    ENGINE_ERROR_CODE ret;
+
+    /* FIXME.  We already have hash_item.  Need an api to avoid hash table
+     * lookup.
+     */
+
+    key = item_get_key(it);
+    if (rp_loglevel >= RP_LOGLEVEL_DEBUG)
+        print_log("rp_apply_set_elem_insert. key=%s",
+            rp_printable_key(key, it->nkey));
+
+    /* Allocate a new element */
+    pthread_mutex_lock(&engine->cache_lock);
+    elem = do_set_elem_alloc(engine, nbytes, NULL);
+    pthread_mutex_unlock(&engine->cache_lock);
+    if (elem == NULL) {
+        print_log("rp_apply_set_elem_insert failed. alloc failed. nbytes=%d",
+            nbytes);
+        return ENGINE_ENOMEM;
+    }
+
+    /* Copy the value and insert the element into the set */
+    memcpy(elem->value, value, nbytes);
+    ret = set_elem_insert(engine, key, it->nkey, elem, NULL /* attr */,
+        &created, NULL);
+
+    pthread_mutex_lock(&engine->cache_lock);
+    do_set_elem_release(engine, elem); /* alloc incremented refcount */
+    pthread_mutex_unlock(&engine->cache_lock);
+
+    /* This function lock-unlock three times... */
+    return ret;
+}
+
+ENGINE_ERROR_CODE
+rp_apply_set_elem_unlink(struct default_engine *engine, hash_item *it,
+    const char *value, uint32_t nbytes)
+{
+    const char *key;
+    bool dropped;
+    ENGINE_ERROR_CODE ret;
+
+    key = item_get_key(it);
+    if (rp_loglevel >= RP_LOGLEVEL_DEBUG)
+        print_log("rp_apply_set_elem_unlink. key=%s",
+            rp_printable_key(key, it->nkey));
+
+    ret = set_elem_delete(engine, key, it->nkey, value, nbytes, false,
+        &dropped);
+
+    return ret;
+}
+
+ENGINE_ERROR_CODE
+rp_apply_list_elem_insert(struct default_engine *engine, hash_item *it,
+    int index, const char *value, uint32_t nbytes)
+{
+    const char *key;
+    list_elem_item *elem;
+    bool created;
+    ENGINE_ERROR_CODE ret;
+
+    /* FIXME.  We already have hash_item.  Need an api to avoid hash table
+     * lookup.
+     */
+
+    key = item_get_key(it);
+    if (rp_loglevel >= RP_LOGLEVEL_DEBUG)
+        print_log("rp_apply_list_elem_insert. key=%s index=%d",
+            rp_printable_key(key, it->nkey), index);
+
+    pthread_mutex_lock(&engine->cache_lock);
+    elem = do_list_elem_alloc(engine, nbytes, NULL);
+    pthread_mutex_unlock(&engine->cache_lock);
+    if (elem == NULL) {
+        print_log("rp_apply_list_elem_insert failed. alloc failed. nbytes=%d",
+            nbytes);
+        return ENGINE_ENOMEM;
+    }
+
+    memcpy(elem->value, value, nbytes);
+    ret = list_elem_insert(engine, key, it->nkey, index, elem, NULL /* attr */,
+        &created, NULL);
+
+    pthread_mutex_lock(&engine->cache_lock);
+    do_list_elem_release(engine, elem);
+    pthread_mutex_unlock(&engine->cache_lock);
+
+    if (ret != ENGINE_SUCCESS) {
+        print_log("rp_apply_list_elem_insert failed. key=%s index=%d"
+            " code=%d", rp_printable_key(key, it->nkey), index, ret);
+    }
+    /* lock-unlock three times.  FIXME */
+    return ret;
+}
+
+ENGINE_ERROR_CODE
+rp_apply_list_elem_unlink(struct default_engine *engine, hash_item *it,
+    int index, int fcnt)
+{
+    const char *key;
+    uint32_t del_count;
+    int to_index;
+    bool dropped;
+    ENGINE_ERROR_CODE ret;
+
+    key = item_get_key(it);
+    if (rp_loglevel >= RP_LOGLEVEL_DEBUG)
+        print_log("rp_apply_list_elem_unlink. key=%s index=%d fcnt=%d",
+            rp_printable_key(key, it->nkey), index, fcnt);
+
+    /* Convert fcnt to index.  list_elem_delete converts it back to index.
+     * Oh well...
+     */
+    if (fcnt >= 0)
+        to_index = index + fcnt - 1;
+    else
+        to_index = index + fcnt + 1;
+    ret = list_elem_delete(engine, key, it->nkey, index /* from */, to_index,
+        false, &del_count, &dropped);
+    if (ret != ENGINE_SUCCESS)
+        print_log("Non-SUCCESS ret=0x%x", ret);
+    return ret;
+}
+
+ENGINE_ERROR_CODE
+rp_apply_item_lru_update(struct default_engine *engine, const char *key,
+    uint32_t nkey)
+{
+    hash_item *it;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    if (rp_loglevel >= RP_LOGLEVEL_DEBUG)
+        print_log("rp_apply_item_lru_update. key=%s",
+            rp_printable_key(key, nkey));
+
+    /* See do_item_update */
+    pthread_mutex_lock(&engine->cache_lock);
+    it = do_item_get(engine, key, nkey, true);
+    if (it) {
+        /* Update the lru list manually, and do not call do_item_update.
+         * do_item_update checks the last access time and ITEM_UPDATE_INTERVAL.
+         * So it may not move the item to the head.
+         */
+        rel_time_t current_time = engine->server.core->get_current_time();
+        item_unlink_q(engine, it);
+        it->time = current_time;
+        item_link_q(engine, it);
+
+        do_item_release(engine, it); /* get incremented refcount */
+    }
+    else
+        ret = ENGINE_KEY_ENOENT;
+    pthread_mutex_unlock(&engine->cache_lock);
+    return ret;
+}
+
+/* The cache is locked */
+bool
+rp_item_invalid(struct default_engine *engine, hash_item *it)
+{
+    rel_time_t current_time = engine->server.core->get_current_time();
+    return (assoc_prefix_isvalid(engine, it) == false ||
+        do_item_isvalid(engine, it, current_time) == false);
+}
+
+ENGINE_ERROR_CODE
+rp_apply_flush(struct default_engine *engine, const char *prefix, int nprefix)
+{
+    print_log("rp_apply_flush. prefix=%s nprefix=%d",
+        prefix ? prefix : "null", nprefix);
+    pthread_mutex_lock(&engine->cache_lock);
+    do_item_flush_expired(engine, prefix, nprefix, 0 /* right now */, NULL);
+    pthread_mutex_unlock(&engine->cache_lock);
+    return ENGINE_SUCCESS; /* always */
+}
+
+ENGINE_ERROR_CODE
+rp_apply_setattr_exptime(struct default_engine *engine, const char *key,
+  uint32_t nkey, rel_time_t exptime)
+{
+    hash_item *it;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    pthread_mutex_lock(&engine->cache_lock);
+    it = do_item_get(engine, key, nkey, true);
+    if (it) {
+        it->exptime = exptime;
+        do_item_release(engine, it); /* get incremented refcount */
+    }
+    else
+        ret = ENGINE_KEY_ENOENT;
+    pthread_mutex_unlock(&engine->cache_lock);
+    return ret;
+}
+
+ENGINE_ERROR_CODE
+rp_apply_setattr_meta_info(struct default_engine *engine, hash_item *it,
+    uint8_t ovflact, uint8_t mflags, rel_time_t exptime, int32_t mcnt,
+    bkey_t *maxbkeyrange)
+{
+    coll_meta_info *info;
+
+    if (!IS_COLL_ITEM(it)) {
+        print_log("rp_apply_setattr_meta_info. The item is not a collection.");
+        return ENGINE_EBADTYPE;
+    }
+    if (maxbkeyrange != NULL && (it->iflag & ITEM_IFLAG_BTREE) == 0) {
+        print_log("rp_apply_setattr_meta_info. The item is not a btree.");
+        return ENGINE_EBADTYPE;
+    }
+    pthread_mutex_lock(&engine->cache_lock);
+    info = (void*)item_get_meta(it);
+    info->ovflact = ovflact;
+    info->mflags = mflags;
+    it->exptime = exptime;
+    info->mcnt = mcnt;
+    if (maxbkeyrange) {
+        ((btree_meta_info*)info)->maxbkeyrange = *maxbkeyrange;
+    }
+    pthread_mutex_unlock(&engine->cache_lock);
+    return ENGINE_SUCCESS;
+}
+
+ENGINE_ERROR_CODE
+rp_apply_junktime(struct default_engine *engine, int junk_item_time)
+{
+    print_log("rp_apply_junktime. old=%d new=%d",
+        (int)engine->config.junk_item_time, junk_item_time);
+    pthread_mutex_lock(&engine->cache_lock);
+    engine->config.junk_item_time = junk_item_time;
+    pthread_mutex_unlock(&engine->cache_lock);
+    return ENGINE_SUCCESS; /* always */
+}
+
+hash_item *
+rp_item_get_locked_noref(struct default_engine *engine,
+  const char *key, int nkey)
+{
+    hash_item *it;
+
+    /* The master calls this.  do_item_get may end up calling rp_unink. */
+    it = do_item_get(engine, key, nkey, false /* Do not change LRU */);
+    if (it != NULL) {
+        /* do_item_get incremented refcount.  So decrement it... */
+        it->refcount--;
+    }
+    return it;
 }

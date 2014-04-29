@@ -80,6 +80,18 @@ typedef struct _btree_elem_item {
     unsigned char data[1];       /* data: <bkey, [eflag,] value> */
 } btree_elem_item;
 
+/* btree_elem_item.status */
+#define BTREE_ITEM_STATUS_USED   2
+#define BTREE_ITEM_STATUS_UNLINK 1
+#define BTREE_ITEM_STATUS_FREE   0
+
+/* get bkey real size */
+#define BTREE_REAL_NBKEY(nbkey) ((nbkey)==0 ? sizeof(uint64_t) : (nbkey))
+
+/* get btree element size */
+#define BTREE_ELEM_SIZE(elem) \
+        (sizeof(btree_elem_item_fixed) + BTREE_REAL_NBKEY(elem->nbkey) + elem->neflag + elem->nbytes)
+
 /* list meta info */
 typedef struct _list_meta_info {
     int32_t  mcnt;      /* maximum count */

@@ -599,6 +599,34 @@ struct conn {
 
     ENGINE_ERROR_CODE aiostat;
     bool ewouldblock;
+    /* Replication.
+     * ewouldblock=true is set when the command returns EWOULDBLOCK.
+     * The worker thread is going to remove the connection from the
+     * event loop and set ewouldblock=false.  But these two events
+     * (set and remove from the event loop) do not happen atomically.
+     * Rarely, notify_io_complete runs before the worker thread removes
+     * the connection from the event loop.  Below, two more variables
+     * deal with these cases...
+     *
+     * blocked=true is set when the worker thread actually removes the
+     * connection from the event loop.  The thread locks itself and then
+     * performs these two operations (set and event loop).
+     *
+     * notify_io_complete locks the thread and checks blocked.
+     * If blocked=false, then we know for sure that the worker thread has
+     * not removed the connection yet.  So, it sets
+     * premature_notify_io_complete=true.
+     *
+     * See complete_nread, conn_parse_cmd, and notify_io_complete.
+     */
+    bool blocked;
+    bool premature_notify_io_complete;
+    /* Replication.  Save the response string so we can call out_string when
+     * the worker thread resumes.  This string is static, constant.
+     * It is not dynamically allocated.  See process_bop_create for an example.
+     */
+    const char *orig_response;
+
     TAP_ITERATOR tap_iterator;
 
     struct {
@@ -695,6 +723,8 @@ bool conn_mwrite(conn *c);
 bool conn_ship_log(conn *c);
 bool conn_add_tap_client(conn *c);
 bool conn_setup_tap_stream(conn *c);
+bool conn_finish_blocked_update(conn *c);
+bool conn_finish_blocked_op_success(conn *c);
 
 /* If supported, give compiler hints for branch prediction. */
 #if !defined(__GNUC__) || (__GNUC__ == 2 && __GNUC_MINOR__ < 96)
