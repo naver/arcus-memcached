@@ -273,6 +273,10 @@ static rel_time_t realtime(const time_t exptime) {
 #ifdef ENABLE_STICKY_ITEM
     if (exptime == -1) return (rel_time_t)(-1);
 #endif
+#ifdef ENABLE_GET_AND_TOUCH
+    if (exptime == -2) return (rel_time_t)(-2); /* -2 means it doesn't need to
+                                                   update the exptime */
+#endif
 
     if (exptime > REALTIME_MAXDELTA) {
         /* if item expiration is at/before the server started, give it an
@@ -288,6 +292,15 @@ static rel_time_t realtime(const time_t exptime) {
         return (rel_time_t)(exptime + current_time);
     }
 }
+
+#ifdef ENABLE_GET_AND_TOUCH
+static bool get_exptime_from_str(char *str, int32_t *exptime_int) {
+    char *value = strchr(str, '=');
+    if (value != NULL && strncmp(str,"expiretime",10)==0 && safe_strtol(value+1, exptime_int))
+        return true;
+    return false;
+}
+#endif
 
 #if defined(SUPPORT_BOP_MGET) || defined(SUPPORT_BOP_SMGET)
 static int tokenize_keys(char *keystr, char delimiter, int keycnt, token_t *tokens) {
@@ -1429,6 +1442,9 @@ static void process_sop_exist_complete(conn *c) {
         ENGINE_ERROR_CODE ret = settings.engine.v1->set_elem_exist(settings.engine.v0, c,
                                                         c->coll_key, c->coll_nkey,
                                                         elem->value, elem->nbytes,
+#ifdef ENABLE_GET_AND_TOUCH
+                                                        c->exptime,
+#endif
                                                         &exist, 0);
         if (settings.detail_enabled) {
             stats_prefix_record_sop_exist(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
@@ -1685,6 +1701,9 @@ static void process_bop_mget_complete(conn *c) {
                                              &c->coll_bkrange,
                                              (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
                                              c->coll_roffset, c->coll_rcount,
+#ifdef ENABLE_GET_AND_TOUCH
+                                             c->exptime,
+#endif
                                              false, false,
                                              &elem_array[tot_elem_count], &cur_elem_count,
                                              &flags, &trimmed, 0);
@@ -1844,6 +1863,9 @@ static void process_bop_smget_complete(conn *c) {
                                                    &c->coll_bkrange,
                                                    (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
                                                    c->coll_roffset, c->coll_rcount,
+#ifdef ENABLE_GET_AND_TOUCH
+                                                   c->exptime,
+#endif
                                                    elem_array, kfnd_array, flag_array, &elem_count,
                                                    kmis_array, &kmis_count, &trimmed, &duplicated, 0);
     }
@@ -2624,6 +2646,9 @@ static void process_bin_get(conn *c) {
     c->aiostat = ENGINE_SUCCESS;
     if (ret == ENGINE_SUCCESS) {
         ret = settings.engine.v1->get(settings.engine.v0, c, &it, key, nkey,
+#ifdef ENABLE_GET_AND_TOUCH
+                                      (rel_time_t)-2,
+#endif
                                       c->binary_header.request.vbucket);
     }
 
@@ -3610,6 +3635,9 @@ static void process_bin_lop_get(conn *c) {
         }
         ret = settings.engine.v1->list_elem_get(settings.engine.v0, c, key, nkey,
                                                 from_index, to_index,
+#ifdef ENABLE_GET_AND_TOUCH
+                                                (rel_time_t)-2,
+#endif
                                                 (bool)req->message.body.delete,
                                                 (bool)req->message.body.drop,
                                                 elem_array, &elem_count, &flags, &dropped,
@@ -4033,6 +4061,9 @@ static void process_bin_sop_exist_complete(conn *c) {
         ret = settings.engine.v1->set_elem_exist(settings.engine.v0, c,
                                                  c->coll_key, c->coll_nkey,
                                                  elem->value, elem->nbytes,
+#ifdef ENABLE_GET_AND_TOUCH
+                                                 (rel_time_t)-2,
+#endif
                                                  &exist, c->binary_header.request.vbucket);
     }
 
@@ -4126,6 +4157,9 @@ static void process_bin_sop_get(conn *c) {
         }
 
         ret = settings.engine.v1->set_elem_get(settings.engine.v0, c, key, nkey, req_count,
+#ifdef ENABLE_GET_AND_TOUCH
+                                               (rel_time_t)-2,
+#endif
                                                (bool)req->message.body.delete,
                                                (bool)req->message.body.drop,
                                                elem_array, &elem_count, &flags, &dropped,
@@ -4811,6 +4845,9 @@ static void process_bin_bop_get(conn *c) {
                                                  bkrange, efilter,
                                                  req->message.body.offset,
                                                  req->message.body.count,
+#ifdef ENABLE_GET_AND_TOUCH
+                                                 (rel_time_t)-2,
+#endif
                                                  (bool)req->message.body.delete,
                                                  (bool)req->message.body.drop,
                                                  elem_array, &elem_count, &flags, &dropped_trimmed,
@@ -4956,6 +4993,9 @@ static void process_bin_bop_count(conn *c) {
     if (ret == ENGINE_SUCCESS) {
         ret = settings.engine.v1->btree_elem_count(settings.engine.v0, c, key, nkey,
                                                    bkrange, efilter,
+#ifdef ENABLE_GET_AND_TOUCH
+                                                   (rel_time_t)-2,
+#endif
                                                    &elem_count, &flags,
                                                    c->binary_header.request.vbucket);
     }
@@ -5214,6 +5254,9 @@ static void process_bin_bop_smget_complete(conn *c) {
                                          &c->coll_bkrange,
                                          (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
                                          c->coll_roffset, c->coll_rcount,
+#ifdef ENABLE_GET_AND_TOUCH
+                                         (rel_time_t)-2,
+#endif
                                          elem_array, kfnd_array, flag_array, &elem_count,
                                          kmis_array, &kmis_count, &trimmed, &duplicated,
                                          c->binary_header.request.vbucket);
@@ -7670,7 +7713,11 @@ static char *get_suffix_buffer(conn *c) {
 }
 
 /* ntokens is overwritten here... shrug.. */
+#ifdef ENABLE_GET_AND_TOUCH
+static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens, bool return_cas, bool touch)
+#else
 static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens, bool return_cas)
+#endif
 {
     char *key;
     size_t nkey;
@@ -7678,6 +7725,18 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
     item *it;
     token_t *key_token = &tokens[KEY_TOKEN];
     assert(c != NULL);
+
+#ifdef ENABLE_GET_AND_TOUCH
+    int32_t exptime_int = -2;
+    if (touch) {
+        if (!get_exptime_from_str(key_token->value, &exptime_int)) {
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+        ++key_token;
+    }
+    rel_time_t exptime = realtime(exptime_int);
+#endif
 
     do {
         while(key_token->length != 0) {
@@ -7690,10 +7749,17 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                 return;
             }
 
+#ifdef ENABLE_GET_AND_TOUCH
+            if (settings.engine.v1->get(settings.engine.v0, c, &it,
+                                        key, nkey, exptime, 0) != ENGINE_SUCCESS) {
+                it = NULL;
+            }
+#else
             if (settings.engine.v1->get(settings.engine.v0, c, &it,
                                         key, nkey, 0) != ENGINE_SUCCESS) {
                 it = NULL;
             }
+#endif
 
             if (settings.detail_enabled) {
                 stats_prefix_record_get(key, nkey, NULL != it);
@@ -8294,6 +8360,9 @@ static inline int get_coll_create_attr_from_tokens(token_t *tokens, const int nt
 
 static void process_lop_get(conn *c, char *key, size_t nkey,
                             int32_t from_index, int32_t to_index,
+#ifdef ENABLE_GET_AND_TOUCH
+                            rel_time_t exptime,
+#endif
                             bool delete, bool drop_if_empty)
 {
     eitem  **elem_array = NULL;
@@ -8321,6 +8390,9 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
 
         ret = settings.engine.v1->list_elem_get(settings.engine.v0, c, key, nkey,
                                                 from_index, to_index,
+#ifdef ENABLE_GET_AND_TOUCH
+                                                exptime,
+#endif
                                                 delete, drop_if_empty,
                                                 elem_array, &elem_count, &flags, &dropped, 0);
     }
@@ -8645,8 +8717,15 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         process_lop_delete(c, key, nkey, from_index, to_index, drop_if_empty);
     }
+#ifdef ENABLE_GET_AND_TOUCH
+    else if ((ntokens>=5 && ntokens<=7) && (strcmp(subcommand, "get") == 0))
+#else
     else if ((ntokens==5 || ntokens==6) && (strcmp(subcommand, "get") == 0))
+#endif
     {
+#ifdef ENABLE_GET_AND_TOUCH
+        int32_t exptime_int = -2;
+#endif
         int32_t from_index, to_index;
         bool delete = false;
         bool drop_if_empty = false;
@@ -8656,6 +8735,29 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
             return;
         }
 
+#ifdef ENABLE_GET_AND_TOUCH
+        if (ntokens >= 6) {
+            if (strcmp(tokens[ntokens-2].value, "delete")==0) {
+                delete = true;
+            } else if (strcmp(tokens[ntokens-2].value, "drop")==0) {
+                delete = true;
+                drop_if_empty = true;
+            }
+            if (ntokens == 7 && delete == false) {
+                out_string(c, "CLIENT_ERROR bad command line format");
+                return;
+            }
+            if (ntokens == 7 || delete == false) {
+                if (!  get_exptime_from_str(tokens[LOP_KEY_TOKEN+2].value, &exptime_int)) {
+                    out_string(c, "CLIENT_ERROR bad command line format");
+                    return;
+                }
+            }
+        }
+
+        process_lop_get(c, key, nkey, from_index, to_index, realtime(exptime_int),
+                        delete, drop_if_empty);
+#else
         if (ntokens == 6) {
             if (strcmp(tokens[LOP_KEY_TOKEN+2].value, "delete")==0) {
                 delete = true;
@@ -8669,6 +8771,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
 
         process_lop_get(c, key, nkey, from_index, to_index, delete, drop_if_empty);
+#endif
     }
     else
     {
@@ -8677,6 +8780,9 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
 }
 
 static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
+#ifdef ENABLE_GET_AND_TOUCH
+                            rel_time_t exptime,
+#endif
                             bool delete, bool drop_if_empty)
 {
     eitem  **elem_array = NULL;
@@ -8698,6 +8804,9 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
         }
 
         ret = settings.engine.v1->set_elem_get(settings.engine.v0, c, key, nkey, req_count,
+#ifdef ENABLE_GET_AND_TOUCH
+                                               exptime,
+#endif
                                                delete, drop_if_empty, elem_array, &elem_count,
                                                &flags, &dropped, 0);
     }
@@ -8984,11 +9093,21 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         process_sop_prepare_nread(c, (int)OPERATION_SOP_DELETE, vlen, key, nkey);
     }
+#ifdef ENABLE_GET_AND_TOUCH
+    else if ((ntokens>=5 && ntokens<=7) && strcmp(subcommand, "exist") == 0)
+#else
     else if ((ntokens==5 || ntokens==6) && strcmp(subcommand, "exist") == 0)
+#endif
     {
         int32_t vlen;
 
         set_pipe_maybe(c, tokens, ntokens);
+#ifdef ENABLE_GET_AND_TOUCH
+        if (ntokens == 7 && c->noreply == 0) {
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+#endif
 
         if (! safe_strtol(tokens[SOP_KEY_TOKEN+1].value, &vlen) || vlen < 0) {
             out_string(c, "CLIENT_ERROR bad command line format");
@@ -8996,19 +9115,59 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
         vlen += 2;
 
+#ifdef ENABLE_GET_AND_TOUCH
+        int32_t exptime_int = -2;
+        if (ntokens >= 6 && (ntokens == 7 || c->noreply == 0)) {
+            if (! get_exptime_from_str(tokens[SOP_KEY_TOKEN+2].value, &exptime_int)) {
+                out_string(c, "CLIENT_ERROR bad command line format");
+                return;
+            }
+        }
+        c->exptime = realtime(exptime_int);
+#endif
+
         process_sop_prepare_nread(c, (int)OPERATION_SOP_EXIST, vlen, key, nkey);
     }
+#ifdef ENABLE_GET_AND_TOUCH
+    else if ((ntokens>=5 || ntokens<=7) && (strcmp(subcommand, "get") == 0))
+#else
     else if ((ntokens==5 || ntokens==6) && (strcmp(subcommand, "get") == 0))
+#endif
     {
         bool delete = false;
         bool drop_if_empty = false;
         uint32_t count = 0;
+#ifdef ENABLE_GET_AND_TOUCH
+        int32_t exptime_int = -2;
+#endif
 
         if (! safe_strtoul(tokens[SOP_KEY_TOKEN+1].value, &count)) {
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
 
+#ifdef ENABLE_GET_AND_TOUCH
+        if (ntokens >= 6) {
+            if (strcmp(tokens[ntokens-2].value, "delete")==0) {
+                delete = true;
+            } else if (strcmp(tokens[ntokens-2].value, "drop")==0) {
+                delete = true;
+                drop_if_empty = true;
+            }
+            if (ntokens == 7 && delete == false) {
+                out_string(c, "CLIENT_ERROR bad command line format");
+                return;
+            }
+            if (ntokens == 7 || delete == false) {
+                if (!  get_exptime_from_str(tokens[SOP_KEY_TOKEN+2].value, &exptime_int)) {
+                    out_string(c, "CLIENT_ERROR bad command line format");
+                    return;
+                }
+            }
+        }
+
+        process_sop_get(c, key, nkey, count, realtime(exptime_int), delete, drop_if_empty);
+#else
         if (ntokens == 6) {
             if (strcmp(tokens[SOP_KEY_TOKEN+2].value, "delete")==0) {
                 delete = true;
@@ -9022,6 +9181,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
 
         process_sop_get(c, key, nkey, count, delete, drop_if_empty);
+#endif
     }
     else
     {
@@ -9032,6 +9192,9 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
 static void process_bop_get(conn *c, char *key, size_t nkey,
                             const bkey_range *bkrange, const eflag_filter *efilter,
                             const uint32_t offset, const uint32_t count,
+#ifdef ENABLE_GET_AND_TOUCH
+                            const rel_time_t exptime,
+#endif
                             const bool delete, const bool drop_if_empty)
 {
     eitem  **elem_array = NULL;
@@ -9057,6 +9220,9 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
 
         ret = settings.engine.v1->btree_elem_get(settings.engine.v0, c, key, nkey,
                                                  bkrange, efilter, offset, count,
+#ifdef ENABLE_GET_AND_TOUCH
+                                                 exptime,
+#endif
                                                  delete, drop_if_empty,
                                                  elem_array, &elem_count,
                                                  &flags, &dropped_trimmed, 0);
@@ -9156,8 +9322,14 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
     }
 }
 
+#ifdef ENABLE_GET_AND_TOUCH
+static void process_bop_count(conn *c, char *key, size_t nkey,
+                              const bkey_range *bkrange, const eflag_filter *efilter,
+                              const rel_time_t exptime)
+#else
 static void process_bop_count(conn *c, char *key, size_t nkey,
                               const bkey_range *bkrange, const eflag_filter *efilter)
+#endif
 {
     uint32_t elem_count;
     uint32_t flags;
@@ -9168,6 +9340,9 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
     if (ret == ENGINE_SUCCESS) {
         ret = settings.engine.v1->btree_elem_count(settings.engine.v0, c,
                                                    key, nkey, bkrange, efilter,
+#ifdef ENABLE_GET_AND_TOUCH
+                                                   exptime,
+#endif
                                                    &elem_count, &flags, 0);
     }
 
@@ -10170,7 +10345,11 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         process_bop_arithmetic(c, key, nkey, &c->coll_bkrange, incr, create, delta, initial, eflagptr);
     }
+#ifdef ENABLE_GET_AND_TOUCH
+    else if ((ntokens >= 5 && ntokens <= 14) && (strcmp(subcommand, "get") == 0))
+#else
     else if ((ntokens >= 5 && ntokens <= 13) && (strcmp(subcommand, "get") == 0))
+#endif
     {
         uint32_t offset = 0;
         uint32_t count  = 0;
@@ -10209,6 +10388,15 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             }
         }
 
+#ifdef ENABLE_GET_AND_TOUCH
+        int32_t exptime_int = -2;
+        if (rest_ntokens > 0) {
+            if (get_exptime_from_str(tokens[read_ntokens+rest_ntokens-1].value, &exptime_int)) {
+                rest_ntokens -= 1;
+            }
+        }
+#endif
+
         if (rest_ntokens > 0) {
             if (rest_ntokens == 1) {
                 if (! safe_strtoul(tokens[read_ntokens].value, &count)) {
@@ -10230,9 +10418,16 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         process_bop_get(c, key, nkey, &c->coll_bkrange,
                         (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
                         offset, count,
+#ifdef ENABLE_GET_AND_TOUCH
+                        realtime(exptime_int),
+#endif
                         delete, drop_if_empty);
     }
+#ifdef ENABLE_GET_AND_TOUCH
+    else if ((ntokens >= 5 && ntokens <= 11) && (strcmp(subcommand, "count") == 0))
+#else
     else if ((ntokens >= 5 && ntokens <= 10) && (strcmp(subcommand, "count") == 0))
+#endif
     {
         if (get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange)) {
             out_string(c, "CLIENT_ERROR bad command line format");
@@ -10242,6 +10437,13 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         int read_ntokens = 4;
         int post_ntokens = 1; /* "\r\n" */
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
+
+#ifdef ENABLE_GET_AND_TOUCH
+        int32_t exptime_int = -2;
+        if (get_exptime_from_str(tokens[ntokens-2].value, &exptime_int)) {
+            rest_ntokens -= 1;
+        }
+#endif
 
         if (rest_ntokens >= 3) {
             int used_ntokens = get_efilter_from_tokens(&tokens[read_ntokens], rest_ntokens,
@@ -10261,13 +10463,25 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             return;
         }
 
+#ifdef ENABLE_GET_AND_TOUCH
+        process_bop_count(c, key, nkey, &c->coll_bkrange,
+                          (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
+                          realtime(exptime_int));
+#else
         process_bop_count(c, key, nkey, &c->coll_bkrange,
                           (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter));
+#endif
     }
 #if defined(SUPPORT_BOP_MGET) || defined(SUPPORT_BOP_SMGET)
+#ifdef ENABLE_GET_AND_TOUCH
+    else if ((ntokens >= 7 && ntokens <= 14) &&
+             ((strcmp(subcommand, "mget") == 0  && (subcommid = (int)OPERATION_BOP_MGET)) ||
+              (strcmp(subcommand, "smget") == 0 && (subcommid = (int)OPERATION_BOP_SMGET)) ))
+#else
     else if ((ntokens >= 7 && ntokens <= 13) &&
              ((strcmp(subcommand, "mget") == 0  && (subcommid = (int)OPERATION_BOP_MGET)) ||
               (strcmp(subcommand, "smget") == 0 && (subcommid = (int)OPERATION_BOP_SMGET)) ))
+#endif
     {
         uint32_t count, offset = 0;
         uint32_t lenkeys, numkeys;
@@ -10286,6 +10500,16 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         int read_ntokens = 5;
         int post_ntokens = 2; /* "\r\n" */
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
+
+#ifdef ENABLE_GET_AND_TOUCH
+        int32_t exptime_int = -2;
+        if (rest_ntokens > 0) {
+            if (get_exptime_from_str(tokens[ntokens-2].value, &exptime_int)) {
+                rest_ntokens -= 1;
+            }
+        }
+        c->exptime = realtime(exptime_int);
+#endif
 
         if (rest_ntokens >= 3) {
             int used_ntokens = get_efilter_from_tokens(&tokens[read_ntokens], rest_ntokens,
@@ -10771,7 +10995,17 @@ static void process_command(conn *c, char *command) {
         ((strcmp(tokens[COMMAND_TOKEN].value, "get") == 0) ||
          (strcmp(tokens[COMMAND_TOKEN].value, "bget") == 0))) {
 
+#ifdef ENABLE_GET_AND_TOUCH
+        process_get_command(c, tokens, ntokens, false, false);
+#else
         process_get_command(c, tokens, ntokens, false);
+#endif
+
+#ifdef ENABLE_GET_AND_TOUCH
+    } else if (ntokens >= 4  && strcmp(tokens[COMMAND_TOKEN].value, "gat") == 0) {
+
+        process_get_command(c, tokens, ntokens, false, true);
+#endif
 
     } else if ((ntokens == 6 || ntokens == 7) &&
                ((strcmp(tokens[COMMAND_TOKEN].value, "add") == 0 && (comm = (int)OPERATION_ADD)) ||
@@ -10792,7 +11026,17 @@ static void process_command(conn *c, char *command) {
 
     } else if (ntokens >= 3 && (strcmp(tokens[COMMAND_TOKEN].value, "gets") == 0)) {
 
+#ifdef ENABLE_GET_AND_TOUCH
+        process_get_command(c, tokens, ntokens, true, false);
+#else
         process_get_command(c, tokens, ntokens, true);
+#endif
+
+#ifdef ENABLE_GET_AND_TOUCH
+    } else if (ntokens >= 4 && (strcmp(tokens[COMMAND_TOKEN].value, "gats") == 0)) {
+
+        process_get_command(c, tokens, ntokens, true, true);
+#endif
 
     } else if ((ntokens == 4 || ntokens == 5 || ntokens == 7 || ntokens == 8) && (strcmp(tokens[COMMAND_TOKEN].value, "decr") == 0)) {
 

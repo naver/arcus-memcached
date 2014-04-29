@@ -330,6 +330,9 @@ extern "C" {
                                  item** item,
                                  const void* key,
                                  const int nkey,
+#ifdef ENABLE_GET_AND_TOUCH
+                                 const rel_time_t exptime,
+#endif
                                  uint16_t vbucket);
 
         /**
@@ -443,6 +446,9 @@ extern "C" {
                                            const int nkey,
                                            int from_index,
                                            int to_index,
+#ifdef ENABLE_GET_AND_TOUCH
+                                           const rel_time_t exptime,
+#endif
                                            const bool delete,
                                            const bool drop_if_empty,
                                            eitem** eitem_array,
@@ -490,6 +496,9 @@ extern "C" {
                                             const int nkey,
                                             const void* value,
                                             const int nbytes,
+#ifdef ENABLE_GET_AND_TOUCH
+                                            const rel_time_t exptime,
+#endif
                                             bool *exist,
                                             uint16_t vbucket);
         ENGINE_ERROR_CODE (*set_elem_get)(ENGINE_HANDLE* handle,
@@ -497,6 +506,9 @@ extern "C" {
                                           const void* key,
                                           const int nkey,
                                           const uint32_t count,
+#ifdef ENABLE_GET_AND_TOUCH
+                                          const rel_time_t exptime,
+#endif
                                           const bool delete,
                                           const bool drop_if_empty,
                                           eitem** eitem,
@@ -574,6 +586,9 @@ extern "C" {
                                             const eflag_filter *efilter,
                                             const uint32_t offset,
                                             const uint32_t req_count,
+#ifdef ENABLE_GET_AND_TOUCH
+                                            const rel_time_t exptime,
+#endif
                                             const bool delete,
                                             const bool drop_if_empty,
                                             eitem** eitem_array,
@@ -587,6 +602,9 @@ extern "C" {
                                               const int nkey,
                                               const bkey_range *bkrange,
                                               const eflag_filter *efilter,
+#ifdef ENABLE_GET_AND_TOUCH
+                                              const rel_time_t exptime,
+#endif
                                               uint32_t* eitem_count,
                                               uint32_t* flags,
                                               uint16_t vbucket);
@@ -618,6 +636,9 @@ extern "C" {
                                               const eflag_filter *efilter,
                                               const uint32_t offset,
                                               const uint32_t count,
+#ifdef ENABLE_GET_AND_TOUCH
+                                              const rel_time_t exptime,
+#endif
                                               eitem** eitem_array,
                                               uint32_t* kfnd_array,
                                               uint32_t* flag_array,

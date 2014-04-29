@@ -49,6 +49,9 @@ static void               default_item_release(ENGINE_HANDLE* handle, const void
                                                item* item);
 static ENGINE_ERROR_CODE  default_get(ENGINE_HANDLE* handle, const void* cookie,
                                       item** item, const void* key, const int nkey,
+#ifdef ENABLE_GET_AND_TOUCH
+                                      const rel_time_t exptime,
+#endif
                                       uint16_t vbucket);
 static ENGINE_ERROR_CODE  default_get_stats(ENGINE_HANDLE* handle, const void *cookie,
                                             const char *stat_key, int nkey, ADD_STAT add_stat);
@@ -88,6 +91,9 @@ static ENGINE_ERROR_CODE  default_list_elem_delete(ENGINE_HANDLE* handle, const 
 static ENGINE_ERROR_CODE  default_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                                                 const void* key, const int nkey,
                                                 int from_index, int to_index,
+#ifdef ENABLE_GET_AND_TOUCH
+                                                const rel_time_t exptime,
+#endif
                                                 const bool delete, const bool drop_if_empty,
                                                 eitem** eitem_array, uint32_t* eitem_count,
                                                 uint32_t* flags, bool *dropped,
@@ -110,9 +116,15 @@ static ENGINE_ERROR_CODE  default_set_elem_delete(ENGINE_HANDLE* handle, const v
 static ENGINE_ERROR_CODE  default_set_elem_exist(ENGINE_HANDLE* handle, const void* cookie,
                                                  const void* key, const int nkey,
                                                  const void* value, const int nbytes,
+#ifdef ENABLE_GET_AND_TOUCH
+                                                 const rel_time_t exptime,
+#endif
                                                  bool *exist, uint16_t vbucket);
 static ENGINE_ERROR_CODE  default_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                                                const void* key, const int nkey, const uint32_t count,
+#ifdef ENABLE_GET_AND_TOUCH
+                                               const rel_time_t exptime,
+#endif
                                                const bool delete, const bool drop_if_empty,
                                                eitem** eitem, uint32_t* eitem_count,
                                                uint32_t* flags, bool* dropped, uint16_t vbucket);
@@ -155,6 +167,9 @@ static ENGINE_ERROR_CODE  default_btree_elem_get(ENGINE_HANDLE* handle, const vo
                                                  const bkey_range *bkrange,
                                                  const eflag_filter *efilter,
                                                  const uint32_t offset, const uint32_t req_count,
+#ifdef ENABLE_GET_AND_TOUCH
+                                                 const rel_time_t exptime,
+#endif
                                                  const bool delete, const bool drop_if_empty,
                                                  eitem** eitem_array, uint32_t* eitem_count,
                                                  uint32_t* flags, bool *dropped_trimmed,
@@ -163,6 +178,9 @@ static ENGINE_ERROR_CODE  default_btree_elem_count(ENGINE_HANDLE* handle, const 
                                                    const void* key, const int nkey,
                                                    const bkey_range *bkrange,
                                                    const eflag_filter *efilter,
+#ifdef ENABLE_GET_AND_TOUCH
+                                                   const rel_time_t exptime,
+#endif
                                                    uint32_t* eitem_count, uint32_t* flags,
                                                    uint16_t vbucket);
 static ENGINE_ERROR_CODE default_btree_posi_find(ENGINE_HANDLE* handle, const void* cookie,
@@ -179,6 +197,9 @@ static ENGINE_ERROR_CODE  default_btree_elem_smget(ENGINE_HANDLE* handle, const 
                                                    const bkey_range *bkrange,
                                                    const eflag_filter *efilter,
                                                    const uint32_t offset, const uint32_t count,
+#ifdef ENABLE_GET_AND_TOUCH
+                                                   const rel_time_t exptime,
+#endif
                                                    eitem** eitem_array,
                                                    uint32_t* kfnd_array, uint32_t* flag_array,
                                                    uint32_t* eitem_count,
@@ -473,7 +494,11 @@ static ENGINE_ERROR_CODE default_item_delete(ENGINE_HANDLE* handle, const void* 
     struct default_engine* engine = get_handle(handle);
     VBUCKET_GUARD(engine, vbucket);
 
+#ifdef ENABLE_GET_AND_TOUCH
+    hash_item *it = item_get(engine, key, nkey, (rel_time_t)-2);
+#else
     hash_item *it = item_get(engine, key, nkey);
+#endif
     if (it == NULL) {
         return ENGINE_KEY_ENOENT;
     }
@@ -493,12 +518,19 @@ static void default_item_release(ENGINE_HANDLE* handle, const void *cookie, item
 
 static ENGINE_ERROR_CODE default_get(ENGINE_HANDLE* handle, const void* cookie,
                                      item** item, const void* key, const int nkey,
+#ifdef ENABLE_GET_AND_TOUCH
+                                     const rel_time_t exptime,
+#endif
                                      uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
     VBUCKET_GUARD(engine, vbucket);
 
+#ifdef ENABLE_GET_AND_TOUCH
+    *item = item_get(engine, key, nkey, exptime);
+#else
     *item = item_get(engine, key, nkey);
+#endif
     if (*item != NULL) {
         hash_item *it = get_real_item(*item);
         if ((it->iflag & ITEM_IFLAG_COLL) != 0) { /* collection item */
@@ -686,6 +718,9 @@ static ENGINE_ERROR_CODE default_list_elem_delete(ENGINE_HANDLE* handle, const v
 static ENGINE_ERROR_CODE default_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                                                const void* key, const int nkey,
                                                int from_index, int to_index,
+#ifdef ENABLE_GET_AND_TOUCH
+                                               const rel_time_t exptime,
+#endif
                                                const bool delete, const bool drop_if_empty,
                                                eitem** eitem_array, uint32_t* eitem_count,
                                                uint32_t* flags, bool* dropped, uint16_t vbucket)
@@ -693,8 +728,13 @@ static ENGINE_ERROR_CODE default_list_elem_get(ENGINE_HANDLE* handle, const void
     struct default_engine *engine = get_handle(handle);
     VBUCKET_GUARD(engine, vbucket);
 
+#ifdef ENABLE_GET_AND_TOUCH
+    return list_elem_get(engine, key, nkey, from_index, to_index, exptime, delete, drop_if_empty,
+                         (list_elem_item**)eitem_array, eitem_count, flags, dropped);
+#else
     return list_elem_get(engine, key, nkey, from_index, to_index, delete, drop_if_empty,
                          (list_elem_item**)eitem_array, eitem_count, flags, dropped);
+#endif
 }
 
 static ENGINE_ERROR_CODE default_set_struct_create(ENGINE_HANDLE* handle, const void* cookie,
@@ -750,16 +790,26 @@ static ENGINE_ERROR_CODE default_set_elem_delete(ENGINE_HANDLE* handle, const vo
 static ENGINE_ERROR_CODE default_set_elem_exist(ENGINE_HANDLE* handle, const void* cookie,
                                                 const void* key, const int nkey,
                                                 const void* value, const int nbytes,
+#ifdef ENABLE_GET_AND_TOUCH
+                                                const rel_time_t exptime,
+#endif
                                                 bool *exist, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
     VBUCKET_GUARD(engine, vbucket);
 
+#ifdef ENABLE_GET_AND_TOUCH
+    return set_elem_exist(engine, key, nkey, value, nbytes, exptime, exist);
+#else
     return set_elem_exist(engine, key, nkey, value, nbytes, exist);
+#endif
 }
 
 static ENGINE_ERROR_CODE default_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                                               const void* key, const int nkey, const uint32_t count,
+#ifdef ENABLE_GET_AND_TOUCH
+                                              const rel_time_t exptime,
+#endif
                                               const bool delete, const bool drop_if_empty,
                                               eitem** eitem, uint32_t* eitem_count,
                                               uint32_t* flags, bool* dropped, uint16_t vbucket)
@@ -767,8 +817,13 @@ static ENGINE_ERROR_CODE default_set_elem_get(ENGINE_HANDLE* handle, const void*
     struct default_engine *engine = get_handle(handle);
     VBUCKET_GUARD(engine, vbucket);
 
+#ifdef ENABLE_GET_AND_TOUCH
+    return set_elem_get(engine, key, nkey, count, exptime, delete, drop_if_empty,
+                        (set_elem_item**)eitem, eitem_count, flags, dropped);
+#else
     return set_elem_get(engine, key, nkey, count, delete, drop_if_empty,
                         (set_elem_item**)eitem, eitem_count, flags, dropped);
+#endif
 }
 
 static ENGINE_ERROR_CODE default_btree_struct_create(ENGINE_HANDLE* handle, const void* cookie,
@@ -873,6 +928,9 @@ static ENGINE_ERROR_CODE default_btree_elem_get(ENGINE_HANDLE* handle, const voi
                                                 const eflag_filter *efilter,
                                                 const uint32_t offset,
                                                 const uint32_t req_count,
+#ifdef ENABLE_GET_AND_TOUCH
+                                                const rel_time_t exptime,
+#endif
                                                 const bool delete, const bool drop_if_empty,
                                                 eitem** eitem_array, uint32_t* eitem_count,
                                                 uint32_t* flags, bool* dropped_trimmed,
@@ -881,22 +939,35 @@ static ENGINE_ERROR_CODE default_btree_elem_get(ENGINE_HANDLE* handle, const voi
     struct default_engine *engine = get_handle(handle);
     VBUCKET_GUARD(engine, vbucket);
 
+#ifdef ENABLE_GET_AND_TOUCH
+    return btree_elem_get(engine, key, nkey, bkrange, efilter, offset, req_count, exptime,
+                          delete, drop_if_empty, (btree_elem_item**)eitem_array, eitem_count,
+                          flags, dropped_trimmed);
+#else
     return btree_elem_get(engine, key, nkey, bkrange, efilter, offset, req_count,
                           delete, drop_if_empty, (btree_elem_item**)eitem_array, eitem_count,
                           flags, dropped_trimmed);
+#endif
 }
 
 static ENGINE_ERROR_CODE default_btree_elem_count(ENGINE_HANDLE* handle, const void* cookie,
                                                   const void* key, const int nkey,
                                                   const bkey_range *bkrange,
                                                   const eflag_filter *efilter,
+#ifdef ENABLE_GET_AND_TOUCH
+                                                  const rel_time_t exptime,
+#endif
                                                   uint32_t* eitem_count, uint32_t* flags,
                                                   uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
     VBUCKET_GUARD(engine, vbucket);
 
+#ifdef ENABLE_GET_AND_TOUCH
+    return btree_elem_count(engine, key, nkey, bkrange, efilter, exptime, eitem_count, flags);
+#else
     return btree_elem_count(engine, key, nkey, bkrange, efilter, eitem_count, flags);
+#endif
 }
 
 static ENGINE_ERROR_CODE default_btree_posi_find(ENGINE_HANDLE* handle, const void* cookie,
@@ -928,6 +999,9 @@ static ENGINE_ERROR_CODE default_btree_elem_smget(ENGINE_HANDLE* handle, const v
                                                   const bkey_range *bkrange,
                                                   const eflag_filter *efilter,
                                                   const uint32_t offset, const uint32_t count,
+#ifdef ENABLE_GET_AND_TOUCH
+                                                  const rel_time_t exptime,
+#endif
                                                   eitem** eitem_array,
                                                   uint32_t* kfnd_array,
                                                   uint32_t* flag_array,
@@ -940,9 +1014,15 @@ static ENGINE_ERROR_CODE default_btree_elem_smget(ENGINE_HANDLE* handle, const v
     struct default_engine *engine = get_handle(handle);
     VBUCKET_GUARD(engine, vbucket);
 
+#ifdef ENABLE_GET_AND_TOUCH
+    return btree_elem_smget(engine, karray, kcount, bkrange, efilter, offset, count, exptime,
+                            (btree_elem_item**)eitem_array, kfnd_array, flag_array, eitem_count,
+                            missed_key_array, missed_key_count, trimmed, duplicated);
+#else
     return btree_elem_smget(engine, karray, kcount, bkrange, efilter, offset, count,
                             (btree_elem_item**)eitem_array, kfnd_array, flag_array, eitem_count,
                             missed_key_array, missed_key_count, trimmed, duplicated);
+#endif
 }
 #endif
 

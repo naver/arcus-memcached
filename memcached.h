@@ -512,6 +512,10 @@ struct conn {
     uint32_t     coll_lenkeys; /* length of keys */
     void        *coll_mkeys;   /* (comma separated) multiple keys */
 
+#ifdef ENABLE_GET_AND_TOUCH
+    rel_time_t   exptime;
+#endif
+
     /* data for the nread state */
 
     /**

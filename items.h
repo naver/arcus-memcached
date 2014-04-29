@@ -245,7 +245,12 @@ hash_item *item_alloc(struct default_engine *engine,
  * @param nkey the number of bytes in the key
  * @return pointer to the item if it exists or NULL otherwise
  */
+#ifdef ENABLE_GET_AND_TOUCH
+hash_item *item_get(struct default_engine *engine, const void *key, const size_t nkey,
+                    const rel_time_t exptime);
+#else
 hash_item *item_get(struct default_engine *engine, const void *key, const size_t nkey);
+#endif
 
 /**
  * Reset the item statistics
@@ -377,6 +382,9 @@ ENGINE_ERROR_CODE list_elem_delete(struct default_engine *engine,
 ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
                                 const char *key, const size_t nkey,
                                 int from_index, int to_index,
+#ifdef ENABLE_GET_AND_TOUCH
+                                const rel_time_t exptime,
+#endif
                                 const bool delete, const bool drop_if_empty,
                                 list_elem_item **elem_array, uint32_t *elem_count,
                                 uint32_t *flags, bool *dropped);
@@ -406,10 +414,16 @@ ENGINE_ERROR_CODE set_elem_delete(struct default_engine *engine,
 ENGINE_ERROR_CODE set_elem_exist(struct default_engine *engine,
                                  const char *key, const size_t nkey,
                                  const char *value, const size_t nbytes,
+#ifdef ENABLE_GET_AND_TOUCH
+                                 const rel_time_t exptime,
+#endif
                                  bool *exist);
 
 ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
                                const char *key, const size_t nkey, const uint32_t count,
+#ifdef ENABLE_GET_AND_TOUCH
+                               const rel_time_t exptime,
+#endif
                                const bool delete, const bool drop_if_empty,
                                set_elem_item **elem_array, uint32_t *elem_count,
                                uint32_t *flags, bool *dropped);
@@ -454,6 +468,9 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
                                  const char *key, const size_t nkey,
                                  const bkey_range *bkrange, const eflag_filter *efilter,
                                  const uint32_t offset, const uint32_t req_count,
+#ifdef ENABLE_GET_AND_TOUCH
+                                 const rel_time_t exptime,
+#endif
                                  const bool delete, const bool drop_if_empty,
                                  btree_elem_item **elem_array, uint32_t *elem_count,
                                  uint32_t *flags, bool *dropped_trimmed);
@@ -461,6 +478,9 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
 ENGINE_ERROR_CODE btree_elem_count(struct default_engine *engine,
                                    const char *key, const size_t nkey,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
+#ifdef ENABLE_GET_AND_TOUCH
+                                   const rel_time_t exptime,
+#endif
                                    uint32_t *elem_count, uint32_t *flags);
 
 ENGINE_ERROR_CODE btree_posi_find(struct default_engine *engine,
@@ -477,6 +497,9 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
                                    token_t *key_array, const int key_count,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
                                    const uint32_t offset, const uint32_t count,
+#ifdef ENABLE_GET_AND_TOUCH
+                                   const rel_time_t exptime,
+#endif
                                    btree_elem_item **elem_array, uint32_t *kfnd_array,
                                    uint32_t *flag_array, uint32_t *elem_count,
                                    uint32_t *missed_key_array, uint32_t *missed_key_count,

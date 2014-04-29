@@ -992,6 +992,18 @@ static void do_item_stats_sizes(struct default_engine *engine, ADD_STAT add_stat
 #endif
 }
 
+#ifdef ENABLE_GET_AND_TOUCH
+static void do_item_touch(hash_item *it, const rel_time_t exptime)
+{
+#ifdef ENABLE_STICKY_ITEM
+    if (it != NULL && exptime != -2 && it->exptime != -1)
+#else
+    if (it != NULL && exptime != -2)
+#endif
+        it->exptime = exptime;
+}
+#endif
+
 /** wrapper around assoc_find which does the lazy expiration logic */
 hash_item *do_item_get(struct default_engine *engine, const char *key, const size_t nkey, bool LRU_reposition)
 {
@@ -4205,6 +4217,9 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
                                     token_t *key_array, const int key_count,
                                     const int bkrtype, const bkey_range *bkrange,
                                     const eflag_filter *efilter, const uint32_t req_count,
+#ifdef ENABLE_GET_AND_TOUCH
+                                    const rel_time_t exptime,
+#endif
                                     btree_scan_info *btree_scan_buf,
                                     uint16_t *sort_sindx_buf, uint32_t *sort_sindx_cnt,
                                     uint32_t *missed_key_array, uint32_t *missed_key_count,
@@ -4240,6 +4255,9 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
             break; /* ret == ENGINE_EBADTYPE */
         }
 
+#ifdef ENABLE_GET_AND_TOUCH
+        do_item_touch(it, exptime);
+#endif
         info = (btree_meta_info *)item_get_meta(it);
         if ((info->mflags & COLL_META_FLAG_READABLE) == 0) { /* unreadable collection */
             missed_key_array[*missed_key_count] = k;
@@ -4813,11 +4831,19 @@ hash_item *item_alloc(struct default_engine *engine,
  * Returns an item if it hasn't been marked as expired,
  * lazy-expiring as needed.
  */
+#ifdef ENABLE_GET_AND_TOUCH
+hash_item *item_get(struct default_engine *engine, const void *key, const size_t nkey,
+                    const rel_time_t exptime)
+#else
 hash_item *item_get(struct default_engine *engine, const void *key, const size_t nkey)
+#endif
 {
     hash_item *it;
     pthread_mutex_lock(&engine->cache_lock);
     it = do_item_get(engine, key, nkey, true);
+#ifdef ENABLE_GET_AND_TOUCH
+    if (it != NULL) do_item_touch(it, exptime);
+#endif
     pthread_mutex_unlock(&engine->cache_lock);
     return it;
 }
@@ -5363,6 +5389,9 @@ ENGINE_ERROR_CODE list_elem_delete(struct default_engine *engine,
 ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
                                 const char *key, const size_t nkey,
                                 int from_index, int to_index,
+#ifdef ENABLE_GET_AND_TOUCH
+                                const rel_time_t exptime,
+#endif
                                 const bool delete, const bool drop_if_empty,
                                 list_elem_item **elem_array, uint32_t *elem_count,
                                 uint32_t *flags, bool *dropped)
@@ -5401,6 +5430,9 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
                 }
             }
         } while (0);
+#ifdef ENABLE_GET_AND_TOUCH
+        do_item_touch(it, exptime);
+#endif
         do_item_release(engine, it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
@@ -5573,6 +5605,9 @@ ENGINE_ERROR_CODE set_elem_delete(struct default_engine *engine,
 ENGINE_ERROR_CODE set_elem_exist(struct default_engine *engine,
                                  const char *key, const size_t nkey,
                                  const char *value, const size_t nbytes,
+#ifdef ENABLE_GET_AND_TOUCH
+                                 const rel_time_t exptime,
+#endif
                                  bool *exist)
 {
     hash_item     *it;
@@ -5592,6 +5627,9 @@ ENGINE_ERROR_CODE set_elem_exist(struct default_engine *engine,
             else
                 *exist = false;
         } while (0);
+#ifdef ENABLE_GET_AND_TOUCH
+        do_item_touch(it, exptime);
+#endif
         do_item_release(engine, it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
@@ -5600,6 +5638,9 @@ ENGINE_ERROR_CODE set_elem_exist(struct default_engine *engine,
 
 ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
                                const char *key, const size_t nkey, const uint32_t count,
+#ifdef ENABLE_GET_AND_TOUCH
+                               const rel_time_t exptime,
+#endif
                                const bool delete, const bool drop_if_empty,
                                set_elem_item **elem_array, uint32_t *elem_count,
                                uint32_t *flags, bool *dropped)
@@ -5630,6 +5671,9 @@ ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
                 ret = ENGINE_ELEM_ENOENT; break;
             }
         } while (0);
+#ifdef ENABLE_GET_AND_TOUCH
+        do_item_touch(it, exptime);
+#endif
         do_item_release(engine, it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
@@ -5907,6 +5951,9 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
                                  const char *key, const size_t nkey,
                                  const bkey_range *bkrange, const eflag_filter *efilter,
                                  const uint32_t offset, const uint32_t req_count,
+#ifdef ENABLE_GET_AND_TOUCH
+                                 const rel_time_t exptime,
+#endif
                                  const bool delete, const bool drop_if_empty,
                                  btree_elem_item **elem_array, uint32_t *elem_count,
                                  uint32_t *flags, bool *dropped_trimmed)
@@ -5954,6 +6001,9 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
                     ret = ENGINE_ELEM_ENOENT;
             }
         } while (0);
+#ifdef ENABLE_GET_AND_TOUCH
+        do_item_touch(it, exptime);
+#endif
         do_item_release(engine, it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
@@ -5963,6 +6013,9 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
 ENGINE_ERROR_CODE btree_elem_count(struct default_engine *engine,
                                    const char *key, const size_t nkey,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
+#ifdef ENABLE_GET_AND_TOUCH
+                                   const rel_time_t exptime,
+#endif
                                    uint32_t *elem_count, uint32_t *flags)
 {
     hash_item       *it;
@@ -5985,6 +6038,9 @@ ENGINE_ERROR_CODE btree_elem_count(struct default_engine *engine,
             *elem_count = do_btree_elem_count(engine, info, bkrtype, bkrange, efilter);
             *flags = it->flags;
         } while (0);
+#ifdef ENABLE_GET_AND_TOUCH
+        do_item_touch(it, exptime);
+#endif
         do_item_release(engine, it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
@@ -6084,6 +6140,9 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
                                    token_t *key_array, const int key_count,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
                                    const uint32_t offset, const uint32_t count,
+#ifdef ENABLE_GET_AND_TOUCH
+                                   const rel_time_t exptime,
+#endif
                                    btree_elem_item **elem_array, uint32_t *kfnd_array,
                                    uint32_t *flag_array, uint32_t *elem_count,
                                    uint32_t *missed_key_array, uint32_t *missed_key_count,
@@ -6108,10 +6167,17 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
     pthread_mutex_lock(&engine->cache_lock);
 
     /* the 1st phase: get the sorted scans */
+#ifdef ENABLE_GET_AND_TOUCH
+    ret = do_btree_smget_scan_sort(engine, key_array, key_count,
+                                   bkrtype, bkrange, efilter, (offset+count), exptime,
+                                   btree_scan_buf, sort_sindx_buf, &sort_sindx_cnt,
+                                   missed_key_array, missed_key_count, duplicated);
+#else
     ret = do_btree_smget_scan_sort(engine, key_array, key_count,
                                    bkrtype, bkrange, efilter, (offset+count),
                                    btree_scan_buf, sort_sindx_buf, &sort_sindx_cnt,
                                    missed_key_array, missed_key_count, duplicated);
+#endif
     if (ret == ENGINE_SUCCESS) {
         /* the 2nd phase: get the sorted elems */
         *elem_count = do_btree_smget_elem_sort(btree_scan_buf, sort_sindx_buf, sort_sindx_cnt,

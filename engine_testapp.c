@@ -148,6 +148,9 @@ static ENGINE_ERROR_CODE mock_get(ENGINE_HANDLE* handle,
                                   item** item,
                                   const void* key,
                                   const int nkey,
+#ifdef ENABLE_GET_AND_TOUCH
+                                  const rel_time_t exptime,
+#endif
                                   uint16_t vbucket) {
     struct mock_engine *me = get_handle(handle);
     struct mock_connstruct *c = (void*)cookie;
@@ -158,10 +161,17 @@ static ENGINE_ERROR_CODE mock_get(ENGINE_HANDLE* handle,
     c->nblocks = 0;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     pthread_mutex_lock(&c->mutex);
+#ifdef ENABLE_GET_AND_TOUCH
+    while (ret == ENGINE_SUCCESS &&
+           (ret = me->the_engine->get((ENGINE_HANDLE*)me->the_engine, c, item,
+                                      key, nkey, exptime, vbucket)) == ENGINE_EWOULDBLOCK &&
+           c->handle_ewouldblock)
+#else
     while (ret == ENGINE_SUCCESS &&
            (ret = me->the_engine->get((ENGINE_HANDLE*)me->the_engine, c, item,
                                       key, nkey, vbucket)) == ENGINE_EWOULDBLOCK &&
            c->handle_ewouldblock)
+#endif
     {
         ++c->nblocks;
         pthread_cond_wait(&c->cond, &c->mutex);
