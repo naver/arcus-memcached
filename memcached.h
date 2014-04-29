@@ -35,6 +35,8 @@
 
 #include "sasl_defs.h"
 
+//#define SCATTERED_READ_WRITE 1
+
 /* This is the address we use for admin purposes.  For example, doing stats
  * and heart beats from arcus_zk.
  * We count these connections separately from regular client connections.
@@ -491,6 +493,12 @@ struct conn {
 
     char   *ritem;  /** when we read in an item's value, it goes here */
     uint32_t    rlbytes;
+#ifdef SCATTERED_READ_WRITE
+    int    rvalcnt;
+    int    rvalidx;
+    int    rvallen;
+    char  *rvalptr;
+#endif
 
     /* collection processing fields */
     void        *coll_eitem;

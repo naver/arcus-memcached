@@ -199,7 +199,11 @@ extern "C" {
         uint16_t nvalue; /** < IN: The number of elements available in value
                           * OUT: the number of elements used in value */
         const void *key;
+#if 1 // SCATTERED_READ_WRITE
+        struct iovec value[300];
+#else
         struct iovec value[1];
+#endif
     } item_info;
 
     /* collection element info */

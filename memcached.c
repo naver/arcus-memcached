@@ -678,6 +678,12 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->rcurr = c->rbuf;
     c->ritem = 0;
     c->rlbytes = 0;
+#ifdef SCATTERED_READ_WRITE
+    c->rvalptr = NULL;
+    c->rvallen = 0;
+    c->rvalidx = 0;
+    c->rvalcnt = 0;
+#endif
     c->icurr = c->ilist;
     c->suffixcurr = c->suffixlist;
     c->ileft = 0;
@@ -795,6 +801,13 @@ static void conn_coll_eitem_free(conn *c) {
 
 static void conn_cleanup(conn *c) {
     assert(c != NULL);
+
+#ifdef SCATTERED_READ_WRITE
+    if (c->rvalcnt > 0) {
+        c->rvalcnt = 0;
+        free(c->ritem); c->ritem = NULL;
+    }
+#endif
 
     if (c->item) {
         settings.engine.v1->release(settings.engine.v0, c, c->item);
@@ -1974,7 +1987,11 @@ static void complete_update_ascii(conn *c) {
     }
 
     item *it = c->item;
+#ifdef SCATTERED_READ_WRITE // GET_ITEM_INFO
+    item_info info = { .nvalue = 300 };
+#else
     item_info info = { .nvalue = 1 };
+#endif
     if (!settings.engine.v1->get_item_info(settings.engine.v0, c, it, &info)) {
         settings.engine.v1->release(settings.engine.v0, c, it);
         settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
@@ -1984,7 +2001,12 @@ static void complete_update_ascii(conn *c) {
         return;
     }
 
-    if (memcmp((char*)info.value[0].iov_base + info.nbytes - 2, "\r\n", 2) != 0) {
+#ifdef SCATTERED_READ_WRITE
+    if (memcmp((char*)info.value[info.nvalue-1].iov_base + info.value[info.nvalue-1].iov_len - 2, "\r\n", 2) != 0)
+#else
+    if (memcmp((char*)info.value[0].iov_base + info.nbytes - 2, "\r\n", 2) != 0)
+#endif
+    {
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         ENGINE_ERROR_CODE ret = settings.engine.v1->store(settings.engine.v0, c,
@@ -2507,7 +2529,11 @@ static void complete_update_bin(conn *c) {
     assert(c != NULL);
 
     item *it = c->item;
+#ifdef SCATTERED_READ_WRITE // GET_ITEM_INFO
+    item_info info = { .nvalue = 300 };
+#else
     item_info info = { .nvalue = 1 };
+#endif
     if (!settings.engine.v1->get_item_info(settings.engine.v0, c, it, &info)) {
         settings.engine.v1->release(settings.engine.v0, c, it);
         settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
@@ -2518,7 +2544,11 @@ static void complete_update_bin(conn *c) {
     }
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
+#ifdef SCATTERED_READ_WRITE
+    memcpy((char*)info.value[info.nvalue-1].iov_base + info.value[info.nvalue-1].iov_len - 2, "\r\n", 2);
+#else
     memcpy((char*)info.value[0].iov_base + info.value[0].iov_len - 2, "\r\n", 2);
+#endif
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     if (ret == ENGINE_SUCCESS) {
@@ -2629,7 +2659,11 @@ static void process_bin_get(conn *c) {
 
     uint16_t keylen;
     uint32_t bodylen;
+#ifdef SCATTERED_READ_WRITE // GET_ITEM_INFO
+    item_info info = { .nvalue = 300 };
+#else
     item_info info = { .nvalue = 1 };
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -2664,7 +2698,16 @@ static void process_bin_get(conn *c) {
         }
 
         /* Add the data minus the CRLF */
+#ifdef SCATTERED_READ_WRITE
+        for (int validx = 0; validx < info.nvalue; validx++) {
+            if (validx < (info.nvalue-1))
+                add_iov(c, info.value[validx].iov_base, info.value[validx].iov_len);
+            else /* validx == (info.nvalue-1) */
+                add_iov(c, info.value[validx].iov_base, info.value[validx].iov_len - 2);
+        }
+#else
         add_iov(c, info.value[0].iov_base, info.value[0].iov_len - 2);
+#endif
         conn_set_state(c, conn_mwrite);
         /* Remember this command so we can garbage collect it later */
         c->item = it;
@@ -5680,7 +5723,11 @@ static void ship_tap_log(conn *c) {
         msg.opaque.message.body.tap.flags = htons(tap_flags);
         msg.opaque.message.header.request.extlen = 8;
         msg.opaque.message.header.request.vbucket = htons(vbucket);
+#ifdef SCATTERED_READ_WRITE // GET_ITEM_INFO
+        item_info info = { .nvalue = 300 };
+#else
         item_info info = { .nvalue = 1 };
+#endif
 
         switch (event) {
         case TAP_NOOP :
@@ -5736,7 +5783,16 @@ static void ship_tap_log(conn *c) {
 
             add_iov(c, info.key, info.nkey);
             if ((tap_flags & TAP_FLAG_NO_VALUE) == 0) {
+#ifdef SCATTERED_READ_WRITE
+                for (int validx = 0; validx < info.nvalue; validx++) {
+                    if (validx < (info.nvalue-1))
+                        add_iov(c, info.value[validx].iov_base, info.value[validx].iov_len);
+                    else
+                        add_iov(c, info.value[validx].iov_base, info.value[validx].iov_len - 2);
+                }
+#else
                 add_iov(c, info.value[0].iov_base, info.value[0].iov_len - 2);
+#endif
             }
 
             pthread_mutex_lock(&tap_stats.mutex);
@@ -6462,7 +6518,11 @@ static void process_bin_update(conn *c) {
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
+#ifdef SCATTERED_READ_WRITE // GET_ITEM_INFO
+    item_info info = { .nvalue = 300 };
+#else
     item_info info = { .nvalue = 1 };
+#endif
 
     if (ret == ENGINE_SUCCESS) {
         ret = settings.engine.v1->allocate(settings.engine.v0, c,
@@ -6501,8 +6561,24 @@ static void process_bin_update(conn *c) {
         }
 
         c->item = it;
+#ifdef SCATTERED_READ_WRITE
+        if (info.nvalue == 1) {
+            c->ritem = info.value[0].iov_base;
+            c->rlbytes = vlen;
+        } else {
+            assert(info.value[0].iov_len == 0);
+            struct iovec *vector = info.value[0].iov_base;
+            c->ritem = (char*)vector;
+            c->rvalptr = vector[0].iov_base;
+            c->rvallen = vector[0].iov_len;
+            c->rvalidx = 0;
+            c->rvalcnt = info.nvalue;
+            c->rlbytes = vlen;
+        }
+#else
         c->ritem = info.value[0].iov_base;
         c->rlbytes = vlen;
+#endif
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
         break;
@@ -6560,7 +6636,11 @@ static void process_bin_append_prepend(conn *c) {
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
+#ifdef SCATTERED_READ_WRITE // GET_ITEM_INFO
     item_info info = { .nvalue = 1 };
+#else
+    item_info info = { .nvalue = 1 };
+#endif
 
     if (ret == ENGINE_SUCCESS) {
         ret = settings.engine.v1->allocate(settings.engine.v0, c,
@@ -6590,8 +6670,24 @@ static void process_bin_append_prepend(conn *c) {
         }
 
         c->item = it;
+#ifdef SCATTERED_READ_WRITE
+        if (info.nvalue == 1) {
+            c->ritem = info.value[0].iov_base;
+            c->rlbytes = vlen;
+        } else {
+            assert(info.value[0].iov_len == 0);
+            struct iovec *vector = info.value[0].iov_base;
+            c->ritem = (char*)vector;
+            c->rvalptr = vector[0].iov_base;
+            c->rvallen = vector[0].iov_len;
+            c->rvalidx = 0;
+            c->rvalcnt = info.nvalue;
+            c->rlbytes = vlen;
+        }
+#else
         c->ritem = info.value[0].iov_base;
         c->rlbytes = vlen;
+#endif
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
         break;
@@ -6886,6 +6982,12 @@ static void reset_cmd_handler(conn *c) {
     c->ascii_cmd = NULL;
     c->cmd = -1;
     c->substate = bin_no_state;
+#ifdef SCATTERED_READ_WRITE
+    if (c->rvalcnt > 0) {
+        c->rvalcnt = 0;
+        free(c->ritem); c->ritem = NULL;
+    }
+#endif
     if(c->item != NULL) {
         settings.engine.v1->release(settings.engine.v0, c, c->item);
         c->item = NULL;
@@ -7700,7 +7802,11 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
             }
 
             if (it) {
+#ifdef SCATTERED_READ_WRITE // GET_ITEM_INFO
+                item_info info = { .nvalue = 300 };
+#else
                 item_info info = { .nvalue = 1 };
+#endif
                 if (!settings.engine.v1->get_item_info(settings.engine.v0, c, it,
                                                        &info)) {
                     settings.engine.v1->release(settings.engine.v0, c, it);
@@ -7708,7 +7814,11 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                     break;
                 }
 
+#ifdef SCATTERED_READ_WRITE
+                assert(memcmp((char*)info.value[info.nvalue-1].iov_base + info.value[info.nvalue-1].iov_len -2, "\r\n", 2) == 0);
+#else
                 assert(memcmp((char*)info.value[0].iov_base + info.nbytes - 2, "\r\n", 2) == 0);
+#endif
 
                 if (i >= c->isize) {
                     item **new_list = realloc(c->ilist, sizeof(item *) * c->isize * 2);
@@ -7753,6 +7863,16 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                   }
                   int cas_len = snprintf(cas, SUFFIX_SIZE, " %"PRIu64"\r\n",
                                          info.cas);
+#ifdef SCATTERED_READ_WRITE
+                  if (add_iov(c, "VALUE ", 6) != 0 ||
+                      add_iov(c, info.key, info.nkey) != 0 ||
+                      add_iov(c, suffix, suffix_len - 2) != 0 ||
+                      add_iov(c, cas, cas_len) != 0)
+                      {
+                          settings.engine.v1->release(settings.engine.v0, c, it);
+                          break;
+                      }
+#else
                   if (add_iov(c, "VALUE ", 6) != 0 ||
                       add_iov(c, info.key, info.nkey) != 0 ||
                       add_iov(c, suffix, suffix_len - 2) != 0 ||
@@ -7762,9 +7882,19 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                           settings.engine.v1->release(settings.engine.v0, c, it);
                           break;
                       }
+#endif
                 }
                 else
                 {
+#ifdef SCATTERED_READ_WRITE
+                  if (add_iov(c, "VALUE ", 6) != 0 ||
+                      add_iov(c, info.key, info.nkey) != 0 ||
+                      add_iov(c, suffix, suffix_len) != 0)
+                      {
+                          settings.engine.v1->release(settings.engine.v0, c, it);
+                          break;
+                      }
+#else
                   if (add_iov(c, "VALUE ", 6) != 0 ||
                       add_iov(c, info.key, info.nkey) != 0 ||
                       add_iov(c, suffix, suffix_len) != 0 ||
@@ -7773,8 +7903,20 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                           settings.engine.v1->release(settings.engine.v0, c, it);
                           break;
                       }
+#endif
                 }
 
+#ifdef SCATTERED_READ_WRITE
+                int validx;
+                for (validx = 0; validx < info.nvalue; validx++) {
+                    if (add_iov(c, info.value[validx].iov_base, info.value[validx].iov_len) != 0)
+                        break;
+                }
+                if (validx < info.nvalue) {
+                    settings.engine.v1->release(settings.engine.v0, c, it);
+                    break;
+                }
+#endif
 
                 if (settings.verbose > 1) {
                     settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
@@ -7892,7 +8034,11 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
                                            vlen, htonl(flags), realtime(exptime));
     }
 
+#ifdef SCATTERED_READ_WRITE // GET_ITEM_INFO
+    item_info info = { .nvalue = 1 }; // 1 is enough
+#else
     item_info info = { .nvalue = 1 };
+#endif
     switch (ret) {
     case ENGINE_SUCCESS:
         item_set_cas(c, it, req_cas_id);
@@ -7902,8 +8048,24 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
             break;
         }
         c->item = it;
+#ifdef SCATTERED_READ_WRITE
+        if (info.nvalue == 1) {
+            c->ritem = info.value[0].iov_base;
+            c->rlbytes = vlen;
+        } else {
+            assert(info.value[0].iov_len == 0);
+            struct iovec *vector = info.value[0].iov_base;
+            c->ritem = (char*)vector;
+            c->rvalptr = vector[0].iov_base;
+            c->rvallen = vector[0].iov_len;
+            c->rvalidx = 0;
+            c->rvalcnt = info.nvalue;
+            c->rlbytes = vlen;
+        }
+#else
         c->ritem = info.value[0].iov_base;
         c->rlbytes = vlen;
+#endif
         c->store_op = store_op;
         conn_set_state(c, conn_nread);
         break;
@@ -8057,7 +8219,11 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     ret = settings.engine.v1->remove(settings.engine.v0, c, key, nkey, 0, 0);
 
     /* For some reason the SLAB_INCR tries to access this... */
+#ifdef SCATTERED_READ_WRITE // GET_ITEM_INFO
+    item_info info = { .nvalue = 300 };
+#else
     item_info info = { .nvalue = 1 };
+#endif
     if (ret == ENGINE_SUCCESS) {
         out_string(c, "DELETED");
         SLAB_INCR(c, delete_hits, key, nkey);
@@ -11707,6 +11873,89 @@ bool conn_nread(conn *c) {
         return !block;
     }
 
+#ifdef SCATTERED_READ_WRITE
+    if (c->rvalcnt > 0) {
+        struct iovec *vector = (struct iovec *)c->ritem;
+
+        /* first check if we have leftovers in the conn_read buffer */
+        while (c->rbytes > 0) {
+            int tocopy = c->rbytes > c->rvallen ? c->rvallen : c->rbytes;
+            if (c->rvalptr != c->rcurr) {
+                memmove(c->rvalptr, c->rcurr, tocopy);
+            }
+            c->rvalptr += tocopy;
+            c->rvallen -= tocopy;
+            c->rlbytes -= tocopy;
+            c->rcurr += tocopy;
+            c->rbytes -= tocopy;
+            if (c->rlbytes == 0) {
+                c->rvalcnt = 0;
+                free(c->ritem); c->ritem = NULL;
+                return true;
+            }
+            if (c->rvallen == 0) {
+                c->rvalidx++;
+                assert(c->rvalidx < c->rvalcnt);
+                c->rvalptr = vector[c->rvalidx].iov_base;
+                c->rvallen = vector[c->rvalidx].iov_len;
+            }
+        }
+
+        assert(c->rlbytes > 0);
+
+        while (c->rlbytes > 0) {
+            /*  now try reading from the socket */
+            res = read(c->sfd, c->rvalptr, c->rvallen);
+            if (res <= 0) {
+                break;
+            }
+            STATS_ADD(c, bytes_read, res);
+            if (c->rcurr == c->rvalptr) {
+                c->rcurr += res;
+            }
+            c->rvalptr += res;
+            c->rvallen -= res;
+            c->rlbytes -= res;
+            if (c->rlbytes == 0) {
+                c->rvalcnt = 0;
+                free(c->ritem); c->ritem = NULL;
+                return true;
+            }
+            if (c->rvallen == 0) {
+                c->rvalidx++;
+                assert(c->rvalidx < c->rvalcnt);
+                c->rvalptr = vector[c->rvalidx].iov_base;
+                c->rvallen = vector[c->rvalidx].iov_len;
+            }
+        }
+    } else {
+        /* first check if we have leftovers in the conn_read buffer */
+        if (c->rbytes > 0) {
+            int tocopy = c->rbytes > c->rlbytes ? c->rlbytes : c->rbytes;
+            if (c->ritem != c->rcurr) {
+                memmove(c->ritem, c->rcurr, tocopy);
+            }
+            c->ritem += tocopy;
+            c->rlbytes -= tocopy;
+            c->rcurr += tocopy;
+            c->rbytes -= tocopy;
+            if (c->rlbytes == 0) {
+                return true;
+            }
+        }
+        /*  now try reading from the socket */
+        res = read(c->sfd, c->ritem, c->rlbytes);
+        if (res > 0) {
+            STATS_ADD(c, bytes_read, res);
+            if (c->rcurr == c->ritem) {
+                c->rcurr += res;
+            }
+            c->ritem += res;
+            c->rlbytes -= res;
+            return true;
+        }
+    }
+#else
     /* first check if we have leftovers in the conn_read buffer */
     if (c->rbytes > 0) {
         int tocopy = c->rbytes > c->rlbytes ? c->rlbytes : c->rbytes;
@@ -11733,6 +11982,7 @@ bool conn_nread(conn *c) {
         c->rlbytes -= res;
         return true;
     }
+#endif
     if (res == 0) { /* end of stream */
         conn_set_state(c, conn_closing);
         return true;
