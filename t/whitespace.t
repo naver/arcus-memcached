@@ -9,6 +9,7 @@ BEGIN {
     my @exempted = qw(Makefile.am win32/Makefile.mingw m4/c99-backport.m4);
     push(@exempted, glob("*/Makefile.am"));
     push(@exempted, glob("ChangeLog*"));
+    push(@exempted, glob("README.md*"));
     push(@exempted, glob("doc/*.md"));
     push(@exempted, glob("doc/*.xml"));
     push(@exempted, glob("doc/xml2rfc/*.xsl"));
