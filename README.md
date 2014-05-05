@@ -101,7 +101,7 @@ HyongYoub Kim <hyongyoub.kim@navercorp.com>
 YeaSol Kim (ngleader) <sol.k@navercorp.com>; <ngleader@gmail.com>  
 HoonMin Kim (harebox) <hoonmin.kim@navercorp.com>; <harebox@gmail.com>  
 SeongHwan Jeong (scryner) <scryner@nhnent.com>  
-ChangHyeon Song <chang.song@navercorp.com>  
+Chang Song <chang.song@navercorp.com>  
 
 ## License
 
