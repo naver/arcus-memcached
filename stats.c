@@ -123,7 +123,7 @@ int stats_prefix_delete(const char *prefix, const size_t nprefix) {
 
     STATS_LOCK();
     if (nprefix == 0) {
-        hidx = hash(prefix, nprefix, 0) % PREFIX_HASH_SIZE;
+        hidx = mc_hash(prefix, nprefix, 0) % PREFIX_HASH_SIZE;
         prev = NULL;
         for (curr = prefix_stats[hidx]; curr != NULL; prev = curr, curr = curr->next) {
             if (curr->prefix_len == 0) break;
@@ -194,7 +194,7 @@ static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey) {
         length = i;
     }
 
-    hashval = hash(key, length, 0) % PREFIX_HASH_SIZE;
+    hashval = mc_hash(key, length, 0) % PREFIX_HASH_SIZE;
 
     for (pfs = prefix_stats[hashval]; NULL != pfs; pfs = pfs->next) {
         if ((pfs->prefix_len==length) && (length==0 || strncmp(pfs->prefix, key, length)==0))
@@ -733,7 +733,7 @@ static void test_prefix_record_set() {
 }
 
 static void test_prefix_dump() {
-    int hashval = hash("abc", 3, 0) % PREFIX_HASH_SIZE;
+    int hashval = mc_hash("abc", 3, 0) % PREFIX_HASH_SIZE;
     char tmp[500];
     char *expected;
     int keynum;
@@ -769,7 +769,7 @@ static void test_prefix_dump() {
     /* Find a key that hashes to the same bucket as "abc" */
     for (keynum = 0; keynum < PREFIX_HASH_SIZE * 100; keynum++) {
         snprintf(tmp, sizeof(tmp), "%d", keynum);
-        if (hashval == hash(tmp, strlen(tmp), 0) % PREFIX_HASH_SIZE) {
+        if (hashval == mc_hash(tmp, strlen(tmp), 0) % PREFIX_HASH_SIZE) {
             break;
         }
     }
