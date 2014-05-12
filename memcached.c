@@ -13239,7 +13239,7 @@ static SERVER_HANDLE_V1 *get_server_api(void)
         .get_socket_fd = get_socket_fd,
         .get_client_ip = get_client_ip,
         .server_version = get_server_version,
-        .hash = hash,
+        .hash = mc_hash,
         .realtime = realtime,
         .notify_io_complete = notify_io_complete,
         .get_current_time = get_current_time,

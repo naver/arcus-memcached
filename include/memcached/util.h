@@ -40,8 +40,11 @@ MEMCACHED_PUBLIC_API void safe_hexatostr(const unsigned char *bin, const int siz
 MEMCACHED_PUBLIC_API bool mc_isvalidname(const char *str, int len);
 
 #ifndef HAVE_HTONLL
-MEMCACHED_PUBLIC_API extern uint64_t htonll(uint64_t);
-MEMCACHED_PUBLIC_API extern uint64_t ntohll(uint64_t);
+#define htonll mc_htonll
+#define ntohll mc_ntohll
+
+MEMCACHED_PUBLIC_API extern uint64_t mc_htonll(uint64_t);
+MEMCACHED_PUBLIC_API extern uint64_t mc_ntohll(uint64_t);
 #endif
 
 #ifdef __GCC

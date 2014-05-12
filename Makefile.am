@@ -107,7 +107,7 @@ memcached_LDFLAGS += -export-dynamic
 endif
 
 if BUILD_ZK_INTEGRATION
-memcached_LDADD += libarcuszk.a
+memcached_LDADD += libarcuszk.a -lzookeeper_mt
 noinst_LIBRARIES = libarcuszk.a
 libarcuszk_a_SOURCES = arcus_zk.c cluster_config.c cluster_config.h
 # Do not use AM_CFLAGS which includes -pedantic.  We do not want that flag

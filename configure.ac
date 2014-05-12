@@ -379,7 +379,7 @@ if test "x$enable_zk_integration" = "xyes"; then
       LIBS="$saved_LIBS -lzookeeper_mt"
 
       # Skip the directory if it isn't there.
-      if test ! -z "$zookeeperdir" -a ! -d "$zkdir" ; then
+      if test ! -z "$zkdir" -a ! -d "$zkdir" ; then
          continue;
       fi
       if test ! -z "$zkdir" ; then
@@ -429,13 +429,13 @@ if test "x$enable_zk_integration" = "xyes"; then
   ])
     fi
   ])
-  LIBS="$LIBS -lzookeeper_mt"
+#  LIBS="$LIBS -lzookeeper_mt"
   if test $ac_cv_zookeeper_dir != "(system)"; then
     if test -d "$ac_cv_zookeeper_dir/lib" ; then
       LDFLAGS="-L$ac_cv_zookeeper_dir/lib $LDFLAGS"
-      le_libdir="$ac_cv_zookeeper_dir/lib"
+      zk_libdir="$ac_cv_zookeeper_dir/lib"
     else    LDFLAGS="-L$ac_cv_zookeeper_dir $LDFLAGS"
-      le_libdir="$ac_cv_zookeeper_dir"
+      zk_libdir="$ac_cv_zookeeper_dir"
     fi
     # ZooKeeper 3.3
     if test -d "$ac_cv_zookeeper_dir/include/c-client-src" ; then

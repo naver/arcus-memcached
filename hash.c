@@ -118,7 +118,7 @@ and these came close:
 }
 
 #if HASH_LITTLE_ENDIAN == 1
-uint32_t hash(
+uint32_t mc_hash(
   const void *key,       /* the key to hash */
   size_t      length,    /* length of the key */
   const uint32_t    initval)   /* initval */
@@ -299,7 +299,7 @@ uint32_t hash(
  * from hashlittle() on all machines.  hashbig() takes advantage of
  * big-endian byte ordering.
  */
-uint32_t hash( const void *key, size_t length, const uint32_t initval)
+uint32_t mc_hash( const void *key, size_t length, const uint32_t initval)
 {
   uint32_t a,b,c;
   union { const void *ptr; size_t i; } u; /* to cast key to (size_t) happily */
