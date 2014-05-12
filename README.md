@@ -85,6 +85,10 @@ Please refer to
 [Arcus cache server ascii protocol](/doc/arcus-ascii-protocol.md)
 for details on Arcus ASCII commands.
 
+You can use telnet interface to test simply Arcus ASCII commands on Arcus cache server.
+To know the usage of telnet interface,
+refer to [Arcus telnet interface guide](/doc/arcus-telnet-interface.md).
+
 ## Issues
 
 If you find a bug, please report it via the GitHub issues page.
@@ -101,7 +105,7 @@ HyongYoub Kim <hyongyoub.kim@navercorp.com>
 YeaSol Kim (ngleader) <sol.k@navercorp.com>; <ngleader@gmail.com>  
 HoonMin Kim (harebox) <hoonmin.kim@navercorp.com>; <harebox@gmail.com>  
 SeongHwan Jeong (scryner) <scryner@nhnent.com>  
-ChangHyeon Song <chang.song@navercorp.com>  
+Chang Song <chang.song@navercorp.com>  
 
 ## License
 
