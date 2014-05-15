@@ -226,6 +226,7 @@ void inc_count(int delta) {
 }
 
 int wait_count(int timeout) {
+    struct timeval  tv;
     struct timespec ts;
     int rc = 0;
     pthread_mutex_lock(&azk_mtx);
@@ -233,7 +234,10 @@ int wait_count(int timeout) {
         if (timeout == 0) {
             rc = pthread_cond_wait(&azk_cond, &azk_mtx);
         } else {
-            clock_gettime(CLOCK_REALTIME, &ts);
+            gettimeofday(&tv, NULL);
+            ts.tv_sec  = tv.tv_sec;
+            ts.tv_nsec = tv.tv_usec*1000;
+            //clock_gettime(CLOCK_REALTIME, &ts);
             ts.tv_sec += timeout/1000; /* timeout: msec */
             rc = pthread_cond_timedwait(&azk_cond, &azk_mtx, &ts);
         }
