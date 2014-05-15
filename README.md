@@ -50,7 +50,7 @@ $ make install
 ```
 
 The use of ZooKeeper based clustering is optional.
-To enable it, use --enable-zk-integration along with --with-zookeeper when running configure.
+To enable it, use `--enable-zk-integration` along with `--with-zookeeper` when running configure.
 Make sure to use the ZooKeeper library with Arcus modifications.
 
 ## Run
