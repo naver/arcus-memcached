@@ -3621,6 +3621,12 @@ static void process_bin_lop_get(conn *c) {
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
 
+    /* adjust list index */
+    if (from_index > MAX_LIST_SIZE)           from_index = MAX_LIST_SIZE;
+    else if (from_index < -(MAX_LIST_SIZE+1)) from_index = -(MAX_LIST_SIZE+1);
+    if (to_index > MAX_LIST_SIZE)             to_index   = MAX_LIST_SIZE;
+    else if (to_index < -(MAX_LIST_SIZE+1))   to_index   = -(MAX_LIST_SIZE+1);
+
     if (ret == ENGINE_SUCCESS) {
         est_count = MAX_LIST_SIZE;
         if ((from_index >= 0 && to_index >= 0) || (from_index  < 0 && to_index < 0)) {
@@ -8374,6 +8380,12 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
 
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
+
+    /* adjust list index */
+    if (from_index > MAX_LIST_SIZE)           from_index = MAX_LIST_SIZE;
+    else if (from_index < -(MAX_LIST_SIZE+1)) from_index = -(MAX_LIST_SIZE+1);
+    if (to_index > MAX_LIST_SIZE)             to_index   = MAX_LIST_SIZE;
+    else if (to_index < -(MAX_LIST_SIZE+1))   to_index   = -(MAX_LIST_SIZE+1);
 
     if (ret == ENGINE_SUCCESS) {
         est_count = MAX_LIST_SIZE;
