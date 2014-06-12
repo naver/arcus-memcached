@@ -58,16 +58,16 @@ Make sure to use the ZooKeeper library with Arcus modifications.
 arcus-memcached has a pluggable engine structure.
 Only the default engine provides all of the above Arcus functionalities.
 
-To start Arcus cache server with the default engine, run the following command line.
+To start Arcus cache server with the default engine, run the following command line with non-root user.
 
 ```
 $ <arcus_install_path>/bin/memcached -m 4000 -p 11211 -E <arcus_install_path>/lib/default_egine.so
 ```
 
-Two important start options are here.
-- To enable Zookeeper-based clustering, use -z to specify the Zookeeper ensemble ip:port list.
+Important start options are here.
+- To enable Zookeeper-based clustering, use `-z` to specify the Zookeeper ensemble ip:port list.
 - The scrub command is provided as an ASCII command extension.
-  To use the command, use -X to specify the location of ascii_scrub.so library.
+  To use the command, use `-X` to specify the location of ascii_scrub.so library.
 
 To see details on arcus-memcached start options, run memcache with -h option like below.
 ```

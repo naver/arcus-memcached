@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 160;
+use Test::More tests => 162;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -44,6 +44,8 @@ print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 lop_insert("lkey", "datum", 5, "create", 17, 0, 0);
 getattr_is($sock, "lkey count maxcount", "count=5 maxcount=4000");
 lop_get_is($sock, "lkey 0..-1",  17, 5, "datum0,datum1,datum2,datum3,datum4");
+lop_get_is($sock, "lkey 0..2147483647",  17, 5, "datum0,datum1,datum2,datum3,datum4");
+lop_get_is($sock, "lkey -2147483648..-1",  17, 5, "datum0,datum1,datum2,datum3,datum4");
 lop_get_is($sock, "lkey 0..2",   17, 3, "datum0,datum1,datum2");
 lop_get_is($sock, "lkey 2..8",   17, 3, "datum2,datum3,datum4");
 lop_get_is($sock, "lkey -1..-2", 17, 2, "datum4,datum3");
