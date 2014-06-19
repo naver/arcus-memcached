@@ -4148,7 +4148,7 @@ static int do_btree_posi_find(btree_meta_info *info,
     return bpos;
 }
 
-static uint32_t do_btree_elem_get_by_posi(struct default_engine *engine, btree_meta_info *info,
+static uint32_t do_btree_elem_get_by_posi(btree_meta_info *info,
                                           const int index, const uint32_t count, const bool forward,
                                           btree_elem_item **elem_array)
 {
@@ -6076,7 +6076,7 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
                 forward = false;
                 rqcount = from_posi - to_posi + 1;
             }
-            *elem_count = do_btree_elem_get_by_posi(engine, info, from_posi, rqcount, forward, elem_array);
+            *elem_count = do_btree_elem_get_by_posi(info, from_posi, rqcount, forward, elem_array);
             if (*elem_count == 0) {
                 ret = ENGINE_ELEM_ENOENT; break;
             }
