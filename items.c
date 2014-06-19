@@ -4110,35 +4110,42 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(struct default_engine *engine,
     return ret;
 }
 
-static int do_btree_posi_find(struct default_engine *engine, btree_meta_info *info,
-                              const int bkrtype, const bkey_range *bkrange,
-                              ENGINE_BTREE_ORDER order, int *position)
+static int do_btree_posi_from_path(btree_meta_info *info,
+                                   btree_elem_posi *path, ENGINE_BTREE_ORDER order)
 {
-    assert(bkrtype == BKEY_RANGE_TYPE_SIN);
+    int d, i, bpos;
+
+    bpos = path[0].indx;
+    for (d = 1; d <= info->root->ndepth; d++) {
+        for (i = 0; i < path[d].indx; i++) {
+            bpos += path[d].node->ecnt[i];
+        }
+    }
+    if (order == BTREE_ORDER_DESC) {
+        bpos = info->ccnt - bpos - 1;
+    }
+    return bpos; /* btree position */
+}
+
+static int do_btree_posi_find(btree_meta_info *info,
+                              const int bkrtype, const bkey_range *bkrange,
+                              ENGINE_BTREE_ORDER order)
+{
     btree_elem_posi  path[BTREE_MAX_DEPTH];
     btree_elem_item *elem;
+    int bpos; /* btree position */
 
-    if (info->root == NULL) return 0;
+    if (info->root == NULL) return -1; /* not found */
 
     elem = do_btree_find_first(info->root, bkrtype, bkrange, path, true);
     if (elem != NULL) {
         assert(path[0].bkeq == true);
-        int d, i;
-        int prev_count = path[0].indx;
-        for (d = 1; d <= info->root->ndepth; d++) {
-            for (i = 0; i < path[d].indx; i++) {
-                prev_count += path[d].node->ecnt[i];
-            }
-        }
-        if (order == BTREE_ORDER_ASC) {
-            *position = prev_count;
-        } else {
-            *position = info->ccnt - prev_count - 1;
-        }
-        return 1; /* found count */
+        bpos = do_btree_posi_from_path(info, path, order);
+        assert(bpos >= 0);
     } else {
-        return 0; /* found count */
+        bpos = -1; /* not found */
     }
+    return bpos;
 }
 
 static uint32_t do_btree_elem_get_by_posi(struct default_engine *engine, btree_meta_info *info,
@@ -5997,8 +6004,10 @@ ENGINE_ERROR_CODE btree_posi_find(struct default_engine *engine,
 {
     hash_item       *it;
     btree_meta_info *info;
-    int bkrtype = do_btree_bkey_range_type(bkrange);
     ENGINE_ERROR_CODE ret;
+
+    int bkrtype = do_btree_bkey_range_type(bkrange);
+    assert(bkrtype == BKEY_RANGE_TYPE_SIN);
 
     pthread_mutex_lock(&engine->cache_lock);
     ret = do_btree_item_find(engine, key, nkey, true, &it);
@@ -6015,10 +6024,10 @@ ENGINE_ERROR_CODE btree_posi_find(struct default_engine *engine,
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
-            if (do_btree_posi_find(engine, info, bkrtype, bkrange, order, position) == 0) {
+            *position = do_btree_posi_find(info, bkrtype, bkrange, order);
+            if (*position < 0) {
                 ret = ENGINE_ELEM_ENOENT; break;
             }
-            /* position was given by posi argument */
         } while (0);
         do_item_release(engine, it);
     }
