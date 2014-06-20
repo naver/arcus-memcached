@@ -33,6 +33,16 @@
                     C(sop_delete_elem_hits) C(sop_delete_none_hits) C(sop_delete_misses) \
                     C(sop_get_elem_hits) C(sop_get_none_hits) C(sop_get_misses) \
                     C(sop_exist_hits) C(sop_exist_misses)
+#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
+#define TK_BOPS(C)  C(bop_create_oks) C(bop_insert_hits) C(bop_insert_misses) \
+                    C(bop_update_elem_hits) C(bop_update_none_hits) C(bop_update_misses) \
+                    C(bop_delete_elem_hits) C(bop_delete_none_hits) C(bop_delete_misses) \
+                    C(bop_get_elem_hits) C(bop_get_none_hits) C(bop_get_misses) \
+                    C(bop_count_hits) C(bop_count_misses) \
+                    C(bop_position_elem_hits) C(bop_position_none_hits) C(bop_position_misses) \
+                    C(bop_pwg_elem_hits) C(bop_pwg_none_hits) C(bop_pwg_misses) \
+                    C(bop_gbp_elem_hits) C(bop_gbp_none_hits) C(bop_gbp_misses)
+#else
 #define TK_BOPS(C)  C(bop_create_oks) C(bop_insert_hits) C(bop_insert_misses) \
                     C(bop_update_elem_hits) C(bop_update_none_hits) C(bop_update_misses) \
                     C(bop_delete_elem_hits) C(bop_delete_none_hits) C(bop_delete_misses) \
@@ -40,6 +50,7 @@
                     C(bop_count_hits) C(bop_count_misses) \
                     C(bop_position_elem_hits) C(bop_position_none_hits) C(bop_position_misses) \
                     C(bop_gbp_elem_hits) C(bop_gbp_none_hits) C(bop_gbp_misses)
+#endif
 #ifdef SUPPORT_BOP_MGET
 #define TK_BMGET(C) C(bop_mget_oks)
 #endif

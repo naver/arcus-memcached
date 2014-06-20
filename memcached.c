@@ -768,6 +768,9 @@ static void conn_coll_eitem_free(conn *c) {
             free(c->coll_eitem);
         break;
       case OPERATION_BOP_GET:
+#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
+      case OPERATION_BOP_PWG: /* position with get */
+#endif
       case OPERATION_BOP_GBP: /* get by position */
         settings.engine.v1->btree_elem_release(settings.engine.v0, c, c->coll_eitem, c->coll_ecount);
         free(c->coll_eitem);
@@ -7305,6 +7308,9 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("cmd_bop_get", "%"PRIu64, thread_stats.cmd_bop_get);
     APPEND_STAT("cmd_bop_count", "%"PRIu64, thread_stats.cmd_bop_count);
     APPEND_STAT("cmd_bop_position", "%"PRIu64, thread_stats.cmd_bop_position);
+#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
+    APPEND_STAT("cmd_bop_pwg", "%"PRIu64, thread_stats.cmd_bop_pwg);
+#endif
     APPEND_STAT("cmd_bop_gbp", "%"PRIu64, thread_stats.cmd_bop_gbp);
 #ifdef SUPPORT_BOP_MGET
     APPEND_STAT("cmd_bop_mget", "%"PRIu64, thread_stats.cmd_bop_mget);
@@ -7366,6 +7372,11 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("bop_position_misses", "%"PRIu64, thread_stats.bop_position_misses);
     APPEND_STAT("bop_position_elem_hits", "%"PRIu64, thread_stats.bop_position_elem_hits);
     APPEND_STAT("bop_position_none_hits", "%"PRIu64, thread_stats.bop_position_none_hits);
+#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
+    APPEND_STAT("bop_pwg_misses", "%"PRIu64, thread_stats.bop_pwg_misses);
+    APPEND_STAT("bop_pwg_elem_hits", "%"PRIu64, thread_stats.bop_pwg_elem_hits);
+    APPEND_STAT("bop_pwg_none_hits", "%"PRIu64, thread_stats.bop_pwg_none_hits);
+#endif
     APPEND_STAT("bop_gbp_misses", "%"PRIu64, thread_stats.bop_gbp_misses);
     APPEND_STAT("bop_gbp_elem_hits", "%"PRIu64, thread_stats.bop_gbp_elem_hits);
     APPEND_STAT("bop_gbp_none_hits", "%"PRIu64, thread_stats.bop_gbp_none_hits);
@@ -9268,6 +9279,122 @@ static void process_bop_position(conn *c, char *key, size_t nkey,
     }
 }
 
+#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
+static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *bkrange,
+                            ENGINE_BTREE_ORDER order, const uint32_t count)
+{
+    eitem  **elem_array = NULL;
+    uint32_t elem_count;
+    uint32_t elem_index;
+    uint32_t flags, i;
+    int      position;
+    int      need_size;
+
+    ENGINE_ERROR_CODE ret = c->aiostat;
+    c->aiostat = ENGINE_SUCCESS;
+
+    if (ret == ENGINE_SUCCESS) {
+        need_size = ((count*2) + 1) * sizeof(eitem*);
+        if ((elem_array = (eitem **)malloc(need_size)) == NULL) {
+            out_string(c, "SERVER_ERROR out of memory");
+            return;
+        }
+
+        ret = settings.engine.v1->btree_posi_find_with_get(settings.engine.v0, c, key, nkey,
+                                                           bkrange, order, count, &position,
+                                                           elem_array, &elem_count, &elem_index,
+                                                           &flags, 0);
+    }
+
+    if (settings.detail_enabled) {
+        stats_prefix_record_bop_pwg(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+    }
+
+    switch (ret) {
+    case ENGINE_SUCCESS:
+        {
+        eitem_info info;
+        char *respbuf; /* response string buffer */
+        char *respptr;
+        int   resplen;
+
+        do {
+            need_size = ((4*lenstr_size) + 30) /* response head and tail size */
+                      + (elem_count * ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + lenstr_size+3)); /* result body size */
+            if ((respbuf = (char*)malloc(need_size)) == NULL) {
+                ret = ENGINE_ENOMEM; break;
+            }
+            respptr = respbuf;
+
+            sprintf(respptr, "VALUE %d %u %u %u\r\n", position, htonl(flags), elem_count, elem_index);
+            if (add_iov(c, respptr, strlen(respptr)) != 0) {
+                ret = ENGINE_ENOMEM; break;
+            }
+            respptr += strlen(respptr);
+
+            for (i = 0; i < elem_count; i++) {
+                settings.engine.v1->get_btree_elem_info(settings.engine.v0, c, elem_array[i], &info);
+                resplen = make_bop_elem_response(respptr, &info);
+                if ((add_iov(c, respptr, resplen) != 0) ||
+                    (add_iov(c, info.value, info.nbytes) != 0)) {
+                    ret = ENGINE_ENOMEM; break;
+                }
+                respptr += resplen;
+            }
+            if (ret == ENGINE_ENOMEM) break;
+
+            sprintf(respptr, "%s\r\n", "END");
+            if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
+                (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+                ret = ENGINE_ENOMEM; break;
+            }
+        } while(0);
+
+        if (ret == ENGINE_SUCCESS) {
+            STATS_ELEM_HITS(c, bop_pwg, key, nkey);
+            c->coll_eitem  = (void *)elem_array;
+            c->coll_ecount = elem_count;
+            c->coll_resps  = respbuf;
+            c->coll_op     = OPERATION_BOP_PWG;
+            conn_set_state(c, conn_mwrite);
+            c->msgcurr     = 0;
+        } else { /* ENGINE_ENOMEM */
+            STATS_NOKEY(c, cmd_bop_pwg);
+            settings.engine.v1->btree_elem_release(settings.engine.v0, c, elem_array, elem_count);
+            free(respbuf);
+            out_string(c, "SERVER_ERROR out of memory writing get response");
+        }
+        }
+        break;
+    case ENGINE_ELEM_ENOENT:
+        STATS_NONE_HITS(c, bop_pwg, key, nkey);
+        out_string(c, "NOT_FOUND_ELEMENT");
+        break;
+    case ENGINE_EWOULDBLOCK:
+        c->ewouldblock = true;
+        break;
+    case ENGINE_DISCONNECT:
+        c->state = conn_closing;
+        break;
+    case ENGINE_KEY_ENOENT:
+    case ENGINE_UNREADABLE:
+        STATS_MISS(c, bop_pwg, key, nkey);
+        if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
+        else                          out_string(c, "UNREADABLE");
+        break;
+    default:
+        STATS_NOKEY(c, cmd_bop_pwg);
+        if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
+        else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
+        else out_string(c, "SERVER_ERROR internal");
+    }
+
+    if (ret != ENGINE_SUCCESS && elem_array != NULL) {
+        free((void *)elem_array);
+    }
+}
+#endif
+
 static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER order,
                             uint32_t from_posi, uint32_t to_posi)
 {
@@ -10387,6 +10514,44 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         process_bop_position(c, key, nkey, &c->coll_bkrange, order);
     }
+#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
+    else if ((ntokens == 6 || ntokens == 7) && (strcmp(subcommand, "pwg") == 0))
+    {
+        ENGINE_BTREE_ORDER order;
+        uint32_t count = 0;
+
+        if (get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange)) {
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+        if (c->coll_bkrange.to_nbkey != BKEY_NULL) {
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+
+        if (strcmp(tokens[BOP_KEY_TOKEN+2].value, "asc") == 0) {
+            order = BTREE_ORDER_ASC;
+        } else if (strcmp(tokens[BOP_KEY_TOKEN+2].value, "desc") == 0) {
+            order = BTREE_ORDER_DESC;
+        } else {
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+
+        if (ntokens == 7) {
+            if (! safe_strtoul(tokens[BOP_KEY_TOKEN+3].value, &count)) {
+                out_string(c, "CLIENT_ERROR bad command line format");
+                return;
+            }
+            if (count > 100) { /* max limit on count: 100 */
+                out_string(c, "CLIENT_ERROR too large count value");
+                return;
+            }
+        }
+
+        process_bop_pwg(c, key, nkey, &c->coll_bkrange, order, count);
+    }
+#endif
     else if ((ntokens == 6) && (strcmp(subcommand, "gbp") == 0))
     {
         uint32_t from_posi, to_posi;
@@ -11012,6 +11177,9 @@ static void process_command(conn *c, char *command) {
             "\t" "bop mget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"comma separated keys\">\\r\\n" "\n"
             "\t" "bop smget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"comma separated keys\">\\r\\n" "\n"
             "\t" "bop position <key> <bkey> <order>\\r\\n" "\n"
+#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
+            "\t" "bop pwg <key> <bkey> <order> [<count>]\\r\\n" "\n"
+#endif
             "\t" "bop gbp <key> <order> <position or \"position range\">\\r\\n" "\n"
             "\n"
             "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"

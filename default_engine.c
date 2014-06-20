@@ -168,6 +168,13 @@ static ENGINE_ERROR_CODE  default_btree_elem_count(ENGINE_HANDLE* handle, const 
 static ENGINE_ERROR_CODE default_btree_posi_find(ENGINE_HANDLE* handle, const void* cookie,
                                                  const char *key, const size_t nkey, const bkey_range *bkrange,
                                                  ENGINE_BTREE_ORDER order, int *position, uint16_t vbucket);
+#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
+static ENGINE_ERROR_CODE default_btree_posi_find_with_get(ENGINE_HANDLE* handle, const void* cookie,
+                                                 const char *key, const size_t nkey, const bkey_range *bkrange,
+                                                 ENGINE_BTREE_ORDER order, const uint32_t count, int *position,
+                                                 eitem **eitem_array, uint32_t *eitem_count, uint32_t *eitem_index,
+                                                 uint32_t *flags, uint16_t vbucket);
+#endif
 static ENGINE_ERROR_CODE default_btree_elem_get_by_posi(ENGINE_HANDLE* handle, const void* cookie,
                                                  const char *key, const size_t nkey,
                                                  ENGINE_BTREE_ORDER order, int from_posi, int to_posi,
@@ -317,6 +324,9 @@ ENGINE_ERROR_CODE create_instance(uint64_t interface, GET_SERVER_API get_server_
          .btree_elem_get     = default_btree_elem_get,
          .btree_elem_count   = default_btree_elem_count,
          .btree_posi_find    = default_btree_posi_find,
+#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
+         .btree_posi_find_with_get = default_btree_posi_find_with_get,
+#endif
          .btree_elem_get_by_posi = default_btree_elem_get_by_posi,
 #ifdef SUPPORT_BOP_SMGET
          .btree_elem_smget   = default_btree_elem_smget,
@@ -908,6 +918,21 @@ static ENGINE_ERROR_CODE default_btree_posi_find(ENGINE_HANDLE* handle, const vo
 
     return btree_posi_find(engine, key, nkey, bkrange, order, position);
 }
+
+#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
+static ENGINE_ERROR_CODE default_btree_posi_find_with_get(ENGINE_HANDLE* handle, const void* cookie,
+                                                 const char *key, const size_t nkey, const bkey_range *bkrange,
+                                                 ENGINE_BTREE_ORDER order, const uint32_t count, int *position,
+                                                 eitem **eitem_array, uint32_t *eitem_count, uint32_t *eitem_index,
+                                                 uint32_t *flags, uint16_t vbucket)
+{
+    struct default_engine *engine = get_handle(handle);
+    VBUCKET_GUARD(engine, vbucket);
+
+    return btree_posi_find_with_get(engine, key, nkey, bkrange, order, count, position,
+                                    (btree_elem_item**)eitem_array, eitem_count, eitem_index, flags);
+}
+#endif
 
 static ENGINE_ERROR_CODE default_btree_elem_get_by_posi(ENGINE_HANDLE* handle, const void* cookie,
                                                  const char *key, const size_t nkey,

@@ -467,6 +467,16 @@ ENGINE_ERROR_CODE btree_posi_find(struct default_engine *engine,
                                   const char *key, const size_t nkey, const bkey_range *bkrange,
                                   ENGINE_BTREE_ORDER order, int *position);
 
+#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
+ENGINE_ERROR_CODE btree_posi_find_with_get(struct default_engine *engine,
+                                           const char *key, const size_t nkey,
+                                           const bkey_range *bkrange, ENGINE_BTREE_ORDER order,
+                                           const int count, int *position,
+                                           btree_elem_item **elem_array, uint32_t *elem_count,
+                                           uint32_t *elem_index, uint32_t *flags);
+#endif
+
+
 ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
                                   const char *key, const size_t nkey,
                                   ENGINE_BTREE_ORDER order, int from_posi, int to_posi,

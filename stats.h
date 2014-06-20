@@ -39,6 +39,9 @@ void stats_prefix_record_bop_decr(const char *key, const size_t nkey, const bool
 void stats_prefix_record_bop_get(const char *key, const size_t nkey, const bool is_hit);
 void stats_prefix_record_bop_count(const char *key, const size_t nkey, const bool is_hit);
 void stats_prefix_record_bop_position(const char *key, const size_t nkey, const bool is_hit);
+#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
+void stats_prefix_record_bop_pwg(const char *key, const size_t nkey, const bool is_hit);
+#endif
 void stats_prefix_record_bop_gbp(const char *key, const size_t nkey, const bool is_hit);
 void stats_prefix_record_getattr(const char *key, const size_t nkey);
 void stats_prefix_record_setattr(const char *key, const size_t nkey);
