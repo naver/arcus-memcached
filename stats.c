@@ -583,7 +583,7 @@ char *stats_prefix_dump(int *length) {
                          "get %llu hit %llu set %llu del %llu lcs %llu lis %llu lih %llu lds %llu ldh %llu lgs %llu "
                          "lgh %llu scs %llu sis %llu sih %llu sds %llu sdh %llu sgs %llu sgh %llu ses %llu seh %llu "
                          "bcs %llu bis %llu bih %llu bus %llu buh %llu bds %llu bdh %llu bps %llu bph %llu bms %llu "
-                         "bmh %llu bgs %llu bgh %llu bns %llu bnh %llu pfs %llu pfh %llu pgs %llu pgh %llu gas %llu "
+                         "bmh %llu bgs %llu bgh %llu bns %llu bnh %llu pfs %llu pfh %llu gps %llu gph %llu gas %llu "
                          "sas %llu\r\n";
     PREFIX_STATS *pfs;
     char *buf;
