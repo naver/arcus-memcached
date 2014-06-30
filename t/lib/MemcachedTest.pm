@@ -14,7 +14,7 @@ my $builddir = getcwd;
 
 @EXPORT = qw(new_memcached new_memcached_engine sleep
              mem_get_is mem_gets mem_gets_is mem_stats mem_cmd_val_is
-             getattr_is lop_get_is sop_get_is bop_get_is bop_gbp_is bop_smget_is
+             getattr_is lop_get_is sop_get_is bop_get_is bop_gbp_is bop_pwg_is bop_smget_is
              bop_ext_get_is bop_ext_smget_is
              stats_prefixes_is stats_noprefix_is stats_prefix_is
              supports_sasl free_port);
@@ -337,6 +337,7 @@ sub bop_ext_get_is {
                    "$expected_head $expected_bkey $expected_eflg $expected_body $expected_tail", $msg);
 }
 
+# COLLECTION
 sub bop_gbp_is {
     # works on single-line values only.  no newlines in value.
     my ($sock_opts, $args, $flags, $ecount, $ebkeys, $values, $tailstr, $msg) = @_;
@@ -362,6 +363,54 @@ sub bop_gbp_is {
     my $rleng;
     my $line = scalar <$sock>;
     while ($line !~ /^END/ and $line !~ /^TRIMMED/ and $line !~ /^DELETED/ and $line !~ /^DELETED_DROPPED/) {
+        $ebkey = substr $line, 0, index($line,' ');
+        $rleng = length($ebkey) + 1;
+        $vleng = substr $line, $rleng, index($line,' ',$rleng)-$rleng;
+        $rleng = $rleng + length($vleng) + 1;
+        if ((substr $vleng , 0, 2) eq "0x") {
+            $eflag = $vleng;
+            $vleng = substr $line, $rleng, index($line,' ',$rleng)-$rleng;
+            $rleng = $rleng + length($vleng) + 1;
+        }
+        $value = substr $line, $rleng, length($line)-$rleng-2;
+        push(@ebkey_array, $ebkey);
+        push(@value_array, $value);
+        $line  = scalar <$sock>;
+    }
+    my $response_bkey = join(",", @ebkey_array);
+    my $response_body = join(",", @value_array);
+    my $response_tail = $line;
+
+    Test::More::is("$response_head $response_bkey $response_body $response_tail",
+                   "$expected_head $expected_bkey $expected_body $expected_tail", $msg);
+}
+
+# COLLECTION
+sub bop_pwg_is {
+    # works on single-line values only.  no newlines in value.
+    my ($sock_opts, $args, $reshead, $ebkeys, $values, $msg) = @_;
+    my $opts = ref $sock_opts eq "HASH" ? $sock_opts : {};
+    my $sock = ref $sock_opts eq "HASH" ? $opts->{sock} : $sock_opts;
+
+    $msg ||= "bop pwg $args == $reshead bkeys data";
+
+    print $sock "bop pwg $args\r\n";
+
+    my $expected_head = "VALUE $reshead\r\n";
+    my $expected_bkey = $ebkeys;
+    my $expected_body = $values;
+    my $expected_tail = "END\r\n";
+
+    my $response_head = scalar <$sock>;
+    my @ebkey_array = ();
+    my @value_array = ();
+    my $ebkey;
+    my $eflag;
+    my $vleng;
+    my $value;
+    my $rleng;
+    my $line = scalar <$sock>;
+    while ($line !~ /^END/) {
         $ebkey = substr $line, 0, index($line,' ');
         $rleng = length($ebkey) + 1;
         $vleng = substr $line, $rleng, index($line,' ',$rleng)-$rleng;
