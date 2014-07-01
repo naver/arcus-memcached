@@ -340,18 +340,18 @@ sub bop_ext_get_is {
 # COLLECTION
 sub bop_gbp_is {
     # works on single-line values only.  no newlines in value.
-    my ($sock_opts, $args, $flags, $ecount, $ebkeys, $values, $tailstr, $msg) = @_;
+    my ($sock_opts, $args, $reshead, $ebkeys, $values, $msg) = @_;
     my $opts = ref $sock_opts eq "HASH" ? $sock_opts : {};
     my $sock = ref $sock_opts eq "HASH" ? $opts->{sock} : $sock_opts;
 
-    $msg ||= "bop gbp $args == $flags $ecount bkeys data";
+    $msg ||= "bop gbp $args == $reshead bkeys data";
 
     print $sock "bop gbp $args\r\n";
 
-    my $expected_head = "VALUE $flags $ecount\r\n";
+    my $expected_head = "VALUE $reshead\r\n";
     my $expected_bkey = $ebkeys;
     my $expected_body = $values;
-    my $expected_tail = "$tailstr\r\n";
+    my $expected_tail = "END\r\n";
 
     my $response_head = scalar <$sock>;
     my @ebkey_array = ();
@@ -362,7 +362,7 @@ sub bop_gbp_is {
     my $value;
     my $rleng;
     my $line = scalar <$sock>;
-    while ($line !~ /^END/ and $line !~ /^TRIMMED/ and $line !~ /^DELETED/ and $line !~ /^DELETED_DROPPED/) {
+    while ($line !~ /^END/) {
         $ebkey = substr $line, 0, index($line,' ');
         $rleng = length($ebkey) + 1;
         $vleng = substr $line, $rleng, index($line,' ',$rleng)-$rleng;
