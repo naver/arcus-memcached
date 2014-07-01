@@ -184,9 +184,7 @@ enum bin_substates {
     bin_reading_bop_get,
     bin_reading_bop_count,
     bin_reading_bop_position,
-#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
     bin_reading_bop_pwg,
-#endif
     bin_reading_bop_gbp,
 #if defined(SUPPORT_BOP_MGET) || defined(SUPPORT_BOP_SMGET)
     bin_reading_bop_prepare_nread_keys,
@@ -257,9 +255,7 @@ struct thread_stats {
     uint64_t          cmd_bop_get;
     uint64_t          cmd_bop_count;
     uint64_t          cmd_bop_position;
-#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
     uint64_t          cmd_bop_pwg;
-#endif
     uint64_t          cmd_bop_gbp;
 #ifdef SUPPORT_BOP_MGET
     uint64_t          cmd_bop_mget;
@@ -312,11 +308,9 @@ struct thread_stats {
     uint64_t          bop_position_elem_hits;
     uint64_t          bop_position_none_hits;
     uint64_t          bop_position_misses;
-#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
     uint64_t          bop_pwg_elem_hits;
     uint64_t          bop_pwg_none_hits;
     uint64_t          bop_pwg_misses;
-#endif
     uint64_t          bop_gbp_elem_hits;
     uint64_t          bop_gbp_none_hits;
     uint64_t          bop_gbp_misses;

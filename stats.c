@@ -61,9 +61,7 @@ struct _prefix_stats {
     uint64_t      num_bop_gets;
     uint64_t      num_bop_counts;
     uint64_t      num_bop_positions; /* find position */
-#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
     uint64_t      num_bop_pwgs;      /* find position with get */
-#endif
     uint64_t      num_bop_gbps;      /* get by position */
     uint64_t      num_getattrs;
     uint64_t      num_setattrs;
@@ -82,9 +80,7 @@ struct _prefix_stats {
     uint64_t      num_bop_get_hits;
     uint64_t      num_bop_count_hits;
     uint64_t      num_bop_position_hits;
-#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
     uint64_t      num_bop_pwg_hits;
-#endif
     uint64_t      num_bop_gbp_hits;
     PREFIX_STATS *next;
 };
@@ -541,7 +537,6 @@ void stats_prefix_record_bop_position(const char *key, const size_t nkey, const 
     STATS_UNLOCK();
 }
 
-#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
 void stats_prefix_record_bop_pwg(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
@@ -555,7 +550,6 @@ void stats_prefix_record_bop_pwg(const char *key, const size_t nkey, const bool 
     }
     STATS_UNLOCK();
 }
-#endif
 
 void stats_prefix_record_bop_gbp(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
@@ -601,21 +595,12 @@ void stats_prefix_record_setattr(const char *key, const size_t nkey) {
  */
 /*@null@*/
 char *stats_prefix_dump(int *length) {
-#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
     const char *format = "PREFIX %s "
                          "get %llu hit %llu set %llu del %llu lcs %llu lis %llu lih %llu lds %llu ldh %llu lgs %llu "
                          "lgh %llu scs %llu sis %llu sih %llu sds %llu sdh %llu sgs %llu sgh %llu ses %llu seh %llu "
                          "bcs %llu bis %llu bih %llu bus %llu buh %llu bds %llu bdh %llu bps %llu bph %llu bms %llu "
                          "bmh %llu bgs %llu bgh %llu bns %llu bnh %llu pfs %llu pfh %llu pgs %llu pgh %llu gps %llu "
                          "gph %llu gas %llu sas %llu\r\n";
-#else
-    const char *format = "PREFIX %s "
-                         "get %llu hit %llu set %llu del %llu lcs %llu lis %llu lih %llu lds %llu ldh %llu lgs %llu "
-                         "lgh %llu scs %llu sis %llu sih %llu sds %llu sdh %llu sgs %llu sgh %llu ses %llu seh %llu "
-                         "bcs %llu bis %llu bih %llu bus %llu buh %llu bds %llu bdh %llu bps %llu bph %llu bms %llu "
-                         "bmh %llu bgs %llu bgh %llu bns %llu bnh %llu pfs %llu pfh %llu gps %llu gph %llu gas %llu "
-                         "sas %llu\r\n";
-#endif
     PREFIX_STATS *pfs;
     char *buf;
     int i, pos;
@@ -628,17 +613,10 @@ char *stats_prefix_dump(int *length) {
      * plus space for the "END" at the end.
      */
     STATS_LOCK();
-#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
     size = strlen(format) + total_prefix_size +
            num_prefixes * (strlen(format) - 2 /* %s */
                            + 43 * (20 - 4)) /* %llu replaced by 20-digit num */
                            + sizeof("END\r\n");
-#else
-    size = strlen(format) + total_prefix_size +
-           num_prefixes * (strlen(format) - 2 /* %s */
-                           + 41 * (20 - 4)) /* %llu replaced by 20-digit num */
-                           + sizeof("END\r\n");
-#endif
     buf = malloc(size);
     if (NULL == buf) {
         perror("Can't allocate stats response: malloc");
@@ -670,9 +648,7 @@ char *stats_prefix_dump(int *length) {
                            pfs->num_bop_gets, pfs->num_bop_get_hits,
                            pfs->num_bop_counts, pfs->num_bop_count_hits,
                            pfs->num_bop_positions, pfs->num_bop_position_hits,
-#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
                            pfs->num_bop_pwgs, pfs->num_bop_pwg_hits,
-#endif
                            pfs->num_bop_gbps, pfs->num_bop_gbp_hits,
                            pfs->num_getattrs, pfs->num_setattrs);
             pos += written;

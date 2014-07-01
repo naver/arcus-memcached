@@ -768,9 +768,7 @@ static void conn_coll_eitem_free(conn *c) {
             free(c->coll_eitem);
         break;
       case OPERATION_BOP_GET:
-#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
       case OPERATION_BOP_PWG: /* position with get */
-#endif
       case OPERATION_BOP_GBP: /* get by position */
         settings.engine.v1->btree_elem_release(settings.engine.v0, c, c->coll_eitem, c->coll_ecount);
         free(c->coll_eitem);
@@ -7308,9 +7306,7 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("cmd_bop_get", "%"PRIu64, thread_stats.cmd_bop_get);
     APPEND_STAT("cmd_bop_count", "%"PRIu64, thread_stats.cmd_bop_count);
     APPEND_STAT("cmd_bop_position", "%"PRIu64, thread_stats.cmd_bop_position);
-#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
     APPEND_STAT("cmd_bop_pwg", "%"PRIu64, thread_stats.cmd_bop_pwg);
-#endif
     APPEND_STAT("cmd_bop_gbp", "%"PRIu64, thread_stats.cmd_bop_gbp);
 #ifdef SUPPORT_BOP_MGET
     APPEND_STAT("cmd_bop_mget", "%"PRIu64, thread_stats.cmd_bop_mget);
@@ -7372,11 +7368,9 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("bop_position_misses", "%"PRIu64, thread_stats.bop_position_misses);
     APPEND_STAT("bop_position_elem_hits", "%"PRIu64, thread_stats.bop_position_elem_hits);
     APPEND_STAT("bop_position_none_hits", "%"PRIu64, thread_stats.bop_position_none_hits);
-#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
     APPEND_STAT("bop_pwg_misses", "%"PRIu64, thread_stats.bop_pwg_misses);
     APPEND_STAT("bop_pwg_elem_hits", "%"PRIu64, thread_stats.bop_pwg_elem_hits);
     APPEND_STAT("bop_pwg_none_hits", "%"PRIu64, thread_stats.bop_pwg_none_hits);
-#endif
     APPEND_STAT("bop_gbp_misses", "%"PRIu64, thread_stats.bop_gbp_misses);
     APPEND_STAT("bop_gbp_elem_hits", "%"PRIu64, thread_stats.bop_gbp_elem_hits);
     APPEND_STAT("bop_gbp_none_hits", "%"PRIu64, thread_stats.bop_gbp_none_hits);
@@ -9279,7 +9273,6 @@ static void process_bop_position(conn *c, char *key, size_t nkey,
     }
 }
 
-#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
 static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *bkrange,
                             ENGINE_BTREE_ORDER order, const uint32_t count)
 {
@@ -9393,7 +9386,6 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
         free((void *)elem_array);
     }
 }
-#endif
 
 static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER order,
                             uint32_t from_posi, uint32_t to_posi)
@@ -10514,7 +10506,6 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         process_bop_position(c, key, nkey, &c->coll_bkrange, order);
     }
-#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
     else if ((ntokens == 6 || ntokens == 7) && (strcmp(subcommand, "pwg") == 0))
     {
         ENGINE_BTREE_ORDER order;
@@ -10551,7 +10542,6 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         process_bop_pwg(c, key, nkey, &c->coll_bkrange, order, count);
     }
-#endif
     else if ((ntokens == 6) && (strcmp(subcommand, "gbp") == 0))
     {
         uint32_t from_posi, to_posi;
@@ -11177,9 +11167,7 @@ static void process_command(conn *c, char *command) {
             "\t" "bop mget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"comma separated keys\">\\r\\n" "\n"
             "\t" "bop smget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"comma separated keys\">\\r\\n" "\n"
             "\t" "bop position <key> <bkey> <order>\\r\\n" "\n"
-#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
             "\t" "bop pwg <key> <bkey> <order> [<count>]\\r\\n" "\n"
-#endif
             "\t" "bop gbp <key> <order> <position or \"position range\">\\r\\n" "\n"
             "\n"
             "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"

@@ -4148,7 +4148,6 @@ static int do_btree_posi_find(btree_meta_info *info,
     return bpos;
 }
 
-#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
 static int do_btree_elem_batch_get(btree_elem_posi posi, const int count,
                                    const bool forward, const bool reverse,
                                    btree_elem_item **elem_array)
@@ -4208,7 +4207,6 @@ static int do_btree_posi_find_with_get(btree_meta_info *info,
     }
     return bpos; /* btree_position */
 }
-#endif
 
 static uint32_t do_btree_elem_get_by_posi(btree_meta_info *info,
                                           const int index, const uint32_t count, const bool forward,
@@ -4237,26 +4235,11 @@ static uint32_t do_btree_elem_get_by_posi(btree_meta_info *info,
     posi.node = node;
     posi.indx = index-tot_ecnt;
 
-#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
     elem = BTREE_GET_ELEM_ITEM(posi.node, posi.indx);
     elem->refcount++;
     elem_array[0] = elem;
     nfound = 1;
     nfound += do_btree_elem_batch_get(posi, count-1, forward, false, &elem_array[nfound]);
-#else
-    nfound = 0;
-    elem = BTREE_GET_ELEM_ITEM(posi.node, posi.indx);
-    while (elem != NULL) {
-        elem->refcount++;
-        elem_array[nfound++] = elem;
-        if (nfound >= count) break;
-
-        if (forward) do_btree_incr_posi(&posi);
-        else         do_btree_decr_posi(&posi);
-        assert(posi.node != NULL);
-        elem = BTREE_GET_ELEM_ITEM(posi.node, posi.indx);
-    }
-#endif
     return nfound;
 }
 
@@ -6105,7 +6088,6 @@ ENGINE_ERROR_CODE btree_posi_find(struct default_engine *engine,
     return ret;
 }
 
-#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
 ENGINE_ERROR_CODE btree_posi_find_with_get(struct default_engine *engine,
                                            const char *key, const size_t nkey,
                                            const bkey_range *bkrange, ENGINE_BTREE_ORDER order,
@@ -6147,7 +6129,6 @@ ENGINE_ERROR_CODE btree_posi_find_with_get(struct default_engine *engine,
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
 }
-#endif
 
 ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
                                          const char *key, const size_t nkey,

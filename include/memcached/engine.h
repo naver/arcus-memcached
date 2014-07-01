@@ -598,7 +598,6 @@ extern "C" {
                                              ENGINE_BTREE_ORDER order,
                                              int *position,
                                              uint16_t vbucket);
-#if 1 // JOON_BTREE_POSI_FIND_WITH_GET
         ENGINE_ERROR_CODE (*btree_posi_find_with_get)(ENGINE_HANDLE *handle,
                                              const void* cookie,
                                              const char *key,
@@ -612,7 +611,6 @@ extern "C" {
                                              uint32_t *eitem_index,
                                              uint32_t *flags,
                                              uint16_t vbucket);
-#endif
         ENGINE_ERROR_CODE (*btree_elem_get_by_posi)(ENGINE_HANDLE *handle,
                                              const void* cookie,
                                              const char *key,
