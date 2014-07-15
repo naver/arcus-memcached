@@ -3,22 +3,22 @@ B+Tree 명령
 
 B+tree collection에 관한 명령은 아래와 같다.
 
-- B+tree collection 생성: bop create
+- [B+tree collection 생성: bop create](command-btree-collection.md#bop-create---btree-collection-%EC%83%9D%EC%84%B1)
 - B+tree collection 삭제: delete (기존 key-value item의 삭제 명령을 그대로 사용)
 
 B+tree element에 관한 기본 명령은 아래와 같다.
 
-- B+tree element 삽입/대체: bop insert/upsert
-- B+tree element 변경: bop update
-- B+tree element 삭제: bop delete
-- B+tree element 조회: bop get
-- B+tree element 개수 계산: bop count
-- B+tree element 값의 증감: bop incr/decr
+- [B+tree element 삽입/대체: bop insert/upsert](command-btree-collection.md#bop-insertupsert---btree-element-%EC%82%BD%EC%9E%85%EB%8C%80%EC%B2%B4)
+- [B+tree element 변경: bop update](command-btree-collection.md#bop-update---btree-element-%EB%B3%80%EA%B2%BD)
+- [B+tree element 삭제: bop delete](command-btree-collection.md#bop-delete---btree-element-%EC%82%AD%EC%A0%9C)
+- [B+tree element 조회: bop get](command-btree-collection.md#bop-get---btree-element-%EC%A1%B0%ED%9A%8C)
+- [B+tree element 개수 계산: bop count](command-btree-collection.md#bop-count---btree-element-%EA%B0%9C%EC%88%98-%EA%B3%84%EC%82%B0)
+- [B+tree element 값의 증감: bop incr/decr](command-btree-collection.md#bop-incrdecr---btree-element-%EA%B0%92%EC%9D%98-%EC%A6%9D%EA%B0%90)
 
 Arcus cache server는 다수의 b+tree들에 대한 조회 기능을 특별히 제공하며, 이들은 아래와 같다.
 
-- 하나의 명령으로 여러 b+tree들에 대한 조회를 한번에 수행하는 기능:  bop mget
-- 여러 b+tree들에서 조회 조건을 만족하는 elements를 sort merge하여 최종 결과를 얻는 기능: bop smget
+- [하나의 명령으로 여러 b+tree들에 대한 조회를 한번에 수행하는 기능:  bop mget](command-btree-collection.md#bop-mget---btree-multiple-get)
+- [여러 b+tree들에서 조회 조건을 만족하는 elements를 sort merge하여 최종 결과를 얻는 기능: bop smget](command-btree-collection.md#bop-smget---btree-sort-merge-get)
 
 Arcus cache server는 bkey 기반의 element 조회 기능 외에도 b+tree position 기반의 element 조회 기능을 제공한다.
 B+tree에서 특정 element의 position이란 b+teee에서의 그 element의 위치 정보로서,
@@ -28,8 +28,8 @@ B+tree position은 0-based index로 표현한다.
 
 Arcus cache server에서 제공하는 b+tree position 관련 명령은 두 가지가 있다.
 
-- B+tree에서 특정 element의 position을 조회하는 기능 : bop position
-- B+tree에서 하나의 position 또는 position range에 해당하는 element를 조회하는 기능 : bop gbp(get by position)
+- [B+tree에서 특정 element의 position을 조회하는 기능 : bop position](command-btree-collection.md#bop-position---btree-position-%EC%A1%B0%ED%9A%8C)
+- [B+tree에서 하나의 position 또는 position range에 해당하는 element를 조회하는 기능 : bop gbp(get by position)](command-btree-collection.md#bop-gbp---btree-get-by-position)
 
 B+tree position 기반의 조회가 필요한 예를 하나 들면, ranking 시스템이 있다.
 Ranking 시스템에서는 특정 score를 bkey로 하여 해당 elements를 저장하고,
