@@ -5985,7 +5985,7 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
             }
-            if (info->ccnt == 0) {
+            if (info->ccnt == 0 || offset >= info->ccnt) {
                 ret = ENGINE_ELEM_ENOENT; break;
             }
             if ((info->bktype == BKEY_TYPE_UINT64 && bkrange->from_nbkey >  0) ||

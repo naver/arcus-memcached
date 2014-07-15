@@ -5070,8 +5070,7 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
             int elem_array_size;
 
             if (req->message.body.key_count > MAX_BMGET_KEY_COUNT ||
-                req->message.body.req_count > MAX_BMGET_ELM_COUNT ||
-                (req->message.body.req_offset + req->message.body.req_count) > MAX_BTREE_SIZE) {
+                req->message.body.req_count > MAX_BMGET_ELM_COUNT) {
                 ret = ENGINE_EBADVALUE; goto done;
             }
             bmget_count = req->message.body.key_count * req->message.body.req_count;
@@ -10457,8 +10456,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         lenkeys += 2;
 #ifdef SUPPORT_BOP_MGET
         if (subcommid == OPERATION_BOP_MGET) {
-            if (numkeys > MAX_BMGET_KEY_COUNT || count > MAX_BMGET_ELM_COUNT ||
-                (offset+count) > MAX_BTREE_SIZE) {
+            if (numkeys > MAX_BMGET_KEY_COUNT || count > MAX_BMGET_ELM_COUNT) {
                 /* ENGINE_EBADVALUE */
                 out_string(c, "CLIENT_ERROR bad value"); return;
             }
