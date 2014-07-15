@@ -56,7 +56,7 @@ Response string과 그 의미는 아래와 같다.
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “SERVER_ERROR out of memory” - 메모리 부족
 
-### bop insert/update - B+Tree Element 삽입/대체
+### bop insert/upsert - B+Tree Element 삽입/대체
 
 B+tree collection에 하나의 element를 추가하는 명령으로
 (1) 하나의 element를 삽입하는 bop insert 명령과
