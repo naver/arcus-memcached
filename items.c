@@ -123,6 +123,17 @@ static unsigned char btree_binary_max_bkey[BKEY_MAX_BINARY_LENG] = { 0xFF, 0xFF,
                                                                      0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
                                                                      0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
+/* maximum collection size  */
+static int32_t coll_size_limit = 100000;
+static int32_t max_list_size   = 50000;
+static int32_t max_set_size    = 50000;
+static int32_t max_btree_size  = 50000;
+
+/* default collection size */
+static int32_t default_list_size  = 4000;
+static int32_t default_set_size   = 4000;
+static int32_t default_btree_size = 4000;
+
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
 void item_stats_reset(struct default_engine *engine)
@@ -1225,6 +1236,30 @@ static void do_mem_slot_free(struct default_engine *engine, void *data, size_t n
     slabs_free(engine, it, ntotal, clsid);
 }
 
+/* get real maxcount for each collection type */
+static int32_t coll_real_maxcount(hash_item *it, int32_t maxcount)
+{
+    int32_t real_maxcount = maxcount;
+
+    if (IS_LIST_ITEM(it)) {
+        if (maxcount < 0 || maxcount > max_list_size)
+            real_maxcount = max_list_size;
+        else if (maxcount == 0)
+            real_maxcount = default_list_size;
+    } else if (IS_SET_ITEM(it)) {
+        if (maxcount < 0 || maxcount > max_set_size)
+            real_maxcount = max_set_size;
+        else if (maxcount == 0)
+            real_maxcount = default_set_size;
+    } else if (IS_BTREE_ITEM(it)) {
+        if (maxcount < 0 || maxcount > max_btree_size)
+            real_maxcount = max_btree_size;
+        else if (maxcount == 0)
+            real_maxcount = default_btree_size;
+    }
+    return real_maxcount;
+}
+
 /*
  * LIST collection management
  */
@@ -1263,8 +1298,8 @@ static hash_item *do_list_item_alloc(struct default_engine *engine,
 
         /* initialize list meta information */
         list_meta_info *info = (list_meta_info *)item_get_meta(it);
-        info->mcnt    = attrp->maxcount;
-        info->ccnt    = 0;
+        info->mcnt = coll_real_maxcount(it, attrp->maxcount);
+        info->ccnt = 0;
         info->ovflact = (attrp->ovflaction==0 ? OVFL_TAIL_TRIM : attrp->ovflaction);
 #ifdef ENABLE_STICKY_ITEM
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
@@ -1475,8 +1510,8 @@ static hash_item *do_set_item_alloc(struct default_engine *engine,
 
         /* initialize set meta information */
         set_meta_info *info = (set_meta_info *)item_get_meta(it);
-        info->mcnt    = attrp->maxcount;
-        info->ccnt    = 0;
+        info->mcnt = coll_real_maxcount(it, attrp->maxcount);
+        info->ccnt = 0;
         info->ovflact = OVFL_ERROR;
 #ifdef ENABLE_STICKY_ITEM
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
@@ -1914,8 +1949,8 @@ static hash_item *do_btree_item_alloc(struct default_engine *engine,
 
         /* initialize b+tree meta information */
         btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
-        info->mcnt    = attrp->maxcount;
-        info->ccnt    = 0;
+        info->mcnt = coll_real_maxcount(it, attrp->maxcount);
+        info->ccnt = 0;
         info->ovflact = (attrp->ovflaction==0 ? OVFL_SMALLEST_TRIM : attrp->ovflaction);
 #ifdef ENABLE_STICKY_ITEM
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
@@ -5187,6 +5222,23 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
     engine->coll_del_queue.size = 0;
     engine->coll_del_sleep = false;
 
+    /* adjust maximum collection size */
+    if (engine->config.max_list_size > max_list_size) {
+        max_list_size = engine->config.max_list_size < coll_size_limit
+                      ? (int32_t)engine->config.max_list_size : coll_size_limit;
+    }
+    if (engine->config.max_set_size > max_set_size) {
+        max_set_size = engine->config.max_set_size < coll_size_limit
+                     ? (int32_t)engine->config.max_set_size : coll_size_limit;
+    }
+    if (engine->config.max_btree_size > max_btree_size) {
+        max_btree_size = engine->config.max_btree_size < coll_size_limit
+                       ? (int32_t)engine->config.max_btree_size : coll_size_limit;
+    }
+    logger->log(EXTENSION_LOG_INFO, NULL, "maximum list  size = %d\n", max_list_size);
+    logger->log(EXTENSION_LOG_INFO, NULL, "maximum set   size = %d\n", max_set_size);
+    logger->log(EXTENSION_LOG_INFO, NULL, "maximum btree size = %d\n", max_btree_size);
+
     pthread_t tid;
     int ret = pthread_create(&tid, NULL, collection_delete_thread, engine);
     if (ret != 0) {
@@ -6352,16 +6404,7 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
                 ret = ENGINE_EBADATTR; break;
             }
             if (attr_ids[i] == ATTR_MAXCOUNT) {
-                if (IS_LIST_ITEM(it)) {
-                    if (attr_data->maxcount > MAX_LIST_SIZE)
-                        attr_data->maxcount = MAX_LIST_SIZE;
-                } else if (IS_SET_ITEM(it)) {
-                    if (attr_data->maxcount > MAX_SET_SIZE)
-                        attr_data->maxcount = MAX_SET_SIZE;
-                } else { /* IS_BTREE_ITEM(it) */
-                    if (attr_data->maxcount > MAX_BTREE_SIZE)
-                        attr_data->maxcount = MAX_BTREE_SIZE;
-                }
+                attr_data->maxcount = coll_real_maxcount(it, attr_data->maxcount);
                 if (info->ccnt > attr_data->maxcount) {
                     ret = ENGINE_EBADVALUE; break;
                 }

@@ -81,18 +81,6 @@
 #define MIN_BIN_PKT_LENGTH 16
 #define BIN_PKT_HDR_WORDS (MIN_BIN_PKT_LENGTH/sizeof(uint32_t))
 
-/* Max collection size */
-#define MAX_COLL_SIZE      50000
-#define MAX_LIST_SIZE      50000
-#define MAX_SET_SIZE       50000
-#define MAX_BTREE_SIZE     50000
-
-/* Default collection size */
-#define DEFAULT_COLL_SIZE   4000
-#define DEFAULT_LIST_SIZE   4000
-#define DEFAULT_SET_SIZE    4000
-#define DEFAULT_BTREE_SIZE  4000
-
 /* Max element value size */
 #define MAX_ELEMENT_BYTES  (4*1024)
 

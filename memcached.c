@@ -56,6 +56,12 @@
 #include <stdarg.h>
 #include <stddef.h>
 
+/* max collection size */
+static int ARCUS_COLL_SIZE_LIMIT = 100000;
+static int MAX_LIST_SIZE  = 50000;
+static int MAX_SET_SIZE   = 50000;
+static int MAX_BTREE_SIZE = 50000;
+
 static inline void item_set_cas(const void *cookie, item *it, uint64_t cas) {
     settings.engine.v1->item_set_cas(settings.engine.v0, cookie, it, cas);
 }
@@ -3286,13 +3292,7 @@ static void process_bin_lop_create(conn *c) {
     item_attr attr_data;
     attr_data.flags   = req->message.body.flags;
     attr_data.exptime = realtime(req->message.body.exptime);
-
-    if (req->message.body.maxcount < 0 || req->message.body.maxcount > MAX_LIST_SIZE)
-        attr_data.maxcount = MAX_LIST_SIZE;
-    else if (req->message.body.maxcount == 0)
-        attr_data.maxcount = DEFAULT_LIST_SIZE;
-    else
-        attr_data.maxcount = req->message.body.maxcount;
+    attr_data.maxcount = req->message.body.maxcount;
 
     if ((req->message.body.ovflaction > 0) &&
         (req->message.body.ovflaction == OVFL_ERROR ||
@@ -3402,12 +3402,7 @@ static void process_bin_lop_prepare_nread(conn *c) {
             c->coll_attrp = &c->coll_attr_space; /* create if not exist */
             c->coll_attrp->flags    = req->message.body.flags;
             c->coll_attrp->exptime  = realtime(req->message.body.exptime);
-            if (req->message.body.maxcount < 0 || req->message.body.maxcount > MAX_LIST_SIZE)
-                c->coll_attrp->maxcount = MAX_LIST_SIZE;
-            else if (req->message.body.maxcount == 0)
-                c->coll_attrp->maxcount = DEFAULT_LIST_SIZE;
-            else
-                c->coll_attrp->maxcount = req->message.body.maxcount;
+            c->coll_attrp->maxcount = req->message.body.maxcount;
             c->coll_attrp->readable = 1;
         } else {
             c->coll_attrp = NULL;
@@ -3733,12 +3728,7 @@ static void process_bin_sop_create(conn *c) {
     item_attr attr_data;
     attr_data.flags = req->message.body.flags;
     attr_data.exptime = realtime(req->message.body.exptime);
-    if (req->message.body.maxcount < 0 || req->message.body.maxcount > MAX_SET_SIZE)
-        attr_data.maxcount = MAX_SET_SIZE;
-    else if (req->message.body.maxcount == 0)
-        attr_data.maxcount = DEFAULT_SET_SIZE;
-    else
-        attr_data.maxcount = req->message.body.maxcount;
+    attr_data.maxcount = req->message.body.maxcount;
     attr_data.readable = req->message.body.readable;
 
     ENGINE_ERROR_CODE ret;
@@ -3856,12 +3846,7 @@ static void process_bin_sop_prepare_nread(conn *c) {
                 c->coll_attrp = &c->coll_attr_space; /* create if not exist */
                 c->coll_attrp->flags    = req->message.body.flags;
                 c->coll_attrp->exptime  = realtime(req->message.body.exptime);
-                if (req->message.body.maxcount < 0 || req->message.body.maxcount > MAX_SET_SIZE)
-                    c->coll_attrp->maxcount = MAX_SET_SIZE;
-                else if (req->message.body.maxcount == 0)
-                    c->coll_attrp->maxcount = DEFAULT_SET_SIZE;
-                else
-                    c->coll_attrp->maxcount = req->message.body.maxcount;
+                c->coll_attrp->maxcount = req->message.body.maxcount;
                 c->coll_attrp->readable = 1;
             } else {
                 c->coll_attrp = NULL;
@@ -4249,12 +4234,7 @@ static void process_bin_bop_create(conn *c) {
     item_attr attr_data;
     attr_data.flags = req->message.body.flags;
     attr_data.exptime = realtime(req->message.body.exptime);
-    if (req->message.body.maxcount < 0 || req->message.body.maxcount > MAX_BTREE_SIZE)
-        attr_data.maxcount = MAX_BTREE_SIZE;
-    else if (req->message.body.maxcount == 0)
-        attr_data.maxcount = DEFAULT_BTREE_SIZE;
-    else
-        attr_data.maxcount = req->message.body.maxcount;
+    attr_data.maxcount = req->message.body.maxcount;
 
     if ((req->message.body.ovflaction > 0) &&
         (req->message.body.ovflaction == OVFL_ERROR ||
@@ -4385,12 +4365,7 @@ static void process_bin_bop_prepare_nread(conn *c) {
             c->coll_attrp = &c->coll_attr_space; /* create if not exist */
             c->coll_attrp->flags    = req->message.body.flags;
             c->coll_attrp->exptime  = realtime(req->message.body.exptime);
-            if (req->message.body.maxcount < 0 || req->message.body.maxcount > MAX_BTREE_SIZE)
-                c->coll_attrp->maxcount = MAX_BTREE_SIZE;
-            else if (req->message.body.maxcount == 0)
-                c->coll_attrp->maxcount = DEFAULT_BTREE_SIZE;
-            else
-                c->coll_attrp->maxcount = req->message.body.maxcount;
+            c->coll_attrp->maxcount = req->message.body.maxcount;
             c->coll_attrp->readable = 1;
         } else {
             c->coll_attrp = NULL;
@@ -5468,12 +5443,7 @@ static void process_bin_setattr(conn *c) {
     if (req->message.body.maxcount_f != 0) {
         attr_ids[attr_count++] = ATTR_MAXCOUNT;
         req->message.body.maxcount = ntohl(req->message.body.maxcount);
-        if (req->message.body.maxcount < 0 || req->message.body.maxcount > MAX_COLL_SIZE)
-            attr_data.maxcount = MAX_COLL_SIZE;
-        else if (req->message.body.maxcount == 0)
-            attr_data.maxcount = DEFAULT_COLL_SIZE;
-        else
-            attr_data.maxcount = req->message.body.maxcount;
+        attr_data.maxcount = req->message.body.maxcount;
     }
     if (req->message.body.maxbkeyrange.len != BKEY_NULL) {
         attr_ids[attr_count++] = ATTR_MAXBKEYRANGE;
@@ -8203,33 +8173,6 @@ static void process_junktime_command(conn *c, token_t *tokens, const size_t ntok
 }
 #endif
 
-static inline int coll_real_maxcount(int coll_type, int maxcount)
-{
-    int real_maxcount = maxcount;
-
-    switch (coll_type) {
-      case ITEM_TYPE_LIST:
-        if (maxcount < 0 || maxcount > MAX_LIST_SIZE)
-            real_maxcount = MAX_LIST_SIZE;
-        else if (maxcount == 0)
-            real_maxcount = DEFAULT_LIST_SIZE;
-        break;
-      case ITEM_TYPE_SET:
-        if (maxcount < 0 || maxcount > MAX_SET_SIZE)
-            real_maxcount = MAX_SET_SIZE;
-        else if (maxcount == 0)
-            real_maxcount = DEFAULT_SET_SIZE;
-        break;
-      case ITEM_TYPE_BTREE:
-        if (maxcount < 0 || maxcount > MAX_BTREE_SIZE)
-            real_maxcount = MAX_BTREE_SIZE;
-        else if (maxcount == 0)
-            real_maxcount = DEFAULT_BTREE_SIZE;
-        break;
-    }
-    return real_maxcount;
-}
-
 static inline int get_coll_create_attr_from_tokens(token_t *tokens, const int ntokens,
                                                    int coll_type, item_attr *attrp)
 {
@@ -8254,13 +8197,12 @@ static inline int get_coll_create_attr_from_tokens(token_t *tokens, const int nt
     }
     attrp->exptime = realtime(exptime_int);
 
-    /* maxocunt */
+    /* maxcount */
     if (ntokens >= 3) {
         if (! safe_strtol(tokens[2].value, &attrp->maxcount)) return -1;
     } else {
         attrp->maxcount = 0; /* default value */
     }
-    attrp->maxcount = coll_real_maxcount(coll_type, attrp->maxcount);
 
     attrp->ovflaction = 0; /* undefined : will be set to default later */
     attrp->readable   = 1; /* readable = on */
@@ -10818,10 +10760,6 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
         } else if (strcmp(name, "maxcount")==0) {
             attr_ids[attr_count++] = ATTR_MAXCOUNT;
             if (! safe_strtol(value, &attr_data.maxcount)) break;
-            if (attr_data.maxcount < 0 || attr_data.maxcount > MAX_COLL_SIZE)
-                attr_data.maxcount = MAX_COLL_SIZE;
-            else if (attr_data.maxcount == 0)
-                attr_data.maxcount = DEFAULT_COLL_SIZE;
         } else if (strcmp(name, "overflowaction")==0) {
             attr_ids[attr_count++] = ATTR_OVFLACTION;
             if (strcmp(value, "error")==0)
@@ -13682,6 +13620,47 @@ int main (int argc, char **argv) {
         settings.port = settings.udpport;
     }
 
+    if (1) { /* check max collection size from environment variables */
+        int value;
+
+        char *arcus_max_list_size = getenv("ARCUS_MAX_LIST_SIZE");
+        if (arcus_max_list_size != NULL) {
+            value = atoi(arcus_max_list_size);
+            if (value > MAX_LIST_SIZE && value <= ARCUS_COLL_SIZE_LIMIT)
+                MAX_LIST_SIZE = value;
+            else {
+                settings.extensions.logger->log(EXTENSION_LOG_INFO, NULL,
+                        "ARCUS_MAX_LIST_SIZE incorrect value: %d, (Allowable values: %d ~ %d)\n",
+                         value, MAX_LIST_SIZE, ARCUS_COLL_SIZE_LIMIT);
+            }
+        }
+        char *arcus_max_set_size = getenv("ARCUS_MAX_SET_SIZE");
+        if (arcus_max_set_size != NULL) {
+            value = atoi(arcus_max_set_size);
+            if (value > MAX_SET_SIZE && value <= ARCUS_COLL_SIZE_LIMIT)
+                MAX_SET_SIZE = value;
+            else {
+                settings.extensions.logger->log(EXTENSION_LOG_INFO, NULL,
+                        "ARCUS_MAX_SET_SIZE incorrect value: %d, (Allowable values: %d ~ %d)\n",
+                         value, MAX_SET_SIZE, ARCUS_COLL_SIZE_LIMIT);
+            }
+        }
+        char *arcus_max_btree_size = getenv("ARCUS_MAX_BTREE_SIZE");
+        if (arcus_max_btree_size != NULL) {
+            value = atoi(arcus_max_btree_size);
+            if (value > MAX_BTREE_SIZE && value <= ARCUS_COLL_SIZE_LIMIT)
+                MAX_BTREE_SIZE = value;
+            else {
+                settings.extensions.logger->log(EXTENSION_LOG_INFO, NULL,
+                        "ARCUS_MAX_BTREE_SIZE incorrect value: %d, (Allowable values: %d ~ %d)\n",
+                         value, MAX_BTREE_SIZE, ARCUS_COLL_SIZE_LIMIT);
+            }
+        }
+        old_opts += sprintf(old_opts, "max_list_size=%d;",  MAX_LIST_SIZE);
+        old_opts += sprintf(old_opts, "max_set_size=%d;",   MAX_SET_SIZE);
+        old_opts += sprintf(old_opts, "max_btree_size=%d;", MAX_BTREE_SIZE);
+    }
+
     if (engine_config != NULL && strlen(old_options) > 0) {
         settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "ERROR: You can't mix -e with the old options\n");
@@ -13689,6 +13668,8 @@ int main (int argc, char **argv) {
     } else if (engine_config == NULL && strlen(old_options) > 0) {
         engine_config = old_options;
     }
+    settings.extensions.logger->log(EXTENSION_LOG_INFO, NULL,
+                                    "engine config: %s\n", engine_config);
 
     if (maxcore != 0) {
         struct rlimit rlim_new;
