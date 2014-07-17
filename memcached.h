@@ -83,18 +83,6 @@
 #define MIN_BIN_PKT_LENGTH 16
 #define BIN_PKT_HDR_WORDS (MIN_BIN_PKT_LENGTH/sizeof(uint32_t))
 
-/* Max collection size */
-#define MAX_COLL_SIZE      50000
-#define MAX_LIST_SIZE      50000
-#define MAX_SET_SIZE       50000
-#define MAX_BTREE_SIZE     50000
-
-/* Default collection size */
-#define DEFAULT_COLL_SIZE   4000
-#define DEFAULT_LIST_SIZE   4000
-#define DEFAULT_SET_SIZE    4000
-#define DEFAULT_BTREE_SIZE  4000
-
 /* Max element value size */
 #define MAX_ELEMENT_BYTES  (4*1024)
 
@@ -186,6 +174,7 @@ enum bin_substates {
     bin_reading_bop_get,
     bin_reading_bop_count,
     bin_reading_bop_position,
+    bin_reading_bop_pwg,
     bin_reading_bop_gbp,
 #if defined(SUPPORT_BOP_MGET) || defined(SUPPORT_BOP_SMGET)
     bin_reading_bop_prepare_nread_keys,
@@ -256,6 +245,7 @@ struct thread_stats {
     uint64_t          cmd_bop_get;
     uint64_t          cmd_bop_count;
     uint64_t          cmd_bop_position;
+    uint64_t          cmd_bop_pwg;
     uint64_t          cmd_bop_gbp;
 #ifdef SUPPORT_BOP_MGET
     uint64_t          cmd_bop_mget;
@@ -308,6 +298,9 @@ struct thread_stats {
     uint64_t          bop_position_elem_hits;
     uint64_t          bop_position_none_hits;
     uint64_t          bop_position_misses;
+    uint64_t          bop_pwg_elem_hits;
+    uint64_t          bop_pwg_none_hits;
+    uint64_t          bop_pwg_misses;
     uint64_t          bop_gbp_elem_hits;
     uint64_t          bop_gbp_none_hits;
     uint64_t          bop_gbp_misses;

@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 700819;
+use Test::More tests => 701085;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -103,7 +103,7 @@ sub assert_bop_get {
 
 # bop gbp (get by position)
 sub assert_bop_gbp {
-    my ($key, $order, $from_posi, $to_posi, $from_bkey, $to_bkey, $width, $flags, $tailstr) = @_;
+    my ($key, $order, $from_posi, $to_posi, $flags, $ecount, $from_bkey, $to_bkey, $width) = @_;
     my $ecnt = 0;
     my $bkey;
     my $data;
@@ -128,10 +128,43 @@ sub assert_bop_gbp {
     my $bkey_list = join(",", @res_bkey);
     my $data_list = join(",", @res_data);
     my $args = "$key $order $from_posi..$to_posi";
-    bop_gbp_is($sock, $args, $flags, $ecnt, $bkey_list, $data_list, $tailstr);
+    my $reshead = "$flags $ecount";
+    bop_gbp_is($sock, $args, $reshead, $bkey_list, $data_list);
+}
+
+# bop pwg (position with get)
+sub assert_bop_pwg {
+    my ($key, $find_bkey, $order, $count, $position, $flags, $ecount, $rindex, $from_bkey, $to_bkey, $width) = @_;
+    my $ecnt = 0;
+    my $bkey;
+    my $data;
+    my @res_bkey = ();
+    my @res_data = ();
+
+    if ($from_bkey <= $to_bkey) {
+        for ($bkey = $from_bkey; $bkey <= $to_bkey; $bkey = $bkey + $width) {
+            $data = "$key-data-$bkey";
+            push(@res_bkey, $bkey);
+            push(@res_data, $data);
+            $ecnt = $ecnt + 1;
+        }
+    } else {
+        for ($bkey = $from_bkey; $bkey >= $to_bkey; $bkey = $bkey - $width) {
+            $data = "$key-data-$bkey";
+            push(@res_bkey, $bkey);
+            push(@res_data, $data);
+            $ecnt = $ecnt + 1;
+        }
+    }
+    my $bkey_list = join(",", @res_bkey);
+    my $data_list = join(",", @res_data);
+    my $args = "$key $find_bkey $order $count";
+    my $reshead = "$position $flags $ecount $rindex";
+    bop_pwg_is($sock, $args, $reshead, $bkey_list, $data_list);
 }
 
 # BOP test global variables
+my $flags = 11;
 my $width = 2;
 my $min = 2;
 my $max = 100000;
@@ -235,16 +268,45 @@ for (0..6) {
     print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
     $cmd = "bop gbp bkey desc 300000..200000"; $rst = "NOT_FOUND_ELEMENT";
     print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-    assert_bop_gbp("bkey", "asc", 0, 99, 2, 200, 2, 11, "END");
-    assert_bop_gbp("bkey", "asc", 99, 0, 200, 2, 2, 11, "END");
-    assert_bop_gbp("bkey", "desc", 0, 100, 100000, 99800, 2, 11, "END");
-    assert_bop_gbp("bkey", "desc", 100, 0, 99800, 100000, 2, 11, "END");
-    assert_bop_gbp("bkey", "asc", 10000, 10099, 20002, 20200, 2, 11, "END");
-    assert_bop_gbp("bkey", "asc", 10099, 10000, 20200, 20002, 2, 11, "END");
-    assert_bop_gbp("bkey", "desc", 10000, 10100, 80000, 79800, 2, 11, "END");
-    assert_bop_gbp("bkey", "desc", 10100, 10000, 79800, 80000, 2, 11, "END");
-    assert_bop_gbp("bkey", "asc", 25000, 25000, 50002, 50002, 2, 11, "END");
-    assert_bop_gbp("bkey", "desc", 25000, 25000, 50000, 50000, 2, 11, "END");
+    assert_bop_gbp("bkey", "asc",      0,    99, $flags, 100,      2,    200, $width);
+    assert_bop_gbp("bkey", "asc",     99,     0, $flags, 100,    200,      2, $width);
+    assert_bop_gbp("bkey", "desc",     0,   100, $flags, 101, 100000,  99800, $width);
+    assert_bop_gbp("bkey", "desc",   100,     0, $flags, 101,  99800, 100000, $width);
+    assert_bop_gbp("bkey", "asc",  10000, 10099, $flags, 100,  20002,  20200, $width);
+    assert_bop_gbp("bkey", "asc",  10099, 10000, $flags, 100,  20200,  20002, $width);
+    assert_bop_gbp("bkey", "desc", 10000, 10100, $flags, 101,  80000,  79800, $width);
+    assert_bop_gbp("bkey", "desc", 10100, 10000, $flags, 101,  79800,  80000, $width);
+    assert_bop_gbp("bkey", "asc",  25000, 25000, $flags,   1,  50002,  50002, $width);
+    assert_bop_gbp("bkey", "desc", 25000, 25000, $flags,   1,  50000,  50000, $width);
+    # bop pwg(position with get)
+    $cmd = "bop pwg bkey 10 asc -1"; $rst = "CLIENT_ERROR bad command line format";
+    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    $cmd = "bop pwg bkey 10 both"; $rst = "CLIENT_ERROR bad command line format";
+    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    $cmd = "bop pwg bkey 33333 asc"; $rst = "NOT_FOUND_ELEMENT";
+    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    $cmd = "bop pwg bkey 77777 desc"; $rst = "NOT_FOUND_ELEMENT";
+    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    $cmd = "bop pwg bkey 33333 asc 10"; $rst = "NOT_FOUND_ELEMENT";
+    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    $cmd = "bop pwg bkey 77777 desc 10"; $rst = "NOT_FOUND_ELEMENT";
+    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    assert_bop_pwg("bkey",      2,  "asc",  0,     0, $flags,  1,  0,      2,      2, $width);
+    assert_bop_pwg("bkey",      2, "desc",  0, 49999, $flags,  1,  0,      2,      2, $width);
+    assert_bop_pwg("bkey", 100000,  "asc",  0, 49999, $flags,  1,  0, 100000, 100000, $width);
+    assert_bop_pwg("bkey", 100000, "desc",  0,     0, $flags,  1,  0, 100000, 100000, $width);
+    assert_bop_pwg("bkey",  44444,  "asc",  0, 22221, $flags,  1,  0,  44444,  44444, $width);
+    assert_bop_pwg("bkey",  44444, "desc",  0, 27778, $flags,  1,  0,  44444,  44444, $width);
+    assert_bop_pwg("bkey",      2,  "asc", 10,     0, $flags, 11,  0,      2,     22, $width);
+    assert_bop_pwg("bkey",      2, "desc", 10, 49999, $flags, 11, 10,     22,      2, $width);
+    assert_bop_pwg("bkey", 100000,  "asc", 10, 49999, $flags, 11, 10,  99980, 100000, $width);
+    assert_bop_pwg("bkey", 100000, "desc", 10,     0, $flags, 11,  0, 100000,  99980, $width);
+    assert_bop_pwg("bkey",  44444,  "asc", 10, 22221, $flags, 21, 10,  44424,  44464, $width);
+    assert_bop_pwg("bkey",  44444, "desc", 10, 27778, $flags, 21, 10,  44464,  44424, $width);
+    assert_bop_pwg("bkey",     10,  "asc", 10,     4, $flags, 15,  4,      2,     30, $width);
+    assert_bop_pwg("bkey",     10, "desc", 10, 49995, $flags, 15, 10,     30,      2, $width);
+    assert_bop_pwg("bkey",  99990,  "asc", 10, 49994, $flags, 16, 10,  99970, 100000, $width);
+    assert_bop_pwg("bkey",  99990, "desc", 10,     5, $flags, 16,  5, 100000,  99970, $width);
     if ($cnt == 0 or $cnt == 2) {
         $cmd = "bop delete bkey 10002..19998"; $rst = "DELETED";
         print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
@@ -254,12 +316,12 @@ for (0..6) {
         print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
         $cmd = "bop position bkey 90000 desc"; $rst = "POSITION=5000";
         print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-        assert_bop_gbp("bkey", "asc", 4999, 5000, 10000, 20000, 10000, 11, "END");
-        assert_bop_gbp("bkey", "desc", 10000, 10001, 80000, 50000, 30000, 11, "END");
-        assert_bop_gbp("bkey", "asc", 100, 199, 202, 400, 2, 11, "END");
-        assert_bop_gbp("bkey", "asc", 199, 100, 400, 202, 2, 11, "END");
-        assert_bop_gbp("bkey", "desc", 0, 100, 100000, 99800, 2, 11, "END");
-        assert_bop_gbp("bkey", "desc", 100, 0, 99800, 100000, 2, 11, "END");
+        assert_bop_gbp("bkey", "asc",   4999,  5000, $flags,   2,  10000,  20000, 10000);
+        assert_bop_gbp("bkey", "desc", 10000, 10001, $flags,   2,  80000,  50000, 30000);
+        assert_bop_gbp("bkey", "asc",    100,   199, $flags, 100,    202,    400,     2);
+        assert_bop_gbp("bkey", "asc",    199,   100, $flags, 100,    400,    202,     2);
+        assert_bop_gbp("bkey", "desc",     0,   100, $flags, 101, 100000,  99800,     2);
+        assert_bop_gbp("bkey", "desc",   100,     0, $flags, 101,  99800, 100000,     2);
         $cmd = "bop delete bkey 0..100000 0 EQ 0x0002,0x0004,0x0006,0x0008"; $rst = "DELETED";
         print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
         bop_insert("bkey", 1, 49999, $width, "", 11, 0, -1);
@@ -271,8 +333,8 @@ for (0..6) {
         print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
         $cmd = "bop position bkey 50002 asc"; $rst = "POSITION=0";
         print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-        assert_bop_gbp("bkey", "asc", 5000, 5100, 60002, 60202, 2, 11, "END");
-        assert_bop_gbp("bkey", "desc", 5000, 5100, 90000, 89800, 2, 11, "END");
+        assert_bop_gbp("bkey", "asc",  5000, 5100, $flags, 101, 60002, 60202, 2);
+        assert_bop_gbp("bkey", "desc", 5000, 5100, $flags, 101, 90000, 89800, 2);
         $cmd = "bop delete bkey 100000..0 0 NE 0x0002,0x0004"; $rst = "DELETED";
         print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
         $cmd = "bop delete bkey 90000..10000 0 EQ 0x0002"; $rst = "DELETED";
@@ -357,16 +419,34 @@ for (0..6) {
     $cmd = "bop position bkey 80000 desc"; $rst = "NOT_FOUND_ELEMENT";
     print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
     # bop bgp(get by position)
-    assert_bop_gbp("bkey", "asc", 0, 99, 1, 199, 2, 11, "END");
-    assert_bop_gbp("bkey", "asc", 99, 0, 199, 1, 2, 11, "END");
-    assert_bop_gbp("bkey", "desc", 0, 100, 99999, 99799, 2, 11, "END");
-    assert_bop_gbp("bkey", "desc", 100, 0, 99799, 99999, 2, 11, "END");
-    assert_bop_gbp("bkey", "asc", 10000, 10099, 20001, 20199, 2, 11, "END");
-    assert_bop_gbp("bkey", "asc", 10099, 10000, 20199, 20001, 2, 11, "END");
-    assert_bop_gbp("bkey", "desc", 10000, 10100, 79999, 79799, 2, 11, "END");
-    assert_bop_gbp("bkey", "desc", 10100, 10000, 79799, 79999, 2, 11, "END");
-    assert_bop_gbp("bkey", "asc", 25000, 25000, 50001, 50001, 2, 11, "END");
-    assert_bop_gbp("bkey", "desc", 25000, 25000, 49999, 49999, 2, 11, "END");
+    assert_bop_gbp("bkey", "asc",      0,    99, $flags, 100,     1,   199, $width);
+    assert_bop_gbp("bkey", "asc",     99,     0, $flags, 100,   199,     1, $width);
+    assert_bop_gbp("bkey", "desc",     0,   100, $flags, 101, 99999, 99799, $width);
+    assert_bop_gbp("bkey", "desc",   100,     0, $flags, 101, 99799, 99999, $width);
+    assert_bop_gbp("bkey", "asc",  10000, 10099, $flags, 100, 20001, 20199, $width);
+    assert_bop_gbp("bkey", "asc",  10099, 10000, $flags, 100, 20199, 20001, $width);
+    assert_bop_gbp("bkey", "desc", 10000, 10100, $flags, 101, 79999, 79799, $width);
+    assert_bop_gbp("bkey", "desc", 10100, 10000, $flags, 101, 79799, 79999, $width);
+    assert_bop_gbp("bkey", "asc",  25000, 25000, $flags,   1, 50001, 50001, $width);
+    assert_bop_gbp("bkey", "desc", 25000, 25000, $flags,   1, 49999, 49999, $width);
+    # bop pwg(position with get)
+    assert_bop_pwg("bkey",      1,  "asc",  0,     0, $flags,  1,  0,     1,      1, $width);
+    assert_bop_pwg("bkey",      1, "desc",  0, 49999, $flags,  1,  0,     1,      1, $width);
+    assert_bop_pwg("bkey",  99999,  "asc",  0, 49999, $flags,  1,  0, 99999,  99999, $width);
+    assert_bop_pwg("bkey",  99999, "desc",  0,     0, $flags,  1,  0, 99999,  99999, $width);
+    assert_bop_pwg("bkey",  33333,  "asc",  0, 16666, $flags,  1,  0, 33333,  33333, $width);
+    assert_bop_pwg("bkey",  33333, "desc",  0, 33333, $flags,  1,  0, 33333,  33333, $width);
+    assert_bop_pwg("bkey",      1,  "asc", 10,     0, $flags, 11,  0,     1,     21, $width);
+    assert_bop_pwg("bkey",      1, "desc", 10, 49999, $flags, 11, 10,    21,      1, $width);
+    assert_bop_pwg("bkey",  99999,  "asc", 10, 49999, $flags, 11, 10, 99979,  99999, $width);
+    assert_bop_pwg("bkey",  99999, "desc", 10,     0, $flags, 11,  0, 99999,  99979, $width);
+    assert_bop_pwg("bkey",  33333,  "asc", 10, 16666, $flags, 21, 10, 33313,  33353, $width);
+    assert_bop_pwg("bkey",  33333, "desc", 10, 33333, $flags, 21, 10, 33353,  33313, $width);
+    assert_bop_pwg("bkey",      9,  "asc", 10,     4, $flags, 15,  4,     1,     29, $width);
+    assert_bop_pwg("bkey",      9, "desc", 10, 49995, $flags, 15, 10,    29,      1, $width);
+    assert_bop_pwg("bkey",  99989,  "asc", 10, 49994, $flags, 16, 10, 99969,  99999, $width);
+    assert_bop_pwg("bkey",  99989, "desc", 10,     5, $flags, 16,  5, 99999,  99969, $width);
+
     if ($cnt == 0 or $cnt == 1) {
         $cmd = "bop delete bkey 10001..19999"; $rst = "DELETED";
         print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
@@ -376,12 +456,12 @@ for (0..6) {
         print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
         $cmd = "bop position bkey 89999 desc"; $rst = "POSITION=5000";
         print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-        assert_bop_gbp("bkey", "asc", 4999, 5000, 9999, 20001, 10002, 11, "END");
-        assert_bop_gbp("bkey", "desc", 9999, 10000, 80001, 49999, 30002, 11, "END");
-        assert_bop_gbp("bkey", "asc", 100, 199, 201, 399, 2, 11, "END");
-        assert_bop_gbp("bkey", "asc", 199, 100, 399, 201, 2, 11, "END");
-        assert_bop_gbp("bkey", "desc", 0, 100, 99999, 99799, 2, 11, "END");
-        assert_bop_gbp("bkey", "desc", 100, 0, 99799, 99999, 2, 11, "END");
+        assert_bop_gbp("bkey", "asc",  4999,  5000, $flags,   2,  9999, 20001, 10002);
+        assert_bop_gbp("bkey", "desc", 9999, 10000, $flags,   2, 80001, 49999, 30002);
+        assert_bop_gbp("bkey", "asc",   100,   199, $flags, 100,   201,   399,     2);
+        assert_bop_gbp("bkey", "asc",   199,   100, $flags, 100,   399,   201,     2);
+        assert_bop_gbp("bkey", "desc",    0,   100, $flags, 101, 99999, 99799,     2);
+        assert_bop_gbp("bkey", "desc",  100,     0, $flags, 101, 99799, 99999,     2);
         $cmd = "bop delete bkey 0..100000 0 NE 0x0005,0x0001"; $rst = "DELETED";
         print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
     } elsif ($cnt == 2 or $cnt == 3) {
@@ -389,8 +469,8 @@ for (0..6) {
         print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
         $cmd = "bop position bkey 50001 asc"; $rst = "POSITION=0";
         print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-        assert_bop_gbp("bkey", "asc", 5000, 5100, 60001, 60201, 2, 11, "END");
-        assert_bop_gbp("bkey", "desc", 5000, 5100, 89999, 89799, 2, 11, "END");
+        assert_bop_gbp("bkey", "asc",  5000, 5100, $flags, 101, 60001, 60201, 2);
+        assert_bop_gbp("bkey", "desc", 5000, 5100, $flags, 101, 89999, 89799, 2);
         $cmd = "bop delete bkey 100000..0 0 NE 0x0001,0x0003"; $rst = "DELETED";
         print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
         $cmd = "bop delete bkey 90000..10000 0 EQ 0x0001"; $rst = "DELETED";

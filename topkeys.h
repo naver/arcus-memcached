@@ -39,6 +39,7 @@
                     C(bop_get_elem_hits) C(bop_get_none_hits) C(bop_get_misses) \
                     C(bop_count_hits) C(bop_count_misses) \
                     C(bop_position_elem_hits) C(bop_position_none_hits) C(bop_position_misses) \
+                    C(bop_pwg_elem_hits) C(bop_pwg_none_hits) C(bop_pwg_misses) \
                     C(bop_gbp_elem_hits) C(bop_gbp_none_hits) C(bop_gbp_misses)
 #ifdef SUPPORT_BOP_MGET
 #define TK_BMGET(C) C(bop_mget_oks)
