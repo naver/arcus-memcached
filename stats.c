@@ -61,6 +61,7 @@ struct _prefix_stats {
     uint64_t      num_bop_gets;
     uint64_t      num_bop_counts;
     uint64_t      num_bop_positions; /* find position */
+    uint64_t      num_bop_pwgs;      /* find position with get */
     uint64_t      num_bop_gbps;      /* get by position */
     uint64_t      num_getattrs;
     uint64_t      num_setattrs;
@@ -79,6 +80,7 @@ struct _prefix_stats {
     uint64_t      num_bop_get_hits;
     uint64_t      num_bop_count_hits;
     uint64_t      num_bop_position_hits;
+    uint64_t      num_bop_pwg_hits;
     uint64_t      num_bop_gbp_hits;
     PREFIX_STATS *next;
 };
@@ -535,6 +537,20 @@ void stats_prefix_record_bop_position(const char *key, const size_t nkey, const 
     STATS_UNLOCK();
 }
 
+void stats_prefix_record_bop_pwg(const char *key, const size_t nkey, const bool is_hit) {
+    PREFIX_STATS *pfs;
+
+    STATS_LOCK();
+    pfs = stats_prefix_find(key, nkey);
+    if (NULL != pfs) {
+        pfs->num_bop_pwgs++;
+        if (is_hit) {
+            pfs->num_bop_pwg_hits++;
+        }
+    }
+    STATS_UNLOCK();
+}
+
 void stats_prefix_record_bop_gbp(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
@@ -583,8 +599,8 @@ char *stats_prefix_dump(int *length) {
                          "get %llu hit %llu set %llu del %llu lcs %llu lis %llu lih %llu lds %llu ldh %llu lgs %llu "
                          "lgh %llu scs %llu sis %llu sih %llu sds %llu sdh %llu sgs %llu sgh %llu ses %llu seh %llu "
                          "bcs %llu bis %llu bih %llu bus %llu buh %llu bds %llu bdh %llu bps %llu bph %llu bms %llu "
-                         "bmh %llu bgs %llu bgh %llu bns %llu bnh %llu pfs %llu pfh %llu pgs %llu pgh %llu gas %llu "
-                         "sas %llu\r\n";
+                         "bmh %llu bgs %llu bgh %llu bns %llu bnh %llu pfs %llu pfh %llu pgs %llu pgh %llu gps %llu "
+                         "gph %llu gas %llu sas %llu\r\n";
     PREFIX_STATS *pfs;
     char *buf;
     int i, pos;
@@ -599,7 +615,7 @@ char *stats_prefix_dump(int *length) {
     STATS_LOCK();
     size = strlen(format) + total_prefix_size +
            num_prefixes * (strlen(format) - 2 /* %s */
-                           + 41 * (20 - 4)) /* %llu replaced by 20-digit num */
+                           + 43 * (20 - 4)) /* %llu replaced by 20-digit num */
                            + sizeof("END\r\n");
     buf = malloc(size);
     if (NULL == buf) {
@@ -632,6 +648,7 @@ char *stats_prefix_dump(int *length) {
                            pfs->num_bop_gets, pfs->num_bop_get_hits,
                            pfs->num_bop_counts, pfs->num_bop_count_hits,
                            pfs->num_bop_positions, pfs->num_bop_position_hits,
+                           pfs->num_bop_pwgs, pfs->num_bop_pwg_hits,
                            pfs->num_bop_gbps, pfs->num_bop_gbp_hits,
                            pfs->num_getattrs, pfs->num_setattrs);
             pos += written;

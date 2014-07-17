@@ -118,6 +118,7 @@ extern "C" {
         OPERATION_BOP_GET,           /**< B+tree operation with get element semantics */
         OPERATION_BOP_COUNT,         /**< B+tree operation with count element semantics */
         OPERATION_BOP_POSITION,      /**< B+tree operation with find position */
+        OPERATION_BOP_PWG,           /**< B+tree operation with find position with get */
         OPERATION_BOP_GBP,           /**< B+tree operation with get element by position */
         // SUPPORT_BOP_MGET
         OPERATION_BOP_MGET,          /**< B+tree operation with mget(multiple get) element semantics */

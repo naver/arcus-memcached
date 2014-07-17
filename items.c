@@ -149,6 +149,17 @@ static unsigned char btree_binary_max_bkey[BKEY_MAX_BINARY_LENG] = { 0xFF, 0xFF,
                                                                      0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
                                                                      0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
+/* maximum collection size  */
+static int32_t coll_size_limit = 100000;
+static int32_t max_list_size   = 50000;
+static int32_t max_set_size    = 50000;
+static int32_t max_btree_size  = 50000;
+
+/* default collection size */
+static int32_t default_list_size  = 4000;
+static int32_t default_set_size   = 4000;
+static int32_t default_btree_size = 4000;
+
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
 void item_stats_reset(struct default_engine *engine)
@@ -1278,6 +1289,30 @@ static void do_mem_slot_free(struct default_engine *engine, void *data, size_t n
     slabs_free(engine, it, ntotal, clsid);
 }
 
+/* get real maxcount for each collection type */
+static int32_t coll_real_maxcount(hash_item *it, int32_t maxcount)
+{
+    int32_t real_maxcount = maxcount;
+
+    if (IS_LIST_ITEM(it)) {
+        if (maxcount < 0 || maxcount > max_list_size)
+            real_maxcount = max_list_size;
+        else if (maxcount == 0)
+            real_maxcount = default_list_size;
+    } else if (IS_SET_ITEM(it)) {
+        if (maxcount < 0 || maxcount > max_set_size)
+            real_maxcount = max_set_size;
+        else if (maxcount == 0)
+            real_maxcount = default_set_size;
+    } else if (IS_BTREE_ITEM(it)) {
+        if (maxcount < 0 || maxcount > max_btree_size)
+            real_maxcount = max_btree_size;
+        else if (maxcount == 0)
+            real_maxcount = default_btree_size;
+    }
+    return real_maxcount;
+}
+
 /*
  * LIST collection management
  */
@@ -1316,8 +1351,8 @@ static hash_item *do_list_item_alloc(struct default_engine *engine,
 
         /* initialize list meta information */
         list_meta_info *info = (list_meta_info *)item_get_meta(it);
-        info->mcnt    = attrp->maxcount;
-        info->ccnt    = 0;
+        info->mcnt = coll_real_maxcount(it, attrp->maxcount);
+        info->ccnt = 0;
         info->ovflact = (attrp->ovflaction==0 ? OVFL_TAIL_TRIM : attrp->ovflaction);
 #ifdef ENABLE_STICKY_ITEM
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
@@ -1580,8 +1615,8 @@ static hash_item *do_set_item_alloc(struct default_engine *engine,
 
         /* initialize set meta information */
         set_meta_info *info = (set_meta_info *)item_get_meta(it);
-        info->mcnt    = attrp->maxcount;
-        info->ccnt    = 0;
+        info->mcnt = coll_real_maxcount(it, attrp->maxcount);
+        info->ccnt = 0;
         info->ovflact = OVFL_ERROR;
 #ifdef ENABLE_STICKY_ITEM
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
@@ -2023,8 +2058,8 @@ static hash_item *do_btree_item_alloc(struct default_engine *engine,
 
         /* initialize b+tree meta information */
         btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
-        info->mcnt    = attrp->maxcount;
-        info->ccnt    = 0;
+        info->mcnt = coll_real_maxcount(it, attrp->maxcount);
+        info->ccnt = 0;
         info->ovflact = (attrp->ovflaction==0 ? OVFL_SMALLEST_TRIM : attrp->ovflaction);
 #ifdef ENABLE_STICKY_ITEM
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
@@ -4249,38 +4284,105 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(struct default_engine *engine,
     return ret;
 }
 
-static int do_btree_posi_find(struct default_engine *engine, btree_meta_info *info,
-                              const int bkrtype, const bkey_range *bkrange,
-                              ENGINE_BTREE_ORDER order, int *position)
+static int do_btree_posi_from_path(btree_meta_info *info,
+                                   btree_elem_posi *path, ENGINE_BTREE_ORDER order)
 {
-    assert(bkrtype == BKEY_RANGE_TYPE_SIN);
+    int d, i, bpos;
+
+    bpos = path[0].indx;
+    for (d = 1; d <= info->root->ndepth; d++) {
+        for (i = 0; i < path[d].indx; i++) {
+            bpos += path[d].node->ecnt[i];
+        }
+    }
+    if (order == BTREE_ORDER_DESC) {
+        bpos = info->ccnt - bpos - 1;
+    }
+    return bpos; /* btree position */
+}
+
+static int do_btree_posi_find(btree_meta_info *info,
+                              const int bkrtype, const bkey_range *bkrange,
+                              ENGINE_BTREE_ORDER order)
+{
     btree_elem_posi  path[BTREE_MAX_DEPTH];
     btree_elem_item *elem;
+    int bpos; /* btree position */
 
-    if (info->root == NULL) return 0;
+    if (info->root == NULL) return -1; /* not found */
 
     elem = do_btree_find_first(info->root, bkrtype, bkrange, path, true);
     if (elem != NULL) {
         assert(path[0].bkeq == true);
-        int d, i;
-        int prev_count = path[0].indx;
-        for (d = 1; d <= info->root->ndepth; d++) {
-            for (i = 0; i < path[d].indx; i++) {
-                prev_count += path[d].node->ecnt[i];
-            }
-        }
-        if (order == BTREE_ORDER_ASC) {
-            *position = prev_count;
-        } else {
-            *position = info->ccnt - prev_count - 1;
-        }
-        return 1; /* found count */
+        bpos = do_btree_posi_from_path(info, path, order);
+        assert(bpos >= 0);
     } else {
-        return 0; /* found count */
+        bpos = -1; /* not found */
     }
+    return bpos;
 }
 
-static uint32_t do_btree_elem_get_by_posi(struct default_engine *engine, btree_meta_info *info,
+static int do_btree_elem_batch_get(btree_elem_posi posi, const int count,
+                                   const bool forward, const bool reverse,
+                                   btree_elem_item **elem_array)
+{
+    btree_elem_item *elem;
+    int nfound = 0;
+    while (nfound < count) {
+        if (forward) do_btree_incr_posi(&posi);
+        else         do_btree_decr_posi(&posi);
+        if (posi.node == NULL) break;
+
+        elem = BTREE_GET_ELEM_ITEM(posi.node, posi.indx);
+        elem->refcount++;
+        if (reverse) elem_array[count-nfound-1] = elem;
+        else         elem_array[nfound] = elem;
+        nfound += 1;
+    }
+    return nfound;
+}
+
+static int do_btree_posi_find_with_get(btree_meta_info *info,
+                                       const int bkrtype, const bkey_range *bkrange,
+                                       ENGINE_BTREE_ORDER order, const int count,
+                                       btree_elem_item **elem_array,
+                                       uint32_t *elem_count, uint32_t *elem_index)
+{
+    btree_elem_posi  path[BTREE_MAX_DEPTH];
+    btree_elem_item *elem;
+    int bpos, ecnt, eidx;
+
+    if (info->root == NULL) return -1; /* not found */
+
+    elem = do_btree_find_first(info->root, bkrtype, bkrange, path, true);
+    if (elem != NULL) {
+        assert(path[0].bkeq == true);
+        bpos = do_btree_posi_from_path(info, path, order);
+        assert(bpos >= 0);
+
+        ecnt = 1;                             /* elem count */
+        eidx = (bpos < count) ? bpos : count; /* elem index in elem array */
+        elem->refcount++;
+        elem_array[eidx] = elem;
+
+        if (order == BTREE_ORDER_ASC) {
+            ecnt += do_btree_elem_batch_get(path[0], eidx,  false, true,  &elem_array[0]);
+            assert((ecnt-1) == eidx);
+            ecnt += do_btree_elem_batch_get(path[0], count, true,  false, &elem_array[eidx+1]);
+        } else {
+            ecnt += do_btree_elem_batch_get(path[0], eidx,  true,  true,  &elem_array[0]);
+            assert((ecnt-1) == eidx);
+            ecnt += do_btree_elem_batch_get(path[0], count, false, false, &elem_array[eidx+1]);
+        }
+        *elem_count = (uint32_t)ecnt;
+        *elem_index = (uint32_t)eidx;
+    } else {
+        bpos = -1; /* not found */
+    }
+    return bpos; /* btree_position */
+}
+
+static uint32_t do_btree_elem_get_by_posi(btree_meta_info *info,
                                           const int index, const uint32_t count, const bool forward,
                                           btree_elem_item **elem_array)
 {
@@ -4307,18 +4409,11 @@ static uint32_t do_btree_elem_get_by_posi(struct default_engine *engine, btree_m
     posi.node = node;
     posi.indx = index-tot_ecnt;
 
-    nfound = 0;
     elem = BTREE_GET_ELEM_ITEM(posi.node, posi.indx);
-    while (elem != NULL) {
-        elem->refcount++;
-        elem_array[nfound++] = elem;
-        if (nfound >= count) break;
-
-        if (forward) do_btree_incr_posi(&posi);
-        else         do_btree_decr_posi(&posi);
-        assert(posi.node != NULL);
-        elem = BTREE_GET_ELEM_ITEM(posi.node, posi.indx);
-    }
+    elem->refcount++;
+    elem_array[0] = elem;
+    nfound = 1;
+    nfound += do_btree_elem_batch_get(posi, count-1, forward, false, &elem_array[nfound]);
     return nfound;
 }
 
@@ -5294,6 +5389,23 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
     engine->coll_del_queue.size = 0;
     engine->coll_del_sleep = false;
 
+    /* adjust maximum collection size */
+    if (engine->config.max_list_size > max_list_size) {
+        max_list_size = engine->config.max_list_size < coll_size_limit
+                      ? (int32_t)engine->config.max_list_size : coll_size_limit;
+    }
+    if (engine->config.max_set_size > max_set_size) {
+        max_set_size = engine->config.max_set_size < coll_size_limit
+                     ? (int32_t)engine->config.max_set_size : coll_size_limit;
+    }
+    if (engine->config.max_btree_size > max_btree_size) {
+        max_btree_size = engine->config.max_btree_size < coll_size_limit
+                       ? (int32_t)engine->config.max_btree_size : coll_size_limit;
+    }
+    logger->log(EXTENSION_LOG_INFO, NULL, "maximum list  size = %d\n", max_list_size);
+    logger->log(EXTENSION_LOG_INFO, NULL, "maximum set   size = %d\n", max_set_size);
+    logger->log(EXTENSION_LOG_INFO, NULL, "maximum btree size = %d\n", max_btree_size);
+
     pthread_t tid;
     int ret = pthread_create(&tid, NULL, collection_delete_thread, engine);
     if (ret != 0) {
@@ -6129,7 +6241,7 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
             }
-            if (info->ccnt == 0) {
+            if (info->ccnt == 0 || offset >= info->ccnt) {
                 ret = ENGINE_ELEM_ENOENT; break;
             }
             if ((info->bktype == BKEY_TYPE_UINT64 && bkrange->from_nbkey >  0) ||
@@ -6211,8 +6323,10 @@ ENGINE_ERROR_CODE btree_posi_find(struct default_engine *engine,
 {
     hash_item       *it;
     btree_meta_info *info;
-    int bkrtype = do_btree_bkey_range_type(bkrange);
     ENGINE_ERROR_CODE ret;
+
+    int bkrtype = do_btree_bkey_range_type(bkrange);
+    assert(bkrtype == BKEY_RANGE_TYPE_SIN);
 
     pthread_mutex_lock(&engine->cache_lock);
     ret = do_btree_item_find(engine, key, nkey, true, &it);
@@ -6229,10 +6343,52 @@ ENGINE_ERROR_CODE btree_posi_find(struct default_engine *engine,
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
-            if (do_btree_posi_find(engine, info, bkrtype, bkrange, order, position) == 0) {
+            *position = do_btree_posi_find(info, bkrtype, bkrange, order);
+            if (*position < 0) {
                 ret = ENGINE_ELEM_ENOENT; break;
             }
-            /* position was given by posi argument */
+        } while (0);
+        do_item_release(engine, it);
+    }
+    pthread_mutex_unlock(&engine->cache_lock);
+    return ret;
+}
+
+ENGINE_ERROR_CODE btree_posi_find_with_get(struct default_engine *engine,
+                                           const char *key, const size_t nkey,
+                                           const bkey_range *bkrange, ENGINE_BTREE_ORDER order,
+                                           const int count, int *position,
+                                           btree_elem_item **elem_array, uint32_t *elem_count,
+                                           uint32_t *elem_index, uint32_t *flags)
+{
+    hash_item       *it;
+    btree_meta_info *info;
+    ENGINE_ERROR_CODE ret;
+
+    int bkrtype = do_btree_bkey_range_type(bkrange);
+    assert(bkrtype == BKEY_RANGE_TYPE_SIN);
+
+    pthread_mutex_lock(&engine->cache_lock);
+    ret = do_btree_item_find(engine, key, nkey, true, &it);
+    if (ret == ENGINE_SUCCESS) {
+        info = (btree_meta_info *)item_get_meta(it);
+        do {
+            if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
+                ret = ENGINE_UNREADABLE; break;
+            }
+            if (info->ccnt == 0) {
+                ret = ENGINE_ELEM_ENOENT; break;
+            }
+            if ((info->bktype == BKEY_TYPE_UINT64 && bkrange->from_nbkey >  0) ||
+                (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
+                ret = ENGINE_EBADBKEY; break;
+            }
+            *position = do_btree_posi_find_with_get(info, bkrtype, bkrange, order, count,
+                                                    elem_array, elem_count, elem_index);
+            if (*position < 0) {
+                ret = ENGINE_ELEM_ENOENT; break;
+            }
+            *flags = it->flags;
         } while (0);
         do_item_release(engine, it);
     }
@@ -6281,7 +6437,7 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
                 forward = false;
                 rqcount = from_posi - to_posi + 1;
             }
-            *elem_count = do_btree_elem_get_by_posi(engine, info, from_posi, rqcount, forward, elem_array);
+            *elem_count = do_btree_elem_get_by_posi(info, from_posi, rqcount, forward, elem_array);
             if (*elem_count == 0) {
                 ret = ENGINE_ELEM_ENOENT; break;
             }
@@ -6463,16 +6619,7 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
                 ret = ENGINE_EBADATTR; break;
             }
             if (attr_ids[i] == ATTR_MAXCOUNT) {
-                if (IS_LIST_ITEM(it)) {
-                    if (attr_data->maxcount > MAX_LIST_SIZE)
-                        attr_data->maxcount = MAX_LIST_SIZE;
-                } else if (IS_SET_ITEM(it)) {
-                    if (attr_data->maxcount > MAX_SET_SIZE)
-                        attr_data->maxcount = MAX_SET_SIZE;
-                } else { /* IS_BTREE_ITEM(it) */
-                    if (attr_data->maxcount > MAX_BTREE_SIZE)
-                        attr_data->maxcount = MAX_BTREE_SIZE;
-                }
+                attr_data->maxcount = coll_real_maxcount(it, attr_data->maxcount);
                 if (info->ccnt > attr_data->maxcount) {
                     ret = ENGINE_EBADVALUE; break;
                 }

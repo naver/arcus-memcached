@@ -39,14 +39,6 @@
 #define MAX_SMGET_REQ_COUNT 2000
 #endif
 
-#define MAX_LIST_SIZE       50000
-#define MAX_SET_SIZE        50000
-#define MAX_BTREE_SIZE      50000
-
-#define DEFAULT_LIST_SIZE   4000
-#define DEFAULT_SET_SIZE    4000
-#define DEFAULT_BTREE_SIZE  4000
-
 /* collection meta flag */
 #define COLL_META_FLAG_READABLE 2
 #define COLL_META_FLAG_STICKY   4
@@ -100,6 +92,9 @@ struct config {
    float  factor;
    size_t chunk_size;
    size_t item_size_max;
+   size_t max_list_size;
+   size_t max_set_size;
+   size_t max_btree_size;
    bool   ignore_vbucket;
    char   prefix_delimiter;
    bool   vb0;

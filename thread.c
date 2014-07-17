@@ -683,6 +683,7 @@ void threadlocal_stats_clear(struct thread_stats *stats) {
     stats->cmd_bop_get = 0;
     stats->cmd_bop_count = 0;
     stats->cmd_bop_position = 0;
+    stats->cmd_bop_pwg = 0;
     stats->cmd_bop_gbp = 0;
 #ifdef SUPPORT_BOP_MGET
     stats->cmd_bop_mget = 0;
@@ -731,6 +732,9 @@ void threadlocal_stats_clear(struct thread_stats *stats) {
     stats->bop_position_elem_hits = 0;
     stats->bop_position_none_hits = 0;
     stats->bop_position_misses = 0;
+    stats->bop_pwg_elem_hits = 0;
+    stats->bop_pwg_none_hits = 0;
+    stats->bop_pwg_misses = 0;
     stats->bop_gbp_elem_hits = 0;
     stats->bop_gbp_none_hits = 0;
     stats->bop_gbp_misses = 0;
@@ -800,6 +804,7 @@ void threadlocal_stats_aggregate(struct thread_stats *thread_stats, struct threa
         stats->cmd_bop_get += thread_stats[ii].cmd_bop_get;
         stats->cmd_bop_count += thread_stats[ii].cmd_bop_count;
         stats->cmd_bop_position += thread_stats[ii].cmd_bop_position;
+        stats->cmd_bop_pwg += thread_stats[ii].cmd_bop_pwg;
         stats->cmd_bop_gbp += thread_stats[ii].cmd_bop_gbp;
 #ifdef SUPPORT_BOP_MGET
         stats->cmd_bop_mget += thread_stats[ii].cmd_bop_mget;
@@ -848,6 +853,9 @@ void threadlocal_stats_aggregate(struct thread_stats *thread_stats, struct threa
         stats->bop_position_elem_hits += thread_stats[ii].bop_position_elem_hits;
         stats->bop_position_none_hits += thread_stats[ii].bop_position_none_hits;
         stats->bop_position_misses += thread_stats[ii].bop_position_misses;
+        stats->bop_pwg_elem_hits += thread_stats[ii].bop_pwg_elem_hits;
+        stats->bop_pwg_none_hits += thread_stats[ii].bop_pwg_none_hits;
+        stats->bop_pwg_misses += thread_stats[ii].bop_pwg_misses;
         stats->bop_gbp_elem_hits += thread_stats[ii].bop_gbp_elem_hits;
         stats->bop_gbp_none_hits += thread_stats[ii].bop_gbp_none_hits;
         stats->bop_gbp_misses += thread_stats[ii].bop_gbp_misses;
