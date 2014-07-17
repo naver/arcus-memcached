@@ -26,10 +26,12 @@ bkey들의 정렬(ASC or DESC) 기준으로 봐서 몇 번째 위치한 element�
 B+tree position은 0-based index로 표현한다.
 예를 들어, b+tree에 N개의 elements가 있다면 0부터 N-1까지의 index로 나타낸다.
 
-Arcus cache server에서 제공하는 b+tree position 관련 명령은 두 가지가 있다.
+Arcus cache server에서 제공하는 b+tree position 관련 명령은 다음과 같다.
 
-- [B+tree에서 특정 element의 position을 조회하는 기능 : bop position](command-btree-collection.md#bop-position---btree-position-%EC%A1%B0%ED%9A%8C)
+- [B+tree에서 특정 bkey의 position을 조회하는 기능 : bop position](command-btree-collection.md#bop-position---btree-position-%EC%A1%B0%ED%9A%8C)
 - [B+tree에서 하나의 position 또는 position range에 해당하는 element를 조회하는 기능 : bop gbp(get by position)](command-btree-collection.md#bop-gbp---btree-get-by-position)
+- B+tree에서 특정 bkey의 position과 element 그리고 그 위치 앞뒤의 element를 함께 조회하는 기능: bop pwg(position with get)
+
 
 B+tree position 기반의 조회가 필요한 예를 하나 들면, ranking 시스템이 있다.
 Ranking 시스템에서는 특정 score를 bkey로 하여 해당 elements를 저장하고,
@@ -495,6 +497,55 @@ END\r\n
 - "NOT_FOUND” - key miss
 - “NOT_FOUND_ELEMENT” - element miss
 - “TYPE_MISMATCH” - b+tree collection 아님
+- “UNREADABLE” - 해당 item이 unreadable item임
+- “CLIENT_ERROR bad command line format” - protocol syntax 틀림
+- “SERVER_ERROR out of memory [writing get response]” - 메모리 부족
+
+### bop pwg - B+Tree Find Position with Get (version 1.8.0)
+
+B+tree collection에서 특정 bkey의 position을 조회하면서,
+그 bkey를 가진 element를 포함하여 앞뒤에(양방향) 위치한 element N개 씩을 한번에 조회한다.
+
+```
+bop pwg <key> <bkey> <order> [<count>]\r\n
+* <order> = asc | desc
+```
+
+- \<key\> - 대상 item의 key string
+- \<bkey\> - 대상 element의 bkey
+- \<order\> - 어떤 bkey 정렬 기준으로 position을 얻을 것인지 명시
+- \<count\> - 조회한 position의 앞뒤에서 각각 몇 개의 element를 조회할 것인지를 명시
+  - 0이면, 조회한 position의 element만 조회
+  - 양수이면, 조회한 position의 element 외에 그 position의 앞뒤에서 각각 그 수만큼 element 조회
+
+성공 시의 response string은 아래와 같다.
+
+```
+VALUE <position> <flags> <count> <index>\r\n
+<bkey> [<eflag>] <bytes> <data>\r\n
+...
+<bkey> [<eflag>] <bytes> <data>\r\n
+END\r\n
+```
+
+위의 VALUE 라인에서 각 값의 의미는 다음과 같다.
+그 아래 라인들에서 element 값의 표현은 bop get 경우와 동일하다.
+
+- \<position\> : 주어진 bkey의 position
+- \<flags\> : b+tree item의 flags 속성값
+- \<count\> : 조회한 전체 element 개수
+- \<index\> : 전체 element list에서 주어진 bkey를 가진 element 위치 (0-based index)
+  - 주어진 bkey의 position과 element만 조회하면, count는 1이 되고, index는 0이 된다.
+  - 주어진 bkey의 position과 element 외에 양방향 10개 element 조회에서,
+    그 position 앞에 5개 element가 존재하고 뒤에 10개 element가 존재한다면
+    count는 (5 + 1 + 10) = 16이 되고, index는 5가 된다.
+
+실패 시의 response string과 그 의미는 아래와 같다.
+
+- "NOT_FOUND” - key miss
+- “NOT_FOUND_ELEMENT” - element miss
+- “TYPE_MISMATCH” - b+tree collection 아님
+- “BKEY_MISMATCH” - 명령 인자로 주어진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
 - “UNREADABLE” - 해당 item이 unreadable item임
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “SERVER_ERROR out of memory [writing get response]” - 메모리 부족
