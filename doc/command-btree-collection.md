@@ -514,7 +514,7 @@ bop pwg <key> <bkey> <order> [<count>]\r\n
 - \<key\> - 대상 item의 key string
 - \<bkey\> - 대상 element의 bkey
 - \<order\> - 어떤 bkey 정렬 기준으로 position을 얻을 것인지 명시
-- \<count\> - 조회한 position의 앞뒤에서 각각 몇 개의 element를 조회할 것인지를 명시
+- \<count\> - 조회한 position의 앞뒤에서 각각 몇 개의 element를 조회할 것인지를 명시 (**최대 값은 100으로 제한**)
   - 0이면, 조회한 position의 element만 조회
   - 양수이면, 조회한 position의 element 외에 그 position의 앞뒤에서 각각 그 수만큼 element 조회
 
