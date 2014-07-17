@@ -252,6 +252,31 @@ static void setup_thread(LIBEVENT_THREAD *me, bool tap) {
                                         "Failed to create suffix cache\n");
         exit(EXIT_FAILURE);
     }
+
+#if 1 // COLL_RESPONSE_HANDLING
+    /* response buffer for collection */
+    if (tap) {
+        me->eitem_buffer = NULL;
+        me->eitem_buflen = 0;
+        me->resps_buffer = NULL;
+        me->resps_buflen = 0;
+    } else {
+        me->eitem_buflen = sizeof(void*) * 100000; // for keeping max 100000 elements
+        me->resps_buflen = 512 * 1024;             // response buffer initial size: 512KB
+        me->eitem_buffer = (char*)malloc(me->eitem_buflen);
+        if (me->eitem_buffer == NULL) {
+            settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+                                            "Failed to allocate thread element buffer\n");
+            exit(EXIT_FAILURE);
+        }
+        me->resps_buffer = (char*)malloc(me->resps_buflen);
+        if (me->resps_buffer == NULL) {
+            settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+                                            "Failed to allocate thread response buffer\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+#endif
 }
 
 /*
@@ -1022,6 +1047,27 @@ void thread_init(int nthr, struct event_base *main_base) {
     }
     pthread_mutex_unlock(&init_lock);
 }
+
+#if 1 // COLL_RESPONSE_HANDLING
+int thread_realloc_resps_buffer(LIBEVENT_THREAD *thread, int size)
+{
+    if (thread->resps_buflen < size) {
+        int count = ((size-1) / (512*1024)) + 1;
+        int newsz = count * (512*1024);
+        char *newptr = (char*)malloc(newsz);
+        if (newptr == NULL) {
+            settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+                                            "Failed to realloc thread response buffer: %d=>%d\n",
+                                            thread->resps_buflen, size);
+            return -1;
+        }
+        free(thread->resps_buffer);
+        thread->resps_buffer = newptr;
+        thread->resps_buflen = newsz;
+    }
+    return 0;
+}
+#endif
 
 void threads_shutdown(void)
 {

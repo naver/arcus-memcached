@@ -413,6 +413,12 @@ typedef struct {
     int notify_send_fd;         /* sending end of notify pipe */
     struct conn_queue *new_conn_queue; /* queue of new connections to handle */
     cache_t *suffix_cache;      /* suffix cache */
+#if 1 // COLL_RESPONSE_HANDLING
+    char *eitem_buffer;         /* elements buffer: 100000 elements */
+    char *resps_buffer;         /* response buffer: 1 MB */
+    int   eitem_buflen;         /* elements buffer length */
+    int   resps_buflen;         /* response buffer length */
+#endif
     pthread_mutex_t mutex;      /* Mutex to lock protect access to the pending_io */
     bool is_locked;
     struct conn *pending_io;    /* List of connection with pending async io ops */
@@ -623,6 +629,9 @@ extern int daemonize(int nochdir, int noclose);
  */
 
 void thread_init(int nthreads, struct event_base *main_base);
+#if 1 // COLL_RESPONSE_HANDLING
+int  thread_realloc_resps_buffer(LIBEVENT_THREAD *thread, int size);
+#endif
 void threads_shutdown(void);
 
 int  dispatch_event_add(int thread, conn *c);
