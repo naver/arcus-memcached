@@ -67,6 +67,9 @@ sub assert_sop_get {
 }
 
 # SOP test global variables
+my $flags = 13;
+my $default_set_size = 4000;
+my $maximum_set_size = 50000;
 my $cnt;
 my $cmd;
 my $val;
@@ -75,10 +78,10 @@ my $rst;
 # testSOPInsertGet
 $cmd = "get skey"; $rst = "END";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-sop_insert("skey", 0, 2848, "create", 13, 0, 0);
-getattr_is($sock, "skey count maxcount", "count=2849 maxcount=4000");
-assert_sop_get("skey 2849", 13, 2849, 0, 2848);
-assert_sop_get("skey 0",    13, 2849, 0, 2848);
+sop_insert("skey", 0, 2848, "create", $flags, 0, 0);
+getattr_is($sock, "skey count maxcount", "count=2849 maxcount=$default_set_size");
+assert_sop_get("skey 2849", $flags, 2849, 0, 2848);
+assert_sop_get("skey 0",    $flags, 2849, 0, 2848);
 $cmd = "sop exist skey 6"; $val="datum6"; $rst = "EXIST";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "sop exist skey 7"; $val="datum66"; $rst = "EXIST";
@@ -95,12 +98,12 @@ print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 # testSOPInsertDeletePop
 $cmd = "get skey"; $rst = "END";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-sop_insert("skey", 0, 9, "create", 13, 0, -1);
+sop_insert("skey", 0, 9, "create", $flags, 0, -1);
 $cmd = "sop insert skey 6"; $val="datum3"; $rst = "ELEMENT_EXISTS";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-getattr_is($sock, "skey count maxcount", "count=10 maxcount=50000");
+getattr_is($sock, "skey count maxcount", "count=10 maxcount=$maximum_set_size");
 sop_get_is($sock, "skey 10",
-           13, 10, "datum0,datum1,datum2,datum3,datum4,datum5,datum6,datum7,datum8,datum9");
+           $flags, 10, "datum0,datum1,datum2,datum3,datum4,datum5,datum6,datum7,datum8,datum9");
 $cmd = "sop delete skey 6"; $val="datum1"; $rst = "DELETED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "sop delete skey 6"; $val="datum3"; $rst = "DELETED";
@@ -116,19 +119,19 @@ print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"
 $cmd = "sop delete skey 7"; $val="datum10"; $rst = "NOT_FOUND_ELEMENT";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 sop_get_is($sock, "skey 10 delete",
-           13, 5, "datum0,datum2,datum4,datum6,datum8");
+           $flags, 5, "datum0,datum2,datum4,datum6,datum8");
 $cmd = "sop insert skey 6"; $val="datum3"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "sop delete skey 6 drop"; $val="datum3"; $rst = "DELETED_DROPPED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "get skey"; $rst = "END";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-sop_insert("skey", 0, 49999, "create", 13, 0, -1);
+sop_insert("skey", 0, 49999, "create", $flags, 0, -1);
 $cmd = "sop insert skey 10"; $val="datum12345"; $rst = "OVERFLOWED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-getattr_is($sock, "skey count maxcount", "count=50000 maxcount=50000");
-assert_sop_get("skey 50000", 13, 50000, 0, 49999);
-assert_sop_get("skey 0",     13, 50000, 0, 49999);
+getattr_is($sock, "skey count maxcount", "count=50000 maxcount=$maximum_set_size");
+assert_sop_get("skey 50000", $flags, 50000, 0, 49999);
+assert_sop_get("skey 0",     $flags, 50000, 0, 49999);
 $cmd = "sop delete skey 6"; $val="datum4"; $rst = "DELETED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "sop delete skey 7"; $val="datum44"; $rst = "DELETED";
@@ -143,7 +146,7 @@ $cmd = "sop delete skey 11"; $val="datum444444"; $rst = "NOT_FOUND_ELEMENT";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "sop delete skey 8"; $val="datum444"; $rst = "NOT_FOUND_ELEMENT";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-getattr_is($sock, "skey count maxcount", "count=49995 maxcount=50000");
+getattr_is($sock, "skey count maxcount", "count=49995 maxcount=$maximum_set_size");
 $cmd = "sop insert skey 10"; $val="datum44444"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "sop insert skey 9"; $val="datum4444"; $rst = "STORED";
@@ -154,23 +157,23 @@ $cmd = "sop insert skey 7"; $val="datum44"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "sop insert skey 6"; $val="datum4"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-getattr_is($sock, "skey count maxcount", "count=50000 maxcount=50000");
+getattr_is($sock, "skey count maxcount", "count=50000 maxcount=$maximum_set_size");
 sop_delete("skey", 30000, 39999);
 sop_delete("skey", 0, 9999);
-getattr_is($sock, "skey count maxcount", "count=30000 maxcount=50000");
+getattr_is($sock, "skey count maxcount", "count=30000 maxcount=$maximum_set_size");
 $cmd = "sop exist skey 9"; $val="datum6666"; $rst = "NOT_EXIST";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "sop exist skey 10"; $val="datum26666"; $rst = "EXIST";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 sop_delete("skey", 40000, 49999);
-assert_sop_get("skey 20000 drop", 13, 20000, 10000, 29999);
+assert_sop_get("skey 20000 drop", $flags, 20000, 10000, 29999);
 $cmd = "get skey"; $rst = "END";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 
 # testEmptyCollectionOfSetType
 $cmd = "get skey"; $rst = "END";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-$cmd = "sop create skey 13 0 -1"; $rst = "CREATED";
+$cmd = "sop create skey $flags 0 -1"; $rst = "CREATED";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 $cmd = "sop insert skey 6"; $val = "datum0"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
@@ -182,9 +185,9 @@ $cmd = "sop insert skey 6"; $val = "datum3"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "sop insert skey 6"; $val = "datum4"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-getattr_is($sock, "skey count maxcount", "count=5 maxcount=50000");
+getattr_is($sock, "skey count maxcount", "count=5 maxcount=$maximum_set_size");
 sop_get_is($sock, "skey 0",
-           13, 5, "datum0,datum1,datum2,datum3,datum4");
+           $flags, 5, "datum0,datum1,datum2,datum3,datum4");
 $cmd = "sop delete skey 6"; $val="datum0"; $rst = "DELETED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "sop delete skey 6"; $val="datum2"; $rst = "DELETED";
@@ -192,11 +195,11 @@ print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"
 $cmd = "sop delete skey 6"; $val="datum4"; $rst = "DELETED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 sop_get_is($sock, "skey 0 delete",
-           13, 2, "datum1,datum3");
+           $flags, 2, "datum1,datum3");
 $cmd = "sop delete skey 6"; $val="datum3"; $rst = "NOT_FOUND_ELEMENT";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "sop get skey 1"; $rst = "NOT_FOUND_ELEMENT";
-getattr_is($sock, "skey count maxcount", "count=0 maxcount=50000");
+getattr_is($sock, "skey count maxcount", "count=0 maxcount=$maximum_set_size");
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 $cmd = "sop insert skey 6"; $val = "datum0"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
@@ -205,7 +208,7 @@ print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"
 $cmd = "sop insert skey 6"; $val = "datum2"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 sop_get_is($sock, "skey 0 drop",
-           13, 3, "datum0,datum1,datum2");
+           $flags, 3, "datum0,datum1,datum2");
 $cmd = "get skey"; $rst = "END";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 
@@ -214,7 +217,7 @@ $cmd = "get skey"; $rst = "END";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 $cmd = "sop insert skey 6"; $val = "datum0"; $rst = "NOT_FOUND";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-$cmd = "sop insert skey 6 create 13 0 1000"; $val = "datum0"; $rst = "CREATED_STORED";
+$cmd = "sop insert skey 6 create $flags 0 1000"; $val = "datum0"; $rst = "CREATED_STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "sop insert skey 6"; $val = "datum0"; $rst = "ELEMENT_EXISTS";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
@@ -231,7 +234,7 @@ print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 # testSOPOverflowCheck
 $cmd = "get skey"; $rst = "END";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-$cmd = "sop insert skey 6 create 13 0 1000"; $val = "datum1"; $rst = "CREATED_STORED";
+$cmd = "sop insert skey 6 create $flags 0 1000"; $val = "datum1"; $rst = "CREATED_STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 getattr_is($sock, "skey count maxcount", "count=1 maxcount=1000");
 $cmd = "setattr skey maxcount=5"; $rst = "OK";
@@ -246,7 +249,7 @@ print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"
 $cmd = "sop insert skey 6"; $val = "datum5"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 sop_get_is($sock, "skey 5",
-           13, 5, "datum1,datum2,datum3,datum4,datum5");
+           $flags, 5, "datum1,datum2,datum3,datum4,datum5");
 $cmd = "sop insert skey 6"; $val = "datum6"; $rst = "OVERFLOWED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "setattr skey overflowaction=head_trim"; $rst = "ATTR_ERROR bad value";
@@ -321,7 +324,7 @@ print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 # testSOPNotKVError
 $cmd = "get skey"; $rst = "END";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-$cmd = "sop insert skey 6 create 13 60 1000"; $val = "datum1"; $rst = "CREATED_STORED";
+$cmd = "sop insert skey 6 create $flags 60 1000"; $val = "datum1"; $rst = "CREATED_STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "sop insert skey 6"; $val = "datum2"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
@@ -347,7 +350,7 @@ print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 # testSOPExpire
 $cmd = "get skey"; $rst = "END";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-$cmd = "sop insert skey 6 create 13 60 1000"; $val = "datum1"; $rst = "CREATED_STORED";
+$cmd = "sop insert skey 6 create $flags 60 1000"; $val = "datum1"; $rst = "CREATED_STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "sop insert skey 6"; $val = "datum2"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
@@ -355,7 +358,7 @@ $cmd = "sop insert skey 6"; $val = "datum3"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "setattr skey expiretime=2"; $rst = "OK";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-sop_get_is($sock, "skey 5",  13, 3, "datum1,datum2,datum3");
+sop_get_is($sock, "skey 5",  $flags, 3, "datum1,datum2,datum3");
 sleep(2.1);
 $cmd = "sop get skey 5"; $rst = "NOT_FOUND";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
@@ -365,13 +368,13 @@ print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 # testSOPFlush
 $cmd = "get skey"; $rst = "END";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-$cmd = "sop insert skey 6 create 13 60 1000"; $val = "datum1"; $rst = "CREATED_STORED";
+$cmd = "sop insert skey 6 create $flags 60 1000"; $val = "datum1"; $rst = "CREATED_STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "sop insert skey 6"; $val = "datum2"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "sop insert skey 6"; $val = "datum3"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-sop_get_is($sock, "skey 5",  13, 3, "datum1,datum2,datum3");
+sop_get_is($sock, "skey 5",  $flags, 3, "datum1,datum2,datum3");
 $cmd = "flush_all"; $rst = "OK";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 $cmd = "sop get skey 5"; $rst = "NOT_FOUND";

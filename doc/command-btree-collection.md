@@ -3,22 +3,22 @@ B+Tree 명령
 
 B+tree collection에 관한 명령은 아래와 같다.
 
-- B+tree collection 생성: bop create
+- [B+tree collection 생성: bop create](command-btree-collection.md#bop-create---btree-collection-%EC%83%9D%EC%84%B1)
 - B+tree collection 삭제: delete (기존 key-value item의 삭제 명령을 그대로 사용)
 
 B+tree element에 관한 기본 명령은 아래와 같다.
 
-- B+tree element 삽입/대체: bop insert/upsert
-- B+tree element 변경: bop update
-- B+tree element 삭제: bop delete
-- B+tree element 조회: bop get
-- B+tree element 개수 계산: bop count
-- B+tree element 값의 증감: bop incr/decr
+- [B+tree element 삽입/대체: bop insert/upsert](command-btree-collection.md#bop-insertupsert---btree-element-%EC%82%BD%EC%9E%85%EB%8C%80%EC%B2%B4)
+- [B+tree element 변경: bop update](command-btree-collection.md#bop-update---btree-element-%EB%B3%80%EA%B2%BD)
+- [B+tree element 삭제: bop delete](command-btree-collection.md#bop-delete---btree-element-%EC%82%AD%EC%A0%9C)
+- [B+tree element 조회: bop get](command-btree-collection.md#bop-get---btree-element-%EC%A1%B0%ED%9A%8C)
+- [B+tree element 개수 계산: bop count](command-btree-collection.md#bop-count---btree-element-%EA%B0%9C%EC%88%98-%EA%B3%84%EC%82%B0)
+- [B+tree element 값의 증감: bop incr/decr](command-btree-collection.md#bop-incrdecr---btree-element-%EA%B0%92%EC%9D%98-%EC%A6%9D%EA%B0%90)
 
 Arcus cache server는 다수의 b+tree들에 대한 조회 기능을 특별히 제공하며, 이들은 아래와 같다.
 
-- 하나의 명령으로 여러 b+tree들에 대한 조회를 한번에 수행하는 기능:  bop mget
-- 여러 b+tree들에서 조회 조건을 만족하는 elements를 sort merge하여 최종 결과를 얻는 기능: bop smget
+- [하나의 명령으로 여러 b+tree들에 대한 조회를 한번에 수행하는 기능:  bop mget](command-btree-collection.md#bop-mget---btree-multiple-get)
+- [여러 b+tree들에서 조회 조건을 만족하는 elements를 sort merge하여 최종 결과를 얻는 기능: bop smget](command-btree-collection.md#bop-smget---btree-sort-merge-get)
 
 Arcus cache server는 bkey 기반의 element 조회 기능 외에도 b+tree position 기반의 element 조회 기능을 제공한다.
 B+tree에서 특정 element의 position이란 b+teee에서의 그 element의 위치 정보로서,
@@ -26,10 +26,12 @@ bkey들의 정렬(ASC or DESC) 기준으로 봐서 몇 번째 위치한 element�
 B+tree position은 0-based index로 표현한다.
 예를 들어, b+tree에 N개의 elements가 있다면 0부터 N-1까지의 index로 나타낸다.
 
-Arcus cache server에서 제공하는 b+tree position 관련 명령은 두 가지가 있다.
+Arcus cache server에서 제공하는 b+tree position 관련 명령은 다음과 같다.
 
-- B+tree에서 특정 element의 position을 조회하는 기능 : bop position
-- B+tree에서 하나의 position 또는 position range에 해당하는 element를 조회하는 기능 : bop gbp(get by position)
+- [B+tree에서 특정 bkey의 position을 조회하는 기능 : bop position](command-btree-collection.md#bop-position---btree-position-%EC%A1%B0%ED%9A%8C)
+- [B+tree에서 하나의 position 또는 position range에 해당하는 element를 조회하는 기능 : bop gbp(get by position)](command-btree-collection.md#bop-gbp---btree-get-by-position)
+- [B+tree에서 특정 bkey의 position과 element 그리고 그 위치 앞뒤의 element를 함께 조회하는 기능: bop pwg(position with get)](command-btree-collection.md#bop-pwg---btree-find-position-with-get-version-180)
+
 
 B+tree position 기반의 조회가 필요한 예를 하나 들면, ranking 시스템이 있다.
 Ranking 시스템에서는 특정 score를 bkey로 하여 해당 elements를 저장하고,
@@ -56,7 +58,7 @@ Response string과 그 의미는 아래와 같다.
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “SERVER_ERROR out of memory” - 메모리 부족
 
-### bop insert/update - B+Tree Element 삽입/대체
+### bop insert/upsert - B+Tree Element 삽입/대체
 
 B+tree collection에 하나의 element를 추가하는 명령으로
 (1) 하나의 element를 삽입하는 bop insert 명령과
@@ -315,7 +317,6 @@ bop mget <lenkeys> <numkeys> <bkey or "bkey range"> [<eflag_filter>] [<offset>] 
 bop mget 명령은 O(small N) 수행 원칙을 위하여 다음의 제약 사항을 가진다.
 - key list에 지정 가능한 최대 key 수는 200이다.
 - count의 최대 값은 50이다.
-- offset과 count 합의 최대 값은 b+tree의 maxcount 속성의 최대 값인 50000이다.
 
  
 성공 시의 response string은 다음과 같다.
@@ -496,6 +497,55 @@ END\r\n
 - "NOT_FOUND” - key miss
 - “NOT_FOUND_ELEMENT” - element miss
 - “TYPE_MISMATCH” - b+tree collection 아님
+- “UNREADABLE” - 해당 item이 unreadable item임
+- “CLIENT_ERROR bad command line format” - protocol syntax 틀림
+- “SERVER_ERROR out of memory [writing get response]” - 메모리 부족
+
+### bop pwg - B+Tree Find Position with Get (version 1.8.0)
+
+B+tree collection에서 특정 bkey의 position을 조회하면서,
+그 bkey를 가진 element를 포함하여 앞뒤에(양방향) 위치한 element N개 씩을 한번에 조회한다.
+
+```
+bop pwg <key> <bkey> <order> [<count>]\r\n
+* <order> = asc | desc
+```
+
+- \<key\> - 대상 item의 key string
+- \<bkey\> - 대상 element의 bkey
+- \<order\> - 어떤 bkey 정렬 기준으로 position을 얻을 것인지 명시
+- \<count\> - 조회한 position의 앞뒤에서 각각 몇 개의 element를 조회할 것인지를 명시
+  - 0이면, 조회한 position의 element만 조회
+  - 양수이면, 조회한 position의 element 외에 그 position의 앞뒤에서 각각 그 수만큼 element 조회
+
+성공 시의 response string은 아래와 같다.
+
+```
+VALUE <position> <flags> <count> <index>\r\n
+<bkey> [<eflag>] <bytes> <data>\r\n
+...
+<bkey> [<eflag>] <bytes> <data>\r\n
+END\r\n
+```
+
+위의 VALUE 라인에서 각 값의 의미는 다음과 같다.
+그 아래 라인들에서 element 값의 표현은 bop get 경우와 동일하다.
+
+- \<position\> : 주어진 bkey의 position
+- \<flags\> : b+tree item의 flags 속성값
+- \<count\> : 조회한 전체 element 개수
+- \<index\> : 전체 element list에서 주어진 bkey를 가진 element 위치 (0-based index)
+  - 주어진 bkey의 position과 element만 조회하면, count는 1이 되고, index는 0이 된다.
+  - 주어진 bkey의 position과 element 외에 양방향 10개 element 조회에서,
+    그 position 앞에 5개 element가 존재하고 뒤에 10개 element가 존재한다면
+    count는 (5 + 1 + 10) = 16이 되고, index는 5가 된다.
+
+실패 시의 response string과 그 의미는 아래와 같다.
+
+- "NOT_FOUND” - key miss
+- “NOT_FOUND_ELEMENT” - element miss
+- “TYPE_MISMATCH” - b+tree collection 아님
+- “BKEY_MISMATCH” - 명령 인자로 주어진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
 - “UNREADABLE” - 해당 item이 unreadable item임
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “SERVER_ERROR out of memory [writing get response]” - 메모리 부족
