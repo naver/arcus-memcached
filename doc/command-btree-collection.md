@@ -30,7 +30,7 @@ Arcus cache server에서 제공하는 b+tree position 관련 명령은 다음과
 
 - [B+tree에서 특정 bkey의 position을 조회하는 기능 : bop position](command-btree-collection.md#bop-position---btree-position-%EC%A1%B0%ED%9A%8C)
 - [B+tree에서 하나의 position 또는 position range에 해당하는 element를 조회하는 기능 : bop gbp(get by position)](command-btree-collection.md#bop-gbp---btree-get-by-position)
-- B+tree에서 특정 bkey의 position과 element 그리고 그 위치 앞뒤의 element를 함께 조회하는 기능: bop pwg(position with get)
+- [B+tree에서 특정 bkey의 position과 element 그리고 그 위치 앞뒤의 element를 함께 조회하는 기능: bop pwg(position with get)](command-btree-collection.md#bop-pwg---btree-find-position-with-get-version-180)
 
 
 B+tree position 기반의 조회가 필요한 예를 하나 들면, ranking 시스템이 있다.
