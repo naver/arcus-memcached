@@ -32,7 +32,7 @@ static void kill_whitey(char *s) {
 
 static int u_hash_key(const char *u)
 {
-    uint32_t h = hash(u, strlen(u), 0) % n_uht_buckets;
+    uint32_t h = mc_hash(u, strlen(u), 0) % n_uht_buckets;
     assert(h < n_uht_buckets);
     return h;
 }
