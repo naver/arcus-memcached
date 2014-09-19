@@ -39,6 +39,28 @@ AC_DEFUN([DETECT_ICC],
        [$2]
     fi
 ])
+DETECT_ICC([],[])
+
+dnl **********************************************************************
+dnl DETECT_CLANG ([ACTION-IF-YES], [ACTION-IF-NO])
+dnl
+dnl check if compiler is clang, and if so run the ACTION-IF-YES sets the
+dnl $CLANG variable to "yes" or "no"
+dnl **********************************************************************
+AC_DEFUN([DETECT_CLANG],
+[
+    AC_MSG_CHECKING([for clang in use])
+    AC_COMPILE_IFELSE(
+    [AC_LANG_PROGRAM([], [[
+    #ifndef __clang__
+            not clang
+    #endif
+    ]])],
+    [CLANG=yes], [CLANG=no])
+    AC_MSG_RESULT([$CLANG])
+    AS_IF([test "$CLANG" = "yes"],[$1],[$2])
+])
+DETECT_CLANG([],[])
 
 dnl **********************************************************************
 dnl DETECT_SUNCC ([ACTION-IF-YES], [ACTION-IF-NO])
@@ -68,10 +90,19 @@ AC_DEFUN([DETECT_SUNCC],
     ])
 ])
 
-AS_IF(test "x$GCC" = "xyes",
-      DETECT_ICC([CFLAGS="-pthread $CFLAGS"], [CFLAGS="-fvisibility=hidden -pthread $CFLAGS"]),
-      ICC=no
-      DETECT_SUNCC([CFLAGS="-xldscope=hidden -mt $CFLAGS"], []))
+DETECT_SUNCC([CFLAGS="-xldscope=hidden -mt $CFLAGS"], [])
+if test "x$GCC" = "xyes" -o "x$ICC" = "xyes"; then
+    if test "x$CLANG" != "xyes"; then
+        CFLAGS="-pthread $CFLAGS"
+    fi
+    if test "x$GCC" = "xyes"; then
+        CFLAGS="-fvisibility=hidden $CFLAGS"
+    fi
+fi
+#AS_IF(test "x$GCC" = "xyes",
+#      DETECT_ICC([CFLAGS="-pthread $CFLAGS"], [CFLAGS="-fvisibility=hidden -pthread $CFLAGS"]),
+#      ICC=no
+#      DETECT_SUNCC([CFLAGS="-xldscope=hidden -mt $CFLAGS"], []))
 
 if test "$ICC" = "no"; then
    AC_PROG_CC_C99
