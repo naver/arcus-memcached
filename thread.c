@@ -441,7 +441,8 @@ static void libevent_tap_process(int fd, short which, void *arg) {
     }
 
     // Do we have pending closes?
-    const size_t max_items = 256;
+    //const size_t max_items = 256;
+    enum { max_items = 256 };
     LOCK_THREAD(me);
     conn *pending_close[max_items];
     size_t n_pending_close = 0;
