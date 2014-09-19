@@ -2260,6 +2260,9 @@ static inline void BINARY_XOR(const unsigned char *v1, const unsigned char *v2,
     }
 }
 
+static bool (*UINT64_COMPARE_OP[COMPARE_OP_MAX]) (const uint64_t *v1, const uint64_t *v2)
+    = { UINT64_ISEQ, UINT64_ISNE, UINT64_ISLT, UINT64_ISLE, UINT64_ISGT, UINT64_ISGE };
+
 static bool (*BINARY_COMPARE_OP[COMPARE_OP_MAX]) (const unsigned char *v1, const int nv1,
                                                   const unsigned char *v2, const int nv2)
     = { BINARY_ISEQ, BINARY_ISNE, BINARY_ISLT, BINARY_ISLE, BINARY_ISGT, BINARY_ISGE };
@@ -5270,6 +5273,13 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
     if (ret != 0) {
         fprintf(stderr, "Can't create thread: %s\n", strerror(ret));
         return ENGINE_FAILED;
+    }
+
+    /* remove unused function warnings */
+    if (1) {
+        uint64_t val1 = 10;
+        uint64_t val2 = 20;
+        assert(UINT64_COMPARE_OP[COMPARE_OP_LT](&val1, &val2) == true);
     }
     return ENGINE_SUCCESS;
 }

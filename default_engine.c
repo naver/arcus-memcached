@@ -278,9 +278,9 @@ static void get_set_elem_info(ENGINE_HANDLE *handle, const void *cookie,
 static void get_btree_elem_info(ENGINE_HANDLE *handle, const void *cookie,
                                 const eitem* eitem, eitem_info *elem_info);
 
-static const char const * vbucket_state_name(enum vbucket_state s)
+static const char * vbucket_state_name(enum vbucket_state s)
 {
-    static const char const * vbucket_states[] = {
+    static const char * vbucket_states[] = {
         "dead", "active", "replica", "pending"
     };
     return vbucket_states[s];

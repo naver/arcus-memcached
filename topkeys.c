@@ -122,6 +122,7 @@ topkey_item_t *topkeys_item_get_or_create(topkeys_t *tk, const void *key, size_t
     return item;
 }
 
+/**** unused function ****
 static inline void append_stat(const void *cookie,
                                const char *name,
                                size_t namelen,
@@ -144,6 +145,7 @@ static inline void append_stat(const void *cookie,
     vlen = snprintf(val_str, sizeof(val_str) - 1, "%d", value);
     add_stats(key_str, klen, val_str, vlen, cookie);
 }
+****************************/
 
 struct tk_context {
     const void *cookie;
