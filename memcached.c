@@ -8098,8 +8098,8 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
 
     bool create = false;
     unsigned int flags;
-    int32_t exptime_int;
-    uint64_t init_value;
+    int32_t exptime_int = 0;
+    uint64_t init_value = 0;
 
     if (ntokens >= 7) {
         if (! (safe_strtoul(tokens[3].value, (uint32_t *)&flags)
@@ -12319,7 +12319,8 @@ void event_handler(const int fd, const short which, void *arg) {
     }
 
     // Do we have pending closes?
-    const size_t max_items = 256;
+    //const size_t max_items = 256;
+    enum { max_items = 256 };
     conn *pending_close[max_items];
     size_t n_pending_close = 0;
     if (c->thread != NULL) {
