@@ -1,2 +1,15 @@
+2014-09-22 [version 1.8.1]
+	* Support Mac OSX (Mavericks)
+
+2014-07-24 [version 1.8.0]
+	* Add bop pwg(position with get) command.
+	* Configurable max collection size, but limitative.
+
+2014-06-12 [version 1.7.1]
+	* Fix the memory corruption by integer overflow of list index.
+
+2014-05-15 
+	* arcus-memcached is opened. (Apache License 2.0)
+
 2014-04-30 
 	* arcus-memcached: version 1.7.0 release
