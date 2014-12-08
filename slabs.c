@@ -41,10 +41,6 @@
 #define RESERVED_SLAB_RATIO 4
 #define MAX_SPACE_SHORTAGE_LEVEL 100
 
-/* variable length slot management */
-#define VARIABLE_LENGTH_SMMGR 1
-
-#ifdef VARIABLE_LENGTH_SMMGR
 /* should be computed manually */
 #define SMMGR_NUM_CLASSES  1025
 //#define SMMGR_NUM_CLASSES  81
@@ -118,45 +114,6 @@ typedef struct _sm_anchor {
 #define SMMGR_MAX_SLOT_SIZE     SMMGR_SLOT_SIZE(MAX_SM_VALUE_SIZE)
 
 static sm_anchor_t sm_anchor;
-#else
-typedef struct _mem_chunk {
-    uint32_t           total_item_count;
-    uint32_t           free_item_count;
-    struct _mem_chunk *prev;
-    struct _mem_chunk *next;
-    struct _mem_chunk *free_prev;
-    struct _mem_chunk *free_next;
-    void              *free_item;
-} mem_chunk_t;
-
-typedef struct _mem_anchor {
-  uint32_t     total_chunk_count;
-  uint32_t     free_chunk_count;
-  uint32_t     chunk_item_size;
-  uint32_t     items_per_chunk;
-  uint32_t     items_free_count;
-  uint32_t     short_of_space;
-  mem_chunk_t *chunk_list;
-  mem_chunk_t *chunk_free_head;
-  mem_chunk_t *chunk_free_tail;
-} mem_anchor_t;
-
-#define SMMGR_ITEM_SIZE(size)   (((((size)+sizeof(uint16_t)-1) / 8) + 1) * 8)
-#define SMMGR_MAX_ITEM_SIZE     SMMGR_ITEM_SIZE(MAX_SM_VALUE_SIZE)
-#define SMMGR_MAX_ITEM_PHYIDX   65535
-#define SMMGR_MAX_CLASS_COUNT   64 /* should be computed manually */
-
-unsigned int smmgr_chunk_size;
-unsigned int smmgr_chunk_clsid;
-
-static unsigned int mem_class_count;
-static unsigned int mem_lack_of_space_count;
-static mem_anchor_t mem_anchor[SMMGR_MAX_CLASS_COUNT];
-static unsigned int total_mem_chunk_count;
-static unsigned int mem_nchunk_for_wideuse;
-static unsigned int smslab_min_free_nchunk; /* minimum # of free chunks */
-static int          smslab_cur_free_nchunk; /* current # of free chunks */
-#endif
 
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
@@ -235,35 +192,18 @@ int slabs_short_of_free_space(struct default_engine *engine)
     if ((engine->slabs.mem_limit <= engine->slabs.mem_malloced) ||
         ((engine->slabs.mem_limit - engine->slabs.mem_malloced) < engine->slabs.mem_reserved))
     {
-#ifdef VARIABLE_LENGTH_SMMGR
         slabclass_t *p = &engine->slabs.slabclass[sm_anchor.blck_clsid];
         if (p->slabs > 0 && sm_anchor.free_limit_space > 0) {
             uint64_t curr_avail_space = do_slabs_free_chunk_space(p)
                                       + sm_anchor.free_avail_space;
             return do_slabs_space_shortage_level(curr_avail_space);
         }
-#else
-        if (engine->slabs.slabclass[smmgr_chunk_clsid].slabs > 0) {
-            slabclass_t *p = &engine->slabs.slabclass[smmgr_chunk_clsid];
-            size_t cur_free_nchunk = p->sl_curr+p->end_page_free;
-            if (p->slabs < p->rsvd_slabs)
-                cur_free_nchunk += ((p->rsvd_slabs-p->slabs)*p->perslab);
-            if (cur_free_nchunk == 0) return MAX_SPACE_SHORTAGE_LEVEL;
-            if ((cur_free_nchunk < smslab_min_free_nchunk) &&
-                (mem_lack_of_space_count > 0 || cur_free_nchunk < (smslab_min_free_nchunk/2))) {
-                /* return the emergency level on short of space */
-                int space_shortage_level = (int)(smslab_min_free_nchunk / cur_free_nchunk);
-                return space_shortage_level < MAX_SPACE_SHORTAGE_LEVEL ? space_shortage_level : MAX_SPACE_SHORTAGE_LEVEL;
-            }
-        }
-#endif
     }
     return 0;
 }
 
 static void do_smmgr_init(struct default_engine *engine)
 {
-#ifdef VARIABLE_LENGTH_SMMGR
     /* small memory allocator */
     sm_anchor.blck_clsid = 0;
     sm_anchor.blck_tsize = SMMGR_BLOCK_SIZE;
@@ -297,41 +237,8 @@ static void do_smmgr_init(struct default_engine *engine)
     engine->slabs.slabclass[0].size = sm_anchor.blck_tsize;
     engine->slabs.slabclass[0].perslab = engine->config.item_size_max / engine->slabs.slabclass[0].size;
     engine->slabs.slabclass[0].rsvd_slabs = 0; // undefined
-#else
-    int item_size = 8;
-    int diff_size = 8;
-
-    /* slab class 0 is used for collection items ans small-sized kv items */
-    smmgr_chunk_clsid = 0;
-    smmgr_chunk_size  = (sizeof(mem_chunk_t)+(2*SMMGR_MAX_ITEM_SIZE));
-    engine->slabs.slabclass[0].size = smmgr_chunk_size;
-    engine->slabs.slabclass[0].perslab = engine->config.item_size_max / engine->slabs.slabclass[0].size;
-    engine->slabs.slabclass[0].rsvd_slabs = 0; // undefined
-    mem_nchunk_for_wideuse = (engine->slabs.slabclass[0].perslab * 10); /* 10MB */
-    smslab_min_free_nchunk = 0;
-    smslab_cur_free_nchunk = -1;
-
-    memset(mem_anchor, 0, sizeof(mem_anchor));
-    mem_class_count = 0;
-    while (item_size < SMMGR_MAX_ITEM_SIZE) {
-        mem_anchor[mem_class_count].chunk_item_size = item_size;
-        mem_anchor[mem_class_count].items_per_chunk = (smmgr_chunk_size-sizeof(mem_chunk_t)) / item_size;
-        mem_class_count++;
-        if ((item_size / 16) == diff_size)
-            diff_size *= 2;
-        item_size += diff_size;
-    }
-    mem_anchor[mem_class_count].chunk_item_size = SMMGR_MAX_ITEM_SIZE;
-    mem_anchor[mem_class_count].items_per_chunk = (smmgr_chunk_size-sizeof(mem_chunk_t)) / SMMGR_MAX_ITEM_SIZE;
-    mem_class_count++;
-    assert(mem_class_count == SMMGR_MAX_CLASS_COUNT);
-    mem_lack_of_space_count = 0;
-
-    total_mem_chunk_count = 0;
-#endif
 }
 
-#ifdef VARIABLE_LENGTH_SMMGR
 static inline int do_smmgr_memid(size_t size)
 {
     if (size < 8192) return (int)(size/8);
@@ -691,158 +598,8 @@ static void do_smmgr_blck_free(struct default_engine *engine, sm_blck_t *blck)
     do_slabs_free(engine, blck, sm_anchor.blck_tsize, sm_anchor.blck_clsid);
 }
 
-#else // VARIABLE_LENGTH_SMMGR
-static mem_chunk_t *do_mem_chunk_alloc(struct default_engine *engine, int memid)
-{
-    mem_chunk_t *chunk;
-
-    chunk = (mem_chunk_t *)do_slabs_alloc(engine, smmgr_chunk_size, smmgr_chunk_clsid);
-    if (chunk != NULL) {
-        int item_size = mem_anchor[memid].chunk_item_size;
-        void    **item;
-        uint16_t *pidx; /* physical item index */
-
-        chunk->total_item_count = mem_anchor[memid].items_per_chunk;
-        chunk->free_item_count  = chunk->total_item_count;
-        for (int i = 0; i < chunk->total_item_count; i++) {
-             item  = (void**)((char *)chunk + sizeof(mem_chunk_t) + (i*item_size));
-             *item = ((i == (chunk->total_item_count-1)) ? (void*)NULL
-                                                         : (void*)((char*)item + item_size));
-             pidx  = (uint16_t *)((char*)item + item_size - sizeof(uint16_t));
-             *pidx = i;
-        }
-        chunk->free_item = (void *)((char *)chunk + sizeof(mem_chunk_t));
-        total_mem_chunk_count++;
-        if (smslab_cur_free_nchunk != -1)
-            smslab_cur_free_nchunk--;
-    } else {
-        logger->log(EXTENSION_LOG_INFO, NULL, "no more small memory chunk\n");
-    }
-    if (slabs_short_of_free_space(engine) > 0) {
-        coll_del_thread_wakeup(engine);
-    }
-    return chunk;
-}
-
-static void do_mem_chunk_free(struct default_engine *engine, mem_chunk_t *chunk)
-{
-    do_slabs_free(engine, chunk, smmgr_chunk_size, smmgr_chunk_clsid);
-    total_mem_chunk_count--;
-    if (smslab_cur_free_nchunk != -1)
-        smslab_cur_free_nchunk++;
-}
-
-static void do_mem_chunk_link(int memid, mem_chunk_t *chunk, bool chunk_list_flag)
-{
-    mem_anchor_t *anchor = &mem_anchor[memid];
-
-    if (chunk_list_flag == true) {
-        chunk->prev = NULL;
-        chunk->next = anchor->chunk_list;
-        if (chunk->next != NULL) chunk->next->prev = chunk;
-        anchor->chunk_list = chunk;
-        anchor->total_chunk_count++;
-
-        anchor->items_free_count += anchor->items_per_chunk;
-        if (anchor->short_of_space != 0) {
-            if (anchor->items_free_count >= (anchor->items_per_chunk*anchor->total_chunk_count/30)) { /* 3.33% */
-                anchor->short_of_space = 0;
-                mem_lack_of_space_count--;
-            }
-        } else { /* anchor->short_of_space == 0 */
-            if (anchor->total_chunk_count >= mem_nchunk_for_wideuse &&
-                anchor->items_free_count < (anchor->items_per_chunk*anchor->total_chunk_count/30)) { /* 3.33% */
-                anchor->short_of_space = 1;
-                mem_lack_of_space_count++;
-            }
-        }
-    }
-
-    chunk->free_prev = anchor->chunk_free_tail;
-    chunk->free_next = NULL;
-    if (chunk->free_prev != NULL) chunk->free_prev->free_next = chunk;
-    anchor->chunk_free_tail = chunk;
-    if (anchor->chunk_free_head == NULL)
-        anchor->chunk_free_head = chunk;
-    anchor->free_chunk_count++;
-}
-
-static void do_mem_chunk_unlink(int memid, mem_chunk_t *chunk, bool chunk_list_flag)
-{
-    mem_anchor_t *anchor = &mem_anchor[memid];
-
-    if (chunk->free_next != NULL)
-        chunk->free_next->free_prev = chunk->free_prev;
-    if (chunk->free_prev != NULL)
-        chunk->free_prev->free_next = chunk->free_next;
-    if (anchor->chunk_free_head == chunk)
-        anchor->chunk_free_head = chunk->free_next;
-    if (anchor->chunk_free_tail == chunk)
-        anchor->chunk_free_tail = chunk->free_prev;
-    chunk->free_prev = chunk->free_next = NULL;
-    anchor->free_chunk_count--;
-
-    if (chunk_list_flag == true) {
-        if (chunk->next != NULL)
-            chunk->next->prev = chunk->prev;
-        if (chunk->prev != NULL)
-            chunk->prev->next = chunk->next;
-        if (anchor->chunk_list == chunk)
-            anchor->chunk_list = chunk->next;
-        chunk->prev = chunk->next = NULL;
-        anchor->total_chunk_count--;
-        anchor->items_free_count -= anchor->items_per_chunk;
-
-        if (anchor->short_of_space != 0) {
-            if (anchor->total_chunk_count < mem_nchunk_for_wideuse) {
-                anchor->short_of_space = 0;
-                mem_lack_of_space_count--;
-            }
-        } else { /* anchor->short_of_space == 0 */
-            if (anchor->total_chunk_count >= mem_nchunk_for_wideuse &&
-                anchor->items_free_count < (anchor->items_per_chunk*anchor->total_chunk_count/30)) { /* 3.33% */
-                anchor->short_of_space = 1;
-                mem_lack_of_space_count++;
-            }
-        }
-    }
-}
-
-static bool do_mem_near_short_of_space(mem_anchor_t *anchor)
-{
-    /* anchor->short_of_space == 0 */
-    if ((anchor->total_chunk_count-1) >= mem_nchunk_for_wideuse) {
-        uint32_t items_free_count = anchor->items_free_count - anchor->items_per_chunk;
-        if (items_free_count < (anchor->items_per_chunk*(anchor->total_chunk_count-1)/30)) { /* 3.33% */
-            return true;
-        }
-    }
-    return false;
-}
-
-static inline int do_smmgr_memid(size_t size)
-{
-    int item_size = SMMGR_ITEM_SIZE(size);
-    int memid;
-    assert(item_size <= SMMGR_MAX_ITEM_SIZE);
-    if (item_size <= 512) {
-        if (item_size <= 128)       memid = ( 0 + ((item_size     -1) /   8));
-        else if (item_size <= 256)  memid = (16 + ((item_size- 128-1) /  16));
-        else                        memid = (24 + ((item_size- 256-1) /  32));
-    } else {
-        if (item_size <= 1024)      memid = (32 + ((item_size- 512-1) /  64));
-        else if (item_size <= 2048) memid = (40 + ((item_size-1024-1) / 128));
-        else if (item_size <= 4096) memid = (48 + ((item_size-2048-1) / 256));
-        else                        memid = (56 + ((item_size-4096-1) / 512));
-    }
-    assert(memid < SMMGR_MAX_CLASS_COUNT);
-    return memid;
-}
-#endif // VARIABLE_LENGTH_SMMGR
-
 static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
 {
-#ifdef VARIABLE_LENGTH_SMMGR
     sm_slot_t *cur_slot = NULL;
     int smid, targ;
     int slen = SMMGR_SLOT_SIZE(size);
@@ -935,69 +692,10 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
 
     //do_smmgr_used_blck_check();
     return (void*)cur_slot;
-#else
-    void *ret;
-    int memid = do_smmgr_memid(size);
-    int above_memid = -1;
-    mem_anchor_t *anchor = &mem_anchor[memid];
-    mem_chunk_t  *chunk;
-
-    if (anchor->chunk_free_head == NULL) {
-        chunk = do_mem_chunk_alloc(engine, memid);
-        if (chunk != NULL) {
-            do_mem_chunk_link(memid, chunk, true);
-            assert(anchor->chunk_free_head != NULL);
-        } else {
-            for (above_memid = memid+1; above_memid < mem_class_count; above_memid++) {
-                if (mem_anchor[above_memid].chunk_free_head != NULL) break;
-            }
-            if (above_memid == mem_class_count) {
-                return NULL;
-            }
-            anchor = &mem_anchor[above_memid];
-            chunk = anchor->chunk_free_head;
-        }
-    } else {
-        if ((smslab_cur_free_nchunk == -1 || smslab_cur_free_nchunk >= smslab_min_free_nchunk) &&
-            (anchor->short_of_space != 0)) {
-            /* allocate additional chunk to avoid short of space */
-            chunk = do_mem_chunk_alloc(engine, memid);
-            if (chunk != NULL) {
-                do_mem_chunk_link(memid, chunk, true);
-            }
-        }
-        chunk = anchor->chunk_free_head;
-    }
-
-    ret = chunk->free_item;
-    chunk->free_item = *((void**)chunk->free_item);
-
-    chunk->free_item_count--;
-    if (chunk->free_item_count == 0) {
-        assert(chunk->free_item == NULL);
-        do_mem_chunk_unlink((above_memid != -1 ? above_memid : memid), chunk, false);
-    }
-
-    anchor->items_free_count--;
-    if (anchor->short_of_space == 0) {
-        if (anchor->total_chunk_count >= mem_nchunk_for_wideuse &&
-            anchor->items_free_count < (anchor->items_per_chunk*anchor->total_chunk_count/30)) { /* 3.33% */
-            anchor->short_of_space = 1;
-            mem_lack_of_space_count++;
-        }
-    }
-    if (above_memid != -1) {
-        uint16_t *pidx = (uint16_t *)((char*)ret + mem_anchor[memid].chunk_item_size - sizeof(uint16_t));
-        *pidx = SMMGR_MAX_ITEM_PHYIDX;
-        *(pidx+1) = above_memid;
-    }
-    return ret;
-#endif
 }
 
 static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t size)
 {
-#ifdef VARIABLE_LENGTH_SMMGR
     sm_blck_t *cur_blck;
     sm_slot_t *cur_slot;
     sm_tail_t *cur_tail;
@@ -1056,56 +754,12 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
     if (sm_anchor.used_slist[targ].count == 0) {
         do_smmgr_used_slot_list_del(targ);
     }
-#else
-    int memid = do_smmgr_memid(size);
-    mem_anchor_t *anchor = &mem_anchor[memid];
-    uint16_t     *pidx   = (uint16_t*)((char*)ptr + anchor->chunk_item_size - sizeof(uint16_t));
-    mem_chunk_t  *chunk;
-
-    if (*pidx == SMMGR_MAX_ITEM_PHYIDX) {
-        memid = *(pidx+1);
-        anchor = &mem_anchor[memid];
-        pidx = (uint16_t*)((char*)ptr + anchor->chunk_item_size - sizeof(uint16_t));
-    }
-    chunk = (mem_chunk_t *)((char*)ptr - sizeof(mem_chunk_t) - ((*pidx)*anchor->chunk_item_size));
-
-    *(void**)ptr = chunk->free_item;
-    chunk->free_item = ptr;
-
-    anchor->items_free_count++;
-    if (anchor->short_of_space != 0) {
-        if (anchor->items_free_count >= (anchor->items_per_chunk*anchor->total_chunk_count/30)) { /* 3.33% */
-            anchor->short_of_space = 0;
-            mem_lack_of_space_count--;
-        }
-    }
-
-    chunk->free_item_count++;
-    if (chunk->free_item_count == 1) {
-        do_mem_chunk_link(memid, chunk, false);
-    }
-    if (chunk->free_item_count >= chunk->total_item_count) {
-        /* free chunk in which all items are free */
-        if ((smslab_cur_free_nchunk == -1 || smslab_cur_free_nchunk >= smslab_min_free_nchunk) &&
-            (anchor->short_of_space != 0 || do_mem_near_short_of_space(anchor))) {
-            /* do not free the chunk */
-        } else {
-            do_mem_chunk_unlink(memid, chunk, true);
-            do_mem_chunk_free(engine, chunk);
-        }
-    }
-#endif
 }
 
 unsigned int slabs_space_size(struct default_engine *engine, const size_t size)
 {
     if (size <= MAX_SM_VALUE_SIZE) {
-#ifdef VARIABLE_LENGTH_SMMGR
         return SMMGR_SLOT_SIZE(size);
-#else
-        int memid = do_smmgr_memid(size);
-        return mem_anchor[memid].chunk_item_size;
-#endif
     }
     int clsid = slabs_clsid(engine, size);
     if (clsid == 0)
@@ -1252,17 +906,10 @@ static int do_slabs_newslab(struct default_engine *engine, const unsigned int id
 
     p->slab_list[p->slabs++] = ptr;
     engine->slabs.mem_malloced += len;
-#ifdef VARIABLE_LENGTH_SMMGR
-#else
-    if (id == smmgr_chunk_clsid && p->rsvd_slabs != 0 && p->slabs > p->rsvd_slabs) {
-        smslab_cur_free_nchunk += p->perslab;
-    }
-#endif
 
     if ((engine->slabs.mem_limit <= engine->slabs.mem_malloced) ||
         ((engine->slabs.mem_limit - engine->slabs.mem_malloced) < engine->slabs.mem_reserved))
     {
-#ifdef VARIABLE_LENGTH_SMMGR
         if (engine->slabs.slabclass[sm_anchor.blck_clsid].rsvd_slabs == 0) { /* undefined */
             /* define the reserved slab count of slab class 0 */
             slabclass_t *z = &engine->slabs.slabclass[sm_anchor.blck_clsid];
@@ -1273,19 +920,6 @@ static int do_slabs_newslab(struct default_engine *engine, const unsigned int id
             sm_anchor.free_limit_space = (additional_slabs * z->perslab) * sm_anchor.blck_tsize;
             coll_del_thread_wakeup(engine);
         }
-#else
-        if (engine->slabs.slabclass[smmgr_chunk_clsid].rsvd_slabs == 0) { /* undefined */
-            /* define the reserved slab count of slab class 0 */
-            slabclass_t *z = &engine->slabs.slabclass[smmgr_chunk_clsid];
-            unsigned int additional_slabs = (z->slabs/100) * RESERVED_SLAB_RATIO;
-            if (additional_slabs < RESERVED_SLABS)
-                additional_slabs = RESERVED_SLABS;
-            z->rsvd_slabs = z->slabs + additional_slabs;
-            smslab_min_free_nchunk = (z->rsvd_slabs - z->slabs) * z->perslab;
-            smslab_cur_free_nchunk = z->sl_curr + z->end_page_free + (int)smslab_min_free_nchunk;
-            coll_del_thread_wakeup(engine);
-        }
-#endif
     }
     MEMCACHED_SLABS_SLABCLASS_ALLOCATE(id);
 
@@ -1416,7 +1050,6 @@ static void do_slabs_stats(struct default_engine *engine, ADD_STAT add_stats, co
 #endif
 
     /* small memory classes */
-#ifdef VARIABLE_LENGTH_SMMGR
     slabclass_t *smp = &engine->slabs.slabclass[sm_anchor.blck_clsid];
     uint64_t free_chunk_space = do_slabs_free_chunk_space(smp);
     uint64_t curr_avail_space = free_chunk_space + sm_anchor.free_avail_space;
@@ -1435,31 +1068,10 @@ static void do_slabs_stats(struct default_engine *engine, ADD_STAT add_stats, co
     add_statistics(cookie, add_stats, "SM", -1, "free_chunk_space", "%"PRIu64, free_chunk_space);
     add_statistics(cookie, add_stats, "SM", -1, "free_limit_space", "%"PRIu64, sm_anchor.free_limit_space);
     add_statistics(cookie, add_stats, "SM", -1, "space_shortage_level", "%d", space_shortage_level);
-#else
-    total = 0;
-    for (i = 0; i < mem_class_count; i++) {
-        mem_anchor_t *p = &mem_anchor[i];
-        if (p->total_chunk_count > 0) {
-            add_statistics(cookie, add_stats, "SM", i, "item_size", "%u", p->chunk_item_size);
-            add_statistics(cookie, add_stats, "SM", i, "items_per_chunk", "%u", p->items_per_chunk);
-            add_statistics(cookie, add_stats, "SM", i, "total_chunks", "%u", p->total_chunk_count);
-            add_statistics(cookie, add_stats, "SM", i, "total_items", "%u", p->items_per_chunk * p->total_chunk_count);
-            add_statistics(cookie, add_stats, "SM", i, "free_items", "%u", p->items_free_count);
-            total++;
-        }
-    }
-    add_statistics(cookie, add_stats, "SM", -1, "active_mem_classes", "%d", total);
-    add_statistics(cookie, add_stats, "SM", -1, "lack_of_space_mem_classes", "%d", mem_lack_of_space_count);
-    add_statistics(cookie, add_stats, "SM", -1, "total_mem_chunks", "%d", total_mem_chunk_count);
-#endif
 
     total = 0;
     int min_slab_id = POWER_SMALLEST;
-#ifdef VARIABLE_LENGTH_SMMGR
     min_slab_id = sm_anchor.blck_clsid;
-#else
-    min_slab_id = smmgr_chunk_clsid;
-#endif
     for (i = min_slab_id; i <= engine->slabs.power_largest; i++) {
         slabclass_t *p = &engine->slabs.slabclass[i];
         if (p->slabs != 0) {
@@ -1489,11 +1101,6 @@ static void do_slabs_stats(struct default_engine *engine, ADD_STAT add_stats, co
 
     /* add overall slab stats and append terminator */
     add_statistics(cookie, add_stats, NULL, -1, "active_slabs", "%d", total);
-#ifdef VARIABLE_LENGTH_SMMGR
-#else
-    add_statistics(cookie, add_stats, NULL, -1, "min_free_chunks_for_smslab", "%u", smslab_min_free_nchunk);
-    add_statistics(cookie, add_stats, NULL, -1, "cur_free_chunks_for_smslab", "%u", smslab_cur_free_nchunk);
-#endif
     add_statistics(cookie, add_stats, NULL, -1, "memory_limit", "%zu", engine->slabs.mem_limit);
     add_statistics(cookie, add_stats, NULL, -1, "total_malloced", "%zu", engine->slabs.mem_malloced);
 }
@@ -1542,31 +1149,16 @@ static ENGINE_ERROR_CODE do_slabs_set_memlimit(struct default_engine *engine, si
     if (new_mem_reserved < (RESERVED_SLABS*engine->config.item_size_max))
         new_mem_reserved = (RESERVED_SLABS*engine->config.item_size_max);
 
-#ifdef VARIABLE_LENGTH_SMMGR
     if (engine->slabs.slabclass[sm_anchor.blck_clsid].rsvd_slabs != 0) {
         /* memlimit > engine->slabs.mem_malloced */
         if ((memlimit - engine->slabs.mem_malloced) < new_mem_reserved) {
             return ENGINE_EBADVALUE;
         }
     }
-#else
-    if (engine->slabs.slabclass[smmgr_chunk_clsid].rsvd_slabs != 0) {
-        /* memlimit > engine->slabs.mem_malloced */
-        if ((memlimit - engine->slabs.mem_malloced) < new_mem_reserved) {
-            return ENGINE_EBADVALUE;
-        }
-    }
-#endif
     engine->slabs.mem_limit = memlimit;
     engine->slabs.mem_reserved = new_mem_reserved;
-#ifdef VARIABLE_LENGTH_SMMGR
     engine->slabs.slabclass[sm_anchor.blck_clsid].rsvd_slabs = 0; /* undefined */
     sm_anchor.free_limit_space = 0;
-#else
-    engine->slabs.slabclass[smmgr_chunk_clsid].rsvd_slabs = 0; /* undefined */
-    smslab_min_free_nchunk = 0;
-    smslab_cur_free_nchunk = -1;
-#endif
     return ENGINE_SUCCESS;
 }
 
