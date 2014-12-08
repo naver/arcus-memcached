@@ -4775,19 +4775,11 @@ static void *collection_delete_thread(void *arg)
     hash_item *it;
     uint32_t expired_cnt;
     //uint32_t deleted_cnt;
-#ifdef NEW_BACKGROUND_EVICTION
     int      space_shortage_level;
     bool     background_evict_flag = false;
     uint32_t background_evict_ccnt = 0; /* current count */
     uint32_t background_evict_pcnt = 0; /* previous count */
     struct timespec background_sleep_time = {0, 0};
-#else
-    bool     background_evict_flag = false;
-    uint32_t background_evict_count = 0;
-    int      space_shortage_level;
-    int             background_sleep_unit;
-    struct timespec background_sleep_time = {0, 10000}; /* 0.001ms */
-#endif
 
     while (engine->initialized) {
         it = pop_coll_del_queue(engine);
@@ -4797,7 +4789,6 @@ static void *collection_delete_thread(void *arg)
 #else
             expired_cnt = check_expired_collections(engine, LRU_CLSID_FOR_SMALL, &space_shortage_level);
 #endif
-#ifdef NEW_BACKGROUND_EVICTION
             if (expired_cnt > 0) {
                 assert(space_shortage_level > 0);
                 if (background_evict_flag == false) {
@@ -4837,46 +4828,6 @@ static void *collection_delete_thread(void *arg)
                 coll_del_thread_sleep(engine);
             }
             continue;
-#else
-            if (expired_cnt > 0) {
-                if (background_evict_flag == false) {
-                    /*****
-                    if (engine->config.verbose > 1) {
-                        logger->log(EXTENSION_LOG_INFO, NULL, "background evict start\n");
-                    }
-                    *****/
-                    background_evict_flag = true;
-                }
-                assert(space_shortage_level > 0);
-                background_sleep_unit = 10 * space_shortage_level;
-                background_evict_count += expired_cnt;
-                if ((background_evict_count / background_sleep_unit) !=
-                    ((background_evict_count-expired_cnt) / background_sleep_unit)) {
-                    nanosleep(&background_sleep_time, NULL);
-                }
-                if (background_evict_count > 10000000) {
-                    if (engine->config.verbose > 1) {
-                        logger->log(EXTENSION_LOG_INFO, NULL, "background evict(or reclaim): count=%u\n",
-                                                               background_evict_count);
-                    }
-                    background_evict_count = 0;
-                }
-                continue;
-            } else {
-                if (background_evict_flag == true) {
-                    /*****
-                    if (engine->config.verbose > 1) {
-                        logger->log(EXTENSION_LOG_INFO, NULL, "background evict(or reclaim) end: count=%u\n",
-                                                               background_evict_count);
-                    }
-                    *****/
-                    background_evict_count = 0;
-                    background_evict_flag = false;
-                }
-            }
-            coll_del_thread_sleep(engine);
-            continue;
-#endif
         }
         if (IS_LIST_ITEM(it)) {
             bool dropped = false;
