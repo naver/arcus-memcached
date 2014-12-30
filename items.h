@@ -17,8 +17,6 @@
 #ifndef ITEMS_H
 #define ITEMS_H
 
-#define REDUCE_EVICTION_SPIKE 1
-
 /*
  * You should not try to aquire any of the item locks before calling these
  * functions.

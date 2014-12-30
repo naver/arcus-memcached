@@ -318,13 +318,8 @@ static void do_item_repair(struct default_engine *engine, hash_item *it,
     do_item_unlink(engine, it);
 }
 
-#ifdef REDUCE_EVICTION_SPIKE
 static void do_item_invalidate(struct default_engine *engine, hash_item *it,
                                const unsigned int lruid, bool immediate)
-#else
-static void do_item_invalidate(struct default_engine *engine, hash_item *it,
-                               const unsigned int lruid)
-#endif
 {
     /* increment # of reclaimed */
     pthread_mutex_lock(&engine->stats.lock);
@@ -333,13 +328,11 @@ static void do_item_invalidate(struct default_engine *engine, hash_item *it,
     engine->items.itemstats[lruid].reclaimed++;
 
     /* it->refcount == 0 */
-#ifdef REDUCE_EVICTION_SPIKE
     if (immediate) {
         if (IS_COLL_ITEM(it)) {
             do_coll_all_elem_delete(engine, it);
         }
     }
-#endif
     do_item_unlink(engine, it);
 }
 
@@ -380,7 +373,6 @@ static void *do_item_alloc_internal(struct default_engine *engine,
     }
 #endif
 
-#ifdef REDUCE_EVICTION_SPIKE
     int space_shortage_level = slabs_space_shortage_level();
     if (space_shortage_level > 0 &&
         id == LRU_CLSID_FOR_SMALL && engine->config.evict_to_free != 0)
@@ -402,7 +394,6 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             if ((--tries) == 0) break;
         }
     }
-#endif
 
 #ifdef ENABLE_STICKY_ITEM
     /* reclaim the flushed sticky items */
@@ -421,11 +412,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             search = engine->items.sticky_tails[id];
             if (search != NULL && search->nkey > 0 && search->refcount == 0 &&
                 do_item_isvalid(engine, search, current_time) == false) {
-#ifdef REDUCE_EVICTION_SPIKE
                 do_item_invalidate(engine, search, id, false);
-#else
-                do_item_invalidate(engine, search, id);
-#endif
             }
             it->slabs_clsid = 0;
             return (void*)it;
@@ -448,11 +435,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             search = engine->items.sticky_curMK[id];
             if (search != NULL && search->nkey > 0 && search->refcount == 0 &&
                 do_item_isvalid(engine, search, current_time) == false) {
-#ifdef REDUCE_EVICTION_SPIKE
                 do_item_invalidate(engine, search, id, false);
-#else
-                do_item_invalidate(engine, search, id);
-#endif
             }
             it->slabs_clsid = 0;
             return (void*)it;
@@ -475,11 +458,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             search = engine->items.tails[id];
             if (search != NULL && search->nkey > 0 && search->refcount == 0 &&
                 do_item_isvalid(engine, search, current_time) == false) {
-#ifdef REDUCE_EVICTION_SPIKE
                 do_item_invalidate(engine, search, id, false);
-#else
-                do_item_invalidate(engine, search, id);
-#endif
             }
             it->slabs_clsid = 0;
             return (void*)it;
@@ -510,11 +489,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             /* try one more invalidation */
             if (previt != NULL && previt->nkey > 0 && previt->refcount == 0 &&
                 do_item_isvalid(engine, previt, current_time) == false) {
-#ifdef REDUCE_EVICTION_SPIKE
                 do_item_invalidate(engine, previt, id, false);
-#else
-                do_item_invalidate(engine, previt, id);
-#endif
             }
             it->slabs_clsid = 0;
             return (void *)it;
@@ -539,11 +514,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             search = engine->items.curMK[id];
             if (search != NULL && search->nkey > 0 && search->refcount == 0 &&
                 do_item_isvalid(engine, search, current_time) == false) {
-#ifdef REDUCE_EVICTION_SPIKE
                 do_item_invalidate(engine, search, id, false);
-#else
-                do_item_invalidate(engine, search, id);
-#endif
             }
             it->slabs_clsid = 0;
             return (void *)it;
@@ -4742,31 +4713,18 @@ static hash_item *pop_coll_del_queue(struct default_engine *engine)
 /*
  * Item Management Daemon
  */
-#ifdef REDUCE_EVICTION_SPIKE
 static int check_expired_collections(struct default_engine *engine, const int clsid, int *ssl)
-#else
-static int check_expired_collections(struct default_engine *engine, const int clsid, int *space_shortage_level)
-#endif
 {
-#ifdef REDUCE_EVICTION_SPIKE
     rel_time_t current_time;
     hash_item *search, *it;
     int unlink_count = 0;
     int space_shortage_level;
     int tries;
-#else
-    rel_time_t current_time = engine->server.core->get_current_time();
-    hash_item *search, *it;
-    int unlink_count = 0;
-    int tries = 10;
-    int id = clsid;
-#endif
 
     /* Never-expired items are positioned near the head of LRU list.
      * To-be-expired items are ordered with expire time near the tail of LRU list.
      * The smaller expire time leads to near the tail of the LRU list.
      */
-#ifdef REDUCE_EVICTION_SPIKE
     space_shortage_level = slabs_space_shortage_level();
     if (space_shortage_level >= 10 /* refer to SSL_FOR_BACKGROUND_EVICT in slabs.c */
         && engine->config.evict_to_free != 0)
@@ -4794,33 +4752,6 @@ static int check_expired_collections(struct default_engine *engine, const int cl
         pthread_mutex_unlock(&engine->cache_lock);
     }
     *ssl = space_shortage_level;
-#else
-    pthread_mutex_lock(&engine->cache_lock);
-    *space_shortage_level = slabs_short_of_free_space(engine);
-    if (*space_shortage_level > 0)
-    {
-        search = engine->items.tails[id];
-        while (search != NULL && tries > 0) {
-            if (search->refcount == 0 && search->nkey > 0) {
-                it = search;
-                search = search->prev; tries--;
-
-                if (do_item_isvalid(engine, it, current_time) == false) {
-                    do_item_invalidate(engine, it, id);
-                    if (++unlink_count > 10) break;
-                } else {
-                    if (engine->config.evict_to_free != 0) {
-                        do_item_evict(engine, it, id, current_time, NULL);
-                        if (++unlink_count > 10) break;
-                    }
-                }
-            } else {
-                search = search->prev; tries--;
-            }
-        }
-    }
-    pthread_mutex_unlock(&engine->cache_lock);
-#endif
     return unlink_count;
 }
 
@@ -4876,10 +4807,6 @@ static void *collection_delete_thread(void *arg)
     int      space_shortage_level;
     bool     background_evict_flag = false;
     uint32_t background_evict_ccnt = 0; /* current count */
-#ifdef REDUCE_EVICTION_SPIKE
-#else
-    uint32_t background_evict_pcnt = 0; /* previous count */
-#endif
     struct timespec background_sleep_time = {0, 0};
 
     while (engine->initialized) {
@@ -4891,10 +4818,6 @@ static void *collection_delete_thread(void *arg)
             expired_cnt = check_expired_collections(engine, LRU_CLSID_FOR_SMALL, &space_shortage_level);
 #endif
             if (expired_cnt > 0) {
-#ifdef REDUCE_EVICTION_SPIKE
-#else
-                assert(space_shortage_level > 0);
-#endif
                 if (background_evict_flag == false) {
                     /*****
                     if (engine->config.verbose > 1) {
@@ -4902,33 +4825,16 @@ static void *collection_delete_thread(void *arg)
                     }
                     *****/
                     background_evict_flag = true;
-#ifdef REDUCE_EVICTION_SPIKE
-#else
-                    background_evict_pcnt = 0;
-#endif
                     background_evict_ccnt = 0;
                 }
-#ifdef REDUCE_EVICTION_SPIKE
                 background_sleep_time.tv_nsec = 10000000 / space_shortage_level;
                 nanosleep(&background_sleep_time, NULL);
                 background_evict_ccnt += expired_cnt;
-#else
-                background_evict_ccnt += expired_cnt;
-                if ((background_evict_ccnt - background_evict_pcnt) >= (10*space_shortage_level)) {
-                    background_sleep_time.tv_nsec = 1000000 / space_shortage_level;
-                    nanosleep(&background_sleep_time, NULL);
-                    background_evict_pcnt = background_evict_ccnt;
-                }
-#endif
                 if (background_evict_ccnt >= 10000000) {
                     if (engine->config.verbose > 1) {
                         logger->log(EXTENSION_LOG_INFO, NULL, "background evict: cur count=%u\n",
                                                                background_evict_ccnt);
                     }
-#ifdef REDUCE_EVICTION_SPIKE
-#else
-                    background_evict_pcnt = 0;
-#endif
                     background_evict_ccnt = 0;
                 }
             } else {

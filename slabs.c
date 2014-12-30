@@ -40,10 +40,8 @@
 #define RESERVED_SLABS      4
 #define RESERVED_SLAB_RATIO 4
 #define MAX_SPACE_SHORTAGE_LEVEL 100
-#ifdef REDUCE_EVICTION_SPIKE
-#define SSL_FOR_BACKGROUND_EVICT 10 /* space shortage level for background evict */
+#define SSL_FOR_BACKGROUND_EVICT 10  /* space shortage level for background evict */
 #define SSL_CHECK_BY_MEM_REQUEST 100 /* space shortage level check tick by slab*/
-#endif
 
 
 /* should be computed manually */
@@ -95,9 +93,7 @@ typedef struct _sm_blist {
 } sm_blist_t;
 
 typedef struct _sm_anchor {
-#ifdef REDUCE_EVICTION_SPIKE
     int         space_shortage_level; /* 0, 1 ~ 100 */
-#endif
     int         blck_clsid;         /* slab class id of block */
     int         blck_tsize;         /* block total size */
     int         blck_bsize;         /* block body size */
@@ -110,19 +106,12 @@ typedef struct _sm_anchor {
     sm_blist_t  used_blist;         /* used block list */
     sm_slist_t  free_slist[SMMGR_NUM_CLASSES]; /* free slot list */
     sm_slist_t  used_slist[SMMGR_NUM_CLASSES]; /* used slot info */
-#ifdef REDUCE_EVICTION_SPIKE
     uint64_t    used_total_space;   /* the amount of used space */
     uint64_t    free_small_space;   /* the amount of free space that can't be used */
     uint64_t    free_avail_space;   /* the amount of free space that can be used */
     uint64_t    free_chunk_space;   /* the amount of free chunk space */
     uint64_t    free_limit_space;   /* the amount of minimum free space that must be maintained */
     uint32_t    num_smmgr_request;  /* the number that do_smmgr_alloc/do_smmgr_free are invoked */
-#else
-    uint64_t    free_small_space;   /* the amount of free space that can't be used */
-    uint64_t    free_avail_space;   /* the amount of free space that can be used */
-    uint64_t    used_total_space;   /* the amount of used space */
-    uint64_t    free_limit_space;   /* the amount of minimum free space that must be maintained */
-#endif
 } sm_anchor_t;
 
 #define SMMGR_BLOCK_SIZE        (64*1024)
@@ -172,7 +161,6 @@ unsigned int slabs_clsid(struct default_engine *engine, const size_t size)
     return res;
 }
 
-#ifdef REDUCE_EVICTION_SPIKE
 static void do_slabs_check_space_shortage_level(struct default_engine *engine)
 {
     uint64_t curr_avail_space = sm_anchor.free_chunk_space
@@ -195,61 +183,11 @@ static void do_slabs_check_space_shortage_level(struct default_engine *engine)
         sm_anchor.space_shortage_level = 0;
     }
 }
-#else
-static inline uint64_t do_slabs_free_chunk_space(slabclass_t *smp)
-{
-    uint64_t free_chunk_space = 0;
-    if (smp->rsvd_slabs > 0) {
-        free_chunk_space = smp->sl_curr + smp->end_page_free;
-        if (smp->slabs < smp->rsvd_slabs)
-            free_chunk_space += ((smp->rsvd_slabs - smp->slabs) * smp->perslab);
-        free_chunk_space *= smp->size;
-    }
-    return free_chunk_space;
-}
-
-static int do_slabs_space_shortage_level(uint64_t curr_avail_space)
-{
-    int space_shortage_level = 0;
-    if (sm_anchor.free_limit_space > 0 && curr_avail_space < sm_anchor.free_limit_space) {
-        /* How do we compute the space_shortage_level ?
-         * Use the following formula.
-         * => (free_limit_space / (curr_avail_space / N)) - (N-1)
-         */
-        int vN = 10;
-        if ((curr_avail_space / vN) > 0) {
-            space_shortage_level = (sm_anchor.free_limit_space / (curr_avail_space / vN)) - (vN-1);
-            if (space_shortage_level > MAX_SPACE_SHORTAGE_LEVEL)
-                space_shortage_level = MAX_SPACE_SHORTAGE_LEVEL;
-        } else {
-            space_shortage_level = MAX_SPACE_SHORTAGE_LEVEL;
-        }
-    }
-    return space_shortage_level;
-}
-
-int slabs_short_of_free_space(struct default_engine *engine)
-{
-    if ((engine->slabs.mem_limit <= engine->slabs.mem_malloced) ||
-        ((engine->slabs.mem_limit - engine->slabs.mem_malloced) < engine->slabs.mem_reserved))
-    {
-        slabclass_t *p = &engine->slabs.slabclass[sm_anchor.blck_clsid];
-        if (p->slabs > 0 && sm_anchor.free_limit_space > 0) {
-            uint64_t curr_avail_space = do_slabs_free_chunk_space(p)
-                                      + sm_anchor.free_avail_space;
-            return do_slabs_space_shortage_level(curr_avail_space);
-        }
-    }
-    return 0;
-}
-#endif
 
 static void do_smmgr_init(struct default_engine *engine)
 {
     /* small memory allocator */
-#ifdef REDUCE_EVICTION_SPIKE
     sm_anchor.space_shortage_level = 0;
-#endif
     sm_anchor.blck_clsid = 0;
     sm_anchor.blck_tsize = SMMGR_BLOCK_SIZE;
     sm_anchor.blck_bsize = sm_anchor.blck_tsize - sizeof(sm_blck_t);
@@ -272,19 +210,12 @@ static void do_smmgr_init(struct default_engine *engine)
         sm_anchor.used_slist[i].space = 0;
         sm_anchor.used_slist[i].count = 0;
     }
-#ifdef REDUCE_EVICTION_SPIKE
     sm_anchor.used_total_space = 0;
     sm_anchor.free_small_space = 0;
     sm_anchor.free_avail_space = 0;
     sm_anchor.free_chunk_space = 0;
     sm_anchor.free_limit_space = 0;
     sm_anchor.num_smmgr_request = 0;
-#else
-    sm_anchor.free_small_space = 0;
-    sm_anchor.free_avail_space = 0;
-    sm_anchor.used_total_space = 0;
-    sm_anchor.free_limit_space = 0;
-#endif
 
     /* slab allocator */
     /* slab class 0 is used for collection items ans small-sized kv items */
@@ -636,21 +567,13 @@ static sm_blck_t *do_smmgr_blck_alloc(struct default_engine *engine)
 {
     sm_blck_t *blck = (sm_blck_t *)do_slabs_alloc(engine, sm_anchor.blck_tsize, sm_anchor.blck_clsid);
     if (blck != NULL) {
-#ifdef REDUCE_EVICTION_SPIKE
         if (sm_anchor.free_limit_space > 0) {
             sm_anchor.free_chunk_space -= sm_anchor.blck_tsize;
         }
-#endif
         do_smmgr_used_blck_link(blck);
     } else {
         logger->log(EXTENSION_LOG_INFO, NULL, "no more small memory chunk\n");
     }
-#ifdef REDUCE_EVICTION_SPIKE
-#else
-    if (slabs_short_of_free_space(engine) > 0) {
-        coll_del_thread_wakeup(engine);
-    }
-#endif
     return blck;
 }
 
@@ -658,18 +581,15 @@ static void do_smmgr_blck_free(struct default_engine *engine, sm_blck_t *blck)
 {
     do_smmgr_used_blck_unlink(blck);
     do_slabs_free(engine, blck, sm_anchor.blck_tsize, sm_anchor.blck_clsid);
-#ifdef REDUCE_EVICTION_SPIKE
     if (sm_anchor.free_limit_space > 0) {
         sm_anchor.free_chunk_space += sm_anchor.blck_tsize;
     }
-#endif
 }
 
 static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
 {
     sm_slot_t *cur_slot = NULL;
     int smid, targ;
-#ifdef REDUCE_EVICTION_SPIKE
     int slen;
 
     if (sm_anchor.free_limit_space > 0) {
@@ -682,10 +602,6 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
     }
 
     slen = SMMGR_SLOT_SIZE(size);
-#else
-    int slen = SMMGR_SLOT_SIZE(size);
-
-#endif
     if (slen < SMMGR_MIN_SLOT_SIZE)
         slen = SMMGR_MIN_SLOT_SIZE;
     targ = do_smmgr_memid(slen);
@@ -782,7 +698,6 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
     sm_slot_t *cur_slot;
     sm_tail_t *cur_tail;
     int targ;
-#ifdef REDUCE_EVICTION_SPIKE
     int slen;
 
     if (sm_anchor.free_limit_space > 0) {
@@ -795,10 +710,6 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
     }
 
     slen = SMMGR_SLOT_SIZE(size);
-#else
-    int slen = SMMGR_SLOT_SIZE(size);
-
-#endif
     if (slen < SMMGR_MIN_SLOT_SIZE)
         slen = SMMGR_MIN_SLOT_SIZE;
     targ = do_smmgr_memid(slen);
@@ -865,12 +776,10 @@ unsigned int slabs_space_size(struct default_engine *engine, const size_t size)
         return engine->slabs.slabclass[clsid].size;
 }
 
-#ifdef REDUCE_EVICTION_SPIKE
 int slabs_space_shortage_level(void)
 {
     return sm_anchor.space_shortage_level;
 }
-#endif
 
 /**
  * Determines the chunk sizes and initializes the slab class descriptors
@@ -1022,12 +931,8 @@ static int do_slabs_newslab(struct default_engine *engine, const unsigned int id
                 additional_slabs = RESERVED_SLABS;
             z->rsvd_slabs = z->slabs + additional_slabs;
             sm_anchor.free_limit_space = (additional_slabs * z->perslab) * sm_anchor.blck_tsize;
-#ifdef REDUCE_EVICTION_SPIKE
             sm_anchor.free_chunk_space = sm_anchor.free_limit_space
                                        + (z->sl_curr + z->end_page_free) * sm_anchor.blck_tsize;
-#else
-            coll_del_thread_wakeup(engine);
-#endif
         }
     }
     MEMCACHED_SLABS_SLABCLASS_ALLOCATE(id);
@@ -1159,14 +1064,6 @@ static void do_slabs_stats(struct default_engine *engine, ADD_STAT add_stats, co
 #endif
 
     /* small memory classes */
-#ifdef REDUCE_EVICTION_SPIKE
-#else
-    slabclass_t *smp = &engine->slabs.slabclass[sm_anchor.blck_clsid];
-    uint64_t free_chunk_space = do_slabs_free_chunk_space(smp);
-    uint64_t curr_avail_space = free_chunk_space + sm_anchor.free_avail_space;
-    int space_shortage_level = do_slabs_space_shortage_level(curr_avail_space);
-
-#endif
     add_statistics(cookie, add_stats, "SM", -1, "used_num_classes", "%d", sm_anchor.used_num_classes);
     add_statistics(cookie, add_stats, "SM", -1, "free_num_classes", "%d", sm_anchor.free_num_classes);
     add_statistics(cookie, add_stats, "SM", -1, "used_min_classid", "%d", sm_anchor.used_minid);
@@ -1177,15 +1074,9 @@ static void do_slabs_stats(struct default_engine *engine, ADD_STAT add_stats, co
     add_statistics(cookie, add_stats, "SM", -1, "used_total_space", "%"PRIu64, sm_anchor.used_total_space);
     add_statistics(cookie, add_stats, "SM", -1, "free_small_space", "%"PRIu64, sm_anchor.free_small_space);
     add_statistics(cookie, add_stats, "SM", -1, "free_avail_space", "%"PRIu64, sm_anchor.free_avail_space);
-#ifdef REDUCE_EVICTION_SPIKE
     add_statistics(cookie, add_stats, "SM", -1, "free_chunk_space", "%"PRIu64, sm_anchor.free_chunk_space);
     add_statistics(cookie, add_stats, "SM", -1, "free_limit_space", "%"PRIu64, sm_anchor.free_limit_space);
     add_statistics(cookie, add_stats, "SM", -1, "space_shortage_level", "%d", sm_anchor.space_shortage_level);
-#else
-    add_statistics(cookie, add_stats, "SM", -1, "free_chunk_space", "%"PRIu64, free_chunk_space);
-    add_statistics(cookie, add_stats, "SM", -1, "free_limit_space", "%"PRIu64, sm_anchor.free_limit_space);
-    add_statistics(cookie, add_stats, "SM", -1, "space_shortage_level", "%d", space_shortage_level);
-#endif
 
     total = 0;
     int min_slab_id = POWER_SMALLEST;
@@ -1277,10 +1168,8 @@ static ENGINE_ERROR_CODE do_slabs_set_memlimit(struct default_engine *engine, si
     engine->slabs.mem_reserved = new_mem_reserved;
     engine->slabs.slabclass[sm_anchor.blck_clsid].rsvd_slabs = 0; /* undefined */
     sm_anchor.free_limit_space = 0;
-#ifdef REDUCE_EVICTION_SPIKE
     sm_anchor.free_chunk_space = 0;
     sm_anchor.space_shortage_level = 0;
-#endif
     return ENGINE_SUCCESS;
 }
 

@@ -79,11 +79,7 @@ unsigned int slabs_clsid(struct default_engine *engine, const size_t size);
 
 unsigned int slabs_space_size(struct default_engine *engine, const size_t size);
 
-#ifdef REDUCE_EVICTION_SPIKE
 int   slabs_space_shortage_level(void);
-#else
-int   slabs_short_of_free_space(struct default_engine *engine);
-#endif
 
 /** Allocate object of given length. 0 on error */ /*@null@*/
 void *slabs_alloc(struct default_engine *engine, const size_t size, unsigned int id);
