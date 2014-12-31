@@ -8047,6 +8047,83 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     }
 }
 
+#if 1 // REFACTOR_ASCII_COMMAND_PROCESSING
+static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens, bool flush_all)
+{
+    time_t exptime;
+
+    set_noreply_maybe(c, tokens, ntokens);
+
+    if (flush_all)
+    {
+        /* flush_all [<delay>] [noreply]\r\n */
+        if (ntokens == (c->noreply ? 3 : 2)) {
+            exptime = 0;
+        } else {
+            exptime = strtol(tokens[1].value, NULL, 10);
+            if(errno == ERANGE) {
+                out_string(c, "CLIENT_ERROR bad command line format");
+                return;
+            }
+        }
+
+        ENGINE_ERROR_CODE ret = settings.engine.v1->flush(settings.engine.v0, c, exptime);
+        if (ret == ENGINE_SUCCESS) {
+            out_string(c, "OK");
+        } else if (ret == ENGINE_ENOTSUP) {
+            out_string(c, "SERVER_ERROR not supported");
+        } else {
+            out_string(c, "SERVER_ERROR failed to flush cache");
+        }
+        STATS_NOKEY(c, cmd_flush);
+    }
+    else /* flush_prefix */
+    {
+        /* flush_prefix <prefix> [<delay>] [noreply]\r\n */
+        if (ntokens == (c->noreply ? 4 : 3)) {
+            exptime = 0;
+        } else {
+            exptime = strtol(tokens[2].value, NULL, 10);
+            if (errno == ERANGE) {
+                out_string(c, "CLIENT_ERROR bad command line format");
+                return;
+            }
+        }
+
+        char *prefix = tokens[PREFIX_TOKEN].value;
+        size_t nprefix = tokens[PREFIX_TOKEN].length;
+        if (nprefix == 4 && strncmp(prefix, "null", 4) == 0) {
+            /* flush null prefix */
+            prefix = NULL;
+            nprefix = 0;
+        }
+
+        ENGINE_ERROR_CODE ret = settings.engine.v1->flush_prefix(settings.engine.v0, c,
+                                                                 prefix, nprefix, exptime);
+        if (settings.detail_enabled) {
+            if (ret == ENGINE_SUCCESS || ret == ENGINE_PREFIX_ENOENT) {
+                if (stats_prefix_delete(prefix, nprefix) == 0) { /* found */
+                    ret = ENGINE_SUCCESS;
+                }
+            }
+        }
+
+        if (ret == ENGINE_SUCCESS) {
+            out_string(c, "OK");
+        } else if (ret == ENGINE_DISCONNECT) {
+            c->state = conn_closing;
+        } else if (ret == ENGINE_PREFIX_ENOENT) {
+            out_string(c, "NOT_FOUND");
+        } else if (ret == ENGINE_ENOTSUP) {
+            out_string(c, "SERVER_ERROR not supported");
+        } else {
+            out_string(c, "SERVER_ERROR failed to flush cache");
+        }
+        STATS_NOKEY(c, cmd_flush_prefix);
+    }
+}
+#endif
+
 static void process_verbosity_command(conn *c, token_t *tokens, const size_t ntokens) {
     unsigned int level;
 
@@ -8169,6 +8246,217 @@ static void process_junktime_command(conn *c, token_t *tokens, const size_t ntok
         }
     } else {
         out_string(c, "CLIENT_ERROR bad command line format");
+    }
+}
+#endif
+
+#if 1 // REFACTOR_ASCII_COMMAND_PROCESSING
+static void process_config_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    if ((ntokens == 3 || ntokens == 4) &&
+        (strcmp(tokens[SUBCOMMAND_TOKEN].value, "maxconns") == 0))
+    {
+        process_maxconns_command(c, tokens, ntokens);
+    }
+    else if ((ntokens == 3 || ntokens == 4) &&
+             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "memlimit") == 0))
+    {
+        process_memlimit_command(c, tokens, ntokens);
+    }
+#ifdef ENABLE_JUNK_ITEM_TIME
+    else if ((ntokens == 3 || ntokens == 4) &&
+             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "junktime") == 0))
+    {
+        process_junktime_command(c, tokens, ntokens);
+    }
+#endif
+    else if ((ntokens >= 3 && ntokens <= 5) &&
+             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "verbosity") == 0))
+    {
+        process_verbosity_command(c, tokens, ntokens);
+    }
+    else
+    {
+        out_string(c, "CLIENT_ERROR bad command line format");
+    }
+}
+#endif
+
+#if 1 // REFACTOR_ASCII_COMMAND_PROCESSING
+#ifdef ENABLE_ZK_INTEGRATION
+static void process_zk_ensemble_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    assert(ntokens == 2 || ntokens == 3);
+
+    if (arcus_zk_cfg == NULL) {
+        out_string(c, "ERROR not using ZooKeeper");
+        return;
+    }
+    if (ntokens == 3) { /* set_zk_ensemble */
+        /* The ensemble is a comma separated list of host:port addresses.
+         * host1:port1,host2:port2,...
+         */
+        if (arcus_zk_set_ensemble(tokens[COMMAND_TOKEN+1].value) != 0) {
+            out_string(c, "ERROR failed to set the new ensemble address (check logs)");
+        } else {
+            out_string(c, "OK");
+        }
+    } else { /* ntokens == 2: show_zk_ensemble */
+        char buf[1024];
+
+        if (arcus_zk_get_ensemble_str(buf, sizeof(buf)-16) != 0) {
+            out_string(c, "ERROR failed to get the ensemble address");
+        } else {
+            strcat(buf, "\r\n\n");
+            out_string(c, buf);
+        }
+    }
+}
+#endif
+#endif
+
+#if 1 // REFACTOR_ASCII_COMMAND_PROCESSING
+static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    char *type = tokens[COMMAND_TOKEN+1].value;
+
+    if (ntokens > 2 && strcmp(type, "kv") == 0) {
+        out_string(c,
+        "\t" "set|add|replace <key> <flags> <exptime> <bytes> [noreply]\\r\\n<data>\\r\\n" "\n"
+        "\t" "append|prepend <key> <flags> <exptime> <bytes> [noreply]\\r\\n<data>\\r\\n" "\n"
+        "\t" "cas <key> <flags> <exptime> <bytes> <cas unique> [noreply]\\r\\n<data>\\r\\n" "\n"
+        "\t" "get <key>[,<key>...]\\r\\n" "\n"
+        "\t" "gets <key>[,<key>...]\\r\\n" "\n"
+        "\t" "incr|decr <key> <delta> [<flags> <exptime> <initial>] [noreply]\\r\\n" "\n"
+        "\t" "delete <key> [<time>] [noreply]\\r\\n" "\n"
+        );
+    } else if (ntokens > 2 && strcmp(type, "list") == 0) {
+        out_string(c,
+        "\t" "lop create <key> <attributes> [noreply]\\r\\n" "\n"
+        "\t" "lop insert <key> <index> <bytes> [create <attributes>] [noreply|pipe]\\r\\n<data>\\r\\n" "\n"
+        "\t" "lop delete <key> <index or range> [drop] [noreply|pipe]\\r\\n" "\n"
+        "\t" "lop get <key> <index or range> [delete|drop]\\r\\n" "\n"
+        "\n"
+        "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
+        );
+    } else if (ntokens > 2 && strcmp(type, "set") == 0) {
+        out_string(c,
+        "\t" "sop create <key> <attributes> [noreply]\\r\\n" "\n"
+        "\t" "sop insert <key> <bytes> [create <attributes>] [noreply|pipe]\\r\\n<data>\\r\\n" "\n"
+        "\t" "sop delete <key> <bytes> [drop] [noreply|pipe]\\r\\n<data>\\r\\n" "\n"
+        "\t" "sop get <key> <count> [delete|drop]\\r\\n" "\n"
+        "\t" "sop exist <key> <bytes> [pipe]\\r\\n<data>\\r\\n" "\n"
+        "\n"
+        "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
+        );
+    } else if (ntokens > 2 && strcmp(type, "btree") == 0) {
+        out_string(c,
+        "\t" "bop create <key> <attributes> [noreply]\\r\\n" "\n"
+        "\t" "bop insert|upsert <key> <bkey> [<eflag>] <bytes> [create <attributes>] [noreply|pipe|getrim]\\r\\n<data>\\r\\n" "\n"
+        "\t" "bop update <key> <bkey> [<eflag_update>] <bytes> [noreply|pipe]\\r\\n<data>\\r\\n" "\n"
+        "\t" "bop delete <key> <bkey or \"bkey range\"> [<eflag_filter>] [<count>] [drop] [noreply|pipe]\\r\\n" "\n"
+        "\t" "bop get <key> <bkey or \"bkey range\"> [<eflag_filter>] [[<offset>] <count>] [delete|drop]\\r\\n" "\n"
+        "\t" "bop count <key> <bkey or \"bkey range\"> [<eflag_filter>] \\r\\n" "\n"
+        "\t" "bop incr|decr <key> <bkey> <value> [noreply|pipe]\\r\\n" "\n"
+        "\t" "bop mget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"comma separated keys\">\\r\\n" "\n"
+        "\t" "bop smget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"comma separated keys\">\\r\\n" "\n"
+        "\t" "bop position <key> <bkey> <order>\\r\\n" "\n"
+        "\t" "bop pwg <key> <bkey> <order> [<count>]\\r\\n" "\n"
+        "\t" "bop gbp <key> <order> <position or \"position range\">\\r\\n" "\n"
+        "\n"
+        "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
+        "\t" "* <eflag_update> : [<fwhere> <bitwop>] <fvalue>" "\n"
+        "\t" "* <eflag_filter> : <fwhere> [<bitwop> <foperand>] <compop> <fvalue>" "\n"
+        "\t" "                 : <fwhere> [<bitwop> <foperand>] EQ|NE <comma separated fvalue list>" "\n"
+        "\t" "* <bitwop> : &, |, ^" "\n"
+        "\t" "* <compop> : EQ, NE, LT, LE, GT, GE" "\n"
+        );
+    } else if (ntokens > 2 && strcmp(type, "attr") == 0) {
+        out_string(c,
+        "\t" "getattr <key> [<attribute name> ...]\\r\\n" "\n"
+        "\t" "setattr <key> <name>=<value> [<name>=value> ...]\\r\\n" "\n"
+        );
+    } else if (ntokens > 2 && strcmp(type, "admin") == 0) {
+        out_string(c,
+        "\t" "flush_all [<delay>] [noreply]\\r\\n" "\n"
+        "\t" "flush_prefix <prefix> [<delay>] [noreply]\\r\\n" "\n"
+        "\n"
+        "\t" "scrub [stale]\\r\\n" "\n"
+        "\n"
+        "\t" "stats\\r\\n" "\n"
+        "\t" "stats settings\\r\\n" "\n"
+        "\t" "stats items\\r\\n" "\n"
+        "\t" "stats slabs\\r\\n" "\n"
+        "\t" "stats prefixes\\r\\n" "\n"
+        "\t" "stats detail [on|off|dump]\\r\\n" "\n"
+        "\t" "stats scrub\\r\\n" "\n"
+        "\t" "stats cachedump <slab_clsid> <limit> [forward|backward [sticky]]\\r\\n" "\n"
+        "\t" "stats reset\\r\\n" "\n"
+        "\n"
+        "\t" "config verbosity [<verbose>]\\r\\n" "\n"
+        "\t" "config memlimit [<memsize(MB)>]\\r\\n" "\n"
+        "\t" "config maxconns [<maxconn>]\\r\\n" "\n"
+        );
+    } else {
+       out_string(c,
+       "\t" "* Usage: help [kv | list | set | btree | attr | admin ]" "\n"
+       );
+    }
+}
+#endif
+
+#if 1 // REFACTOR_ASCII_COMMAND_PROCESSING
+static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
+{
+    EXTENSION_ASCII_PROTOCOL_DESCRIPTOR *cmd;
+    size_t nbytes = 0;
+    char *ptr;
+
+    if (ntokens > 0) {
+        if (ntokens == MAX_TOKENS) {
+            out_string(c, "ERROR too many arguments");
+            return;
+        }
+        if (tokens[ntokens - 1].length == 0) {
+            --ntokens;
+        }
+    }
+    /* ntokens must be larger than 0 in order to avoid segfault in the next for statement. */
+    if (ntokens <= 0) {
+        out_string(c, "ERROR");
+        return;
+    }
+
+    for (cmd = settings.extensions.ascii; cmd != NULL; cmd = cmd->next) {
+        if (cmd->accept(cmd->cookie, c, ntokens, tokens, &nbytes, &ptr)) {
+            break;
+        }
+    }
+    if (cmd == NULL) {
+        /* Unify the response string in case of command mismatch */
+        /* out_string(c, "ERROR unknown command"); */
+        out_string(c, "ERROR");
+        return;
+    }
+    if (nbytes == 0) {
+        if (!cmd->execute(cmd->cookie, c, ntokens, tokens,
+                          ascii_response_handler)) {
+            conn_set_state(c, conn_closing);
+        } else {
+            if (c->dynamic_buffer.buffer != NULL) {
+                write_and_free(c, c->dynamic_buffer.buffer,
+                               c->dynamic_buffer.offset);
+                c->dynamic_buffer.buffer = NULL;
+            } else {
+                conn_set_state(c, conn_new_cmd);
+            }
+        }
+    } else {
+        c->rlbytes = nbytes;
+        c->ritem = ptr;
+        c->ascii_cmd = cmd;
+        /* NOT SUPPORTED YET! */
+        conn_set_state(c, conn_nread);
     }
 }
 #endif
@@ -10930,6 +11218,11 @@ static void process_command(conn *c, char *command) {
         process_stat(c, tokens, ntokens);
 
     } else if (ntokens >= 2 && ntokens <= 4 && (strcmp(tokens[COMMAND_TOKEN].value, "flush_all") == 0)) {
+#if 1 // REFACTOR_ASCII_COMMAND_PROCESSING
+
+        process_flush_command(c, tokens, ntokens, true);
+
+#else
         time_t exptime;
 
         set_noreply_maybe(c, tokens, ntokens);
@@ -10955,7 +11248,13 @@ static void process_command(conn *c, char *command) {
         }
         STATS_NOKEY(c, cmd_flush);
         return;
+#endif
     } else if (ntokens >= 3 && ntokens <= 5 && (strcmp(tokens[COMMAND_TOKEN].value, "flush_prefix") == 0)) {
+#if 1 // REFACTOR_ASCII_COMMAND_PROCESSING
+
+        process_flush_command(c, tokens, ntokens, false);
+
+#else
         time_t exptime;
 
         set_noreply_maybe(c, tokens, ntokens);
@@ -11002,8 +11301,12 @@ static void process_command(conn *c, char *command) {
 
         STATS_NOKEY(c, cmd_flush_prefix);
         return;
+#endif
     } else if (ntokens > 2 && (strcmp(tokens[COMMAND_TOKEN].value, "config") == 0)) {
 
+#if 1 // REFACTOR_ASCII_COMMAND_PROCESSING
+        process_config_command(c, tokens, ntokens);
+#else
         if ((ntokens == 3 || ntokens == 4) && strcmp(tokens[COMMAND_TOKEN+1].value, "maxconns") == 0) {
             process_maxconns_command(c, tokens, ntokens);
         } else if ((ntokens == 3 || ntokens == 4) && (strcmp(tokens[COMMAND_TOKEN+1].value, "memlimit") == 0)) {
@@ -11017,6 +11320,7 @@ static void process_command(conn *c, char *command) {
         } else {
             out_string(c, "CLIENT_ERROR bad command line format");
         }
+#endif
 
     } else if (ntokens == 2 && (strcmp(tokens[COMMAND_TOKEN].value, "version") == 0)) {
 
@@ -11027,6 +11331,11 @@ static void process_command(conn *c, char *command) {
         conn_set_state(c, conn_closing);
 #ifdef ENABLE_ZK_INTEGRATION
     } else if (ntokens == 3 && (strcmp(tokens[COMMAND_TOKEN].value, "set_zk_ensemble") == 0)) {
+#if 1 // REFACTOR_ASCII_COMMAND_PROCESSING
+
+        process_zk_ensemble_command(c, tokens, ntokens);
+
+#else
         /* The ensemble is a comma separated list of host:port addresses.
          * host1:port1,host2:port2,...
          */
@@ -11038,7 +11347,13 @@ static void process_command(conn *c, char *command) {
         else
             out_str = "OK";
         out_string(c, out_str);
+#endif
     } else if (ntokens == 2 && (strcmp(tokens[COMMAND_TOKEN].value, "show_zk_ensemble") == 0)) {
+#if 1 // REFACTOR_ASCII_COMMAND_PROCESSING
+
+        process_zk_ensemble_command(c, tokens, ntokens);
+
+#else
         char *out_str = "ERROR";
         char buf[1024];
         if (arcus_zk_cfg == NULL)
@@ -11051,8 +11366,13 @@ static void process_command(conn *c, char *command) {
         }
         out_string(c, out_str);
 #endif
+#endif
     } else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "help") == 0)) {
 
+#if 1 // REFACTOR_ASCII_COMMAND_PROCESSING
+        process_help_command(c, tokens, ntokens);
+
+#else
         char *type = tokens[COMMAND_TOKEN+1].value;
 
         if (ntokens > 2 && strcmp(type, "kv") == 0) {
@@ -11149,6 +11469,18 @@ static void process_command(conn *c, char *command) {
            "\t" "* Usage: help [kv | list | set | btree | attr | admin ]" "\n"
            );
         }
+#endif
+#if 1 // REFACTOR_ASCII_COMMAND_PROCESSING
+    }
+    else /* no matching command */
+    {
+        if (settings.extensions.ascii != NULL) {
+            process_extension_command(c, tokens, ntokens);
+        } else {
+            out_string(c, "ERROR");
+        }
+    }
+#else
     } else if (settings.extensions.ascii != NULL) {
         EXTENSION_ASCII_PROTOCOL_DESCRIPTOR *cmd;
         size_t nbytes = 0;
@@ -11204,6 +11536,7 @@ static void process_command(conn *c, char *command) {
     } else {
         out_string(c, "ERROR");
     }
+#endif
     return;
 }
 
