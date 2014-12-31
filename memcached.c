@@ -11119,14 +11119,13 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
     }
 }
 
-static void process_command(conn *c, char *command) {
-
+static void process_command(conn *c, char *command)
+{
     token_t tokens[MAX_TOKENS];
     size_t ntokens;
     int comm;
 
     assert(c != NULL);
-
     MEMCACHED_PROCESS_COMMAND_START(c->sfd, c->rcurr, c->rbytes);
 
     if (settings.verbose > 1) {
@@ -11148,98 +11147,101 @@ static void process_command(conn *c, char *command) {
     }
 
     ntokens = tokenize_command(command, tokens, MAX_TOKENS);
-    if (ntokens >= 3 &&
-        ((strcmp(tokens[COMMAND_TOKEN].value, "get") == 0) ||
-         (strcmp(tokens[COMMAND_TOKEN].value, "bget") == 0))) {
 
+    if ((ntokens >= 3) && ((strcmp(tokens[COMMAND_TOKEN].value, "get" ) == 0) ||
+                           (strcmp(tokens[COMMAND_TOKEN].value, "bget") == 0)))
+    {
         process_get_command(c, tokens, ntokens, false);
-
-    } else if ((ntokens == 6 || ntokens == 7) &&
-               ((strcmp(tokens[COMMAND_TOKEN].value, "add") == 0 && (comm = (int)OPERATION_ADD)) ||
-                (strcmp(tokens[COMMAND_TOKEN].value, "set") == 0 && (comm = (int)OPERATION_SET)) ||
-                (strcmp(tokens[COMMAND_TOKEN].value, "replace") == 0 && (comm = (int)OPERATION_REPLACE)) ||
-                (strcmp(tokens[COMMAND_TOKEN].value, "prepend") == 0 && (comm = (int)OPERATION_PREPEND)) ||
-                (strcmp(tokens[COMMAND_TOKEN].value, "append") == 0 && (comm = (int)OPERATION_APPEND)) )) {
-
-        process_update_command(c, tokens, ntokens, (ENGINE_STORE_OPERATION)comm, false);
-
-    } else if ((ntokens == 7 || ntokens == 8) && (strcmp(tokens[COMMAND_TOKEN].value, "cas") == 0 && (comm = (int)OPERATION_CAS))) {
-
-        process_update_command(c, tokens, ntokens, (ENGINE_STORE_OPERATION)comm, true);
-
-    } else if ((ntokens == 4 || ntokens == 5 || ntokens == 7 || ntokens == 8) && (strcmp(tokens[COMMAND_TOKEN].value, "incr") == 0)) {
-
-        process_arithmetic_command(c, tokens, ntokens, 1);
-
-    } else if (ntokens >= 3 && (strcmp(tokens[COMMAND_TOKEN].value, "gets") == 0)) {
-
+    }
+    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "gets") == 0))
+    {
         process_get_command(c, tokens, ntokens, true);
-
-    } else if ((ntokens == 4 || ntokens == 5 || ntokens == 7 || ntokens == 8) && (strcmp(tokens[COMMAND_TOKEN].value, "decr") == 0)) {
-
+    }
+    else if ((ntokens == 6 || ntokens == 7) &&
+        ((strcmp(tokens[COMMAND_TOKEN].value, "add"    ) == 0 && (comm = (int)OPERATION_ADD)) ||
+         (strcmp(tokens[COMMAND_TOKEN].value, "set"    ) == 0 && (comm = (int)OPERATION_SET)) ||
+         (strcmp(tokens[COMMAND_TOKEN].value, "replace") == 0 && (comm = (int)OPERATION_REPLACE)) ||
+         (strcmp(tokens[COMMAND_TOKEN].value, "prepend") == 0 && (comm = (int)OPERATION_PREPEND)) ||
+         (strcmp(tokens[COMMAND_TOKEN].value, "append" ) == 0 && (comm = (int)OPERATION_APPEND)) ))
+    {
+        process_update_command(c, tokens, ntokens, (ENGINE_STORE_OPERATION)comm, false);
+    }
+    else if ((ntokens == 7 || ntokens == 8) &&
+         (strcmp(tokens[COMMAND_TOKEN].value, "cas"    ) == 0 && (comm = (int)OPERATION_CAS)))
+    {
+        process_update_command(c, tokens, ntokens, (ENGINE_STORE_OPERATION)comm, true);
+    }
+    else if ((ntokens == 4 || ntokens == 5 || ntokens == 7 || ntokens == 8) &&
+        (strcmp(tokens[COMMAND_TOKEN].value, "incr") == 0))
+    {
+        process_arithmetic_command(c, tokens, ntokens, 1);
+    }
+    else if ((ntokens == 4 || ntokens == 5 || ntokens == 7 || ntokens == 8) &&
+        (strcmp(tokens[COMMAND_TOKEN].value, "decr") == 0))
+    {
         process_arithmetic_command(c, tokens, ntokens, 0);
-
-    } else if (ntokens >= 3 && ntokens <= 5 && (strcmp(tokens[COMMAND_TOKEN].value, "delete") == 0)) {
-
+    }
+    else if ((ntokens >= 3 && ntokens <= 5) && (strcmp(tokens[COMMAND_TOKEN].value, "delete") == 0))
+    {
         process_delete_command(c, tokens, ntokens);
-
-    } else if (ntokens >= 5 && ntokens <= 13 && (strcmp(tokens[COMMAND_TOKEN].value, "lop") == 0)) {
-
+    }
+    else if ((ntokens >= 5 && ntokens <= 13) && (strcmp(tokens[COMMAND_TOKEN].value, "lop") == 0))
+    {
         process_lop_command(c, tokens, ntokens);
-
-    } else if (ntokens >= 5 && ntokens <= 12 && (strcmp(tokens[COMMAND_TOKEN].value, "sop") == 0)) {
-
+    }
+    else if ((ntokens >= 5 && ntokens <= 12) && (strcmp(tokens[COMMAND_TOKEN].value, "sop") == 0))
+    {
         process_sop_command(c, tokens, ntokens);
-
-    } else if (ntokens >= 5 && ntokens <= 14 && (strcmp(tokens[COMMAND_TOKEN].value, "bop") == 0)) {
-
+    }
+    else if ((ntokens >= 5 && ntokens <= 14) && (strcmp(tokens[COMMAND_TOKEN].value, "bop") == 0))
+    {
         process_bop_command(c, tokens, ntokens);
-
-    } else if (ntokens >= 3 && ntokens <= 11 && (strcmp(tokens[COMMAND_TOKEN].value, "getattr") == 0)) {
-
+    }
+    else if ((ntokens >= 3 && ntokens <= 11) && (strcmp(tokens[COMMAND_TOKEN].value, "getattr") == 0))
+    {
         process_getattr_command(c, tokens, ntokens);
-
-    } else if (ntokens >= 4 && ntokens <= 8  && (strcmp(tokens[COMMAND_TOKEN].value, "setattr") == 0)) {
-
+    }
+    else if ((ntokens >= 4 && ntokens <=  8) && (strcmp(tokens[COMMAND_TOKEN].value, "setattr") == 0))
+    {
         process_setattr_command(c, tokens, ntokens);
-
-    } else if (ntokens >= 2 && (strcmp(tokens[COMMAND_TOKEN].value, "stats") == 0)) {
-
+    }
+    else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "stats") == 0))
+    {
         process_stat(c, tokens, ntokens);
-
-    } else if (ntokens >= 2 && ntokens <= 4 && (strcmp(tokens[COMMAND_TOKEN].value, "flush_all") == 0)) {
-
+    }
+    else if ((ntokens >= 2 && ntokens <= 4) && (strcmp(tokens[COMMAND_TOKEN].value, "flush_all") == 0))
+    {
         process_flush_command(c, tokens, ntokens, true);
-
-    } else if (ntokens >= 3 && ntokens <= 5 && (strcmp(tokens[COMMAND_TOKEN].value, "flush_prefix") == 0)) {
-
+    }
+    else if ((ntokens >= 3 && ntokens <= 5) && (strcmp(tokens[COMMAND_TOKEN].value, "flush_prefix") == 0))
+    {
         process_flush_command(c, tokens, ntokens, false);
-
-    } else if (ntokens > 2 && (strcmp(tokens[COMMAND_TOKEN].value, "config") == 0)) {
-
+    }
+    else if ((ntokens >  2) && (strcmp(tokens[COMMAND_TOKEN].value, "config") == 0))
+    {
         process_config_command(c, tokens, ntokens);
-
-    } else if (ntokens == 2 && (strcmp(tokens[COMMAND_TOKEN].value, "version") == 0)) {
-
-        out_string(c, "VERSION " VERSION);
-
-    } else if (ntokens == 2 && (strcmp(tokens[COMMAND_TOKEN].value, "quit") == 0)) {
-
-        conn_set_state(c, conn_closing);
+    }
 #ifdef ENABLE_ZK_INTEGRATION
-    } else if (ntokens == 3 && (strcmp(tokens[COMMAND_TOKEN].value, "set_zk_ensemble") == 0)) {
-
+    else if ((ntokens == 3) && (strcmp(tokens[COMMAND_TOKEN].value, "set_zk_ensemble") == 0))
+    {
         process_zk_ensemble_command(c, tokens, ntokens);
-
-    } else if (ntokens == 2 && (strcmp(tokens[COMMAND_TOKEN].value, "show_zk_ensemble") == 0)) {
-
+    }
+    else if ((ntokens == 2) && (strcmp(tokens[COMMAND_TOKEN].value, "show_zk_ensemble") == 0))
+    {
         process_zk_ensemble_command(c, tokens, ntokens);
-
+    }
 #endif
-    } else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "help") == 0)) {
-
+    else if ((ntokens == 2) && (strcmp(tokens[COMMAND_TOKEN].value, "version") == 0))
+    {
+        out_string(c, "VERSION " VERSION);
+    }
+    else if ((ntokens == 2) && (strcmp(tokens[COMMAND_TOKEN].value, "quit") == 0))
+    {
+        conn_set_state(c, conn_closing);
+    }
+    else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "help") == 0))
+    {
         process_help_command(c, tokens, ntokens);
-
     }
     else /* no matching command */
     {
