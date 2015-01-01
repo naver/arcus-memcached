@@ -23,7 +23,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
-#include "memcached.h"
+#include <memcached/util.h>
 
 bool safe_strtoull(const char *str, uint64_t *out) {
     assert(out != NULL);
