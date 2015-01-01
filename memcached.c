@@ -62,14 +62,6 @@ static int MAX_LIST_SIZE  = 50000;
 static int MAX_SET_SIZE   = 50000;
 static int MAX_BTREE_SIZE = 50000;
 
-static inline void item_set_cas(const void *cookie, item *it, uint64_t cas) {
-    settings.engine.v1->item_set_cas(settings.engine.v0, cookie, it, cas);
-}
-
-/* static inline uint8_t item_get_clsid(const item* it) { */
-/*     /\* return settings.engine.v1->item_get_clsid(settings.engine.v0, it); *\/ */
-/* } */
-
 /* The item must always be called "it" */
 #define SLAB_GUTS(conn, thread_stats, slab_op, thread_op) \
     thread_stats->slab_stats[info.clsid].slab_op++;
@@ -6456,7 +6448,8 @@ static void process_bin_update(conn *c) {
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        item_set_cas(c, it, c->binary_header.request.cas);
+        settings.engine.v1->item_set_cas(settings.engine.v0, c, it,
+                                         c->binary_header.request.cas);
 
         switch (c->cmd) {
         case PROTOCOL_BINARY_CMD_ADD:
@@ -6552,7 +6545,8 @@ static void process_bin_append_prepend(conn *c) {
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        item_set_cas(c, it, c->binary_header.request.cas);
+        settings.engine.v1->item_set_cas(settings.engine.v0, c, it,
+                                         c->binary_header.request.cas);
 
         switch (c->cmd) {
         case PROTOCOL_BINARY_CMD_APPEND:
@@ -7875,7 +7869,7 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     item_info info = { .nvalue = 1 };
     switch (ret) {
     case ENGINE_SUCCESS:
-        item_set_cas(c, it, req_cas_id);
+        settings.engine.v1->item_set_cas(settings.engine.v0, c, it, req_cas_id);
         if (!settings.engine.v1->get_item_info(settings.engine.v0, c, it, &info)) {
             settings.engine.v1->release(settings.engine.v0, c, it);
             out_string(c, "SERVER_ERROR error getting item data");
