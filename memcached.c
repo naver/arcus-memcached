@@ -158,53 +158,6 @@ extern volatile sig_atomic_t arcus_zk_shutdown;
  */
 volatile rel_time_t current_time;
 
-/*
- * forward declarations
- */
-static int new_socket(struct addrinfo *ai);
-static int try_read_command(conn *c);
-static inline struct independent_stats *get_independent_stats(conn *c);
-static inline struct thread_stats *get_thread_stats(conn *c);
-static void register_callback(ENGINE_HANDLE *eh,
-                              ENGINE_EVENT_TYPE type,
-                              EVENT_CALLBACK cb, const void *cb_data);
-
-
-enum try_read_result {
-    READ_DATA_RECEIVED,
-    READ_NO_DATA_RECEIVED,
-    READ_ERROR,            /** an error occured (on the socket) (or client closed connection) */
-    READ_MEMORY_ERROR      /** failed to allocate more memory */
-};
-
-static enum try_read_result try_read_network(conn *c);
-static enum try_read_result try_read_udp(conn *c);
-
-/* stats */
-static void stats_init(void);
-static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate);
-static void process_stat_settings(ADD_STAT add_stats, void *c);
-
-
-/* defaults */
-static void settings_init(void);
-
-/* event handling, network IO */
-static void event_handler(const int fd, const short which, void *arg);
-static bool update_event(conn *c, const int new_flags);
-static void complete_nread(conn *c);
-static void process_command(conn *c, char *command);
-static void write_and_free(conn *c, char *buf, int bytes);
-static int ensure_iov_space(conn *c);
-static int add_iov(conn *c, const void *buf, int len);
-static int add_msghdr(conn *c);
-
-
-/* time handling */
-static void set_current_time(void);  /* update the global variable holding
-                              global 32-bit seconds-since-start time
-                              (to avoid 64 bit time_t) */
-
 /** exported globals **/
 struct stats stats;
 struct settings settings;
@@ -224,6 +177,42 @@ static struct engine_event_handler *engine_event_handlers[MAX_ENGINE_EVENT_TYPE 
 static char *arcus_zk_cfg = NULL;
 #endif
 
+/*
+ * forward declarations
+ */
+static int new_socket(struct addrinfo *ai);
+static int try_read_command(conn *c);
+static inline struct independent_stats *get_independent_stats(conn *c);
+static inline struct thread_stats *get_thread_stats(conn *c);
+
+enum try_read_result {
+    READ_DATA_RECEIVED,
+    READ_NO_DATA_RECEIVED,
+    READ_ERROR,            /** an error occured (on the socket) (or client closed connection) */
+    READ_MEMORY_ERROR      /** failed to allocate more memory */
+};
+
+static enum try_read_result try_read_network(conn *c);
+static enum try_read_result try_read_udp(conn *c);
+
+/* stats */
+static void stats_init(void);
+static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate);
+static void process_stat_settings(ADD_STAT add_stats, void *c);
+
+/* defaults */
+static void settings_init(void);
+
+/* event handling, network IO */
+static void event_handler(const int fd, const short which, void *arg);
+static bool update_event(conn *c, const int new_flags);
+static void complete_nread(conn *c);
+static void process_command(conn *c, char *command);
+static void write_and_free(conn *c, char *buf, int bytes);
+static int ensure_iov_space(conn *c);
+static int add_iov(conn *c, const void *buf, int len);
+static int add_msghdr(conn *c);
+
 enum transmit_result {
     TRANSMIT_COMPLETE,   /** All done writing. */
     TRANSMIT_INCOMPLETE, /** More data remaining to write. */
@@ -232,8 +221,6 @@ enum transmit_result {
 };
 
 static enum transmit_result transmit(conn *c);
-
-#define REALTIME_MAXDELTA 60*60*24*30
 
 #ifdef ENABLE_ZK_INTEGRATION
 extern void arcus_shutdown(const char *);
@@ -249,15 +236,23 @@ extern bool arcus_key_is_mine     (const char *key, size_t nkey);
 extern bool arcus_cluster_is_valid(void);
 #endif
 
-// Perform all callbacks of a given type for the given connection.
-static void perform_callbacks(ENGINE_EVENT_TYPE type,
-                              const void *data,
-                              const void *c) {
-    for (struct engine_event_handler *h = engine_event_handlers[type];
-         h; h = h->next) {
-        h->cb(c, type, data, h->cb_data);
-    }
+/* time-sensitive callers can call it by hand with this,
+ * outside the normal ever-1-second timer
+ */
+static void set_current_time(void)
+{
+    struct timeval timer;
+
+    gettimeofday(&timer, NULL);
+    current_time = (rel_time_t) (timer.tv_sec - process_started);
 }
+
+static rel_time_t get_current_time(void)
+{
+    return current_time;
+}
+
+#define REALTIME_MAXDELTA 60*60*24*30
 
 /*
  * given time value that's either unix time or delta from current unix time,
@@ -286,42 +281,6 @@ static rel_time_t realtime(const time_t exptime) {
         return (rel_time_t)(exptime + current_time);
     }
 }
-
-#if defined(SUPPORT_BOP_MGET) || defined(SUPPORT_BOP_SMGET)
-static int tokenize_keys(char *keystr, char delimiter, int keycnt, token_t *tokens) {
-    int ntokens = 0;
-    char *s, *e;
-    bool finish = false;
-
-    assert(keystr != NULL && tokens != NULL && keycnt >= 1);
-
-    s = keystr;
-    while (*s == ' ')
-        s++;
-    for (e = s; ntokens < keycnt; ++e) {
-        if (*e == ' ') break;
-        else if (*e == delimiter) {
-            if (s == e) break;
-            tokens[ntokens].value = s;
-            tokens[ntokens].length = e - s;
-            ntokens++;
-            s = e + 1;
-        } else if (*e == '\r' && *(e+1) == '\n') {
-            if (s == e) break;
-            tokens[ntokens].value = s;
-            tokens[ntokens].length = e - s;
-            ntokens++;
-            finish = true;
-            break; /* string end */
-        }
-    }
-    if (ntokens == keycnt && finish == true) {
-        return ntokens;
-    } else {
-        return -1; /* some errors */
-    }
-}
-#endif
 
 static void stats_init(void) {
     stats.daemon_conns = 0;
@@ -457,6 +416,31 @@ void safe_close(int sfd) {
         }
     }
 }
+
+// Register a callback.
+static void register_callback(ENGINE_HANDLE *eh,
+                              ENGINE_EVENT_TYPE type,
+                              EVENT_CALLBACK cb, const void *cb_data) {
+    struct engine_event_handler *h =
+        calloc(sizeof(struct engine_event_handler), 1);
+
+    assert(h);
+    h->cb = cb;
+    h->cb_data = cb_data;
+    h->next = engine_event_handlers[type];
+    engine_event_handlers[type] = h;
+}
+
+// Perform all callbacks of a given type for the given connection.
+static void perform_callbacks(ENGINE_EVENT_TYPE type,
+                              const void *data,
+                              const void *c) {
+    for (struct engine_event_handler *h = engine_event_handlers[type];
+         h; h = h->next) {
+        h->cb(c, type, data, h->cb_data);
+    }
+}
+
 
 /*
  * Free list management for connections.
@@ -1641,6 +1625,42 @@ static void process_bop_update_complete(conn *c)
         c->coll_eitem = NULL;
     }
 }
+
+#if defined(SUPPORT_BOP_MGET) || defined(SUPPORT_BOP_SMGET)
+static int tokenize_keys(char *keystr, char delimiter, int keycnt, token_t *tokens) {
+    int ntokens = 0;
+    char *s, *e;
+    bool finish = false;
+
+    assert(keystr != NULL && tokens != NULL && keycnt >= 1);
+
+    s = keystr;
+    while (*s == ' ')
+        s++;
+    for (e = s; ntokens < keycnt; ++e) {
+        if (*e == ' ') break;
+        else if (*e == delimiter) {
+            if (s == e) break;
+            tokens[ntokens].value = s;
+            tokens[ntokens].length = e - s;
+            ntokens++;
+            s = e + 1;
+        } else if (*e == '\r' && *(e+1) == '\n') {
+            if (s == e) break;
+            tokens[ntokens].value = s;
+            tokens[ntokens].length = e - s;
+            ntokens++;
+            finish = true;
+            break; /* string end */
+        }
+    }
+    if (ntokens == keycnt && finish == true) {
+        return ntokens;
+    } else {
+        return -1; /* some errors */
+    }
+}
+#endif
 
 #ifdef SUPPORT_BOP_MGET
 static void process_bop_mget_complete(conn *c) {
@@ -12441,14 +12461,6 @@ static int server_socket_unix(const char *path, int access_mask) {
 
 static struct event clockevent;
 
-/* time-sensitive callers can call it by hand with this, outside the normal ever-1-second timer */
-static void set_current_time(void) {
-    struct timeval timer;
-
-    gettimeofday(&timer, NULL);
-    current_time = (rel_time_t) (timer.tv_sec - process_started);
-}
-
 static void clock_handler(const int fd, const short which, void *arg) {
     struct timeval t = {.tv_sec = 1, .tv_usec = 0};
     static bool initialized = false;
@@ -12788,24 +12800,6 @@ static inline struct thread_stats *get_thread_stats(conn *c) {
     struct independent_stats *independent_stats = get_independent_stats(c);
     assert(c->thread->index < num_independent_stats());
     return &independent_stats->thread_stats[c->thread->index];
-}
-
-static void register_callback(ENGINE_HANDLE *eh,
-                              ENGINE_EVENT_TYPE type,
-                              EVENT_CALLBACK cb, const void *cb_data) {
-    struct engine_event_handler *h =
-        calloc(sizeof(struct engine_event_handler), 1);
-
-    assert(h);
-    h->cb = cb;
-    h->cb_data = cb_data;
-    h->next = engine_event_handlers[type];
-    engine_event_handlers[type] = h;
-}
-
-static rel_time_t get_current_time(void)
-{
-    return current_time;
 }
 
 static void count_eviction(const void *cookie, const void *key, const int nkey) {
