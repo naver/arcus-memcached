@@ -32,6 +32,9 @@
 #include "config.h"
 #include "memcached.h"
 #include "memcached/extension_loggers.h"
+#ifdef ENABLE_ZK_INTEGRATION
+#include "arcus_zk.h"
+#endif
 
 #if defined(ENABLE_SASL) || defined(ENABLE_ISASL)
 #define SASL_ENABLED
@@ -144,9 +147,6 @@ static int MAX_BTREE_SIZE = 50000;
 }
 
 volatile sig_atomic_t memcached_shutdown;
-#ifdef ENABLE_ZK_INTEGRATION
-extern volatile sig_atomic_t arcus_zk_shutdown;
-#endif
 
 /*
  * We keep the current time of day in a global variable that's updated by a
@@ -222,19 +222,6 @@ enum transmit_result {
 
 static enum transmit_result transmit(conn *c);
 
-#ifdef ENABLE_ZK_INTEGRATION
-extern void arcus_shutdown(const char *);
-extern void arcus_zk_init(char *ensemble_list, int arcus_zk_to,
-                          EXTENSION_LOGGER_DESCRIPTOR *logger,
-                          int verbose, size_t maxbytes, int port);
-extern int arcus_zk_set_ensemble(char *ensemble_list);
-extern int arcus_zk_get_ensemble_str(char *buf, int size);
-extern int arcus_zk_get_timeout(void);
-#endif
-#ifdef ENABLE_CLUSTER_AWARE
-extern bool arcus_key_is_mine     (const char *key, size_t nkey);
-extern bool arcus_cluster_is_valid(void);
-#endif
 
 /* time-sensitive callers can call it by hand with this,
  * outside the normal ever-1-second timer
@@ -12673,7 +12660,7 @@ static void sigterm_handler(int sig) {
     if (arcus_zk_cfg) {
         arcus_zk_shutdown = 1;
 #if 0
-        arcus_shutdown("Interrupted");
+        arcus_zk_final("Interrupted");
 #endif
     }
 #endif
@@ -13081,7 +13068,7 @@ static void shutdown_server(void) {
 #ifdef ENABLE_ZK_INTEGRATION
     if (arcus_zk_cfg) {
         arcus_zk_shutdown = 1;
-        arcus_shutdown("shutdown_server");
+        arcus_zk_final("shutdown_server");
     }
 #endif
 }
@@ -13973,7 +13960,7 @@ int main (int argc, char **argv) {
 #ifdef ENABLE_ZK_INTEGRATION
     // shutdown Arcus connection
     if (arcus_zk_cfg)
-        arcus_shutdown("graceful shutdown");
+        arcus_zk_final("graceful shutdown");
     free (arcus_zk_cfg);    // not really needed though
 #endif
 

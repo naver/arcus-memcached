@@ -64,6 +64,7 @@
 #include <stdbool.h>
 #include <sysexits.h>
 #include <limits.h>
+#include "arcus_zk.h"
 #include "memcached/extension_loggers.h"
 #ifdef ENABLE_CLUSTER_AWARE
 #include "cluster_config.h"
@@ -173,20 +174,7 @@ static void arcus_cluster_watcher(zhandle_t *zh, int type, int state,
                                   const char *path, void *ctx);
 #endif
 
-// declaration
-void arcus_zk_init(char *ensemble_list, int zk_to,
-                   EXTENSION_LOGGER_DESCRIPTOR *logger,
-                   int verbose, size_t maxbytes, int port);
-void arcus_shutdown(const char *msg);
 int  mc_hb(zhandle_t* zh, void *context);     // memcached self-heartbeat
-int  arcus_zk_set_ensemble(char *ensemble_list);
-int  arcus_zk_get_ensemble_str(char *buf, int size);
-int  arcus_zk_get_timeout(void);
-
-#ifdef ENABLE_CLUSTER_AWARE
-bool arcus_cluster_is_valid(void);
-bool arcus_key_is_mine(const char *key, size_t nkey);
-#endif
 
 // async routine synchronization
 static pthread_cond_t  azk_cond = PTHREAD_COND_INITIALIZER;
@@ -317,7 +305,7 @@ arcus_cluster_watch_servers(zhandle_t *zh, const char *path, watcher_fn fn)
     int i, rc;
 
     /* Do not call zookeeper API if we are calling
-     * zookeeper_close.  See arcus_shutdown.
+     * zookeeper_close.  See arcus_zk_final.
      */
     pthread_mutex_lock(&zk_close_lock);
     if (zk_closing) {
@@ -438,7 +426,7 @@ arcus_zk_log(zhandle_t *zh, const char *action)
 // this shutdown Zookeeper connection, ephemeral node, and leave a log
 //
 void
-arcus_shutdown(const char *msg)
+arcus_zk_final(const char *msg)
 {
 #if 0 // Remove the code of deleting the ephemeral znode. it'll be deleted, after closing a zookeeper session.
     char zpath[200]="";
@@ -613,7 +601,8 @@ arcus_exit(zhandle_t *zh, int err)
 
 
 void
-arcus_zk_init(char *ensemble_list, int zk_to, EXTENSION_LOGGER_DESCRIPTOR *logger,
+arcus_zk_init(char *ensemble_list, int zk_to,
+              EXTENSION_LOGGER_DESCRIPTOR *logger,
               int verbose, size_t maxbytes, int port)
 {
     int     rc;
@@ -973,7 +962,7 @@ arcus_zk_init(char *ensemble_list, int zk_to, EXTENSION_LOGGER_DESCRIPTOR *logge
 
     // Either got SIG* or memcached shutdown process finished
     if (arcus_zk_shutdown) {
-        arcus_shutdown("Interrupted");
+        arcus_zk_final("Interrupted");
     }
 
     return;
@@ -1153,10 +1142,10 @@ hb_thread(void *arg)
 
             if (failed >= HEART_BEAT_TRY_COUNT) {
                 /* Do not bother calling memcached.c:shutdown_server.
-                 * Call arcus_shutdown directly.  shutdown_server just sets
+                 * Call arcus_zk_final directly.  shutdown_server just sets
                  * memcached_shutdown = arcus_zk_shutdown = 1 and calls
-                 * arcus_shutdown.  These flags are used for graceful shutdown.
-                 * We do not need them here.  Besides, arcus_shutdown kills
+                 * arcus_zk_final.  These flags are used for graceful shutdown.
+                 * We do not need them here.  Besides, arcus_zk_final kills
                  * the process right away, assuming the zookeeper library
                  * still functions.
                  */
@@ -1167,7 +1156,7 @@ hb_thread(void *arg)
                 arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                     "%d consecutive heartbeat failures. Shutting down...\n",
                     failed);
-                arcus_shutdown("Heartbeat failures");
+                arcus_zk_final("Heartbeat failures");
                 /* Does not return */
             }
         }
@@ -1190,7 +1179,7 @@ start_hb_thread(app_ping_t *data)
     if ((ret = pthread_create(&tid, &attr, hb_thread, (void *)data)) != 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                                "Cannot create hb thread: %s\n", strerror(ret));
-        arcus_shutdown("start_hb_thread");
+        arcus_zk_final("start_hb_thread");
     }
 }
 #endif // ENABLE_HEART_BEAT_THREAD
