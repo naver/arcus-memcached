@@ -203,9 +203,11 @@ static ENGINE_ERROR_CODE  default_setattr(ENGINE_HANDLE* handle, const void* coo
                                           const uint32_t attr_count, item_attr *attr_data,
                                           uint16_t vbucket);
 static ENGINE_ERROR_CODE  initalize_configuration(struct default_engine *se, const char *cfg_str);
+#if 0 // ENABLE_TAP_PROTOCOL
 static TAP_ITERATOR       get_tap_iterator(ENGINE_HANDLE* handle, const void* cookie,
                                            const void* client, size_t nclient, uint32_t flags,
                                            const void* userdata, size_t nuserdata);
+#endif
 static ENGINE_ERROR_CODE  default_set_memlimit(ENGINE_HANDLE* handle, const void* cookie,
                                                const size_t memlimit, const int sticky_ratio);
 static void               default_set_junktime(ENGINE_HANDLE* handle, const void* cookie,
@@ -341,7 +343,9 @@ ENGINE_ERROR_CODE create_instance(uint64_t interface, GET_SERVER_API get_server_
          .get_list_elem_info = get_list_elem_info,
          .get_set_elem_info = get_set_elem_info,
          .get_btree_elem_info = get_btree_elem_info,
+#if 0 // ENABLE_TAP_PROTOCOL
          .get_tap_iterator = get_tap_iterator
+#endif
       },
       .server = *api,
       .get_server_api = get_server_api,
@@ -1011,6 +1015,7 @@ static ENGINE_ERROR_CODE default_get_prefix_stats(ENGINE_HANDLE* handle, const v
     return assoc_get_prefix_stats(engine, key, nkey, prefix_data);
 }
 
+#if 0 // ENABLE_TAP_PROTOCOL
 static tap_event_t tap_always_pause(ENGINE_HANDLE *e,
                                     const void *cookie, item **itm, void **es,
                                     uint16_t *nes, uint8_t *ttl, uint16_t *flags,
@@ -1038,6 +1043,7 @@ static TAP_ITERATOR get_tap_iterator(ENGINE_HANDLE* handle, const void* cookie,
     }
     return rv;
 }
+#endif
 
 static ENGINE_ERROR_CODE initalize_configuration(struct default_engine *se, const char *cfg_str)
 {

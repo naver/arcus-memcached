@@ -175,6 +175,7 @@ extern "C"
         PROTOCOL_BINARY_CMD_RDECRQ    = 0x3c,
         /* End Range operations */
 
+#if 0 // ENABLE_TAP_PROTOCOL
         /* TAP commands */
         PROTOCOL_BINARY_CMD_TAP_CONNECT = 0x40,
         PROTOCOL_BINARY_CMD_TAP_MUTATION = 0x41,
@@ -183,6 +184,7 @@ extern "C"
         PROTOCOL_BINARY_CMD_TAP_OPAQUE = 0x44,
         PROTOCOL_BINARY_CMD_TAP_VBUCKET_SET = 0x45,
         /* End TAP */
+#endif
 
         /* ATTR commands */
         PROTOCOL_BINARY_CMD_GETATTR     = 0x4e,
@@ -912,6 +914,7 @@ extern "C"
     typedef protocol_binary_request_rangeop protocol_binary_request_rdecrq;
 
 
+#if 0 // ENABLE_TAP_PROTOCOL
     /**
      * Definition of tap commands
      * See To be written
@@ -1045,6 +1048,7 @@ extern "C"
     typedef protocol_binary_request_tap_no_extras protocol_binary_request_tap_flush;
     typedef protocol_binary_request_tap_no_extras protocol_binary_request_tap_opaque;
     typedef protocol_binary_request_tap_no_extras protocol_binary_request_tap_vbucket_set;
+#endif
 
 
     /**

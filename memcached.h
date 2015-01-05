@@ -121,7 +121,9 @@
 #define STAT_VAL_LEN 128
 
 #define DEFAULT_REQS_PER_EVENT     20
+#if 0 // ENABLE_TAP_PROTOCOL
 #define DEFAULT_REQS_PER_TAP_EVENT 1000
+#endif
 
 
 /** Append a simple stat with a stat name, value format and value */
@@ -371,8 +373,10 @@ struct settings {
     bool allow_detailed;    /* detailed stats commands are allowed */
     int reqs_per_event;     /* Maximum number of io to process on each
                                io-event. */
+#if 0 // ENABLE_TAP_PROTOCOL
     int reqs_per_tap_event; /* Maximum number of tap io to process on each
                                io-event. */
+#endif
     bool use_cas;
     enum protocol binding_protocol;
     int backlog;
@@ -439,7 +443,9 @@ typedef struct {
 
 
 
+#if 0 // ENABLE_TAP_PROTOCOL
 extern LIBEVENT_THREAD tap_thread;
+#endif
 
 typedef struct {
     pthread_t thread_id;        /* unique ID of this thread */
@@ -592,7 +598,9 @@ struct conn {
 
     ENGINE_ERROR_CODE aiostat;
     bool ewouldblock;
+#if 0 // ENABLE_TAP_PROTOCOL
     TAP_ITERATOR tap_iterator;
+#endif
 
     struct {
         bool active;
@@ -681,13 +689,17 @@ bool conn_parse_cmd(conn *c);
 bool conn_write(conn *c);
 bool conn_nread(conn *c);
 bool conn_swallow(conn *c);
+#if 0 // ENABLE_TAP_PROTOCOL
 bool conn_pending_close(conn *c);
+#endif
 bool conn_immediate_close(conn *c);
 bool conn_closing(conn *c);
 bool conn_mwrite(conn *c);
+#if 0 // ENABLE_TAP_PROTOCOL
 bool conn_ship_log(conn *c);
 bool conn_add_tap_client(conn *c);
 bool conn_setup_tap_stream(conn *c);
+#endif
 
 /* If supported, give compiler hints for branch prediction. */
 #if !defined(__GNUC__) || (__GNUC__ == 2 && __GNUC_MINOR__ < 96)

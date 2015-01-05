@@ -76,8 +76,10 @@ static LIBEVENT_DISPATCHER_THREAD dispatcher_thread;
 static int nthreads;
 static LIBEVENT_THREAD *threads;
 static pthread_t *thread_ids;
+#if 0 // ENABLE_TAP_PROTOCOL
 LIBEVENT_THREAD tap_thread;
 static pthread_t tap_thread_id;
+#endif
 
 /*
  * Number of worker threads that have finished setting themselves up.
@@ -88,7 +90,9 @@ static pthread_cond_t init_cond;
 
 
 static void thread_libevent_process(int fd, short which, void *arg);
+#if 0 // ENABLE_TAP_PROTOCOL
 static void libevent_tap_process(int fd, short which, void *arg);
+#endif
 
 /*
  * Initializes a connection queue.
@@ -208,7 +212,11 @@ static void create_worker(void *(*func)(void *), void *arg, pthread_t *id) {
  * Set up a thread's information.
  */
 static void setup_thread(LIBEVENT_THREAD *me, bool tap) {
+#if 0 // ENABLE_TAP_PROTOCOL
+    me->type = GENERAL;
+#else
     me->type = tap ? TAP : GENERAL;
+#endif
     me->base = event_init();
     if (! me->base) {
         settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -217,9 +225,15 @@ static void setup_thread(LIBEVENT_THREAD *me, bool tap) {
     }
 
     /* Listen for notifications from other threads */
+#if 0 // ENABLE_TAP_PROTOCOL
     event_set(&me->notify_event, me->notify_receive_fd,
               EV_READ | EV_PERSIST,
               tap ? libevent_tap_process : thread_libevent_process, me);
+#else
+    event_set(&me->notify_event, me->notify_receive_fd,
+              EV_READ | EV_PERSIST,
+              thread_libevent_process, me);
+#endif
     event_base_set(me->base, &me->notify_event);
 
     if (event_add(&me->notify_event, 0) == -1) {
@@ -397,6 +411,7 @@ size_t list_to_array(conn **dest, size_t max_items, conn **l) {
     return n_items;
 }
 
+#if 0 // ENABLE_TAP_PROTOCOL
 static void libevent_tap_process(int fd, short which, void *arg) {
     LIBEVENT_THREAD *me = arg;
     assert(me->type == TAP);
@@ -481,7 +496,9 @@ static void libevent_tap_process(int fd, short which, void *arg) {
         }
     }
 }
+#endif
 
+#if 0 // ENABLE_TAP_PROTOCOL
 static bool is_thread_me(LIBEVENT_THREAD *thr) {
 #ifdef __WIN32__
     pthread_t tid = pthread_self();
@@ -490,6 +507,7 @@ static bool is_thread_me(LIBEVENT_THREAD *thr) {
     return pthread_self() == thr->thread_id;
 #endif
 }
+#endif
 
 void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
 {
@@ -499,6 +517,7 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
                                     "Got notify from %d, status %x\n",
                                     conn->sfd, status);
 
+#if 0 // ENABLE_TAP_PROTOCOL
     /*
     ** TROND:
     **   I changed the logic for the tap connections so that the core
@@ -534,6 +553,7 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
         UNLOCK_THREAD(conn->thread);
         return;
     }
+#endif
 
     /*
     ** There may be a race condition between the engine calling this
@@ -993,6 +1013,7 @@ void thread_init(int nthr, struct event_base *main_base) {
         threads[i].thread_id = thread_ids[i];
     }
 
+#if 0 // ENABLE_TAP_PROTOCOL
 #ifdef __WIN32__
     if (createLocalSocketPair(sockfd, fds, &serv_addr) == -1) {
         settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -1015,6 +1036,7 @@ void thread_init(int nthr, struct event_base *main_base) {
     setup_thread(&tap_thread, true);
     create_worker(worker_libevent, &tap_thread, &tap_thread_id);
     tap_thread.thread_id = tap_thread_id;
+#endif
 
     /* Wait for all the threads to set themselves up before returning. */
     pthread_mutex_lock(&init_lock);
@@ -1032,12 +1054,14 @@ void threads_shutdown(void)
         }
         pthread_join(thread_ids[ii], NULL);
     }
+#if 0 // ENABLE_TAP_PROTOCOL
     if (write(tap_thread.notify_send_fd, "", 1) < 0) {
         perror("write failure shutting down.");
     }
     pthread_join(tap_thread_id, NULL);
     close(tap_thread.notify_receive_fd);
     close(tap_thread.notify_send_fd);
+#endif
     for (int ii = 0; ii < nthreads; ++ii) {
         close(threads[ii].notify_send_fd);
         close(threads[ii].notify_receive_fd);

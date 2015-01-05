@@ -123,6 +123,7 @@ extern "C" {
         SERVER_LOG_API *log;
     };
 
+#if 0 // ENABLE_TAP_PROTOCOL
     typedef enum { TAP_MUTATION = 1,
                    TAP_DELETION,
                    TAP_FLUSH,
@@ -164,6 +165,7 @@ extern "C" {
                                         uint16_t *flags,
                                         uint32_t *seqno,
                                         uint16_t *vbucket);
+#endif
 
     /**
      * The signature for the "create_instance" function exported from the module.
@@ -749,6 +751,7 @@ extern "C" {
                                              protocol_binary_request_header *request,
                                              ADD_RESPONSE response);
 
+#if 0 // ENABLE_TAP_PROTOCOL
         /* TAP operations */
 
         /**
@@ -807,6 +810,7 @@ extern "C" {
                                          const void* client, size_t nclient,
                                          uint32_t flags,
                                          const void* userdata, size_t nuserdata);
+#endif
 
         /**
          * Set the CAS id on an item.

@@ -798,7 +798,9 @@ static void conn_cleanup(conn *c) {
     }
 
     c->engine_storage = NULL;
+#if 0 // ENABLE_TAP_PROTOCOL
     c->tap_iterator = NULL;
+#endif
     c->thread = NULL;
     assert(c->next == NULL);
     c->ascii_cmd = NULL;
@@ -937,6 +939,7 @@ const char *state_text(STATE_FUNC state) {
         return "conn_closing";
     } else if (state == conn_mwrite) {
         return "conn_mwrite";
+#if 0 // ENABLE_TAP_PROTOCOL
     } else if (state == conn_ship_log) {
         return "conn_ship_log";
     } else if (state == conn_add_tap_client) {
@@ -945,6 +948,7 @@ const char *state_text(STATE_FUNC state) {
         return "conn_setup_tap_stream";
     } else if (state == conn_pending_close) {
         return "conn_pending_close";
+#endif
     } else if (state == conn_immediate_close) {
         return "conn_immediate_close";
     } else {
@@ -961,6 +965,7 @@ void conn_set_state(conn *c, STATE_FUNC state) {
     assert(c != NULL);
 
     if (state != c->state) {
+#if 0 // ENABLE_TAP_PROTOCOL
         /*
          * The connections in the "tap thread" behaves differently than
          * normal connections because they operate in a full duplex mode.
@@ -973,9 +978,15 @@ void conn_set_state(conn *c, STATE_FUNC state) {
                 state = conn_ship_log;
             }
         }
+#endif
 
+#if 0 // ENABLE_TAP_PROTOCOL
         if (settings.verbose > 2 || c->state == conn_closing
-            || c->state == conn_add_tap_client) {
+            || c->state == conn_add_tap_client)
+#else
+        if (settings.verbose > 2 || c->state == conn_closing)
+#endif
+        {
             settings.extensions.logger->log(EXTENSION_LOG_DETAIL, c,
                                             "%d: going from %s to %s\n",
                                             c->sfd, state_text(c->state),
@@ -2236,6 +2247,7 @@ static void add_bin_header(conn *c, uint16_t err, uint8_t hdr_len, uint16_t key_
     add_iov(c, c->wbuf, sizeof(header->response));
 }
 
+#if 0 // ENABLE_TAP_PROTOCOL
 /**
  * Convert an error code generated from the storage engine to the corresponding
  * error code used by the protocol layer.
@@ -2270,6 +2282,7 @@ static protocol_binary_response_status engine_error_2_protocol_error(ENGINE_ERRO
 
     return ret;
 }
+#endif
 
 static void write_bin_packet(conn *c, protocol_binary_response_status err, int swallow) {
     ssize_t len;
@@ -5580,6 +5593,7 @@ static bool binary_response_handler(const void *key, uint16_t keylen,
     return true;
 }
 
+#if 0 // ENABLE_TAP_PROTOCOL
 /**
  * Tap stats (these are only used by the tap thread, so they don't need
  * to be in the threadlocal struct right now...
@@ -5810,6 +5824,7 @@ static void ship_tap_log(conn *c) {
         }
     }
 }
+#endif
 
 static void process_bin_unknown_packet(conn *c) {
     void *packet = c->rcurr - (c->binary_header.request.bodylen +
@@ -5837,6 +5852,7 @@ static void process_bin_unknown_packet(conn *c) {
     }
 }
 
+#if 0 // ENABLE_TAP_PROTOCOL
 static void process_bin_tap_connect(conn *c) {
     char *packet = (c->rcurr - (c->binary_header.request.bodylen +
                                 sizeof(c->binary_header)));
@@ -5968,7 +5984,9 @@ static void process_bin_tap_ack(conn *c) {
         conn_set_state(c, conn_ship_log);
     }
 }
+#endif
 
+#if 0 // ENABLE_TAP_PROTOCOL
 static void process_bin_packet(conn *c) {
     /* @todo this should be an array of funciton pointers and call through */
     switch (c->binary_header.request.opcode) {
@@ -6012,7 +6030,9 @@ static void process_bin_packet(conn *c) {
         process_bin_unknown_packet(c);
     }
 }
+#endif
 
+#if 0 // ENABLE_TAP_PROTOCOL
 typedef void (*RESPONSE_HANDLER)(conn*);
 /**
  * A map between the response packets op-code and the function to handle
@@ -6025,6 +6045,7 @@ static RESPONSE_HANDLER response_handlers[256] = {
     [PROTOCOL_BINARY_CMD_TAP_OPAQUE] = process_bin_tap_ack,
     [PROTOCOL_BINARY_CMD_TAP_VBUCKET_SET] = process_bin_tap_ack
 };
+#endif
 
 static void dispatch_bin_command(conn *c) {
     int protocol_error = 0;
@@ -6336,6 +6357,7 @@ static void dispatch_bin_command(conn *c) {
             }
             break;
 #endif
+#if 0 // ENABLE_TAP_PROTOCOL
        case PROTOCOL_BINARY_CMD_TAP_CONNECT:
             if (settings.engine.v1->get_tap_iterator == NULL) {
                 write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, bodylen);
@@ -6355,6 +6377,7 @@ static void dispatch_bin_command(conn *c) {
                 bin_read_chunk(c, bin_reading_packet, c->binary_header.request.bodylen);
             }
             break;
+#endif
 #ifdef SASL_ENABLED
         case PROTOCOL_BINARY_CMD_SASL_LIST_MECHS:
             if (extlen == 0 && keylen == 0 && bodylen == 0) {
@@ -6837,6 +6860,7 @@ static void complete_nread_binary(conn *c) {
         break;
 #endif
     case bin_reading_packet:
+#if 0 // ENABLE_TAP_PROTOCOL
         if (c->binary_header.request.magic == PROTOCOL_BINARY_RES) {
             RESPONSE_HANDLER handler;
             handler = response_handlers[c->binary_header.request.opcode];
@@ -6851,6 +6875,9 @@ static void complete_nread_binary(conn *c) {
         } else {
             process_bin_packet(c);
         }
+#else
+        process_bin_unknown_packet(c);
+#endif
         break;
     default:
         settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
@@ -7368,6 +7395,7 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("conn_yields", "%" PRIu64, (unsigned long long)thread_stats.conn_yields);
     STATS_UNLOCK();
 
+#if 0 // ENABLE_TAP_PROTOCOL
     /*
      * Add tap stats (only if non-zero)
      */
@@ -7414,6 +7442,7 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
         APPEND_STAT("tap_vbucket_set_received", "%"PRIu64,
                     ts.received.vbucket_set);
     }
+#endif
 }
 
 static void process_stat_settings(ADD_STAT add_stats, void *c) {
@@ -11318,9 +11347,14 @@ static int try_read_command(conn *c) {
             c->binary_header.request.cas = ntohll(req->request.cas);
 
 
+#if 0 // ENABLE_TAP_PROTOCOL
             if (c->binary_header.request.magic != PROTOCOL_BINARY_REQ &&
                 !(c->binary_header.request.magic == PROTOCOL_BINARY_RES &&
-                  response_handlers[c->binary_header.request.opcode])) {
+                  response_handlers[c->binary_header.request.opcode]))
+#else
+            if (c->binary_header.request.magic != PROTOCOL_BINARY_REQ)
+#endif
+            {
                 if (settings.verbose) {
                     if (c->binary_header.request.magic != PROTOCOL_BINARY_RES) {
                         settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
@@ -11655,6 +11689,7 @@ bool conn_listening(conn *c)
     return false;
 }
 
+#if 0 // ENABLE_TAP_PROTOCOL
 /**
  * Ship tap log to the other end. This state differs with all other states
  * in the way that it support full duplex dialog. We're listening to both read
@@ -11713,6 +11748,7 @@ bool conn_ship_log(conn *c) {
 
     return cont;
 }
+#endif
 
 bool conn_waiting(conn *c) {
     if (!update_event(c, EV_READ | EV_PERSIST)) {
@@ -11996,6 +12032,7 @@ bool conn_mwrite(conn *c) {
     return true;
 }
 
+#if 0 // ENABLE_TAP_PROTOCOL
 bool conn_pending_close(conn *c) {
     assert(!c->pending_close.active);
     assert(c->sfd != -1);
@@ -12031,6 +12068,7 @@ bool conn_pending_close(conn *c) {
      */
     return c->state != conn_pending_close;
 }
+#endif
 
 bool conn_immediate_close(conn *c) {
     if (IS_UDP(c->transport)) {
@@ -12043,16 +12081,21 @@ bool conn_immediate_close(conn *c) {
 }
 
 bool conn_closing(conn *c) {
+#if 0 // ENABLE_TAP_PROTOCOL
     assert(c->thread->type == TAP || c->thread->type == GENERAL);
     if (c->thread == &tap_thread) {
         conn_set_state(c, conn_pending_close);
     } else {
+#endif
         conn_set_state(c, conn_immediate_close);
+#if 0 // ENABLE_TAP_PROTOCOL
     }
+#endif
 
     return true;
 }
 
+#if 0 // ENABLE_TAP_PROTOCOL
 bool conn_add_tap_client(conn *c) {
     LIBEVENT_THREAD *tp = &tap_thread;
     c->ewouldblock = true;
@@ -12080,11 +12123,14 @@ bool conn_add_tap_client(conn *c) {
 
     return false;
 }
+#endif
 
+#if 0 // ENABLE_TAP_PROTOCOL
 bool conn_setup_tap_stream(conn *c) {
     process_bin_tap_connect(c);
     return true;
 }
+#endif
 
 void event_handler(const int fd, const short which, void *arg) {
     conn *c;
@@ -12112,9 +12158,11 @@ void event_handler(const int fd, const short which, void *arg) {
     perform_callbacks(ON_SWITCH_CONN, c, c);
 
     c->nevents = settings.reqs_per_event;
+#if 0 // ENABLE_TAP_PROTOCOL
     if (c->state == conn_ship_log) {
         c->nevents = settings.reqs_per_tap_event;
     }
+#endif
 
     // Do we have pending closes?
     //const size_t max_items = 256;
@@ -13597,6 +13645,7 @@ int main (int argc, char **argv) {
         old_opts += sprintf(old_opts, "verbose=%lu;", (unsigned long)settings.verbose);
     }
 
+#if 0 // ENABLE_TAP_PROTOCOL
     if (getenv("MEMCACHED_REQS_TAP_EVENT") != NULL) {
         settings.reqs_per_tap_event = atoi(getenv("MEMCACHED_REQS_TAP_EVENT"));
     }
@@ -13604,6 +13653,7 @@ int main (int argc, char **argv) {
     if (settings.reqs_per_tap_event == 0) {
         settings.reqs_per_tap_event = DEFAULT_REQS_PER_TAP_EVENT;
     }
+#endif
 
 
     if (install_sigterm_handler() != 0) {

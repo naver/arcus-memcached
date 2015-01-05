@@ -32,13 +32,16 @@
 struct mock_engine {
     ENGINE_HANDLE_V1 me;
     ENGINE_HANDLE_V1 *the_engine;
+#if 0 // ENABLE_TAP_PROTOCOL
     TAP_ITERATOR iterator;
+#endif
 };
 
 static inline struct mock_engine* get_handle(ENGINE_HANDLE* handle) {
     return (struct mock_engine*)handle;
 }
 
+#if 0 // ENABLE_TAP_PROTOCOL
 static tap_event_t mock_tap_iterator(ENGINE_HANDLE* handle,
                                      const void *cookie, item **itm,
                                      void **es, uint16_t *nes, uint8_t *ttl,
@@ -48,6 +51,7 @@ static tap_event_t mock_tap_iterator(ENGINE_HANDLE* handle,
    return me->iterator((ENGINE_HANDLE*)me->the_engine, cookie, itm, es, nes,
                        ttl, flags, seqno, vbucket);
 }
+#endif
 
 static const engine_info* mock_get_info(ENGINE_HANDLE* handle) {
     struct mock_engine *me = get_handle(handle);
@@ -403,6 +407,7 @@ static ENGINE_ERROR_CODE mock_aggregate_stats(ENGINE_HANDLE* handle,
     return ret;
 }
 
+#if 0 // ENABLE_TAP_PROTOCOL
 static ENGINE_ERROR_CODE mock_tap_notify(ENGINE_HANDLE* handle,
                                         const void *cookie,
                                         void *engine_specific,
@@ -459,6 +464,7 @@ static TAP_ITERATOR mock_get_tap_iterator(ENGINE_HANDLE* handle, const void* coo
                                                     client, nclient, flags, userdata, nuserdata);
     return (me->iterator != NULL) ? mock_tap_iterator : NULL;
 }
+#endif
 
 static size_t mock_errinfo(ENGINE_HANDLE *handle, const void* cookie,
                            char *buffer, size_t buffsz) {
@@ -488,8 +494,10 @@ struct mock_engine default_mock_engine = {
         .get_stats_struct = mock_get_stats_struct,
         .aggregate_stats = mock_aggregate_stats,
         .unknown_command = mock_unknown_command,
+#if 0 // ENABLE_TAP_PROTOCOL
         .tap_notify = mock_tap_notify,
         .get_tap_iterator = mock_get_tap_iterator,
+#endif
         .item_set_cas = mock_item_set_cas,
         .get_item_info = mock_get_item_info,
         .errinfo = mock_errinfo
@@ -597,12 +605,14 @@ static ENGINE_HANDLE_V1 *start_your_engines(const char *engine, const char* cfg,
     if (mock_engine.the_engine->unknown_command == NULL) {
         mock_engine.me.unknown_command = NULL;
     }
+#if 0 // ENABLE_TAP_PROTOCOL
     if (mock_engine.the_engine->tap_notify == NULL) {
         mock_engine.me.tap_notify = NULL;
     }
     if (mock_engine.the_engine->get_tap_iterator == NULL) {
         mock_engine.me.get_tap_iterator = NULL;
     }
+#endif
     if (mock_engine.the_engine->errinfo == NULL) {
         mock_engine.me.errinfo = NULL;
     }
