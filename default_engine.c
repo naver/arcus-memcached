@@ -484,19 +484,22 @@ static ENGINE_ERROR_CODE default_item_delete(ENGINE_HANDLE* handle, const void* 
                                              uint64_t cas, uint16_t vbucket)
 {
     struct default_engine* engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
     hash_item *it = item_get(engine, key, nkey);
     if (it == NULL) {
-        return ENGINE_KEY_ENOENT;
-    }
-    if (cas == 0 || cas == item_get_cas(it)) {
-        item_unlink(engine, it);
-        item_release(engine, it);
-        return ENGINE_SUCCESS;
+        ret = ENGINE_KEY_ENOENT;
     } else {
-        return ENGINE_KEY_EEXISTS;
+        if (cas == 0 || cas == item_get_cas(it)) {
+            item_unlink(engine, it);
+            ret = ENGINE_SUCCESS;
+        } else {
+            ret = ENGINE_KEY_EEXISTS;
+        }
+        item_release(engine, it);
     }
+    return ret;
 }
 
 static void default_item_release(ENGINE_HANDLE* handle, const void *cookie, item* item)
