@@ -13470,8 +13470,7 @@ int main (int argc, char **argv) {
                         "Factor must be greater than 1\n");
                 return 1;
             }
-             old_opts += sprintf(old_opts, "factor=%f;",
-                                 settings.factor);
+             old_opts += sprintf(old_opts, "factor=%f;", settings.factor);
            break;
         case 'n':
             settings.chunk_size = atoi(optarg);
@@ -13480,8 +13479,7 @@ int main (int argc, char **argv) {
                         "Chunk size must be greater than 0\n");
                 return 1;
             }
-            old_opts += sprintf(old_opts, "chunk_size=%u;",
-                                settings.chunk_size);
+            old_opts += sprintf(old_opts, "chunk_size=%u;", settings.chunk_size);
             break;
         case 't':
             settings.num_threads = atoi(optarg);
@@ -13515,6 +13513,7 @@ int main (int argc, char **argv) {
             break;
         case 'C' :
             settings.use_cas = false;
+            old_opts += sprintf(old_opts, "use_cas=false;");
             break;
         case 'b' :
             settings.backlog = atoi(optarg);
