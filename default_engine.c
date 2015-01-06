@@ -614,8 +614,11 @@ static ENGINE_ERROR_CODE default_store(ENGINE_HANDLE* handle, const void *cookie
                                        uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
-    return store_item(engine, get_real_item(item), cas, operation, cookie);
+
+    ret = store_item(engine, get_real_item(item), cas, operation, cookie);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_arithmetic(ENGINE_HANDLE* handle, const void* cookie,
@@ -625,23 +628,30 @@ static ENGINE_ERROR_CODE default_arithmetic(ENGINE_HANDLE* handle, const void* c
                                             uint64_t *cas, uint64_t *result, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return arithmetic(engine, cookie, key, nkey, increment,
-                      create, delta, initial, flags, engine->server.core->realtime(exptime),
-                      cas, result);
+    ret = arithmetic(engine, cookie, key, nkey, increment,
+                     create, delta, initial, flags, engine->server.core->realtime(exptime),
+                     cas, result);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_flush(ENGINE_HANDLE* handle, const void* cookie, time_t when)
 {
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
     item_flush_expired(get_handle(handle), when, cookie);
-    return ENGINE_SUCCESS;
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_flush_prefix(ENGINE_HANDLE* handle, const void* cookie,
                                               const void* prefix, const int nprefix, time_t when)
 {
-    return item_flush_prefix_expired(get_handle(handle), prefix, nprefix, when, cookie);
+    ENGINE_ERROR_CODE ret;
+
+    ret = item_flush_prefix_expired(get_handle(handle), prefix, nprefix, when, cookie);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_list_struct_create(ENGINE_HANDLE* handle, const void* cookie,
@@ -649,9 +659,11 @@ static ENGINE_ERROR_CODE default_list_struct_create(ENGINE_HANDLE* handle, const
                                                     uint16_t vbucket)
 {
     struct default_engine* engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return list_struct_create(engine, key, nkey, attrp, cookie);
+    ret = list_struct_create(engine, key, nkey, attrp, cookie);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_list_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
@@ -678,10 +690,12 @@ static ENGINE_ERROR_CODE default_list_elem_insert(ENGINE_HANDLE* handle, const v
                                                   item_attr *attrp, bool *created, uint16_t vbucket)
 {
     struct default_engine* engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return list_elem_insert(engine, key, nkey, index, (list_elem_item *)eitem,
-                            attrp, created, cookie);
+    ret = list_elem_insert(engine, key, nkey, index, (list_elem_item *)eitem,
+                           attrp, created, cookie);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_list_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
@@ -690,10 +704,12 @@ static ENGINE_ERROR_CODE default_list_elem_delete(ENGINE_HANDLE* handle, const v
                                                   uint32_t* del_count, bool* dropped, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return list_elem_delete(engine, key, nkey, from_index, to_index, drop_if_empty,
-                            del_count, dropped);
+    ret = list_elem_delete(engine, key, nkey, from_index, to_index, drop_if_empty,
+                           del_count, dropped);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
@@ -704,10 +720,12 @@ static ENGINE_ERROR_CODE default_list_elem_get(ENGINE_HANDLE* handle, const void
                                                uint32_t* flags, bool* dropped, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return list_elem_get(engine, key, nkey, from_index, to_index, delete, drop_if_empty,
-                         (list_elem_item**)eitem_array, eitem_count, flags, dropped);
+    ret = list_elem_get(engine, key, nkey, from_index, to_index, delete, drop_if_empty,
+                        (list_elem_item**)eitem_array, eitem_count, flags, dropped);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_set_struct_create(ENGINE_HANDLE* handle, const void* cookie,
@@ -715,9 +733,11 @@ static ENGINE_ERROR_CODE default_set_struct_create(ENGINE_HANDLE* handle, const 
                                                    uint16_t vbucket)
 {
     struct default_engine* engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return set_struct_create(engine, key, nkey, attrp, cookie);
+    ret = set_struct_create(engine, key, nkey, attrp, cookie);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_set_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
@@ -743,9 +763,11 @@ static ENGINE_ERROR_CODE default_set_elem_insert(ENGINE_HANDLE* handle, const vo
                                                  item_attr *attrp, bool *created, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return set_elem_insert(engine, key, nkey, (set_elem_item*)eitem, attrp, created, cookie);
+    ret = set_elem_insert(engine, key, nkey, (set_elem_item*)eitem, attrp, created, cookie);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_set_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
@@ -755,9 +777,11 @@ static ENGINE_ERROR_CODE default_set_elem_delete(ENGINE_HANDLE* handle, const vo
                                                  uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return set_elem_delete(engine, key, nkey, value, nbytes, drop_if_empty, dropped);
+    ret = set_elem_delete(engine, key, nkey, value, nbytes, drop_if_empty, dropped);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_set_elem_exist(ENGINE_HANDLE* handle, const void* cookie,
@@ -766,9 +790,11 @@ static ENGINE_ERROR_CODE default_set_elem_exist(ENGINE_HANDLE* handle, const voi
                                                 bool *exist, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return set_elem_exist(engine, key, nkey, value, nbytes, exist);
+    ret = set_elem_exist(engine, key, nkey, value, nbytes, exist);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
@@ -778,10 +804,12 @@ static ENGINE_ERROR_CODE default_set_elem_get(ENGINE_HANDLE* handle, const void*
                                               uint32_t* flags, bool* dropped, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return set_elem_get(engine, key, nkey, count, delete, drop_if_empty,
-                        (set_elem_item**)eitem, eitem_count, flags, dropped);
+    ret = set_elem_get(engine, key, nkey, count, delete, drop_if_empty,
+                       (set_elem_item**)eitem, eitem_count, flags, dropped);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_btree_struct_create(ENGINE_HANDLE* handle, const void* cookie,
@@ -789,9 +817,11 @@ static ENGINE_ERROR_CODE default_btree_struct_create(ENGINE_HANDLE* handle, cons
                                                      uint16_t vbucket)
 {
     struct default_engine* engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return btree_struct_create(engine, key, nkey, attrp, cookie);
+    ret = btree_struct_create(engine, key, nkey, attrp, cookie);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_btree_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
@@ -820,8 +850,8 @@ static ENGINE_ERROR_CODE default_btree_elem_insert(ENGINE_HANDLE* handle, const 
                                                    uint16_t vbucket)
 {
     struct default_engine* engine = get_handle(handle);
-    VBUCKET_GUARD(engine, vbucket);
     ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
 
     if (trimmed == NULL) {
         ret = btree_elem_insert(engine, key, nkey, (btree_elem_item *)eitem, replace_if_exist, attrp,
@@ -844,9 +874,11 @@ static ENGINE_ERROR_CODE default_btree_elem_update(ENGINE_HANDLE* handle, const 
                                                    uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return btree_elem_update(engine, key, nkey, bkrange, eupdate, value, nbytes, cookie);
+    ret = btree_elem_update(engine, key, nkey, bkrange, eupdate, value, nbytes, cookie);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_btree_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
@@ -859,10 +891,12 @@ static ENGINE_ERROR_CODE default_btree_elem_delete(ENGINE_HANDLE* handle, const 
                                                    uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return btree_elem_delete(engine, key, nkey, bkrange, efilter, req_count, drop_if_empty,
-                             del_count, dropped);
+    ret = btree_elem_delete(engine, key, nkey, bkrange, efilter, req_count, drop_if_empty,
+                            del_count, dropped);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_btree_elem_arithmetic(ENGINE_HANDLE* handle, const void* cookie,
@@ -874,10 +908,12 @@ static ENGINE_ERROR_CODE default_btree_elem_arithmetic(ENGINE_HANDLE* handle, co
                                                        uint64_t *result, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return btree_elem_arithmetic(engine, key, nkey, bkrange, increment, create,
-                                 delta, initial, eflagp, result, cookie);
+    ret = btree_elem_arithmetic(engine, key, nkey, bkrange, increment, create,
+                                delta, initial, eflagp, result, cookie);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
@@ -892,11 +928,13 @@ static ENGINE_ERROR_CODE default_btree_elem_get(ENGINE_HANDLE* handle, const voi
                                                 uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return btree_elem_get(engine, key, nkey, bkrange, efilter, offset, req_count,
-                          delete, drop_if_empty, (btree_elem_item**)eitem_array, eitem_count,
-                          flags, dropped_trimmed);
+    ret = btree_elem_get(engine, key, nkey, bkrange, efilter, offset, req_count,
+                         delete, drop_if_empty, (btree_elem_item**)eitem_array, eitem_count,
+                         flags, dropped_trimmed);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_btree_elem_count(ENGINE_HANDLE* handle, const void* cookie,
@@ -907,9 +945,11 @@ static ENGINE_ERROR_CODE default_btree_elem_count(ENGINE_HANDLE* handle, const v
                                                   uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return btree_elem_count(engine, key, nkey, bkrange, efilter, eitem_count, flags);
+    ret = btree_elem_count(engine, key, nkey, bkrange, efilter, eitem_count, flags);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_btree_posi_find(ENGINE_HANDLE* handle, const void* cookie,
@@ -917,9 +957,11 @@ static ENGINE_ERROR_CODE default_btree_posi_find(ENGINE_HANDLE* handle, const vo
                                                  ENGINE_BTREE_ORDER order, int *position, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return btree_posi_find(engine, key, nkey, bkrange, order, position);
+    ret = btree_posi_find(engine, key, nkey, bkrange, order, position);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_btree_posi_find_with_get(ENGINE_HANDLE* handle, const void* cookie,
@@ -929,10 +971,12 @@ static ENGINE_ERROR_CODE default_btree_posi_find_with_get(ENGINE_HANDLE* handle,
                                                  uint32_t *flags, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return btree_posi_find_with_get(engine, key, nkey, bkrange, order, count, position,
-                                    (btree_elem_item**)eitem_array, eitem_count, eitem_index, flags);
+    ret = btree_posi_find_with_get(engine, key, nkey, bkrange, order, count, position,
+                                   (btree_elem_item**)eitem_array, eitem_count, eitem_index, flags);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_btree_elem_get_by_posi(ENGINE_HANDLE* handle, const void* cookie,
@@ -942,10 +986,12 @@ static ENGINE_ERROR_CODE default_btree_elem_get_by_posi(ENGINE_HANDLE* handle, c
                                                  uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return btree_elem_get_by_posi(engine, key, nkey, order, from_posi, to_posi,
-                                  (btree_elem_item**)eitem_array, eitem_count, flags);
+    ret = btree_elem_get_by_posi(engine, key, nkey, order, from_posi, to_posi,
+                                 (btree_elem_item**)eitem_array, eitem_count, flags);
+    return ret;
 }
 
 #ifdef SUPPORT_BOP_SMGET
@@ -964,11 +1010,13 @@ static ENGINE_ERROR_CODE default_btree_elem_smget(ENGINE_HANDLE* handle, const v
                                                   uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return btree_elem_smget(engine, karray, kcount, bkrange, efilter, offset, count,
-                            (btree_elem_item**)eitem_array, kfnd_array, flag_array, eitem_count,
-                            missed_key_array, missed_key_count, trimmed, duplicated);
+    ret = btree_elem_smget(engine, karray, kcount, bkrange, efilter, offset, count,
+                           (btree_elem_item**)eitem_array, kfnd_array, flag_array, eitem_count,
+                           missed_key_array, missed_key_count, trimmed, duplicated);
+    return ret;
 }
 #endif
 
@@ -979,9 +1027,11 @@ static ENGINE_ERROR_CODE default_getattr(ENGINE_HANDLE* handle, const void* cook
                                          item_attr *attr_data, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return item_getattr(engine, key, nkey, attr_ids, attr_count, attr_data);
+    ret = item_getattr(engine, key, nkey, attr_ids, attr_count, attr_data);
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_setattr(ENGINE_HANDLE* handle, const void* cookie,
@@ -991,9 +1041,11 @@ static ENGINE_ERROR_CODE default_setattr(ENGINE_HANDLE* handle, const void* cook
                                          uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    return item_setattr(engine, key, nkey, attr_ids, attr_count, attr_data);
+    ret = item_setattr(engine, key, nkey, attr_ids, attr_count, attr_data);
+    return ret;
 }
 
 static void default_reset_stats(ENGINE_HANDLE* handle, const void *cookie)
@@ -1012,7 +1064,10 @@ static ENGINE_ERROR_CODE default_get_prefix_stats(ENGINE_HANDLE* handle, const v
                                                   const void* key, const int nkey, void *prefix_data)
 {
     struct default_engine *engine = get_handle(handle);
-    return assoc_get_prefix_stats(engine, key, nkey, prefix_data);
+    ENGINE_ERROR_CODE ret;
+
+    ret = assoc_get_prefix_stats(engine, key, nkey, prefix_data);
+    return ret;
 }
 
 #if 0 // ENABLE_TAP_PROTOCOL
