@@ -506,4 +506,9 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
  */
 bool item_start_scrub(struct default_engine *engine, int mode);
 
+/**
+ * Get the item scrubber statitistics
+ */
+void item_stats_scrub(struct default_engine *engine, ADD_STAT add_stat, const void *cookie);
+
 #endif

@@ -6742,3 +6742,34 @@ bool item_start_scrub(struct default_engine *engine, int mode)
 
     return ret;
 }
+
+void item_stats_scrub(struct default_engine *engine,
+                      ADD_STAT add_stat, const void *cookie)
+{
+    char val[128];
+    int len;
+
+    pthread_mutex_lock(&engine->scrubber.lock);
+    if (engine->scrubber.running) {
+        add_stat("scrubber:status", 15, "running", 7, cookie);
+    } else {
+        add_stat("scrubber:status", 15, "stopped", 7, cookie);
+    }
+    if (engine->scrubber.started != 0) {
+        if (engine->scrubber.runmode == SCRUB_MODE_NORMAL) {
+            add_stat("scrubber:run_mode", 17, "scrub", 5, cookie);
+        } else {
+            add_stat("scrubber:run_mode", 17, "scrub stale", 11, cookie);
+        }
+        if (engine->scrubber.stopped != 0) {
+            time_t diff = engine->scrubber.stopped - engine->scrubber.started;
+            len = sprintf(val, "%"PRIu64, (uint64_t)diff);
+            add_stat("scrubber:last_run", 17, val, len, cookie);
+        }
+        len = sprintf(val, "%"PRIu64, engine->scrubber.visited);
+        add_stat("scrubber:visited", 16, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, engine->scrubber.cleaned);
+        add_stat("scrubber:cleaned", 16, val, len, cookie);
+    }
+    pthread_mutex_unlock(&engine->scrubber.lock);
+}

@@ -743,6 +743,33 @@ static ENGINE_ERROR_CODE default_setattr(ENGINE_HANDLE* handle, const void* cook
 
 /* Stats */
 
+static void stats_engine(struct default_engine *engine, ADD_STAT add_stat, const void *cookie)
+{
+    char val[128];
+    int len;
+
+    pthread_mutex_lock(&engine->stats.lock);
+    len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.evictions);
+    add_stat("evictions", 9, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.sticky_items);
+    add_stat("sticky_items", 12, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.curr_items);
+    add_stat("curr_items", 10, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.total_items);
+    add_stat("total_items", 11, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.sticky_bytes);
+    add_stat("sticky_bytes", 12, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.curr_bytes);
+    add_stat("bytes", 5, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, engine->stats.reclaimed);
+    add_stat("reclaimed", 9, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)engine->config.sticky_limit);
+    add_stat("sticky_limit", 12, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)engine->config.maxbytes);
+    add_stat("engine_maxbytes", 15, val, len, cookie);
+    pthread_mutex_unlock(&engine->stats.lock);
+}
+
 static const char * vbucket_state_name(enum vbucket_state s)
 {
     static const char * vbucket_states[] = {
@@ -751,10 +778,10 @@ static const char * vbucket_state_name(enum vbucket_state s)
     return vbucket_states[s];
 }
 
-static void stats_vbucket(struct default_engine *e, ADD_STAT add_stat, const void *cookie)
+static void stats_vbucket(struct default_engine *engine, ADD_STAT add_stat, const void *cookie)
 {
     for (int i = 0; i < NUM_VBUCKETS; i++) {
-        enum vbucket_state state = get_vbucket_state(e, i);
+        enum vbucket_state state = get_vbucket_state(engine, i);
         if (state != VBUCKET_STATE_DEAD) {
             char buf[16];
             snprintf(buf, sizeof(buf), "vb_%d", i);
@@ -771,65 +798,24 @@ static ENGINE_ERROR_CODE default_get_stats(ENGINE_HANDLE* handle, const void* co
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     if (stat_key == NULL) {
-        char val[128];
-        int len;
-
-        pthread_mutex_lock(&engine->stats.lock);
-        len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.evictions);
-        add_stat("evictions", 9, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.sticky_items);
-        add_stat("sticky_items", 12, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.curr_items);
-        add_stat("curr_items", 10, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.total_items);
-        add_stat("total_items", 11, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.sticky_bytes);
-        add_stat("sticky_bytes", 12, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.curr_bytes);
-        add_stat("bytes", 5, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, engine->stats.reclaimed);
-        add_stat("reclaimed", 9, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, (uint64_t)engine->config.sticky_limit);
-        add_stat("sticky_limit", 12, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, (uint64_t)engine->config.maxbytes);
-        add_stat("engine_maxbytes", 15, val, len, cookie);
-        pthread_mutex_unlock(&engine->stats.lock);
-    } else if (strncmp(stat_key, "slabs", 5) == 0) {
+        stats_engine(engine, add_stat, cookie);
+    }
+    else if (strncmp(stat_key, "slabs", 5) == 0) {
         slabs_stats(engine, add_stat, cookie);
-    } else if (strncmp(stat_key, "items", 5) == 0) {
+    }
+    else if (strncmp(stat_key, "items", 5) == 0) {
         item_stats(engine, add_stat, cookie);
-    } else if (strncmp(stat_key, "sizes", 5) == 0) {
+    }
+    else if (strncmp(stat_key, "sizes", 5) == 0) {
         item_stats_sizes(engine, add_stat, cookie);
-    } else if (strncmp(stat_key, "vbucket", 7) == 0) {
+    }
+    else if (strncmp(stat_key, "vbucket", 7) == 0) {
         stats_vbucket(engine, add_stat, cookie);
-    } else if (strncmp(stat_key, "scrub", 5) == 0) {
-        char val[128];
-        int len;
-
-        pthread_mutex_lock(&engine->scrubber.lock);
-        if (engine->scrubber.running) {
-            add_stat("scrubber:status", 15, "running", 7, cookie);
-        } else {
-            add_stat("scrubber:status", 15, "stopped", 7, cookie);
-        }
-        if (engine->scrubber.started != 0) {
-            if (engine->scrubber.runmode == SCRUB_MODE_NORMAL) {
-                add_stat("scrubber:run_mode", 17, "scrub", 5, cookie);
-            } else {
-                add_stat("scrubber:run_mode", 17, "scrub stale", 11, cookie);
-            }
-            if (engine->scrubber.stopped != 0) {
-                time_t diff = engine->scrubber.stopped - engine->scrubber.started;
-                len = sprintf(val, "%"PRIu64, (uint64_t)diff);
-                add_stat("scrubber:last_run", 17, val, len, cookie);
-            }
-            len = sprintf(val, "%"PRIu64, engine->scrubber.visited);
-            add_stat("scrubber:visited", 16, val, len, cookie);
-            len = sprintf(val, "%"PRIu64, engine->scrubber.cleaned);
-            add_stat("scrubber:cleaned", 16, val, len, cookie);
-        }
-        pthread_mutex_unlock(&engine->scrubber.lock);
-    } else {
+    }
+    else if (strncmp(stat_key, "scrub", 5) == 0) {
+        item_stats_scrub(engine, add_stat, cookie);
+    }
+    else {
         ret = ENGINE_KEY_ENOENT;
     }
     return ret;
