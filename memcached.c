@@ -163,6 +163,11 @@ struct stats stats;
 struct settings settings;
 EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
 
+static union {
+    ENGINE_HANDLE *v0;
+    ENGINE_HANDLE_V1 *v1;
+} mc_engine;
+
 static time_t process_started;     /* when the process was started */
 
 /* The size of string representing 4 bytes integer is 10. */
@@ -292,7 +297,7 @@ static void stats_reset(const void *cookie) {
     stats_prefix_clear();
     STATS_UNLOCK();
     threadlocal_stats_reset(get_independent_stats(conn)->thread_stats);
-    settings.engine.v1->reset_stats(settings.engine.v0, cookie);
+    mc_engine.v1->reset_stats(mc_engine.v0, cookie);
 }
 
 static void settings_init(void) {
@@ -702,24 +707,24 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
 static void conn_coll_eitem_free(conn *c) {
     switch (c->coll_op) {
       case OPERATION_LOP_INSERT:
-        settings.engine.v1->list_elem_release(settings.engine.v0, c, &c->coll_eitem, 1);
+        mc_engine.v1->list_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         break;
       case OPERATION_LOP_GET:
-        settings.engine.v1->list_elem_release(settings.engine.v0, c, c->coll_eitem, c->coll_ecount);
+        mc_engine.v1->list_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
         free(c->coll_eitem);
         if (c->coll_resps != NULL) {
             free(c->coll_resps); c->coll_resps = NULL;
         }
         break;
       case OPERATION_SOP_INSERT:
-        settings.engine.v1->set_elem_release(settings.engine.v0, c, &c->coll_eitem, 1);
+        mc_engine.v1->set_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         break;
       case OPERATION_SOP_DELETE:
       case OPERATION_SOP_EXIST:
         free(c->coll_eitem);
         break;
       case OPERATION_SOP_GET:
-        settings.engine.v1->set_elem_release(settings.engine.v0, c, c->coll_eitem, c->coll_ecount);
+        mc_engine.v1->set_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
         free(c->coll_eitem);
         if (c->coll_resps != NULL) {
             free(c->coll_resps); c->coll_resps = NULL;
@@ -727,7 +732,7 @@ static void conn_coll_eitem_free(conn *c) {
         break;
       case OPERATION_BOP_INSERT:
       case OPERATION_BOP_UPSERT:
-        settings.engine.v1->btree_elem_release(settings.engine.v0, c, &c->coll_eitem, 1);
+        mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         break;
       case OPERATION_BOP_UPDATE:
         if (c->coll_eitem != NULL)
@@ -736,7 +741,7 @@ static void conn_coll_eitem_free(conn *c) {
       case OPERATION_BOP_GET:
       case OPERATION_BOP_PWG: /* position with get */
       case OPERATION_BOP_GBP: /* get by position */
-        settings.engine.v1->btree_elem_release(settings.engine.v0, c, c->coll_eitem, c->coll_ecount);
+        mc_engine.v1->btree_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
         free(c->coll_eitem);
         if (c->coll_resps != NULL) {
             free(c->coll_resps); c->coll_resps = NULL;
@@ -749,7 +754,7 @@ static void conn_coll_eitem_free(conn *c) {
 #ifdef SUPPORT_BOP_SMGET
       case OPERATION_BOP_SMGET:
 #endif
-        settings.engine.v1->btree_elem_release(settings.engine.v0, c, c->coll_eitem, c->coll_ecount);
+        mc_engine.v1->btree_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
         free(c->coll_eitem);
         free(c->coll_mkeys); c->coll_mkeys = NULL;
         break;
@@ -764,7 +769,7 @@ static void conn_cleanup(conn *c) {
     assert(c != NULL);
 
     if (c->item) {
-        settings.engine.v1->release(settings.engine.v0, c, c->item);
+        mc_engine.v1->release(mc_engine.v0, c, c->item);
         c->item = 0;
     }
 
@@ -774,7 +779,7 @@ static void conn_cleanup(conn *c) {
 
     if (c->ileft != 0) {
         for (; c->ileft > 0; c->ileft--,c->icurr++) {
-            settings.engine.v1->release(settings.engine.v0, c, *(c->icurr));
+            mc_engine.v1->release(mc_engine.v0, c, *(c->icurr));
         }
     }
 
@@ -1255,13 +1260,13 @@ static void process_lop_insert_complete(conn *c) {
     eitem *elem = (eitem *)c->coll_eitem;
 
     eitem_info info;
-    settings.engine.v1->get_list_elem_info(settings.engine.v0, c, elem, &info);
+    mc_engine.v1->get_list_elem_info(mc_engine.v0, c, elem, &info);
 
     if (strncmp((char*)info.value + info.nbytes - 2, "\r\n", 2) != 0) {
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         bool created;
-        ENGINE_ERROR_CODE ret = settings.engine.v1->list_elem_insert(settings.engine.v0, c,
+        ENGINE_ERROR_CODE ret = mc_engine.v1->list_elem_insert(mc_engine.v0, c,
                                                     c->coll_key, c->coll_nkey, c->coll_index, elem,
                                                     c->coll_attrp, &created, 0);
 
@@ -1293,7 +1298,7 @@ static void process_lop_insert_complete(conn *c) {
         }
     }
 
-    settings.engine.v1->list_elem_release(settings.engine.v0, c, &c->coll_eitem, 1);
+    mc_engine.v1->list_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
     c->coll_eitem = NULL;
 }
 
@@ -1303,13 +1308,13 @@ static void process_sop_insert_complete(conn *c) {
     eitem *elem = (eitem *)c->coll_eitem;
 
     eitem_info info;
-    settings.engine.v1->get_set_elem_info(settings.engine.v0, c, elem, &info);
+    mc_engine.v1->get_set_elem_info(mc_engine.v0, c, elem, &info);
 
     if (strncmp((char*)info.value + info.nbytes - 2, "\r\n", 2) != 0) {
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         bool created;
-        ENGINE_ERROR_CODE ret = settings.engine.v1->set_elem_insert(settings.engine.v0, c,
+        ENGINE_ERROR_CODE ret = mc_engine.v1->set_elem_insert(mc_engine.v0, c,
                                                     c->coll_key, c->coll_nkey, elem,
                                                     c->coll_attrp, &created, 0);
 
@@ -1341,7 +1346,7 @@ static void process_sop_insert_complete(conn *c) {
         }
     }
 
-    settings.engine.v1->set_elem_release(settings.engine.v0, c, &c->coll_eitem, 1);
+    mc_engine.v1->set_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
     c->coll_eitem = NULL;
 }
 
@@ -1354,7 +1359,7 @@ static void process_sop_delete_complete(conn *c) {
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         bool dropped;
-        ENGINE_ERROR_CODE ret = settings.engine.v1->set_elem_delete(settings.engine.v0, c,
+        ENGINE_ERROR_CODE ret = mc_engine.v1->set_elem_delete(mc_engine.v0, c,
                                                         c->coll_key, c->coll_nkey,
                                                         elem->value, elem->nbytes, c->coll_drop,
                                                         &dropped, 0);
@@ -1400,7 +1405,7 @@ static void process_sop_exist_complete(conn *c) {
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         bool exist;
-        ENGINE_ERROR_CODE ret = settings.engine.v1->set_elem_exist(settings.engine.v0, c,
+        ENGINE_ERROR_CODE ret = mc_engine.v1->set_elem_exist(mc_engine.v0, c,
                                                         c->coll_key, c->coll_nkey,
                                                         elem->value, elem->nbytes,
                                                         &exist, 0);
@@ -1467,11 +1472,11 @@ static void process_bop_insert_complete(conn *c) {
     eitem *elem = (eitem *)c->coll_eitem;
 
     eitem_info info;
-    settings.engine.v1->get_btree_elem_info(settings.engine.v0, c, elem, &info);
+    mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem, &info);
 
     if (strncmp((char*)info.value + info.nbytes - 2, "\r\n", 2) != 0) {
         // release the btree element
-        settings.engine.v1->btree_elem_release(settings.engine.v0, c, &c->coll_eitem, 1);
+        mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         c->coll_eitem = NULL;
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
@@ -1479,13 +1484,13 @@ static void process_bop_insert_complete(conn *c) {
         bool created;
         bool replaced;
         bool replace_if_exist = (c->coll_op == OPERATION_BOP_UPSERT ? true : false);
-        ENGINE_ERROR_CODE ret = settings.engine.v1->btree_elem_insert(settings.engine.v0, c,
+        ENGINE_ERROR_CODE ret = mc_engine.v1->btree_elem_insert(mc_engine.v0, c,
                                                     c->coll_key, c->coll_nkey, elem, replace_if_exist,
                                                     c->coll_attrp, &replaced, &created,
                                                     (c->coll_drop ? &trim_result : NULL), 0);
 
         // release the btree element inserted.
-        settings.engine.v1->btree_elem_release(settings.engine.v0, c, &c->coll_eitem, 1);
+        mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         c->coll_eitem = NULL;
 
         if (settings.detail_enabled) {
@@ -1506,7 +1511,7 @@ static void process_bop_insert_complete(conn *c) {
                 resplen = strlen(respptr);
 
                 /* get trimmed element info */
-                settings.engine.v1->get_btree_elem_info(settings.engine.v0, c, trim_result.elems, &info);
+                mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, trim_result.elems, &info);
                 resplen += make_bop_elem_response(respptr + resplen, &info);
 
                 /* add io vectors */
@@ -1514,8 +1519,8 @@ static void process_bop_insert_complete(conn *c) {
                     (add_iov(c, info.value, info.nbytes) != 0) ||
                     (add_iov(c, "TRIMMED\r\n", strlen("TRIMMED\r\n")) != 0))
                 {
-                    settings.engine.v1->btree_elem_release(settings.engine.v0, c,
-                                                           &trim_result.elems, trim_result.count);
+                    mc_engine.v1->btree_elem_release(mc_engine.v0, c,
+                                                     &trim_result.elems, trim_result.count);
                     out_string(c, "SERVER_ERROR out of memory writing get response");
                 } else {
                     /* prepare for writing response */
@@ -1576,10 +1581,10 @@ static void process_bop_update_complete(conn *c)
     eupdate_ptr = (c->coll_eupdate.neflag == EFLAG_NULL ? NULL : &c->coll_eupdate);
 
     ENGINE_ERROR_CODE ret;
-    ret = settings.engine.v1->btree_elem_update(settings.engine.v0, c,
-                                                c->coll_key, c->coll_nkey,
-                                                &c->coll_bkrange, eupdate_ptr,
-                                                new_value, new_nbytes, 0);
+    ret = mc_engine.v1->btree_elem_update(mc_engine.v0, c,
+                                          c->coll_key, c->coll_nkey,
+                                          &c->coll_bkrange, eupdate_ptr,
+                                          new_value, new_nbytes, 0);
 
     if (settings.detail_enabled) {
         stats_prefix_record_bop_update(c->coll_key, c->coll_nkey,
@@ -1690,7 +1695,7 @@ static void process_bop_mget_complete(conn *c) {
         }
 
         for (k = 0; k < c->coll_numkeys; k++) {
-            ret = settings.engine.v1->btree_elem_get(settings.engine.v0, c,
+            ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c,
                                              key_tokens[k].value, key_tokens[k].length,
                                              &c->coll_bkrange,
                                              (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
@@ -1716,8 +1721,8 @@ static void process_bop_mget_complete(conn *c) {
                 resultptr += strlen(resultptr);
 
                 for (e = 0; e < cur_elem_count; e++) {
-                    settings.engine.v1->get_btree_elem_info(settings.engine.v0, c,
-                                                            elem_array[tot_elem_count+e], &info);
+                    mc_engine.v1->get_btree_elem_info(mc_engine.v0, c,
+                                                      elem_array[tot_elem_count+e], &info);
                     sprintf(resultptr, "ELEMENT ");
                     resultlen = strlen(resultptr);
                     resultlen += make_bop_elem_response(resultptr + resultlen, &info);
@@ -1794,7 +1799,7 @@ static void process_bop_mget_complete(conn *c) {
         break;
       case ENGINE_ENOMEM:
         STATS_NOKEY(c, cmd_bop_mget);
-        settings.engine.v1->btree_elem_release(settings.engine.v0, c, elem_array, tot_elem_count);
+        mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, tot_elem_count);
         out_string(c, "SERVER_ERROR out of memory writing get response");
         break;
       default:
@@ -1849,13 +1854,13 @@ static void process_bop_smget_complete(conn *c) {
                    (c->coll_bkrange.from_nbkey==0 ? sizeof(uint64_t) : c->coll_bkrange.from_nbkey));
             c->coll_bkrange.to_nbkey = c->coll_bkrange.from_nbkey;
         }
-        ret = settings.engine.v1->btree_elem_smget(settings.engine.v0, c,
-                                                   keys_array, c->coll_numkeys,
-                                                   &c->coll_bkrange,
-                                                   (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
-                                                   c->coll_roffset, c->coll_rcount,
-                                                   elem_array, kfnd_array, flag_array, &elem_count,
-                                                   kmis_array, &kmis_count, &trimmed, &duplicated, 0);
+        ret = mc_engine.v1->btree_elem_smget(mc_engine.v0, c,
+                                             keys_array, c->coll_numkeys,
+                                             &c->coll_bkrange,
+                                             (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
+                                             c->coll_roffset, c->coll_rcount,
+                                             elem_array, kfnd_array, flag_array, &elem_count,
+                                             kmis_array, &kmis_count, &trimmed, &duplicated, 0);
     }
 
     switch (ret) {
@@ -1877,8 +1882,7 @@ static void process_bop_smget_complete(conn *c) {
                 if (add_iov(c, keys_array[idx].value, keys_array[idx].length) != 0) {
                     ret = ENGINE_ENOMEM; break;
                 }
-                settings.engine.v1->get_btree_elem_info(settings.engine.v0, c,
-                                                        elem_array[i], &info[i]);
+                mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem_array[i], &info[i]);
                 /* flags */
                 sprintf(respptr, " %u ", htonl(flag_array[i]));
                 resplen = strlen(respptr);
@@ -1932,7 +1936,7 @@ static void process_bop_smget_complete(conn *c) {
             c->msgcurr     = 0;
         } else {
             STATS_NOKEY(c, cmd_bop_smget);
-            settings.engine.v1->btree_elem_release(settings.engine.v0, c, elem_array, elem_count);
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
             out_string(c, "SERVER_ERROR out of memory writing get response");
         }
         }
@@ -1985,8 +1989,8 @@ static void complete_update_ascii(conn *c) {
 
     item *it = c->item;
     item_info info = { .nvalue = 1 };
-    if (!settings.engine.v1->get_item_info(settings.engine.v0, c, it, &info)) {
-        settings.engine.v1->release(settings.engine.v0, c, it);
+    if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &info)) {
+        mc_engine.v1->release(mc_engine.v0, c, it);
         mc_logger->log(EXTENSION_LOG_WARNING, c,
                        "%d: Failed to get item info\n", c->sfd);
         out_string(c, "SERVER_ERROR failed to get item details");
@@ -1996,9 +2000,8 @@ static void complete_update_ascii(conn *c) {
     if (memcmp((char*)info.value[0].iov_base + info.nbytes - 2, "\r\n", 2) != 0) {
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
-        ENGINE_ERROR_CODE ret = settings.engine.v1->store(settings.engine.v0, c,
-                                                          it, &c->cas,
-                                                          c->store_op, 0);
+        ENGINE_ERROR_CODE ret = mc_engine.v1->store(mc_engine.v0, c,
+                                                    it, &c->cas, c->store_op, 0);
 #ifdef ENABLE_DTRACE
         switch (c->store_op) {
         case OPERATION_ADD:
@@ -2084,7 +2087,7 @@ static void complete_update_ascii(conn *c) {
 
     SLAB_INCR(c, cmd_set, info.key, info.nkey);
     /* release the c->item reference */
-    settings.engine.v1->release(settings.engine.v0, c, c->item);
+    mc_engine.v1->release(mc_engine.v0, c, c->item);
     c->item = 0;
 }
 
@@ -2365,9 +2368,9 @@ static void write_bin_packet(conn *c, protocol_binary_response_status err, int s
     }
 
     /* Allow the engine to pass extra error information */
-    if (settings.engine.v1->errinfo != NULL) {
-        size_t elen = settings.engine.v1->errinfo(settings.engine.v0, c, buffer + len + 2,
-                                                  sizeof(buffer) - len - 3);
+    if (mc_engine.v1->errinfo != NULL) {
+        size_t elen = mc_engine.v1->errinfo(mc_engine.v0, c, buffer + len + 2,
+                                            sizeof(buffer) - len - 3);
 
         if (elen > 0) {
             memcpy(buffer + len, ": ", 2);
@@ -2444,16 +2447,16 @@ static void complete_incr_bin(conn *c) {
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     if (ret == ENGINE_SUCCESS) {
-        ret = settings.engine.v1->arithmetic(settings.engine.v0,
-                                             c, key, nkey, incr,
-                                             req->message.body.expiration != 0xffffffff,
-                                             req->message.body.delta,
-                                             req->message.body.initial,
-                                             0, /* flags */
-                                             req->message.body.expiration,
-                                             &c->cas,
-                                             &rsp->message.body.value,
-                                             c->binary_header.request.vbucket);
+        ret = mc_engine.v1->arithmetic(mc_engine.v0,
+                                       c, key, nkey, incr,
+                                       req->message.body.expiration != 0xffffffff,
+                                       req->message.body.delta,
+                                       req->message.body.initial,
+                                       0, /* flags */
+                                       req->message.body.expiration,
+                                       &c->cas,
+                                       &rsp->message.body.value,
+                                       c->binary_header.request.vbucket);
     }
 
     switch (ret) {
@@ -2516,8 +2519,8 @@ static void complete_update_bin(conn *c) {
 
     item *it = c->item;
     item_info info = { .nvalue = 1 };
-    if (!settings.engine.v1->get_item_info(settings.engine.v0, c, it, &info)) {
-        settings.engine.v1->release(settings.engine.v0, c, it);
+    if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &info)) {
+        mc_engine.v1->release(mc_engine.v0, c, it);
         mc_logger->log(EXTENSION_LOG_WARNING, c,
                        "%d: Failed to get item info\n", c->sfd);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
@@ -2529,9 +2532,9 @@ static void complete_update_bin(conn *c) {
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     if (ret == ENGINE_SUCCESS) {
-        ret = settings.engine.v1->store(settings.engine.v0, c,
-                                        it, &c->cas, c->store_op,
-                                        c->binary_header.request.vbucket);
+        ret = mc_engine.v1->store(mc_engine.v0, c,
+                                  it, &c->cas, c->store_op,
+                                  c->binary_header.request.vbucket);
     }
 
 #ifdef ENABLE_DTRACE
@@ -2606,7 +2609,7 @@ static void complete_update_bin(conn *c) {
 
     if (!c->ewouldblock) {
         /* release the c->item reference */
-        settings.engine.v1->release(settings.engine.v0, c, c->item);
+        mc_engine.v1->release(mc_engine.v0, c, c->item);
         c->item = 0;
     }
 }
@@ -2629,8 +2632,8 @@ static void process_bin_get(conn *c) {
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     if (ret == ENGINE_SUCCESS) {
-        ret = settings.engine.v1->get(settings.engine.v0, c, &it, key, nkey,
-                                      c->binary_header.request.vbucket);
+        ret = mc_engine.v1->get(mc_engine.v0, c, &it, key, nkey,
+                                c->binary_header.request.vbucket);
     }
 
     uint16_t keylen;
@@ -2639,8 +2642,8 @@ static void process_bin_get(conn *c) {
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        if (!settings.engine.v1->get_item_info(settings.engine.v0, c, it, &info)) {
-            settings.engine.v1->release(settings.engine.v0, c, it);
+        if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &info)) {
+            mc_engine.v1->release(mc_engine.v0, c, it);
             mc_logger->log(EXTENSION_LOG_WARNING, c,
                            "%d: Failed to get item info\n", c->sfd);
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
@@ -2857,13 +2860,13 @@ static void process_bin_stat(conn *c) {
     if (ret == ENGINE_SUCCESS) {
         if (nkey == 0) {
             /* request all statistics */
-            ret = settings.engine.v1->get_stats(settings.engine.v0, c, NULL, 0, append_stats);
+            ret = mc_engine.v1->get_stats(mc_engine.v0, c, NULL, 0, append_stats);
             if (ret == ENGINE_SUCCESS) {
                 server_stats(&append_stats, c, false);
             }
         } else if (strncmp(subcommand, "reset", 5) == 0) {
             stats_reset(c);
-            settings.engine.v1->reset_stats(settings.engine.v0, c);
+            mc_engine.v1->reset_stats(mc_engine.v0, c);
         } else if (strncmp(subcommand, "settings", 8) == 0) {
             process_stat_settings(&append_stats, c);
         } else if (strncmp(subcommand, "detail", 6) == 0) {
@@ -2912,7 +2915,7 @@ static void process_bin_stat(conn *c) {
             }
 
             prefix_engine_stats prefix_data;
-            ret = settings.engine.v1->get_prefix_stats(settings.engine.v0, c, prefix, nprefix, &prefix_data);
+            ret = mc_engine.v1->get_prefix_stats(mc_engine.v0, c, prefix, nprefix, &prefix_data);
 
             if (ret == ENGINE_SUCCESS) {
                 char buffer[1024];
@@ -2928,7 +2931,7 @@ static void process_bin_stat(conn *c) {
             }
         } else if (strncmp(subcommand, "noprefix", 8) == 0) {
             prefix_engine_stats prefix_data;
-            ret = settings.engine.v1->get_prefix_stats(settings.engine.v0, c, NULL, 0, &prefix_data);
+            ret = mc_engine.v1->get_prefix_stats(mc_engine.v0, c, NULL, 0, &prefix_data);
 
             if (ret == ENGINE_SUCCESS) {
                 char buffer[1024];
@@ -2945,9 +2948,8 @@ static void process_bin_stat(conn *c) {
             }
         ************************************/
         } else {
-            ret = settings.engine.v1->get_stats(settings.engine.v0, c,
-                                                subcommand, nkey,
-                                                append_stats);
+            ret = mc_engine.v1->get_stats(mc_engine.v0, c,
+                                          subcommand, nkey, append_stats);
         }
     }
 
@@ -3296,8 +3298,8 @@ static void process_bin_lop_create(conn *c) {
     attr_data.readable = req->message.body.readable;
 
     ENGINE_ERROR_CODE ret;
-    ret = settings.engine.v1->list_struct_create(settings.engine.v0, c, key, nkey, &attr_data,
-                                                 c->binary_header.request.vbucket);
+    ret = mc_engine.v1->list_struct_create(mc_engine.v0, c, key, nkey, &attr_data,
+                                           c->binary_header.request.vbucket);
     if (settings.detail_enabled) {
         stats_prefix_record_lop_create(key, nkey);
     }
@@ -3368,7 +3370,7 @@ static void process_bin_lop_prepare_nread(conn *c) {
         if ((vlen + 2) > MAX_ELEMENT_BYTES) {
             ret = ENGINE_E2BIG;
         } else {
-            ret = settings.engine.v1->list_elem_alloc(settings.engine.v0, c, &elem, vlen + 2);
+            ret = mc_engine.v1->list_elem_alloc(mc_engine.v0, c, &elem, vlen + 2);
         }
     }
 
@@ -3380,7 +3382,7 @@ static void process_bin_lop_prepare_nread(conn *c) {
     case ENGINE_SUCCESS:
         {
         eitem_info info;
-        settings.engine.v1->get_list_elem_info(settings.engine.v0, c, elem, &info);
+        mc_engine.v1->get_list_elem_info(mc_engine.v0, c, elem, &info);
         c->ritem   = (char *)info.value;
         c->rlbytes = vlen;
         c->coll_eitem  = (void *)elem;
@@ -3430,7 +3432,7 @@ static void process_bin_lop_insert_complete(conn *c) {
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
     eitem_info info;
-    settings.engine.v1->get_list_elem_info(settings.engine.v0, c, elem, &info);
+    mc_engine.v1->get_list_elem_info(mc_engine.v0, c, elem, &info);
     memcpy((char*)info.value + info.nbytes - 2, "\r\n", 2);
 
     bool created;
@@ -3438,7 +3440,7 @@ static void process_bin_lop_insert_complete(conn *c) {
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     if (ret == ENGINE_SUCCESS) {
-        ret = settings.engine.v1->list_elem_insert(settings.engine.v0, c,
+        ret = mc_engine.v1->list_elem_insert(mc_engine.v0, c,
                                        c->coll_key, c->coll_nkey, c->coll_index, elem,
                                        c->coll_attrp, &created,
                                        c->binary_header.request.vbucket);
@@ -3482,7 +3484,7 @@ static void process_bin_lop_insert_complete(conn *c) {
 
     if (!c->ewouldblock) {
         /* release the c->coll_eitem reference */
-        settings.engine.v1->list_elem_release(settings.engine.v0, c, &c->coll_eitem, 1);
+        mc_engine.v1->list_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         c->coll_eitem = NULL;
     }
 }
@@ -3516,12 +3518,12 @@ static void process_bin_lop_delete(conn *c) {
     bool     dropped;
 
     ENGINE_ERROR_CODE ret;
-    ret = settings.engine.v1->list_elem_delete(settings.engine.v0, c, key, nkey,
-                                               req->message.body.from_index,
-                                               req->message.body.to_index,
-                                               (bool)req->message.body.drop,
-                                               &del_count, &dropped,
-                                               c->binary_header.request.vbucket);
+    ret = mc_engine.v1->list_elem_delete(mc_engine.v0, c, key, nkey,
+                                         req->message.body.from_index,
+                                         req->message.body.to_index,
+                                         (bool)req->message.body.drop,
+                                         &del_count, &dropped,
+                                         c->binary_header.request.vbucket);
     if (settings.detail_enabled) {
         stats_prefix_record_lop_delete(key, nkey,
                                        (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
@@ -3601,12 +3603,12 @@ static void process_bin_lop_get(conn *c) {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
             return;
         }
-        ret = settings.engine.v1->list_elem_get(settings.engine.v0, c, key, nkey,
-                                                from_index, to_index,
-                                                (bool)req->message.body.delete,
-                                                (bool)req->message.body.drop,
-                                                elem_array, &elem_count, &flags, &dropped,
-                                                c->binary_header.request.vbucket);
+        ret = mc_engine.v1->list_elem_get(mc_engine.v0, c, key, nkey,
+                                          from_index, to_index,
+                                          (bool)req->message.body.delete,
+                                          (bool)req->message.body.drop,
+                                          elem_array, &elem_count, &flags, &dropped,
+                                          c->binary_header.request.vbucket);
     }
 
     if (settings.detail_enabled) {
@@ -3623,8 +3625,7 @@ static void process_bin_lop_get(conn *c) {
 
         eitem_info info[elem_count];
         for (i = 0; i < elem_count; i++) {
-            settings.engine.v1->get_list_elem_info(settings.engine.v0, c,
-                                                   elem_array[i], &info[i]);
+            mc_engine.v1->get_list_elem_info(mc_engine.v0, c, elem_array[i], &info[i]);
         }
 
         bodylen = sizeof(rsp->message.body) + (elem_count * sizeof(uint32_t));
@@ -3660,7 +3661,7 @@ static void process_bin_lop_get(conn *c) {
             conn_set_state(c, conn_mwrite);
         } else {
             STATS_NOKEY(c, cmd_lop_get);
-            settings.engine.v1->list_elem_release(settings.engine.v0, c, elem_array, elem_count);
+            mc_engine.v1->list_elem_release(mc_engine.v0, c, elem_array, elem_count);
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         }
         }
@@ -3723,8 +3724,8 @@ static void process_bin_sop_create(conn *c) {
     attr_data.readable = req->message.body.readable;
 
     ENGINE_ERROR_CODE ret;
-    ret = settings.engine.v1->set_struct_create(settings.engine.v0, c, key, nkey, &attr_data,
-                                                c->binary_header.request.vbucket);
+    ret = mc_engine.v1->set_struct_create(mc_engine.v0, c, key, nkey, &attr_data,
+                                          c->binary_header.request.vbucket);
     if (settings.detail_enabled) {
         stats_prefix_record_sop_create(key, nkey);
     }
@@ -3792,7 +3793,7 @@ static void process_bin_sop_prepare_nread(conn *c) {
             ret = ENGINE_E2BIG;
         } else {
             if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
-                ret = settings.engine.v1->set_elem_alloc(settings.engine.v0, c, &elem, vlen + 2);
+                ret = mc_engine.v1->set_elem_alloc(mc_engine.v0, c, &elem, vlen + 2);
             } else { /* PROTOCOL_BINARY_CMD_SOP_DELETE or PROTOCOL_BINARY_CMD_SOP_EXIST */
                 if ((elem = (eitem *)malloc(sizeof(elem_value) + vlen + 2)) == NULL)
                     ret = ENGINE_ENOMEM;
@@ -3815,7 +3816,7 @@ static void process_bin_sop_prepare_nread(conn *c) {
     case ENGINE_SUCCESS:
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
             eitem_info info;
-            settings.engine.v1->get_set_elem_info(settings.engine.v0, c, elem, &info);
+            mc_engine.v1->get_set_elem_info(mc_engine.v0, c, elem, &info);
             c->ritem   = (char *)info.value;
             c->rlbytes = vlen;
          } else {
@@ -3886,7 +3887,7 @@ static void process_bin_sop_insert_complete(conn *c) {
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
     eitem_info info;
-    settings.engine.v1->get_set_elem_info(settings.engine.v0, c, elem, &info);
+    mc_engine.v1->get_set_elem_info(mc_engine.v0, c, elem, &info);
     memcpy((char*)info.value + info.nbytes - 2, "\r\n", 2);
 
     bool created;
@@ -3894,7 +3895,7 @@ static void process_bin_sop_insert_complete(conn *c) {
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     if (ret == ENGINE_SUCCESS) {
-        ret = settings.engine.v1->set_elem_insert(settings.engine.v0, c,
+        ret = mc_engine.v1->set_elem_insert(mc_engine.v0, c,
                                   c->coll_key, c->coll_nkey, elem,
                                   c->coll_attrp, &created,
                                   c->binary_header.request.vbucket);
@@ -3938,7 +3939,7 @@ static void process_bin_sop_insert_complete(conn *c) {
 
     if (!c->ewouldblock) {
         /* release the c->coll_eitem reference */
-        settings.engine.v1->set_elem_release(settings.engine.v0, c, &c->coll_eitem, 1);
+        mc_engine.v1->set_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         c->coll_eitem = NULL;
     }
 }
@@ -3956,11 +3957,11 @@ static void process_bin_sop_delete_complete(conn *c) {
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     if (ret == ENGINE_SUCCESS) {
-        ret = settings.engine.v1->set_elem_delete(settings.engine.v0, c,
-                                                  c->coll_key, c->coll_nkey,
-                                                  elem->value, elem->nbytes,
-                                                  c->coll_drop, &dropped,
-                                                  c->binary_header.request.vbucket);
+        ret = mc_engine.v1->set_elem_delete(mc_engine.v0, c,
+                                            c->coll_key, c->coll_nkey,
+                                            elem->value, elem->nbytes,
+                                            c->coll_drop, &dropped,
+                                            c->binary_header.request.vbucket);
     }
 
     if (settings.detail_enabled) {
@@ -4013,10 +4014,10 @@ static void process_bin_sop_exist_complete(conn *c) {
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     if (ret == ENGINE_SUCCESS) {
-        ret = settings.engine.v1->set_elem_exist(settings.engine.v0, c,
-                                                 c->coll_key, c->coll_nkey,
-                                                 elem->value, elem->nbytes,
-                                                 &exist, c->binary_header.request.vbucket);
+        ret = mc_engine.v1->set_elem_exist(mc_engine.v0, c,
+                                           c->coll_key, c->coll_nkey,
+                                           elem->value, elem->nbytes,
+                                           &exist, c->binary_header.request.vbucket);
     }
 
     if (settings.detail_enabled) {
@@ -4108,11 +4109,11 @@ static void process_bin_sop_get(conn *c) {
             return;
         }
 
-        ret = settings.engine.v1->set_elem_get(settings.engine.v0, c, key, nkey, req_count,
-                                               (bool)req->message.body.delete,
-                                               (bool)req->message.body.drop,
-                                               elem_array, &elem_count, &flags, &dropped,
-                                               c->binary_header.request.vbucket);
+        ret = mc_engine.v1->set_elem_get(mc_engine.v0, c, key, nkey, req_count,
+                                         (bool)req->message.body.delete,
+                                         (bool)req->message.body.drop,
+                                         elem_array, &elem_count, &flags, &dropped,
+                                         c->binary_header.request.vbucket);
     }
 
     if (settings.detail_enabled) {
@@ -4129,8 +4130,7 @@ static void process_bin_sop_get(conn *c) {
 
         eitem_info info[elem_count];
         for (i = 0; i < elem_count; i++) {
-            settings.engine.v1->get_set_elem_info(settings.engine.v0, c,
-                                                  elem_array[i], &info[i]);
+            mc_engine.v1->get_set_elem_info(mc_engine.v0, c, elem_array[i], &info[i]);
         }
 
         bodylen = sizeof(rsp->message.body) + (elem_count * sizeof(uint32_t));
@@ -4166,7 +4166,7 @@ static void process_bin_sop_get(conn *c) {
             conn_set_state(c, conn_mwrite);
         } else {
             STATS_NOKEY(c, cmd_sop_get);
-            settings.engine.v1->set_elem_release(settings.engine.v0, c, elem_array, elem_count);
+            mc_engine.v1->set_elem_release(mc_engine.v0, c, elem_array, elem_count);
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         }
         }
@@ -4240,8 +4240,8 @@ static void process_bin_bop_create(conn *c) {
     attr_data.readable = req->message.body.readable;
 
     ENGINE_ERROR_CODE ret;
-    ret = settings.engine.v1->btree_struct_create(settings.engine.v0, c, key, nkey, &attr_data,
-                                                  c->binary_header.request.vbucket);
+    ret = mc_engine.v1->btree_struct_create(mc_engine.v0, c, key, nkey, &attr_data,
+                                            c->binary_header.request.vbucket);
     if (settings.detail_enabled) {
         stats_prefix_record_bop_create(key, nkey);
     }
@@ -4320,9 +4320,9 @@ static void process_bin_bop_prepare_nread(conn *c) {
         if ((vlen + 2) > MAX_ELEMENT_BYTES) {
             ret = ENGINE_E2BIG;
         } else {
-            ret = settings.engine.v1->btree_elem_alloc(settings.engine.v0, c, &elem,
-                                                       req->message.body.nbkey,
-                                                       req->message.body.neflag, vlen + 2);
+            ret = mc_engine.v1->btree_elem_alloc(mc_engine.v0, c, &elem,
+                                                 req->message.body.nbkey,
+                                                 req->message.body.neflag, vlen + 2);
         }
     }
 
@@ -4334,7 +4334,7 @@ static void process_bin_bop_prepare_nread(conn *c) {
     case ENGINE_SUCCESS:
         {
         eitem_info info;
-        settings.engine.v1->get_btree_elem_info(settings.engine.v0, c, elem, &info);
+        mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem, &info);
         if (info.nscore == 0) {
             memcpy((void*)info.score, req->message.body.bkey, sizeof(uint64_t));
         } else {
@@ -4394,7 +4394,7 @@ static void process_bin_bop_insert_complete(conn *c) {
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
     eitem_info info;
-    settings.engine.v1->get_btree_elem_info(settings.engine.v0, c, elem, &info);
+    mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem, &info);
     memcpy((char*)info.value + info.nbytes - 2, "\r\n", 2);
 
     bool created;
@@ -4404,7 +4404,7 @@ static void process_bin_bop_insert_complete(conn *c) {
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     if (ret == ENGINE_SUCCESS) {
-        ret = settings.engine.v1->btree_elem_insert(settings.engine.v0, c,
+        ret = mc_engine.v1->btree_elem_insert(mc_engine.v0, c,
                                        c->coll_key, c->coll_nkey, elem, replace_if_exist,
                                        c->coll_attrp, &replaced, &created, NULL,
                                        c->binary_header.request.vbucket);
@@ -4453,7 +4453,7 @@ static void process_bin_bop_insert_complete(conn *c) {
 
     if (!c->ewouldblock) {
         /* release the c->coll_eitem reference */
-        settings.engine.v1->btree_elem_release(settings.engine.v0, c, &c->coll_eitem, 1);
+        mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         c->coll_eitem = NULL;
     }
 }
@@ -4485,7 +4485,7 @@ static void process_bin_bop_update_complete(conn *c) {
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     if (ret == ENGINE_SUCCESS) {
-        ret = settings.engine.v1->btree_elem_update(settings.engine.v0, c,
+        ret = mc_engine.v1->btree_elem_update(mc_engine.v0, c,
                                        c->coll_key, c->coll_nkey,
                                        &c->coll_bkrange, eupdate_ptr,
                                        new_value, new_nbytes,
@@ -4684,11 +4684,11 @@ static void process_bin_bop_delete(conn *c) {
     bool     dropped;
 
     ENGINE_ERROR_CODE ret;
-    ret = settings.engine.v1->btree_elem_delete(settings.engine.v0, c, key, nkey,
-                                                bkrange, efilter, req->message.body.count,
-                                                (bool)req->message.body.drop,
-                                                &del_count, &dropped,
-                                                c->binary_header.request.vbucket);
+    ret = mc_engine.v1->btree_elem_delete(mc_engine.v0, c, key, nkey,
+                                          bkrange, efilter, req->message.body.count,
+                                          (bool)req->message.body.drop,
+                                          &del_count, &dropped,
+                                          c->binary_header.request.vbucket);
     if (settings.detail_enabled) {
         stats_prefix_record_bop_delete(key, nkey,
                                        (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
@@ -4780,14 +4780,14 @@ static void process_bin_bop_get(conn *c) {
             return;
         }
 
-        ret = settings.engine.v1->btree_elem_get(settings.engine.v0, c, key, nkey,
-                                                 bkrange, efilter,
-                                                 req->message.body.offset,
-                                                 req->message.body.count,
-                                                 (bool)req->message.body.delete,
-                                                 (bool)req->message.body.drop,
-                                                 elem_array, &elem_count, &flags, &dropped_trimmed,
-                                                 c->binary_header.request.vbucket);
+        ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c, key, nkey,
+                                           bkrange, efilter,
+                                           req->message.body.offset,
+                                           req->message.body.count,
+                                           (bool)req->message.body.delete,
+                                           (bool)req->message.body.drop,
+                                           elem_array, &elem_count, &flags, &dropped_trimmed,
+                                           c->binary_header.request.vbucket);
     }
 
     if (settings.detail_enabled) {
@@ -4807,7 +4807,7 @@ static void process_bin_bop_get(conn *c) {
 
         eitem_info info[elem_count];
         for (i = 0; i < elem_count; i++) {
-            settings.engine.v1->get_btree_elem_info(settings.engine.v0, c,
+            mc_engine.v1->get_btree_elem_info(mc_engine.v0, c,
                                                     elem_array[i], &info[i]);
         }
 
@@ -4846,7 +4846,7 @@ static void process_bin_bop_get(conn *c) {
             conn_set_state(c, conn_mwrite);
         } else {
             STATS_NOKEY(c, cmd_bop_get);
-            settings.engine.v1->btree_elem_release(settings.engine.v0, c, elem_array, elem_count);
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         }
         }
@@ -4927,10 +4927,9 @@ static void process_bin_bop_count(conn *c) {
     c->aiostat = ENGINE_SUCCESS;
 
     if (ret == ENGINE_SUCCESS) {
-        ret = settings.engine.v1->btree_elem_count(settings.engine.v0, c, key, nkey,
-                                                   bkrange, efilter,
-                                                   &elem_count, &flags,
-                                                   c->binary_header.request.vbucket);
+        ret = mc_engine.v1->btree_elem_count(mc_engine.v0, c, key, nkey,
+                                             bkrange, efilter, &elem_count, &flags,
+                                             c->binary_header.request.vbucket);
     }
 
     if (settings.detail_enabled) {
@@ -5181,7 +5180,7 @@ static void process_bin_bop_smget_complete(conn *c) {
                        (c->coll_bkrange.from_nbkey==0 ? sizeof(uint64_t) : c->coll_bkrange.from_nbkey));
                 c->coll_bkrange.to_nbkey = c->coll_bkrange.from_nbkey;
             }
-            ret = settings.engine.v1->btree_elem_smget(settings.engine.v0, c,
+            ret = mc_engine.v1->btree_elem_smget(mc_engine.v0, c,
                                          keys_array, c->coll_numkeys,
                                          &c->coll_bkrange,
                                          (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
@@ -5215,8 +5214,7 @@ static void process_bin_bop_smget_complete(conn *c) {
 
         eitem_info info[elem_count+1]; /* elem_count might be 0. */
         for (i = 0; i < elem_count; i++) {
-            settings.engine.v1->get_btree_elem_info(settings.engine.v0, c,
-                                                    elem_array[i], &info[i]);
+            mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem_array[i], &info[i]);
         }
 
         bodylen = sizeof(rsp->message.body);
@@ -5285,7 +5283,7 @@ static void process_bin_bop_smget_complete(conn *c) {
             conn_set_state(c, conn_mwrite);
         } else {
             STATS_NOKEY(c, cmd_bop_smget);
-            settings.engine.v1->btree_elem_release(settings.engine.v0, c, elem_array, elem_count);
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         }
         }
@@ -5357,9 +5355,9 @@ static void process_bin_getattr(conn *c) {
     uint32_t attr_count = 0;
 
     ENGINE_ERROR_CODE ret;
-    ret = settings.engine.v1->getattr(settings.engine.v0, c, key, nkey,
-                                      attr_ids, attr_count, &attr_data,
-                                      c->binary_header.request.vbucket);
+    ret = mc_engine.v1->getattr(mc_engine.v0, c, key, nkey,
+                                attr_ids, attr_count, &attr_data,
+                                c->binary_header.request.vbucket);
 
     if (settings.detail_enabled) {
         stats_prefix_record_getattr(key, nkey);
@@ -5489,9 +5487,9 @@ static void process_bin_setattr(conn *c) {
     }
 
     ENGINE_ERROR_CODE ret;
-    ret = settings.engine.v1->setattr(settings.engine.v0, c, key, nkey,
-                                      attr_ids, attr_count, &attr_data,
-                                      c->binary_header.request.vbucket);
+    ret = mc_engine.v1->setattr(mc_engine.v0, c, key, nkey,
+                                attr_ids, attr_count, &attr_data,
+                                c->binary_header.request.vbucket);
     if (settings.detail_enabled) {
         stats_prefix_record_setattr(key, nkey);
     }
@@ -5628,7 +5626,7 @@ static void ship_tap_log(conn *c) {
         uint32_t seqno;
         uint16_t vbucket;
 
-        tap_event_t event = c->tap_iterator(settings.engine.v0, c, &it,
+        tap_event_t event = c->tap_iterator(mc_engine.v0, c, &it,
                                             &engine, &nengine, &ttl,
                                             &tap_flags, &seqno, &vbucket);
         union {
@@ -5664,8 +5662,8 @@ static void ship_tap_log(conn *c) {
             more_data = false;
             break;
         case TAP_MUTATION:
-            if (!settings.engine.v1->get_item_info(settings.engine.v0, c, it, &info)) {
-                settings.engine.v1->release(settings.engine.v0, c, it);
+            if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &info)) {
+                mc_engine.v1->release(mc_engine.v0, c, it);
                 mc_logger->log(EXTENSION_LOG_WARNING, c,
                                "%d: Failed to get item info\n", c->sfd);
                 break;
@@ -5713,8 +5711,8 @@ static void ship_tap_log(conn *c) {
             break;
         case TAP_DELETION:
             /* This is a delete */
-            if (!settings.engine.v1->get_item_info(settings.engine.v0, c, it, &info)) {
-                settings.engine.v1->release(settings.engine.v0, c, it);
+            if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &info)) {
+                mc_engine.v1->release(mc_engine.v0, c, it);
                 mc_logger->log(EXTENSION_LOG_WARNING, c,
                                "%d: Failed to get item info\n", c->sfd);
                 break;
@@ -5812,8 +5810,8 @@ static void process_bin_unknown_packet(conn *c) {
     c->ewouldblock = false;
 
     if (ret == ENGINE_SUCCESS) {
-        ret = settings.engine.v1->unknown_command(settings.engine.v0, c, packet,
-                                                  binary_response_handler);
+        ret = mc_engine.v1->unknown_command(mc_engine.v0, c, packet,
+                                            binary_response_handler);
     }
 
     if (ret == ENGINE_SUCCESS) {
@@ -5871,8 +5869,8 @@ static void process_bin_tap_connect(conn *c) {
                 c->sfd, buffer);
     }
 
-    TAP_ITERATOR iterator = settings.engine.v1->get_tap_iterator(
-        settings.engine.v0, c, key, c->binary_header.request.keylen,
+    TAP_ITERATOR iterator = mc_engine.v1->get_tap_iterator(
+        mc_engine.v0, c, key, c->binary_header.request.keylen,
         flags, data, ndata);
 
     if (iterator == NULL) {
@@ -5915,15 +5913,15 @@ static void process_bin_tap_packet(tap_event_t event, conn *c) {
     }
 
     ENGINE_ERROR_CODE ret;
-    ret = settings.engine.v1->tap_notify(settings.engine.v0, c,
-                                         engine_specific, nengine,
-                                         ttl - 1, tap_flags,
-                                         event, seqno,
-                                         key, nkey,
-                                         flags, exptime,
-                                         ntohll(tap->message.header.request.cas),
-                                         data, ndata,
-                                         c->binary_header.request.vbucket);
+    ret = mc_engine.v1->tap_notify(mc_engine.v0, c,
+                                   engine_specific, nengine,
+                                   ttl - 1, tap_flags,
+                                   event, seqno,
+                                   key, nkey,
+                                   flags, exptime,
+                                   ntohll(tap->message.header.request.cas),
+                                   data, ndata,
+                                   c->binary_header.request.vbucket);
 
     if (ret == ENGINE_DISCONNECT) {
         conn_set_state(c, conn_closing);
@@ -5946,11 +5944,11 @@ static void process_bin_tap_ack(conn *c) {
     char *key = packet + sizeof(rsp->bytes);
 
     ENGINE_ERROR_CODE ret = ENGINE_DISCONNECT;
-    if (settings.engine.v1->tap_notify != NULL) {
-        ret = settings.engine.v1->tap_notify(settings.engine.v0, c, NULL, 0, 0, status,
-                                             TAP_ACK, seqno, key,
-                                             c->binary_header.request.keylen, 0, 0,
-                                             0, NULL, 0, 0);
+    if (mc_engine.v1->tap_notify != NULL) {
+        ret = mc_engine.v1->tap_notify(mc_engine.v0, c, NULL, 0, 0, status,
+                                       TAP_ACK, seqno, key,
+                                       c->binary_header.request.keylen, 0, 0,
+                                       0, NULL, 0, 0);
     }
 
     if (ret == ENGINE_DISCONNECT) {
@@ -6334,7 +6332,7 @@ static void dispatch_bin_command(conn *c) {
 #endif
 #if 0 // ENABLE_TAP_PROTOCOL
        case PROTOCOL_BINARY_CMD_TAP_CONNECT:
-            if (settings.engine.v1->get_tap_iterator == NULL) {
+            if (mc_engine.v1->get_tap_iterator == NULL) {
                 write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, bodylen);
             } else {
                 bin_read_chunk(c, bin_reading_packet,
@@ -6346,7 +6344,7 @@ static void dispatch_bin_command(conn *c) {
        case PROTOCOL_BINARY_CMD_TAP_FLUSH:
        case PROTOCOL_BINARY_CMD_TAP_OPAQUE:
        case PROTOCOL_BINARY_CMD_TAP_VBUCKET_SET:
-            if (settings.engine.v1->tap_notify == NULL) {
+            if (mc_engine.v1->tap_notify == NULL) {
                 write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, bodylen);
             } else {
                 bin_read_chunk(c, bin_reading_packet, c->binary_header.request.bodylen);
@@ -6371,7 +6369,7 @@ static void dispatch_bin_command(conn *c) {
             break;
 #endif
         default:
-            if (settings.engine.v1->unknown_command == NULL) {
+            if (mc_engine.v1->unknown_command == NULL) {
                 write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_UNKNOWN_COMMAND,
                                 bodylen);
             } else {
@@ -6437,14 +6435,13 @@ static void process_bin_update(conn *c) {
     item_info info = { .nvalue = 1 };
 
     if (ret == ENGINE_SUCCESS) {
-        ret = settings.engine.v1->allocate(settings.engine.v0, c,
-                                           &it, key, nkey,
-                                           vlen + 2,
-                                           req->message.body.flags,
-                                           realtime(req->message.body.expiration));
-        if (ret == ENGINE_SUCCESS && !settings.engine.v1->get_item_info(settings.engine.v0,
-                                                                        c, it, &info)) {
-            settings.engine.v1->release(settings.engine.v0, c, it);
+        ret = mc_engine.v1->allocate(mc_engine.v0, c,
+                                     &it, key, nkey, vlen + 2,
+                                     req->message.body.flags,
+                                     realtime(req->message.body.expiration));
+        if (ret == ENGINE_SUCCESS && !mc_engine.v1->get_item_info(mc_engine.v0,
+                                                                  c, it, &info)) {
+            mc_engine.v1->release(mc_engine.v0, c, it);
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
             return;
         }
@@ -6452,8 +6449,8 @@ static void process_bin_update(conn *c) {
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        settings.engine.v1->item_set_cas(settings.engine.v0, c, it,
-                                         c->binary_header.request.cas);
+        mc_engine.v1->item_set_cas(mc_engine.v0, c, it,
+                                   c->binary_header.request.cas);
 
         switch (c->cmd) {
         case PROTOCOL_BINARY_CMD_ADD:
@@ -6499,9 +6496,9 @@ static void process_bin_update(conn *c) {
          */
         if (c->cmd == PROTOCOL_BINARY_CMD_SET) {
             /* @todo fix this for the ASYNC interface! */
-            settings.engine.v1->remove(settings.engine.v0, c, key, nkey,
-                                       ntohll(req->message.header.request.cas),
-                                       c->binary_header.request.vbucket);
+            mc_engine.v1->remove(mc_engine.v0, c, key, nkey,
+                                 ntohll(req->message.header.request.cas),
+                                 c->binary_header.request.vbucket);
         }
 
         /* swallow the data line */
@@ -6536,12 +6533,11 @@ static void process_bin_append_prepend(conn *c) {
     item_info info = { .nvalue = 1 };
 
     if (ret == ENGINE_SUCCESS) {
-        ret = settings.engine.v1->allocate(settings.engine.v0, c,
-                                           &it, key, nkey,
-                                           vlen + 2, 0, 0);
-        if (ret == ENGINE_SUCCESS && !settings.engine.v1->get_item_info(settings.engine.v0,
-                                                                        c, it, &info)) {
-            settings.engine.v1->release(settings.engine.v0, c, it);
+        ret = mc_engine.v1->allocate(mc_engine.v0, c,
+                                     &it, key, nkey, vlen + 2, 0, 0);
+        if (ret == ENGINE_SUCCESS && !mc_engine.v1->get_item_info(mc_engine.v0,
+                                                                  c, it, &info)) {
+            mc_engine.v1->release(mc_engine.v0, c, it);
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
             return;
         }
@@ -6549,8 +6545,8 @@ static void process_bin_append_prepend(conn *c) {
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        settings.engine.v1->item_set_cas(settings.engine.v0, c, it,
-                                         c->binary_header.request.cas);
+        mc_engine.v1->item_set_cas(mc_engine.v0, c, it,
+                                   c->binary_header.request.cas);
 
         switch (c->cmd) {
         case PROTOCOL_BINARY_CMD_APPEND:
@@ -6600,7 +6596,7 @@ static void process_bin_flush(conn *c) {
     }
 
     ENGINE_ERROR_CODE ret;
-    ret = settings.engine.v1->flush(settings.engine.v0, c, exptime);
+    ret = mc_engine.v1->flush(mc_engine.v0, c, exptime);
 
     if (ret == ENGINE_SUCCESS) {
         write_bin_response(c, NULL, 0, 0, 0);
@@ -6640,7 +6636,7 @@ static void process_bin_flush_prefix(conn *c) {
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     if (ret == ENGINE_SUCCESS) {
-        ret = settings.engine.v1->flush_prefix(settings.engine.v0, c, prefix, nprefix, exptime);
+        ret = mc_engine.v1->flush_prefix(mc_engine.v0, c, prefix, nprefix, exptime);
         if (settings.detail_enabled) {
             if (ret == ENGINE_SUCCESS || ret == ENGINE_PREFIX_ENOENT) {
                 if (stats_prefix_delete(prefix, nprefix) == 0) { /* found */
@@ -6700,9 +6696,9 @@ static void process_bin_delete(conn *c) {
         if (settings.detail_enabled) {
             stats_prefix_record_delete(key, nkey);
         }
-        ret = settings.engine.v1->remove(settings.engine.v0, c, key, nkey,
-                                         ntohll(req->message.header.request.cas),
-                                         c->binary_header.request.vbucket);
+        ret = mc_engine.v1->remove(mc_engine.v0, c, key, nkey,
+                                   ntohll(req->message.header.request.cas),
+                                   c->binary_header.request.vbucket);
     }
 
     switch (ret) {
@@ -6863,7 +6859,7 @@ static void reset_cmd_handler(conn *c) {
     c->cmd = -1;
     c->substate = bin_no_state;
     if(c->item != NULL) {
-        settings.engine.v1->release(settings.engine.v0, c, c->item);
+        mc_engine.v1->release(mc_engine.v0, c, c->item);
         c->item = NULL;
     }
     if (c->coll_eitem != NULL) {
@@ -7141,7 +7137,7 @@ static void process_stats_prefix(conn *c, const char *prefix, const int nprefix)
 
     if (nprefix < 0) {
         char *prefix_data;
-        ret = settings.engine.v1->get_prefix_stats(settings.engine.v0, c, prefix, nprefix, &prefix_data);
+        ret = mc_engine.v1->get_prefix_stats(mc_engine.v0, c, prefix, nprefix, &prefix_data);
         switch (ret) {
             case ENGINE_SUCCESS:
                 c->write_and_free = prefix_data;
@@ -7166,7 +7162,7 @@ static void process_stats_prefix(conn *c, const char *prefix, const int nprefix)
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
-        ret = settings.engine.v1->get_prefix_stats(settings.engine.v0, c, prefix, nprefix, &prefix_data);
+        ret = mc_engine.v1->get_prefix_stats(mc_engine.v0, c, prefix, nprefix, &prefix_data);
         switch (ret) {
             case ENGINE_SUCCESS:
                 {
@@ -7211,11 +7207,9 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     struct thread_stats thread_stats;
     threadlocal_stats_clear(&thread_stats);
 
-    if (aggregate && settings.engine.v1->aggregate_stats != NULL) {
-        settings.engine.v1->aggregate_stats(settings.engine.v0,
-                                            (const void *)c,
-                                            aggregate_callback,
-                                            &thread_stats);
+    if (aggregate && mc_engine.v1->aggregate_stats != NULL) {
+        mc_engine.v1->aggregate_stats(mc_engine.v0, (const void *)c,
+                                      aggregate_callback, &thread_stats);
     } else {
         threadlocal_stats_aggregate(get_independent_stats(c)->thread_stats,
                                     &thread_stats);
@@ -7489,8 +7483,8 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
 
     if (ntokens == 2) {
         server_stats(&append_stats, c, false);
-        (void)settings.engine.v1->get_stats(settings.engine.v0, c,
-                                            NULL, 0, &append_stats);
+        (void)mc_engine.v1->get_stats(mc_engine.v0, c,
+                                      NULL, 0, &append_stats);
     } else if (strcmp(subcommand, "reset") == 0) {
         stats_reset(c);
         out_string(c, "RESET");
@@ -7544,8 +7538,8 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
             }
         }
 
-        buf = settings.engine.v1->cachedump(settings.engine.v0, c, id, limit,
-                                            forward, sticky,  &bytes);
+        buf = mc_engine.v1->cachedump(mc_engine.v0, c, id, limit,
+                                      forward, sticky,  &bytes);
         write_and_free(c, buf, bytes);
         return ;
     } else if (strcmp(subcommand, "aggregate") == 0) {
@@ -7580,8 +7574,8 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
         char *buf = NULL;
         int nb = -1;
         detokenize(&tokens[1], ntokens - 2, &buf, &nb);
-        ret = settings.engine.v1->get_stats(settings.engine.v0, c, buf,
-                                            nb, append_stats);
+        ret = mc_engine.v1->get_stats(mc_engine.v0, c, buf,
+                                      nb, append_stats);
         free(buf);
 
         switch (ret) {
@@ -7671,8 +7665,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                 return;
             }
 
-            if (settings.engine.v1->get(settings.engine.v0, c, &it,
-                                        key, nkey, 0) != ENGINE_SUCCESS) {
+            if (mc_engine.v1->get(mc_engine.v0, c, &it, key, nkey, 0) != ENGINE_SUCCESS) {
                 it = NULL;
             }
 
@@ -7682,9 +7675,8 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
 
             if (it) {
                 item_info info = { .nvalue = 1 };
-                if (!settings.engine.v1->get_item_info(settings.engine.v0, c, it,
-                                                       &info)) {
-                    settings.engine.v1->release(settings.engine.v0, c, it);
+                if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &info)) {
+                    mc_engine.v1->release(mc_engine.v0, c, it);
                     out_string(c, "SERVER_ERROR error getting item data");
                     break;
                 }
@@ -7697,7 +7689,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                         c->isize *= 2;
                         c->ilist = new_list;
                     } else {
-                        settings.engine.v1->release(settings.engine.v0, c, it);
+                        mc_engine.v1->release(mc_engine.v0, c, it);
                         break;
                     }
                 }
@@ -7706,7 +7698,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                 char *suffix = get_suffix_buffer(c);
                 if (suffix == NULL) {
                     out_string(c, "SERVER_ERROR out of memory rebuilding suffix");
-                    settings.engine.v1->release(settings.engine.v0, c, it);
+                    mc_engine.v1->release(mc_engine.v0, c, it);
                     return;
                 }
                 int suffix_len = snprintf(suffix, SUFFIX_SIZE,
@@ -7729,7 +7721,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                   char *cas = get_suffix_buffer(c);
                   if (cas == NULL) {
                     out_string(c, "SERVER_ERROR out of memory making CAS suffix");
-                    settings.engine.v1->release(settings.engine.v0, c, it);
+                    mc_engine.v1->release(mc_engine.v0, c, it);
                     return;
                   }
                   int cas_len = snprintf(cas, SUFFIX_SIZE, " %"PRIu64"\r\n",
@@ -7740,7 +7732,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                       add_iov(c, cas, cas_len) != 0 ||
                       add_iov(c, info.value[0].iov_base, info.value[0].iov_len) != 0)
                       {
-                          settings.engine.v1->release(settings.engine.v0, c, it);
+                          mc_engine.v1->release(mc_engine.v0, c, it);
                           break;
                       }
                 }
@@ -7751,7 +7743,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                       add_iov(c, suffix, suffix_len) != 0 ||
                       add_iov(c, info.value[0].iov_base, info.value[0].iov_len) != 0)
                       {
-                          settings.engine.v1->release(settings.engine.v0, c, it);
+                          mc_engine.v1->release(mc_engine.v0, c, it);
                           break;
                       }
                 }
@@ -7867,17 +7859,17 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     c->ewouldblock = false;
 
     if (ret == ENGINE_SUCCESS) {
-        ret = settings.engine.v1->allocate(settings.engine.v0, c,
-                                           &it, key, nkey,
-                                           vlen, htonl(flags), realtime(exptime));
+        ret = mc_engine.v1->allocate(mc_engine.v0, c,
+                                     &it, key, nkey,
+                                     vlen, htonl(flags), realtime(exptime));
     }
 
     item_info info = { .nvalue = 1 };
     switch (ret) {
     case ENGINE_SUCCESS:
-        settings.engine.v1->item_set_cas(settings.engine.v0, c, it, req_cas_id);
-        if (!settings.engine.v1->get_item_info(settings.engine.v0, c, it, &info)) {
-            settings.engine.v1->release(settings.engine.v0, c, it);
+        mc_engine.v1->item_set_cas(mc_engine.v0, c, it, req_cas_id);
+        if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &info)) {
+            mc_engine.v1->release(mc_engine.v0, c, it);
             out_string(c, "SERVER_ERROR error getting item data");
             break;
         }
@@ -7906,7 +7898,7 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         /* Avoid stale data persisting in cache because we failed alloc.
          * Unacceptable for SET. Anywhere else too? */
         if (store_op == OPERATION_SET) {
-            settings.engine.v1->remove(settings.engine.v0, c, key, nkey, 0, 0);
+            mc_engine.v1->remove(mc_engine.v0, c, key, nkey, 0, 0);
         }
     }
 }
@@ -7953,10 +7945,10 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
     uint64_t cas;
     uint64_t result;
 
-    ret = settings.engine.v1->arithmetic(settings.engine.v0, c, key, nkey,
-                                         incr, create, delta,
-                                         init_value, htonl(flags), exptime_int,
-                                         &cas, &result, 0);
+    ret = mc_engine.v1->arithmetic(mc_engine.v0, c, key, nkey,
+                                   incr, create, delta,
+                                   init_value, htonl(flags), exptime_int,
+                                   &cas, &result, 0);
     char temp[INCR_MAX_STORAGE_LEN];
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -8034,7 +8026,7 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     }
 
     ENGINE_ERROR_CODE ret;
-    ret = settings.engine.v1->remove(settings.engine.v0, c, key, nkey, 0, 0);
+    ret = mc_engine.v1->remove(mc_engine.v0, c, key, nkey, 0, 0);
 
     /* For some reason the SLAB_INCR tries to access this... */
     item_info info = { .nvalue = 1 };
@@ -8066,7 +8058,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
             }
         }
 
-        ENGINE_ERROR_CODE ret = settings.engine.v1->flush(settings.engine.v0, c, exptime);
+        ENGINE_ERROR_CODE ret = mc_engine.v1->flush(mc_engine.v0, c, exptime);
         if (ret == ENGINE_SUCCESS) {
             out_string(c, "OK");
         } else if (ret == ENGINE_ENOTSUP) {
@@ -8097,8 +8089,8 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
             nprefix = 0;
         }
 
-        ENGINE_ERROR_CODE ret = settings.engine.v1->flush_prefix(settings.engine.v0, c,
-                                                                 prefix, nprefix, exptime);
+        ENGINE_ERROR_CODE ret = mc_engine.v1->flush_prefix(mc_engine.v0, c,
+                                                           prefix, nprefix, exptime);
         if (settings.detail_enabled) {
             if (ret == ENGINE_SUCCESS || ret == ENGINE_PREFIX_ENOENT) {
                 if (stats_prefix_delete(prefix, nprefix) == 0) { /* found */
@@ -8149,7 +8141,7 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
         settings.verbose = level;
         perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
         out_string(c, "END");
-        settings.engine.v1->set_verbose(settings.engine.v0, c, settings.verbose);
+        mc_engine.v1->set_verbose(mc_engine.v0, c, settings.verbose);
     } else {
         c->noreply = false;
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -8169,7 +8161,7 @@ static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntok
         ENGINE_ERROR_CODE ret;
         size_t new_maxbytes = (size_t)mlimit * 1024 * 1024;
 
-        ret = settings.engine.v1->set_memlimit(settings.engine.v0, c, new_maxbytes, settings.sticky_ratio);
+        ret = mc_engine.v1->set_memlimit(mc_engine.v0, c, new_maxbytes, settings.sticky_ratio);
         if (ret == ENGINE_SUCCESS) {
             settings.maxbytes = new_maxbytes;
             out_string(c, "END");
@@ -8236,7 +8228,7 @@ static void process_junktime_command(conn *c, token_t *tokens, const size_t ntok
     } else if (ntokens == 4 && safe_strtoul(tokens[COMMAND_TOKEN+2].value, &junktime)) {
         /* Junk item time must be 0(zero) or be between 10800(3 hours) and 2592000(30 days) */
         if (junktime == 0 || (junktime >= 10800 && junktime <= 2592000)) {
-            settings.engine.v1->set_junktime(settings.engine.v0, c, junktime);
+            mc_engine.v1->set_junktime(mc_engine.v0, c, junktime);
             settings.junk_item_time = junktime;
             out_string(c, "END");
         } else {
@@ -8555,10 +8547,9 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
             return;
         }
 
-        ret = settings.engine.v1->list_elem_get(settings.engine.v0, c, key, nkey,
-                                                from_index, to_index,
-                                                delete, drop_if_empty,
-                                                elem_array, &elem_count, &flags, &dropped, 0);
+        ret = mc_engine.v1->list_elem_get(mc_engine.v0, c, key, nkey,
+                                          from_index, to_index, delete, drop_if_empty,
+                                          elem_array, &elem_count, &flags, &dropped, 0);
     }
 
     if (settings.detail_enabled) {
@@ -8587,7 +8578,7 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
             respptr += strlen(respptr);
 
             for (i = 0; i < elem_count; i++) {
-                settings.engine.v1->get_list_elem_info(settings.engine.v0, c, elem_array[i], &info);
+                mc_engine.v1->get_list_elem_info(mc_engine.v0, c, elem_array[i], &info);
                 sprintf(respptr, "%u ", info.nbytes-2);
                 if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
                     (add_iov(c, info.value, info.nbytes) != 0)) {
@@ -8615,7 +8606,7 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
             c->msgcurr     = 0;
         } else { /* ENGINE_ENOMEM */
             STATS_NOKEY(c, cmd_lop_get);
-            settings.engine.v1->list_elem_release(settings.engine.v0, c, elem_array, elem_count);
+            mc_engine.v1->list_elem_release(mc_engine.v0, c, elem_array, elem_count);
             free(respbuf);
             out_string(c, "SERVER_ERROR out of memory writing get response");
         }
@@ -8660,7 +8651,7 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
         if (vlen > MAX_ELEMENT_BYTES) {
             ret = ENGINE_E2BIG;
         } else {
-            ret = settings.engine.v1->list_elem_alloc(settings.engine.v0, c, &elem, vlen);
+            ret = mc_engine.v1->list_elem_alloc(mc_engine.v0, c, &elem, vlen);
         }
     }
 
@@ -8672,7 +8663,7 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
     case ENGINE_SUCCESS:
         {
         eitem_info info;
-        settings.engine.v1->get_list_elem_info(settings.engine.v0, c, elem, &info);
+        mc_engine.v1->get_list_elem_info(mc_engine.v0, c, elem, &info);
         c->ritem   = (char *)info.value;
         c->rlbytes = vlen;
         c->coll_eitem  = (void *)elem;
@@ -8705,7 +8696,7 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
 static void process_lop_create(conn *c, char *key, size_t nkey, item_attr *attrp) {
 
     ENGINE_ERROR_CODE ret;
-    ret = settings.engine.v1->list_struct_create(settings.engine.v0, c, key, nkey, attrp, 0);
+    ret = mc_engine.v1->list_struct_create(mc_engine.v0, c, key, nkey, attrp, 0);
 
     if (settings.detail_enabled) {
         stats_prefix_record_lop_create(key, nkey);
@@ -8735,9 +8726,9 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
     bool     dropped;
 
     ENGINE_ERROR_CODE ret;
-    ret = settings.engine.v1->list_elem_delete(settings.engine.v0, c, key, nkey,
-                                               from_index, to_index, drop_if_empty,
-                                               &del_count, &dropped, 0);
+    ret = mc_engine.v1->list_elem_delete(mc_engine.v0, c, key, nkey,
+                                         from_index, to_index, drop_if_empty,
+                                         &del_count, &dropped, 0);
 
     if (settings.detail_enabled) {
         stats_prefix_record_lop_delete(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
@@ -8933,9 +8924,9 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
             return;
         }
 
-        ret = settings.engine.v1->set_elem_get(settings.engine.v0, c, key, nkey, req_count,
-                                               delete, drop_if_empty, elem_array, &elem_count,
-                                               &flags, &dropped, 0);
+        ret = mc_engine.v1->set_elem_get(mc_engine.v0, c, key, nkey, req_count,
+                                         delete, drop_if_empty, elem_array, &elem_count,
+                                         &flags, &dropped, 0);
     }
 
     if (settings.detail_enabled) {
@@ -8964,7 +8955,7 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
             respptr += strlen(respptr);
 
             for (i = 0; i < elem_count; i++) {
-                settings.engine.v1->get_set_elem_info(settings.engine.v0, c, elem_array[i], &info);
+                mc_engine.v1->get_set_elem_info(mc_engine.v0, c, elem_array[i], &info);
                 sprintf(respptr, "%u ", info.nbytes-2);
                 if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
                     (add_iov(c, info.value, info.nbytes) != 0)) {
@@ -8992,7 +8983,7 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
             c->msgcurr     = 0;
         } else { /* ENGINE_ENOMEM */
             STATS_NOKEY(c, cmd_sop_get);
-            settings.engine.v1->set_elem_release(settings.engine.v0, c, elem_array, elem_count);
+            mc_engine.v1->set_elem_release(mc_engine.v0, c, elem_array, elem_count);
             free(respbuf);
             out_string(c, "SERVER_ERROR out of memory writing get response");
         }
@@ -9037,7 +9028,7 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
             ret = ENGINE_E2BIG;
         } else {
             if (cmd == (int)OPERATION_SOP_INSERT) {
-                ret = settings.engine.v1->set_elem_alloc(settings.engine.v0, c, &elem, vlen);
+                ret = mc_engine.v1->set_elem_alloc(mc_engine.v0, c, &elem, vlen);
             } else { /* OPERATION_SOP_DELETE or OPERATION_SOP_EXIST */
                 if ((elem = (eitem *)malloc(sizeof(elem_value) + vlen)) == NULL)
                     ret = ENGINE_ENOMEM;
@@ -9060,7 +9051,7 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
     case ENGINE_SUCCESS:
         if (cmd == (int)OPERATION_SOP_INSERT) {
             eitem_info info;
-            settings.engine.v1->get_set_elem_info(settings.engine.v0, c, elem, &info);
+            mc_engine.v1->get_set_elem_info(mc_engine.v0, c, elem, &info);
             c->ritem   = (char *)info.value;
             c->rlbytes = vlen;
         } else {
@@ -9101,7 +9092,7 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
 
 static void process_sop_create(conn *c, char *key, size_t nkey, item_attr *attrp) {
     ENGINE_ERROR_CODE ret;
-    ret = settings.engine.v1->set_struct_create(settings.engine.v0, c, key, nkey, attrp, 0);
+    ret = mc_engine.v1->set_struct_create(mc_engine.v0, c, key, nkey, attrp, 0);
 
     if (settings.detail_enabled) {
         stats_prefix_record_sop_create(key, nkey);
@@ -9291,11 +9282,11 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
             return;
         }
 
-        ret = settings.engine.v1->btree_elem_get(settings.engine.v0, c, key, nkey,
-                                                 bkrange, efilter, offset, count,
-                                                 delete, drop_if_empty,
-                                                 elem_array, &elem_count,
-                                                 &flags, &dropped_trimmed, 0);
+        ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c, key, nkey,
+                                           bkrange, efilter, offset, count,
+                                           delete, drop_if_empty,
+                                           elem_array, &elem_count,
+                                           &flags, &dropped_trimmed, 0);
     }
 
     if (settings.detail_enabled) {
@@ -9325,7 +9316,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
             respptr += strlen(respptr);
 
             for (i = 0; i < elem_count; i++) {
-                settings.engine.v1->get_btree_elem_info(settings.engine.v0, c, elem_array[i], &info);
+                mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem_array[i], &info);
                 resplen = make_bop_elem_response(respptr, &info);
                 if ((add_iov(c, respptr, resplen) != 0) ||
                     (add_iov(c, info.value, info.nbytes) != 0)) {
@@ -9356,7 +9347,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
             c->msgcurr     = 0;
         } else { /* ENGINE_ENOMEM */
             STATS_NOKEY(c, cmd_bop_get);
-            settings.engine.v1->btree_elem_release(settings.engine.v0, c, elem_array, elem_count);
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
             free(respbuf);
             out_string(c, "SERVER_ERROR out of memory writing get response");
         }
@@ -9402,9 +9393,9 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
     c->aiostat = ENGINE_SUCCESS;
 
     if (ret == ENGINE_SUCCESS) {
-        ret = settings.engine.v1->btree_elem_count(settings.engine.v0, c,
-                                                   key, nkey, bkrange, efilter,
-                                                   &elem_count, &flags, 0);
+        ret = mc_engine.v1->btree_elem_count(mc_engine.v0, c,
+                                             key, nkey, bkrange, efilter,
+                                             &elem_count, &flags, 0);
     }
 
     if (settings.detail_enabled) {
@@ -9450,8 +9441,8 @@ static void process_bop_position(conn *c, char *key, size_t nkey,
     c->aiostat = ENGINE_SUCCESS;
 
     if (ret == ENGINE_SUCCESS) {
-        ret = settings.engine.v1->btree_posi_find(settings.engine.v0, c, key, nkey,
-                                                  bkrange, order, &position, 0);
+        ret = mc_engine.v1->btree_posi_find(mc_engine.v0, c, key, nkey,
+                                            bkrange, order, &position, 0);
     }
 
     if (settings.detail_enabled) {
@@ -9512,10 +9503,10 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
             return;
         }
 
-        ret = settings.engine.v1->btree_posi_find_with_get(settings.engine.v0, c, key, nkey,
-                                                           bkrange, order, count, &position,
-                                                           elem_array, &elem_count, &elem_index,
-                                                           &flags, 0);
+        ret = mc_engine.v1->btree_posi_find_with_get(mc_engine.v0, c, key, nkey,
+                                                     bkrange, order, count, &position,
+                                                     elem_array, &elem_count, &elem_index,
+                                                     &flags, 0);
     }
 
     if (settings.detail_enabled) {
@@ -9545,7 +9536,7 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
             respptr += strlen(respptr);
 
             for (i = 0; i < elem_count; i++) {
-                settings.engine.v1->get_btree_elem_info(settings.engine.v0, c, elem_array[i], &info);
+                mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem_array[i], &info);
                 resplen = make_bop_elem_response(respptr, &info);
                 if ((add_iov(c, respptr, resplen) != 0) ||
                     (add_iov(c, info.value, info.nbytes) != 0)) {
@@ -9572,7 +9563,7 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
             c->msgcurr     = 0;
         } else { /* ENGINE_ENOMEM */
             STATS_NOKEY(c, cmd_bop_pwg);
-            settings.engine.v1->btree_elem_release(settings.engine.v0, c, elem_array, elem_count);
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
             free(respbuf);
             out_string(c, "SERVER_ERROR out of memory writing get response");
         }
@@ -9630,9 +9621,9 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
             return;
         }
 
-        ret = settings.engine.v1->btree_elem_get_by_posi(settings.engine.v0, c, key, nkey,
-                                                         order, from_posi, to_posi,
-                                                         elem_array, &elem_count, &flags, 0);
+        ret = mc_engine.v1->btree_elem_get_by_posi(mc_engine.v0, c, key, nkey,
+                                                   order, from_posi, to_posi,
+                                                   elem_array, &elem_count, &flags, 0);
     }
 
     if (settings.detail_enabled) {
@@ -9662,7 +9653,7 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
             respptr += strlen(respptr);
 
             for (i = 0; i < elem_count; i++) {
-                settings.engine.v1->get_btree_elem_info(settings.engine.v0, c, elem_array[i], &info);
+                mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem_array[i], &info);
                 resplen = make_bop_elem_response(respptr, &info);
                 if ((add_iov(c, respptr, resplen) != 0) ||
                     (add_iov(c, info.value, info.nbytes) != 0)) {
@@ -9689,7 +9680,7 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
             c->msgcurr     = 0;
         } else { /* ENGINE_ENOMEM */
             STATS_NOKEY(c, cmd_bop_gbp);
-            settings.engine.v1->btree_elem_release(settings.engine.v0, c, elem_array, elem_count);
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
             free(respbuf);
             out_string(c, "SERVER_ERROR out of memory writing get response");
         }
@@ -9789,8 +9780,8 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
         if (vlen > MAX_ELEMENT_BYTES) {
             ret = ENGINE_E2BIG;
         } else {
-            ret = settings.engine.v1->btree_elem_alloc(settings.engine.v0, c, &elem,
-                                                       nbkey, neflag, vlen);
+            ret = mc_engine.v1->btree_elem_alloc(mc_engine.v0, c, &elem,
+                                                 nbkey, neflag, vlen);
         }
     }
 
@@ -9802,7 +9793,7 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
     case ENGINE_SUCCESS:
         {
         eitem_info info;
-        settings.engine.v1->get_btree_elem_info(settings.engine.v0, c, elem, &info);
+        mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem, &info);
         memcpy((void*)info.score, bkey, (info.nscore==0 ? sizeof(uint64_t) : info.nscore));
         if (info.neflag > 0)
             memcpy((void*)info.eflag, eflag, info.neflag);
@@ -9922,7 +9913,7 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, size_t vlen) {
 static void process_bop_create(conn *c, char *key, size_t nkey, item_attr *attrp) {
 
     ENGINE_ERROR_CODE ret;
-    ret = settings.engine.v1->btree_struct_create(settings.engine.v0, c, key, nkey, attrp, 0);
+    ret = mc_engine.v1->btree_struct_create(mc_engine.v0, c, key, nkey, attrp, 0);
 
     if (settings.detail_enabled) {
         stats_prefix_record_bop_create(key, nkey);
@@ -9953,9 +9944,9 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
     bool     dropped;
 
     ENGINE_ERROR_CODE ret;
-    ret = settings.engine.v1->btree_elem_delete(settings.engine.v0, c, key, nkey,
-                                                bkrange, efilter, count, drop_if_empty,
-                                                &del_count, &dropped, 0);
+    ret = mc_engine.v1->btree_elem_delete(mc_engine.v0, c, key, nkey,
+                                          bkrange, efilter, count, drop_if_empty,
+                                          &del_count, &dropped, 0);
 
     if (settings.detail_enabled) {
         stats_prefix_record_bop_delete(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
@@ -9994,8 +9985,8 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
     uint64_t result;
     char temp[INCR_MAX_STORAGE_LEN];
 
-    ret = settings.engine.v1->btree_elem_arithmetic(settings.engine.v0, c, key, nkey, bkrange, incr, create,
-                                                    delta, initial, eflagp, &result, 0);
+    ret = mc_engine.v1->btree_elem_arithmetic(mc_engine.v0, c, key, nkey, bkrange, incr, create,
+                                              delta, initial, eflagp, &result, 0);
 
     if (settings.detail_enabled) {
         if (incr) {
@@ -10826,8 +10817,8 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
     }
 
     ENGINE_ERROR_CODE ret;
-    ret = settings.engine.v1->getattr(settings.engine.v0, c, key, nkey,
-                                      attr_ids, attr_count, &attr_data, 0);
+    ret = mc_engine.v1->getattr(mc_engine.v0, c, key, nkey,
+                                attr_ids, attr_count, &attr_data, 0);
 
     if (settings.detail_enabled) {
         stats_prefix_record_getattr(key, nkey);
@@ -11092,8 +11083,8 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
     }
 
     ENGINE_ERROR_CODE ret;
-    ret = settings.engine.v1->setattr(settings.engine.v0, c, key, nkey,
-                                      attr_ids, attr_count, &attr_data, 0);
+    ret = mc_engine.v1->setattr(mc_engine.v0, c, key, nkey,
+                                attr_ids, attr_count, &attr_data, 0);
 
     if (settings.detail_enabled) {
         stats_prefix_record_setattr(key, nkey);
@@ -11952,7 +11943,7 @@ bool conn_mwrite(conn *c) {
         if (c->state == conn_mwrite) {
             while (c->ileft > 0) {
                 item *it = *(c->icurr);
-                settings.engine.v1->release(settings.engine.v0, c, it);
+                mc_engine.v1->release(mc_engine.v0, c, it);
                 c->icurr++;
                 c->ileft--;
             }
@@ -12786,8 +12777,8 @@ static void release_independent_stats(void *stats) {
 
 static inline struct independent_stats *get_independent_stats(conn *c) {
     struct independent_stats *independent_stats;
-    if (settings.engine.v1->get_stats_struct != NULL) {
-        independent_stats = settings.engine.v1->get_stats_struct(settings.engine.v0, (const void *)c);
+    if (mc_engine.v1->get_stats_struct != NULL) {
+        independent_stats = mc_engine.v1->get_stats_struct(mc_engine.v0, (const void *)c);
         if (independent_stats == NULL)
             independent_stats = default_independent_stats;
     } else {
@@ -13176,7 +13167,7 @@ static SERVER_HANDLE_V1 *get_server_api(void)
     };
 
     if (rv.engine == NULL) {
-        rv.engine = settings.engine.v0;
+        rv.engine = mc_engine.v0;
     }
 
     return &rv;
@@ -13851,10 +13842,10 @@ int main (int argc, char **argv) {
     if (settings.verbose > 0) {
         log_engine_details(engine_handle, mc_logger);
     }
-    settings.engine.v1 = (ENGINE_HANDLE_V1 *) engine_handle;
+    mc_engine.v1 = (ENGINE_HANDLE_V1 *) engine_handle;
 #if 0 // not used code
-    if (settings.engine.v1->arithmetic == NULL) {
-        settings.engine.v1->arithmetic = internal_arithmetic;
+    if (mc_engine.v1->arithmetic == NULL) {
+        mc_engine.v1->arithmetic = internal_arithmetic;
     }
 #endif
     /* initialize other stuff */
@@ -13967,7 +13958,7 @@ int main (int argc, char **argv) {
     }
     threads_shutdown();
 
-    settings.engine.v1->destroy(settings.engine.v0);
+    mc_engine.v1->destroy(mc_engine.v0);
 
     /* remove the PID file if we're a daemon */
     if (do_daemonize)

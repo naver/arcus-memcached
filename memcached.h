@@ -384,10 +384,6 @@ struct settings {
     bool sasl;              /* SASL on/off */
     bool require_sasl;      /* require SASL auth */
     int topkeys;            /* Number of top keys to track */
-    union {
-        ENGINE_HANDLE *v0;
-        ENGINE_HANDLE_V1 *v1;
-    } engine;
     struct {
         EXTENSION_DAEMON_DESCRIPTOR *daemons;
         EXTENSION_LOGGER_DESCRIPTOR *logger;
