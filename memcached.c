@@ -161,6 +161,8 @@ volatile rel_time_t current_time;
 /** exported globals **/
 struct stats stats;
 struct settings settings;
+EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
+
 static time_t process_started;     /* when the process was started */
 
 /* The size of string representing 4 bytes integer is 10. */
@@ -393,9 +395,9 @@ void safe_close(int sfd) {
         }
 
         if (rval == -1) {
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
-                                            "Failed to close socket %d (%s)!!\n", (int)sfd,
-                                            strerror(errno));
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                           "Failed to close socket %d (%s)!!\n",
+                           (int)sfd, strerror(errno));
         } else {
             STATS_LOCK();
             stats.curr_conns--;
@@ -541,9 +543,8 @@ static int conn_constructor(void *buffer, void *unused1, int unused2) {
         free(c->suffixlist);
         free(c->iov);
         free(c->msglist);
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING,
-                                        NULL,
-                                        "Failed to allocate buffers for connection\n");
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                       "Failed to allocate buffers for connection\n");
         return 1;
     }
 
@@ -614,26 +615,23 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
 
     if (settings.verbose > 1) {
         if (init_state == conn_listening) {
-            settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                            "<%d server listening (%s)\n", sfd,
-                                            prot_text(c->protocol));
+            mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                           "<%d server listening (%s)\n", sfd, prot_text(c->protocol));
         } else if (IS_UDP(transport)) {
-            settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                            "<%d server listening (udp)\n", sfd);
+            mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                           "<%d server listening (udp)\n", sfd);
         } else if (c->protocol == negotiating_prot) {
-            settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                            "<%d new auto-negotiating client connection\n",
-                                            sfd);
+            mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                           "<%d new auto-negotiating client connection\n", sfd);
         } else if (c->protocol == ascii_prot) {
-            settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                            "<%d new ascii client connection.\n", sfd);
+            mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                           "<%d new ascii client connection.\n", sfd);
         } else if (c->protocol == binary_prot) {
-            settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                            "<%d new binary client connection.\n", sfd);
+            mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                           "<%d new binary client connection.\n", sfd);
         } else {
-            settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                            "<%d new unknown (%d) client connection\n",
-                                            sfd, c->protocol);
+            mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                           "<%d new unknown (%d) client connection\n", sfd, c->protocol);
             assert(false);
         }
     }
@@ -674,9 +672,8 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->ev_flags = event_flags;
 
     if (event_add(&c->event, timeout) == -1) {
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING,
-                                        NULL,
-                                        "Failed to add connection to libevent: %s", strerror(errno));
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                       "Failed to add connection to libevent: %s", strerror(errno));
         assert(c->thread == NULL);
         cache_free(conn_cache, c);
         return NULL;
@@ -817,8 +814,8 @@ void conn_close(conn *c) {
         event_del(&c->event);
 
         if (settings.verbose > 1) {
-            settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                            "<%d connection closed.\n", c->sfd);
+            mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                           "<%d connection closed.\n", c->sfd);
         }
         safe_close(c->sfd);
         c->sfd = -1;
@@ -838,8 +835,8 @@ void conn_close(conn *c) {
     LOCK_THREAD(c->thread);
     /* remove from pending-io list */
     if (settings.verbose > 1 && list_contains(c->thread->pending_io, c)) {
-        settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                        "Current connection was in the pending-io list.. Nuking it\n");
+        mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                       "Current connection was in the pending-io list.. Nuking it\n");
     }
     c->thread->pending_io = list_remove(c->thread->pending_io, c);
     c->thread->pending_close = list_remove(c->thread->pending_close, c);
@@ -987,10 +984,8 @@ void conn_set_state(conn *c, STATE_FUNC state) {
         if (settings.verbose > 2 || c->state == conn_closing)
 #endif
         {
-            settings.extensions.logger->log(EXTENSION_LOG_DETAIL, c,
-                                            "%d: going from %s to %s\n",
-                                            c->sfd, state_text(c->state),
-                                            state_text(state));
+            mc_logger->log(EXTENSION_LOG_DETAIL, c, "%d: going from %s to %s\n",
+                           c->sfd, state_text(c->state), state_text(state));
         }
 
         c->state = state;
@@ -1136,11 +1131,9 @@ static void out_string(conn *c, const char *str) {
 
     if (settings.verbose > 1) {
         if (c->noreply)
-            settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                            ">%d NOREPLY %s\n", c->sfd, str);
+            mc_logger->log(EXTENSION_LOG_DEBUG, c, ">%d NOREPLY %s\n", c->sfd, str);
         else
-            settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                            ">%d %s\n", c->sfd, str);
+            mc_logger->log(EXTENSION_LOG_DEBUG, c, ">%d %s\n", c->sfd, str);
     }
 
     if (c->pipe_state != PIPE_STATE_OFF) {
@@ -1994,9 +1987,8 @@ static void complete_update_ascii(conn *c) {
     item_info info = { .nvalue = 1 };
     if (!settings.engine.v1->get_item_info(settings.engine.v0, c, it, &info)) {
         settings.engine.v1->release(settings.engine.v0, c, it);
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
-                                        "%d: Failed to get item info\n",
-                                        c->sfd);
+        mc_logger->log(EXTENSION_LOG_WARNING, c,
+                       "%d: Failed to get item info\n", c->sfd);
         out_string(c, "SERVER_ERROR failed to get item details");
         return;
     }
@@ -2239,8 +2231,7 @@ static void add_bin_header(conn *c, uint16_t err, uint8_t hdr_len, uint16_t key_
                                    "Writing bin response:",
                                    (const char*)header->bytes,
                                    sizeof(header->bytes)) != -1) {
-            settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                            "%s", buffer);
+            mc_logger->log(EXTENSION_LOG_DEBUG, c, "%s", buffer);
         }
     }
 
@@ -2369,8 +2360,8 @@ static void write_bin_packet(conn *c, protocol_binary_response_status err, int s
 
     default:
         len = snprintf(buffer, sizeof(buffer), "UNHANDLED ERROR (%d)", err);
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
-                                        ">%d UNHANDLED ERROR: %d\n", c->sfd, err);
+        mc_logger->log(EXTENSION_LOG_WARNING, c,
+                       ">%d UNHANDLED ERROR: %d\n", c->sfd, err);
     }
 
     /* Allow the engine to pass extra error information */
@@ -2385,9 +2376,8 @@ static void write_bin_packet(conn *c, protocol_binary_response_status err, int s
     }
 
     if (err != PROTOCOL_BINARY_RESPONSE_SUCCESS && settings.verbose > 1) {
-        settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                        ">%d Writing an error: %s\n", c->sfd,
-                                        buffer);
+        mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                       ">%d Writing an error: %s\n", c->sfd, buffer);
     }
 
     add_bin_header(c, err, 0, 0, len);
@@ -2446,8 +2436,7 @@ static void complete_incr_bin(conn *c) {
                          (uint64_t)req->message.body.delta,
                          (uint64_t)req->message.body.initial,
                          (uint64_t)req->message.body.expiration) != -1) {
-                settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c, "%s",
-                                                buffer);
+                mc_logger->log(EXTENSION_LOG_DEBUG, c, "%s", buffer);
             }
         }
     }
@@ -2529,9 +2518,8 @@ static void complete_update_bin(conn *c) {
     item_info info = { .nvalue = 1 };
     if (!settings.engine.v1->get_item_info(settings.engine.v0, c, it, &info)) {
         settings.engine.v1->release(settings.engine.v0, c, it);
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
-                                        "%d: Failed to get item info\n",
-                                        c->sfd);
+        mc_logger->log(EXTENSION_LOG_WARNING, c,
+                       "%d: Failed to get item info\n", c->sfd);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
         return;
     }
@@ -2634,8 +2622,7 @@ static void process_bin_get(conn *c) {
         char buffer[1024];
         if (key_to_printable_buffer(buffer, sizeof(buffer), c->sfd, true,
                                     "GET", key, nkey) != -1) {
-            settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c, "%s\n",
-                                            buffer);
+            mc_logger->log(EXTENSION_LOG_DEBUG, c, "%s\n", buffer);
         }
     }
 
@@ -2654,9 +2641,8 @@ static void process_bin_get(conn *c) {
     case ENGINE_SUCCESS:
         if (!settings.engine.v1->get_item_info(settings.engine.v0, c, it, &info)) {
             settings.engine.v1->release(settings.engine.v0, c, it);
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
-                                            "%d: Failed to get item info\n",
-                                            c->sfd);
+            mc_logger->log(EXTENSION_LOG_WARNING, c,
+                           "%d: Failed to get item info\n", c->sfd);
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
             break;
         }
@@ -2725,8 +2711,8 @@ static void process_bin_get(conn *c) {
         break;
     default:
         /* @todo add proper error handling! */
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
-                                        "Unknown error code: %d\n", ret);
+        mc_logger->log(EXTENSION_LOG_WARNING, c,
+                       "Unknown error code: %d\n", ret);
         abort();
     }
 
@@ -2860,8 +2846,7 @@ static void process_bin_stat(conn *c) {
         char buffer[1024];
         if (key_to_printable_buffer(buffer, sizeof(buffer), c->sfd, true,
                                     "STATS", subcommand, nkey) != -1) {
-            settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c, "%s\n",
-                                            buffer);
+            mc_logger->log(EXTENSION_LOG_DEBUG, c, "%s\n", buffer);
         }
     }
 
@@ -3012,16 +2997,15 @@ static void bin_read_chunk(conn *c, enum bin_substates next_substate, uint32_t c
 
         if (nsize != c->rsize) {
             if (settings.verbose > 1) {
-                settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                        "%d: Need to grow buffer from %lu to %lu\n",
-                        c->sfd, (unsigned long)c->rsize, (unsigned long)nsize);
+                mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                    "%d: Need to grow buffer from %lu to %lu\n",
+                    c->sfd, (unsigned long)c->rsize, (unsigned long)nsize);
             }
             char *newm = realloc(c->rbuf, nsize);
             if (newm == NULL) {
                 if (settings.verbose) {
-                    settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                            "%d: Failed to grow buffer.. closing connection\n",
-                            c->sfd);
+                    mc_logger->log(EXTENSION_LOG_INFO, c,
+                        "%d: Failed to grow buffer.. closing connection\n", c->sfd);
                 }
                 conn_set_state(c, conn_closing);
                 return;
@@ -3036,9 +3020,8 @@ static void bin_read_chunk(conn *c, enum bin_substates next_substate, uint32_t c
             memmove(c->rbuf, c->rcurr, c->rbytes);
             c->rcurr = c->rbuf;
             if (settings.verbose > 1) {
-                settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                                "%d: Repack input buffer\n",
-                                                c->sfd);
+                mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                               "%d: Repack input buffer\n", c->sfd);
             }
         }
     }
@@ -3057,7 +3040,7 @@ static void bin_read_key(conn *c, enum bin_substates next_substate, int extra) {
 static void handle_binary_protocol_error(conn *c) {
     write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
     if (settings.verbose) {
-        settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
+        mc_logger->log(EXTENSION_LOG_INFO, c,
                 "%d: Protocol error (opcode %02x), close connection\n",
                 c->sfd, c->binary_header.request.opcode);
     }
@@ -3072,9 +3055,8 @@ static void init_sasl_conn(conn *c) {
                                    NULL, 0, &c->sasl_conn);
         if (result != SASL_OK) {
             if (settings.verbose) {
-                settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                         "%d: Failed to initialize SASL conn.\n",
-                         c->sfd);
+                mc_logger->log(EXTENSION_LOG_INFO, c,
+                         "%d: Failed to initialize SASL conn.\n", c->sfd);
             }
             c->sasl_conn = NULL;
         }
@@ -3105,9 +3087,8 @@ static void bin_list_sasl_mechs(conn *c) {
     if (result != SASL_OK) {
         /* Perhaps there's a better error for this... */
         if (settings.verbose) {
-            settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                     "%d: Failed to list SASL mechanisms.\n",
-                     c->sfd);
+            mc_logger->log(EXTENSION_LOG_INFO, c,
+                     "%d: Failed to list SASL mechanisms.\n", c->sfd);
         }
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
         return;
@@ -3186,7 +3167,7 @@ static void process_bin_complete_sasl_auth(conn *c) {
     mech[nkey] = 0x00;
 
     if (settings.verbose) {
-        settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
+        mc_logger->log(EXTENSION_LOG_DEBUG, c,
                 "%d: mech: ``%s'' with %d bytes of data\n", c->sfd, mech, vlen);
     }
 
@@ -3210,7 +3191,7 @@ static void process_bin_complete_sasl_auth(conn *c) {
         /* This code is pretty much impossible, but makes the compiler
            happier */
         if (settings.verbose) {
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
+            mc_logger->log(EXTENSION_LOG_WARNING, c,
                     "%d: Unhandled command %d with challenge %s\n",
                     c->sfd, c->cmd, challenge);
         }
@@ -3222,9 +3203,8 @@ static void process_bin_complete_sasl_auth(conn *c) {
     c->ritem = NULL;
 
     if (settings.verbose) {
-        settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                                        "%d: sasl result code:  %d\n",
-                                        c->sfd, result);
+        mc_logger->log(EXTENSION_LOG_INFO, c,
+                       "%d: sasl result code:  %d\n", c->sfd, result);
     }
 
     switch(result) {
@@ -3245,9 +3225,8 @@ static void process_bin_complete_sasl_auth(conn *c) {
         break;
     default:
         if (settings.verbose) {
-            settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                                            "%d: Unknown sasl response:  %d\n",
-                                            c->sfd, result);
+            mc_logger->log(EXTENSION_LOG_INFO, c,
+                           "%d: Unknown sasl response:  %d\n", c->sfd, result);
         }
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
         STATS_NOKEY2(c, auth_cmds, auth_errors);
@@ -3273,7 +3252,7 @@ static bool authenticated(conn *c) {
     }
 
     if (settings.verbose > 1) {
-        settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
+        mc_logger->log(EXTENSION_LOG_DEBUG, c,
                 "%d: authenticated() in cmd 0x%02x is %s\n",
                 c->sfd, c->cmd, rv ? "true" : "false");
     }
@@ -5551,9 +5530,8 @@ static bool binary_response_handler(const void *key, uint16_t keylen,
     size_t needed = keylen + extlen + bodylen + sizeof(protocol_binary_response_header);
     if (!grow_dynamic_buffer(c, needed)) {
         if (settings.verbose > 0) {
-            settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                    "<%d ERROR: Failed to allocate memory for response\n",
-                    c->sfd);
+            mc_logger->log(EXTENSION_LOG_INFO, c,
+                    "<%d ERROR: Failed to allocate memory for response\n", c->sfd);
         }
         return false;
     }
@@ -5620,8 +5598,8 @@ static void ship_tap_log(conn *c) {
     c->iovused = 0;
     if (add_msghdr(c) != 0) {
         if (settings.verbose) {
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
-                                            "%d: Failed to create output headers. Shutting down tap connection\n", c->sfd);
+            mc_logger->log(EXTENSION_LOG_WARNING, c,
+                "%d: Failed to create output headers. Shutting down tap connection\n", c->sfd);
         }
         conn_set_state(c, conn_closing);
         return ;
@@ -5688,8 +5666,8 @@ static void ship_tap_log(conn *c) {
         case TAP_MUTATION:
             if (!settings.engine.v1->get_item_info(settings.engine.v0, c, it, &info)) {
                 settings.engine.v1->release(settings.engine.v0, c, it);
-                settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
-                                                "%d: Failed to get item info\n", c->sfd);
+                mc_logger->log(EXTENSION_LOG_WARNING, c,
+                               "%d: Failed to get item info\n", c->sfd);
                 break;
             }
             send_data = true;
@@ -5737,8 +5715,8 @@ static void ship_tap_log(conn *c) {
             /* This is a delete */
             if (!settings.engine.v1->get_item_info(settings.engine.v0, c, it, &info)) {
                 settings.engine.v1->release(settings.engine.v0, c, it);
-                settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
-                                                "%d: Failed to get item info\n", c->sfd);
+                mc_logger->log(EXTENSION_LOG_WARNING, c,
+                               "%d: Failed to get item info\n", c->sfd);
                 break;
             }
             send_data = true;
@@ -5816,9 +5794,8 @@ static void ship_tap_log(conn *c) {
         } else {
             /* No more items to ship to the slave at this time.. suspend.. */
             if (settings.verbose > 1) {
-                settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                                "%d: No more items in tap log.. waiting\n",
-                                                c->sfd);
+                mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                        "%d: No more items in tap log.. waiting\n", c->sfd);
             }
             c->ewouldblock = true;
         }
@@ -5870,9 +5847,8 @@ static void process_bin_tap_connect(conn *c) {
         if (flags & TAP_CONNECT_FLAG_BACKFILL) {
             /* the userdata has to be at least 8 bytes! */
             if (ndata < 8) {
-                settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
-                                                "%d: ERROR: Invalid tap connect message\n",
-                                                c->sfd);
+                mc_logger->log(EXTENSION_LOG_WARNING, c,
+                        "%d: ERROR: Invalid tap connect message\n", c->sfd);
                 conn_set_state(c, conn_closing);
                 return ;
             }
@@ -5890,9 +5866,9 @@ static void process_bin_tap_connect(conn *c) {
         }
         memcpy(buffer, key, len);
         buffer[len] = '\0';
-        settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                        "%d: Trying to connect with named tap connection: <%s>\n",
-                                        c->sfd, buffer);
+        mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                "%d: Trying to connect with named tap connection: <%s>\n",
+                c->sfd, buffer);
     }
 
     TAP_ITERATOR iterator = settings.engine.v1->get_tap_iterator(
@@ -5900,9 +5876,8 @@ static void process_bin_tap_connect(conn *c) {
         flags, data, ndata);
 
     if (iterator == NULL) {
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
-                                        "%d: FATAL: The engine does not support tap\n",
-                                        c->sfd);
+        mc_logger->log(EXTENSION_LOG_WARNING, c,
+                "%d: FATAL: The engine does not support tap\n", c->sfd);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
         c->write_and_go = conn_closing;
     } else {
@@ -6447,8 +6422,7 @@ static void process_bin_update(conn *c) {
         if (nw != -1) {
             if (snprintf(buffer + nw, sizeof(buffer) - nw,
                          " Value len is %d\n", vlen)) {
-                settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c, "%s",
-                                                buffer);
+                mc_logger->log(EXTENSION_LOG_DEBUG, c, "%s", buffer);
             }
         }
     }
@@ -6621,9 +6595,8 @@ static void process_bin_flush(conn *c) {
     }
 
     if (settings.verbose > 1) {
-        settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                        "%d: flush %ld", c->sfd,
-                                        (long)exptime);
+        mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                       "%d: flush %ld", c->sfd, (long)exptime);
     }
 
     ENGINE_ERROR_CODE ret;
@@ -6654,7 +6627,7 @@ static void process_bin_flush_prefix(conn *c) {
     if (settings.verbose > 1) {
         char buffer[1024];
         if (key_to_printable_buffer(buffer, sizeof(buffer), c->sfd, true, "FLUSH_PREFIX", prefix, nprefix) != -1) {
-            settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c, "%s %ld\n", buffer, (long)exptime);
+            mc_logger->log(EXTENSION_LOG_DEBUG, c, "%s %ld\n", buffer, (long)exptime);
         }
     }
 
@@ -6715,8 +6688,7 @@ static void process_bin_delete(conn *c) {
         char buffer[1024];
         if (key_to_printable_buffer(buffer, sizeof(buffer), c->sfd, true,
                                     "DELETE", key, nkey) != -1) {
-            settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c, "%s\n",
-                                            buffer);
+            mc_logger->log(EXTENSION_LOG_DEBUG, c, "%s\n", buffer);
         }
     }
 
@@ -6867,8 +6839,8 @@ static void complete_nread_binary(conn *c) {
             if (handler) {
                 handler(c);
             } else {
-                settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                       "%d: ERROR: Unsupported response packet received: %u\n",
+                mc_logger->log(EXTENSION_LOG_INFO, c,
+                        "%d: ERROR: Unsupported response packet received: %u\n",
                         c->sfd, (unsigned int)c->binary_header.request.opcode);
                 conn_set_state(c, conn_closing);
             }
@@ -6880,7 +6852,7 @@ static void complete_nread_binary(conn *c) {
 #endif
         break;
     default:
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
+        mc_logger->log(EXTENSION_LOG_WARNING, c,
                 "Not handling substate %d\n", c->substate);
         abort();
     }
@@ -6912,9 +6884,8 @@ static bool ascii_response_handler(const void *cookie,
     conn *c = (conn*)cookie;
     if (!grow_dynamic_buffer(c, nbytes)) {
         if (settings.verbose > 0) {
-            settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                    "<%d ERROR: Failed to allocate memory for response\n",
-                    c->sfd);
+            mc_logger->log(EXTENSION_LOG_INFO, c,
+                    "<%d ERROR: Failed to allocate memory for response\n", c->sfd);
         }
         return false;
     }
@@ -7498,7 +7469,7 @@ static void process_stat_settings(ADD_STAT add_stats, void *c) {
         APPEND_STAT("extension", "%s", ptr->get_name());
     }
 
-    APPEND_STAT("logger", "%s", settings.extensions.logger->get_name());
+    APPEND_STAT("logger", "%s", mc_logger->get_name());
 
     for (EXTENSION_ASCII_PROTOCOL_DESCRIPTOR *ptr = settings.extensions.ascii;
          ptr != NULL;
@@ -7662,7 +7633,7 @@ static char *get_suffix_buffer(conn *c) {
             c->suffixlist = new_suffix_list;
         } else {
             if (settings.verbose > 1) {
-                settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
+                mc_logger->log(EXTENSION_LOG_DEBUG, c,
                         "=%d Failed to resize suffix buffer\n", c->sfd);
             }
 
@@ -7787,9 +7758,8 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
 
 
                 if (settings.verbose > 1) {
-                    settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                                    ">%d sending key %s\n",
-                                                    c->sfd, (char*)info.key);
+                    mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                            ">%d sending key %s\n", c->sfd, (char*)info.key);
                 }
 
                 /* item_get() has incremented it->refcount for us */
@@ -7821,8 +7791,8 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
     c->suffixcurr = c->suffixlist;
 
     if (settings.verbose > 1) {
-        settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                        ">%d END\n", c->sfd);
+        mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                       ">%d END\n", c->sfd);
     }
 
     /*
@@ -11159,8 +11129,8 @@ static void process_command(conn *c, char *command)
     MEMCACHED_PROCESS_COMMAND_START(c->sfd, c->rcurr, c->rbytes);
 
     if (settings.verbose > 1) {
-        settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                        "<%d %s\n", c->sfd, command);
+        mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                       "<%d %s\n", c->sfd, command);
     }
 
     /*
@@ -11300,7 +11270,7 @@ static int try_read_command(conn *c) {
         }
 
         if (settings.verbose > 1) {
-            settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
+            mc_logger->log(EXTENSION_LOG_DEBUG, c,
                     "%d: Client using the %s protocol\n", c->sfd,
                     prot_text(c->protocol));
         }
@@ -11318,8 +11288,8 @@ static int try_read_command(conn *c) {
                 memmove(c->rbuf, c->rcurr, c->rbytes);
                 c->rcurr = c->rbuf;
                 if (settings.verbose > 1) {
-                    settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                             "%d: Realign input buffer\n", c->sfd);
+                    mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                            "%d: Realign input buffer\n", c->sfd);
                 }
             }
 #endif
@@ -11335,8 +11305,7 @@ static int try_read_command(conn *c) {
                                             (const char*)req->bytes,
                                             sizeof(req->bytes));
                 if (nw != -1) {
-                    settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                                                    "%s", buffer);
+                    mc_logger->log(EXTENSION_LOG_DEBUG, c, "%s", buffer);
                 }
             }
 
@@ -11357,14 +11326,13 @@ static int try_read_command(conn *c) {
             {
                 if (settings.verbose) {
                     if (c->binary_header.request.magic != PROTOCOL_BINARY_RES) {
-                        settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                              "%d: Invalid magic:  %x\n", c->sfd,
-                              c->binary_header.request.magic);
+                        mc_logger->log(EXTENSION_LOG_INFO, c,
+                                "%d: Invalid magic:  %x\n", c->sfd,
+                                c->binary_header.request.magic);
                     } else {
-                        settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                              "%d: ERROR: Unsupported response packet received: %u\n",
-                              c->sfd, (unsigned int)c->binary_header.request.opcode);
-
+                        mc_logger->log(EXTENSION_LOG_INFO, c,
+                                "%d: ERROR: Unsupported response packet received: %u\n",
+                                c->sfd, (unsigned int)c->binary_header.request.opcode);
                     }
                 }
                 conn_set_state(c, conn_closing);
@@ -11505,8 +11473,8 @@ static enum try_read_result try_read_network(conn *c) {
             char *new_rbuf = realloc(c->rbuf, c->rsize * 2);
             if (!new_rbuf) {
                 if (settings.verbose > 0) {
-                 settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                          "Couldn't realloc input buffer\n");
+                 mc_logger->log(EXTENSION_LOG_INFO, c,
+                         "Couldn't realloc input buffer\n");
                 }
                 c->rbytes = 0; /* ignore what we read */
                 out_string(c, "SERVER_ERROR out of memory reading request");
@@ -11549,10 +11517,10 @@ static bool update_event(conn *c, const int new_flags) {
     if (c->ev_flags == new_flags)
         return true;
 
-    settings.extensions.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                                    "Updated event for %d to read=%s, write=%s\n",
-                                    c->sfd, (new_flags & EV_READ ? "yes" : "no"),
-                                    (new_flags & EV_WRITE ? "yes" : "no"));
+    mc_logger->log(EXTENSION_LOG_DEBUG, NULL,
+                   "Updated event for %d to read=%s, write=%s\n",
+                   c->sfd, (new_flags & EV_READ ? "yes" : "no"),
+                   (new_flags & EV_WRITE ? "yes" : "no"));
 
     if (event_del(&c->event) == -1) return false;
     event_set(&c->event, c->sfd, new_flags, event_handler, (void *)c);
@@ -11606,8 +11574,8 @@ static enum transmit_result transmit(conn *c) {
         if (res == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
             if (!update_event(c, EV_WRITE | EV_PERSIST)) {
                 if (settings.verbose > 0) {
-                    settings.extensions.logger->log(EXTENSION_LOG_DEBUG, c,
-                            "Couldn't update event\n");
+                    mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                                   "Couldn't update event\n");
                 }
                 conn_set_state(c, conn_closing);
                 return TRANSMIT_HARD_ERROR;
@@ -11638,13 +11606,12 @@ bool conn_listening(conn *c)
     if ((sfd = accept(c->sfd, (struct sockaddr *)&addr, &addrlen)) == -1) {
         if (errno == EMFILE) {
             if (settings.verbose > 0) {
-                settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                                                "Too many open connections\n");
+                mc_logger->log(EXTENSION_LOG_INFO, c,
+                               "Too many open connections\n");
             }
         } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
-                                            "Failed to accept new client: %s\n",
-                                            strerror(errno));
+            mc_logger->log(EXTENSION_LOG_WARNING, c,
+                    "Failed to accept new client: %s\n", strerror(errno));
 
         }
         return false;
@@ -11666,8 +11633,8 @@ bool conn_listening(conn *c)
             STATS_UNLOCK();
 
             if (settings.verbose > 0) {
-                settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                                                "Too many open connections (maxconns)\n");
+                mc_logger->log(EXTENSION_LOG_INFO, c,
+                               "Too many open connections (maxconns)\n");
             }
             safe_close(sfd);
             return false;
@@ -11676,9 +11643,8 @@ bool conn_listening(conn *c)
 
     if ((flags = fcntl(sfd, F_GETFL, 0)) < 0 ||
         fcntl(sfd, F_SETFL, flags | O_NONBLOCK) < 0) {
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
-                                        "Failed to set nonblocking io: %s\n",
-                                        strerror(errno));
+        mc_logger->log(EXTENSION_LOG_WARNING, c,
+                "Failed to set nonblocking io: %s\n", strerror(errno));
         safe_close(sfd);
         return false;
     }
@@ -11740,8 +11706,8 @@ bool conn_ship_log(conn *c) {
 
     if (!update_event(c, mask)) {
         if (settings.verbose > 0) {
-            settings.extensions.logger->log(EXTENSION_LOG_INFO,
-                                            c, "Couldn't update event\n");
+            mc_logger->log(EXTENSION_LOG_INFO, c,
+                           "Couldn't update event\n");
         }
         conn_set_state(c, conn_closing);
     }
@@ -11753,8 +11719,8 @@ bool conn_ship_log(conn *c) {
 bool conn_waiting(conn *c) {
     if (!update_event(c, EV_READ | EV_PERSIST)) {
         if (settings.verbose > 0) {
-            settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                                            "Couldn't update event\n");
+            mc_logger->log(EXTENSION_LOG_INFO, c,
+                           "Couldn't update event\n");
         }
         conn_set_state(c, conn_closing);
         return true;
@@ -11808,8 +11774,8 @@ bool conn_new_cmd(conn *c) {
             */
             if (!update_event(c, EV_WRITE | EV_PERSIST)) {
                 if (settings.verbose > 0) {
-                    settings.extensions.logger->log(EXTENSION_LOG_INFO,
-                                                    c, "Couldn't update event\n");
+                    mc_logger->log(EXTENSION_LOG_INFO, c,
+                                   "Couldn't update event\n");
                 }
                 conn_set_state(c, conn_closing);
                 return true;
@@ -11853,8 +11819,8 @@ bool conn_swallow(conn *c) {
     if (res == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
         if (!update_event(c, EV_READ | EV_PERSIST)) {
             if (settings.verbose > 0) {
-                settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                                                "Couldn't update event\n");
+                mc_logger->log(EXTENSION_LOG_INFO, c,
+                               "Couldn't update event\n");
             }
             conn_set_state(c, conn_closing);
             return true;
@@ -11864,8 +11830,8 @@ bool conn_swallow(conn *c) {
 
     if (errno != ENOTCONN && errno != ECONNRESET) {
         /* otherwise we have a real error, on which we close the connection */
-        settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                                        "Failed to read, and not due to blocking (%s)\n", strerror(errno));
+        mc_logger->log(EXTENSION_LOG_INFO, c,
+                "Failed to read, and not due to blocking (%s)\n", strerror(errno));
     }
 
     conn_set_state(c, conn_closing);
@@ -11928,8 +11894,8 @@ bool conn_nread(conn *c) {
     if (res == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
         if (!update_event(c, EV_READ | EV_PERSIST)) {
             if (settings.verbose > 0) {
-                settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                                                "Couldn't update event\n");
+                mc_logger->log(EXTENSION_LOG_INFO, c,
+                               "Couldn't update event\n");
             }
             conn_set_state(c, conn_closing);
             return true;
@@ -11939,13 +11905,13 @@ bool conn_nread(conn *c) {
 
     if (errno != ENOTCONN && errno != ECONNRESET) {
         /* otherwise we have a real error, on which we close the connection */
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
-                                        "Failed to read, and not due to blocking:\n"
-                                        "errno: %d %s \n"
-                                        "rcurr=%lx ritem=%lx rbuf=%lx rlbytes=%d rsize=%d\n",
-                                        errno, strerror(errno),
-                                        (long)c->rcurr, (long)c->ritem, (long)c->rbuf,
-                                        (int)c->rlbytes, (int)c->rsize);
+        mc_logger->log(EXTENSION_LOG_WARNING, c,
+                       "Failed to read, and not due to blocking:\n"
+                       "errno: %d %s \n"
+                       "rcurr=%lx ritem=%lx rbuf=%lx rlbytes=%d rsize=%d\n",
+                       errno, strerror(errno),
+                       (long)c->rcurr, (long)c->ritem, (long)c->rbuf,
+                       (int)c->rlbytes, (int)c->rsize);
     }
     conn_set_state(c, conn_closing);
     return true;
@@ -11960,8 +11926,8 @@ bool conn_write(conn *c) {
     if (c->iovused == 0 || (IS_UDP(c->transport) && c->iovused == 1)) {
         if (add_iov(c, c->wcurr, c->wbytes) != 0) {
             if (settings.verbose > 0) {
-                settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                                                "Couldn't build response\n");
+                mc_logger->log(EXTENSION_LOG_INFO, c,
+                               "Couldn't build response\n");
             }
             conn_set_state(c, conn_closing);
             return true;
@@ -11974,8 +11940,8 @@ bool conn_write(conn *c) {
 bool conn_mwrite(conn *c) {
     if (IS_UDP(c->transport) && c->msgcurr == 0 && build_udp_headers(c) != 0) {
         if (settings.verbose > 0) {
-            settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                                            "Failed to build UDP headers\n");
+            mc_logger->log(EXTENSION_LOG_INFO, c,
+                           "Failed to build UDP headers\n");
         }
         conn_set_state(c, conn_closing);
         return true;
@@ -12013,8 +11979,8 @@ bool conn_mwrite(conn *c) {
             conn_set_state(c, c->write_and_go);
         } else {
             if (settings.verbose > 0) {
-                settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
-                                                "Unexpected state %p\n", (void*)((uintptr_t)c->state));
+                mc_logger->log(EXTENSION_LOG_INFO, c,
+                        "Unexpected state %p\n", (void*)((uintptr_t)c->state));
                 /* No standard way of printing a function pointer... */
             }
             conn_set_state(c, conn_closing);
@@ -12036,10 +12002,10 @@ bool conn_mwrite(conn *c) {
 bool conn_pending_close(conn *c) {
     assert(!c->pending_close.active);
     assert(c->sfd != -1);
-    settings.extensions.logger->log(EXTENSION_LOG_WARNING, c,
-                                    "Tap client connect closed (%d)."
-                                    " Putting it (%p) in pending close\n",
-                                    c->sfd, (void*)c);
+    mc_logger->log(EXTENSION_LOG_WARNING, c,
+                   "Tap client connect closed (%d)."
+                   " Putting it (%p) in pending close\n",
+                   c->sfd, (void*)c);
     LOCK_THREAD(c->thread);
     c->pending_close.timeout = current_time + 5;
     c->pending_close.active = true;
@@ -12105,9 +12071,9 @@ bool conn_add_tap_client(conn *c) {
     LOCK_THREAD(tp);
     c->ev_flags = 0;
     conn_set_state(c, conn_setup_tap_stream);
-    settings.extensions.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                                    "Moving %d conn from %p to %p\n",
-                                    c->sfd, (void*)c->thread, (void*)tp);
+    mc_logger->log(EXTENSION_LOG_DEBUG, NULL,
+                   "Moving %d conn from %p to %p\n",
+                   c->sfd, (void*)c->thread, (void*)tp);
     c->thread = tp;
     c->event.ev_base = tp->base;
     assert(c->next == NULL);
@@ -12148,7 +12114,7 @@ void event_handler(const int fd, const short which, void *arg) {
     /* sanity */
     if (fd != c->sfd) {
         if (settings.verbose > 0) {
-            settings.extensions.logger->log(EXTENSION_LOG_INFO, c,
+            mc_logger->log(EXTENSION_LOG_INFO, c,
                     "Catastrophic: event fd doesn't match conn fd!\n");
         }
         conn_close(c);
@@ -12191,9 +12157,8 @@ void event_handler(const int fd, const short which, void *arg) {
         for (size_t i = 0; i < n_pending_close; ++i) {
             conn *ce = pending_close[i];
             if (ce->pending_close.timeout < current_time) {
-                settings.extensions.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                                                "OK, time to nuke: %p: (%d)\n", (void*)ce,
-                                                ce->sfd);
+                mc_logger->log(EXTENSION_LOG_DEBUG, NULL,
+                        "OK, time to nuke: %p: (%d)\n", (void*)ce, ce->sfd);
                 conn_close(ce);
             } else {
                 LOCK_THREAD(ce->thread);
@@ -12255,8 +12220,8 @@ static void maximize_sndbuf(const int sfd) {
     }
 
     if (settings.verbose > 1) {
-        settings.extensions.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                 "<%d send buffer was %d, now %d\n", sfd, old_size, last_good);
+        mc_logger->log(EXTENSION_LOG_DEBUG, NULL,
+                "<%d send buffer was %d, now %d\n", sfd, old_size, last_good);
     }
 }
 
@@ -12292,11 +12257,11 @@ static int server_socket(int port, enum network_transport transport,
     error= getaddrinfo(settings.inter, port_buf, &hints, &ai);
     if (error != 0) {
         if (error != EAI_SYSTEM) {
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
-                     "getaddrinfo(): %s\n", gai_strerror(error));
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "getaddrinfo(): %s\n", gai_strerror(error));
         } else {
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
-                     "getaddrinfo(): %s\n", strerror(error));
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "getaddrinfo(): %s\n", strerror(error));
         }
         return 1;
     }
@@ -12392,7 +12357,7 @@ static int server_socket(int port, enum network_transport transport,
             if (!(listen_conn_add = conn_new(sfd, conn_listening,
                                              EV_READ | EV_PERSIST, 1,
                                              transport, main_base, NULL))) {
-                settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                         "failed to create listening connection\n");
                 exit(EXIT_FAILURE);
             }
@@ -12482,8 +12447,8 @@ static int server_socket_unix(const char *path, int access_mask) {
     if (!(listen_conn = conn_new(sfd, conn_listening,
                                  EV_READ | EV_PERSIST, 1,
                                  local_transport, main_base, NULL))) {
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
-                 "failed to create listening connection\n");
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "failed to create listening connection\n");
         exit(EXIT_FAILURE);
     }
 
@@ -12666,15 +12631,15 @@ static void save_pid(const pid_t pid, const char *pid_file) {
     }
 
     if ((fp = fopen(pid_file, "w")) == NULL) {
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
-                 "Could not open the pid file %s for writing: %s\n",
-                 pid_file, strerror(errno));
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Could not open the pid file %s for writing: %s\n",
+                pid_file, strerror(errno));
         return;
     }
 
     fprintf(fp,"%ld\n", (long)pid);
     if (fclose(fp) == -1) {
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Could not close the pid file %s: %s\n",
                 pid_file, strerror(errno));
     }
@@ -12683,7 +12648,7 @@ static void save_pid(const pid_t pid, const char *pid_file) {
 static void remove_pidfile(const char *pid_file) {
     if (pid_file != NULL) {
         if (unlink(pid_file) != 0) {
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Could not remove the pid file %s: %s\n",
                     pid_file, strerror(errno));
         }
@@ -12750,16 +12715,16 @@ static int enable_large_pages(void) {
         arg.mha_cmd = MHA_MAPSIZE_BSSBRK;
 
         if (memcntl(0, 0, MC_HAT_ADVISE, (caddr_t)&arg, 0, 0) == -1) {
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
-                  "Failed to set large pages: %s\nWill use default page size\n",
-                  strerror(errno));
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to set large pages: %s\nWill use default page size\n",
+                    strerror(errno));
         } else {
             ret = 0;
         }
     } else {
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
-          "Failed to get supported pagesizes: %s\nWill use default page size\n",
-          strerror(errno));
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Failed to get supported pagesizes: %s\nWill use default page size\n",
+            strerror(errno));
     }
 
     return ret;
@@ -12982,6 +12947,7 @@ static bool register_extension(extension_type_t type, void *extension)
         return true;
     case EXTENSION_LOGGER:
         settings.extensions.logger = extension;
+        mc_logger = settings.extensions.logger;
         return true;
     case EXTENSION_ASCII_PROTOCOL:
         if (settings.extensions.ascii != NULL) {
@@ -13043,6 +13009,7 @@ static void unregister_extension(extension_type_t type, void *extension)
             } else {
                 settings.extensions.logger = get_stderr_logger();
             }
+            mc_logger = settings.extensions.logger;
         }
         break;
     case EXTENSION_ASCII_PROTOCOL:
@@ -13236,7 +13203,7 @@ static bool load_extension(const char *soname, const char *config) {
     void *handle = dlopen(soname, RTLD_NOW | RTLD_LOCAL);
     if (handle == NULL) {
         const char *msg = dlerror();
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Failed to open library \"%s\": %s\n",
                 soname, msg ? msg : "unknown error");
         return false;
@@ -13245,7 +13212,7 @@ static bool load_extension(const char *soname, const char *config) {
     void *symbol = dlsym(handle, "memcached_extensions_initialize");
     if (symbol == NULL) {
         const char *msg = dlerror();
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Could not find symbol \"memcached_extensions_initialize\" in %s: %s\n",
                 soname, msg ? msg : "unknown error");
         return false;
@@ -13255,7 +13222,7 @@ static bool load_extension(const char *soname, const char *config) {
     EXTENSION_ERROR_CODE error = (*funky.initialize)(config, get_server_api);
 
     if (error != EXTENSION_SUCCESS) {
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Failed to initalize extensions from %s. Error code: %d\n",
                 soname, error);
         dlclose(handle);
@@ -13263,7 +13230,7 @@ static bool load_extension(const char *soname, const char *config) {
     }
 
     if (settings.verbose > 0) {
-        settings.extensions.logger->log(EXTENSION_LOG_INFO, NULL,
+        mc_logger->log(EXTENSION_LOG_INFO, NULL,
                 "Loaded extensions from: %s\n", soname);
     }
 
@@ -13324,6 +13291,9 @@ int main (int argc, char **argv) {
 
     /* init settings */
     settings_init();
+
+    /* memcached logger */
+    mc_logger = settings.extensions.logger;
 
     if (memcached_initialize_stderr_logger(get_server_api) != EXTENSION_SUCCESS) {
         fprintf(stderr, "Failed to initialize log system\n");
@@ -13403,8 +13373,8 @@ int main (int argc, char **argv) {
         case 'g':
             settings.sticky_ratio = atoi(optarg);
             if (settings.sticky_ratio < 0 || settings.sticky_ratio > 100) {
-                settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
-                      "The value of sticky(gummed) item ratio must be between 0 and 100.\n");
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "The value of sticky(gummed) item ratio must be between 0 and 100.\n");
                 return 1;
             }
             break;
@@ -13418,8 +13388,8 @@ int main (int argc, char **argv) {
                 old_opts += sprintf(old_opts, "junk_item_time=%u;",
                                     settings.junk_item_time);
             } else {
-                settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
-                      "Junk item time must be 0 or be between 10800(3 hours) and 2592000(30 days).\n");
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Junk item time must be 0 or be between 10800(3 hours) and 2592000(30 days).\n");
                 return 1;
             }
             break;
@@ -13452,8 +13422,8 @@ int main (int argc, char **argv) {
         case 'R':
             settings.reqs_per_event = atoi(optarg);
             if (settings.reqs_per_event == 0) {
-                settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
-                      "Number of requests per event must be greater than 0\n");
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Number of requests per event must be greater than 0\n");
                 return 1;
             }
             break;
@@ -13466,7 +13436,7 @@ int main (int argc, char **argv) {
         case 'f':
             settings.factor = atof(optarg);
             if (settings.factor <= 1.0) {
-                settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Factor must be greater than 1\n");
                 return 1;
             }
@@ -13475,7 +13445,7 @@ int main (int argc, char **argv) {
         case 'n':
             settings.chunk_size = atoi(optarg);
             if (settings.chunk_size == 0) {
-                settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Chunk size must be greater than 0\n");
                 return 1;
             }
@@ -13484,7 +13454,7 @@ int main (int argc, char **argv) {
         case 't':
             settings.num_threads = atoi(optarg);
             if (settings.num_threads <= 0) {
-                settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Number of threads must be greater than 0\n");
                 return 1;
             }
@@ -13493,7 +13463,7 @@ int main (int argc, char **argv) {
              * default.
              */
             if (settings.num_threads > 64) {
-                settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                         "WARNING: Setting a high number of worker"
                         "threads is not recommended.\n"
                         " Set this value to the number of cores in"
@@ -13527,7 +13497,7 @@ int main (int argc, char **argv) {
             } else if (strcmp(optarg, "ascii") == 0) {
                 settings.binding_protocol = ascii_prot;
             } else {
-                settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Invalid value for binding protocol: %s\n"
                         " -- should be one of auto, binary, or ascii\n", optarg);
                 exit(EX_USAGE);
@@ -13550,17 +13520,17 @@ int main (int argc, char **argv) {
             /* small memory allocator needs the maximum item size larger than 20 KB */
             //if (settings.item_size_max < 1024) {
             if (settings.item_size_max < 1024 * 20) {
-                settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Item max size cannot be less than 20KB.\n");
                 return 1;
             }
             if (settings.item_size_max > 1024 * 1024 * 128) {
-                settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Cannot set item size limit higher than 128 mb.\n");
                 return 1;
             }
             if (settings.item_size_max > 1024 * 1024) {
-                settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "WARNING: Setting item max size above 1MB is not"
                     " recommended!\n"
                     " Raising this limit increases the minimum memory requirements\n"
@@ -13586,7 +13556,7 @@ int main (int argc, char **argv) {
             break;
         case 'S': /* set Sasl authentication to true. Default is false */
 #ifndef SASL_ENABLED
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "This server is not built with SASL support.\n");
             exit(EX_USAGE);
 #endif
@@ -13623,7 +13593,7 @@ int main (int argc, char **argv) {
 #endif
 
         default:
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Illegal argument \"%c\"\n", c);
             return 1;
         }
@@ -13656,8 +13626,8 @@ int main (int argc, char **argv) {
 
 
     if (install_sigterm_handler() != 0) {
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
-                                        "Failed to install SIGTERM handler\n");
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                       "Failed to install SIGTERM handler\n");
         exit(EXIT_FAILURE);
     }
 
@@ -13674,12 +13644,12 @@ int main (int argc, char **argv) {
             settings.binding_protocol = binary_prot;
         } else {
             if (settings.binding_protocol == negotiating_prot) {
-                settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                         "ERROR: You cannot use auto-negotiating protocol while requiring SASL.\n");
                 exit(EX_USAGE);
             }
             if (settings.binding_protocol == ascii_prot) {
-                settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                         "ERROR: You cannot use only ASCII protocol while requiring SASL.\n");
                 exit(EX_USAGE);
             }
@@ -13701,7 +13671,7 @@ int main (int argc, char **argv) {
             if (value > MAX_LIST_SIZE && value <= ARCUS_COLL_SIZE_LIMIT)
                 MAX_LIST_SIZE = value;
             else {
-                settings.extensions.logger->log(EXTENSION_LOG_INFO, NULL,
+                mc_logger->log(EXTENSION_LOG_INFO, NULL,
                         "ARCUS_MAX_LIST_SIZE incorrect value: %d, (Allowable values: %d ~ %d)\n",
                          value, MAX_LIST_SIZE, ARCUS_COLL_SIZE_LIMIT);
             }
@@ -13712,7 +13682,7 @@ int main (int argc, char **argv) {
             if (value > MAX_SET_SIZE && value <= ARCUS_COLL_SIZE_LIMIT)
                 MAX_SET_SIZE = value;
             else {
-                settings.extensions.logger->log(EXTENSION_LOG_INFO, NULL,
+                mc_logger->log(EXTENSION_LOG_INFO, NULL,
                         "ARCUS_MAX_SET_SIZE incorrect value: %d, (Allowable values: %d ~ %d)\n",
                          value, MAX_SET_SIZE, ARCUS_COLL_SIZE_LIMIT);
             }
@@ -13723,7 +13693,7 @@ int main (int argc, char **argv) {
             if (value > MAX_BTREE_SIZE && value <= ARCUS_COLL_SIZE_LIMIT)
                 MAX_BTREE_SIZE = value;
             else {
-                settings.extensions.logger->log(EXTENSION_LOG_INFO, NULL,
+                mc_logger->log(EXTENSION_LOG_INFO, NULL,
                         "ARCUS_MAX_BTREE_SIZE incorrect value: %d, (Allowable values: %d ~ %d)\n",
                          value, MAX_BTREE_SIZE, ARCUS_COLL_SIZE_LIMIT);
             }
@@ -13734,14 +13704,14 @@ int main (int argc, char **argv) {
     }
 
     if (engine_config != NULL && strlen(old_options) > 0) {
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                 "ERROR: You can't mix -e with the old options\n");
         return EX_USAGE;
     } else if (engine_config == NULL && strlen(old_options) > 0) {
         engine_config = old_options;
     }
-    settings.extensions.logger->log(EXTENSION_LOG_INFO, NULL,
-                                    "engine config: %s\n", engine_config);
+    mc_logger->log(EXTENSION_LOG_INFO, NULL,
+                   "engine config: %s\n", engine_config);
 
     if (maxcore != 0) {
         struct rlimit rlim_new;
@@ -13764,7 +13734,7 @@ int main (int argc, char **argv) {
          */
 
         if ((getrlimit(RLIMIT_CORE, &rlim) != 0) || rlim.rlim_cur == 0) {
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "failed to ensure corefile creation\n");
             exit(EX_OSERR);
         }
@@ -13776,7 +13746,7 @@ int main (int argc, char **argv) {
      */
 
     if (getrlimit(RLIMIT_NOFILE, &rlim) != 0) {
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                 "failed to getrlimit number of files\n");
         exit(EX_OSERR);
     } else {
@@ -13786,7 +13756,7 @@ int main (int argc, char **argv) {
         if (rlim.rlim_max < rlim.rlim_cur)
             rlim.rlim_max = rlim.rlim_cur;
         if (setrlimit(RLIMIT_NOFILE, &rlim) != 0) {
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "failed to set rlimit for open files. Try running as"
                     " root or requesting smaller maxconns value.\n");
             exit(EX_OSERR);
@@ -13803,7 +13773,7 @@ int main (int argc, char **argv) {
     }
 
     if (settings.maxconns <= nfiles) {
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Configuratioin error. \n"
                 "You specified %d connections, but the system will use at "
                 "least %d\nconnection structures to start.\n",
@@ -13814,17 +13784,17 @@ int main (int argc, char **argv) {
     /* lose root privileges if we have them */
     if (getuid() == 0 || geteuid() == 0) {
         if (username == 0 || *username == '\0') {
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "can't run as root without the -u switch\n");
             exit(EX_USAGE);
         }
         if ((pw = getpwnam(username)) == 0) {
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "can't find the user %s to switch to\n", username);
             exit(EX_NOUSER);
         }
         if (setgid(pw->pw_gid) < 0 || setuid(pw->pw_uid) < 0) {
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "failed to assume identity of user %s: %s\n", username,
                     strerror(errno));
             exit(EX_OSERR);
@@ -13839,11 +13809,11 @@ int main (int argc, char **argv) {
     /* if we want to ensure our ability to dump core, don't chdir to / */
     if (do_daemonize) {
         if (sigignore(SIGHUP) == -1) {
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to ignore SIGHUP: %s", strerror(errno));
         }
         if (daemonize(maxcore, settings.verbose) == -1) {
-             settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "failed to daemon() in order to daemonize\n");
             exit(EXIT_FAILURE);
         }
@@ -13854,12 +13824,12 @@ int main (int argc, char **argv) {
 #ifdef HAVE_MLOCKALL
         int res = mlockall(MCL_CURRENT | MCL_FUTURE);
         if (res != 0) {
-            settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "warning: -k invalid, mlockall() failed: %s\n",
                     strerror(errno));
         }
 #else
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                 "warning: -k invalid, mlockall() not supported on this platform.  proceeding without.\n");
 #endif
     }
@@ -13869,17 +13839,17 @@ int main (int argc, char **argv) {
 
     /* Load the storage engine */
     ENGINE_HANDLE *engine_handle = NULL;
-    if (!load_engine(engine,get_server_api,settings.extensions.logger,&engine_handle)) {
+    if (!load_engine(engine, get_server_api, mc_logger, &engine_handle)) {
         /* Error already reported */
         exit(EXIT_FAILURE);
     }
 
-    if(!init_engine(engine_handle,engine_config,settings.extensions.logger)) {
+    if (!init_engine(engine_handle, engine_config, mc_logger)) {
         return false;
     }
 
-    if(settings.verbose > 0) {
-        log_engine_details(engine_handle,settings.extensions.logger);
+    if (settings.verbose > 0) {
+        log_engine_details(engine_handle, mc_logger);
     }
     settings.engine.v1 = (ENGINE_HANDLE_V1 *) engine_handle;
 #if 0 // not used code
@@ -13892,7 +13862,7 @@ int main (int argc, char **argv) {
 
     if (!(conn_cache = cache_create("conn", sizeof(conn), sizeof(void*),
                                     conn_constructor, conn_destructor))) {
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Failed to create connection cache\n");
         exit(EXIT_FAILURE);
     }
@@ -13905,7 +13875,7 @@ int main (int argc, char **argv) {
      * need that information
      */
     if (sigignore(SIGPIPE) == -1) {
-        settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                 "failed to ignore SIGPIPE; sigaction");
         exit(EX_OSERR);
     }
@@ -13944,7 +13914,7 @@ int main (int argc, char **argv) {
 
             portnumber_file = fopen(temp_portnumber_filename, "a");
             if (portnumber_file == NULL) {
-                settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Failed to open \"%s\": %s\n",
                         temp_portnumber_filename, strerror(errno));
             }
@@ -13983,8 +13953,8 @@ int main (int argc, char **argv) {
 #ifdef ENABLE_ZK_INTEGRATION
     // initialize Arcus ZK cluster connection
     if (arcus_zk_cfg) {
-        arcus_zk_init ( arcus_zk_cfg, arcus_zk_to, settings.extensions.logger,
-                        settings.verbose, settings.maxbytes, settings.port);
+        arcus_zk_init(arcus_zk_cfg, arcus_zk_to, mc_logger,
+                      settings.verbose, settings.maxbytes, settings.port);
     }
 #endif
 
@@ -13992,7 +13962,7 @@ int main (int argc, char **argv) {
     event_base_loop(main_base, 0);
 
     if (settings.verbose) {
-        settings.extensions.logger->log(EXTENSION_LOG_INFO, NULL,
+        mc_logger->log(EXTENSION_LOG_INFO, NULL,
                                         "Initiating shutdown\n");
     }
     threads_shutdown();

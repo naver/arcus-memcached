@@ -403,6 +403,7 @@ struct engine_event_handler {
 
 extern struct stats stats;
 extern struct settings settings;
+extern EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
 
 enum thread_type {
     GENERAL = 11,
