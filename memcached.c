@@ -159,8 +159,8 @@ volatile sig_atomic_t memcached_shutdown;
 volatile rel_time_t current_time;
 
 /** exported globals **/
-struct stats stats;
 struct settings settings;
+struct mc_stats mc_stats;
 EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
 
 static union {
@@ -277,9 +277,9 @@ static rel_time_t realtime(const time_t exptime) {
 }
 
 static void stats_init(void) {
-    stats.daemon_conns = 0;
-    stats.rejected_conns = 0;
-    stats.curr_conns = stats.total_conns = stats.conn_structs = 0;
+    mc_stats.daemon_conns = 0;
+    mc_stats.rejected_conns = 0;
+    mc_stats.curr_conns = mc_stats.total_conns = mc_stats.conn_structs = 0;
 
     /* make the time we started always be 2 seconds before we really
        did, so time(0) - time.started is never zero.  if so, things
@@ -292,8 +292,8 @@ static void stats_init(void) {
 static void stats_reset(const void *cookie) {
     struct conn *conn = (struct conn*)cookie;
     STATS_LOCK();
-    stats.rejected_conns = 0;
-    stats.total_conns = 0;
+    mc_stats.rejected_conns = 0;
+    mc_stats.total_conns = 0;
     stats_prefix_clear();
     STATS_UNLOCK();
     threadlocal_stats_reset(get_independent_stats(conn)->thread_stats);
@@ -405,7 +405,7 @@ void safe_close(int sfd) {
                            (int)sfd, strerror(errno));
         } else {
             STATS_LOCK();
-            stats.curr_conns--;
+            mc_stats.curr_conns--;
             STATS_UNLOCK();
         }
     }
@@ -554,7 +554,7 @@ static int conn_constructor(void *buffer, void *unused1, int unused2) {
     }
 
     STATS_LOCK();
-    stats.conn_structs++;
+    mc_stats.conn_structs++;
     STATS_UNLOCK();
 
     return 0;
@@ -577,7 +577,7 @@ static void conn_destructor(void *buffer, void *unused) {
     free(c->msglist);
 
     STATS_LOCK();
-    stats.conn_structs--;
+    mc_stats.conn_structs--;
     STATS_UNLOCK();
 }
 
@@ -685,7 +685,7 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     }
 
     STATS_LOCK();
-    stats.total_conns++;
+    mc_stats.total_conns++;
     STATS_UNLOCK();
 
     c->aiostat = ENGINE_SUCCESS;
@@ -7244,10 +7244,10 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
                 (long)usage.ru_stime.tv_usec);
 #endif
 
-    APPEND_STAT("daemon_connections", "%u", stats.daemon_conns);
-    APPEND_STAT("curr_connections", "%u", stats.curr_conns);
-    APPEND_STAT("total_connections", "%u", stats.total_conns);
-    APPEND_STAT("connection_structures", "%u", stats.conn_structs);
+    APPEND_STAT("daemon_connections", "%u", mc_stats.daemon_conns);
+    APPEND_STAT("curr_connections", "%u", mc_stats.curr_conns);
+    APPEND_STAT("total_connections", "%u", mc_stats.total_conns);
+    APPEND_STAT("connection_structures", "%u", mc_stats.conn_structs);
     APPEND_STAT("cmd_get", "%"PRIu64, thread_stats.cmd_get);
     APPEND_STAT("cmd_set", "%"PRIu64, slab_stats.cmd_set);
     APPEND_STAT("cmd_flush", "%"PRIu64, thread_stats.cmd_flush);
@@ -7355,7 +7355,7 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("bytes_read", "%"PRIu64, thread_stats.bytes_read);
     APPEND_STAT("bytes_written", "%"PRIu64, thread_stats.bytes_written);
     APPEND_STAT("limit_maxbytes", "%"PRIu64, settings.maxbytes);
-    APPEND_STAT("rejected_conns", "%" PRIu64, (unsigned long long)stats.rejected_conns);
+    APPEND_STAT("rejected_conns", "%" PRIu64, (unsigned long long)mc_stats.rejected_conns);
     APPEND_STAT("threads", "%d", settings.num_threads);
     APPEND_STAT("conn_yields", "%" PRIu64, (unsigned long long)thread_stats.conn_yields);
     STATS_UNLOCK();
@@ -8175,7 +8175,7 @@ static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntok
 
 static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntokens) {
     int new_max;
-    int curr_conns = stats.curr_conns;
+    int curr_conns = mc_stats.curr_conns;
     char buf[50];
     struct rlimit rlim;
 
@@ -11609,7 +11609,7 @@ bool conn_listening(conn *c)
     }
 
     STATS_LOCK();
-    int curr_conns = stats.curr_conns++;
+    int curr_conns = mc_stats.curr_conns++;
     STATS_UNLOCK();
 
     if (curr_conns >= settings.maxconns) {
@@ -11620,7 +11620,7 @@ bool conn_listening(conn *c)
             curr_conns >= settings.maxconns + ADMIN_MAX_CONNECTIONS)
         {
             STATS_LOCK();
-            ++stats.rejected_conns;
+            ++mc_stats.rejected_conns;
             STATS_UNLOCK();
 
             if (settings.verbose > 0) {
@@ -12341,7 +12341,7 @@ static int server_socket(int port, enum network_transport transport,
                 dispatch_conn_new(sfd, conn_read, EV_READ | EV_PERSIST,
                                   UDP_READ_BUFFER_SIZE, transport);
                 STATS_LOCK();
-                ++stats.daemon_conns;
+                ++mc_stats.daemon_conns;
                 STATS_UNLOCK();
             }
         } else {
@@ -12355,7 +12355,7 @@ static int server_socket(int port, enum network_transport transport,
             listen_conn_add->next = listen_conn;
             listen_conn = listen_conn_add;
             STATS_LOCK();
-            ++stats.daemon_conns;
+            ++mc_stats.daemon_conns;
             STATS_UNLOCK();
         }
     }
@@ -12444,7 +12444,7 @@ static int server_socket_unix(const char *path, int access_mask) {
     }
 
     STATS_LOCK();
-    ++stats.daemon_conns;
+    ++mc_stats.daemon_conns;
     STATS_UNLOCK();
 
     return 0;

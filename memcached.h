@@ -336,7 +336,7 @@ struct independent_stats {
 /**
  * Global stats.
  */
-struct stats {
+struct mc_stats {
     pthread_mutex_t mutex;
     unsigned int  daemon_conns; /* conns used by the server */
     unsigned int  curr_conns;

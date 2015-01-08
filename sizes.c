@@ -13,7 +13,7 @@ int main(int argc, char **argv) {
     display("Thread stats",
             sizeof(struct thread_stats)
             - (200 * sizeof(struct slab_stats)));
-    display("Global stats", sizeof(struct stats));
+    display("Global stats", sizeof(struct mc_stats));
     display("Settings", sizeof(struct settings));
     display("Libevent thread",
             sizeof(LIBEVENT_THREAD));
