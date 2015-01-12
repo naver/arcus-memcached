@@ -5094,8 +5094,9 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
         oldest_live = pt->oldest_live;
 
         if (engine->config.verbose) {
-            logger->log(EXTENSION_LOG_INFO, NULL, "flush prefix=%s when=%u client_ip=%s",
-                        ((prefix==NULL) ? "null" : prefix), (unsigned)when, engine->server.core->get_client_ip(cookie));
+            logger->log(EXTENSION_LOG_INFO, NULL, "flush prefix=%s when=%u client_ip=%s\n",
+                        ((prefix==NULL) ? "null" : prefix),
+                        (unsigned)when, engine->server.core->get_client_ip(cookie));
         }
     } else { /* flush all */
         if (when <= 0) {
@@ -5106,8 +5107,8 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
         oldest_live = engine->config.oldest_live;
 
         if (engine->config.verbose) {
-            logger->log(EXTENSION_LOG_INFO, NULL, "flush all when=%u client_ip=%s",
-                                                  (unsigned)when, engine->server.core->get_client_ip(cookie));
+            logger->log(EXTENSION_LOG_INFO, NULL, "flush all when=%u client_ip=%s\n",
+                        (unsigned)when, engine->server.core->get_client_ip(cookie));
         }
     }
 
