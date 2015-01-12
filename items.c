@@ -94,10 +94,6 @@ extern int  genhash_string_hash(const void* p, size_t nkey);
 /* get bkey real size */
 #define BTREE_REAL_NBKEY(nbkey) ((nbkey)==0 ? sizeof(uint64_t) : (nbkey))
 
-/* get btree element size */
-#define BTREE_ELEM_SIZE(elem) \
-        (sizeof(btree_elem_item_fixed) + BTREE_REAL_NBKEY(elem->nbkey) + elem->neflag + elem->nbytes)
-
 /* overflow type */
 #define OVFL_TYPE_NONE  0
 #define OVFL_TYPE_COUNT 1
@@ -1287,6 +1283,23 @@ static int32_t coll_real_maxcount(hash_item *it, int32_t maxcount)
     return real_maxcount;
 }
 
+static inline uint32_t do_list_elem_ntotal(list_elem_item *elem)
+{
+    return sizeof(list_elem_item) + elem->nbytes;
+}
+
+static inline uint32_t do_set_elem_ntotal(set_elem_item *elem)
+{
+    return sizeof(set_elem_item) + elem->nbytes;
+}
+
+static inline uint32_t do_btree_elem_ntotal(btree_elem_item *elem)
+{
+    return sizeof(btree_elem_item_fixed) + BTREE_REAL_NBKEY(elem->nbkey)
+           + elem->neflag + elem->nbytes;
+}
+
+
 /*
  * LIST collection management
  */
@@ -1361,7 +1374,7 @@ static void do_list_elem_free(struct default_engine *engine, list_elem_item *ele
 {
     assert(elem->refcount == 0);
     assert(elem->slabs_clsid != 0);
-    size_t ntotal = sizeof(list_elem_item) + elem->nbytes;
+    size_t ntotal = do_list_elem_ntotal(elem);
     do_mem_slot_free(engine, elem, ntotal);
 }
 
@@ -1425,7 +1438,7 @@ static ENGINE_ERROR_CODE do_list_elem_link(struct default_engine *engine,
     info->ccnt++;
 
     if (1) { /* apply memory space */
-        size_t stotal = slabs_space_size(engine, (sizeof(list_elem_item)+elem->nbytes));
+        size_t stotal = slabs_space_size(engine, do_list_elem_ntotal(elem));
         increase_collection_space(engine, ITEM_TYPE_LIST, (coll_meta_info *)info, stotal);
     }
     return ENGINE_SUCCESS;
@@ -1444,7 +1457,7 @@ static void do_list_elem_unlink(struct default_engine *engine,
         info->ccnt--;
 
         if (info->stotal > 0) { /* apply memory space */
-            size_t stotal = slabs_space_size(engine, (sizeof(list_elem_item)+elem->nbytes));
+            size_t stotal = slabs_space_size(engine, do_list_elem_ntotal(elem));
             decrease_collection_space(engine, ITEM_TYPE_LIST, (coll_meta_info *)info, stotal);
         }
 
@@ -1597,7 +1610,7 @@ static void do_set_elem_free(struct default_engine *engine, set_elem_item *elem)
 {
     assert(elem->refcount == 0);
     assert(elem->slabs_clsid != 0);
-    size_t ntotal = sizeof(set_elem_item) + elem->nbytes;
+    size_t ntotal = do_set_elem_ntotal(elem);
     do_mem_slot_free(engine, elem, ntotal);
 }
 
@@ -1749,7 +1762,7 @@ static ENGINE_ERROR_CODE do_set_elem_link(struct default_engine *engine,
     info->ccnt++;
 
     if (1) { /* apply memory space */
-        size_t stotal = slabs_space_size(engine, (sizeof(set_elem_item)+elem->nbytes));
+        size_t stotal = slabs_space_size(engine, do_set_elem_ntotal(elem));
         increase_collection_space(engine, ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
     }
 
@@ -1770,7 +1783,7 @@ static void do_set_elem_unlink(struct default_engine *engine,
     info->ccnt--;
 
     if (info->stotal > 0) { /* apply memory space */
-        size_t stotal = slabs_space_size(engine, (sizeof(set_elem_item)+elem->nbytes));
+        size_t stotal = slabs_space_size(engine, do_set_elem_ntotal(elem));
         decrease_collection_space(engine, ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
     }
 
@@ -2045,7 +2058,7 @@ static void do_btree_elem_free(struct default_engine *engine, btree_elem_item *e
 {
     assert(elem->refcount == 0);
     assert(elem->slabs_clsid != 0);
-    size_t ntotal = BTREE_ELEM_SIZE(elem);
+    size_t ntotal = do_btree_elem_ntotal(elem);
     do_mem_slot_free(engine, elem, ntotal);
 }
 
@@ -3378,7 +3391,7 @@ static void do_btree_elem_unlink(struct default_engine *engine,
     int i;
 
     if (info->stotal > 0) { /* apply memory space */
-        size_t stotal = slabs_space_size(engine, BTREE_ELEM_SIZE(elem));
+        size_t stotal = slabs_space_size(engine, do_btree_elem_ntotal(elem));
         decrease_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
     }
 
@@ -3411,8 +3424,8 @@ static ENGINE_ERROR_CODE do_btree_elem_replace(struct default_engine *engine, bt
                                                btree_elem_posi *posi, btree_elem_item *new_elem)
 {
     btree_elem_item *old_elem = BTREE_GET_ELEM_ITEM(posi->node, posi->indx);
-    size_t old_stotal = slabs_space_size(engine, BTREE_ELEM_SIZE(old_elem));
-    size_t new_stotal = slabs_space_size(engine, BTREE_ELEM_SIZE(new_elem));
+    size_t old_stotal = slabs_space_size(engine, do_btree_elem_ntotal(old_elem));
+    size_t new_stotal = slabs_space_size(engine, do_btree_elem_ntotal(new_elem));
 
 #ifdef ENABLE_STICKY_ITEM
     if (new_stotal > old_stotal) {
@@ -3572,7 +3585,7 @@ static uint32_t do_btree_elem_delete(struct default_engine *engine, btree_meta_i
             c_posi.bkeq = false;
             do {
                 if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
-                    stotal += slabs_space_size(engine, BTREE_ELEM_SIZE(elem));
+                    stotal += slabs_space_size(engine, do_btree_elem_ntotal(elem));
 
                     if (elem->refcount > 0) {
                         elem->status = BTREE_ITEM_STATUS_UNLINK;
@@ -3860,7 +3873,7 @@ static ENGINE_ERROR_CODE do_btree_elem_link(struct default_engine *engine,
         }
 
         if (1) { /* apply memory space */
-            size_t stotal = slabs_space_size(engine, BTREE_ELEM_SIZE(elem));
+            size_t stotal = slabs_space_size(engine, do_btree_elem_ntotal(elem));
             increase_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
         }
 
@@ -3974,7 +3987,7 @@ static uint32_t do_btree_elem_get(struct default_engine *engine, btree_meta_info
                         elem->refcount++;
                         elem_array[tot_fcnt+cur_fcnt] = elem;
                         if (delete) {
-                            stotal += slabs_space_size(engine, BTREE_ELEM_SIZE(elem));
+                            stotal += slabs_space_size(engine, do_btree_elem_ntotal(elem));
                             elem->status = BTREE_ITEM_STATUS_UNLINK;
                             c_posi.node->item[c_posi.indx] = NULL;
                         }
@@ -6561,6 +6574,29 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
+}
+
+/*
+ * Collection element size functions
+ */
+uint32_t list_elem_ntotal(list_elem_item *elem)
+{
+    return do_list_elem_ntotal(elem);
+}
+
+uint32_t set_elem_ntotal(set_elem_item *elem)
+{
+    return do_set_elem_ntotal(elem);
+}
+
+uint32_t btree_elem_ntotal(btree_elem_item *elem)
+{
+    return do_btree_elem_ntotal(elem);
+}
+
+uint8_t  btree_real_nbkey(uint8_t nbkey)
+{
+    return (uint8_t)BTREE_REAL_NBKEY(nbkey);
 }
 
 /*

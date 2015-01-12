@@ -500,6 +500,15 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
                                ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
                                item_attr *attr_data);
 
+
+/*
+ * Collection element size functions
+ */
+uint32_t list_elem_ntotal(list_elem_item *elem);
+uint32_t set_elem_ntotal(set_elem_item *elem);
+uint32_t btree_elem_ntotal(btree_elem_item *elem);
+uint8_t  btree_real_nbkey(uint8_t nbkey);
+
 /**
  * Start the item scrubber
  * @param engine handle to the storage engine
