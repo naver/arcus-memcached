@@ -132,13 +132,6 @@ static int32_t default_btree_size = 4000;
 
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
-void item_stats_reset(struct default_engine *engine)
-{
-    pthread_mutex_lock(&engine->cache_lock);
-    memset(engine->items.itemstats, 0, sizeof(engine->items.itemstats));
-    pthread_mutex_unlock(&engine->cache_lock);
-}
-
 /* warning: don't use these macros with a function, as it evals its arg twice */
 static inline size_t ITEM_ntotal(struct default_engine *engine, const hash_item *item)
 {
@@ -938,33 +931,33 @@ static char *do_item_cachedump(struct default_engine *engine, const unsigned int
 
 static void do_item_stats(struct default_engine *engine, ADD_STAT add_stats, const void *c)
 {
-    int i;
-    for (i = 0; i <= POWER_LARGEST; i++)
+    const char *prefix = "items";
+
+    for (int i = 0; i <= POWER_LARGEST; i++)
     {
-        if (engine->items.tails[i] != NULL || engine->items.sticky_tails[i] != NULL)
-        {
-            const char *prefix = "items";
-            add_statistics(c, add_stats, prefix, i, "number", "%u",
-                           engine->items.sizes[i]+engine->items.sticky_sizes[i]);
+        if (engine->items.tails[i] == NULL && engine->items.sticky_tails[i] == NULL)
+            continue;
+
+        add_statistics(c, add_stats, prefix, i, "number", "%u",
+                       engine->items.sizes[i]+engine->items.sticky_sizes[i]);
 #ifdef ENABLE_STICKY_ITEM
-            add_statistics(c, add_stats, prefix, i, "sticky", "%u",
-                           engine->items.sticky_sizes[i]);
+        add_statistics(c, add_stats, prefix, i, "sticky", "%u",
+                       engine->items.sticky_sizes[i]);
 #endif
-            add_statistics(c, add_stats, prefix, i, "age", "%u",
-                           (engine->items.tails[i] != NULL ? engine->items.tails[i]->time : 0));
-            add_statistics(c, add_stats, prefix, i, "evicted",
-                           "%u", engine->items.itemstats[i].evicted);
-            add_statistics(c, add_stats, prefix, i, "evicted_nonzero",
-                           "%u", engine->items.itemstats[i].evicted_nonzero);
-            add_statistics(c, add_stats, prefix, i, "evicted_time",
-                           "%u", engine->items.itemstats[i].evicted_time);
-            add_statistics(c, add_stats, prefix, i, "outofmemory",
-                           "%u", engine->items.itemstats[i].outofmemory);
-            add_statistics(c, add_stats, prefix, i, "tailrepairs",
-                           "%u", engine->items.itemstats[i].tailrepairs);;
-            add_statistics(c, add_stats, prefix, i, "reclaimed",
-                           "%u", engine->items.itemstats[i].reclaimed);;
-        }
+        add_statistics(c, add_stats, prefix, i, "age", "%u",
+                       (engine->items.tails[i] != NULL ? engine->items.tails[i]->time : 0));
+        add_statistics(c, add_stats, prefix, i, "evicted",
+                       "%u", engine->items.itemstats[i].evicted);
+        add_statistics(c, add_stats, prefix, i, "evicted_nonzero",
+                       "%u", engine->items.itemstats[i].evicted_nonzero);
+        add_statistics(c, add_stats, prefix, i, "evicted_time",
+                       "%u", engine->items.itemstats[i].evicted_time);
+        add_statistics(c, add_stats, prefix, i, "outofmemory",
+                       "%u", engine->items.itemstats[i].outofmemory);
+        add_statistics(c, add_stats, prefix, i, "tailrepairs",
+                       "%u", engine->items.itemstats[i].tailrepairs);;
+        add_statistics(c, add_stats, prefix, i, "reclaimed",
+                       "%u", engine->items.itemstats[i].reclaimed);;
     }
 }
 
@@ -5243,7 +5236,6 @@ void item_stats(struct default_engine *engine,
     pthread_mutex_unlock(&engine->cache_lock);
 }
 
-
 void item_stats_sizes(struct default_engine *engine,
                       ADD_STAT add_stat, const void *cookie)
 {
@@ -5251,6 +5243,14 @@ void item_stats_sizes(struct default_engine *engine,
     do_item_stats_sizes(engine, add_stat, cookie);
     pthread_mutex_unlock(&engine->cache_lock);
 }
+
+void item_stats_reset(struct default_engine *engine)
+{
+    pthread_mutex_lock(&engine->cache_lock);
+    memset(engine->items.itemstats, 0, sizeof(engine->items.itemstats));
+    pthread_mutex_unlock(&engine->cache_lock);
+}
+
 
 ENGINE_ERROR_CODE item_init(struct default_engine *engine)
 {
