@@ -98,9 +98,10 @@
 #define SYSLOGD_PORT    514     // UDP syslog port #
 #define MAX_HB_RETRY    (2*3)   // we want to retry 2 heartbeats every 1/3 of ZK session timeout
 
-static const char *zk_map_path   = "/cache_server_mapping";
-static const char *zk_log_path   = "/cache_server_log";
-static const char *zk_cache_path = "/cache_list";
+static const char *zk_root = NULL;
+static const char *zk_map_path   = "cache_server_mapping";
+static const char *zk_log_path   = "cache_server_log";
+static const char *zk_cache_path = "cache_list";
 static const char *mc_hb_cmd     = "set arcus-zk5:ping 1 0 1\r\n1\r\n";
 
 static zhandle_t    *zh=NULL;
@@ -385,7 +386,7 @@ arcus_zk_log(zhandle_t *zh, const char *action)
     gettimeofday(&now, 0);
     ltm = localtime (&now.tv_sec);
     strftime(sbuf, sizeof(sbuf), "%Y-%m-%d", ltm);
-    snprintf(zpath, sizeof(zpath), "%s/%s", zk_log_path, sbuf);
+    snprintf(zpath, sizeof(zpath), "%s/%s/%s", zk_root, zk_log_path, sbuf);
     rc = zoo_exists(zh, zpath, ZK_NOWATCH, &zstat);
 
     // if this "date" directory does not exist, create one
@@ -400,7 +401,8 @@ arcus_zk_log(zhandle_t *zh, const char *action)
 
     // if this znode already exist or the creation was successful
     if (rc == ZOK || rc == ZNODEEXISTS) {
-        snprintf(zpath, sizeof(zpath), "%s/%s/%s-", zk_log_path, sbuf, arcus_conf.zk_path);
+        snprintf(zpath, sizeof(zpath), "%s/%s/%s/%s-",
+                 zk_root, zk_log_path, sbuf, arcus_conf.zk_path);
         snprintf(sbuf,  sizeof(sbuf), "%s", action);
         rc = zoo_create(zh, zpath, sbuf, strlen(sbuf), &ZOO_OPEN_ACL_UNSAFE,
                         ZOO_SEQUENCE, rcbuf, sizeof(rcbuf));
@@ -433,8 +435,8 @@ arcus_zk_final(const char *msg)
     if (zoo_state(zh) == ZOO_CONNECTED_STATE && arcus_conf.init) {
 
         // delete "/cache_list/{svc}/ip:port-hostname" ephemeral znode
-        snprintf(zpath, sizeof(zpath), "%s/%s/%s",
-                 zk_cache_path, arcus_conf.svc, arcus_conf.zk_path);
+        snprintf(zpath, sizeof(zpath), "%s/%s/%s/%s",
+                 zk_root, zk_cache_path, arcus_conf.svc, arcus_conf.zk_path);
 
         // manually delete this znode with stored version number to allow immediate restart
         // of memcached. Otherwise, need to wait until ZK remove this at session expiration
@@ -776,13 +778,13 @@ arcus_zk_init(char *ensemble_list, int zk_to,
         zoo_set_debug_level(ZOO_LOG_LEVEL_WARN);
     }
 
-    snprintf(zpath, sizeof(zpath), "%s/arcus", arcus_conf.ensemble_list);
-
     // connect to ZK ensemble
     if (arcus_conf.verbose > 2)
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "zookeeper_init()\n");
 
     gettimeofday(&start_time, 0);
+
+    snprintf(zpath, sizeof(zpath), "%s", arcus_conf.ensemble_list);
     inc_count(1);
     zh = zookeeper_init(zpath, arcus_zk_watcher, arcus_conf.zk_timeout, &myid, 0, 0);
     if (!zh) {
@@ -799,6 +801,8 @@ arcus_zk_init(char *ensemble_list, int zk_to,
         arcus_exit(zh, EX_PROTOCOL);
     }
 
+    zk_root = "/arcus";
+
 #ifdef ENABLE_HEART_BEAT_THREAD
 #else
     // Now register L7 ping
@@ -811,8 +815,9 @@ arcus_zk_init(char *ensemble_list, int zk_to,
 
     // get service string for this cache
     // first sync the zk server in ensemble to get latest
+    snprintf(zpath, sizeof(zpath), "%s/%s/%s", zk_root, zk_map_path, arcus_conf.hostip);
     inc_count(1);
-    rc = zoo_async(zh, zk_map_path, arcus_zk_sync_cb, NULL);
+    rc = zoo_async(zh, zpath, arcus_zk_sync_cb, NULL);
     if (rc) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "zoo_async() failed: %s\n", zerror(rc));
@@ -832,14 +837,15 @@ arcus_zk_init(char *ensemble_list, int zk_to,
 
     // get children of "/cache_server_mapping/ip:port"
     // the children includes service code in which this memcached participates
-    snprintf(zpath, sizeof(zpath), "%s/%s:%d",
-             zk_map_path, arcus_conf.hostip, arcus_conf.port);
+    snprintf(zpath, sizeof(zpath), "%s/%s/%s:%d",
+             zk_root, zk_map_path, arcus_conf.hostip, arcus_conf.port);
     rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
     if (rc) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                                "%s not found (%s).\n", zpath, zerror(rc));
         // Recheck: get children of "/cache_server_mapping/ip"
-        snprintf(zpath, sizeof(zpath), "%s/%s", zk_map_path, arcus_conf.hostip);
+        snprintf(zpath, sizeof(zpath), "%s/%s/%s",
+                 zk_root, zk_map_path, arcus_conf.hostip);
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "Recheck with %s\n", zpath);
         rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
         if (rc) {
@@ -872,8 +878,8 @@ arcus_zk_init(char *ensemble_list, int zk_to,
     arcus_conf.init     = true;
 
     // create "/cache_list/{svc}/ip:port-hostname" ephemeral znode
-    snprintf(zpath, sizeof(zpath), "%s/%s/%s",
-             zk_cache_path, arcus_conf.svc, arcus_conf.zk_path);
+    snprintf(zpath, sizeof(zpath), "%s/%s/%s/%s",
+             zk_root, zk_cache_path, arcus_conf.svc, arcus_conf.zk_path);
     sprintf(sbuf, "%ldMB", (long) arcus_conf.maxbytes/1024/1024);
     rc = zoo_create(zh, zpath, sbuf, strlen(sbuf), &ZOO_OPEN_ACL_UNSAFE,
                     ZOO_EPHEMERAL, rcbuf, sizeof(rcbuf));
@@ -921,7 +927,8 @@ arcus_zk_init(char *ensemble_list, int zk_to,
 
 #ifdef ENABLE_CLUSTER_AWARE
     char zpath_cluster[200];
-    snprintf(zpath_cluster, sizeof(zpath_cluster), "%s/%s", zk_cache_path, arcus_conf.svc);
+    snprintf(zpath_cluster, sizeof(zpath_cluster), "%s/%s/%s",
+             zk_root, zk_cache_path, arcus_conf.svc);
     arcus_conf.cluster_path = strndup(zpath_cluster, 200);
 
     arcus_conf.ch = cluster_config_init(arcus_conf.logger, arcus_conf.verbose);
