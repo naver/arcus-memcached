@@ -166,8 +166,6 @@ static void arcus_zk_watcher(zhandle_t *wzh, int type, int state,
 static void arcus_zk_sync_cb(int rc, const char *name, const void *data);
 static void arcus_zk_log(zhandle_t *zh, const char *);
 static void arcus_exit(zhandle_t *zh, int err);
-static void inc_count(int delta);
-static int  wait_count(int timeout);
 
 #ifdef ENABLE_CLUSTER_AWARE
 static void arcus_cluster_watcher(zhandle_t *zh, int type, int state,
@@ -206,14 +204,16 @@ static void start_hb_thread(app_ping_t *data);
 #endif // ENABLE_HEART_BEAT_THREAD
 
 // mutex for async operations
-void inc_count(int delta) {
+static void inc_count(int delta)
+{
     pthread_mutex_lock(&azk_mtx);
     azk_count += delta;
     pthread_cond_broadcast(&azk_cond);
     pthread_mutex_unlock(&azk_mtx);
 }
 
-int wait_count(int timeout) {
+static int wait_count(int timeout)
+{
     struct timeval  tv;
     struct timespec ts;
     int rc = 0;
@@ -241,7 +241,7 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
     if (type != ZOO_SESSION_EVENT) {
         if (arcus_conf.verbose > 2)
             arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                                   "arcus_zk_watch not session event (type=%d)\n", type);
+                    "arcus_zk_watch not session event (type=%d)\n", type);
         return;
     }
 
@@ -264,20 +264,17 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
         inc_count (-1);
     }
     else if (state == ZOO_AUTH_FAILED_STATE) {
-
+        // authorization failure
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "Auth failure. shutting down\n");
-        arcus_exit (wzh, EX_NOPERM);
-
+        arcus_exit(wzh, EX_NOPERM);
     }
     else if (state == ZOO_EXPIRED_SESSION_STATE) {
-
         // very likely that memcached process exited and restarted within
         // session timeout
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "Expired state. shutting down\n");
 
         // send SMS here??
-        //
-        arcus_exit (wzh, EX_TEMPFAIL);
+        arcus_exit(wzh, EX_TEMPFAIL);
 
         // We chose not to restart here.
         // All memcached start/restart should start from scratch (cold cache)
@@ -286,7 +283,6 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
         //arcus_zk_init(arcus_conf.ensemble_list, settings );
     }
     else if (state == ZOO_ASSOCIATING_STATE || state == ZOO_CONNECTING_STATE) {
-
         // we get these when connection to Ensemble is dropped and retrying
         // this happens emsemble failover as well
         // since this is not memcached operation issue, we will allow reconnecting
@@ -311,17 +307,15 @@ arcus_cluster_watch_servers(zhandle_t *zh, const char *path, watcher_fn fn)
     if (zk_closing) {
         pthread_mutex_unlock(&zk_close_lock);
         return;
-    }
-    else {
+    } else {
         zk_watcher_running = true;
     }
     pthread_mutex_unlock(&zk_close_lock);
 
     // get cache list
     rc = zoo_wget_children(zh, path, arcus_cluster_watcher, NULL, &result);
-
-    // update the cache list
     if (rc == ZOK) {
+        // update the cache list
         if (arcus_conf.verbose > 0) {
             for (i=0; i<result.count; i++) {
                 arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
@@ -345,14 +339,14 @@ arcus_cluster_watcher(zhandle_t *zh, int type, int state, const char *path, void
 {
     if (type == ZOO_CHILD_EVENT) {
         arcus_cluster_watch_servers(zh, path, arcus_cluster_watcher);
-    } else if (type == ZOO_SESSION_EVENT) {
+    }
+    else if (type == ZOO_SESSION_EVENT) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                               "ZOO_SESSION_EVENT from ZK: state=%d\n", state);
-    } else {
-        // an unexpected event has been occurred
+                "ZOO_SESSION_EVENT from ZK: state=%d\n", state);
+    }
+    else { // an unexpected event has occurred
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                               "An unexpected event from ZK: type=%d, state=%d\n",
-                               type, state);
+                "An unexpected event from ZK: type=%d, state=%d\n", type, state);
     }
 }
 #endif
@@ -367,7 +361,6 @@ arcus_zk_sync_cb(int rc, const char *name, const void *data)
     // signal cond var
     inc_count (-1);
     last_rc = rc;
-
 }
 
 // Log memcached join/leave acvitivity
@@ -397,11 +390,11 @@ arcus_zk_log(zhandle_t *zh, const char *action)
 
     // if this "date" directory does not exist, create one
     if (rc == ZNONODE) {
-        rc = zoo_create (zh, zpath, NULL, 0, &ZOO_OPEN_ACL_UNSAFE,
-                         0, rcbuf, sizeof(rcbuf));
+        rc = zoo_create(zh, zpath, NULL, 0, &ZOO_OPEN_ACL_UNSAFE,
+                        0, rcbuf, sizeof(rcbuf));
         if (rc == ZOK && arcus_conf.verbose > 2) {
             arcus_conf.logger->log(EXTENSION_LOG_DEBUG,
-                            NULL, "znode %s does not exist. created\n", rcbuf);
+                    NULL, "znode %s does not exist. created\n", rcbuf);
         }
     }
 
@@ -409,15 +402,15 @@ arcus_zk_log(zhandle_t *zh, const char *action)
     if (rc == ZOK || rc == ZNODEEXISTS) {
         snprintf(zpath, sizeof(zpath), "%s/%s/%s-", zk_log_path, sbuf, arcus_conf.zk_path);
         snprintf(sbuf,  sizeof(sbuf), "%s", action);
-        rc = zoo_create (zh, zpath, sbuf, strlen(sbuf), &ZOO_OPEN_ACL_UNSAFE,
-                         ZOO_SEQUENCE, rcbuf, sizeof(rcbuf));
+        rc = zoo_create(zh, zpath, sbuf, strlen(sbuf), &ZOO_OPEN_ACL_UNSAFE,
+                        ZOO_SEQUENCE, rcbuf, sizeof(rcbuf));
         if (arcus_conf.verbose > 2)
             arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "znode \"%s\" created\n", rcbuf);
     }
 
     if (rc) {
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                    "cannot log this acvitiy (%s error)\n", zerror(rc));
+                "cannot log this acvitiy (%s error)\n", zerror(rc));
     }
 }
 
@@ -450,8 +443,7 @@ arcus_zk_final(const char *msg)
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "cannot remove %s (%s error)\n",
                                    zpath, zerror(rc));
             arcus_zk_log(zh, "leave-unclean");
-        }
-        else {
+        } else {
             arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "Deleting cache_list entry manually\n");
             // log this leave activity in /arcus/cache_server_log
             arcus_zk_log(zh, "leave-clean");
@@ -497,7 +489,7 @@ arcus_zk_final(const char *msg)
             sleep(1);
     }
 
-    arcus_exit (zh, EX_OK);
+    arcus_exit(zh, EX_OK);
 }
 
 int arcus_zk_get_timeout(void)
@@ -514,7 +506,7 @@ int arcus_zk_get_timeout(void)
 // it is very possible have expired state in the end.
 // this retries 2 twice at every 1/3 of ZK recv timeout
 int
-mc_hb (zhandle_t *zh, void *context)
+mc_hb(zhandle_t *zh, void *context)
 {
     app_ping_t      *data = (app_ping_t *) context;
     struct linger   linger;
@@ -555,11 +547,11 @@ mc_hb (zhandle_t *zh, void *context)
     arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "mc_hb: connecting to memcached at %s:%d...\n",
                            inet_ntoa(data->addr.sin_addr), arcus_conf.port);
 
-    err = connect (sock, (struct sockaddr *) &data->addr, sizeof(struct sockaddr));
+    err = connect(sock, (struct sockaddr *) &data->addr, sizeof(struct sockaddr));
     if (err) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "mc_hb: cannot connect to local memcached (%s error)\n", strerror(errno));
-        close (sock);
+                "mc_hb: cannot connect to local memcached (%s error)\n", strerror(errno));
+        close(sock);
         return 0; // Allow ZK ping by returning 0 even if connect() fails.
     }
 
@@ -575,17 +567,17 @@ mc_hb (zhandle_t *zh, void *context)
         err = recv(sock, buf, 8, 0);
         if (err < 0) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "mc_hb: recv failed (%s error)\n", strerror(errno));
+                    "mc_hb: recv failed (%s error)\n", strerror(errno));
         }
     } else {
         if (err < 0) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "mc_hb: send failed (%s error)\n", strerror(errno));
+                    "mc_hb: send failed (%s error)\n", strerror(errno));
         }
     }
 
     if (sock)
-        close (sock);
+        close(sock);
     return 0;
 }
 
@@ -659,18 +651,17 @@ arcus_zk_init(char *ensemble_list, int zk_to,
         arcus_exit(zh, EX_OSERR);
     }
 
-    saddr.sin_family    = AF_INET;
-    saddr.sin_port      = htons(SYSLOGD_PORT); // syslogd port. what if this is not open? XXX
+    saddr.sin_family = AF_INET;
+    saddr.sin_port   = htons(SYSLOGD_PORT); // syslogd port. what if this is not open? XXX
 
     // loop through all ensemble IP in case ensemble failure
     zip = strtok_r(ensemble_list, sep1, &hlist);  // separate IP:PORT tuple
-    while (zip) {
-
-        zip = strtok(zip, sep2);                    // extract the first IP
+    while (zip)
+    {
+        zip = strtok(zip, sep2); // extract the first IP
 
         // try to convert IP -> network IP format
         if (!inet_aton(zip, &inaddr)) {
-
             // Must be hostname, not IP. Convert hostame to IP first
             zkhost = gethostbyname(zip);
             if (!zkhost) {
@@ -679,15 +670,13 @@ arcus_zk_init(char *ensemble_list, int zk_to,
                 zip = strtok_r(NULL, sep1, &hlist);  // get next token: separate IP:PORT tuple
                 continue;
             }
-
             if (arcus_conf.verbose > 2)
                 arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "Ensemble hostname: %s\n", zip);
             memcpy((char *) &saddr.sin_addr, zkhost->h_addr_list[0], zkhost->h_length);
             inet_ntop(AF_INET, &saddr.sin_addr, rcbuf, sizeof(rcbuf));
             if (arcus_conf.verbose > 2)
                 arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "Trying converted IP: %s\n", rcbuf);
-        }
-        else {
+        } else {
             // just use the IP
             saddr.sin_addr = inaddr;
             arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "Trying ensemble IP: %s\n", zip);
@@ -705,13 +694,13 @@ arcus_zk_init(char *ensemble_list, int zk_to,
             // connect immediately
             if (arcus_conf.verbose > 2)
                 arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                            "connected to ensemble \"%s\" syslogd UDP port\n", zip);
+                        "connected to ensemble \"%s\" syslogd UDP port\n", zip);
             break;
         }
 
         // if cannot connect immediately, try other ensemble
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "Cannot connect to ensemble %s (%s error)\n", zip, strerror(errno));
+                "Cannot connect to ensemble %s (%s error)\n", zip, strerror(errno));
         zip = strtok_r(NULL, sep1, &hlist);  // get next token: separate IP:PORT tuple
     }
 
@@ -737,29 +726,25 @@ arcus_zk_init(char *ensemble_list, int zk_to,
 
 
     if (!arcus_conf.zk_path) {
-
         // Also get local hostname. We want IP and hostname to better identify this cache
         hp = gethostbyaddr( (char*) &myaddr.sin_addr.s_addr, sizeof(myaddr.sin_addr.s_addr), AF_INET );
         if (hp) {
             hostp = strdup (hp->h_name);
-        }
-        else {
+        } else {
             // if gethostbyaddr() doesn't work, try gethostname
             if (gethostname((char *) &host, sizeof(host))) {
                 arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "cannot get hostname: %s\n", strerror(errno));
                 arcus_exit(zh, EX_NOHOST);
             }
-
             hostp = host;
         }
-
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "hostname: %s\n", hostp);
     }
 
     // prepare app_ping context data: sockaddr for memcached connection in app ping
     //
     ping_data = calloc(1, sizeof(app_ping_t));
-    assert (ping_data);
+    assert(ping_data);
 
     ping_data->addr.sin_family = AF_INET;
     ping_data->addr.sin_port   = htons(arcus_conf.port);
@@ -811,7 +796,7 @@ arcus_zk_init(char *ensemble_list, int zk_to,
     if (wait_count(arcus_conf.zk_timeout) != 0) {
         /* zoo_state(zh) != ZOO_CONNECTED_STATE */
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "cannot to be ZOO_CONNECTED_STATE\n");
-        arcus_exit (zh, EX_PROTOCOL);
+        arcus_exit(zh, EX_PROTOCOL);
     }
 
 #ifdef ENABLE_HEART_BEAT_THREAD
@@ -827,18 +812,19 @@ arcus_zk_init(char *ensemble_list, int zk_to,
     // get service string for this cache
     // first sync the zk server in ensemble to get latest
     inc_count(1);
-    rc = zoo_async (zh, zk_map_path, arcus_zk_sync_cb, NULL);
+    rc = zoo_async(zh, zk_map_path, arcus_zk_sync_cb, NULL);
     if (rc) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "zoo_async() failed: %s\n", zerror(rc));
-        arcus_exit (zh, EX_PROTOCOL);
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "zoo_async() failed: %s\n", zerror(rc));
+        arcus_exit(zh, EX_PROTOCOL);
     }
 
     // wait until above sync callback is called
     wait_count(0);
 
     if (last_rc != ZOK) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "arcus_zk_sync failed with %s error\n",
-                                zerror(rc));
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "arcus_zk_sync failed with %s error\n", zerror(rc));
         arcus_exit(zh, EX_PROTOCOL);
     }
 
@@ -846,26 +832,28 @@ arcus_zk_init(char *ensemble_list, int zk_to,
 
     // get children of "/cache_server_mapping/ip:port"
     // the children includes service code in which this memcached participates
-    snprintf(zpath, sizeof(zpath), "%s/%s:%d", zk_map_path, arcus_conf.hostip, arcus_conf.port);
-    rc = zoo_get_children (zh, zpath, ZK_NOWATCH, &strv);
+    snprintf(zpath, sizeof(zpath), "%s/%s:%d",
+             zk_map_path, arcus_conf.hostip, arcus_conf.port);
+    rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
     if (rc) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "%s not found (%s).\n", zpath, zerror(rc));
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                               "%s not found (%s).\n", zpath, zerror(rc));
         // Recheck: get children of "/cache_server_mapping/ip"
         snprintf(zpath, sizeof(zpath), "%s/%s", zk_map_path, arcus_conf.hostip);
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "Recheck with %s\n", zpath);
-        rc = zoo_get_children (zh, zpath, ZK_NOWATCH, &strv);
+        rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
         if (rc) {
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "%s not found (%s). Provision this server in Arcus cluster\n",
-                    zpath, zerror(rc));
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "%s not found (%s). Provision this server in Arcus cluster\n", zpath, zerror(rc));
             // tip: provision this cache server in Arcus cache cluster
-            arcus_exit (zh, EX_PROTOCOL);
+            arcus_exit(zh, EX_PROTOCOL);
         }
     }
     if (strv.count == 0) { // zoo_get_children returns ZOK even if no child exist
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "Service code not found for this server (under %s/)\n", zpath);
+                "Service code not found for this server (under %s/)\n", zpath);
         // tip: provision this cache server for a service
-        arcus_exit (zh, EX_PROTOCOL);
+        arcus_exit(zh, EX_PROTOCOL);
     }
 
     // get the first one. we could have more than one (meaning one server participating in
@@ -873,7 +861,7 @@ arcus_zk_init(char *ensemble_list, int zk_to,
     arcus_conf.svc = strdup(strv.data[0]);
 
     // free returned strings
-    for(int i=0; i < strv.count; i++) {
+    for (int i=0; i < strv.count; i++) {
         free(strv.data[i]);
     }
     free(strv.data);
@@ -887,18 +875,17 @@ arcus_zk_init(char *ensemble_list, int zk_to,
     snprintf(zpath, sizeof(zpath), "%s/%s/%s",
              zk_cache_path, arcus_conf.svc, arcus_conf.zk_path);
     sprintf(sbuf, "%ldMB", (long) arcus_conf.maxbytes/1024/1024);
-    rc = zoo_create (zh, zpath, sbuf, strlen(sbuf), &ZOO_OPEN_ACL_UNSAFE,
-                     ZOO_EPHEMERAL, rcbuf, sizeof(rcbuf));
+    rc = zoo_create(zh, zpath, sbuf, strlen(sbuf), &ZOO_OPEN_ACL_UNSAFE,
+                    ZOO_EPHEMERAL, rcbuf, sizeof(rcbuf));
     if (rc) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "cannot create znode %s (%s error)\n",
-                       zpath, zerror(rc));
+                               zpath, zerror(rc));
         if (rc == ZNODEEXISTS) {
             arcus_conf.logger->log( EXTENSION_LOG_DETAIL, NULL,
                             "old session still exist. Wait a bit\n");
         }
-        arcus_exit (zh, EX_PROTOCOL);
-    }
-    else {
+        arcus_exit(zh, EX_PROTOCOL);
+    } else {
         if (arcus_conf.verbose > 2)
             arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "Joined Arcus cloud at %s\n", rcbuf);
     }
@@ -906,8 +893,8 @@ arcus_zk_init(char *ensemble_list, int zk_to,
     rc = zoo_exists (zh, zpath, 0, &zstat);
     if (rc) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "cannot find %s just created (%s error)\n",
-                       rcbuf, zerror(rc));
-        arcus_exit (zh, EX_PROTOCOL);
+                               rcbuf, zerror(rc));
+        arcus_exit(zh, EX_PROTOCOL);
     }
 
     // store this version number, just in case we restart
@@ -924,17 +911,13 @@ arcus_zk_init(char *ensemble_list, int zk_to,
     arcus_zk_log(zh, "join");
 
     // We have finished registering this memcached instance to Arcus cluster
-    arcus_conf.logger->log(
-                    EXTENSION_LOG_INFO,
-                    NULL,
-                    "Memcached joined Arcus cache cloud for \"%s\" service"
-                    " (took %ld microsec)\n",
-                    arcus_conf.svc,
-                    difftime_us);
+    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
+            "Memcached joined Arcus cache cloud for \"%s\" service (took %ld microsec)\n",
+            arcus_conf.svc, difftime_us);
     // "recv" timeout is actually the session timeout
     // ZK client ping period is recv_timeout / 3.
-    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "ZooKeeper session timeout: %d sec\n",
-                    zoo_recv_timeout(zh)/1000);
+    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
+            "ZooKeeper session timeout: %d sec\n", zoo_recv_timeout(zh)/1000);
 
 #ifdef ENABLE_CLUSTER_AWARE
     char zpath_cluster[200];
@@ -952,8 +935,7 @@ arcus_zk_init(char *ensemble_list, int zk_to,
     arcus_cluster_watch_servers(zh, arcus_conf.cluster_path, arcus_cluster_watcher);
 
     arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                           "Memcached is watching Arcus cache cloud for \"%s\"\n",
-                           arcus_conf.cluster_path);
+            "Memcached is watching Arcus cache cloud for \"%s\"\n", arcus_conf.cluster_path);
 #endif
 
 #ifdef ENABLE_HEART_BEAT_THREAD
@@ -994,8 +976,7 @@ arcus_zk_set_ensemble(char *ensemble_list)
         free(copy);
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
             "Failed to change the ZooKeeper ensemble list. error=%d(%s)\n", rc, zerror(rc));
-    }
-    else {
+    } else {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
             "Failed to change the ZooKeeper ensemble list. The handle is invalid.\n");
     }
@@ -1012,8 +993,7 @@ arcus_zk_get_ensemble_str(char *buf, int size)
             return 0;
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
             "Failed to get the ZooKeeper ensemble list. error=%d(%s)\n", rc, zerror(rc));
-    }
-    else {
+    } else {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
             "Failed to get the ZooKeeper ensemble list. The handle is invalid.\n");
     }
@@ -1036,11 +1016,9 @@ bool arcus_key_is_mine(const char *key, size_t nkey)
 
     if (arcus_conf.verbose > 2) {
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                               "key=%s, self_id=%d, key_id=%d, key_is_mine=%s\n",
-                               key, self_id, key_id,
-                               (key_is_mine)?"true":"false");
+                "key=%s, self_id=%d, key_id=%d, key_is_mine=%s\n",
+                key, self_id, key_id, (key_is_mine)?"true":"false");
     }
-
     return key_is_mine;
 }
 #endif
@@ -1056,6 +1034,7 @@ hb_thread(void *arg)
     uint64_t elapsed_msec, start_msec, end_msec;
 
     hb_thread_running = true;
+
     /* Always print this to help the admin. */
     arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
         "Heartbeat thread is running.\n");
@@ -1103,8 +1082,7 @@ hb_thread(void *arg)
         end_msec = end_time.tv_sec * 1000 + end_time.tv_usec / 1000;
         if (end_msec >= start_msec) {
             elapsed_msec = end_msec - start_msec;
-        }
-        else {
+        } else {
             elapsed_msec = 0; /* Ignore this failure */
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "hb_thread: Clock has gone backwards? start_msec=%llu"
@@ -1159,8 +1137,7 @@ hb_thread(void *arg)
                 arcus_zk_final("Heartbeat failures");
                 /* Does not return */
             }
-        }
-        else {
+        } else {
             /* Reset the failure counter */
             failed = 0;
         }
