@@ -120,6 +120,7 @@ volatile sig_atomic_t  arcus_zk_shutdown=false;
 typedef struct {
     char    *ensemble_list;     // ZK ensemble IP:port list
     char    *svc;               // Service code name
+    char    *mc_ipport;         // this memcached ip:port string
     char    *hostip;            // localhost server IP
     int     port;               // memcached port number
     int     zk_timeout;         // Zookeeper session timeout
@@ -139,6 +140,7 @@ typedef struct {
 arcus_zk_conf arcus_conf = {
     .ensemble_list  = NULL,
     .svc            = NULL,
+    .mc_ipport      = NULL,
     .hostip         = NULL,
     .zk_timeout     = DEFAULT_ZK_TO,
     .zk_path        = NULL,
@@ -793,8 +795,9 @@ static int arcus_get_local_ip_hostname(void)
                                "local hostname: %s\n", hostp);
 
         // we need to keep ip:port-hostname tuple for later user (restart)
-        snprintf(rcbuf, sizeof(rcbuf), "%s:%d-%s",
-                 arcus_conf.hostip, arcus_conf.port, hostp);
+        snprintf(rcbuf, sizeof(rcbuf), "%s:%d", arcus_conf.hostip, arcus_conf.port);
+        arcus_conf.mc_ipport = strdup(rcbuf);
+        snprintf(rcbuf, sizeof(rcbuf), "%s-%s", arcus_conf.mc_ipport, hostp);
         arcus_conf.zk_path = strdup(rcbuf);
     }
     return 0; // EX_OK
@@ -825,8 +828,8 @@ static int arcus_get_service_code(zhandle_t *zh, const char *root)
     }
 
     // First check: get children of "/cache_server_mapping/ip:port"
-    snprintf(zpath, sizeof(zpath), "%s/%s/%s:%d",
-             root, zk_map_path, arcus_conf.hostip, arcus_conf.port);
+    snprintf(zpath, sizeof(zpath), "%s/%s/%s",
+             root, zk_map_path, arcus_conf.mc_ipport);
     rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
     if (rc == ZNONODE) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
