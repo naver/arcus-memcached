@@ -164,14 +164,13 @@ typedef struct {
 // static declaration
 static void arcus_zk_watcher(zhandle_t *wzh, int type, int state,
                              const char *path, void *cxt);
-static void arcus_zk_sync_cb(int rc, const char *name, const void *data);
-static void arcus_zk_log(zhandle_t *zh, const char *);
-static void arcus_exit(zhandle_t *zh, int err);
-
 #ifdef ENABLE_CLUSTER_AWARE
 static void arcus_cluster_watcher(zhandle_t *zh, int type, int state,
                                   const char *path, void *ctx);
 #endif
+static void arcus_zk_sync_cb(int rc, const char *name, const void *data);
+static void arcus_zk_log(zhandle_t *zh, const char *);
+static void arcus_exit(zhandle_t *zh, int err);
 
 int  mc_hb(zhandle_t* zh, void *context);     // memcached self-heartbeat
 
@@ -416,87 +415,13 @@ arcus_zk_log(zhandle_t *zh, const char *action)
     }
 }
 
-
-// called from memcached main thread
-// this shutdown Zookeeper connection, ephemeral node, and leave a log
-//
-void
-arcus_zk_final(const char *msg)
+static void
+arcus_exit(zhandle_t *zh, int err)
 {
-#if 0 // Remove the code of deleting the ephemeral znode. it'll be deleted, after closing a zookeeper session.
-    char zpath[200]="";
-    int  rc;
-
-    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "\nArcus memcached shutting down\n");
-
-    if (!zh)
-        exit (0);
-
-    if (zoo_state(zh) == ZOO_CONNECTED_STATE && arcus_conf.init) {
-
-        // delete "/cache_list/{svc}/ip:port-hostname" ephemeral znode
-        snprintf(zpath, sizeof(zpath), "%s/%s/%s/%s",
-                 zk_root, zk_cache_path, arcus_conf.svc, arcus_conf.zk_path);
-
-        // manually delete this znode with stored version number to allow immediate restart
-        // of memcached. Otherwise, need to wait until ZK remove this at session expiration
-        rc = zoo_delete (zh, zpath, arcus_conf.zk_path_ver);
-        if (rc) {
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "cannot remove %s (%s error)\n",
-                                   zpath, zerror(rc));
-            arcus_zk_log(zh, "leave-unclean");
-        } else {
-            arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "Deleting cache_list entry manually\n");
-            // log this leave activity in /arcus/cache_server_log
-            arcus_zk_log(zh, "leave-clean");
-        }
-    }
-#else
-    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "\nArcus memcached shutting down - %s\n", msg);
-
-    if (!zh)
-        exit (0);
-#endif
-#ifdef ENABLE_HEART_BEAT_THREAD
-    /* Just set a flag and do not wait for the thread to die.
-     * hb_thread is probably sleeping.  And, if it is in the middle of
-     * doing a ping, it would block for a long time because worker threads
-     * are likely all dead at this point.
-     */
-    hb_thread_running = false;
-#endif
-
-    /* Do not call zookeeper_close (arcus_exit) and
-     * zoo_wget_children (arcus_cluster_watch_servers) at the same time.
-     * Otherwise, this thread (main thread) and the watcher thread
-     * (zoo_wget_children) may hang forever until the user manually kills
-     * the process.  The root cause is within the zookeeper library.  Its
-     * handling of concurrent API calls like zoo_wget_children and
-     * zookeeper_close still has holes...
-     */
-    {
-        bool watcher_running;
-        pthread_mutex_lock(&zk_close_lock);
-        zk_closing = true;
-        watcher_running = zk_watcher_running;
-        pthread_mutex_unlock(&zk_close_lock);
-
-        /* If the watcher thread (zoo_wget_children) is running now, wait for
-         * one second.  Either it completes, or it at least registers
-         * sync_completion and blocks.  In the latter case, zookeeper_close
-         * aborts all sync_completion's, which then wakes up the blocking
-         * watcher thread.  zoo_wget_children returns an error.
-         */
-        if (watcher_running)
-            sleep(1);
-    }
-
-    arcus_exit(zh, EX_OK);
-}
-
-int arcus_zk_get_timeout(void)
-{
-    return (int)arcus_conf.zk_timeout;
+    if (zh)
+        zookeeper_close(zh);
+    arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "shutting down\n");
+    exit(err);
 }
 
 // this is L7 application ping callback
@@ -583,15 +508,143 @@ mc_hb(zhandle_t *zh, void *context)
     return 0;
 }
 
+#ifdef ENABLE_HEART_BEAT_THREAD
+static void *
+hb_thread(void *arg)
+{
+    app_ping_t *ping_data = arg;
+    int failed = 0;
+    struct timeval start_time;
+    struct timeval end_time;
+    uint64_t elapsed_msec, start_msec, end_msec;
+
+    hb_thread_running = true;
+
+    /* Always print this to help the admin. */
+    arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+        "Heartbeat thread is running.\n");
+
+    /* We consider 3 types of shutdowns.
+     *
+     * 1. control-c
+     * The user wants a graceful shutdown.  The main thread wakes up all
+     * the worker threads and wait for them to terminate.  It also calls
+     * the engine destroy function.  In this case, heartbeat should just stop.
+     * arcus_zk_shutdown = true indicates this case.  So, we check that flag
+     * in this function.
+     *
+     * 2. kill -KILL
+     * Something is very wrong, and the user wants to kill the process right
+     * away.  For example, control-c/graceful shutdown might hang due to bugs.
+     * And, the user wants to forcefully kill the process.  There is nothing
+     * we can do here.
+     *
+     * 3. Heartbeat failure
+     * memcached is not working properly.  We attempt to close the ZK session
+     * and then forcefully terminate.  This is NOT a graceful shutdown.  We
+     * do not wait for worker threads to terminate.  We do not call the engine
+     * destroy function.
+     */
+
+    while (hb_thread_running && !arcus_zk_shutdown) {
+        /* If the last hearbeat timed out, do not wait and try another
+         * right away.
+         */
+        if (failed == 0)
+            sleep(HEART_BEAT_PERIOD);
+
+        /* Graceful shutdown was requested while sleeping. */
+        if (arcus_zk_shutdown)
+            break;
+
+        /* Do one ping and measure how long it takes. */
+        gettimeofday(&start_time, NULL);
+        mc_hb((zhandle_t *)NULL, (void *)ping_data);
+        gettimeofday(&end_time, NULL);
+
+        /* Paranoid.  Check if the clock had gone backwards. */
+        start_msec = start_time.tv_sec * 1000 + start_time.tv_usec / 1000;
+        end_msec = end_time.tv_sec * 1000 + end_time.tv_usec / 1000;
+        if (end_msec >= start_msec) {
+            elapsed_msec = end_msec - start_msec;
+        } else {
+            elapsed_msec = 0; /* Ignore this failure */
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "hb_thread: Clock has gone backwards? start_msec=%llu"
+                " end_msec=%llu\n", (unsigned long long)start_msec,
+                (unsigned long long)end_msec);
+        }
+
+        /* If the heartbeat took longer than 1 second, leave a log message.
+         * Local heartbeat should take on the order of microseconds.  We want
+         * to see how often it takes unexpectedly long, independently of
+         * failure detection.
+         */
+        if (elapsed_msec > HEART_BEAT_WARN_TIMEOUT && !arcus_zk_shutdown) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Heartbeat took longer than expected. elapsed_msec=%llu\n",
+                (unsigned long long)elapsed_msec);
+        }
+
+        if (elapsed_msec > HEART_BEAT_TIMEOUT) {
+            failed++;
+
+            /* Graceful shutdown was requested while doing heartbeat.
+             * When worker threads die, there is no one to process heartbeat
+             * request, and we would see a timeout.  Ignore the false alarm.
+             */
+            if (arcus_zk_shutdown)
+                break;
+
+            /* Print a message for every failure to help debugging, postmortem
+             * analysis, etc.
+             */
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Heartbeat failure. elapsed_msec=%llu consecutive_fail=%d\n",
+                (unsigned long long)elapsed_msec, failed);
+
+            if (failed >= HEART_BEAT_TRY_COUNT) {
+                /* Do not bother calling memcached.c:shutdown_server.
+                 * Call arcus_zk_final directly.  shutdown_server just sets
+                 * memcached_shutdown = arcus_zk_shutdown = 1 and calls
+                 * arcus_zk_final.  These flags are used for graceful shutdown.
+                 * We do not need them here.  Besides, arcus_zk_final kills
+                 * the process right away, assuming the zookeeper library
+                 * still functions.
+                 */
+                /*
+                  SERVER_HANDLE_V1 *api = arcus_conf.get_server_api();
+                  api->core->shutdown();
+                */
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "%d consecutive heartbeat failures. Shutting down...\n",
+                    failed);
+                arcus_zk_final("Heartbeat failures");
+                /* Does not return */
+            }
+        } else {
+            /* Reset the failure counter */
+            failed = 0;
+        }
+    }
+    return NULL;
+}
 
 static void
-arcus_exit(zhandle_t *zh, int err)
+start_hb_thread(app_ping_t *data)
 {
-    if (zh)
-        zookeeper_close(zh);
-    arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "shutting down\n");
-    exit(err);
+    pthread_t tid;
+    int ret;
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+
+    if ((ret = pthread_create(&tid, &attr, hb_thread, (void *)data)) != 0) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                               "Cannot create hb thread: %s\n", strerror(ret));
+        arcus_zk_final("start_hb_thread");
+    }
 }
+#endif // ENABLE_HEART_BEAT_THREAD
 
 static app_ping_t *arcus_prepare_ping_context(int port)
 {
@@ -856,10 +909,9 @@ static int arcus_create_ephemeral_znode(zhandle_t *zh, const char *root)
     return 0;
 }
 
-void
-arcus_zk_init(char *ensemble_list, int zk_to,
-              EXTENSION_LOGGER_DESCRIPTOR *logger,
-              int verbose, size_t maxbytes, int port)
+void arcus_zk_init(char *ensemble_list, int zk_to,
+                   EXTENSION_LOGGER_DESCRIPTOR *logger,
+                   int verbose, size_t maxbytes, int port)
 {
     int             rc;
     char            zpath[200] = "";
@@ -1020,8 +1072,83 @@ arcus_zk_init(char *ensemble_list, int zk_to,
     }
 }
 
-int
-arcus_zk_set_ensemble(char *ensemble_list)
+/* called from memcached main thread
+ * this shutdown Zookeeper connection, ephemeral node, and leave a log
+ */
+void arcus_zk_final(const char *msg)
+{
+#if 0 // Remove the code of deleting the ephemeral znode. it'll be deleted, after closing a zookeeper session.
+    char zpath[200]="";
+    int  rc;
+
+    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "\nArcus memcached shutting down\n");
+
+    if (!zh)
+        exit (0);
+
+    if (zoo_state(zh) == ZOO_CONNECTED_STATE && arcus_conf.init) {
+
+        // delete "/cache_list/{svc}/ip:port-hostname" ephemeral znode
+        snprintf(zpath, sizeof(zpath), "%s/%s/%s/%s",
+                 zk_root, zk_cache_path, arcus_conf.svc, arcus_conf.zk_path);
+
+        // manually delete this znode with stored version number to allow immediate restart
+        // of memcached. Otherwise, need to wait until ZK remove this at session expiration
+        rc = zoo_delete (zh, zpath, arcus_conf.zk_path_ver);
+        if (rc) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "cannot remove %s (%s error)\n",
+                                   zpath, zerror(rc));
+            arcus_zk_log(zh, "leave-unclean");
+        } else {
+            arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "Deleting cache_list entry manually\n");
+            // log this leave activity in /arcus/cache_server_log
+            arcus_zk_log(zh, "leave-clean");
+        }
+    }
+#else
+    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "\nArcus memcached shutting down - %s\n", msg);
+
+    if (!zh)
+        exit (0);
+#endif
+#ifdef ENABLE_HEART_BEAT_THREAD
+    /* Just set a flag and do not wait for the thread to die.
+     * hb_thread is probably sleeping.  And, if it is in the middle of
+     * doing a ping, it would block for a long time because worker threads
+     * are likely all dead at this point.
+     */
+    hb_thread_running = false;
+#endif
+
+    /* Do not call zookeeper_close (arcus_exit) and
+     * zoo_wget_children (arcus_cluster_watch_servers) at the same time.
+     * Otherwise, this thread (main thread) and the watcher thread
+     * (zoo_wget_children) may hang forever until the user manually kills
+     * the process.  The root cause is within the zookeeper library.  Its
+     * handling of concurrent API calls like zoo_wget_children and
+     * zookeeper_close still has holes...
+     */
+    {
+        bool watcher_running;
+        pthread_mutex_lock(&zk_close_lock);
+        zk_closing = true;
+        watcher_running = zk_watcher_running;
+        pthread_mutex_unlock(&zk_close_lock);
+
+        /* If the watcher thread (zoo_wget_children) is running now, wait for
+         * one second.  Either it completes, or it at least registers
+         * sync_completion and blocks.  In the latter case, zookeeper_close
+         * aborts all sync_completion's, which then wakes up the blocking
+         * watcher thread.  zoo_wget_children returns an error.
+         */
+        if (watcher_running)
+            sleep(1);
+    }
+
+    arcus_exit(zh, EX_OK);
+}
+
+int arcus_zk_set_ensemble(char *ensemble_list)
 {
     int rc;
     if (zh) {
@@ -1053,8 +1180,7 @@ arcus_zk_set_ensemble(char *ensemble_list)
     return -1;
 }
 
-int
-arcus_zk_get_ensemble_str(char *buf, int size)
+int arcus_zk_get_ensemble_str(char *buf, int size)
 {
     int rc;
     if (zh) {
@@ -1068,6 +1194,11 @@ arcus_zk_get_ensemble_str(char *buf, int size)
             "Failed to get the ZooKeeper ensemble list. The handle is invalid.\n");
     }
     return -1;
+}
+
+int arcus_zk_get_timeout(void)
+{
+    return (int)arcus_conf.zk_timeout;
 }
 
 #ifdef ENABLE_CLUSTER_AWARE
@@ -1093,141 +1224,4 @@ bool arcus_key_is_mine(const char *key, size_t nkey)
 }
 #endif
 
-#ifdef ENABLE_HEART_BEAT_THREAD
-static void *
-hb_thread(void *arg)
-{
-    app_ping_t *ping_data = arg;
-    int failed = 0;
-    struct timeval start_time;
-    struct timeval end_time;
-    uint64_t elapsed_msec, start_msec, end_msec;
-
-    hb_thread_running = true;
-
-    /* Always print this to help the admin. */
-    arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-        "Heartbeat thread is running.\n");
-
-    /* We consider 3 types of shutdowns.
-     *
-     * 1. control-c
-     * The user wants a graceful shutdown.  The main thread wakes up all
-     * the worker threads and wait for them to terminate.  It also calls
-     * the engine destroy function.  In this case, heartbeat should just stop.
-     * arcus_zk_shutdown = true indicates this case.  So, we check that flag
-     * in this function.
-     *
-     * 2. kill -KILL
-     * Something is very wrong, and the user wants to kill the process right
-     * away.  For example, control-c/graceful shutdown might hang due to bugs.
-     * And, the user wants to forcefully kill the process.  There is nothing
-     * we can do here.
-     *
-     * 3. Heartbeat failure
-     * memcached is not working properly.  We attempt to close the ZK session
-     * and then forcefully terminate.  This is NOT a graceful shutdown.  We
-     * do not wait for worker threads to terminate.  We do not call the engine
-     * destroy function.
-     */
-
-    while (hb_thread_running && !arcus_zk_shutdown) {
-        /* If the last hearbeat timed out, do not wait and try another
-         * right away.
-         */
-        if (failed == 0)
-            sleep(HEART_BEAT_PERIOD);
-
-        /* Graceful shutdown was requested while sleeping. */
-        if (arcus_zk_shutdown)
-            break;
-
-        /* Do one ping and measure how long it takes. */
-        gettimeofday(&start_time, NULL);
-        mc_hb((zhandle_t *)NULL, (void *)ping_data);
-        gettimeofday(&end_time, NULL);
-
-        /* Paranoid.  Check if the clock had gone backwards. */
-        start_msec = start_time.tv_sec * 1000 + start_time.tv_usec / 1000;
-        end_msec = end_time.tv_sec * 1000 + end_time.tv_usec / 1000;
-        if (end_msec >= start_msec) {
-            elapsed_msec = end_msec - start_msec;
-        } else {
-            elapsed_msec = 0; /* Ignore this failure */
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "hb_thread: Clock has gone backwards? start_msec=%llu"
-                " end_msec=%llu\n", (unsigned long long)start_msec,
-                (unsigned long long)end_msec);
-        }
-
-        /* If the heartbeat took longer than 1 second, leave a log message.
-         * Local heartbeat should take on the order of microseconds.  We want
-         * to see how often it takes unexpectedly long, independently of
-         * failure detection.
-         */
-        if (elapsed_msec > HEART_BEAT_WARN_TIMEOUT && !arcus_zk_shutdown) {
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Heartbeat took longer than expected. elapsed_msec=%llu\n",
-                (unsigned long long)elapsed_msec);
-        }
-
-        if (elapsed_msec > HEART_BEAT_TIMEOUT) {
-            failed++;
-
-            /* Graceful shutdown was requested while doing heartbeat.
-             * When worker threads die, there is no one to process heartbeat
-             * request, and we would see a timeout.  Ignore the false alarm.
-             */
-            if (arcus_zk_shutdown)
-                break;
-
-            /* Print a message for every failure to help debugging, postmortem
-             * analysis, etc.
-             */
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Heartbeat failure. elapsed_msec=%llu consecutive_fail=%d\n",
-                (unsigned long long)elapsed_msec, failed);
-
-            if (failed >= HEART_BEAT_TRY_COUNT) {
-                /* Do not bother calling memcached.c:shutdown_server.
-                 * Call arcus_zk_final directly.  shutdown_server just sets
-                 * memcached_shutdown = arcus_zk_shutdown = 1 and calls
-                 * arcus_zk_final.  These flags are used for graceful shutdown.
-                 * We do not need them here.  Besides, arcus_zk_final kills
-                 * the process right away, assuming the zookeeper library
-                 * still functions.
-                 */
-                /*
-                  SERVER_HANDLE_V1 *api = arcus_conf.get_server_api();
-                  api->core->shutdown();
-                */
-                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "%d consecutive heartbeat failures. Shutting down...\n",
-                    failed);
-                arcus_zk_final("Heartbeat failures");
-                /* Does not return */
-            }
-        } else {
-            /* Reset the failure counter */
-            failed = 0;
-        }
-    }
-    return NULL;
-}
-
-static void
-start_hb_thread(app_ping_t *data)
-{
-    pthread_t tid;
-    int ret;
-    pthread_attr_t attr;
-    pthread_attr_init(&attr);
-
-    if ((ret = pthread_create(&tid, &attr, hb_thread, (void *)data)) != 0) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                               "Cannot create hb thread: %s\n", strerror(ret));
-        arcus_zk_final("start_hb_thread");
-    }
-}
-#endif // ENABLE_HEART_BEAT_THREAD
 #endif  // ENABLE_ZK_INTEGRATION
