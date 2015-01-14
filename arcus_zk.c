@@ -131,7 +131,6 @@ typedef struct {
     EXTENSION_LOGGER_DESCRIPTOR *logger; // mc logger
     char   *cluster_path;       // cluster path for this memcached
 #ifdef ENABLE_CLUSTER_AWARE
-    char   *self_hostport;      // host:port string for this memcached
     struct cluster_config *ch;  // cluster configuration handle
 #endif
     bool    init;               // is this structure initialized?
@@ -151,7 +150,6 @@ arcus_zk_conf arcus_conf = {
     .logger         = NULL,
     .cluster_path   = NULL,
 #ifdef ENABLE_CLUSTER_AWARE
-    .self_hostport  = NULL,
     .ch             = NULL,
 #endif
     .init           = false
@@ -1051,17 +1049,16 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 
 #ifdef ENABLE_CLUSTER_AWARE
     arcus_conf.ch = cluster_config_init(arcus_conf.logger, arcus_conf.verbose);
-
-    char self_hostport[200];
-    snprintf(self_hostport, sizeof(self_hostport), "%s:%u", arcus_conf.hostip, arcus_conf.port);
-    cluster_config_set_hostport(arcus_conf.ch, self_hostport, 200);
+    assert(arcus_conf.ch);
+    cluster_config_set_hostport(arcus_conf.ch,
+                                arcus_conf.mc_ipport, strlen(arcus_conf.mc_ipport));
 
     // set a watch to the cache list this memcached belongs in
     // (e.g. /arcus/cache_list/a_cluster)
     arcus_cluster_watch_servers(zh, arcus_conf.cluster_path, arcus_cluster_watcher);
 
     arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-            "Memcached is watching Arcus cache cloud for \"%s\"\n", arcus_conf.cluster_path);
+        "Memcached is watching Arcus cache cloud for \"%s\"\n", arcus_conf.cluster_path);
 #endif
 
 #ifdef ENABLE_HEART_BEAT_THREAD
