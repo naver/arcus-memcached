@@ -129,8 +129,8 @@ typedef struct {
     int     verbose;            // verbose output
     size_t  maxbytes;           // mc -M option
     EXTENSION_LOGGER_DESCRIPTOR *logger; // mc logger
-#ifdef ENABLE_CLUSTER_AWARE
     char   *cluster_path;       // cluster path for this memcached
+#ifdef ENABLE_CLUSTER_AWARE
     char   *self_hostport;      // host:port string for this memcached
     struct cluster_config *ch;  // cluster configuration handle
 #endif
@@ -149,8 +149,8 @@ arcus_zk_conf arcus_conf = {
     .port           = -1,
     .maxbytes       = -1,
     .logger         = NULL,
-#ifdef ENABLE_CLUSTER_AWARE
     .cluster_path   = NULL,
+#ifdef ENABLE_CLUSTER_AWARE
     .self_hostport  = NULL,
     .ch             = NULL,
 #endif
@@ -880,8 +880,8 @@ static int arcus_create_ephemeral_znode(zhandle_t *zh, const char *root)
     char        rcbuf[200];
     struct Stat zstat;
 
-    snprintf(zpath, sizeof(zpath), "%s/%s/%s/%s",
-             root, zk_cache_path, arcus_conf.svc, arcus_conf.zk_path);
+    snprintf(zpath, sizeof(zpath), "%s/%s",
+             arcus_conf.cluster_path, arcus_conf.zk_path);
     snprintf(value, sizeof(value), "%ldMB", (long)arcus_conf.maxbytes/1024/1024);
     rc = zoo_create(zh, zpath, value, strlen(value), &ZOO_OPEN_ACL_UNSAFE,
                     ZOO_EPHEMERAL, rcbuf, sizeof(rcbuf));
@@ -1020,6 +1020,10 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     }
     assert(arcus_conf.svc != NULL);
 
+    snprintf(zpath, sizeof(zpath), "%s/%s/%s", zk_root, zk_cache_path, arcus_conf.svc);
+    arcus_conf.cluster_path = strdup(zpath);
+    assert(arcus_conf.cluster_path);
+
     arcus_conf.init = true;
 
     /* create "/cache_list/{svc}/ip:port-hostname" ephemeral znode */
@@ -1046,11 +1050,6 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
             "ZooKeeper session timeout: %d sec\n", zoo_recv_timeout(zh)/1000);
 
 #ifdef ENABLE_CLUSTER_AWARE
-    char zpath_cluster[200];
-    snprintf(zpath_cluster, sizeof(zpath_cluster), "%s/%s/%s",
-             zk_root, zk_cache_path, arcus_conf.svc);
-    arcus_conf.cluster_path = strndup(zpath_cluster, 200);
-
     arcus_conf.ch = cluster_config_init(arcus_conf.logger, arcus_conf.verbose);
 
     char self_hostport[200];
@@ -1092,8 +1091,8 @@ void arcus_zk_final(const char *msg)
     if (zoo_state(zh) == ZOO_CONNECTED_STATE && arcus_conf.init) {
 
         // delete "/cache_list/{svc}/ip:port-hostname" ephemeral znode
-        snprintf(zpath, sizeof(zpath), "%s/%s/%s/%s",
-                 zk_root, zk_cache_path, arcus_conf.svc, arcus_conf.zk_path);
+        snprintf(zpath, sizeof(zpath), "%s/%s",
+                 arcus_conf.cluster_path, arcus_conf.zk_path);
 
         // manually delete this znode with stored version number to allow immediate restart
         // of memcached. Otherwise, need to wait until ZK remove this at session expiration
