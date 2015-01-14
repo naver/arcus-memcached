@@ -593,6 +593,245 @@ arcus_exit(zhandle_t *zh, int err)
     exit(err);
 }
 
+#if 1 // JOON_CODE_REFACTORING
+static int arcus_get_local_ip_hostname(void)
+{
+    int                 sock, rc;
+    socklen_t           socklen=16;
+    struct in_addr      inaddr;
+    struct sockaddr_in  saddr, myaddr;
+    struct hostent      *zkhost, *hp;
+    char                *zip, *hlist;
+    char                *sep1=",";
+    char                *sep2=":";
+    char                myip[50];
+    char                rcbuf[200];
+
+    // Need to figure out local IP. first create a dummy udp socket
+    if ((sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP)) == -1) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "socket() failed: %s\n", strerror(errno));
+        return EX_OSERR;
+    }
+
+    saddr.sin_family = AF_INET;
+    saddr.sin_port   = htons(SYSLOGD_PORT); // what if this is not open? XXX
+
+    // loop through all ensemble IP in case ensemble failure
+    zip = strtok_r(arcus_conf.ensemble_list, sep1, &hlist); // separate IP:PORT tuple
+    while (zip)
+    {
+        zip = strtok(zip, sep2); // extract the first IP
+
+        // try to convert IP -> network IP format
+        if (inet_aton(zip, &inaddr)) {
+            // just use the IP
+            saddr.sin_addr = inaddr;
+            if (arcus_conf.verbose > 2) {
+                arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
+                        "Trying ensemble IP: %s\n", zip);
+            }
+        } else {
+            // Must be hostname, not IP. Convert hostname to IP first
+            zkhost = gethostbyname(zip);
+            if (!zkhost) {
+                arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
+                        "Invalid IP/hostname in arg: %s\n", zip);
+                // get next token: separate IP:PORT tuple
+                zip = strtok_r(NULL, sep1, &hlist);
+                continue;
+            }
+            memcpy((char *)&saddr.sin_addr,
+                   zkhost->h_addr_list[0], zkhost->h_length);
+            inet_ntop(AF_INET, &saddr.sin_addr, rcbuf, sizeof(rcbuf));
+            if (arcus_conf.verbose > 2) {
+                arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
+                    "Trying converted IP of hostname(%s): %s\n", zip, rcbuf);
+            }
+        }
+
+        // try to connect to ensemble' arcus_conf.logger->logd UDP port
+        // this is dummy code that simply is used to get local IP address
+        int flags = fcntl(sock, F_GETFL, 0);
+        fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+        rc = connect(sock, (struct sockaddr*) &saddr, sizeof(struct sockaddr_in));
+        fcntl(sock, F_SETFL, flags);
+        if (rc == 0) { // connect immediately
+            if (arcus_conf.verbose > 2) {
+                arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
+                        "connected to ensemble \"%s\" syslogd UDP port\n", zip);
+            }
+            break;
+        }
+
+        // if cannot connect immediately, try other ensemble
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Cannot connect to ensemble %s (%s error)\n", zip, strerror(errno));
+        zip = strtok_r(NULL, sep1, &hlist); // get next token: separate IP:PORT tuple
+    }
+    if (!zip) { // failed to connect to all ensemble host. fail
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "not able to connect any Ensemble server\n");
+        close(sock); sock = -1;
+        return EX_UNAVAILABLE;
+    }
+
+    // finally, what's my local IP?
+    if (getsockname(sock, (struct sockaddr *) &myaddr, &socklen)) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "getsockname failed: %s\n", strerror(errno));
+        close(sock); sock = -1;
+        return EX_NOHOST;
+    }
+    close(sock); sock = -1;
+
+    // Finally local IP
+    inet_ntop(AF_INET, &myaddr.sin_addr, myip, sizeof(myip));
+    arcus_conf.hostip = strdup(myip);
+    arcus_conf.logger->log(EXTENSION_LOG_DETAIL, NULL, "local IP: %s\n", myip);
+
+    if (!arcus_conf.zk_path) {
+        char *hostp=NULL;
+        char  hostbuf[100];
+        // Also get local hostname.
+        // We want IP and hostname to better identify this cache
+        hp = gethostbyaddr((char*)&myaddr.sin_addr.s_addr,
+                            sizeof(myaddr.sin_addr.s_addr), AF_INET);
+        if (hp) {
+            hostp = strdup(hp->h_name);
+        } else {
+            // if gethostbyaddr() doesn't work, try gethostname
+            if (gethostname((char *)&hostbuf, sizeof(hostbuf))) {
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "cannot get hostname: %s\n", strerror(errno));
+                return EX_NOHOST;
+            }
+            hostp = hostbuf;
+        }
+        arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
+                               "local hostname: %s\n", hostp);
+
+        // we need to keep ip:port-hostname tuple for later user (restart)
+        snprintf(rcbuf, sizeof(rcbuf), "%s:%d-%s",
+                 arcus_conf.hostip, arcus_conf.port, hostp);
+        arcus_conf.zk_path = strdup(rcbuf);
+    }
+    return 0; // EX_OK
+}
+#endif
+
+#if 1 // JOON_CODE_REFACTORING
+static int arcus_get_service_code(zhandle_t *zh, const char *root)
+{
+    struct String_vector strv = {0, NULL};
+    char zpath[200];
+    int  rc;
+
+    snprintf(zpath, sizeof(zpath), "%s/%s/%s",
+             root, zk_map_path, arcus_conf.hostip);
+    inc_count(1);
+    rc = zoo_async(zh, zpath, arcus_zk_sync_cb, NULL);
+    if (rc != ZOK) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "zoo_async() failed: %s\n", zerror(rc));
+        return -1;
+    }
+    // wait until above sync callback is called
+    wait_count(0);
+    rc = last_rc;
+    if (rc != ZOK) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Failed to synchronize zpath. zpath=%s error=%s\n", zpath, zerror(rc));
+        return -1;
+    }
+
+    // First check: get children of "/cache_server_mapping/ip:port"
+    snprintf(zpath, sizeof(zpath), "%s/%s/%s:%d",
+             root, zk_map_path, arcus_conf.hostip, arcus_conf.port);
+    rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
+    if (rc == ZNONODE) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Cannot find the server mapping. zpath=%s error=%d(%s)\n",
+                zpath, rc, zerror(rc));
+
+        // Second check: get children of "/cache_server_mapping/ip"
+        snprintf(zpath, sizeof(zpath), "%s/%s/%s",
+                 root, zk_map_path, arcus_conf.hostip);
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Recheck the server mapping without the port number."
+                " zpath=%s\n", zpath);
+        rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
+    }
+    if (rc != ZOK) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Failed to read the server mapping. zpath=%s error=%d(%s)\n",
+                zpath, rc, zerror(rc));
+        return -1;
+    }
+
+    // zoo_get_children returns ZOK even if no child exist
+    if (strv.count == 0) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "The server mapping exists but has no service code."
+                " zpath=%s\n", zpath);
+        return -1;
+    }
+
+    // get the first one. we could have more than one (meaning one server participating in
+    // more than one service in the cluster: not likely though)
+    arcus_conf.svc = strdup(strv.data[0]);
+    if (arcus_conf.svc == NULL) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Failed to allocate service code string\n");
+        return -1;
+    }
+
+    deallocate_String_vector(&strv);
+    return 0;
+}
+#endif
+
+#if 1 // JOON_CODE_REFACTORING
+static int arcus_create_ephemeral_znode(zhandle_t *zh, const char *root)
+{
+    int         rc;
+    char        zpath[200];
+    char        value[200];
+    char        rcbuf[200];
+    struct Stat zstat;
+
+    snprintf(zpath, sizeof(zpath), "%s/%s/%s/%s",
+             root, zk_cache_path, arcus_conf.svc, arcus_conf.zk_path);
+    snprintf(value, sizeof(value), "%ldMB", (long)arcus_conf.maxbytes/1024/1024);
+    rc = zoo_create(zh, zpath, value, strlen(value), &ZOO_OPEN_ACL_UNSAFE,
+                    ZOO_EPHEMERAL, rcbuf, sizeof(rcbuf));
+    if (rc) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "cannot create znode %s (%s error)\n", zpath, zerror(rc));
+        if (rc == ZNODEEXISTS) {
+            arcus_conf.logger->log( EXTENSION_LOG_DETAIL, NULL,
+                    "old session still exist. Wait a bit\n");
+        }
+        return -1;
+    } else {
+        if (arcus_conf.verbose > 2) {
+            arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
+                    "Joined Arcus cloud at %s\n", rcbuf);
+        }
+    }
+
+    rc = zoo_exists(zh, zpath, 0, &zstat);
+    if (rc) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "cannot find %s just created (%s error)\n", rcbuf, zerror(rc));
+        return -1;
+    }
+
+    // store this version number, just in case we restart
+    arcus_conf.zk_path_ver = zstat.version;
+    return 0;
+}
+#endif
 
 void
 arcus_zk_init(char *ensemble_list, int zk_to,
@@ -601,15 +840,23 @@ arcus_zk_init(char *ensemble_list, int zk_to,
 {
     int     rc;
     char    zpath[200] = "";
+#if 1 // JOON_CODE_REFACTORING
+#else
     char    rcbuf[200] = "";
+#endif
     char    sbuf[200] = "";
+#if 1 // JOON_CODE_REFACTORING
+#else
     char    host[100] = "";
     char    myip[50] = "";
     char    *sep1=",", *sep2=":", *zip, *hlist;
     char    *hostp=NULL;
+#endif
 
     struct timeval          start_time, end_time;
     struct tm               *ltm;
+#if 1 // JOON_CODE_REFACTORING
+#else
     struct String_vector    strv = {0, NULL};
 
     int                 sock;
@@ -617,8 +864,12 @@ arcus_zk_init(char *ensemble_list, int zk_to,
     struct in_addr      inaddr;
     struct sockaddr_in  saddr, myaddr;
     struct hostent      *zkhost, *hp;
+#endif
     long                difftime_us;
+#if 1 // JOON_CODE_REFACTORING
+#else
     struct Stat         zstat;
+#endif
     app_ping_t          *ping_data;
 
     // save these for later use (restart)
@@ -647,6 +898,14 @@ arcus_zk_init(char *ensemble_list, int zk_to,
         arcus_exit(zh, EX_USAGE);
     }
 
+#if 1 // JOON_CODE_REFACTORING
+    rc = arcus_get_local_ip_hostname();
+    if (rc != 0) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                               "arcus_get_local_ip_hostname() faileds\n");
+        arcus_exit(zh, rc);
+    }
+#else
     // Need to figure out local IP. first create a dummy udp socket
     if ((sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP)) == -1) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "socket() failed: %s\n", strerror(errno));
@@ -742,6 +1001,7 @@ arcus_zk_init(char *ensemble_list, int zk_to,
         }
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "hostname: %s\n", hostp);
     }
+#endif
 
     // prepare app_ping context data: sockaddr for memcached connection in app ping
     //
@@ -813,6 +1073,15 @@ arcus_zk_init(char *ensemble_list, int zk_to,
     }
 #endif
 
+#if 1 // JOON_CODE_REFACTORING
+    /* Retrieve the service code for this cache node */
+    if (arcus_get_service_code(zh, zk_root) != 0) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                 "Failed to get the service code for this cache node.\n");
+        arcus_exit(zh, EX_PROTOCOL);
+    }
+    assert(arcus_conf.svc != NULL);
+#else
     // get service string for this cache
     // first sync the zk server in ensemble to get latest
     snprintf(zpath, sizeof(zpath), "%s/%s/%s", zk_root, zk_map_path, arcus_conf.hostip);
@@ -871,13 +1140,24 @@ arcus_zk_init(char *ensemble_list, int zk_to,
         free(strv.data[i]);
     }
     free(strv.data);
+#endif
 
+#if 1 // JOON_CODE_REFACTORING
+#else
     // we need to keep ip:port-hostname tuple for later user (restart)
     snprintf(rcbuf, sizeof(rcbuf), "%s:%d-%s", arcus_conf.hostip, arcus_conf.port, hostp);
     arcus_conf.zk_path = strdup (rcbuf);
+#endif
     arcus_conf.init     = true;
 
     // create "/cache_list/{svc}/ip:port-hostname" ephemeral znode
+#if 1 // JOON_CODE_REFACTORING
+    if (arcus_create_ephemeral_znode(zh, zk_root) != 0) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                               "arcus_create_ephemeral_znode() failed.\n");
+        arcus_exit(zh, EX_PROTOCOL);
+    }
+#else
     snprintf(zpath, sizeof(zpath), "%s/%s/%s/%s",
              zk_root, zk_cache_path, arcus_conf.svc, arcus_conf.zk_path);
     sprintf(sbuf, "%ldMB", (long) arcus_conf.maxbytes/1024/1024);
@@ -905,6 +1185,7 @@ arcus_zk_init(char *ensemble_list, int zk_to,
 
     // store this version number, just in case we restart
     arcus_conf.zk_path_ver = zstat.version;
+#endif
 
     gettimeofday(&end_time, 0);
     difftime_us = (end_time.tv_sec*1000000+end_time.tv_usec) -
