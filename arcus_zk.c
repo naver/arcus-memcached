@@ -368,7 +368,7 @@ arcus_zk_sync_cb(int rc, const char *name, const void *data)
 // this is for debugging purpose
 // We cannot log in case of memcached crash
 //
-void
+static void
 arcus_zk_log(zhandle_t *zh, const char *action)
 {
     int     rc;
@@ -584,13 +584,42 @@ mc_hb(zhandle_t *zh, void *context)
 }
 
 
-void
+static void
 arcus_exit(zhandle_t *zh, int err)
 {
     if (zh)
         zookeeper_close(zh);
     arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "shutting down\n");
     exit(err);
+}
+
+static app_ping_t *arcus_prepare_ping_context(int port)
+{
+    /* prepare app_ping context data:
+     * sockaddr for memcached connection in app ping
+     */
+    app_ping_t *ping_data = calloc(1, sizeof(app_ping_t));
+    if (ping_data != NULL) {
+        ping_data->addr.sin_family = AF_INET;
+        ping_data->addr.sin_port   = htons(port);
+        /* Use the admin ip (currently localhost) to avoid competing with
+         * regular clients for connections.
+         */
+        ping_data->addr.sin_addr.s_addr = inet_addr(ADMIN_CLIENT_IP);
+#ifdef ENABLE_HEART_BEAT_THREAD
+        {
+            /* +500 msec so that the caller can detect the timeout */
+            uint64_t usec = HEART_BEAT_TIMEOUT * 1000 + 500000;
+            ping_data->to.tv_sec = usec / 1000000;
+            ping_data->to.tv_usec = usec % 1000000;
+        }
+#else
+        // Just use ZK session timeout in seconds
+        ping_data->to.tv_sec = arcus_conf.zk_timeout / 1000;
+        ping_data->to.tv_usec = 0;
+#endif
+    }
+    return ping_data;
 }
 
 static int arcus_get_local_ip_hostname(void)
@@ -834,11 +863,20 @@ arcus_zk_init(char *ensemble_list, int zk_to,
 {
     int             rc;
     char            zpath[200] = "";
-    char            sbuf[200] = "";
     struct timeval  start_time, end_time;
-    struct tm       *ltm;
     long            difftime_us;
     app_ping_t      *ping_data;
+
+    assert(logger);
+    if (arcus_conf.verbose > 2)
+        arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
+                               "-> arcus_zk_init\n");
+
+    if (!ensemble_list) { // Arcus Zookeeper Ensemble IP list
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                               " -z{ensemble_list} must not be empty\n");
+        arcus_exit(zh, EX_USAGE);
+    }
 
     // save these for later use (restart)
     if (!arcus_conf.init) {
@@ -856,45 +894,23 @@ arcus_zk_init(char *ensemble_list, int zk_to,
         memset( &myid, 0, sizeof(myid) );
     }
 
-    assert(logger);
-    if (arcus_conf.verbose > 2)
-        arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "-> arcus_zk_init\n");
-
-    // Arcus Zookeeper Ensemble IP list
-    if (!ensemble_list) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, " -z{ensemble_list} must not be empty\n");
-        arcus_exit(zh, EX_USAGE);
+    /* prepare app_ping context data */
+    ping_data = arcus_prepare_ping_context(arcus_conf.port);
+    if (ping_data == NULL) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                               "arcus_prepare_ping_context() failed\n");
+        arcus_exit(zh, EX_OSERR);
     }
 
+    /* make znode name while getting local ip and hostname */
     rc = arcus_get_local_ip_hostname();
     if (rc != 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                               "arcus_get_local_ip_hostname() faileds\n");
+                               "arcus_get_local_ip_hostname() failed\n");
         arcus_exit(zh, rc);
     }
 
-    // prepare app_ping context data: sockaddr for memcached connection in app ping
-    //
-    ping_data = calloc(1, sizeof(app_ping_t));
-    assert(ping_data);
-
-    ping_data->addr.sin_family = AF_INET;
-    ping_data->addr.sin_port   = htons(arcus_conf.port);
-    // Use the admin ip (currently localhost) to avoid competing with regular
-    // clients for connections.
-    ping_data->addr.sin_addr.s_addr = inet_addr(ADMIN_CLIENT_IP);
-#ifdef ENABLE_HEART_BEAT_THREAD
-    {
-        /* +500 msec so that the caller can detect the timeout */
-        uint64_t usec = HEART_BEAT_TIMEOUT * 1000 + 500000;
-        ping_data->to.tv_sec = usec / 1000000;
-        ping_data->to.tv_usec = usec % 1000000;
-    }
-#else
-    // Just use ZK session timeout in seconds
-    ping_data->to.tv_sec = arcus_conf.zk_timeout / 1000;
-    ping_data->to.tv_usec = 0;
-#endif
+    gettimeofday(&start_time, 0);
 
     if (strncmp("syslog", arcus_conf.logger->get_name(), 7) == 0) {
         zoo_forward_logs_to_syslog("memcached", 1);
@@ -908,26 +924,24 @@ arcus_zk_init(char *ensemble_list, int zk_to,
         zoo_set_debug_level(ZOO_LOG_LEVEL_WARN);
     }
 
-    // connect to ZK ensemble
     if (arcus_conf.verbose > 2)
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "zookeeper_init()\n");
 
-    gettimeofday(&start_time, 0);
-
+    // connect to ZK ensemble
     snprintf(zpath, sizeof(zpath), "%s", arcus_conf.ensemble_list);
     inc_count(1);
     zh = zookeeper_init(zpath, arcus_zk_watcher, arcus_conf.zk_timeout, &myid, 0, 0);
     if (!zh) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "zookeeper_init() failed (%s error)\n",
-                                strerror(errno));
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "zookeeper_init() failed (%s error)\n", strerror(errno));
         arcus_exit(zh, EX_PROTOCOL);
     }
-
     // wait until above init callback is called
     // We need to wait until ZOO_CONNECTED_STATE
     if (wait_count(arcus_conf.zk_timeout) != 0) {
         /* zoo_state(zh) != ZOO_CONNECTED_STATE */
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "cannot to be ZOO_CONNECTED_STATE\n");
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "cannot to be ZOO_CONNECTED_STATE\n");
         arcus_exit(zh, EX_PROTOCOL);
     }
 
@@ -960,20 +974,17 @@ arcus_zk_init(char *ensemble_list, int zk_to,
         arcus_exit(zh, EX_PROTOCOL);
     }
 
-    gettimeofday(&end_time, 0);
-    difftime_us = (end_time.tv_sec*1000000+end_time.tv_usec) -
-                  (start_time.tv_sec*1000000 + start_time.tv_usec);
-
-    ltm = localtime (&end_time.tv_sec);
-    strftime(sbuf, sizeof(sbuf), "%Y-%m-%d %H:%M:%S", ltm);
-
     // log this join activity in /arcus/cache_server_log
     arcus_zk_log(zh, "join");
 
+    gettimeofday(&end_time, 0);
+    difftime_us = (end_time.tv_sec*1000000 + end_time.tv_usec) -
+                  (start_time.tv_sec*1000000 + start_time.tv_usec);
     // We have finished registering this memcached instance to Arcus cluster
     arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
             "Memcached joined Arcus cache cloud for \"%s\" service (took %ld microsec)\n",
             arcus_conf.svc, difftime_us);
+
     // "recv" timeout is actually the session timeout
     // ZK client ping period is recv_timeout / 3.
     arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
@@ -1007,8 +1018,6 @@ arcus_zk_init(char *ensemble_list, int zk_to,
     if (arcus_zk_shutdown) {
         arcus_zk_final("Interrupted");
     }
-
-    return;
 }
 
 int
