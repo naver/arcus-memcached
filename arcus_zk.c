@@ -675,7 +675,7 @@ static app_ping_t *arcus_prepare_ping_context(int port)
     return ping_data;
 }
 
-static int arcus_get_local_ip_hostname(void)
+static int arcus_build_znode_name(char *ensemble_list)
 {
     int                 sock, rc;
     socklen_t           socklen=16;
@@ -699,7 +699,7 @@ static int arcus_get_local_ip_hostname(void)
     saddr.sin_port   = htons(SYSLOGD_PORT); // what if this is not open? XXX
 
     // loop through all ensemble IP in case ensemble failure
-    zip = strtok_r(arcus_conf.ensemble_list, sep1, &hlist); // separate IP:PORT tuple
+    zip = strtok_r(ensemble_list, sep1, &hlist); // separate IP:PORT tuple
     while (zip)
     {
         zip = strtok(zip, sep2); // extract the first IP
@@ -956,10 +956,10 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     }
 
     /* make znode name while getting local ip and hostname */
-    rc = arcus_get_local_ip_hostname();
+    rc = arcus_build_znode_name(ensemble_list);
     if (rc != 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                               "arcus_get_local_ip_hostname() failed\n");
+                               "arcus_build_znode_name() failed\n");
         arcus_exit(zh, rc);
     }
 
@@ -982,6 +982,8 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 
     // connect to ZK ensemble
     snprintf(zpath, sizeof(zpath), "%s", arcus_conf.ensemble_list);
+    if (arcus_conf.verbose > 2)
+        arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "zk ensemble: %s\n", zpath);
     inc_count(1);
     zh = zookeeper_init(zpath, arcus_zk_watcher, arcus_conf.zk_timeout, &myid, 0, 0);
     if (!zh) {
