@@ -13945,7 +13945,8 @@ int main (int argc, char **argv) {
     // initialize Arcus ZK cluster connection
     if (arcus_zk_cfg) {
         arcus_zk_init(arcus_zk_cfg, arcus_zk_to, mc_logger,
-                      settings.verbose, settings.maxbytes, settings.port);
+                      settings.verbose, settings.maxbytes, settings.port,
+                      mc_engine.v1);
     }
 #endif
 

@@ -65,7 +65,6 @@
 #include <sysexits.h>
 #include <limits.h>
 #include "arcus_zk.h"
-#include "memcached/extension_loggers.h"
 #ifdef ENABLE_CLUSTER_AWARE
 #include "cluster_config.h"
 #endif
@@ -129,6 +128,10 @@ typedef struct {
     int     verbose;            // verbose output
     size_t  maxbytes;           // mc -M option
     EXTENSION_LOGGER_DESCRIPTOR *logger; // mc logger
+    union {
+        ENGINE_HANDLE *v0;
+        ENGINE_HANDLE_V1 *v1;
+    } engine;                   // mc engine
     char   *cluster_path;       // cluster path for this memcached
 #ifdef ENABLE_CLUSTER_AWARE
     struct cluster_config *ch;  // cluster configuration handle
@@ -912,7 +915,8 @@ static int arcus_create_ephemeral_znode(zhandle_t *zh, const char *root)
 
 void arcus_zk_init(char *ensemble_list, int zk_to,
                    EXTENSION_LOGGER_DESCRIPTOR *logger,
-                   int verbose, size_t maxbytes, int port)
+                   int verbose, size_t maxbytes, int port,
+                   ENGINE_HANDLE_V1 *engine)
 {
     int             rc;
     char            zpath[200] = "";
@@ -921,6 +925,8 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     app_ping_t      *ping_data;
 
     assert(logger);
+    assert(engine);
+
     if (arcus_conf.verbose > 2)
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
                                "-> arcus_zk_init\n");
@@ -933,8 +939,9 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 
     // save these for later use (restart)
     if (!arcus_conf.init) {
-        arcus_conf.port          = port;    // memcached liste port
+        arcus_conf.port          = port;    // memcached listen port
         arcus_conf.logger        = logger;
+        arcus_conf.engine.v1     = engine;
         arcus_conf.verbose       = verbose;
         arcus_conf.maxbytes      = maxbytes;
         arcus_conf.ensemble_list = strdup(ensemble_list);

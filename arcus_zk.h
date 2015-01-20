@@ -19,6 +19,7 @@
 
 #include "config.h"
 #include "memcached/extension_loggers.h"
+#include "memcached/engine.h"
 
 #ifdef ENABLE_ZK_INTEGRATION
 
@@ -28,7 +29,8 @@ extern volatile sig_atomic_t arcus_zk_shutdown;
 
 void arcus_zk_init(char *ensemble_list, int zk_to,
                    EXTENSION_LOGGER_DESCRIPTOR *logger,
-                   int verbose, size_t maxbytes, int port);
+                   int verbose, size_t maxbytes, int port,
+                   ENGINE_HANDLE_V1 *engine);
 void arcus_zk_final(const char *msg);
 
 int  arcus_zk_set_ensemble(char *ensemble_list);
