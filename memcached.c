@@ -13970,9 +13970,10 @@ int main (int argc, char **argv) {
 
 #ifdef ENABLE_ZK_INTEGRATION
     // shutdown Arcus connection
-    if (arcus_zk_cfg)
+    if (arcus_zk_cfg) {
         arcus_zk_final("graceful shutdown");
-    free (arcus_zk_cfg);    // not really needed though
+        free(arcus_zk_cfg);
+    }
 #endif
 
     return EXIT_SUCCESS;
