@@ -1080,45 +1080,18 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     }
 }
 
-/* called from memcached main thread
- * this shutdown Zookeeper connection, ephemeral node, and leave a log
+/* Close the ZK connection and die. Do not do anything that may
+ * block here such as deleting the ephemeral znode.
+ * It will be deleted, after closing the ZK connection(or session).
  */
 void arcus_zk_final(const char *msg)
 {
-#if 0 // Remove the code of deleting the ephemeral znode. it'll be deleted, after closing a zookeeper session.
-    char zpath[200]="";
-    int  rc;
-
-    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "\nArcus memcached shutting down\n");
+    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
+                           "\nArcus memcached shutting down - %s\n", msg);
 
     if (!zh)
-        exit (0);
+        exit(0);
 
-    if (zoo_state(zh) == ZOO_CONNECTED_STATE && arcus_conf.init) {
-
-        // delete "/cache_list/{svc}/ip:port-hostname" ephemeral znode
-        snprintf(zpath, sizeof(zpath), "%s/%s",
-                 arcus_conf.cluster_path, arcus_conf.zk_path);
-
-        // manually delete this znode with stored version number to allow immediate restart
-        // of memcached. Otherwise, need to wait until ZK remove this at session expiration
-        rc = zoo_delete (zh, zpath, arcus_conf.zk_path_ver);
-        if (rc) {
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "cannot remove %s (%s error)\n",
-                                   zpath, zerror(rc));
-            arcus_zk_log(zh, "leave-unclean");
-        } else {
-            arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "Deleting cache_list entry manually\n");
-            // log this leave activity in /arcus/cache_server_log
-            arcus_zk_log(zh, "leave-clean");
-        }
-    }
-#else
-    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "\nArcus memcached shutting down - %s\n", msg);
-
-    if (!zh)
-        exit (0);
-#endif
 #ifdef ENABLE_HEART_BEAT_THREAD
     /* Just set a flag and do not wait for the thread to die.
      * hb_thread is probably sleeping.  And, if it is in the middle of
