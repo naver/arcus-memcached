@@ -60,15 +60,17 @@ static hash_item *do_item_alloc(struct default_engine *engine,
                                 const int flags, const rel_time_t exptime,
                                 const int nbytes, const void *cookie);
 static hash_item *do_item_get(struct default_engine *engine,
-                              const char *key, const size_t nkey, bool LRU_reposition);
+                              const char *key, const size_t nkey,
+                              bool LRU_reposition);
 static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *it);
 static void do_item_unlink(struct default_engine *engine, hash_item *it,
                            enum item_unlink_cause cause);
 static void do_item_release(struct default_engine *engine, hash_item *it);
 static void do_item_update(struct default_engine *engine, hash_item *it);
 static void do_item_lru_reposition(struct default_engine *engine, hash_item *it);
-static ENGINE_ERROR_CODE do_item_replace(struct default_engine *engine, hash_item *it, hash_item *new_it);
-static void item_free(struct default_engine *engine, hash_item *it);
+static ENGINE_ERROR_CODE do_item_replace(struct default_engine *engine,
+                                         hash_item *it, hash_item *new_it);
+static void do_item_free(struct default_engine *engine, hash_item *it);
 static void push_coll_del_queue(struct default_engine *engine, hash_item *it);
 static void do_coll_all_elem_delete(struct default_engine *engine, hash_item *it);
 extern int  genhash_string_hash(const void* p, size_t nkey);
@@ -356,7 +358,8 @@ static void do_item_invalidate(struct default_engine *engine, hash_item *it,
 }
 
 static void *do_item_alloc_internal(struct default_engine *engine,
-                                    const size_t ntotal, const unsigned int clsid, const void *cookie)
+                                    const size_t ntotal, const unsigned int clsid,
+                                    const void *cookie)
 {
     hash_item *it = NULL;
 
@@ -616,8 +619,10 @@ static void *do_item_alloc_internal(struct default_engine *engine,
 }
 
 /*@null@*/
-hash_item *do_item_alloc(struct default_engine *engine, const void *key, const size_t nkey,
-                         const int flags, const rel_time_t exptime, const int nbytes, const void *cookie)
+static hash_item *do_item_alloc(struct default_engine *engine,
+                                const void *key, const size_t nkey,
+                                const int flags, const rel_time_t exptime,
+                                const int nbytes, const void *cookie)
 {
     hash_item *it = NULL;
     size_t ntotal = sizeof(hash_item) + nkey + nbytes;
@@ -659,7 +664,7 @@ hash_item *do_item_alloc(struct default_engine *engine, const void *key, const s
     return it;
 }
 
-static void item_free(struct default_engine *engine, hash_item *it)
+static void do_item_free(struct default_engine *engine, hash_item *it)
 {
     size_t ntotal = ITEM_ntotal(engine, it);
     unsigned int clsid;
@@ -786,7 +791,7 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it)
     return;
 }
 
-ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *it)
+static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *it)
 {
     MEMCACHED_ITEM_LINK(item_get_key(it), it->nkey, it->nbytes);
     assert((it->iflag & (ITEM_LINKED|ITEM_SLABBED)) == 0);
@@ -830,8 +835,8 @@ ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *it)
     return ENGINE_SUCCESS;
 }
 
-void do_item_unlink(struct default_engine *engine, hash_item *it,
-                    enum item_unlink_cause cause)
+static void do_item_unlink(struct default_engine *engine, hash_item *it,
+                           enum item_unlink_cause cause)
 {
     /* cause: item unlink cause will be used, later
     */
@@ -864,12 +869,12 @@ void do_item_unlink(struct default_engine *engine, hash_item *it,
                      item_get_key(it), it->nkey);
         item_unlink_q(engine, it);
         if (it->refcount == 0) {
-            item_free(engine, it);
+            do_item_free(engine, it);
         }
     }
 }
 
-void do_item_release(struct default_engine *engine, hash_item *it)
+static void do_item_release(struct default_engine *engine, hash_item *it)
 {
     MEMCACHED_ITEM_REMOVE(item_get_key(it), it->nkey, it->nbytes);
     if (it->refcount != 0) {
@@ -877,11 +882,11 @@ void do_item_release(struct default_engine *engine, hash_item *it)
         DEBUG_REFCNT(it, '-');
     }
     if (it->refcount == 0 && (it->iflag & ITEM_LINKED) == 0) {
-        item_free(engine, it);
+        do_item_free(engine, it);
     }
 }
 
-void do_item_update(struct default_engine *engine, hash_item *it)
+static void do_item_update(struct default_engine *engine, hash_item *it)
 {
     rel_time_t current_time = engine->server.core->get_current_time();
     MEMCACHED_ITEM_UPDATE(item_get_key(it), it->nkey, it->nbytes);
@@ -896,7 +901,7 @@ void do_item_update(struct default_engine *engine, hash_item *it)
     }
 }
 
-void do_item_lru_reposition(struct default_engine *engine, hash_item *it)
+static void do_item_lru_reposition(struct default_engine *engine, hash_item *it)
 {
     assert((it->iflag & ITEM_SLABBED) == 0);
     if ((it->iflag & ITEM_LINKED) != 0) {
@@ -906,7 +911,8 @@ void do_item_lru_reposition(struct default_engine *engine, hash_item *it)
     }
 }
 
-ENGINE_ERROR_CODE do_item_replace(struct default_engine *engine, hash_item *it, hash_item *new_it)
+static ENGINE_ERROR_CODE do_item_replace(struct default_engine *engine,
+                                         hash_item *it, hash_item *new_it)
 {
     MEMCACHED_ITEM_REPLACE(item_get_key(it), it->nkey, it->nbytes,
                            item_get_key(new_it), new_it->nkey, new_it->nbytes);
@@ -1054,7 +1060,9 @@ static void do_item_stats_sizes(struct default_engine *engine, ADD_STAT add_stat
 }
 
 /** wrapper around assoc_find which does the lazy expiration logic */
-hash_item *do_item_get(struct default_engine *engine, const char *key, const size_t nkey, bool LRU_reposition)
+static hash_item *do_item_get(struct default_engine *engine,
+                              const char *key, const size_t nkey,
+                              bool LRU_reposition)
 {
     rel_time_t current_time = engine->server.core->get_current_time();
     hash_item *it = assoc_find(engine, engine->server.core->hash(key, nkey, 0), key, nkey);
@@ -1288,7 +1296,7 @@ static void do_mem_slot_free(struct default_engine *engine, void *data, size_t n
 }
 
 /* get real maxcount for each collection type */
-static int32_t coll_real_maxcount(hash_item *it, int32_t maxcount)
+static int32_t do_coll_real_maxcount(hash_item *it, int32_t maxcount)
 {
     int32_t real_maxcount = maxcount;
 
@@ -1370,7 +1378,7 @@ static hash_item *do_list_item_alloc(struct default_engine *engine,
 
         /* initialize list meta information */
         list_meta_info *info = (list_meta_info *)item_get_meta(it);
-        info->mcnt = coll_real_maxcount(it, attrp->maxcount);
+        info->mcnt = do_coll_real_maxcount(it, attrp->maxcount);
         info->ccnt = 0;
         info->ovflact = (attrp->ovflaction==0 ? OVFL_TAIL_TRIM : attrp->ovflaction);
         info->mflags  = 0;
@@ -1586,7 +1594,7 @@ static hash_item *do_set_item_alloc(struct default_engine *engine,
 
         /* initialize set meta information */
         set_meta_info *info = (set_meta_info *)item_get_meta(it);
-        info->mcnt = coll_real_maxcount(it, attrp->maxcount);
+        info->mcnt = do_coll_real_maxcount(it, attrp->maxcount);
         info->ccnt = 0;
         info->ovflact = OVFL_ERROR;
         info->mflags  = 0;
@@ -2034,7 +2042,7 @@ static hash_item *do_btree_item_alloc(struct default_engine *engine,
 
         /* initialize b+tree meta information */
         btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
-        info->mcnt = coll_real_maxcount(it, attrp->maxcount);
+        info->mcnt = do_coll_real_maxcount(it, attrp->maxcount);
         info->ccnt = 0;
         info->ovflact = (attrp->ovflaction==0 ? OVFL_SMALLEST_TRIM : attrp->ovflaction);
         info->mflags  = 0;
@@ -4924,7 +4932,7 @@ static void *collection_delete_thread(void *arg)
                 (void)do_list_elem_delete(engine, info, 0, 30, ELEM_DELETE_COLL);
                 if (info->ccnt == 0) {
                     assert(info->head == NULL && info->tail == NULL);
-                    item_free(engine, it);
+                    do_item_free(engine, it);
                     dropped = true;
                 }
                 pthread_mutex_unlock(&engine->cache_lock);
@@ -4939,7 +4947,7 @@ static void *collection_delete_thread(void *arg)
                 (void)do_set_elem_delete(engine, info, 30, ELEM_DELETE_COLL);
                 if (info->ccnt == 0) {
                     assert(info->root == NULL);
-                    item_free(engine, it);
+                    do_item_free(engine, it);
                     dropped = true;
                 }
                 pthread_mutex_unlock(&engine->cache_lock);
@@ -4958,7 +4966,7 @@ static void *collection_delete_thread(void *arg)
                                            NULL, 100, ELEM_DELETE_COLL);
                 if (info->ccnt == 0) {
                     assert(info->root == NULL);
-                    item_free(engine, it);
+                    do_item_free(engine, it);
                     dropped = true;
                 }
                 pthread_mutex_unlock(&engine->cache_lock);
@@ -6514,7 +6522,7 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
                 ret = ENGINE_EBADATTR; break;
             }
             if (attr_ids[i] == ATTR_MAXCOUNT) {
-                attr_data->maxcount = coll_real_maxcount(it, attr_data->maxcount);
+                attr_data->maxcount = do_coll_real_maxcount(it, attr_data->maxcount);
                 if (info->ccnt > attr_data->maxcount) {
                     ret = ENGINE_EBADVALUE; break;
                 }
