@@ -28,6 +28,30 @@
 
 #include "default_engine.h"
 
+/* item unlink cause */
+enum item_unlink_cause {
+    ITEM_UNLINK_NORMAL = 0, /* unlink by normal request */
+    ITEM_UNLINK_EVICT,      /* unlink by eviction */
+    ITEM_UNLINK_INVALID,    /* unlink by invalidation such like expiration/flush */
+    ITEM_UNLINK_REPLACE,    /* unlink by replacement of set/replace command,
+                             * simple kv type only
+                             */
+    ITEM_UNLINK_ABORT,      /* unlink by abortion of creating a collection
+                             * collection type only
+                             */
+    ITEM_UNLINK_EMPTY,      /* unlink by empty collection
+                             * collection type only
+                             */
+    ITEM_UNLINK_STALE       /* unlink by staleness */
+};
+
+/* element delete cause */
+enum elem_delete_cause {
+    ELEM_DELETE_NORMAL = 0, /* delete by normal request */
+    ELEM_DELETE_COLL   = 1, /* delete by collection deletion */
+    ELEM_DELETE_TRIM   = 2  /* delete by overflow trim */
+};
+
 /* Forward Declarations */
 static void item_link_q(struct default_engine *engine, hash_item *it);
 static void item_unlink_q(struct default_engine *engine, hash_item *it);
@@ -38,7 +62,8 @@ static hash_item *do_item_alloc(struct default_engine *engine,
 static hash_item *do_item_get(struct default_engine *engine,
                               const char *key, const size_t nkey, bool LRU_reposition);
 static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *it);
-static void do_item_unlink(struct default_engine *engine, hash_item *it);
+static void do_item_unlink(struct default_engine *engine, hash_item *it,
+                           enum item_unlink_cause cause);
 static void do_item_release(struct default_engine *engine, hash_item *it);
 static void do_item_update(struct default_engine *engine, hash_item *it);
 static void do_item_lru_reposition(struct default_engine *engine, hash_item *it);
@@ -254,7 +279,7 @@ static hash_item *do_item_reclaim(struct default_engine *engine, hash_item *it,
     if (lruid != LRU_CLSID_FOR_SMALL) {
         it->refcount = 1;
         slabs_adjust_mem_requested(engine, it->slabs_clsid, ITEM_ntotal(engine,it), ntotal);
-        do_item_unlink(engine, it);
+        do_item_unlink(engine, it, ITEM_UNLINK_INVALID);
         /* Initialize the item block: */
         it->slabs_clsid = 0;
         it->refcount = 0;
@@ -264,7 +289,7 @@ static hash_item *do_item_reclaim(struct default_engine *engine, hash_item *it,
 #endif
     if (IS_COLL_ITEM(it))
         do_coll_all_elem_delete(engine, it);
-    do_item_unlink(engine, it);
+    do_item_unlink(engine, it, ITEM_UNLINK_INVALID);
 
     /* allocate from slab allocator */
     it = slabs_alloc(engine, ntotal, clsid);
@@ -291,7 +316,7 @@ static void do_item_evict(struct default_engine *engine, hash_item *it,
     /* unlink the item */
     if (IS_COLL_ITEM(it))
         do_coll_all_elem_delete(engine, it);
-    do_item_unlink(engine, it);
+    do_item_unlink(engine, it, ITEM_UNLINK_EVICT);
 }
 
 static void do_item_repair(struct default_engine *engine, hash_item *it,
@@ -304,7 +329,7 @@ static void do_item_repair(struct default_engine *engine, hash_item *it,
     /* unlink the item */
     if (IS_COLL_ITEM(it))
         do_coll_all_elem_delete(engine, it);
-    do_item_unlink(engine, it);
+    do_item_unlink(engine, it, ITEM_UNLINK_EVICT);
 }
 
 static void do_item_invalidate(struct default_engine *engine, hash_item *it,
@@ -322,7 +347,7 @@ static void do_item_invalidate(struct default_engine *engine, hash_item *it,
             do_coll_all_elem_delete(engine, it);
         }
     }
-    do_item_unlink(engine, it);
+    do_item_unlink(engine, it, ITEM_UNLINK_INVALID);
 }
 
 static void *do_item_alloc_internal(struct default_engine *engine,
@@ -800,8 +825,12 @@ ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *it)
     return ENGINE_SUCCESS;
 }
 
-void do_item_unlink(struct default_engine *engine, hash_item *it)
+void do_item_unlink(struct default_engine *engine, hash_item *it,
+                    enum item_unlink_cause cause)
 {
+    /* cause: item unlink cause will be used, later
+    */
+
     MEMCACHED_ITEM_UNLINK(item_get_key(it), it->nkey, it->nbytes);
     if ((it->iflag & ITEM_LINKED) != 0) {
         it->iflag &= ~ITEM_LINKED;
@@ -878,7 +907,7 @@ ENGINE_ERROR_CODE do_item_replace(struct default_engine *engine, hash_item *it, 
                            item_get_key(new_it), new_it->nkey, new_it->nbytes);
     assert((it->iflag & ITEM_SLABBED) == 0);
 
-    do_item_unlink(engine, it);
+    do_item_unlink(engine, it, ITEM_UNLINK_REPLACE);
     ENGINE_ERROR_CODE ret = do_item_link(engine, new_it);
     assert(ret == ENGINE_SUCCESS);
     return ret;
@@ -1027,7 +1056,8 @@ hash_item *do_item_get(struct default_engine *engine, const char *key, const siz
 
     if (it != NULL) {
         if (do_item_isvalid(engine, it, current_time)==false) {
-            do_item_unlink(engine, it); it = NULL;
+            do_item_unlink(engine, it, ITEM_UNLINK_INVALID);
+            it = NULL;
         }
     }
     if (it != NULL) {
@@ -1438,7 +1468,8 @@ static ENGINE_ERROR_CODE do_list_elem_link(struct default_engine *engine,
 }
 
 static void do_list_elem_unlink(struct default_engine *engine,
-                                list_meta_info *info, list_elem_item *elem)
+                                list_meta_info *info, list_elem_item *elem,
+                                enum elem_delete_cause cause)
 {
     /* if (elem->next != (list_elem_item *)ADDR_MEANS_UNLINKED) */
     {
@@ -1461,7 +1492,9 @@ static void do_list_elem_unlink(struct default_engine *engine,
 }
 
 static uint32_t do_list_elem_delete(struct default_engine *engine,
-                                    list_meta_info *info, const int index, const uint32_t count)
+                                    list_meta_info *info,
+                                    const int index, const uint32_t count,
+                                    enum elem_delete_cause cause)
 {
     uint32_t fcnt = 0;
     list_elem_item *next;
@@ -1469,7 +1502,7 @@ static uint32_t do_list_elem_delete(struct default_engine *engine,
     while (elem != NULL) {
         next = elem->next;
         fcnt++;
-        do_list_elem_unlink(engine, info, elem);
+        do_list_elem_unlink(engine, info, elem, cause);
         if (count > 0 && fcnt >= count) break;
         elem = next;
     }
@@ -1489,7 +1522,7 @@ static uint32_t do_list_elem_get(struct default_engine *engine,
         tobe = (forward ? elem->next : elem->prev);
         elem->refcount++;
         elem_array[fcnt++] = elem;
-        if (delete) do_list_elem_unlink(engine, info, elem);
+        if (delete) do_list_elem_unlink(engine, info, elem, ELEM_DELETE_NORMAL);
         if (count > 0 && fcnt >= count) break;
         elem = tobe;
     }
@@ -1765,7 +1798,8 @@ static ENGINE_ERROR_CODE do_set_elem_link(struct default_engine *engine,
 static void do_set_elem_unlink(struct default_engine *engine,
                                set_meta_info *info,
                                set_hash_node *node, const int hidx,
-                               set_elem_item *prev, set_elem_item *elem)
+                               set_elem_item *prev, set_elem_item *elem,
+                               enum elem_delete_cause cause)
 {
     if (prev != NULL) prev->next = elem->next;
     else              node->htab[hidx] = elem->next;
@@ -1839,7 +1873,8 @@ static ENGINE_ERROR_CODE do_set_elem_traverse_delete(struct default_engine *engi
                 elem = elem->next;
             }
             if (elem != NULL) {
-                do_set_elem_unlink(engine, info, node, hidx, prev, elem);
+                do_set_elem_unlink(engine, info, node, hidx, prev, elem,
+                                   ELEM_DELETE_NORMAL);
                 ret = ENGINE_SUCCESS;
             }
         }
@@ -1849,8 +1884,10 @@ static ENGINE_ERROR_CODE do_set_elem_traverse_delete(struct default_engine *engi
 
 static ENGINE_ERROR_CODE do_set_elem_delete_with_value(struct default_engine *engine,
                                                        set_meta_info *info,
-                                                       const char *val, const int vlen)
+                                                       const char *val, const int vlen,
+                                                       enum elem_delete_cause cause)
 {
+    assert(cause == ELEM_DELETE_NORMAL);
     ENGINE_ERROR_CODE ret;
     if (info->root != NULL) {
         int hval = genhash_string_hash(val, vlen);
@@ -1906,7 +1943,9 @@ static int do_set_elem_traverse_dfs(struct default_engine *engine,
                     elem_array[tot_fcnt+fcnt] = elem;
                 }
                 fcnt++;
-                if (delete) do_set_elem_unlink(engine, info, node, hidx, NULL, elem);
+                if (delete) do_set_elem_unlink(engine, info, node, hidx, NULL, elem,
+                                               (elem_array==NULL ? ELEM_DELETE_COLL
+                                                                 : ELEM_DELETE_NORMAL));
                 if (count > 0 && (tot_fcnt+fcnt) >= count) break;
                 elem = (delete ? node->htab[hidx] : elem->next);
             }
@@ -1918,8 +1957,10 @@ static int do_set_elem_traverse_dfs(struct default_engine *engine,
 }
 
 static uint32_t do_set_elem_delete(struct default_engine *engine,
-                                   set_meta_info *info, const uint32_t count)
+                                   set_meta_info *info, const uint32_t count,
+                                   enum elem_delete_cause cause)
 {
+    assert(cause == ELEM_DELETE_COLL);
     uint32_t fcnt = 0;
     if (info->root != NULL) {
         fcnt = do_set_elem_traverse_dfs(engine, info, info->root, count, true, NULL);
@@ -3377,7 +3418,8 @@ static void do_btree_node_merge(struct default_engine *engine,
 }
 
 static void do_btree_elem_unlink(struct default_engine *engine,
-                                 btree_meta_info *info, btree_elem_posi *path)
+                                 btree_meta_info *info, btree_elem_posi *path,
+                                 enum elem_delete_cause cause)
 {
     btree_elem_posi *posi = &path[0];
     btree_elem_item *elem = BTREE_GET_ELEM_ITEM(posi->node, posi->indx);
@@ -3540,7 +3582,8 @@ static ENGINE_ERROR_CODE do_btree_elem_update(struct default_engine *engine, btr
 
 static uint32_t do_btree_elem_delete(struct default_engine *engine, btree_meta_info *info,
                                      const int bkrtype, const bkey_range *bkrange,
-                                     const eflag_filter *efilter, const uint32_t count)
+                                     const eflag_filter *efilter, const uint32_t count,
+                                     enum elem_delete_cause cause)
 {
     btree_elem_posi  path[BTREE_MAX_DEPTH];
     btree_elem_item *elem;
@@ -3555,7 +3598,8 @@ static uint32_t do_btree_elem_delete(struct default_engine *engine, btree_meta_i
         if (bkrtype == BKEY_RANGE_TYPE_SIN) {
             assert(path[0].bkeq == true);
             if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
-                do_btree_elem_unlink(engine, info, path);
+                /* cause == ELEM_DELETE_NORMAL */
+                do_btree_elem_unlink(engine, info, path, cause);
                 tot_fcnt = 1;
             }
         } else {
@@ -3781,7 +3825,8 @@ static void do_btree_overflow_trim(struct default_engine *engine, btree_meta_inf
             bkrange_space.to_nbkey   = edge_elem->nbkey;
         }
         bkrtype = do_btree_bkey_range_type(&bkrange_space);
-        del_count = do_btree_elem_delete(engine, info, bkrtype, &bkrange_space, NULL, 0);
+        del_count = do_btree_elem_delete(engine, info, bkrtype, &bkrange_space, NULL, 0,
+                                         ELEM_DELETE_TRIM);
         assert(del_count > 0);
         assert(info->ccnt > 0);
         if (info->ovflact == OVFL_SMALLEST_TRIM || info->ovflact == OVFL_LARGEST_TRIM)
@@ -3805,7 +3850,7 @@ static void do_btree_overflow_trim(struct default_engine *engine, btree_meta_inf
             *trimmed_elems = edge_elem;
             *trimmed_count = 1;
         }
-        do_btree_elem_unlink(engine, info, delpath);
+        do_btree_elem_unlink(engine, info, delpath, ELEM_DELETE_TRIM);
         if (info->ovflact == OVFL_SMALLEST_TRIM || info->ovflact == OVFL_LARGEST_TRIM)
             info->has_trimmed = 1;
     }
@@ -3940,7 +3985,7 @@ static uint32_t do_btree_elem_get(struct default_engine *engine, btree_meta_info
                     elem->refcount++;
                     elem_array[tot_fcnt++] = elem;
                     if (delete) {
-                        do_btree_elem_unlink(engine, info, path);
+                        do_btree_elem_unlink(engine, info, path, ELEM_DELETE_NORMAL);
                     }
                 }
             }
@@ -4765,17 +4810,18 @@ static void do_coll_all_elem_delete(struct default_engine *engine, hash_item *it
 {
     if (IS_LIST_ITEM(it)) {
         list_meta_info *info = (list_meta_info *)item_get_meta(it);
-        (void)do_list_elem_delete(engine, info, 0, info->mcnt);
+        (void)do_list_elem_delete(engine, info, 0, info->mcnt, ELEM_DELETE_COLL);
         assert(info->head == NULL && info->tail == NULL);
     } else if (IS_SET_ITEM(it)) {
         set_meta_info *info = (set_meta_info *)item_get_meta(it);
-        (void)do_set_elem_delete(engine, info, info->mcnt);
+        (void)do_set_elem_delete(engine, info, info->mcnt, ELEM_DELETE_COLL);
         assert(info->root == NULL);
     } else if (IS_BTREE_ITEM(it)) {
         btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
         bkey_range bkrange_space;
         get_bkey_full_range(info->bktype, true, &bkrange_space);
-        (void)do_btree_elem_delete(engine, info, BKEY_RANGE_TYPE_ASC, &bkrange_space, NULL, info->mcnt);
+        (void)do_btree_elem_delete(engine, info, BKEY_RANGE_TYPE_ASC, &bkrange_space,
+                                   NULL, info->mcnt, ELEM_DELETE_COLL);
         assert(info->root == NULL);
     }
 }
@@ -4864,7 +4910,7 @@ static void *collection_delete_thread(void *arg)
                 pthread_mutex_lock(&engine->cache_lock);
                 info = (list_meta_info *)item_get_meta(it);
                 //deleted_cnt = do_list_elem_delete(engine, info, 0, 30);
-                (void)do_list_elem_delete(engine, info, 0, 30);
+                (void)do_list_elem_delete(engine, info, 0, 30, ELEM_DELETE_COLL);
                 if (info->ccnt == 0) {
                     assert(info->head == NULL && info->tail == NULL);
                     item_free(engine, it);
@@ -4879,7 +4925,7 @@ static void *collection_delete_thread(void *arg)
                 pthread_mutex_lock(&engine->cache_lock);
                 info = (set_meta_info *)item_get_meta(it);
                 //deleted_cnt = do_set_elem_delete(engine, info, 30);
-                (void)do_set_elem_delete(engine, info, 30);
+                (void)do_set_elem_delete(engine, info, 30, ELEM_DELETE_COLL);
                 if (info->ccnt == 0) {
                     assert(info->root == NULL);
                     item_free(engine, it);
@@ -4897,7 +4943,8 @@ static void *collection_delete_thread(void *arg)
                 pthread_mutex_lock(&engine->cache_lock);
                 info = (btree_meta_info *)item_get_meta(it);
                 //deleted_cnt = do_btree_elem_delete(engine, info, BKEY_RANGE_TYPE_ASC, &bkrange_space, NULL, 100);
-                (void)do_btree_elem_delete(engine, info, BKEY_RANGE_TYPE_ASC, &bkrange_space, NULL, 100);
+                (void)do_btree_elem_delete(engine, info, BKEY_RANGE_TYPE_ASC, &bkrange_space,
+                                           NULL, 100, ELEM_DELETE_COLL);
                 if (info->ccnt == 0) {
                     assert(info->root == NULL);
                     item_free(engine, it);
@@ -4966,7 +5013,7 @@ void item_release(struct default_engine *engine, hash_item *item)
 void item_unlink(struct default_engine *engine, hash_item *item)
 {
     pthread_mutex_lock(&engine->cache_lock);
-    do_item_unlink(engine, item);
+    do_item_unlink(engine, item, ITEM_UNLINK_NORMAL);
     pthread_mutex_unlock(&engine->cache_lock);
 }
 
@@ -5143,11 +5190,11 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
                                 found = true;
                         }
                         if (found == true && (iter->iflag & ITEM_SLABBED) == 0) {
-                            do_item_unlink(engine, iter);
+                            do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
                         }
                     } else { /* flush all */
                         if ((iter->iflag & ITEM_SLABBED) == 0) {
-                            do_item_unlink(engine, iter);
+                            do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
                         }
                     }
                 } else {
@@ -5175,11 +5222,11 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
                                 found = true;
                         }
                         if (found == true && (iter->iflag & ITEM_SLABBED) == 0) {
-                            do_item_unlink(engine, iter);
+                            do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
                         }
                     } else { /* flush all */
                         if ((iter->iflag & ITEM_SLABBED) == 0) {
-                            do_item_unlink(engine, iter);
+                            do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
                         }
                     }
                 } else {
@@ -5398,12 +5445,14 @@ ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
                 if (index == 0 || index == -1) {
                     /* delete an element item of opposite side to make room */
                     uint32_t deleted = do_list_elem_delete(engine, info,
-                                                           (index==-1 ? 0 : -1), 1);
+                                                           (index==-1 ? 0 : -1), 1,
+                                                           ELEM_DELETE_TRIM);
                     assert(deleted == 1);
                 } else {
                     /* delete an element item that ovflow action indicates */
                     uint32_t deleted = do_list_elem_delete(engine, info,
-                                                           (info->ovflact==OVFL_HEAD_TRIM ? 0 : -1), 1);
+                                                           (info->ovflact==OVFL_HEAD_TRIM ? 0 : -1), 1,
+                                                           ELEM_DELETE_TRIM);
                     assert(deleted == 1);
                 }
             }
@@ -5435,7 +5484,7 @@ ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
                 if (*created) {
                     /* unlink the created list item and free it*/
                     do_item_release(engine, it);
-                    do_item_unlink(engine, it);
+                    do_item_unlink(engine, it, ITEM_UNLINK_ABORT);
                     it = NULL;
                 }
                 break;
@@ -5501,10 +5550,11 @@ ENGINE_ERROR_CODE list_elem_delete(struct default_engine *engine,
                 index = to_index;
                 count = from_index - to_index + 1;
             }
-            *del_count = do_list_elem_delete(engine, info, index, count);
+            *del_count = do_list_elem_delete(engine, info, index, count,
+                                             ELEM_DELETE_NORMAL);
             if (*del_count > 0) {
                 if (info->ccnt == 0 && drop_if_empty) {
-                    do_item_unlink(engine, it);
+                    do_item_unlink(engine, it, ITEM_UNLINK_EMPTY);
                     *dropped = true;
                 } else {
                     *dropped = false;
@@ -5549,7 +5599,7 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
                 if (*elem_count > 0) {
                     if (info->ccnt == 0 && drop_if_empty) {
                         assert(delete == true);
-                        do_item_unlink(engine, it);
+                        do_item_unlink(engine, it, ITEM_UNLINK_EMPTY);
                         *dropped = true;
                     } else {
                         *dropped = false;
@@ -5668,7 +5718,7 @@ ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key
                     if (*created) {
                         /* unlink the created set item and free it */
                         do_item_release(engine, it);
-                        do_item_unlink(engine, it);
+                        do_item_unlink(engine, it, ITEM_UNLINK_ABORT);
                         it = NULL;
                     }
                     ret = ENGINE_ENOMEM; break;
@@ -5686,7 +5736,7 @@ ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key
                 if (*created) {
                     /* unlink the created set item and free it*/
                     do_item_release(engine, it);
-                    do_item_unlink(engine, it);
+                    do_item_unlink(engine, it, ITEM_UNLINK_ABORT);
                     it = NULL;
                 }
                 break;
@@ -5716,10 +5766,11 @@ ENGINE_ERROR_CODE set_elem_delete(struct default_engine *engine,
     ret = do_set_item_find(engine, key, nkey, false, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         info = (set_meta_info *)item_get_meta(it);
-        ret = do_set_elem_delete_with_value(engine, info, value, nbytes);
+        ret = do_set_elem_delete_with_value(engine, info, value, nbytes,
+                                            ELEM_DELETE_NORMAL);
         if (ret == ENGINE_SUCCESS) {
             if (info->ccnt == 0 && drop_if_empty) {
-                do_item_unlink(engine, it);
+                do_item_unlink(engine, it, ITEM_UNLINK_EMPTY);
                 *dropped = true;
             }
         }
@@ -5779,7 +5830,7 @@ ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
             if (*elem_count > 0) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(delete == true);
-                    do_item_unlink(engine, it);
+                    do_item_unlink(engine, it, ITEM_UNLINK_EMPTY);
                     *dropped = true;
                 } else {
                     *dropped = false;
@@ -5901,7 +5952,7 @@ ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
                     if (*created) {
                         /* unlink the created btree item and free it */
                         do_item_release(engine, it);
-                        do_item_unlink(engine, it);
+                        do_item_unlink(engine, it, ITEM_UNLINK_ABORT);
                         it = NULL;
                     }
                     ret = ENGINE_ENOMEM; break;
@@ -5919,7 +5970,7 @@ ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
                 if (*created) {
                     /* unlink the created btree item and free it */
                     do_item_release(engine, it);
-                    do_item_unlink(engine, it);
+                    do_item_unlink(engine, it, ITEM_UNLINK_ABORT);
                     it = NULL;
                 }
                 break;
@@ -5992,11 +6043,12 @@ ENGINE_ERROR_CODE btree_elem_delete(struct default_engine *engine,
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
-            *del_count = do_btree_elem_delete(engine, info, bkrtype, bkrange, efilter, req_count);
+            *del_count = do_btree_elem_delete(engine, info, bkrtype, bkrange, efilter, req_count,
+                                              ELEM_DELETE_NORMAL);
             if (*del_count > 0) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(info->root == NULL);
-                    do_item_unlink(engine, it);
+                    do_item_unlink(engine, it, ITEM_UNLINK_EMPTY);
                     *dropped = true;
                 } else {
                     *dropped = false;
@@ -6097,7 +6149,7 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
                 if (delete) {
                     if (info->ccnt == 0 && drop_if_empty) {
                         assert(info->root == NULL);
-                        do_item_unlink(engine, it);
+                        do_item_unlink(engine, it, ITEM_UNLINK_EMPTY);
                         *dropped_trimmed = true;
                     } else {
                         *dropped_trimmed = false;
@@ -6607,7 +6659,7 @@ static bool item_scrub(struct default_engine *engine, hash_item *item)
     engine->scrubber.visited++;
     rel_time_t current_time = engine->server.core->get_current_time();
     if (item->refcount == 0 && do_item_isvalid(engine, item, current_time) == false) {
-        do_item_unlink(engine, item);
+        do_item_unlink(engine, item, ITEM_UNLINK_INVALID);
         engine->scrubber.cleaned++;
         return true;
     } else {
@@ -6631,7 +6683,7 @@ static bool item_scrub_stale(struct default_engine *engine, hash_item *item)
     engine->scrubber.visited++;
     if (do_item_isstale(engine, item) == true) {
         /* item->refcount might be 0 */
-        do_item_unlink(engine, item);
+        do_item_unlink(engine, item, ITEM_UNLINK_STALE);
         engine->scrubber.cleaned++;
         return true;
     } else {
