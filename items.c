@@ -139,6 +139,10 @@ extern int  genhash_string_hash(const void* p, size_t nkey);
 #define COLL_META_FLAG_STICKY   4
 #define COLL_META_FLAG_TRIMMED  8
 
+/** How long an object can reasonably be assumed to be locked before
+ *     harvesting it on a low memory condition. */
+#define TAIL_REPAIR_TIME (3 * 3600)
+
 /* btree position debugging */
 static bool btree_position_debug = false;
 

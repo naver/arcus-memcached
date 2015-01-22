@@ -46,10 +46,6 @@
 #define DONT_PREALLOC_SLABS
 #define MAX_NUMBER_OF_SLAB_CLASSES (POWER_LARGEST+1)
 
-/** How long an object can reasonably be assumed to be locked before
-    harvesting it on a low memory condition. */
-#define TAIL_REPAIR_TIME (3 * 3600)
-
 /* Forward decl */
 struct default_engine;
 
