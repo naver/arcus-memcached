@@ -168,6 +168,14 @@ static int32_t default_btree_size = 4000;
 
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
+/*
+ * Static functions
+ */
+static char* item_get_meta(const hash_item* item)
+{
+    return ((char*)item_get_key(item)) + META_OFFSET_IN_ITEM(item->nkey, item->nbytes);
+}
+
 /* warning: don't use these macros with a function, as it evals its arg twice */
 static inline size_t ITEM_ntotal(struct default_engine *engine, const hash_item *item)
 {
@@ -832,7 +840,7 @@ static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *
     pthread_mutex_unlock(&engine->stats.lock);
 
     /* Allocate a new CAS ID on link. */
-    item_set_cas(NULL, NULL, it, get_cas_id());
+    item_set_cas(it, get_cas_id());
 
     item_link_q(engine, it);
 
@@ -6649,6 +6657,43 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
+}
+
+/*
+ * Item access functions
+ */
+uint64_t item_get_cas(const hash_item* item)
+{
+    if (item->iflag & ITEM_WITH_CAS) {
+        return *(uint64_t*)(item + 1);
+    }
+    return 0;
+}
+
+void item_set_cas(const hash_item* item, uint64_t val)
+{
+    if (item->iflag & ITEM_WITH_CAS) {
+        *(uint64_t*)(item + 1) = val;
+    }
+}
+
+const void* item_get_key(const hash_item* item)
+{
+    char *ret = (void*)(item + 1);
+    if (item->iflag & ITEM_WITH_CAS) {
+        ret += sizeof(uint64_t);
+    }
+    return ret;
+}
+
+char* item_get_data(const hash_item* item)
+{
+    return ((char*)item_get_key(item)) + item->nkey;
+}
+
+uint8_t item_get_clsid(const hash_item* item)
+{
+    return 0;
 }
 
 /*

@@ -500,6 +500,14 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
                                ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
                                item_attr *attr_data);
 
+/*
+ * Item access functions
+ */
+uint64_t    item_get_cas(const hash_item* item);
+void        item_set_cas(const hash_item* item, uint64_t val);
+const void* item_get_key(const hash_item* item);
+char*       item_get_data(const hash_item* item);
+uint8_t     item_get_clsid(const hash_item* item);
 
 /*
  * Collection element size functions

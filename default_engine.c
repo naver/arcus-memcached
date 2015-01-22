@@ -1114,6 +1114,14 @@ static ENGINE_ERROR_CODE default_unknown_command(ENGINE_HANDLE* handle, const vo
     }
 }
 
+/* Item set cas value */
+static void default_item_set_cas(ENGINE_HANDLE *handle, const void *cookie,
+                                 item* item, uint64_t val)
+{
+    hash_item* it = get_real_item(item);
+    item_set_cas(it, val);
+}
+
 /* Item/Elem Info */
 
 static bool get_item_info(ENGINE_HANDLE *handle, const void *cookie,
@@ -1249,7 +1257,7 @@ ENGINE_ERROR_CODE create_instance(uint64_t interface, GET_SERVER_API get_server_
          .get_tap_iterator = get_tap_iterator,
 #endif
 
-         .item_set_cas        = item_set_cas,
+         .item_set_cas        = default_item_set_cas,
          .get_item_info       = get_item_info,
          .get_list_elem_info  = get_list_elem_info,
          .get_set_elem_info   = get_set_elem_info,
@@ -1304,44 +1312,3 @@ ENGINE_ERROR_CODE create_instance(uint64_t interface, GET_SERVER_API get_server_
     *handle = (ENGINE_HANDLE*)&engine->engine;
     return ENGINE_SUCCESS;
 }
-
-uint64_t item_get_cas(const hash_item* item)
-{
-    if (item->iflag & ITEM_WITH_CAS) {
-        return *(uint64_t*)(item + 1);
-    }
-    return 0;
-}
-
-void item_set_cas(ENGINE_HANDLE *handle, const void *cookie, item* item, uint64_t val)
-{
-    hash_item* it = get_real_item(item);
-    if (it->iflag & ITEM_WITH_CAS) {
-        *(uint64_t*)(it + 1) = val;
-    }
-}
-
-const void* item_get_key(const hash_item* item)
-{
-    char *ret = (void*)(item + 1);
-    if (item->iflag & ITEM_WITH_CAS) {
-        ret += sizeof(uint64_t);
-    }
-    return ret;
-}
-
-char* item_get_data(const hash_item* item)
-{
-    return ((char*)item_get_key(item)) + item->nkey;
-}
-
-char* item_get_meta(const hash_item* item)
-{
-    return ((char*)item_get_key(item)) + META_OFFSET_IN_ITEM(item->nkey, item->nbytes);
-}
-
-uint8_t item_get_clsid(const hash_item* item)
-{
-    return 0;
-}
-
