@@ -39,10 +39,6 @@
 #define MAX_SMGET_REQ_COUNT 2000
 #endif
 
-/* collection meta flag */
-#define COLL_META_FLAG_READABLE 2
-#define COLL_META_FLAG_STICKY   4
-
 /* Slab sizing definitions. */
 #define POWER_SMALLEST      1
 #define POWER_LARGEST       200

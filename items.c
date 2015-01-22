@@ -132,6 +132,11 @@ extern int  genhash_string_hash(const void* p, size_t nkey);
 /* special address for representing unlinked status */
 #define ADDR_MEANS_UNLINKED  1
 
+/* collection meta flag */
+#define COLL_META_FLAG_READABLE 2
+#define COLL_META_FLAG_STICKY   4
+#define COLL_META_FLAG_TRIMMED  8
+
 /* btree position debugging */
 static bool btree_position_debug = false;
 
@@ -1364,12 +1369,11 @@ static hash_item *do_list_item_alloc(struct default_engine *engine,
         info->mcnt = coll_real_maxcount(it, attrp->maxcount);
         info->ccnt = 0;
         info->ovflact = (attrp->ovflaction==0 ? OVFL_TAIL_TRIM : attrp->ovflaction);
+        info->mflags  = 0;
 #ifdef ENABLE_STICKY_ITEM
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
-        else                                    info->mflags &= ~COLL_META_FLAG_STICKY;
 #endif
-        if (attrp->readable == 1) info->mflags |= COLL_META_FLAG_READABLE;
-        else                      info->mflags &= ~COLL_META_FLAG_READABLE;
+        if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
         info->stotal  = 0;
         info->prefix  = NULL;
         info->head = info->tail = NULL;
@@ -1579,12 +1583,11 @@ static hash_item *do_set_item_alloc(struct default_engine *engine,
         info->mcnt = coll_real_maxcount(it, attrp->maxcount);
         info->ccnt = 0;
         info->ovflact = OVFL_ERROR;
+        info->mflags  = 0;
 #ifdef ENABLE_STICKY_ITEM
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
-        else                                    info->mflags &= ~COLL_META_FLAG_STICKY;
 #endif
-        if (attrp->readable == 1) info->mflags |= COLL_META_FLAG_READABLE;
-        else                      info->mflags &= ~COLL_META_FLAG_READABLE;
+        if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
         info->stotal  = 0;
         info->prefix  = NULL;
         info->root    = NULL;
@@ -2026,16 +2029,14 @@ static hash_item *do_btree_item_alloc(struct default_engine *engine,
         info->mcnt = coll_real_maxcount(it, attrp->maxcount);
         info->ccnt = 0;
         info->ovflact = (attrp->ovflaction==0 ? OVFL_SMALLEST_TRIM : attrp->ovflaction);
+        info->mflags  = 0;
 #ifdef ENABLE_STICKY_ITEM
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
-        else                                    info->mflags &= ~COLL_META_FLAG_STICKY;
 #endif
-        if (attrp->readable == 1) info->mflags |= COLL_META_FLAG_READABLE;
-        else                      info->mflags &= ~COLL_META_FLAG_READABLE;
+        if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
         info->bktype  = BKEY_TYPE_UNKNOWN;
         info->stotal  = 0;
         info->prefix  = NULL;
-        info->has_trimmed = 0;
         info->maxbkeyrange.len = BKEY_NULL;
         info->root    = NULL;
     }
@@ -3830,7 +3831,7 @@ static void do_btree_overflow_trim(struct default_engine *engine, btree_meta_inf
         assert(del_count > 0);
         assert(info->ccnt > 0);
         if (info->ovflact == OVFL_SMALLEST_TRIM || info->ovflact == OVFL_LARGEST_TRIM)
-            info->has_trimmed = 0;
+            info->mflags &= ~COLL_META_FLAG_TRIMMED; // clear trimmed
     } else { /* overflow_type == OVFL_TYPE_COUNT */
         assert(overflow_type == OVFL_TYPE_COUNT);
         assert((info->ccnt-1) == info->mcnt);
@@ -3852,7 +3853,7 @@ static void do_btree_overflow_trim(struct default_engine *engine, btree_meta_inf
         }
         do_btree_elem_unlink(engine, info, delpath, ELEM_DELETE_TRIM);
         if (info->ovflact == OVFL_SMALLEST_TRIM || info->ovflact == OVFL_LARGEST_TRIM)
-            info->has_trimmed = 1;
+            info->mflags |= COLL_META_FLAG_TRIMMED; // set trimmed
     }
 }
 
@@ -3933,7 +3934,7 @@ static ENGINE_ERROR_CODE do_btree_elem_link(struct default_engine *engine,
 static bool do_btree_overlapped_with_trimmed_space(btree_meta_info *info,
                                                    btree_elem_posi *posi, const int bkrtype)
 {
-    assert(info->has_trimmed != 0);
+    assert((info->mflags & COLL_META_FLAG_TRIMMED) != 0);
     bool overlapped = false;
 
     switch (info->ovflact) {
@@ -4001,7 +4002,7 @@ static uint32_t do_btree_elem_get(struct default_engine *engine, btree_meta_info
             int i;
 
             /* check if start position might be trimmed */
-            if (c_posi.bkeq == false && info->has_trimmed != 0) {
+            if (c_posi.bkeq == false && (info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
                 if (do_btree_overlapped_with_trimmed_space(info, &c_posi, bkrtype)) {
                     *potentialbkeytrim = true;
                 }
@@ -4067,7 +4068,7 @@ static uint32_t do_btree_elem_get(struct default_engine *engine, btree_meta_info
 
             /* check if end position might be trimmed */
             if (elem == NULL) {
-                if (c_posi.node == NULL && info->has_trimmed != 0) {
+                if (c_posi.node == NULL && (info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
                     if (do_btree_overlapped_with_trimmed_space(info, &c_posi, bkrtype)) {
                         *potentialbkeytrim = true;
                     }
@@ -4093,7 +4094,7 @@ static uint32_t do_btree_elem_get(struct default_engine *engine, btree_meta_info
             }
         }
     } else {
-        if (info->has_trimmed != 0) {
+        if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
             if (do_btree_overlapped_with_trimmed_space(info, &path[0], bkrtype)) {
                 *potentialbkeytrim = true;
             }
@@ -4434,7 +4435,7 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
 
         elem = do_btree_find_first(info->root, bkrtype, bkrange, &posi, false);
         if (elem == NULL) { /* No elements within the bkey range */
-            if (info->has_trimmed != 0) {
+            if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
                 /* Some elements weren't cached because of overflow trim */
                 if (do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
                     do_item_release(engine, it);
@@ -4445,7 +4446,7 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
             continue;
         }
 
-        if (posi.bkeq == false && info->has_trimmed != 0) {
+        if (posi.bkeq == false && (info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
             /* Some elements weren't cached because of overflow trim */
             if (do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
                 do_item_release(engine, it);
@@ -4466,7 +4467,7 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
         } while (elem != NULL);
 
         if (elem == NULL) {
-            if (posi.node == NULL && info->has_trimmed != 0) {
+            if (posi.node == NULL && (info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
                 if (do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
                     do_item_release(engine, it);
                     ret = ENGINE_EBKEYOOR; break;
@@ -4643,7 +4644,7 @@ static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
             if (btree_scan_buf[curr_idx].posi.node == NULL) {
                 /* reached to the end of b+tree scan */
                 info = (btree_meta_info *)item_get_meta(btree_scan_buf[curr_idx].it);
-                if (info->has_trimmed != 0) {
+                if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
                     if (do_btree_overlapped_with_trimmed_space(info, &btree_scan_buf[curr_idx].posi, bkrtype)) {
                         *potentialbkeytrim = true;
                         break; /* stop smget */
@@ -6443,7 +6444,7 @@ ENGINE_ERROR_CODE item_getattr(struct default_engine *engine,
                 if (attr_data->type == ITEM_TYPE_BTREE) {
                     btree_meta_info *binfo = (btree_meta_info *)info;
                     attr_data->maxbkeyrange = binfo->maxbkeyrange;
-                    attr_data->trimmed = binfo->has_trimmed;
+                    attr_data->trimmed = (((binfo->mflags & COLL_META_FLAG_TRIMMED) != 0) ? 1 : 0);
                     if (info->ccnt > 0) {
                         btree_elem_item *min_bkey_elem = do_btree_get_first_elem(binfo->root);
                         do_btree_get_bkey(min_bkey_elem, &attr_data->minbkey);
@@ -6588,7 +6589,7 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
                     if (IS_BTREE_ITEM(it)) {
                         btree_meta_info *binfo = (btree_meta_info *)info;
                         if (binfo->ovflact != attr_data->ovflaction) {
-                            binfo->has_trimmed = 0;
+                            binfo->mflags &= ~COLL_META_FLAG_TRIMMED; // clear trimmed
                         }
                     }
                     info->ovflact = attr_data->ovflaction;
