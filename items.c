@@ -6697,8 +6697,13 @@ uint8_t item_get_clsid(const hash_item* item)
 }
 
 /*
- * Collection element size functions
+ * Item and Element size functions
  */
+uint32_t item_ntotal(struct default_engine *engine, hash_item *item)
+{
+    return (uint32_t)ITEM_ntotal(engine, item);
+}
+
 uint32_t list_elem_ntotal(list_elem_item *elem)
 {
     return do_list_elem_ntotal(elem);

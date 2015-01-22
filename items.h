@@ -510,8 +510,9 @@ char*       item_get_data(const hash_item* item);
 uint8_t     item_get_clsid(const hash_item* item);
 
 /*
- * Collection element size functions
+ * Item and Element size functions
  */
+uint32_t item_ntotal(struct default_engine *engine, hash_item *item);
 uint32_t list_elem_ntotal(list_elem_item *elem);
 uint32_t set_elem_ntotal(set_elem_item *elem);
 uint32_t btree_elem_ntotal(btree_elem_item *elem);
