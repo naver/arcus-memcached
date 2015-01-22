@@ -1311,6 +1311,11 @@ static int32_t coll_real_maxcount(hash_item *it, int32_t maxcount)
     return real_maxcount;
 }
 
+static inline hash_item *do_coll_get_hash_item(coll_meta_info *info)
+{
+    return (hash_item*)((size_t*)info - info->itdist);
+}
+
 static inline uint32_t do_list_elem_ntotal(list_elem_item *elem)
 {
     return sizeof(list_elem_item) + elem->nbytes;
@@ -1326,7 +1331,6 @@ static inline uint32_t do_btree_elem_ntotal(btree_elem_item *elem)
     return sizeof(btree_elem_item_fixed) + BTREE_REAL_NBKEY(elem->nbkey)
            + elem->neflag + elem->nbytes;
 }
-
 
 /*
  * LIST collection management
@@ -1374,9 +1378,11 @@ static hash_item *do_list_item_alloc(struct default_engine *engine,
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
 #endif
         if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
+        info->itdist  = (uint8_t)((size_t*)info-(size_t*)it);
         info->stotal  = 0;
         info->prefix  = NULL;
         info->head = info->tail = NULL;
+        assert(do_coll_get_hash_item((coll_meta_info*)info) == it);
     }
     return it;
 }
@@ -1588,9 +1594,11 @@ static hash_item *do_set_item_alloc(struct default_engine *engine,
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
 #endif
         if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
+        info->itdist  = (uint8_t)((size_t*)info-(size_t*)it);
         info->stotal  = 0;
         info->prefix  = NULL;
         info->root    = NULL;
+        assert(do_coll_get_hash_item((coll_meta_info*)info) == it);
     }
     return it;
 }
@@ -2034,11 +2042,13 @@ static hash_item *do_btree_item_alloc(struct default_engine *engine,
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
 #endif
         if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
+        info->itdist  = (uint8_t)((size_t*)info-(size_t*)it);
         info->bktype  = BKEY_TYPE_UNKNOWN;
         info->stotal  = 0;
         info->prefix  = NULL;
         info->maxbkeyrange.len = BKEY_NULL;
         info->root    = NULL;
+        assert(do_coll_get_hash_item((coll_meta_info*)info) == it);
     }
     return it;
 }

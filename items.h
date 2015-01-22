@@ -86,7 +86,7 @@ typedef struct _list_meta_info {
     int32_t  ccnt;      /* current count */
     uint8_t  ovflact;   /* overflow action */
     uint8_t  mflags;    /* sticky, readable flags */
-    uint8_t  dummy;
+    uint8_t  itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint8_t  reserved;
     uint32_t stotal;    /* total space */
     void    *prefix;    /* pointer to prefix meta info */
@@ -114,7 +114,7 @@ typedef struct _set_meta_info {
     int32_t  ccnt;      /* current count */
     uint8_t  ovflact;   /* overflow action */
     uint8_t  mflags;    /* sticky, readable flags */
-    uint8_t  dummy;
+    uint8_t  itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint8_t  reserved;
     uint32_t stotal;    /* total space */
     void    *prefix;    /* pointer to prefix meta info */
@@ -153,7 +153,7 @@ typedef struct _btree_meta_info {
     int32_t  ccnt;      /* current count */
     uint8_t  ovflact;   /* overflow action */
     uint8_t  mflags;    /* sticky, readable, trimmed flags */
-    uint8_t  dummy;
+    uint8_t  itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint8_t  bktype;    /* bkey type : BKEY_TYPE_UINT64 or BKEY_TYPE_BINARY */
     uint32_t stotal;    /* total space */
     void    *prefix;    /* pointer to prefix meta info */
@@ -185,7 +185,7 @@ typedef struct _coll_meta_info {
     int32_t  ccnt;      /* current count */
     uint8_t  ovflact;   /* overflow action */
     uint8_t  mflags;    /* sticky, readable flags */
-    uint8_t  dummy;
+    uint8_t  itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint8_t  reserved;
     uint32_t stotal;    /* total space */
     void    *prefix;    /* pointer to prefix meta info */
