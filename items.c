@@ -6699,6 +6699,16 @@ uint8_t item_get_clsid(const hash_item* item)
 /*
  * Check linked status
  */
+bool item_is_valid(struct default_engine *engine, hash_item* item)
+{
+    if (item->iflag & ITEM_LINKED) {
+        rel_time_t current_time = engine->server.core->get_current_time();
+        return do_item_isvalid(engine, item, current_time);
+    } else {
+        return false;
+    }
+}
+
 bool item_is_linked(const hash_item* item)
 {
     return (item->iflag & ITEM_LINKED);

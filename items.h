@@ -512,6 +512,7 @@ uint8_t     item_get_clsid(const hash_item* item);
 /*
  * Check linked status
  */
+bool item_is_valid(struct default_engine *engine, hash_item *item);
 bool item_is_linked(const hash_item* item);
 bool list_elem_is_linked(list_elem_item *elem);
 bool set_elem_is_linked(set_elem_item *elem);
