@@ -6697,6 +6697,30 @@ uint8_t item_get_clsid(const hash_item* item)
 }
 
 /*
+ * Check linked status
+ */
+bool item_is_linked(const hash_item* item)
+{
+    return (item->iflag & ITEM_LINKED);
+}
+
+bool list_elem_is_linked(list_elem_item *elem)
+{
+    return (elem->prev != (list_elem_item *)ADDR_MEANS_UNLINKED &&
+            elem->next != (list_elem_item *)ADDR_MEANS_UNLINKED);
+}
+
+bool set_elem_is_linked(set_elem_item *elem)
+{
+    return (elem->next != (set_elem_item *)ADDR_MEANS_UNLINKED);
+}
+
+bool btree_elem_is_linked(btree_elem_item *elem)
+{
+    return (elem->status == BTREE_ITEM_STATUS_USED);
+}
+
+/*
  * Item and Element size functions
  */
 uint32_t item_ntotal(struct default_engine *engine, hash_item *item)
