@@ -12657,9 +12657,15 @@ static int sigignore(int sig) {
 }
 #endif /* !HAVE_SIGIGNORE */
 
-static void sigterm_handler(int sig) {
+static void sigterm_handler(int sig)
+{
     assert(sig == SIGTERM || sig == SIGINT);
+
+    mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                   "memcached shutdown by signal(%s)\n",
+                   (sig == SIGINT ? "SIGINT" : "SIGTERM"));
     memcached_shutdown = 1;
+
 #ifdef ENABLE_ZK_INTEGRATION
     if (arcus_zk_cfg) {
         arcus_zk_shutdown = 1;
@@ -13069,8 +13075,11 @@ static bool is_my_key(const char *key, size_t nkey)
 }
 #endif
 
-static void shutdown_server(void) {
+static void shutdown_server(void)
+{
+    mc_logger->log(EXTENSION_LOG_WARNING, NULL, "memcached shutdown by api\n");
     memcached_shutdown = 1;
+
 #ifdef ENABLE_ZK_INTEGRATION
     if (arcus_zk_cfg) {
         arcus_zk_shutdown = 1;
@@ -13954,8 +13963,7 @@ int main (int argc, char **argv) {
     event_base_loop(main_base, 0);
 
     if (settings.verbose) {
-        mc_logger->log(EXTENSION_LOG_INFO, NULL,
-                                        "Initiating shutdown\n");
+        mc_logger->log(EXTENSION_LOG_INFO, NULL, "Initiating shutdown\n");
     }
     threads_shutdown();
 
