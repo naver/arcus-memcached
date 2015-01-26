@@ -12722,7 +12722,7 @@ static int get_socket_fd(const void *cookie) {
 
 static const char* get_client_ip(const void *cookie) {
     conn *c = (conn *)cookie;
-    return c->client_ip;
+    return (c != NULL ? c->client_ip : "null");
 }
 
 static int num_independent_stats(void) {
