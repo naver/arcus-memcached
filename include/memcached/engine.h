@@ -720,10 +720,6 @@ extern "C" {
                                           const size_t memlimit,
                                           const int sticky_ratio);
 
-        void (*set_junktime)(ENGINE_HANDLE* handle,
-                             const void *cookie,
-                             const size_t junktime);
-
         void (*set_verbose) (ENGINE_HANDLE* handle,
                              const void* cookie,
                              const size_t verbose);

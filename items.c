@@ -265,11 +265,6 @@ static bool do_item_isvalid(struct default_engine *engine, hash_item *it, rel_ti
     if (it->exptime != 0 && it->exptime <= current_time) {
         return false; /* expired */
     }
-    /* check junk item time if it was set */
-    if (engine->config.junk_item_time != 0) {
-        if ((current_time - it->time) > engine->config.junk_item_time)
-            return false; /* Not accessed for a very long time => junk item */
-    }
     /* check flushed items as well as expired items */
     if (engine->config.oldest_live != 0) {
         if (engine->config.oldest_live <= current_time && it->time <= engine->config.oldest_live)
@@ -431,27 +426,6 @@ static void *do_item_alloc_internal(struct default_engine *engine,
 
 #ifdef ENABLE_STICKY_ITEM
     /* reclaim the flushed sticky items */
-    if (engine->config.junk_item_time != 0) {
-        while (engine->items.sticky_tails[id] != NULL) {
-            search = engine->items.sticky_tails[id];
-            if (search->nkey == 0 || search->refcount > 0 ||
-                do_item_isvalid(engine, search, current_time)) {
-                break; /* No item to reclaim in perspective of junk item time. */
-            }
-            it = do_item_reclaim(engine, search, ntotal, clsid_based_on_ntotal, id);
-            if (it != NULL) break; /* allocated */
-        }
-        if (it != NULL) {
-            /* try one more invalidation */
-            search = engine->items.sticky_tails[id];
-            if (search != NULL && search->nkey > 0 && search->refcount == 0 &&
-                do_item_isvalid(engine, search, current_time) == false) {
-                do_item_invalidate(engine, search, id, false);
-            }
-            it->slabs_clsid = 0;
-            return (void*)it;
-        }
-    }
     if (engine->items.sticky_curMK[id] != NULL) {
         tries = 20;
         while (engine->items.sticky_curMK[id] != NULL) {
@@ -477,27 +451,6 @@ static void *do_item_alloc_internal(struct default_engine *engine,
     }
 #endif
 
-    if (engine->config.junk_item_time != 0) {
-        while (engine->items.tails[id] != NULL) {
-            search = engine->items.tails[id];
-            if (search->nkey == 0 || search->refcount > 0 ||
-                do_item_isvalid(engine, search, current_time)) {
-                break; /* No item to reclaim in perspective of junk item time. */
-            }
-            it = do_item_reclaim(engine, search, ntotal, clsid_based_on_ntotal, id);
-            if (it != NULL) break; /* allocated */
-        }
-        if (it != NULL) {
-            /* try one more invalidation */
-            search = engine->items.tails[id];
-            if (search != NULL && search->nkey > 0 && search->refcount == 0 &&
-                do_item_isvalid(engine, search, current_time) == false) {
-                do_item_invalidate(engine, search, id, false);
-            }
-            it->slabs_clsid = 0;
-            return (void*)it;
-        }
-    }
     if (engine->items.curMK[id] != NULL) {
         assert(engine->items.lowMK[id] != NULL);
         /* step 1) reclaim items from lowMK position */

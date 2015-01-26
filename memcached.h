@@ -358,7 +358,6 @@ struct settings {
     int port;
     int udpport;
     int sticky_ratio;
-    int junk_item_time;
     char *inter;
     int verbose;
     rel_time_t oldest_live; /* ignore existing items older than this */

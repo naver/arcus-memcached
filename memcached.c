@@ -310,9 +310,6 @@ static void settings_init(void) {
     settings.maxbytes = 64 * 1024 * 1024; /* default is 64MB */
     settings.maxconns = 1024;         /* to limit connections-related memory to about 5MB */
     settings.sticky_ratio = 0;        /* default: 0 */
-#ifdef ENABLE_JUNK_ITEM_TIME
-    settings.junk_item_time = 0;
-#endif
     settings.verbose = 0;
     settings.oldest_live = 0;
     settings.evict_to_free = 1;       /* push old items out of cache when memory runs out */
@@ -7420,9 +7417,6 @@ static void process_stat_settings(ADD_STAT add_stats, void *c) {
     APPEND_STAT("tcpport", "%d", settings.port);
     APPEND_STAT("udpport", "%d", settings.udpport);
     APPEND_STAT("sticky_ratio", "%d", settings.sticky_ratio);
-#ifdef ENABLE_JUNK_ITEM_TIME
-    APPEND_STAT("junk_item_time", "%d", settings.junk_item_time);
-#endif
     APPEND_STAT("inter", "%s", settings.inter ? settings.inter : "NULL");
     APPEND_STAT("verbosity", "%d", settings.verbose);
     APPEND_STAT("oldest", "%lu", (unsigned long)settings.oldest_live);
@@ -8218,31 +8212,6 @@ static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntok
     }
 }
 
-#ifdef ENABLE_JUNK_ITEM_TIME
-static void process_junktime_command(conn *c, token_t *tokens, const size_t ntokens) {
-    unsigned int junktime;
-    assert(c != NULL);
-
-    if (ntokens == 3) {
-        char buf[50];
-        sprintf(buf, "junktime %u\r\nEND", settings.junk_item_time);
-        out_string(c, buf);
-
-    } else if (ntokens == 4 && safe_strtoul(tokens[COMMAND_TOKEN+2].value, &junktime)) {
-        /* Junk item time must be 0(zero) or be between 10800(3 hours) and 2592000(30 days) */
-        if (junktime == 0 || (junktime >= 10800 && junktime <= 2592000)) {
-            mc_engine.v1->set_junktime(mc_engine.v0, c, junktime);
-            settings.junk_item_time = junktime;
-            out_string(c, "END");
-        } else {
-            out_string(c, "CLIENT_ERROR bad value");
-        }
-    } else {
-        out_string(c, "CLIENT_ERROR bad command line format");
-    }
-}
-#endif
-
 static void process_config_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     if ((ntokens == 3 || ntokens == 4) &&
@@ -8255,13 +8224,6 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     {
         process_memlimit_command(c, tokens, ntokens);
     }
-#ifdef ENABLE_JUNK_ITEM_TIME
-    else if ((ntokens == 3 || ntokens == 4) &&
-             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "junktime") == 0))
-    {
-        process_junktime_command(c, tokens, ntokens);
-    }
-#endif
     else if ((ntokens >= 3 && ntokens <= 5) &&
              (strcmp(tokens[SUBCOMMAND_TOKEN].value, "verbosity") == 0))
     {
@@ -12493,9 +12455,6 @@ static void usage(void) {
 #ifdef ENABLE_STICKY_ITEM
            "-g            sticky(gummed) item ratio of 0 ~ 100 (default: 0)\n"
 #endif
-#ifdef ENABLE_JUNK_ITEM_TIME
-           "-j            max unused time(unit: seconds) for junk items (default: 0)\n"
-#endif
            "-c <num>      max simultaneous connections (default: 1024)\n"
            "-k            lock down all paged memory.  Note that there is a\n"
            "              limit on how much memory you may lock.  Trying to\n"
@@ -13318,9 +13277,6 @@ int main (int argc, char **argv) {
 #ifdef ENABLE_STICKY_ITEM
           "g:"  /* sticky(gummed) item ratio */
 #endif
-#ifdef ENABLE_JUNK_ITEM_TIME
-          "j:"  /* max unused time for junk items (unit: seconds) */
-#endif
           "c:"  /* max simultaneous connections */
           "k"   /* lock down all paged memory */
           "hi"  /* help, licence info */
@@ -13382,21 +13338,6 @@ int main (int argc, char **argv) {
             if (settings.sticky_ratio < 0 || settings.sticky_ratio > 100) {
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "The value of sticky(gummed) item ratio must be between 0 and 100.\n");
-                return 1;
-            }
-            break;
-#endif
-#ifdef ENABLE_JUNK_ITEM_TIME
-        case 'j':
-            settings.junk_item_time = atoi(optarg);
-            /* Junk item time must be 0(zero) or be between 10800(3 hours) and 2592000(30 days) */
-            if ((settings.junk_item_time == 0) ||
-                (settings.junk_item_time >= 10800 && settings.sticky_ratio <= 2592000)) {
-                old_opts += sprintf(old_opts, "junk_item_time=%u;",
-                                    settings.junk_item_time);
-            } else {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Junk item time must be 0 or be between 10800(3 hours) and 2592000(30 days).\n");
                 return 1;
             }
             break;

@@ -79,7 +79,6 @@ struct config {
    size_t num_threads;
    size_t maxbytes;
    size_t sticky_limit;
-   size_t junk_item_time;
    bool   preallocate;
    float  factor;
    size_t chunk_size;

@@ -106,9 +106,6 @@ static ENGINE_ERROR_CODE initalize_configuration(struct default_engine *se, cons
             { .key = "sticky_limit",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.sticky_limit},
-            { .key = "junk_item_time",
-              .datatype = DT_SIZE,
-              .value.dt_size = &se->config.junk_item_time },
             { .key = "preallocate",
               .datatype = DT_BOOL,
               .value.dt_bool = &se->config.preallocate },
@@ -903,15 +900,6 @@ static ENGINE_ERROR_CODE default_set_memlimit(ENGINE_HANDLE* handle, const void*
     return ret;
 }
 
-static void default_set_junktime(ENGINE_HANDLE* handle, const void* cookie, const size_t junktime)
-{
-    struct default_engine* engine = get_handle(handle);
-
-    pthread_mutex_lock(&engine->cache_lock);
-    engine->config.junk_item_time = junktime;
-    pthread_mutex_unlock(&engine->cache_lock);
-}
-
 static void default_set_verbose(ENGINE_HANDLE* handle, const void* cookie, const size_t verbose)
 {
     struct default_engine* engine = get_handle(handle);
@@ -1248,7 +1236,6 @@ ENGINE_ERROR_CODE create_instance(uint64_t interface, GET_SERVER_API get_server_
 
          /* Config */
          .set_memlimit     = default_set_memlimit,
-         .set_junktime     = default_set_junktime,
          .set_verbose      = default_set_verbose,
 
          .unknown_command  = default_unknown_command,
@@ -1285,7 +1272,6 @@ ENGINE_ERROR_CODE create_instance(uint64_t interface, GET_SERVER_API get_server_
          .num_threads = 0,
          .maxbytes = 64 * 1024 * 1024,
          .sticky_limit = 0,
-         .junk_item_time = 0,
          .preallocate = false,
          .factor = 1.25,
          .chunk_size = 48,
