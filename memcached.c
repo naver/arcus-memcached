@@ -12664,9 +12664,11 @@ static void sigterm_handler(int sig)
 {
     assert(sig == SIGTERM || sig == SIGINT);
 
-    mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                   "memcached shutdown by signal(%s)\n",
-                   (sig == SIGINT ? "SIGINT" : "SIGTERM"));
+    if (settings.verbose) {
+        mc_logger->log(EXTENSION_LOG_INFO, NULL,
+                       "memcached shutdown by signal(%s)\n",
+                       (sig == SIGINT ? "SIGINT" : "SIGTERM"));
+    }
     memcached_shutdown = 1;
 
 #ifdef ENABLE_ZK_INTEGRATION
@@ -13080,7 +13082,9 @@ static bool is_my_key(const char *key, size_t nkey)
 
 static void shutdown_server(void)
 {
-    mc_logger->log(EXTENSION_LOG_WARNING, NULL, "memcached shutdown by api\n");
+    if (settings.verbose) {
+        mc_logger->log(EXTENSION_LOG_INFO, NULL, "memcached shutdown by api\n");
+    }
     memcached_shutdown = 1;
 
 #ifdef ENABLE_ZK_INTEGRATION
