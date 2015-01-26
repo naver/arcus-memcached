@@ -574,6 +574,7 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
 
     conn->aiostat = status;
 
+#if 0 // ENABLE_TAP_PROTOCOL : PENDING_CLOSE
     /* Move the connection to the closing state if the engine
      * wants it to be disconnected
      */
@@ -597,6 +598,16 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
     }
     assert(number_of_pending(conn, thr->pending_io) +
            number_of_pending(conn, thr->pending_close) == 1);
+#else
+    if (number_of_pending(conn, thr->pending_io) == 0) {
+        if (thr->pending_io == NULL) {
+            notify = 1;
+        }
+        conn->next = thr->pending_io;
+        thr->pending_io = conn;
+    }
+    assert(number_of_pending(conn, thr->pending_io) == 1);
+#endif
     UNLOCK_THREAD(thr);
 
     /* kick the thread in the butt */

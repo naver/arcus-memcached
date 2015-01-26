@@ -419,8 +419,10 @@ typedef struct {
     int index;                  /* index of this thread in the threads array */
     enum thread_type type;      /* Type of IO this thread processes */
 
+#if 0 // ENABLE_TAP_PROTOCOL : PENDING_CLOSE
     rel_time_t last_checked;
     struct conn *pending_close; /* list of connections close at a later time */
+#endif
 } LIBEVENT_THREAD;
 
 #define LOCK_THREAD(t)                          \
@@ -598,10 +600,12 @@ struct conn {
     TAP_ITERATOR tap_iterator;
 #endif
 
+#if 0 // ENABLE_TAP_PROTOCOL : PENDING_CLOSE
     struct {
         bool active;
         rel_time_t  timeout;
     } pending_close;
+#endif
 };
 
 /*

@@ -803,7 +803,9 @@ static void conn_cleanup(conn *c) {
     c->thread = NULL;
     assert(c->next == NULL);
     c->ascii_cmd = NULL;
+#if 0 // ENABLE_TAP_PROTOCOL : PENDING_CLOSE
     c->pending_close.active = false;
+#endif
     c->sfd = -1;
 }
 
@@ -828,11 +830,15 @@ void conn_close(conn *c) {
     }
 
     assert(c->thread);
+#if 0 // ENABLE_TAP_PROTOCOL : PENDING_CLOSE
     if (!c->pending_close.active) {
         perform_callbacks(ON_DISCONNECT, NULL, c);
     } else {
         assert(current_time > c->pending_close.timeout);
     }
+#else
+    perform_callbacks(ON_DISCONNECT, NULL, c);
+#endif
 
     LOCK_THREAD(c->thread);
     /* remove from pending-io list */
@@ -841,7 +847,9 @@ void conn_close(conn *c) {
                        "Current connection was in the pending-io list.. Nuking it\n");
     }
     c->thread->pending_io = list_remove(c->thread->pending_io, c);
+#if 0 // ENABLE_TAP_PROTOCOL : PENDING_CLOSE
     c->thread->pending_close = list_remove(c->thread->pending_close, c);
+#endif
     UNLOCK_THREAD(c->thread);
 
     conn_cleanup(c);
@@ -12092,6 +12100,7 @@ void event_handler(const int fd, const short which, void *arg) {
     }
 #endif
 
+#if 0 // ENABLE_TAP_PROTOCOL : PENDING_CLOSE
     // Do we have pending closes?
     //const size_t max_items = 256;
     enum { max_items = 256 };
@@ -12109,11 +12118,13 @@ void event_handler(const int fd, const short which, void *arg) {
         }
         UNLOCK_THREAD(me);
     }
+#endif
 
     while (c->state(c)) {
         /* do task */
     }
 
+#if 0 // ENABLE_TAP_PROTOCOL : PENDING_CLOSE
     /* Close any connections pending close */
     if (n_pending_close > 0) {
         for (size_t i = 0; i < n_pending_close; ++i) {
@@ -12131,6 +12142,7 @@ void event_handler(const int fd, const short which, void *arg) {
             }
         }
     }
+#endif
 }
 
 static int new_socket(struct addrinfo *ai) {
