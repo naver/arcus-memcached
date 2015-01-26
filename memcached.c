@@ -13087,6 +13087,7 @@ static void set_log_level(EXTENSION_LOG_LEVEL severity)
     default:
         settings.verbose = 3;
     }
+    perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
 }
 
 /**
