@@ -687,8 +687,8 @@ bool conn_nread(conn *c);
 bool conn_swallow(conn *c);
 #if 0 // ENABLE_TAP_PROTOCOL
 bool conn_pending_close(conn *c);
-#endif
 bool conn_immediate_close(conn *c);
+#endif
 bool conn_closing(conn *c);
 bool conn_mwrite(conn *c);
 #if 0 // ENABLE_TAP_PROTOCOL

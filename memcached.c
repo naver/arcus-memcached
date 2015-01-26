@@ -947,9 +947,9 @@ const char *state_text(STATE_FUNC state) {
         return "conn_setup_tap_stream";
     } else if (state == conn_pending_close) {
         return "conn_pending_close";
-#endif
     } else if (state == conn_immediate_close) {
         return "conn_immediate_close";
+#endif
     } else {
         return "Unknown";
     }
@@ -11990,7 +11990,6 @@ bool conn_pending_close(conn *c) {
      */
     return c->state != conn_pending_close;
 }
-#endif
 
 bool conn_immediate_close(conn *c) {
     if (IS_UDP(c->transport)) {
@@ -12001,6 +12000,7 @@ bool conn_immediate_close(conn *c) {
 
     return false;
 }
+#endif
 
 bool conn_closing(conn *c) {
 #if 0 // ENABLE_TAP_PROTOCOL
@@ -12008,13 +12008,19 @@ bool conn_closing(conn *c) {
     if (c->thread == &tap_thread) {
         conn_set_state(c, conn_pending_close);
     } else {
-#endif
         conn_set_state(c, conn_immediate_close);
-#if 0 // ENABLE_TAP_PROTOCOL
     }
-#endif
 
     return true;
+#else
+    if (IS_UDP(c->transport)) {
+        conn_cleanup(c);
+    } else {
+        conn_close(c);
+    }
+
+    return false;
+#endif
 }
 
 #if 0 // ENABLE_TAP_PROTOCOL
