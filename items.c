@@ -1047,9 +1047,11 @@ static hash_item *do_item_get(struct default_engine *engine,
 
     if (engine->config.verbose > 2) {
         if (it == NULL) {
-            fprintf(stderr, "> NOT FOUND %s\n", key);
+            logger->log(EXTENSION_LOG_INFO, NULL, "> NOT FOUND %s\n",
+                        key);
         } else {
-            fprintf(stderr, "> FOUND KEY %s\n", (const char*)item_get_key(it));
+            logger->log(EXTENSION_LOG_INFO, NULL, "> FOUND KEY %s\n",
+                        (const char*)item_get_key(it));
         }
     }
     return it;
@@ -1111,10 +1113,9 @@ static ENGINE_ERROR_CODE do_store_item(struct default_engine *engine, hash_item 
             pthread_mutex_unlock(&c->thread->stats.mutex);
 #endif
             if (engine->config.verbose > 1) {
-                fprintf(stderr,
+                logger->log(EXTENSION_LOG_WARNING, NULL,
                         "CAS:  failure: expected %"PRIu64", got %"PRIu64"\n",
-                        item_get_cas(old_it),
-                        item_get_cas(it));
+                        item_get_cas(old_it), item_get_cas(it));
             }
             stored = ENGINE_KEY_EEXISTS;
         }
@@ -2146,8 +2147,6 @@ static inline void do_btree_get_bkey(btree_elem_item *elem, bkey_t *bkey)
     } else {
         bkey->len = 0;
         memcpy(bkey->val, elem->data, sizeof(uint64_t));
-        //*(uint64_t*)bkey->val = *(uint64_t*)elem->data;
-        //fprintf(stderr, "ss = %"PRIu64"\r\n", *(uint64_t*)elem->data);
     }
 }
 
