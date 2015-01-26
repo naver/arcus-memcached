@@ -5813,15 +5813,18 @@ static void process_bin_unknown_packet(conn *c) {
         ret = mc_engine.v1->unknown_command(mc_engine.v0, c, packet,
                                             binary_response_handler);
     }
-
-    if (ret == ENGINE_SUCCESS) {
+    switch (ret) {
+    case ENGINE_SUCCESS:
         write_and_free(c, c->dynamic_buffer.buffer, c->dynamic_buffer.offset);
         c->dynamic_buffer.buffer = NULL;
-    } else if (ret == ENGINE_ENOTSUP) {
+        break;
+    case ENGINE_ENOTSUP:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_UNKNOWN_COMMAND, 0);
-    } else if (ret == ENGINE_EWOULDBLOCK) {
+        break;
+    case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
-    } else {
+        break;
+    default:
         /* FATAL ERROR, shut down connection */
         conn_set_state(c, conn_closing);
     }
@@ -6648,24 +6651,24 @@ static void process_bin_flush_prefix(conn *c) {
 
 
     switch (ret) {
-        case ENGINE_SUCCESS:
-            write_bin_response(c, NULL, 0, 0, 0);
-            break;
-        case ENGINE_EWOULDBLOCK:
-            c->ewouldblock = true;
-            break;
-        case ENGINE_DISCONNECT:
-            c->state = conn_closing;
-            break;
-        case ENGINE_PREFIX_ENOENT:
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_PREFIX_ENOENT, 0);
-            break;
-        case ENGINE_ENOTSUP:
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
-            break;
-        default:
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
-            break;
+    case ENGINE_SUCCESS:
+        write_bin_response(c, NULL, 0, 0, 0);
+        break;
+    case ENGINE_EWOULDBLOCK:
+        c->ewouldblock = true;
+        break;
+    case ENGINE_DISCONNECT:
+        c->state = conn_closing;
+        break;
+    case ENGINE_PREFIX_ENOENT:
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_PREFIX_ENOENT, 0);
+        break;
+    case ENGINE_ENOTSUP:
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
+        break;
+    default:
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
+        break;
     }
 
     STATS_NOKEY(c, cmd_flush_prefix);
