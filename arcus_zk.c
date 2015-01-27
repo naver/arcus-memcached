@@ -101,7 +101,7 @@ static const char *zk_root = NULL;
 static const char *zk_map_path   = "cache_server_mapping";
 static const char *zk_log_path   = "cache_server_log";
 static const char *zk_cache_path = "cache_list";
-static const char *mc_hb_cmd     = "set arcus-zk5:ping 1 0 1\r\n1\r\n";
+static const char *mc_hb_cmd     = "set arcus:zk-ping 1 0 1\r\n1\r\n";
 
 static zhandle_t    *zh=NULL;
 static clientid_t   myid;
@@ -447,7 +447,7 @@ mc_hb(zhandle_t *zh, void *context)
     int             err=0;
 
     // make a tcp connection to this memcached itself,
-    // and try "set arcus-zk5:ping".
+    // and try "set arcus:zk-ping".
     // if any of these failed, we return success to allow ZK ping.
 
     sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
@@ -485,7 +485,7 @@ mc_hb(zhandle_t *zh, void *context)
         return 0; // Allow ZK ping by returning 0 even if connect() fails.
     }
 
-    // try to set a key "arcus-zk5:ping"
+    // try to set a key "arcus:zk-ping"
     // we need to be careful here. Since we can make a connection, basic
     // memcached event loop works and system resources are enough. if we can an
     // error during send()/recv(), it may not be a memcached failure at all.
