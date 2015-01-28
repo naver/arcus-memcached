@@ -14442,7 +14442,8 @@ int main (int argc, char **argv) {
                 "failed to getrlimit number of files\n");
         exit(EX_OSERR);
     } else {
-        int maxfiles = settings.maxconns;
+        /* Make room for arcus_zk and others (+ 20) */
+        int maxfiles = settings.maxconns + 20;
         if (rlim.rlim_cur < maxfiles)
             rlim.rlim_cur = maxfiles;
         if (rlim.rlim_max < rlim.rlim_cur)
