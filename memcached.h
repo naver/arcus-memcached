@@ -35,6 +35,8 @@
 
 #include "sasl_defs.h"
 
+#define NEW_WOULDBLOCK_HANDLING 1
+
 /* This is the address we use for admin purposes.  For example, doing stats
  * and heart beats from arcus_zk.
  * We count these connections separately from regular client connections.
@@ -596,6 +598,29 @@ struct conn {
 
     ENGINE_ERROR_CODE aiostat;
     bool ewouldblock;
+#ifdef NEW_WOULDBLOCK_HANDLING
+    /* ewouldblock=true is set when the command returns EWOULDBLOCK.
+     * The worker thread is going to remove the connection from the
+     * event loop and set ewouldblock=false.  But these two events
+     * (set and remove from the event loop) do not happen atomically.
+     * Rarely, notify_io_complete runs before the worker thread removes
+     * the connection from the event loop.  Below, two more variables
+     * deal with these cases...
+     *
+     * io_blocked=true is set when the worker thread actually removes
+     * the connection from the event loop.  The thread locks itself
+     * and then performs these two operations (set and event loop).
+     *
+     * notify_io_complete locks the thread and checks io_blocked.
+     * If io_blocked=false, then we know for sure that the worker thread
+     * has not removed the connection yet.  So, it sets
+     * premature_notify_io_complete=true.
+     *
+     * See conn_parse_cmd, conn_nread, and notify_io_complete.
+     */
+    bool io_blocked;
+    bool premature_notify_io_complete;
+#endif
 #if 0 // ENABLE_TAP_PROTOCOL
     TAP_ITERATOR tap_iterator;
 #endif

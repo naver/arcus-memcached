@@ -687,6 +687,10 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
 
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
+#ifdef NEW_WOULDBLOCK_HANDLING
+    c->io_blocked = false;
+    c->premature_notify_io_complete = false;
+#endif
 
     /* save client ip address in connection object */
     struct sockaddr_in addr;
@@ -807,6 +811,12 @@ static void conn_cleanup(conn *c) {
     c->pending_close.active = false;
 #endif
     c->sfd = -1;
+
+#ifdef NEW_WOULDBLOCK_HANDLING
+    c->ewouldblock = false;
+    c->io_blocked = false;
+    c->premature_notify_io_complete = false;
+#endif
 }
 
 void conn_close(conn *c) {
@@ -1179,6 +1189,16 @@ static void out_string(conn *c, const char *str) {
 
     if (c->noreply) {
         c->noreply = false;
+#ifdef NEW_WOULDBLOCK_HANDLING
+       /* Clear the ewouldblock so that the next read command from
+        * the same connection does not falsely block and time out.
+        *
+        * It's better not to set the ewouldblock if noreply exists
+        * when write operations are performed.
+        */
+        if (c->ewouldblock)
+            c->ewouldblock = false;
+#endif
         conn_set_state(c, conn_new_cmd);
         return;
     }
@@ -1274,6 +1294,12 @@ static void process_lop_insert_complete(conn *c) {
         ENGINE_ERROR_CODE ret = mc_engine.v1->list_elem_insert(mc_engine.v0, c,
                                                     c->coll_key, c->coll_nkey, c->coll_index, elem,
                                                     c->coll_attrp, &created, 0);
+#ifdef NEW_WOULDBLOCK_HANDLING
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
 
         if (settings.detail_enabled) {
             stats_prefix_record_lop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
@@ -1322,6 +1348,12 @@ static void process_sop_insert_complete(conn *c) {
         ENGINE_ERROR_CODE ret = mc_engine.v1->set_elem_insert(mc_engine.v0, c,
                                                     c->coll_key, c->coll_nkey, elem,
                                                     c->coll_attrp, &created, 0);
+#ifdef NEW_WOULDBLOCK_HANDLING
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
 
         if (settings.detail_enabled) {
             stats_prefix_record_sop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
@@ -1368,6 +1400,12 @@ static void process_sop_delete_complete(conn *c) {
                                                         c->coll_key, c->coll_nkey,
                                                         elem->value, elem->nbytes, c->coll_drop,
                                                         &dropped, 0);
+#ifdef NEW_WOULDBLOCK_HANDLING
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
         if (settings.detail_enabled) {
             stats_prefix_record_sop_delete(c->coll_key, c->coll_nkey,
                                            (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
@@ -1498,6 +1536,12 @@ static void process_bop_insert_complete(conn *c) {
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         c->coll_eitem = NULL;
 
+#ifdef NEW_WOULDBLOCK_HANDLING
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
         if (settings.detail_enabled) {
             stats_prefix_record_bop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
         }
@@ -1526,6 +1570,10 @@ static void process_bop_insert_complete(conn *c) {
                 {
                     mc_engine.v1->btree_elem_release(mc_engine.v0, c,
                                                      &trim_result.elems, trim_result.count);
+#ifdef NEW_WOULDBLOCK_HANDLING
+                    if (c->ewouldblock)
+                        c->ewouldblock = false;
+#endif
                     out_string(c, "SERVER_ERROR out of memory writing get response");
                 } else {
                     /* prepare for writing response */
@@ -1567,6 +1615,9 @@ static void process_bop_insert_complete(conn *c) {
 static void process_bop_update_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_BOP_UPDATE);
+#ifdef NEW_WOULDBLOCK_HANDLING
+    assert(c->ewouldblock == false);
+#endif
     char *new_value;
     int  new_nbytes;
     eflag_update *eupdate_ptr;
@@ -1591,6 +1642,12 @@ static void process_bop_update_complete(conn *c)
                                           &c->coll_bkrange, eupdate_ptr,
                                           new_value, new_nbytes, 0);
 
+#ifdef NEW_WOULDBLOCK_HANDLING
+    if (ret == ENGINE_EWOULDBLOCK) {
+        c->ewouldblock = true;
+        ret = ENGINE_SUCCESS;
+    }
+#endif
     if (settings.detail_enabled) {
         stats_prefix_record_bop_update(c->coll_key, c->coll_nkey,
                                        (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
@@ -1974,6 +2031,9 @@ static void process_bop_smget_complete(conn *c) {
 
 static void complete_update_ascii(conn *c) {
     assert(c != NULL);
+#ifdef NEW_WOULDBLOCK_HANDLING
+    assert(c->ewouldblock == false);
+#endif
 
     if (c->coll_eitem != NULL) {
         if (c->coll_op == OPERATION_LOP_INSERT)  process_lop_insert_complete(c);
@@ -2035,6 +2095,13 @@ static void complete_update_ascii(conn *c) {
         }
 #endif
 
+#ifdef NEW_WOULDBLOCK_HANDLING
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
+
         switch (ret) {
         case ENGINE_SUCCESS:
             out_string(c, "STORED");
@@ -2079,11 +2146,14 @@ static void complete_update_ascii(conn *c) {
             out_string(c, "SERVER_ERROR failure");
             break;
 
+#ifdef NEW_WOULDBLOCK_HANDLING
+#else
         case ENGINE_EWOULDBLOCK: // Fall-through.
         case ENGINE_WANT_MORE:
             assert(false);
             c->state = conn_closing;
             break;
+#endif
 
         default:
             out_string(c, "SERVER_ERROR internal");
@@ -2449,8 +2519,12 @@ static void complete_incr_bin(conn *c) {
         }
     }
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
+#endif
     if (ret == ENGINE_SUCCESS) {
         ret = mc_engine.v1->arithmetic(mc_engine.v0,
                                        c, key, nkey, incr,
@@ -2462,6 +2536,12 @@ static void complete_incr_bin(conn *c) {
                                        &c->cas,
                                        &rsp->message.body.value,
                                        c->binary_header.request.vbucket);
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
     }
 
     switch (ret) {
@@ -2510,9 +2590,12 @@ static void complete_incr_bin(conn *c) {
     case ENGINE_EBADTYPE:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     default:
         abort();
     }
@@ -2534,12 +2617,22 @@ static void complete_update_bin(conn *c) {
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
     memcpy((char*)info.value[0].iov_base + info.value[0].iov_len - 2, "\r\n", 2);
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
+#endif
     if (ret == ENGINE_SUCCESS) {
         ret = mc_engine.v1->store(mc_engine.v0, c,
                                   it, &c->cas, c->store_op,
                                   c->binary_header.request.vbucket);
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
     }
 
 #ifdef ENABLE_DTRACE
@@ -2584,9 +2677,12 @@ static void complete_update_bin(conn *c) {
     case ENGINE_ENOMEM:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -2612,11 +2708,17 @@ static void complete_update_bin(conn *c) {
 
     SLAB_INCR(c, cmd_set, info.key, info.nkey);
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+    /* release the c->item reference */
+    mc_engine.v1->release(mc_engine.v0, c, c->item);
+    c->item = 0;
+#else
     if (!c->ewouldblock) {
         /* release the c->item reference */
         mc_engine.v1->release(mc_engine.v0, c, c->item);
         c->item = 0;
     }
+#endif
 }
 
 static void process_bin_get(conn *c) {
@@ -2634,8 +2736,12 @@ static void process_bin_get(conn *c) {
         }
     }
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
+#endif
     if (ret == ENGINE_SUCCESS) {
         ret = mc_engine.v1->get(mc_engine.v0, c, &it, key, nkey,
                                 c->binary_header.request.vbucket);
@@ -2702,9 +2808,12 @@ static void process_bin_get(conn *c) {
             }
         }
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -2858,10 +2967,14 @@ static void process_bin_stat(conn *c) {
         }
     }
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         if (nkey == 0) {
             /* request all statistics */
@@ -2976,9 +3089,12 @@ static void process_bin_stat(conn *c) {
     case ENGINE_ENOTSUP:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_PREFIX_ENOENT:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_PREFIX_ENOENT, 0);
         break;
@@ -3269,6 +3385,9 @@ static bool authenticated(conn *c) {
 
 static void process_bin_lop_create(conn *c) {
     assert(c != NULL);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    assert(c->ewouldblock == false);
+#endif
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
 
@@ -3305,6 +3424,13 @@ static void process_bin_lop_create(conn *c) {
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->list_struct_create(mc_engine.v0, c, key, nkey, &attr_data,
                                            c->binary_header.request.vbucket);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    if (ret == ENGINE_EWOULDBLOCK) {
+        c->ewouldblock = true;
+        ret = ENGINE_SUCCESS;
+    }
+#endif
+
     if (settings.detail_enabled) {
         stats_prefix_record_lop_create(key, nkey);
     }
@@ -3367,10 +3493,14 @@ static void process_bin_lop_prepare_nread(conn *c) {
 
     eitem *elem;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         if ((vlen + 2) > MAX_ELEMENT_BYTES) {
             ret = ENGINE_E2BIG;
@@ -3409,9 +3539,12 @@ static void process_bin_lop_prepare_nread(conn *c) {
         c->substate = bin_reading_lop_nread_complete;
         }
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -3442,13 +3575,23 @@ static void process_bin_lop_insert_complete(conn *c) {
 
     bool created;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
+#endif
     if (ret == ENGINE_SUCCESS) {
         ret = mc_engine.v1->list_elem_insert(mc_engine.v0, c,
                                        c->coll_key, c->coll_nkey, c->coll_index, elem,
                                        c->coll_attrp, &created,
                                        c->binary_header.request.vbucket);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
     }
 
     if (settings.detail_enabled) {
@@ -3461,9 +3604,12 @@ static void process_bin_lop_insert_complete(conn *c) {
         /* Stored */
         write_bin_response(c, NULL, 0, 0, 0);
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -3487,11 +3633,17 @@ static void process_bin_lop_insert_complete(conn *c) {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
     }
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    /* release the c->coll_eitem reference */
+    mc_engine.v1->list_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+    c->coll_eitem = NULL;
+#else
     if (!c->ewouldblock) {
         /* release the c->coll_eitem reference */
         mc_engine.v1->list_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         c->coll_eitem = NULL;
     }
+#endif
 }
 
 static void process_bin_lop_nread_complete(conn *c) {
@@ -3502,6 +3654,9 @@ static void process_bin_lop_nread_complete(conn *c) {
 
 static void process_bin_lop_delete(conn *c) {
     assert(c != NULL);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    assert(c->ewouldblock == false);
+#endif
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
 
@@ -3529,6 +3684,12 @@ static void process_bin_lop_delete(conn *c) {
                                          (bool)req->message.body.drop,
                                          &del_count, &dropped,
                                          c->binary_header.request.vbucket);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    if (ret == ENGINE_EWOULDBLOCK) {
+        c->ewouldblock = true;
+        ret = ENGINE_SUCCESS;
+    }
+#endif
     if (settings.detail_enabled) {
         stats_prefix_record_lop_delete(key, nkey,
                                        (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
@@ -3561,6 +3722,9 @@ static void process_bin_lop_delete(conn *c) {
 
 static void process_bin_lop_get(conn *c) {
     assert(c != NULL);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    assert(c->ewouldblock == false);
+#endif
     assert(c->cmd == PROTOCOL_BINARY_CMD_LOP_GET);
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
@@ -3587,8 +3751,12 @@ static void process_bin_lop_get(conn *c) {
     int      est_count;
     int      need_size;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
+#endif
 
     /* adjust list index */
     if (from_index > MAX_LIST_SIZE)           from_index = MAX_LIST_SIZE;
@@ -3614,6 +3782,12 @@ static void process_bin_lop_get(conn *c) {
                                           (bool)req->message.body.drop,
                                           elem_array, &elem_count, &flags, &dropped,
                                           c->binary_header.request.vbucket);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
     }
 
     if (settings.detail_enabled) {
@@ -3667,6 +3841,10 @@ static void process_bin_lop_get(conn *c) {
         } else {
             STATS_NOKEY(c, cmd_lop_get);
             mc_engine.v1->list_elem_release(mc_engine.v0, c, elem_array, elem_count);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+            if (c->ewouldblock)
+                c->ewouldblock = false;
+#endif
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         }
         }
@@ -3675,9 +3853,12 @@ static void process_bin_lop_get(conn *c) {
         STATS_NONE_HITS(c, lop_get, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINDEXOOR, 0);
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -3704,6 +3885,9 @@ static void process_bin_lop_get(conn *c) {
 
 static void process_bin_sop_create(conn *c) {
     assert(c != NULL);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    assert(c->ewouldblock == false);
+#endif
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
 
@@ -3731,6 +3915,12 @@ static void process_bin_sop_create(conn *c) {
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->set_struct_create(mc_engine.v0, c, key, nkey, &attr_data,
                                           c->binary_header.request.vbucket);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    if (ret == ENGINE_EWOULDBLOCK) {
+        c->ewouldblock = true;
+        ret = ENGINE_SUCCESS;
+    }
+#endif
     if (settings.detail_enabled) {
         stats_prefix_record_sop_create(key, nkey);
     }
@@ -3789,10 +3979,14 @@ static void process_bin_sop_prepare_nread(conn *c) {
 
     eitem *elem = NULL;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         if ((vlen + 2) > MAX_ELEMENT_BYTES) {
             ret = ENGINE_E2BIG;
@@ -3858,9 +4052,12 @@ static void process_bin_sop_prepare_nread(conn *c) {
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_sop_nread_complete;
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -3897,13 +4094,23 @@ static void process_bin_sop_insert_complete(conn *c) {
 
     bool created;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
+#endif
     if (ret == ENGINE_SUCCESS) {
         ret = mc_engine.v1->set_elem_insert(mc_engine.v0, c,
                                   c->coll_key, c->coll_nkey, elem,
                                   c->coll_attrp, &created,
                                   c->binary_header.request.vbucket);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
     }
 
     if (settings.detail_enabled) {
@@ -3916,9 +4123,12 @@ static void process_bin_sop_insert_complete(conn *c) {
         /* Stored */
         write_bin_response(c, NULL, 0, 0, 0);
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -3942,11 +4152,17 @@ static void process_bin_sop_insert_complete(conn *c) {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
     }
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    /* release the c->coll_eitem reference */
+    mc_engine.v1->set_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+    c->coll_eitem = NULL;
+#else
     if (!c->ewouldblock) {
         /* release the c->coll_eitem reference */
         mc_engine.v1->set_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         c->coll_eitem = NULL;
     }
+#endif
 }
 
 static void process_bin_sop_delete_complete(conn *c) {
@@ -3959,14 +4175,24 @@ static void process_bin_sop_delete_complete(conn *c) {
 
     bool dropped;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
+#endif
     if (ret == ENGINE_SUCCESS) {
         ret = mc_engine.v1->set_elem_delete(mc_engine.v0, c,
                                             c->coll_key, c->coll_nkey,
                                             elem->value, elem->nbytes,
                                             c->coll_drop, &dropped,
                                             c->binary_header.request.vbucket);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
     }
 
     if (settings.detail_enabled) {
@@ -3983,9 +4209,12 @@ static void process_bin_sop_delete_complete(conn *c) {
         STATS_NONE_HITS(c, sop_delete, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT, 0);
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -4016,8 +4245,12 @@ static void process_bin_sop_exist_complete(conn *c) {
 
     bool exist;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
+#endif
     if (ret == ENGINE_SUCCESS) {
         ret = mc_engine.v1->set_elem_exist(mc_engine.v0, c,
                                            c->coll_key, c->coll_nkey,
@@ -4039,9 +4272,12 @@ static void process_bin_sop_exist_complete(conn *c) {
         write_bin_response(c, &rsp->message.body, 0, 0, sizeof(rsp->message.body));
         }
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -4080,6 +4316,9 @@ static void process_bin_sop_nread_complete(conn *c) {
 
 static void process_bin_sop_get(conn *c) {
     assert(c != NULL);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    assert(c->ewouldblock == false);
+#endif
     assert(c->cmd == PROTOCOL_BINARY_CMD_SOP_GET);
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
@@ -4103,9 +4342,13 @@ static void process_bin_sop_get(conn *c) {
     bool     dropped;
     int      need_size;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         if (req_count <= 0 || req_count > MAX_SET_SIZE) req_count = MAX_SET_SIZE;
         need_size = req_count * (sizeof(eitem*)+sizeof(uint32_t));
@@ -4119,6 +4362,12 @@ static void process_bin_sop_get(conn *c) {
                                          (bool)req->message.body.drop,
                                          elem_array, &elem_count, &flags, &dropped,
                                          c->binary_header.request.vbucket);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
     }
 
     if (settings.detail_enabled) {
@@ -4172,6 +4421,10 @@ static void process_bin_sop_get(conn *c) {
         } else {
             STATS_NOKEY(c, cmd_sop_get);
             mc_engine.v1->set_elem_release(mc_engine.v0, c, elem_array, elem_count);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+            if (c->ewouldblock)
+                c->ewouldblock = false;
+#endif
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         }
         }
@@ -4180,9 +4433,12 @@ static void process_bin_sop_get(conn *c) {
         STATS_NONE_HITS(c, sop_get, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT, 0);
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -4209,6 +4465,9 @@ static void process_bin_sop_get(conn *c) {
 
 static void process_bin_bop_create(conn *c) {
     assert(c != NULL);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    assert(c->ewouldblock == false);
+#endif
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
 
@@ -4247,6 +4506,12 @@ static void process_bin_bop_create(conn *c) {
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_struct_create(mc_engine.v0, c, key, nkey, &attr_data,
                                             c->binary_header.request.vbucket);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    if (ret == ENGINE_EWOULDBLOCK) {
+        c->ewouldblock = true;
+        ret = ENGINE_SUCCESS;
+    }
+#endif
     if (settings.detail_enabled) {
         stats_prefix_record_bop_create(key, nkey);
     }
@@ -4317,10 +4582,14 @@ static void process_bin_bop_prepare_nread(conn *c) {
 
     eitem *elem;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         if ((vlen + 2) > MAX_ELEMENT_BYTES) {
             ret = ENGINE_E2BIG;
@@ -4370,9 +4639,12 @@ static void process_bin_bop_prepare_nread(conn *c) {
         c->substate = bin_reading_bop_nread_complete;
         }
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -4406,13 +4678,23 @@ static void process_bin_bop_insert_complete(conn *c) {
     bool replaced;
     bool replace_if_exist = (c->coll_op == OPERATION_BOP_UPSERT ? true : false);
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
+#endif
     if (ret == ENGINE_SUCCESS) {
         ret = mc_engine.v1->btree_elem_insert(mc_engine.v0, c,
                                        c->coll_key, c->coll_nkey, elem, replace_if_exist,
                                        c->coll_attrp, &replaced, &created, NULL,
                                        c->binary_header.request.vbucket);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
     }
 
     if (settings.detail_enabled) {
@@ -4425,9 +4707,12 @@ static void process_bin_bop_insert_complete(conn *c) {
         /* Stored */
         write_bin_response(c, NULL, 0, 0, 0);
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -4456,11 +4741,17 @@ static void process_bin_bop_insert_complete(conn *c) {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
     }
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    /* release the c->coll_eitem reference */
+    mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+    c->coll_eitem = NULL;
+#else
     if (!c->ewouldblock) {
         /* release the c->coll_eitem reference */
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         c->coll_eitem = NULL;
     }
+#endif
 }
 
 static void process_bin_bop_nread_complete(conn *c) {
@@ -4487,14 +4778,24 @@ static void process_bin_bop_update_complete(conn *c) {
 
     eupdate_ptr = (c->coll_eupdate.neflag == EFLAG_NULL ? NULL : &c->coll_eupdate);
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
+#endif
     if (ret == ENGINE_SUCCESS) {
         ret = mc_engine.v1->btree_elem_update(mc_engine.v0, c,
                                        c->coll_key, c->coll_nkey,
                                        &c->coll_bkrange, eupdate_ptr,
                                        new_value, new_nbytes,
                                        c->binary_header.request.vbucket);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
     }
 
     if (settings.detail_enabled) {
@@ -4511,9 +4812,12 @@ static void process_bin_bop_update_complete(conn *c) {
         STATS_NONE_HITS(c, bop_update, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT, 0);
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -4604,10 +4908,14 @@ static void process_bin_bop_update_prepare_nread(conn *c) {
 
     eitem *elem = NULL;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         if ((vlen + 2) > MAX_ELEMENT_BYTES) {
             ret = ENGINE_E2BIG;
@@ -4635,9 +4943,12 @@ static void process_bin_bop_update_prepare_nread(conn *c) {
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_bop_update_nread_complete;
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -4655,6 +4966,9 @@ static void process_bin_bop_update_prepare_nread(conn *c) {
 
 static void process_bin_bop_delete(conn *c) {
     assert(c != NULL);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    assert(c->ewouldblock == false);
+#endif
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
 
@@ -4694,6 +5008,12 @@ static void process_bin_bop_delete(conn *c) {
                                           (bool)req->message.body.drop,
                                           &del_count, &dropped,
                                           c->binary_header.request.vbucket);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    if (ret == ENGINE_EWOULDBLOCK) {
+        c->ewouldblock = true;
+        ret = ENGINE_SUCCESS;
+    }
+#endif
     if (settings.detail_enabled) {
         stats_prefix_record_bop_delete(key, nkey,
                                        (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
@@ -4728,6 +5048,9 @@ static void process_bin_bop_delete(conn *c) {
 
 static void process_bin_bop_get(conn *c) {
     assert(c != NULL);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    assert(c->ewouldblock == false);
+#endif
     assert(c->cmd == PROTOCOL_BINARY_CMD_BOP_GET);
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
@@ -4770,9 +5093,13 @@ static void process_bin_bop_get(conn *c) {
     int      est_count;
     int      need_size;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         est_count = MAX_BTREE_SIZE;
         if (req->message.body.count > 0 && req->message.body.count < MAX_BTREE_SIZE) {
@@ -4793,6 +5120,12 @@ static void process_bin_bop_get(conn *c) {
                                            (bool)req->message.body.drop,
                                            elem_array, &elem_count, &flags, &dropped_trimmed,
                                            c->binary_header.request.vbucket);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
     }
 
     if (settings.detail_enabled) {
@@ -4852,6 +5185,10 @@ static void process_bin_bop_get(conn *c) {
         } else {
             STATS_NOKEY(c, cmd_bop_get);
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+            if (c->ewouldblock)
+                c->ewouldblock = false;
+#endif
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         }
         }
@@ -4860,9 +5197,12 @@ static void process_bin_bop_get(conn *c) {
         STATS_NONE_HITS(c, bop_get, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT, 0);
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -4928,9 +5268,13 @@ static void process_bin_bop_count(conn *c) {
     uint32_t elem_count;
     uint32_t flags;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         ret = mc_engine.v1->btree_elem_count(mc_engine.v0, c, key, nkey,
                                              bkrange, efilter, &elem_count, &flags,
@@ -4950,9 +5294,12 @@ static void process_bin_bop_count(conn *c) {
         rsp->message.body.count = htonl(elem_count);
         write_bin_response(c, &rsp->message.body, 0, 0, sizeof(rsp->message.body));
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -5023,10 +5370,14 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
 
     eitem *elem=NULL;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         int need_size = 0;
 
@@ -5102,9 +5453,12 @@ done:
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_bop_nread_keys_complete;
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -5127,9 +5481,13 @@ static void process_bin_bop_mget_complete(conn *c) {
     assert(c->coll_op == OPERATION_BOP_MGET);
     assert(c->coll_eitem != NULL);
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         ret = ENGINE_ENOTSUP;
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
@@ -5173,8 +5531,12 @@ static void process_bin_bop_smget_complete(conn *c) {
     bool trimmed;
     bool duplicated;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
+#endif
     if (ret == ENGINE_SUCCESS) {
         int ntokens = tokenize_keys(vptr, delimiter, c->coll_numkeys, keys_array);
         if (ntokens == -1) {
@@ -5293,9 +5655,12 @@ static void process_bin_bop_smget_complete(conn *c) {
         }
         }
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -5419,6 +5784,9 @@ static void process_bin_getattr(conn *c) {
 
 static void process_bin_setattr(conn *c) {
     assert(c != NULL);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    assert(c->ewouldblock == false);
+#endif
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
 
@@ -5495,6 +5863,12 @@ static void process_bin_setattr(conn *c) {
     ret = mc_engine.v1->setattr(mc_engine.v0, c, key, nkey,
                                 attr_ids, attr_count, &attr_data,
                                 c->binary_header.request.vbucket);
+#ifdef NEW_WOULDBLOCK_HANDLING // 3rd
+    if (ret == ENGINE_EWOULDBLOCK) {
+        c->ewouldblock = true;
+        ret = ENGINE_SUCCESS;
+    }
+#endif
     if (settings.detail_enabled) {
         stats_prefix_record_setattr(key, nkey);
     }
@@ -5810,10 +6184,14 @@ static void process_bin_unknown_packet(conn *c) {
     void *packet = c->rcurr - (c->binary_header.request.bodylen +
                                sizeof(c->binary_header));
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         ret = mc_engine.v1->unknown_command(mc_engine.v0, c, packet,
                                             binary_response_handler);
@@ -5826,9 +6204,12 @@ static void process_bin_unknown_packet(conn *c) {
     case ENGINE_ENOTSUP:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_UNKNOWN_COMMAND, 0);
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     default:
         /* FATAL ERROR, shut down connection */
         conn_set_state(c, conn_closing);
@@ -6437,9 +6818,13 @@ static void process_bin_update(conn *c) {
         stats_prefix_record_set(key, nkey);
     }
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
+#endif
     item_info info = { .nvalue = 1 };
 
     if (ret == ENGINE_SUCCESS) {
@@ -6484,9 +6869,12 @@ static void process_bin_update(conn *c) {
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -6535,9 +6923,13 @@ static void process_bin_append_prepend(conn *c) {
         stats_prefix_record_set(key, nkey);
     }
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
+#endif
     item_info info = { .nvalue = 1 };
 
     if (ret == ENGINE_SUCCESS) {
@@ -6573,9 +6965,12 @@ static void process_bin_append_prepend(conn *c) {
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -6605,6 +7000,12 @@ static void process_bin_flush(conn *c) {
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->flush(mc_engine.v0, c, exptime);
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+    if (ret == ENGINE_EWOULDBLOCK) {
+        c->ewouldblock = true;
+        ret = ENGINE_SUCCESS;
+    }
+#endif
 
     if (ret == ENGINE_SUCCESS) {
         write_bin_response(c, NULL, 0, 0, 0);
@@ -6641,10 +7042,20 @@ static void process_bin_flush_prefix(conn *c) {
         nprefix = 0;
     }
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
+#endif
     if (ret == ENGINE_SUCCESS) {
         ret = mc_engine.v1->flush_prefix(mc_engine.v0, c, prefix, nprefix, exptime);
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
         if (settings.detail_enabled) {
             if (ret == ENGINE_SUCCESS || ret == ENGINE_PREFIX_ENOENT) {
                 if (stats_prefix_delete(prefix, nprefix) == 0) { /* found */
@@ -6654,14 +7065,16 @@ static void process_bin_flush_prefix(conn *c) {
         }
     }
 
-
     switch (ret) {
     case ENGINE_SUCCESS:
         write_bin_response(c, NULL, 0, 0, 0);
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -6696,10 +7109,14 @@ static void process_bin_delete(conn *c) {
         }
     }
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         if (settings.detail_enabled) {
             stats_prefix_record_delete(key, nkey);
@@ -6707,6 +7124,12 @@ static void process_bin_delete(conn *c) {
         ret = mc_engine.v1->remove(mc_engine.v0, c, key, nkey,
                                    ntohll(req->message.header.request.cas),
                                    c->binary_header.request.vbucket);
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
     }
 
     switch (ret) {
@@ -6722,9 +7145,12 @@ static void process_bin_delete(conn *c) {
     case ENGINE_NOT_MY_VBUCKET:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_MY_VBUCKET, 0);
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 4th
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     default:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
     }
@@ -7859,10 +8285,14 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         stats_prefix_record_set(key, nkey);
     }
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         ret = mc_engine.v1->allocate(mc_engine.v0, c,
                                      &it, key, nkey,
@@ -7884,9 +8314,12 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         c->store_op = store_op;
         conn_set_state(c, conn_nread);
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -7915,6 +8348,9 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
     size_t nkey;
 
     assert(c != NULL);
+#ifdef NEW_WOULDBLOCK_HANDLING
+    assert(c->ewouldblock == false);
+#endif
 
     set_noreply_maybe(c, tokens, ntokens);
 
@@ -7954,6 +8390,13 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
                                    incr, create, delta,
                                    init_value, htonl(flags), exptime_int,
                                    &cas, &result, 0);
+#ifdef NEW_WOULDBLOCK_HANDLING
+    if (ret == ENGINE_EWOULDBLOCK) {
+        c->ewouldblock = true;
+        ret = ENGINE_SUCCESS;
+    }
+
+#endif
     char temp[INCR_MAX_STORAGE_LEN];
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -8004,6 +8447,9 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     size_t nkey;
 
     assert(c != NULL);
+#ifdef NEW_WOULDBLOCK_HANDLING
+    assert(c->ewouldblock == false);
+#endif
 
     if (ntokens > 3) {
         bool hold_is_zero = strcmp(tokens[KEY_TOKEN+1].value, "0") == 0;
@@ -8032,6 +8478,12 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->remove(mc_engine.v0, c, key, nkey, 0, 0);
+#ifdef NEW_WOULDBLOCK_HANDLING
+    if (ret == ENGINE_EWOULDBLOCK) {
+        c->ewouldblock = true;
+        ret = ENGINE_SUCCESS;
+    }
+#endif
 
     /* For some reason the SLAB_INCR tries to access this... */
     item_info info = { .nvalue = 1 };
@@ -8047,6 +8499,10 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
 static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens, bool flush_all)
 {
     time_t exptime;
+
+#ifdef NEW_WOULDBLOCK_HANDLING
+    assert(c->ewouldblock == false);
+#endif
 
     set_noreply_maybe(c, tokens, ntokens);
 
@@ -8064,6 +8520,12 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
         }
 
         ENGINE_ERROR_CODE ret = mc_engine.v1->flush(mc_engine.v0, c, exptime);
+#ifdef NEW_WOULDBLOCK_HANDLING
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
         if (ret == ENGINE_SUCCESS) {
             out_string(c, "OK");
         } else if (ret == ENGINE_ENOTSUP) {
@@ -8096,6 +8558,12 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
 
         ENGINE_ERROR_CODE ret = mc_engine.v1->flush_prefix(mc_engine.v0, c,
                                                            prefix, nprefix, exptime);
+#ifdef NEW_WOULDBLOCK_HANDLING
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
         if (settings.detail_enabled) {
             if (ret == ENGINE_SUCCESS || ret == ENGINE_PREFIX_ENOENT) {
                 if (stats_prefix_delete(prefix, nprefix) == 0) { /* found */
@@ -8498,8 +8966,14 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
     int      est_count;
     int      need_size;
 
+#ifdef NEW_WOULDBLOCK_HANDLING
+    assert(c->ewouldblock == false);
+
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
+#endif
 
     /* adjust list index */
     if (from_index > MAX_LIST_SIZE)           from_index = MAX_LIST_SIZE;
@@ -8523,6 +8997,12 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
         ret = mc_engine.v1->list_elem_get(mc_engine.v0, c, key, nkey,
                                           from_index, to_index, delete, drop_if_empty,
                                           elem_array, &elem_count, &flags, &dropped, 0);
+#ifdef NEW_WOULDBLOCK_HANDLING
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
     }
 
     if (settings.detail_enabled) {
@@ -8581,6 +9061,10 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
             STATS_NOKEY(c, cmd_lop_get);
             mc_engine.v1->list_elem_release(mc_engine.v0, c, elem_array, elem_count);
             free(respbuf);
+#ifdef NEW_WOULDBLOCK_HANDLING
+            if (c->ewouldblock)
+                c->ewouldblock = false;
+#endif
             out_string(c, "SERVER_ERROR out of memory writing get response");
         }
         }
@@ -8589,9 +9073,12 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
         STATS_NONE_HITS(c, lop_get, key, nkey);
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -8616,10 +9103,14 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
                                       char *key, size_t nkey, int32_t index) {
     eitem *elem;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         if (vlen > MAX_ELEMENT_BYTES) {
             ret = ENGINE_E2BIG;
@@ -8648,9 +9139,12 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
         conn_set_state(c, conn_nread);
         }
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -8668,8 +9162,17 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
 
 static void process_lop_create(conn *c, char *key, size_t nkey, item_attr *attrp) {
 
+#ifdef NEW_WOULDBLOCK_HANDLING
+    assert(c->ewouldblock == false);
+#endif
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->list_struct_create(mc_engine.v0, c, key, nkey, attrp, 0);
+#ifdef NEW_WOULDBLOCK_HANDLING
+    if (ret == ENGINE_EWOULDBLOCK) {
+        c->ewouldblock = true;
+        ret = ENGINE_SUCCESS;
+    }
+#endif
 
     if (settings.detail_enabled) {
         stats_prefix_record_lop_create(key, nkey);
@@ -8698,10 +9201,20 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
     uint32_t del_count;
     bool     dropped;
 
+#ifdef NEW_WOULDBLOCK_HANDLING
+    assert(c->ewouldblock == false);
+#endif
+
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->list_elem_delete(mc_engine.v0, c, key, nkey,
                                          from_index, to_index, drop_if_empty,
                                          &del_count, &dropped, 0);
+#ifdef NEW_WOULDBLOCK_HANDLING
+    if (ret == ENGINE_EWOULDBLOCK) {
+        c->ewouldblock = true;
+        ret = ENGINE_SUCCESS;
+    }
+#endif
 
     if (settings.detail_enabled) {
         stats_prefix_record_lop_delete(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
@@ -8886,9 +9399,15 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
     bool     dropped;
     int      need_size;
 
+#ifdef NEW_WOULDBLOCK_HANDLING
+    assert(c->ewouldblock == false);
+
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         if (req_count <= 0 || req_count > MAX_SET_SIZE) req_count = MAX_SET_SIZE;
         need_size = req_count * sizeof(eitem*);
@@ -8900,6 +9419,12 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
         ret = mc_engine.v1->set_elem_get(mc_engine.v0, c, key, nkey, req_count,
                                          delete, drop_if_empty, elem_array, &elem_count,
                                          &flags, &dropped, 0);
+#ifdef NEW_WOULDBLOCK_HANDLING
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
     }
 
     if (settings.detail_enabled) {
@@ -8958,6 +9483,10 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
             STATS_NOKEY(c, cmd_sop_get);
             mc_engine.v1->set_elem_release(mc_engine.v0, c, elem_array, elem_count);
             free(respbuf);
+#ifdef NEW_WOULDBLOCK_HANDLING
+            if (c->ewouldblock)
+                c->ewouldblock = false;
+#endif
             out_string(c, "SERVER_ERROR out of memory writing get response");
         }
         }
@@ -8966,9 +9495,12 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
         STATS_NONE_HITS(c, sop_get, key, nkey);
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -8992,10 +9524,14 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
 static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, size_t nkey) {
     eitem *elem = NULL;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         if (vlen > MAX_ELEMENT_BYTES) {
             ret = ENGINE_E2BIG;
@@ -9038,9 +9574,12 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
         c->coll_nkey   = nkey;
         conn_set_state(c, conn_nread);
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -9064,8 +9603,17 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
 }
 
 static void process_sop_create(conn *c, char *key, size_t nkey, item_attr *attrp) {
+#ifdef NEW_WOULDBLOCK_HANDLING
+    assert(c->ewouldblock == false);
+#endif
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->set_struct_create(mc_engine.v0, c, key, nkey, attrp, 0);
+#ifdef NEW_WOULDBLOCK_HANDLING
+    if (ret == ENGINE_EWOULDBLOCK) {
+        c->ewouldblock = true;
+        ret = ENGINE_SUCCESS;
+    }
+#endif
 
     if (settings.detail_enabled) {
         stats_prefix_record_sop_create(key, nkey);
@@ -9241,9 +9789,15 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
     int      est_count;
     int      need_size;
 
+#ifdef NEW_WOULDBLOCK_HANDLING
+    assert(c->ewouldblock == false);
+
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         est_count = MAX_BTREE_SIZE;
         if (count > 0 && count < MAX_BTREE_SIZE) {
@@ -9260,6 +9814,12 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
                                            delete, drop_if_empty,
                                            elem_array, &elem_count,
                                            &flags, &dropped_trimmed, 0);
+#ifdef NEW_WOULDBLOCK_HANDLING
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+#endif
     }
 
     if (settings.detail_enabled) {
@@ -9322,6 +9882,10 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
             STATS_NOKEY(c, cmd_bop_get);
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
             free(respbuf);
+#ifdef NEW_WOULDBLOCK_HANDLING
+            if (c->ewouldblock)
+                c->ewouldblock = false;
+#endif
             out_string(c, "SERVER_ERROR out of memory writing get response");
         }
         }
@@ -9330,9 +9894,12 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
         STATS_NONE_HITS(c, bop_get, key, nkey);
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -9362,9 +9929,13 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
     uint32_t elem_count;
     uint32_t flags;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         ret = mc_engine.v1->btree_elem_count(mc_engine.v0, c,
                                              key, nkey, bkrange, efilter,
@@ -9385,9 +9956,12 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
         out_string(c, buffer);
         }
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -9410,9 +9984,13 @@ static void process_bop_position(conn *c, char *key, size_t nkey,
 {
     int position;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         ret = mc_engine.v1->btree_posi_find(mc_engine.v0, c, key, nkey,
                                             bkrange, order, &position, 0);
@@ -9436,9 +10014,12 @@ static void process_bop_position(conn *c, char *key, size_t nkey,
         STATS_NONE_HITS(c, bop_position, key, nkey);
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -9466,9 +10047,13 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
     int      position;
     int      need_size;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         need_size = ((count*2) + 1) * sizeof(eitem*);
         if ((elem_array = (eitem **)malloc(need_size)) == NULL) {
@@ -9546,9 +10131,12 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
         STATS_NONE_HITS(c, bop_pwg, key, nkey);
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -9579,8 +10167,12 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
     int      est_count;
     int      need_size;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
+#endif
 
     if (from_posi > MAX_BTREE_SIZE) from_posi = MAX_BTREE_SIZE;
     if (to_posi   > MAX_BTREE_SIZE) to_posi   = MAX_BTREE_SIZE;
@@ -9663,9 +10255,12 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
         STATS_NONE_HITS(c, bop_gbp, key, nkey);
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -9691,10 +10286,14 @@ static void process_bop_update_prepare_nread(conn *c, int cmd, char *key, size_t
     assert(cmd == (int)OPERATION_BOP_UPDATE);
     eitem *elem = NULL;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         if (vlen > MAX_ELEMENT_BYTES) {
             ret = ENGINE_E2BIG;
@@ -9721,9 +10320,12 @@ static void process_bop_update_prepare_nread(conn *c, int cmd, char *key, size_t
         c->coll_nkey   = nkey;
         conn_set_state(c, conn_nread);
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -9745,10 +10347,14 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
 {
     eitem *elem;
 
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
 
+#endif
     if (ret == ENGINE_SUCCESS) {
         if (vlen > MAX_ELEMENT_BYTES) {
             ret = ENGINE_E2BIG;
@@ -9780,9 +10386,12 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
         conn_set_state(c, conn_nread);
         }
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -9801,9 +10410,13 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
 #if defined(SUPPORT_BOP_MGET) || defined(SUPPORT_BOP_SMGET)
 static void process_bop_prepare_nread_keys(conn *c, int cmd, size_t vlen) {
     eitem *elem = NULL;
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#else
     ENGINE_ERROR_CODE ret = c->aiostat;
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
+#endif
 
     if (ret == ENGINE_SUCCESS) {
         int need_size = 0;
@@ -9858,9 +10471,12 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, size_t vlen) {
         conn_set_state(c, conn_nread);
         }
         break;
+#ifdef NEW_WOULDBLOCK_HANDLING // 2nd
+#else
     case ENGINE_EWOULDBLOCK:
         c->ewouldblock = true;
         break;
+#endif
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
@@ -9885,8 +10501,17 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, size_t vlen) {
 
 static void process_bop_create(conn *c, char *key, size_t nkey, item_attr *attrp) {
 
+#ifdef NEW_WOULDBLOCK_HANDLING
+    assert(c->ewouldblock == false);
+#endif
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_struct_create(mc_engine.v0, c, key, nkey, attrp, 0);
+#ifdef NEW_WOULDBLOCK_HANDLING
+    if (ret == ENGINE_EWOULDBLOCK) {
+        c->ewouldblock = true;
+        ret = ENGINE_SUCCESS;
+    }
+#endif
 
     if (settings.detail_enabled) {
         stats_prefix_record_bop_create(key, nkey);
@@ -9916,10 +10541,20 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
     uint32_t del_count;
     bool     dropped;
 
+#ifdef NEW_WOULDBLOCK_HANDLING
+    assert(c->ewouldblock == false);
+#endif
+
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_elem_delete(mc_engine.v0, c, key, nkey,
                                           bkrange, efilter, count, drop_if_empty,
                                           &del_count, &dropped, 0);
+#ifdef NEW_WOULDBLOCK_HANDLING
+    if (ret == ENGINE_EWOULDBLOCK) {
+        c->ewouldblock = true;
+        ret = ENGINE_SUCCESS;
+    }
+#endif
 
     if (settings.detail_enabled) {
         stats_prefix_record_bop_delete(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
@@ -9958,9 +10593,18 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
     uint64_t result;
     char temp[INCR_MAX_STORAGE_LEN];
 
+#ifdef NEW_WOULDBLOCK_HANDLING
+    assert(c->ewouldblock == false);
+#endif
+
     ret = mc_engine.v1->btree_elem_arithmetic(mc_engine.v0, c, key, nkey, bkrange, incr, create,
                                               delta, initial, eflagp, &result, 0);
-
+#ifdef NEW_WOULDBLOCK_HANDLING
+    if (ret == ENGINE_EWOULDBLOCK) {
+        c->ewouldblock = true;
+        ret = ENGINE_SUCCESS;
+    }
+#endif
     if (settings.detail_enabled) {
         if (incr) {
             stats_prefix_record_bop_incr(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
@@ -10975,6 +11619,9 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
 
 static void process_setattr_command(conn *c, token_t *tokens, const size_t ntokens) {
     assert(c != NULL);
+#ifdef NEW_WOULDBLOCK_HANDLING
+    assert(c->ewouldblock == false);
+#endif
     char *key = tokens[KEY_TOKEN].value;
     size_t nkey = tokens[KEY_TOKEN].length;
 
@@ -11058,6 +11705,12 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->setattr(mc_engine.v0, c, key, nkey,
                                 attr_ids, attr_count, &attr_data, 0);
+#ifdef NEW_WOULDBLOCK_HANDLING
+    if (ret == ENGINE_EWOULDBLOCK) {
+        c->ewouldblock = true;
+        ret = ENGINE_SUCCESS;
+    }
+#endif
 
     if (settings.detail_enabled) {
         stats_prefix_record_setattr(key, nkey);
@@ -11719,6 +12372,34 @@ bool conn_parse_cmd(conn *c) {
         conn_set_state(c, conn_waiting);
     }
 
+#ifdef NEW_WOULDBLOCK_HANDLING
+    /* try_read_command eventually calls write functions
+     * that may return EWOULDBLOCK and set ewouldblock true.
+     * So, remove the current connection from the event loop
+     * and wait for notify_io_complete event.
+     * See also conn_nread.
+     */
+    if (c->ewouldblock) {
+        LIBEVENT_THREAD *t = c->thread;
+        bool block = false;
+
+        LOCK_THREAD(t);
+        if (c->premature_notify_io_complete) {
+            /* notify_io_complete was called before we got here */
+            c->premature_notify_io_complete = false;
+        } else {
+            event_del(&c->event);
+            c->io_blocked = true;
+            block = true;
+        }
+        UNLOCK_THREAD(t);
+        c->ewouldblock = false;
+
+        if (block)
+            return false;
+    }
+#endif
+
     return true;
 }
 
@@ -11808,6 +12489,27 @@ bool conn_nread(conn *c) {
     ssize_t res;
 
     if (c->rlbytes == 0) {
+#ifdef NEW_WOULDBLOCK_HANDLING
+        complete_nread(c);
+
+        bool block = false;
+        if (c->ewouldblock) {
+            LIBEVENT_THREAD *t = c->thread;
+
+            LOCK_THREAD(t);
+            if (c->premature_notify_io_complete) {
+                /* notify_io_complete was called before we got here */
+                c->premature_notify_io_complete = false;
+            } else {
+                event_del(&c->event);
+                c->io_blocked = true;
+                block = true;
+            }
+            UNLOCK_THREAD(t);
+            c->ewouldblock = false;
+        }
+        return !block;
+#else
         LIBEVENT_THREAD *t = c->thread;
         LOCK_THREAD(t);
         bool block = c->ewouldblock = false;
@@ -11823,6 +12525,7 @@ bool conn_nread(conn *c) {
         }
         UNLOCK_THREAD(t);
         return !block;
+#endif
     }
 
     /* first check if we have leftovers in the conn_read buffer */
@@ -11902,6 +12605,13 @@ bool conn_write(conn *c) {
 }
 
 bool conn_mwrite(conn *c) {
+#ifdef NEW_WOULDBLOCK_HANDLING
+    /* c->aiostat was set by notify_io_complete function.  */
+    if (c->aiostat != ENGINE_SUCCESS) {
+        /* The response must be reset according to c->aiostat. */
+    }
+#endif
+
     if (IS_UDP(c->transport) && c->msgcurr == 0 && build_udp_headers(c) != 0) {
         if (settings.verbose > 0) {
             mc_logger->log(EXTENSION_LOG_INFO, c,
@@ -11910,6 +12620,14 @@ bool conn_mwrite(conn *c) {
         conn_set_state(c, conn_closing);
         return true;
     }
+
+#ifdef NEW_WOULDBLOCK_HANDLING
+    /* Clear the ewouldblock so that the next read command from
+     * the same connection does not falsely block and time out.
+     */
+    if (c->ewouldblock)
+        c->ewouldblock = false;
+#endif
 
     switch (transmit(c)) {
     case TRANSMIT_COMPLETE:
