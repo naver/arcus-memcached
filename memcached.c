@@ -14389,14 +14389,21 @@ int main (int argc, char **argv) {
     }
 
     if (engine_config != NULL && strlen(old_options) > 0) {
-        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+        /* If there is -e, just append it to the "old" options that we have
+         * accumulated so far.
+         */
+        old_opts += sprintf(old_opts, "%s", engine_config);
+        engine_config = NULL; /* So we set it to old_options below... */
+        /*
+        settings.extensions.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "ERROR: You can't mix -e with the old options\n");
         return EX_USAGE;
-    } else if (engine_config == NULL && strlen(old_options) > 0) {
+        */
+    }
+    if (engine_config == NULL && strlen(old_options) > 0) {
         engine_config = old_options;
     }
-    mc_logger->log(EXTENSION_LOG_INFO, NULL,
-                   "engine config: %s\n", engine_config);
+    mc_logger->log(EXTENSION_LOG_INFO, NULL, "engine config: %s\n", engine_config);
 
     if (maxcore != 0) {
         struct rlimit rlim_new;
