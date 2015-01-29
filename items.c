@@ -30,7 +30,7 @@
 
 /* item unlink cause */
 enum item_unlink_cause {
-    ITEM_UNLINK_NORMAL = 0, /* unlink by normal request */
+    ITEM_UNLINK_NORMAL = 1, /* unlink by normal request */
     ITEM_UNLINK_EVICT,      /* unlink by eviction */
     ITEM_UNLINK_INVALID,    /* unlink by invalidation such like expiration/flush */
     ITEM_UNLINK_REPLACE,    /* unlink by replacement of set/replace command,
@@ -47,9 +47,9 @@ enum item_unlink_cause {
 
 /* element delete cause */
 enum elem_delete_cause {
-    ELEM_DELETE_NORMAL = 0, /* delete by normal request */
-    ELEM_DELETE_COLL   = 1, /* delete by collection deletion */
-    ELEM_DELETE_TRIM   = 2  /* delete by overflow trim */
+    ELEM_DELETE_NORMAL = 1, /* delete by normal request */
+    ELEM_DELETE_COLL,       /* delete by collection deletion */
+    ELEM_DELETE_TRIM        /* delete by overflow trim */
 };
 
 /* Forward Declarations */
