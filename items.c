@@ -171,10 +171,6 @@ static EXTENSION_LOGGER_DESCRIPTOR *logger;
 /*
  * Static functions
  */
-static char* item_get_meta(const hash_item* item)
-{
-    return ((char*)item_get_key(item)) + META_OFFSET_IN_ITEM(item->nkey, item->nbytes);
-}
 
 /* warning: don't use these macros with a function, as it evals its arg twice */
 static inline size_t ITEM_ntotal(struct default_engine *engine, const hash_item *item)
@@ -6636,6 +6632,15 @@ const void* item_get_key(const hash_item* item)
         ret += sizeof(uint64_t);
     }
     return ret;
+}
+
+const void* item_get_meta(const hash_item* item)
+{
+    if (IS_COLL_ITEM(item))
+        return (void*)((char*)item_get_key(item) +
+                       META_OFFSET_IN_ITEM(item->nkey, item->nbytes));
+    else
+        return NULL;
 }
 
 char* item_get_data(const hash_item* item)
