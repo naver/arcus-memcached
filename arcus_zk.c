@@ -1007,8 +1007,6 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         arcus_exit(zh, EX_PROTOCOL);
     }
 
-    zk_root = "/arcus";
-
 #ifdef ENABLE_HEART_BEAT_THREAD
 #else
     // Now register L7 ping
@@ -1018,6 +1016,9 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         arcus_exit(zh, EX_PROTOCOL);
     }
 #endif
+
+    /* zk root node */
+    zk_root = "/arcus";
 
     /* Retrieve the service code for this cache node */
     if (arcus_get_service_code(zh, zk_root) != 0) {
