@@ -1,3 +1,9 @@
+2015-02-02 [version 1.8.3]
+	* Extensive code refactoring.
+	* Comment out "tap protocol" code.
+	* New EWOULDBLOCK and notify_io_complete handling.
+	* Clarify item unlink and element delete causes. 
+
 2014-12-30 [version 1.8.2]
 	* Reduce "too many evictions" occurrences.
 
