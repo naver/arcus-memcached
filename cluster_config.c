@@ -19,22 +19,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <pthread.h>
 #include "cluster_config.h"
 
 #define PROTOTYPES 1
 #include "rfc1321/md5c.c"
 #undef  PROTOTYPES
 
+#define MAX_SERVER_ITEM_COUNT 100
+
 struct server_item {
     char *hostport;
 };
-
-static void server_item_free(struct server_item *servers, int num_servers) {
-    int i;
-    for (i=0; i<num_servers; i++) {
-        free(servers[i].hostport);
-    }
-}
 
 struct continuum_item {
     uint32_t index;    // server index
@@ -59,6 +55,7 @@ struct cluster_config {
     bool     is_valid;                   // is this configuration valid?
 };
 
+
 static void hash_md5(const char *key, size_t key_length, unsigned char *result)
 {
     MD5_CTX ctx;
@@ -73,20 +70,19 @@ static uint32_t hash_ketama(const char *key, size_t key_length)
     unsigned char digest[16];
 
     hash_md5(key, key_length, digest);
-
-    return (uint32_t) ( (digest[3] << 24)
-                       |(digest[2] << 16)
-                       |(digest[1] << 8)
-                       | digest[0]);
+    return (uint32_t)((digest[3] << 24)
+                     |(digest[2] << 16)
+                     |(digest[1] << 8)
+                     | digest[0]);
 }
 
 static int continuum_item_cmp(const void *t1, const void *t2)
 {
     const struct continuum_item *ct1 = t1, *ct2 = t2;
 
-    if      (ct1->point == ct2->point)   return  0;
-    else if (ct1->point  > ct2->point)   return  1;
-    else                                 return -1;
+    if      (ct1->point == ct2->point) return  0;
+    else if (ct1->point  > ct2->point) return  1;
+    else                               return -1;
 }
 
 #define NUM_OF_HASHES 40
@@ -105,7 +101,6 @@ static bool ketama_continuum_generate(struct cluster_config *config,
     int points_per_server = NUM_OF_HASHES * NUM_PER_HASH;
 
     *continuum = calloc(points_per_server * num_servers, sizeof(struct continuum_item));
-
     if (*continuum == NULL) {
         config->logger->log(EXTENSION_LOG_WARNING, NULL, "calloc failed: continuum\n");
         return false;
@@ -127,22 +122,26 @@ static bool ketama_continuum_generate(struct cluster_config *config,
     }
 
     qsort(*continuum, pp, sizeof(struct continuum_item), continuum_item_cmp);
-
     *continuum_len = pp;
 
     return true;
+}
+
+static void server_item_free(struct server_item *servers, int num_servers)
+{
+    for (int i=0; i<num_servers; i++) {
+        free(servers[i].hostport);
+    }
 }
 
 static bool server_item_populate(struct cluster_config *config,
                                  char **server_list, size_t num_servers, const char *self_hostport,
                                  struct server_item **servers, uint32_t *self_id)
 {
+    assert(*servers == NULL);
     int i;
 
-    assert(*servers == NULL);
-
     *servers = calloc(num_servers, sizeof(struct server_item));
-
     if (*servers == NULL) {
         config->logger->log(EXTENSION_LOG_WARNING, NULL, "calloc failed: servers\n");
         return false;
@@ -167,15 +166,12 @@ static bool server_item_populate(struct cluster_config *config,
             }
 
             (*servers)[i].hostport = hostport;
-
             if (strcmp(self_hostport, hostport) == 0) {
                 *self_id = i;
             }
-
             break;
         }
     }
-
     return true;
 }
 
@@ -185,7 +181,6 @@ struct cluster_config *cluster_config_init(EXTENSION_LOGGER_DESCRIPTOR *logger, 
     int err;
 
     config = calloc(1, sizeof(struct cluster_config));
-
     if (config == NULL) {
         logger->log(EXTENSION_LOG_WARNING, NULL, "calloc failed: cluster_config\n");
         return NULL;
@@ -196,9 +191,7 @@ struct cluster_config *cluster_config_init(EXTENSION_LOGGER_DESCRIPTOR *logger, 
 
     config->logger = logger;
     config->verbose = verbose;
-
     config->is_valid = false;
-
     return config;
 }
 
@@ -207,18 +200,15 @@ void cluster_config_free(struct cluster_config *config)
     if (config == NULL) {
         return;
     }
-
     if (config->continuum) {
         free(config->continuum);
         config->continuum = NULL;
     }
-
     if (config->servers) {
         server_item_free(config->servers, config->num_servers);
         free(config->servers);
         config->servers = NULL;
     }
-
     pthread_mutex_destroy(&config->lock);
     free(config);
 }
@@ -298,14 +288,12 @@ bool cluster_config_reconfigure(struct cluster_config *config, char **server_lis
     config->is_valid = true;
 
     pthread_mutex_unlock(&config->lock);
-
     return true;
 
 RECONFIG_FAILED:
     pthread_mutex_lock(&config->lock);
     config->is_valid = false;
     pthread_mutex_unlock(&config->lock);
-
     return false;
 }
 
