@@ -501,6 +501,11 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
                                item_attr *attr_data);
 
 /*
+ * Item config functions
+ */
+void item_conf_set_evict_to_free(struct default_engine *engine, bool value);
+
+/*
  * Item access functions
  */
 uint64_t    item_get_cas(const hash_item* item);

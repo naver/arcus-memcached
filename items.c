@@ -146,6 +146,9 @@ extern int  genhash_string_hash(const void* p, size_t nkey);
 /* btree position debugging */
 static bool btree_position_debug = false;
 
+/* config: evict items to free memory */
+static bool item_evict_to_free = true;
+
 /* min & max bkey constants */
 static uint64_t      btree_uint64_min_bkey = BTREE_UINT64_MIN_BKEY;
 static uint64_t      btree_uint64_max_bkey = BTREE_UINT64_MAX_BKEY;
@@ -399,8 +402,8 @@ static void *do_item_alloc_internal(struct default_engine *engine,
 #endif
 
     int space_shortage_level = slabs_space_shortage_level();
-    if (space_shortage_level > 0 &&
-        id == LRU_CLSID_FOR_SMALL && engine->config.evict_to_free != 0)
+    if (space_shortage_level > 0 && id == LRU_CLSID_FOR_SMALL
+        && item_evict_to_free == true)
     {
         tries  = space_shortage_level;
         search = engine->items.tails[id];
@@ -514,7 +517,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         /* If requested to not push old items out of cache when memory runs out,
          * we're out of luck at this point...
          */
-        if (engine->config.evict_to_free == 0) {
+        if (item_evict_to_free != true) {
             engine->items.itemstats[clsid_based_on_ntotal].outofmemory++;
             return NULL;
         }
@@ -4757,7 +4760,7 @@ static int check_expired_collections(struct default_engine *engine, const int cl
      */
     space_shortage_level = slabs_space_shortage_level();
     if (space_shortage_level >= 10 /* refer to SSL_FOR_BACKGROUND_EVICT in slabs.c */
-        && engine->config.evict_to_free != 0)
+        && item_evict_to_free == true)
     {
         current_time = engine->server.core->get_current_time();
         tries = space_shortage_level;
@@ -5287,6 +5290,8 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
     engine->coll_del_queue.head = engine->coll_del_queue.tail = NULL;
     engine->coll_del_queue.size = 0;
     engine->coll_del_sleep = false;
+
+    item_evict_to_free = engine->config.evict_to_free;
 
     /* adjust maximum collection size */
     if (engine->config.max_list_size > max_list_size) {
@@ -6605,6 +6610,16 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
+}
+
+/*
+ *  * Item config functions
+ *   */
+void item_conf_set_evict_to_free(struct default_engine *engine, bool value)
+{
+    pthread_mutex_lock(&engine->cache_lock);
+    item_evict_to_free = value;
+    pthread_mutex_unlock(&engine->cache_lock);
 }
 
 /*
