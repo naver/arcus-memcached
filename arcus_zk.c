@@ -97,6 +97,8 @@
 #define SYSLOGD_PORT    514     // UDP syslog port #
 #define MAX_HB_RETRY    (2*3)   // we want to retry 2 heartbeats every 1/3 of ZK session timeout
 
+#define WHCHOI83_CACHE_PUBLIC_IP 1
+
 static const char *zk_root = NULL;
 static const char *zk_map_path   = "cache_server_mapping";
 static const char *zk_log_path   = "cache_server_log";
@@ -773,6 +775,15 @@ static int arcus_build_znode_name(char *ensemble_list)
     inet_ntop(AF_INET, &myaddr.sin_addr, myip, sizeof(myip));
     arcus_conf.hostip = strdup(myip);
     arcus_conf.logger->log(EXTENSION_LOG_DETAIL, NULL, "local IP: %s\n", myip);
+
+#ifdef WHCHOI83_CACHE_PUBLIC_IP
+    if (getenv("CACHE_PUBLIC_IP") != NULL)
+    {
+        free(arcus_conf.hostip);
+        arcus_conf.hostip = strdup(getenv("CACHE_PUBLIC_IP"));
+        arcus_conf.logger->log(EXTENSION_LOG_DETAIL, NULL, "local public IP: %s\n", getenv("CACHE_PUBLIC_IP"));
+    }
+#endif /* WHCHOI83_CACHE_PUBLIC_IP */
 
     if (!arcus_conf.zk_path) {
         char *hostp=NULL;
