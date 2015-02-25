@@ -774,6 +774,12 @@ static int arcus_build_znode_name(char *ensemble_list)
     arcus_conf.hostip = strdup(myip);
     arcus_conf.logger->log(EXTENSION_LOG_DETAIL, NULL, "local IP: %s\n", myip);
 
+    if (getenv("ARCUS_CACHE_PUBLIC_IP") != NULL) {
+        free(arcus_conf.hostip);
+        arcus_conf.hostip = strdup(getenv("ARCUS_CACHE_PUBLIC_IP"));
+        arcus_conf.logger->log(EXTENSION_LOG_DETAIL, NULL, "local public IP: %s\n", arcus_conf.hostip);
+    }
+
     if (!arcus_conf.zk_path) {
         char *hostp=NULL;
         char  hostbuf[100];
