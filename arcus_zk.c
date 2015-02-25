@@ -689,6 +689,7 @@ static int arcus_build_znode_name(char *ensemble_list)
     char                *sep1=",";
     char                *sep2=":";
     char                myip[50];
+    char                *mypublicip;
     char                rcbuf[200];
 
     // Need to figure out local IP. first create a dummy udp socket
@@ -760,25 +761,24 @@ static int arcus_build_znode_name(char *ensemble_list)
         return EX_UNAVAILABLE;
     }
 
-    // finally, what's my local IP?
-    if (getsockname(sock, (struct sockaddr *) &myaddr, &socklen)) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "getsockname failed: %s\n", strerror(errno));
-        close(sock); sock = -1;
-        return EX_NOHOST;
+    if ((mypublicip = getenv("ARCUS_CACHE_PUBLIC_IP")) != NULL) {
+        arcus_conf.hostip = strdup(mypublicip);
+        arcus_conf.logger->log(EXTENSION_LOG_DETAIL, NULL, "local public IP: %s\n", mypublicip);
+    } else {
+        // finally, what's my local IP?
+        if (getsockname(sock, (struct sockaddr *) &myaddr, &socklen)) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "getsockname failed: %s\n", strerror(errno));
+            close(sock); sock = -1;
+            return EX_NOHOST;
+        }
+
+        // Finally local IP
+        inet_ntop(AF_INET, &myaddr.sin_addr, myip, sizeof(myip));
+        arcus_conf.hostip = strdup(myip);
+        arcus_conf.logger->log(EXTENSION_LOG_DETAIL, NULL, "local IP: %s\n", myip);
     }
     close(sock); sock = -1;
-
-    // Finally local IP
-    inet_ntop(AF_INET, &myaddr.sin_addr, myip, sizeof(myip));
-    arcus_conf.hostip = strdup(myip);
-    arcus_conf.logger->log(EXTENSION_LOG_DETAIL, NULL, "local IP: %s\n", myip);
-
-    if (getenv("ARCUS_CACHE_PUBLIC_IP") != NULL) {
-        free(arcus_conf.hostip);
-        arcus_conf.hostip = strdup(getenv("ARCUS_CACHE_PUBLIC_IP"));
-        arcus_conf.logger->log(EXTENSION_LOG_DETAIL, NULL, "local public IP: %s\n", arcus_conf.hostip);
-    }
 
     if (!arcus_conf.zk_path) {
         char *hostp=NULL;
