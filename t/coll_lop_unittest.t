@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 162;
+use Test::More tests => 188;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -181,19 +181,19 @@ print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"
 lop_get_is($sock, "lkey 0..-1", 17, 5, "datum6,datum1,datum2,datum0,datum8");
 $cmd = "lop insert lkey 4 6"; $val = "datum9"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-lop_get_is($sock, "lkey 0..-1", 17, 5, "datum1,datum2,datum0,datum8,datum9");
+lop_get_is($sock, "lkey 0..-1", 17, 5, "datum6,datum1,datum2,datum0,datum9");
 $cmd = "lop insert lkey -5 6"; $val = "datum3"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-lop_get_is($sock, "lkey 0..-1", 17, 5, "datum3,datum1,datum2,datum0,datum8");
+lop_get_is($sock, "lkey 0..-1", 17, 5, "datum6,datum3,datum1,datum2,datum0");
 $cmd = "setattr lkey overflowaction=head_trim"; $rst = "OK";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 getattr_is($sock, "lkey overflowaction", "overflowaction=head_trim");
 $cmd = "lop insert lkey 2 6"; $val = "datums"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-lop_get_is($sock, "lkey 0..-1", 17, 5, "datum1,datum2,datums,datum0,datum8");
+lop_get_is($sock, "lkey 0..-1", 17, 5, "datum3,datums,datum1,datum2,datum0");
 $cmd = "lop insert lkey 0 6"; $val = "datumt"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-lop_get_is($sock, "lkey 0..-1", 17, 5, "datumt,datum1,datum2,datums,datum0");
+lop_get_is($sock, "lkey 0..-1", 17, 5, "datumt,datum3,datums,datum1,datum2");
 $cmd = "setattr lkey overflowaction=error"; $rst = "OK";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 getattr_is($sock, "lkey overflowaction", "overflowaction=error");
@@ -203,7 +203,7 @@ $cmd = "lop insert lkey 0 6"; $val = "datumu"; $rst = "OVERFLOWED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "lop insert lkey -1 6"; $val = "datumu"; $rst = "OVERFLOWED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-lop_get_is($sock, "lkey 0..-1", 17, 5, "datumt,datum1,datum2,datums,datum0");
+lop_get_is($sock, "lkey 0..-1", 17, 5, "datumt,datum3,datums,datum1,datum2");
 $cmd = "setattr lkey overflowaction=smallest_trim"; $rst = "ATTR_ERROR bad value";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 $cmd = "setattr lkey overflowaction=largest_trim"; $rst = "ATTR_ERROR bad value";
@@ -213,6 +213,56 @@ print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 $cmd = "delete lkey"; $rst = "DELETED";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 $cmd = "get lkey"; $rst = "END";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+
+# testLOPTrimCheck-1
+$cmd = "get lkey"; $rst = "END";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+$cmd = "lop create lkey 17 0 5 head_trim"; $rst = "CREATED";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+$cmd = "lop insert lkey -1 6"; $val = "datum0"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "lop insert lkey -1 6"; $val = "datum1"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "lop insert lkey -1 6"; $val = "datum2"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "lop insert lkey -1 6"; $val = "datum3"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "lop insert lkey -1 6"; $val = "datum4"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+lop_get_is($sock, "lkey 0..-1", 17, 5, "datum0,datum1,datum2,datum3,datum4");
+$cmd = "lop insert lkey 1 6"; $val = "datums"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+lop_get_is($sock, "lkey 0..-1", 17, 5, "datums,datum1,datum2,datum3,datum4");
+$cmd = "lop insert lkey 4 6"; $val = "datumt"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+lop_get_is($sock, "lkey 0..-1", 17, 5, "datum1,datum2,datum3,datumt,datum4");
+$cmd = "delete lkey"; $rst = "DELETED";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+
+# testLOPTrimCheck-2
+$cmd = "get lkey"; $rst = "END";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+$cmd = "lop create lkey 17 0 5 tail_trim"; $rst = "CREATED";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+$cmd = "lop insert lkey -1 6"; $val = "datum0"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "lop insert lkey -1 6"; $val = "datum1"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "lop insert lkey -1 6"; $val = "datum2"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "lop insert lkey -1 6"; $val = "datum3"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "lop insert lkey -1 6"; $val = "datum4"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+lop_get_is($sock, "lkey 0..-1", 17, 5, "datum0,datum1,datum2,datum3,datum4");
+$cmd = "lop insert lkey -2 6"; $val = "datums"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+lop_get_is($sock, "lkey 0..-1", 17, 5, "datum0,datum1,datum2,datum3,datums");
+$cmd = "lop insert lkey -5 6"; $val = "datumt"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+lop_get_is($sock, "lkey 0..-1", 17, 5, "datum0,datumt,datum1,datum2,datum3");
+$cmd = "delete lkey"; $rst = "DELETED";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 
 # testLOPNotFoundError

@@ -5419,13 +5419,6 @@ ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
                 if (info->ovflact == OVFL_ERROR) {
                     ret = ENGINE_EOVERFLOW; break;
                 }
-                if (index >= 0) {
-                    if (index == (info->mcnt-1))
-                        index = -1;
-                } else {
-                    if ((-index) == info->mcnt)
-                        index = 0;
-                }
                 if (index == 0 || index == -1) {
                     /* delete an element item of opposite side to make room */
                     uint32_t deleted = do_list_elem_delete(engine, info,
@@ -5433,11 +5426,17 @@ ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
                                                            ELEM_DELETE_TRIM);
                     assert(deleted == 1);
                 } else {
-                    /* delete an element item that ovflow action indicates */
+                    /* delete an element item that overflow action indicates */
                     uint32_t deleted = do_list_elem_delete(engine, info,
                                                            (info->ovflact==OVFL_HEAD_TRIM ? 0 : -1), 1,
                                                            ELEM_DELETE_TRIM);
                     assert(deleted == 1);
+                    /* adjust list index value */
+                    if (info->ovflact == OVFL_HEAD_TRIM) {
+                      if (index > 0) index -= 1;
+                    } else { /* ovflact == OVFL_TAIL_TRIM */
+                      if (index < 0) index += 1;
+                    }
                 }
             }
         } else if (ret == ENGINE_KEY_ENOENT) {
