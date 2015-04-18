@@ -801,8 +801,8 @@ static int arcus_get_service_code(zhandle_t *zh, const char *root)
     char zpath[200];
     int  rc;
 
-    snprintf(zpath, sizeof(zpath), "%s/%s/%s",
-             root, zk_map_path, arcus_conf.hostip);
+    // sync map path
+    snprintf(zpath, sizeof(zpath), "%s/%s", root, zk_map_path);
     inc_count(1);
     rc = zoo_async(zh, zpath, arcus_zk_sync_cb, NULL);
     if (rc != ZOK) {
