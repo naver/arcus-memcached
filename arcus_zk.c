@@ -933,13 +933,9 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     assert(logger);
     assert(engine);
 
-    if (arcus_conf.verbose > 2)
-        arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                               "-> arcus_zk_init\n");
-
     if (!ensemble_list) { // Arcus Zookeeper Ensemble IP list
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                               " -z{ensemble_list} must not be empty\n");
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    " -z{ensemble_list} must not be empty\n");
         arcus_exit(zh, EX_USAGE);
     }
 
@@ -959,6 +955,9 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 
         memset( &myid, 0, sizeof(myid) );
     }
+
+    if (arcus_conf.verbose > 2)
+        arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "-> arcus_zk_init\n");
 
     /* prepare app_ping context data */
     ping_data = arcus_prepare_ping_context(arcus_conf.port);
