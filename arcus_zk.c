@@ -80,9 +80,6 @@
 #define HAVE_HTONLL 1
 #include "memcached.h"
 
-/* Use a heart heat thread instead of ZK app_ping */
-#define ENABLE_HEART_BEAT_THREAD 1
-
 // Recv. timeout governs ZK heartbeat period, reconnect timeout
 // as well as ZK session timeout
 //
@@ -189,7 +186,6 @@ static pthread_mutex_t zk_close_lock = PTHREAD_MUTEX_INITIALIZER;
 static bool            zk_closing = false;
 static bool            zk_watcher_running = false;
 
-#ifdef ENABLE_HEART_BEAT_THREAD
 /* One heartbeat every 3 seconds. */
 #define HEART_BEAT_PERIOD       3 /* sec */
 /* If hearbeat takes more than 10 seconds, consider it failed.  */
@@ -206,7 +202,6 @@ static bool            zk_watcher_running = false;
 static volatile bool hb_thread_running = false;
 static void *hb_thread(void *arg);
 static void start_hb_thread(app_ping_t *data);
-#endif // ENABLE_HEART_BEAT_THREAD
 
 // mutex for async operations
 static void inc_count(int delta)
@@ -513,7 +508,6 @@ mc_hb(zhandle_t *zh, void *context)
     return 0;
 }
 
-#ifdef ENABLE_HEART_BEAT_THREAD
 static void *
 hb_thread(void *arg)
 {
@@ -649,7 +643,6 @@ start_hb_thread(app_ping_t *data)
         arcus_zk_final("start_hb_thread");
     }
 }
-#endif // ENABLE_HEART_BEAT_THREAD
 
 static void arcus_prepare_ping_context(app_ping_t *ping_data, int port)
 {
@@ -663,18 +656,11 @@ static void arcus_prepare_ping_context(app_ping_t *ping_data, int port)
      * regular clients for connections.
      */
     ping_data->addr.sin_addr.s_addr = inet_addr(ADMIN_CLIENT_IP);
-#ifdef ENABLE_HEART_BEAT_THREAD
-    {
-        /* +500 msec so that the caller can detect the timeout */
-        uint64_t usec = HEART_BEAT_TIMEOUT * 1000 + 500000;
-        ping_data->to.tv_sec = usec / 1000000;
-        ping_data->to.tv_usec = usec % 1000000;
-    }
-#else
-    /* Just use ZK session timeout in seconds */
-    ping_data->to.tv_sec = arcus_conf.zk_timeout / 1000;
-    ping_data->to.tv_usec = 0;
-#endif
+
+    /* +500 msec so that the caller can detect the timeout */
+    uint64_t usec = HEART_BEAT_TIMEOUT * 1000 + 500000;
+    ping_data->to.tv_sec = usec / 1000000;
+    ping_data->to.tv_usec = usec % 1000000;
 }
 
 static int arcus_build_znode_name(char *ensemble_list)
@@ -1007,16 +993,6 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         arcus_exit(zh, EX_PROTOCOL);
     }
 
-#ifdef ENABLE_HEART_BEAT_THREAD
-#else
-    // Now register L7 ping
-    if (zoo_register_app_ping(zh, &mc_hb, (void *) ping_data)) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                 "zoo_register_app_ping() failed (%s error)\n", strerror(errno));
-        arcus_exit(zh, EX_PROTOCOL);
-    }
-#endif
-
     /* zk root node */
     zk_root = "/arcus";
 
@@ -1071,9 +1047,8 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         "Memcached is watching Arcus cache cloud for \"%s\"\n", arcus_conf.cluster_path);
 #endif
 
-#ifdef ENABLE_HEART_BEAT_THREAD
+    // start heartbeat thread
     start_hb_thread(ping_data);
-#endif
 
     // Either got SIG* or memcached shutdown process finished
     if (arcus_zk_shutdown) {
@@ -1093,14 +1068,12 @@ void arcus_zk_final(const char *msg)
     if (!zh)
         exit(0);
 
-#ifdef ENABLE_HEART_BEAT_THREAD
     /* Just set a flag and do not wait for the thread to die.
      * hb_thread is probably sleeping.  And, if it is in the middle of
      * doing a ping, it would block for a long time because worker threads
      * are likely all dead at this point.
      */
     hb_thread_running = false;
-#endif
 
     /* Do not call zookeeper_close (arcus_exit) and
      * zoo_wget_children (arcus_cluster_watch_servers) at the same time.
