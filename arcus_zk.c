@@ -164,6 +164,8 @@ typedef struct {
     struct timeval      to;   // mc_hb may block for up to this long (give or take)
 } app_ping_t;
 
+static app_ping_t mc_ping_context;
+
 // static declaration
 static void arcus_zk_watcher(zhandle_t *wzh, int type, int state,
                              const char *path, void *cxt);
@@ -649,33 +651,30 @@ start_hb_thread(app_ping_t *data)
 }
 #endif // ENABLE_HEART_BEAT_THREAD
 
-static app_ping_t *arcus_prepare_ping_context(int port)
+static void arcus_prepare_ping_context(app_ping_t *ping_data, int port)
 {
     /* prepare app_ping context data:
      * sockaddr for memcached connection in app ping
      */
-    app_ping_t *ping_data = calloc(1, sizeof(app_ping_t));
-    if (ping_data != NULL) {
-        ping_data->addr.sin_family = AF_INET;
-        ping_data->addr.sin_port   = htons(port);
-        /* Use the admin ip (currently localhost) to avoid competing with
-         * regular clients for connections.
-         */
-        ping_data->addr.sin_addr.s_addr = inet_addr(ADMIN_CLIENT_IP);
+    memset(ping_data, 0, sizeof(app_ping_t));
+    ping_data->addr.sin_family = AF_INET;
+    ping_data->addr.sin_port   = htons(port);
+    /* Use the admin ip (currently localhost) to avoid competing with
+     * regular clients for connections.
+     */
+    ping_data->addr.sin_addr.s_addr = inet_addr(ADMIN_CLIENT_IP);
 #ifdef ENABLE_HEART_BEAT_THREAD
-        {
-            /* +500 msec so that the caller can detect the timeout */
-            uint64_t usec = HEART_BEAT_TIMEOUT * 1000 + 500000;
-            ping_data->to.tv_sec = usec / 1000000;
-            ping_data->to.tv_usec = usec % 1000000;
-        }
-#else
-        // Just use ZK session timeout in seconds
-        ping_data->to.tv_sec = arcus_conf.zk_timeout / 1000;
-        ping_data->to.tv_usec = 0;
-#endif
+    {
+        /* +500 msec so that the caller can detect the timeout */
+        uint64_t usec = HEART_BEAT_TIMEOUT * 1000 + 500000;
+        ping_data->to.tv_sec = usec / 1000000;
+        ping_data->to.tv_usec = usec % 1000000;
     }
-    return ping_data;
+#else
+    /* Just use ZK session timeout in seconds */
+    ping_data->to.tv_sec = arcus_conf.zk_timeout / 1000;
+    ping_data->to.tv_usec = 0;
+#endif
 }
 
 static int arcus_build_znode_name(char *ensemble_list)
@@ -960,12 +959,8 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "-> arcus_zk_init\n");
 
     /* prepare app_ping context data */
-    ping_data = arcus_prepare_ping_context(arcus_conf.port);
-    if (ping_data == NULL) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                               "arcus_prepare_ping_context() failed\n");
-        arcus_exit(zh, EX_OSERR);
-    }
+    arcus_prepare_ping_context(&mc_ping_context, arcus_conf.port);
+    ping_data = &mc_ping_context;
 
     /* make znode name while getting local ip and hostname */
     rc = arcus_build_znode_name(ensemble_list);
