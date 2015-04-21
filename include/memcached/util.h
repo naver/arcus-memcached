@@ -25,6 +25,7 @@
  *
  * returns true if conversion succeeded.
  */
+#include <config.h>
 #include <memcached/visibility.h>
 #ifdef __cplusplus
 extern "C" {
