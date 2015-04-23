@@ -28,6 +28,8 @@
 
 #include "default_engine.h"
 
+#define ENABLE_DETACH_REF_ITEM_FROM_LRU 1
+
 /* item unlink cause */
 enum item_unlink_cause {
     ITEM_UNLINK_NORMAL = 1, /* unlink by normal request */
@@ -431,6 +433,24 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         tries  = space_shortage_level;
         search = engine->items.tails[id];
         while (search != NULL) {
+#ifdef ENABLE_DETACH_REF_ITEM_FROM_LRU
+            if (search->nkey > 0) {
+                previt = search->prev;
+                if (search->refcount == 0) {
+                    if (do_item_isvalid(engine, search, current_time) == false) {
+                        do_item_invalidate(engine, search, id, true);
+                    } else {
+                        do_item_evict(engine, search, id, current_time, cookie);
+                    }
+                } else { /* search->refcount > 0 */
+                    /* just unlink the item from LRU list. */
+                    item_unlink_q(engine, search);
+                }
+                search = previt;
+            } else { /* search->nkey == 0: scrub cursor item */
+                search = search->prev; /* ignore it */
+            }
+#else
             if (search->refcount == 0 && search->nkey > 0) {
                 previt = search->prev;
                 if (do_item_isvalid(engine, search, current_time) == false) {
@@ -442,6 +462,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             } else { /* search->nkey == 0: scrub cursor item */
                 search = search->prev; /* ignore it */
             }
+#endif
             if ((--tries) == 0) break;
         }
     }
@@ -554,6 +575,26 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         tries  = 200;
         search = engine->items.tails[id];
         while (search != NULL) {
+#ifdef ENABLE_DETACH_REF_ITEM_FROM_LRU
+            if (search->nkey > 0) {
+                previt = search->prev;
+                if (search->refcount == 0) {
+                    if (do_item_isvalid(engine, search, current_time) == false) {
+                        it = do_item_reclaim(engine, search, ntotal, clsid_based_on_ntotal, id);
+                    } else {
+                        do_item_evict(engine, search, id, current_time, cookie);
+                        it = slabs_alloc(engine, ntotal, clsid_based_on_ntotal);
+                    }
+                    if (it != NULL) break; /* allocated */
+                } else { /* search->refcount > 0 */
+                    /* just unlink the item from LRU list. */
+                    item_unlink_q(engine, search);
+                }
+                search = previt;
+            } else { /* search->nkey == 0: scrub cursor item */
+                search = search->prev; /* ignore it */
+            }
+#else
             if (search->refcount == 0 && search->nkey > 0) {
                 previt = search->prev;
                 if (do_item_isvalid(engine, search, current_time) == false) {
@@ -567,6 +608,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             } else { /* search->nkey == 0: scrub cursor item */
                 search = search->prev; /* ignore it */
             }
+#endif
             if ((--tries) == 0) break;
         }
     }
@@ -638,7 +680,12 @@ static hash_item *do_item_alloc(struct default_engine *engine,
     it->slabs_clsid = id;
     assert(it != engine->items.heads[it->slabs_clsid]);
 
+#ifdef ENABLE_DETACH_REF_ITEM_FROM_LRU
+    it->next = it->prev = it;
+    it->h_next = 0;
+#else
     it->next = it->prev = it->h_next = 0;
+#endif
     it->refcount = 1;     /* the caller will have a reference */
     it->refchunk = 0;
     DEBUG_REFCNT(it, '*');
@@ -735,6 +782,12 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it)
     }
 #endif
 
+#ifdef ENABLE_DETACH_REF_ITEM_FROM_LRU
+    if (it->prev == it && it->next == it) { /* special meaning: unlinked from LRU */
+        return; /* Already unlinked from LRU list */
+    }
+#endif
+
 #ifdef ENABLE_STICKY_ITEM
     if (it->exptime == (rel_time_t)(-1)) {
         head = &engine->items.sticky_heads[clsid];
@@ -776,6 +829,9 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it)
 
     if (it->next) it->next->prev = it->prev;
     if (it->prev) it->prev->next = it->next;
+#ifdef ENABLE_DETACH_REF_ITEM_FROM_LRU
+    it->prev = it->next = it; /* special meaning: unlinked from LRU */
+#endif
     return;
 }
 
@@ -869,9 +925,21 @@ static void do_item_release(struct default_engine *engine, hash_item *it)
         ITEM_REFCOUNT_DECR(it);
         DEBUG_REFCNT(it, '-');
     }
+#ifdef ENABLE_DETACH_REF_ITEM_FROM_LRU
+    if (it->refcount == 0) {
+        if ((it->iflag & ITEM_LINKED) == 0) {
+            do_item_free(engine, it);
+        }
+        else if (it->prev == it && it->next == it) {
+            /* link the item into the LRU list */
+            item_link_q(engine, it);
+        }
+    }
+#else
     if (it->refcount == 0 && (it->iflag & ITEM_LINKED) == 0) {
         do_item_free(engine, it);
     }
+#endif
 }
 
 static void do_item_update(struct default_engine *engine, hash_item *it)
@@ -4792,6 +4860,26 @@ static int check_expired_collections(struct default_engine *engine, const int cl
         pthread_mutex_lock(&engine->cache_lock);
         search = engine->items.tails[clsid];
         while (search != NULL && tries > 0) {
+#ifdef ENABLE_DETACH_REF_ITEM_FROM_LRU
+            if (search->nkey > 0) {
+                it = search;
+                search = search->prev; tries--;
+
+                if (it->refcount == 0) {
+                    if (do_item_isvalid(engine, it, current_time) == false) {
+                        do_item_invalidate(engine, it, clsid, true);
+                    } else {
+                        do_item_evict(engine, it, clsid, current_time, NULL);
+                    }
+                    unlink_count++;
+                } else { /* search->refcount > 0 */
+                    /* just unlink the item from LRU list. */
+                    item_unlink_q(engine, it);
+                }
+            } else {
+                search = search->prev; tries--;
+            }
+#else
             if (search->refcount == 0 && search->nkey > 0) {
                 it = search;
                 search = search->prev; tries--;
@@ -4805,6 +4893,7 @@ static int check_expired_collections(struct default_engine *engine, const int cl
             } else {
                 search = search->prev; tries--;
             }
+#endif
         }
         pthread_mutex_unlock(&engine->cache_lock);
     }
