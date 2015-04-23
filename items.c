@@ -6725,8 +6725,8 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
 }
 
 /*
- *  * Item config functions
- *   */
+ * Item config functions
+ */
 void item_conf_set_evict_to_free(struct default_engine *engine, bool value)
 {
     pthread_mutex_lock(&engine->cache_lock);
