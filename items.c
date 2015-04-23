@@ -175,6 +175,28 @@ static EXTENSION_LOGGER_DESCRIPTOR *logger;
  * Static functions
  */
 
+#define ITEM_REFCOUNT_FULL 65535
+#define ITEM_REFCOUNT_MOVE 32768
+
+static inline void ITEM_REFCOUNT_INCR(hash_item *it)
+{
+    it->refcount++;
+    if (it->refcount == ITEM_REFCOUNT_FULL) {
+        it->refchunk += 1;
+        it->refcount -= ITEM_REFCOUNT_MOVE;
+        assert(it->refchunk != 0); /* overflow */
+    }
+}
+
+static inline void ITEM_REFCOUNT_DECR(hash_item *it)
+{
+    it->refcount--;
+    if (it->refcount == 0 && it->refchunk > 0) {
+        it->refchunk -= 1;
+        it->refcount = ITEM_REFCOUNT_MOVE;
+    }
+}
+
 /* warning: don't use these macros with a function, as it evals its arg twice */
 static inline size_t ITEM_ntotal(struct default_engine *engine, const hash_item *item)
 {
@@ -338,6 +360,7 @@ static void do_item_repair(struct default_engine *engine, hash_item *it,
     /* increment # of repaired */
     engine->items.itemstats[lruid].tailrepairs++;
     it->refcount = 0;
+    it->refchunk = 0;
 
     /* unlink the item */
     if (IS_COLL_ITEM(it))
@@ -617,6 +640,7 @@ static hash_item *do_item_alloc(struct default_engine *engine,
 
     it->next = it->prev = it->h_next = 0;
     it->refcount = 1;     /* the caller will have a reference */
+    it->refchunk = 0;
     DEBUG_REFCNT(it, '*');
     it->iflag = engine->config.use_cas ? ITEM_WITH_CAS : 0;
     it->nkey = nkey;
@@ -842,7 +866,7 @@ static void do_item_release(struct default_engine *engine, hash_item *it)
 {
     MEMCACHED_ITEM_REMOVE(item_get_key(it), it->nkey, it->nbytes);
     if (it->refcount != 0) {
-        it->refcount--;
+        ITEM_REFCOUNT_DECR(it);
         DEBUG_REFCNT(it, '-');
     }
     if (it->refcount == 0 && (it->iflag & ITEM_LINKED) == 0) {
@@ -1038,7 +1062,7 @@ static hash_item *do_item_get(struct default_engine *engine,
         }
     }
     if (it != NULL) {
-        it->refcount++;
+        ITEM_REFCOUNT_INCR(it);
         DEBUG_REFCNT(it, '+');
         if (LRU_reposition)
             do_item_update(engine, it);

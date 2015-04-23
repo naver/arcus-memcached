@@ -22,26 +22,27 @@
  * functions.
  */
 typedef struct _hash_item {
-    unsigned short refcount;
-    uint8_t slabs_clsid;/* which slab class we're in */
-    uint8_t nprefix;    /* length of prefix name */
+    uint16_t refcount;  /* reference count */
+    uint8_t  slabs_clsid;/* which slab class we're in */
+    uint8_t  refchunk;  /* reference chunk */
     uint32_t flags;     /* Flags associated with the item (in network byte order) */
     struct _hash_item *next;   /* LRU chain next */
     struct _hash_item *prev;   /* LRU chain prev */
     struct _hash_item *h_next; /* hash chain next */
     rel_time_t time;    /* least recent access */
     rel_time_t exptime; /* When the item will expire (relative to process startup) */
-    uint32_t nbytes;    /* The total size of the data (in bytes) */
-    uint16_t nkey;      /* The total length of the key (in bytes) */
     uint16_t iflag;     /* Intermal flags.
                          * lower 8 bit is reserved for the core server,
-                         * the upper 8 bits is reserved for engine implementation.
-                         */
+                         *                          * the upper 8 bits is reserved for engine implementation.
+                         *                                                   */
+    uint8_t  nkey;      /* The total length of the key (in bytes) */
+    uint8_t  nprefix;   /* The prefix length of the key (in bytes) */
+    uint32_t nbytes;    /* The total size of the data (in bytes) */
 } hash_item;
 
 /* list element */
 typedef struct _list_elem_item {
-    unsigned short refcount;      /* reference count */
+    uint16_t refcount;
     uint8_t  slabs_clsid;         /* which slab class we're in */
     uint32_t dummy;
     struct _list_elem_item *next; /* next chain in double linked list */
@@ -52,7 +53,7 @@ typedef struct _list_elem_item {
 
 /* set element */
 typedef struct _set_elem_item {
-    unsigned short refcount;      /* reference count */
+    uint16_t refcount;
     uint8_t  slabs_clsid;         /* which slab class we're in */
     uint32_t hval;                /* hash value */
     struct _set_elem_item *next;  /* hash chain next */
@@ -62,7 +63,7 @@ typedef struct _set_elem_item {
 
 /* btree element */
 typedef struct _btree_elem_item_fixed {
-    unsigned short refcount;     /* reference count */
+    uint16_t refcount;
     uint8_t  slabs_clsid;        /* which slab class we're in */
     uint8_t  status;             /* 3(used), 2(insert mark), 1(delete_mark), or 0(free) */
     uint8_t  nbkey;              /* length of bkey */
@@ -71,7 +72,7 @@ typedef struct _btree_elem_item_fixed {
 } btree_elem_item_fixed;
 
 typedef struct _btree_elem_item {
-    unsigned short refcount;     /* reference count */
+    uint16_t refcount;
     uint8_t  slabs_clsid;        /* which slab class we're in */
     uint8_t  status;             /* 3(used), 2(insert mark), 1(delete_mark), or 0(free) */
     uint8_t  nbkey;              /* length of bkey */
@@ -100,7 +101,7 @@ typedef struct _list_meta_info {
 #define SET_MAX_HASHCHAIN_SIZE 64
 
 typedef struct _set_hash_node {
-    unsigned short refcount;      /* reference count */
+    uint16_t refcount;
     uint8_t  slabs_clsid;         /* which slab class we're in */
     uint8_t  hdepth;
     uint16_t tot_elem_cnt;
@@ -126,7 +127,7 @@ typedef struct _set_meta_info {
 #define BTREE_ITEM_COUNT 32 /* Recommend BTREE_ITEM_COUNT >= 8 */
 
 typedef struct _btree_leaf_node {
-    unsigned short refcount;   /* reference count */
+    uint16_t refcount;
     uint8_t  slabs_clsid;      /* which slab class we're in */
     uint8_t  ndepth;
     uint16_t used_count;
@@ -137,7 +138,7 @@ typedef struct _btree_leaf_node {
 } btree_leaf_node;
 
 typedef struct _btree_indx_node {
-    unsigned short refcount;   /* reference count */
+    uint16_t refcount;
     uint8_t  slabs_clsid;      /* which slab class we're in */
     uint8_t  ndepth;
     uint16_t used_count;
