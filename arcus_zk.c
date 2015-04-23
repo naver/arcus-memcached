@@ -183,8 +183,7 @@ static int             azk_count;
 
 // zookeeper close synchronization
 static pthread_mutex_t zk_close_lock = PTHREAD_MUTEX_INITIALIZER;
-static bool            zk_closing = false;
-static bool            zk_watcher_running = false;
+static volatile bool   zk_watcher_running = false;
 
 /* One heartbeat every 3 seconds. */
 #define HEART_BEAT_PERIOD       3 /* sec */
@@ -200,8 +199,11 @@ static bool            zk_watcher_running = false;
 #define HEART_BEAT_TRY_COUNT 3
 
 static volatile bool hb_thread_running = false;
+static bool hb_thread_sleep = false;
+static pthread_mutex_t hb_thread_lock;
+static pthread_cond_t  hb_thread_cond;
 static void *hb_thread(void *arg);
-static void start_hb_thread(app_ping_t *data);
+static int start_hb_thread(app_ping_t *data);
 
 // mutex for async operations
 static void inc_count(int delta)
@@ -303,14 +305,10 @@ arcus_cluster_watch_servers(zhandle_t *zh, const char *path, watcher_fn fn)
     /* Do not call zookeeper API if we are calling
      * zookeeper_close.  See arcus_zk_final.
      */
-    pthread_mutex_lock(&zk_close_lock);
-    if (zk_closing) {
-        pthread_mutex_unlock(&zk_close_lock);
+    if (arcus_zk_shutdown)
         return;
-    } else {
-        zk_watcher_running = true;
-    }
-    pthread_mutex_unlock(&zk_close_lock);
+
+    zk_watcher_running = true;
 
     // get cache list
     rc = zoo_wget_children(zh, path, arcus_cluster_watcher, NULL, &result);
@@ -329,9 +327,7 @@ arcus_cluster_watch_servers(zhandle_t *zh, const char *path, watcher_fn fn)
                                "Could not get children from ZK. errno=%d\n", rc);
     }
 
-    pthread_mutex_lock(&zk_close_lock);
     zk_watcher_running = false;
-    pthread_mutex_unlock(&zk_close_lock);
 }
 
 static void
@@ -508,11 +504,23 @@ mc_hb(zhandle_t *zh, void *context)
     return 0;
 }
 
+static void
+hb_wakeup(void)
+{
+  pthread_mutex_lock(&hb_thread_lock);
+  if (hb_thread_sleep == true)
+      pthread_cond_signal(&hb_thread_cond);
+  pthread_mutex_unlock(&hb_thread_lock);
+}
+
 static void *
 hb_thread(void *arg)
 {
     app_ping_t *ping_data = arg;
     int failed = 0;
+    bool shutdown_by_me = false;
+    struct timeval  tv;
+    struct timespec ts;
     struct timeval start_time;
     struct timeval end_time;
     uint64_t elapsed_msec, start_msec, end_msec;
@@ -549,8 +557,21 @@ hb_thread(void *arg)
         /* If the last hearbeat timed out, do not wait and try another
          * right away.
          */
-        if (failed == 0)
-            sleep(HEART_BEAT_PERIOD);
+        if (failed == 0) {
+            /* sleep HEART_BEAT_PERIOD seconds */
+            gettimeofday(&tv, NULL);
+            ts.tv_sec  = tv.tv_sec + HEART_BEAT_PERIOD;
+            ts.tv_nsec = tv.tv_usec*1000;
+            /* sleep with spurious wakeups checking */
+            while (tv.tv_sec < ts.tv_sec && !arcus_zk_shutdown) {
+                pthread_mutex_lock(&hb_thread_lock);
+                hb_thread_sleep = false;
+                pthread_cond_timedwait(&hb_thread_cond, &hb_thread_lock, &ts);
+                hb_thread_sleep = true;
+                pthread_mutex_unlock(&hb_thread_lock);
+                gettimeofday(&tv, NULL);
+            }
+        }
 
         /* Graceful shutdown was requested while sleeping. */
         if (arcus_zk_shutdown)
@@ -618,18 +639,24 @@ hb_thread(void *arg)
                 arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                     "%d consecutive heartbeat failures. Shutting down...\n",
                     failed);
-                arcus_zk_final("Heartbeat failures");
-                /* Does not return */
+                shutdown_by_me = true;
+                break;
             }
         } else {
             /* Reset the failure counter */
             failed = 0;
         }
     }
+    hb_thread_running = false;
+    if (shutdown_by_me) {
+        arcus_zk_shutdown = true;
+        arcus_zk_final("Heartbeat failure");
+        exit(0);
+    }
     return NULL;
 }
 
-static void
+static int
 start_hb_thread(app_ping_t *data)
 {
     pthread_t tid;
@@ -637,11 +664,14 @@ start_hb_thread(app_ping_t *data)
     pthread_attr_t attr;
     pthread_attr_init(&attr);
 
+    pthread_mutex_init(&hb_thread_lock, NULL);
+    pthread_cond_init(&hb_thread_cond, NULL);
+
     if ((ret = pthread_create(&tid, &attr, hb_thread, (void *)data)) != 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                                "Cannot create hb thread: %s\n", strerror(ret));
-        arcus_zk_final("start_hb_thread");
     }
+    return ret;
 }
 
 static void arcus_prepare_ping_context(app_ping_t *ping_data, int port)
@@ -1048,7 +1078,10 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 #endif
 
     // start heartbeat thread
-    start_hb_thread(ping_data);
+    if (start_hb_thread(ping_data) != 0) {
+        /* We need normal shutdown at this time */
+        arcus_zk_shutdown = true;
+    }
 
     // Either got SIG* or memcached shutdown process finished
     if (arcus_zk_shutdown) {
@@ -1063,44 +1096,60 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 void arcus_zk_final(const char *msg)
 {
     arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
-                           "\nArcus memcached shutting down - %s\n", msg);
+                           "Arcus memcached shutting down - %s\n", msg);
 
-    if (!zh)
-        exit(0);
+    assert(arcus_zk_shutdown == true);
 
-    /* Just set a flag and do not wait for the thread to die.
-     * hb_thread is probably sleeping.  And, if it is in the middle of
-     * doing a ping, it would block for a long time because worker threads
-     * are likely all dead at this point.
-     */
-    hb_thread_running = false;
+    pthread_mutex_lock(&zk_close_lock);
+    if (zh) {
+        int elapsed_msec;
 
-    /* Do not call zookeeper_close (arcus_exit) and
-     * zoo_wget_children (arcus_cluster_watch_servers) at the same time.
-     * Otherwise, this thread (main thread) and the watcher thread
-     * (zoo_wget_children) may hang forever until the user manually kills
-     * the process.  The root cause is within the zookeeper library.  Its
-     * handling of concurrent API calls like zoo_wget_children and
-     * zookeeper_close still has holes...
-     */
-    {
-        bool watcher_running;
-        pthread_mutex_lock(&zk_close_lock);
-        zk_closing = true;
-        watcher_running = zk_watcher_running;
-        pthread_mutex_unlock(&zk_close_lock);
-
-        /* If the watcher thread (zoo_wget_children) is running now, wait for
-         * one second.  Either it completes, or it at least registers
-         * sync_completion and blocks.  In the latter case, zookeeper_close
-         * aborts all sync_completion's, which then wakes up the blocking
-         * watcher thread.  zoo_wget_children returns an error.
+        /* hb_thread is probably sleeping.  And, if it is in the middle of
+         * doing a ping, it would block for a long time because worker threads
+         * are likely all dead at this point.
          */
-        if (watcher_running)
-            sleep(1);
-    }
+        /* wake up the heartbeat thread if it's sleeping */
+        hb_wakeup();
 
-    arcus_exit(zh, EX_OK);
+        /* wait a maximum of 1000 msec */
+        elapsed_msec = 0;
+        while (elapsed_msec <= 1000) {
+            if (elapsed_msec == 0) {
+                /* go below */
+            } else {
+                usleep(10000); // 10ms wait
+                elapsed_msec += 10;
+            }
+            /* Do not call zookeeper_close (arcus_exit) and
+             * zoo_wget_children (arcus_cluster_watch_servers) at the same time.
+             * Otherwise, this thread (main thread) and the watcher thread
+             * (zoo_wget_children) may hang forever until the user manually kills
+             * the process.  The root cause is within the zookeeper library.  Its
+             * handling of concurrent API calls like zoo_wget_children and
+             * zookeeper_close still has holes...
+             */
+            /* If the watcher thread (zoo_wget_children) is running now, wait for
+             * one second.  Either it completes, or it at least registers
+             * sync_completion and blocks.  In the latter case, zookeeper_close
+             * aborts all sync_completion's, which then wakes up the blocking
+             * watcher thread.  zoo_wget_children returns an error.
+             */
+            if (zk_watcher_running)
+                continue;
+
+            if (hb_thread_running)
+                continue;
+
+            arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "zk threads terminated\n");
+            break;
+        }
+
+        /* close zk connection */
+        zookeeper_close(zh);
+        zh = NULL;
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "zk connection closed\n");
+    }
+    pthread_mutex_unlock(&zk_close_lock);
 }
 
 int arcus_zk_set_ensemble(char *ensemble_list)

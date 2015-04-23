@@ -13369,9 +13369,6 @@ static void sigterm_handler(int sig)
 #ifdef ENABLE_ZK_INTEGRATION
     if (arcus_zk_cfg) {
         arcus_zk_shutdown = 1;
-#if 0
-        arcus_zk_final("Interrupted");
-#endif
     }
 #endif
 }
@@ -13785,7 +13782,6 @@ static void shutdown_server(void)
 #ifdef ENABLE_ZK_INTEGRATION
     if (arcus_zk_cfg) {
         arcus_zk_shutdown = 1;
-        arcus_zk_final("shutdown_server");
     }
 #endif
 }
@@ -14660,6 +14656,14 @@ int main (int argc, char **argv) {
     }
     threads_shutdown();
 
+#ifdef ENABLE_ZK_INTEGRATION
+    // shutdown Arcus connection
+    if (arcus_zk_cfg) {
+        arcus_zk_final("graceful shutdown");
+        free(arcus_zk_cfg);
+    }
+#endif
+
     mc_engine.v1->destroy(mc_engine.v0);
 
     /* remove the PID file if we're a daemon */
@@ -14669,13 +14673,9 @@ int main (int argc, char **argv) {
     if (settings.inter)
       free(settings.inter);
 
-#ifdef ENABLE_ZK_INTEGRATION
-    // shutdown Arcus connection
-    if (arcus_zk_cfg) {
-        arcus_zk_final("graceful shutdown");
-        free(arcus_zk_cfg);
+    if (settings.verbose) {
+        mc_logger->log(EXTENSION_LOG_INFO, NULL, "Arcus memcached terminated.\n");
     }
-#endif
 
     return EXIT_SUCCESS;
 }
