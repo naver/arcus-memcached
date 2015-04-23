@@ -14572,11 +14572,7 @@ int main (int argc, char **argv) {
 
     /* start up worker threads if MT mode */
     thread_init(settings.num_threads, main_base);
-    /* save the PID in if we're a daemon, do this after thread_init due to
-       a file descriptor handling bug somewhere in libevent */
 
-    if (do_daemonize)
-        save_pid(getpid(), pid_file);
     /* initialise clock event */
     clock_handler(0, 0, 0);
 
@@ -14647,6 +14643,12 @@ int main (int argc, char **argv) {
                       mc_engine.v1);
     }
 #endif
+
+    /* Save the PID in the pid file if we're a daemon.
+     * Do this after the successful startup of memcached.
+     */
+    if (do_daemonize)
+        save_pid(getpid(), pid_file);
 
     /* enter the event loop */
     event_base_loop(main_base, 0);
