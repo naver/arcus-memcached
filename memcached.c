@@ -60,7 +60,7 @@
 #include <stddef.h>
 
 /* max collection size */
-static int ARCUS_COLL_SIZE_LIMIT = 100000;
+static int ARCUS_COLL_SIZE_LIMIT = 500000;
 static int MAX_LIST_SIZE  = 50000;
 static int MAX_SET_SIZE   = 50000;
 static int MAX_BTREE_SIZE = 50000;

@@ -161,7 +161,7 @@ static unsigned char btree_binary_max_bkey[BKEY_MAX_BINARY_LENG] = { 0xFF, 0xFF,
                                                                      0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
 /* maximum collection size  */
-static int32_t coll_size_limit = 100000;
+static int32_t coll_size_limit = 500000;
 static int32_t max_list_size   = 50000;
 static int32_t max_set_size    = 50000;
 static int32_t max_btree_size  = 50000;
