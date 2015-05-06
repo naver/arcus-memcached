@@ -155,6 +155,9 @@ arcus_zk_conf arcus_conf = {
     .init           = false
 };
 
+/* Arcus ZK stats */
+arcus_zk_stats azk_stat;
+
 // context struct to pass to app_ping
 typedef struct {
     struct sockaddr_in  addr; // cache this for use in L7 ping routine
@@ -602,6 +605,9 @@ hb_thread(void *arg)
                 (unsigned long long)end_msec);
         }
 
+        azk_stat.hb_count += 1;
+        azk_stat.hb_latency += elapsed_msec;
+
         if (elapsed_msec > HEART_BEAT_TIMEOUT) {
             failed++;
             /* Print a message for every failure to help debugging, postmortem
@@ -970,6 +976,11 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         memset( &myid, 0, sizeof(myid) );
     }
 
+    /* initialize Arcus ZK stats */
+    azk_stat.zk_timeout = 0;
+    azk_stat.hb_count = 0;
+    azk_stat.hb_latency = 0;
+
     if (arcus_conf.verbose > 2)
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "-> arcus_zk_init\n");
 
@@ -1199,9 +1210,11 @@ int arcus_zk_get_ensemble_str(char *buf, int size)
     return -1;
 }
 
-int arcus_zk_get_timeout(void)
+void arcus_zk_get_stats(arcus_zk_stats *stats)
 {
-    return (int)arcus_conf.zk_timeout;
+    stats->zk_timeout = arcus_conf.zk_timeout;
+    stats->hb_count = azk_stat.hb_count;
+    stats->hb_latency = azk_stat.hb_latency;
 }
 
 #ifdef ENABLE_CLUSTER_AWARE

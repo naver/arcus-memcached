@@ -7657,6 +7657,11 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     getrusage(RUSAGE_SELF, &usage);
 #endif
 
+#ifdef ENABLE_ZK_INTEGRATION
+    arcus_zk_stats zk_stats;
+    arcus_zk_get_stats(&zk_stats);
+#endif
+
     STATS_LOCK();
 
     APPEND_STAT("pid", "%lu", (long)pid);
@@ -7664,10 +7669,12 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("time", "%ld", now + (long)process_started);
     APPEND_STAT("version", "%s", VERSION);
     APPEND_STAT("libevent", "%s", event_get_version());
-#ifdef ENABLE_ZK_INTEGRATION
-    APPEND_STAT("zk_timeout", "%d", arcus_zk_get_timeout());
-#endif
     APPEND_STAT("pointer_size", "%d", (int)(8 * sizeof(void *)));
+#ifdef ENABLE_ZK_INTEGRATION
+    APPEND_STAT("zk_timeout", "%d", zk_stats.zk_timeout);
+    APPEND_STAT("hb_count", "%"PRIu64, zk_stats.hb_count);
+    APPEND_STAT("hb_latency", "%"PRIu64, zk_stats.hb_latency);
+#endif
 
 #ifndef __WIN32__
     append_stat("rusage_user", add_stats, c, "%ld.%06ld",
