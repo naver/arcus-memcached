@@ -582,6 +582,13 @@ hb_thread(void *arg)
         mc_hb((zhandle_t *)NULL, (void *)ping_data);
         gettimeofday(&end_time, NULL);
 
+        /* Graceful shutdown was requested while doing heartbeat.
+         * When worker threads die, there is no one to process heartbeat
+         * request, and we would see a timeout.  Ignore the false alarm.
+         */
+        if (arcus_zk_shutdown)
+            break;
+
         /* Paranoid.  Check if the clock had gone backwards. */
         start_msec = start_time.tv_sec * 1000 + start_time.tv_usec / 1000;
         end_msec = end_time.tv_sec * 1000 + end_time.tv_usec / 1000;
@@ -595,27 +602,8 @@ hb_thread(void *arg)
                 (unsigned long long)end_msec);
         }
 
-        /* If the heartbeat took longer than 1 second, leave a log message.
-         * Local heartbeat should take on the order of microseconds.  We want
-         * to see how often it takes unexpectedly long, independently of
-         * failure detection.
-         */
-        if (elapsed_msec > HEART_BEAT_WARN_TIMEOUT && !arcus_zk_shutdown) {
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Heartbeat took longer than expected. elapsed_msec=%llu\n",
-                (unsigned long long)elapsed_msec);
-        }
-
         if (elapsed_msec > HEART_BEAT_TIMEOUT) {
             failed++;
-
-            /* Graceful shutdown was requested while doing heartbeat.
-             * When worker threads die, there is no one to process heartbeat
-             * request, and we would see a timeout.  Ignore the false alarm.
-             */
-            if (arcus_zk_shutdown)
-                break;
-
             /* Print a message for every failure to help debugging, postmortem
              * analysis, etc.
              */
@@ -645,6 +633,17 @@ hb_thread(void *arg)
         } else {
             /* Reset the failure counter */
             failed = 0;
+
+            /* If the heartbeat took longer than 1 second, leave a log message.
+             * Local heartbeat should take on the order of microseconds.  We want
+             * to see how often it takes unexpectedly long, independently of
+             * failure detection.
+             */
+            if (elapsed_msec > HEART_BEAT_WARN_TIMEOUT) {
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Heartbeat took longer than expected. elapsed_msec=%llu\n",
+                    (unsigned long long)elapsed_msec);
+            }
         }
     }
     hb_thread_running = false;
