@@ -7,7 +7,7 @@ use lib "$Bin/lib";
 use MemcachedTest;
 
 # set environment variable
-$ENV{'ARCUS_MAX_BTREE_SIZE'}='500000';
+$ENV{'ARCUS_MAX_BTREE_SIZE'}='1000000';
 
 my $max_btree_size = 200000;
 my $server = new_memcached();
