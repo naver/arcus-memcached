@@ -92,7 +92,6 @@
 #define ZK_WATCH        1
 #define ZK_NOWATCH      0
 #define SYSLOGD_PORT    514     // UDP syslog port #
-#define MAX_HB_RETRY    (2*3)   // we want to retry 2 heartbeats every 1/3 of ZK session timeout
 
 /* One heartbeat every 3 seconds. */
 #define HEART_BEAT_PERIOD       3 /* sec */
