@@ -94,6 +94,18 @@
 #define SYSLOGD_PORT    514     // UDP syslog port #
 #define MAX_HB_RETRY    (2*3)   // we want to retry 2 heartbeats every 1/3 of ZK session timeout
 
+/* One heartbeat every 3 seconds. */
+#define HEART_BEAT_PERIOD       3 /* sec */
+/* If consecutive heartbeats fail, consider memcached dead and commit
+ * suicide.  If the accumulated latency of consecutive heartbeats is
+ * over the following HEART_BEAT_FAILSTOP value, it does fail-stop.
+ */
+#define HEART_BEAT_FAILSTOP     20000 /* msec */
+/* If hearbeat takes more than timeout msec, consider it failed.  */
+#define HEART_BEAT_MIN_TIMEOUT  50    /* msec */
+#define HEART_BEAT_DFT_TIMEOUT  1000  /* msec */
+#define HEART_BEAT_MAX_TIMEOUT  HEART_BEAT_FAILSTOP /* msec */
+
 static const char *zk_root = NULL;
 static const char *zk_map_path   = "cache_server_mapping";
 static const char *zk_log_path   = "cache_server_log";
@@ -119,6 +131,7 @@ typedef struct {
     char    *mc_ipport;         // this memcached ip:port string
     char    *hostip;            // localhost server IP
     int     port;               // memcached port number
+    int     hb_timeout;         // memcached heartbeat timeout
     int     zk_timeout;         // Zookeeper session timeout
     char    *zk_path;           // Ephemeral ZK path for this mc identification
     int     zk_path_ver;        // Zookeeper path version
@@ -141,6 +154,7 @@ arcus_zk_conf arcus_conf = {
     .svc            = NULL,
     .mc_ipport      = NULL,
     .hostip         = NULL,
+    .hb_timeout     = HEART_BEAT_DFT_TIMEOUT,
     .zk_timeout     = DEFAULT_ZK_TO,
     .zk_path        = NULL,
     .zk_path_ver    = -1,
@@ -188,19 +202,7 @@ static int             azk_count;
 static pthread_mutex_t zk_close_lock = PTHREAD_MUTEX_INITIALIZER;
 static volatile bool   zk_watcher_running = false;
 
-/* One heartbeat every 3 seconds. */
-#define HEART_BEAT_PERIOD       3 /* sec */
-/* If hearbeat takes more than 10 seconds, consider it failed.  */
-#define HEART_BEAT_TIMEOUT      10000 /* msec */
-/* If heartbeat takes more than 1 second, leave a warning message. */
-#define HEART_BEAT_WARN_TIMEOUT 1000 /* msec */
-
-/* If 3 consecutive heartbeats fail, consider memcached dead and commit
- * suicide.  TIMEOUT x TRY_COUNT = 30 seconds.  When we have more data
- * later on, we should adjust both TIMEOUT and TRY_COUNT.
- */
-#define HEART_BEAT_TRY_COUNT 3
-
+// memcached heartheat thread */
 static volatile bool hb_thread_running = false;
 static bool hb_thread_sleep = false;
 static pthread_mutex_t hb_thread_lock;
@@ -423,6 +425,30 @@ arcus_exit(zhandle_t *zh, int err)
     exit(err);
 }
 
+static void arcus_adjust_ping_timeout(app_ping_t *ping_data, int timeout)
+{
+    /* +50 msec so that the caller can detect the timeout */
+    uint64_t usec = timeout * 1000 + 50000;
+    ping_data->to.tv_sec = usec / 1000000;
+    ping_data->to.tv_usec = usec % 1000000;
+}
+
+static void arcus_prepare_ping_context(app_ping_t *ping_data, int port)
+{
+    /* prepare app_ping context data:
+     * sockaddr for memcached connection in app ping
+     */
+    memset(ping_data, 0, sizeof(app_ping_t));
+    ping_data->addr.sin_family = AF_INET;
+    ping_data->addr.sin_port   = htons(port);
+    /* Use the admin ip (currently localhost) to avoid competing with
+     * regular clients for connections.
+     */
+    ping_data->addr.sin_addr.s_addr = inet_addr(ADMIN_CLIENT_IP);
+
+    arcus_adjust_ping_timeout(ping_data, arcus_conf.hb_timeout);
+}
+
 // this is L7 application ping callback
 // only one app ping per ZK ping period if successful
 // In this case, we make a TCP connection to self memcached port, and
@@ -520,7 +546,8 @@ static void *
 hb_thread(void *arg)
 {
     app_ping_t *ping_data = arg;
-    int failed = 0;
+    int cur_hb_timeout = arcus_conf.hb_timeout;
+    int acc_hb_latency = 0;
     bool shutdown_by_me = false;
     struct timeval  tv;
     struct timespec ts;
@@ -560,7 +587,7 @@ hb_thread(void *arg)
         /* If the last hearbeat timed out, do not wait and try another
          * right away.
          */
-        if (failed == 0) {
+        if (acc_hb_latency == 0) {
             /* sleep HEART_BEAT_PERIOD seconds */
             gettimeofday(&tv, NULL);
             ts.tv_sec  = tv.tv_sec + HEART_BEAT_PERIOD;
@@ -579,6 +606,18 @@ hb_thread(void *arg)
         /* Graceful shutdown was requested while sleeping. */
         if (arcus_zk_shutdown)
             break;
+
+        /* check if hb_timeout is changed */
+        if (cur_hb_timeout != arcus_conf.hb_timeout) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Heartbeat timeout has changed. old(%d) => new(%d)\n",
+                cur_hb_timeout, arcus_conf.hb_timeout);
+            /* reset hb timeout and latency */
+            cur_hb_timeout = arcus_conf.hb_timeout;
+            acc_hb_latency = 0;
+            /* adjust ping timeout */
+            arcus_adjust_ping_timeout(ping_data, cur_hb_timeout);
+        }
 
         /* Do one ping and measure how long it takes. */
         gettimeofday(&start_time, NULL);
@@ -608,16 +647,17 @@ hb_thread(void *arg)
         azk_stat.hb_count += 1;
         azk_stat.hb_latency += elapsed_msec;
 
-        if (elapsed_msec > HEART_BEAT_TIMEOUT) {
-            failed++;
+        if (elapsed_msec > cur_hb_timeout) {
+            acc_hb_latency += elapsed_msec;
             /* Print a message for every failure to help debugging, postmortem
              * analysis, etc.
              */
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Heartbeat failure. elapsed_msec=%llu consecutive_fail=%d\n",
-                (unsigned long long)elapsed_msec, failed);
+                "Heartbeat failure. hb_timeout=%d hb_latency=%llu "
+                "accumulated_hb_latency=%d\n", cur_hb_timeout,
+                (unsigned long long)elapsed_msec, acc_hb_latency);
 
-            if (failed >= HEART_BEAT_TRY_COUNT) {
+            if (acc_hb_latency > HEART_BEAT_FAILSTOP) {
                 /* Do not bother calling memcached.c:shutdown_server.
                  * Call arcus_zk_final directly.  shutdown_server just sets
                  * memcached_shutdown = arcus_zk_shutdown = 1 and calls
@@ -631,25 +671,13 @@ hb_thread(void *arg)
                   api->core->shutdown();
                 */
                 arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "%d consecutive heartbeat failures. Shutting down...\n",
-                    failed);
+                    "consecutive heartbeat failures. Shutting down...\n");
                 shutdown_by_me = true;
                 break;
             }
         } else {
-            /* Reset the failure counter */
-            failed = 0;
-
-            /* If the heartbeat took longer than 1 second, leave a log message.
-             * Local heartbeat should take on the order of microseconds.  We want
-             * to see how often it takes unexpectedly long, independently of
-             * failure detection.
-             */
-            if (elapsed_msec > HEART_BEAT_WARN_TIMEOUT) {
-                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Heartbeat took longer than expected. elapsed_msec=%llu\n",
-                    (unsigned long long)elapsed_msec);
-            }
+            /* Reset the acc_hb_latency */
+            acc_hb_latency = 0;
         }
     }
     hb_thread_running = false;
@@ -677,25 +705,6 @@ start_hb_thread(app_ping_t *data)
                                "Cannot create hb thread: %s\n", strerror(ret));
     }
     return ret;
-}
-
-static void arcus_prepare_ping_context(app_ping_t *ping_data, int port)
-{
-    /* prepare app_ping context data:
-     * sockaddr for memcached connection in app ping
-     */
-    memset(ping_data, 0, sizeof(app_ping_t));
-    ping_data->addr.sin_family = AF_INET;
-    ping_data->addr.sin_port   = htons(port);
-    /* Use the admin ip (currently localhost) to avoid competing with
-     * regular clients for connections.
-     */
-    ping_data->addr.sin_addr.s_addr = inet_addr(ADMIN_CLIENT_IP);
-
-    /* +500 msec so that the caller can detect the timeout */
-    uint64_t usec = HEART_BEAT_TIMEOUT * 1000 + 500000;
-    ping_data->to.tv_sec = usec / 1000000;
-    ping_data->to.tv_usec = usec % 1000000;
 }
 
 static int arcus_build_znode_name(char *ensemble_list)
@@ -1210,9 +1219,29 @@ int arcus_zk_get_ensemble_str(char *buf, int size)
     return -1;
 }
 
+int arcus_zk_set_hbtimeout(int hbtimeout)
+{
+    if (hbtimeout < HEART_BEAT_MIN_TIMEOUT ||
+        hbtimeout > HEART_BEAT_MAX_TIMEOUT)
+        return -1;
+
+    if (hbtimeout != arcus_conf.hb_timeout) {
+        arcus_conf.hb_timeout = hbtimeout;
+    }
+    return 0;
+}
+
+int arcus_zk_get_hbtimeout(void)
+{
+    assert(arcus_conf.hb_timeout >= HEART_BEAT_MIN_TIMEOUT &&
+           arcus_conf.hb_timeout <= HEART_BEAT_MAX_TIMEOUT);
+    return arcus_conf.hb_timeout;
+}
+
 void arcus_zk_get_stats(arcus_zk_stats *stats)
 {
     stats->zk_timeout = arcus_conf.zk_timeout;
+    stats->hb_timeout = arcus_conf.hb_timeout;
     stats->hb_count = azk_stat.hb_count;
     stats->hb_latency = azk_stat.hb_latency;
 }
