@@ -38,7 +38,7 @@
 #include "default_engine.h"
 
 #define RESERVED_SLABS      4
-#define RESERVED_SLAB_RATIO 4
+#define RESERVED_SLAB_RATIO 5
 #define MAX_SPACE_SHORTAGE_LEVEL 100
 #define SSL_FOR_BACKGROUND_EVICT 10  /* space shortage level for background evict */
 #define SSL_CHECK_BY_MEM_REQUEST 100 /* space shortage level check tick by slab*/
