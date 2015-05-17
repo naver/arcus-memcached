@@ -99,11 +99,13 @@
  * suicide.  If the accumulated latency of consecutive heartbeats is
  * over the following HEART_BEAT_FAILSTOP value, it does fail-stop.
  */
-#define HEART_BEAT_FAILSTOP     20000 /* msec */
+#define HEART_BEAT_MIN_FAILSTOP 3000  /* msec */
+#define HEART_BEAT_DFT_FAILSTOP 20000 /* msec */
+#define HEART_BEAT_MAX_FAILSTOP 60000 /* msec */
 /* If hearbeat takes more than timeout msec, consider it failed.  */
 #define HEART_BEAT_MIN_TIMEOUT  50    /* msec */
 #define HEART_BEAT_DFT_TIMEOUT  1000  /* msec */
-#define HEART_BEAT_MAX_TIMEOUT  HEART_BEAT_FAILSTOP /* msec */
+#define HEART_BEAT_MAX_TIMEOUT  HEART_BEAT_MAX_FAILSTOP /* msec */
 
 static const char *zk_root = NULL;
 static const char *zk_map_path   = "cache_server_mapping";
@@ -130,6 +132,7 @@ typedef struct {
     char    *mc_ipport;         // this memcached ip:port string
     char    *hostip;            // localhost server IP
     int     port;               // memcached port number
+    int     hb_failstop;        // memcached heartbeat failstop
     int     hb_timeout;         // memcached heartbeat timeout
     int     zk_timeout;         // Zookeeper session timeout
     char    *zk_path;           // Ephemeral ZK path for this mc identification
@@ -153,6 +156,7 @@ arcus_zk_conf arcus_conf = {
     .svc            = NULL,
     .mc_ipport      = NULL,
     .hostip         = NULL,
+    .hb_failstop    = HEART_BEAT_DFT_FAILSTOP,
     .hb_timeout     = HEART_BEAT_DFT_TIMEOUT,
     .zk_timeout     = DEFAULT_ZK_TO,
     .zk_path        = NULL,
@@ -545,6 +549,7 @@ static void *
 hb_thread(void *arg)
 {
     app_ping_t *ping_data = arg;
+    int cur_hb_failstop = arcus_conf.hb_failstop;
     int cur_hb_timeout = arcus_conf.hb_timeout;
     int acc_hb_latency = 0;
     bool shutdown_by_me = false;
@@ -606,14 +611,21 @@ hb_thread(void *arg)
         if (arcus_zk_shutdown)
             break;
 
+        /* check if hb_failstop is changed */
+        if (cur_hb_failstop != arcus_conf.hb_failstop) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Heartbeat failstop has changed. old(%d) => new(%d)\n",
+                cur_hb_failstop, arcus_conf.hb_failstop);
+            cur_hb_failstop = arcus_conf.hb_failstop;
+            acc_hb_latency = 0; /* reset accumulated hb latency */
+        }
         /* check if hb_timeout is changed */
         if (cur_hb_timeout != arcus_conf.hb_timeout) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Heartbeat timeout has changed. old(%d) => new(%d)\n",
                 cur_hb_timeout, arcus_conf.hb_timeout);
-            /* reset hb timeout and latency */
             cur_hb_timeout = arcus_conf.hb_timeout;
-            acc_hb_latency = 0;
+            acc_hb_latency = 0; /* reset accumulated hb latency */
             /* adjust ping timeout */
             arcus_adjust_ping_timeout(ping_data, cur_hb_timeout);
         }
@@ -656,7 +668,7 @@ hb_thread(void *arg)
                 "accumulated_hb_latency=%d\n", cur_hb_timeout,
                 (unsigned long long)elapsed_msec, acc_hb_latency);
 
-            if (acc_hb_latency > HEART_BEAT_FAILSTOP) {
+            if (acc_hb_latency > cur_hb_failstop) {
                 /* Do not bother calling memcached.c:shutdown_server.
                  * Call arcus_zk_final directly.  shutdown_server just sets
                  * memcached_shutdown = arcus_zk_shutdown = 1 and calls
@@ -1224,6 +1236,10 @@ int arcus_zk_set_hbtimeout(int hbtimeout)
         hbtimeout > HEART_BEAT_MAX_TIMEOUT)
         return -1;
 
+    /* Check: heartbeat timeout <= heartbeat failstop */
+    if (hbtimeout > arcus_conf.hb_failstop)
+        return -1;
+
     if (hbtimeout != arcus_conf.hb_timeout) {
         arcus_conf.hb_timeout = hbtimeout;
     }
@@ -1237,10 +1253,34 @@ int arcus_zk_get_hbtimeout(void)
     return arcus_conf.hb_timeout;
 }
 
+int arcus_zk_set_hbfailstop(int hbfailstop)
+{
+    if (hbfailstop < HEART_BEAT_MIN_FAILSTOP ||
+        hbfailstop > HEART_BEAT_MAX_FAILSTOP)
+        return -1;
+
+    /* Check: heartbeat failstop >= heartbeat timeout */
+    if (hbfailstop < arcus_conf.hb_timeout)
+        return -1;
+
+    if (hbfailstop != arcus_conf.hb_failstop) {
+        arcus_conf.hb_failstop = hbfailstop;
+    }
+    return 0;
+}
+
+int arcus_zk_get_hbfailstop(void)
+{
+    assert(arcus_conf.hb_failstop >= HEART_BEAT_MIN_FAILSTOP &&
+           arcus_conf.hb_failstop <= HEART_BEAT_MAX_FAILSTOP );
+    return arcus_conf.hb_failstop;
+}
+
 void arcus_zk_get_stats(arcus_zk_stats *stats)
 {
     stats->zk_timeout = arcus_conf.zk_timeout;
     stats->hb_timeout = arcus_conf.hb_timeout;
+    stats->hb_failstop = arcus_conf.hb_failstop;
     stats->hb_count = azk_stat.hb_count;
     stats->hb_latency = azk_stat.hb_latency;
 }

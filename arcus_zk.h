@@ -26,6 +26,7 @@
 typedef struct {
     uint32_t zk_timeout;    // Zookeeper session timeout (unit: ms)
     uint32_t hb_timeout;    // memcached heartbeat timeout (unit: ms)
+    uint32_t hb_failstop;   // memcached heartbeat failstop (unit: ms)
     uint64_t hb_count;      // heartbeat accumulated count
     uint64_t hb_latency;    // heartbeat accumulated latency (unit: ms) */
 } arcus_zk_stats;
@@ -44,6 +45,8 @@ int  arcus_zk_set_ensemble(char *ensemble_list);
 int  arcus_zk_get_ensemble_str(char *buf, int size);
 int  arcus_zk_set_hbtimeout(int hbtimeout);
 int  arcus_zk_get_hbtimeout(void);
+int  arcus_zk_set_hbfailstop(int hbfailstop);
+int  arcus_zk_get_hbfailstop(void);
 void arcus_zk_get_stats(arcus_zk_stats *stats);
 
 #ifdef ENABLE_CLUSTER_AWARE

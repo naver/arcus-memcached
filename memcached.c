@@ -7673,6 +7673,7 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
 #ifdef ENABLE_ZK_INTEGRATION
     APPEND_STAT("zk_timeout", "%u", zk_stats.zk_timeout);
     APPEND_STAT("hb_timeout", "%u", zk_stats.hb_timeout);
+    APPEND_STAT("hb_failstop", "%u", zk_stats.hb_failstop);
     APPEND_STAT("hb_count", "%"PRIu64, zk_stats.hb_count);
     APPEND_STAT("hb_latency", "%"PRIu64, zk_stats.hb_latency);
 #endif
@@ -8714,6 +8715,24 @@ static void process_hbtimeout_command(conn *c, token_t *tokens, const size_t nto
         out_string(c, "CLIENT_ERROR bad command line format");
     }
 }
+
+static void process_hbfailstop_command(conn *c, token_t *tokens, const size_t ntokens) {
+    unsigned int hbfailstop;
+    assert(c != NULL);
+
+    if (ntokens == 3) {
+        char buf[50];
+        sprintf(buf, "hbfailstop %d\r\nEND", arcus_zk_get_hbfailstop());
+        out_string(c, buf);
+    } else if (ntokens == 4 && safe_strtoul(tokens[COMMAND_TOKEN+2].value, &hbfailstop)) {
+        if (arcus_zk_set_hbfailstop((int)hbfailstop) == 0)
+            out_string(c, "END");
+        else
+            out_string(c, "CLIENT_ERROR bad value");
+    } else {
+        out_string(c, "CLIENT_ERROR bad command line format");
+    }
+}
 #endif
 
 static void process_config_command(conn *c, token_t *tokens, const size_t ntokens)
@@ -8733,6 +8752,11 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
              (strcmp(tokens[SUBCOMMAND_TOKEN].value, "hbtimeout") == 0))
     {
         process_hbtimeout_command(c, tokens, ntokens);
+    }
+    else if ((ntokens == 3 || ntokens == 4) &&
+             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "hbfailstop") == 0))
+    {
+        process_hbfailstop_command(c, tokens, ntokens);
     }
 #endif
     else if ((ntokens >= 3 && ntokens <= 5) &&
@@ -8859,6 +8883,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "config maxconns [<maxconn>]\\r\\n" "\n"
 #ifdef ENABLE_ZK_INTEGRATION
         "\t" "config hbtimeout [<hbtimeout>]\\r\\n" "\n"
+        "\t" "config hbfailstop [<hbfailstop>]\\r\\n" "\n"
 #endif
         );
     } else {
