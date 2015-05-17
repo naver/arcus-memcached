@@ -100,11 +100,11 @@
  * over the following HEART_BEAT_FAILSTOP value, it does fail-stop.
  */
 #define HEART_BEAT_MIN_FAILSTOP 3000  /* msec */
-#define HEART_BEAT_DFT_FAILSTOP 20000 /* msec */
+#define HEART_BEAT_DFT_FAILSTOP 30000 /* msec */
 #define HEART_BEAT_MAX_FAILSTOP 60000 /* msec */
 /* If hearbeat takes more than timeout msec, consider it failed.  */
 #define HEART_BEAT_MIN_TIMEOUT  50    /* msec */
-#define HEART_BEAT_DFT_TIMEOUT  1000  /* msec */
+#define HEART_BEAT_DFT_TIMEOUT  10000 /* msec */
 #define HEART_BEAT_MAX_TIMEOUT  HEART_BEAT_MAX_FAILSTOP /* msec */
 
 static const char *zk_root = NULL;
