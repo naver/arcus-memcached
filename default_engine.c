@@ -34,6 +34,7 @@
 #define CMD_GET_VBUCKET 0x84
 #define CMD_DEL_VBUCKET 0x85
 
+#define ACTION_BEFORE_WRITE(c, k, l)
 #define ACTION_AFTER_WRITE(c, r)
 
 union vbucket_info_adapter {
@@ -224,6 +225,7 @@ static ENGINE_ERROR_CODE default_item_delete(ENGINE_HANDLE* handle, const void* 
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
     hash_item *it = item_get(engine, key, nkey);
     if (it == NULL) {
         ret = ENGINE_KEY_ENOENT;
@@ -271,10 +273,12 @@ static ENGINE_ERROR_CODE default_store(ENGINE_HANDLE* handle, const void *cookie
                                        uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
+    hash_item *it = get_real_item(item);
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    ret = store_item(engine, get_real_item(item), cas, operation, cookie);
+    ACTION_BEFORE_WRITE(cookie, item_get_key(it), it->nkey);
+    ret = store_item(engine, it, cas, operation, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -289,6 +293,7 @@ static ENGINE_ERROR_CODE default_arithmetic(ENGINE_HANDLE* handle, const void* c
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = arithmetic(engine, cookie, key, nkey, increment,
                      create, delta, initial, flags, engine->server.core->realtime(exptime),
                      cas, result);
@@ -300,6 +305,7 @@ static ENGINE_ERROR_CODE default_flush(ENGINE_HANDLE* handle, const void* cookie
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
+    ACTION_BEFORE_WRITE(cookie, NULL, 0);
     item_flush_expired(get_handle(handle), when, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
@@ -310,6 +316,10 @@ static ENGINE_ERROR_CODE default_flush_prefix(ENGINE_HANDLE* handle, const void*
 {
     ENGINE_ERROR_CODE ret;
 
+    if (nprefix == 5 && strncmp(prefix, "arcus", 5) == 0) {
+        return ENGINE_ENOTSUP; /* Flushing arcus prefix is not allowed */
+    }
+    ACTION_BEFORE_WRITE(cookie, NULL, 0);
     ret = item_flush_prefix_expired(get_handle(handle), prefix, nprefix, when, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
@@ -325,6 +335,7 @@ static ENGINE_ERROR_CODE default_list_struct_create(ENGINE_HANDLE* handle, const
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = list_struct_create(engine, key, nkey, attrp, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
@@ -357,6 +368,7 @@ static ENGINE_ERROR_CODE default_list_elem_insert(ENGINE_HANDLE* handle, const v
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = list_elem_insert(engine, key, nkey, index, (list_elem_item *)eitem,
                            attrp, created, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
@@ -372,6 +384,7 @@ static ENGINE_ERROR_CODE default_list_elem_delete(ENGINE_HANDLE* handle, const v
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = list_elem_delete(engine, key, nkey, from_index, to_index, drop_if_empty,
                            del_count, dropped);
     ACTION_AFTER_WRITE(cookie, ret);
@@ -389,6 +402,8 @@ static ENGINE_ERROR_CODE default_list_elem_get(ENGINE_HANDLE* handle, const void
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    if (delete)
+        ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = list_elem_get(engine, key, nkey, from_index, to_index, delete, drop_if_empty,
                         (list_elem_item**)eitem_array, eitem_count, flags, dropped);
     if (delete && *eitem_count > 0) {
@@ -407,6 +422,7 @@ static ENGINE_ERROR_CODE default_set_struct_create(ENGINE_HANDLE* handle, const 
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = set_struct_create(engine, key, nkey, attrp, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
@@ -438,6 +454,7 @@ static ENGINE_ERROR_CODE default_set_elem_insert(ENGINE_HANDLE* handle, const vo
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = set_elem_insert(engine, key, nkey, (set_elem_item*)eitem, attrp, created, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
@@ -453,6 +470,7 @@ static ENGINE_ERROR_CODE default_set_elem_delete(ENGINE_HANDLE* handle, const vo
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = set_elem_delete(engine, key, nkey, value, nbytes, drop_if_empty, dropped);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
@@ -481,6 +499,8 @@ static ENGINE_ERROR_CODE default_set_elem_get(ENGINE_HANDLE* handle, const void*
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    if (delete)
+        ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = set_elem_get(engine, key, nkey, count, delete, drop_if_empty,
                        (set_elem_item**)eitem, eitem_count, flags, dropped);
     if (delete && *eitem_count > 0) {
@@ -499,6 +519,7 @@ static ENGINE_ERROR_CODE default_btree_struct_create(ENGINE_HANDLE* handle, cons
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = btree_struct_create(engine, key, nkey, attrp, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
@@ -533,6 +554,7 @@ static ENGINE_ERROR_CODE default_btree_elem_insert(ENGINE_HANDLE* handle, const 
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
     if (trimmed == NULL) {
         ret = btree_elem_insert(engine, key, nkey, (btree_elem_item *)eitem, replace_if_exist, attrp,
                                 replaced, created, NULL, NULL, NULL, cookie);
@@ -558,6 +580,7 @@ static ENGINE_ERROR_CODE default_btree_elem_update(ENGINE_HANDLE* handle, const 
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = btree_elem_update(engine, key, nkey, bkrange, eupdate, value, nbytes, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
@@ -576,6 +599,7 @@ static ENGINE_ERROR_CODE default_btree_elem_delete(ENGINE_HANDLE* handle, const 
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = btree_elem_delete(engine, key, nkey, bkrange, efilter, req_count, drop_if_empty,
                             del_count, dropped);
     ACTION_AFTER_WRITE(cookie, ret);
@@ -594,6 +618,7 @@ static ENGINE_ERROR_CODE default_btree_elem_arithmetic(ENGINE_HANDLE* handle, co
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = btree_elem_arithmetic(engine, key, nkey, bkrange, increment, create,
                                 delta, initial, eflagp, result, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
@@ -615,6 +640,8 @@ static ENGINE_ERROR_CODE default_btree_elem_get(ENGINE_HANDLE* handle, const voi
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    if (delete)
+        ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = btree_elem_get(engine, key, nkey, bkrange, efilter, offset, req_count,
                          delete, drop_if_empty, (btree_elem_item**)eitem_array, eitem_count,
                          flags, dropped_trimmed);
@@ -733,6 +760,7 @@ static ENGINE_ERROR_CODE default_setattr(ENGINE_HANDLE* handle, const void* cook
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = item_setattr(engine, key, nkey, attr_ids, attr_count, attr_data);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
