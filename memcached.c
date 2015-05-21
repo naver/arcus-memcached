@@ -1275,6 +1275,12 @@ static inline char *get_ovflaction_str(uint8_t ovflact) {
     else                                    return "unknown";
 }
 
+static void
+handle_unexpected_errorcode_ascii(conn *c, ENGINE_ERROR_CODE ret)
+{
+    out_string(c, "SERVER_ERROR internal");
+}
+
 /*
  * we get here after reading the value in set/add/replace commands. The command
  * has been stored in c->cmd, and the item is ready in c->item.
@@ -1325,7 +1331,7 @@ static void process_lop_insert_complete(conn *c) {
             else if (ret == ENGINE_EINDEXOOR) out_string(c, "OUT_OF_RANGE");
             else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
             else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
-            else out_string(c, "SERVER_ERROR internal");
+            else handle_unexpected_errorcode_ascii(c, ret);
         }
     }
 
@@ -1379,7 +1385,7 @@ static void process_sop_insert_complete(conn *c) {
             else if (ret == ENGINE_ELEM_EEXISTS) out_string(c, "ELEMENT_EXISTS");
             else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
             else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
-            else out_string(c, "SERVER_ERROR internal");
+            else handle_unexpected_errorcode_ascii(c, ret);
         }
     }
 
@@ -1431,7 +1437,7 @@ static void process_sop_delete_complete(conn *c) {
         default:
             STATS_NOKEY(c, cmd_sop_delete);
             if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
-            else out_string(c, "SERVER_ERROR internal");
+            else handle_unexpected_errorcode_ascii(c, ret);
         }
     }
 
@@ -1607,7 +1613,7 @@ static void process_bop_insert_complete(conn *c) {
             else if (ret == ENGINE_ELEM_EEXISTS) out_string(c, "ELEMENT_EXISTS");
             else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
             else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
-            else out_string(c, "SERVER_ERROR internal");
+            else handle_unexpected_errorcode_ascii(c, ret);
         }
     }
 }
@@ -1675,7 +1681,7 @@ static void process_bop_update_complete(conn *c)
         else if (ret == ENGINE_EBADBKEY)  out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_EBADEFLAG) out_string(c, "EFLAG_MISMATCH");
         else if (ret == ENGINE_ENOMEM)    out_string(c, "SERVER_ERROR out of memory");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
     }
 
     if (c->coll_eitem != NULL) {
@@ -2156,7 +2162,7 @@ static void complete_update_ascii(conn *c) {
 #endif
 
         default:
-            out_string(c, "SERVER_ERROR internal");
+            handle_unexpected_errorcode_ascii(c, ret);
         }
     }
 
@@ -8332,7 +8338,8 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
-    default:
+    case ENGINE_E2BIG:
+    case ENGINE_ENOMEM:
         if (ret == ENGINE_E2BIG) {
             out_string(c, "SERVER_ERROR object too large for cache");
         } else {
@@ -8347,6 +8354,9 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         if (store_op == OPERATION_SET) {
             mc_engine.v1->remove(mc_engine.v0, c, key, nkey, 0, 0);
         }
+        break;
+    default:
+        handle_unexpected_errorcode_ascii(c, ret);
     }
 }
 
@@ -8447,7 +8457,7 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
         out_string(c, "TYPE_MISMATCH");
         break;
     default:
-        abort();
+        handle_unexpected_errorcode_ascii(c, ret);
     }
 }
 
@@ -8499,9 +8509,11 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     if (ret == ENGINE_SUCCESS) {
         out_string(c, "DELETED");
         SLAB_INCR(c, delete_hits, key, nkey);
-    } else {
+    } else if (ret == ENGINE_KEY_ENOENT) {
         out_string(c, "NOT_FOUND");
         STATS_INCR(c, delete_misses, key, nkey);
+    } else {
+        handle_unexpected_errorcode_ascii(c, ret);
     }
 }
 
@@ -8540,7 +8552,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
         } else if (ret == ENGINE_ENOTSUP) {
             out_string(c, "SERVER_ERROR not supported");
         } else {
-            out_string(c, "SERVER_ERROR failed to flush cache");
+            handle_unexpected_errorcode_ascii(c, ret);
         }
         STATS_NOKEY(c, cmd_flush);
     }
@@ -8590,7 +8602,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
         } else if (ret == ENGINE_ENOTSUP) {
             out_string(c, "SERVER_ERROR not supported");
         } else {
-            out_string(c, "SERVER_ERROR failed to flush cache");
+            handle_unexpected_errorcode_ascii(c, ret);
         }
         STATS_NOKEY(c, cmd_flush_prefix);
     }
@@ -9154,7 +9166,7 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
     default:
         STATS_NOKEY(c, cmd_lop_get);
         if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
     }
 
     if (ret != ENGINE_SUCCESS && elem_array != NULL) {
@@ -9254,7 +9266,7 @@ static void process_lop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         if (ret == ENGINE_KEY_EEXISTS) out_string(c, "EXISTS");
         else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
         else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
     }
 }
 
@@ -9303,7 +9315,7 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
     default:
         STATS_NOKEY(c, cmd_lop_delete);
         if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
     }
 }
 
@@ -9576,7 +9588,7 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
     default:
         STATS_NOKEY(c, cmd_sop_get);
         if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
     }
 
     if (ret != ENGINE_SUCCESS && elem_array != NULL) {
@@ -9695,7 +9707,7 @@ static void process_sop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         if (ret == ENGINE_KEY_EEXISTS) out_string(c, "EXISTS");
         else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
         else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
     }
 }
 
@@ -9978,7 +9990,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
         STATS_NOKEY(c, cmd_bop_get);
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
     }
 
     if (ret != ENGINE_SUCCESS && elem_array != NULL) {
@@ -10593,7 +10605,7 @@ static void process_bop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         if (ret == ENGINE_KEY_EEXISTS) out_string(c, "EXISTS");
         else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
         else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
     }
 }
 
@@ -10644,7 +10656,7 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
         STATS_NOKEY(c, cmd_bop_delete);
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
     }
 }
 
@@ -10714,7 +10726,7 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
         else if (ret == ENGINE_EBKEYOOR)  out_string(c, "OUT_OF_RANGE");
         else if (ret == ENGINE_EOVERFLOW) out_string(c, "OVERFLOWED");
         else if (ret == ENGINE_ENOMEM)    out_string(c, "SERVER_ERROR out of memory");
-        else                              out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
     }
 }
 
@@ -11795,7 +11807,7 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
         STATS_NOKEY(c, cmd_setattr);
         if (ret == ENGINE_EBADATTR) out_string(c, "ATTR_ERROR not found");
         else if (ret == ENGINE_EBADVALUE) out_string(c, "ATTR_ERROR bad value");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
     }
 }
 
