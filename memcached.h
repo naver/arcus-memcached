@@ -35,8 +35,6 @@
 
 #include "sasl_defs.h"
 
-#define NEW_WOULDBLOCK_HANDLING 1
-
 /* This is the address we use for admin purposes.  For example, doing stats
  * and heart beats from arcus_zk.
  * We count these connections separately from regular client connections.
@@ -598,7 +596,6 @@ struct conn {
 
     ENGINE_ERROR_CODE aiostat;
     bool ewouldblock;
-#ifdef NEW_WOULDBLOCK_HANDLING
     /* ewouldblock=true is set when the command returns EWOULDBLOCK.
      * The worker thread is going to remove the connection from the
      * event loop and set ewouldblock=false.  But these two events
@@ -620,7 +617,6 @@ struct conn {
      */
     bool io_blocked;
     bool premature_notify_io_complete;
-#endif
 #if 0 // ENABLE_TAP_PROTOCOL
     TAP_ITERATOR tap_iterator;
 #endif

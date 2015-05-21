@@ -567,7 +567,6 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
 
     LOCK_THREAD(thr);
 
-#ifdef NEW_WOULDBLOCK_HANDLING
     if (thr != conn->thread || conn->state == conn_closing || !conn->io_blocked){
         conn->premature_notify_io_complete = true;
         UNLOCK_THREAD(thr);
@@ -575,12 +574,6 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
         return;
     }
     conn->io_blocked = false;
-#else
-    if (thr != conn->thread || conn->state == conn_closing || !conn->ewouldblock) {
-        UNLOCK_THREAD(thr);
-        return;
-    }
-#endif
 
     conn->aiostat = status;
 
