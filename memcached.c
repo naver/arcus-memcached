@@ -799,15 +799,9 @@ static void conn_cleanup(conn *c) {
     }
 
     c->engine_storage = NULL;
-#if 0 // ENABLE_TAP_PROTOCOL
-    c->tap_iterator = NULL;
-#endif
     c->thread = NULL;
     assert(c->next == NULL);
     c->ascii_cmd = NULL;
-#if 0 // ENABLE_TAP_PROTOCOL : PENDING_CLOSE
-    c->pending_close.active = false;
-#endif
     c->sfd = -1;
 
     c->ewouldblock = false;
@@ -836,15 +830,7 @@ void conn_close(conn *c) {
     }
 
     assert(c->thread);
-#if 0 // ENABLE_TAP_PROTOCOL : PENDING_CLOSE
-    if (!c->pending_close.active) {
-        perform_callbacks(ON_DISCONNECT, NULL, c);
-    } else {
-        assert(current_time > c->pending_close.timeout);
-    }
-#else
     perform_callbacks(ON_DISCONNECT, NULL, c);
-#endif
 
     LOCK_THREAD(c->thread);
     /* remove from pending-io list */
@@ -853,9 +839,6 @@ void conn_close(conn *c) {
                        "Current connection was in the pending-io list.. Nuking it\n");
     }
     c->thread->pending_io = list_remove(c->thread->pending_io, c);
-#if 0 // ENABLE_TAP_PROTOCOL : PENDING_CLOSE
-    c->thread->pending_close = list_remove(c->thread->pending_close, c);
-#endif
     UNLOCK_THREAD(c->thread);
 
     conn_cleanup(c);
@@ -952,18 +935,6 @@ const char *state_text(STATE_FUNC state) {
         return "conn_closing";
     } else if (state == conn_mwrite) {
         return "conn_mwrite";
-#if 0 // ENABLE_TAP_PROTOCOL
-    } else if (state == conn_ship_log) {
-        return "conn_ship_log";
-    } else if (state == conn_add_tap_client) {
-        return "conn_add_tap_client";
-    } else if (state == conn_setup_tap_stream) {
-        return "conn_setup_tap_stream";
-    } else if (state == conn_pending_close) {
-        return "conn_pending_close";
-    } else if (state == conn_immediate_close) {
-        return "conn_immediate_close";
-#endif
     } else {
         return "Unknown";
     }
@@ -978,28 +949,7 @@ void conn_set_state(conn *c, STATE_FUNC state) {
     assert(c != NULL);
 
     if (state != c->state) {
-#if 0 // ENABLE_TAP_PROTOCOL
-        /*
-         * The connections in the "tap thread" behaves differently than
-         * normal connections because they operate in a full duplex mode.
-         * New messages may appear from both sides, so we can't block on
-         * read from the nework / engine
-         */
-        if (c->thread == &tap_thread) {
-            if (state == conn_waiting) {
-                c->which = EV_WRITE;
-                state = conn_ship_log;
-            }
-        }
-#endif
-
-#if 0 // ENABLE_TAP_PROTOCOL
-        if (settings.verbose > 2 || c->state == conn_closing
-            || c->state == conn_add_tap_client)
-#else
-        if (settings.verbose > 2 || c->state == conn_closing)
-#endif
-        {
+        if (settings.verbose > 2 || c->state == conn_closing) {
             mc_logger->log(EXTENSION_LOG_DETAIL, c, "%d: going from %s to %s\n",
                            c->sfd, state_text(c->state), state_text(state));
         }
@@ -2300,43 +2250,6 @@ static void add_bin_header(conn *c, uint16_t err, uint8_t hdr_len, uint16_t key_
 
     add_iov(c, c->wbuf, sizeof(header->response));
 }
-
-#if 0 // ENABLE_TAP_PROTOCOL
-/**
- * Convert an error code generated from the storage engine to the corresponding
- * error code used by the protocol layer.
- * @param e the error code as used in the engine
- * @return the error code as used by the protocol layer
- */
-static protocol_binary_response_status engine_error_2_protocol_error(ENGINE_ERROR_CODE e) {
-    protocol_binary_response_status ret;
-
-    switch (e) {
-    case ENGINE_SUCCESS:
-        return PROTOCOL_BINARY_RESPONSE_SUCCESS;
-    case ENGINE_KEY_ENOENT:
-        return PROTOCOL_BINARY_RESPONSE_KEY_ENOENT;
-    case ENGINE_KEY_EEXISTS:
-        return PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS;
-    case ENGINE_ENOMEM:
-        return PROTOCOL_BINARY_RESPONSE_ENOMEM;
-    case ENGINE_NOT_STORED:
-        return PROTOCOL_BINARY_RESPONSE_NOT_STORED;
-    case ENGINE_EINVAL:
-        return PROTOCOL_BINARY_RESPONSE_EINVAL;
-    case ENGINE_ENOTSUP:
-        return PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED;
-    case ENGINE_E2BIG:
-        return PROTOCOL_BINARY_RESPONSE_E2BIG;
-    case ENGINE_NOT_MY_VBUCKET:
-        return PROTOCOL_BINARY_RESPONSE_NOT_MY_VBUCKET;
-    default:
-        ret = PROTOCOL_BINARY_RESPONSE_EINTERNAL;
-    }
-
-    return ret;
-}
-#endif
 
 static void write_bin_packet(conn *c, protocol_binary_response_status err, int swallow) {
     ssize_t len;
@@ -5564,238 +5477,6 @@ static bool binary_response_handler(const void *key, uint16_t keylen,
     return true;
 }
 
-#if 0 // ENABLE_TAP_PROTOCOL
-/**
- * Tap stats (these are only used by the tap thread, so they don't need
- * to be in the threadlocal struct right now...
- */
-struct tap_cmd_stats {
-    uint64_t connect;
-    uint64_t mutation;
-    uint64_t delete;
-    uint64_t flush;
-    uint64_t opaque;
-    uint64_t vbucket_set;
-};
-
-struct tap_stats {
-    pthread_mutex_t mutex;
-    struct tap_cmd_stats sent;
-    struct tap_cmd_stats received;
-} tap_stats = { .mutex = PTHREAD_MUTEX_INITIALIZER };
-
-static void ship_tap_log(conn *c) {
-    assert(c->thread->type == TAP);
-    c->msgcurr = 0;
-    c->msgused = 0;
-    c->iovused = 0;
-    if (add_msghdr(c) != 0) {
-        if (settings.verbose) {
-            mc_logger->log(EXTENSION_LOG_WARNING, c,
-                "%d: Failed to create output headers. Shutting down tap connection\n", c->sfd);
-        }
-        conn_set_state(c, conn_closing);
-        return ;
-    }
-    /* @todo add check for buffer overflow of c->wbuf) */
-    c->wcurr = c->wbuf;
-
-    bool more_data = true;
-    bool send_data = false;
-    bool disconnect = false;
-
-    item *it;
-    uint32_t bodylen;
-    int ii = 0;
-    c->icurr = c->ilist;
-    do {
-        /* @todo fixme! */
-        if (ii++ == 10) {
-            break;
-        }
-
-        void *engine;
-        uint16_t nengine;
-        uint8_t ttl;
-        uint16_t tap_flags;
-        uint32_t seqno;
-        uint16_t vbucket;
-
-        tap_event_t event = c->tap_iterator(mc_engine.v0, c, &it,
-                                            &engine, &nengine, &ttl,
-                                            &tap_flags, &seqno, &vbucket);
-        union {
-            protocol_binary_request_tap_mutation mutation;
-            protocol_binary_request_tap_delete delete;
-            protocol_binary_request_tap_flush flush;
-            protocol_binary_request_tap_opaque opaque;
-            protocol_binary_request_noop noop;
-        } msg = {
-            .mutation.message.header.request.magic = (uint8_t)PROTOCOL_BINARY_REQ,
-        };
-
-        msg.opaque.message.header.request.opaque = htonl(seqno);
-        msg.opaque.message.body.tap.enginespecific_length = htons(nengine);
-        msg.opaque.message.body.tap.ttl = ttl;
-        msg.opaque.message.body.tap.flags = htons(tap_flags);
-        msg.opaque.message.header.request.extlen = 8;
-        msg.opaque.message.header.request.vbucket = htons(vbucket);
-        item_info info = { .nvalue = 1 };
-
-        switch (event) {
-        case TAP_NOOP :
-            send_data = true;
-            msg.noop.message.header.request.opcode = PROTOCOL_BINARY_CMD_NOOP;
-            msg.noop.message.header.request.extlen = 0;
-            msg.noop.message.header.request.bodylen = htonl(0);
-            memcpy(c->wcurr, msg.noop.bytes, sizeof(msg.noop.bytes));
-            add_iov(c, c->wcurr, sizeof(msg.noop.bytes));
-            c->wcurr += sizeof(msg.noop.bytes);
-            c->wbytes += sizeof(msg.noop.bytes);
-            break;
-        case TAP_PAUSE :
-            more_data = false;
-            break;
-        case TAP_MUTATION:
-            if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &info)) {
-                mc_engine.v1->release(mc_engine.v0, c, it);
-                mc_logger->log(EXTENSION_LOG_WARNING, c,
-                               "%d: Failed to get item info\n", c->sfd);
-                break;
-            }
-            send_data = true;
-            c->ilist[c->ileft++] = it;
-
-            msg.mutation.message.header.request.opcode = PROTOCOL_BINARY_CMD_TAP_MUTATION;
-            msg.mutation.message.header.request.cas = htonll(info.cas);
-            msg.mutation.message.header.request.keylen = htons(info.nkey);
-            msg.mutation.message.header.request.extlen = 16;
-
-            bodylen = 16 + info.nkey + nengine;
-            if ((tap_flags & TAP_FLAG_NO_VALUE) == 0) {
-                bodylen += info.nbytes - 2;
-            }
-            msg.mutation.message.header.request.bodylen = htonl(bodylen);
-            msg.mutation.message.body.item.flags = htonl(info.flags);
-            msg.mutation.message.body.item.expiration = htonl(info.exptime);
-            msg.mutation.message.body.tap.enginespecific_length = htons(nengine);
-            msg.mutation.message.body.tap.ttl = ttl;
-            msg.mutation.message.body.tap.flags = htons(tap_flags);
-            memcpy(c->wcurr, msg.mutation.bytes, sizeof(msg.mutation.bytes));
-
-            add_iov(c, c->wcurr, sizeof(msg.mutation.bytes));
-            c->wcurr += sizeof(msg.mutation.bytes);
-            c->wbytes += sizeof(msg.mutation.bytes);
-
-            if (nengine > 0) {
-                memcpy(c->wcurr, engine, nengine);
-                add_iov(c, c->wcurr, nengine);
-                c->wcurr += nengine;
-                c->wbytes += nengine;
-            }
-
-            add_iov(c, info.key, info.nkey);
-            if ((tap_flags & TAP_FLAG_NO_VALUE) == 0) {
-                add_iov(c, info.value[0].iov_base, info.value[0].iov_len - 2);
-            }
-
-            pthread_mutex_lock(&tap_stats.mutex);
-            tap_stats.sent.mutation++;
-            pthread_mutex_unlock(&tap_stats.mutex);
-
-            break;
-        case TAP_DELETION:
-            /* This is a delete */
-            if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &info)) {
-                mc_engine.v1->release(mc_engine.v0, c, it);
-                mc_logger->log(EXTENSION_LOG_WARNING, c,
-                               "%d: Failed to get item info\n", c->sfd);
-                break;
-            }
-            send_data = true;
-            c->ilist[c->ileft++] = it;
-            msg.mutation.message.header.request.opcode = PROTOCOL_BINARY_CMD_TAP_DELETE;
-            msg.delete.message.header.request.keylen = htons(info.nkey);
-            msg.delete.message.header.request.bodylen = htonl(info.nkey + 8);
-            memcpy(c->wcurr, msg.delete.bytes, sizeof(msg.delete.bytes));
-            add_iov(c, c->wcurr, sizeof(msg.delete.bytes));
-            c->wcurr += sizeof(msg.delete.bytes);
-            c->wbytes += sizeof(msg.delete.bytes);
-            add_iov(c, info.key, info.nkey);
-
-            pthread_mutex_lock(&tap_stats.mutex);
-            tap_stats.sent.delete++;
-            pthread_mutex_unlock(&tap_stats.mutex);
-            break;
-
-        case TAP_DISCONNECT:
-            disconnect = true;
-            more_data = false;
-            break;
-        case TAP_VBUCKET_SET:
-        case TAP_FLUSH:
-        case TAP_OPAQUE:
-            send_data = true;
-
-            if (event == TAP_OPAQUE) {
-                msg.flush.message.header.request.opcode = PROTOCOL_BINARY_CMD_TAP_OPAQUE;
-                pthread_mutex_lock(&tap_stats.mutex);
-                tap_stats.sent.opaque++;
-                pthread_mutex_unlock(&tap_stats.mutex);
-
-            } else if (event == TAP_FLUSH) {
-                msg.flush.message.header.request.opcode = PROTOCOL_BINARY_CMD_TAP_FLUSH;
-                pthread_mutex_lock(&tap_stats.mutex);
-                tap_stats.sent.flush++;
-                pthread_mutex_unlock(&tap_stats.mutex);
-            } else if (event == TAP_VBUCKET_SET) {
-                msg.flush.message.header.request.opcode = PROTOCOL_BINARY_CMD_TAP_VBUCKET_SET;
-                msg.flush.message.body.tap.flags = htons(tap_flags);
-                pthread_mutex_lock(&tap_stats.mutex);
-                tap_stats.sent.vbucket_set++;
-                pthread_mutex_unlock(&tap_stats.mutex);
-            }
-
-            msg.flush.message.header.request.bodylen = htonl(8 + nengine);
-            memcpy(c->wcurr, msg.flush.bytes, sizeof(msg.flush.bytes));
-            add_iov(c, c->wcurr, sizeof(msg.flush.bytes));
-            c->wcurr += sizeof(msg.flush.bytes);
-            c->wbytes += sizeof(msg.flush.bytes);
-            if (nengine > 0) {
-                memcpy(c->wcurr, engine, nengine);
-                add_iov(c, c->wcurr, nengine);
-                c->wcurr += nengine;
-                c->wbytes += nengine;
-            }
-            break;
-        default:
-            abort();
-        }
-    } while (more_data);
-
-    c->ewouldblock = false;
-    if (send_data) {
-        conn_set_state(c, conn_mwrite);
-        if (disconnect) {
-            c->write_and_go = conn_closing;
-        } else {
-            c->write_and_go = conn_ship_log;
-        }
-    } else {
-        if (disconnect) {
-            conn_set_state(c, conn_closing);
-        } else {
-            /* No more items to ship to the slave at this time.. suspend.. */
-            if (settings.verbose > 1) {
-                mc_logger->log(EXTENSION_LOG_DEBUG, c,
-                        "%d: No more items in tap log.. waiting\n", c->sfd);
-            }
-            c->ewouldblock = true;
-        }
-    }
-}
-#endif
-
 static void process_bin_unknown_packet(conn *c) {
     void *packet = c->rcurr - (c->binary_header.request.bodylen +
                                sizeof(c->binary_header));
@@ -5817,199 +5498,6 @@ static void process_bin_unknown_packet(conn *c) {
         conn_set_state(c, conn_closing);
     }
 }
-
-#if 0 // ENABLE_TAP_PROTOCOL
-static void process_bin_tap_connect(conn *c) {
-    char *packet = (c->rcurr - (c->binary_header.request.bodylen +
-                                sizeof(c->binary_header)));
-    protocol_binary_request_tap_connect *req = (void*)packet;
-    const char *key = packet + sizeof(req->bytes);
-    const char *data = key + c->binary_header.request.keylen;
-    uint32_t flags = 0;
-    size_t ndata = c->binary_header.request.bodylen -
-        c->binary_header.request.extlen -
-        c->binary_header.request.keylen;
-
-    if (c->binary_header.request.extlen == 4) {
-        flags = ntohl(req->message.body.flags);
-
-        if (flags & TAP_CONNECT_FLAG_BACKFILL) {
-            /* the userdata has to be at least 8 bytes! */
-            if (ndata < 8) {
-                mc_logger->log(EXTENSION_LOG_WARNING, c,
-                        "%d: ERROR: Invalid tap connect message\n", c->sfd);
-                conn_set_state(c, conn_closing);
-                return ;
-            }
-        }
-    } else {
-        data -= 4;
-        key -= 4;
-    }
-
-    if (settings.verbose && c->binary_header.request.keylen > 0) {
-        char buffer[1024];
-        int len = c->binary_header.request.keylen;
-        if (len >= sizeof(buffer)) {
-            len = sizeof(buffer) - 1;
-        }
-        memcpy(buffer, key, len);
-        buffer[len] = '\0';
-        mc_logger->log(EXTENSION_LOG_DEBUG, c,
-                "%d: Trying to connect with named tap connection: <%s>\n",
-                c->sfd, buffer);
-    }
-
-    TAP_ITERATOR iterator = mc_engine.v1->get_tap_iterator(
-        mc_engine.v0, c, key, c->binary_header.request.keylen,
-        flags, data, ndata);
-
-    if (iterator == NULL) {
-        mc_logger->log(EXTENSION_LOG_WARNING, c,
-                "%d: FATAL: The engine does not support tap\n", c->sfd);
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
-        c->write_and_go = conn_closing;
-    } else {
-        c->tap_iterator = iterator;
-        c->which = EV_WRITE;
-        conn_set_state(c, conn_ship_log);
-    }
-}
-
-static void process_bin_tap_packet(tap_event_t event, conn *c) {
-    assert(c != NULL);
-    char *packet = (c->rcurr - (c->binary_header.request.bodylen +
-                                sizeof(c->binary_header)));
-    protocol_binary_request_tap_no_extras *tap = (void*)packet;
-    uint16_t nengine = ntohs(tap->message.body.tap.enginespecific_length);
-    uint16_t tap_flags = ntohs(tap->message.body.tap.flags);
-    uint32_t seqno = ntohl(tap->message.header.request.opaque);
-    uint8_t ttl = tap->message.body.tap.ttl;
-    assert(ttl > 0);
-    char *engine_specific = packet + sizeof(tap->bytes);
-    char *key = engine_specific + nengine;
-    uint16_t nkey = c->binary_header.request.keylen;
-    char *data = key + nkey;
-    uint32_t flags = 0;
-    uint32_t exptime = 0;
-    uint32_t ndata = c->binary_header.request.bodylen - nengine - nkey - 8;
-
-    if (event == TAP_MUTATION) {
-        protocol_binary_request_tap_mutation *mutation = (void*)tap;
-        flags = ntohl(mutation->message.body.item.flags);
-        exptime = ntohl(mutation->message.body.item.expiration);
-        key += 8;
-        data += 8;
-        ndata -= 8;
-    }
-
-    ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->tap_notify(mc_engine.v0, c,
-                                   engine_specific, nengine,
-                                   ttl - 1, tap_flags,
-                                   event, seqno,
-                                   key, nkey,
-                                   flags, exptime,
-                                   ntohll(tap->message.header.request.cas),
-                                   data, ndata,
-                                   c->binary_header.request.vbucket);
-
-    if (ret == ENGINE_DISCONNECT) {
-        conn_set_state(c, conn_closing);
-    } else {
-        if (tap_flags & TAP_FLAG_ACK) {
-            write_bin_packet(c, engine_error_2_protocol_error(ret), 0);
-        } else {
-            conn_set_state(c, conn_new_cmd);
-        }
-    }
-}
-
-static void process_bin_tap_ack(conn *c) {
-    assert(c != NULL);
-    char *packet = (c->rcurr - (c->binary_header.request.bodylen +
-                                sizeof(c->binary_header)));
-    protocol_binary_response_no_extras *rsp = (void*)packet;
-    uint32_t seqno = ntohl(rsp->message.header.response.opaque);
-    uint16_t status = ntohs(rsp->message.header.response.status);
-    char *key = packet + sizeof(rsp->bytes);
-
-    ENGINE_ERROR_CODE ret = ENGINE_DISCONNECT;
-    if (mc_engine.v1->tap_notify != NULL) {
-        ret = mc_engine.v1->tap_notify(mc_engine.v0, c, NULL, 0, 0, status,
-                                       TAP_ACK, seqno, key,
-                                       c->binary_header.request.keylen, 0, 0,
-                                       0, NULL, 0, 0);
-    }
-
-    if (ret == ENGINE_DISCONNECT) {
-        conn_set_state(c, conn_closing);
-    } else {
-        conn_set_state(c, conn_ship_log);
-    }
-}
-#endif
-
-#if 0 // ENABLE_TAP_PROTOCOL
-static void process_bin_packet(conn *c) {
-    /* @todo this should be an array of funciton pointers and call through */
-    switch (c->binary_header.request.opcode) {
-    case PROTOCOL_BINARY_CMD_TAP_CONNECT:
-        pthread_mutex_lock(&tap_stats.mutex);
-        tap_stats.received.connect++;
-        pthread_mutex_unlock(&tap_stats.mutex);
-        conn_set_state(c, conn_add_tap_client);
-        break;
-    case PROTOCOL_BINARY_CMD_TAP_MUTATION:
-        pthread_mutex_lock(&tap_stats.mutex);
-        tap_stats.received.mutation++;
-        pthread_mutex_unlock(&tap_stats.mutex);
-        process_bin_tap_packet(TAP_MUTATION, c);
-        break;
-    case PROTOCOL_BINARY_CMD_TAP_DELETE:
-        pthread_mutex_lock(&tap_stats.mutex);
-        tap_stats.received.delete++;
-        pthread_mutex_unlock(&tap_stats.mutex);
-        process_bin_tap_packet(TAP_DELETION, c);
-        break;
-    case PROTOCOL_BINARY_CMD_TAP_FLUSH:
-        pthread_mutex_lock(&tap_stats.mutex);
-        tap_stats.received.flush++;
-        pthread_mutex_unlock(&tap_stats.mutex);
-        process_bin_tap_packet(TAP_FLUSH, c);
-        break;
-    case PROTOCOL_BINARY_CMD_TAP_OPAQUE:
-        pthread_mutex_lock(&tap_stats.mutex);
-        tap_stats.received.opaque++;
-        pthread_mutex_unlock(&tap_stats.mutex);
-        process_bin_tap_packet(TAP_OPAQUE, c);
-        break;
-    case PROTOCOL_BINARY_CMD_TAP_VBUCKET_SET:
-        pthread_mutex_lock(&tap_stats.mutex);
-        tap_stats.received.vbucket_set++;
-        pthread_mutex_unlock(&tap_stats.mutex);
-        process_bin_tap_packet(TAP_VBUCKET_SET, c);
-        break;
-    default:
-        process_bin_unknown_packet(c);
-    }
-}
-#endif
-
-#if 0 // ENABLE_TAP_PROTOCOL
-typedef void (*RESPONSE_HANDLER)(conn*);
-/**
- * A map between the response packets op-code and the function to handle
- * the response message.
- */
-static RESPONSE_HANDLER response_handlers[256] = {
-    [PROTOCOL_BINARY_CMD_TAP_MUTATION] = process_bin_tap_ack,
-    [PROTOCOL_BINARY_CMD_TAP_DELETE] = process_bin_tap_ack,
-    [PROTOCOL_BINARY_CMD_TAP_FLUSH] = process_bin_tap_ack,
-    [PROTOCOL_BINARY_CMD_TAP_OPAQUE] = process_bin_tap_ack,
-    [PROTOCOL_BINARY_CMD_TAP_VBUCKET_SET] = process_bin_tap_ack
-};
-#endif
 
 static void dispatch_bin_command(conn *c) {
     int protocol_error = 0;
@@ -6318,27 +5806,6 @@ static void dispatch_bin_command(conn *c) {
                 bin_read_key(c, bin_reading_bop_prepare_nread_keys, (sizeof(bkey_range)+sizeof(eflag_filter)+12));
             } else {
                 protocol_error = 1;
-            }
-            break;
-#endif
-#if 0 // ENABLE_TAP_PROTOCOL
-       case PROTOCOL_BINARY_CMD_TAP_CONNECT:
-            if (mc_engine.v1->get_tap_iterator == NULL) {
-                write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, bodylen);
-            } else {
-                bin_read_chunk(c, bin_reading_packet,
-                               c->binary_header.request.bodylen);
-            }
-            break;
-       case PROTOCOL_BINARY_CMD_TAP_MUTATION:
-       case PROTOCOL_BINARY_CMD_TAP_DELETE:
-       case PROTOCOL_BINARY_CMD_TAP_FLUSH:
-       case PROTOCOL_BINARY_CMD_TAP_OPAQUE:
-       case PROTOCOL_BINARY_CMD_TAP_VBUCKET_SET:
-            if (mc_engine.v1->tap_notify == NULL) {
-                write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, bodylen);
-            } else {
-                bin_read_chunk(c, bin_reading_packet, c->binary_header.request.bodylen);
             }
             break;
 #endif
@@ -6804,24 +6271,7 @@ static void complete_nread_binary(conn *c) {
         break;
 #endif
     case bin_reading_packet:
-#if 0 // ENABLE_TAP_PROTOCOL
-        if (c->binary_header.request.magic == PROTOCOL_BINARY_RES) {
-            RESPONSE_HANDLER handler;
-            handler = response_handlers[c->binary_header.request.opcode];
-            if (handler) {
-                handler(c);
-            } else {
-                mc_logger->log(EXTENSION_LOG_INFO, c,
-                        "%d: ERROR: Unsupported response packet received: %u\n",
-                        c->sfd, (unsigned int)c->binary_header.request.opcode);
-                conn_set_state(c, conn_closing);
-            }
-        } else {
-            process_bin_packet(c);
-        }
-#else
         process_bin_unknown_packet(c);
-#endif
         break;
     default:
         mc_logger->log(EXTENSION_LOG_WARNING, c,
@@ -7344,55 +6794,6 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("threads", "%d", settings.num_threads);
     APPEND_STAT("conn_yields", "%" PRIu64, (unsigned long long)thread_stats.conn_yields);
     STATS_UNLOCK();
-
-#if 0 // ENABLE_TAP_PROTOCOL
-    /*
-     * Add tap stats (only if non-zero)
-     */
-    struct tap_stats ts;
-    pthread_mutex_lock(&tap_stats.mutex);
-    ts = tap_stats;
-    pthread_mutex_unlock(&tap_stats.mutex);
-
-    if (ts.sent.connect) {
-        APPEND_STAT("tap_connect_sent", "%"PRIu64, ts.sent.connect);
-    }
-    if (ts.sent.mutation) {
-        APPEND_STAT("tap_mutation_sent", "%"PRIu64, ts.sent.mutation);
-    }
-    if (ts.sent.delete) {
-        APPEND_STAT("tap_delete_sent", "%"PRIu64, ts.sent.delete);
-    }
-    if (ts.sent.flush) {
-        APPEND_STAT("tap_flush_sent", "%"PRIu64, ts.sent.flush);
-    }
-    if (ts.sent.opaque) {
-        APPEND_STAT("tap_opaque_sent", "%"PRIu64, ts.sent.opaque);
-    }
-    if (ts.sent.vbucket_set) {
-        APPEND_STAT("tap_vbucket_set_sent", "%"PRIu64,
-                    ts.sent.vbucket_set);
-    }
-    if (ts.received.connect) {
-        APPEND_STAT("tap_connect_received", "%"PRIu64, ts.received.connect);
-    }
-    if (ts.received.mutation) {
-        APPEND_STAT("tap_mutation_received", "%"PRIu64, ts.received.mutation);
-    }
-    if (ts.received.delete) {
-        APPEND_STAT("tap_delete_received", "%"PRIu64, ts.received.delete);
-    }
-    if (ts.received.flush) {
-        APPEND_STAT("tap_flush_received", "%"PRIu64, ts.received.flush);
-    }
-    if (ts.received.opaque) {
-        APPEND_STAT("tap_opaque_received", "%"PRIu64, ts.received.opaque);
-    }
-    if (ts.received.vbucket_set) {
-        APPEND_STAT("tap_vbucket_set_received", "%"PRIu64,
-                    ts.received.vbucket_set);
-    }
-#endif
 }
 
 static void process_stat_settings(ADD_STAT add_stats, void *c) {
@@ -11312,13 +10713,7 @@ static int try_read_command(conn *c) {
             c->binary_header.request.cas = ntohll(req->request.cas);
 
 
-#if 0 // ENABLE_TAP_PROTOCOL
-            if (c->binary_header.request.magic != PROTOCOL_BINARY_REQ &&
-                !(c->binary_header.request.magic == PROTOCOL_BINARY_RES &&
-                  response_handlers[c->binary_header.request.opcode]))
-#else
             if (c->binary_header.request.magic != PROTOCOL_BINARY_REQ)
-#endif
             {
                 if (settings.verbose) {
                     if (c->binary_header.request.magic != PROTOCOL_BINARY_RES) {
@@ -11651,67 +11046,6 @@ bool conn_listening(conn *c)
     return false;
 }
 
-#if 0 // ENABLE_TAP_PROTOCOL
-/**
- * Ship tap log to the other end. This state differs with all other states
- * in the way that it support full duplex dialog. We're listening to both read
- * and write events from libevent most of the time. If a read event occurs we
- * switch to the conn_read state to read and execute the input message (that would
- * be an ack message from the other side). If a write event occurs we continue to
- * send tap log to the other end.
- * @param c the tap connection to drive
- * @return true if we should continue to process work for this connection, false
- *              if we should start processing events for other connections.
- */
-bool conn_ship_log(conn *c) {
-    bool cont = false;
-
-    if (c->pending_close.active) {
-        // Remove the event if it is present..
-        event_del(&c->event);
-        return false;
-    }
-
-    short mask = EV_READ | EV_PERSIST | EV_WRITE;
-
-    if (c->which & EV_READ) {
-        if (c->rbytes > 0) {
-            if (try_read_command(c) == 0) {
-                conn_set_state(c, conn_read);
-            }
-        } else {
-            conn_set_state(c, conn_read);
-        }
-
-        // we're going to process something.. let's proceed
-        cont = true;
-    } else if (c->which & EV_WRITE) {
-        --c->nevents;
-        if (c->nevents >= 0) {
-            LOCK_THREAD(c->thread);
-            c->ewouldblock = false;
-            ship_tap_log(c);
-            if (c->ewouldblock) {
-                mask = EV_READ | EV_PERSIST;
-            } else {
-                cont = true;
-            }
-            UNLOCK_THREAD(c->thread);
-        }
-    }
-
-    if (!update_event(c, mask)) {
-        if (settings.verbose > 0) {
-            mc_logger->log(EXTENSION_LOG_INFO, c,
-                           "Couldn't update event\n");
-        }
-        conn_set_state(c, conn_closing);
-    }
-
-    return cont;
-}
-#endif
-
 bool conn_waiting(conn *c) {
     if (!update_event(c, EV_READ | EV_PERSIST)) {
         if (settings.verbose > 0) {
@@ -12035,111 +11369,14 @@ bool conn_mwrite(conn *c) {
     return true;
 }
 
-#if 0 // ENABLE_TAP_PROTOCOL
-bool conn_pending_close(conn *c) {
-    assert(!c->pending_close.active);
-    assert(c->sfd != -1);
-    mc_logger->log(EXTENSION_LOG_WARNING, c,
-                   "Tap client connect closed (%d)."
-                   " Putting it (%p) in pending close\n",
-                   c->sfd, (void*)c);
-    LOCK_THREAD(c->thread);
-    c->pending_close.timeout = current_time + 5;
-    c->pending_close.active = true;
-    c->thread->pending_io = list_remove(c->thread->pending_io, c);
-    if (!list_contains(c->thread->pending_close, c)) {
-        c->next = c->thread->pending_close;
-        c->thread->pending_close = c;
-    }
-    assert(!has_cycle(c->thread->pending_close));
-    assert(list_contains(c->thread->pending_close, c));
-    UNLOCK_THREAD(c->thread);
-
-    // We don't want any network notifications anymore..
-    event_del(&c->event);
-    safe_close(c->sfd);
-    c->sfd = -1;
-
-    /*
-     * tell the tap connection that we're disconnecting it now,
-     * but give it a grace period
-     */
-    perform_callbacks(ON_DISCONNECT, NULL, c);
-
-    /* disconnect callback may have changed the state for the object
-     * so we might complete the disconnect now
-     */
-    return c->state != conn_pending_close;
-}
-
-bool conn_immediate_close(conn *c) {
-    if (IS_UDP(c->transport)) {
-        conn_cleanup(c);
-    } else {
-        conn_close(c);
-    }
-
-    return false;
-}
-#endif
-
 bool conn_closing(conn *c) {
-#if 0 // ENABLE_TAP_PROTOCOL
-    assert(c->thread->type == TAP || c->thread->type == GENERAL);
-    if (c->thread == &tap_thread) {
-        conn_set_state(c, conn_pending_close);
-    } else {
-        conn_set_state(c, conn_immediate_close);
-    }
-
-    return true;
-#else
     if (IS_UDP(c->transport)) {
         conn_cleanup(c);
     } else {
         conn_close(c);
     }
-
-    return false;
-#endif
-}
-
-#if 0 // ENABLE_TAP_PROTOCOL
-bool conn_add_tap_client(conn *c) {
-    LIBEVENT_THREAD *tp = &tap_thread;
-    c->ewouldblock = true;
-
-    event_del(&c->event);
-
-    LOCK_THREAD(tp);
-    c->ev_flags = 0;
-    conn_set_state(c, conn_setup_tap_stream);
-    mc_logger->log(EXTENSION_LOG_DEBUG, NULL,
-                   "Moving %d conn from %p to %p\n",
-                   c->sfd, (void*)c->thread, (void*)tp);
-    c->thread = tp;
-    c->event.ev_base = tp->base;
-    assert(c->next == NULL);
-    c->next = tp->pending_io;
-    tp->pending_io = c;
-    assert(!has_cycle(c));
-    assert(number_of_pending(c, tp->pending_io) == 1);
-    UNLOCK_THREAD(tp);
-
-    if (write(tp->notify_send_fd, "", 1) != 1) {
-        perror("Writing to tap thread notify pipe");
-    }
-
     return false;
 }
-#endif
-
-#if 0 // ENABLE_TAP_PROTOCOL
-bool conn_setup_tap_stream(conn *c) {
-    process_bin_tap_connect(c);
-    return true;
-}
-#endif
 
 void event_handler(const int fd, const short which, void *arg) {
     conn *c;
@@ -12167,55 +11404,10 @@ void event_handler(const int fd, const short which, void *arg) {
     perform_callbacks(ON_SWITCH_CONN, c, c);
 
     c->nevents = settings.reqs_per_event;
-#if 0 // ENABLE_TAP_PROTOCOL
-    if (c->state == conn_ship_log) {
-        c->nevents = settings.reqs_per_tap_event;
-    }
-#endif
-
-#if 0 // ENABLE_TAP_PROTOCOL : PENDING_CLOSE
-    // Do we have pending closes?
-    //const size_t max_items = 256;
-    enum { max_items = 256 };
-    conn *pending_close[max_items];
-    size_t n_pending_close = 0;
-    if (c->thread != NULL) {
-        LIBEVENT_THREAD *me = c->thread;
-        LOCK_THREAD(me);
-        if (me->pending_close && me->last_checked != current_time) {
-            assert(!has_cycle(me->pending_close));
-            me->last_checked = current_time;
-
-            n_pending_close = list_to_array(pending_close, max_items,
-                                            &me->pending_close);
-        }
-        UNLOCK_THREAD(me);
-    }
-#endif
 
     while (c->state(c)) {
         /* do task */
     }
-
-#if 0 // ENABLE_TAP_PROTOCOL : PENDING_CLOSE
-    /* Close any connections pending close */
-    if (n_pending_close > 0) {
-        for (size_t i = 0; i < n_pending_close; ++i) {
-            conn *ce = pending_close[i];
-            if (ce->pending_close.timeout < current_time) {
-                mc_logger->log(EXTENSION_LOG_DEBUG, NULL,
-                        "OK, time to nuke: %p: (%d)\n", (void*)ce, ce->sfd);
-                conn_close(ce);
-            } else {
-                LOCK_THREAD(ce->thread);
-                ce->next = ce->thread->pending_close;
-                ce->thread->pending_close = ce;
-                assert(!has_cycle(ce->thread->pending_close));
-                UNLOCK_THREAD(ce->thread);
-            }
-        }
-    }
-#endif
 }
 
 static int new_socket(struct addrinfo *ai) {
@@ -12593,8 +11785,7 @@ static void usage(void) {
 #endif
     printf("\nEnvironment variables:\n"
            "MEMCACHED_PORT_FILENAME   File to write port information to\n"
-           "MEMCACHED_TOP_KEYS        Number of top keys to keep track of\n"
-           "MEMCACHED_REQS_TAP_EVENT  Similar to -R but for tap_ship_log\n");
+           "MEMCACHED_TOP_KEYS        Number of top keys to keep track of\n");
 }
 
 static void usage_license(void) {
@@ -13649,17 +12840,6 @@ int main (int argc, char **argv) {
     if (settings.verbose) {
         old_opts += sprintf(old_opts, "verbose=%lu;", (unsigned long)settings.verbose);
     }
-
-#if 0 // ENABLE_TAP_PROTOCOL
-    if (getenv("MEMCACHED_REQS_TAP_EVENT") != NULL) {
-        settings.reqs_per_tap_event = atoi(getenv("MEMCACHED_REQS_TAP_EVENT"));
-    }
-
-    if (settings.reqs_per_tap_event == 0) {
-        settings.reqs_per_tap_event = DEFAULT_REQS_PER_TAP_EVENT;
-    }
-#endif
-
 
     if (install_sigterm_handler() != 0) {
         mc_logger->log(EXTENSION_LOG_WARNING, NULL,

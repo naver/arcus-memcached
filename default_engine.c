@@ -876,36 +876,6 @@ static char *default_cachedump(ENGINE_HANDLE* handle, const void* cookie,
     return item_cachedump(engine, slabs_clsid, limit, forward, sticky, bytes);
 }
 
-#if 0 // ENABLE_TAP_PROTOCOL
-static tap_event_t tap_always_pause(ENGINE_HANDLE *e,
-                                    const void *cookie, item **itm, void **es,
-                                    uint16_t *nes, uint8_t *ttl, uint16_t *flags,
-                                    uint32_t *seqno, uint16_t *vbucket)
-{
-    return TAP_PAUSE;
-}
-
-static tap_event_t tap_always_disconnect(ENGINE_HANDLE *e,
-                                         const void *cookie, item **itm, void **es,
-                                         uint16_t *nes, uint8_t *ttl, uint16_t *flags,
-                                         uint32_t *seqno, uint16_t *vbucket)
-{
-    return TAP_DISCONNECT;
-}
-
-static TAP_ITERATOR get_tap_iterator(ENGINE_HANDLE* handle, const void* cookie,
-                                     const void* client, size_t nclient, uint32_t flags,
-                                     const void* userdata, size_t nuserdata)
-{
-    TAP_ITERATOR rv = tap_always_pause;
-    if ((flags & TAP_CONNECT_FLAG_DUMP)
-        || (flags & TAP_CONNECT_FLAG_TAKEOVER_VBUCKETS)) {
-        rv = tap_always_disconnect;
-    }
-    return rv;
-}
-#endif
-
 /* Config */
 
 static ENGINE_ERROR_CODE default_set_memlimit(ENGINE_HANDLE* handle, const void* cookie,
@@ -1267,10 +1237,6 @@ ENGINE_ERROR_CODE create_instance(uint64_t interface, GET_SERVER_API get_server_
          .set_verbose      = default_set_verbose,
 
          .unknown_command  = default_unknown_command,
-
-#if 0 // ENABLE_TAP_PROTOCOL
-         .get_tap_iterator = get_tap_iterator,
-#endif
 
          .item_set_cas        = default_item_set_cas,
          .get_item_info       = get_item_info,

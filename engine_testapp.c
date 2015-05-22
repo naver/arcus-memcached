@@ -32,26 +32,11 @@
 struct mock_engine {
     ENGINE_HANDLE_V1 me;
     ENGINE_HANDLE_V1 *the_engine;
-#if 0 // ENABLE_TAP_PROTOCOL
-    TAP_ITERATOR iterator;
-#endif
 };
 
 static inline struct mock_engine* get_handle(ENGINE_HANDLE* handle) {
     return (struct mock_engine*)handle;
 }
-
-#if 0 // ENABLE_TAP_PROTOCOL
-static tap_event_t mock_tap_iterator(ENGINE_HANDLE* handle,
-                                     const void *cookie, item **itm,
-                                     void **es, uint16_t *nes, uint8_t *ttl,
-                                     uint16_t *flags, uint32_t *seqno,
-                                     uint16_t *vbucket) {
-   struct mock_engine *me = get_handle(handle);
-   return me->iterator((ENGINE_HANDLE*)me->the_engine, cookie, itm, es, nes,
-                       ttl, flags, seqno, vbucket);
-}
-#endif
 
 static const engine_info* mock_get_info(ENGINE_HANDLE* handle) {
     struct mock_engine *me = get_handle(handle);
@@ -407,72 +392,12 @@ static ENGINE_ERROR_CODE mock_aggregate_stats(ENGINE_HANDLE* handle,
     return ret;
 }
 
-#if 0 // ENABLE_TAP_PROTOCOL
-static ENGINE_ERROR_CODE mock_tap_notify(ENGINE_HANDLE* handle,
-                                        const void *cookie,
-                                        void *engine_specific,
-                                        uint16_t nengine,
-                                        uint8_t ttl,
-                                        uint16_t tap_flags,
-                                        tap_event_t tap_event,
-                                        uint32_t tap_seqno,
-                                        const void *key,
-                                        size_t nkey,
-                                        uint32_t flags,
-                                        uint32_t exptime,
-                                        uint64_t cas,
-                                        const void *data,
-                                        size_t ndata,
-                                         uint16_t vbucket) {
-
-    struct mock_engine *me = get_handle(handle);
-    struct mock_connstruct *c = (void*)cookie;
-    if (c == NULL) {
-        c = (void*)create_mock_cookie();
-    }
-
-    c->nblocks = 0;
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    pthread_mutex_lock(&c->mutex);
-    while (ret == ENGINE_SUCCESS &&
-           (ret = me->the_engine->tap_notify((ENGINE_HANDLE*)me->the_engine, c,
-                                             engine_specific, nengine, ttl, tap_flags,
-                                             tap_event, tap_seqno, key, nkey, flags,
-                                             exptime, cas, data, ndata, vbucket)) == ENGINE_EWOULDBLOCK &&
-           c->handle_ewouldblock)
-    {
-        ++c->nblocks;
-        pthread_cond_wait(&c->cond, &c->mutex);
-        ret = c->status;
-    }
-    pthread_mutex_unlock(&c->mutex);
-
-    if (c != cookie) {
-        destroy_mock_cookie(c);
-    }
-
-    return ret;
-}
-
-
-static TAP_ITERATOR mock_get_tap_iterator(ENGINE_HANDLE* handle, const void* cookie,
-                                           const void* client, size_t nclient,
-                                           uint32_t flags,
-                                           const void* userdata, size_t nuserdata) {
-    struct mock_engine *me = get_handle(handle);
-    me->iterator = me->the_engine->get_tap_iterator((ENGINE_HANDLE*)me->the_engine, cookie,
-                                                    client, nclient, flags, userdata, nuserdata);
-    return (me->iterator != NULL) ? mock_tap_iterator : NULL;
-}
-#endif
-
 static size_t mock_errinfo(ENGINE_HANDLE *handle, const void* cookie,
                            char *buffer, size_t buffsz) {
     struct mock_engine *me = get_handle(handle);
     return me->the_engine->errinfo((ENGINE_HANDLE*)me->the_engine, cookie,
                                    buffer, buffsz);
 }
-
 
 struct mock_engine default_mock_engine = {
     .me = {
@@ -494,10 +419,6 @@ struct mock_engine default_mock_engine = {
         .get_stats_struct = mock_get_stats_struct,
         .aggregate_stats = mock_aggregate_stats,
         .unknown_command = mock_unknown_command,
-#if 0 // ENABLE_TAP_PROTOCOL
-        .tap_notify = mock_tap_notify,
-        .get_tap_iterator = mock_get_tap_iterator,
-#endif
         .item_set_cas = mock_item_set_cas,
         .get_item_info = mock_get_item_info,
         .errinfo = mock_errinfo
@@ -605,14 +526,6 @@ static ENGINE_HANDLE_V1 *start_your_engines(const char *engine, const char* cfg,
     if (mock_engine.the_engine->unknown_command == NULL) {
         mock_engine.me.unknown_command = NULL;
     }
-#if 0 // ENABLE_TAP_PROTOCOL
-    if (mock_engine.the_engine->tap_notify == NULL) {
-        mock_engine.me.tap_notify = NULL;
-    }
-    if (mock_engine.the_engine->get_tap_iterator == NULL) {
-        mock_engine.me.get_tap_iterator = NULL;
-    }
-#endif
     if (mock_engine.the_engine->errinfo == NULL) {
         mock_engine.me.errinfo = NULL;
     }

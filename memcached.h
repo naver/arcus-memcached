@@ -121,10 +121,6 @@
 #define STAT_VAL_LEN 128
 
 #define DEFAULT_REQS_PER_EVENT     20
-#if 0 // ENABLE_TAP_PROTOCOL
-#define DEFAULT_REQS_PER_TAP_EVENT 1000
-#endif
-
 
 /** Append a simple stat with a stat name, value format and value */
 #define APPEND_STAT(name, fmt, val) \
@@ -370,12 +366,7 @@ struct settings {
     char prefix_delimiter;  /* character that marks a key prefix (for stats) */
     int detail_enabled;     /* nonzero if we're collecting detailed stats */
     bool allow_detailed;    /* detailed stats commands are allowed */
-    int reqs_per_event;     /* Maximum number of io to process on each
-                               io-event. */
-#if 0 // ENABLE_TAP_PROTOCOL
-    int reqs_per_tap_event; /* Maximum number of tap io to process on each
-                               io-event. */
-#endif
+    int reqs_per_event;     /* Maximum number of io to process on each io-event. */
     bool use_cas;
     enum protocol binding_protocol;
     int backlog;
@@ -401,8 +392,7 @@ extern struct settings settings;
 extern EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
 
 enum thread_type {
-    GENERAL = 11,
-    TAP = 13
+    GENERAL = 11
 };
 
 typedef struct {
@@ -418,11 +408,6 @@ typedef struct {
     struct conn *pending_io;    /* List of connection with pending async io ops */
     int index;                  /* index of this thread in the threads array */
     enum thread_type type;      /* Type of IO this thread processes */
-
-#if 0 // ENABLE_TAP_PROTOCOL : PENDING_CLOSE
-    rel_time_t last_checked;
-    struct conn *pending_close; /* list of connections close at a later time */
-#endif
 } LIBEVENT_THREAD;
 
 #define LOCK_THREAD(t)                          \
@@ -438,12 +423,6 @@ typedef struct {
     if (pthread_mutex_unlock(&t->mutex) != 0) {  \
         abort();                                 \
     }
-
-
-
-#if 0 // ENABLE_TAP_PROTOCOL
-extern LIBEVENT_THREAD tap_thread;
-#endif
 
 typedef struct {
     pthread_t thread_id;        /* unique ID of this thread */
@@ -617,16 +596,6 @@ struct conn {
      */
     bool io_blocked;
     bool premature_notify_io_complete;
-#if 0 // ENABLE_TAP_PROTOCOL
-    TAP_ITERATOR tap_iterator;
-#endif
-
-#if 0 // ENABLE_TAP_PROTOCOL : PENDING_CLOSE
-    struct {
-        bool active;
-        rel_time_t  timeout;
-    } pending_close;
-#endif
 };
 
 /*
@@ -710,17 +679,8 @@ bool conn_parse_cmd(conn *c);
 bool conn_write(conn *c);
 bool conn_nread(conn *c);
 bool conn_swallow(conn *c);
-#if 0 // ENABLE_TAP_PROTOCOL
-bool conn_pending_close(conn *c);
-bool conn_immediate_close(conn *c);
-#endif
 bool conn_closing(conn *c);
 bool conn_mwrite(conn *c);
-#if 0 // ENABLE_TAP_PROTOCOL
-bool conn_ship_log(conn *c);
-bool conn_add_tap_client(conn *c);
-bool conn_setup_tap_stream(conn *c);
-#endif
 
 /* If supported, give compiler hints for branch prediction. */
 #if !defined(__GNUC__) || (__GNUC__ == 2 && __GNUC_MINOR__ < 96)
