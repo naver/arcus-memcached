@@ -146,7 +146,7 @@ typedef struct _btree_indx_node {
     struct _btree_indx_node *prev;
     struct _btree_indx_node *next;
     void    *item[BTREE_ITEM_COUNT];
-    uint16_t ecnt[BTREE_ITEM_COUNT];
+    uint32_t ecnt[BTREE_ITEM_COUNT];
 } btree_indx_node;
 
 typedef struct _btree_meta_info {
