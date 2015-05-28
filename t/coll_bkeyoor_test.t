@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 77;
+use Test::More tests => 95;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -205,6 +205,38 @@ $cmd = "bop get bkey1 110"; $rst = "NOT_FOUND_ELEMENT";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 $cmd = "bop insert bkey1 10 7"; $val = "datum01"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey1 100 7"; $val = "datum10"; $rst = "OUT_OF_RANGE";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+getattr_is($sock, "bkey1 trimmed", "trimmed=1");
+$cmd = "bop get bkey1 100"; $rst = "OUT_OF_RANGE";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+$cmd = "bop get bkey1 100..110"; $rst = "OUT_OF_RANGE";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+
+$cmd = "setattr bkey1 overflowaction=smallest_trim"; $rst = "OK";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+getattr_is($sock, "bkey1 overflowaction", "overflowaction=smallest_trim");
+getattr_is($sock, "bkey1 trimmed", "trimmed=0");
+$cmd = "bop insert bkey1 5 7"; $val = "datum00"; $rst = "OUT_OF_RANGE";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+getattr_is($sock, "bkey1 trimmed", "trimmed=1");
+$cmd = "bop get bkey1 5"; $rst = "OUT_OF_RANGE";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+$cmd = "bop get bkey1 0..5"; $rst = "OUT_OF_RANGE";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+$cmd = "bop get bkey1 110"; $rst = "NOT_FOUND_ELEMENT";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+$cmd = "bop get bkey1 120..110"; $rst = "NOT_FOUND_ELEMENT";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+
+$cmd = "setattr bkey1 overflowaction=largest_trim"; $rst = "OK";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+getattr_is($sock, "bkey1 overflowaction", "overflowaction=largest_trim");
+getattr_is($sock, "bkey1 trimmed", "trimmed=0");
+$cmd = "bop get bkey1 5"; $rst = "NOT_FOUND_ELEMENT";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+$cmd = "bop get bkey1 110"; $rst = "NOT_FOUND_ELEMENT";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 $cmd = "bop insert bkey1 100 7"; $val = "datum10"; $rst = "OUT_OF_RANGE";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 getattr_is($sock, "bkey1 trimmed", "trimmed=1");

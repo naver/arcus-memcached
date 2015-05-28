@@ -148,7 +148,7 @@ print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"
 bop_ext_get_is($sock, "bkey1 0x00..0xFF", 11, 5,
                "0x01,0x030303,0x0505050505,0x07070707070707,0x090909090909090909",
                ",0x03,0x05,0x07,0x09",
-               "datum11111,datum33333,datum55555,datum77777,datum99999", "END");
+               "datum11111,datum33333,datum55555,datum77777,datum99999", "TRIMMED");
 # Finalize
 $cmd = "delete kvkey"; $rst = "DELETED";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");

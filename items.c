@@ -3843,13 +3843,23 @@ static ENGINE_ERROR_CODE do_btree_overflow_check(btree_meta_info *info, btree_el
         if (info->ovflact == OVFL_SMALLEST_TRIM || info->ovflact == OVFL_SMALLEST_SILENT_TRIM) {
             if (min_bkey_elem == NULL)
                 min_bkey_elem = do_btree_get_first_elem(info->root);
-            if (BKEY_ISLT(elem->data, elem->nbkey, min_bkey_elem->data, min_bkey_elem->nbkey))
+            if (BKEY_ISLT(elem->data, elem->nbkey, min_bkey_elem->data, min_bkey_elem->nbkey)) {
+                if (info->ovflact == OVFL_SMALLEST_TRIM) {
+                    /* It means the implicit trim. */
+                    info->mflags |= COLL_META_FLAG_TRIMMED; // set trimmed
+                }
                 return ENGINE_EBKEYOOR;
+            }
         } else { /* OVFL_LARGEST_TRIM || OVFL_LARGEST_SILENT_TRIM */
             if (max_bkey_elem == NULL)
                 max_bkey_elem = do_btree_get_last_elem(info->root);
-            if (BKEY_ISGT(elem->data, elem->nbkey, max_bkey_elem->data, max_bkey_elem->nbkey))
+            if (BKEY_ISGT(elem->data, elem->nbkey, max_bkey_elem->data, max_bkey_elem->nbkey)) {
+                if (info->ovflact == OVFL_LARGEST_TRIM) {
+                    /* It means the implicit trim. */
+                    info->mflags |= COLL_META_FLAG_TRIMMED; // set trimmed
+                }
                 return ENGINE_EBKEYOOR;
+            }
         }
         *overflow_type = OVFL_TYPE_COUNT;
     }
