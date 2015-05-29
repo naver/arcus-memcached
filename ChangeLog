@@ -1,3 +1,13 @@
+2015-05-29 [version 1.8.4]
+	* Set btree trimmed if the insertion of a bkey to trimmed space is tried.
+	* Support large btree(max 1000000 elements), but be careful in using that.
+	* Change memcached heartbeat scheme and make it configurable.
+	* Change reserved slab ratio - from 4 to 5 percent.
+	* Detach the referenced items from LRU at eviction time.
+	* Fix the list element insertion issue when overflow trim occurs.
+	* Extensive code refactoring - remove not-used old code.
+	* Fix some minor bugs.
+
 2015-02-02 [version 1.8.3]
 	* Extensive code refactoring.
 	* Comment out "tap protocol" code.
