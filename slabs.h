@@ -69,6 +69,7 @@ struct slabs {
 ENGINE_ERROR_CODE slabs_init(struct default_engine *engine,
                              const size_t limit, const double factor,
                              const bool prealloc);
+void              slabs_final(struct default_engine *engine);
 
 
 /**

@@ -353,6 +353,8 @@ void coll_del_thread_wakeup(struct default_engine *engine);
 
 ENGINE_ERROR_CODE item_init(struct default_engine *engine);
 
+void              item_final(struct default_engine *engine);
+
 ENGINE_ERROR_CODE list_struct_create(struct default_engine *engine,
                                      const char *key, const size_t nkey,
                                      item_attr *attrp, const void *cookie);

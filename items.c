@@ -5433,8 +5433,8 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
     logger->log(EXTENSION_LOG_INFO, NULL, "maximum set   size = %d\n", max_set_size);
     logger->log(EXTENSION_LOG_INFO, NULL, "maximum btree size = %d\n", max_btree_size);
 
-    pthread_t tid;
-    int ret = pthread_create(&tid, NULL, collection_delete_thread, engine);
+    int ret = pthread_create(&engine->coll_del_tid, NULL,
+                             collection_delete_thread, engine);
     if (ret != 0) {
         fprintf(stderr, "Can't create thread: %s\n", strerror(ret));
         return ENGINE_FAILED;
@@ -5447,6 +5447,22 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
         assert(UINT64_COMPARE_OP[COMPARE_OP_LT](&val1, &val2) == true);
     }
     return ENGINE_SUCCESS;
+}
+
+void item_final(struct default_engine *engine)
+{
+    coll_del_thread_wakeup(engine);
+    pthread_join(engine->coll_del_tid, NULL);
+
+    int sleep_count = 0;
+    while (engine->scrubber.running) {
+        usleep(1000); // 1ms;
+        sleep_count++;
+    }
+    if (sleep_count > 100) { // waited too long
+        logger->log(EXTENSION_LOG_INFO, NULL,
+                "Waited %d ms for scrubber to be stopped.\n", sleep_count);
+    }
 }
 
 /*
@@ -6942,6 +6958,9 @@ static void item_scrub_class(struct default_engine *engine, int lruid, bool stic
     gettimeofday(&start_time, 0);
 #endif
     do {
+       if (!engine->initialized)
+           break;
+
         /* long-running background task.
          * hold the cache lock lazily in order to give priority to normal workers.
          */
@@ -6984,6 +7003,8 @@ static void *item_scubber_main(void *arg)
 
     for (int ii = 0; ii < MAX_NUMBER_OF_SLAB_CLASSES; ++ii)
     {
+        if (!engine->initialized) break;
+
         pthread_mutex_lock(&engine->cache_lock);
         if (engine->items.heads[ii] != NULL) {
             engine->items.scrub[ii] = engine->items.heads[ii];

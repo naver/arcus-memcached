@@ -863,6 +863,12 @@ ENGINE_ERROR_CODE slabs_init(struct default_engine *engine,
     return ENGINE_SUCCESS;
 }
 
+void slabs_final(struct default_engine *engine)
+{
+    /* Free memory allocated. */
+    /* Do nothing, currently. */
+}
+
 #ifndef DONT_PREALLOC_SLABS
 static void slabs_preallocate(const unsigned int maxslabs)
 {

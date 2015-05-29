@@ -183,10 +183,13 @@ static void default_destroy(ENGINE_HANDLE* handle)
     struct default_engine* se = get_handle(handle);
 
     if (se->initialized) {
+        se->initialized = false;
+        item_final(se);
+        slabs_final(se);
+        assoc_final(se);
         pthread_mutex_destroy(&se->cache_lock);
         pthread_mutex_destroy(&se->stats.lock);
         pthread_mutex_destroy(&se->slabs.lock);
-        se->initialized = false;
         free(se);
     }
 }
@@ -1277,6 +1280,7 @@ ENGINE_ERROR_CODE create_instance(uint64_t interface, GET_SERVER_API get_server_
        },
       .scrubber = {
          .lock = PTHREAD_MUTEX_INITIALIZER,
+         .running = false,
       },
       .info.engine_info = {
            .description = "Default engine v0.1",

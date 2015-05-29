@@ -118,7 +118,7 @@ enum scrub_mode {
 
 struct engine_scrubber {
    pthread_mutex_t lock;
-   bool            running;
+   volatile bool   running;
    enum scrub_mode runmode;
    uint64_t        visited;
    uint64_t        cleaned;
@@ -169,6 +169,7 @@ struct default_engine {
    pthread_mutex_t coll_del_lock;
    pthread_cond_t  coll_del_cond;
    bool            coll_del_sleep;
+   pthread_t       coll_del_tid; /* thread id */
 
    struct config config;
    struct engine_stats stats;

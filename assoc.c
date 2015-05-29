@@ -38,6 +38,8 @@ typedef struct {
     uint32_t    hash;
 } prefix_t_list_elem;
 
+static EXTENSION_LOGGER_DESCRIPTOR *logger;
+
 static prefix_t *root_pt = NULL;
 
 static inline void *_get_prefix(prefix_t *prefix)
@@ -47,6 +49,8 @@ static inline void *_get_prefix(prefix_t *prefix)
 
 ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
 {
+    logger = engine->server.log->get_logger();
+
     engine->assoc.primary_hashtable = calloc(hashsize(engine->assoc.hashpower), sizeof(void *));
     if (engine->assoc.primary_hashtable == NULL) {
         return ENGINE_ENOMEM;
@@ -61,6 +65,21 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
     memset(&engine->assoc.noprefix_stats, 0, sizeof(prefix_t));
     root_pt = &engine->assoc.noprefix_stats;
     return ENGINE_SUCCESS;
+}
+
+void assoc_final(struct default_engine *engine)
+{
+    int sleep_count = 0;
+    while (engine->assoc.expanding) {
+        usleep(1000); // 1ms
+        sleep_count++;
+    }
+    if (sleep_count > 100) { /* waited too long */
+        logger->log(EXTENSION_LOG_INFO, NULL,
+                "Waited %d ms for hash table expantion to be stopped.\n", sleep_count);
+    }
+    free(engine->assoc.primary_hashtable);
+    free(engine->assoc.prefix_hashtable);
 }
 
 hash_item *assoc_find(struct default_engine *engine, uint32_t hash, const char *key, const size_t nkey)
@@ -123,13 +142,14 @@ static void *assoc_maintenance_thread(void *arg)
     struct timespec sleep_time = {0, 1000};
     int  i,try_cnt = 9;
     long tot_execs = 0;
-    EXTENSION_LOGGER_DESCRIPTOR *logger = engine->server.log->get_logger();
+
     if (engine->config.verbose) {
         logger->log(EXTENSION_LOG_INFO, NULL, "Hash table expansion start: %d => %d\n",
                     hashsize(engine->assoc.hashpower - 1), hashsize(engine->assoc.hashpower));
     }
 
-    do {
+    while (engine->initialized)
+    {
         int ii;
         /* long-running background task.
          * hold the cache lock lazily in order to give priority to normal workers.
@@ -158,16 +178,24 @@ static void *assoc_maintenance_thread(void *arg)
             if (engine->assoc.expand_bucket == hashsize(engine->assoc.hashpower - 1)) {
                 engine->assoc.expanding = false;
                 free(engine->assoc.old_hashtable);
+                engine->assoc.old_hashtable = NULL;
+                done = true;
             }
         }
-        if (!engine->assoc.expanding) {
-            done = true;
-        }
         pthread_mutex_unlock(&engine->cache_lock);
+        if (done) break;
+
         if ((++tot_execs % 100) == 0) {
             nanosleep(&sleep_time, NULL);
         }
-    } while (!done);
+    }
+
+    if (engine->assoc.expanding) {
+        engine->assoc.expanding = false;
+        free(engine->assoc.old_hashtable);
+        engine->assoc.old_hashtable = NULL;
+        logger->log(EXTENSION_LOG_INFO, NULL, "Hash table expansion stopped.\n");
+    }
 
     if (engine->config.verbose) {
         logger->log(EXTENSION_LOG_INFO, NULL, "Hash table expansion done\n");
@@ -199,10 +227,12 @@ static void assoc_expand(struct default_engine *engine)
             engine->assoc.hashpower--;
             engine->assoc.expanding = false;
             free(engine->assoc.primary_hashtable);
-            engine->assoc.primary_hashtable =engine->assoc.old_hashtable;
+            engine->assoc.primary_hashtable = engine->assoc.old_hashtable;
+            engine->assoc.old_hashtable = NULL;
         }
     } else {
         engine->assoc.primary_hashtable = engine->assoc.old_hashtable;
+        engine->assoc.old_hashtable = NULL;
         /* Bad news, but we can keep running. */
     }
 }
