@@ -133,60 +133,57 @@ static hash_item** _hashitem_before(struct default_engine *engine,
 }
 
 #define DEFAULT_HASH_BULK_MOVE 10
-int hash_bulk_move = DEFAULT_HASH_BULK_MOVE;
-
 static void *assoc_maintenance_thread(void *arg)
 {
     struct default_engine *engine = arg;
-    bool done = false;
     struct timespec sleep_time = {0, 1000};
+    hash_item *it, *next;
+    int  bucket;
+    int  hash_bulk_move = DEFAULT_HASH_BULK_MOVE;
     int  i,try_cnt = 9;
     long tot_execs = 0;
+    bool done = false;
 
     if (engine->config.verbose) {
         logger->log(EXTENSION_LOG_INFO, NULL, "Hash table expansion start: %d => %d\n",
-                    hashsize(engine->assoc.hashpower - 1), hashsize(engine->assoc.hashpower));
+                    hashsize(engine->assoc.hashpower-1), hashsize(engine->assoc.hashpower));
     }
 
     while (engine->initialized)
     {
-        int ii;
-        /* long-running background task.
-         * hold the cache lock lazily in order to give priority to normal workers.
-         */
+        /* Long-running background task. */
+        /* Hold the cache lock lazily in order to give priority to normal workers. */
         for (i = 0; i < try_cnt; i++) {
             if (pthread_mutex_trylock(&engine->cache_lock) == 0) break;
-            nanosleep(&sleep_time, NULL);
+            nanosleep(&sleep_time, NULL); /* 1 us */
         }
-        if (i == try_cnt) pthread_mutex_lock(&engine->cache_lock);
-        for (ii = 0; ii < hash_bulk_move && engine->assoc.expanding; ++ii) {
-            hash_item *it, *next;
-            int bucket;
+        if (i >= try_cnt) pthread_mutex_lock(&engine->cache_lock);
 
-            for (it = engine->assoc.old_hashtable[engine->assoc.expand_bucket];
-                 NULL != it; it = next) {
+        /* Expand hash table incrementally */
+        for (i = 0; i < hash_bulk_move && engine->assoc.expanding; i++) {
+            it = engine->assoc.old_hashtable[engine->assoc.expand_bucket];
+            for ( ;  it != NULL; it = next) {
                 next = it->h_next;
-
                 bucket = engine->server.core->hash(item_get_key(it), it->nkey, 0)
-                    & hashmask(engine->assoc.hashpower);
+                       & hashmask(engine->assoc.hashpower);
                 it->h_next = engine->assoc.primary_hashtable[bucket];
                 engine->assoc.primary_hashtable[bucket] = it;
             }
-
             engine->assoc.old_hashtable[engine->assoc.expand_bucket] = NULL;
             engine->assoc.expand_bucket++;
-            if (engine->assoc.expand_bucket == hashsize(engine->assoc.hashpower - 1)) {
+            if (engine->assoc.expand_bucket == hashsize(engine->assoc.hashpower-1)) {
                 engine->assoc.expanding = false;
                 free(engine->assoc.old_hashtable);
                 engine->assoc.old_hashtable = NULL;
                 done = true;
             }
         }
+        /* Release the cache lock */
         pthread_mutex_unlock(&engine->cache_lock);
         if (done) break;
 
         if ((++tot_execs % 100) == 0) {
-            nanosleep(&sleep_time, NULL);
+            nanosleep(&sleep_time, NULL); /* 1 us */
         }
     }
 
