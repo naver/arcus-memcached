@@ -17,10 +17,7 @@
 #ifndef ITEMS_H
 #define ITEMS_H
 
-/*
- * You should not try to aquire any of the item locks before calling these
- * functions.
- */
+/* hash item strtucture */
 typedef struct _hash_item {
     uint16_t refcount;  /* reference count */
     uint8_t  slabs_clsid;/* which slab class we're in */
@@ -32,12 +29,12 @@ typedef struct _hash_item {
     rel_time_t time;    /* least recent access */
     rel_time_t exptime; /* When the item will expire (relative to process startup) */
     uint16_t iflag;     /* Intermal flags.
-                         * lower 8 bit is reserved for the core server,
-                         * the upper 8 bits is reserved for engine implementation.
+                         * Lower 8 bits are reserved for the core server,
+                         * Upper 8 bits are reserved for engine implementation.
                          */
     uint8_t  nkey;      /* The total length of the key (in bytes) */
     uint8_t  nprefix;   /* The prefix length of the key (in bytes) */
-    uint32_t nbytes;    /* The total size of the data (in bytes) */
+    uint32_t nbytes;    /* The total length of the data (in bytes) */
 } hash_item;
 
 /* list element */
@@ -192,6 +189,7 @@ typedef struct _coll_meta_info {
     void    *prefix;    /* pointer to prefix meta info */
 } coll_meta_info;
 
+/* item stats */
 typedef struct {
     unsigned int evicted;
     unsigned int evicted_nonzero;
@@ -201,6 +199,7 @@ typedef struct {
     unsigned int reclaimed;
 } itemstats_t;
 
+/* item global */
 struct items {
    hash_item   *heads[MAX_NUMBER_OF_SLAB_CLASSES];
    hash_item   *tails[MAX_NUMBER_OF_SLAB_CLASSES];
@@ -223,6 +222,10 @@ typedef struct {
    unsigned int size;
 } item_queue;
 
+/*
+ * You should not try to aquire any of the item locks before calling these
+ * functions.
+ */
 
 /**
  * Allocate and initialize a new item structure
