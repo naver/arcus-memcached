@@ -1251,7 +1251,7 @@ ENGINE_ERROR_CODE create_instance(uint64_t interface, GET_SERVER_API get_server_
       .get_server_api = get_server_api,
       .initialized = true,
       .assoc = {
-         .hashpower = 16,
+         .hashpower = 17, /* (1<<17) => 128K hash size */
          .tot_prefix_items = 0,
       },
       .slabs = {
