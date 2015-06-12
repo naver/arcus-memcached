@@ -12302,7 +12302,8 @@ static void* get_extension(extension_type_t type)
 static bool is_zk_integrated(void)
 {
 #ifdef ENABLE_ZK_INTEGRATION
-    return (arcus_zk_cfg ? true : false);
+    if (arcus_zk_cfg)
+        return true;
 #endif
     return false;
 }
@@ -12310,9 +12311,8 @@ static bool is_zk_integrated(void)
 static bool is_my_key(const char *key, size_t nkey)
 {
 #ifdef ENABLE_ZK_INTEGRATION
-    if (arcus_zk_cfg && arcus_cluster_is_valid()) {
+    if (arcus_zk_cfg && arcus_cluster_is_valid())
         return arcus_key_is_mine(key, nkey);
-    }
 #endif
     return true;
 }

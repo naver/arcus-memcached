@@ -237,7 +237,8 @@ bool cluster_config_is_valid(struct cluster_config *config)
     return config->is_valid;
 }
 
-void cluster_config_set_hostport(struct cluster_config *config, const char *hostport, size_t hostport_len)
+void cluster_config_set_hostport(struct cluster_config *config,
+                                 const char *hostport, size_t hostport_len)
 {
     assert(config);
     assert(hostport);
@@ -245,7 +246,8 @@ void cluster_config_set_hostport(struct cluster_config *config, const char *host
     config->self_hostport = strndup(hostport, hostport_len);
 }
 
-bool cluster_config_reconfigure(struct cluster_config *config, char **server_list, size_t num_servers)
+bool cluster_config_reconfigure(struct cluster_config *config,
+                                char **server_list, size_t num_servers)
 {
     assert(config);
     assert(server_list);
@@ -257,17 +259,19 @@ bool cluster_config_reconfigure(struct cluster_config *config, char **server_lis
 
     bool populated, generated;
 
-    populated = server_item_populate(config, server_list, num_servers, config->self_hostport,
-                                     &servers, &self_id);
+    populated = server_item_populate(config, server_list, num_servers,
+                                     config->self_hostport, &servers, &self_id);
     if (!populated) {
-        config->logger->log(EXTENSION_LOG_WARNING, NULL, "reconfiguration failed: server_item_populate\n");
+        config->logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "reconfiguration failed: server_item_populate\n");
         goto RECONFIG_FAILED;
     }
 
     generated = ketama_continuum_generate(config, servers, num_servers,
                                           &continuum, &num_continuum);
     if (!generated) {
-        config->logger->log(EXTENSION_LOG_WARNING, NULL, "reconfiguration failed: ketama_continuum_generate\n");
+        config->logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "reconfiguration failed: ketama_continuum_generate\n");
         server_item_free(servers, num_servers);
         free(servers);
         servers = NULL;
@@ -297,7 +301,8 @@ RECONFIG_FAILED:
     return false;
 }
 
-bool cluster_config_key_is_mine(struct cluster_config *config, const char *key, size_t nkey,
+bool cluster_config_key_is_mine(struct cluster_config *config,
+                                const char *key, size_t nkey,
                                 uint32_t *key_id, uint32_t *self_id)
 {
     uint32_t server, self;
@@ -312,7 +317,7 @@ bool cluster_config_key_is_mine(struct cluster_config *config, const char *key, 
     // this should not be happened
     if (config->is_valid == false) {
         pthread_mutex_unlock(&config->lock);
-        return true;
+        return true; /* unknown cluster, so return true */
     }
 
     self = config->self_id;

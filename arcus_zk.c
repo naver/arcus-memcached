@@ -1293,18 +1293,17 @@ bool arcus_cluster_is_valid()
 
 bool arcus_key_is_mine(const char *key, size_t nkey)
 {
-    bool key_is_mine;
     uint32_t key_id, self_id;
+    bool     mine;
 
-    key_is_mine = cluster_config_key_is_mine(arcus_conf.ch, key, nkey,
-                                             &key_id, &self_id);
-
+    mine = cluster_config_key_is_mine(arcus_conf.ch, key, nkey,
+                                      &key_id, &self_id);
     if (arcus_conf.verbose > 2) {
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                "key=%s, self_id=%d, key_id=%d, key_is_mine=%s\n",
-                key, self_id, key_id, (key_is_mine)?"true":"false");
+                "key=%s, self_id=%d, key_id=%d, mine=%s\n",
+                key, self_id, key_id, (mine)?"true":"false");
     }
-    return key_is_mine;
+    return mine;
 }
 #endif
 
