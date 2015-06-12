@@ -175,6 +175,30 @@ static bool server_item_populate(struct cluster_config *config,
     return true;
 }
 
+static void cluster_config_print_node_list(struct cluster_config *config)
+{
+    assert(config->num_servers > 0 && config->servers != NULL);
+
+    config->logger->log(EXTENSION_LOG_DEBUG, NULL,
+                        "cluster node list: count=%d\n", config->num_servers);
+    for (int i = 0; i < config->num_servers; i++) {
+        config->logger->log(EXTENSION_LOG_DEBUG, NULL,
+                            "node[%d]: %s\n", i, config->servers[i].hostport);
+    }
+}
+
+static void cluster_config_print_continuum(struct cluster_config *config)
+{
+    assert(config->num_continuum > 0 && config->continuum!= NULL);
+
+    config->logger->log(EXTENSION_LOG_DEBUG, NULL,
+                        "cluster continuum: count=%d\n", config->num_continuum);
+    for (int i = 0; i < config->num_continuum; i++) {
+        config->logger->log(EXTENSION_LOG_DEBUG, NULL, "continuum[%d]: sidx=%d, hash=%x\n",
+                            i, config->continuum[i].index, config->continuum[i].point);
+    }
+}
+
 struct cluster_config *cluster_config_init(EXTENSION_LOGGER_DESCRIPTOR *logger, int verbose)
 {
     struct cluster_config *config;
@@ -292,6 +316,12 @@ bool cluster_config_reconfigure(struct cluster_config *config,
     config->is_valid = true;
 
     pthread_mutex_unlock(&config->lock);
+
+    if (config->verbose > 2) {
+        cluster_config_print_node_list(config);
+        cluster_config_print_continuum(config);
+    }
+
     return true;
 
 RECONFIG_FAILED:
