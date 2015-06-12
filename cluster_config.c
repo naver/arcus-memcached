@@ -336,7 +336,7 @@ bool cluster_config_key_is_mine(struct cluster_config *config,
                                 uint32_t *key_id, uint32_t *self_id)
 {
     uint32_t server, self;
-    uint32_t digest, mid, prev;
+    uint32_t digest;
     struct continuum_item *beginp, *endp, *midp, *highp, *lowp;
 
     assert(config);
@@ -355,6 +355,19 @@ bool cluster_config_key_is_mine(struct cluster_config *config,
     beginp = lowp = config->continuum;
     endp = highp = config->continuum + config->num_continuum;
 
+    while (lowp < highp)
+    {
+        midp = lowp + (highp - lowp) / 2;
+        if (midp->point < digest)
+            lowp = midp + 1;
+        else
+            highp = midp;
+    }
+    if (highp == endp)
+        highp = beginp;
+    server = highp->index;
+#if 0 // OLD_CODE
+    uint32_t mid, prev;
     while (1) {
         // pick the middle point
         midp = lowp + (highp - lowp) / 2;
@@ -383,6 +396,7 @@ bool cluster_config_key_is_mine(struct cluster_config *config,
             break;
         }
     }
+#endif
 
     if ( key_id)  *key_id = server;
     if (self_id) *self_id = self;
