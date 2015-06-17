@@ -834,13 +834,18 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it)
 
 static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *it)
 {
-    MEMCACHED_ITEM_LINK(item_get_key(it), it->nkey, it->nbytes);
+    const char *key = item_get_key(it);
+    size_t stotal;
     assert((it->iflag & ITEM_LINKED) == 0);
     assert(it->nbytes < (1024 * 1024));  /* 1MB max size */
 
-    size_t stotal = ITEM_stotal(engine, it);
+    MEMCACHED_ITEM_LINK(key, it->nkey, it->nbytes);
 
-    /* link given item to prefix */
+    /* Allocate a new CAS ID on link. */
+    item_set_cas(it, get_cas_id());
+
+    /* link the item to prefix info */
+    stotal = ITEM_stotal(engine, it);
     prefix_t *pt;
     ENGINE_ERROR_CODE ret = assoc_prefix_link(engine, it, stotal, &pt);
     if (ret != ENGINE_SUCCESS) {
@@ -852,10 +857,15 @@ static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *
         assert(info->stotal == 0); /* Only empty collection can be linked */
     }
 
+    /* link the item to the hash table */
     it->iflag |= ITEM_LINKED;
     it->time = engine->server.core->get_current_time();
-    assoc_insert(engine, engine->server.core->hash(item_get_key(it), it->nkey, 0), it);
+    assoc_insert(engine, engine->server.core->hash(key, it->nkey, 0), it);
 
+    /* link the item to LRU list */
+    item_link_q(engine, it);
+
+    /* update item statistics */
     pthread_mutex_lock(&engine->stats.lock);
 #ifdef ENABLE_STICKY_ITEM
     if (it->exptime == (rel_time_t)(-1)) { /* sticky item */
@@ -868,11 +878,6 @@ static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *
     engine->stats.total_items += 1;
     pthread_mutex_unlock(&engine->stats.lock);
 
-    /* Allocate a new CAS ID on link. */
-    item_set_cas(it, get_cas_id());
-
-    item_link_q(engine, it);
-
     return ENGINE_SUCCESS;
 }
 
@@ -881,13 +886,29 @@ static void do_item_unlink(struct default_engine *engine, hash_item *it,
 {
     /* cause: item unlink cause will be used, later
     */
+    const char *key = item_get_key(it);
+    size_t stotal;
+    MEMCACHED_ITEM_UNLINK(key, it->nkey, it->nbytes);
 
-    MEMCACHED_ITEM_UNLINK(item_get_key(it), it->nkey, it->nbytes);
     if ((it->iflag & ITEM_LINKED) != 0) {
+        /* unlink the item from LUR list */
+        item_unlink_q(engine, it);
+
+        /* unlink the item from hash table */
+        assoc_delete(engine, engine->server.core->hash(key, it->nkey, 0),
+                     key, it->nkey);
         it->iflag &= ~ITEM_LINKED;
 
-        size_t stotal = ITEM_stotal(engine, it);
+        /* unlink the item from prefix info */
+        stotal = ITEM_stotal(engine, it);
+        assoc_prefix_unlink(engine, it, stotal);
+        if (IS_COLL_ITEM(it)) {
+            coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
+            info->prefix = NULL;
+            info->stotal = 0; /* Don't need to decrease space statistics any more */
+        }
 
+        /* update item statistics */
         pthread_mutex_lock(&engine->stats.lock);
 #ifdef ENABLE_STICKY_ITEM
         if (it->exptime == (rel_time_t)(-1)) { /* sticky item */
@@ -899,16 +920,7 @@ static void do_item_unlink(struct default_engine *engine, hash_item *it,
         engine->stats.curr_items -= 1;
         pthread_mutex_unlock(&engine->stats.lock);
 
-        /* unlink given item from prefix */
-        assoc_prefix_unlink(engine, it, stotal);
-        if (IS_COLL_ITEM(it)) {
-            coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-            info->prefix = NULL;
-            info->stotal = 0; /* Don't need to decrease space statistics any more */
-        }
-        assoc_delete(engine, engine->server.core->hash(item_get_key(it), it->nkey, 0),
-                     item_get_key(it), it->nkey);
-        item_unlink_q(engine, it);
+        /* free the item if no one reference it */
         if (it->refcount == 0) {
             do_item_free(engine, it);
         }
