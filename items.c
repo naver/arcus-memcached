@@ -57,22 +57,9 @@ enum elem_delete_cause {
 /* Forward Declarations */
 static void item_link_q(struct default_engine *engine, hash_item *it);
 static void item_unlink_q(struct default_engine *engine, hash_item *it);
-static hash_item *do_item_alloc(struct default_engine *engine,
-                                const void *key, const size_t nkey,
-                                const int flags, const rel_time_t exptime,
-                                const int nbytes, const void *cookie);
-static hash_item *do_item_get(struct default_engine *engine,
-                              const char *key, const size_t nkey,
-                              bool LRU_reposition);
 static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *it);
 static void do_item_unlink(struct default_engine *engine, hash_item *it,
                            enum item_unlink_cause cause);
-static void do_item_release(struct default_engine *engine, hash_item *it);
-static void do_item_update(struct default_engine *engine, hash_item *it);
-static void do_item_lru_reposition(struct default_engine *engine, hash_item *it);
-static ENGINE_ERROR_CODE do_item_replace(struct default_engine *engine,
-                                         hash_item *it, hash_item *new_it);
-static void do_item_free(struct default_engine *engine, hash_item *it);
 static void push_coll_del_queue(struct default_engine *engine, hash_item *it);
 static void do_coll_all_elem_delete(struct default_engine *engine, hash_item *it);
 extern int  genhash_string_hash(const void* p, size_t nkey);
