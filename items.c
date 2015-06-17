@@ -238,10 +238,9 @@ static uint64_t get_cas_id(void)
 /* Enable this for reference-count debugging. */
 #if 0
 # define DEBUG_REFCNT(it,op) \
-         fprintf(stderr, "item %x refcnt(%c) %d %c%c%c\n", \
+         fprintf(stderr, "item %x refcnt(%c) %d %c\n", \
                         it, op, it->refcount, \
-                        (it->it_flags & ITEM_LINKED) ? 'L' : ' ', \
-                        (it->it_flags & ITEM_SLABBED) ? 'S' : ' ')
+                        (it->it_flags & ITEM_LINKED) ? 'L' : ' ')
 #else
 # define DEBUG_REFCNT(it,op) while(0)
 #endif
@@ -719,7 +718,6 @@ static void do_item_free(struct default_engine *engine, hash_item *it)
     /* so slab size changer can tell later if item is already free or not */
     clsid = it->slabs_clsid;
     it->slabs_clsid = 0;
-    it->iflag |= ITEM_SLABBED;
     DEBUG_REFCNT(it, 'F');
     slabs_free(engine, it, ntotal, clsid);
 }
@@ -728,7 +726,6 @@ static void item_link_q(struct default_engine *engine, hash_item *it)
 {
     hash_item **head, **tail;
     assert(it->slabs_clsid <= POWER_LARGEST);
-    assert((it->iflag & ITEM_SLABBED) == 0);
 
 #ifdef USE_SINGLE_LRU_LIST
     int clsid = 1;
@@ -838,7 +835,7 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it)
 static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *it)
 {
     MEMCACHED_ITEM_LINK(item_get_key(it), it->nkey, it->nbytes);
-    assert((it->iflag & (ITEM_LINKED|ITEM_SLABBED)) == 0);
+    assert((it->iflag & ITEM_LINKED) == 0);
     assert(it->nbytes < (1024 * 1024));  /* 1MB max size */
 
     size_t stotal = ITEM_stotal(engine, it);
@@ -947,8 +944,6 @@ static void do_item_update(struct default_engine *engine, hash_item *it)
     rel_time_t current_time = engine->server.core->get_current_time();
     MEMCACHED_ITEM_UPDATE(item_get_key(it), it->nkey, it->nbytes);
     if (it->time < current_time - ITEM_UPDATE_INTERVAL) {
-        assert((it->iflag & ITEM_SLABBED) == 0);
-
         if ((it->iflag & ITEM_LINKED) != 0) {
             item_unlink_q(engine, it);
             it->time = current_time;
@@ -959,7 +954,6 @@ static void do_item_update(struct default_engine *engine, hash_item *it)
 
 static void do_item_lru_reposition(struct default_engine *engine, hash_item *it)
 {
-    assert((it->iflag & ITEM_SLABBED) == 0);
     if ((it->iflag & ITEM_LINKED) != 0) {
         item_unlink_q(engine, it);
         it->time = engine->server.core->get_current_time();
@@ -972,8 +966,6 @@ static ENGINE_ERROR_CODE do_item_replace(struct default_engine *engine,
 {
     MEMCACHED_ITEM_REPLACE(item_get_key(it), it->nkey, it->nbytes,
                            item_get_key(new_it), new_it->nkey, new_it->nbytes);
-    assert((it->iflag & ITEM_SLABBED) == 0);
-
     do_item_unlink(engine, it, ITEM_UNLINK_REPLACE);
     ENGINE_ERROR_CODE ret = do_item_link(engine, new_it);
     assert(ret == ENGINE_SUCCESS);
@@ -5294,13 +5286,11 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
                                 *(iter_key + nprefix) == engine->config.prefix_delimiter)
                                 found = true;
                         }
-                        if (found == true && (iter->iflag & ITEM_SLABBED) == 0) {
+                        if (found == true) {
                             do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
                         }
                     } else { /* flush all */
-                        if ((iter->iflag & ITEM_SLABBED) == 0) {
-                            do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
-                        }
+                        do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
                     }
                 } else {
                     /* We've hit the first old item. Continue to the next queue. */
@@ -5326,13 +5316,11 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
                                 *(iter_key + nprefix) == engine->config.prefix_delimiter)
                                 found = true;
                         }
-                        if (found == true && (iter->iflag & ITEM_SLABBED) == 0) {
+                        if (found == true) {
                             do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
                         }
                     } else { /* flush all */
-                        if ((iter->iflag & ITEM_SLABBED) == 0) {
-                            do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
-                        }
+                        do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
                     }
                 } else {
                     /* We've hit the first old item. Continue to the next queue. */

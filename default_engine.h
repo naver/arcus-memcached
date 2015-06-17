@@ -66,7 +66,7 @@ extern "C" {
 #define ITEM_IFLAG_BTREE 8   /* b+tree item */
 #define ITEM_IFLAG_COLL  14  /* collection item: list/set/b+tree */
 #define ITEM_LINKED  (1<<8)
-#define ITEM_SLABBED (2<<8)
+#define ITEM_SLABBED (2<<8)  /* NOT USED */
 
 #define META_OFFSET_IN_ITEM(nkey,nbytes) ((((nkey)+(nbytes)-1)/8+1)*8)
 
