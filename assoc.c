@@ -187,15 +187,12 @@ static void *assoc_maintenance_thread(void *arg)
         }
     }
 
-    if (engine->assoc.expanding) {
-        engine->assoc.expanding = false;
-        free(engine->assoc.old_hashtable);
-        engine->assoc.old_hashtable = NULL;
+    if (done) {
+        if (engine->config.verbose) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "Hash table expansion done\n");
+        }
+    } else {
         logger->log(EXTENSION_LOG_INFO, NULL, "Hash table expansion stopped.\n");
-    }
-
-    if (engine->config.verbose) {
-        logger->log(EXTENSION_LOG_INFO, NULL, "Hash table expansion done\n");
     }
     return NULL;
 }
