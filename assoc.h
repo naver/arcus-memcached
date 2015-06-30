@@ -64,6 +64,7 @@ struct assoc {
 
    /* Flag: Are we in the middle of expanding now? */
    bool expanding;
+   bool threadrun;
 
    /*
     * During expansion we migrate values with bucket granularity; this is how

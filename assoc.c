@@ -70,7 +70,7 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
 void assoc_final(struct default_engine *engine)
 {
     int sleep_count = 0;
-    while (engine->assoc.expanding) {
+    while (engine->assoc.expanding && engine->assoc.threadrun) {
         usleep(1000); // 1ms
         sleep_count++;
     }
@@ -144,6 +144,8 @@ static void *assoc_maintenance_thread(void *arg)
     long tot_execs = 0;
     bool done = false;
 
+    engine->assoc.threadrun = true;
+
     if (engine->config.verbose) {
         logger->log(EXTENSION_LOG_INFO, NULL, "Hash table expansion start: %d => %d\n",
                     hashsize(engine->assoc.hashpower-1), hashsize(engine->assoc.hashpower));
@@ -194,6 +196,8 @@ static void *assoc_maintenance_thread(void *arg)
     } else {
         logger->log(EXTENSION_LOG_INFO, NULL, "Hash table expansion stopped.\n");
     }
+
+    engine->assoc.threadrun = false;
     return NULL;
 }
 
