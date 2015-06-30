@@ -199,8 +199,11 @@ static void cluster_config_print_continuum(struct cluster_config *config)
     }
 }
 
-struct cluster_config *cluster_config_init(EXTENSION_LOGGER_DESCRIPTOR *logger, int verbose)
+struct cluster_config *cluster_config_init(const char *hostport, size_t hostport_len,
+                                           EXTENSION_LOGGER_DESCRIPTOR *logger, int verbose)
 {
+    assert(hostport);
+    assert(hostport_len > 0);
     struct cluster_config *config;
     int err;
 
@@ -213,6 +216,7 @@ struct cluster_config *cluster_config_init(EXTENSION_LOGGER_DESCRIPTOR *logger, 
     err = pthread_mutex_init(&config->lock, NULL);
     assert(err == 0);
 
+    config->self_hostport = strndup(hostport, hostport_len);
     config->logger = logger;
     config->verbose = verbose;
     config->is_valid = false;
@@ -259,15 +263,6 @@ bool cluster_config_is_valid(struct cluster_config *config)
 {
     assert(config);
     return config->is_valid;
-}
-
-void cluster_config_set_hostport(struct cluster_config *config,
-                                 const char *hostport, size_t hostport_len)
-{
-    assert(config);
-    assert(hostport);
-    assert(hostport_len > 0);
-    config->self_hostport = strndup(hostport, hostport_len);
 }
 
 bool cluster_config_reconfigure(struct cluster_config *config,

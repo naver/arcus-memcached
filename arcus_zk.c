@@ -1094,10 +1094,9 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
             "ZooKeeper session timeout: %d sec\n", zoo_recv_timeout(zh)/1000);
 
 #ifdef ENABLE_CLUSTER_AWARE
-    arcus_conf.ch = cluster_config_init(arcus_conf.logger, arcus_conf.verbose);
+    arcus_conf.ch = cluster_config_init(arcus_conf.mc_ipport, strlen(arcus_conf.mc_ipport),
+                                        arcus_conf.logger, arcus_conf.verbose);
     assert(arcus_conf.ch);
-    cluster_config_set_hostport(arcus_conf.ch,
-                                arcus_conf.mc_ipport, strlen(arcus_conf.mc_ipport));
 
     // set a watch to the cache list this memcached belongs in
     // (e.g. /arcus/cache_list/a_cluster)
