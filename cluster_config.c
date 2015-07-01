@@ -28,6 +28,10 @@
 
 #define MAX_SERVER_ITEM_COUNT 100
 
+#define NUM_OF_HASHES 40
+#define NUM_PER_HASH  4
+#define NUM_NODE_HASHES (NUM_OF_HASHES * NUM_PER_HASH)
+
 struct server_item {
     char *hostport;
 };
@@ -40,10 +44,10 @@ struct continuum_item {
 struct cluster_config {
     uint32_t self_id;                    // server index for this memcached
     char     *self_hostport;             // host:port string for this memcached
+    struct continuum_item self_continuum[NUM_NODE_HASHES];
 
     int      num_servers;                // number of memcached servers in cluster
     int      num_continuum;              // number of continuum
-
     struct   server_item *servers;       // server list
     struct   continuum_item *continuum;  // continuum list
 
@@ -84,9 +88,6 @@ static int continuum_item_cmp(const void *t1, const void *t2)
     else if (ct1->point  > ct2->point) return  1;
     else                               return -1;
 }
-
-#define NUM_OF_HASHES 40
-#define NUM_PER_HASH  4
 
 static bool ketama_continuum_generate(struct cluster_config *config,
                                       const struct server_item *servers, size_t num_servers,
@@ -199,6 +200,86 @@ static void cluster_config_print_continuum(struct cluster_config *config)
     }
 }
 
+static void build_self_continuum(struct continuum_item *continuum, const char *hostport)
+{
+    char host[MAX_SERVER_ITEM_COUNT+10] = "";
+    int  hlen, hh, nn, pp;
+    unsigned char digest[16];
+
+    /* build sorted hash map */
+    pp = 0;
+    for (hh=0; hh<NUM_OF_HASHES; hh++) {
+        hlen = snprintf(host, MAX_SERVER_ITEM_COUNT+10, "%s-%u", hostport, hh);
+        hash_md5(host, hlen, digest);
+        for (nn=0; nn<NUM_PER_HASH; nn++, pp++) {
+            continuum[pp].index = 0;
+            continuum[pp].point = ((uint32_t) (digest[3 + nn * NUM_PER_HASH] & 0xFF) << 24)
+                                | ((uint32_t) (digest[2 + nn * NUM_PER_HASH] & 0xFF) << 16)
+                                | ((uint32_t) (digest[1 + nn * NUM_PER_HASH] & 0xFF) <<  8)
+                                | (           (digest[0 + nn * NUM_PER_HASH] & 0xFF)      );
+        }
+    }
+    qsort(continuum, pp, sizeof(struct continuum_item), continuum_item_cmp);
+
+    /* build hash index */
+    for (pp=0; pp<NUM_NODE_HASHES; pp++) {
+        continuum[pp].index = (uint32_t)pp;
+        //fprintf(stderr, "continuum[%u] hash=%x\n", continuum[pp].index, continuum[pp].point);
+    }
+}
+
+static uint32_t find_continuum(struct continuum_item *continuum, size_t continuum_len,
+                               uint32_t hash_value)
+{
+    struct continuum_item *beginp, *endp, *midp, *highp, *lowp;
+
+    beginp = lowp = continuum;
+    endp = highp = continuum + continuum_len;
+    while (lowp < highp)
+    {
+        midp = lowp + (highp - lowp) / 2;
+        if (midp->point < hash_value)
+            lowp = midp + 1;
+        else
+            highp = midp;
+    }
+    if (highp == endp)
+        highp = beginp;
+    return highp->index;
+#if 0 // OLD_CODE
+    uint32_t mid, prev;
+    while (1) {
+        // pick the middle point
+        midp = lowp + (highp - lowp) / 2;
+
+        if (midp == endp) {
+            // if at the end, rollback to 0th
+            server = beginp->index;
+            break;
+        }
+
+        mid = midp->point;
+        prev = (midp == beginp) ? 0 : (midp-1)->point;
+
+        if (digest <= mid && digest > prev) {
+            // found the nearest server
+            server = midp->index;
+            break;
+        }
+
+        // adjust the limits
+        if (mid < digest)     lowp = midp + 1;
+        else                 highp = midp - 1;
+
+        if (lowp > highp) {
+            server = beginp->index;
+            break;
+        }
+    }
+    return server;
+#endif
+}
+
 struct cluster_config *cluster_config_init(const char *hostport, size_t hostport_len,
                                            EXTENSION_LOGGER_DESCRIPTOR *logger, int verbose)
 {
@@ -217,6 +298,8 @@ struct cluster_config *cluster_config_init(const char *hostport, size_t hostport
     assert(err == 0);
 
     config->self_hostport = strndup(hostport, hostport_len);
+    build_self_continuum(config->self_continuum, config->self_hostport);
+
     config->logger = logger;
     config->verbose = verbose;
     config->is_valid = false;
@@ -332,7 +415,6 @@ bool cluster_config_key_is_mine(struct cluster_config *config,
 {
     uint32_t server, self;
     uint32_t digest;
-    struct continuum_item *beginp, *endp, *midp, *highp, *lowp;
 
     assert(config);
     assert(config->continuum);
@@ -347,51 +429,7 @@ bool cluster_config_key_is_mine(struct cluster_config *config,
 
     self = config->self_id;
     digest = hash_ketama(key, nkey);
-    beginp = lowp = config->continuum;
-    endp = highp = config->continuum + config->num_continuum;
-
-    while (lowp < highp)
-    {
-        midp = lowp + (highp - lowp) / 2;
-        if (midp->point < digest)
-            lowp = midp + 1;
-        else
-            highp = midp;
-    }
-    if (highp == endp)
-        highp = beginp;
-    server = highp->index;
-#if 0 // OLD_CODE
-    uint32_t mid, prev;
-    while (1) {
-        // pick the middle point
-        midp = lowp + (highp - lowp) / 2;
-
-        if (midp == endp) {
-            // if at the end, rollback to 0th
-            server = beginp->index;
-            break;
-        }
-
-        mid = midp->point;
-        prev = (midp == beginp) ? 0 : (midp-1)->point;
-
-        if (digest <= mid && digest > prev) {
-            // found the nearest server
-            server = midp->index;
-            break;
-        }
-
-        // adjust the limits
-        if (mid < digest)     lowp = midp + 1;
-        else                 highp = midp - 1;
-
-        if (lowp > highp) {
-            server = beginp->index;
-            break;
-        }
-    }
-#endif
+    server = find_continuum(config->continuum, config->num_continuum, digest);
 
     if ( key_id)  *key_id = server;
     if (self_id) *self_id = self;
@@ -399,4 +437,16 @@ bool cluster_config_key_is_mine(struct cluster_config *config,
     pthread_mutex_unlock(&config->lock);
 
     return server == self;
+}
+
+uint32_t cluster_config_ketama_hash(struct cluster_config *config,
+                                    const char *key, size_t nkey, int *hashidx)
+{
+    assert(config);
+    uint32_t digest = hash_ketama(key, nkey);
+    if (hashidx) {
+        *hashidx = (int)find_continuum(config->self_continuum, NUM_NODE_HASHES, digest);
+        assert(*hashidx >= 0 && *hashidx < NUM_NODE_HASHES);
+    }
+    return digest;
 }

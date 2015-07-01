@@ -1304,6 +1304,11 @@ bool arcus_key_is_mine(const char *key, size_t nkey)
     }
     return mine;
 }
+
+uint32_t arcus_gen_ketama_hash(const char *key, size_t nkey, int *hashidx)
+{
+    return cluster_config_ketama_hash(arcus_conf.ch, key, nkey, hashidx);
+}
 #endif
 
 #endif  // ENABLE_ZK_INTEGRATION
