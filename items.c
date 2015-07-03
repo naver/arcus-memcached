@@ -5104,16 +5104,6 @@ void item_release(struct default_engine *engine, hash_item *item)
 }
 
 /*
- * Unlinks an item from the LRU and hashtable.
- */
-void item_unlink(struct default_engine *engine, hash_item *item)
-{
-    pthread_mutex_lock(&engine->cache_lock);
-    do_item_unlink(engine, item, ITEM_UNLINK_NORMAL);
-    pthread_mutex_unlock(&engine->cache_lock);
-}
-
-/*
  * Stores an item in the cache (high level, obeys set/add/replace semantics)
  */
 ENGINE_ERROR_CODE store_item(struct default_engine *engine,
@@ -5191,6 +5181,42 @@ ENGINE_ERROR_CODE arithmetic(struct default_engine *engine,
     pthread_mutex_lock(&engine->cache_lock);
     ret = do_arithmetic(engine, cookie, key, nkey, increment,
                         create, delta, initial, flags, exptime, cas, result);
+    pthread_mutex_unlock(&engine->cache_lock);
+    return ret;
+}
+
+/*
+ * Delete an item.
+ */
+
+static ENGINE_ERROR_CODE do_item_delete(struct default_engine *engine,
+                                        const void* key, const size_t nkey,
+                                        uint64_t cas)
+{
+    ENGINE_ERROR_CODE ret;
+    hash_item *it = do_item_get(engine, key, nkey, true);
+    if (it == NULL) {
+        ret = ENGINE_KEY_ENOENT;
+    } else {
+        if (cas == 0 || cas == item_get_cas(it)) {
+            do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
+            ret = ENGINE_SUCCESS;
+        } else {
+            ret = ENGINE_KEY_EEXISTS;
+        }
+        do_item_release(engine, it);
+    }
+    return ret;
+}
+
+ENGINE_ERROR_CODE item_delete(struct default_engine *engine,
+                              const void* key, const size_t nkey,
+                              uint64_t cas)
+{
+    ENGINE_ERROR_CODE ret;
+
+    pthread_mutex_lock(&engine->cache_lock);
+    ret = do_item_delete(engine, key, nkey, cas);
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
 }

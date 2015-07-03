@@ -308,13 +308,6 @@ ENGINE_ERROR_CODE item_flush_prefix_expired(struct default_engine *engine,
 void item_release(struct default_engine *engine, hash_item *it);
 
 /**
- * Unlink the item from the hash table (make it inaccessible)
- * @param engine handle to the storage engine
- * @param it the item to unlink
- */
-void item_unlink(struct default_engine *engine, hash_item *it);
-
-/**
  * Store an item in the cache
  * @param engine handle to the storage engine
  * @param item the item to store
@@ -334,6 +327,17 @@ ENGINE_ERROR_CODE arithmetic(struct default_engine *engine, const void* cookie,
                              const bool create, const uint64_t delta, const uint64_t initial,
                              const int flags, const rel_time_t exptime, uint64_t *cas,
                              uint64_t *result);
+
+/**
+ * Delete an item of the given key.
+ * @param engine handle to the storage engine
+ * @param key the key to delete
+ * @param nkey the number of bytes in the key
+ * @param cas the cas value
+ */
+ENGINE_ERROR_CODE item_delete(struct default_engine *engine,
+                              const void* key, const size_t nkey,
+                              uint64_t cas);
 
 void coll_del_thread_wakeup(struct default_engine *engine);
 

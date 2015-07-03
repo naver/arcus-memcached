@@ -228,20 +228,9 @@ static ENGINE_ERROR_CODE default_item_delete(ENGINE_HANDLE* handle, const void* 
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    hash_item *it = item_get(engine, key, nkey);
-    if (it == NULL) {
-        return ENGINE_KEY_ENOENT;
-    }
-    if (cas == 0 || cas == item_get_cas(it)) {
-        ACTION_BEFORE_WRITE(cookie, key, nkey);
-        item_unlink(engine, it);
-        item_release(engine, it);
-        ret = ENGINE_SUCCESS;
-        ACTION_AFTER_WRITE(cookie, ret);
-    } else {
-        item_release(engine, it);
-        ret = ENGINE_KEY_EEXISTS;
-    }
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
+    ret = item_delete(engine, key, nkey, cas);
+    ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
 
