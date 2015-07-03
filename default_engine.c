@@ -542,14 +542,13 @@ static ENGINE_ERROR_CODE default_btree_elem_insert(ENGINE_HANDLE* handle, const 
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     if (trimmed == NULL) {
-        ret = btree_elem_insert(engine, key, nkey, (btree_elem_item *)eitem, replace_if_exist, attrp,
-                                replaced, created, NULL, NULL, NULL, cookie);
+        ret = btree_elem_insert(engine, key, nkey, (btree_elem_item *)eitem,
+                                replace_if_exist, attrp, replaced, created,
+                                NULL, NULL, NULL, cookie);
     } else {
-        btree_elem_item *trimmed_elem = NULL;
-        ret = btree_elem_insert(engine, key, nkey, (btree_elem_item *)eitem, replace_if_exist, attrp,
-                                replaced, created, &trimmed_elem,
-                                &trimmed->count, &trimmed->flags, cookie);
-        trimmed->elems = trimmed_elem;
+        ret = btree_elem_insert(engine, key, nkey, (btree_elem_item *)eitem,
+                                replace_if_exist, attrp, replaced, created,
+                                (btree_elem_item**)&trimmed->elems, &trimmed->count, &trimmed->flags, cookie);
     }
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
