@@ -228,20 +228,20 @@ static ENGINE_ERROR_CODE default_item_delete(ENGINE_HANDLE* handle, const void* 
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    ACTION_BEFORE_WRITE(cookie, key, nkey);
     hash_item *it = item_get(engine, key, nkey);
     if (it == NULL) {
-        ret = ENGINE_KEY_ENOENT;
-    } else {
-        if (cas == 0 || cas == item_get_cas(it)) {
-            item_unlink(engine, it);
-            ret = ENGINE_SUCCESS;
-        } else {
-            ret = ENGINE_KEY_EEXISTS;
-        }
-        item_release(engine, it);
+        return ENGINE_KEY_ENOENT;
     }
-    ACTION_AFTER_WRITE(cookie, ret);
+    if (cas == 0 || cas == item_get_cas(it)) {
+        ACTION_BEFORE_WRITE(cookie, key, nkey);
+        item_unlink(engine, it);
+        item_release(engine, it);
+        ret = ENGINE_SUCCESS;
+        ACTION_AFTER_WRITE(cookie, ret);
+    } else {
+        item_release(engine, it);
+        ret = ENGINE_KEY_EEXISTS;
+    }
     return ret;
 }
 
@@ -405,13 +405,10 @@ static ENGINE_ERROR_CODE default_list_elem_get(ENGINE_HANDLE* handle, const void
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    if (delete)
-        ACTION_BEFORE_WRITE(cookie, key, nkey);
+    if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = list_elem_get(engine, key, nkey, from_index, to_index, delete, drop_if_empty,
                         (list_elem_item**)eitem_array, eitem_count, flags, dropped);
-    if (delete && *eitem_count > 0) {
-        ACTION_AFTER_WRITE(cookie, ret);
-    }
+    if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
 
@@ -502,13 +499,10 @@ static ENGINE_ERROR_CODE default_set_elem_get(ENGINE_HANDLE* handle, const void*
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    if (delete)
-        ACTION_BEFORE_WRITE(cookie, key, nkey);
+    if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = set_elem_get(engine, key, nkey, count, delete, drop_if_empty,
                        (set_elem_item**)eitem, eitem_count, flags, dropped);
-    if (delete && *eitem_count > 0) {
-        ACTION_AFTER_WRITE(cookie, ret);
-    }
+    if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
 
@@ -643,14 +637,11 @@ static ENGINE_ERROR_CODE default_btree_elem_get(ENGINE_HANDLE* handle, const voi
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    if (delete)
-        ACTION_BEFORE_WRITE(cookie, key, nkey);
+    if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = btree_elem_get(engine, key, nkey, bkrange, efilter, offset, req_count,
                          delete, drop_if_empty, (btree_elem_item**)eitem_array, eitem_count,
                          flags, dropped_trimmed);
-    if (delete && *eitem_count > 0) {
-        ACTION_AFTER_WRITE(cookie, ret);
-    }
+    if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
 
