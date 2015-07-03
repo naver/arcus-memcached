@@ -335,23 +335,6 @@ ENGINE_ERROR_CODE arithmetic(struct default_engine *engine, const void* cookie,
                              const int flags, const rel_time_t exptime, uint64_t *cas,
                              uint64_t *result);
 
-
-/**
- * Add a delta to an item
- * @param engine handle to the storage engine
- * @param item the item to operate on
- * @param incr true if we want to increment, false for decrement
- * @param delta the amount to incr/decr
- * @param cas the new cas value (OUT)
- * @param result the new value for the item (OUT)
- * @return ENGINE_SUCCESS on success
- *
- * @todo perhaps we should do the same refactor as suggested for
- *       store_item
- */
-ENGINE_ERROR_CODE add_delta(struct default_engine *engine, hash_item *item, const bool incr,
-                            const int64_t delta, uint64_t *cas, uint64_t *result, const void *cookie);
-
 void coll_del_thread_wakeup(struct default_engine *engine);
 
 ENGINE_ERROR_CODE item_init(struct default_engine *engine);

@@ -5114,22 +5114,6 @@ void item_unlink(struct default_engine *engine, hash_item *item)
 }
 
 /*
- * Does arithmetic on a numeric item value.
- */
-ENGINE_ERROR_CODE add_delta(struct default_engine *engine,
-                            hash_item *item, const bool incr,
-                            const int64_t delta, uint64_t *rcas,
-                            uint64_t *result, const void *cookie)
-{
-    ENGINE_ERROR_CODE ret;
-
-    pthread_mutex_lock(&engine->cache_lock);
-    ret = do_add_delta(engine, item, incr, delta, rcas, result, cookie);
-    pthread_mutex_unlock(&engine->cache_lock);
-    return ret;
-}
-
-/*
  * Stores an item in the cache (high level, obeys set/add/replace semantics)
  */
 ENGINE_ERROR_CODE store_item(struct default_engine *engine,
