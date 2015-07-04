@@ -112,6 +112,15 @@ extern "C" {
         const char* (*get_client_ip)(const void *cookie);
 
         /**
+         * Retrieve thread index for the given cookie.
+         *
+         * @param cookie The cookie provided by the frontend
+         *
+         * @return the thread index from 0 to num_threads-1.
+         */
+        int (*get_thread_index)(const void *cookie);
+
+        /**
          * Let a connection know that IO has completed.
          * @param cookie cookie representing the connection
          * @param status the status for the io operation

@@ -11998,6 +11998,11 @@ static const char* get_client_ip(const void *cookie) {
     return (c != NULL ? c->client_ip : "null");
 }
 
+static int get_thread_index(const void *cookie) {
+    conn *c = (conn *)cookie;
+    return c->thread->index;
+}
+
 static int num_independent_stats(void) {
     return settings.num_threads + 1;
 }
@@ -12375,6 +12380,7 @@ static SERVER_HANDLE_V1 *get_server_api(void)
         .get_engine_specific = get_engine_specific,
         .get_socket_fd = get_socket_fd,
         .get_client_ip = get_client_ip,
+        .get_thread_index = get_thread_index,
         .server_version = get_server_version,
         .hash = mc_hash,
         .realtime = realtime,
