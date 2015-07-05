@@ -211,7 +211,9 @@ static ENGINE_ERROR_CODE default_item_allocate(ENGINE_HANDLE* handle, const void
     }
 
     hash_item *it;
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
     it = item_alloc(engine, key, nkey, flags, exptime, nbytes, cookie);
+    ACTION_AFTER_WRITE(cookie, ENGINE_EINVAL);
     if (it != NULL) {
         *item = it;
         return ENGINE_SUCCESS;
@@ -336,7 +338,11 @@ static ENGINE_ERROR_CODE default_list_struct_create(ENGINE_HANDLE* handle, const
 static ENGINE_ERROR_CODE default_list_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
                                                  eitem** eitem, const size_t nbytes)
 {
-    list_elem_item *elem = list_elem_alloc(get_handle(handle), nbytes, cookie);
+    list_elem_item *elem;
+
+    ACTION_BEFORE_WRITE(cookie, NULL, 0);
+    elem = list_elem_alloc(get_handle(handle), nbytes, cookie);
+    ACTION_AFTER_WRITE(cookie, ENGINE_EINVAL);
     if (elem != NULL) {
         *eitem = elem;
         return ENGINE_SUCCESS;
@@ -420,7 +426,11 @@ static ENGINE_ERROR_CODE default_set_struct_create(ENGINE_HANDLE* handle, const 
 static ENGINE_ERROR_CODE default_set_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
                                                 eitem** eitem, const size_t nbytes)
 {
-    set_elem_item *elem = set_elem_alloc(get_handle(handle), nbytes, cookie);
+    set_elem_item *elem;
+
+    ACTION_BEFORE_WRITE(cookie, NULL, 0);
+    elem = set_elem_alloc(get_handle(handle), nbytes, cookie);
+    ACTION_AFTER_WRITE(cookie, ENGINE_EINVAL);
     if (elem != NULL) {
         *eitem = elem;
         return ENGINE_SUCCESS;
@@ -515,7 +525,11 @@ static ENGINE_ERROR_CODE default_btree_elem_alloc(ENGINE_HANDLE* handle, const v
                                                   eitem** eitem,
                                                   const size_t nbkey, const size_t neflag, const size_t nbytes)
 {
-    btree_elem_item *elem = btree_elem_alloc(get_handle(handle), nbkey, neflag, nbytes, cookie);
+    btree_elem_item *elem;
+
+    ACTION_BEFORE_WRITE(cookie, NULL, 0);
+    elem = btree_elem_alloc(get_handle(handle), nbkey, neflag, nbytes, cookie);
+    ACTION_AFTER_WRITE(cookie, ENGINE_EINVAL);
     if (elem != NULL) {
         *eitem = elem;
         return ENGINE_SUCCESS;
