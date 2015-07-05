@@ -211,15 +211,18 @@ static ENGINE_ERROR_CODE default_item_allocate(ENGINE_HANDLE* handle, const void
     }
 
     hash_item *it;
+    ENGINE_ERROR_CODE ret = ENGINE_EINVAL;
+
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     it = item_alloc(engine, key, nkey, flags, exptime, nbytes, cookie);
-    ACTION_AFTER_WRITE(cookie, ENGINE_EINVAL);
+    ACTION_AFTER_WRITE(cookie, ret);
     if (it != NULL) {
         *item = it;
-        return ENGINE_SUCCESS;
+        ret = ENGINE_SUCCESS;
     } else {
-        return ENGINE_ENOMEM;
+        ret = ENGINE_ENOMEM;
     }
+    return ret;
 }
 
 static ENGINE_ERROR_CODE default_item_delete(ENGINE_HANDLE* handle, const void* cookie,
@@ -339,16 +342,18 @@ static ENGINE_ERROR_CODE default_list_elem_alloc(ENGINE_HANDLE* handle, const vo
                                                  eitem** eitem, const size_t nbytes)
 {
     list_elem_item *elem;
+    ENGINE_ERROR_CODE ret = ENGINE_EINVAL;
 
     ACTION_BEFORE_WRITE(cookie, NULL, 0);
     elem = list_elem_alloc(get_handle(handle), nbytes, cookie);
-    ACTION_AFTER_WRITE(cookie, ENGINE_EINVAL);
+    ACTION_AFTER_WRITE(cookie, ret);
     if (elem != NULL) {
         *eitem = elem;
-        return ENGINE_SUCCESS;
+        ret = ENGINE_SUCCESS;
     } else {
-        return ENGINE_ENOMEM;
+        ret = ENGINE_ENOMEM;
     }
+    return ret;
 }
 
 static void default_list_elem_release(ENGINE_HANDLE* handle, const void *cookie,
@@ -427,16 +432,18 @@ static ENGINE_ERROR_CODE default_set_elem_alloc(ENGINE_HANDLE* handle, const voi
                                                 eitem** eitem, const size_t nbytes)
 {
     set_elem_item *elem;
+    ENGINE_ERROR_CODE ret = ENGINE_EINVAL;
 
     ACTION_BEFORE_WRITE(cookie, NULL, 0);
     elem = set_elem_alloc(get_handle(handle), nbytes, cookie);
-    ACTION_AFTER_WRITE(cookie, ENGINE_EINVAL);
+    ACTION_AFTER_WRITE(cookie, ret);
     if (elem != NULL) {
         *eitem = elem;
-        return ENGINE_SUCCESS;
+        ret = ENGINE_SUCCESS;
     } else {
-        return ENGINE_ENOMEM;
+        ret = ENGINE_ENOMEM;
     }
+    return ret;
 }
 
 static void default_set_elem_release(ENGINE_HANDLE* handle, const void *cookie,
@@ -526,16 +533,18 @@ static ENGINE_ERROR_CODE default_btree_elem_alloc(ENGINE_HANDLE* handle, const v
                                                   const size_t nbkey, const size_t neflag, const size_t nbytes)
 {
     btree_elem_item *elem;
+    ENGINE_ERROR_CODE ret = ENGINE_EINVAL;
 
     ACTION_BEFORE_WRITE(cookie, NULL, 0);
     elem = btree_elem_alloc(get_handle(handle), nbkey, neflag, nbytes, cookie);
-    ACTION_AFTER_WRITE(cookie, ENGINE_EINVAL);
+    ACTION_AFTER_WRITE(cookie, ret);
     if (elem != NULL) {
         *eitem = elem;
-        return ENGINE_SUCCESS;
+        ret = ENGINE_SUCCESS;
     } else {
-        return ENGINE_ENOMEM;
+        ret = ENGINE_ENOMEM;
     }
+    return ret;
 }
 
 static void default_btree_elem_release(ENGINE_HANDLE* handle, const void *cookie,
