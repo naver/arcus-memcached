@@ -58,11 +58,10 @@ enum elem_delete_cause {
 static void item_link_q(struct default_engine *engine, hash_item *it);
 static void item_unlink_q(struct default_engine *engine, hash_item *it);
 static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *it);
-static void do_item_unlink(struct default_engine *engine, hash_item *it,
-                           enum item_unlink_cause cause);
-static void push_coll_del_queue(struct default_engine *engine, hash_item *it);
+static void do_item_unlink(struct default_engine *engine, hash_item *it, enum item_unlink_cause cause);
 static void do_coll_all_elem_delete(struct default_engine *engine, hash_item *it);
-extern int  genhash_string_hash(const void* p, size_t nkey);
+
+extern int genhash_string_hash(const void* p, size_t nkey);
 
 /*
  * We only reposition items in the LRU queue if they haven't been repositioned
@@ -261,6 +260,45 @@ static void decrease_collection_space(struct default_engine *engine, ENGINE_ITEM
     assoc_prefix_update_size(info->prefix, item_type, dec_space, false);
     engine->stats.curr_bytes -= dec_space;
     //pthread_mutex_unlock(&engine->stats.lock);
+}
+
+/*
+ * Collection Delete Queue Management
+ */
+static void push_coll_del_queue(struct default_engine *engine, hash_item *it)
+{
+    /* push the item into the tail of delete queue */
+    it->next = NULL;
+    pthread_mutex_lock(&engine->coll_del_lock);
+    if (engine->coll_del_queue.tail == NULL) {
+        engine->coll_del_queue.head = it;
+    } else {
+        engine->coll_del_queue.tail->next = it;
+    }
+    engine->coll_del_queue.tail = it;
+    engine->coll_del_queue.size++;
+    if (engine->coll_del_sleep == true) {
+        /* wake up collection delete thead */
+        pthread_cond_signal(&engine->coll_del_cond);
+    }
+    pthread_mutex_unlock(&engine->coll_del_lock);
+}
+
+static hash_item *pop_coll_del_queue(struct default_engine *engine)
+{
+    /* pop an item from the head of delete queue */
+    hash_item *it = NULL;
+    pthread_mutex_lock(&engine->coll_del_lock);
+    if (engine->coll_del_queue.head != NULL) {
+        it = engine->coll_del_queue.head;
+        engine->coll_del_queue.head = it->next;
+        if (engine->coll_del_queue.head == NULL) {
+            engine->coll_del_queue.tail = NULL;
+        }
+        engine->coll_del_queue.size--;
+    }
+    pthread_mutex_unlock(&engine->coll_del_lock);
+    return it;
 }
 
 static bool do_item_isvalid(struct default_engine *engine, hash_item *it, rel_time_t current_time)
@@ -4938,45 +4976,6 @@ static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
     return elem_count;
 }
 #endif
-
-/*
- * Collection Delete Queue Management
- */
-static void push_coll_del_queue(struct default_engine *engine, hash_item *it)
-{
-    /* push the item into the tail of delete queue */
-    it->next = NULL;
-    pthread_mutex_lock(&engine->coll_del_lock);
-    if (engine->coll_del_queue.tail == NULL) {
-        engine->coll_del_queue.head = it;
-    } else {
-        engine->coll_del_queue.tail->next = it;
-    }
-    engine->coll_del_queue.tail = it;
-    engine->coll_del_queue.size++;
-    if (engine->coll_del_sleep == true) {
-        /* wake up collection delete thead */
-        pthread_cond_signal(&engine->coll_del_cond);
-    }
-    pthread_mutex_unlock(&engine->coll_del_lock);
-}
-
-static hash_item *pop_coll_del_queue(struct default_engine *engine)
-{
-    /* pop an item from the head of delete queue */
-    hash_item *it = NULL;
-    pthread_mutex_lock(&engine->coll_del_lock);
-    if (engine->coll_del_queue.head != NULL) {
-        it = engine->coll_del_queue.head;
-        engine->coll_del_queue.head = it->next;
-        if (engine->coll_del_queue.head == NULL) {
-            engine->coll_del_queue.tail = NULL;
-        }
-        engine->coll_del_queue.size--;
-    }
-    pthread_mutex_unlock(&engine->coll_del_lock);
-    return it;
-}
 
 /*
  * Item Management Daemon
