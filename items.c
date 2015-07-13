@@ -1595,7 +1595,6 @@ static uint32_t do_list_elem_get(struct default_engine *engine,
     return fcnt;
 }
 
-#if 1 // JHPARK_ELEMENT_INSERT
 static ENGINE_ERROR_CODE do_list_elem_insert(struct default_engine *engine,
                                              hash_item *it,
                                              int index, list_elem_item *elem,
@@ -1652,7 +1651,6 @@ static ENGINE_ERROR_CODE do_list_elem_insert(struct default_engine *engine,
     ret = do_list_elem_link(engine, info, index, elem);
     return ret;
 }
-#endif
 
 /*
  * SET collection manangement
@@ -2111,7 +2109,6 @@ static uint32_t do_set_elem_get(struct default_engine *engine,
     return fcnt;
 }
 
-#if 1 // JHPARK_ELEMENT_INSERT
 static ENGINE_ERROR_CODE do_set_elem_insert(struct default_engine *engine,
                                             hash_item *it, set_elem_item *elem,
                                             const void *cookie)
@@ -2153,7 +2150,6 @@ static ENGINE_ERROR_CODE do_set_elem_insert(struct default_engine *engine,
     }
     return ret;
 }
-#endif
 
 /*
  * B+TREE collection management
@@ -4315,7 +4311,6 @@ static uint32_t do_btree_elem_count(struct default_engine *engine, btree_meta_in
     return tot_fcnt;
 }
 
-#if 1 // JHPARK_ELEMENT_INSERT
 static ENGINE_ERROR_CODE do_btree_elem_insert(struct default_engine *engine,
                                               hash_item *it, btree_elem_item *elem,
                                               const bool replace_if_exist, bool *replaced,
@@ -4358,7 +4353,6 @@ static ENGINE_ERROR_CODE do_btree_elem_insert(struct default_engine *engine,
     }
     return ret;
 }
-#endif
 
 static ENGINE_ERROR_CODE do_btree_elem_arithmetic(struct default_engine *engine, btree_meta_info *info,
                                                   const int bkrtype, const bkey_range *bkrange,
@@ -5669,20 +5663,13 @@ ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
                                    item_attr *attrp,
                                    bool *created, const void *cookie)
 {
-#if 1 // JHPARK_ELEMENT_INSERT
     hash_item *it = NULL;
     ENGINE_ERROR_CODE ret;
-#else
-    hash_item      *it;
-    list_meta_info *info=NULL;
-    ENGINE_ERROR_CODE ret;
-#endif
 
     *created = false;
 
     pthread_mutex_lock(&engine->cache_lock);
     ret = do_list_item_find(engine, key, nkey, false, &it);
-#if 1 // JHPARK_ELEMENT_INSERT
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
         it = do_list_item_alloc(engine, key, nkey, attrp, cookie);
         if (it == NULL) {
@@ -5702,92 +5689,6 @@ ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
             do_item_unlink(engine, it, ITEM_UNLINK_ABORT);
         }
     }
-#else
-    do {
-        if (ret == ENGINE_SUCCESS) { /* it != NULL */
-            info = (list_meta_info *)item_get_meta(it);
-            /* validation check: index value */
-            if (index >= 0) {
-                if (index > info->ccnt || index > (info->mcnt-1)) {
-                    ret = ENGINE_EINDEXOOR; break;
-                }
-            } else {
-                if ((-index) > (info->ccnt+1) || (-index) > info->mcnt) {
-                    ret = ENGINE_EINDEXOOR; break;
-                }
-            }
-#ifdef ENABLE_STICKY_ITEM
-            /* sticky memory limit check */
-            if ((info->mflags & COLL_META_FLAG_STICKY) != 0) {
-                if (engine->stats.sticky_bytes >= engine->config.sticky_limit) {
-                    ret = ENGINE_ENOMEM; break;
-                }
-            }
-#endif
-            /* overflow check */
-            if (info->ccnt >= info->mcnt) {
-                if (info->ovflact == OVFL_ERROR) {
-                    ret = ENGINE_EOVERFLOW; break;
-                }
-                if (index == 0 || index == -1) {
-                    /* delete an element item of opposite side to make room */
-                    uint32_t deleted = do_list_elem_delete(engine, info,
-                                                           (index==-1 ? 0 : -1), 1,
-                                                           ELEM_DELETE_TRIM);
-                    assert(deleted == 1);
-                } else {
-                    /* delete an element item that overflow action indicates */
-                    uint32_t deleted = do_list_elem_delete(engine, info,
-                                                           (info->ovflact==OVFL_HEAD_TRIM ? 0 : -1), 1,
-                                                           ELEM_DELETE_TRIM);
-                    assert(deleted == 1);
-                    /* adjust list index value */
-                    if (info->ovflact == OVFL_HEAD_TRIM) {
-                      if (index > 0) index -= 1;
-                    } else { /* ovflact == OVFL_TAIL_TRIM */
-                      if (index < 0) index += 1;
-                    }
-                }
-            }
-        } else if (ret == ENGINE_KEY_ENOENT) {
-            if (attrp != NULL) {
-                /* validation check: index value */
-                if (index != 0 && index != -1) {
-                    ret = ENGINE_EINDEXOOR; break;
-                }
-                /* allocate list item */
-                it = do_list_item_alloc(engine, key, nkey, attrp, cookie);
-                if (it == NULL) {
-                    ret = ENGINE_ENOMEM; break;
-                }
-                ret = do_item_link(engine, it);
-                if (ret != ENGINE_SUCCESS) {
-                    /* The list item is to be released in the outside of do-while loop */
-                    break;
-                }
-                info = (list_meta_info *)item_get_meta(it);
-                *created = true;
-                ret = ENGINE_SUCCESS;
-            }
-        }
-
-        if (ret == ENGINE_SUCCESS) {
-            ret = do_list_elem_link(engine, info, index, elem);
-            if (ret != ENGINE_SUCCESS) {
-                if (*created) {
-                    /* unlink the created list item and free it*/
-                    do_item_release(engine, it);
-                    do_item_unlink(engine, it, ITEM_UNLINK_ABORT);
-                    it = NULL;
-                }
-                break;
-            }
-        } else {
-            /* ENGINE_KEY_ENOENT | ENGINE_EBADTYPE */
-        }
-    } while(0);
-
-#endif
     if (it != NULL) do_item_release(engine, it);
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -5964,20 +5865,13 @@ void set_elem_release(struct default_engine *engine, set_elem_item **elem_array,
 ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key, const size_t nkey,
                                   set_elem_item *elem, item_attr *attrp, bool *created, const void *cookie)
 {
-#if 1 // JHPARK_ELEMENT_INSERT
     hash_item *it = NULL;
     ENGINE_ERROR_CODE ret;
-#else
-    hash_item     *it;
-    set_meta_info *info=NULL;
-    ENGINE_ERROR_CODE ret;
-#endif
 
     *created = false;
 
     pthread_mutex_lock(&engine->cache_lock);
     ret = do_set_item_find(engine, key, nkey, false, &it);
-#if 1 // JHPARK_ELEMENT_INSERT
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
         it = do_set_item_alloc(engine, key, nkey, attrp, cookie);
         if (it == NULL) {
@@ -5997,76 +5891,6 @@ ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key
             do_item_unlink(engine, it, ITEM_UNLINK_ABORT);
         }
     }
-#else
-    do {
-        if (ret == ENGINE_SUCCESS) { /* it != NULL */
-            info = (set_meta_info *)item_get_meta(it);
-#ifdef ENABLE_STICKY_ITEM
-            /* sticky memory limit check */
-            if ((info->mflags & COLL_META_FLAG_STICKY) != 0) {
-                if (engine->stats.sticky_bytes >= engine->config.sticky_limit) {
-                    ret = ENGINE_ENOMEM; break;
-                }
-            }
-#endif
-            /* overflow check */
-            if (info->ccnt >= info->mcnt) {
-                ret = ENGINE_EOVERFLOW; break;
-            }
-        } else if (ret == ENGINE_KEY_ENOENT) {
-            if (attrp != NULL) {
-                it = do_set_item_alloc(engine, key, nkey, attrp, cookie);
-                if (it == NULL) {
-                    ret = ENGINE_ENOMEM; break;
-                }
-                ret = do_item_link(engine, it);
-                if (ret != ENGINE_SUCCESS) {
-                    /* The set item is to be released in the outside of do-while loop */
-                    break;
-                }
-                info = (set_meta_info *)item_get_meta(it);
-                *created = true;
-                ret = ENGINE_SUCCESS;
-            }
-        }
-
-        if (ret == ENGINE_SUCCESS) {
-            bool new_root_flag = false;
-            if (info->root == NULL) { /* empty set */
-                set_hash_node *r_node = do_set_node_alloc(engine, 0, cookie);
-                if (r_node == NULL) {
-                    if (*created) {
-                        /* unlink the created set item and free it */
-                        do_item_release(engine, it);
-                        do_item_unlink(engine, it, ITEM_UNLINK_ABORT);
-                        it = NULL;
-                    }
-                    ret = ENGINE_ENOMEM; break;
-                }
-                do_set_node_link(engine, info, NULL, 0, r_node);
-                new_root_flag = true;
-            }
-
-            ret = do_set_elem_link(engine, info, elem, cookie);
-            if (ret != ENGINE_SUCCESS) {
-                if (new_root_flag) {
-                    /* unlink the root node and free it */
-                    do_set_node_unlink(engine, info, NULL, 0);
-                }
-                if (*created) {
-                    /* unlink the created set item and free it*/
-                    do_item_release(engine, it);
-                    do_item_unlink(engine, it, ITEM_UNLINK_ABORT);
-                    it = NULL;
-                }
-                break;
-            }
-        } else {
-            /* ENGINE_KEY_ENOENT | ENGINE_EBADTYPE */
-        }
-    } while(0);
-
-#endif
     if (it != NULL) do_item_release(engine, it);
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -6227,14 +6051,8 @@ ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
                                     bool *replaced, bool *created, btree_elem_item **trimmed_elems,
                                     uint32_t *trimmed_count, uint32_t *trimmed_flags, const void *cookie)
 {
-#if 1 // JHPARK_ELEMENT_INSERT
     hash_item *it = NULL;
     ENGINE_ERROR_CODE ret;
-#else
-    hash_item       *it;
-    btree_meta_info *info=NULL;
-    ENGINE_ERROR_CODE ret;
-#endif
 
     *created = false;
     if (trimmed_elems != NULL) {
@@ -6245,7 +6063,6 @@ ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
 
     pthread_mutex_lock(&engine->cache_lock);
     ret = do_btree_item_find(engine, key, nkey, false, &it);
-#if 1 // JHPARK_ELEMENT_INSERT
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
         it = do_btree_item_alloc(engine, key, nkey, attrp, cookie);
         if (it == NULL) {
@@ -6269,72 +6086,6 @@ ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
             *trimmed_flags = it->flags;
         }
     }
-#else
-    do {
-        if (ret == ENGINE_SUCCESS) {
-            info = (btree_meta_info *)item_get_meta(it);
-            if (info->ccnt > 0 || info->maxbkeyrange.len != BKEY_NULL) {
-                if ((info->bktype == BKEY_TYPE_UINT64 && elem->nbkey >  0) ||
-                    (info->bktype == BKEY_TYPE_BINARY && elem->nbkey == 0)) {
-                    ret = ENGINE_EBADBKEY; break;
-                }
-            }
-        } else if (ret == ENGINE_KEY_ENOENT) {
-            if (attrp != NULL) {
-                it = do_btree_item_alloc(engine, key, nkey, attrp, cookie);
-                if (it == NULL) {
-                    ret = ENGINE_ENOMEM; break;
-                }
-                ret = do_item_link(engine, it);
-                if (ret != ENGINE_SUCCESS) {
-                    break; /* The btree item will be released in the outside of do-while loop */
-                }
-                info = (btree_meta_info *)item_get_meta(it);
-                *created = true;
-                ret = ENGINE_SUCCESS;
-            }
-        }
-
-        if (ret == ENGINE_SUCCESS) {
-            bool new_root_flag = false;
-            if (info->root == NULL) {
-                btree_indx_node *r_node = do_btree_node_alloc(engine, 0, cookie);
-                if (r_node == NULL) {
-                    if (*created) {
-                        /* unlink the created btree item and free it */
-                        do_item_release(engine, it);
-                        do_item_unlink(engine, it, ITEM_UNLINK_ABORT);
-                        it = NULL;
-                    }
-                    ret = ENGINE_ENOMEM; break;
-                }
-                do_btree_node_link(engine, info, r_node, NULL);
-                new_root_flag = true;
-            }
-            ret = do_btree_elem_link(engine, info, elem, replace_if_exist, replaced,
-                                     trimmed_elems, trimmed_count, cookie);
-            if (ret != ENGINE_SUCCESS) {
-                if (new_root_flag) {
-                    /* unlink the root node and free it */
-                    do_btree_node_unlink(engine, info, info->root, NULL);
-                }
-                if (*created) {
-                    /* unlink the created btree item and free it */
-                    do_item_release(engine, it);
-                    do_item_unlink(engine, it, ITEM_UNLINK_ABORT);
-                    it = NULL;
-                }
-                break;
-            }
-            if (trimmed_elems != NULL && *trimmed_elems != NULL) {
-                *trimmed_flags = it->flags;
-            }
-        } else {
-            /* ENGINE_KEY_ENOENT | ENGINE_EBADTYPE */
-        }
-    } while(0);
-
-#endif
     if (it != NULL) do_item_release(engine, it);
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
