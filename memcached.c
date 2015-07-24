@@ -2079,7 +2079,7 @@ static void complete_update_ascii(conn *c) {
             out_string(c, "CLIENT_ERROR value too big");
             break;
         case ENGINE_EACCESS:
-            out_string(c, "CLIENt_ERROR access control violation");
+            out_string(c, "CLIENT_ERROR access control violation");
             break;
         case ENGINE_NOT_MY_VBUCKET:
             out_string(c, "SERVER_ERROR not my vbucket");
