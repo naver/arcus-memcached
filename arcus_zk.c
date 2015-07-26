@@ -599,9 +599,9 @@ hb_thread(void *arg)
             /* sleep with spurious wakeups checking */
             while (tv.tv_sec < ts.tv_sec && !arcus_zk_shutdown) {
                 pthread_mutex_lock(&hb_thread_lock);
-                hb_thread_sleep = false;
-                pthread_cond_timedwait(&hb_thread_cond, &hb_thread_lock, &ts);
                 hb_thread_sleep = true;
+                pthread_cond_timedwait(&hb_thread_cond, &hb_thread_lock, &ts);
+                hb_thread_sleep = false;
                 pthread_mutex_unlock(&hb_thread_lock);
                 gettimeofday(&tv, NULL);
             }
