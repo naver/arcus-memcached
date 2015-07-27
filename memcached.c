@@ -655,6 +655,8 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->msgcurr = 0;
     c->msgused = 0;
     c->next = NULL;
+    c->conn_prev = NULL;
+    c->conn_next = NULL;
 
     c->write_and_go = init_state;
     c->write_and_free = 0;
@@ -799,6 +801,16 @@ static void conn_cleanup(conn *c) {
     }
 
     c->engine_storage = NULL;
+    /* disconnect it from the conn_list of a thread in charge */
+    if (c->conn_prev != NULL) {
+        c->conn_prev->conn_next = c->conn_next;
+    } else {
+        assert(c->thread->conn_list == c);
+        c->thread->conn_list = c->conn_next;
+    }
+    if (c->conn_next != NULL) {
+        c->conn_next->conn_prev = c->conn_prev;
+    }
     c->thread = NULL;
     assert(c->next == NULL);
     c->ascii_cmd = NULL;
@@ -12510,6 +12522,20 @@ static bool sanitycheck(void) {
     return true;
 }
 
+static void close_listen_sockets(void)
+{
+    struct conn *conn;
+
+    /* Just close listen sockets only.
+     * We do not free listen connections.
+     */
+    conn = listen_conn;
+    while (conn != NULL) {
+        close(conn->sfd);
+        conn = conn->next;
+    }
+}
+
 int main (int argc, char **argv) {
     int c;
     bool lock_memory = false;
@@ -13197,6 +13223,7 @@ int main (int argc, char **argv) {
     if (settings.verbose) {
         mc_logger->log(EXTENSION_LOG_INFO, NULL, "Initiating shutdown\n");
     }
+    close_listen_sockets();
     threads_shutdown();
 
 #ifdef ENABLE_ZK_INTEGRATION

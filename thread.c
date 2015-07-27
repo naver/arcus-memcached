@@ -252,6 +252,8 @@ static void setup_thread(LIBEVENT_THREAD *me) {
  */
 static void *worker_libevent(void *arg) {
     LIBEVENT_THREAD *me = arg;
+    struct conn *conn;
+    CQ_ITEM *item;
 
     /* Any per-thread setup can happen here; thread_init() will block until
      * all threads have finished initializing.
@@ -263,6 +265,19 @@ static void *worker_libevent(void *arg) {
     pthread_mutex_unlock(&init_lock);
 
     event_base_loop(me->base, 0);
+
+    /* close all connections */
+    conn = me->conn_list;
+    while (conn != NULL) {
+        close(conn->sfd);
+        conn = conn->conn_next;
+    }
+    item = cq_pop(me->new_conn_queue);
+    while (item != NULL) {
+        close(item->sfd);
+        cqi_free(item);
+        item = cq_pop(me->new_conn_queue);
+    }
     return NULL;
 }
 
@@ -318,6 +333,12 @@ static void thread_libevent_process(int fd, short which, void *arg) {
         } else {
             assert(c->thread == NULL);
             c->thread = me;
+            /* link to the conn_list of the thread */
+            if (me->conn_list != NULL) {
+                c->conn_next = me->conn_list;
+                me->conn_list->conn_prev = c;
+            }
+            me->conn_list = c;
         }
         cqi_free(item);
     }

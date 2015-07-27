@@ -406,6 +406,7 @@ typedef struct {
     pthread_mutex_t mutex;      /* Mutex to lock protect access to the pending_io */
     bool is_locked;
     struct conn *pending_io;    /* List of connection with pending async io ops */
+    struct conn *conn_list;     /* connection list managed by this thread */
     int index;                  /* index of this thread in the threads array */
     enum thread_type type;      /* Type of IO this thread processes */
 } LIBEVENT_THREAD;
@@ -572,6 +573,8 @@ struct conn {
     int keylen;
     conn   *next;     /* Used for generating a list of conn structures */
     LIBEVENT_THREAD *thread; /* Pointer to the thread object serving this connection */
+    conn *conn_prev;  /* used in the conn_list of a thread in charge */
+    conn *conn_next;  /* used in the conn_list of a thread in charge */
 
     ENGINE_ERROR_CODE aiostat;
     bool ewouldblock;
