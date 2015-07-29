@@ -8117,7 +8117,7 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
         STATS_NOKEY(c, cmd_lop_insert);
         if (ret == ENGINE_E2BIG) out_string(c, "CLIENT_ERROR too large value");
         else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
 
         /* swallow the data line */
         c->write_and_go = conn_swallow;
@@ -8520,7 +8520,7 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
 
         if (ret == ENGINE_E2BIG) out_string(c, "CLIENT_ERROR too large value");
         else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
 
         /* swallow the data line */
         c->write_and_go = conn_swallow;
@@ -9220,7 +9220,7 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
         STATS_NOKEY(c, cmd_bop_insert);
         if (ret == ENGINE_E2BIG) out_string(c, "CLIENT_ERROR too large value");
         else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
 
         /* swallow the data line */
         c->write_and_go = conn_swallow;
