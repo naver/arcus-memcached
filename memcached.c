@@ -7290,6 +7290,9 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         break;
     default:
         handle_unexpected_errorcode_ascii(c, ret);
+        /* swallow the data line */
+        c->write_and_go = conn_swallow;
+        c->sbytes = vlen;
     }
 }
 
