@@ -1,3 +1,11 @@
+2015-07-31 [version 1.8.5]
+	* Graceful shutdown waits for all threads to be stopped.
+	* Graceful shutdown closes listen socket and all client connections.
+	* Fix the mistake in setting hb_thread_sleep value.
+	* Increase initial hash table size - 64K => 128K.
+	* Internal code optimization and code refactoring.
+	* Add some preparation code for replication and migration.
+
 2015-05-29 [version 1.8.4]
 	* Set btree trimmed if the insertion of a bkey to trimmed space is tried.
 	* Support large btree(max 1000000 elements), but be careful in using that.
