@@ -17,6 +17,8 @@
 #ifndef ASSOC_H
 #define ASSOC_H
 
+#define MWJIN_HASHTABLE_EXPANSION_BY_WORKERS
+
 typedef struct _prefix_t prefix_t;
 
 struct _prefix_t {
@@ -44,6 +46,28 @@ struct _prefix_t {
 };
 
 struct assoc {
+#ifdef MWJIN_HASHTABLE_EXPANSION_BY_WORKERS
+   uint32_t hashpower; /* how many hash buckets in a hash table ? (power of 2) */
+   uint32_t hashsize;  /* hash table size */
+   uint32_t hashmask;  /* hash bucket mask */
+   uint32_t rootpower; /* how many hash tables we use ? (power of 2) */
+
+   /* cache item hash table : an array of hash tables */
+   struct table {
+      hash_item** hashtable;
+   } *roottable;
+
+   /* hash power table: how many hash tables each hash bucket use ? (power of 2) */
+   uint32_t* powertable;
+
+   /* prefix hash table : single hash table */
+   prefix_t**  prefix_hashtable;
+   prefix_t    noprefix_stats;
+
+   /* Number of items in the hash table. */
+   unsigned int hash_items;
+   unsigned int tot_prefix_items;
+#else
    /* how many powers of 2's worth of buckets we use */
    unsigned int hashpower;
 
@@ -71,6 +95,7 @@ struct assoc {
     * far we've gotten so far. Ranges from 0 .. hashsize(hashpower - 1) - 1.
     */
    unsigned int expand_bucket;
+#endif
 };
 
 /* associative array */
