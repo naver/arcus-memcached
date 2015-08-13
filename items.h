@@ -433,7 +433,7 @@ ENGINE_ERROR_CODE btree_elem_delete(struct default_engine *engine,
                                     const char *key, const size_t nkey,
                                     const bkey_range *bkrange, const eflag_filter *efilter,
                                     const uint32_t req_count, const bool drop_if_empty,
-                                    uint32_t *del_count, bool *dropped);
+                                    uint32_t *del_count, uint32_t *access_count, bool *dropped);
 
 ENGINE_ERROR_CODE btree_elem_arithmetic(struct default_engine *engine,
                                         const char* key, const size_t nkey,
@@ -449,12 +449,13 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
                                  const uint32_t offset, const uint32_t req_count,
                                  const bool delete, const bool drop_if_empty,
                                  btree_elem_item **elem_array, uint32_t *elem_count,
+                                 uint32_t *access_count,
                                  uint32_t *flags, bool *dropped_trimmed);
 
 ENGINE_ERROR_CODE btree_elem_count(struct default_engine *engine,
                                    const char *key, const size_t nkey,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
-                                   uint32_t *elem_count, uint32_t *flags);
+                                   uint32_t *elem_count, uint32_t *access_count);
 
 ENGINE_ERROR_CODE btree_posi_find(struct default_engine *engine,
                                   const char *key, const size_t nkey, const bkey_range *bkrange,

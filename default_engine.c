@@ -600,7 +600,8 @@ static ENGINE_ERROR_CODE default_btree_elem_delete(ENGINE_HANDLE* handle, const 
                                                    const eflag_filter *efilter,
                                                    const uint32_t req_count,
                                                    const bool drop_if_empty,
-                                                   uint32_t* del_count, bool* dropped,
+                                                   uint32_t* del_count, uint32_t *access_count,
+                                                   bool* dropped,
                                                    uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
@@ -609,7 +610,7 @@ static ENGINE_ERROR_CODE default_btree_elem_delete(ENGINE_HANDLE* handle, const 
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = btree_elem_delete(engine, key, nkey, bkrange, efilter, req_count, drop_if_empty,
-                            del_count, dropped);
+                            del_count, access_count, dropped);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -641,6 +642,7 @@ static ENGINE_ERROR_CODE default_btree_elem_get(ENGINE_HANDLE* handle, const voi
                                                 const uint32_t req_count,
                                                 const bool delete, const bool drop_if_empty,
                                                 eitem** eitem_array, uint32_t* eitem_count,
+                                                uint32_t *access_count,
                                                 uint32_t* flags, bool* dropped_trimmed,
                                                 uint16_t vbucket)
 {
@@ -651,7 +653,7 @@ static ENGINE_ERROR_CODE default_btree_elem_get(ENGINE_HANDLE* handle, const voi
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = btree_elem_get(engine, key, nkey, bkrange, efilter, offset, req_count,
                          delete, drop_if_empty, (btree_elem_item**)eitem_array, eitem_count,
-                         flags, dropped_trimmed);
+                         access_count, flags, dropped_trimmed);
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -660,14 +662,14 @@ static ENGINE_ERROR_CODE default_btree_elem_count(ENGINE_HANDLE* handle, const v
                                                   const void* key, const int nkey,
                                                   const bkey_range *bkrange,
                                                   const eflag_filter *efilter,
-                                                  uint32_t* eitem_count, uint32_t* flags,
+                                                  uint32_t* eitem_count, uint32_t* access_count,
                                                   uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    ret = btree_elem_count(engine, key, nkey, bkrange, efilter, eitem_count, flags);
+    ret = btree_elem_count(engine, key, nkey, bkrange, efilter, eitem_count, access_count);
     return ret;
 }
 

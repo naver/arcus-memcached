@@ -510,6 +510,7 @@ extern "C" {
                                               const uint32_t req_count,
                                               const bool drop_if_empty,
                                               uint32_t* del_count,
+                                              uint32_t* access_count,
                                               bool* dropped,
                                               uint16_t vbucket);
         ENGINE_ERROR_CODE (*btree_elem_arithmetic)(ENGINE_HANDLE* handle,
@@ -536,6 +537,7 @@ extern "C" {
                                             const bool drop_if_empty,
                                             eitem** eitem_array,
                                             uint32_t* eitem_count,
+                                            uint32_t* access_count,
                                             uint32_t* flags,
                                             bool* dropped_trimmed,
                                             uint16_t vbucket);
@@ -546,7 +548,7 @@ extern "C" {
                                               const bkey_range *bkrange,
                                               const eflag_filter *efilter,
                                               uint32_t* eitem_count,
-                                              uint32_t* flags,
+                                              uint32_t* access_count,
                                               uint16_t vbucket);
         ENGINE_ERROR_CODE (*btree_posi_find)(ENGINE_HANDLE *handle,
                                              const void* cookie,

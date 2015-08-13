@@ -3785,19 +3785,25 @@ static ENGINE_ERROR_CODE do_btree_elem_update(struct default_engine *engine, btr
 static uint32_t do_btree_elem_delete(struct default_engine *engine, btree_meta_info *info,
                                      const int bkrtype, const bkey_range *bkrange,
                                      const eflag_filter *efilter, const uint32_t count,
-                                     enum elem_delete_cause cause)
+                                     uint32_t *access_count, enum elem_delete_cause cause)
 {
     btree_elem_posi  path[BTREE_MAX_DEPTH];
     btree_elem_item *elem;
     uint32_t tot_found = 0; /* found count */
+    uint32_t tot_access = 0; /* access count */
 
-    if (info->root == NULL) return 0;
+    if (info->root == NULL) {
+        if (access_count)
+            *access_count = 0;
+        return 0;
+    }
 
     assert(info->root->ndepth < BTREE_MAX_DEPTH);
     elem = do_btree_find_first(info->root, bkrtype, bkrange, path, true);
     if (elem != NULL) {
         if (bkrtype == BKEY_RANGE_TYPE_SIN) {
             assert(path[0].bkeq == true);
+            tot_access++;
             if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
                 /* cause == ELEM_DELETE_NORMAL */
                 do_btree_elem_unlink(engine, info, path, cause);
@@ -3822,6 +3828,7 @@ static uint32_t do_btree_elem_delete(struct default_engine *engine, btree_meta_i
 
             c_posi.bkeq = false;
             do {
+                tot_access++;
                 if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
                     stotal += slabs_space_size(engine, do_btree_elem_ntotal(elem));
 
@@ -3887,6 +3894,8 @@ static uint32_t do_btree_elem_delete(struct default_engine *engine, btree_meta_i
             }
         }
     }
+    if (access_count)
+        *access_count = tot_access;
     return tot_found;
 }
 
@@ -4037,7 +4046,7 @@ static void do_btree_overflow_trim(struct default_engine *engine, btree_meta_inf
         }
         bkrtype = do_btree_bkey_range_type(&bkrange_space);
         del_count = do_btree_elem_delete(engine, info, bkrtype, &bkrange_space, NULL, 0,
-                                         ELEM_DELETE_TRIM);
+                                         NULL, ELEM_DELETE_TRIM);
         assert(del_count > 0);
         assert(info->ccnt > 0);
         if (info->ovflact == OVFL_SMALLEST_TRIM || info->ovflact == OVFL_LARGEST_TRIM)
@@ -4175,21 +4184,28 @@ static bool do_btree_overlapped_with_trimmed_space(btree_meta_info *info,
 static uint32_t do_btree_elem_get(struct default_engine *engine, btree_meta_info *info,
                                   const int bkrtype, const bkey_range *bkrange, const eflag_filter *efilter,
                                   const uint32_t offset, const uint32_t count, const bool delete,
-                                  btree_elem_item **elem_array, bool *potentialbkeytrim)
+                                  btree_elem_item **elem_array,
+                                  uint32_t *access_count, bool *potentialbkeytrim)
 {
     btree_elem_posi  path[BTREE_MAX_DEPTH];
     btree_elem_item *elem;
     uint32_t tot_found = 0; /* total found count */
+    uint32_t tot_access = 0; /* total access count */
 
     *potentialbkeytrim = false;
 
-    if (info->root == NULL) return 0;
+    if (info->root == NULL) {
+        if (access_count)
+            *access_count = 0;
+        return 0;
+    }
 
     assert(info->root->ndepth < BTREE_MAX_DEPTH);
     elem = do_btree_find_first(info->root, bkrtype, bkrange, path, delete);
     if (elem != NULL) {
         if (bkrtype == BKEY_RANGE_TYPE_SIN) { /* single bkey */
             assert(path[0].bkeq == true);
+            tot_access++;
             if (offset == 0) {
                 if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
                     elem->refcount++;
@@ -4228,6 +4244,7 @@ static uint32_t do_btree_elem_get(struct default_engine *engine, btree_meta_info
 
             c_posi.bkeq = false;
             do {
+                tot_access++;
                 if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
                     if (skip_cnt < offset) {
                         skip_cnt++;
@@ -4309,29 +4326,38 @@ static uint32_t do_btree_elem_get(struct default_engine *engine, btree_meta_info
             }
         }
     }
+    if (access_count)
+        *access_count = tot_access;
     return tot_found;
 }
 
 static uint32_t do_btree_elem_count(struct default_engine *engine, btree_meta_info *info,
                                     const int bkrtype, const bkey_range *bkrange,
-                                    const eflag_filter *efilter)
+                                    const eflag_filter *efilter, uint32_t *access_count)
 {
     btree_elem_posi  posi;
     btree_elem_item *elem;
     uint32_t tot_found = 0; /* total found count */
+    uint32_t tot_access = 0; /* total access count */
 
-    if (info->root == NULL) return 0;
+    if (info->root == NULL) {
+        if (access_count)
+            *access_count = 0;
+        return 0;
+    }
 
     elem = do_btree_find_first(info->root, bkrtype, bkrange, &posi, false);
     if (elem != NULL) {
         if (bkrtype == BKEY_RANGE_TYPE_SIN) {
             assert(posi.bkeq == true);
+            tot_access++;
             if (efilter == NULL || do_btree_elem_filter(elem, efilter))
                 tot_found++;
         } else { /* BKEY_RANGE_TYPE_ASC || BKEY_RANGE_TYPE_DSC */
             bool forward = (bkrtype == BKEY_RANGE_TYPE_ASC ? true : false);
             posi.bkeq = false;
             do {
+                tot_access++;
                 if (efilter == NULL || do_btree_elem_filter(elem, efilter))
                     tot_found++;
 
@@ -4343,6 +4369,8 @@ static uint32_t do_btree_elem_count(struct default_engine *engine, btree_meta_in
             } while (elem != NULL);
         }
     }
+    if (access_count)
+        *access_count = tot_access;
     return tot_found;
 }
 
@@ -5055,7 +5083,7 @@ static void do_coll_all_elem_delete(struct default_engine *engine, hash_item *it
         bkey_range bkrange_space;
         get_bkey_full_range(info->bktype, true, &bkrange_space);
         (void)do_btree_elem_delete(engine, info, BKEY_RANGE_TYPE_ASC, &bkrange_space,
-                                   NULL, info->mcnt, ELEM_DELETE_COLL);
+                                   NULL, info->mcnt, NULL, ELEM_DELETE_COLL);
         assert(info->root == NULL);
     }
 }
@@ -5178,7 +5206,7 @@ static void *collection_delete_thread(void *arg)
                 info = (btree_meta_info *)item_get_meta(it);
                 //deleted_cnt = do_btree_elem_delete(engine, info, BKEY_RANGE_TYPE_ASC, &bkrange_space, NULL, 100);
                 (void)do_btree_elem_delete(engine, info, BKEY_RANGE_TYPE_ASC, &bkrange_space,
-                                           NULL, 100, ELEM_DELETE_COLL);
+                                           NULL, 100, NULL, ELEM_DELETE_COLL);
                 if (info->ccnt == 0) {
                     assert(info->root == NULL);
                     do_item_free(engine, it);
@@ -6123,7 +6151,7 @@ ENGINE_ERROR_CODE btree_elem_delete(struct default_engine *engine,
                                     const char *key, const size_t nkey,
                                     const bkey_range *bkrange, const eflag_filter *efilter,
                                     const uint32_t req_count, const bool drop_if_empty,
-                                    uint32_t *del_count, bool *dropped)
+                                    uint32_t *del_count, uint32_t *access_count, bool *dropped)
 {
     hash_item       *it;
     btree_meta_info *info;
@@ -6143,7 +6171,7 @@ ENGINE_ERROR_CODE btree_elem_delete(struct default_engine *engine,
                 ret = ENGINE_EBADBKEY; break;
             }
             *del_count = do_btree_elem_delete(engine, info, bkrtype, bkrange, efilter, req_count,
-                                              ELEM_DELETE_NORMAL);
+                                              access_count, ELEM_DELETE_NORMAL);
             if (*del_count > 0) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(info->root == NULL);
@@ -6219,6 +6247,7 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
                                  const uint32_t offset, const uint32_t req_count,
                                  const bool delete, const bool drop_if_empty,
                                  btree_elem_item **elem_array, uint32_t *elem_count,
+                                 uint32_t *access_count,
                                  uint32_t *flags, bool *dropped_trimmed)
 {
     hash_item       *it;
@@ -6242,8 +6271,9 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
-            *elem_count = do_btree_elem_get(engine, info, bkrtype, bkrange, efilter, offset, req_count,
-                                            delete, elem_array, &potentialbkeytrim);
+            *elem_count = do_btree_elem_get(engine, info, bkrtype, bkrange, efilter,
+                                            offset, req_count, delete,
+                                            elem_array, access_count, &potentialbkeytrim);
             if (*elem_count > 0) {
                 if (delete) {
                     if (info->ccnt == 0 && drop_if_empty) {
@@ -6273,7 +6303,7 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
 ENGINE_ERROR_CODE btree_elem_count(struct default_engine *engine,
                                    const char *key, const size_t nkey,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
-                                   uint32_t *elem_count, uint32_t *flags)
+                                   uint32_t *elem_count, uint32_t *access_count)
 {
     hash_item       *it;
     btree_meta_info *info;
@@ -6292,8 +6322,8 @@ ENGINE_ERROR_CODE btree_elem_count(struct default_engine *engine,
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
-            *elem_count = do_btree_elem_count(engine, info, bkrtype, bkrange, efilter);
-            *flags = it->flags;
+            *elem_count = do_btree_elem_count(engine, info, bkrtype, bkrange, efilter,
+                                              access_count);
         } while (0);
         do_item_release(engine, it);
     }

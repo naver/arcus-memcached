@@ -1688,6 +1688,7 @@ static void process_bop_mget_complete(conn *c) {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     eitem **elem_array = (eitem **)c->coll_eitem;
     uint32_t tot_elem_count = 0;
+    uint32_t tot_access_count = 0;
     char delimiter = ',';
     token_t key_tokens[MAX_BMGET_KEY_COUNT];
 
@@ -1699,6 +1700,7 @@ static void process_bop_mget_complete(conn *c) {
     else /* valid key_tokens */
     {
         uint32_t cur_elem_count = 0;
+        uint32_t cur_access_count = 0;
         uint32_t flags, k, e;
         bool trimmed;
         eitem_info info;
@@ -1724,7 +1726,7 @@ static void process_bop_mget_complete(conn *c) {
                                              c->coll_roffset, c->coll_rcount,
                                              false, false,
                                              &elem_array[tot_elem_count], &cur_elem_count,
-                                             &flags, &trimmed, 0);
+                                             &cur_access_count, &flags, &trimmed, 0);
 
             if (settings.detail_enabled) {
                 stats_prefix_record_bop_get(key_tokens[k].value, key_tokens[k].length,
@@ -1759,6 +1761,8 @@ static void process_bop_mget_complete(conn *c) {
                     STATS_ELEM_HITS(c, bop_get, key_tokens[k].value, key_tokens[k].length);
                     tot_elem_count += cur_elem_count;
                     cur_elem_count = 0;
+                    tot_access_count += cur_access_count;
+                    cur_access_count = 0;
                 } else {
                     STATS_NOKEY(c, cmd_bop_get);
                     // ret == ENGINE_ENOMEM
@@ -1803,6 +1807,8 @@ static void process_bop_mget_complete(conn *c) {
             // ret != ENGINE_SUCCESS
             tot_elem_count += cur_elem_count;
             cur_elem_count = 0;
+            tot_access_count += cur_access_count;
+            cur_access_count = 0;
         }
     }
 
@@ -4616,13 +4622,14 @@ static void process_bin_bop_delete(conn *c) {
     }
 
     uint32_t del_count;
+    uint32_t acc_count; /* access count */
     bool     dropped;
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_elem_delete(mc_engine.v0, c, key, nkey,
                                           bkrange, efilter, req->message.body.count,
                                           (bool)req->message.body.drop,
-                                          &del_count, &dropped,
+                                          &del_count, &acc_count, &dropped,
                                           c->binary_header.request.vbucket);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
@@ -4701,6 +4708,7 @@ static void process_bin_bop_get(conn *c) {
 
     eitem  **elem_array = NULL;
     uint32_t elem_count;
+    uint32_t access_count;
     uint32_t flags, i;
     bool     dropped_trimmed;
     int      est_count;
@@ -4725,7 +4733,8 @@ static void process_bin_bop_get(conn *c) {
                                        req->message.body.count,
                                        (bool)req->message.body.delete,
                                        (bool)req->message.body.drop,
-                                       elem_array, &elem_count, &flags, &dropped_trimmed,
+                                       elem_array, &elem_count, &access_count,
+                                       &flags, &dropped_trimmed,
                                        c->binary_header.request.vbucket);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
@@ -4862,11 +4871,12 @@ static void process_bin_bop_count(conn *c) {
     }
 
     uint32_t elem_count;
-    uint32_t flags;
+    uint32_t access_count;
+    uint32_t flags = 0;
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_elem_count(mc_engine.v0, c, key, nkey,
-                                         bkrange, efilter, &elem_count, &flags,
+                                         bkrange, efilter, &elem_count, &access_count,
                                          c->binary_header.request.vbucket);
 
     if (settings.detail_enabled) {
@@ -8709,6 +8719,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
 {
     eitem  **elem_array = NULL;
     uint32_t elem_count;
+    uint32_t access_count;
     uint32_t flags, i;
     bool     dropped_trimmed;
     int      est_count;
@@ -8731,7 +8742,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
     ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c, key, nkey,
                                        bkrange, efilter, offset, count,
                                        delete, drop_if_empty,
-                                       elem_array, &elem_count,
+                                       elem_array, &elem_count, &access_count,
                                        &flags, &dropped_trimmed, 0);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
@@ -8835,12 +8846,12 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
                               const bkey_range *bkrange, const eflag_filter *efilter)
 {
     uint32_t elem_count;
-    uint32_t flags;
+    uint32_t access_count;
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_elem_count(mc_engine.v0, c,
                                          key, nkey, bkrange, efilter,
-                                         &elem_count, &flags, 0);
+                                         &elem_count, &access_count, 0);
 
     if (settings.detail_enabled) {
         stats_prefix_record_bop_count(key, nkey, (ret==ENGINE_SUCCESS));
@@ -9345,6 +9356,7 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
                                uint32_t count, bool drop_if_empty)
 {
     uint32_t del_count;
+    uint32_t acc_count; /* access count */
     bool     dropped;
 
     assert(c->ewouldblock == false);
@@ -9352,7 +9364,7 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_elem_delete(mc_engine.v0, c, key, nkey,
                                           bkrange, efilter, count, drop_if_empty,
-                                          &del_count, &dropped, 0);
+                                          &del_count, &acc_count, &dropped, 0);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
