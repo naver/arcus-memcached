@@ -6996,7 +6996,7 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
         if (tk != NULL) {
             topkeys_stats(tk, c, current_time, append_stats);
         } else {
-            out_string(c, "ERROR");
+            out_string(c, "SERVER_ERROR not supported");
             return;
         }
     } else if (strcmp(subcommand, "prefixes") == 0) {
@@ -7041,7 +7041,7 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
             out_string(c, "SERVER_ERROR not supported");
             break;
         default:
-            out_string(c, "ERROR");
+            out_string(c, "ERROR no matching stat");
             break;
         }
         return ;
@@ -7899,7 +7899,7 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
     }
     /* ntokens must be larger than 0 in order to avoid segfault in the next for statement. */
     if (ntokens <= 0) {
-        out_string(c, "ERROR");
+        out_string(c, "ERROR no arguments");
         return;
     }
 
@@ -7909,9 +7909,7 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
         }
     }
     if (cmd == NULL) {
-        /* Unify the response string in case of command mismatch */
-        /* out_string(c, "ERROR unknown command"); */
-        out_string(c, "ERROR");
+        out_string(c, "ERROR no matching command");
         return;
     }
     if (nbytes == 0) {
@@ -10735,7 +10733,7 @@ static void process_command(conn *c, char *command)
         if (settings.extensions.ascii != NULL) {
             process_extension_command(c, tokens, ntokens);
         } else {
-            out_string(c, "ERROR");
+            out_string(c, "ERROR unknown command");
         }
     }
     return;

@@ -80,16 +80,16 @@ $cmd = "set kvkey 0 0 10"; $val = "0000000000"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 
 $cmd = "set kvkey 0 0 10"; $val = "11111111111";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR";
+$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR unknown command";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 $cmd = "set kvkey 0 0 10"; $val = "222222222222";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR";
+$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR unknown command";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 
 $cmd = "set kvkey 0 10"; $val = "0000000000";
-$rst = "ERROR"; $rst2 = "ERROR";
+$rst = "ERROR unknown command"; $rst2 = "ERROR unknown command";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 $cmd = "set kvkey 0 0 10"; $val = "0000000000"; $rst = "STORED";
@@ -97,7 +97,7 @@ print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"
 $cmd = "set kvkey 0 0 10 10"; $val = "0000000000"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "set kvkey 0 0 10 10 10"; $val = "0000000000";
-$rst = "ERROR"; $rst2 = "ERROR";
+$rst = "ERROR unknown command"; $rst2 = "ERROR unknown command";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 
@@ -107,30 +107,30 @@ print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"
 $cmd = "bop insert bkey1 15 5"; $val = "55555"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "bop insert bkey1 16 5"; $val = "666666";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR";
+$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR unknown command";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 $cmd = "bop insert bkey1 17 5"; $val = "7777777";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR";
+$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR unknown command";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 $cmd = "bop insert bkey1 18 5"; $val = "88888888";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR";
+$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR unknown command";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 $cmd = "bop insert bkey1 19 5"; $val = "999999999";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR";
+$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR unknown command";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 
 $cmd = "bop insert bkey1 21"; $val = "0000000000";
-$rst = "CLIENT_ERROR bad command line format"; $rst2 = "ERROR";
+$rst = "CLIENT_ERROR bad command line format"; $rst2 = "ERROR unknown command";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 $cmd = "bop insert bkey1 22 10"; $val = "0000000000"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "bop insert bkey1 23 10 10"; $val = "0000000000";
-$rst = "CLIENT_ERROR bad command line format"; $rst2 = "ERROR";
+$rst = "CLIENT_ERROR bad command line format"; $rst2 = "ERROR unknown command";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 
@@ -158,16 +158,16 @@ $cmd = "set kvkey 0 0 10"; $val = "0000000000"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 
 $cmd = "set kvkey 0 0 10"; $val = "11111111111";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR";
+$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR no arguments";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 $cmd = "set kvkey 0 0 10"; $val = "222222222222";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR";
+$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR no matching command";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 
 $cmd = "set kvkey 0 10"; $val = "0000000000";
-$rst = "ERROR"; $rst2 = "ERROR";
+$rst = "ERROR no matching command"; $rst2 = "ERROR no matching command";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 $cmd = "set kvkey 0 0 10"; $val = "0000000000"; $rst = "STORED";
@@ -175,7 +175,7 @@ print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"
 $cmd = "set kvkey 0 0 10 10"; $val = "0000000000"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "set kvkey 0 0 10 10 10"; $val = "0000000000";
-$rst = "ERROR"; $rst2 = "ERROR";
+$rst = "ERROR no matching command"; $rst2 = "ERROR no matching command";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 
@@ -185,30 +185,30 @@ print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"
 $cmd = "bop insert bkey1 15 5"; $val = "55555"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "bop insert bkey1 16 5"; $val = "666666";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR";
+$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR no arguments";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 $cmd = "bop insert bkey1 17 5"; $val = "7777777";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR";
+$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR no matching command";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 $cmd = "bop insert bkey1 18 5"; $val = "88888888";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR";
+$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR no matching command";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 $cmd = "bop insert bkey1 19 5"; $val = "999999999";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR";
+$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR no matching command";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 
 $cmd = "bop insert bkey1 21"; $val = "0000000000";
-$rst = "CLIENT_ERROR bad command line format"; $rst2 = "ERROR";
+$rst = "CLIENT_ERROR bad command line format"; $rst2 = "ERROR no matching command";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 $cmd = "bop insert bkey1 22 10"; $val = "0000000000"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "bop insert bkey1 23 10 10"; $val = "0000000000";
-$rst = "CLIENT_ERROR bad command line format"; $rst2 = "ERROR";
+$rst = "CLIENT_ERROR bad command line format"; $rst2 = "ERROR no matching command";
 print $sock "$cmd\r\n$val\r\n";
 is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
 

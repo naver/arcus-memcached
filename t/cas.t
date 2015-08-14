@@ -70,9 +70,9 @@ is(scalar <$sock>, "NOT_FOUND\r\n", "cas failed, foo does not exist");
 
 # cas empty
 print $sock "cas foo 0 0 6 \r\nbarva2\r\n";
-is(scalar <$sock>, "ERROR\r\n", "cas empty, throw error");
+is(scalar <$sock>, "ERROR unknown command\r\n", "cas empty, throw error");
 # cant parse barval2\r\n
-is(scalar <$sock>, "ERROR\r\n", "error out on barval2 parsing");
+is(scalar <$sock>, "ERROR unknown command\r\n", "error out on barval2 parsing");
 
 # set foo1
 print $sock "set foo1 0 0 1\r\n1\r\n";
