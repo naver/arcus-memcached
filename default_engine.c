@@ -339,12 +339,13 @@ static ENGINE_ERROR_CODE default_list_struct_create(ENGINE_HANDLE* handle, const
 }
 
 static ENGINE_ERROR_CODE default_list_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
-                                                 eitem** eitem, const size_t nbytes)
+                                                 const void* key, const int nkey,
+                                                 const size_t nbytes, eitem** eitem)
 {
     list_elem_item *elem;
     ENGINE_ERROR_CODE ret = ENGINE_EINVAL;
 
-    ACTION_BEFORE_WRITE(cookie, NULL, 0);
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
     elem = list_elem_alloc(get_handle(handle), nbytes, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     if (elem != NULL) {
@@ -429,12 +430,13 @@ static ENGINE_ERROR_CODE default_set_struct_create(ENGINE_HANDLE* handle, const 
 }
 
 static ENGINE_ERROR_CODE default_set_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
-                                                eitem** eitem, const size_t nbytes)
+                                                const void* key, const int nkey,
+                                                const size_t nbytes, eitem** eitem)
 {
     set_elem_item *elem;
     ENGINE_ERROR_CODE ret = ENGINE_EINVAL;
 
-    ACTION_BEFORE_WRITE(cookie, NULL, 0);
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
     elem = set_elem_alloc(get_handle(handle), nbytes, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     if (elem != NULL) {
@@ -529,13 +531,14 @@ static ENGINE_ERROR_CODE default_btree_struct_create(ENGINE_HANDLE* handle, cons
 }
 
 static ENGINE_ERROR_CODE default_btree_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
-                                                  eitem** eitem,
-                                                  const size_t nbkey, const size_t neflag, const size_t nbytes)
+                                                  const void* key, const int nkey,
+                                                  const size_t nbkey, const size_t neflag, const size_t nbytes,
+                                                  eitem** eitem)
 {
     btree_elem_item *elem;
     ENGINE_ERROR_CODE ret = ENGINE_EINVAL;
 
-    ACTION_BEFORE_WRITE(cookie, NULL, 0);
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
     elem = btree_elem_alloc(get_handle(handle), nbkey, neflag, nbytes, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     if (elem != NULL) {

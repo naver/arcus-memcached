@@ -370,8 +370,10 @@ extern "C" {
                                                 uint16_t vbucket);
         ENGINE_ERROR_CODE (*list_elem_alloc)(ENGINE_HANDLE* handle,
                                              const void* cookie,
-                                             eitem** eitem,
-                                             const size_t nbytes);
+                                             const void* key,
+                                             const int nkey,
+                                             const size_t nbytes,
+                                             eitem** eitem);
         void (*list_elem_release)(ENGINE_HANDLE* handle,
                                   const void *cookie,
                                   eitem **eitem_array,
@@ -419,8 +421,10 @@ extern "C" {
                                                uint16_t vbucket);
         ENGINE_ERROR_CODE (*set_elem_alloc)(ENGINE_HANDLE* handle,
                                             const void* cookie,
-                                            eitem** eitem,
-                                            const size_t nbytes);
+                                            const void* key,
+                                            const int nkey,
+                                            const size_t nbytes,
+                                            eitem** eitem);
         void (*set_elem_release)(ENGINE_HANDLE* handle,
                                  const void *cookie,
                                  eitem **eitem_array,
@@ -473,10 +477,12 @@ extern "C" {
                                                  uint16_t vbucket);
         ENGINE_ERROR_CODE (*btree_elem_alloc)(ENGINE_HANDLE* handle,
                                               const void* cookie,
-                                              eitem** eitem,
+                                              const void* key,
+                                              const int nkey,
                                               const size_t nbkey,
                                               const size_t neflag,
-                                              const size_t nbytes);
+                                              const size_t nbytes,
+                                              eitem** eitem);
         void (*btree_elem_release)(ENGINE_HANDLE* handle,
                                    const void *cookie,
                                    eitem **eitem_array,

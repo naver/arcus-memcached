@@ -3359,7 +3359,7 @@ static void process_bin_lop_prepare_nread(conn *c) {
     if ((vlen + 2) > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
-        ret = mc_engine.v1->list_elem_alloc(mc_engine.v0, c, &elem, vlen + 2);
+        ret = mc_engine.v1->list_elem_alloc(mc_engine.v0, c, key, nkey, vlen+2, &elem);
     }
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
@@ -3783,7 +3783,7 @@ static void process_bin_sop_prepare_nread(conn *c) {
         ret = ENGINE_E2BIG;
     } else {
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
-            ret = mc_engine.v1->set_elem_alloc(mc_engine.v0, c, &elem, vlen + 2);
+            ret = mc_engine.v1->set_elem_alloc(mc_engine.v0, c, key, nkey, vlen+2, &elem);
         } else { /* PROTOCOL_BINARY_CMD_SOP_DELETE or PROTOCOL_BINARY_CMD_SOP_EXIST */
             if ((elem = (eitem *)malloc(sizeof(elem_value) + vlen + 2)) == NULL)
                 ret = ENGINE_ENOMEM;
@@ -4296,9 +4296,10 @@ static void process_bin_bop_prepare_nread(conn *c) {
     if ((vlen + 2) > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
-        ret = mc_engine.v1->btree_elem_alloc(mc_engine.v0, c, &elem,
+        ret = mc_engine.v1->btree_elem_alloc(mc_engine.v0, c, key, nkey,
                                              req->message.body.nbkey,
-                                             req->message.body.neflag, vlen + 2);
+                                             req->message.body.neflag, vlen+2,
+                                             &elem);
     }
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
@@ -8140,7 +8141,7 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
     if (vlen > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
-        ret = mc_engine.v1->list_elem_alloc(mc_engine.v0, c, &elem, vlen);
+        ret = mc_engine.v1->list_elem_alloc(mc_engine.v0, c, key, nkey, vlen, &elem);
     }
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
@@ -8527,7 +8528,7 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
         ret = ENGINE_E2BIG;
     } else {
         if (cmd == (int)OPERATION_SOP_INSERT) {
-            ret = mc_engine.v1->set_elem_alloc(mc_engine.v0, c, &elem, vlen);
+            ret = mc_engine.v1->set_elem_alloc(mc_engine.v0, c, key, nkey, vlen, &elem);
         } else { /* OPERATION_SOP_DELETE or OPERATION_SOP_EXIST */
             if ((elem = (eitem *)malloc(sizeof(elem_value) + vlen)) == NULL)
                 ret = ENGINE_ENOMEM;
@@ -9251,8 +9252,8 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
     if (vlen > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
-        ret = mc_engine.v1->btree_elem_alloc(mc_engine.v0, c, &elem,
-                                             nbkey, neflag, vlen);
+        ret = mc_engine.v1->btree_elem_alloc(mc_engine.v0, c, key, nkey,
+                                             nbkey, neflag, vlen, &elem);
     }
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
