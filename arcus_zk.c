@@ -202,6 +202,7 @@ static pthread_mutex_t azk_mtx  = PTHREAD_MUTEX_INITIALIZER;
 static int             azk_count;
 
 // zookeeper close synchronization
+static pthread_mutex_t zk_final_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t zk_close_lock = PTHREAD_MUTEX_INITIALIZER;
 static volatile bool   zk_watcher_running = false;
 
@@ -1129,7 +1130,7 @@ void arcus_zk_final(const char *msg)
 
     assert(arcus_zk_shutdown == true);
 
-    pthread_mutex_lock(&zk_close_lock);
+    pthread_mutex_lock(&zk_final_lock);
     if (zh) {
         int elapsed_msec;
 
@@ -1174,11 +1175,13 @@ void arcus_zk_final(const char *msg)
         }
 
         /* close zk connection */
+        pthread_mutex_lock(&zk_close_lock);
         zookeeper_close(zh);
         zh = NULL;
+        pthread_mutex_unlock(&zk_close_lock);
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "zk connection closed\n");
     }
-    pthread_mutex_unlock(&zk_close_lock);
+    pthread_mutex_unlock(&zk_final_lock);
 }
 
 int arcus_zk_set_ensemble(char *ensemble_list)
