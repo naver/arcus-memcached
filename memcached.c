@@ -184,6 +184,10 @@ static struct engine_event_handler *engine_event_handlers[MAX_ENGINE_EVENT_TYPE 
 static char *arcus_zk_cfg = NULL;
 #endif
 
+#ifdef COMMAND_LOGGING
+static bool cmdlog = false;
+#endif
+
 /*
  * forward declarations
  */
@@ -7935,6 +7939,84 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
     }
 }
 
+#ifdef COMMAND_LOGGING
+static void get_cmdlog_stats(char* str)
+{
+    struct cmd_log_stats *logstats = cmdlog_stats();
+
+    snprintf(str, CMDLOG_INPUT_SIZE,
+            "\t" "Command logging stats" "\n"
+            "\t" "Last enterd command number : %d" "\n"
+            "\t" "Last skipped command number : %d" "\n"
+            "\t" "Last running time : %d_%d ~ %d_%d" "\n"
+            "\t" "The number of log files : %d" "\n"
+            "\t" "Log file name: %d_%d_n.log" "\n"
+            "\t" "How stopped : %d" "\n",
+            logstats->entered_commands, logstats->skipped_commands,
+            logstats->bgndate, logstats->bgntime, logstats->enddate,
+            logstats->endtime, logstats->file_count, logstats->bgndate,
+            logstats->bgntime, logstats->stop_cause);
+}
+
+static void process_logging_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    char *type = tokens[COMMAND_TOKEN+1].value;
+    bool already_check = false;
+    int ret;
+
+    if (ntokens > 2 && strcmp(type, "start") == 0) {
+        ret = cmdlog_start(&already_check);
+        if (already_check) {
+            out_string(c,
+            "\t" "already command logging started" "\n"
+            );
+        } else if (! already_check && ret == 0) {
+            out_string(c,
+            "\t" "command logging start" "\n"
+            );
+            cmdlog = true;
+        } else {
+            out_string(c,
+            "\t" "command logging start error" "\n"
+            );
+            cmdlog = false;
+        }
+    } else if (ntokens > 2 && strcmp(type, "stop") == 0) {
+        ret = cmdlog_stop(&already_check);
+        if (already_check) {
+            out_string(c,
+            "\t" "already command logging started" "\n"
+            );
+        } else if (! already_check && ret == 0) {
+            out_string(c,
+            "\t" "command logging stop" "\n"
+            );
+            cmdlog = false;
+        } else {
+            out_string(c,
+            "\t" "command logging error" "\n"
+            );
+            cmdlog = false;
+        }
+    } else if (ntokens > 2 && strcmp(type, "stats") == 0) {
+        char *str = malloc(CMDLOG_INPUT_SIZE * sizeof(char));
+
+        if (str) {
+            get_cmdlog_stats(str);
+            write_and_free(c, str, strlen(str));
+        } else {
+            out_string(c,
+            "\t" "command logging stats string can't allocate" "\n"
+            );
+        }
+    } else {
+        out_string(c,
+        "\t" "* Usage: logging [start | stop | stats]" "\n"
+        );
+    }
+}
+#endif
+
 static inline int get_coll_create_attr_from_tokens(token_t *tokens, const int ntokens,
                                                    int coll_type, item_attr *attrp)
 {
@@ -10632,6 +10714,14 @@ static void process_command(conn *c, char *command)
         return;
     }
 
+#ifdef COMMAND_LOGGING
+    if (cmdlog) {
+        if (cmdlog_write(c->client_ip, command) == false) {
+            cmdlog = false;
+        }
+    }
+#endif
+
     ntokens = tokenize_command(command, tokens, MAX_TOKENS);
 
     if ((ntokens >= 3) && ((strcmp(tokens[COMMAND_TOKEN].value, "get" ) == 0) ||
@@ -10729,6 +10819,12 @@ static void process_command(conn *c, char *command)
     {
         process_help_command(c, tokens, ntokens);
     }
+#ifdef COMMAND_LOGGING
+    else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "cmdlog") == 0))
+    {
+        process_logging_command(c, tokens, ntokens);
+    }
+#endif
     else /* no matching command */
     {
         if (settings.extensions.ascii != NULL) {
@@ -13214,6 +13310,11 @@ int main (int argc, char **argv) {
     }
 #endif
 
+#ifdef COMMAND_LOGGING
+    /* initialise command logging */
+    cmdlog_init(mc_logger);
+#endif
+
     /* start up worker threads if MT mode */
     thread_init(settings.num_threads, main_base);
 
@@ -13309,6 +13410,11 @@ int main (int argc, char **argv) {
         arcus_zk_final("graceful shutdown");
         free(arcus_zk_cfg);
     }
+#endif
+
+#ifdef COMMAND_LOGGING
+    /* destroy command logging */
+    cmdlog_final();
 #endif
 
     mc_engine.v1->destroy(mc_engine.v0);
