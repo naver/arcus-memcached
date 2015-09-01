@@ -31,12 +31,10 @@
 
 #include "cache.h"
 #include "topkeys.h"
+#include "cmdlog.h"
 #include "engine_loader.h"
 
 #include "sasl_defs.h"
-
-/* code tag : COMMAND_LOGGING */
-#include "cmdlog.h"
 
 /* This is the address we use for admin purposes.  For example, doing stats
  * and heart beats from arcus_zk.

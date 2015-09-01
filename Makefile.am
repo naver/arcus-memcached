@@ -78,9 +78,9 @@ memcached_SOURCES = \
                     thread.c \
                     topkeys.c \
                     topkeys.h \
-                    trace.h \
                     cmdlog.c \
-                    cmdlog.h
+                    cmdlog.h \
+                    trace.h
 memcached_LDFLAGS =-R '$(libdir)'
 memcached_CFLAGS = @PROFILER_FLAGS@ ${AM_CFLAGS}
 memcached_DEPENDENCIES = libmcd_util.la
