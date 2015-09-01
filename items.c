@@ -966,7 +966,13 @@ static void do_item_release(struct default_engine *engine, hash_item *it)
         }
         else if (it->prev == it && it->next == it) {
             /* link the item into the LRU list */
-            item_link_q(engine, it);
+            rel_time_t current_time = engine->server.core->get_current_time();
+            if (do_item_isvalid(engine, it, current_time)) {
+                it->time = current_time;
+                item_link_q(engine, it);
+            } else {
+                do_item_unlink(engine, it, ITEM_UNLINK_INVALID);
+            }
         }
     }
 #else
