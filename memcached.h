@@ -35,6 +35,9 @@
 
 #include "sasl_defs.h"
 
+/* code tag : COMMAND_LOGGING */
+#include "cmdlog.h"
+
 /* This is the address we use for admin purposes.  For example, doing stats
  * and heart beats from arcus_zk.
  * We count these connections separately from regular client connections.
