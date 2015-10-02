@@ -328,6 +328,9 @@ static void settings_init(void) {
     settings.backlog = 1024;
     settings.binding_protocol = negotiating_prot;
     settings.item_size_max = 1024 * 1024; /* The famous 1MB upper limit. */
+    settings.max_list_size = MAX_LIST_SIZE;
+    settings.max_set_size = MAX_SET_SIZE;
+    settings.max_btree_size = MAX_BTREE_SIZE;
     settings.topkeys = 0;
     settings.require_sasl = false;
     settings.extensions.logger = get_stderr_logger();
@@ -6907,6 +6910,9 @@ static void process_stat_settings(ADD_STAT add_stats, void *c) {
 #endif
     APPEND_STAT("auth_required_sasl", "%s", settings.require_sasl ? "yes" : "no");
     APPEND_STAT("item_size_max", "%d", settings.item_size_max);
+    APPEND_STAT("max_list_size", "%d", settings.max_list_size);
+    APPEND_STAT("max_set_size", "%d", settings.max_set_size);
+    APPEND_STAT("max_btree_size", "%d", settings.max_btree_size);
     APPEND_STAT("topkeys", "%d", settings.topkeys);
 
     for (EXTENSION_DAEMON_DESCRIPTOR *ptr = settings.extensions.daemons;
@@ -13119,6 +13125,11 @@ int main (int argc, char **argv) {
                          value, MAX_BTREE_SIZE, ARCUS_COLL_SIZE_LIMIT);
             }
         }
+        /* reset maximum elements of each collection */
+        settings.max_list_size = MAX_LIST_SIZE;
+        settings.max_set_size = MAX_SET_SIZE;
+        settings.max_btree_size = MAX_BTREE_SIZE;
+
         old_opts += sprintf(old_opts, "max_list_size=%d;",  MAX_LIST_SIZE);
         old_opts += sprintf(old_opts, "max_set_size=%d;",   MAX_SET_SIZE);
         old_opts += sprintf(old_opts, "max_btree_size=%d;", MAX_BTREE_SIZE);

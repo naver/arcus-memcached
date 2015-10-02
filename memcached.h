@@ -374,6 +374,9 @@ struct settings {
     size_t item_size_max;   /* Maximum item size, and upper end for slabs */
     bool sasl;              /* SASL on/off */
     bool require_sasl;      /* require SASL auth */
+    int max_list_size;      /* Maximum elements in list collection */
+    int max_set_size;       /* Maximum elements in set collection */
+    int max_btree_size;     /* Maximum elements in b+tree collection */
     int topkeys;            /* Number of top keys to track */
     struct {
         EXTENSION_DAEMON_DESCRIPTOR *daemons;
