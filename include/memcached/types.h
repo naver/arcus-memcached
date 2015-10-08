@@ -32,6 +32,7 @@ struct iovec {
 
 #define SUPPORT_BOP_MGET
 #define SUPPORT_BOP_SMGET
+#define JHPARK_NEW_SMGET_INTERFACE
 #define MAX_EFLAG_COMPARE_COUNT 100
 
 #ifdef __cplusplus
@@ -281,6 +282,21 @@ extern "C" {
         uint8_t  bitwop;
         uint8_t reserved[6];
     } eflag_update;
+
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+    /* Key info of the hitted element in smget */
+    typedef struct {
+        uint16_t kidx;  /* key index in keys array */
+        uint8_t  trim;  /* is trimmed ? 0 or 1 */
+        uint32_t flag;  /* item flags */
+    } smget_ehit_t;
+
+    /* Key info of the missed key in smget */
+    typedef struct {
+        uint16_t kidx;  /* key index in keys array */
+        uint16_t cause; /* why the key is missed ? */
+    } smget_kmis_t;
+#endif
 
     /* item attribute structure */
     typedef struct {

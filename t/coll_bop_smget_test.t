@@ -47,7 +47,10 @@ sub assert_bop_smget {
     my $bkey;
     my $data;
     my $mis_count = 1;
+    my $mis_keys = "KEY_absent NOT_FOUND";
+=head
     my $mis_keys = "KEY_absent";
+=cut
 
     my $range_valid = 1;
     if ($from <= $to) {

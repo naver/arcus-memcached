@@ -15,7 +15,7 @@ my $builddir = getcwd;
 @EXPORT = qw(new_memcached new_memcached_engine sleep
              mem_get_is mem_gets mem_gets_is mem_stats mem_cmd_val_is
              getattr_is lop_get_is sop_get_is bop_get_is bop_gbp_is bop_pwg_is bop_smget_is
-             bop_ext_get_is bop_ext_smget_is
+             bop_ext_get_is bop_ext_smget_is bop_new_smget_is
              stats_prefixes_is stats_noprefix_is stats_prefix_is
              supports_sasl free_port);
 
@@ -592,6 +592,67 @@ sub bop_ext_smget_is {
     if ($exp_elem_flgs ne "") {
         Test::More::is("$res_elem_flgs", "$exp_elem_flgs", $msg);
     }
+}
+
+# COLLECTION
+sub bop_new_smget_is {
+    # works on single-line values only.  no newlines in value.
+    my ($sock_opts, $args, $keys, $ecount, $elems, $mcount, $mkeys, $resp, $msg) = @_;
+    my $opts = ref $sock_opts eq "HASH" ? $sock_opts : {};
+    my $sock = ref $sock_opts eq "HASH" ? $opts->{sock} : $sock_opts;
+
+    $msg ||= "bop smget $args keys == $ecount {<key> [trim] <flags> <bkey> [<eflag>] <value>} $mcount {<key> <cause>}";
+    print $sock "bop smget $args\r\n$keys\r\n";
+
+    my $line;
+    my $elem_data;
+    my $mkey_data;
+
+    my $exp_elem_head = "VALUE $ecount\r\n";
+    my $exp_mkey_head = "MISSED_KEYS $mcount\r\n";
+    my $exp_resp_tail = "$resp\r\n";
+
+    my @elem_arr = ();
+    my @elem_set = split(",", $elems);
+    foreach $elem_data ( @elem_set )
+    {
+       $elem_data =~ s/^\s+|\s+$//g;
+       $elem_data =~ s/[\r\n]//sg;
+       push(@elem_arr, $elem_data);
+    }
+    my @mkey_arr = ();
+    my @mkey_set = split(",", $mkeys);
+    foreach $mkey_data ( @mkey_set )
+    {
+       $mkey_data =~ s/^\s+|\s+$//g;
+       $mkey_data =~ s/[\r\n]//sg;
+       push(@mkey_arr, $mkey_data);
+    }
+    my $exp_elem_body = join(",", @elem_arr);
+    my $exp_mkey_body = join(",", @mkey_arr);
+
+    @elem_arr = ();
+    @mkey_arr = ();
+
+    my $res_elem_head = scalar <$sock>;
+    $line = scalar <$sock>;
+    while ($line !~ /^MISSED_KEYS/) {
+        push(@elem_arr, (substr $line, 0, length($line)-2));
+        $line  = scalar <$sock>;
+    }
+    my $res_elem_body = join(",", @elem_arr);
+
+    my $res_mkey_head = $line;
+    $line = scalar <$sock>;
+    while ($line !~ /^END/ and $line !~ /^DUPLICATED/) {
+        push(@mkey_arr, (substr $line, 0, length($line)-2));
+        $line = scalar <$sock>;
+    }
+    my $res_mkey_body = join(",", @mkey_arr);
+    my $res_resp_tail = $line;
+
+    Test::More::is("$res_elem_head $res_elem_body $res_mkey_head $res_mkey_body $res_resp_tail",
+                   "$exp_elem_head $exp_elem_body $exp_mkey_head $exp_mkey_body $exp_resp_tail", $msg);
 }
 
 # DELETE_BY_PREFIX

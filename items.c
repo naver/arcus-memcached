@@ -4669,7 +4669,11 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
                                     const eflag_filter *efilter, const uint32_t req_count,
                                     btree_scan_info *btree_scan_buf,
                                     uint16_t *sort_sindx_buf, uint32_t *sort_sindx_cnt,
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+                                    smget_kmis_t *missed_key_array, uint32_t *missed_key_count,
+#else
                                     uint32_t *missed_key_array, uint32_t *missed_key_count,
+#endif
                                     bool *bkey_duplicated)
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
@@ -4681,6 +4685,9 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
     uint16_t curr_idx = 0;
     uint16_t free_idx = req_count;
     int sort_count = 0; /* sorted scan count */
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+    int mkey_count = 0; /* missed key count */
+#endif
     int k, i, cmp_res;
     int mid, left, right;
     bool ascending = (bkrtype != BKEY_RANGE_TYPE_DSC ? true : false);
@@ -4688,15 +4695,24 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
     int32_t  maxelemcount = 0;
     uint8_t  overflowactn = OVFL_SMALLEST_TRIM;
 
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+#else
     *missed_key_count = 0;
+#endif
 
     maxbkeyrange.len = BKEY_NULL;
     for (k = 0; k < key_count; k++) {
         ret = do_btree_item_find(engine, key_array[k].value, key_array[k].length, true, &it);
         if (ret != ENGINE_SUCCESS) {
             if (ret == ENGINE_KEY_ENOENT) { /* key missed */
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+                missed_key_array[mkey_count].kidx = k;
+                missed_key_array[mkey_count].cause = ENGINE_KEY_ENOENT;
+                mkey_count++;
+#else
                 missed_key_array[*missed_key_count] = k;
                 *missed_key_count += 1;
+#endif
                 ret = ENGINE_SUCCESS; continue;
             }
             break; /* ret == ENGINE_EBADTYPE */
@@ -4704,8 +4720,14 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
 
         info = (btree_meta_info *)item_get_meta(it);
         if ((info->mflags & COLL_META_FLAG_READABLE) == 0) { /* unreadable collection */
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+            missed_key_array[mkey_count].kidx = k;
+            missed_key_array[mkey_count].cause = ENGINE_UNREADABLE;
+            mkey_count++;
+#else
             missed_key_array[*missed_key_count] = k;
             *missed_key_count += 1;
+#endif
             do_item_release(engine, it); continue;
         }
         if (info->ccnt == 0) { /* empty collection */
@@ -4720,6 +4742,16 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
 
         elem = do_btree_find_first(info->root, bkrtype, bkrange, &posi, false);
         if (elem == NULL) { /* No elements within the bkey range */
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+            if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
+                do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
+                /* Some elements weren't cached because of overflow trim */
+                missed_key_array[mkey_count].kidx = k;
+                missed_key_array[mkey_count].cause = ENGINE_EBKEYOOR;
+                mkey_count++;
+            }
+            do_item_release(engine, it); continue;
+#else
             if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
                 /* Some elements weren't cached because of overflow trim */
                 if (do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
@@ -4729,8 +4761,19 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
             }
             do_item_release(engine, it);
             continue;
+#endif
         }
 
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+        if (posi.bkeq == false && (info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
+            do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
+            /* Some elements weren't cached because of overflow trim */
+            missed_key_array[mkey_count].kidx = k;
+            missed_key_array[mkey_count].cause = ENGINE_EBKEYOOR;
+            mkey_count++;
+            do_item_release(engine, it); continue;
+        }
+#else
         if (posi.bkeq == false && (info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
             /* Some elements weren't cached because of overflow trim */
             if (do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
@@ -4738,6 +4781,7 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
                 ret = ENGINE_EBKEYOOR; break;
             }
         }
+#endif
 
         posi.bkeq = false;
         do {
@@ -4752,6 +4796,16 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
         } while (elem != NULL);
 
         if (elem == NULL) {
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+            if (posi.node == NULL && (info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
+                do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
+                /* Some elements weren't cached because of overflow trim */
+                missed_key_array[mkey_count].kidx = k;
+                missed_key_array[mkey_count].cause = ENGINE_EBKEYOOR;
+                mkey_count++;
+            }
+            do_item_release(engine, it); continue;
+#else
             if (posi.node == NULL && (info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
                 if (do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
                     do_item_release(engine, it);
@@ -4760,6 +4814,7 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
             }
             do_item_release(engine, it);
             continue;
+#endif
         }
 
         if (sort_count == 0) {
@@ -4865,6 +4920,10 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
         }
     }
 
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+    *missed_key_count = mkey_count;
+#endif
+
     if (ret == ENGINE_SUCCESS) {
         *sort_sindx_cnt = sort_count;
     } else {
@@ -4879,12 +4938,22 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
 #endif
 
 #ifdef SUPPORT_BOP_SMGET
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
+                                    uint16_t *sort_sindx_buf, const int sort_sindx_cnt,
+                                    const int bkrtype, const bkey_range *bkrange,
+                                    const eflag_filter *efilter,
+                                    const uint32_t offset, const uint32_t count,
+                                    btree_elem_item **elem_array, smget_ehit_t *ehit_array,
+                                    bool *bkey_duplicated)
+#else
 static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
                                     uint16_t *sort_sindx_buf, const int sort_sindx_cnt,
                                     const int bkrtype, const bkey_range *bkrange, const eflag_filter *efilter,
                                     const uint32_t offset, const uint32_t count,
                                     btree_elem_item **elem_array, uint32_t *kfnd_array, uint32_t *flag_array,
                                     bool *potentialbkeytrim, bool *bkey_duplicated)
+#endif
 {
     btree_meta_info *info;
     btree_elem_item *elem, *comp;
@@ -4907,8 +4976,14 @@ static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
         } else { /* skip_count == offset */
             elem->refcount++;
             elem_array[elem_count] = elem;
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+            ehit_array[elem_count].kidx = btree_scan_buf[curr_idx].kidx;
+            ehit_array[elem_count].flag = btree_scan_buf[curr_idx].it->flags;
+            ehit_array[elem_count].trim = 0;
+#else
             kfnd_array[elem_count] = btree_scan_buf[curr_idx].kidx;
             flag_array[elem_count] = btree_scan_buf[curr_idx].it->flags;
+#endif
             elem_count++;
             if (elem_count >= count) break;
         }
@@ -4929,12 +5004,19 @@ static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
             if (btree_scan_buf[curr_idx].posi.node == NULL) {
                 /* reached to the end of b+tree scan */
                 info = (btree_meta_info *)item_get_meta(btree_scan_buf[curr_idx].it);
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+                if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
+                    do_btree_overlapped_with_trimmed_space(info, &btree_scan_buf[curr_idx].posi, bkrtype)) {
+                    ehit_array[elem_count-1].trim = 1;
+                }
+#else
                 if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
                     if (do_btree_overlapped_with_trimmed_space(info, &btree_scan_buf[curr_idx].posi, bkrtype)) {
                         *potentialbkeytrim = true;
                         break; /* stop smget */
                     }
                 }
+#endif
             }
             first_idx++; sort_count--;
             continue;
@@ -6470,6 +6552,16 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
 }
 
 #ifdef SUPPORT_BOP_SMGET
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
+                                   token_t *key_array, const int key_count,
+                                   const bkey_range *bkrange, const eflag_filter *efilter,
+                                   const uint32_t offset, const uint32_t count,
+                                   btree_elem_item **elem_array,
+                                   smget_ehit_t *ehit_array, uint32_t *elem_count,
+                                   smget_kmis_t *kmis_array, uint32_t *kmis_count,
+                                   bool *duplicated)
+#else
 ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
                                    token_t *key_array, const int key_count,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
@@ -6478,6 +6570,7 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
                                    uint32_t *flag_array, uint32_t *elem_count,
                                    uint32_t *missed_key_array, uint32_t *missed_key_count,
                                    bool *trimmed, bool *duplicated)
+#endif
 {
     assert(key_count > 0);
     assert(count > 0 && (offset+count) <= MAX_SMGET_REQ_COUNT);
@@ -6492,22 +6585,38 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
         btree_scan_buf[i].it = NULL;
     }
 
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+#else
     *trimmed = false;
+#endif
     *duplicated = false;
 
     pthread_mutex_lock(&engine->cache_lock);
 
     /* the 1st phase: get the sorted scans */
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+    ret = do_btree_smget_scan_sort(engine, key_array, key_count,
+                                   bkrtype, bkrange, efilter, (offset+count),
+                                   btree_scan_buf, sort_sindx_buf, &sort_sindx_cnt,
+                                   kmis_array, kmis_count, duplicated);
+#else
     ret = do_btree_smget_scan_sort(engine, key_array, key_count,
                                    bkrtype, bkrange, efilter, (offset+count),
                                    btree_scan_buf, sort_sindx_buf, &sort_sindx_cnt,
                                    missed_key_array, missed_key_count, duplicated);
+#endif
     if (ret == ENGINE_SUCCESS) {
         /* the 2nd phase: get the sorted elems */
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+        *elem_count = do_btree_smget_elem_sort(btree_scan_buf, sort_sindx_buf, sort_sindx_cnt,
+                                               bkrtype, bkrange, efilter, offset, count,
+                                               elem_array, ehit_array, duplicated);
+#else
         *elem_count = do_btree_smget_elem_sort(btree_scan_buf, sort_sindx_buf, sort_sindx_cnt,
                                                bkrtype, bkrange, efilter, offset, count,
                                                elem_array, kfnd_array, flag_array,
                                                trimmed, duplicated);
+#endif
         for (i = 0; i <= (offset+count); i++) {
             if (btree_scan_buf[i].it != NULL)
                 do_item_release(engine, btree_scan_buf[i].it);

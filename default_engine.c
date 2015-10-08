@@ -725,21 +725,35 @@ static ENGINE_ERROR_CODE default_btree_elem_smget(ENGINE_HANDLE* handle, const v
                                                   const eflag_filter *efilter,
                                                   const uint32_t offset, const uint32_t count,
                                                   eitem** eitem_array,
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+                                                  smget_ehit_t *ehit_array,
+                                                  uint32_t     *eitem_count,
+                                                  smget_kmis_t *kmis_array,
+                                                  uint32_t     *kmis_count,
+                                                  bool *duplicated,
+#else
                                                   uint32_t* kfnd_array,
                                                   uint32_t* flag_array,
                                                   uint32_t* eitem_count,
                                                   uint32_t* missed_key_array,
                                                   uint32_t* missed_key_count,
                                                   bool *trimmed, bool *duplicated,
+#endif
                                                   uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+    ret = btree_elem_smget(engine, karray, kcount, bkrange, efilter, offset, count,
+                           (btree_elem_item**)eitem_array, ehit_array, eitem_count,
+                           kmis_array, kmis_count, duplicated);
+#else
     ret = btree_elem_smget(engine, karray, kcount, bkrange, efilter, offset, count,
                            (btree_elem_item**)eitem_array, kfnd_array, flag_array, eitem_count,
                            missed_key_array, missed_key_count, trimmed, duplicated);
+#endif
     return ret;
 }
 #endif

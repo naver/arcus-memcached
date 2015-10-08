@@ -598,12 +598,19 @@ extern "C" {
                                               const uint32_t offset,
                                               const uint32_t count,
                                               eitem** eitem_array,
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+                                              smget_ehit_t *ehit_array,
+                                              uint32_t     *eitem_count,
+                                              smget_kmis_t *kmis_array,
+                                              uint32_t     *kmis_count,
+#else
                                               uint32_t* kfnd_array,
                                               uint32_t* flag_array,
                                               uint32_t* eitem_count,
                                               uint32_t* missed_key_array,
                                               uint32_t* missed_key_count,
                                               bool *trimmed,
+#endif
                                               bool *duplicated,
                                               uint16_t vbucket);
 #endif
