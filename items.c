@@ -4740,6 +4740,23 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
         }
         assert(info->root != NULL);
 
+        if (sort_count == 0) {
+            /* save the b+tree attributes */
+            maxbkeyrange = info->maxbkeyrange;
+            maxelemcount = info->mcnt;
+            overflowactn = info->ovflact;
+        } else {
+            /* check if the b+trees have same attributes */
+            if (maxelemcount != info->mcnt || overflowactn != info->ovflact ||
+                maxbkeyrange.len != info->maxbkeyrange.len ||
+                (maxbkeyrange.len != BKEY_NULL &&
+                 BKEY_ISNE(maxbkeyrange.val, maxbkeyrange.len, info->maxbkeyrange.val, maxbkeyrange.len)))
+            {
+                do_item_release(engine, it);
+                ret = ENGINE_EBADATTR; break;
+            }
+        }
+
         elem = do_btree_find_first(info->root, bkrtype, bkrange, &posi, false);
         if (elem == NULL) { /* No elements within the bkey range */
 #ifdef JHPARK_NEW_SMGET_INTERFACE
@@ -4817,23 +4834,6 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
 #endif
         }
 
-        if (sort_count == 0) {
-            /* save the b+tree attributes */
-            maxbkeyrange = info->maxbkeyrange;
-            maxelemcount = info->mcnt;
-            overflowactn = info->ovflact;
-        } else {
-            /* check if the b+trees have same attributes */
-            if (maxelemcount != info->mcnt || overflowactn != info->ovflact ||
-                maxbkeyrange.len != info->maxbkeyrange.len ||
-                (maxbkeyrange.len != BKEY_NULL &&
-                 BKEY_ISNE(maxbkeyrange.val, maxbkeyrange.len, info->maxbkeyrange.val, maxbkeyrange.len)))
-            {
-                do_item_release(engine, it);
-                ret = ENGINE_EBADATTR; break;
-            }
-        }
-
         /* found the item */
         btree_scan_buf[curr_idx].it   = it;
         btree_scan_buf[curr_idx].posi = posi;
@@ -4905,7 +4905,7 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
             if (ret == ENGINE_EBADVALUE) break;
 
             assert(left > right);
-            /* left : insert position */
+            /* left : insertion position */
             for (i = sort_count-1; i >= left; i--) {
                 sort_sindx_buf[i+1] = sort_sindx_buf[i];
             }
@@ -5026,37 +5026,8 @@ static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
             continue; /* sorting is not needed */
         }
 
-        /* compare with the last element */
-        comp_idx = sort_sindx_buf[first_idx+sort_count-1];
-        comp = BTREE_GET_ELEM_ITEM(btree_scan_buf[comp_idx].posi.node,
-                                   btree_scan_buf[comp_idx].posi.indx);
-
-        cmp_res = BKEY_COMP(elem->data, elem->nbkey, comp->data, comp->nbkey);
-        if (cmp_res == 0) {
-            cmp_res = do_btree_comp_hkey(btree_scan_buf[curr_idx].it,
-                                         btree_scan_buf[comp_idx].it);
-            assert(cmp_res != 0);
-            *bkey_duplicated = true;
-        }
-        if ((ascending ==  true && cmp_res > 0) ||
-            (ascending == false && cmp_res < 0)) {
-            if ((first_idx + sort_count) >= (offset + count)) {
-                first_idx++; sort_count--;
-            } else {
-                for (i = first_idx+1; i < first_idx+sort_count; i++) {
-                    sort_sindx_buf[i-1] = sort_sindx_buf[i];
-                }
-                sort_sindx_buf[first_idx+sort_count-1] = curr_idx;
-            }
-            continue;
-        }
-
-        if (sort_count == 2) {
-            continue; /* sorting has already completed */
-        }
-
         left  = first_idx + 1;
-        right = first_idx + sort_count - 2;
+        right = first_idx + sort_count - 1;
         while (left <= right) {
             mid  = (left + right) / 2;
             comp_idx = sort_sindx_buf[mid];
@@ -5065,10 +5036,10 @@ static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
 
             cmp_res = BKEY_COMP(elem->data, elem->nbkey, comp->data, comp->nbkey);
             if (cmp_res == 0) {
+                *bkey_duplicated = true;
                 cmp_res = do_btree_comp_hkey(btree_scan_buf[curr_idx].it,
                                              btree_scan_buf[comp_idx].it);
                 assert(cmp_res != 0);
-                *bkey_duplicated = true;
             }
             if (ascending) {
                 if (cmp_res < 0) right = mid-1;
@@ -5080,11 +5051,11 @@ static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
         }
 
         assert(left > right);
-        /* left : insert position */
-        for (i = first_idx+1; i < left; i++) {
+        /* right : insertion position */
+        for (i = first_idx+1; i <= right; i++) {
             sort_sindx_buf[i-1] = sort_sindx_buf[i];
         }
-        sort_sindx_buf[left-1] = curr_idx;
+        sort_sindx_buf[right] = curr_idx;
     }
     return elem_count;
 }
