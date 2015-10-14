@@ -61,6 +61,9 @@ extern "C" {
         ENGINE_DISCONNECT  = 0x0a, /**< Tell the server to disconnect this client */
         ENGINE_EACCESS     = 0x0b, /**< Access control violations */
         ENGINE_NOT_MY_VBUCKET = 0x0c, /** < This vbucket doesn't belong to me */
+#ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
+        ENGINE_EDUPLICATE  = 0x0d, /** < Duplicate value(ex, bkey) */
+#endif
 
         ENGINE_EBADTYPE     = 0x32, /**< Not supported operation, bad type */
         ENGINE_EOVERFLOW    = 0x33, /**< The collection is full of elements */

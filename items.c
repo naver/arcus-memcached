@@ -4679,6 +4679,9 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
                                     token_t *key_array, const int key_count,
                                     const int bkrtype, const bkey_range *bkrange,
                                     const eflag_filter *efilter, const uint32_t req_count,
+#ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
+                                    const bool unique,
+#endif
                                     btree_scan_info *btree_scan_buf,
                                     uint16_t *sort_sindx_buf, uint32_t *sort_sindx_cnt,
 #ifdef JHPARK_NEW_SMGET_INTERFACE
@@ -4871,6 +4874,11 @@ scan_next:
                     ret = ENGINE_EBADVALUE; break;
                 }
                 *bkey_duplicated = true;
+#ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
+                if (unique) {
+                    ret = ENGINE_EDUPLICATE; break;
+                }
+#endif
             }
             if (ascending) {
                 if (cmp_res < 0) right = mid-1;
@@ -4885,6 +4893,11 @@ scan_next:
             btree_scan_buf[curr_idx].it = NULL;
             break;
         }
+#ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
+        if (ret == ENGINE_EDUPLICATE) {
+            elem = NULL; goto scan_next;
+        }
+#endif
 
         if (left >= req_count) {
             /* do not need to proceed the current scan */
@@ -4938,6 +4951,9 @@ static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
                                     const int bkrtype, const bkey_range *bkrange,
                                     const eflag_filter *efilter,
                                     const uint32_t offset, const uint32_t count,
+#if 1 // UNIQUE_SMGET
+                                    const bool unique,
+#endif
                                     btree_elem_item **elem_array, smget_ehit_t *ehit_array,
                                     bool *bkey_duplicated)
 #else
@@ -5025,6 +5041,9 @@ scan_next:
             cmp_res = BKEY_COMP(elem->data, elem->nbkey, comp->data, comp->nbkey);
             if (cmp_res == 0) {
                 *bkey_duplicated = true;
+#ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
+                if (unique) break;
+#endif
                 cmp_res = do_btree_comp_hkey(btree_scan_buf[curr_idx].it,
                                              btree_scan_buf[comp_idx].it);
                 assert(cmp_res != 0);
@@ -5037,8 +5056,15 @@ scan_next:
                 else             left  = mid+1;
             }
         }
+#ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
+        if (left <= right) { /* Duplicate bkey is found */
+            goto scan_next;
+        }
+
+#else
 
         assert(left > right);
+#endif
         /* right : insertion position */
         for (i = first_idx+1; i <= right; i++) {
             sort_sindx_buf[i-1] = sort_sindx_buf[i];
@@ -6516,6 +6542,9 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
                                    token_t *key_array, const int key_count,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
                                    const uint32_t offset, const uint32_t count,
+#if 1 // UNIQUE_SMGET
+                                   const bool unique,
+#endif
                                    btree_elem_item **elem_array,
                                    smget_ehit_t *ehit_array, uint32_t *elem_count,
                                    smget_kmis_t *kmis_array, uint32_t *kmis_count,
@@ -6555,7 +6584,11 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
     /* the 1st phase: get the sorted scans */
 #ifdef JHPARK_NEW_SMGET_INTERFACE
     ret = do_btree_smget_scan_sort(engine, key_array, key_count,
+#if 1 // UNIQUE_SMGET
+                                   bkrtype, bkrange, efilter, (offset+count), unique,
+#else
                                    bkrtype, bkrange, efilter, (offset+count),
+#endif
                                    btree_scan_buf, sort_sindx_buf, &sort_sindx_cnt,
                                    kmis_array, kmis_count, duplicated);
 #else
@@ -6568,7 +6601,11 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
         /* the 2nd phase: get the sorted elems */
 #ifdef JHPARK_NEW_SMGET_INTERFACE
         *elem_count = do_btree_smget_elem_sort(btree_scan_buf, sort_sindx_buf, sort_sindx_cnt,
+#if 1 // UNIQUE_SMGET
+                                               bkrtype, bkrange, efilter, offset, count, unique,
+#else
                                                bkrtype, bkrange, efilter, offset, count,
+#endif
                                                elem_array, ehit_array, duplicated);
 #else
         *elem_count = do_btree_smget_elem_sort(btree_scan_buf, sort_sindx_buf, sort_sindx_cnt,

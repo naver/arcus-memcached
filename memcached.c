@@ -1937,7 +1937,11 @@ static void process_bop_smget_complete(conn *c) {
                                              keys_array, c->coll_numkeys,
                                              &c->coll_bkrange,
                                              (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
+#ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
+                                             c->coll_roffset, c->coll_rcount, c->coll_unique,
+#else
                                              c->coll_roffset, c->coll_rcount,
+#endif
 #ifdef JHPARK_NEW_SMGET_INTERFACE
                                              elem_array, ehit_array, &elem_count,
                                              kmis_array, &kmis_count, &duplicated, 0
@@ -5250,7 +5254,11 @@ static void process_bin_bop_smget_complete(conn *c) {
                                      keys_array, c->coll_numkeys,
                                      &c->coll_bkrange,
                                      (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
+#ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
+                                     c->coll_roffset, c->coll_rcount, c->coll_unique,
+#else
                                      c->coll_roffset, c->coll_rcount,
+#endif
 #ifdef JHPARK_NEW_SMGET_INTERFACE
                                      elem_array, ehit_array, &elem_count,
                                      kmis_array, &kmis_count, &duplicated,
@@ -6652,6 +6660,19 @@ static void write_and_free(conn *c, char *buf, int bytes) {
         out_string(c, "SERVER_ERROR out of memory writing stats");
     }
 }
+
+#ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
+static inline bool set_unique_maybe(conn *c, token_t *tokens, size_t ntokens)
+{
+    int unique_index = ntokens - 2;
+
+    if (tokens[unique_index].value
+        && strcmp(tokens[unique_index].value, "unique") == 0)
+        return true;
+    else
+        return false;
+}
+#endif
 
 static inline bool set_noreply_maybe(conn *c, token_t *tokens, size_t ntokens)
 {
@@ -10362,6 +10383,9 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
     {
         uint32_t count, offset = 0;
         uint32_t lenkeys, numkeys;
+#ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
+        bool unique = set_unique_maybe(c, tokens, ntokens);
+#endif
 
         if ((! safe_strtoul(tokens[BOP_KEY_TOKEN].value, &lenkeys)) ||
             (! safe_strtoul(tokens[BOP_KEY_TOKEN+1].value, &numkeys))) {
@@ -10375,7 +10399,11 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
 
         int read_ntokens = 5;
+#ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
+        int post_ntokens = (unique ? 3 : 2); /* "\r\n" */
+#else
         int post_ntokens = 2; /* "\r\n" */
+#endif
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
         if (rest_ntokens >= 3) {
@@ -10437,6 +10465,9 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         c->coll_lenkeys = lenkeys;
         c->coll_roffset = offset;
         c->coll_rcount  = count;
+#ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
+        c->coll_unique  = unique;
+#endif
 
         process_bop_prepare_nread_keys(c, subcommid, lenkeys);
     }

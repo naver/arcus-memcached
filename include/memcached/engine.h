@@ -597,6 +597,9 @@ extern "C" {
                                               const eflag_filter *efilter,
                                               const uint32_t offset,
                                               const uint32_t count,
+#ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
+                                              const bool unique,
+#endif
                                               eitem** eitem_array,
 #ifdef JHPARK_NEW_SMGET_INTERFACE
                                               smget_ehit_t *ehit_array,
