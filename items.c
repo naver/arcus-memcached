@@ -4663,7 +4663,6 @@ static inline int do_btree_comp_hkey(hash_item *it1, hash_item *it2)
 }
 
 #ifdef SUPPORT_BOP_SMGET
-#if 1 // JHPARK_REFACTOR_SMGET
 static btree_elem_item *do_btree_scan_next(btree_elem_posi *posi,
                              const int bkrtype, const bkey_range *bkrange)
 {
@@ -4675,7 +4674,6 @@ static btree_elem_item *do_btree_scan_next(btree_elem_posi *posi,
     else // descending
         return do_btree_find_prev(posi, bkrange);
 }
-#endif
 
 static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
                                     token_t *key_array, const int key_count,
@@ -4815,7 +4813,6 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
 #endif
 
         posi.bkeq = false;
-#if 1 // JHPARK_REFACTOR_SMGET
 
 scan_next:
         if (elem == NULL) {
@@ -4846,40 +4843,6 @@ scan_next:
         if (efilter != NULL && !do_btree_elem_filter(elem, efilter)) {
             elem = NULL; goto scan_next;
         }
-#else
-        do {
-           if (efilter == NULL || do_btree_elem_filter(elem, efilter))
-               break;
-
-           if (posi.bkeq == true) {
-               elem = NULL; break;
-           }
-           elem = (ascending ? do_btree_find_next(&posi, bkrange)
-                             : do_btree_find_prev(&posi, bkrange));
-        } while (elem != NULL);
-
-        if (elem == NULL) {
-#ifdef JHPARK_NEW_SMGET_INTERFACE
-            if (posi.node == NULL && (info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
-                do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
-                /* Some elements weren't cached because of overflow trim */
-                missed_key_array[mkey_count].kidx = k;
-                missed_key_array[mkey_count].cause = ENGINE_EBKEYOOR;
-                mkey_count++;
-            }
-            do_item_release(engine, it); continue;
-#else
-            if (posi.node == NULL && (info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
-                if (do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
-                    do_item_release(engine, it);
-                    ret = ENGINE_EBKEYOOR; break;
-                }
-            }
-            do_item_release(engine, it);
-            continue;
-#endif
-        }
-#endif
 
         /* found the item */
         btree_scan_buf[curr_idx].it   = it;
@@ -4887,7 +4850,6 @@ scan_next:
         btree_scan_buf[curr_idx].kidx = k;
 
         /* add the current scan into the scan sort buffer */
-#if 1 // JHPARK_REFACTOR_SMGET
         if (sort_count == 0) {
             sort_sindx_buf[sort_count++] = curr_idx;
             curr_idx += 1;
@@ -4950,85 +4912,6 @@ scan_next:
         } else {
             curr_idx = free_idx;
         }
-#else
-        /* insert the index into the sort_sindx_buf */
-        if (sort_count >= req_count) {
-            /* compare with the element of the last scan */
-            comp_idx = sort_sindx_buf[sort_count-1];
-            comp = BTREE_GET_ELEM_ITEM(btree_scan_buf[comp_idx].posi.node,
-                                       btree_scan_buf[comp_idx].posi.indx);
-            cmp_res = BKEY_COMP(elem->data, elem->nbkey, comp->data, comp->nbkey);
-            if (cmp_res == 0) {
-                cmp_res = do_btree_comp_hkey(btree_scan_buf[curr_idx].it,
-                                             btree_scan_buf[comp_idx].it);
-                if (cmp_res == 0) {
-                    do_item_release(engine, btree_scan_buf[curr_idx].it);
-                    btree_scan_buf[curr_idx].it = NULL;
-                    ret = ENGINE_EBADVALUE; break;
-                }
-                *bkey_duplicated = true;
-            }
-            if ((ascending ==  true && cmp_res > 0) ||
-                (ascending == false && cmp_res < 0)) {
-                /* do not need to proceed the current scan */
-                do_item_release(engine, btree_scan_buf[curr_idx].it);
-                btree_scan_buf[curr_idx].it = NULL;
-                continue;
-            }
-            /* free the last scan */
-            do_item_release(engine, btree_scan_buf[comp_idx].it);
-            btree_scan_buf[comp_idx].it = NULL;
-            free_idx = comp_idx;
-            sort_count--;
-        }
-
-        /* sort_count < req_count */
-        if (sort_count == 0) {
-            sort_sindx_buf[sort_count++] = curr_idx;
-        } else {
-            left = 0;
-            right = sort_count-1;
-            while (left <= right) {
-                mid  = (left + right) / 2;
-                comp_idx = sort_sindx_buf[mid];
-                comp = BTREE_GET_ELEM_ITEM(btree_scan_buf[comp_idx].posi.node,
-                                           btree_scan_buf[comp_idx].posi.indx);
-                cmp_res = BKEY_COMP(elem->data, elem->nbkey, comp->data, comp->nbkey);
-                if (cmp_res == 0) {
-                    cmp_res = do_btree_comp_hkey(btree_scan_buf[curr_idx].it,
-                                                 btree_scan_buf[comp_idx].it);
-                    if (cmp_res == 0) {
-                        do_item_release(engine, btree_scan_buf[curr_idx].it);
-                        btree_scan_buf[curr_idx].it = NULL;
-                        ret = ENGINE_EBADVALUE; break;
-                    }
-                    *bkey_duplicated = true;
-                }
-                if (ascending) {
-                    if (cmp_res < 0) right = mid-1;
-                    else             left  = mid+1;
-                } else {
-                    if (cmp_res > 0) right = mid-1;
-                    else             left  = mid+1;
-                }
-            }
-            if (ret == ENGINE_EBADVALUE) break;
-
-            assert(left > right);
-            /* left : insertion position */
-            for (i = sort_count-1; i >= left; i--) {
-                sort_sindx_buf[i+1] = sort_sindx_buf[i];
-            }
-            sort_sindx_buf[left] = curr_idx;
-            sort_count++;
-        }
-
-        if (sort_count < req_count) {
-            curr_idx += 1;
-        } else {
-            curr_idx = free_idx;
-        }
-#endif
     }
 
 #ifdef JHPARK_NEW_SMGET_INTERFACE
@@ -5099,7 +4982,6 @@ static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
             if (elem_count >= count) break;
         }
 
-#if 1 // JHPARK_REFACTOR_SMGET
 scan_next:
         elem = do_btree_scan_next(&btree_scan_buf[curr_idx].posi, bkrtype, bkrange);
         if (elem == NULL) {
@@ -5127,41 +5009,6 @@ scan_next:
         if (efilter != NULL && !do_btree_elem_filter(elem, efilter)) {
             goto scan_next;
         }
-#else
-        do {
-            if (btree_scan_buf[curr_idx].posi.bkeq == true) {
-                elem = NULL; break;
-            }
-            elem = (ascending ? do_btree_find_next(&btree_scan_buf[curr_idx].posi, bkrange)
-                              : do_btree_find_prev(&btree_scan_buf[curr_idx].posi, bkrange));
-            if (elem != NULL) {
-                if (efilter == NULL || do_btree_elem_filter(elem, efilter))
-                    break;
-            }
-        } while (elem != NULL);
-
-        if (elem == NULL) {
-            if (btree_scan_buf[curr_idx].posi.node == NULL) {
-                /* reached to the end of b+tree scan */
-                info = (btree_meta_info *)item_get_meta(btree_scan_buf[curr_idx].it);
-#ifdef JHPARK_NEW_SMGET_INTERFACE
-                if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
-                    do_btree_overlapped_with_trimmed_space(info, &btree_scan_buf[curr_idx].posi, bkrtype)) {
-                    ehit_array[elem_count-1].trim = 1;
-                }
-#else
-                if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
-                    if (do_btree_overlapped_with_trimmed_space(info, &btree_scan_buf[curr_idx].posi, bkrtype)) {
-                        *potentialbkeytrim = true;
-                        break; /* stop smget */
-                    }
-                }
-#endif
-            }
-            first_idx++; sort_count--;
-            continue;
-        }
-#endif
 
         if (sort_count == 1) {
             continue; /* sorting is not needed */
