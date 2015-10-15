@@ -4706,6 +4706,7 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
     int k, i, cmp_res;
     int mid, left, right;
     bool ascending = (bkrtype != BKEY_RANGE_TYPE_DSC ? true : false);
+    bool is_first;
     bkey_t   maxbkeyrange;
     int32_t  maxelemcount = 0;
     uint8_t  overflowactn = OVFL_SMALLEST_TRIM;
@@ -4815,10 +4816,13 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
         }
 #endif
 
+        /* initialize for the next scan */
+        is_first = true;
         posi.bkeq = false;
 
 scan_next:
-        if (elem == NULL) {
+        if (is_first != true) {
+            assert(elem != NULL);
             elem = do_btree_scan_next(&posi, bkrtype, bkrange);
             if (elem == NULL) {
 #ifdef JHPARK_NEW_SMGET_INTERFACE
@@ -4842,9 +4846,10 @@ scan_next:
 #endif
             }
         }
+        is_first = false;
 
         if (efilter != NULL && !do_btree_elem_filter(elem, efilter)) {
-            elem = NULL; goto scan_next;
+            goto scan_next;
         }
 
         /* found the item */
@@ -4932,7 +4937,7 @@ scan_next:
         }
 #ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
         if (ret == ENGINE_EDUPLICATE) {
-            elem = NULL; goto scan_next;
+            goto scan_next;
         }
 #endif
 
