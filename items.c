@@ -4859,6 +4859,43 @@ scan_next:
             continue;
         }
 
+        if (sort_count >= req_count) {
+            /* compare with the element of the last scan */
+            comp_idx = sort_sindx_buf[sort_count-1];
+            comp = BTREE_GET_ELEM_ITEM(btree_scan_buf[comp_idx].posi.node,
+                                       btree_scan_buf[comp_idx].posi.indx);
+            cmp_res = BKEY_COMP(elem->data, elem->nbkey, comp->data, comp->nbkey);
+            if (cmp_res == 0) {
+                cmp_res = do_btree_comp_hkey(btree_scan_buf[curr_idx].it,
+                                             btree_scan_buf[comp_idx].it);
+                if (cmp_res == 0) {
+                    do_item_release(engine, btree_scan_buf[curr_idx].it);
+                    btree_scan_buf[curr_idx].it = NULL;
+                    ret = ENGINE_EBADVALUE; break;
+                }
+                *bkey_duplicated = true;
+#ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
+                if (unique) {
+                    cmp_res = 0;
+                }
+#endif
+            }
+#ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
+            if ((cmp_res == 0) ||
+                (ascending ==  true && cmp_res > 0) ||
+                (ascending == false && cmp_res < 0))
+#else
+            if ((ascending ==  true && cmp_res > 0) ||
+                (ascending == false && cmp_res < 0))
+#endif
+            {
+                /* do not need to proceed the current scan */
+                do_item_release(engine, btree_scan_buf[curr_idx].it);
+                btree_scan_buf[curr_idx].it = NULL;
+                continue;
+            }
+        }
+
         left = 0;
         right = sort_count-1;
         while (left <= right) {
@@ -4898,13 +4935,6 @@ scan_next:
             elem = NULL; goto scan_next;
         }
 #endif
-
-        if (left >= req_count) {
-            /* do not need to proceed the current scan */
-            do_item_release(engine, btree_scan_buf[curr_idx].it);
-            btree_scan_buf[curr_idx].it = NULL;
-            continue;
-        }
 
         if (sort_count >= req_count) {
             /* free the last scan */
