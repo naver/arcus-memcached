@@ -334,7 +334,7 @@ bool cmdlog_write(char client_ip[], char* command)
     ptm = localtime(&val.tv_sec);
 
     snprintf(inputstr, CMDLOG_INPUT_SIZE, "%02d:%02d:%02d.%06ld %s %s\n",
-             ptm->tm_hour, ptm->tm_min, ptm->tm_sec, val.tv_usec, client_ip, command);
+             ptm->tm_hour, ptm->tm_min, ptm->tm_sec, (long)val.tv_usec, client_ip, command);
     inputlen = strlen(inputstr);
 
     pthread_mutex_lock(&buffer->lock);
