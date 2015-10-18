@@ -287,30 +287,30 @@ extern "C" {
     } eflag_update;
 
 #ifdef JHPARK_NEW_SMGET_INTERFACE
-    /* Key info of the hitted element in smget */
+    /* Key info of the found elements in smget */
     typedef struct {
         uint16_t kidx;  /* key index in keys array */
         uint32_t flag;  /* item flags */
     } smget_ehit_t;
 
-    /* Key info of the missed key in smget */
+    /* Key info of the missed/trimmed keys in smget */
     typedef struct {
         uint16_t kidx;  /* key index in keys array */
-        uint16_t code;  /* error code mean why the key is missed ? */
+        uint16_t code;  /* error code if the key is missed */
     } smget_emis_t;
 
     /* smget result structure */
     typedef struct {
-        eitem       **elem_array;
-        smget_ehit_t *elem_kinfo;
-        smget_emis_t *miss_kinfo; /* missed and trimmed */
-        smget_emis_t *trim_kinfo;
-        eitem       **trim_elems;
-        uint32_t      elem_count;
-        uint32_t      miss_count;
-        uint32_t      trim_count;
-        bool          duplicated;
-        bool          ascending;
+        eitem       **elem_array; /* found elements in smget */
+        smget_ehit_t *elem_kinfo; /* key info of found elements */
+        smget_emis_t *miss_kinfo; /* key info of missed keys */
+        smget_emis_t *trim_kinfo; /* key info of trimmed keys */
+        eitem       **trim_elems; /* the element before trim in each trimmed key */
+        uint32_t      elem_count; /* # of found elements */
+        uint32_t      miss_count; /* # of missed keys */
+        uint32_t      trim_count; /* # of trimmed keys */
+        bool          duplicated; /* bkey is duplicated ? */
+        bool          ascending;  /* bkey order of found elements: ascending ? */
     } smget_result_t;
 #endif
 

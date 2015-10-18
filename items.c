@@ -4645,6 +4645,7 @@ static uint32_t do_btree_elem_get_by_posi(btree_meta_info *info,
     return nfound;
 }
 
+#ifdef SUPPORT_BOP_SMGET
 static inline int do_btree_comp_hkey(hash_item *it1, hash_item *it2)
 {
     int cmp_res;
@@ -4681,7 +4682,6 @@ static inline int do_comp_key_string(const char *key1, const int len1,
 }
 **********************/
 
-#ifdef SUPPORT_BOP_SMGET
 static btree_elem_item *do_btree_scan_next(btree_elem_posi *posi,
                              const int bkrtype, const bkey_range *bkrange)
 {
@@ -4954,17 +4954,18 @@ scan_next:
             assert(elem != NULL);
 #ifdef JHPARK_NEW_SMGET_INTERFACE
             btree_elem_item *prev = elem;
-#endif
             elem = do_btree_scan_next(&posi, bkrtype, bkrange);
             if (elem == NULL) {
-#ifdef JHPARK_NEW_SMGET_INTERFACE
                 if (posi.node == NULL && (info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
                     do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
                     /* Some elements weren't cached because of overflow trim */
                     do_btree_smget_add_trim(smres, k, prev);
                 }
                 do_item_release(engine, it); continue;
+            }
 #else
+            elem = do_btree_scan_next(&posi, bkrtype, bkrange);
+            if (elem == NULL) {
                 if (posi.node == NULL && (info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
                     if (do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
                         do_item_release(engine, it);
@@ -4973,8 +4974,8 @@ scan_next:
                 }
                 do_item_release(engine, it);
                 continue;
-#endif
             }
+#endif
         }
         is_first = false;
 
@@ -5161,7 +5162,7 @@ static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
             smres->elem_kinfo[smres->elem_count].kidx = btree_scan_buf[curr_idx].kidx;
             smres->elem_kinfo[smres->elem_count].flag = btree_scan_buf[curr_idx].it->flags;
             smres->elem_count += 1;
-            if (smres->elem_count == 1) {
+            if (smres->elem_count == 1) { /* the first element is found */
                 if (offset > 0 && smres->trim_count > 0 &&
                     do_btree_smget_check_trim(smres) != true) {
                     /* Some elements are trimmed in 0 ~ offset range.
