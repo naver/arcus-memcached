@@ -110,6 +110,7 @@ bop_new_smget_is($sock, "11 2 0x0000..0x0200 10", "bkey1,bkey2",
 ,bkey2 12 0x0100 7 datum10",
 1,
 "bkey1 OUT_OF_RANGE",
+0, "",
 "END");
 bop_new_smget_is($sock, "11 2 0x0200..0x0000 10", "bkey1,bkey2",
 10,
@@ -120,10 +121,12 @@ bop_new_smget_is($sock, "11 2 0x0200..0x0000 10", "bkey1,bkey2",
 ,bkey2 12 0x0080 6 datum8
 ,bkey1 11 0x0070 6 datum7
 ,bkey2 12 0x0060 6 datum6
-,bkey1 trim 11 0x0050 6 datum5
+,bkey1 11 0x0050 6 datum5
 ,bkey2 12 0x0040 6 datum4
 ,bkey2 12 0x0020 6 datum2",
 0, "",
+1,
+"bkey1 0x0050",
 "END");
 =head
 $cmd = "bop smget 11 2 0x0000..0x0200 10"; $val = "bkey1,bkey2"; $rst = "OUT_OF_RANGE";
@@ -177,11 +180,13 @@ bop_new_smget_is($sock, "11 2 0x0000..0x0200 10", "bkey1,bkey2",
 ,bkey2 12 0x0060 6 datum6
 ,bkey1 11 0x0070 6 datum7
 ,bkey2 12 0x0080 6 datum8
-,bkey1 trim 11 0x0090 6 datum9
+,bkey1 11 0x0090 6 datum9
 ,bkey2 12 0x0100 7 datum10
 ,bkey2 12 0x0120 7 datum12
 ,bkey2 12 0x0140 7 datum14",
 0, "",
+1,
+"bkey1 0x0090",
 "END");
 bop_new_smget_is($sock, "11 2 0x0200..0x0000 10", "bkey1,bkey2",
 5,
@@ -192,6 +197,7 @@ bop_new_smget_is($sock, "11 2 0x0200..0x0000 10", "bkey1,bkey2",
 ,bkey2 12 0x0060 6 datum6",
 1,
 "bkey1 OUT_OF_RANGE",
+0, "",
 "END");
 =head
 bop_ext_smget_is($sock, "11 2 0x0000..0x0200 10", "bkey1,bkey2",
@@ -271,6 +277,7 @@ bop_new_smget_is($sock, "11 2 0x0000..0x0200 10", "bkey1,bkey2",
 ,bkey1 11 0x0110 7 datum11
 ,bkey1 11 0x0130 7 datum13",
 0, "",
+0, "",
 "END");
 bop_new_smget_is($sock, "11 2 0x0200..0x0000 10", "bkey1,bkey2",
 10,
@@ -284,6 +291,7 @@ bop_new_smget_is($sock, "11 2 0x0200..0x0000 10", "bkey1,bkey2",
 ,bkey1 11 0x0050 6 datum5
 ,bkey2 12 0x0040 6 datum4
 ,bkey2 12 0x0020 6 datum2",
+0, "",
 0, "",
 "END");
 =head
@@ -348,6 +356,7 @@ bop_new_smget_is($sock, "11 2 0x0000..0x0200 10", "bkey1,bkey2",
 ,bkey2 12 0x0120 7 datum12
 ,bkey2 12 0x0140 7 datum14",
 0, "",
+0, "",
 "END");
 bop_new_smget_is($sock, "11 2 0x0200..0x0000 10", "bkey1,bkey2",
 10,
@@ -361,6 +370,7 @@ bop_new_smget_is($sock, "11 2 0x0200..0x0000 10", "bkey1,bkey2",
 ,bkey1 11 0x0050 6 datum5
 ,bkey1 11 0x0030 6 datum3
 ,bkey1 11 0x0010 6 datum1",
+0, "",
 0, "",
 "END");
 =head

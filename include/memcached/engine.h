@@ -600,6 +600,9 @@ extern "C" {
 #ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
                                               const bool unique,
 #endif
+#ifdef JHPARK_NEW_SMGET_INTERFACE // TRIMMED_KEYS
+                                              smget_result_t *result,
+#else
                                               eitem** eitem_array,
 #ifdef JHPARK_NEW_SMGET_INTERFACE
                                               smget_ehit_t *ehit_array,
@@ -615,6 +618,7 @@ extern "C" {
                                               bool *trimmed,
 #endif
                                               bool *duplicated,
+#endif
                                               uint16_t vbucket);
 #endif
         /*

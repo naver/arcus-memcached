@@ -437,6 +437,7 @@ sub bop_pwg_is {
 sub bop_smget_is {
     # works on single-line values only.  no newlines in value.
     my ($sock_opts, $args, $keystr, $ecount, $keys, $flags, $ebkeys, $values, $miss_kcnt, $miss_keys, $tailstr, $msg) = @_;
+    #my ($sock_opts, $args, $keystr, $ecount, $keys, $flags, $ebkeys, $values, $miss_kcnt, $miss_keys, $tailstr, $msg) = @_;
     my $opts = ref $sock_opts eq "HASH" ? $sock_opts : {};
     my $sock = ref $sock_opts eq "HASH" ? $opts->{sock} : $sock_opts;
 
@@ -451,6 +452,8 @@ sub bop_smget_is {
     my $exp_elem_vals = $values;
     my $exp_mkey_head = "MISSED_KEYS $miss_kcnt\r\n";
     my $exp_mkey_vals = $miss_keys;
+    my $exp_tkey_head = "TRIMMED_KEYS 0\r\n";
+    my $exp_tkey_vals = "";
     my $exp_elem_tail = "$tailstr\r\n";
 
     my $res_elem_head = scalar <$sock>;
@@ -490,16 +493,35 @@ sub bop_smget_is {
     my @mskey_array = ();
     my $mskey;
     $line = scalar <$sock>;
+    while ($line !~ /^TRIMMED_KEYS/) {
+        $mskey = substr $line, 0, length($line)-2;
+        push(@mskey_array, $mskey);
+        $line = scalar <$sock>;
+    }
+    my $res_mkey_vals = join(",", @mskey_array);
+
+    my $res_tkey_head = $line;
+    my @trkey_array = ();
+    my $trkey;
+    $line = scalar <$sock>;
+    while ($line !~ /^END/ and $line !~ /^TRIMMED/ and $line !~ /^DUPLICATED/ and $line !~ /^DUPLICATED_TRIMMED/) {
+        $trkey = substr $line, 0, length($line)-2;
+        push(@trkey_array, $trkey);
+        $line = scalar <$sock>;
+    }
+    my $res_tkey_vals = join(",", @trkey_array);
+=head
     while ($line !~ /^END/ and $line !~ /^TRIMMED/ and $line !~ /^DUPLICATED/ and $line !~ /^DUPLICATED_TRIMMED/) {
         $mskey = substr $line, 0, length($line)-2;
         push(@mskey_array, $mskey);
         $line = scalar <$sock>;
     }
     my $res_mkey_vals = join(",", @mskey_array);
+=cut
     my $res_elem_tail = $line;
 
-    Test::More::is("$res_elem_head $res_elem_bkey $res_elem_vals $res_mkey_head $res_mkey_vals $res_elem_tail",
-                   "$exp_elem_head $exp_elem_bkey $exp_elem_vals $exp_mkey_head $exp_mkey_vals $exp_elem_tail", $msg);
+    Test::More::is("$res_elem_head $res_elem_bkey $res_elem_vals $res_mkey_head $res_mkey_vals $res_tkey_head $res_tkey_vals $res_elem_tail",
+                   "$exp_elem_head $exp_elem_bkey $exp_elem_vals $exp_mkey_head $exp_mkey_vals $exp_tkey_head $exp_tkey_vals $exp_elem_tail", $msg);
     if ($exp_elem_keys ne "") {
         Test::More::is("$res_elem_keys", "$exp_elem_keys", $msg);
     }
@@ -597,7 +619,8 @@ sub bop_ext_smget_is {
 # COLLECTION
 sub bop_new_smget_is {
     # works on single-line values only.  no newlines in value.
-    my ($sock_opts, $args, $keys, $ecount, $elems, $mcount, $mkeys, $resp, $msg) = @_;
+    my ($sock_opts, $args, $keys, $ecount, $elems, $mcount, $mkeys, $tcount, $tkeys, $resp, $msg) = @_;
+#    my ($sock_opts, $args, $keys, $ecount, $elems, $mcount, $mkeys, $resp, $msg) = @_;
     my $opts = ref $sock_opts eq "HASH" ? $sock_opts : {};
     my $sock = ref $sock_opts eq "HASH" ? $opts->{sock} : $sock_opts;
 
@@ -607,9 +630,11 @@ sub bop_new_smget_is {
     my $line;
     my $elem_data;
     my $mkey_data;
+    my $tkey_data;
 
     my $exp_elem_head = "VALUE $ecount\r\n";
     my $exp_mkey_head = "MISSED_KEYS $mcount\r\n";
+    my $exp_tkey_head = "TRIMMED_KEYS $tcount\r\n";
     my $exp_resp_tail = "$resp\r\n";
 
     my @elem_arr = ();
@@ -628,11 +653,21 @@ sub bop_new_smget_is {
        $mkey_data =~ s/[\r\n]//sg;
        push(@mkey_arr, $mkey_data);
     }
+    my @tkey_arr = ();
+    my @tkey_set = split(",", $tkeys);
+    foreach $tkey_data ( @tkey_set )
+    {
+       $tkey_data =~ s/^\s+|\s+$//g;
+       $tkey_data =~ s/[\r\n]//sg;
+       push(@tkey_arr, $tkey_data);
+    }
     my $exp_elem_body = join(",", @elem_arr);
     my $exp_mkey_body = join(",", @mkey_arr);
+    my $exp_tkey_body = join(",", @tkey_arr);
 
     @elem_arr = ();
     @mkey_arr = ();
+    @tkey_arr = ();
 
     my $res_elem_head = scalar <$sock>;
     $line = scalar <$sock>;
@@ -644,15 +679,23 @@ sub bop_new_smget_is {
 
     my $res_mkey_head = $line;
     $line = scalar <$sock>;
-    while ($line !~ /^END/ and $line !~ /^DUPLICATED/) {
+    while ($line !~ /^TRIMMED_KEYS/) {
         push(@mkey_arr, (substr $line, 0, length($line)-2));
-        $line = scalar <$sock>;
+        $line  = scalar <$sock>;
     }
     my $res_mkey_body = join(",", @mkey_arr);
+
+    my $res_tkey_head = $line;
+    $line = scalar <$sock>;
+    while ($line !~ /^END/ and $line !~ /^DUPLICATED/) {
+        push(@tkey_arr, (substr $line, 0, length($line)-2));
+        $line = scalar <$sock>;
+    }
+    my $res_tkey_body = join(",", @tkey_arr);
     my $res_resp_tail = $line;
 
-    Test::More::is("$res_elem_head $res_elem_body $res_mkey_head $res_mkey_body $res_resp_tail",
-                   "$exp_elem_head $exp_elem_body $exp_mkey_head $exp_mkey_body $exp_resp_tail", $msg);
+    Test::More::is("$res_elem_head $res_elem_body $res_mkey_head $res_mkey_body $res_tkey_head $res_tkey_body $res_resp_tail",
+                   "$exp_elem_head $exp_elem_body $exp_mkey_head $exp_mkey_body $exp_tkey_head $exp_tkey_body $exp_resp_tail", $msg);
 }
 
 # DELETE_BY_PREFIX

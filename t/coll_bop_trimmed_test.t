@@ -1,7 +1,10 @@
 #!/usr/bin/perl
 
 use strict;
+use Test::More tests => 61;
+=head
 use Test::More tests => 63;
+=cut
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -193,11 +196,27 @@ $cmd = "bop insert bkey2 100 7"; $val = "datum10"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "bop insert bkey2 120 7"; $val = "datum12"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+bop_new_smget_is($sock, "11 2 120..40 10", "bkey1,bkey2",
+9,
+"bkey2 12 120 7 datum12
+,bkey1 12 110 7 datum11
+,bkey2 12 100 7 datum10
+,bkey1 12 90 7 datum09
+,bkey2 12 80 7 datum08
+,bkey1 12 70 7 datum07
+,bkey2 12 60 7 datum06
+,bkey1 12 50 7 datum05
+,bkey2 12 40 7 datum04",
+0,"",
+0,"",
+"END");
+=head
 bop_smget_is($sock, "11 2 120..40 10", "bkey1,bkey2",
              9, "bkey2,bkey1,bkey2,bkey1,bkey2,bkey1,bkey2,bkey1,bkey2", "12,12,12,12,12,12,12,12,12",
              "120,110,100,90,80,70,60,50,40",
              "datum12,datum11,datum10,datum09,datum08,datum07,datum06,datum05,datum04",
              0, "", "END");
+=cut
 $cmd = "delete bkey1"; $rst = "DELETED";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 $cmd = "delete bkey2"; $rst = "DELETED";

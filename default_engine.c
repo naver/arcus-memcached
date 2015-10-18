@@ -727,6 +727,9 @@ static ENGINE_ERROR_CODE default_btree_elem_smget(ENGINE_HANDLE* handle, const v
 #ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
                                                   const bool unique,
 #endif
+#ifdef JHPARK_NEW_SMGET_INTERFACE // TRIMMED_KEYS
+                                                  smget_result_t *result,
+#else
                                                   eitem** eitem_array,
 #ifdef JHPARK_NEW_SMGET_INTERFACE
                                                   smget_ehit_t *ehit_array,
@@ -742,6 +745,7 @@ static ENGINE_ERROR_CODE default_btree_elem_smget(ENGINE_HANDLE* handle, const v
                                                   uint32_t* missed_key_count,
                                                   bool *trimmed, bool *duplicated,
 #endif
+#endif
                                                   uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
@@ -750,9 +754,14 @@ static ENGINE_ERROR_CODE default_btree_elem_smget(ENGINE_HANDLE* handle, const v
 
 #ifdef JHPARK_NEW_SMGET_INTERFACE
 #if 1 // UNIQUE_SMGET
+#if 1 // TRIMMED_KEYS
+    ret = btree_elem_smget(engine, karray, kcount, bkrange, efilter,
+                           offset, count, unique, result);
+#else
     ret = btree_elem_smget(engine, karray, kcount, bkrange, efilter, offset, count, unique,
                            (btree_elem_item**)eitem_array, ehit_array, eitem_count,
                            kmis_array, kmis_count, duplicated);
+#endif
 #else
     ret = btree_elem_smget(engine, karray, kcount, bkrange, efilter, offset, count,
                            (btree_elem_item**)eitem_array, ehit_array, eitem_count,

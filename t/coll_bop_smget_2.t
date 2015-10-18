@@ -159,6 +159,7 @@ bop_new_smget_is($sock, "11 2 0x0000..0x0100 5", "bkey1,bkey2",
 ,bkey2 12 0x0040 6 datum4
 ,bkey1 11 0x0050 6 datum5",
 0, "",
+0, "",
 "END");
 bop_new_smget_is($sock, "23 4 0x0000..0x0100 2 6", "bkey2,bkey3,bkey1,bkey4",
 6,
@@ -171,6 +172,7 @@ bop_new_smget_is($sock, "23 4 0x0000..0x0100 2 6", "bkey2,bkey3,bkey1,bkey4",
 2,
 "bkey3 NOT_FOUND
 ,bkey4 NOT_FOUND",
+0, "",
 "END");
 bop_new_smget_is($sock, "23 4 0x0090..0x0030 2 9", "bkey2,bkey3,bkey1,bkey4",
 5,
@@ -182,12 +184,14 @@ bop_new_smget_is($sock, "23 4 0x0090..0x0030 2 9", "bkey2,bkey3,bkey1,bkey4",
 2,
 "bkey3 NOT_FOUND
 ,bkey4 NOT_FOUND",
+0, "",
 "END");
 bop_new_smget_is($sock, "23 4 0x0200..0x0300 2 6", "bkey2,bkey3,bkey1,bkey4",
 0, "",
 2,
 "bkey3 NOT_FOUND
 ,bkey4 NOT_FOUND",
+0, "",
 "END");
 bop_new_smget_is($sock, "29 5 0x0000..0x0100 1 6", "bkey2,bkey3,bkey1,bkey4,bkey3",
 6,
@@ -201,6 +205,7 @@ bop_new_smget_is($sock, "29 5 0x0000..0x0100 1 6", "bkey2,bkey3,bkey1,bkey4,bkey
 "bkey3 NOT_FOUND
 ,bkey4 NOT_FOUND
 ,bkey3 NOT_FOUND",
+0, "",
 "END");
 =head
 bop_ext_smget_is($sock, "11 2 0x0000..0x0100 5", "bkey1,bkey2",
@@ -273,6 +278,7 @@ bop_new_smget_is($sock, "11 2 0x00..0xFF 5", "bkey1,bkey2",
 ,bkey2 12 0x00000000000040 6 datum4
 ,bkey1 11 0x000000000050 6 datum5",
 0, "",
+0, "",
 "END");
 bop_new_smget_is($sock, "23 4 0x00..0xFFFF 2 6", "bkey2,bkey3,bkey1,bkey4",
 6,
@@ -285,6 +291,7 @@ bop_new_smget_is($sock, "23 4 0x00..0xFFFF 2 6", "bkey2,bkey3,bkey1,bkey4",
 2,
 "bkey3 NOT_FOUND
 ,bkey4 NOT_FOUND",
+0, "",
 "END");
 bop_new_smget_is($sock, "23 4 0x0090..0x0000000000000030 2 9", "bkey2,bkey3,bkey1,bkey4",
 5,
@@ -296,12 +303,14 @@ bop_new_smget_is($sock, "23 4 0x0090..0x0000000000000030 2 9", "bkey2,bkey3,bkey
 2,
 "bkey3 NOT_FOUND
 ,bkey4 NOT_FOUND",
+0, "",
 "END");
 bop_new_smget_is($sock, "23 4 0x0200..0x0300 2 6", "bkey2,bkey3,bkey1,bkey4",
 0, "",
 2,
 "bkey3 NOT_FOUND
 ,bkey4 NOT_FOUND",
+0, "",
 "END");
 bop_new_smget_is($sock, "29 5 0x0000..0x0100 1 6", "bkey2,bkey3,bkey1,bkey4,bkey3",
 6,
@@ -315,6 +324,7 @@ bop_new_smget_is($sock, "29 5 0x0000..0x0100 1 6", "bkey2,bkey3,bkey1,bkey4,bkey
 "bkey3 NOT_FOUND
 ,bkey4 NOT_FOUND
 ,bkey3 NOT_FOUND",
+0, "",
 "END");
 =head
 bop_ext_smget_is($sock, "11 2 0x00..0xFF 5", "bkey1,bkey2",

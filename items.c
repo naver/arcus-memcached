@@ -4662,6 +4662,25 @@ static inline int do_btree_comp_hkey(hash_item *it1, hash_item *it2)
     return cmp_res;
 }
 
+/*** NOT USED CODE ***
+static inline int do_comp_key_string(const char *key1, const int len1,
+                                     const char *key2, const int len2)
+{
+    int res;
+    if (len1 == len2) {
+        retrun strncmp(key1, key2, len1);
+    }
+    if (len1 < len2) {
+        res = strncmp(key1, key2, len1);
+        if (res == 0) res = -1;
+    } else {
+        res = strncmp(key1, key2, len2);
+        if (res == 0) res =  1;
+    }
+    return res;
+}
+**********************/
+
 #ifdef SUPPORT_BOP_SMGET
 static btree_elem_item *do_btree_scan_next(btree_elem_posi *posi,
                              const int bkrtype, const bkey_range *bkrange)
@@ -4675,6 +4694,139 @@ static btree_elem_item *do_btree_scan_next(btree_elem_posi *posi,
         return do_btree_find_prev(posi, bkrange);
 }
 
+#ifdef JHPARK_NEW_SMGET_INTERFACE // TRIMMED_KEYS
+static void do_btree_smget_add_miss(smget_result_t *smres,
+                                    uint16_t kidx, uint16_t erid)
+{
+    /* miss_kinfo: forward array */
+    smres->miss_kinfo[smres->miss_count].kidx = kidx;
+    smres->miss_kinfo[smres->miss_count].code = erid; /* error id */
+    smres->miss_count++;
+}
+
+static void do_btree_smget_add_trim(smget_result_t *smres,
+                                    uint16_t kidx, btree_elem_item *elem)
+{
+    /* trim_elems & trim_kinfo: backward array */
+    smres->trim_elems[-(smres->trim_count)] = elem;
+    smres->trim_kinfo[-(smres->trim_count)].kidx = kidx;
+    //smres->trim_kinfo[-(smres->trim_count)].code = 0;
+    smres->trim_count++;
+}
+#endif
+
+#ifdef JHPARK_NEW_SMGET_INTERFACE // TRIMMED_KEYS
+static bool do_btree_smget_check_trim(smget_result_t *smres)
+{
+    btree_elem_item *head_elem = smres->elem_array[0];
+    btree_elem_item *trim_elem;
+    bool valid = true;
+
+    /* Check if all the trimmed elements(actually the last element before trim)
+     * are behind the first found element of smget.
+     */
+    if (smres->ascending) {
+        for (int i = 0; i < smres->trim_count; i++) {
+            trim_elem = smres->trim_elems[-(i)];
+            if (BKEY_COMP(trim_elem->data, trim_elem->nbkey,
+                          head_elem->data, head_elem->nbkey) < 0) {
+                valid = false; break;
+            }
+        }
+    } else {
+        for (int i = 0; i < smres->trim_count; i++) {
+            trim_elem = smres->trim_elems[-(i)];
+            if (BKEY_COMP(trim_elem->data, trim_elem->nbkey,
+                          head_elem->data, head_elem->nbkey) > 0) {
+                valid = false; break;
+            }
+        }
+    }
+    return valid;
+}
+#endif
+
+#ifdef JHPARK_NEW_SMGET_INTERFACE // TRIMMED_KEYS
+static void do_btree_smget_adjust_trim(smget_result_t *smres)
+{
+    eitem       **new_trim_elems = &smres->elem_array[smres->elem_count];
+    smget_emis_t *new_trim_kinfo = &smres->miss_kinfo[smres->miss_count];
+    uint32_t      new_trim_count = 0;
+    btree_elem_item *tail_elem = smres->elem_count == 0 ? NULL
+                               : smres->elem_array[smres->elem_count-1];
+    btree_elem_item *comp_elem;
+    btree_elem_item *trim_elem;
+    uint16_t         trim_kidx;
+    int idx, res, pos, i;
+    int left, right, mid;
+
+    for (idx = smres->trim_count-1; idx >= 0; idx--)
+    {
+        trim_elem = smres->trim_elems[-(idx)];
+        trim_kidx = smres->trim_kinfo[-(idx)].kidx;
+        /* check if the trim elem is valid */
+        if (tail_elem != NULL) {
+            res = BKEY_COMP(trim_elem->data, trim_elem->nbkey,
+                            tail_elem->data, tail_elem->nbkey);
+            if ((smres->ascending == true && res > 0) ||
+                (smres->ascending != true && res < 0)) {
+                continue; /* invalid trim */
+            }
+        }
+        /* add the valid trim info in sorted arry */
+        if (new_trim_count == 0) {
+            pos = 0;
+        } else {
+            left  = 0;
+            right = new_trim_count-1;
+            while (left <= right) {
+                mid = (left + right) / 2;
+                comp_elem = new_trim_elems[mid];
+                res = BKEY_COMP(trim_elem->data, trim_elem->nbkey,
+                                comp_elem->data, comp_elem->nbkey);
+                if (res == 0) {
+                    right = mid; left = mid+1;
+                    break;
+                }
+                if (smres->ascending) {
+                    if (res < 0) right = mid-1;
+                    else         left  = mid+1;
+                } else {
+                    if (res > 0) right = mid-1;
+                    else         left  = mid+1;
+                }
+            }
+            /* left: insertion position */
+            for (i = new_trim_count-1; i >= left; i--) {
+                new_trim_elems[i+1] = new_trim_elems[i];
+                new_trim_kinfo[i+1] = new_trim_kinfo[i];
+            }
+            pos = left;
+        }
+        trim_elem->refcount++;
+        new_trim_elems[pos] = trim_elem;
+        new_trim_kinfo[pos].kidx = trim_kidx;
+        new_trim_count++;
+    }
+    smres->trim_elems = new_trim_elems;
+    smres->trim_kinfo = new_trim_kinfo;
+    smres->trim_count = new_trim_count;
+}
+#endif
+
+#ifdef JHPARK_NEW_SMGET_INTERFACE // TRIMMED_KEYS
+static ENGINE_ERROR_CODE
+do_btree_smget_scan_sort(struct default_engine *engine,
+                         token_t *key_array, const int key_count,
+                         const int bkrtype, const bkey_range *bkrange,
+                         const eflag_filter *efilter, const uint32_t req_count,
+#ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
+                         const bool unique,
+#endif
+                         btree_scan_info *btree_scan_buf,
+                         uint16_t *sort_sindx_buf, uint32_t *sort_sindx_cnt,
+                         smget_result_t *smres)
+#else
 static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
                                     token_t *key_array, const int key_count,
                                     const int bkrtype, const bkey_range *bkrange,
@@ -4690,6 +4842,7 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
                                     uint32_t *missed_key_array, uint32_t *missed_key_count,
 #endif
                                     bool *bkey_duplicated)
+#endif
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     hash_item *it;
@@ -4701,7 +4854,10 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
     uint16_t free_idx = req_count;
     int sort_count = 0; /* sorted scan count */
 #ifdef JHPARK_NEW_SMGET_INTERFACE
+#if 1 // TRIMMED_KEYS
+#else
     int mkey_count = 0; /* missed key count */
+#endif
 #endif
     int k, i, cmp_res;
     int mid, left, right;
@@ -4722,9 +4878,13 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
         if (ret != ENGINE_SUCCESS) {
             if (ret == ENGINE_KEY_ENOENT) { /* key missed */
 #ifdef JHPARK_NEW_SMGET_INTERFACE
+#if 1 // TRIMMED_KEYS
+                do_btree_smget_add_miss(smres, k, ENGINE_KEY_ENOENT);
+#else
                 missed_key_array[mkey_count].kidx = k;
                 missed_key_array[mkey_count].cause = ENGINE_KEY_ENOENT;
                 mkey_count++;
+#endif
 #else
                 missed_key_array[*missed_key_count] = k;
                 *missed_key_count += 1;
@@ -4737,9 +4897,13 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
         info = (btree_meta_info *)item_get_meta(it);
         if ((info->mflags & COLL_META_FLAG_READABLE) == 0) { /* unreadable collection */
 #ifdef JHPARK_NEW_SMGET_INTERFACE
+#if 1 // TRIMMED_KEYS
+            do_btree_smget_add_miss(smres, k, ENGINE_UNREADABLE);
+#else
             missed_key_array[mkey_count].kidx = k;
             missed_key_array[mkey_count].cause = ENGINE_UNREADABLE;
             mkey_count++;
+#endif
 #else
             missed_key_array[*missed_key_count] = k;
             *missed_key_count += 1;
@@ -4779,9 +4943,13 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
             if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
                 do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
                 /* Some elements weren't cached because of overflow trim */
+#if 1 // TRIMMED_KEYS
+                do_btree_smget_add_miss(smres, k, ENGINE_EBKEYOOR);
+#else
                 missed_key_array[mkey_count].kidx = k;
                 missed_key_array[mkey_count].cause = ENGINE_EBKEYOOR;
                 mkey_count++;
+#endif
             }
             do_item_release(engine, it); continue;
 #else
@@ -4801,9 +4969,13 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
         if (posi.bkeq == false && (info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
             do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
             /* Some elements weren't cached because of overflow trim */
+#if 1 // TRIMMED_KEYS
+            do_btree_smget_add_miss(smres, k, ENGINE_EBKEYOOR);
+#else
             missed_key_array[mkey_count].kidx = k;
             missed_key_array[mkey_count].cause = ENGINE_EBKEYOOR;
             mkey_count++;
+#endif
             do_item_release(engine, it); continue;
         }
 #else
@@ -4823,15 +4995,22 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
 scan_next:
         if (is_first != true) {
             assert(elem != NULL);
+#ifdef JHPARK_NEW_SMGET_INTERFACE // TRIMMED_KEYS
+            btree_elem_item *prev = elem;
+#endif
             elem = do_btree_scan_next(&posi, bkrtype, bkrange);
             if (elem == NULL) {
 #ifdef JHPARK_NEW_SMGET_INTERFACE
                 if (posi.node == NULL && (info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
                     do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
                     /* Some elements weren't cached because of overflow trim */
+#if 1 // TRIMMED_KEYS
+                    do_btree_smget_add_trim(smres, k, prev);
+#else
                     missed_key_array[mkey_count].kidx = k;
                     missed_key_array[mkey_count].cause = ENGINE_EBKEYOOR;
                     mkey_count++;
+#endif
                 }
                 do_item_release(engine, it); continue;
 #else
@@ -4878,7 +5057,11 @@ scan_next:
                     btree_scan_buf[curr_idx].it = NULL;
                     ret = ENGINE_EBADVALUE; break;
                 }
+#ifdef JHPARK_NEW_SMGET_INTERFACE // TRIMMED_KEYS
+                smres->duplicated = true;
+#else
                 *bkey_duplicated = true;
+#endif
 #ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
                 if (unique) {
                     cmp_res = 0;
@@ -4915,7 +5098,11 @@ scan_next:
                 if (cmp_res == 0) {
                     ret = ENGINE_EBADVALUE; break;
                 }
+#ifdef JHPARK_NEW_SMGET_INTERFACE // TRIMMED_KEYS
+                smres->duplicated = true;
+#else
                 *bkey_duplicated = true;
+#endif
 #ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
                 if (unique) {
                     ret = ENGINE_EDUPLICATE; break;
@@ -4963,7 +5150,10 @@ scan_next:
     }
 
 #ifdef JHPARK_NEW_SMGET_INTERFACE
+#if 1 // TRIMMED_KEYS
+#else
     *missed_key_count = mkey_count;
+#endif
 #endif
 
     if (ret == ENGINE_SUCCESS) {
@@ -4980,6 +5170,18 @@ scan_next:
 #endif
 
 #ifdef SUPPORT_BOP_SMGET
+#ifdef JHPARK_NEW_SMGET_INTERFACE // TRIMMED_KEYS
+static ENGINE_ERROR_CODE
+do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
+                         uint16_t *sort_sindx_buf, const int sort_sindx_cnt,
+                         const int bkrtype, const bkey_range *bkrange,
+                         const eflag_filter *efilter,
+                         const uint32_t offset, const uint32_t count,
+#if 1 // UNIQUE_SMGET
+                         const bool unique,
+#endif
+                         smget_result_t *smres)
+#else
 #ifdef JHPARK_NEW_SMGET_INTERFACE
 static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
                                     uint16_t *sort_sindx_buf, const int sort_sindx_cnt,
@@ -4999,16 +5201,26 @@ static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
                                     btree_elem_item **elem_array, uint32_t *kfnd_array, uint32_t *flag_array,
                                     bool *potentialbkeytrim, bool *bkey_duplicated)
 #endif
+#endif
 {
+#if 1 // TRIMMED_KEYS
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#endif
     btree_meta_info *info;
     btree_elem_item *elem, *comp;
+#if 1 // TRIMMED_KEYS
+    btree_elem_item *prev;
+#endif
     uint16_t first_idx = 0;
     uint16_t curr_idx;
     uint16_t comp_idx;
     int i, cmp_res;
     int mid, left, right;
     int skip_count = 0;
+#if 1 // TRIMMED_KEYS
+#else
     int elem_count = 0;
+#endif
     int sort_count = sort_sindx_cnt;
     bool ascending = (bkrtype != BKEY_RANGE_TYPE_DSC ? true : false);
 
@@ -5019,6 +5231,23 @@ static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
         if (skip_count < offset) {
             skip_count++;
         } else { /* skip_count == offset */
+#ifdef JHPARK_NEW_SMGET_INTERFACE // TRIMMED_KEYS
+            smres->elem_array[smres->elem_count] = elem;
+            smres->elem_kinfo[smres->elem_count].kidx = btree_scan_buf[curr_idx].kidx;
+            smres->elem_kinfo[smres->elem_count].flag = btree_scan_buf[curr_idx].it->flags;
+            smres->elem_count += 1;
+            if (smres->elem_count == 1) {
+                if (offset > 0 && smres->trim_count > 0 &&
+                    do_btree_smget_check_trim(smres) != true) {
+                    /* Some elements are trimmed in 0 ~ offset range.
+                     * So, we cannot make the correct smget result.
+                     */
+                    ret = ENGINE_EBKEYOOR; break;
+                }
+            }
+            elem->refcount++;
+            if (smres->elem_count >= count) break;
+#else
             elem->refcount++;
             elem_array[elem_count] = elem;
 #ifdef JHPARK_NEW_SMGET_INTERFACE
@@ -5031,9 +5260,13 @@ static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
 #endif
             elem_count++;
             if (elem_count >= count) break;
+#endif
         }
 
 scan_next:
+#if 1 // TRIMMED_KEYS
+        prev = elem;
+#endif
         elem = do_btree_scan_next(&btree_scan_buf[curr_idx].posi, bkrtype, bkrange);
         if (elem == NULL) {
             if (btree_scan_buf[curr_idx].posi.node == NULL) {
@@ -5042,7 +5275,18 @@ scan_next:
 #ifdef JHPARK_NEW_SMGET_INTERFACE
                 if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
                     do_btree_overlapped_with_trimmed_space(info, &btree_scan_buf[curr_idx].posi, bkrtype)) {
+#if 1 // TRIMMED_KEYS
+                    if (skip_count < offset) {
+                        /* Some elements are trimmed in 0 ~ offset range.
+                         * So, we cannot make correct smget result.
+                         */
+                        assert(smres->elem_count == 0);
+                        ret = ENGINE_EBKEYOOR; break;
+                    }
+                    do_btree_smget_add_trim(smres, btree_scan_buf[curr_idx].kidx, prev);
+#else
                     ehit_array[elem_count-1].trim = 1;
+#endif
                 }
 #else
                 if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
@@ -5075,7 +5319,11 @@ scan_next:
 
             cmp_res = BKEY_COMP(elem->data, elem->nbkey, comp->data, comp->nbkey);
             if (cmp_res == 0) {
+#ifdef JHPARK_NEW_SMGET_INTERFACE // TRIMMED_KEYS
+                smres->duplicated = true;
+#else
                 *bkey_duplicated = true;
+#endif
 #ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
                 if (unique) break;
 #endif
@@ -5106,7 +5354,16 @@ scan_next:
         }
         sort_sindx_buf[right] = curr_idx;
     }
+#ifdef JHPARK_NEW_SMGET_INTERFACE // TRIMMED_KEYS
+    if (ret == ENGINE_SUCCESS) {
+        if (smres->trim_count > 0) {
+            do_btree_smget_adjust_trim(smres);
+        }
+    }
+    return ret;
+#else
     return elem_count;
+#endif
 }
 #endif
 
@@ -6580,10 +6837,15 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
 #if 1 // UNIQUE_SMGET
                                    const bool unique,
 #endif
+#if 1 // TRIMMED_KEYS
+                                   smget_result_t *result
+#else
                                    btree_elem_item **elem_array,
                                    smget_ehit_t *ehit_array, uint32_t *elem_count,
                                    smget_kmis_t *kmis_array, uint32_t *kmis_count,
-                                   bool *duplicated)
+                                   bool *duplicated
+#endif
+                                  )
 #else
 ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
                                    token_t *key_array, const int key_count,
@@ -6608,6 +6870,45 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
         btree_scan_buf[i].it = NULL;
     }
 
+#ifdef JHPARK_NEW_SMGET_INTERFACE // TRIMMED_KEYS
+    /* initialize smget result structure */
+    assert(result->elem_array != NULL);
+    result->trim_elems = (eitem *)&result->elem_array[count + key_count - 1];
+    result->elem_kinfo = (smget_ehit_t *)&result->elem_array[count + key_count];
+    result->miss_kinfo = (smget_emis_t *)&result->elem_kinfo[count];
+    result->trim_kinfo = (smget_emis_t *)&result->miss_kinfo[key_count - 1];
+    result->elem_count = 0;
+    result->miss_count = 0;
+    result->trim_count = 0;
+    result->duplicated = false;
+    result->ascending = (bkrtype != BKEY_RANGE_TYPE_DSC ? true : false);
+
+    pthread_mutex_lock(&engine->cache_lock);
+    do {
+        /* the 1st phase: get the sorted scans */
+        ret = do_btree_smget_scan_sort(engine, key_array, key_count,
+                                       bkrtype, bkrange, efilter, (offset+count), unique,
+                                       btree_scan_buf, sort_sindx_buf, &sort_sindx_cnt,
+                                       result);
+        if (ret != ENGINE_SUCCESS) {
+            break;
+        }
+
+        /* the 2nd phase: get the sorted elems */
+        ret = do_btree_smget_elem_sort(btree_scan_buf, sort_sindx_buf, sort_sindx_cnt,
+                                       bkrtype, bkrange, efilter, offset, count, unique,
+                                       result);
+        if (ret != ENGINE_SUCCESS) {
+            break;
+        }
+
+        for (i = 0; i <= (offset+count); i++) {
+            if (btree_scan_buf[i].it != NULL)
+                do_item_release(engine, btree_scan_buf[i].it);
+        }
+    } while(0);
+    pthread_mutex_unlock(&engine->cache_lock);
+#else
 #ifdef JHPARK_NEW_SMGET_INTERFACE
 #else
     *trimmed = false;
@@ -6655,6 +6956,7 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
     }
 
     pthread_mutex_unlock(&engine->cache_lock);
+#endif
 
     return ret;
 }

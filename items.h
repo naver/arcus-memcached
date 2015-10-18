@@ -482,10 +482,15 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
 #if 1 // UNIQUE_SMGET
                                    const bool unique,
 #endif
+#if 1 // TRIMMED_KEYS
+                                   smget_result_t *result
+#else
                                    btree_elem_item **elem_array,
                                    smget_ehit_t *ehit_array, uint32_t *elem_count,
                                    smget_kmis_t *kmis_array, uint32_t *kmis_count,
-                                   bool *duplicated);
+                                   bool *duplicated
+#endif
+                                  );
 #else
 ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
                                    token_t *key_array, const int key_count,
