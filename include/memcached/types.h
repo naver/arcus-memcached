@@ -61,7 +61,7 @@ extern "C" {
         ENGINE_DISCONNECT  = 0x0a, /**< Tell the server to disconnect this client */
         ENGINE_EACCESS     = 0x0b, /**< Access control violations */
         ENGINE_NOT_MY_VBUCKET = 0x0c, /** < This vbucket doesn't belong to me */
-#ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
+#ifdef JHPARK_NEW_SMGET_INTERFACE
         ENGINE_EDUPLICATE  = 0x0d, /** < Duplicate value(ex, bkey) */
 #endif
 
@@ -290,27 +290,15 @@ extern "C" {
     /* Key info of the hitted element in smget */
     typedef struct {
         uint16_t kidx;  /* key index in keys array */
-#if 1 // TRIMMED_KEYS
-#else
-        uint8_t  trim;  /* is trimmed ? 0 or 1 */
-#endif
         uint32_t flag;  /* item flags */
     } smget_ehit_t;
 
     /* Key info of the missed key in smget */
-#if 1 // TRIMMED_KEYS
     typedef struct {
         uint16_t kidx;  /* key index in keys array */
         uint16_t code;  /* error code mean why the key is missed ? */
     } smget_emis_t;
-#else
-    typedef struct {
-        uint16_t kidx;  /* key index in keys array */
-        uint16_t cause; /* why the key is missed ? */
-    } smget_kmis_t;
-#endif
 
-#if 1 // TRIMMED_KEYS
     /* smget result structure */
     typedef struct {
         eitem       **elem_array;
@@ -324,7 +312,6 @@ extern "C" {
         bool          duplicated;
         bool          ascending;
     } smget_result_t;
-#endif
 #endif
 
     /* item attribute structure */

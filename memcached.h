@@ -484,7 +484,7 @@ struct conn {
     item_attr    coll_attr_space;
     item_attr   *coll_attrp;
     bool         coll_drop;    /* drop flag */
-#ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
+#ifdef JHPARK_NEW_SMGET_INTERFACE
     bool         coll_unique;  /* unique flag */
 #endif
     bkey_range   coll_bkrange; /* bkey range */

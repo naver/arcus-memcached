@@ -597,26 +597,17 @@ extern "C" {
                                               const eflag_filter *efilter,
                                               const uint32_t offset,
                                               const uint32_t count,
-#ifdef JHPARK_NEW_SMGET_INTERFACE // UNIQUE_SMGET
+#ifdef JHPARK_NEW_SMGET_INTERFACE
                                               const bool unique,
-#endif
-#ifdef JHPARK_NEW_SMGET_INTERFACE // TRIMMED_KEYS
                                               smget_result_t *result,
 #else
                                               eitem** eitem_array,
-#ifdef JHPARK_NEW_SMGET_INTERFACE
-                                              smget_ehit_t *ehit_array,
-                                              uint32_t     *eitem_count,
-                                              smget_kmis_t *kmis_array,
-                                              uint32_t     *kmis_count,
-#else
                                               uint32_t* kfnd_array,
                                               uint32_t* flag_array,
                                               uint32_t* eitem_count,
                                               uint32_t* missed_key_array,
                                               uint32_t* missed_key_count,
                                               bool *trimmed,
-#endif
                                               bool *duplicated,
 #endif
                                               uint16_t vbucket);

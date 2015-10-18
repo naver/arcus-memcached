@@ -860,7 +860,7 @@ extern "C"
             protocol_binary_response_header header;
             struct {
                 uint32_t elem_count; /* found element count */
-#ifdef JHPARK_NEW_SMGET_INTERFACE // TRIMMED_KEYS
+#ifdef JHPARK_NEW_SMGET_INTERFACE
                 uint32_t miss_count; /* missed key count */
                 uint32_t trim_count; /* trimmed key count */
                 uint32_t dummy;
@@ -869,7 +869,7 @@ extern "C"
 #endif
             } body;
         } message;
-#ifdef JHPARK_NEW_SMGET_INTERFACE // TRIMMED_KEYS
+#ifdef JHPARK_NEW_SMGET_INTERFACE
         uint8_t bytes[sizeof(protocol_binary_response_header) + 16];
 #else
         uint8_t bytes[sizeof(protocol_binary_response_header) + 8];
