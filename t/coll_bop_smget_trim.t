@@ -210,7 +210,7 @@ bop_new_smget_is($sock, "29 5 0..100 2 6", "bkey2,bkey3,bkey1,bkey4,bkey1",
 ,bkey2 12 100 7 datum10",
 4,
 "bkey3 NOT_FOUND
-,bkey1 OUT_OF_RANGE 
+,bkey1 OUT_OF_RANGE
 ,bkey4 NOT_FOUND
 ,bkey1 OUT_OF_RANGE",
 0, "",
@@ -222,7 +222,7 @@ bop_new_smget_is($sock, "29 5 0..100 2 6", "bkey2,bkey3,bkey1,bkey4,bkey3",
 ,bkey2 12 100 7 datum10",
 4,
 "bkey3 NOT_FOUND
-,bkey1 OUT_OF_RANGE 
+,bkey1 OUT_OF_RANGE
 ,bkey4 NOT_FOUND
 ,bkey3 NOT_FOUND",
 0, "",
