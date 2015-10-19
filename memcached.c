@@ -146,6 +146,9 @@ static int MAX_BTREE_SIZE = 50000;
     pthread_mutex_unlock(&thread_stats->mutex); \
 }
 
+#define GET_8ALIGN_SIZE(size) \
+    (((size) % 8) == 0 ? (size) : ((size) + (8 - ((size) % 8))))
+
 volatile sig_atomic_t memcached_shutdown;
 
 /*
@@ -1715,7 +1718,7 @@ static void process_bop_mget_complete(conn *c) {
     uint32_t tot_elem_count = 0;
     uint32_t tot_access_count = 0;
     char delimiter = ',';
-    token_t key_tokens[MAX_BMGET_KEY_COUNT];
+    token_t *key_tokens = (token_t *)((char*)c->coll_mkeys + GET_8ALIGN_SIZE(c->coll_lenkeys+2));
 
     if ((strncmp((char*)c->coll_mkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
         (tokenize_keys((char*)c->coll_mkeys, delimiter, c->coll_numkeys, key_tokens) == -1))
@@ -1907,34 +1910,34 @@ static void process_bop_smget_complete(conn *c) {
     assert(c->coll_op == OPERATION_BOP_SMGET);
     assert(c->coll_eitem != NULL);
     int i, idx;
-#ifdef JHPARK_NEW_SMGET_INTERFACE
-    smget_result_t smres;
-    token_t *keys_array;
     char *vptr = (char*)c->coll_mkeys;
     char delimiter = ',';
+    token_t *keys_array = (token_t *)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys+2));
+    char *respptr;
+    int   resplen;
+#ifdef JHPARK_NEW_SMGET_INTERFACE
+    smget_result_t smres;
 
     smres.elem_array = (eitem **)c->coll_eitem;
     smres.elem_kinfo = (smget_ehit_t *)&smres.elem_array[c->coll_rcount+c->coll_numkeys];
     smres.miss_kinfo = (smget_emis_t *)&smres.elem_kinfo[c->coll_rcount];
-    keys_array = (token_t *)&smres.miss_kinfo[c->coll_numkeys];
+
+    respptr = (char *)&smres.miss_kinfo[c->coll_numkeys];
 #else
     int smget_count = c->coll_roffset + c->coll_rcount;
     int elem_array_size = smget_count * (sizeof(eitem*) + (2*sizeof(uint32_t)));
-    int keys_array_size = c->coll_numkeys * sizeof(token_t);
     int kmis_array_size = c->coll_numkeys * sizeof(uint32_t);
-    char *vptr = (char*)c->coll_mkeys;
-    char delimiter = ',';
 
     uint32_t  kmis_count = 0;
     uint32_t  elem_count = 0;
     eitem   **elem_array = (eitem  **)c->coll_eitem;
     uint32_t *kfnd_array = (uint32_t*)((char*)elem_array + (smget_count*sizeof(eitem*)));
     uint32_t *flag_array = (uint32_t*)((char*)kfnd_array + (smget_count*sizeof(uint32_t)));
-    token_t  *keys_array = (token_t *)((char*)elem_array + elem_array_size);
-    uint32_t *kmis_array = (uint32_t*)((char*)keys_array + keys_array_size);
-
+    uint32_t *kmis_array = (uint32_t*)((char*)flag_array + (smget_count*sizeof(uint32_t)));
     bool trimmed;
     bool duplicated;
+
+    respptr = ((char*)kmis_array + kmis_array_size);
 #endif
 
     ENGINE_ERROR_CODE ret;
@@ -1970,12 +1973,9 @@ static void process_bop_smget_complete(conn *c) {
         {
 #ifdef JHPARK_NEW_SMGET_INTERFACE
         eitem_info info[smres.elem_count+1]; /* elem_count might be 0. */
-        char *respptr = (char*)&keys_array[c->coll_numkeys];
 #else
         eitem_info info[elem_count+1]; /* elem_count might be 0. */
-        char *respptr = ((char*)kmis_array + kmis_array_size);
 #endif
-        int   resplen;
 
         do {
 #ifdef JHPARK_NEW_SMGET_INTERFACE
@@ -5144,13 +5144,11 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
             int elem_array_size; /* smget element array size */
             int ehit_array_size; /* smget hitted elem array size */
             int emis_array_size; /* element missed keys array size */
-            int keys_array_size; /* keyinfo(token_t) array size */
             int elem_rshdr_size; /* the size of result header about the found elems */
             int emis_rshdr_size; /* the size of result header about the missed keys */
 #else
             int smget_count;
             int elem_array_size; /* elem pointer array where the found elements will be saved */
-            int keys_array_size; /* keyinfo(token_t) array where the address and length of keys are to be saved */
             int kmis_array_size; /* key index array where the missed key indexes are to be saved */
             int elem_rshdr_size; /* the size of result header about the found elems */
             int kmis_rshdr_size; /* the size of result header about the missed keys */
@@ -5164,19 +5162,17 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
             elem_array_size = (req->message.body.req_count + req->message.body.key_count) * sizeof(eitem*);
             ehit_array_size = req->message.body.req_count * sizeof(smget_ehit_t);
             emis_array_size = req->message.body.key_count * sizeof(smget_emis_t);
-            keys_array_size = req->message.body.key_count * sizeof(token_t);
             elem_rshdr_size = req->message.body.req_count * (sizeof(uint64_t) + (3*sizeof(uint32_t)));
             emis_rshdr_size = req->message.body.key_count * sizeof(uint32_t);
             need_size = elem_array_size + ehit_array_size + emis_array_size
-                      + keys_array_size + elem_rshdr_size + emis_rshdr_size;
+                      + elem_rshdr_size + emis_rshdr_size;
 #else
             smget_count = req->message.body.req_offset + req->message.body.req_count;
             elem_array_size = smget_count * (sizeof(eitem*) + (2*sizeof(uint32_t)));
-            keys_array_size = req->message.body.key_count * sizeof(token_t);
             kmis_array_size = req->message.body.key_count * sizeof(uint32_t);
             elem_rshdr_size = smget_count * (sizeof(uint64_t) + (3*sizeof(uint32_t)));
             kmis_rshdr_size = req->message.body.key_count * sizeof(uint32_t);
-            need_size = elem_array_size + keys_array_size + kmis_array_size + elem_rshdr_size + kmis_rshdr_size;
+            need_size = elem_array_size + kmis_array_size + elem_rshdr_size + kmis_rshdr_size;
 #endif
         }
 #endif
@@ -5185,7 +5181,9 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
         if ((elem = (eitem *)malloc(need_size)) == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
-            if ((c->coll_mkeys = malloc(vlen+2)) == NULL) {
+            int kmem_size = GET_8ALIGN_SIZE(vlen+2)
+                          + (sizeof(token_t) * req->message.body.key_count);
+            if ((c->coll_mkeys = malloc(kmem_size)) == NULL) {
                 free((void*)elem);
                 ret = ENGINE_ENOMEM;
             } else {
@@ -5252,15 +5250,15 @@ static void process_bin_bop_smget_complete(conn *c) {
     assert(c->coll_eitem != NULL);
 #ifdef JHPARK_NEW_SMGET_INTERFACE
     smget_result_t smres;
-    token_t *keys_array;
 #else
     int smget_count = c->coll_roffset + c->coll_rcount;
     int elem_array_size = smget_count * (sizeof(eitem*) + (2*sizeof(uint32_t)));
-    int keys_array_size = c->coll_numkeys * sizeof(token_t);
     int kmis_array_size = c->coll_numkeys * sizeof(uint32_t);
 #endif
+    char *resultptr;
     char *vptr = (char*)c->coll_mkeys;
     char delimiter = ',';
+    token_t *keys_array = (token_t*)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys+2));
 
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
@@ -5270,15 +5268,17 @@ static void process_bin_bop_smget_complete(conn *c) {
     smres.elem_array = (eitem **)c->coll_eitem;
     smres.elem_kinfo = (smget_ehit_t *)&smres.elem_array[c->coll_rcount+c->coll_numkeys];
     smres.miss_kinfo = (smget_emis_t *)&smres.elem_kinfo[c->coll_rcount];
-    keys_array = (token_t *)&smres.miss_kinfo[c->coll_numkeys];
+
+    resultptr = (char *)&smres.miss_kinfo[c->coll_numkeys];
 #else
     uint32_t  kmis_count = 0;
     uint32_t  elem_count = 0;
     eitem   **elem_array = (eitem  **)c->coll_eitem;
     uint32_t *kfnd_array = (uint32_t*)((char*)elem_array + (smget_count*sizeof(eitem*)));
     uint32_t *flag_array = (uint32_t*)((char*)kfnd_array + (smget_count*sizeof(uint32_t)));
-    token_t  *keys_array = (token_t *)((char*)elem_array + elem_array_size);
-    uint32_t *kmis_array = (uint32_t*)((char*)keys_array + keys_array_size);
+    uint32_t *kmis_array = (uint32_t*)((char*)flag_array + (smget_count*sizeof(uint32_t)));
+
+    resultptr = ((char *)kmis_array + kmis_array_size);
 
     bool trimmed;
     bool duplicated;
@@ -5317,12 +5317,10 @@ static void process_bin_bop_smget_complete(conn *c) {
         uint32_t real_elem_hdr_size = smres.elem_count * (sizeof(uint64_t) + (3*sizeof(uint32_t)));
         uint32_t real_emis_hdr_size = (smres.miss_count + smres.trim_count) * sizeof(uint32_t);
         uint32_t bodylen, i;
-        char     *resultptr = (char*)&keys_array[c->coll_numkeys];
 #else
         uint32_t real_elem_hdr_size = elem_count * (sizeof(uint64_t) + (3*sizeof(uint32_t)));
         uint32_t real_kmis_hdr_size = kmis_count * sizeof(uint32_t);
         uint32_t bodylen, i;
-        char     *resultptr = (char*)kmis_array + kmis_array_size;
 #endif
         uint64_t *bkeyptr;
         uint32_t *vlenptr;
@@ -9661,7 +9659,8 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
 }
 
 #if defined(SUPPORT_BOP_MGET) || defined(SUPPORT_BOP_SMGET)
-static void process_bop_prepare_nread_keys(conn *c, int cmd, size_t vlen) {
+static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint32_t kcnt)
+{
     eitem *elem = NULL;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     int need_size = 0;
@@ -9682,11 +9681,9 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, size_t vlen) {
         int elem_array_size; /* smget element array size */
         int ehit_array_size; /* smget hitted elem array size */
         int emis_array_size; /* element missed keys array size */
-        int keys_array_size; /* keyinfo(token_t) array size */
 #else
         int smget_count = c->coll_roffset + c->coll_rcount;
         int elem_array_size; /* elem pointer array where the found elements will be saved */
-        int keys_array_size; /* keyinfo(token_t) array where the address and length of keys are to be saved */
         int kmis_array_size; /* key index array where the missed key indexes are to be saved */
 #endif
         int respon_hdr_size; /* the size of response head and tail */
@@ -9696,20 +9693,18 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, size_t vlen) {
         elem_array_size = (c->coll_rcount + c->coll_numkeys) * sizeof(eitem*);
         ehit_array_size = c->coll_rcount * sizeof(smget_ehit_t);
         emis_array_size = c->coll_numkeys * sizeof(smget_emis_t);
-        keys_array_size = c->coll_numkeys * sizeof(token_t);
         respon_hdr_size = (3*lenstr_size) + 50; /* result head and tail size */
         respon_bdy_size = (c->coll_rcount * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+(lenstr_size*2)+10))
                         + (c->coll_numkeys * ((MAX_EFLAG_LENG*2+2) + 5)); /* result body size */
         need_size = elem_array_size + ehit_array_size + emis_array_size
-                  + keys_array_size + respon_hdr_size + respon_bdy_size;
+                  + respon_hdr_size + respon_bdy_size;
 #else
         elem_array_size = smget_count * (sizeof(eitem*) + (2*sizeof(uint32_t)));
-        keys_array_size = c->coll_numkeys * sizeof(token_t);
         kmis_array_size = c->coll_numkeys * sizeof(uint32_t);
         respon_hdr_size = (2*lenstr_size) + 30; /* result head and tail size */
         respon_bdy_size = smget_count * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+(lenstr_size*2)+5); /* result body size */
 
-        need_size = elem_array_size + keys_array_size + kmis_array_size + respon_hdr_size + respon_bdy_size;
+        need_size = elem_array_size + kmis_array_size + respon_hdr_size + respon_bdy_size;
 #endif
     }
 #endif
@@ -9718,7 +9713,9 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, size_t vlen) {
     if ((elem = (eitem *)malloc(need_size)) == NULL) {
         ret = ENGINE_ENOMEM;
     } else {
-        if ((c->coll_mkeys = malloc(vlen)) == NULL) {
+        int kmem_size = GET_8ALIGN_SIZE(vlen)
+                      + (sizeof(token_t) * c->coll_numkeys);
+        if ((c->coll_mkeys = malloc(kmem_size)) == NULL) {
             free((void*)elem);
             ret = ENGINE_ENOMEM;
         }
@@ -10574,7 +10571,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         c->coll_unique  = unique;
 #endif
 
-        process_bop_prepare_nread_keys(c, subcommid, lenkeys);
+        process_bop_prepare_nread_keys(c, subcommid, lenkeys, numkeys);
     }
 #endif
     else if ((ntokens == 6) && (strcmp(subcommand, "position") == 0))
