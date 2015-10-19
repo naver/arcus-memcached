@@ -1,10 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 42;
-=head
-use Test::More tests => 54;
-=cut
+use Test::More tests => 39;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
