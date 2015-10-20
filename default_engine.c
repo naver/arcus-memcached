@@ -918,6 +918,16 @@ static ENGINE_ERROR_CODE default_set_memlimit(ENGINE_HANDLE* handle, const void*
     return ret;
 }
 
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+static ENGINE_ERROR_CODE default_set_maxcollsize(ENGINE_HANDLE* handle, const void* cookie,
+                                                 const int coll_type, int *maxsize)
+{
+    struct default_engine* engine = get_handle(handle);
+
+    return item_conf_set_maxcollsize(engine, coll_type, maxsize);
+}
+#endif
+
 static void default_set_verbose(ENGINE_HANDLE* handle, const void* cookie, const size_t verbose)
 {
     struct default_engine* engine = get_handle(handle);
@@ -1254,6 +1264,9 @@ ENGINE_ERROR_CODE create_instance(uint64_t interface, GET_SERVER_API get_server_
 
          /* Config */
          .set_memlimit     = default_set_memlimit,
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+         .set_maxcollsize  = default_set_maxcollsize,
+#endif
          .set_verbose      = default_set_verbose,
 
          .unknown_command  = default_unknown_command,

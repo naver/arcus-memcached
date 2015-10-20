@@ -7974,6 +7974,64 @@ static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntok
     }
 }
 
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t ntokens,
+                                        int coll_type)
+{
+    assert(coll_type==ITEM_TYPE_LIST || coll_type==ITEM_TYPE_SET ||
+           coll_type==ITEM_TYPE_BTREE);
+    assert(c != NULL);
+    int32_t maxsize;
+
+    if (ntokens == 3) {
+        char buf[50];
+        switch (coll_type) {
+          case ITEM_TYPE_LIST:
+               sprintf(buf, "max_list_size %d\r\nEND", settings.max_list_size);
+               break;
+          case ITEM_TYPE_SET:
+               sprintf(buf, "max_set_size %d\r\nEND", settings.max_set_size);
+               break;
+          case ITEM_TYPE_BTREE:
+               sprintf(buf, "max_btree_size %d\r\nEND", settings.max_btree_size);
+               break;
+        }
+        out_string(c, buf);
+    }
+    else if (ntokens == 4 && safe_strtol(tokens[COMMAND_TOKEN+2].value, &maxsize)) {
+        ENGINE_ERROR_CODE ret;
+
+        SETTING_LOCK();
+        ret = mc_engine.v1->set_maxcollsize(mc_engine.v0, c, coll_type, &maxsize);
+        if (ret == ENGINE_SUCCESS) {
+            switch (coll_type) {
+              case ITEM_TYPE_LIST:
+                   settings.max_list_size = maxsize;
+                   MAX_LIST_SIZE = maxsize;
+                   break;
+              case ITEM_TYPE_SET:
+                   settings.max_set_size = maxsize;
+                   MAX_SET_SIZE = maxsize;
+                   break;
+              case ITEM_TYPE_BTREE:
+                   settings.max_btree_size = maxsize;
+                   MAX_BTREE_SIZE = maxsize;
+                   break;
+            }
+        }
+        SETTING_UNLOCK();
+        if (ret == ENGINE_SUCCESS) {
+            out_string(c, "END");
+        } else { /* ENGINE_EBADVALUE */
+            out_string(c, "CLIENT_ERROR bad value");
+        }
+    }
+    else {
+        out_string(c, "CLIENT_ERROR bad command line format");
+    }
+}
+#endif
+
 #ifdef ENABLE_ZK_INTEGRATION
 static void process_hbtimeout_command(conn *c, token_t *tokens, const size_t ntokens) {
     unsigned int hbtimeout;
@@ -8024,6 +8082,23 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     {
         process_memlimit_command(c, tokens, ntokens);
     }
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+    else if ((ntokens == 3 || ntokens == 4) &&
+             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_list_size") == 0))
+    {
+        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_LIST);
+    }
+    else if ((ntokens == 3 || ntokens == 4) &&
+             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_set_size") == 0))
+    {
+        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_SET);
+    }
+    else if ((ntokens == 3 || ntokens == 4) &&
+             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_btree_size") == 0))
+    {
+        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_BTREE);
+    }
+#endif
 #ifdef ENABLE_ZK_INTEGRATION
     else if ((ntokens == 3 || ntokens == 4) &&
              (strcmp(tokens[SUBCOMMAND_TOKEN].value, "hbtimeout") == 0))
@@ -8158,6 +8233,11 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "config verbosity [<verbose>]\\r\\n" "\n"
         "\t" "config memlimit [<memsize(MB)>]\\r\\n" "\n"
         "\t" "config maxconns [<maxconn>]\\r\\n" "\n"
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+        "\t" "config max_list_size [<maxsize>]\\r\\n" "\n"
+        "\t" "config max_set_size [<maxsize>]\\r\\n" "\n"
+        "\t" "config max_btree_size [<maxsize>]\\r\\n" "\n"
+#endif
 #ifdef ENABLE_ZK_INTEGRATION
         "\t" "config hbtimeout [<hbtimeout>]\\r\\n" "\n"
         "\t" "config hbfailstop [<hbfailstop>]\\r\\n" "\n"
@@ -13394,6 +13474,9 @@ int main (int argc, char **argv) {
         settings.port = settings.udpport;
     }
 
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+    /* Following code of setting max collection size will be deprecated. */
+#endif
     if (1) { /* check max collection size from environment variables */
         int value;
 

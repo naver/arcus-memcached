@@ -688,6 +688,12 @@ extern "C" {
                                           const void *cookie,
                                           const size_t memlimit,
                                           const int sticky_ratio);
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+        ENGINE_ERROR_CODE (*set_maxcollsize)(ENGINE_HANDLE* handle,
+                                          const void *cookie,
+                                          const int coll_type,
+                                          int *maxsize);
+#endif
 
         void (*set_verbose) (ENGINE_HANDLE* handle,
                              const void* cookie,

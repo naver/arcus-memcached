@@ -1394,17 +1394,29 @@ static int32_t do_coll_real_maxcount(hash_item *it, int32_t maxcount)
 
     if (IS_LIST_ITEM(it)) {
         if (maxcount < 0 || maxcount > max_list_size)
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+            real_maxcount = -1;
+#else
             real_maxcount = max_list_size;
+#endif
         else if (maxcount == 0)
             real_maxcount = default_list_size;
     } else if (IS_SET_ITEM(it)) {
         if (maxcount < 0 || maxcount > max_set_size)
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+            real_maxcount = -1;
+#else
             real_maxcount = max_set_size;
+#endif
         else if (maxcount == 0)
             real_maxcount = default_set_size;
     } else if (IS_BTREE_ITEM(it)) {
         if (maxcount < 0 || maxcount > max_btree_size)
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+            real_maxcount = -1;
+#else
             real_maxcount = max_btree_size;
+#endif
         else if (maxcount == 0)
             real_maxcount = default_btree_size;
     }
@@ -1645,14 +1657,25 @@ static ENGINE_ERROR_CODE do_list_elem_insert(struct default_engine *engine,
                                              const void *cookie)
 {
     list_meta_info *info = (list_meta_info *)item_get_meta(it);
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+    int32_t real_mcnt = (info->mcnt == -1 ? max_list_size : info->mcnt);
+#endif
     ENGINE_ERROR_CODE ret;
 
     /* validation check: index value */
     if (index >= 0) {
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+        if (index > info->ccnt || index > (real_mcnt-1))
+#else
         if (index > info->ccnt || index > (info->mcnt-1))
+#endif
             return ENGINE_EINDEXOOR;
     } else {
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+        if ((-index) > (info->ccnt+1) || (-index) > real_mcnt)
+#else
         if ((-index) > (info->ccnt+1) || (-index) > info->mcnt)
+#endif
             return ENGINE_EINDEXOOR;
     }
 
@@ -1665,11 +1688,22 @@ static ENGINE_ERROR_CODE do_list_elem_insert(struct default_engine *engine,
 #endif
 
     /* overflow check */
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+    if (info->ovflact == OVFL_ERROR && info->ccnt >= real_mcnt) {
+        return ENGINE_EOVERFLOW;
+    }
+#else
     if (info->ovflact == OVFL_ERROR && info->ccnt >= info->mcnt) {
         return ENGINE_EOVERFLOW;
     }
+#endif
 
-    if (info->ccnt >= info->mcnt) {
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+    if (info->ccnt >= real_mcnt)
+#else
+    if (info->ccnt >= info->mcnt)
+#endif
+    {
         /* info->ovflact: OVFL_HEAD_TRIM or OVFL_TAIL_TRIM */
         int      delidx;
         uint32_t delcnt;
@@ -2158,6 +2192,9 @@ static ENGINE_ERROR_CODE do_set_elem_insert(struct default_engine *engine,
                                             const void *cookie)
 {
     set_meta_info *info = (set_meta_info *)item_get_meta(it);
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+    int32_t real_mcnt = (info->mcnt == -1 ? max_set_size : info->mcnt);
+#endif
     ENGINE_ERROR_CODE ret;
 
 #ifdef ENABLE_STICKY_ITEM
@@ -2170,9 +2207,15 @@ static ENGINE_ERROR_CODE do_set_elem_insert(struct default_engine *engine,
 
     /* overflow check */
     assert(info->ovflact == OVFL_ERROR);
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+    if (info->ccnt >= real_mcnt) {
+        return ENGINE_EOVERFLOW;
+    }
+#else
     if (info->ccnt >= info->mcnt) {
         return ENGINE_EOVERFLOW;
     }
+#endif
 
     /* create the root hash node if it does not exist */
     bool new_root_flag = false;
@@ -3941,6 +3984,9 @@ static ENGINE_ERROR_CODE do_btree_overflow_check(btree_meta_info *info, btree_el
     /* info->ccnt >= 1 */
     btree_elem_item *min_bkey_elem = NULL;
     btree_elem_item *max_bkey_elem = NULL;
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+    int32_t real_mcnt = (info->mcnt == -1 ? max_btree_size : info->mcnt);
+#endif
 
     /* step 1: overflow check on max bkey range */
     if (info->maxbkeyrange.len != BKEY_NULL) {
@@ -3978,7 +4024,11 @@ static ENGINE_ERROR_CODE do_btree_overflow_check(btree_meta_info *info, btree_el
     }
 
     /* step 2: overflow check on max element count */
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+    if (info->ccnt >= real_mcnt && *overflow_type == OVFL_TYPE_NONE) {
+#else
     if (info->ccnt >= info->mcnt && *overflow_type == OVFL_TYPE_NONE) {
+#endif
         if (info->ovflact == OVFL_ERROR) {
             return ENGINE_EOVERFLOW;
         }
@@ -6894,7 +6944,27 @@ ENGINE_ERROR_CODE item_getattr(struct default_engine *engine,
             if (ret == ENGINE_SUCCESS) {
                 coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
                 attr_data->count      = info->ccnt;
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+                if (info->mcnt > 0) {
+                    attr_data->maxcount   = info->mcnt;
+                } else {
+                    switch (attr_data->type) {
+                      case ITEM_TYPE_LIST:
+                           attr_data->maxcount = max_list_size;
+                           break;
+                      case ITEM_TYPE_SET:
+                           attr_data->maxcount = max_set_size;
+                           break;
+                      case ITEM_TYPE_BTREE:
+                           attr_data->maxcount = max_btree_size;
+                           break;
+                      default:
+                           attr_data->maxcount = 0;
+                    }
+                }
+#else
                 attr_data->maxcount   = info->mcnt;
+#endif
                 attr_data->ovflaction = info->ovflact;
                 attr_data->readable   = (((info->mflags & COLL_META_FLAG_READABLE) != 0) ? 1 : 0);
                 if (attr_data->type == ITEM_TYPE_BTREE) {
@@ -6961,9 +7031,15 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
             }
             if (attr_ids[i] == ATTR_MAXCOUNT) {
                 attr_data->maxcount = do_coll_real_maxcount(it, attr_data->maxcount);
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+                if (attr_data->maxcount > 0 && attr_data->maxcount < info->ccnt) {
+                    ret = ENGINE_EBADVALUE; break;
+                }
+#else
                 if (info->ccnt > attr_data->maxcount) {
                     ret = ENGINE_EBADVALUE; break;
                 }
+#endif
             } else if (attr_ids[i] == ATTR_OVFLACTION) {
                 if (attr_data->ovflaction == OVFL_ERROR) {
                     /* nothing to check */
@@ -7088,6 +7164,47 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
 /*
  * Item config functions
  */
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+ENGINE_ERROR_CODE item_conf_set_maxcollsize(struct default_engine *engine,
+                                            const int coll_type, int *maxsize)
+{
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    pthread_mutex_lock(&engine->cache_lock);
+    if (*maxsize < 0 || *maxsize > coll_size_limit) {
+        *maxsize = coll_size_limit;
+    }
+    switch (coll_type) {
+      case ITEM_TYPE_LIST:
+           if (*maxsize <= max_list_size) {
+               ret = ENGINE_EBADVALUE;
+           } else {
+               max_list_size = *maxsize;
+               engine->config.max_list_size = *maxsize;
+           }
+           break;
+      case ITEM_TYPE_SET:
+           if (*maxsize <= max_set_size) {
+               ret = ENGINE_EBADVALUE;
+           } else {
+               max_set_size = *maxsize;
+               engine->config.max_set_size = *maxsize;
+           }
+           break;
+      case ITEM_TYPE_BTREE:
+           if (*maxsize <= max_btree_size) {
+               ret = ENGINE_EBADVALUE;
+           } else {
+               max_btree_size = *maxsize;
+               engine->config.max_btree_size = *maxsize;
+           }
+           break;
+    }
+    pthread_mutex_unlock(&engine->cache_lock);
+    return ret;
+}
+#endif
+
 bool item_conf_get_evict_to_free(struct default_engine *engine)
 {
     bool value;
