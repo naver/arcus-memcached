@@ -4059,7 +4059,6 @@ static void do_btree_overflow_trim(struct default_engine *engine, btree_meta_inf
             info->mflags &= ~COLL_META_FLAG_TRIMMED; // clear trimmed
     } else { /* overflow_type == OVFL_TYPE_COUNT */
         assert(overflow_type == OVFL_TYPE_COUNT);
-        assert((info->ccnt-1) == info->mcnt);
 
         btree_elem_posi delpath[BTREE_MAX_DEPTH];
         assert(info->root->ndepth < BTREE_MAX_DEPTH);
@@ -5351,18 +5350,18 @@ static void do_coll_all_elem_delete(struct default_engine *engine, hash_item *it
 {
     if (IS_LIST_ITEM(it)) {
         list_meta_info *info = (list_meta_info *)item_get_meta(it);
-        (void)do_list_elem_delete(engine, info, 0, info->mcnt, ELEM_DELETE_COLL);
+        (void)do_list_elem_delete(engine, info, 0, 0, ELEM_DELETE_COLL);
         assert(info->head == NULL && info->tail == NULL);
     } else if (IS_SET_ITEM(it)) {
         set_meta_info *info = (set_meta_info *)item_get_meta(it);
-        (void)do_set_elem_delete(engine, info, info->mcnt, ELEM_DELETE_COLL);
+        (void)do_set_elem_delete(engine, info, 0, ELEM_DELETE_COLL);
         assert(info->root == NULL);
     } else if (IS_BTREE_ITEM(it)) {
         btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
         bkey_range bkrange_space;
         get_bkey_full_range(info->bktype, true, &bkrange_space);
         (void)do_btree_elem_delete(engine, info, BKEY_RANGE_TYPE_ASC, &bkrange_space,
-                                   NULL, info->mcnt, NULL, ELEM_DELETE_COLL);
+                                   NULL, 0, NULL, ELEM_DELETE_COLL);
         assert(info->root == NULL);
     }
 }
