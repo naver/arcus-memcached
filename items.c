@@ -4707,9 +4707,10 @@ static void do_btree_smget_add_trim(smget_result_t *smres,
                                     uint16_t kidx, btree_elem_item *elem)
 {
     /* trim_elems & trim_kinfo: backward array */
-    smres->trim_elems[-(smres->trim_count)] = elem;
-    smres->trim_kinfo[-(smres->trim_count)].kidx = kidx;
-    //smres->trim_kinfo[-(smres->trim_count)].code = 0;
+    int idx = (int)smres->trim_count;
+    smres->trim_elems[-(idx)] = elem;
+    smres->trim_kinfo[-(idx)].kidx = kidx;
+    //smres->trim_kinfo[-(idx)].code = 0;
     smres->trim_count++;
 }
 
