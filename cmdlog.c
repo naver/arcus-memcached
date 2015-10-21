@@ -143,8 +143,8 @@ static void *cmdlog_flush_thread()
                     cmdlog.stats.bgndate, cmdlog.stats.bgntime,
                     cmdlog.stats.file_count);
             if ((fd = open(fname, O_WRONLY | O_CREAT | O_APPEND, 0644)) < 0) {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL, "Can't open %d.log file\n",
-                               cmdlog.stats.file_count);
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                               "Can't open command log file: %s\n", fname);
                 err = -1; break;
             }
         }
@@ -171,7 +171,9 @@ static void *cmdlog_flush_thread()
             if (writelen > 0) {
                 nwritten = write(fd, buffer->data + buffer->head, writelen);
                 if (nwritten != writelen) {
-                    mc_logger->log(EXTENSION_LOG_WARNING, NULL, "flush thread write error\n");
+                    mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                                   "write command log error: nwritten(%d) != writelen(%d)\n",
+                                   nwritten, writelen);
                     err = -1; break;
                 }
                 pthread_mutex_lock(&buffer->lock);
@@ -184,9 +186,10 @@ static void *cmdlog_flush_thread()
             if (writelen > 0) {
                 nwritten = write(fd, buffer->data + buffer->head, writelen);
                 if (nwritten != writelen) {
-                    mc_logger->log(EXTENSION_LOG_WARNING, NULL, "flush thread write error\n");
+                    mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                                   "write command log error: nwritten(%d) != writelen(%d)\n",
+                                   nwritten, writelen);
                     err = -1; break;
-                    break;
                 }
                 pthread_mutex_lock(&buffer->lock);
                 buffer->last = 0;
@@ -256,7 +259,7 @@ int cmdlog_start(bool *already_started)
         if (cmdlog.buffer.data == NULL) {
             if ((cmdlog.buffer.data = malloc(CMDLOG_BUFFER_SIZE)) == NULL) {
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                               "Can't allocate buffer\n");
+                               "Can't allocate command log buffer\n");
                 ret = -1; break;
             }
         }
@@ -278,7 +281,7 @@ int cmdlog_start(bool *already_started)
             (ret = pthread_create(&cmdlog.flush.tid, &cmdlog.flush.attr, cmdlog_flush_thread, NULL)) != 0)
         {
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                           "Can't create thread: %s\n", strerror(ret));
+                           "Can't create command log flush thread: %s\n", strerror(ret));
             cmdlog.on_logging = false; // disable it */
             ret = -1; break;
         }
