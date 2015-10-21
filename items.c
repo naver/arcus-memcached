@@ -4757,10 +4757,10 @@ static void do_btree_smget_add_trim(smget_result_t *smres,
                                     uint16_t kidx, btree_elem_item *elem)
 {
     /* trim_elems & trim_kinfo: backward array */
-    int idx = (int)smres->trim_count;
-    smres->trim_elems[-(idx)] = elem;
-    smres->trim_kinfo[-(idx)].kidx = kidx;
-    //smres->trim_kinfo[-(idx)].code = 0;
+    assert(smres->trim_count < smres->keys_arrsz);
+    smres->trim_elems[smres->keys_arrsz-1-smres->trim_count] = elem;
+    smres->trim_kinfo[smres->keys_arrsz-1-smres->trim_count].kidx = kidx;
+    //smres->trim_kinfo[smres->keys_arrsz-1-smres->trim_count].code = 0;
     smres->trim_count++;
 }
 
@@ -4775,7 +4775,7 @@ static bool do_btree_smget_check_trim(smget_result_t *smres)
      */
     if (smres->ascending) {
         for (int i = 0; i < smres->trim_count; i++) {
-            trim_elem = smres->trim_elems[-(i)];
+            trim_elem = smres->trim_elems[smres->keys_arrsz-1-i];
             if (BKEY_COMP(trim_elem->data, trim_elem->nbkey,
                           head_elem->data, head_elem->nbkey) < 0) {
                 valid = false; break;
@@ -4783,7 +4783,7 @@ static bool do_btree_smget_check_trim(smget_result_t *smres)
         }
     } else {
         for (int i = 0; i < smres->trim_count; i++) {
-            trim_elem = smres->trim_elems[-(i)];
+            trim_elem = smres->trim_elems[smres->keys_arrsz-1-i];
             if (BKEY_COMP(trim_elem->data, trim_elem->nbkey,
                           head_elem->data, head_elem->nbkey) > 0) {
                 valid = false; break;
@@ -4808,8 +4808,8 @@ static void do_btree_smget_adjust_trim(smget_result_t *smres)
 
     for (idx = smres->trim_count-1; idx >= 0; idx--)
     {
-        trim_elem = smres->trim_elems[-(idx)];
-        trim_kidx = smres->trim_kinfo[-(idx)].kidx;
+        trim_elem = smres->trim_elems[smres->keys_arrsz-1-idx];
+        trim_kidx = smres->trim_kinfo[smres->keys_arrsz-1-idx].kidx;
         /* check if the trim elem is valid */
         if (tail_elem != NULL) {
             res = BKEY_COMP(trim_elem->data, trim_elem->nbkey,
@@ -6827,13 +6827,15 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
 #ifdef JHPARK_NEW_SMGET_INTERFACE
     /* initialize smget result structure */
     assert(result->elem_array != NULL);
-    result->trim_elems = (eitem *)&result->elem_array[count + key_count - 1];
+    result->trim_elems = (eitem *)&result->elem_array[count];
     result->elem_kinfo = (smget_ehit_t *)&result->elem_array[count + key_count];
     result->miss_kinfo = (smget_emis_t *)&result->elem_kinfo[count];
-    result->trim_kinfo = (smget_emis_t *)&result->miss_kinfo[key_count - 1];
+    result->trim_kinfo = result->miss_kinfo;
     result->elem_count = 0;
     result->miss_count = 0;
     result->trim_count = 0;
+    result->elem_arrsz = count;
+    result->keys_arrsz = key_count;
     result->duplicated = false;
     result->ascending = (bkrtype != BKEY_RANGE_TYPE_DSC ? true : false);
 

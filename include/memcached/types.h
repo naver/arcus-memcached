@@ -310,6 +310,8 @@ extern "C" {
         uint32_t      elem_count; /* # of found elements */
         uint32_t      miss_count; /* # of missed keys */
         uint32_t      trim_count; /* # of trimmed keys */
+        uint32_t      elem_arrsz; /* elem array size */
+        uint32_t      keys_arrsz; /* miss & trim array size */
         bool          duplicated; /* bkey is duplicated ? */
         bool          ascending;  /* bkey order of found elements: ascending ? */
     } smget_result_t;
