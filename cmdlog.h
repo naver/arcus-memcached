@@ -3,7 +3,7 @@
 
 #include "memcached/extension_loggers.h"
 
-//#define COMMAND_LOGGING
+#define COMMAND_LOGGING
 #define CMDLOG_INPUT_SIZE 400
 
 #define CMDLOG_EXPLICIT_STOP 0  /* stop by user request */
