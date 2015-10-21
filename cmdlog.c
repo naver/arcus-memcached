@@ -11,11 +11,11 @@
 
 #include "cmdlog.h"
 
-#define CMDLOG_BUFFER_SIZE     (10 * 1024 * 1024)  /* 10 * MB */
-#define CMDLOG_WRITE_SIZE      (4 * 1024)          /* 4 * KB */
-#define CMDLOG_BUFFER_NUM 10  /* number of log files */
-#define CMDLOG_FILE_DIR "command_log/%d_%d_%d.log"  /* arcus/scripts/command_log */
-#define CMDLOG_FILENAME_LENGTH 128  /* filename plus path's length */
+#define CMDLOG_BUFFER_SIZE  (10 * 1024 * 1024)  /* 10 * MB */
+#define CMDLOG_WRITE_SIZE   (4 * 1024)          /* 4 * KB */
+#define CMDLOG_BUFFER_NUM   10                  /* number of log files */
+#define CMDLOG_FILE_DIR     "command_log/%d_%d_%d.log"  /* arcus/scripts/command_log */
+#define CMDLOG_FILENAME_LENGTH 128              /* filename plus path's length */
 
 EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
 
@@ -30,8 +30,7 @@ struct cmd_log_buffer {
 };
 
 /*command log flush structure */
-struct cmd_log_flush
-{
+struct cmd_log_flush {
     pthread_t tid;        /* flush thread id */
     pthread_attr_t attr;  /* flush thread mode */
     pthread_mutex_t lock; /* flush thread sleep and wakeup */
@@ -241,6 +240,8 @@ int cmdlog_start(bool *already_started)
 {
     int ret = 0;
 
+    *already_started = false;
+
     pthread_mutex_lock(&cmdlog.lock);
     do {
         if (cmdlog.on_logging) {
@@ -277,7 +278,6 @@ int cmdlog_start(bool *already_started)
             cmdlog.on_logging = false; // disable it */
             ret = -1; break;
         }
-        *already_started = false;
     } while(0);
     pthread_mutex_unlock(&cmdlog.lock);
 
@@ -288,15 +288,13 @@ int cmdlog_stop(bool *already_stopped)
 {
     int ret = 0;
 
+    *already_stopped = false;
+
     pthread_mutex_lock(&cmdlog.lock);
     if (cmdlog.on_logging == true) {
-        /* stop bu user request */
         do_cmdlog_stop(CMDLOG_EXPLICIT_STOP);
-        *already_stopped = false;
-        ret = 0;
     } else {
         *already_stopped = true;
-        ret = 0;
     }
     pthread_mutex_unlock(&cmdlog.lock);
 
@@ -311,7 +309,6 @@ struct cmd_log_stats *cmdlog_stats()
         stats->enddate = getnowdate();
         stats->endtime = getnowtime();
     }
-
     return stats;
 }
 
