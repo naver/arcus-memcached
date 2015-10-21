@@ -8305,20 +8305,24 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
 #ifdef COMMAND_LOGGING
 static void get_cmdlog_stats(char* str)
 {
-    struct cmd_log_stats *logstats = cmdlog_stats();
+    char *stop_cause_str[3] = {"stop by explicit request",     // CMDLOG_EXPLICIT_STOP
+                               "stop by command log overflow", // CMDLOG_OVERFLOW_STOP
+                               "stop by disk flush error"};    // CMDLOG_FLUSHERR_STOP
+    struct cmd_log_stats *stats = cmdlog_stats();
 
     snprintf(str, CMDLOG_INPUT_SIZE,
             "\t" "Command logging stats" "\n"
-            "\t" "Last enterd command number : %d" "\n"
-            "\t" "Last skipped command number : %d" "\n"
-            "\t" "Last running time : %d_%d ~ %d_%d" "\n"
+            "\t" "The last running time : %d_%d ~ %d_%d" "\n"
+            "\t" "The number of entered commands : %d" "\n"
+            "\t" "The number of skipped commands : %d" "\n"
             "\t" "The number of log files : %d" "\n"
-            "\t" "Log file name: %d_%d_n.log" "\n"
-            "\t" "How stopped : %d" "\n",
-            logstats->entered_commands, logstats->skipped_commands,
-            logstats->bgndate, logstats->bgntime, logstats->enddate,
-            logstats->endtime, logstats->file_count, logstats->bgndate,
-            logstats->bgntime, logstats->stop_cause);
+            "\t" "The log file name: command_log/%d_%d_{n}.log" "\n"
+            "\t" "How command logging stopped : %s" "\n",
+            stats->bgndate, stats->bgntime, stats->enddate, stats->endtime,
+            stats->entered_commands, stats->skipped_commands,
+            stats->file_count, stats->bgndate, stats->bgntime,
+            (stats->stop_cause >= 0 && stats->stop_cause <= 2 ?
+             stop_cause_str[stats->stop_cause] : "unknown"));
 }
 
 static void process_logging_command(conn *c, token_t *tokens, const size_t ntokens)
@@ -8330,52 +8334,35 @@ static void process_logging_command(conn *c, token_t *tokens, const size_t ntoke
     if (ntokens > 2 && strcmp(type, "start") == 0) {
         ret = cmdlog_start(&already_check);
         if (already_check) {
-            out_string(c,
-            "\t" "already command logging started" "\n"
-            );
+            out_string(c, "\tcommand logging already started.\n");
         } else if (! already_check && ret == 0) {
-            out_string(c,
-            "\t" "command logging start" "\n"
-            );
+            out_string(c, "\tcommand logging started.\n");
             cmdlog_in_use = true;
         } else {
-            out_string(c,
-            "\t" "command logging start error" "\n"
-            );
+            out_string(c, "\tcommand logging failed to start.\n");
             cmdlog_in_use = false;
         }
     } else if (ntokens > 2 && strcmp(type, "stop") == 0) {
         ret = cmdlog_stop(&already_check);
         if (already_check) {
-            out_string(c,
-            "\t" "already command logging started" "\n"
-            );
+            out_string(c, "\tcommand logging already stopped.\n");
         } else if (! already_check && ret == 0) {
-            out_string(c,
-            "\t" "command logging stop" "\n"
-            );
+            out_string(c, "\tcommand logging stopped.\n");
             cmdlog_in_use = false;
         } else {
-            out_string(c,
-            "\t" "command logging error" "\n"
-            );
+            out_string(c, "\tcommand logging failed to stop.\n");
             cmdlog_in_use = false;
         }
     } else if (ntokens > 2 && strcmp(type, "stats") == 0) {
         char *str = malloc(CMDLOG_INPUT_SIZE * sizeof(char));
-
         if (str) {
             get_cmdlog_stats(str);
             write_and_free(c, str, strlen(str));
         } else {
-            out_string(c,
-            "\t" "command logging stats string can't allocate" "\n"
-            );
+            out_string(c, "\tcommand logging failed to get stats memory.\n");
         }
     } else {
-        out_string(c,
-        "\t" "* Usage: logging [start | stop | stats]" "\n"
-        );
+        out_string(c, "\t* Usage: logging [start | stop | stats]\n");
     }
 }
 #endif

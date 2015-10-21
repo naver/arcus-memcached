@@ -16,9 +16,6 @@
 #define CMDLOG_BUFFER_NUM 10  /* number of log files */
 #define CMDLOG_FILE_DIR "command_log/%d_%d_%d.log"  /* arcus/scripts/command_log */
 #define CMDLOG_FILENAME_LENGTH 128  /* filename plus path's length */
-#define CMDLOG_EXPLICIT_STOP 1      /* stop by user request */
-#define CMDLOG_OVERFLOW_STOP 2      /* stop by command log overflow */
-#define CMDLOG_FLUSHERR_STOP 3      /* stop by flush operation error */
 
 EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
 
