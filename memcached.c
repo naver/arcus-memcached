@@ -8316,11 +8316,12 @@ static void get_cmdlog_stats(char* str)
             "\t" "The number of entered commands : %d" "\n"
             "\t" "The number of skipped commands : %d" "\n"
             "\t" "The number of log files : %d" "\n"
-            "\t" "The log file name: command_log/%d_%d_{n}.log" "\n"
+            "\t" "The log file name: command_log/%d_%d_%d_{n}.log" "\n"
             "\t" "How command logging stopped : %s" "\n",
             stats->bgndate, stats->bgntime, stats->enddate, stats->endtime,
             stats->entered_commands, stats->skipped_commands,
-            stats->file_count, stats->bgndate, stats->bgntime,
+            stats->file_count,
+            settings.port, stats->bgndate, stats->bgntime,
             (stats->stop_cause >= 0 && stats->stop_cause <= 2 ?
              stop_cause_str[stats->stop_cause] : "unknown"));
 }
@@ -13698,7 +13699,7 @@ int main (int argc, char **argv) {
 
 #ifdef COMMAND_LOGGING
     /* initialise command logging */
-    cmdlog_init(mc_logger);
+    cmdlog_init(settings.port, mc_logger);
 #endif
 
     /* start up worker threads if MT mode */

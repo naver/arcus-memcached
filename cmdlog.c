@@ -14,10 +14,11 @@
 #define CMDLOG_BUFFER_SIZE  (10 * 1024 * 1024)  /* 10 * MB */
 #define CMDLOG_WRITE_SIZE   (4 * 1024)          /* 4 * KB */
 #define CMDLOG_BUFFER_NUM   10                  /* number of log files */
-#define CMDLOG_FILE_DIR     "command_log/%d_%d_%d.log"  /* arcus/scripts/command_log */
+#define CMDLOG_FILE_DIR "command_log/%d_%d_%d_%d.log" /* arcus/scripts/command_log */
 #define CMDLOG_FILENAME_LENGTH 128              /* filename plus path's length */
 
-EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
+static int mc_port;
+static EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
 
 /* command log buffer structure */
 struct cmd_log_buffer {
@@ -138,8 +139,9 @@ static void *cmdlog_flush_thread()
     while (1)
     {
         if (fd < 0) { /* open log file */
-            sprintf(fname, CMDLOG_FILE_DIR, cmdlog.stats.bgndate, cmdlog.stats.bgntime,
-                                            cmdlog.stats.file_count);
+            sprintf(fname, CMDLOG_FILE_DIR, mc_port,
+                    cmdlog.stats.bgndate, cmdlog.stats.bgntime,
+                    cmdlog.stats.file_count);
             if ((fd = open(fname, O_WRONLY | O_CREAT | O_APPEND, 0644)) < 0) {
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL, "Can't open %d.log file\n",
                                cmdlog.stats.file_count);
@@ -207,9 +209,11 @@ static void *cmdlog_flush_thread()
     return NULL;
 }
 
-void cmdlog_init(EXTENSION_LOGGER_DESCRIPTOR *logger)
+void cmdlog_init(int port, EXTENSION_LOGGER_DESCRIPTOR *logger)
 {
+    mc_port = port;
     mc_logger = logger;
+
     cmdlog.on_logging = false;
     pthread_mutex_init(&cmdlog.lock, NULL);
 

@@ -20,7 +20,7 @@ struct cmd_log_stats {
     uint32_t skipped_commands; /* number of skipped command */
 };
 
-void cmdlog_init(EXTENSION_LOGGER_DESCRIPTOR *logger);
+void cmdlog_init(int port, EXTENSION_LOGGER_DESCRIPTOR *logger);
 void cmdlog_final(void);
 int cmdlog_start(bool *already_started);
 int cmdlog_stop(bool *already_stopped);
