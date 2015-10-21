@@ -188,7 +188,7 @@ static char *arcus_zk_cfg = NULL;
 #endif
 
 #ifdef COMMAND_LOGGING
-static bool cmdlog = false;
+static bool cmdlog_in_use = false;
 #endif
 
 /*
@@ -8337,12 +8337,12 @@ static void process_logging_command(conn *c, token_t *tokens, const size_t ntoke
             out_string(c,
             "\t" "command logging start" "\n"
             );
-            cmdlog = true;
+            cmdlog_in_use = true;
         } else {
             out_string(c,
             "\t" "command logging start error" "\n"
             );
-            cmdlog = false;
+            cmdlog_in_use = false;
         }
     } else if (ntokens > 2 && strcmp(type, "stop") == 0) {
         ret = cmdlog_stop(&already_check);
@@ -8354,12 +8354,12 @@ static void process_logging_command(conn *c, token_t *tokens, const size_t ntoke
             out_string(c,
             "\t" "command logging stop" "\n"
             );
-            cmdlog = false;
+            cmdlog_in_use = false;
         } else {
             out_string(c,
             "\t" "command logging error" "\n"
             );
-            cmdlog = false;
+            cmdlog_in_use = false;
         }
     } else if (ntokens > 2 && strcmp(type, "stats") == 0) {
         char *str = malloc(CMDLOG_INPUT_SIZE * sizeof(char));
@@ -11106,9 +11106,9 @@ static void process_command(conn *c, char *command)
     }
 
 #ifdef COMMAND_LOGGING
-    if (cmdlog) {
+    if (cmdlog_in_use) {
         if (cmdlog_write(c->client_ip, command) == false) {
-            cmdlog = false;
+            cmdlog_in_use = false;
         }
     }
 #endif
