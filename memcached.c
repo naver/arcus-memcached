@@ -1718,7 +1718,7 @@ static void process_bop_mget_complete(conn *c) {
     uint32_t tot_elem_count = 0;
     uint32_t tot_access_count = 0;
     char delimiter = ',';
-    token_t *key_tokens = (token_t *)((char*)c->coll_mkeys + GET_8ALIGN_SIZE(c->coll_lenkeys+2));
+    token_t *key_tokens = (token_t *)((char*)c->coll_mkeys + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
     if ((strncmp((char*)c->coll_mkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
         (tokenize_keys((char*)c->coll_mkeys, delimiter, c->coll_numkeys, key_tokens) == -1))
@@ -1912,7 +1912,7 @@ static void process_bop_smget_complete(conn *c) {
     int i, idx;
     char *vptr = (char*)c->coll_mkeys;
     char delimiter = ',';
-    token_t *keys_array = (token_t *)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys+2));
+    token_t *keys_array = (token_t *)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
     char *respptr;
     int   resplen;
 #ifdef JHPARK_NEW_SMGET_INTERFACE
@@ -5258,7 +5258,7 @@ static void process_bin_bop_smget_complete(conn *c) {
     char *resultptr;
     char *vptr = (char*)c->coll_mkeys;
     char delimiter = ',';
-    token_t *keys_array = (token_t*)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys+2));
+    token_t *keys_array = (token_t*)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
