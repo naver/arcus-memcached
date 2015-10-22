@@ -445,7 +445,7 @@ sub bop_smget_is {
 
     print $sock "bop smget $args\r\n$keystr\r\n";
 
-    my $exp_elem_head = "VALUE $ecount\r\n";
+    my $exp_elem_head = "ELEMENTS $ecount\r\n";
     my $exp_elem_keys = $keys;
     my $exp_elem_flgs = $flags;
     my $exp_elem_bkey = $ebkeys;
@@ -541,7 +541,7 @@ sub bop_ext_smget_is {
 
     print $sock "bop smget $args\r\n$keystr\r\n";
 
-    my $exp_elem_head = "VALUE $ecount\r\n";
+    my $exp_elem_head = "ELEMENTS $ecount\r\n";
     my $exp_elem_keys = $keys;
     my $exp_elem_flgs = $flags;
     my $exp_elem_bkey = $ebkeys;
@@ -632,7 +632,7 @@ sub bop_new_smget_is {
     my $mkey_data;
     my $tkey_data;
 
-    my $exp_elem_head = "VALUE $ecount\r\n";
+    my $exp_elem_head = "ELEMENTS $ecount\r\n";
     my $exp_mkey_head = "MISSED_KEYS $mcount\r\n";
     my $exp_tkey_head = "TRIMMED_KEYS $tcount\r\n";
     my $exp_resp_tail = "$resp\r\n";
