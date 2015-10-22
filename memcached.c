@@ -1979,7 +1979,10 @@ static void process_bop_smget_complete(conn *c) {
 
         do {
 #ifdef JHPARK_NEW_SMGET_INTERFACE
-            sprintf(respptr, "VALUE %u\r\n", smres.elem_count);
+            /* Change smget response head string: VALUE => ELEMENTS.
+             * It makes incompatible with the clients of lower version.
+             */
+            sprintf(respptr, "ELEMENTS %u\r\n", smres.elem_count);
 #else
             sprintf(respptr, "VALUE %u\r\n", elem_count);
 #endif
