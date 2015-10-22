@@ -384,7 +384,7 @@ bop smget <lenkeys> <numkeys> <bkey or "bkey range"> [<eflag_filter>] [<offset>]
 - \<eflag_filter\> - eflag filter 조건.
                     [Collection 기본 개념](/doc/arcus-collection-concept.md)에서 eflag filter 참조 바란다.
 - [\<offset\>] \<count\> - 조회 조건을 만족하는 elements의 sort merge 결과에서 skip 개수와 실제 조회할 개수
-- [unique] - 중복 bkey를 제거하여 unique bkey 결과를 만드는 기능으로 생략 가능하다.
+- [unique] - 중복 bkey를 제거하여 unique bkey 결과만을 조회하는 기능으로, 생략 가능하다.
 
 bop smget 명령은 O(small N) 수행 원칙을 위하여 다음의 제약 사항을 가진다.
 - key list에 지정 가능한 최대 key 수는 10000이다.
@@ -429,8 +429,8 @@ END|DUPLICATED\r\n
   - \<bkey\>는 trim 발생 직전에 있는 마지막 bkey 이다.
   - Timmed keys 정보는 bkey 기준으로 정렬된다.  
 - 마지막 라인은 smget response string의 마지막을 나타낸다.
-  - END: 조회된 elements에 중복 bkey가 없음 
-  - DUPLICATED: 조회된 elements에 중복 bkey가 있음.
+  - END: element 조회 과정에서 중복 bkey가 없음 
+  - DUPLICATED: element 조회 과정에서 중복 bkey가 있음.
 
 ARCUS 응용은 smget 결과의 misses keys와 trimmed keys 정보를 이용하여
 아래와 같이 최종 smget 결과를 만들어 사용해야 한다.
@@ -447,14 +447,24 @@ ARCUS 응용은 smget 결과의 misses keys와 trimmed keys 정보를 이용하�
 - “BKEY_MISMATCH” - smget에 참여된 b+tree들의 bkey 유형이 서로 다름.
 - “ATTR_MISMATCH” - smget에 참여된 b+tree들의 속성들이 서로 다름.
                     maxcount, maxbkeyrange, overflowaction이 모두 동일해야 함.
-- “OUT_OF_RANGE” - 조회 조건에서 offset이 양수인 경우에 발생할 수 있는 오류로
-                   0과 offset 범위의 element에서 trim된 key가 존재함을 의미한다.
-                   이 경우, 정확한 smget 결과를 만들 수 없는 상태가 된다.
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “CLIENT_ERROR bad data chunk”	- 주어진 key 리스트에 중복된 key가 존재함.
               또는 주어진 key 리스트의 길이가 \<lenkeys\> 길이와 다르거나 “\r\n”으로 끝나지 않음.
 - “CLIENT_ERROR bad value” - 앞서 기술한 smget 연산의 제약 조건을 위배
 - “SERVER_ERROR out of memory [writing get response]” - 메모리 부족
+
+
+smget 사용 시의 주의 사항으로, offset 값은 항상 0으로 사용하길 권고한다.
+대신에, 이전 smget 조회 값 기준으로 bkey range를 조정하여 사용할 수 있다.
+
+offset 값이 양수인 경우 문제가 되는 이유는 아래와 같다.
+- Missed keys가 존재하는 경우, 그 missed keys에 대한 DB 조회는
+  0 ~ offset 범위에 유효한 bkey를 가질 수 있다.
+- Cache에서 0 ~ offset 범위에서 trimmed keys가 존재하는 경우,
+  그 trimmed keys에 대한 DB 조회는 0 ~ offset 범위에 유효한 bkey를 가질 수 있다.
+- 따라서, cache에 있는 데이터만을 기준으로
+  offset 처리하는 것은 응용 관점에서 정확하지 않을 수 있다.
+  
 
 ### bop position - B+Tree Position 조회
 

@@ -2131,7 +2131,10 @@ static void process_bop_smget_complete(conn *c) {
         else if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_EBADATTR) out_string(c, "ATTR_MISMATCH");
+#ifdef JHPARK_NEW_SMGET_INTERFACE // JHPARK_SMGET_OFFSET_HANDLING
+#else
         else if (ret == ENGINE_EBKEYOOR) out_string(c, "OUT_OF_RANGE");
+#endif
         else out_string(c, "SERVER_ERROR internal");
     }
 
@@ -5518,8 +5521,11 @@ static void process_bin_bop_smget_complete(conn *c) {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADBKEY, 0);
         else if (ret == ENGINE_EBADATTR)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADATTR, 0);
+#ifdef JHPARK_NEW_SMGET_INTERFACE // JHPARK_SMGET_OFFSET_HANDLING
+#else
         else if (ret == ENGINE_EBKEYOOR)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBKEYOOR, 0);
+#endif
         else
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
     }

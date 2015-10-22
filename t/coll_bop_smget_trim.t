@@ -191,8 +191,16 @@ bop_new_smget_is($sock, "23 4 200..300 2 6", "bkey2,bkey3,bkey1,bkey4",
 ,bkey4 NOT_FOUND",
 0, "",
 "END");
+bop_new_smget_is($sock, "11 2 40..0 4 10", "bkey1,bkey2",
+0, "",
+0, "",
+1,
+"bkey1 30",
+"DUPLICATED");
+=head
 $cmd = "bop smget 11 2 40..0 4 10"; $val = "bkey1,bkey2"; $rst = "OUT_OF_RANGE";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+=cut
 
 
 $cmd = "set keyx 19 5 10"; $val = "some value"; $rst = "STORED";

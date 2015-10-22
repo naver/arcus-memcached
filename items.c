@@ -4764,6 +4764,8 @@ static void do_btree_smget_add_trim(smget_result_t *smres,
     smres->trim_count++;
 }
 
+#if 1 // JHPARK_SMGET_OFFSET_HANDLING
+#else
 static bool do_btree_smget_check_trim(smget_result_t *smres)
 {
     btree_elem_item *head_elem = smres->elem_array[0];
@@ -4792,6 +4794,7 @@ static bool do_btree_smget_check_trim(smget_result_t *smres)
     }
     return valid;
 }
+#endif
 
 static void do_btree_smget_adjust_trim(smget_result_t *smres)
 {
@@ -5212,6 +5215,8 @@ static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
             smres->elem_kinfo[smres->elem_count].kidx = btree_scan_buf[curr_idx].kidx;
             smres->elem_kinfo[smres->elem_count].flag = btree_scan_buf[curr_idx].it->flags;
             smres->elem_count += 1;
+#if 1 // JHPARK_SMGET_OFFSET_HANDLING
+#else
             if (smres->elem_count == 1) { /* the first element is found */
                 if (offset > 0 && smres->trim_count > 0 &&
                     do_btree_smget_check_trim(smres) != true) {
@@ -5221,6 +5226,7 @@ static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
                     ret = ENGINE_EBKEYOOR; break;
                 }
             }
+#endif
             elem->refcount++;
             if (smres->elem_count >= count) break;
 #else
@@ -5245,6 +5251,8 @@ scan_next:
 #ifdef JHPARK_NEW_SMGET_INTERFACE
                 if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
                     do_btree_overlapped_with_trimmed_space(info, &btree_scan_buf[curr_idx].posi, bkrtype)) {
+#if 1 // JHPARK_SMGET_OFFSET_HANDLING
+#else
                     if (skip_count < offset) {
                         /* Some elements are trimmed in 0 ~ offset range.
                          * So, we cannot make correct smget result.
@@ -5252,6 +5260,7 @@ scan_next:
                         assert(smres->elem_count == 0);
                         ret = ENGINE_EBKEYOOR; break;
                     }
+#endif
                     do_btree_smget_add_trim(smres, btree_scan_buf[curr_idx].kidx, prev);
                 }
 #else
