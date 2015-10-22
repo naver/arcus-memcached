@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 69;
+use Test::More tests => 76;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -253,46 +253,121 @@ $cmd = "bop create bkey4 0 0 2"; $rst = "CREATED";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 $cmd = "bop create bkey5 0 0 2"; $rst = "CREATED";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-$cmd = "bop insert bkey1 11 7"; $val = "datum11"; $rst = "STORED";
+$cmd = "bop insert bkey1 11 0x01 7"; $val = "datum11"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-$cmd = "bop insert bkey2 12 7"; $val = "datum12"; $rst = "STORED";
+$cmd = "bop insert bkey2 12 0x02 7"; $val = "datum12"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-$cmd = "bop insert bkey3 13 7"; $val = "datum13"; $rst = "STORED";
+$cmd = "bop insert bkey3 13 0x01 7"; $val = "datum13"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-$cmd = "bop insert bkey4 14 7"; $val = "datum14"; $rst = "STORED";
+$cmd = "bop insert bkey4 14 0x02 7"; $val = "datum14"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-$cmd = "bop insert bkey5 15 7"; $val = "datum15"; $rst = "STORED";
+$cmd = "bop insert bkey5 15 0x01 7"; $val = "datum15"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-$cmd = "bop insert bkey1 16 7"; $val = "datum16"; $rst = "STORED";
+$cmd = "bop insert bkey1 16 0x02 7"; $val = "datum16"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-$cmd = "bop insert bkey2 17 7"; $val = "datum17"; $rst = "STORED";
+$cmd = "bop insert bkey2 17 0x01 7"; $val = "datum17"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-$cmd = "bop insert bkey3 18 7"; $val = "datum18"; $rst = "STORED";
+$cmd = "bop insert bkey3 18 0x02 7"; $val = "datum18"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-$cmd = "bop insert bkey4 19 7"; $val = "datum19"; $rst = "STORED";
+$cmd = "bop insert bkey4 19 0x01 7"; $val = "datum19"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-$cmd = "bop insert bkey5 20 7"; $val = "datum20"; $rst = "STORED";
+$cmd = "bop insert bkey5 20 0x02 7"; $val = "datum20"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-$cmd = "bop insert bkey1 21 7"; $val = "datum21"; $rst = "STORED";
+$cmd = "bop insert bkey1 21 0x03 7"; $val = "datum21"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-$cmd = "bop insert bkey2 22 7"; $val = "datum22"; $rst = "STORED";
+$cmd = "bop insert bkey2 22 0x03 7"; $val = "datum22"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-$cmd = "bop insert bkey3 23 7"; $val = "datum23"; $rst = "STORED";
+$cmd = "bop insert bkey3 23 0x03 7"; $val = "datum23"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-$cmd = "bop insert bkey4 24 7"; $val = "datum24"; $rst = "STORED";
+$cmd = "bop insert bkey4 24 0x03 7"; $val = "datum24"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 bop_new_smget_is($sock, "29 5 24..11 14", "bkey1,bkey2,bkey3,bkey4,bkey5",
 10,
-"bkey4 0 24 7 datum24
-,bkey3 0 23 7 datum23
-,bkey2 0 22 7 datum22
-,bkey1 0 21 7 datum21
-,bkey5 0 20 7 datum20
-,bkey4 0 19 7 datum19
-,bkey3 0 18 7 datum18
-,bkey2 0 17 7 datum17
-,bkey1 0 16 7 datum16
-,bkey5 0 15 7 datum15",
+"bkey4 0 24 0x03 7 datum24
+,bkey3 0 23 0x03 7 datum23
+,bkey2 0 22 0x03 7 datum22
+,bkey1 0 21 0x03 7 datum21
+,bkey5 0 20 0x02 7 datum20
+,bkey4 0 19 0x01 7 datum19
+,bkey3 0 18 0x02 7 datum18
+,bkey2 0 17 0x01 7 datum17
+,bkey1 0 16 0x02 7 datum16
+,bkey5 0 15 0x01 7 datum15",
+0, "",
+4,
+"bkey4 19
+,bkey3 18
+,bkey2 17
+,bkey1 16",
+"END");
+bop_new_smget_is($sock, "29 5 24..11 0 EQ 0x01 14", "bkey1,bkey2,bkey3,bkey4,bkey5",
+3,
+"bkey4 0 19 0x01 7 datum19
+,bkey2 0 17 0x01 7 datum17
+,bkey5 0 15 0x01 7 datum15",
+0, "",
+4,
+"bkey4 19
+,bkey3 18
+,bkey2 17
+,bkey1 16",
+"END");
+bop_new_smget_is($sock, "29 5 24..11 0 EQ 0x02 14", "bkey1,bkey2,bkey3,bkey4,bkey5",
+3,
+"bkey5 0 20 0x02 7 datum20
+,bkey3 0 18 0x02 7 datum18
+,bkey1 0 16 0x02 7 datum16",
+0, "",
+4,
+"bkey4 19
+,bkey3 18
+,bkey2 17
+,bkey1 16",
+"END");
+bop_new_smget_is($sock, "29 5 24..11 0 EQ 0x03 14", "bkey1,bkey2,bkey3,bkey4,bkey5",
+4,
+"bkey4 0 24 0x03 7 datum24
+,bkey3 0 23 0x03 7 datum23
+,bkey2 0 22 0x03 7 datum22
+,bkey1 0 21 0x03 7 datum21",
+0, "",
+4,
+"bkey4 19
+,bkey3 18
+,bkey2 17
+,bkey1 16",
+"END");
+bop_new_smget_is($sock, "29 5 24..17 0 EQ 0x03 14", "bkey1,bkey2,bkey3,bkey4,bkey5",
+4,
+"bkey4 0 24 0x03 7 datum24
+,bkey3 0 23 0x03 7 datum23
+,bkey2 0 22 0x03 7 datum22
+,bkey1 0 21 0x03 7 datum21",
+0, "",
+2,
+"bkey4 19
+,bkey3 18",
+"END");
+bop_new_smget_is($sock, "29 5 24..11 0 EQ 0x03 4", "bkey1,bkey2,bkey3,bkey4,bkey5",
+4,
+"bkey4 0 24 0x03 7 datum24
+,bkey3 0 23 0x03 7 datum23
+,bkey2 0 22 0x03 7 datum22
+,bkey1 0 21 0x03 7 datum21",
+0, "",
+0, "",
+"END");
+bop_new_smget_is($sock, "29 5 24..11 0 EQ 0x03 2 2", "bkey1,bkey2,bkey3,bkey4,bkey5",
+2,
+"bkey2 0 22 0x03 7 datum22
+,bkey1 0 21 0x03 7 datum21",
+0, "",
+0, "",
+"END");
+bop_new_smget_is($sock, "29 5 24..11 0 EQ 0x03 2 3", "bkey1,bkey2,bkey3,bkey4,bkey5",
+2,
+"bkey2 0 22 0x03 7 datum22
+,bkey1 0 21 0x03 7 datum21",
 0, "",
 4,
 "bkey4 19
@@ -302,8 +377,8 @@ bop_new_smget_is($sock, "29 5 24..11 14", "bkey1,bkey2,bkey3,bkey4,bkey5",
 "END");
 bop_new_smget_is($sock, "29 5 11..24 14", "bkey1,bkey2,bkey3,bkey4,bkey5",
 2,
-"bkey5 0 15 7 datum15
-,bkey5 0 20 7 datum20",
+"bkey5 0 15 0x01 7 datum15
+,bkey5 0 20 0x02 7 datum20",
 4,
 "bkey1 OUT_OF_RANGE
 ,bkey2 OUT_OF_RANGE
@@ -311,22 +386,22 @@ bop_new_smget_is($sock, "29 5 11..24 14", "bkey1,bkey2,bkey3,bkey4,bkey5",
 ,bkey4 OUT_OF_RANGE",
 0, "",
 "END");
-$cmd = "bop insert bkey1 23 7"; $val = "datum23"; $rst = "STORED";
+$cmd = "bop insert bkey1 23 0x03 7"; $val = "datum23"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-$cmd = "bop insert bkey2 23 7"; $val = "datum23"; $rst = "STORED";
+$cmd = "bop insert bkey2 23 0x03 7"; $val = "datum23"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 bop_new_smget_is($sock, "29 5 24..11 14", "bkey1,bkey2,bkey3,bkey4,bkey5",
 10,
-"bkey4 0 24 7 datum24
-,bkey3 0 23 7 datum23
-,bkey2 0 23 7 datum23
-,bkey1 0 23 7 datum23
-,bkey2 0 22 7 datum22
-,bkey1 0 21 7 datum21
-,bkey5 0 20 7 datum20
-,bkey4 0 19 7 datum19
-,bkey3 0 18 7 datum18
-,bkey5 0 15 7 datum15",
+"bkey4 0 24 0x03 7 datum24
+,bkey3 0 23 0x03 7 datum23
+,bkey2 0 23 0x03 7 datum23
+,bkey1 0 23 0x03 7 datum23
+,bkey2 0 22 0x03 7 datum22
+,bkey1 0 21 0x03 7 datum21
+,bkey5 0 20 0x02 7 datum20
+,bkey4 0 19 0x01 7 datum19
+,bkey3 0 18 0x02 7 datum18
+,bkey5 0 15 0x01 7 datum15",
 0, "",
 4,
 "bkey2 22
@@ -336,8 +411,8 @@ bop_new_smget_is($sock, "29 5 24..11 14", "bkey1,bkey2,bkey3,bkey4,bkey5",
 "DUPLICATED");
 bop_new_smget_is($sock, "29 5 11..24 14", "bkey1,bkey2,bkey3,bkey4,bkey5",
 2,
-"bkey5 0 15 7 datum15
-,bkey5 0 20 7 datum20",
+"bkey5 0 15 0x01 7 datum15
+,bkey5 0 20 0x02 7 datum20",
 4,
 "bkey1 OUT_OF_RANGE
 ,bkey2 OUT_OF_RANGE

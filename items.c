@@ -4801,13 +4801,27 @@ static void do_btree_smget_adjust_trim(smget_result_t *smres)
     eitem       **new_trim_elems = &smres->elem_array[smres->elem_count];
     smget_emis_t *new_trim_kinfo = &smres->miss_kinfo[smres->miss_count];
     uint32_t      new_trim_count = 0;
+#if 1 // JOON_TRIMMED_KEYS_HANDLING
+    btree_elem_item *tail_elem = NULL;
+#else
     btree_elem_item *tail_elem = smres->elem_count == 0 ? NULL
                                : smres->elem_array[smres->elem_count-1];
+#endif
     btree_elem_item *comp_elem;
     btree_elem_item *trim_elem;
     uint16_t         trim_kidx;
     int idx, res, pos, i;
     int left, right, mid;
+
+#if 1 // JOON_TRIMMED_KEYS_HANDLING
+    if (smres->elem_count == smres->elem_arrsz) {
+        /* We found the elements as many as the requested count. In this case,
+         * we might trim the trimmed keys if the bkey-before-trim is behind
+         * the bkey of the last found element.
+         */
+        tail_elem = smres->elem_array[smres->elem_count-1];
+    }
+#endif
 
     for (idx = smres->trim_count-1; idx >= 0; idx--)
     {
