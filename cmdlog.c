@@ -11,11 +11,10 @@
 
 #include "cmdlog.h"
 
-#define CMDLOG_BUFFER_SIZE  (10 * 1024 * 1024)  /* 10 * MB */
-#define CMDLOG_WRITE_SIZE   (4 * 1024)          /* 4 * KB */
-#define CMDLOG_BUFFER_NUM   10                  /* number of log files */
-#define CMDLOG_FILE_DIR "command_log/%d_%d_%d_%d.log" /* arcus/scripts/command_log */
-#define CMDLOG_FILENAME_LENGTH 128              /* filename plus path's length */
+#define CMDLOG_BUFFER_SIZE  (10 * 1024 * 1024)   /* 10 * MB */
+#define CMDLOG_WRITE_SIZE   (4 * 1024)           /* 4 * KB */
+#define CMDLOG_BUFFER_NUM   10                   /* number of log files */
+#define CMDLOG_FILENAME_FORMAT "%s/%d_%d_%d_%d.log"
 
 static int mc_port;
 static EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
@@ -139,8 +138,8 @@ static void *cmdlog_flush_thread()
     while (1)
     {
         if (fd < 0) { /* open log file */
-            sprintf(fname, CMDLOG_FILE_DIR, mc_port,
-                    cmdlog.stats.bgndate, cmdlog.stats.bgntime,
+            sprintf(fname, CMDLOG_FILENAME_FORMAT, cmdlog.stats.dirpath,
+                    mc_port, cmdlog.stats.bgndate, cmdlog.stats.bgntime,
                     cmdlog.stats.file_count);
             if ((fd = open(fname, O_WRONLY | O_CREAT | O_APPEND, 0644)) < 0) {
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -243,9 +242,11 @@ void cmdlog_final()
     }
 }
 
-int cmdlog_start(bool *already_started)
+int cmdlog_start(char *file_path, bool *already_started)
 {
+    char fname[CMDLOG_FILENAME_LENGTH];
     int ret = 0;
+    int fd = -1;
 
     *already_started = false;
 
@@ -272,6 +273,24 @@ int cmdlog_start(bool *already_started)
         cmdlog.stats.bgndate = getnowdate();
         cmdlog.stats.bgntime = getnowtime();
 
+        if (file_path != NULL) {
+            sprintf(cmdlog.stats.dirpath, file_path);
+        } else {
+            sprintf(cmdlog.stats.dirpath, "command_log");
+        }
+
+        /* open log file */
+        sprintf(fname, CMDLOG_FILENAME_FORMAT, cmdlog.stats.dirpath,
+                mc_port, cmdlog.stats.bgndate, cmdlog.stats.bgntime,
+                cmdlog.stats.file_count);
+        if ((fd = open(fname, O_WRONLY | O_CREAT | O_APPEND, 0644)) < 0) {
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                           "Can't open command log file: %s\n", fname);
+            ret = -1; break;
+        } else {
+            close(fd);
+        }
+        
         /* enable command logging */
         cmdlog.on_logging = true;
 
