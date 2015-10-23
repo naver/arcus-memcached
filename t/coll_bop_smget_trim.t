@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 76;
+use Test::More tests => 97;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -431,3 +431,59 @@ print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 $cmd = "delete bkey5"; $rst = "DELETED";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 
+# smget issue 1
+$cmd = "bop create bkey1 0 0 2"; $rst = "CREATED";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+$cmd = "bop create bkey2 0 0 2"; $rst = "CREATED";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+$cmd = "bop create bkey3 0 0 2"; $rst = "CREATED";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+$cmd = "bop create bkey4 0 0 2"; $rst = "CREATED";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+$cmd = "bop insert bkey1 1 0x01 6"; $val = "datum1"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey1 6 0x02 6"; $val = "datum6"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey1 7 0x01 6"; $val = "datum7"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey2 2 0x01 6"; $val = "datum2"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey2 5 0x01 6"; $val = "datum5"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey2 8 0x01 6"; $val = "datum8"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey3 3 0x01 6"; $val = "datum3"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey3 4 0x01 6"; $val = "datum4"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey4 0 0x01 6"; $val = "datum0"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey4 1 0x01 6"; $val = "datum1"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey4 2 0x01 6"; $val = "datum2"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+bop_new_smget_is($sock, "23 4 8..0 0 EQ 0x01 3 2", "bkey1,bkey2,bkey3,bkey4",
+2,
+"bkey3 0 4 0x01 6 datum4
+,bkey3 0 3 0x01 6 datum3",
+0, "",
+2,
+"bkey1 6
+,bkey2 5",
+"END");
+bop_new_smget_is($sock, "23 4 8..0 3 EQ 0x01 2", "bkey1,bkey2,bkey3,bkey4",
+0, "",
+0, "",
+3,
+"bkey1 6
+,bkey2 5
+,bkey4 1",
+"END");
+$cmd = "delete bkey1"; $rst = "DELETED";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+$cmd = "delete bkey2"; $rst = "DELETED";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+$cmd = "delete bkey3"; $rst = "DELETED";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+$cmd = "delete bkey4"; $rst = "DELETED";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
