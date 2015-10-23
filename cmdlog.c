@@ -290,7 +290,7 @@ int cmdlog_start(char *file_path, bool *already_started)
         } else {
             close(fd);
         }
-        
+
         /* enable command logging */
         cmdlog.on_logging = true;
 
