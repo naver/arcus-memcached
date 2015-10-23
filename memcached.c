@@ -8325,12 +8325,12 @@ static void get_cmdlog_stats(char* str)
             "\t" "The number of entered commands : %d" "\n"
             "\t" "The number of skipped commands : %d" "\n"
             "\t" "The number of log files : %d" "\n"
-            "\t" "The log file name: command_log/%d_%d_%d_{n}.log" "\n"
+            "\t" "The log file name: %s/%d_%d_%d_{n}.log" "\n"
             "\t" "How command logging stopped : %s" "\n",
             stats->bgndate, stats->bgntime, stats->enddate, stats->endtime,
             stats->entered_commands, stats->skipped_commands,
             stats->file_count,
-            settings.port, stats->bgndate, stats->bgntime,
+            stats->dirpath, settings.port, stats->bgndate, stats->bgntime,
             (stats->stop_cause >= 0 && stats->stop_cause <= 2 ?
              stop_cause_str[stats->stop_cause] : "unknown"));
 }
@@ -8338,11 +8338,16 @@ static void get_cmdlog_stats(char* str)
 static void process_logging_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     char *type = tokens[COMMAND_TOKEN+1].value;
+    char *fpath = NULL;
     bool already_check = false;
     int ret;
 
     if (ntokens > 2 && strcmp(type, "start") == 0) {
-        ret = cmdlog_start(&already_check);
+        if (ntokens > 3) {
+            fpath = tokens[COMMAND_TOKEN+2].value;
+        }
+
+        ret = cmdlog_start(fpath, &already_check);
         if (already_check) {
             out_string(c, "\tcommand logging already started.\n");
         } else if (! already_check && ret == 0) {
@@ -8372,7 +8377,7 @@ static void process_logging_command(conn *c, token_t *tokens, const size_t ntoke
             out_string(c, "\tcommand logging failed to get stats memory.\n");
         }
     } else {
-        out_string(c, "\t* Usage: logging [start | stop | stats]\n");
+        out_string(c, "\t* Usage: logging [start [path] | stop | stats]\n");
     }
 }
 #endif
