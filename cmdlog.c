@@ -273,11 +273,8 @@ int cmdlog_start(char *file_path, bool *already_started)
         cmdlog.stats.bgndate = getnowdate();
         cmdlog.stats.bgntime = getnowtime();
 
-        if (file_path != NULL) {
-            sprintf(cmdlog.stats.dirpath, file_path);
-        } else {
-            sprintf(cmdlog.stats.dirpath, "command_log");
-        }
+        sprintf(cmdlog.stats.dirpath, "%s",
+                (file_path != NULL ? file_path : "command_log"));
 
         /* open log file */
         sprintf(fname, CMDLOG_FILENAME_FORMAT, cmdlog.stats.dirpath,
