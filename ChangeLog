@@ -1,3 +1,18 @@
+2015-10-26 [version 1.9.0]
+	* Hash table expansion by worker threads. Don't create a daemon thread.
+	* Compute elemeent access overhead in bop delete/count/get/mget.
+	* Swallow the remaining data when command pipeling fails. 
+	* Do more delicate synchronization when close ZK.
+	* Support command logging. 
+	* Link the detached items into LRU top only if they are valid.
+	* New smget interface
+	  - Continue smget even if some bkeys of a key are trimmed in bkey range.
+	    - Missed keys are returned with the cause.
+		  (NOT_FOUND, UNREADABLE, OUT_OF_RANGE).
+		- Trimmed keys are returned with the last bkey before trim. 
+	  - Support unique smget that remove duplicate bkeys as an option.
+	* Set/get maximum collection size with config command.
+
 2015-07-31 [version 1.8.5]
 	* Graceful shutdown waits for all threads to be stopped.
 	* Graceful shutdown closes listen socket and all client connections.
