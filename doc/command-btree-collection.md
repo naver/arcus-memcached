@@ -423,8 +423,8 @@ END|DUPLICATED\r\n
   - \<cause\>는 smget에 참여하지 못한 원인을 나타낸다.
     - NOT_FOUND: 그 key가 cache에 존재하지 않음
     - UNREADABLE: 그 key가 unreadable 상태에 있음
-    - OUT_OF_RANGE: bkey range의 시작 부분이 trim 영역과 겹쳐 있음
-- TRIMMED_KEYS 부분: smget 조회 범위에서 trim이 발생한 key list이다.
+    - OUT_OF_RANGE: bkey range의 시작 부분이 그 key의 trim 영역과 겹쳐 있음
+- TRIMMED_KEYS 부분: smget 조회 범위의 뒷 부분에서 trim이 발생한 key list이다.
   - \<key\>는 trim이 발생한 key string이다.
   - \<bkey\>는 trim 직전에 있던 마지막 bkey 이다.
   - Timmed keys 정보는 bkey 기준으로 정렬된다.  
@@ -435,11 +435,11 @@ END|DUPLICATED\r\n
 ARCUS 응용은 smget 결과의 misses keys와 trimmed keys 정보를 이용하여
 아래와 같이 최종 smget 결과를 만들어 사용해야 한다.
 - Missed keys들에 대해 cache에서 element 조회가 불가한 상태이므로,
-  back-end storage인 DB에서 동일 조회 조건으로 그 key들의 elements를 조회하여
-  최종 smget 결과를 만들어야 한다.
-- Trimmed keys들에 대해 cache에서 trim이 발생하여 elements 조회가 불가한 상태이므로,
-  back-end storage인 DB에서 주어진 bkey 이후의 elements를 조회하여
-  최종 smget 결과를 만들어야 한다.
+  back-end storage인 DB에서 동일 조회 조건으로 그 key의 elements를 조회하여
+  최종 smget 결과에 sort merge 방식으로 반영하여야 한다.
+- Trimmed keys들에 대해 cache에서 trim 이후의 elements 조회가 불가한 상태이므로,
+  back-end storage인 DB에서 trim 직전의 bkey 이후에 있는 elements를 조회하여
+  최종 smget 결과에 sort merge 방식으로 반영하여야 한다.
   
 실패 시의 response string은 다음과 같다.
 
@@ -448,8 +448,8 @@ ARCUS 응용은 smget 결과의 misses keys와 trimmed keys 정보를 이용하�
 - “ATTR_MISMATCH” - smget에 참여된 b+tree들의 속성들이 서로 다름.
                     maxcount, maxbkeyrange, overflowaction이 모두 동일해야 함.
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
-- “CLIENT_ERROR bad data chunk”	- 주어진 key 리스트에 중복된 key가 존재함.
-              또는 주어진 key 리스트의 길이가 \<lenkeys\> 길이와 다르거나 “\r\n”으로 끝나지 않음.
+- “CLIENT_ERROR bad data chunk”	- 주어진 key 리스트에 중복 key가 존재하거나
+              주어진 key 리스트의 길이가 \<lenkeys\> 길이와 다르거나 “\r\n”으로 끝나지 않음.
 - “CLIENT_ERROR bad value” - 앞서 기술한 smget 연산의 제약 조건을 위배
 - “SERVER_ERROR out of memory [writing get response]” - 메모리 부족
 
@@ -461,9 +461,9 @@ Offset 값이 양수인 경우의 smget 조회 결과는 아래 문제를 가질
 - Missed keys가 존재하는 경우, 그 missed keys에 대한 DB 조회는
   0 ~ offset 범위에 유효한 bkey를 가질 수 있다.
 - Trimmed keys 중에 0 ~ offset 범위에서 trim된 bkey를 가지는 경우,
-  그 trimmed bkey 이후에 대한 DB 조회는
-  여전히 0 ~ offset 범위에 유효한 bkey를 가질 수 있다.
-- 따라서, cache에 있는 데이터만을 기준으로 offset 처리하는 얻은
+  그 trimmed bkey를 DB에서 조회하면 여전히 0 ~ offset 범위에 있는 
+  bkey일 수 있다.
+- 따라서, cache에 있는 데이터만을 기준으로 offset 처리하여 얻은
   smget 결과는 응용 관점에서 정확하지 않을 수 있다.
   
 
