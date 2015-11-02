@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 109997;
+use Test::More tests => 110005;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -39,7 +39,8 @@ sub prepare_bop_smget {
 }
 
 sub assert_bop_smget {
-    my ($key_len, $key_cnt, $key_str, $min, $max, $from, $to, $offset, $count) = @_;
+    my ($key_len, $key_cnt, $key_str, $min, $max, $from, $to, $offset, $count, $newapi) = @_;
+#    my ($key_len, $key_cnt, $key_str, $min, $max, $from, $to, $offset, $count) = @_;
     my $range = "$from..$to";
     my $res_count;
     my @res_bkey = ();
@@ -47,10 +48,13 @@ sub assert_bop_smget {
     my $bkey;
     my $data;
     my $mis_count = 1;
-    my $mis_keys = "KEY_absent NOT_FOUND";
-=head
-    my $mis_keys = "KEY_absent";
-=cut
+    my $mis_keys;
+    #my $mis_keys = "KEY_absent";
+    if ($newapi > 0) { # new smget api
+        $mis_keys = "KEY_absent NOT_FOUND";
+    } else {
+        $mis_keys = "KEY_absent";
+    }
 
     my $range_valid = 1;
     if ($from <= $to) {
@@ -111,7 +115,12 @@ sub assert_bop_smget {
         }
     }
 
-    my $args = "$key_len $key_cnt $range $offset $count";
+    my $args;
+    if ($newapi > 0) {
+        $args = "$key_len $key_cnt $range $offset $count duplicate";
+    } else {
+        $args = "$key_len $key_cnt $range $offset $count";
+    }
     if ($range_valid == 1) {
         my $bkey_list = join(",", @res_bkey);
         my $data_list = join(",", @res_data);
@@ -136,12 +145,22 @@ for ($kcnt = 0; $kcnt < $key_cnt; $kcnt += 1) {
     $key_str = "$key_str,KEY_$kcnt";
 }
 $key_len = length($key_str);
-assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, 0, $dat_cnt-1, 0, 20);
-assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, 0, $dat_cnt-1, 10, 20);
-assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt/2, $dat_cnt-1, 10, 20);
-assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt-1, 0, 0, 20);
-assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt-1, 0, 10, 20);
-assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt/2, 0, 10, 20);
-assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt, $dat_cnt+100, 0, 20);
-assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt+100, $dat_cnt, 0, 20);
+# New smget test
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, 0, $dat_cnt-1, 0, 20, 1);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, 0, $dat_cnt-1, 10, 20, 1);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt/2, $dat_cnt-1, 10, 20, 1);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt-1, 0, 0, 20, 1);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt-1, 0, 10, 20, 1);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt/2, 0, 10, 20, 1);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt, $dat_cnt+100, 0, 20, 1);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt+100, $dat_cnt, 0, 20, 1);
+# Old smget test
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, 0, $dat_cnt-1, 0, 20, 0);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, 0, $dat_cnt-1, 10, 20, 0);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt/2, $dat_cnt-1, 10, 20, 0);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt-1, 0, 0, 20, 0);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt-1, 0, 10, 20, 0);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt/2, 0, 10, 20, 0);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt, $dat_cnt+100, 0, 20, 0);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt+100, $dat_cnt, 0, 20, 0);
 

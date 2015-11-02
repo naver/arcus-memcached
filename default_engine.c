@@ -719,6 +719,32 @@ static ENGINE_ERROR_CODE default_btree_elem_get_by_posi(ENGINE_HANDLE* handle, c
 }
 
 #ifdef SUPPORT_BOP_SMGET
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+static ENGINE_ERROR_CODE default_btree_elem_smget_old(ENGINE_HANDLE* handle, const void* cookie,
+                                                  token_t *karray, const int kcount,
+                                                  const bkey_range *bkrange,
+                                                  const eflag_filter *efilter,
+                                                  const uint32_t offset, const uint32_t count,
+                                                  eitem** eitem_array,
+                                                  uint32_t* kfnd_array,
+                                                  uint32_t* flag_array,
+                                                  uint32_t* eitem_count,
+                                                  uint32_t* missed_key_array,
+                                                  uint32_t* missed_key_count,
+                                                  bool *trimmed, bool *duplicated,
+                                                  uint16_t vbucket)
+{
+    struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    ret = btree_elem_smget_old(engine, karray, kcount, bkrange, efilter, offset, count,
+                           (btree_elem_item**)eitem_array, kfnd_array, flag_array, eitem_count,
+                           missed_key_array, missed_key_count, trimmed, duplicated);
+    return ret;
+}
+#endif
+
 static ENGINE_ERROR_CODE default_btree_elem_smget(ENGINE_HANDLE* handle, const void* cookie,
                                                   token_t *karray, const int kcount,
                                                   const bkey_range *bkrange,
@@ -1250,6 +1276,9 @@ ENGINE_ERROR_CODE create_instance(uint64_t interface, GET_SERVER_API get_server_
          .btree_posi_find_with_get = default_btree_posi_find_with_get,
          .btree_elem_get_by_posi = default_btree_elem_get_by_posi,
 #ifdef SUPPORT_BOP_SMGET
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+         .btree_elem_smget_old = default_btree_elem_smget_old,
+#endif
          .btree_elem_smget   = default_btree_elem_smget,
 #endif
          /* Attribute functions */

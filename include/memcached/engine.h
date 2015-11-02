@@ -589,6 +589,26 @@ extern "C" {
                                              uint32_t *flags,
                                              uint16_t vbucket);
 #ifdef SUPPORT_BOP_SMGET
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+        ENGINE_ERROR_CODE (*btree_elem_smget_old)(ENGINE_HANDLE* handle,
+                                              const void* cookie,
+                                              token_t *karray,
+                                              const int kcount,
+                                              const bkey_range *bkrange,
+                                              const eflag_filter *efilter,
+                                              const uint32_t offset,
+                                              const uint32_t count,
+                                              eitem** eitem_array,
+                                              uint32_t* kfnd_array,
+                                              uint32_t* flag_array,
+                                              uint32_t* eitem_count,
+                                              uint32_t* missed_key_array,
+                                              uint32_t* missed_key_count,
+                                              bool *trimmed,
+                                              bool *duplicated,
+                                              uint16_t vbucket);
+#endif
+
         ENGINE_ERROR_CODE (*btree_elem_smget)(ENGINE_HANDLE* handle,
                                               const void* cookie,
                                               token_t *karray,

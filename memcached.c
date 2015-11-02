@@ -1906,9 +1906,158 @@ static int make_smget_trim_response(char *bufptr, eitem_info *info)
 }
 #endif
 
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+static void process_bop_smget_complete_old(conn *c) {
+    int i, idx;
+    char *vptr = (char*)c->coll_mkeys;
+    char delimiter = ',';
+    token_t *keys_array = (token_t *)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
+    char *respptr;
+    int   resplen;
+    int smget_count = c->coll_roffset + c->coll_rcount;
+    int kmis_array_size = c->coll_numkeys * sizeof(uint32_t);
+
+    uint32_t  kmis_count = 0;
+    uint32_t  elem_count = 0;
+    eitem   **elem_array = (eitem  **)c->coll_eitem;
+    uint32_t *kfnd_array = (uint32_t*)((char*)elem_array + (smget_count*sizeof(eitem*)));
+    uint32_t *flag_array = (uint32_t*)((char*)kfnd_array + (smget_count*sizeof(uint32_t)));
+    uint32_t *kmis_array = (uint32_t*)((char*)flag_array + (smget_count*sizeof(uint32_t)));
+    bool trimmed;
+    bool duplicated;
+
+    respptr = ((char*)kmis_array + kmis_array_size);
+
+    ENGINE_ERROR_CODE ret;
+    if ((strncmp(vptr + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
+        (tokenize_keys(vptr, delimiter, c->coll_numkeys, keys_array) == -1)) {
+        ret = ENGINE_EBADVALUE;
+    } else {
+        if (c->coll_bkrange.to_nbkey == BKEY_NULL) {
+            memcpy(c->coll_bkrange.to_bkey, c->coll_bkrange.from_bkey,
+                   (c->coll_bkrange.from_nbkey==0 ? sizeof(uint64_t) : c->coll_bkrange.from_nbkey));
+            c->coll_bkrange.to_nbkey = c->coll_bkrange.from_nbkey;
+        }
+        ret = mc_engine.v1->btree_elem_smget_old(mc_engine.v0, c,
+                                             keys_array, c->coll_numkeys,
+                                             &c->coll_bkrange,
+                                             (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
+                                             c->coll_roffset, c->coll_rcount,
+                                             elem_array, kfnd_array, flag_array, &elem_count,
+                                             kmis_array, &kmis_count, &trimmed, &duplicated, 0);
+    }
+
+    switch (ret) {
+    case ENGINE_SUCCESS:
+        {
+        eitem_info info[elem_count+1]; /* elem_count might be 0. */
+
+        do {
+            sprintf(respptr, "VALUE %u\r\n", elem_count);
+            if (add_iov(c, respptr, strlen(respptr)) != 0) {
+                ret = ENGINE_ENOMEM; break;
+            }
+            respptr += strlen(respptr);
+
+            for (i = 0; i < elem_count; i++) {
+                idx = kfnd_array[i];
+                if (add_iov(c, keys_array[idx].value, keys_array[idx].length) != 0) {
+                    ret = ENGINE_ENOMEM; break;
+                }
+                mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem_array[i], &info[i]);
+                /* flags */
+                sprintf(respptr, " %u ", htonl(flag_array[i]));
+                resplen = strlen(respptr);
+                resplen += make_bop_elem_response(respptr + resplen, &info[i]);
+                if ((add_iov(c, respptr, resplen) != 0) ||
+                    (add_iov(c, info[i].value, info[i].nbytes) != 0)) {
+                    ret = ENGINE_ENOMEM; break;
+                }
+                respptr += resplen;
+            }
+            if (ret == ENGINE_ENOMEM) break;
+
+            sprintf(respptr, "MISSED_KEYS %u\r\n", kmis_count);
+            if (add_iov(c, respptr, strlen(respptr)) != 0) {
+                ret = ENGINE_ENOMEM; break;
+            }
+            respptr += strlen(respptr);
+
+            if (kmis_count > 0) {
+                sprintf(respptr, "\r\n"); resplen = 2;
+                for (i = 0; i < kmis_count; i++) {
+                    /* the last key string does not have delimiter character */
+                    idx = kmis_array[i];
+                    if ((add_iov(c, keys_array[idx].value, keys_array[idx].length) != 0) ||
+                        (add_iov(c, respptr, resplen) != 0)) {
+                        ret = ENGINE_ENOMEM; break;
+                    }
+                }
+                respptr += resplen;
+                if (ret == ENGINE_ENOMEM) break;
+            }
+
+            if (trimmed == true) {
+                sprintf(respptr, (duplicated ? "DUPLICATED_TRIMMED\r\n" : "TRIMMED\r\n"));
+            } else {
+                sprintf(respptr, (duplicated ? "DUPLICATED\r\n" : "END\r\n"));
+            }
+            if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
+                (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+                ret = ENGINE_ENOMEM; break;
+            }
+        } while(0);
+
+        if (ret == ENGINE_SUCCESS) {
+            STATS_NOKEY2(c, cmd_bop_smget, bop_smget_oks);
+            /* Remember this command so we can garbage collect it later */
+            /* c->coll_eitem  = (void *)elem_array; */
+            c->coll_ecount = elem_count;
+            c->coll_op     = OPERATION_BOP_SMGET;
+            conn_set_state(c, conn_mwrite);
+            c->msgcurr     = 0;
+        } else {
+            STATS_NOKEY(c, cmd_bop_smget);
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
+            out_string(c, "SERVER_ERROR out of memory writing get response");
+        }
+        }
+        break;
+    case ENGINE_DISCONNECT:
+        c->state = conn_closing;
+        break;
+    default:
+        STATS_NOKEY(c, cmd_bop_smget);
+        if (ret == ENGINE_EBADVALUE)     out_string(c, "CLIENT_ERROR bad data chunk");
+        else if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
+        else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
+        else if (ret == ENGINE_EBADATTR) out_string(c, "ATTR_MISMATCH");
+        else if (ret == ENGINE_EBKEYOOR) out_string(c, "OUT_OF_RANGE");
+        else out_string(c, "SERVER_ERROR internal");
+    }
+
+    if (ret != ENGINE_SUCCESS) {
+        if (c->coll_mkeys != NULL) {
+            free((void *)c->coll_mkeys);
+            c->coll_mkeys = NULL;
+        }
+        if (c->coll_eitem != NULL) {
+            free((void *)c->coll_eitem);
+            c->coll_eitem = NULL;
+        }
+    }
+}
+#endif
+
 static void process_bop_smget_complete(conn *c) {
     assert(c->coll_op == OPERATION_BOP_SMGET);
     assert(c->coll_eitem != NULL);
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+    if (c->coll_smgmode == 0) {
+        process_bop_smget_complete_old(c);
+        return;
+    }
+#endif
     int i, idx;
     char *vptr = (char*)c->coll_mkeys;
     char delimiter = ',';
@@ -1925,7 +2074,10 @@ static void process_bop_smget_complete(conn *c) {
     respptr = (char *)&smres.miss_kinfo[c->coll_numkeys];
 #else
     int smget_count = c->coll_roffset + c->coll_rcount;
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#else
     int elem_array_size = smget_count * (sizeof(eitem*) + (2*sizeof(uint32_t)));
+#endif
     int kmis_array_size = c->coll_numkeys * sizeof(uint32_t);
 
     uint32_t  kmis_count = 0;
@@ -1955,7 +2107,12 @@ static void process_bop_smget_complete(conn *c) {
                                              keys_array, c->coll_numkeys,
                                              &c->coll_bkrange,
                                              (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+                                             c->coll_roffset, c->coll_rcount,
+                                             (c->coll_smgmode == 2 ? true : false),
+#else
                                              c->coll_roffset, c->coll_rcount, c->coll_unique,
+#endif
                                              &smres, 0);
 #else
         ret = mc_engine.v1->btree_elem_smget(mc_engine.v0, c,
@@ -5146,6 +5303,26 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
 #endif
 #ifdef SUPPORT_BOP_SMGET
         if (c->cmd == PROTOCOL_BINARY_CMD_BOP_SMGET) {
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+          if (c->coll_smgmode == 0) {
+            int smget_count;
+            int elem_array_size; /* elem pointer array where the found elements will be saved */
+            int kmis_array_size; /* key index array where the missed key indexes are to be saved */
+            int elem_rshdr_size; /* the size of result header about the found elems */
+            int kmis_rshdr_size; /* the size of result header about the missed keys */
+
+            if (req->message.body.key_count > MAX_SMGET_KEY_COUNT ||
+                (req->message.body.req_offset + req->message.body.req_count) > MAX_SMGET_REQ_COUNT) {
+                ret = ENGINE_EBADVALUE; break;
+            }
+            smget_count = req->message.body.req_offset + req->message.body.req_count;
+            elem_array_size = smget_count * (sizeof(eitem*) + (2*sizeof(uint32_t)));
+            kmis_array_size = req->message.body.key_count * sizeof(uint32_t);
+            elem_rshdr_size = smget_count * (sizeof(uint64_t) + (3*sizeof(uint32_t)));
+            kmis_rshdr_size = req->message.body.key_count * sizeof(uint32_t);
+            need_size = elem_array_size + kmis_array_size + elem_rshdr_size + kmis_rshdr_size;
+          } else {
+#endif
 #ifdef JHPARK_NEW_SMGET_INTERFACE
             int elem_array_size; /* smget element array size */
             int ehit_array_size; /* smget hitted elem array size */
@@ -5179,6 +5356,9 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
             elem_rshdr_size = smget_count * (sizeof(uint64_t) + (3*sizeof(uint32_t)));
             kmis_rshdr_size = req->message.body.key_count * sizeof(uint32_t);
             need_size = elem_array_size + kmis_array_size + elem_rshdr_size + kmis_rshdr_size;
+#endif
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+          }
 #endif
         }
 #endif
@@ -5252,13 +5432,198 @@ static void process_bin_bop_mget_complete(conn *c) {
 #endif
 
 #ifdef SUPPORT_BOP_SMGET
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+static void process_bin_bop_smget_complete_old(conn *c) {
+    int smget_count = c->coll_roffset + c->coll_rcount;
+    int kmis_array_size = c->coll_numkeys * sizeof(uint32_t);
+    char *resultptr;
+    char *vptr = (char*)c->coll_mkeys;
+    char delimiter = ',';
+    token_t *keys_array = (token_t*)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
+
+    /* We don't actually receive the trailing two characters in the bin
+     * protocol, so we're going to just set them here */
+    memcpy(vptr + c->coll_lenkeys - 2, "\r\n", 2);
+
+    uint32_t  kmis_count = 0;
+    uint32_t  elem_count = 0;
+    eitem   **elem_array = (eitem  **)c->coll_eitem;
+    uint32_t *kfnd_array = (uint32_t*)((char*)elem_array + (smget_count*sizeof(eitem*)));
+    uint32_t *flag_array = (uint32_t*)((char*)kfnd_array + (smget_count*sizeof(uint32_t)));
+    uint32_t *kmis_array = (uint32_t*)((char*)flag_array + (smget_count*sizeof(uint32_t)));
+
+    resultptr = ((char *)kmis_array + kmis_array_size);
+
+    bool trimmed;
+    bool duplicated;
+
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    int ntokens = tokenize_keys(vptr, delimiter, c->coll_numkeys, keys_array);
+    if (ntokens == -1) {
+        ret = ENGINE_EBADVALUE;
+    } else {
+        if (c->coll_bkrange.to_nbkey == BKEY_NULL) {
+            memcpy(c->coll_bkrange.to_bkey, c->coll_bkrange.from_bkey,
+                   (c->coll_bkrange.from_nbkey==0 ? sizeof(uint64_t) : c->coll_bkrange.from_nbkey));
+            c->coll_bkrange.to_nbkey = c->coll_bkrange.from_nbkey;
+        }
+        ret = mc_engine.v1->btree_elem_smget_old(mc_engine.v0, c,
+                                     keys_array, c->coll_numkeys,
+                                     &c->coll_bkrange,
+                                     (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
+                                     c->coll_roffset, c->coll_rcount,
+                                     elem_array, kfnd_array, flag_array, &elem_count,
+                                     kmis_array, &kmis_count, &trimmed, &duplicated,
+                                     c->binary_header.request.vbucket);
+    }
+
+    switch (ret) {
+    case ENGINE_SUCCESS:
+        {
+        protocol_binary_response_bop_smget* rsp = (protocol_binary_response_bop_smget*)c->wbuf;
+        uint32_t real_elem_hdr_size = elem_count * (sizeof(uint64_t) + (3*sizeof(uint32_t)));
+        uint32_t real_kmis_hdr_size = kmis_count * sizeof(uint32_t);
+        uint32_t bodylen, i;
+        uint64_t *bkeyptr;
+        uint32_t *vlenptr;
+        uint32_t *flagptr;
+        uint32_t *klenptr;
+
+        if (((long)resultptr % 8) != 0) /* NOT aligned */
+            resultptr += (8 - ((long)resultptr % 8));
+        bkeyptr = (uint64_t *)resultptr;
+        vlenptr = (uint32_t *)((char*)bkeyptr + (sizeof(uint64_t) * elem_count));
+        flagptr = (uint32_t *)((char*)vlenptr + (sizeof(uint32_t) * elem_count));
+        klenptr = (uint32_t *)((char*)flagptr + (sizeof(uint32_t) * elem_count));
+
+        eitem_info info[elem_count+1]; /* elem_count might be 0. */
+        for (i = 0; i < elem_count; i++) {
+            mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem_array[i], &info[i]);
+        }
+
+        bodylen = sizeof(rsp->message.body);
+        bodylen += (real_elem_hdr_size + real_kmis_hdr_size);
+        for (i = 0; i < elem_count; i++) {
+             bodylen += (info[i].nbytes - 2);
+             bodylen += keys_array[kfnd_array[i]].length;
+        }
+        for (i = 0; i < kmis_count; i++) {
+             bodylen += keys_array[kmis_array[i]].length;
+        }
+        add_bin_header(c, 0, sizeof(rsp->message.body), 0, bodylen);
+
+        // add the flags and count
+        rsp->message.body.elem_count = htonl(elem_count);
+#if 1 /* JHPARK_NEW_SMGET_INTERFACE */
+        rsp->message.body.miss_count = htonl(kmis_count);
+#else
+        rsp->message.body.kmis_count = htonl(kmis_count);
+#endif
+        add_iov(c, &rsp->message.body, sizeof(rsp->message.body));
+
+        // add value lengths
+        for (i = 0; i < elem_count; i++) {
+             bkeyptr[i] = htonll(*(uint64_t*)info[i].score);
+             vlenptr[i] = htonl(info[i].nbytes - 2);
+             flagptr[i] = flag_array[i];
+             klenptr[i] = htonl(keys_array[kfnd_array[i]].length);
+        }
+        for (i = 0; i < kmis_count; i++) {
+             klenptr[elem_count+i] = htonl(keys_array[kmis_array[i]].length);
+        }
+        if (add_iov(c, (char*)bkeyptr, real_elem_hdr_size+real_kmis_hdr_size) != 0) {
+            ret = ENGINE_ENOMEM;
+        }
+
+        /* Add the data without CRLF */
+        if (ret == ENGINE_SUCCESS) {
+            for (i = 0; i < elem_count; i++) {
+                if (add_iov(c, info[i].value, info[i].nbytes - 2) != 0) {
+                    ret = ENGINE_ENOMEM; break;
+                }
+            }
+        }
+        /* Add the found key */
+        if (ret == ENGINE_SUCCESS) {
+            for (i = 0; i < elem_count; i++) {
+                if (add_iov(c, keys_array[kfnd_array[i]].value,
+                               keys_array[kfnd_array[i]].length) != 0) {
+                    ret = ENGINE_ENOMEM; break;
+                }
+            }
+        }
+        /* Add the missed key */
+        if (ret == ENGINE_SUCCESS) {
+            for (i = 0; i < kmis_count; i++) {
+                if (add_iov(c, keys_array[kmis_array[i]].value,
+                               keys_array[kmis_array[i]].length) != 0) {
+                    ret = ENGINE_ENOMEM; break;
+                }
+            }
+        }
+
+        if (ret == ENGINE_SUCCESS) {
+            /* Remember this command so we can garbage collect it later */
+            /* c->coll_eitem  = (void *)elem_array; */
+            STATS_NOKEY2(c, cmd_bop_smget, bop_smget_oks);
+            c->coll_ecount = elem_count;
+            c->coll_op     = OPERATION_BOP_SMGET;
+            conn_set_state(c, conn_mwrite);
+        } else {
+            STATS_NOKEY(c, cmd_bop_smget);
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+        }
+        }
+        break;
+    case ENGINE_DISCONNECT:
+        c->state = conn_closing;
+        break;
+    default:
+        STATS_NOKEY(c, cmd_bop_smget);
+        if (ret == ENGINE_EBADVALUE)
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADVALUE, 0);
+        else if (ret == ENGINE_EBADTYPE)
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
+        else if (ret == ENGINE_EBADBKEY)
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADBKEY, 0);
+        else if (ret == ENGINE_EBADATTR)
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADATTR, 0);
+        else if (ret == ENGINE_EBKEYOOR)
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBKEYOOR, 0);
+        else
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+    }
+
+    if (ret != ENGINE_SUCCESS) {
+        if (c->coll_mkeys != NULL) {
+            free((void *)c->coll_mkeys);
+            c->coll_mkeys = NULL;
+        }
+        if (c->coll_eitem != NULL) {
+            free((void *)c->coll_eitem);
+            c->coll_eitem = NULL;
+        }
+    }
+}
+#endif
+
 static void process_bin_bop_smget_complete(conn *c) {
     assert(c->coll_eitem != NULL);
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+    if (c->coll_smgmode == 0) {
+        process_bin_bop_smget_complete_old(c);
+        return;
+    }
+#endif
 #ifdef JHPARK_NEW_SMGET_INTERFACE
     smget_result_t smres;
 #else
     int smget_count = c->coll_roffset + c->coll_rcount;
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#else
     int elem_array_size = smget_count * (sizeof(eitem*) + (2*sizeof(uint32_t)));
+#endif
     int kmis_array_size = c->coll_numkeys * sizeof(uint32_t);
 #endif
     char *resultptr;
@@ -5305,8 +5670,13 @@ static void process_bin_bop_smget_complete(conn *c) {
                                      &c->coll_bkrange,
                                      (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
 #ifdef JHPARK_NEW_SMGET_INTERFACE
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+                                     c->coll_roffset, c->coll_rcount,
+                                     (c->coll_smgmode == 2 ? true : false), &smres,
+#else
                                      c->coll_roffset, c->coll_rcount, c->coll_unique,
                                      &smres,
+#endif
 #else
                                      c->coll_roffset, c->coll_rcount,
                                      elem_array, kfnd_array, flag_array, &elem_count,
@@ -6773,6 +7143,21 @@ static void write_and_free(conn *c, char *buf, int bytes) {
 }
 
 #ifdef JHPARK_NEW_SMGET_INTERFACE
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+static inline int set_smget_mode_maybe(conn *c, token_t *tokens, size_t ntokens)
+{
+    int mode_index = ntokens - 2;
+    int mode_value = 0;
+
+    if (tokens[mode_index].value) {
+        if (strcmp(tokens[mode_index].value, "duplicate") == 0)
+            mode_value = 1;
+        else if (strcmp(tokens[mode_index].value, "unique") == 0)
+            mode_value = 2;
+    }
+    return mode_value;
+}
+#else
 static inline bool set_unique_maybe(conn *c, token_t *tokens, size_t ntokens)
 {
     int unique_index = ntokens - 2;
@@ -6783,6 +7168,7 @@ static inline bool set_unique_maybe(conn *c, token_t *tokens, size_t ntokens)
     else
         return false;
 }
+#endif
 #endif
 
 static inline bool set_noreply_maybe(conn *c, token_t *tokens, size_t ntokens)
@@ -8197,6 +8583,29 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         );
     } else if (ntokens > 2 && strcmp(type, "btree") == 0) {
 #ifdef JHPARK_NEW_SMGET_INTERFACE
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+        out_string(c,
+        "\t" "bop create <key> <attributes> [noreply]\\r\\n" "\n"
+        "\t" "bop insert|upsert <key> <bkey> [<eflag>] <bytes> [create <attributes>] [noreply|pipe|getrim]\\r\\n<data>\\r\\n" "\n"
+        "\t" "bop update <key> <bkey> [<eflag_update>] <bytes> [noreply|pipe]\\r\\n<data>\\r\\n" "\n"
+        "\t" "bop delete <key> <bkey or \"bkey range\"> [<eflag_filter>] [<count>] [drop] [noreply|pipe]\\r\\n" "\n"
+        "\t" "bop get <key> <bkey or \"bkey range\"> [<eflag_filter>] [[<offset>] <count>] [delete|drop]\\r\\n" "\n"
+        "\t" "bop count <key> <bkey or \"bkey range\"> [<eflag_filter>] \\r\\n" "\n"
+        "\t" "bop incr|decr <key> <bkey> <value> [noreply|pipe]\\r\\n" "\n"
+        "\t" "bop mget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"comma separated keys\">\\r\\n" "\n"
+        "\t" "bop smget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count> [duplicate|unique]\\r\\n<\"comma separated keys\">\\r\\n" "\n"
+        "\t" "bop position <key> <bkey> <order>\\r\\n" "\n"
+        "\t" "bop pwg <key> <bkey> <order> [<count>]\\r\\n" "\n"
+        "\t" "bop gbp <key> <order> <position or \"position range\">\\r\\n" "\n"
+        "\n"
+        "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
+        "\t" "* <eflag_update> : [<fwhere> <bitwop>] <fvalue>" "\n"
+        "\t" "* <eflag_filter> : <fwhere> [<bitwop> <foperand>] <compop> <fvalue>" "\n"
+        "\t" "                 : <fwhere> [<bitwop> <foperand>] EQ|NE <comma separated fvalue list>" "\n"
+        "\t" "* <bitwop> : &, |, ^" "\n"
+        "\t" "* <compop> : EQ, NE, LT, LE, GT, GE" "\n"
+        );
+#else
         out_string(c,
         "\t" "bop create <key> <attributes> [noreply]\\r\\n" "\n"
         "\t" "bop insert|upsert <key> <bkey> [<eflag>] <bytes> [create <attributes>] [noreply|pipe|getrim]\\r\\n<data>\\r\\n" "\n"
@@ -8218,6 +8627,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "* <bitwop> : &, |, ^" "\n"
         "\t" "* <compop> : EQ, NE, LT, LE, GT, GE" "\n"
         );
+#endif
 #else
         out_string(c,
         "\t" "bop create <key> <attributes> [noreply]\\r\\n" "\n"
@@ -9783,6 +10193,22 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
 #endif
 #ifdef SUPPORT_BOP_SMGET
     if (cmd == OPERATION_BOP_SMGET) {
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+      if (c->coll_smgmode == 0) {
+        int smget_count = c->coll_roffset + c->coll_rcount;
+        int elem_array_size; /* elem pointer array where the found elements will be saved */
+        int kmis_array_size; /* key index array where the missed key indexes are to be saved */
+        int respon_hdr_size; /* the size of response head and tail */
+        int respon_bdy_size; /* the size of response body */
+
+        elem_array_size = smget_count * (sizeof(eitem*) + (2*sizeof(uint32_t)));
+        kmis_array_size = c->coll_numkeys * sizeof(uint32_t);
+        respon_hdr_size = (2*lenstr_size) + 30; /* result head and tail size */
+        respon_bdy_size = smget_count * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+(lenstr_size*2)+5); /* result body size */
+
+        need_size = elem_array_size + kmis_array_size + respon_hdr_size + respon_bdy_size;
+      } else {
+#endif
 #ifdef JHPARK_NEW_SMGET_INTERFACE
         int elem_array_size; /* smget element array size */
         int ehit_array_size; /* smget hitted elem array size */
@@ -9811,6 +10237,9 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
         respon_bdy_size = smget_count * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+(lenstr_size*2)+5); /* result body size */
 
         need_size = elem_array_size + kmis_array_size + respon_hdr_size + respon_bdy_size;
+#endif
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+     }
 #endif
     }
 #endif
@@ -10592,7 +11021,11 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         uint32_t count, offset = 0;
         uint32_t lenkeys, numkeys;
 #ifdef JHPARK_NEW_SMGET_INTERFACE
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+        int smgmode = set_smget_mode_maybe(c, tokens, ntokens);
+#else
         bool unique = set_unique_maybe(c, tokens, ntokens);
+#endif
 #endif
 
         if ((! safe_strtoul(tokens[BOP_KEY_TOKEN].value, &lenkeys)) ||
@@ -10608,7 +11041,11 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         int read_ntokens = 5;
 #ifdef JHPARK_NEW_SMGET_INTERFACE
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+        int post_ntokens = (smgmode > 0 ? 3 : 2); /* "\r\n" */
+#else
         int post_ntokens = (unique ? 3 : 2); /* "\r\n" */
+#endif
 #else
         int post_ntokens = 2; /* "\r\n" */
 #endif
@@ -10674,7 +11111,11 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         c->coll_roffset = offset;
         c->coll_rcount  = count;
 #ifdef JHPARK_NEW_SMGET_INTERFACE
+#if 1 // JHPARK_OLD_SMGET_INTERFACE
+        c->coll_smgmode = smgmode;
+#else
         c->coll_unique  = unique;
+#endif
 #endif
 
         process_bop_prepare_nread_keys(c, subcommid, lenkeys, numkeys);
