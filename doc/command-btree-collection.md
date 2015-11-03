@@ -371,8 +371,34 @@ flags와 ecount를 포함하여 조회된 element 정보가 생략된다.
 sort merge 형태로 조회하면서 offset 만큼 skip하고 count 개의 elements를 가져온다.
 결국, 여러 b+tree들을 하나의 large b+tree로 보고 이에 대한 element 조회 기능이다.
 
+smget 동작은 조회 범위와 어떤 b+tree의 trim 영역의 겹침에 대한 처리에 관련하여 두 가지 동작 모드가 있다.
+
+1. 기존 smget 동작 (1.8.X 이하 버전에서 동작하던 방식)
+  - smget 조회 조건을 만족하는 첫번째 element가 trim된 b+tree가 하나라도 존재하면 OUT_OF_RANGE 응답을 보낸다.
+    이 경우, 응용은 모든 key에 대해 백엔드 저장소인 DB에서 elements 조회하여 
+    응용에서 sort-merge 작업을 수행하여야 한다.
+  - OUT_OF_RANGE가 발생하지 않은 상황에서 smget 수행하면서
+    조회 조건을 만족하는 두번째 이후의 element가 trim된 b+tree를 만나게 되면,
+    그 지점까지 조회한 elements를 최종 elements 결과로 하고
+    smget 수행 상태는 TRIMMED로 하여 응답을 보낸다.
+    이 경우, 응용은 모든 key에 대해 백엔드 저장소인 DB에서 trim 영역의 elements를 조회하여
+    smget 결과에 반영하여야 한다.
+
+2. 신규 smget 동작 (1.9.0 이후 버전에서 추가된 방식)
+  - 기존의 OUT_OF_RANGE에 해당하는 b+tree의 key를 missed keys로 분류하고
+    나머지 b+tree들에 대해 smget을 수행한다.
+    따라서, 응용에서는 missed keys에 한해서만
+    백엔드 저장소인 DB에서 elements를 조회하여 최종 smget 결과에 반영할 수 있다.
+  - smget 조회 조건을 만족하는 두번째 이후의 element가 trim된 b+tree가 존재하더라도,
+    그 지점에서 smget을 중지하는 것이 아니라, 그러한 b+tree의 key를 trimmed keys로 분류하고
+    원하는 개수의 elements를 찾을 때까지 smget을 계속 진행한다.
+    따라서, 응용에서는 trimmed keys에 한해서만,
+    백엔드 저장소인 DB에서 trim된 elements를 조회하여 최종 smget 결과에 반영할 수 있다.
+  - 중복 bkey를 허용하는 동작 외에 중복 bkey를 제거하는 동작을 지원한다.
+
+
 ```
-bop smget <lenkeys> <numkeys> <bkey or "bkey range"> [<eflag_filter>] [<offset>] <count> [unique]\r\n
+bop smget <lenkeys> <numkeys> <bkey or "bkey range"> [<eflag_filter>] [<offset>] <count> [duplicate|unique]\r\n
 <"comma separated keys">\r\n
 * <eflag_filter> : <fwhere> [<bitwop> <foperand>] <compop> <fvalue>
 ```
@@ -383,14 +409,47 @@ bop smget <lenkeys> <numkeys> <bkey or "bkey range"> [<eflag_filter>] [<offset>]
                              Bkey range는 "bkey1..bkey2" 형식으로 표현한다.
 - \<eflag_filter\> - eflag filter 조건.
                     [Collection 기본 개념](/doc/arcus-collection-concept.md)에서 eflag filter 참조 바란다.
-- [\<offset\>] \<count\> - 조회 조건을 만족하는 elements의 sort merge 결과에서 skip 개수와 실제 조회할 개수
-- [unique] - 중복 bkey를 제거하여 unique bkey 결과만을 조회하는 기능으로, 생략 가능하다.
+- [\<offset\>] \<count\> - 조회 조건을 만족하는 elements에서 skip할 개수와 조회할 개수
+  - 주의 사항으로, offset은 향후 depricate 시킬 기능이다.
+- [duplicate|unique] - smget 동작 방식을 지정한다.
+  - 생략되면, 예전 smget 동작을 수행한다.
+  - 지정되면, 신규 smget 동작을 수행한다. duplicate는 중복 bkey를 허용하고, unique는 중복 bkey를 제거한다.
 
 bop smget 명령은 O(small N) 수행 원칙을 위하여 다음의 제약 사항을 가진다.
 - key list에 지정 가능한 최대 key 수는 10000이다.
 - offset과 count의 합은 최대 2000이다.
 
-성공 시의 response string은 다음과 같다.
+기존 smget 동작에서 성공 시의 response string은 다음과 같다.
+
+```
+VALUE <ecount>\r\n
+<key> <flags> <bkey> [<eflag>] <bytes> <data>\r\n
+<key> <flags> <bkey> [<eflag>] <bytes> <data>\r\n
+<key> <flags> <bkey> [<eflag>] <bytes> <data>\r\n
+...
+MISSED_KEYS <kcount>\r\n
+<key>\r\n
+<key>\r\n
+…
+END|DUPLICATED|TRIMMED|DUPLICATRED_TRIMMED\r\n
+```
+
+위 response string에 대한 설명은 다음과 같다.
+
+- VALUE 부분: 조회한 elements를 나타낸다.
+  - Element 정보는 그 element가 소속된 b+tree의 key string과 flags 정보와
+    그 element 자체의 bkey, optional eflag, data로 구성된다.
+  - Element 정보는 bkey 기준으로 정렬되며,
+    동일 bkey를 가진 elements는 key string 기준으로 정렬된다.
+- MISSED_KEYS 부분: smget 조회에 참여하지 못한 key list와 그 원인을 나타낸다.
+  - \<key\>는 smget에 참여하지 못한 key string이다.
+- 마지막 라인은 smget response string의 마지막을 나타낸다.
+  - END: element 조회 과정에서 중복 bkey가 없음 
+  - DUPLICATED: element 조회 과정에서 중복 bkey가 있음.
+  - TRIMMED: element 조회 과정에서 조회 범위가 trim 영역과 겹치는 b+tree를 발견한 상태이다.
+  - DUPLICATED_TRIMMED: DUPLICATED 그리고 TRIMMED 의미를 가진다.
+
+신규 smget 동작에서 성공 시의 response string은 다음과 같다.
 
 ```
 ELEMENTS <ecount>\r\n
@@ -411,7 +470,7 @@ END|DUPLICATED\r\n
 * <cause> = NOT_FOUND | UNREADABLE | OUT_OF_RANGE
 ```
 
-위의 response string에 대한 설명은 다음과 같다.
+위 response string에 대한 설명은 다음과 같다.
 
 - ELEMENTS 부분: 조회한 elements를 나타낸다.
   - Element 정보는 그 element가 소속된 b+tree의 key string과 flags 정보와
@@ -432,27 +491,19 @@ END|DUPLICATED\r\n
   - END: element 조회 과정에서 중복 bkey가 없음 
   - DUPLICATED: element 조회 과정에서 중복 bkey가 있음.
 
-ARCUS 응용은 smget 결과의 misses keys와 trimmed keys 정보를 이용하여
-아래와 같이 최종 smget 결과를 만들어 사용해야 한다.
-- Missed keys들에 대해 cache에서 element 조회가 불가한 상태이므로,
-  back-end storage인 DB에서 동일 조회 조건으로 그 key의 elements를 조회하여
-  최종 smget 결과에 sort merge 방식으로 반영하여야 한다.
-- Trimmed keys들에 대해 cache에서 trim 이후의 elements 조회가 불가한 상태이므로,
-  back-end storage인 DB에서 trim 직전의 bkey 이후에 있는 elements를 조회하여
-  최종 smget 결과에 sort merge 방식으로 반영하여야 한다.
-  
-실패 시의 response string은 다음과 같다.
+
+smget 수행의 실패 시의 response string은 다음과 같다.
 
 - “TYPE_MISMATCH” - 어떤 key가 b+tree type이 아님
 - “BKEY_MISMATCH” - smget에 참여된 b+tree들의 bkey 유형이 서로 다름.
 - “ATTR_MISMATCH” - smget에 참여된 b+tree들의 속성들이 서로 다름.
                     maxcount, maxbkeyrange, overflowaction이 모두 동일해야 함.
+- “OUT_OF_RANGE” - 기존 smget 동작에서만 발생할 수 있는 실패 response string이다.
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “CLIENT_ERROR bad data chunk”	- 주어진 key 리스트에 중복 key가 존재하거나
               주어진 key 리스트의 길이가 \<lenkeys\> 길이와 다르거나 “\r\n”으로 끝나지 않음.
 - “CLIENT_ERROR bad value” - 앞서 기술한 smget 연산의 제약 조건을 위배
 - “SERVER_ERROR out of memory [writing get response]” - 메모리 부족
-
 
 smget 사용 시의 주의 사항으로, offset 값은 항상 0으로 사용하길 권고한다.
 대신에, 이전 smget 조회 값 기준으로 bkey range를 조정하여 사용할 수 있다.
