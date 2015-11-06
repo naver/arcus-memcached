@@ -71,14 +71,13 @@ struct assoc {
 ENGINE_ERROR_CODE assoc_init(struct default_engine *engine);
 void              assoc_final(struct default_engine *engine);
 
-hash_item *       assoc_find(struct default_engine *engine,
-                             uint32_t hash, const char *key, const size_t nkey);
-int               assoc_insert(struct default_engine *engine,
-                               uint32_t hash, hash_item *item);
-void              assoc_delete(struct default_engine *engine,
-                               uint32_t hash, const char *key, const size_t nkey);
-prefix_t *        assoc_prefix_find(struct default_engine *engine,
-                                    uint32_t hash, const char *prefix, const size_t nprefix);
+hash_item *       assoc_find(struct default_engine *engine, uint32_t hash,
+                             const char *key, const size_t nkey);
+int               assoc_insert(struct default_engine *engine, uint32_t hash, hash_item *item);
+void              assoc_delete(struct default_engine *engine, uint32_t hash,
+                               const char *key, const size_t nkey);
+prefix_t *        assoc_prefix_find(struct default_engine *engine, uint32_t hash,
+                                    const char *prefix, const size_t nprefix);
 bool              assoc_prefix_isvalid(struct default_engine *engine, hash_item *it);
 void              assoc_prefix_update_size(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
                                     const size_t item_size, const bool increment);
