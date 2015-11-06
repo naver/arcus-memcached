@@ -18,8 +18,6 @@
 #ifndef ASSOC_H
 #define ASSOC_H
 
-#define MWJIN_HASHTABLE_EXPANSION_BY_WORKERS
-
 typedef struct _prefix_t prefix_t;
 
 struct _prefix_t {
@@ -47,7 +45,6 @@ struct _prefix_t {
 };
 
 struct assoc {
-#ifdef MWJIN_HASHTABLE_EXPANSION_BY_WORKERS
    uint32_t hashpower; /* how many hash buckets in a hash table ? (power of 2) */
    uint32_t hashsize;  /* hash table size */
    uint32_t hashmask;  /* hash bucket mask */
@@ -68,35 +65,6 @@ struct assoc {
    /* Number of items in the hash table. */
    unsigned int hash_items;
    unsigned int tot_prefix_items;
-#else
-   /* how many powers of 2's worth of buckets we use */
-   unsigned int hashpower;
-
-   /* Main hash table. This is where we look except during expansion. */
-   hash_item** primary_hashtable;
-   prefix_t**  prefix_hashtable;
-   prefix_t    noprefix_stats;
-
-   /*
-    * Previous hash table. During expansion, we look here for keys that haven't
-    * been moved over to the primary yet.
-    */
-   hash_item** old_hashtable;
-
-   /* Number of items in the hash table. */
-   unsigned int hash_items;
-   unsigned int tot_prefix_items;
-
-   /* Flag: Are we in the middle of expanding now? */
-   bool expanding;
-   bool threadrun;
-
-   /*
-    * During expansion we migrate values with bucket granularity; this is how
-    * far we've gotten so far. Ranges from 0 .. hashsize(hashpower - 1) - 1.
-    */
-   unsigned int expand_bucket;
-#endif
 };
 
 /* associative array */
