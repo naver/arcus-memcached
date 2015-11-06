@@ -705,7 +705,13 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     /* save client ip address in connection object */
     struct sockaddr_in addr;
     socklen_t addrlen = sizeof(addr);
-    getpeername(c->sfd, (struct sockaddr*)&addr, &addrlen);
+    if (getpeername(c->sfd, (struct sockaddr*)&addr, &addrlen) != 0) {
+        if (init_state == conn_new_cmd) {
+            mc_logger->log(EXTENSION_LOG_WARNING, c,
+                           "getpeername(fd=%d) has failed: %s\n",
+                           c->sfd, strerror(errno));
+        }
+    }
     snprintf(c->client_ip, 16, "%s", inet_ntoa(addr.sin_addr));
 
     MEMCACHED_CONN_ALLOCATE(c->sfd);
