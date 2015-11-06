@@ -1,5 +1,6 @@
 /*
  * arcus-memcached - Arcus memory cache server
+ * Copyright 2010-2014 NAVER Corp.
  * Copyright 2015 JaM2in Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
