@@ -384,7 +384,8 @@ int assoc_insert(struct default_engine *engine, uint32_t hash, hash_item *it)
     return 1;
 }
 
-void assoc_delete(struct default_engine *engine, uint32_t hash, const char *key, const size_t nkey)
+void assoc_delete(struct default_engine *engine, uint32_t hash,
+                  const char *key, const size_t nkey)
 {
     hash_item **before = _hashitem_before(engine, hash, key, nkey);
 
@@ -410,7 +411,8 @@ void assoc_delete(struct default_engine *engine, uint32_t hash, const char *key,
 /*
  * Prefix Management
  */
-prefix_t *assoc_prefix_find(struct default_engine *engine, uint32_t hash, const char *prefix, const size_t nprefix)
+prefix_t *assoc_prefix_find(struct default_engine *engine, uint32_t hash,
+                            const char *prefix, const size_t nprefix)
 {
     prefix_t *pt;
 
@@ -424,8 +426,8 @@ prefix_t *assoc_prefix_find(struct default_engine *engine, uint32_t hash, const 
     return NULL;
 }
 
-static prefix_t** _prefixitem_before(struct default_engine *engine,
-                                     uint32_t hash, const char *prefix, const size_t nprefix)
+static prefix_t** _prefixitem_before(struct default_engine *engine, uint32_t hash,
+                                     const char *prefix, const size_t nprefix)
 {
     prefix_t **pos;
 
@@ -449,9 +451,10 @@ static int _prefix_insert(struct default_engine *engine, uint32_t hash, prefix_t
     return 1;
 }
 
-static void _prefix_delete(struct default_engine *engine, uint32_t prefix_hash, const char *prefix, const uint8_t nprefix)
+static void _prefix_delete(struct default_engine *engine, uint32_t hash,
+                           const char *prefix, const uint8_t nprefix)
 {
-    prefix_t **prefix_before = _prefixitem_before(engine, prefix_hash, prefix, nprefix);
+    prefix_t **prefix_before = _prefixitem_before(engine, hash, prefix, nprefix);
     prefix_t *pt = *prefix_before;
     prefix_t *prefix_nxt = NULL;
 
@@ -496,7 +499,8 @@ bool assoc_prefix_isvalid(struct default_engine *engine, hash_item *it)
     return true;
 }
 
-void assoc_prefix_update_size(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const size_t item_size, const bool increment)
+void assoc_prefix_update_size(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
+                              const size_t item_size, const bool increment)
 {
     assert(pt != NULL);
 
@@ -532,8 +536,8 @@ void assoc_prefix_update_size(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const si
     }
 }
 
-ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine,
-                                    hash_item *it, const size_t item_size, prefix_t **pfx_item)
+ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it,
+                                    const size_t item_size, prefix_t **pfx_item)
 {
     assert(it->nprefix == 0);
     const char *key = item_get_key(it);
@@ -545,7 +549,7 @@ ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine,
     prefix_t_list_elem prefix_list[DEFAULT_PREFIX_MAX_DEPTH];
 
     // prefix discovering: we don't even know prefix existence at this time
-    while ((token = memchr(key + i + 1, engine->config.prefix_delimiter, nkey - i - 1)) != NULL) {
+    while ((token = memchr(key+i+1, engine->config.prefix_delimiter, nkey-i-1)) != NULL) {
         i = token - key;
         prefix_list[prefix_depth].nprefix = i;
 
@@ -711,8 +715,10 @@ static uint32_t do_assoc_count_invalid_prefix(struct default_engine *engine)
 }
 #endif
 
-static ENGINE_ERROR_CODE do_assoc_get_prefix_stats(struct default_engine *engine,
-                                                   const char *prefix, const int  nprefix, void *prefix_data)
+static ENGINE_ERROR_CODE
+do_assoc_get_prefix_stats(struct default_engine *engine,
+                          const char *prefix, const int  nprefix,
+                          void *prefix_data)
 {
     prefix_t *pt;
 
@@ -720,14 +726,16 @@ static ENGINE_ERROR_CODE do_assoc_get_prefix_stats(struct default_engine *engine
         char *buf;
         struct tm *t;
         const char *format = "PREFIX %s itm %llu kitm %llu litm %llu sitm %llu bitm %llu "
-                             "tsz %llu ktsz %llu ltsz %llu stsz %llu btsz %llu time %04d%02d%02d%02d%02d%02d\r\n";
+                                       "tsz %llu ktsz %llu ltsz %llu stsz %llu btsz %llu "
+                                       "time %04d%02d%02d%02d%02d%02d\r\n";
         uint32_t i, hsize = hashsize(DEFAULT_PREFIX_HASHPOWER);
         uint32_t num_prefixes = engine->assoc.tot_prefix_items;
         uint32_t tot_prefix_name_len = 0;
         uint32_t msize, pos, written;
 
         pt = root_pt;
-        if (pt != NULL && (pt->hash_items > 0 || pt->list_hash_items > 0 || pt->set_hash_items > 0 || pt->btree_hash_items > 0)) {
+        if (pt != NULL && (pt->hash_items > 0 || pt->list_hash_items > 0 ||
+                           pt->set_hash_items > 0 || pt->btree_hash_items > 0)) {
             /* including null prefix */
             num_prefixes += 1;
             tot_prefix_name_len = strlen("<null>");
@@ -753,7 +761,8 @@ static ENGINE_ERROR_CODE do_assoc_get_prefix_stats(struct default_engine *engine
         pos = sizeof(uint32_t);
 
         pt = root_pt;
-        if (pt != NULL && (pt->hash_items > 0 || pt->list_hash_items > 0 || pt->set_hash_items > 0 || pt->btree_hash_items > 0)) {
+        if (pt != NULL && (pt->hash_items > 0 || pt->list_hash_items > 0 ||
+                           pt->set_hash_items > 0 || pt->btree_hash_items > 0)) {
             /* including null prefix */
             t = localtime(&pt->create_time);
             written = snprintf(buf+pos, msize-pos, format, "<null>",
