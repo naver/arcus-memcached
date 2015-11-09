@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 56;
+use Test::More tests => 58;
 =head
 use Test::More tests => 54;
 =cut
@@ -161,6 +161,24 @@ bop_new_smget_is($sock, "11 2 100..0 10 unique", "bkey1,bkey2",
 ,bkey1 11 30 6 datum3
 ,bkey2 12 20 6 datum2
 ,bkey1 11 10 6 datum1",
+0, "",
+0, "",
+"DUPLICATED");
+bop_new_smget_is($sock, "11 2 70..0 4 duplicate", "bkey1,bkey2",
+4,
+"bkey2 12 70 6 datum7
+,bkey1 11 70 6 datum7
+,bkey2 12 60 6 datum6
+,bkey1 11 60 6 datum6",
+0, "",
+0, "",
+"DUPLICATED");
+bop_new_smget_is($sock, "11 2 70..0 4 unique", "bkey1,bkey2",
+4,
+"bkey1 11 70 6 datum7
+,bkey2 12 60 6 datum6
+,bkey1 11 50 6 datum5
+,bkey2 12 40 6 datum4",
 0, "",
 0, "",
 "DUPLICATED");

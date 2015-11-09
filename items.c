@@ -5357,6 +5357,7 @@ scan_next:
         }
 #ifdef JHPARK_NEW_SMGET_INTERFACE
         if (ret == ENGINE_EDUPLICATE) {
+            ret = ENGINE_SUCCESS;
             goto scan_next;
         }
 #endif
