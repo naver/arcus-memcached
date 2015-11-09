@@ -18,8 +18,6 @@
 #ifndef ASSOC_H
 #define ASSOC_H
 
-#define JHPARK_HASH_BUCKET_INFO 1
-
 typedef struct _prefix_t prefix_t;
 
 struct _prefix_t {
@@ -46,12 +44,12 @@ struct _prefix_t {
     prefix_t *parent_prefix;
 };
 
-#ifdef JHPARK_HASH_BUCKET_INFO
 struct bucket_info {
     uint16_t refcount; /* reference count */
-    uint16_t curpower; /* current hash power */
+    uint16_t curpower; /* current hash power:
+                        * how may hash tables each hash bucket use ? (power of 2)
+                        */
 };
-#endif
 
 struct assoc {
    uint32_t hashpower; /* how many hash buckets in a hash table ? (power of 2) */
@@ -64,13 +62,8 @@ struct assoc {
       hash_item** hashtable;
    } *roottable;
 
-#ifdef JHPARK_HASH_BUCKET_INFO
    /* bucket info table */
   struct bucket_info *infotable;
-#else
-   /* hash power table: how many hash tables each hash bucket use ? (power of 2) */
-   uint32_t* powertable;
-#endif
 
    /* prefix hash table : single hash table */
    prefix_t**  prefix_hashtable;

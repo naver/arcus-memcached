@@ -67,28 +67,16 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
     }
     assoc->roottable[0].hashtable = (hash_item**)&assoc->roottable[assoc->hashsize];
 
-#ifdef JHPARK_HASH_BUCKET_INFO
     assoc->infotable = calloc(assoc->hashsize, sizeof(struct bucket_info));
     if (assoc->infotable == NULL) {
         free(assoc->roottable);
         return ENGINE_ENOMEM;
     }
-#else
-    assoc->powertable = calloc(assoc->hashsize, sizeof(uint32_t*));
-    if (assoc->powertable == NULL) {
-        free(assoc->roottable);
-        return ENGINE_ENOMEM;
-    }
-#endif
 
     assoc->prefix_hashtable = calloc(hashsize(DEFAULT_PREFIX_HASHPOWER), sizeof(void *));
     if (assoc->prefix_hashtable == NULL) {
         free(assoc->roottable);
-#ifdef JHPARK_HASH_BUCKET_INFO
         free(assoc->infotable);
-#else
-        free(assoc->powertable);
-#endif
         return ENGINE_ENOMEM;
     }
 
@@ -108,11 +96,7 @@ void assoc_final(struct default_engine *engine)
          free(assoc->roottable[table_count].hashtable);
     }
     free(assoc->roottable);
-#ifdef JHPARK_HASH_BUCKET_INFO
     free(assoc->infotable);
-#else
-    free(assoc->powertable);
-#endif
     free(assoc->prefix_hashtable);
 }
 
@@ -121,11 +105,7 @@ static void redistribute(struct default_engine *engine, unsigned int bucket)
     struct assoc *assoc = &engine->assoc;
     hash_item *it, **prev;
     uint32_t tabidx;
-#ifdef JHPARK_HASH_BUCKET_INFO
     uint32_t ii, table_count = hashsize(assoc->infotable[bucket].curpower);
-#else
-    uint32_t ii, table_count = hashsize(assoc->powertable[bucket]);
-#endif
 
     for (ii=0; ii < table_count; ++ii) {
          prev = &assoc->roottable[ii].hashtable[bucket];
@@ -142,11 +122,7 @@ static void redistribute(struct default_engine *engine, unsigned int bucket)
              }
          }
     }
-#ifdef JHPARK_HASH_BUCKET_INFO
     assoc->infotable[bucket].curpower = assoc->rootpower;
-#else
-    assoc->powertable[bucket] = assoc->rootpower;
-#endif
 }
 
 hash_item *assoc_find(struct default_engine *engine, uint32_t hash,
@@ -157,13 +133,8 @@ hash_item *assoc_find(struct default_engine *engine, uint32_t hash,
     hash_item *it;
     int depth = 0;
     uint32_t bucket = GET_HASH_BUCKET(hash, assoc->hashmask);
-#ifdef JHPARK_HASH_BUCKET_INFO
     uint32_t tabidx = GET_HASH_TABIDX(hash, assoc->hashpower,
                                       hashmask(assoc->infotable[bucket].curpower));
-#else
-    uint32_t tabidx = GET_HASH_TABIDX(hash, assoc->hashpower,
-                                      hashmask(assoc->powertable[bucket]));
-#endif
 
     it = assoc->roottable[tabidx].hashtable[bucket];
     while (it) {
@@ -186,13 +157,8 @@ static hash_item** _hashitem_before(struct default_engine *engine, uint32_t hash
     struct assoc *assoc = &engine->assoc;
     hash_item **pos;
     uint32_t bucket = GET_HASH_BUCKET(hash, assoc->hashmask);
-#ifdef JHPARK_HASH_BUCKET_INFO
     uint32_t tabidx = GET_HASH_TABIDX(hash, assoc->hashpower,
                                       hashmask(assoc->infotable[bucket].curpower));
-#else
-    uint32_t tabidx = GET_HASH_TABIDX(hash, assoc->hashpower,
-                                      hashmask(assoc->powertable[bucket]));
-#endif
 
     pos = &assoc->roottable[tabidx].hashtable[bucket];
     while (*pos && ((nkey != (*pos)->nkey) || memcmp(key, item_get_key(*pos), nkey))) {
@@ -224,7 +190,6 @@ int assoc_insert(struct default_engine *engine, uint32_t hash, hash_item *it)
     uint32_t bucket = GET_HASH_BUCKET(hash, assoc->hashmask);
     uint32_t tabidx;
 
-#ifdef JHPARK_HASH_BUCKET_INFO
     assert(assoc_find(engine, hash, item_get_key(it), it->nkey) == 0); /* shouldn't have duplicately named things defined */
 
     if (assoc->infotable[bucket].curpower != assoc->rootpower &&
@@ -233,14 +198,6 @@ int assoc_insert(struct default_engine *engine, uint32_t hash, hash_item *it)
     }
     tabidx = GET_HASH_TABIDX(hash, assoc->hashpower,
                              hashmask(assoc->infotable[bucket].curpower));
-#else
-    if (assoc->powertable[bucket] != assoc->rootpower) {
-        redistribute(engine, bucket);
-    }
-    tabidx = GET_HASH_TABIDX(hash, assoc->hashpower, hashmask(assoc->powertable[bucket]));
-
-    assert(assoc_find(engine, hash, item_get_key(it), it->nkey) == 0); /* shouldn't have duplicately named things defined */
-#endif
 
     // inserting actual hash_item to appropriate assoc_t
     it->h_next = assoc->roottable[tabidx].hashtable[bucket];
