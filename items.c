@@ -7969,6 +7969,11 @@ static void *item_dumper_main(void *arg)
     int max_buflen = DUMP_BUFFER_SIZE;
     static char dump_buffer[DUMP_BUFFER_SIZE];
     char *cur_bufptr = dump_buffer;
+#if 1 // JHPARK_ADD_EXPTIME_IN_KEY_DUMP
+    time_t     real_nowtime; /* real now time */
+    rel_time_t memc_curtime; /* current time of cache server */
+    int str_length;
+#endif
 
     assert(dumper->running == true);
 
@@ -7998,6 +8003,10 @@ static void *item_dumper_main(void *arg)
         pthread_mutex_unlock(&engine->cache_lock);
 
         /* write key string to buffer */
+#if 1 // JHPARK_ADD_EXPTIME_IN_KEY_DUMP
+        real_nowtime = time(NULL);
+        memc_curtime = engine->server.core->get_current_time();
+#endif
         for (i = 0; i < scan.item_count; i++) {
             it = scan.item_array[i];
             dumper->visited++;
@@ -8012,7 +8021,12 @@ static void *item_dumper_main(void *arg)
                     continue; /* not null prefix */
                 }
             }
-            if ((cur_buflen + it->nkey + 3) > max_buflen) {
+#if 1 // JHPARK_ADD_EXPTIME_IN_KEY_DUMP
+            if ((cur_buflen + it->nkey + 24) > max_buflen)
+#else
+            if ((cur_buflen + it->nkey + 3) > max_buflen)
+#endif
+            {
                 nwritten = write(fd, dump_buffer, cur_buflen);
                 if (nwritten != cur_buflen) {
                     logger->log(EXTENSION_LOG_WARNING, NULL, "Failed to write the dump: "
@@ -8030,12 +8044,41 @@ static void *item_dumper_main(void *arg)
             else                        memcpy(cur_bufptr, "K ", 2);
             cur_bufptr += 2;
             cur_buflen += 2;
+#if 1 // JHPARK_ADD_EXPTIME_IN_KEY_DUMP
+            /* key string */
+            memcpy(cur_bufptr, item_get_key(it), it->nkey);
+            cur_bufptr += it->nkey;
+            cur_buflen += it->nkey;
+            /* exptime and new line */
+            if (it->exptime == 0) {
+                memcpy(cur_bufptr, " 0\n", 3);
+                cur_bufptr += 3;
+                cur_buflen += 3;
+#ifdef ENABLE_STICKY_ITEM
+            } else if (it->exptime == (rel_time_t)-1) {
+                memcpy(cur_bufptr, " -1\n", 4);
+                cur_bufptr += 4;
+                cur_buflen += 4;
+#endif
+            } else {
+                if (it->exptime > memc_curtime) {
+                    snprintf(cur_bufptr, 22, " %"PRIu64"\n",
+                             (uint64_t)(real_nowtime + (it->exptime - memc_curtime)));
+                } else {
+                    snprintf(cur_bufptr, 22, " %"PRIu64"\n", (uint64_t)real_nowtime);
+                }
+                str_length = strlen(cur_bufptr);
+                cur_bufptr += str_length;
+                cur_buflen += str_length;
+            }
+#else
             /* key string */
             memcpy(cur_bufptr, item_get_key(it), it->nkey);
             cur_bufptr += it->nkey;
             memcpy(cur_bufptr, "\n", 1); /* append new line character */
             cur_bufptr += 1;
             cur_buflen += (it->nkey + 1);
+#endif
         }
 
         pthread_mutex_lock(&engine->cache_lock);
