@@ -8100,6 +8100,8 @@ static void *item_dumper_main(void *arg)
                             "nwritten(%d) != writelen(%d)\n", nwritten, cur_buflen);
                 ret = -1;
             }
+            cur_buflen = 0;
+            cur_bufptr = dump_buffer;
         }
         if (ret == 0) {
             snprintf(cur_bufptr, summary_length, "DUMP SUMMARY: "
