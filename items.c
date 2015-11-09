@@ -8012,7 +8012,7 @@ static void *item_dumper_main(void *arg)
                     continue; /* not null prefix */
                 }
             }
-            if ((cur_buflen + it->nkey + 1) > max_buflen) {
+            if ((cur_buflen + it->nkey + 3) > max_buflen) {
                 nwritten = write(fd, dump_buffer, cur_buflen);
                 if (nwritten != cur_buflen) {
                     logger->log(EXTENSION_LOG_WARNING, NULL, "Failed to write the dump: "
@@ -8049,7 +8049,8 @@ static void *item_dumper_main(void *arg)
     assoc_scan_final(engine, &scan);
 
     if (ret == 0) {
-        if ((cur_buflen + 512) > max_buflen) {
+        int summary_length = 256; /* just, enough memory space size */
+        if ((cur_buflen + summary_length) > max_buflen) {
             nwritten = write(fd, dump_buffer, cur_buflen);
             if (nwritten != cur_buflen) {
                 logger->log(EXTENSION_LOG_WARNING, NULL, "Failed to write the dump: "
@@ -8058,7 +8059,7 @@ static void *item_dumper_main(void *arg)
             }
         }
         if (ret == 0) {
-            snprintf(cur_bufptr, 512, "DUMP SUMMARY: "
+            snprintf(cur_bufptr, summary_length, "DUMP SUMMARY: "
                      "{ prefix=%s, count=%"PRIu64", total=%"PRIu64" elapsed=%"PRIu64" }\n",
                      dumper->nprefix > 0 ? dumper->prefix : (dumper->nprefix == 0 ? "<null>" : "<all>"),
                      dumper->dumpped, dumper->visited, (uint64_t)(time(NULL)-dumper->started));
