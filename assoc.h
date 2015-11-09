@@ -81,6 +81,19 @@ struct assoc {
    unsigned int tot_prefix_items;
 };
 
+#ifdef JHPARK_KEY_DUMP
+#define MAX_SCAN_ITEMS 256
+struct assoc_scan {
+  int        guard_data;
+  int        cur_bucket;
+  int        cur_tabidx;
+  int        max_bucket;
+  int        array_size;
+  int        item_count;
+  hash_item *item_array[MAX_SCAN_ITEMS];
+};
+#endif
+
 /* associative array */
 ENGINE_ERROR_CODE assoc_init(struct default_engine *engine);
 void              assoc_final(struct default_engine *engine);
@@ -90,6 +103,12 @@ hash_item *       assoc_find(struct default_engine *engine, uint32_t hash,
 int               assoc_insert(struct default_engine *engine, uint32_t hash, hash_item *item);
 void              assoc_delete(struct default_engine *engine, uint32_t hash,
                                const char *key, const size_t nkey);
+#ifdef JHPARK_KEY_DUMP
+/* assoc scan functions */
+void              assoc_scan_init(struct default_engine *engine, struct assoc_scan *scan);
+void              assoc_scan_next(struct default_engine *engine, struct assoc_scan *scan);
+void              assoc_scan_final(struct default_engine *engine, struct assoc_scan *scan);
+#endif
 prefix_t *        assoc_prefix_find(struct default_engine *engine, uint32_t hash,
                                     const char *prefix, const size_t nprefix);
 bool              assoc_prefix_isvalid(struct default_engine *engine, hash_item *it);

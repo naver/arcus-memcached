@@ -887,6 +887,11 @@ static ENGINE_ERROR_CODE default_get_stats(ENGINE_HANDLE* handle, const void* co
     else if (strncmp(stat_key, "scrub", 5) == 0) {
         item_stats_scrub(engine, add_stat, cookie);
     }
+#ifdef JHPARK_KEY_DUMP
+    else if (strncmp(stat_key, "dump", 4) == 0) {
+        item_stats_dump(engine, add_stat, cookie);
+    }
+#endif
     else {
         ret = ENGINE_KEY_ENOENT;
     }
@@ -922,6 +927,31 @@ static char *default_cachedump(ENGINE_HANDLE* handle, const void* cookie,
     struct default_engine* engine = get_handle(handle);
     return item_cachedump(engine, slabs_clsid, limit, forward, sticky, bytes);
 }
+
+#ifdef JHPARK_KEY_DUMP
+static ENGINE_ERROR_CODE default_dump(ENGINE_HANDLE* handle, const void* cookie,
+                          const char *opstr, const char *modestr,
+                          const char *prefix, const int nprefix, const char *filepath)
+{
+    struct default_engine* engine = get_handle(handle);
+    enum dump_op   op;
+    enum dump_mode mode;
+
+    if (memcmp(opstr, "start", 5) == 0) {
+        op = DUMP_OP_START;
+        if (memcmp(modestr, "key", 3) != 0) {
+            return ENGINE_ENOTSUP;
+        }
+        mode = DUMP_MODE_KEY;
+    } else if (memcmp(opstr, "stop", 4) == 0) {
+        op = DUMP_OP_STOP;
+        mode = DUMP_MODE_NONE;
+    } else {
+        return ENGINE_ENOTSUP;
+    }
+    return item_dump(engine, op, mode, prefix, nprefix, filepath);
+}
+#endif
 
 /* Config */
 
@@ -1291,6 +1321,9 @@ ENGINE_ERROR_CODE create_instance(uint64_t interface, GET_SERVER_API get_server_
          .reset_stats      = default_reset_stats,
          .get_prefix_stats = default_get_prefix_stats,
          .cachedump        = default_cachedump,
+#ifdef JHPARK_KEY_DUMP
+         .dump             = default_dump,
+#endif
 
          /* Config */
          .set_memlimit     = default_set_memlimit,

@@ -278,6 +278,79 @@ void assoc_delete(struct default_engine *engine, uint32_t hash,
     assert(*before != 0);
 }
 
+#ifdef JHPARK_KEY_DUMP
+/*
+ * Assoc scan
+ */
+void assoc_scan_init(struct default_engine *engine, struct assoc_scan *scan)
+{
+    scan->guard_data = 23456;
+    scan->cur_bucket = 0;
+    scan->cur_tabidx = 0;
+    scan->max_bucket = engine->assoc.hashsize;
+    scan->array_size = MAX_SCAN_ITEMS;
+    scan->item_count = 0;
+}
+
+void assoc_scan_next(struct default_engine *engine, struct assoc_scan *scan)
+{
+    assert(scan->guard_data == 23456);
+    struct assoc *assoc = &engine->assoc;
+    hash_item *it;
+    uint32_t ii, ntables;
+    uint32_t found_count;
+    uint32_t access_count = 0;
+
+    scan->item_count = 0;
+    while (scan->cur_bucket < scan->max_bucket) {
+        if (scan->cur_tabidx == 0) {
+            /* increment bucket's reference count */
+            assoc->infotable[scan->cur_bucket].refcount += 1;
+        }
+        ntables = hashsize(assoc->infotable[scan->cur_bucket].curpower);
+        for (ii=scan->cur_tabidx; ii < ntables; ii++) {
+            if (access_count > (MAX_SCAN_ITEMS/2)) {
+                break; /* long time elapsed after holding cache lock */
+            }
+            found_count = 0;
+            it = assoc->roottable[ii].hashtable[scan->cur_bucket];
+            while (it != NULL) {
+                access_count++;
+                if (item_is_valid(engine, it)) {
+                    if ((scan->item_count + found_count) >= scan->array_size) {
+                        break; /* overflow */
+                    }
+                    scan->item_array[scan->item_count + found_count]= it;
+                    found_count += 1;
+                }
+                it = it->h_next;
+            }
+            if (it != NULL) { /* overflow */
+                scan->cur_tabidx = ii;
+                break;
+            }
+            scan->item_count += found_count;
+        }
+        if (ii < ntables) break;
+
+        /* decrement bucket's reference count */
+        assoc->infotable[scan->cur_bucket].refcount -= 1;
+        scan->cur_tabidx = 0;
+        scan->cur_bucket += 1;
+    }
+}
+
+void assoc_scan_final(struct default_engine *engine, struct assoc_scan *scan)
+{
+    assert(scan->guard_data == 23456);
+    if (scan->cur_bucket < scan->max_bucket) {
+        /* decrement bucket's reference count */
+        engine->assoc.infotable[scan->cur_bucket].refcount -= 1;
+    }
+    scan->guard_data = 0;
+}
+#endif
+
 /*
  * Prefix Management
  */

@@ -727,6 +727,14 @@ extern "C" {
                           const bool forward,
                           const bool sticky,
                           unsigned int *bytes);
+#ifdef JHPARK_KEY_DUMP
+        ENGINE_ERROR_CODE (*dump)(ENGINE_HANDLE* handle,
+                                  const void *cookie,
+                                  const char *opstr,
+                                  const char *modestr,
+                                  const char *prefix, const int nprefix,
+                                  const char *filepath);
+#endif
 
         /**
          * Any unknown command will be considered engine specific.

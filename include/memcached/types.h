@@ -37,6 +37,8 @@ struct iovec {
 #define CONFIG_MAX_COLLECTION_SIZE
 #define MAX_EFLAG_COMPARE_COUNT 100
 
+#define JHPARK_KEY_DUMP
+
 #ifdef __cplusplus
 extern "C" {
 #endif

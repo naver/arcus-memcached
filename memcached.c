@@ -8555,6 +8555,61 @@ static void process_zk_ensemble_command(conn *c, token_t *tokens, const size_t n
 }
 #endif
 
+#ifdef JHPARK_KEY_DUMP
+static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    char *opstr;
+    char *modestr = NULL;
+    char *filepath = NULL;
+    char *prefix = NULL;
+    int  nprefix = -1; /* all prefixes */
+
+    /* dump ascii command
+     * dump start key [<prefix>] filepath\r\n
+     * dump stop\r\n
+     */
+    opstr = tokens[1].value;
+    if (memcmp(opstr, "start", 5) == 0) {
+        modestr = tokens[2].value;
+        if (memcmp(modestr, "key", 3) != 0) {
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+        if (ntokens == 6) {
+            prefix = tokens[3].value;
+            nprefix = tokens[3].length;
+            if (nprefix == 4 && strncmp(prefix, "null", 4) == 0) { /* null prefix */
+                prefix = NULL;
+                nprefix = 0;
+            }
+            filepath = tokens[4].value;
+        } else {
+            filepath = tokens[3].value;
+        }
+    } else {
+        if (memcmp(opstr, "stop", 4) != 0) {
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+    }
+
+    ENGINE_ERROR_CODE ret;
+    ret = mc_engine.v1->dump(mc_engine.v0, c, opstr, modestr,
+                             prefix, nprefix, filepath);
+    if (ret == ENGINE_SUCCESS) {
+        out_string(c, "OK");
+    } else if (ret == ENGINE_DISCONNECT) {
+        c->state = conn_closing;
+    } else if (ret == ENGINE_ENOTSUP) {
+        out_string(c, "SERVER_ERROR not supported");
+    } else if (ret == ENGINE_FAILED) {
+        out_string(c, "SERVER_ERROR failed. refer to the reason in server log.");
+    } else {
+        handle_unexpected_errorcode_ascii(c, ret);
+    }
+}
+#endif
+
 static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     char *type = tokens[COMMAND_TOKEN+1].value;
@@ -8677,8 +8732,16 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "stats prefixes\\r\\n" "\n"
         "\t" "stats detail [on|off|dump]\\r\\n" "\n"
         "\t" "stats scrub\\r\\n" "\n"
+#ifdef JHPARK_KEY_DUMP
+        "\t" "stats dump\\r\\n" "\n"
+#endif
         "\t" "stats cachedump <slab_clsid> <limit> [forward|backward [sticky]]\\r\\n" "\n"
         "\t" "stats reset\\r\\n" "\n"
+#ifdef JHPARK_KEY_DUMP
+        "\n"
+        "\t" "dump start key [<prefix>] filepath\\r\\n" "\n"
+        "\t" "dump stop\\r\\n" "\n"
+#endif
         "\n"
         "\t" "config verbosity [<verbose>]\\r\\n" "\n"
         "\t" "config memlimit [<memsize(MB)>]\\r\\n" "\n"
@@ -11676,6 +11739,12 @@ static void process_command(conn *c, char *command)
     {
         out_string(c, "VERSION " VERSION);
     }
+#ifdef JHPARK_KEY_DUMP
+    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "dump") == 0))
+    {
+        process_dump_command(c, tokens, ntokens);
+    }
+#endif
     else if ((ntokens == 2) && (strcmp(tokens[COMMAND_TOKEN].value, "quit") == 0))
     {
         conn_set_state(c, conn_closing);

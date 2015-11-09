@@ -127,6 +127,24 @@ struct engine_scrubber {
    time_t          stopped;
 };
 
+#ifdef JHPARK_KEY_DUMP
+#define MAX_FILEPATH_LENGTH 256
+struct engine_dumper {
+   pthread_mutex_t lock;
+   bool            running;
+   bool            success; /* dump final status: success or fail */
+   bool            stop;    /* request to stop dump */
+   enum dump_mode  mode;    /* dump mode: key dump is only supported. */
+   uint64_t        visited; /* # of cache item visited */
+   uint64_t        dumpped; /* # of cache item dumped */
+   time_t          started; /* dump start time */
+   time_t          stopped; /* dump stop time */
+   char            filepath[MAX_FILEPATH_LENGTH]; /* dump file path */
+   char           *prefix;  /* prefix of keys for dumping */
+   int             nprefix;
+};
+#endif
+
 enum vbucket_state {
     VBUCKET_STATE_DEAD    = 0,
     VBUCKET_STATE_ACTIVE  = 1,
@@ -175,6 +193,9 @@ struct default_engine {
    struct config config;
    struct engine_stats stats;
    struct engine_scrubber scrubber;
+#ifdef JHPARK_KEY_DUMP
+   struct engine_dumper dumper;
+#endif
    union {
        engine_info engine_info;
        char buffer[sizeof(engine_info) + (sizeof(feature_info)*LAST_REGISTERED_ENGINE_FEATURE)];
