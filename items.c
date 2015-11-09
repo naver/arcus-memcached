@@ -8236,7 +8236,7 @@ void item_stats_dump(struct default_engine *engine,
         } else {
             add_stat("dumper:prefix", 13, "<all>", 5, cookie);
         }
-        if (engine->dumper.filepath != NULL) {
+        if (strlen(engine->dumper.filepath) > 0) {
             len = sprintf(val, "%s", engine->dumper.filepath);
             add_stat("dumper:filepath", 15, val, len, cookie);
         }
