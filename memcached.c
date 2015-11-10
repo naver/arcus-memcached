@@ -8881,7 +8881,7 @@ static void process_logging_command(conn *c, token_t *tokens, const size_t ntoke
             out_string(c, "\tcommand logging failed to get stats memory.\n");
         }
     } else {
-        out_string(c, "\t* Usage: logging [start [path] | stop | stats]\n");
+        out_string(c, "\t* Usage: cmdlog [start [path] | stop | stats]\n");
     }
 }
 #endif
