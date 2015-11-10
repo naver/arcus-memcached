@@ -8569,13 +8569,20 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
      * dump stop\r\n
      */
     opstr = tokens[1].value;
-    if (memcmp(opstr, "start", 5) == 0) {
-        modestr = tokens[2].value;
-        if (memcmp(modestr, "key", 3) != 0) {
+    if (ntokens == 3) {
+        if (memcmp(opstr, "stop", 4) != 0) {
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
-        if (ntokens == 6) {
+    } else if (ntokens == 5 || ntokens == 6) {
+        modestr = tokens[2].value;
+        if (memcmp(opstr, "start", 5) != 0 || memcmp(modestr, "key", 3) != 0) {
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+        if (ntokens == 5) {
+            filepath = tokens[3].value;
+        } else {
             prefix = tokens[3].value;
             nprefix = tokens[3].length;
             if (nprefix == 4 && strncmp(prefix, "null", 4) == 0) { /* null prefix */
@@ -8583,14 +8590,10 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
                 nprefix = 0;
             }
             filepath = tokens[4].value;
-        } else {
-            filepath = tokens[3].value;
         }
     } else {
-        if (memcmp(opstr, "stop", 4) != 0) {
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
-        }
+        out_string(c, "CLIENT_ERROR bad command line format");
+        return;
     }
 
     ENGINE_ERROR_CODE ret;
