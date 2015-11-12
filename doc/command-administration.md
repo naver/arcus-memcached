@@ -5,6 +5,8 @@ Admin & Monitoring 명령
 - SCRUB 명령
 - STATS 명령
 - CONFIG 명령
+- COMMAND LOGGING 명령
+- KEY DUMP 명령
 - HELP 명령
 
 ### Flush 명령
@@ -288,6 +290,106 @@ config maxconns [<maxconn>]\r\n
 
 \<maxconn\>는 새로 지정할 최대 연결 수로서, 현재의 연결 수보다 10% 이상의 큰 값으로만 설정이 가능하다.
 이 인자가 생략되면 현재 설정되어 있는 최대 연결 수 값을 조회한다.
+
+### Command Logging 명령
+
+Arcus cache server에 입력되는 command를 logging 한다.
+start 명령을 시작으로 logging이 종료될 때 까지의 모든 command를 기록한다.
+단, 성능유지를 위해 skip되는 command가 있을 수 있으며 stats 명령을 통해 그 수를 확인할 수 있다.
+10MB log 파일 10개를 사용하며, 초과될 경우 자동 종료한다.
+
+```
+cmdlog [start [<log_file_path>] | stop | stats]\r\n
+```
+
+\<log_file_path\>는 logging 정보를 저장할 file의 path이다.
+- path는 생략 가능하며, 생략할 경우 default로 지정된다.
+- path는 절대 path, 상대 path, default 지정이 가능하다.
+- path를 직접 지정할 경우 최종 파일이 생성될 디렉터리까지 지정해 주어야 한다.
+- default로 자동 지정할 경우 log file은 command_log 디렉터리 안에 생성된다.
+- command_log 디렉터리는 자동생성되지 않으며, memcached process가 구동된 위치에 생성해 주어야 한다.
+
+start 명령의 결과로 log file에 출력되는 내용은 아래와 같다.
+
+```
+<time> <client_ip> <command>\n
+```
+
+stop 명령은 logging이 완료되기 전 중지하고 싶을 때 사용할 수 있다.
+
+stats 명령은 가장 최근 수행된(수행 중인) command logging의 상태를 조회하고 결과는 아래와 같다.
+
+```
+Command logging stats
+The last running time : bgndata_bgntime ~ enddate_endtime
+The number of entered commands : entered_commands
+The number of skipped commands : skipped_commands
+The number of log files : file_count
+The log file name: path/port_bgndate_bgntime_{n}.log
+How command logging stopped : stop by explicit request
+                              stop by command log overflow
+                              stop by disk flush error
+```
+
+### Key dump 명령
+
+Arcus cache server의 key를 dump 한다.
+
+dump ascii command는 아래와 같다.
+```
+dump start key [<prefix>] filepath\r\n
+dump stop\r\n
+stats dump\r\n
+```
+dump start명령.
+- 첫번째 인자는 무조건 "key"이다.
+  - 현재는 일단 key string만을 dump한다.
+  - 향후에 key or item을 선택할 수 있게 하여, item인 경우 item 전체 내용을 dump할 수 있다.
+- 두번째 인자는 \<prefix\>는 cache key의 prefix를 의미하며, 생략 가능하다.
+  - 생략하면, 모든 key string을 dump한다.
+  - "null"을 주면, prefix가 없는 key string을 dump한다.
+  - 어떤 prefix를 주면, 그 prefix의 모든 key string을 dump한다.
+- 세번째 인자는 \<file path\>이다.
+  - 반드시 명시해야 한다.
+  - 절대 path로 줄 수도 있으며, 상대 path도 가능하다.
+  - 상대 path이면 memcached process가 구동된 위치에서의 상대 path이다.
+
+dump stop은 혹시나 dump 작업이 너무 오려 걸려
+중지하고 싶을 경우에 사용할 수 있다.
+
+stats dump는 현재 진행중인 dump 또는 가장 최근에 수행된 dump의 stats을 보여 준다.
+
+dump 파일은 무조건 하나의 file로 만들어 진다.
+file 내용의 format은 아래와 같다.
+
+```
+<type> <key_string> <exptime>\n
+...
+<type> <key_string> <exptime>\n
+DUMP SUMMARY: { prefix=<prefix>, count=<count>, total=<total> elapsed=<elapsed> }\n
+```
+
+위의 결과에서 각 의미는 아래와 같다.
+- key dump 결과 부분
+  - \<type\>은 item type으로 1 character로 표시한다.
+     - "K" : kv 
+     - "L" : list
+     - "S" : set
+     - "B" : b+tree
+  - \<key_string\>은 cache server에 저장되어 있는 key string 이다.
+  - \<exptime\>은 key의 exptime으로 아래 값들 중 하나이다.
+    -  0 (exptime = 0인 경우)
+    - -1 : sticky item (exptime = -1인 경우)
+    - timestamp (exptime > 0인 경우)으로
+      "time since the Epoch (00:00:00 UTC, January 1, 1970), measured in seconds" 이다.
+- DUMP SUMMARY 부분
+  - \<prefix\>는 prefix name이다.
+    - 모든 key dump이면, "\<all\>"이 명시된다.
+    - prefix 없는 key dump이면, "\<null\>"이 명시된다.
+    - 특정 prefix의 key dump이면, 그 prefix name이 명시된다.
+  - \<count\>는 dump한 key 개수이다.
+  - \<total\>은 cache에 있는 전체 key 개수이다.
+  - \<elapsed\>는 dump하는 데 소요된 시간(단위: 초) 이다.
 
 ### Help 명령
 
