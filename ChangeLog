@@ -1,3 +1,10 @@
+2015-11-13 [version 1.9.3]
+	* Complete key dump funtionality.
+	  - fix a mistake in parsing dump ascii command.
+	  - update manual to have key dump usage.
+	* Fix a typo in comand logging usage.
+	* Update manual to have commnag logging usage.
+
 2015-11-09 [version 1.9.2]
 	* Support cahe key dump by prefix.
 	* Fix the bug that "SERVER_ERROR internal" is returned
