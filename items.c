@@ -5673,25 +5673,28 @@ scan_next:
  */
 static int check_expired_collections(struct default_engine *engine, const int clsid, int *ssl)
 {
-    rel_time_t current_time;
     hash_item *search, *it;
     int unlink_count = 0;
     int space_shortage_level;
     int tries;
+    rel_time_t current_time;
 
-    /* Never-expired items are positioned near the head of LRU list.
-     * To-be-expired items are ordered with expire time near the tail of LRU list.
-     * The smaller expire time leads to near the tail of the LRU list.
-     */
-    space_shortage_level = slabs_space_shortage_level();
-    if (space_shortage_level >= 10 /* refer to SSL_FOR_BACKGROUND_EVICT in slabs.c */
-        && item_evict_to_free == true)
+    if (item_evict_to_free != true) {
+        *ssl = 0;
+        return unlink_count;
+    }
+    if ((space_shortage_level = slabs_space_shortage_level()) < 10) {
+        /* refer to SSL_FOR_BACKGROUND_EVICT in slabs.c */
+        *ssl = space_shortage_level;
+        return unlink_count;
+    }
+
+    tries = space_shortage_level;
+    current_time = engine->server.core->get_current_time();
+
+    pthread_mutex_lock(&engine->cache_lock);
+    if (item_evict_to_free == true)
     {
-        current_time = engine->server.core->get_current_time();
-        tries = space_shortage_level;
-
-        pthread_mutex_lock(&engine->cache_lock);
-        if (item_evict_to_free == true) {
         search = engine->items.tails[clsid];
         while (search != NULL && tries > 0) {
 #ifdef ENABLE_DETACH_REF_ITEM_FROM_LRU
@@ -5729,9 +5732,9 @@ static int check_expired_collections(struct default_engine *engine, const int cl
             }
 #endif
         }
-        }
-        pthread_mutex_unlock(&engine->cache_lock);
     }
+    pthread_mutex_unlock(&engine->cache_lock);
+
     *ssl = space_shortage_level;
     return unlink_count;
 }
