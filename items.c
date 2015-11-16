@@ -5691,6 +5691,7 @@ static int check_expired_collections(struct default_engine *engine, const int cl
         tries = space_shortage_level;
 
         pthread_mutex_lock(&engine->cache_lock);
+        if (item_evict_to_free == true) {
         search = engine->items.tails[clsid];
         while (search != NULL && tries > 0) {
 #ifdef ENABLE_DETACH_REF_ITEM_FROM_LRU
@@ -5727,6 +5728,7 @@ static int check_expired_collections(struct default_engine *engine, const int cl
                 search = search->prev; tries--;
             }
 #endif
+        }
         }
         pthread_mutex_unlock(&engine->cache_lock);
     }
