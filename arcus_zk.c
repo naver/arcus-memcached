@@ -1126,10 +1126,9 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
  */
 void arcus_zk_final(const char *msg)
 {
-    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
-                           "Arcus memcached shutting down - %s\n", msg);
-
     assert(arcus_zk_shutdown == true);
+    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
+                           "arcus zk final - %s\n", msg);
 
     pthread_mutex_lock(&zk_final_lock);
     if (zh) {

@@ -14343,9 +14343,8 @@ int main (int argc, char **argv) {
     /* enter the event loop */
     event_base_loop(main_base, 0);
 
-    if (settings.verbose) {
-        mc_logger->log(EXTENSION_LOG_INFO, NULL, "Initiating shutdown\n");
-    }
+    mc_logger->log(EXTENSION_LOG_INFO, NULL, "Initiating arcus memcached shutdown...\n");
+
     close_listen_sockets();
     threads_shutdown();
 
@@ -14363,6 +14362,7 @@ int main (int argc, char **argv) {
 #endif
 
     mc_engine.v1->destroy(mc_engine.v0);
+    mc_logger->log(EXTENSION_LOG_INFO, NULL, "Memcached engine destroyed.\n");
 
     /* remove the PID file if we're a daemon */
     if (do_daemonize)
@@ -14371,9 +14371,6 @@ int main (int argc, char **argv) {
     if (settings.inter)
       free(settings.inter);
 
-    if (settings.verbose) {
-        mc_logger->log(EXTENSION_LOG_INFO, NULL, "Arcus memcached terminated.\n");
-    }
-
+    mc_logger->log(EXTENSION_LOG_INFO, NULL, "Arcus memcached terminated.\n");
     return EXIT_SUCCESS;
 }
