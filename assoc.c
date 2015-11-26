@@ -83,6 +83,8 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
     // initialize noprefix stats info
     memset(&assoc->noprefix_stats, 0, sizeof(prefix_t));
     root_pt = &assoc->noprefix_stats;
+
+    logger->log(EXTENSION_LOG_INFO, NULL, "ASSOC module initialized.\n");
     return ENGINE_SUCCESS;
 }
 
@@ -98,6 +100,7 @@ void assoc_final(struct default_engine *engine)
     free(assoc->roottable);
     free(assoc->infotable);
     free(assoc->prefix_hashtable);
+    logger->log(EXTENSION_LOG_INFO, NULL, "ASSOC module destroyed.\n");
 }
 
 static void redistribute(struct default_engine *engine, unsigned int bucket)

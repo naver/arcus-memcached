@@ -861,6 +861,8 @@ ENGINE_ERROR_CODE slabs_init(struct default_engine *engine,
 #endif
 
     do_smmgr_init(engine);
+
+    logger->log(EXTENSION_LOG_INFO, NULL, "SLABS module initialized.\n");
     return ENGINE_SUCCESS;
 }
 
@@ -868,6 +870,7 @@ void slabs_final(struct default_engine *engine)
 {
     /* Free memory allocated. */
     /* Do nothing, currently. */
+    logger->log(EXTENSION_LOG_INFO, NULL, "SLABS module destroyed.\n");
 }
 
 #ifndef DONT_PREALLOC_SLABS

@@ -6270,7 +6270,8 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
     int ret = pthread_create(&engine->coll_del_tid, NULL,
                              collection_delete_thread, engine);
     if (ret != 0) {
-        fprintf(stderr, "Can't create thread: %s\n", strerror(ret));
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Can't create thread: %s\n", strerror(ret));
         return ENGINE_FAILED;
     }
 
@@ -6280,6 +6281,8 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
         uint64_t val2 = 20;
         assert(UINT64_COMPARE_OP[COMPARE_OP_LT](&val1, &val2) == true);
     }
+
+    logger->log(EXTENSION_LOG_INFO, NULL, "ITEM module initialized.\n");
     return ENGINE_SUCCESS;
 }
 
@@ -6317,6 +6320,7 @@ void item_final(struct default_engine *engine)
                 "Waited %d ms for dumper to be stopped.\n", sleep_count);
     }
 #endif
+    logger->log(EXTENSION_LOG_INFO, NULL, "ITEM module destroyed.\n");
 }
 
 /*
