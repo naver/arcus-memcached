@@ -302,10 +302,22 @@ static void thread_libevent_process(int fd, short which, void *arg) {
     CQ_ITEM *item;
     char buf[1];
 
+#ifdef JHPARK_SHUTDOWN_ZK_BEFORE_MC
+    if (memcached_shutdown > 1) {
+        if (settings.verbose > 0) {
+            mc_logger->log(EXTENSION_LOG_INFO, NULL,
+                "Worker thread[%d] is now terminating from libevent process.\n",
+                me->index);
+        }
+        event_base_loopbreak(me->base);
+        return;
+    }
+#else
     if (memcached_shutdown) {
         event_base_loopbreak(me->base);
         return;
     }
+#endif
 
     if (read(fd, buf, 1) != 1) {
         if (settings.verbose > 0) {
