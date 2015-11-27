@@ -441,6 +441,20 @@ bool cluster_config_key_is_mine(struct cluster_config *config,
 }
 
 uint32_t cluster_config_ketama_hash(struct cluster_config *config,
+                                    const char *key, size_t nkey)
+{
+    assert(config);
+    return hash_ketama(key, nkey);
+}
+
+uint32_t cluster_config_hslice_index(struct cluster_config *config, uint32_t hvalue)
+{
+    assert(config);
+    return find_continuum(config->self_continuum, NUM_NODE_HASHES, hvalue);
+}
+
+/**** OLD CODE ****
+uint32_t cluster_config_ketama_hash(struct cluster_config *config,
                                     const char *key, size_t nkey, int *hashidx)
 {
     assert(config);
@@ -451,3 +465,4 @@ uint32_t cluster_config_ketama_hash(struct cluster_config *config,
     }
     return digest;
 }
+*******************/

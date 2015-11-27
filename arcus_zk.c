@@ -1308,10 +1308,22 @@ bool arcus_key_is_mine(const char *key, size_t nkey)
     return mine;
 }
 
+uint32_t arcus_gen_ketama_hash(const char *key, size_t nkey)
+{
+    return cluster_config_ketama_hash(arcus_conf.ch, key, nkey);
+}
+
+uint32_t arcus_find_hslice_index(uint32_t hvalue)
+{
+    return cluster_config_hslice_index(arcus_conf.ch, hvalue);
+}
+
+/**** OLD CODE ****
 uint32_t arcus_gen_ketama_hash(const char *key, size_t nkey, int *hashidx)
 {
     return cluster_config_ketama_hash(arcus_conf.ch, key, nkey, hashidx);
 }
+******************/
 #endif
 
 #endif  // ENABLE_ZK_INTEGRATION
