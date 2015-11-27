@@ -13470,8 +13470,13 @@ static bool is_zk_integrated(void)
 static bool is_my_key(const char *key, size_t nkey)
 {
 #ifdef ENABLE_ZK_INTEGRATION
-    if (arcus_zk_cfg && arcus_cluster_is_valid())
-        return arcus_key_is_mine(key, nkey);
+    if (arcus_zk_cfg) {
+        bool mine;
+        if (arcus_key_is_mine(key, nkey, &mine) == 0) {
+            return mine;
+        }
+        /* The cluster is invalid: go downward and return true */
+    }
 #endif
     return true;
 }

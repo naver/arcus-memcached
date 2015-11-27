@@ -34,8 +34,8 @@ bool     cluster_config_is_valid(struct cluster_config *config);
 
 bool     cluster_config_reconfigure(struct cluster_config *config,
                                     char **server_list, size_t num_servers);
-bool     cluster_config_key_is_mine(struct cluster_config *config,
-                                    const char *key, size_t key_len,
+int      cluster_config_key_is_mine(struct cluster_config *config,
+                                    const char *key, size_t key_len, bool *mine,
                                     uint32_t *key_id, uint32_t *self_id);
 uint32_t cluster_config_ketama_hash(struct cluster_config *config,
                                     const char *key, size_t nkey);

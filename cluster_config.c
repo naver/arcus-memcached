@@ -410,34 +410,33 @@ RECONFIG_FAILED:
     return false;
 }
 
-bool cluster_config_key_is_mine(struct cluster_config *config,
-                                const char *key, size_t nkey,
-                                uint32_t *key_id, uint32_t *self_id)
+int cluster_config_key_is_mine(struct cluster_config *config,
+                               const char *key, size_t nkey, bool *mine,
+                               uint32_t *key_id, uint32_t *self_id)
 {
     uint32_t server, self;
     uint32_t digest;
+    int ret = 0;
 
     assert(config);
     assert(config->continuum);
 
     pthread_mutex_lock(&config->lock);
-
-    // this should not be happened
-    if (config->is_valid == false) {
-        pthread_mutex_unlock(&config->lock);
-        return true; /* unknown cluster, so return true */
+    if (config->is_valid) {
+        /* cluster is valid */
+        self = config->self_id;
+        digest = hash_ketama(key, nkey);
+        server = find_continuum(config->continuum, config->num_continuum, digest);
+        *mine = (server == self ? true : false);
+        if ( key_id)  *key_id = server;
+        if (self_id) *self_id = self;
+    } else {
+        /* this case should not be happened. */
+        ret = -1; /* unknown cluster */
     }
-
-    self = config->self_id;
-    digest = hash_ketama(key, nkey);
-    server = find_continuum(config->continuum, config->num_continuum, digest);
-
-    if ( key_id)  *key_id = server;
-    if (self_id) *self_id = self;
-
     pthread_mutex_unlock(&config->lock);
 
-    return server == self;
+    return ret;
 }
 
 uint32_t cluster_config_ketama_hash(struct cluster_config *config,

@@ -1293,19 +1293,21 @@ bool arcus_cluster_is_valid()
     return cluster_config_is_valid(arcus_conf.ch);
 }
 
-bool arcus_key_is_mine(const char *key, size_t nkey)
+int arcus_key_is_mine(const char *key, size_t nkey, bool *mine)
 {
+    int      ret;
     uint32_t key_id, self_id;
-    bool     mine;
 
-    mine = cluster_config_key_is_mine(arcus_conf.ch, key, nkey,
-                                      &key_id, &self_id);
-    if (arcus_conf.verbose > 2) {
-        arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                "key=%s, self_id=%d, key_id=%d, mine=%s\n",
-                key, self_id, key_id, (mine)?"true":"false");
+    ret = cluster_config_key_is_mine(arcus_conf.ch, key, nkey, mine,
+                                     &key_id, &self_id);
+    if (ret == 0) {
+        if (arcus_conf.verbose > 2) {
+            arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
+                    "key=%s, self_id=%d, key_id=%d, mine=%s\n",
+                    key, self_id, key_id, ((*mine) ? "true" : "false"));
+        }
     }
-    return mine;
+    return ret;
 }
 
 uint32_t arcus_gen_ketama_hash(const char *key, size_t nkey)
