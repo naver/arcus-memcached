@@ -355,7 +355,7 @@ for (0..6) {
         my $small;
         my $large;
         for ($small = 0; $small < 100000; $small = $small + 10000) {
-            $large = $small + int(rand(9000));
+            $large = $small + 2 + int(rand(9000));
             $cmd = "bop delete bkey $small..$large"; $rst = "DELETED";
             print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
         }
