@@ -53,10 +53,8 @@ struct cluster_config {
     struct   continuum_item *continuum;  // continuum list
 
     pthread_mutex_t lock;                // cluster lock
-
     EXTENSION_LOGGER_DESCRIPTOR *logger; // memcached logger
     int      verbose;                    // log level
-
     bool     is_valid;                   // is this configuration valid?
 };
 
@@ -158,12 +156,10 @@ static bool server_item_populate(struct cluster_config *config,
              tok;
              tok=strtok_r(NULL, "-", &buf)) {
             char *hostport = strdup(server_list[i]);
-
             if (hostport == NULL) {
                 config->logger->log(EXTENSION_LOG_WARNING, NULL, "invalid server token\n");
                 server_item_free(*servers, i);
-                free(*servers);
-                *servers = NULL;
+                free(*servers); *servers = NULL;
                 return false;
             }
 
@@ -184,8 +180,8 @@ static void cluster_config_print_node_list(struct cluster_config *config)
     config->logger->log(EXTENSION_LOG_DEBUG, NULL,
                         "cluster node list: count=%d\n", config->num_servers);
     for (int i = 0; i < config->num_servers; i++) {
-        config->logger->log(EXTENSION_LOG_DEBUG, NULL,
-                            "node[%d]: %s\n", i, config->servers[i].hostport);
+        config->logger->log(EXTENSION_LOG_DEBUG, NULL, "node[%d]: %s\n",
+                            i, config->servers[i].hostport);
     }
 }
 
@@ -309,23 +305,21 @@ struct cluster_config *cluster_config_init(const char *hostport, size_t hostport
 
 void cluster_config_free(struct cluster_config *config)
 {
-    if (config == NULL) {
-        return;
+    if (config != NULL) {
+        if (config->continuum) {
+            free(config->continuum);
+            config->continuum = NULL;
+        }
+        if (config->servers) {
+            server_item_free(config->servers, config->num_servers);
+            free(config->servers);
+            config->servers = NULL;
+        }
+        free(config);
     }
-    if (config->continuum) {
-        free(config->continuum);
-        config->continuum = NULL;
-    }
-    if (config->servers) {
-        server_item_free(config->servers, config->num_servers);
-        free(config->servers);
-        config->servers = NULL;
-    }
-    pthread_mutex_destroy(&config->lock);
-    free(config);
 }
 
-uint32_t cluster_config_self_id (struct cluster_config *config)
+uint32_t cluster_config_self_id(struct cluster_config *config)
 {
     assert(config);
     return config->self_id;
@@ -343,8 +337,8 @@ int cluster_config_num_continuum(struct cluster_config *config)
     return config->num_continuum;
 }
 
-bool cluster_config_reconfigure(struct cluster_config *config,
-                                char **server_list, size_t num_servers)
+int cluster_config_reconfigure(struct cluster_config *config,
+                               char **server_list, size_t num_servers)
 {
     assert(config);
     assert(server_list);
@@ -353,55 +347,52 @@ bool cluster_config_reconfigure(struct cluster_config *config,
     size_t num_continuum = 0;
     struct server_item *servers = NULL;
     struct continuum_item *continuum = NULL;
-
     bool populated, generated;
+    int ret = 0;
 
-    populated = server_item_populate(config, server_list, num_servers,
-                                     config->self_hostport, &servers, &self_id);
-    if (!populated) {
-        config->logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "reconfiguration failed: server_item_populate\n");
-        goto RECONFIG_FAILED;
-    }
-
-    generated = ketama_continuum_generate(config, servers, num_servers,
-                                          &continuum, &num_continuum);
-    if (!generated) {
-        config->logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "reconfiguration failed: ketama_continuum_generate\n");
-        server_item_free(servers, num_servers);
-        free(servers);
-        servers = NULL;
-        goto RECONFIG_FAILED;
-    }
+    do {
+        populated = server_item_populate(config, server_list, num_servers,
+                                         config->self_hostport, &servers, &self_id);
+        if (!populated) {
+            config->logger->log(EXTENSION_LOG_WARNING, NULL,
+                                "reconfiguration failed: server_item_populate\n");
+            ret = -1; break;
+        }
+        generated = ketama_continuum_generate(config, servers, num_servers,
+                                              &continuum, &num_continuum);
+        if (!generated) {
+            config->logger->log(EXTENSION_LOG_WARNING, NULL,
+                                "reconfiguration failed: ketama_continuum_generate\n");
+            server_item_free(servers, num_servers);
+            free(servers); servers = NULL;
+            ret = -1; break;
+        }
+    } while(0);
 
     pthread_mutex_lock(&config->lock);
+    if (ret == 0) {
+        server_item_free(config->servers, config->num_servers);
+        free(config->servers);
+        free(config->continuum);
 
-    server_item_free(config->servers, config->num_servers);
-    free(config->servers);
-    free(config->continuum);
-
-    config->self_id = self_id;
-    config->num_servers = num_servers;
-    config->servers = servers;
-    config->continuum = continuum;
-    config->num_continuum = num_continuum;
-    config->is_valid = true;
-
-    pthread_mutex_unlock(&config->lock);
-
-    if (config->verbose > 2) {
-        cluster_config_print_node_list(config);
-        cluster_config_print_continuum(config);
+        config->self_id = self_id;
+        config->num_servers = num_servers;
+        config->servers = servers;
+        config->continuum = continuum;
+        config->num_continuum = num_continuum;
+        config->is_valid = true;
+    } else {
+        config->is_valid = false;
     }
-
-    return true;
-
-RECONFIG_FAILED:
-    pthread_mutex_lock(&config->lock);
-    config->is_valid = false;
     pthread_mutex_unlock(&config->lock);
-    return false;
+
+    if (config->is_valid) {
+        if (config->verbose > 2) {
+            cluster_config_print_node_list(config);
+            cluster_config_print_continuum(config);
+        }
+    }
+    return ret;
 }
 
 int cluster_config_key_is_mine(struct cluster_config *config,

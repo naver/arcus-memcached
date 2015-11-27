@@ -31,7 +31,7 @@ uint32_t cluster_config_self_id(struct cluster_config *config);
 int      cluster_config_num_servers(struct cluster_config *config);
 int      cluster_config_num_continuum(struct cluster_config *conifg);
 
-bool     cluster_config_reconfigure(struct cluster_config *config,
+int      cluster_config_reconfigure(struct cluster_config *config,
                                     char **server_list, size_t num_servers);
 int      cluster_config_key_is_mine(struct cluster_config *config,
                                     const char *key, size_t key_len, bool *mine,
