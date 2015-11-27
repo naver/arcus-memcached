@@ -1288,11 +1288,6 @@ void arcus_zk_get_stats(arcus_zk_stats *stats)
 }
 
 #ifdef ENABLE_CLUSTER_AWARE
-bool arcus_cluster_is_valid()
-{
-    return cluster_config_is_valid(arcus_conf.ch);
-}
-
 int arcus_key_is_mine(const char *key, size_t nkey, bool *mine)
 {
     int      ret;

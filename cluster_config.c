@@ -343,12 +343,6 @@ int cluster_config_num_continuum(struct cluster_config *config)
     return config->num_continuum;
 }
 
-bool cluster_config_is_valid(struct cluster_config *config)
-{
-    assert(config);
-    return config->is_valid;
-}
-
 bool cluster_config_reconfigure(struct cluster_config *config,
                                 char **server_list, size_t num_servers)
 {
