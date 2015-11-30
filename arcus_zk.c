@@ -122,7 +122,7 @@ static int          last_rc=ZOK;
 // during ZK initialization
 // ZK shutdown is done at the end of arcus_zk_init()
 // to simplify synchronization
-volatile sig_atomic_t  arcus_zk_shutdown=false;
+volatile sig_atomic_t  arcus_zk_shutdown=0;
 // This flag is now used to indicate graceful shutdown.  See hb_thread for
 // more comment.
 
@@ -573,7 +573,7 @@ hb_thread(void *arg)
      * The user wants a graceful shutdown.  The main thread wakes up all
      * the worker threads and wait for them to terminate.  It also calls
      * the engine destroy function.  In this case, heartbeat should just stop.
-     * arcus_zk_shutdown = true indicates this case.  So, we check that flag
+     * arcus_zk_shutdown = 1 indicates this case.  So, we check that flag
      * in this function.
      *
      * 2. kill -KILL
@@ -695,7 +695,7 @@ hb_thread(void *arg)
     }
     hb_thread_running = false;
     if (shutdown_by_me) {
-        arcus_zk_shutdown = true;
+        arcus_zk_shutdown = 1;
         arcus_zk_final("Heartbeat failure");
         exit(0);
     }
@@ -1111,7 +1111,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     // start heartbeat thread
     if (start_hb_thread(ping_data) != 0) {
         /* We need normal shutdown at this time */
-        arcus_zk_shutdown = true;
+        arcus_zk_shutdown = 1;
     }
 
     // Either got SIG* or memcached shutdown process finished
@@ -1126,7 +1126,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
  */
 void arcus_zk_final(const char *msg)
 {
-    assert(arcus_zk_shutdown == true);
+    assert(arcus_zk_shutdown == 1);
     arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
                            "arcus zk final - %s\n", msg);
 
