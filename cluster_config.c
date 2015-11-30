@@ -27,7 +27,7 @@
 #include "rfc1321/md5c.c"
 #undef  PROTOTYPES
 
-#define MAX_SERVER_ITEM_COUNT 100
+#define MAX_NODE_NAME_LENGTH 128
 
 #define NUM_OF_HASHES 40
 #define NUM_PER_HASH  4
@@ -94,8 +94,8 @@ static bool ketama_continuum_generate(struct cluster_config *config,
                                       const struct server_item *servers, size_t num_servers,
                                       struct continuum_item **continuum, size_t *continuum_len)
 {
-    char host[MAX_SERVER_ITEM_COUNT+10] = "";
-    int host_len;
+    char nodename[MAX_NODE_NAME_LENGTH] = "";
+    int  nodenlen;
     int pp, hh, ss, nn;
     unsigned char digest[16];
 
@@ -107,9 +107,8 @@ static bool ketama_continuum_generate(struct cluster_config *config,
 
     for (ss=0, pp=0; ss<num_servers; ss++) {
         for (hh=0; hh<NUM_OF_HASHES; hh++) {
-            host_len = snprintf(host, MAX_SERVER_ITEM_COUNT+10, "%s-%u",
-                                servers[ss].hostport, hh);
-            hash_md5(host, host_len, digest);
+            nodenlen = snprintf(nodename, MAX_NODE_NAME_LENGTH, "%s-%u", servers[ss].hostport, hh);
+            hash_md5(nodename, nodenlen, digest);
             for (nn=0; nn<NUM_PER_HASH; nn++, pp++) {
                 (*continuum)[pp].index = ss;
                 (*continuum)[pp].point = ((uint32_t) (digest[3 + nn * NUM_PER_HASH] & 0xFF) << 24)
@@ -122,7 +121,6 @@ static bool ketama_continuum_generate(struct cluster_config *config,
 
     qsort(*continuum, pp, sizeof(struct continuum_item), continuum_item_cmp);
     *continuum_len = pp;
-
     return true;
 }
 
@@ -198,15 +196,16 @@ static void cluster_config_print_continuum(struct cluster_config *config)
 
 static void build_self_continuum(struct continuum_item *continuum, const char *hostport)
 {
-    char host[MAX_SERVER_ITEM_COUNT+10] = "";
-    int  hlen, hh, nn, pp;
+    char nodename[MAX_NODE_NAME_LENGTH] = "";
+    int  nodenlen;
+    int  hh, nn, pp;
     unsigned char digest[16];
 
     /* build sorted hash map */
     pp = 0;
     for (hh=0; hh<NUM_OF_HASHES; hh++) {
-        hlen = snprintf(host, MAX_SERVER_ITEM_COUNT+10, "%s-%u", hostport, hh);
-        hash_md5(host, hlen, digest);
+        nodenlen= snprintf(nodename, MAX_NODE_NAME_LENGTH, "%s-%u", hostport, hh);
+        hash_md5(nodename, nodenlen, digest);
         for (nn=0; nn<NUM_PER_HASH; nn++, pp++) {
             continuum[pp].index = 0;
             continuum[pp].point = ((uint32_t) (digest[3 + nn * NUM_PER_HASH] & 0xFF) << 24)
