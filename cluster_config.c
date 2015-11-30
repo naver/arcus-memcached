@@ -31,6 +31,8 @@
 
 #define NUM_OF_HASHES 40
 #define NUM_PER_HASH  4
+
+/* 40 hashes, 4 numbers per hash = 160 hash points per node */
 #define NUM_NODE_HASHES (NUM_OF_HASHES * NUM_PER_HASH)
 
 struct server_item {
@@ -97,10 +99,7 @@ static bool ketama_continuum_generate(struct cluster_config *config,
     int pp, hh, ss, nn;
     unsigned char digest[16];
 
-    // 40 hashes, 4 numbers per hash = 160 points per server
-    int points_per_server = NUM_OF_HASHES * NUM_PER_HASH;
-
-    *continuum = calloc(points_per_server * num_servers, sizeof(struct continuum_item));
+    *continuum = calloc(NUM_NODE_HASHES * num_servers, sizeof(struct continuum_item));
     if (*continuum == NULL) {
         config->logger->log(EXTENSION_LOG_WARNING, NULL, "calloc failed: continuum\n");
         return false;
