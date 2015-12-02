@@ -34,8 +34,6 @@
 #include "engine_loader.h"
 #include "sasl_defs.h"
 
-#define JHPARK_SHUTDOWN_ZK_BEFORE_MC 1
-
 /* This is the address we use for admin purposes.  For example, doing stats
  * and heart beats from arcus_zk.
  * We count these connections separately from regular client connections.

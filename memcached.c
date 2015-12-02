@@ -150,11 +150,7 @@ static int MAX_BTREE_SIZE = 50000;
 #define GET_8ALIGN_SIZE(size) \
     (((size) % 8) == 0 ? (size) : ((size) + (8 - ((size) % 8))))
 
-#ifdef JHPARK_SHUTDOWN_ZK_BEFORE_MC
 volatile sig_atomic_t memcached_shutdown=0;
-#else
-volatile sig_atomic_t memcached_shutdown;
-#endif
 
 /*
  * We keep the current time of day in a global variable that's updated by a
@@ -12510,7 +12506,6 @@ void event_handler(const int fd, const short which, void *arg) {
     c = (conn *)arg;
     assert(c != NULL);
 
-#ifdef JHPARK_SHUTDOWN_ZK_BEFORE_MC
     if (memcached_shutdown) {
         if (c->thread == NULL) {
             if (settings.verbose > 0) {
@@ -12530,12 +12525,6 @@ void event_handler(const int fd, const short which, void *arg) {
             return ;
         }
     }
-#else
-    if (memcached_shutdown) {
-        event_base_loopbreak(c->event.ev_base);
-        return ;
-    }
-#endif
 
     c->which = which;
 
@@ -12853,12 +12842,10 @@ static void clock_handler(const int fd, const short which, void *arg) {
     static bool initialized = false;
 
     if (memcached_shutdown) {
-#ifdef JHPARK_SHUTDOWN_ZK_BEFORE_MC
         if (settings.verbose > 0) {
             mc_logger->log(EXTENSION_LOG_INFO, NULL,
                     "Main thread is now terminating from clock handler.\n");
         }
-#endif
         event_base_loopbreak(main_base);
         return ;
     }
@@ -14382,7 +14369,6 @@ int main (int argc, char **argv) {
 
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Initiating arcus memcached shutdown...\n");
 
-#ifdef JHPARK_SHUTDOWN_ZK_BEFORE_MC
 #ifdef ENABLE_ZK_INTEGRATION
     /* shutdown arcus ZK connection */
     if (arcus_zk_cfg) {
@@ -14397,18 +14383,6 @@ int main (int argc, char **argv) {
     memcached_shutdown = 2;
     threads_shutdown();
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Worker threads terminated.\n");
-#else
-    close_listen_sockets();
-    threads_shutdown();
-
-#ifdef ENABLE_ZK_INTEGRATION
-    // shutdown Arcus connection
-    if (arcus_zk_cfg) {
-        arcus_zk_final("graceful shutdown");
-        free(arcus_zk_cfg);
-    }
-#endif
-#endif
 
 #ifdef COMMAND_LOGGING
     /* destroy command logging */
