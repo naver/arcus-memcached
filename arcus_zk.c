@@ -108,6 +108,8 @@
 #define HEART_BEAT_DFT_TIMEOUT  10000 /* msec */
 #define HEART_BEAT_MAX_TIMEOUT  HEART_BEAT_MAX_FAILSTOP /* msec */
 
+#define MAX_SERVICECODE_LENGTH  32
+
 static const char *zk_root = NULL;
 static const char *zk_map_path   = "cache_server_mapping";
 static const char *zk_log_path   = "cache_server_log";
@@ -1065,6 +1067,11 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         arcus_exit(zh, EX_PROTOCOL);
     }
     assert(arcus_conf.svc != NULL);
+    if (strlen(arcus_conf.svc) > MAX_SERVICECODE_LENGTH) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                 "Too long service code. servicecode=%s\n", arcus_conf.svc);
+        arcus_exit(zh, EX_PROTOCOL);
+    }
 
     snprintf(zpath, sizeof(zpath), "%s/%s/%s", zk_root, zk_cache_path, arcus_conf.svc);
     arcus_conf.cluster_path = strdup(zpath);
