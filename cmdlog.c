@@ -324,10 +324,8 @@ int cmdlog_start(char *file_path, bool *already_started)
     return ret;
 }
 
-int cmdlog_stop(bool *already_stopped)
+void cmdlog_stop(bool *already_stopped)
 {
-    int ret = 0;
-
     *already_stopped = false;
 
     pthread_mutex_lock(&cmdlog.lock);
@@ -337,8 +335,6 @@ int cmdlog_stop(bool *already_stopped)
         *already_stopped = true;
     }
     pthread_mutex_unlock(&cmdlog.lock);
-
-    return ret;
 }
 
 struct cmd_log_stats *cmdlog_stats()

@@ -41,7 +41,7 @@ struct cmd_log_stats {
 void cmdlog_init(int port, EXTENSION_LOGGER_DESCRIPTOR *logger);
 void cmdlog_final(void);
 int cmdlog_start(char *file_path, bool *already_started);
-int cmdlog_stop(bool *already_stopped);
+void cmdlog_stop(bool *already_stopped);
 struct cmd_log_stats *cmdlog_stats(void);
 bool cmdlog_write(char client_ip[], char *command);
 #endif
