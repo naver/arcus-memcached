@@ -8865,14 +8865,11 @@ static void process_logging_command(conn *c, token_t *tokens, const size_t ntoke
             cmdlog_in_use = false;
         }
     } else if (ntokens > 2 && strcmp(type, "stop") == 0) {
-        ret = cmdlog_stop(&already_check);
+        cmdlog_stop(&already_check);
         if (already_check) {
             out_string(c, "\tcommand logging already stopped.\n");
-        } else if (! already_check && ret == 0) {
-            out_string(c, "\tcommand logging stopped.\n");
-            cmdlog_in_use = false;
         } else {
-            out_string(c, "\tcommand logging failed to stop.\n");
+            out_string(c, "\tcommand logging stopped.\n");
             cmdlog_in_use = false;
         }
     } else if (ntokens > 2 && strcmp(type, "stats") == 0) {
