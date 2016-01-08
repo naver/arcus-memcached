@@ -8,7 +8,9 @@
 
 #include "lqdetect.h"
 
-#define LONGQ_INPUT_SIZE    500    /* the size of input(time, ip, command, argument) */
+static EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
+static char *command_str[LONGQ_COMMAND_NUM] = {"sop get", "lop insert", "lop delete", "lop get",
+                            "bop delete", "bop get", "bop count", "bop gbp"};
 
 /* lqdetect global structure */
 struct lq_detect_global {
@@ -113,11 +115,11 @@ int lqdetect_start(uint32_t lqdetect_standard, bool *already_started)
         /* prepare detect long query buffer, argument and counts*/
         for(ii = 0; ii < LONGQ_COMMAND_NUM; ii++) {
             memset(lqdetect.buffer[ii].data, 0, LONGQ_SAVE_CNT * LONGQ_INPUT_SIZE);
-            memset(lqdetect.buffer[ii].keyoffset, 0, LONGQ_SAVE_CNT * sizeof(uint32_t));
-            memset(lqdetect.buffer[ii].lenkey, 0, LONGQ_SAVE_CNT * sizeof(uint32_t));
+            memset(lqdetect.buffer[ii].keypos, 0, LONGQ_SAVE_CNT * sizeof(uint32_t));
+            memset(lqdetect.buffer[ii].keylen, 0, LONGQ_SAVE_CNT * sizeof(uint32_t));
             memset(lqdetect.arg[ii], 0, LONGQ_SAVE_CNT * sizeof(struct lq_detect_argument));
-            lqdetect.buffer[ii].detect_count = 0;
-            lqdetect.buffer[ii].save_count = 0;
+            lqdetect.buffer[ii].ntotal = 0;
+            lqdetect.buffer[ii].nsaved = 0;
             lqdetect.buffer[ii].offset = 0;
         }
 
@@ -158,9 +160,9 @@ struct lq_detect_stats *lqdetect_stats()
         stats->endtime = getnowtime();
     }
 
-    stats->total_ndetdcmd = 0;
+    stats->total_lqcmds = 0;
     for (ii = 0; ii < LONGQ_COMMAND_NUM; ii++) {
-        stats->total_ndetdcmd += lqdetect.buffer[ii].detect_count;
+        stats->total_lqcmds += lqdetect.buffer[ii].ntotal;
     }
     return stats;
 }
@@ -171,72 +173,80 @@ struct lq_detect_buffer *lqdetect_buffer(int cmd)
     return buffer;
 }
 
-void lqdetect_refcount_lock(bool locking)
+void lqdetect_buffer_hold()
 {
     pthread_mutex_lock(&lqdetect.lock);
-    lqdetect_refcount = locking ? 1 : 0;
+    lqdetect_refcount++;
+    pthread_mutex_unlock(&lqdetect.lock);
+}
+
+void lqdetect_buffer_release()
+{
+    pthread_mutex_lock(&lqdetect.lock);
+    if (lqdetect_refcount != 0) {
+        lqdetect_refcount--;
+    }
     pthread_mutex_unlock(&lqdetect.lock);
 }
 
 static bool lqdetect_dupcheck(char *key, enum lqdetect_command cmd, struct lq_detect_argument *arg)
 {
     int ii;
-    int count = lqdetect.buffer[cmd].save_count;
+    int count = lqdetect.buffer[cmd].nsaved;
 
     switch (cmd) {
-    case lop_insert:
-    case lop_delete:
-    case lop_get:
-    case bop_gbp:
+    case LQCMD_LOP_INSERT:
+    case LQCMD_LOP_DELETE:
+    case LQCMD_LOP_GET:
+    case LQCMD_BOP_GBP:
         for(ii = 0; ii < count; ii++) {
             if (strcmp(lqdetect.arg[cmd][ii].range, arg->range) == 0) {
-                return false;
+                return true;
             }
         }
         break;
-    case bop_get:
-    case bop_count:
-    case bop_delete:
+    case LQCMD_BOP_GET:
+    case LQCMD_BOP_COUNT:
+    case LQCMD_BOP_DELETE:
         for(ii = 0; ii < count; ii++) {
             if ((strcmp(lqdetect.arg[cmd][ii].range, arg->range) == 0) &&
                 (lqdetect.arg[cmd][ii].offset == arg->offset) &&
-                (lqdetect.arg[cmd][ii].input_count == arg->input_count)) {
-                return false;
+                (lqdetect.arg[cmd][ii].count == arg->count)) {
+                return true;
             }
         }
         break;
-    case sop_get:
+    case LQCMD_SOP_GET:
         for(ii = 0; ii < count; ii++) {
-            if (arg->input_count == 0) {
-                uint32_t offset = lqdetect.buffer[cmd].keyoffset[ii];
-                uint32_t cmplen = lqdetect.buffer[cmd].lenkey[ii];
-                if (strncmp(lqdetect.buffer[cmd].data+offset, key, cmplen) == 0) {
-                    return false;
+            if (arg->count == 0) {
+                uint32_t offset = lqdetect.buffer[cmd].keypos[ii];
+                uint32_t cmplen = lqdetect.buffer[cmd].keylen[ii];
+                if (cmplen != strlen(key)) {
+                    return true;
+                } else {
+                    if (strncmp(lqdetect.buffer[cmd].data+offset, key, cmplen) == 0) {
+                        return true;
+                    }
                 }
             } else {
                 if (strcmp(lqdetect.arg[cmd][ii].range, arg->range) == 0) {
-                    return false;
+                    return true;
                 }
             }
         }
         break;
-    default:
-        return false;
     }
     lqdetect.arg[cmd][ii] = *arg;
-    return true;
+    return false;
 }
 
-static void lqdetect_write(char client_ip[], char *key, enum lqdetect_command cmd)
+static bool lqdetect_write(char client_ip[], char *key, enum lqdetect_command cmd)
 {
-    char *command_str[8] = {"sop get", "lop insert", "lop delete", "lop get",
-                            "bop delete", "bop get", "bop count", "bop gbp"};
-
     struct   tm *ptm;
     struct   timeval val;
     struct   lq_detect_buffer *buffer = &lqdetect.buffer[cmd];
     uint32_t offset = buffer->offset;
-    int      count = buffer->save_count;
+    int      count = buffer->nsaved;
     struct   lq_detect_argument *arg = &lqdetect.arg[cmd][count];
     char     *bufptr = buffer->data + offset;
 
@@ -245,50 +255,64 @@ static void lqdetect_write(char client_ip[], char *key, enum lqdetect_command cm
 
     snprintf(bufptr, LONGQ_INPUT_SIZE, "%02d:%02d:%02d.%06ld %s <%d> %s ",
         ptm->tm_hour, ptm->tm_min, ptm->tm_sec, (long)val.tv_usec, client_ip,
-        arg->access_count, command_str[cmd]);
+        arg->overhead, command_str[cmd]);
 
-    buffer->keyoffset[count] = offset + strlen(bufptr);
-    buffer->lenkey[count] = strlen(key);
+    buffer->keypos[count] = offset + strlen(bufptr);
+    buffer->keylen[count] = strlen(key);
     bufptr += strlen(bufptr);
 
     switch (cmd) {
-    case lop_insert:
-    case sop_get:
+    case LQCMD_LOP_INSERT:
+    case LQCMD_SOP_GET:
         snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s\n", key, arg->range);
         break;
-    case lop_delete:
-    case lop_get:
-        snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s %s\n", key, arg->range, (arg->delete_or_drop != 0 ?
-                   (arg->delete_or_drop == 2 ? "drop" : "delete") : "notdel"));
+    case LQCMD_LOP_DELETE:
+        if (arg->delete_or_drop == 2) {
+            snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s %s\n", key, arg->range, "drop");
+        } else {
+            snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s\n", key, arg->range);
+        }
+    case LQCMD_LOP_GET:
+        if (arg->delete_or_drop != 0) {
+            snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s %s\n", key, arg->range,
+                       (arg->delete_or_drop == 2 ? "drop" : "delete"));
+        } else {
+            snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s\n", key, arg->range);
+        }
         break;
-    case bop_gbp:
+    case LQCMD_BOP_GBP:
         snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s %s\n", key, arg->range, (arg->asc_or_desc == 2 ? "desc" : "asc"));
         break;
-    case bop_get:
-        snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s %s %d %d %s\n", key, arg->range, (arg->efilter ? "efilter" : "nofilter"),
-                   arg->offset, arg->input_count, (arg->delete_or_drop != 0 ?
-                   (arg->delete_or_drop == 2 ? "drop" : "delete") : "notdel"));
+    case LQCMD_BOP_GET:
+        if (arg->delete_or_drop != 0) {
+            snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s %d %d %s\n", key, arg->range,
+                        arg->offset, arg->count, (arg->delete_or_drop == 2 ? "drop" : "delete"));
+        } else {
+            snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s %d %d\n", key, arg->range,
+                        arg->offset, arg->count);
+        }
         break;
-    case bop_count:
-        snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s %s\n", key, arg->range, (arg->efilter ? "efilter" : "nofilter"));
+    case LQCMD_BOP_COUNT:
+        snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s\n", key, arg->range);
         break;
-    case bop_delete:
-        snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s %s %d %s\n", key, arg->range, (arg->efilter ? "efilter" : "nofilter"),
-                   arg->input_count, (arg->delete_or_drop != 0 ?
-                   (arg->delete_or_drop == 2 ? "drop" : "delete") : "notdel"));
-        break;
-    default:
+    case LQCMD_BOP_DELETE:
+        if (arg->delete_or_drop == 2) {
+            snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s %d %s\n", key, arg->range, arg->count, "drop");
+        } else {
+            snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s %d\n", key, arg->range, arg->count);
+        }
         break;
     }
 
-    /* cmdstring overflow check */
-    if (strlen(bufptr) >= LONGQ_INPUT_SIZE) {
-        do_lqdetect_stop(LONGQ_BUFFER_OVERFLOW_STOP);
-        return;
+    buffer->offset = buffer->keypos[count] + strlen(bufptr);
+    buffer->nsaved++;
+
+    /* buffer overflow check */
+    if (buffer->offset + LONGQ_INPUT_SIZE > LONGQ_SAVE_CNT * LONGQ_INPUT_SIZE) {
+        return false;
     }
 
-    buffer->offset = buffer->keyoffset[count] + strlen(bufptr);
-    buffer->save_count++;
+    return true;
 }
 
 bool lqdetect_discriminant(uint32_t count)
@@ -300,10 +324,16 @@ bool lqdetect_discriminant(uint32_t count)
     }
 }
 
-bool lqdetect_process_targetcmd(char client_ip[], char* key,
+bool lqdetect_save_cmd(char client_ip[], char* key,
                                 enum lqdetect_command cmd, struct lq_detect_argument *arg)
 {
     bool ret = true;
+
+    if (cmd < LQCMD_SOP_GET || cmd > LQCMD_BOP_GBP) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                       "lqdetect error: entered non target command");
+        return true;
+    }
 
     pthread_mutex_lock(&lqdetect.lock);
     do {
@@ -312,17 +342,21 @@ bool lqdetect_process_targetcmd(char client_ip[], char* key,
             break;
         }
 
-        lqdetect.buffer[cmd].detect_count++;
-        if (lqdetect.buffer[cmd].save_count >= LONGQ_SAVE_CNT) break;
+        lqdetect.buffer[cmd].ntotal++;
+        if (lqdetect.buffer[cmd].nsaved >= LONGQ_SAVE_CNT) break;
 
-        if (lqdetect_dupcheck(key, cmd, arg)) {
-            lqdetect_write(client_ip, key, cmd);
+        if (! lqdetect_dupcheck(key, cmd, arg)) {
+            if (! lqdetect_write(client_ip, key, cmd)) {
+                do_lqdetect_stop(LONGQ_BUFFER_OVERFLOW_STOP);
+                ret = false;
+                break;
+            }
         } else {
             break;
         }
 
         /* internal stop */
-        if (lqdetect.buffer[cmd].save_count >= LONGQ_SAVE_CNT) {
+        if (lqdetect.buffer[cmd].nsaved >= LONGQ_SAVE_CNT) {
             lqdetect.overflow_cnt++;
             if (lqdetect.overflow_cnt >= LONGQ_COMMAND_NUM) {
                 do_lqdetect_stop(LONGQ_COUNT_OVERFLOW_STOP);

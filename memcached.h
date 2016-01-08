@@ -535,6 +535,10 @@ struct conn {
     char   **suffixcurr;
     int    suffixleft;
 
+#ifdef DETECT_LONG_QUERY
+    int    lqrefcnt_left;
+#endif
+
     enum protocol protocol;   /* which protocol this connection speaks */
     enum network_transport transport; /* what transport is used by this connection */
 

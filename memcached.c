@@ -789,11 +789,17 @@ static void conn_coll_eitem_free(conn *c) {
 
 static void conn_cleanup(conn *c) {
     assert(c != NULL);
-
     if (c->item) {
         mc_engine.v1->release(mc_engine.v0, c, c->item);
         c->item = 0;
     }
+
+#ifdef DETECT_LONG_QUERT
+    if (c->lqrefcnt_left != 0) {
+        lqdetect_buffer_release();
+        c->lqrefcnt_left--;
+    }
+#endif
 
     if (c->coll_eitem != NULL) {
         conn_coll_eitem_free(c);
@@ -1314,10 +1320,10 @@ static void process_lop_insert_complete(conn *c) {
                 char *bufptr = argument.range;
 
                 snprintf(bufptr, 16, "%d", c->coll_index);
-                argument.input_count = c->coll_index;
-                argument.access_count = abs(c->coll_index);
+                argument.count = c->coll_index;
+                argument.overhead = c->coll_index > 0 ? c->coll_index+1 : abs(c->coll_index);
 
-                if (! lqdetect_process_targetcmd(c->client_ip, c->coll_key, lop_insert, &argument)) {
+                if (! lqdetect_save_cmd(c->client_ip, c->coll_key, LQCMD_LOP_INSERT, &argument)) {
                     lqdetect_in_use = false;
                 }
             }
@@ -7008,6 +7014,12 @@ static void reset_cmd_handler(conn *c) {
         mc_engine.v1->release(mc_engine.v0, c, c->item);
         c->item = NULL;
     }
+#ifdef DETECT_LONG_QUERT
+    if (c->lqrefcnt_left != 0) {
+        lqdetect_buffer_release();
+        c->lqrefcnt_left--;
+    }
+#endif
     if (c->coll_eitem != NULL) {
         conn_coll_eitem_free(c);
     }
@@ -8917,7 +8929,8 @@ static void process_logging_command(conn *c, token_t *tokens, const size_t ntoke
 
 #ifdef DETECT_LONG_QUERY
 static void lqdetect_make_bkeystring(const unsigned char* from_bkey, const unsigned char* to_bkey,
-                                     const int from_nbkey, const int to_nbkey, char *bufptr) {
+                                     const int from_nbkey, const int to_nbkey,
+                                     const eflag_filter *efilter, char *bufptr) {
     char *tmpptr = bufptr;
 
     /* bkey */
@@ -8928,39 +8941,46 @@ static void lqdetect_make_bkeystring(const unsigned char* from_bkey, const unsig
         if (to_bkey != NULL) {
             memcpy(tmpptr, "..0x", 4); tmpptr += 4;
             safe_hexatostr(to_bkey, to_nbkey, tmpptr);
+            tmpptr += strlen(tmpptr);
         }
     } else {
         sprintf(tmpptr, "%"PRIu64"", *(uint64_t*)from_bkey);
         tmpptr += strlen(tmpptr);
         if (to_bkey != NULL) {
             sprintf(tmpptr, "..%"PRIu64"", *(uint64_t*)to_bkey);
+            tmpptr += strlen(tmpptr);
         }
+    }
+    /* efilter */
+    if (efilter != NULL) {
+        strcpy(tmpptr, " efilter");
     }
 }
 
 static void lqdetect_get_stats(char* str)
 {
     char *stop_cause_str[4] = {"stop by explicit request",     // LONGQ_EXPLICIT_STOP
-                               "stop by detect long query overflow with buffer", // LONGQ_BUFFER_OVERFLOW_STOP
-                               "stop by detect long query overflow with save count", // LONGQ_COUNT_OVERFLOW_STOP
+                               "stop by long query buffer overflow", // LONGQ_BUFFER_OVERFLOW_STOP
+                               "stop by long query count overflow", // LONGQ_COUNT_OVERFLOW_STOP
                                "is running"}; // LONGQ_RUNNING
     struct lq_detect_stats *stats = lqdetect_stats();
 
     snprintf(str, CMDLOG_INPUT_SIZE,
-            "\t" "Detection long query stats" "\n"
+            "\t" "Long query detection stats" "\n"
             "\t" "The last running time : %d_%d ~ %d_%d" "\n"
-            "\t" "The number of total long commands : %d" "\n"
+            "\t" "The number of total long query commands : %d" "\n"
             "\t" "The detection standard : %d" "\n"
-            "\t" "How long request detecting stopped : %s" "\n",
+            "\t" "How long query detection stopped : %s" "\n",
             stats->bgndate, stats->bgntime, stats->enddate, stats->endtime,
-            stats->total_ndetdcmd, stats->standard,
+            stats->total_lqcmds, stats->standard,
             (stats->stop_cause >= 0 && stats->stop_cause <= 3 ?
              stop_cause_str[stats->stop_cause] : "unknown"));
 }
 
 static void lqdetect_show(conn *c)
 {
-    char *shorted_str[8] = {"sop get command entered count :",
+    char *shorted_str[LONGQ_COMMAND_NUM] = {
+                            "sop get command entered count :",
                             "lop insert command entered count :",
                             "lop delete command entered count :",
                             "lop get command entered count :",
@@ -8968,28 +8988,41 @@ static void lqdetect_show(conn *c)
                             "bop get command entered count :",
                             "bop count command entered count :",
                             "bop gbp command entered count :"};
-    struct lq_detect_buffer *buffer[8];
+    struct lq_detect_buffer *buffer;
+    char *data;
+    uint32_t *ntotal;
+    uint32_t *offset;
     int ii;
-    char str[800];
-    char *str_p = str;
 
-    lqdetect_refcount_lock(true);
+    lqdetect_buffer_hold();
+    c->lqrefcnt_left++;
     /* create detected long query return string */
     for(ii = 0; ii < LONGQ_COMMAND_NUM; ii++) {
-        buffer[ii] = lqdetect_buffer(ii);
+        buffer = lqdetect_buffer(ii);
+        data = buffer->data;
+        ntotal = &buffer->ntotal;
+        offset = &buffer->offset;
 
-        int nstr = snprintf(str_p, 100, "%s %d\n", shorted_str[ii], buffer[ii]->detect_count);
-        if (add_iov(c, str_p, nstr) != 0 ||
-            add_iov(c, buffer[ii]->data, buffer[ii]->offset) != 0 ||
+        char *count = get_suffix_buffer(c);
+        if (count == NULL) {
+            out_string(c, "SERVER_ERROR out of memory lqdetect show suffix");
+            c->lqrefcnt_left -= 1;
+            return;
+        }
+        int count_len = snprintf(count, SUFFIX_SIZE, " %d\n", *ntotal);
+
+        if (add_iov(c, shorted_str[ii], strlen(shorted_str[ii])) != 0 ||
+            add_iov(c, count, count_len) != 0 ||
+            add_iov(c, data, *offset) != 0 ||
             add_iov(c, "\n", 1) != 0)
             {
                 out_string(c, "SERVER_ERROR lqdetect show conn_write");
             }
-        str_p += nstr;
     }
-    conn_set_state(c, conn_write);
+    c->suffixcurr = c->suffixlist;
+
+    conn_set_state(c, conn_mwrite);
     c->msgcurr = 0;
-    lqdetect_refcount_lock(false);
 }
 
 static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
@@ -9001,7 +9034,7 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
 
     if (ntokens > 2 && strcmp(type, "start") == 0) {
         if (ntokens == 3) {
-            standard = LONGQ_STANDARD_BASE;
+            standard = LONGQ_STANDARD_DEFAULT;
         } else {
             if (! safe_strtoul(tokens[COMMAND_TOKEN+2].value, &standard)) {
                 out_string(c, "CLIENT_ERROR bad command line format");
@@ -9031,13 +9064,11 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
     } else if (ntokens > 2 && strcmp(type, "show") == 0) {
         lqdetect_show(c);
     } else if (ntokens > 2 && strcmp(type, "stats") == 0) {
-        char *str = malloc(CMDLOG_INPUT_SIZE * sizeof(char));
-        if (str) {
-            lqdetect_get_stats(str);
-            write_and_free(c, str, strlen(str));
-        } else {
-            out_string(c, "\tlong query detection failed to get stats memory.\n");
-        }
+        char str[LONGQ_INPUT_SIZE];
+        char *str_p = str;
+
+        lqdetect_get_stats(str_p);
+        out_string(c, str);
     } else {
         out_string(c,
         "\t" "* Usage: lqdetect [start [standard] | stop | show | stats]" "\n"
@@ -9170,14 +9201,15 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
             char *bufptr = argument.range;
 
             snprintf(bufptr, 36, "%d..%d", from_index, to_index);
-            argument.access_count = elem_count + abs(from_index);
+            argument.overhead = elem_count + abs(from_index);
+            argument.delete_or_drop = 0;
             if (drop_if_empty) {
                 argument.delete_or_drop = 2;
             } else if (delete) {
                 argument.delete_or_drop = 1;
             }
 
-            if (! lqdetect_process_targetcmd(c->client_ip, key, lop_get, &argument)) {
+            if (! lqdetect_save_cmd(c->client_ip, key, LQCMD_LOP_GET, &argument)) {
                 lqdetect_in_use = false;
             }
         }
@@ -9373,12 +9405,13 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
             char *bufptr = argument.range;
 
             snprintf(bufptr, 36, "%d..%d", from_index, to_index);
-            argument.access_count = del_count + abs(from_index);
+            argument.overhead = del_count + abs(from_index);
+            argument.delete_or_drop = 0;
             if (drop_if_empty) {
                 argument.delete_or_drop = 2;
             }
 
-            if (! lqdetect_process_targetcmd(c->client_ip, key, lop_delete, &argument)) {
+            if (! lqdetect_save_cmd(c->client_ip, key, LQCMD_LOP_DELETE, &argument)) {
                 lqdetect_in_use = false;
             }
         }
@@ -9599,15 +9632,16 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
             char *bufptr = argument.range;
 
             snprintf(bufptr, 16, "%d", count);
-            argument.input_count = count;
-            argument.access_count = elem_count;
+            argument.count = count;
+            argument.overhead = elem_count;
+            argument.delete_or_drop = 0;
             if (drop_if_empty) {
                 argument.delete_or_drop = 2;
             } else if (delete) {
                 argument.delete_or_drop = 1;
             }
 
-            if (! lqdetect_process_targetcmd(c->client_ip, key, sop_get, &argument)) {
+            if (! lqdetect_save_cmd(c->client_ip, key, LQCMD_SOP_GET, &argument)) {
                 lqdetect_in_use = false;
             }
         }
@@ -9988,18 +10022,19 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
             char *bufptr = argument.range;
 
             lqdetect_make_bkeystring(bkrange->from_bkey, bkrange->to_bkey,
-                                     bkrange->from_nbkey, bkrange->to_nbkey, bufptr);
-            argument.input_count = count;
-            argument.access_count = access_count;
+                                     bkrange->from_nbkey, bkrange->to_nbkey,
+                                     efilter, bufptr);
+            argument.count = count;
+            argument.overhead = access_count;
             argument.offset = offset;
+            argument.delete_or_drop = 0;
             if (drop_if_empty) {
                 argument.delete_or_drop = 2;
             } else if (delete) {
                 argument.delete_or_drop = 1;
             }
-            argument.efilter = efilter != NULL ? true : false;
 
-            if (! lqdetect_process_targetcmd(c->client_ip, key, bop_get, &argument)) {
+            if (! lqdetect_save_cmd(c->client_ip, key, LQCMD_BOP_GET, &argument)) {
                 lqdetect_in_use = false;
             }
         }
@@ -10118,11 +10153,11 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
             char *bufptr = argument.range;
 
             lqdetect_make_bkeystring(bkrange->from_bkey, bkrange->to_bkey,
-                                     bkrange->from_nbkey, bkrange->to_nbkey, bufptr);
-            argument.access_count = access_count;
-            argument.efilter = efilter != NULL ? true : false;
+                                     bkrange->from_nbkey, bkrange->to_nbkey,
+                                     efilter, bufptr);
+            argument.overhead = access_count;
 
-            if (! lqdetect_process_targetcmd(c->client_ip, key, bop_count, &argument)) {
+            if (! lqdetect_save_cmd(c->client_ip, key, LQCMD_BOP_COUNT, &argument)) {
                 lqdetect_in_use = false;
             }
         }
@@ -10346,10 +10381,10 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
             char *bufptr = argument.range;
 
             snprintf(bufptr, 36, "%d..%d", from_posi, to_posi);
-            argument.access_count = elem_count;
+            argument.overhead = elem_count;
             argument.asc_or_desc = order == BTREE_ORDER_ASC ? 1 : 2;
 
-            if (! lqdetect_process_targetcmd(c->client_ip, key, bop_gbp, &argument)) {
+            if (! lqdetect_save_cmd(c->client_ip, key, LQCMD_BOP_GBP, &argument)) {
                 lqdetect_in_use = false;
             }
         }
@@ -10709,15 +10744,16 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
             char *bufptr = argument.range;
 
             lqdetect_make_bkeystring(bkrange->from_bkey, bkrange->to_bkey,
-                                     bkrange->from_nbkey, bkrange->to_nbkey, bufptr);
-            argument.input_count = count;
-            argument.access_count = acc_count;
+                                     bkrange->from_nbkey, bkrange->to_nbkey,
+                                     efilter, bufptr);
+            argument.count = count;
+            argument.overhead = acc_count;
+            argument.delete_or_drop = 0;
             if (drop_if_empty) {
                 argument.delete_or_drop = 2;
             }
-            argument.efilter = efilter != NULL ? true : false;
 
-            if (! lqdetect_process_targetcmd(c->client_ip, key, bop_delete, &argument)) {
+            if (! lqdetect_save_cmd(c->client_ip, key, LQCMD_BOP_DELETE, &argument)) {
                 lqdetect_in_use = false;
             }
         }
@@ -12769,6 +12805,12 @@ bool conn_mwrite(conn *c) {
                 c->suffixcurr++;
                 c->suffixleft--;
             }
+#ifdef DETECT_LONG_QUERT
+            if (c->lqrefcnt_left != 0) {
+                lqdetect_buffer_release();
+                c->lqrefcnt_left--;
+            }
+#endif
             if (c->coll_eitem != NULL) {
                 conn_coll_eitem_free(c);
             }
