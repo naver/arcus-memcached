@@ -8,9 +8,22 @@
 
 #include "lqdetect.h"
 
+#define LONGQ_SAVE_CNT     20     /* save key count */
+#define LONGQ_INPUT_SIZE   500    /* the size of input(time, ip, command, argument) */
+
 static EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
 static char *command_str[LONGQ_COMMAND_NUM] = {"sop get", "lop insert", "lop delete", "lop get",
                             "bop delete", "bop get", "bop count", "bop gbp"};
+
+/* lqdetect buffer structure */
+struct lq_detect_buffer {
+    char *data;
+    uint32_t offset;
+    uint32_t ntotal;
+    uint32_t nsaved;
+    uint32_t keypos[LONGQ_SAVE_CNT];
+    uint32_t keylen[LONGQ_SAVE_CNT];
+};
 
 /* lqdetect global structure */
 struct lq_detect_global {
@@ -20,6 +33,7 @@ struct lq_detect_global {
     struct lq_detect_stats stats;
     int overflow_cnt;
     bool on_detecting;
+    uint16_t refcount; /* lqdetect show refrence count */
 };
 struct lq_detect_global lqdetect;
 
@@ -83,7 +97,7 @@ int lqdetect_init()
     }
 
     memset(&lqdetect.stats, 0, sizeof(struct lq_detect_stats));
-    lqdetect_refcount = 0;
+    lqdetect.refcount = 0;
     return 0;
 }
 
@@ -107,7 +121,7 @@ int lqdetect_start(uint32_t lqdetect_standard, bool *already_started)
         }
 
         /* if lqdetect showing, start is fail */
-        if (lqdetect_refcount != 0) {
+        if (lqdetect.refcount != 0) {
             ret = -1;
             break;
         }
@@ -167,29 +181,28 @@ struct lq_detect_stats *lqdetect_stats()
     return stats;
 }
 
-struct lq_detect_buffer *lqdetect_buffer(int cmd)
+char *lqdetect_buffer_get(int cmd, uint32_t *length, uint32_t *cmdcnt)
 {
-    struct lq_detect_buffer *buffer = &lqdetect.buffer[cmd];
-    return buffer;
+    char *data = lqdetect.buffer[cmd].data;
+    *length = lqdetect.buffer[cmd].offset;
+    *cmdcnt = lqdetect.buffer[cmd].ntotal;
+
+    pthread_mutex_lock(&lqdetect.lock);
+    lqdetect.refcount++;
+    pthread_mutex_unlock(&lqdetect.lock);
+
+    return data;
 }
 
-void lqdetect_buffer_hold()
+void lqdetect_buffer_release(int bufcnt)
 {
     pthread_mutex_lock(&lqdetect.lock);
-    lqdetect_refcount++;
+    lqdetect.refcount = (lqdetect.refcount-bufcnt) < 0 ?
+                              0 : lqdetect.refcount-bufcnt;
     pthread_mutex_unlock(&lqdetect.lock);
 }
 
-void lqdetect_buffer_release()
-{
-    pthread_mutex_lock(&lqdetect.lock);
-    if (lqdetect_refcount != 0) {
-        lqdetect_refcount--;
-    }
-    pthread_mutex_unlock(&lqdetect.lock);
-}
-
-static bool lqdetect_dupcheck(char *key, enum lqdetect_command cmd, struct lq_detect_argument *arg)
+static bool lqdetect_dupcheck(char *key, enum lq_detect_command cmd, struct lq_detect_argument *arg)
 {
     int ii;
     int count = lqdetect.buffer[cmd].nsaved;
@@ -240,7 +253,7 @@ static bool lqdetect_dupcheck(char *key, enum lqdetect_command cmd, struct lq_de
     return false;
 }
 
-static bool lqdetect_write(char client_ip[], char *key, enum lqdetect_command cmd)
+static bool lqdetect_write(char client_ip[], char *key, enum lq_detect_command cmd)
 {
     struct   tm *ptm;
     struct   timeval val;
@@ -325,7 +338,7 @@ bool lqdetect_discriminant(uint32_t count)
 }
 
 bool lqdetect_save_cmd(char client_ip[], char* key,
-                                enum lqdetect_command cmd, struct lq_detect_argument *arg)
+                                enum lq_detect_command cmd, struct lq_detect_argument *arg)
 {
     bool ret = true;
 

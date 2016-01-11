@@ -794,10 +794,10 @@ static void conn_cleanup(conn *c) {
         c->item = 0;
     }
 
-#ifdef DETECT_LONG_QUERT
-    if (c->lqrefcnt_left != 0) {
-        lqdetect_buffer_release();
-        c->lqrefcnt_left--;
+#ifdef DETECT_LONG_QUERY
+    if (c->lq_bufcnt != 0) {
+        lqdetect_buffer_release(c->lq_bufcnt);
+        c->lq_bufcnt = 0;
     }
 #endif
 
@@ -1321,7 +1321,7 @@ static void process_lop_insert_complete(conn *c) {
 
                 snprintf(bufptr, 16, "%d", c->coll_index);
                 argument.count = c->coll_index;
-                argument.overhead = c->coll_index > 0 ? c->coll_index+1 : abs(c->coll_index);
+                argument.overhead = c->coll_index >= 0 ? c->coll_index+1 : -(c->coll_index);
 
                 if (! lqdetect_save_cmd(c->client_ip, c->coll_key, LQCMD_LOP_INSERT, &argument)) {
                     lqdetect_in_use = false;
@@ -7014,10 +7014,10 @@ static void reset_cmd_handler(conn *c) {
         mc_engine.v1->release(mc_engine.v0, c, c->item);
         c->item = NULL;
     }
-#ifdef DETECT_LONG_QUERT
-    if (c->lqrefcnt_left != 0) {
-        lqdetect_buffer_release();
-        c->lqrefcnt_left--;
+#ifdef DETECT_LONG_QUERY
+    if (c->lq_bufcnt != 0) {
+        lqdetect_buffer_release(c->lq_bufcnt);
+        c->lq_bufcnt = 0;
     }
 #endif
     if (c->coll_eitem != NULL) {
@@ -8965,7 +8965,7 @@ static void lqdetect_get_stats(char* str)
                                "is running"}; // LONGQ_RUNNING
     struct lq_detect_stats *stats = lqdetect_stats();
 
-    snprintf(str, CMDLOG_INPUT_SIZE,
+    snprintf(str, LONGQ_STAT_STRLEN,
             "\t" "Long query detection stats" "\n"
             "\t" "The last running time : %d_%d ~ %d_%d" "\n"
             "\t" "The number of total long query commands : %d" "\n"
@@ -8988,40 +8988,39 @@ static void lqdetect_show(conn *c)
                             "bop get command entered count :",
                             "bop count command entered count :",
                             "bop gbp command entered count :"};
-    struct lq_detect_buffer *buffer;
     char *data;
-    uint32_t *ntotal;
-    uint32_t *offset;
-    int ii;
+    uint32_t length;
+    uint32_t cmdcnt;
+    int ii, ret = 0;
 
-    lqdetect_buffer_hold();
-    c->lqrefcnt_left++;
     /* create detected long query return string */
     for(ii = 0; ii < LONGQ_COMMAND_NUM; ii++) {
-        buffer = lqdetect_buffer(ii);
-        data = buffer->data;
-        ntotal = &buffer->ntotal;
-        offset = &buffer->offset;
+        data = lqdetect_buffer_get(ii, &length, &cmdcnt);
+        c->lq_bufcnt++;
 
         char *count = get_suffix_buffer(c);
         if (count == NULL) {
-            out_string(c, "SERVER_ERROR out of memory lqdetect show suffix");
-            c->lqrefcnt_left -= 1;
-            return;
+            out_string(c, "SERVER ERROR out of memory wrting show response");
+            lqdetect_buffer_release(c->lq_bufcnt);
+            c->lq_bufcnt = 0;
+            ret = -1; break;
         }
-        int count_len = snprintf(count, SUFFIX_SIZE, " %d\n", *ntotal);
+        int count_len = snprintf(count, SUFFIX_SIZE, " %d\n", cmdcnt);
 
         if (add_iov(c, shorted_str[ii], strlen(shorted_str[ii])) != 0 ||
             add_iov(c, count, count_len) != 0 ||
-            add_iov(c, data, *offset) != 0 ||
+            add_iov(c, data, length) != 0 ||
             add_iov(c, "\n", 1) != 0)
             {
-                out_string(c, "SERVER_ERROR lqdetect show conn_write");
+                out_string(c, "SERVER ERROR out of memory wrting show response");
+                ret = -1; break;
             }
     }
     c->suffixcurr = c->suffixlist;
 
-    conn_set_state(c, conn_mwrite);
+    if (ret == 0) {
+        conn_set_state(c, conn_mwrite);
+    }
     c->msgcurr = 0;
 }
 
@@ -9064,7 +9063,7 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
     } else if (ntokens > 2 && strcmp(type, "show") == 0) {
         lqdetect_show(c);
     } else if (ntokens > 2 && strcmp(type, "stats") == 0) {
-        char str[LONGQ_INPUT_SIZE];
+        char str[LONGQ_STAT_STRLEN];
         char *str_p = str;
 
         lqdetect_get_stats(str_p);
@@ -9201,7 +9200,7 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
             char *bufptr = argument.range;
 
             snprintf(bufptr, 36, "%d..%d", from_index, to_index);
-            argument.overhead = elem_count + abs(from_index);
+            argument.overhead = elem_count + (from_index >= 0 ? from_index+1 : -(from_index));
             argument.delete_or_drop = 0;
             if (drop_if_empty) {
                 argument.delete_or_drop = 2;
@@ -9405,7 +9404,7 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
             char *bufptr = argument.range;
 
             snprintf(bufptr, 36, "%d..%d", from_index, to_index);
-            argument.overhead = del_count + abs(from_index);
+            argument.overhead = del_count + (from_index >= 0 ? from_index+1 : -(from_index));
             argument.delete_or_drop = 0;
             if (drop_if_empty) {
                 argument.delete_or_drop = 2;
@@ -12805,10 +12804,10 @@ bool conn_mwrite(conn *c) {
                 c->suffixcurr++;
                 c->suffixleft--;
             }
-#ifdef DETECT_LONG_QUERT
-            if (c->lqrefcnt_left != 0) {
-                lqdetect_buffer_release();
-                c->lqrefcnt_left--;
+#ifdef DETECT_LONG_QUERY
+            if (c->lq_bufcnt != 0) {
+                lqdetect_buffer_release(c->lq_bufcnt);
+                c->lq_bufcnt = 0;
             }
 #endif
             if (c->coll_eitem != NULL) {
@@ -14643,7 +14642,7 @@ int main (int argc, char **argv) {
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_init() == -1) {
         mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Can't allocate detect long query buffer data\n");
+                "Can't allocate long query detection buffer\n");
         exit(EXIT_FAILURE);
     }
 #endif
