@@ -6,7 +6,7 @@
 #define DETECT_LONG_QUERY
 #define LONGQ_STAT_STRLEN        300
 #define LONGQ_STANDARD_DEFAULT   4000        /* defulat detect standard */
-#define LONGQ_RANGE_SIZE         31*2+10*2
+#define LONGQ_RANGE_SIZE         (31*2+10*2)
 
 
 #define LONGQ_EXPLICIT_STOP          0    /* stop by user request */
@@ -25,7 +25,7 @@ enum lq_detect_command {
     LQCMD_BOP_COUNT,
     LQCMD_BOP_GBP
 };
-#define LONGQ_COMMAND_NUM   LQCMD_BOP_GBP+1  /* detectiong command count */
+#define LONGQ_COMMAND_NUM   (LQCMD_BOP_GBP+1)  /* detectiong command count */
 
 /* lqdetect argument structure */
 struct lq_detect_argument {
@@ -53,7 +53,7 @@ void lqdetect_buffer_release(int bufcnt);
 int lqdetect_start(uint32_t lqdetect_base, bool *already_started);
 void lqdetect_stop(bool *already_stopped);
 struct lq_detect_stats *lqdetect_stats(void);
-bool lqdetect_discriminant(uint32_t count);
+bool lqdetect_discriminant(uint32_t overhead);
 bool lqdetect_save_cmd(char client_ip[], char *key,
                       enum lq_detect_command cmd, struct lq_detect_argument *arg);
 #endif

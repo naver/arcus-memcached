@@ -673,6 +673,10 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->conn_prev = NULL;
     c->conn_next = NULL;
 
+#ifdef DETECT_LONG_QUERY
+    c->lq_bufcnt = 0;
+#endif
+
     c->write_and_go = init_state;
     c->write_and_free = 0;
     c->item = 0;
@@ -1315,13 +1319,13 @@ static void process_lop_insert_complete(conn *c) {
 #ifdef DETECT_LONG_QUERY
         /* long query detection */
         if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
-            if (lqdetect_discriminant(abs(c->coll_index))) {
+            uint32_t overhead = c->coll_index >= 0 ? c->coll_index+1 : -(c->coll_index);
+            if (lqdetect_discriminant(overhead)) {
                 struct lq_detect_argument argument;
                 char *bufptr = argument.range;
 
                 snprintf(bufptr, 16, "%d", c->coll_index);
-                argument.count = c->coll_index;
-                argument.overhead = c->coll_index >= 0 ? c->coll_index+1 : -(c->coll_index);
+                argument.overhead = overhead;
 
                 if (! lqdetect_save_cmd(c->client_ip, c->coll_key, LQCMD_LOP_INSERT, &argument)) {
                     lqdetect_in_use = false;
@@ -9013,6 +9017,8 @@ static void lqdetect_show(conn *c)
             add_iov(c, "\n", 1) != 0)
             {
                 out_string(c, "SERVER ERROR out of memory wrting show response");
+                lqdetect_buffer_release(c->lq_bufcnt);
+                c->lq_bufcnt = 0;
                 ret = -1; break;
             }
     }
@@ -9020,8 +9026,8 @@ static void lqdetect_show(conn *c)
 
     if (ret == 0) {
         conn_set_state(c, conn_mwrite);
+        c->msgcurr = 0;
     }
-    c->msgcurr = 0;
 }
 
 static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
@@ -9064,9 +9070,7 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
         lqdetect_show(c);
     } else if (ntokens > 2 && strcmp(type, "stats") == 0) {
         char str[LONGQ_STAT_STRLEN];
-        char *str_p = str;
-
-        lqdetect_get_stats(str_p);
+        lqdetect_get_stats(str);
         out_string(c, str);
     } else {
         out_string(c,
@@ -9195,12 +9199,13 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
 #ifdef DETECT_LONG_QUERY
     /* long query detection */
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
-        if (lqdetect_discriminant(elem_count + abs(from_index))) {
+        uint32_t overhead = elem_count + (from_index >= 0 ? from_index+1 : -(from_index));
+        if (lqdetect_discriminant(overhead)) {
             struct lq_detect_argument argument;
             char *bufptr = argument.range;
 
             snprintf(bufptr, 36, "%d..%d", from_index, to_index);
-            argument.overhead = elem_count + (from_index >= 0 ? from_index+1 : -(from_index));
+            argument.overhead = overhead;
             argument.delete_or_drop = 0;
             if (drop_if_empty) {
                 argument.delete_or_drop = 2;
@@ -9399,12 +9404,13 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
 #ifdef DETECT_LONG_QUERY
     /* long query detection */
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
-        if (lqdetect_discriminant(del_count + abs(from_index))) {
+        uint32_t overhead = del_count + (from_index >= 0 ? from_index+1 : -(from_index));
+        if (lqdetect_discriminant(overhead)) {
             struct lq_detect_argument argument;
             char *bufptr = argument.range;
 
             snprintf(bufptr, 36, "%d..%d", from_index, to_index);
-            argument.overhead = del_count + (from_index >= 0 ? from_index+1 : -(from_index));
+            argument.overhead = overhead;
             argument.delete_or_drop = 0;
             if (drop_if_empty) {
                 argument.delete_or_drop = 2;
@@ -9631,8 +9637,8 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
             char *bufptr = argument.range;
 
             snprintf(bufptr, 16, "%d", count);
-            argument.count = count;
             argument.overhead = elem_count;
+            argument.count = count;
             argument.delete_or_drop = 0;
             if (drop_if_empty) {
                 argument.delete_or_drop = 2;
@@ -10023,9 +10029,9 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
             lqdetect_make_bkeystring(bkrange->from_bkey, bkrange->to_bkey,
                                      bkrange->from_nbkey, bkrange->to_nbkey,
                                      efilter, bufptr);
-            argument.count = count;
             argument.overhead = access_count;
             argument.offset = offset;
+            argument.count = count;
             argument.delete_or_drop = 0;
             if (drop_if_empty) {
                 argument.delete_or_drop = 2;
@@ -10745,8 +10751,8 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
             lqdetect_make_bkeystring(bkrange->from_bkey, bkrange->to_bkey,
                                      bkrange->from_nbkey, bkrange->to_nbkey,
                                      efilter, bufptr);
-            argument.count = count;
             argument.overhead = acc_count;
+            argument.count = count;
             argument.delete_or_drop = 0;
             if (drop_if_empty) {
                 argument.delete_or_drop = 2;

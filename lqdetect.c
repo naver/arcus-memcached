@@ -13,7 +13,7 @@
 
 static EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
 static char *command_str[LONGQ_COMMAND_NUM] = {"sop get", "lop insert", "lop delete", "lop get",
-                            "bop delete", "bop get", "bop count", "bop gbp"};
+                                               "bop delete", "bop get", "bop count", "bop gbp"};
 
 /* lqdetect buffer structure */
 struct lq_detect_buffer {
@@ -128,10 +128,8 @@ int lqdetect_start(uint32_t lqdetect_standard, bool *already_started)
 
         /* prepare detect long query buffer, argument and counts*/
         for(ii = 0; ii < LONGQ_COMMAND_NUM; ii++) {
-            memset(lqdetect.buffer[ii].data, 0, LONGQ_SAVE_CNT * LONGQ_INPUT_SIZE);
             memset(lqdetect.buffer[ii].keypos, 0, LONGQ_SAVE_CNT * sizeof(uint32_t));
             memset(lqdetect.buffer[ii].keylen, 0, LONGQ_SAVE_CNT * sizeof(uint32_t));
-            memset(lqdetect.arg[ii], 0, LONGQ_SAVE_CNT * sizeof(struct lq_detect_argument));
             lqdetect.buffer[ii].ntotal = 0;
             lqdetect.buffer[ii].nsaved = 0;
             lqdetect.buffer[ii].offset = 0;
@@ -234,12 +232,9 @@ static bool lqdetect_dupcheck(char *key, enum lq_detect_command cmd, struct lq_d
             if (arg->count == 0) {
                 uint32_t offset = lqdetect.buffer[cmd].keypos[ii];
                 uint32_t cmplen = lqdetect.buffer[cmd].keylen[ii];
-                if (cmplen != strlen(key)) {
+                if (cmplen == strlen(key) &&
+                    memcmp(lqdetect.buffer[cmd].data+offset, key, cmplen) == 0) {
                     return true;
-                } else {
-                    if (strncmp(lqdetect.buffer[cmd].data+offset, key, cmplen) == 0) {
-                        return true;
-                    }
                 }
             } else {
                 if (strcmp(lqdetect.arg[cmd][ii].range, arg->range) == 0) {
@@ -258,10 +253,14 @@ static bool lqdetect_write(char client_ip[], char *key, enum lq_detect_command c
     struct   tm *ptm;
     struct   timeval val;
     struct   lq_detect_buffer *buffer = &lqdetect.buffer[cmd];
-    uint32_t offset = buffer->offset;
-    int      count = buffer->nsaved;
-    struct   lq_detect_argument *arg = &lqdetect.arg[cmd][count];
-    char     *bufptr = buffer->data + offset;
+    uint32_t nsaved = buffer->nsaved;
+    char     *bufptr = buffer->data + buffer->offset;
+    struct   lq_detect_argument *arg = &lqdetect.arg[cmd][nsaved];
+
+    /* buffer overflow check */
+    if (LONGQ_SAVE_CNT * LONGQ_INPUT_SIZE - buffer->offset < LONGQ_INPUT_SIZE) {
+        return false;
+    }
 
     gettimeofday(&val, NULL);
     ptm = localtime(&val.tv_sec);
@@ -270,8 +269,8 @@ static bool lqdetect_write(char client_ip[], char *key, enum lq_detect_command c
         ptm->tm_hour, ptm->tm_min, ptm->tm_sec, (long)val.tv_usec, client_ip,
         arg->overhead, command_str[cmd]);
 
-    buffer->keypos[count] = offset + strlen(bufptr);
-    buffer->keylen[count] = strlen(key);
+    buffer->keypos[nsaved] = buffer->offset + strlen(bufptr);
+    buffer->keylen[nsaved] = strlen(key);
     bufptr += strlen(bufptr);
 
     switch (cmd) {
@@ -317,20 +316,15 @@ static bool lqdetect_write(char client_ip[], char *key, enum lq_detect_command c
         break;
     }
 
-    buffer->offset = buffer->keypos[count] + strlen(bufptr);
+    buffer->offset = buffer->keypos[nsaved] + strlen(bufptr);
     buffer->nsaved++;
-
-    /* buffer overflow check */
-    if (buffer->offset + LONGQ_INPUT_SIZE > LONGQ_SAVE_CNT * LONGQ_INPUT_SIZE) {
-        return false;
-    }
 
     return true;
 }
 
-bool lqdetect_discriminant(uint32_t count)
+bool lqdetect_discriminant(uint32_t overhead)
 {
-    if (count >= lqdetect.stats.standard) {
+    if (overhead >= lqdetect.stats.standard) {
         return true;
     } else {
         return false;
@@ -338,7 +332,7 @@ bool lqdetect_discriminant(uint32_t count)
 }
 
 bool lqdetect_save_cmd(char client_ip[], char* key,
-                                enum lq_detect_command cmd, struct lq_detect_argument *arg)
+                       enum lq_detect_command cmd, struct lq_detect_argument *arg)
 {
     bool ret = true;
 
@@ -358,13 +352,12 @@ bool lqdetect_save_cmd(char client_ip[], char* key,
         lqdetect.buffer[cmd].ntotal++;
         if (lqdetect.buffer[cmd].nsaved >= LONGQ_SAVE_CNT) break;
 
-        if (! lqdetect_dupcheck(key, cmd, arg)) {
-            if (! lqdetect_write(client_ip, key, cmd)) {
-                do_lqdetect_stop(LONGQ_BUFFER_OVERFLOW_STOP);
-                ret = false;
-                break;
-            }
-        } else {
+        if (lqdetect_dupcheck(key, cmd, arg))
+            break; /* duplication query */
+
+        if (! lqdetect_write(client_ip, key, cmd)) {
+            do_lqdetect_stop(LONGQ_BUFFER_OVERFLOW_STOP);
+            ret = false;
             break;
         }
 
