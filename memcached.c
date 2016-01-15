@@ -3299,8 +3299,8 @@ static void bin_read_chunk(conn *c, enum bin_substates next_substate, uint32_t c
             char *newm = realloc(c->rbuf, nsize);
             if (newm == NULL) {
                 if (settings.verbose) {
-                    mc_logger->log(EXTENSION_LOG_INFO, c,
-                        "%d: Failed to grow buffer.. closing connection\n", c->sfd);
+                    mc_logger->log(EXTENSION_LOG_WARNING, c,
+                        "%d: Failed to grow buffer. closing connection\n", c->sfd);
                 }
                 conn_set_state(c, conn_closing);
                 return;
@@ -11886,12 +11886,30 @@ static int try_read_command(conn *c) {
                     ++ptr;
                 }
 
-                if (ptr - c->rcurr > 100 ||
-                    (strncmp(ptr, "get ", 4) && strncmp(ptr, "gets ", 5))) {
-
+#if 1 // JOON_DEBUG
+                if (ptr - c->rcurr > 100) {
+                    mc_logger->log(EXTENSION_LOG_WARNING, c,
+                        "%d: Too many leading whitespaces(%d). Close the connection.\n",
+                        c->sfd, (int)(ptr - c->rcurr));
                     conn_set_state(c, conn_closing);
                     return 1;
                 }
+                if (strncmp(ptr, "get ", 4) && strncmp(ptr, "gets ", 5)) {
+                    char buffer[16];
+                    memcpy(buffer, ptr, 15); buffer[15] = '\0';
+                    mc_logger->log(EXTENSION_LOG_WARNING, c,
+                        "%d: Too long ascii command(%s). Close the connection.\n",
+                        c->sfd, buffer);
+                    conn_set_state(c, conn_closing);
+                    return 1;
+                }
+#else
+                if (ptr - c->rcurr > 100 ||
+                    (strncmp(ptr, "get ", 4) && strncmp(ptr, "gets ", 5))) {
+                    conn_set_state(c, conn_closing);
+                    return 1;
+                }
+#endif
             }
 
             return 0;
@@ -11983,8 +12001,8 @@ static enum try_read_result try_read_network(conn *c) {
             char *new_rbuf = realloc(c->rbuf, c->rsize * 2);
             if (!new_rbuf) {
                 if (settings.verbose > 0) {
-                 mc_logger->log(EXTENSION_LOG_INFO, c,
-                         "Couldn't realloc input buffer\n");
+                    mc_logger->log(EXTENSION_LOG_WARNING, c,
+                            "Couldn't realloc input buffer\n");
                 }
                 c->rbytes = 0; /* ignore what we read */
                 out_string(c, "SERVER_ERROR out of memory reading request");
@@ -12008,12 +12026,25 @@ static enum try_read_result try_read_network(conn *c) {
             }
         }
         if (res == 0) {
+#if 1 // JOON_DEBUG
+            if (settings.verbose > 0) {
+                mc_logger->log(EXTENSION_LOG_INFO, c,
+                        "Couldn't read in try_read_network: end of stream\n");
+            }
+#endif
             return READ_ERROR;
         }
         if (res == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 break;
             }
+#if 1 // JOON_DEBUG
+            if (settings.verbose > 0) {
+                mc_logger->log(EXTENSION_LOG_WARNING, c,
+                        "Couldn't read in try_read_network: err=(%d:%s)\n",
+                        errno, strerror(errno));
+            }
+#endif
             return READ_ERROR;
         }
     }
@@ -12084,8 +12115,8 @@ static enum transmit_result transmit(conn *c) {
         if (res == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
             if (!update_event(c, EV_WRITE | EV_PERSIST)) {
                 if (settings.verbose > 0) {
-                    mc_logger->log(EXTENSION_LOG_DEBUG, c,
-                                   "Couldn't update event\n");
+                    mc_logger->log(EXTENSION_LOG_WARNING, c,
+                                   "Couldn't update event in transmit.\n");
                 }
                 conn_set_state(c, conn_closing);
                 return TRANSMIT_HARD_ERROR;
@@ -12094,8 +12125,15 @@ static enum transmit_result transmit(conn *c) {
         }
         /* if res == 0 or res == -1 and error is not EAGAIN or EWOULDBLOCK,
            we have a real error, on which we close the connection */
+#if 1 // JOON_DEBUG
+        if (settings.verbose > 0) {
+            mc_logger->log(EXTENSION_LOG_INFO, c,
+                           "Failed to write, and not due to blocking.\n");
+        }
+#else
         if (settings.verbose > 0)
             perror("Failed to write, and not due to blocking");
+#endif
 
         if (IS_UDP(c->transport))
             conn_set_state(c, conn_read);
@@ -12168,8 +12206,8 @@ bool conn_listening(conn *c)
 bool conn_waiting(conn *c) {
     if (!update_event(c, EV_READ | EV_PERSIST)) {
         if (settings.verbose > 0) {
-            mc_logger->log(EXTENSION_LOG_INFO, c,
-                           "Couldn't update event\n");
+            mc_logger->log(EXTENSION_LOG_WARNING, c,
+                           "Couldn't update event in conn_waiting.\n");
         }
         conn_set_state(c, conn_closing);
         return true;
@@ -12249,8 +12287,8 @@ bool conn_new_cmd(conn *c) {
             */
             if (!update_event(c, EV_WRITE | EV_PERSIST)) {
                 if (settings.verbose > 0) {
-                    mc_logger->log(EXTENSION_LOG_INFO, c,
-                                   "Couldn't update event\n");
+                    mc_logger->log(EXTENSION_LOG_WARNING, c,
+                                   "Couldn't update event in conn_new_cmd.\n");
                 }
                 conn_set_state(c, conn_closing);
                 return true;
@@ -12288,14 +12326,20 @@ bool conn_swallow(conn *c) {
         return true;
     }
     if (res == 0) { /* end of stream */
+#if 1 // JOON_DEBUG
+        if (settings.verbose > 0) {
+            mc_logger->log(EXTENSION_LOG_INFO, c,
+                           "Couldn't read in conn_swallow: end of stream.\n");
+        }
+#endif
         conn_set_state(c, conn_closing);
         return true;
     }
     if (res == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
         if (!update_event(c, EV_READ | EV_PERSIST)) {
             if (settings.verbose > 0) {
-                mc_logger->log(EXTENSION_LOG_INFO, c,
-                               "Couldn't update event\n");
+                mc_logger->log(EXTENSION_LOG_WARNING, c,
+                               "Couldn't update event in conn_swallow.\n");
             }
             conn_set_state(c, conn_closing);
             return true;
@@ -12305,9 +12349,17 @@ bool conn_swallow(conn *c) {
 
     if (errno != ENOTCONN && errno != ECONNRESET) {
         /* otherwise we have a real error, on which we close the connection */
-        mc_logger->log(EXTENSION_LOG_INFO, c,
-                "Failed to read, and not due to blocking (%s)\n", strerror(errno));
+        mc_logger->log(EXTENSION_LOG_WARNING, c,
+                "Failed to read in conn_swallow, and not due to blocking: err=(%d:%s)\n",
+                errno, strerror(errno));
     }
+#if 1 // JOON_DEBUG
+    else {
+        mc_logger->log(EXTENSION_LOG_INFO, c,
+                "Failed to read in conn_swallow, and not due to blocking: err=(%d:%s)\n",
+                errno, strerror(errno));
+    }
+#endif
 
     conn_set_state(c, conn_closing);
 
@@ -12367,14 +12419,20 @@ bool conn_nread(conn *c) {
         return true;
     }
     if (res == 0) { /* end of stream */
+#if 1 // JOON_DEBUG
+        if (settings.verbose > 0) {
+            mc_logger->log(EXTENSION_LOG_INFO, c,
+                           "Couldn't read in conn_nread: end of stream.\n");
+        }
+#endif
         conn_set_state(c, conn_closing);
         return true;
     }
     if (res == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
         if (!update_event(c, EV_READ | EV_PERSIST)) {
             if (settings.verbose > 0) {
-                mc_logger->log(EXTENSION_LOG_INFO, c,
-                               "Couldn't update event\n");
+                mc_logger->log(EXTENSION_LOG_WARNING, c,
+                               "Couldn't update event in conn_nread.\n");
             }
             conn_set_state(c, conn_closing);
             return true;
@@ -12385,13 +12443,22 @@ bool conn_nread(conn *c) {
     if (errno != ENOTCONN && errno != ECONNRESET) {
         /* otherwise we have a real error, on which we close the connection */
         mc_logger->log(EXTENSION_LOG_WARNING, c,
-                       "Failed to read, and not due to blocking:\n"
-                       "errno: %d %s \n"
+                       "Failed to read in conn_nread, and not due to blocking: err=(%d:%s)\n"
                        "rcurr=%lx ritem=%lx rbuf=%lx rlbytes=%d rsize=%d\n",
                        errno, strerror(errno),
                        (long)c->rcurr, (long)c->ritem, (long)c->rbuf,
                        (int)c->rlbytes, (int)c->rsize);
     }
+#if 1 // JOON_DEBUG
+    else {
+        mc_logger->log(EXTENSION_LOG_INFO, c,
+                       "Failed to read in conn_nread, and not due to blocking: err=(%d:%s)\n"
+                       "rcurr=%lx ritem=%lx rbuf=%lx rlbytes=%d rsize=%d\n",
+                       errno, strerror(errno),
+                       (long)c->rcurr, (long)c->ritem, (long)c->rbuf,
+                       (int)c->rlbytes, (int)c->rsize);
+    }
+#endif
     conn_set_state(c, conn_closing);
     return true;
 }
@@ -12405,8 +12472,8 @@ bool conn_write(conn *c) {
     if (c->iovused == 0 || (IS_UDP(c->transport) && c->iovused == 1)) {
         if (add_iov(c, c->wcurr, c->wbytes) != 0) {
             if (settings.verbose > 0) {
-                mc_logger->log(EXTENSION_LOG_INFO, c,
-                               "Couldn't build response\n");
+                mc_logger->log(EXTENSION_LOG_WARNING, c,
+                               "Couldn't build response in conn_write.\n");
             }
             conn_set_state(c, conn_closing);
             return true;
@@ -12424,8 +12491,8 @@ bool conn_mwrite(conn *c) {
 
     if (IS_UDP(c->transport) && c->msgcurr == 0 && build_udp_headers(c) != 0) {
         if (settings.verbose > 0) {
-            mc_logger->log(EXTENSION_LOG_INFO, c,
-                           "Failed to build UDP headers\n");
+            mc_logger->log(EXTENSION_LOG_WARNING, c,
+                           "Failed to build UDP headers in conn_mwrite.\n");
         }
         conn_set_state(c, conn_closing);
         return true;
@@ -12469,9 +12536,8 @@ bool conn_mwrite(conn *c) {
             conn_set_state(c, c->write_and_go);
         } else {
             if (settings.verbose > 0) {
-                mc_logger->log(EXTENSION_LOG_INFO, c,
-                        "Unexpected state %p\n", (void*)((uintptr_t)c->state));
-                /* No standard way of printing a function pointer... */
+                mc_logger->log(EXTENSION_LOG_WARNING, c,
+                        "Unexpected state %s\n", state_text(c->state));
             }
             conn_set_state(c, conn_closing);
         }
