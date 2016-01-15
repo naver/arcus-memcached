@@ -287,6 +287,9 @@ static rel_time_t realtime(const time_t exptime) {
 static void stats_init(void) {
     mc_stats.daemon_conns = 0;
     mc_stats.rejected_conns = 0;
+#if 1 // JOON_QUIT_CONN
+    mc_stats.quit_conns = 0;
+#endif
     mc_stats.curr_conns = mc_stats.total_conns = mc_stats.conn_structs = 0;
 
     /* make the time we started always be 2 seconds before we really
@@ -301,6 +304,9 @@ static void stats_reset(const void *cookie) {
     struct conn *conn = (struct conn*)cookie;
     STATS_LOCK();
     mc_stats.rejected_conns = 0;
+#if 1 // JOON_QUIT_CONN
+    mc_stats.quit_conns = 0;
+#endif
     mc_stats.total_conns = 0;
     stats_prefix_clear();
     STATS_UNLOCK();
@@ -7432,6 +7438,10 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
 
     APPEND_STAT("daemon_connections", "%u", mc_stats.daemon_conns);
     APPEND_STAT("curr_connections", "%u", mc_stats.curr_conns);
+#if 1 // JOON_QUIT_CONN
+    APPEND_STAT("quit_connections", "%u", mc_stats.quit_conns);
+    APPEND_STAT("reject_connections", "%u", mc_stats.rejected_conns);
+#endif
     APPEND_STAT("total_connections", "%u", mc_stats.total_conns);
     APPEND_STAT("connection_structures", "%u", mc_stats.conn_structs);
     APPEND_STAT("cmd_get", "%"PRIu64, thread_stats.cmd_get);
@@ -7541,7 +7551,10 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("bytes_read", "%"PRIu64, thread_stats.bytes_read);
     APPEND_STAT("bytes_written", "%"PRIu64, thread_stats.bytes_written);
     APPEND_STAT("limit_maxbytes", "%"PRIu64, settings.maxbytes);
+#if 1 // JOON_QUIT_CONN
+#else
     APPEND_STAT("rejected_conns", "%" PRIu64, (unsigned long long)mc_stats.rejected_conns);
+#endif
     APPEND_STAT("threads", "%d", settings.num_threads);
     APPEND_STAT("conn_yields", "%" PRIu64, (unsigned long long)thread_stats.conn_yields);
     STATS_UNLOCK();
@@ -11747,6 +11760,11 @@ static void process_command(conn *c, char *command)
 #endif
     else if ((ntokens == 2) && (strcmp(tokens[COMMAND_TOKEN].value, "quit") == 0))
     {
+#if 1 // JOON_QUIT_CONN
+        STATS_LOCK();
+        mc_stats.quit_conns++;
+        STATS_UNLOCK();
+#endif
         conn_set_state(c, conn_closing);
     }
     else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "help") == 0))
