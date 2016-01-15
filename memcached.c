@@ -12045,8 +12045,9 @@ static enum try_read_result try_read_network(conn *c) {
         }
         if (res == 0) {
 #if 1 // JOON_DEBUG
-            if (settings.verbose > 0) {
-                mc_logger->log(EXTENSION_LOG_INFO, c,
+            /* The client called shutdown() to close the socket. */
+            if (settings.verbose > 1) {
+                mc_logger->log(EXTENSION_LOG_DEBUG, c,
                         "Couldn't read in try_read_network: end of stream\n");
             }
 #endif
@@ -12057,8 +12058,9 @@ static enum try_read_result try_read_network(conn *c) {
                 break;
             }
 #if 1 // JOON_DEBUG
-            if (settings.verbose > 0) {
-                mc_logger->log(EXTENSION_LOG_WARNING, c,
+            /* The client called close() to close the socket. */
+            if (settings.verbose > 1) {
+                mc_logger->log(EXTENSION_LOG_DEBUG, c,
                         "Couldn't read in try_read_network: err=(%d:%s)\n",
                         errno, strerror(errno));
             }
