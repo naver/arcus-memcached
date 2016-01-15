@@ -206,7 +206,6 @@ static int             azk_count;
 
 // zookeeper close synchronization
 static pthread_mutex_t zk_final_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_mutex_t zk_close_lock = PTHREAD_MUTEX_INITIALIZER;
 static volatile bool   zk_watcher_running = false;
 
 // memcached heartheat thread */
@@ -1182,10 +1181,8 @@ void arcus_zk_final(const char *msg)
         }
 
         /* close zk connection */
-        pthread_mutex_lock(&zk_close_lock);
         zookeeper_close(zh);
         zh = NULL;
-        pthread_mutex_unlock(&zk_close_lock);
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "zk connection closed\n");
     }
     pthread_mutex_unlock(&zk_final_lock);
