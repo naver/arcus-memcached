@@ -519,7 +519,7 @@ mc_hb(zhandle_t *zh, void *context)
     // error during send()/recv(), it may not be a memcached failure at all.
     // We may get slab memory shortage for slab class 0 for above key.
     // For now, we simply return here without ping error or intentional delay
-    err = send(sock, mc_hb_cmd, 29, 0);
+    err = send(sock, mc_hb_cmd, 28, 0);
     if (err > 0) {
         // expects "STORED\r\n"
         err = recv(sock, buf, 8, 0);
@@ -534,8 +534,8 @@ mc_hb(zhandle_t *zh, void *context)
         }
     }
 
-    if (sock)
-        close(sock);
+    shutdown(sock, SHUT_RDWR);
+    //close(sock);
     return 0;
 }
 
