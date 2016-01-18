@@ -335,17 +335,11 @@ struct mc_stats {
     pthread_mutex_t mutex;
     unsigned int  daemon_conns; /* conns used by the server */
     unsigned int  curr_conns;
-#if 1 // JOON_QUIT_CONN
     unsigned int  quit_conns;
     unsigned int  rejected_conns; /* number of times I reject a client */
-#endif
     unsigned int  total_conns;
     unsigned int  conn_structs;
     time_t        started;          /* when the process was started */
-#if 1 // JOON_QUIT_CONN
-#else
-    uint64_t      rejected_conns; /* number of times I reject a client */
-#endif
 };
 
 #define MAX_VERBOSITY_LEVEL 2
