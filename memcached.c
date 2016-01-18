@@ -11892,7 +11892,6 @@ static int try_read_command(conn *c) {
                     ++ptr;
                 }
 
-#if 1 // JOON_DEBUG
                 if (ptr - c->rcurr > 100) {
                     mc_logger->log(EXTENSION_LOG_WARNING, c,
                         "%d: Too many leading whitespaces(%d). Close the connection.\n",
@@ -11909,13 +11908,6 @@ static int try_read_command(conn *c) {
                     conn_set_state(c, conn_closing);
                     return 1;
                 }
-#else
-                if (ptr - c->rcurr > 100 ||
-                    (strncmp(ptr, "get ", 4) && strncmp(ptr, "gets ", 5))) {
-                    conn_set_state(c, conn_closing);
-                    return 1;
-                }
-#endif
             }
 
             return 0;
@@ -12032,27 +12024,23 @@ static enum try_read_result try_read_network(conn *c) {
             }
         }
         if (res == 0) {
-#if 1 // JOON_DEBUG
             /* The client called shutdown() to close the socket. */
             if (settings.verbose > 1) {
                 mc_logger->log(EXTENSION_LOG_DEBUG, c,
                         "Couldn't read in try_read_network: end of stream\n");
             }
-#endif
             return READ_ERROR;
         }
         if (res == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 break;
             }
-#if 1 // JOON_DEBUG
             /* The client called close() to close the socket. */
             if (settings.verbose > 1) {
                 mc_logger->log(EXTENSION_LOG_DEBUG, c,
                         "Couldn't read in try_read_network: err=(%d:%s)\n",
                         errno, strerror(errno));
             }
-#endif
             return READ_ERROR;
         }
     }
@@ -12133,15 +12121,11 @@ static enum transmit_result transmit(conn *c) {
         }
         /* if res == 0 or res == -1 and error is not EAGAIN or EWOULDBLOCK,
            we have a real error, on which we close the connection */
-#if 1 // JOON_DEBUG
         if (settings.verbose > 0) {
             mc_logger->log(EXTENSION_LOG_INFO, c,
                            "Failed to write, and not due to blocking.\n");
+            //perror("Failed to write, and not due to blocking");
         }
-#else
-        if (settings.verbose > 0)
-            perror("Failed to write, and not due to blocking");
-#endif
 
         if (IS_UDP(c->transport))
             conn_set_state(c, conn_read);
@@ -12334,12 +12318,10 @@ bool conn_swallow(conn *c) {
         return true;
     }
     if (res == 0) { /* end of stream */
-#if 1 // JOON_DEBUG
         if (settings.verbose > 0) {
             mc_logger->log(EXTENSION_LOG_INFO, c,
                            "Couldn't read in conn_swallow: end of stream.\n");
         }
-#endif
         conn_set_state(c, conn_closing);
         return true;
     }
@@ -12360,14 +12342,11 @@ bool conn_swallow(conn *c) {
         mc_logger->log(EXTENSION_LOG_WARNING, c,
                 "Failed to read in conn_swallow, and not due to blocking: err=(%d:%s)\n",
                 errno, strerror(errno));
-    }
-#if 1 // JOON_DEBUG
-    else {
+    } else {
         mc_logger->log(EXTENSION_LOG_INFO, c,
                 "Failed to read in conn_swallow, and not due to blocking: err=(%d:%s)\n",
                 errno, strerror(errno));
     }
-#endif
 
     conn_set_state(c, conn_closing);
 
@@ -12427,12 +12406,10 @@ bool conn_nread(conn *c) {
         return true;
     }
     if (res == 0) { /* end of stream */
-#if 1 // JOON_DEBUG
         if (settings.verbose > 0) {
             mc_logger->log(EXTENSION_LOG_INFO, c,
                            "Couldn't read in conn_nread: end of stream.\n");
         }
-#endif
         conn_set_state(c, conn_closing);
         return true;
     }
@@ -12456,9 +12433,7 @@ bool conn_nread(conn *c) {
                        errno, strerror(errno),
                        (long)c->rcurr, (long)c->ritem, (long)c->rbuf,
                        (int)c->rlbytes, (int)c->rsize);
-    }
-#if 1 // JOON_DEBUG
-    else {
+    } else {
         mc_logger->log(EXTENSION_LOG_INFO, c,
                        "Failed to read in conn_nread, and not due to blocking: err=(%d:%s)\n"
                        "rcurr=%lx ritem=%lx rbuf=%lx rlbytes=%d rsize=%d\n",
@@ -12466,7 +12441,6 @@ bool conn_nread(conn *c) {
                        (long)c->rcurr, (long)c->ritem, (long)c->rbuf,
                        (int)c->rlbytes, (int)c->rsize);
     }
-#endif
     conn_set_state(c, conn_closing);
     return true;
 }
