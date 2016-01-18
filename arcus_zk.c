@@ -534,8 +534,7 @@ mc_hb(zhandle_t *zh, void *context)
         }
     }
 
-    shutdown(sock, SHUT_RDWR);
-    //close(sock);
+    close(sock);
     return 0;
 }
 
