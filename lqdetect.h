@@ -10,9 +10,8 @@
 
 
 #define LONGQ_EXPLICIT_STOP          0    /* stop by user request */
-#define LONGQ_BUFFER_OVERFLOW_STOP   1    /* stop by detected command buffer overflow */
-#define LONGQ_COUNT_OVERFLOW_STOP    2    /* stop by detected command count obferflow */
-#define LONGQ_RUNNING                3    /* long query is running */
+#define LONGQ_OVERFLOW_STOP          1    /* stop by detected command overflow (buffer or count)*/
+#define LONGQ_RUNNING                2    /* long query is running */
 
 /* detect long query target command */
 enum lq_detect_command {

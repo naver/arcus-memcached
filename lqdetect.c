@@ -33,7 +33,7 @@ struct lq_detect_global {
     struct lq_detect_stats stats;
     int overflow_cnt;
     bool on_detecting;
-    uint16_t refcount; /* lqdetect show refrence count */
+    uint16_t refcount; /* lqdetect show reference count */
 };
 struct lq_detect_global lqdetect;
 
@@ -248,7 +248,7 @@ static bool lqdetect_dupcheck(char *key, enum lq_detect_command cmd, struct lq_d
     return false;
 }
 
-static bool lqdetect_write(char client_ip[], char *key, enum lq_detect_command cmd)
+static void lqdetect_write(char client_ip[], char *key, enum lq_detect_command cmd)
 {
     struct   tm *ptm;
     struct   timeval val;
@@ -256,70 +256,69 @@ static bool lqdetect_write(char client_ip[], char *key, enum lq_detect_command c
     uint32_t nsaved = buffer->nsaved;
     char     *bufptr = buffer->data + buffer->offset;
     struct   lq_detect_argument *arg = &lqdetect.arg[cmd][nsaved];
-
-    /* buffer overflow check */
-    if (LONGQ_SAVE_CNT * LONGQ_INPUT_SIZE - buffer->offset < LONGQ_INPUT_SIZE) {
-        return false;
-    }
+    uint32_t mwrite;
+    uint32_t length;
 
     gettimeofday(&val, NULL);
     ptm = localtime(&val.tv_sec);
+    length = ((nsaved+1) * LONGQ_INPUT_SIZE) - buffer->offset - 1;
 
-    snprintf(bufptr, LONGQ_INPUT_SIZE, "%02d:%02d:%02d.%06ld %s <%d> %s ",
+    snprintf(bufptr, length, "%02d:%02d:%02d.%06ld %s <%d> %s ",
         ptm->tm_hour, ptm->tm_min, ptm->tm_sec, (long)val.tv_usec, client_ip,
         arg->overhead, command_str[cmd]);
 
-    buffer->keypos[nsaved] = buffer->offset + strlen(bufptr);
+    mwrite = strlen(bufptr);
+    buffer->keypos[nsaved] = buffer->offset + mwrite;
     buffer->keylen[nsaved] = strlen(key);
-    bufptr += strlen(bufptr);
+    length -= mwrite;
+    bufptr += mwrite;
 
     switch (cmd) {
     case LQCMD_LOP_INSERT:
     case LQCMD_SOP_GET:
-        snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s\n", key, arg->range);
+        snprintf(bufptr, length, "%s %s\n", key, arg->range);
         break;
     case LQCMD_LOP_DELETE:
         if (arg->delete_or_drop == 2) {
-            snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s %s\n", key, arg->range, "drop");
+            snprintf(bufptr, length, "%s %s %s\n", key, arg->range, "drop");
         } else {
-            snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s\n", key, arg->range);
+            snprintf(bufptr, length, "%s %s\n", key, arg->range);
         }
     case LQCMD_LOP_GET:
         if (arg->delete_or_drop != 0) {
-            snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s %s\n", key, arg->range,
+            snprintf(bufptr, length, "%s %s %s\n", key, arg->range,
                        (arg->delete_or_drop == 2 ? "drop" : "delete"));
         } else {
-            snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s\n", key, arg->range);
+            snprintf(bufptr, length, "%s %s\n", key, arg->range);
         }
         break;
     case LQCMD_BOP_GBP:
-        snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s %s\n", key, arg->range, (arg->asc_or_desc == 2 ? "desc" : "asc"));
+        snprintf(bufptr, length, "%s %s %s\n", key, arg->range, (arg->asc_or_desc == 2 ? "desc" : "asc"));
         break;
     case LQCMD_BOP_GET:
         if (arg->delete_or_drop != 0) {
-            snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s %d %d %s\n", key, arg->range,
+            snprintf(bufptr, length, "%s %s %d %d %s\n", key, arg->range,
                         arg->offset, arg->count, (arg->delete_or_drop == 2 ? "drop" : "delete"));
         } else {
-            snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s %d %d\n", key, arg->range,
+            snprintf(bufptr, length, "%s %s %d %d\n", key, arg->range,
                         arg->offset, arg->count);
         }
         break;
     case LQCMD_BOP_COUNT:
-        snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s\n", key, arg->range);
+        snprintf(bufptr, length, "%s %s\n", key, arg->range);
         break;
     case LQCMD_BOP_DELETE:
         if (arg->delete_or_drop == 2) {
-            snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s %d %s\n", key, arg->range, arg->count, "drop");
+            snprintf(bufptr, length, "%s %s %d %s\n", key, arg->range, arg->count, "drop");
         } else {
-            snprintf(bufptr, LONGQ_INPUT_SIZE, "%s %s %d\n", key, arg->range, arg->count);
+            snprintf(bufptr, length, "%s %s %d\n", key, arg->range, arg->count);
         }
         break;
     }
 
-    buffer->offset = buffer->keypos[nsaved] + strlen(bufptr);
-    buffer->nsaved++;
-
-    return true;
+    mwrite += strlen(bufptr);
+    buffer->offset += mwrite;
+    buffer->nsaved += 1;
 }
 
 bool lqdetect_discriminant(uint32_t overhead)
@@ -355,17 +354,14 @@ bool lqdetect_save_cmd(char client_ip[], char* key,
         if (lqdetect_dupcheck(key, cmd, arg))
             break; /* duplication query */
 
-        if (! lqdetect_write(client_ip, key, cmd)) {
-            do_lqdetect_stop(LONGQ_BUFFER_OVERFLOW_STOP);
-            ret = false;
-            break;
-        }
+        /* write to buffer */
+        lqdetect_write(client_ip, key, cmd);
 
         /* internal stop */
         if (lqdetect.buffer[cmd].nsaved >= LONGQ_SAVE_CNT) {
             lqdetect.overflow_cnt++;
             if (lqdetect.overflow_cnt >= LONGQ_COMMAND_NUM) {
-                do_lqdetect_stop(LONGQ_COUNT_OVERFLOW_STOP);
+                do_lqdetect_stop(LONGQ_OVERFLOW_STOP);
                 ret = false;
             }
         }
