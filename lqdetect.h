@@ -51,7 +51,7 @@ char *lqdetect_buffer_get(int cmd, uint32_t *length, uint32_t *cmdcnt);
 void lqdetect_buffer_release(int bufcnt);
 int lqdetect_start(uint32_t lqdetect_base, bool *already_started);
 void lqdetect_stop(bool *already_stopped);
-struct lq_detect_stats *lqdetect_stats(void);
+void lqdetect_stats(struct lq_detect_stats *stats);
 bool lqdetect_discriminant(uint32_t overhead);
 bool lqdetect_save_cmd(char client_ip[], char *key,
                       enum lq_detect_command cmd, struct lq_detect_argument *arg);

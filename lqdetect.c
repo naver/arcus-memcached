@@ -128,8 +128,6 @@ int lqdetect_start(uint32_t lqdetect_standard, bool *already_started)
 
         /* prepare detect long query buffer, argument and counts*/
         for(ii = 0; ii < LONGQ_COMMAND_NUM; ii++) {
-            memset(lqdetect.buffer[ii].keypos, 0, LONGQ_SAVE_CNT * sizeof(uint32_t));
-            memset(lqdetect.buffer[ii].keylen, 0, LONGQ_SAVE_CNT * sizeof(uint32_t));
             lqdetect.buffer[ii].ntotal = 0;
             lqdetect.buffer[ii].nsaved = 0;
             lqdetect.buffer[ii].offset = 0;
@@ -162,33 +160,32 @@ void lqdetect_stop(bool *already_stopped)
     pthread_mutex_unlock(&lqdetect.lock);
 }
 
-struct lq_detect_stats *lqdetect_stats()
+void lqdetect_stats(struct lq_detect_stats *stats)
 {
     int ii;
-    struct lq_detect_stats *stats = &lqdetect.stats;
+    *stats = lqdetect.stats;
 
     if (lqdetect.on_detecting) {
-        stats->enddate = getnowdate();
-        stats->endtime = getnowtime();
+        stats->enddate = 0;
+        stats->endtime = 0;
     }
 
     stats->total_lqcmds = 0;
     for (ii = 0; ii < LONGQ_COMMAND_NUM; ii++) {
         stats->total_lqcmds += lqdetect.buffer[ii].ntotal;
     }
-    return stats;
 }
 
 char *lqdetect_buffer_get(int cmd, uint32_t *length, uint32_t *cmdcnt)
 {
+    pthread_mutex_lock(&lqdetect.lock);
+
     char *data = lqdetect.buffer[cmd].data;
     *length = lqdetect.buffer[cmd].offset;
     *cmdcnt = lqdetect.buffer[cmd].ntotal;
-
-    pthread_mutex_lock(&lqdetect.lock);
     lqdetect.refcount++;
-    pthread_mutex_unlock(&lqdetect.lock);
 
+    pthread_mutex_unlock(&lqdetect.lock);
     return data;
 }
 
@@ -253,25 +250,26 @@ static void lqdetect_write(char client_ip[], char *key, enum lq_detect_command c
     struct   tm *ptm;
     struct   timeval val;
     struct   lq_detect_buffer *buffer = &lqdetect.buffer[cmd];
+    uint32_t offset = buffer->offset;
     uint32_t nsaved = buffer->nsaved;
     char     *bufptr = buffer->data + buffer->offset;
     struct   lq_detect_argument *arg = &lqdetect.arg[cmd][nsaved];
-    uint32_t mwrite;
+    uint32_t nwrite;
     uint32_t length;
 
     gettimeofday(&val, NULL);
     ptm = localtime(&val.tv_sec);
-    length = ((nsaved+1) * LONGQ_INPUT_SIZE) - buffer->offset - 1;
+    length = ((nsaved+1) * LONGQ_INPUT_SIZE) - offset - 1;
 
     snprintf(bufptr, length, "%02d:%02d:%02d.%06ld %s <%d> %s ",
         ptm->tm_hour, ptm->tm_min, ptm->tm_sec, (long)val.tv_usec, client_ip,
         arg->overhead, command_str[cmd]);
 
-    mwrite = strlen(bufptr);
-    buffer->keypos[nsaved] = buffer->offset + mwrite;
+    nwrite = strlen(bufptr);
+    buffer->keypos[nsaved] = offset + nwrite;
     buffer->keylen[nsaved] = strlen(key);
-    length -= mwrite;
-    bufptr += mwrite;
+    length -= nwrite;
+    bufptr += nwrite;
 
     switch (cmd) {
     case LQCMD_LOP_INSERT:
@@ -316,8 +314,8 @@ static void lqdetect_write(char client_ip[], char *key, enum lq_detect_command c
         break;
     }
 
-    mwrite += strlen(bufptr);
-    buffer->offset += mwrite;
+    nwrite += strlen(bufptr);
+    buffer->offset += nwrite;
     buffer->nsaved += 1;
 }
 
