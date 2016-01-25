@@ -31,6 +31,7 @@
 #include "cache.h"
 #include "topkeys.h"
 #include "cmdlog.h"
+#include "lqdetect.h"
 #include "engine_loader.h"
 #include "sasl_defs.h"
 
@@ -534,6 +535,10 @@ struct conn {
     int    suffixsize;
     char   **suffixcurr;
     int    suffixleft;
+
+#ifdef DETECT_LONG_QUERY
+    int    lq_bufcnt;
+#endif
 
     enum protocol protocol;   /* which protocol this connection speaks */
     enum network_transport transport; /* what transport is used by this connection */

@@ -80,6 +80,8 @@ memcached_SOURCES = \
                     topkeys.h \
                     cmdlog.c \
                     cmdlog.h \
+                    lqdetect.c \
+                    lqdetect.h \
                     trace.h
 memcached_LDFLAGS =-R '$(libdir)'
 memcached_CFLAGS = @PROFILER_FLAGS@ ${AM_CFLAGS}
