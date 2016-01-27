@@ -1,3 +1,12 @@
+2016-01-27 [version 1.9.4]
+	* Do background eviction only if item_evict_to_free is true.
+	* Close ZK conn before close listen socket during shutdown.
+	* Change package name and bug-report mail address.
+	* Check maximum service code length of 32.
+	* Augment messages printed when client connections are closed.
+	* Add long query(or request) detection funtionality.
+	* Remove the pid file as the first task of shutdown.
+
 2015-11-13 [version 1.9.3]
 	* Complete key dump funtionality.
 	  - fix a mistake in parsing dump ascii command.
