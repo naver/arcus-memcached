@@ -5,7 +5,8 @@ Admin & Monitoring 명령
 - SCRUB 명령
 - STATS 명령
 - CONFIG 명령
-- COMMAND LOGGING 명령
+- CMDLOG 명령
+- LQDETECT 명령
 - KEY DUMP 명령
 - HELP 명령
 
@@ -304,15 +305,26 @@ cmdlog [start [<log_file_path>] | stop | stats]\r\n
 
 \<log_file_path\>는 logging 정보를 저장할 file의 path이다.
 - path는 생략 가능하며, 생략할 경우 default로 지정된다.
-- path는 절대 path, 상대 path, default 지정이 가능하다.
-- path를 직접 지정할 경우 최종 파일이 생성될 디렉터리까지 지정해 주어야 한다.
-- default로 자동 지정할 경우 log file은 command_log 디렉터리 안에 생성된다.
-- command_log 디렉터리는 자동생성되지 않으며, memcached process가 구동된 위치에 생성해 주어야 한다.
+  - default로 자동 지정할 경우 log file은 memcached구동위치/command_log 디렉터리 안에 생성된다.
+  - command_log 디렉터리는 자동생성되지 않으며, memcached process가 구동된 위치에 생성해 주어야 한다.
+  - 생성되는 log file의 파일명은 11211_20160126_191445_0.log | port_bgndate_bgntime_{n}.log 이다.
+- path는 직접 지정할 경우 절대 path, 상대 path지정이 가능하다. 최종 파일이 생성될 디렉터리까지 지정해 주어야 한다.
 
 start 명령의 결과로 log file에 출력되는 내용은 아래와 같다.
 
 ```
-<time> <client_ip> <command>\n
+---------------------------------------
+format : <time> <client_ip> <command>\n
+---------------------------------------
+
+19:14:45.530198 127.0.0.1 bop insert arcustest-Collection_Btree:vuRYyfqyeP0Egg8daGF72 0x626B65795F6279746541727279323239 0x45464C4147 80 create 0 600 4000
+19:14:45.530387 127.0.0.1 lop insert arcustest-Collection_List:pGhEn6DFv5MixbYObBgp1 -1 64 create 0 600 4000
+19:14:45.530221 127.0.0.1 lop insert arcustest-Collection_List:hhSAED2pFBH9xGqEgAeW1 -1 80 create 0 600 4000
+19:14:45.530334 127.0.0.1 bop insert arcustest-Collection_Btree:RGSXLACxWpKwLPdC86qn0 0x626B65795F6279746541727279303331 0x45464C4147 80 create 0 600 4000
+19:14:45.530385 127.0.0.1 lop insert arcustest-Collection_List:PwFTiFSEWlenireHcxNb2 -1 80 create 0 600 4000
+19:14:45.530407 127.0.0.1 bop insert arcustest-Collection_Btree:P1lfJrJyVFyP0ogrw27h1 0x626B65795F6279746541727279313238 0x45464C4147 101 create 0 600 4000
+19:14:45.530537 127.0.0.1 sop exist arcustest-Collection_Set:gTx8KDPBiufiGN9ArtgG3 81 pipe
+19:14:45.530757 127.0.0.1 sop exist arcustest-Collection_Set:gTx8KDPBiufiGN9ArtgG3 81
 ```
 
 stop 명령은 logging이 완료되기 전 중지하고 싶을 때 사용할 수 있다.
@@ -321,14 +333,88 @@ stats 명령은 가장 최근 수행된(수행 중인) command logging의 상태
 
 ```
 Command logging stats
-The last running time : bgndata_bgntime ~ enddate_endtime
-The number of entered commands : entered_commands
-The number of skipped commands : skipped_commands
-The number of log files : file_count
-The log file name: path/port_bgndate_bgntime_{n}.log
-How command logging stopped : stop by explicit request
-                              stop by command log overflow
-                              stop by disk flush error
+The last running time : 20160126_192729 ~ 20160126_192742               //bgndate_bgntime ~ enddate_endtime
+The number of entered commands : 146783                                 //entered_commands
+The number of skipped commands : 0                                      //skipped_commands
+The number of log files : 1                                             //file_count
+The log file name: /Users/mwjin/Task/temp/11211_20160126_192729_{n}.log //path/file_name
+How command logging stopped : stop by explicit request                  //stop by explicit request
+                                                                          stop by command log overflow
+                                                                          stop by disk flush error
+```
+
+### Long query detect 명령
+
+Arcus cache server에서 collection item에 대한 요청 중에는 그 처리 시간이 오래 걸리는 요청이 존재한다.
+이를 detect하기 위한 기능으로 lqdetect 명령을 제공한다.
+start 명령을 시작으로 detection이 종료될 때 까지 long query 가능성이 있는 command에 대하여, 
+그 command 처리에서 접근한 elements 수가 특정 기준 이상인 command를 추출,
+command 별로 detect된 명령어 20개를 샘플로 저장한다.
+long query 대상이 되는 모든 command에 대해 20개의 샘플 저장이 완료되면 자동 종료한다.
+저장된 샘플은 show 명령을 통해 확인할 수 있다.
+
+long query detection 대상이 되는 command는 아래와 같다.
+```
+1. sop get
+2. lop insert
+3. lop delete
+4. lop get
+5. bop delete
+6. bop get
+7. bop count
+8. bop gbp
+```
+
+lqdetect command는 아래와 같다.
+```
+lqdetect [start [<detect_standard>] | stop | show | stats]\r\n
+```
+\<detect_standard\>는 long query로 분류하는 기준으로 해당 요청에서 접근하는 elements 수로 나타내며, 어떤 요청에서 detection 기준 이상으로 많은 elements를 접근하는 요청을 long query로 구분한다. 생략 시 default standard는 4000이다.
+
+start 명령으로 detection을 시작할 수 있다.
+
+stop 명령은 detection이 완료되기 전 중지하고 싶을 때 사용할 수 있다.
+
+show 명령은 저장된 명령어 샘플을 출력하고 그 결과는 아래와 같다.
+
+```
+-----------------------------------------------------------
+format : <time> <client_ip> <count> <command> <arguments>\n
+-----------------------------------------------------------
+
+sop get command entered count : 0
+
+lop insert command entered count : 0
+
+lop delete command entered count : 0
+
+lop get command entered count : 92
+17:56:33.276847 127.0.0.1 <46> lop get arcustest-Collection_List:YN8UCtNaoD4hHnMMwMJq1 0..44
+17:56:33.278116 127.0.0.1 <43> lop get arcustest-Collection_List:orjTteJo7F0bWdXDDGcP0 0..41
+17:56:33.279856 127.0.0.1 <48> lop get arcustest-Collection_List:r7ERYr3IdiD3RO8hLNvI3 0..46
+17:56:33.304063 127.0.0.1 <45> lop get arcustest-Collection_List:0OWKNF3Z17NaTSaDTZG61 0..43
+
+bop delete command entered count : 0
+
+bop get command entered count : 81
+17:56:33.142590 127.0.0.1 <47> bop get arcustest-Collection_Btree:0X6mqSiwBx6fEZVLuwKF0 0x626B65795F62797465417272793030..0x626B65795F6279746541727279303530 efilter 0 47
+17:56:33.142762 127.0.0.1 <49> bop get arcustest-Collection_Btree:PiX8strLCv7iWywd1ZuE0 0x626B65795F62797465417272793030..0x626B65795F6279746541727279303530 efilter 0 49
+17:56:33.143326 127.0.0.1 <46> bop get arcustest-Collection_Btree:PiX8strLCv7iWywd1ZuE1 0x626B65795F62797465417272793130..0x626B65795F6279746541727279313530 efilter 0 48
+
+bop count command entered count : 0
+
+bop gbp command entered count : 0
+```
+
+stats 명령은 가장 최근 수행된(수행 중인) long query detection의 상태를 조회하고 그 결과는 아래와 같다.
+```
+Long query detection stats
+The last running time : 20160126_175629 ~ 0_0     //bgndata_bgntime ~ enddate_endtime
+The number of total long query commands : 1152    //detected_commands 
+The detection standard : 43                       //standard
+How long query detection stopped : is running     //stop by explicit request
+                                                    stop by long query overflow
+                                                    is running
 ```
 
 ### Key dump 명령
