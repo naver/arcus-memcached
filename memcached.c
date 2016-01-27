@@ -14787,6 +14787,10 @@ int main (int argc, char **argv) {
 
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Initiating arcus memcached shutdown...\n");
 
+    /* remove the PID file if we're a daemon */
+    if (do_daemonize)
+        remove_pidfile(pid_file);
+
 #ifdef ENABLE_ZK_INTEGRATION
     /* shutdown arcus ZK connection */
     if (arcus_zk_cfg) {
@@ -14814,9 +14818,6 @@ int main (int argc, char **argv) {
     mc_engine.v1->destroy(mc_engine.v0);
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Memcached engine destroyed.\n");
 
-    /* remove the PID file if we're a daemon */
-    if (do_daemonize)
-        remove_pidfile(pid_file);
     /* Clean up strdup() call for bind() address */
     if (settings.inter)
       free(settings.inter);
