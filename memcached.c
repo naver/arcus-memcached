@@ -8011,6 +8011,11 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
+    if (vlen < 0 || vlen > (INT_MAX-2)) {
+        out_string(c, "CLIENT_ERROR bad command line format");
+        return;
+    }
+    vlen += 2;
 
     /* Ubuntu 8.04 breaks when I pass exptime to safe_strtol */
     exptime = exptime_int;
@@ -8021,12 +8026,6 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
-    }
-
-    vlen += 2;
-    if (vlen < 0 || vlen - 2 < 0) {
-        out_string(c, "CLIENT_ERROR bad command line format");
-        return;
     }
 
     if (settings.detail_enabled) {
