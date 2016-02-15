@@ -79,6 +79,19 @@ typedef struct _btree_elem_item {
     unsigned char data[1];       /* data: <bkey, [eflag,] value> */
 } btree_elem_item;
 
+#ifdef MAP_COLLECTION_SUPPORT
+/* map element */
+typedef struct _map_elem_item {
+    uint16_t refcount;
+    uint8_t  slabs_clsid;         /* which slab class we're in */
+    uint32_t hval;                /* hash value */
+    struct _map_elem_item *next;  /* hash chain next */
+    uint8_t nfield;              /**< The total size of the field (in bytes) */
+    uint16_t nbytes;              /**< The total size of the data (in bytes) */
+    unsigned char data[1];        /* data: <field, value> */
+} map_elem_item;
+#endif
+
 /* list meta info */
 typedef struct _list_meta_info {
     int32_t  mcnt;      /* maximum count */
@@ -159,6 +172,42 @@ typedef struct _btree_meta_info {
     bkey_t   maxbkeyrange;
     btree_indx_node *root;
 } btree_meta_info;
+
+#ifdef MAP_COLLECTION_SUPPORT
+/* map meta info */
+#define MAP_HASHTAB_SIZE 16
+#define MAP_HASHIDX_MASK 0x0000000F
+#define MAP_MAX_HASHCHAIN_SIZE 64
+
+typedef struct _map_hash_node {
+    uint16_t refcount;
+    uint8_t  slabs_clsid;         /* which slab class we're in */
+    uint8_t  hdepth;
+    uint16_t tot_elem_cnt;
+    uint16_t tot_hash_cnt;
+    int16_t  hcnt[MAP_HASHTAB_SIZE];
+    void    *htab[MAP_HASHTAB_SIZE];
+} map_hash_node;
+
+typedef struct _map_meta_info {
+    int32_t  mcnt;      /* maximum count */
+    int32_t  ccnt;      /* current count */
+    uint8_t  ovflact;   /* overflow action */
+    uint8_t  mflags;    /* sticky, readable flags */
+    uint8_t  itdist;    /* distance from hash item (unit: sizeof(size_t)) */
+    uint8_t  reserved;
+    uint32_t stotal;    /* total space */
+    void    *prefix;    /* pointer to prefix meta info */
+    map_hash_node *root;
+} map_meta_info;
+
+/* map element previous info */
+typedef struct _map_prev_info {
+    map_hash_node *node;
+    map_elem_item *prev;
+    uint16_t       hidx;
+} map_prev_info;
+#endif
 
 /* btree element position */
 typedef struct _btree_elem_posi {
@@ -515,6 +564,42 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
                                ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
                                item_attr *attr_data);
 
+#ifdef MAP_COLLECTION_SUPPORT
+ENGINE_ERROR_CODE map_struct_create(struct default_engine *engine,
+                                    const char *key, const size_t nkey,
+                                    item_attr *attrp, const void *cookie);
+
+map_elem_item *map_elem_alloc(struct default_engine *engine, const int nfield,
+                              const int nbytes, const void *cookie);
+
+void map_elem_release(struct default_engine *engine,
+                      map_elem_item **elem_array, const int elem_count);
+
+ENGINE_ERROR_CODE map_elem_insert(struct default_engine *engine,
+                                  const char *key, const size_t nkey,
+                                  map_elem_item *elem,
+                                  item_attr *attrp,
+                                  bool *created, const void *cookie);
+
+ENGINE_ERROR_CODE map_elem_update(struct default_engine *engine,
+                                  const char *key, const size_t nkey,
+                                  const field_t *field,
+                                  const char *value, const int nbytes,
+                                  const void *cookie);
+
+ENGINE_ERROR_CODE map_elem_delete(struct default_engine *engine,
+                                  const char *key, const size_t nkey,
+                                  const int numfields, const field_t *flist,
+                                  const bool drop_if_empty, uint32_t *del_count,
+                                  bool *dropped);
+
+ENGINE_ERROR_CODE map_elem_get(struct default_engine *engine,
+                               const char *key, const size_t nkey,
+                               const int numfields, const field_t *flist, const bool delete,
+                               const bool drop_if_empty, map_elem_item **elem_array,
+                               uint32_t *elem_count, uint32_t *flags, bool *dropped);
+#endif
+
 /*
  * Item config functions
  */
@@ -543,6 +628,9 @@ bool item_is_linked(const hash_item* item);
 bool list_elem_is_linked(list_elem_item *elem);
 bool set_elem_is_linked(set_elem_item *elem);
 bool btree_elem_is_linked(btree_elem_item *elem);
+#ifdef MAP_COLLECTION_SUPPORT
+bool map_elem_is_linked(map_elem_item *elem);
+#endif
 
 /*
  * Item and Element size functions
@@ -552,6 +640,9 @@ uint32_t list_elem_ntotal(list_elem_item *elem);
 uint32_t set_elem_ntotal(set_elem_item *elem);
 uint32_t btree_elem_ntotal(btree_elem_item *elem);
 uint8_t  btree_real_nbkey(uint8_t nbkey);
+#ifdef MAP_COLLECTION_SUPPORT
+uint32_t map_elem_ntotal(map_elem_item *elem);
+#endif
 
 /**
  * Start the item scrubber

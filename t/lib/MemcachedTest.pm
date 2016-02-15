@@ -14,7 +14,7 @@ my $builddir = getcwd;
 
 @EXPORT = qw(new_memcached new_memcached_engine sleep
              mem_get_is mem_gets mem_gets_is mem_stats mem_cmd_val_is
-             getattr_is lop_get_is sop_get_is bop_get_is bop_gbp_is bop_pwg_is bop_smget_is
+             getattr_is lop_get_is sop_get_is mop_get_is bop_get_is bop_gbp_is bop_pwg_is bop_smget_is
              bop_ext_get_is bop_ext_smget_is bop_new_smget_is bop_old_smget_is
              stats_prefixes_is stats_noprefix_is stats_prefix_is
              supports_sasl free_port);
@@ -234,6 +234,52 @@ sub sop_get_is {
     my $response_body = join(",", sort(@value_array));
 
     Test::More::is("$response_head $response_body", "$expected_head $expected_body", $msg);
+}
+
+# COLLECTION
+sub mop_get_is {
+    # works on single-line values only.  no newlines in value.
+    my ($sock_opts, $args, $flags, $numfields, $ecount, $flist, $fields, $values, $tailstr, $msg) = @_;
+    my $opts = ref $sock_opts eq "HASH" ? $sock_opts : {};
+    my $sock = ref $sock_opts eq "HASH" ? $opts->{sock} : $sock_opts;
+
+    $msg ||= "mop get $args == $flags $ecount field data";
+
+    if ($numfields > 0) {
+        print $sock "mop get $args\r\n$flist\r\n";
+    } else {
+        print $sock "mop get $args\r\n";
+    }
+
+    my $expected_head = "VALUE $flags $ecount\r\n";
+    my $expected_field = $fields;
+    my $expected_body = $values;
+    my $expected_tail = "$tailstr\r\n";
+
+    my $response_head = scalar <$sock>;
+    my @field_array = ();
+    my @value_array = ();
+    my $field;
+    my $vleng;
+    my $value;
+    my $rleng;
+    my $line = scalar <$sock>;
+    while ($line !~ /^END/ and $line !~ /^DELETED/ and $line !~ /DELETED_DROPPED/) {
+        $field = substr $line, 0, index($line, ' ');
+        $rleng = length($field) + 1;
+        $vleng = substr $line, $rleng, index($line,' ',$rleng)-$rleng;
+        $rleng = $rleng + length($vleng) + 1;
+        $value = substr $line, $rleng, length($line)-$rleng-2;
+        push(@field_array, $field);
+        push(@value_array, $value);
+        $line = scalar <$sock>;
+    }
+    my $response_field = join(",", @field_array);
+    my $response_body = join(",", @value_array);
+    my $response_tail = $line;
+
+    Test::More::is("$response_head $response_field $response_body $response_tail",
+                   "$expected_head $expected_field $expected_body $expected_tail", $msg);
 }
 
 # COLLECTION
