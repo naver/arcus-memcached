@@ -26,7 +26,8 @@ lib_LTLIBRARIES = ascii_scrub.la \
                   default_engine.la \
                   demo_engine.la \
                   example_protocol.la \
-                  stdin_term_handler.la
+                  stdin_term_handler.la \
+                  userlog_logger.la
 
 if BUILD_SYSLOG_LOGGER
 lib_LTLIBRARIES += syslog_logger.la
@@ -226,6 +227,10 @@ example_protocol_la_LDFLAGS= -avoid-version -shared -module -no-undefined
 # A logger using syslog
 syslog_logger_la_SOURCES = syslog_logger.c
 syslog_logger_la_LDFLAGS = -avoid-version -shared -module -no-undefined
+
+# A logger using user log file
+userlog_logger_la_SOURCES = userlog_logger.c 
+userlog_logger_la_LDFLAGS = -avoid-version -shared -module -no-undefined
 
 basic_engine_testsuite_la_SOURCES= basic_engine_testsuite.c
 basic_engine_testsuite_la_DEPENDENCIES= libmcd_util.la
