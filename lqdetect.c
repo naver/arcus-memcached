@@ -199,7 +199,7 @@ void lqdetect_buffer_release(int bufcnt)
 
 static bool lqdetect_dupcheck(char *key, enum lq_detect_command cmd, struct lq_detect_argument *arg)
 {
-    int ii;
+    int ii = 0;
     int count = lqdetect.buffer[cmd].nsaved;
 
     switch (cmd) {
