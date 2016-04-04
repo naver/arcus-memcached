@@ -542,12 +542,8 @@ ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it
     return ENGINE_SUCCESS;
 }
 
-#ifdef ITEM_REPLACE_TO_ALWAYS_SUCCESS
 void assoc_prefix_unlink(struct default_engine *engine, hash_item *it,
                          const size_t item_size, bool drop_if_empty)
-#else
-void assoc_prefix_unlink(struct default_engine *engine, hash_item *it, const size_t item_size)
-#endif
 {
     prefix_t *pt;
     assert(it->nprefix != 0);
@@ -584,7 +580,6 @@ void assoc_prefix_unlink(struct default_engine *engine, hash_item *it, const siz
         }
     }
 #endif
-#ifdef ITEM_REPLACE_TO_ALWAYS_SUCCESS
     if (drop_if_empty) {
         while (pt != NULL) {
             prefix_t *parent_pt = pt->parent_prefix;
@@ -601,22 +596,6 @@ void assoc_prefix_unlink(struct default_engine *engine, hash_item *it, const siz
             pt = parent_pt;
         }
     }
-#else
-    while (pt != NULL) {
-        prefix_t *parent_pt = pt->parent_prefix;
-
-        if (pt != root_pt && pt->prefix_items == 0 && pt->hash_items == 0 &&
-            pt->list_hash_items == 0 && pt->set_hash_items == 0 && pt->btree_hash_items == 0) {
-            assert(pt->hash_items_bytes == 0 && pt->list_hash_items_bytes == 0 &&
-                   pt->set_hash_items_bytes == 0 && pt->btree_hash_items_bytes == 0);
-            _prefix_delete(engine, engine->server.core->hash(_get_prefix(pt), pt->nprefix, 0),
-                           _get_prefix(pt), pt->nprefix);
-        } else {
-            break;
-        }
-        pt = parent_pt;
-    }
-#endif
 }
 
 #if 0 // might be used later

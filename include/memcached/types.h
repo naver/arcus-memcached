@@ -38,7 +38,6 @@ struct iovec {
 #define MAX_EFLAG_COMPARE_COUNT 100
 
 #define JHPARK_KEY_DUMP
-#define ITEM_REPLACE_TO_ALWAYS_SUCCESS
 
 #ifdef __cplusplus
 extern "C" {

@@ -930,11 +930,7 @@ static void do_item_unlink(struct default_engine *engine, hash_item *it,
 
         /* unlink the item from prefix info */
         stotal = ITEM_stotal(engine, it);
-#ifdef ITEM_REPLACE_TO_ALWAYS_SUCCESS
         assoc_prefix_unlink(engine, it, stotal, (cause != ITEM_UNLINK_REPLACE ? true : false));
-#else
-        assoc_prefix_unlink(engine, it, stotal);
-#endif
         if (IS_COLL_ITEM(it)) {
             coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
             info->prefix = NULL;
@@ -1012,27 +1008,17 @@ static void do_item_lru_reposition(struct default_engine *engine, hash_item *it)
     }
 }
 
-#ifdef ITEM_REPLACE_TO_ALWAYS_SUCCESS
 static void do_item_replace(struct default_engine *engine,
                             hash_item *it, hash_item *new_it)
 {
     MEMCACHED_ITEM_REPLACE(item_get_key(it), it->nkey, it->nbytes,
                            item_get_key(new_it), new_it->nkey, new_it->nbytes);
     do_item_unlink(engine, it, ITEM_UNLINK_REPLACE);
-    do_item_link(engine, new_it);
+    /* Cache item replacement does not drop the prefix item even if it's empty.
+     * So, the below do_item_link function always return SUCCESS.
+     */
+    (void)do_item_link(engine, new_it);
 }
-#else
-static ENGINE_ERROR_CODE do_item_replace(struct default_engine *engine,
-                                         hash_item *it, hash_item *new_it)
-{
-    MEMCACHED_ITEM_REPLACE(item_get_key(it), it->nkey, it->nbytes,
-                           item_get_key(new_it), new_it->nkey, new_it->nbytes);
-    do_item_unlink(engine, it, ITEM_UNLINK_REPLACE);
-    ENGINE_ERROR_CODE ret = do_item_link(engine, new_it);
-    assert(ret == ENGINE_SUCCESS);
-    return ret;
-}
-#endif
 
 /*@null@*/
 static char *do_item_cachedump(struct default_engine *engine, const unsigned int slabs_clsid,
@@ -1248,11 +1234,7 @@ static ENGINE_ERROR_CODE do_store_item(struct default_engine *engine, hash_item 
             c->thread->stats.slab_stats[item_get_clsid(old_it)].cas_hits++;
             pthread_mutex_unlock(&c->thread->stats.mutex);
 #endif
-#ifdef ITEM_REPLACE_TO_ALWAYS_SUCCESS
             do_item_replace(engine, old_it, it);
-#else
-            (void)do_item_replace(engine, old_it, it);
-#endif
             stored = ENGINE_SUCCESS;
         } else {
 #if 0
@@ -1316,11 +1298,7 @@ static ENGINE_ERROR_CODE do_store_item(struct default_engine *engine, hash_item 
         }
         if (stored == ENGINE_NOT_STORED) {
             if (old_it != NULL) {
-#ifdef ITEM_REPLACE_TO_ALWAYS_SUCCESS
                 do_item_replace(engine, old_it, it);
-#else
-                (void)do_item_replace(engine, old_it, it);
-#endif
                 stored = ENGINE_SUCCESS;
             } else {
                 stored = do_item_link(engine, it);
@@ -1396,11 +1374,7 @@ static ENGINE_ERROR_CODE do_add_delta(struct default_engine *engine, hash_item *
         return ENGINE_ENOMEM;
     }
     memcpy(item_get_data(new_it), buf, res);
-#ifdef ITEM_REPLACE_TO_ALWAYS_SUCCESS
     do_item_replace(engine, it, new_it);
-#else
-    (void)do_item_replace(engine, it, new_it);
-#endif
     *rcas = item_get_cas(new_it);
     do_item_release(engine, new_it);       /* release our reference */
 
