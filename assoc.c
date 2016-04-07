@@ -630,11 +630,14 @@ do_assoc_get_prefix_stats(struct default_engine *engine,
     if (nprefix < 0) { // all prefix information
         char *buf;
         struct tm *t;
+
+        /* itm : number of total items, tsz : size of total items (KV, LIST, SET, BTREE) */
         const char *format = "PREFIX %s itm %llu kitm %llu litm %llu sitm %llu bitm %llu "
                                        "tsz %llu ktsz %llu ltsz %llu stsz %llu btsz %llu "
                                        "time %04d%02d%02d%02d%02d%02d\r\n";
         uint32_t i, hsize = hashsize(DEFAULT_PREFIX_HASHPOWER);
         uint32_t num_prefixes = assoc->tot_prefix_items;
+        uint32_t tot_prefix_item_type = 4; // KV, LIST, SET, BTREE
         uint32_t tot_prefix_name_len = 0;
         uint32_t msize, pos, written;
 
@@ -655,7 +658,7 @@ do_assoc_get_prefix_stats(struct default_engine *engine,
 
         msize = sizeof(uint32_t) + strlen(format) + tot_prefix_name_len
                 + num_prefixes * (strlen(format) - 2 /* %s */
-                                  + (10 * (20 - 4))) /* %llu replaced by 20-digit num */
+                + ((tot_prefix_item_type + 1) * (20 - 4))) /* %llu replaced by 20-digit num */
                 - (5 * (4 - 2)) /* %02d replaced by 2-digit num */
                 + sizeof("END\r\n");
 
@@ -671,10 +674,18 @@ do_assoc_get_prefix_stats(struct default_engine *engine,
             /* including null prefix */
             t = localtime(&pt->create_time);
             written = snprintf(buf+pos, msize-pos, format, "<null>",
-                               pt->hash_items+pt->list_hash_items+pt->set_hash_items+pt->btree_hash_items,
-                               pt->hash_items,pt->list_hash_items,pt->set_hash_items,pt->btree_hash_items,
-                               pt->hash_items_bytes+pt->list_hash_items_bytes+pt->set_hash_items_bytes+pt->btree_hash_items_bytes,
-                               pt->hash_items_bytes,pt->list_hash_items_bytes,pt->set_hash_items_bytes,pt->btree_hash_items_bytes,
+                               pt->hash_items + pt->list_hash_items + pt->set_hash_items + pt->btree_hash_items,
+                               pt->hash_items,
+                               pt->list_hash_items,
+                               pt->set_hash_items,
+                               pt->btree_hash_items,
+
+                               pt->hash_items_bytes + pt->list_hash_items_bytes + pt->set_hash_items_bytes + pt->btree_hash_items_bytes,
+                               pt->hash_items_bytes,
+                               pt->list_hash_items_bytes,
+                               pt->set_hash_items_bytes,
+                               pt->btree_hash_items_bytes,
+
                                t->tm_year+1900, t->tm_mon+1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
             pos += written;
         }
@@ -684,10 +695,18 @@ do_assoc_get_prefix_stats(struct default_engine *engine,
             while (pt) {
                 t = localtime(&pt->create_time);
                 written = snprintf(buf+pos, msize-pos, format, _get_prefix(pt),
-                               pt->hash_items+pt->list_hash_items+pt->set_hash_items+pt->btree_hash_items,
-                               pt->hash_items,pt->list_hash_items,pt->set_hash_items,pt->btree_hash_items,
-                               pt->hash_items_bytes+pt->list_hash_items_bytes+pt->set_hash_items_bytes+pt->btree_hash_items_bytes,
-                               pt->hash_items_bytes,pt->list_hash_items_bytes,pt->set_hash_items_bytes,pt->btree_hash_items_bytes,
+                               pt->hash_items + pt->list_hash_items + pt->set_hash_items + pt->btree_hash_items,
+                               pt->hash_items,
+                               pt->list_hash_items,
+                               pt->set_hash_items,
+                               pt->btree_hash_items,
+
+                               pt->hash_items_bytes + pt->list_hash_items_bytes + pt->set_hash_items_bytes + pt->btree_hash_items_bytes,
+                               pt->hash_items_bytes,
+                               pt->list_hash_items_bytes,
+                               pt->set_hash_items_bytes,
+                               pt->btree_hash_items_bytes,
+
                                t->tm_year+1900, t->tm_mon+1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
                 pos += written;
                 assert(pos < msize);
