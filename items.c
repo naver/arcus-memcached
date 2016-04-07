@@ -2109,6 +2109,57 @@ static ENGINE_ERROR_CODE do_set_elem_delete_with_value(struct default_engine *en
     return ret;
 }
 
+#ifdef TOT_FCNT_REMOVE_SET
+static int do_set_elem_traverse_dfs(struct default_engine *engine,
+                                    set_meta_info *info, set_hash_node *node,
+                                    const uint32_t count, const bool delete,
+                                    set_elem_item **elem_array)
+{
+    int hidx;
+    int rcnt = 0; /* request count */
+    int fcnt = 0; /* found count */
+
+    if (node->tot_hash_cnt > 0) {
+        for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
+            if (node->hcnt[hidx] == -1) {
+                set_hash_node *child_node = (set_hash_node *)node->htab[hidx];
+                if (count > 0) rcnt = count - fcnt;
+                fcnt += do_set_elem_traverse_dfs(engine, info, child_node, rcnt, delete,
+                                            (elem_array==NULL ? NULL : &elem_array[fcnt]));
+                if (delete) {
+                    if  (child_node->tot_hash_cnt == 0 &&
+                         child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
+                         do_set_node_unlink(engine, info, node, hidx);
+                     }
+                }
+                if (count > 0 && fcnt >= count)
+                    return fcnt;
+            }
+        }
+    }
+    assert(count == 0 || fcnt < count);
+
+    for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
+        if (node->hcnt[hidx] > 0) {
+            set_elem_item *elem = node->htab[hidx];
+            while (elem != NULL) {
+                if (elem_array) {
+                    elem->refcount++;
+                    elem_array[fcnt] = elem;
+                }
+                fcnt++;
+                if (delete) do_set_elem_unlink(engine, info, node, hidx, NULL, elem,
+                                               (elem_array==NULL ? ELEM_DELETE_COLL
+                                                                 : ELEM_DELETE_NORMAL));
+                if (count > 0 && fcnt >= count) break;
+                elem = (delete ? node->htab[hidx] : elem->next);
+            }
+            if (count > 0 && fcnt >= count) break;
+        }
+    }
+    return fcnt;
+}
+#else
 static int do_set_elem_traverse_dfs(struct default_engine *engine,
                                     set_meta_info *info, set_hash_node *node,
                                     const uint32_t count, const bool delete,
@@ -2161,6 +2212,7 @@ static int do_set_elem_traverse_dfs(struct default_engine *engine,
     }
     return tot_fcnt;
 }
+#endif
 
 static uint32_t do_set_elem_delete(struct default_engine *engine,
                                    set_meta_info *info, const uint32_t count,
