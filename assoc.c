@@ -627,78 +627,101 @@ do_assoc_get_prefix_stats(struct default_engine *engine,
     struct assoc *assoc = &engine->assoc;
     prefix_t *pt;
 
-    if (nprefix < 0) { // all prefix information
-        char *buf;
+    if (nprefix < 0) /* all prefix stats */
+    {
+        const char *format = "PREFIX %s "
+                             "itm %llu kitm %llu litm %llu sitm %llu bitm %llu " /* total item count */
+                             "tsz %llu ktsz %llu ltsz %llu stsz %llu btsz %llu " /* total item bytes */
+                             "time %04d%02d%02d%02d%02d%02d\r\n"; /* create time */
+        char *buffer;
         struct tm *t;
-        const char *format = "PREFIX %s itm %llu kitm %llu litm %llu sitm %llu bitm %llu "
-                                       "tsz %llu ktsz %llu ltsz %llu stsz %llu btsz %llu "
-                                       "time %04d%02d%02d%02d%02d%02d\r\n";
-        uint32_t i, hsize = hashsize(DEFAULT_PREFIX_HASHPOWER);
+        uint32_t prefix_hsize = hashsize(DEFAULT_PREFIX_HASHPOWER);
         uint32_t num_prefixes = assoc->tot_prefix_items;
-        uint32_t tot_prefix_name_len = 0;
-        uint32_t msize, pos, written;
+        uint32_t sum_nameleng = 0; /* sum of prefix name length */
+        uint32_t tot_item_count;
+        uint32_t tot_item_bytes;
+        uint32_t i, buflen, pos;
 
-        pt = root_pt;
-        if (pt != NULL && (pt->hash_items > 0 || pt->list_hash_items > 0 ||
-                           pt->set_hash_items > 0 || pt->btree_hash_items > 0)) {
-            /* including null prefix */
+        /* get # of prefixes and num of prefix names */
+        assert(root_pt != NULL);
+        if (root_pt->hash_items > 0 || root_pt->list_hash_items > 0 ||
+            root_pt->set_hash_items > 0 || root_pt->btree_hash_items > 0) {
+            /* including valid null prefix (that is root prefix) */
             num_prefixes += 1;
-            tot_prefix_name_len = strlen("<null>");
+            sum_nameleng += strlen("<null>");
         }
-        for (i = 0; i < hsize; i++) {
+        for (i = 0; i < prefix_hsize; i++) {
             pt = assoc->prefix_hashtable[i];
             while (pt) {
-                tot_prefix_name_len += pt->nprefix;
+                sum_nameleng += pt->nprefix;
                 pt = pt->h_next;
             }
         }
 
-        msize = sizeof(uint32_t) + strlen(format) + tot_prefix_name_len
-                + num_prefixes * (strlen(format) - 2 /* %s */
-                                  + (10 * (20 - 4))) /* %llu replaced by 20-digit num */
-                - (5 * (4 - 2)) /* %02d replaced by 2-digit num */
-                + sizeof("END\r\n");
+        /* Allocate stats buffer: <length, prefix stats list, tail>.
+         * Check the count of "%llu" and "%02d" in the above format string.
+         *   - 10 : the count of "%llu" strings.
+         *   -  5 : the count of "%02d" strings.
+         */
+        buflen = sizeof(uint32_t) /* length */
+               + sum_nameleng
+               + num_prefixes * (strlen(format) - 2 /* %s replaced by prefix name */
+                                 + (10 * (20 - 4))  /* %llu replaced by 20-digit num */
+                                 - ( 5 * ( 4 - 2))) /* %02d replaced by 2-digit num */
+               + sizeof("END\r\n"); /* tail string */
 
-        buf = malloc(msize);
-        if (buf == NULL) {
+        if ((buffer = malloc(buflen)) == NULL) {
             return ENGINE_ENOMEM;
         }
+
+        /* write prefix stats in the buffer */
         pos = sizeof(uint32_t);
-
-        pt = root_pt;
-        if (pt != NULL && (pt->hash_items > 0 || pt->list_hash_items > 0 ||
-                           pt->set_hash_items > 0 || pt->btree_hash_items > 0)) {
-            /* including null prefix */
+        if (num_prefixes > assoc->tot_prefix_items) { /* include root prefix */
+            pt = root_pt;
+            tot_item_count = pt->hash_items + pt->list_hash_items
+                           + pt->set_hash_items + pt->btree_hash_items;
+            tot_item_bytes = pt->hash_items_bytes + pt->list_hash_items_bytes
+                           + pt->set_hash_items_bytes + pt->btree_hash_items_bytes;
             t = localtime(&pt->create_time);
-            written = snprintf(buf+pos, msize-pos, format, "<null>",
-                               pt->hash_items+pt->list_hash_items+pt->set_hash_items+pt->btree_hash_items,
-                               pt->hash_items,pt->list_hash_items,pt->set_hash_items,pt->btree_hash_items,
-                               pt->hash_items_bytes+pt->list_hash_items_bytes+pt->set_hash_items_bytes+pt->btree_hash_items_bytes,
-                               pt->hash_items_bytes,pt->list_hash_items_bytes,pt->set_hash_items_bytes,pt->btree_hash_items_bytes,
-                               t->tm_year+1900, t->tm_mon+1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
-            pos += written;
-        }
 
-        for (i = 0; i < hsize; i++) {
+            pos += snprintf(buffer+pos, buflen-pos, format, "<null>",
+                            tot_item_count,
+                            pt->hash_items, pt->list_hash_items,
+                            pt->set_hash_items, pt->btree_hash_items,
+                            tot_item_bytes,
+                            pt->hash_items_bytes, pt->list_hash_items_bytes,
+                            pt->set_hash_items_bytes, pt->btree_hash_items_bytes,
+                            t->tm_year+1900, t->tm_mon+1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
+            assert(pos < buflen);
+        }
+        for (i = 0; i < prefix_hsize; i++) {
             pt = assoc->prefix_hashtable[i];
             while (pt) {
+                tot_item_count = pt->hash_items + pt->list_hash_items
+                               + pt->set_hash_items + pt->btree_hash_items;
+                tot_item_bytes = pt->hash_items_bytes + pt->list_hash_items_bytes
+                               + pt->set_hash_items_bytes + pt->btree_hash_items_bytes;
                 t = localtime(&pt->create_time);
-                written = snprintf(buf+pos, msize-pos, format, _get_prefix(pt),
-                               pt->hash_items+pt->list_hash_items+pt->set_hash_items+pt->btree_hash_items,
-                               pt->hash_items,pt->list_hash_items,pt->set_hash_items,pt->btree_hash_items,
-                               pt->hash_items_bytes+pt->list_hash_items_bytes+pt->set_hash_items_bytes+pt->btree_hash_items_bytes,
-                               pt->hash_items_bytes,pt->list_hash_items_bytes,pt->set_hash_items_bytes,pt->btree_hash_items_bytes,
-                               t->tm_year+1900, t->tm_mon+1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
-                pos += written;
-                assert(pos < msize);
+
+                pos += snprintf(buffer+pos, buflen-pos, format, _get_prefix(pt),
+                                tot_item_count,
+                                pt->hash_items, pt->list_hash_items,
+                                pt->set_hash_items, pt->btree_hash_items,
+                                tot_item_bytes,
+                                pt->hash_items_bytes, pt->list_hash_items_bytes,
+                                pt->set_hash_items_bytes, pt->btree_hash_items_bytes,
+                                t->tm_year+1900, t->tm_mon+1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec);
+                assert(pos < buflen);
                 pt = pt->h_next;
             }
         }
-        memcpy(buf+pos, "END\r\n", 6);
-        *(uint32_t*)buf = pos + 5 - sizeof(uint32_t);
+        memcpy(buffer+pos, "END\r\n", 6);
+        *(uint32_t*)buffer = pos + 5 - sizeof(uint32_t);
 
-        *(char**)prefix_data = buf;
-    } else {
+        *(char**)prefix_data = buffer;
+    }
+    else /* prefix stats on the given prefix */
+    {
         prefix_engine_stats *prefix_stats = (prefix_engine_stats*)prefix_data;
 
         if (prefix != NULL) {
