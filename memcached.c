@@ -683,7 +683,7 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->write_and_free = 0;
     c->item = 0;
 
-    c->coll_mkeys = 0;
+    c->coll_strkeys = 0;
     c->coll_eitem = 0;
     c->coll_resps = 0;
 
@@ -784,7 +784,7 @@ static void conn_coll_eitem_free(conn *c) {
 #endif
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
         free(c->coll_eitem);
-        free(c->coll_mkeys); c->coll_mkeys = NULL;
+        free(c->coll_strkeys); c->coll_strkeys = NULL;
         break;
 #endif
       default:
@@ -1760,10 +1760,10 @@ static void process_bop_mget_complete(conn *c) {
     uint32_t tot_elem_count = 0;
     uint32_t tot_access_count = 0;
     char delimiter = ',';
-    token_t *key_tokens = (token_t *)((char*)c->coll_mkeys + GET_8ALIGN_SIZE(c->coll_lenkeys));
+    token_t *key_tokens = (token_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
-    if ((strncmp((char*)c->coll_mkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-        (tokenize_keys((char*)c->coll_mkeys, delimiter, c->coll_numkeys, key_tokens) == -1))
+    if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
+        (tokenize_keys((char*)c->coll_strkeys, delimiter, c->coll_numkeys, key_tokens) == -1))
     {
         ret = ENGINE_EBADVALUE;
     }
@@ -1907,9 +1907,9 @@ static void process_bop_mget_complete(conn *c) {
     }
 
     if (ret != ENGINE_SUCCESS) {
-        if (c->coll_mkeys != NULL) {
-            free((void *)c->coll_mkeys);
-            c->coll_mkeys = NULL;
+        if (c->coll_strkeys != NULL) {
+            free((void *)c->coll_strkeys);
+            c->coll_strkeys = NULL;
         }
         if (c->coll_eitem != NULL) {
             free((void *)c->coll_eitem);
@@ -1951,7 +1951,7 @@ static int make_smget_trim_response(char *bufptr, eitem_info *info)
 #if 1 // JHPARK_OLD_SMGET_INTERFACE
 static void process_bop_smget_complete_old(conn *c) {
     int i, idx;
-    char *vptr = (char*)c->coll_mkeys;
+    char *vptr = (char*)c->coll_strkeys;
     char delimiter = ',';
     token_t *keys_array = (token_t *)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
     char *respptr;
@@ -2079,9 +2079,9 @@ static void process_bop_smget_complete_old(conn *c) {
     }
 
     if (ret != ENGINE_SUCCESS) {
-        if (c->coll_mkeys != NULL) {
-            free((void *)c->coll_mkeys);
-            c->coll_mkeys = NULL;
+        if (c->coll_strkeys != NULL) {
+            free((void *)c->coll_strkeys);
+            c->coll_strkeys = NULL;
         }
         if (c->coll_eitem != NULL) {
             free((void *)c->coll_eitem);
@@ -2101,7 +2101,7 @@ static void process_bop_smget_complete(conn *c) {
     }
 #endif
     int i, idx;
-    char *vptr = (char*)c->coll_mkeys;
+    char *vptr = (char*)c->coll_strkeys;
     char delimiter = ',';
     token_t *keys_array = (token_t *)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
     char *respptr;
@@ -2341,9 +2341,9 @@ static void process_bop_smget_complete(conn *c) {
     }
 
     if (ret != ENGINE_SUCCESS) {
-        if (c->coll_mkeys != NULL) {
-            free((void *)c->coll_mkeys);
-            c->coll_mkeys = NULL;
+        if (c->coll_strkeys != NULL) {
+            free((void *)c->coll_strkeys);
+            c->coll_strkeys = NULL;
         }
         if (c->coll_eitem != NULL) {
             free((void *)c->coll_eitem);
@@ -5411,7 +5411,7 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
         } else {
             int kmem_size = GET_8ALIGN_SIZE(vlen+2)
                           + (sizeof(token_t) * req->message.body.key_count);
-            if ((c->coll_mkeys = malloc(kmem_size)) == NULL) {
+            if ((c->coll_strkeys = malloc(kmem_size)) == NULL) {
                 free((void*)elem);
                 ret = ENGINE_ENOMEM;
             } else {
@@ -5427,7 +5427,7 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        c->ritem       = (char *)c->coll_mkeys;
+        c->ritem       = (char *)c->coll_strkeys;
         c->rlbytes     = vlen;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 0;
@@ -5461,9 +5461,9 @@ static void process_bin_bop_mget_complete(conn *c) {
     write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
 
     if (ret != ENGINE_SUCCESS) {
-        if (c->coll_mkeys != NULL) {
-            free((void *)c->coll_mkeys);
-            c->coll_mkeys = NULL;
+        if (c->coll_strkeys != NULL) {
+            free((void *)c->coll_strkeys);
+            c->coll_strkeys = NULL;
         }
         if (c->coll_eitem != NULL) {
             free((void *)c->coll_eitem);
@@ -5479,7 +5479,7 @@ static void process_bin_bop_smget_complete_old(conn *c) {
     int smget_count = c->coll_roffset + c->coll_rcount;
     int kmis_array_size = c->coll_numkeys * sizeof(uint32_t);
     char *resultptr;
-    char *vptr = (char*)c->coll_mkeys;
+    char *vptr = (char*)c->coll_strkeys;
     char delimiter = ',';
     token_t *keys_array = (token_t*)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
@@ -5638,9 +5638,9 @@ static void process_bin_bop_smget_complete_old(conn *c) {
     }
 
     if (ret != ENGINE_SUCCESS) {
-        if (c->coll_mkeys != NULL) {
-            free((void *)c->coll_mkeys);
-            c->coll_mkeys = NULL;
+        if (c->coll_strkeys != NULL) {
+            free((void *)c->coll_strkeys);
+            c->coll_strkeys = NULL;
         }
         if (c->coll_eitem != NULL) {
             free((void *)c->coll_eitem);
@@ -5669,7 +5669,7 @@ static void process_bin_bop_smget_complete(conn *c) {
     int kmis_array_size = c->coll_numkeys * sizeof(uint32_t);
 #endif
     char *resultptr;
-    char *vptr = (char*)c->coll_mkeys;
+    char *vptr = (char*)c->coll_strkeys;
     char delimiter = ',';
     token_t *keys_array = (token_t*)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
@@ -5946,9 +5946,9 @@ static void process_bin_bop_smget_complete(conn *c) {
     }
 
     if (ret != ENGINE_SUCCESS) {
-        if (c->coll_mkeys != NULL) {
-            free((void *)c->coll_mkeys);
-            c->coll_mkeys = NULL;
+        if (c->coll_strkeys != NULL) {
+            free((void *)c->coll_strkeys);
+            c->coll_strkeys = NULL;
         }
         if (c->coll_eitem != NULL) {
             free((void *)c->coll_eitem);
@@ -10651,7 +10651,7 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
     } else {
         int kmem_size = GET_8ALIGN_SIZE(vlen)
                       + (sizeof(token_t) * c->coll_numkeys);
-        if ((c->coll_mkeys = malloc(kmem_size)) == NULL) {
+        if ((c->coll_strkeys = malloc(kmem_size)) == NULL) {
             free((void*)elem);
             ret = ENGINE_ENOMEM;
         }
@@ -10660,7 +10660,7 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
     switch (ret) {
     case ENGINE_SUCCESS:
         {
-        c->ritem       = (char *)c->coll_mkeys;
+        c->ritem       = (char *)c->coll_strkeys;
         c->rlbytes     = vlen;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 0;

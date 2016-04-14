@@ -498,7 +498,7 @@ struct conn {
     uint32_t     coll_rcount;  /* request count */
     uint32_t     coll_numkeys; /* number of keys */
     uint32_t     coll_lenkeys; /* length of keys */
-    void        *coll_mkeys;   /* (comma separated) multiple keys */
+    void        *coll_strkeys; /* (comma separated) multiple keys */
 
     /* data for the nread state */
 
