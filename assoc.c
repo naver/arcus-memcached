@@ -638,9 +638,9 @@ do_assoc_get_prefix_stats(struct default_engine *engine,
         uint32_t prefix_hsize = hashsize(DEFAULT_PREFIX_HASHPOWER);
         uint32_t num_prefixes = assoc->tot_prefix_items;
         uint32_t sum_nameleng = 0; /* sum of prefix name length */
-        uint32_t tot_item_count;
-        uint32_t tot_item_bytes;
         uint32_t i, buflen, pos;
+        uint64_t tot_item_count;
+        uint64_t tot_item_bytes;
 
         /* get # of prefixes and num of prefix names */
         assert(root_pt != NULL);
