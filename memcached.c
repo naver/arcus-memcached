@@ -2815,17 +2815,9 @@ static void complete_incr_bin(conn *c) {
         write_bin_response(c, &rsp->message.body, 0, 0,
                            sizeof (rsp->message.body.value));
         if (incr) {
-#ifdef UPDATE_INCR_DECR
             STATS_HITS(c, incr, key, nkey);
-#else
-            STATS_INCR(c, incr_hits, key, nkey);
-#endif
         } else {
-#ifdef UPDATE_INCR_DECR
             STATS_HITS(c, decr, key, nkey);
-#else
-            STATS_INCR(c, decr_hits, key, nkey);
-#endif
         }
         break;
     case ENGINE_KEY_EEXISTS:
@@ -2834,17 +2826,9 @@ static void complete_incr_bin(conn *c) {
     case ENGINE_KEY_ENOENT:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         if (c->cmd == PROTOCOL_BINARY_CMD_INCREMENT) {
-#ifdef UPDATE_INCR_DECR
             STATS_MISS(c, incr, key, nkey);
-#else
-            STATS_INCR(c, incr_misses, key, nkey);
-#endif
         } else {
-#ifdef UPDATE_INCR_DECR
             STATS_MISS(c, decr, key, nkey);
-#else
-            STATS_INCR(c, decr_misses, key, nkey);
-#endif
         }
         break;
     case ENGINE_PREFIX_ENAME:
@@ -7494,10 +7478,8 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("connection_structures", "%u", mc_stats.conn_structs);
     APPEND_STAT("cmd_get", "%"PRIu64, thread_stats.cmd_get);
     APPEND_STAT("cmd_set", "%"PRIu64, slab_stats.cmd_set);
-#ifdef UPDATE_INCR_DECR
     APPEND_STAT("cmd_incr", "%"PRIu64, thread_stats.cmd_incr);
     APPEND_STAT("cmd_decr", "%"PRIu64, thread_stats.cmd_decr);
-#endif
     APPEND_STAT("cmd_flush", "%"PRIu64, thread_stats.cmd_flush);
     APPEND_STAT("cmd_flush_prefix", "%"PRIu64, thread_stats.cmd_flush_prefix);
     APPEND_STAT("cmd_lop_create", "%"PRIu64, thread_stats.cmd_lop_create);
@@ -8154,34 +8136,18 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
     switch (ret) {
     case ENGINE_SUCCESS:
         if (incr) {
-#ifdef UPDATE_INCR_DECR
             STATS_HITS(c, incr, key, nkey);
-#else
-            STATS_INCR(c, incr_hits, key, nkey);
-#endif
         } else {
-#ifdef UPDATE_INCR_DECR
             STATS_HITS(c, decr, key, nkey);
-#else
-            STATS_INCR(c, decr_hits, key, nkey);
-#endif
         }
         snprintf(temp, sizeof(temp), "%"PRIu64, result);
         out_string(c, temp);
         break;
     case ENGINE_KEY_ENOENT:
         if (incr) {
-#ifdef UPDATE_INCR_DECR
             STATS_MISS(c, incr, key, nkey);
-#else
-            STATS_INCR(c, incr_misses, key, nkey);
-#endif
         } else {
-#ifdef UPDATE_INCR_DECR
             STATS_MISS(c, decr, key, nkey);
-#else
-            STATS_INCR(c, decr_misses, key, nkey);
-#endif
         }
         out_string(c, "NOT_FOUND");
         break;
