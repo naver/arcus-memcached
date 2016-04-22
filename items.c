@@ -930,7 +930,7 @@ static void do_item_unlink(struct default_engine *engine, hash_item *it,
 
         /* unlink the item from prefix info */
         stotal = ITEM_stotal(engine, it);
-        assoc_prefix_unlink(engine, it, stotal);
+        assoc_prefix_unlink(engine, it, stotal, (cause != ITEM_UNLINK_REPLACE ? true : false));
         if (IS_COLL_ITEM(it)) {
             coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
             info->prefix = NULL;
@@ -1008,15 +1008,16 @@ static void do_item_lru_reposition(struct default_engine *engine, hash_item *it)
     }
 }
 
-static ENGINE_ERROR_CODE do_item_replace(struct default_engine *engine,
-                                         hash_item *it, hash_item *new_it)
+static void do_item_replace(struct default_engine *engine,
+                            hash_item *it, hash_item *new_it)
 {
     MEMCACHED_ITEM_REPLACE(item_get_key(it), it->nkey, it->nbytes,
                            item_get_key(new_it), new_it->nkey, new_it->nbytes);
     do_item_unlink(engine, it, ITEM_UNLINK_REPLACE);
-    ENGINE_ERROR_CODE ret = do_item_link(engine, new_it);
-    assert(ret == ENGINE_SUCCESS);
-    return ret;
+    /* Cache item replacement does not drop the prefix item even if it's empty.
+     * So, the below do_item_link function always return SUCCESS.
+     */
+    (void)do_item_link(engine, new_it);
 }
 
 /*@null@*/
@@ -1233,8 +1234,7 @@ static ENGINE_ERROR_CODE do_store_item(struct default_engine *engine, hash_item 
             c->thread->stats.slab_stats[item_get_clsid(old_it)].cas_hits++;
             pthread_mutex_unlock(&c->thread->stats.mutex);
 #endif
-
-            (void)do_item_replace(engine, old_it, it);
+            do_item_replace(engine, old_it, it);
             stored = ENGINE_SUCCESS;
         } else {
 #if 0
@@ -1298,7 +1298,7 @@ static ENGINE_ERROR_CODE do_store_item(struct default_engine *engine, hash_item 
         }
         if (stored == ENGINE_NOT_STORED) {
             if (old_it != NULL) {
-                (void)do_item_replace(engine, old_it, it);
+                do_item_replace(engine, old_it, it);
                 stored = ENGINE_SUCCESS;
             } else {
                 stored = do_item_link(engine, it);
@@ -1374,7 +1374,7 @@ static ENGINE_ERROR_CODE do_add_delta(struct default_engine *engine, hash_item *
         return ENGINE_ENOMEM;
     }
     memcpy(item_get_data(new_it), buf, res);
-    (void)do_item_replace(engine, it, new_it);
+    do_item_replace(engine, it, new_it);
     *rcas = item_get_cas(new_it);
     do_item_release(engine, new_it);       /* release our reference */
 
@@ -2116,50 +2116,47 @@ static int do_set_elem_traverse_dfs(struct default_engine *engine,
 {
     int hidx;
     int rcnt = 0; /* request count */
-    int fcnt, tot_fcnt = 0; /* found count */
+    int fcnt = 0; /* found count */
 
     if (node->tot_hash_cnt > 0) {
         for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
             if (node->hcnt[hidx] == -1) {
                 set_hash_node *child_node = (set_hash_node *)node->htab[hidx];
-                if (count > 0) rcnt = count - tot_fcnt;
-                fcnt = do_set_elem_traverse_dfs(engine, info, child_node, rcnt, delete,
-                                            (elem_array==NULL ? NULL : &elem_array[tot_fcnt]));
+                if (count > 0) rcnt = count - fcnt;
+                fcnt += do_set_elem_traverse_dfs(engine, info, child_node, rcnt, delete,
+                                            (elem_array==NULL ? NULL : &elem_array[fcnt]));
                 if (delete) {
                     if  (child_node->tot_hash_cnt == 0 &&
                          child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
                          do_set_node_unlink(engine, info, node, hidx);
                      }
                 }
-                tot_fcnt += fcnt;
-                if (count > 0 && tot_fcnt >= count)
-                    return tot_fcnt;
+                if (count > 0 && fcnt >= count)
+                    return fcnt;
             }
         }
     }
-    assert(count == 0 || tot_fcnt < count);
+    assert(count == 0 || fcnt < count);
 
     for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
         if (node->hcnt[hidx] > 0) {
-            fcnt = 0;
             set_elem_item *elem = node->htab[hidx];
             while (elem != NULL) {
                 if (elem_array) {
                     elem->refcount++;
-                    elem_array[tot_fcnt+fcnt] = elem;
+                    elem_array[fcnt] = elem;
                 }
                 fcnt++;
                 if (delete) do_set_elem_unlink(engine, info, node, hidx, NULL, elem,
                                                (elem_array==NULL ? ELEM_DELETE_COLL
                                                                  : ELEM_DELETE_NORMAL));
-                if (count > 0 && (tot_fcnt+fcnt) >= count) break;
+                if (count > 0 && fcnt >= count) break;
                 elem = (delete ? node->htab[hidx] : elem->next);
             }
-            tot_fcnt += fcnt;
-            if (count > 0 && tot_fcnt >= count) break;
+            if (count > 0 && fcnt >= count) break;
         }
     }
-    return tot_fcnt;
+    return fcnt;
 }
 
 static uint32_t do_set_elem_delete(struct default_engine *engine,

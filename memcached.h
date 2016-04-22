@@ -208,6 +208,11 @@ struct slab_stats {
 struct thread_stats {
     pthread_mutex_t   mutex;
     uint64_t          cmd_get;
+#ifdef UPDATE_INCR_DECR
+    uint64_t          cmd_incr;
+    uint64_t          cmd_decr;
+    uint64_t          cmd_delete;
+#endif
     uint64_t          get_misses;
     uint64_t          delete_misses;
     uint64_t          incr_misses;

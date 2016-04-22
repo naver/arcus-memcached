@@ -110,8 +110,8 @@ void              assoc_prefix_update_size(prefix_t *pt, ENGINE_ITEM_TYPE item_t
 ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine,
                                     hash_item *it, const size_t item_size,
                                     prefix_t **pfx_item);
-void              assoc_prefix_unlink(struct default_engine *engine,
-                                    hash_item *it, const size_t item_size);
+void              assoc_prefix_unlink(struct default_engine *engine, hash_item *it,
+                                    const size_t item_size, bool drop_if_empty);
 ENGINE_ERROR_CODE assoc_get_prefix_stats(struct default_engine *engine,
                                     const char *prefix, const int nprefix,
                                     void *prefix_data);
