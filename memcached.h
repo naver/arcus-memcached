@@ -211,6 +211,7 @@ struct thread_stats {
 #ifdef UPDATE_INCR_DECR
     uint64_t          cmd_incr;
     uint64_t          cmd_decr;
+    uint64_t          cmd_delete;
 #endif
     uint64_t          get_misses;
     uint64_t          delete_misses;

@@ -7497,7 +7497,9 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
 #ifdef UPDATE_INCR_DECR
     APPEND_STAT("cmd_incr", "%"PRIu64, thread_stats.cmd_incr);
     APPEND_STAT("cmd_decr", "%"PRIu64, thread_stats.cmd_decr);
+
 #endif
+    APPEND_STAT("cmd_delete", "%"PRIu64, thread_stats.cmd_delete);
     APPEND_STAT("cmd_flush", "%"PRIu64, thread_stats.cmd_flush);
     APPEND_STAT("cmd_flush_prefix", "%"PRIu64, thread_stats.cmd_flush_prefix);
     APPEND_STAT("cmd_lop_create", "%"PRIu64, thread_stats.cmd_lop_create);
@@ -8255,10 +8257,18 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     item_info info = { .nvalue = 1 };
     if (ret == ENGINE_SUCCESS) {
         out_string(c, "DELETED");
+#ifdef UPDATE_INCR_DECR
+        STATS_HIT(c, delete, key, nkey);
+#else
         SLAB_INCR(c, delete_hits, key, nkey);
+#endif
     } else if (ret == ENGINE_KEY_ENOENT) {
         out_string(c, "NOT_FOUND");
+#ifdef UPDATE_INCR_DECR
+        STATS_MISS(c, delete, key, nkey);
+#else
         STATS_INCR(c, delete_misses, key, nkey);
+#endif
     } else {
         handle_unexpected_errorcode_ascii(c, ret);
     }
