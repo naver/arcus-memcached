@@ -10520,6 +10520,7 @@ static void process_bop_update_prepare_nread(conn *c, int cmd, char *key, size_t
     default:
         STATS_NOKEY(c, cmd_bop_update);
         if (ret == ENGINE_E2BIG) out_string(c, "CLIENT_ERROR too large value");
+        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
         else out_string(c, "SERVER_ERROR internal");
 
         /* swallow the data line */
