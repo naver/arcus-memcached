@@ -210,6 +210,7 @@ struct thread_stats {
     uint64_t          cmd_get;
     uint64_t          cmd_incr;
     uint64_t          cmd_decr;
+    uint64_t          cmd_delete;
     uint64_t          get_misses;
     uint64_t          delete_misses;
     uint64_t          incr_misses;
