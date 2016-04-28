@@ -573,9 +573,14 @@ static ENGINE_ERROR_CODE default_btree_elem_insert(ENGINE_HANDLE* handle, const 
                                 replace_if_exist, attrp, replaced, created,
                                 NULL, NULL, NULL, cookie);
     } else {
+        /* We use a separate trimmed_elems variable to fix compile warning of
+         * "dereferencing type-punned pointer will break strict-aliasing rules".
+         */
+        btree_elem_item *trimmed_elems=NULL;
         ret = btree_elem_insert(engine, key, nkey, (btree_elem_item *)eitem,
                                 replace_if_exist, attrp, replaced, created,
-                                (btree_elem_item**)&trimmed->elems, &trimmed->count, &trimmed->flags, cookie);
+                                &trimmed_elems, &trimmed->count, &trimmed->flags, cookie);
+        trimmed->elems = trimmed_elems;
     }
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
