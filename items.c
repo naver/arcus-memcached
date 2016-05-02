@@ -30,6 +30,7 @@
 #include "default_engine.h"
 
 #define ENABLE_DETACH_REF_ITEM_FROM_LRU 1
+//#define SET_DELETE_NO_MERGE
 
 /* item unlink cause */
 enum item_unlink_cause {
@@ -2109,6 +2110,44 @@ static ENGINE_ERROR_CODE do_set_elem_delete_with_value(struct default_engine *en
     return ret;
 }
 
+#ifdef SET_DELETE_NO_MERGE
+static uint32_t do_set_elem_traverse_fast(struct default_engine *engine, set_meta_info *info,
+                                          set_hash_node *node, const uint32_t count)
+{
+    int hidx;
+    int fcnt = 0;
+
+    /* node has child node */
+    if (node->tot_hash_cnt > 0) {
+        for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
+            if (node->hcnt[hidx] == -1) {
+                set_hash_node *childnode = (set_hash_node *)node->htab[hidx];
+                fcnt += do_set_elem_traverse_fast(engine, info, childnode,
+                                                  (count == 0 ? 0 : (count - fcnt)));
+
+                if (childnode->tot_hash_cnt == 0 && childnode->tot_elem_cnt == 0) {
+                    do_set_node_unlink(engine, info, node, hidx);
+                }
+                if (count > 0 && fcnt >= count) {
+                    return fcnt;
+                }
+            }
+        }
+    }
+    for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
+        if (node->hcnt[hidx] > 0) {
+            set_elem_item *elem = node->htab[hidx];
+            while (elem != NULL) {
+                fcnt++;
+                do_set_elem_unlink(engine, info, node, hidx, NULL, elem, ELEM_DELETE_COLL);
+                elem = node->htab[hidx];
+            }
+        }
+    }
+    return fcnt;
+}
+#endif
+
 static int do_set_elem_traverse_dfs(struct default_engine *engine,
                                     set_meta_info *info, set_hash_node *node,
                                     const uint32_t count, const bool delete,
@@ -2166,7 +2205,11 @@ static uint32_t do_set_elem_delete(struct default_engine *engine,
     assert(cause == ELEM_DELETE_COLL);
     uint32_t fcnt = 0;
     if (info->root != NULL) {
+#ifdef SET_DELETE_NO_MERGE
+        fcnt = do_set_elem_traverse_fast(engine, info, info->root, count);
+#else
         fcnt = do_set_elem_traverse_dfs(engine, info, info->root, count, true, NULL);
+#endif
         if (info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
             do_set_node_unlink(engine, info, NULL, 0);
         }
