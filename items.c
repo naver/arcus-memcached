@@ -31,6 +31,15 @@
 
 #define ENABLE_DETACH_REF_ITEM_FROM_LRU 1
 //#define SET_DELETE_NO_MERGE
+//#define BTREE_DELETE_NO_MERGE
+
+#ifdef BTREE_DELETE_NO_MERGE
+/* btree delete path position */
+typedef struct _btree_delete_posi {
+    btree_elem_posi path[BTREE_MAX_DEPTH];
+    btree_indx_node *cur_node;
+} btree_delete_posi;
+#endif
 
 /* item unlink cause */
 enum item_unlink_cause {
