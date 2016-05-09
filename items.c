@@ -2127,14 +2127,10 @@ static uint32_t do_set_elem_traverse_fast(struct default_engine *engine, set_met
                                                   (count == 0 ? 0 : (count - fcnt)));
 
                 if (childnode->tot_hash_cnt == 0 && childnode->tot_elem_cnt == 0) {
-#if 1 // JOON_FAST_DELETE_SET
                     node->htab[hidx] = NULL;
                     node->hcnt[hidx] = 0;
                     do_set_node_free(engine, childnode);
                     node->tot_hash_cnt -= 1;
-#else
-                    do_set_node_unlink(engine, info, node, hidx);
-#endif
                 }
                 if (count > 0 && fcnt >= count) {
                     return fcnt;
@@ -2144,7 +2140,6 @@ static uint32_t do_set_elem_traverse_fast(struct default_engine *engine, set_met
     }
     for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
         if (node->hcnt[hidx] > 0) {
-#if 1 // JOON_FAST_DELETE_SET
             set_elem_item *elem;
             while ((elem = node->htab[hidx]) != NULL) {
                 node->htab[hidx] = elem->next;
@@ -2155,14 +2150,6 @@ static uint32_t do_set_elem_traverse_fast(struct default_engine *engine, set_met
             fcnt += node->hcnt[hidx];
             node->tot_elem_cnt -= node->hcnt[hidx];
             node->hcnt[hidx] = 0;
-#else
-            set_elem_item *elem = node->htab[hidx];
-            while (elem != NULL) {
-                fcnt++;
-                do_set_elem_unlink(engine, info, node, hidx, NULL, elem, ELEM_DELETE_COLL);
-                elem = node->htab[hidx];
-            }
-#endif
         }
     }
     return fcnt;
@@ -2227,7 +2214,6 @@ static uint32_t do_set_elem_delete_fast(struct default_engine *engine,
     if (info->root != NULL) {
         fcnt = do_set_elem_traverse_fast(engine, info, info->root, count);
         if (info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
-#if 1 // JOON_FAST_DELETE_SET
             do_set_node_free(engine, info->root);
             info->root = NULL;
             info->ccnt = 0;
@@ -2235,9 +2221,6 @@ static uint32_t do_set_elem_delete_fast(struct default_engine *engine,
                 decrease_collection_space(engine, ITEM_TYPE_SET,
                                           (coll_meta_info *)info, info->stotal);
             }
-#else
-            do_set_node_unlink(engine, info, NULL, 0);
-#endif
         }
     }
     return fcnt;
