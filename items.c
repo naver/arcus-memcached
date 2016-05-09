@@ -5930,7 +5930,6 @@ static void *collection_delete_thread(void *arg)
     struct default_engine *engine = arg;
     hash_item *it;
     uint32_t expired_cnt;
-    //uint32_t deleted_cnt;
     int      space_shortage_level;
     bool     background_evict_flag = false;
     uint32_t background_evict_ccnt = 0; /* current count */
@@ -5984,7 +5983,6 @@ static void *collection_delete_thread(void *arg)
             while (dropped == false) {
                 pthread_mutex_lock(&engine->cache_lock);
                 info = (list_meta_info *)item_get_meta(it);
-                //deleted_cnt = do_list_elem_delete(engine, info, 0, 30);
                 (void)do_list_elem_delete(engine, info, 0, 30, ELEM_DELETE_COLL);
                 if (info->ccnt == 0) {
                     assert(info->head == NULL && info->tail == NULL);
@@ -5999,7 +5997,6 @@ static void *collection_delete_thread(void *arg)
             while (dropped == false) {
                 pthread_mutex_lock(&engine->cache_lock);
                 info = (set_meta_info *)item_get_meta(it);
-                //deleted_cnt = do_set_elem_delete(engine, info, 30);
 #ifdef SET_DELETE_NO_MERGE
                 (void)do_set_elem_delete_fast(engine, info, 30);
 #else
@@ -6026,7 +6023,6 @@ static void *collection_delete_thread(void *arg)
             while (dropped == false) {
                 pthread_mutex_lock(&engine->cache_lock);
                 info = (btree_meta_info *)item_get_meta(it);
-                //deleted_cnt = do_btree_elem_delete(engine, info, BKEY_RANGE_TYPE_ASC, &bkrange_space, NULL, 100);
 #ifdef BTREE_DELETE_NO_MERGE
                 (void)do_btree_elem_delete_fast(engine, info, path, 100);
 #else
