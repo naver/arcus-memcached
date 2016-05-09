@@ -2199,6 +2199,20 @@ static int do_set_elem_traverse_dfs(struct default_engine *engine,
     return fcnt;
 }
 
+#ifdef SET_DELETE_NO_MERGE
+static uint32_t do_set_elem_delete_fast(struct default_engine *engine,
+                                        set_meta_info *info, const uint32_t count)
+{
+    uint32_t fcnt = 0;
+    if (info->root != NULL) {
+        fcnt = do_set_elem_traverse_fast(engine, info, info->root, count);
+        if (info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
+            do_set_node_unlink(engine, info, NULL, 0);
+        }
+    }
+    return fcnt;
+}
+#else
 static uint32_t do_set_elem_delete(struct default_engine *engine,
                                    set_meta_info *info, const uint32_t count,
                                    enum elem_delete_cause cause)
@@ -2206,17 +2220,14 @@ static uint32_t do_set_elem_delete(struct default_engine *engine,
     assert(cause == ELEM_DELETE_COLL);
     uint32_t fcnt = 0;
     if (info->root != NULL) {
-#ifdef SET_DELETE_NO_MERGE
-        fcnt = do_set_elem_traverse_fast(engine, info, info->root, count);
-#else
         fcnt = do_set_elem_traverse_dfs(engine, info, info->root, count, true, NULL);
-#endif
         if (info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
             do_set_node_unlink(engine, info, NULL, 0);
         }
     }
     return fcnt;
 }
+#endif
 
 static uint32_t do_set_elem_get(struct default_engine *engine,
                                 set_meta_info *info, const uint32_t count, const bool delete,
@@ -5855,7 +5866,11 @@ static void do_coll_all_elem_delete(struct default_engine *engine, hash_item *it
         assert(info->head == NULL && info->tail == NULL);
     } else if (IS_SET_ITEM(it)) {
         set_meta_info *info = (set_meta_info *)item_get_meta(it);
+#ifdef SET_DELETE_NO_MERGE
+        (void)do_set_elem_delete_fast(engine, info, 0);
+#else
         (void)do_set_elem_delete(engine, info, 0, ELEM_DELETE_COLL);
+#endif
         assert(info->root == NULL);
     } else if (IS_BTREE_ITEM(it)) {
         btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
@@ -5972,7 +5987,11 @@ static void *collection_delete_thread(void *arg)
                 pthread_mutex_lock(&engine->cache_lock);
                 info = (set_meta_info *)item_get_meta(it);
                 //deleted_cnt = do_set_elem_delete(engine, info, 30);
+#ifdef SET_DELETE_NO_MERGE
+                (void)do_set_elem_delete_fast(engine, info, 30);
+#else
                 (void)do_set_elem_delete(engine, info, 30, ELEM_DELETE_COLL);
+#endif
                 if (info->ccnt == 0) {
                     assert(info->root == NULL);
                     do_item_free(engine, it);
