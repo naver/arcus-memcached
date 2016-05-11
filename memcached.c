@@ -8971,22 +8971,21 @@ static void lqdetect_make_bkeystring(const unsigned char* from_bkey, const unsig
 
 static void lqdetect_get_stats(char* str)
 {
-    char *stop_cause_str[3] = {"stop by explicit request",     // LONGQ_EXPLICIT_STOP
-                               "stop by long query overflow", // LONGQ_OVERFLOW_STOP
-                               "is running"}; // LONGQ_RUNNING
+    char *stop_cause_str[3] = {"stopped by explicit request",     // LONGQ_EXPLICIT_STOP
+                               "stopped by long query overflow", // LONGQ_OVERFLOW_STOP
+                               "running"}; // LONGQ_RUNNING
     struct lq_detect_stats stats;
     lqdetect_stats(&stats);
 
     snprintf(str, LONGQ_STAT_STRLEN,
-            "\t" "Long query detection stats" "\n"
+            "\t" "Long query detection stats : %s" "\n"
             "\t" "The last running time : %d_%d ~ %d_%d" "\n"
             "\t" "The number of total long query commands : %d" "\n"
-            "\t" "The detection standard : %d" "\n"
-            "\t" "How long query detection stopped : %s" "\n",
-            stats.bgndate, stats.bgntime, stats.enddate, stats.endtime,
-            stats.total_lqcmds, stats.standard,
+            "\t" "The detection standard : %d" "\n",
             (stats.stop_cause >= 0 && stats.stop_cause <= 2 ?
-             stop_cause_str[stats.stop_cause] : "unknown"));
+             stop_cause_str[stats.stop_cause] : "unknown"),
+            stats.bgndate, stats.bgntime, stats.enddate, stats.endtime,
+            stats.total_lqcmds, stats.standard);
 }
 
 static void lqdetect_show(conn *c)
