@@ -40,7 +40,7 @@ fi
 
 mkdir -p m4
 
-if [[ -d .git || -f .git ]]
+if [ -d .git ]
 then
   perl config/version.pl || die "Failed to run config/version.pl"
 fi
