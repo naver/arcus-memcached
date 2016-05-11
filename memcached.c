@@ -12486,7 +12486,8 @@ static enum transmit_result transmit(conn *c) {
            we have a real error, on which we close the connection */
         if (settings.verbose > 0) {
             mc_logger->log(EXTENSION_LOG_INFO, c,
-                           "Failed to write, and not due to blocking.\n");
+                           "Failed to write, and not due to blocking: %s\n",
+                           strerror(errno));
             //perror("Failed to write, and not due to blocking");
         }
 
