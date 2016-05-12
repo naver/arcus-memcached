@@ -26,6 +26,9 @@ struct _prefix_t {
     uint32_t prefix_items;
     uint64_t list_hash_items;
     uint64_t set_hash_items;
+#ifdef MAP_COLLECTION_SUPPORT
+    uint64_t map_hash_items;
+#endif
     uint64_t btree_hash_items;
     uint64_t hash_items;
     //uint64_t tot_hash_items;
@@ -37,6 +40,9 @@ struct _prefix_t {
 
     uint64_t list_hash_items_bytes;
     uint64_t set_hash_items_bytes;
+#ifdef MAP_COLLECTION_SUPPORT
+    uint64_t map_hash_items_bytes;
+#endif
     uint64_t btree_hash_items_bytes;
     uint64_t hash_items_bytes;
     //uint64_t tot_hash_items_bytes;

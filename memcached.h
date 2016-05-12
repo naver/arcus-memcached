@@ -236,6 +236,14 @@ struct thread_stats {
     uint64_t          cmd_sop_delete;
     uint64_t          cmd_sop_get;
     uint64_t          cmd_sop_exist;
+#ifdef MAP_COLLECTION_SUPPORT
+    /* map command stats */
+    uint64_t          cmd_mop_create;
+    uint64_t          cmd_mop_insert;
+    uint64_t          cmd_mop_update;
+    uint64_t          cmd_mop_delete;
+    uint64_t          cmd_mop_get;
+#endif
     /* btree command stats */
     uint64_t          cmd_bop_create;
     uint64_t          cmd_bop_insert;
@@ -279,6 +287,21 @@ struct thread_stats {
     uint64_t          sop_get_misses;
     uint64_t          sop_exist_hits;
     uint64_t          sop_exist_misses;
+#ifdef MAP_COLLECTION_SUPPORT
+    /* map hit & miss stats */
+    uint64_t          mop_create_oks;
+    uint64_t          mop_insert_hits;
+    uint64_t          mop_insert_misses;
+    uint64_t          mop_update_elem_hits;
+    uint64_t          mop_update_none_hits;
+    uint64_t          mop_update_misses;
+    uint64_t          mop_delete_elem_hits;
+    uint64_t          mop_delete_none_hits;
+    uint64_t          mop_delete_misses;
+    uint64_t          mop_get_elem_hits;
+    uint64_t          mop_get_none_hits;
+    uint64_t          mop_get_misses;
+#endif
     /* btree hit & miss stats */
     uint64_t          bop_create_oks;
     uint64_t          bop_insert_hits;
@@ -379,6 +402,9 @@ struct settings {
     bool require_sasl;      /* require SASL auth */
     int max_list_size;      /* Maximum elements in list collection */
     int max_set_size;       /* Maximum elements in set collection */
+#ifdef MAP_COLLECTION_SUPPORT
+    int max_map_size;       /* Maximum elements in map collection */
+#endif
     int max_btree_size;     /* Maximum elements in b+tree collection */
     int topkeys;            /* Number of top keys to track */
     struct {
@@ -502,6 +528,14 @@ struct conn {
     uint32_t     coll_numkeys; /* number of keys */
     uint32_t     coll_lenkeys; /* length of keys */
     void        *coll_strkeys; /* (comma separated) multiple keys */
+
+#ifdef MAP_COLLECTION_SUPPORT
+    field_t      coll_field;
+    bool         coll_delete;    /* delete flag */
+    uint32_t     coll_numfields; /* number of fields */
+    uint32_t     coll_lenfields; /* length of fields */
+    void        *coll_flist;     /* (comma separated) field list */
+#endif
 
     /* data for the nread state */
 
