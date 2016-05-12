@@ -2,7 +2,7 @@ Item Attribute 설명
 ------------------
 
 Arcus cache server는 colletion 기능 지원으로 인해,
-기존 key-value item 유형 외에 list, set, b+tree item 유형을 가진다.
+기존 key-value item 유형 외에 list, set, b+tree, map item 유형을 가진다.
 각 item 유형에 따라 설정/조회 가능한 속성들(attributes)이 구분되며, 이들의 개요는 아래 표와 같다.
 아래 표에서 각 속성이 적용되는 item 유형, 속성의 간단한 설명, 허용가능한 값들과 디폴트 값을 나타낸다.
 
@@ -26,7 +26,7 @@ Arcus cache server는 colletion 기능 지원으로 인해,
 | overflowaction | collection  | overflow action       | “error” - all collections     | list - "tail_trim"       |
 |                |             |                       | “head_trim” – list only       | set - "error"            |
 |                |             |                       | “tail_trim” – list only       | b+tree - "smallest_trim" |
-|                |             |                       | “smallest_trim” – b+tree only |                          |
+|                |             |                       | “smallest_trim” – b+tree only | map - "error"            |
 |                |             |                       | “largest_trim” – b+tree only  |                          |
 |-----------------------------------------------------------------------------------------------------------------|
 | readable       | collection  | readable/unreable     | “on”, “off”                   | "on"                     |
