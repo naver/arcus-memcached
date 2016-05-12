@@ -200,13 +200,6 @@ typedef struct _map_meta_info {
     void    *prefix;    /* pointer to prefix meta info */
     map_hash_node *root;
 } map_meta_info;
-
-/* map element previous info */
-typedef struct _map_prev_info {
-    map_hash_node *node;
-    map_elem_item *prev;
-    uint16_t       hidx;
-} map_prev_info;
 #endif
 
 /* btree element position */

@@ -33,10 +33,10 @@ Response string과 그 의미는 아래와 같다.
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “SERVER_ERROR out of memory” - 메모리 부족
 
-### mop insert - Map Field, Element 삽입
+### mop insert - Map Element 삽입
 
 Map collection에 하나의 field, element를 삽입한다.
-Map collection을 생성하면서 하나의 field, element를 삽입할 수도 있다.
+Map collection을 생성하면서 \<field, value\>로 구성된 하나의 element를 삽입할 수도 있다.
 
 ```
 mop insert <key> <field> <bytes> [create <attributes>] [noreply|pipe]\r\n<data>\r\n
@@ -44,9 +44,9 @@ mop insert <key> <field> <bytes> [create <attributes>] [noreply|pipe]\r\n<data>\
 ```
 
 - \<key\> - 대상 item의 key string
-- \<field\> - 대상 item의 field string
-- \<bytes\> - 삽입할 데이터 길이 (trailing 문자인 "\r\n"을 제외한 길이)
-- create \<attributes\> - set collection 없을 시에 set 생성 요청.
+- \<field\> - 삽입할 element의 field string
+- \<bytes\> - 삽입할 element의 데이터 길이 (trailing 문자인 "\r\n"을 제외한 길이)
+- create \<attributes\> - 해당 map collection 없을 시에 map 생성 요청.
                     [Item Attribute 설명](/doc/arcus-item-attribute.md)을 참조 바란다.
 - noreply or pipe - 명시하면, response string을 전달받지 않는다. 
                     pipe 사용은 [Command Pipelining](/doc/command-pipelining.md)을 참조 바란다.
@@ -57,12 +57,13 @@ Response string과 그 의미는 아래와 같다.
 - "STROED" - 성공 (field, element 삽입)
 - “CREATED_STORED” - 성공 (collection 생성하고 field, element 삽입)
 - “NOT_FOUND” - key miss
-- “TYPE_MISMATCH” - 해당 item이 map colleciton이 아님
+- “TYPE_MISMATCH” - 해당 item이 map collection이 아님
 - “OVERFLOWED” - overflow 발생
 - "ELEMENT_EXISTS" - 동일 이름의 field가 이미 존재. map field uniqueness 위배
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “CLIENT_ERROR too large value” - 삽입할 데이터가 4KB 보다 큼
 - “CLIENT_ERROR bad data chunk” - 삽입할 데이터 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
+- “CLIENT_ERROR invalid prefix name” - 유효하지(존재하지) 않는 prefix 명
 - “SERVER_ERROR out of memory” - 메모리 부족
 
 ### mop update - Map Element 변경
@@ -75,27 +76,26 @@ mop update <key> <field> <bytes> [noreply|pipe]\r\n
 ```
 
 - \<key\> - 대상 item의 key string
-- \<field\> - 대상 item의 field string
+- \<field\> - 대상 element의 field string
 - \<bytes\> - 변경할 데이터 길이 (trailing 문자인 "\r\n"을 제외한 길이)
 - noreply or pipe - 명시하면, response string을 전달받지 않는다. 
                     pipe 사용은 [Command Pipelining](/doc/command-pipelining.md)을 참조 바란다.
-- \<data\> - 변경할 데이터 (최대 4KB)
+- \<data\> - 변경할 데이터 자체 (최대 4KB)
 
 Response string과 그 의미는 아래와 같다.
 
 - "UPDATED" - 성공 (element 변경)
 - “NOT_FOUND” - key miss
 - "NOT_FOUND_ELEMENT" - field miss
-- “TYPE_MISMATCH” - 해당 item이 map colleciton이 아님
-- “OVERFLOWED” - overflow 발생
+- “TYPE_MISMATCH” - 해당 item이 map collection이 아님
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “CLIENT_ERROR too large value” - 삽입할 데이터가 4KB 보다 큼
 - “CLIENT_ERROR bad data chunk” - 삽입할 데이터 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
 - “SERVER_ERROR out of memory” - 메모리 부족
 
-### mop delete - Map Field, Element 삭제
+### mop delete - Map Element 삭제
 
-Map collection에서 하나의 field 또는 지정한 field 조건을 만족하는 N개의 element를 삭제한다.
+Map collection에서 하나 이상의 field 이름을 주어, 그에 해당하는 element를 삭제한다.
 
 ```
 mop delete <key> <lenfields> <numfields> [drop] [noreply|pipe]\r\n
@@ -120,7 +120,7 @@ Response string과 그 의미는 아래와 같다.
 
 ### mop get - Map Field, Element 조회
 
-Map collection에서 하나의 field 또는 지정한 field 조건을 만족하는 N개의 element를 조회한다.
+Map collection에서 하나 이상의 field 이름을 주어, 그에 해당하는 element를 조회한다.
 
 ```
 mop get <key> <lenfields> <numfields> [delete|drop]\r\n
@@ -151,7 +151,7 @@ END|DELETED|DELETED_DROPPED\r\n
 실패 시의 response string과 그 의미는 아래와 같다.
 
 - “NOT_FOUND” - key miss
-- “NOT_FOUND_ELEMENT” - field miss (주어진 모든 field, element가 존재하지 않는 상태임)
+- “NOT_FOUND_ELEMENT” - field miss (주어진 field 이름들 중 하나라도 가진 element가 전혀 없는 상태임)
 - “TYPE_MISMATCH” - 해당 item이 map collection이 아님
 - “UNREADABLE” - 해당 item이 unreadable item임
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림

@@ -344,6 +344,9 @@ static void settings_init(void) {
     settings.max_list_size = MAX_LIST_SIZE;
     settings.max_set_size = MAX_SET_SIZE;
     settings.max_btree_size = MAX_BTREE_SIZE;
+#ifdef MAP_COLLECTION_SUPPORT
+    settings.max_map_size = MAX_MAP_SIZE;
+#endif
     settings.topkeys = 0;
     settings.require_sasl = false;
     settings.extensions.logger = get_stderr_logger();
@@ -2386,13 +2389,9 @@ static int make_mop_elem_response(char *bufptr, eitem_info *info)
     char *tmpptr = bufptr;
 
     /* field */
-    if (info->nscore > 0) {
-        memcpy(tmpptr, info->score, info->nscore);
-        tmpptr += (int)info->nscore;
-    } else {
-        sprintf(tmpptr, "%s", "NOT_FIELD");
-        tmpptr += strlen(tmpptr);
-    }
+    assert(info->nscore > 0);
+    memcpy(tmpptr, info->score, info->nscore);
+    tmpptr += (int)info->nscore;
 
     /* nbytes */
     sprintf(tmpptr, " %u ", info->nbytes-2);
@@ -2459,19 +2458,14 @@ static void process_mop_update_complete(conn *c) {
     assert(c->coll_op == OPERATION_MOP_UPDATE);
     assert(c->coll_eitem != NULL);
     elem_value *elem = (elem_value *)c->coll_eitem;
-    char *new_value;
-    int  new_nbytes;
 
     if (strncmp(&elem->value[elem->nbytes-2], "\r\n", 2) != 0) {
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
-        new_value = elem->value;
-        new_nbytes = elem->nbytes;
-
         ENGINE_ERROR_CODE ret;
         ret = mc_engine.v1->map_elem_update(mc_engine.v0, c,
                                             c->coll_key, c->coll_nkey, &c->coll_field,
-                                            new_value, new_nbytes, 0);
+                                            elem->value, elem->nbytes, 0);
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
             ret = ENGINE_SUCCESS;
@@ -2500,8 +2494,6 @@ static void process_mop_update_complete(conn *c) {
         default:
             STATS_NOKEY(c, cmd_mop_update);
             if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
-            else if (ret == ENGINE_EOVERFLOW) out_string(c, "OVERFLOWED");
-            else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
             else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
             else handle_unexpected_errorcode_ascii(c, ret);
         }
@@ -2510,40 +2502,6 @@ static void process_mop_update_complete(conn *c) {
     if (c->coll_eitem != NULL) {
         free((void*)c->coll_eitem);
         c->coll_eitem = NULL;
-    }
-}
-
-static int tokenize_fields(char *fieldstr, char delimiter, int numfields, field_t *flist) {
-    int ntokens = 0;
-    char *s, *e;
-    bool finish = false;
-
-    assert(fieldstr != NULL && flist != NULL && numfields >= 1);
-
-    s = fieldstr;
-    while (*s == ' ')
-        s++;
-    for (e = s; ntokens < numfields; ++e) {
-        if (*e == ' ') break;
-        else if (*e == delimiter) {
-            if (s == e) break;
-            flist[ntokens].value = s;
-            flist[ntokens].length = e - s;
-            ntokens++;
-            s = e + 1;
-        } else if (*e == '\r' && *(e+1) == '\n') {
-            if (s == e) break;
-            flist[ntokens].value = s;
-            flist[ntokens].length = e - s;
-            ntokens++;
-            finish = true;
-            break; /* string end */
-        }
-    }
-    if (ntokens == numfields && finish == true) {
-        return ntokens;
-    } else {
-        return -1; /* some errors */
     }
 }
 
@@ -2560,7 +2518,7 @@ static void process_mop_delete_complete(conn *c) {
         flist = (field_t *)((char*)c->coll_flist + GET_8ALIGN_SIZE(c->coll_lenfields));
 
         if ((strncmp((char*)c->coll_flist + c->coll_lenfields - 2, "\r\n", 2) != 0) ||
-            (tokenize_fields((char*)c->coll_flist, delimiter, c->coll_numfields, flist) == -1))
+            (tokenize_keys((char*)c->coll_flist, delimiter, c->coll_numfields, (token_t*)flist) == -1))
         {
             ret = ENGINE_EBADVALUE;
         }
@@ -2636,7 +2594,7 @@ static void process_mop_get_complete(conn *c)
         flist = (field_t *)((char*)c->coll_flist + GET_8ALIGN_SIZE(c->coll_lenfields));
 
         if ((strncmp((char*)c->coll_flist + c->coll_lenfields - 2, "\r\n", 2) != 0) ||
-            (tokenize_fields((char*)c->coll_flist, delimiter, c->coll_numfields, flist) == -1))
+            (tokenize_keys((char*)c->coll_flist, delimiter, c->coll_numfields, (token_t*)flist) == -1))
         {
             ret = ENGINE_EBADVALUE;
         }
@@ -2732,6 +2690,7 @@ static void process_mop_get_complete(conn *c)
     default:
         STATS_NOKEY(c, cmd_mop_get);
         if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
+        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad data chunk");
         else handle_unexpected_errorcode_ascii(c, ret);
     }
 

@@ -243,7 +243,6 @@ struct thread_stats {
     uint64_t          cmd_mop_update;
     uint64_t          cmd_mop_delete;
     uint64_t          cmd_mop_get;
-    uint64_t          cmd_mop_mget;
 #endif
     /* btree command stats */
     uint64_t          cmd_bop_create;
@@ -302,7 +301,6 @@ struct thread_stats {
     uint64_t          mop_get_elem_hits;
     uint64_t          mop_get_none_hits;
     uint64_t          mop_get_misses;
-    uint64_t          mop_mget_oks;
 #endif
     /* btree hit & miss stats */
     uint64_t          bop_create_oks;

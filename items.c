@@ -115,11 +115,6 @@ extern int genhash_string_hash(const void* p, size_t nkey);
 #define BTREE_GET_ELEM_ITEM(node, indx) ((btree_elem_item *)((node)->item[indx]))
 #define BTREE_GET_NODE_ITEM(node, indx) ((btree_indx_node *)((node)->item[indx]))
 
-#ifdef MAP_COLLECTION_SUPPORT
-/* map element item */
-#define MAP_GET_ELEM_ITEM(node, hidx) ((map_elem_item *)((node)->htab[hidx]))
-#endif
-
 /* get bkey real size */
 #define BTREE_REAL_NBKEY(nbkey) ((nbkey)==0 ? sizeof(uint64_t) : (nbkey))
 
@@ -178,6 +173,15 @@ static int32_t default_map_size   = 4000;
 #endif
 
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
+
+#ifdef MAP_COLLECTION_SUPPORT
+/* map element previous info internally used */
+typedef struct _map_prev_info {
+    map_hash_node *node;
+    map_elem_item *prev;
+    uint16_t       hidx;
+} map_prev_info;
+#endif
 
 /*
  * Static functions
@@ -6129,7 +6133,7 @@ static void do_map_elem_unlink(struct default_engine *engine,
     }
 }
 
-static map_elem_item *do_map_elem_find(map_hash_node *node, const field_t *field,  map_prev_info *pinfo)
+static map_elem_item *do_map_elem_find(map_hash_node *node, const field_t *field, map_prev_info *pinfo)
 {
     map_elem_item *elem = NULL;
     map_elem_item *prev = NULL;
@@ -6167,8 +6171,7 @@ static bool do_map_elem_traverse_dfs_byfield(struct default_engine *engine,
 
     if (node->hcnt[hidx] == -1) {
         map_hash_node *child_node = node->htab[hidx];
-        ret = do_map_elem_traverse_dfs_byfield(engine, info, child_node, hval, field, delete,
-                                  (elem_array==NULL ? NULL : elem_array));
+        ret = do_map_elem_traverse_dfs_byfield(engine, info, child_node, hval, field, delete, elem_array);
         if (ret && delete) {
             if (child_node->tot_hash_cnt == 0 &&
                 child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
@@ -6256,15 +6259,15 @@ static uint32_t do_map_elem_delete_with_field(struct default_engine *engine,
     assert(cause == ELEM_DELETE_NORMAL);
 
     int ii;
-    uint32_t total_delcnt = 0;
+    uint32_t delcnt = 0;
     if (info->root != NULL) {
         if (numfields == 0) {
-            total_delcnt = do_map_elem_traverse_dfs_bycnt(engine, info, info->root, 0, true, NULL, cause);
+            delcnt = do_map_elem_traverse_dfs_bycnt(engine, info, info->root, 0, true, NULL, cause);
         } else {
             for (ii = 0; ii < numfields; ii++) {
                 int hval = genhash_string_hash(flist[ii].value, flist[ii].length);
                 if (do_map_elem_traverse_dfs_byfield(engine, info, info->root, hval, &flist[ii], true, NULL)) {
-                    total_delcnt++;
+                    delcnt++;
                 }
             }
         }
@@ -6272,7 +6275,7 @@ static uint32_t do_map_elem_delete_with_field(struct default_engine *engine,
             do_map_node_unlink(engine, info, NULL, 0);
         }
     }
-    return total_delcnt;
+    return delcnt;
 }
 
 static ENGINE_ERROR_CODE do_map_elem_replace(struct default_engine *engine, map_meta_info *info,
@@ -6284,7 +6287,7 @@ static ENGINE_ERROR_CODE do_map_elem_replace(struct default_engine *engine, map_
     if (prev != NULL) {
         old_elem = pinfo->prev->next;
     } else {
-        old_elem = MAP_GET_ELEM_ITEM(pinfo->node, pinfo->hidx);
+        old_elem = (map_elem_item *)pinfo->node->htab[pinfo->hidx];
     }
 
     size_t old_stotal = slabs_space_size(engine, do_map_elem_ntotal(old_elem));
@@ -6300,12 +6303,11 @@ static ENGINE_ERROR_CODE do_map_elem_replace(struct default_engine *engine, map_
     }
 #endif
 
+    new_elem->next = old_elem->next;
     if (prev != NULL) {
         prev->next = new_elem;
-        new_elem->next = old_elem->next;
     } else {
         pinfo->node->htab[pinfo->hidx] = new_elem;
-        new_elem->next = old_elem->next;
     }
 
     old_elem->next = (map_elem_item *)ADDR_MEANS_UNLINKED;
