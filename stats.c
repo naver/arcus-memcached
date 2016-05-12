@@ -660,7 +660,7 @@ char *stats_prefix_dump(int *length) {
         for (pfs = prefix_stats[i]; NULL != pfs; pfs = pfs->next) {
             written = snprintf(buf + pos, size-pos, format,
                            (pfs->prefix_len == 0 ? null_prefix_str : pfs->prefix),
-                           pfs->num_gets, pfs->num_hits, pfs->num_sets, pfs->num_deletes, 
+                           pfs->num_gets, pfs->num_hits, pfs->num_sets, pfs->num_deletes,
                            pfs->num_incrs, pfs->num_decrs,
                            pfs->num_lop_creates,
                            pfs->num_lop_inserts, pfs->num_lop_insert_hits,
