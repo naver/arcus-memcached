@@ -44,6 +44,8 @@ struct _prefix_stats {
     uint64_t      num_sets;
     uint64_t      num_deletes;
     uint64_t      num_hits;
+    uint64_t      num_incrs;
+    uint64_t      num_decrs;
     uint64_t      num_lop_creates;
     uint64_t      num_lop_inserts;
     uint64_t      num_lop_deletes;
@@ -282,6 +284,34 @@ void stats_prefix_record_set(const char *key, const size_t nkey) {
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_sets++;
+    }
+    STATS_UNLOCK();
+}
+
+/*
+ * Records a "incr" of a key.
+ */
+void stats_prefix_record_incr(const char *key, const size_t nkey) {
+    PREFIX_STATS *pfs;
+
+    STATS_LOCK();
+    pfs = stats_prefix_find(key, nkey);
+    if (NULL != pfs) {
+        pfs->num_incrs++;
+    }
+    STATS_UNLOCK();
+}
+
+/*
+ * Records a "decr" of a key.
+ */
+void stats_prefix_record_decr(const char *key, const size_t nkey) {
+    PREFIX_STATS *pfs;
+
+    STATS_LOCK();
+    pfs = stats_prefix_find(key, nkey);
+    if (NULL != pfs) {
+        pfs->num_decrs++;
     }
     STATS_UNLOCK();
 }
@@ -597,11 +627,11 @@ void stats_prefix_record_setattr(const char *key, const size_t nkey) {
 /*@null@*/
 char *stats_prefix_dump(int *length) {
     const char *format = "PREFIX %s "
-                         "get %llu hit %llu set %llu del %llu lcs %llu lis %llu lih %llu lds %llu ldh %llu lgs %llu "
-                         "lgh %llu scs %llu sis %llu sih %llu sds %llu sdh %llu sgs %llu sgh %llu ses %llu seh %llu "
-                         "bcs %llu bis %llu bih %llu bus %llu buh %llu bds %llu bdh %llu bps %llu bph %llu bms %llu "
-                         "bmh %llu bgs %llu bgh %llu bns %llu bnh %llu pfs %llu pfh %llu pgs %llu pgh %llu gps %llu "
-                         "gph %llu gas %llu sas %llu\r\n";
+                         "get %llu hit %llu set %llu del %llu inc %llu dec %llu lcs %llu lis %llu lih %llu lds %llu "
+                         "ldh %llu lgs %llu lgh %llu scs %llu sis %llu sih %llu sds %llu sdh %llu sgs %llu sgh %llu "
+                         "ses %llu seh %llu bcs %llu bis %llu bih %llu bus %llu buh %llu bds %llu bdh %llu bps %llu "
+                         "bph %llu bms %llu bmh %llu bgs %llu bgh %llu bns %llu bnh %llu pfs %llu pfh %llu pgs %llu "
+                         "pgh %llu gps %llu gph %llu gas %llu sas %llu\r\n";
     PREFIX_STATS *pfs;
     char *buf;
     int i, pos;
@@ -616,7 +646,7 @@ char *stats_prefix_dump(int *length) {
     STATS_LOCK();
     size = strlen(format) + total_prefix_size +
            num_prefixes * (strlen(format) - 2 /* %s */
-                           + 43 * (20 - 4)) /* %llu replaced by 20-digit num */
+                           + 45 * (20 - 4)) /* %llu replaced by 20-digit num */
                            + sizeof("END\r\n");
     buf = malloc(size);
     if (NULL == buf) {
@@ -630,7 +660,8 @@ char *stats_prefix_dump(int *length) {
         for (pfs = prefix_stats[i]; NULL != pfs; pfs = pfs->next) {
             written = snprintf(buf + pos, size-pos, format,
                            (pfs->prefix_len == 0 ? null_prefix_str : pfs->prefix),
-                           pfs->num_gets, pfs->num_hits, pfs->num_sets, pfs->num_deletes,
+                           pfs->num_gets, pfs->num_hits, pfs->num_sets, pfs->num_deletes, 
+                           pfs->num_incrs, pfs->num_decrs,
                            pfs->num_lop_creates,
                            pfs->num_lop_inserts, pfs->num_lop_insert_hits,
                            pfs->num_lop_deletes, pfs->num_lop_delete_hits,

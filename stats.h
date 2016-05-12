@@ -22,6 +22,8 @@ int  stats_prefix_delete(const char *prefix, const size_t nprefix);
 void stats_prefix_record_get(const char *key, const size_t nkey, const bool is_hit);
 void stats_prefix_record_delete(const char *key, const size_t nkey);
 void stats_prefix_record_set(const char *key, const size_t nkey);
+void stats_prefix_record_incr(const char *key, const size_t nkey);
+void stats_prefix_record_decr(const char *key, const size_t nkey);
 void stats_prefix_record_lop_create(const char *key, const size_t nkey);
 void stats_prefix_record_lop_insert(const char *key, const size_t nkey, const bool is_hit);
 void stats_prefix_record_lop_delete(const char *key, const size_t nkey, const bool is_hit);
