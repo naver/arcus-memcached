@@ -65,7 +65,12 @@ extern "C" {
 #define ITEM_IFLAG_LIST  2   /* list item */
 #define ITEM_IFLAG_SET   4   /* set item */
 #define ITEM_IFLAG_BTREE 8   /* b+tree item */
+#ifdef MAP_COLLECTION_SUPPORT
+#define ITEM_IFLAG_MAP   16  /* map item */
+#define ITEM_IFLAG_COLL  30  /* collection item: list/set/map/b+tree */
+#else
 #define ITEM_IFLAG_COLL  14  /* collection item: list/set/b+tree */
+#endif
 #define ITEM_LINKED  (1<<8)
 #define ITEM_SLABBED (2<<8)  /* NOT USED */
 
@@ -86,6 +91,9 @@ struct config {
    size_t item_size_max;
    size_t max_list_size;
    size_t max_set_size;
+#ifdef MAP_COLLECTION_SUPPORT
+   size_t max_map_size;
+#endif
    size_t max_btree_size;
    bool   ignore_vbucket;
    char   prefix_delimiter;

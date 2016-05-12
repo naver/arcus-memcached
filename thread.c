@@ -568,6 +568,13 @@ void threadlocal_stats_clear(struct thread_stats *stats) {
 #endif
     stats->cmd_bop_incr = 0;
     stats->cmd_bop_decr = 0;
+#ifdef MAP_COLLECTION_SUPPORT
+    stats->cmd_mop_create = 0;
+    stats->cmd_mop_insert = 0;
+    stats->cmd_mop_update = 0;
+    stats->cmd_mop_delete = 0;
+    stats->cmd_mop_get = 0;
+#endif
     stats->cmd_getattr = 0;
     stats->cmd_setattr = 0;
     stats->lop_create_oks = 0;
@@ -625,6 +632,20 @@ void threadlocal_stats_clear(struct thread_stats *stats) {
     stats->bop_decr_elem_hits = 0;
     stats->bop_decr_none_hits = 0;
     stats->bop_decr_misses = 0;
+#ifdef MAP_COLLECTION_SUPPORT
+    stats->mop_create_oks = 0;
+    stats->mop_insert_hits = 0;
+    stats->mop_insert_misses = 0;
+    stats->mop_update_elem_hits = 0;
+    stats->mop_update_none_hits = 0;
+    stats->mop_update_misses = 0;
+    stats->mop_delete_elem_hits = 0;
+    stats->mop_delete_none_hits = 0;
+    stats->mop_delete_misses = 0;
+    stats->mop_get_elem_hits = 0;
+    stats->mop_get_none_hits = 0;
+    stats->mop_get_misses = 0;
+#endif
     stats->getattr_hits = 0;
     stats->getattr_misses = 0;
     stats->setattr_hits = 0;
@@ -691,6 +712,13 @@ void threadlocal_stats_aggregate(struct thread_stats *thread_stats, struct threa
 #endif
         stats->cmd_bop_incr += thread_stats[ii].cmd_bop_incr;
         stats->cmd_bop_decr += thread_stats[ii].cmd_bop_decr;
+#ifdef MAP_COLLECTION_SUPPORT
+        stats->cmd_mop_create += thread_stats[ii].cmd_mop_create;
+        stats->cmd_mop_insert += thread_stats[ii].cmd_mop_insert;
+        stats->cmd_mop_update += thread_stats[ii].cmd_mop_update;
+        stats->cmd_mop_delete += thread_stats[ii].cmd_mop_delete;
+        stats->cmd_mop_get += thread_stats[ii].cmd_mop_get;
+#endif
         stats->cmd_getattr += thread_stats[ii].cmd_getattr;
         stats->cmd_setattr += thread_stats[ii].cmd_setattr;
         stats->lop_create_oks += thread_stats[ii].lop_create_oks;
@@ -748,6 +776,20 @@ void threadlocal_stats_aggregate(struct thread_stats *thread_stats, struct threa
         stats->bop_decr_elem_hits += thread_stats[ii].bop_decr_elem_hits;
         stats->bop_decr_none_hits += thread_stats[ii].bop_decr_none_hits;
         stats->bop_decr_misses += thread_stats[ii].bop_decr_misses;
+#ifdef MAP_COLLECTION_SUPPORT
+        stats->mop_create_oks += thread_stats[ii].mop_create_oks;
+        stats->mop_insert_hits += thread_stats[ii].mop_insert_hits;
+        stats->mop_insert_misses += thread_stats[ii].mop_insert_misses;
+        stats->mop_update_elem_hits += thread_stats[ii].mop_update_elem_hits;
+        stats->mop_update_none_hits += thread_stats[ii].mop_update_none_hits;
+        stats->mop_update_misses += thread_stats[ii].mop_update_misses;
+        stats->mop_delete_elem_hits += thread_stats[ii].mop_delete_elem_hits;
+        stats->mop_delete_none_hits += thread_stats[ii].mop_delete_none_hits;
+        stats->mop_delete_misses += thread_stats[ii].mop_delete_misses;
+        stats->mop_get_elem_hits += thread_stats[ii].mop_get_elem_hits;
+        stats->mop_get_none_hits += thread_stats[ii].mop_get_none_hits;
+        stats->mop_get_misses += thread_stats[ii].mop_get_misses;
+#endif
         stats->getattr_hits += thread_stats[ii].getattr_hits;
         stats->getattr_misses += thread_stats[ii].getattr_misses;
         stats->setattr_hits += thread_stats[ii].setattr_hits;

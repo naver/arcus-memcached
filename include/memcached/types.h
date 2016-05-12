@@ -31,6 +31,7 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
+#define MAP_COLLECTION_SUPPORT
 #define SUPPORT_BOP_MGET
 #define SUPPORT_BOP_SMGET
 #define JHPARK_NEW_SMGET_INTERFACE
@@ -126,8 +127,20 @@ extern "C" {
         OPERATION_BOP_GBP,           /**< B+tree operation with get element by position */
         // SUPPORT_BOP_MGET
         OPERATION_BOP_MGET,          /**< B+tree operation with mget(multiple get) element semantics */
+#ifdef MAP_COLLECTION_SUPPORT
+        // SUPPORT_BOP_SMGET
+        OPERATION_BOP_SMGET,          /**< B+tree operation with smget(sort-merge get) element semantics */
+
+        /* map operation */
+        OPERATION_MOP_CREATE = 0x80, /**< Map operation with create structure semantics */
+        OPERATION_MOP_INSERT,        /**< Map operation with insert element semantics */
+        OPERATION_MOP_UPDATE,        /**< Map operation with update element semantics */
+        OPERATION_MOP_DELETE,        /**< Map operation with delete element semantics */
+        OPERATION_MOP_GET            /**< Map operation with get element semantics */
+#else
         // SUPPORT_BOP_SMGET
         OPERATION_BOP_SMGET          /**< B+tree operation with smget(sort-merge get) element semantics */
+#endif
     } ENGINE_COLL_OPERATION;
 
     /* item type */
@@ -136,6 +149,9 @@ extern "C" {
         ITEM_TYPE_LIST,
         ITEM_TYPE_SET,
         ITEM_TYPE_BTREE,
+#ifdef MAP_COLLECTION_SUPPORT
+        ITEM_TYPE_MAP,
+#endif
         ITEM_TYPE_UNKNOWN
     } ENGINE_ITEM_TYPE;
 
@@ -235,6 +251,16 @@ extern "C" {
 #define MAX_EFLAG_LENG 31
 #define BKEY_NULL  255
 #define EFLAG_NULL 255
+
+#ifdef MAP_COLLECTION_SUPPORT
+#define MAX_FIELD_LENG 250
+
+    /* field list structure */
+    typedef struct {
+        char *value;
+        size_t length;
+    } field_t;
+#endif
 
     /* bkey type */
     typedef struct {
