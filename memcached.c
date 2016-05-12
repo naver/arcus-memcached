@@ -2809,6 +2809,14 @@ static void complete_incr_bin(conn *c) {
         ret = ENGINE_SUCCESS;
     }
 
+    if (settings.detail_enabled) {
+        if (incr) {
+            stats_prefix_record_incr(key, nkey);
+        } else {
+            stats_prefix_record_decr(key, nkey);
+        }
+    }
+
     switch (ret) {
     case ENGINE_SUCCESS:
         rsp->message.body.value = htonll(rsp->message.body.value);
@@ -8118,6 +8126,14 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
             return;
         }
         create = true;
+    }
+
+    if (settings.detail_enabled) {
+        if (incr) {
+            stats_prefix_record_incr(key, nkey);
+        } else {
+            stats_prefix_record_decr(key, nkey);
+        }
     }
 
     ENGINE_ERROR_CODE ret;
