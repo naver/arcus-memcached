@@ -23,9 +23,11 @@
 #define CMDLOG_INPUT_SIZE 400
 #define CMDLOG_FILENAME_LENGTH 256 /* filename plus path's length */
 
-#define CMDLOG_EXPLICIT_STOP 0  /* stop by user request */
-#define CMDLOG_OVERFLOW_STOP 1  /* stop by command log overflow */
-#define CMDLOG_FLUSHERR_STOP 2  /* stop by flush operation error */
+#define CMDLOG_NOT_STARTED   0  /* not started */
+#define CMDLOG_EXPLICIT_STOP 1  /* stop by user request */
+#define CMDLOG_OVERFLOW_STOP 2  /* stop by command log overflow */
+#define CMDLOG_FLUSHERR_STOP 3  /* stop by flush operation error */
+#define CMDLOG_RUNNING       4  /* running */
 
 /*command log stats structure */
 struct cmd_log_stats {

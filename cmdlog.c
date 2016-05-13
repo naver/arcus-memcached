@@ -31,7 +31,7 @@
 #define CMDLOG_BUFFER_SIZE  (10 * 1024 * 1024)   /* 10 * MB */
 #define CMDLOG_WRITE_SIZE   (4 * 1024)           /* 4 * KB */
 #define CMDLOG_BUFFER_NUM   10                   /* number of log files */
-#define CMDLOG_FILENAME_FORMAT "%s/%d_%d_%d_%d.log"
+#define CMDLOG_FILENAME_FORMAT "%s/command_%d_%d_%d_%d.log"
 
 static int mc_port;
 static EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
@@ -162,6 +162,8 @@ static void *cmdlog_flush_thread()
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                                "Can't open command log file: %s\n", fname);
                 err = -1; break;
+            } else {
+                cmdlog.stats.file_count++;
             }
         }
 
@@ -213,7 +215,7 @@ static void *cmdlog_flush_thread()
                 pthread_mutex_unlock(&buffer->lock);
             }
             close(fd); fd = -1;
-            if (++cmdlog.stats.file_count >= CMDLOG_BUFFER_NUM) {
+            if (cmdlog.stats.file_count >= CMDLOG_BUFFER_NUM) {
                 break; /* do internal stop: overflow stop */
             }
         }
@@ -307,6 +309,7 @@ int cmdlog_start(char *file_path, bool *already_started)
 
         /* enable command logging */
         cmdlog.on_logging = true;
+        cmdlog.stats.stop_cause = CMDLOG_RUNNING;
 
         /* start the flush thread to write command log to disk */
         if (pthread_attr_init(&cmdlog.flush.attr) != 0 ||
@@ -316,6 +319,11 @@ int cmdlog_start(char *file_path, bool *already_started)
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                            "Can't create command log flush thread: %s\n", strerror(ret));
             cmdlog.on_logging = false; // disable it */
+            if (-1 == remove(fname)) {
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                               "Can't remove command log file: %s\n", fname);
+            }
+            cmdlog.stats.stop_cause = CMDLOG_NOT_STARTED;
             ret = -1; break;
         }
     } while(0);
