@@ -136,7 +136,7 @@ extern "C" {
         ITEM_TYPE_LIST,
         ITEM_TYPE_SET,
         ITEM_TYPE_BTREE,
-        ITEM_TYPE_UNKNOWN
+        ITEM_TYPE_MAX
     } ENGINE_ITEM_TYPE;
 
     /* overflow action */

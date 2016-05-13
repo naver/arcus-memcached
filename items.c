@@ -7501,7 +7501,7 @@ ENGINE_ERROR_CODE item_getattr(struct default_engine *engine,
             if (IS_LIST_ITEM(it))       attr_data->type = ITEM_TYPE_LIST;
             else if (IS_SET_ITEM(it))   attr_data->type = ITEM_TYPE_SET;
             else if (IS_BTREE_ITEM(it)) attr_data->type = ITEM_TYPE_BTREE;
-            else                        attr_data->type = ITEM_TYPE_UNKNOWN;
+            else                        attr_data->type = ITEM_TYPE_MAX; /* unknown */
             /* attribute validation check */
             if (attr_data->type != ITEM_TYPE_BTREE) {
                 for (int i = 0; i < attr_count; i++) {
