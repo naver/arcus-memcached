@@ -319,7 +319,7 @@ int cmdlog_start(char *file_path, bool *already_started)
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                            "Can't create command log flush thread: %s\n", strerror(ret));
             cmdlog.on_logging = false; // disable it */
-            if (-1 == remove(fname)) {
+            if (remove(fname) != 0) {
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                                "Can't remove command log file: %s\n", fname);
             }
