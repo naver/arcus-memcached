@@ -408,13 +408,10 @@ bop gbp command entered count : 0
 
 stats 명령은 가장 최근 수행된(수행 중인) long query detection의 상태를 조회하고 그 결과는 아래와 같다.
 ```
-Long query detection stats
+Long query detection stats : running              //stopped by causes(request or overflow) | running
 The last running time : 20160126_175629 ~ 0_0     //bgndata_bgntime ~ enddate_endtime
 The number of total long query commands : 1152    //detected_commands 
 The detection standard : 43                       //standard
-How long query detection stopped : is running     //stop by explicit request
-                                                    stop by long query overflow
-                                                    is running
 ```
 
 ### Key dump 명령
