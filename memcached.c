@@ -8802,6 +8802,12 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
 #endif
         "\t" "stats cachedump <slab_clsid> <limit> [forward|backward [sticky]]\\r\\n" "\n"
         "\t" "stats reset\\r\\n" "\n"
+#ifdef COMMAND_LOGGING
+        "\n"
+        "\t" "cmdlog start [<file_path>]\\r\\n" "\n"
+        "\t" "cmdlog stop\\r\\n" "\n"
+        "\t" "cmdlog stats\\r\\n" "\n"
+#endif
 #ifdef DETECT_LONG_QUERY
         "\n"
         "\t" "lqdetect start [<detect_standard>]\\r\\n" "\n"
@@ -8890,25 +8896,26 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
 #ifdef COMMAND_LOGGING
 static void get_cmdlog_stats(char* str)
 {
-    char *stop_cause_str[3] = {"stop by explicit request",     // CMDLOG_EXPLICIT_STOP
-                               "stop by command log overflow", // CMDLOG_OVERFLOW_STOP
-                               "stop by disk flush error"};    // CMDLOG_FLUSHERR_STOP
+    char *stop_cause_str[5] = {"Not started",                     // CMDLOG_NOT_STARTED
+                               "stopped by explicit request",     // CMDLOG_EXPLICIT_STOP
+                               "stopped by command log overflow", // CMDLOG_OVERFLOW_STOP
+                               "stopped by disk flush error",     // CMDLOG_FLUSHERR_STOP
+                               "running"};                        // CMDLOG_RUNNING
     struct cmd_log_stats *stats = cmdlog_stats();
 
     snprintf(str, CMDLOG_INPUT_SIZE,
-            "\t" "Command logging stats" "\n"
+            "\t" "Command logging stats : %s" "\n"
             "\t" "The last running time : %d_%d ~ %d_%d" "\n"
             "\t" "The number of entered commands : %d" "\n"
             "\t" "The number of skipped commands : %d" "\n"
             "\t" "The number of log files : %d" "\n"
-            "\t" "The log file name: %s/%d_%d_%d_{n}.log" "\n"
-            "\t" "How command logging stopped : %s" "\n",
+            "\t" "The log file name: %s/command_%d_%d_%d_{n}.log" "\n",
+            (stats->stop_cause >= 0 && stats->stop_cause <= 4 ?
+             stop_cause_str[stats->stop_cause] : "unknown"),
             stats->bgndate, stats->bgntime, stats->enddate, stats->endtime,
             stats->entered_commands, stats->skipped_commands,
             stats->file_count,
-            stats->dirpath, settings.port, stats->bgndate, stats->bgntime,
-            (stats->stop_cause >= 0 && stats->stop_cause <= 2 ?
-             stop_cause_str[stats->stop_cause] : "unknown"));
+            stats->dirpath, settings.port, stats->bgndate, stats->bgntime);
 }
 
 static void process_logging_command(conn *c, token_t *tokens, const size_t ntokens)

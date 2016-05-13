@@ -307,7 +307,7 @@ cmdlog [start [<log_file_path>] | stop | stats]\r\n
 - path는 생략 가능하며, 생략할 경우 default로 지정된다.
   - default로 자동 지정할 경우 log file은 memcached구동위치/command_log 디렉터리 안에 생성된다.
   - command_log 디렉터리는 자동생성되지 않으며, memcached process가 구동된 위치에 생성해 주어야 한다.
-  - 생성되는 log file의 파일명은 11211_20160126_191445_0.log | port_bgndate_bgntime_{n}.log 이다.
+  - 생성되는 log file의 파일명은 command_port_bgndate_bgntime_{n}.log 이다.
 - path는 직접 지정할 경우 절대 path, 상대 path지정이 가능하다. 최종 파일이 생성될 디렉터리까지 지정해 주어야 한다.
 
 start 명령의 결과로 log file에 출력되는 내용은 아래와 같다.
@@ -332,15 +332,12 @@ stop 명령은 logging이 완료되기 전 중지하고 싶을 때 사용할 수
 stats 명령은 가장 최근 수행된(수행 중인) command logging의 상태를 조회하고 결과는 아래와 같다.
 
 ```
-Command logging stats
-The last running time : 20160126_192729 ~ 20160126_192742               //bgndate_bgntime ~ enddate_endtime
-The number of entered commands : 146783                                 //entered_commands
-The number of skipped commands : 0                                      //skipped_commands
-The number of log files : 1                                             //file_count
-The log file name: /Users/mwjin/Task/temp/11211_20160126_192729_{n}.log //path/file_name
-How command logging stopped : stop by explicit request                  //stop by explicit request
-                                                                          stop by command log overflow
-                                                                          stop by disk flush error
+Command logging stats : running                                      //Not started | stopped by causes(request or overflow or error) | running
+The last running time : 20160126_192729 ~ 20160126_192742            //bgndate_bgntime ~ enddate_endtime
+The number of entered commands : 146783                              //entered_commands
+The number of skipped commands : 0                                   //skipped_commands
+The number of log files : 1                                          //file_count
+The log file name: /Users/temp/command_11211_20160126_192729_{n}.log //path/file_name
 ```
 
 ### Long query detect 명령
