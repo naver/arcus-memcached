@@ -188,35 +188,13 @@ static void do_slabs_check_space_shortage_level(struct default_engine *engine)
 static void do_smmgr_init(struct default_engine *engine)
 {
     /* small memory allocator */
-    sm_anchor.space_shortage_level = 0;
-    sm_anchor.blck_clsid = 0;
+    memset(&sm_anchor, 0, sizeof(sm_anchor_t));
     sm_anchor.blck_tsize = SMMGR_BLOCK_SIZE;
     sm_anchor.blck_bsize = sm_anchor.blck_tsize - sizeof(sm_blck_t);
-    sm_anchor.used_num_classes = 0;
-    sm_anchor.free_num_classes = 0;
     sm_anchor.used_minid = SMMGR_NUM_CLASSES;
     sm_anchor.used_maxid = -1;
     sm_anchor.free_minid = SMMGR_NUM_CLASSES;
     sm_anchor.free_maxid = -1;
-    sm_anchor.used_blist.head = NULL;
-    sm_anchor.used_blist.tail = NULL;
-    sm_anchor.used_blist.count = 0;
-    for (int i = 0; i < SMMGR_NUM_CLASSES; i++) {
-        sm_anchor.free_slist[i].head = NULL;
-        sm_anchor.free_slist[i].tail = NULL;
-        sm_anchor.free_slist[i].space = 0;
-        sm_anchor.free_slist[i].count = 0;
-        sm_anchor.used_slist[i].head = NULL;
-        sm_anchor.used_slist[i].tail = NULL;
-        sm_anchor.used_slist[i].space = 0;
-        sm_anchor.used_slist[i].count = 0;
-    }
-    sm_anchor.used_total_space = 0;
-    sm_anchor.free_small_space = 0;
-    sm_anchor.free_avail_space = 0;
-    sm_anchor.free_chunk_space = 0;
-    sm_anchor.free_limit_space = 0;
-    sm_anchor.num_smmgr_request = 0;
 
     /* slab allocator */
     /* slab class 0 is used for collection items ans small-sized kv items */
