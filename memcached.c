@@ -1715,9 +1715,9 @@ static void process_bop_update_complete(conn *c)
 }
 
 #if defined(SUPPORT_BOP_MGET) || defined(SUPPORT_BOP_SMGET)
-static int tokenize_keys(char *keystr, char delimiter, int keycnt, token_t *tokens) {
+static int tokenize_keys(char *keystr, int length, char delimiter, int keycnt, token_t *tokens) {
     int ntokens = 0;
-    char *s, *e;
+    char *first, *s, *e;
     bool finish = false;
 
     assert(keystr != NULL && tokens != NULL && keycnt >= 1);
@@ -1725,9 +1725,10 @@ static int tokenize_keys(char *keystr, char delimiter, int keycnt, token_t *toke
     s = keystr;
     while (*s == ' ')
         s++;
+    first = s;
     for (e = s; ntokens < keycnt; ++e) {
         if (*e == ' ') break;
-        else if (*e == delimiter) {
+        if (*e == delimiter) {
             if (s == e) break;
             tokens[ntokens].value = s;
             tokens[ntokens].length = e - s;
@@ -1738,11 +1739,12 @@ static int tokenize_keys(char *keystr, char delimiter, int keycnt, token_t *toke
             tokens[ntokens].value = s;
             tokens[ntokens].length = e - s;
             ntokens++;
-            finish = true;
+            if (ntokens == keycnt && (e-first) == (length-2))
+                finish = true;
             break; /* string end */
         }
     }
-    if (ntokens == keycnt && finish == true) {
+    if (finish == true) {
         return ntokens;
     } else {
         return -1; /* some errors */
@@ -1763,7 +1765,8 @@ static void process_bop_mget_complete(conn *c) {
     token_t *key_tokens = (token_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
     if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-        (tokenize_keys((char*)c->coll_strkeys, delimiter, c->coll_numkeys, key_tokens) == -1))
+        (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys,
+                       delimiter, c->coll_numkeys, key_tokens) == -1))
     {
         ret = ENGINE_EBADVALUE;
     }
@@ -1972,7 +1975,7 @@ static void process_bop_smget_complete_old(conn *c) {
 
     ENGINE_ERROR_CODE ret;
     if ((strncmp(vptr + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-        (tokenize_keys(vptr, delimiter, c->coll_numkeys, keys_array) == -1)) {
+        (tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1)) {
         ret = ENGINE_EBADVALUE;
     } else {
         if (c->coll_bkrange.to_nbkey == BKEY_NULL) {
@@ -2136,7 +2139,7 @@ static void process_bop_smget_complete(conn *c) {
 
     ENGINE_ERROR_CODE ret;
     if ((strncmp(vptr + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-        (tokenize_keys(vptr, delimiter, c->coll_numkeys, keys_array) == -1)) {
+        (tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1)) {
         ret = ENGINE_EBADVALUE;
     } else {
         if (c->coll_bkrange.to_nbkey == BKEY_NULL) {
@@ -5507,7 +5510,7 @@ static void process_bin_bop_smget_complete_old(conn *c) {
     bool duplicated;
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    int ntokens = tokenize_keys(vptr, delimiter, c->coll_numkeys, keys_array);
+    int ntokens = tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
     if (ntokens == -1) {
         ret = ENGINE_EBADVALUE;
     } else {
@@ -5705,7 +5708,7 @@ static void process_bin_bop_smget_complete(conn *c) {
 #endif
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    int ntokens = tokenize_keys(vptr, delimiter, c->coll_numkeys, keys_array);
+    int ntokens = tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
     if (ntokens == -1) {
         ret = ENGINE_EBADVALUE;
     } else {
