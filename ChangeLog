@@ -1,3 +1,15 @@
+2016-05-20 [version 1.9.5]
+	* Strengthen the integrity of tokenize_keys() function.
+	* Change the output format of lqdetect and cmdlog stats.
+	* Add the number of incr/decr requests on prefix stats.
+	* Fix failing autorun.sh on dash.
+	* Add do_btree/set_elem_delet_fast function as disabled state.
+	* Fix compile warning when use gcc of lower version (ex, 4.1).
+	* Add "SERVER_ERROR out of memory" response in process_bop_update_prepare_nread.
+	* Add cmd_incr/cmd_decr/cmd_delete stats.
+	* Fix the uninitialized variable in lqdetect_dupcheck.
+	* Fix the max integer test failure in OSX environment.
+
 2016-01-27 [version 1.9.4]
 	* Do background eviction only if item_evict_to_free is true.
 	* Close ZK conn before close listen socket during shutdown.
