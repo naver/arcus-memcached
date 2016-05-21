@@ -40,10 +40,7 @@ fi
 
 mkdir -p m4
 
-if [ -d .git ]
-then
-  perl config/version.pl || die "Failed to run config/version.pl"
-fi
+perl config/version.pl || die "Failed to run config/version.pl"
 
 # Try to detect the supported binaries if the user didn't
 # override that by pushing the environment variable
