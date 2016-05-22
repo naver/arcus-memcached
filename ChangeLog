@@ -1,4 +1,5 @@
-2016-05-20 [version 1.9.5]
+2016-05-22 [version 1.9.5]
+	* Fix config/autorun.sh for arcus build.
 	* Strengthen the integrity of tokenize_keys() function.
 	* Change the output format of lqdetect and cmdlog stats.
 	* Add the number of incr/decr requests on prefix stats.
