@@ -708,6 +708,7 @@ static hash_item *do_item_alloc(struct default_engine *engine,
     assert(it->slabs_clsid == 0);
 
     it->slabs_clsid = id;
+    assert(it->slabs_clsid > 0);
     assert(it != engine->items.heads[it->slabs_clsid]);
 
 #ifdef ENABLE_DETACH_REF_ITEM_FROM_LRU
@@ -1514,6 +1515,7 @@ static list_elem_item *do_list_elem_alloc(struct default_engine *engine,
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(engine, ntotal);
+        assert(elem->slabs_clsid > 0);
         elem->refcount    = 1;
         elem->nbytes      = nbytes;
         elem->prev = elem->next = (list_elem_item *)ADDR_MEANS_UNLINKED; /* Unliked state */
@@ -1809,6 +1811,7 @@ static set_hash_node *do_set_node_alloc(struct default_engine *engine,
     if (node != NULL) {
         assert(node->slabs_clsid == 0);
         node->slabs_clsid = slabs_clsid(engine, ntotal);
+        assert(node->slabs_clsid > 0);
         node->refcount    = 0;
         node->hdepth      = hash_depth;
         node->tot_hash_cnt = 0;
@@ -1833,6 +1836,7 @@ static set_elem_item *do_set_elem_alloc(struct default_engine *engine,
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(engine, ntotal);
+        assert(elem->slabs_clsid > 0);
         elem->refcount    = 1;
         elem->nbytes      = nbytes;
         elem->next = (set_elem_item *)ADDR_MEANS_UNLINKED; /* Unliked state */
@@ -2373,6 +2377,7 @@ static btree_indx_node *do_btree_node_alloc(struct default_engine *engine,
     if (node != NULL) {
         assert(node->slabs_clsid == 0);
         node->slabs_clsid = slabs_clsid(engine, ntotal);
+        assert(node->slabs_clsid > 0);
         node->refcount    = 0;
         node->ndepth      = node_depth;
         node->used_count  = 0;
