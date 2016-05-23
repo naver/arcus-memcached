@@ -21,7 +21,11 @@
 typedef struct _prefix_t prefix_t;
 
 struct _prefix_t {
+#ifdef LONG_KEY_SUPPORT
+    uint16_t nprefix;
+#else
     uint8_t nprefix;
+#endif
 
     uint32_t prefix_items;
     uint64_t list_hash_items;
