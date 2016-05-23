@@ -571,6 +571,7 @@ static void do_smmgr_blck_free(struct default_engine *engine, sm_blck_t *blck)
 static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
 {
     sm_slot_t *cur_slot = NULL;
+    sm_slot_t *nxt_slot;
     int smid, targ;
     int slen;
 
@@ -639,15 +640,15 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
         sm_blck_t *blck = do_smmgr_blck_alloc(engine);
         if (blck == NULL) return NULL;
 
-        cur_slot = (sm_slot_t*)((char*)blck + sizeof(sm_blck_t) + slen);
-        do_smmgr_free_slot_init(cur_slot, sizeof(sm_blck_t) + slen, sm_anchor.blck_bsize - slen);
-        do_smmgr_free_slot_link(cur_slot);
-
         cur_slot = (sm_slot_t*)((char*)blck + sizeof(sm_blck_t));
         do_smmgr_used_slot_init(cur_slot, sizeof(sm_blck_t), slen);
+
+        nxt_slot = (sm_slot_t*)((char*)blck + sizeof(sm_blck_t) + slen);
+        do_smmgr_free_slot_init(nxt_slot, sizeof(sm_blck_t) + slen, sm_anchor.blck_bsize - slen);
+        do_smmgr_free_slot_link(nxt_slot);
     } else {
         if (cur_slot->length > slen) {
-            sm_slot_t *nxt_slot = (sm_slot_t*)((char*)cur_slot + slen);
+            nxt_slot = (sm_slot_t*)((char*)cur_slot + slen);
             if (smid != do_smmgr_memid(cur_slot->length - slen)) {
                 do_smmgr_free_slot_unlink(cur_slot);
                 do_smmgr_free_slot_init(nxt_slot, cur_slot->offset + slen, cur_slot->length - slen);
