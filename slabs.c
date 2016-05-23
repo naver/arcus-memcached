@@ -367,11 +367,11 @@ static void do_smmgr_free_slot_list_del(int targ)
     }
 }
 
-static void do_smmgr_used_slot_init(sm_slot_t *slot, uint16_t offset, uint16_t length)
+static void do_smmgr_used_slot_init(sm_slot_t *slot, int offset, int length)
 {
     sm_tail_t *tail = (sm_tail_t*)((char*)slot + length - sizeof(sm_tail_t));
-    tail->offset = offset;
-    tail->length = length; /* used slot */
+    tail->offset = (uint16_t)offset;
+    tail->length = (uint16_t)length; /* used slot */
     /* Set it as used slot.
      * In eager invalidation, incomplete slot can be inspected.
      * At that time, the slot must be regared as an used slot.
@@ -379,14 +379,14 @@ static void do_smmgr_used_slot_init(sm_slot_t *slot, uint16_t offset, uint16_t l
     slot->status = (uint32_t)-1; /* used slot */
 }
 
-static void do_smmgr_free_slot_init(sm_slot_t *slot, uint16_t offset, uint16_t length)
+static void do_smmgr_free_slot_init(sm_slot_t *slot, int offset, int length)
 {
     sm_tail_t *tail = (sm_tail_t*)((char*)slot + length - sizeof(sm_tail_t));
-    tail->offset = offset;
+    tail->offset = (uint16_t)offset;
     tail->length = 0; /* free slot */
     slot->status = 0; /* free slot */
-    slot->offset = offset;
-    slot->length = length;
+    slot->offset = tail->offset;
+    slot->length = (uint16_t)length;
 }
 
 static void do_smmgr_free_slot_link(sm_slot_t *slot)
