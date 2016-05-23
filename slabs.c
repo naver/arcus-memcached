@@ -385,14 +385,15 @@ static void do_smmgr_free_slot_init(sm_slot_t *slot, uint16_t offset, uint16_t l
 static void do_smmgr_free_slot_link(sm_slot_t *slot)
 {
     sm_slist_t *list;
-    int         smid;
+    int slen = slot->length;
+    int smid;
 
-    if (slot->length < SMMGR_MIN_SLOT_SIZE) {
-        sm_anchor.free_small_space += slot->length;
+    if (slen < SMMGR_MIN_SLOT_SIZE) {
+        sm_anchor.free_small_space += slen;
         return;
     }
 
-    smid = do_smmgr_memid(slot->length);
+    smid = do_smmgr_memid(slen);
     list = &sm_anchor.free_slist[smid];
 
     if (list->head == NULL) {
@@ -401,7 +402,7 @@ static void do_smmgr_free_slot_link(sm_slot_t *slot)
         slot->next = NULL;
         list->head = slot;
         list->tail = slot;
-        list->space = slot->length;
+        list->space = slen;
         list->count = 1;
         do_smmgr_free_slot_list_add(smid);
     } else {
@@ -410,49 +411,50 @@ static void do_smmgr_free_slot_link(sm_slot_t *slot)
         slot->next = NULL;
         slot->prev->next = slot;
         list->tail = slot;
-        list->space += slot->length;
+        list->space += slen;
         list->count += 1;
     }
     if (smid < sm_anchor.used_maxid) {
-        sm_anchor.free_small_space += slot->length;
+        sm_anchor.free_small_space += slen;
     } else {
-        sm_anchor.free_avail_space += slot->length;
+        sm_anchor.free_avail_space += slen;
     }
 }
 
 static void do_smmgr_free_slot_unlink(sm_slot_t *slot)
 {
     sm_slist_t *list;
-    int         smid;
+    int slen = slot->length;
+    int smid;
 
-    if (slot->length < SMMGR_MIN_SLOT_SIZE) {
-        sm_anchor.free_small_space -= slot->length;
+    if (slen < SMMGR_MIN_SLOT_SIZE) {
+        sm_anchor.free_small_space -= slen;
         return;
     }
 
-    smid = do_smmgr_memid(slot->length);
+    smid = do_smmgr_memid(slen);
     if (smid < sm_anchor.used_maxid) {
-        sm_anchor.free_small_space -= slot->length;
+        sm_anchor.free_small_space -= slen;
     } else {
-        sm_anchor.free_avail_space -= slot->length;
+        sm_anchor.free_avail_space -= slen;
     }
 
     list = &sm_anchor.free_slist[smid];
     if (list->count == 1) {
-        assert(list->space == slot->length && list->head == slot && list->tail == slot);
+        assert(list->space == slen && list->head == slot && list->tail == slot);
         list->head = NULL;
         list->tail = NULL;
         list->space = 0;
         list->count = 0;
         do_smmgr_free_slot_list_del(smid);
     } else {
-        assert(list->count > 1 && list->space > slot->length &&
+        assert(list->count > 1 && list->space > slen &&
                list->head != NULL && list->tail != NULL);
         if (slot->prev != NULL) slot->prev->next = slot->next;
         if (slot->next != NULL) slot->next->prev = slot->prev;
         if (list->head == slot) list->head = slot->next;
         if (list->tail == slot) list->tail = slot->prev;
-        list->space -= slot->length;
+        list->space -= slen;
         list->count -= 1;
     }
 }
@@ -461,7 +463,8 @@ static void do_smmgr_free_slot_replace(sm_slot_t *old_slot, sm_slot_t *new_slot,
 {
     sm_slist_t *list = &sm_anchor.free_slist[smid];
     assert(list->head == old_slot);
-    uint16_t diff_leng = old_slot->length - new_slot->length;
+    assert(old_slot->length > new_slot->length);
+    int diff = old_slot->length - new_slot->length;
 
     new_slot->prev = NULL;
     if (old_slot->next == NULL) {
@@ -472,12 +475,12 @@ static void do_smmgr_free_slot_replace(sm_slot_t *old_slot, sm_slot_t *new_slot,
         new_slot->next->prev = new_slot;
     }
     list->head = new_slot;
-    list->space -= diff_leng;
+    list->space -= diff;
 
     if (smid < sm_anchor.used_maxid) {
-        sm_anchor.free_small_space -= diff_leng;
+        sm_anchor.free_small_space -= diff;
     } else {
-        sm_anchor.free_avail_space -= diff_leng;
+        sm_anchor.free_avail_space -= diff;
     }
 }
 
