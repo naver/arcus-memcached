@@ -115,10 +115,8 @@ typedef struct _sm_anchor {
     uint32_t    num_smmgr_request;  /* the number that do_smmgr_alloc/do_smmgr_free are invoked */
 } sm_anchor_t;
 
-#define SMMGR_BLOCK_SIZE        (64*1024)
-#define SMMGR_SLOT_SIZE(size)   (((((size)+sizeof(sm_tail_t)-1) / 8) + 1) * 8)
-#define SMMGR_MIN_SLOT_SIZE     32
-#define SMMGR_MAX_SLOT_SIZE     SMMGR_SLOT_SIZE(MAX_SM_VALUE_SIZE)
+#define SMMGR_BLOCK_SIZE    (64*1024)
+#define SMMGR_MIN_SLOT_SIZE 32
 
 static sm_anchor_t sm_anchor;
 
@@ -201,6 +199,15 @@ static void do_smmgr_init(struct default_engine *engine)
     engine->slabs.slabclass[0].size = sm_anchor.blck_tsize;
     engine->slabs.slabclass[0].perslab = engine->config.item_size_max / engine->slabs.slabclass[0].size;
     engine->slabs.slabclass[0].rsvd_slabs = 0; // undefined
+}
+
+static inline int do_smmgr_slen(size_t size)
+{
+    int slen = (int)size + sizeof(sm_tail_t);
+    slen = (((slen-1) / 8) + 1) * 8;
+    if (slen < SMMGR_MIN_SLOT_SIZE)
+        slen = SMMGR_MIN_SLOT_SIZE;
+    return slen;
 }
 
 static inline int do_smmgr_memid(size_t size)
@@ -584,9 +591,7 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
         }
     }
 
-    slen = SMMGR_SLOT_SIZE(size);
-    if (slen < SMMGR_MIN_SLOT_SIZE)
-        slen = SMMGR_MIN_SLOT_SIZE;
+    slen = do_smmgr_slen(size);
     targ = do_smmgr_memid(slen);
 
     /* allocate slot from free slot list */
@@ -692,9 +697,7 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
         }
     }
 
-    slen = SMMGR_SLOT_SIZE(size);
-    if (slen < SMMGR_MIN_SLOT_SIZE)
-        slen = SMMGR_MIN_SLOT_SIZE;
+    slen = do_smmgr_slen(size);
     targ = do_smmgr_memid(slen);
 
     //do_smmgr_used_blck_check();
@@ -750,7 +753,7 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
 unsigned int slabs_space_size(struct default_engine *engine, const size_t size)
 {
     if (size <= MAX_SM_VALUE_SIZE) {
-        return SMMGR_SLOT_SIZE(size);
+        return do_smmgr_slen(size);
     }
     int clsid = slabs_clsid(engine, size);
     if (clsid == 0)
