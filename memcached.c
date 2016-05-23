@@ -226,7 +226,7 @@ static void settings_init(void);
 static void event_handler(const int fd, const short which, void *arg);
 static bool update_event(conn *c, const int new_flags);
 static void complete_nread(conn *c);
-static void process_command(conn *c, char *command);
+static void process_command(conn *c, char *command, int cmdlen);
 static void write_and_free(conn *c, char *buf, int bytes);
 static int ensure_iov_space(conn *c);
 static int add_iov(conn *c, const void *buf, int len);
@@ -7124,23 +7124,27 @@ static void complete_nread(conn *c)
  *      command  = tokens[ix].value;
  *   }
  */
-static size_t tokenize_command(char *command, token_t *tokens, const size_t max_tokens) {
+static size_t tokenize_command(char *command, int cmdlen, token_t *tokens, const size_t max_tokens) {
     char *s, *e;
     size_t ntokens = 0;
+    size_t checked = 0;
 
     assert(command != NULL && tokens != NULL && max_tokens > 1);
 
-    for (s = e = command; ntokens < max_tokens - 1; ++e) {
-        if (*e == ' ') {
+    s = command;
+    while (ntokens < max_tokens - 1) {
+        e = memchr(s, ' ', cmdlen - checked);
+        if (e) {
             if (s != e) {
                 tokens[ntokens].value = s;
                 tokens[ntokens].length = e - s;
                 ntokens++;
                 *e = '\0';
+                checked = e - command;
             }
-            s = e + 1;
-        }
-        else if (*e == '\0') {
+            s = (++e);
+        } else {
+            e = command + cmdlen;
             if (s != e) {
                 tokens[ntokens].value = s;
                 tokens[ntokens].length = e - s;
@@ -7155,7 +7159,14 @@ static size_t tokenize_command(char *command, token_t *tokens, const size_t max_
      * If we scanned the whole string, the terminal value pointer is null,
      * otherwise it is the first unprocessed character.
      */
-    tokens[ntokens].value =  *e == '\0' ? NULL : e;
+    if (*e == '\0') {
+        tokens[ntokens].value = NULL;
+    } else {
+        assert(ntokens == (max_tokens-1));
+        tokens[ntokens].value = e;
+        /* The next reserved token keeps the length of untokenized command. */
+        tokens[ntokens+1].length = cmdlen - (e - command);
+    }
     tokens[ntokens].length = 0;
     ntokens++;
 
@@ -7964,7 +7975,9 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
          * of tokens.
          */
         if(key_token->value != NULL) {
-            ntokens = tokenize_command(key_token->value, tokens, MAX_TOKENS);
+            /* The next reserved token has the length of untokenized command. */
+            ntokens = tokenize_command(key_token->value, (key_token+1)->length,
+                                       tokens, MAX_TOKENS);
             key_token = tokens;
         }
 
@@ -12001,9 +12014,12 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
     }
 }
 
-static void process_command(conn *c, char *command)
+static void process_command(conn *c, char *command, int cmdlen)
 {
-    token_t tokens[MAX_TOKENS];
+    /* One more token is reserved in tokens strucure
+     * for kepping the loenth of untokenized command.
+     */
+    token_t tokens[MAX_TOKENS+1];
     size_t ntokens;
     int comm;
 
@@ -12036,7 +12052,7 @@ static void process_command(conn *c, char *command)
     }
 #endif
 
-    ntokens = tokenize_command(command, tokens, MAX_TOKENS);
+    ntokens = tokenize_command(command, cmdlen, tokens, MAX_TOKENS);
 
     if ((ntokens >= 3) && ((strcmp(tokens[COMMAND_TOKEN].value, "get" ) == 0) ||
                            (strcmp(tokens[COMMAND_TOKEN].value, "bget") == 0)))
@@ -12309,7 +12325,7 @@ static int try_read_command(conn *c) {
 
         assert(cont <= (c->rcurr + c->rbytes));
 
-        process_command(c, c->rcurr);
+        process_command(c, c->rcurr, el - c->rcurr);
 
         c->rbytes -= (cont - c->rcurr);
         c->rcurr = cont;
