@@ -591,6 +591,8 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
         }
     }
 
+    //do_smmgr_used_blck_check();
+
     slen = do_smmgr_slen(size);
     targ = do_smmgr_memid(slen);
 
@@ -676,7 +678,6 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
         do_smmgr_used_slot_list_add(targ);
     }
 
-    //do_smmgr_used_blck_check();
     return (void*)cur_slot;
 }
 
@@ -699,8 +700,6 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
 
     slen = do_smmgr_slen(size);
     targ = do_smmgr_memid(slen);
-
-    //do_smmgr_used_blck_check();
 
     cur_tail = (sm_tail_t*)((char*)ptr + slen - sizeof(sm_tail_t));
     assert(cur_tail->length == slen);
@@ -748,6 +747,8 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
     if (sm_anchor.used_slist[targ].count == 0) {
         do_smmgr_used_slot_list_del(targ);
     }
+
+    //do_smmgr_used_blck_check();
 }
 
 unsigned int slabs_space_size(struct default_engine *engine, const size_t size)
