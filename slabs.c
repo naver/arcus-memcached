@@ -514,13 +514,13 @@ static void do_smmgr_used_blck_check(void)
         tail = (sm_tail_t*)((char*)blck + sm_anchor.blck_tsize - sizeof(sm_tail_t));
         while (((char*)tail - (char*)blck) > sizeof(sm_blck_t)) {
             slot = (sm_slot_t*)((char*)blck + tail->offset);
-            if (tail->length > 8) { /* used slot */
+            if (SM_USED_TAIL(tail)) { /* used slot */
                 used_count += 1;
-                assert(slot->status != 0);
+                assert(SM_USED_SLOT(slot));
             } else { /* free slot */
                 free_count += 1;
                 comp_length = (char*)tail - (char*)slot + sizeof(sm_tail_t);
-                assert(slot->status == 0);
+                assert(SM_FREE_SLOT(slot));
                 assert(slot->offset == tail->offset);
                 assert(slot->length == comp_length);
             }
