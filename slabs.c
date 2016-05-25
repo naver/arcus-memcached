@@ -118,9 +118,25 @@ typedef struct _sm_anchor {
 #define SMMGR_BLOCK_SIZE    (64*1024)
 #define SMMGR_MIN_SLOT_SIZE 32
 
+/* macros for converting offset and length values of slots */
+#define SM_SLOT_OFFSET(o)  (o)
+#define SM_SLOT_LENGTH(l)  (l)
+#define SM_REAL_OFFSET(o)  (o)
+#define SM_REAL_LENGTH(l)  (l)
+
+/* macros for checking the validity of offset and length values */
+#define SM_VALID_OFFSET(o) (((o)%8)==0)
+#define SM_VALID_LENGTH(l) (((l)%8)==0)
+
 /* macros for checking the used/free state of the given slot */
+/* 1) check the used/free state using status value of slot head. */
 #define SM_USED_SLOT(slot) ((slot)->status != 0)
 #define SM_FREE_SLOT(slot) ((slot)->status == 0)
+/* 2) check the used/free state using length value of slot tail.
+ *    All free slots have 0 as the length value of slot tail.
+ *    Exceptionally, only the smallest free slot of 8 bytes,
+ *    has the real size as the length value.
+ */
 #define SM_USED_TAIL(tail) ((tail)->length >  8)
 #define SM_FREE_TAIL(tail) ((tail)->length <= 8)
 
@@ -375,9 +391,10 @@ static void do_smmgr_free_slot_list_del(int targ)
 
 static void do_smmgr_used_slot_init(sm_slot_t *slot, int offset, int length)
 {
+    assert(SM_VALID_OFFSET(offset) && SM_VALID_LENGTH(length));
     sm_tail_t *tail = (sm_tail_t*)((char*)slot + length - sizeof(sm_tail_t));
-    tail->offset = (uint16_t)offset;
-    tail->length = (uint16_t)length; /* used slot */
+    tail->offset = (uint16_t)SM_SLOT_OFFSET(offset);
+    tail->length = (uint16_t)SM_SLOT_LENGTH(length); /* used slot */
     /* Set it as used slot.
      * In eager invalidation, incomplete slot can be inspected.
      * At that time, the slot must be regared as an used slot.
@@ -387,18 +404,19 @@ static void do_smmgr_used_slot_init(sm_slot_t *slot, int offset, int length)
 
 static void do_smmgr_free_slot_init(sm_slot_t *slot, int offset, int length)
 {
+    assert(SM_VALID_OFFSET(offset) && SM_VALID_LENGTH(length));
     sm_tail_t *tail = (sm_tail_t*)((char*)slot + length - sizeof(sm_tail_t));
-    tail->offset = (uint16_t)offset;
+    tail->offset = (uint16_t)SM_SLOT_OFFSET(offset);
     tail->length = 0; /* free slot */
     slot->status = 0; /* free slot */
     slot->offset = tail->offset;
-    slot->length = (uint16_t)length;
+    slot->length = (uint16_t)SM_SLOT_LENGTH(length);
 }
 
 static void do_smmgr_free_slot_link(sm_slot_t *slot)
 {
     sm_slist_t *list;
-    int slen = slot->length;
+    int slen = SM_REAL_LENGTH(slot->length);
     int smid;
 
     if (slen < SMMGR_MIN_SLOT_SIZE) {
@@ -437,7 +455,7 @@ static void do_smmgr_free_slot_link(sm_slot_t *slot)
 static void do_smmgr_free_slot_unlink(sm_slot_t *slot)
 {
     sm_slist_t *list;
-    int slen = slot->length;
+    int slen = SM_REAL_LENGTH(slot->length);
     int smid;
 
     if (slen < SMMGR_MIN_SLOT_SIZE) {
@@ -477,7 +495,7 @@ static void do_smmgr_free_slot_replace(sm_slot_t *old_slot, sm_slot_t *new_slot,
     sm_slist_t *list = &sm_anchor.free_slist[smid];
     assert(list->head == old_slot);
     assert(old_slot->length > new_slot->length);
-    int diff = old_slot->length - new_slot->length;
+    int diff = SM_REAL_LENGTH(old_slot->length - new_slot->length);
 
     new_slot->prev = NULL;
     if (old_slot->next == NULL) {
@@ -513,7 +531,7 @@ static void do_smmgr_used_blck_check(void)
         blck_count += 1;
         tail = (sm_tail_t*)((char*)blck + sm_anchor.blck_tsize - sizeof(sm_tail_t));
         while (((char*)tail - (char*)blck) > sizeof(sm_blck_t)) {
-            slot = (sm_slot_t*)((char*)blck + tail->offset);
+            slot = (sm_slot_t*)((char*)blck + SM_REAL_OFFSET(tail->offset));
             if (SM_USED_TAIL(tail)) { /* used slot */
                 used_count += 1;
                 assert(SM_USED_SLOT(slot));
@@ -522,7 +540,7 @@ static void do_smmgr_used_blck_check(void)
                 comp_length = (char*)tail - (char*)slot + sizeof(sm_tail_t);
                 assert(SM_FREE_SLOT(slot));
                 assert(slot->offset == tail->offset);
-                assert(slot->length == comp_length);
+                assert(SM_REAL_LENGTH(slot->length) == comp_length);
             }
             tail = (sm_tail_t*)((char*)slot - sizeof(sm_tail_t));
         }
@@ -660,8 +678,8 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
         do_smmgr_free_slot_init(nxt_slot, sizeof(sm_blck_t) + slen, sm_anchor.blck_bsize - slen);
         do_smmgr_free_slot_link(nxt_slot);
     } else {
-        int cur_offset = cur_slot->offset;
-        int cur_length = cur_slot->length;
+        int cur_offset = SM_REAL_OFFSET(cur_slot->offset);
+        int cur_length = SM_REAL_LENGTH(cur_slot->length);
         if (cur_length > slen) {
             nxt_slot = (sm_slot_t*)((char*)cur_slot + slen);
             if (smid != do_smmgr_memid(cur_length - slen)) {
@@ -695,7 +713,7 @@ static sm_slot_t *sm_get_prev_free_slot(sm_slot_t *cur_slot, sm_blck_t *cur_blck
     sm_tail_t *prv_tail = (sm_tail_t*)((char*)cur_slot - sizeof(sm_tail_t));
 
     if (SM_FREE_TAIL(prv_tail)) { /* free slot */
-        prv_slot = (sm_slot_t*)((char*)cur_blck + prv_tail->offset);
+        prv_slot = (sm_slot_t*)((char*)cur_blck + SM_REAL_OFFSET(prv_tail->offset));
         assert(prv_slot->offset == prv_tail->offset && SM_FREE_SLOT(prv_slot));
     } else {
         prv_slot = NULL;
@@ -709,7 +727,8 @@ static sm_slot_t *sm_get_next_free_slot(sm_tail_t *cur_tail)
     sm_tail_t *nxt_tail;
 
     if (SM_FREE_SLOT(nxt_slot)) { /* free slot */
-        nxt_tail = (sm_tail_t*)((char*)nxt_slot + nxt_slot->length - sizeof(sm_tail_t));
+        nxt_tail = (sm_tail_t*)((char*)nxt_slot + SM_REAL_LENGTH(nxt_slot->length)
+                                                - sizeof(sm_tail_t));
         assert(nxt_tail->offset == nxt_slot->offset && SM_FREE_TAIL(nxt_tail));
     } else {
         nxt_slot = NULL;
@@ -740,8 +759,8 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
     cur_slot = (sm_slot_t*)ptr;
     cur_tail = (sm_tail_t*)((char*)cur_slot + slen - sizeof(sm_tail_t));
 
-    int cur_offset = cur_tail->offset;
-    int cur_length = cur_tail->length;
+    int cur_offset = SM_REAL_OFFSET(cur_tail->offset);
+    int cur_length = SM_REAL_LENGTH(cur_tail->length);
     assert(cur_length == slen);
 
     cur_blck = (sm_blck_t*)((char*)cur_slot - cur_offset);
@@ -751,8 +770,8 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
         sm_slot_t *prv_slot = sm_get_prev_free_slot(cur_slot, cur_blck);
         if (prv_slot != NULL) {
             do_smmgr_free_slot_unlink(prv_slot);
-            cur_offset  = prv_slot->offset;
-            cur_length += prv_slot->length;
+            cur_offset  = SM_REAL_OFFSET(prv_slot->offset);
+            cur_length += SM_REAL_LENGTH(prv_slot->length);
         }
     }
     /* check and merge the next slot if it exists as freed state. */
@@ -760,7 +779,7 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
         sm_slot_t *nxt_slot = sm_get_next_free_slot(cur_tail);
         if (nxt_slot != NULL) {
             do_smmgr_free_slot_unlink(nxt_slot);
-            cur_length += nxt_slot->length;
+            cur_length += SM_REAL_LENGTH(nxt_slot->length);
         }
     }
     /* free the slot */
