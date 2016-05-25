@@ -115,14 +115,21 @@ typedef struct _sm_anchor {
     uint32_t    num_smmgr_request;  /* the number that do_smmgr_alloc/do_smmgr_free are invoked */
 } sm_anchor_t;
 
+
 #define SMMGR_BLOCK_SIZE    (64*1024)
 #define SMMGR_MIN_SLOT_SIZE 32
 
 /* macros for converting offset and length values of slots */
+#define SM_SLOT_OFFSET(o)  ((o)/8)
+#define SM_SLOT_LENGTH(l)  ((l)/8)
+#define SM_REAL_OFFSET(o)  ((o)*8)
+#define SM_REAL_LENGTH(l)  ((l)*8)
+/****
 #define SM_SLOT_OFFSET(o)  (o)
 #define SM_SLOT_LENGTH(l)  (l)
 #define SM_REAL_OFFSET(o)  (o)
 #define SM_REAL_LENGTH(l)  (l)
+****/
 
 /* macros for checking the validity of offset and length values */
 #define SM_VALID_OFFSET(o) (((o)%8)==0)
@@ -137,8 +144,12 @@ typedef struct _sm_anchor {
  *    Exceptionally, only the smallest free slot of 8 bytes,
  *    has the real size as the length value.
  */
+#define SM_USED_TAIL(tail) ((tail)->length >  1)
+#define SM_FREE_TAIL(tail) ((tail)->length <= 1)
+/****
 #define SM_USED_TAIL(tail) ((tail)->length >  8)
 #define SM_FREE_TAIL(tail) ((tail)->length <= 8)
+****/
 
 static sm_anchor_t sm_anchor;
 
