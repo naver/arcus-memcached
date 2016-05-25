@@ -118,13 +118,11 @@ typedef struct _sm_anchor {
 #define SMMGR_BLOCK_SIZE    (64*1024)
 #define SMMGR_MIN_SLOT_SIZE 32
 
-#if 1 // JOON_SM_SLOT
 /* macros for checking the used/free state of the given slot */
 #define SM_USED_SLOT(slot) ((slot)->status != 0)
 #define SM_FREE_SLOT(slot) ((slot)->status == 0)
 #define SM_USED_TAIL(tail) ((tail)->length >  8)
 #define SM_FREE_TAIL(tail) ((tail)->length <= 8)
-#endif
 
 static sm_anchor_t sm_anchor;
 
@@ -662,7 +660,6 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
         do_smmgr_free_slot_init(nxt_slot, sizeof(sm_blck_t) + slen, sm_anchor.blck_bsize - slen);
         do_smmgr_free_slot_link(nxt_slot);
     } else {
-#if 1 // JOON_SM_SLOT
         int cur_offset = cur_slot->offset;
         int cur_length = cur_slot->length;
         if (cur_length > slen) {
@@ -679,22 +676,6 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
             do_smmgr_free_slot_unlink(cur_slot);
         }
         do_smmgr_used_slot_init(cur_slot, cur_offset, slen);
-#else
-        if (cur_slot->length > slen) {
-            nxt_slot = (sm_slot_t*)((char*)cur_slot + slen);
-            if (smid != do_smmgr_memid(cur_slot->length - slen)) {
-                do_smmgr_free_slot_unlink(cur_slot);
-                do_smmgr_free_slot_init(nxt_slot, cur_slot->offset + slen, cur_slot->length - slen);
-                do_smmgr_free_slot_link(nxt_slot);
-            } else {
-                do_smmgr_free_slot_init(nxt_slot, cur_slot->offset + slen, cur_slot->length - slen);
-                do_smmgr_free_slot_replace(cur_slot, nxt_slot, smid);
-            }
-        } else {
-            do_smmgr_free_slot_unlink(cur_slot);
-        }
-        do_smmgr_used_slot_init(cur_slot, cur_slot->offset, slen);
-#endif
     }
 
     /* used slot stats */
@@ -708,7 +689,6 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
     return (void*)cur_slot;
 }
 
-#if 1 // JOON_SM_SLOT
 static sm_slot_t *sm_get_prev_free_slot(sm_slot_t *cur_slot, sm_blck_t *cur_blck)
 {
     sm_slot_t *prv_slot;
@@ -736,7 +716,6 @@ static sm_slot_t *sm_get_next_free_slot(sm_tail_t *cur_tail)
     }
     return nxt_slot;
 }
-#endif
 
 static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t size)
 {
@@ -758,7 +737,6 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
     slen = do_smmgr_slen(size);
     targ = do_smmgr_memid(slen);
 
-#if 1 // JOON_SM_SLOT
     cur_slot = (sm_slot_t*)ptr;
     cur_tail = (sm_tail_t*)((char*)cur_slot + slen - sizeof(sm_tail_t));
 
@@ -767,13 +745,7 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
     assert(cur_length == slen);
 
     cur_blck = (sm_blck_t*)((char*)cur_slot - cur_offset);
-#else
-    cur_tail = (sm_tail_t*)((char*)ptr + slen - sizeof(sm_tail_t));
-    assert(cur_tail->length == slen);
-    cur_blck = (sm_blck_t*)((char*)ptr - cur_tail->offset);
-#endif
 
-#if 1 // JOON_SM_SLOT
     /* check and merge the prev slot if it exists as freed state. */
     if (cur_offset > sizeof(sm_blck_t)) {
         sm_slot_t *prv_slot = sm_get_prev_free_slot(cur_slot, cur_blck);
@@ -799,41 +771,6 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
     } else {
         do_smmgr_blck_free(engine, cur_blck);
     }
-#else
-    /* check if prev slot is in freed state. if then, merge with that */
-    if (cur_tail->offset > sizeof(sm_blck_t)) {
-        sm_slot_t *prv_slot;
-        sm_tail_t *prv_tail = (sm_tail_t*)((char*)ptr - sizeof(sm_tail_t));
-        if (prv_tail->length <= 8) { /* free slot */
-            prv_slot = (sm_slot_t*)((char*)cur_blck + prv_tail->offset);
-            assert(prv_slot->offset == prv_tail->offset);
-            do_smmgr_free_slot_unlink(prv_slot);
-            cur_tail->offset  = prv_slot->offset;
-            cur_tail->length += prv_slot->length;
-        }
-    }
-    /* check if next slot is in freed state. if then, merge with that */
-    if ((cur_tail->offset + cur_tail->length) < sm_anchor.blck_tsize) {
-        sm_slot_t *nxt_slot = (sm_slot_t*)((char*)cur_tail + sizeof(sm_tail_t));
-        sm_tail_t *nxt_tail;
-        if (nxt_slot->status == 0) { /* free slot */
-            nxt_tail = (sm_tail_t*)((char*)nxt_slot + nxt_slot->length - sizeof(sm_tail_t));
-            assert(nxt_tail->offset == nxt_slot->offset && nxt_tail->length <= 8);
-            do_smmgr_free_slot_unlink(nxt_slot);
-            nxt_tail->offset = cur_tail->offset;
-            nxt_tail->length = cur_tail->length + nxt_slot->length;
-            cur_tail = nxt_tail;
-        }
-    }
-
-    if (cur_tail->offset > sizeof(sm_blck_t) || cur_tail->length < sm_anchor.blck_bsize) {
-        cur_slot = (sm_slot_t*)((char*)cur_tail - cur_tail->length + sizeof(sm_tail_t));
-        do_smmgr_free_slot_init(cur_slot, cur_tail->offset, cur_tail->length);
-        do_smmgr_free_slot_link(cur_slot);
-    } else {
-        do_smmgr_blck_free(engine, cur_blck);
-    }
-#endif
 
     /* used slot stats */
     assert(sm_anchor.used_slist[targ].count >= 1);
