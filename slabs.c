@@ -116,7 +116,8 @@ typedef struct _sm_anchor {
 } sm_anchor_t;
 
 
-#define SMMGR_BLOCK_SIZE    (64*1024)
+/* The maximum size of smmgr block is 512K. */
+#define SMMGR_BLOCK_SIZE    (256*1024)
 #define SMMGR_MIN_SLOT_SIZE 32
 
 /* macros for converting offset and length values of slots */
