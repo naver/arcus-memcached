@@ -33,8 +33,15 @@ typedef struct _hash_item {
                          * Lower 8 bits are reserved for the core server,
                          * Upper 8 bits are reserved for engine implementation.
                          */
+#ifdef LONG_KEY_SUPPORT
+    uint16_t nkey;      /* The total length of the key (in bytes) */
+    uint16_t nprefix;   /* The prefix length of the key (in bytes) */
+    uint16_t dummy16;
+    uint32_t dummy32;
+#else
     uint8_t  nkey;      /* The total length of the key (in bytes) */
     uint8_t  nprefix;   /* The prefix length of the key (in bytes) */
+#endif
     uint32_t nbytes;    /* The total length of the data (in bytes) */
 } hash_item;
 
@@ -85,8 +92,12 @@ typedef struct _list_meta_info {
     int32_t  ccnt;      /* current count */
     uint8_t  ovflact;   /* overflow action */
     uint8_t  mflags;    /* sticky, readable flags */
+#ifdef LONG_KEY_SUPPORT
+    uint16_t itdist;    /* distance from hash item (unit: sizeof(size_t)) */
+#else
     uint8_t  itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint8_t  reserved;
+#endif
     uint32_t stotal;    /* total space */
     void    *prefix;    /* pointer to prefix meta info */
     list_elem_item *head;
@@ -113,8 +124,12 @@ typedef struct _set_meta_info {
     int32_t  ccnt;      /* current count */
     uint8_t  ovflact;   /* overflow action */
     uint8_t  mflags;    /* sticky, readable flags */
+#ifdef LONG_KEY_SUPPORT
+    uint16_t itdist;    /* distance from hash item (unit: sizeof(size_t)) */
+#else
     uint8_t  itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint8_t  reserved;
+#endif
     uint32_t stotal;    /* total space */
     void    *prefix;    /* pointer to prefix meta info */
     set_hash_node *root;
@@ -152,10 +167,18 @@ typedef struct _btree_meta_info {
     int32_t  ccnt;      /* current count */
     uint8_t  ovflact;   /* overflow action */
     uint8_t  mflags;    /* sticky, readable, trimmed flags */
+#ifdef LONG_KEY_SUPPORT
+    uint16_t itdist;    /* distance from hash item (unit: sizeof(size_t)) */
+    uint32_t stotal;    /* total space */
+    void    *prefix;    /* pointer to prefix meta info */
+    uint8_t  bktype;    /* bkey type : BKEY_TYPE_UINT64 or BKEY_TYPE_BINARY */
+    uint8_t  dummy[7];  /* reserved space */
+#else
     uint8_t  itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint8_t  bktype;    /* bkey type : BKEY_TYPE_UINT64 or BKEY_TYPE_BINARY */
     uint32_t stotal;    /* total space */
     void    *prefix;    /* pointer to prefix meta info */
+#endif
     bkey_t   maxbkeyrange;
     btree_indx_node *root;
 } btree_meta_info;
@@ -184,8 +207,12 @@ typedef struct _coll_meta_info {
     int32_t  ccnt;      /* current count */
     uint8_t  ovflact;   /* overflow action */
     uint8_t  mflags;    /* sticky, readable flags */
+#ifdef LONG_KEY_SUPPORT
+    uint16_t itdist;    /* distance from hash item (unit: sizeof(size_t)) */
+#else
     uint8_t  itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint8_t  reserved;
+#endif
     uint32_t stotal;    /* total space */
     void    *prefix;    /* pointer to prefix meta info */
 } coll_meta_info;
