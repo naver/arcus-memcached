@@ -12017,7 +12017,7 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
 static void process_command(conn *c, char *command, int cmdlen)
 {
     /* One more token is reserved in tokens strucure
-     * for kepping the loenth of untokenized command.
+     * for keeping the length of untokenized command.
      */
     token_t tokens[MAX_TOKENS+1];
     size_t ntokens;
