@@ -76,6 +76,11 @@ typedef struct _sm_blck {
     struct _sm_blck *next;
     uint32_t    frspc; /* (NOT USED) free slot space in each block */
     uint32_t    frcnt; /* (NOT USED) free slot count in each block */
+    /* The size of sm block strcture must be a multiple of
+     * the size of the smallest slot unit. (ex, 16 or 32).
+     * For that purpose, following dummy field was added.
+     */
+    uint64_t    dummy64;
 } sm_blck_t;
 
 /* sm slot list */
