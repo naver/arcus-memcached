@@ -445,24 +445,24 @@ static void do_smmgr_free_slot_link(sm_slot_t *slot)
     smid = do_smmgr_memid(slen);
     list = &sm_anchor.free_slist[smid];
 
-    if (list->head == NULL) {
-        assert(list->tail == NULL && list->count == 0 && list->space == 0);
+    /* link the slot to the tail of the list */
+    slot->next = NULL;
+    if (list->tail == NULL) {
+        assert(list->head == NULL && list->count == 0 && list->space == 0);
         slot->prev = NULL;
-        slot->next = NULL;
         list->head = slot;
-        list->tail = slot;
-        list->space = slen;
-        list->count = 1;
-        do_smmgr_free_slot_list_add(smid);
     } else {
-        assert(list->tail != NULL && list->count > 0 && list->space > 0);
+        assert(list->head != NULL && list->count > 0 && list->space > 0);
         slot->prev = list->tail;
-        slot->next = NULL;
         slot->prev->next = slot;
-        list->tail = slot;
-        list->space += slen;
-        list->count += 1;
     }
+    list->tail = slot;
+    list->space += slen;
+    list->count += 1;
+    if (list->count == 1) {
+        do_smmgr_free_slot_list_add(smid);
+    }
+
     if (smid < sm_anchor.used_maxid) {
         sm_anchor.free_small_space += slen;
     } else {
