@@ -48,12 +48,6 @@
 /* should be computed manually */
 #define SMMGR_NUM_CLASSES  1025
 //#define SMMGR_NUM_CLASSES  81
-//#define SMMGR_NUM_CLASSES  9
-//#define SMMGR_FREE_MINSIZE  32
-//#define SMMGR_NUM_CLASSES  8
-//#define SMMGR_FREE_MINSIZE  64
-//#define SMMGR_NUM_CLASSES  5
-//#define SMMGR_FREE_MINSIZE  512
 
 /* sm slot head */
 typedef struct _sm_slot {
@@ -254,16 +248,6 @@ static inline int do_smmgr_memid(int slen)
 {
     if (slen < 8192) return (int)(slen/8);
     else             return SMMGR_NUM_CLASSES-1;
-#if 0
-    int memid = -1;
-    int limit = SMMGR_FREE_MINSIZE;
-    while (slen >= limit && memid < (SMMGR_NUM_CLASSES-1)) {
-        limit *= 2;
-        memid += 1;
-    }
-    assert(memid < SMMGR_NUM_CLASSES);
-    return memid;
-#endif
 #if 0
     int memid;
     if (slen < 2048) {
