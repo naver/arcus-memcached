@@ -241,7 +241,7 @@ static void do_smmgr_init(struct default_engine *engine)
     p->rsvd_slabs = 0; // undefined
 }
 
-static inline int do_smmgr_slen(size_t size)
+static inline int do_smmgr_slen(int size)
 {
     int slen = (int)size + sizeof(sm_tail_t);
     slen = (((slen-1) / 8) + 1) * 8;
@@ -250,14 +250,14 @@ static inline int do_smmgr_slen(size_t size)
     return slen;
 }
 
-static inline int do_smmgr_memid(size_t size)
+static inline int do_smmgr_memid(int slen)
 {
-    if (size < 8192) return (int)(size/8);
+    if (slen < 8192) return (int)(slen/8);
     else             return SMMGR_NUM_CLASSES-1;
 #if 0
     int memid = -1;
     int limit = SMMGR_FREE_MINSIZE;
-    while (size >= limit && memid < (SMMGR_NUM_CLASSES-1)) {
+    while (slen >= limit && memid < (SMMGR_NUM_CLASSES-1)) {
         limit *= 2;
         memid += 1;
     }
@@ -266,12 +266,12 @@ static inline int do_smmgr_memid(size_t size)
 #endif
 #if 0
     int memid;
-    if (size < 2048) {
-        if (size < 1024) memid = ( 0 + ((size     ) /  32));
-        else             memid = (32 + ((size-1024) /  64));
-    } else if (size < 8192) {
-        if (size < 4096) memid = (48 + ((size-2048) / 128));
-        else             memid = (64 + ((size-4096) / 256));
+    if (slen < 2048) {
+        if (slen < 1024) memid = ( 0 + ((slen     ) /  32));
+        else             memid = (32 + ((slen-1024) /  64));
+    } else if (slen < 8192) {
+        if (slen < 4096) memid = (48 + ((slen-2048) / 128));
+        else             memid = (64 + ((slen-4096) / 256));
     } else {
         memid = SMMGR_NUM_CLASSES-1;
     }
@@ -280,12 +280,12 @@ static inline int do_smmgr_memid(size_t size)
 #endif
 #if 0
     int memid;
-    if (size < 2048) {
-        if (size < 1024) memid = (  0 + ((size     ) /  16));
-        else             memid = ( 64 + ((size-1024) /  32));
-    } else if (size < 8192) {
-        if (size < 4096) memid = ( 96 + ((size-2048) /  64));
-        else             memid = (128 + ((size-4096) / 128));
+    if (slen < 2048) {
+        if (slen < 1024) memid = (  0 + ((slen     ) /  16));
+        else             memid = ( 64 + ((slen-1024) /  32));
+    } else if (slen < 8192) {
+        if (slen < 4096) memid = ( 96 + ((slen-2048) /  64));
+        else             memid = (128 + ((slen-4096) / 128));
     } else {
         memid = SMMGR_NUM_CLASSES-1;
     }
@@ -294,13 +294,13 @@ static inline int do_smmgr_memid(size_t size)
 #endif
 #if 0
     int memid;
-    if (size <= 2048) {
-        if (size <= 512)       memid = (0  + ((size     -1) /  16));
-        else if (size <= 1024) memid = (32 + ((size- 512-1) /  32));
-        else                   memid = (48 + ((size-1024-1) /  64));
+    if (slen <= 2048) {
+        if (slen <= 512)       memid = (0  + ((slen     -1) /  16));
+        else if (slen <= 1024) memid = (32 + ((slen- 512-1) /  32));
+        else                   memid = (48 + ((slen-1024-1) /  64));
     } else {
-        if (size <= 4096)      memid = (64 + ((size-2048-1) / 128));
-        else if (size <= 8192) memid = (80 + ((size-4096-1) / 256));
+        if (slen <= 4096)      memid = (64 + ((slen-2048-1) / 128));
+        else if (slen <= 8192) memid = (80 + ((slen-4096-1) / 256));
         else                   memid = 96;
     }
     assert(memid < SMMGR_NUM_CLASSES);
