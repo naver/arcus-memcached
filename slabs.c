@@ -235,9 +235,10 @@ static void do_smmgr_init(struct default_engine *engine)
 
     /* slab allocator */
     /* slab class 0 is used for collection items ans small-sized kv items */
-    engine->slabs.slabclass[0].size = sm_anchor.blck_tsize;
-    engine->slabs.slabclass[0].perslab = engine->config.item_size_max / engine->slabs.slabclass[0].size;
-    engine->slabs.slabclass[0].rsvd_slabs = 0; // undefined
+    slabclass_t *p = &engine->slabs.slabclass[0];
+    p->size = sm_anchor.blck_tsize;
+    p->perslab = engine->config.item_size_max / p->size;
+    p->rsvd_slabs = 0; // undefined
 }
 
 static inline int do_smmgr_slen(size_t size)
