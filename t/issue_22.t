@@ -12,7 +12,7 @@ use MemcachedTest;
 
 my $server = new_memcached("-m 3");
 my $sock = $server->sock;
-my $value = "B"x66560;
+my $value = "B"x77320;
 my $key = 0;
 
 ### [ARCUS] CHANGED FOLLOWING TEST ###
@@ -20,7 +20,7 @@ my $key = 0;
 #for ($key = 0; $key < 40; $key++) {
 for ($key = 0; $key < 60; $key++) {
 ######################################
-    print $sock "set key$key 0 0 66560\r\n$value\r\n";
+    print $sock "set key$key 0 0 77320\r\n$value\r\n";
     is (scalar <$sock>, "STORED\r\n", "stored key$key");
 }
 
@@ -42,7 +42,7 @@ is ($second_evicted, "0", "check evicted");
 #for ($key = 40; $key < 80; $key++) {
 for ($key = 60; $key < 100; $key++) {
 ######################################
-    print $sock "set key$key 0 0 66560\r\n$value\r\n";
+    print $sock "set key$key 0 0 77320\r\n$value\r\n";
     is (scalar <$sock>, "STORED\r\n", "stored key$key");
 }
 
