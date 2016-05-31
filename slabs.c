@@ -118,6 +118,7 @@ typedef struct _sm_anchor {
 /* The maximum size of smmgr block is 512K. */
 #define SMMGR_BLOCK_SIZE    (256*1024)
 #define SMMGR_MIN_SLOT_SIZE 32
+#define SMMGR_MAX_SLOT_SIZE 8192 // 8K
 
 /* macros for converting offset and length values of slots */
 #define SM_SLOT_OFFSET(o)  ((o)/8)
@@ -253,8 +254,10 @@ static inline int do_smmgr_slen(int size)
 
 static inline int do_smmgr_memid(int slen)
 {
-    if (slen < 8192) return (int)(slen/8);
-    else             return SMMGR_NUM_CLASSES-1;
+    assert((slen%8) == 0);
+    if (slen > SMMGR_MAX_SLOT_SIZE)
+        return SMMGR_NUM_CLASSES-1;
+    return (slen/8);
 #if 0
     int memid;
     if (slen < 2048) {
