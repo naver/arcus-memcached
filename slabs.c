@@ -836,6 +836,7 @@ int slabs_space_shortage_level(void)
 ENGINE_ERROR_CODE slabs_init(struct default_engine *engine,
                              const size_t limit, const double factor, const bool prealloc)
 {
+    slabclass_t *p;
     int i = POWER_SMALLEST - 1;
     unsigned int size = sizeof(hash_item) + engine->config.chunk_size;
 
@@ -868,25 +869,27 @@ ENGINE_ERROR_CODE slabs_init(struct default_engine *engine,
         if (size % CHUNK_ALIGN_BYTES)
             size += CHUNK_ALIGN_BYTES - (size % CHUNK_ALIGN_BYTES);
 
-        engine->slabs.slabclass[i].size = size;
-        engine->slabs.slabclass[i].perslab = engine->config.item_size_max / engine->slabs.slabclass[i].size;
-        engine->slabs.slabclass[i].rsvd_slabs = RESERVED_SLABS;
+        p = &engine->slabs.slabclass[i];
+        p->size = size;
+        p->perslab = engine->config.item_size_max / p->size;
+        p->rsvd_slabs = RESERVED_SLABS;
 
         size *= factor;
         if (engine->config.verbose > 1) {
             fprintf(stderr, "slab class %3d: chunk size %9u perslab %7u\n",
-                    i, engine->slabs.slabclass[i].size, engine->slabs.slabclass[i].perslab);
+                    i, p->size, p->perslab);
         }
     }
 
     engine->slabs.power_largest = i;
-    engine->slabs.slabclass[engine->slabs.power_largest].size = engine->config.item_size_max;
-    engine->slabs.slabclass[engine->slabs.power_largest].perslab = 1;
-    engine->slabs.slabclass[engine->slabs.power_largest].rsvd_slabs = RESERVED_SLABS;
+    p = &engine->slabs.slabclass[i];
+    p->size = engine->config.item_size_max;
+    p->perslab = 1;
+    p->rsvd_slabs = RESERVED_SLABS;
 
     if (engine->config.verbose > 1) {
         fprintf(stderr, "slab class %3d: chunk size %9u perslab %7u\n",
-                i, engine->slabs.slabclass[i].size, engine->slabs.slabclass[i].perslab);
+                i, p->size, p->perslab);
     }
 
     /* for the test suite:  faking of how much we've already malloc'd */
@@ -895,7 +898,6 @@ ENGINE_ERROR_CODE slabs_init(struct default_engine *engine,
         if (t_initial_malloc) {
             engine->slabs.mem_malloced = (size_t)atol(t_initial_malloc);
         }
-
     }
 #ifndef DONT_PREALLOC_SLABS
     {
