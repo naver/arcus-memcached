@@ -37,7 +37,7 @@ typedef struct _hash_item {
     uint16_t nkey;      /* The total length of the key (in bytes) */
     uint16_t nprefix;   /* The prefix length of the key (in bytes) */
     uint16_t dummy16;
-    uint32_t dummy32;
+    uint32_t hval;      /* hash value */
 #else
     uint8_t  nkey;      /* The total length of the key (in bytes) */
     uint8_t  nprefix;   /* The prefix length of the key (in bytes) */
