@@ -216,7 +216,7 @@ static void do_slabs_check_space_shortage_level(struct default_engine *engine)
     }
 }
 
-static void do_smmgr_init(struct default_engine *engine)
+static int do_smmgr_init(struct default_engine *engine)
 {
     /* small memory allocator */
     memset(&sm_anchor, 0, sizeof(sm_anchor_t));
@@ -233,6 +233,13 @@ static void do_smmgr_init(struct default_engine *engine)
     p->size = sm_anchor.blck_tsize;
     p->perslab = engine->config.item_size_max / p->size;
     p->rsvd_slabs = 0; // undefined
+
+    return 0;
+}
+
+static void do_smmgr_final(struct default_engine *engine)
+{
+    /* Do nothing, currently. */
 }
 
 static inline int do_smmgr_slen(int size)
@@ -900,7 +907,13 @@ ENGINE_ERROR_CODE slabs_init(struct default_engine *engine,
     }
 #endif
 
-    do_smmgr_init(engine);
+    if (do_smmgr_init(engine) != 0) {
+        if (engine->slabs.mem_base != NULL) {
+            free(engine->slabs.mem_base);
+            engine->slabs.mem_base = NULL;
+        }
+        return ENGINE_ENOMEM;
+    }
 
     logger->log(EXTENSION_LOG_INFO, NULL, "SLABS module initialized.\n");
     return ENGINE_SUCCESS;
@@ -909,7 +922,7 @@ ENGINE_ERROR_CODE slabs_init(struct default_engine *engine,
 void slabs_final(struct default_engine *engine)
 {
     /* Free memory allocated. */
-    /* Do nothing, currently. */
+    do_smmgr_final(engine);
     logger->log(EXTENSION_LOG_INFO, NULL, "SLABS module destroyed.\n");
 }
 
