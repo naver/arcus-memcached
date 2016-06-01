@@ -308,14 +308,16 @@ static void do_smmgr_used_slot_list_add(int targ)
         sm_anchor.used_minid = targ;
     }
     if (targ > sm_anchor.used_maxid) {
-        /* adjust free_space small & avail */
+        /* adjust free small & avail space */
+        uint64_t space_adjusted = 0;
         int smid = (sm_anchor.used_maxid < 0 ? 0 : sm_anchor.used_maxid);
         for ( ; smid < targ; smid++) {
-            if (sm_anchor.free_slist[smid].space > 0) {
-                sm_anchor.free_small_space += sm_anchor.free_slist[smid].space;
-                sm_anchor.free_avail_space -= sm_anchor.free_slist[smid].space;
-            }
+            if (sm_anchor.free_slist[smid].space > 0)
+                space_adjusted += sm_anchor.free_slist[smid].space;
         }
+        sm_anchor.free_small_space += space_adjusted;
+        sm_anchor.free_avail_space -= space_adjusted;
+        /* set the new used_maxid */
         sm_anchor.used_maxid = targ;
     }
     sm_anchor.used_num_classes += 1;
@@ -324,33 +326,36 @@ static void do_smmgr_used_slot_list_add(int targ)
 static void do_smmgr_used_slot_list_del(int targ)
 {
     int smid;
-    if (targ == sm_anchor.used_minid) {
-        if (sm_anchor.used_total_space > 0) {
-            for (smid = sm_anchor.used_minid+1; smid <= sm_anchor.used_maxid; smid++) {
+    if (sm_anchor.used_total_space > 0) {
+        if (targ == sm_anchor.used_minid) {
+            for (smid = targ+1; smid <= sm_anchor.used_maxid; smid++) {
                 if (sm_anchor.used_slist[smid].count > 0) break;
             }
+            assert(smid <= sm_anchor.used_maxid);
             sm_anchor.used_minid = smid;
-        } else {
-            sm_anchor.used_minid = SMMGR_NUM_CLASSES;
         }
-    }
-    if (targ == sm_anchor.used_maxid) {
-        if (sm_anchor.used_total_space > 0) {
-            for (smid = sm_anchor.used_maxid-1; smid >= sm_anchor.used_minid; smid--) {
+        if (targ == sm_anchor.used_maxid) {
+            for (smid = targ-1; smid >= sm_anchor.used_minid; smid--) {
                 if (sm_anchor.used_slist[smid].count > 0) break;
             }
+            assert(smid >= sm_anchor.used_minid);
             sm_anchor.used_maxid = smid;
-        } else {
-            sm_anchor.used_maxid = -1;
-        }
-        /* adjust free_space small & avail */
-        smid = (sm_anchor.used_maxid < 0 ? 0 : sm_anchor.used_maxid);
-        for ( ; smid < targ; smid++) {
-            if (sm_anchor.free_slist[smid].space > 0) {
-                sm_anchor.free_small_space -= sm_anchor.free_slist[smid].space;
-                sm_anchor.free_avail_space += sm_anchor.free_slist[smid].space;
+            /* adjust free small & avail space */
+            uint64_t space_adjusted = 0;
+            for (smid = sm_anchor.used_maxid; smid < targ; smid++) {
+                if (sm_anchor.free_slist[smid].space > 0)
+                    space_adjusted += sm_anchor.free_slist[smid].space;
             }
+            sm_anchor.free_small_space -= space_adjusted;
+            sm_anchor.free_avail_space += space_adjusted;
         }
+    } else {
+        assert(targ == sm_anchor.used_minid && targ == sm_anchor.used_maxid);
+        sm_anchor.used_minid = SMMGR_NUM_CLASSES;
+        sm_anchor.used_maxid = -1;
+        /* adjust free small & avail space */
+        sm_anchor.free_avail_space += sm_anchor.free_small_space;
+        sm_anchor.free_small_space = 0;
     }
     sm_anchor.used_num_classes -= 1;
 }
@@ -366,11 +371,6 @@ static void do_smmgr_free_slot_list_add(int targ)
         }
         sm_anchor.free_num_classes += 1;
     }
-    /*****
-    if (sm_anchor.free_maxid < targ) {
-        sm_anchor.free_maxid = targ;
-    }
-    *****/
 }
 
 static void do_smmgr_free_slot_list_del(int targ)
@@ -378,24 +378,22 @@ static void do_smmgr_free_slot_list_del(int targ)
     if (targ < (SMMGR_NUM_CLASSES-1)) {
         int smid;
         if (targ == sm_anchor.free_minid) {
-            if (sm_anchor.free_minid < sm_anchor.free_maxid) {
-                for (smid = sm_anchor.free_minid+1; smid <= sm_anchor.free_maxid; smid++) {
-                    if (sm_anchor.free_slist[smid].head != NULL) break;
-                }
+            for (smid = targ+1; smid <= sm_anchor.free_maxid; smid++) {
+                if (sm_anchor.free_slist[smid].head != NULL) break;
+            }
+            if (smid <= sm_anchor.free_maxid) {
                 sm_anchor.free_minid = smid;
             } else {
                 sm_anchor.free_minid = SMMGR_NUM_CLASSES;
+                sm_anchor.free_maxid = -1;
             }
         }
         if (targ == sm_anchor.free_maxid) {
-            if (sm_anchor.free_maxid > sm_anchor.free_minid) {
-                for (smid = sm_anchor.free_maxid-1; smid >= sm_anchor.free_minid; smid--) {
-                    if (sm_anchor.free_slist[smid].head != NULL) break;
-                }
-                sm_anchor.free_maxid = smid;
-            } else {
-                sm_anchor.free_maxid = -1;
+            for (smid = targ-1; smid >= sm_anchor.free_minid; smid--) {
+                if (sm_anchor.free_slist[smid].head != NULL) break;
             }
+            assert(smid >= sm_anchor.free_minid);
+            sm_anchor.free_maxid = smid;
         }
         sm_anchor.free_num_classes -= 1;
     }
