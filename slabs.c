@@ -45,9 +45,8 @@
 #define SSL_CHECK_BY_MEM_REQUEST 100 /* space shortage level check tick by slab*/
 
 
-/* should be computed manually */
-#define SMMGR_NUM_CLASSES  1025
-//#define SMMGR_NUM_CLASSES  81
+/* Number of sm slot classes */
+static int SMMGR_NUM_CLASSES;
 
 /* sm slot head */
 typedef struct _sm_slot {
@@ -104,8 +103,8 @@ typedef struct _sm_anchor {
     int         free_minid;         /* max sm classid of free slots */
     int         free_maxid;         /* max sm classid of free slots (excluding the largest free slot) */
     sm_blist_t  used_blist;         /* used block list */
-    sm_slist_t  free_slist[SMMGR_NUM_CLASSES]; /* free slot list */
-    sm_slist_t  used_slist[SMMGR_NUM_CLASSES]; /* used slot info */
+    sm_slist_t *used_slist;         /* used slot info */
+    sm_slist_t *free_slist;         /* free slot list */
     uint64_t    used_total_space;   /* the amount of used space */
     uint64_t    free_small_space;   /* the amount of free space that can't be used */
     uint64_t    free_avail_space;   /* the amount of free space that can be used */
@@ -219,6 +218,9 @@ static void do_slabs_check_space_shortage_level(struct default_engine *engine)
 
 static int do_smmgr_init(struct default_engine *engine)
 {
+    /* set the number of sm slot clsses */
+    SMMGR_NUM_CLASSES = (SMMGR_MAX_SLOT_SIZE / 8) + 1;
+
     /* small memory allocator */
     memset(&sm_anchor, 0, sizeof(sm_anchor_t));
     sm_anchor.blck_tsize = SMMGR_BLOCK_SIZE;
@@ -227,6 +229,13 @@ static int do_smmgr_init(struct default_engine *engine)
     sm_anchor.used_maxid = -1;
     sm_anchor.free_minid = SMMGR_NUM_CLASSES;
     sm_anchor.free_maxid = -1;
+
+    /* allocate used/free slot list structure */
+    int need_size = SMMGR_NUM_CLASSES * sizeof(sm_slist_t) * 2;
+    sm_anchor.used_slist = (sm_slist_t*)malloc(need_size);
+    if (sm_anchor.used_slist == NULL) return -1;
+    sm_anchor.free_slist = sm_anchor.used_slist + SMMGR_NUM_CLASSES;
+    memset(sm_anchor.used_slist, 0, need_size);
 
     /* slab allocator */
     /* slab class 0 is used for collection items ans small-sized kv items */
@@ -240,7 +249,11 @@ static int do_smmgr_init(struct default_engine *engine)
 
 static void do_smmgr_final(struct default_engine *engine)
 {
-    /* Do nothing, currently. */
+    if (sm_anchor.used_slist != NULL) {
+        free(sm_anchor.used_slist);
+        sm_anchor.used_slist = NULL;
+        sm_anchor.free_slist = NULL;
+    }
 }
 
 static inline int do_smmgr_slen(int size)
