@@ -643,52 +643,25 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
     slen = do_smmgr_slen(size);
     targ = do_smmgr_memid(slen);
 
-    /* allocate slot from free slot list */
-#if 0 // check
-    if (targ <= sm_anchor.free_maxid) {
-        for (smid = targ; smid <= sm_anchor.free_maxid; smid++) {
+    /* find the free slot list from which we allocate a slot. */
+    do {
+        if (targ > sm_anchor.free_maxid) {
+            smid = SMMGR_NUM_CLASSES-1; break;
+        }
+        if (sm_anchor.free_slist[targ].head != NULL) {
+            smid = targ; break;
+        }
+        /* find the 2 times large free slot */
+        smid = do_smmgr_memid(slen*2);
+        for ( ; smid <= sm_anchor.free_maxid; smid++) {
             if (sm_anchor.free_slist[smid].head != NULL) break;
         }
-    } else {
-        smid = SMMGR_NUM_CLASSES-1;
-    }
-    cur_slot = sm_anchor.free_slist[smid].head;
-#endif
-#if 0 // check
-    if (targ <= sm_anchor.free_maxid) {
-        if (sm_anchor.free_slist[targ].head != NULL) smid = targ;
-        else                                         smid = sm_anchor.free_maxid;
-    } else {
-        smid = SMMGR_NUM_CLASSES-1;
-    }
-    cur_slot = sm_anchor.free_slist[smid].head;
-#endif
-#if 0
-    for (smid = targ; smid < sm_anchor.free_maxid; smid += targ) {
-        if (sm_anchor.free_slist[smid].head != NULL) {
-            cur_slot = sm_anchor.free_slist[smid].head; break;
-        }
-    }
-    if (cur_slot == NULL && targ < sm_anchor.free_maxid) {
-        smid = sm_anchor.free_maxid;
-        cur_slot = sm_anchor.free_slist[smid].head;
-        assert(cur_slot != NULL);
-    }
-#endif
-    if (targ <= sm_anchor.free_maxid) {
-        if (sm_anchor.free_slist[targ].head != NULL) {
-            smid = targ;
-        } else if ((targ*2) <= sm_anchor.free_maxid) {
-            for (smid = targ*2; smid <= sm_anchor.free_maxid; smid++) {
-                if (sm_anchor.free_slist[smid].head != NULL) break;
-            }
-        } else {
+        if (smid > sm_anchor.free_maxid) {
             smid = sm_anchor.free_maxid;
         }
-    } else {
-        smid = SMMGR_NUM_CLASSES-1;
-    }
+    } while(0);
 
+    /* allocate a slot from the free slot list */
     cur_slot = sm_anchor.free_slist[smid].head;
     if (cur_slot == NULL) {
         sm_blck_t *blck = do_smmgr_blck_alloc(engine);
