@@ -768,6 +768,7 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
             do_smmgr_free_slot_unlink(prv_slot);
             cur_offset  = SM_REAL_OFFSET(prv_slot->offset);
             cur_length += SM_REAL_LENGTH(prv_slot->length);
+            cur_slot = prv_slot;
         }
     }
     /* check and merge the next slot if it exists as freed state. */
@@ -780,7 +781,6 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
     }
     /* free the slot */
     if (cur_offset > sizeof(sm_blck_t) || cur_length < sm_anchor.blck_bsize) {
-        cur_slot = (sm_slot_t*)((char*)cur_blck + cur_offset);
         do_smmgr_free_slot_init(cur_slot, cur_offset, cur_length);
         do_smmgr_free_slot_link(cur_slot);
     } else {
