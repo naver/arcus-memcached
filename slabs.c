@@ -44,10 +44,6 @@
 #define SSL_FOR_BACKGROUND_EVICT 10  /* space shortage level for background evict */
 #define SSL_CHECK_BY_MEM_REQUEST 100 /* space shortage level check tick by slab*/
 
-
-/* Number of sm slot classes */
-static int SM_NUM_CLASSES;
-
 /* sm slot head */
 typedef struct _sm_slot {
     uint32_t    status; /* 0: free slot */
@@ -93,9 +89,7 @@ typedef struct _sm_blist {
 
 typedef struct _sm_anchor {
     int         space_shortage_level; /* 0, 1 ~ 100 */
-    int         blck_clsid;         /* slab class id of block */
-    int         blck_tsize;         /* block total size */
-    int         blck_bsize;         /* block body size */
+    int         num_smmgr_request;  /* the number that do_smmgr_alloc/do_smmgr_free are invoked */
     int         used_num_classes;   /* # of used slot classes */
     int         free_num_classes;   /* # of free slot classes */
     int         used_minid;         /* min sm classid of used slots */
@@ -110,12 +104,13 @@ typedef struct _sm_anchor {
     uint64_t    free_avail_space;   /* the amount of free space that can be used */
     uint64_t    free_chunk_space;   /* the amount of free chunk space */
     uint64_t    free_limit_space;   /* the amount of minimum free space that must be maintained */
-    uint32_t    num_smmgr_request;  /* the number that do_smmgr_alloc/do_smmgr_free are invoked */
 } sm_anchor_t;
 
+/* sm slab class id */
+#define SM_SLAB_CLSID   0
 
-/* The maximum size of smmgr block is 512K. */
-#define SMMGR_BLOCK_SIZE    (256*1024)
+/* sm block size (Note the maximum value is 512K) */
+#define SM_BLOCK_SIZE   262144 // 256K
 
 /* The minimum and maximum size of sm slot */
 #define SM_MIN_SLOT_SIZE    32
@@ -152,6 +147,13 @@ typedef struct _sm_anchor {
 #define SM_USED_TAIL(tail) ((tail)->length >  8)
 #define SM_FREE_TAIL(tail) ((tail)->length <= 8)
 ****/
+
+/* Number of sm slot classes */
+static int SM_NUM_CLASSES = 0; /* computed in do_smmgr_init */
+
+/* The head and body size of sm block */
+static int SM_BHEAD_SIZE = sizeof(sm_blck_t);
+static int SM_BBODY_SIZE = SM_BLOCK_SIZE - sizeof(sm_blck_t);
 
 static sm_anchor_t sm_anchor;
 
@@ -225,8 +227,6 @@ static int do_smmgr_init(struct default_engine *engine)
 
     /* small memory allocator */
     memset(&sm_anchor, 0, sizeof(sm_anchor_t));
-    sm_anchor.blck_tsize = SMMGR_BLOCK_SIZE;
-    sm_anchor.blck_bsize = sm_anchor.blck_tsize - sizeof(sm_blck_t);
     sm_anchor.used_minid = SM_NUM_CLASSES;
     sm_anchor.used_maxid = -1;
     sm_anchor.free_minid = SM_NUM_CLASSES;
@@ -242,7 +242,7 @@ static int do_smmgr_init(struct default_engine *engine)
     /* slab allocator */
     /* slab class 0 is used for collection items ans small-sized kv items */
     slabclass_t *p = &engine->slabs.slabclass[0];
-    p->size = sm_anchor.blck_tsize;
+    p->size = SM_BLOCK_SIZE;
     p->perslab = engine->config.item_size_max / p->size;
     p->rsvd_slabs = 0; // undefined
 
@@ -554,8 +554,8 @@ static void do_smmgr_used_blck_check(void)
     blck = sm_anchor.used_blist.head;
     while (blck != NULL) {
         blck_count += 1;
-        tail = (sm_tail_t*)((char*)blck + sm_anchor.blck_tsize - sizeof(sm_tail_t));
-        while (((char*)tail - (char*)blck) > sizeof(sm_blck_t)) {
+        tail = (sm_tail_t*)((char*)blck + SM_BLOCK_SIZE - sizeof(sm_tail_t));
+        while (((char*)tail - (char*)blck) > SM_BHEAD_SIZE) {
             slot = (sm_slot_t*)((char*)blck + SM_REAL_OFFSET(tail->offset));
             if (SM_USED_TAIL(tail)) { /* used slot */
                 used_count += 1;
@@ -603,10 +603,10 @@ static void do_smmgr_used_blck_unlink(sm_blck_t *blck)
 
 static sm_blck_t *do_smmgr_blck_alloc(struct default_engine *engine)
 {
-    sm_blck_t *blck = (sm_blck_t *)do_slabs_alloc(engine, sm_anchor.blck_tsize, sm_anchor.blck_clsid);
+    sm_blck_t *blck = (sm_blck_t *)do_slabs_alloc(engine, SM_BLOCK_SIZE, SM_SLAB_CLSID);
     if (blck != NULL) {
         if (sm_anchor.free_limit_space > 0) {
-            sm_anchor.free_chunk_space -= sm_anchor.blck_tsize;
+            sm_anchor.free_chunk_space -= SM_BLOCK_SIZE;
         }
         do_smmgr_used_blck_link(blck);
     } else {
@@ -618,9 +618,9 @@ static sm_blck_t *do_smmgr_blck_alloc(struct default_engine *engine)
 static void do_smmgr_blck_free(struct default_engine *engine, sm_blck_t *blck)
 {
     do_smmgr_used_blck_unlink(blck);
-    do_slabs_free(engine, blck, sm_anchor.blck_tsize, sm_anchor.blck_clsid);
+    do_slabs_free(engine, blck, SM_BLOCK_SIZE, SM_SLAB_CLSID);
     if (sm_anchor.free_limit_space > 0) {
-        sm_anchor.free_chunk_space += sm_anchor.blck_tsize;
+        sm_anchor.free_chunk_space += SM_BLOCK_SIZE;
     }
 }
 
@@ -669,11 +669,11 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
         sm_blck_t *blck = do_smmgr_blck_alloc(engine);
         if (blck == NULL) return NULL;
 
-        cur_slot = (sm_slot_t*)((char*)blck + sizeof(sm_blck_t));
-        do_smmgr_used_slot_init(cur_slot, sizeof(sm_blck_t), slen);
+        cur_slot = (sm_slot_t*)((char*)blck + SM_BHEAD_SIZE);
+        do_smmgr_used_slot_init(cur_slot, SM_BHEAD_SIZE, slen);
 
-        nxt_slot = (sm_slot_t*)((char*)blck + sizeof(sm_blck_t) + slen);
-        do_smmgr_free_slot_init(nxt_slot, sizeof(sm_blck_t) + slen, sm_anchor.blck_bsize - slen);
+        nxt_slot = (sm_slot_t*)((char*)blck + SM_BHEAD_SIZE + slen);
+        do_smmgr_free_slot_init(nxt_slot, SM_BHEAD_SIZE+slen, SM_BBODY_SIZE-slen);
         do_smmgr_free_slot_link(nxt_slot);
     } else {
         int cur_offset = SM_REAL_OFFSET(cur_slot->offset);
@@ -764,7 +764,7 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
     cur_blck = (sm_blck_t*)((char*)cur_slot - cur_offset);
 
     /* check and merge the prev slot if it exists as freed state. */
-    if (cur_offset > sizeof(sm_blck_t)) {
+    if (cur_offset > SM_BHEAD_SIZE) {
         sm_slot_t *prv_slot = sm_get_prev_free_slot(cur_slot, cur_blck);
         if (prv_slot != NULL) {
             do_smmgr_free_slot_unlink(prv_slot);
@@ -774,7 +774,7 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
         }
     }
     /* check and merge the next slot if it exists as freed state. */
-    if ((cur_offset + cur_length) < sm_anchor.blck_tsize) {
+    if ((cur_offset + cur_length) < SM_BLOCK_SIZE) {
         sm_slot_t *nxt_slot = sm_get_next_free_slot(cur_tail);
         if (nxt_slot != NULL) {
             do_smmgr_free_slot_unlink(nxt_slot);
@@ -782,7 +782,7 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
         }
     }
     /* free the slot */
-    if (cur_offset > sizeof(sm_blck_t) || cur_length < sm_anchor.blck_bsize) {
+    if (cur_offset > SM_BHEAD_SIZE || cur_length < SM_BBODY_SIZE) {
         do_smmgr_free_slot_init(cur_slot, cur_offset, cur_length);
         do_smmgr_free_slot_link(cur_slot);
     } else {
@@ -977,16 +977,16 @@ static int do_slabs_newslab(struct default_engine *engine, const unsigned int id
     if ((engine->slabs.mem_limit <= engine->slabs.mem_malloced) ||
         ((engine->slabs.mem_limit - engine->slabs.mem_malloced) < engine->slabs.mem_reserved))
     {
-        if (engine->slabs.slabclass[sm_anchor.blck_clsid].rsvd_slabs == 0) { /* undefined */
+        if (engine->slabs.slabclass[SM_SLAB_CLSID].rsvd_slabs == 0) { /* undefined */
             /* define the reserved slab count of slab class 0 */
-            slabclass_t *z = &engine->slabs.slabclass[sm_anchor.blck_clsid];
+            slabclass_t *z = &engine->slabs.slabclass[SM_SLAB_CLSID];
             unsigned int additional_slabs = (z->slabs/100) * RESERVED_SLAB_RATIO;
             if (additional_slabs < RESERVED_SLABS)
                 additional_slabs = RESERVED_SLABS;
             z->rsvd_slabs = z->slabs + additional_slabs;
-            sm_anchor.free_limit_space = (additional_slabs * z->perslab) * sm_anchor.blck_tsize;
+            sm_anchor.free_limit_space = (additional_slabs * z->perslab) * SM_BLOCK_SIZE;
             sm_anchor.free_chunk_space = sm_anchor.free_limit_space
-                                       + (z->sl_curr + z->end_page_free) * sm_anchor.blck_tsize;
+                                       + (z->sl_curr + z->end_page_free) * SM_BLOCK_SIZE;
         }
     }
     MEMCACHED_SLABS_SLABCLASS_ALLOCATE(id);
@@ -1134,7 +1134,7 @@ static void do_slabs_stats(struct default_engine *engine, ADD_STAT add_stats, co
 
     total = 0;
     int min_slab_id = POWER_SMALLEST;
-    min_slab_id = sm_anchor.blck_clsid;
+    min_slab_id = SM_SLAB_CLSID;
     for (i = min_slab_id; i <= engine->slabs.power_largest; i++) {
         slabclass_t *p = &engine->slabs.slabclass[i];
         if (p->slabs != 0) {
@@ -1212,7 +1212,7 @@ static ENGINE_ERROR_CODE do_slabs_set_memlimit(struct default_engine *engine, si
     if (new_mem_reserved < (RESERVED_SLABS*engine->config.item_size_max))
         new_mem_reserved = (RESERVED_SLABS*engine->config.item_size_max);
 
-    if (engine->slabs.slabclass[sm_anchor.blck_clsid].rsvd_slabs != 0) {
+    if (engine->slabs.slabclass[SM_SLAB_CLSID].rsvd_slabs != 0) {
         /* memlimit > engine->slabs.mem_malloced */
         if ((memlimit - engine->slabs.mem_malloced) < new_mem_reserved) {
             return ENGINE_EBADVALUE;
@@ -1220,7 +1220,7 @@ static ENGINE_ERROR_CODE do_slabs_set_memlimit(struct default_engine *engine, si
     }
     engine->slabs.mem_limit = memlimit;
     engine->slabs.mem_reserved = new_mem_reserved;
-    engine->slabs.slabclass[sm_anchor.blck_clsid].rsvd_slabs = 0; /* undefined */
+    engine->slabs.slabclass[SM_SLAB_CLSID].rsvd_slabs = 0; /* undefined */
     sm_anchor.free_limit_space = 0;
     sm_anchor.free_chunk_space = 0;
     sm_anchor.space_shortage_level = 0;
