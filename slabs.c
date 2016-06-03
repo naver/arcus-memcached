@@ -116,8 +116,10 @@ typedef struct _sm_anchor {
 
 /* The maximum size of smmgr block is 512K. */
 #define SMMGR_BLOCK_SIZE    (256*1024)
-#define SMMGR_MIN_SLOT_SIZE 32
-#define SMMGR_MAX_SLOT_SIZE 8192 // 8K
+
+/* The minimum and maximum size of sm slot */
+#define SM_MIN_SLOT_SIZE    32
+#define SM_MAX_SLOT_SIZE    8192 // 8K
 
 /* macros for converting offset and length values of slots */
 #define SM_SLOT_OFFSET(o)  ((o)/8)
@@ -219,7 +221,7 @@ static void do_slabs_check_space_shortage_level(struct default_engine *engine)
 static int do_smmgr_init(struct default_engine *engine)
 {
     /* set the number of sm slot clsses */
-    SMMGR_NUM_CLASSES = (SMMGR_MAX_SLOT_SIZE / 8) + 1;
+    SMMGR_NUM_CLASSES = (SM_MAX_SLOT_SIZE / 8) + 1;
 
     /* small memory allocator */
     memset(&sm_anchor, 0, sizeof(sm_anchor_t));
@@ -260,15 +262,15 @@ static inline int do_smmgr_slen(int size)
 {
     int slen = (int)size + sizeof(sm_tail_t);
     slen = (((slen-1) / 8) + 1) * 8;
-    if (slen < SMMGR_MIN_SLOT_SIZE)
-        slen = SMMGR_MIN_SLOT_SIZE;
+    if (slen < SM_MIN_SLOT_SIZE)
+        slen = SM_MIN_SLOT_SIZE;
     return slen;
 }
 
 static inline int do_smmgr_memid(int slen)
 {
     assert((slen%8) == 0);
-    if (slen > SMMGR_MAX_SLOT_SIZE)
+    if (slen > SM_MAX_SLOT_SIZE)
         return SMMGR_NUM_CLASSES-1;
     return (slen/8);
 #if 0
@@ -442,7 +444,7 @@ static void do_smmgr_free_slot_link(sm_slot_t *slot)
     int slen = SM_REAL_LENGTH(slot->length);
     int smid;
 
-    if (slen < SMMGR_MIN_SLOT_SIZE) {
+    if (slen < SM_MIN_SLOT_SIZE) {
         sm_anchor.free_small_space += slen;
         return;
     }
@@ -481,7 +483,7 @@ static void do_smmgr_free_slot_unlink(sm_slot_t *slot)
     int slen = SM_REAL_LENGTH(slot->length);
     int smid;
 
-    if (slen < SMMGR_MIN_SLOT_SIZE) {
+    if (slen < SM_MIN_SLOT_SIZE) {
         sm_anchor.free_small_space -= slen;
         return;
     }
