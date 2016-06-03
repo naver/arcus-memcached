@@ -46,7 +46,7 @@
 
 
 /* Number of sm slot classes */
-static int SMMGR_NUM_CLASSES;
+static int SM_NUM_CLASSES;
 
 /* sm slot head */
 typedef struct _sm_slot {
@@ -221,22 +221,22 @@ static void do_slabs_check_space_shortage_level(struct default_engine *engine)
 static int do_smmgr_init(struct default_engine *engine)
 {
     /* set the number of sm slot clsses */
-    SMMGR_NUM_CLASSES = (SM_MAX_SLOT_SIZE / 8) + 1;
+    SM_NUM_CLASSES = (SM_MAX_SLOT_SIZE / 8) + 1;
 
     /* small memory allocator */
     memset(&sm_anchor, 0, sizeof(sm_anchor_t));
     sm_anchor.blck_tsize = SMMGR_BLOCK_SIZE;
     sm_anchor.blck_bsize = sm_anchor.blck_tsize - sizeof(sm_blck_t);
-    sm_anchor.used_minid = SMMGR_NUM_CLASSES;
+    sm_anchor.used_minid = SM_NUM_CLASSES;
     sm_anchor.used_maxid = -1;
-    sm_anchor.free_minid = SMMGR_NUM_CLASSES;
+    sm_anchor.free_minid = SM_NUM_CLASSES;
     sm_anchor.free_maxid = -1;
 
     /* allocate used/free slot list structure */
-    int need_size = SMMGR_NUM_CLASSES * sizeof(sm_slist_t) * 2;
+    int need_size = SM_NUM_CLASSES * sizeof(sm_slist_t) * 2;
     sm_anchor.used_slist = (sm_slist_t*)malloc(need_size);
     if (sm_anchor.used_slist == NULL) return -1;
-    sm_anchor.free_slist = sm_anchor.used_slist + SMMGR_NUM_CLASSES;
+    sm_anchor.free_slist = sm_anchor.used_slist + SM_NUM_CLASSES;
     memset(sm_anchor.used_slist, 0, need_size);
 
     /* slab allocator */
@@ -271,7 +271,7 @@ static inline int do_smmgr_memid(int slen)
 {
     assert((slen%8) == 0);
     if (slen > SM_MAX_SLOT_SIZE)
-        return SMMGR_NUM_CLASSES-1;
+        return SM_NUM_CLASSES-1;
     return (slen/8);
 #if 0
     int memid;
@@ -282,9 +282,9 @@ static inline int do_smmgr_memid(int slen)
         if (slen < 4096) memid = (48 + ((slen-2048) / 128));
         else             memid = (64 + ((slen-4096) / 256));
     } else {
-        memid = SMMGR_NUM_CLASSES-1;
+        memid = SM_NUM_CLASSES-1;
     }
-    assert(memid < SMMGR_NUM_CLASSES);
+    assert(memid < SM_NUM_CLASSES);
     return memid;
 #endif
 #if 0
@@ -296,9 +296,9 @@ static inline int do_smmgr_memid(int slen)
         if (slen < 4096) memid = ( 96 + ((slen-2048) /  64));
         else             memid = (128 + ((slen-4096) / 128));
     } else {
-        memid = SMMGR_NUM_CLASSES-1;
+        memid = SM_NUM_CLASSES-1;
     }
-    assert(memid < SMMGR_NUM_CLASSES);
+    assert(memid < SM_NUM_CLASSES);
     return memid;
 #endif
 #if 0
@@ -312,7 +312,7 @@ static inline int do_smmgr_memid(int slen)
         else if (slen <= 8192) memid = (80 + ((slen-4096-1) / 256));
         else                   memid = 96;
     }
-    assert(memid < SMMGR_NUM_CLASSES);
+    assert(memid < SM_NUM_CLASSES);
     return memid;
 #endif
 }
@@ -366,7 +366,7 @@ static void do_smmgr_used_slot_list_del(int targ)
         }
     } else {
         assert(targ == sm_anchor.used_minid && targ == sm_anchor.used_maxid);
-        sm_anchor.used_minid = SMMGR_NUM_CLASSES;
+        sm_anchor.used_minid = SM_NUM_CLASSES;
         sm_anchor.used_maxid = -1;
         /* adjust free small & avail space */
         sm_anchor.free_avail_space += sm_anchor.free_small_space;
@@ -377,7 +377,7 @@ static void do_smmgr_used_slot_list_del(int targ)
 
 static void do_smmgr_free_slot_list_add(int targ)
 {
-    if (targ < (SMMGR_NUM_CLASSES-1)) {
+    if (targ < (SM_NUM_CLASSES-1)) {
         if (sm_anchor.free_minid > targ) {
             sm_anchor.free_minid = targ;
         }
@@ -390,7 +390,7 @@ static void do_smmgr_free_slot_list_add(int targ)
 
 static void do_smmgr_free_slot_list_del(int targ)
 {
-    if (targ < (SMMGR_NUM_CLASSES-1)) {
+    if (targ < (SM_NUM_CLASSES-1)) {
         int smid;
         if (targ == sm_anchor.free_minid) {
             for (smid = targ+1; smid <= sm_anchor.free_maxid; smid++) {
@@ -399,7 +399,7 @@ static void do_smmgr_free_slot_list_del(int targ)
             if (smid <= sm_anchor.free_maxid) {
                 sm_anchor.free_minid = smid;
             } else {
-                sm_anchor.free_minid = SMMGR_NUM_CLASSES;
+                sm_anchor.free_minid = SM_NUM_CLASSES;
                 sm_anchor.free_maxid = -1;
             }
         }
@@ -648,7 +648,7 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
     /* find the free slot list from which we allocate a slot. */
     do {
         if (targ > sm_anchor.free_maxid) {
-            smid = SMMGR_NUM_CLASSES-1; break;
+            smid = SM_NUM_CLASSES-1; break;
         }
         if (sm_anchor.free_slist[targ].head != NULL) {
             smid = targ; break;
@@ -1124,7 +1124,7 @@ static void do_slabs_stats(struct default_engine *engine, ADD_STAT add_stats, co
     add_statistics(cookie, add_stats, "SM", -1, "used_max_classid", "%d", sm_anchor.used_maxid);
     add_statistics(cookie, add_stats, "SM", -1, "free_min_classid", "%d", sm_anchor.free_minid);
     add_statistics(cookie, add_stats, "SM", -1, "free_max_classid", "%d", sm_anchor.free_maxid);
-    add_statistics(cookie, add_stats, "SM", -1, "free_big_slot_count", "%"PRIu64, sm_anchor.free_slist[SMMGR_NUM_CLASSES-1].count);
+    add_statistics(cookie, add_stats, "SM", -1, "free_big_slot_count", "%"PRIu64, sm_anchor.free_slist[SM_NUM_CLASSES-1].count);
     add_statistics(cookie, add_stats, "SM", -1, "used_total_space", "%"PRIu64, sm_anchor.used_total_space);
     add_statistics(cookie, add_stats, "SM", -1, "free_small_space", "%"PRIu64, sm_anchor.free_small_space);
     add_statistics(cookie, add_stats, "SM", -1, "free_avail_space", "%"PRIu64, sm_anchor.free_avail_space);
