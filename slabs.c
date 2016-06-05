@@ -515,31 +515,6 @@ static void do_smmgr_free_slot_unlink(sm_slot_t *slot)
     }
 }
 
-static void do_smmgr_free_slot_replace(sm_slot_t *old_slot, sm_slot_t *new_slot, int smid)
-{
-    sm_slist_t *list = &sm_anchor.free_slist[smid];
-    assert(list->head == old_slot);
-    assert(old_slot->length > new_slot->length);
-    int diff = SM_REAL_LENGTH(old_slot->length - new_slot->length);
-
-    new_slot->prev = NULL;
-    if (old_slot->next == NULL) {
-        new_slot->next = NULL;
-        list->tail = new_slot;
-    } else {
-        new_slot->next = old_slot->next;
-        new_slot->next->prev = new_slot;
-    }
-    list->head = new_slot;
-    list->space -= diff;
-
-    if (smid < sm_anchor.used_maxid) {
-        sm_anchor.free_small_space -= diff;
-    } else {
-        sm_anchor.free_avail_space -= diff;
-    }
-}
-
 #if 0 // can be used later
 static void do_smmgr_used_blck_check(void)
 {
@@ -672,26 +647,19 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
         cur_slot = (sm_slot_t*)((char*)blck + SM_BHEAD_SIZE);
         do_smmgr_used_slot_init(cur_slot, SM_BHEAD_SIZE, slen);
 
-        nxt_slot = (sm_slot_t*)((char*)blck + SM_BHEAD_SIZE + slen);
+        nxt_slot = (sm_slot_t*)((char*)cur_slot + slen);
         do_smmgr_free_slot_init(nxt_slot, SM_BHEAD_SIZE+slen, SM_BBODY_SIZE-slen);
         do_smmgr_free_slot_link(nxt_slot);
     } else {
         int cur_offset = SM_REAL_OFFSET(cur_slot->offset);
         int cur_length = SM_REAL_LENGTH(cur_slot->length);
+        do_smmgr_free_slot_unlink(cur_slot);
+        do_smmgr_used_slot_init(cur_slot, cur_offset, slen);
         if (cur_length > slen) {
             nxt_slot = (sm_slot_t*)((char*)cur_slot + slen);
-            if (smid != do_smmgr_memid(cur_length - slen)) {
-                do_smmgr_free_slot_unlink(cur_slot);
-                do_smmgr_free_slot_init(nxt_slot, cur_offset+slen, cur_length-slen);
-                do_smmgr_free_slot_link(nxt_slot);
-            } else {
-                do_smmgr_free_slot_init(nxt_slot, cur_offset+slen, cur_length-slen);
-                do_smmgr_free_slot_replace(cur_slot, nxt_slot, smid);
-            }
-        } else {
-            do_smmgr_free_slot_unlink(cur_slot);
+            do_smmgr_free_slot_init(nxt_slot, cur_offset+slen, cur_length-slen);
+            do_smmgr_free_slot_link(nxt_slot);
         }
-        do_smmgr_used_slot_init(cur_slot, cur_offset, slen);
     }
 
     /* used slot stats */
