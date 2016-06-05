@@ -438,11 +438,14 @@ static void do_smmgr_free_slot_init(sm_slot_t *slot, int offset, int length)
     slot->length = (uint16_t)SM_SLOT_LENGTH(length);
 }
 
-static void do_smmgr_free_slot_link(sm_slot_t *slot)
+static void do_smmgr_free_slot_link(sm_slot_t *slot, int offset, int length)
 {
     sm_slist_t *list;
-    int slen = SM_REAL_LENGTH(slot->length);
+    int slen = length;
     int smid;
+
+    /* initialize the free slot */
+    do_smmgr_free_slot_init(slot, offset, slen);
 
     if (slen < SM_MIN_SLOT_SIZE) {
         sm_anchor.free_small_space += slen;
@@ -648,8 +651,7 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
         do_smmgr_used_slot_init(cur_slot, SM_BHEAD_SIZE, slen);
 
         nxt_slot = (sm_slot_t*)((char*)cur_slot + slen);
-        do_smmgr_free_slot_init(nxt_slot, SM_BHEAD_SIZE+slen, SM_BBODY_SIZE-slen);
-        do_smmgr_free_slot_link(nxt_slot);
+        do_smmgr_free_slot_link(nxt_slot, SM_BHEAD_SIZE+slen, SM_BBODY_SIZE-slen);
     } else {
         int cur_offset = SM_REAL_OFFSET(cur_slot->offset);
         int cur_length = SM_REAL_LENGTH(cur_slot->length);
@@ -657,8 +659,7 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
         do_smmgr_used_slot_init(cur_slot, cur_offset, slen);
         if (cur_length > slen) {
             nxt_slot = (sm_slot_t*)((char*)cur_slot + slen);
-            do_smmgr_free_slot_init(nxt_slot, cur_offset+slen, cur_length-slen);
-            do_smmgr_free_slot_link(nxt_slot);
+            do_smmgr_free_slot_link(nxt_slot, cur_offset+slen, cur_length-slen);
         }
     }
 
@@ -751,8 +752,7 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
     }
     /* free the slot */
     if (cur_offset > SM_BHEAD_SIZE || cur_length < SM_BBODY_SIZE) {
-        do_smmgr_free_slot_init(cur_slot, cur_offset, cur_length);
-        do_smmgr_free_slot_link(cur_slot);
+        do_smmgr_free_slot_link(cur_slot, cur_offset, cur_length);
     } else {
         do_smmgr_blck_free(engine, cur_blck);
     }
