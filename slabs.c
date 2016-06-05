@@ -974,6 +974,11 @@ static int do_slabs_newslab(struct default_engine *engine, const unsigned int id
     p->slab_list[p->slabs++] = ptr;
     engine->slabs.mem_malloced += len;
 
+    if (id == SM_SLAB_CLSID && p->rsvd_slabs > 0 && p->slabs > p->rsvd_slabs) {
+        sm_anchor.free_limit_space += (p->perslab * p->size);
+        sm_anchor.free_chunk_space += (p->perslab * p->size);
+    }
+
     if ((engine->slabs.mem_limit <= engine->slabs.mem_malloced) ||
         ((engine->slabs.mem_limit - engine->slabs.mem_malloced) < engine->slabs.mem_reserved))
     {
