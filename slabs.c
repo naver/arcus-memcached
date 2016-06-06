@@ -801,9 +801,8 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
     } else {
         int cur_offset = SM_REAL_OFFSET(cur_slot->offset);
         int cur_length = SM_REAL_LENGTH(cur_slot->length);
-#ifdef JOON_NEW_SM_CLASS
         assert(cur_length >= slen);
-#endif
+
         do_smmgr_free_slot_unlink(cur_slot);
         do_smmgr_used_slot_init(cur_slot, cur_offset, slen);
         if (cur_length > slen) {
