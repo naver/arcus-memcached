@@ -448,7 +448,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         id                    = clsid;
     } else {
         clsid_based_on_ntotal = clsid;
-        if (ntotal <= MAX_SM_VALUE_SIZE) {
+        if (ntotal <= MAX_SM_VALUE_LEN) {
             id = LRU_CLSID_FOR_SMALL;
         } else {
             id = clsid;
@@ -763,7 +763,7 @@ static void item_link_q(struct default_engine *engine, hash_item *it)
     int clsid = 1;
 #else
     int clsid = it->slabs_clsid;
-    if (IS_COLL_ITEM(it) || ITEM_ntotal(engine, it) <= MAX_SM_VALUE_SIZE) {
+    if (IS_COLL_ITEM(it) || ITEM_ntotal(engine, it) <= MAX_SM_VALUE_LEN) {
         clsid = LRU_CLSID_FOR_SMALL;
     }
 #endif
@@ -806,7 +806,7 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it)
     int clsid = 1;
 #else
     int clsid = it->slabs_clsid;
-    if (IS_COLL_ITEM(it) || ITEM_ntotal(engine, it) <= MAX_SM_VALUE_SIZE) {
+    if (IS_COLL_ITEM(it) || ITEM_ntotal(engine, it) <= MAX_SM_VALUE_LEN) {
         clsid = LRU_CLSID_FOR_SMALL;
     }
 #endif

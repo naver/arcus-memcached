@@ -61,6 +61,10 @@ struct slabs {
    pthread_mutex_t lock;
 };
 
+/* extern variables */
+/* Maximum value length for using the small memory allocator */
+extern int MAX_SM_VALUE_LEN;
+
 /** Init the subsystem. 1st argument is the limit on no. of bytes to allocate,
     0 if no limit. 2nd argument is the growth factor; each slab will use a chunk
     size equal to the previous slab's chunk size times this factor.

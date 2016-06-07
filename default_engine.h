@@ -35,7 +35,6 @@
 #include <memcached/visibility.h>
 
 #define MAX_ELEMENT_BYTES   (4*1024)
-#define MAX_SM_VALUE_SIZE   8000
 #ifdef SUPPORT_BOP_SMGET
 #define MAX_SMGET_REQ_COUNT 2000
 #endif

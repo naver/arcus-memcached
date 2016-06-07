@@ -187,6 +187,10 @@ static sm_anchor_t sm_anchor;
 
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
+
+/* global variable */
+int MAX_SM_VALUE_LEN = SM_BLOCK_SIZE - sizeof(sm_blck_t) - sizeof(sm_tail_t);
+
 /*
  * Forward Declarations
  */
@@ -925,7 +929,7 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
 
 unsigned int slabs_space_size(struct default_engine *engine, const size_t size)
 {
-    if (size <= MAX_SM_VALUE_SIZE) {
+    if (size <= MAX_SM_VALUE_LEN) {
         return do_smmgr_slen(size);
     }
     int clsid = slabs_clsid(engine, size);
@@ -1127,7 +1131,7 @@ static void *do_slabs_alloc(struct default_engine *engine, const size_t size, un
     slabclass_t *p;
     void *ret = NULL;
 
-    if (size <= MAX_SM_VALUE_SIZE) {
+    if (size <= MAX_SM_VALUE_LEN) {
         return do_smmgr_alloc(engine, size);
     }
 
@@ -1177,7 +1181,7 @@ static void do_slabs_free(struct default_engine *engine, void *ptr, const size_t
 {
     slabclass_t *p;
 
-    if (size <= MAX_SM_VALUE_SIZE) {
+    if (size <= MAX_SM_VALUE_LEN) {
         do_smmgr_free(engine, ptr, size);
         return;
     }
