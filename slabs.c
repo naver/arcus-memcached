@@ -134,7 +134,8 @@ typedef struct _sm_anchor {
 
 /* The minimum and maximum size of sm slot */
 #define SM_MIN_SLOT_SIZE 32
-#define SM_MAX_SLOT_SIZE 8192 // 8K
+//#define SM_MAX_SLOT_SIZE 8192 // 8K
+#define SM_MAX_SLOT_SIZE 49152 // 48K
 
 #ifdef JOON_NEW_SM_CLASS
 /* slot unit info used to calculate sm slot classes */
