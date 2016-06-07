@@ -189,7 +189,7 @@ static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
 
 /* global variable */
-int MAX_SM_VALUE_LEN = SM_BLOCK_SIZE - sizeof(sm_blck_t) - sizeof(sm_tail_t);
+int MAX_SM_VALUE_LEN = SM_MAX_SLOT_SIZE - sizeof(sm_tail_t);
 
 /*
  * Forward Declarations
