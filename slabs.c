@@ -43,12 +43,7 @@
 #define MAX_SPACE_SHORTAGE_LEVEL 100
 #define SSL_FOR_BACKGROUND_EVICT 10  /* space shortage level for background evict */
 #define SSL_CHECK_BY_MEM_REQUEST 100 /* space shortage level check tick by slab*/
-
-#define JOON_NEW_SM_CLASS 1
-
-#ifdef JOON_NEW_SM_CLASS
 #define SM_MAX_CLASS_INFO 10
-#endif
 
 /* sm slot head */
 typedef struct _sm_slot {
@@ -93,7 +88,6 @@ typedef struct _sm_blist {
     uint64_t    count;
 } sm_blist_t;
 
-#ifdef JOON_NEW_SM_CLASS
 /* sm slot class meta info */
 typedef struct _sm_class {
     uint32_t sulen; /* current slot unit length */
@@ -101,7 +95,6 @@ typedef struct _sm_class {
     uint32_t tolen; /* total slot unit length */
     uint32_t tocnt; /* total slot unit count */
 } sm_class_t;
-#endif
 
 typedef struct _sm_anchor {
     int         space_shortage_level; /* 0, 1 ~ 100 */
@@ -120,10 +113,8 @@ typedef struct _sm_anchor {
     uint64_t    free_avail_space;   /* the amount of free space that can be used */
     uint64_t    free_chunk_space;   /* the amount of free chunk space */
     uint64_t    free_limit_space;   /* the amount of minimum free space that must be maintained */
-#ifdef JOON_NEW_SM_CLASS
     sm_class_t  class_info[SM_MAX_CLASS_INFO]; /* class meta info */
     uint32_t    class_info_count;   /* class meta info count */
-#endif
 } sm_anchor_t;
 
 /* sm slab class id */
@@ -137,13 +128,11 @@ typedef struct _sm_anchor {
 //#define SM_MAX_SLOT_SIZE 8192 // 8K
 #define SM_MAX_SLOT_SIZE 49152 // 48K
 
-#ifdef JOON_NEW_SM_CLASS
 /* slot unit info used to calculate sm slot classes */
 //#define SM_SLOT_UNIT_LEN 8
 //#define SM_SLOT_UNIT_CNT 1024
 #define SM_SLOT_UNIT_LEN 8
 #define SM_SLOT_UNIT_CNT 128
-#endif
 
 /* macros for converting offset and length values of slots */
 #define SM_SLOT_OFFSET(o)  ((o)/8)
@@ -253,7 +242,6 @@ static void do_slabs_check_space_shortage_level(struct default_engine *engine)
     }
 }
 
-#ifdef JOON_NEW_SM_CLASS
 static void do_smmgr_set_class_info(int idx, int sulen, int sucnt, int tolen, int tocnt)
 {
     sm_anchor.class_info[idx].sulen = sulen;
@@ -321,24 +309,16 @@ static int do_smmgr_build_class_info(struct default_engine *engine)
 
     return total_cnt;
 }
-#endif
 
 static int do_smmgr_init(struct default_engine *engine)
 {
-#ifdef JOON_NEW_SM_CLASS
     /* small memory allocator */
     memset(&sm_anchor, 0, sizeof(sm_anchor_t));
 
     /* set the number of sm slot classes */
     SM_NUM_CLASSES = do_smmgr_build_class_info(engine);
     SM_NUM_CLASSES += 1; /* 1: big free slot list */
-#else
-    /* set the number of sm slot clsses */
-    SM_NUM_CLASSES = (SM_MAX_SLOT_SIZE / 8) + 1;
 
-    /* small memory allocator */
-    memset(&sm_anchor, 0, sizeof(sm_anchor_t));
-#endif
     sm_anchor.used_minid = SM_NUM_CLASSES;
     sm_anchor.used_maxid = -1;
     sm_anchor.free_minid = SM_NUM_CLASSES;
@@ -379,7 +359,6 @@ static inline int do_smmgr_slen(int size)
     return slen;
 }
 
-#ifdef JOON_NEW_SM_CLASS
 static inline int do_smmgr_memid(int slen, bool above)
 {
     assert((slen%8) == 0);
@@ -401,58 +380,10 @@ static inline int do_smmgr_memid(int slen, bool above)
         smid++;
     }
     return smid;
-}
-#else
-static inline int do_smmgr_memid(int slen)
-{
-    assert((slen%8) == 0);
-    if (slen > SM_MAX_SLOT_SIZE)
-        return SM_NUM_CLASSES-1;
+#if 0 // old code
     return (slen/8);
-#if 0
-    int memid;
-    if (slen < 2048) {
-        if (slen < 1024) memid = ( 0 + ((slen     ) /  32));
-        else             memid = (32 + ((slen-1024) /  64));
-    } else if (slen < 8192) {
-        if (slen < 4096) memid = (48 + ((slen-2048) / 128));
-        else             memid = (64 + ((slen-4096) / 256));
-    } else {
-        memid = SM_NUM_CLASSES-1;
-    }
-    assert(memid < SM_NUM_CLASSES);
-    return memid;
-#endif
-#if 0
-    int memid;
-    if (slen < 2048) {
-        if (slen < 1024) memid = (  0 + ((slen     ) /  16));
-        else             memid = ( 64 + ((slen-1024) /  32));
-    } else if (slen < 8192) {
-        if (slen < 4096) memid = ( 96 + ((slen-2048) /  64));
-        else             memid = (128 + ((slen-4096) / 128));
-    } else {
-        memid = SM_NUM_CLASSES-1;
-    }
-    assert(memid < SM_NUM_CLASSES);
-    return memid;
-#endif
-#if 0
-    int memid;
-    if (slen <= 2048) {
-        if (slen <= 512)       memid = (0  + ((slen     -1) /  16));
-        else if (slen <= 1024) memid = (32 + ((slen- 512-1) /  32));
-        else                   memid = (48 + ((slen-1024-1) /  64));
-    } else {
-        if (slen <= 4096)      memid = (64 + ((slen-2048-1) / 128));
-        else if (slen <= 8192) memid = (80 + ((slen-4096-1) / 256));
-        else                   memid = 96;
-    }
-    assert(memid < SM_NUM_CLASSES);
-    return memid;
 #endif
 }
-#endif
 
 static void do_smmgr_used_slot_list_add(int targ)
 {
@@ -589,11 +520,7 @@ static void do_smmgr_free_slot_link(sm_slot_t *slot, int offset, int length)
         return;
     }
 
-#ifdef JOON_NEW_SM_CLASS
     smid = do_smmgr_memid(slen, false);
-#else
-    smid = do_smmgr_memid(slen);
-#endif
     list = &sm_anchor.free_slist[smid];
 
     /* link the slot to the tail of the list */
@@ -632,11 +559,7 @@ static void do_smmgr_free_slot_unlink(sm_slot_t *slot)
         return;
     }
 
-#ifdef JOON_NEW_SM_CLASS
     smid = do_smmgr_memid(slen, false);
-#else
-    smid = do_smmgr_memid(slen);
-#endif
     if (smid < sm_anchor.used_maxid) {
         sm_anchor.free_small_space -= slen;
     } else {
@@ -766,11 +689,7 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
     //do_smmgr_used_blck_check();
 
     slen = do_smmgr_slen(size);
-#ifdef JOON_NEW_SM_CLASS
     targ = do_smmgr_memid(slen, true);
-#else
-    targ = do_smmgr_memid(slen);
-#endif
 
     /* find the free slot list from which we allocate a slot. */
     do {
@@ -781,11 +700,7 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
             smid = targ; break;
         }
         /* find the 2 times large free slot */
-#ifdef JOON_NEW_SM_CLASS
         smid = do_smmgr_memid(slen*2, false);
-#else
-        smid = do_smmgr_memid(slen*2);
-#endif
         for ( ; smid <= sm_anchor.free_maxid; smid++) {
             if (sm_anchor.free_slist[smid].head != NULL) break;
         }
@@ -876,11 +791,7 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
     }
 
     slen = do_smmgr_slen(size);
-#ifdef JOON_NEW_SM_CLASS
     targ = do_smmgr_memid(slen, true);
-#else
-    targ = do_smmgr_memid(slen);
-#endif
 
     cur_slot = (sm_slot_t*)ptr;
     cur_tail = (sm_tail_t*)((char*)cur_slot + slen - sizeof(sm_tail_t));
