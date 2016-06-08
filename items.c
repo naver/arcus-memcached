@@ -1955,7 +1955,7 @@ static ENGINE_ERROR_CODE do_set_elem_link(struct default_engine *engine,
     assert(info->root != NULL);
     set_hash_node *node = info->root;
     set_elem_item *find;
-    int hidx;
+    int hidx = -1;
 
     /* set hash value */
     elem->hval = genhash_string_hash(elem->value, elem->nbytes);
@@ -1967,6 +1967,7 @@ static ENGINE_ERROR_CODE do_set_elem_link(struct default_engine *engine,
         node = node->htab[hidx];
     }
     assert(node != NULL);
+    assert(hidx != -1);
 
     for (find = node->htab[hidx]; find != NULL; find = find->next) {
         if (set_hash_eq(elem->hval, elem->value, elem->nbytes,
