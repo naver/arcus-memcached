@@ -47,6 +47,9 @@
 /** Maximum length of a key. */
 #define KEY_MAX_LENGTH 250
 
+/** Maximum length of a prefix */
+#define PREFIX_MAX_LENGTH 250
+
 /** Size of an incr buf. */
 #define INCR_MAX_STORAGE_LEN 24
 
