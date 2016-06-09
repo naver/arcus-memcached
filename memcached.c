@@ -3252,7 +3252,7 @@ static void process_bin_stat(conn *c) {
         char *prefix = subcommand + 7;
         int nprefix = nkey - 13;
 
-        if (nprefix < 1 || nprefix > KEY_MAX_LENGTH) {
+        if (nprefix < 1 || nprefix > (KEY_MAX_LENGTH-1)) {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
             return;
         }
@@ -7397,7 +7397,7 @@ static void process_stats_prefix(conn *c, const char *prefix, const int nprefix)
     } else {
         /****** SPEC-OUT FUNCTIONS **********
         prefix_engine_stats prefix_data;
-        if (nprefix > KEY_MAX_LENGTH) {
+        if (nprefix > (KEY_MAX_LENGTH-1)) {
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
@@ -8317,6 +8317,11 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
 
         char *prefix = tokens[PREFIX_TOKEN].value;
         size_t nprefix = tokens[PREFIX_TOKEN].length;
+        if (nprefix > (KEY_MAX_LENGTH-1)) {
+            /* The prefix length must be smaller than key max length. */
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
         if (nprefix == 4 && strncmp(prefix, "null", 4) == 0) {
             /* flush null prefix */
             prefix = NULL;
@@ -8663,6 +8668,11 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
         } else {
             prefix = tokens[3].value;
             nprefix = tokens[3].length;
+            if (nprefix > (KEY_MAX_LENGTH-1)) {
+                /* The prefix length must be smaller than key max length. */
+                out_string(c, "CLIENT_ERROR bad command line format");
+                return;
+            }
             if (nprefix == 4 && strncmp(prefix, "null", 4) == 0) { /* null prefix */
                 prefix = NULL;
                 nprefix = 0;
