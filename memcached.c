@@ -8710,8 +8710,8 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "set|add|replace <key> <flags> <exptime> <bytes> [noreply]\\r\\n<data>\\r\\n" "\n"
         "\t" "append|prepend <key> <flags> <exptime> <bytes> [noreply]\\r\\n<data>\\r\\n" "\n"
         "\t" "cas <key> <flags> <exptime> <bytes> <cas unique> [noreply]\\r\\n<data>\\r\\n" "\n"
-        "\t" "get <key>[,<key>...]\\r\\n" "\n"
-        "\t" "gets <key>[,<key>...]\\r\\n" "\n"
+        "\t" "get <key>[ <key> ...]\\r\\n" "\n"
+        "\t" "gets <key>[ <key> ...]\\r\\n" "\n"
         "\t" "incr|decr <key> <delta> [<flags> <exptime> <initial>] [noreply]\\r\\n" "\n"
         "\t" "delete <key> [<time>] [noreply]\\r\\n" "\n"
         );
@@ -8843,7 +8843,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
 #endif
 #ifdef JHPARK_KEY_DUMP
         "\n"
-        "\t" "dump start key [<prefix>] filepath\\r\\n" "\n"
+        "\t" "dump start key [<prefix>] <filepath>\\r\\n" "\n"
         "\t" "dump stop\\r\\n" "\n"
 #endif
         "\n"
