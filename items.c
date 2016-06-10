@@ -6253,11 +6253,10 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
     if (nprefix >= 0) { /* flush the given prefix */
         prefix_t *pt;
         if (nprefix == 0) { /* null prefix */
-            assert(prefix == NULL);
             pt = &engine->assoc.noprefix_stats;
         } else {
-            assert(prefix != NULL);
-            pt = assoc_prefix_find(engine, engine->server.core->hash(prefix, nprefix, 0), prefix, nprefix);
+            pt = assoc_prefix_find(engine, engine->server.core->hash(prefix, nprefix, 0),
+                                   prefix, nprefix);
         }
         if (pt == NULL) {
             return ENGINE_PREFIX_ENOENT;
@@ -6272,7 +6271,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
 
         if (engine->config.verbose) {
             logger->log(EXTENSION_LOG_INFO, NULL, "flush prefix=%s when=%u client_ip=%s\n",
-                        ((prefix==NULL) ? "null" : prefix),
+                        (prefix == NULL ? "<null>" : prefix),
                         (unsigned)when, engine->server.core->get_client_ip(cookie));
         }
     } else { /* flush all */
@@ -6302,22 +6301,18 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
             for (iter = engine->items.heads[i]; iter != NULL; iter = next) {
                 if (iter->time >= oldest_live) {
                     next = iter->next;
-                    if (nprefix >= 0) {
-                        bool found = false;
-                        if (nprefix == 0) {
-                            if (iter->nprefix == 0)
-                                found = true;
-                        } else { /* nprefix > 0 */
-                            char *iter_key = (char*)item_get_key(iter);
-                            if (iter->nkey > nprefix && memcmp(prefix,iter_key,nprefix) == 0 &&
-                                *(iter_key + nprefix) == engine->config.prefix_delimiter)
-                                found = true;
-                        }
-                        if (found == true) {
+                    if (nprefix < 0) { /* flush all */
+                        do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
+                    } else if (nprefix == 0) { /* flush null prefix */
+                        if (iter->nprefix == 0) {
                             do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
                         }
-                    } else { /* flush all */
-                        do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
+                    } else { /* nprefix > 0: flush given prefix */
+                        char *iter_key = (char*)item_get_key(iter);
+                        if (iter->nkey > nprefix && memcmp(prefix,iter_key,nprefix) == 0 &&
+                            *(iter_key + nprefix) == engine->config.prefix_delimiter) {
+                            do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
+                        }
                     }
                 } else {
                     /* We've hit the first old item. Continue to the next queue. */
@@ -6331,23 +6326,18 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
             for (iter = engine->items.sticky_heads[i]; iter != NULL; iter = next) {
                 if (iter->time >= oldest_live) {
                     next = iter->next;
-
-                    if (nprefix >= 0) {
-                        bool found = false;
-                        if (nprefix == 0) {
-                            if (iter->nprefix == 0)
-                                found = true;
-                        } else { /* nprefix > 0 */
-                            char *iter_key = (char*)item_get_key(iter);
-                            if (iter->nkey > nprefix && memcmp(prefix,iter_key,nprefix) == 0 &&
-                                *(iter_key + nprefix) == engine->config.prefix_delimiter)
-                                found = true;
-                        }
-                        if (found == true) {
+                    if (nprefix < 0) { /* flush all */
+                        do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
+                    } else if (nprefix == 0) { /* flush null prefix */
+                        if (iter->nprefix == 0) {
                             do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
                         }
-                    } else { /* flush all */
-                        do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
+                    } else { /* nprefix > 0: flush given prefix */
+                        char *iter_key = (char*)item_get_key(iter);
+                        if (iter->nkey > nprefix && memcmp(prefix,iter_key,nprefix) == 0 &&
+                            *(iter_key + nprefix) == engine->config.prefix_delimiter) {
+                            do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
+                        }
                     }
                 } else {
                     /* We've hit the first old item. Continue to the next queue. */
