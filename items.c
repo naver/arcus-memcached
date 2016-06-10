@@ -6305,7 +6305,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
                     if (nprefix >= 0) {
                         bool found = false;
                         if (nprefix == 0) {
-                            if (iter->nprefix == iter->nkey)
+                            if (iter->nprefix == 0)
                                 found = true;
                         } else { /* nprefix > 0 */
                             char *iter_key = (char*)item_get_key(iter);
@@ -6335,7 +6335,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
                     if (nprefix >= 0) {
                         bool found = false;
                         if (nprefix == 0) {
-                            if (iter->nprefix == iter->nkey)
+                            if (iter->nprefix == 0)
                                 found = true;
                         } else { /* nprefix > 0 */
                             char *iter_key = (char*)item_get_key(iter);
@@ -8199,12 +8199,12 @@ static void *item_dumper_main(void *arg)
             dumper->visited++;
             /* check prefix name */
             if (dumper->nprefix > 0) {
-                if (dumper->nprefix != it->nprefix || it->nprefix == it->nkey ||
+                if (dumper->nprefix != it->nprefix ||
                     memcmp(item_get_key(it), dumper->prefix, dumper->nprefix) != 0) {
                     continue; /* prefix mismatch */
                 }
             } else if (dumper->nprefix == 0) {
-                if (it->nprefix != it->nkey) {
+                if (it->nprefix != 0) {
                     continue; /* not null prefix */
                 }
             }

@@ -386,15 +386,13 @@ bool assoc_prefix_isvalid(struct default_engine *engine, hash_item *it)
     rel_time_t current_time = engine->server.core->get_current_time();
     prefix_t *pt;
 
-    if (it->nprefix == it->nkey) {
-        /* the prefix of key: null */
+    if (it->nprefix == 0) { /* the prefix of key is null */
         assert(root_pt != NULL);
         pt = root_pt;
         if (pt->oldest_live != 0 && pt->oldest_live <= current_time && it->time <= pt->oldest_live) {
             return false;
         }
-    } else {
-        /* the prifix of key: given */
+    } else { /* it->nprefix > 0: the prefix of key is given */
         pt = assoc_prefix_find(engine, engine->server.core->hash(item_get_key(it), it->nprefix, 0),
                                item_get_key(it), it->nprefix);
         while (pt != NULL && pt != root_pt) {
@@ -449,7 +447,6 @@ void assoc_prefix_update_size(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
 ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it,
                                     const size_t item_size, prefix_t **pfx_item)
 {
-    assert(it->nprefix == 0);
     const char *key = item_get_key(it);
     size_t     nkey = it->nkey;
     int prefix_depth = 0;
@@ -472,7 +469,7 @@ ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it
     if (prefix_depth == 0) {
         pt = root_pt;
         time(&pt->create_time);
-        it->nprefix = nkey;
+        it->nprefix = 0;
     } else {
         for (i = prefix_depth - 1; i >= 0; i--) {
             prefix_list[i].hash = engine->server.core->hash(key, prefix_list[i].nprefix, 0);
@@ -554,9 +551,8 @@ void assoc_prefix_unlink(struct default_engine *engine, hash_item *it,
                          const size_t item_size, bool drop_if_empty)
 {
     prefix_t *pt;
-    assert(it->nprefix != 0);
 
-    if (it->nprefix == it->nkey) {
+    if (it->nprefix == 0) {
         pt = root_pt;
     } else {
         pt = assoc_prefix_find(engine, engine->server.core->hash(item_get_key(it), it->nprefix, 0),
