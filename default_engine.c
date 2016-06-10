@@ -716,6 +716,7 @@ static ENGINE_ERROR_CODE default_btree_elem_get_by_posi(ENGINE_HANDLE* handle, c
 
 #ifdef SUPPORT_BOP_SMGET
 #if 1 // JHPARK_OLD_SMGET_INTERFACE
+/* smget old interface */
 static ENGINE_ERROR_CODE default_btree_elem_smget_old(ENGINE_HANDLE* handle, const void* cookie,
                                                   token_t *karray, const int kcount,
                                                   const bkey_range *bkrange,
@@ -741,37 +742,22 @@ static ENGINE_ERROR_CODE default_btree_elem_smget_old(ENGINE_HANDLE* handle, con
 }
 #endif
 
+/* smget new interface */
 static ENGINE_ERROR_CODE default_btree_elem_smget(ENGINE_HANDLE* handle, const void* cookie,
                                                   token_t *karray, const int kcount,
                                                   const bkey_range *bkrange,
                                                   const eflag_filter *efilter,
                                                   const uint32_t offset, const uint32_t count,
-#ifdef JHPARK_NEW_SMGET_INTERFACE
                                                   const bool unique,
                                                   smget_result_t *result,
-#else
-                                                  eitem** eitem_array,
-                                                  uint32_t* kfnd_array,
-                                                  uint32_t* flag_array,
-                                                  uint32_t* eitem_count,
-                                                  uint32_t* missed_key_array,
-                                                  uint32_t* missed_key_count,
-                                                  bool *trimmed, bool *duplicated,
-#endif
                                                   uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-#ifdef JHPARK_NEW_SMGET_INTERFACE
     ret = btree_elem_smget(engine, karray, kcount, bkrange, efilter,
                            offset, count, unique, result);
-#else
-    ret = btree_elem_smget(engine, karray, kcount, bkrange, efilter, offset, count,
-                           (btree_elem_item**)eitem_array, kfnd_array, flag_array, eitem_count,
-                           missed_key_array, missed_key_count, trimmed, duplicated);
-#endif
     return ret;
 }
 #endif

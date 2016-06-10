@@ -33,7 +33,6 @@ struct iovec {
 
 #define SUPPORT_BOP_MGET
 #define SUPPORT_BOP_SMGET
-#define JHPARK_NEW_SMGET_INTERFACE
 #define CONFIG_MAX_COLLECTION_SIZE
 #define MAX_EFLAG_COMPARE_COUNT 100
 
@@ -66,9 +65,7 @@ extern "C" {
         ENGINE_DISCONNECT  = 0x0a, /**< Tell the server to disconnect this client */
         ENGINE_EACCESS     = 0x0b, /**< Access control violations */
         ENGINE_NOT_MY_VBUCKET = 0x0c, /** < This vbucket doesn't belong to me */
-#ifdef JHPARK_NEW_SMGET_INTERFACE
         ENGINE_EDUPLICATE  = 0x0d, /** < Duplicate value(ex, bkey) */
-#endif
 
         ENGINE_EBADTYPE     = 0x32, /**< Not supported operation, bad type */
         ENGINE_EOVERFLOW    = 0x33, /**< The collection is full of elements */
@@ -291,7 +288,6 @@ extern "C" {
         uint8_t reserved[6];
     } eflag_update;
 
-#ifdef JHPARK_NEW_SMGET_INTERFACE
     /* Key info of the found elements in smget */
     typedef struct {
         uint16_t kidx;  /* key index in keys array */
@@ -319,7 +315,6 @@ extern "C" {
         bool          duplicated; /* bkey is duplicated ? */
         bool          ascending;  /* bkey order of found elements: ascending ? */
     } smget_result_t;
-#endif
 
     /* item attribute structure */
     typedef struct {

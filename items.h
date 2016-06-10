@@ -503,6 +503,7 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
 
 #ifdef SUPPORT_BOP_SMGET
 #if 1 // JHPARK_OLD_SMGET_INTERFACE
+/* smget old interface */
 ENGINE_ERROR_CODE btree_elem_smget_old(struct default_engine *engine,
                                    token_t *key_array, const int key_count,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
@@ -513,23 +514,13 @@ ENGINE_ERROR_CODE btree_elem_smget_old(struct default_engine *engine,
                                    bool *trimmed, bool *duplicated);
 #endif
 
-#ifdef JHPARK_NEW_SMGET_INTERFACE
+/* smget new interface */
 ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
                                    token_t *key_array, const int key_count,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
                                    const uint32_t offset, const uint32_t count,
                                    const bool unique,
                                    smget_result_t *result);
-#else
-ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
-                                   token_t *key_array, const int key_count,
-                                   const bkey_range *bkrange, const eflag_filter *efilter,
-                                   const uint32_t offset, const uint32_t count,
-                                   btree_elem_item **elem_array, uint32_t *kfnd_array,
-                                   uint32_t *flag_array, uint32_t *elem_count,
-                                   uint32_t *missed_key_array, uint32_t *missed_key_count,
-                                   bool *trimmed, bool *duplicated);
-#endif
 #endif
 
 ENGINE_ERROR_CODE item_getattr(struct default_engine *engine,
