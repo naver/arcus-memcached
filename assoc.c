@@ -323,7 +323,7 @@ void assoc_scan_final(struct default_engine *engine, struct assoc_scan *scan)
  * Prefix Management
  */
 prefix_t *assoc_prefix_find(struct default_engine *engine, uint32_t hash,
-                            const char *prefix, const size_t nprefix)
+                            const char *prefix, const int nprefix)
 {
     prefix_t *pt;
 
@@ -338,7 +338,7 @@ prefix_t *assoc_prefix_find(struct default_engine *engine, uint32_t hash,
 }
 
 static prefix_t** _prefixitem_before(struct default_engine *engine, uint32_t hash,
-                                     const char *prefix, const size_t nprefix)
+                                     const char *prefix, const int nprefix)
 {
     prefix_t **pos;
 
@@ -363,7 +363,7 @@ static int _prefix_insert(struct default_engine *engine, uint32_t hash, prefix_t
 }
 
 static void _prefix_delete(struct default_engine *engine, uint32_t hash,
-                           const char *prefix, const uint8_t nprefix)
+                           const char *prefix, const int nprefix)
 {
     prefix_t **prefix_before = _prefixitem_before(engine, hash, prefix, nprefix);
     prefix_t *pt = *prefix_before;
@@ -625,7 +625,7 @@ static uint32_t do_assoc_count_invalid_prefix(struct default_engine *engine)
 
 static ENGINE_ERROR_CODE
 do_assoc_get_prefix_stats(struct default_engine *engine,
-                          const char *prefix, const int  nprefix,
+                          const char *prefix, const int nprefix,
                           void *prefix_data)
 {
     struct assoc *assoc = &engine->assoc;

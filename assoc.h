@@ -107,7 +107,7 @@ void              assoc_scan_next(struct default_engine *engine, struct assoc_sc
 void              assoc_scan_final(struct default_engine *engine, struct assoc_scan *scan);
 #endif
 prefix_t *        assoc_prefix_find(struct default_engine *engine, uint32_t hash,
-                                    const char *prefix, const size_t nprefix);
+                                    const char *prefix, const int nprefix);
 bool              assoc_prefix_isvalid(struct default_engine *engine, hash_item *it);
 void              assoc_prefix_update_size(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
                                     const size_t item_size, const bool increment);
