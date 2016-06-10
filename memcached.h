@@ -490,7 +490,7 @@ struct conn {
     item_attr    coll_attr_space;
     item_attr   *coll_attrp;
     bool         coll_drop;    /* drop flag */
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
     int          coll_smgmode; /* smget exec mode : 0(oldexec), 1(duplicate), 2(unique) */
 #else
     bool         coll_unique;  /* unique flag (used in smget) */

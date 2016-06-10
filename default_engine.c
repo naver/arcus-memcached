@@ -715,7 +715,7 @@ static ENGINE_ERROR_CODE default_btree_elem_get_by_posi(ENGINE_HANDLE* handle, c
 }
 
 #ifdef SUPPORT_BOP_SMGET
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
 /* smget old interface */
 static ENGINE_ERROR_CODE default_btree_elem_smget_old(ENGINE_HANDLE* handle, const void* cookie,
                                                   token_t *karray, const int kcount,
@@ -1287,7 +1287,7 @@ ENGINE_ERROR_CODE create_instance(uint64_t interface, GET_SERVER_API get_server_
          .btree_posi_find_with_get = default_btree_posi_find_with_get,
          .btree_elem_get_by_posi = default_btree_elem_get_by_posi,
 #ifdef SUPPORT_BOP_SMGET
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
          .btree_elem_smget_old = default_btree_elem_smget_old,
 #endif
          .btree_elem_smget   = default_btree_elem_smget,

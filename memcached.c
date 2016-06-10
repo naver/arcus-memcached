@@ -1949,7 +1949,7 @@ static int make_smget_trim_response(char *bufptr, eitem_info *info)
     return (int)(tmpptr - bufptr);
 }
 
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
 static void process_bop_smget_complete_old(conn *c) {
     int i, idx;
     char *vptr = (char*)c->coll_strkeys;
@@ -2095,7 +2095,7 @@ static void process_bop_smget_complete_old(conn *c) {
 static void process_bop_smget_complete(conn *c) {
     assert(c->coll_op == OPERATION_BOP_SMGET);
     assert(c->coll_eitem != NULL);
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
     if (c->coll_smgmode == 0) {
         process_bop_smget_complete_old(c);
         return;
@@ -2129,11 +2129,11 @@ static void process_bop_smget_complete(conn *c) {
                                              keys_array, c->coll_numkeys,
                                              &c->coll_bkrange,
                                              (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
                                              c->coll_roffset, c->coll_rcount,
+#ifdef JHPARK_OLD_SMGET_INTERFACE
                                              (c->coll_smgmode == 2 ? true : false),
 #else
-                                             c->coll_roffset, c->coll_rcount, c->coll_unique,
+                                             c->coll_unique,
 #endif
                                              &smres, 0);
     }
@@ -5261,7 +5261,7 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
 #endif
 #ifdef SUPPORT_BOP_SMGET
         if (c->cmd == PROTOCOL_BINARY_CMD_BOP_SMGET) {
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
           if (c->coll_smgmode == 0) {
             int smget_count;
             int elem_array_size; /* elem pointer array where the found elements will be saved */
@@ -5298,7 +5298,7 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
             emis_rshdr_size = req->message.body.key_count * sizeof(uint32_t);
             need_size = elem_array_size + ehit_array_size + emis_array_size
                       + elem_rshdr_size + emis_rshdr_size;
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
           }
 #endif
         }
@@ -5373,7 +5373,7 @@ static void process_bin_bop_mget_complete(conn *c) {
 #endif
 
 #ifdef SUPPORT_BOP_SMGET
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
 static void process_bin_bop_smget_complete_old(conn *c) {
     int smget_count = c->coll_roffset + c->coll_rcount;
     int kmis_array_size = c->coll_numkeys * sizeof(uint32_t);
@@ -5547,7 +5547,7 @@ static void process_bin_bop_smget_complete_old(conn *c) {
 
 static void process_bin_bop_smget_complete(conn *c) {
     assert(c->coll_eitem != NULL);
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
     if (c->coll_smgmode == 0) {
         process_bin_bop_smget_complete_old(c);
         return;
@@ -5583,12 +5583,11 @@ static void process_bin_bop_smget_complete(conn *c) {
                                      keys_array, c->coll_numkeys,
                                      &c->coll_bkrange,
                                      (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
                                      c->coll_roffset, c->coll_rcount,
+#ifdef JHPARK_OLD_SMGET_INTERFACE
                                      (c->coll_smgmode == 2 ? true : false), &smres,
 #else
-                                     c->coll_roffset, c->coll_rcount, c->coll_unique,
-                                     &smres,
+                                     c->coll_unique, &smres,
 #endif
                                      c->binary_header.request.vbucket);
     }
@@ -6982,7 +6981,7 @@ static void write_and_free(conn *c, char *buf, int bytes) {
     }
 }
 
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
 static inline int set_smget_mode_maybe(conn *c, token_t *tokens, size_t ntokens)
 {
     int mode_index = ntokens - 2;
@@ -8503,7 +8502,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
         );
     } else if (ntokens > 2 && strcmp(type, "btree") == 0) {
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
         out_string(c,
         "\t" "bop create <key> <attributes> [noreply]\\r\\n" "\n"
         "\t" "bop insert|upsert <key> <bkey> [<eflag>] <bytes> [create <attributes>] [noreply|pipe|getrim]\\r\\n<data>\\r\\n" "\n"
@@ -10392,7 +10391,7 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
 #endif
 #ifdef SUPPORT_BOP_SMGET
     if (cmd == OPERATION_BOP_SMGET) {
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
       if (c->coll_smgmode == 0) {
         int smget_count = c->coll_roffset + c->coll_rcount;
         int elem_array_size; /* elem pointer array where the found elements will be saved */
@@ -10422,7 +10421,7 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
                         + (c->coll_numkeys * ((MAX_EFLAG_LENG*2+2) + 5)); /* result body size */
         need_size = elem_array_size + ehit_array_size + emis_array_size
                   + respon_hdr_size + respon_bdy_size;
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
      }
 #endif
     }
@@ -11228,7 +11227,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
     {
         uint32_t count, offset = 0;
         uint32_t lenkeys, numkeys;
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
         int smgmode = set_smget_mode_maybe(c, tokens, ntokens);
 #else
         bool unique = set_unique_maybe(c, tokens, ntokens);
@@ -11246,7 +11245,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
 
         int read_ntokens = 5;
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
         int post_ntokens = (smgmode > 0 ? 3 : 2); /* "\r\n" */
 #else
         int post_ntokens = (unique ? 3 : 2); /* "\r\n" */
@@ -11312,7 +11311,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         c->coll_lenkeys = lenkeys;
         c->coll_roffset = offset;
         c->coll_rcount  = count;
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
         c->coll_smgmode = smgmode;
 #else
         c->coll_unique  = unique;

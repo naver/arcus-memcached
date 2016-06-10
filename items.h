@@ -502,7 +502,7 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
                                   btree_elem_item **elem_array, uint32_t *elem_count, uint32_t *flags);
 
 #ifdef SUPPORT_BOP_SMGET
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
 /* smget old interface */
 ENGINE_ERROR_CODE btree_elem_smget_old(struct default_engine *engine,
                                    token_t *key_array, const int key_count,

@@ -5033,7 +5033,7 @@ static void do_btree_smget_adjust_trim(smget_result_t *smres)
     smres->trim_count = new_trim_count;
 }
 
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
 static ENGINE_ERROR_CODE do_btree_smget_scan_sort_old(struct default_engine *engine,
                                     token_t *key_array, const int key_count,
                                     const int bkrtype, const bkey_range *bkrange,
@@ -5479,7 +5479,7 @@ scan_next:
 #endif
 
 #ifdef SUPPORT_BOP_SMGET
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
 static int do_btree_smget_elem_sort_old(btree_scan_info *btree_scan_buf,
                                     uint16_t *sort_sindx_buf, const int sort_sindx_cnt,
                                     const int bkrtype, const bkey_range *bkrange, const eflag_filter *efilter,
@@ -7190,7 +7190,7 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
 }
 
 #ifdef SUPPORT_BOP_SMGET
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
 ENGINE_ERROR_CODE btree_elem_smget_old(struct default_engine *engine,
                                    token_t *key_array, const int key_count,
                                    const bkey_range *bkrange, const eflag_filter *efilter,

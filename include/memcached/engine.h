@@ -586,7 +586,7 @@ extern "C" {
                                              uint32_t *flags,
                                              uint16_t vbucket);
 #ifdef SUPPORT_BOP_SMGET
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
         /* smget old interface */
         ENGINE_ERROR_CODE (*btree_elem_smget_old)(ENGINE_HANDLE* handle,
                                               const void* cookie,
