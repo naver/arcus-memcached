@@ -347,18 +347,14 @@ extern "C" {
          *
          * @param handle the engine handle
          * @param cookie The cookie provided by the frontend
+         * @prefix prefix string
+         * @nprefix prefix string length: -1(all prefixes), 0(null prefix)
          * @param when time at which the flush should take effect
          *
          * @return ENGINE_SUCCESS if all goes well
          */
-        ENGINE_ERROR_CODE (*flush)(ENGINE_HANDLE* handle,
-                                   const void* cookie, time_t when);
-
-        /*
-         * delete by prefix
-         */
-        ENGINE_ERROR_CODE (*flush_prefix)(ENGINE_HANDLE* handle, const void* cookie,
-                                          const void* prefix, const int nprefix, time_t when);
+        ENGINE_ERROR_CODE (*flush)(ENGINE_HANDLE* handle, const void* cookie,
+                                   const void* prefix, const int nprefix, time_t when);
 
         /*
          * LIST Interface

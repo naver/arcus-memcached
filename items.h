@@ -320,13 +320,13 @@ char *item_cachedump(struct default_engine *engine, const unsigned int slabs_cls
 /**
  * Flush expired items from the cache
  * @param engine handle to the storage engine
+ * @prefix prefix string
+ * @nprefix prefix string length: -1(all prefixes), 0(null prefix)
  * @param when when the items should be flushed
  */
-void  item_flush_expired(struct default_engine *engine, time_t when, const void* cookie);
-
-ENGINE_ERROR_CODE item_flush_prefix_expired(struct default_engine *engine,
-                                            const char *prefix, const int nprefix,
-                                            time_t when, const void* cookie);
+ENGINE_ERROR_CODE item_flush_expired(struct default_engine *engine,
+                                     const char *prefix, const int nprefix,
+                                     time_t when, const void* cookie);
 
 /**
  * Release our reference to the current item

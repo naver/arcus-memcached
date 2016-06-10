@@ -6783,7 +6783,7 @@ static void process_bin_flush(conn *c) {
     }
 
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->flush(mc_engine.v0, c, exptime);
+    ret = mc_engine.v1->flush(mc_engine.v0, c, NULL, -1, exptime);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -6825,7 +6825,7 @@ static void process_bin_flush_prefix(conn *c) {
     }
 
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->flush_prefix(mc_engine.v0, c, prefix, nprefix, exptime);
+    ret = mc_engine.v1->flush(mc_engine.v0, c, prefix, nprefix, exptime);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -8267,7 +8267,10 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
 
 static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens, bool flush_all)
 {
+    char *prefix;
+    int  nprefix;
     time_t exptime;
+    ENGINE_ERROR_CODE ret;
 
     assert(c->ewouldblock == false);
 
@@ -8286,8 +8289,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
             }
         }
 
-        ENGINE_ERROR_CODE ret;
-        ret = mc_engine.v1->flush(mc_engine.v0, c, exptime);
+        ret = mc_engine.v1->flush(mc_engine.v0, c, NULL, -1, exptime);
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
             ret = ENGINE_SUCCESS;
@@ -8314,9 +8316,8 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
                 return;
             }
         }
-
-        char *prefix = tokens[PREFIX_TOKEN].value;
-        size_t nprefix = tokens[PREFIX_TOKEN].length;
+        prefix = tokens[PREFIX_TOKEN].value;
+        nprefix = tokens[PREFIX_TOKEN].length;
         if (nprefix > PREFIX_MAX_LENGTH) {
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
@@ -8327,8 +8328,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
             nprefix = 0;
         }
 
-        ENGINE_ERROR_CODE ret;
-        ret = mc_engine.v1->flush_prefix(mc_engine.v0, c, prefix, nprefix, exptime);
+        ret = mc_engine.v1->flush(mc_engine.v0, c, prefix, nprefix, exptime);
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
             ret = ENGINE_SUCCESS;

@@ -299,18 +299,8 @@ static ENGINE_ERROR_CODE default_arithmetic(ENGINE_HANDLE* handle, const void* c
     return ret;
 }
 
-static ENGINE_ERROR_CODE default_flush(ENGINE_HANDLE* handle, const void* cookie, time_t when)
-{
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-
-    ACTION_BEFORE_WRITE(cookie, NULL, 0);
-    item_flush_expired(get_handle(handle), when, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
-    return ret;
-}
-
-static ENGINE_ERROR_CODE default_flush_prefix(ENGINE_HANDLE* handle, const void* cookie,
-                                              const void* prefix, const int nprefix, time_t when)
+static ENGINE_ERROR_CODE default_flush(ENGINE_HANDLE* handle, const void* cookie,
+                                       const void* prefix, const int nprefix, time_t when)
 {
     ENGINE_ERROR_CODE ret;
 
@@ -318,7 +308,7 @@ static ENGINE_ERROR_CODE default_flush_prefix(ENGINE_HANDLE* handle, const void*
         return ENGINE_ENOTSUP; /* Flushing arcus prefix is not allowed */
     }
     ACTION_BEFORE_WRITE(cookie, NULL, 0);
-    ret = item_flush_prefix_expired(get_handle(handle), prefix, nprefix, when, cookie);
+    ret = item_flush_expired(get_handle(handle), prefix, nprefix, when, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -1282,7 +1272,6 @@ ENGINE_ERROR_CODE create_instance(uint64_t interface, GET_SERVER_API get_server_
          .store             = default_store,
          .arithmetic        = default_arithmetic,
          .flush             = default_flush,
-         .flush_prefix      = default_flush_prefix,
          /* LIST functions */
          .list_struct_create = default_list_struct_create,
          .list_elem_alloc   = default_list_elem_alloc,

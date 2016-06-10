@@ -6352,17 +6352,9 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
     return ENGINE_SUCCESS;
 }
 
-void item_flush_expired(struct default_engine *engine, time_t when, const void* cookie)
-{
-    pthread_mutex_lock(&engine->cache_lock);
-    /* flush all items */
-    do_item_flush_expired(engine, NULL, -1, when, cookie);
-    pthread_mutex_unlock(&engine->cache_lock);
-}
-
-ENGINE_ERROR_CODE item_flush_prefix_expired(struct default_engine *engine,
-                                            const char *prefix, const int nprefix,
-                                            time_t when, const void* cookie)
+ENGINE_ERROR_CODE item_flush_expired(struct default_engine *engine,
+                                     const char *prefix, const int nprefix,
+                                     time_t when, const void* cookie)
 {
     ENGINE_ERROR_CODE ret;
     pthread_mutex_lock(&engine->cache_lock);

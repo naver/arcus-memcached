@@ -274,8 +274,8 @@ static ENGINE_ERROR_CODE mock_arithmetic(ENGINE_HANDLE* handle,
     return ret;
 }
 
-static ENGINE_ERROR_CODE mock_flush(ENGINE_HANDLE* handle,
-                                    const void* cookie, time_t when) {
+static ENGINE_ERROR_CODE mock_flush(ENGINE_HANDLE* handle, const void* cookie,
+                                    const void *prefix, const int nprefix, time_t when) {
     struct mock_engine *me = get_handle(handle);
     struct mock_connstruct *c = (void*)cookie;
     if (c == NULL) {
@@ -286,7 +286,7 @@ static ENGINE_ERROR_CODE mock_flush(ENGINE_HANDLE* handle,
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     pthread_mutex_lock(&c->mutex);
     while (ret == ENGINE_SUCCESS &&
-           (ret = me->the_engine->flush((ENGINE_HANDLE*)me->the_engine, c, when)) == ENGINE_EWOULDBLOCK &&
+           (ret = me->the_engine->flush((ENGINE_HANDLE*)me->the_engine, c, NULL, -1, when)) == ENGINE_EWOULDBLOCK &&
            c->handle_ewouldblock)
     {
         ++c->nblocks;
