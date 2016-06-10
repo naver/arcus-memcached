@@ -8322,7 +8322,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
-        if (nprefix == 6 && strncmp(prefix, "<null>", 4) == 0) {
+        if (nprefix == 6 && strncmp(prefix, "<null>", 6) == 0) {
             /* flush null prefix */
             prefix = NULL;
             nprefix = 0;
