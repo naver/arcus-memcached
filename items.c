@@ -68,6 +68,9 @@ static void do_item_dump_stop(struct default_engine *engine);
 
 extern int genhash_string_hash(const void* p, size_t nkey);
 
+/* get hash item address from collection info address */
+#define COLL_GET_HASH_ITEM(info) ((size_t*)(info) - (info)->itdist)
+
 /*
  * We only reposition items in the LRU queue if they haven't been repositioned
  * in this many seconds. That saves us from churning on frequently-accessed
@@ -1394,11 +1397,6 @@ static int32_t do_coll_real_maxcount(hash_item *it, int32_t maxcount)
     return real_maxcount;
 }
 
-static inline hash_item *do_coll_get_hash_item(coll_meta_info *info)
-{
-    return (hash_item*)((size_t*)info - info->itdist);
-}
-
 static inline uint32_t do_list_elem_ntotal(list_elem_item *elem)
 {
     return sizeof(list_elem_item) + elem->nbytes;
@@ -1469,7 +1467,7 @@ static hash_item *do_list_item_alloc(struct default_engine *engine,
         info->stotal  = 0;
         info->prefix  = NULL;
         info->head = info->tail = NULL;
-        assert(do_coll_get_hash_item((coll_meta_info*)info) == it);
+        assert((hash_item*)COLL_GET_HASH_ITEM(info) == it);
     }
     return it;
 }
@@ -1769,7 +1767,7 @@ static hash_item *do_set_item_alloc(struct default_engine *engine,
         info->stotal  = 0;
         info->prefix  = NULL;
         info->root    = NULL;
-        assert(do_coll_get_hash_item((coll_meta_info*)info) == it);
+        assert((hash_item*)COLL_GET_HASH_ITEM(info) == it);
     }
     return it;
 }
@@ -2343,7 +2341,7 @@ static hash_item *do_btree_item_alloc(struct default_engine *engine,
 #endif
         info->maxbkeyrange.len = BKEY_NULL;
         info->root    = NULL;
-        assert(do_coll_get_hash_item((coll_meta_info*)info) == it);
+        assert((hash_item*)COLL_GET_HASH_ITEM(info) == it);
     }
     return it;
 }
