@@ -1039,6 +1039,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     snprintf(zpath, sizeof(zpath), "%s", arcus_conf.ensemble_list);
     if (arcus_conf.verbose > 2)
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "zk ensemble: %s\n", zpath);
+
     inc_count(1);
     zh = zookeeper_init(zpath, arcus_zk_watcher, arcus_conf.zk_timeout, &myid, 0, 0);
     if (!zh) {
@@ -1055,20 +1056,22 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         arcus_exit(zh, EX_PROTOCOL);
     }
 
-    /* zk root node */
-    zk_root = "/arcus";
+    /* check zk root directory and get the serice code */
+    if (zk_root == NULL) {
+        zk_root = "/arcus"; /* set zk root directory */
 
-    /* Retrieve the service code for this cache node */
-    if (arcus_get_service_code(zh, zk_root) != 0) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                 "Failed to get the service code for this cache node.\n");
-        arcus_exit(zh, EX_PROTOCOL);
-    }
-    assert(arcus_conf.svc != NULL);
-    if (strlen(arcus_conf.svc) > MAX_SERVICECODE_LENGTH) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                 "Too long service code. servicecode=%s\n", arcus_conf.svc);
-        arcus_exit(zh, EX_PROTOCOL);
+        /* Retrieve the service code for this cache node */
+        if (arcus_get_service_code(zh, zk_root) != 0) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                     "Failed to get the service code for this cache node.\n");
+            arcus_exit(zh, EX_PROTOCOL);
+        }
+        assert(arcus_conf.svc != NULL);
+        if (strlen(arcus_conf.svc) > MAX_SERVICECODE_LENGTH) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                     "Too long service code. servicecode=%s\n", arcus_conf.svc);
+            arcus_exit(zh, EX_PROTOCOL);
+        }
     }
 
     snprintf(zpath, sizeof(zpath), "%s/%s/%s", zk_root, zk_cache_path, arcus_conf.svc);
