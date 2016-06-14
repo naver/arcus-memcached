@@ -304,7 +304,7 @@ static ENGINE_ERROR_CODE default_flush(ENGINE_HANDLE* handle, const void* cookie
 {
     ENGINE_ERROR_CODE ret;
 
-    if (nprefix == 5 && strncmp(prefix, "arcus", 5) == 0) {
+    if (PREFIX_IS_RSVD(prefix, nprefix)) {
         return ENGINE_ENOTSUP; /* Flushing arcus prefix is not allowed */
     }
     ACTION_BEFORE_WRITE(cookie, NULL, 0);
