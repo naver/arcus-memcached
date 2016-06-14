@@ -48,6 +48,9 @@ struct _prefix_t {
     prefix_t *parent_prefix;
 };
 
+#define PREFIX_IS_RSVD(pfx,npfx) ((npfx) == 5 && strncmp((pfx), "arcus", 5) == 0)
+#define PREFIX_IS_USER(pfx,npfx) ((npfx) != 5 || strncmp((pfx), "arcus", 5) != 0)
+
 struct bucket_info {
     uint16_t refcount; /* reference count */
     uint16_t curpower; /* current hash power:

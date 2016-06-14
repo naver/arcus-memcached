@@ -265,6 +265,7 @@ void assoc_scan_next(struct default_engine *engine, struct assoc_scan *scan)
     assert(scan->guard_data == 23456);
     struct assoc *assoc = &engine->assoc;
     hash_item *it;
+    char      *key;
     uint32_t ii, ntables;
     uint32_t found_count;
     uint32_t access_count = 0;
@@ -284,7 +285,8 @@ void assoc_scan_next(struct default_engine *engine, struct assoc_scan *scan)
             it = assoc->roottable[ii].hashtable[scan->cur_bucket];
             while (it != NULL) {
                 access_count++;
-                if (item_is_valid(engine, it)) {
+                key = (char*)item_get_key(it);
+                if (item_is_valid(engine, it) && PREFIX_IS_USER(key, it->nprefix)) {
                     if ((scan->item_count + found_count) >= scan->array_size) {
                         break; /* overflow */
                     }
