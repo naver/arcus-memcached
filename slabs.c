@@ -38,12 +38,13 @@
 
 #include "default_engine.h"
 
-#define RESERVED_SLABS      4
-#define RESERVED_SLAB_RATIO 5
 #define MAX_SPACE_SHORTAGE_LEVEL 100
 #define SSL_FOR_BACKGROUND_EVICT 10  /* space shortage level for background evict */
 #define SSL_CHECK_BY_MEM_REQUEST 100 /* space shortage level check tick by slab*/
 #define SM_MAX_CLASS_INFO 10
+
+static int RSVD_SLAB_COUNT; /* # of reserved slabs */
+static int RSVD_SLAB_RATIO; /* reserved slab ratio */
 
 /* sm slot head */
 typedef struct _sm_slot {
@@ -869,10 +870,13 @@ ENGINE_ERROR_CODE slabs_init(struct default_engine *engine,
 
     logger = engine->server.log->get_logger();
 
+    RSVD_SLAB_COUNT = 4;
+    RSVD_SLAB_RATIO = 5;
+
     engine->slabs.mem_limit = limit;
-    engine->slabs.mem_reserved = (limit / 100) * RESERVED_SLAB_RATIO;
-    if (engine->slabs.mem_reserved < (RESERVED_SLABS*engine->config.item_size_max))
-        engine->slabs.mem_reserved = (RESERVED_SLABS*engine->config.item_size_max);
+    engine->slabs.mem_reserved = (limit / 100) * RSVD_SLAB_RATIO;
+    if (engine->slabs.mem_reserved < (RSVD_SLAB_COUNT*engine->config.item_size_max))
+        engine->slabs.mem_reserved = (RSVD_SLAB_COUNT*engine->config.item_size_max);
 
     if (prealloc) {
         /* Allocate everything in a big chunk with malloc */
@@ -899,7 +903,7 @@ ENGINE_ERROR_CODE slabs_init(struct default_engine *engine,
         p = &engine->slabs.slabclass[i];
         p->size = size;
         p->perslab = engine->config.item_size_max / p->size;
-        p->rsvd_slabs = RESERVED_SLABS;
+        p->rsvd_slabs = RSVD_SLAB_COUNT;
 
         size *= factor;
         if (engine->config.verbose > 1) {
@@ -912,7 +916,7 @@ ENGINE_ERROR_CODE slabs_init(struct default_engine *engine,
     p = &engine->slabs.slabclass[i];
     p->size = engine->config.item_size_max;
     p->perslab = 1;
-    p->rsvd_slabs = RESERVED_SLABS;
+    p->rsvd_slabs = RSVD_SLAB_COUNT;
 
     if (engine->config.verbose > 1) {
         fprintf(stderr, "slab class %3d: chunk size %9u perslab %7u\n",
@@ -1023,9 +1027,9 @@ static int do_slabs_newslab(struct default_engine *engine, const unsigned int id
         if (engine->slabs.slabclass[SM_SLAB_CLSID].rsvd_slabs == 0) { /* undefined */
             /* define the reserved slab count of slab class 0 */
             slabclass_t *z = &engine->slabs.slabclass[SM_SLAB_CLSID];
-            unsigned int additional_slabs = (z->slabs/100) * RESERVED_SLAB_RATIO;
-            if (additional_slabs < RESERVED_SLABS)
-                additional_slabs = RESERVED_SLABS;
+            unsigned int additional_slabs = (z->slabs/100) * RSVD_SLAB_RATIO;
+            if (additional_slabs < RSVD_SLAB_COUNT)
+                additional_slabs = RSVD_SLAB_COUNT;
             z->rsvd_slabs = z->slabs + additional_slabs;
             sm_anchor.free_limit_space = (additional_slabs * z->perslab) * SM_BLOCK_SIZE;
             sm_anchor.free_chunk_space = sm_anchor.free_limit_space
@@ -1251,9 +1255,9 @@ static ENGINE_ERROR_CODE do_slabs_set_memlimit(struct default_engine *engine, si
         return ENGINE_EBADVALUE;
     }
 
-    size_t new_mem_reserved = (memlimit / 100) * RESERVED_SLAB_RATIO;
-    if (new_mem_reserved < (RESERVED_SLABS*engine->config.item_size_max))
-        new_mem_reserved = (RESERVED_SLABS*engine->config.item_size_max);
+    size_t new_mem_reserved = (memlimit / 100) * RSVD_SLAB_RATIO;
+    if (new_mem_reserved < (RSVD_SLAB_COUNT*engine->config.item_size_max))
+        new_mem_reserved = (RSVD_SLAB_COUNT*engine->config.item_size_max);
 
     if (engine->slabs.slabclass[SM_SLAB_CLSID].rsvd_slabs != 0) {
         /* memlimit > engine->slabs.mem_malloced */
