@@ -13723,6 +13723,8 @@ static SERVER_HANDLE_V1 *get_server_api(void)
 #ifdef ENABLE_CLUSTER_AWARE
         .is_zk_integrated = is_zk_integrated,
         .is_my_key = is_my_key,
+        .ketama_hash = arcus_ketama_hash,
+        .ketama_hslice = arcus_ketama_hslice,
 #endif
         .shutdown = shutdown_server
     };
