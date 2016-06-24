@@ -1310,20 +1310,20 @@ int arcus_key_is_mine(const char *key, size_t nkey, bool *mine)
     return ret;
 }
 
-uint32_t arcus_gen_ketama_hash(const char *key, size_t nkey)
+uint32_t arcus_ketama_hash(const char *key, size_t nkey)
 {
     return cluster_config_ketama_hash(arcus_conf.ch, key, nkey);
 }
 
-uint32_t arcus_find_hslice_index(uint32_t hvalue)
+int arcus_ketama_hslice(uint32_t hvalue)
 {
-    return cluster_config_hslice_index(arcus_conf.ch, hvalue);
+    return cluster_config_ketama_hslice(arcus_conf.ch, hvalue);
 }
 
 /**** OLD CODE ****
-uint32_t arcus_gen_ketama_hash(const char *key, size_t nkey, int *hashidx)
+uint32_t arcus_ketama_hash(const char *key, size_t nkey, int *hslice)
 {
-    return cluster_config_ketama_hash(arcus_conf.ch, key, nkey, hashidx);
+    return cluster_config_ketama_hash(arcus_conf.ch, key, nkey, hslice);
 }
 ******************/
 #endif

@@ -427,21 +427,21 @@ uint32_t cluster_config_ketama_hash(struct cluster_config *config,
     return hash_ketama(key, nkey);
 }
 
-uint32_t cluster_config_hslice_index(struct cluster_config *config, uint32_t hvalue)
+int cluster_config_ketama_hslice(struct cluster_config *config, uint32_t hvalue)
 {
     assert(config);
-    return find_continuum(config->self_continuum, NUM_NODE_HASHES, hvalue);
+    return (int)find_continuum(config->self_continuum, NUM_NODE_HASHES, hvalue);
 }
 
 /**** OLD CODE ****
 uint32_t cluster_config_ketama_hash(struct cluster_config *config,
-                                    const char *key, size_t nkey, int *hashidx)
+                                    const char *key, size_t nkey, int *hslice)
 {
     assert(config);
     uint32_t digest = hash_ketama(key, nkey);
-    if (hashidx) {
-        *hashidx = (int)find_continuum(config->self_continuum, NUM_NODE_HASHES, digest);
-        assert(*hashidx >= 0 && *hashidx < NUM_NODE_HASHES);
+    if (hslice) {
+        *hslice = (int)find_continuum(config->self_continuum, NUM_NODE_HASHES, digest);
+        assert(*hslice >= 0 && *hslice < NUM_NODE_HASHES);
     }
     return digest;
 }
