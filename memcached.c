@@ -8510,7 +8510,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "bop delete <key> <bkey or \"bkey range\"> [<eflag_filter>] [<count>] [drop] [noreply|pipe]\\r\\n" "\n"
         "\t" "bop get <key> <bkey or \"bkey range\"> [<eflag_filter>] [[<offset>] <count>] [delete|drop]\\r\\n" "\n"
         "\t" "bop count <key> <bkey or \"bkey range\"> [<eflag_filter>] \\r\\n" "\n"
-        "\t" "bop incr|decr <key> <bkey> <value> [noreply|pipe]\\r\\n" "\n"
+        "\t" "bop incr|decr <key> <bkey> <delta> [<initial> [<eflag>]] [noreply|pipe]\\r\\n" "\n"
         "\t" "bop mget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"comma separated keys\">\\r\\n" "\n"
         "\t" "bop smget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count> [duplicate|unique]\\r\\n<\"comma separated keys\">\\r\\n" "\n"
         "\t" "bop position <key> <bkey> <order>\\r\\n" "\n"
