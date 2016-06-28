@@ -2,9 +2,9 @@ AC_PREREQ(2.52)
 m4_include([m4/version.m4])
 m4_include([m4/c99-backport.m4])
 AC_INIT(arcus-memcached, VERSION_NUMBER, openarcus@googlegroups.com)
-AC_CANONICAL_SYSTEM
+AC_CANONICAL_HOST
 AC_CONFIG_SRCDIR(memcached.c)
-AM_INIT_AUTOMAKE(AC_PACKAGE_NAME, AC_PACKAGE_VERSION)
+AM_INIT_AUTOMAKE(foreign)
 AM_CONFIG_HEADER(config.h)
 
 AC_PROG_CC
