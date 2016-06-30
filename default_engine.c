@@ -915,22 +915,22 @@ static ENGINE_ERROR_CODE default_dump(ENGINE_HANDLE* handle, const void* cookie,
                           const char *prefix, const int nprefix, const char *filepath)
 {
     struct default_engine* engine = get_handle(handle);
-    enum dump_op   op;
-    enum dump_mode mode;
 
     if (memcmp(opstr, "start", 5) == 0) {
-        op = DUMP_OP_START;
         if (memcmp(modestr, "key", 3) != 0) {
             return ENGINE_ENOTSUP;
         }
-        mode = DUMP_MODE_KEY;
-    } else if (memcmp(opstr, "stop", 4) == 0) {
-        op = DUMP_OP_STOP;
-        mode = DUMP_MODE_NONE;
-    } else {
+        if (item_start_dump(engine, DUMP_MODE_KEY, prefix, nprefix, filepath) != 0) {
+            return ENGINE_FAILED;
+        }
+    }
+    else if (memcmp(opstr, "stop", 4) == 0) {
+        item_stop_dump(engine);
+    }
+    else {
         return ENGINE_ENOTSUP;
     }
-    return item_dump(engine, op, mode, prefix, nprefix, filepath);
+    return ENGINE_SUCCESS;
 }
 #endif
 

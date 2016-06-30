@@ -580,19 +580,19 @@ void item_stats_scrub(struct default_engine *engine,
                       ADD_STAT add_stat, const void *cookie);
 
 #ifdef JHPARK_KEY_DUMP
-enum dump_op {
-    DUMP_OP_START = 1, /* dump start */
-    DUMP_OP_STOP  = 2  /* dump stop */
-};
+/**
+ * Item dumpper
+ */
 enum dump_mode {
     DUMP_MODE_NONE = 0,
     DUMP_MODE_KEY  = 1, /* key string only */
     DUMP_MODE_ITEM = 2  /* key string & item value */
 };
-ENGINE_ERROR_CODE item_dump(struct default_engine *engine,
-                            enum dump_op oper, enum dump_mode mode,
-                            const char *prefix, const int nprefix,
-                            const char *filepath);
+int  item_start_dump(struct default_engine *engine,
+                     enum dump_mode mode,
+                     const char *prefix, const int nprefix,
+                     const char *filepath);
+void item_stop_dump(struct default_engine *engine);
 void item_stats_dump(struct default_engine *engine,
                      ADD_STAT add_stat, const void *cookie);
 #endif

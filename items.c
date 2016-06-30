@@ -62,9 +62,6 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it);
 static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *it);
 static void do_item_unlink(struct default_engine *engine, hash_item *it, enum item_unlink_cause cause);
 static void do_coll_all_elem_delete(struct default_engine *engine, hash_item *it);
-#ifdef JHPARK_KEY_DUMP
-static void do_item_dump_stop(struct default_engine *engine);
-#endif
 
 extern int genhash_string_hash(const void* p, size_t nkey);
 
@@ -6257,12 +6254,7 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
 void item_final(struct default_engine *engine)
 {
 #ifdef JHPARK_KEY_DUMP
-    if (engine->dumper.running) {
-        /* stop the dumper */
-        pthread_mutex_lock(&engine->dumper.lock);
-        do_item_dump_stop(engine);
-        pthread_mutex_unlock(&engine->dumper.lock);
-    }
+    item_stop_dump(engine);
 #endif
     coll_del_thread_wakeup(engine);
     pthread_join(engine->coll_del_tid, NULL);
@@ -8065,23 +8057,24 @@ done:
     return NULL;
 }
 
-static ENGINE_ERROR_CODE do_item_dump_start(struct default_engine *engine,
-                                            enum dump_mode mode,
-                                            const char *prefix, const int nprefix,
-                                            const char *filepath)
+int item_start_dump(struct default_engine *engine,
+                    enum dump_mode mode,
+                    const char *prefix, const int nprefix,
+                    const char *filepath)
 {
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     pthread_t tid;
     pthread_attr_t attr;
     int fd;
+    int ret=0;
 
     assert(mode == DUMP_MODE_KEY);
 
+    pthread_mutex_lock(&engine->dumper.lock);
     do {
         if (engine->dumper.running) {
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "Failed to start dumping. Already started.\n");
-            ret = ENGINE_FAILED; break;
+            ret = -1; break;
         }
 
         snprintf(engine->dumper.filepath, MAX_FILEPATH_LENGTH-1, "%s",
@@ -8103,7 +8096,7 @@ static ENGINE_ERROR_CODE do_item_dump_start(struct default_engine *engine,
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "Failed to open the dump file. path=%s err=%s\n",
                         engine->dumper.filepath, strerror(errno));
-            ret = ENGINE_FAILED; break;
+            ret = -1; break;
         }
         close(fd);
 
@@ -8116,37 +8109,22 @@ static ENGINE_ERROR_CODE do_item_dump_start(struct default_engine *engine,
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "Failed to create the dump thread. err=%s\n", strerror(errno));
             engine->dumper.running = false;
-            ret = ENGINE_FAILED; break;
+            ret = -1; break;
         }
     } while(0);
+    pthread_mutex_unlock(&engine->dumper.lock);
 
     return ret;
 }
 
-static void do_item_dump_stop(struct default_engine *engine)
+void item_stop_dump(struct default_engine *engine)
 {
+    pthread_mutex_lock(&engine->dumper.lock);
     if (engine->dumper.running) {
         /* stop the dumper */
         engine->dumper.stop = true;
     }
-}
-
-ENGINE_ERROR_CODE item_dump(struct default_engine *engine,
-                            enum dump_op op, enum dump_mode mode,
-                            const char *prefix, const int nprefix,
-                            const char *filepath)
-{
-    assert(op == DUMP_OP_START || op == DUMP_OP_STOP);
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-
-    pthread_mutex_lock(&engine->dumper.lock);
-    if (op == DUMP_OP_START) {
-        ret = do_item_dump_start(engine, mode, prefix, nprefix, filepath);
-    } else { /* DUMP_OP_STOP */
-        do_item_dump_stop(engine);
-    }
     pthread_mutex_unlock(&engine->dumper.lock);
-    return ret;
 }
 
 void item_stats_dump(struct default_engine *engine,
