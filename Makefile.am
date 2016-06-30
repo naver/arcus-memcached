@@ -125,14 +125,14 @@ BUILT_SOURCES=
 
 # The default storage engine
 default_engine_la_SOURCES= \
-                    assoc.c \
-                    assoc.h \
-                    default_engine.c \
-                    default_engine.h \
-                    items.c \
-                    items.h \
-                    slabs.c \
-                    slabs.h
+                    engines/default/assoc.c \
+                    engines/default/assoc.h \
+                    engines/default/default_engine.c \
+                    engines/default/default_engine.h \
+                    engines/default/items.c \
+                    engines/default/items.h \
+                    engines/default/slabs.c \
+                    engines/default/slabs.h
 default_engine_la_DEPENDENCIES= libmcd_util.la
 default_engine_la_LIBADD= libmcd_util.la $(LIBM)
 default_engine_la_LDFLAGS= -avoid-version -shared -module -no-undefined

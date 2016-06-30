@@ -4,7 +4,7 @@ m4_include([m4/c99-backport.m4])
 AC_INIT([arcus-memcached], [VERSION_NUMBER], [openarcus@googlegroups.com])
 AC_CANONICAL_HOST
 AC_CONFIG_SRCDIR([memcached.c])
-AM_INIT_AUTOMAKE([foreign])
+AM_INIT_AUTOMAKE([subdir-objects foreign])
 AM_CONFIG_HEADER([config.h])
 
 AC_PROG_CC
