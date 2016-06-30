@@ -572,15 +572,12 @@ uint32_t btree_elem_ntotal(btree_elem_item *elem);
 uint8_t  btree_real_nbkey(uint8_t nbkey);
 
 /**
- * Start the item scrubber
- * @param engine handle to the storage engine
+ * Item scrubber
  */
 bool item_start_scrub(struct default_engine *engine, int mode);
-
-/**
- * Get the item scrubber statitistics
- */
-void item_stats_scrub(struct default_engine *engine, ADD_STAT add_stat, const void *cookie);
+void item_onoff_scrub(struct default_engine *engine, bool val);
+void item_stats_scrub(struct default_engine *engine,
+                      ADD_STAT add_stat, const void *cookie);
 
 #ifdef JHPARK_KEY_DUMP
 enum dump_op {

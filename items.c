@@ -7840,7 +7840,7 @@ bool item_start_scrub(struct default_engine *engine, int mode)
     assert(mode == (int)SCRUB_MODE_NORMAL || mode == (int)SCRUB_MODE_STALE);
     bool ret = false;
     pthread_mutex_lock(&engine->scrubber.lock);
-    if (!engine->scrubber.running) {
+    if (engine->scrubber.enabled && !engine->scrubber.running) {
         engine->scrubber.started = time(NULL);
         engine->scrubber.stopped = 0;
         engine->scrubber.visited = 0;
@@ -7865,6 +7865,17 @@ bool item_start_scrub(struct default_engine *engine, int mode)
     return ret;
 }
 
+void item_onoff_scrub(struct default_engine *engine, bool val)
+{
+    pthread_mutex_lock(&engine->scrubber.lock);
+    /* The scrubber can be disabled even if it is running.
+     * The on-going scrubbing continues its task. But, the next
+     * scrubbing cannot be started until it is enabled again.
+     */
+    engine->scrubber.enabled = val;
+    pthread_mutex_unlock(&engine->scrubber.lock);
+}
+
 void item_stats_scrub(struct default_engine *engine,
                       ADD_STAT add_stat, const void *cookie)
 {
@@ -7875,7 +7886,10 @@ void item_stats_scrub(struct default_engine *engine,
     if (engine->scrubber.running) {
         add_stat("scrubber:status", 15, "running", 7, cookie);
     } else {
-        add_stat("scrubber:status", 15, "stopped", 7, cookie);
+        if (engine->scrubber.enabled)
+            add_stat("scrubber:status", 15, "stopped", 7, cookie);
+        else
+            add_stat("scrubber:status", 15, "disabled", 8, cookie);
     }
     if (engine->scrubber.started != 0) {
         if (engine->scrubber.runmode == SCRUB_MODE_NORMAL) {

@@ -118,6 +118,7 @@ enum scrub_mode {
 
 struct engine_scrubber {
    pthread_mutex_t lock;
+   volatile bool   enabled;
    volatile bool   running;
    enum scrub_mode runmode;
    uint64_t        visited;

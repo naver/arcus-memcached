@@ -1353,6 +1353,7 @@ ENGINE_ERROR_CODE create_instance(uint64_t interface, GET_SERVER_API get_server_
        },
       .scrubber = {
          .lock = PTHREAD_MUTEX_INITIALIZER,
+         .enabled = true,
          .running = false,
       },
       .info.engine_info = {
