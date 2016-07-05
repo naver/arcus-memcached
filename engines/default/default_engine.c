@@ -91,8 +91,6 @@ default_get_info(ENGINE_HANDLE* handle)
 static ENGINE_ERROR_CODE
 initalize_configuration(struct default_engine *se, const char *cfg_str)
 {
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-
     se->config.vb0 = true;
 
     if (cfg_str != NULL) {
@@ -149,13 +147,15 @@ initalize_configuration(struct default_engine *se, const char *cfg_str)
               .datatype = DT_CONFIGFILE },
             { .key = NULL}
         };
-        ret = se->server.core->parse_config(cfg_str, items, stderr);
+        if (se->server.core->parse_config(cfg_str, items, stderr) != 0) {
+            return ENGINE_FAILED;
+        }
     }
 
     if (se->config.vb0) {
         set_vbucket_state(se, 0, VBUCKET_STATE_ACTIVE);
     }
-    return ret;
+    return ENGINE_SUCCESS;
 }
 
 static ENGINE_ERROR_CODE
