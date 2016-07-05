@@ -236,7 +236,8 @@ extern "C" {
                                       item **item,
                                       const void* key, const size_t nkey,
                                       const size_t nbytes,
-                                      const int flags, const rel_time_t exptime);
+                                      const int flags, const rel_time_t exptime,
+                                      const uint64_t cas);
 
         /**
          * Remove an item.

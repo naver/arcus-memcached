@@ -232,7 +232,8 @@ default_item_allocate(ENGINE_HANDLE* handle, const void* cookie,
                       item **item,
                       const void* key, const size_t nkey,
                       const size_t nbytes,
-                      const int flags, const rel_time_t exptime)
+                      const int flags, const rel_time_t exptime,
+                      const uint64_t cas)
 {
     struct default_engine* engine = get_handle(handle);
     size_t ntotal = sizeof(hash_item) + nkey + nbytes;
@@ -251,6 +252,7 @@ default_item_allocate(ENGINE_HANDLE* handle, const void* cookie,
     it = item_alloc(engine, key, nkey, flags, exptime, nbytes, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     if (it != NULL) {
+        item_set_cas(it, cas);
         *item = it;
         ret = ENGINE_SUCCESS;
     } else {
@@ -1271,15 +1273,6 @@ default_unknown_command(ENGINE_HANDLE* handle, const void* cookie,
     }
 }
 
-/* Item set cas value */
-static void
-default_item_set_cas(ENGINE_HANDLE *handle, const void *cookie,
-                     item* item, uint64_t val)
-{
-    hash_item* it = get_real_item(item);
-    item_set_cas(it, val);
-}
-
 /* Item/Elem Info */
 
 static bool
@@ -1432,8 +1425,6 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .set_verbose      = default_set_verbose,
          /* Unknown Command API */
          .unknown_command  = default_unknown_command,
-         /* Set CAS API */
-         .item_set_cas        = default_item_set_cas,
          /* Info API */
          .get_item_info       = get_item_info,
          .get_list_elem_info  = get_list_elem_info,

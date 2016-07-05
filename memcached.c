@@ -6403,10 +6403,10 @@ static void process_bin_update(conn *c) {
     ENGINE_ERROR_CODE ret;
     item_info info = { .nvalue = 1 };
 
-    ret = mc_engine.v1->allocate(mc_engine.v0, c,
-                                 &it, key, nkey, vlen + 2,
+    ret = mc_engine.v1->allocate(mc_engine.v0, c, &it, key, nkey, vlen+2,
                                  req->message.body.flags,
-                                 realtime(req->message.body.expiration));
+                                 realtime(req->message.body.expiration),
+                                 c->binary_header.request.cas);
     if (ret == ENGINE_SUCCESS && !mc_engine.v1->get_item_info(mc_engine.v0,
                                                               c, it, &info)) {
         mc_engine.v1->release(mc_engine.v0, c, it);
@@ -6416,9 +6416,6 @@ static void process_bin_update(conn *c) {
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        mc_engine.v1->item_set_cas(mc_engine.v0, c, it,
-                                   c->binary_header.request.cas);
-
         switch (c->cmd) {
         case PROTOCOL_BINARY_CMD_ADD:
             c->store_op = OPERATION_ADD;
@@ -6494,8 +6491,8 @@ static void process_bin_append_prepend(conn *c) {
     ENGINE_ERROR_CODE ret;
     item_info info = { .nvalue = 1 };
 
-    ret = mc_engine.v1->allocate(mc_engine.v0, c,
-                                 &it, key, nkey, vlen + 2, 0, 0);
+    ret = mc_engine.v1->allocate(mc_engine.v0, c, &it, key, nkey, vlen+2,
+                                 0, 0, c->binary_header.request.cas);
     if (ret == ENGINE_SUCCESS && !mc_engine.v1->get_item_info(mc_engine.v0,
                                                               c, it, &info)) {
         mc_engine.v1->release(mc_engine.v0, c, it);
@@ -6505,9 +6502,6 @@ static void process_bin_append_prepend(conn *c) {
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        mc_engine.v1->item_set_cas(mc_engine.v0, c, it,
-                                   c->binary_header.request.cas);
-
         switch (c->cmd) {
         case PROTOCOL_BINARY_CMD_APPEND:
             c->store_op = OPERATION_APPEND;
@@ -7781,7 +7775,7 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     char *key;
     size_t nkey;
     unsigned int flags;
-    int32_t exptime_int = 0;
+    int32_t exptime_int=0;
     time_t exptime;
     int vlen;
     uint64_t req_cas_id=0;
@@ -7827,13 +7821,12 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     }
 
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->allocate(mc_engine.v0, c, &it, key, nkey,
-                                 vlen, htonl(flags), realtime(exptime));
+    ret = mc_engine.v1->allocate(mc_engine.v0, c, &it, key, nkey, vlen,
+                                 htonl(flags), realtime(exptime), req_cas_id);
 
     item_info info = { .nvalue = 1 };
     switch (ret) {
     case ENGINE_SUCCESS:
-        mc_engine.v1->item_set_cas(mc_engine.v0, c, it, req_cas_id);
         if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &info)) {
             mc_engine.v1->release(mc_engine.v0, c, it);
             out_string(c, "SERVER_ERROR error getting item data");

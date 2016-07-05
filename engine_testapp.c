@@ -62,7 +62,8 @@ static ENGINE_ERROR_CODE mock_allocate(ENGINE_HANDLE* handle,
                                        const size_t nkey,
                                        const size_t nbytes,
                                        const int flags,
-                                       const rel_time_t exptime) {
+                                       const rel_time_t exptime,
+                                       const uint64_t cas) {
     struct mock_engine *me = get_handle(handle);
     struct mock_connstruct *c = (void*)cookie;
     if (c == NULL) {
@@ -76,7 +77,7 @@ static ENGINE_ERROR_CODE mock_allocate(ENGINE_HANDLE* handle,
            (ret = me->the_engine->allocate((ENGINE_HANDLE*)me->the_engine, c,
                                            item, key, nkey,
                                            nbytes, flags,
-                                           exptime)) == ENGINE_EWOULDBLOCK &&
+                                           exptime, cas)) == ENGINE_EWOULDBLOCK &&
            c->handle_ewouldblock)
     {
         ++c->nblocks;
@@ -339,13 +340,6 @@ static ENGINE_ERROR_CODE mock_unknown_command(ENGINE_HANDLE* handle,
     return ret;
 }
 
-static void mock_item_set_cas(ENGINE_HANDLE *handle, const void *cookie,
-                              item* item, uint64_t val)
-{
-    struct mock_engine *me = get_handle(handle);
-    me->the_engine->item_set_cas((ENGINE_HANDLE*)me->the_engine, cookie, item, val);
-}
-
 
 static bool mock_get_item_info(ENGINE_HANDLE *handle, const void *cookie,
                                const item* item, item_info *item_info)
@@ -420,7 +414,6 @@ struct mock_engine default_mock_engine = {
         .get_stats_struct = mock_get_stats_struct,
         .aggregate_stats = mock_aggregate_stats,
         .unknown_command = mock_unknown_command,
-        .item_set_cas = mock_item_set_cas,
         .get_item_info = mock_get_item_info,
         .errinfo = mock_errinfo
     }
