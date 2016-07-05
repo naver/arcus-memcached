@@ -31,17 +31,29 @@
 #include "memcached/util.h"
 #include "memcached/config_parser.h"
 
+#define ACTION_BEFORE_WRITE(c, k, l)
+#define ACTION_AFTER_WRITE(c, r)
+
+/*
+ * vbucket related structures and functions
+ */
 #define CMD_SET_VBUCKET 0x83
 #define CMD_GET_VBUCKET 0x84
 #define CMD_DEL_VBUCKET 0x85
-
-#define ACTION_BEFORE_WRITE(c, k, l)
-#define ACTION_AFTER_WRITE(c, r)
 
 union vbucket_info_adapter {
     char c;
     struct vbucket_info v;
 };
+
+static const char*
+vbucket_state_name(enum vbucket_state s)
+{
+    static const char * vbucket_states[] = {
+        "dead", "active", "replica", "pending"
+    };
+    return vbucket_states[s];
+}
 
 static void
 set_vbucket_state(struct default_engine *e, uint16_t vbid, enum vbucket_state to)
@@ -70,6 +82,9 @@ handled_vbucket(struct default_engine *e, uint16_t vbid)
 /* mechanism for handling bad vbucket requests */
 #define VBUCKET_GUARD(e, v) if (!handled_vbucket(e, v)) { return ENGINE_NOT_MY_VBUCKET; }
 
+/*
+ * common static functions
+ */
 static inline struct default_engine*
 get_handle(ENGINE_HANDLE* handle)
 {
@@ -81,6 +96,10 @@ get_real_item(item* item)
 {
     return (hash_item*)item;
 }
+
+/*
+ * DEFAULT ENGINE API
+ */
 
 static const engine_info*
 default_get_info(ENGINE_HANDLE* handle)
@@ -203,6 +222,10 @@ default_destroy(ENGINE_HANDLE* handle)
         free(se);
     }
 }
+
+/*
+ * Item API
+ */
 
 static ENGINE_ERROR_CODE
 default_item_allocate(ENGINE_HANDLE* handle, const void* cookie,
@@ -860,9 +883,12 @@ default_setattr(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
-/* Stats */
+/*
+ * Stats API
+ */
 
-static void stats_engine(struct default_engine *engine, ADD_STAT add_stat, const void *cookie)
+static void stats_engine(struct default_engine *engine,
+                         ADD_STAT add_stat, const void *cookie)
 {
     char val[128];
     int len;
@@ -889,15 +915,8 @@ static void stats_engine(struct default_engine *engine, ADD_STAT add_stat, const
     pthread_mutex_unlock(&engine->stats.lock);
 }
 
-static const char * vbucket_state_name(enum vbucket_state s)
-{
-    static const char * vbucket_states[] = {
-        "dead", "active", "replica", "pending"
-    };
-    return vbucket_states[s];
-}
-
-static void stats_vbucket(struct default_engine *engine, ADD_STAT add_stat, const void *cookie)
+static void stats_vbucket(struct default_engine *engine,
+                          ADD_STAT add_stat, const void *cookie)
 {
     for (int i = 0; i < NUM_VBUCKETS; i++) {
         enum vbucket_state state = get_vbucket_state(engine, i);
@@ -970,6 +989,10 @@ default_get_prefix_stats(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
+/*
+ * Dump API
+ */
+
 static char *
 default_cachedump(ENGINE_HANDLE* handle, const void* cookie,
                   const unsigned int slabs_clsid, const unsigned int limit,
@@ -1006,7 +1029,7 @@ default_dump(ENGINE_HANDLE* handle, const void* cookie,
 #endif
 
 /*
- * Dynamic Configuration API
+ * Config API
  */
 
 static ENGINE_ERROR_CODE
@@ -1052,7 +1075,9 @@ default_set_verbose(ENGINE_HANDLE* handle, const void* cookie,
     pthread_mutex_unlock(&engine->cache_lock);
 }
 
-/* Unknown Command */
+/*
+ * Unknown Command API
+ */
 
 static protocol_binary_response_status
 scrub_cmd(struct default_engine *e, protocol_binary_request_header *request,
@@ -1341,9 +1366,11 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .interface = {
             .interface = 1
          },
+         /* Engine API */
          .get_info          = default_get_info,
          .initialize        = default_initialize,
          .destroy           = default_destroy,
+         /* Item API */
          .allocate          = default_item_allocate,
          .remove            = default_item_delete,
          .release           = default_item_release,
@@ -1351,14 +1378,14 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .store             = default_store,
          .arithmetic        = default_arithmetic,
          .flush             = default_flush,
-         /* LIST functions */
+         /* LIST Collection API */
          .list_struct_create = default_list_struct_create,
          .list_elem_alloc   = default_list_elem_alloc,
          .list_elem_release = default_list_elem_release,
          .list_elem_insert  = default_list_elem_insert,
          .list_elem_delete  = default_list_elem_delete,
          .list_elem_get     = default_list_elem_get,
-         /* SET functions */
+         /* SET Colleciton API */
          .set_struct_create = default_set_struct_create,
          .set_elem_alloc    = default_set_elem_alloc,
          .set_elem_release  = default_set_elem_release,
@@ -1366,7 +1393,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .set_elem_delete   = default_set_elem_delete,
          .set_elem_exist    = default_set_elem_exist,
          .set_elem_get      = default_set_elem_get,
-         /* B+Tree functions */
+         /* B+Tree Collection API */
          .btree_struct_create = default_btree_struct_create,
          .btree_elem_alloc   = default_btree_elem_alloc,
          .btree_elem_release = default_btree_elem_release,
@@ -1385,29 +1412,29 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
 #endif
          .btree_elem_smget   = default_btree_elem_smget,
 #endif
-         /* Attribute functions */
+         /* Attributes API */
          .getattr          = default_getattr,
          .setattr          = default_setattr,
-
-         /* Stats */
+         /* Stats API */
          .get_stats        = default_get_stats,
          .reset_stats      = default_reset_stats,
          .get_prefix_stats = default_get_prefix_stats,
+         /* Dump API */
          .cachedump        = default_cachedump,
 #ifdef JHPARK_KEY_DUMP
          .dump             = default_dump,
 #endif
-
-         /* Config */
+         /* Config API */
          .set_memlimit     = default_set_memlimit,
 #ifdef CONFIG_MAX_COLLECTION_SIZE
          .set_maxcollsize  = default_set_maxcollsize,
 #endif
          .set_verbose      = default_set_verbose,
-
+         /* Unknown Command API */
          .unknown_command  = default_unknown_command,
-
+         /* Set CAS API */
          .item_set_cas        = default_item_set_cas,
+         /* Info API */
          .get_item_info       = get_item_info,
          .get_list_elem_info  = get_list_elem_info,
          .get_set_elem_info   = get_set_elem_info,
