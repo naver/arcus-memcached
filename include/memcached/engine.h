@@ -229,6 +229,7 @@ extern "C" {
          *        value of this item.
          * @param flags the item's flags
          * @param exptime the maximum lifetime of this item
+         * @param cas the cas value to set in this item
          *
          * @return ENGINE_SUCCESS if all goes well
          */
@@ -627,12 +628,6 @@ extern "C" {
                                              const void* cookie,
                                              protocol_binary_request_header *request,
                                              ADD_RESPONSE response);
-
-        /**
-         * Set the CAS id on an item.
-         */
-        void (*item_set_cas)(ENGINE_HANDLE *handle, const void *cookie,
-                             item *item, uint64_t cas);
 
         /**
          * Get information about an item.
