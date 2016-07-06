@@ -66,9 +66,6 @@ extern "C" {
 #define ITEM_LINKED  (1<<8)
 #define ITEM_SLABBED (2<<8)  /* NOT USED */
 
-#define META_OFFSET_IN_ITEM(nkey,nbytes) ((((nkey)+(nbytes)-1)/8+1)*8)
-
-
 struct config {
    bool   use_cas;
    size_t verbose;

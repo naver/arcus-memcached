@@ -136,6 +136,9 @@ extern int genhash_string_hash(const void* p, size_t nkey);
  *     harvesting it on a low memory condition. */
 #define TAIL_REPAIR_TIME (3 * 3600)
 
+/* collection meta info offset */
+#define META_OFFSET_IN_ITEM(nkey,nbytes) ((((nkey)+(nbytes)-1)/8+1)*8)
+
 /* btree position debugging */
 static bool btree_position_debug = false;
 
