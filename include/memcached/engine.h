@@ -647,13 +647,9 @@ extern "C" {
         /*
          * Get information about a collection element.
          */
-        void (*get_list_elem_info)(ENGINE_HANDLE *handle, const void *cookie,
-                                   const eitem* eitem, eitem_info *elem_info);
-
-        void (*get_set_elem_info)(ENGINE_HANDLE *handle, const void *cookie,
-                                  const eitem* eitem, eitem_info *elem_info);
-        void (*get_btree_elem_info)(ENGINE_HANDLE *handle, const void *cookie,
-                                    const eitem* eitem, eitem_info *elem_info);
+        void (*get_elem_info)(ENGINE_HANDLE *handle, const void *cookie,
+                              const int type, /* collection type */
+                              const eitem* eitem, eitem_info *elem_info);
 
         /**
          * Get extra error information for an operation.

@@ -1297,45 +1297,34 @@ get_item_info(ENGINE_HANDLE *handle, const void *cookie,
 }
 
 static void
-get_list_elem_info(ENGINE_HANDLE *handle, const void *cookie,
-                   const eitem* eitem, eitem_info *elem_info)
+get_elem_info(ENGINE_HANDLE *handle, const void *cookie,
+              const int type, /* collection type */
+              const eitem* eitem, eitem_info *elem_info)
 {
-    list_elem_item *elem = (list_elem_item*)eitem;
-    elem_info->nbytes = elem->nbytes;
-    elem_info->value  = elem->value;
-}
-
-static void
-get_set_elem_info(ENGINE_HANDLE *handle, const void *cookie,
-                  const eitem* eitem, eitem_info *elem_info)
-{
-    set_elem_item *elem = (set_elem_item*)eitem;
-    elem_info->nbytes = elem->nbytes;
-    elem_info->value  = elem->value;
-}
-
-static void
-get_btree_elem_info(ENGINE_HANDLE *handle, const void *cookie,
-                    const eitem* eitem, eitem_info *elem_info)
-{
-    btree_elem_item *elem = (btree_elem_item*)eitem;
-    elem_info->nscore = elem->nbkey;
-    elem_info->neflag = elem->neflag;
-    elem_info->nbytes = elem->nbytes;
-    elem_info->score  = elem->data;
-    if (elem->neflag > 0) {
-        if (elem->nbkey == 0) {
-            elem_info->eflag = elem->data + sizeof(uint64_t);
+    if (type == ITEM_TYPE_LIST) {
+        list_elem_item *elem = (list_elem_item*)eitem;
+        elem_info->nbytes = elem->nbytes;
+        elem_info->value  = elem->value;
+    }
+    else if (type == ITEM_TYPE_SET) {
+        set_elem_item *elem = (set_elem_item*)eitem;
+        elem_info->nbytes = elem->nbytes;
+        elem_info->value  = elem->value;
+    }
+    else if (type == ITEM_TYPE_BTREE) {
+        btree_elem_item *elem = (btree_elem_item*)eitem;
+        elem_info->nscore = elem->nbkey;
+        elem_info->neflag = elem->neflag;
+        elem_info->nbytes = elem->nbytes;
+        elem_info->score  = elem->data;
+        if (elem->neflag > 0) {
+            elem_info->eflag = elem->data
+                             + (elem->nbkey==0 ? sizeof(uint64_t) : elem->nbkey);
+            elem_info->value = (const char*)elem_info->eflag + elem->neflag;
         } else {
-            elem_info->eflag = elem->data + elem->nbkey;
-        }
-        elem_info->value = (const char*)elem_info->eflag + elem->neflag;
-    } else {
-        elem_info->eflag = NULL;
-        if (elem->nbkey == 0) {
-            elem_info->value = (const char*)elem->data + sizeof(uint64_t);
-        } else {
-            elem_info->value = (const char*)elem->data + elem->nbkey;
+            elem_info->eflag = NULL;
+            elem_info->value = (const char*)elem->data
+                             + (elem->nbkey==0 ? sizeof(uint64_t) : elem->nbkey);
         }
     }
 }
@@ -1426,10 +1415,8 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          /* Unknown Command API */
          .unknown_command  = default_unknown_command,
          /* Info API */
-         .get_item_info       = get_item_info,
-         .get_list_elem_info  = get_list_elem_info,
-         .get_set_elem_info   = get_set_elem_info,
-         .get_btree_elem_info = get_btree_elem_info
+         .get_item_info    = get_item_info,
+         .get_elem_info    = get_elem_info
       },
       .server = *api,
       .get_server_api = get_server_api,

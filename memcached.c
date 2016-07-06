@@ -1299,7 +1299,7 @@ static void process_lop_insert_complete(conn *c) {
     eitem *elem = (eitem *)c->coll_eitem;
 
     eitem_info info;
-    mc_engine.v1->get_list_elem_info(mc_engine.v0, c, elem, &info);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &info);
 
     if (strncmp((char*)info.value + info.nbytes - 2, "\r\n", 2) != 0) {
         out_string(c, "CLIENT_ERROR bad data chunk");
@@ -1371,7 +1371,7 @@ static void process_sop_insert_complete(conn *c) {
     eitem *elem = (eitem *)c->coll_eitem;
 
     eitem_info info;
-    mc_engine.v1->get_set_elem_info(mc_engine.v0, c, elem, &info);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, elem, &info);
 
     if (strncmp((char*)info.value + info.nbytes - 2, "\r\n", 2) != 0) {
         out_string(c, "CLIENT_ERROR bad data chunk");
@@ -1551,7 +1551,7 @@ static void process_bop_insert_complete(conn *c) {
     eitem *elem = (eitem *)c->coll_eitem;
 
     eitem_info info;
-    mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem, &info);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &info);
 
     if (strncmp((char*)info.value + info.nbytes - 2, "\r\n", 2) != 0) {
         // release the btree element
@@ -1596,7 +1596,8 @@ static void process_bop_insert_complete(conn *c) {
                 resplen = strlen(respptr);
 
                 /* get trimmed element info */
-                mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, trim_result.elems, &info);
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                            trim_result.elems, &info);
                 resplen += make_bop_elem_response(respptr + resplen, &info);
 
                 /* add io vectors */
@@ -1818,8 +1819,8 @@ static void process_bop_mget_complete(conn *c) {
                 resultptr += strlen(resultptr);
 
                 for (e = 0; e < cur_elem_count; e++) {
-                    mc_engine.v1->get_btree_elem_info(mc_engine.v0, c,
-                                                      elem_array[tot_elem_count+e], &info);
+                    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                                elem_array[tot_elem_count+e], &info);
                     sprintf(resultptr, "ELEMENT ");
                     resultlen = strlen(resultptr);
                     resultlen += make_bop_elem_response(resultptr + resultlen, &info);
@@ -2007,7 +2008,8 @@ static void process_bop_smget_complete_old(conn *c) {
                 if (add_iov(c, keys_array[idx].value, keys_array[idx].length) != 0) {
                     ret = ENGINE_ENOMEM; break;
                 }
-                mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem_array[i], &info[i]);
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                            elem_array[i], &info[i]);
                 /* flags */
                 sprintf(respptr, " %u ", htonl(flag_array[i]));
                 resplen = strlen(respptr);
@@ -2154,8 +2156,8 @@ static void process_bop_smget_complete(conn *c) {
             respptr += strlen(respptr);
 
             for (i = 0; i < smres.elem_count; i++) {
-                mc_engine.v1->get_btree_elem_info(mc_engine.v0, c,
-                                  smres.elem_array[i], &info[i]);
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                            smres.elem_array[i], &info[i]);
                 sprintf(respptr, " %u ", htonl(smres.elem_kinfo[i].flag));
                 resplen = strlen(respptr);
                 resplen += make_bop_elem_response(respptr + resplen, &info[i]);
@@ -2198,8 +2200,8 @@ static void process_bop_smget_complete(conn *c) {
             if (smres.trim_count > 0) {
                 eitem_info tinfo;
                 for (i = 0; i < smres.trim_count; i++) {
-                    mc_engine.v1->get_btree_elem_info(mc_engine.v0, c,
-                                                      smres.trim_elems[i], &tinfo);
+                    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                                smres.trim_elems[i], &tinfo);
                     resplen = make_smget_trim_response(respptr, &tinfo);
                     idx = smres.trim_kinfo[i].kidx;
                     if ((add_iov(c, keys_array[idx].value, keys_array[idx].length) != 0) ||
@@ -3626,7 +3628,7 @@ static void process_bin_lop_prepare_nread(conn *c) {
     case ENGINE_SUCCESS:
         {
         eitem_info info;
-        mc_engine.v1->get_list_elem_info(mc_engine.v0, c, elem, &info);
+        mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &info);
         c->ritem   = (char *)info.value;
         c->rlbytes = vlen;
         c->coll_eitem  = (void *)elem;
@@ -3673,7 +3675,7 @@ static void process_bin_lop_insert_complete(conn *c) {
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
     eitem_info info;
-    mc_engine.v1->get_list_elem_info(mc_engine.v0, c, elem, &info);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &info);
     memcpy((char*)info.value + info.nbytes - 2, "\r\n", 2);
 
     bool created;
@@ -3870,7 +3872,8 @@ static void process_bin_lop_get(conn *c) {
 
         eitem_info info[elem_count];
         for (i = 0; i < elem_count; i++) {
-            mc_engine.v1->get_list_elem_info(mc_engine.v0, c, elem_array[i], &info[i]);
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST,
+                                        elem_array[i], &info[i]);
         }
 
         bodylen = sizeof(rsp->message.body) + (elem_count * sizeof(uint32_t));
@@ -4061,7 +4064,8 @@ static void process_bin_sop_prepare_nread(conn *c) {
     case ENGINE_SUCCESS:
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
             eitem_info info;
-            mc_engine.v1->get_set_elem_info(mc_engine.v0, c, elem, &info);
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
+                                        elem, &info);
             c->ritem   = (char *)info.value;
             c->rlbytes = vlen;
          } else {
@@ -4129,7 +4133,7 @@ static void process_bin_sop_insert_complete(conn *c) {
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
     eitem_info info;
-    mc_engine.v1->get_set_elem_info(mc_engine.v0, c, elem, &info);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, elem, &info);
     memcpy((char*)info.value + info.nbytes - 2, "\r\n", 2);
 
     bool created;
@@ -4362,7 +4366,8 @@ static void process_bin_sop_get(conn *c) {
 
         eitem_info info[elem_count];
         for (i = 0; i < elem_count; i++) {
-            mc_engine.v1->get_set_elem_info(mc_engine.v0, c, elem_array[i], &info[i]);
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
+                                        elem_array[i], &info[i]);
         }
 
         bodylen = sizeof(rsp->message.body) + (elem_count * sizeof(uint32_t));
@@ -4566,7 +4571,7 @@ static void process_bin_bop_prepare_nread(conn *c) {
     case ENGINE_SUCCESS:
         {
         eitem_info info;
-        mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem, &info);
+        mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &info);
         if (info.nscore == 0) {
             memcpy((void*)info.score, req->message.body.bkey, sizeof(uint64_t));
         } else {
@@ -4623,7 +4628,7 @@ static void process_bin_bop_insert_complete(conn *c) {
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
     eitem_info info;
-    mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem, &info);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &info);
     memcpy((char*)info.value + info.nbytes - 2, "\r\n", 2);
 
     bool created;
@@ -5033,8 +5038,8 @@ static void process_bin_bop_get(conn *c) {
 
         eitem_info info[elem_count];
         for (i = 0; i < elem_count; i++) {
-            mc_engine.v1->get_btree_elem_info(mc_engine.v0, c,
-                                                    elem_array[i], &info[i]);
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                        elem_array[i], &info[i]);
         }
 
         bodylen = sizeof(rsp->message.body) + (elem_count * (sizeof(uint64_t)+sizeof(uint32_t)));
@@ -5439,7 +5444,8 @@ static void process_bin_bop_smget_complete_old(conn *c) {
 
         eitem_info info[elem_count+1]; /* elem_count might be 0. */
         for (i = 0; i < elem_count; i++) {
-            mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem_array[i], &info[i]);
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                        elem_array[i], &info[i]);
         }
 
         bodylen = sizeof(rsp->message.body);
@@ -5613,7 +5619,8 @@ static void process_bin_bop_smget_complete(conn *c) {
 
         eitem_info info[smres.elem_count+1]; /* elem_count might be 0. */
         for (i = 0; i < smres.elem_count; i++) {
-            mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, smres.elem_array[i], &info[i]);
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                        smres.elem_array[i], &info[i]);
         }
 
         bodylen = sizeof(rsp->message.body);
@@ -9034,7 +9041,8 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
             respptr += strlen(respptr);
 
             for (i = 0; i < elem_count; i++) {
-                mc_engine.v1->get_list_elem_info(mc_engine.v0, c, elem_array[i], &info);
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST,
+                                           elem_array[i], &info);
                 sprintf(respptr, "%u ", info.nbytes-2);
                 if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
                     (add_iov(c, info.value, info.nbytes) != 0)) {
@@ -9113,7 +9121,7 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
     case ENGINE_SUCCESS:
         {
         eitem_info info;
-        mc_engine.v1->get_list_elem_info(mc_engine.v0, c, elem, &info);
+        mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &info);
         c->ritem   = (char *)info.value;
         c->rlbytes = vlen;
         c->coll_eitem  = (void *)elem;
@@ -9467,7 +9475,8 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
             respptr += strlen(respptr);
 
             for (i = 0; i < elem_count; i++) {
-                mc_engine.v1->get_set_elem_info(mc_engine.v0, c, elem_array[i], &info);
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
+                                            elem_array[i], &info);
                 sprintf(respptr, "%u ", info.nbytes-2);
                 if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
                     (add_iov(c, info.value, info.nbytes) != 0)) {
@@ -9557,7 +9566,8 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
     case ENGINE_SUCCESS:
         if (cmd == (int)OPERATION_SOP_INSERT) {
             eitem_info info;
-            mc_engine.v1->get_set_elem_info(mc_engine.v0, c, elem, &info);
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
+                                        elem, &info);
             c->ritem   = (char *)info.value;
             c->rlbytes = vlen;
         } else {
@@ -9861,7 +9871,8 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
             respptr += strlen(respptr);
 
             for (i = 0; i < elem_count; i++) {
-                mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem_array[i], &info);
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                            elem_array[i], &info);
                 resplen = make_bop_elem_response(respptr, &info);
                 if ((add_iov(c, respptr, resplen) != 0) ||
                     (add_iov(c, info.value, info.nbytes) != 0)) {
@@ -10082,7 +10093,8 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
             respptr += strlen(respptr);
 
             for (i = 0; i < elem_count; i++) {
-                mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem_array[i], &info);
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                            elem_array[i], &info);
                 resplen = make_bop_elem_response(respptr, &info);
                 if ((add_iov(c, respptr, resplen) != 0) ||
                     (add_iov(c, info.value, info.nbytes) != 0)) {
@@ -10211,7 +10223,8 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
             respptr += strlen(respptr);
 
             for (i = 0; i < elem_count; i++) {
-                mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem_array[i], &info);
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                            elem_array[i], &info);
                 resplen = make_bop_elem_response(respptr, &info);
                 if ((add_iov(c, respptr, resplen) != 0) ||
                     (add_iov(c, info.value, info.nbytes) != 0)) {
@@ -10336,7 +10349,7 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
     case ENGINE_SUCCESS:
         {
         eitem_info info;
-        mc_engine.v1->get_btree_elem_info(mc_engine.v0, c, elem, &info);
+        mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &info);
         memcpy((void*)info.score, bkey, (info.nscore==0 ? sizeof(uint64_t) : info.nscore));
         if (info.neflag > 0)
             memcpy((void*)info.eflag, eflag, info.neflag);
