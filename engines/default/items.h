@@ -45,6 +45,21 @@ typedef struct _hash_item {
     uint32_t nbytes;    /* The total length of the data (in bytes) */
 } hash_item;
 
+/* Item Internal Flags */
+#define ITEM_WITH_CAS    1
+#define ITEM_IFLAG_LIST  2   /* list item */
+#define ITEM_IFLAG_SET   4   /* set item */
+#define ITEM_IFLAG_BTREE 8   /* b+tree item */
+#define ITEM_IFLAG_COLL  14  /* collection item: list/set/b+tree */
+#define ITEM_LINKED  (1<<8)
+#define ITEM_SLABBED (2<<8)  /* NOT USED */
+
+/* Macros for checking item type */
+#define IS_LIST_ITEM(it)  (((it)->iflag & ITEM_IFLAG_LIST) != 0)
+#define IS_SET_ITEM(it)   (((it)->iflag & ITEM_IFLAG_SET) != 0)
+#define IS_BTREE_ITEM(it) (((it)->iflag & ITEM_IFLAG_BTREE) != 0)
+#define IS_COLL_ITEM(it)  (((it)->iflag & ITEM_IFLAG_COLL) != 0)
+
 /* list element */
 typedef struct _list_elem_item {
     uint16_t refcount;

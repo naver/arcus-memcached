@@ -50,23 +50,13 @@ struct default_engine;
 #include "trace.h"
 #include "items.h"
 #include "assoc.h"
-#include "hash.h"
 #include "slabs.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Item Internal Flags */
-#define ITEM_WITH_CAS    1
-#define ITEM_IFLAG_LIST  2   /* list item */
-#define ITEM_IFLAG_SET   4   /* set item */
-#define ITEM_IFLAG_BTREE 8   /* b+tree item */
-#define ITEM_IFLAG_COLL  14  /* collection item: list/set/b+tree */
-#define ITEM_LINKED  (1<<8)
-#define ITEM_SLABBED (2<<8)  /* NOT USED */
-
-struct config {
+struct engine_config {
    bool   use_cas;
    size_t verbose;
    rel_time_t oldest_live;
@@ -185,7 +175,7 @@ struct default_engine {
    bool            coll_del_sleep;
    pthread_t       coll_del_tid; /* thread id */
 
-   struct config config;
+   struct engine_config config;
    struct engine_stats stats;
    struct engine_scrubber scrubber;
 #ifdef JHPARK_KEY_DUMP

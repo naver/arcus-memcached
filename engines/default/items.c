@@ -78,12 +78,6 @@ extern int genhash_string_hash(const void* p, size_t nkey);
 /* LRU id of small memory items */
 #define LRU_CLSID_FOR_SMALL 0
 
-/* item type checking */
-#define IS_LIST_ITEM(it)  (((it)->iflag & ITEM_IFLAG_LIST) != 0)
-#define IS_SET_ITEM(it)   (((it)->iflag & ITEM_IFLAG_SET) != 0)
-#define IS_BTREE_ITEM(it) (((it)->iflag & ITEM_IFLAG_BTREE) != 0)
-#define IS_COLL_ITEM(it)  (((it)->iflag & ITEM_IFLAG_COLL) != 0)
-
 /* btree item status */
 #define BTREE_ITEM_STATUS_USED   2
 #define BTREE_ITEM_STATUS_UNLINK 1
