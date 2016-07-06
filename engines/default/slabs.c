@@ -686,7 +686,7 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
             sm_anchor.num_smmgr_request = 0;
             do_slabs_check_space_shortage_level(engine);
             if (sm_anchor.space_shortage_level >= SSL_FOR_BACKGROUND_EVICT)
-                coll_del_thread_wakeup(engine);
+                coll_del_thread_wakeup();
         }
     }
 
@@ -790,7 +790,7 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
             sm_anchor.num_smmgr_request = 0;
             do_slabs_check_space_shortage_level(engine);
             if (sm_anchor.space_shortage_level >= SSL_FOR_BACKGROUND_EVICT)
-                coll_del_thread_wakeup(engine);
+                coll_del_thread_wakeup();
         }
     }
 

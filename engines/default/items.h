@@ -382,7 +382,7 @@ ENGINE_ERROR_CODE item_delete(struct default_engine *engine,
                               const void* key, const size_t nkey,
                               uint64_t cas);
 
-void coll_del_thread_wakeup(struct default_engine *engine);
+void coll_del_thread_wakeup(void);
 
 ENGINE_ERROR_CODE item_init(struct default_engine *engine);
 

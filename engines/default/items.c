@@ -159,6 +159,13 @@ static int32_t default_list_size  = 4000;
 static int32_t default_set_size   = 4000;
 static int32_t default_btree_size = 4000;
 
+/* collection delete queue */
+static item_queue      coll_del_queue;
+static pthread_mutex_t coll_del_lock;
+static pthread_cond_t  coll_del_cond;
+static bool            coll_del_sleep;
+static pthread_t       coll_del_tid; /* thread id */
+
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
 /*
@@ -267,39 +274,39 @@ static void decrease_collection_space(struct default_engine *engine, ENGINE_ITEM
 /*
  * Collection Delete Queue Management
  */
-static void push_coll_del_queue(struct default_engine *engine, hash_item *it)
+static void push_coll_del_queue(hash_item *it)
 {
     /* push the item into the tail of delete queue */
     it->next = NULL;
-    pthread_mutex_lock(&engine->coll_del_lock);
-    if (engine->coll_del_queue.tail == NULL) {
-        engine->coll_del_queue.head = it;
+    pthread_mutex_lock(&coll_del_lock);
+    if (coll_del_queue.tail == NULL) {
+        coll_del_queue.head = it;
     } else {
-        engine->coll_del_queue.tail->next = it;
+        coll_del_queue.tail->next = it;
     }
-    engine->coll_del_queue.tail = it;
-    engine->coll_del_queue.size++;
-    if (engine->coll_del_sleep == true) {
+    coll_del_queue.tail = it;
+    coll_del_queue.size++;
+    if (coll_del_sleep == true) {
         /* wake up collection delete thead */
-        pthread_cond_signal(&engine->coll_del_cond);
+        pthread_cond_signal(&coll_del_cond);
     }
-    pthread_mutex_unlock(&engine->coll_del_lock);
+    pthread_mutex_unlock(&coll_del_lock);
 }
 
-static hash_item *pop_coll_del_queue(struct default_engine *engine)
+static hash_item *pop_coll_del_queue(void)
 {
     /* pop an item from the head of delete queue */
     hash_item *it = NULL;
-    pthread_mutex_lock(&engine->coll_del_lock);
-    if (engine->coll_del_queue.head != NULL) {
-        it = engine->coll_del_queue.head;
-        engine->coll_del_queue.head = it->next;
-        if (engine->coll_del_queue.head == NULL) {
-            engine->coll_del_queue.tail = NULL;
+    pthread_mutex_lock(&coll_del_lock);
+    if (coll_del_queue.head != NULL) {
+        it = coll_del_queue.head;
+        coll_del_queue.head = it->next;
+        if (coll_del_queue.head == NULL) {
+            coll_del_queue.tail = NULL;
         }
-        engine->coll_del_queue.size--;
+        coll_del_queue.size--;
     }
-    pthread_mutex_unlock(&engine->coll_del_lock);
+    pthread_mutex_unlock(&coll_del_lock);
     return it;
 }
 
@@ -704,7 +711,7 @@ static void do_item_free(struct default_engine *engine, hash_item *it)
     if (IS_COLL_ITEM(it)) {
         coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
         if (info->ccnt > 0) { /* NOT empty collection (list or set) */
-            push_coll_del_queue(engine, it);
+            push_coll_del_queue(it);
             return;
         }
     }
@@ -5730,12 +5737,12 @@ static void do_coll_all_elem_delete(struct default_engine *engine, hash_item *it
     }
 }
 
-static void coll_del_thread_sleep(struct default_engine *engine)
+static void coll_del_thread_sleep(void)
 {
     struct timeval  tv;
     struct timespec to;
-    pthread_mutex_lock(&engine->coll_del_lock);
-    if (engine->coll_del_queue.head == NULL) {
+    pthread_mutex_lock(&coll_del_lock);
+    if (coll_del_queue.head == NULL) {
         /* 50 mili second sleep */
         gettimeofday(&tv, NULL);
         tv.tv_usec += 50000;
@@ -5746,12 +5753,12 @@ static void coll_del_thread_sleep(struct default_engine *engine)
         to.tv_sec = tv.tv_sec;
         to.tv_nsec = tv.tv_usec * 1000;
 
-        engine->coll_del_sleep = true;
-        pthread_cond_timedwait(&engine->coll_del_cond,
-                               &engine->coll_del_lock, &to);
-        engine->coll_del_sleep = false;
+        coll_del_sleep = true;
+        pthread_cond_timedwait(&coll_del_cond,
+                               &coll_del_lock, &to);
+        coll_del_sleep = false;
     }
-    pthread_mutex_unlock(&engine->coll_del_lock);
+    pthread_mutex_unlock(&coll_del_lock);
 }
 
 static void *collection_delete_thread(void *arg)
@@ -5765,7 +5772,7 @@ static void *collection_delete_thread(void *arg)
     struct timespec background_sleep_time = {0, 0};
 
     while (engine->initialized) {
-        it = pop_coll_del_queue(engine);
+        it = pop_coll_del_queue();
         if (it == NULL) {
 #ifdef USE_SINGLE_LRU_LIST
             expired_cnt = check_expired_collections(engine, 1, &space_shortage_level);
@@ -5802,7 +5809,7 @@ static void *collection_delete_thread(void *arg)
                     *****/
                     background_evict_flag = false;
                 }
-                coll_del_thread_sleep(engine);
+                coll_del_thread_sleep();
             }
             continue;
         }
@@ -5870,14 +5877,14 @@ static void *collection_delete_thread(void *arg)
     return NULL;
 }
 
-void coll_del_thread_wakeup(struct default_engine *engine)
+void coll_del_thread_wakeup(void)
 {
-    pthread_mutex_lock(&engine->coll_del_lock);
-    if (engine->coll_del_sleep == true) {
+    pthread_mutex_lock(&coll_del_lock);
+    if (coll_del_sleep == true) {
         /* wake up collection delete thead */
-        pthread_cond_signal(&engine->coll_del_cond);
+        pthread_cond_signal(&coll_del_cond);
     }
-    pthread_mutex_unlock(&engine->coll_del_lock);
+    pthread_mutex_unlock(&coll_del_lock);
 }
 
 /********************************* ITEM ACCESS *******************************/
@@ -6204,11 +6211,11 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
 {
     logger = engine->server.log->get_logger();
 
-    pthread_mutex_init(&engine->coll_del_lock, NULL);
-    pthread_cond_init(&engine->coll_del_cond, NULL);
-    engine->coll_del_queue.head = engine->coll_del_queue.tail = NULL;
-    engine->coll_del_queue.size = 0;
-    engine->coll_del_sleep = false;
+    pthread_mutex_init(&coll_del_lock, NULL);
+    pthread_cond_init(&coll_del_cond, NULL);
+    coll_del_queue.head = coll_del_queue.tail = NULL;
+    coll_del_queue.size = 0;
+    coll_del_sleep = false;
 
     item_evict_to_free = engine->config.evict_to_free;
 
@@ -6229,8 +6236,7 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
     logger->log(EXTENSION_LOG_INFO, NULL, "maximum set   size = %d\n", max_set_size);
     logger->log(EXTENSION_LOG_INFO, NULL, "maximum btree size = %d\n", max_btree_size);
 
-    int ret = pthread_create(&engine->coll_del_tid, NULL,
-                             collection_delete_thread, engine);
+    int ret = pthread_create(&coll_del_tid, NULL, collection_delete_thread, engine);
     if (ret != 0) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Can't create thread: %s\n", strerror(ret));
@@ -6253,8 +6259,8 @@ void item_final(struct default_engine *engine)
 #ifdef JHPARK_KEY_DUMP
     item_stop_dump(engine);
 #endif
-    coll_del_thread_wakeup(engine);
-    pthread_join(engine->coll_del_tid, NULL);
+    coll_del_thread_wakeup();
+    pthread_join(coll_del_tid, NULL);
 
     int sleep_count = 0;
     while (engine->scrubber.running) {

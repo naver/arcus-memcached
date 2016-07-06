@@ -168,13 +168,6 @@ struct default_engine {
     */
    pthread_mutex_t cache_lock;
 
-   /* collection delete queue */
-   item_queue      coll_del_queue;
-   pthread_mutex_t coll_del_lock;
-   pthread_cond_t  coll_del_cond;
-   bool            coll_del_sleep;
-   pthread_t       coll_del_tid; /* thread id */
-
    struct engine_config config;
    struct engine_stats stats;
    struct engine_scrubber scrubber;
