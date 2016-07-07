@@ -26,10 +26,8 @@
 #define MEMCACHED_DEFAULT_ENGINE_H
 
 #include "config.h"
-
 #include <pthread.h>
 #include <stdbool.h>
-
 #include <memcached/engine.h>
 #include <memcached/util.h>
 #include <memcached/visibility.h>
@@ -42,10 +40,9 @@ struct default_engine;
 #include "assoc.h"
 #include "slabs.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
+/**
+ * engine configuration
+ */
 struct engine_config {
    bool   use_cas;
    size_t verbose;
@@ -66,13 +63,8 @@ struct engine_config {
    bool   vb0;
 };
 
-MEMCACHED_PUBLIC_API
-ENGINE_ERROR_CODE create_instance(uint64_t interface,
-                                  GET_SERVER_API get_server_api,
-                                  ENGINE_HANDLE **handle);
-
 /**
- * Statistic information collected by the default engine
+ * Statistic information collected by engine
  */
 struct engine_stats {
    pthread_mutex_t lock;
@@ -85,6 +77,9 @@ struct engine_stats {
    uint64_t total_items;
 };
 
+/**
+ * scrubber
+ */
 enum scrub_mode {
     SCRUB_MODE_STOP   = 0,
     SCRUB_MODE_NORMAL = 1,
@@ -103,6 +98,9 @@ struct engine_scrubber {
 };
 
 #ifdef JHPARK_KEY_DUMP
+/**
+ * cache item dumper
+ */
 #define MAX_FILEPATH_LENGTH 256
 struct engine_dumper {
    pthread_mutex_t lock;
@@ -157,4 +155,10 @@ struct default_engine {
    } info;
    char vbucket_infos[NUM_VBUCKETS];
 };
+
+MEMCACHED_PUBLIC_API
+ENGINE_ERROR_CODE create_instance(uint64_t interface,
+                                  GET_SERVER_API get_server_api,
+                                  ENGINE_HANDLE **handle);
+
 #endif
