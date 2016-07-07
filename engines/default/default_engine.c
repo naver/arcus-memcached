@@ -35,16 +35,8 @@
 #define ACTION_AFTER_WRITE(c, r)
 
 /*
- * vbucket related structures and functions
+ * vbucket static functions
  */
-#define CMD_SET_VBUCKET 0x83
-#define CMD_GET_VBUCKET 0x84
-#define CMD_DEL_VBUCKET 0x85
-
-union vbucket_info_adapter {
-    char c;
-    struct vbucket_info v;
-};
 
 static const char*
 vbucket_state_name(enum vbucket_state s)

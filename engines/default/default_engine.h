@@ -130,19 +130,6 @@ struct engine_dumper {
 };
 #endif
 
-enum vbucket_state {
-    VBUCKET_STATE_DEAD    = 0,
-    VBUCKET_STATE_ACTIVE  = 1,
-    VBUCKET_STATE_REPLICA = 2,
-    VBUCKET_STATE_PENDING = 3
-};
-
-struct vbucket_info {
-    int state : 2;
-};
-
-#define NUM_VBUCKETS 65536
-
 /**
  * Definition of the private instance data used by the default engine.
  *
