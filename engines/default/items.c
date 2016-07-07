@@ -7132,8 +7132,6 @@ ENGINE_ERROR_CODE btree_elem_smget_old(struct default_engine *engine,
                                    uint32_t *missed_key_array, uint32_t *missed_key_count,
                                    bool *trimmed, bool *duplicated)
 {
-    assert(key_count > 0);
-    assert(count > 0 && (offset+count) <= MAX_SMGET_REQ_COUNT);
     btree_scan_info btree_scan_buf[offset+count+1];
     uint16_t        sort_sindx_buf[offset+count]; /* sorted scan index buffer */
     uint32_t        sort_sindx_cnt, i;
@@ -7180,8 +7178,6 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
                                    const bool unique,
                                    smget_result_t *result)
 {
-    assert(key_count > 0);
-    assert(count > 0 && (offset+count) <= MAX_SMGET_REQ_COUNT);
     btree_scan_info btree_scan_buf[offset+count+1];
     uint16_t        sort_sindx_buf[offset+count]; /* sorted scan index buffer */
     uint32_t        sort_sindx_cnt, i;

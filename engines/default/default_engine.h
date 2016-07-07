@@ -34,11 +34,6 @@
 #include <memcached/util.h>
 #include <memcached/visibility.h>
 
-#define MAX_ELEMENT_BYTES   (4*1024)
-#ifdef SUPPORT_BOP_SMGET
-#define MAX_SMGET_REQ_COUNT 2000
-#endif
-
 /* Slab sizing definitions. */
 #define POWER_SMALLEST      1
 #define POWER_LARGEST       200

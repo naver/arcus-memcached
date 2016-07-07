@@ -1982,6 +1982,9 @@ static void process_bop_smget_complete_old(conn *c) {
                    (c->coll_bkrange.from_nbkey==0 ? sizeof(uint64_t) : c->coll_bkrange.from_nbkey));
             c->coll_bkrange.to_nbkey = c->coll_bkrange.from_nbkey;
         }
+        assert(c->coll_numkeys > 0);
+        assert(c->coll_rcount > 0);
+        assert((c->coll_roffset + c->coll_rcount) <= MAX_SMGET_REQ_COUNT);
         ret = mc_engine.v1->btree_elem_smget_old(mc_engine.v0, c,
                                              keys_array, c->coll_numkeys,
                                              &c->coll_bkrange,
@@ -2127,6 +2130,9 @@ static void process_bop_smget_complete(conn *c) {
                    (c->coll_bkrange.from_nbkey==0 ? sizeof(uint64_t) : c->coll_bkrange.from_nbkey));
             c->coll_bkrange.to_nbkey = c->coll_bkrange.from_nbkey;
         }
+        assert(c->coll_numkeys > 0);
+        assert(c->coll_rcount > 0);
+        assert((c->coll_roffset + c->coll_rcount) <= MAX_SMGET_REQ_COUNT);
         ret = mc_engine.v1->btree_elem_smget(mc_engine.v0, c,
                                              keys_array, c->coll_numkeys,
                                              &c->coll_bkrange,
@@ -5413,6 +5419,9 @@ static void process_bin_bop_smget_complete_old(conn *c) {
                    (c->coll_bkrange.from_nbkey==0 ? sizeof(uint64_t) : c->coll_bkrange.from_nbkey));
             c->coll_bkrange.to_nbkey = c->coll_bkrange.from_nbkey;
         }
+        assert(c->coll_numkeys > 0);
+        assert(c->coll_rcount > 0);
+        assert((c->coll_roffset + c->coll_rcount) <= MAX_SMGET_REQ_COUNT);
         ret = mc_engine.v1->btree_elem_smget_old(mc_engine.v0, c,
                                      keys_array, c->coll_numkeys,
                                      &c->coll_bkrange,
@@ -5585,6 +5594,9 @@ static void process_bin_bop_smget_complete(conn *c) {
                    (c->coll_bkrange.from_nbkey==0 ? sizeof(uint64_t) : c->coll_bkrange.from_nbkey));
             c->coll_bkrange.to_nbkey = c->coll_bkrange.from_nbkey;
         }
+        assert(c->coll_numkeys > 0);
+        assert(c->coll_rcount > 0);
+        assert((c->coll_roffset + c->coll_rcount) <= MAX_SMGET_REQ_COUNT);
         ret = mc_engine.v1->btree_elem_smget(mc_engine.v0, c,
                                      keys_array, c->coll_numkeys,
                                      &c->coll_bkrange,
