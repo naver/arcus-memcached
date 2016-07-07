@@ -244,18 +244,18 @@ typedef struct {
 
 /* item global */
 struct items {
-   hash_item   *heads[MAX_NUMBER_OF_SLAB_CLASSES];
-   hash_item   *tails[MAX_NUMBER_OF_SLAB_CLASSES];
-   hash_item   *lowMK[MAX_NUMBER_OF_SLAB_CLASSES]; /* low mark for invalidation(expire/flush) check */
-   hash_item   *curMK[MAX_NUMBER_OF_SLAB_CLASSES]; /* cur mark for invalidation(expire/flush) check */
-   hash_item   *scrub[MAX_NUMBER_OF_SLAB_CLASSES]; /* scrub mark */
-   hash_item   *sticky_heads[MAX_NUMBER_OF_SLAB_CLASSES];
-   hash_item   *sticky_tails[MAX_NUMBER_OF_SLAB_CLASSES];
-   hash_item   *sticky_curMK[MAX_NUMBER_OF_SLAB_CLASSES]; /* cur mark for invalidation(expire/flush) check */
-   hash_item   *sticky_scrub[MAX_NUMBER_OF_SLAB_CLASSES]; /* scrub mark */
-   unsigned int sizes[MAX_NUMBER_OF_SLAB_CLASSES];
-   unsigned int sticky_sizes[MAX_NUMBER_OF_SLAB_CLASSES];
-   itemstats_t  itemstats[MAX_NUMBER_OF_SLAB_CLASSES];
+   hash_item   *heads[MAX_SLAB_CLASSES];
+   hash_item   *tails[MAX_SLAB_CLASSES];
+   hash_item   *lowMK[MAX_SLAB_CLASSES]; /* low mark for invalidation(expire/flush) check */
+   hash_item   *curMK[MAX_SLAB_CLASSES]; /* cur mark for invalidation(expire/flush) check */
+   hash_item   *scrub[MAX_SLAB_CLASSES]; /* scrub mark */
+   hash_item   *sticky_heads[MAX_SLAB_CLASSES];
+   hash_item   *sticky_tails[MAX_SLAB_CLASSES];
+   hash_item   *sticky_curMK[MAX_SLAB_CLASSES]; /* cur mark for invalidation(expire/flush) check */
+   hash_item   *sticky_scrub[MAX_SLAB_CLASSES]; /* scrub mark */
+   unsigned int sizes[MAX_SLAB_CLASSES];
+   unsigned int sticky_sizes[MAX_SLAB_CLASSES];
+   itemstats_t  itemstats[MAX_SLAB_CLASSES];
 };
 
 /* item queue */

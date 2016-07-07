@@ -45,7 +45,7 @@ typedef struct {
 } slabclass_t;
 
 struct slabs {
-   slabclass_t slabclass[MAX_NUMBER_OF_SLAB_CLASSES];
+   slabclass_t slabclass[MAX_SLAB_CLASSES];
    size_t mem_limit;
    size_t mem_malloced;
    size_t mem_reserved; // Arcus Added it

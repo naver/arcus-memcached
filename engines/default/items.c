@@ -7794,7 +7794,7 @@ static void *item_scubber_main(void *arg)
     struct default_engine *engine = arg;
     assert(engine->scrubber.running == true);
 
-    for (int ii = 0; ii < MAX_NUMBER_OF_SLAB_CLASSES; ++ii)
+    for (int ii = 0; ii < MAX_SLAB_CLASSES; ++ii)
     {
         if (!engine->initialized) break;
 

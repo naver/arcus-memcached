@@ -34,11 +34,6 @@
 #include <memcached/util.h>
 #include <memcached/visibility.h>
 
-/* Slab sizing definitions. */
-#define POWER_SMALLEST      1
-#define POWER_LARGEST       200
-#define MAX_NUMBER_OF_SLAB_CLASSES (POWER_LARGEST+1)
-
 /* Forward decl */
 struct default_engine;
 

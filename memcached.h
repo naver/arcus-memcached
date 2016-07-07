@@ -112,11 +112,6 @@
 #define PIPE_STATE_ERR_MFULL 3
 #define PIPE_STATE_ERR_BAD   4
 
-/* Slab sizing definitions. */
-#define POWER_SMALLEST 1
-#define POWER_LARGEST  200
-#define MAX_NUMBER_OF_SLAB_CLASSES (POWER_LARGEST + 1)
-
 
 #define STAT_KEY_LEN 128
 #define STAT_VAL_LEN 128
@@ -321,7 +316,7 @@ struct thread_stats {
     uint64_t          getattr_misses;
     uint64_t          setattr_hits;
     uint64_t          setattr_misses;
-    struct slab_stats slab_stats[MAX_NUMBER_OF_SLAB_CLASSES];
+    struct slab_stats slab_stats[MAX_SLAB_CLASSES];
 };
 
 
