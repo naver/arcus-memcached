@@ -24,6 +24,7 @@ pkginclude_HEADERS = \
 lib_LTLIBRARIES = ascii_scrub.la \
                   basic_engine_testsuite.la \
                   default_engine.la \
+                  demo_engine.la \
                   example_protocol.la \
                   stdin_term_handler.la
 
@@ -110,6 +111,10 @@ memcached_SOURCES += $(default_engine_la_SOURCES)
 memcached_LDFLAGS += -export-dynamic
 endif
 
+if INCLUDE_DEMO_ENGINE
+memcached_SOURCES += $(demo_engine_la_SOURCES)
+endif
+
 if BUILD_ZK_INTEGRATION
 memcached_SOURCES += arcus_zk.h
 memcached_LDADD += libarcuszk.a -lzookeeper_mt
@@ -137,6 +142,18 @@ default_engine_la_DEPENDENCIES= libmcd_util.la
 default_engine_la_LIBADD= libmcd_util.la $(LIBM)
 default_engine_la_LDFLAGS= -avoid-version -shared -module -no-undefined
 
+# The demo storage engine
+demo_engine_la_SOURCES= \
+                    engines/demo/demo_engine.c \
+                    engines/demo/demo_engine.h \
+                    engines/demo/dm_items.c \
+                    engines/demo/dm_items.h \
+                    engines/demo/dm_assoc.c \
+                    engines/demo/dm_assoc.h
+demo_engine_la_DEPENDENCIES= libmcd_util.la
+demo_engine_la_LIBADD= libmcd_util.la $(LIBM)
+demo_engine_la_LDFLAGS= -avoid-version -shared -module -no-undefined
+
 if BUILD_DTRACE
 BUILT_SOURCES += memcached_dtrace.h
 CLEANFILES += memcached_dtrace.h
@@ -145,10 +162,15 @@ endif
 if DTRACE_INSTRUMENT_OBJ
 memcached_LDADD += memcached_dtrace.o
 memcached_DEPENDENCIES += memcached_dtrace.o
-CLEANFILES += memcached_dtrace.o default_engine_dtrace.lo
+CLEANFILES += memcached_dtrace.o
 
 default_engine_la_LIBADD += default_engine_dtrace.lo
 default_engine_la_DEPENDENCIES += default_engine_dtrace.lo
+CLEANFILES += default_engine_dtrace.lo
+
+demo_engine_la_LIBADD += demo_engine_dtrace.lo
+demo_engine_la_DEPENDENCIES += demo_engine_dtrace.lo
+CLEANFILES += demo_engine_dtrace.lo
 endif
 
 # ASCII support for the scrub command

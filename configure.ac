@@ -203,9 +203,15 @@ if test "x$enable_sticky_item" = "xyes"; then
     AC_DEFINE([ENABLE_STICKY_ITEM],1,[Set to nonzero if you want to include sticky items])
 fi
 
+# default engine
 AC_ARG_ENABLE(default-engine,
   [AS_HELP_STRING([--enable-default-engine], [Build-in default engine])])
 AM_CONDITIONAL([INCLUDE_DEFAULT_ENGINE],[test "$enable_default_engine" = "yes"])
+
+# demo engine
+AC_ARG_ENABLE(demo-engine,
+  [AS_HELP_STRING([--enable-demo-engine], [Build-in demo engine])])
+AM_CONDITIONAL([INCLUDE_DEMO_ENGINE],[test "$enable_demo_engine" = "yes"])
 
 AC_ARG_ENABLE(dtrace,
   [AS_HELP_STRING([--enable-dtrace],[Enable dtrace probes])])
