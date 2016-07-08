@@ -86,9 +86,7 @@ struct demo_engine {
    SERVER_HANDLE_V1 server;
    GET_SERVER_API get_server_api;
 
-   /**
-    * Is the engine initalized or not
-    */
+   /* Is the engine initalized or not */
    volatile bool initialized;
 
    struct dm_assoc assoc;

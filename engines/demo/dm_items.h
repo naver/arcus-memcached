@@ -15,8 +15,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef ITEMS_H
-#define ITEMS_H
+#ifndef DM_ITEMS_H
+#define DM_ITEMS_H
 
 /* hash item strtucture */
 typedef struct _hash_item {

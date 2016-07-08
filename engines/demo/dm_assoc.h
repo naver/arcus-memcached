@@ -15,11 +15,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef ASSOC_H
-#define ASSOC_H
-
-#define PREFIX_IS_RSVD(pfx,npfx) ((npfx) == 5 && strncmp((pfx), "arcus", 5) == 0)
-#define PREFIX_IS_USER(pfx,npfx) ((npfx) != 5 || strncmp((pfx), "arcus", 5) != 0)
+#ifndef DM_ASSOC_H
+#define DM_ASSOC_H
 
 struct dm_assoc {
    uint32_t hashsize;  /* hash table size */

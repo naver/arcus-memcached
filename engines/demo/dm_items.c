@@ -49,34 +49,6 @@ enum item_unlink_cause {
     ITEM_UNLINK_STALE       /* unlink by staleness */
 };
 
-/* element delete cause */
-enum elem_delete_cause {
-    ELEM_DELETE_NORMAL = 1, /* delete by normal request */
-    ELEM_DELETE_COLL,       /* delete by collection deletion */
-    ELEM_DELETE_TRIM        /* delete by overflow trim */
-};
-
-/* Forward Declarations */
-static void do_item_unlink(struct demo_engine *engine, hash_item *it, enum item_unlink_cause cause);
-
-
-/*
- * We only reposition items in the LRU queue if they haven't been repositioned
- * in this many seconds. That saves us from churning on frequently-accessed
- * items.
- */
-#define ITEM_UPDATE_INTERVAL 60
-
-/* LRU id of small memory items */
-#define LRU_CLSID_FOR_SMALL 0
-
-/* special address for representing unlinked status */
-#define ADDR_MEANS_UNLINKED  1
-
-/** How long an object can reasonably be assumed to be locked before
- *     harvesting it on a low memory condition. */
-#define TAIL_REPAIR_TIME (3 * 3600)
-
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
 /*
@@ -442,6 +414,25 @@ static ENGINE_ERROR_CODE do_item_store(struct demo_engine *engine,
     return stored;
 }
 
+static ENGINE_ERROR_CODE do_item_delete(struct demo_engine *engine,
+                                        const void* key, const size_t nkey,
+                                        uint64_t cas)
+{
+    ENGINE_ERROR_CODE ret;
+    hash_item *it = do_item_get(engine, key, nkey, true);
+    if (it == NULL) {
+        ret = ENGINE_KEY_ENOENT;
+    } else {
+        if (cas == 0 || cas == dm_item_get_cas(it)) {
+            do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
+            ret = ENGINE_SUCCESS;
+        } else {
+            ret = ENGINE_KEY_EEXISTS;
+        }
+        do_item_release(engine, it);
+    }
+    return ret;
+}
 
 /********************************* ITEM ACCESS *******************************/
 
@@ -518,26 +509,6 @@ ENGINE_ERROR_CODE dm_item_arithmetic(struct demo_engine *engine,
 /*
  * Delete an item.
  */
-
-static ENGINE_ERROR_CODE do_item_delete(struct demo_engine *engine,
-                                        const void* key, const size_t nkey,
-                                        uint64_t cas)
-{
-    ENGINE_ERROR_CODE ret;
-    hash_item *it = do_item_get(engine, key, nkey, true);
-    if (it == NULL) {
-        ret = ENGINE_KEY_ENOENT;
-    } else {
-        if (cas == 0 || cas == dm_item_get_cas(it)) {
-            do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
-            ret = ENGINE_SUCCESS;
-        } else {
-            ret = ENGINE_KEY_EEXISTS;
-        }
-        do_item_release(engine, it);
-    }
-    return ret;
-}
 
 ENGINE_ERROR_CODE dm_item_delete(struct demo_engine *engine,
                               const void* key, const size_t nkey,
