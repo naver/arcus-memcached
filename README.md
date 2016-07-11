@@ -61,7 +61,7 @@ Only the default engine provides all of the above Arcus functionalities.
 To start Arcus cache server with the default engine, run the following command line with non-root user.
 
 ```
-$ <arcus_install_path>/bin/memcached -m 4000 -p 11211 -E <arcus_install_path>/lib/default_egine.so
+$ <arcus_install_path>/bin/memcached -m 4000 -p 11211 -E <arcus_install_path>/lib/default_engine.so
 ```
 
 Important start options are here.
