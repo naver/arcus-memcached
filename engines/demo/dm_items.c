@@ -152,7 +152,7 @@ static hash_item *do_item_alloc(struct demo_engine *engine,
     if (it == NULL)  {
         return NULL;
     }
-    assert(it->slabs_clsid == 0);
+    //assert(it->slabs_clsid == 0);
 
     it->slabs_clsid = 1;
     it->next = it->prev = it; /* special meaning: unlinked from LRU */
