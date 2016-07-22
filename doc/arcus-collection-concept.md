@@ -19,7 +19,15 @@ Colleciton 유형과 그 구조 및 특징은 아래와 같다.
   Unordered set of unique value 저장을 위해 내부적으로 hash table 구조를 사용한다.
   하나의 set에 들어가는 elments 개수에 비례하여 hash table 전체 크기를 동적으로 조정하기 위해,
   일반적인 tree 구조와 유사하게 여러 depth로 구성되는 hash table 구조를 가진다.
-  
+
+**Map** - unordered set of \<field, value\>
+
+> Map 자료 구조는 \<field, value\> 쌍을 저장한다.
+  Field 값의 유일성 보장과 field 기준으로 해당 element 탐색을 빠르게 하기 위한 hash table 구조를 사용한다.
+  하나의 map에 들어가는 elments 개수에 비례하여 hash table 전체 크기를 동적으로 조정하기 위해,
+  일반적인 tree 구조와 유사하게 여러 depth로 구성되는 hash table 구조를 가진다.
+
+
 **B+tree** - sorted map based on b+tree key
 
 > 각 element 마다 unique key를 두고, 이를 기준으로 정렬된 elements 집합을 b+tree 구조로 저장하며,
@@ -32,7 +40,7 @@ Collection item은 \<key, "colleciton meta info"\> 구조를 가진다.
 Colleciton meta info는 collection 유형에 따른 속성 정보를 가지며,
 해당 collection의 elements에 신속히 접근하기 정보를 가진다.
 예를 들어, list의 head/tail element 주소, set의 최상위 hash table 주소,
-b+tree의 root node 주소가 이에 해당된다.
+map의 최상위 hash table 구조, b+tree의 root node 주소가 이에 해당된다.
 
 ### Element 구조
 
@@ -41,6 +49,11 @@ Colleciton 유형에 따른 element 구조는 아래와 같다.
 - list/set element : \< data \>
 
   각 element는 하나의 데이터 만을 가진다.
+
+- map element : \<field(map element key), data \>
+
+  map에서 각 element를 구분하기 위한 field를 필수적으로 가지며,
+  field는 중복을 허용하지 않는다.
   
 - b+tree element : \< bkey(b+tree key), eflag(element flag), data \>
 

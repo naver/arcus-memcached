@@ -31,6 +31,7 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
+#define MAP_COLLECTION_SUPPORT
 #define SUPPORT_BOP_MGET
 #define SUPPORT_BOP_SMGET
 #define JHPARK_OLD_SMGET_INTERFACE
@@ -112,8 +113,20 @@ extern "C" {
         OPERATION_SOP_EXIST,         /**< Set operation with check existence of element semantics */
         OPERATION_SOP_GET,           /**< Set operation with get element semantics */
 
+#ifdef MAP_COLLECTION_SUPPORT
+        /* map operation */
+        OPERATION_MOP_CREATE = 0x70, /**< Map operation with create structure semantics */
+        OPERATION_MOP_INSERT,        /**< Map operation with insert element semantics */
+        OPERATION_MOP_UPDATE,        /**< Map operation with update element semantics */
+        OPERATION_MOP_DELETE,        /**< Map operation with delete element semantics */
+        OPERATION_MOP_GET,            /**< Map operation with get element semantics */
+
+        /* b+tree operation */
+        OPERATION_BOP_CREATE = 0x80, /**< B+tree operation with create structure semantics */
+#else
         /* b+tree operation */
         OPERATION_BOP_CREATE = 0x70, /**< B+tree operation with create structure semantics */
+#endif
         OPERATION_BOP_INSERT,        /**< B+tree operation with insert element semantics */
         OPERATION_BOP_UPSERT,        /**< B+tree operation with upsert element semantics */
         OPERATION_BOP_UPDATE,        /**< B+tree operation with update element semantics */
@@ -134,6 +147,9 @@ extern "C" {
         ITEM_TYPE_KV = 0,
         ITEM_TYPE_LIST,
         ITEM_TYPE_SET,
+#ifdef MAP_COLLECTION_SUPPORT
+        ITEM_TYPE_MAP,
+#endif
         ITEM_TYPE_BTREE,
         ITEM_TYPE_MAX
     } ENGINE_ITEM_TYPE;
@@ -234,6 +250,15 @@ extern "C" {
 #define MAX_EFLAG_LENG 31
 #define BKEY_NULL  255
 #define EFLAG_NULL 255
+#ifdef MAP_COLLECTION_SUPPORT
+#define MAX_FIELD_LENG 250
+
+    /* field list structure */
+    typedef struct {
+        char *value;
+        size_t length;
+    } field_t;
+#endif
 
     /* bkey type */
     typedef struct {

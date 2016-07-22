@@ -43,6 +43,7 @@ Arcus cache server는 simple key-value 외에 collection 지원으로 다양한 
 - collection item
   - list item - 데이터들의 linked list을 value가지는 item
   - set item - 유일한 데이터들의 집합을 value로 가지는 item
+  - map item - \<field, value\>쌍으로 구성된 데이터 집합을 value로 가지는 item 
   - b+tree item - b+tree key 기반으로 정렬된 데이터 집합을 value로 가지는 item
 
 ### Expiration, Eviction, and Sticky
