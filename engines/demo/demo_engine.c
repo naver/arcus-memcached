@@ -626,7 +626,12 @@ Demo_get_prefix_stats(ENGINE_HANDLE* handle, const void* cookie,
 /*
  * Config API
  */
-
+static ENGINE_ERROR_CODE
+Demo_set_config(ENGINE_HANDLE* handle, const void* cookie,
+        const char* config_type, const char* value0, const char* value1)
+{
+    return ENGINE_ENOTSUP;
+}
 /*
  * Unknown Command API
  */
@@ -733,6 +738,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .get_prefix_stats = Demo_get_prefix_stats,
          /* Dump API */
          /* Config API */
+     .set_config       = Demo_set_config,
          /* Unknown Command API */
          /* Info API */
          .get_item_info    = Demo_get_item_info,

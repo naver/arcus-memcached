@@ -1069,6 +1069,36 @@ default_set_verbose(ENGINE_HANDLE* handle, const void* cookie,
     pthread_mutex_unlock(&engine->cache_lock);
 }
 
+static ENGINE_ERROR_CODE
+default_set_config(ENGINE_HANDLE* handle, const void* cookie,
+            const char* config_type, const char* value0, const char* value1)
+{
+    if(strcmp(config_type,"memlimit")==0){
+        unsigned int mlimit = atoi(value0);
+        int sticky_ratio = atoi(value1);
+        size_t memlimit = (size_t)mlimit*1024*1024;
+        if(memlimit>0)
+            return default_set_memlimit(handle,cookie,memlimit,sticky_ratio);
+    }
+    else if(strcmp(config_type,"max_list_size")==0 ||
+        strcmp(config_type,"max_set_size")==0 ||
+        strcmp(config_type,"max_bree_size")==0)
+    {
+        int coll_type = atoi(value0);
+        int maxsize = atoi(value1);
+        if(coll_type>0 && maxsize>0)
+            return default_set_maxcollsize(handle,cookie,coll_type,&maxsize);
+    }
+    else if(strcmp(config_type,"verbosity")==0){
+        size_t verbosity = (size_t)atoi(value0);
+        if(verbosity>0){
+            default_set_verbose(handle,cookie,verbosity);
+            return ENGINE_SUCCESS;
+        }
+    }
+    return ENGINE_EINVAL;
+}
+
 /*
  * Unknown Command API
  */
@@ -1404,7 +1434,8 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .set_maxcollsize  = default_set_maxcollsize,
 #endif
          .set_verbose      = default_set_verbose,
-         /* Unknown Command API */
+         .set_config       = default_set_config,
+    /* Unknown Command API */
          .unknown_command  = default_unknown_command,
          /* Info API */
          .get_item_info    = get_item_info,

@@ -8164,7 +8164,8 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
         settings.verbose = level;
         perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
         out_string(c, "END");
-        mc_engine.v1->set_verbose(mc_engine.v0, c, settings.verbose);
+        mc_engine.v1->set_config(mc_engine.v0,c,tokens[COMMAND_TOKEN+1].value,tokens[COMMAND_TOKEN+2].value,NULL);
+    //mc_engine.v1->set_verbose(mc_engine.v0, c, settings.verbose);
     } else {
         c->noreply = false;
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -8183,12 +8184,18 @@ static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntok
     } else if (ntokens == 4 && safe_strtoul(tokens[COMMAND_TOKEN+2].value, &mlimit)) {
         ENGINE_ERROR_CODE ret;
         size_t new_maxbytes = (size_t)mlimit * 1024 * 1024;
-
-        ret = mc_engine.v1->set_memlimit(mc_engine.v0, c, new_maxbytes, settings.sticky_ratio);
+    char sticky_buf[50];
+    sprintf(sticky_buf,"%d",settings.sticky_ratio);
+    ret = mc_engine.v1->set_config(mc_engine.v0,c,tokens[COMMAND_TOKEN+1].value,tokens[COMMAND_TOKEN+2].value,sticky_buf);
+       // ret = mc_engine.v1->set_memlimit(mc_engine.v0, c, new_maxbytes, settings.sticky_ratio);
         if (ret == ENGINE_SUCCESS) {
             settings.maxbytes = new_maxbytes;
             out_string(c, "END");
-        } else { /* ENGINE_EBADVALUE */
+        }
+    else if(ret == ENGINE_ENOTSUP){
+        out_string(c, "This engine does not support configuration");
+    }
+    else { /* ENGINE_EBADVALUE */
             out_string(c, "CLIENT_ERROR bad value");
         }
     } else {
@@ -8264,9 +8271,11 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
     }
     else if (ntokens == 4 && safe_strtol(tokens[COMMAND_TOKEN+2].value, &maxsize)) {
         ENGINE_ERROR_CODE ret;
-
+    char buf[50];
+    sprintf(buf,"%d",coll_type);
         SETTING_LOCK();
-        ret = mc_engine.v1->set_maxcollsize(mc_engine.v0, c, coll_type, &maxsize);
+           ret = mc_engine.v1->set_config(mc_engine.v0,c,tokens[COMMAND_TOKEN+1].value,buf,tokens[COMMAND_TOKEN+2].value);
+    // ret = mc_engine.v1->set_maxcollsize(mc_engine.v0, c, coll_type, &maxsize);
         if (ret == ENGINE_SUCCESS) {
             switch (coll_type) {
               case ITEM_TYPE_LIST:
@@ -8286,7 +8295,11 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
         SETTING_UNLOCK();
         if (ret == ENGINE_SUCCESS) {
             out_string(c, "END");
-        } else { /* ENGINE_EBADVALUE */
+        }
+    else if(ret == ENGINE_ENOTSUP){
+        out_string(c,"This engine does not support configuration");
+    }
+    else { /* ENGINE_EBADVALUE */
             out_string(c, "CLIENT_ERROR bad value");
         }
     }

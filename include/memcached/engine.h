@@ -590,7 +590,12 @@ extern "C" {
                                               const void* key, const int nkey,
                                               void *prefix_data);
 
-        ENGINE_ERROR_CODE (*set_memlimit)(ENGINE_HANDLE* handle, const void *cookie,
+       /**
+    * Config API
+    */
+     ENGINE_ERROR_CODE (*set_config)(ENGINE_HANDLE* handle, const void *cookie,
+                      const char* config_type, const char* value0, const char* value1);
+     ENGINE_ERROR_CODE (*set_memlimit)(ENGINE_HANDLE* handle, const void *cookie,
                                           const size_t memlimit, const int sticky_ratio);
 
 #ifdef CONFIG_MAX_COLLECTION_SIZE
