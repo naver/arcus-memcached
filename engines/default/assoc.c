@@ -2,7 +2,7 @@
 /*
  * arcus-memcached - Arcus memory cache server
  * Copyright 2010-2014 NAVER Corp.
- * Copyright 2015 JaM2in Co., Ltd.
+ * Copyright 2015-2016 JaM2in Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -114,8 +114,12 @@ static void redistribute(struct default_engine *engine, unsigned int bucket)
          prev = &assoc->roottable[ii].hashtable[bucket];
          while (*prev != NULL) {
              it = *prev;
+#ifdef LONG_KEY_SUPPORT
+             tabidx = GET_HASH_TABIDX(it->hval, assoc->hashpower, hashmask(assoc->rootpower));
+#else
              tabidx = GET_HASH_TABIDX(engine->server.core->hash(item_get_key(it), it->nkey, 0),
                                       assoc->hashpower, hashmask(assoc->rootpower));
+#endif
              if (tabidx == ii) {
                  prev = &it->h_next;
              } else {
@@ -141,7 +145,11 @@ hash_item *assoc_find(struct default_engine *engine, uint32_t hash,
 
     it = assoc->roottable[tabidx].hashtable[bucket];
     while (it) {
+#ifdef LONG_KEY_SUPPORT
+        if ((nkey == it->nkey) && (hash == it->hval) && (memcmp(key, item_get_key(it), nkey) == 0)) {
+#else
         if ((nkey == it->nkey) && (memcmp(key, item_get_key(it), nkey) == 0)) {
+#endif
             ret = it;
             break;
         }
@@ -257,6 +265,7 @@ void assoc_scan_next(struct default_engine *engine, struct assoc_scan *scan)
     assert(scan->guard_data == 23456);
     struct assoc *assoc = &engine->assoc;
     hash_item *it;
+    char      *key;
     uint32_t ii, ntables;
     uint32_t found_count;
     uint32_t access_count = 0;
@@ -276,7 +285,8 @@ void assoc_scan_next(struct default_engine *engine, struct assoc_scan *scan)
             it = assoc->roottable[ii].hashtable[scan->cur_bucket];
             while (it != NULL) {
                 access_count++;
-                if (item_is_valid(engine, it)) {
+                key = (char*)item_get_key(it);
+                if (item_is_valid(engine, it) && PREFIX_IS_USER(key, it->nprefix)) {
                     if ((scan->item_count + found_count) >= scan->array_size) {
                         break; /* overflow */
                     }
@@ -315,7 +325,7 @@ void assoc_scan_final(struct default_engine *engine, struct assoc_scan *scan)
  * Prefix Management
  */
 prefix_t *assoc_prefix_find(struct default_engine *engine, uint32_t hash,
-                            const char *prefix, const size_t nprefix)
+                            const char *prefix, const int nprefix)
 {
     prefix_t *pt;
 
@@ -330,7 +340,7 @@ prefix_t *assoc_prefix_find(struct default_engine *engine, uint32_t hash,
 }
 
 static prefix_t** _prefixitem_before(struct default_engine *engine, uint32_t hash,
-                                     const char *prefix, const size_t nprefix)
+                                     const char *prefix, const int nprefix)
 {
     prefix_t **pos;
 
@@ -355,7 +365,7 @@ static int _prefix_insert(struct default_engine *engine, uint32_t hash, prefix_t
 }
 
 static void _prefix_delete(struct default_engine *engine, uint32_t hash,
-                           const char *prefix, const uint8_t nprefix)
+                           const char *prefix, const int nprefix)
 {
     prefix_t **prefix_before = _prefixitem_before(engine, hash, prefix, nprefix);
     prefix_t *pt = *prefix_before;
@@ -378,15 +388,13 @@ bool assoc_prefix_isvalid(struct default_engine *engine, hash_item *it)
     rel_time_t current_time = engine->server.core->get_current_time();
     prefix_t *pt;
 
-    if (it->nprefix == it->nkey) {
-        /* the prefix of key: null */
+    if (it->nprefix == 0) { /* the prefix of key is null */
         assert(root_pt != NULL);
         pt = root_pt;
         if (pt->oldest_live != 0 && pt->oldest_live <= current_time && it->time <= pt->oldest_live) {
             return false;
         }
-    } else {
-        /* the prifix of key: given */
+    } else { /* it->nprefix > 0: the prefix of key is given */
         pt = assoc_prefix_find(engine, engine->server.core->hash(item_get_key(it), it->nprefix, 0),
                                item_get_key(it), it->nprefix);
         while (pt != NULL && pt != root_pt) {
@@ -441,7 +449,6 @@ void assoc_prefix_update_size(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
 ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it,
                                     const size_t item_size, prefix_t **pfx_item)
 {
-    assert(it->nprefix == 0);
     const char *key = item_get_key(it);
     size_t     nkey = it->nkey;
     int prefix_depth = 0;
@@ -464,7 +471,7 @@ ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it
     if (prefix_depth == 0) {
         pt = root_pt;
         time(&pt->create_time);
-        it->nprefix = nkey;
+        it->nprefix = 0;
     } else {
         for (i = prefix_depth - 1; i >= 0; i--) {
             prefix_list[i].hash = engine->server.core->hash(key, prefix_list[i].nprefix, 0);
@@ -546,9 +553,8 @@ void assoc_prefix_unlink(struct default_engine *engine, hash_item *it,
                          const size_t item_size, bool drop_if_empty)
 {
     prefix_t *pt;
-    assert(it->nprefix != 0);
 
-    if (it->nprefix == it->nkey) {
+    if (it->nprefix == 0) {
         pt = root_pt;
     } else {
         pt = assoc_prefix_find(engine, engine->server.core->hash(item_get_key(it), it->nprefix, 0),
@@ -621,7 +627,7 @@ static uint32_t do_assoc_count_invalid_prefix(struct default_engine *engine)
 
 static ENGINE_ERROR_CODE
 do_assoc_get_prefix_stats(struct default_engine *engine,
-                          const char *prefix, const int  nprefix,
+                          const char *prefix, const int nprefix,
                           void *prefix_data)
 {
     struct assoc *assoc = &engine->assoc;

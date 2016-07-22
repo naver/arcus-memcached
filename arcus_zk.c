@@ -111,20 +111,20 @@
 #define MAX_SERVICECODE_LENGTH  32
 
 static const char *zk_root = NULL;
-static const char *zk_map_path   = "cache_server_mapping";
-static const char *zk_log_path   = "cache_server_log";
-static const char *zk_cache_path = "cache_list";
-static const char *mc_hb_cmd     = "set arcus:zk-ping 1 0 1\r\n1\r\n";
+static const char *zk_map_dir = "cache_server_mapping";
+static const char *zk_log_dir = "cache_server_log";
+static const char *zk_cache_dir = "cache_list";
+static const char *mc_hb_command = "set arcus:zk-ping 1 0 1\r\n1\r\n";
 
-static zhandle_t    *zh=NULL;
-static clientid_t   myid;
-static int          last_rc=ZOK;
+static zhandle_t *zh=NULL;
+static clientid_t myid;
+static int        last_rc=ZOK;
 
 // this is to indicate if we get shutdown signal
 // during ZK initialization
 // ZK shutdown is done at the end of arcus_zk_init()
 // to simplify synchronization
-volatile sig_atomic_t  arcus_zk_shutdown=0;
+volatile sig_atomic_t arcus_zk_shutdown=0;
 // This flag is now used to indicate graceful shutdown.  See hb_thread for
 // more comment.
 
@@ -138,8 +138,8 @@ typedef struct {
     int     hb_failstop;        // memcached heartbeat failstop
     int     hb_timeout;         // memcached heartbeat timeout
     int     zk_timeout;         // Zookeeper session timeout
-    char    *zk_path;           // Ephemeral ZK path for this mc identification
-    int     zk_path_ver;        // Zookeeper path version
+    char    *znode_name;        // Ephemeral ZK node name for this mc identification
+    int     znode_ver;          // Ephemeral ZK node version
     int     verbose;            // verbose output
     size_t  maxbytes;           // mc -M option
     EXTENSION_LOGGER_DESCRIPTOR *logger; // mc logger
@@ -162,8 +162,8 @@ arcus_zk_conf arcus_conf = {
     .hb_failstop    = HEART_BEAT_DFT_FAILSTOP,
     .hb_timeout     = HEART_BEAT_DFT_TIMEOUT,
     .zk_timeout     = DEFAULT_ZK_TO,
-    .zk_path        = NULL,
-    .zk_path_ver    = -1,
+    .znode_name     = NULL,
+    .znode_ver      = -1,
     .verbose        = -1,
     .port           = -1,
     .maxbytes       = -1,
@@ -392,30 +392,28 @@ arcus_zk_log(zhandle_t *zh, const char *action)
     gettimeofday(&now, 0);
     ltm = localtime (&now.tv_sec);
     strftime(sbuf, sizeof(sbuf), "%Y-%m-%d", ltm);
-    snprintf(zpath, sizeof(zpath), "%s/%s/%s", zk_root, zk_log_path, sbuf);
-    rc = zoo_exists(zh, zpath, ZK_NOWATCH, &zstat);
+    snprintf(zpath, sizeof(zpath), "%s/%s/%s", zk_root, zk_log_dir, sbuf);
 
-    // if this "date" directory does not exist, create one
+    rc = zoo_exists(zh, zpath, ZK_NOWATCH, &zstat);
     if (rc == ZNONODE) {
+        // if this "date" directory does not exist, create one
         rc = zoo_create(zh, zpath, NULL, 0, &ZOO_OPEN_ACL_UNSAFE,
                         0, rcbuf, sizeof(rcbuf));
         if (rc == ZOK && arcus_conf.verbose > 2) {
-            arcus_conf.logger->log(EXTENSION_LOG_DEBUG,
-                    NULL, "znode %s does not exist. created\n", rcbuf);
+            arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
+                    "znode %s does not exist. created\n", rcbuf);
         }
     }
-
-    // if this znode already exist or the creation was successful
     if (rc == ZOK || rc == ZNODEEXISTS) {
+        // if this znode already exist or the creation was successful
         snprintf(zpath, sizeof(zpath), "%s/%s/%s/%s-",
-                 zk_root, zk_log_path, sbuf, arcus_conf.zk_path);
+                 zk_root, zk_log_dir, sbuf, arcus_conf.znode_name);
         snprintf(sbuf,  sizeof(sbuf), "%s", action);
         rc = zoo_create(zh, zpath, sbuf, strlen(sbuf), &ZOO_OPEN_ACL_UNSAFE,
                         ZOO_SEQUENCE, rcbuf, sizeof(rcbuf));
         if (arcus_conf.verbose > 2)
             arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "znode \"%s\" created\n", rcbuf);
     }
-
     if (rc) {
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
                 "cannot log this acvitiy (%s error)\n", zerror(rc));
@@ -519,7 +517,7 @@ mc_hb(zhandle_t *zh, void *context)
     // error during send()/recv(), it may not be a memcached failure at all.
     // We may get slab memory shortage for slab class 0 for above key.
     // For now, we simply return here without ping error or intentional delay
-    err = send(sock, mc_hb_cmd, 28, 0);
+    err = send(sock, mc_hb_command, 28, 0);
     if (err > 0) {
         // expects "STORED\r\n"
         err = recv(sock, buf, 8, 0);
@@ -819,10 +817,11 @@ static int arcus_build_znode_name(char *ensemble_list)
     if (getenv("ARCUS_CACHE_PUBLIC_IP") != NULL) {
         free(arcus_conf.hostip);
         arcus_conf.hostip = strdup(getenv("ARCUS_CACHE_PUBLIC_IP"));
-        arcus_conf.logger->log(EXTENSION_LOG_DETAIL, NULL, "local public IP: %s\n", arcus_conf.hostip);
+        arcus_conf.logger->log(EXTENSION_LOG_DETAIL, NULL, "local public IP: %s\n",
+                               arcus_conf.hostip);
     }
 
-    if (!arcus_conf.zk_path) {
+    if (!arcus_conf.znode_name) {
         char *hostp=NULL;
         char  hostbuf[100];
         // Also get local hostname.
@@ -847,7 +846,7 @@ static int arcus_build_znode_name(char *ensemble_list)
         snprintf(rcbuf, sizeof(rcbuf), "%s:%d", arcus_conf.hostip, arcus_conf.port);
         arcus_conf.mc_ipport = strdup(rcbuf);
         snprintf(rcbuf, sizeof(rcbuf), "%s-%s", arcus_conf.mc_ipport, hostp);
-        arcus_conf.zk_path = strdup(rcbuf);
+        arcus_conf.znode_name = strdup(rcbuf);
     }
     return 0; // EX_OK
 }
@@ -859,7 +858,7 @@ static int arcus_get_service_code(zhandle_t *zh, const char *root)
     int  rc;
 
     // sync map path
-    snprintf(zpath, sizeof(zpath), "%s/%s", root, zk_map_path);
+    snprintf(zpath, sizeof(zpath), "%s/%s", root, zk_map_dir);
     inc_count(1);
     rc = zoo_async(zh, zpath, arcus_zk_sync_cb, NULL);
     if (rc != ZOK) {
@@ -878,7 +877,7 @@ static int arcus_get_service_code(zhandle_t *zh, const char *root)
 
     // First check: get children of "/cache_server_mapping/ip:port"
     snprintf(zpath, sizeof(zpath), "%s/%s/%s",
-             root, zk_map_path, arcus_conf.mc_ipport);
+             root, zk_map_dir, arcus_conf.mc_ipport);
     rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
     if (rc == ZNONODE) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -887,7 +886,7 @@ static int arcus_get_service_code(zhandle_t *zh, const char *root)
 
         // Second check: get children of "/cache_server_mapping/ip"
         snprintf(zpath, sizeof(zpath), "%s/%s/%s",
-                 root, zk_map_path, arcus_conf.hostip);
+                 root, zk_map_dir, arcus_conf.hostip);
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Recheck the server mapping without the port number."
                 " zpath=%s\n", zpath);
@@ -930,7 +929,7 @@ static int arcus_create_ephemeral_znode(zhandle_t *zh, const char *root)
     struct Stat zstat;
 
     snprintf(zpath, sizeof(zpath), "%s/%s",
-             arcus_conf.cluster_path, arcus_conf.zk_path);
+             arcus_conf.cluster_path, arcus_conf.znode_name);
     snprintf(value, sizeof(value), "%ldMB", (long)arcus_conf.maxbytes/1024/1024);
     rc = zoo_create(zh, zpath, value, strlen(value), &ZOO_OPEN_ACL_UNSAFE,
                     ZOO_EPHEMERAL, rcbuf, sizeof(rcbuf));
@@ -957,7 +956,7 @@ static int arcus_create_ephemeral_znode(zhandle_t *zh, const char *root)
     }
 
     // store this version number, just in case we restart
-    arcus_conf.zk_path_ver = zstat.version;
+    arcus_conf.znode_ver = zstat.version;
     return 0;
 }
 
@@ -1014,7 +1013,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     rc = arcus_build_znode_name(ensemble_list);
     if (rc != 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                               "arcus_build_znode_name() failed\n");
+                               "Failed to build znode name.\n");
         arcus_exit(zh, rc);
     }
 
@@ -1039,6 +1038,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     snprintf(zpath, sizeof(zpath), "%s", arcus_conf.ensemble_list);
     if (arcus_conf.verbose > 2)
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "zk ensemble: %s\n", zpath);
+
     inc_count(1);
     zh = zookeeper_init(zpath, arcus_zk_watcher, arcus_conf.zk_timeout, &myid, 0, 0);
     if (!zh) {
@@ -1055,23 +1055,25 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         arcus_exit(zh, EX_PROTOCOL);
     }
 
-    /* zk root node */
-    zk_root = "/arcus";
+    /* check zk root directory and get the serice code */
+    if (zk_root == NULL) {
+        zk_root = "/arcus"; /* set zk root directory */
 
-    /* Retrieve the service code for this cache node */
-    if (arcus_get_service_code(zh, zk_root) != 0) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                 "Failed to get the service code for this cache node.\n");
-        arcus_exit(zh, EX_PROTOCOL);
-    }
-    assert(arcus_conf.svc != NULL);
-    if (strlen(arcus_conf.svc) > MAX_SERVICECODE_LENGTH) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                 "Too long service code. servicecode=%s\n", arcus_conf.svc);
-        arcus_exit(zh, EX_PROTOCOL);
+        /* Retrieve the service code for this cache node */
+        if (arcus_get_service_code(zh, zk_root) != 0) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                     "Failed to get the service code for this cache node.\n");
+            arcus_exit(zh, EX_PROTOCOL);
+        }
+        assert(arcus_conf.svc != NULL);
+        if (strlen(arcus_conf.svc) > MAX_SERVICECODE_LENGTH) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                     "Too long service code. servicecode=%s\n", arcus_conf.svc);
+            arcus_exit(zh, EX_PROTOCOL);
+        }
     }
 
-    snprintf(zpath, sizeof(zpath), "%s/%s/%s", zk_root, zk_cache_path, arcus_conf.svc);
+    snprintf(zpath, sizeof(zpath), "%s/%s/%s", zk_root, zk_cache_dir, arcus_conf.svc);
     arcus_conf.cluster_path = strdup(zpath);
     assert(arcus_conf.cluster_path);
 
@@ -1308,20 +1310,20 @@ int arcus_key_is_mine(const char *key, size_t nkey, bool *mine)
     return ret;
 }
 
-uint32_t arcus_gen_ketama_hash(const char *key, size_t nkey)
+uint32_t arcus_ketama_hash(const char *key, size_t nkey)
 {
     return cluster_config_ketama_hash(arcus_conf.ch, key, nkey);
 }
 
-uint32_t arcus_find_hslice_index(uint32_t hvalue)
+int arcus_ketama_hslice(uint32_t hvalue)
 {
-    return cluster_config_hslice_index(arcus_conf.ch, hvalue);
+    return cluster_config_ketama_hslice(arcus_conf.ch, hvalue);
 }
 
 /**** OLD CODE ****
-uint32_t arcus_gen_ketama_hash(const char *key, size_t nkey, int *hashidx)
+uint32_t arcus_ketama_hash(const char *key, size_t nkey, int *hslice)
 {
-    return cluster_config_ketama_hash(arcus_conf.ch, key, nkey, hashidx);
+    return cluster_config_ketama_hash(arcus_conf.ch, key, nkey, hslice);
 }
 ******************/
 #endif

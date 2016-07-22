@@ -8,18 +8,18 @@ use MemcachedTest;
 
 my $server = new_memcached();
 my $sock = $server->sock;
-my $value1 = "A"x66560;
-my $value2 = "B"x66570;
+my $value1 = "A"x77320;
+my $value2 = "B"x77330;
 
-print $sock "set key 0 1 66560\r\n$value1\r\n";
+print $sock "set key 0 1 77320\r\n$value1\r\n";
 is (scalar <$sock>, "STORED\r\n", "stored key");
 
 my $stats  = mem_stats($sock, "slabs");
 my $requested = $stats->{"31:mem_requested"};
 isnt ($requested, "0", "We should have requested some memory");
 
-sleep(2);
-print $sock "set key 0 0 66570\r\n$value2\r\n";
+sleep(3);
+print $sock "set key 0 0 77330\r\n$value2\r\n";
 is (scalar <$sock>, "STORED\r\n", "stored key");
 
 my $stats  = mem_stats($sock, "items");
@@ -29,7 +29,7 @@ is ($reclaimed, "1", "Objects should be reclaimed");
 print $sock "delete key\r\n";
 is (scalar <$sock>, "DELETED\r\n", "deleted key");
 
-print $sock "set key 0 0 66560\r\n$value1\r\n";
+print $sock "set key 0 0 77320\r\n$value1\r\n";
 is (scalar <$sock>, "STORED\r\n", "stored key");
 
 my $stats  = mem_stats($sock, "slabs");

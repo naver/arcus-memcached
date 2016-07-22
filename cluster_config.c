@@ -174,10 +174,10 @@ static void cluster_config_print_node_list(struct cluster_config *config)
 {
     assert(config->num_servers > 0 && config->servers != NULL);
 
-    config->logger->log(EXTENSION_LOG_DEBUG, NULL,
+    config->logger->log(EXTENSION_LOG_INFO, NULL,
                         "cluster node list: count=%d\n", config->num_servers);
     for (int i = 0; i < config->num_servers; i++) {
-        config->logger->log(EXTENSION_LOG_DEBUG, NULL, "node[%d]: %s\n",
+        config->logger->log(EXTENSION_LOG_INFO, NULL, "node[%d]: %s\n",
                             i, config->servers[i].hostport);
     }
 }
@@ -186,10 +186,10 @@ static void cluster_config_print_continuum(struct cluster_config *config)
 {
     assert(config->num_continuum > 0 && config->continuum!= NULL);
 
-    config->logger->log(EXTENSION_LOG_DEBUG, NULL,
+    config->logger->log(EXTENSION_LOG_INFO, NULL,
                         "cluster continuum: count=%d\n", config->num_continuum);
     for (int i = 0; i < config->num_continuum; i++) {
-        config->logger->log(EXTENSION_LOG_DEBUG, NULL, "continuum[%d]: sidx=%d, hash=%x\n",
+        config->logger->log(EXTENSION_LOG_INFO, NULL, "continuum[%d]: sidx=%d, hash=%x\n",
                             i, config->continuum[i].index, config->continuum[i].point);
     }
 }
@@ -216,7 +216,7 @@ static void build_self_continuum(struct continuum_item *continuum, const char *h
     }
     qsort(continuum, pp, sizeof(struct continuum_item), continuum_item_cmp);
 
-    /* build hash index */
+    /* build hash slice index */
     for (pp=0; pp<NUM_NODE_HASHES; pp++) {
         continuum[pp].index = (uint32_t)pp;
         //fprintf(stderr, "continuum[%u] hash=%x\n", continuum[pp].index, continuum[pp].point);
@@ -384,11 +384,9 @@ int cluster_config_reconfigure(struct cluster_config *config,
     }
     pthread_mutex_unlock(&config->lock);
 
-    if (config->is_valid) {
-        if (config->verbose > 2) {
-            cluster_config_print_node_list(config);
-            cluster_config_print_continuum(config);
-        }
+    if (config->is_valid && config->verbose > 2) {
+        cluster_config_print_node_list(config);
+        cluster_config_print_continuum(config);
     }
     return ret;
 }
@@ -429,21 +427,21 @@ uint32_t cluster_config_ketama_hash(struct cluster_config *config,
     return hash_ketama(key, nkey);
 }
 
-uint32_t cluster_config_hslice_index(struct cluster_config *config, uint32_t hvalue)
+int cluster_config_ketama_hslice(struct cluster_config *config, uint32_t hvalue)
 {
     assert(config);
-    return find_continuum(config->self_continuum, NUM_NODE_HASHES, hvalue);
+    return (int)find_continuum(config->self_continuum, NUM_NODE_HASHES, hvalue);
 }
 
 /**** OLD CODE ****
 uint32_t cluster_config_ketama_hash(struct cluster_config *config,
-                                    const char *key, size_t nkey, int *hashidx)
+                                    const char *key, size_t nkey, int *hslice)
 {
     assert(config);
     uint32_t digest = hash_ketama(key, nkey);
-    if (hashidx) {
-        *hashidx = (int)find_continuum(config->self_continuum, NUM_NODE_HASHES, digest);
-        assert(*hashidx >= 0 && *hashidx < NUM_NODE_HASHES);
+    if (hslice) {
+        *hslice = (int)find_continuum(config->self_continuum, NUM_NODE_HASHES, digest);
+        assert(*hslice >= 0 && *hslice < NUM_NODE_HASHES);
     }
     return digest;
 }

@@ -630,8 +630,7 @@ void threadlocal_stats_clear(struct thread_stats *stats) {
     stats->setattr_hits = 0;
     stats->setattr_misses = 0;
 
-    memset(stats->slab_stats, 0,
-           sizeof(struct slab_stats) * MAX_NUMBER_OF_SLAB_CLASSES);
+    memset(stats->slab_stats, 0, sizeof(struct slab_stats)*MAX_SLAB_CLASSES);
 }
 
 void threadlocal_stats_reset(struct thread_stats *thread_stats) {
@@ -753,7 +752,7 @@ void threadlocal_stats_aggregate(struct thread_stats *thread_stats, struct threa
         stats->setattr_hits += thread_stats[ii].setattr_hits;
         stats->setattr_misses += thread_stats[ii].setattr_misses;
 
-        for (sid = 0; sid < MAX_NUMBER_OF_SLAB_CLASSES; sid++) {
+        for (sid = 0; sid < MAX_SLAB_CLASSES; sid++) {
             stats->slab_stats[sid].cmd_set +=
                 thread_stats[ii].slab_stats[sid].cmd_set;
             stats->slab_stats[sid].get_hits +=
@@ -779,7 +778,7 @@ void slab_stats_aggregate(struct thread_stats *stats, struct slab_stats *out) {
     out->cas_hits = 0;
     out->cas_badval = 0;
 
-    for (sid = 0; sid < MAX_NUMBER_OF_SLAB_CLASSES; sid++) {
+    for (sid = 0; sid < MAX_SLAB_CLASSES; sid++) {
         out->cmd_set += stats->slab_stats[sid].cmd_set;
         out->get_hits += stats->slab_stats[sid].get_hits;
         out->delete_hits += stats->slab_stats[sid].delete_hits;

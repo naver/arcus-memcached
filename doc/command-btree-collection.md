@@ -269,13 +269,16 @@ B+tree collection 특정 하나의 eleement에 있는 데이터를 increment 또
 이 명령을 수행할 b+tree element의 데이터는 증감이 가능한 숫자형 데이터이어야 한다.
 
 ```
-bop incr <key> <bkey> <delta> [noreply|pipe]\r\n
-bop decr <key> <bkey> <delta> [noreply|pipe]\r\n
+bop incr <key> <bkey> <delta> [<initial> [<eflag>]] [noreply|pipe]\r\n
+bop decr <key> <bkey> <delta> [<initial> [<eflag>]] [noreply|pipe]\r\n
 ```
 
 - \<key\> - 대상 item의 key string
 - \<bkey\> - 대상 element의 bkey
 - \<delta\> - increment/decrement할 delta 값으로서, 0 보다 큰 숫자 값을 가져야 한다.
+  - increment 연산으로 64bit unsigned integer가 overflow되면, wrap around되어 잔여 값으로 설정된다.
+  - decrement 연산으로 64bit unsigned integer가 underflow되면, 새로운 값은 무조건 0으로 설정된다.
+
 
 성공 시의 response string은 아래와 같다.
 Increment/decrement 수행 후의 데이터 값이다.
@@ -286,10 +289,16 @@ Increment/decrement 수행 후의 데이터 값이다.
 
 실패 시의 response string과 그 의미는 아래와 같다.
 
-- "NOT_FOUND” - key miss
+- “NOT_FOUND” - key miss
 - “NOT_FOUND_ELEMENT” - element miss
 - “TYPE_MISMATCH” - 해당 item이 b+tree collection이 아님
 - “BKEY_MISMATCH” - 명령 인자로 주언진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
+- “OUT_OF_RANGE” - b+tree의 maxcount, maxbkeyrange, overflowaction 속성에 따라,
+                   새로 삽입할 element가 자동 trim되어 삽입되지 않은 상태이다.
+                   예를 들면, overflowaction이 smallest_trim인 상황에서,
+                   새로 삽입할 element의 bkey가 b+tree의 smallest bkey 보다 작으면서
+                   maxcount 개의 elements가 이미 존재하거나 maxbkeyrange를 벗어나는 경우가 이에 해당된다.
+- “OVERFLOWED” - overflow 발생
 - “CLIENT_ERROR cannot increment or decrement non-numeric value” - 해당 element의 데이터가 숫자형이 아님.
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “SERVER_ERROR out of memory [writing get response]” - 메모리 부족

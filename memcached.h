@@ -47,6 +47,9 @@
 /** Maximum length of a key. */
 #define KEY_MAX_LENGTH 250
 
+/** Maximum length of a prefix */
+#define PREFIX_MAX_LENGTH 250
+
 /** Size of an incr buf. */
 #define INCR_MAX_STORAGE_LEN 24
 
@@ -108,13 +111,6 @@
 #define PIPE_STATE_ERR_CFULL 2
 #define PIPE_STATE_ERR_MFULL 3
 #define PIPE_STATE_ERR_BAD   4
-
-/* Slab sizing definitions. */
-#define POWER_SMALLEST 1
-#define POWER_LARGEST  200
-#define CHUNK_ALIGN_BYTES 8
-#define DONT_PREALLOC_SLABS
-#define MAX_NUMBER_OF_SLAB_CLASSES (POWER_LARGEST + 1)
 
 
 #define STAT_KEY_LEN 128
@@ -320,7 +316,7 @@ struct thread_stats {
     uint64_t          getattr_misses;
     uint64_t          setattr_hits;
     uint64_t          setattr_misses;
-    struct slab_stats slab_stats[MAX_NUMBER_OF_SLAB_CLASSES];
+    struct slab_stats slab_stats[MAX_SLAB_CLASSES];
 };
 
 
@@ -487,12 +483,10 @@ struct conn {
     item_attr    coll_attr_space;
     item_attr   *coll_attrp;
     bool         coll_drop;    /* drop flag */
-#ifdef JHPARK_NEW_SMGET_INTERFACE
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
     int          coll_smgmode; /* smget exec mode : 0(oldexec), 1(duplicate), 2(unique) */
 #else
     bool         coll_unique;  /* unique flag (used in smget) */
-#endif
 #endif
     bkey_range   coll_bkrange; /* bkey range */
     eflag_filter coll_efilter; /* eflag filter */

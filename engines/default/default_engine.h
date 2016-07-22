@@ -1,7 +1,7 @@
 /*
  * arcus-memcached - Arcus memory cache server
  * Copyright 2010-2014 NAVER Corp.
- * Copyright 2014-2015 JaM2in Co., Ltd.
+ * Copyright 2014-2016 JaM2in Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,26 +26,11 @@
 #define MEMCACHED_DEFAULT_ENGINE_H
 
 #include "config.h"
-
 #include <pthread.h>
 #include <stdbool.h>
-
 #include <memcached/engine.h>
 #include <memcached/util.h>
 #include <memcached/visibility.h>
-
-#define MAX_ELEMENT_BYTES   (4*1024)
-#define MAX_SM_VALUE_SIZE   8000
-#ifdef SUPPORT_BOP_SMGET
-#define MAX_SMGET_REQ_COUNT 2000
-#endif
-
-/* Slab sizing definitions. */
-#define POWER_SMALLEST      1
-#define POWER_LARGEST       200
-#define CHUNK_ALIGN_BYTES   8
-#define DONT_PREALLOC_SLABS
-#define MAX_NUMBER_OF_SLAB_CLASSES (POWER_LARGEST+1)
 
 /* Forward decl */
 struct default_engine;
@@ -53,26 +38,12 @@ struct default_engine;
 #include "trace.h"
 #include "items.h"
 #include "assoc.h"
-#include "hash.h"
 #include "slabs.h"
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-/* Item Internal Flags */
-#define ITEM_WITH_CAS    1
-#define ITEM_IFLAG_LIST  2   /* list item */
-#define ITEM_IFLAG_SET   4   /* set item */
-#define ITEM_IFLAG_BTREE 8   /* b+tree item */
-#define ITEM_IFLAG_COLL  14  /* collection item: list/set/b+tree */
-#define ITEM_LINKED  (1<<8)
-#define ITEM_SLABBED (2<<8)  /* NOT USED */
-
-#define META_OFFSET_IN_ITEM(nkey,nbytes) ((((nkey)+(nbytes)-1)/8+1)*8)
-
-
-struct config {
+/**
+ * engine configuration
+ */
+struct engine_config {
    bool   use_cas;
    size_t verbose;
    rel_time_t oldest_live;
@@ -92,13 +63,8 @@ struct config {
    bool   vb0;
 };
 
-MEMCACHED_PUBLIC_API
-ENGINE_ERROR_CODE create_instance(uint64_t interface,
-                                  GET_SERVER_API get_server_api,
-                                  ENGINE_HANDLE **handle);
-
 /**
- * Statistic information collected by the default engine
+ * Statistic information collected by engine
  */
 struct engine_stats {
    pthread_mutex_t lock;
@@ -111,6 +77,9 @@ struct engine_stats {
    uint64_t total_items;
 };
 
+/**
+ * scrubber
+ */
 enum scrub_mode {
     SCRUB_MODE_STOP   = 0,
     SCRUB_MODE_NORMAL = 1,
@@ -119,6 +88,7 @@ enum scrub_mode {
 
 struct engine_scrubber {
    pthread_mutex_t lock;
+   volatile bool   enabled;
    volatile bool   running;
    enum scrub_mode runmode;
    uint64_t        visited;
@@ -128,6 +98,9 @@ struct engine_scrubber {
 };
 
 #ifdef JHPARK_KEY_DUMP
+/**
+ * cache item dumper
+ */
 #define MAX_FILEPATH_LENGTH 256
 struct engine_dumper {
    pthread_mutex_t lock;
@@ -144,19 +117,6 @@ struct engine_dumper {
    int             nprefix;
 };
 #endif
-
-enum vbucket_state {
-    VBUCKET_STATE_DEAD    = 0,
-    VBUCKET_STATE_ACTIVE  = 1,
-    VBUCKET_STATE_REPLICA = 2,
-    VBUCKET_STATE_PENDING = 3
-};
-
-struct vbucket_info {
-    int state : 2;
-};
-
-#define NUM_VBUCKETS 65536
 
 /**
  * Definition of the private instance data used by the default engine.
@@ -183,14 +143,7 @@ struct default_engine {
     */
    pthread_mutex_t cache_lock;
 
-   /* collection delete queue */
-   item_queue      coll_del_queue;
-   pthread_mutex_t coll_del_lock;
-   pthread_cond_t  coll_del_cond;
-   bool            coll_del_sleep;
-   pthread_t       coll_del_tid; /* thread id */
-
-   struct config config;
+   struct engine_config config;
    struct engine_stats stats;
    struct engine_scrubber scrubber;
 #ifdef JHPARK_KEY_DUMP
@@ -202,4 +155,10 @@ struct default_engine {
    } info;
    char vbucket_infos[NUM_VBUCKETS];
 };
+
+MEMCACHED_PUBLIC_API
+ENGINE_ERROR_CODE create_instance(uint64_t interface,
+                                  GET_SERVER_API get_server_api,
+                                  ENGINE_HANDLE **handle);
+
 #endif

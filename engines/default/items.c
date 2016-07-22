@@ -2,7 +2,7 @@
 /*
  * arcus-memcached - Arcus memory cache server
  * Copyright 2010-2014 NAVER Corp.
- * Copyright 2014-2015 JaM2in Co., Ltd.
+ * Copyright 2014-2016 JaM2in Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +29,6 @@
 
 #include "default_engine.h"
 
-#define ENABLE_DETACH_REF_ITEM_FROM_LRU 1
 //#define SET_DELETE_NO_MERGE
 //#define BTREE_DELETE_NO_MERGE
 
@@ -63,11 +62,11 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it);
 static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *it);
 static void do_item_unlink(struct default_engine *engine, hash_item *it, enum item_unlink_cause cause);
 static void do_coll_all_elem_delete(struct default_engine *engine, hash_item *it);
-#ifdef JHPARK_KEY_DUMP
-static void do_item_dump_stop(struct default_engine *engine);
-#endif
 
 extern int genhash_string_hash(const void* p, size_t nkey);
+
+/* get hash item address from collection info address */
+#define COLL_GET_HASH_ITEM(info) ((size_t*)(info) - (info)->itdist)
 
 /*
  * We only reposition items in the LRU queue if they haven't been repositioned
@@ -78,12 +77,6 @@ extern int genhash_string_hash(const void* p, size_t nkey);
 
 /* LRU id of small memory items */
 #define LRU_CLSID_FOR_SMALL 0
-
-/* item type checking */
-#define IS_LIST_ITEM(it)  (((it)->iflag & ITEM_IFLAG_LIST) != 0)
-#define IS_SET_ITEM(it)   (((it)->iflag & ITEM_IFLAG_SET) != 0)
-#define IS_BTREE_ITEM(it) (((it)->iflag & ITEM_IFLAG_BTREE) != 0)
-#define IS_COLL_ITEM(it)  (((it)->iflag & ITEM_IFLAG_COLL) != 0)
 
 /* btree item status */
 #define BTREE_ITEM_STATUS_USED   2
@@ -137,6 +130,9 @@ extern int genhash_string_hash(const void* p, size_t nkey);
  *     harvesting it on a low memory condition. */
 #define TAIL_REPAIR_TIME (3 * 3600)
 
+/* collection meta info offset */
+#define META_OFFSET_IN_ITEM(nkey,nbytes) ((((nkey)+(nbytes)-1)/8+1)*8)
+
 /* btree position debugging */
 static bool btree_position_debug = false;
 
@@ -162,6 +158,13 @@ static int32_t max_btree_size  = 50000;
 static int32_t default_list_size  = 4000;
 static int32_t default_set_size   = 4000;
 static int32_t default_btree_size = 4000;
+
+/* collection delete queue */
+static item_queue      coll_del_queue;
+static pthread_mutex_t coll_del_lock;
+static pthread_cond_t  coll_del_cond;
+static bool            coll_del_sleep;
+static pthread_t       coll_del_tid; /* thread id */
 
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
@@ -271,39 +274,39 @@ static void decrease_collection_space(struct default_engine *engine, ENGINE_ITEM
 /*
  * Collection Delete Queue Management
  */
-static void push_coll_del_queue(struct default_engine *engine, hash_item *it)
+static void push_coll_del_queue(hash_item *it)
 {
     /* push the item into the tail of delete queue */
     it->next = NULL;
-    pthread_mutex_lock(&engine->coll_del_lock);
-    if (engine->coll_del_queue.tail == NULL) {
-        engine->coll_del_queue.head = it;
+    pthread_mutex_lock(&coll_del_lock);
+    if (coll_del_queue.tail == NULL) {
+        coll_del_queue.head = it;
     } else {
-        engine->coll_del_queue.tail->next = it;
+        coll_del_queue.tail->next = it;
     }
-    engine->coll_del_queue.tail = it;
-    engine->coll_del_queue.size++;
-    if (engine->coll_del_sleep == true) {
+    coll_del_queue.tail = it;
+    coll_del_queue.size++;
+    if (coll_del_sleep == true) {
         /* wake up collection delete thead */
-        pthread_cond_signal(&engine->coll_del_cond);
+        pthread_cond_signal(&coll_del_cond);
     }
-    pthread_mutex_unlock(&engine->coll_del_lock);
+    pthread_mutex_unlock(&coll_del_lock);
 }
 
-static hash_item *pop_coll_del_queue(struct default_engine *engine)
+static hash_item *pop_coll_del_queue(void)
 {
     /* pop an item from the head of delete queue */
     hash_item *it = NULL;
-    pthread_mutex_lock(&engine->coll_del_lock);
-    if (engine->coll_del_queue.head != NULL) {
-        it = engine->coll_del_queue.head;
-        engine->coll_del_queue.head = it->next;
-        if (engine->coll_del_queue.head == NULL) {
-            engine->coll_del_queue.tail = NULL;
+    pthread_mutex_lock(&coll_del_lock);
+    if (coll_del_queue.head != NULL) {
+        it = coll_del_queue.head;
+        coll_del_queue.head = it->next;
+        if (coll_del_queue.head == NULL) {
+            coll_del_queue.tail = NULL;
         }
-        engine->coll_del_queue.size--;
+        coll_del_queue.size--;
     }
-    pthread_mutex_unlock(&engine->coll_del_lock);
+    pthread_mutex_unlock(&coll_del_lock);
     return it;
 }
 
@@ -448,7 +451,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         id                    = clsid;
     } else {
         clsid_based_on_ntotal = clsid;
-        if (ntotal <= MAX_SM_VALUE_SIZE) {
+        if (ntotal <= MAX_SM_VALUE_LEN) {
             id = LRU_CLSID_FOR_SMALL;
         } else {
             id = clsid;
@@ -463,7 +466,6 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         tries  = space_shortage_level;
         search = engine->items.tails[id];
         while (search != NULL) {
-#ifdef ENABLE_DETACH_REF_ITEM_FROM_LRU
             if (search->nkey > 0) {
                 previt = search->prev;
                 if (search->refcount == 0) {
@@ -480,19 +482,6 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             } else { /* search->nkey == 0: scrub cursor item */
                 search = search->prev; /* ignore it */
             }
-#else
-            if (search->refcount == 0 && search->nkey > 0) {
-                previt = search->prev;
-                if (do_item_isvalid(engine, search, current_time) == false) {
-                    do_item_invalidate(engine, search, id, true);
-                } else {
-                    do_item_evict(engine, search, id, current_time, cookie);
-                }
-                search = previt;
-            } else { /* search->nkey == 0: scrub cursor item */
-                search = search->prev; /* ignore it */
-            }
-#endif
             if ((--tries) == 0) break;
         }
     }
@@ -605,7 +594,6 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         tries  = 200;
         search = engine->items.tails[id];
         while (search != NULL) {
-#ifdef ENABLE_DETACH_REF_ITEM_FROM_LRU
             if (search->nkey > 0) {
                 previt = search->prev;
                 if (search->refcount == 0) {
@@ -624,21 +612,6 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             } else { /* search->nkey == 0: scrub cursor item */
                 search = search->prev; /* ignore it */
             }
-#else
-            if (search->refcount == 0 && search->nkey > 0) {
-                previt = search->prev;
-                if (do_item_isvalid(engine, search, current_time) == false) {
-                    it = do_item_reclaim(engine, search, ntotal, clsid_based_on_ntotal, id);
-                } else {
-                    do_item_evict(engine, search, id, current_time, cookie);
-                    it = slabs_alloc(engine, ntotal, clsid_based_on_ntotal);
-                }
-                if (it != NULL) break; /* allocated */
-                search = previt;
-            } else { /* search->nkey == 0: scrub cursor item */
-                search = search->prev; /* ignore it */
-            }
-#endif
             if ((--tries) == 0) break;
         }
     }
@@ -708,14 +681,11 @@ static hash_item *do_item_alloc(struct default_engine *engine,
     assert(it->slabs_clsid == 0);
 
     it->slabs_clsid = id;
+    assert(it->slabs_clsid > 0);
     assert(it != engine->items.heads[it->slabs_clsid]);
 
-#ifdef ENABLE_DETACH_REF_ITEM_FROM_LRU
-    it->next = it->prev = it;
+    it->next = it->prev = it; /* special meaning: unlinked from LRU */
     it->h_next = 0;
-#else
-    it->next = it->prev = it->h_next = 0;
-#endif
     it->refcount = 1;     /* the caller will have a reference */
     it->refchunk = 0;
     DEBUG_REFCNT(it, '*');
@@ -741,7 +711,7 @@ static void do_item_free(struct default_engine *engine, hash_item *it)
     if (IS_COLL_ITEM(it)) {
         coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
         if (info->ccnt > 0) { /* NOT empty collection (list or set) */
-            push_coll_del_queue(engine, it);
+            push_coll_del_queue(it);
             return;
         }
     }
@@ -762,7 +732,7 @@ static void item_link_q(struct default_engine *engine, hash_item *it)
     int clsid = 1;
 #else
     int clsid = it->slabs_clsid;
-    if (IS_COLL_ITEM(it) || ITEM_ntotal(engine, it) <= MAX_SM_VALUE_SIZE) {
+    if (IS_COLL_ITEM(it) || ITEM_ntotal(engine, it) <= MAX_SM_VALUE_LEN) {
         clsid = LRU_CLSID_FOR_SMALL;
     }
 #endif
@@ -805,16 +775,14 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it)
     int clsid = 1;
 #else
     int clsid = it->slabs_clsid;
-    if (IS_COLL_ITEM(it) || ITEM_ntotal(engine, it) <= MAX_SM_VALUE_SIZE) {
+    if (IS_COLL_ITEM(it) || ITEM_ntotal(engine, it) <= MAX_SM_VALUE_LEN) {
         clsid = LRU_CLSID_FOR_SMALL;
     }
 #endif
 
-#ifdef ENABLE_DETACH_REF_ITEM_FROM_LRU
     if (it->prev == it && it->next == it) { /* special meaning: unlinked from LRU */
         return; /* Already unlinked from LRU list */
     }
-#endif
 
 #ifdef ENABLE_STICKY_ITEM
     if (it->exptime == (rel_time_t)(-1)) {
@@ -857,9 +825,7 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it)
 
     if (it->next) it->next->prev = it->prev;
     if (it->prev) it->prev->next = it->next;
-#ifdef ENABLE_DETACH_REF_ITEM_FROM_LRU
     it->prev = it->next = it; /* special meaning: unlinked from LRU */
-#endif
     return;
 }
 
@@ -891,7 +857,12 @@ static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *
     /* link the item to the hash table */
     it->iflag |= ITEM_LINKED;
     it->time = engine->server.core->get_current_time();
+#ifdef LONG_KEY_SUPPORT
+    it->hval = engine->server.core->hash(key, it->nkey, 0);
+    assoc_insert(engine, it->hval, it);
+#else
     assoc_insert(engine, engine->server.core->hash(key, it->nkey, 0), it);
+#endif
 
     /* link the item to LRU list */
     item_link_q(engine, it);
@@ -926,8 +897,12 @@ static void do_item_unlink(struct default_engine *engine, hash_item *it,
         item_unlink_q(engine, it);
 
         /* unlink the item from hash table */
+#ifdef LONG_KEY_SUPPORT
+        assoc_delete(engine, it->hval, key, it->nkey);
+#else
         assoc_delete(engine, engine->server.core->hash(key, it->nkey, 0),
                      key, it->nkey);
+#endif
         it->iflag &= ~ITEM_LINKED;
 
         /* unlink the item from prefix info */
@@ -965,13 +940,12 @@ static void do_item_release(struct default_engine *engine, hash_item *it)
         ITEM_REFCOUNT_DECR(it);
         DEBUG_REFCNT(it, '-');
     }
-#ifdef ENABLE_DETACH_REF_ITEM_FROM_LRU
     if (it->refcount == 0) {
         if ((it->iflag & ITEM_LINKED) == 0) {
             do_item_free(engine, it);
         }
         else if (it->prev == it && it->next == it) {
-            /* link the item into the LRU list */
+            /* re-link the item into the LRU list */
             rel_time_t current_time = engine->server.core->get_current_time();
             if (do_item_isvalid(engine, it, current_time)) {
                 it->time = current_time;
@@ -981,11 +955,6 @@ static void do_item_release(struct default_engine *engine, hash_item *it)
             }
         }
     }
-#else
-    if (it->refcount == 0 && (it->iflag & ITEM_LINKED) == 0) {
-        do_item_free(engine, it);
-    }
-#endif
 }
 
 static void do_item_update(struct default_engine *engine, hash_item *it)
@@ -1429,11 +1398,6 @@ static int32_t do_coll_real_maxcount(hash_item *it, int32_t maxcount)
     return real_maxcount;
 }
 
-static inline hash_item *do_coll_get_hash_item(coll_meta_info *info)
-{
-    return (hash_item*)((size_t*)info - info->itdist);
-}
-
 static inline uint32_t do_list_elem_ntotal(list_elem_item *elem)
 {
     return sizeof(list_elem_item) + elem->nbytes;
@@ -1496,11 +1460,15 @@ static hash_item *do_list_item_alloc(struct default_engine *engine,
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
 #endif
         if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
+#ifdef LONG_KEY_SUPPORT
+        info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
+#else
         info->itdist  = (uint8_t)((size_t*)info-(size_t*)it);
+#endif
         info->stotal  = 0;
         info->prefix  = NULL;
         info->head = info->tail = NULL;
-        assert(do_coll_get_hash_item((coll_meta_info*)info) == it);
+        assert((hash_item*)COLL_GET_HASH_ITEM(info) == it);
     }
     return it;
 }
@@ -1514,6 +1482,7 @@ static list_elem_item *do_list_elem_alloc(struct default_engine *engine,
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(engine, ntotal);
+        assert(elem->slabs_clsid > 0);
         elem->refcount    = 1;
         elem->nbytes      = nbytes;
         elem->prev = elem->next = (list_elem_item *)ADDR_MEANS_UNLINKED; /* Unliked state */
@@ -1791,11 +1760,15 @@ static hash_item *do_set_item_alloc(struct default_engine *engine,
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
 #endif
         if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
+#ifdef LONG_KEY_SUPPORT
+        info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
+#else
         info->itdist  = (uint8_t)((size_t*)info-(size_t*)it);
+#endif
         info->stotal  = 0;
         info->prefix  = NULL;
         info->root    = NULL;
-        assert(do_coll_get_hash_item((coll_meta_info*)info) == it);
+        assert((hash_item*)COLL_GET_HASH_ITEM(info) == it);
     }
     return it;
 }
@@ -1809,6 +1782,7 @@ static set_hash_node *do_set_node_alloc(struct default_engine *engine,
     if (node != NULL) {
         assert(node->slabs_clsid == 0);
         node->slabs_clsid = slabs_clsid(engine, ntotal);
+        assert(node->slabs_clsid > 0);
         node->refcount    = 0;
         node->hdepth      = hash_depth;
         node->tot_hash_cnt = 0;
@@ -1833,6 +1807,7 @@ static set_elem_item *do_set_elem_alloc(struct default_engine *engine,
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(engine, ntotal);
+        assert(elem->slabs_clsid > 0);
         elem->refcount    = 1;
         elem->nbytes      = nbytes;
         elem->next = (set_elem_item *)ADDR_MEANS_UNLINKED; /* Unliked state */
@@ -1955,7 +1930,7 @@ static ENGINE_ERROR_CODE do_set_elem_link(struct default_engine *engine,
     assert(info->root != NULL);
     set_hash_node *node = info->root;
     set_elem_item *find;
-    int hidx;
+    int hidx = -1;
 
     /* set hash value */
     elem->hval = genhash_string_hash(elem->value, elem->nbytes);
@@ -1967,6 +1942,7 @@ static ENGINE_ERROR_CODE do_set_elem_link(struct default_engine *engine,
         node = node->htab[hidx];
     }
     assert(node != NULL);
+    assert(hidx != -1);
 
     for (find = node->htab[hidx]; find != NULL; find = find->next) {
         if (set_hash_eq(elem->hval, elem->value, elem->nbytes,
@@ -2353,13 +2329,20 @@ static hash_item *do_btree_item_alloc(struct default_engine *engine,
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
 #endif
         if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
+#ifdef LONG_KEY_SUPPORT
+        info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
+        info->stotal  = 0;
+        info->prefix  = NULL;
+        info->bktype  = BKEY_TYPE_UNKNOWN;
+#else
         info->itdist  = (uint8_t)((size_t*)info-(size_t*)it);
         info->bktype  = BKEY_TYPE_UNKNOWN;
         info->stotal  = 0;
         info->prefix  = NULL;
+#endif
         info->maxbkeyrange.len = BKEY_NULL;
         info->root    = NULL;
-        assert(do_coll_get_hash_item((coll_meta_info*)info) == it);
+        assert((hash_item*)COLL_GET_HASH_ITEM(info) == it);
     }
     return it;
 }
@@ -2373,6 +2356,7 @@ static btree_indx_node *do_btree_node_alloc(struct default_engine *engine,
     if (node != NULL) {
         assert(node->slabs_clsid == 0);
         node->slabs_clsid = slabs_clsid(engine, ntotal);
+        assert(node->slabs_clsid > 0);
         node->refcount    = 0;
         node->ndepth      = node_depth;
         node->used_count  = 0;
@@ -4879,7 +4863,6 @@ static btree_elem_item *do_btree_scan_next(btree_elem_posi *posi,
         return do_btree_find_prev(posi, bkrange);
 }
 
-#ifdef JHPARK_NEW_SMGET_INTERFACE
 static void do_btree_smget_add_miss(smget_result_t *smres,
                                     uint16_t kidx, uint16_t erid)
 {
@@ -4900,8 +4883,7 @@ static void do_btree_smget_add_trim(smget_result_t *smres,
     smres->trim_count++;
 }
 
-#if 1 // JHPARK_SMGET_OFFSET_HANDLING
-#else
+#if 0 // JHPARK_SMGET_OFFSET_HANDLING
 static bool do_btree_smget_check_trim(smget_result_t *smres)
 {
     btree_elem_item *head_elem = smres->elem_array[0];
@@ -5004,9 +4986,8 @@ static void do_btree_smget_adjust_trim(smget_result_t *smres)
     smres->trim_kinfo = new_trim_kinfo;
     smres->trim_count = new_trim_count;
 }
-#endif
 
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
 static ENGINE_ERROR_CODE do_btree_smget_scan_sort_old(struct default_engine *engine,
                                     token_t *key_array, const int key_count,
                                     const int bkrtype, const bkey_range *bkrange,
@@ -5227,7 +5208,6 @@ scan_next:
 }
 #endif
 
-#ifdef JHPARK_NEW_SMGET_INTERFACE
 static ENGINE_ERROR_CODE
 do_btree_smget_scan_sort(struct default_engine *engine,
                          token_t *key_array, const int key_count,
@@ -5237,16 +5217,6 @@ do_btree_smget_scan_sort(struct default_engine *engine,
                          btree_scan_info *btree_scan_buf,
                          uint16_t *sort_sindx_buf, uint32_t *sort_sindx_cnt,
                          smget_result_t *smres)
-#else
-static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
-                                    token_t *key_array, const int key_count,
-                                    const int bkrtype, const bkey_range *bkrange,
-                                    const eflag_filter *efilter, const uint32_t req_count,
-                                    btree_scan_info *btree_scan_buf,
-                                    uint16_t *sort_sindx_buf, uint32_t *sort_sindx_cnt,
-                                    uint32_t *missed_key_array, uint32_t *missed_key_count,
-                                    bool *bkey_duplicated)
-#endif
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     hash_item *it;
@@ -5265,22 +5235,12 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
     int32_t  maxelemcount = 0;
     uint8_t  overflowactn = OVFL_SMALLEST_TRIM;
 
-#ifdef JHPARK_NEW_SMGET_INTERFACE
-#else
-    *missed_key_count = 0;
-#endif
-
     maxbkeyrange.len = BKEY_NULL;
     for (k = 0; k < key_count; k++) {
         ret = do_btree_item_find(engine, key_array[k].value, key_array[k].length, true, &it);
         if (ret != ENGINE_SUCCESS) {
             if (ret == ENGINE_KEY_ENOENT) { /* key missed */
-#ifdef JHPARK_NEW_SMGET_INTERFACE
                 do_btree_smget_add_miss(smres, k, ENGINE_KEY_ENOENT);
-#else
-                missed_key_array[*missed_key_count] = k;
-                *missed_key_count += 1;
-#endif
                 ret = ENGINE_SUCCESS; continue;
             }
             break; /* ret == ENGINE_EBADTYPE */
@@ -5288,12 +5248,7 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
 
         info = (btree_meta_info *)item_get_meta(it);
         if ((info->mflags & COLL_META_FLAG_READABLE) == 0) { /* unreadable collection */
-#ifdef JHPARK_NEW_SMGET_INTERFACE
             do_btree_smget_add_miss(smres, k, ENGINE_UNREADABLE);
-#else
-            missed_key_array[*missed_key_count] = k;
-            *missed_key_count += 1;
-#endif
             do_item_release(engine, it); continue;
         }
         if (info->ccnt == 0) { /* empty collection */
@@ -5325,42 +5280,20 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
 
         elem = do_btree_find_first(info->root, bkrtype, bkrange, &posi, false);
         if (elem == NULL) { /* No elements within the bkey range */
-#ifdef JHPARK_NEW_SMGET_INTERFACE
             if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
                 do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
                 /* Some elements weren't cached because of overflow trim */
                 do_btree_smget_add_miss(smres, k, ENGINE_EBKEYOOR);
             }
             do_item_release(engine, it); continue;
-#else
-            if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
-                /* Some elements weren't cached because of overflow trim */
-                if (do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
-                    do_item_release(engine, it);
-                    ret = ENGINE_EBKEYOOR; break;
-                }
-            }
-            do_item_release(engine, it);
-            continue;
-#endif
         }
 
-#ifdef JHPARK_NEW_SMGET_INTERFACE
         if (posi.bkeq == false && (info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
             do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
             /* Some elements weren't cached because of overflow trim */
             do_btree_smget_add_miss(smres, k, ENGINE_EBKEYOOR);
             do_item_release(engine, it); continue;
         }
-#else
-        if (posi.bkeq == false && (info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
-            /* Some elements weren't cached because of overflow trim */
-            if (do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
-                do_item_release(engine, it);
-                ret = ENGINE_EBKEYOOR; break;
-            }
-        }
-#endif
 
         /* initialize for the next scan */
         is_first = true;
@@ -5369,7 +5302,6 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort(struct default_engine *engine,
 scan_next:
         if (is_first != true) {
             assert(elem != NULL);
-#ifdef JHPARK_NEW_SMGET_INTERFACE
             btree_elem_item *prev = elem;
             elem = do_btree_scan_next(&posi, bkrtype, bkrange);
             if (elem == NULL) {
@@ -5380,19 +5312,6 @@ scan_next:
                 }
                 do_item_release(engine, it); continue;
             }
-#else
-            elem = do_btree_scan_next(&posi, bkrtype, bkrange);
-            if (elem == NULL) {
-                if (posi.node == NULL && (info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
-                    if (do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
-                        do_item_release(engine, it);
-                        ret = ENGINE_EBKEYOOR; break;
-                    }
-                }
-                do_item_release(engine, it);
-                continue;
-            }
-#endif
         }
         is_first = false;
 
@@ -5426,23 +5345,14 @@ scan_next:
                     btree_scan_buf[curr_idx].it = NULL;
                     ret = ENGINE_EBADVALUE; break;
                 }
-#ifdef JHPARK_NEW_SMGET_INTERFACE
                 smres->duplicated = true;
                 if (unique) {
                     cmp_res = 0;
                 }
-#else
-                *bkey_duplicated = true;
-#endif
             }
-#ifdef JHPARK_NEW_SMGET_INTERFACE
             if ((cmp_res == 0) ||
                 (ascending ==  true && cmp_res > 0) ||
                 (ascending == false && cmp_res < 0))
-#else
-            if ((ascending ==  true && cmp_res > 0) ||
-                (ascending == false && cmp_res < 0))
-#endif
             {
                 /* do not need to proceed the current scan */
                 do_item_release(engine, btree_scan_buf[curr_idx].it);
@@ -5465,14 +5375,10 @@ scan_next:
                 if (cmp_res == 0) {
                     ret = ENGINE_EBADVALUE; break;
                 }
-#ifdef JHPARK_NEW_SMGET_INTERFACE
                 smres->duplicated = true;
                 if (unique) {
                     ret = ENGINE_EDUPLICATE; break;
                 }
-#else
-                *bkey_duplicated = true;
-#endif
             }
             if (ascending) {
                 if (cmp_res < 0) right = mid-1;
@@ -5487,12 +5393,10 @@ scan_next:
             btree_scan_buf[curr_idx].it = NULL;
             break;
         }
-#ifdef JHPARK_NEW_SMGET_INTERFACE
         if (ret == ENGINE_EDUPLICATE) {
             ret = ENGINE_SUCCESS;
             goto scan_next;
         }
-#endif
 
         if (sort_count >= req_count) {
             /* free the last scan */
@@ -5529,7 +5433,7 @@ scan_next:
 #endif
 
 #ifdef SUPPORT_BOP_SMGET
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
 static int do_btree_smget_elem_sort_old(btree_scan_info *btree_scan_buf,
                                     uint16_t *sort_sindx_buf, const int sort_sindx_cnt,
                                     const int bkrtype, const bkey_range *bkrange, const eflag_filter *efilter,
@@ -5624,7 +5528,6 @@ scan_next:
 }
 #endif
 
-#ifdef JHPARK_NEW_SMGET_INTERFACE
 static ENGINE_ERROR_CODE
 do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
                          uint16_t *sort_sindx_buf, const int sort_sindx_cnt,
@@ -5633,33 +5536,17 @@ do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
                          const uint32_t offset, const uint32_t count,
                          const bool unique,
                          smget_result_t *smres)
-#else
-static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
-                                    uint16_t *sort_sindx_buf, const int sort_sindx_cnt,
-                                    const int bkrtype, const bkey_range *bkrange, const eflag_filter *efilter,
-                                    const uint32_t offset, const uint32_t count,
-                                    btree_elem_item **elem_array, uint32_t *kfnd_array, uint32_t *flag_array,
-                                    bool *potentialbkeytrim, bool *bkey_duplicated)
-#endif
 {
-#ifdef JHPARK_NEW_SMGET_INTERFACE
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-#endif
     btree_meta_info *info;
     btree_elem_item *elem, *comp;
-#ifdef JHPARK_NEW_SMGET_INTERFACE
     btree_elem_item *prev;
-#endif
     uint16_t first_idx = 0;
     uint16_t curr_idx;
     uint16_t comp_idx;
     int i, cmp_res;
     int mid, left, right;
     int skip_count = 0;
-#ifdef JHPARK_NEW_SMGET_INTERFACE
-#else
-    int elem_count = 0;
-#endif
     int sort_count = sort_sindx_cnt;
     bool ascending = (bkrtype != BKEY_RANGE_TYPE_DSC ? true : false);
 
@@ -5670,13 +5557,11 @@ static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
         if (skip_count < offset) {
             skip_count++;
         } else { /* skip_count == offset */
-#ifdef JHPARK_NEW_SMGET_INTERFACE
             smres->elem_array[smres->elem_count] = elem;
             smres->elem_kinfo[smres->elem_count].kidx = btree_scan_buf[curr_idx].kidx;
             smres->elem_kinfo[smres->elem_count].flag = btree_scan_buf[curr_idx].it->flags;
             smres->elem_count += 1;
-#if 1 // JHPARK_SMGET_OFFSET_HANDLING
-#else
+#if 0 // JHPARK_SMGET_OFFSET_HANDLING
             if (smres->elem_count == 1) { /* the first element is found */
                 if (offset > 0 && smres->trim_count > 0 &&
                     do_btree_smget_check_trim(smres) != true) {
@@ -5689,30 +5574,18 @@ static int do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
 #endif
             elem->refcount++;
             if (smres->elem_count >= count) break;
-#else
-            elem->refcount++;
-            elem_array[elem_count] = elem;
-            kfnd_array[elem_count] = btree_scan_buf[curr_idx].kidx;
-            flag_array[elem_count] = btree_scan_buf[curr_idx].it->flags;
-            elem_count++;
-            if (elem_count >= count) break;
-#endif
         }
 
 scan_next:
-#ifdef JHPARK_NEW_SMGET_INTERFACE
         prev = elem;
-#endif
         elem = do_btree_scan_next(&btree_scan_buf[curr_idx].posi, bkrtype, bkrange);
         if (elem == NULL) {
             if (btree_scan_buf[curr_idx].posi.node == NULL) {
                 /* reached to the end of b+tree scan */
                 info = (btree_meta_info *)item_get_meta(btree_scan_buf[curr_idx].it);
-#ifdef JHPARK_NEW_SMGET_INTERFACE
                 if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
                     do_btree_overlapped_with_trimmed_space(info, &btree_scan_buf[curr_idx].posi, bkrtype)) {
-#if 1 // JHPARK_SMGET_OFFSET_HANDLING
-#else
+#if 0 // JHPARK_SMGET_OFFSET_HANDLING
                     if (skip_count < offset) {
                         /* Some elements are trimmed in 0 ~ offset range.
                          * So, we cannot make correct smget result.
@@ -5723,14 +5596,6 @@ scan_next:
 #endif
                     do_btree_smget_add_trim(smres, btree_scan_buf[curr_idx].kidx, prev);
                 }
-#else
-                if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
-                    if (do_btree_overlapped_with_trimmed_space(info, &btree_scan_buf[curr_idx].posi, bkrtype)) {
-                        *potentialbkeytrim = true;
-                        break; /* stop smget */
-                    }
-                }
-#endif
             }
             first_idx++; sort_count--;
             continue;
@@ -5754,12 +5619,8 @@ scan_next:
 
             cmp_res = BKEY_COMP(elem->data, elem->nbkey, comp->data, comp->nbkey);
             if (cmp_res == 0) {
-#ifdef JHPARK_NEW_SMGET_INTERFACE
                 smres->duplicated = true;
                 if (unique) break;
-#else
-                *bkey_duplicated = true;
-#endif
                 cmp_res = do_btree_comp_hkey(btree_scan_buf[curr_idx].it,
                                              btree_scan_buf[comp_idx].it);
                 assert(cmp_res != 0);
@@ -5772,31 +5633,22 @@ scan_next:
                 else             left  = mid+1;
             }
         }
-#ifdef JHPARK_NEW_SMGET_INTERFACE
         if (left <= right) { /* Duplicate bkey is found */
             goto scan_next;
         }
 
-#else
-
-        assert(left > right);
-#endif
         /* right : insertion position */
         for (i = first_idx+1; i <= right; i++) {
             sort_sindx_buf[i-1] = sort_sindx_buf[i];
         }
         sort_sindx_buf[right] = curr_idx;
     }
-#ifdef JHPARK_NEW_SMGET_INTERFACE
     if (ret == ENGINE_SUCCESS) {
         if (smres->trim_count > 0) {
             do_btree_smget_adjust_trim(smres);
         }
     }
     return ret;
-#else
-    return elem_count;
-#endif
 }
 #endif
 
@@ -5829,7 +5681,6 @@ static int check_expired_collections(struct default_engine *engine, const int cl
     {
         search = engine->items.tails[clsid];
         while (search != NULL && tries > 0) {
-#ifdef ENABLE_DETACH_REF_ITEM_FROM_LRU
             if (search->nkey > 0) {
                 it = search;
                 search = search->prev; tries--;
@@ -5848,21 +5699,6 @@ static int check_expired_collections(struct default_engine *engine, const int cl
             } else {
                 search = search->prev; tries--;
             }
-#else
-            if (search->refcount == 0 && search->nkey > 0) {
-                it = search;
-                search = search->prev; tries--;
-
-                if (do_item_isvalid(engine, it, current_time) == false) {
-                    do_item_invalidate(engine, it, clsid, true);
-                } else {
-                    do_item_evict(engine, it, clsid, current_time, NULL);
-                }
-                unlink_count++;
-            } else {
-                search = search->prev; tries--;
-            }
-#endif
         }
     }
     pthread_mutex_unlock(&engine->cache_lock);
@@ -5901,12 +5737,12 @@ static void do_coll_all_elem_delete(struct default_engine *engine, hash_item *it
     }
 }
 
-static void coll_del_thread_sleep(struct default_engine *engine)
+static void coll_del_thread_sleep(void)
 {
     struct timeval  tv;
     struct timespec to;
-    pthread_mutex_lock(&engine->coll_del_lock);
-    if (engine->coll_del_queue.head == NULL) {
+    pthread_mutex_lock(&coll_del_lock);
+    if (coll_del_queue.head == NULL) {
         /* 50 mili second sleep */
         gettimeofday(&tv, NULL);
         tv.tv_usec += 50000;
@@ -5917,12 +5753,12 @@ static void coll_del_thread_sleep(struct default_engine *engine)
         to.tv_sec = tv.tv_sec;
         to.tv_nsec = tv.tv_usec * 1000;
 
-        engine->coll_del_sleep = true;
-        pthread_cond_timedwait(&engine->coll_del_cond,
-                               &engine->coll_del_lock, &to);
-        engine->coll_del_sleep = false;
+        coll_del_sleep = true;
+        pthread_cond_timedwait(&coll_del_cond,
+                               &coll_del_lock, &to);
+        coll_del_sleep = false;
     }
-    pthread_mutex_unlock(&engine->coll_del_lock);
+    pthread_mutex_unlock(&coll_del_lock);
 }
 
 static void *collection_delete_thread(void *arg)
@@ -5936,7 +5772,7 @@ static void *collection_delete_thread(void *arg)
     struct timespec background_sleep_time = {0, 0};
 
     while (engine->initialized) {
-        it = pop_coll_del_queue(engine);
+        it = pop_coll_del_queue();
         if (it == NULL) {
 #ifdef USE_SINGLE_LRU_LIST
             expired_cnt = check_expired_collections(engine, 1, &space_shortage_level);
@@ -5973,7 +5809,7 @@ static void *collection_delete_thread(void *arg)
                     *****/
                     background_evict_flag = false;
                 }
-                coll_del_thread_sleep(engine);
+                coll_del_thread_sleep();
             }
             continue;
         }
@@ -6041,14 +5877,14 @@ static void *collection_delete_thread(void *arg)
     return NULL;
 }
 
-void coll_del_thread_wakeup(struct default_engine *engine)
+void coll_del_thread_wakeup(void)
 {
-    pthread_mutex_lock(&engine->coll_del_lock);
-    if (engine->coll_del_sleep == true) {
+    pthread_mutex_lock(&coll_del_lock);
+    if (coll_del_sleep == true) {
         /* wake up collection delete thead */
-        pthread_cond_signal(&engine->coll_del_cond);
+        pthread_cond_signal(&coll_del_cond);
     }
-    pthread_mutex_unlock(&engine->coll_del_lock);
+    pthread_mutex_unlock(&coll_del_lock);
 }
 
 /********************************* ITEM ACCESS *******************************/
@@ -6223,11 +6059,10 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
     if (nprefix >= 0) { /* flush the given prefix */
         prefix_t *pt;
         if (nprefix == 0) { /* null prefix */
-            assert(prefix == NULL);
             pt = &engine->assoc.noprefix_stats;
         } else {
-            assert(prefix != NULL);
-            pt = assoc_prefix_find(engine, engine->server.core->hash(prefix, nprefix, 0), prefix, nprefix);
+            pt = assoc_prefix_find(engine, engine->server.core->hash(prefix, nprefix, 0),
+                                   prefix, nprefix);
         }
         if (pt == NULL) {
             return ENGINE_PREFIX_ENOENT;
@@ -6242,7 +6077,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
 
         if (engine->config.verbose) {
             logger->log(EXTENSION_LOG_INFO, NULL, "flush prefix=%s when=%u client_ip=%s\n",
-                        ((prefix==NULL) ? "null" : prefix),
+                        (prefix == NULL ? "<null>" : prefix),
                         (unsigned)when, engine->server.core->get_client_ip(cookie));
         }
     } else { /* flush all */
@@ -6272,22 +6107,18 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
             for (iter = engine->items.heads[i]; iter != NULL; iter = next) {
                 if (iter->time >= oldest_live) {
                     next = iter->next;
-                    if (nprefix >= 0) {
-                        bool found = false;
-                        if (nprefix == 0) {
-                            if (iter->nprefix == iter->nkey)
-                                found = true;
-                        } else { /* nprefix > 0 */
-                            char *iter_key = (char*)item_get_key(iter);
-                            if (iter->nkey > nprefix && memcmp(prefix,iter_key,nprefix) == 0 &&
-                                *(iter_key + nprefix) == engine->config.prefix_delimiter)
-                                found = true;
-                        }
-                        if (found == true) {
+                    if (nprefix < 0) { /* flush all */
+                        do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
+                    } else if (nprefix == 0) { /* flush null prefix */
+                        if (iter->nprefix == 0) {
                             do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
                         }
-                    } else { /* flush all */
-                        do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
+                    } else { /* nprefix > 0: flush given prefix */
+                        char *iter_key = (char*)item_get_key(iter);
+                        if (iter->nkey > nprefix && memcmp(prefix,iter_key,nprefix) == 0 &&
+                            *(iter_key + nprefix) == engine->config.prefix_delimiter) {
+                            do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
+                        }
                     }
                 } else {
                     /* We've hit the first old item. Continue to the next queue. */
@@ -6301,23 +6132,18 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
             for (iter = engine->items.sticky_heads[i]; iter != NULL; iter = next) {
                 if (iter->time >= oldest_live) {
                     next = iter->next;
-
-                    if (nprefix >= 0) {
-                        bool found = false;
-                        if (nprefix == 0) {
-                            if (iter->nprefix == iter->nkey)
-                                found = true;
-                        } else { /* nprefix > 0 */
-                            char *iter_key = (char*)item_get_key(iter);
-                            if (iter->nkey > nprefix && memcmp(prefix,iter_key,nprefix) == 0 &&
-                                *(iter_key + nprefix) == engine->config.prefix_delimiter)
-                                found = true;
-                        }
-                        if (found == true) {
+                    if (nprefix < 0) { /* flush all */
+                        do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
+                    } else if (nprefix == 0) { /* flush null prefix */
+                        if (iter->nprefix == 0) {
                             do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
                         }
-                    } else { /* flush all */
-                        do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
+                    } else { /* nprefix > 0: flush given prefix */
+                        char *iter_key = (char*)item_get_key(iter);
+                        if (iter->nkey > nprefix && memcmp(prefix,iter_key,nprefix) == 0 &&
+                            *(iter_key + nprefix) == engine->config.prefix_delimiter) {
+                            do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
+                        }
                     }
                 } else {
                     /* We've hit the first old item. Continue to the next queue. */
@@ -6332,17 +6158,9 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
     return ENGINE_SUCCESS;
 }
 
-void item_flush_expired(struct default_engine *engine, time_t when, const void* cookie)
-{
-    pthread_mutex_lock(&engine->cache_lock);
-    /* flush all items */
-    do_item_flush_expired(engine, NULL, -1, when, cookie);
-    pthread_mutex_unlock(&engine->cache_lock);
-}
-
-ENGINE_ERROR_CODE item_flush_prefix_expired(struct default_engine *engine,
-                                            const char *prefix, const int nprefix,
-                                            time_t when, const void* cookie)
+ENGINE_ERROR_CODE item_flush_expired(struct default_engine *engine,
+                                     const char *prefix, const int nprefix,
+                                     time_t when, const void* cookie)
 {
     ENGINE_ERROR_CODE ret;
     pthread_mutex_lock(&engine->cache_lock);
@@ -6393,11 +6211,11 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
 {
     logger = engine->server.log->get_logger();
 
-    pthread_mutex_init(&engine->coll_del_lock, NULL);
-    pthread_cond_init(&engine->coll_del_cond, NULL);
-    engine->coll_del_queue.head = engine->coll_del_queue.tail = NULL;
-    engine->coll_del_queue.size = 0;
-    engine->coll_del_sleep = false;
+    pthread_mutex_init(&coll_del_lock, NULL);
+    pthread_cond_init(&coll_del_cond, NULL);
+    coll_del_queue.head = coll_del_queue.tail = NULL;
+    coll_del_queue.size = 0;
+    coll_del_sleep = false;
 
     item_evict_to_free = engine->config.evict_to_free;
 
@@ -6418,8 +6236,7 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
     logger->log(EXTENSION_LOG_INFO, NULL, "maximum set   size = %d\n", max_set_size);
     logger->log(EXTENSION_LOG_INFO, NULL, "maximum btree size = %d\n", max_btree_size);
 
-    int ret = pthread_create(&engine->coll_del_tid, NULL,
-                             collection_delete_thread, engine);
+    int ret = pthread_create(&coll_del_tid, NULL, collection_delete_thread, engine);
     if (ret != 0) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Can't create thread: %s\n", strerror(ret));
@@ -6440,15 +6257,10 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
 void item_final(struct default_engine *engine)
 {
 #ifdef JHPARK_KEY_DUMP
-    if (engine->dumper.running) {
-        /* stop the dumper */
-        pthread_mutex_lock(&engine->dumper.lock);
-        do_item_dump_stop(engine);
-        pthread_mutex_unlock(&engine->dumper.lock);
-    }
+    item_stop_dump(engine);
 #endif
-    coll_del_thread_wakeup(engine);
-    pthread_join(engine->coll_del_tid, NULL);
+    coll_del_thread_wakeup();
+    pthread_join(coll_del_tid, NULL);
 
     int sleep_count = 0;
     while (engine->scrubber.running) {
@@ -7310,7 +7122,7 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
 }
 
 #ifdef SUPPORT_BOP_SMGET
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
 ENGINE_ERROR_CODE btree_elem_smget_old(struct default_engine *engine,
                                    token_t *key_array, const int key_count,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
@@ -7320,8 +7132,6 @@ ENGINE_ERROR_CODE btree_elem_smget_old(struct default_engine *engine,
                                    uint32_t *missed_key_array, uint32_t *missed_key_count,
                                    bool *trimmed, bool *duplicated)
 {
-    assert(key_count > 0);
-    assert(count > 0 && (offset+count) <= MAX_SMGET_REQ_COUNT);
     btree_scan_info btree_scan_buf[offset+count+1];
     uint16_t        sort_sindx_buf[offset+count]; /* sorted scan index buffer */
     uint32_t        sort_sindx_cnt, i;
@@ -7361,26 +7171,13 @@ ENGINE_ERROR_CODE btree_elem_smget_old(struct default_engine *engine,
 }
 #endif
 
-#ifdef JHPARK_NEW_SMGET_INTERFACE
 ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
                                    token_t *key_array, const int key_count,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
                                    const uint32_t offset, const uint32_t count,
                                    const bool unique,
                                    smget_result_t *result)
-#else
-ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
-                                   token_t *key_array, const int key_count,
-                                   const bkey_range *bkrange, const eflag_filter *efilter,
-                                   const uint32_t offset, const uint32_t count,
-                                   btree_elem_item **elem_array, uint32_t *kfnd_array,
-                                   uint32_t *flag_array, uint32_t *elem_count,
-                                   uint32_t *missed_key_array, uint32_t *missed_key_count,
-                                   bool *trimmed, bool *duplicated)
-#endif
 {
-    assert(key_count > 0);
-    assert(count > 0 && (offset+count) <= MAX_SMGET_REQ_COUNT);
     btree_scan_info btree_scan_buf[offset+count+1];
     uint16_t        sort_sindx_buf[offset+count]; /* sorted scan index buffer */
     uint32_t        sort_sindx_cnt, i;
@@ -7392,7 +7189,6 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
         btree_scan_buf[i].it = NULL;
     }
 
-#ifdef JHPARK_NEW_SMGET_INTERFACE
     /* initialize smget result structure */
     assert(result->elem_array != NULL);
     result->trim_elems = (eitem *)&result->elem_array[count];
@@ -7432,31 +7228,6 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
         }
     } while(0);
     pthread_mutex_unlock(&engine->cache_lock);
-#else
-    *trimmed = false;
-    *duplicated = false;
-
-    pthread_mutex_lock(&engine->cache_lock);
-
-    /* the 1st phase: get the sorted scans */
-    ret = do_btree_smget_scan_sort(engine, key_array, key_count,
-                                   bkrtype, bkrange, efilter, (offset+count),
-                                   btree_scan_buf, sort_sindx_buf, &sort_sindx_cnt,
-                                   missed_key_array, missed_key_count, duplicated);
-    if (ret == ENGINE_SUCCESS) {
-        /* the 2nd phase: get the sorted elems */
-        *elem_count = do_btree_smget_elem_sort(btree_scan_buf, sort_sindx_buf, sort_sindx_cnt,
-                                               bkrtype, bkrange, efilter, offset, count,
-                                               elem_array, kfnd_array, flag_array,
-                                               trimmed, duplicated);
-        for (i = 0; i <= (offset+count); i++) {
-            if (btree_scan_buf[i].it != NULL)
-                do_item_release(engine, btree_scan_buf[i].it);
-        }
-    }
-
-    pthread_mutex_unlock(&engine->cache_lock);
-#endif
 
     return ret;
 }
@@ -8023,7 +7794,7 @@ static void *item_scubber_main(void *arg)
     struct default_engine *engine = arg;
     assert(engine->scrubber.running == true);
 
-    for (int ii = 0; ii < MAX_NUMBER_OF_SLAB_CLASSES; ++ii)
+    for (int ii = 0; ii < MAX_SLAB_CLASSES; ++ii)
     {
         if (!engine->initialized) break;
 
@@ -8060,7 +7831,7 @@ bool item_start_scrub(struct default_engine *engine, int mode)
     assert(mode == (int)SCRUB_MODE_NORMAL || mode == (int)SCRUB_MODE_STALE);
     bool ret = false;
     pthread_mutex_lock(&engine->scrubber.lock);
-    if (!engine->scrubber.running) {
+    if (engine->scrubber.enabled && !engine->scrubber.running) {
         engine->scrubber.started = time(NULL);
         engine->scrubber.stopped = 0;
         engine->scrubber.visited = 0;
@@ -8085,6 +7856,17 @@ bool item_start_scrub(struct default_engine *engine, int mode)
     return ret;
 }
 
+void item_onoff_scrub(struct default_engine *engine, bool val)
+{
+    pthread_mutex_lock(&engine->scrubber.lock);
+    /* The scrubber can be disabled even if it is running.
+     * The on-going scrubbing continues its task. But, the next
+     * scrubbing cannot be started until it is enabled again.
+     */
+    engine->scrubber.enabled = val;
+    pthread_mutex_unlock(&engine->scrubber.lock);
+}
+
 void item_stats_scrub(struct default_engine *engine,
                       ADD_STAT add_stat, const void *cookie)
 {
@@ -8095,7 +7877,10 @@ void item_stats_scrub(struct default_engine *engine,
     if (engine->scrubber.running) {
         add_stat("scrubber:status", 15, "running", 7, cookie);
     } else {
-        add_stat("scrubber:status", 15, "stopped", 7, cookie);
+        if (engine->scrubber.enabled)
+            add_stat("scrubber:status", 15, "stopped", 7, cookie);
+        else
+            add_stat("scrubber:status", 15, "disabled", 8, cookie);
     }
     if (engine->scrubber.started != 0) {
         if (engine->scrubber.runmode == SCRUB_MODE_NORMAL) {
@@ -8169,12 +7954,12 @@ static void *item_dumper_main(void *arg)
             dumper->visited++;
             /* check prefix name */
             if (dumper->nprefix > 0) {
-                if (dumper->nprefix != it->nprefix || it->nprefix == it->nkey ||
+                if (dumper->nprefix != it->nprefix ||
                     memcmp(item_get_key(it), dumper->prefix, dumper->nprefix) != 0) {
                     continue; /* prefix mismatch */
                 }
             } else if (dumper->nprefix == 0) {
-                if (it->nprefix != it->nkey) {
+                if (it->nprefix != 0) {
                     continue; /* not null prefix */
                 }
             }
@@ -8271,23 +8056,24 @@ done:
     return NULL;
 }
 
-static ENGINE_ERROR_CODE do_item_dump_start(struct default_engine *engine,
-                                            enum dump_mode mode,
-                                            const char *prefix, const int nprefix,
-                                            const char *filepath)
+int item_start_dump(struct default_engine *engine,
+                    enum dump_mode mode,
+                    const char *prefix, const int nprefix,
+                    const char *filepath)
 {
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     pthread_t tid;
     pthread_attr_t attr;
     int fd;
+    int ret=0;
 
     assert(mode == DUMP_MODE_KEY);
 
+    pthread_mutex_lock(&engine->dumper.lock);
     do {
         if (engine->dumper.running) {
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "Failed to start dumping. Already started.\n");
-            ret = ENGINE_FAILED; break;
+            ret = -1; break;
         }
 
         snprintf(engine->dumper.filepath, MAX_FILEPATH_LENGTH-1, "%s",
@@ -8309,7 +8095,7 @@ static ENGINE_ERROR_CODE do_item_dump_start(struct default_engine *engine,
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "Failed to open the dump file. path=%s err=%s\n",
                         engine->dumper.filepath, strerror(errno));
-            ret = ENGINE_FAILED; break;
+            ret = -1; break;
         }
         close(fd);
 
@@ -8322,37 +8108,22 @@ static ENGINE_ERROR_CODE do_item_dump_start(struct default_engine *engine,
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "Failed to create the dump thread. err=%s\n", strerror(errno));
             engine->dumper.running = false;
-            ret = ENGINE_FAILED; break;
+            ret = -1; break;
         }
     } while(0);
+    pthread_mutex_unlock(&engine->dumper.lock);
 
     return ret;
 }
 
-static void do_item_dump_stop(struct default_engine *engine)
+void item_stop_dump(struct default_engine *engine)
 {
+    pthread_mutex_lock(&engine->dumper.lock);
     if (engine->dumper.running) {
         /* stop the dumper */
         engine->dumper.stop = true;
     }
-}
-
-ENGINE_ERROR_CODE item_dump(struct default_engine *engine,
-                            enum dump_op op, enum dump_mode mode,
-                            const char *prefix, const int nprefix,
-                            const char *filepath)
-{
-    assert(op == DUMP_OP_START || op == DUMP_OP_STOP);
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-
-    pthread_mutex_lock(&engine->dumper.lock);
-    if (op == DUMP_OP_START) {
-        ret = do_item_dump_start(engine, mode, prefix, nprefix, filepath);
-    } else { /* DUMP_OP_STOP */
-        do_item_dump_stop(engine);
-    }
     pthread_mutex_unlock(&engine->dumper.lock);
-    return ret;
 }
 
 void item_stats_dump(struct default_engine *engine,

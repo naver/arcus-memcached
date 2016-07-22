@@ -37,7 +37,7 @@ flush_all [<delay>] [noreply]\r\n
 flush_prefix <prefix> [<delay>] [noreply]\r\n
 ```
 
-- \<prefix\> - prefix string. "null"을 사용하면, prefix string이 없는 item들을 invalidate시킨다.
+- \<prefix\> - prefix string. "\<null\>"을 사용하면, prefix string이 없는 item들을 invalidate시킨다.
 - \<delay\> - 지연된 invalidation 요청 시에 명시하며, 그 지연 기간을 초(second) 단위로 지정한다.
 - noreply - 명시하면, response string이 생략된다.
 
@@ -427,7 +427,7 @@ dump start명령.
   - 향후에 key or item을 선택할 수 있게 하여, item인 경우 item 전체 내용을 dump할 수 있다.
 - 두번째 인자는 \<prefix\>는 cache key의 prefix를 의미하며, 생략 가능하다.
   - 생략하면, 모든 key string을 dump한다.
-  - "null"을 주면, prefix가 없는 key string을 dump한다.
+  - "\<null\>"을 주면, prefix가 없는 key string을 dump한다.
   - 어떤 prefix를 주면, 그 prefix의 모든 key string을 dump한다.
 - 세번째 인자는 \<file path\>이다.
   - 반드시 명시해야 한다.

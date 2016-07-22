@@ -1,7 +1,7 @@
 /*
  * arcus-memcached - Arcus memory cache server
  * Copyright 2010-2014 NAVER Corp.
- * Copyright 2015 JaM2in Co., Ltd.
+ * Copyright 2015-2016 JaM2in Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,11 @@
 typedef struct _prefix_t prefix_t;
 
 struct _prefix_t {
+#ifdef LONG_KEY_SUPPORT
+    uint16_t nprefix;
+#else
     uint8_t nprefix;
+#endif
 
     uint32_t prefix_items;
     uint64_t list_hash_items;
@@ -43,6 +47,9 @@ struct _prefix_t {
 
     prefix_t *parent_prefix;
 };
+
+#define PREFIX_IS_RSVD(pfx,npfx) ((npfx) == 5 && strncmp((pfx), "arcus", 5) == 0)
+#define PREFIX_IS_USER(pfx,npfx) ((npfx) != 5 || strncmp((pfx), "arcus", 5) != 0)
 
 struct bucket_info {
     uint16_t refcount; /* reference count */
@@ -103,7 +110,7 @@ void              assoc_scan_next(struct default_engine *engine, struct assoc_sc
 void              assoc_scan_final(struct default_engine *engine, struct assoc_scan *scan);
 #endif
 prefix_t *        assoc_prefix_find(struct default_engine *engine, uint32_t hash,
-                                    const char *prefix, const size_t nprefix);
+                                    const char *prefix, const int nprefix);
 bool              assoc_prefix_isvalid(struct default_engine *engine, hash_item *it);
 void              assoc_prefix_update_size(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
                                     const size_t item_size, const bool increment);

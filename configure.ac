@@ -1,11 +1,11 @@
 AC_PREREQ(2.52)
 m4_include([m4/version.m4])
 m4_include([m4/c99-backport.m4])
-AC_INIT(arcus-memcached, VERSION_NUMBER, openarcus@googlegroups.com)
-AC_CANONICAL_SYSTEM
-AC_CONFIG_SRCDIR(memcached.c)
-AM_INIT_AUTOMAKE(AC_PACKAGE_NAME, AC_PACKAGE_VERSION)
-AM_CONFIG_HEADER(config.h)
+AC_INIT([arcus-memcached], [VERSION_NUMBER], [openarcus@googlegroups.com])
+AC_CANONICAL_HOST
+AC_CONFIG_SRCDIR([memcached.c])
+AM_INIT_AUTOMAKE([subdir-objects foreign])
+AM_CONFIG_HEADER([config.h])
 
 AC_PROG_CC
 AC_DISABLE_STATIC
@@ -203,9 +203,15 @@ if test "x$enable_sticky_item" = "xyes"; then
     AC_DEFINE([ENABLE_STICKY_ITEM],1,[Set to nonzero if you want to include sticky items])
 fi
 
+# default engine
 AC_ARG_ENABLE(default-engine,
   [AS_HELP_STRING([--enable-default-engine], [Build-in default engine])])
 AM_CONDITIONAL([INCLUDE_DEFAULT_ENGINE],[test "$enable_default_engine" = "yes"])
+
+# demo engine
+AC_ARG_ENABLE(demo-engine,
+  [AS_HELP_STRING([--enable-demo-engine], [Build-in demo engine])])
+AM_CONDITIONAL([INCLUDE_DEMO_ENGINE],[test "$enable_demo_engine" = "yes"])
 
 AC_ARG_ENABLE(dtrace,
   [AS_HELP_STRING([--enable-dtrace],[Enable dtrace probes])])
