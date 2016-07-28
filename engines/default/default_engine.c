@@ -1068,7 +1068,75 @@ default_set_verbose(ENGINE_HANDLE* handle, const void* cookie,
     engine->config.verbose = verbose;
     pthread_mutex_unlock(&engine->cache_lock);
 }
-
+#ifdef CONFIG_API
+static ENGINE_ERROR_CODE
+default_set_config(ENGINE_HANDLE* handle, const void* cookie,
+                   const char* config_type, const char* config_val, void* setting_sticky, void* setting_memlimit,
+                   void* setting_maxlevel, void* setting_verbose_level, void* setting_coll_type, void* setting_collsize, char* ret_type)
+{
+    if (strcmp(config_type, "memlimit") == 0) {
+        unsigned int mlimit = atoi(config_val);
+        if (mlimit == 0 && *config_val != '0') {
+            return ENGINE_EINVAL;
+        }
+        else {
+            ENGINE_ERROR_CODE ret;
+            int sticky_ratio = *((int*)setting_sticky);
+            size_t memlimit = (size_t)mlimit * 1024 * 1024;
+            ret = default_set_memlimit(handle, cookie, memlimit, sticky_ratio);
+            if (ret == ENGINE_SUCCESS) {
+                *ret_type = 'm';
+                *((size_t*)setting_memlimit) = memlimit;
+                return ENGINE_SUCCESS;
+            } else {
+                return ENGINE_EBADVALUE;
+            }
+        }
+    } else if (strcmp(config_type, "verbosity") == 0) {
+        unsigned int  verbosity = (unsigned int)atoi(config_val);
+        unsigned char max_level = *((unsigned char*)setting_maxlevel);
+        if (verbosity == 0 && (*config_val) != '0') {
+            return ENGINE_EINVAL;
+        } else {
+            if(verbosity > max_level) {
+                return ENGINE_E2BIG;
+            }
+            default_set_verbose(handle, cookie, verbosity);
+            *ret_type = 'v';
+            *((unsigned int*)setting_verbose_level) = verbosity;
+            return ENGINE_SUCCESS;
+        }
+    } else { /* list,set,btree */
+        int coll_type;
+        if (strcmp(config_type, "max_list_size") == 0) {
+            coll_type = ITEM_TYPE_LIST;
+        } else if (strcmp(config_type, "max_btree_size") == 0) {
+            coll_type = ITEM_TYPE_BTREE;
+        } else if (strcmp(config_type, "max_set_size") == 0) {
+            coll_type = ITEM_TYPE_SET;
+        } else {
+            return ENGINE_EINVAL;
+        }
+        *((int*)setting_coll_type) = coll_type;
+        int maxsize = atoi(config_val);
+        if (maxsize == 0 && *config_val != '0') {
+            return ENGINE_EINVAL;
+        }
+        else {
+            ENGINE_ERROR_CODE ret;
+            ret = default_set_maxcollsize(handle, cookie, coll_type, &maxsize);
+            if (ret == ENGINE_SUCCESS) {
+                *ret_type = 'c';
+                *((size_t*)setting_collsize) = maxsize;
+                return ENGINE_SUCCESS;
+            } else {
+                return ENGINE_EBADVALUE;
+            }
+        }
+    }
+    return ENGINE_EINVAL;
+}
+#endif
 /*
  * Unknown Command API
  */
@@ -1399,11 +1467,15 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .dump             = default_dump,
 #endif
          /* Config API */
+#ifdef CONFIG_API
+         .set_config       = default_set_config,
+#else
          .set_memlimit     = default_set_memlimit,
 #ifdef CONFIG_MAX_COLLECTION_SIZE
          .set_maxcollsize  = default_set_maxcollsize,
 #endif
          .set_verbose      = default_set_verbose,
+#endif
          /* Unknown Command API */
          .unknown_command  = default_unknown_command,
          /* Info API */

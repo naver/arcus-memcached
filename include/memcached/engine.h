@@ -18,7 +18,9 @@
  */
 #ifndef MEMCACHED_ENGINE_H
 #define MEMCACHED_ENGINE_H
-
+#ifndef CONFIG_API
+#define CONFIG_API
+#endif
 #include <sys/types.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -590,7 +592,17 @@ extern "C" {
                                               const void* key, const int nkey,
                                               void *prefix_data);
 
-        ENGINE_ERROR_CODE (*set_memlimit)(ENGINE_HANDLE* handle, const void *cookie,
+       /**
+    * Config API
+    */
+#ifdef CONFIG_API
+     ENGINE_ERROR_CODE (*set_config)(ENGINE_HANDLE* handle, const void *cookie,
+                                     const char* config_type, const char* config_val,
+                                     void* setting_sticky, void* setting_memlimit,
+                                     void* setting_maxlevel, void* setting_verbose_level,
+                                     void* setting_coll_type, void* setting_collsize, char* ret_type);
+#else
+     ENGINE_ERROR_CODE (*set_memlimit)(ENGINE_HANDLE* handle, const void *cookie,
                                           const size_t memlimit, const int sticky_ratio);
 
 #ifdef CONFIG_MAX_COLLECTION_SIZE
@@ -600,7 +612,7 @@ extern "C" {
 
         void (*set_verbose) (ENGINE_HANDLE* handle, const void* cookie,
                              const size_t verbose);
-
+#endif
        char *(*cachedump)(ENGINE_HANDLE* handle, const void *cookie,
                           const unsigned int slabs_clsid,
                           const unsigned int limit,
