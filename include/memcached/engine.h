@@ -18,9 +18,7 @@
  */
 #ifndef MEMCACHED_ENGINE_H
 #define MEMCACHED_ENGINE_H
-#ifndef CONFIG_API
-#define CONFIG_API
-#endif
+
 #include <sys/types.h>
 #include <stdbool.h>
 #include <stdint.h>

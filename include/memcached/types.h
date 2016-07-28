@@ -17,8 +17,9 @@
  */
 #ifndef MEMCACHED_TYPES_H
 #define MEMCACHED_TYPES_H 1
-#ifndef CONFIG_API
-#endif
+
+#define CONFIG_API
+
 #include <sys/types.h>
 #include <stdbool.h>
 #include <stdint.h>
