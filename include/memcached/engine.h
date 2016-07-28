@@ -652,7 +652,16 @@ extern "C" {
                                               const void* key, const int nkey,
                                               void *prefix_data);
 
-        ENGINE_ERROR_CODE (*set_memlimit)(ENGINE_HANDLE* handle, const void *cookie,
+       /**
+    * Config API
+    */
+#ifdef CONFIG_API
+     ENGINE_ERROR_CODE (*control_engine_config)(ENGINE_HANDLE* handle, const void *cookie,
+                                     const char* config_type, const char* config_val,
+                                     char* ret_type, void* ret_val,
+                                     char* res_buf, bool type);
+#else
+     ENGINE_ERROR_CODE (*set_memlimit)(ENGINE_HANDLE* handle, const void *cookie,
                                           const size_t memlimit, const int sticky_ratio);
 
 #ifdef CONFIG_MAX_COLLECTION_SIZE
@@ -662,7 +671,7 @@ extern "C" {
 
         void (*set_verbose) (ENGINE_HANDLE* handle, const void* cookie,
                              const size_t verbose);
-
+#endif
        char *(*cachedump)(ENGINE_HANDLE* handle, const void *cookie,
                           const unsigned int slabs_clsid,
                           const unsigned int limit,

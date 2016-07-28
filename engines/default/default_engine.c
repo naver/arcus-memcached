@@ -121,6 +121,9 @@ initalize_configuration(struct default_engine *se, const char *cfg_str)
             { .key = "cache_size",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.maxbytes },
+            { .key = "sticky_ratio",
+              .datatype = DT_SIZE,
+              .value.dt_size = &se->config.sticky_ratio},
             { .key = "sticky_limit",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.sticky_limit},
@@ -1146,7 +1149,7 @@ default_dump(ENGINE_HANDLE* handle, const void* cookie,
 
 static ENGINE_ERROR_CODE
 default_set_memlimit(ENGINE_HANDLE* handle, const void* cookie,
-                     const size_t memlimit, const int sticky_ratio)
+                     const size_t memlimit)
 {
     struct default_engine* engine = get_handle(handle);
     ENGINE_ERROR_CODE ret;
@@ -1156,8 +1159,8 @@ default_set_memlimit(ENGINE_HANDLE* handle, const void* cookie,
     if (ret == ENGINE_SUCCESS) {
         engine->config.maxbytes = memlimit;
 #ifdef ENABLE_STICKY_ITEM
-        if (sticky_ratio > 0) {
-            engine->config.sticky_limit = (memlimit / 100) * sticky_ratio;
+        if (engine->config.sticky_ratio > 0) {
+            engine->config.sticky_limit = (memlimit / 100) * engine->config.sticky_ratio;
         }
 #endif
     }
@@ -1186,7 +1189,103 @@ default_set_verbose(ENGINE_HANDLE* handle, const void* cookie,
     engine->config.verbose = verbose;
     pthread_mutex_unlock(&engine->cache_lock);
 }
-
+#ifdef CONFIG_API
+#define MAX_VERBOSITY_LEVEL 2
+static ENGINE_ERROR_CODE
+default_control_engine_config(ENGINE_HANDLE* handle, const void* cookie,
+                   const char* config_type, const char* config_val, char* ret_type, void* ret_val,
+                   char* res_buf, bool set_type)
+{
+    struct default_engine* engine = get_handle(handle);
+    if (strcmp(config_type, "memlimit") == 0) {
+        if (set_type) {
+            pthread_mutex_lock(&engine->cache_lock);
+            sprintf(res_buf, " %u\r\nEND", (int)(engine->config.maxbytes / (1024 * 1024)));
+            pthread_mutex_unlock(&engine->cache_lock);
+            return ENGINE_SUCCESS;
+        }
+        unsigned int mlimit = atoi(config_val);
+        if (mlimit == 0 && *config_val != '0') {
+            return ENGINE_EINVAL;
+        }
+        else {
+            ENGINE_ERROR_CODE ret;
+            size_t memlimit = (size_t)mlimit * 1024 * 1024;
+            ret = default_set_memlimit(handle, cookie, memlimit);
+            if (ret == ENGINE_SUCCESS) {
+                ret_type[0] = 'm';
+                *((size_t*)ret_val) = memlimit;
+                return ENGINE_SUCCESS;
+            } else {
+                return ENGINE_EBADVALUE;
+            }
+        }
+    } else if (strcmp(config_type, "verbosity") == 0) {
+        if (set_type) {
+            pthread_mutex_lock(&engine->cache_lock);
+            sprintf(res_buf, " %u\r\nEND", (int)engine->config.verbose);
+            pthread_mutex_unlock(&engine->cache_lock);
+            return ENGINE_SUCCESS;
+        }
+        unsigned int  verbosity = (unsigned int)atoi(config_val);
+        if (verbosity == 0 && (*config_val) != '0') {
+            return ENGINE_EINVAL;
+        } else {
+            if(verbosity > MAX_VERBOSITY_LEVEL) {
+                return ENGINE_E2BIG;
+            }
+            default_set_verbose(handle, cookie, verbosity);
+            ret_type[0] = 'v';
+            *((int*)ret_val) = verbosity;
+            return ENGINE_SUCCESS;
+        }
+    } else { /* list,set,btree */
+        int coll_type;
+        if (strcmp(config_type, "max_list_size") == 0) {
+            coll_type = ITEM_TYPE_LIST;
+        } else if (strcmp(config_type, "max_btree_size") == 0) {
+            coll_type = ITEM_TYPE_BTREE;
+        } else if (strcmp(config_type, "max_set_size") == 0) {
+            coll_type = ITEM_TYPE_SET;
+        } else {
+            return ENGINE_EINVAL;
+        }
+        if (set_type) {
+            pthread_mutex_lock(&engine->cache_lock);
+            switch(coll_type) {
+              case ITEM_TYPE_LIST:
+                sprintf(res_buf, " %u\r\nEND", (int)engine->config.max_list_size);
+                break;
+              case ITEM_TYPE_BTREE:
+                sprintf(res_buf, " %u\r\nEND", (int)engine->config.max_btree_size);
+                break;
+              case ITEM_TYPE_SET:
+                sprintf(res_buf, " %u\r\nEND", (int)engine->config.max_set_size);
+                break;
+            }
+            pthread_mutex_unlock(&engine->cache_lock);
+            return ENGINE_SUCCESS;
+        }
+        int max_coll_size = atoi(config_val);
+        if (max_coll_size == 0 && *config_val != '0') {
+            return ENGINE_EINVAL;
+        }
+        else {
+            ENGINE_ERROR_CODE ret;
+            ret = default_set_maxcollsize(handle, cookie, coll_type, &max_coll_size);
+            if (ret == ENGINE_SUCCESS) {
+                ret_type[0] = 'c';
+                ret_type[1] = coll_type;
+                *((int*)ret_val) = max_coll_size;
+                return ENGINE_SUCCESS;
+            } else {
+                return ENGINE_EBADVALUE;
+            }
+        }
+    }
+    return ENGINE_EINVAL;
+}
+#endif
 /*
  * Unknown Command API
  */
@@ -1536,11 +1635,15 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .dump             = default_dump,
 #endif
          /* Config API */
+#ifdef CONFIG_API
+         .control_engine_config       = default_control_engine_config,
+#else
          .set_memlimit     = default_set_memlimit,
 #ifdef CONFIG_MAX_COLLECTION_SIZE
          .set_maxcollsize  = default_set_maxcollsize,
 #endif
          .set_verbose      = default_set_verbose,
+#endif
          /* Unknown Command API */
          .unknown_command  = default_unknown_command,
          /* Info API */

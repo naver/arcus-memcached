@@ -50,6 +50,7 @@ struct engine_config {
    bool   evict_to_free;
    size_t num_threads;
    size_t maxbytes;
+   size_t sticky_ratio;
    size_t sticky_limit;
    bool   preallocate;
    float  factor;

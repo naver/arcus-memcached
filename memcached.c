@@ -8536,8 +8536,72 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
         STATS_NOKEY(c, cmd_flush_prefix);
     }
 }
-
-static void process_verbosity_command(conn *c, token_t *tokens, const size_t ntokens) {
+#ifdef CONFIG_API
+static void process_engine_config_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    assert(c != NULL);
+    char* config_type = tokens[SUBCOMMAND_TOKEN].value;
+    char* config_val = tokens[SUBCOMMAND_TOKEN+1].value;
+    char ret_type[2] = {0,};
+    size_t ret_val;
+    if(ntokens == 3) {
+        char buf[50];
+        memcpy(buf,config_type,strlen(config_type)+1);
+        ENGINE_ERROR_CODE ret;
+        ret = mc_engine.v1->control_engine_config(mc_engine.v0, c, config_type, config_val, NULL, NULL, buf + strlen(config_type), true);
+        if(ret == ENGINE_SUCCESS) {
+            out_string(c, buf);
+        } else if(ret == ENGINE_ENOTSUP) {
+            out_string(c, "SERVER_ERROR not supported");
+        } else { /*ENGINE_INVAL*/
+            out_string(c, "CLIENT_ERROR bad command line format");
+        }
+    } else {
+        ENGINE_ERROR_CODE ret;
+        ret = mc_engine.v1->control_engine_config(mc_engine.v0, c, config_type, config_val, ret_type, (void*)&ret_val, NULL, false);
+        if (ret == ENGINE_SUCCESS) {
+            if (ret_type[0] == 'm') { /*memlimit*/
+                settings.maxbytes = ret_val;
+            } else if (ret_type[0] == 'v') { /*verbosity*/
+                settings.verbose = (int)ret_val;
+                perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
+            } else if (ret_type[0] == 'c') { /*maxcollsize*/
+                SETTING_LOCK();
+                switch (ret_type[1]) {
+                  case ITEM_TYPE_LIST:
+                       settings.max_list_size = (int)ret_val;
+                       MAX_LIST_SIZE = (int)ret_val;
+                       break;
+                  case ITEM_TYPE_SET:
+                       settings.max_set_size = (int)ret_val;
+                       MAX_SET_SIZE = (int)ret_val;
+                       break;
+                  case ITEM_TYPE_BTREE:
+                       settings.max_btree_size = (int)ret_val;
+                       MAX_BTREE_SIZE = (int)ret_val;
+                       break;
+                }
+                SETTING_UNLOCK();
+            } else {
+                return;
+            }
+            out_string(c, "END");
+            return;
+        }
+        if (ret == ENGINE_E2BIG) {
+            out_string(c, "SERVER_ERROR cannot change the verbosity over the limit");
+        } else if (ret == ENGINE_ENOTSUP) {
+            out_string(c, "SERVER_ERROR not supported");
+        } else if (ret == ENGINE_EBADVALUE) {
+            out_string(c, "CLIENT_ERROR bad value");
+        } else { /*ENGINE_INVAL*/
+            out_string(c, "CLIENT_ERROR bad command line format");
+        }
+    }
+}
+#else
+static void process_verbosity_command(conn *c, token_t *tokens, const size_t ntokens)
+{
     unsigned int level;
 
     assert(c != NULL);
@@ -8548,9 +8612,8 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
         char buf[50];
         sprintf(buf, "verbosity %u\r\nEND", settings.verbose);
         out_string(c, buf);
-
     } else if ((!c->noreply && ntokens == 4) || (c->noreply && ntokens == 5)) {
-        if (!safe_strtoul(tokens[COMMAND_TOKEN+2].value, &level)) {
+        if (!safe_stroul(tokens[COMMAND_TOKEN+2].value, &level)) {
             c->noreply = false;
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
@@ -8579,23 +8642,97 @@ static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntok
         char buf[50];
         sprintf(buf, "memlimit %u\r\nEND", (int)(settings.maxbytes / (1024 * 1024)));
         out_string(c, buf);
-
-    } else if (ntokens == 4 && safe_strtoul(tokens[COMMAND_TOKEN+2].value, &mlimit)) {
+    }
+    else if (ntokens == 4 && safe_strtoul(tokens[COMMAND_TOKEN+2].value, &mlimit)) {
         ENGINE_ERROR_CODE ret;
         size_t new_maxbytes = (size_t)mlimit * 1024 * 1024;
-
         ret = mc_engine.v1->set_memlimit(mc_engine.v0, c, new_maxbytes, settings.sticky_ratio);
         if (ret == ENGINE_SUCCESS) {
             settings.maxbytes = new_maxbytes;
             out_string(c, "END");
-        } else { /* ENGINE_EBADVALUE */
+        } else { /* ENGINE_EBADVALUE*/
             out_string(c, "CLIENT_ERROR bad value");
         }
-    } else {
+    }
+    else {
         out_string(c, "CLIENT_ERROR bad command line format");
     }
 }
 
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t ntokens,
+                                        int coll_type)
+{
+#ifdef MAP_COLLECTION_SUPPORT
+    assert(coll_type==ITEM_TYPE_LIST || coll_type==ITEM_TYPE_SET ||
+           coll_type==ITEM_TYPE_MAP || coll_type==ITEM_TYPE_BTREE);
+#else
+    assert(coll_type==ITEM_TYPE_LIST || coll_type==ITEM_TYPE_SET ||
+           coll_type==ITEM_TYPE_BTREE);
+#endif
+    assert(c != NULL);
+    int32_t maxsize;
+
+    if (ntokens == 3) {
+        char buf[50];
+        switch (coll_type) {
+          case ITEM_TYPE_LIST:
+               sprintf(buf, "max_list_size %d\r\nEND", settings.max_list_size);
+               break;
+          case ITEM_TYPE_SET:
+               sprintf(buf, "max_set_size %d\r\nEND", settings.max_set_size);
+               break;
+#ifdef MAP_COLLECTION_SUPPORT
+          case ITEM_TYPE_MAP:
+               sprintf(buf, "max_map_size %d\r\nEND", settings.max_map_size);
+               break;
+#endif
+          case ITEM_TYPE_BTREE:
+               sprintf(buf, "max_btree_size %d\r\nEND", settings.max_btree_size);
+               break;
+        }
+        out_string(c, buf);
+    }
+     else if (ntokens == 4 && safe_strtol(tokens[COMMAND_TOKEN+2].value, &maxsize)) {
+        ENGINE_ERROR_CODE ret;
+
+        SETTING_LOCK();
+        ret = mc_engine.v1->set_maxcollsize(mc_engine.v0, c, coll_type, &maxsize);
+        if (ret == ENGINE_SUCCESS) {
+            switch (coll_type) {
+              case ITEM_TYPE_LIST:
+                   settings.max_list_size = maxsize;
+                   MAX_LIST_SIZE = maxsize;
+                   break;
+              case ITEM_TYPE_SET:
+                   settings.max_set_size = maxsize;
+                   MAX_SET_SIZE = maxsize;
+                   break;
+#ifdef MAP_COLLECTION_SUPPORT
+              case ITEM_TYPE_MAP:
+                   settings.max_map_size = maxsize;
+                   MAX_MAP_SIZE = maxsize;
+                   break;
+#endif
+              case ITEM_TYPE_BTREE:
+                   settings.max_btree_size = maxsize;
+                   MAX_BTREE_SIZE = maxsize;
+                   break;
+            }
+        }
+        SETTING_UNLOCK();
+        if (ret == ENGINE_SUCCESS) {
+            out_string(c, "END");
+        } else { /* ENGINE_EBADVALUE */
+            out_string(c, "CLIENT_ERROR bad value");
+        }
+    }
+    else {
+        out_string(c, "CLIENT_ERROR bad command line format");
+    }
+}
+#endif
+#endif
 static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntokens) {
     int new_max;
     int curr_conns = mc_stats.curr_conns;
@@ -8637,81 +8774,6 @@ static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntok
         out_string(c, "CLIENT_ERROR bad command line format");
     }
 }
-
-#ifdef CONFIG_MAX_COLLECTION_SIZE
-static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t ntokens,
-                                        int coll_type)
-{
-#ifdef MAP_COLLECTION_SUPPORT
-    assert(coll_type==ITEM_TYPE_LIST || coll_type==ITEM_TYPE_SET ||
-           coll_type==ITEM_TYPE_MAP || coll_type==ITEM_TYPE_BTREE);
-#else
-    assert(coll_type==ITEM_TYPE_LIST || coll_type==ITEM_TYPE_SET ||
-           coll_type==ITEM_TYPE_BTREE);
-#endif
-    assert(c != NULL);
-    int32_t maxsize;
-
-    if (ntokens == 3) {
-        char buf[50];
-        switch (coll_type) {
-          case ITEM_TYPE_LIST:
-               sprintf(buf, "max_list_size %d\r\nEND", settings.max_list_size);
-               break;
-          case ITEM_TYPE_SET:
-               sprintf(buf, "max_set_size %d\r\nEND", settings.max_set_size);
-               break;
-#ifdef MAP_COLLECTION_SUPPORT
-          case ITEM_TYPE_MAP:
-               sprintf(buf, "max_map_size %d\r\nEND", settings.max_map_size);
-               break;
-#endif
-          case ITEM_TYPE_BTREE:
-               sprintf(buf, "max_btree_size %d\r\nEND", settings.max_btree_size);
-               break;
-        }
-        out_string(c, buf);
-    }
-    else if (ntokens == 4 && safe_strtol(tokens[COMMAND_TOKEN+2].value, &maxsize)) {
-        ENGINE_ERROR_CODE ret;
-
-        SETTING_LOCK();
-        ret = mc_engine.v1->set_maxcollsize(mc_engine.v0, c, coll_type, &maxsize);
-        if (ret == ENGINE_SUCCESS) {
-            switch (coll_type) {
-              case ITEM_TYPE_LIST:
-                   settings.max_list_size = maxsize;
-                   MAX_LIST_SIZE = maxsize;
-                   break;
-              case ITEM_TYPE_SET:
-                   settings.max_set_size = maxsize;
-                   MAX_SET_SIZE = maxsize;
-                   break;
-#ifdef MAP_COLLECTION_SUPPORT
-              case ITEM_TYPE_MAP:
-                   settings.max_map_size = maxsize;
-                   MAX_MAP_SIZE = maxsize;
-                   break;
-#endif
-              case ITEM_TYPE_BTREE:
-                   settings.max_btree_size = maxsize;
-                   MAX_BTREE_SIZE = maxsize;
-                   break;
-            }
-        }
-        SETTING_UNLOCK();
-        if (ret == ENGINE_SUCCESS) {
-            out_string(c, "END");
-        } else { /* ENGINE_EBADVALUE */
-            out_string(c, "CLIENT_ERROR bad value");
-        }
-    }
-    else {
-        out_string(c, "CLIENT_ERROR bad command line format");
-    }
-}
-#endif
-
 #ifdef ENABLE_ZK_INTEGRATION
 static void process_hbtimeout_command(conn *c, token_t *tokens, const size_t ntokens) {
     unsigned int hbtimeout;
@@ -8757,6 +8819,7 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     {
         process_maxconns_command(c, tokens, ntokens);
     }
+#ifndef CONFIG_API
     else if ((ntokens == 3 || ntokens == 4) &&
              (strcmp(tokens[SUBCOMMAND_TOKEN].value, "memlimit") == 0))
     {
@@ -8786,6 +8849,7 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
         process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_BTREE);
     }
 #endif
+#endif
 #ifdef ENABLE_ZK_INTEGRATION
     else if ((ntokens == 3 || ntokens == 4) &&
              (strcmp(tokens[SUBCOMMAND_TOKEN].value, "hbtimeout") == 0))
@@ -8798,11 +8862,19 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
         process_hbfailstop_command(c, tokens, ntokens);
     }
 #endif
+#ifndef CONFIG_API
     else if ((ntokens >= 3 && ntokens <= 5) &&
              (strcmp(tokens[SUBCOMMAND_TOKEN].value, "verbosity") == 0))
     {
         process_verbosity_command(c, tokens, ntokens);
     }
+#endif
+#ifdef CONFIG_API
+    else if (ntokens >=3 && ntokens <= 5)
+    {
+        process_engine_config_command(c, tokens, ntokens);/* maxcollsize, memlimit, verbosity */
+    }
+#endif
     else
     {
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -14892,6 +14964,13 @@ int main (int argc, char **argv) {
 #ifdef ENABLE_STICKY_ITEM
     if (1) {
         size_t sticky_limit = 0;
+#ifdef CONFIG_API
+        int sticky_ratio = 0;
+        if (settings.sticky_ratio >0) {
+            sticky_ratio = settings.sticky_ratio;
+        }
+        old_opts += sprintf(old_opts, "sticky_ratio=%lu;", (unsigned long)sticky_ratio);
+#endif
         if (settings.sticky_ratio > 0) {
             sticky_limit = (settings.maxbytes / 100) * settings.sticky_ratio;
         }

@@ -81,6 +81,9 @@ initalize_configuration(struct demo_engine *se, const char *cfg_str)
             { .key = "cache_size",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.maxbytes },
+            { .key = "sticky_ratio",
+              .datatype = DT_SIZE,
+              .value.dt_size = &se->config.sticky_ratio},
             { .key = "sticky_limit",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.sticky_limit},
@@ -696,7 +699,14 @@ Demo_get_prefix_stats(ENGINE_HANDLE* handle, const void* cookie,
 /*
  * Config API
  */
-
+static ENGINE_ERROR_CODE
+Demo_control_engine_config(ENGINE_HANDLE* handle, const void* cookie,
+                const char* config_type, const char* config_val,
+                char* ret_type, void* ret_val,
+                char* res_buf, bool set_type)
+{
+    return ENGINE_ENOTSUP;
+}
 /*
  * Unknown Command API
  */
@@ -813,6 +823,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .get_prefix_stats = Demo_get_prefix_stats,
          /* Dump API */
          /* Config API */
+         .control_engine_config       = Demo_control_engine_config,
          /* Unknown Command API */
          /* Info API */
          .get_item_info    = Demo_get_item_info,
