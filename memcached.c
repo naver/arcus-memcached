@@ -8136,238 +8136,6 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
         STATS_NOKEY(c, cmd_flush_prefix);
     }
 }
-#ifndef CONFIG_API
-static void process_verbosity_command(conn *c, token_t *tokens, const size_t ntokens)
-{
-    unsigned int level;
-    unsigned char max_level = MAX_VERBOSITY_LEVEL;
-    assert(c != NULL);
-
-    set_noreply_maybe(c, tokens, ntokens);
-
-    if (!c->noreply && ntokens == 3) {
-        char buf[50];
-        sprintf(buf, "verbosity %u\r\nEND", settings.verbose);
-        out_string(c, buf);
-    } else if ((!c->noreply && ntokens == 4) || (c->noreply && ntokens == 5)) {
-        ENGINE_ERROR_CODE ret;
-        ret = mc_engine.v1->set_config(mc_engine.v0, c, tokens[COMMAND_TOKEN+1].value, tokens[COMMAND_TOKEN+2].value, (void*)&max_level, (void*)&level);
-        if (ret == ENGINE_SUCCESS) {
-            settings.verbose = level;
-            perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
-            out_string(c, "END");
-        } else if (ret == ENGINE_E2BIG) {
-            c->noreply = false;
-            out_string(c, "SERVER_ERROR cannot change the verbosity over the limit");
-        } else if (ret == ENGINE_ENOTSUP) {
-            c->noreply = false;
-            out_string(c, "This engine does not support changing configuration");
-        } else { /*ENGINE_INVAL*/
-            c->noreply = false;
-            out_string(c, "CLIENT_ERROR bad command line format");
-        }
-
-        if (!safe_strtoul(tokens[COMMAND_TOKEN+2].value, &level)) {
-            c->noreply = false;
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
-        }
-        if (level > MAX_VERBOSITY_LEVEL) {
-            c->noreply = false;
-            out_string(c, "SERVER_ERROR cannot change the verbosity over the limit");
-            return;
-        }
-
-        settings.verbose = level;
-        perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
-        out_string(c, "END");
-        mc_engine.v1->set_verbose(mc_engine.v0, c, settings.verbose);
-    } else {
-        c->noreply = false;
-        out_string(c, "CLIENT_ERROR bad command line format");
-    }
-}
-#endif
-
-#ifndef CONFIG_API
-static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntokens) {
-    unsigned int mlimit;
-    assert(c != NULL);
-
-    if (ntokens == 3) {
-        char buf[50];
-        sprintf(buf, "memlimit %u\r\nEND", (int)(settings.maxbytes / (1024 * 1024)));
-        out_string(c, buf);
-    }
-#ifndef CONFIG_API
-    else if (ntokens == 4) {
-        ENGINE_ERROR_CODE ret;
-        size_t new_maxbytes;
-        ret = mc_engine.v1->set_config(mc_engine.v0, c, tokens[COMMAND_TOKEN+1].value, tokens[COMMAND_TOKEN+2].value, (void*)&(settings.sticky_ratio),(void*)&new_maxbytes);
-        if (ret == ENGINE_SUCCESS) {
-            settings.maxbytes = new_maxbytes;
-            out_string(c, "END");
-        } else if (ret == ENGINE_ENOTSUP) {
-            out_string(c, "This engine does not support configuration");
-        } else if (ret == ENGINE_EBADVALUE) {
-            out_string(c, "CLIENT_ERROR bad value");
-        } else { /*ENGINE_INVAL*/
-            out_string(c, "CLIENT_ERROR bad command line format");
-        }
-    }
-
-    else if (ntokens == 4 && safe_strtoul(tokens[COMMAND_TOKEN+2].value, &mlimit)) {
-        ENGINE_ERROR_CODE ret;
-        size_t new_maxbytes = (size_t)mlimit * 1024 * 1024;
-        ret = mc_engine.v1->set_memlimit(mc_engine.v0, c, new_maxbytes, settings.sticky_ratio);
-        if (ret == ENGINE_SUCCESS) {
-            settings.maxbytes = new_maxbytes;
-            out_string(c, "END");
-        } else if (ret == ENGINE_ENOTSUP){
-            out_string(c, "This engine does not support configuration");
-        } else { /* ENGINE_EBADVALUE*/
-            out_string(c, "CLIENT_ERROR bad value");
-        }
-    }
-#endif
-    else {
-        out_string(c, "CLIENT_ERROR bad command line format");
-    }
-}
-#endif
-static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntokens) {
-    int new_max;
-    int curr_conns = mc_stats.curr_conns;
-    char buf[50];
-    struct rlimit rlim;
-
-    if (ntokens == 3) {
-        sprintf(buf, "maxconns %d\r\nEND", settings.maxconns);
-        out_string(c, buf);
-
-    } else if (ntokens == 4 && safe_strtol(tokens[COMMAND_TOKEN+2].value, &new_max)) {
-        int extra_nfiles = ADMIN_MAX_CONNECTIONS + ZK_CONNECTIONS;
-        if (settings.port != 0) {
-            extra_nfiles += 2;
-        }
-        if (settings.udpport != 0) {
-            extra_nfiles += settings.num_threads * 2;
-        }
-
-        if (new_max + extra_nfiles < (int)(curr_conns * 1.1) || new_max + extra_nfiles > 1000000) {
-            out_string(c, "CLIENT_ERROR the value is out of range");
-            return;
-        }
-        if (getrlimit(RLIMIT_NOFILE, &rlim) != 0) {
-            out_string(c, "SERVER_ERROR failed to get RLIMIT_NOFILE");
-            return;
-        }
-        if ((rlim.rlim_cur != RLIM_INFINITY) && (new_max + extra_nfiles > (int)rlim.rlim_cur)) {
-            out_string(c, "SERVER_ERROR cannot change to the maxconns over the soft limit");
-            return;
-        }
-
-        SETTING_LOCK();
-        settings.maxconns = new_max;
-        SETTING_UNLOCK();
-
-        out_string(c, "END");
-    } else {
-        out_string(c, "CLIENT_ERROR bad command line format");
-    }
-}
-
-#ifdef CONFIG_MAX_COLLECTION_SIZE
-#ifndef CONFIG_API
-static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t ntokens,
-                                        int coll_type)
-{
-    assert(coll_type==ITEM_TYPE_LIST || coll_type==ITEM_TYPE_SET ||
-           coll_type==ITEM_TYPE_BTREE);
-    assert(c != NULL);
-    int32_t maxsize;
-    if (ntokens == 3) {
-        char buf[50];
-        switch (coll_type) {
-          case ITEM_TYPE_LIST:
-               sprintf(buf, "max_list_size %d\r\nEND", settings.max_list_size);
-               break;
-          case ITEM_TYPE_SET:
-               sprintf(buf, "max_set_size %d\r\nEND", settings.max_set_size);
-               break;
-          case ITEM_TYPE_BTREE:
-               sprintf(buf, "max_btree_size %d\r\nEND", settings.max_btree_size);
-               break;
-        }
-        out_string(c, buf);
-    }
-    else if (ntokens == 4) {
-        ENGINE_ERROR_CODE ret;
-        SETTING_LOCK();
-        ret = mc_engine.v1->set_config(mc_engine.v0, c, tokens[COMMAND_TOKEN+1].value, tokens[COMMAND_TOKEN+2].value, (void*)&coll_type, (void*)&maxsize);
-        if (ret == ENGINE_SUCCESS) {
-            switch (coll_type) {
-              case ITEM_TYPE_LIST:
-                   settings.max_list_size = maxsize;
-                   MAX_LIST_SIZE = maxsize;
-                   break;
-              case ITEM_TYPE_SET:
-                   settings.max_set_size = maxsize;
-                   MAX_SET_SIZE = maxsize;
-                   break;
-              case ITEM_TYPE_BTREE:
-                   settings.max_btree_size = maxsize;
-                   MAX_BTREE_SIZE = maxsize;
-                   break;
-            }
-        }
-        SETTING_UNLOCK();
-        if (ret == ENGINE_SUCCESS) {
-            out_string(c, "END");
-        } else if (ret == ENGINE_ENOTSUP) {
-            out_string(c, "This engine does not support configuration");
-        } else if (ret == ENGINE_EBADVALUE){
-            out_string(c, "CLIENT_ERROR bad value");
-        } else { /*ENIGNE_INVAL*/
-            out_string(c, "CLIENT_ERROR bad command line format");
-        }
-    }
-
-    else if (ntokens == 4 && safe_strtol(tokens[COMMAND_TOKEN+2].value, &maxsize)) {
-        ENGINE_ERROR_CODE ret;
-        SETTING_LOCK();
-        ret = mc_engine.v1->set_maxcollsize(mc_engine.v0, c, coll_type, &maxsize);
-        if (ret == ENGINE_SUCCESS) {
-            switch (coll_type) {
-              case ITEM_TYPE_LIST:
-                   settings.max_list_size = maxsize;
-                   MAX_LIST_SIZE = maxsize;
-                   break;
-              case ITEM_TYPE_SET:
-                   settings.max_set_size = maxsize;
-                   MAX_SET_SIZE = maxsize;
-                   break;
-              case ITEM_TYPE_BTREE:
-                   settings.max_btree_size = maxsize;
-                   MAX_BTREE_SIZE = maxsize;
-                   break;
-            }
-        }
-        SETTING_UNLOCK();
-        if (ret == ENGINE_SUCCESS) {
-            out_string(c, "END");
-        } else if (ret == ENGINE_ENOTSUP) {
-            out_string(c, "This engine does not support configuration");
-        } else { /* ENGINE_EBADVALUE */
-            out_string(c, "CLIENT_ERROR bad value");
-        }
-    }
-    else {
-        out_string(c, "CLIENT_ERROR bad command line format");
-    }
-}
-#endif
-#endif
 #ifdef CONFIG_API
 static void process_engine_config_command(conn *c, token_t *tokens, const size_t ntokens)
 {
@@ -8436,7 +8204,7 @@ static void process_engine_config_command(conn *c, token_t *tokens, const size_t
             out_string(c, "SERVER_ERROR cannot change the verbosity over the limit");
         } else if (ret == ENGINE_ENOTSUP) {
             c->noreply = false;
-            out_string(c, "This engine does not support configuration");
+            out_string(c, "SERVER_ERROR not supported");
         } else if (ret == ENGINE_EBADVALUE) {
             c->noreply = false;
             out_string(c, "CLIENT_ERROR bad value");
@@ -8446,8 +8214,165 @@ static void process_engine_config_command(conn *c, token_t *tokens, const size_t
         }
     }
 }
-#endif
+#else
+static void process_verbosity_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    unsigned int level;
+    
+    assert(c != NULL);
 
+    set_noreply_maybe(c, tokens, ntokens);
+
+    if (!c->noreply && ntokens == 3) {
+        char buf[50];
+        sprintf(buf, "verbosity %u\r\nEND", settings.verbose);
+        out_string(c, buf);
+    } else if ((!c->noreply && ntokens == 4) || (c->noreply && ntokens == 5)) {
+        if (!safe_stroul(tokens[COMMAND_TOKEN+2].value, &level)) {
+            c->noreply = false;
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+        if (level > MAX_VERBOSITY_LEVEL) {
+            c->noreply = false;
+            out_string(c, "SERVER_ERROR cannot change the verbosity over the limit");
+            return;
+        }
+
+        settings.verbose = level;
+        perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
+        out_string(c, "END");
+        mc_engine.v1->set_verbose(mc_engine.v0, c, settings.verbose);
+    } else {
+        c->noreply = false;
+        out_string(c, "CLIENT_ERROR bad command line format");
+    }
+}
+
+static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntokens) {
+    unsigned int mlimit;
+    assert(c != NULL);
+
+    if (ntokens == 3) {
+        char buf[50];
+        sprintf(buf, "memlimit %u\r\nEND", (int)(settings.maxbytes / (1024 * 1024)));
+        out_string(c, buf);
+    }
+    else if (ntokens == 4 && safe_strtoul(tokens[COMMAND_TOKEN+2].value, &mlimit)) {
+        ENGINE_ERROR_CODE ret;
+        size_t new_maxbytes = (size_t)mlimit * 1024 * 1024;
+        ret = mc_engine.v1->set_memlimit(mc_engine.v0, c, new_maxbytes, settings.sticky_ratio);
+        if (ret == ENGINE_SUCCESS) {
+            settings.maxbytes = new_maxbytes;
+            out_string(c, "END");
+        } else { /* ENGINE_EBADVALUE*/
+            out_string(c, "CLIENT_ERROR bad value");
+        }
+    }
+    else {
+        out_string(c, "CLIENT_ERROR bad command line format");
+    }
+}
+
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t ntokens,
+                                        int coll_type)
+{
+    assert(coll_type==ITEM_TYPE_LIST || coll_type==ITEM_TYPE_SET ||
+           coll_type==ITEM_TYPE_BTREE);
+    assert(c != NULL);
+    int32_t maxsize;
+    
+    if (ntokens == 3) {
+        char buf[50];
+        switch (coll_type) {
+          case ITEM_TYPE_LIST:
+               sprintf(buf, "max_list_size %d\r\nEND", settings.max_list_size);
+               break;
+          case ITEM_TYPE_SET:
+               sprintf(buf, "max_set_size %d\r\nEND", settings.max_set_size);
+               break;
+          case ITEM_TYPE_BTREE:
+               sprintf(buf, "max_btree_size %d\r\nEND", settings.max_btree_size);
+               break;
+        }
+        out_string(c, buf);
+    }
+     else if (ntokens == 4 && safe_strtol(tokens[COMMAND_TOKEN+2].value, &maxsize)) {
+        ENGINE_ERROR_CODE ret;
+     
+        SETTING_LOCK();
+        ret = mc_engine.v1->set_maxcollsize(mc_engine.v0, c, coll_type, &maxsize);
+        if (ret == ENGINE_SUCCESS) {
+            switch (coll_type) {
+              case ITEM_TYPE_LIST:
+                   settings.max_list_size = maxsize;
+                   MAX_LIST_SIZE = maxsize;
+                   break;
+              case ITEM_TYPE_SET:
+                   settings.max_set_size = maxsize;
+                   MAX_SET_SIZE = maxsize;
+                   break;
+              case ITEM_TYPE_BTREE:
+                   settings.max_btree_size = maxsize;
+                   MAX_BTREE_SIZE = maxsize;
+                   break;
+            }
+        }
+        SETTING_UNLOCK();
+        if (ret == ENGINE_SUCCESS) {
+            out_string(c, "END");
+        } else { /* ENGINE_EBADVALUE */
+            out_string(c, "CLIENT_ERROR bad value");
+        }
+    }
+    else {
+        out_string(c, "CLIENT_ERROR bad command line format");
+    }
+}
+#endif
+#endif
+static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntokens) {
+    int new_max;
+    int curr_conns = mc_stats.curr_conns;
+    char buf[50];
+    struct rlimit rlim;
+
+    if (ntokens == 3) {
+        sprintf(buf, "maxconns %d\r\nEND", settings.maxconns);
+        out_string(c, buf);
+
+    } else if (ntokens == 4 && safe_strtol(tokens[COMMAND_TOKEN+2].value, &new_max)) {
+        int extra_nfiles = ADMIN_MAX_CONNECTIONS + ZK_CONNECTIONS;
+        if (settings.port != 0) {
+            extra_nfiles += 2;
+        }
+        if (settings.udpport != 0) {
+            extra_nfiles += settings.num_threads * 2;
+        }
+
+        if (new_max + extra_nfiles < (int)(curr_conns * 1.1) || new_max + extra_nfiles > 1000000) {
+            out_string(c, "CLIENT_ERROR the value is out of range");
+            return;
+        }
+        if (getrlimit(RLIMIT_NOFILE, &rlim) != 0) {
+            out_string(c, "SERVER_ERROR failed to get RLIMIT_NOFILE");
+            return;
+        }
+        if ((rlim.rlim_cur != RLIM_INFINITY) && (new_max + extra_nfiles > (int)rlim.rlim_cur)) {
+            out_string(c, "SERVER_ERROR cannot change to the maxconns over the soft limit");
+            return;
+        }
+
+        SETTING_LOCK();
+        settings.maxconns = new_max;
+        SETTING_UNLOCK();
+
+        out_string(c, "END");
+    } else {
+        out_string(c, "CLIENT_ERROR bad command line format");
+    }
+}
 #ifdef ENABLE_ZK_INTEGRATION
 static void process_hbtimeout_command(conn *c, token_t *tokens, const size_t ntokens) {
     unsigned int hbtimeout;
