@@ -14170,6 +14170,13 @@ int main (int argc, char **argv) {
 #ifdef ENABLE_STICKY_ITEM
     if (1) {
         size_t sticky_limit = 0;
+#ifdef CONFIG_API
+        int sticky_ratio = 0;
+        if (settings.sticky_ratio >0) {
+            sticky_ratio = settings.sticky_ratio;
+        }
+        old_opts += sprintf(old_opts, "sticky_ratio=%lu;", (unsigned long)sticky_ratio);
+#endif
         if (settings.sticky_ratio > 0) {
             sticky_limit = (settings.maxbytes / 100) * settings.sticky_ratio;
         }
