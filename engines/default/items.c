@@ -1500,11 +1500,7 @@ static hash_item *do_list_item_alloc(struct default_engine *engine,
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
 #endif
         if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
-#ifdef LONG_KEY_SUPPORT
         info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
-#else
-        info->itdist  = (uint8_t)((size_t*)info-(size_t*)it);
-#endif
         info->stotal  = 0;
         info->prefix  = NULL;
         info->head = info->tail = NULL;
@@ -1800,11 +1796,7 @@ static hash_item *do_set_item_alloc(struct default_engine *engine,
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
 #endif
         if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
-#ifdef LONG_KEY_SUPPORT
         info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
-#else
-        info->itdist  = (uint8_t)((size_t*)info-(size_t*)it);
-#endif
         info->stotal  = 0;
         info->prefix  = NULL;
         info->root    = NULL;
@@ -2369,17 +2361,10 @@ static hash_item *do_btree_item_alloc(struct default_engine *engine,
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
 #endif
         if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
-#ifdef LONG_KEY_SUPPORT
         info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
         info->stotal  = 0;
         info->prefix  = NULL;
         info->bktype  = BKEY_TYPE_UNKNOWN;
-#else
-        info->itdist  = (uint8_t)((size_t*)info-(size_t*)it);
-        info->bktype  = BKEY_TYPE_UNKNOWN;
-        info->stotal  = 0;
-        info->prefix  = NULL;
-#endif
         info->maxbkeyrange.len = BKEY_NULL;
         info->root    = NULL;
         assert((hash_item*)COLL_GET_HASH_ITEM(info) == it);
@@ -8339,11 +8324,7 @@ static hash_item *do_map_item_alloc(struct default_engine *engine,
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
 #endif
         if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
-#ifdef LONG_KEY_SUPPORT
         info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
-#else
-        info->itdist  = (uint8_t)((size_t*)info-(size_t*)it);
-#endif
         info->stotal  = 0;
         info->prefix  = NULL;
         info->root    = NULL;
