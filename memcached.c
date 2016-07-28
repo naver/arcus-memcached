@@ -8151,10 +8151,7 @@ static void process_engine_config_command(conn *c, token_t *tokens, const size_t
     if(ntokens == 3) {
         char buf[50];
         if (strcmp(config_type, "verbosity") == 0) {
-            set_noreply_maybe(c, tokens, ntokens);
-            if(!c->noreply) {
-                sprintf(buf, "verbosity %u\r\nEND", settings.verbose);
-            }
+            sprintf(buf, "verbosity %u\r\nEND", settings.verbose);
         } else if (strcmp(config_type, "memlimit") == 0) {
             sprintf(buf, "memlimit %u\r\nEND", (int)(settings.maxbytes / (1024 * 1024)));
         } else if (strcmp(config_type, "max_list_size") == 0) {
@@ -8175,7 +8172,6 @@ static void process_engine_config_command(conn *c, token_t *tokens, const size_t
             } else if (ret_type == 'v') { /*verbosity*/
                 settings.verbose = level;
                 perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
-                set_noreply_maybe(c, tokens, ntokens);
             } else if (ret_type == 'c') { /*maxcollsize*/
                 SETTING_LOCK();
                 switch (coll_type) {
@@ -8200,16 +8196,12 @@ static void process_engine_config_command(conn *c, token_t *tokens, const size_t
             return;
         }
         if (ret == ENGINE_E2BIG) {
-            c->noreply = false;
             out_string(c, "SERVER_ERROR cannot change the verbosity over the limit");
         } else if (ret == ENGINE_ENOTSUP) {
-            c->noreply = false;
             out_string(c, "SERVER_ERROR not supported");
         } else if (ret == ENGINE_EBADVALUE) {
-            c->noreply = false;
             out_string(c, "CLIENT_ERROR bad value");
         } else { /*ENGINE_INVAL*/
-            c->noreply = false;
             out_string(c, "CLIENT_ERROR bad command line format");
         }
     }
@@ -8218,7 +8210,7 @@ static void process_engine_config_command(conn *c, token_t *tokens, const size_t
 static void process_verbosity_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     unsigned int level;
-    
+
     assert(c != NULL);
 
     set_noreply_maybe(c, tokens, ntokens);
@@ -8282,7 +8274,7 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
            coll_type==ITEM_TYPE_BTREE);
     assert(c != NULL);
     int32_t maxsize;
-    
+
     if (ntokens == 3) {
         char buf[50];
         switch (coll_type) {
@@ -8300,7 +8292,7 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
     }
      else if (ntokens == 4 && safe_strtol(tokens[COMMAND_TOKEN+2].value, &maxsize)) {
         ENGINE_ERROR_CODE ret;
-     
+
         SETTING_LOCK();
         ret = mc_engine.v1->set_maxcollsize(mc_engine.v0, c, coll_type, &maxsize);
         if (ret == ENGINE_SUCCESS) {
