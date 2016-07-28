@@ -127,16 +127,16 @@ stats 명령은 직접 한번씩 수행해 보기를 권하며, 아래에서는 
 \<null\> prefix 통계는 prefix를 가지지 않는 items 통계이다.
 
 ```
-PREFIX <null> itm 2 kitm 1 litm 1 sitm 0 bitm 0 tsz 144 ktsz 64 ltsz 80 stsz 0 btsz 0 time 20121105152422
-PREFIX a itm 5 kitm 5 litm 0 sitm 0 bitm 0 tsz 376 ktsz 376 ltsz 0 stsz 0 btsz 0 time 20121105152422
-PREFIX b itm 2 kitm 2 litm 0 sitm 0 bitm 0 tsz 144 ktsz 144 ltsz 0 stsz 0 btsz 0 time 20121105152422
+PREFIX <null> itm 2 kitm 1 litm 1 sitm 0 mitm 0 bitm 0 tsz 144 ktsz 64 ltsz 80 stsz 0 mtsz 0 btsz 0 time 20121105152422
+PREFIX a itm 5 kitm 5 litm 0 sitm 0 mitm 0 bitm 0 tsz 376 ktsz 376 ltsz 0 stsz 0 mtsz 0 btsz 0 time 20121105152422
+PREFIX b itm 2 kitm 2 litm 0 sitm 0 mitm 0 bitm 0 tsz 144 ktsz 144 ltsz 0 stsz 0 mtsz 0 btsz 0 time 20121105152422
 END
 ```
 
 각 prefix의 item 통계 정보에
-itm은 전체 item 수이고, kitm, litm, sitm, bitm은 각각 kv, list, set, b+tree item 수이며,
+itm은 전체 item 수이고, kitm, litm, sitm, mitm, bitm은 각각 kv, list, set, map, b+tree item 수이며,
 tsz(total size)는 전체 items이 차지하는 공간의 크기이고,
-ktsz, ltsz, stsz, btsz는 각각 kv, list, set, b+tree items이 차지하는 공간의 크기이다.
+ktsz, ltsz, stsz, mtsz, btsz는 각각 kv, list, set, map, b+tree items이 차지하는 공간의 크기이다.
 time은 prefix 생성 시간이다.
 
 모든 prefix들의 연산 통계 정보의 결과 예는 아래와 같다.
@@ -146,19 +146,22 @@ time은 prefix 생성 시간이다.
 ```
 PREFIX <null> get 2 hit 2 set 2 del 0
        lcs 0 lis 0 lih 0 lds 0 ldh 0 lgs 0 lgh 0
-       scs 0 sis 0 sih 0 sds 0 sdh 0 sgs 0 sgh 0 ses 0 seh 0 
+       scs 0 sis 0 sih 0 sds 0 sdh 0 sgs 0 sgh 0 ses 0 seh 0
+       mcs 0 mis 0 mih 0 mus 0 muh 0 mds 0 mdh 0 mgs 0 mgh 0
        bcs 0 bis 0 bih 0 bus 0 buh 0 bds 0 bdh 0 bps 0 bph 0 bms 0 bmh 0 bgs 0 bgh 0 bns 0 bnh 0
        pfs 0 pfh 0 pgs 0 pgh 0
        gas 0 sas 0
 PREFIX a get 5 hit 5 set 5 del 0 
        lcs 0 lis 0 lih 0 lds 0 ldh 0 lgs 0 lgh 0
-       scs 0 sis 0 sih 0 sds 0 sdh 0 sgs 0 sgh 0 ses 0 seh 0 
+       scs 0 sis 0 sih 0 sds 0 sdh 0 sgs 0 sgh 0 ses 0 seh 0
+       mcs 0 mis 0 mih 0 mus 0 muh 0 mds 0 mdh 0 mgs 0 mgh 0
        bcs 0 bis 0 bih 0 bus 0 buh 0 bds 0 bdh 0 bps 0 bph 0 bms 0 bmh 0 bgs 0 bgh 0 bns 0 bnh 0
        pfs 0 pfh 0 pgs 0 pgh 0
        gas 0 sas 0
 PREFIX b get 2 hit 2 set 2 del 0 
        lcs 0 lis 0 lih 0 lds 0 ldh 0 lgs 0 lgh 0
-       scs 0 sis 0 sih 0 sds 0 sdh 0 sgs 0 sgh 0 ses 0 seh 0 
+       scs 0 sis 0 sih 0 sds 0 sdh 0 sgs 0 sgh 0 ses 0 seh 0
+       mcs 0 mis 0 mih 0 mus 0 muh 0 mds 0 mdh 0 mgs 0 mgh 0
        bcs 0 bis 0 bih 0 bus 0 buh 0 bds 0 bdh 0 bps 0 bph 0 bms 0 bmh 0 bgs 0 bgh 0 bns 0 bnh 0
        pfs 0 pfh 0 pgs 0 pgh 0
        gas 0 sas 0
@@ -167,7 +170,7 @@ END
 
 각 prefix의 연산 통계 정보에서
 get, hit, set, del은 kv 유형의 items에 대한 연산 통계이고,
-'l', 's', b'로 시작하는 3 character는 각각 list, set, b+tree 유형의 items에 대한 연산 통계이며,
+'l', 's', 'm', 'b'로 시작하는 3 character는 각각 list, set, map, b+tree 유형의 items에 대한 연산 통계이며,
 'p'로 시작하는 3 character는 특별히 b+tree에 대한 position 연산의 통계이다.
 gas와 sas는 item attribute 연산의 통계이다.
 
@@ -184,6 +187,12 @@ gas와 sas는 item attribute 연산의 통계이다.
   - sds, sdh – sop delete 수행 횟수와 hit 수
   - sgs, sgh – sop get 수행 횟수와 hit 수
   - ses, seh - sop exist 수행 횟수와 hit 수
+- map 연산 통계
+  - mcs - mop create 수행 횟수
+  - mis, mih - mop insert 수행 횟수와 hit 수
+  - mus, muh – mop update 수행 횟수와 hit 수
+  - mds, mdh – mop delete 수행 횟수와 hit 수
+  - mgs, mgh – mop get 수행 횟수와 hit 수
 - b+tree 연산 통계
   - bcs – bop create 수행 횟수
   - bis, bih – bop insert/upsert 수행 횟수와 hit 수
@@ -455,6 +464,7 @@ DUMP SUMMARY: { prefix=<prefix>, count=<count>, total=<total> elapsed=<elapsed> 
      - "K" : kv 
      - "L" : list
      - "S" : set
+     - "M" : map
      - "B" : b+tree
   - \<key_string\>은 cache server에 저장되어 있는 key string 이다.
   - \<exptime\>은 key의 exptime으로 아래 값들 중 하나이다.
@@ -479,5 +489,5 @@ Arcus cache server의 acsii command syntax를 조회한다.
 help [<subcommand>]\r\n
 ```
 
-\<subcommand\>로는 kv, lop, sop, bop, stats, flush, config, etc가 있으며,
+\<subcommand\>로는 kv, lop, sop, mop, bop, stats, flush, config, etc가 있으며,
 \<subcommand\>가 생략되면, help 명령에서 사용가능한 subcommand 목록이 출력된다.

@@ -16,6 +16,7 @@ Command pipelining 가능한 명령은 아래와 같으며, 단순 response stri
 
 * lop 명령들 - lop insert/delete
 * sop 명령들 - sop insert/delete/exist
+* mop 명령들 - mop insert/delete/update
 * bop 명령들 - bop insert/upsert/delete/update/incr/decr
  
 Command pipelining 수행 예로,

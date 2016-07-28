@@ -412,6 +412,68 @@ extern "C" {
                                           uint32_t* flags, bool* dropped,
                                           uint16_t vbucket);
 
+#ifdef MAP_COLLECTION_SUPPORT
+        /*
+         * MAP Interface
+         */
+        ENGINE_ERROR_CODE (*map_struct_create)(ENGINE_HANDLE* handle,
+                                               const void* cookie,
+                                               const void* key,
+                                               const int nkey,
+                                               item_attr *attrp,
+                                               uint16_t vbucket);
+        ENGINE_ERROR_CODE (*map_elem_alloc)(ENGINE_HANDLE* handle,
+                                            const void* cookie,
+                                            const void* key,
+                                            const int nkey,
+                                            const size_t nfield,
+                                            const size_t nbytes,
+                                            eitem** eitem);
+        void (*map_elem_release)(ENGINE_HANDLE* handle,
+                                 const void *cookie,
+                                 eitem **eitem_array,
+                                 const int eitem_count);
+        ENGINE_ERROR_CODE (*map_elem_insert)(ENGINE_HANDLE* handle,
+                                             const void* cookie,
+                                             const void* key,
+                                             const int nkey,
+                                             eitem *eitem,
+                                             item_attr *attrp,
+                                             bool *created,
+                                             uint16_t vbucket);
+        ENGINE_ERROR_CODE (*map_elem_update)(ENGINE_HANDLE* handle,
+                                             const void* cookie,
+                                             const void* key,
+                                             const int nkey,
+                                             const field_t *field,
+                                             const void* value,
+                                             const int nbytes,
+                                             uint16_t vbucket);
+        ENGINE_ERROR_CODE (*map_elem_delete)(ENGINE_HANDLE* handle,
+                                             const void* cookie,
+                                             const void* key,
+                                             const int nkey,
+                                             const int numfields,
+                                             const field_t *flist,
+                                             const bool drop_if_empty,
+                                             uint32_t* del_count,
+                                             bool *dropped,
+                                             uint16_t vbucket);
+        ENGINE_ERROR_CODE (*map_elem_get)(ENGINE_HANDLE* handle,
+                                          const void* cookie,
+                                          const void* key,
+                                          const int nkey,
+                                          const int numfields,
+                                          const field_t *flist,
+                                          const bool delete,
+                                          const bool drop_if_empty,
+                                          eitem** eitem,
+                                          uint32_t* eitem_count,
+                                          uint32_t* flags,
+                                          bool* dropped,
+                                          uint16_t vbucket);
+#endif
+
         /*
          * B+Tree Interface
          */

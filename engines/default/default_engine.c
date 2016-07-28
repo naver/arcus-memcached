@@ -142,6 +142,11 @@ initalize_configuration(struct default_engine *se, const char *cfg_str)
             { .key = "max_set_size",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.max_set_size },
+#ifdef MAP_COLLECTION_SUPPORT
+            { .key = "max_map_size",
+              .datatype = DT_SIZE,
+              .value.dt_size = &se->config.max_map_size },
+#endif
             { .key = "max_btree_size",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.max_btree_size },
@@ -561,6 +566,119 @@ default_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
+
+#ifdef MAP_COLLECTION_SUPPORT
+
+/*
+ * Map Collection API
+ */
+
+static ENGINE_ERROR_CODE
+default_map_struct_create(ENGINE_HANDLE* handle, const void* cookie,
+                          const void* key, const int nkey, item_attr *attrp,
+                          uint16_t vbucket)
+{
+    struct default_engine* engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
+    ret = map_struct_create(engine, key, nkey, attrp, cookie);
+    ACTION_AFTER_WRITE(cookie, ret);
+    return ret;
+}
+
+static ENGINE_ERROR_CODE
+default_map_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
+                       const void* key, const int nkey, const size_t nfield,
+                       const size_t nbytes, eitem** eitem)
+{
+    map_elem_item *elem;
+    ENGINE_ERROR_CODE ret = ENGINE_EINVAL;
+
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
+    elem = map_elem_alloc(get_handle(handle), nfield, nbytes, cookie);
+    ACTION_AFTER_WRITE(cookie, ret);
+    if (elem != NULL) {
+        *eitem = elem;
+        ret = ENGINE_SUCCESS;
+    } else {
+        ret = ENGINE_ENOMEM;
+    }
+    return ret;
+}
+
+static void
+default_map_elem_release(ENGINE_HANDLE* handle, const void *cookie,
+                         eitem **eitem_array, const int eitem_count)
+{
+    map_elem_release(get_handle(handle), (map_elem_item**)eitem_array, eitem_count);
+}
+
+static ENGINE_ERROR_CODE
+default_map_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
+                        const void* key, const int nkey, eitem *eitem,
+                        item_attr *attrp, bool *created, uint16_t vbucket)
+{
+    struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
+    ret = map_elem_insert(engine, key, nkey, (map_elem_item*)eitem, attrp, created, cookie);
+    ACTION_AFTER_WRITE(cookie, ret);
+    return ret;
+}
+
+static ENGINE_ERROR_CODE
+default_map_elem_update(ENGINE_HANDLE* handle, const void* cookie,
+                        const void* key, const int nkey, const field_t *field,
+                        const void* value, const int nbytes, uint16_t vbucket)
+{
+    struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
+    ret = map_elem_update(engine, key, nkey, field, value, nbytes, cookie);
+    ACTION_AFTER_WRITE(cookie, ret);
+    return ret;
+}
+
+static ENGINE_ERROR_CODE
+default_map_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
+                        const void* key, const int nkey, const int numfields,
+                        const field_t *flist, const bool drop_if_empty,
+                        uint32_t* del_count, bool *dropped, uint16_t vbucket)
+{
+    struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    ACTION_BEFORE_WRITE(cookie, key, nkey);
+    ret = map_elem_delete(engine, key, nkey, numfields, flist, drop_if_empty, del_count, dropped);
+    ACTION_AFTER_WRITE(cookie, ret);
+    return ret;
+}
+
+static ENGINE_ERROR_CODE
+default_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
+                     const void* key, const int nkey, const int numfields,
+                     const field_t *flist, const bool delete, const bool drop_if_empty,
+                     eitem** eitem, uint32_t* eitem_count, uint32_t* flags,
+                     bool* dropped, uint16_t vbucket)
+{
+    struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
+    ret = map_elem_get(engine, key, nkey, numfields, flist, delete, drop_if_empty,
+                       (map_elem_item**)eitem, eitem_count, flags, dropped);
+    if (delete) ACTION_AFTER_WRITE(cookie, ret);
+    return ret;
+}
+#endif
 
 /*
  * B+Tree Collection API
@@ -1303,6 +1421,15 @@ get_elem_info(ENGINE_HANDLE *handle, const void *cookie,
         elem_info->nbytes = elem->nbytes;
         elem_info->value  = elem->value;
     }
+#ifdef MAP_COLLECTION_SUPPORT
+    else if (type == ITEM_TYPE_MAP) {
+        map_elem_item *elem = (map_elem_item*)eitem;
+        elem_info->nscore = elem->nfield;
+        elem_info->nbytes = elem->nbytes;
+        elem_info->score  = elem->data;
+        elem_info->value  = (const char*)elem->data + elem->nfield;
+    }
+#endif
     else if (type == ITEM_TYPE_BTREE) {
         btree_elem_item *elem = (btree_elem_item*)eitem;
         elem_info->nscore = elem->nbkey;
@@ -1367,6 +1494,16 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .set_elem_delete   = default_set_elem_delete,
          .set_elem_exist    = default_set_elem_exist,
          .set_elem_get      = default_set_elem_get,
+#ifdef MAP_COLLECTION_SUPPORT
+         /* MAP Collection API */
+         .map_struct_create = default_map_struct_create,
+         .map_elem_alloc    = default_map_elem_alloc,
+         .map_elem_release  = default_map_elem_release,
+         .map_elem_insert   = default_map_elem_insert,
+         .map_elem_update   = default_map_elem_update,
+         .map_elem_delete   = default_map_elem_delete,
+         .map_elem_get      = default_map_elem_get,
+#endif
          /* B+Tree Collection API */
          .btree_struct_create = default_btree_struct_create,
          .btree_elem_alloc   = default_btree_elem_alloc,
@@ -1438,6 +1575,9 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .item_size_max= 1024 * 1024,
          .max_list_size = 50000,
          .max_set_size = 50000,
+#ifdef MAP_COLLECTION_SUPPORT
+         .max_map_size = 50000,
+#endif
          .max_btree_size = 50000,
          .prefix_delimiter = ':',
        },

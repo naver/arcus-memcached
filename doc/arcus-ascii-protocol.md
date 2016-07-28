@@ -18,6 +18,7 @@ Ascii protocol 관점에서 Arcus cache server는 기존 memcached 기능 외에
 
 - list : 데이터들의 linked list 구조
 - set : 유일한 데이터들의 집합으로 membership 검사에 적합
+- map : \<field, value\>쌍으로 구성된 데이터들의 집합으로 field 기준의 hash 구조
 - b+tree : b+tree 키 기준으로 정렬된 데이터들의 집합으로 range scan 처리에 적합
 
 Basic Concepts
@@ -46,6 +47,7 @@ Collection 명령의 자세한 설명은 아래를 참고 바랍니다.
 
 - [List collection 명령](/doc/command-list-collection.md)
 - [Set collection 명령](/doc/command-set-collection.md)
+- [Map collection 명령](/doc/command-map-collection.md)
 - [B+tree collection 명령](/doc/command-btree-collection.md)
 
 Collection 일부 명령들은 command pipelining 처리가 가능하며,
