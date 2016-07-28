@@ -8142,50 +8142,43 @@ static void process_engine_config_command(conn *c, token_t *tokens, const size_t
     assert(c != NULL);
     char* config_type = tokens[SUBCOMMAND_TOKEN].value;
     char* config_val = tokens[SUBCOMMAND_TOKEN+1].value;
-    size_t new_maxbytes;
-    unsigned int level;
-    unsigned char max_verbosity = MAX_VERBOSITY_LEVEL;
-    int coll_type;
-    int coll_size;
-    char ret_type = 0;
+    char ret_type[2] = {0,};
+    size_t ret_val;
     if(ntokens == 3) {
         char buf[50];
-        if (strcmp(config_type, "verbosity") == 0) {
-            sprintf(buf, "verbosity %u\r\nEND", settings.verbose);
-        } else if (strcmp(config_type, "memlimit") == 0) {
-            sprintf(buf, "memlimit %u\r\nEND", (int)(settings.maxbytes / (1024 * 1024)));
-        } else if (strcmp(config_type, "max_list_size") == 0) {
-            sprintf(buf, "max_list_size %d\r\nEND", settings.max_list_size);
-        } else if (strcmp(config_type, "max_btree_size") == 0) {
-            sprintf(buf, "max_btree_size %d\r\nEND", settings.max_btree_size);
-        } else if (strcmp(config_type, "max_set_size") == 0) {
-            sprintf(buf, "max_set_size %d\r\nEND", settings.max_set_size);
+        memcpy(buf,config_type,strlen(config_type)+1);
+        ENGINE_ERROR_CODE ret;
+        ret = mc_engine.v1->control_engine_config(mc_engine.v0, c, config_type, config_val, NULL, NULL, buf + strlen(config_type), true);
+        if(ret == ENGINE_SUCCESS) {
+            out_string(c, buf);
+        } else if(ret == ENGINE_ENOTSUP) {
+            out_string(c, "SERVER_ERROR not supported");
+        } else { /*ENGINE_INVAL*/
+            out_string(c, "CLIENT_ERROR bad command line format");
         }
-        out_string(c, buf);
     } else {
         ENGINE_ERROR_CODE ret;
-        ret = mc_engine.v1->set_config(mc_engine.v0, c, config_type, config_val, (void*)&(settings.sticky_ratio), (void*)&new_maxbytes,
-                                       (void*)&max_verbosity, (void*)&level, (void*)&coll_type, (void*)&coll_size, &ret_type);
+        ret = mc_engine.v1->control_engine_config(mc_engine.v0, c, config_type, config_val, ret_type, (void*)&ret_val, NULL, false);
         if (ret == ENGINE_SUCCESS) {
-            if (ret_type == 'm') { /*memlimit*/
-                settings.maxbytes = new_maxbytes;
-            } else if (ret_type == 'v') { /*verbosity*/
-                settings.verbose = level;
+            if (ret_type[0] == 'm') { /*memlimit*/
+                settings.maxbytes = ret_val;
+            } else if (ret_type[0] == 'v') { /*verbosity*/
+                settings.verbose = (int)ret_val;
                 perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
-            } else if (ret_type == 'c') { /*maxcollsize*/
+            } else if (ret_type[0] == 'c') { /*maxcollsize*/
                 SETTING_LOCK();
-                switch (coll_type) {
+                switch (ret_type[1]) {
                   case ITEM_TYPE_LIST:
-                       settings.max_list_size = coll_size;
-                       MAX_LIST_SIZE = coll_size;
+                       settings.max_list_size = (int)ret_val;
+                       MAX_LIST_SIZE = (int)ret_val;
                        break;
                   case ITEM_TYPE_SET:
-                       settings.max_set_size = coll_size;
-                       MAX_SET_SIZE = coll_size;
+                       settings.max_set_size = (int)ret_val;
+                       MAX_SET_SIZE = (int)ret_val;
                        break;
                   case ITEM_TYPE_BTREE:
-                       settings.max_btree_size = coll_size;
-                       MAX_BTREE_SIZE = coll_size;
+                       settings.max_btree_size = (int)ret_val;
+                       MAX_BTREE_SIZE = (int)ret_val;
                        break;
                 }
                 SETTING_UNLOCK();

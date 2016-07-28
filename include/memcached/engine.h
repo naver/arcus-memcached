@@ -594,11 +594,10 @@ extern "C" {
     * Config API
     */
 #ifdef CONFIG_API
-     ENGINE_ERROR_CODE (*set_config)(ENGINE_HANDLE* handle, const void *cookie,
+     ENGINE_ERROR_CODE (*control_engine_config)(ENGINE_HANDLE* handle, const void *cookie,
                                      const char* config_type, const char* config_val,
-                                     void* setting_sticky, void* setting_memlimit,
-                                     void* setting_maxlevel, void* setting_verbose_level,
-                                     void* setting_coll_type, void* setting_collsize, char* ret_type);
+                                     char* ret_type, void* ret_val,
+                                     char* res_buf, bool type);
 #else
      ENGINE_ERROR_CODE (*set_memlimit)(ENGINE_HANDLE* handle, const void *cookie,
                                           const size_t memlimit, const int sticky_ratio);
