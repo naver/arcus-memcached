@@ -48,6 +48,9 @@ struct engine_config {
    bool   evict_to_free;
    size_t num_threads;
    size_t maxbytes;
+#ifdef REPLACE_STICKY_LIMIT
+   size_t sticky_ratio;
+#endif
    size_t sticky_limit;
    bool   preallocate;
    float  factor;
