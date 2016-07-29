@@ -8542,21 +8542,13 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
 
     assert(c != NULL);
 
-    set_noreply_maybe(c, tokens, ntokens);
-
-    if (!c->noreply && ntokens == 3) {
+    if (ntokens == 3) {
         char buf[50];
         sprintf(buf, "verbosity %u\r\nEND", settings.verbose);
         out_string(c, buf);
 
-    } else if ((!c->noreply && ntokens == 4) || (c->noreply && ntokens == 5)) {
-        if (!safe_strtoul(tokens[COMMAND_TOKEN+2].value, &level)) {
-            c->noreply = false;
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
-        }
+    } else if (ntokens == 4 && safe_strtoul(tokens[COMMAND_TOKEN+2].value, &level)) {
         if (level > MAX_VERBOSITY_LEVEL) {
-            c->noreply = false;
             out_string(c, "SERVER_ERROR cannot change the verbosity over the limit");
             return;
         }
@@ -8566,7 +8558,6 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
         out_string(c, "END");
         mc_engine.v1->set_verbose(mc_engine.v0, c, settings.verbose);
     } else {
-        c->noreply = false;
         out_string(c, "CLIENT_ERROR bad command line format");
     }
 }
@@ -8798,7 +8789,7 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
         process_hbfailstop_command(c, tokens, ntokens);
     }
 #endif
-    else if ((ntokens >= 3 && ntokens <= 5) &&
+    else if ((ntokens == 3 || ntokens == 4) &&
              (strcmp(tokens[SUBCOMMAND_TOKEN].value, "verbosity") == 0))
     {
         process_verbosity_command(c, tokens, ntokens);
