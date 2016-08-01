@@ -12347,8 +12347,13 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
             ptr += strlen(ptr);
             sprintf(ptr, "ATTR expiretime=%d\r\n", (int32_t)attr_data.exptime);
             ptr += strlen(ptr);
+#ifdef MAP_COLLECTION_SUPPORT
+            if (attr_data.type == ITEM_TYPE_LIST || attr_data.type == ITEM_TYPE_SET ||
+                attr_data.type == ITEM_TYPE_MAP || attr_data.type == ITEM_TYPE_BTREE) {
+#else
             if (attr_data.type == ITEM_TYPE_LIST || attr_data.type == ITEM_TYPE_SET ||
                 attr_data.type == ITEM_TYPE_BTREE) {
+#endif
                 sprintf(ptr, "ATTR count=%d\r\n", attr_data.count);
                 ptr += strlen(ptr);
                 sprintf(ptr, "ATTR maxcount=%d\r\n", attr_data.maxcount);
