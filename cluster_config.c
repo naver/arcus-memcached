@@ -90,9 +90,9 @@ static int continuum_item_cmp(const void *t1, const void *t2)
     else                               return -1;
 }
 
-static bool ketama_continuum_generate(struct cluster_config *config,
-                                      const struct server_item *servers, size_t num_servers,
-                                      struct continuum_item **continuum, size_t *continuum_len)
+static int ketama_continuum_generate(struct cluster_config *config,
+                                     const struct server_item *servers, size_t num_servers,
+                                     struct continuum_item **continuum, size_t *continuum_len)
 {
     char nodestr[MAX_NODE_NAME_LENGTH] = "";
     int  nodelen;
@@ -102,7 +102,7 @@ static bool ketama_continuum_generate(struct cluster_config *config,
     *continuum = calloc(NUM_NODE_HASHES * num_servers, sizeof(struct continuum_item));
     if (*continuum == NULL) {
         config->logger->log(EXTENSION_LOG_WARNING, NULL, "calloc failed: continuum\n");
-        return false;
+        return -1;
     }
 
     for (ss=0, pp=0; ss<num_servers; ss++) {
@@ -121,7 +121,7 @@ static bool ketama_continuum_generate(struct cluster_config *config,
 
     qsort(*continuum, pp, sizeof(struct continuum_item), continuum_item_cmp);
     *continuum_len = pp;
-    return true;
+    return 0;
 }
 
 static void server_item_free(struct server_item *servers, int num_servers)
@@ -129,45 +129,45 @@ static void server_item_free(struct server_item *servers, int num_servers)
     for (int i=0; i<num_servers; i++) {
         free(servers[i].nodename);
     }
+    free(servers);
 }
 
-static bool server_item_populate(struct cluster_config *config,
-                                 char **server_list, size_t num_servers, const char *self_nodename,
-                                 struct server_item **servers, uint32_t *self_id)
+static int server_item_populate(struct cluster_config *config,
+                                char **server_list, size_t num_servers, const char *self_nodename,
+                                struct server_item **servers, uint32_t *self_id)
 {
     assert(*servers == NULL);
-    int i;
+    char *buf = NULL;
+    char *tok = NULL;
+    int i, ret = 0;
 
     *servers = calloc(num_servers, sizeof(struct server_item));
     if (*servers == NULL) {
         config->logger->log(EXTENSION_LOG_WARNING, NULL, "calloc failed: servers\n");
-        return false;
+        return -1;
     }
 
     for (i=0; i<num_servers; i++) {
-        char *buf = NULL;
-        char *tok = NULL;
-
         // filter characters after dash(-)
-        for (tok=strtok_r(server_list[i], "-", &buf);
-             tok;
-             tok=strtok_r(NULL, "-", &buf)) {
-            char *nodename = strdup(server_list[i]);
-            if (nodename == NULL) {
+        tok = strtok_r(server_list[i], "-", &buf);
+        while (tok != NULL) {
+            if (((*servers)[i].nodename = strdup(tok)) == NULL) {
                 config->logger->log(EXTENSION_LOG_WARNING, NULL, "invalid server token\n");
-                server_item_free(*servers, i);
-                free(*servers); *servers = NULL;
-                return false;
+                ret = -1; break;
             }
-
-            (*servers)[i].nodename = nodename;
-            if (strcmp(self_nodename, nodename) == 0) {
+            if (strcmp(self_nodename, tok) == 0) {
                 *self_id = i;
             }
             break;
+            //tok=strtok_r(NULL, "-", &buf);
         }
+        if (ret != 0) break;
     }
-    return true;
+    if (ret != 0) {
+        server_item_free(*servers, i);
+        *servers = NULL;
+    }
+    return ret;
 }
 
 static void cluster_config_print_node_list(struct cluster_config *config)
@@ -314,7 +314,6 @@ void cluster_config_final(struct cluster_config *config)
         }
         if (config->servers) {
             server_item_free(config->servers, config->num_servers);
-            free(config->servers);
             config->servers = NULL;
         }
         free(config);
@@ -344,29 +343,25 @@ int cluster_config_reconfigure(struct cluster_config *config,
 {
     assert(config);
     assert(server_list);
-
-    uint32_t self_id = 0;
     size_t num_continuum = 0;
     struct server_item *servers = NULL;
     struct continuum_item *continuum = NULL;
-    bool populated, generated;
+    uint32_t self_id = 0;
     int ret = 0;
 
     do {
-        populated = server_item_populate(config, server_list, num_servers,
-                                         config->self_nodename, &servers, &self_id);
-        if (!populated) {
+        if (server_item_populate(config, server_list, num_servers,
+                                 config->self_nodename, &servers, &self_id) < 0) {
             config->logger->log(EXTENSION_LOG_WARNING, NULL,
                                 "reconfiguration failed: server_item_populate\n");
             ret = -1; break;
         }
-        generated = ketama_continuum_generate(config, servers, num_servers,
-                                              &continuum, &num_continuum);
-        if (!generated) {
+        if (ketama_continuum_generate(config, servers, num_servers,
+                                      &continuum, &num_continuum) < 0) {
             config->logger->log(EXTENSION_LOG_WARNING, NULL,
                                 "reconfiguration failed: ketama_continuum_generate\n");
             server_item_free(servers, num_servers);
-            free(servers); servers = NULL;
+            servers = NULL;
             ret = -1; break;
         }
     } while(0);
@@ -374,14 +369,13 @@ int cluster_config_reconfigure(struct cluster_config *config,
     pthread_mutex_lock(&config->lock);
     if (ret == 0) {
         server_item_free(config->servers, config->num_servers);
-        free(config->servers);
         free(config->continuum);
 
-        config->self_id = self_id;
         config->num_servers = num_servers;
         config->servers = servers;
         config->continuum = continuum;
         config->num_continuum = num_continuum;
+        config->self_id = self_id;
         config->is_valid = true;
     } else {
         config->is_valid = false;
