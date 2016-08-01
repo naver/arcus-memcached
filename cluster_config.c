@@ -275,11 +275,11 @@ static uint32_t find_continuum(struct continuum_item *continuum, size_t continuu
 #endif
 }
 
-struct cluster_config *cluster_config_init(const char *hostport, size_t hostport_len,
-                                           EXTENSION_LOGGER_DESCRIPTOR *logger, int verbose)
+struct cluster_config *cluster_config_init(const char *hostport,
+                                           EXTENSION_LOGGER_DESCRIPTOR *logger,
+                                           int verbose)
 {
     assert(hostport);
-    assert(hostport_len > 0);
     struct cluster_config *config;
     int err;
 
@@ -292,7 +292,7 @@ struct cluster_config *cluster_config_init(const char *hostport, size_t hostport
     err = pthread_mutex_init(&config->lock, NULL);
     assert(err == 0);
 
-    config->self_hostport = strndup(hostport, hostport_len);
+    config->self_hostport = strdup(hostport);
     build_self_continuum(config->self_continuum, config->self_hostport);
 
     config->logger = logger;
