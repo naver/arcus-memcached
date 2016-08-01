@@ -8552,15 +8552,11 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
             out_string(c, "SERVER_ERROR cannot change the verbosity over the limit");
             return;
         }
-#ifdef SET_LOCK
         SETTING_LOCK();
-#endif
+        mc_engine.v1->set_verbose(mc_engine.v0, c, settings.verbose);
         settings.verbose = level;
         perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
-        mc_engine.v1->set_verbose(mc_engine.v0, c, settings.verbose);
-#ifdef SET_LOCK
         SETTING_UNLOCK();
-#endif
         out_string(c, "END");
     } else {
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -8575,20 +8571,15 @@ static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntok
         char buf[50];
         sprintf(buf, "memlimit %u\r\nEND", (int)(settings.maxbytes / (1024 * 1024)));
         out_string(c, buf);
-
     } else if (ntokens == 4 && safe_strtoul(tokens[COMMAND_TOKEN+2].value, &mlimit)) {
         ENGINE_ERROR_CODE ret;
         size_t new_maxbytes = (size_t)mlimit * 1024 * 1024;
-#ifdef SET_LOCK
         SETTING_LOCK();
-#endif
         ret = mc_engine.v1->set_memlimit(mc_engine.v0, c, new_maxbytes);
         if (ret == ENGINE_SUCCESS) {
             settings.maxbytes = new_maxbytes;
         }
-#ifdef SET_LOCK
         SETTING_UNLOCK();
-#endif
         if (ret == ENGINE_SUCCESS) {
             out_string(c, "END");
         } else { /* ENGINE_EBADVALUE */

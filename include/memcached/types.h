@@ -31,7 +31,6 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
-#define SET_LOCK
 #define MAP_COLLECTION_SUPPORT
 #define SUPPORT_BOP_MGET
 #define SUPPORT_BOP_SMGET
