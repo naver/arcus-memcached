@@ -36,7 +36,7 @@
 #define NUM_NODE_HASHES (NUM_OF_HASHES * NUM_PER_HASH)
 
 struct server_item {
-    char *hostport;
+    char *nodename; /* "ip:port" string or group name string */
 };
 
 struct continuum_item {
@@ -46,7 +46,7 @@ struct continuum_item {
 
 struct cluster_config {
     uint32_t self_id;                    // server index for this memcached
-    char     *self_hostport;             // host:port string for this memcached
+    char     *self_nodename;             // ip:port string or group name string */
     struct continuum_item self_continuum[NUM_NODE_HASHES];
 
     int      num_servers;                // number of memcached servers in cluster
@@ -107,7 +107,7 @@ static bool ketama_continuum_generate(struct cluster_config *config,
 
     for (ss=0, pp=0; ss<num_servers; ss++) {
         for (hh=0; hh<NUM_OF_HASHES; hh++) {
-            nodelen = snprintf(nodestr, MAX_NODE_NAME_LENGTH, "%s-%u", servers[ss].hostport, hh);
+            nodelen = snprintf(nodestr, MAX_NODE_NAME_LENGTH, "%s-%u", servers[ss].nodename, hh);
             hash_md5(nodestr, nodelen, digest);
             for (nn=0; nn<NUM_PER_HASH; nn++, pp++) {
                 (*continuum)[pp].index = ss;
@@ -127,12 +127,12 @@ static bool ketama_continuum_generate(struct cluster_config *config,
 static void server_item_free(struct server_item *servers, int num_servers)
 {
     for (int i=0; i<num_servers; i++) {
-        free(servers[i].hostport);
+        free(servers[i].nodename);
     }
 }
 
 static bool server_item_populate(struct cluster_config *config,
-                                 char **server_list, size_t num_servers, const char *self_hostport,
+                                 char **server_list, size_t num_servers, const char *self_nodename,
                                  struct server_item **servers, uint32_t *self_id)
 {
     assert(*servers == NULL);
@@ -152,16 +152,16 @@ static bool server_item_populate(struct cluster_config *config,
         for (tok=strtok_r(server_list[i], "-", &buf);
              tok;
              tok=strtok_r(NULL, "-", &buf)) {
-            char *hostport = strdup(server_list[i]);
-            if (hostport == NULL) {
+            char *nodename = strdup(server_list[i]);
+            if (nodename == NULL) {
                 config->logger->log(EXTENSION_LOG_WARNING, NULL, "invalid server token\n");
                 server_item_free(*servers, i);
                 free(*servers); *servers = NULL;
                 return false;
             }
 
-            (*servers)[i].hostport = hostport;
-            if (strcmp(self_hostport, hostport) == 0) {
+            (*servers)[i].nodename = nodename;
+            if (strcmp(self_nodename, nodename) == 0) {
                 *self_id = i;
             }
             break;
@@ -178,7 +178,7 @@ static void cluster_config_print_node_list(struct cluster_config *config)
                         "cluster node list: count=%d\n", config->num_servers);
     for (int i = 0; i < config->num_servers; i++) {
         config->logger->log(EXTENSION_LOG_INFO, NULL, "node[%d]: %s\n",
-                            i, config->servers[i].hostport);
+                            i, config->servers[i].nodename);
     }
 }
 
@@ -194,7 +194,7 @@ static void cluster_config_print_continuum(struct cluster_config *config)
     }
 }
 
-static void build_self_continuum(struct continuum_item *continuum, const char *hostport)
+static void build_self_continuum(struct continuum_item *continuum, const char *nodename)
 {
     char nodestr[MAX_NODE_NAME_LENGTH] = "";
     int  nodelen;
@@ -204,7 +204,7 @@ static void build_self_continuum(struct continuum_item *continuum, const char *h
     /* build sorted hash map */
     pp = 0;
     for (hh=0; hh<NUM_OF_HASHES; hh++) {
-        nodelen = snprintf(nodestr, MAX_NODE_NAME_LENGTH, "%s-%u", hostport, hh);
+        nodelen = snprintf(nodestr, MAX_NODE_NAME_LENGTH, "%s-%u", nodename, hh);
         hash_md5(nodestr, nodelen, digest);
         for (nn=0; nn<NUM_PER_HASH; nn++, pp++) {
             continuum[pp].index = 0;
@@ -275,11 +275,11 @@ static uint32_t find_continuum(struct continuum_item *continuum, size_t continuu
 #endif
 }
 
-struct cluster_config *cluster_config_init(const char *hostport,
+struct cluster_config *cluster_config_init(const char *nodename,
                                            EXTENSION_LOGGER_DESCRIPTOR *logger,
                                            int verbose)
 {
-    assert(hostport);
+    assert(nodename);
     struct cluster_config *config;
     int err;
 
@@ -292,8 +292,8 @@ struct cluster_config *cluster_config_init(const char *hostport,
     err = pthread_mutex_init(&config->lock, NULL);
     assert(err == 0);
 
-    config->self_hostport = strdup(hostport);
-    build_self_continuum(config->self_continuum, config->self_hostport);
+    config->self_nodename = strdup(nodename);
+    build_self_continuum(config->self_continuum, config->self_nodename);
 
     config->logger = logger;
     config->verbose = verbose;
@@ -304,9 +304,9 @@ struct cluster_config *cluster_config_init(const char *hostport,
 void cluster_config_final(struct cluster_config *config)
 {
     if (config != NULL) {
-        if (config->self_hostport) {
-            free(config->self_hostport);
-            config->self_hostport = NULL;
+        if (config->self_nodename) {
+            free(config->self_nodename);
+            config->self_nodename = NULL;
         }
         if (config->continuum) {
             free(config->continuum);
@@ -354,7 +354,7 @@ int cluster_config_reconfigure(struct cluster_config *config,
 
     do {
         populated = server_item_populate(config, server_list, num_servers,
-                                         config->self_hostport, &servers, &self_id);
+                                         config->self_nodename, &servers, &self_id);
         if (!populated) {
             config->logger->log(EXTENSION_LOG_WARNING, NULL,
                                 "reconfiguration failed: server_item_populate\n");

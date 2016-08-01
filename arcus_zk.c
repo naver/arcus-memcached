@@ -1103,7 +1103,8 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
             "ZooKeeper session timeout: %d sec\n", zoo_recv_timeout(zh)/1000);
 
 #ifdef ENABLE_CLUSTER_AWARE
-    arcus_conf.ch = cluster_config_init(arcus_conf.mc_ipport,
+    const char *nodename = arcus_conf.mc_ipport;
+    arcus_conf.ch = cluster_config_init(nodename,
                                         arcus_conf.logger, arcus_conf.verbose);
     assert(arcus_conf.ch);
 

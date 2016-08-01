@@ -23,7 +23,7 @@
 
 struct cluster_config;
 
-struct   cluster_config *cluster_config_init(const char *hostport,
+struct   cluster_config *cluster_config_init(const char *nodename,
                                              EXTENSION_LOGGER_DESCRIPTOR *logger,
                                              int verbose);
 void     cluster_config_final(struct cluster_config *config);
