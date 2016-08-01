@@ -151,6 +151,7 @@ typedef struct {
 #ifdef ENABLE_CLUSTER_AWARE
     struct cluster_config *ch;  // cluster configuration handle
 #endif
+    pthread_mutex_t lock;
     bool    init;               // is this structure initialized?
 } arcus_zk_conf;
 
@@ -172,6 +173,7 @@ arcus_zk_conf arcus_conf = {
 #ifdef ENABLE_CLUSTER_AWARE
     .ch             = NULL,
 #endif
+    .lock           = PTHREAD_MUTEX_INITIALIZER,
     .init           = false
 };
 
@@ -1246,18 +1248,25 @@ int arcus_zk_get_ensemble_str(char *buf, int size)
 
 int arcus_zk_set_hbtimeout(int hbtimeout)
 {
+    int ret=0;
+
     if (hbtimeout < HEART_BEAT_MIN_TIMEOUT ||
         hbtimeout > HEART_BEAT_MAX_TIMEOUT)
         return -1;
 
-    /* Check: heartbeat timeout <= heartbeat failstop */
-    if (hbtimeout > arcus_conf.hb_failstop)
-        return -1;
+    pthread_mutex_lock(&arcus_conf.lock);
+    do {
+        /* Check: heartbeat timeout <= heartbeat failstop */
+        if (hbtimeout > arcus_conf.hb_failstop) {
+            ret = -1; break;
+        }
+        if (hbtimeout != arcus_conf.hb_timeout) {
+            arcus_conf.hb_timeout = hbtimeout;
+        }
+    } while(0);
+    pthread_mutex_unlock(&arcus_conf.lock);
 
-    if (hbtimeout != arcus_conf.hb_timeout) {
-        arcus_conf.hb_timeout = hbtimeout;
-    }
-    return 0;
+    return ret;
 }
 
 int arcus_zk_get_hbtimeout(void)
@@ -1269,18 +1278,25 @@ int arcus_zk_get_hbtimeout(void)
 
 int arcus_zk_set_hbfailstop(int hbfailstop)
 {
+    int ret=0;
+
     if (hbfailstop < HEART_BEAT_MIN_FAILSTOP ||
         hbfailstop > HEART_BEAT_MAX_FAILSTOP)
         return -1;
 
-    /* Check: heartbeat failstop >= heartbeat timeout */
-    if (hbfailstop < arcus_conf.hb_timeout)
-        return -1;
+    pthread_mutex_lock(&arcus_conf.lock);
+    do {
+        /* Check: heartbeat failstop >= heartbeat timeout */
+        if (hbfailstop < arcus_conf.hb_timeout) {
+            ret = -1; break;
+        }
+        if (hbfailstop != arcus_conf.hb_failstop) {
+            arcus_conf.hb_failstop = hbfailstop;
+        }
+    } while(0);
+    pthread_mutex_unlock(&arcus_conf.lock);
 
-    if (hbfailstop != arcus_conf.hb_failstop) {
-        arcus_conf.hb_failstop = hbfailstop;
-    }
-    return 0;
+    return ret;
 }
 
 int arcus_zk_get_hbfailstop(void)
