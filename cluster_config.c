@@ -94,9 +94,9 @@ static bool ketama_continuum_generate(struct cluster_config *config,
                                       const struct server_item *servers, size_t num_servers,
                                       struct continuum_item **continuum, size_t *continuum_len)
 {
-    char nodename[MAX_NODE_NAME_LENGTH] = "";
-    int  nodenlen;
-    int pp, hh, ss, nn;
+    char nodestr[MAX_NODE_NAME_LENGTH] = "";
+    int  nodelen;
+    int  pp, hh, ss, nn;
     unsigned char digest[16];
 
     *continuum = calloc(NUM_NODE_HASHES * num_servers, sizeof(struct continuum_item));
@@ -107,8 +107,8 @@ static bool ketama_continuum_generate(struct cluster_config *config,
 
     for (ss=0, pp=0; ss<num_servers; ss++) {
         for (hh=0; hh<NUM_OF_HASHES; hh++) {
-            nodenlen = snprintf(nodename, MAX_NODE_NAME_LENGTH, "%s-%u", servers[ss].hostport, hh);
-            hash_md5(nodename, nodenlen, digest);
+            nodelen = snprintf(nodestr, MAX_NODE_NAME_LENGTH, "%s-%u", servers[ss].hostport, hh);
+            hash_md5(nodestr, nodelen, digest);
             for (nn=0; nn<NUM_PER_HASH; nn++, pp++) {
                 (*continuum)[pp].index = ss;
                 (*continuum)[pp].point = ((uint32_t) (digest[3 + nn * NUM_PER_HASH] & 0xFF) << 24)
@@ -196,16 +196,16 @@ static void cluster_config_print_continuum(struct cluster_config *config)
 
 static void build_self_continuum(struct continuum_item *continuum, const char *hostport)
 {
-    char nodename[MAX_NODE_NAME_LENGTH] = "";
-    int  nodenlen;
+    char nodestr[MAX_NODE_NAME_LENGTH] = "";
+    int  nodelen;
     int  hh, nn, pp;
     unsigned char digest[16];
 
     /* build sorted hash map */
     pp = 0;
     for (hh=0; hh<NUM_OF_HASHES; hh++) {
-        nodenlen= snprintf(nodename, MAX_NODE_NAME_LENGTH, "%s-%u", hostport, hh);
-        hash_md5(nodename, nodenlen, digest);
+        nodelen = snprintf(nodestr, MAX_NODE_NAME_LENGTH, "%s-%u", hostport, hh);
+        hash_md5(nodestr, nodelen, digest);
         for (nn=0; nn<NUM_PER_HASH; nn++, pp++) {
             continuum[pp].index = 0;
             continuum[pp].point = ((uint32_t) (digest[3 + nn * NUM_PER_HASH] & 0xFF) << 24)
