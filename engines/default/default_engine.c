@@ -122,15 +122,9 @@ initalize_configuration(struct default_engine *se, const char *cfg_str)
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.maxbytes },
 #ifdef ENABLE_STICKY_ITEM
-#ifdef REPLACE_STICKY_LIMIT
             { .key = "sticky_ratio",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.sticky_ratio},
-#else
-            { .key = "sticky_limit",
-              .datatype = DT_SIZE,
-              .value.dt_size = &se->config.sticky_limit},
-#endif
 #endif
             { .key = "preallocate",
               .datatype = DT_BOOL,
@@ -175,11 +169,9 @@ initalize_configuration(struct default_engine *se, const char *cfg_str)
             return ENGINE_FAILED;
         }
 #ifdef ENABLE_STICKY_ITEM
-#ifdef REPLACE_STICKY_LIMIT
         if (se->config.sticky_ratio > 0) {
             se->config.sticky_limit = (se->config.maxbytes / 100) * se->config.sticky_ratio;
         }
-#endif
 #endif
     }
 
@@ -1158,15 +1150,9 @@ default_dump(ENGINE_HANDLE* handle, const void* cookie,
 /*
  * Config API
  */
-#ifdef REPLACE_STICKY_LIMIT
 static ENGINE_ERROR_CODE
 default_set_memlimit(ENGINE_HANDLE* handle, const void* cookie,
                      const size_t memlimit)
-#else
-static ENGINE_ERROR_CODE
-default_set_memlimit(ENGINE_HANDLE* handle, const void* cookie,
-                     const size_t memlimit, const int sticky_ratio)
-#endif
 {
     struct default_engine* engine = get_handle(handle);
     ENGINE_ERROR_CODE ret;
@@ -1176,15 +1162,9 @@ default_set_memlimit(ENGINE_HANDLE* handle, const void* cookie,
     if (ret == ENGINE_SUCCESS) {
         engine->config.maxbytes = memlimit;
 #ifdef ENABLE_STICKY_ITEM
-#ifdef REPLACE_STICKY_LIMIT
         if (engine->config.sticky_ratio > 0) {
             engine->config.sticky_limit = (memlimit / 100) * engine->config.sticky_ratio;
         }
-#else
-        if (sticky_ratio > 0) {
-            engine->config.sticky_limit = (memlimit / 100) * sticky_ratio;
-        }
-#endif
 #endif
     }
     pthread_mutex_unlock(&engine->cache_lock);
@@ -1594,9 +1574,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .evict_to_free = true,
          .num_threads = 0,
          .maxbytes = 64 * 1024 * 1024,
-#ifdef REPLACE_STICKY_LIMIT
          .sticky_ratio = 0,
-#endif
          .sticky_limit = 0,
          .preallocate = false,
          .factor = 1.25,

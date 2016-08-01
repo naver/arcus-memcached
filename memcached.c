@@ -8575,11 +8575,7 @@ static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntok
         ENGINE_ERROR_CODE ret;
         size_t new_maxbytes = (size_t)mlimit * 1024 * 1024;
 
-#ifdef REPLACE_STICKY_LIMIT
         ret = mc_engine.v1->set_memlimit(mc_engine.v0, c, new_maxbytes);
-#else
-        ret = mc_engine.v1->set_memlimit(mc_engine.v0, c, new_maxbytes, settings.sticky_ratio);
-#endif
         if (ret == ENGINE_SUCCESS) {
             settings.maxbytes = new_maxbytes;
             out_string(c, "END");
@@ -14680,9 +14676,8 @@ int main (int argc, char **argv) {
                     "The value of sticky(gummed) item ratio must be between 0 and 100.\n");
                 return 1;
             }
-#ifdef REPLACE_STICKY_LIMIT
-            old_opts += sprintf(old_opts, "sticky_ratio=%lu;", (unsigned long)settings.sticky_ratio);
-#endif
+            old_opts += sprintf(old_opts, "sticky_ratio=%lu;",
+                                (unsigned long)settings.sticky_ratio);
             break;
 #endif
         case 'c':
@@ -14892,17 +14887,6 @@ int main (int argc, char **argv) {
 
     old_opts += sprintf(old_opts, "num_threads=%lu;", (unsigned long)settings.num_threads);
 
-#ifdef ENABLE_STICKY_ITEM
-#ifndef REPLACE_STICKY_LIMIT
-    if (1) {
-        size_t sticky_limit = 0;
-        if (settings.sticky_ratio > 0) {
-            sticky_limit = (settings.maxbytes / 100) * settings.sticky_ratio;
-        }
-        old_opts += sprintf(old_opts, "sticky_limit=%lu;", (unsigned long)sticky_limit);
-    }
-#endif
-#endif
     if (settings.verbose) {
         old_opts += sprintf(old_opts, "verbose=%lu;", (unsigned long)settings.verbose);
     }

@@ -652,13 +652,8 @@ extern "C" {
                                               const void* key, const int nkey,
                                               void *prefix_data);
 
-#ifdef REPLACE_STICKY_LIMIT
         ENGINE_ERROR_CODE (*set_memlimit)(ENGINE_HANDLE* handle, const void *cookie,
                                           const size_t memlimit);
-#else
-        ENGINE_ERROR_CODE (*set_memlimit)(ENGINE_HANDLE* handle, const void *cookie,
-                                          const size_t memlimit, const int sticky_ratio);
-#endif
 
 #ifdef CONFIG_MAX_COLLECTION_SIZE
         ENGINE_ERROR_CODE (*set_maxcollsize)(ENGINE_HANDLE* handle, const void *cookie,
