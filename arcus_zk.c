@@ -1186,6 +1186,12 @@ void arcus_zk_final(const char *msg)
         zh = NULL;
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "zk connection closed\n");
     }
+#ifdef ENABLE_CLUSTER_AWARE
+    if (arcus_conf.ch != NULL) {
+        cluster_config_final(arcus_conf.ch);
+        arcus_conf.ch = NULL;
+    }
+#endif
     pthread_mutex_unlock(&zk_final_lock);
 }
 

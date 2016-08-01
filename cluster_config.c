@@ -301,9 +301,13 @@ struct cluster_config *cluster_config_init(const char *hostport, size_t hostport
     return config;
 }
 
-void cluster_config_free(struct cluster_config *config)
+void cluster_config_final(struct cluster_config *config)
 {
     if (config != NULL) {
+        if (config->self_hostport) {
+            free(config->self_hostport);
+            config->self_hostport = NULL;
+        }
         if (config->continuum) {
             free(config->continuum);
             config->continuum = NULL;

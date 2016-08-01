@@ -25,7 +25,7 @@ struct cluster_config;
 
 struct   cluster_config *cluster_config_init(const char *hostport, size_t hostport_len,
                                              EXTENSION_LOGGER_DESCRIPTOR *logger, int verbose);
-void     cluster_config_free(struct cluster_config *config);
+void     cluster_config_final(struct cluster_config *config);
 
 uint32_t cluster_config_self_id(struct cluster_config *config);
 int      cluster_config_num_servers(struct cluster_config *config);
