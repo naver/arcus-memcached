@@ -342,7 +342,7 @@ int cluster_config_reconfigure(struct cluster_config *config,
                                char **server_list, size_t num_servers)
 {
     assert(config);
-    assert(server_list);
+    assert(server_list && num_servers > 0);
     size_t num_continuum = 0;
     struct server_item *servers = NULL;
     struct continuum_item *continuum = NULL;
@@ -368,9 +368,14 @@ int cluster_config_reconfigure(struct cluster_config *config,
 
     pthread_mutex_lock(&config->lock);
     if (ret == 0) {
-        server_item_free(config->servers, config->num_servers);
-        free(config->continuum);
-
+        if (config->servers != NULL) {
+            server_item_free(config->servers, config->num_servers);
+            config->servers = NULL;
+        }
+        if (config->continuum != NULL) {
+            free(config->continuum);
+            config->continuum = NULL;
+        }
         config->num_servers = num_servers;
         config->servers = servers;
         config->continuum = continuum;
