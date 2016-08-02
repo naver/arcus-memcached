@@ -1150,6 +1150,55 @@ default_dump(ENGINE_HANDLE* handle, const void* cookie,
 /*
  * Config API
  */
+
+#ifdef CONFIG_API
+static ENGINE_ERROR_CODE
+default_set_config(ENGINE_HANDLE* handle, const void* cookie,
+                   const char* config_key, const void* config_value)
+{
+    struct default_engine* engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+
+    if (strcmp(config_key, "memlimit") == 0) {
+        size_t new_maxbytes = *(size_t*)config_value;
+
+        pthread_mutex_lock(&engine->cache_lock);
+        ret = slabs_set_memlimit(engine, new_maxbytes);
+        if (ret == ENGINE_SUCCESS) {
+            engine->config.maxbytes = new_maxbytes;
+#ifdef ENABLE_STICKY_ITEM
+            if (engine->config.sticky_ratio > 0) {
+                engine->config.sticky_limit = (new_maxbytes / 100) * engine->config.sticky_ratio;
+            }
+#endif
+        }
+        pthread_mutex_unlock(&engine->cache_lock);
+
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+    } else { /* list, set, map, btree */
+        int32_t maxsize = *(int32_t*)config_value;
+
+        if (strcmp(config_key, "max_list_size") == 0) {
+            ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_LIST, &maxsize);
+        } else if (strcmp(config_key, "max_set_size") == 0) {
+            ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_SET, &maxsize);
+#ifdef MAP_COLLECTION_SUPPORT
+        } else if (strcmp(config_key, "max_map_size") == 0) {
+            ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_MAP, &maxsize);
+#endif
+        } else if (strcmp(config_key, "max_btree_size") == 0) {
+            ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_BTREE, &maxsize);
+        } else {
+            return ENGINE_EINVAL;
+        }
+
+        *(int32_t*)config_value = maxsize;
+#endif
+    }
+    return ret;
+}
+#else
+
 static ENGINE_ERROR_CODE
 default_set_memlimit(ENGINE_HANDLE* handle, const void* cookie,
                      const size_t memlimit)
@@ -1180,6 +1229,7 @@ default_set_maxcollsize(ENGINE_HANDLE* handle, const void* cookie,
 
     return item_conf_set_maxcollsize(engine, coll_type, maxsize);
 }
+#endif
 #endif
 
 static void
@@ -1542,9 +1592,13 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .dump             = default_dump,
 #endif
          /* Config API */
+#ifdef CONFIG_API
+         .set_config       = default_set_config,
+#else
          .set_memlimit     = default_set_memlimit,
 #ifdef CONFIG_MAX_COLLECTION_SIZE
          .set_maxcollsize  = default_set_maxcollsize,
+#endif
 #endif
          .set_verbose      = default_set_verbose,
          /* Unknown Command API */

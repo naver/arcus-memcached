@@ -8537,6 +8537,102 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
     }
 }
 
+#ifdef CONFIG_API
+static void process_engine_config_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    assert(c != NULL);
+
+    char* config_key = tokens[SUBCOMMAND_TOKEN].value;
+    char* config_value = tokens[SUBCOMMAND_TOKEN+1].value;
+
+    if (ntokens == 3) {
+
+        char buf[50];
+
+        if (strcmp(config_key, "memlimit") == 0) {
+            sprintf(buf, "memlimit %u\r\nEND", (int)(settings.maxbytes / (1024 * 1024)));
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+        } else if (strcmp(config_key, "max_list_size") == 0) {
+            sprintf(buf, "max_list_size %d\r\nEND", settings.max_list_size);
+        } else if (strcmp(config_key, "max_set_size") == 0) {
+            sprintf(buf, "max_set_size %d\r\nEND", settings.max_set_size);
+#ifdef MAP_COLLECTION_SUPPORT
+        } else if (strcmp(config_key, "max_map_size") == 0) {
+            sprintf(buf, "max_map_size %d\r\nEND", settings.max_map_size);
+#endif
+        } else if (strcmp(config_key, "max_btree_size") == 0) {
+            sprintf(buf, "max_btree_size %d\r\nEND", settings.max_btree_size);
+#endif
+        } else {
+            sprintf(buf, "CLIENT_ERROR bad command line format");
+        }
+        out_string(c, buf);
+    } else if (ntokens == 4) {
+
+        ENGINE_ERROR_CODE ret;
+        unsigned int mlimit;
+        int32_t maxcollsize;
+
+        SETTING_LOCK();
+        if (strcmp(config_key, "memlimit") == 0 && safe_strtoul(config_value, &mlimit)) {
+            size_t new_maxbytes = (size_t)mlimit * 1024 * 1024;
+            ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&new_maxbytes);
+
+            if (ret == ENGINE_SUCCESS) {
+                settings.maxbytes = new_maxbytes;
+            }
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+        } else if (strcmp(config_key, "max_list_size") == 0 && safe_strtol(config_value, &maxcollsize)) {
+            ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&maxcollsize);
+
+            if (ret == ENGINE_SUCCESS) {
+                settings.max_list_size = maxcollsize;
+                MAX_LIST_SIZE = maxcollsize;
+            }
+        } else if (strcmp(config_key, "max_set_size") == 0 && safe_strtol(config_value, &maxcollsize)) {
+            ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&maxcollsize);
+
+            if (ret == ENGINE_SUCCESS) {
+                settings.max_set_size = maxcollsize;
+                MAX_SET_SIZE = maxcollsize;
+            }
+#ifdef MAP_COLLECTION_SUPPORT
+        } else if (strcmp(config_key, "max_map_size") == 0 && safe_strtol(config_value, &maxcollsize)) {
+            ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&maxcollsize);
+
+            if (ret == ENGINE_SUCCESS) {
+                settings.max_map_size = maxcollsize;
+                MAX_MAP_SIZE = maxcollsize;
+            }
+#endif
+        } else if (strcmp(config_key, "max_btree_size") == 0 && safe_strtol(config_value, &maxcollsize)) {
+            ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&maxcollsize);
+
+            if (ret == ENGINE_SUCCESS) {
+                settings.max_btree_size = maxcollsize;
+                MAX_BTREE_SIZE = maxcollsize;
+            }
+#endif
+        } else {
+            ret = ENGINE_EINVAL;
+        }
+        SETTING_UNLOCK();
+
+        if (ret == ENGINE_SUCCESS) {
+            out_string(c, "END");
+        } else if (ret == ENGINE_ENOTSUP) {
+            out_string(c, "SERVER_ERROR not supported");
+        } else if (ret == ENGINE_EBADVALUE) {
+            out_string(c, "CLIENT_ERROR bad value");
+        } else { /*ENGINE_INVAL*/
+            out_string(c, "CLIENT_ERROR bad command line format");
+        }
+    } else {
+        out_string(c, "CLIENT_ERROR bad command line format");
+    }
+}
+#endif
+
 static void process_verbosity_command(conn *c, token_t *tokens, const size_t ntokens) {
     unsigned int level;
 
@@ -8563,6 +8659,7 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
     }
 }
 
+#ifndef CONFIG_API
 static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntokens) {
     unsigned int mlimit;
     assert(c != NULL);
@@ -8589,6 +8686,7 @@ static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntok
         out_string(c, "CLIENT_ERROR bad command line format");
     }
 }
+#endif
 
 static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntokens) {
     int new_max;
@@ -8633,6 +8731,7 @@ static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntok
 }
 
 #ifdef CONFIG_MAX_COLLECTION_SIZE
+#ifndef CONFIG_API
 static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t ntokens,
                                         int coll_type)
 {
@@ -8705,6 +8804,7 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
     }
 }
 #endif
+#endif
 
 #ifdef ENABLE_ZK_INTEGRATION
 static void process_hbtimeout_command(conn *c, token_t *tokens, const size_t ntokens) {
@@ -8751,12 +8851,15 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     {
         process_maxconns_command(c, tokens, ntokens);
     }
+#ifndef CONFIG_API
     else if ((ntokens == 3 || ntokens == 4) &&
              (strcmp(tokens[SUBCOMMAND_TOKEN].value, "memlimit") == 0))
     {
         process_memlimit_command(c, tokens, ntokens);
     }
+#endif
 #ifdef CONFIG_MAX_COLLECTION_SIZE
+#ifndef CONFIG_API
     else if ((ntokens == 3 || ntokens == 4) &&
              (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_list_size") == 0))
     {
@@ -8767,18 +8870,23 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     {
         process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_SET);
     }
+#endif
 #ifdef MAP_COLLECTION_SUPPORT
+#ifndef CONFIG_API
     else if ((ntokens == 3 || ntokens == 4) &&
              (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_map_size") == 0))
     {
         process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_MAP);
     }
 #endif
+#endif
+#ifndef CONFIG_API
     else if ((ntokens == 3 || ntokens == 4) &&
              (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_btree_size") == 0))
     {
         process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_BTREE);
     }
+#endif
 #endif
 #ifdef ENABLE_ZK_INTEGRATION
     else if ((ntokens == 3 || ntokens == 4) &&
@@ -8797,10 +8905,17 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     {
         process_verbosity_command(c, tokens, ntokens);
     }
+#ifdef CONFIG_API
     else
+    {
+        process_engine_config_command(c, tokens, ntokens);
+    }
+#else
+   else
     {
         out_string(c, "CLIENT_ERROR bad command line format");
     }
+#endif
 }
 
 #ifdef ENABLE_ZK_INTEGRATION

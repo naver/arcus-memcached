@@ -652,6 +652,11 @@ extern "C" {
                                               const void* key, const int nkey,
                                               void *prefix_data);
 
+#ifdef CONFIG_API
+        ENGINE_ERROR_CODE (*set_config)(ENGINE_HANDLE* handle, const void* cookie,
+                                        const char* config_key, const void* config_value);
+#else
+
         ENGINE_ERROR_CODE (*set_memlimit)(ENGINE_HANDLE* handle, const void *cookie,
                                           const size_t memlimit);
 
@@ -659,11 +664,12 @@ extern "C" {
         ENGINE_ERROR_CODE (*set_maxcollsize)(ENGINE_HANDLE* handle, const void *cookie,
                                           const int coll_type, int *maxsize);
 #endif
+#endif
 
         void (*set_verbose) (ENGINE_HANDLE* handle, const void* cookie,
                              const size_t verbose);
 
-       char *(*cachedump)(ENGINE_HANDLE* handle, const void *cookie,
+        char *(*cachedump)(ENGINE_HANDLE* handle, const void *cookie,
                           const unsigned int slabs_clsid,
                           const unsigned int limit,
                           const bool forward,
