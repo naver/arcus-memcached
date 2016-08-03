@@ -7838,6 +7838,9 @@ static void process_stat_settings(ADD_STAT add_stats, void *c) {
     APPEND_STAT("item_size_max", "%d", settings.item_size_max);
     APPEND_STAT("max_list_size", "%d", settings.max_list_size);
     APPEND_STAT("max_set_size", "%d", settings.max_set_size);
+#ifdef MAP_COLLECTION_SUPPORT
+    APPEND_STAT("max_map_size", "%d", settings.max_map_size);
+#endif
     APPEND_STAT("max_btree_size", "%d", settings.max_btree_size);
     APPEND_STAT("topkeys", "%d", settings.topkeys);
 
