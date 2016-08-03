@@ -47,7 +47,7 @@ typedef struct _hash_item {
 #ifdef MAP_COLLECTION_SUPPORT
 #define ITEM_IFLAG_MAP   8   /* map item */
 #define ITEM_IFLAG_BTREE 16  /* b+tree item */
-#define ITEM_IFLAG_COLL  30  /* collection item: list/set/b+tree */
+#define ITEM_IFLAG_COLL  30  /* collection item: list/set/map/b+tree */
 #else
 #define ITEM_IFLAG_BTREE 8   /* b+tree item */
 #define ITEM_IFLAG_COLL  14  /* collection item: list/set/b+tree */
