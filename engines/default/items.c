@@ -8473,13 +8473,65 @@ static void do_map_node_unlink(struct default_engine *engine,
     do_map_node_free(engine, node);
 }
 
+static ENGINE_ERROR_CODE do_map_elem_replace(struct default_engine *engine, map_meta_info *info,
+                                             map_prev_info *pinfo, map_elem_item *new_elem)
+{
+    map_elem_item *prev = pinfo->prev;
+    map_elem_item *old_elem;
+
+    if (prev != NULL) {
+        old_elem = pinfo->prev->next;
+    } else {
+        old_elem = (map_elem_item *)pinfo->node->htab[pinfo->hidx];
+    }
+
+    size_t old_stotal = slabs_space_size(engine, do_map_elem_ntotal(old_elem));
+    size_t new_stotal = slabs_space_size(engine, do_map_elem_ntotal(new_elem));
+
+#ifdef ENABLE_STICKY_ITEM
+    if (new_stotal > old_stotal) {
+        /* sticky memory limit check */
+        if ((info->mflags & COLL_META_FLAG_STICKY) != 0) {
+            if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
+                return ENGINE_ENOMEM;
+        }
+    }
+#endif
+
+    new_elem->next = old_elem->next;
+    if (prev != NULL) {
+        prev->next = new_elem;
+    } else {
+        pinfo->node->htab[pinfo->hidx] = new_elem;
+    }
+
+    old_elem->next = (map_elem_item *)ADDR_MEANS_UNLINKED;
+    if (old_elem->refcount == 0) {
+        do_map_elem_free(engine, old_elem);
+    }
+
+    if (new_stotal != old_stotal) {
+        assert(info->stotal > 0);
+        if (new_stotal > old_stotal) {
+            increase_collection_space(engine, ITEM_TYPE_MAP, (coll_meta_info *)info, (new_stotal-old_stotal));
+        } else {
+            decrease_collection_space(engine, ITEM_TYPE_MAP, (coll_meta_info *)info, (old_stotal-new_stotal));
+        }
+    }
+    return ENGINE_SUCCESS;
+}
+
 static ENGINE_ERROR_CODE do_map_elem_link(struct default_engine *engine,
                                           map_meta_info *info, map_elem_item *elem,
-                                          const void *cookie)
+                                          const bool replace_if_exist, const void *cookie)
 {
     assert(info->root != NULL);
     map_hash_node *node = info->root;
+    map_elem_item *prev = NULL;
     map_elem_item *find;
+    map_prev_info pinfo;
+    ENGINE_ERROR_CODE res = ENGINE_SUCCESS;
+
     int hidx = -1;
 
     /* map hash value */
@@ -8496,16 +8548,26 @@ static ENGINE_ERROR_CODE do_map_elem_link(struct default_engine *engine,
         if (map_hash_eq(elem->hval, elem->data, elem->nfield,
                         find->hval, find->data, find->nfield))
             break;
+        prev = find;
     }
 
     if (find != NULL) {
-        return ENGINE_ELEM_EEXISTS;
+        if (replace_if_exist) {
+            pinfo.node = node;
+            pinfo.prev = prev;
+            pinfo.hidx = hidx;
+            res = do_map_elem_replace(engine, info, &pinfo, elem);
+        } else {
+            res = ENGINE_ELEM_EEXISTS;
+        }
+        return res;
     }
 
     if (node->hcnt[hidx] >= MAP_MAX_HASHCHAIN_SIZE) {
         map_hash_node *n_node = do_map_node_alloc(engine, node->hdepth+1, cookie);
         if (n_node == NULL) {
-            return ENGINE_ENOMEM;
+            res = ENGINE_ENOMEM;
+            return res;
         }
         do_map_node_link(engine, info, node, hidx, n_node);
 
@@ -8525,7 +8587,7 @@ static ENGINE_ERROR_CODE do_map_elem_link(struct default_engine *engine,
         increase_collection_space(engine, ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
     }
 
-    return ENGINE_SUCCESS;
+    return res;
 }
 
 static void do_map_elem_unlink(struct default_engine *engine,
@@ -8550,34 +8612,6 @@ static void do_map_elem_unlink(struct default_engine *engine,
     if (elem->refcount == 0) {
         do_map_elem_free(engine, elem);
     }
-}
-
-static map_elem_item *do_map_elem_find(map_hash_node *node, const field_t *field, map_prev_info *pinfo)
-{
-    map_elem_item *elem = NULL;
-    map_elem_item *prev = NULL;
-    int hval = genhash_string_hash(field->value, field->length);
-    int hidx = -1;
-
-    while (node != NULL) {
-        hidx = MAP_GET_HASHIDX(hval, node->hdepth);
-        if (node->hcnt[hidx] >= 0) /* map element hash chain */
-            break;
-        node = node->htab[hidx];
-    }
-    assert(node != NULL);
-    for (elem = node->htab[hidx]; elem != NULL; elem = elem->next) {
-        if (map_hash_eq(hval, field->value, field->length, elem->hval, elem->data, elem->nfield)) {
-            if (pinfo != NULL) {
-                pinfo->node = node;
-                pinfo->prev = prev;
-                pinfo->hidx = hidx;
-            }
-            break;
-        }
-        prev = elem;
-    }
-    return elem;
 }
 
 static bool do_map_elem_traverse_dfs_byfield(struct default_engine *engine,
@@ -8697,52 +8731,32 @@ static uint32_t do_map_elem_delete_with_field(struct default_engine *engine,
     return delcnt;
 }
 
-static ENGINE_ERROR_CODE do_map_elem_replace(struct default_engine *engine, map_meta_info *info,
-                                             map_prev_info *pinfo, map_elem_item *new_elem)
+static map_elem_item *do_map_elem_find(map_hash_node *node, const field_t *field, map_prev_info *pinfo)
 {
-    map_elem_item *prev = pinfo->prev;
-    map_elem_item *old_elem;
+    map_elem_item *elem = NULL;
+    map_elem_item *prev = NULL;
+    int hval = genhash_string_hash(field->value, field->length);
+    int hidx = -1;
 
-    if (prev != NULL) {
-        old_elem = pinfo->prev->next;
-    } else {
-        old_elem = (map_elem_item *)pinfo->node->htab[pinfo->hidx];
+    while (node != NULL) {
+        hidx = MAP_GET_HASHIDX(hval, node->hdepth);
+        if (node->hcnt[hidx] >= 0) /* map element hash chain */
+            break;
+        node = node->htab[hidx];
     }
-
-    size_t old_stotal = slabs_space_size(engine, do_map_elem_ntotal(old_elem));
-    size_t new_stotal = slabs_space_size(engine, do_map_elem_ntotal(new_elem));
-
-#ifdef ENABLE_STICKY_ITEM
-    if (new_stotal > old_stotal) {
-        /* sticky memory limit check */
-        if ((info->mflags & COLL_META_FLAG_STICKY) != 0) {
-            if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
-                return ENGINE_ENOMEM;
+    assert(node != NULL);
+    for (elem = node->htab[hidx]; elem != NULL; elem = elem->next) {
+        if (map_hash_eq(hval, field->value, field->length, elem->hval, elem->data, elem->nfield)) {
+            if (pinfo != NULL) {
+                pinfo->node = node;
+                pinfo->prev = prev;
+                pinfo->hidx = hidx;
+            }
+            break;
         }
+        prev = elem;
     }
-#endif
-
-    new_elem->next = old_elem->next;
-    if (prev != NULL) {
-        prev->next = new_elem;
-    } else {
-        pinfo->node->htab[pinfo->hidx] = new_elem;
-    }
-
-    old_elem->next = (map_elem_item *)ADDR_MEANS_UNLINKED;
-    if (old_elem->refcount == 0) {
-        do_map_elem_free(engine, old_elem);
-    }
-
-    if (new_stotal != old_stotal) {
-        assert(info->stotal > 0);
-        if (new_stotal > old_stotal) {
-            increase_collection_space(engine, ITEM_TYPE_MAP, (coll_meta_info *)info, (new_stotal-old_stotal));
-        } else {
-            decrease_collection_space(engine, ITEM_TYPE_MAP, (coll_meta_info *)info, (old_stotal-new_stotal));
-        }
-    }
-    return ENGINE_SUCCESS;
+    return elem;
 }
 
 static ENGINE_ERROR_CODE do_map_elem_update(struct default_engine *engine, map_meta_info *info,
@@ -8823,7 +8837,7 @@ static uint32_t do_map_elem_get(struct default_engine *engine,
 
 static ENGINE_ERROR_CODE do_map_elem_insert(struct default_engine *engine,
                                             hash_item *it, map_elem_item *elem,
-                                            const void *cookie)
+                                            const bool replace_if_exist, const void *cookie)
 {
     map_meta_info *info = (map_meta_info *)item_get_meta(it);
 #ifdef CONFIG_MAX_COLLECTION_SIZE
@@ -8863,7 +8877,7 @@ static ENGINE_ERROR_CODE do_map_elem_insert(struct default_engine *engine,
     }
 
     /* insert the element */
-    ret = do_map_elem_link(engine, info, elem, cookie);
+    ret = do_map_elem_link(engine, info, elem, replace_if_exist, cookie);
     if (ret != ENGINE_SUCCESS) {
         if (new_root_flag) {
             do_map_node_unlink(engine, info, NULL, 0);
@@ -8947,7 +8961,7 @@ ENGINE_ERROR_CODE map_elem_insert(struct default_engine *engine, const char *key
         }
     }
     if (ret == ENGINE_SUCCESS) {
-        ret = do_map_elem_insert(engine, it, elem, cookie);
+        ret = do_map_elem_insert(engine, it, elem, false /* replace_if_exist */, cookie);
         if (ret != ENGINE_SUCCESS && *created) {
             do_item_unlink(engine, it, ITEM_UNLINK_ABORT);
         }
