@@ -55,6 +55,7 @@ Response string과 그 의미는 아래와 같다.
 
 - "CREATED" - 성공
 - "EXISTS" - 동일 key string을 가진 item이 이미 존재
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “SERVER_ERROR out of memory” - 메모리 부족
 
@@ -107,6 +108,7 @@ END\r\n
                    새로 삽입할 element의 bkey가 b+tree의 smallest bkey 보다 작으면서
                    maxcount 개의 elements가 이미 존재하거나 maxbkeyrange를 벗어나는 경우가 이에 해당된다.
 - "ELEMENT_EXISTS" - 동일 bkey를 가진 element가 존재
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “CLIENT_ERROR too large value” - 삽입할 데이터가 4KB 보다 큼
 - “CLIENT_ERROR bad data chunk” - 삽입할 데이터의 길이가 <bytes>와 다르거나 "\r\n"으로 끝나지 않음
@@ -142,6 +144,7 @@ Response string과 그 의미는 아래와 같다.
                      예를 들어, 변경하고자 하는 eflag가 존재하지 않거나,
                      존재하더라도 \<eflag_update\> 조건으로 명시된 부분의 데이터를 가지지 않은 상태이다.
 - “NOTHING_TO_UPDATE” - eflag 변경과 data 변경 중 어느 하나도 명시되지 않은 상태
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “CLIENT_ERROR too large value” - 변경할 데이터가 4KB 보다 큼
 - “CLIENT_ERROR bad data chunk” - 변경할 데이터의 길이가 <bytes>와 다르거나 "\r\n"으로 끝나지 않음
@@ -175,6 +178,7 @@ Response string과 그 의미는 아래와 같다.
 - “NOT_FOUND_ELEMENT” - element miss (삭제할 element가 없음)
 - “TYPE_MISMATCH” - 해당 item이 b+tree colleciton이 아님
 - "BKEY_MISMATCH" - 명령 인자의 bkey 유형과 대상 b+tree의 bkey 유형이 다름
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 
 ### bop get - B+Tree Element 조회
@@ -228,6 +232,7 @@ END|TRIMMED|DELETED|DELETED_DROPPED\r\n
 - “TYPE_MISMATCH” - 해당 item이 b+tree collection이 아님
 - “BKEY_MISMATCH” - 명령 인자로 주어진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
 - “UNREADABLE” - 해당 item이 unreadable item임
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “SERVER_ERROR out of memory [writing get response]” - 메모리 부족
 
@@ -259,6 +264,7 @@ COUNT=<count>
 - “TYPE_MISMATCH” - 해당 item이 b+tree collection이 아님
 - “BKEY_MISMATCH” - 명령 인자로 주어진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
 - “UNREADABLE” - 해당 item이 unreadable item임
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 
 ### bop incr/decr - B+Tree Element 값의 증감
@@ -299,6 +305,7 @@ Increment/decrement 수행 후의 데이터 값이다.
                    새로 삽입할 element의 bkey가 b+tree의 smallest bkey 보다 작으면서
                    maxcount 개의 elements가 이미 존재하거나 maxbkeyrange를 벗어나는 경우가 이에 해당된다.
 - “OVERFLOWED” - overflow 발생
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR cannot increment or decrement non-numeric value” - 해당 element의 데이터가 숫자형이 아님.
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “SERVER_ERROR out of memory [writing get response]” - 메모리 부족
@@ -369,6 +376,7 @@ flags와 ecount를 포함하여 조회된 element 정보가 생략된다.
 
 실패 시의 response string과 그 의미는 다음과 같다.
 
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “CLIENT_ERROR bad data chunk”	- comma seperated key list의 길이가 \<lenkeys\>와 다르거나 “\r\n”으로 끝나지 않음
 - “CLIENT_ERROR bad value” - bop mget 명령의 제약 조건을 위배함.
@@ -508,6 +516,7 @@ smget 수행의 실패 시의 response string은 다음과 같다.
 - “ATTR_MISMATCH” - smget에 참여된 b+tree들의 속성들이 서로 다름.
                     maxcount, maxbkeyrange, overflowaction이 모두 동일해야 함.
 - “OUT_OF_RANGE” - 기존 smget 동작에서만 발생할 수 있는 실패 response string이다.
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “CLIENT_ERROR bad data chunk”	- 주어진 key 리스트에 중복 key가 존재하거나
               주어진 key 리스트의 길이가 \<lenkeys\> 길이와 다르거나 “\r\n”으로 끝나지 않음.
@@ -556,6 +565,7 @@ POSITION=<position>\r\n
 - “TYPE_MISMATCH” - b+tree collection 아님
 - “BKEY_MISMATCH” - 명령 인자로 주어진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
 - “UNREADABLE” - 해당 item이 unreadable item임
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 
 ### bop gbp - B+Tree Get By Position
@@ -590,6 +600,7 @@ END\r\n
 - “NOT_FOUND_ELEMENT” - element miss
 - “TYPE_MISMATCH” - b+tree collection 아님
 - “UNREADABLE” - 해당 item이 unreadable item임
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “SERVER_ERROR out of memory [writing get response]” - 메모리 부족
 
@@ -639,5 +650,6 @@ END\r\n
 - “TYPE_MISMATCH” - b+tree collection 아님
 - “BKEY_MISMATCH” - 명령 인자로 주어진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
 - “UNREADABLE” - 해당 item이 unreadable item임
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “SERVER_ERROR out of memory [writing get response]” - 메모리 부족

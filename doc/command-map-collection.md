@@ -30,6 +30,7 @@ Response string과 그 의미는 아래와 같다.
 
 - "CREATED" - 성공
 - "EXISTS" - 동일 key string을 가진 item이 이미 존재
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “SERVER_ERROR out of memory” - 메모리 부족
 
@@ -60,6 +61,7 @@ Response string과 그 의미는 아래와 같다.
 - “TYPE_MISMATCH” - 해당 item이 map collection이 아님
 - “OVERFLOWED” - overflow 발생
 - "ELEMENT_EXISTS" - 동일 이름의 field가 이미 존재. map field uniqueness 위배
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “CLIENT_ERROR too large value” - 삽입할 데이터가 4KB 보다 큼
 - “CLIENT_ERROR bad data chunk” - 삽입할 데이터 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
@@ -88,6 +90,7 @@ Response string과 그 의미는 아래와 같다.
 - “NOT_FOUND” - key miss
 - "NOT_FOUND_ELEMENT" - field miss
 - “TYPE_MISMATCH” - 해당 item이 map collection이 아님
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “CLIENT_ERROR too large value” - 삽입할 데이터가 4KB 보다 큼
 - “CLIENT_ERROR bad data chunk” - 삽입할 데이터 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
@@ -116,6 +119,7 @@ Response string과 그 의미는 아래와 같다.
 - “NOT_FOUND” - key miss
 - “NOT_FOUND_ELEMENT” - field miss (삭제할 field, element가 없음. 모든 field가 없을 시에만 리턴)
 - “TYPE_MISMATCH” - 해당 item이 map colleciton이 아님
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 
 ### mop get - Map Field, Element 조회
@@ -154,6 +158,7 @@ END|DELETED|DELETED_DROPPED\r\n
 - “NOT_FOUND_ELEMENT” - field miss (주어진 field 이름들 중 하나라도 가진 element가 전혀 없는 상태임)
 - “TYPE_MISMATCH” - 해당 item이 map collection이 아님
 - “UNREADABLE” - 해당 item이 unreadable item임
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - "SERVER_ERROR out of memory [writing get response]”	- 메모리 부족
 
