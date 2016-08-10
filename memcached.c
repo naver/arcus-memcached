@@ -15395,36 +15395,37 @@ int main (int argc, char **argv) {
     /* enter the event loop */
     event_base_loop(main_base, 0);
 
+    /* Memcached shutdown process */
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Initiating arcus memcached shutdown...\n");
 
-    /* remove the PID file if we're a daemon */
+    /* 1) remove the PID file if we're a daemon */
     if (do_daemonize)
         remove_pidfile(pid_file);
 
+    /* 2) close listen sockes not to accept new connections */
+    close_listen_sockets();
+    mc_logger->log(EXTENSION_LOG_INFO, NULL, "Listen sockets closed.\n");
+
+    /* 3) shutdown all threads */
+    memcached_shutdown = 2;
+    threads_shutdown();
+    mc_logger->log(EXTENSION_LOG_INFO, NULL, "Worker threads terminated.\n");
+
 #ifdef ENABLE_ZK_INTEGRATION
-    /* shutdown arcus ZK connection */
+    /* 4) shutdown arcus ZK connection */
     if (arcus_zk_cfg) {
         arcus_zk_final("graceful shutdown");
         free(arcus_zk_cfg);
     }
 #endif
 
-    close_listen_sockets();
-    mc_logger->log(EXTENSION_LOG_INFO, NULL, "Listen sockets closed.\n");
-
-    memcached_shutdown = 2;
-    threads_shutdown();
-    mc_logger->log(EXTENSION_LOG_INFO, NULL, "Worker threads terminated.\n");
-
+    /* 5) destroy data structures */
 #ifdef COMMAND_LOGGING
-    /* destroy command logging */
-    cmdlog_final();
+    cmdlog_final(); /* finalize command logging */
 #endif
-
 #ifdef DETECT_LONG_QUERY
-    lqdetect_final();
+    lqdetect_final(); /* finalize long query detection */
 #endif
-
     mc_engine.v1->destroy(mc_engine.v0);
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Memcached engine destroyed.\n");
 
