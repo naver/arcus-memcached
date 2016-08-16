@@ -22,7 +22,8 @@ typedef struct _prefix_t prefix_t;
 
 struct _prefix_t {
     uint16_t nprefix; /* length of prefix name */
-    uint16_t dummy16;
+    uint8_t  internal; /* internal prefix: 1 or 0 */
+    uint8_t  dummy8;
     uint32_t prefix_items;
     uint64_t list_hash_items;
     uint64_t set_hash_items;

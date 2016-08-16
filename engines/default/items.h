@@ -52,8 +52,8 @@ typedef struct _hash_item {
 #define ITEM_IFLAG_BTREE 8   /* b+tree item */
 #define ITEM_IFLAG_COLL  14  /* collection item: list/set/b+tree */
 #endif
-#define ITEM_LINKED  (1<<8)
-#define ITEM_SLABBED (2<<8)  /* NOT USED */
+#define ITEM_INTERNAL (1<<8) /* internal cache item */
+#define ITEM_LINKED   (2<<8) /* linked to assoc hash table */
 
 /* Macros for checking item type */
 #define IS_LIST_ITEM(it)  (((it)->iflag & ITEM_IFLAG_LIST) != 0)

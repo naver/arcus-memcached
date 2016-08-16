@@ -504,6 +504,9 @@ ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it
                 memcpy(pt + 1, key, prefix_list[j].nprefix);
                 memcpy((char*)pt+sizeof(prefix_t)+prefix_list[j].nprefix, "\0", 1);
                 pt->nprefix = prefix_list[j].nprefix;
+                if (PREFIX_IS_RSVD(key, pt->nprefix)) {
+                    pt->internal = 1; /* internal prefix */
+                }
                 pt->parent_prefix = (j == 0 ? root_pt : prefix_list[j-1].pt);
                 time(&pt->create_time);
 

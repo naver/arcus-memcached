@@ -875,6 +875,10 @@ static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *
         info->prefix = (void*)pt;
         assert(info->stotal == 0); /* Only empty collection can be linked */
     }
+    if (pt->internal) {
+        /* It's an internal cache item whose prefix name is "arcus". */
+        it->iflag |= ITEM_INTERNAL;
+    }
 
     /* link the item to the hash table */
     it->iflag |= ITEM_LINKED;
