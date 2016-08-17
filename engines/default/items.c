@@ -2037,7 +2037,7 @@ static set_elem_item *do_set_elem_find(set_meta_info *info, const char *val, con
     if (info->root != NULL) {
         set_hash_node *node = info->root;
         int hval = genhash_string_hash(val, vlen);
-        int hidx;
+        int hidx = 0;
 
         while (node != NULL) {
             hidx = SET_GET_HASHIDX(hval, node->hdepth);
