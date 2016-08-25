@@ -15402,22 +15402,21 @@ int main (int argc, char **argv) {
     if (do_daemonize)
         remove_pidfile(pid_file);
 
-    /* 2) close listen sockes not to accept new connections */
+#ifdef ENABLE_ZK_INTEGRATION
+    /* 2) shutdown arcus ZK connection */
+    if (arcus_zk_cfg) {
+        arcus_zk_final("graceful shutdown");
+    }
+#endif
+
+    /* 3) close listen sockes not to accept new connections */
     close_listen_sockets();
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Listen sockets closed.\n");
 
-    /* 3) shutdown all threads */
+    /* 4) shutdown all threads */
     memcached_shutdown = 2;
     threads_shutdown();
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Worker threads terminated.\n");
-
-#ifdef ENABLE_ZK_INTEGRATION
-    /* 4) shutdown arcus ZK connection */
-    if (arcus_zk_cfg) {
-        arcus_zk_final("graceful shutdown");
-        free(arcus_zk_cfg);
-    }
-#endif
 
     /* 5) destroy data structures */
 #ifdef COMMAND_LOGGING
@@ -15429,6 +15428,13 @@ int main (int argc, char **argv) {
     mc_engine.v1->destroy(mc_engine.v0);
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Memcached engine destroyed.\n");
 
+#ifdef ENABLE_ZK_INTEGRATION
+    /* 6) destroy cluster config structure */
+    if (arcus_zk_cfg) {
+        arcus_zk_destroy();
+        free(arcus_zk_cfg);
+    }
+#endif
     /* Clean up strdup() call for bind() address */
     if (settings.inter)
       free(settings.inter);

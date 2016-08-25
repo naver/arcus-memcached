@@ -697,6 +697,7 @@ hb_thread(void *arg)
     if (shutdown_by_me) {
         arcus_zk_shutdown = 1;
         arcus_zk_final("Heartbeat failure");
+        arcus_zk_destroy();
         exit(0);
     }
     return NULL;
@@ -1127,6 +1128,8 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     // Either got SIG* or memcached shutdown process finished
     if (arcus_zk_shutdown) {
         arcus_zk_final("Interrupted");
+        arcus_zk_destroy();
+        arcus_exit(zh, EX_OSERR);
     }
 }
 
@@ -1189,6 +1192,15 @@ void arcus_zk_final(const char *msg)
         zh = NULL;
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "zk connection closed\n");
     }
+    pthread_mutex_unlock(&zk_final_lock);
+}
+
+void arcus_zk_destroy(void)
+{
+    assert(arcus_zk_shutdown == 1);
+    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "arcus zk destroy\n");
+
+    pthread_mutex_lock(&zk_final_lock);
 #ifdef ENABLE_CLUSTER_AWARE
     if (arcus_conf.ch != NULL) {
         cluster_config_final(arcus_conf.ch);

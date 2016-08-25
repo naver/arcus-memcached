@@ -41,6 +41,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
                    int verbose, size_t maxbytes, int port,
                    ENGINE_HANDLE_V1 *engine);
 void arcus_zk_final(const char *msg);
+void arcus_zk_destroy(void);
 
 int  arcus_zk_set_ensemble(char *ensemble_list);
 int  arcus_zk_get_ensemble_str(char *buf, int size);
