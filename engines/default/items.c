@@ -8019,11 +8019,6 @@ static void *item_dumper_main(void *arg)
     pthread_mutex_lock(&engine->cache_lock);
     while (scan.cur_bucket < scan.max_bucket)
     {
-        if (!engine->initialized || dumper->stop) {
-            logger->log(EXTENSION_LOG_INFO, NULL, "Stop the current dump.\n");
-            ret = -1; break;
-        }
-
         assoc_scan_next(engine, &scan);
         for (i = 0; i < scan.item_count; i++) {
             ITEM_REFCOUNT_INCR(scan.item_array[i]);
@@ -8101,6 +8096,11 @@ static void *item_dumper_main(void *arg)
             ITEM_REFCOUNT_DECR(scan.item_array[i]);
         }
         if (ret != 0) break;
+
+        if (!engine->initialized || dumper->stop) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "Stop the current dump.\n");
+            ret = -1; break;
+        }
     }
     assoc_scan_final(engine, &scan);
 
