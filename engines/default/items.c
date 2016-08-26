@@ -8102,9 +8102,9 @@ static void *item_dumper_main(void *arg)
         }
         if (ret != 0) break;
     }
-    pthread_mutex_unlock(&engine->cache_lock);
-
     assoc_scan_final(engine, &scan);
+
+    pthread_mutex_unlock(&engine->cache_lock);
 
     if (ret == 0) {
         int summary_length = 256; /* just, enough memory space size */
