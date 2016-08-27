@@ -242,6 +242,125 @@ void assoc_delete(struct default_engine *engine, uint32_t hash,
 /*
  * Assoc scan
  */
+#ifdef NEW_ASSOC_SCAN
+void assoc_scan_init(struct default_engine *engine, struct assoc_scan *scan)
+{
+    /* initialize assoc_scan structure */
+    scan->engine = engine;
+    scan->hashsz = engine->assoc.hashsize;
+    scan->bucket = 0;
+    scan->tabcnt = 0; /* 0 means the scan on the current
+                       * bucket chain has not yet started.
+                       */
+
+    /* initialize the placeholder item */
+    scan->ph_item.refcount = 1;
+    scan->ph_item.refchunk = 0;
+    scan->ph_item.nkey = 0;
+    scan->ph_item.nbytes = 0;
+    scan->ph_item.iflag = ITEM_INTERNAL;
+    scan->ph_item.h_next = NULL;
+    scan->ph_linked = false;
+
+    scan->initialized = true;
+}
+
+static void
+unlink_scan_placeholder(struct assoc *assoc, struct assoc_scan *scan)
+{
+    hash_item **p = &assoc->roottable[scan->tabidx].hashtable[scan->bucket];
+    assert(*p != NULL);
+    while (*p != &scan->ph_item)
+        p = &((*p)->h_next);
+    *p = (*p)->h_next;
+    scan->ph_linked = false;
+}
+
+int assoc_scan_next(struct assoc_scan *scan, hash_item **item_array, int array_size)
+{
+    assert(scan->initialized && array_size > 0);
+    struct assoc *assoc = &scan->engine->assoc;
+    hash_item *next;
+    int item_count = 0;
+    int scan_cost = 0;
+    int scan_done = false;
+
+    while (scan->bucket < scan->hashsz)
+    {
+        if (scan->tabcnt == 0) {
+            /* start the scan on the current bucket */
+            scan->tabcnt = hashsize(assoc->infotable[scan->bucket].curpower);
+            scan->tabidx = 0;
+            assert(scan->tabcnt > 0);
+            /* increment bucket's reference count */
+            assoc->infotable[scan->bucket].refcount += 1;
+        }
+
+        while (scan->tabidx < scan->tabcnt) {
+            if (scan_cost > (2*array_size) && item_count > 0) {
+                /* too large scan cost, stop the scan */
+                scan_done = true;  break;
+            }
+            if (scan->ph_linked) {
+                next = scan->ph_item.h_next;
+                unlink_scan_placeholder(assoc, scan);
+            } else {
+                next = assoc->roottable[scan->tabidx].hashtable[scan->bucket];
+            }
+            scan_cost++;
+            while (next != NULL) {
+                if ((next->nkey == 0) ||
+                    (next->iflag & ITEM_INTERNAL) != 0 ||
+                    (item_is_valid(scan->engine, next) != true)) {
+                    /* invalid item. do nothing */
+                } else {
+                    item_array[item_count] = next;
+                    if (++item_count >= array_size)
+                        break;
+                }
+                next = next->h_next;
+                scan_cost++;
+            }
+            if (next != NULL) {
+                if (next->h_next != NULL) {
+                    /* add a placeholder item for the next scan */
+                    scan->ph_item.h_next = next->h_next;
+                    next->h_next = &scan->ph_item;
+                    scan->ph_linked = true;
+                } else {
+                    scan->tabidx += 1;
+                }
+                /* the array is full of items. stop the scan. */
+                scan_done = true;  break;
+            }
+            scan->tabidx += 1;
+        }
+        if (scan_done) break;
+
+        /* finish the scan on the current bucket */
+        /* decrement bucket's reference count */
+        assoc->infotable[scan->bucket].refcount -= 1;
+        /* goto the next bucket */
+        scan->bucket += 1;
+        scan->tabcnt = 0;
+    }
+    return item_count;
+}
+
+void assoc_scan_final(struct assoc_scan *scan)
+{
+    assert(scan->initialized);
+
+    if (scan->ph_linked) {
+        unlink_scan_placeholder(&scan->engine->assoc, scan);
+    }
+    if (scan->bucket < scan->hashsz) {
+        /* decrement bucket's reference count */
+        scan->engine->assoc.infotable[scan->bucket].refcount -= 1;
+    }
+    scan->initialized = false;
+}
+#else
 void assoc_scan_init(struct default_engine *engine, struct assoc_scan *scan)
 {
     scan->guard_data = 23456;
@@ -311,6 +430,7 @@ void assoc_scan_final(struct default_engine *engine, struct assoc_scan *scan)
     }
     scan->guard_data = 0;
 }
+#endif
 #endif
 
 /*

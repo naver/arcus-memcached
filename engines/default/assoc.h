@@ -18,6 +18,8 @@
 #ifndef ASSOC_H
 #define ASSOC_H
 
+#define NEW_ASSOC_SCAN 1
+
 typedef struct _prefix_t prefix_t;
 
 struct _prefix_t {
@@ -85,6 +87,18 @@ struct assoc {
 };
 
 #ifdef JHPARK_KEY_DUMP
+#ifdef NEW_ASSOC_SCAN
+struct assoc_scan {
+    struct default_engine *engine;
+    int        hashsz;    /* hash table size */
+    int        bucket;    /* current bucket index */
+    int        tabcnt;    /* table count in the bucket */
+    int        tabidx;    /* table index in the bucket */
+    hash_item  ph_item;   /* placeholder item itself */
+    bool       ph_linked; /* placeholder item linked */
+    bool       initialized;
+};
+#else
 #define MAX_SCAN_ITEMS 256
 struct assoc_scan {
   int        guard_data;
@@ -95,6 +109,7 @@ struct assoc_scan {
   int        item_count;
   hash_item *item_array[MAX_SCAN_ITEMS];
 };
+#endif
 #endif
 
 /* associative array */
@@ -109,8 +124,14 @@ void              assoc_delete(struct default_engine *engine, uint32_t hash,
 #ifdef JHPARK_KEY_DUMP
 /* assoc scan functions */
 void              assoc_scan_init(struct default_engine *engine, struct assoc_scan *scan);
+#ifdef NEW_ASSOC_SCAN
+int               assoc_scan_next(struct assoc_scan *scan,
+                                  hash_item **item_array, int array_size);
+void              assoc_scan_final(struct assoc_scan *scan);
+#else
 void              assoc_scan_next(struct default_engine *engine, struct assoc_scan *scan);
 void              assoc_scan_final(struct default_engine *engine, struct assoc_scan *scan);
+#endif
 #endif
 prefix_t *        assoc_prefix_find(struct default_engine *engine, uint32_t hash,
                                     const char *prefix, const int nprefix);
