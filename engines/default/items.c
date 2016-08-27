@@ -7987,18 +7987,14 @@ void item_stats_scrub(struct default_engine *engine,
 
 #ifdef JHPARK_KEY_DUMP
 #define DUMP_BUFFER_SIZE (64 * 1024)
-#ifdef NEW_ASSOC_SCAN
 #define SCAN_ITEM_ARRAY_SIZE 64
-#endif
 static void *item_dumper_main(void *arg)
 {
     struct default_engine *engine = arg;
     struct engine_dumper *dumper = &engine->dumper;
-#ifdef NEW_ASSOC_SCAN
     int        array_size=SCAN_ITEM_ARRAY_SIZE;
     int        item_count;
     hash_item *item_array[SCAN_ITEM_ARRAY_SIZE];
-#endif
     hash_item *it;
     struct assoc_scan scan;
     int fd, ret = 0;
@@ -8025,13 +8021,8 @@ static void *item_dumper_main(void *arg)
     assoc_scan_init(engine, &scan);
 
     pthread_mutex_lock(&engine->cache_lock);
-#ifdef NEW_ASSOC_SCAN
     while (true)
-#else
-    while (scan.cur_bucket < scan.max_bucket)
-#endif
     {
-#ifdef NEW_ASSOC_SCAN
         item_count = assoc_scan_next(&scan, item_array, array_size);
         if (item_count <= 0) { /* reached to the end */
             break;
@@ -8039,24 +8030,13 @@ static void *item_dumper_main(void *arg)
         for (i = 0; i < item_count; i++) {
             ITEM_REFCOUNT_INCR(item_array[i]);
         }
-#else
-        assoc_scan_next(engine, &scan);
-        for (i = 0; i < scan.item_count; i++) {
-            ITEM_REFCOUNT_INCR(scan.item_array[i]);
-        }
-#endif
         pthread_mutex_unlock(&engine->cache_lock);
 
         /* write key string to buffer */
         real_nowtime = time(NULL);
         memc_curtime = engine->server.core->get_current_time();
-#ifdef NEW_ASSOC_SCAN
         for (i = 0; i < item_count; i++) {
             it = item_array[i];
-#else
-        for (i = 0; i < scan.item_count; i++) {
-            it = scan.item_array[i];
-#endif
             dumper->visited++;
             /* check prefix name */
             if (dumper->nprefix > 0) {
@@ -8119,15 +8099,9 @@ static void *item_dumper_main(void *arg)
         }
 
         pthread_mutex_lock(&engine->cache_lock);
-#ifdef NEW_ASSOC_SCAN
         for (i = 0; i < item_count; i++) {
             do_item_release(engine, item_array[i]);
         }
-#else
-        for (i = 0; i < scan.item_count; i++) {
-            ITEM_REFCOUNT_DECR(scan.item_array[i]);
-        }
-#endif
         if (ret != 0) break;
 
         if (!engine->initialized || dumper->stop) {
@@ -8135,11 +8109,7 @@ static void *item_dumper_main(void *arg)
             ret = -1; break;
         }
     }
-#ifdef NEW_ASSOC_SCAN
     assoc_scan_final(&scan);
-#else
-    assoc_scan_final(engine, &scan);
-#endif
 
     pthread_mutex_unlock(&engine->cache_lock);
 
