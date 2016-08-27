@@ -350,9 +350,6 @@ default_flush(ENGINE_HANDLE* handle, const void* cookie,
 {
     ENGINE_ERROR_CODE ret;
 
-    if (PREFIX_IS_RSVD(prefix, nprefix)) {
-        return ENGINE_ENOTSUP; /* Flushing arcus prefix is not allowed */
-    }
     ACTION_BEFORE_WRITE(cookie, NULL, 0);
     ret = item_flush_expired(get_handle(handle), prefix, nprefix, when, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
