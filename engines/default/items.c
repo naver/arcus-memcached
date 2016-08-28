@@ -8027,8 +8027,15 @@ static void *item_dumper_main(void *arg)
         if (item_count <= 0) { /* reached to the end */
             break;
         }
+        memc_curtime = engine->server.core->get_current_time();
         for (i = 0; i < item_count; i++) {
-            ITEM_REFCOUNT_INCR(item_array[i]);
+            it = item_array[i];
+            if ((it->iflag & ITEM_INTERNAL) == 0 &&
+                do_item_isvalid(engine, it, memc_curtime)) {
+                ITEM_REFCOUNT_INCR(it); /* valid user item */
+            } else {
+                item_array[i] = NULL;
+            }
         }
         pthread_mutex_unlock(&engine->cache_lock);
 
@@ -8036,7 +8043,7 @@ static void *item_dumper_main(void *arg)
         real_nowtime = time(NULL);
         memc_curtime = engine->server.core->get_current_time();
         for (i = 0; i < item_count; i++) {
-            it = item_array[i];
+            if ((it = item_array[i]) == NULL) continue;
             dumper->visited++;
             /* check prefix name */
             if (dumper->nprefix > 0) {
@@ -8100,7 +8107,9 @@ static void *item_dumper_main(void *arg)
 
         pthread_mutex_lock(&engine->cache_lock);
         for (i = 0; i < item_count; i++) {
-            do_item_release(engine, item_array[i]);
+            if (item_array[i] != NULL) {
+                do_item_release(engine, item_array[i]);
+            }
         }
         if (ret != 0) break;
 

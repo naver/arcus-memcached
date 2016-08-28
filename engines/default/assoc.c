@@ -308,12 +308,8 @@ int assoc_scan_next(struct assoc_scan *scan, hash_item **item_array, int array_s
             }
             scan_cost++;
             while (next != NULL) {
-                if ((next->nkey == 0) ||
-                    (next->iflag & ITEM_INTERNAL) != 0 ||
-                    (item_is_valid(scan->engine, next) != true)) {
-                    /* invalid item. do nothing */
-                } else {
-                    item_array[item_count] = next;
+                if (next->nkey > 0) { /* Not placeholder item */
+                    item_array[item_count] = next; /* user cache item */
                     if (++item_count >= array_size)
                         break;
                 }
