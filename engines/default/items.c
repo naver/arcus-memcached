@@ -814,8 +814,11 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it)
         /* move curMK, srcub pointer in LRU */
         if (engine->items.sticky_curMK[clsid] == it)
             engine->items.sticky_curMK[clsid] = it->prev;
+#ifdef NEW_SCRUB_WITH_ASSOC_SCAN
+#else
         if (engine->items.sticky_scrub[clsid] == it)
             engine->items.sticky_scrub[clsid] = it->next; /* move forward */
+#endif
     } else {
 #endif
         head = &engine->items.heads[clsid];
@@ -829,8 +832,11 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it)
             if (engine->items.curMK[clsid] == NULL)
                 engine->items.curMK[clsid] = engine->items.lowMK[clsid];
         }
+#ifdef NEW_SCRUB_WITH_ASSOC_SCAN
+#else
         if (engine->items.scrub[clsid] == it)
             engine->items.scrub[clsid] = it->next; /* move forward */
+#endif
 #ifdef ENABLE_STICKY_ITEM
     }
 #endif
@@ -7757,6 +7763,79 @@ uint8_t  btree_real_nbkey(uint8_t nbkey)
 /*
  * ITEM SCRUB functions
  */
+#ifdef NEW_SCRUB_WITH_ASSOC_SCAN
+static bool do_item_isstale(struct default_engine *engine, hash_item *it)
+{
+    assert(it != NULL);
+#ifdef ENABLE_CLUSTER_AWARE
+    if ((it->iflag & ITEM_INTERNAL) == 0 &&
+        !engine->server.core->is_my_key(item_get_key(it),it->nkey)) {
+        return true; /* stale data */
+    }
+#endif
+    return false; /* not-stale data */
+}
+
+static void *item_scrubber_main(void *arg)
+{
+    struct default_engine *engine = arg;
+    int        array_size=32; /* configurable */
+    int        item_count;
+    hash_item *item_array[array_size];
+    struct assoc_scan scan;
+    rel_time_t current_time = engine->server.core->get_current_time();
+    struct timespec sleep_time = {0, 1000};
+    long       tot_execs = 0;
+    int        i,try_cnt = 9;
+
+    assert(engine->scrubber.running == true);
+
+    assoc_scan_init(engine, &scan);
+    while (engine->initialized)
+    {
+        /* hold cache lock */
+        /* pthread_mutex_lock(&engine->cache_lock); */
+        for (i = 0; i < try_cnt; i++) {
+            if (pthread_mutex_trylock(&engine->cache_lock) == 0) break;
+            nanosleep(&sleep_time, NULL); /* 1ms sleep */
+        }
+        if (i == try_cnt) pthread_mutex_lock(&engine->cache_lock);
+
+        /* scan and scrub cache items */
+        item_count = assoc_scan_next(&scan, item_array, array_size);
+        if (item_count <= 0) { /* reached to the end */
+            assoc_scan_final(&scan);
+            pthread_mutex_unlock(&engine->cache_lock);
+            break;
+        }
+        for (i = 0; i < item_count; i++) {
+            engine->scrubber.visited++;
+            if (do_item_isvalid(engine, item_array[i], current_time) == false) {
+                do_item_unlink(engine, item_array[i], ITEM_UNLINK_INVALID);
+                engine->scrubber.cleaned++;
+            } else {
+                if (engine->scrubber.runmode == SCRUB_MODE_STALE &&
+                    do_item_isstale(engine, item_array[i]) == true) {
+                    do_item_unlink(engine, item_array[i], ITEM_UNLINK_STALE);
+                    engine->scrubber.cleaned++;
+                }
+            }
+        }
+
+        /* release cache lock */
+        pthread_mutex_unlock(&engine->cache_lock);
+        if ((++tot_execs % 50) == 0) {
+            nanosleep(&sleep_time, NULL); /* 1ms sleep */
+        }
+    }
+
+    pthread_mutex_lock(&engine->scrubber.lock);
+    engine->scrubber.stopped = time(NULL);
+    engine->scrubber.running = false;
+    pthread_mutex_unlock(&engine->scrubber.lock);
+    return NULL;
+}
+#else
 static bool item_scrub(struct default_engine *engine, hash_item *item)
 {
     engine->scrubber.visited++;
@@ -7909,6 +7988,7 @@ static void *item_scubber_main(void *arg)
     pthread_mutex_unlock(&engine->scrubber.lock);
     return NULL;
 }
+#endif
 
 bool item_start_scrub(struct default_engine *engine, int mode)
 {
@@ -7926,9 +8006,15 @@ bool item_start_scrub(struct default_engine *engine, int mode)
         pthread_t t;
         pthread_attr_t attr;
 
+#ifdef NEW_SCRUB_WITH_ASSOC_SCAN
+        if (pthread_attr_init(&attr) != 0 ||
+            pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0 ||
+            pthread_create(&t, &attr, item_scrubber_main, engine) != 0)
+#else
         if (pthread_attr_init(&attr) != 0 ||
             pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0 ||
             pthread_create(&t, &attr, item_scubber_main, engine) != 0)
+#endif
         {
             engine->scrubber.running = false;
         } else {

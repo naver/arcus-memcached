@@ -238,7 +238,6 @@ void assoc_delete(struct default_engine *engine, uint32_t hash,
     assert(*before != 0);
 }
 
-#ifdef JHPARK_KEY_DUMP
 /*
  * Assoc scan functions
  */
@@ -355,7 +354,6 @@ void assoc_scan_final(struct assoc_scan *scan)
     }
     scan->initialized = false;
 }
-#endif
 
 /*
  * Prefix Management

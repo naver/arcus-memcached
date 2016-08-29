@@ -18,6 +18,8 @@
 #ifndef ITEMS_H
 #define ITEMS_H
 
+#define NEW_SCRUB_WITH_ASSOC_SCAN 1
+
 /* hash item strtucture */
 typedef struct _hash_item {
     uint16_t refcount;  /* reference count */
@@ -271,11 +273,17 @@ struct items {
    hash_item   *tails[MAX_SLAB_CLASSES];
    hash_item   *lowMK[MAX_SLAB_CLASSES]; /* low mark for invalidation(expire/flush) check */
    hash_item   *curMK[MAX_SLAB_CLASSES]; /* cur mark for invalidation(expire/flush) check */
+#ifdef NEW_SCRUB_WITH_ASSOC_SCAN
+#else
    hash_item   *scrub[MAX_SLAB_CLASSES]; /* scrub mark */
+#endif
    hash_item   *sticky_heads[MAX_SLAB_CLASSES];
    hash_item   *sticky_tails[MAX_SLAB_CLASSES];
    hash_item   *sticky_curMK[MAX_SLAB_CLASSES]; /* cur mark for invalidation(expire/flush) check */
+#ifdef NEW_SCRUB_WITH_ASSOC_SCAN
+#else
    hash_item   *sticky_scrub[MAX_SLAB_CLASSES]; /* scrub mark */
+#endif
    unsigned int sizes[MAX_SLAB_CLASSES];
    unsigned int sticky_sizes[MAX_SLAB_CLASSES];
    itemstats_t  itemstats[MAX_SLAB_CLASSES];
