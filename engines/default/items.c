@@ -4646,7 +4646,7 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(struct default_engine *engine,
         *result = initial;
     } else {
         real_nbkey = BTREE_REAL_NBKEY(elem->nbkey);
-        if (! safe_strtoull((const char*)elem->data + real_nbkey + elem->neflag, &value)) {
+        if (! safe_strtoull((const char*)elem->data + real_nbkey + elem->neflag, &value) || elem->nbytes == 2) {
             return ENGINE_EINVAL;
         }
 
