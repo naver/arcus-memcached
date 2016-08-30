@@ -814,11 +814,6 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it)
         /* move curMK, srcub pointer in LRU */
         if (engine->items.sticky_curMK[clsid] == it)
             engine->items.sticky_curMK[clsid] = it->prev;
-#ifdef NEW_SCRUB_WITH_ASSOC_SCAN
-#else
-        if (engine->items.sticky_scrub[clsid] == it)
-            engine->items.sticky_scrub[clsid] = it->next; /* move forward */
-#endif
     } else {
 #endif
         head = &engine->items.heads[clsid];
@@ -832,11 +827,6 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it)
             if (engine->items.curMK[clsid] == NULL)
                 engine->items.curMK[clsid] = engine->items.lowMK[clsid];
         }
-#ifdef NEW_SCRUB_WITH_ASSOC_SCAN
-#else
-        if (engine->items.scrub[clsid] == it)
-            engine->items.scrub[clsid] = it->next; /* move forward */
-#endif
 #ifdef ENABLE_STICKY_ITEM
     }
 #endif
@@ -7763,7 +7753,6 @@ uint8_t  btree_real_nbkey(uint8_t nbkey)
 /*
  * ITEM SCRUB functions
  */
-#ifdef NEW_SCRUB_WITH_ASSOC_SCAN
 static bool do_item_isstale(struct default_engine *engine, hash_item *it)
 {
     assert(it != NULL);
@@ -7835,160 +7824,6 @@ static void *item_scrubber_main(void *arg)
     pthread_mutex_unlock(&engine->scrubber.lock);
     return NULL;
 }
-#else
-static bool item_scrub(struct default_engine *engine, hash_item *item)
-{
-    engine->scrubber.visited++;
-    rel_time_t current_time = engine->server.core->get_current_time();
-    if (item->refcount == 0 && do_item_isvalid(engine, item, current_time) == false) {
-        do_item_unlink(engine, item, ITEM_UNLINK_INVALID);
-        engine->scrubber.cleaned++;
-        return true;
-    } else {
-        return false;
-    }
-}
-
-static bool do_item_isstale(struct default_engine *engine, hash_item *it)
-{
-    assert(it != NULL);
-#ifdef ENABLE_CLUSTER_AWARE
-    if (! engine->server.core->is_my_key(item_get_key(it),it->nkey)) {
-        return true; /* stale data */
-    }
-#endif
-    return false; /* not-stale data */
-}
-
-static bool item_scrub_stale(struct default_engine *engine, hash_item *item)
-{
-    engine->scrubber.visited++;
-    if (do_item_isstale(engine, item) == true) {
-        /* item->refcount might be 0 */
-        do_item_unlink(engine, item, ITEM_UNLINK_STALE);
-        engine->scrubber.cleaned++;
-        return true;
-    } else {
-        return false;
-    }
-}
-
-static bool do_item_walk_cursor(struct default_engine *engine, int lruid, bool sticky, int steplength)
-{
-    hash_item *check;
-    int        ii = 0;
-
-    while (ii++ < steplength) {
-        if (sticky) {
-            if (engine->items.sticky_scrub[lruid] == NULL) return false;
-            check = engine->items.sticky_scrub[lruid];
-            engine->items.sticky_scrub[lruid] = check->next;
-        } else {
-            if (engine->items.scrub[lruid] == NULL) return false;
-            check = engine->items.scrub[lruid];
-            engine->items.scrub[lruid] = check->next;
-        }
-
-        if (item_scrub(engine, check) == false) {
-            if (engine->scrubber.runmode == SCRUB_MODE_STALE)
-                (void)item_scrub_stale(engine, check);
-        }
-    }
-    return true;
-}
-
-static void item_scrub_class(struct default_engine *engine, int lruid, bool sticky)
-{
-    struct timespec sleep_time = {0, 1000};
-    long    tot_execs = 0;
-    int     i,try_cnt = 9;
-    bool    more;
-#if 0 // stats
-    long    c[10] = {0,0,0,0,0,0,0,0,0,0};
-    long    difftime_us;
-    struct timeval start_time;
-    struct timeval end_time;
-#endif
-
-#if 0 // stats
-    gettimeofday(&start_time, 0);
-#endif
-    do {
-       if (!engine->initialized)
-           break;
-
-        /* long-running background task.
-         * hold the cache lock lazily in order to give priority to normal workers.
-         */
-        for (i = 0; i < try_cnt; i++) {
-            if (pthread_mutex_trylock(&engine->cache_lock) == 0) break;
-            nanosleep(&sleep_time, NULL);
-        }
-        if (i == try_cnt) pthread_mutex_lock(&engine->cache_lock);
-        more = do_item_walk_cursor(engine, lruid, sticky, 10);
-        pthread_mutex_unlock(&engine->cache_lock);
-        if ((++tot_execs % 50) == 0) {
-            nanosleep(&sleep_time, NULL);
-        }
-#if 0 // stats
-        if (engine->config.verbose) {
-            c[i]++;
-            if ((tot_execs % 100000) == 0) {
-                fprintf(stderr, "SCRUB: tot=%lu, c[0]=%lu, c[1]=%lu, c[2]=%lu, c[3]=%lu, c[4]=%lu,\
-                                                 c[5]=%lu, c[6]=%lu, c[7]=%lu, c[8]=%lu, c[9]=%lu\n",
-                        tot_execs, c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], c[8], c[9]);
-            }
-        }
-#endif
-#if 0 // stats
-        gettimeofday(&end_time, 0);
-        difftime_us = (end_time.tv_sec*1000000+end_time.tv_usec) -
-                      (start_time.tv_sec*1000000 + start_time.tv_usec);
-        if (difftime_us >= 100) {
-            nanosleep(&sleep_time, NULL);
-            gettimeofday(&start_time, 0);
-        }
-#endif
-    } while (more);
-}
-
-static void *item_scubber_main(void *arg)
-{
-    struct default_engine *engine = arg;
-    assert(engine->scrubber.running == true);
-
-    for (int ii = 0; ii < MAX_SLAB_CLASSES; ++ii)
-    {
-        if (!engine->initialized) break;
-
-        pthread_mutex_lock(&engine->cache_lock);
-        if (engine->items.heads[ii] != NULL) {
-            engine->items.scrub[ii] = engine->items.heads[ii];
-            pthread_mutex_unlock(&engine->cache_lock);
-            item_scrub_class(engine, ii, false);
-            pthread_mutex_lock(&engine->cache_lock);
-        }
-        pthread_mutex_unlock(&engine->cache_lock);
-
-#ifdef ENABLE_STICKY_ITEM
-        pthread_mutex_lock(&engine->cache_lock);
-        if (engine->items.sticky_heads[ii] != NULL) {
-            engine->items.sticky_scrub[ii] = engine->items.sticky_heads[ii];
-            pthread_mutex_unlock(&engine->cache_lock);
-            item_scrub_class(engine, ii, true);
-            pthread_mutex_lock(&engine->cache_lock);
-        }
-        pthread_mutex_unlock(&engine->cache_lock);
-#endif
-    }
-
-    pthread_mutex_lock(&engine->scrubber.lock);
-    engine->scrubber.stopped = time(NULL);
-    engine->scrubber.running = false;
-    pthread_mutex_unlock(&engine->scrubber.lock);
-    return NULL;
-}
-#endif
 
 bool item_start_scrub(struct default_engine *engine, int mode)
 {
@@ -8006,15 +7841,9 @@ bool item_start_scrub(struct default_engine *engine, int mode)
         pthread_t t;
         pthread_attr_t attr;
 
-#ifdef NEW_SCRUB_WITH_ASSOC_SCAN
         if (pthread_attr_init(&attr) != 0 ||
             pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0 ||
             pthread_create(&t, &attr, item_scrubber_main, engine) != 0)
-#else
-        if (pthread_attr_init(&attr) != 0 ||
-            pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0 ||
-            pthread_create(&t, &attr, item_scubber_main, engine) != 0)
-#endif
         {
             engine->scrubber.running = false;
         } else {
