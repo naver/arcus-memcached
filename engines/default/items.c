@@ -546,7 +546,6 @@ static void *do_item_alloc_internal(struct default_engine *engine,
                 search = previt;
             } else {
                 if (search->exptime == 0 && search == engine->items.lowMK[id]) {
-                    /* The scrub cursor item also corresponds to this case. */
                     engine->items.lowMK[id] = search->prev; /* move lowMK position upward */
                 }
                 search = search->prev;
@@ -807,7 +806,7 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it)
         head = &engine->items.sticky_heads[clsid];
         tail = &engine->items.sticky_tails[clsid];
         engine->items.sticky_sizes[clsid]--;
-        /* move curMK, srcub pointer in LRU */
+        /* move curMK pointer in LRU */
         if (engine->items.sticky_curMK[clsid] == it)
             engine->items.sticky_curMK[clsid] = it->prev;
     } else {
@@ -815,7 +814,7 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it)
         head = &engine->items.heads[clsid];
         tail = &engine->items.tails[clsid];
         engine->items.sizes[clsid]--;
-        /* move lowMK, curMK, srcub pointer in LRU */
+        /* move lowMK, curMK pointer in LRU */
         if (engine->items.lowMK[clsid] == it)
             engine->items.lowMK[clsid] = it->prev;
         if (engine->items.curMK[clsid] == it) {
