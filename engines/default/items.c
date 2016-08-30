@@ -488,22 +488,19 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         tries  = space_shortage_level;
         search = engine->items.tails[id];
         while (search != NULL) {
-            if (search->nkey > 0) {
-                previt = search->prev;
-                if (search->refcount == 0) {
-                    if (do_item_isvalid(engine, search, current_time) == false) {
-                        do_item_invalidate(engine, search, id, true);
-                    } else {
-                        do_item_evict(engine, search, id, current_time, cookie);
-                    }
-                } else { /* search->refcount > 0 */
-                    /* just unlink the item from LRU list. */
-                    item_unlink_q(engine, search);
+            assert(search->nkey > 0);
+            previt = search->prev;
+            if (search->refcount == 0) {
+                if (do_item_isvalid(engine, search, current_time) == false) {
+                    do_item_invalidate(engine, search, id, true);
+                } else {
+                    do_item_evict(engine, search, id, current_time, cookie);
                 }
-                search = previt;
-            } else { /* search->nkey == 0: scrub cursor item */
-                search = search->prev; /* ignore it */
+            } else { /* search->refcount > 0 */
+                /* just unlink the item from LRU list. */
+                item_unlink_q(engine, search);
             }
+            search = previt;
             if ((--tries) == 0) break;
         }
     }
@@ -515,7 +512,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         while (engine->items.sticky_curMK[id] != NULL) {
             search = engine->items.sticky_curMK[id];
             engine->items.sticky_curMK[id] = search->prev;
-            if (search->nkey > 0 && search->refcount == 0 &&
+            if (search->refcount == 0 &&
                 do_item_isvalid(engine, search, current_time) == false) {
                 it = do_item_reclaim(engine, search, ntotal, clsid_based_on_ntotal, id);
                 if (it != NULL) break; /* allocated */
@@ -525,7 +522,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         if (it != NULL) {
             /* try one more invalidation */
             search = engine->items.sticky_curMK[id];
-            if (search != NULL && search->nkey > 0 && search->refcount == 0 &&
+            if (search != NULL && search->refcount == 0 &&
                 do_item_isvalid(engine, search, current_time) == false) {
                 do_item_invalidate(engine, search, id, false);
             }
@@ -541,7 +538,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         tries = 20;
         search = engine->items.lowMK[id];
         while (search != NULL && search != engine->items.curMK[id]) {
-            if (search->nkey > 0 && search->refcount == 0 &&
+            if (search->refcount == 0 &&
                 do_item_isvalid(engine, search, current_time) == false) {
                 previt = search->prev;
                 it = do_item_reclaim(engine, search, ntotal, clsid_based_on_ntotal, id);
@@ -558,7 +555,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         }
         if (it != NULL) {
             /* try one more invalidation */
-            if (previt != NULL && previt->nkey > 0 && previt->refcount == 0 &&
+            if (previt != NULL && previt->refcount == 0 &&
                 do_item_isvalid(engine, previt, current_time) == false) {
                 do_item_invalidate(engine, previt, id, false);
             }
@@ -570,7 +567,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         while (engine->items.curMK[id] != NULL) {
             search = engine->items.curMK[id];
             engine->items.curMK[id] = search->prev;
-            if (search->nkey > 0 && search->refcount == 0 &&
+            if (search->refcount == 0 &&
                 do_item_isvalid(engine, search, current_time) == false) {
                 it = do_item_reclaim(engine, search, ntotal, clsid_based_on_ntotal, id);
                 if (it != NULL) break; /* allocated */
@@ -583,7 +580,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         if (it != NULL) {
             /* try one more invalidation */
             search = engine->items.curMK[id];
-            if (search != NULL && search->nkey > 0 && search->refcount == 0 &&
+            if (search != NULL && search->refcount == 0 &&
                 do_item_isvalid(engine, search, current_time) == false) {
                 do_item_invalidate(engine, search, id, false);
             }
@@ -616,24 +613,21 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         tries  = 200;
         search = engine->items.tails[id];
         while (search != NULL) {
-            if (search->nkey > 0) {
-                previt = search->prev;
-                if (search->refcount == 0) {
-                    if (do_item_isvalid(engine, search, current_time) == false) {
-                        it = do_item_reclaim(engine, search, ntotal, clsid_based_on_ntotal, id);
-                    } else {
-                        do_item_evict(engine, search, id, current_time, cookie);
-                        it = slabs_alloc(engine, ntotal, clsid_based_on_ntotal);
-                    }
-                    if (it != NULL) break; /* allocated */
-                } else { /* search->refcount > 0 */
-                    /* just unlink the item from LRU list. */
-                    item_unlink_q(engine, search);
+            assert(search->nkey > 0);
+            previt = search->prev;
+            if (search->refcount == 0) {
+                if (do_item_isvalid(engine, search, current_time) == false) {
+                    it = do_item_reclaim(engine, search, ntotal, clsid_based_on_ntotal, id);
+                } else {
+                    do_item_evict(engine, search, id, current_time, cookie);
+                    it = slabs_alloc(engine, ntotal, clsid_based_on_ntotal);
                 }
-                search = previt;
-            } else { /* search->nkey == 0: scrub cursor item */
-                search = search->prev; /* ignore it */
+                if (it != NULL) break; /* allocated */
+            } else { /* search->refcount > 0 */
+                /* just unlink the item from LRU list. */
+                item_unlink_q(engine, search);
             }
+            search = previt;
             if ((--tries) == 0) break;
         }
     }
@@ -651,7 +645,8 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             tries  = 50;
             search = engine->items.tails[id];
             while (search != NULL) {
-                if (search->nkey > 0 && search->refcount != 0 &&
+                assert(search->nkey > 0);
+                if (search->refcount != 0 &&
                     search->time + TAIL_REPAIR_TIME < current_time) {
                     previt = search->prev;
                     do_item_repair(engine, search, id);
@@ -678,6 +673,7 @@ static hash_item *do_item_alloc(struct default_engine *engine,
                                 const int flags, const rel_time_t exptime,
                                 const int nbytes, const void *cookie)
 {
+    assert(nkey > 0);
     hash_item *it = NULL;
     size_t ntotal = sizeof(hash_item) + nkey + nbytes;
     if (engine->config.use_cas) {
@@ -1252,8 +1248,7 @@ static ENGINE_ERROR_CODE do_store_item(struct default_engine *engine, hash_item 
             if (stored == ENGINE_NOT_STORED) {
                 /* we have it and old_it here - alloc memory to hold both */
                 new_it = do_item_alloc(engine, key, it->nkey,
-                                       old_it->flags,
-                                       old_it->exptime,
+                                       old_it->flags, old_it->exptime,
                                        it->nbytes + old_it->nbytes - 2 /* CRLF */,
                                        cookie);
 
@@ -1350,10 +1345,8 @@ static ENGINE_ERROR_CODE do_add_delta(struct default_engine *engine, hash_item *
     if ((res = snprintf(buf, sizeof(buf), "%" PRIu64 "\r\n", value)) == -1) {
         return ENGINE_EINVAL;
     }
-    hash_item *new_it = do_item_alloc(engine, item_get_key(it),
-                                      it->nkey, it->flags,
-                                      it->exptime, res,
-                                      cookie );
+    hash_item *new_it = do_item_alloc(engine, item_get_key(it), it->nkey,
+                                      it->flags, it->exptime, res, cookie);
     if (new_it == NULL) {
         return ENGINE_ENOMEM;
     }
@@ -5697,23 +5690,20 @@ static int check_expired_collections(struct default_engine *engine, const int cl
     {
         search = engine->items.tails[clsid];
         while (search != NULL && tries > 0) {
-            if (search->nkey > 0) {
-                it = search;
-                search = search->prev; tries--;
+            assert(search->nkey > 0);
+            it = search;
+            search = search->prev; tries--;
 
-                if (it->refcount == 0) {
-                    if (do_item_isvalid(engine, it, current_time) == false) {
-                        do_item_invalidate(engine, it, clsid, true);
-                    } else {
-                        do_item_evict(engine, it, clsid, current_time, NULL);
-                    }
-                    unlink_count++;
-                } else { /* search->refcount > 0 */
-                    /* just unlink the item from LRU list. */
-                    item_unlink_q(engine, it);
+            if (it->refcount == 0) {
+                if (do_item_isvalid(engine, it, current_time) == false) {
+                    do_item_invalidate(engine, it, clsid, true);
+                } else {
+                    do_item_evict(engine, it, clsid, current_time, NULL);
                 }
-            } else {
-                search = search->prev; tries--;
+                unlink_count++;
+            } else { /* search->refcount > 0 */
+                /* just unlink the item from LRU list. */
+                item_unlink_q(engine, it);
             }
         }
     }
