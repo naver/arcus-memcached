@@ -909,9 +909,16 @@ static int arcus_get_service_code(zhandle_t *zh, const char *root)
                 " zpath=%s\n", zpath);
         return -1;
     }
-
-    // get the first one. we could have more than one (meaning one server participating in
-    // more than one service in the cluster: not likely though)
+    /* We assume only one server mapping znode.
+     * We do not care that we have more than one (meaning one server participating in
+     * more than one service in the cluster: not likely though)
+     */
+    if (strv.count > 1) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "The server mapping exists but has %d( > 1) mapping znodes."
+                " zpath=%s\n", strv.count, zpath);
+        return -1;
+    }
     arcus_conf.svc = strdup(strv.data[0]);
     if (arcus_conf.svc == NULL) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
