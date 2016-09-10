@@ -7769,21 +7769,13 @@ static void *item_scrubber_main(void *arg)
     assert(engine->scrubber.running == true);
 
     assoc_scan_init(engine, &scan);
+
+    pthread_mutex_lock(&engine->cache_lock);
     while (engine->initialized)
     {
-        /* hold cache lock */
-        /* pthread_mutex_lock(&engine->cache_lock); */
-        for (i = 0; i < try_cnt; i++) {
-            if (pthread_mutex_trylock(&engine->cache_lock) == 0) break;
-            nanosleep(&sleep_time, NULL); /* 1ms sleep */
-        }
-        if (i == try_cnt) pthread_mutex_lock(&engine->cache_lock);
-
         /* scan and scrub cache items */
         item_count = assoc_scan_next(&scan, item_array, array_size);
         if (item_count <= 0) { /* reached to the end */
-            assoc_scan_final(&scan);
-            pthread_mutex_unlock(&engine->cache_lock);
             break;
         }
         for (i = 0; i < item_count; i++) {
@@ -7800,12 +7792,23 @@ static void *item_scrubber_main(void *arg)
             }
         }
 
-        /* release cache lock */
         pthread_mutex_unlock(&engine->cache_lock);
         if ((++tot_execs % 50) == 0) {
             nanosleep(&sleep_time, NULL); /* 1ms sleep */
         }
+
+        /* pthread_mutex_lock(&engine->cache_lock); */
+        for (i = 0; i < try_cnt; i++) {
+            if (pthread_mutex_trylock(&engine->cache_lock) == 0)
+                break;
+            nanosleep(&sleep_time, NULL); /* 1ms sleep */
+        }
+        if (i == try_cnt) {
+            pthread_mutex_lock(&engine->cache_lock);
+        }
     }
+    assoc_scan_final(&scan);
+    pthread_mutex_unlock(&engine->cache_lock);
 
     pthread_mutex_lock(&engine->scrubber.lock);
     engine->scrubber.stopped = time(NULL);
