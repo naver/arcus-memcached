@@ -82,6 +82,28 @@ static uint32_t hash_ketama(const char *key, uint32_t nkey)
                      | digest[0]);
 }
 
+static void gen_node_continuum(struct cont_item *continuum,
+                               const char *node_name, uint32_t node_index)
+{
+    char buffer[MAX_NODE_NAME_LENGTH+1] = "";
+    int  length;
+    int  hh, nn, pp;
+    unsigned char digest[16];
+
+    pp = 0;
+    for (hh=0; hh<NUM_OF_HASHES; hh++) {
+        length = snprintf(buffer, MAX_NODE_NAME_LENGTH, "%s-%u", node_name, hh);
+        hash_md5(buffer, length, digest);
+        for (nn=0; nn<NUM_PER_HASH; nn++, pp++) {
+            continuum[pp].hpoint = ((uint32_t) (digest[3 + nn * NUM_PER_HASH] & 0xFF) << 24)
+                                 | ((uint32_t) (digest[2 + nn * NUM_PER_HASH] & 0xFF) << 16)
+                                 | ((uint32_t) (digest[1 + nn * NUM_PER_HASH] & 0xFF) <<  8)
+                                 | (           (digest[0 + nn * NUM_PER_HASH] & 0xFF)      );
+            continuum[pp].nindex = node_index;
+        }
+    }
+}
+
 static int compare_continuum_item(const void *t1, const void *t2)
 {
     const struct cont_item *ct1 = t1, *ct2 = t2;
@@ -92,30 +114,13 @@ static int compare_continuum_item(const void *t1, const void *t2)
 
 static void build_self_continuum(struct cont_item *continuum, const char *self_name)
 {
-    char nodestr[MAX_NODE_NAME_LENGTH+1] = "";
-    int  nodelen;
-    int  hh, nn, pp;
-    unsigned char digest[16];
-
-    /* build sorted hash map */
-    pp = 0;
-    for (hh=0; hh<NUM_OF_HASHES; hh++) {
-        nodelen = snprintf(nodestr, MAX_NODE_NAME_LENGTH, "%s-%u", self_name, hh);
-        hash_md5(nodestr, nodelen, digest);
-        for (nn=0; nn<NUM_PER_HASH; nn++, pp++) {
-            continuum[pp].hpoint = ((uint32_t) (digest[3 + nn * NUM_PER_HASH] & 0xFF) << 24)
-                                 | ((uint32_t) (digest[2 + nn * NUM_PER_HASH] & 0xFF) << 16)
-                                 | ((uint32_t) (digest[1 + nn * NUM_PER_HASH] & 0xFF) <<  8)
-                                 | (           (digest[0 + nn * NUM_PER_HASH] & 0xFF)      );
-            continuum[pp].nindex = 0;
-        }
-    }
-    qsort(continuum, pp, sizeof(struct cont_item), compare_continuum_item);
+    gen_node_continuum(continuum, self_name, 0);
+    qsort(continuum, NUM_NODE_HASHES, sizeof(struct cont_item), compare_continuum_item);
 
     /* build hash slice index */
-    for (pp=0; pp<NUM_NODE_HASHES; pp++) {
-        continuum[pp].nindex = pp;
-        //fprintf(stderr, "continuum[%u] hash=%x\n", pp, continuum[pp].hpoint);
+    for (int i=0; i < NUM_NODE_HASHES; i++) {
+        continuum[i].nindex = i;
+        //fprintf(stderr, "continuum[%d] hash=%x\n", i, continuum[i].hpoint);
     }
 }
 
@@ -172,36 +177,21 @@ static int ketama_continuum_generate(struct cluster_config *config,
                                      struct cont_item **continuum_ptr)
 {
     struct cont_item *continuum;
-    char nodestr[MAX_NODE_NAME_LENGTH+1] = "";
-    int  nodelen;
-    int  pp, hh, ss, nn;
-    unsigned char digest[16];
+    int i, count = num_nodes * NUM_NODE_HASHES;
 
-    continuum = calloc(num_nodes * NUM_NODE_HASHES, sizeof(struct cont_item));
-    if (continuum == NULL) {
+    if ((continuum = calloc(count, sizeof(struct cont_item))) == NULL) {
         config->logger->log(EXTENSION_LOG_WARNING, NULL, "calloc failed: continuum\n");
         return -1;
     }
 
-    for (ss=0, pp=0; ss<num_nodes; ss++) {
-        for (hh=0; hh<NUM_OF_HASHES; hh++) {
-            nodelen = snprintf(nodestr, MAX_NODE_NAME_LENGTH, "%s-%u", node_list[ss].ndname, hh);
-            hash_md5(nodestr, nodelen, digest);
-            for (nn=0; nn<NUM_PER_HASH; nn++, pp++) {
-                continuum[pp].hpoint = ((uint32_t) (digest[3 + nn * NUM_PER_HASH] & 0xFF) << 24)
-                                     | ((uint32_t) (digest[2 + nn * NUM_PER_HASH] & 0xFF) << 16)
-                                     | ((uint32_t) (digest[1 + nn * NUM_PER_HASH] & 0xFF) <<  8)
-                                     | (           (digest[0 + nn * NUM_PER_HASH] & 0xFF)      );
-                continuum[pp].nindex = ss;
-            }
-        }
+    for (i=0; i < num_nodes; i++) {
+        gen_node_continuum(&continuum[i*NUM_NODE_HASHES], node_list[i].ndname, i);
     }
+    qsort(continuum, count, sizeof(struct cont_item), compare_continuum_item);
 
-    qsort(continuum, pp, sizeof(struct cont_item), compare_continuum_item);
     *continuum_ptr = continuum;
     return 0;
 }
-
 
 static void cluster_config_print_node_list(struct cluster_config *config)
 {
