@@ -27,7 +27,7 @@
 #include "rfc1321/md5c.c"
 #undef  PROTOTYPES
 
-#define MAX_NODE_NAME_LENGTH 128
+#define MAX_NODE_NAME_LENGTH 127
 
 #define NUM_OF_HASHES 40
 #define NUM_PER_HASH  4
@@ -94,7 +94,7 @@ static int ketama_continuum_generate(struct cluster_config *config,
                                      const struct server_item *servers, size_t num_servers,
                                      struct continuum_item **continuum, size_t *continuum_len)
 {
-    char nodestr[MAX_NODE_NAME_LENGTH] = "";
+    char nodestr[MAX_NODE_NAME_LENGTH+1] = "";
     int  nodelen;
     int  pp, hh, ss, nn;
     unsigned char digest[16];
@@ -196,7 +196,7 @@ static void cluster_config_print_continuum(struct cluster_config *config)
 
 static void build_self_continuum(struct continuum_item *continuum, const char *nodename)
 {
-    char nodestr[MAX_NODE_NAME_LENGTH] = "";
+    char nodestr[MAX_NODE_NAME_LENGTH+1] = "";
     int  nodelen;
     int  hh, nn, pp;
     unsigned char digest[16];
