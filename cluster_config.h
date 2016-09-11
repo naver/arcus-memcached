@@ -23,24 +23,23 @@
 
 struct cluster_config;
 
-struct   cluster_config *cluster_config_init(const char *nodename,
-                                             EXTENSION_LOGGER_DESCRIPTOR *logger,
-                                             int verbose);
-void     cluster_config_final(struct cluster_config *config);
+struct cluster_config *cluster_config_init(const char *node_name,
+                                           EXTENSION_LOGGER_DESCRIPTOR *logger,
+                                           int verbose);
+void cluster_config_final(struct cluster_config *config);
 
 uint32_t cluster_config_self_id(struct cluster_config *config);
-int      cluster_config_num_servers(struct cluster_config *config);
-int      cluster_config_num_continuum(struct cluster_config *conifg);
+uint32_t cluster_config_node_count(struct cluster_config *config);
+uint32_t cluster_config_continuum_size(struct cluster_config *conifg);
 
-int      cluster_config_reconfigure(struct cluster_config *config,
-                                    char **server_list, size_t num_servers);
-int      cluster_config_key_is_mine(struct cluster_config *config,
-                                    const char *key, size_t nkey, bool *mine,
-                                    uint32_t *key_id, uint32_t *self_id);
+int cluster_config_reconfigure(struct cluster_config *config,
+                               char **node_strs, uint32_t num_nodes);
+int cluster_config_key_is_mine(struct cluster_config *config,
+                               const char *key, uint32_t nkey, bool *mine,
+                               uint32_t *key_id, uint32_t *self_id);
 uint32_t cluster_config_ketama_hash(struct cluster_config *config,
-                                    const char *key, size_t nkey);
-int      cluster_config_ketama_hslice(struct cluster_config *config,
-                                      uint32_t hvalue);
+                                    const char *key, uint32_t nkey);
+uint32_t cluster_config_ketama_hslice(struct cluster_config *config, uint32_t hvalue);
 /**** OLD CODE ****
 uint32_t cluster_config_ketama_hash(struct cluster_config *config,
                                     const char *key, size_t nkey, int *hslice);
