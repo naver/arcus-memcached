@@ -213,7 +213,8 @@ static void cluster_config_print_continuum(struct cluster_config *config)
     }
 }
 
-static uint32_t find_continuum(struct cont_item *continuum, uint32_t num_conts, uint32_t hvalue)
+static struct cont_item *find_continuum(struct cont_item *continuum, uint32_t num_conts,
+                                        uint32_t hvalue)
 {
     struct cont_item *beginp, *endp, *midp, *highp, *lowp;
 
@@ -229,39 +230,7 @@ static uint32_t find_continuum(struct cont_item *continuum, uint32_t num_conts, 
     }
     if (highp == endp)
         highp = beginp;
-    return highp->nindex;
-#if 0 // OLD_CODE
-    uint32_t mid, prev;
-    while (1) {
-        // pick the middle item
-        midp = lowp + (highp - lowp) / 2;
-
-        if (midp == endp) {
-            // if at the end, rollback to 0th
-            server = beginp->nindex;
-            break;
-        }
-
-        mid = midp->hpoint;
-        prev = (midp == beginp) ? 0 : (midp-1)->hpoint;
-
-        if (digest <= mid && digest > prev) {
-            // found the nearest server
-            server = midp->nindex;
-            break;
-        }
-
-        // adjust the limits
-        if (mid < digest)     lowp = midp + 1;
-        else                 highp = midp - 1;
-
-        if (lowp > highp) {
-            server = beginp->nindex;
-            break;
-        }
-    }
-    return server;
-#endif
+    return highp;
 }
 
 struct cluster_config *cluster_config_init(const char *node_name,
@@ -385,16 +354,16 @@ int cluster_config_key_is_mine(struct cluster_config *config,
                                uint32_t *key_id, uint32_t *self_id)
 {
     assert(config && config->continuum);
-    uint32_t server;
+    struct cont_item *item;
     uint32_t digest;
     int ret = 0;
 
     pthread_mutex_lock(&config->lock);
     if (config->is_valid) {
         digest = hash_ketama(key, nkey);
-        server = find_continuum(config->continuum, config->num_conts, digest);
-        *mine = (server == config->self_id ? true : false);
-        if ( key_id)  *key_id = server;
+        item = find_continuum(config->continuum, config->num_conts, digest);
+        *mine = (item->nindex == config->self_id ? true : false);
+        if ( key_id)  *key_id = item->nindex;
         if (self_id) *self_id = config->self_id;
     } else { /* this case must not be happened. */
         ret = -1; /* unknown cluster */
@@ -412,18 +381,23 @@ uint32_t cluster_config_ketama_hash(struct cluster_config *config,
 
 uint32_t cluster_config_ketama_hslice(struct cluster_config *config, uint32_t hvalue)
 {
-    assert(config);
-    return (uint32_t)find_continuum(config->self_continuum, NUM_NODE_HASHES, hvalue);
+    assert(config && config->continuum);
+    struct cont_item *item;
+
+    item = find_continuum(config->self_continuum, NUM_NODE_HASHES, hvalue);
+    return item->nindex; /* slice index */
 }
 
 /**** OLD CODE ****
 uint32_t cluster_config_ketama_hash(struct cluster_config *config,
                                     const char *key, uint32_t nkey, uint32_t *hslice)
 {
-    assert(config);
+    assert(config && config->continuum);
+    struct cont_item *item;
     uint32_t digest = hash_ketama(key, nkey);
     if (hslice) {
-        *hslice = (int)find_continuum(config->self_continuum, NUM_NODE_HASHES, digest);
+        item = find_continuum(config->self_continuum, NUM_NODE_HASHES, digest);
+        *hslice = item->nindex;
         assert(*hslice >= 0 && *hslice < NUM_NODE_HASHES);
     }
     return digest;
