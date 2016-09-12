@@ -34,15 +34,30 @@
 #define NUM_PER_HASH    4
 #define NUM_NODE_HASHES 160
 
+/* node state */
+#define NSTATE_JOINING  0
+#define NSTATE_LEAVING  1
+#define NSTATE_EXISTING 2
+
+/* hash slice state: related to node state */
+#define SSTATE_NONE     NSTATE_JOINING
+#define SSTATE_LOCAL    NSTATE_LEAVING
+#define SSTATE_NORMAL   NSTATE_EXISTING
+
 /* continuum item */
 struct cont_item {
     uint32_t hpoint;  // hash point on the ketama continuum
-    uint32_t nindex;  // node index
+    uint16_t nindex;  // node index (old server index) in node array
+    uint8_t  sindex;  // hash slice index: 0 ~ 159
+    uint8_t  sstate;  // hash slice state: 0(none), 1(local), 2(normal)
 };
 
 /* node item */
 struct node_item {
     char    *ndname; // "ip:port" string or group name string
+    uint16_t nstate; // node state: 0(joining), 1(leaving), 2(existing)
+    uint16_t dummy16;
+    uint32_t dummy32;
 };
 
 struct cluster_config {
@@ -82,8 +97,8 @@ static uint32_t hash_ketama(const char *key, uint32_t nkey)
                      | digest[0]);
 }
 
-static void gen_node_continuum(struct cont_item *continuum,
-                               const char *node_name, uint32_t node_index)
+static void gen_node_continuum(struct cont_item *continuum, const char *node_name,
+                               uint16_t node_index, uint8_t node_state)
 {
     char buffer[MAX_NODE_NAME_LENGTH+1] = "";
     int  length;
@@ -100,8 +115,15 @@ static void gen_node_continuum(struct cont_item *continuum,
                                  | ((uint32_t) (digest[1 + nn * NUM_PER_HASH] & 0xFF) <<  8)
                                  | (           (digest[0 + nn * NUM_PER_HASH] & 0xFF)      );
             continuum[pp].nindex = node_index;
+            continuum[pp].sstate = node_state;
         }
     }
+}
+
+static int compare_node_item(const void *t1, const void *t2)
+{
+    return strcmp(((struct node_item*)t1)->ndname,
+                  ((struct node_item*)t2)->ndname);
 }
 
 static int compare_continuum_item(const void *t1, const void *t2)
@@ -109,18 +131,19 @@ static int compare_continuum_item(const void *t1, const void *t2)
     const struct cont_item *ct1 = t1, *ct2 = t2;
     if      (ct1->hpoint > ct2->hpoint) return  1;
     else if (ct1->hpoint < ct2->hpoint) return -1;
+    else if (ct1->nindex > ct2->nindex) return  1;
+    else if (ct1->nindex < ct2->nindex) return -1;
     else                                return  0;
 }
 
 static void build_self_continuum(struct cont_item *continuum, const char *self_name)
 {
-    gen_node_continuum(continuum, self_name, 0);
+    gen_node_continuum(continuum, self_name, 0, NSTATE_EXISTING);
     qsort(continuum, NUM_NODE_HASHES, sizeof(struct cont_item), compare_continuum_item);
 
     /* build hash slice index */
     for (int i=0; i < NUM_NODE_HASHES; i++) {
-        continuum[i].nindex = i;
-        //fprintf(stderr, "continuum[%d] hash=%x\n", i, continuum[i].hpoint);
+        continuum[i].sindex = i;
     }
 }
 
@@ -152,13 +175,12 @@ static int node_item_populate(struct cluster_config *config,
         // filter characters after dash(-)
         tok = strtok_r(node_strs[i], "-", &buf);
         while (tok != NULL) {
-            if ((node_list[i].ndname = strdup(tok)) == NULL) {
+            node_list[i].ndname = strdup(tok);
+            if (node_list[i].ndname == NULL) {
                 config->logger->log(EXTENSION_LOG_WARNING, NULL, "invalid node token\n");
                 ret = -1; break;
             }
-            if (strcmp(self_name, tok) == 0) {
-                *self_id = i;
-            }
+            node_list[i].nstate = NSTATE_EXISTING;
             break;
             //tok=strtok_r(NULL, "-", &buf);
         }
@@ -167,7 +189,15 @@ static int node_item_populate(struct cluster_config *config,
     if (ret != 0) {
         node_item_free(node_list, i);
         node_list = NULL;
+        return ret;
     }
+
+    qsort(node_list, num_nodes, sizeof(struct node_item), compare_node_item);
+    for (i=0; i < num_nodes; i++) {
+        if (strcmp(self_name, node_list[i].ndname) == 0)
+            break;
+    }
+    *self_id = i;
     *nodes_ptr = node_list;
     return ret;
 }
@@ -185,7 +215,8 @@ static int ketama_continuum_generate(struct cluster_config *config,
     }
 
     for (i=0; i < num_nodes; i++) {
-        gen_node_continuum(&continuum[i*NUM_NODE_HASHES], node_list[i].ndname, i);
+        gen_node_continuum(&continuum[i*NUM_NODE_HASHES], node_list[i].ndname,
+                           i, NSTATE_EXISTING);
     }
     qsort(continuum, count, sizeof(struct cont_item), compare_continuum_item);
 
@@ -198,8 +229,9 @@ static void cluster_config_print_node_list(struct cluster_config *config)
     config->logger->log(EXTENSION_LOG_INFO, NULL, "cluster node list: count=%d\n",
                         config->num_nodes);
     for (int i=0; i < config->num_nodes; i++) {
-        config->logger->log(EXTENSION_LOG_INFO, NULL, "node[%d]: %s\n",
-                            i, config->node_list[i].ndname);
+        config->logger->log(EXTENSION_LOG_INFO, NULL,
+                            "node[%d]: name=%s state=%d\n", i,
+                            config->node_list[i].ndname, config->node_list[i].nstate);
     }
 }
 
@@ -208,8 +240,10 @@ static void cluster_config_print_continuum(struct cluster_config *config)
     config->logger->log(EXTENSION_LOG_INFO, NULL, "cluster continuum: count=%d\n",
                        config->num_conts);
     for (int i=0; i < config->num_conts; i++) {
-        config->logger->log(EXTENSION_LOG_INFO, NULL, "continuum[%d]: sidx=%d, hash=%x\n",
-                            i, config->continuum[i].nindex, config->continuum[i].hpoint);
+        config->logger->log(EXTENSION_LOG_INFO, NULL,
+                            "continuum[%d]: hpoint=%x nindex=%d sstate=%d\n", i,
+                            config->continuum[i].hpoint, config->continuum[i].nindex,
+                            config->continuum[i].sstate);
     }
 }
 
@@ -230,6 +264,13 @@ static struct cont_item *find_continuum(struct cont_item *continuum, uint32_t nu
     }
     if (highp == endp)
         highp = beginp;
+    if (highp->sstate == SSTATE_NONE) {
+        do {
+            highp += 1;
+            if (highp == endp)
+                highp = beginp;
+        } while (highp->sstate != SSTATE_NORMAL);
+    }
     return highp;
 }
 
@@ -385,7 +426,7 @@ uint32_t cluster_config_ketama_hslice(struct cluster_config *config, uint32_t hv
     struct cont_item *item;
 
     item = find_continuum(config->self_continuum, NUM_NODE_HASHES, hvalue);
-    return item->nindex; /* slice index */
+    return item->sindex; /* slice index */
 }
 
 /**** OLD CODE ****
@@ -397,7 +438,7 @@ uint32_t cluster_config_ketama_hash(struct cluster_config *config,
     uint32_t digest = hash_ketama(key, nkey);
     if (hslice) {
         item = find_continuum(config->self_continuum, NUM_NODE_HASHES, digest);
-        *hslice = item->nindex;
+        *hslice = item->sindex;
         assert(*hslice >= 0 && *hslice < NUM_NODE_HASHES);
     }
     return digest;
