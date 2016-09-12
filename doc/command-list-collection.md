@@ -29,6 +29,7 @@ Response string과 그 의미는 아래와 같다.
 
 - "CREATED" - 성공
 - "EXISTS" - 동일 key string을 가진 item이 이미 존재
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “SERVER_ERROR out of memory” - 메모리 부족
 
@@ -62,6 +63,7 @@ Response string과 그 의미는 아래와 같다.
 - “OVERFLOWED” - overflow 발생
 - “OUT_OF_RANGE” - 삽입 위치가 list의 현재 element index 범위를 넘어섬,
                    예를 들어, 10개 element가 있는 상태에서 삽입 위치가 20인 경우임
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “CLIENT_ERROR too large value” - 삽입할 데이터가 4KB 보다 큼
 - “CLIENT_ERROR bad data chunk” - 삽입할 데이터 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
@@ -95,6 +97,7 @@ Response string과 그 의미는 아래와 같다.
 - “NOT_FOUND” - key miss
 - “NOT_FOUND_ELEMENT” - element miss (single index or index range에 해당하는 element가 없음)
 - “TYPE_MISMATCH” - 해당 item이 list colleciton이 아님
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 
 ### lop get - List Element 조회
@@ -131,6 +134,7 @@ END|DELETED|DELETED_DROPPED\r\n
 - “NOT_FOUND_ELEMENT”	- element miss (index or index range에 해당하는 element가 없음)
 - “TYPE_MISMATCH”	- 해당 item이 list collection이 아님
 - “UNREADABLE” - 해당 item이 unreadable item임
+- "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - "SERVER_ERROR out of memory [writing get response]”	- 메모리 부족
 
