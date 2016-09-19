@@ -1352,22 +1352,10 @@ int arcus_key_is_mine(const char *key, size_t nkey, bool *mine)
     return ret;
 }
 
-uint32_t arcus_ketama_hash(const char *key, size_t nkey)
+int arcus_ketama_hslice(const char *key, size_t nkey, uint32_t *hvalue)
 {
-    return cluster_config_ketama_hash(arcus_conf.ch, key, nkey);
+    return cluster_config_ketama_hslice(arcus_conf.ch, key, nkey, hvalue);
 }
-
-int arcus_ketama_hslice(uint32_t hvalue)
-{
-    return cluster_config_ketama_hslice(arcus_conf.ch, hvalue);
-}
-
-/**** OLD CODE ****
-uint32_t arcus_ketama_hash(const char *key, size_t nkey, int *hslice)
-{
-    return cluster_config_ketama_hash(arcus_conf.ch, key, nkey, hslice);
-}
-******************/
 #endif
 
 #endif  // ENABLE_ZK_INTEGRATION

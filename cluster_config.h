@@ -37,11 +37,6 @@ int cluster_config_reconfigure(struct cluster_config *config,
 int cluster_config_key_is_mine(struct cluster_config *config,
                                const char *key, uint32_t nkey, bool *mine,
                                uint32_t *key_id, uint32_t *self_id);
-uint32_t cluster_config_ketama_hash(struct cluster_config *config,
-                                    const char *key, uint32_t nkey);
-uint32_t cluster_config_ketama_hslice(struct cluster_config *config, uint32_t hvalue);
-/**** OLD CODE ****
-uint32_t cluster_config_ketama_hash(struct cluster_config *config,
-                                    const char *key, size_t nkey, int *hslice);
-*******************/
+int cluster_config_ketama_hslice(struct cluster_config *config,
+                                 const char *key, uint32_t nkey, uint32_t *hvalue);
 #endif

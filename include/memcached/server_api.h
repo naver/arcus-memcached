@@ -147,14 +147,10 @@ extern "C" {
         bool (*is_my_key)(const char *key, size_t nkey);
 
         /**
-         * Get the ketama hash value on the given key string.
-         */
-        uint32_t (*ketama_hash)(const char *key, size_t nkey);
-        /**
          * Get the index of the ketama hash slice
-         * including the given hash value.
+         * with the ketama hash value.
          */
-        int (*ketama_hslice)(uint32_t hvalue);
+        int (*ketama_hslice)(const char *key, size_t nkey, uint32_t *hvalue);
 #endif
 
         /**

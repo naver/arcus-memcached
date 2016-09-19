@@ -623,34 +623,14 @@ int cluster_config_key_is_mine(struct cluster_config *config,
     return ret;
 }
 
-uint32_t cluster_config_ketama_hash(struct cluster_config *config,
-                                    const char *key, uint32_t nkey)
+int cluster_config_ketama_hslice(struct cluster_config *config,
+                                 const char *key, uint32_t nkey, uint32_t *hvalue)
 {
     assert(config);
-    return hash_ketama(key, nkey);
-}
-
-uint32_t cluster_config_ketama_hslice(struct cluster_config *config, uint32_t hvalue)
-{
-    assert(config && config->continuum);
     struct cont_item *item;
 
-    item = find_continuum(config->self_node.hslice, NUM_NODE_HASHES, hvalue);
+    *hvalue = hash_ketama(key, nkey);
+
+    item = find_continuum(config->self_node.hslice, NUM_NODE_HASHES, *hvalue);
     return item->sindex; /* slice index */
 }
-
-/**** OLD CODE ****
-uint32_t cluster_config_ketama_hash(struct cluster_config *config,
-                                    const char *key, uint32_t nkey, uint32_t *hslice)
-{
-    assert(config && config->continuum);
-    struct cont_item *item;
-    uint32_t digest = hash_ketama(key, nkey);
-    if (hslice) {
-        item = find_continuum(config->self_node.hslice, NUM_NODE_HASHES, digest);
-        *hslice = item->sindex;
-        assert(*hslice >= 0 && *hslice < NUM_NODE_HASHES);
-    }
-    return digest;
-}
-*******************/
