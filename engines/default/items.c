@@ -710,7 +710,9 @@ static hash_item *do_item_alloc(struct default_engine *engine,
     it->nkey = nkey;
     it->nbytes = nbytes;
     it->flags = flags;
-    memcpy((void*)item_get_key(it), key, nkey);
+    if (key != NULL) {
+        memcpy((void*)item_get_key(it), key, nkey);
+    }
     it->exptime = exptime;
     it->nprefix = 0;
     return it;
@@ -5926,6 +5928,7 @@ hash_item *item_alloc(struct default_engine *engine,
 {
     hash_item *it;
     pthread_mutex_lock(&engine->cache_lock);
+    /* key can be NULL */
     it = do_item_alloc(engine, key, nkey, flags, exptime, nbytes, cookie);
     pthread_mutex_unlock(&engine->cache_lock);
     return it;
