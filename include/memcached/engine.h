@@ -223,7 +223,7 @@ extern "C" {
          * @param handle the engine handle
          * @param cookie The cookie provided by the frontend
          * @param output variable that will receive the item
-         * @param key the item's key
+         * @param key the item's key (can be NULL)
          * @param nkey the length of the key
          * @param nbytes the number of bytes that will make up the
          *        value of this item.
