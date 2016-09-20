@@ -710,7 +710,6 @@ static hash_item *do_item_alloc(struct default_engine *engine,
     it->nkey = nkey;
     it->nbytes = nbytes;
     it->flags = flags;
-    memcpy((void*)item_get_key(it), key, nkey);
     it->exptime = exptime;
     it->nprefix = 0;
     return it;
@@ -1260,8 +1259,11 @@ static ENGINE_ERROR_CODE do_store_item(struct default_engine *engine, hash_item 
                     return ENGINE_NOT_STORED;
                 }
 
-                /* copy data from it and old_it to new_it */
+                if (key != NULL) {
+                    memcpy((void*)item_get_key(new_it), key, it->nkey);
+                }
 
+                /* copy data from it and old_it to new_it */
                 if (operation == OPERATION_APPEND) {
                     memcpy(item_get_data(new_it), item_get_data(old_it), old_it->nbytes);
                     memcpy(item_get_data(new_it) + old_it->nbytes - 2 /* CRLF */, item_get_data(it), it->nbytes);
@@ -1344,11 +1346,18 @@ static ENGINE_ERROR_CODE do_add_delta(struct default_engine *engine, hash_item *
     if ((res = snprintf(buf, sizeof(buf), "%" PRIu64 "\r\n", value)) == -1) {
         return ENGINE_EINVAL;
     }
-    hash_item *new_it = do_item_alloc(engine, item_get_key(it), it->nkey,
+
+    char *key = (char*)item_get_key(it);
+    hash_item *new_it = do_item_alloc(engine, key, it->nkey,
                                       it->flags, it->exptime, res, cookie);
     if (new_it == NULL) {
         return ENGINE_ENOMEM;
     }
+
+    if (key != NULL) {
+        memcpy((void*)item_get_key(new_it), key, it->nkey);
+    }
+
     memcpy(item_get_data(new_it), buf, res);
     do_item_replace(engine, it, new_it);
     *rcas = item_get_cas(new_it);
@@ -5928,6 +5937,9 @@ hash_item *item_alloc(struct default_engine *engine,
     pthread_mutex_lock(&engine->cache_lock);
     it = do_item_alloc(engine, key, nkey, flags, exptime, nbytes, cookie);
     pthread_mutex_unlock(&engine->cache_lock);
+    if (it != NULL && key != NULL) {
+        memcpy((void*)item_get_key(it), key, nkey);
+    }
     return it;
 }
 
@@ -5984,10 +5996,10 @@ static ENGINE_ERROR_CODE do_arithmetic(struct default_engine *engine,
                                        uint64_t *cas,
                                        uint64_t *result)
 {
-    hash_item *item = do_item_get(engine, key, nkey, true);
+    hash_item *it = do_item_get(engine, key, nkey, true);
     ENGINE_ERROR_CODE ret;
 
-    if (item == NULL) {
+    if (it == NULL) {
         if (!create) {
             return ENGINE_KEY_ENOENT;
         } else {
@@ -5995,21 +6007,26 @@ static ENGINE_ERROR_CODE do_arithmetic(struct default_engine *engine,
             int len = snprintf(buffer, sizeof(buffer), "%"PRIu64"\r\n",
                     (uint64_t)initial);
 
-            item = do_item_alloc(engine, key, nkey, flags, exptime, len, cookie);
-            if (item == NULL) {
+            it = do_item_alloc(engine, key, nkey, flags, exptime, len, cookie);
+            if (it == NULL) {
                 return ENGINE_ENOMEM;
             }
-            memcpy((void*)item_get_data(item), buffer, len);
 
-            ret = do_store_item(engine, item, cas, OPERATION_ADD, cookie);
+            if (key != NULL) {
+                memcpy((void*)item_get_key(it), key, nkey);
+            }
+
+            memcpy((void*)item_get_data(it), buffer, len);
+
+            ret = do_store_item(engine, it, cas, OPERATION_ADD, cookie);
             if (ret == ENGINE_SUCCESS) {
                 *result = initial;
             }
-            do_item_release(engine, item);
+            do_item_release(engine, it);
         }
     } else {
-        ret = do_add_delta(engine, item, increment, delta, cas, result, cookie);
-        do_item_release(engine, item);
+        ret = do_add_delta(engine, it, increment, delta, cas, result, cookie);
+        do_item_release(engine, it);
     }
 
     return ret;
@@ -6343,6 +6360,9 @@ ENGINE_ERROR_CODE list_struct_create(struct default_engine *engine,
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
+            if (key != NULL) {
+                memcpy((void*)item_get_key(it), key, nkey);
+            }
             ret = do_item_link(engine, it);
             do_item_release(engine, it);
         }
@@ -6394,6 +6414,9 @@ ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
+            if (key != NULL) {
+                memcpy((void*)item_get_key(it), key, nkey);
+            }
             ret = do_item_link(engine, it);
             if (ret == ENGINE_SUCCESS) {
                 *created = true;
@@ -6550,6 +6573,9 @@ ENGINE_ERROR_CODE set_struct_create(struct default_engine *engine,
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
+            if (key != NULL) {
+                memcpy((void*)item_get_key(it), key, nkey);
+            }
             ret = do_item_link(engine, it);
             do_item_release(engine, it);
         }
@@ -6596,6 +6622,9 @@ ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
+            if (key != NULL) {
+                memcpy((void*)item_get_key(it), key, nkey);
+            }
             ret = do_item_link(engine, it);
             if (ret == ENGINE_SUCCESS) {
                 *created = true;
@@ -6730,6 +6759,9 @@ ENGINE_ERROR_CODE btree_struct_create(struct default_engine *engine,
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
+            if (key != NULL) {
+                memcpy((void*)item_get_key(it), key, nkey);
+            }
             ret = do_item_link(engine, it);
             do_item_release(engine, it);
         }
@@ -6787,6 +6819,9 @@ ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
+            if (key != NULL) {
+                memcpy((void*)item_get_key(it), key, nkey);
+            }
             ret = do_item_link(engine, it);
             if (ret == ENGINE_SUCCESS) {
                 *created = true;
@@ -8830,6 +8865,9 @@ ENGINE_ERROR_CODE map_struct_create(struct default_engine *engine,
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
+            if (key != NULL) {
+                memcpy((void*)item_get_key(it), key, nkey);
+            }
             ret = do_item_link(engine, it);
             do_item_release(engine, it);
         }
@@ -8876,6 +8914,9 @@ ENGINE_ERROR_CODE map_elem_insert(struct default_engine *engine, const char *key
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
+            if (key != NULL) {
+                memcpy((void*)item_get_key(it), key, nkey);
+            }
             ret = do_item_link(engine, it);
             if (ret == ENGINE_SUCCESS) {
                 *created = true;
