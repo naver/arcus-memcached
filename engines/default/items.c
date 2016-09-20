@@ -5987,10 +5987,10 @@ static ENGINE_ERROR_CODE do_arithmetic(struct default_engine *engine,
                                        uint64_t *cas,
                                        uint64_t *result)
 {
-    hash_item *item = do_item_get(engine, key, nkey, true);
+    hash_item *it = do_item_get(engine, key, nkey, true);
     ENGINE_ERROR_CODE ret;
 
-    if (item == NULL) {
+    if (it == NULL) {
         if (!create) {
             return ENGINE_KEY_ENOENT;
         } else {
@@ -5998,21 +5998,21 @@ static ENGINE_ERROR_CODE do_arithmetic(struct default_engine *engine,
             int len = snprintf(buffer, sizeof(buffer), "%"PRIu64"\r\n",
                     (uint64_t)initial);
 
-            item = do_item_alloc(engine, key, nkey, flags, exptime, len, cookie);
-            if (item == NULL) {
+            it = do_item_alloc(engine, key, nkey, flags, exptime, len, cookie);
+            if (it == NULL) {
                 return ENGINE_ENOMEM;
             }
-            memcpy((void*)item_get_data(item), buffer, len);
+            memcpy((void*)item_get_data(it), buffer, len);
 
-            ret = do_store_item(engine, item, cas, OPERATION_ADD, cookie);
+            ret = do_store_item(engine, it, cas, OPERATION_ADD, cookie);
             if (ret == ENGINE_SUCCESS) {
                 *result = initial;
             }
-            do_item_release(engine, item);
+            do_item_release(engine, it);
         }
     } else {
-        ret = do_add_delta(engine, item, increment, delta, cas, result, cookie);
-        do_item_release(engine, item);
+        ret = do_add_delta(engine, it, increment, delta, cas, result, cookie);
+        do_item_release(engine, it);
     }
 
     return ret;
