@@ -322,14 +322,25 @@ static int hashring_space_prepare(struct cluster_config *config, uint32_t num_no
     return 0;
 }
 
+static int node_string_check(char **node_strs, uint32_t num_nodes)
+{
+    char *buf = NULL;
+    char *tok = NULL;
+
+    for (int i=0; i < num_nodes; i++) {
+        /* filter characters after dash(-) */
+        tok = strtok_r(node_strs[i], "-", &buf);
+        if (tok == NULL) return -1;
+    }
+    return 0;
+}
+
 static struct node_item **
 nodearray_build_replace(struct cluster_config *config,
                         char **node_strs, uint32_t num_nodes, int *self_id)
 {
     struct node_item **array;
     struct node_item  *item;
-    char *buf = NULL;
-    char *tok = NULL;
     int nallocs=0;
     int i, id;
 
@@ -346,23 +357,17 @@ nodearray_build_replace(struct cluster_config *config,
     assert(array != NULL);
 
     for (i=0; i < num_nodes; i++) {
-        // filter characters after dash(-)
-        tok = strtok_r(node_strs[i], "-", &buf);
-        if (tok == NULL) {
-            config->logger->log(EXTENSION_LOG_WARNING, NULL, "invalid node token\n");
-            break;
-        }
         if (config->num_nodes > 0) {
-            id = nodearray_find(config->nodearray, config->num_nodes, tok);
+            id = nodearray_find(config->nodearray, config->num_nodes, node_strs[i]);
             if (id < 0) item = NULL;
             else        item = config->nodearray[id];
         } else {
             item = NULL;
-            if (strcmp(tok, config->self_node.ndname) == 0)
+            if (strcmp(node_strs[i], config->self_node.ndname) == 0)
                 item = &config->self_node;
         }
         if (item == NULL) {
-            item = node_item_build(config, tok, NSTATE_EXISTING);
+            item = node_item_build(config, node_strs[i], NSTATE_EXISTING);
             if (item == NULL) break;
             nallocs += 1;
         }
@@ -574,6 +579,12 @@ int cluster_config_reconfigure(struct cluster_config *config,
     struct node_item **nodearray;
     struct cont_item  *continuum;
     int self_id, ret=0;
+
+    if (node_string_check(node_strs, num_nodes) < 0) {
+        config->logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "reconfiguration failed: invalid node token exists.\n");
+        return -1;
+    }
 
     pthread_mutex_lock(&config->config_lock);
     nodearray = nodearray_build_replace(config, node_strs, num_nodes, &self_id);
