@@ -55,6 +55,13 @@ struct _prefix_stats {
     uint64_t      num_sop_deletes;
     uint64_t      num_sop_gets;
     uint64_t      num_sop_exists;
+#ifdef MAP_COLLECTION_SUPPORT
+    uint64_t      num_mop_creates;
+    uint64_t      num_mop_inserts;
+    uint64_t      num_mop_updates;
+    uint64_t      num_mop_deletes;
+    uint64_t      num_mop_gets;
+#endif
     uint64_t      num_bop_creates;
     uint64_t      num_bop_inserts;
     uint64_t      num_bop_updates;
@@ -75,6 +82,12 @@ struct _prefix_stats {
     uint64_t      num_sop_delete_hits;
     uint64_t      num_sop_get_hits;
     uint64_t      num_sop_exist_hits;
+#ifdef MAP_COLLECTION_SUPPORT
+    uint64_t      num_mop_insert_hits;
+    uint64_t      num_mop_update_hits;
+    uint64_t      num_mop_delete_hits;
+    uint64_t      num_mop_get_hits;
+#endif
     uint64_t      num_bop_insert_hits;
     uint64_t      num_bop_update_hits;
     uint64_t      num_bop_delete_hits;
@@ -442,6 +455,78 @@ void stats_prefix_record_sop_exist(const char *key, const size_t nkey, const boo
     STATS_UNLOCK();
 }
 
+#ifdef MAP_COLLECTION_SUPPORT
+/*
+ * MAP stats
+ */
+void stats_prefix_record_mop_create(const char *key, const size_t nkey) {
+    PREFIX_STATS *pfs;
+
+    STATS_LOCK();
+    pfs = stats_prefix_find(key, nkey);
+    if (NULL != pfs) {
+        pfs->num_mop_creates++;
+    }
+    STATS_UNLOCK();
+}
+
+void stats_prefix_record_mop_insert(const char *key, const size_t nkey, const bool is_hit) {
+    PREFIX_STATS *pfs;
+
+    STATS_LOCK();
+    pfs = stats_prefix_find(key, nkey);
+    if (NULL != pfs) {
+        pfs->num_mop_inserts++;
+        if (is_hit) {
+            pfs->num_mop_insert_hits++;
+        }
+    }
+    STATS_UNLOCK();
+}
+
+void stats_prefix_record_mop_update(const char *key, const size_t nkey, const bool is_hit) {
+    PREFIX_STATS *pfs;
+
+    STATS_LOCK();
+    pfs = stats_prefix_find(key, nkey);
+    if (NULL != pfs) {
+        pfs->num_mop_updates++;
+        if (is_hit) {
+            pfs->num_mop_update_hits++;
+        }
+    }
+    STATS_UNLOCK();
+}
+
+void stats_prefix_record_mop_delete(const char *key, const size_t nkey, const bool is_hit) {
+    PREFIX_STATS *pfs;
+
+    STATS_LOCK();
+    pfs = stats_prefix_find(key, nkey);
+    if (NULL != pfs) {
+        pfs->num_mop_deletes++;
+        if (is_hit) {
+            pfs->num_mop_delete_hits++;
+        }
+    }
+    STATS_UNLOCK();
+}
+
+void stats_prefix_record_mop_get(const char *key, const size_t nkey, const bool is_hit) {
+    PREFIX_STATS *pfs;
+
+    STATS_LOCK();
+    pfs = stats_prefix_find(key, nkey);
+    if (NULL != pfs) {
+        pfs->num_mop_gets++;
+        if (is_hit) {
+            pfs->num_mop_get_hits++;
+        }
+    }
+    STATS_UNLOCK();
+}
+#endif
+
 /*
  * B+TREE stats
  */
@@ -627,11 +712,20 @@ void stats_prefix_record_setattr(const char *key, const size_t nkey) {
 /*@null@*/
 char *stats_prefix_dump(int *length) {
     const char *format = "PREFIX %s "
+#ifdef MAP_COLLECTION_SUPPORT
+                         "get %llu hit %llu set %llu del %llu inc %llu dec %llu lcs %llu lis %llu lih %llu lds %llu "
+                         "ldh %llu lgs %llu lgh %llu scs %llu sis %llu sih %llu sds %llu sdh %llu sgs %llu sgh %llu "
+                         "ses %llu seh %llu mcs %llu mis %llu mih %llu mus %llu muh %llu mds %llu mdh %llu mgs %llu "
+                         "mgh %llu bcs %llu bis %llu bih %llu bus %llu buh %llu bds %llu bdh %llu bps %llu bph %llu "
+                         "bms %llu bmh %llu bgs %llu bgh %llu bns %llu bnh %llu pfs %llu pfh %llu pgs %llu pgh %llu "
+                         "gps %llu gph %llu gas %llu sas %llu\r\n";
+#else
                          "get %llu hit %llu set %llu del %llu inc %llu dec %llu lcs %llu lis %llu lih %llu lds %llu "
                          "ldh %llu lgs %llu lgh %llu scs %llu sis %llu sih %llu sds %llu sdh %llu sgs %llu sgh %llu "
                          "ses %llu seh %llu bcs %llu bis %llu bih %llu bus %llu buh %llu bds %llu bdh %llu bps %llu "
                          "bph %llu bms %llu bmh %llu bgs %llu bgh %llu bns %llu bnh %llu pfs %llu pfh %llu pgs %llu "
                          "pgh %llu gps %llu gph %llu gas %llu sas %llu\r\n";
+#endif
     PREFIX_STATS *pfs;
     char *buf;
     int i, pos;
@@ -644,10 +738,17 @@ char *stats_prefix_dump(int *length) {
      * plus space for the "END" at the end.
      */
     STATS_LOCK();
+#ifdef MAP_COLLECTION_SUPPORT
+    size = strlen(format) + total_prefix_size +
+           num_prefixes * (strlen(format) - 2 /* %s */
+                           + 54 * (20 - 4)) /* %llu replaced by 20-digit num */
+                           + sizeof("END\r\n");
+#else
     size = strlen(format) + total_prefix_size +
            num_prefixes * (strlen(format) - 2 /* %s */
                            + 45 * (20 - 4)) /* %llu replaced by 20-digit num */
                            + sizeof("END\r\n");
+#endif
     buf = malloc(size);
     if (NULL == buf) {
         perror("Can't allocate stats response: malloc");
@@ -658,6 +759,38 @@ char *stats_prefix_dump(int *length) {
     pos = 0;
     for (i = 0; i < PREFIX_HASH_SIZE; i++) {
         for (pfs = prefix_stats[i]; NULL != pfs; pfs = pfs->next) {
+#ifdef MAP_COLLECTION_SUPPORT
+            written = snprintf(buf + pos, size-pos, format,
+                           (pfs->prefix_len == 0 ? null_prefix_str : pfs->prefix),
+                           pfs->num_gets, pfs->num_hits, pfs->num_sets, pfs->num_deletes,
+                           pfs->num_incrs, pfs->num_decrs,
+                           pfs->num_lop_creates,
+                           pfs->num_lop_inserts, pfs->num_lop_insert_hits,
+                           pfs->num_lop_deletes, pfs->num_lop_delete_hits,
+                           pfs->num_lop_gets, pfs->num_lop_get_hits,
+                           pfs->num_sop_creates,
+                           pfs->num_sop_inserts, pfs->num_sop_insert_hits,
+                           pfs->num_sop_deletes, pfs->num_sop_delete_hits,
+                           pfs->num_sop_gets, pfs->num_sop_get_hits,
+                           pfs->num_sop_exists, pfs->num_sop_exist_hits,
+                           pfs->num_mop_creates,
+                           pfs->num_mop_inserts, pfs->num_mop_insert_hits,
+                           pfs->num_mop_updates, pfs->num_mop_update_hits,
+                           pfs->num_mop_deletes, pfs->num_mop_delete_hits,
+                           pfs->num_mop_gets, pfs->num_mop_get_hits,
+                           pfs->num_bop_creates,
+                           pfs->num_bop_inserts, pfs->num_bop_insert_hits,
+                           pfs->num_bop_updates, pfs->num_bop_update_hits,
+                           pfs->num_bop_deletes, pfs->num_bop_delete_hits,
+                           pfs->num_bop_incrs, pfs->num_bop_incr_hits,
+                           pfs->num_bop_decrs, pfs->num_bop_decr_hits,
+                           pfs->num_bop_gets, pfs->num_bop_get_hits,
+                           pfs->num_bop_counts, pfs->num_bop_count_hits,
+                           pfs->num_bop_positions, pfs->num_bop_position_hits,
+                           pfs->num_bop_pwgs, pfs->num_bop_pwg_hits,
+                           pfs->num_bop_gbps, pfs->num_bop_gbp_hits,
+                           pfs->num_getattrs, pfs->num_setattrs);
+#else
             written = snprintf(buf + pos, size-pos, format,
                            (pfs->prefix_len == 0 ? null_prefix_str : pfs->prefix),
                            pfs->num_gets, pfs->num_hits, pfs->num_sets, pfs->num_deletes,
@@ -683,6 +816,7 @@ char *stats_prefix_dump(int *length) {
                            pfs->num_bop_pwgs, pfs->num_bop_pwg_hits,
                            pfs->num_bop_gbps, pfs->num_bop_gbp_hits,
                            pfs->num_getattrs, pfs->num_setattrs);
+#endif
             pos += written;
             total_written += written;
             assert(total_written < size);

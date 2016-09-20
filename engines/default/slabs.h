@@ -1,7 +1,7 @@
 /*
  * arcus-memcached - Arcus memory cache server
  * Copyright 2010-2014 NAVER Corp.
- * Copyright 2014-2015 JaM2in Co., Ltd.
+ * Copyright 2014-2016 JaM2in Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,7 +45,7 @@ typedef struct {
 } slabclass_t;
 
 struct slabs {
-   slabclass_t slabclass[MAX_NUMBER_OF_SLAB_CLASSES];
+   slabclass_t slabclass[MAX_SLAB_CLASSES];
    size_t mem_limit;
    size_t mem_malloced;
    size_t mem_reserved; // Arcus Added it
@@ -60,6 +60,10 @@ struct slabs {
     */
    pthread_mutex_t lock;
 };
+
+/* extern variables */
+/* Maximum value length for using the small memory allocator */
+extern int MAX_SM_VALUE_LEN;
 
 /** Init the subsystem. 1st argument is the limit on no. of bytes to allocate,
     0 if no limit. 2nd argument is the growth factor; each slab will use a chunk

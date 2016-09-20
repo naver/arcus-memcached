@@ -31,9 +31,11 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
+#define CONFIG_API
+#define MAP_COLLECTION_SUPPORT
 #define SUPPORT_BOP_MGET
 #define SUPPORT_BOP_SMGET
-#define JHPARK_NEW_SMGET_INTERFACE
+#define JHPARK_OLD_SMGET_INTERFACE
 #define CONFIG_MAX_COLLECTION_SIZE
 #define MAX_EFLAG_COMPARE_COUNT 100
 
@@ -65,9 +67,7 @@ extern "C" {
         ENGINE_DISCONNECT  = 0x0a, /**< Tell the server to disconnect this client */
         ENGINE_EACCESS     = 0x0b, /**< Access control violations */
         ENGINE_NOT_MY_VBUCKET = 0x0c, /** < This vbucket doesn't belong to me */
-#ifdef JHPARK_NEW_SMGET_INTERFACE
         ENGINE_EDUPLICATE  = 0x0d, /** < Duplicate value(ex, bkey) */
-#endif
 
         ENGINE_EBADTYPE     = 0x32, /**< Not supported operation, bad type */
         ENGINE_EOVERFLOW    = 0x33, /**< The collection is full of elements */
@@ -113,8 +113,20 @@ extern "C" {
         OPERATION_SOP_EXIST,         /**< Set operation with check existence of element semantics */
         OPERATION_SOP_GET,           /**< Set operation with get element semantics */
 
+#ifdef MAP_COLLECTION_SUPPORT
+        /* map operation */
+        OPERATION_MOP_CREATE = 0x70, /**< Map operation with create structure semantics */
+        OPERATION_MOP_INSERT,        /**< Map operation with insert element semantics */
+        OPERATION_MOP_UPDATE,        /**< Map operation with update element semantics */
+        OPERATION_MOP_DELETE,        /**< Map operation with delete element semantics */
+        OPERATION_MOP_GET,            /**< Map operation with get element semantics */
+
+        /* b+tree operation */
+        OPERATION_BOP_CREATE = 0x80, /**< B+tree operation with create structure semantics */
+#else
         /* b+tree operation */
         OPERATION_BOP_CREATE = 0x70, /**< B+tree operation with create structure semantics */
+#endif
         OPERATION_BOP_INSERT,        /**< B+tree operation with insert element semantics */
         OPERATION_BOP_UPSERT,        /**< B+tree operation with upsert element semantics */
         OPERATION_BOP_UPDATE,        /**< B+tree operation with update element semantics */
@@ -135,6 +147,9 @@ extern "C" {
         ITEM_TYPE_KV = 0,
         ITEM_TYPE_LIST,
         ITEM_TYPE_SET,
+#ifdef MAP_COLLECTION_SUPPORT
+        ITEM_TYPE_MAP,
+#endif
         ITEM_TYPE_BTREE,
         ITEM_TYPE_MAX
     } ENGINE_ITEM_TYPE;
@@ -235,6 +250,15 @@ extern "C" {
 #define MAX_EFLAG_LENG 31
 #define BKEY_NULL  255
 #define EFLAG_NULL 255
+#ifdef MAP_COLLECTION_SUPPORT
+#define MAX_FIELD_LENG 250
+
+    /* field list structure */
+    typedef struct {
+        char *value;
+        size_t length;
+    } field_t;
+#endif
 
     /* bkey type */
     typedef struct {
@@ -290,7 +314,6 @@ extern "C" {
         uint8_t reserved[6];
     } eflag_update;
 
-#ifdef JHPARK_NEW_SMGET_INTERFACE
     /* Key info of the found elements in smget */
     typedef struct {
         uint16_t kidx;  /* key index in keys array */
@@ -318,7 +341,6 @@ extern "C" {
         bool          duplicated; /* bkey is duplicated ? */
         bool          ascending;  /* bkey order of found elements: ascending ? */
     } smget_result_t;
-#endif
 
     /* item attribute structure */
     typedef struct {

@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 use strict;
-use Test::More tests => 7;
+use Test::More tests => 8;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -23,8 +23,8 @@ is('0', $settings->{'verbosity'}, "Verify settings");
 print $sock "config verbosity foo\r\n";
 is(scalar <$sock>, "CLIENT_ERROR bad command line format\r\n", "Not a numeric argument");
 
-print $sock "config verbosity 1 noreply\r\n";
-# should not generate an output...
+print $sock "config verbosity 1\r\n";
+is(scalar <$sock>, "END\r\n", "Correct syntax");
 
 $settings = mem_stats($sock, 'settings');
 is('1', $settings->{'verbosity'}, "Verify settings");

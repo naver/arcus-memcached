@@ -204,8 +204,7 @@ extern "C" {
          * @param handle the engine handle
          * @param config_str configuration this engine needs to initialize itself.
          */
-        ENGINE_ERROR_CODE (*initialize)(ENGINE_HANDLE* handle,
-                                        const char* config_str);
+        ENGINE_ERROR_CODE (*initialize)(ENGINE_HANDLE* handle, const char* config_str);
 
         /**
          * Tear down this engine.
@@ -230,17 +229,16 @@ extern "C" {
          *        value of this item.
          * @param flags the item's flags
          * @param exptime the maximum lifetime of this item
+         * @param cas the cas value to set in this item
          *
          * @return ENGINE_SUCCESS if all goes well
          */
-        ENGINE_ERROR_CODE (*allocate)(ENGINE_HANDLE* handle,
-                                      const void* cookie,
+        ENGINE_ERROR_CODE (*allocate)(ENGINE_HANDLE* handle, const void* cookie,
                                       item **item,
-                                      const void* key,
-                                      const size_t nkey,
+                                      const void* key, const size_t nkey,
                                       const size_t nbytes,
-                                      const int flags,
-                                      const rel_time_t exptime);
+                                      const int flags, const rel_time_t exptime,
+                                      const uint64_t cas);
 
         /**
          * Remove an item.
@@ -253,12 +251,9 @@ extern "C" {
          *
          * @return ENGINE_SUCCESS if all goes well
          */
-        ENGINE_ERROR_CODE (*remove)(ENGINE_HANDLE* handle,
-                                    const void* cookie,
-                                    const void* key,
-                                    const size_t nkey,
-                                    uint64_t cas,
-                                    uint16_t vbucket);
+        ENGINE_ERROR_CODE (*remove)(ENGINE_HANDLE* handle, const void* cookie,
+                                    const void* key, const size_t nkey,
+                                    uint64_t cas, uint16_t vbucket);
 
         /**
          * Indicate that a caller who received an item no longer needs
@@ -268,9 +263,7 @@ extern "C" {
          * @param cookie The cookie provided by the frontend
          * @param item the item to be released
          */
-        void (*release)(ENGINE_HANDLE* handle, const
-                        void *cookie,
-                        item* item);
+        void (*release)(ENGINE_HANDLE* handle, const void *cookie, item* item);
 
         /**
          * Retrieve an item.
@@ -284,11 +277,9 @@ extern "C" {
          *
          * @return ENGINE_SUCCESS if all goes well
          */
-        ENGINE_ERROR_CODE (*get)(ENGINE_HANDLE* handle,
-                                 const void* cookie,
+        ENGINE_ERROR_CODE (*get)(ENGINE_HANDLE* handle, const void* cookie,
                                  item** item,
-                                 const void* key,
-                                 const int nkey,
+                                 const void* key, const int nkey,
                                  uint16_t vbucket);
 
         /**
@@ -303,10 +294,8 @@ extern "C" {
          *
          * @return ENGINE_SUCCESS if all goes well
          */
-        ENGINE_ERROR_CODE (*store)(ENGINE_HANDLE* handle,
-                                   const void *cookie,
-                                   item* item,
-                                   uint64_t *cas,
+        ENGINE_ERROR_CODE (*store)(ENGINE_HANDLE* handle, const void *cookie,
+                                   item* item, uint64_t *cas,
                                    ENGINE_STORE_OPERATION operation,
                                    uint16_t vbucket);
 
@@ -328,18 +317,12 @@ extern "C" {
          *
          * @return ENGINE_SUCCESS if all goes well
          */
-        ENGINE_ERROR_CODE (*arithmetic)(ENGINE_HANDLE* handle,
-                                        const void* cookie,
-                                        const void* key,
-                                        const int nkey,
-                                        const bool increment,
-                                        const bool create,
-                                        const uint64_t delta,
-                                        const uint64_t initial,
-                                        const int flags,
-                                        const rel_time_t exptime,
-                                        uint64_t *cas,
-                                        uint64_t *result,
+        ENGINE_ERROR_CODE (*arithmetic)(ENGINE_HANDLE* handle, const void* cookie,
+                                        const void* key, const int nkey,
+                                        const bool increment, const bool create,
+                                        const uint64_t delta, const uint64_t initial,
+                                        const int flags, const rel_time_t exptime,
+                                        uint64_t *cas, uint64_t *result,
                                         uint16_t vbucket);
 
         /**
@@ -347,90 +330,110 @@ extern "C" {
          *
          * @param handle the engine handle
          * @param cookie The cookie provided by the frontend
+         * @prefix prefix string
+         * @nprefix prefix string length: -1(all prefixes), 0(null prefix)
          * @param when time at which the flush should take effect
          *
          * @return ENGINE_SUCCESS if all goes well
          */
-        ENGINE_ERROR_CODE (*flush)(ENGINE_HANDLE* handle,
-                                   const void* cookie, time_t when);
-
-        /*
-         * delete by prefix
-         */
-        ENGINE_ERROR_CODE (*flush_prefix)(ENGINE_HANDLE* handle, const void* cookie,
-                                          const void* prefix, const int nprefix, time_t when);
+        ENGINE_ERROR_CODE (*flush)(ENGINE_HANDLE* handle, const void* cookie,
+                                   const void* prefix, const int nprefix, time_t when);
 
         /*
          * LIST Interface
          */
-        ENGINE_ERROR_CODE (*list_struct_create)(ENGINE_HANDLE* handle,
-                                                const void* cookie,
-                                                const void* key,
-                                                const int nkey,
-                                                item_attr *attrp,
-                                                uint16_t vbucket);
-        ENGINE_ERROR_CODE (*list_elem_alloc)(ENGINE_HANDLE* handle,
-                                             const void* cookie,
-                                             const void* key,
-                                             const int nkey,
-                                             const size_t nbytes,
-                                             eitem** eitem);
-        void (*list_elem_release)(ENGINE_HANDLE* handle,
-                                  const void *cookie,
-                                  eitem **eitem_array,
-                                  const int eitem_count);
-        ENGINE_ERROR_CODE (*list_elem_insert)(ENGINE_HANDLE* handle,
-                                              const void* cookie,
-                                              const void* key,
-                                              const int nkey,
-                                              int index,
-                                              eitem *eitem,
-                                              item_attr *attrp,
-                                              bool *created,
+        ENGINE_ERROR_CODE (*list_struct_create)(ENGINE_HANDLE* handle, const void* cookie,
+                                                const void* key, const int nkey,
+                                                item_attr *attrp, uint16_t vbucket);
+
+        ENGINE_ERROR_CODE (*list_elem_alloc)(ENGINE_HANDLE* handle, const void* cookie,
+                                             const void* key, const int nkey,
+                                             const size_t nbytes, eitem** eitem);
+
+        void (*list_elem_release)(ENGINE_HANDLE* handle, const void *cookie,
+                                  eitem **eitem_array, const int eitem_count);
+
+        ENGINE_ERROR_CODE (*list_elem_insert)(ENGINE_HANDLE* handle, const void* cookie,
+                                              const void* key, const int nkey,
+                                              int index, eitem *eitem,
+                                              item_attr *attrp, bool *created,
                                               uint16_t vbucket);
-        ENGINE_ERROR_CODE (*list_elem_delete)(ENGINE_HANDLE* handle,
-                                              const void* cookie,
-                                              const void* key,
-                                              const int nkey,
-                                              int from_index,
-                                              int to_index,
+
+        ENGINE_ERROR_CODE (*list_elem_delete)(ENGINE_HANDLE* handle, const void* cookie,
+                                              const void* key, const int nkey,
+                                              int from_index, int to_index,
                                               const bool drop_if_empty,
-                                              uint32_t* del_count,
-                                              bool* dropped,
+                                              uint32_t* del_count, bool* dropped,
                                               uint16_t vbucket);
-        ENGINE_ERROR_CODE (*list_elem_get)(ENGINE_HANDLE* handle,
-                                           const void* cookie,
-                                           const void* key,
-                                           const int nkey,
-                                           int from_index,
-                                           int to_index,
-                                           const bool delete,
-                                           const bool drop_if_empty,
-                                           eitem** eitem_array,
-                                           uint32_t* eitem_count,
-                                           uint32_t* flags,
-                                           bool* dropped,
+
+        ENGINE_ERROR_CODE (*list_elem_get)(ENGINE_HANDLE* handle, const void* cookie,
+                                           const void* key, const int nkey,
+                                           int from_index, int to_index,
+                                           const bool delete, const bool drop_if_empty,
+                                           eitem** eitem_array, uint32_t* eitem_count,
+                                           uint32_t* flags, bool* dropped,
                                            uint16_t vbucket);
+
         /*
          * SET Interface
          */
-        ENGINE_ERROR_CODE (*set_struct_create)(ENGINE_HANDLE* handle,
+        ENGINE_ERROR_CODE (*set_struct_create)(ENGINE_HANDLE* handle, const void* cookie,
+                                               const void* key, const int nkey,
+                                               item_attr *attrp, uint16_t vbucket);
+
+        ENGINE_ERROR_CODE (*set_elem_alloc)(ENGINE_HANDLE* handle, const void* cookie,
+                                            const void* key, const int nkey,
+                                            const size_t nbytes, eitem** eitem);
+
+        void (*set_elem_release)(ENGINE_HANDLE* handle, const void *cookie,
+                                 eitem **eitem_array, const int eitem_count);
+
+        ENGINE_ERROR_CODE (*set_elem_insert)(ENGINE_HANDLE* handle, const void* cookie,
+                                             const void* key, const int nkey, eitem *eitem,
+                                             item_attr *attrp, bool *created,
+                                             uint16_t vbucket);
+
+        ENGINE_ERROR_CODE (*set_elem_delete)(ENGINE_HANDLE* handle, const void* cookie,
+                                             const void* key, const int nkey,
+                                             const void* value, const int nbytes,
+                                             const bool drop_if_empty, bool *dropped,
+                                             uint16_t vbucket);
+
+        ENGINE_ERROR_CODE (*set_elem_exist)(ENGINE_HANDLE* handle, const void* cookie,
+                                            const void* key, const int nkey,
+                                            const void* value, const int nbytes,
+                                            bool *exist, uint16_t vbucket);
+
+        ENGINE_ERROR_CODE (*set_elem_get)(ENGINE_HANDLE* handle, const void* cookie,
+                                          const void* key, const int nkey,
+                                          const uint32_t count,
+                                          const bool delete, const bool drop_if_empty,
+                                          eitem** eitem, uint32_t* eitem_count,
+                                          uint32_t* flags, bool* dropped,
+                                          uint16_t vbucket);
+
+#ifdef MAP_COLLECTION_SUPPORT
+        /*
+         * MAP Interface
+         */
+        ENGINE_ERROR_CODE (*map_struct_create)(ENGINE_HANDLE* handle,
                                                const void* cookie,
                                                const void* key,
                                                const int nkey,
                                                item_attr *attrp,
                                                uint16_t vbucket);
-        ENGINE_ERROR_CODE (*set_elem_alloc)(ENGINE_HANDLE* handle,
+        ENGINE_ERROR_CODE (*map_elem_alloc)(ENGINE_HANDLE* handle,
                                             const void* cookie,
                                             const void* key,
                                             const int nkey,
+                                            const size_t nfield,
                                             const size_t nbytes,
                                             eitem** eitem);
-        void (*set_elem_release)(ENGINE_HANDLE* handle,
+        void (*map_elem_release)(ENGINE_HANDLE* handle,
                                  const void *cookie,
                                  eitem **eitem_array,
                                  const int eitem_count);
-        ENGINE_ERROR_CODE (*set_elem_insert)(ENGINE_HANDLE* handle,
+        ENGINE_ERROR_CODE (*map_elem_insert)(ENGINE_HANDLE* handle,
                                              const void* cookie,
                                              const void* key,
                                              const int nkey,
@@ -438,28 +441,30 @@ extern "C" {
                                              item_attr *attrp,
                                              bool *created,
                                              uint16_t vbucket);
-        ENGINE_ERROR_CODE (*set_elem_delete)(ENGINE_HANDLE* handle,
+        ENGINE_ERROR_CODE (*map_elem_update)(ENGINE_HANDLE* handle,
                                              const void* cookie,
                                              const void* key,
                                              const int nkey,
+                                             const field_t *field,
                                              const void* value,
                                              const int nbytes,
+                                             uint16_t vbucket);
+        ENGINE_ERROR_CODE (*map_elem_delete)(ENGINE_HANDLE* handle,
+                                             const void* cookie,
+                                             const void* key,
+                                             const int nkey,
+                                             const int numfields,
+                                             const field_t *flist,
                                              const bool drop_if_empty,
+                                             uint32_t* del_count,
                                              bool *dropped,
                                              uint16_t vbucket);
-        ENGINE_ERROR_CODE (*set_elem_exist)(ENGINE_HANDLE* handle,
-                                            const void* cookie,
-                                            const void* key,
-                                            const int nkey,
-                                            const void* value,
-                                            const int nbytes,
-                                            bool *exist,
-                                            uint16_t vbucket);
-        ENGINE_ERROR_CODE (*set_elem_get)(ENGINE_HANDLE* handle,
+        ENGINE_ERROR_CODE (*map_elem_get)(ENGINE_HANDLE* handle,
                                           const void* cookie,
                                           const void* key,
                                           const int nkey,
-                                          const uint32_t count,
+                                          const int numfields,
+                                          const field_t *flist,
                                           const bool delete,
                                           const bool drop_if_empty,
                                           eitem** eitem,
@@ -467,187 +472,135 @@ extern "C" {
                                           uint32_t* flags,
                                           bool* dropped,
                                           uint16_t vbucket);
+#endif
+
         /*
          * B+Tree Interface
          */
-        ENGINE_ERROR_CODE (*btree_struct_create)(ENGINE_HANDLE* handle,
-                                                 const void* cookie,
-                                                 const void* key,
-                                                 const int nkey,
-                                                 item_attr *attrp,
-                                                 uint16_t vbucket);
-        ENGINE_ERROR_CODE (*btree_elem_alloc)(ENGINE_HANDLE* handle,
-                                              const void* cookie,
-                                              const void* key,
-                                              const int nkey,
-                                              const size_t nbkey,
-                                              const size_t neflag,
-                                              const size_t nbytes,
-                                              eitem** eitem);
-        void (*btree_elem_release)(ENGINE_HANDLE* handle,
-                                   const void *cookie,
-                                   eitem **eitem_array,
-                                   const int eitem_count);
-        ENGINE_ERROR_CODE (*btree_elem_insert)(ENGINE_HANDLE* handle,
-                                              const void* cookie,
-                                              const void* key,
-                                              const int nkey,
-                                              eitem *eitem,
-                                              const bool replace_if_exist,
+        ENGINE_ERROR_CODE (*btree_struct_create)(ENGINE_HANDLE* handle, const void* cookie,
+                                                 const void* key, const int nkey,
+                                                 item_attr *attrp, uint16_t vbucket);
+
+        ENGINE_ERROR_CODE (*btree_elem_alloc)(ENGINE_HANDLE* handle, const void* cookie,
+                                              const void* key, const int nkey,
+                                              const size_t nbkey, const size_t neflag,
+                                              const size_t nbytes, eitem** eitem);
+
+        void (*btree_elem_release)(ENGINE_HANDLE* handle, const void *cookie,
+                                   eitem **eitem_array, const int eitem_count);
+
+        ENGINE_ERROR_CODE (*btree_elem_insert)(ENGINE_HANDLE* handle, const void* cookie,
+                                              const void* key, const int nkey,
+                                              eitem *eitem, const bool replace_if_exist,
                                               item_attr *attrp,
-                                              bool *replaced,
-                                              bool *created,
+                                              bool *replaced, bool *created,
                                               eitem_result *trimmed,
                                               uint16_t vbucket);
-        ENGINE_ERROR_CODE (*btree_elem_update)(ENGINE_HANDLE* handle,
-                                              const void* cookie,
-                                              const void* key,
-                                              const int nkey,
+
+        ENGINE_ERROR_CODE (*btree_elem_update)(ENGINE_HANDLE* handle, const void* cookie,
+                                              const void* key, const int nkey,
                                               const bkey_range *bkrange,
                                               const eflag_update *eupdate,
-                                              const void* value,
-                                              const int nbytes,
+                                              const void* value, const int nbytes,
                                               uint16_t vbucket);
-        ENGINE_ERROR_CODE (*btree_elem_delete)(ENGINE_HANDLE* handle,
-                                              const void* cookie,
-                                              const void* key,
-                                              const int nkey,
+
+        ENGINE_ERROR_CODE (*btree_elem_delete)(ENGINE_HANDLE* handle, const void* cookie,
+                                              const void* key, const int nkey,
                                               const bkey_range *bkrange,
                                               const eflag_filter *efilter,
                                               const uint32_t req_count,
                                               const bool drop_if_empty,
-                                              uint32_t* del_count,
-                                              uint32_t* access_count,
-                                              bool* dropped,
-                                              uint16_t vbucket);
-        ENGINE_ERROR_CODE (*btree_elem_arithmetic)(ENGINE_HANDLE* handle,
-                                                   const void* cookie,
-                                                   const void* key,
-                                                   const int nkey,
+                                              uint32_t* del_count, uint32_t* access_count,
+                                              bool* dropped, uint16_t vbucket);
+
+        ENGINE_ERROR_CODE (*btree_elem_arithmetic)(ENGINE_HANDLE* handle, const void* cookie,
+                                                   const void* key, const int nkey,
                                                    const bkey_range *bkrange,
-                                                   const bool increment,
-                                                   const bool create,
-                                                   const uint64_t delta,
-                                                   const uint64_t initial,
-                                                   const eflag_t *eflagp,
-                                                   uint64_t *result,
+                                                   const bool increment, const bool create,
+                                                   const uint64_t delta, const uint64_t initial,
+                                                   const eflag_t *eflagp, uint64_t *result,
                                                    uint16_t vbucket);
-        ENGINE_ERROR_CODE (*btree_elem_get)(ENGINE_HANDLE* handle,
-                                            const void* cookie,
-                                            const void* key,
-                                            const int nkey,
+
+        ENGINE_ERROR_CODE (*btree_elem_get)(ENGINE_HANDLE* handle, const void* cookie,
+                                            const void* key, const int nkey,
                                             const bkey_range *bkrange,
                                             const eflag_filter *efilter,
                                             const uint32_t offset,
                                             const uint32_t req_count,
-                                            const bool delete,
-                                            const bool drop_if_empty,
-                                            eitem** eitem_array,
-                                            uint32_t* eitem_count,
-                                            uint32_t* access_count,
-                                            uint32_t* flags,
-                                            bool* dropped_trimmed,
-                                            uint16_t vbucket);
-        ENGINE_ERROR_CODE (*btree_elem_count)(ENGINE_HANDLE* handle,
-                                              const void* cookie,
-                                              const void* key,
-                                              const int nkey,
+                                            const bool delete, const bool drop_if_empty,
+                                            eitem** eitem_array, uint32_t* eitem_count,
+                                            uint32_t* access_count, uint32_t* flags,
+                                            bool* dropped_trimmed, uint16_t vbucket);
+
+        ENGINE_ERROR_CODE (*btree_elem_count)(ENGINE_HANDLE* handle, const void* cookie,
+                                              const void* key, const int nkey,
                                               const bkey_range *bkrange,
                                               const eflag_filter *efilter,
-                                              uint32_t* eitem_count,
-                                              uint32_t* access_count,
+                                              uint32_t* eitem_count, uint32_t* access_count,
                                               uint16_t vbucket);
-        ENGINE_ERROR_CODE (*btree_posi_find)(ENGINE_HANDLE *handle,
-                                             const void* cookie,
-                                             const char *key,
-                                             const size_t nkey,
+
+        ENGINE_ERROR_CODE (*btree_posi_find)(ENGINE_HANDLE *handle, const void* cookie,
+                                             const char *key, const size_t nkey,
                                              const bkey_range *bkrange,
                                              ENGINE_BTREE_ORDER order,
-                                             int *position,
-                                             uint16_t vbucket);
-        ENGINE_ERROR_CODE (*btree_posi_find_with_get)(ENGINE_HANDLE *handle,
-                                             const void* cookie,
-                                             const char *key,
-                                             const size_t nkey,
+                                             int *position, uint16_t vbucket);
+
+        ENGINE_ERROR_CODE (*btree_posi_find_with_get)(ENGINE_HANDLE *handle, const void* cookie,
+                                             const char *key, const size_t nkey,
                                              const bkey_range *bkrange,
                                              ENGINE_BTREE_ORDER order,
                                              const uint32_t count,
-                                             int *position,
-                                             eitem **eitem_array,
-                                             uint32_t *eitem_count,
-                                             uint32_t *eitem_index,
-                                             uint32_t *flags,
-                                             uint16_t vbucket);
-        ENGINE_ERROR_CODE (*btree_elem_get_by_posi)(ENGINE_HANDLE *handle,
-                                             const void* cookie,
-                                             const char *key,
-                                             const size_t nkey,
+                                             int *position, eitem **eitem_array,
+                                             uint32_t *eitem_count, uint32_t *eitem_index,
+                                             uint32_t *flags, uint16_t vbucket);
+
+        ENGINE_ERROR_CODE (*btree_elem_get_by_posi)(ENGINE_HANDLE *handle, const void* cookie,
+                                             const char *key, const size_t nkey,
                                              ENGINE_BTREE_ORDER order,
-                                             int from_posi,
-                                             int to_posi,
-                                             eitem **eitem_array,
-                                             uint32_t *eitem_count,
-                                             uint32_t *flags,
-                                             uint16_t vbucket);
+                                             int from_posi, int to_posi,
+                                             eitem **eitem_array, uint32_t *eitem_count,
+                                             uint32_t *flags, uint16_t vbucket);
+
 #ifdef SUPPORT_BOP_SMGET
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
-        ENGINE_ERROR_CODE (*btree_elem_smget_old)(ENGINE_HANDLE* handle,
-                                              const void* cookie,
-                                              token_t *karray,
-                                              const int kcount,
+#ifdef JHPARK_OLD_SMGET_INTERFACE
+        /* smget old interface */
+        ENGINE_ERROR_CODE (*btree_elem_smget_old)(ENGINE_HANDLE* handle, const void* cookie,
+                                              token_t *karray, const int kcount,
                                               const bkey_range *bkrange,
                                               const eflag_filter *efilter,
-                                              const uint32_t offset,
-                                              const uint32_t count,
+                                              const uint32_t offset, const uint32_t count,
                                               eitem** eitem_array,
                                               uint32_t* kfnd_array,
                                               uint32_t* flag_array,
                                               uint32_t* eitem_count,
                                               uint32_t* missed_key_array,
                                               uint32_t* missed_key_count,
-                                              bool *trimmed,
-                                              bool *duplicated,
+                                              bool *trimmed, bool *duplicated,
                                               uint16_t vbucket);
 #endif
 
-        ENGINE_ERROR_CODE (*btree_elem_smget)(ENGINE_HANDLE* handle,
-                                              const void* cookie,
-                                              token_t *karray,
-                                              const int kcount,
+        /* smget new interface */
+        ENGINE_ERROR_CODE (*btree_elem_smget)(ENGINE_HANDLE* handle, const void* cookie,
+                                              token_t *karray, const int kcount,
                                               const bkey_range *bkrange,
                                               const eflag_filter *efilter,
-                                              const uint32_t offset,
-                                              const uint32_t count,
-#ifdef JHPARK_NEW_SMGET_INTERFACE
+                                              const uint32_t offset, const uint32_t count,
                                               const bool unique,
                                               smget_result_t *result,
-#else
-                                              eitem** eitem_array,
-                                              uint32_t* kfnd_array,
-                                              uint32_t* flag_array,
-                                              uint32_t* eitem_count,
-                                              uint32_t* missed_key_array,
-                                              uint32_t* missed_key_count,
-                                              bool *trimmed,
-                                              bool *duplicated,
-#endif
                                               uint16_t vbucket);
 #endif
         /*
          * ATTR Interface
          */
-        ENGINE_ERROR_CODE (*getattr)(ENGINE_HANDLE* handle,
-                                     const void* cookie,
-                                     const void* key,
-                                     const int nkey,
+        ENGINE_ERROR_CODE (*getattr)(ENGINE_HANDLE* handle, const void* cookie,
+                                     const void* key, const int nkey,
                                      ENGINE_ITEM_ATTR *attr_ids,
                                      const uint32_t attr_count,
                                      item_attr *attr_data,
                                      uint16_t vbucket);
-        ENGINE_ERROR_CODE (*setattr)(ENGINE_HANDLE* handle,
-                                     const void* cookie,
-                                     const void* key,
-                                     const int nkey,
+
+        ENGINE_ERROR_CODE (*setattr)(ENGINE_HANDLE* handle, const void* cookie,
+                                     const void* key, const int nkey,
                                      ENGINE_ITEM_ATTR *attr_ids,
                                      const uint32_t attr_count,
                                      item_attr *attr_data,
@@ -668,10 +621,8 @@ extern "C" {
          *
          * @return ENGINE_SUCCESS if all goes well
          */
-        ENGINE_ERROR_CODE (*get_stats)(ENGINE_HANDLE* handle,
-                                       const void* cookie,
-                                       const char* stat_key,
-                                       int nkey,
+        ENGINE_ERROR_CODE (*get_stats)(ENGINE_HANDLE* handle, const void* cookie,
+                                       const char* stat_key, int nkey,
                                        ADD_STAT add_stat);
 
         /**
@@ -685,53 +636,48 @@ extern "C" {
         /**
          * Get an array of per-thread stats. Set to NULL if you don't need it.
          */
-        void *(*get_stats_struct)(ENGINE_HANDLE* handle,
-                                  const void* cookie);
+        void *(*get_stats_struct)(ENGINE_HANDLE* handle, const void* cookie);
 
         /**
          * Aggregate stats among all per-connection stats. Set to NULL if you don't need it.
          */
-        ENGINE_ERROR_CODE (*aggregate_stats)(ENGINE_HANDLE* handle,
-                                             const void* cookie,
+        ENGINE_ERROR_CODE (*aggregate_stats)(ENGINE_HANDLE* handle, const void* cookie,
                                              void (*callback)(void*, void*),
                                              void*);
 
         /**
          * Statistical information for each prefix
          */
-        ENGINE_ERROR_CODE (*get_prefix_stats)(ENGINE_HANDLE* handle,
-                                              const void* cookie,
-                                              const void* key,
-                                              const int nkey,
+        ENGINE_ERROR_CODE (*get_prefix_stats)(ENGINE_HANDLE* handle, const void* cookie,
+                                              const void* key, const int nkey,
                                               void *prefix_data);
 
-        ENGINE_ERROR_CODE (*set_memlimit)(ENGINE_HANDLE* handle,
-                                          const void *cookie,
-                                          const size_t memlimit,
-                                          const int sticky_ratio);
+#ifdef CONFIG_API
+        ENGINE_ERROR_CODE (*set_config)(ENGINE_HANDLE* handle, const void* cookie,
+                                        const char* config_key, const void* config_value);
+#else
+
+        ENGINE_ERROR_CODE (*set_memlimit)(ENGINE_HANDLE* handle, const void *cookie,
+                                          const size_t memlimit);
+
 #ifdef CONFIG_MAX_COLLECTION_SIZE
-        ENGINE_ERROR_CODE (*set_maxcollsize)(ENGINE_HANDLE* handle,
-                                          const void *cookie,
-                                          const int coll_type,
-                                          int *maxsize);
+        ENGINE_ERROR_CODE (*set_maxcollsize)(ENGINE_HANDLE* handle, const void *cookie,
+                                          const int coll_type, int *maxsize);
+#endif
 #endif
 
-        void (*set_verbose) (ENGINE_HANDLE* handle,
-                             const void* cookie,
+        void (*set_verbose) (ENGINE_HANDLE* handle, const void* cookie,
                              const size_t verbose);
 
-       char *(*cachedump)(ENGINE_HANDLE* handle,
-                          const void *cookie,
+        char *(*cachedump)(ENGINE_HANDLE* handle, const void *cookie,
                           const unsigned int slabs_clsid,
                           const unsigned int limit,
                           const bool forward,
                           const bool sticky,
                           unsigned int *bytes);
 #ifdef JHPARK_KEY_DUMP
-        ENGINE_ERROR_CODE (*dump)(ENGINE_HANDLE* handle,
-                                  const void *cookie,
-                                  const char *opstr,
-                                  const char *modestr,
+        ENGINE_ERROR_CODE (*dump)(ENGINE_HANDLE* handle, const void *cookie,
+                                  const char *opstr, const char *modestr,
                                   const char *prefix, const int nprefix,
                                   const char *filepath);
 #endif
@@ -752,12 +698,6 @@ extern "C" {
                                              ADD_RESPONSE response);
 
         /**
-         * Set the CAS id on an item.
-         */
-        void (*item_set_cas)(ENGINE_HANDLE *handle, const void *cookie,
-                             item *item, uint64_t cas);
-
-        /**
          * Get information about an item.
          *
          * The loader of the module may need the pointers to the actual data within
@@ -770,27 +710,14 @@ extern "C" {
          * @param item_info
          * @return true if successful
          */
-        bool (*get_item_info)(ENGINE_HANDLE *handle,
-                              const void *cookie,
-                              const item* item,
-                              item_info *item_info);
-
+        bool (*get_item_info)(ENGINE_HANDLE *handle, const void *cookie,
+                              const item* item, item_info *item_info);
         /*
          * Get information about a collection element.
          */
-        void (*get_list_elem_info)(ENGINE_HANDLE *handle,
-                                   const void *cookie,
-                                   const eitem* eitem,
-                                   eitem_info *elem_info);
-
-        void (*get_set_elem_info)(ENGINE_HANDLE *handle,
-                                  const void *cookie,
-                                  const eitem* eitem,
-                                  eitem_info *elem_info);
-        void (*get_btree_elem_info)(ENGINE_HANDLE *handle,
-                                    const void *cookie,
-                                    const eitem* eitem,
-                                    eitem_info *elem_info);
+        void (*get_elem_info)(ENGINE_HANDLE *handle, const void *cookie,
+                              const int type, /* collection type */
+                              const eitem* eitem, eitem_info *elem_info);
 
         /**
          * Get extra error information for an operation.
@@ -803,8 +730,6 @@ extern "C" {
          */
         size_t (*errinfo)(ENGINE_HANDLE *handle, const void* cookie,
                           char *buffer, size_t buffsz);
-
-
 
     } ENGINE_HANDLE_V1;
 

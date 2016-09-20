@@ -47,6 +47,9 @@
 /** Maximum length of a key. */
 #define KEY_MAX_LENGTH 250
 
+/** Maximum length of a prefix */
+#define PREFIX_MAX_LENGTH 250
+
 /** Size of an incr buf. */
 #define INCR_MAX_STORAGE_LEN 24
 
@@ -108,13 +111,6 @@
 #define PIPE_STATE_ERR_CFULL 2
 #define PIPE_STATE_ERR_MFULL 3
 #define PIPE_STATE_ERR_BAD   4
-
-/* Slab sizing definitions. */
-#define POWER_SMALLEST 1
-#define POWER_LARGEST  200
-#define CHUNK_ALIGN_BYTES 8
-#define DONT_PREALLOC_SLABS
-#define MAX_NUMBER_OF_SLAB_CLASSES (POWER_LARGEST + 1)
 
 
 #define STAT_KEY_LEN 128
@@ -236,6 +232,14 @@ struct thread_stats {
     uint64_t          cmd_sop_delete;
     uint64_t          cmd_sop_get;
     uint64_t          cmd_sop_exist;
+#ifdef MAP_COLLECTION_SUPPORT
+    /* map command stats */
+    uint64_t          cmd_mop_create;
+    uint64_t          cmd_mop_insert;
+    uint64_t          cmd_mop_update;
+    uint64_t          cmd_mop_delete;
+    uint64_t          cmd_mop_get;
+#endif
     /* btree command stats */
     uint64_t          cmd_bop_create;
     uint64_t          cmd_bop_insert;
@@ -279,6 +283,21 @@ struct thread_stats {
     uint64_t          sop_get_misses;
     uint64_t          sop_exist_hits;
     uint64_t          sop_exist_misses;
+#ifdef MAP_COLLECTION_SUPPORT
+    /* map hit & miss stats */
+    uint64_t          mop_create_oks;
+    uint64_t          mop_insert_hits;
+    uint64_t          mop_insert_misses;
+    uint64_t          mop_update_elem_hits;
+    uint64_t          mop_update_none_hits;
+    uint64_t          mop_update_misses;
+    uint64_t          mop_delete_elem_hits;
+    uint64_t          mop_delete_none_hits;
+    uint64_t          mop_delete_misses;
+    uint64_t          mop_get_elem_hits;
+    uint64_t          mop_get_none_hits;
+    uint64_t          mop_get_misses;
+#endif
     /* btree hit & miss stats */
     uint64_t          bop_create_oks;
     uint64_t          bop_insert_hits;
@@ -320,7 +339,7 @@ struct thread_stats {
     uint64_t          getattr_misses;
     uint64_t          setattr_hits;
     uint64_t          setattr_misses;
-    struct slab_stats slab_stats[MAX_NUMBER_OF_SLAB_CLASSES];
+    struct slab_stats slab_stats[MAX_SLAB_CLASSES];
 };
 
 
@@ -379,6 +398,9 @@ struct settings {
     bool require_sasl;      /* require SASL auth */
     int max_list_size;      /* Maximum elements in list collection */
     int max_set_size;       /* Maximum elements in set collection */
+#ifdef MAP_COLLECTION_SUPPORT
+    int max_map_size;       /* Maximum elements in map collection */
+#endif
     int max_btree_size;     /* Maximum elements in b+tree collection */
     int topkeys;            /* Number of top keys to track */
     struct {
@@ -486,13 +508,14 @@ struct conn {
     int          coll_index;   /* the list index of lop insert */
     item_attr    coll_attr_space;
     item_attr   *coll_attrp;
+#ifdef MAP_COLLECTION_SUPPORT
+    bool         coll_delete;  /* delete flag */
+#endif
     bool         coll_drop;    /* drop flag */
-#ifdef JHPARK_NEW_SMGET_INTERFACE
-#if 1 // JHPARK_OLD_SMGET_INTERFACE
+#ifdef JHPARK_OLD_SMGET_INTERFACE
     int          coll_smgmode; /* smget exec mode : 0(oldexec), 1(duplicate), 2(unique) */
 #else
     bool         coll_unique;  /* unique flag (used in smget) */
-#endif
 #endif
     bkey_range   coll_bkrange; /* bkey range */
     eflag_filter coll_efilter; /* eflag filter */
@@ -502,6 +525,10 @@ struct conn {
     uint32_t     coll_numkeys; /* number of keys */
     uint32_t     coll_lenkeys; /* length of keys */
     void        *coll_strkeys; /* (comma separated) multiple keys */
+
+#ifdef MAP_COLLECTION_SUPPORT
+    field_t      coll_field;
+#endif
 
     /* data for the nread state */
 

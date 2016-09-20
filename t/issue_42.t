@@ -24,5 +24,5 @@ my $first_stats = mem_stats($sock, "slabs");
 #my $req = $first_stats->{"1:mem_requested"};
 #ok ($req == "600" || $req == "720", "Check allocated size");
 my $req = $first_stats->{"0:mem_requested"};
-ok ($req == "65536", "Check allocated size");
+ok ($req == "262144", "Check allocated size");
 ######################################
