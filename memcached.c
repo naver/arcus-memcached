@@ -14673,7 +14673,7 @@ static bool load_extension(const char *soname, const char *config) {
 
     if (error != EXTENSION_SUCCESS) {
         mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Failed to initalize extensions from %s. Error code: %d\n",
+                "Failed to initialize extensions from %s. Error code: %d\n",
                 soname, error);
         dlclose(handle);
         return false;

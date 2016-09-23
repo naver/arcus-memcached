@@ -100,7 +100,7 @@ default_get_info(ENGINE_HANDLE* handle)
 }
 
 static ENGINE_ERROR_CODE
-initalize_configuration(struct default_engine *se, const char *cfg_str)
+initialize_configuration(struct default_engine *se, const char *cfg_str)
 {
     se->config.vb0 = true;
 
@@ -186,7 +186,7 @@ default_initialize(ENGINE_HANDLE* handle, const char* config_str)
 {
     struct default_engine* se = get_handle(handle);
 
-    ENGINE_ERROR_CODE ret = initalize_configuration(se, config_str);
+    ENGINE_ERROR_CODE ret = initialize_configuration(se, config_str);
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }

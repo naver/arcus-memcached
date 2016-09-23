@@ -301,7 +301,7 @@ const char* (*get_info)(ENGINE_HANDLE* handle);
             <section anchor="initialize" title="initialize">
                 <t>
                     Called during initialization of memcached. The engine
-                    should do all of its initalization in this routine.
+                    should do all of its initialization in this routine.
                 </t>
                 <figure>
                     <artwork>

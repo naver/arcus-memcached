@@ -133,7 +133,7 @@ struct default_engine {
    GET_SERVER_API get_server_api;
 
    /**
-    * Is the engine initalized or not
+    * Is the engine initialized or not
     */
    volatile bool initialized;
 
