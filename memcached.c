@@ -12372,6 +12372,84 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
     }
 }
 
+static size_t attr_to_printable_buffer(char *ptr, ENGINE_ITEM_ATTR attr_id, item_attr *attr_datap) {
+    if (attr_id == ATTR_TYPE)
+        sprintf(ptr, "ATTR type=%s\r\n", get_item_type_str(attr_datap->type));
+    else if (attr_id == ATTR_FLAGS)
+        sprintf(ptr, "ATTR flags=%u\r\n", htonl(attr_datap->flags));
+    else if (attr_id == ATTR_EXPIRETIME)
+        sprintf(ptr, "ATTR expiretime=%d\r\n", (int32_t)attr_datap->exptime);
+    else if (attr_id == ATTR_COUNT)
+        sprintf(ptr, "ATTR count=%d\r\n", attr_datap->count);
+    else if (attr_id == ATTR_MAXCOUNT)
+        sprintf(ptr, "ATTR maxcount=%d\r\n", attr_datap->maxcount);
+    else if (attr_id == ATTR_OVFLACTION)
+        sprintf(ptr, "ATTR overflowaction=%s\r\n", get_ovflaction_str(attr_datap->ovflaction));
+    else if (attr_id == ATTR_READABLE)
+        sprintf(ptr, "ATTR readable=%s\r\n", (attr_datap->readable ? "on" : "off"));
+    else if (attr_id == ATTR_MAXBKEYRANGE) {
+        if (attr_datap->maxbkeyrange.len == BKEY_NULL) {
+            sprintf(ptr, "ATTR maxbkeyrange=0\r\n");
+        } else {
+            if (attr_datap->maxbkeyrange.len == 0) {
+                uint64_t bkey_temp;
+                memcpy((unsigned char*)&bkey_temp, attr_datap->maxbkeyrange.val, sizeof(uint64_t));
+                sprintf(ptr, "ATTR maxbkeyrange=%"PRIu64"\r\n", bkey_temp);
+                //sprintf(ptr, "ATTR maxbkeyrange=%"PRIu64"\r\n", *(uint64_t*)attr_datap->maxbkeyrange.val);
+            } else {
+                char *ptr_temp = ptr;
+                sprintf(ptr_temp, "ATTR maxbkeyrange=0x");
+                ptr_temp += strlen(ptr_temp);
+                safe_hexatostr(attr_datap->maxbkeyrange.val, attr_datap->maxbkeyrange.len, ptr_temp);
+                ptr_temp += strlen(ptr_temp);
+                sprintf(ptr_temp, "\r\n");
+            }
+        }
+    }
+    else if (attr_id == ATTR_MINBKEY) {
+        if (attr_datap->count > 0) {
+            if (attr_datap->minbkey.len == 0) {
+                uint64_t bkey_temp;
+                memcpy((unsigned char*)&bkey_temp, attr_datap->minbkey.val, sizeof(uint64_t));
+                sprintf(ptr, "ATTR minbkey=%"PRIu64"\r\n", bkey_temp);
+                //sprintf(ptr, "ATTR minbkey=%"PRIu64"\r\n", *(uint64_t*)attr_datap->minbkey.val);
+            } else {
+                char *ptr_temp = ptr;
+                sprintf(ptr_temp, "ATTR minbkey=0x");
+                ptr_temp += strlen(ptr_temp);
+                safe_hexatostr(attr_datap->minbkey.val, attr_datap->minbkey.len, ptr_temp);
+                ptr_temp += strlen(ptr_temp);
+                sprintf(ptr_temp, "\r\n");
+            }
+        } else {
+            sprintf(ptr, "ATTR minbkey=-1\r\n");
+        }
+    }
+    else if (attr_id == ATTR_MAXBKEY) {
+        if (attr_datap->count > 0) {
+            if (attr_datap->maxbkey.len == 0) {
+                uint64_t bkey_temp;
+                memcpy((unsigned char*)&bkey_temp, attr_datap->maxbkey.val, sizeof(uint64_t));
+                sprintf(ptr, "ATTR maxbkey=%"PRIu64"\r\n", bkey_temp);
+                //sprintf(ptr, "ATTR maxbkey=%"PRIu64"\r\n", *(uint64_t*)attr_datap->maxbkey.val);
+            } else {
+                char *ptr_temp = ptr;
+                sprintf(ptr_temp, "ATTR maxbkey=0x");
+                ptr_temp += strlen(ptr_temp);
+                safe_hexatostr(attr_datap->maxbkey.val, attr_datap->maxbkey.len, ptr_temp);
+                ptr_temp += strlen(ptr_temp);
+                sprintf(ptr_temp, "\r\n");
+            }
+        } else {
+            sprintf(ptr, "ATTR maxbkey=-1\r\n");
+        }
+    }
+    else if (attr_id == ATTR_TRIMMED)
+        sprintf(ptr, "ATTR trimmed=%u\r\n", (attr_datap->trimmed != 0 ? 1 : 0));
+
+    return strlen(ptr);
+}
+
 static void process_getattr_command(conn *c, token_t *tokens, const size_t ntokens) {
     assert(c != NULL);
     char   *key = tokens[KEY_TOKEN].value;
@@ -12382,6 +12460,7 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
         return;
     }
 
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     item_attr attr_data;
     ENGINE_ITEM_ATTR attr_ids[ATTR_END];
     uint32_t attr_count = 0;
@@ -12405,17 +12484,17 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
             else break;
         }
         if (i < ntokens-1) {
-            out_string(c, "ATTR_ERROR not found");
-            return;
+            ret = ENGINE_EBADATTR;
         }
     }
 
-    ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->getattr(mc_engine.v0, c, key, nkey,
-                                attr_ids, attr_count, &attr_data, 0);
+    if (ret == ENGINE_SUCCESS) {
+        ret = mc_engine.v1->getattr(mc_engine.v0, c, key, nkey,
+                                    attr_ids, attr_count, &attr_data, 0);
 
-    if (settings.detail_enabled) {
-        stats_prefix_record_getattr(key, nkey);
+        if (settings.detail_enabled) {
+            stats_prefix_record_getattr(key, nkey);
+        }
     }
 
     switch (ret) {
@@ -12429,156 +12508,23 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
 
         if (attr_count > 0) {
             for (i = 0; i < attr_count; i++) {
-                if (attr_ids[i] == ATTR_TYPE)
-                    sprintf(ptr, "ATTR type=%s\r\n", get_item_type_str(attr_data.type));
-                else if (attr_ids[i] == ATTR_FLAGS)
-                    sprintf(ptr, "ATTR flags=%u\r\n", htonl(attr_data.flags));
-                else if (attr_ids[i] == ATTR_EXPIRETIME)
-                    sprintf(ptr, "ATTR expiretime=%d\r\n", (int32_t)attr_data.exptime);
-                else if (attr_ids[i] == ATTR_COUNT)
-                    sprintf(ptr, "ATTR count=%d\r\n", attr_data.count);
-                else if (attr_ids[i] == ATTR_MAXCOUNT)
-                    sprintf(ptr, "ATTR maxcount=%d\r\n", attr_data.maxcount);
-                else if (attr_ids[i] == ATTR_OVFLACTION)
-                    sprintf(ptr, "ATTR overflowaction=%s\r\n", get_ovflaction_str(attr_data.ovflaction));
-                else if (attr_ids[i] == ATTR_READABLE)
-                    sprintf(ptr, "ATTR readable=%s\r\n", (attr_data.readable ? "on" : "off"));
-                else if (attr_ids[i] == ATTR_MAXBKEYRANGE) {
-                    if (attr_data.maxbkeyrange.len == BKEY_NULL) {
-                        sprintf(ptr, "ATTR maxbkeyrange=0\r\n");
-                    } else {
-                        if (attr_data.maxbkeyrange.len == 0) {
-                            uint64_t bkey_temp;
-                            memcpy((unsigned char*)&bkey_temp, attr_data.maxbkeyrange.val, sizeof(uint64_t));
-                            sprintf(ptr, "ATTR maxbkeyrange=%"PRIu64"\r\n", bkey_temp);
-                            //sprintf(ptr, "ATTR maxbkeyrange=%"PRIu64"\r\n", *(uint64_t*)attr_data.maxbkeyrange.val);
-                        } else {
-                            sprintf(ptr, "ATTR maxbkeyrange=0x");
-                            ptr += strlen(ptr);
-                            safe_hexatostr(attr_data.maxbkeyrange.val, attr_data.maxbkeyrange.len, ptr);
-                            ptr += strlen(ptr);
-                            sprintf(ptr, "\r\n");
-                        }
-                    }
-                }
-                else if (attr_ids[i] == ATTR_MINBKEY) {
-                    if (attr_data.count > 0) {
-                        if (attr_data.minbkey.len == 0) {
-                            uint64_t bkey_temp;
-                            memcpy((unsigned char*)&bkey_temp, attr_data.minbkey.val, sizeof(uint64_t));
-                            sprintf(ptr, "ATTR minbkey=%"PRIu64"\r\n", bkey_temp);
-                            //sprintf(ptr, "ATTR minbkey=%"PRIu64"\r\n", *(uint64_t*)attr_data.minbkey.val);
-                        } else {
-                            sprintf(ptr, "ATTR minbkey=0x");
-                            ptr += strlen(ptr);
-                            safe_hexatostr(attr_data.minbkey.val, attr_data.minbkey.len, ptr);
-                            ptr += strlen(ptr);
-                            sprintf(ptr, "\r\n");
-                        }
-                    } else {
-                        sprintf(ptr, "ATTR minbkey=-1\r\n");
-                    }
-                }
-                else if (attr_ids[i] == ATTR_MAXBKEY) {
-                    if (attr_data.count > 0) {
-                        if (attr_data.maxbkey.len == 0) {
-                            uint64_t bkey_temp;
-                            memcpy((unsigned char*)&bkey_temp, attr_data.maxbkey.val, sizeof(uint64_t));
-                            sprintf(ptr, "ATTR maxbkey=%"PRIu64"\r\n", bkey_temp);
-                            //sprintf(ptr, "ATTR maxbkey=%"PRIu64"\r\n", *(uint64_t*)attr_data.maxbkey.val);
-                        } else {
-                            sprintf(ptr, "ATTR maxbkey=0x");
-                            ptr += strlen(ptr);
-                            safe_hexatostr(attr_data.maxbkey.val, attr_data.maxbkey.len, ptr);
-                            ptr += strlen(ptr);
-                            sprintf(ptr, "\r\n");
-                        }
-                    } else {
-                        sprintf(ptr, "ATTR maxbkey=-1\r\n");
-                    }
-                }
-                else if (attr_ids[i] == ATTR_TRIMMED)
-                    sprintf(ptr, "ATTR trimmed=%u\r\n", (attr_data.trimmed != 0 ? 1 : 0));
-                ptr += strlen(ptr);
+                ptr += attr_to_printable_buffer(ptr, attr_ids[i], &attr_data);
             }
         } else { /* attr_count == 0 */
-            sprintf(ptr, "ATTR type=%s\r\n", get_item_type_str(attr_data.type));
-            ptr += strlen(ptr);
-            sprintf(ptr, "ATTR flags=%u\r\n", htonl(attr_data.flags));
-            ptr += strlen(ptr);
-            sprintf(ptr, "ATTR expiretime=%d\r\n", (int32_t)attr_data.exptime);
-            ptr += strlen(ptr);
-#ifdef MAP_COLLECTION_SUPPORT
-            if (attr_data.type == ITEM_TYPE_LIST || attr_data.type == ITEM_TYPE_SET ||
-                attr_data.type == ITEM_TYPE_MAP || attr_data.type == ITEM_TYPE_BTREE) {
-#else
-            if (attr_data.type == ITEM_TYPE_LIST || attr_data.type == ITEM_TYPE_SET ||
-                attr_data.type == ITEM_TYPE_BTREE) {
-#endif
-                sprintf(ptr, "ATTR count=%d\r\n", attr_data.count);
-                ptr += strlen(ptr);
-                sprintf(ptr, "ATTR maxcount=%d\r\n", attr_data.maxcount);
-                ptr += strlen(ptr);
-                sprintf(ptr, "ATTR overflowaction=%s\r\n", get_ovflaction_str(attr_data.ovflaction));
-                ptr += strlen(ptr);
-                sprintf(ptr, "ATTR readable=%s\r\n", (attr_data.readable ? "on" : "off"));
-                ptr += strlen(ptr);
+            ptr += attr_to_printable_buffer(ptr, ATTR_TYPE, &attr_data);
+            ptr += attr_to_printable_buffer(ptr, ATTR_FLAGS, &attr_data);
+            ptr += attr_to_printable_buffer(ptr, ATTR_EXPIRETIME, &attr_data);
+            if (attr_data.type != ITEM_TYPE_KV) { /* collection_item */
+                ptr += attr_to_printable_buffer(ptr, ATTR_COUNT, &attr_data);
+                ptr += attr_to_printable_buffer(ptr, ATTR_MAXCOUNT, &attr_data);
+                ptr += attr_to_printable_buffer(ptr, ATTR_OVFLACTION, &attr_data);
+                ptr += attr_to_printable_buffer(ptr, ATTR_READABLE, &attr_data);
             }
             if (attr_data.type == ITEM_TYPE_BTREE) {
-                if (attr_data.maxbkeyrange.len == BKEY_NULL) {
-                    sprintf(ptr, "ATTR maxbkeyrange=0\r\n");
-                } else {
-                    if (attr_data.maxbkeyrange.len == 0) {
-                        uint64_t bkey_temp;
-                        memcpy((unsigned char*)&bkey_temp, attr_data.maxbkeyrange.val, sizeof(uint64_t));
-                        sprintf(ptr, "ATTR maxbkeyrange=%"PRIu64"\r\n", bkey_temp);
-                        //sprintf(ptr, "ATTR maxbkeyrange=%"PRIu64"\r\n", *(uint64_t*)attr_data.maxbkeyrange.val);
-                    } else {
-                        sprintf(ptr, "ATTR maxbkeyrange=0x");
-                        ptr += strlen(ptr);
-                        safe_hexatostr(attr_data.maxbkeyrange.val, attr_data.maxbkeyrange.len, ptr);
-                        ptr += strlen(ptr);
-                        sprintf(ptr, "\r\n");
-                    }
-                }
-                ptr += strlen(ptr);
-                if (attr_data.count > 0) {
-                    if (attr_data.minbkey.len == 0) {
-                        uint64_t bkey_temp;
-                        memcpy((unsigned char*)&bkey_temp, attr_data.minbkey.val, sizeof(uint64_t));
-                        sprintf(ptr, "ATTR minbkey=%"PRIu64"\r\n", bkey_temp);
-                        //sprintf(ptr, "ATTR minbkey=%"PRIu64"\r\n", *(uint64_t*)attr_data.minbkey.val);
-                    } else {
-                        sprintf(ptr, "ATTR minbkey=0x");
-                        ptr += strlen(ptr);
-                        safe_hexatostr(attr_data.minbkey.val, attr_data.minbkey.len, ptr);
-                        ptr += strlen(ptr);
-                        sprintf(ptr, "\r\n");
-                    }
-                } else {
-                    sprintf(ptr, "ATTR minbkey=-1\r\n");
-                }
-
-                ptr += strlen(ptr);
-                if (attr_data.count > 0) {
-                    if (attr_data.maxbkey.len == 0) {
-                        uint64_t bkey_temp;
-                        memcpy((unsigned char*)&bkey_temp, attr_data.maxbkey.val, sizeof(uint64_t));
-                        sprintf(ptr, "ATTR maxbkey=%"PRIu64"\r\n", bkey_temp);
-                        //sprintf(ptr, "ATTR maxbkey=%"PRIu64"\r\n", *(uint64_t*)attr_data.maxbkey.val);
-                    } else {
-                        sprintf(ptr, "ATTR maxbkey=0x");
-                        ptr += strlen(ptr);
-                        safe_hexatostr(attr_data.maxbkey.val, attr_data.maxbkey.len, ptr);
-                        ptr += strlen(ptr);
-                        sprintf(ptr, "\r\n");
-                    }
-                } else {
-                    sprintf(ptr, "ATTR maxbkey=-1\r\n");
-                }
-                ptr += strlen(ptr);
-                sprintf(ptr, "ATTR trimmed=%u\r\n", (attr_data.trimmed != 0 ? 1 : 0));
-                ptr += strlen(ptr);
+                ptr += attr_to_printable_buffer(ptr, ATTR_MAXBKEYRANGE, &attr_data);
+                ptr += attr_to_printable_buffer(ptr, ATTR_MINBKEY, &attr_data);
+                ptr += attr_to_printable_buffer(ptr, ATTR_MAXBKEY, &attr_data);
+                ptr += attr_to_printable_buffer(ptr, ATTR_TRIMMED, &attr_data);
             }
         }
         sprintf(ptr, "END");
@@ -12611,6 +12557,7 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
         return;
     }
 
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     item_attr attr_data;
     ENGINE_ITEM_ATTR attr_ids[ATTR_END];
     uint32_t attr_count = 0;
@@ -12618,18 +12565,27 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
     char *name, *value, *equal;
 
     for (i = KEY_TOKEN+1; i < ntokens-1; i++) {
-        if ((equal = strchr(tokens[i].value, '=')) == NULL) break;
+        if ((equal = strchr(tokens[i].value, '=')) == NULL) {
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
         *equal = '\0';
         name = tokens[i].value; value = equal + 1;
 
         if (strcmp(name, "expiretime")==0) {
             int32_t exptime_int;
             attr_ids[attr_count++] = ATTR_EXPIRETIME;
-            if (! safe_strtol(value, &exptime_int)) break;
+            if (! safe_strtol(value, &exptime_int)) {
+                ret = ENGINE_EBADVALUE;
+                break;
+            }
             attr_data.exptime = realtime(exptime_int);
         } else if (strcmp(name, "maxcount")==0) {
             attr_ids[attr_count++] = ATTR_MAXCOUNT;
-            if (! safe_strtol(value, &attr_data.maxcount)) break;
+            if (! safe_strtol(value, &attr_data.maxcount)) {
+                ret = ENGINE_EBADVALUE;
+                break;
+            }
         } else if (strcmp(name, "overflowaction")==0) {
             attr_ids[attr_count++] = ATTR_OVFLACTION;
             if (strcmp(value, "error")==0)
@@ -12647,23 +12603,23 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
             else if (strcmp(value, "largest_silent_trim")==0)
                 attr_data.ovflaction = OVFL_LARGEST_SILENT_TRIM;
             else {
-                out_string(c, "ATTR_ERROR bad value");
-                return;
+                ret = ENGINE_EBADVALUE;
+                break;
             }
         } else if (strcmp(name, "readable")==0) {
             attr_ids[attr_count++] = ATTR_READABLE;
             if (strcmp(value, "on")==0)
                 attr_data.readable = 1;
             else {
-                out_string(c, "ATTR_ERROR bad value");
-                return;
+                ret = ENGINE_EBADVALUE;
+                break;
             }
         } else if (strcmp(name, "maxbkeyrange")==0) {
             int length;
             length = get_bkey_from_str(value, attr_data.maxbkeyrange.val);
             if (length == -1) {
-                out_string(c, "ATTR_ERROR bad value");
-                return;
+                ret = ENGINE_EBADVALUE;
+                break;
             }
             attr_data.maxbkeyrange.len = (uint8_t)length;
             if (attr_data.maxbkeyrange.len == 0) {
@@ -12678,21 +12634,22 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
             break;
         }
     }
-    if (i < ntokens-1) {
-        out_string(c, "ATTR_ERROR not found");
-        return;
+    if (i < ntokens-1 && ret == ENGINE_SUCCESS) {
+        ret = ENGINE_EBADATTR;
     }
 
-    ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->setattr(mc_engine.v0, c, key, nkey,
-                                attr_ids, attr_count, &attr_data, 0);
-    if (ret == ENGINE_EWOULDBLOCK) {
-        c->ewouldblock = true;
-        ret = ENGINE_SUCCESS;
-    }
+    if (ret == ENGINE_SUCCESS) {
+        ret = mc_engine.v1->setattr(mc_engine.v0, c, key, nkey,
+                                    attr_ids, attr_count, &attr_data, 0);
 
-    if (settings.detail_enabled) {
-        stats_prefix_record_setattr(key, nkey);
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
+
+        if (settings.detail_enabled) {
+            stats_prefix_record_setattr(key, nkey);
+        }
     }
 
     switch (ret) {
@@ -12811,7 +12768,7 @@ static void process_command(conn *c, char *command, int cmdlen)
     {
         process_bop_command(c, tokens, ntokens);
     }
-    else if ((ntokens >= 3 && ntokens <= 11) && (strcmp(tokens[COMMAND_TOKEN].value, "getattr") == 0))
+    else if ((ntokens >= 3 && ntokens <= 14) && (strcmp(tokens[COMMAND_TOKEN].value, "getattr") == 0))
     {
         process_getattr_command(c, tokens, ntokens);
     }
