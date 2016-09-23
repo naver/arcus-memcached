@@ -2300,8 +2300,10 @@ static ENGINE_ERROR_CODE do_set_elem_insert(struct default_engine *engine,
         if (new_root_flag) {
             do_set_node_unlink(engine, info, NULL, 0);
         }
+        return ret;
     }
-    return ret;
+
+    return ENGINE_SUCCESS;
 }
 
 /*
@@ -4602,8 +4604,10 @@ static ENGINE_ERROR_CODE do_btree_elem_insert(struct default_engine *engine,
         if (new_root_flag) {
             do_btree_node_unlink(engine, info, info->root, NULL);
         }
+        return ret;
     }
-    return ret;
+
+    return ENGINE_SUCCESS;
 }
 
 static ENGINE_ERROR_CODE do_btree_elem_arithmetic(struct default_engine *engine, btree_meta_info *info,
@@ -8818,8 +8822,10 @@ static ENGINE_ERROR_CODE do_map_elem_insert(struct default_engine *engine,
         if (new_root_flag) {
             do_map_node_unlink(engine, info, NULL, 0);
         }
+        return ret;
     }
-    return ret;
+
+    return ENGINE_SUCCESS;
 }
 
 /*
