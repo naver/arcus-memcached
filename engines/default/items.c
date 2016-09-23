@@ -1616,7 +1616,9 @@ static uint32_t do_list_elem_delete(struct default_engine *engine,
 {
     uint32_t fcnt = 0;
     list_elem_item *next;
-    list_elem_item *elem = do_list_elem_find(info, index);
+    list_elem_item *elem;
+
+    elem = do_list_elem_find(info, index);
     while (elem != NULL) {
         next = elem->next;
         fcnt++;
@@ -1635,7 +1637,9 @@ static uint32_t do_list_elem_get(struct default_engine *engine,
 {
     uint32_t fcnt = 0; /* found count */
     list_elem_item *tobe;
-    list_elem_item *elem = do_list_elem_find(info, index);
+    list_elem_item *elem;
+
+    elem = do_list_elem_find(info, index);
     while (elem != NULL) {
         tobe = (forward ? elem->next : elem->prev);
         elem->refcount++;
@@ -7647,6 +7651,11 @@ const void* item_get_key(const hash_item* item)
     return ret;
 }
 
+char* item_get_data(const hash_item* item)
+{
+    return ((char*)item_get_key(item)) + item->nkey;
+}
+
 const void* item_get_meta(const hash_item* item)
 {
     if (IS_COLL_ITEM(item))
@@ -7656,15 +7665,12 @@ const void* item_get_meta(const hash_item* item)
         return NULL;
 }
 
-char* item_get_data(const hash_item* item)
-{
-    return ((char*)item_get_key(item)) + item->nkey;
-}
-
+/****
 uint8_t item_get_clsid(const hash_item* item)
 {
     return 0;
 }
+****/
 
 /*
  * Check linked status
