@@ -652,7 +652,7 @@ uint8_t  btree_real_nbkey(uint8_t nbkey);
  * Item scrubber
  */
 bool item_start_scrub(struct default_engine *engine, int mode);
-void item_onoff_scrub(struct default_engine *engine, bool val);
+bool item_onoff_scrub(struct default_engine *engine, bool val);
 void item_stats_scrub(struct default_engine *engine,
                       ADD_STAT add_stat, const void *cookie);
 

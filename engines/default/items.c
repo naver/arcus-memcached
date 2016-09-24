@@ -7860,15 +7860,19 @@ bool item_start_scrub(struct default_engine *engine, int mode)
     return ret;
 }
 
-void item_onoff_scrub(struct default_engine *engine, bool val)
+bool item_onoff_scrub(struct default_engine *engine, bool val)
 {
+    bool old_val;
+
     pthread_mutex_lock(&engine->scrubber.lock);
     /* The scrubber can be disabled even if it is running.
      * The on-going scrubbing continues its task. But, the next
      * scrubbing cannot be started until it is enabled again.
      */
+    old_val = engine->scrubber.enabled;
     engine->scrubber.enabled = val;
     pthread_mutex_unlock(&engine->scrubber.lock);
+    return old_val;
 }
 
 void item_stats_scrub(struct default_engine *engine,
