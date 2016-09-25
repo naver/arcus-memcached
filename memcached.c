@@ -8632,6 +8632,35 @@ static void process_hbfailstop_command(conn *c, token_t *tokens, const size_t nt
         out_string(c, "CLIENT_ERROR bad command line format");
     }
 }
+
+static void process_zkensemble_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    assert(c != NULL);
+
+    if (arcus_zk_cfg == NULL) {
+        out_string(c, "ERROR not using ZooKeeper");
+        return;
+    }
+    if (ntokens == 3) { /* old command : show_zk_ensemble */
+        char buf[1024];
+
+        if (arcus_zk_get_ensemble(buf, sizeof(buf)-16) != 0) {
+            out_string(c, "ERROR failed to get the ensemble address");
+        } else {
+            strcat(buf, "\r\n\n");
+            out_string(c, buf);
+        }
+    } else { /* old command: set_zk_ensemble */
+        /* The ensemble is a comma separated list of host:port addresses.
+         * host1:port1,host2:port2,...
+         */
+        if (arcus_zk_set_ensemble(tokens[COMMAND_TOKEN+1].value) != 0) {
+            out_string(c, "ERROR failed to set the new ensemble address (check logs)");
+        } else {
+            out_string(c, "OK");
+        }
+    }
+}
 #endif
 
 #ifdef CONFIG_API
@@ -8882,6 +8911,11 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     {
         process_hbfailstop_command(c, tokens, ntokens);
     }
+    else if ((ntokens == 3 || ntokens == 4) &&
+             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "zkensemble") == 0))
+    {
+        process_zkensemble_command(c, tokens, ntokens);
+    }
 #endif
 #ifdef CONFIG_API
 #else
@@ -8932,37 +8966,6 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     }
 #endif
 }
-
-#ifdef ENABLE_ZK_INTEGRATION
-static void process_zk_ensemble_command(conn *c, token_t *tokens, const size_t ntokens)
-{
-    assert(ntokens == 2 || ntokens == 3);
-
-    if (arcus_zk_cfg == NULL) {
-        out_string(c, "ERROR not using ZooKeeper");
-        return;
-    }
-    if (ntokens == 3) { /* set_zk_ensemble */
-        /* The ensemble is a comma separated list of host:port addresses.
-         * host1:port1,host2:port2,...
-         */
-        if (arcus_zk_set_ensemble(tokens[COMMAND_TOKEN+1].value) != 0) {
-            out_string(c, "ERROR failed to set the new ensemble address (check logs)");
-        } else {
-            out_string(c, "OK");
-        }
-    } else { /* ntokens == 2: show_zk_ensemble */
-        char buf[1024];
-
-        if (arcus_zk_get_ensemble_str(buf, sizeof(buf)-16) != 0) {
-            out_string(c, "ERROR failed to get the ensemble address");
-        } else {
-            strcat(buf, "\r\n\n");
-            out_string(c, buf);
-        }
-    }
-}
-#endif
 
 #ifdef JHPARK_KEY_DUMP
 static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
@@ -12785,16 +12788,6 @@ static void process_command(conn *c, char *command, int cmdlen)
     {
         process_config_command(c, tokens, ntokens);
     }
-#ifdef ENABLE_ZK_INTEGRATION
-    else if ((ntokens == 3) && (strcmp(tokens[COMMAND_TOKEN].value, "set_zk_ensemble") == 0))
-    {
-        process_zk_ensemble_command(c, tokens, ntokens);
-    }
-    else if ((ntokens == 2) && (strcmp(tokens[COMMAND_TOKEN].value, "show_zk_ensemble") == 0))
-    {
-        process_zk_ensemble_command(c, tokens, ntokens);
-    }
-#endif
     else if ((ntokens == 2) && (strcmp(tokens[COMMAND_TOKEN].value, "version") == 0))
     {
         out_string(c, "VERSION " VERSION);

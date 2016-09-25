@@ -1249,7 +1249,7 @@ int arcus_zk_set_ensemble(char *ensemble_list)
     return -1;
 }
 
-int arcus_zk_get_ensemble_str(char *buf, int size)
+int arcus_zk_get_ensemble(char *buf, int size)
 {
     int rc;
     if (zh) {

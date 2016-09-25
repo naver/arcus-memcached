@@ -44,7 +44,7 @@ void arcus_zk_final(const char *msg);
 void arcus_zk_destroy(void);
 
 int  arcus_zk_set_ensemble(char *ensemble_list);
-int  arcus_zk_get_ensemble_str(char *buf, int size);
+int  arcus_zk_get_ensemble(char *buf, int size);
 int  arcus_zk_set_hbtimeout(int hbtimeout);
 int  arcus_zk_get_hbtimeout(void);
 int  arcus_zk_set_hbfailstop(int hbfailstop);
