@@ -8677,7 +8677,8 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
     }
 }
 
-#ifndef CONFIG_API
+#ifdef CONFIG_API
+#else
 static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntokens) {
     unsigned int mlimit;
     assert(c != NULL);
@@ -8750,8 +8751,9 @@ static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntok
     }
 }
 
+#ifdef CONFIG_API
+#else
 #ifdef CONFIG_MAX_COLLECTION_SIZE
-#ifndef CONFIG_API
 static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t ntokens,
                                         int coll_type)
 {
@@ -8873,43 +8875,6 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     {
         process_maxconns_command(c, tokens, ntokens);
     }
-#ifndef CONFIG_API
-    else if ((ntokens == 3 || ntokens == 4) &&
-             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "memlimit") == 0))
-    {
-        process_memlimit_command(c, tokens, ntokens);
-    }
-#endif
-#ifdef CONFIG_MAX_COLLECTION_SIZE
-#ifndef CONFIG_API
-    else if ((ntokens == 3 || ntokens == 4) &&
-             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_list_size") == 0))
-    {
-        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_LIST);
-    }
-    else if ((ntokens == 3 || ntokens == 4) &&
-             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_set_size") == 0))
-    {
-        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_SET);
-    }
-#endif
-#ifdef MAP_COLLECTION_SUPPORT
-#ifndef CONFIG_API
-    else if ((ntokens == 3 || ntokens == 4) &&
-             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_map_size") == 0))
-    {
-        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_MAP);
-    }
-#endif
-#endif
-#ifndef CONFIG_API
-    else if ((ntokens == 3 || ntokens == 4) &&
-             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_btree_size") == 0))
-    {
-        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_BTREE);
-    }
-#endif
-#endif
 #ifdef ENABLE_ZK_INTEGRATION
     else if ((ntokens == 3 || ntokens == 4) &&
              (strcmp(tokens[SUBCOMMAND_TOKEN].value, "hbtimeout") == 0))
@@ -8921,6 +8886,38 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     {
         process_hbfailstop_command(c, tokens, ntokens);
     }
+#endif
+#ifdef CONFIG_API
+#else
+    else if ((ntokens == 3 || ntokens == 4) &&
+             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "memlimit") == 0))
+    {
+        process_memlimit_command(c, tokens, ntokens);
+    }
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+    else if ((ntokens == 3 || ntokens == 4) &&
+             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_list_size") == 0))
+    {
+        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_LIST);
+    }
+    else if ((ntokens == 3 || ntokens == 4) &&
+             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_set_size") == 0))
+    {
+        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_SET);
+    }
+#ifdef MAP_COLLECTION_SUPPORT
+    else if ((ntokens == 3 || ntokens == 4) &&
+             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_map_size") == 0))
+    {
+        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_MAP);
+    }
+#endif
+    else if ((ntokens == 3 || ntokens == 4) &&
+             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_btree_size") == 0))
+    {
+        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_BTREE);
+    }
+#endif
 #endif
     else if ((ntokens == 3 || ntokens == 4) &&
              (strcmp(tokens[SUBCOMMAND_TOKEN].value, "verbosity") == 0))

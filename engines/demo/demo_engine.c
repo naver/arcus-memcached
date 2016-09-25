@@ -706,7 +706,7 @@ Demo_get_prefix_stats(ENGINE_HANDLE* handle, const void* cookie,
 #ifdef CONFIG_API
 static ENGINE_ERROR_CODE
 Demo_set_config(ENGINE_HANDLE* handle, const void* cookie,
-                const char* config_type, const void* config_value)
+                const char* config_type, void* config_value)
 {
     return ENGINE_ENOTSUP;
 }

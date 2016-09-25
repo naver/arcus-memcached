@@ -653,8 +653,20 @@ extern "C" {
                                               void *prefix_data);
 
 #ifdef CONFIG_API
+        /**
+         * Set engine config.
+         *
+         * @param handle the engine handle
+         * @param cookie The cookie provided by the frontend
+         * @param config_key config key
+         * @param config_value config value
+         *
+         * @return ENGINE_SUCCESS if all goes well.
+         *         ENGINE_EBADVALUE if given value is not valid.
+         *         ENGINE_ENOTSUP if given config is not supported.
+         */
         ENGINE_ERROR_CODE (*set_config)(ENGINE_HANDLE* handle, const void* cookie,
-                                        const char* config_key, const void* config_value);
+                                        const char* config_key, void* config_value);
 #else
 
         ENGINE_ERROR_CODE (*set_memlimit)(ENGINE_HANDLE* handle, const void *cookie,

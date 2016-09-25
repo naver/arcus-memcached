@@ -1147,18 +1147,16 @@ default_dump(ENGINE_HANDLE* handle, const void* cookie,
 /*
  * Config API
  */
-
 #ifdef CONFIG_API
 static ENGINE_ERROR_CODE
 default_set_config(ENGINE_HANDLE* handle, const void* cookie,
-                   const char* config_key, const void* config_value)
+                   const char* config_key, void* config_value)
 {
     struct default_engine* engine = get_handle(handle);
     ENGINE_ERROR_CODE ret;
 
     if (strcmp(config_key, "memlimit") == 0) {
         size_t new_maxbytes = *(size_t*)config_value;
-
         pthread_mutex_lock(&engine->cache_lock);
         ret = slabs_set_memlimit(engine, new_maxbytes);
         if (ret == ENGINE_SUCCESS) {
@@ -1170,32 +1168,29 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
 #endif
         }
         pthread_mutex_unlock(&engine->cache_lock);
-
+    }
 #ifdef CONFIG_MAX_COLLECTION_SIZE
-    } else { /* list, set, map, btree */
-        int32_t maxsize = *(int32_t*)config_value;
-
-        if (strcmp(config_key, "max_list_size") == 0) {
-            ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_LIST, &maxsize);
-        } else if (strcmp(config_key, "max_set_size") == 0) {
-            ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_SET, &maxsize);
+    else if (strcmp(config_key, "max_list_size") == 0) {
+        ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_LIST, (int*)config_value);
+    }
+    else if (strcmp(config_key, "max_set_size") == 0) {
+        ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_SET, (int*)config_value);
+    }
 #ifdef MAP_COLLECTION_SUPPORT
-        } else if (strcmp(config_key, "max_map_size") == 0) {
-            ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_MAP, &maxsize);
+    else if (strcmp(config_key, "max_map_size") == 0) {
+        ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_MAP, (int*)config_value);
+    }
 #endif
-        } else if (strcmp(config_key, "max_btree_size") == 0) {
-            ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_BTREE, &maxsize);
-        } else {
-            return ENGINE_EINVAL;
-        }
-
-        *(int32_t*)config_value = maxsize;
+    else if (strcmp(config_key, "max_btree_size") == 0) {
+        ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_BTREE, (int*)config_value);
+    }
 #endif
+    else {
+        ret = ENGINE_ENOTSUP;
     }
     return ret;
 }
 #else
-
 static ENGINE_ERROR_CODE
 default_set_memlimit(ENGINE_HANDLE* handle, const void* cookie,
                      const size_t memlimit)
