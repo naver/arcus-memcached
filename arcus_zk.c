@@ -854,7 +854,71 @@ static int arcus_build_znode_name(char *ensemble_list)
     return 0; // EX_OK
 }
 
-static int arcus_get_service_code(zhandle_t *zh, const char *root)
+/* Some znode names use '^' as a delimiter.
+ * Return pointers to the starting and ending ('^') characters.
+ */
+static int
+breakup_string(char *str, char *start[], char *end[], int vec_len)
+{
+    char *c = str;
+    int i = 0;
+    while (i < vec_len) {
+        start[i] = c;
+        while (*c != '\0') {
+            if (*c == '^')
+                break;
+            c++;
+        }
+        if (*c == '\0') {
+            end[i] = c;
+            i++;
+            break;
+        }
+        if (start[i] == c)
+            break; /* empty */
+        end[i] = c++;
+        i++;
+    }
+    if (*c != '\0') {
+        /* There are leftover characters.
+         * Ignore them.
+         */
+    }
+    return i; /* i <= vec_len */
+}
+
+static int arcus_parse_server_mapping(const char *root, char *znode)
+{
+    char *start[4], *end[4]; /* enough pointers for future extension */
+    int num_substrs = 1; /* sevice code */
+    int i, count;
+
+    count = breakup_string(znode, start, end, num_substrs);
+    if (count < num_substrs) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "The server mapping znode seems to be invalid. znode=%s\n", znode);
+        return -1;
+    }
+    /* Null-terminate substrings */
+    for (i = 0; i < count; i++) {
+        *end[i] = '\0';
+    }
+
+    /* get service code */
+    arcus_conf.svc = strdup(start[0]);
+    if (strlen(arcus_conf.svc) > MAX_SERVICECODE_LENGTH) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Too long service code. service_code=%s\n", arcus_conf.svc);
+        return -1;
+    }
+
+    arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Found the valid server mapping. service_code=%s\n",
+            arcus_conf.svc);
+    return 0;
+}
+
+static int arcus_check_server_mapping(zhandle_t *zh, const char *root)
 {
     struct String_vector strv = {0, NULL};
     char zpath[200];
@@ -919,10 +983,9 @@ static int arcus_get_service_code(zhandle_t *zh, const char *root)
                 " zpath=%s\n", strv.count, zpath);
         return -1;
     }
-    arcus_conf.svc = strdup(strv.data[0]);
-    if (arcus_conf.svc == NULL) {
+    if (arcus_parse_server_mapping(root, strv.data[0]) < 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Failed to allocate service code string\n");
+                "Failed to parse server mapping znode.\n");
         return -1;
     }
 
@@ -1068,17 +1131,10 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     /* check zk root directory and get the serice code */
     if (zk_root == NULL) {
         zk_root = "/arcus"; /* set zk root directory */
-
-        /* Retrieve the service code for this cache node */
-        if (arcus_get_service_code(zh, zk_root) != 0) {
+        if (arcus_check_server_mapping(zh, zk_root) != 0) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                     "Failed to get the service code for this cache node.\n");
-            arcus_exit(zh, EX_PROTOCOL);
-        }
-        assert(arcus_conf.svc != NULL);
-        if (strlen(arcus_conf.svc) > MAX_SERVICECODE_LENGTH) {
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                     "Too long service code. servicecode=%s\n", arcus_conf.svc);
+                     "Failed to check server mapping for this cache node. "
+                     "(zk_root=%s)\n", zk_root);
             arcus_exit(zh, EX_PROTOCOL);
         }
     }
