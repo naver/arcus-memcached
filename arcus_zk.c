@@ -218,6 +218,39 @@ static pthread_cond_t  hb_thread_cond;
 static void *hb_thread(void *arg);
 static int start_hb_thread(app_ping_t *data);
 
+/* Some znode names use '^' as a delimiter.
+ * Return pointers to the starting and ending ('^') characters.
+ */
+static int
+breakup_string(char *str, char *start[], char *end[], int vec_len)
+{
+    char *c = str;
+    int i = 0;
+    while (i < vec_len) {
+        start[i] = c;
+        while (*c != '\0') {
+            if (*c == '^')
+                break;
+            c++;
+        }
+        if (*c == '\0') {
+            end[i] = c;
+            i++;
+            break;
+        }
+        if (start[i] == c)
+            break; /* empty */
+        end[i] = c++;
+        i++;
+    }
+    if (*c != '\0') {
+        /* There are leftover characters.
+         * Ignore them.
+         */
+    }
+    return i; /* i <= vec_len */
+}
+
 // mutex for async operations
 static void inc_count(int delta)
 {
@@ -852,39 +885,6 @@ static int arcus_build_znode_name(char *ensemble_list)
         arcus_conf.znode_name = strdup(rcbuf);
     }
     return 0; // EX_OK
-}
-
-/* Some znode names use '^' as a delimiter.
- * Return pointers to the starting and ending ('^') characters.
- */
-static int
-breakup_string(char *str, char *start[], char *end[], int vec_len)
-{
-    char *c = str;
-    int i = 0;
-    while (i < vec_len) {
-        start[i] = c;
-        while (*c != '\0') {
-            if (*c == '^')
-                break;
-            c++;
-        }
-        if (*c == '\0') {
-            end[i] = c;
-            i++;
-            break;
-        }
-        if (start[i] == c)
-            break; /* empty */
-        end[i] = c++;
-        i++;
-    }
-    if (*c != '\0') {
-        /* There are leftover characters.
-         * Ignore them.
-         */
-    }
-    return i; /* i <= vec_len */
 }
 
 static int arcus_parse_server_mapping(const char *root, char *znode)
