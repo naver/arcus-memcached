@@ -211,12 +211,8 @@ int  mc_hb(zhandle_t* zh, void *context);     // memcached self-heartbeat
  * We don't do blocking operations in the context of watcher callback
  * any more.
  */
-/* sm state */
-#define SM_STATE_UNKNOWN 0
-
 /* sm structure */
 struct sm {
-    int  state; /* will be extended in the future */
     bool update_cache_list;
 
     /* Cache of the latest version we pulled from ZK */
@@ -1662,7 +1658,6 @@ sm_init(void)
 
     /* clear sm_info structure */
     memset(&sm_info, 0, sizeof(sm_info));
-    sm_info.state = SM_STATE_UNKNOWN;
 
     pthread_mutex_init(&sm_info.lock, NULL);
     pthread_cond_init(&sm_info.cond, NULL);
