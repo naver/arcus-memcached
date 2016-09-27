@@ -81,11 +81,8 @@
 #define HAVE_HTONLL 1
 #include "memcached.h"
 
-#define JHPARK_SM_THREAD 1
-#ifdef JHPARK_SM_THREAD
 /* Kill server if disconnected from zookeeper for too long */
 //#define ENABLE_SUICIDE_UPON_DISCONNECT 1
-#endif
 
 // Recv. timeout governs ZK heartbeat period, reconnect timeout
 // as well as ZK session timeout
@@ -122,10 +119,8 @@ static const char *zk_log_dir = "cache_server_log";
 static const char *zk_cache_dir = "cache_list";
 static const char *mc_hb_command = "set arcus:zk-ping 1 0 1\r\n1\r\n";
 
-#ifdef JHPARK_SM_THREAD
 #ifdef ENABLE_SUICIDE_UPON_DISCONNECT
 static bool zk_connected = false;
-#endif
 #endif
 
 static zhandle_t *zh=NULL;
@@ -203,22 +198,14 @@ static app_ping_t mc_ping_context;
 // static declaration
 static void arcus_zk_watcher(zhandle_t *wzh, int type, int state,
                              const char *path, void *cxt);
-#ifdef JHPARK_SM_THREAD
 static void arcus_cache_list_watcher(zhandle_t *zh, int type, int state,
                                      const char *path, void *ctx);
-#else
-#ifdef ENABLE_CLUSTER_AWARE
-static void arcus_cluster_watcher(zhandle_t *zh, int type, int state,
-                                  const char *path, void *ctx);
-#endif
-#endif
 static void arcus_zk_sync_cb(int rc, const char *name, const void *data);
 static void arcus_zk_log(zhandle_t *zh, const char *);
 static void arcus_exit(zhandle_t *zh, int err);
 
 int  mc_hb(zhandle_t* zh, void *context);     // memcached self-heartbeat
 
-#ifdef JHPARK_SM_THREAD
 /* State machine thread.
  * It performs all blocking ZK operations including cluster_config.
  * We don't do blocking operations in the context of watcher callback
@@ -259,7 +246,6 @@ static int  sm_init(void);
 static void sm_lock(void);
 static void sm_unlock(void);
 static void sm_wakeup(bool locked);
-#endif
 
 // async routine synchronization
 static pthread_cond_t  azk_cond = PTHREAD_COND_INITIALIZER;
@@ -268,10 +254,6 @@ static int             azk_count;
 
 // zookeeper close synchronization
 static pthread_mutex_t zk_final_lock = PTHREAD_MUTEX_INITIALIZER;
-#ifdef JHPARK_SM_THREAD
-#else
-static volatile bool   zk_watcher_running = false;
-#endif
 
 // memcached heartheat thread */
 static volatile bool hb_thread_running = false;
@@ -359,12 +341,9 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
     if (state == ZOO_CONNECTED_STATE) {
         const clientid_t *id = zoo_client_id(wzh);
 
-#ifdef JHPARK_SM_THREAD
 #ifdef ENABLE_SUICIDE_UPON_DISCONNECT
         zk_connected = true;
 #endif
-#endif
-
         if (arcus_conf.verbose > 2) {
             arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "ZK ensemble connected\n");
             arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
@@ -408,7 +387,6 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
         // what to do.
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "CONNECTING.... \n");
 
-#ifdef JHPARK_SM_THREAD
 #ifdef ENABLE_SUICIDE_UPON_DISCONNECT
         /* The server is disconnected from ZK.  But we do not know how much
          * time has elapsed from the last successful ZK ping.  A connection
@@ -420,11 +398,9 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
          */
         zk_connected = false;
 #endif
-#endif
     }
 }
 
-#ifdef JHPARK_SM_THREAD
 /* cache_list zk watcher */
 static void
 arcus_cache_list_watcher(zhandle_t *zh, int type, int state, const char *path, void *ctx)
@@ -491,60 +467,6 @@ update_cluster_config(struct String_vector *strv)
     cluster_config_reconfigure(arcus_conf.ch, strv->data, strv->count);
 }
 #endif
-
-#else // JHPARK_SM_THREAD
-#ifdef ENABLE_CLUSTER_AWARE
-static void
-arcus_cluster_watch_servers(zhandle_t *zh, const char *path, watcher_fn fn)
-{
-    struct String_vector result;
-    int i, rc;
-
-    /* Do not call zookeeper API if we are calling
-     * zookeeper_close.  See arcus_zk_final.
-     */
-    if (arcus_zk_shutdown)
-        return;
-
-    zk_watcher_running = true;
-
-    // get cache list
-    rc = zoo_wget_children(zh, path, arcus_cluster_watcher, NULL, &result);
-    if (rc == ZOK) {
-        // update the cache list
-        if (arcus_conf.verbose > 0) {
-            for (i=0; i<result.count; i++) {
-                arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
-                                       "server[%d] = %s\n", i, result.data[i]);
-            }
-        }
-        cluster_config_reconfigure(arcus_conf.ch, result.data, result.count);
-        deallocate_String_vector(&result);
-    } else {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                               "Could not get children from ZK. errno=%d\n", rc);
-    }
-
-    zk_watcher_running = false;
-}
-
-static void
-arcus_cluster_watcher(zhandle_t *zh, int type, int state, const char *path, void *ctx)
-{
-    if (type == ZOO_CHILD_EVENT) {
-        arcus_cluster_watch_servers(zh, path, arcus_cluster_watcher);
-    }
-    else if (type == ZOO_SESSION_EVENT) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "ZOO_SESSION_EVENT from ZK: state=%d\n", state);
-    }
-    else { // an unexpected event has occurred
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "An unexpected event from ZK: type=%d, state=%d\n", type, state);
-    }
-}
-#endif
-#endif // JHPARK_SM_THREAD
 
 // callback for sync command
 static void
@@ -1296,14 +1218,12 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     arcus_conf.cluster_path = strdup(zpath);
     assert(arcus_conf.cluster_path);
 
-#ifdef JHPARK_SM_THREAD
     /* Initialize the state machine. */
     if (sm_init() != 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Failed to initialize the state machine. Terminating.\n");
         arcus_exit(zh, EX_CONFIG);
     }
-#endif
 
     arcus_conf.init = true;
 
@@ -1336,7 +1256,6 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
                                         arcus_conf.logger, arcus_conf.verbose);
     assert(arcus_conf.ch);
 
-#ifdef JHPARK_SM_THREAD
     struct String_vector strv = { 0, NULL };
     if (arcus_read_cache_list(&strv, false /* do not register watcher */) != 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -1345,17 +1264,11 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     }
     update_cluster_config(&strv);
     deallocate_String_vector(&strv);
-#else
-    // set a watch to the cache list this memcached belongs in
-    // (e.g. /arcus/cache_list/a_cluster)
-    arcus_cluster_watch_servers(zh, arcus_conf.cluster_path, arcus_cluster_watcher);
-#endif
 
     arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
         "Memcached is watching Arcus cache cloud for \"%s\"\n", arcus_conf.cluster_path);
 #endif
 
-#ifdef JHPARK_SM_THREAD
     /* Wake up the state machine thread.
      * Tell it to refresh the hash ring (cluster_config).
      */
@@ -1364,7 +1277,6 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     sm_info.update_cache_list = true;
     sm_wakeup(true);
     sm_unlock();
-#endif
 
     // start heartbeat thread
     if (start_hb_thread(ping_data) != 0) {
@@ -1400,10 +1312,8 @@ void arcus_zk_final(const char *msg)
          */
         /* wake up the heartbeat thread if it's sleeping */
         hb_wakeup();
-#ifdef JHPARK_SM_THREAD
         /* wake up the SM state thread if it's sleeping */
         sm_wakeup(false);
-#endif
 
         /* wait a maximum of 1000 msec */
         elapsed_msec = 0;
@@ -1414,7 +1324,6 @@ void arcus_zk_final(const char *msg)
                 usleep(10000); // 10ms wait
                 elapsed_msec += 10;
             }
-#ifdef JHPARK_SM_THREAD
             /* Do not call zookeeper_close (arcus_exit) and zoo_wget_children at
              * the same time.  Otherwise, this thread (main thread) and the watcher
              * thread (zoo_wget_children) may hang forever until the user manually
@@ -1428,37 +1337,14 @@ void arcus_zk_final(const char *msg)
              * aborts all sync_completion's, which then wakes up the blocking
              * watcher thread.  zoo_wget_children returns an error.
              */
-#else
-            /* Do not call zookeeper_close (arcus_exit) and
-             * zoo_wget_children (arcus_cluster_watch_servers) at the same time.
-             * Otherwise, this thread (main thread) and the watcher thread
-             * (zoo_wget_children) may hang forever until the user manually kills
-             * the process.  The root cause is within the zookeeper library.  Its
-             * handling of concurrent API calls like zoo_wget_children and
-             * zookeeper_close still has holes...
-             */
-            /* If the watcher thread (zoo_wget_children) is running now, wait for
-             * one second.  Either it completes, or it at least registers
-             * sync_completion and blocks.  In the latter case, zookeeper_close
-             * aborts all sync_completion's, which then wakes up the blocking
-             * watcher thread.  zoo_wget_children returns an error.
-             */
-            if (zk_watcher_running)
-                continue;
-
-#endif
             if (hb_thread_running)
                 continue;
-
-#ifdef JHPARK_SM_THREAD
             if (sm_info.state_running)
                 continue;
 #ifdef ENABLE_SUICIDE_UPON_DISCONNECT
             if (sm_info.timer_running)
                 continue;
 #endif
-#endif
-
             arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "zk threads terminated\n");
             break;
         }
@@ -1627,7 +1513,6 @@ int arcus_ketama_hslice(const char *key, size_t nkey, uint32_t *hvalue)
 }
 #endif
 
-#ifdef JHPARK_SM_THREAD
 static void *
 sm_state_thread(void *arg)
 {
@@ -1829,6 +1714,5 @@ sm_wakeup(bool locked)
     if (!locked)
         sm_unlock();
 }
-#endif
 
 #endif  // ENABLE_ZK_INTEGRATION
