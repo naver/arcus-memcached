@@ -211,9 +211,15 @@ int  mc_hb(zhandle_t* zh, void *context);     // memcached self-heartbeat
  * We don't do blocking operations in the context of watcher callback
  * any more.
  */
+/* sm request structure */
+struct sm_request {
+    bool update_cache_list;
+};
+
 /* sm structure */
 struct sm {
-    bool update_cache_list;
+    /* sm requests by other threads */
+    struct sm_request request;
 
     /* Cache of the latest version we pulled from ZK */
     struct String_vector cache_list; /* from /cache_list */
@@ -424,7 +430,7 @@ arcus_cache_list_watcher(zhandle_t *zh, int type, int state, const char *path, v
      * Should we do this only in ZOO_CHILD_EVENT ? FIXME.
      */
     sm_lock();
-    sm_info.update_cache_list = true;
+    sm_info.request.update_cache_list = true;
     sm_wakeup(true);
     sm_unlock();
 }
@@ -1270,7 +1276,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
      */
     sm_lock();
     /* Don't care if we just read the list above.  Do it again. */
-    sm_info.update_cache_list = true;
+    sm_info.request.update_cache_list = true;
     sm_wakeup(true);
     sm_unlock();
 
@@ -1512,9 +1518,9 @@ int arcus_ketama_hslice(const char *key, size_t nkey, uint32_t *hvalue)
 static void *
 sm_state_thread(void *arg)
 {
+    struct sm_request smreq;
     struct timeval  tv;
     struct timespec ts;
-    bool update_cache_list;
     bool retry = false;
     bool shutdown_by_me = false;
 
@@ -1543,22 +1549,22 @@ sm_state_thread(void *arg)
             pthread_cond_wait(&sm_info.cond, &sm_info.lock);
         }
         sm_info.notification = false;
-        update_cache_list = sm_info.update_cache_list;
-        sm_info.update_cache_list = false;
+        smreq = sm_info.request;
+        memset(&sm_info.request, 0, sizeof(struct sm_request));
         sm_unlock();
 
         if (arcus_zk_shutdown)
             break;
 
         /* Read the latest hash ring */
-        if (update_cache_list) {
+        if (smreq.update_cache_list) {
             struct String_vector strv_cache_list = {0, NULL};
             if (arcus_read_cache_list(&strv_cache_list, true) != 0) {
                 arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Failed to read cache list from ZK.  Retry...\n");
                 retry = true;
                 sm_lock();
-                sm_info.update_cache_list = true;
+                sm_info.request.update_cache_list = true;
                 sm_unlock();
                 /* ZK operations can fail.  For example, when we are
                  * disconnected from ZK, operations fail with connectionloss.
