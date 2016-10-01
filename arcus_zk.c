@@ -222,7 +222,7 @@ struct sm {
     struct sm_request request;
 
     /* Cache of the latest version we pulled from ZK */
-    struct String_vector cache_list; /* from /cache_list */
+    struct String_vector cache_list; /* from /cache_list/{svc} */
 
     /* Used to wake up the thread */
     pthread_mutex_t lock;
@@ -1521,7 +1521,7 @@ sm_state_thread(void *arg)
     struct sm_request smreq;
     struct timeval  tv;
     struct timespec ts;
-    bool retry = false;
+    bool sm_retry = false;
     bool shutdown_by_me = false;
 
     sm_info.state_running = true;
@@ -1533,7 +1533,7 @@ sm_state_thread(void *arg)
             /* Poll if requested.
              * Otherwise, wait till the ZK watcher wakes us up.
              */
-            if (retry) {
+            if (sm_retry) {
                 gettimeofday(&tv, NULL);
                 tv.tv_usec += 100000; /* Wake up in 100 ms.  Magic number.  FIXME */
                 if (tv.tv_usec >= 1000000) {
@@ -1543,7 +1543,7 @@ sm_state_thread(void *arg)
                 ts.tv_sec = tv.tv_sec;
                 ts.tv_nsec = tv.tv_usec * 1000;
                 pthread_cond_timedwait(&sm_info.cond, &sm_info.lock, &ts);
-                retry = false;
+                sm_retry = false;
                 break;
             }
             pthread_cond_wait(&sm_info.cond, &sm_info.lock);
@@ -1562,7 +1562,7 @@ sm_state_thread(void *arg)
             if (arcus_read_cache_list(&strv_cache_list, true) != 0) {
                 arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Failed to read cache list from ZK.  Retry...\n");
-                retry = true;
+                sm_retry = true;
                 sm_lock();
                 sm_info.request.update_cache_list = true;
                 sm_unlock();
