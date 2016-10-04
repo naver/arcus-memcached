@@ -1012,6 +1012,8 @@ static void stats_engine(struct default_engine *engine,
     pthread_mutex_lock(&engine->stats.lock);
     len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.evictions);
     add_stat("evictions", 9, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)engine->assoc.tot_prefix_items);
+    add_stat("curr_prefixes", 13, val, len, cookie);
     len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.sticky_items);
     add_stat("sticky_items", 12, val, len, cookie);
     len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.curr_items);
