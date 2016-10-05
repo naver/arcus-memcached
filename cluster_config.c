@@ -152,7 +152,7 @@ static int gen_node_continuum(struct cont_item *continuum,
                                  | ((uint32_t) (digest[1 + nn * NUM_PER_HASH] & 0xFF) <<  8)
                                  | (           (digest[0 + nn * NUM_PER_HASH] & 0xFF)      );
             /* continuum[pp].nindex : will be set later */
-            continuum[pp].sstate = node_state; /* SSTATE_NORMAL or SSTATE_NONE */
+            continuum[pp].sstate = node_state; /* SSTATE_NORMAL */
         }
     }
     /* sort the continuum and set the slice index */
@@ -516,13 +516,6 @@ find_global_continuum(struct cont_item **continuum, uint32_t num_conts, uint32_t
     }
     if (highp == endp)
         highp = beginp;
-    if ((*highp)->sstate == SSTATE_NONE) {
-        do {
-            highp += 1;
-            if (highp == endp)
-                highp = beginp;
-        } while ((*highp)->sstate != SSTATE_NORMAL);
-    }
     /* find the first node if duplicate hash points */
     while (highp != beginp && (*highp)->hpoint == (*(highp-1))->hpoint) {
         highp -= 1;
@@ -547,13 +540,6 @@ find_local_continuum(struct cont_item *continuum, uint32_t num_conts, uint32_t h
     }
     if (highp == endp)
         highp = beginp;
-    if (highp->sstate == SSTATE_NONE) {
-        do {
-            highp += 1;
-            if (highp == endp)
-                highp = beginp;
-        } while (highp->sstate != SSTATE_NORMAL);
-    }
     return highp;
 }
 
