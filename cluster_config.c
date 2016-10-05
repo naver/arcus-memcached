@@ -57,7 +57,9 @@ struct node_item {
     char     ndname[MAX_NODE_NAME_LENGTH+1]; // "ip:port" string or group name string
     uint16_t nstate;         // node state: 0(joining), 1(leaving), 2(existing)
     uint16_t refcnt;         // reference count
-    uint32_t dummy32;        // reserved
+    uint8_t  dup_hp;         // duplicate hash point exist
+    uint8_t  alive;          // alive node (NOT USED)
+    uint16_t dummy16;        // reserved
     struct node_item *next;  // next pointer
     struct cont_item hslice[NUM_NODE_HASHES]; // my hash continuum
 };
@@ -128,18 +130,17 @@ static int compare_cont_item(const void *t1, const void *t2)
     const struct cont_item *ct1 = t1, *ct2 = t2;
     if      (ct1->hpoint > ct2->hpoint) return  1;
     else if (ct1->hpoint < ct2->hpoint) return -1;
-    else if (ct1->nindex > ct2->nindex) return  1;
-    else if (ct1->nindex < ct2->nindex) return -1;
     else                                return  0;
 }
 
-static void gen_node_continuum(struct cont_item *continuum,
+static int gen_node_continuum(struct cont_item *continuum,
                                const char *node_name, uint8_t node_state)
 {
     char buffer[MAX_NODE_NAME_LENGTH+1] = "";
     int  length;
     int  hh, nn, pp;
     unsigned char digest[16];
+    bool duplicate = 0;
 
     pp = 0;
     for (hh=0; hh<NUM_OF_HASHES; hh++) {
@@ -157,15 +158,25 @@ static void gen_node_continuum(struct cont_item *continuum,
     /* sort the continuum and set the slice index */
     qsort(continuum, NUM_NODE_HASHES, sizeof(struct cont_item), compare_cont_item);
     for (pp=0; pp < NUM_NODE_HASHES; pp++) {
+        if (pp > 0) { /* check duplicate hpoint */
+            if (continuum[pp].hpoint == continuum[pp-1].hpoint)
+                duplicate = 1;
+        }
         continuum[pp].sindex = pp; /* slice index: 0 ~ 159 */
     }
+    return duplicate;
 }
 
-static void self_node_build(struct node_item *item, const char *node_name)
+static void self_node_build(struct cluster_config *config, const char *node_name)
 {
+    struct node_item *item = &config->self_node;
     strncpy(item->ndname, node_name, MAX_NODE_NAME_LENGTH);
     item->nstate = NSTATE_EXISTING;
-    gen_node_continuum(item->hslice, item->ndname, item->nstate);
+    item->dup_hp = gen_node_continuum(item->hslice, item->ndname, item->nstate);
+    if (item->dup_hp) {
+        config->logger->log(EXTENSION_LOG_INFO, NULL,
+                "[CHECK] Duplicate hssh point in %s node.\n", node_name);
+    }
     item->refcnt = 1;
 }
 
@@ -204,7 +215,11 @@ static struct node_item *node_item_build(struct cluster_config *config,
     }
     strncpy(item->ndname, node_name, MAX_NODE_NAME_LENGTH);
     item->nstate = node_state;
-    gen_node_continuum(item->hslice, item->ndname, item->nstate);
+    item->dup_hp = gen_node_continuum(item->hslice, item->ndname, item->nstate);
+    if (item->dup_hp) {
+        config->logger->log(EXTENSION_LOG_INFO, NULL,
+                "[CHECK] Duplicate hssh point in %s node.\n", node_name);
+    }
     return item;
 }
 
@@ -508,6 +523,10 @@ find_global_continuum(struct cont_item **continuum, uint32_t num_conts, uint32_t
                 highp = beginp;
         } while ((*highp)->sstate != SSTATE_NORMAL);
     }
+    /* find the first node if duplicate hash points */
+    while (highp != beginp && (*highp)->hpoint == (*(highp-1))->hpoint) {
+        highp -= 1;
+    }
     return (*highp);
 }
 
@@ -556,7 +575,7 @@ struct cluster_config *cluster_config_init(const char *node_name,
         free(config);
         return NULL;
     }
-    self_node_build(&config->self_node, node_name);
+    self_node_build(config, node_name);
     config->self_id = 0;
 
     err = pthread_mutex_init(&config->config_lock, NULL);
