@@ -105,7 +105,7 @@ static uint32_t hash_ketama(const char *key, uint32_t nkey)
                      | digest[0]);
 }
 
-static int compare_node_item(const void *t1, const void *t2)
+static int compare_node_item_ptr(const void *t1, const void *t2)
 {
     const struct node_item **nt1 = (const struct node_item **)t1;
     const struct node_item **nt2 = (const struct node_item **)t2;
@@ -386,7 +386,7 @@ nodearray_build_replace(struct cluster_config *config,
     }
 
     /* sort the nodearray according to node name */
-    qsort(array, num_nodes, sizeof(struct node_item*), compare_node_item);
+    qsort(array, num_nodes, sizeof(struct node_item*), compare_node_item_ptr);
 
     /* find the self_node */
     *self_id = nodearray_find(array, num_nodes, config->self_node.ndname);
