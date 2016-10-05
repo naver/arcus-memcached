@@ -12959,8 +12959,8 @@ static int try_read_command(conn *c) {
                     char buffer[16];
                     memcpy(buffer, ptr, 15); buffer[15] = '\0';
                     mc_logger->log(EXTENSION_LOG_WARNING, c,
-                        "%d: Too long ascii command(%s). Close the connection.\n",
-                        c->sfd, buffer);
+                        "%d: Too long ascii command(%s). Close the connection. client_ip: %s\n",
+                        c->sfd, buffer, c->client_ip);
                     conn_set_state(c, conn_closing);
                     return 1;
                 }
@@ -13179,8 +13179,8 @@ static enum transmit_result transmit(conn *c) {
            we have a real error, on which we close the connection */
         if (settings.verbose > 0) {
             mc_logger->log(EXTENSION_LOG_INFO, c,
-                           "Failed to write, and not due to blocking: %s\n",
-                           strerror(errno));
+                           "Failed to write, and not due to blocking: %s, client_ip: %s\n",
+                           strerror(errno), c->client_ip);
             //perror("Failed to write, and not due to blocking");
         }
 
@@ -13397,12 +13397,12 @@ bool conn_swallow(conn *c) {
     if (errno != ENOTCONN && errno != ECONNRESET) {
         /* otherwise we have a real error, on which we close the connection */
         mc_logger->log(EXTENSION_LOG_WARNING, c,
-                "Failed to read in conn_swallow, and not due to blocking: err=(%d:%s)\n",
-                errno, strerror(errno));
+                "Failed to read in conn_swallow, and not due to blocking: err=(%d:%s), client_ip: %s\n",
+                errno, strerror(errno), c->client_ip);
     } else {
         mc_logger->log(EXTENSION_LOG_INFO, c,
-                "Failed to read in conn_swallow, and not due to blocking: err=(%d:%s)\n",
-                errno, strerror(errno));
+                "Failed to read in conn_swallow, and not due to blocking: err=(%d:%s), client_ip: %s\n",
+                errno, strerror(errno), c->client_ip);
     }
 
     conn_set_state(c, conn_closing);
@@ -13485,16 +13485,16 @@ bool conn_nread(conn *c) {
     if (errno != ENOTCONN && errno != ECONNRESET) {
         /* otherwise we have a real error, on which we close the connection */
         mc_logger->log(EXTENSION_LOG_WARNING, c,
-                       "Failed to read in conn_nread, and not due to blocking: err=(%d:%s)\n"
+                       "Failed to read in conn_nread, and not due to blocking: err=(%d:%s), client_ip: %s\n"
                        "rcurr=%lx ritem=%lx rbuf=%lx rlbytes=%d rsize=%d\n",
-                       errno, strerror(errno),
+                       errno, strerror(errno), c->client_ip,
                        (long)c->rcurr, (long)c->ritem, (long)c->rbuf,
                        (int)c->rlbytes, (int)c->rsize);
     } else {
         mc_logger->log(EXTENSION_LOG_INFO, c,
-                       "Failed to read in conn_nread, and not due to blocking: err=(%d:%s)\n"
+                       "Failed to read in conn_nread, and not due to blocking: err=(%d:%s), client_ip: %s\n"
                        "rcurr=%lx ritem=%lx rbuf=%lx rlbytes=%d rsize=%d\n",
-                       errno, strerror(errno),
+                       errno, strerror(errno), c->client_ip,
                        (long)c->rcurr, (long)c->ritem, (long)c->rbuf,
                        (int)c->rlbytes, (int)c->rsize);
     }
