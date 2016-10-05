@@ -459,25 +459,28 @@ static void hashring_replace(struct cluster_config *config, struct cont_item **c
 
 static void cluster_config_print_node_list(struct cluster_config *config)
 {
+    struct node_item **nodearray = config->nodearray;
+
     config->logger->log(EXTENSION_LOG_INFO, NULL, "cluster node list: count=%d\n",
                         config->num_nodes);
     for (int i=0; i < config->num_nodes; i++) {
         config->logger->log(EXTENSION_LOG_INFO, NULL,
                             "node[%d]: name=%s state=%d\n", i,
-                            config->nodearray[i]->ndname, config->nodearray[i]->nstate);
+                            nodearray[i]->ndname, nodearray[i]->nstate);
     }
 }
 
 static void cluster_config_print_continuum(struct cluster_config *config)
 {
+    struct cont_item **continuum = config->continuum;
+
     config->logger->log(EXTENSION_LOG_INFO, NULL, "cluster continuum: count=%d\n",
                        config->num_conts);
     for (int i=0; i < config->num_conts; i++) {
         config->logger->log(EXTENSION_LOG_INFO, NULL,
                             "continuum[%d]: hpoint=%x nindex=%d sstate=%d\n", i,
-                            config->continuum[i]->hpoint,
-                            config->continuum[i]->nindex,
-                            config->continuum[i]->sstate);
+                            continuum[i]->hpoint, continuum[i]->nindex,
+                            continuum[i]->sstate);
     }
 }
 
