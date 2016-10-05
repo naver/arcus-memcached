@@ -44,8 +44,6 @@
 #define SSTATE_LOCAL    NSTATE_LEAVING
 #define SSTATE_NORMAL   NSTATE_EXISTING
 
-#define CONTINUUM_OF_POINTER_ARRAY_TYPE 1
-
 /* continuum item */
 struct cont_item {
     uint32_t hpoint;  // hash point on the ketama continuum
@@ -72,11 +70,7 @@ struct cluster_config {
     uint32_t           num_nodes;   // number of nodes (used node_item entries)
     struct node_item  *free_list;   // free node list
     struct node_item **nodearray;   // node pointer array
-#ifdef CONTINUUM_OF_POINTER_ARRAY_TYPE
     struct cont_item **continuum;   // continuum of hash slices, that is hash ring
-#else
-    struct cont_item  *continuum;   // continuum of hash slices, that is hash ring
-#endif
 
     uint32_t           cur_memlen;  // length of cur_memory
     uint32_t           old_memlen;  // length of old_memory
@@ -118,7 +112,6 @@ static int compare_node_item_ptr(const void *t1, const void *t2)
     return strcmp((*nt1)->ndname, (*nt2)->ndname);
 }
 
-#ifdef CONTINUUM_OF_POINTER_ARRAY_TYPE
 static int compare_cont_item_ptr(const void *t1, const void *t2)
 {
     const struct cont_item **ct1 = (const struct cont_item **)t1;
@@ -129,7 +122,6 @@ static int compare_cont_item_ptr(const void *t1, const void *t2)
     else if ((*ct1)->nindex < (*ct2)->nindex) return -1;
     else                                      return  0;
 }
-#endif
 
 static int compare_cont_item(const void *t1, const void *t2)
 {
@@ -159,21 +151,14 @@ static void gen_node_continuum(struct cont_item *continuum,
                                  | ((uint32_t) (digest[1 + nn * NUM_PER_HASH] & 0xFF) <<  8)
                                  | (           (digest[0 + nn * NUM_PER_HASH] & 0xFF)      );
             /* continuum[pp].nindex : will be set later */
-#ifdef CONTINUUM_OF_POINTER_ARRAY_TYPE
             continuum[pp].sstate = node_state; /* SSTATE_NORMAL or SSTATE_NONE */
-#else
-            continuum[pp].sindex = 255; /* unknown */
-            continuum[pp].sstate = node_state;
-#endif
         }
     }
-#ifdef CONTINUUM_OF_POINTER_ARRAY_TYPE
     /* sort the continuum and set the slice index */
     qsort(continuum, NUM_NODE_HASHES, sizeof(struct cont_item), compare_cont_item);
     for (pp=0; pp < NUM_NODE_HASHES; pp++) {
         continuum[pp].sindex = pp; /* slice index: 0 ~ 159 */
     }
-#endif
 }
 
 static void self_node_build(struct node_item *item, const char *node_name)
@@ -182,15 +167,6 @@ static void self_node_build(struct node_item *item, const char *node_name)
     item->nstate = NSTATE_EXISTING;
     gen_node_continuum(item->hslice, item->ndname, item->nstate);
     item->refcnt = 1;
-#ifdef CONTINUUM_OF_POINTER_ARRAY_TYPE
-#else
-
-    /* sort the hash slices and set the slice index */
-    qsort(item->hslice, NUM_NODE_HASHES, sizeof(struct cont_item), compare_cont_item);
-    for (int i=0; i < NUM_NODE_HASHES; i++) {
-        item->hslice[i].sindex = i;
-    }
-#endif
 }
 
 static struct node_item *node_item_new(void)
@@ -298,13 +274,8 @@ static int hashring_space_init(struct cluster_config *config, uint32_t num_nodes
         }
 
         /* init space for new nodearray and continuum */
-#ifdef CONTINUUM_OF_POINTER_ARRAY_TYPE
         config->old_memlen = (num_nodes * sizeof(void*))
                            + (num_nodes * NUM_NODE_HASHES * sizeof(void*));
-#else
-        config->old_memlen = (num_nodes * sizeof(void*))
-                           + (num_nodes * NUM_NODE_HASHES * sizeof(struct cont_item));
-#endif
         config->old_memory = malloc(config->old_memlen);
         if (config->old_memory == NULL) {
             config->logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -346,13 +317,8 @@ static int hashring_space_prepare(struct cluster_config *config, uint32_t num_no
     }
 
     /* prepare space for new nodearray and continuum */
-#ifdef CONTINUUM_OF_POINTER_ARRAY_TYPE
     new_memlen = (num_nodes * sizeof(void*))
                + (num_nodes * NUM_NODE_HASHES * sizeof(void*));
-#else
-    new_memlen = (num_nodes * sizeof(void*))
-               + (num_nodes * NUM_NODE_HASHES * sizeof(struct cont_item));
-#endif
     if (config->old_memlen < new_memlen) {
         if ((new_memory = realloc(config->old_memory, new_memlen)) == NULL) {
             config->logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -441,7 +407,6 @@ nodearray_build_replace(struct cluster_config *config,
     return array; /* OK */
 }
 
-#ifdef CONTINUUM_OF_POINTER_ARRAY_TYPE
 static struct cont_item **
 continuum_build(struct cluster_config *config, struct node_item **array, uint32_t count)
 {
@@ -457,32 +422,9 @@ continuum_build(struct cluster_config *config, struct node_item **array, uint32_
     qsort(continuum, num_conts, sizeof(struct cont_item *), compare_cont_item_ptr);
     return continuum;
 }
-#else
-static struct cont_item *
-continuum_build(struct cluster_config *config, struct node_item **array, uint32_t count)
-{
-    struct cont_item *continuum = (struct cont_item *)(array + count);
-    int i, j;
 
-    for (i = 0; i < count; i++) {
-        for (j = 0; j < NUM_NODE_HASHES; j++) {
-            array[i]->hslice[j].nindex = i; /* set the correct node index */
-        }
-        memcpy(&continuum[i*NUM_NODE_HASHES], array[i]->hslice,
-               (sizeof(struct cont_item) * NUM_NODE_HASHES));
-    }
-    qsort(continuum, (count*NUM_NODE_HASHES), sizeof(struct cont_item), compare_cont_item);
-    return continuum;
-}
-#endif
-
-#ifdef CONTINUUM_OF_POINTER_ARRAY_TYPE
 static void hashring_replace(struct cluster_config *config, struct cont_item **continuum,
                              struct node_item **nodearray, uint32_t num_nodes, int self_id)
-#else
-static void hashring_replace(struct cluster_config *config, struct cont_item *continuum,
-                             struct node_item **nodearray, uint32_t num_nodes, int self_id)
-#endif
 {
     assert((void*)nodearray == config->old_memory);
     void    *tmp_memory;
@@ -531,22 +473,14 @@ static void cluster_config_print_continuum(struct cluster_config *config)
     config->logger->log(EXTENSION_LOG_INFO, NULL, "cluster continuum: count=%d\n",
                        config->num_conts);
     for (int i=0; i < config->num_conts; i++) {
-#ifdef CONTINUUM_OF_POINTER_ARRAY_TYPE
         config->logger->log(EXTENSION_LOG_INFO, NULL,
                             "continuum[%d]: hpoint=%x nindex=%d sstate=%d\n", i,
                             config->continuum[i]->hpoint,
                             config->continuum[i]->nindex,
                             config->continuum[i]->sstate);
-#else
-        config->logger->log(EXTENSION_LOG_INFO, NULL,
-                            "continuum[%d]: hpoint=%x nindex=%d sstate=%d\n", i,
-                            config->continuum[i].hpoint, config->continuum[i].nindex,
-                            config->continuum[i].sstate);
-#endif
     }
 }
 
-#ifdef CONTINUUM_OF_POINTER_ARRAY_TYPE
 static struct cont_item *
 find_global_continuum(struct cont_item **continuum, uint32_t num_conts, uint32_t hvalue)
 {
@@ -573,15 +507,9 @@ find_global_continuum(struct cont_item **continuum, uint32_t num_conts, uint32_t
     }
     return (*highp);
 }
-#endif
 
-#ifdef CONTINUUM_OF_POINTER_ARRAY_TYPE
 static struct cont_item *
 find_local_continuum(struct cont_item *continuum, uint32_t num_conts, uint32_t hvalue)
-#else
-static struct cont_item *find_continuum(struct cont_item *continuum, uint32_t num_conts,
-                                        uint32_t hvalue)
-#endif
 {
     struct cont_item *beginp, *endp, *midp, *highp, *lowp;
 
@@ -685,11 +613,7 @@ int cluster_config_reconfigure(struct cluster_config *config,
 {
     assert(config && node_strs && num_nodes > 0);
     struct node_item **nodearray;
-#ifdef CONTINUUM_OF_POINTER_ARRAY_TYPE
     struct cont_item **continuum;
-#else
-    struct cont_item  *continuum;
-#endif
     int self_id, ret=0;
 
     if (node_string_check(node_strs, num_nodes) < 0) {
@@ -735,11 +659,7 @@ int cluster_config_key_is_mine(struct cluster_config *config,
     pthread_mutex_lock(&config->lock);
     if (config->is_valid) {
         digest = hash_ketama(key, nkey);
-#ifdef CONTINUUM_OF_POINTER_ARRAY_TYPE
         item = find_global_continuum(config->continuum, config->num_conts, digest);
-#else
-        item = find_continuum(config->continuum, config->num_conts, digest);
-#endif
         *mine = (item->nindex == config->self_id ? true : false);
         if ( key_id)  *key_id = item->nindex;
         if (self_id) *self_id = config->self_id;
@@ -758,10 +678,6 @@ int cluster_config_ketama_hslice(struct cluster_config *config,
 
     *hvalue = hash_ketama(key, nkey);
 
-#ifdef CONTINUUM_OF_POINTER_ARRAY_TYPE
     item = find_local_continuum(config->self_node.hslice, NUM_NODE_HASHES, *hvalue);
-#else
-    item = find_continuum(config->self_node.hslice, NUM_NODE_HASHES, *hvalue);
-#endif
     return item->sindex; /* slice index */
 }
