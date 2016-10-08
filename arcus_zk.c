@@ -222,7 +222,7 @@ struct sm {
     struct sm_request request;
 
     /* Cache of the latest version we pulled from ZK */
-    struct String_vector cache_list; /* from /cache_list/{svc} */
+    struct String_vector sv_cache_list; /* from /cache_list/{svc} */
 
     /* Used to wake up the thread */
     pthread_mutex_t lock;
@@ -436,16 +436,14 @@ arcus_cache_list_watcher(zhandle_t *zh, int type, int state, const char *path, v
 }
 
 static int
-arcus_read_cache_list(struct String_vector *strv, bool watch)
+arcus_read_ZK_children(const char *zpath, watcher_fn watcher,
+                       struct String_vector *strv)
 {
-    int rc = zoo_wget_children(zh, arcus_conf.cluster_path,
-                               watch ? arcus_cache_list_watcher : NULL,
-                               NULL, strv);
+    int rc = zoo_wget_children(zh, zpath, watcher, NULL, strv);
     if (rc != ZOK) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-            "Failed to get the list of znodes in the cache_list directory. "
-            "Will try again. path=%s error=%d(%s)\n",
-            arcus_conf.cluster_path, rc, zerror(rc));
+            "Failed to read children(znode list) of zpath=%s: "
+            "error=%d(%s)\n", zpath, rc, zerror(rc));
     }
     /* The caller must free strv */
     return (rc == ZOK ? 0 : -1);
@@ -1259,7 +1257,8 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     assert(arcus_conf.ch);
 
     struct String_vector strv = { 0, NULL };
-    if (arcus_read_cache_list(&strv, false /* do not register watcher */) != 0) {
+    /* 2nd argument, NULL means no watcher */
+    if (arcus_read_ZK_children(arcus_conf.cluster_path, NULL, &strv) != 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Failed to read cache list from ZK. Terminating...\n");
         arcus_exit(zh, EX_CONFIG);
@@ -1559,7 +1558,9 @@ sm_state_thread(void *arg)
         /* Read the latest hash ring */
         if (smreq.update_cache_list) {
             struct String_vector strv_cache_list = {0, NULL};
-            if (arcus_read_cache_list(&strv_cache_list, true) != 0) {
+            if (arcus_read_ZK_children(arcus_conf.cluster_path,
+                                       arcus_cache_list_watcher,
+                                       &strv_cache_list) != 0) {
                 arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Failed to read cache list from ZK.  Retry...\n");
                 sm_retry = true;
@@ -1572,19 +1573,19 @@ sm_state_thread(void *arg)
                  */
             } else {
                 /* Remember the latest cache list */
-                deallocate_String_vector(&sm_info.cache_list);
-                sm_info.cache_list = strv_cache_list;
+                deallocate_String_vector(&sm_info.sv_cache_list);
+                sm_info.sv_cache_list = strv_cache_list;
 
 #ifdef ENABLE_CLUSTER_AWARE
                 /* update cluster config */
-                update_cluster_config(&sm_info.cache_list);
+                update_cluster_config(&sm_info.sv_cache_list);
 #endif
             }
         }
     }
 
     sm_info.state_running = false;
-    deallocate_String_vector(&sm_info.cache_list);
+    deallocate_String_vector(&sm_info.sv_cache_list);
     if (shutdown_by_me) {
         arcus_zk_shutdown = 1;
         arcus_zk_final("SM state failure");
