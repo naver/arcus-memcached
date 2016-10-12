@@ -8047,6 +8047,7 @@ static char *get_suffix_buffer(conn *c) {
 /* ntokens is overwritten here... shrug.. */
 static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens, bool return_cas)
 {
+    ENGINE_ERROR_CODE ret;
     char *key;
     size_t nkey;
     int i = 0;
@@ -8065,7 +8066,8 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                 return;
             }
 
-            if (mc_engine.v1->get(mc_engine.v0, c, &it, key, nkey, 0) != ENGINE_SUCCESS) {
+            ret = mc_engine.v1->get(mc_engine.v0, c, &it, key, nkey, 0);
+            if (ret != ENGINE_SUCCESS) {
                 it = NULL;
             }
 
@@ -8185,8 +8187,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
     c->suffixcurr = c->suffixlist;
 
     if (settings.verbose > 1) {
-        mc_logger->log(EXTENSION_LOG_DEBUG, c,
-                       ">%d END\n", c->sfd);
+        mc_logger->log(EXTENSION_LOG_DEBUG, c, ">%d END\n", c->sfd);
     }
 
     /*
