@@ -1545,7 +1545,7 @@ static void process_sop_exist_complete(conn *c) {
             STATS_NOKEY(c, cmd_sop_exist);
             if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
             else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-            else out_string(c, "SERVER_ERROR internal");
+            else handle_unexpected_errorcode_ascii(c, ret);
         }
     }
 
@@ -2284,7 +2284,7 @@ static void process_bop_mget_complete(conn *c) {
         STATS_NOKEY(c, cmd_bop_mget);
         if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad data chunk");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
     }
 
     if (ret != ENGINE_SUCCESS) {
@@ -2459,7 +2459,7 @@ static void process_bop_smget_complete_old(conn *c) {
         else if (ret == ENGINE_EBADATTR) out_string(c, "ATTR_MISMATCH");
         else if (ret == ENGINE_EBKEYOOR) out_string(c, "OUT_OF_RANGE");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
     }
 
     if (ret != ENGINE_SUCCESS) {
@@ -2633,7 +2633,7 @@ static void process_bop_smget_complete(conn *c) {
 #if 0 // JHPARK_SMGET_OFFSET_HANDLING
         else if (ret == ENGINE_EBKEYOOR) out_string(c, "OUT_OF_RANGE");
 #endif
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
     }
 
     if (ret != ENGINE_SUCCESS) {
@@ -10593,7 +10593,7 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
     }
 }
 
@@ -10638,7 +10638,7 @@ static void process_bop_position(conn *c, char *key, size_t nkey,
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
     }
 }
 
@@ -10744,7 +10744,7 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
     }
 
     if (ret != ENGINE_SUCCESS && elem_array != NULL) {
@@ -10874,7 +10874,7 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
         STATS_NOKEY(c, cmd_bop_gbp);
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
     }
 
     if (ret != ENGINE_SUCCESS && elem_array != NULL) {
@@ -12539,7 +12539,7 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
         STATS_NOKEY(c, cmd_getattr);
         if (ret == ENGINE_EBADATTR) out_string(c, "ATTR_ERROR not found");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-        else out_string(c, "SERVER_ERROR internal");
+        else handle_unexpected_errorcode_ascii(c, ret);
     }
 }
 
