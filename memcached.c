@@ -5248,11 +5248,9 @@ static void process_bin_bop_update_prepare_nread(conn *c) {
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_bop_update_nread_complete;
         break;
-    case ENGINE_DISCONNECT:
-        c->state = conn_closing;
-        break;
     default:
         STATS_NOKEY(c, cmd_bop_update);
+        /* ret == ENGINE_E2BIG || ret == ENGINE_ENOMEM */
         if (ret == ENGINE_E2BIG)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
         else
@@ -5734,16 +5732,12 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_bop_nread_keys_complete;
         break;
-    case ENGINE_DISCONNECT:
-        c->state = conn_closing;
-        break;
     default:
+        /* ret == ENGINE_EBADVALUE || ret == ENGINE_ENOMEM */
         if (ret == ENGINE_EBADVALUE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADVALUE, vlen);
-        else if (ret == ENGINE_ENOMEM)
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
 
         /* swallow the data line */
         c->write_and_go = conn_swallow;
@@ -10912,15 +10906,11 @@ static void process_bop_update_prepare_nread(conn *c, int cmd, char *key, size_t
         c->coll_nkey   = nkey;
         conn_set_state(c, conn_nread);
         break;
-    case ENGINE_DISCONNECT:
-        c->state = conn_closing;
-        break;
     default:
+        /* ret == ENGINE_E2BIG || ret == ENGINE_ENOMEM */
         STATS_NOKEY(c, cmd_bop_update);
         if (ret == ENGINE_E2BIG) out_string(c, "CLIENT_ERROR too large value");
-        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
-        else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-        else out_string(c, "SERVER_ERROR internal");
+        else                     out_string(c, "SERVER_ERROR out of memory");
 
         /* swallow the data line */
         c->write_and_go = conn_swallow;
@@ -11059,9 +11049,6 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
         conn_set_state(c, conn_nread);
         }
         break;
-    case ENGINE_DISCONNECT:
-        c->state = conn_closing;
-        break;
     default:
 #ifdef SUPPORT_BOP_MGET
         if (cmd == OPERATION_BOP_MGET)
@@ -11071,9 +11058,8 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
         if (cmd == OPERATION_BOP_SMGET)
             STATS_NOKEY(c, cmd_bop_smget);
 #endif
-        if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
-        else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-        else out_string(c, "SERVER_ERROR internal");
+        /* ret == ENGINE_ENOMEM */
+        out_string(c, "SERVER_ERROR out of memory");
 
         /* swallow the data line */
         c->write_and_go = conn_swallow;
@@ -11531,10 +11517,8 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
         } else if (cmd == OPERATION_MOP_GET) {
             STATS_NOKEY(c, cmd_mop_get);
         }
-
-        if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
-        else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-        else out_string(c, "SERVER_ERROR internal");
+        /* ret == ENGINE_ENOMEM */
+        out_string(c, "SERVER_ERROR out of memory");
 
         //swallow the data line
         c->write_and_go = conn_swallow;
