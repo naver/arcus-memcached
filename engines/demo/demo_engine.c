@@ -710,6 +710,14 @@ Demo_set_config(ENGINE_HANDLE* handle, const void* cookie,
 {
     return ENGINE_ENOTSUP;
 }
+#else
+/* SIMPLE_CONFIG_API tag */
+static ENGINE_ERROR_CODE
+Demo_set_config(ENGINE_HANDLE* handle, const void* cookie,
+                const int config_type, void* config_argument)
+{
+    return ENGINE_ENOTSUP;
+}
 #endif
 
 /*
@@ -828,6 +836,9 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .get_prefix_stats = Demo_get_prefix_stats,
          /* Dump API */
          /* Config API */
+#ifdef SIMPLE_CONFIG_API
+         .set_config       = Demo_set_config,
+#endif
 #ifdef CONFIG_API
          .set_config       = Demo_set_config,
 #endif

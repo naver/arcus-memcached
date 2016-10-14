@@ -31,7 +31,8 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
-#define CONFIG_API
+#define SIMPLE_CONFIG_API
+//#define CONFIG_API
 #define MAP_COLLECTION_SUPPORT
 #define SUPPORT_BOP_MGET
 #define SUPPORT_BOP_SMGET
@@ -153,6 +154,20 @@ extern "C" {
         ITEM_TYPE_BTREE,
         ITEM_TYPE_MAX
     } ENGINE_ITEM_TYPE;
+
+#ifdef SIMPLE_CONFIG_API
+    /* engine config type */
+    typedef enum {
+        CONFIG_TYPE_MEMLIMIT = 0,
+        CONFIG_TYPE_MAX_LIST_SIZE,
+        CONFIG_TYPE_MAX_SET_SIZE,
+#ifdef MAP_COLLECTION_SUPPORT
+        CONFIG_TYPE_MAX_MAP_SIZE,
+#endif
+        CONFIG_TYPE_MAX_BTREE_SIZE,
+        CONFIG_TYPE_VERBOSITY
+    } ENGINE_CONFIG_TYPE;
+#endif
 
     /* overflow action */
     typedef enum {
