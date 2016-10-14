@@ -1237,6 +1237,39 @@ default_set_verbose(ENGINE_HANDLE* handle, const void* cookie,
     pthread_mutex_unlock(&engine->cache_lock);
 }
 
+#ifdef SIMPLE_CONFIG_API
+static ENGINE_ERROR_CODE
+default_set_config(ENGINE_HANDLE* handle, const void* cookie,
+                   const int config_type, void* config_argument)
+{
+    ENGINE_ERROR_CODE ret = ENGINE_ENOTSUP;
+
+    switch(config_type) {
+    case CONFIG_TYPE_MEMLIMIT:
+        ret = default_set_memlimit(handle, cookie, *(size_t*)config_argument);
+        break;
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+    case CONFIG_TYPE_MAX_LIST_SIZE:
+    case CONFIG_TYPE_MAX_SET_SIZE:
+#ifdef MAP_COLLECTION_SUPPORT
+    case CONFIG_TYPE_MAX_MAP_SIZE:
+#endif
+    case CONFIG_TYPE_MAX_BTREE_SIZE:
+        ret = default_set_maxcollsize(handle, cookie, config_type, (int*)config_argument);
+        break;
+#endif
+    case CONFIG_TYPE_VERBOSITY:
+        ret = ENGINE_SUCCESS;
+        default_set_verbose(handle, cookie, *(size_t*)config_argument);
+        break;
+    default:
+        break;
+    }
+
+    return ret;
+}
+#endif
+
 /*
  * Unknown Command API
  */
@@ -1586,6 +1619,9 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .dump             = default_dump,
 #endif
          /* Config API */
+#ifdef SIMPLE_CONFIG_API
+         .set_config       = default_set_config,
+#else
 #ifdef CONFIG_API
          .set_config       = default_set_config,
 #else
@@ -1595,6 +1631,8 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
 #endif
 #endif
          .set_verbose      = default_set_verbose,
+#endif /* SIMPLE_CONFIG_API tag end */
+
          /* Unknown Command API */
          .unknown_command  = default_unknown_command,
          /* Info API */

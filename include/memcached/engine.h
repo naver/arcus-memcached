@@ -652,6 +652,10 @@ extern "C" {
                                               const void* key, const int nkey,
                                               void *prefix_data);
 
+#ifdef SIMPLE_CONFIG_API
+        ENGINE_ERROR_CODE (*set_config)(ENGINE_HANDLE* handle, const void* cookie,
+                                        const int config_type, void* config_argument);
+#else
 #ifdef CONFIG_API
         /**
          * Set engine config.
@@ -680,6 +684,7 @@ extern "C" {
 
         void (*set_verbose) (ENGINE_HANDLE* handle, const void* cookie,
                              const size_t verbose);
+#endif
 
         char *(*cachedump)(ENGINE_HANDLE* handle, const void *cookie,
                           const unsigned int slabs_clsid,
