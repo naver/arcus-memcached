@@ -145,8 +145,9 @@ typedef struct {
     int     hb_failstop;        // memcached heartbeat failstop
     int     hb_timeout;         // memcached heartbeat timeout
     int     zk_timeout;         // Zookeeper session timeout
-    char    *znode_name;        // Ephemeral ZK node name for this mc identification
+    char   *znode_name;         // Ephemeral ZK node name for this mc identification
     int     znode_ver;          // Ephemeral ZK node version
+    bool    znode_created;      // Ephemeral ZK node is created ?
     int     verbose;            // verbose output
     size_t  maxbytes;           // mc -M option
     EXTENSION_LOGGER_DESCRIPTOR *logger; // mc logger
@@ -172,6 +173,7 @@ arcus_zk_conf arcus_conf = {
     .zk_timeout     = DEFAULT_ZK_TO,
     .znode_name     = NULL,
     .znode_ver      = -1,
+    .znode_created  = false,
     .verbose        = -1,
     .port           = -1,
     .maxbytes       = -1,
@@ -1073,14 +1075,13 @@ static int arcus_create_ephemeral_znode(zhandle_t *zh, const char *root)
     int         rc;
     char        zpath[200];
     char        value[200];
-    char        rcbuf[200];
     struct Stat zstat;
 
     snprintf(zpath, sizeof(zpath), "%s/%s",
              arcus_conf.cluster_path, arcus_conf.znode_name);
     snprintf(value, sizeof(value), "%ldMB", (long)arcus_conf.maxbytes/1024/1024);
     rc = zoo_create(zh, zpath, value, strlen(value), &ZOO_OPEN_ACL_UNSAFE,
-                    ZOO_EPHEMERAL, rcbuf, sizeof(rcbuf));
+                    ZOO_EPHEMERAL, NULL, 0);
     if (rc) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "cannot create znode %s (%s error)\n", zpath, zerror(rc));
@@ -1089,22 +1090,20 @@ static int arcus_create_ephemeral_znode(zhandle_t *zh, const char *root)
                     "old session still exist. Wait a bit\n");
         }
         return -1;
-    } else {
-        if (arcus_conf.verbose > 2) {
-            arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                    "Joined Arcus cloud at %s\n", rcbuf);
-        }
     }
 
     rc = zoo_exists(zh, zpath, 0, &zstat);
     if (rc) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "cannot find %s just created (%s error)\n", rcbuf, zerror(rc));
+                "cannot find %s just created (%s error)\n", zpath, zerror(rc));
         return -1;
     }
 
     // store this version number, just in case we restart
     arcus_conf.znode_ver = zstat.version;
+    arcus_conf.znode_created = true;
+    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
+            "Joined Arcus cloud at %s(ver=%d)\n", zpath, arcus_conf.znode_ver);
     return 0;
 }
 
