@@ -1149,6 +1149,55 @@ default_dump(ENGINE_HANDLE* handle, const void* cookie,
 /*
  * Config API
  */
+#ifdef SIMPLE_CONFIG_API
+static ENGINE_ERROR_CODE
+default_set_config(ENGINE_HANDLE* handle, const void* cookie,
+                   const char* config_key, void* config_value)
+{
+    struct default_engine* engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    if (strcmp(config_key, "memlimit") == 0) {
+        size_t new_maxbytes = *(size_t*)config_value;
+        pthread_mutex_lock(&engine->cache_lock);
+        ret = slabs_set_memlimit(engine, new_maxbytes);
+        if (ret == ENGINE_SUCCESS) {
+            engine->config.maxbytes = new_maxbytes;
+#ifdef ENABLE_STICKY_ITEM
+            if (engine->config.sticky_ratio > 0) {
+                engine->config.sticky_limit = (new_maxbytes / 100) * engine->config.sticky_ratio;
+            }
+#endif
+        }
+        pthread_mutex_unlock(&engine->cache_lock);
+    }
+#ifdef CONFIG_MAX_COLLECTION_SIZE
+    else if (strcmp(config_key, "max_list_size") == 0) {
+        ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_LIST, (int*)config_value);
+    }
+    else if (strcmp(config_key, "max_set_size") == 0) {
+        ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_SET, (int*)config_value);
+    }
+#ifdef MAP_COLLECTION_SUPPORT
+    else if (strcmp(config_key, "max_map_size") == 0) {
+        ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_MAP, (int*)config_value);
+    }
+#endif
+    else if (strcmp(config_key, "max_btree_size") == 0) {
+        ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_BTREE, (int*)config_value);
+    }
+#endif
+    else if (strcmp(config_key, "verbosity") == 0) {
+        pthread_mutex_lock(&engine->cache_lock);
+        engine->config.verbose = *(size_t*)config_value;
+        pthread_mutex_unlock(&engine->cache_lock);
+    }
+    else {
+        ret = ENGINE_ENOTSUP;
+    }
+    return ret;
+}
+#else
 #ifdef CONFIG_API
 static ENGINE_ERROR_CODE
 default_set_config(ENGINE_HANDLE* handle, const void* cookie,
@@ -1236,6 +1285,7 @@ default_set_verbose(ENGINE_HANDLE* handle, const void* cookie,
     engine->config.verbose = verbose;
     pthread_mutex_unlock(&engine->cache_lock);
 }
+#endif /* SIMPLE_CONFIG_API end */
 
 /*
  * Unknown Command API
@@ -1586,6 +1636,9 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .dump             = default_dump,
 #endif
          /* Config API */
+#ifdef SIMPLE_CONFIG_API
+         .set_config       = default_set_config,
+#else
 #ifdef CONFIG_API
          .set_config       = default_set_config,
 #else
@@ -1595,6 +1648,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
 #endif
 #endif
          .set_verbose      = default_set_verbose,
+#endif /* SIMPLE_CONFIG_API end */
          /* Unknown Command API */
          .unknown_command  = default_unknown_command,
          /* Info API */
