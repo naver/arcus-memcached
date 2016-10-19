@@ -1149,7 +1149,6 @@ default_dump(ENGINE_HANDLE* handle, const void* cookie,
 /*
  * Config API
  */
-#ifdef SIMPLE_CONFIG_API
 static ENGINE_ERROR_CODE
 default_set_config(ENGINE_HANDLE* handle, const void* cookie,
                    const char* config_key, void* config_value)
@@ -1197,95 +1196,6 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
     }
     return ret;
 }
-#else
-#ifdef CONFIG_API
-static ENGINE_ERROR_CODE
-default_set_config(ENGINE_HANDLE* handle, const void* cookie,
-                   const char* config_key, void* config_value)
-{
-    struct default_engine* engine = get_handle(handle);
-    ENGINE_ERROR_CODE ret;
-
-    if (strcmp(config_key, "memlimit") == 0) {
-        size_t new_maxbytes = *(size_t*)config_value;
-        pthread_mutex_lock(&engine->cache_lock);
-        ret = slabs_set_memlimit(engine, new_maxbytes);
-        if (ret == ENGINE_SUCCESS) {
-            engine->config.maxbytes = new_maxbytes;
-#ifdef ENABLE_STICKY_ITEM
-            if (engine->config.sticky_ratio > 0) {
-                engine->config.sticky_limit = (new_maxbytes / 100) * engine->config.sticky_ratio;
-            }
-#endif
-        }
-        pthread_mutex_unlock(&engine->cache_lock);
-    }
-#ifdef CONFIG_MAX_COLLECTION_SIZE
-    else if (strcmp(config_key, "max_list_size") == 0) {
-        ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_LIST, (int*)config_value);
-    }
-    else if (strcmp(config_key, "max_set_size") == 0) {
-        ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_SET, (int*)config_value);
-    }
-#ifdef MAP_COLLECTION_SUPPORT
-    else if (strcmp(config_key, "max_map_size") == 0) {
-        ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_MAP, (int*)config_value);
-    }
-#endif
-    else if (strcmp(config_key, "max_btree_size") == 0) {
-        ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_BTREE, (int*)config_value);
-    }
-#endif
-    else {
-        ret = ENGINE_ENOTSUP;
-    }
-    return ret;
-}
-#else
-static ENGINE_ERROR_CODE
-default_set_memlimit(ENGINE_HANDLE* handle, const void* cookie,
-                     const size_t memlimit)
-{
-    struct default_engine* engine = get_handle(handle);
-    ENGINE_ERROR_CODE ret;
-
-    pthread_mutex_lock(&engine->cache_lock);
-    ret = slabs_set_memlimit(engine, memlimit);
-    if (ret == ENGINE_SUCCESS) {
-        engine->config.maxbytes = memlimit;
-#ifdef ENABLE_STICKY_ITEM
-        if (engine->config.sticky_ratio > 0) {
-            engine->config.sticky_limit = (memlimit / 100) * engine->config.sticky_ratio;
-        }
-#endif
-    }
-    pthread_mutex_unlock(&engine->cache_lock);
-    return ret;
-}
-
-#ifdef CONFIG_MAX_COLLECTION_SIZE
-static ENGINE_ERROR_CODE
-default_set_maxcollsize(ENGINE_HANDLE* handle, const void* cookie,
-                        const int coll_type, int *maxsize)
-{
-    struct default_engine* engine = get_handle(handle);
-
-    return item_conf_set_maxcollsize(engine, coll_type, maxsize);
-}
-#endif
-#endif
-
-static void
-default_set_verbose(ENGINE_HANDLE* handle, const void* cookie,
-                    const size_t verbose)
-{
-    struct default_engine* engine = get_handle(handle);
-
-    pthread_mutex_lock(&engine->cache_lock);
-    engine->config.verbose = verbose;
-    pthread_mutex_unlock(&engine->cache_lock);
-}
-#endif /* SIMPLE_CONFIG_API end */
 
 /*
  * Unknown Command API
@@ -1636,19 +1546,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .dump             = default_dump,
 #endif
          /* Config API */
-#ifdef SIMPLE_CONFIG_API
          .set_config       = default_set_config,
-#else
-#ifdef CONFIG_API
-         .set_config       = default_set_config,
-#else
-         .set_memlimit     = default_set_memlimit,
-#ifdef CONFIG_MAX_COLLECTION_SIZE
-         .set_maxcollsize  = default_set_maxcollsize,
-#endif
-#endif
-         .set_verbose      = default_set_verbose,
-#endif /* SIMPLE_CONFIG_API end */
          /* Unknown Command API */
          .unknown_command  = default_unknown_command,
          /* Info API */

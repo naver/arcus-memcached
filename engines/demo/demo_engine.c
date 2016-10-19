@@ -702,15 +702,12 @@ Demo_get_prefix_stats(ENGINE_HANDLE* handle, const void* cookie,
 /*
  * Config API
  */
-
-#ifdef CONFIG_API
 static ENGINE_ERROR_CODE
 Demo_set_config(ENGINE_HANDLE* handle, const void* cookie,
                 const char* config_type, void* config_value)
 {
     return ENGINE_ENOTSUP;
 }
-#endif
 
 /*
  * Unknown Command API
@@ -828,9 +825,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .get_prefix_stats = Demo_get_prefix_stats,
          /* Dump API */
          /* Config API */
-#ifdef CONFIG_API
          .set_config       = Demo_set_config,
-#endif
          /* Unknown Command API */
          /* Info API */
          .get_item_info    = Demo_get_item_info,

@@ -8658,30 +8658,22 @@ static void process_zkensemble_command(conn *c, token_t *tokens, const size_t nt
 }
 #endif
 
-#ifdef CONFIG_API
-#else
 static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
-    unsigned int mlimit;
-
-#ifdef SIMPLE_CONFIG_API
     char *config_key = tokens[SUBCOMMAND_TOKEN].value;
-#endif
+    char *config_val = tokens[SUBCOMMAND_TOKEN+1].value;
+    unsigned int mlimit;
 
     if (ntokens == 3) {
         char buf[50];
         sprintf(buf, "memlimit %u\r\nEND", (int)(settings.maxbytes / (1024 * 1024)));
         out_string(c, buf);
-    } else if (ntokens == 4 && safe_strtoul(tokens[COMMAND_TOKEN+2].value, &mlimit)) {
+    } else if (ntokens == 4 && safe_strtoul(config_val, &mlimit)) {
         ENGINE_ERROR_CODE ret;
         size_t new_maxbytes = (size_t)mlimit * 1024 * 1024;
         SETTING_LOCK();
-#ifdef SIMPLE_CONFIG_API
         ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&new_maxbytes);
-#else
-        ret = mc_engine.v1->set_memlimit(mc_engine.v0, c, new_maxbytes);
-#endif
         if (ret == ENGINE_SUCCESS) {
             settings.maxbytes = new_maxbytes;
         }
@@ -8702,19 +8694,10 @@ static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntok
 static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t ntokens,
                                         int coll_type)
 {
-#ifdef MAP_COLLECTION_SUPPORT
-    assert(coll_type==ITEM_TYPE_LIST || coll_type==ITEM_TYPE_SET ||
-           coll_type==ITEM_TYPE_MAP || coll_type==ITEM_TYPE_BTREE);
-#else
-    assert(coll_type==ITEM_TYPE_LIST || coll_type==ITEM_TYPE_SET ||
-           coll_type==ITEM_TYPE_BTREE);
-#endif
-    assert(c != NULL);
-    int32_t maxsize;
-
-#ifdef SIMPLE_CONFIG_API
+    assert(c != NULL && coll_type != ITEM_TYPE_KV);
     char *config_key = tokens[SUBCOMMAND_TOKEN].value;
-#endif
+    char *config_val = tokens[SUBCOMMAND_TOKEN+1].value;
+    int32_t maxsize;
 
     if (ntokens == 3) {
         char buf[50];
@@ -8736,15 +8719,11 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
         }
         out_string(c, buf);
     }
-    else if (ntokens == 4 && safe_strtol(tokens[COMMAND_TOKEN+2].value, &maxsize)) {
+    else if (ntokens == 4 && safe_strtol(config_val, &maxsize)) {
         ENGINE_ERROR_CODE ret;
 
         SETTING_LOCK();
-#ifdef SIMPLE_CONFIG_API
         ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&maxsize);
-#else
-        ret = mc_engine.v1->set_maxcollsize(mc_engine.v0, c, coll_type, &maxsize);
-#endif
         if (ret == ENGINE_SUCCESS) {
             switch (coll_type) {
               case ITEM_TYPE_LIST:
@@ -8781,32 +8760,25 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
     }
 }
 #endif
-#endif
 
 static void process_verbosity_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
-    unsigned int level;
-
-#ifdef SIMPLE_CONFIG_API
     char *config_key = tokens[SUBCOMMAND_TOKEN].value;
-#endif
+    char *config_val = tokens[SUBCOMMAND_TOKEN+1].value;
+    unsigned int level;
 
     if (ntokens == 3) {
         char buf[50];
         sprintf(buf, "verbosity %u\r\nEND", settings.verbose);
         out_string(c, buf);
-    } else if (ntokens == 4 && safe_strtoul(tokens[COMMAND_TOKEN+2].value, &level)) {
+    } else if (ntokens == 4 && safe_strtoul(config_val, &level)) {
         if (level > MAX_VERBOSITY_LEVEL) {
             out_string(c, "SERVER_ERROR cannot change the verbosity over the limit");
             return;
         }
         SETTING_LOCK();
-#ifdef SIMPLE_CONFIG_API
         mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&level);
-#else
-        mc_engine.v1->set_verbose(mc_engine.v0, c, settings.verbose);
-#endif
         settings.verbose = level;
         perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
         SETTING_UNLOCK();
@@ -8815,102 +8787,6 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
         out_string(c, "CLIENT_ERROR bad command line format");
     }
 }
-
-#ifdef CONFIG_API
-static void process_engine_config_command(conn *c, token_t *tokens, const size_t ntokens)
-{
-    assert(c != NULL);
-
-    char* config_key = tokens[SUBCOMMAND_TOKEN].value;
-    char* config_value = tokens[SUBCOMMAND_TOKEN+1].value;
-
-    if (ntokens == 3) {
-
-        char buf[50];
-
-        if (strcmp(config_key, "memlimit") == 0) {
-            sprintf(buf, "memlimit %u\r\nEND", (int)(settings.maxbytes / (1024 * 1024)));
-#ifdef CONFIG_MAX_COLLECTION_SIZE
-        } else if (strcmp(config_key, "max_list_size") == 0) {
-            sprintf(buf, "max_list_size %d\r\nEND", settings.max_list_size);
-        } else if (strcmp(config_key, "max_set_size") == 0) {
-            sprintf(buf, "max_set_size %d\r\nEND", settings.max_set_size);
-#ifdef MAP_COLLECTION_SUPPORT
-        } else if (strcmp(config_key, "max_map_size") == 0) {
-            sprintf(buf, "max_map_size %d\r\nEND", settings.max_map_size);
-#endif
-        } else if (strcmp(config_key, "max_btree_size") == 0) {
-            sprintf(buf, "max_btree_size %d\r\nEND", settings.max_btree_size);
-#endif
-        } else {
-            sprintf(buf, "CLIENT_ERROR bad command line format");
-        }
-        out_string(c, buf);
-    } else if (ntokens == 4) {
-
-        ENGINE_ERROR_CODE ret;
-        unsigned int mlimit;
-        int32_t maxcollsize;
-
-        SETTING_LOCK();
-        if (strcmp(config_key, "memlimit") == 0 && safe_strtoul(config_value, &mlimit)) {
-            size_t new_maxbytes = (size_t)mlimit * 1024 * 1024;
-            ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&new_maxbytes);
-
-            if (ret == ENGINE_SUCCESS) {
-                settings.maxbytes = new_maxbytes;
-            }
-#ifdef CONFIG_MAX_COLLECTION_SIZE
-        } else if (strcmp(config_key, "max_list_size") == 0 && safe_strtol(config_value, &maxcollsize)) {
-            ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&maxcollsize);
-
-            if (ret == ENGINE_SUCCESS) {
-                settings.max_list_size = maxcollsize;
-                MAX_LIST_SIZE = maxcollsize;
-            }
-        } else if (strcmp(config_key, "max_set_size") == 0 && safe_strtol(config_value, &maxcollsize)) {
-            ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&maxcollsize);
-
-            if (ret == ENGINE_SUCCESS) {
-                settings.max_set_size = maxcollsize;
-                MAX_SET_SIZE = maxcollsize;
-            }
-#ifdef MAP_COLLECTION_SUPPORT
-        } else if (strcmp(config_key, "max_map_size") == 0 && safe_strtol(config_value, &maxcollsize)) {
-            ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&maxcollsize);
-
-            if (ret == ENGINE_SUCCESS) {
-                settings.max_map_size = maxcollsize;
-                MAX_MAP_SIZE = maxcollsize;
-            }
-#endif
-        } else if (strcmp(config_key, "max_btree_size") == 0 && safe_strtol(config_value, &maxcollsize)) {
-            ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&maxcollsize);
-
-            if (ret == ENGINE_SUCCESS) {
-                settings.max_btree_size = maxcollsize;
-                MAX_BTREE_SIZE = maxcollsize;
-            }
-#endif
-        } else {
-            ret = ENGINE_EINVAL;
-        }
-        SETTING_UNLOCK();
-
-        if (ret == ENGINE_SUCCESS) {
-            out_string(c, "END");
-        } else if (ret == ENGINE_ENOTSUP) {
-            out_string(c, "NOT_SUPPORTED");
-        } else if (ret == ENGINE_EBADVALUE) {
-            out_string(c, "CLIENT_ERROR bad value");
-        } else { /*ENGINE_INVAL*/
-            out_string(c, "CLIENT_ERROR bad command line format");
-        }
-    } else {
-        out_string(c, "CLIENT_ERROR bad command line format");
-    }
-}
-#endif
 
 static void process_config_command(conn *c, token_t *tokens, const size_t ntokens)
 {
@@ -8936,8 +8812,6 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
         process_zkensemble_command(c, tokens, ntokens);
     }
 #endif
-#ifdef CONFIG_API
-#else
     else if ((ntokens == 3 || ntokens == 4) &&
              (strcmp(tokens[SUBCOMMAND_TOKEN].value, "memlimit") == 0))
     {
@@ -8967,23 +8841,15 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
         process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_BTREE);
     }
 #endif
-#endif
     else if ((ntokens == 3 || ntokens == 4) &&
              (strcmp(tokens[SUBCOMMAND_TOKEN].value, "verbosity") == 0))
     {
         process_verbosity_command(c, tokens, ntokens);
     }
-#ifdef CONFIG_API
-    else
-    {
-        process_engine_config_command(c, tokens, ntokens);
-    }
-#else
    else
     {
         out_string(c, "CLIENT_ERROR bad command line format");
     }
-#endif
 }
 
 #ifdef JHPARK_KEY_DUMP
