@@ -31,7 +31,8 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
-#define CONFIG_API
+#define SIMPLE_CONFIG_API
+//#define CONFIG_API
 #define MAP_COLLECTION_SUPPORT
 #define SUPPORT_BOP_MGET
 #define SUPPORT_BOP_SMGET

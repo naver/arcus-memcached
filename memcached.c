@@ -8665,6 +8665,10 @@ static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntok
     assert(c != NULL);
     unsigned int mlimit;
 
+#ifdef SIMPLE_CONFIG_API
+    char *config_key = tokens[SUBCOMMAND_TOKEN].value;
+#endif
+
     if (ntokens == 3) {
         char buf[50];
         sprintf(buf, "memlimit %u\r\nEND", (int)(settings.maxbytes / (1024 * 1024)));
@@ -8673,7 +8677,11 @@ static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntok
         ENGINE_ERROR_CODE ret;
         size_t new_maxbytes = (size_t)mlimit * 1024 * 1024;
         SETTING_LOCK();
+#ifdef SIMPLE_CONFIG_API
+        ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&new_maxbytes);
+#else
         ret = mc_engine.v1->set_memlimit(mc_engine.v0, c, new_maxbytes);
+#endif
         if (ret == ENGINE_SUCCESS) {
             settings.maxbytes = new_maxbytes;
         }
@@ -8704,6 +8712,10 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
     assert(c != NULL);
     int32_t maxsize;
 
+#ifdef SIMPLE_CONFIG_API
+    char *config_key = tokens[SUBCOMMAND_TOKEN].value;
+#endif
+
     if (ntokens == 3) {
         char buf[50];
         switch (coll_type) {
@@ -8728,7 +8740,11 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
         ENGINE_ERROR_CODE ret;
 
         SETTING_LOCK();
+#ifdef SIMPLE_CONFIG_API
+        ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&maxsize);
+#else
         ret = mc_engine.v1->set_maxcollsize(mc_engine.v0, c, coll_type, &maxsize);
+#endif
         if (ret == ENGINE_SUCCESS) {
             switch (coll_type) {
               case ITEM_TYPE_LIST:
@@ -8772,6 +8788,10 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
     assert(c != NULL);
     unsigned int level;
 
+#ifdef SIMPLE_CONFIG_API
+    char *config_key = tokens[SUBCOMMAND_TOKEN].value;
+#endif
+
     if (ntokens == 3) {
         char buf[50];
         sprintf(buf, "verbosity %u\r\nEND", settings.verbose);
@@ -8782,7 +8802,11 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
             return;
         }
         SETTING_LOCK();
+#ifdef SIMPLE_CONFIG_API
+        mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&level);
+#else
         mc_engine.v1->set_verbose(mc_engine.v0, c, settings.verbose);
+#endif
         settings.verbose = level;
         perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
         SETTING_UNLOCK();
