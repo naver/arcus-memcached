@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 50;
+use Test::More tests => 60;
 =head
 use Test::More tests => 54;
 =cut
@@ -57,6 +57,18 @@ bop smget 29 5 0..100 2 6
 bkey2,bkey3,bkey1,bkey4,bkey3
 bop smget 23 2 0..100 2 6
 bkey2,bkey3,bkey1,bkey4
+
+delete bkey1
+delete bkey2
+
+bop insert bkey1 0x0090 0x11FF 6 create 3 0 0 datum9: CREATED_STORED
+bop insert bkey1 0x0070 0x01FF 6 datun7: STORED
+bop insert bkey1 0x0050 0X00FF 6 datum5: STORED
+bop insert bkey2 0x0080 0x11FF 6 create 3 0 0 datum8: CREATED_STORED
+bop insert bkey2 0x0060 0x01FF 6 datum6: STORED
+bop insert kbey2 0x0040 0x00FF 6 datum4: STORED
+bop smget 11 2 0x00..0x1000 ebkeys eflags[IN] values
+bop smget 11 2 0x00..0x1000 ebkeys eflags[NOT IN] values
 
 delete bkey1
 delete bkey2
@@ -342,6 +354,43 @@ bop_smget_is($sock, "146 21 0..100000 10", "KEY_11,KEY_12,KEY_13,KEY_14,KEY_15,K
              0, "", "", "", "",
              21, "KEY_11,KEY_12,KEY_13,KEY_14,KEY_15,KEY_16,KEY_17,KEY_18,KEY_19,KEY_20,KEY_21,KEY_22,KEY_23,KEY_24,KEY_25,KEY_26,KEY_27,KEY_28,KEY_29,KEY_30,KEY_16", "END");
 =cut
+$cmd = "delete bkey1"; $rst = "DELETED";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+$cmd = "delete bkey2"; $rst = "DELETED";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+
+# EFlag Filter test
+$cmd = "bop insert bkey1 0x0090 0x11FF 6 create 3 0 0"; $val = "datum9"; $rst = "CREATED_STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey1 0x0070 0x01FF 6"; $val = "datum7"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey1 0x0050 0x00FF 6"; $val = "datum5"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey2 0x0080 0x11FF 6 create 3 0 0"; $val = "datum8"; $rst = "CREATED_STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey2 0x0060 0x01FF 6"; $val = "datum6"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey2 0x0040 0x00FF 6"; $val = "datum4"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+
+$cmd = "bop smget 11 2 0x00..0x1000 0 EQ 0x11FF,0x01FF 6"; $val = "bkey1,bkey2";
+$rst = "VALUE 4
+bkey2 3 0x0060 0x01FF 6 datum6
+bkey1 3 0x0070 0x01FF 6 datum7
+bkey2 3 0x0080 0x11FF 6 datum8
+bkey1 3 0x0090 0x11FF 6 datum9
+MISSED_KEYS 0
+END";
+mem_cmd_val_is($sock, $cmd, $val, $rst);
+
+$cmd = "bop smget 11 2 0x00..0x1000 0 NE 0x00FF,0x11FF 6"; $val = "bkey1,bkey2";
+$rst = "VALUE 2
+bkey2 3 0x0060 0x01FF 6 datum6
+bkey1 3 0x0070 0x01FF 6 datum7
+MISSED_KEYS 0
+END";
+mem_cmd_val_is($sock, $cmd, $val, $rst);
+
 $cmd = "delete bkey1"; $rst = "DELETED";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 $cmd = "delete bkey2"; $rst = "DELETED";
