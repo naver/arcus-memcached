@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 42;
+use Test::More tests => 52;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -77,6 +77,18 @@ bop insert bkey2 40 6
 datum4
 bop insert bkey2 20 6
 datum2
+
+delete bkey1
+delete bkey2
+
+bop insert bkey1 0x0090 0x11FF 6 create 3 0 0 datum9: CREATED_STORED
+bop insert bkey1 0x0070 0x01FF 6 datun7: STORED
+bop insert bkey1 0x0050 0X00FF 6 datum5: STORED
+bop insert bkey2 0x0080 0x11FF 6 create 3 0 0 datum8: CREATED_STORED
+bop insert bkey2 0x0060 0x01FF 6 datum6: STORED
+bop insert kbey2 0x0040 0x00FF 6 datum4: STORED
+bop mget 11 2 0x00..0x1000 ebkeys eflags[IN] values
+bop mget 11 2 0x00..0x1000 ebkeys eflags[NOT IN] values
 
 delete bkey1
 delete bkey2
@@ -295,6 +307,43 @@ VALUE KEY_28 NOT_FOUND
 VALUE KEY_29 NOT_FOUND
 VALUE KEY_30 NOT_FOUND
 VALUE KEY_16 NOT_FOUND
+END";
+mem_cmd_val_is($sock, $cmd, $val, $rst);
+
+$cmd = "delete bkey1"; $rst = "DELETED";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+$cmd = "delete bkey2"; $rst = "DELETED";
+print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+
+# EFlag Filter test
+$cmd = "bop insert bkey1 0x0090 0x11FF 6 create 3 0 0"; $val = "datum9"; $rst = "CREATED_STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey1 0x0070 0x01FF 6"; $val = "datum7"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey1 0x0050 0x00FF 6"; $val = "datum5"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey2 0x0080 0x11FF 6 create 3 0 0"; $val = "datum8"; $rst = "CREATED_STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey2 0x0060 0x01FF 6"; $val = "datum6"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey2 0x0040 0x00FF 6"; $val = "datum4"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+
+$cmd = "bop mget 11 2 0x00..0x1000 0 EQ 0x11FF,0x01FF 6"; $val = "bkey1,bkey2";
+$rst = "VALUE bkey1 OK 3 2
+ELEMENT 0x0070 0x01FF 6 datum7
+ELEMENT 0x0090 0x11FF 6 datum9
+VALUE bkey2 OK 3 2
+ELEMENT 0x0060 0x01FF 6 datum6
+ELEMENT 0x0080 0x11FF 6 datum8
+END";
+mem_cmd_val_is($sock, $cmd, $val, $rst);
+
+$cmd = "bop mget 11 2 0x00..0x1000 0 NE 0x00FF,0x11FF 6"; $val = "bkey1,bkey2";
+$rst = "VALUE bkey1 OK 3 1
+ELEMENT 0x0070 0x01FF 6 datum7
+VALUE bkey2 OK 3 1
+ELEMENT 0x0060 0x01FF 6 datum6
 END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 
