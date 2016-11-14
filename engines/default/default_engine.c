@@ -1154,12 +1154,29 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
     if (strcmp(config_key, "memlimit") == 0) {
         size_t new_maxbytes = *(size_t*)config_value;
         pthread_mutex_lock(&engine->cache_lock);
-        ret = slabs_set_memlimit(engine, new_maxbytes);
-        if (ret == ENGINE_SUCCESS) {
-            engine->config.maxbytes = new_maxbytes;
+        if (new_maxbytes >= engine->config.sticky_limit) {
+            ret = slabs_set_memlimit(engine, new_maxbytes);
+            if (ret == ENGINE_SUCCESS) {
+                engine->config.maxbytes = new_maxbytes;
+            }
+        } else {
+            ret = ENGINE_EBADVALUE;
         }
         pthread_mutex_unlock(&engine->cache_lock);
     }
+#ifdef ENABLE_STICKY_ITEM
+    else if (strcmp(config_key, "sticky_limit") == 0) {
+        size_t new_sticky_limit = *(size_t*)config_value;
+        pthread_mutex_lock(&engine->cache_lock);
+        if (new_sticky_limit >= engine->stats.sticky_bytes &&
+            new_sticky_limit <= engine->config.maxbytes) {
+            engine->config.sticky_limit = new_sticky_limit;
+        } else {
+            ret = ENGINE_EBADVALUE;
+        }
+        pthread_mutex_unlock(&engine->cache_lock);
+    }
+#endif
 #ifdef CONFIG_MAX_COLLECTION_SIZE
     else if (strcmp(config_key, "max_list_size") == 0) {
         ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_LIST, (int*)config_value);
