@@ -326,7 +326,7 @@ static void settings_init(void) {
     settings.inter = NULL;
     settings.maxbytes = 64 * 1024 * 1024; /* default is 64MB */
     settings.maxconns = 1024;         /* to limit connections-related memory to about 5MB */
-    settings.sticky_ratio = 0;        /* default: 0 */
+    settings.sticky_limit = 0;        /* default: 0 MB */
     settings.verbose = 0;
     settings.oldest_live = 0;
     settings.evict_to_free = 1;       /* push old items out of cache when memory runs out */
@@ -7807,7 +7807,7 @@ static void process_stat_settings(ADD_STAT add_stats, void *c) {
     APPEND_STAT("maxconns", "%d", settings.maxconns);
     APPEND_STAT("tcpport", "%d", settings.port);
     APPEND_STAT("udpport", "%d", settings.udpport);
-    APPEND_STAT("sticky_ratio", "%d", settings.sticky_ratio);
+    APPEND_STAT("sticky_limit", "%lu", (unsigned long)settings.sticky_limit);
     APPEND_STAT("inter", "%s", settings.inter ? settings.inter : "NULL");
     APPEND_STAT("verbosity", "%d", settings.verbose);
     APPEND_STAT("oldest", "%lu", (unsigned long)settings.oldest_live);
@@ -13860,7 +13860,7 @@ static void usage(void) {
            "-m <num>      max memory to use for items in megabytes (default: 64 MB)\n"
            "-M            return error on memory exhausted (rather than removing items)\n"
 #ifdef ENABLE_STICKY_ITEM
-           "-g            sticky(gummed) item ratio of 0 ~ 100 (default: 0)\n"
+           "-g            sticky(gummed) memory limit in megabytes (default: 0 MB)\n"
 #endif
            "-c <num>      max simultaneous connections (default: 1024)\n"
            "-k            lock down all paged memory.  Note that there is a\n"
@@ -14591,7 +14591,7 @@ int main (int argc, char **argv) {
           "m:"  /* max memory to use for items in megabytes */
           "M"   /* return error on memory exhausted */
 #ifdef ENABLE_STICKY_ITEM
-          "g:"  /* sticky(gummed) item ratio */
+          "g:"  /* sticky(gummed) memory limit */
 #endif
           "c:"  /* max simultaneous connections */
           "k"   /* lock down all paged memory */
@@ -14650,14 +14650,15 @@ int main (int argc, char **argv) {
             break;
 #ifdef ENABLE_STICKY_ITEM
         case 'g':
-            settings.sticky_ratio = atoi(optarg);
-            if (settings.sticky_ratio < 0 || settings.sticky_ratio > 100) {
+            settings.sticky_limit = ((size_t)atoi(optarg)) * 1024 * 1024;
+            if (settings.sticky_limit < 0 || settings.sticky_limit > settings.maxbytes) {
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "The value of sticky(gummed) item ratio must be between 0 and 100.\n");
+                    "The value of sticky(gummed) memory limit must be"
+                    " greater than 0 and less than memlimit.\n");
                 return 1;
             }
-            old_opts += sprintf(old_opts, "sticky_ratio=%lu;",
-                                (unsigned long)settings.sticky_ratio);
+            old_opts += sprintf(old_opts, "sticky_limit=%lu;",
+                                (unsigned long)settings.sticky_limit);
             break;
 #endif
         case 'c':
