@@ -82,9 +82,9 @@ initialize_configuration(struct demo_engine *se, const char *cfg_str)
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.maxbytes },
 #ifdef ENABLE_STICKY_ITEM
-            { .key = "sticky_ratio",
+            { .key = "sticky_limit",
               .datatype = DT_SIZE,
-              .value.dt_size = &se->config.sticky_ratio},
+              .value.dt_size = &se->config.sticky_limit},
 #endif
             { .key = "preallocate",
               .datatype = DT_BOOL,
@@ -128,11 +128,6 @@ initialize_configuration(struct demo_engine *se, const char *cfg_str)
         if (se->server.core->parse_config(cfg_str, items, stderr) != 0) {
             return ENGINE_FAILED;
         }
-#ifdef ENABLE_STICKY_ITEM
-        if (se->config.sticky_ratio > 0) {
-            se->config.sticky_limit = (se->config.maxbytes / 100) * se->config.sticky_ratio;
-        }
-#endif
     }
     return ENGINE_SUCCESS;
 }
@@ -849,7 +844,6 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .evict_to_free = true,
          .num_threads = 0,
          .maxbytes = 64 * 1024 * 1024,
-         .sticky_ratio = 0,
          .sticky_limit = 0,
          .preallocate = false,
          .factor = 1.25,

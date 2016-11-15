@@ -326,7 +326,7 @@ static void settings_init(void) {
     settings.inter = NULL;
     settings.maxbytes = 64 * 1024 * 1024; /* default is 64MB */
     settings.maxconns = 1024;         /* to limit connections-related memory to about 5MB */
-    settings.sticky_ratio = 0;        /* default: 0 */
+    settings.sticky_limit = 0;        /* default: 0 MB */
     settings.verbose = 0;
     settings.oldest_live = 0;
     settings.evict_to_free = 1;       /* push old items out of cache when memory runs out */
@@ -7807,7 +7807,7 @@ static void process_stat_settings(ADD_STAT add_stats, void *c) {
     APPEND_STAT("maxconns", "%d", settings.maxconns);
     APPEND_STAT("tcpport", "%d", settings.port);
     APPEND_STAT("udpport", "%d", settings.udpport);
-    APPEND_STAT("sticky_ratio", "%d", settings.sticky_ratio);
+    APPEND_STAT("sticky_limit", "%lu", (unsigned long)settings.sticky_limit);
     APPEND_STAT("inter", "%s", settings.inter ? settings.inter : "NULL");
     APPEND_STAT("verbosity", "%d", settings.verbose);
     APPEND_STAT("oldest", "%lu", (unsigned long)settings.oldest_live);
@@ -8690,6 +8690,40 @@ static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntok
     }
 }
 
+#ifdef ENABLE_STICKY_ITEM
+static void process_stickylimit_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    assert(c != NULL);
+    char *config_key = tokens[SUBCOMMAND_TOKEN].value;
+    char *config_val = tokens[SUBCOMMAND_TOKEN+1].value;
+    unsigned int sticky_limit;
+
+    if (ntokens == 3) {
+        char buf[50];
+        sprintf(buf, "sticky_limit %u\r\nEND", (int)(settings.sticky_limit / (1024 * 1024)));
+        out_string(c, buf);
+    } else if (ntokens == 4 && safe_strtoul(config_val, &sticky_limit)) {
+        ENGINE_ERROR_CODE ret;
+        size_t new_sticky_limit = (size_t)sticky_limit * 1024 * 1024;
+        SETTING_LOCK();
+        ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&new_sticky_limit);
+        if (ret == ENGINE_SUCCESS) {
+            settings.sticky_limit = new_sticky_limit;
+        }
+        SETTING_UNLOCK();
+        if (ret == ENGINE_SUCCESS) {
+            out_string(c, "END");
+        } else if (ret == ENGINE_ENOTSUP) {
+            out_string(c, "NOT_SUPPORTED");
+        } else { /* ENGINE_EBADVALUE */
+            out_string(c, "CLIENT_ERROR bad value");
+        }
+    } else {
+        out_string(c, "CLIENT_ERROR bad command line format");
+    }
+}
+#endif
+
 #ifdef CONFIG_MAX_COLLECTION_SIZE
 static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t ntokens,
                                         int coll_type)
@@ -8817,6 +8851,13 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     {
         process_memlimit_command(c, tokens, ntokens);
     }
+#ifdef ENABLE_STICKY_ITEM
+    else if ((ntokens == 3 || ntokens == 4) &&
+             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "sticky_limit") == 0))
+    {
+        process_stickylimit_command(c, tokens, ntokens);
+    }
+#endif
 #ifdef CONFIG_MAX_COLLECTION_SIZE
     else if ((ntokens == 3 || ntokens == 4) &&
              (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_list_size") == 0))
@@ -9051,6 +9092,9 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\n"
         "\t" "config verbosity [<verbose>]\\r\\n" "\n"
         "\t" "config memlimit [<memsize(MB)>]\\r\\n" "\n"
+#ifdef ENABLE_STICKY_ITEM
+        "\t" "config sticky_limit [<stickylimit(MB)>]\\r\\n" "\n"
+#endif
         "\t" "config maxconns [<maxconn>]\\r\\n" "\n"
 #ifdef CONFIG_MAX_COLLECTION_SIZE
         "\t" "config max_list_size [<maxsize>]\\r\\n" "\n"
@@ -13860,7 +13904,7 @@ static void usage(void) {
            "-m <num>      max memory to use for items in megabytes (default: 64 MB)\n"
            "-M            return error on memory exhausted (rather than removing items)\n"
 #ifdef ENABLE_STICKY_ITEM
-           "-g            sticky(gummed) item ratio of 0 ~ 100 (default: 0)\n"
+           "-g            sticky(gummed) memory limit in megabytes (default: 0 MB)\n"
 #endif
            "-c <num>      max simultaneous connections (default: 1024)\n"
            "-k            lock down all paged memory.  Note that there is a\n"
@@ -14591,7 +14635,7 @@ int main (int argc, char **argv) {
           "m:"  /* max memory to use for items in megabytes */
           "M"   /* return error on memory exhausted */
 #ifdef ENABLE_STICKY_ITEM
-          "g:"  /* sticky(gummed) item ratio */
+          "g:"  /* sticky(gummed) memory limit */
 #endif
           "c:"  /* max simultaneous connections */
           "k"   /* lock down all paged memory */
@@ -14650,14 +14694,15 @@ int main (int argc, char **argv) {
             break;
 #ifdef ENABLE_STICKY_ITEM
         case 'g':
-            settings.sticky_ratio = atoi(optarg);
-            if (settings.sticky_ratio < 0 || settings.sticky_ratio > 100) {
+            settings.sticky_limit = ((size_t)atoi(optarg)) * 1024 * 1024;
+            if (settings.sticky_limit < 0 || settings.sticky_limit > settings.maxbytes) {
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "The value of sticky(gummed) item ratio must be between 0 and 100.\n");
+                    "The value of sticky(gummed) memory limit must be"
+                    " greater than 0 and less than memlimit.\n");
                 return 1;
             }
-            old_opts += sprintf(old_opts, "sticky_ratio=%lu;",
-                                (unsigned long)settings.sticky_ratio);
+            old_opts += sprintf(old_opts, "sticky_limit=%lu;",
+                                (unsigned long)settings.sticky_limit);
             break;
 #endif
         case 'c':

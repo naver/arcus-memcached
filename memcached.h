@@ -376,7 +376,7 @@ struct settings {
     int maxconns;
     int port;
     int udpport;
-    int sticky_ratio;
+    size_t sticky_limit;
     char *inter;
     int verbose;
     rel_time_t oldest_live; /* ignore existing items older than this */
