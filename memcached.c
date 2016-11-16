@@ -14597,6 +14597,8 @@ int main (int argc, char **argv) {
     struct rlimit rlim;
     char unit = '\0';
     int size_max = 0;
+    int cache_memory_limit = 0;
+    int sticky_memory_limit = 0;
 
     bool protocol_specified = false;
     bool tcp_specified = false;
@@ -14684,18 +14686,26 @@ int main (int argc, char **argv) {
             settings.socketpath = optarg;
             break;
         case 'm':
-            settings.maxbytes = ((size_t)atoi(optarg)) * 1024 * 1024;
-             old_opts += sprintf(old_opts, "cache_size=%lu;",
+            cache_memory_limit = atoi(optarg);
+            settings.maxbytes = (size_t)cache_memory_limit * 1024 * 1024;
+            if (cache_memory_limit < 0 || settings.maxbytes < settings.sticky_limit) {
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "The value of memory limit must be"
+                    " greater than 0 and sticky_limit.\n");
+                return 1;
+            }
+            old_opts += sprintf(old_opts, "cache_size=%lu;",
                                  (unsigned long)settings.maxbytes);
-           break;
+            break;
         case 'M':
             settings.evict_to_free = 0;
             old_opts += sprintf(old_opts, "eviction=false;");
             break;
 #ifdef ENABLE_STICKY_ITEM
         case 'g':
-            settings.sticky_limit = ((size_t)atoi(optarg)) * 1024 * 1024;
-            if (settings.sticky_limit < 0 || settings.sticky_limit > settings.maxbytes) {
+            sticky_memory_limit = atoi(optarg);
+            settings.sticky_limit = (size_t)sticky_memory_limit * 1024 * 1024;
+            if (sticky_memory_limit < 0 || settings.sticky_limit > settings.maxbytes) {
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "The value of sticky(gummed) memory limit must be"
                     " greater than 0 and less than memlimit.\n");
