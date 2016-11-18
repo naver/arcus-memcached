@@ -226,6 +226,9 @@ struct sm {
     /* Cache of the latest version we pulled from ZK */
     struct String_vector sv_cache_list; /* from /cache_list/{svc} */
 
+    /* Current # of nodes in cluster */
+    int cluster_node_count;
+
     /* Used to wake up the thread */
     pthread_mutex_t lock;
     pthread_cond_t cond;
@@ -453,11 +456,13 @@ arcus_read_ZK_children(const char *zpath, watcher_fn watcher,
 
 #ifdef ENABLE_CLUSTER_AWARE
 /* update cluster config, that is ketama hash ring. */
-static void
+static int
 update_cluster_config(struct String_vector *strv)
 {
-    if (strv->count == 0) /* cache_list can be empty. */
-        return;
+    if (strv->count == 0) { /* cache_list can be empty. */
+        sm_info.cluster_node_count = 0;
+        return 0;
+    }
 
     if (arcus_conf.verbose > 0) {
         for (int i = 0; i < strv->count; i++) {
@@ -466,7 +471,11 @@ update_cluster_config(struct String_vector *strv)
         }
     }
     /* reconfigure arcus-memcached cluster */
-    cluster_config_reconfigure(arcus_conf.ch, strv->data, strv->count);
+    if (cluster_config_reconfigure(arcus_conf.ch, strv->data, strv->count) < 0) {
+        return -1;
+    }
+    sm_info.cluster_node_count = strv->count;
+    return 0;
 }
 #endif
 
@@ -1262,7 +1271,11 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
                 "Failed to read cache list from ZK. Terminating...\n");
         arcus_exit(zh, EX_CONFIG);
     }
-    update_cluster_config(&strv);
+    if (update_cluster_config(&strv) != 0) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Failed to update cluster config. Terminating...\n");
+        arcus_exit(zh, EX_CONFIG);
+    }
     deallocate_String_vector(&strv);
 
     arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -1577,7 +1590,10 @@ sm_state_thread(void *arg)
 
 #ifdef ENABLE_CLUSTER_AWARE
                 /* update cluster config */
-                update_cluster_config(&sm_info.sv_cache_list);
+                if (update_cluster_config(&sm_info.sv_cache_list) != 0) {
+                    arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "Failed to update cluster config. Will check later.\n");
+                }
 #endif
             }
         }
