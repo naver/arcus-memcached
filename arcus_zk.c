@@ -449,9 +449,9 @@ arcus_read_ZK_children(const char *zpath, watcher_fn watcher,
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
             "Failed to read children(znode list) of zpath=%s: "
             "error=%d(%s)\n", zpath, rc, zerror(rc));
+        return (rc == ZNONODE ? 0 : -1);
     }
-    /* The caller must free strv */
-    return (rc == ZOK ? 0 : -1);
+    return 1; /* The caller must free strv */
 }
 
 #ifdef ENABLE_CLUSTER_AWARE
@@ -1266,7 +1266,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 
     struct String_vector strv = { 0, NULL };
     /* 2nd argument, NULL means no watcher */
-    if (arcus_read_ZK_children(arcus_conf.cluster_path, NULL, &strv) != 0) {
+    if (arcus_read_ZK_children(arcus_conf.cluster_path, NULL, &strv) <= 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Failed to read cache list from ZK. Terminating...\n");
         arcus_exit(zh, EX_CONFIG);
@@ -1570,9 +1570,10 @@ sm_state_thread(void *arg)
         /* Read the latest hash ring */
         if (smreq.update_cache_list) {
             struct String_vector strv_cache_list = {0, NULL};
-            if (arcus_read_ZK_children(arcus_conf.cluster_path,
-                                       arcus_cache_list_watcher,
-                                       &strv_cache_list) != 0) {
+            int zresult = arcus_read_ZK_children(arcus_conf.cluster_path,
+                                                 arcus_cache_list_watcher,
+                                                 &strv_cache_list);
+            if (zresult < 0) {
                 arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Failed to read cache list from ZK.  Retry...\n");
                 sm_retry = true;
@@ -1583,6 +1584,10 @@ sm_state_thread(void *arg)
                  * disconnected from ZK, operations fail with connectionloss.
                  * Or, we would see operation timeout.
                  */
+            } else if (zresult == 0) { /* NO znode */
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "Cannot read cache list from ZK.  No znode.\n");
+                /* Do not retry */
             } else {
                 /* Remember the latest cache list */
                 deallocate_String_vector(&sm_info.sv_cache_list);
