@@ -8321,7 +8321,7 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
     }
 
     bool create = false;
-    unsigned int flags;
+    unsigned int flags  = 0;
     int32_t exptime_int = 0;
     uint64_t init_value = 0;
 
