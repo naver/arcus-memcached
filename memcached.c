@@ -7797,13 +7797,13 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("bytes_written", "%"PRIu64, thread_stats.bytes_written);
     APPEND_STAT("limit_maxbytes", "%"PRIu64, settings.maxbytes);
     APPEND_STAT("threads", "%d", settings.num_threads);
-    APPEND_STAT("conn_yields", "%" PRIu64, (unsigned long long)thread_stats.conn_yields);
+    APPEND_STAT("conn_yields", "%"PRIu64, thread_stats.conn_yields);
     STATS_UNLOCK();
 }
 
 static void process_stat_settings(ADD_STAT add_stats, void *c) {
     assert(add_stats);
-    APPEND_STAT("maxbytes", "%u", (unsigned int)settings.maxbytes);
+    APPEND_STAT("maxbytes", "%lu", (unsigned long)settings.maxbytes);
     APPEND_STAT("maxconns", "%d", settings.maxconns);
     APPEND_STAT("tcpport", "%d", settings.port);
     APPEND_STAT("udpport", "%d", settings.udpport);
