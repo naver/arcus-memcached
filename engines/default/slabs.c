@@ -1200,7 +1200,7 @@ static void do_slabs_stats(struct default_engine *engine, ADD_STAT add_stats, co
             add_statistics(cookie, add_stats, NULL, i, "used_chunks", "%u", (slabs*perslab)-p->sl_curr-p->end_page_free);
             add_statistics(cookie, add_stats, NULL, i, "free_chunks", "%u", p->sl_curr);
             add_statistics(cookie, add_stats, NULL, i, "free_chunks_end", "%u", p->end_page_free);
-            add_statistics(cookie, add_stats, NULL, i, "mem_requested", "%zu", p->requested);
+            add_statistics(cookie, add_stats, NULL, i, "mem_requested", "%llu", (unsigned long long)p->requested);
 #ifdef FUTURE
             add_statistics(cookie, add_stats, NULL, i, "get_hits", "%"PRIu64, thread_stats.slab_stats[i].get_hits);
             add_statistics(cookie, add_stats, NULL, i, "cmd_set", "%"PRIu64, thread_stats.slab_stats[i].set_cmds);
@@ -1214,8 +1214,8 @@ static void do_slabs_stats(struct default_engine *engine, ADD_STAT add_stats, co
 
     /* add overall slab stats and append terminator */
     add_statistics(cookie, add_stats, NULL, -1, "active_slabs", "%d", total);
-    add_statistics(cookie, add_stats, NULL, -1, "memory_limit", "%zu", engine->slabs.mem_limit);
-    add_statistics(cookie, add_stats, NULL, -1, "total_malloced", "%zu", engine->slabs.mem_malloced);
+    add_statistics(cookie, add_stats, NULL, -1, "memory_limit", "%llu", (unsigned long long)engine->slabs.mem_limit);
+    add_statistics(cookie, add_stats, NULL, -1, "total_malloced", "%llu", (unsigned long long)engine->slabs.mem_malloced);
 }
 
 static void *memory_allocate(struct default_engine *engine, size_t size)

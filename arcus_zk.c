@@ -771,9 +771,8 @@ hb_thread(void *arg)
         } else {
             elapsed_msec = 0; /* Ignore this failure */
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "hb_thread: Clock has gone backwards? start_msec=%llu"
-                " end_msec=%llu\n", (unsigned long long)start_msec,
-                (unsigned long long)end_msec);
+                "hb_thread: Clock has gone backwards? start_msec=%"PRIu64
+                " end_msec=%"PRIu64"\n", start_msec, end_msec);
         }
 
         azk_stat.hb_count += 1;
@@ -785,9 +784,9 @@ hb_thread(void *arg)
              * analysis, etc.
              */
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Heartbeat failure. hb_timeout=%d hb_latency=%llu "
-                "accumulated_hb_latency=%d\n", cur_hb_timeout,
-                (unsigned long long)elapsed_msec, acc_hb_latency);
+                "Heartbeat failure. hb_timeout=%d hb_latency=%"PRIu64
+                " accumulated_hb_latency=%d\n", cur_hb_timeout,
+                elapsed_msec, acc_hb_latency);
 
             if (acc_hb_latency > cur_hb_failstop) {
                 /* Do not bother calling memcached.c:shutdown_server.
@@ -1651,8 +1650,7 @@ sm_timer_thread(void *arg)
                  */
                 arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Disconnected from ZK for too long. Terminating... "
-                    "duration_msec=%llu\n",
-                    (long long unsigned)(now_msec - start_msec));
+                    "duration_msec=%"PRIu64"\n", now_msec - start_msec);
                 shutdown_by_me = true;
                 break;
                 /* Do we have to kill the slave too?  Or, only the master?

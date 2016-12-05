@@ -7803,11 +7803,11 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
 
 static void process_stat_settings(ADD_STAT add_stats, void *c) {
     assert(add_stats);
-    APPEND_STAT("maxbytes", "%lu", (unsigned long)settings.maxbytes);
+    APPEND_STAT("maxbytes", "%llu", (unsigned long long)settings.maxbytes);
     APPEND_STAT("maxconns", "%d", settings.maxconns);
     APPEND_STAT("tcpport", "%d", settings.port);
     APPEND_STAT("udpport", "%d", settings.udpport);
-    APPEND_STAT("sticky_limit", "%lu", (unsigned long)settings.sticky_limit);
+    APPEND_STAT("sticky_limit", "%llu", (unsigned long long)settings.sticky_limit);
     APPEND_STAT("inter", "%s", settings.inter ? settings.inter : "NULL");
     APPEND_STAT("verbosity", "%d", settings.verbose);
     APPEND_STAT("oldest", "%lu", (unsigned long)settings.oldest_live);
@@ -7842,7 +7842,7 @@ static void process_stat_settings(ADD_STAT add_stats, void *c) {
     APPEND_STAT("auth_sasl_engine", "%s", "none");
 #endif
     APPEND_STAT("auth_required_sasl", "%s", settings.require_sasl ? "yes" : "no");
-    APPEND_STAT("item_size_max", "%d", settings.item_size_max);
+    APPEND_STAT("item_size_max", "%llu", settings.item_size_max);
     APPEND_STAT("max_list_size", "%d", settings.max_list_size);
     APPEND_STAT("max_set_size", "%d", settings.max_set_size);
 #ifdef MAP_COLLECTION_SUPPORT
@@ -14694,8 +14694,8 @@ int main (int argc, char **argv) {
                     " greater than 0 and sticky_limit.\n");
                 return 1;
             }
-            old_opts += sprintf(old_opts, "cache_size=%lu;",
-                                 (unsigned long)settings.maxbytes);
+            old_opts += sprintf(old_opts, "cache_size=%llu;",
+                                 (unsigned long long)settings.maxbytes);
             break;
         case 'M':
             settings.evict_to_free = 0;
@@ -14711,8 +14711,8 @@ int main (int argc, char **argv) {
                     " greater than 0 and less than memlimit.\n");
                 return 1;
             }
-            old_opts += sprintf(old_opts, "sticky_limit=%lu;",
-                                (unsigned long)settings.sticky_limit);
+            old_opts += sprintf(old_opts, "sticky_limit=%llu;",
+                                (unsigned long long)settings.sticky_limit);
             break;
 #endif
         case 'c':
@@ -14858,13 +14858,8 @@ int main (int argc, char **argv) {
                     " and will decrease your memory efficiency.\n"
                 );
             }
-#ifndef __WIN32__
-            old_opts += sprintf(old_opts, "item_size_max=%zu;",
+            old_opts += sprintf(old_opts, "item_size_max=%llu;", (unsigned long long)
                                 settings.item_size_max);
-#else
-            old_opts += sprintf(old_opts, "item_size_max=%lu;", (long unsigned)
-                                settings.item_size_max);
-#endif
             break;
         case 'E':
             engine = optarg;
