@@ -269,8 +269,9 @@ static void increase_collection_space(struct default_engine *engine, ENGINE_ITEM
     /* Currently, stats.lock is useless since global cache lock is held. */
     //pthread_mutex_lock(&engine->stats.lock);
 #ifdef ENABLE_STICKY_ITEM
-    if ((info->mflags & COLL_META_FLAG_STICKY) != 0)
+    if ((info->mflags & COLL_META_FLAG_STICKY) != 0) {
         engine->stats.sticky_bytes += inc_space;
+    }
 #endif
     assoc_prefix_update_size(info->prefix, item_type, inc_space, true);
     engine->stats.curr_bytes += inc_space;
