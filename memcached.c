@@ -14381,6 +14381,18 @@ static bool is_my_key(const char *key, size_t nkey)
 #endif
     return true;
 }
+
+static int ketama_hslice(const char *key, size_t nkey, uint32_t *hvalue)
+{
+#ifdef ENABLE_ZK_INTEGRATION
+    if (arcus_zk_cfg) {
+       return arcus_ketama_hslice(key, nkey, hvalue);
+    }
+#endif
+    /* No ZK integration */
+    *hvalue = 0;
+    return 0; /* slice index */
+}
 #endif
 
 static void shutdown_server(void)
@@ -14450,7 +14462,7 @@ static SERVER_HANDLE_V1 *get_server_api(void)
 #ifdef ENABLE_CLUSTER_AWARE
         .is_zk_integrated = is_zk_integrated,
         .is_my_key = is_my_key,
-        .ketama_hslice = arcus_ketama_hslice,
+        .ketama_hslice = ketama_hslice,
 #endif
         .shutdown = shutdown_server
     };
