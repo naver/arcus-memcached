@@ -6,7 +6,11 @@ use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
 
-my $server = new_memcached();
+### [ARCUS] CHANGED FOLLOWING TEST ###
+## ENABLE_MIGRATION: hash_item structure has more fields in migration.
+#my $server = new_memcached();
+my $server = new_memcached("-n 32");
+######################################
 my $sock = $server->sock;
 my $value1 = "A"x77320;
 my $value2 = "B"x77330;
