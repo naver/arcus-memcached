@@ -703,13 +703,15 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
         if (sm_anchor.free_slist[targ].head != NULL) {
             smid = targ; break;
         }
-        /* find the 2 times large free slot */
+        /* look for a 2 times larger free slot */
         smid = do_smmgr_memid(slen*2, false);
-        for ( ; smid <= sm_anchor.free_maxid; smid++) {
-            if (sm_anchor.free_slist[smid].head != NULL) break;
-        }
         if (smid > sm_anchor.free_maxid) {
             smid = sm_anchor.free_maxid;
+        } else {
+            for ( ; smid <= sm_anchor.free_maxid; smid++) {
+                if (sm_anchor.free_slist[smid].head != NULL) break;
+            }
+            assert(smid <= sm_anchor.free_maxid);
         }
     } while(0);
 
