@@ -8649,7 +8649,7 @@ static void process_zkensemble_command(conn *c, token_t *tokens, const size_t nt
         /* The ensemble is a comma separated list of host:port addresses.
          * host1:port1,host2:port2,...
          */
-        if (arcus_zk_set_ensemble(tokens[COMMAND_TOKEN+1].value) != 0) {
+        if (arcus_zk_set_ensemble(tokens[SUBCOMMAND_TOKEN+1].value) != 0) {
             out_string(c, "ERROR failed to set the new ensemble address (check logs)");
         } else {
             out_string(c, "OK");
