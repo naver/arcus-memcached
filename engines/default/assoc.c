@@ -417,9 +417,8 @@ static void _prefix_delete(struct default_engine *engine, uint32_t hash,
     free(pt); // release
 }
 
-bool assoc_prefix_isvalid(struct default_engine *engine, hash_item *it)
+bool assoc_prefix_isvalid(struct default_engine *engine, hash_item *it, rel_time_t current_time)
 {
-    rel_time_t current_time = engine->server.core->get_current_time();
     prefix_t *pt;
 
     if (it->nprefix == 0) { /* the prefix of key is null */

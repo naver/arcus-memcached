@@ -351,7 +351,7 @@ static bool do_item_isvalid(struct default_engine *engine, hash_item *it, rel_ti
             return false; /* flushed by flush_all */
     }
     /* check if prefix is valid */
-    if (assoc_prefix_isvalid(engine, it) == false) {
+    if (assoc_prefix_isvalid(engine, it, current_time) == false) {
         return false;
     }
     return true; /* Yes, it's a valid item */
