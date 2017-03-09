@@ -114,7 +114,7 @@ static void redistribute(struct default_engine *engine, unsigned int bucket)
          prev = &assoc->roottable[ii].hashtable[bucket];
          while (*prev != NULL) {
              it = *prev;
-             tabidx = GET_HASH_TABIDX(it->hval, assoc->hashpower, hashmask(assoc->rootpower));
+             tabidx = GET_HASH_TABIDX(it->khash, assoc->hashpower, hashmask(assoc->rootpower));
              if (tabidx == ii) {
                  prev = &it->h_next;
              } else {
@@ -140,7 +140,7 @@ hash_item *assoc_find(struct default_engine *engine, uint32_t hash,
 
     it = assoc->roottable[tabidx].hashtable[bucket];
     while (it) {
-        if ((hash == it->hval) && (nkey == it->nkey) &&
+        if ((hash == it->khash) && (nkey == it->nkey) &&
             (memcmp(key, item_get_key(it), nkey) == 0)) {
             ret = it;
             break;

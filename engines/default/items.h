@@ -35,9 +35,10 @@ typedef struct _hash_item {
                          */
     uint16_t nkey;      /* The total length of the key (in bytes) */
     uint32_t nbytes;    /* The total length of the data (in bytes) */
+    /* Following fields are used to trade off memory space for performance */
     uint8_t  nprefix;   /* The prefix length of the key (in bytes) : 0 ~ 250 */
     uint8_t  dummy[3];
-    uint32_t hval;      /* hash value of key string */
+    uint32_t khash;     /* The hash value of key string */
 } hash_item;
 
 /* Item Internal Flags */

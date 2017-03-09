@@ -878,8 +878,8 @@ static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *
     /* link the item to the hash table */
     it->iflag |= ITEM_LINKED;
     it->time = engine->server.core->get_current_time();
-    it->hval = engine->server.core->hash(key, it->nkey, 0);
-    assoc_insert(engine, it->hval, it);
+    it->khash = engine->server.core->hash(key, it->nkey, 0);
+    assoc_insert(engine, it->khash, it);
 
     /* link the item to LRU list */
     item_link_q(engine, it);
@@ -914,7 +914,7 @@ static void do_item_unlink(struct default_engine *engine, hash_item *it,
         item_unlink_q(engine, it);
 
         /* unlink the item from hash table */
-        assoc_delete(engine, it->hval, key, it->nkey);
+        assoc_delete(engine, it->khash, key, it->nkey);
         it->iflag &= ~ITEM_LINKED;
 
         /* unlink the item from prefix info */
