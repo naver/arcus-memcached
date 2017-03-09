@@ -62,26 +62,26 @@ struct bucket_info {
 };
 
 struct assoc {
-   uint32_t hashpower; /* how many hash buckets in a hash table ? (power of 2) */
-   uint32_t hashsize;  /* hash table size */
-   uint32_t hashmask;  /* hash bucket mask */
-   uint32_t rootpower; /* how many hash tables we use ? (power of 2) */
+    uint32_t hashpower; /* how many hash buckets in a hash table ? (power of 2) */
+    uint32_t hashsize;  /* hash table size */
+    uint32_t hashmask;  /* hash bucket mask */
+    uint32_t rootpower; /* how many hash tables we use ? (power of 2) */
 
-   /* cache item hash table : an array of hash tables */
-   struct table {
-      hash_item** hashtable;
-   } *roottable;
+    /* cache item hash table : an array of hash tables */
+    struct table {
+       hash_item** hashtable;
+    } *roottable;
 
-   /* bucket info table */
-  struct bucket_info *infotable;
+    /* bucket info table */
+    struct bucket_info *infotable;
 
-   /* prefix hash table : single hash table */
-   prefix_t**  prefix_hashtable;
-   prefix_t    noprefix_stats;
+    /* prefix hash table : single hash table */
+    prefix_t**  prefix_hashtable;
+    prefix_t    noprefix_stats;
 
-   /* Number of items in the hash table. */
-   unsigned int hash_items;
-   unsigned int tot_prefix_items;
+    /* Number of items in the hash table. */
+    unsigned int hash_items;
+    unsigned int tot_prefix_items;
 };
 
 /* assoc scan structure */
