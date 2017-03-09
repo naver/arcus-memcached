@@ -361,9 +361,7 @@ void assoc_scan_final(struct assoc_scan *scan)
 prefix_t *assoc_prefix_find(struct default_engine *engine, uint32_t hash,
                             const char *prefix, const int nprefix)
 {
-    prefix_t *pt;
-
-    pt = engine->assoc.prefix_hashtable[hash & hashmask(DEFAULT_PREFIX_HASHPOWER)];
+    prefix_t *pt = engine->assoc.prefix_hashtable[hash & hashmask(DEFAULT_PREFIX_HASHPOWER)];
     while (pt) {
         if ((nprefix == pt->nprefix) && (memcmp(prefix, _get_prefix(pt), nprefix) == 0)) {
             return pt;
@@ -371,50 +369,6 @@ prefix_t *assoc_prefix_find(struct default_engine *engine, uint32_t hash,
         pt = pt->h_next;
     }
     return NULL;
-}
-
-static prefix_t** _prefixitem_before(struct default_engine *engine, uint32_t hash,
-                                     const char *prefix, const int nprefix)
-{
-    prefix_t **pos;
-
-    pos = &engine->assoc.prefix_hashtable[hash & hashmask(DEFAULT_PREFIX_HASHPOWER)];
-    while (*pos && ((nprefix != (*pos)->nprefix) || memcmp(prefix, _get_prefix(*pos), nprefix))) {
-        pos = &(*pos)->h_next;
-    }
-    return pos;
-}
-
-static int _prefix_insert(struct default_engine *engine, uint32_t hash, prefix_t *pt)
-{
-    assert(assoc_prefix_find(engine, hash, _get_prefix(pt), pt->nprefix) == NULL);
-
-    pt->h_next = engine->assoc.prefix_hashtable[hash & hashmask(DEFAULT_PREFIX_HASHPOWER)];
-    engine->assoc.prefix_hashtable[hash & hashmask(DEFAULT_PREFIX_HASHPOWER)] = pt;
-
-    assert(pt->parent_prefix != NULL);
-    pt->parent_prefix->prefix_items++;
-    engine->assoc.tot_prefix_items++;
-    return 1;
-}
-
-static void _prefix_delete(struct default_engine *engine, uint32_t hash,
-                           const char *prefix, const int nprefix)
-{
-    prefix_t **prefix_before = _prefixitem_before(engine, hash, prefix, nprefix);
-    prefix_t *pt = *prefix_before;
-    prefix_t *prefix_nxt = NULL;
-
-    assert(pt != NULL && pt->parent_prefix != NULL);
-
-    pt->parent_prefix->prefix_items--;
-    engine->assoc.tot_prefix_items--;
-
-    prefix_nxt = pt->h_next;
-    pt->h_next = 0;
-    *prefix_before = prefix_nxt;
-
-    free(pt); // release
 }
 
 bool assoc_prefix_isvalid(struct default_engine *engine, hash_item *it, rel_time_t current_time)
@@ -482,6 +436,43 @@ void assoc_prefix_update_size(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
             }
         }
 #endif
+    }
+}
+
+static int _prefix_insert(struct default_engine *engine, uint32_t hash, prefix_t *pt)
+{
+    assert(assoc_prefix_find(engine, hash, _get_prefix(pt), pt->nprefix) == NULL);
+
+    int bucket = hash & hashmask(DEFAULT_PREFIX_HASHPOWER);
+    pt->h_next = engine->assoc.prefix_hashtable[bucket];
+    engine->assoc.prefix_hashtable[bucket] = pt;
+
+    assert(pt->parent_prefix != NULL);
+    pt->parent_prefix->prefix_items++;
+    engine->assoc.tot_prefix_items++;
+    return 1;
+}
+
+static void _prefix_delete(struct default_engine *engine, uint32_t hash,
+                           const char *prefix, const int nprefix)
+{
+    int bucket = hash & hashmask(DEFAULT_PREFIX_HASHPOWER);
+    prefix_t *prev_pt = NULL;
+    prefix_t *pt = engine->assoc.prefix_hashtable[bucket];
+    while (pt) {
+        if ((nprefix == pt->nprefix) && (memcmp(prefix, _get_prefix(pt), nprefix) == 0))
+            break; /* found */
+        prev_pt = pt; pt = pt->h_next;
+    }
+    if (pt) {
+        assert(pt->parent_prefix != NULL);
+        pt->parent_prefix->prefix_items--;
+        engine->assoc.tot_prefix_items--;
+
+        /* unlink and free the prefix structure */
+        if (prev_pt) prev_pt->h_next = pt->h_next;
+        else         engine->assoc.prefix_hashtable[bucket] = pt->h_next;
+        free(pt);
     }
 }
 
