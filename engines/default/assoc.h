@@ -26,14 +26,15 @@ struct _prefix_t {
     uint8_t  nprefix;  /* the length of prefix name */
     uint8_t  internal; /* is internal prefix ? 1 or 0 */
     uint16_t dummy16;
-    uint32_t prefix_items;
-
-    prefix_t *h_next;
 
     rel_time_t oldest_live;
-    time_t create_time;
+    time_t     create_time;
 
+    prefix_t *h_next;  /* prefix hash chain */
     prefix_t *parent_prefix;
+
+    /* lower prefix count */
+    uint32_t prefix_items;
 
     /* the count and bytes of cache items per item type */
     uint64_t items_count[ITEM_TYPE_MAX];
