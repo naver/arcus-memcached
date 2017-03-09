@@ -18,6 +18,8 @@
 #ifndef ASSOC_H
 #define ASSOC_H
 
+#include <memcached/types.h>
+
 typedef struct _prefix_t prefix_t;
 
 struct _prefix_t {
@@ -25,30 +27,21 @@ struct _prefix_t {
     uint8_t  internal; /* is internal prefix ? 1 or 0 */
     uint16_t dummy16;
     uint32_t prefix_items;
-    uint64_t list_hash_items;
-    uint64_t set_hash_items;
-#ifdef MAP_COLLECTION_SUPPORT
-    uint64_t map_hash_items;
-#endif
-    uint64_t btree_hash_items;
-    uint64_t hash_items;
-    //uint64_t tot_hash_items;
 
     prefix_t *h_next;
 
     rel_time_t oldest_live;
     time_t create_time;
 
-    uint64_t list_hash_items_bytes;
-    uint64_t set_hash_items_bytes;
-#ifdef MAP_COLLECTION_SUPPORT
-    uint64_t map_hash_items_bytes;
-#endif
-    uint64_t btree_hash_items_bytes;
-    uint64_t hash_items_bytes;
-    //uint64_t tot_hash_items_bytes;
-
     prefix_t *parent_prefix;
+
+    /* the count and bytes of cache items per item type */
+    uint64_t items_count[ITEM_TYPE_MAX];
+    uint64_t items_bytes[ITEM_TYPE_MAX];
+    uint64_t total_count_exclusive;
+    uint64_t total_bytes_exclusive;
+    //uint64_t total_count_inclusive; /* NOT yet used */
+    //uint64_t total_bytes_inclusive; /* NOT yet used */
 };
 
 #define PREFIX_IS_RSVD(pfx,npfx) ((npfx) == 5 && strncmp((pfx), "arcus", 5) == 0)
