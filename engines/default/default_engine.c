@@ -290,17 +290,8 @@ default_get(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     *item = item_get(engine, key, nkey);
-    if (*item != NULL) {
-        hash_item *it = get_real_item(*item);
-        if ((it->iflag & ITEM_IFLAG_COLL) != 0) { /* collection item */
-            item_release(engine, it);
-            *item = NULL;
-            return ENGINE_EBADTYPE;
-        }
-        return ENGINE_SUCCESS;
-    } else {
-        return ENGINE_KEY_ENOENT;
-    }
+    return (*item != NULL) ? ENGINE_SUCCESS
+                           : ENGINE_KEY_ENOENT;
 }
 
 static ENGINE_ERROR_CODE
