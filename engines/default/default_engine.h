@@ -35,6 +35,8 @@
 /* Forward decl */
 struct default_engine;
 
+#define USE_PREFIX_POINTER_IN_HASH_ITEM 1
+
 #include "trace.h"
 #include "items.h"
 #include "assoc.h"

@@ -20,7 +20,10 @@
 
 #include <memcached/types.h>
 
+#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
+#else
 typedef struct _prefix_t prefix_t;
+#endif
 
 struct _prefix_t {
     uint8_t  nprefix;  /* the length of prefix name */
@@ -30,8 +33,13 @@ struct _prefix_t {
     rel_time_t oldest_live;
     time_t     create_time;
 
+#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
+    struct _prefix_t *h_next;  /* prefix hash chain */
+    struct _prefix_t *parent_prefix;
+#else
     prefix_t *h_next;  /* prefix hash chain */
     prefix_t *parent_prefix;
+#endif
 
     /* lower prefix count */
     uint32_t prefix_items;
@@ -112,9 +120,14 @@ bool              assoc_prefix_isvalid(struct default_engine *engine,
                                        hash_item *it, rel_time_t current_time);
 void              assoc_prefix_update_size(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
                                     const size_t item_size, const bool increment);
+#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
+ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine,
+                                    hash_item *it, const size_t item_size);
+#else
 ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine,
                                     hash_item *it, const size_t item_size,
                                     prefix_t **pfx_item);
+#endif
 void              assoc_prefix_unlink(struct default_engine *engine, hash_item *it,
                                     const size_t item_size, bool drop_if_empty);
 ENGINE_ERROR_CODE assoc_get_prefix_stats(struct default_engine *engine,

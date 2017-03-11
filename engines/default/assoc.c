@@ -373,6 +373,19 @@ prefix_t *assoc_prefix_find(struct default_engine *engine, uint32_t hash,
 
 bool assoc_prefix_isvalid(struct default_engine *engine, hash_item *it, rel_time_t current_time)
 {
+#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
+    prefix_t *pt = it->pfxptr;
+    do {
+        if (pt->oldest_live != 0 &&
+            pt->oldest_live <= current_time &&
+            it->time <= pt->oldest_live)
+            return false;
+        /* traverse parent prefixes to validate them */
+        pt = pt->parent_prefix;
+    } while(pt != NULL && pt != root_pt);
+
+    return true;
+#else
     prefix_t *pt;
 
     if (it->nprefix == 0) { /* the prefix of key is null */
@@ -393,6 +406,7 @@ bool assoc_prefix_isvalid(struct default_engine *engine, hash_item *it, rel_time
             pt = pt->parent_prefix;
         }
     }
+#endif
     return true;
 }
 
@@ -466,8 +480,13 @@ static void _prefix_delete(struct default_engine *engine, uint32_t hash,
     }
 }
 
+#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
+ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it,
+                                    const size_t item_size)
+#else
 ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it,
                                     const size_t item_size, prefix_t **pfx_item)
+#endif
 {
     const char *key = item_get_key(it);
     size_t     nkey = it->nkey;
@@ -491,7 +510,12 @@ ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it
     if (prefix_depth == 0) {
         pt = root_pt;
         time(&pt->create_time);
+#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
+        /* save prefix pointer in hash_item */
+        it->pfxptr = pt;
+#else
         it->nprefix = 0;
+#endif
     } else {
         for (i = prefix_depth - 1; i >= 0; i--) {
             prefix_list[i].hash = engine->server.core->hash(key, prefix_list[i].nprefix, 0);
@@ -537,8 +561,13 @@ ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it
                 prefix_list[j].pt = pt;
             }
         }
+#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
+        /* save prefix pointer in hash_item */
+        it->pfxptr = pt;
+#else
         // update item information about prefix length
         it->nprefix = pt->nprefix;
+#endif
     }
 
     assert(pt != NULL);
@@ -568,13 +597,20 @@ ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it
     }
 #endif
 
+#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
+#else
     *pfx_item = pt;
+#endif
     return ENGINE_SUCCESS;
 }
 
 void assoc_prefix_unlink(struct default_engine *engine, hash_item *it,
                          const size_t item_size, bool drop_if_empty)
 {
+#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
+    prefix_t *pt = it->pfxptr;
+    it->pfxptr = NULL;
+#else
     prefix_t *pt;
 
     if (it->nprefix == 0) {
@@ -583,6 +619,7 @@ void assoc_prefix_unlink(struct default_engine *engine, hash_item *it,
         pt = assoc_prefix_find(engine, engine->server.core->hash(item_get_key(it), it->nprefix, 0),
                                item_get_key(it), it->nprefix);
     }
+#endif
     assert(pt != NULL);
 
     /* update prefix information */
