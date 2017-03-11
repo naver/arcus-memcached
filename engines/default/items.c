@@ -7375,6 +7375,10 @@ ENGINE_ERROR_CODE item_getattr(struct default_engine *engine,
         }
 
         if (IS_COLL_ITEM(it)) {
+#ifdef USE_1_BYTE_IFLAG
+            attr_data->type = GET_ITEM_TYPE(it);
+            assert(attr_data->type < ITEM_TYPE_MAX);
+#else
             if (IS_LIST_ITEM(it))       attr_data->type = ITEM_TYPE_LIST;
             else if (IS_SET_ITEM(it))   attr_data->type = ITEM_TYPE_SET;
 #ifdef MAP_COLLECTION_SUPPORT
@@ -7382,6 +7386,7 @@ ENGINE_ERROR_CODE item_getattr(struct default_engine *engine,
 #endif
             else if (IS_BTREE_ITEM(it)) attr_data->type = ITEM_TYPE_BTREE;
             else                        attr_data->type = ITEM_TYPE_MAX; /* unknown */
+#endif
             /* attribute validation check */
             if (attr_data->type != ITEM_TYPE_BTREE) {
                 for (int i = 0; i < attr_count; i++) {
