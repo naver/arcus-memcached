@@ -44,9 +44,7 @@
 #define IS_BTREE_ITEM(it) (((it)->iflag & ITEM_IFLAG_COLL) == ITEM_IFLAG_BTREE)
 #define IS_COLL_ITEM(it)  (((it)->iflag & ITEM_IFLAG_COLL) != 0)
 
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
 typedef struct _prefix_t prefix_t;
-#endif
 
 /* hash item strtucture */
 typedef struct _hash_item {
@@ -63,15 +61,8 @@ typedef struct _hash_item {
     uint16_t nkey;      /* The total length of the key (in bytes) */
     uint32_t nbytes;    /* The total length of the data (in bytes) */
     /* Following fields are used to trade off memory space for performance */
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
-#else
-    uint8_t  nprefix;   /* The prefix length of the key (in bytes) : 0 ~ 250 */
-    uint8_t  dummy[3];
-#endif
     uint32_t khash;     /* The hash value of key string */
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
     prefix_t *pfxptr;   /* pointer to prefix structure */
-#endif
 } hash_item;
 
 /* list element */
@@ -136,10 +127,6 @@ typedef struct _list_meta_info {
     uint8_t  mflags;    /* sticky, readable flags */
     uint16_t itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint32_t stotal;    /* total space */
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
-#else
-    void    *prefix;    /* pointer to prefix meta info */
-#endif
     list_elem_item *head;
     list_elem_item *tail;
 } list_meta_info;
@@ -166,10 +153,6 @@ typedef struct _set_meta_info {
     uint8_t  mflags;    /* sticky, readable flags */
     uint16_t itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint32_t stotal;    /* total space */
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
-#else
-    void    *prefix;    /* pointer to prefix meta info */
-#endif
     set_hash_node *root;
 } set_meta_info;
 
@@ -196,10 +179,6 @@ typedef struct _map_meta_info {
     uint8_t  mflags;    /* sticky, readable flags */
     uint16_t itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint32_t stotal;    /* total space */
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
-#else
-    void    *prefix;    /* pointer to prefix meta info */
-#endif
     map_hash_node *root;
 } map_meta_info;
 #endif
@@ -238,10 +217,6 @@ typedef struct _btree_meta_info {
     uint8_t  mflags;    /* sticky, readable, trimmed flags */
     uint16_t itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint32_t stotal;    /* total space */
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
-#else
-    void    *prefix;    /* pointer to prefix meta info */
-#endif
     uint8_t  bktype;    /* bkey type : BKEY_TYPE_UINT64 or BKEY_TYPE_BINARY */
     uint8_t  dummy[7];  /* reserved space */
     bkey_t   maxbkeyrange;
@@ -274,10 +249,6 @@ typedef struct _coll_meta_info {
     uint8_t  mflags;    /* sticky, readable flags */
     uint16_t itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint32_t stotal;    /* total space */
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
-#else
-    void    *prefix;    /* pointer to prefix meta info */
-#endif
 } coll_meta_info;
 
 /* item stats */

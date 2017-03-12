@@ -273,12 +273,8 @@ static void increase_collection_space(struct default_engine *engine, ENGINE_ITEM
         engine->stats.sticky_bytes += inc_space;
     }
 #endif
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
     hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
     assoc_prefix_update_size(it->pfxptr, item_type, inc_space, true);
-#else
-    assoc_prefix_update_size(info->prefix, item_type, inc_space, true);
-#endif
     engine->stats.curr_bytes += inc_space;
     //pthread_mutex_unlock(&engine->stats.lock);
 }
@@ -295,12 +291,8 @@ static void decrease_collection_space(struct default_engine *engine, ENGINE_ITEM
         engine->stats.sticky_bytes -= dec_space;
     }
 #endif
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
     hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
     assoc_prefix_update_size(it->pfxptr, item_type, dec_space, false);
-#else
-    assoc_prefix_update_size(info->prefix, item_type, dec_space, false);
-#endif
     engine->stats.curr_bytes -= dec_space;
     //pthread_mutex_unlock(&engine->stats.lock);
 }
@@ -726,11 +718,7 @@ static hash_item *do_item_alloc(struct default_engine *engine,
         memcpy((void*)item_get_key(it), key, nkey);
     }
     it->exptime = exptime;
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
     it->pfxptr = NULL;
-#else
-    it->nprefix = 0;
-#endif
     return it;
 }
 
@@ -874,7 +862,6 @@ static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *
 
     /* link the item to prefix info */
     stotal = ITEM_stotal(engine, it);
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
     ENGINE_ERROR_CODE ret = assoc_prefix_link(engine, it, stotal);
     if (ret != ENGINE_SUCCESS) {
         return ret;
@@ -883,22 +870,6 @@ static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *
         /* It's an internal cache item whose prefix name is "arcus". */
         it->iflag |= ITEM_INTERNAL;
     }
-#else
-    prefix_t *pt;
-    ENGINE_ERROR_CODE ret = assoc_prefix_link(engine, it, stotal, &pt);
-    if (ret != ENGINE_SUCCESS) {
-        return ret;
-    }
-    if (IS_COLL_ITEM(it)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        info->prefix = (void*)pt;
-        assert(info->stotal == 0); /* Only empty collection can be linked */
-    }
-    if (pt->internal) {
-        /* It's an internal cache item whose prefix name is "arcus". */
-        it->iflag |= ITEM_INTERNAL;
-    }
-#endif
 
     /* link the item to the hash table */
     it->iflag |= ITEM_LINKED;
@@ -947,10 +918,6 @@ static void do_item_unlink(struct default_engine *engine, hash_item *it,
         assoc_prefix_unlink(engine, it, stotal, (cause != ITEM_UNLINK_REPLACE ? true : false));
         if (IS_COLL_ITEM(it)) {
             coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
-#else
-            info->prefix = NULL;
-#endif
             info->stotal = 0; /* Don't need to decrease space statistics any more */
         }
 
@@ -1517,10 +1484,6 @@ static hash_item *do_list_item_alloc(struct default_engine *engine,
         if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
         info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
         info->stotal  = 0;
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
-#else
-        info->prefix  = NULL;
-#endif
         info->head = info->tail = NULL;
         assert((hash_item*)COLL_GET_HASH_ITEM(info) == it);
     }
@@ -1820,10 +1783,6 @@ static hash_item *do_set_item_alloc(struct default_engine *engine,
         if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
         info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
         info->stotal  = 0;
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
-#else
-        info->prefix  = NULL;
-#endif
         info->root    = NULL;
         assert((hash_item*)COLL_GET_HASH_ITEM(info) == it);
     }
@@ -2390,10 +2349,6 @@ static hash_item *do_btree_item_alloc(struct default_engine *engine,
         if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
         info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
         info->stotal  = 0;
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
-#else
-        info->prefix  = NULL;
-#endif
         info->bktype  = BKEY_TYPE_UNKNOWN;
         info->maxbkeyrange.len = BKEY_NULL;
         info->root    = NULL;
@@ -6195,15 +6150,9 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
                     if (nprefix < 0) { /* flush all */
                         do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
                     } else if (nprefix == 0) { /* flush null prefix */
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
                         if (iter->pfxptr->nprefix == 0) {
                             do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
                         }
-#else
-                        if (iter->nprefix == 0) {
-                            do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
-                        }
-#endif
                     } else { /* nprefix > 0: flush given prefix */
                         char *iter_key = (char*)item_get_key(iter);
                         if (iter->nkey > nprefix && memcmp(prefix,iter_key,nprefix) == 0 &&
@@ -6226,15 +6175,9 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
                     if (nprefix < 0) { /* flush all */
                         do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
                     } else if (nprefix == 0) { /* flush null prefix */
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
                         if (iter->pfxptr->nprefix == 0) {
                             do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
                         }
-#else
-                        if (iter->nprefix == 0) {
-                            do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
-                        }
-#endif
                     } else { /* nprefix > 0: flush given prefix */
                         char *iter_key = (char*)item_get_key(iter);
                         if (iter->nkey > nprefix && memcmp(prefix,iter_key,nprefix) == 0 &&
@@ -8024,27 +7967,14 @@ static void *item_dumper_main(void *arg)
             dumper->visited++;
             /* check prefix name */
             if (dumper->nprefix > 0) {
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
                 if (dumper->nprefix != it->pfxptr->nprefix ||
                     memcmp(item_get_key(it), dumper->prefix, dumper->nprefix) != 0) {
                     continue; /* prefix mismatch */
                 }
-#else
-                if (dumper->nprefix != it->nprefix ||
-                    memcmp(item_get_key(it), dumper->prefix, dumper->nprefix) != 0) {
-                    continue; /* prefix mismatch */
-                }
-#endif
             } else if (dumper->nprefix == 0) {
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
                 if (it->pfxptr->nprefix != 0) {
                     continue; /* NOT null prefix */
                 }
-#else
-                if (it->nprefix != 0) {
-                    continue; /* not null prefix */
-                }
-#endif
             }
             if ((cur_buflen + it->nkey + 24) > max_buflen) {
                 nwritten = write(fd, dump_buffer, cur_buflen);
@@ -8327,10 +8257,6 @@ static hash_item *do_map_item_alloc(struct default_engine *engine,
         if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
         info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
         info->stotal  = 0;
-#ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
-#else
-        info->prefix  = NULL;
-#endif
         info->root    = NULL;
         assert((hash_item*)COLL_GET_HASH_ITEM(info) == it);
     }
