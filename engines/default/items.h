@@ -18,9 +18,6 @@
 #ifndef ITEMS_H
 #define ITEMS_H
 
-#define USE_1_BYTE_IFLAG 1
-
-#ifdef USE_1_BYTE_IFLAG
 /* Item internal flag (1 byte) : item type and flag */
 /* 1) item type: increasing order (See ENGINE_ITEM_TYPE) */
 #define ITEM_IFLAG_LIST  1   /* list item */
@@ -46,7 +43,6 @@
 #endif
 #define IS_BTREE_ITEM(it) (((it)->iflag & ITEM_IFLAG_COLL) == ITEM_IFLAG_BTREE)
 #define IS_COLL_ITEM(it)  (((it)->iflag & ITEM_IFLAG_COLL) != 0)
-#endif
 
 #ifdef USE_PREFIX_POINTER_IN_HASH_ITEM
 typedef struct _prefix_t prefix_t;
@@ -63,15 +59,7 @@ typedef struct _hash_item {
     struct _hash_item *h_next; /* hash chain next */
     rel_time_t time;    /* least recent access */
     rel_time_t exptime; /* When the item will expire (relative to process startup) */
-#ifdef USE_1_BYTE_IFLAG
     uint8_t  iflag;     /* Intermal flags: item type and flag */
-    uint8_t  dummy;
-#else
-    uint16_t iflag;     /* Intermal flags.
-                         * Lower 8 bits are reserved for the core server,
-                         * Upper 8 bits are reserved for engine implementation.
-                         */
-#endif
     uint16_t nkey;      /* The total length of the key (in bytes) */
     uint32_t nbytes;    /* The total length of the data (in bytes) */
     /* Following fields are used to trade off memory space for performance */
@@ -85,33 +73,6 @@ typedef struct _hash_item {
     prefix_t *pfxptr;   /* pointer to prefix structure */
 #endif
 } hash_item;
-
-#ifdef USE_1_BYTE_IFLAG
-#else
-/* Item Internal Flags */
-#define ITEM_WITH_CAS    1
-#define ITEM_IFLAG_LIST  2   /* list item */
-#define ITEM_IFLAG_SET   4   /* set item */
-#ifdef MAP_COLLECTION_SUPPORT
-#define ITEM_IFLAG_MAP   8   /* map item */
-#define ITEM_IFLAG_BTREE 16  /* b+tree item */
-#define ITEM_IFLAG_COLL  30  /* collection item: list/set/map/b+tree */
-#else
-#define ITEM_IFLAG_BTREE 8   /* b+tree item */
-#define ITEM_IFLAG_COLL  14  /* collection item: list/set/b+tree */
-#endif
-#define ITEM_INTERNAL (1<<8) /* internal cache item */
-#define ITEM_LINKED   (2<<8) /* linked to assoc hash table */
-
-/* Macros for checking item type */
-#define IS_LIST_ITEM(it)  (((it)->iflag & ITEM_IFLAG_LIST) != 0)
-#define IS_SET_ITEM(it)   (((it)->iflag & ITEM_IFLAG_SET) != 0)
-#ifdef MAP_COLLECTION_SUPPORT
-#define IS_MAP_ITEM(it)   (((it)->iflag & ITEM_IFLAG_MAP) != 0)
-#endif
-#define IS_BTREE_ITEM(it) (((it)->iflag & ITEM_IFLAG_BTREE) != 0)
-#define IS_COLL_ITEM(it)  (((it)->iflag & ITEM_IFLAG_COLL) != 0)
-#endif
 
 /* list element */
 typedef struct _list_elem_item {

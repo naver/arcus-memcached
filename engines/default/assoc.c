@@ -573,19 +573,7 @@ ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it
     assert(pt != NULL);
 
     /* update prefix information */
-#ifdef USE_1_BYTE_IFLAG
     int item_type = GET_ITEM_TYPE(it);
-#else
-    int item_type;
-    if (IS_LIST_ITEM(it))       item_type = ITEM_TYPE_LIST;
-    else if (IS_SET_ITEM(it))   item_type = ITEM_TYPE_SET;
-#ifdef MAP_COLLECTION_SUPPORT
-    else if (IS_MAP_ITEM(it))   item_type = ITEM_TYPE_MAP;
-#endif
-    else if (IS_BTREE_ITEM(it)) item_type = ITEM_TYPE_BTREE;
-    else                        item_type = ITEM_TYPE_KV;
-
-#endif
     pt->items_count[item_type] += 1;
     pt->items_bytes[item_type] += item_size;
     pt->total_count_exclusive += 1;
@@ -627,19 +615,7 @@ void assoc_prefix_unlink(struct default_engine *engine, hash_item *it,
     assert(pt != NULL);
 
     /* update prefix information */
-#ifdef USE_1_BYTE_IFLAG
     int item_type = GET_ITEM_TYPE(it);
-#else
-    int item_type;
-    if (IS_LIST_ITEM(it))       item_type = ITEM_TYPE_LIST;
-    else if (IS_SET_ITEM(it))   item_type = ITEM_TYPE_SET;
-#ifdef MAP_COLLECTION_SUPPORT
-    else if (IS_MAP_ITEM(it))   item_type = ITEM_TYPE_MAP;
-#endif
-    else if (IS_BTREE_ITEM(it)) item_type = ITEM_TYPE_BTREE;
-    else                        item_type = ITEM_TYPE_KV;
-
-#endif
     pt->items_count[item_type] -= 1;
     pt->items_bytes[item_type] -= item_size;
     pt->total_count_exclusive -= 1;
