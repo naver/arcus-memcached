@@ -268,12 +268,12 @@ static void increase_collection_space(struct default_engine *engine, ENGINE_ITEM
     info->stotal += inc_space;
     /* Currently, stats.lock is useless since global cache lock is held. */
     //pthread_mutex_lock(&engine->stats.lock);
+    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
 #ifdef ENABLE_STICKY_ITEM
-    if ((info->mflags & COLL_META_FLAG_STICKY) != 0) {
+    if (it->exptime == (rel_time_t)-1) {
         engine->stats.sticky_bytes += inc_space;
     }
 #endif
-    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
     assoc_prefix_update_size(it->pfxptr, item_type, inc_space, true);
     engine->stats.curr_bytes += inc_space;
     //pthread_mutex_unlock(&engine->stats.lock);
@@ -286,12 +286,12 @@ static void decrease_collection_space(struct default_engine *engine, ENGINE_ITEM
     info->stotal -= dec_space;
     /* Currently, stats.lock is useless since global cache lock is held. */
     //pthread_mutex_lock(&engine->stats.lock);
+    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
 #ifdef ENABLE_STICKY_ITEM
-    if ((info->mflags & COLL_META_FLAG_STICKY) != 0) {
+    if (it->exptime == (rel_time_t)-1) {
         engine->stats.sticky_bytes -= dec_space;
     }
 #endif
-    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
     assoc_prefix_update_size(it->pfxptr, item_type, dec_space, false);
     engine->stats.curr_bytes -= dec_space;
     //pthread_mutex_unlock(&engine->stats.lock);
@@ -1677,7 +1677,7 @@ static ENGINE_ERROR_CODE do_list_elem_insert(struct default_engine *engine,
 
 #ifdef ENABLE_STICKY_ITEM
     /* sticky memory limit check */
-    if ((info->mflags & COLL_META_FLAG_STICKY) != 0) {
+    if (it->exptime == (rel_time_t)-1) {
         if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
             return ENGINE_ENOMEM;
     }
@@ -2260,7 +2260,7 @@ static ENGINE_ERROR_CODE do_set_elem_insert(struct default_engine *engine,
 
 #ifdef ENABLE_STICKY_ITEM
     /* sticky memory limit check */
-    if ((info->mflags & COLL_META_FLAG_STICKY) != 0) {
+    if (it->exptime == (rel_time_t)-1) {
         if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
             return ENGINE_ENOMEM;
     }
@@ -8786,7 +8786,7 @@ static ENGINE_ERROR_CODE do_map_elem_insert(struct default_engine *engine,
 
 #ifdef ENABLE_STICKY_ITEM
     /* sticky memory limit check */
-    if ((info->mflags & COLL_META_FLAG_STICKY) != 0) {
+    if (it->exptime == (rel_time_t)-1) {
         if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
             return ENGINE_ENOMEM;
     }
