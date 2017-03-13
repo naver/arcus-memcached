@@ -127,6 +127,7 @@ typedef struct _list_meta_info {
     uint8_t  mflags;    /* sticky, readable flags */
     uint16_t itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint32_t stotal;    /* total space */
+    void    *prefix;    /* pointer to prefix meta info (NOT Used) */
     list_elem_item *head;
     list_elem_item *tail;
 } list_meta_info;
@@ -153,6 +154,7 @@ typedef struct _set_meta_info {
     uint8_t  mflags;    /* sticky, readable flags */
     uint16_t itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint32_t stotal;    /* total space */
+    void    *prefix;    /* pointer to prefix meta info (NOT Used) */
     set_hash_node *root;
 } set_meta_info;
 
@@ -179,6 +181,7 @@ typedef struct _map_meta_info {
     uint8_t  mflags;    /* sticky, readable flags */
     uint16_t itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint32_t stotal;    /* total space */
+    void    *prefix;    /* pointer to prefix meta info (NOT Used) */
     map_hash_node *root;
 } map_meta_info;
 #endif
@@ -217,6 +220,7 @@ typedef struct _btree_meta_info {
     uint8_t  mflags;    /* sticky, readable, trimmed flags */
     uint16_t itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint32_t stotal;    /* total space */
+    void    *prefix;    /* pointer to prefix meta info (NOT Used) */
     uint8_t  bktype;    /* bkey type : BKEY_TYPE_UINT64 or BKEY_TYPE_BINARY */
     uint8_t  dummy[7];  /* reserved space */
     bkey_t   maxbkeyrange;
@@ -249,6 +253,7 @@ typedef struct _coll_meta_info {
     uint8_t  mflags;    /* sticky, readable flags */
     uint16_t itdist;    /* distance from hash item (unit: sizeof(size_t)) */
     uint32_t stotal;    /* total space */
+    void    *prefix;    /* pointer to prefix meta info (NOT Used) */
 } coll_meta_info;
 
 /* item stats */
