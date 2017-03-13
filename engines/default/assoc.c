@@ -46,11 +46,6 @@ static EXTENSION_LOGGER_DESCRIPTOR *logger;
 static prefix_t *root_pt = NULL; /* root prefix info */
 
 
-static inline void *_get_prefix(prefix_t *prefix)
-{
-    return (void*)(prefix + 1);
-}
-
 ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
 {
     struct assoc *assoc = &engine->assoc;
@@ -131,7 +126,6 @@ hash_item *assoc_find(struct default_engine *engine, uint32_t hash,
                       const char *key, const size_t nkey)
 {
     struct assoc *assoc = &engine->assoc;
-    hash_item *ret = NULL;
     hash_item *it;
     int depth = 0;
     uint32_t bucket = GET_HASH_BUCKET(hash, assoc->hashmask);
@@ -142,14 +136,13 @@ hash_item *assoc_find(struct default_engine *engine, uint32_t hash,
     while (it) {
         if ((hash == it->khash) && (nkey == it->nkey) &&
             (memcmp(key, item_get_key(it), nkey) == 0)) {
-            ret = it;
-            break;
+            break; /* found */
         }
         it = it->h_next;
         ++depth;
     }
     MEMCACHED_ASSOC_FIND(key, nkey, depth);
-    return ret;
+    return it;
 }
 
 /* returns the address of the item pointer before the key.  if *item == 0,
@@ -358,6 +351,11 @@ void assoc_scan_final(struct assoc_scan *scan)
 /*
  * Prefix Management
  */
+static inline void *_get_prefix(prefix_t *prefix)
+{
+    return (void*)(prefix + 1);
+}
+
 prefix_t *assoc_prefix_find(struct default_engine *engine, uint32_t hash,
                             const char *prefix, const int nprefix)
 {
@@ -775,7 +773,8 @@ do_assoc_get_prefix_stats(struct default_engine *engine,
         prefix_engine_stats *prefix_stats = (prefix_engine_stats*)prefix_data;
 
         if (prefix != NULL) {
-            pt = assoc_prefix_find(engine, engine->server.core->hash(prefix,nprefix,0), prefix, nprefix);
+            pt = assoc_prefix_find(engine, engine->server.core->hash(prefix,nprefix,0),
+                                   prefix, nprefix);
         } else {
             pt = root_pt;
         }
@@ -795,7 +794,8 @@ do_assoc_get_prefix_stats(struct default_engine *engine,
 }
 
 ENGINE_ERROR_CODE assoc_get_prefix_stats(struct default_engine *engine,
-                                         const char *prefix, const int nprefix, void *prefix_data)
+                                         const char *prefix, const int nprefix,
+                                         void *prefix_data)
 {
     ENGINE_ERROR_CODE ret;
     pthread_mutex_lock(&engine->cache_lock);
