@@ -44,6 +44,11 @@
 #define IS_BTREE_ITEM(it) (((it)->iflag & ITEM_IFLAG_COLL) == ITEM_IFLAG_BTREE)
 #define IS_COLL_ITEM(it)  (((it)->iflag & ITEM_IFLAG_COLL) != 0)
 
+/* collection meta flag */
+#define COLL_META_FLAG_READABLE 2
+#define COLL_META_FLAG_STICKY   4
+#define COLL_META_FLAG_TRIMMED  8
+
 typedef struct _prefix_t prefix_t;
 
 /* hash item strtucture */

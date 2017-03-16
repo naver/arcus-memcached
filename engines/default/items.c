@@ -125,11 +125,6 @@ extern int genhash_string_hash(const void* p, size_t nkey);
 /* special address for representing unlinked status */
 #define ADDR_MEANS_UNLINKED  1
 
-/* collection meta flag */
-#define COLL_META_FLAG_READABLE 2
-#define COLL_META_FLAG_STICKY   4
-#define COLL_META_FLAG_TRIMMED  8
-
 /** How long an object can reasonably be assumed to be locked before
  *     harvesting it on a low memory condition. */
 #define TAIL_REPAIR_TIME (3 * 3600)
