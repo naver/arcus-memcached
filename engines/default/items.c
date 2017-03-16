@@ -5945,13 +5945,6 @@ hash_item *item_get(struct default_engine *engine, const void *key, const size_t
     hash_item *it;
     pthread_mutex_lock(&engine->cache_lock);
     it = do_item_get(engine, key, nkey, true);
-    if (it != NULL && IS_COLL_ITEM(it)) {
-        /* Do not return the item if it is a collection item.
-         * It would be better to return the error code of ENGINE_EBADTYPE.
-         */
-        do_item_release(engine, it);
-        it = NULL;
-    }
     pthread_mutex_unlock(&engine->cache_lock);
     return it;
 }
