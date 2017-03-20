@@ -8863,71 +8863,48 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
 
 static void process_config_command(conn *c, token_t *tokens, const size_t ntokens)
 {
-    if ((ntokens == 3 || ntokens == 4) &&
-        (strcmp(tokens[SUBCOMMAND_TOKEN].value, "maxconns") == 0))
-    {
+    if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "maxconns") == 0) {
         process_maxconns_command(c, tokens, ntokens);
     }
 #ifdef ENABLE_ZK_INTEGRATION
-    else if ((ntokens == 3 || ntokens == 4) &&
-             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "hbtimeout") == 0))
-    {
+    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "hbtimeout") == 0) {
         process_hbtimeout_command(c, tokens, ntokens);
     }
-    else if ((ntokens == 3 || ntokens == 4) &&
-             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "hbfailstop") == 0))
-    {
+    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "hbfailstop") == 0) {
         process_hbfailstop_command(c, tokens, ntokens);
     }
-    else if ((ntokens == 3 || ntokens == 4) &&
-             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "zkensemble") == 0))
-    {
+    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "zkensemble") == 0) {
         process_zkensemble_command(c, tokens, ntokens);
     }
 #endif
-    else if ((ntokens == 3 || ntokens == 4) &&
-             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "memlimit") == 0))
-    {
+    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "memlimit") == 0) {
         process_memlimit_command(c, tokens, ntokens);
     }
 #ifdef ENABLE_STICKY_ITEM
-    else if ((ntokens == 3 || ntokens == 4) &&
-             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "sticky_limit") == 0))
-    {
+    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "sticky_limit") == 0) {
         process_stickylimit_command(c, tokens, ntokens);
     }
 #endif
 #ifdef CONFIG_MAX_COLLECTION_SIZE
-    else if ((ntokens == 3 || ntokens == 4) &&
-             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_list_size") == 0))
-    {
+    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_list_size") == 0) {
         process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_LIST);
     }
-    else if ((ntokens == 3 || ntokens == 4) &&
-             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_set_size") == 0))
-    {
+    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_set_size") == 0) {
         process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_SET);
     }
 #ifdef MAP_COLLECTION_SUPPORT
-    else if ((ntokens == 3 || ntokens == 4) &&
-             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_map_size") == 0))
-    {
+    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_map_size") == 0) {
         process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_MAP);
     }
 #endif
-    else if ((ntokens == 3 || ntokens == 4) &&
-             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_btree_size") == 0))
-    {
+    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_btree_size") == 0) {
         process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_BTREE);
     }
 #endif
-    else if ((ntokens == 3 || ntokens == 4) &&
-             (strcmp(tokens[SUBCOMMAND_TOKEN].value, "verbosity") == 0))
-    {
+    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "verbosity") == 0) {
         process_verbosity_command(c, tokens, ntokens);
     }
-   else
-    {
+    else {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
     }
@@ -12830,7 +12807,7 @@ static void process_command(conn *c, char *command, int cmdlen)
     {
         process_flush_command(c, tokens, ntokens, false);
     }
-    else if ((ntokens >  2) && (strcmp(tokens[COMMAND_TOKEN].value, "config") == 0))
+    else if ((ntokens >= 3 && ntokens <= 4) && (strcmp(tokens[COMMAND_TOKEN].value, "config") == 0))
     {
         process_config_command(c, tokens, ntokens);
     }
