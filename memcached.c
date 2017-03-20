@@ -8863,6 +8863,12 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
 
 static void process_config_command(conn *c, token_t *tokens, const size_t ntokens)
 {
+    if (ntokens < 3 || ntokens > 4) {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "CLIENT_ERROR bad command line format");
+        return;
+    }
+
     if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "maxconns") == 0) {
         process_maxconns_command(c, tokens, ntokens);
     }
@@ -12807,7 +12813,7 @@ static void process_command(conn *c, char *command, int cmdlen)
     {
         process_flush_command(c, tokens, ntokens, false);
     }
-    else if ((ntokens >= 3 && ntokens <= 4) && (strcmp(tokens[COMMAND_TOKEN].value, "config") == 0))
+    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "config") == 0))
     {
         process_config_command(c, tokens, ntokens);
     }
