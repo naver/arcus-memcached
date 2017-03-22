@@ -4279,19 +4279,29 @@ static ENGINE_ERROR_CODE do_btree_elem_link(struct default_engine *engine,
         }
 #endif
 
-        if (info->ccnt > 0) { /* overflow check */
-            res = do_btree_overflow_check(info, elem, &ovfl_type);
-            if (res != ENGINE_SUCCESS) {
-                return res;
-            }
-        }
-
+        /* If the leaf node is full of elements, split it ahead. */
         if (path[0].node->used_count >= BTREE_ITEM_COUNT) {
             res = do_btree_node_split(engine, info, path, cookie);
             if (res != ENGINE_SUCCESS) {
                 return res;
             }
         }
+
+        if (info->ccnt > 0) {
+            /* overflow check */
+            res = do_btree_overflow_check(info, elem, &ovfl_type);
+            if (res != ENGINE_SUCCESS) {
+                return res;
+            }
+        } else { /* info->ccnt == 0 */
+            /* set bkey type */
+            if (elem->nbkey == 0)
+                info->bktype = BKEY_TYPE_UINT64;
+            else
+                info->bktype = BKEY_TYPE_BINARY;
+        }
+
+        /* insert the element into the leaf page */
         elem->status = BTREE_ITEM_STATUS_USED;
         if (path[0].indx < path[0].node->used_count) {
             for (i = (path[0].node->used_count-1); i >= path[0].indx; i--) {
@@ -4305,10 +4315,6 @@ static ENGINE_ERROR_CODE do_btree_elem_link(struct default_engine *engine,
             path[i].node->ecnt[path[i].indx]++;
         }
         info->ccnt++;
-
-        if (info->ccnt == 1) {
-            info->bktype = (elem->nbkey==0 ? BKEY_TYPE_UINT64 : BKEY_TYPE_BINARY);
-        }
 
         if (1) { /* apply memory space */
             size_t stotal = slabs_space_size(engine, do_btree_elem_ntotal(elem));
