@@ -1,3 +1,25 @@
+2017-03-24 [version 1.10.0]
+	* [Feature] Added a map collection type.
+	* [Feature] Showed the current prefix count with stats command.
+	* [Feature] Combined the commands for getting/setting configuration
+	            into a single config command.
+	* [Feature] Set the maximum sticky memory with sticky_limit config.
+	* [Feature] Printed the invalid command if bad commad error occurs.
+	* [Feature] Stopped cache node if more than one server mapping znodes exist.
+	* [Fix] Fixed key dump bugs such as memory leak, duplicate dump, etc.
+	* [Fix] Fixed the negative free_chunk_space problem.
+	* [Enhancement] Reduced excessive evictions by adjusting sm classes.
+	* [Enhancement] Enhanced set performance by using prefix pointer
+	                when check invalid items.
+	* [Internal] Managed engine source code with separate engine directories.
+	* [Internal] Added the demo engine for use as a reference engine. 
+	* [Internal] Performed the preparation task for long key support.
+	* [Internal] Performed ZK operation outside of zk watcher with a separate thread.
+	* [Internal] Added/used a scan facility to scan items in hash table.
+	* [Internal] Modified the ketama hash ring structure more usefully.
+	* [Other] Extensive minor enhancements. 
+	* [Other] Extensive code refactoring.
+
 2016-05-22 [version 1.9.5]
 	* Fix config/autorun.sh for arcus build.
 	* Strengthen the integrity of tokenize_keys() function.
