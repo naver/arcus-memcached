@@ -3764,22 +3764,12 @@ static void do_btree_elem_unlink(struct default_engine *engine,
     }
 }
 
-static ENGINE_ERROR_CODE do_btree_elem_replace(struct default_engine *engine, btree_meta_info *info,
-                                               btree_elem_posi *posi, btree_elem_item *new_elem)
+static void do_btree_elem_replace(struct default_engine *engine, btree_meta_info *info,
+                                  btree_elem_posi *posi, btree_elem_item *new_elem)
 {
     btree_elem_item *old_elem = BTREE_GET_ELEM_ITEM(posi->node, posi->indx);
     size_t old_stotal = slabs_space_size(engine, do_btree_elem_ntotal(old_elem));
     size_t new_stotal = slabs_space_size(engine, do_btree_elem_ntotal(new_elem));
-
-#ifdef ENABLE_STICKY_ITEM
-    if (new_stotal > old_stotal) {
-        /* sticky memory limit check */
-        if ((info->mflags & COLL_META_FLAG_STICKY) != 0) {
-            if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
-                return ENGINE_ENOMEM;
-        }
-    }
-#endif
 
     if (old_elem->refcount > 0) {
         old_elem->status = BTREE_ITEM_STATUS_UNLINK;
@@ -3798,7 +3788,6 @@ static ENGINE_ERROR_CODE do_btree_elem_replace(struct default_engine *engine, bt
         else
             decrease_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, (old_stotal-new_stotal));
     }
-    return ENGINE_SUCCESS;
 }
 
 static ENGINE_ERROR_CODE do_btree_elem_update(struct default_engine *engine, btree_meta_info *info,
@@ -3853,6 +3842,15 @@ static ENGINE_ERROR_CODE do_btree_elem_update(struct default_engine *engine, btr
             ret = ENGINE_SUCCESS;
         } else {
             /* old body size != new body size */
+#ifdef ENABLE_STICKY_ITEM
+            if ((info->mflags & COLL_META_FLAG_STICKY) != 0 &&
+                (elem->neflag+elem->nbytes) < (new_neflag+new_nbytes)) {
+                /* sticky memory limit check : old body size < new body size */
+                if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
+                    return ENGINE_ENOMEM;
+            }
+#endif
+
             btree_elem_item *new_elem = do_btree_elem_alloc(engine, elem->nbkey, new_neflag, new_nbytes, cookie);
             if (new_elem == NULL) {
                 return ENGINE_ENOMEM;
@@ -3882,8 +3880,9 @@ static ENGINE_ERROR_CODE do_btree_elem_update(struct default_engine *engine, btr
                 memcpy(ptr, elem->data + real_nbkey + elem->neflag, elem->nbytes);
             }
 
-            ret = do_btree_elem_replace(engine, info, &posi, new_elem);
+            do_btree_elem_replace(engine, info, &posi, new_elem);
             do_btree_elem_release(engine, new_elem);
+            ret = ENGINE_SUCCESS;
         }
     }
     return ret;
@@ -4327,10 +4326,19 @@ static ENGINE_ERROR_CODE do_btree_elem_link(struct default_engine *engine,
     }
     else if (res == ENGINE_ELEM_EEXISTS) {
         if (replace_if_exist) {
-            res = do_btree_elem_replace(engine, info, &path[0], elem);
-            if (res == ENGINE_SUCCESS) {
-                *replaced = true;
+#ifdef ENABLE_STICKY_ITEM
+            btree_elem_item *find = BTREE_GET_ELEM_ITEM(path[0].node, path[0].indx);
+            if ((info->mflags & COLL_META_FLAG_STICKY) != 0 &&
+                (find->neflag+find->nbytes) < (elem->neflag+elem->nbytes)) {
+                /* sticky memory limit check */
+                if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
+                    return ENGINE_ENOMEM;
             }
+#endif
+
+            do_btree_elem_replace(engine, info, &path[0], elem);
+            *replaced = true;
+            res = ENGINE_SUCCESS;
         }
     }
     return res;
@@ -4680,14 +4688,21 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(struct default_engine *engine,
             memcpy(elem->data + real_nbkey + elem->neflag, nbuf, elem->nbytes);
             ret = ENGINE_SUCCESS;
         } else {
+#ifdef ENABLE_STICKY_ITEM
+            /* sticky memory limit check : do not check it
+             * Because, the space difference is negligible.
+             */
+#endif
             btree_elem_item *new_elem = do_btree_elem_alloc(engine, elem->nbkey, elem->neflag, nlen, cookie);
             if (new_elem == NULL) {
                 return ENGINE_ENOMEM;
             }
             memcpy(new_elem->data, elem->data, real_nbkey + elem->neflag);
             memcpy(new_elem->data + real_nbkey + new_elem->neflag, nbuf, nlen);
-            ret = do_btree_elem_replace(engine, info, &posi, new_elem);
+
+            do_btree_elem_replace(engine, info, &posi, new_elem);
             do_btree_elem_release(engine, new_elem);
+            ret = ENGINE_SUCCESS;
         }
         *result = value;
     }
@@ -8406,8 +8421,8 @@ static void do_map_node_unlink(struct default_engine *engine,
     do_map_node_free(engine, node);
 }
 
-static ENGINE_ERROR_CODE do_map_elem_replace(struct default_engine *engine, map_meta_info *info,
-                                             map_prev_info *pinfo, map_elem_item *new_elem)
+static void do_map_elem_replace(struct default_engine *engine, map_meta_info *info,
+                                map_prev_info *pinfo, map_elem_item *new_elem)
 {
     map_elem_item *prev = pinfo->prev;
     map_elem_item *old_elem;
@@ -8420,16 +8435,6 @@ static ENGINE_ERROR_CODE do_map_elem_replace(struct default_engine *engine, map_
 
     size_t old_stotal = slabs_space_size(engine, do_map_elem_ntotal(old_elem));
     size_t new_stotal = slabs_space_size(engine, do_map_elem_ntotal(new_elem));
-
-#ifdef ENABLE_STICKY_ITEM
-    if (new_stotal > old_stotal) {
-        /* sticky memory limit check */
-        if ((info->mflags & COLL_META_FLAG_STICKY) != 0) {
-            if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
-                return ENGINE_ENOMEM;
-        }
-    }
-#endif
 
     new_elem->next = old_elem->next;
     if (prev != NULL) {
@@ -8451,7 +8456,6 @@ static ENGINE_ERROR_CODE do_map_elem_replace(struct default_engine *engine, map_
             decrease_collection_space(engine, ITEM_TYPE_MAP, (coll_meta_info *)info, (old_stotal-new_stotal));
         }
     }
-    return ENGINE_SUCCESS;
 }
 
 static ENGINE_ERROR_CODE do_map_elem_link(struct default_engine *engine,
@@ -8486,15 +8490,30 @@ static ENGINE_ERROR_CODE do_map_elem_link(struct default_engine *engine,
 
     if (find != NULL) {
         if (replace_if_exist) {
+#ifdef ENABLE_STICKY_ITEM
+            if ((info->mflags & COLL_META_FLAG_STICKY) != 0 && find->nbytes < elem->nbytes) {
+                /* sticky memory limit check : old body size < new body size */
+                if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
+                    return ENGINE_ENOMEM;
+            }
+#endif
             pinfo.node = node;
             pinfo.prev = prev;
             pinfo.hidx = hidx;
-            res = do_map_elem_replace(engine, info, &pinfo, elem);
+            do_map_elem_replace(engine, info, &pinfo, elem);
+            return ENGINE_SUCCESS;
         } else {
-            res = ENGINE_ELEM_EEXISTS;
+            return ENGINE_ELEM_EEXISTS;
         }
-        return res;
     }
+
+#ifdef ENABLE_STICKY_ITEM
+    /* sticky memory limit check */
+    if ((info->mflags & COLL_META_FLAG_STICKY) != 0) {
+        if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
+            return ENGINE_ENOMEM;
+    }
+#endif
 
     if (node->hcnt[hidx] >= MAP_MAX_HASHCHAIN_SIZE) {
         map_hash_node *n_node = do_map_node_alloc(engine, node->hdepth+1, cookie);
@@ -8711,6 +8730,14 @@ static ENGINE_ERROR_CODE do_map_elem_update(struct default_engine *engine, map_m
             ret = ENGINE_SUCCESS;
         } else {
             /* old body size != new body size */
+#ifdef ENABLE_STICKY_ITEM
+            if ((info->mflags & COLL_META_FLAG_STICKY) != 0 && elem->nbytes < nbytes) {
+                /* sticky memory limit check : old body size < new body size */
+                if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
+                    return ENGINE_ENOMEM;
+            }
+#endif
+
             map_elem_item *new_elem = do_map_elem_alloc(engine, elem->nfield, nbytes, cookie);
             if (new_elem == NULL) {
                 return ENGINE_ENOMEM;
@@ -8720,8 +8747,11 @@ static ENGINE_ERROR_CODE do_map_elem_update(struct default_engine *engine, map_m
             memcpy(new_elem->data, elem->data, elem->nfield);
             memcpy(new_elem->data + elem->nfield, value, nbytes);
             new_elem->hval = elem->hval;
-            ret = do_map_elem_replace(engine, info, &pinfo, new_elem);
+
+            /* replace the element */
+            do_map_elem_replace(engine, info, &pinfo, new_elem);
             do_map_elem_release(engine, new_elem);
+            ret = ENGINE_SUCCESS;
         }
     }
     return ret;
@@ -8777,14 +8807,6 @@ static ENGINE_ERROR_CODE do_map_elem_insert(struct default_engine *engine,
     int32_t real_mcnt = (info->mcnt == -1 ? max_map_size : info->mcnt);
 #endif
     ENGINE_ERROR_CODE ret;
-
-#ifdef ENABLE_STICKY_ITEM
-    /* sticky memory limit check */
-    if (it->exptime == (rel_time_t)-1) {
-        if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
-            return ENGINE_ENOMEM;
-    }
-#endif
 
     /* overflow check */
     assert(info->ovflact == OVFL_ERROR);
