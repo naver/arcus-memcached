@@ -4265,7 +4265,7 @@ static ENGINE_ERROR_CODE do_btree_elem_link(struct default_engine *engine,
     int i, ovfl_type = OVFL_TYPE_NONE;
     ENGINE_ERROR_CODE res;
 
-    *replaced = false;
+    if (replaced) *replaced = false;
 
     assert(info->root->ndepth < BTREE_MAX_DEPTH);
     res = do_btree_find_insposi(info->root, elem->data, elem->nbkey, path);
@@ -4337,7 +4337,7 @@ static ENGINE_ERROR_CODE do_btree_elem_link(struct default_engine *engine,
 #endif
 
             do_btree_elem_replace(engine, info, &path[0], elem);
-            *replaced = true;
+            if (replaced) *replaced = true;
             res = ENGINE_SUCCESS;
         }
     }
@@ -4657,8 +4657,7 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(struct default_engine *engine,
             memcpy(elem->data + real_nbkey + eflagp->len, nbuf, nlen);
         }
 
-        bool dummy_replaced;
-        ret = do_btree_elem_link(engine, info, elem, false, &dummy_replaced, NULL, NULL, cookie);
+        ret = do_btree_elem_link(engine, info, elem, false, NULL, NULL, NULL, cookie);
         if (ret != ENGINE_SUCCESS) {
             assert(ret != ENGINE_ELEM_EEXISTS);
             /* ENGINE_ENOMEM || ENGINE_BKEYOOR || ENGINE_OVERFLOW */
