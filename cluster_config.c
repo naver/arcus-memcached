@@ -40,9 +40,9 @@
 #define NSTATE_EXISTING 2
 
 /* hash slice state: related to node state */
-#define SSTATE_NONE     NSTATE_JOINING
-#define SSTATE_LOCAL    NSTATE_LEAVING
-#define SSTATE_NORMAL   NSTATE_EXISTING
+#define SSTATE_NONE     0
+#define SSTATE_LOCAL    1
+#define SSTATE_NORMAL   2
 
 /* continuum item */
 struct cont_item {
@@ -134,7 +134,7 @@ static int compare_cont_item(const void *t1, const void *t2)
 }
 
 static int gen_node_continuum(struct cont_item *continuum,
-                               const char *node_name, uint8_t node_state)
+                              const char *node_name, uint8_t slice_state)
 {
     char buffer[MAX_NODE_NAME_LENGTH+1] = "";
     int  length;
@@ -152,7 +152,7 @@ static int gen_node_continuum(struct cont_item *continuum,
                                  | ((uint32_t) (digest[1 + nn * NUM_PER_HASH] & 0xFF) <<  8)
                                  | (           (digest[0 + nn * NUM_PER_HASH] & 0xFF)      );
             /* continuum[pp].nindex : will be set later */
-            continuum[pp].sstate = node_state; /* SSTATE_NORMAL */
+            continuum[pp].sstate = slice_state;
         }
     }
     /* sort the continuum and set the slice index */
@@ -172,7 +172,7 @@ static void self_node_build(struct cluster_config *config, const char *node_name
     struct node_item *item = &config->self_node;
     strncpy(item->ndname, node_name, MAX_NODE_NAME_LENGTH);
     item->nstate = NSTATE_EXISTING;
-    item->dup_hp = gen_node_continuum(item->hslice, item->ndname, item->nstate);
+    item->dup_hp = gen_node_continuum(item->hslice, item->ndname, SSTATE_NORMAL);
     if (item->dup_hp) {
         config->logger->log(EXTENSION_LOG_INFO, NULL,
                 "[CHECK] Duplicate hssh point in %s node.\n", node_name);
@@ -204,7 +204,8 @@ static struct node_item *node_item_alloc(struct cluster_config *config)
 }
 
 static struct node_item *node_item_build(struct cluster_config *config,
-                                         const char *node_name, uint8_t node_state)
+                                         const char *node_name,
+                                         uint8_t node_state, uint8_t slice_state)
 {
     struct node_item *item;
 
@@ -215,7 +216,7 @@ static struct node_item *node_item_build(struct cluster_config *config,
     }
     strncpy(item->ndname, node_name, MAX_NODE_NAME_LENGTH);
     item->nstate = node_state;
-    item->dup_hp = gen_node_continuum(item->hslice, item->ndname, item->nstate);
+    item->dup_hp = gen_node_continuum(item->hslice, item->ndname, slice_state);
     if (item->dup_hp) {
         config->logger->log(EXTENSION_LOG_INFO, NULL,
                 "[CHECK] Duplicate hssh point in %s node.\n", node_name);
@@ -391,7 +392,8 @@ nodearray_build_replace(struct cluster_config *config,
                 item = &config->self_node;
         }
         if (item == NULL) {
-            item = node_item_build(config, node_strs[i], NSTATE_EXISTING);
+            item = node_item_build(config, node_strs[i],
+                                   NSTATE_EXISTING, SSTATE_NORMAL);
             if (item == NULL) break;
             nallocs += 1;
         }
