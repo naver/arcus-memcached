@@ -104,11 +104,9 @@ initialize_configuration(struct demo_engine *se, const char *cfg_str)
             { .key = "max_set_size",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.max_set_size },
-#ifdef MAP_COLLECTION_SUPPORT
             { .key = "max_map_size",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.max_map_size },
-#endif
             { .key = "max_btree_size",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.max_btree_size },
@@ -391,8 +389,6 @@ Demo_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     return ENGINE_ENOTSUP;
 }
 
-#ifdef MAP_COLLECTION_SUPPORT
-
 /*
  * Map Collection API
  */
@@ -454,7 +450,6 @@ Demo_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
 {
     return ENGINE_ENOTSUP;
 }
-#endif
 
 /*
  * B+Tree Collection API
@@ -785,7 +780,6 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .set_elem_delete   = Demo_set_elem_delete,
          .set_elem_exist    = Demo_set_elem_exist,
          .set_elem_get      = Demo_set_elem_get,
-#ifdef MAP_COLLECTION_SUPPORT
          /* MAP Collection API */
          .map_struct_create = Demo_map_struct_create,
          .map_elem_alloc    = Demo_map_elem_alloc,
@@ -794,7 +788,6 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .map_elem_update   = Demo_map_elem_update,
          .map_elem_delete   = Demo_map_elem_delete,
          .map_elem_get      = Demo_map_elem_get,
-#endif
          /* B+Tree Collection API */
          .btree_struct_create = Demo_btree_struct_create,
          .btree_elem_alloc   = Demo_btree_elem_alloc,
@@ -851,9 +844,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .item_size_max= 1024 * 1024,
          .max_list_size = 50000,
          .max_set_size = 50000,
-#ifdef MAP_COLLECTION_SUPPORT
          .max_map_size = 50000,
-#endif
          .max_btree_size = 50000,
          .prefix_delimiter = ':',
        },

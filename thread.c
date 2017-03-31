@@ -551,13 +551,11 @@ void threadlocal_stats_clear(struct thread_stats *stats) {
     stats->cmd_sop_delete = 0;
     stats->cmd_sop_get = 0;
     stats->cmd_sop_exist = 0;
-#ifdef MAP_COLLECTION_SUPPORT
     stats->cmd_mop_create = 0;
     stats->cmd_mop_insert = 0;
     stats->cmd_mop_update = 0;
     stats->cmd_mop_delete = 0;
     stats->cmd_mop_get = 0;
-#endif
     stats->cmd_bop_create = 0;
     stats->cmd_bop_insert = 0;
     stats->cmd_bop_update = 0;
@@ -597,7 +595,6 @@ void threadlocal_stats_clear(struct thread_stats *stats) {
     stats->sop_get_misses = 0;
     stats->sop_exist_hits = 0;
     stats->sop_exist_misses = 0;
-#ifdef MAP_COLLECTION_SUPPORT
     stats->mop_create_oks = 0;
     stats->mop_insert_hits = 0;
     stats->mop_insert_misses = 0;
@@ -610,7 +607,6 @@ void threadlocal_stats_clear(struct thread_stats *stats) {
     stats->mop_get_elem_hits = 0;
     stats->mop_get_none_hits = 0;
     stats->mop_get_misses = 0;
-#endif
     stats->bop_create_oks = 0;
     stats->bop_insert_hits = 0;
     stats->bop_insert_misses = 0;
@@ -694,13 +690,11 @@ void threadlocal_stats_aggregate(struct thread_stats *thread_stats, struct threa
         stats->cmd_sop_delete += thread_stats[ii].cmd_sop_delete;
         stats->cmd_sop_get += thread_stats[ii].cmd_sop_get;
         stats->cmd_sop_exist += thread_stats[ii].cmd_sop_exist;
-#ifdef MAP_COLLECTION_SUPPORT
         stats->cmd_mop_create += thread_stats[ii].cmd_mop_create;
         stats->cmd_mop_insert += thread_stats[ii].cmd_mop_insert;
         stats->cmd_mop_update += thread_stats[ii].cmd_mop_update;
         stats->cmd_mop_delete += thread_stats[ii].cmd_mop_delete;
         stats->cmd_mop_get += thread_stats[ii].cmd_mop_get;
-#endif
         stats->cmd_bop_create += thread_stats[ii].cmd_bop_create;
         stats->cmd_bop_insert += thread_stats[ii].cmd_bop_insert;
         stats->cmd_bop_update += thread_stats[ii].cmd_bop_update;
@@ -740,7 +734,6 @@ void threadlocal_stats_aggregate(struct thread_stats *thread_stats, struct threa
         stats->sop_get_misses += thread_stats[ii].sop_get_misses;
         stats->sop_exist_hits += thread_stats[ii].sop_exist_hits;
         stats->sop_exist_misses += thread_stats[ii].sop_exist_misses;
-#ifdef MAP_COLLECTION_SUPPORT
         stats->mop_create_oks += thread_stats[ii].mop_create_oks;
         stats->mop_insert_hits += thread_stats[ii].mop_insert_hits;
         stats->mop_insert_misses += thread_stats[ii].mop_insert_misses;
@@ -753,7 +746,6 @@ void threadlocal_stats_aggregate(struct thread_stats *thread_stats, struct threa
         stats->mop_get_elem_hits += thread_stats[ii].mop_get_elem_hits;
         stats->mop_get_none_hits += thread_stats[ii].mop_get_none_hits;
         stats->mop_get_misses += thread_stats[ii].mop_get_misses;
-#endif
         stats->bop_create_oks += thread_stats[ii].bop_create_oks;
         stats->bop_insert_hits += thread_stats[ii].bop_insert_hits;
         stats->bop_insert_misses += thread_stats[ii].bop_insert_misses;

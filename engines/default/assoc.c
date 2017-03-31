@@ -620,15 +620,9 @@ do_assoc_get_prefix_stats(struct default_engine *engine,
     if (nprefix < 0) /* all prefix stats */
     {
         const char *format = "PREFIX %s "
-#ifdef MAP_COLLECTION_SUPPORT
                              "itm %llu kitm %llu litm %llu sitm %llu mitm %llu bitm %llu " /* total item count */
                              "tsz %llu ktsz %llu ltsz %llu stsz %llu mtsz %llu btsz %llu " /* total item bytes */
                              "time %04d%02d%02d%02d%02d%02d\r\n"; /* create time */
-#else
-                             "itm %llu kitm %llu litm %llu sitm %llu bitm %llu " /* total item count */
-                             "tsz %llu ktsz %llu ltsz %llu stsz %llu btsz %llu " /* total item bytes */
-                             "time %04d%02d%02d%02d%02d%02d\r\n"; /* create time */
-#endif
         char *buffer;
         struct tm *t;
         uint32_t prefix_hsize = hashsize(DEFAULT_PREFIX_HASHPOWER);
@@ -656,21 +650,12 @@ do_assoc_get_prefix_stats(struct default_engine *engine,
          *   - 10 : the count of "%llu" strings.
          *   -  5 : the count of "%02d" strings.
          */
-#ifdef MAP_COLLECTION_SUPPORT
         buflen = sizeof(uint32_t) /* length */
                + sum_nameleng
                + num_prefixes * (strlen(format) - 2 /* %s replaced by prefix name */
                                  + (12 * (20 - 4))  /* %llu replaced by 20-digit num */
                                  - ( 5 * ( 4 - 2))) /* %02d replaced by 2-digit num */
                + sizeof("END\r\n"); /* tail string */
-#else
-        buflen = sizeof(uint32_t) /* length */
-               + sum_nameleng
-               + num_prefixes * (strlen(format) - 2 /* %s replaced by prefix name */
-                                 + (10 * (20 - 4))  /* %llu replaced by 20-digit num */
-                                 - ( 5 * ( 4 - 2))) /* %02d replaced by 2-digit num */
-               + sizeof("END\r\n"); /* tail string */
-#endif
 
         if ((buffer = malloc(buflen)) == NULL) {
             return ENGINE_ENOMEM;
@@ -678,7 +663,6 @@ do_assoc_get_prefix_stats(struct default_engine *engine,
 
         /* write prefix stats in the buffer */
         pos = sizeof(uint32_t);
-#ifdef MAP_COLLECTION_SUPPORT
         if (num_prefixes > assoc->tot_prefix_items) { /* include root prefix */
             pt = root_pt;
             t = localtime(&pt->create_time);
@@ -722,47 +706,6 @@ do_assoc_get_prefix_stats(struct default_engine *engine,
                 pt = pt->h_next;
             }
         }
-#else
-        if (num_prefixes > assoc->tot_prefix_items) { /* include root prefix */
-            pt = root_pt;
-            t = localtime(&pt->create_time);
-            pos += snprintf(buffer+pos, buflen-pos, format, "<null>",
-                            pt->total_count_exclusive,
-                            pt->items_count[ITEM_TYPE_KV],
-                            pt->items_count[ITEM_TYPE_LIST],
-                            pt->items_count[ITEM_TYPE_SET],
-                            pt->items_count[ITEM_TYPE_BTREE],
-                            pt->total_bytes_exclusive,
-                            pt->items_bytes[ITEM_TYPE_KV],
-                            pt->items_bytes[ITEM_TYPE_LIST],
-                            pt->items_bytes[ITEM_TYPE_SET],
-                            pt->items_bytes[ITEM_TYPE_BTREE],
-                            t->tm_year+1900, t->tm_mon+1, t->tm_mday,
-                            t->tm_hour, t->tm_min, t->tm_sec);
-            assert(pos < buflen);
-        }
-        for (i = 0; i < prefix_hsize; i++) {
-            pt = assoc->prefix_hashtable[i];
-            while (pt) {
-                t = localtime(&pt->create_time);
-                pos += snprintf(buffer+pos, buflen-pos, format, _get_prefix(pt),
-                                pt->total_count_exclusive,
-                                pt->items_count[ITEM_TYPE_KV],
-                                pt->items_count[ITEM_TYPE_LIST],
-                                pt->items_count[ITEM_TYPE_SET],
-                                pt->items_count[ITEM_TYPE_BTREE],
-                                pt->total_bytes_exclusive,
-                                pt->items_bytes[ITEM_TYPE_KV],
-                                pt->items_bytes[ITEM_TYPE_LIST],
-                                pt->items_bytes[ITEM_TYPE_SET],
-                                pt->items_bytes[ITEM_TYPE_BTREE],
-                                t->tm_year+1900, t->tm_mon+1, t->tm_mday,
-                                t->tm_hour, t->tm_min, t->tm_sec);
-                assert(pos < buflen);
-                pt = pt->h_next;
-            }
-        }
-#endif
         memcpy(buffer+pos, "END\r\n", 6);
         *(uint32_t*)buffer = pos + 5 - sizeof(uint32_t);
 

@@ -64,9 +64,7 @@
 static int ARCUS_COLL_SIZE_LIMIT = 1000000;
 static int MAX_LIST_SIZE  = 50000;
 static int MAX_SET_SIZE   = 50000;
-#ifdef MAP_COLLECTION_SUPPORT
 static int MAX_MAP_SIZE   = 50000;
-#endif
 static int MAX_BTREE_SIZE = 50000;
 
 /* The item must always be called "it" */
@@ -343,9 +341,7 @@ static void settings_init(void) {
     settings.item_size_max = 1024 * 1024; /* The famous 1MB upper limit. */
     settings.max_list_size = MAX_LIST_SIZE;
     settings.max_set_size = MAX_SET_SIZE;
-#ifdef MAP_COLLECTION_SUPPORT
     settings.max_map_size = MAX_MAP_SIZE;
-#endif
     settings.max_btree_size = MAX_BTREE_SIZE;
     settings.topkeys = 0;
     settings.require_sasl = false;
@@ -740,6 +736,7 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
 
 static void conn_coll_eitem_free(conn *c) {
     switch (c->coll_op) {
+      /* lop */
       case OPERATION_LOP_INSERT:
         mc_engine.v1->list_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         break;
@@ -750,6 +747,7 @@ static void conn_coll_eitem_free(conn *c) {
             free(c->coll_resps); c->coll_resps = NULL;
         }
         break;
+      /* sop */
       case OPERATION_SOP_INSERT:
         mc_engine.v1->set_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         break;
@@ -764,7 +762,7 @@ static void conn_coll_eitem_free(conn *c) {
             free(c->coll_resps); c->coll_resps = NULL;
         }
         break;
-#ifdef MAP_COLLECTION_SUPPORT
+      /* mop */
       case OPERATION_MOP_INSERT:
         mc_engine.v1->map_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         break;
@@ -785,7 +783,7 @@ static void conn_coll_eitem_free(conn *c) {
         }
         free(c->coll_strkeys); c->coll_strkeys = NULL;
         break;
-#endif
+      /* bop */
       case OPERATION_BOP_INSERT:
       case OPERATION_BOP_UPSERT:
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
@@ -1296,9 +1294,7 @@ static inline char *get_item_type_str(uint8_t type) {
     if (type == ITEM_TYPE_KV)          return "kv";
     else if (type == ITEM_TYPE_LIST)   return "list";
     else if (type == ITEM_TYPE_SET)    return "set";
-#ifdef MAP_COLLECTION_SUPPORT
     else if (type == ITEM_TYPE_MAP)    return "map";
-#endif
     else if (type == ITEM_TYPE_BTREE)  return "b+tree";
     else                               return "unknown";
 }
@@ -1553,7 +1549,6 @@ static void process_sop_exist_complete(conn *c) {
     c->coll_eitem = NULL;
 }
 
-#if defined(SUPPORT_BOP_MGET) || defined(SUPPORT_BOP_SMGET) || defined(MAP_COLLECTION_SUPPORT)
 static int tokenize_keys(char *keystr, int length, char delimiter, int keycnt, token_t *tokens) {
     int ntokens = 0;
     char *first, *s, *e;
@@ -1589,9 +1584,7 @@ static int tokenize_keys(char *keystr, int length, char delimiter, int keycnt, t
         return -1; /* some errors */
     }
 }
-#endif
 
-#ifdef MAP_COLLECTION_SUPPORT
 static int make_mop_elem_response(char *bufptr, eitem_info *info)
 {
     char *tmpptr = bufptr;
@@ -1928,7 +1921,6 @@ static void process_mop_get_complete(conn *c)
         }
     }
 }
-#endif
 
 static int make_bop_elem_response(char *bufptr, eitem_info *info)
 {
@@ -2653,21 +2645,18 @@ static void complete_update_ascii(conn *c) {
     assert(c != NULL);
     assert(c->ewouldblock == false);
 
-#ifdef MAP_COLLECTION_SUPPORT
+    /* The condition of 'c->coll_strkeys != NULL' is given for map collection.
+     * See process_mop_delete_complete() and process_mop_get_complete().
+     */
     if (c->coll_eitem != NULL || c->coll_strkeys != NULL) {
-#else
-    if (c->coll_eitem != NULL) {
-#endif
         if (c->coll_op == OPERATION_LOP_INSERT)  process_lop_insert_complete(c);
         else if (c->coll_op == OPERATION_SOP_INSERT) process_sop_insert_complete(c);
         else if (c->coll_op == OPERATION_SOP_DELETE) process_sop_delete_complete(c);
         else if (c->coll_op == OPERATION_SOP_EXIST) process_sop_exist_complete(c);
-#ifdef MAP_COLLECTION_SUPPORT
         else if (c->coll_op == OPERATION_MOP_INSERT) process_mop_insert_complete(c);
         else if (c->coll_op == OPERATION_MOP_UPDATE) process_mop_update_complete(c);
         else if (c->coll_op == OPERATION_MOP_DELETE) process_mop_delete_complete(c);
         else if (c->coll_op == OPERATION_MOP_GET) process_mop_get_complete(c);
-#endif
         else if (c->coll_op == OPERATION_BOP_INSERT ||
                  c->coll_op == OPERATION_BOP_UPSERT) process_bop_insert_complete(c);
         else if (c->coll_op == OPERATION_BOP_UPDATE) process_bop_update_complete(c);
@@ -7269,9 +7258,7 @@ static void complete_nread(conn *c)
 #define KEY_TOKEN 1
 #define LOP_KEY_TOKEN 2
 #define SOP_KEY_TOKEN 2
-#ifdef MAP_COLLECTION_SUPPORT
 #define MOP_KEY_TOKEN 2
-#endif
 #define BOP_KEY_TOKEN 2
 
 #define MAX_TOKENS 30
@@ -7702,13 +7689,11 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("cmd_sop_delete", "%"PRIu64, thread_stats.cmd_sop_delete);
     APPEND_STAT("cmd_sop_get", "%"PRIu64, thread_stats.cmd_sop_get);
     APPEND_STAT("cmd_sop_exist", "%"PRIu64, thread_stats.cmd_sop_exist);
-#ifdef MAP_COLLECTION_SUPPORT
     APPEND_STAT("cmd_mop_create", "%"PRIu64, thread_stats.cmd_mop_create);
     APPEND_STAT("cmd_mop_insert", "%"PRIu64, thread_stats.cmd_mop_insert);
     APPEND_STAT("cmd_mop_update", "%"PRIu64, thread_stats.cmd_mop_update);
     APPEND_STAT("cmd_mop_delete", "%"PRIu64, thread_stats.cmd_mop_delete);
     APPEND_STAT("cmd_mop_get", "%"PRIu64, thread_stats.cmd_mop_get);
-#endif
     APPEND_STAT("cmd_bop_create", "%"PRIu64, thread_stats.cmd_bop_create);
     APPEND_STAT("cmd_bop_insert", "%"PRIu64, thread_stats.cmd_bop_insert);
     APPEND_STAT("cmd_bop_update", "%"PRIu64, thread_stats.cmd_bop_update);
@@ -7761,7 +7746,6 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("sop_get_none_hits", "%"PRIu64, thread_stats.sop_get_none_hits);
     APPEND_STAT("sop_exist_misses", "%"PRIu64, thread_stats.sop_exist_misses);
     APPEND_STAT("sop_exist_hits", "%"PRIu64, thread_stats.sop_exist_hits);
-#ifdef MAP_COLLECTION_SUPPORT
     APPEND_STAT("mop_create_oks", "%"PRIu64, thread_stats.mop_create_oks);
     APPEND_STAT("mop_insert_misses", "%"PRIu64, thread_stats.mop_insert_misses);
     APPEND_STAT("mop_insert_hits", "%"PRIu64, thread_stats.mop_insert_hits);
@@ -7774,7 +7758,6 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("mop_get_misses", "%"PRIu64, thread_stats.mop_get_misses);
     APPEND_STAT("mop_get_elem_hits", "%"PRIu64, thread_stats.mop_get_elem_hits);
     APPEND_STAT("mop_get_none_hits", "%"PRIu64, thread_stats.mop_get_none_hits);
-#endif
     APPEND_STAT("bop_create_oks", "%"PRIu64, thread_stats.bop_create_oks);
     APPEND_STAT("bop_insert_misses", "%"PRIu64, thread_stats.bop_insert_misses);
     APPEND_STAT("bop_insert_hits", "%"PRIu64, thread_stats.bop_insert_hits);
@@ -7866,9 +7849,7 @@ static void process_stat_settings(ADD_STAT add_stats, void *c) {
     APPEND_STAT("item_size_max", "%llu", settings.item_size_max);
     APPEND_STAT("max_list_size", "%d", settings.max_list_size);
     APPEND_STAT("max_set_size", "%d", settings.max_set_size);
-#ifdef MAP_COLLECTION_SUPPORT
     APPEND_STAT("max_map_size", "%d", settings.max_map_size);
-#endif
     APPEND_STAT("max_btree_size", "%d", settings.max_btree_size);
     APPEND_STAT("topkeys", "%d", settings.topkeys);
 
@@ -8779,11 +8760,9 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
           case ITEM_TYPE_SET:
                sprintf(buf, "max_set_size %d\r\nEND", settings.max_set_size);
                break;
-#ifdef MAP_COLLECTION_SUPPORT
           case ITEM_TYPE_MAP:
                sprintf(buf, "max_map_size %d\r\nEND", settings.max_map_size);
                break;
-#endif
           case ITEM_TYPE_BTREE:
                sprintf(buf, "max_btree_size %d\r\nEND", settings.max_btree_size);
                break;
@@ -8805,12 +8784,10 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
                    settings.max_set_size = maxsize;
                    MAX_SET_SIZE = maxsize;
                    break;
-#ifdef MAP_COLLECTION_SUPPORT
               case ITEM_TYPE_MAP:
                    settings.max_map_size = maxsize;
                    MAX_MAP_SIZE = maxsize;
                    break;
-#endif
               case ITEM_TYPE_BTREE:
                    settings.max_btree_size = maxsize;
                    MAX_BTREE_SIZE = maxsize;
@@ -8898,11 +8875,9 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_set_size") == 0) {
         process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_SET);
     }
-#ifdef MAP_COLLECTION_SUPPORT
     else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_map_size") == 0) {
         process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_MAP);
     }
-#endif
     else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_btree_size") == 0) {
         process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_BTREE);
     }
@@ -9015,7 +8990,6 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\n"
         "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
         );
-#ifdef MAP_COLLECTION_SUPPORT
     } else if (ntokens > 2 && strcmp(type, "map") == 0) {
         out_string(c,
         "\t" "mop create <key> <attributes> [noreply]\\r\\n" "\n"
@@ -9026,7 +9000,6 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\n"
         "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
         );
-#endif
     } else if (ntokens > 2 && strcmp(type, "btree") == 0) {
 #ifdef JHPARK_OLD_SMGET_INTERFACE
         out_string(c,
@@ -9125,9 +9098,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
 #ifdef CONFIG_MAX_COLLECTION_SIZE
         "\t" "config max_list_size [<maxsize>]\\r\\n" "\n"
         "\t" "config max_set_size [<maxsize>]\\r\\n" "\n"
-#ifdef MAP_COLLECTION_SUPPORT
         "\t" "config max_map_size [<maxsize>]\\r\\n" "\n"
-#endif
         "\t" "config max_btree_size [<maxsize>]\\r\\n" "\n"
 #endif
 #ifdef ENABLE_ZK_INTEGRATION
@@ -9136,15 +9107,9 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
 #endif
         );
     } else {
-#ifdef MAP_COLLECTION_SUPPORT
        out_string(c,
        "\t" "* Usage: help [kv | list | set | map | btree | attr | admin ]" "\n"
        );
-#else
-       out_string(c,
-       "\t" "* Usage: help [kv | list | set | btree | attr | admin ]" "\n"
-       );
-#endif
     }
 }
 
@@ -9421,13 +9386,8 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
 static inline int get_coll_create_attr_from_tokens(token_t *tokens, const int ntokens,
                                                    int coll_type, item_attr *attrp)
 {
-#ifdef MAP_COLLECTION_SUPPORT
     assert(coll_type==ITEM_TYPE_LIST || coll_type==ITEM_TYPE_SET ||
            coll_type==ITEM_TYPE_MAP || coll_type==ITEM_TYPE_BTREE);
-#else
-    assert(coll_type==ITEM_TYPE_LIST || coll_type==ITEM_TYPE_SET ||
-           coll_type==ITEM_TYPE_BTREE);
-#endif
     int32_t exptime_int;
 
     /* create attributes: flags, exptime, maxcount, ovflaction, unreadable */
@@ -11409,7 +11369,6 @@ static inline int get_efilter_from_tokens(token_t *tokens, const int ntokens, ef
     return token_count;
 }
 
-#ifdef MAP_COLLECTION_SUPPORT
 static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, field_t *field, size_t vlen)
 {
     assert(cmd == (int)OPERATION_MOP_INSERT || (int)OPERATION_MOP_UPDATE);
@@ -11765,7 +11724,6 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         out_string(c, "CLIENT_ERROR bad command line format");
     }
 }
-#endif
 
 static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 {
@@ -12783,12 +12741,10 @@ static void process_command(conn *c, char *command, int cmdlen)
     {
         process_sop_command(c, tokens, ntokens);
     }
-#ifdef MAP_COLLECTION_SUPPORT
     else if ((ntokens >= 6 && ntokens <= 13) && (strcmp(tokens[COMMAND_TOKEN].value, "mop") == 0))
     {
         process_mop_command(c, tokens, ntokens);
     }
-#endif
     else if ((ntokens >= 5 && ntokens <= 14) && (strcmp(tokens[COMMAND_TOKEN].value, "bop") == 0))
     {
         process_bop_command(c, tokens, ntokens);
@@ -15108,7 +15064,6 @@ int main (int argc, char **argv) {
                          value, MAX_SET_SIZE, ARCUS_COLL_SIZE_LIMIT);
             }
         }
-#ifdef MAP_COLLECTION_SUPPORT
         char *arcus_max_map_size = getenv("ARCUS_MAX_MAP_SIZE");
         if (arcus_max_map_size != NULL) {
             value = atoi(arcus_max_map_size);
@@ -15120,7 +15075,6 @@ int main (int argc, char **argv) {
                          value, MAX_MAP_SIZE, ARCUS_COLL_SIZE_LIMIT);
             }
         }
-#endif
         char *arcus_max_btree_size = getenv("ARCUS_MAX_BTREE_SIZE");
         if (arcus_max_btree_size != NULL) {
             value = atoi(arcus_max_btree_size);
@@ -15135,16 +15089,12 @@ int main (int argc, char **argv) {
         /* reset maximum elements of each collection */
         settings.max_list_size = MAX_LIST_SIZE;
         settings.max_set_size = MAX_SET_SIZE;
-#ifdef MAP_COLLECTION_SUPPORT
         settings.max_map_size = MAX_MAP_SIZE;
-#endif
         settings.max_btree_size = MAX_BTREE_SIZE;
 
         old_opts += sprintf(old_opts, "max_list_size=%d;",  MAX_LIST_SIZE);
         old_opts += sprintf(old_opts, "max_set_size=%d;",   MAX_SET_SIZE);
-#ifdef MAP_COLLECTION_SUPPORT
         old_opts += sprintf(old_opts, "max_map_size=%d;",   MAX_MAP_SIZE);
-#endif
         old_opts += sprintf(old_opts, "max_btree_size=%d;", MAX_BTREE_SIZE);
     }
 

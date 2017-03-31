@@ -412,7 +412,6 @@ extern "C" {
                                           uint32_t* flags, bool* dropped,
                                           uint16_t vbucket);
 
-#ifdef MAP_COLLECTION_SUPPORT
         /*
          * MAP Interface
          */
@@ -472,7 +471,6 @@ extern "C" {
                                           uint32_t* flags,
                                           bool* dropped,
                                           uint16_t vbucket);
-#endif
 
         /*
          * B+Tree Interface

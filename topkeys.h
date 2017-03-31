@@ -34,6 +34,10 @@
                     C(sop_delete_elem_hits) C(sop_delete_none_hits) C(sop_delete_misses) \
                     C(sop_get_elem_hits) C(sop_get_none_hits) C(sop_get_misses) \
                     C(sop_exist_hits) C(sop_exist_misses)
+#define TK_MOPS(C)  C(mop_create_oks) C(mop_insert_hits) C(mop_insert_misses) \
+                    C(mop_update_elem_hits) C(mop_update_none_hits) C(mop_update_misses) \
+                    C(mop_delete_elem_hits) C(mop_delete_none_hits) C(mop_delete_misses) \
+                    C(mop_get_elem_hits) C(mop_get_none_hits) C(mop_get_misses)
 #define TK_BOPS(C)  C(bop_create_oks) C(bop_insert_hits) C(bop_insert_misses) \
                     C(bop_update_elem_hits) C(bop_update_none_hits) C(bop_update_misses) \
                     C(bop_delete_elem_hits) C(bop_delete_none_hits) C(bop_delete_misses) \
@@ -42,12 +46,6 @@
                     C(bop_position_elem_hits) C(bop_position_none_hits) C(bop_position_misses) \
                     C(bop_pwg_elem_hits) C(bop_pwg_none_hits) C(bop_pwg_misses) \
                     C(bop_gbp_elem_hits) C(bop_gbp_none_hits) C(bop_gbp_misses)
-#ifdef MAP_COLLECTION_SUPPORT
-#define TK_MOPS(C)  C(mop_create_oks) C(mop_insert_hits) C(mop_insert_misses) \
-                    C(mop_update_elem_hits) C(mop_update_none_hits) C(mop_update_misses) \
-                    C(mop_delete_elem_hits) C(mop_delete_none_hits) C(mop_delete_misses) \
-                    C(mop_get_elem_hits) C(mop_get_none_hits) C(mop_get_misses)
-#endif
 #ifdef SUPPORT_BOP_MGET
 #define TK_BMGET(C) C(bop_mget_oks)
 #endif
@@ -86,6 +84,7 @@ typedef struct topkey_item {
     TK_OPS(TK_CUR)
     TK_LOPS(TK_CUR)
     TK_SOPS(TK_CUR)
+    TK_MOPS(TK_CUR)
     TK_BOPS(TK_CUR)
 #ifdef SUPPORT_BOP_MGET
     TK_BMGET(TK_CUR)
@@ -95,9 +94,6 @@ typedef struct topkey_item {
 #endif
     TK_BINCR(TK_CUR)
     TK_BDECR(TK_CUR)
-#ifdef MAP_COLLECTION_SUPPORT
-    TK_MOPS(TK_CUR)
-#endif
     TK_AOPS(TK_CUR)
 #undef TK_CUR
     char key[]; /* A variable length array in the struct itself */

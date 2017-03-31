@@ -144,11 +144,9 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
             { .key = "max_set_size",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.max_set_size },
-#ifdef MAP_COLLECTION_SUPPORT
             { .key = "max_map_size",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.max_map_size },
-#endif
             { .key = "max_btree_size",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.max_btree_size },
@@ -566,7 +564,6 @@ default_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
-#ifdef MAP_COLLECTION_SUPPORT
 
 /*
  * Map Collection API
@@ -677,7 +674,6 @@ default_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
-#endif
 
 /*
  * B+Tree Collection API
@@ -1184,11 +1180,9 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
     else if (strcmp(config_key, "max_set_size") == 0) {
         ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_SET, (int*)config_value);
     }
-#ifdef MAP_COLLECTION_SUPPORT
     else if (strcmp(config_key, "max_map_size") == 0) {
         ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_MAP, (int*)config_value);
     }
-#endif
     else if (strcmp(config_key, "max_btree_size") == 0) {
         ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_BTREE, (int*)config_value);
     }
@@ -1438,7 +1432,6 @@ get_elem_info(ENGINE_HANDLE *handle, const void *cookie,
         elem_info->nbytes = elem->nbytes;
         elem_info->value  = elem->value;
     }
-#ifdef MAP_COLLECTION_SUPPORT
     else if (type == ITEM_TYPE_MAP) {
         map_elem_item *elem = (map_elem_item*)eitem;
         elem_info->nscore = elem->nfield;
@@ -1446,7 +1439,6 @@ get_elem_info(ENGINE_HANDLE *handle, const void *cookie,
         elem_info->score  = elem->data;
         elem_info->value  = (const char*)elem->data + elem->nfield;
     }
-#endif
     else if (type == ITEM_TYPE_BTREE) {
         btree_elem_item *elem = (btree_elem_item*)eitem;
         elem_info->nscore = elem->nbkey;
@@ -1511,7 +1503,6 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .set_elem_delete   = default_set_elem_delete,
          .set_elem_exist    = default_set_elem_exist,
          .set_elem_get      = default_set_elem_get,
-#ifdef MAP_COLLECTION_SUPPORT
          /* MAP Collection API */
          .map_struct_create = default_map_struct_create,
          .map_elem_alloc    = default_map_elem_alloc,
@@ -1520,7 +1511,6 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .map_elem_update   = default_map_elem_update,
          .map_elem_delete   = default_map_elem_delete,
          .map_elem_get      = default_map_elem_get,
-#endif
          /* B+Tree Collection API */
          .btree_struct_create = default_btree_struct_create,
          .btree_elem_alloc   = default_btree_elem_alloc,
@@ -1588,9 +1578,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .item_size_max= 1024 * 1024,
          .max_list_size = 50000,
          .max_set_size = 50000,
-#ifdef MAP_COLLECTION_SUPPORT
          .max_map_size = 50000,
-#endif
          .max_btree_size = 50000,
          .prefix_delimiter = ':',
        },

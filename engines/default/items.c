@@ -62,10 +62,8 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it);
 static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *it);
 static void do_item_unlink(struct default_engine *engine, hash_item *it, enum item_unlink_cause cause);
 static void do_coll_all_elem_delete(struct default_engine *engine, hash_item *it);
-#ifdef MAP_COLLECTION_SUPPORT
 static uint32_t do_map_elem_delete(struct default_engine *engine, map_meta_info *info,
                                    const uint32_t count, enum elem_delete_cause cause);
-#endif
 
 extern int genhash_string_hash(const void* p, size_t nkey);
 
@@ -151,17 +149,13 @@ static unsigned char btree_binary_max_bkey[BKEY_MAX_BINARY_LENG] = { 0xFF, 0xFF,
 static int32_t coll_size_limit = 1000000;
 static int32_t max_list_size   = 50000;
 static int32_t max_set_size    = 50000;
-#ifdef MAP_COLLECTION_SUPPORT
 static int32_t max_map_size    = 50000;
-#endif
 static int32_t max_btree_size  = 50000;
 
 /* default collection size */
 static int32_t default_list_size  = 4000;
 static int32_t default_set_size   = 4000;
-#ifdef MAP_COLLECTION_SUPPORT
 static int32_t default_map_size  = 4000;
-#endif
 static int32_t default_btree_size = 4000;
 
 /* collection delete queue */
@@ -173,14 +167,12 @@ static pthread_t       coll_del_tid; /* thread id */
 
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
-#ifdef MAP_COLLECTION_SUPPORT
 /* map element previous info internally used */
 typedef struct _map_prev_info {
     map_hash_node *node;
     map_elem_item *prev;
     uint16_t       hidx;
 } map_prev_info;
-#endif
 
 /*
  * Static functions
@@ -216,9 +208,7 @@ static inline size_t ITEM_ntotal(struct default_engine *engine, const hash_item 
         ret = sizeof(*item) + META_OFFSET_IN_ITEM(item->nkey, item->nbytes);
         if (IS_LIST_ITEM(item))     ret += sizeof(list_meta_info);
         else if (IS_SET_ITEM(item)) ret += sizeof(set_meta_info);
-#ifdef MAP_COLLECTION_SUPPORT
         else if (IS_MAP_ITEM(item)) ret += sizeof(map_meta_info);
-#endif
         else /* BTREE_ITEM */       ret += sizeof(btree_meta_info);
     } else {
         ret = sizeof(*item) + item->nkey + item->nbytes;
@@ -1384,7 +1374,6 @@ static int32_t do_coll_real_maxcount(hash_item *it, int32_t maxcount)
 #endif
         else if (maxcount == 0)
             real_maxcount = default_set_size;
-#ifdef MAP_COLLECTION_SUPPORT
     } else if (IS_MAP_ITEM(it)) {
         if (maxcount < 0 || maxcount > max_map_size)
 #ifdef CONFIG_MAX_COLLECTION_SIZE
@@ -1394,7 +1383,6 @@ static int32_t do_coll_real_maxcount(hash_item *it, int32_t maxcount)
 #endif
         else if (maxcount == 0)
             real_maxcount = default_map_size;
-#endif
     } else if (IS_BTREE_ITEM(it)) {
         if (maxcount < 0 || maxcount > max_btree_size)
 #ifdef CONFIG_MAX_COLLECTION_SIZE
@@ -1418,12 +1406,10 @@ static inline uint32_t do_set_elem_ntotal(set_elem_item *elem)
     return sizeof(set_elem_item) + elem->nbytes;
 }
 
-#ifdef MAP_COLLECTION_SUPPORT
 static inline uint32_t do_map_elem_ntotal(map_elem_item *elem)
 {
     return sizeof(map_elem_item) + elem->nfield + elem->nbytes;
 }
-#endif
 
 static inline uint32_t do_btree_elem_ntotal(btree_elem_item *elem)
 {
@@ -5745,12 +5731,10 @@ static void do_coll_all_elem_delete(struct default_engine *engine, hash_item *it
         (void)do_set_elem_delete(engine, info, 0, ELEM_DELETE_COLL);
 #endif
         assert(info->root == NULL);
-#ifdef MAP_COLLECTION_SUPPORT
     } else if (IS_MAP_ITEM(it)) {
         map_meta_info *info = (map_meta_info *)item_get_meta(it);
         (void)do_map_elem_delete(engine, info, 0, ELEM_DELETE_COLL);
         assert(info->root == NULL);
-#endif
     } else if (IS_BTREE_ITEM(it)) {
         btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
 #ifdef BTREE_DELETE_NO_MERGE
@@ -5876,7 +5860,6 @@ static void *collection_delete_thread(void *arg)
                 pthread_mutex_unlock(&engine->cache_lock);
             }
         }
-#ifdef MAP_COLLECTION_SUPPORT
         else if (IS_MAP_ITEM(it)) {
             bool dropped = false;
             map_meta_info *info;
@@ -5892,7 +5875,6 @@ static void *collection_delete_thread(void *arg)
                 pthread_mutex_unlock(&engine->cache_lock);
             }
         }
-#endif
         else if (IS_BTREE_ITEM(it)) {
             bool dropped = false;
             btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
@@ -6276,21 +6258,17 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
         max_set_size = engine->config.max_set_size < coll_size_limit
                      ? (int32_t)engine->config.max_set_size : coll_size_limit;
     }
-#ifdef MAP_COLLECTION_SUPPORT
     if (engine->config.max_map_size > max_map_size) {
         max_map_size = engine->config.max_map_size < coll_size_limit
                      ? (int32_t)engine->config.max_map_size : coll_size_limit;
     }
-#endif
     if (engine->config.max_btree_size > max_btree_size) {
         max_btree_size = engine->config.max_btree_size < coll_size_limit
                        ? (int32_t)engine->config.max_btree_size : coll_size_limit;
     }
     logger->log(EXTENSION_LOG_INFO, NULL, "maximum list  size = %d\n", max_list_size);
     logger->log(EXTENSION_LOG_INFO, NULL, "maximum set   size = %d\n", max_set_size);
-#ifdef MAP_COLLECTION_SUPPORT
     logger->log(EXTENSION_LOG_INFO, NULL, "maximum map   size = %d\n", max_map_size);
-#endif
     logger->log(EXTENSION_LOG_INFO, NULL, "maximum btree size = %d\n", max_btree_size);
 
     int ret = pthread_create(&coll_del_tid, NULL, collection_delete_thread, engine);
@@ -7351,11 +7329,9 @@ ENGINE_ERROR_CODE item_getattr(struct default_engine *engine,
                       case ITEM_TYPE_SET:
                            attr_data->maxcount = max_set_size;
                            break;
-#ifdef MAP_COLLECTION_SUPPORT
                       case ITEM_TYPE_MAP:
                            attr_data->maxcount = max_map_size;
                            break;
-#endif
                       case ITEM_TYPE_BTREE:
                            attr_data->maxcount = max_btree_size;
                            break;
@@ -7592,7 +7568,6 @@ ENGINE_ERROR_CODE item_conf_set_maxcollsize(struct default_engine *engine,
                engine->config.max_set_size = *maxsize;
            }
            break;
-#ifdef MAP_COLLECTION_SUPPORT
       case ITEM_TYPE_MAP:
            if (*maxsize <= max_map_size) {
                ret = ENGINE_EBADVALUE;
@@ -7601,7 +7576,6 @@ ENGINE_ERROR_CODE item_conf_set_maxcollsize(struct default_engine *engine,
                engine->config.max_map_size = *maxsize;
            }
            break;
-#endif
       case ITEM_TYPE_BTREE:
            if (*maxsize <= max_btree_size) {
                ret = ENGINE_EBADVALUE;
@@ -7709,12 +7683,10 @@ bool set_elem_is_linked(set_elem_item *elem)
     return (elem->next != (set_elem_item *)ADDR_MEANS_UNLINKED);
 }
 
-#ifdef MAP_COLLECTION_SUPPORT
 bool map_elem_is_linked(map_elem_item *elem)
 {
     return (elem->next != (map_elem_item *)ADDR_MEANS_UNLINKED);
 }
-#endif
 
 bool btree_elem_is_linked(btree_elem_item *elem)
 {
@@ -7739,12 +7711,10 @@ uint32_t set_elem_ntotal(set_elem_item *elem)
     return do_set_elem_ntotal(elem);
 }
 
-#ifdef MAP_COLLECTION_SUPPORT
 uint32_t map_elem_ntotal(map_elem_item *elem)
 {
     return do_map_elem_ntotal(elem);
 }
-#endif
 
 uint32_t btree_elem_ntotal(btree_elem_item *elem)
 {
@@ -7998,9 +7968,7 @@ static void *item_dumper_main(void *arg)
             /* key item type: L(list), S(set), B(b+tree), K(kv) */
             if (IS_LIST_ITEM(it))       memcpy(cur_bufptr, "L ", 2);
             else if (IS_SET_ITEM(it))   memcpy(cur_bufptr, "S ", 2);
-#ifdef MAP_COLLECTION_SUPPORT
             else if (IS_MAP_ITEM(it))   memcpy(cur_bufptr, "M ", 2);
-#endif
             else if (IS_BTREE_ITEM(it)) memcpy(cur_bufptr, "B ", 2);
             else                        memcpy(cur_bufptr, "K ", 2);
             cur_bufptr += 2;
@@ -8207,7 +8175,6 @@ void item_stats_dump(struct default_engine *engine,
 }
 #endif
 
-#ifdef MAP_COLLECTION_SUPPORT
 /*
  * MAP collection manangement
  */
@@ -9011,5 +8978,3 @@ ENGINE_ERROR_CODE map_elem_get(struct default_engine *engine, const char *key, c
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
 }
-#endif
-

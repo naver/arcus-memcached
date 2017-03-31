@@ -33,13 +33,11 @@ void stats_prefix_record_sop_insert(const char *key, const size_t nkey, const bo
 void stats_prefix_record_sop_delete(const char *key, const size_t nkey, const bool is_hit);
 void stats_prefix_record_sop_get(const char *key, const size_t nkey, const bool is_hit);
 void stats_prefix_record_sop_exist(const char *key, const size_t nkey, const bool is_hit);
-#ifdef MAP_COLLECTION_SUPPORT
 void stats_prefix_record_mop_create(const char *key, const size_t nkey);
 void stats_prefix_record_mop_insert(const char *key, const size_t nkey, const bool is_hit);
 void stats_prefix_record_mop_update(const char *key, const size_t nkey, const bool is_hit);
 void stats_prefix_record_mop_delete(const char *key, const size_t nkey, const bool is_hit);
 void stats_prefix_record_mop_get(const char *key, const size_t nkey, const bool is_hit);
-#endif
 void stats_prefix_record_bop_create(const char *key, const size_t nkey);
 void stats_prefix_record_bop_insert(const char *key, const size_t nkey, const bool is_hit);
 void stats_prefix_record_bop_update(const char *key, const size_t nkey, const bool is_hit);
