@@ -364,7 +364,7 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
         }
 
         // finally connected to one of ZK ensemble. signal go.
-        inc_count (-1);
+        inc_count(-1);
     }
     else if (state == ZOO_AUTH_FAILED_STATE) {
         // authorization failure
@@ -487,7 +487,7 @@ arcus_zk_sync_cb(int rc, const char *name, const void *data)
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "arcus_zk_sync cb\n");
 
     // signal cond var
-    inc_count (-1);
+    inc_count(-1);
     last_rc = rc;
 }
 
@@ -1124,15 +1124,18 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     char            zpath[200] = "";
     struct timeval  start_time, end_time;
     long            difftime_us;
-    app_ping_t      *ping_data;
 
     assert(logger);
     assert(engine);
-
     if (!ensemble_list) { // Arcus Zookeeper Ensemble IP list
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     " -z{ensemble_list} must not be empty\n");
         arcus_exit(zh, EX_USAGE);
+    }
+
+    if (arcus_conf.verbose > 2) {
+        arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
+                               "arcus_zk_init(%s)\n", ensemble_list);
     }
 
     // save these for later use (restart)
@@ -1143,6 +1146,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         arcus_conf.verbose       = verbose;
         arcus_conf.maxbytes      = maxbytes;
         arcus_conf.ensemble_list = strdup(ensemble_list);
+        assert(arcus_conf.ensemble_list);
         // Use the user specified timeout only if it falls within
         // [MIN, MAX).  Otherwise, silently ignore it and use
         // the default value.
@@ -1153,16 +1157,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     }
 
     /* initialize Arcus ZK stats */
-    azk_stat.zk_timeout = 0;
-    azk_stat.hb_count = 0;
-    azk_stat.hb_latency = 0;
-
-    if (arcus_conf.verbose > 2)
-        arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "-> arcus_zk_init\n");
-
-    /* prepare app_ping context data */
-    arcus_prepare_ping_context(&mc_ping_context, arcus_conf.port);
-    ping_data = &mc_ping_context;
+    memset(&azk_stat, 0, sizeof(azk_stat));
 
     /* make znode name while getting local ip and hostname */
     rc = arcus_build_znode_name(ensemble_list);
@@ -1189,13 +1184,9 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     if (arcus_conf.verbose > 2)
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "zookeeper_init()\n");
 
-    // connect to ZK ensemble
-    snprintf(zpath, sizeof(zpath), "%s", arcus_conf.ensemble_list);
-    if (arcus_conf.verbose > 2)
-        arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "zk ensemble: %s\n", zpath);
-
     inc_count(1);
-    zh = zookeeper_init(zpath, arcus_zk_watcher, arcus_conf.zk_timeout, &myid, 0, 0);
+    zh = zookeeper_init(arcus_conf.ensemble_list, arcus_zk_watcher,
+                        arcus_conf.zk_timeout, &myid, 0, 0);
     if (!zh) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "zookeeper_init() failed (%s error)\n", strerror(errno));
@@ -1206,7 +1197,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     if (wait_count(arcus_conf.zk_timeout) != 0) {
         /* zoo_state(zh) != ZOO_CONNECTED_STATE */
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "cannot to be ZOO_CONNECTED_STATE\n");
+                 "cannot to be ZOO_CONNECTED_STATE\n");
         arcus_exit(zh, EX_PROTOCOL);
     }
 
@@ -1291,7 +1282,8 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     sm_unlock();
 
     // start heartbeat thread
-    if (start_hb_thread(ping_data) != 0) {
+    arcus_prepare_ping_context(&mc_ping_context, arcus_conf.port);
+    if (start_hb_thread(&mc_ping_context) != 0) {
         /* We need normal shutdown at this time */
         arcus_zk_shutdown = 1;
     }
@@ -1311,13 +1303,10 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 void arcus_zk_final(const char *msg)
 {
     assert(arcus_zk_shutdown == 1);
-    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
-                           "arcus zk final - %s\n", msg);
+    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "arcus_zk_final(%s)\n", msg);
 
     pthread_mutex_lock(&zk_final_lock);
     if (zh) {
-        int elapsed_msec;
-
         /* hb_thread is probably sleeping.  And, if it is in the middle of
          * doing a ping, it would block for a long time because worker threads
          * are likely all dead at this point.
@@ -1328,10 +1317,10 @@ void arcus_zk_final(const char *msg)
         sm_wakeup(false);
 
         /* wait a maximum of 1000 msec */
-        elapsed_msec = 0;
+        int elapsed_msec = 0;
         while (elapsed_msec <= 1000) {
             if (elapsed_msec == 0) {
-                /* go below */
+                /* the first check: go below */
             } else {
                 usleep(10000); // 10ms wait
                 elapsed_msec += 10;
@@ -1372,7 +1361,7 @@ void arcus_zk_final(const char *msg)
 void arcus_zk_destroy(void)
 {
     assert(arcus_zk_shutdown == 1);
-    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "arcus zk destroy\n");
+    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "arcus_zk_destroy\n");
 
     pthread_mutex_lock(&zk_final_lock);
 #ifdef ENABLE_CLUSTER_AWARE
@@ -1381,6 +1370,10 @@ void arcus_zk_destroy(void)
         arcus_conf.ch = NULL;
     }
 #endif
+    if (arcus_conf.ensemble_list) {
+        free(arcus_conf.ensemble_list);
+        arcus_conf.ensemble_list = NULL;
+    }
     pthread_mutex_unlock(&zk_final_lock);
 }
 
