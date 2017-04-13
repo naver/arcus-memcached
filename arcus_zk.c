@@ -441,7 +441,7 @@ arcus_cache_list_watcher(zhandle_t *zh, int type, int state, const char *path, v
 }
 
 static int
-arcus_read_ZK_children(const char *zpath, watcher_fn watcher,
+arcus_read_ZK_children(zhandle_t *zh, const char *zpath, watcher_fn watcher,
                        struct String_vector *strv)
 {
     int rc = zoo_wget_children(zh, zpath, watcher, NULL, strv);
@@ -1253,7 +1253,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 
     struct String_vector strv = { 0, NULL };
     /* 2nd argument, NULL means no watcher */
-    if (arcus_read_ZK_children(arcus_conf.cluster_path, NULL, &strv) <= 0) {
+    if (arcus_read_ZK_children(zh, arcus_conf.cluster_path, NULL, &strv) <= 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Failed to read cache list from ZK. Terminating...\n");
         arcus_exit(zh, EX_CONFIG);
@@ -1558,7 +1558,8 @@ static void *sm_state_thread(void *arg)
         /* Read the latest hash ring */
         if (smreq.update_cache_list) {
             struct String_vector strv_cache_list = {0, NULL};
-            int zresult = arcus_read_ZK_children(arcus_conf.cluster_path,
+            int zresult = arcus_read_ZK_children(zh,
+                                                 arcus_conf.cluster_path,
                                                  arcus_cache_list_watcher,
                                                  &strv_cache_list);
             if (zresult < 0) {
