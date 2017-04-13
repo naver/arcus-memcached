@@ -119,23 +119,23 @@ static const char *zk_log_dir = "cache_server_log";
 static const char *zk_cache_dir = "cache_list";
 static const char *mc_hb_command = "set arcus:zk-ping 1 0 1\r\n1\r\n";
 
-#ifdef ENABLE_SUICIDE_UPON_DISCONNECT
-static bool zk_connected = false;
-#endif
-
 static zhandle_t *zh=NULL;
 static clientid_t myid;
 static int        last_rc=ZOK;
 
-// this is to indicate if we get shutdown signal
-// during ZK initialization
-// ZK shutdown is done at the end of arcus_zk_init()
-// to simplify synchronization
-volatile sig_atomic_t arcus_zk_shutdown=0;
-// This flag is now used to indicate graceful shutdown.  See hb_thread for
-// more comment.
+#ifdef ENABLE_SUICIDE_UPON_DISCONNECT
+static bool zk_connected = false;
+#endif
 
-// placeholder for zookeeper and memcached settings
+/* this is to indicate if we get shutdown signal during ZK initialization
+ * ZK shutdown is done at the end of arcus_zk_init() to simplify synchronization
+ */
+volatile sig_atomic_t arcus_zk_shutdown=0;
+/* This flag is now used to indicate graceful shutdown.  See hb_thread for
+ * more comment.
+ */
+
+/* placeholder for zookeeper and memcached settings */
 typedef struct {
     char    *ensemble_list;     // ZK ensemble IP:port list
     char    *svc;               // Service code name
@@ -241,8 +241,8 @@ struct sm {
 
     pthread_t state_tid;
 #ifdef ENABLE_SUICIDE_UPON_DISCONNECT
-    /* A timer thread to fail-stop the server when it is disconnected from
-     * the ZK ensemble.
+    /* A timer thread to fail-stop the server
+     * when it is disconnected from the ZK ensemble.
      */
     pthread_t timer_tid;
 #endif
@@ -254,15 +254,15 @@ static void sm_lock(void);
 static void sm_unlock(void);
 static void sm_wakeup(bool locked);
 
-// async routine synchronization
+/* async routine synchronization */
 static pthread_cond_t  azk_cond = PTHREAD_COND_INITIALIZER;
 static pthread_mutex_t azk_mtx  = PTHREAD_MUTEX_INITIALIZER;
 static int             azk_count;
 
-// zookeeper close synchronization
+/* zookeeper close synchronization */
 static pthread_mutex_t zk_final_lock = PTHREAD_MUTEX_INITIALIZER;
 
-// memcached heartheat thread */
+/* memcached heartheat thread */
 static volatile bool hb_thread_running = false;
 static bool hb_thread_sleep = false;
 static pthread_mutex_t hb_thread_lock;
@@ -296,14 +296,12 @@ breakup_string(char *str, char *start[], char *end[], int vec_len)
         i++;
     }
     if (*c != '\0') {
-        /* There are leftover characters.
-         * Ignore them.
-         */
+        /* There are leftover characters. Ignore them. */
     }
     return i; /* i <= vec_len */
 }
 
-// mutex for async operations
+/* mutex for async operations */
 static void inc_count(int delta)
 {
     pthread_mutex_lock(&azk_mtx);
@@ -339,32 +337,28 @@ static void
 arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cxt)
 {
     if (type != ZOO_SESSION_EVENT) {
-        if (arcus_conf.verbose > 2)
-            arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                    "arcus_zk_watch not session event (type=%d)\n", type);
         return;
     }
 
     if (state == ZOO_CONNECTED_STATE) {
         const clientid_t *id = zoo_client_id(wzh);
-
-#ifdef ENABLE_SUICIDE_UPON_DISCONNECT
-        zk_connected = true;
-#endif
         if (arcus_conf.verbose > 2) {
-            arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "ZK ensemble connected\n");
             arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                            "session id: 0x%llx\n", (long long) myid.client_id);
+                                   "ZK ensemble connected. session id: 0x%llx\n",
+                                   (long long) myid.client_id);
         }
         if (myid.client_id == 0 || myid.client_id != id->client_id) {
             if (arcus_conf.verbose > 2)
                  arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                         "a old session id: 0x%llx\n", (long long) myid.client_id);
+                         "A old session id: 0x%llx\n", (long long) myid.client_id);
              myid = *id;
         }
 
         // finally connected to one of ZK ensemble. signal go.
         inc_count(-1);
+#ifdef ENABLE_SUICIDE_UPON_DISCONNECT
+        zk_connected = true;
+#endif
     }
     else if (state == ZOO_AUTH_FAILED_STATE) {
         // authorization failure
@@ -375,25 +369,23 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
         // very likely that memcached process exited and restarted within
         // session timeout
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "Expired state. shutting down\n");
-
         // send SMS here??
         arcus_exit(wzh, EX_TEMPFAIL);
-
-        // We chose not to restart here.
-        // All memcached start/restart should start from scratch (cold cache)
-        // to avoid stale cache data access (rehashing already happened)
-        //
+        /* We chose not to restart here.
+         * All memcached start/restart should start from scratch (cold cache)
+         * to avoid stale cache data access (rehashing already happened)
+         */
         //arcus_zk_init(arcus_conf.ensemble_list, settings );
     }
     else if (state == ZOO_ASSOCIATING_STATE || state == ZOO_CONNECTING_STATE) {
-        // we get these when connection to Ensemble is dropped and retrying
-        // this happens emsemble failover as well
-        // since this is not memcached operation issue, we will allow reconnecting
-        // but it is possible that app_ping fails and zk server may have disconnected
-        // and if that's the case, we let heartbeat timeout algorithm decide
-        // what to do.
+        /* we get these when connection to Ensemble is dropped and retrying
+         * this happens emsemble failover as well
+         * since this is not memcached operation issue, we will allow reconnecting
+         * but it is possible that app_ping fails and zk server may have disconnected
+         * and if that's the case, we let heartbeat timeout algorithm decide
+         * what to do.
+         */
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "CONNECTING.... \n");
-
 #ifdef ENABLE_SUICIDE_UPON_DISCONNECT
         /* The server is disconnected from ZK.  But we do not know how much
          * time has elapsed from the last successful ZK ping.  A connection
@@ -463,9 +455,7 @@ update_cluster_config(struct String_vector *strv)
         sm_info.cluster_node_count = 0;
         return 0;
     }
-
     arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "update cluster config...\n");
-
     if (arcus_conf.verbose > 0) {
         for (int i = 0; i < strv->count; i++) {
             arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "server[%d] = %s\n",
@@ -481,22 +471,21 @@ update_cluster_config(struct String_vector *strv)
 }
 #endif
 
-// callback for sync command
+/* callback for sync command */
 static void
 arcus_zk_sync_cb(int rc, const char *name, const void *data)
 {
-    if (arcus_conf.verbose > 2)
+    if (arcus_conf.verbose > 2) {
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "arcus_zk_sync cb\n");
-
+    }
     // signal cond var
     inc_count(-1);
     last_rc = rc;
 }
 
-// Log memcached join/leave acvitivity
-// this is for debugging purpose
-// We cannot log in case of memcached crash
-//
+/* Log memcached join/leave acvitivity for debugging purpose
+ * We cannot log in case of memcached crash
+ */
 static void
 arcus_zk_log(zhandle_t *zh, const char *action)
 {
@@ -576,14 +565,15 @@ static void arcus_prepare_ping_context(app_ping_t *ping_data, int port)
     arcus_adjust_ping_timeout(ping_data, arcus_conf.hb_timeout);
 }
 
-// this is L7 application ping callback
-// only one app ping per ZK ping period if successful
-// In this case, we make a TCP connection to self memcached port, and
-// try to set a key.
-//
-// make sure that successful app heartbeat completes in 2/3 of recv timeout, otherwise
-// it is very possible have expired state in the end.
-// this retries 2 twice at every 1/3 of ZK recv timeout
+/* This is L7 application ping callback
+ * only one app ping per ZK ping period if successful
+ * In this case, we make a TCP connection to self memcached port, and
+ * try to set a key.
+ *
+ * Make sure that successful app heartbeat completes in 2/3 of recv timeout,
+ * otherwise it is very possible have expired state in the end.
+ * This retries 2 twice at every 1/3 of ZK recv timeout
+ */
 int mc_hb(void *context)
 {
     app_ping_t      *data = (app_ping_t *) context;
@@ -601,25 +591,26 @@ int mc_hb(void *context)
     if (sock == -1) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "mc_hb: cannot create a socket (error=%s)\n", strerror(errno));
-        return 0; // Allow ZK ping by returning 0 even if socket() fails.
+        return 0; /* Allow ZK ping by returning 0 even if socket() fails. */
     }
 
     flags = 1;
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &flags, sizeof(flags)); // fast port recycle
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &flags, sizeof(flags)); /* fast port recycle */
     setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &flags, sizeof(flags));
 
-    // send()/recv() could be blocked forever when all memcached worker threads are deadlocked
-    // while the acceptor thread is still alive.
-    // Blocked in L7 health check, ZK ping fails, then ZK ensemble gives up the connection.
-    // However, as the blocked ZK ping runs on ZK client's I/O thread
-    // the client cannot receive the events from ZK ensemble. So memcached fails to fail-stop.
-    // To prevent this situation we set timeouts to send()/recv().
+    /* send()/recv() could be blocked forever when all memcached worker threads are deadlocked
+     * while the acceptor thread is still alive.
+     * Blocked in L7 health check, ZK ping fails, then ZK ensemble gives up the connection.
+     * However, as the blocked ZK ping runs on ZK client's I/O thread
+     * the client cannot receive the events from ZK ensemble. So memcached fails to fail-stop.
+     * To prevent this situation we set timeouts to send()/recv().
+     */
     tv_timeo = data->to;
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv_timeo, sizeof(tv_timeo)); // recv timeout
-    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv_timeo, sizeof(tv_timeo)); // send timeout
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv_timeo, sizeof(tv_timeo));
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv_timeo, sizeof(tv_timeo));
 
     linger.l_onoff  = 1;
-    linger.l_linger = 0;        // flush buffers upon close() and send TCP RST
+    linger.l_linger = 0; /* flush buffers upon close() and send TCP RST */
     setsockopt(sock, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger));
 
     arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
@@ -631,15 +622,16 @@ int mc_hb(void *context)
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "mc_hb: cannot connect to local memcached (error=%s)\n", strerror(errno));
         close(sock);
-        return 0; // Allow ZK ping by returning 0 even if connect() fails.
+        return 0; /* Allow ZK ping by returning 0 even if socket() fails. */
     }
 
-    // try to set a key "arcus:zk-ping"
-    // we need to be careful here. Since we can make a connection, basic
-    // memcached event loop works and system resources are enough. if we can an
-    // error during send()/recv(), it may not be a memcached failure at all.
-    // We may get slab memory shortage for slab class 0 for above key.
-    // For now, we simply return here without ping error or intentional delay
+    /* Try to set a key "arcus:zk-ping"
+     * we need to be careful here. Since we can make a connection, basic
+     * memcached event loop works and system resources are enough. if we can an
+     * error during send()/recv(), it may not be a memcached failure at all.
+     * We may get slab memory shortage for slab class 0 for above key.
+     * For now, we simply return here without ping error or intentional delay
+     */
     err = send(sock, mc_hb_command, 28, 0);
     if (err > 0) {
         // expects "STORED\r\n"
@@ -705,8 +697,7 @@ static void *hb_thread(void *arg)
      * destroy function.
      */
     hb_thread_running = true;
-
-    while (hb_thread_running && !arcus_zk_shutdown) {
+    while (!arcus_zk_shutdown) {
         /* If the last hearbeat timed out, do not wait and try another
          * right away.
          */
@@ -810,6 +801,7 @@ static void *hb_thread(void *arg)
         }
     }
     hb_thread_running = false;
+
     if (shutdown_by_me) {
         arcus_zk_shutdown = 1;
         arcus_zk_final("Heartbeat failure");
@@ -1006,7 +998,7 @@ static int arcus_check_server_mapping(zhandle_t *zh, const char *root)
     char zpath[200];
     int  rc;
 
-    // sync map path
+    /* sync map path */
     snprintf(zpath, sizeof(zpath), "%s/%s", root, zk_map_dir);
     inc_count(1);
     rc = zoo_async(zh, zpath, arcus_zk_sync_cb, NULL);
@@ -1015,7 +1007,7 @@ static int arcus_check_server_mapping(zhandle_t *zh, const char *root)
                 "zoo_async() failed: %s\n", zerror(rc));
         return -1;
     }
-    // wait until above sync callback is called
+    /* wait until above sync callback is called */
     wait_count(0);
     rc = last_rc;
     if (rc != ZOK) {
@@ -1024,7 +1016,7 @@ static int arcus_check_server_mapping(zhandle_t *zh, const char *root)
         return -1;
     }
 
-    // First check: get children of "/cache_server_mapping/ip:port"
+    /* First check: get children of "/cache_server_mapping/ip:port" */
     snprintf(zpath, sizeof(zpath), "%s/%s/%s",
              root, zk_map_dir, arcus_conf.mc_ipport);
     rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
@@ -1033,7 +1025,7 @@ static int arcus_check_server_mapping(zhandle_t *zh, const char *root)
                 "Cannot find the server mapping. zpath=%s error=%d(%s)\n",
                 zpath, rc, zerror(rc));
 
-        // Second check: get children of "/cache_server_mapping/ip"
+        /* Second check: get children of "/cache_server_mapping/ip" */
         snprintf(zpath, sizeof(zpath), "%s/%s/%s",
                  root, zk_map_dir, arcus_conf.hostip);
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -1048,15 +1040,15 @@ static int arcus_check_server_mapping(zhandle_t *zh, const char *root)
         return -1;
     }
 
-    // zoo_get_children returns ZOK even if no child exist
+    /* zoo_get_children returns ZOK even if no child exist */
     if (strv.count == 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "The server mapping exists but has no service code."
                 " zpath=%s\n", zpath);
         return -1;
     }
-    /* We assume only one server mapping znode.
-     * We do not care that we have more than one (meaning one server participating in
+    /* We assume only one server mapping znode. We do not care that
+     * we have more than one (meaning one server participating in
      * more than one service in the cluster: not likely though)
      */
     if (strv.count > 1) {
@@ -1104,7 +1096,7 @@ static int arcus_create_ephemeral_znode(zhandle_t *zh, const char *root)
         return -1;
     }
 
-    // store this version number, just in case we restart
+    /* store this version number, just in case we restart */
     arcus_conf.znode_ver = zstat.version;
     arcus_conf.znode_created = true;
     arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
@@ -1164,8 +1156,6 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         arcus_exit(NULL, rc);
     }
 
-    gettimeofday(&start_time, 0);
-
     if (strncmp("syslog", arcus_conf.logger->get_name(), 7) == 0) {
         zoo_forward_logs_to_syslog("memcached", 1);
     }
@@ -1181,6 +1171,8 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     if (arcus_conf.verbose > 2)
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "zookeeper_init()\n");
 
+    gettimeofday(&start_time, 0);
+
     inc_count(1);
     zh = zookeeper_init(arcus_conf.ensemble_list, arcus_zk_watcher,
                         arcus_conf.zk_timeout, &myid, 0, 0);
@@ -1189,8 +1181,9 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
                 "zookeeper_init() failed (%s error)\n", strerror(errno));
         arcus_exit(NULL, EX_PROTOCOL);
     }
-    // wait until above init callback is called
-    // We need to wait until ZOO_CONNECTED_STATE
+    /* wait until above init callback is called
+     * We need to wait until ZOO_CONNECTED_STATE
+     */
     if (wait_count(arcus_conf.zk_timeout) != 0) {
         /* zoo_state(zh) != ZOO_CONNECTED_STATE */
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -1229,16 +1222,17 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         arcus_exit(zh, EX_PROTOCOL);
     }
 
-    // log this join activity in /arcus/cache_server_log
+    /* log this join activity in /arcus/cache_server_log */
     arcus_zk_log(zh, "join");
 
     gettimeofday(&end_time, 0);
     difftime_us = (end_time.tv_sec*1000000 + end_time.tv_usec) -
                   (start_time.tv_sec*1000000 + start_time.tv_usec);
-    // We have finished registering this memcached instance to Arcus cluster
+
+    /* We have finished registering this memcached instance to Arcus cluster */
     arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
-            "Memcached joined Arcus cache cloud for \"%s\" service (took %ld microsec)\n",
-            arcus_conf.svc, difftime_us);
+            "Memcached joined Arcus cache cloud for \"%s\" service "
+            "(took %ld microsec)\n", arcus_conf.svc, difftime_us);
 
     // "recv" timeout is actually the session timeout
     // ZK client ping period is recv_timeout / 3.
@@ -1285,7 +1279,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         arcus_zk_shutdown = 1;
     }
 
-    // Either got SIG* or memcached shutdown process finished
+    /* Either got SIG* or memcached shutdown process finished */
     if (arcus_zk_shutdown) {
         arcus_zk_final("Interrupted");
         arcus_zk_destroy();
@@ -1411,8 +1405,9 @@ int arcus_zk_get_ensemble(char *buf, int size)
     int rc;
     if (zh) {
         rc = zookeeper_get_ensemble_string(zh, buf, size);
-        if (rc == ZOK)
+        if (rc == ZOK) {
             return 0;
+        }
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
             "Failed to get the ZooKeeper ensemble list. error=%d(%s)\n", rc, zerror(rc));
     } else {
@@ -1524,7 +1519,6 @@ static void *sm_state_thread(void *arg)
     bool shutdown_by_me = false;
 
     sm_info.state_running = true;
-
     while (!arcus_zk_shutdown)
     {
         sm_lock();
@@ -1592,8 +1586,8 @@ static void *sm_state_thread(void *arg)
             }
         }
     }
-
     sm_info.state_running = false;
+
     deallocate_String_vector(&sm_info.sv_cache_list);
     if (shutdown_by_me) {
         arcus_zk_shutdown = 1;
@@ -1617,7 +1611,6 @@ static void *sm_timer_thread(void *arg)
      * says it re-connected to ZK, cancel the timer.
      */
     sm_info.timer_running = true;
-
     while (!arcus_zk_shutdown)
     {
         /* Keep the logic simple.  Poll once every 100msec. */
@@ -1654,6 +1647,7 @@ static void *sm_timer_thread(void *arg)
         }
     }
     sm_info.timer_running = false;
+
     if (shutdown_by_me) {
         arcus_zk_shutdown = 1;
         arcus_zk_final("SM timer failure");
