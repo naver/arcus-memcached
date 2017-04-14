@@ -31,6 +31,7 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
+#define USE_DUAL_ZK
 #define SUPPORT_BOP_MGET
 #define SUPPORT_BOP_SMGET
 #define JHPARK_OLD_SMGET_INTERFACE
