@@ -43,7 +43,14 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 void arcus_zk_final(const char *msg);
 void arcus_zk_destroy(void);
 
+#ifdef USE_DUAL_ZK
+int  arcus_zk_add_ensemble(char *ensemble_list);
+int  arcus_zk_delete_ensemble(int id);
+int  arcus_zk_set_ensemble(int id, char *ensemble_list);
+int  arcus_zk_switchover_ensemble(void);
+#else
 int  arcus_zk_set_ensemble(char *ensemble_list);
+#endif
 int  arcus_zk_get_ensemble(char *buf, int size);
 int  arcus_zk_set_hbtimeout(int hbtimeout);
 int  arcus_zk_get_hbtimeout(void);

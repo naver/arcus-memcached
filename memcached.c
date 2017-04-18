@@ -8652,6 +8652,59 @@ static void process_zkensemble_command(conn *c, token_t *tokens, const size_t nt
         out_string(c, "ERROR not using ZooKeeper");
         return;
     }
+#ifdef USE_DUAL_ZK
+    int ensemble_id;
+    if ((ntokens == 5) && strcmp(tokens[SUBCOMMAND_TOKEN].value, "set") == 0) {
+        if ((!safe_strtol(tokens[SUBCOMMAND_TOKEN+1].value, &ensemble_id)) || (ensemble_id < 0)) {
+            out_string(c, "CLIENT_ERROR bad command line format");
+        }
+        if (arcus_zk_set_ensemble(ensemble_id, tokens[SUBCOMMAND_TOKEN+2].value) != 0) {
+            out_string(c, "ERROR failed to set the new ensemble address (check logs)");
+        } else {
+            out_string(c, "OK");
+        }
+    }
+    else if ((ntokens == 4) && strcmp(tokens[SUBCOMMAND_TOKEN].value, "add") == 0) {
+        if ((ensemble_id = arcus_zk_add_ensemble(tokens[SUBCOMMAND_TOKEN+1].value)) == -1) {
+            out_string(c, "ERROR failed to add the new ensemble address (check logs)");
+        } else {
+            char buf[25];
+            sprintf(buf, "OK, ensemble_id is %d", ensemble_id);
+            out_string(c, buf);
+        }
+    }
+    else if ((ntokens == 4) && strcmp(tokens[SUBCOMMAND_TOKEN].value, "delete") == 0) {
+        if ((!safe_strtol(tokens[SUBCOMMAND_TOKEN+1].value, &ensemble_id)) || (ensemble_id < 0)) {
+            out_string(c, "CLIENT_ERROR bad command line format");
+        }
+        if (arcus_zk_delete_ensemble(ensemble_id) != 0) {
+            out_string(c, "ERROR failed to delete the ensemble id");
+        } else {
+            out_string(c, "OK");
+        }
+    }
+    else if ((ntokens == 3) && strcmp(tokens[SUBCOMMAND_TOKEN].value, "switchover") == 0) {
+        if (arcus_zk_switchover_ensemble() != 0) {
+            out_string(c, "ERROR failed switchover main zookeeper");
+        } else {
+            out_string(c, "OK");
+        }
+    }
+    else if ((ntokens == 3) && strcmp(tokens[SUBCOMMAND_TOKEN].value, "get") == 0) {
+        char buf[1024];
+
+        if (arcus_zk_get_ensemble(buf, sizeof(buf)-16) != 0) {
+            out_string(c, "ERROR failed to get the ensemble address");
+        } else {
+            strcat(buf, "\r\n\n");
+            out_string(c, buf);
+        }
+    }
+    else
+    {
+        out_string(c, "CLIENT_ERROR bad command line format");
+    }
+#else
     if (ntokens == 3) { /* old command : show_zk_ensemble */
         char buf[1024];
 
@@ -8671,6 +8724,7 @@ static void process_zkensemble_command(conn *c, token_t *tokens, const size_t nt
             out_string(c, "OK");
         }
     }
+#endif
 }
 #endif
 
@@ -8856,9 +8910,11 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "hbfailstop") == 0) {
         process_hbfailstop_command(c, tokens, ntokens);
     }
+#ifndef USE_DUAL_ZK
     else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "zkensemble") == 0) {
         process_zkensemble_command(c, tokens, ntokens);
     }
+#endif
 #endif
     else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "memlimit") == 0) {
         process_memlimit_command(c, tokens, ntokens);
@@ -12782,6 +12838,14 @@ static void process_command(conn *c, char *command, int cmdlen)
     {
         process_dump_command(c, tokens, ntokens);
     }
+#endif
+#ifdef ENABLE_ZK_INTEGRATION
+#ifdef USE_DUAL_ZK
+    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "zkensemble") == 0))
+    {
+        process_zkensemble_command(c, tokens, ntokens);
+    }
+#endif
 #endif
     else if ((ntokens == 2) && (strcmp(tokens[COMMAND_TOKEN].value, "quit") == 0))
     {
