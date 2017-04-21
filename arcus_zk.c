@@ -119,8 +119,14 @@ static const char *zk_log_dir = "cache_server_log";
 static const char *zk_cache_dir = "cache_list";
 static const char *mc_hb_command = "set arcus:zk-ping 1 0 1\r\n1\r\n";
 
-static zhandle_t *zh=NULL;
-static clientid_t myid;
+typedef struct {
+    char       *ensemble_list; /* ZK ensemble IP:port list */
+    zhandle_t  *zh;            /* ZK handle */
+    clientid_t  myid;
+} zk_info_t;
+
+static zk_info_t zk_info;
+static zk_info_t *main_zk=NULL;
 static int        last_rc=ZOK;
 
 #ifdef ENABLE_SUICIDE_UPON_DISCONNECT
@@ -137,7 +143,6 @@ volatile sig_atomic_t arcus_zk_shutdown=0;
 
 /* placeholder for zookeeper and memcached settings */
 typedef struct {
-    char    *ensemble_list;     // ZK ensemble IP:port list
     char    *svc;               // Service code name
     char    *mc_ipport;         // this memcached ip:port string
     char    *hostip;            // localhost server IP
@@ -164,7 +169,6 @@ typedef struct {
 } arcus_zk_conf;
 
 arcus_zk_conf arcus_conf = {
-    .ensemble_list  = NULL,
     .svc            = NULL,
     .mc_ipport      = NULL,
     .hostip         = NULL,
@@ -260,7 +264,7 @@ static pthread_mutex_t azk_mtx  = PTHREAD_MUTEX_INITIALIZER;
 static int             azk_count;
 
 /* zookeeper close synchronization */
-static pthread_mutex_t zk_final_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t zk_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* memcached heartheat thread */
 static volatile bool hb_thread_running = false;
@@ -342,16 +346,17 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
 
     if (state == ZOO_CONNECTED_STATE) {
         const clientid_t *id = zoo_client_id(wzh);
+        zk_info_t *zinfo = cxt;
         if (arcus_conf.verbose > 2) {
             arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
                                    "ZK ensemble connected. session id: 0x%llx\n",
-                                   (long long) myid.client_id);
+                                   (long long) main_zk->myid.client_id);
         }
-        if (myid.client_id == 0 || myid.client_id != id->client_id) {
+        if (zinfo->myid.client_id == 0 || zinfo->myid.client_id != id->client_id) {
             if (arcus_conf.verbose > 2)
                  arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                         "A old session id: 0x%llx\n", (long long) myid.client_id);
-             myid = *id;
+                         "A old session id: 0x%llx\n", (long long) zinfo->myid.client_id);
+             zinfo->myid = *id;
         }
 
         // finally connected to one of ZK ensemble. signal go.
@@ -1109,6 +1114,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
                    int verbose, size_t maxbytes, int port,
                    ENGINE_HANDLE_V1 *engine)
 {
+    zk_info_t      *zinfo;
     int             rc;
     char            zpath[200] = "";
     struct timeval  start_time, end_time;
@@ -1127,6 +1133,12 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
                                "arcus_zk_init(%s)\n", ensemble_list);
     }
 
+    memset(&zk_info, 0, sizeof(zk_info_t));
+
+    zinfo = &zk_info;
+    zinfo->ensemble_list = strdup(ensemble_list);
+    assert(zinfo->ensemble_list);
+
     // save these for later use (restart)
     if (!arcus_conf.init) {
         arcus_conf.port          = port;    // memcached listen port
@@ -1134,15 +1146,11 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         arcus_conf.engine.v1     = engine;
         arcus_conf.verbose       = verbose;
         arcus_conf.maxbytes      = maxbytes;
-        arcus_conf.ensemble_list = strdup(ensemble_list);
-        assert(arcus_conf.ensemble_list);
         // Use the user specified timeout only if it falls within
         // [MIN, MAX).  Otherwise, silently ignore it and use
         // the default value.
         if (zk_to >= MIN_ZK_TO && zk_to < MAX_ZK_TO)
             arcus_conf.zk_timeout = zk_to*1000; // msec conversion
-
-        memset( &myid, 0, sizeof(myid) );
     }
 
     /* initialize Arcus ZK stats */
@@ -1174,9 +1182,9 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     gettimeofday(&start_time, 0);
 
     inc_count(1);
-    zh = zookeeper_init(arcus_conf.ensemble_list, arcus_zk_watcher,
-                        arcus_conf.zk_timeout, &myid, 0, 0);
-    if (!zh) {
+    zinfo->zh = zookeeper_init(zinfo->ensemble_list, arcus_zk_watcher,
+                               arcus_conf.zk_timeout, &zinfo->myid, zinfo, 0);
+    if (!zinfo->zh) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "zookeeper_init() failed (%s error)\n", strerror(errno));
         arcus_exit(NULL, EX_PROTOCOL);
@@ -1188,17 +1196,20 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         /* zoo_state(zh) != ZOO_CONNECTED_STATE */
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                  "cannot to be ZOO_CONNECTED_STATE\n");
-        arcus_exit(zh, EX_PROTOCOL);
+        arcus_exit(zk_info.zh, EX_PROTOCOL);
     }
+
+    /* setting main zk */
+    main_zk = zinfo;
 
     /* check zk root directory and get the serice code */
     if (zk_root == NULL) {
         zk_root = "/arcus"; /* set zk root directory */
-        if (arcus_check_server_mapping(zh, zk_root) != 0) {
+        if (arcus_check_server_mapping(main_zk->zh, zk_root) != 0) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                      "Failed to check server mapping for this cache node. "
                      "(zk_root=%s)\n", zk_root);
-            arcus_exit(zh, EX_PROTOCOL);
+            arcus_exit(main_zk->zh, EX_PROTOCOL);
         }
     }
 
@@ -1210,20 +1221,20 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     if (sm_init() != 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Failed to initialize the state machine. Terminating.\n");
-        arcus_exit(zh, EX_CONFIG);
+        arcus_exit(main_zk->zh, EX_CONFIG);
     }
 
     arcus_conf.init = true;
 
     /* create "/cache_list/{svc}/ip:port-hostname" ephemeral znode */
-    if (arcus_create_ephemeral_znode(zh, zk_root) != 0) {
+    if (arcus_create_ephemeral_znode(main_zk->zh, zk_root) != 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                                "arcus_create_ephemeral_znode() failed.\n");
-        arcus_exit(zh, EX_PROTOCOL);
+        arcus_exit(main_zk->zh, EX_PROTOCOL);
     }
 
     /* log this join activity in /arcus/cache_server_log */
-    arcus_zk_log(zh, "join");
+    arcus_zk_log(main_zk->zh, "join");
 
     gettimeofday(&end_time, 0);
     difftime_us = (end_time.tv_sec*1000000 + end_time.tv_usec) -
@@ -1237,7 +1248,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     // "recv" timeout is actually the session timeout
     // ZK client ping period is recv_timeout / 3.
     arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
-            "ZooKeeper session timeout: %d sec\n", zoo_recv_timeout(zh)/1000);
+            "ZooKeeper session timeout: %d sec\n", zoo_recv_timeout(main_zk->zh)/1000);
 
 #ifdef ENABLE_CLUSTER_AWARE
     const char *nodename = arcus_conf.mc_ipport;
@@ -1247,15 +1258,15 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 
     struct String_vector strv = { 0, NULL };
     /* 2nd argument, NULL means no watcher */
-    if (arcus_read_ZK_children(zh, arcus_conf.cluster_path, NULL, &strv) <= 0) {
+    if (arcus_read_ZK_children(main_zk->zh, arcus_conf.cluster_path, NULL, &strv) <= 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Failed to read cache list from ZK. Terminating...\n");
-        arcus_exit(zh, EX_CONFIG);
+        arcus_exit(main_zk->zh, EX_CONFIG);
     }
     if (update_cluster_config(&strv) != 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Failed to update cluster config. Terminating...\n");
-        arcus_exit(zh, EX_CONFIG);
+        arcus_exit(main_zk->zh, EX_CONFIG);
     }
     deallocate_String_vector(&strv);
 
@@ -1283,7 +1294,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     if (arcus_zk_shutdown) {
         arcus_zk_final("Interrupted");
         arcus_zk_destroy();
-        arcus_exit(zh, EX_OSERR);
+        arcus_exit(main_zk->zh, EX_OSERR);
     }
 }
 
@@ -1296,8 +1307,8 @@ void arcus_zk_final(const char *msg)
     assert(arcus_zk_shutdown == 1);
     arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "arcus_zk_final(%s)\n", msg);
 
-    pthread_mutex_lock(&zk_final_lock);
-    if (zh) {
+    pthread_mutex_lock(&zk_lock);
+    if (main_zk->zh) {
         /* hb_thread is probably sleeping.  And, if it is in the middle of
          * doing a ping, it would block for a long time because worker threads
          * are likely all dead at this point.
@@ -1342,11 +1353,13 @@ void arcus_zk_final(const char *msg)
         }
 
         /* close zk connection */
-        zookeeper_close(zh);
-        zh = NULL;
+        zookeeper_close(main_zk->zh);
+        main_zk->zh = NULL;
+        free(main_zk->ensemble_list);
+        main_zk->ensemble_list = NULL;
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "zk connection closed\n");
     }
-    pthread_mutex_unlock(&zk_final_lock);
+    pthread_mutex_unlock(&zk_lock);
 }
 
 void arcus_zk_destroy(void)
@@ -1354,67 +1367,71 @@ void arcus_zk_destroy(void)
     assert(arcus_zk_shutdown == 1);
     arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "arcus_zk_destroy\n");
 
-    pthread_mutex_lock(&zk_final_lock);
+    pthread_mutex_lock(&zk_lock);
 #ifdef ENABLE_CLUSTER_AWARE
     if (arcus_conf.ch != NULL) {
         cluster_config_final(arcus_conf.ch);
         arcus_conf.ch = NULL;
     }
 #endif
-    if (arcus_conf.ensemble_list) {
-        free(arcus_conf.ensemble_list);
-        arcus_conf.ensemble_list = NULL;
-    }
-    pthread_mutex_unlock(&zk_final_lock);
+    pthread_mutex_unlock(&zk_lock);
 }
 
 int arcus_zk_set_ensemble(char *ensemble_list)
 {
-    int rc;
-    if (zh) {
-        char *copy = strdup(ensemble_list);
-        if (!copy) {
-            /* Should not happen unless the system is really short of memory. */
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Failed to copy the ensemble list. list=%s\n", ensemble_list);
-            return -1;
-        }
-        rc = zookeeper_change_ensemble(zh, ensemble_list);
-        if (rc == ZOK) {
+    int ret = 0;
+    pthread_mutex_lock(&zk_lock);
+    if (main_zk->zh) {
+        do {
+            char *copy = strdup(ensemble_list);
+            if (!copy) {
+                /* Should not happen unless the system is really short of memory. */
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to copy the ensemble list. list=%s\n", ensemble_list);
+                ret = -1; break;
+            }
+            int rc = zookeeper_change_ensemble(main_zk->zh, ensemble_list);
+            if (rc != ZOK) {
+                free(copy);
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to change the ZooKeeper ensemble list. error=%d(%s)\n", rc, zerror(rc));
+                ret = -1; break;
+            }
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Successfully changed the ZooKeeper ensemble list. list=%s\n", ensemble_list);
-            /* arcus_conf.ensemble_list is not used after init.
+            /* main_zk->ensemble_list is not used after init.
              * Nothing uses it.  So it is okay to just replace the pointer.
              */
-            free(arcus_conf.ensemble_list);
-            arcus_conf.ensemble_list = copy;
-            return 0;
-        }
-        free(copy);
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-            "Failed to change the ZooKeeper ensemble list. error=%d(%s)\n", rc, zerror(rc));
+            free(main_zk->ensemble_list);
+            main_zk->ensemble_list = copy;
+        } while(0);
     } else {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
             "Failed to change the ZooKeeper ensemble list. The handle is invalid.\n");
+        ret = -1;
     }
-    return -1;
+    pthread_mutex_unlock(&zk_lock);
+    return ret;
 }
 
 int arcus_zk_get_ensemble(char *buf, int size)
 {
-    int rc;
-    if (zh) {
-        rc = zookeeper_get_ensemble_string(zh, buf, size);
-        if (rc == ZOK) {
-            return 0;
+    int ret = 0;
+    pthread_mutex_lock(&zk_lock);
+    if (main_zk->zh) {
+        int rc = zookeeper_get_ensemble_string(main_zk->zh, buf, size);
+        if (rc != ZOK) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Failed to get the ZooKeeper ensemble list. error=%d(%s)\n", rc, zerror(rc));
+            ret = -1;
         }
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-            "Failed to get the ZooKeeper ensemble list. error=%d(%s)\n", rc, zerror(rc));
     } else {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
             "Failed to get the ZooKeeper ensemble list. The handle is invalid.\n");
+        ret = -1;
     }
-    return -1;
+    pthread_mutex_unlock(&zk_lock);
+    return ret;
 }
 
 int arcus_zk_set_hbtimeout(int hbtimeout)
@@ -1552,7 +1569,7 @@ static void *sm_state_thread(void *arg)
         /* Read the latest hash ring */
         if (smreq.update_cache_list) {
             struct String_vector strv_cache_list = {0, NULL};
-            int zresult = arcus_read_ZK_children(zh,
+            int zresult = arcus_read_ZK_children(main_zk->zh,
                                                  arcus_conf.cluster_path,
                                                  arcus_cache_list_watcher,
                                                  &strv_cache_list);
