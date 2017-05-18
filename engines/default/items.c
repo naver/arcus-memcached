@@ -1606,11 +1606,11 @@ static uint32_t do_list_elem_delete(struct default_engine *engine,
     return fcnt;
 }
 
-static uint32_t do_list_elem_get(struct default_engine *engine,
-                                 list_meta_info *info,
-                                 const int index, const uint32_t count,
-                                 const bool forward, const bool delete,
-                                 list_elem_item **elem_array)
+static ENGINE_ERROR_CODE do_list_elem_get(struct default_engine *engine,
+                                          list_meta_info *info,
+                                          const int index, const uint32_t count,
+                                          const bool forward, const bool delete,
+                                          list_elem_item **elem_array, uint32_t *elem_count)
 {
     uint32_t fcnt = 0; /* found count */
     list_elem_item *tobe;
@@ -1625,7 +1625,13 @@ static uint32_t do_list_elem_get(struct default_engine *engine,
         if (count > 0 && fcnt >= count) break;
         elem = tobe;
     }
-    return fcnt;
+
+    *elem_count = fcnt;
+    if (fcnt > 0) {
+        return ENGINE_SUCCESS;
+    } else {
+        return ENGINE_ELEM_ENOENT;
+    }
 }
 
 static ENGINE_ERROR_CODE do_list_elem_insert(struct default_engine *engine,
@@ -2215,9 +2221,9 @@ static uint32_t do_set_elem_delete(struct default_engine *engine,
 }
 #endif
 
-static uint32_t do_set_elem_get(struct default_engine *engine,
-                                set_meta_info *info, const uint32_t count, const bool delete,
-                                set_elem_item **elem_array)
+static ENGINE_ERROR_CODE do_set_elem_get(struct default_engine *engine,
+                                         set_meta_info *info, const uint32_t count, const bool delete,
+                                         set_elem_item **elem_array, uint32_t *elem_count)
 {
     uint32_t fcnt = 0;
     if (info->root != NULL) {
@@ -2226,7 +2232,13 @@ static uint32_t do_set_elem_get(struct default_engine *engine,
             do_set_node_unlink(engine, info, NULL, 0);
         }
     }
-    return fcnt;
+
+    *elem_count = fcnt;
+    if (fcnt > 0) {
+        return ENGINE_SUCCESS;
+    } else {
+        return ENGINE_ELEM_ENOENT;
+    }
 }
 
 static ENGINE_ERROR_CODE do_set_elem_insert(struct default_engine *engine,
@@ -4361,11 +4373,11 @@ static bool do_btree_overlapped_with_trimmed_space(btree_meta_info *info,
     return overlapped;
 }
 
-static uint32_t do_btree_elem_get(struct default_engine *engine, btree_meta_info *info,
-                                  const int bkrtype, const bkey_range *bkrange, const eflag_filter *efilter,
-                                  const uint32_t offset, const uint32_t count, const bool delete,
-                                  btree_elem_item **elem_array,
-                                  uint32_t *access_count, bool *potentialbkeytrim)
+static ENGINE_ERROR_CODE do_btree_elem_get(struct default_engine *engine, btree_meta_info *info,
+                                           const int bkrtype, const bkey_range *bkrange, const eflag_filter *efilter,
+                                           const uint32_t offset, const uint32_t count, const bool delete,
+                                           btree_elem_item **elem_array, uint32_t *elem_count,
+                                           uint32_t *access_count, bool *potentialbkeytrim)
 {
     btree_elem_posi  path[BTREE_MAX_DEPTH];
     btree_elem_item *elem;
@@ -4377,7 +4389,7 @@ static uint32_t do_btree_elem_get(struct default_engine *engine, btree_meta_info
     if (info->root == NULL) {
         if (access_count)
             *access_count = 0;
-        return 0;
+        return ENGINE_ELEM_ENOENT;
     }
 
     assert(info->root->ndepth < BTREE_MAX_DEPTH);
@@ -4508,7 +4520,13 @@ static uint32_t do_btree_elem_get(struct default_engine *engine, btree_meta_info
     }
     if (access_count)
         *access_count = tot_access;
-    return tot_found;
+
+    *elem_count = tot_found;
+    if (tot_found > 0) {
+        return ENGINE_SUCCESS;
+    } else {
+        return ENGINE_ELEM_ENOENT;
+    }
 }
 
 static uint32_t do_btree_elem_count(struct default_engine *engine, btree_meta_info *info,
@@ -4792,9 +4810,9 @@ static int do_btree_posi_find_with_get(btree_meta_info *info,
     return bpos; /* btree_position */
 }
 
-static uint32_t do_btree_elem_get_by_posi(btree_meta_info *info,
-                                          const int index, const uint32_t count, const bool forward,
-                                          btree_elem_item **elem_array)
+static ENGINE_ERROR_CODE do_btree_elem_get_by_posi(btree_meta_info *info,
+                                                   const int index, const uint32_t count, const bool forward,
+                                                   btree_elem_item **elem_array, uint32_t *elem_count)
 {
     btree_elem_posi  posi;
     btree_indx_node *node;
@@ -4802,7 +4820,7 @@ static uint32_t do_btree_elem_get_by_posi(btree_meta_info *info,
     int i, tot_ecnt;
     uint32_t nfound; /* found count */
 
-    if (info->root == NULL) return 0;
+    if (info->root == NULL) return ENGINE_ELEM_ENOENT;
 
     node = info->root;
     tot_ecnt = 0;
@@ -4824,7 +4842,13 @@ static uint32_t do_btree_elem_get_by_posi(btree_meta_info *info,
     elem_array[0] = elem;
     nfound = 1;
     nfound += do_btree_elem_batch_get(posi, count-1, forward, false, &elem_array[nfound]);
-    return nfound;
+
+    *elem_count = nfound;
+    if (*elem_count > 0) {
+        return ENGINE_SUCCESS;
+    } else {
+        return ENGINE_ELEM_ENOENT;
+    }
 }
 
 #ifdef SUPPORT_BOP_SMGET
@@ -5447,12 +5471,12 @@ scan_next:
 
 #ifdef SUPPORT_BOP_SMGET
 #ifdef JHPARK_OLD_SMGET_INTERFACE
-static int do_btree_smget_elem_sort_old(btree_scan_info *btree_scan_buf,
-                                    uint16_t *sort_sindx_buf, const int sort_sindx_cnt,
-                                    const int bkrtype, const bkey_range *bkrange, const eflag_filter *efilter,
-                                    const uint32_t offset, const uint32_t count,
-                                    btree_elem_item **elem_array, uint32_t *kfnd_array, uint32_t *flag_array,
-                                    bool *potentialbkeytrim, bool *bkey_duplicated)
+static ENGINE_ERROR_CODE do_btree_smget_elem_sort_old(btree_scan_info *btree_scan_buf,
+                                   uint16_t *sort_sindx_buf, const int sort_sindx_cnt,
+                                   const int bkrtype, const bkey_range *bkrange, const eflag_filter *efilter,
+                                   const uint32_t offset, const uint32_t count, btree_elem_item **elem_array,
+                                   uint32_t *kfnd_array, uint32_t *flag_array, uint32_t *elem_count,
+                                   bool *potentialbkeytrim, bool *bkey_duplicated)
 {
     btree_meta_info *info;
     btree_elem_item *elem, *comp;
@@ -5462,9 +5486,9 @@ static int do_btree_smget_elem_sort_old(btree_scan_info *btree_scan_buf,
     int i, cmp_res;
     int mid, left, right;
     int skip_count = 0;
-    int elem_count = 0;
     int sort_count = sort_sindx_cnt;
     bool ascending = (bkrtype != BKEY_RANGE_TYPE_DSC ? true : false);
+    *elem_count = 0;
 
     while (sort_count > 0) {
         curr_idx = sort_sindx_buf[first_idx];
@@ -5474,11 +5498,11 @@ static int do_btree_smget_elem_sort_old(btree_scan_info *btree_scan_buf,
             skip_count++;
         } else { /* skip_count == offset */
             elem->refcount++;
-            elem_array[elem_count] = elem;
-            kfnd_array[elem_count] = btree_scan_buf[curr_idx].kidx;
-            flag_array[elem_count] = btree_scan_buf[curr_idx].it->flags;
-            elem_count++;
-            if (elem_count >= count) break;
+            elem_array[*elem_count] = elem;
+            kfnd_array[*elem_count] = btree_scan_buf[curr_idx].kidx;
+            flag_array[*elem_count] = btree_scan_buf[curr_idx].it->flags;
+            *elem_count += 1;
+            if (*elem_count >= count) break;
         }
 
 scan_next:
@@ -5537,7 +5561,8 @@ scan_next:
         }
         sort_sindx_buf[right] = curr_idx;
     }
-    return elem_count;
+
+    return ENGINE_SUCCESS;
 }
 #endif
 
@@ -6507,8 +6532,8 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
                 int  index = from_index;
                 uint32_t count = (forward ? (to_index - from_index + 1)
                                           : (from_index - to_index + 1));
-                *elem_count = do_list_elem_get(engine, info, index, count, forward, delete, elem_array);
-                if (*elem_count > 0) {
+                ret = do_list_elem_get(engine, info, index, count, forward, delete, elem_array, elem_count);
+                if (ret == ENGINE_SUCCESS) {
                     if (info->ccnt == 0 && drop_if_empty) {
                         assert(delete == true);
                         do_item_unlink(engine, it, ITEM_UNLINK_EMPTY);
@@ -6517,9 +6542,7 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
                         *dropped = false;
                     }
                     *flags = it->flags;
-                } else {
-                    ret = ENGINE_ELEM_ENOENT; /* SERVER_ERROR internal */
-                }
+                } /* ret = ENGINE_ELEM_ENOENT */
             }
         } while (0);
         do_item_release(engine, it);
@@ -6688,8 +6711,8 @@ ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
             }
-            *elem_count = do_set_elem_get(engine, info, count, delete, elem_array);
-            if (*elem_count > 0) {
+            ret = do_set_elem_get(engine, info, count, delete, elem_array, elem_count);
+            if (ret == ENGINE_SUCCESS) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(delete == true);
                     do_item_unlink(engine, it, ITEM_UNLINK_EMPTY);
@@ -6698,9 +6721,7 @@ ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
                     *dropped = false;
                 }
                 *flags = it->flags;
-            } else {
-                ret = ENGINE_ELEM_ENOENT; break;
-            }
+            } /* ret = ENGINE_ELEM_ENOENT */
         } while (0);
         do_item_release(engine, it);
     }
@@ -6964,10 +6985,10 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
-            *elem_count = do_btree_elem_get(engine, info, bkrtype, bkrange, efilter,
-                                            offset, req_count, delete,
-                                            elem_array, access_count, &potentialbkeytrim);
-            if (*elem_count > 0) {
+            ret = do_btree_elem_get(engine, info, bkrtype, bkrange, efilter,
+                                    offset, req_count, delete, elem_array,
+                                    elem_count, access_count, &potentialbkeytrim);
+            if (ret == ENGINE_SUCCESS) {
                 if (delete) {
                     if (info->ccnt == 0 && drop_if_empty) {
                         assert(info->root == NULL);
@@ -6983,8 +7004,7 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
             } else {
                 if (potentialbkeytrim == true)
                     ret = ENGINE_EBKEYOOR;
-                else
-                    ret = ENGINE_ELEM_ENOENT;
+                /* ret = ENGINE_ELEM_ENOENT; */
             }
         } while (0);
         do_item_release(engine, it);
@@ -7144,10 +7164,9 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
                 forward = false;
                 rqcount = from_posi - to_posi + 1;
             }
-            *elem_count = do_btree_elem_get_by_posi(info, from_posi, rqcount, forward, elem_array);
-            if (*elem_count == 0) {
-                ret = ENGINE_ELEM_ENOENT; break;
-            }
+            ret = do_btree_elem_get_by_posi(info, from_posi, rqcount, forward, elem_array, elem_count);
+            if (ret != ENGINE_SUCCESS) /* ret == ENGINE_ELEM_ENOENT */
+                break;
             *flags = it->flags;
         } while (0);
         do_item_release(engine, it);
@@ -7190,10 +7209,10 @@ ENGINE_ERROR_CODE btree_elem_smget_old(struct default_engine *engine,
                                    missed_key_array, missed_key_count, duplicated);
     if (ret == ENGINE_SUCCESS) {
         /* the 2nd phase: get the sorted elems */
-        *elem_count = do_btree_smget_elem_sort_old(btree_scan_buf, sort_sindx_buf, sort_sindx_cnt,
-                                               bkrtype, bkrange, efilter, offset, count,
-                                               elem_array, kfnd_array, flag_array,
-                                               trimmed, duplicated);
+        ret = do_btree_smget_elem_sort_old(btree_scan_buf, sort_sindx_buf, sort_sindx_cnt,
+                                           bkrtype, bkrange, efilter, offset, count,
+                                           elem_array, kfnd_array, flag_array, elem_count,
+                                           trimmed, duplicated);
         for (i = 0; i <= (offset+count); i++) {
             if (btree_scan_buf[i].it != NULL)
                 do_item_release(engine, btree_scan_buf[i].it);
@@ -8738,9 +8757,9 @@ static uint32_t do_map_elem_delete(struct default_engine *engine,
     return fcnt;
 }
 
-static uint32_t do_map_elem_get(struct default_engine *engine,
-                                map_meta_info *info, const int numfields, const field_t *flist,
-                                const bool delete, map_elem_item **elem_array)
+static ENGINE_ERROR_CODE do_map_elem_get(struct default_engine *engine,
+                                         map_meta_info *info, const int numfields, const field_t *flist,
+                                         const bool delete, map_elem_item **elem_array, uint32_t *elem_count)
 {
     int ii;
     uint32_t array_cnt = 0;
@@ -8761,7 +8780,13 @@ static uint32_t do_map_elem_get(struct default_engine *engine,
             do_map_node_unlink(engine, info, NULL, 0);
         }
     }
-    return array_cnt;
+
+    *elem_count = array_cnt;
+    if (array_cnt > 0) {
+        return ENGINE_SUCCESS;
+    } else {
+        return ENGINE_ELEM_ENOENT;
+    }
 }
 
 static ENGINE_ERROR_CODE do_map_elem_insert(struct default_engine *engine,
@@ -8959,8 +8984,8 @@ ENGINE_ERROR_CODE map_elem_get(struct default_engine *engine, const char *key, c
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
             }
-            *elem_count = do_map_elem_get(engine, info, numfields, flist, delete, elem_array);
-            if (*elem_count > 0) {
+            ret = do_map_elem_get(engine, info, numfields, flist, delete, elem_array, elem_count);
+            if (ret == ENGINE_SUCCESS) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(delete == true);
                     do_item_unlink(engine, it, ITEM_UNLINK_EMPTY);
@@ -8969,9 +8994,7 @@ ENGINE_ERROR_CODE map_elem_get(struct default_engine *engine, const char *key, c
                     *dropped = false;
                 }
                 *flags = it->flags;
-            } else {
-                ret = ENGINE_ELEM_ENOENT;
-            }
+            } /* ret = ENGINE_ELEM_ENOENT */
         } while (0);
         do_item_release(engine, it);
     }
