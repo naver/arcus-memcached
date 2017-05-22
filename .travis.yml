@@ -1,0 +1,18 @@
+language: c
+
+compiler:
+  - clang
+  - gcc
+
+script:
+  - sudo apt-get install -qq build-essential autoconf automake libtool libcppunit-dev libevent-dev
+  - ./config/autorun.sh
+  - ./configure
+  - make
+  - make test
+
+notifications:
+  email:
+    - junhyun.park@jam2in.com
+    - minkikim89@jam2in.com
+    - alsdn653@jam2in.com
