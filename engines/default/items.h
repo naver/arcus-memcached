@@ -437,7 +437,11 @@ set_elem_item *set_elem_alloc(struct default_engine *engine,
                               const int nbytes, const void *cookie);
 
 void set_elem_release(struct default_engine *engine,
+#ifdef USE_EBLOCK_RESULT
+                      eitem *eitem, EITEM_TYPE type);
+#else
                       set_elem_item **elem_array, const int elem_count);
+#endif
 
 ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine,
                                   const char *key, const size_t nkey,
@@ -459,7 +463,11 @@ ENGINE_ERROR_CODE set_elem_exist(struct default_engine *engine,
 ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
                                const char *key, const size_t nkey, const uint32_t count,
                                const bool delete, const bool drop_if_empty,
+#ifdef USE_EBLOCK_RESULT
+                               eblock_result_t *eblk_ret,
+#else
                                set_elem_item **elem_array, uint32_t *elem_count,
+#endif
                                uint32_t *flags, bool *dropped);
 
 ENGINE_ERROR_CODE map_struct_create(struct default_engine *engine,
