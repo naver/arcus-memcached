@@ -345,12 +345,21 @@ Demo_set_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
     return ENGINE_ENOTSUP;
 }
 
+#ifdef USE_EBLOCK_RESULT
+static void
+Demo_set_elem_release(ENGINE_HANDLE* handle, const void *cookie,
+                        eitem *eitem, EITEM_TYPE type)
+{
+    return;
+}
+#else
 static void
 Demo_set_elem_release(ENGINE_HANDLE* handle, const void *cookie,
                          eitem **eitem_array, const int eitem_count)
 {
     return;
 }
+#endif
 
 static ENGINE_ERROR_CODE
 Demo_set_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
@@ -383,7 +392,11 @@ static ENGINE_ERROR_CODE
 Demo_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                      const void* key, const int nkey, const uint32_t count,
                      const bool delete, const bool drop_if_empty,
+#ifdef USE_EBLOCK_RESULT
+                     eblock_result_t *eblk_ret,
+#else
                      eitem** eitem, uint32_t* eitem_count,
+#endif
                      uint32_t* flags, bool* dropped, uint16_t vbucket)
 {
     return ENGINE_ENOTSUP;

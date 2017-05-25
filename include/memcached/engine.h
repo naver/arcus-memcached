@@ -386,7 +386,11 @@ extern "C" {
                                             const size_t nbytes, eitem** eitem);
 
         void (*set_elem_release)(ENGINE_HANDLE* handle, const void *cookie,
+#ifdef USE_EBLOCK_RESULT
+                                 eitem *eitem, EITEM_TYPE type);
+#else
                                  eitem **eitem_array, const int eitem_count);
+#endif
 
         ENGINE_ERROR_CODE (*set_elem_insert)(ENGINE_HANDLE* handle, const void* cookie,
                                              const void* key, const int nkey, eitem *eitem,
@@ -408,7 +412,11 @@ extern "C" {
                                           const void* key, const int nkey,
                                           const uint32_t count,
                                           const bool delete, const bool drop_if_empty,
+#ifdef USE_EBLOCK_RESULT
+                                          eblock_result_t *eblk_ret,
+#else
                                           eitem** eitem, uint32_t* eitem_count,
+#endif
                                           uint32_t* flags, bool* dropped,
                                           uint16_t vbucket);
 

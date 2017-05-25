@@ -586,6 +586,10 @@ struct conn {
     /* map collection */
     field_t      coll_field;   /* field in map collection */
 
+#ifdef USE_EBLOCK_RESULT
+    /* block allocator */
+    eblock_result_t eblk_ret;
+#endif
     /* data for the nread state */
 
     /**

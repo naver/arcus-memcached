@@ -58,11 +58,17 @@ enum elem_delete_cause {
 };
 
 /* Forward Declarations */
+#ifdef USE_EBLOCK_RESULT
+typedef void (*ELEM_RELEASE_FUNC)(struct default_engine *engine, eitem *eitem);
+#endif
 static void item_link_q(struct default_engine *engine, hash_item *it);
 static void item_unlink_q(struct default_engine *engine, hash_item *it);
 static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *it);
 static void do_item_unlink(struct default_engine *engine, hash_item *it, enum item_unlink_cause cause);
 static void do_coll_all_elem_delete(struct default_engine *engine, hash_item *it);
+#ifdef USE_EBLOCK_RESULT
+static void do_coll_elem_release(struct default_engine *engine, eitem *eitem, EITEM_TYPE type, ELEM_RELEASE_FUNC elem_release_func);
+#endif
 static uint32_t do_map_elem_delete(struct default_engine *engine, map_meta_info *info,
                                    const uint32_t count, enum elem_delete_cause cause);
 
@@ -1853,6 +1859,18 @@ static void do_set_elem_free(struct default_engine *engine, set_elem_item *elem)
     do_mem_slot_free(engine, elem, ntotal);
 }
 
+#ifdef USE_EBLOCK_RESULT
+static void do_set_elem_release(struct default_engine *engine, eitem *eitem)
+{
+    set_elem_item *elem = (set_elem_item *)eitem;
+    if (elem->refcount != 0) {
+        elem->refcount--;
+    }
+    if (elem->refcount == 0 && elem->next == (set_elem_item *)ADDR_MEANS_UNLINKED) {
+        do_set_elem_free(engine, elem);
+    }
+}
+#else
 static void do_set_elem_release(struct default_engine *engine, set_elem_item *elem)
 {
     if (elem->refcount != 0) {
@@ -1862,6 +1880,7 @@ static void do_set_elem_release(struct default_engine *engine, set_elem_item *el
         do_set_elem_free(engine, elem);
     }
 }
+#endif
 
 static void do_set_node_link(struct default_engine *engine,
                              set_meta_info *info,
@@ -2165,7 +2184,11 @@ static uint32_t do_set_elem_traverse_fast(struct default_engine *engine, set_met
 static int do_set_elem_traverse_dfs(struct default_engine *engine,
                                     set_meta_info *info, set_hash_node *node,
                                     const uint32_t count, const bool delete,
+#ifdef USE_EBLOCK_RESULT
+                                    eblock_result_t *eblk_ret)
+#else
                                     set_elem_item **elem_array)
+#endif
 {
     int hidx;
     int rcnt = 0; /* request count */
@@ -2176,8 +2199,13 @@ static int do_set_elem_traverse_dfs(struct default_engine *engine,
             if (node->hcnt[hidx] == -1) {
                 set_hash_node *child_node = (set_hash_node *)node->htab[hidx];
                 if (count > 0) rcnt = count - fcnt;
+#ifdef USE_EBLOCK_RESULT
+                fcnt += do_set_elem_traverse_dfs(engine, info, child_node, rcnt, delete,
+                                            eblk_ret);
+#else
                 fcnt += do_set_elem_traverse_dfs(engine, info, child_node, rcnt, delete,
                                             (elem_array==NULL ? NULL : &elem_array[fcnt]));
+#endif
                 if (delete) {
                     if  (child_node->tot_hash_cnt == 0 &&
                          child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
@@ -2195,6 +2223,17 @@ static int do_set_elem_traverse_dfs(struct default_engine *engine,
         if (node->hcnt[hidx] > 0) {
             set_elem_item *elem = node->htab[hidx];
             while (elem != NULL) {
+#ifdef USE_EBLOCK_RESULT
+                if (eblk_ret != NULL) {
+                    elem->refcount++;
+                    eblk_add_elem(eblk_ret, elem);
+                }
+
+                fcnt++;
+                if (delete) do_set_elem_unlink(engine, info, node, hidx, NULL, elem,
+                                               (eblk_ret==NULL ? ELEM_DELETE_COLL
+                                                               : ELEM_DELETE_NORMAL));
+#else
                 if (elem_array) {
                     elem->refcount++;
                     elem_array[fcnt] = elem;
@@ -2203,6 +2242,7 @@ static int do_set_elem_traverse_dfs(struct default_engine *engine,
                 if (delete) do_set_elem_unlink(engine, info, node, hidx, NULL, elem,
                                                (elem_array==NULL ? ELEM_DELETE_COLL
                                                                  : ELEM_DELETE_NORMAL));
+#endif
                 if (count > 0 && fcnt >= count) break;
                 elem = (delete ? node->htab[hidx] : elem->next);
             }
@@ -2250,17 +2290,32 @@ static uint32_t do_set_elem_delete(struct default_engine *engine,
 
 static ENGINE_ERROR_CODE do_set_elem_get(struct default_engine *engine,
                                          set_meta_info *info, const uint32_t count, const bool delete,
+#ifdef USE_EBLOCK_RESULT
+                                         eblock_result_t *eblk_ret)
+#else
                                          set_elem_item **elem_array, uint32_t *elem_count)
+#endif
 {
     uint32_t fcnt = 0;
     if (info->root != NULL) {
+#ifdef USE_EBLOCK_RESULT
+        if (!eblk_prepare(eblk_ret, (count == 0 || count > info->ccnt) ? info->ccnt : count))
+            return ENGINE_ENOMEM;
+
+        fcnt = do_set_elem_traverse_dfs(engine, info, info->root, count, delete, eblk_ret);
+        eblk_truncate(eblk_ret);
+#else
         fcnt = do_set_elem_traverse_dfs(engine, info, info->root, count, delete, elem_array);
+#endif
         if (delete && info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
             do_set_node_unlink(engine, info, NULL, 0);
         }
     }
 
+#ifdef USE_EBLOCK_RESULT
+#else
     *elem_count = fcnt;
+#endif
     if (fcnt > 0) {
         return ENGINE_SUCCESS;
     } else {
@@ -6723,6 +6778,12 @@ set_elem_item *set_elem_alloc(struct default_engine *engine, const int nbytes, c
     return elem;
 }
 
+#ifdef USE_EBLOCK_RESULT
+void set_elem_release(struct default_engine *engine, eitem *eitem, EITEM_TYPE type)
+{
+    do_coll_elem_release(engine, eitem, type, do_set_elem_release);
+}
+#else
 void set_elem_release(struct default_engine *engine, set_elem_item **elem_array, const int elem_count)
 {
     int cnt = 0;
@@ -6736,6 +6797,7 @@ void set_elem_release(struct default_engine *engine, set_elem_item **elem_array,
     }
     pthread_mutex_unlock(&engine->cache_lock);
 }
+#endif
 
 ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key, const size_t nkey,
                                   set_elem_item *elem, item_attr *attrp, bool *created, const void *cookie)
@@ -6831,7 +6893,11 @@ ENGINE_ERROR_CODE set_elem_exist(struct default_engine *engine,
 ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
                                const char *key, const size_t nkey, const uint32_t count,
                                const bool delete, const bool drop_if_empty,
+#ifdef USE_EBLOCK_RESULT
+                               eblock_result_t *eblk_ret,
+#else
                                set_elem_item **elem_array, uint32_t *elem_count,
+#endif
                                uint32_t *flags, bool *dropped)
 {
     hash_item     *it;
@@ -6846,7 +6912,11 @@ ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
             }
+#ifdef USE_EBLOCK_RESULT
+            ret = do_set_elem_get(engine, info, count, delete, eblk_ret);
+#else
             ret = do_set_elem_get(engine, info, count, delete, elem_array, elem_count);
+#endif
             if (ret == ENGINE_SUCCESS) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(delete == true);
@@ -6856,7 +6926,11 @@ ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
                     *dropped = false;
                 }
                 *flags = it->flags;
+#ifdef USE_EBLOCK_RESULT
+            } /* ret = ENGINE_ENOMEM or ENGINE_ELEM_ENOENT */
+#else
             } /* ret = ENGINE_ELEM_ENOENT */
+#endif
         } while (0);
         do_item_release(engine, it);
     }
@@ -7705,6 +7779,41 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
 }
+
+#ifdef USE_EBLOCK_RESULT
+/*
+ * collection common release
+ */
+static void do_coll_elem_release(struct default_engine *engine, eitem *item, EITEM_TYPE type, ELEM_RELEASE_FUNC elem_release_func)
+{
+    if (type == EITEM_TYPE_SINGLE) {
+        pthread_mutex_lock(&engine->cache_lock);
+        elem_release_func(engine, item);
+        pthread_mutex_unlock(&engine->cache_lock);
+    } else if (type == EITEM_TYPE_BLOCK) {
+        eblock_result_t *eblk_ret = (eblock_result_t *)item;
+        uint32_t elem_count = EBLOCK_ELEM_COUNT(eblk_ret);
+        uint32_t lock_count, i, j;
+        eblock_scan_t eblk_sc;
+        eitem *elem;
+
+        EBLOCK_SCAN_INIT(eblk_ret, &eblk_sc);
+        for (i = 0; i < elem_count; i += lock_count) {
+            lock_count = (elem_count-i) < 100
+                       ? (elem_count-i) : 100;
+            pthread_mutex_lock(&engine->cache_lock);
+            for (j = 0; j < lock_count; j++) {
+                EBLOCK_SCAN_NEXT(&eblk_sc, elem);
+                elem_release_func(engine, elem);
+            }
+            pthread_mutex_unlock(&engine->cache_lock);
+        }
+        pthread_mutex_lock(&engine->cache_lock);
+        mblock_list_free(eblk_ret->blck_cnt, eblk_ret->head_blk, eblk_ret->tail_blk);
+        pthread_mutex_unlock(&engine->cache_lock);
+    }
+}
+#endif
 
 /*
  * Item config functions

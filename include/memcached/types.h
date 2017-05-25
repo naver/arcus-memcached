@@ -41,6 +41,7 @@ struct iovec {
 #define JHPARK_OLD_SMGET_INTERFACE
 #define CONFIG_MAX_COLLECTION_SIZE
 #define MAX_EFLAG_COMPARE_COUNT 100
+#define USE_EBLOCK_RESULT
 
 #define JHPARK_KEY_DUMP
 
@@ -378,6 +379,58 @@ extern "C" {
 
     /* Forward declaration of the server handle -- to be filled in later */
     typedef struct server_handle_v1_t SERVER_HANDLE_V1;
+
+#ifdef USE_EBLOCK_RESULT
+#define EITEMS_PER_BLOCK 1023
+
+#define EBLOCK_ELEM_COUNT(b) ((b)->elem_cnt)
+#define EBLOCK_SCAN_INIT(b, s)         \
+    do {                               \
+        (s)->blk = (b)->head_blk;      \
+        (s)->tot = (b)->elem_cnt;      \
+        (s)->idx = 0;                  \
+    } while(0)                         \
+
+#define EBLOCK_SCAN_NEXT(s, e)                                               \
+    do {                                                                     \
+        if ((s)->idx < (s)->tot) {                                           \
+            (e) = ((s)->blk)->items[(s)->idx % EITEMS_PER_BLOCK];            \
+            if ((((s)->idx)++ % EITEMS_PER_BLOCK) == (EITEMS_PER_BLOCK - 1)) \
+                (s)->blk = ((s)->blk)->next;                                 \
+        } else {                                                             \
+            (e) = NULL;                                                      \
+        }                                                                    \
+    } while(0)                                                               \
+
+    typedef enum {
+        EITEM_TYPE_SINGLE = 1,
+        EITEM_TYPE_BLOCK
+    } EITEM_TYPE;
+
+    typedef struct _mem_block_t {
+      eitem* items[EITEMS_PER_BLOCK];
+      struct _mem_block_t *next;
+    } mem_block_t;
+
+    typedef struct _eblock_result_t {
+      struct _mem_block_t *head_blk; /* head block pointer */
+      struct _mem_block_t *tail_blk; /* tail block pointer */
+      struct _mem_block_t *last_blk; /* last block pointer */
+      uint32_t elem_cnt;             /* element count */
+      uint32_t blck_cnt;             /* block   count */
+    } eblock_result_t;
+
+    typedef struct _eblock_scan_t {
+        mem_block_t *blk;            /* current block pointer */
+        uint32_t     tot;            /* total element count   */
+        uint32_t     idx;            /* current element index */
+    } eblock_scan_t;
+
+    typedef struct _mblock_stats {
+      uint32_t total_mblocks;
+      uint32_t free_mblocks;
+    } mblock_stats;
+#endif
 
 #ifdef __cplusplus
 }
