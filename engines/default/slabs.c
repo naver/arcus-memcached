@@ -705,6 +705,19 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
         }
         /* look for a 2 times larger free slot */
         smid = do_smmgr_memid(slen*2, false);
+#ifdef REFACTOR_SEARCH_FREESLOT
+        if (sm_anchor.space_shortage_level > 0) {
+            /* use free small memory if possible. */
+            int twice = smid;
+            smid = twice < sm_anchor.used_maxid
+                 ? twice : sm_anchor.used_maxid;
+            for (smid = smid-1; smid > targ; smid--) {
+                if (sm_anchor.free_slist[smid].head != NULL) break;
+            }
+            if (smid > targ) break;
+            smid = twice;
+        }
+#endif
         if (smid > sm_anchor.free_maxid) {
             smid = sm_anchor.free_maxid;
         } else {
