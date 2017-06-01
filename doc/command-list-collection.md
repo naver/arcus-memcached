@@ -59,7 +59,7 @@ Response string과 그 의미는 아래와 같다.
 - "STROED" - 성공 (element만 삽입)
 - “CREATED_STORED” - 성공 (collection 생성하고 element 삽입)
 - “NOT_FOUND” - key miss
-- “TYPE_MISMATCH” - 해당 item이 list colleciton이 아님
+- “TYPE_MISMATCH” - 해당 item이 list collection이 아님
 - “OVERFLOWED” - overflow 발생
 - “OUT_OF_RANGE” - 삽입 위치가 list의 현재 element index 범위를 넘어섬,
                    예를 들어, 10개 element가 있는 상태에서 삽입 위치가 20인 경우임
@@ -96,7 +96,7 @@ Response string과 그 의미는 아래와 같다.
 - “DELETED_DROPPED” - 성공 (element 삭제하고 list를 drop한 상태)
 - “NOT_FOUND” - key miss
 - “NOT_FOUND_ELEMENT” - element miss (single index or index range에 해당하는 element가 없음)
-- “TYPE_MISMATCH” - 해당 item이 list colleciton이 아님
+- “TYPE_MISMATCH” - 해당 item이 list collection이 아님
 - "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 

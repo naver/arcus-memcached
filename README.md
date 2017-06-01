@@ -69,7 +69,7 @@ Important start options are here.
 - The scrub command is provided as an ASCII command extension.
   To use the command, use `-X` to specify the location of ascii_scrub.so library.
 
-To see details on arcus-memcached start options, run memcache with -h option like below.
+To see details on arcus-memcached start options, run memcached with -h option like below.
 ```
 $ <arcus_install_path>/bin/memcached -h
 ```
