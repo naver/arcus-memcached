@@ -350,7 +350,7 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
         if (arcus_conf.verbose > 2) {
             arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
                                    "ZK ensemble connected. session id: 0x%llx\n",
-                                   (long long) main_zk->myid.client_id);
+                                   (long long) zinfo->myid.client_id);
         }
         if (zinfo->myid.client_id == 0 || zinfo->myid.client_id != id->client_id) {
             if (arcus_conf.verbose > 2)
