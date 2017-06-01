@@ -3,28 +3,28 @@ Collection Concept
 
 ### Collection 구조와 특징
 
-Colleciton 유형과 그 구조 및 특징은 아래와 같다.
+Collection 유형과 그 구조 및 특징은 아래와 같다.
 
 **List** - linked list
 
 > Element들의 doubly linked list 구조를 가진다.
-  Head element와 tail element 정보를 유지하면서, head/tail에서 시작하여 forward/backwad 방향으로
+  Head element와 tail element 정보를 유지하면서, head/tail에서 시작하여 forward/backward 방향으로
   특정 위치에 있는 element를 접근할 수 있다.
-  많은 elelment를 가진 list에서 중간 위치의 임의 element 접근 시에 성능 이슈가 있으므로,
+  많은 element를 가진 list에서 중간 위치의 임의 element 접근 시에 성능 이슈가 있으므로,
   list를 queue 개념으로 사용하길 권한다.
   
 **Set** - unordered set of unique value
 
-> Set 자료 구조는 membership checking에 적합니다.
+> Set 자료 구조는 membership checking에 적합하다.
   Unordered set of unique value 저장을 위해 내부적으로 hash table 구조를 사용한다.
-  하나의 set에 들어가는 elments 개수에 비례하여 hash table 전체 크기를 동적으로 조정하기 위해,
+  하나의 set에 들어가는 elements 개수에 비례하여 hash table 전체 크기를 동적으로 조정하기 위해,
   일반적인 tree 구조와 유사하게 여러 depth로 구성되는 hash table 구조를 가진다.
 
 **Map** - unordered set of \<field, value\>
 
 > Map 자료 구조는 \<field, value\> 쌍을 저장한다.
   Field 값의 유일성 보장과 field 기준으로 해당 element 탐색을 빠르게 하기 위한 hash table 구조를 사용한다.
-  하나의 map에 들어가는 elments 개수에 비례하여 hash table 전체 크기를 동적으로 조정하기 위해,
+  하나의 map에 들어가는 elements 개수에 비례하여 hash table 전체 크기를 동적으로 조정하기 위해,
   일반적인 tree 구조와 유사하게 여러 depth로 구성되는 hash table 구조를 가진다.
 
 
@@ -36,15 +36,15 @@ Colleciton 유형과 그 구조 및 특징은 아래와 같다.
   그 외에, b+tree의 nonleaf node는 각 하위 node 중심의 sub-tree에 저장된 element 개수 정보를
   담고 있도록 해서, 특정 element의 position 조회 및 position 기반의 element 조회 기능도 제공한다.
   
-Collection item은 \<key, "colleciton meta info"\> 구조를 가진다.
-Colleciton meta info는 collection 유형에 따른 속성 정보를 가지며,
+Collection item은 \<key, "collection meta info"\> 구조를 가진다.
+Collection meta info는 collection 유형에 따른 속성 정보를 가지며,
 해당 collection의 elements에 신속히 접근하기 정보를 가진다.
 예를 들어, list의 head/tail element 주소, set의 최상위 hash table 주소,
 map의 최상위 hash table 구조, b+tree의 root node 주소가 이에 해당된다.
 
 ### Element 구조
 
-Colleciton 유형에 따른 element 구조는 아래와 같다.
+Collection 유형에 따른 element 구조는 아래와 같다.
 
 - list/set element : \< data \>
 

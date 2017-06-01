@@ -118,7 +118,7 @@ Response string과 그 의미는 아래와 같다.
 - “DELETED_DROPPED” - 성공 (전체 또는 일부 field, element 삭제하고 collection을 drop한 상태)
 - “NOT_FOUND” - key miss
 - “NOT_FOUND_ELEMENT” - field miss (삭제할 field, element가 없음. 모든 field가 없을 시에만 리턴)
-- “TYPE_MISMATCH” - 해당 item이 map colleciton이 아님
+- “TYPE_MISMATCH” - 해당 item이 map collection이 아님
 - "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 

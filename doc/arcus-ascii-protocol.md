@@ -56,7 +56,7 @@ Collection 일부 명령들은 command pipelining 처리가 가능하며,
 Item Attributes 기능
 --------------------
 
-Colleciton 지원으로 인해 item 유형이 다양해 졌으며, 다양한 item 유형에 따라 item attributes도 확장되었다.
+Collection 지원으로 인해 item 유형이 다양해 졌으며, 다양한 item 유형에 따라 item attributes도 확장되었다.
 이러한 item attributes를 조회하거나 변경하기 위하여
 [Item Attribute 명령](/doc/command-item-attribute.md)을 제공한다.
 
