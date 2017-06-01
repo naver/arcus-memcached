@@ -31,6 +31,7 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
+#define CHANGE_STANDARD_FREE_AVAIL
 #define REFACTOR_SEARCH_FREESLOT
 #define SUPPORT_BOP_MGET
 #define SUPPORT_BOP_SMGET
