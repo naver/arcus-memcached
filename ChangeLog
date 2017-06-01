@@ -2,6 +2,7 @@
 	* [Enhancement] Alleviate excessive evictions.
 	   - Use the free small space if possible in space shortage status.
 	   - Use 99% of used space to separate the free smalli/avail space.
+	* [Other] Fix typos on docs.
 
 2017-03-24 [version 1.10.0]
 	* [Feature] Added a map collection type.
