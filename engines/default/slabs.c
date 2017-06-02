@@ -703,7 +703,7 @@ static sm_blck_t *do_smmgr_blck_alloc(struct default_engine *engine)
         }
         do_smmgr_used_blck_link(blck);
     } else {
-        logger->log(EXTENSION_LOG_INFO, NULL, "no more small memory chunk\n");
+        logger->log(EXTENSION_LOG_WARNING, NULL, "no more small memory chunk\n");
     }
     return blck;
 }
