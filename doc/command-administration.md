@@ -110,7 +110,7 @@ stats [<args>]\r\n
  prefixes           | Prefix 별 item 통계 정보 조회
  detail on|off|dump | Prefix 별 수행 명령 통계 정보 조회 및 제어
  scrub              | scrub 수행 상태 조회
- cachedump          | slab calss 별 cache key dump
+ cachedump          | slab class 별 cache key dump
  reset              | 모든 통계 정보를 reset
 ``` 
 
