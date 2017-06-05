@@ -22,7 +22,7 @@ run() {
 locate_binary() {
   for f in $@
   do
-    file=`which $f 2>/dev/null | grep -v '^no '`
+    file=$(which $f 2>/dev/null | grep -v '^no ')
     if test -n "$file" -a -x "$file"; then
       echo $file
       return 0
@@ -48,35 +48,35 @@ fi
 # Try to detect the supported binaries if the user didn't
 # override that by pushing the environment variable
 if test x$LIBTOOLIZE = x; then
-  LIBTOOLIZE=`locate_binary glibtoolize libtoolize-1.5 libtoolize`
+  LIBTOOLIZE=$(locate_binary glibtoolize libtoolize-1.5 libtoolize)
   if test x$LIBTOOLIZE = x; then
     die "Did not find a supported libtoolize"
   fi
 fi
 
 if test x$ACLOCAL = x; then
-  ACLOCAL=`locate_binary aclocal-1.11 aclocal-1.10 aclocal-1.9 aclocal19 aclocal`
+  ACLOCAL=$(locate_binary aclocal-1.11 aclocal-1.10 aclocal-1.9 aclocal19 aclocal)
   if test x$ACLOCAL = x; then
     die "Did not find a supported aclocal"
   fi
 fi
 
 if test x$AUTOMAKE = x; then
-  AUTOMAKE=`locate_binary automake-1.11 automake-1.10 automake-1.9 automake19 automake`
+  AUTOMAKE=$(locate_binary automake-1.11 automake-1.10 automake-1.9 automake19 automake)
   if test x$AUTOMAKE = x; then
     die "Did not find a supported automake"
   fi
 fi
 
 if test x$AUTOCONF = x; then
-  AUTOCONF=`locate_binary autoconf-2.59 autoconf259 autoconf`
+  AUTOCONF=$(locate_binary autoconf-2.59 autoconf259 autoconf)
   if test x$AUTOCONF = x; then
     die "Did not find a supported autoconf"
   fi
 fi
 
 if test x$AUTOHEADER = x; then
-  AUTOHEADER=`locate_binary autoheader-2.59 autoheader259 autoheader`
+  AUTOHEADER=$(locate_binary autoheader-2.59 autoheader259 autoheader)
   if test x$AUTOHEADER = x; then
     die "Did not find a supported autoheader"
   fi
