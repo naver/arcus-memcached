@@ -18,7 +18,7 @@ overhead associated with establishing a TCP connection (the overhead
 of preparing for a new connection on the server side is insignificant
 compared to this).
 
-There are two kinds of data sent in the memcache protocol: text lines
+There are two kinds of data sent in the memcached protocol: text lines
 and unstructured data.  Text lines are used for commands from clients
 and responses from servers. Unstructured data is sent when a client
 wants to store or retrieve data. The server will transmit back
@@ -330,16 +330,16 @@ settings, documented below.  In the other form it has some arguments:
 stats <args>\r\n
 
 Depending on <args>, various internal data is sent by the server. The
-kinds of arguments and the data sent are not documented in this vesion
+kinds of arguments and the data sent are not documented in this version
 of the protocol, and are subject to change for the convenience of
-memcache developers.
+memcached developers.
 
 
 General-purpose statistics
 --------------------------
 
-Upon receiving the "stats" command without arguments, the server sents
-a number of lines which look like this:
+Upon receiving the "stats" command without arguments, the server sends
+a number of lines which looks like this:
 
 STAT <name> <value>\r\n
 
