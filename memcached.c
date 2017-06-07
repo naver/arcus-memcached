@@ -8643,35 +8643,6 @@ static void process_hbfailstop_command(conn *c, token_t *tokens, const size_t nt
         out_string(c, "CLIENT_ERROR bad command line format");
     }
 }
-
-static void process_zkensemble_command(conn *c, token_t *tokens, const size_t ntokens)
-{
-    assert(c != NULL);
-
-    if (arcus_zk_cfg == NULL) {
-        out_string(c, "ERROR not using ZooKeeper");
-        return;
-    }
-    if (ntokens == 3) { /* old command : show_zk_ensemble */
-        char buf[1024];
-
-        if (arcus_zk_get_ensemble(buf, sizeof(buf)-16) != 0) {
-            out_string(c, "ERROR failed to get the ensemble address");
-        } else {
-            strcat(buf, "\r\n\n");
-            out_string(c, buf);
-        }
-    } else { /* old command: set_zk_ensemble */
-        /* The ensemble is a comma separated list of host:port addresses.
-         * host1:port1,host2:port2,...
-         */
-        if (arcus_zk_set_ensemble(tokens[SUBCOMMAND_TOKEN+1].value) != 0) {
-            out_string(c, "ERROR failed to set the new ensemble address (check logs)");
-        } else {
-            out_string(c, "OK");
-        }
-    }
-}
 #endif
 
 static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntokens)
@@ -8856,9 +8827,6 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "hbfailstop") == 0) {
         process_hbfailstop_command(c, tokens, ntokens);
     }
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "zkensemble") == 0) {
-        process_zkensemble_command(c, tokens, ntokens);
-    }
 #endif
     else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "memlimit") == 0) {
         process_memlimit_command(c, tokens, ntokens);
@@ -8890,6 +8858,52 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
         out_string(c, "CLIENT_ERROR bad command line format");
     }
 }
+
+#ifdef ENABLE_ZK_INTEGRATION
+static void process_zkensemble_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    assert(c != NULL);
+
+    if (arcus_zk_cfg == NULL) {
+        out_string(c, "ERROR not using ZooKeeper");
+        return;
+    }
+
+    bool valid = false;
+
+    if (ntokens == 3) {
+        if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "get") == 0) {
+            char buf[1024];
+
+            if (arcus_zk_get_ensemble(buf, sizeof(buf)-16) != 0) {
+                out_string(c, "ERROR failed to get the ensemble address");
+            } else {
+                strcat(buf, "\r\n\n");
+                out_string(c, buf);
+            }
+            valid = true;
+        }
+    } else if (ntokens == 4) {
+        if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "set") == 0) {
+            /* The ensemble is a comma separated list of host:port addresses.
+             * host1:port1,host2:port2,...
+             */
+            if (arcus_zk_set_ensemble(tokens[SUBCOMMAND_TOKEN+1].value) != 0) {
+                out_string(c, "ERROR failed to set the new ensemble address (check logs)");
+            } else {
+                out_string(c, "OK");
+            }
+            valid = true;
+        }
+    }
+
+    if (valid == false) {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "CLIENT_ERROR bad command line format");
+        return;
+    }
+}
+#endif
 
 #ifdef JHPARK_KEY_DUMP
 static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
@@ -9087,6 +9101,11 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\n"
         "\t" "dump start key [<prefix>] <filepath>\\r\\n" "\n"
         "\t" "dump stop\\r\\n" "\n"
+#endif
+#ifdef ENABLE_ZK_INTEGRATION
+        "\n"
+        "\t" "zkensemble set <ensemble_list>\\r\\n" "\n"
+        "\t" "zkensemble get\\r\\n" "\n"
 #endif
         "\n"
         "\t" "config verbosity [<verbose>]\\r\\n" "\n"
@@ -12773,6 +12792,11 @@ static void process_command(conn *c, char *command, int cmdlen)
     {
         process_config_command(c, tokens, ntokens);
     }
+#ifdef ENABLE_ZK_INTEGRATION
+    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "zkensemble") == 0)) {
+        process_zkensemble_command(c, tokens, ntokens);
+    }
+#endif
     else if ((ntokens == 2) && (strcmp(tokens[COMMAND_TOKEN].value, "version") == 0))
     {
         out_string(c, "VERSION " VERSION);
