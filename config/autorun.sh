@@ -20,7 +20,7 @@ run() {
 # Try to locate a program by using which, and verify that the file is an
 # executable
 locate_binary() {
-  for f in $@
+  for f in "$@"
   do
     file=$(which $f 2>/dev/null | grep -v '^no ')
     if test -n "$file" -a -x "$file"; then
