@@ -1,4 +1,4 @@
-#! /bin/sh
+#! /bin/bash
 MEMC_VERSION=`git describe | tr '-' '_'`;
 cat > .libs/config_version.h << EOF
 #ifndef CONFIG_VERSION_H

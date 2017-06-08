@@ -25,7 +25,7 @@ The pre-commit hook can be used to ensure that your tree passes tests
 before allowing a commit.  To do so, add the following to
 .git/hooks/pre-commit (which must be executable):
 
-    #!/bin/sh
+    #!/bin/bash
     make test
 
 ** Post Commit Hook
@@ -35,7 +35,7 @@ post commit hook to update the version number after each commit so as
 to keep the reporting accurate.  To do so, add the following to
 .git/hooks/post-commit (which must be executable)
 
-    #!/bin/sh
+    #!/bin/bash
     ./version.sh
 
 ** Running memcached in gdb for tests.
