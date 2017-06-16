@@ -7,7 +7,7 @@ Arcus is normally positioned in front of a back-end storage, such as DB,
 where it stores/retrieves hot-spot data of service applications using fast main memory.
 Therefore, Arcus provides very fast data access for service applications
 and reduces the load on back-end storage.
-In addition, Arcus can serve as fast shared storage.  Remote services processes
+In addition, Arcus can serve as a fast shared storage.  Remote service processes
 usually store complex query results, computation-intensive results, and intermediate results
 of web processing in Arcus cache cloud so any process can access them.
 
