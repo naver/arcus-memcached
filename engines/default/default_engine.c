@@ -200,6 +200,11 @@ default_initialize(ENGINE_HANDLE* handle, const char* config_str)
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
+#ifdef USE_EBLOCK_RESULT
+    if (mblock_allocator_init(0)) {
+        return ENGINE_FAILED;
+    }
+#endif
     return ENGINE_SUCCESS;
 }
 
@@ -213,6 +218,9 @@ default_destroy(ENGINE_HANDLE* handle)
         item_final(se);
         slabs_final(se);
         assoc_final(se);
+#ifdef USE_EBLOCK_RESULT
+        mblock_allocator_destroy();
+#endif
         pthread_mutex_destroy(&se->cache_lock);
         pthread_mutex_destroy(&se->stats.lock);
         pthread_mutex_destroy(&se->slabs.lock);
@@ -490,6 +498,15 @@ default_set_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
+#ifdef USE_EBLOCK_RESULT
+static void
+default_set_elem_release(ENGINE_HANDLE* handle, const void *cookie,
+                         eitem *eitem, EITEM_TYPE type)
+{
+    struct default_engine *engine = get_handle(handle);
+    set_elem_release(engine, eitem, type);
+}
+#else
 static void
 default_set_elem_release(ENGINE_HANDLE* handle, const void *cookie,
                          eitem **eitem_array, const int eitem_count)
@@ -497,6 +514,7 @@ default_set_elem_release(ENGINE_HANDLE* handle, const void *cookie,
     struct default_engine *engine = get_handle(handle);
     set_elem_release(engine, (set_elem_item**)eitem_array, eitem_count);
 }
+#endif
 
 static ENGINE_ERROR_CODE
 default_set_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
@@ -550,7 +568,11 @@ static ENGINE_ERROR_CODE
 default_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                      const void* key, const int nkey, const uint32_t count,
                      const bool delete, const bool drop_if_empty,
+#ifdef USE_EBLOCK_RESULT
+                     eblock_result_t *eblk_ret,
+#else
                      eitem** eitem, uint32_t* eitem_count,
+#endif
                      uint32_t* flags, bool* dropped, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
@@ -559,7 +581,11 @@ default_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = set_elem_get(engine, key, nkey, count, delete, drop_if_empty,
+#ifdef USE_EBLOCK_RESULT
+                       eblk_ret, flags, dropped);
+#else
                        (set_elem_item**)eitem, eitem_count, flags, dropped);
+#endif
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -999,8 +1025,18 @@ static void stats_engine(struct default_engine *engine,
 {
     char val[128];
     int len;
+#ifdef USE_EBLOCK_RESULT
+    mblock_stats blk_stat;
+    mblock_allocator_stats(&blk_stat);
+#endif
 
     pthread_mutex_lock(&engine->stats.lock);
+#ifdef USE_EBLOCK_RESULT
+    len = sprintf(val, "%"PRIu32, blk_stat.total_mblocks);
+    add_stat("total_mblocks", 13, val, len, cookie);
+    len = sprintf(val, "%"PRIu32, blk_stat.free_mblocks);
+    add_stat("free_mblocks", 12, val, len, cookie);
+#endif
     len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.evictions);
     add_stat("evictions", 9, val, len, cookie);
     len = sprintf(val, "%"PRIu64, (uint64_t)engine->assoc.tot_prefix_items);
