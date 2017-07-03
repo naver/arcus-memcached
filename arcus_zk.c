@@ -147,6 +147,9 @@ typedef struct {
     char    *mc_ipport;         // this memcached ip:port string
     char    *hostip;            // localhost server IP
     int     port;               // memcached port number
+#ifdef CONFIG_FAILSTOP
+    bool    mc_failstop;        // memcached automatic failstop on/off
+#endif
     int     hb_failstop;        // memcached heartbeat failstop
     int     hb_timeout;         // memcached heartbeat timeout
     int     zk_timeout;         // Zookeeper session timeout
@@ -172,6 +175,9 @@ arcus_zk_conf arcus_conf = {
     .svc            = NULL,
     .mc_ipport      = NULL,
     .hostip         = NULL,
+#ifdef CONFIG_FAILSTOP
+    .mc_failstop    = true,
+#endif
     .hb_failstop    = HEART_BEAT_DFT_FAILSTOP,
     .hb_timeout     = HEART_BEAT_DFT_TIMEOUT,
     .zk_timeout     = DEFAULT_ZK_TO,
@@ -241,6 +247,10 @@ struct sm {
     volatile bool state_running;
 #ifdef ENABLE_SUICIDE_UPON_DISCONNECT
     volatile bool timer_running;
+#endif
+
+#ifdef CONFIG_FAILSTOP
+    volatile bool mc_pause;
 #endif
 
     pthread_t state_tid;
@@ -336,6 +346,35 @@ static int wait_count(int timeout)
     return rc;
 }
 
+#ifdef CONFIG_FAILSTOP
+static int
+arcus_zk_client_init(zk_info_t *zinfo)
+{
+    inc_count(1);
+    zinfo->zh = zookeeper_init(zinfo->ensemble_list, arcus_zk_watcher,
+                               arcus_conf.zk_timeout, &zinfo->myid, zinfo, 0);
+    if (!zinfo->zh) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "zookeeper_init() failed (%s error)\n", strerror(errno));
+        return EX_PROTOCOL;
+    }
+    /* wait until above init callback is called
+     * We need to wait until ZOO_CONNECTED_STATE
+     */
+    if (wait_count(arcus_conf.zk_timeout) != 0) {
+        /* zoo_state(zh) != ZOO_CONNECTED_STATE */
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                 "cannot to be ZOO_CONNECTED_STATE\n");
+        zookeeper_close(zinfo->zh);
+        zinfo->zh = NULL;
+        inc_count(-1);
+        return EX_PROTOCOL;
+    }
+
+    return 0;
+}
+#endif
+
 // Arcus zookeeper global watch callback routine
 static void
 arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cxt)
@@ -371,6 +410,22 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
         arcus_exit(wzh, EX_NOPERM);
     }
     else if (state == ZOO_EXPIRED_SESSION_STATE) {
+#ifdef CONFIG_FAILSTOP
+        if (arcus_conf.mc_failstop) {
+            // very likely that memcached process exited and restarted within
+            // session timeout
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "Expired state. shutting down\n");
+            // send SMS here??
+            arcus_exit(wzh, EX_TEMPFAIL);
+        } else {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "Expired state. pausing memcached (mc_failstop: off)\n");
+
+            sm_lock();
+            sm_info.mc_pause = true;
+            sm_wakeup(true);
+            sm_unlock();
+        }
+#else
         // very likely that memcached process exited and restarted within
         // session timeout
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "Expired state. shutting down\n");
@@ -381,6 +436,7 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
          * to avoid stale cache data access (rehashing already happened)
          */
         //arcus_zk_init(arcus_conf.ensemble_list, settings );
+#endif
     }
     else if (state == ZOO_ASSOCIATING_STATE || state == ZOO_CONNECTING_STATE) {
         /* we get these when connection to Ensemble is dropped and retrying
@@ -1181,6 +1237,14 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 
     gettimeofday(&start_time, 0);
 
+#ifdef CONFIG_FAILSTOP
+    rc = arcus_zk_client_init(zinfo);
+    if (rc != 0) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                               "Failed to initialize zk client\n");
+        arcus_exit(NULL, rc);
+    }
+#else
     inc_count(1);
     zinfo->zh = zookeeper_init(zinfo->ensemble_list, arcus_zk_watcher,
                                arcus_conf.zk_timeout, &zinfo->myid, zinfo, 0);
@@ -1198,6 +1262,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
                  "cannot to be ZOO_CONNECTED_STATE\n");
         arcus_exit(zk_info.zh, EX_PROTOCOL);
     }
+#endif
 
     /* setting main zk */
     main_zk = zinfo;
@@ -1434,6 +1499,136 @@ int arcus_zk_get_ensemble(char *buf, int size)
     return ret;
 }
 
+#ifdef CONFIG_FAILSTOP
+int arcus_zk_rejoin_ensemble()
+{
+    int ret = 0;
+
+    pthread_mutex_lock(&zk_lock);
+
+    if (main_zk->zh != NULL) {
+        pthread_mutex_unlock(&zk_lock);
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Failed to rejoin ensemble. It's already a member of cloud.\n");
+        return -1;
+    }
+
+    assert(sm_info.mc_pause == true);
+
+    do {
+        struct timeval  start_time, end_time;
+        long            difftime_us;
+
+        /* initialize Arcus ZK stats */
+        memset(&azk_stat, 0, sizeof(azk_stat));
+
+        memset(&main_zk->myid, 0, sizeof(clientid_t));
+
+        assert(main_zk->ensemble_list);
+
+        gettimeofday(&start_time, 0);
+
+        ret = arcus_zk_client_init(main_zk);
+        if (ret != 0) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                                   "Failed to initialize zk client.\n");
+            break;
+        }
+
+        /* check zk root directory and get the serice code */
+        if (zk_root == NULL) {
+            zk_root = "/arcus"; /* set zk root directory */
+            ret = arcus_check_server_mapping(main_zk->zh, zk_root);
+            if (ret != 0) {
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                         "Failed to check server mapping for this cache node. "
+                         "(zk_root=%s)\n", zk_root);
+            }
+        }
+
+        /* create "/cache_list/{svc}/ip:port-hostname" ephemeral znode */
+        ret = arcus_create_ephemeral_znode(main_zk->zh, zk_root);
+        if (ret != 0) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                                   "arcus_create_ephemeral_znode() failed.\n");
+            break;
+        }
+
+        /* log this rejoin activity in /arcus/cache_server_log */
+        arcus_zk_log(main_zk->zh, "rejoin");
+
+        gettimeofday(&end_time, 0);
+        difftime_us = (end_time.tv_sec*1000000 + end_time.tv_usec) -
+                      (start_time.tv_sec*1000000 + start_time.tv_usec);
+
+        /* We have finished registering this memcached instance to Arcus cluster */
+        arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
+                "Memcached rejoined Arcus cache cloud for \"%s\" service "
+                "(took %ld microsec)\n", arcus_conf.svc, difftime_us);
+
+        // "recv" timeout is actually the session timeout
+        // ZK client ping period is recv_timeout / 3.
+        arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
+                "ZooKeeper session timeout: %d sec\n", zoo_recv_timeout(main_zk->zh)/1000);
+
+        assert(arcus_conf.ch);
+
+        struct String_vector strv = { 0, NULL };
+        /* 2nd argument, NULL means no watcher */
+        if (arcus_read_ZK_children(main_zk->zh, arcus_conf.cluster_path, NULL, &strv) <= 0) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to read cache list from ZK.\n");
+            ret = -1; break;
+        }
+
+        if (update_cluster_config(&strv) != 0) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to update cluster config.\n");
+            ret = -1; break;
+        }
+
+        deallocate_String_vector(&strv);
+
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Memcached is watching Arcus cache cloud for \"%s\"\n", arcus_conf.cluster_path);
+
+
+        /* Wake up the state machine thread.
+         * Tell it to refresh the hash ring (cluster_config).
+         */
+        sm_lock();
+        sm_info.mc_pause = false;
+        /* Don't care if we just read the list above.  Do it again. */
+        sm_info.request.update_cache_list = true;
+        sm_wakeup(true);
+        sm_unlock();
+    } while(0);
+
+    if (ret != 0) {
+        if (main_zk->zh) {
+          zookeeper_close(main_zk->zh);
+          main_zk->zh = NULL;
+        }
+        ret = -1;
+    }
+    pthread_mutex_unlock(&zk_lock);
+
+    return ret;
+}
+
+void arcus_zk_set_mcfailstop(bool mcfailstop)
+{
+    pthread_mutex_lock(&arcus_conf.lock);
+    arcus_conf.mc_failstop = mcfailstop;
+    pthread_mutex_unlock(&arcus_conf.lock);
+}
+
+bool arcus_zk_get_mcfailstop(void)
+{
+    return arcus_conf.mc_failstop;
+}
+#endif
+
 int arcus_zk_set_hbtimeout(int hbtimeout)
 {
     int ret=0;
@@ -1535,6 +1730,9 @@ static void *sm_state_thread(void *arg)
     bool sm_retry = false;
     bool shutdown_by_me = false;
 
+#ifdef CONFIG_FAILSTOP
+    sm_info.mc_pause = false;
+#endif
     sm_info.state_running = true;
     while (!arcus_zk_shutdown)
     {
@@ -1565,6 +1763,23 @@ static void *sm_state_thread(void *arg)
 
         if (arcus_zk_shutdown)
             break;
+
+#ifdef CONFIG_FAILSTOP
+        if (sm_info.mc_pause == true) {
+            bool paused = false;
+            pthread_mutex_lock(&zk_lock);
+            if (sm_info.mc_pause == true) {
+                if (main_zk->zh != NULL) {
+                    zookeeper_close(main_zk->zh);
+                    main_zk->zh = NULL;
+                    arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "zk connection closed\n");
+                }
+                paused = true;
+            }
+            pthread_mutex_unlock(&zk_lock);
+            if (paused) continue;
+        }
+#endif
 
         /* Read the latest hash ring */
         if (smreq.update_cache_list) {
