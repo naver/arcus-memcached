@@ -137,7 +137,9 @@ default_engine_la_SOURCES= \
                     engines/default/items.c \
                     engines/default/items.h \
                     engines/default/slabs.c \
-                    engines/default/slabs.h
+                    engines/default/slabs.h \
+                    engines/COMMON/mblock_allocator.c \
+                    engines/COMMON/mblock_allocator.h
 default_engine_la_DEPENDENCIES= libmcd_util.la
 default_engine_la_LIBADD= libmcd_util.la $(LIBM)
 default_engine_la_LDFLAGS= -avoid-version -shared -module -no-undefined
