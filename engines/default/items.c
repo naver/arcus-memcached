@@ -8415,6 +8415,18 @@ static void do_map_elem_free(struct default_engine *engine, map_elem_item *elem)
     do_mem_slot_free(engine, elem, ntotal);
 }
 
+#ifdef USE_EBLOCK_RESULT
+static void do_map_elem_release(struct default_engine *engine, eitem *eitem)
+{
+    map_elem_item *elem = (map_elem_item *)eitem;
+    if (elem->refcount != 0) {
+        elem->refcount--;
+    }
+    if (elem->refcount == 0 && elem->next == (map_elem_item *)ADDR_MEANS_UNLINKED) {
+        do_map_elem_free(engine, elem);
+    }
+}
+#else
 static void do_map_elem_release(struct default_engine *engine, map_elem_item *elem)
 {
     if (elem->refcount != 0) {
@@ -8424,6 +8436,7 @@ static void do_map_elem_release(struct default_engine *engine, map_elem_item *el
         do_map_elem_free(engine, elem);
     }
 }
+#endif
 
 static void do_map_node_link(struct default_engine *engine,
                              map_meta_info *info,
@@ -8663,14 +8676,22 @@ static void do_map_elem_unlink(struct default_engine *engine,
 static bool do_map_elem_traverse_dfs_byfield(struct default_engine *engine,
                                              map_meta_info *info, map_hash_node *node, const int hval,
                                              const field_t *field, const bool delete,
+#ifdef USE_EBLOCK_RESULT
+                                             eblock_result_t *eblk_ret)
+#else
                                              map_elem_item **elem_array)
+#endif
 {
     bool ret;
     int hidx = MAP_GET_HASHIDX(hval, node->hdepth);
 
     if (node->hcnt[hidx] == -1) {
         map_hash_node *child_node = node->htab[hidx];
+#ifdef USE_EBLOCK_RESULT
+        ret = do_map_elem_traverse_dfs_byfield(engine, info, child_node, hval, field, delete, eblk_ret);
+#else
         ret = do_map_elem_traverse_dfs_byfield(engine, info, child_node, hval, field, delete, elem_array);
+#endif
         if (ret && delete) {
             if (child_node->tot_hash_cnt == 0 &&
                 child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
@@ -8684,10 +8705,17 @@ static bool do_map_elem_traverse_dfs_byfield(struct default_engine *engine,
             map_elem_item *elem = node->htab[hidx];
             while (elem != NULL) {
                 if (map_hash_eq(hval, field->value, field->length, elem->hval, elem->data, elem->nfield)) {
+#ifdef USE_EBLOCK_RESULT
+                    if (eblk_ret != NULL) {
+                        elem->refcount++;
+                        eblk_add_elem(eblk_ret, elem);
+                    }
+#else
                     if (elem_array) {
                         elem->refcount++;
                         elem_array[0] = elem;
                     }
+#endif
 
                     if (delete) {
                         do_map_elem_unlink(engine, info, node, hidx, prev, elem, ELEM_DELETE_NORMAL);
@@ -8706,7 +8734,11 @@ static bool do_map_elem_traverse_dfs_byfield(struct default_engine *engine,
 static int do_map_elem_traverse_dfs_bycnt(struct default_engine *engine,
                                           map_meta_info *info, map_hash_node *node,
                                           const uint32_t count, const bool delete,
+#ifdef USE_EBLOCK_RESULT
+                                          eblock_result_t *eblk_ret, enum elem_delete_cause cause)
+#else
                                           map_elem_item **elem_array, enum elem_delete_cause cause)
+#endif
 {
     int hidx = -1;
     int rcnt = 0; /* request count */
@@ -8717,8 +8749,13 @@ static int do_map_elem_traverse_dfs_bycnt(struct default_engine *engine,
             if (node->hcnt[hidx] == -1) {
                 map_hash_node *child_node = (map_hash_node *)node->htab[hidx];
                 if (count > 0) rcnt = count - fcnt;
+#ifdef USE_EBLOCK_RESULT
+                fcnt += do_map_elem_traverse_dfs_bycnt(engine, info, child_node, rcnt, delete,
+                                                       eblk_ret, cause);
+#else
                 fcnt += do_map_elem_traverse_dfs_bycnt(engine, info, child_node, rcnt, delete,
                                             (elem_array==NULL ? NULL : &elem_array[fcnt]), cause);
+#endif
                 if (delete) {
                     if  (child_node->tot_hash_cnt == 0 &&
                          child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
@@ -8736,10 +8773,17 @@ static int do_map_elem_traverse_dfs_bycnt(struct default_engine *engine,
         if (node->hcnt[hidx] > 0) {
             map_elem_item *elem = node->htab[hidx];
             while (elem != NULL) {
+#ifdef USE_EBLOCK_RESULT
+                if (eblk_ret != NULL) {
+                    elem->refcount++;
+                    eblk_add_elem(eblk_ret, elem);
+                }
+#else
                 if (elem_array) {
                     elem->refcount++;
                     elem_array[fcnt] = elem;
                 }
+#endif
                 fcnt++;
                 if (delete) do_map_elem_unlink(engine, info, node, hidx, NULL, elem, cause);
                 if (count > 0 && fcnt >= count) break;
@@ -8868,29 +8912,52 @@ static uint32_t do_map_elem_delete(struct default_engine *engine,
 
 static ENGINE_ERROR_CODE do_map_elem_get(struct default_engine *engine,
                                          map_meta_info *info, const int numfields, const field_t *flist,
+#ifdef USE_EBLOCK_RESULT
+                                         const bool delete, eblock_result_t *eblk_ret)
+#else
                                          const bool delete, map_elem_item **elem_array, uint32_t *elem_count)
+#endif
 {
     int ii;
     uint32_t array_cnt = 0;
 
     if (info->root != NULL) {
+#ifdef USE_EBLOCK_RESULT
+        if (!eblk_prepare(eblk_ret, (numfields == 0 || numfields > info->ccnt) ? info->ccnt : numfields))
+            return ENGINE_ENOMEM;
+#endif
         if (numfields == 0) {
+#ifdef USE_EBLOCK_RESULT
+            array_cnt = do_map_elem_traverse_dfs_bycnt(engine, info, info->root, 0, delete, eblk_ret, ELEM_DELETE_NORMAL);
+#else
             array_cnt = do_map_elem_traverse_dfs_bycnt(engine, info, info->root, 0, delete, elem_array, ELEM_DELETE_NORMAL);
+#endif
         } else {
             for (ii = 0; ii < numfields; ii++) {
                 int hval = genhash_string_hash(flist[ii].value, flist[ii].length);
+#ifdef USE_EBLOCK_RESULT
+                if (do_map_elem_traverse_dfs_byfield(engine, info, info->root, hval, &flist[ii],
+                                                     delete, eblk_ret)) {
+#else
                 if (do_map_elem_traverse_dfs_byfield(engine, info, info->root, hval, &flist[ii],
                                                      delete, &elem_array[array_cnt])) {
+#endif
                     array_cnt++;
                 }
             }
         }
+#ifdef USE_EBLOCK_RESULT
+        eblk_truncate(eblk_ret);
+#endif
         if (delete && info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
             do_map_node_unlink(engine, info, NULL, 0);
         }
     }
 
+#ifdef USE_EBLOCK_RESULT
+#else
     *elem_count = array_cnt;
+#endif
     if (array_cnt > 0) {
         return ENGINE_SUCCESS;
     } else {
@@ -8980,6 +9047,12 @@ map_elem_item *map_elem_alloc(struct default_engine *engine, const int nfield, c
     return elem;
 }
 
+#ifdef USE_EBLOCK_RESULT
+void map_elem_release(struct default_engine *engine, eitem *eitem, EITEM_TYPE type)
+{
+    do_coll_elem_release(engine, eitem, type, do_map_elem_release);
+}
+#else
 void map_elem_release(struct default_engine *engine, map_elem_item **elem_array, const int elem_count)
 {
     int cnt = 0;
@@ -8993,6 +9066,7 @@ void map_elem_release(struct default_engine *engine, map_elem_item **elem_array,
     }
     pthread_mutex_unlock(&engine->cache_lock);
 }
+#endif
 
 ENGINE_ERROR_CODE map_elem_insert(struct default_engine *engine, const char *key, const size_t nkey,
                                   map_elem_item *elem, item_attr *attrp, bool *created, const void *cookie)
@@ -9078,7 +9152,11 @@ ENGINE_ERROR_CODE map_elem_delete(struct default_engine *engine, const char *key
 
 ENGINE_ERROR_CODE map_elem_get(struct default_engine *engine, const char *key, const size_t nkey,
                                const int numfields, const field_t *flist, const bool delete,
+#ifdef USE_EBLOCK_RESULT
+                               const bool drop_if_empty, eblock_result_t *eblk_ret,
+#else
                                const bool drop_if_empty, map_elem_item **elem_array, uint32_t *elem_count,
+#endif
                                uint32_t *flags, bool *dropped)
 {
     hash_item     *it;
@@ -9093,7 +9171,11 @@ ENGINE_ERROR_CODE map_elem_get(struct default_engine *engine, const char *key, c
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
             }
+#ifdef USE_EBLOCK_RESULT
+            ret = do_map_elem_get(engine, info, numfields, flist, delete, eblk_ret);
+#else
             ret = do_map_elem_get(engine, info, numfields, flist, delete, elem_array, elem_count);
+#endif
             if (ret == ENGINE_SUCCESS) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(delete == true);
@@ -9103,7 +9185,11 @@ ENGINE_ERROR_CODE map_elem_get(struct default_engine *engine, const char *key, c
                     *dropped = false;
                 }
                 *flags = it->flags;
+#ifdef USE_EBLOCK_RESULT
+            } /* ret = ENGINE_ENOMEM or ENGINE_ELEM_ENOENT */
+#else
             } /* ret = ENGINE_ELEM_ENOENT */
+#endif
         } while (0);
         do_item_release(engine, it);
     }

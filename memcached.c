@@ -772,7 +772,11 @@ static void conn_coll_eitem_free(conn *c) {
         break;
       /* mop */
       case OPERATION_MOP_INSERT:
+#ifdef USE_EBLOCK_RESULT
+        mc_engine.v1->map_elem_release(mc_engine.v0, c, c->coll_eitem, EITEM_TYPE_SINGLE);
+#else
         mc_engine.v1->map_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+#endif
         break;
       case OPERATION_MOP_UPDATE:
         if (c->coll_eitem != NULL)
@@ -784,8 +788,12 @@ static void conn_coll_eitem_free(conn *c) {
         }
         break;
       case OPERATION_MOP_GET:
+#ifdef USE_EBLOCK_RESULT
+        mc_engine.v1->map_elem_release(mc_engine.v0, c, c->coll_eitem, EITEM_TYPE_BLOCK);
+#else
         mc_engine.v1->map_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
         free(c->coll_eitem);
+#endif
         if (c->coll_resps != NULL) {
             free(c->coll_resps); c->coll_resps = NULL;
         }
@@ -1667,7 +1675,11 @@ static void process_mop_insert_complete(conn *c) {
         }
     }
 
+#ifdef USE_EBLOCK_RESULT
+    mc_engine.v1->map_elem_release(mc_engine.v0, c, c->coll_eitem, EITEM_TYPE_SINGLE);
+#else
     mc_engine.v1->map_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+#endif
     c->coll_eitem = NULL;
 }
 
@@ -1793,13 +1805,18 @@ static void process_mop_get_complete(conn *c)
     assert(c->coll_op == OPERATION_MOP_GET);
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#ifdef USE_EBLOCK_RESULT
+#else
     eitem **elem_array = NULL;
+#endif
     field_t *flist = NULL;
     uint32_t elem_count = 0;
     uint32_t flags, f;
     bool delete = c->coll_delete;
     bool drop_if_empty = c->coll_drop;
     bool dropped;
+#ifdef USE_EBLOCK_RESULT
+#else
     int  need_size = 0;
 
     if (c->coll_numkeys <= 0 || c->coll_numkeys > MAX_MAP_SIZE) {
@@ -1813,6 +1830,7 @@ static void process_mop_get_complete(conn *c)
     } else {
         elem_array = (eitem **)c->coll_eitem;
     }
+#endif
 
     assert(c->ewouldblock == false);
 
@@ -1828,8 +1846,14 @@ static void process_mop_get_complete(conn *c)
     }
 
     if (ret == ENGINE_SUCCESS) {
+#ifdef USE_EBLOCK_RESULT
+        ret = mc_engine.v1->map_elem_get(mc_engine.v0, c, c->coll_key, c->coll_nkey, c->coll_numkeys, flist,
+                                         delete, drop_if_empty, &c->eblk_ret, &flags, &dropped, 0);
+        elem_count = EBLOCK_ELEM_COUNT(&c->eblk_ret);
+#else
         ret = mc_engine.v1->map_elem_get(mc_engine.v0, c, c->coll_key, c->coll_nkey, c->coll_numkeys, flist,
                                          delete, drop_if_empty, elem_array, &elem_count, &flags, &dropped, 0);
+#endif
     }
 
     if (ret == ENGINE_EWOULDBLOCK) {
@@ -1849,6 +1873,10 @@ static void process_mop_get_complete(conn *c)
         char *respptr;
         int   resplen;
         int   need_size;
+#ifdef USE_EBLOCK_RESULT
+        eitem *elem;
+        eblock_scan_t eblk_sc;
+#endif
 
         do {
             need_size = ((2*lenstr_size) + 30) /* response head and tail size */
@@ -1864,8 +1892,16 @@ static void process_mop_get_complete(conn *c)
             }
             respptr += strlen(respptr);
 
+#ifdef USE_EBLOCK_RESULT
+            EBLOCK_SCAN_INIT(&c->eblk_ret, &eblk_sc);
+#endif
             for (f = 0; f < elem_count; f++) {
+#ifdef USE_EBLOCK_RESULT
+                EBLOCK_SCAN_NEXT(&eblk_sc, elem);
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem, &info);
+#else
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem_array[f], &info);
+#endif
                 resplen = make_mop_elem_response(respptr, &info);
                 if ((add_iov(c, respptr, resplen) != 0) ||
                     (add_iov(c, info.value, info.nbytes) != 0)) {
@@ -1885,15 +1921,23 @@ static void process_mop_get_complete(conn *c)
 
         if (ret == ENGINE_SUCCESS) {
             STATS_ELEM_HITS(c, mop_get, c->coll_key, c->coll_nkey);
+#ifdef USE_EBLOCK_RESULT
+            c->coll_eitem  = (void *)&c->eblk_ret;
+#else
             c->coll_eitem  = (void *)elem_array;
             c->coll_ecount = elem_count;
+#endif
             c->coll_resps  = respbuf;
             c->coll_op     = OPERATION_MOP_GET;
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
         } else { /* ENGINE_ENOMEM */
             STATS_NOKEY(c, cmd_mop_get);
+#ifdef USE_EBLOCK_RESULT
+            mc_engine.v1->map_elem_release(mc_engine.v0, c, &c->eblk_ret, EITEM_TYPE_BLOCK);
+#else
             mc_engine.v1->map_elem_release(mc_engine.v0, c, elem_array, elem_count);
+#endif
             free(respbuf);
             if (c->ewouldblock)
                 c->ewouldblock = false;
@@ -1913,7 +1957,12 @@ static void process_mop_get_complete(conn *c)
         STATS_MISS(c, mop_get, c->coll_key, c->coll_nkey);
         if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
         else                          out_string(c, "UNREADABLE");
+  break;
+#ifdef USE_EBLOCK_RESULT
+    case ENGINE_ENOMEM:
+        out_string(c, "SERVER_ERROR out of memory getting elements");
         break;
+#endif
     default:
         STATS_NOKEY(c, cmd_mop_get);
         if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
@@ -1927,10 +1976,13 @@ static void process_mop_get_complete(conn *c)
             free((void *)c->coll_strkeys);
             c->coll_strkeys = NULL;
         }
+#ifdef USE_EBLOCK_RESULT
+#else
         if (c->coll_eitem != NULL) {
            free((void *)c->coll_eitem);
            c->coll_eitem = NULL;
         }
+#endif
     }
 }
 

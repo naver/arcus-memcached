@@ -630,12 +630,21 @@ default_map_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
+#ifdef USE_EBLOCK_RESULT
+static void
+default_map_elem_release(ENGINE_HANDLE* handle, const void *cookie,
+                         eitem *eitem, EITEM_TYPE type)
+{
+    map_elem_release(get_handle(handle), eitem, type);
+}
+#else
 static void
 default_map_elem_release(ENGINE_HANDLE* handle, const void *cookie,
                          eitem **eitem_array, const int eitem_count)
 {
     map_elem_release(get_handle(handle), (map_elem_item**)eitem_array, eitem_count);
 }
+#endif
 
 static ENGINE_ERROR_CODE
 default_map_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
@@ -687,7 +696,11 @@ static ENGINE_ERROR_CODE
 default_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                      const void* key, const int nkey, const int numfields,
                      const field_t *flist, const bool delete, const bool drop_if_empty,
+#ifdef USE_EBLOCK_RESULT
+                     eblock_result_t *eblk_ret, uint32_t* flags,
+#else
                      eitem** eitem, uint32_t* eitem_count, uint32_t* flags,
+#endif
                      bool* dropped, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
@@ -696,7 +709,11 @@ default_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = map_elem_get(engine, key, nkey, numfields, flist, delete, drop_if_empty,
+#ifdef USE_EBLOCK_RESULT
+                       eblk_ret, flags, dropped);
+#else
                        (map_elem_item**)eitem, eitem_count, flags, dropped);
+#endif
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
