@@ -422,12 +422,21 @@ Demo_map_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
     return ENGINE_ENOTSUP;
 }
 
+#ifdef USE_EBLOCK_RESULT
+static void
+Demo_map_elem_release(ENGINE_HANDLE* handle, const void *cookie,
+                      eitem *eitem, EITEM_TYPE type)
+{
+    return;
+}
+#else
 static void
 Demo_map_elem_release(ENGINE_HANDLE* handle, const void *cookie,
                          eitem **eitem_array, const int eitem_count)
 {
     return;
 }
+#endif
 
 static ENGINE_ERROR_CODE
 Demo_map_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
@@ -458,7 +467,11 @@ static ENGINE_ERROR_CODE
 Demo_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                      const void* key, const int nkey, const int numfields,
                      const field_t *flist, const bool delete, const bool drop_if_empty,
+#ifdef USE_EBLOCK_RESULT
+                     eblock_result_t* eblk_ret, uint32_t* flags,
+#else
                      eitem** eitem, uint32_t* eitem_count, uint32_t* flags,
+#endif
                      bool* dropped, uint16_t vbucket)
 {
     return ENGINE_ENOTSUP;

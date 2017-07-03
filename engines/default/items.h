@@ -478,7 +478,11 @@ map_elem_item *map_elem_alloc(struct default_engine *engine, const int nfield,
                               const int nbytes, const void *cookie);
 
 void map_elem_release(struct default_engine *engine,
+#ifdef USE_EBLOCK_RESULT
+                      eitem *eitem, EITEM_TYPE type);
+#else
                       map_elem_item **elem_array, const int elem_count);
+#endif
 
 ENGINE_ERROR_CODE map_elem_insert(struct default_engine *engine,
                                   const char *key, const size_t nkey,
@@ -501,8 +505,13 @@ ENGINE_ERROR_CODE map_elem_delete(struct default_engine *engine,
 ENGINE_ERROR_CODE map_elem_get(struct default_engine *engine,
                                const char *key, const size_t nkey,
                                const int numfields, const field_t *flist, const bool delete,
+#ifdef USE_EBLOCK_RESULT
+                               const bool drop_if_empty, eblock_result_t *eblk_ret,
+                               uint32_t *flags, bool *dropped);
+#else
                                const bool drop_if_empty, map_elem_item **elem_array,
                                uint32_t *elem_count, uint32_t *flags, bool *dropped);
+#endif
 
 ENGINE_ERROR_CODE btree_struct_create(struct default_engine *engine,
                                       const char *key, const size_t nkey,
