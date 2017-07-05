@@ -738,11 +738,19 @@ static void conn_coll_eitem_free(conn *c) {
     switch (c->coll_op) {
       /* lop */
       case OPERATION_LOP_INSERT:
+#ifdef USE_EBLOCK_RESULT
+        mc_engine.v1->list_elem_release(mc_engine.v0, c, c->coll_eitem, EITEM_TYPE_SINGLE);
+#else
         mc_engine.v1->list_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+#endif
         break;
       case OPERATION_LOP_GET:
+#ifdef USE_EBLOCK_RESULT
+        mc_engine.v1->list_elem_release(mc_engine.v0, c, c->coll_eitem, EITEM_TYPE_BLOCK);
+#else
         mc_engine.v1->list_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
         free(c->coll_eitem);
+#endif
         if (c->coll_resps != NULL) {
             free(c->coll_resps); c->coll_resps = NULL;
         }
@@ -1405,7 +1413,11 @@ static void process_lop_insert_complete(conn *c) {
         }
     }
 
+#ifdef USE_EBLOCK_RESULT
+    mc_engine.v1->list_elem_release(mc_engine.v0, c, c->coll_eitem, EITEM_TYPE_SINGLE);
+#else
     mc_engine.v1->list_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+#endif
     c->coll_eitem = NULL;
 }
 
@@ -4172,7 +4184,11 @@ static void process_bin_lop_insert_complete(conn *c) {
     }
 
     /* release the c->coll_eitem reference */
+#ifdef USE_EBLOCK_RESULT
+    mc_engine.v1->list_elem_release(mc_engine.v0, c, c->coll_eitem, EITEM_TYPE_SINGLE);
+#else
     mc_engine.v1->list_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+#endif
     c->coll_eitem = NULL;
 }
 
@@ -4269,15 +4285,30 @@ static void process_bin_lop_get(conn *c) {
                 (req->message.body.delete ? "true" : "false"));
     }
 
+#ifdef USE_EBLOCK_RESULT
+#else
     eitem  **elem_array = NULL;
+#endif
     uint32_t elem_count;
     uint32_t flags, i;
     bool     dropped;
+#ifdef USE_EBLOCK_RESULT
+#else
     int      est_count;
     int      need_size;
+#endif
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
+#ifdef USE_EBLOCK_RESULT
+    ret = mc_engine.v1->list_elem_get(mc_engine.v0, c, key, nkey,
+                                      from_index, to_index,
+                                      (bool)req->message.body.delete,
+                                      (bool)req->message.body.drop,
+                                      &c->eblk_ret, &flags, &dropped,
+                                      c->binary_header.request.vbucket);
+    elem_count = EBLOCK_ELEM_COUNT(&c->eblk_ret);
+#else
     /* adjust list index */
     if (from_index > MAX_LIST_SIZE)           from_index = MAX_LIST_SIZE;
     else if (from_index < -(MAX_LIST_SIZE+1)) from_index = -(MAX_LIST_SIZE+1);
@@ -4301,6 +4332,7 @@ static void process_bin_lop_get(conn *c) {
                                       (bool)req->message.body.drop,
                                       elem_array, &elem_count, &flags, &dropped,
                                       c->binary_header.request.vbucket);
+#endif
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -4315,14 +4347,34 @@ static void process_bin_lop_get(conn *c) {
     case ENGINE_SUCCESS:
         {
         protocol_binary_response_lop_get* rsp = (protocol_binary_response_lop_get*)c->wbuf;
+#ifdef USE_EBLOCK_RESULT
+        eitem *elem;
+        eblock_scan_t eblk_sc;
+        uint32_t *vlenptr = NULL;
+#else
         uint32_t *vlenptr = (uint32_t *)&elem_array[elem_count];
+#endif
         uint32_t  bodylen;
 
         eitem_info info[elem_count];
+#ifdef USE_EBLOCK_RESULT
+        if ((vlenptr = (uint32_t *)malloc(elem_count * sizeof(uint32_t))) == NULL) {
+            ret = ENGINE_ENOMEM;
+        } else {
+#endif
+#ifdef USE_EBLOCK_RESULT
+        EBLOCK_SCAN_INIT(&c->eblk_ret, &eblk_sc);
+        for (i = 0; i < elem_count; i++) {
+            EBLOCK_SCAN_NEXT(&eblk_sc, elem);
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST,
+                                        elem, &info[i]);
+        }
+#else
         for (i = 0; i < elem_count; i++) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST,
                                         elem_array[i], &info[i]);
         }
+#endif
 
         bodylen = sizeof(rsp->message.body) + (elem_count * sizeof(uint32_t));
         for (i = 0; i < elem_count; i++) {
@@ -4347,17 +4399,30 @@ static void process_bin_lop_get(conn *c) {
                 ret = ENGINE_ENOMEM; break;
             }
         }
+#ifdef USE_EBLOCK_RESULT
+        }
+#endif
 
         if (ret == ENGINE_SUCCESS) {
             STATS_ELEM_HITS(c, lop_get, key, nkey);
             /* Remember this command so we can garbage collect it later */
+#ifdef USE_EBLOCK_RESULT
+            c->coll_eitem  = (void *)&c->eblk_ret;
+            c->coll_resps  = (void *)vlenptr;
+#else
             c->coll_eitem  = (void *)elem_array;
             c->coll_ecount = elem_count;
+#endif
             c->coll_op     = OPERATION_LOP_GET;
             conn_set_state(c, conn_mwrite);
         } else {
             STATS_NOKEY(c, cmd_lop_get);
+#ifdef USE_EBLOCK_RESULT
+            mc_engine.v1->list_elem_release(mc_engine.v0, c, &c->eblk_ret, EITEM_TYPE_BLOCK);
+            free((void *)vlenptr);
+#else
             mc_engine.v1->list_elem_release(mc_engine.v0, c, elem_array, elem_count);
+#endif
             if (c->ewouldblock)
                 c->ewouldblock = false;
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
@@ -4379,6 +4444,11 @@ static void process_bin_lop_get(conn *c) {
         else
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_UNREADABLE, 0);
         break;
+#ifdef USE_EBLOCK_RESULT
+    case ENGINE_ENOMEM:
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+        break;
+#endif
     default:
         STATS_NOKEY(c, cmd_lop_get);
         if (ret == ENGINE_EBADTYPE)
@@ -4387,9 +4457,12 @@ static void process_bin_lop_get(conn *c) {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
     }
 
+#ifdef USE_EBLOCK_RESULT
+#else
     if (ret != ENGINE_SUCCESS && elem_array != NULL) {
         free((void *)elem_array);
     }
+#endif
 }
 
 static void process_bin_sop_create(conn *c) {
@@ -9583,17 +9656,29 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
                             int32_t from_index, int32_t to_index,
                             bool delete, bool drop_if_empty)
 {
+#ifdef USE_EBLOCK_RESULT
+#else
     eitem  **elem_array = NULL;
+#endif
     uint32_t elem_count;
     uint32_t flags, i;
     bool     dropped;
+#ifdef USE_EBLOCK_RESULT
+#else
     int      est_count;
+#endif
     int      need_size;
 
     assert(c->ewouldblock == false);
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
+#ifdef USE_EBLOCK_RESULT
+    ret = mc_engine.v1->list_elem_get(mc_engine.v0, c, key, nkey,
+                                      from_index, to_index, delete, drop_if_empty,
+                                      &c->eblk_ret, &flags, &dropped, 0);
+    elem_count = EBLOCK_ELEM_COUNT(&c->eblk_ret);
+#else
     /* adjust list index */
     if (from_index > MAX_LIST_SIZE)           from_index = MAX_LIST_SIZE;
     else if (from_index < -(MAX_LIST_SIZE+1)) from_index = -(MAX_LIST_SIZE+1);
@@ -9615,6 +9700,8 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
     ret = mc_engine.v1->list_elem_get(mc_engine.v0, c, key, nkey,
                                       from_index, to_index, delete, drop_if_empty,
                                       elem_array, &elem_count, &flags, &dropped, 0);
+#endif
+
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -9654,6 +9741,10 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
         eitem_info info;
         char *respbuf; /* response string buffer */
         char *respptr;
+#ifdef USE_EBLOCK_RESULT
+        eitem *elem;
+        eblock_scan_t eblk_sc;
+#endif
 
         do {
             need_size = ((2*lenstr_size) + 30) /* response head and tail size */
@@ -9669,9 +9760,18 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
             }
             respptr += strlen(respptr);
 
+#ifdef USE_EBLOCK_RESULT
+            EBLOCK_SCAN_INIT(&c->eblk_ret, &eblk_sc);
+#endif
             for (i = 0; i < elem_count; i++) {
+#ifdef USE_EBLOCK_RESULT
+                EBLOCK_SCAN_NEXT(&eblk_sc, elem);
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST,
+                                           elem, &info);
+#else
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST,
                                            elem_array[i], &info);
+#endif
                 sprintf(respptr, "%u ", info.nbytes-2);
                 if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
                     (add_iov(c, info.value, info.nbytes) != 0)) {
@@ -9691,15 +9791,23 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
 
         if (ret == ENGINE_SUCCESS) {
             STATS_ELEM_HITS(c, lop_get, key, nkey);
+#ifdef USE_EBLOCK_RESULT
+            c->coll_eitem  = (void *)&c->eblk_ret;
+#else
             c->coll_eitem  = (void *)elem_array;
             c->coll_ecount = elem_count;
+#endif
             c->coll_resps  = respbuf;
             c->coll_op     = OPERATION_LOP_GET;
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
         } else { /* ENGINE_ENOMEM */
             STATS_NOKEY(c, cmd_lop_get);
+#ifdef USE_EBLOCK_RESULT
+            mc_engine.v1->list_elem_release(mc_engine.v0, c, &c->eblk_ret, EITEM_TYPE_BLOCK);
+#else
             mc_engine.v1->list_elem_release(mc_engine.v0, c, elem_array, elem_count);
+#endif
             free(respbuf);
             if (c->ewouldblock)
                 c->ewouldblock = false;
@@ -9720,6 +9828,11 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
         if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
         else                          out_string(c, "UNREADABLE");
         break;
+#ifdef USE_EBLOCK_RESULT
+    case ENGINE_ENOMEM:
+        out_string(c, "SERVER_ERROR out of memory getting elements");
+        break;
+#endif
     default:
         STATS_NOKEY(c, cmd_lop_get);
         if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
@@ -9727,9 +9840,12 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
         else handle_unexpected_errorcode_ascii(c, ret);
     }
 
+#ifdef USE_EBLOCK_RESULT
+#else
     if (ret != ENGINE_SUCCESS && elem_array != NULL) {
         free((void *)elem_array);
     }
+#endif
 }
 
 static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
