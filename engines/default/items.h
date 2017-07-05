@@ -408,7 +408,11 @@ list_elem_item *list_elem_alloc(struct default_engine *engine,
                                 const int nbytes, const void *cookie);
 
 void list_elem_release(struct default_engine *engine,
+#ifdef USE_EBLOCK_RESULT
+                       eitem *eitem, EITEM_TYPE type);
+#else
                        list_elem_item **elem_array, const int elem_count);
+#endif
 
 ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
                                    const char *key, const size_t nkey,
@@ -426,7 +430,11 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
                                 const char *key, const size_t nkey,
                                 int from_index, int to_index,
                                 const bool delete, const bool drop_if_empty,
+#ifdef USE_EBLOCK_RESULT
+                                eblock_result_t *eblk_ret,
+#else
                                 list_elem_item **elem_array, uint32_t *elem_count,
+#endif
                                 uint32_t *flags, bool *dropped);
 
 ENGINE_ERROR_CODE set_struct_create(struct default_engine *engine,
