@@ -8573,7 +8573,7 @@ static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntok
     if (ntokens == 3) {
         sprintf(buf, "maxconns %d\r\nEND", settings.maxconns);
         out_string(c, buf);
-    } else if (ntokens == 4 && safe_strtol(tokens[COMMAND_TOKEN+2].value, &new_max)) {
+    } else if (ntokens == 4 && safe_strtol(tokens[SUBCOMMAND_TOKEN+1].value, &new_max)) {
         int extra_nfiles = ADMIN_MAX_CONNECTIONS + ZK_CONNECTIONS;
         if (settings.port != 0) {
             extra_nfiles += 2;
@@ -8613,7 +8613,7 @@ static void process_hbtimeout_command(conn *c, token_t *tokens, const size_t nto
         char buf[50];
         sprintf(buf, "hbtimeout %d\r\nEND", arcus_zk_get_hbtimeout());
         out_string(c, buf);
-    } else if (ntokens == 4 && safe_strtoul(tokens[COMMAND_TOKEN+2].value, &hbtimeout)) {
+    } else if (ntokens == 4 && safe_strtoul(tokens[SUBCOMMAND_TOKEN+1].value, &hbtimeout)) {
         if (arcus_zk_set_hbtimeout((int)hbtimeout) == 0)
             out_string(c, "END");
         else
@@ -8633,7 +8633,7 @@ static void process_hbfailstop_command(conn *c, token_t *tokens, const size_t nt
         char buf[50];
         sprintf(buf, "hbfailstop %d\r\nEND", arcus_zk_get_hbfailstop());
         out_string(c, buf);
-    } else if (ntokens == 4 && safe_strtoul(tokens[COMMAND_TOKEN+2].value, &hbfailstop)) {
+    } else if (ntokens == 4 && safe_strtoul(tokens[SUBCOMMAND_TOKEN+1].value, &hbfailstop)) {
         if (arcus_zk_set_hbfailstop((int)hbfailstop) == 0)
             out_string(c, "END");
         else
@@ -9218,7 +9218,7 @@ static void process_logging_command(conn *c, token_t *tokens, const size_t ntoke
 
     if (ntokens > 2 && strcmp(type, "start") == 0) {
         if (ntokens > 3) {
-            fpath = tokens[COMMAND_TOKEN+2].value;
+            fpath = tokens[SUBCOMMAND_TOKEN+1].value;
         }
 
         ret = cmdlog_start(fpath, &already_check);
@@ -9362,7 +9362,7 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
         if (ntokens == 3) {
             standard = LONGQ_STANDARD_DEFAULT;
         } else {
-            if (! safe_strtoul(tokens[COMMAND_TOKEN+2].value, &standard)) {
+            if (! safe_strtoul(tokens[SUBCOMMAND_TOKEN+1].value, &standard)) {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
                 return;
