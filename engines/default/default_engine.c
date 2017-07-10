@@ -396,6 +396,15 @@ default_list_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
+#ifdef USE_EBLOCK_RESULT
+static void
+default_list_elem_release(ENGINE_HANDLE* handle, const void *cookie,
+                          eitem *eitem, EITEM_TYPE type)
+{
+    struct default_engine *engine = get_handle(handle);
+    list_elem_release(engine, eitem, type);
+}
+#else
 static void
 default_list_elem_release(ENGINE_HANDLE* handle, const void *cookie,
                           eitem **eitem_array, const int eitem_count)
@@ -403,6 +412,7 @@ default_list_elem_release(ENGINE_HANDLE* handle, const void *cookie,
     struct default_engine *engine = get_handle(handle);
     list_elem_release(engine, (list_elem_item**)eitem_array, eitem_count);
 }
+#endif
 
 static ENGINE_ERROR_CODE
 default_list_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
@@ -443,7 +453,11 @@ default_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                       const void* key, const int nkey,
                       int from_index, int to_index,
                       const bool delete, const bool drop_if_empty,
+#ifdef USE_EBLOCK_RESULT
+                      eblock_result_t *eblk_ret,
+#else
                       eitem** eitem_array, uint32_t* eitem_count,
+#endif
                       uint32_t* flags, bool* dropped, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
@@ -453,7 +467,11 @@ default_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = list_elem_get(engine, key, nkey, from_index, to_index,
                         delete, drop_if_empty,
+#ifdef USE_EBLOCK_RESULT
+                        eblk_ret,
+#else
                         (list_elem_item**)eitem_array, eitem_count,
+#endif
                         flags, dropped);
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;

@@ -1502,6 +1502,18 @@ static void do_list_elem_free(struct default_engine *engine, list_elem_item *ele
     do_mem_slot_free(engine, elem, ntotal);
 }
 
+#ifdef USE_EBLOCK_RESULT
+static void do_list_elem_release(struct default_engine *engine, eitem *eitem)
+{
+    list_elem_item *elem = (list_elem_item *)eitem;
+    if (elem->refcount != 0) {
+        elem->refcount--;
+    }
+    if (elem->refcount == 0 && elem->next == (list_elem_item *)ADDR_MEANS_UNLINKED) {
+        do_list_elem_free(engine, elem);
+    }
+}
+#else
 static void do_list_elem_release(struct default_engine *engine, list_elem_item *elem)
 {
     if (elem->refcount != 0) {
@@ -1511,6 +1523,7 @@ static void do_list_elem_release(struct default_engine *engine, list_elem_item *
         do_list_elem_free(engine, elem);
     }
 }
+#endif
 
 static list_elem_item *do_list_elem_find(list_meta_info *info, int index)
 {
@@ -1616,23 +1629,40 @@ static ENGINE_ERROR_CODE do_list_elem_get(struct default_engine *engine,
                                           list_meta_info *info,
                                           const int index, const uint32_t count,
                                           const bool forward, const bool delete,
+#ifdef USE_EBLOCK_RESULT
+                                          eblock_result_t *eblk_ret)
+#else
                                           list_elem_item **elem_array, uint32_t *elem_count)
+#endif
 {
     uint32_t fcnt = 0; /* found count */
     list_elem_item *tobe;
     list_elem_item *elem;
 
+#ifdef USE_EBLOCK_RESULT
+    if (!eblk_prepare(eblk_ret, (count == 0 || count > info->ccnt) ? info->ccnt : count))
+        return ENGINE_ENOMEM;
+#endif
     elem = do_list_elem_find(info, index);
     while (elem != NULL) {
         tobe = (forward ? elem->next : elem->prev);
         elem->refcount++;
+#ifdef USE_EBLOCK_RESULT
+        eblk_add_elem(eblk_ret, elem);
+        fcnt++;
+#else
         elem_array[fcnt++] = elem;
+#endif
         if (delete) do_list_elem_unlink(engine, info, elem, ELEM_DELETE_NORMAL);
         if (count > 0 && fcnt >= count) break;
         elem = tobe;
     }
 
+#ifdef USE_EBLOCK_RESULT
+    eblk_truncate(eblk_ret);
+#else
     *elem_count = fcnt;
+#endif
     if (fcnt > 0) {
         return ENGINE_SUCCESS;
     } else {
@@ -6439,6 +6469,13 @@ list_elem_item *list_elem_alloc(struct default_engine *engine,
     return elem;
 }
 
+#ifdef USE_EBLOCK_RESULT
+void list_elem_release(struct default_engine *engine,
+                       eitem *eitem, EITEM_TYPE type)
+{
+    do_coll_elem_release(engine, eitem, type, do_list_elem_release);
+}
+#else
 void list_elem_release(struct default_engine *engine,
                        list_elem_item **elem_array, const int elem_count)
 {
@@ -6453,6 +6490,7 @@ void list_elem_release(struct default_engine *engine,
     }
     pthread_mutex_unlock(&engine->cache_lock);
 }
+#endif
 
 ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
                                    const char *key, const size_t nkey,
@@ -6565,7 +6603,11 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
                                 const char *key, const size_t nkey,
                                 int from_index, int to_index,
                                 const bool delete, const bool drop_if_empty,
+#ifdef USE_EBLOCK_RESULT
+                                eblock_result_t *eblk_ret,
+#else
                                 list_elem_item **elem_array, uint32_t *elem_count,
+#endif
                                 uint32_t *flags, bool *dropped)
 {
     hash_item      *it;
@@ -6587,7 +6629,11 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
                 int  index = from_index;
                 uint32_t count = (forward ? (to_index - from_index + 1)
                                           : (from_index - to_index + 1));
+#ifdef USE_EBLOCK_RESULT
+                ret = do_list_elem_get(engine, info, index, count, forward, delete, eblk_ret);
+#else
                 ret = do_list_elem_get(engine, info, index, count, forward, delete, elem_array, elem_count);
+#endif
                 if (ret == ENGINE_SUCCESS) {
                     if (info->ccnt == 0 && drop_if_empty) {
                         assert(delete == true);
@@ -6597,7 +6643,11 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
                         *dropped = false;
                     }
                     *flags = it->flags;
+#ifdef USE_EBLOCK_RESULT
+                } /* ret = ENGINE_ENOMEM or ENGINE_ELEM_ENOENT */
+#else
                 } /* ret = ENGINE_ELEM_ENOENT */
+#endif
             }
         } while (0);
         do_item_release(engine, it);
