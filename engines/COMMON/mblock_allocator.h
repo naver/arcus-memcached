@@ -34,5 +34,5 @@ void mblock_list_free(uint32_t blck_cnt, mem_block_t *head_blk, mem_block_t *tai
 bool eblk_prepare(eblock_result_t *result, uint32_t elem_count);
 void eblk_truncate(eblock_result_t *result);
 void eblk_add_elem(eblock_result_t *result, eitem *elem);
-
+void eblk_add_elem_with_posi(eblock_result_t *result, eitem *elem, int posi);
 #endif

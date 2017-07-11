@@ -530,7 +530,11 @@ btree_elem_item *btree_elem_alloc(struct default_engine *engine,
                                   const void *cookie);
 
 void btree_elem_release(struct default_engine *engine,
+#ifdef USE_EBLOCK_RESULT
+                        eitem *eitem, EITEM_TYPE type);
+#else
                         btree_elem_item **elem_array, const int elem_count);
+#endif
 
 ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
                                     const char *key, const size_t nkey,
@@ -562,7 +566,11 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
                                  const bkey_range *bkrange, const eflag_filter *efilter,
                                  const uint32_t offset, const uint32_t req_count,
                                  const bool delete, const bool drop_if_empty,
+#ifdef USE_EBLOCK_RESULT
+                                 eblock_result_t *eblk_ret,
+#else
                                  btree_elem_item **elem_array, uint32_t *elem_count,
+#endif
                                  uint32_t *access_count,
                                  uint32_t *flags, bool *dropped_trimmed);
 
@@ -579,13 +587,22 @@ ENGINE_ERROR_CODE btree_posi_find_with_get(struct default_engine *engine,
                                            const char *key, const size_t nkey,
                                            const bkey_range *bkrange, ENGINE_BTREE_ORDER order,
                                            const int count, int *position,
+#ifdef USE_EBLOCK_RESULT
+                                           eblock_result_t *eblk_ret,
+#else
                                            btree_elem_item **elem_array, uint32_t *elem_count,
+#endif
                                            uint32_t *elem_index, uint32_t *flags);
 
 ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
                                   const char *key, const size_t nkey,
+#ifdef USE_EBLOCK_RESULT
+                                  ENGINE_BTREE_ORDER order, uint32_t from_posi, uint32_t to_posi,
+                                  eblock_result_t *eblk_ret, uint32_t *flags);
+#else
                                   ENGINE_BTREE_ORDER order, int from_posi, int to_posi,
                                   btree_elem_item **elem_array, uint32_t *elem_count, uint32_t *flags);
+#endif
 
 #ifdef SUPPORT_BOP_SMGET
 #ifdef JHPARK_OLD_SMGET_INTERFACE
@@ -594,8 +611,13 @@ ENGINE_ERROR_CODE btree_elem_smget_old(struct default_engine *engine,
                                    token_t *key_array, const int key_count,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
                                    const uint32_t offset, const uint32_t count,
+#ifdef USE_EBLOCK_RESULT
+                                   eblock_result_t *eblk_ret, uint32_t *kfnd_array,
+                                   uint32_t *flag_array,
+#else
                                    btree_elem_item **elem_array, uint32_t *kfnd_array,
                                    uint32_t *flag_array, uint32_t *elem_count,
+#endif
                                    uint32_t *missed_key_array, uint32_t *missed_key_count,
                                    bool *trimmed, bool *duplicated);
 #endif

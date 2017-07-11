@@ -310,6 +310,17 @@ extern "C" {
         uint32_t flag;  /* item flags */
     } smget_ehit_t;
 
+#ifdef USE_EBLOCK_RESULT
+    typedef struct _eblock_result_t {
+      struct _mem_block_t *head_blk; /* head block pointer */
+      struct _mem_block_t *tail_blk; /* tail block pointer */
+      struct _mem_block_t *last_blk; /* last block pointer */
+      uint32_t elem_cnt;             /* element count */
+      uint32_t blck_cnt;             /* block   count */
+      uint32_t num_keys;             /* for multiget */
+    } eblock_result_t;
+#endif
+
     /* Key info of the missed/trimmed keys in smget */
     typedef struct {
         uint16_t kidx;  /* key index in keys array */
@@ -318,7 +329,11 @@ extern "C" {
 
     /* smget result structure */
     typedef struct {
+#ifdef USE_EBLOCK_RESULT
+        eblock_result_t *eblk_ret; /* found elements in smget */
+#else
         eitem       **elem_array; /* found elements in smget */
+#endif
         smget_ehit_t *elem_kinfo; /* key info of found elements */
         smget_emis_t *miss_kinfo; /* key info of missed keys */
         smget_emis_t *trim_kinfo; /* key info of trimmed keys */
@@ -367,12 +382,29 @@ extern "C" {
 #ifdef USE_EBLOCK_RESULT
 #define EITEMS_PER_BLOCK 1023
 
+#define EBLOCK_HEAD(b)       ((b)->head_blk)
+#define EBLOCK_ELEM_LAST(b)  ((b)->tail_blk->items[(EBLOCK_ELEM_COUNT(b) - 1) % EITEMS_PER_BLOCK])
 #define EBLOCK_ELEM_COUNT(b) ((b)->elem_cnt)
+#define EBLOCK_NKEY_COUNT(b) ((b)->num_keys)
+#define EBLOCK_MGET_INIT(b, k)         \
+    do {                               \
+        (b)->head_blk = NULL;          \
+        (b)->tail_blk = NULL;          \
+        (b)->elem_cnt = 0;             \
+        (b)->blck_cnt = 0;             \
+        (b)->num_keys = (k);           \
+    } while(0)                         \
+
 #define EBLOCK_SCAN_INIT(b, s)         \
     do {                               \
         (s)->blk = (b)->head_blk;      \
         (s)->tot = (b)->elem_cnt;      \
         (s)->idx = 0;                  \
+    } while(0)                         \
+
+#define EBLOCK_MSCAN_NEXT(b, s)        \
+    do {                               \
+        (s)->tot = (b)->elem_cnt;      \
     } while(0)                         \
 
 #define EBLOCK_SCAN_NEXT(s, e)                                               \
@@ -395,14 +427,6 @@ extern "C" {
       eitem* items[EITEMS_PER_BLOCK];
       struct _mem_block_t *next;
     } mem_block_t;
-
-    typedef struct _eblock_result_t {
-      struct _mem_block_t *head_blk; /* head block pointer */
-      struct _mem_block_t *tail_blk; /* tail block pointer */
-      struct _mem_block_t *last_blk; /* last block pointer */
-      uint32_t elem_cnt;             /* element count */
-      uint32_t blck_cnt;             /* block   count */
-    } eblock_result_t;
 
     typedef struct _eblock_scan_t {
         mem_block_t *blk;            /* current block pointer */

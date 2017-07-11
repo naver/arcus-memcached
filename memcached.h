@@ -495,7 +495,10 @@ struct conn {
     /* collection processing fields */
     void        *coll_eitem;
     char        *coll_resps;
+#ifdef USE_EBLOCK_RESULT
+#else
     int          coll_ecount;
+#endif
     ENGINE_COLL_OPERATION coll_op;
     char        *coll_key;
     int          coll_nkey;

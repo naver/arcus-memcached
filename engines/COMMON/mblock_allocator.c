@@ -223,6 +223,7 @@ void mblock_list_free(uint32_t blck_cnt, mem_block_t *head_blk, mem_block_t *tai
         free(bye_helper);
     }*/
 }
+
 bool eblk_prepare(eblock_result_t *result, uint32_t elem_count) {
     assert(elem_count > 0);
     uint32_t blkcnt = ((elem_count - 1) / EITEMS_PER_BLOCK) + 1;
@@ -234,6 +235,7 @@ bool eblk_prepare(eblock_result_t *result, uint32_t elem_count) {
     result->blck_cnt = blkcnt;
     return true;
 }
+
 void eblk_truncate(eblock_result_t *result) {
     assert(result->last_blk->next == NULL);
     /* returns empty blocklist */
@@ -267,4 +269,15 @@ void eblk_add_elem(eblock_result_t *result, eitem *elem) {
     }
 
     result->tail_blk->items[result->elem_cnt++ % EITEMS_PER_BLOCK] = (eitem *)elem;
+}
+
+void eblk_add_elem_with_posi(eblock_result_t *result, eitem *elem, int posi) {
+    /* This function should not be used when there are multiple blocks. */
+    assert(result->blck_cnt == 1);
+    if (result->tail_blk == NULL) {
+        result->tail_blk = result->head_blk;
+        result->elem_cnt = 0;
+    }
+    result->tail_blk->items[posi % EITEMS_PER_BLOCK] = (eitem *)elem;
+    result->elem_cnt++;
 }
