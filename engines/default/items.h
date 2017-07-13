@@ -559,7 +559,7 @@ ENGINE_ERROR_CODE btree_posi_find_with_get(struct default_engine *engine,
 
 ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
                                   const char *key, const size_t nkey,
-                                  ENGINE_BTREE_ORDER order, int from_posi, int to_posi,
+                                  ENGINE_BTREE_ORDER order, uint32_t from_posi, uint32_t to_posi,
                                   btree_elem_item **elem_array, uint32_t *elem_count, uint32_t *flags);
 
 #ifdef SUPPORT_BOP_SMGET
