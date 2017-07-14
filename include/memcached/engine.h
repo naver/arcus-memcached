@@ -593,11 +593,10 @@ extern "C" {
         ENGINE_ERROR_CODE (*btree_elem_get_by_posi)(ENGINE_HANDLE *handle, const void* cookie,
                                              const char *key, const size_t nkey,
                                              ENGINE_BTREE_ORDER order,
-#ifdef USE_EBLOCK_RESULT
                                              uint32_t from_posi, uint32_t to_posi,
+#ifdef USE_EBLOCK_RESULT
                                              eblock_result_t *eblk_ret,
 #else
-                                             int from_posi, int to_posi,
                                              eitem **eitem_array, uint32_t *eitem_count,
 #endif
                                              uint32_t *flags, uint16_t vbucket);
