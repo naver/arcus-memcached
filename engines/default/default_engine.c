@@ -905,7 +905,7 @@ default_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     ret = btree_elem_get(engine, key, nkey, bkrange, efilter,
                          offset, req_count, delete, drop_if_empty,
 #ifdef USE_EBLOCK_RESULT
-                         eblk_ret,
+                         eblk_ret, EBLOCK_RESULT_SINGLE,
 #else
                          (btree_elem_item**)eitem_array, eitem_count,
 #endif
@@ -913,6 +913,26 @@ default_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
+
+#ifdef USE_EBLOCK_RESULT
+static ENGINE_ERROR_CODE
+default_btree_elem_mget(ENGINE_HANDLE* handle, const void* cookie,
+                        const token_t *key_tokens,
+                        const bkey_range *bkrange, const eflag_filter *efilter,
+                        const uint32_t offset, const uint32_t req_count,
+                        eblock_result_t *eblk_ret, uint32_t *access_count,
+                        uint16_t vbucket)
+{
+    struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    ret = btree_elem_mget(engine, key_tokens, bkrange, efilter,
+                          offset, req_count,
+                          eblk_ret, access_count);
+    return ret;
+}
+#endif
 
 static ENGINE_ERROR_CODE
 default_btree_elem_count(ENGINE_HANDLE* handle, const void* cookie,
@@ -1638,6 +1658,9 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .btree_elem_delete  = default_btree_elem_delete,
          .btree_elem_arithmetic  = default_btree_elem_arithmetic,
          .btree_elem_get     = default_btree_elem_get,
+#ifdef USE_EBLOCK_RESULT
+         .btree_elem_mget    = default_btree_elem_mget,
+#endif
          .btree_elem_count   = default_btree_elem_count,
          .btree_posi_find    = default_btree_posi_find,
          .btree_posi_find_with_get = default_btree_posi_find_with_get,

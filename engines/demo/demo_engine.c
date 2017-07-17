@@ -587,6 +587,19 @@ Demo_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     return ENGINE_ENOTSUP;
 }
 
+#ifdef USE_EBLOCK_RESULT
+static ENGINE_ERROR_CODE
+Demo_btree_elem_mget(ENGINE_HANDLE* handle, const void*cookie,
+                     const token_t *key_tokens,
+                     const bkey_range *bkrange, const eflag_filter *efilter,
+                     const uint32_t offset, const uint32_t req_count,
+                     eblock_result_t *eblk_ret, uint32_t *access_count,
+                     uint16_t vbucket)
+{
+    return ENGINE_ENOTSUP;
+}
+#endif
+
 static ENGINE_ERROR_CODE
 Demo_btree_elem_count(ENGINE_HANDLE* handle, const void* cookie,
                          const void* key, const int nkey,
@@ -858,6 +871,9 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .btree_elem_delete  = Demo_btree_elem_delete,
          .btree_elem_arithmetic  = Demo_btree_elem_arithmetic,
          .btree_elem_get     = Demo_btree_elem_get,
+#ifdef USE_EBLOCK_RESULT
+         .btree_elem_mget    = Demo_btree_elem_mget,
+#endif
          .btree_elem_count   = Demo_btree_elem_count,
          .btree_posi_find    = Demo_btree_posi_find,
          .btree_posi_find_with_get = Demo_btree_posi_find_with_get,

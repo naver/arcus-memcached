@@ -567,12 +567,21 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
                                  const uint32_t offset, const uint32_t req_count,
                                  const bool delete, const bool drop_if_empty,
 #ifdef USE_EBLOCK_RESULT
-                                 eblock_result_t *eblk_ret,
+                                 eblock_result_t *eblk_ret, EBLOCK_RESULT_TYPE eblk_type,
 #else
                                  btree_elem_item **elem_array, uint32_t *elem_count,
 #endif
                                  uint32_t *access_count,
                                  uint32_t *flags, bool *dropped_trimmed);
+
+#ifdef USE_EBLOCK_RESULT
+ENGINE_ERROR_CODE btree_elem_mget(struct default_engine *engine,
+                                  const token_t *key_tokens,
+                                  const bkey_range *bkrange, const eflag_filter *efilter,
+                                  const uint32_t offset, const uint32_t req_count,
+                                  eblock_result_t *eblk_ret,
+                                  uint32_t *access_count);
+#endif
 
 ENGINE_ERROR_CODE btree_elem_count(struct default_engine *engine,
                                    const char *key, const size_t nkey,

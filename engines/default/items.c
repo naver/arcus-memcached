@@ -4477,7 +4477,7 @@ static ENGINE_ERROR_CODE do_btree_elem_get(struct default_engine *engine, btree_
                                            const int bkrtype, const bkey_range *bkrange, const eflag_filter *efilter,
                                            const uint32_t offset, const uint32_t count, const bool delete,
 #ifdef USE_EBLOCK_RESULT
-                                           eblock_result_t *eblk_ret,
+                                           eblock_result_t *eblk_ret, EBLOCK_RESULT_TYPE eblk_type,
 #else
                                            btree_elem_item **elem_array, uint32_t *elem_count,
 #endif
@@ -4491,19 +4491,25 @@ static ENGINE_ERROR_CODE do_btree_elem_get(struct default_engine *engine, btree_
 
     *potentialbkeytrim = false;
 
-#ifdef USE_EBLOCK_RESULT
-    if (EBLOCK_HEAD(eblk_ret) == NULL) {
-        uint32_t max_cnt   = (EBLOCK_NKEY_COUNT(eblk_ret) > 1) ? max_btree_size : info->ccnt;
-        uint32_t need_size = (count > 0 && count < max_cnt) ? count : max_cnt;
-        if (!eblk_prepare(eblk_ret, need_size * EBLOCK_NKEY_COUNT(eblk_ret)))
-            return ENGINE_ENOMEM;
-    }
-#endif
     if (info->root == NULL) {
         if (access_count)
             *access_count = 0;
         return ENGINE_ELEM_ENOENT;
     }
+
+#ifdef USE_EBLOCK_RESULT
+    if (eblk_type == EBLOCK_RESULT_SINGLE) {
+        if (!eblk_prepare(eblk_ret, (count > 0 && count < info->ccnt) ? count : info->ccnt))
+            return ENGINE_ENOMEM;
+    } else { /* EBLOCK_RESULT_MULTI */
+        if (EBLOCK_HEAD(eblk_ret) == NULL) {
+            uint32_t max_cnt   = (EBLOCK_NKEY_COUNT(eblk_ret) > 1) ? max_btree_size : info->ccnt;
+            uint32_t need_size = (count > 0 && count < max_cnt) ? count : max_cnt;
+            if (!eblk_prepare(eblk_ret, need_size * EBLOCK_NKEY_COUNT(eblk_ret)))
+                return ENGINE_ENOMEM;
+        }
+    }
+#endif
 
     assert(info->root->ndepth < BTREE_MAX_DEPTH);
     elem = do_btree_find_first(info->root, bkrtype, bkrange, path, delete);
@@ -4644,6 +4650,8 @@ static ENGINE_ERROR_CODE do_btree_elem_get(struct default_engine *engine, btree_
         *access_count = tot_access;
 
 #ifdef USE_EBLOCK_RESULT
+    if (eblk_type == EBLOCK_RESULT_SINGLE)
+        eblk_truncate(eblk_ret);
 #else
     *elem_count = tot_found;
 #endif
@@ -7243,7 +7251,7 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
                                  const uint32_t offset, const uint32_t req_count,
                                  const bool delete, const bool drop_if_empty,
 #ifdef USE_EBLOCK_RESULT
-                                 eblock_result_t *eblk_ret,
+                                 eblock_result_t *eblk_ret, EBLOCK_RESULT_TYPE eblk_type,
 #else
                                  btree_elem_item **elem_array, uint32_t *elem_count,
 #endif
@@ -7273,8 +7281,8 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
             }
 #ifdef USE_EBLOCK_RESULT
             ret = do_btree_elem_get(engine, info, bkrtype, bkrange, efilter,
-                                    offset, req_count, delete,
-                                    eblk_ret, access_count, &potentialbkeytrim);
+                                    offset, req_count, delete, eblk_ret,
+                                    eblk_type, access_count, &potentialbkeytrim);
 #else
             ret = do_btree_elem_get(engine, info, bkrtype, bkrange, efilter,
                                     offset, req_count, delete, elem_array,
@@ -7305,13 +7313,48 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
         } while (0);
         do_item_release(engine, it);
     }
-#ifdef USE_EBLOCK_RESULT
-    if (--EBLOCK_NKEY_COUNT(eblk_ret) < 1 && EBLOCK_HEAD(eblk_ret) != NULL)
-        eblk_truncate(eblk_ret);
-#endif
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
 }
+
+#ifdef USE_EBLOCK_RESULT
+ENGINE_ERROR_CODE btree_elem_mget(struct default_engine *engine,
+                                  const token_t *key_tokens,
+                                  const bkey_range *bkrange, const eflag_filter *efilter,
+                                  const uint32_t offset, const uint32_t req_count,
+                                  eblock_result_t *eblk_ret,
+                                  uint32_t *access_count)
+{
+    assert (EBLOCK_HEAD(eblk_ret) == NULL);
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    int k;
+    int nkey = EBLOCK_NKEY_COUNT(eblk_ret);
+    uint32_t curr_elem_count = 0;
+    uint32_t curr_access_count = 0;
+
+    for (k = 0; k < nkey; k++) {
+        ret = btree_elem_get(engine, key_tokens[k].value, key_tokens[k].length,
+                             bkrange, efilter, offset, req_count, false, false,
+                             eblk_ret, EBLOCK_RESULT_MULTI, &curr_access_count,
+                             &eblk_ret->flags[k], &eblk_ret->trimmed[k]);
+        if (ret == ENGINE_ENOMEM) { /* eblk_prepare failed */
+            break;
+        } else {
+            eblk_ret->ret[k] = ret;
+            eblk_ret->mecnt[k] = EBLOCK_ELEM_COUNT(eblk_ret) - curr_elem_count;
+            curr_elem_count = EBLOCK_ELEM_COUNT(eblk_ret);
+            access_count += curr_access_count;
+            curr_access_count = 0;
+            if (--EBLOCK_NKEY_COUNT(eblk_ret) < 1) {
+                ret = ENGINE_SUCCESS;
+                if (EBLOCK_HEAD(eblk_ret) != NULL)
+                    eblk_truncate(eblk_ret);
+            }
+        }
+    }
+    return ret;
+}
+#endif
 
 ENGINE_ERROR_CODE btree_elem_count(struct default_engine *engine,
                                    const char *key, const size_t nkey,
