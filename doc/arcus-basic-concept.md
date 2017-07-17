@@ -2,12 +2,12 @@ Arcus Basic Concept
 -------------------
 
 Arcus cache server는 하나의 데이터만을 value로 가지는 simple key-value 외에도
-여러 데이터를 구조화된 형태로 저장하는 colleciton을 하나의 value로 가지는
+여러 데이터를 구조화된 형태로 저장하는 collection을 하나의 value로 가지는
 확장된 key-value 데이터 모델을 제공한다.
 
 ### 기본 제약 사항
 
-Arcus caceh server의 key-value 모델은 아래의 기본 제약 사항을 가진다.
+Arcus cache server의 key-value 모델은 아래의 기본 제약 사항을 가진다.
 
 - 기존 key-value 모델의 제약 사항
   - Key의 최대 크기는 250 character이다.
@@ -48,7 +48,7 @@ Arcus cache server는 simple key-value 외에 collection 지원으로 다양한 
 
 ### Expiration, Eviction, and Sticky
 
-각 cache item은 expireation time 속성을 가지며,
+각 cache item은 expiration time 속성을 가지며,
 이 값의 설정을 통해 expire되지 않는 item 또는 특정 시간 이후에 자동 expire될 item을 지정할 수 있다.
 이에 대한 자세한 설명은 [Item Attribute 설명](/doc/arcus-item-attribute.md)을 참고 바란다.
 
@@ -93,7 +93,7 @@ Slab allocator는 메모리 크기 별로 메모리 공간을 나누어 관리�
   
 **Small Memory Allocator**
 
-Colleciton 지원으로 인해 작은 메모리 공간의 할당과 반환 요청이 많아졌다.
+Collection 지원으로 인해 작은 메모리 공간의 할당과 반환 요청이 많아졌다.
 이러한 작은 메모리 공간을 효율적으로 관리하기 위하여
 small memory allocator를 새로 개발하여 사용하고 있다.
 8000 바이트 이하의 메모리 공간은 small memory allocator가 담당하며,

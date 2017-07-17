@@ -57,7 +57,7 @@ CREATE_SUBDIRS         = NO
 # Croatian, Czech, Danish, Dutch, Farsi, Finnish, French, German, Greek,
 # Hungarian, Italian, Japanese, Japanese-en (Japanese with English messages),
 # Korean, Korean-en, Lithuanian, Norwegian, Macedonian, Persian, Polish,
-# Portuguese, Romanian, Russian, Serbian, Serbian-Cyrilic, Slovak, Slovene,
+# Portuguese, Romanian, Russian, Serbian, Serbian-Cyrillic, Slovak, Slovene,
 # Spanish, Swedish, and Ukrainian.
 
 OUTPUT_LANGUAGE        = English
@@ -278,13 +278,13 @@ TYPEDEF_HIDES_STRUCT   = NO
 # For small to medium size projects (<1000 input files) the default value is
 # probably good enough. For larger projects a too small cache size can cause
 # doxygen to be busy swapping symbols to and from disk most of the time
-# causing a significant performance penality.
+# causing a significant performance penalty.
 # If the system has enough physical memory increasing the cache will improve the
 # performance by keeping more symbols in memory. Note that the value works on
 # a logarithmic scale so increasing the size by one will rougly double the
 # memory usage. The cache size is given by this formula:
 # 2^(16+SYMBOL_CACHE_SIZE). The valid range is 0..9, the default is 0,
-# corresponding to a cache size of 2^16 = 65536 symbols
+# corresponding to a cache size of 2^16 = 65536 symbols.
 
 SYMBOL_CACHE_SIZE      = 0
 
@@ -532,7 +532,7 @@ WARN_IF_UNDOCUMENTED   = YES
 
 WARN_IF_DOC_ERROR      = YES
 
-# This WARN_NO_PARAMDOC option can be abled to get warnings for
+# This WARN_NO_PARAMDOC option can be enabled to get warnings for
 # functions that are documented, but have no documentation for their parameters
 # or return value. If set to NO (the default) doxygen will only warn about
 # wrong or incomplete parameter documentation, but not about the absence of
@@ -907,7 +907,8 @@ QHP_VIRTUAL_FOLDER     = doc
 
 QHP_CUST_FILTER_NAME   =
 
-# The QHP_CUST_FILT_ATTRS tag specifies the list of the attributes of the custom filter to add.For more information please see
+# The QHP_CUST_FILT_ATTRS tag specifies the list of the attributes of the custom filter to add.
+# For more information please see
 # <a href="http://doc.trolltech.com/qthelpproject.html#custom-filters">Qt Help Project / Custom Filters</a>.
 
 QHP_CUST_FILTER_ATTRS  =
@@ -1311,7 +1312,7 @@ PERL_PATH              = @PERL@
 #---------------------------------------------------------------------------
 
 # If the CLASS_DIAGRAMS tag is set to YES (the default) Doxygen will
-# generate a inheritance diagram (in HTML, RTF and LaTeX) for classes with base
+# generate an inheritance diagram (in HTML, RTF and LaTeX) for classes with base
 # or super classes. Setting the tag to NO turns the diagrams off. Note that
 # this option is superseded by the HAVE_DOT option below. This is only a
 # fallback. It is recommended to install and use dot, since it yields more
@@ -1456,7 +1457,7 @@ DOTFILE_DIRS           =
 # The DOT_GRAPH_MAX_NODES tag can be used to set the maximum number of
 # nodes that will be shown in the graph. If the number of nodes in a graph
 # becomes larger than this value, doxygen will truncate the graph, which is
-# visualized by representing a node as a red box. Note that doxygen if the
+# visualized by representing a node as a red box. Note that if the
 # number of direct children of the root node in a graph is already larger than
 # DOT_GRAPH_MAX_NODES then the graph will not be shown at all. Also note
 # that the size of a graph can be further restricted by MAX_DOT_GRAPH_DEPTH.

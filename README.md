@@ -1,4 +1,4 @@
-## arcus-memcached : Arcus Memory Cache Server
+## arcus-memcached : Arcus Memory Cache Server [![Build Status](https://travis-ci.org/naver/arcus-memcached.svg?branch=develop)](https://travis-ci.org/naver/arcus-memcached)
 
 Arcus is a memcached-based cache cloud developed by NAVER Corp.
 Memcached has been heavily modified to support functional and performance
@@ -7,7 +7,7 @@ Arcus is normally positioned in front of a back-end storage, such as DB,
 where it stores/retrieves hot-spot data of service applications using fast main memory.
 Therefore, Arcus provides very fast data access for service applications
 and reduces the load on back-end storage.
-In addition, Arcus can serve as fast shared storage.  Remote services processes
+In addition, Arcus can serve as a fast shared storage.  Remote service processes
 usually store complex query results, computation-intensive results, and intermediate results
 of web processing in Arcus cache cloud so any process can access them.
 
@@ -69,7 +69,7 @@ Important start options are here.
 - The scrub command is provided as an ASCII command extension.
   To use the command, use `-X` to specify the location of ascii_scrub.so library.
 
-To see details on arcus-memcached start options, run memcache with -h option like below.
+To see details on arcus-memcached start options, run memcached with -h option like below.
 ```
 $ <arcus_install_path>/bin/memcached -h
 ```

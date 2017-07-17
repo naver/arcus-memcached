@@ -57,7 +57,7 @@ Response string과 그 의미는 아래와 같다.
 - "STROED" - 성공 (element만 삽입)
 - “CREATED_STORED” - 성공 (collection 생성하고 element 삽입)
 - “NOT_FOUND” - key miss
-- “TYPE_MISMATCH” - 해당 item이 set colleciton이 아님
+- “TYPE_MISMATCH” - 해당 item이 set collection이 아님
 - “OVERFLOWED” - overflow 발생
 - "ELEMENT_EXISTS" - 동일 데이터를 가진 element가 존재. set uniqueness 위배
 - "NOT_SUPPORTED" - 지원하지 않음
@@ -87,7 +87,7 @@ Response string과 그 의미는 아래와 같다.
 - “DELETED_DROPPED” - 성공 (element 삭제하고 collection을 drop한 상태)
 - “NOT_FOUND” - key miss
 - “NOT_FOUND_ELEMENT” - element miss (삭제할 element가 없음)
-- “TYPE_MISMATCH” - 해당 item이 set colleciton이 아님
+- “TYPE_MISMATCH” - 해당 item이 set collection이 아님
 - "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “CLIENT_ERROR too large value” - 삭제할 데이터가 4KB 보다 큼
@@ -140,20 +140,20 @@ sop exist <key> <bytes> [pipe]\r\n<data>\r\n
 ```
 
 - \<key\> - 대상 item의 key string
-- \<bytes\>와 \<data\> - 존재 유무를 검사할 데이터의 길의와 데이터 그 자체 (최대 4KB)
+- \<bytes\>와 \<data\> - 존재 유무를 검사할 데이터의 길이와 데이터 그 자체 (최대 4KB)
 - pipe - 명시하면, response string을 전달받지 않는다. 
          [Command Pipelining](/doc/command-pipelining.md)을 참조 바란다.
 
 Response string과 그 의미는 아래와 같다.
 
 - “EXIST" - 성공 (주어진 데이터가 set에 존재)
-- "NOT_EXIST" - 성공 (주어진 데이타가 set에 존재하지 않음)
+- "NOT_EXIST" - 성공 (주어진 데이터가 set에 존재하지 않음)
 - “NOT_FOUND”	- key miss
 - “TYPE_MISMATCH”	- 해당 item이 set collection이 아님
 - “UNREADABLE” - 해당 item이 unreadable item임
 - "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
-- “CLIENT_ERROR too large value” : 주어진 데이타가 4KB 보다 큼
-- “CLIENT_ERROR bad data chunk” : 주어진 데이티의 길이가 \<bytes\>와 다르거나 “\r\n”으로 끝나지 않음
+- “CLIENT_ERROR too large value” : 주어진 데이터가 4KB 보다 큼
+- “CLIENT_ERROR bad data chunk” : 주어진 데이터의 길이가 \<bytes\>와 다르거나 “\r\n”으로 끝나지 않음
  
 

@@ -8,6 +8,7 @@ Admin & Monitoring 명령
 - CMDLOG 명령
 - LQDETECT 명령
 - KEY DUMP 명령
+- ZKENSEMBLE 명령
 - HELP 명령
 
 ### Flush 명령
@@ -110,7 +111,7 @@ stats [<args>]\r\n
  prefixes           | Prefix 별 item 통계 정보 조회
  detail on|off|dump | Prefix 별 수행 명령 통계 정보 조회 및 제어
  scrub              | scrub 수행 상태 조회
- cachedump          | slab calss 별 cache key dump
+ cachedump          | slab class 별 cache key dump
  reset              | 모든 통계 정보를 reset
 ``` 
 
@@ -480,6 +481,19 @@ DUMP SUMMARY: { prefix=<prefix>, count=<count>, total=<total> elapsed=<elapsed> 
   - \<count\>는 dump한 key 개수이다.
   - \<total\>은 cache에 있는 전체 key 개수이다.
   - \<elapsed\>는 dump하는 데 소요된 시간(단위: 초) 이다.
+
+### Zkensemble 명령
+
+Arcus cache server가 연결되어 있는 ZooKeeper ensemble 설정에 대한 명령을 제공한다.
+
+```
+zkensemble set <ensemble_list>\r\n
+zkensemble get\r\n
+```
+
+set 명령은 ZK ensemble 주소를 변경한다. ensemble_list는 \<ip:port\>,...,\<ip:port\>  와 같은 ZK server 들의 list 형태 혹은 ZK ensemble의 도메인 주소 형태로 지정할 수 있다.
+
+get 명령은 ZK ensemble 주소를 조회한다. 조회 결과는 \<ip:port\>,...,\<ip:port\> 형식으로 확인할 수 있다.
 
 ### Help 명령
 
