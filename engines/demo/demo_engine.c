@@ -593,8 +593,8 @@ Demo_btree_elem_mget(ENGINE_HANDLE* handle, const void*cookie,
                      const token_t *key_tokens,
                      const bkey_range *bkrange, const eflag_filter *efilter,
                      const uint32_t offset, const uint32_t req_count,
-                     eblock_result_t *eblk_ret, uint32_t *access_count,
-                     uint16_t vbucket)
+                     eblock_result_t *eblk_ret, uint32_t numkeys,
+                     uint32_t *access_count, uint16_t vbucket)
 {
     return ENGINE_ENOTSUP;
 }

@@ -2257,6 +2257,7 @@ static void process_bop_mget_complete(conn *c) {
     {
 #ifdef USE_EBLOCK_RESULT
         uint32_t e, k = 0;
+        uint32_t cur_elem_count;
         eitem_info info;
         char *resultptr;
         char *valuestrp;
@@ -2283,11 +2284,12 @@ static void process_bop_mget_complete(conn *c) {
                                            key_tokens, &c->coll_bkrange,
                                            (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
                                            c->coll_roffset, c->coll_rcount,
-                                           &c->eblk_ret, &tot_access_count, 0);
+                                           &c->eblk_ret, c->coll_numkeys, &tot_access_count, 0);
         EBLOCK_SCAN_INIT(&c->eblk_ret, &eblk_sc);
         if (ret == ENGINE_SUCCESS) {
             for (k = 0; k < c->coll_numkeys; k++) {
                 ret = c->eblk_ret.ret[k];
+                cur_elem_count = c->eblk_ret.cur_ecnt[k];
 
                 if (settings.detail_enabled) {
                     stats_prefix_record_bop_get(key_tokens[k].value, key_tokens[k].length,
@@ -2296,7 +2298,7 @@ static void process_bop_mget_complete(conn *c) {
 
                 if (ret == ENGINE_SUCCESS) {
                     sprintf(resultptr, " %s %u %u\r\n",
-                            (c->eblk_ret.trimmed[k]==false ? "OK" : "TRIMMED"), htonl(c->eblk_ret.flags[k]), (c->eblk_ret.mecnt[k]));
+                            (c->eblk_ret.trimmed[k]==false ? "OK" : "TRIMMED"), htonl(c->eblk_ret.flags[k]), cur_elem_count);
                     if ((add_iov(c, valuestrp, nvaluestr) != 0) ||
                         (add_iov(c, key_tokens[k].value, key_tokens[k].length) != 0) ||
                         (add_iov(c, resultptr, strlen(resultptr)) != 0)) {
@@ -2305,7 +2307,7 @@ static void process_bop_mget_complete(conn *c) {
                     }
                     resultptr += strlen(resultptr);
 
-                    for (e = 0; e < c->eblk_ret.mecnt[k]; e++) {
+                    for (e = 0; e < cur_elem_count; e++) {
                         EBLOCK_SCAN_NEXT(&eblk_sc, elem);
                         mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                                     elem, &info);
@@ -2479,7 +2481,7 @@ static void process_bop_mget_complete(conn *c) {
         STATS_NOKEY2(c, cmd_bop_mget, bop_mget_oks);
         /* Remember this command so we can garbage collect it later */
 #ifdef USE_EBLOCK_RESULT
-        /* c->coll_resps  = c->eblk_ret.mecnt; */
+        /* c->coll_resps  = c->eblk_ret.cur_ecnt; */
         c->coll_eitem  = (void *)&c->eblk_ret;
 #else
         /* c->coll_eitem  = (void *)elem_array; */

@@ -316,12 +316,12 @@ extern "C" {
       struct _mem_block_t *head_blk; /* head block pointer */
       struct _mem_block_t *tail_blk; /* tail block pointer */
       struct _mem_block_t *last_blk; /* last block pointer */
-      uint32_t elem_cnt;             /* element count */
-      uint32_t blck_cnt;             /* block   count */
+      uint32_t elem_cnt;             /* total element count */
+      uint32_t blck_cnt;             /* block count */
 
       /* for multiget */
       uint32_t num_keys;              /* number of keys */
-      uint32_t *mecnt;                /* elem count array for individual keys */
+      uint32_t *cur_ecnt;             /* elem count array for individual keys */
       uint32_t *flags;                /* flag array for individual keys */
       bool     *trimmed;              /* trim check array for individual keys */
       ENGINE_ERROR_CODE *ret;         /* engine error code for individual keys */
@@ -400,11 +400,11 @@ extern "C" {
         (b)->elem_cnt = 0;                                                              \
         (b)->blck_cnt = 0;                                                              \
         (b)->num_keys = (k);                                                            \
-        (b)->mecnt    = (uint32_t*)(p);                                                 \
-        (b)->flags    = (uint32_t*)((char*)(b)->mecnt + (sizeof(uint32_t)*(k)));        \
+        (b)->cur_ecnt = (uint32_t*)(p);                                                 \
+        (b)->flags    = (uint32_t*)((char*)(b)->cur_ecnt + (sizeof(uint32_t)*(k)));     \
         (b)->trimmed  = (bool*)((char*)(b)->flags + (sizeof(uint32_t)*(k)));            \
         (b)->ret      = (ENGINE_ERROR_CODE*)((char*)(b)->trimmed + (sizeof(bool)*(k))); \
-    } while(0)                                                    \
+    } while(0)                                                                          \
 
 #define EBLOCK_SCAN_INIT(b, s)         \
     do {                               \

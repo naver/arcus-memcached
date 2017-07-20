@@ -7322,29 +7322,28 @@ ENGINE_ERROR_CODE btree_elem_mget(struct default_engine *engine,
                                   const token_t *key_tokens,
                                   const bkey_range *bkrange, const eflag_filter *efilter,
                                   const uint32_t offset, const uint32_t req_count,
-                                  eblock_result_t *eblk_ret,
+                                  eblock_result_t *eblk_ret, uint32_t numkeys,
                                   uint32_t *access_count)
 {
     assert (EBLOCK_HEAD(eblk_ret) == NULL);
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     int k;
-    int nkey = EBLOCK_NKEY_COUNT(eblk_ret);
-    uint32_t curr_elem_count = 0;
-    uint32_t curr_access_count = 0;
+    uint32_t cur_elem_count = 0;
+    uint32_t cur_access_count = 0;
 
-    for (k = 0; k < nkey; k++) {
+    for (k = 0; k < numkeys; k++) {
         ret = btree_elem_get(engine, key_tokens[k].value, key_tokens[k].length,
                              bkrange, efilter, offset, req_count, false, false,
-                             eblk_ret, EBLOCK_RESULT_MULTI, &curr_access_count,
+                             eblk_ret, EBLOCK_RESULT_MULTI, &cur_access_count,
                              &eblk_ret->flags[k], &eblk_ret->trimmed[k]);
         if (ret == ENGINE_ENOMEM) { /* eblk_prepare failed */
             break;
         } else {
             eblk_ret->ret[k] = ret;
-            eblk_ret->mecnt[k] = EBLOCK_ELEM_COUNT(eblk_ret) - curr_elem_count;
-            curr_elem_count = EBLOCK_ELEM_COUNT(eblk_ret);
-            access_count += curr_access_count;
-            curr_access_count = 0;
+            eblk_ret->cur_ecnt[k] = EBLOCK_ELEM_COUNT(eblk_ret) - cur_elem_count;
+            cur_elem_count = EBLOCK_ELEM_COUNT(eblk_ret);
+            access_count += cur_access_count;
+            cur_access_count = 0;
             if (--EBLOCK_NKEY_COUNT(eblk_ret) < 1) {
                 ret = ENGINE_SUCCESS;
                 if (EBLOCK_HEAD(eblk_ret) != NULL)
