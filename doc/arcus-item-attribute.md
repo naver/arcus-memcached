@@ -61,9 +61,9 @@ Sticky item 또한 expiretime 속성으로 지정한다.
 
 - -1 : sticky item으로 설정
 - 0	: never expired item으로 설정, 그러나 메모리 부족 시에 evict될 수 있다.
-- X <= (60*60*24*30) : 30일 이하의 값이면, 실제 expiration time은 "현재 시간 + X(초)"로 결정된다.
+- X <= (60 * 60 * 24 * 30) : 30일 이하의 값이면, 실제 expiration time은 "현재 시간 + X(초)"로 결정된다.
                        -2 이하이면, 그 즉시 expire 된다.
-- X > (60*60*24*30) : 30일 초과의 값이면, 실제 expiration time은 "X"로 결정된다.
+- X > (60 * 60 * 24 * 30) : 30일 초과의 값이면, 실제 expiration time은 "X"로 결정된다.
                       이 경우, X를 unix time으로 인식하여 expiration time으로 설정하는 것이며,
                       X가 현재 시간보다 작으면 그 즉시 expire 된다.
 
