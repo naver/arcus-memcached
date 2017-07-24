@@ -590,10 +590,10 @@ Demo_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
 #ifdef USE_EBLOCK_RESULT
 static ENGINE_ERROR_CODE
 Demo_btree_elem_mget(ENGINE_HANDLE* handle, const void*cookie,
-                     const token_t *key_tokens,
+                     const token_t *key_tokens, uint32_t numkeys,
                      const bkey_range *bkrange, const eflag_filter *efilter,
                      const uint32_t offset, const uint32_t req_count,
-                     eblock_result_t *eblk_ret, uint32_t numkeys,
+                     eblock_result_t *eblk_ret,
                      uint32_t *access_count, uint16_t vbucket)
 {
     return ENGINE_ENOTSUP;

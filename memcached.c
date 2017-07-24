@@ -2281,10 +2281,10 @@ static void process_bop_mget_complete(conn *c) {
         }
 
         ret = mc_engine.v1->btree_elem_mget(mc_engine.v0, c,
-                                           key_tokens, &c->coll_bkrange,
+                                           key_tokens, c->coll_numkeys, &c->coll_bkrange,
                                            (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
                                            c->coll_roffset, c->coll_rcount,
-                                           &c->eblk_ret, c->coll_numkeys, &tot_access_count, 0);
+                                           &c->eblk_ret, &tot_access_count, 0);
         EBLOCK_SCAN_INIT(&c->eblk_ret, &eblk_sc);
         if (ret == ENGINE_SUCCESS) {
             for (k = 0; k < c->coll_numkeys; k++) {

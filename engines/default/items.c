@@ -4886,7 +4886,7 @@ static int do_btree_posi_find(btree_meta_info *info,
 static int do_btree_elem_batch_get(btree_elem_posi posi, const int count,
                                    const bool forward, const bool reverse,
 #ifdef USE_EBLOCK_RESULT
-                                   eblock_result_t *eblk_ret, int position)
+                                   eblock_result_t *eblk_ret)
 #else
                                    btree_elem_item **elem_array)
 #endif
@@ -4901,7 +4901,7 @@ static int do_btree_elem_batch_get(btree_elem_posi posi, const int count,
         elem = BTREE_GET_ELEM_ITEM(posi.node, posi.indx);
         elem->refcount++;
 #ifdef USE_EBLOCK_RESULT
-        if (reverse) eblk_add_elem_with_posi(eblk_ret, elem, position+count-nfound-1);
+        if (reverse) eblk_add_elem_with_posi(eblk_ret, elem, count-nfound-1);
         else         eblk_add_elem(eblk_ret, elem);
 #else
         if (reverse) elem_array[count-nfound-1] = elem;
@@ -4951,13 +4951,13 @@ static int do_btree_posi_find_with_get(btree_meta_info *info,
 
         eblk_add_elem_with_posi(eblk_ret, elem, eidx);
         if (order == BTREE_ORDER_ASC) {
-            ecnt += do_btree_elem_batch_get(path[0], eidx,  false, true,  eblk_ret, 0);
+            ecnt += do_btree_elem_batch_get(path[0], eidx,  false, true,  eblk_ret);
             assert((ecnt-1) == eidx);
-            ecnt += do_btree_elem_batch_get(path[0], count, true,  false, eblk_ret, eidx+1);
+            ecnt += do_btree_elem_batch_get(path[0], count, true,  false, eblk_ret);
         } else {
-            ecnt += do_btree_elem_batch_get(path[0], eidx,  true,  true,  eblk_ret, 0);
+            ecnt += do_btree_elem_batch_get(path[0], eidx,  true,  true,  eblk_ret);
             assert((ecnt-1) == eidx);
-            ecnt += do_btree_elem_batch_get(path[0], count, false, false, eblk_ret, eidx+1);
+            ecnt += do_btree_elem_batch_get(path[0], count, false, false, eblk_ret);
         }
         eblk_truncate(eblk_ret);
 #else
@@ -5027,7 +5027,7 @@ static ENGINE_ERROR_CODE do_btree_elem_get_by_posi(btree_meta_info *info,
 #ifdef USE_EBLOCK_RESULT
     eblk_add_elem(eblk_ret, elem);
     nfound = 1;
-    nfound += do_btree_elem_batch_get(posi, count-1, forward, false, eblk_ret, 1);
+    nfound += do_btree_elem_batch_get(posi, count-1, forward, false, eblk_ret);
 #else
     elem_array[0] = elem;
     nfound = 1;
@@ -7319,10 +7319,10 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
 
 #ifdef USE_EBLOCK_RESULT
 ENGINE_ERROR_CODE btree_elem_mget(struct default_engine *engine,
-                                  const token_t *key_tokens,
+                                  const token_t *key_tokens, const uint32_t numkeys,
                                   const bkey_range *bkrange, const eflag_filter *efilter,
                                   const uint32_t offset, const uint32_t req_count,
-                                  eblock_result_t *eblk_ret, uint32_t numkeys,
+                                  eblock_result_t *eblk_ret,
                                   uint32_t *access_count)
 {
     assert (EBLOCK_HEAD(eblk_ret) == NULL);

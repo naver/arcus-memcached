@@ -917,19 +917,19 @@ default_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
 #ifdef USE_EBLOCK_RESULT
 static ENGINE_ERROR_CODE
 default_btree_elem_mget(ENGINE_HANDLE* handle, const void* cookie,
-                        const token_t *key_tokens,
+                        const token_t *key_tokens, const uint32_t numkeys,
                         const bkey_range *bkrange, const eflag_filter *efilter,
                         const uint32_t offset, const uint32_t req_count,
-                        eblock_result_t *eblk_ret, uint32_t numkeys,
+                        eblock_result_t *eblk_ret,
                         uint32_t *access_count, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    ret = btree_elem_mget(engine, key_tokens, bkrange, efilter,
-                          offset, req_count,
-                          eblk_ret, numkeys, access_count);
+    ret = btree_elem_mget(engine, key_tokens, numkeys, bkrange,
+                          efilter, offset, req_count,
+                          eblk_ret, access_count);
     return ret;
 }
 #endif
