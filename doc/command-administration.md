@@ -266,6 +266,7 @@ Arcus cache server는 특정 configuration에 대해 동적으로 변경하거�
 
 - verbosity
 - memlimit
+- mcfailstop
 - maxconns
 
 **config verbosity**
@@ -290,6 +291,16 @@ config memlimit [<memsize>]\r\n
 \<memsize\>는 새로 지정할 memory limit으로 MB 단위로 설정하며,
 Arcus cache server가 현재 사용 중인 메모리 크기인 tatal_malloced 보다 큰 크기로만 설정이 가능하다.
 이 인자가 생략되면 현재 설정되어 있는 memory limit 값을 조회한다.
+
+**config mcfailstop**
+
+Arcus cache server의 automatic failstop 기능을 on 또는 off 한다.
+
+```
+config mcfailstop [on|off]\r\n
+```
+
+Network failure 상태에서 정상적인 서비스를 진행하지 못하는 cache server가 cache cloud에 그대로 존재할 경우, 해당 cache server가 담당하고 있는 data 범위에 대한 요청이 모두 실패하고 DB에 부담을 주게 된다. 또한 이후에 ZooKeeper에 재연결 되더라도 old data를 가지고 있을 가능성이 있으며 이로 인해 응용에 오동작을 발생시킬 수 있다. Arcus cache server는 이를 해결하기위해 ZooKeepeeper session timeout이 발생할 경우 failed cache server를 cache cloud에서 자동으로 제거하는 automatic failstop 기능을 기본적으로 제공한다.
 
 **config maxconns**
 
@@ -489,11 +500,14 @@ Arcus cache server가 연결되어 있는 ZooKeeper ensemble 설정에 대한 �
 ```
 zkensemble set <ensemble_list>\r\n
 zkensemble get\r\n
+zkensemble rejoin\r\n
 ```
 
 set 명령은 ZK ensemble 주소를 변경한다. ensemble_list는 \<ip:port\>,...,\<ip:port\>  와 같은 ZK server 들의 list 형태 혹은 ZK ensemble의 도메인 주소 형태로 지정할 수 있다.
 
 get 명령은 ZK ensemble 주소를 조회한다. 조회 결과는 \<ip:port\>,...,\<ip:port\> 형식으로 확인할 수 있다.
+
+rejoin 명령은 cache server를 ZK ensemble에 다시 연결하도록 하는 명령이다. failstop이 off 된 상태에서 ZooKeeper session timeout이 일어날 경우 cache server는 ZooKeeper와의 연결을 끊고 cache cloud에서 빠져 대기한다. 이 때 이 rejoin 명령을 내리면 기존 data를 가진 그대로 cache cloud에 참여하게 된다.
 
 ### Help 명령
 
