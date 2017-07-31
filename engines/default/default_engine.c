@@ -349,6 +349,20 @@ default_flush(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
+#ifdef USE_IVALUE_BLOCK
+static bool
+default_is_endcrlf(ENGINE_HANDLE* handle, item* item)
+{
+    return item_is_endcrlf(item);
+}
+
+static void
+default_get_ivnext(ENGINE_HANDLE* handle, struct iovec *ivret)
+{
+    item_get_ivnext(ivret);
+}
+#endif
+
 /*
  * List Collection API
  */
@@ -1413,7 +1427,11 @@ get_item_info(ENGINE_HANDLE *handle, const void *cookie,
     item_info->nvalue = 1;
     item_info->key = item_get_key(it);
     item_info->value[0].iov_base = item_get_data(it);
+#ifdef USE_IVALUE_BLOCK
+    item_info->value[0].iov_len = item_get_ivbytes(it);
+#else
     item_info->value[0].iov_len = it->nbytes;
+#endif
     return true;
 }
 
@@ -1488,6 +1506,10 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .store             = default_store,
          .arithmetic        = default_arithmetic,
          .flush             = default_flush,
+#ifdef USE_IVALUE_BLOCK
+         .is_endcrlf        = default_is_endcrlf,
+         .get_ivnext        = default_get_ivnext,
+#endif
          /* LIST Collection API */
          .list_struct_create = default_list_struct_create,
          .list_elem_alloc   = default_list_elem_alloc,

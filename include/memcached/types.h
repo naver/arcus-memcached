@@ -36,6 +36,7 @@ struct iovec {
 #define JHPARK_OLD_SMGET_INTERFACE
 #define CONFIG_MAX_COLLECTION_SIZE
 #define MAX_EFLAG_COMPARE_COUNT 100
+#define USE_IVALUE_BLOCK
 
 #define JHPARK_KEY_DUMP
 
@@ -362,6 +363,21 @@ extern "C" {
 
     /* Forward declaration of the server handle -- to be filled in later */
     typedef struct server_handle_v1_t SERVER_HANDLE_V1;
+
+#ifdef USE_IVALUE_BLOCK
+#define IVALUE_PER_BLOCK 32786
+#define IVALUE_VALUE_SIZE (IVALUE_PER_BLOCK - sizeof(ivalue_block_t))
+
+typedef struct _ivalue_block_t {
+    struct _ivalue_block_t *next;
+    size_t nbytes;
+} ivalue_block_t;
+
+typedef struct _ivalue_relink_t {
+    ivalue_block_t *head;    /* starting point of block to be reused */
+    ivalue_block_t *tail;    /* end point of block to be reused */
+} ivalue_relink_t;
+#endif
 
 #ifdef __cplusplus
 }

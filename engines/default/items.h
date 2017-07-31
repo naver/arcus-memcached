@@ -610,8 +610,16 @@ void item_conf_set_evict_to_free(struct default_engine *engine, bool value);
 uint64_t    item_get_cas(const hash_item* item);
 void        item_set_cas(const hash_item* item, uint64_t val);
 const void* item_get_key(const hash_item* item);
+#ifdef USE_IVALUE_BLOCK
+ivalue_block_t* item_get_ivblk(const hash_item* item);
+#endif
 char*       item_get_data(const hash_item* item);
 const void* item_get_meta(const hash_item* item);
+#ifdef USE_IVALUE_BLOCK
+size_t      item_get_ivbytes(const hash_item* item);
+bool        item_is_endcrlf(const hash_item* item);
+void        item_get_ivnext(struct iovec *ivret);
+#endif
 
 /*
  * Check linked status

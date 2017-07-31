@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 149;
+use Test::More tests => 205;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -42,7 +42,7 @@ for (my $i = 0; $i < 100; $i++) {
 # some evictions should have happened
 my $stats = mem_stats($sock);
 my $evictions = int($stats->{"evictions"});
-ok($evictions == 37, "some evictions happened");
+ok($evictions == 93, "some evictions happened");
 
 # the first big value should be gone
 mem_get_is($sock, "big", undef);

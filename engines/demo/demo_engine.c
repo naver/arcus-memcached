@@ -269,6 +269,20 @@ Demo_flush(ENGINE_HANDLE* handle, const void* cookie,
     return ENGINE_ENOTSUP;
 }
 
+#ifdef USE_IVALUE_BLOCK
+static bool
+Demo_is_endcrlf(ENGINE_HANDLE* handle, item* item)
+{
+    return 0;
+}
+
+static void
+Demo_get_ivnext(ENGINE_HANDLE* handle, struct iovec *ivret)
+{
+    return;
+}
+#endif
+
 /*
  * List Collection API
  */
@@ -765,6 +779,10 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .store             = Demo_store,
          .arithmetic        = Demo_arithmetic,
          .flush             = Demo_flush,
+#ifdef USE_IVALUE_BLOCK
+         .is_endcrlf        = Demo_is_endcrlf,
+         .get_ivnext        = Demo_get_ivnext,
+#endif
          /* LIST Collection API */
          .list_struct_create = Demo_list_struct_create,
          .list_elem_alloc   = Demo_list_elem_alloc,

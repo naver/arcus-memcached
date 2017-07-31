@@ -368,7 +368,7 @@ $mc->silent_mutation(::CMD_ADDQ, 'silentadd', 'silentaddval');
         # print $sock "set $key 0 0 $vallen\r\n$value\r\n";
         print $sock "set $key 0 0 $biglen\r\n$big\r\n";
         is(scalar <$sock>, "STORED\r\n", "stored big");
-        my ($f, $v, $c) = $mc->get($key);
+#        my ($f, $v, $c) = $mc->get($key);
     }
 }
 
