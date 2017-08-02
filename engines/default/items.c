@@ -715,8 +715,7 @@ static hash_item *do_item_alloc(struct default_engine *engine,
         assert(IVALUE_VALUE_SIZE > (ntotal - nbytes));
         it = do_ivalue_alloc(engine, key, nkey, flags, exptime,
                              cookie, nbytes, ntotal);
-        return it;
-    }
+    } else {
 #endif
 
     it = do_item_alloc_internal(engine, ntotal, id, cookie);
@@ -743,6 +742,9 @@ static hash_item *do_item_alloc(struct default_engine *engine,
     }
     it->exptime = exptime;
     it->pfxptr = NULL;
+#ifdef USE_IVALUE_BLOCK
+    }
+#endif
     return it;
 }
 
@@ -7769,7 +7771,7 @@ const void* item_get_meta(const hash_item* item)
         return NULL;
 }
 #ifdef USE_IVALUE_BLOCK
-bool item_is_endcrlf(const hash_item *it)
+bool item_value_validate(const hash_item *it)
 {
     /* get last ivalue block */
     ivalue_block_t *ivblk = item_get_ivblk(it);
@@ -7787,12 +7789,12 @@ bool item_is_endcrlf(const hash_item *it)
               (split_store && memcmp((char*)ivblk + sizeof(ivalue_block_t), "\n", 1) == 0));
 }
 
-void item_get_ivnext(struct iovec *ivret)
+void item_iovec_next(struct iovec *ivalue)
 {
-    ivalue_block_t *blk = (ivalue_block_t *)((char*)ivret->iov_base - sizeof(ivalue_block_t));
+    ivalue_block_t *blk = (ivalue_block_t *)((char*)ivalue->iov_base - sizeof(ivalue_block_t));
     blk = blk->next;
-    ivret->iov_base = (void *)((char*)blk + sizeof(ivalue_block_t));
-    ivret->iov_len = blk->nbytes;
+    ivalue->iov_base = (void *)((char*)blk + sizeof(ivalue_block_t));
+    ivalue->iov_len = blk->nbytes;
 }
 
 static hash_item *do_ivalue_alloc(struct default_engine *engine,
@@ -7807,7 +7809,8 @@ static hash_item *do_ivalue_alloc(struct default_engine *engine,
 
     uint32_t leftbytes = ((ntotal - 1) % IVALUE_VALUE_SIZE) + 1;
     uint32_t alloc_cnt = ((ntotal - 1) / IVALUE_VALUE_SIZE) + 1;
-    uint32_t ivbytes = (ntotal < IVALUE_VALUE_SIZE) ? nbytes : (IVALUE_VALUE_SIZE - (ntotal - nbytes)); //value size of first block
+    uint32_t ivbytes = (ntotal < IVALUE_VALUE_SIZE) ? nbytes /* value size of first block */
+                                                    : (IVALUE_VALUE_SIZE - (ntotal - nbytes));
     uint32_t check_cnt = alloc_cnt; /* to check if all allocate is complete */
     unsigned int id = slabs_clsid(engine, IVALUE_PER_BLOCK);
     size_t alloc_bytes = IVALUE_PER_BLOCK;
@@ -7853,7 +7856,7 @@ static hash_item *do_ivalue_alloc(struct default_engine *engine,
         alloc_cnt--;
     }
 
-    if (alloc_cnt > 0 && (alloc_cnt != check_cnt)) { /* allocate failed */
+    if (0 < alloc_cnt && alloc_cnt < check_cnt) { /* allocate failed */
         it->nbytes = ivbytes + ((check_cnt - alloc_cnt - 1) * IVALUE_VALUE_SIZE);
         do_ivalue_free(engine, it);
         return NULL;
@@ -8061,7 +8064,8 @@ static hash_item *do_combine_ivblk(struct default_engine *engine,
     ivalue_block_t *it_ivblk = item_get_ivblk(it);
     ivalue_block_t *new_ivblk;
 
-    uint32_t fblk_bytes = IVALUE_VALUE_SIZE - sizeof(hash_item) - it->nkey; /* max value size of first ivalue_block*/
+    /* fblk bytes : max value size of first ivalue_block */
+    uint32_t fblk_bytes = IVALUE_VALUE_SIZE - (sizeof(hash_item) + it->nkey);
     uint32_t new_nbytes = it->nbytes + old_it->nbytes - 2;
 
     if (new_nbytes > 1024 * 1024) return NULL;

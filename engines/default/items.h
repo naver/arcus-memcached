@@ -617,8 +617,8 @@ char*       item_get_data(const hash_item* item);
 const void* item_get_meta(const hash_item* item);
 #ifdef USE_IVALUE_BLOCK
 size_t      item_get_ivbytes(const hash_item* item);
-bool        item_is_endcrlf(const hash_item* item);
-void        item_get_ivnext(struct iovec *ivret);
+bool        item_value_validate(const hash_item* item);
+void        item_iovec_next(struct iovec *ivalue);
 #endif
 
 /*

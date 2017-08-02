@@ -365,7 +365,7 @@ extern "C" {
     typedef struct server_handle_v1_t SERVER_HANDLE_V1;
 
 #ifdef USE_IVALUE_BLOCK
-#define IVALUE_PER_BLOCK 32786
+#define IVALUE_PER_BLOCK 32768 // 32K
 #define IVALUE_VALUE_SIZE (IVALUE_PER_BLOCK - sizeof(ivalue_block_t))
 
 typedef struct _ivalue_block_t {

@@ -1122,13 +1122,13 @@ static int add_iov(conn *c, const void *buf, int len) {
 #ifdef USE_IVALUE_BLOCK
 static int add_iov_ivblk(conn *c, item_info info) {
     int len = info.nbytes;
-    c->ivret.iov_base = info.value[0].iov_base;
-    c->ivret.iov_len = info.value[0].iov_len;
+    c->ivalue.iov_base = info.value[0].iov_base;
+    c->ivalue.iov_len = info.value[0].iov_len;
 
     while (len > 0) {
-        if((add_iov(c, c->ivret.iov_base, c->ivret.iov_len) != 0)) return -1;
-        len -= c->ivret.iov_len;
-        if (len > 0) mc_engine.v1->get_ivnext(mc_engine.v0, &c->ivret);
+        if((add_iov(c, c->ivalue.iov_base, c->ivalue.iov_len) != 0)) return -1;
+        len -= c->ivalue.iov_len;
+        if (len > 0) mc_engine.v1->iovec_next(mc_engine.v0, &c->ivalue);
     }
     return 0;
 }
@@ -2694,7 +2694,7 @@ static void complete_update_ascii(conn *c) {
     }
 
 #ifdef USE_IVALUE_BLOCK
-    if (!mc_engine.v1->is_endcrlf(mc_engine.v0, it)) {
+    if (!mc_engine.v1->value_validate(mc_engine.v0, it)) {
 #else
     if (memcmp((char*)info.value[0].iov_base + info.nbytes - 2, "\r\n", 2) != 0) {
 #endif
@@ -3679,7 +3679,7 @@ static void bin_read_chunk(conn *c, enum bin_substates next_substate, uint32_t c
     /* preserve the header in the buffer.. */
     c->ritem = c->rcurr + sizeof(protocol_binary_request_header);
 #ifdef USE_IVALUE_BLOCK
-    c->ivret.iov_len = -1; /* it mean not to use ivalue_block */
+    c->ivalue.iov_len = -1; /* it mean not to use ivalue_block */
 #endif
     conn_set_state(c, conn_nread);
 }
@@ -3794,7 +3794,7 @@ static void process_bin_sasl_auth(conn *c) {
     c->ritem = data->data + nkey;
     c->rlbytes = vlen;
 #ifdef USE_IVALUE_BLOCK
-    c->ivret.iov_len = -1; /* it mean not to use ivalue_block */
+    c->ivalue.iov_len = -1; /* it mean not to use ivalue_block */
 #endif
     conn_set_state(c, conn_nread);
     c->substate = bin_reading_sasl_auth_data;
@@ -4055,7 +4055,7 @@ static void process_bin_lop_prepare_nread(conn *c) {
             c->coll_attrp = NULL;
         }
 #ifdef USE_IVALUE_BLOCK
-        c->ivret.iov_len  = -1; /* it mean not to use ivalue_block */
+        c->ivalue.iov_len  = -1; /* it mean not to use ivalue_block */
 #endif
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_lop_nread_complete;
@@ -4511,7 +4511,7 @@ static void process_bin_sop_prepare_nread(conn *c) {
             c->coll_op     = OPERATION_SOP_EXIST;
         }
 #ifdef USE_IVALUE_BLOCK
-        c->ivret.iov_len = -1; /* it mean not to use ivalue_block */
+        c->ivalue.iov_len = -1; /* it mean not to use ivalue_block */
 #endif
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_sop_nread_complete;
@@ -5013,7 +5013,7 @@ static void process_bin_bop_prepare_nread(conn *c) {
             c->coll_attrp = NULL;
         }
 #ifdef USE_IVALUE_BLOCK
-        c->ivret.iov_len = -1; /* it mean not to use ivalue_block */
+        c->ivalue.iov_len = -1; /* it mean not to use ivalue_block */
 #endif
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_bop_nread_complete;
@@ -5268,7 +5268,7 @@ static void process_bin_bop_update_prepare_nread(conn *c) {
         c->coll_nkey   = nkey;
         c->coll_op     = OPERATION_BOP_UPDATE;
 #ifdef USE_IVALUE_BLOCK
-        c->ivret.iov_len     = -1; /* it mean not to use ivalue_block */
+        c->ivalue.iov_len     = -1; /* it mean not to use ivalue_block */
 #endif
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_bop_update_nread_complete;
@@ -5755,7 +5755,7 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
         c->coll_ecount = 0;
         c->coll_op     = (c->cmd==PROTOCOL_BINARY_CMD_BOP_MGET ? OPERATION_BOP_MGET : OPERATION_BOP_SMGET);
 #ifdef USE_IVALUE_BLOCK
-        c->ivret.iov_len     = -1; /* it mean not to use ivalue_block */
+        c->ivalue.iov_len     = -1; /* it mean not to use ivalue_block */
 #endif
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_bop_nread_keys_complete;
@@ -6868,7 +6868,7 @@ static void process_bin_update(conn *c) {
         c->ritem = info.value[0].iov_base;
         c->rlbytes = vlen;
 #ifdef USE_IVALUE_BLOCK
-        c->ivret.iov_len = -1; /* it mean not to use ivalue_block */
+        c->ivalue.iov_len = -1; /* it mean not to use ivalue_block */
 #endif
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
@@ -6950,7 +6950,7 @@ static void process_bin_append_prepend(conn *c) {
         c->ritem = info.value[0].iov_base;
         c->rlbytes = vlen;
 #ifdef USE_IVALUE_BLOCK
-        c->ivret.iov_len = -1; /* it mean not to use ivalue_block */
+        c->ivalue.iov_len = -1; /* it mean not to use ivalue_block */
 #endif
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
@@ -8129,7 +8129,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                 }
 
 #ifdef USE_IVALUE_BLOCK
-                assert(mc_engine.v1->is_endcrlf(mc_engine.v0, it) == 1);
+                assert(mc_engine.v1->value_validate(mc_engine.v0, it) == 1);
 #else
                 assert(memcmp((char*)info.value[0].iov_base + info.nbytes - 2, "\r\n", 2) == 0);
 #endif
@@ -8347,8 +8347,8 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         c->ritem = info.value[0].iov_base;
         c->rlbytes = vlen;
 #ifdef USE_IVALUE_BLOCK
-        c->ivret.iov_base = info.value[0].iov_base;;
-        c->ivret.iov_len = info.value[0].iov_len;
+        c->ivalue.iov_base = info.value[0].iov_base;;
+        c->ivalue.iov_len = info.value[0].iov_len;
 #endif
         c->store_op = store_op;
         conn_set_state(c, conn_nread);
@@ -9238,7 +9238,7 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
         c->ascii_cmd = cmd;
         /* NOT SUPPORTED YET! */
 #ifdef USE_IVALUE_BLOCK
-        c->ivret.iov_len   = -1; /* it mean not to use ivalue_block */
+        c->ivalue.iov_len   = -1; /* it mean not to use ivalue_block */
 #endif
         conn_set_state(c, conn_nread);
     }
@@ -9715,7 +9715,7 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
         c->coll_nkey   = nkey;
         c->coll_index  = index;
 #ifdef USE_IVALUE_BLOCK
-        c->ivret.iov_len     = -1; /* it mean not to use ivalue_block */
+        c->ivalue.iov_len     = -1; /* it mean not to use ivalue_block */
 #endif
         conn_set_state(c, conn_nread);
         }
@@ -10182,7 +10182,7 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
         c->coll_key    = key;
         c->coll_nkey   = nkey;
 #ifdef USE_IVALUE_BLOCK
-        c->ivret.iov_len     = -1; /* it mean not to use ivalue_block */
+        c->ivalue.iov_len     = -1; /* it mean not to use ivalue_block */
 #endif
         conn_set_state(c, conn_nread);
         break;
@@ -10934,7 +10934,7 @@ static void process_bop_update_prepare_nread(conn *c, int cmd, char *key, size_t
         c->coll_key    = key;
         c->coll_nkey   = nkey;
 #ifdef USE_IVALUE_BLOCK
-        c->ivret.iov_len     = -1; /* it mean not to use ivalue_block */
+        c->ivalue.iov_len     = -1; /* it mean not to use ivalue_block */
 #endif
         conn_set_state(c, conn_nread);
         break;
@@ -10985,7 +10985,7 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
         c->coll_key    = key;
         c->coll_nkey   = nkey;
 #ifdef USE_IVALUE_BLOCK
-        c->ivret.iov_len     = -1; /* it mean not to use ivalue_block */
+        c->ivalue.iov_len     = -1; /* it mean not to use ivalue_block */
 #endif
         conn_set_state(c, conn_nread);
         }
@@ -11082,7 +11082,7 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
         c->coll_ecount = 0;
         c->coll_op     = cmd;
 #ifdef USE_IVALUE_BLOCK
-        c->ivret.iov_len     = -1; /* it mean not to use ivalue_block */
+        c->ivalue.iov_len     = -1; /* it mean not to use ivalue_block */
 #endif
         conn_set_state(c, conn_nread);
         }
@@ -11502,7 +11502,7 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
         c->coll_nkey   = nkey;
         c->coll_field  = *field;
 #ifdef USE_IVALUE_BLOCK
-        c->ivret.iov_len     = -1; /* it mean not to use ivalue_block */
+        c->ivalue.iov_len     = -1; /* it mean not to use ivalue_block */
 #endif
         conn_set_state(c, conn_nread);
         break;
@@ -11549,7 +11549,7 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
         c->coll_nkey      = nkey;
         c->coll_lenkeys   = flen;
 #ifdef USE_IVALUE_BLOCK
-        c->ivret.iov_len        = -1; /* it mean not to use ivalue_block */
+        c->ivalue.iov_len        = -1; /* it mean not to use ivalue_block */
 #endif
         conn_set_state(c, conn_nread);
         break;
@@ -13522,26 +13522,26 @@ bool conn_nread(conn *c) {
     }
 
 #ifdef USE_IVALUE_BLOCK
-    if (c->ivret.iov_len != -1) { /* -1 mean not to use ivalue_block */
+    if (c->ivalue.iov_len != -1) { /* -1 mean not to use ivalue_block */
         /* first check if we have leftovers in the conn_read buffer */
         if (c->rbytes > 0) {
-            int tocopy = c->rbytes > c->rlbytes ? c->rlbytes : c->rbytes;
+            int tocopy = (c->rbytes > c->rlbytes) ? c->rlbytes : c->rbytes;
             int cpivbyte;
             if (c->ritem != c->rcurr) {
                 while (tocopy > 0) {
-                    cpivbyte = tocopy > c->ivret.iov_len ? c->ivret.iov_len : tocopy;
+                    cpivbyte = (tocopy > c->ivalue.iov_len) ? c->ivalue.iov_len : tocopy;
                     memmove(c->ritem, c->rcurr, cpivbyte);
 
                     c->ritem   += cpivbyte;
                     c->rcurr   += cpivbyte;
                     c->rlbytes -= cpivbyte;
                     c->rbytes  -= cpivbyte;
-                    c->ivret.iov_len -= cpivbyte;
+                    c->ivalue.iov_len -= cpivbyte;
                     tocopy     -= cpivbyte;
-                    if (c->ivret.iov_len == 0 && tocopy > 0) {
-                        mc_engine.v1->get_ivnext(mc_engine.v0, &c->ivret);
-                        c->ritem = (char*)c->ivret.iov_base;
-                        c->ivret.iov_len = c->ivret.iov_len;
+                    if (c->ivalue.iov_len == 0 && tocopy > 0) {
+                        mc_engine.v1->iovec_next(mc_engine.v0, &c->ivalue);
+                        c->ritem = (char*)c->ivalue.iov_base;
+                        c->ivalue.iov_len = c->ivalue.iov_len;
                     }
                     if (c->rlbytes == 0) return true;
                 }
@@ -13550,22 +13550,22 @@ bool conn_nread(conn *c) {
 
         /*  now try reading from the socket */
         while (1) {
-            res = read(c->sfd, c->ritem, c->ivret.iov_len);
+            res = read(c->sfd, c->ritem, c->ivalue.iov_len);
 
             if (res > 0) {
                 STATS_ADD(c, bytes_read, res);
                 if (c->rcurr == c->ritem) {
                     c->rcurr += res;
                 }
-                c->ivret.iov_len -= res;
+                c->ivalue.iov_len -= res;
                 c->ritem += res;
                 c->rlbytes -= res;
 
                 if (c->rlbytes == 0) return true;
-                if (c->ivret.iov_len == 0) {
-                    mc_engine.v1->get_ivnext(mc_engine.v0, &c->ivret);
-                    c->ritem = (char*)c->ivret.iov_base;
-                    c->ivret.iov_len = c->ivret.iov_len;
+                if (c->ivalue.iov_len == 0) {
+                    mc_engine.v1->iovec_next(mc_engine.v0, &c->ivalue);
+                    c->ritem = (char*)c->ivalue.iov_base;
+                    c->ivalue.iov_len = c->ivalue.iov_len;
                 }
                 continue;
             }

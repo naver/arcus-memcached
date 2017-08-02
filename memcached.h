@@ -481,7 +481,7 @@ struct conn {
     int    rsize;   /** total allocated size of rbuf */
     int    rbytes;  /** how much data, starting from rcur, do we have unparsed */
 #ifdef USE_IVALUE_BLOCK
-    struct iovec ivret; /* to read ivalue block */
+    struct iovec ivalue; /* to read ivalue block */
 #endif
 
     char   *wbuf;

@@ -341,20 +341,22 @@ extern "C" {
 
 #ifdef USE_IVALUE_BLOCK
         /**
-         * ivalue to confirm the "\r\n" at the end
+         * value to confirm the "\r\n" at the end
+         *
          * @param handle the engine handle
          * @param item the item to check value
          *
-         * @return confirm the "\r\n" at the end of ivalue and then return true
+         * @return confirm the "\r\n" at the end of value and then return true
          */
-        bool (*is_endcrlf)(ENGINE_HANDLE* handle, item* item);
+        bool (*value_validate)(ENGINE_HANDLE* handle, item* item);
 
         /**
          * to find next block to read value
+         *
          * @param handle the engine handle
-         * @param ivret include starting point of the buffer to read and bytes to read
+         * @param ivalue include starting point of the buffer to read and bytes to read
          */
-        void (*get_ivnext)(ENGINE_HANDLE* handle, struct iovec* ivret);
+        void (*iovec_next)(ENGINE_HANDLE* handle, struct iovec* ivalue);
 #endif
 
         /*

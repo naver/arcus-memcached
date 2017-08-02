@@ -351,15 +351,15 @@ default_flush(ENGINE_HANDLE* handle, const void* cookie,
 
 #ifdef USE_IVALUE_BLOCK
 static bool
-default_is_endcrlf(ENGINE_HANDLE* handle, item* item)
+default_value_validate(ENGINE_HANDLE* handle, item* item)
 {
-    return item_is_endcrlf(item);
+    return item_value_validate(item);
 }
 
 static void
-default_get_ivnext(ENGINE_HANDLE* handle, struct iovec *ivret)
+default_iovec_next(ENGINE_HANDLE* handle, struct iovec *ivalue)
 {
-    item_get_ivnext(ivret);
+    item_iovec_next(ivalue);
 }
 #endif
 
@@ -1507,8 +1507,8 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .arithmetic        = default_arithmetic,
          .flush             = default_flush,
 #ifdef USE_IVALUE_BLOCK
-         .is_endcrlf        = default_is_endcrlf,
-         .get_ivnext        = default_get_ivnext,
+         .value_validate   = default_value_validate,
+         .iovec_next       = default_iovec_next,
 #endif
          /* LIST Collection API */
          .list_struct_create = default_list_struct_create,
