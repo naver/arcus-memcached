@@ -7963,9 +7963,9 @@ static bool do_combine_internal(struct default_engine *engine,
     bool split_store; /* "\r\n" split stored */
     uint32_t fill_bytes = IVALUE_VALUE_SIZE + 2 /* reuse part of front "\r\n" */;
 
+    ivalue_block_t *new_ivblk = item_get_ivblk(new_it);
     ivalue_block_t *frt_ivblk = item_get_ivblk(front);
     ivalue_block_t *bck_ivblk = item_get_ivblk(back);
-    ivalue_block_t *new_ivblk = item_get_ivblk(new_it);
     ivalue_relink_t link;
 
     if (front->nbytes <= fblk_bytes) {
@@ -8073,13 +8073,12 @@ static hash_item *do_combine_ivblk(struct default_engine *engine,
 
     if (engine->config.use_cas) fblk_bytes -= sizeof(uint64_t);
 
-    alloc_bytes = (new_nbytes > (fblk_bytes + IVALUE_VALUE_SIZE)) ? fblk_bytes : new_nbytes;
-
     /*
      * Attempt to combine if the newly created new_it has more tmore than two blocks.
      * copying two or fewer blocks is judged not to have a significant impact on performance
      */
-    need_combine = (alloc_bytes == new_nbytes) ? false : true;
+    need_combine = (new_nbytes > (fblk_bytes + IVALUE_VALUE_SIZE)) ? true : false;
+    alloc_bytes = need_combine ? fblk_bytes : new_nbytes;
     new_it = do_item_alloc(engine, item_get_key(it), it->nkey,
                            old_it->flags, old_it->exptime,
                            alloc_bytes,
@@ -8112,51 +8111,50 @@ static hash_item *do_combine_ivblk(struct default_engine *engine,
 /*
  * functions like memcpy used for ivalue block
  */
-static void do_copy_ivblk(ivalue_block_t *new_iv, ivalue_block_t *cpy_iv, int offset, int size)
+static void do_copy_ivblk(ivalue_block_t *dest_iv, ivalue_block_t *src_iv, int offset, int size)
 {
     assert(offset >= 0);
     int copy = size;
-    int new_size;           /* size of remaining value of the new block */
-    int copy_size;          /* size of remaining value of the copy block */
-    int real_size;          /* real copy value size */
-    int move_size = offset; /* move size */
+    int dest_size; /* size of remaining value of the destination block */
+    int copy_size; /* size of remaining value of the source block */
+    int real_size; /* real copy value size */
+    int move = 0;
 
-    char *ncurr;
-    char *ccurr;
+    char *dcurr; /* location to write down on destination block */
+    char *ccurr; /* location to read from source block */
 
-    while (new_iv->nbytes < move_size) {
-        move_size -= new_iv->nbytes;
-        new_iv = new_iv->next;
+    while ((dest_iv->nbytes + move) < offset) {
+        move += dest_iv->nbytes;
+        dest_iv = dest_iv->next;
     }
-    new_size = new_iv->nbytes - move_size;
-    copy_size = cpy_iv->nbytes;
+    dest_size = dest_iv->nbytes - (offset - move);
+    copy_size = src_iv->nbytes;
 
-    ncurr = (char*)new_iv + (sizeof(ivalue_block_t) + move_size);
-    ccurr = (char*)cpy_iv + sizeof(ivalue_block_t);
-
+    dcurr = (char*)dest_iv + (sizeof(ivalue_block_t) + (offset - move));
+    ccurr = (char*)src_iv + sizeof(ivalue_block_t);
 
     while (copy > 0) {
-        real_size = (new_size > copy_size) ? copy_size : new_size;
+        real_size = (dest_size > copy_size) ? copy_size : dest_size;
         real_size = (copy > real_size) ? real_size : copy;
 
-        memcpy(ncurr, ccurr, real_size);
+        memcpy(dcurr, ccurr, real_size);
 
         copy -= real_size;
-        new_size -= real_size;
+        dest_size -= real_size;
         copy_size -= real_size;
 
-        ncurr += real_size;
+        dcurr += real_size;
         ccurr += real_size;
         if (copy > 0) {
             if (copy_size == 0) {
-                cpy_iv = cpy_iv->next;
-                ccurr = (char*)cpy_iv + sizeof(ivalue_block_t);
-                copy_size = cpy_iv->nbytes;
+                src_iv = src_iv->next;
+                ccurr = (char*)src_iv + sizeof(ivalue_block_t);
+                copy_size = src_iv->nbytes;
             }
-            if (new_size == 0) {
-                new_iv = new_iv->next;
-                ncurr = (char*)new_iv + sizeof(ivalue_block_t);
-                new_size = new_iv->nbytes;
+            if (dest_size == 0) {
+                dest_iv = dest_iv->next;
+                dcurr = (char*)dest_iv + sizeof(ivalue_block_t);
+                dest_size = dest_iv->nbytes;
             }
         }
    }
