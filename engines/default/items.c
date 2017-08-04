@@ -8067,12 +8067,19 @@ static hash_item *do_combine_ivblk(struct default_engine *engine,
     /* fblk bytes : max value size of first ivalue_block */
     uint32_t fblk_bytes = IVALUE_VALUE_SIZE - (sizeof(hash_item) + it->nkey);
     uint32_t new_nbytes = it->nbytes + old_it->nbytes - 2;
+    bool need_combine;
 
     if (new_nbytes > 1024 * 1024) return NULL;
 
     if (engine->config.use_cas) fblk_bytes -= sizeof(uint64_t);
 
     alloc_bytes = (new_nbytes > (fblk_bytes + IVALUE_VALUE_SIZE)) ? fblk_bytes : new_nbytes;
+
+    /*
+     * Attempt to combine if the newly created new_it has more tmore than two blocks.
+     * copying two or fewer blocks is judged not to have a significant impact on performance
+     */
+    need_combine = (alloc_bytes == new_nbytes) ? false : true;
     new_it = do_item_alloc(engine, item_get_key(it), it->nkey,
                            old_it->flags, old_it->exptime,
                            alloc_bytes,
@@ -8083,15 +8090,15 @@ static hash_item *do_combine_ivblk(struct default_engine *engine,
     new_ivblk = item_get_ivblk(new_it);
 
     if (append) { /* OPERATION_APPEND */
-        if (alloc_bytes == new_nbytes) {
+        if (!need_combine) {
             do_copy_ivblk(new_ivblk, old_ivblk, 0, old_it->nbytes - 2);
             do_copy_ivblk(new_ivblk, it_ivblk, old_it->nbytes - 2, it->nbytes);
-        } else { // need combine block
+        } else {
             if (!do_combine_internal(engine, cookie, new_it, old_it, it, fblk_bytes))
                 return NULL;
         }
     } else { /* OPERATION_PREPEND */
-        if (alloc_bytes == new_nbytes) {
+        if (!need_combine) {
             do_copy_ivblk(new_ivblk, it_ivblk, 0, it->nbytes - 2);
             do_copy_ivblk(new_ivblk, old_ivblk, it->nbytes -2, old_it->nbytes);
         } else {
@@ -8109,45 +8116,47 @@ static void do_copy_ivblk(ivalue_block_t *new_iv, ivalue_block_t *cpy_iv, int of
 {
     assert(offset >= 0);
     int copy = size;
-    int nsize;          /* size of remaining value of the new block */
-    int csize;          /* size of remaining value of the copy block */
-    int rsize;          /* real copy value size */
-    int msize = offset; /* move size */
+    int new_size;           /* size of remaining value of the new block */
+    int copy_size;          /* size of remaining value of the copy block */
+    int real_size;          /* real copy value size */
+    int move_size = offset; /* move size */
 
     char *ncurr;
     char *ccurr;
 
-    while (new_iv->nbytes < msize) {
-        msize -= new_iv->nbytes;
+    while (new_iv->nbytes < move_size) {
+        move_size -= new_iv->nbytes;
         new_iv = new_iv->next;
     }
-    nsize = new_iv->nbytes - msize;
-    csize = cpy_iv->nbytes;
+    new_size = new_iv->nbytes - move_size;
+    copy_size = cpy_iv->nbytes;
 
-    ncurr = (char*)new_iv + (sizeof(ivalue_block_t) + msize);
+    ncurr = (char*)new_iv + (sizeof(ivalue_block_t) + move_size);
     ccurr = (char*)cpy_iv + sizeof(ivalue_block_t);
 
 
     while (copy > 0) {
-        rsize = (nsize > csize) ? csize : nsize;
-        rsize = (copy > rsize) ? rsize : copy;
-        memcpy(ncurr, ccurr, rsize);
-        copy -= rsize;
-        nsize -= rsize;
-        csize -= rsize;
+        real_size = (new_size > copy_size) ? copy_size : new_size;
+        real_size = (copy > real_size) ? real_size : copy;
 
-        ncurr += rsize;
-        ccurr += rsize;
+        memcpy(ncurr, ccurr, real_size);
+
+        copy -= real_size;
+        new_size -= real_size;
+        copy_size -= real_size;
+
+        ncurr += real_size;
+        ccurr += real_size;
         if (copy > 0) {
-            if (csize == 0) {
+            if (copy_size == 0) {
                 cpy_iv = cpy_iv->next;
                 ccurr = (char*)cpy_iv + sizeof(ivalue_block_t);
-                csize = cpy_iv->nbytes;
+                copy_size = cpy_iv->nbytes;
             }
-            if (nsize == 0) {
+            if (new_size == 0) {
                 new_iv = new_iv->next;
                 ncurr = (char*)new_iv + sizeof(ivalue_block_t);
-                nsize = new_iv->nbytes;
+                new_size = new_iv->nbytes;
             }
         }
    }
