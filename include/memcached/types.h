@@ -31,6 +31,7 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
+#define SUPPORT_KV_MGET
 #define TOKENIZE_SPACE
 #define OPTIMIZE_HASH
 #define CONFIG_FAILSTOP
@@ -136,7 +137,10 @@ extern "C" {
         // SUPPORT_BOP_MGET
         OPERATION_BOP_MGET,          /**< B+tree operation with mget(multiple get) element semantics */
         // SUPPORT_BOP_SMGET
-        OPERATION_BOP_SMGET          /**< B+tree operation with smget(sort-merge get) element semantics */
+        OPERATION_BOP_SMGET,         /**< B+tree operation with smget(sort-merge get) element semantics */
+#ifdef SUPPORT_KV_MGET
+        OPERATION_MGET = 0x90
+#endif
     } ENGINE_COLL_OPERATION;
 
     /* item type */
