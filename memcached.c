@@ -11853,7 +11853,7 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
 #ifdef JHPARK_OLD_SMGET_INTERFACE
       if (c->coll_smgmode == 0) {
         int smget_count = c->coll_roffset + c->coll_rcount;
-        int kfnd_array_size;
+        int kfnd_array_size; /* key index array where the find key indexes are to be saved */
         int kmis_array_size; /* key index array where the missed key indexes are to be saved */
         int respon_hdr_size; /* the size of response head and tail */
         int respon_bdy_size; /* the size of response body */
