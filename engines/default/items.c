@@ -130,6 +130,11 @@ extern int genhash_string_hash(const void* p, size_t nkey);
 /* collection meta info offset */
 #define META_OFFSET_IN_ITEM(nkey,nbytes) ((((nkey)+(nbytes)-1)/8+1)*8)
 
+#ifdef OPTIMIZE_HASH
+/* max hash key length for calculation hash value */
+#define MAX_HKEY_LEN 250
+#endif
+
 /* btree position debugging */
 static bool btree_position_debug = false;
 
@@ -837,6 +842,10 @@ static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *
 {
     const char *key = item_get_key(it);
     size_t stotal;
+#ifdef OPTIMIZE_HASH
+    const char *hkey = (it->nkey > MAX_HKEY_LEN) ? key+(it->nkey-MAX_HKEY_LEN) : key;
+    const size_t hnkey = (it->nkey > MAX_HKEY_LEN) ? MAX_HKEY_LEN : it->nkey;
+#endif
     assert((it->iflag & ITEM_LINKED) == 0);
     assert(it->nbytes < (1024 * 1024));  /* 1MB max size */
 
@@ -859,7 +868,11 @@ static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *
     /* link the item to the hash table */
     it->iflag |= ITEM_LINKED;
     it->time = engine->server.core->get_current_time();
+#ifdef OPTIMIZE_HASH
+    it->khash = engine->server.core->hash(hkey, hnkey, 0);
+#else
     it->khash = engine->server.core->hash(key, it->nkey, 0);
+#endif
     assoc_insert(engine, it->khash, it);
 
     /* link the item to LRU list */
@@ -1124,7 +1137,13 @@ static hash_item *do_item_get(struct default_engine *engine,
                               bool LRU_reposition)
 {
     rel_time_t current_time = engine->server.core->get_current_time();
+#ifdef OPTIMIZE_HASH
+    const char *hkey = (nkey > MAX_HKEY_LEN) ? key+(nkey-MAX_HKEY_LEN) : key;
+    const size_t hnkey = (nkey > MAX_HKEY_LEN) ? MAX_HKEY_LEN : nkey;
+    hash_item *it = assoc_find(engine, engine->server.core->hash(hkey, hnkey, 0), key, nkey);
+#else
     hash_item *it = assoc_find(engine, engine->server.core->hash(key, nkey, 0), key, nkey);
+#endif
 
     if (it != NULL) {
         if (do_item_isvalid(engine, it, current_time)==false) {
