@@ -184,6 +184,13 @@ typedef struct _map_prev_info {
     uint16_t       hidx;
 } map_prev_info;
 
+#ifdef USE_IVALUE_BLOCK
+typedef struct _ivalue_relink_t {
+    ivalue_block_t *head;    /* starting point of block to be reused */
+    ivalue_block_t *tail;    /* end point of block to be reused */
+} ivalue_relink_t;
+#endif
+
 /*
  * Static functions
  */
@@ -7959,7 +7966,7 @@ static bool do_combine_internal(struct default_engine *engine,
 
     int alloc_bytes;
     int cpbytes;
-    int ivbytes; /* value size of block */
+    int ivbytes;      /* value size of block */
     bool split_store; /* "\r\n" split stored */
     uint32_t fill_bytes = IVALUE_VALUE_SIZE + 2 /* reuse part of front "\r\n" */;
 
@@ -8040,7 +8047,7 @@ static bool do_combine_internal(struct default_engine *engine,
             } else {
                 link.tail = link.tail->next;
                 do_copy_ivblk(link.tail, frt_ivblk, 0, frt_ivblk->nbytes - 2);
-                do_copy_ivblk(link.tail, item_get_ivblk(back), frt_ivblk->nbytes - 2, ivbytes - (frt_ivblk->nbytes -2));
+                do_copy_ivblk(link.tail, item_get_ivblk(back), frt_ivblk->nbytes - 2, ivbytes - (frt_ivblk->nbytes - 2));
             }
             front->nbytes = item_get_ivblk(front)->nbytes;
             id = slabs_clsid(engine, frt_ivblk->nbytes + sizeof(ivalue_block_t));
@@ -8074,7 +8081,7 @@ static hash_item *do_combine_ivblk(struct default_engine *engine,
     if (engine->config.use_cas) fblk_bytes -= sizeof(uint64_t);
 
     /*
-     * Attempt to combine if the newly created new_it has more tmore than two blocks.
+     * Attempt to combine if the newly created new_it has more than two blocks.
      * copying two or fewer blocks is judged not to have a significant impact on performance
      */
     need_combine = (new_nbytes > (fblk_bytes + IVALUE_VALUE_SIZE)) ? true : false;
@@ -8114,42 +8121,43 @@ static hash_item *do_combine_ivblk(struct default_engine *engine,
 static void do_copy_ivblk(ivalue_block_t *dest_iv, ivalue_block_t *src_iv, int offset, int size)
 {
     assert(offset >= 0);
-    int copy = size;
+    int tocopy = size;
     int dest_size; /* size of remaining value of the destination block */
-    int copy_size; /* size of remaining value of the source block */
+    int src_size;  /* size of remaining value of the source block */
     int real_size; /* real copy value size */
     int move = 0;
 
     char *dcurr; /* location to write down on destination block */
-    char *ccurr; /* location to read from source block */
+    char *scurr; /* location to read from source block */
 
     while ((dest_iv->nbytes + move) < offset) {
         move += dest_iv->nbytes;
         dest_iv = dest_iv->next;
     }
     dest_size = dest_iv->nbytes - (offset - move);
-    copy_size = src_iv->nbytes;
+    src_size = src_iv->nbytes;
 
     dcurr = (char*)dest_iv + (sizeof(ivalue_block_t) + (offset - move));
-    ccurr = (char*)src_iv + sizeof(ivalue_block_t);
+    scurr = (char*)src_iv + sizeof(ivalue_block_t);
 
-    while (copy > 0) {
-        real_size = (dest_size > copy_size) ? copy_size : dest_size;
-        real_size = (copy > real_size) ? real_size : copy;
+    while (tocopy > 0) {
+        /* real_size : the smallest of dest_size, src_size and tocopy */
+        real_size = (dest_size > src_size) ? src_size : dest_size;
+        real_size = (tocopy > real_size) ? real_size : tocopy;
 
-        memcpy(dcurr, ccurr, real_size);
+        memcpy(dcurr, scurr, real_size);
 
-        copy -= real_size;
+        tocopy -= real_size;
         dest_size -= real_size;
-        copy_size -= real_size;
+        src_size -= real_size;
 
         dcurr += real_size;
-        ccurr += real_size;
-        if (copy > 0) {
-            if (copy_size == 0) {
+        scurr += real_size;
+        if (tocopy > 0) {
+            if (src_size == 0) {
                 src_iv = src_iv->next;
-                ccurr = (char*)src_iv + sizeof(ivalue_block_t);
-                copy_size = src_iv->nbytes;
+                scurr = (char*)src_iv + sizeof(ivalue_block_t);
+                src_size = src_iv->nbytes;
             }
             if (dest_size == 0) {
                 dest_iv = dest_iv->next;

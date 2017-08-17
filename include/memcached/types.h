@@ -372,11 +372,6 @@ typedef struct _ivalue_block_t {
     struct _ivalue_block_t *next;
     size_t nbytes;
 } ivalue_block_t;
-
-typedef struct _ivalue_relink_t {
-    ivalue_block_t *head;    /* starting point of block to be reused */
-    ivalue_block_t *tail;    /* end point of block to be reused */
-} ivalue_relink_t;
 #endif
 
 #ifdef __cplusplus
