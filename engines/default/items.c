@@ -7904,14 +7904,15 @@ static void do_ivalue_free(struct default_engine *engine, hash_item *it)
 /*
  * calculates blocks that can be combined as much as fill_bytes
  */
-static void compute_alloc_bytes(ivalue_block_t **ivblk, int *cpbytes, int *alloc_bytes,  uint32_t fill_bytes)
+static void prepare_combine(ivalue_block_t **ivblk, int *tocpy_bytes, int *alloc_bytes, int reuse_bytes, uint32_t fill_bytes)
 {
     uint32_t nbytes;
-    while (*cpbytes > 0) {
+    *alloc_bytes = -reuse_bytes;
+    while (*tocpy_bytes > 0) {
         nbytes = (*ivblk)->nbytes;
         if (*alloc_bytes + nbytes <= fill_bytes) {
             *alloc_bytes += nbytes;
-            *cpbytes -= nbytes;
+            *tocpy_bytes -= nbytes;
             (*ivblk) = (*ivblk)->next;
         } else break;
     }
@@ -7924,7 +7925,7 @@ static void compute_alloc_bytes(ivalue_block_t **ivblk, int *cpbytes, int *alloc
  * @param nbytes the amount of scan bytes
  * @param split  flag of split stored("\r\n")
  */
-static void prepare_combine(ivalue_block_t **ivblk, ivalue_relink_t *link,  int nbytes, bool *split)
+static void prepare_relink(ivalue_block_t **ivblk, ivalue_relink_t *link,  int nbytes, bool *split)
 {
     int cpbytes = nbytes;
     ivalue_block_t *sc_ivblk = *ivblk;
@@ -7965,10 +7966,11 @@ static bool do_combine_internal(struct default_engine *engine,
     unsigned int id;
 
     int alloc_bytes;
-    int cpbytes;
     int ivbytes;      /* value size of block */
+    int tocpy_bytes;
+    int reuse_bytes;
     bool split_store; /* "\r\n" split stored */
-    uint32_t fill_bytes = IVALUE_VALUE_SIZE + 2 /* reuse part of front "\r\n" */;
+    uint32_t fill_bytes = IVALUE_VALUE_SIZE; /* max size of new combine block */
 
     ivalue_block_t *new_ivblk = item_get_ivblk(new_it);
     ivalue_block_t *frt_ivblk = item_get_ivblk(front);
@@ -7976,9 +7978,9 @@ static bool do_combine_internal(struct default_engine *engine,
     ivalue_relink_t link;
 
     if (front->nbytes <= fblk_bytes) {
-        cpbytes = back->nbytes - (fblk_bytes - (front->nbytes - 2));
-        ivbytes = -(fblk_bytes - (front->nbytes - 2));
-        compute_alloc_bytes(&bck_ivblk, &cpbytes, &ivbytes, IVALUE_VALUE_SIZE);
+        tocpy_bytes = back->nbytes - (fblk_bytes - (front->nbytes - 2));
+        reuse_bytes = fblk_bytes - (front->nbytes - 2);
+        prepare_combine(&bck_ivblk, &tocpy_bytes, &ivbytes, reuse_bytes, fill_bytes);
 
         alloc_bytes = ivbytes + sizeof(ivalue_block_t);
         id = slabs_clsid(engine, alloc_bytes);
@@ -7995,35 +7997,35 @@ static bool do_combine_internal(struct default_engine *engine,
         do_copy_ivblk(new_ivblk, item_get_ivblk(back), front->nbytes - 2, ivbytes + fblk_bytes - (front->nbytes - 2));
     } else {
         do_copy_ivblk(new_ivblk, frt_ivblk, 0, fblk_bytes);
-        prepare_combine(&frt_ivblk, &link, front->nbytes, &split_store);
+        prepare_relink(&frt_ivblk, &link, front->nbytes, &split_store);
         new_ivblk->next = link.head;
-        ivbytes = (split_store == true) ? -1 : frt_ivblk->nbytes - 2;
-        cpbytes = back->nbytes;
+        reuse_bytes = (split_store == true) ? 1 : -(frt_ivblk->nbytes - 2) /* parts used in front block */;
+        tocpy_bytes = back->nbytes;
 
-        compute_alloc_bytes(&bck_ivblk, &cpbytes, &ivbytes, fill_bytes);
+        prepare_combine(&bck_ivblk, &tocpy_bytes, &ivbytes, reuse_bytes, fill_bytes);
 
-        if (cpbytes == back->nbytes) { //failed to combine front block and back block
-            ivbytes = 0;
+        if (tocpy_bytes == back->nbytes) { //failed to combine front block and back block
+            reuse_bytes = 2 /* front "\r\n" */;
             bck_ivblk = item_get_ivblk(back);
 
             //try again with back block only
-            compute_alloc_bytes(&bck_ivblk, &cpbytes, &ivbytes, fill_bytes);
+            prepare_combine(&bck_ivblk, &tocpy_bytes, &ivbytes, reuse_bytes, fill_bytes);
 
             if (new_ivblk->next == NULL) new_ivblk->next = frt_ivblk; //link.head == NULL;
-            alloc_bytes = ivbytes - 2 /* front "\r\n" */ + sizeof(ivalue_block_t);
+            alloc_bytes = ivbytes + sizeof(ivalue_block_t);
             id = slabs_clsid(engine, alloc_bytes);
             if ((frt_ivblk->next = do_item_alloc_internal(engine, alloc_bytes, id, cookie)) == NULL) {
                 id = slabs_clsid(engine, IVALUE_PER_BLOCK);
                 slabs_free(engine, new_it, IVALUE_PER_BLOCK, id);
                 return false;
             }
-            frt_ivblk->next->nbytes = ivbytes - 2;
-            if (cpbytes > 0) { //remain back block
+            frt_ivblk->next->nbytes = ivbytes;
+            if (tocpy_bytes > 0) { //remain back block
                 frt_ivblk->next->next = bck_ivblk;
-                back->nbytes -= cpbytes;
+                back->nbytes -= tocpy_bytes;
             }
 
-            do_copy_ivblk(frt_ivblk, item_get_ivblk(back), (frt_ivblk->nbytes - 2), ivbytes);
+            do_copy_ivblk(frt_ivblk, item_get_ivblk(back), (frt_ivblk->nbytes - 2), ivbytes + reuse_bytes);
             front->nbytes = item_get_ivblk(front)->nbytes;
         } else {
             alloc_bytes = ivbytes + sizeof(ivalue_block_t);
@@ -8037,17 +8039,17 @@ static bool do_combine_internal(struct default_engine *engine,
                 return false;
             }
             link.tail->next->nbytes = ivbytes;
-            if (cpbytes > 0) { //remain back block
+            if (tocpy_bytes > 0) { //remain back block
                 link.tail->next->next = bck_ivblk;
-                back->nbytes -= cpbytes;
+                back->nbytes -= tocpy_bytes;
             }
 
             if (split_store) {
-                do_copy_ivblk(link.tail, item_get_ivblk(back), link.tail->nbytes - 1, ivbytes + 1/* \r\n split */);
+                do_copy_ivblk(link.tail, item_get_ivblk(back), link.tail->nbytes - 1, ivbytes + reuse_bytes);
             } else {
                 link.tail = link.tail->next;
                 do_copy_ivblk(link.tail, frt_ivblk, 0, frt_ivblk->nbytes - 2);
-                do_copy_ivblk(link.tail, item_get_ivblk(back), frt_ivblk->nbytes - 2, ivbytes - (frt_ivblk->nbytes - 2));
+                do_copy_ivblk(link.tail, item_get_ivblk(back), frt_ivblk->nbytes - 2, ivbytes + reuse_bytes);
             }
             front->nbytes = item_get_ivblk(front)->nbytes;
             id = slabs_clsid(engine, frt_ivblk->nbytes + sizeof(ivalue_block_t));
