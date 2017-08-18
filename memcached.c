@@ -813,6 +813,12 @@ static void conn_coll_eitem_free(conn *c) {
         free(c->coll_strkeys); c->coll_strkeys = NULL;
         break;
 #endif
+#ifdef SUPPORT_KV_MGET
+      case OPERATION_MGET:
+        free(c->coll_eitem);
+        free(c->coll_strkeys); c->coll_strkeys = NULL;
+        break;
+#endif
       default:
         assert(0); /* This case must not happen */
     }
@@ -1561,7 +1567,9 @@ static int tokenize_keys(char *keystr, int length, char delimiter, int keycnt, t
         s++;
     first = s;
     for (e = s; ntokens < keycnt; ++e) {
+#ifndef TOKENIZE_SPACE
         if (*e == ' ') break;
+#endif
         if (*e == delimiter) {
             if (s == e) break;
             tokens[ntokens].value = s;
@@ -1576,7 +1584,13 @@ static int tokenize_keys(char *keystr, int length, char delimiter, int keycnt, t
             if (ntokens == keycnt && (e-first) == (length-2))
                 finish = true;
             break; /* string end */
+#ifdef TOKENIZE_SPACE
+        } else if (*e == ' ') {
+            break; /* string end */
         }
+#else
+        }
+#endif
     }
     if (finish == true) {
         return ntokens;
@@ -1717,14 +1731,25 @@ static void process_mop_delete_complete(conn *c) {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     field_t *flist = NULL;
     uint32_t del_count = 0;
+#ifdef TOKENIZE_SPACE
+    char delimiter = ' ';
+    char old_delimiter = ','; /* need to keep backwards compatibility */
+#else
     char delimiter = ',';
+#endif
     bool dropped;
 
     if (c->coll_strkeys != NULL) {
         flist = (field_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
+#ifdef TOKENIZE_SPACE
         if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-            (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist) == -1))
+            ((tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist) == -1) &&
+             (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist) == -1)))
+#else
+       if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
+           (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist) == -1))
+#endif
         {
             ret = ENGINE_EBADVALUE;
         }
@@ -1805,11 +1830,21 @@ static void process_mop_get_complete(conn *c)
     assert(c->ewouldblock == false);
 
     if (ret == ENGINE_SUCCESS && c->coll_strkeys != NULL) {
+#ifdef TOKENIZE_SPACE
+        char delimiter = ' ';
+        char old_delimiter = ','; /* need to keep backwards compatibility */
+#else
         char delimiter = ',';
+#endif
         flist = (field_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(c->coll_lenkeys));
-
+#ifdef TOKENIZE_SPACE
+        if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
+            ((tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist) == -1) &&
+             (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist) == -1)))
+#else
         if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
             (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist) == -1))
+#endif
         {
             ret = ENGINE_EBADVALUE;
         }
@@ -2130,17 +2165,25 @@ static void process_bop_mget_complete(conn *c) {
     eitem **elem_array = (eitem **)c->coll_eitem;
     uint32_t tot_elem_count = 0;
     uint32_t tot_access_count = 0;
+#ifdef TOKENIZE_SPACE
+    char delimiter = ' ';
+    char old_delimiter = ','; /* need to keep backwards compatibility */
+#else
     char delimiter = ',';
+#endif
     token_t *key_tokens = (token_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
+#ifdef TOKENIZE_SPACE
     if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-        (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys,
-                       delimiter, c->coll_numkeys, key_tokens) == -1))
+        ((tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, delimiter, c->coll_numkeys, key_tokens) == -1) &&
+         (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, old_delimiter, c->coll_numkeys, key_tokens) == -1)))
+#else
+    if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
+        (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, delimiter, c->coll_numkeys, key_tokens) == -1))
+#endif
     {
         ret = ENGINE_EBADVALUE;
-    }
-    else /* valid key_tokens */
-    {
+    } else { /* valid key_tokens */
         uint32_t cur_elem_count = 0;
         uint32_t cur_access_count = 0;
         uint32_t flags, k, e;
@@ -2323,7 +2366,12 @@ static int make_smget_trim_response(char *bufptr, eitem_info *info)
 static void process_bop_smget_complete_old(conn *c) {
     int i, idx;
     char *vptr = (char*)c->coll_strkeys;
+#ifdef TOKENIZE_SPACE
+    char delimiter = ' ';
+    char old_delimiter = ','; /* need to keep backwards compatibility */
+#else
     char delimiter = ',';
+#endif
     token_t *keys_array = (token_t *)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
     char *respptr;
     int   resplen;
@@ -2342,8 +2390,15 @@ static void process_bop_smget_complete_old(conn *c) {
     respptr = ((char*)kmis_array + kmis_array_size);
 
     ENGINE_ERROR_CODE ret;
+#ifdef TOKENIZE_SPACE
     if ((strncmp(vptr + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-        (tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1)) {
+        ((tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1) &&
+         (tokenize_keys(vptr, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array) == -1)))
+#else
+    if ((strncmp(vptr + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
+        (tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1))
+#endif
+    {
         ret = ENGINE_EBADVALUE;
     } else {
         if (c->coll_bkrange.to_nbkey == BKEY_NULL) {
@@ -2478,7 +2533,12 @@ static void process_bop_smget_complete(conn *c) {
 #endif
     int i, idx;
     char *vptr = (char*)c->coll_strkeys;
+#ifdef TOKENIZE_SPACE
+    char delimiter = ' ';
+    char old_delimiter = ','; /* need to keep backwards compatibility */
+#else
     char delimiter = ',';
+#endif
     token_t *keys_array = (token_t *)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
     char *respptr;
     int   resplen;
@@ -2491,8 +2551,15 @@ static void process_bop_smget_complete(conn *c) {
     respptr = (char *)&smres.miss_kinfo[c->coll_numkeys];
 
     ENGINE_ERROR_CODE ret;
+#ifdef TOKENIZE_SPACE
     if ((strncmp(vptr + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-        (tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1)) {
+        ((tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1) &&
+         (tokenize_keys(vptr, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array) == -1)))
+#else
+    if ((strncmp(vptr + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
+        (tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1))
+#endif
+    {
         ret = ENGINE_EBADVALUE;
     } else {
         if (c->coll_bkrange.to_nbkey == BKEY_NULL) {
@@ -2641,6 +2708,181 @@ static void process_bop_smget_complete(conn *c) {
 }
 #endif
 
+/**
+ * Get a suffix buffer and insert it into the list of used suffix buffers
+ * @param c the connection object
+ * @return a pointer to a new suffix buffer or NULL if allocation failed
+ */
+static char *get_suffix_buffer(conn *c) {
+    if (c->suffixleft == c->suffixsize) {
+        char **new_suffix_list;
+        size_t sz = sizeof(char*) * c->suffixsize * 2;
+
+        new_suffix_list = realloc(c->suffixlist, sz);
+        if (new_suffix_list) {
+            c->suffixsize *= 2;
+            c->suffixlist = new_suffix_list;
+        } else {
+            if (settings.verbose > 1) {
+                mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                        "=%d Failed to resize suffix buffer\n", c->sfd);
+            }
+
+            return NULL;
+        }
+    }
+
+    char *suffix = cache_alloc(c->thread->suffix_cache);
+    if (suffix != NULL) {
+        *(c->suffixlist + c->suffixleft) = suffix;
+        ++c->suffixleft;
+    }
+
+    return suffix;
+}
+
+
+#ifdef SUPPORT_KV_MGET
+static void process_mget_complete(conn *c)
+{
+    assert(c->coll_op == OPERATION_MGET);
+    assert(c->coll_eitem != NULL);
+
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    int nhit;
+    item **item_array = (item **)c->coll_eitem;
+    token_t *key_tokens = (token_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(c->coll_lenkeys));
+
+    if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
+        (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, ' ', c->coll_numkeys, key_tokens) == -1))
+    {
+        ret = ENGINE_EBADVALUE;
+    } else { /* valid key_tokens */
+        item *it;
+        uint32_t k;
+        nhit = 0;
+        for (k = 0; k < c->coll_numkeys; k++) {
+
+            if (key_tokens[k].length > KEY_MAX_LENGTH) {
+                out_string(c, "CLIENT_ERROR bad command line format");
+                return;
+            }
+
+            ret = mc_engine.v1->get(mc_engine.v0, c, &it, key_tokens[k].value, key_tokens[k].length, 0);
+            if (ret != ENGINE_SUCCESS) {
+                it = NULL;
+            }
+
+            if (settings.detail_enabled) {
+                stats_prefix_record_get(key_tokens[k].value, key_tokens[k].length, NULL != it);
+            }
+
+            if (it) {
+                item_info info = { .nvalue = 1 };
+                if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &info)) {
+                    mc_engine.v1->release(mc_engine.v0, c, it);
+                    out_string(c, "SERVER_ERROR error getting item data");
+                    break;
+                }
+
+                assert(memcmp((char*)info.value[0].iov_base + info.nbytes - 2, "\r\n", 2) == 0);
+
+                /* Rebuild the suffix */
+                char *suffix = get_suffix_buffer(c);
+                if (suffix == NULL) {
+                    out_string(c, "SERVER_ERROR out of memory rebuilding suffix");
+                    mc_engine.v1->release(mc_engine.v0, c, it);
+                    return;
+                }
+                int suffix_len = snprintf(suffix, SUFFIX_SIZE,
+                                          " %u %u\r\n", htonl(info.flags),
+                                          info.nbytes - 2);
+
+                MEMCACHED_COMMAND_GET(c->sfd, info.key, info.nkey,info.nbytes, info.cas);
+                if (c->return_cas)
+                {
+                  char *cas = get_suffix_buffer(c);
+                  if (cas == NULL) {
+                    out_string(c, "SERVER_ERROR out of memory making CAS suffix");
+                    mc_engine.v1->release(mc_engine.v0, c, it);
+                    return;
+                  }
+                  int cas_len = snprintf(cas, SUFFIX_SIZE, " %"PRIu64"\r\n",
+                                         info.cas);
+                  if (add_iov(c, "VALUE ", 6) != 0 ||
+                      add_iov(c, info.key, info.nkey) != 0 ||
+                      add_iov(c, suffix, suffix_len - 2) != 0 ||
+                      add_iov(c, cas, cas_len) != 0 ||
+                      add_iov(c, info.value[0].iov_base, info.value[0].iov_len) != 0)
+                      {
+                          mc_engine.v1->release(mc_engine.v0, c, it);
+                          break;
+                      }
+                } else {
+                  if (add_iov(c, "VALUE ", 6) != 0 ||
+                      add_iov(c, info.key, info.nkey) != 0 ||
+                      add_iov(c, suffix, suffix_len) != 0 ||
+                      add_iov(c, info.value[0].iov_base, info.value[0].iov_len) != 0)
+                      {
+                          mc_engine.v1->release(mc_engine.v0, c, it);
+                          break;
+                      }
+                }
+
+                 if (settings.verbose > 1) {
+                      mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                              ">%d sending key %s\n", c->sfd, (char*)info.key);
+                 }
+
+                  /* item_get() has incremented it->refcount for us */
+                  STATS_HIT(c, get, key_tokens[k].value, key_tokens[k].length);
+                  *(item_array + nhit) = it;
+                  nhit++;
+            } else {
+                STATS_MISS(c, get, key_tokens[k].value, key_tokens[k].length);
+                MEMCACHED_COMMAND_GET(c->sfd, key_tokens[k].value, key_tokens[k].length, -1, 0);
+            }
+        }
+
+        if (settings.verbose > 1) {
+            mc_logger->log(EXTENSION_LOG_DEBUG, c, ">%d END\n", c->sfd);
+        }
+
+        if (k != c->coll_numkeys || add_iov(c, "END\r\n", 5) != 0
+            || (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+            out_string(c, "SERVER_ERROR out of memory writing get response");
+        }
+        else {
+            ret = ENGINE_SUCCESS;
+        }
+    }
+    switch(ret) {
+      case ENGINE_SUCCESS:
+        c->icurr = (item*)c->coll_eitem;
+        c->ileft = nhit;
+        c->suffixcurr = c->suffixlist;
+        conn_set_state(c, conn_mwrite);
+        c->msgcurr = 0;
+        break;
+     default:
+        if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad data chunk");
+        else handle_unexpected_errorcode_ascii(c, ret);
+    }
+
+    if (ret != ENGINE_SUCCESS) {
+        if (c->coll_strkeys != NULL) {
+            free((void *)c->coll_strkeys);
+            c->coll_strkeys = NULL;
+        }
+        if (c->coll_eitem != NULL) {
+            free((void *)c->coll_eitem);
+            c->coll_eitem = NULL;
+        }
+    }
+
+}
+#endif
+
 static void complete_update_ascii(conn *c) {
     assert(c != NULL);
     assert(c->ewouldblock == false);
@@ -2665,6 +2907,9 @@ static void complete_update_ascii(conn *c) {
 #endif
 #ifdef SUPPORT_BOP_SMGET
         else if (c->coll_op == OPERATION_BOP_SMGET) process_bop_smget_complete(c);
+#endif
+#ifdef SUPPORT_KV_MGET
+        else if (c->coll_op == OPERATION_MGET) process_mget_complete(c);
 #endif
         return;
     }
@@ -5762,7 +6007,12 @@ static void process_bin_bop_smget_complete_old(conn *c) {
     int kmis_array_size = c->coll_numkeys * sizeof(uint32_t);
     char *resultptr;
     char *vptr = (char*)c->coll_strkeys;
+#ifdef TOKENIZE_SPACE
+    char delimiter = ' ';
+    char old_delimiter = ','; /* need to keep backwards compatibility */
+#else
     char delimiter = ',';
+#endif
     token_t *keys_array = (token_t*)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
     /* We don't actually receive the trailing two characters in the bin
@@ -5782,7 +6032,14 @@ static void process_bin_bop_smget_complete_old(conn *c) {
     bool duplicated;
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#ifdef TOKENIZE_SPACE
     int ntokens = tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+    if (ntokens == -1) {
+        ntokens = tokenize_keys(vptr, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
+    }
+#else
+    int ntokens = tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+#endif
     if (ntokens == -1) {
         ret = ENGINE_EBADVALUE;
     } else {
@@ -5943,7 +6200,12 @@ static void process_bin_bop_smget_complete(conn *c) {
     smget_result_t smres;
     char *resultptr;
     char *vptr = (char*)c->coll_strkeys;
+#ifdef TOKENIZE_SPACE
+    char delimiter = ' ';
+    char old_delimiter = ','; /* need to keep backwards compatibility */
+#else
     char delimiter = ',';
+#endif
     token_t *keys_array = (token_t*)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
     /* We don't actually receive the trailing two characters in the bin
@@ -5957,8 +6219,13 @@ static void process_bin_bop_smget_complete(conn *c) {
     resultptr = (char *)&smres.miss_kinfo[c->coll_numkeys];
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    int ntokens = tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
-    if (ntokens == -1) {
+#ifdef TOKENIZE_SPACE
+    if ((tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1) &&
+        (tokenize_keys(vptr, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array) == -1))
+#else
+    if (tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1)
+#endif
+    {
         ret = ENGINE_EBADVALUE;
     } else {
         if (c->coll_bkrange.to_nbkey == BKEY_NULL) {
@@ -8011,39 +8278,6 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
     }
 }
 
-/**
- * Get a suffix buffer and insert it into the list of used suffix buffers
- * @param c the connection object
- * @return a pointer to a new suffix buffer or NULL if allocation failed
- */
-static char *get_suffix_buffer(conn *c) {
-    if (c->suffixleft == c->suffixsize) {
-        char **new_suffix_list;
-        size_t sz = sizeof(char*) * c->suffixsize * 2;
-
-        new_suffix_list = realloc(c->suffixlist, sz);
-        if (new_suffix_list) {
-            c->suffixsize *= 2;
-            c->suffixlist = new_suffix_list;
-        } else {
-            if (settings.verbose > 1) {
-                mc_logger->log(EXTENSION_LOG_DEBUG, c,
-                        "=%d Failed to resize suffix buffer\n", c->sfd);
-            }
-
-            return NULL;
-        }
-    }
-
-    char *suffix = cache_alloc(c->thread->suffix_cache);
-    if (suffix != NULL) {
-        *(c->suffixlist + c->suffixleft) = suffix;
-        ++c->suffixleft;
-    }
-
-    return suffix;
-}
-
 /* ntokens is overwritten here... shrug.. */
 static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens, bool return_cas)
 {
@@ -8206,7 +8440,75 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
 
     return;
 }
+#ifdef SUPPORT_KV_MGET
+static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt, bool return_cas)
+{
+    /* kcnt is not used */
+    item *it = NULL;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    int need_size = 0;
 
+    int item_array_size = c->coll_numkeys * sizeof(item*);
+    int respon_hdr_size = c->coll_numkeys * ((lenstr_size*2)+30);
+    int respon_bdy_size = c->coll_numkeys * ((KEY_MAX_LENGTH*2+2)+lenstr_size+15);
+
+    need_size = item_array_size + respon_hdr_size + respon_bdy_size;
+
+    assert(need_size > 0);
+
+    if ((it = (item *)malloc(need_size)) == NULL) {
+        ret = ENGINE_ENOMEM;
+    } else {
+        int kmem_size = GET_8ALIGN_SIZE(vlen)
+                      + (sizeof(token_t) * c->coll_numkeys);
+        if ((c->coll_strkeys = malloc(kmem_size)) == NULL) {
+            free((void*)it);
+            ret = ENGINE_ENOMEM;
+        }
+    }
+
+    switch (ret) {
+    case ENGINE_SUCCESS:
+        {
+        c->return_cas  = return_cas;
+        c->ritem       = (char *)c->coll_strkeys;
+        c->rlbytes     = vlen;
+        c->coll_eitem  = (void *)it;
+        c->coll_op     = OPERATION_MGET;
+        conn_set_state(c, conn_nread);
+        }
+        break;
+    default:
+        out_string(c, "SERVER_ERROR out of memory");
+
+        c->write_and_go = conn_swallow;
+        c->sbytes = vlen;
+    }
+}
+
+static inline void process_mget_command(conn *c, token_t *tokens, const size_t ntokens, bool return_cas)
+{
+    uint32_t lenkeys, numkeys;
+
+    if ((! safe_strtoul(tokens[COMMAND_TOKEN+1].value, &lenkeys)) ||
+        (! safe_strtoul(tokens[COMMAND_TOKEN+2].value, &numkeys))) {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "CLIENT_ERROR bad command line format");
+        return;
+    }
+
+    if (lenkeys < 1 || numkeys < 1) {
+        /* ENGINE_EBADVALUE */
+        out_string(c, "CLIENT_ERROR bad value"); return;
+    }
+    lenkeys += 2;
+
+    c->coll_numkeys = numkeys;
+    c->coll_lenkeys = lenkeys;
+
+    process_prepare_nread_keys(c, lenkeys, numkeys, return_cas);
+}
+#endif
 static void process_update_command(conn *c, token_t *tokens, const size_t ntokens, ENGINE_STORE_OPERATION store_op, bool handle_cas) {
     char *key;
     size_t nkey;
@@ -12775,6 +13077,16 @@ static void process_command(conn *c, char *command, int cmdlen)
     {
         process_get_command(c, tokens, ntokens, true);
     }
+#ifdef SUPPORT_KV_MGET
+    else if ((ntokens == 4) && (strcmp(tokens[COMMAND_TOKEN].value, "mget") == 0))
+    {
+        process_mget_command(c, tokens, ntokens, false);
+    }
+    else if ((ntokens == 4) && (strcmp(tokens[COMMAND_TOKEN].value, "mgets") == 0))
+    {
+        process_mget_command(c, tokens, ntokens, true);
+    }
+#endif
     else if ((ntokens == 6 || ntokens == 7) &&
         ((strcmp(tokens[COMMAND_TOKEN].value, "add"    ) == 0 && (comm = (int)OPERATION_ADD)) ||
          (strcmp(tokens[COMMAND_TOKEN].value, "set"    ) == 0 && (comm = (int)OPERATION_SET)) ||

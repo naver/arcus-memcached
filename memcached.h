@@ -492,6 +492,10 @@ struct conn {
     char   *ritem;  /** when we read in an item's value, it goes here */
     uint32_t    rlbytes;
 
+#ifdef SUPPORT_KV_MGET
+    /* kv processing fields */
+    bool    return_cas;
+#endif
     /* collection processing fields */
     void        *coll_eitem;
     char        *coll_resps;
