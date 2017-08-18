@@ -563,18 +563,6 @@ extern "C" {
                                             uint32_t* access_count, uint32_t* flags,
                                             bool* dropped_trimmed, uint16_t vbucket);
 
-#ifdef USE_EBLOCK_RESULT
-        ENGINE_ERROR_CODE (*btree_elem_mget)(ENGINE_HANDLE* handle, const void* cookie,
-                                             const token_t *key_tokens,
-                                             const uint32_t numkeys,
-                                             const bkey_range *bkrange,
-                                             const eflag_filter *efilter,
-                                             const uint32_t offset,
-                                             const uint32_t req_count,
-                                             eblock_result_t *eblk_ret,
-                                             uint32_t *access_count, uint16_t vbucket);
-#endif
-
         ENGINE_ERROR_CODE (*btree_elem_count)(ENGINE_HANDLE* handle, const void* cookie,
                                               const void* key, const int nkey,
                                               const bkey_range *bkrange,

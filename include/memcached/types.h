@@ -318,13 +318,6 @@ extern "C" {
       struct _mem_block_t *last_blk; /* last block pointer */
       uint32_t elem_cnt;             /* total element count */
       uint32_t blck_cnt;             /* block count */
-
-      /* for multiget */
-      uint32_t num_keys;              /* number of keys */
-      uint32_t *cur_ecnt;             /* elem count array for individual keys */
-      uint32_t *flags;                /* flag array for individual keys */
-      bool     *trimmed;              /* trim check array for individual keys */
-      ENGINE_ERROR_CODE *ret;         /* engine error code for individual keys */
     } eblock_result_t;
 #endif
 
@@ -389,22 +382,8 @@ extern "C" {
 #ifdef USE_EBLOCK_RESULT
 #define EITEMS_PER_BLOCK 1023
 
-#define EBLOCK_HEAD(b)       ((b)->head_blk)
 #define EBLOCK_ELEM_LAST(b)  ((b)->tail_blk->items[(EBLOCK_ELEM_COUNT(b) - 1) % EITEMS_PER_BLOCK])
 #define EBLOCK_ELEM_COUNT(b) ((b)->elem_cnt)
-#define EBLOCK_NKEY_COUNT(b) ((b)->num_keys)
-#define EBLOCK_MGET_INIT(b, k, p)                                                       \
-    do {                                                                                \
-        (b)->head_blk = NULL;                                                           \
-        (b)->tail_blk = NULL;                                                           \
-        (b)->elem_cnt = 0;                                                              \
-        (b)->blck_cnt = 0;                                                              \
-        (b)->num_keys = (k);                                                            \
-        (b)->cur_ecnt = (uint32_t*)(p);                                                 \
-        (b)->flags    = (uint32_t*)((char*)(b)->cur_ecnt + (sizeof(uint32_t)*(k)));     \
-        (b)->trimmed  = (bool*)((char*)(b)->flags + (sizeof(uint32_t)*(k)));            \
-        (b)->ret      = (ENGINE_ERROR_CODE*)((char*)(b)->trimmed + (sizeof(bool)*(k))); \
-    } while(0)                                                                          \
 
 #define EBLOCK_SCAN_INIT(b, s)         \
     do {                               \
@@ -413,12 +392,14 @@ extern "C" {
         (s)->idx = 0;                  \
     } while(0)                         \
 
+#define EBLOCK_SCAN_RESET(b, s) ((s)->tot = (b)->elem_cnt)
+
 #define EBLOCK_SCAN_NEXT(s, e)                                               \
     do {                                                                     \
         if ((s)->idx < (s)->tot) {                                           \
-            (e) = ((s)->blk)->items[(s)->idx % EITEMS_PER_BLOCK];            \
-            if ((((s)->idx)++ % EITEMS_PER_BLOCK) == (EITEMS_PER_BLOCK - 1)) \
+            if (((s)->idx % EITEMS_PER_BLOCK) == 0 && ((s)->idx != 0))       \
                 (s)->blk = ((s)->blk)->next;                                 \
+            (e) = ((s)->blk)->items[(s)->idx++ % EITEMS_PER_BLOCK];          \
         } else {                                                             \
             (e) = NULL;                                                      \
         }                                                                    \

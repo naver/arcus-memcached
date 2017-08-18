@@ -171,7 +171,7 @@ bool mblock_list_alloc(uint32_t blck_cnt, mem_block_t **head_blk, mem_block_t **
         total_mblocks += new_cnt;
         //pthread_mutex_unlock(&pool_mutex);
         if (alloc_cnt < blck_cnt) {
-            mblock_list_free(alloc_cnt, *head_blk, *tail_blk);
+            mblock_list_free(alloc_cnt, head_blk, tail_blk);
             return false;
         }
     }
@@ -179,24 +179,25 @@ bool mblock_list_alloc(uint32_t blck_cnt, mem_block_t **head_blk, mem_block_t **
     return true;
 }
 
-void mblock_list_free(uint32_t blck_cnt, mem_block_t *head_blk, mem_block_t *tail_blk) {
+void mblock_list_free(uint32_t blck_cnt, mem_block_t **head_blk, mem_block_t **tail_blk) {
     //mem_block_t *bye = NULL;
     //mem_block_t *bye_helper = NULL;
 
     //pthread_mutex_lock(&pool_mutex);
-    if (head_blk == NULL || blck_cnt == 0)
+    if (*head_blk == NULL || blck_cnt == 0)
         return;
 
     assert(pool_tail == NULL || pool_tail->next == NULL);
-    assert(tail_blk->next == NULL);
+    assert((*tail_blk)->next == NULL);
 
     if (pool_head == NULL) {
-        pool_head = head_blk;
+        pool_head = *head_blk;
     } else {
-        pool_tail->next = head_blk;
+        pool_tail->next = *head_blk;
     }
-    pool_tail = tail_blk;
+    pool_tail = *tail_blk;
 
+    *head_blk = *tail_blk = NULL;
     free_mblocks += blck_cnt;
     assert(free_mblocks <= total_mblocks);
 
@@ -226,12 +227,29 @@ void mblock_list_free(uint32_t blck_cnt, mem_block_t *head_blk, mem_block_t *tai
 
 bool eblk_prepare(eblock_result_t *result, uint32_t elem_count) {
     assert(elem_count > 0);
-    uint32_t blkcnt = ((elem_count - 1) / EITEMS_PER_BLOCK) + 1;
-    if (!mblock_list_alloc(blkcnt, &result->head_blk, &result->last_blk)) {
-        result->elem_cnt = 0;
-        return false;
+    uint32_t blkcnt;
+    if (result->head_blk == NULL) { // empty block
+        blkcnt = ((elem_count - 1) / EITEMS_PER_BLOCK) + 1;
+        if (!mblock_list_alloc(blkcnt, &result->head_blk, &result->last_blk)) {
+            result->elem_cnt = 0;
+            return false;
+        }
+        result->tail_blk = NULL;
+    } else {
+        mem_block_t *tmp_head;
+        mem_block_t *tmp_last;
+        uint32_t curr_blkcnt = result->blck_cnt;
+        uint32_t curr_elemcnt = result->elem_cnt;
+        blkcnt = ((result->elem_cnt + elem_count - 1) / EITEMS_PER_BLOCK) + 1;
+        if (blkcnt > curr_blkcnt) { // need append block
+            if (!mblock_list_alloc((blkcnt - curr_blkcnt), &tmp_head, &tmp_last)) {
+                result->elem_cnt = curr_elemcnt;
+                return false;
+            }
+            result->last_blk->next = tmp_head;
+            result->last_blk = tmp_last;
+        }
     }
-    result->tail_blk = NULL;
     result->blck_cnt = blkcnt;
     return true;
 }
@@ -246,13 +264,13 @@ void eblk_truncate(eblock_result_t *result) {
             uint32_t used_nblks = ((result->elem_cnt - 1) / EITEMS_PER_BLOCK) + 1;
             uint32_t free_nblks = result->blck_cnt - used_nblks;
 
-            mblock_list_free(free_nblks, free_head, free_tail);
+            mblock_list_free(free_nblks, &free_head, &free_tail);
             result->tail_blk->next = NULL;
             result->last_blk = result->tail_blk;
             result->blck_cnt -= free_nblks;
         }
     } else { /* ENGINE_ELEM_ENOENT case */
-        mblock_list_free(result->blck_cnt, result->head_blk, result->last_blk);
+        mblock_list_free(result->blck_cnt, &result->head_blk, &result->last_blk);
         result->head_blk = result->tail_blk = result->last_blk = NULL;
         result->elem_cnt = result->blck_cnt = 0;
     }
