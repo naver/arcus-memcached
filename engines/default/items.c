@@ -7962,7 +7962,7 @@ static bool do_combine_internal(struct default_engine *engine,
                                 uint32_t fblk_bytes)
 {
     assert(new_it != NULL);
-    assert(new_it->nbytes = front->nbytes + back->nbytes - 2);
+    assert(new_it->nbytes == front->nbytes + back->nbytes - 2);
     unsigned int id;
 
     int alloc_bytes;
@@ -7970,7 +7970,6 @@ static bool do_combine_internal(struct default_engine *engine,
     int tocpy_bytes;
     int reuse_bytes;
     bool split_store; /* "\r\n" split stored */
-    uint32_t fill_bytes = IVALUE_VALUE_SIZE; /* max size of new combine block */
 
     ivalue_block_t *new_ivblk = item_get_ivblk(new_it);
     ivalue_block_t *frt_ivblk = item_get_ivblk(front);
@@ -7978,9 +7977,9 @@ static bool do_combine_internal(struct default_engine *engine,
     ivalue_relink_t link;
 
     if (front->nbytes <= fblk_bytes) {
-        tocpy_bytes = back->nbytes - (fblk_bytes - (front->nbytes - 2));
         reuse_bytes = fblk_bytes - (front->nbytes - 2);
-        prepare_combine(&bck_ivblk, &tocpy_bytes, &ivbytes, reuse_bytes, fill_bytes);
+        tocpy_bytes = back->nbytes - reuse_bytes;
+        prepare_combine(&bck_ivblk, &tocpy_bytes, &ivbytes, reuse_bytes, IVALUE_VALUE_SIZE);
 
         alloc_bytes = ivbytes + sizeof(ivalue_block_t);
         id = slabs_clsid(engine, alloc_bytes);
@@ -7992,9 +7991,9 @@ static bool do_combine_internal(struct default_engine *engine,
         new_ivblk->next->nbytes = ivbytes;
         new_ivblk->next->next = bck_ivblk;
 
-        back->nbytes = ivbytes + fblk_bytes - (front->nbytes - 2);
+        back->nbytes = ivbytes + reuse_bytes;
         do_copy_ivblk(new_ivblk, frt_ivblk, 0, front->nbytes - 2);
-        do_copy_ivblk(new_ivblk, item_get_ivblk(back), front->nbytes - 2, ivbytes + fblk_bytes - (front->nbytes - 2));
+        do_copy_ivblk(new_ivblk, item_get_ivblk(back), front->nbytes - 2, ivbytes + reuse_bytes);
     } else {
         do_copy_ivblk(new_ivblk, frt_ivblk, 0, fblk_bytes);
         prepare_relink(&frt_ivblk, &link, front->nbytes, &split_store);
@@ -8002,14 +8001,14 @@ static bool do_combine_internal(struct default_engine *engine,
         reuse_bytes = (split_store == true) ? 1 : -(frt_ivblk->nbytes - 2) /* parts used in front block */;
         tocpy_bytes = back->nbytes;
 
-        prepare_combine(&bck_ivblk, &tocpy_bytes, &ivbytes, reuse_bytes, fill_bytes);
+        prepare_combine(&bck_ivblk, &tocpy_bytes, &ivbytes, reuse_bytes, IVALUE_VALUE_SIZE);
 
         if (tocpy_bytes == back->nbytes) { //failed to combine front block and back block
             reuse_bytes = 2 /* front "\r\n" */;
             bck_ivblk = item_get_ivblk(back);
 
             //try again with back block only
-            prepare_combine(&bck_ivblk, &tocpy_bytes, &ivbytes, reuse_bytes, fill_bytes);
+            prepare_combine(&bck_ivblk, &tocpy_bytes, &ivbytes, reuse_bytes, IVALUE_VALUE_SIZE);
 
             if (new_ivblk->next == NULL) new_ivblk->next = frt_ivblk; //link.head == NULL;
             alloc_bytes = ivbytes + sizeof(ivalue_block_t);
