@@ -4934,11 +4934,11 @@ static int do_btree_posi_find_with_get(btree_meta_info *info,
 
         ecnt = 1;                             /* elem count */
         eidx = (bpos < count) ? bpos : count; /* elem index in elem array */
-        elem->refcount++;
 #ifdef USE_EBLOCK_RESULT
         if (!eblk_prepare(eblk_ret, (eidx + count + 1)))
             return ENGINE_ENOMEM;
 
+        elem->refcount++;
         eblk_add_elem_with_posi(eblk_ret, elem, eidx);
         if (order == BTREE_ORDER_ASC) {
             ecnt += do_btree_elem_batch_get(path[0], eidx,  false, true,  eblk_ret);
@@ -4951,6 +4951,7 @@ static int do_btree_posi_find_with_get(btree_meta_info *info,
         }
         eblk_truncate(eblk_ret);
 #else
+        elem->refcount++;
         elem_array[eidx] = elem;
 
         if (order == BTREE_ORDER_ASC) {
@@ -4994,7 +4995,7 @@ static ENGINE_ERROR_CODE do_btree_elem_get_by_posi(btree_meta_info *info,
     if (info->root == NULL) return ENGINE_ELEM_ENOENT;
 
 #ifdef USE_EBLOCK_RESULT
-    if (!eblk_prepare(eblk_ret, (count > 0 && count < info->ccnt) ? count : info->ccnt))
+    if (!eblk_prepare(eblk_ret, (count < info->ccnt) ? count : info->ccnt))
         return ENGINE_ENOMEM;
 #endif
     node = info->root;

@@ -392,7 +392,15 @@ extern "C" {
         (s)->idx = 0;                  \
     } while(0)                         \
 
-#define EBLOCK_SCAN_RESET(b, s) ((s)->tot = (b)->elem_cnt)
+#define EBLOCK_SCAN_RESET(f, b, s)     \
+    do {                               \
+        if ((f) == false) {            \
+            (s)->blk = (b)->head_blk;  \
+            (s)->idx = 0;              \
+            (f) = true;                \
+        }                              \
+        (s)->tot = (b)->elem_cnt;      \
+    } while(0)                         \
 
 #define EBLOCK_SCAN_NEXT(s, e)                                               \
     do {                                                                     \

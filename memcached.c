@@ -2282,7 +2282,7 @@ static void process_bop_mget_complete(conn *c) {
         }
 
 #ifdef USE_EBLOCK_RESULT
-        EBLOCK_SCAN_INIT(&c->eblk_ret, &eblk_sc); //dummy initialization
+        EBLOCK_SCAN_INIT(&c->eblk_ret, &eblk_sc);
 #endif
         for (k = 0; k < c->coll_numkeys; k++) {
 #ifdef USE_EBLOCK_RESULT
@@ -2325,14 +2325,7 @@ static void process_bop_mget_complete(conn *c) {
                 resultptr += strlen(resultptr);
 
 #ifdef USE_EBLOCK_RESULT
-                if (cur_elem_count > 0) {
-                    if (eblk_scan_init == false) {
-                        EBLOCK_SCAN_INIT(&c->eblk_ret, &eblk_sc);
-                        eblk_scan_init = true;
-                    } else {
-                        EBLOCK_SCAN_RESET(&c->eblk_ret, &eblk_sc);
-                    }
-                }
+                EBLOCK_SCAN_RESET(eblk_scan_init, &c->eblk_ret, &eblk_sc);
 #endif
                 for (e = 0; e < cur_elem_count; e++) {
 #ifdef USE_EBLOCK_RESULT

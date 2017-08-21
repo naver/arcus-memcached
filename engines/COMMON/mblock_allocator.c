@@ -239,9 +239,11 @@ bool eblk_prepare(eblock_result_t *result, uint32_t elem_count) {
         mem_block_t *head;
         mem_block_t *last;
         uint32_t curr_blkcnt = result->blck_cnt;
+        int alloc_blkcnt;
         blkcnt = ((result->elem_cnt + elem_count - 1) / EITEMS_PER_BLOCK) + 1;
-        if (blkcnt > curr_blkcnt) { // need append block
-            if (!mblock_list_alloc((blkcnt - curr_blkcnt), &head, &last))
+        alloc_blkcnt = blkcnt - curr_blkcnt;
+        if (alloc_blkcnt > 0) { // need append block
+            if (!mblock_list_alloc((alloc_blkcnt), &head, &last))
                 return false;
             result->last_blk->next = head;
             result->last_blk = last;
