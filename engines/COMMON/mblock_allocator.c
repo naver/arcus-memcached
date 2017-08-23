@@ -39,6 +39,17 @@ static void do_mblock_allocator_free_all() {
     pool_tail = NULL;
 }
 
+static void prepare_eblk_add_elem(eblock_result_t *result) {
+    if (result->tail_blk == NULL) {
+        result->tail_blk = result->head_blk;
+        result->elem_cnt = 0;
+    } else {
+        assert(result->elem_cnt > 0);
+        if (result->elem_cnt % EITEMS_PER_BLOCK == 0)
+            result->tail_blk = result->tail_blk->next;
+    }
+}
+
 int mblock_allocator_init(size_t nblocks) {
     mem_block_t *helper = NULL;
     int i;
@@ -276,25 +287,20 @@ void eblk_truncate(eblock_result_t *result) {
 }
 
 void eblk_add_elem(eblock_result_t *result, eitem *elem) {
-    if (result->tail_blk == NULL) {
-        result->tail_blk = result->head_blk;
-        result->elem_cnt = 0;
-    } else {
-        assert(result->elem_cnt > 0);
-        if (result->elem_cnt % EITEMS_PER_BLOCK == 0)
-            result->tail_blk = result->tail_blk->next;
-    }
-
+    prepare_eblk_add_elem(result);
     result->tail_blk->items[result->elem_cnt++ % EITEMS_PER_BLOCK] = (eitem *)elem;
 }
 
 void eblk_add_elem_with_posi(eblock_result_t *result, eitem *elem, int posi) {
-    /* This function should not be used when there are multiple blocks. */
-    assert(result->blck_cnt == 1);
-    if (result->tail_blk == NULL) {
-        result->tail_blk = result->head_blk;
-        result->elem_cnt = 0;
+    mem_block_t *curr_blk = result->head_blk;
+    int move_block_count = (posi / EITEMS_PER_BLOCK);
+
+    while (move_block_count > 0) {
+        curr_blk = curr_blk->next;
+        move_block_count--;
     }
-    result->tail_blk->items[posi % EITEMS_PER_BLOCK] = (eitem *)elem;
+
+    prepare_eblk_add_elem(result);
+    curr_blk->items[posi % EITEMS_PER_BLOCK] = (eitem *)elem;
     result->elem_cnt++;
 }
