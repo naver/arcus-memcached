@@ -1587,10 +1587,8 @@ static int tokenize_keys(char *keystr, int length, char delimiter, int keycnt, t
 #ifdef TOKENIZE_SPACE
         } else if (*e == ' ') {
             break; /* string end */
-        }
-#else
-        }
 #endif
+        }
     }
     if (finish == true) {
         return ntokens;
@@ -1837,6 +1835,7 @@ static void process_mop_get_complete(conn *c)
         char delimiter = ',';
 #endif
         flist = (field_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(c->coll_lenkeys));
+
 #ifdef TOKENIZE_SPACE
         if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
             ((tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist) == -1) &&
@@ -2183,7 +2182,9 @@ static void process_bop_mget_complete(conn *c) {
 #endif
     {
         ret = ENGINE_EBADVALUE;
-    } else { /* valid key_tokens */
+    }
+    else /* valid key_tokens */
+    {
         uint32_t cur_elem_count = 0;
         uint32_t cur_access_count = 0;
         uint32_t flags, k, e;
@@ -2713,7 +2714,8 @@ static void process_bop_smget_complete(conn *c) {
  * @param c the connection object
  * @return a pointer to a new suffix buffer or NULL if allocation failed
  */
-static char *get_suffix_buffer(conn *c) {
+static char *get_suffix_buffer(conn *c)
+{
     if (c->suffixleft == c->suffixsize) {
         char **new_suffix_list;
         size_t sz = sizeof(char*) * c->suffixsize * 2;
@@ -2727,7 +2729,6 @@ static char *get_suffix_buffer(conn *c) {
                 mc_logger->log(EXTENSION_LOG_DEBUG, c,
                         "=%d Failed to resize suffix buffer\n", c->sfd);
             }
-
             return NULL;
         }
     }
@@ -2737,10 +2738,8 @@ static char *get_suffix_buffer(conn *c) {
         *(c->suffixlist + c->suffixleft) = suffix;
         ++c->suffixleft;
     }
-
     return suffix;
 }
-
 
 #ifdef SUPPORT_KV_MGET
 static void process_mget_complete(conn *c)
@@ -2799,45 +2798,23 @@ static void process_mget_complete(conn *c)
                                           info.nbytes - 2);
 
                 MEMCACHED_COMMAND_GET(c->sfd, info.key, info.nkey,info.nbytes, info.cas);
-                if (c->return_cas)
+                if (add_iov(c, "VALUE ", 6) != 0 ||
+                    add_iov(c, info.key, info.nkey) != 0 ||
+                    add_iov(c, suffix, suffix_len) != 0 ||
+                    add_iov(c, info.value[0].iov_base, info.value[0].iov_len) != 0)
                 {
-                  char *cas = get_suffix_buffer(c);
-                  if (cas == NULL) {
-                    out_string(c, "SERVER_ERROR out of memory making CAS suffix");
                     mc_engine.v1->release(mc_engine.v0, c, it);
-                    return;
-                  }
-                  int cas_len = snprintf(cas, SUFFIX_SIZE, " %"PRIu64"\r\n",
-                                         info.cas);
-                  if (add_iov(c, "VALUE ", 6) != 0 ||
-                      add_iov(c, info.key, info.nkey) != 0 ||
-                      add_iov(c, suffix, suffix_len - 2) != 0 ||
-                      add_iov(c, cas, cas_len) != 0 ||
-                      add_iov(c, info.value[0].iov_base, info.value[0].iov_len) != 0)
-                      {
-                          mc_engine.v1->release(mc_engine.v0, c, it);
-                          break;
-                      }
-                } else {
-                  if (add_iov(c, "VALUE ", 6) != 0 ||
-                      add_iov(c, info.key, info.nkey) != 0 ||
-                      add_iov(c, suffix, suffix_len) != 0 ||
-                      add_iov(c, info.value[0].iov_base, info.value[0].iov_len) != 0)
-                      {
-                          mc_engine.v1->release(mc_engine.v0, c, it);
-                          break;
-                      }
+                    break;
+                }
+                if (settings.verbose > 1) {
+                    mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                                   ">%d sending key %s\n", c->sfd, (char*)info.key);
                 }
 
-                 if (settings.verbose > 1) {
-                      mc_logger->log(EXTENSION_LOG_DEBUG, c,
-                              ">%d sending key %s\n", c->sfd, (char*)info.key);
-                 }
-
-                  /* item_get() has incremented it->refcount for us */
-                  STATS_HIT(c, get, key_tokens[k].value, key_tokens[k].length);
-                  *(item_array + nhit) = it;
-                  nhit++;
+                /* item_get() has incremented it->refcount for us */
+                STATS_HIT(c, get, key_tokens[k].value, key_tokens[k].length);
+                *(item_array + nhit) = it;
+                nhit++;
             } else {
                 STATS_MISS(c, get, key_tokens[k].value, key_tokens[k].length);
                 MEMCACHED_COMMAND_GET(c->sfd, key_tokens[k].value, key_tokens[k].length, -1, 0);
@@ -8441,7 +8418,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
     return;
 }
 #ifdef SUPPORT_KV_MGET
-static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt, bool return_cas)
+static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt)
 {
     /* kcnt is not used */
     item *it = NULL;
@@ -8470,7 +8447,6 @@ static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt, bo
     switch (ret) {
     case ENGINE_SUCCESS:
         {
-        c->return_cas  = return_cas;
         c->ritem       = (char *)c->coll_strkeys;
         c->rlbytes     = vlen;
         c->coll_eitem  = (void *)it;
@@ -8486,7 +8462,7 @@ static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt, bo
     }
 }
 
-static inline void process_mget_command(conn *c, token_t *tokens, const size_t ntokens, bool return_cas)
+static inline void process_mget_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     uint32_t lenkeys, numkeys;
 
@@ -8506,9 +8482,10 @@ static inline void process_mget_command(conn *c, token_t *tokens, const size_t n
     c->coll_numkeys = numkeys;
     c->coll_lenkeys = lenkeys;
 
-    process_prepare_nread_keys(c, lenkeys, numkeys, return_cas);
+    process_prepare_nread_keys(c, lenkeys, numkeys);
 }
 #endif
+
 static void process_update_command(conn *c, token_t *tokens, const size_t ntokens, ENGINE_STORE_OPERATION store_op, bool handle_cas) {
     char *key;
     size_t nkey;
@@ -13080,11 +13057,7 @@ static void process_command(conn *c, char *command, int cmdlen)
 #ifdef SUPPORT_KV_MGET
     else if ((ntokens == 4) && (strcmp(tokens[COMMAND_TOKEN].value, "mget") == 0))
     {
-        process_mget_command(c, tokens, ntokens, false);
-    }
-    else if ((ntokens == 4) && (strcmp(tokens[COMMAND_TOKEN].value, "mgets") == 0))
-    {
-        process_mget_command(c, tokens, ntokens, true);
+        process_mget_command(c, tokens, ntokens);
     }
 #endif
     else if ((ntokens == 6 || ntokens == 7) &&
