@@ -18,12 +18,20 @@ cas <key> <flags> <exptime> <bytes> <cas unique> [noreply]\r\n<data>\r\n
 
 **retrieval 명령**
 
-get, gets 명령이 있으며, syntax는 다음과 같다.
+get, gets, mget, mgets  명령이 있으며, syntax는 다음과 같다.
 
 ```
 get <key>\r\n
 gets <key>\r\n
+
+mget <lenkeys> <numkeys>
+<"space separated keys">\r\n
+
+mgets <lenkeys> <numkeys>
+<"space separated keys">\r\n
 ```
+- \<”space separated keys”\> - key list로, 스페이스(' ')로 구분한다.
+- \<lenkeys\>과 \<numkeys> - key list 문자열의 길이와 key 개수를 나타낸다.
 
 **deletion 명령**
 
