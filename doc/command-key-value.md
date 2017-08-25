@@ -18,16 +18,19 @@ cas <key> <flags> <exptime> <bytes> <cas unique> [noreply]\r\n<data>\r\n
 
 **retrieval 명령**
 
-get, gets, mget, mgets  명령이 있으며, syntax는 다음과 같다.
+하나의 cache item을 조회하는 get, gets 명령이 있으며, syntax는 다음과 같다.
+get 명령은 value만 조회하는 반면 gets 명령은 value와 함께 cas value도 조회한다.
 
 ```
 get <key>\r\n
 gets <key>\r\n
+```
 
-mget <lenkeys> <numkeys>
-<"space separated keys">\r\n
+한번에 여러 cache item들을 조회하기 위한 mget 명령이 있으며, syntax는 다음과 같다.
+mget 명령은 1.11 버전부터 제공한다.
 
-mgets <lenkeys> <numkeys>
+```
+mget <lenkeys> <numkeys>\r\n
 <"space separated keys">\r\n
 ```
 - \<”space separated keys”\> - key list로, 스페이스(' ')로 구분한다.
