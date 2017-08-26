@@ -133,9 +133,13 @@ sub mem_cmd_val_is {
     my $opts = ref $sock_opts eq "HASH" ? $sock_opts : {};
     my $sock = ref $sock_opts eq "HASH" ? $opts->{sock} : $sock_opts;
 
-    $msg ||= "$cmd: $val";
-
-    print $sock "$cmd\r\n$val\r\n";
+    if ($val eq "") {
+        $msg ||= "$cmd";
+        print $sock "$cmd\r\n";
+    } else {
+        $msg ||= "$cmd: $val";
+        print $sock "$cmd\r\n$val\r\n";
+    }
 
     my $resp = "";
     my $line = scalar <$sock>;
