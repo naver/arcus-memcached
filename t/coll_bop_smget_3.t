@@ -101,7 +101,7 @@ bop_ext_get_is($sock, "bkey2 0x0000..0x0200",
                12, 5, "0x0020,0x0040,0x0060,0x0080,0x0100", ",,,,",
                "datum2,datum4,datum6,datum8,datum10", "END");
 # smgets
-bop_new_smget_is($sock, "11 2 0x0000..0x0200 10 duplicate", "bkey1,bkey2",
+bop_new_smget_is($sock, "11 2 0x0000..0x0200 10 duplicate", "bkey1 bkey2",
 5,
 "bkey2 12 0x0020 6 datum2
 ,bkey2 12 0x0040 6 datum4
@@ -112,7 +112,7 @@ bop_new_smget_is($sock, "11 2 0x0000..0x0200 10 duplicate", "bkey1,bkey2",
 "bkey1 OUT_OF_RANGE",
 0, "",
 "END");
-bop_new_smget_is($sock, "11 2 0x0200..0x0000 10 duplicate", "bkey1,bkey2",
+bop_new_smget_is($sock, "11 2 0x0200..0x0000 10 duplicate", "bkey1 bkey2",
 10,
 "bkey1 11 0x0130 7 datum13
 ,bkey1 11 0x0110 7 datum11
@@ -128,7 +128,7 @@ bop_new_smget_is($sock, "11 2 0x0200..0x0000 10 duplicate", "bkey1,bkey2",
 1,
 "bkey1 0x0050",
 "END");
-# Old smget test
+# OLD smget test : Use comma separated keys
 $cmd = "bop smget 11 2 0x0000..0x0200 10"; $val = "bkey1,bkey2"; $rst = "OUT_OF_RANGE";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 bop_old_smget_is($sock, "11 2 0x0200..0x0000 10", "bkey1,bkey2",
@@ -187,7 +187,7 @@ bop_ext_get_is($sock, "bkey2 0x0000..0x0200",
                "datum6,datum8,datum10,datum12,datum14", "END");
 
 # smgets 2
-bop_new_smget_is($sock, "11 2 0x0000..0x0200 10 duplicate", "bkey1,bkey2",
+bop_new_smget_is($sock, "11 2 0x0000..0x0200 10 duplicate", "bkey1 bkey2",
 10,
 "bkey1 11 0x0010 6 datum1
 ,bkey1 11 0x0030 6 datum3
@@ -203,7 +203,7 @@ bop_new_smget_is($sock, "11 2 0x0000..0x0200 10 duplicate", "bkey1,bkey2",
 1,
 "bkey1 0x0090",
 "END");
-bop_new_smget_is($sock, "11 2 0x0200..0x0000 10 duplicate", "bkey1,bkey2",
+bop_new_smget_is($sock, "11 2 0x0200..0x0000 10 duplicate", "bkey1 bkey2",
 5,
 "bkey2 12 0x0140 7 datum14
 ,bkey2 12 0x0120 7 datum12
@@ -214,7 +214,7 @@ bop_new_smget_is($sock, "11 2 0x0200..0x0000 10 duplicate", "bkey1,bkey2",
 "bkey1 OUT_OF_RANGE",
 0, "",
 "END");
-# Old smget test
+# OLD smget test : Use comma separated keys
 bop_old_smget_is($sock, "11 2 0x0000..0x0200 10", "bkey1,bkey2",
 7,
 "bkey1 11 0x0010 6 datum1
@@ -226,7 +226,7 @@ bop_old_smget_is($sock, "11 2 0x0000..0x0200 10", "bkey1,bkey2",
 ,bkey1 11 0x0090 6 datum9",
 0, "",
 "TRIMMED");
-$cmd = "bop smget 11 2 0x0200..0x0000 10"; $val = "bkey1,bkey2"; $rst = "OUT_OF_RANGE";
+$cmd = "bop smget 11 2 0x0200..0x0000 10"; $val = "bkey1 bkey2"; $rst = "OUT_OF_RANGE";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 =head
 bop_ext_smget_is($sock, "11 2 0x0000..0x0200 10", "bkey1,bkey2",
@@ -293,7 +293,7 @@ bop_ext_get_is($sock, "bkey2 0x0000..0x0200",
                12, 5, "0x0020,0x0040,0x0060,0x0080,0x0100", ",,,,",
                "datum2,datum4,datum6,datum8,datum10", "END");
 # smgets
-bop_new_smget_is($sock, "11 2 0x0000..0x0200 10 duplicate", "bkey1,bkey2",
+bop_new_smget_is($sock, "11 2 0x0000..0x0200 10 duplicate", "bkey1 bkey2",
 10,
 "bkey2 12 0x0020 6 datum2
 ,bkey2 12 0x0040 6 datum4
@@ -308,7 +308,7 @@ bop_new_smget_is($sock, "11 2 0x0000..0x0200 10 duplicate", "bkey1,bkey2",
 0, "",
 0, "",
 "END");
-bop_new_smget_is($sock, "11 2 0x0200..0x0000 10 duplicate", "bkey1,bkey2",
+bop_new_smget_is($sock, "11 2 0x0200..0x0000 10 duplicate", "bkey1 bkey2",
 10,
 "bkey1 11 0x0130 7 datum13
 ,bkey1 11 0x0110 7 datum11
@@ -323,7 +323,7 @@ bop_new_smget_is($sock, "11 2 0x0200..0x0000 10 duplicate", "bkey1,bkey2",
 0, "",
 0, "",
 "END");
-# Old smget test
+# OLD smget test : Use comma separated keys
 bop_old_smget_is($sock, "11 2 0x0000..0x0200 10", "bkey1,bkey2",
 10,
 "bkey2 12 0x0020 6 datum2
@@ -401,7 +401,7 @@ bop_ext_get_is($sock, "bkey2 0x0000..0x0200",
                "datum6,datum8,datum10,datum12,datum14", "END");
 
 # smgets 2
-bop_new_smget_is($sock, "11 2 0x0000..0x0200 10 duplicate", "bkey1,bkey2",
+bop_new_smget_is($sock, "11 2 0x0000..0x0200 10 duplicate", "bkey1 bkey2",
 10,
 "bkey1 11 0x0010 6 datum1
 ,bkey1 11 0x0030 6 datum3
@@ -416,7 +416,7 @@ bop_new_smget_is($sock, "11 2 0x0000..0x0200 10 duplicate", "bkey1,bkey2",
 0, "",
 0, "",
 "END");
-bop_new_smget_is($sock, "11 2 0x0200..0x0000 10 duplicate", "bkey1,bkey2",
+bop_new_smget_is($sock, "11 2 0x0200..0x0000 10 duplicate", "bkey1 bkey2",
 10,
 "bkey2 12 0x0140 7 datum14
 ,bkey2 12 0x0120 7 datum12
@@ -431,7 +431,7 @@ bop_new_smget_is($sock, "11 2 0x0200..0x0000 10 duplicate", "bkey1,bkey2",
 0, "",
 0, "",
 "END");
-# Old smget test
+# OLD smget test : Use comma separated keys
 bop_old_smget_is($sock, "11 2 0x0000..0x0200 10", "bkey1,bkey2",
 10,
 "bkey1 11 0x0010 6 datum1

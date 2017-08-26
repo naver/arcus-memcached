@@ -85,7 +85,7 @@ bop insert bkey2 120 7
 datum12
 getattr bkey2
 bop smget 11 2 120..40 10
-bkey1,bkey2
+bkey1 bkey2
 delete bkey1
 delete bkey2
 =cut
@@ -196,7 +196,7 @@ $cmd = "bop insert bkey2 100 7"; $val = "datum10"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "bop insert bkey2 120 7"; $val = "datum12"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-bop_new_smget_is($sock, "11 2 120..40 10 duplicate", "bkey1,bkey2",
+bop_new_smget_is($sock, "11 2 120..40 10 duplicate", "bkey1 bkey2",
 9,
 "bkey2 12 120 7 datum12
 ,bkey1 12 110 7 datum11
@@ -210,7 +210,7 @@ bop_new_smget_is($sock, "11 2 120..40 10 duplicate", "bkey1,bkey2",
 0,"",
 0,"",
 "END");
-# Old smget test
+# OLD smget test : Use comma separated keys
 bop_old_smget_is($sock, "11 2 120..40 10", "bkey1,bkey2",
 9,
 "bkey2 12 120 7 datum12
