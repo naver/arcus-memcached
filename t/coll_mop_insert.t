@@ -14,7 +14,7 @@ datum9
 mop insert mkey1 field2 6
 datum7
 mop get mkey1 13 2
-field1,field2
+field1 field2
 
 mop insert mkey2 field1 6
 datum2
@@ -48,7 +48,7 @@ $cmd = "mop insert mkey1 field1 6 create 11 0 0"; $val = "datum9"; $rst = "CREAT
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 $cmd = "mop insert mkey1 field2 6"; $val = "datum7"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-mop_get_is($sock, "mkey1 13 2", 11, 2, 2, "field1,field2", "field1,field2",
+mop_get_is($sock, "mkey1 13 2", 11, 2, 2, "field1 field2", "field1,field2",
            "datum9,datum7","END");
 # Fail Cases
 $cmd = "mop insert mkey2 field1 6"; $val = "datum2"; $rst = "NOT_FOUND";

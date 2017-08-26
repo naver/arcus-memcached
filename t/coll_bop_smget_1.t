@@ -40,23 +40,23 @@ datum2
 bop get bkey1 0..100
 bop get bkey2 0..100
 bop smget 11 2 0..100 5
-bkey1,bkey2
+bkey1 bkey2
 bop smget 23 4 0..100 2 6
-bkey2,bkey3,bkey1,bkey4
+bkey2 bkey3 bkey1 bkey4
 bop smget 23 4 90..30 2 9
-bkey2,bkey3,bkey1,bkey4
+bkey2 bkey3 bkey1 bkey4
 bop smget 23 4 200..300 2 6
-bkey2,bkey3,bkey1,bkey4
+bkey2 bkey3 bkey1 bkey4
 set keyx 0 0 6
 datumx
 bop smget 28 5 0..100 2 6
-bkey2,bkey3,bkey1,bkey4,keyx
+bkey2 bkey3 bkey1 bkey4 keyx
 bop smget 29 5 0..100 2 6
-bkey2,bkey3,bkey1,bkey4,bkey1
+bkey2 bkey3 bkey1 bkey4 bkey1
 bop smget 29 5 0..100 2 6
-bkey2,bkey3,bkey1,bkey4,bkey3
+bkey2 bkey3 bkey1 bkey4 bkey3
 bop smget 23 2 0..100 2 6
-bkey2,bkey3,bkey1,bkey4
+bkey2 bkey3 bkey1 bkey4
 
 delete bkey1
 delete bkey2
@@ -106,7 +106,7 @@ print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"
 $cmd = "bop insert bkey2 20 6"; $val = "datum2"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 bop_get_is($sock, "bkey2 0..100", 12, 5, "20,40,60,80,100", "datum2,datum4,datum6,datum8,datum10", "END");
-bop_new_smget_is($sock, "11 2 0..100 5 duplicate", "bkey1,bkey2",
+bop_new_smget_is($sock, "11 2 0..100 5 duplicate", "bkey1 bkey2",
 5,
 "bkey1 11 10 6 datum1
 ,bkey2 12 20 6 datum2
@@ -116,7 +116,7 @@ bop_new_smget_is($sock, "11 2 0..100 5 duplicate", "bkey1,bkey2",
 0, "",
 0, "",
 "END");
-bop_new_smget_is($sock, "11 2 100..0 10 duplicate", "bkey1,bkey2",
+bop_new_smget_is($sock, "11 2 100..0 10 duplicate", "bkey1 bkey2",
 10,
 "bkey2 12 100 7 datum10
 ,bkey1 11 90 6 datum9
@@ -131,7 +131,7 @@ bop_new_smget_is($sock, "11 2 100..0 10 duplicate", "bkey1,bkey2",
 0, "",
 0, "",
 "END");
-bop_new_smget_is($sock, "23 4 0..100 2 6 duplicate", "bkey2,bkey3,bkey1,bkey4",
+bop_new_smget_is($sock, "23 4 0..100 2 6 duplicate", "bkey2 bkey3 bkey1 bkey4",
 6,
 "bkey1 11 30 6 datum3
 ,bkey2 12 40 6 datum4
@@ -144,7 +144,7 @@ bop_new_smget_is($sock, "23 4 0..100 2 6 duplicate", "bkey2,bkey3,bkey1,bkey4",
 ,bkey4 NOT_FOUND",
 0, "",
 "END");
-bop_new_smget_is($sock, "23 4 90..30 2 9 duplicate", "bkey2,bkey3,bkey1,bkey4",
+bop_new_smget_is($sock, "23 4 90..30 2 9 duplicate", "bkey2 bkey3 bkey1 bkey4",
 5,
 "bkey1 11 70 6 datum7
 ,bkey2 12 60 6 datum6
@@ -156,14 +156,14 @@ bop_new_smget_is($sock, "23 4 90..30 2 9 duplicate", "bkey2,bkey3,bkey1,bkey4",
 ,bkey4 NOT_FOUND",
 0, "",
 "END");
-bop_new_smget_is($sock, "23 4 200..300 2 6 duplicate", "bkey2,bkey3,bkey1,bkey4",
+bop_new_smget_is($sock, "23 4 200..300 2 6 duplicate", "bkey2 bkey3 bkey1 bkey4",
 0, "",
 2,
 "bkey3 NOT_FOUND
 ,bkey4 NOT_FOUND",
 0, "",
 "END");
-# Old smget test
+# OLD smget test : Use comma separated keys
 bop_old_smget_is($sock, "11 2 0..100 5", "bkey1,bkey2",
 5,
 "bkey1 11 10 6 datum1
@@ -232,13 +232,13 @@ bop_smget_is($sock, "23 4 200..300 2 6", "bkey2,bkey3,bkey1,bkey4",
 =cut
 $cmd = "set keyx 19 5 10"; $val = "some value"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-$cmd = "bop smget 23 2 0..100 2 6"; $val = "bkey2,bkey3,bkey1,bkey4"; $rst = "CLIENT_ERROR bad data chunk";
+$cmd = "bop smget 23 2 0..100 2 6"; $val = "bkey2 bkey3 bkey1 bkey4"; $rst = "CLIENT_ERROR bad data chunk";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-$cmd = "bop smget 28 5 0..100 2 6"; $val = "bkey2,bkey3,bkey1,bkey4,keyx"; $rst = "TYPE_MISMATCH";
+$cmd = "bop smget 28 5 0..100 2 6"; $val = "bkey2 bkey3 bkey1 bkey4 keyx"; $rst = "TYPE_MISMATCH";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-$cmd = "bop smget 29 5 0..100 2 6"; $val = "bkey2,bkey3,bkey1,bkey4,bkey1"; $rst = "CLIENT_ERROR bad data chunk";
+$cmd = "bop smget 29 5 0..100 2 6"; $val = "bkey2 bkey3 bkey1 bkey4 bkey1"; $rst = "CLIENT_ERROR bad data chunk";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-bop_new_smget_is($sock, "29 5 0..100 2 6 duplicate", "bkey2,bkey3,bkey1,bkey4,bkey3",
+bop_new_smget_is($sock, "29 5 0..100 2 6 duplicate", "bkey2 bkey3 bkey1 bkey4 bkey3",
 6,
 "bkey1 11 30 6 datum3
 ,bkey2 12 40 6 datum4
@@ -252,7 +252,7 @@ bop_new_smget_is($sock, "29 5 0..100 2 6 duplicate", "bkey2,bkey3,bkey1,bkey4,bk
 ,bkey3 NOT_FOUND",
 0, "",
 "END");
-# Old smget test
+# OLD smget test : Use comma separated keys
 bop_old_smget_is($sock, "29 5 0..100 2 6", "bkey2,bkey3,bkey1,bkey4,bkey3",
 6,
 "bkey1 11 30 6 datum3
@@ -295,7 +295,7 @@ print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"
 $cmd = "bop get bkey1 0..100"; $rst = "NOT_FOUND_ELEMENT";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 bop_get_is($sock, "bkey2 0..100", 12, 5, "20,40,60,80,100", "datum2,datum4,datum6,datum8,datum10", "END");
-bop_new_smget_is($sock, "11 2 0..100 5 duplicate", "bkey1,bkey2",
+bop_new_smget_is($sock, "11 2 0..100 5 duplicate", "bkey1 bkey2",
 5,
 "bkey2 12 20 6 datum2
 ,bkey2 12 40 6 datum4
@@ -305,7 +305,7 @@ bop_new_smget_is($sock, "11 2 0..100 5 duplicate", "bkey1,bkey2",
 0, "",
 0, "",
 "END");
-bop_new_smget_is($sock, "146 21 0..100000 10 duplicate", "KEY_11,KEY_12,KEY_13,KEY_14,KEY_15,KEY_16,KEY_17,KEY_18,KEY_19,KEY_20,KEY_21,KEY_22,KEY_23,KEY_24,KEY_25,KEY_26,KEY_27,KEY_28,KEY_29,KEY_30,KEY_16",
+bop_new_smget_is($sock, "146 21 0..100000 10 duplicate", "KEY_11 KEY_12 KEY_13 KEY_14 KEY_15 KEY_16 KEY_17 KEY_18 KEY_19 KEY_20 KEY_21 KEY_22 KEY_23 KEY_24 KEY_25 KEY_26 KEY_27 KEY_28 KEY_29 KEY_30 KEY_16",
 0, "",
 21,
 "KEY_11 NOT_FOUND
@@ -331,7 +331,7 @@ bop_new_smget_is($sock, "146 21 0..100000 10 duplicate", "KEY_11,KEY_12,KEY_13,K
 ,KEY_16 NOT_FOUND",
 0, "",
 "END");
-# Old smget test
+# OLD smget test : Use comma separated keys
 bop_old_smget_is($sock, "11 2 0..100 5", "bkey1,bkey2",
 5,
 "bkey2 12 20 6 datum2
@@ -373,7 +373,7 @@ print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"
 $cmd = "bop insert bkey2 0x0040 0x00FF 6"; $val = "datum4"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 
-$cmd = "bop smget 11 2 0x00..0x1000 0 EQ 0x11FF,0x01FF 6"; $val = "bkey1,bkey2";
+$cmd = "bop smget 11 2 0x00..0x1000 0 EQ 0x11FF,0x01FF 6"; $val = "bkey1 bkey2";
 $rst = "VALUE 4
 bkey2 3 0x0060 0x01FF 6 datum6
 bkey1 3 0x0070 0x01FF 6 datum7
@@ -383,7 +383,7 @@ MISSED_KEYS 0
 END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 
-$cmd = "bop smget 11 2 0x00..0x1000 0 NE 0x00FF,0x11FF 6"; $val = "bkey1,bkey2";
+$cmd = "bop smget 11 2 0x00..0x1000 0 NE 0x00FF,0x11FF 6"; $val = "bkey1 bkey2";
 $rst = "VALUE 2
 bkey2 3 0x0060 0x01FF 6 datum6
 bkey1 3 0x0070 0x01FF 6 datum7

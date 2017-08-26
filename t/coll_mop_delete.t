@@ -18,21 +18,21 @@ mop insert mkey1 f4 6 datum4: STORED
 mop insert mkey1 f6 6 datum6: STORED
 mop insert mkey1 f8 6 datum8: STORED
 mop get mkey1 26 9
-f1,f2,f3,f4,f5,f6,f7,f8,f9
+f1 f2 f3 f4 f5 f6 f7 f8 f9
 
 mop delete mkey1 5: CLIENT_ERROR bad command line format
 mop delete mkey1 3 1 f10: NOT_FOUND_ELEMENT
-mop delete mkey1 7 2 f11,f12: NOT_FOUND_ELEMENT
+mop delete mkey1 7 2 f11 f12: NOT_FOUND_ELEMENT
 mop delete mkey1 -1 -1: CLIENT_ERROR bad command line format
 mop delete mkey1 10 -1: CLIENT_ERROR bad command line format
 mop dleete mkey1 -1 10: CLIENT_ERROR bad command line format
 
 mop delete mkey1 2 1 f2: DELETED
 mop get mkey 26 9
-f1,f2,f3,f4,f5,f6,f7,f8,f9
-mop delete mkey1 5 2 f9,f5: DELETED
+f1 f2 f3 f4 f5 f6 f7 f8 f9
+mop delete mkey1 5 2 f9 f5: DELETED
 mop get mkey1 26 9
-f1,f2,f3,f4,f5,f6,f7,f8,f9
+f1 f2 f3 f4 f5 f6 f7 f8 f9
 mop delete mkey1 0 0 true: DELETED_DROPPED
 get mkey1: END
 =cut
@@ -67,12 +67,12 @@ $cmd = "mop insert mkey1 f6 6"; $val = "datum6"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "mop insert mkey1 f8 6"; $val = "datum8"; $rst = "STORED";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-mop_get_is($sock, "mkey1 26 9", 11, 9, 9, "f1,f2,f3,f4,f5,f6,f7,f8,f9", "f1,f2,f3,f4,f5,f6,f7,f8,f9",
+mop_get_is($sock, "mkey1 26 9", 11, 9, 9, "f1 f2 f3 f4 f5 f6 f7 f8 f9", "f1,f2,f3,f4,f5,f6,f7,f8,f9",
            "datum1,datum2,datum3,datum4,datum5,datum6,datum7,datum8,datum9", "END");
 # Fail Cases
 $cmd = "mop delete mkey1 3 1"; $flist = "f10"; $rst = "NOT_FOUND_ELEMENT";
 print $sock "$cmd\r\n$flist\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-$cmd = "mop delete mkey1 7 2"; $flist = "f11,f12"; $rst = "NOT_FOUND_ELEMENT";
+$cmd = "mop delete mkey1 7 2"; $flist = "f11 f12"; $rst = "NOT_FOUND_ELEMENT";
 print $sock "$cmd\r\n$flist\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 $cmd = "mop delete mkey1 -1 -1"; $rst = "CLIENT_ERROR bad command line format";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
@@ -83,11 +83,11 @@ print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 # Success Cases
 $cmd = "mop delete mkey1 2 1"; $flist = "f3"; $rst = "DELETED";
 print $sock "$cmd\r\n$flist\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-mop_get_is($sock, "mkey1 26 9", 11, 9, 8, "f1,f2,f3,f4,f5,f6,f7,f8,f9", "f1,f2,f4,f5,f6,f7,f8,f9",
+mop_get_is($sock, "mkey1 26 9", 11, 9, 8, "f1 f2 f3 f4 f5 f6 f7 f8 f9", "f1,f2,f4,f5,f6,f7,f8,f9",
            "datum1,datum2,datum4,datum5,datum6,datum7,datum8,datum9", "END");
-$cmd = "mop delete mkey1 5 2"; $flist = "f9,f5"; $rst = "DELETED";
+$cmd = "mop delete mkey1 5 2"; $flist = "f9 f5"; $rst = "DELETED";
 print $sock "$cmd\r\n$flist\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-mop_get_is($sock, "mkey1 26 9", 11, 9, 6, "f1,f2,f3,f4,f5,f6,f7,f8,f9", "f1,f2,f4,f6,f7,f8",
+mop_get_is($sock, "mkey1 26 9", 11, 9, 6, "f1 f2 f3 f4 f5 f6 f7 f8 f9", "f1,f2,f4,f6,f7,f8",
            "datum1,datum2,datum4,datum6,datum7,datum8", "END");
 $cmd = "mop delete mkey1 0 0 drop"; $rst = "DELETED_DROPPED";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
