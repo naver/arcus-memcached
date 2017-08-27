@@ -814,7 +814,12 @@ static void conn_coll_eitem_free(conn *c) {
         break;
 #endif
 #ifdef SUPPORT_KV_MGET
+      /* kv */
       case OPERATION_MGET:
+        /* release items */
+        for (int x = 0; x < c->coll_ecount; x++) {
+            mc_engine.v1->release(mc_engine.v0, c, ((item **)c->coll_eitem)[x]);
+        }
         free(c->coll_eitem);
         free(c->coll_strkeys); c->coll_strkeys = NULL;
         break;
@@ -2748,101 +2753,90 @@ static void process_mget_complete(conn *c)
     assert(c->coll_eitem != NULL);
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    int nhit;
-    item **item_array = (item **)c->coll_eitem;
-    token_t *key_tokens = (token_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(c->coll_lenkeys));
+    uint32_t vlen = c->coll_lenkeys;
+    uint32_t kcnt = c->coll_numkeys;
+    item    *it;
+    char    *key;
+    size_t   nkey;
+    void   **item_array = (void **)c->coll_eitem;
+    char    *respon_ptr = (char *)item_array + (kcnt * sizeof(item *));
+    int      respon_len;
+    token_t *key_tokens = (token_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(vlen));
+    char     delimiter = ' ';
+    uint32_t k, nhit;
 
-    if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-        (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, ' ', c->coll_numkeys, key_tokens) == -1))
-    {
-        ret = ENGINE_EBADVALUE;
-    } else { /* valid key_tokens */
-        item *it;
-        uint32_t k;
+    do {
+        if ((strncmp((char*)c->coll_strkeys + vlen - 2, "\r\n", 2) != 0) ||
+            (tokenize_keys((char*)c->coll_strkeys, vlen, delimiter, kcnt, key_tokens) == -1)) {
+            ret = ENGINE_EBADVALUE; break;
+        }
+        /* check key length */
+        for (k = 0; k < kcnt; k++) {
+            if (key_tokens[k].length > KEY_MAX_LENGTH)
+                break;
+        }
+        if (k < kcnt) { /* too long key */
+            ret = ENGINE_EBADVALUE; break;
+        }
+        /* do get operation for each key */
         nhit = 0;
-        for (k = 0; k < c->coll_numkeys; k++) {
+        for (k = 0; k < kcnt; k++) {
+            key = key_tokens[k].value;
+            nkey = key_tokens[k].length;
 
-            if (key_tokens[k].length > KEY_MAX_LENGTH) {
-                out_string(c, "CLIENT_ERROR bad command line format");
-                return;
-            }
-
-            ret = mc_engine.v1->get(mc_engine.v0, c, &it, key_tokens[k].value, key_tokens[k].length, 0);
-            if (ret != ENGINE_SUCCESS) {
+            if (mc_engine.v1->get(mc_engine.v0, c, &it, key, nkey, 0) != ENGINE_SUCCESS) {
                 it = NULL;
             }
-
             if (settings.detail_enabled) {
-                stats_prefix_record_get(key_tokens[k].value, key_tokens[k].length, NULL != it);
+                stats_prefix_record_get(key, nkey, NULL != it);
             }
-
             if (it) {
                 item_info info = { .nvalue = 1 };
-                if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &info)) {
-                    mc_engine.v1->release(mc_engine.v0, c, it);
-                    out_string(c, "SERVER_ERROR error getting item data");
-                    break;
-                }
-
+                /* get_item_info() always returns true. */
+                (void)mc_engine.v1->get_item_info(mc_engine.v0, c, it, &info);
                 assert(memcmp((char*)info.value[0].iov_base + info.nbytes - 2, "\r\n", 2) == 0);
 
-                /* Rebuild the suffix */
-                char *suffix = get_suffix_buffer(c);
-                if (suffix == NULL) {
-                    out_string(c, "SERVER_ERROR out of memory rebuilding suffix");
-                    mc_engine.v1->release(mc_engine.v0, c, it);
-                    return;
-                }
-                int suffix_len = snprintf(suffix, SUFFIX_SIZE,
-                                          " %u %u\r\n", htonl(info.flags),
-                                          info.nbytes - 2);
+                /* save the item */
+                item_array[nhit++] = it;
 
-                MEMCACHED_COMMAND_GET(c->sfd, info.key, info.nkey,info.nbytes, info.cas);
+                MEMCACHED_COMMAND_GET(c->sfd, info.key, info.nkey, info.nbytes, info.cas);
+                respon_len = sprintf(respon_ptr, " %u %u\r\n", htonl(info.flags), info.nbytes-2);
                 if (add_iov(c, "VALUE ", 6) != 0 ||
                     add_iov(c, info.key, info.nkey) != 0 ||
-                    add_iov(c, suffix, suffix_len) != 0 ||
+                    add_iov(c, respon_ptr, respon_len) != 0 ||
                     add_iov(c, info.value[0].iov_base, info.value[0].iov_len) != 0)
                 {
-                    mc_engine.v1->release(mc_engine.v0, c, it);
-                    break;
+                    break; /* out of memory */
                 }
-                if (settings.verbose > 1) {
-                    mc_logger->log(EXTENSION_LOG_DEBUG, c,
-                                   ">%d sending key %s\n", c->sfd, (char*)info.key);
-                }
-
-                /* item_get() has incremented it->refcount for us */
-                STATS_HIT(c, get, key_tokens[k].value, key_tokens[k].length);
-                *(item_array + nhit) = it;
-                nhit++;
+                respon_ptr += respon_len;
+                STATS_HIT(c, get, key, nkey);
             } else {
-                STATS_MISS(c, get, key_tokens[k].value, key_tokens[k].length);
-                MEMCACHED_COMMAND_GET(c->sfd, key_tokens[k].value, key_tokens[k].length, -1, 0);
+                MEMCACHED_COMMAND_GET(c->sfd, key, nkey, -1, 0);
+                STATS_MISS(c, get, key, nkey);
             }
         }
-
         if (settings.verbose > 1) {
             mc_logger->log(EXTENSION_LOG_DEBUG, c, ">%d END\n", c->sfd);
         }
-
-        if (k != c->coll_numkeys || add_iov(c, "END\r\n", 5) != 0
+        if (k < kcnt || add_iov(c, "END\r\n", 5) != 0
             || (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
-            out_string(c, "SERVER_ERROR out of memory writing get response");
+            /* release items */
+            for (k = 0; k < nhit; k++) {
+                mc_engine.v1->release(mc_engine.v0, c, item_array[k]);
+            }
+            ret = ENGINE_ENOMEM;
         }
-        else {
-            ret = ENGINE_SUCCESS;
-        }
-    }
+    } while(0);
+
     switch(ret) {
       case ENGINE_SUCCESS:
-        c->icurr = (item*)c->coll_eitem;
-        c->ileft = nhit;
-        c->suffixcurr = c->suffixlist;
+        c->coll_ecount = nhit;
         conn_set_state(c, conn_mwrite);
         c->msgcurr = 0;
         break;
      default:
-        if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad data chunk");
+        if (ret == ENGINE_EBADVALUE)   out_string(c, "CLIENT_ERROR bad data chunk");
+        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory writing get response");
         else handle_unexpected_errorcode_ascii(c, ret);
     }
 
@@ -2856,7 +2850,6 @@ static void process_mget_complete(conn *c)
             c->coll_eitem = NULL;
         }
     }
-
 }
 #endif
 
@@ -8420,43 +8413,30 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
 #ifdef SUPPORT_KV_MGET
 static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt)
 {
-    /* kcnt is not used */
-    item *it = NULL;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    int need_size = 0;
+    int item_array_size = kcnt * sizeof(item*);
+    int respon_hdr_size = kcnt * ((lenstr_size*2)+10);
+    int need_size = item_array_size + respon_hdr_size;
+    int kmem_size = GET_8ALIGN_SIZE(vlen) + (kcnt * sizeof(token_t));
 
-    int item_array_size = c->coll_numkeys * sizeof(item*);
-    int respon_hdr_size = c->coll_numkeys * ((lenstr_size*2)+30);
-    int respon_bdy_size = c->coll_numkeys * ((KEY_MAX_LENGTH*2+2)+lenstr_size+15);
-
-    need_size = item_array_size + respon_hdr_size + respon_bdy_size;
-
-    assert(need_size > 0);
-
-    if ((it = (item *)malloc(need_size)) == NULL) {
+    if ((c->coll_eitem = (item *)malloc(need_size)) == NULL) {
         ret = ENGINE_ENOMEM;
     } else {
-        int kmem_size = GET_8ALIGN_SIZE(vlen)
-                      + (sizeof(token_t) * c->coll_numkeys);
         if ((c->coll_strkeys = malloc(kmem_size)) == NULL) {
-            free((void*)it);
+            free((void*)c->coll_eitem); c->coll_eitem = NULL;
             ret = ENGINE_ENOMEM;
         }
     }
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        {
         c->ritem       = (char *)c->coll_strkeys;
         c->rlbytes     = vlen;
-        c->coll_eitem  = (void *)it;
         c->coll_op     = OPERATION_MGET;
         conn_set_state(c, conn_nread);
-        }
         break;
     default:
         out_string(c, "SERVER_ERROR out of memory");
-
         c->write_and_go = conn_swallow;
         c->sbytes = vlen;
     }
