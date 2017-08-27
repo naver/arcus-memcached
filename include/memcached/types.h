@@ -101,6 +101,17 @@ extern "C" {
         OPERATION_CAS      /**< Store with set semantics. */
     } ENGINE_STORE_OPERATION;
 
+#ifdef SUPPORT_KV_MGET
+    /**
+     * Engine retrieval operations.
+     */
+    typedef enum {
+        OPERATION_GET = 11, /**< Retrieve with get semantics */
+        OPERATION_GETS,    /**< Retrieve with gets semantics */
+        OPERATION_MGET     /**< Retrieve with mget semantics */
+    } ENGINE_RETRIEVE_OPERATION;
+#endif
+
     /* collection operation */
     typedef enum {
         /* list operation */
@@ -137,12 +148,7 @@ extern "C" {
         // SUPPORT_BOP_MGET
         OPERATION_BOP_MGET,          /**< B+tree operation with mget(multiple get) element semantics */
         // SUPPORT_BOP_SMGET
-#ifdef SUPPORT_KV_MGET
-        OPERATION_BOP_SMGET,         /**< B+tree operation with smget(sort-merge get) element semantics */
-        OPERATION_MGET = 0x90
-#else
         OPERATION_BOP_SMGET          /**< B+tree operation with smget(sort-merge get) element semantics */
-#endif
     } ENGINE_COLL_OPERATION;
 
     /* item type */
