@@ -496,7 +496,11 @@ struct conn {
     void        *coll_eitem;
     char        *coll_resps;
     int          coll_ecount;
+#ifdef SUPPORT_KV_MGET
+    int          coll_op;
+#else
     ENGINE_COLL_OPERATION coll_op;
+#endif
     char        *coll_key;
     int          coll_nkey;
     int          coll_index;   /* the list index of lop insert */
