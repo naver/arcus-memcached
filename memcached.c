@@ -9284,6 +9284,9 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "cas <key> <flags> <exptime> <bytes> <cas unique> [noreply]\\r\\n<data>\\r\\n" "\n"
         "\t" "get <key>[ <key> ...]\\r\\n" "\n"
         "\t" "gets <key>[ <key> ...]\\r\\n" "\n"
+#ifdef SUPPORT_KV_MGET
+        "\t" "mget <lenkeys> <numkeys>\\r\\n<\"space separated keys\">\\r\\n" "\n"
+#endif
         "\t" "incr|decr <key> <delta> [<flags> <exptime> <initial>] [noreply]\\r\\n" "\n"
         "\t" "delete <key> [<time>] [noreply]\\r\\n" "\n"
         );
@@ -9311,8 +9314,13 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "mop create <key> <attributes> [noreply]\\r\\n" "\n"
         "\t" "mop insert <key> <field> <bytes> [create <attributes>] [noreply|pipe]\\r\\n<data>\\r\\n" "\n"
         "\t" "mop update <key> <field> <bytes> [noreply|pipe]\\r\\n<data>\\r\\n" "\n"
+#ifdef TOKENIZE_SPACE
+        "\t" "mop delete <key> <lenfields> <numfields> [drop] [noreply|pipe]\\r\\n[<\"space separated fields\">]\\r\\n" "\n"
+        "\t" "mop get <key> <lenfields> <numfields> [delete|drop]\\r\\n[<\"space separated fields\">]\\r\\n" "\n"
+#else
         "\t" "mop delete <key> <lenfields> <numfields> [drop] [noreply|pipe]\\r\\n[<\"comma separated fields\">]\\r\\n" "\n"
         "\t" "mop get <key> <lenfields> <numfields> [delete|drop]\\r\\n[<\"comma separated fields\">]\\r\\n" "\n"
+#endif
         "\n"
         "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
         );
@@ -9326,8 +9334,13 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "bop get <key> <bkey or \"bkey range\"> [<eflag_filter>] [[<offset>] <count>] [delete|drop]\\r\\n" "\n"
         "\t" "bop count <key> <bkey or \"bkey range\"> [<eflag_filter>] \\r\\n" "\n"
         "\t" "bop incr|decr <key> <bkey> <delta> [<initial> [<eflag>]] [noreply|pipe]\\r\\n" "\n"
+#ifdef TOKENIZE_SPACE
+        "\t" "bop mget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"space separated keys\">\\r\\n" "\n"
+        "\t" "bop smget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count> [duplicate|unique]\\r\\n<\"space separated keys\">\\r\\n" "\n"
+#else
         "\t" "bop mget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"comma separated keys\">\\r\\n" "\n"
         "\t" "bop smget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count> [duplicate|unique]\\r\\n<\"comma separated keys\">\\r\\n" "\n"
+#endif
         "\t" "bop position <key> <bkey> <order>\\r\\n" "\n"
         "\t" "bop pwg <key> <bkey> <order> [<count>]\\r\\n" "\n"
         "\t" "bop gbp <key> <order> <position or \"position range\">\\r\\n" "\n"
@@ -9348,8 +9361,13 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "bop get <key> <bkey or \"bkey range\"> [<eflag_filter>] [[<offset>] <count>] [delete|drop]\\r\\n" "\n"
         "\t" "bop count <key> <bkey or \"bkey range\"> [<eflag_filter>] \\r\\n" "\n"
         "\t" "bop incr|decr <key> <bkey> <value> [noreply|pipe]\\r\\n" "\n"
+#ifdef TOKENIZE_SPACE
+        "\t" "bop mget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"space separated keys\">\\r\\n" "\n"
+        "\t" "bop smget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count> [duplicate|unique]\\r\\n<\"space separated keys\">\\r\\n" "\n"
+#else
         "\t" "bop mget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"comma separated keys\">\\r\\n" "\n"
         "\t" "bop smget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count> [unique]\\r\\n<\"comma separated keys\">\\r\\n" "\n"
+#endif
         "\t" "bop position <key> <bkey> <order>\\r\\n" "\n"
         "\t" "bop pwg <key> <bkey> <order> [<count>]\\r\\n" "\n"
         "\t" "bop gbp <key> <order> <position or \"position range\">\\r\\n" "\n"
