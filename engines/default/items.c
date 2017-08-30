@@ -7959,7 +7959,7 @@ static bool do_combine_internal(struct default_engine *engine,
                                 hash_item *new_it,
                                 hash_item *front,
                                 hash_item *back,
-                                uint32_t fblk_bytes)
+                                uint32_t max_first_ivbytes)
 {
     assert(new_it != NULL);
     assert(new_it->nbytes == front->nbytes + back->nbytes - 2);
@@ -7976,8 +7976,8 @@ static bool do_combine_internal(struct default_engine *engine,
     ivalue_block_t *bck_ivblk = item_get_ivblk(back);
     ivalue_relink_t link;
 
-    if (front->nbytes <= fblk_bytes) {
-        reuse_bytes = fblk_bytes - (front->nbytes - 2);
+    if (front->nbytes <= max_first_ivbytes) {
+        reuse_bytes = max_first_ivbytes - (front->nbytes - 2);
         tocpy_bytes = back->nbytes - reuse_bytes;
         prepare_combine(&bck_ivblk, &tocpy_bytes, &ivbytes, reuse_bytes, IVALUE_VALUE_SIZE);
 
@@ -7995,7 +7995,7 @@ static bool do_combine_internal(struct default_engine *engine,
         do_copy_ivblk(new_ivblk, frt_ivblk, 0, front->nbytes - 2);
         do_copy_ivblk(new_ivblk, item_get_ivblk(back), front->nbytes - 2, ivbytes + reuse_bytes);
     } else {
-        do_copy_ivblk(new_ivblk, frt_ivblk, 0, fblk_bytes);
+        do_copy_ivblk(new_ivblk, frt_ivblk, 0, max_first_ivbytes);
         prepare_relink(&frt_ivblk, &link, front->nbytes, &split_store);
         new_ivblk->next = link.head;
         reuse_bytes = (split_store == true) ? 1 : -(frt_ivblk->nbytes - 2) /* parts used in front block */;
@@ -8073,20 +8073,20 @@ static hash_item *do_combine_ivblk(struct default_engine *engine,
     ivalue_block_t *new_ivblk;
 
     /* fblk bytes : max value size of first ivalue_block */
-    uint32_t fblk_bytes = IVALUE_VALUE_SIZE - (sizeof(hash_item) + it->nkey);
+    uint32_t max_first_ivbytes = IVALUE_VALUE_SIZE - (sizeof(hash_item) + it->nkey);
     uint32_t new_nbytes = it->nbytes + old_it->nbytes - 2;
     bool need_combine;
 
     if (new_nbytes > 1024 * 1024) return NULL;
 
-    if (engine->config.use_cas) fblk_bytes -= sizeof(uint64_t);
+    if (engine->config.use_cas) max_first_ivbytes -= sizeof(uint64_t);
 
     /*
      * Attempt to combine if the newly created new_it has more than two blocks.
      * copying two or fewer blocks is judged not to have a significant impact on performance
      */
-    need_combine = (new_nbytes > (fblk_bytes + IVALUE_VALUE_SIZE)) ? true : false;
-    alloc_bytes = need_combine ? fblk_bytes : new_nbytes;
+    need_combine = (new_nbytes > (max_first_ivbytes + IVALUE_VALUE_SIZE)) ? true : false;
+    alloc_bytes = need_combine ? max_first_ivbytes : new_nbytes;
     new_it = do_item_alloc(engine, item_get_key(it), it->nkey,
                            old_it->flags, old_it->exptime,
                            alloc_bytes,
@@ -8101,7 +8101,7 @@ static hash_item *do_combine_ivblk(struct default_engine *engine,
             do_copy_ivblk(new_ivblk, old_ivblk, 0, old_it->nbytes - 2);
             do_copy_ivblk(new_ivblk, it_ivblk, old_it->nbytes - 2, it->nbytes);
         } else {
-            if (!do_combine_internal(engine, cookie, new_it, old_it, it, fblk_bytes))
+            if (!do_combine_internal(engine, cookie, new_it, old_it, it, max_first_ivbytes))
                 return NULL;
         }
     } else { /* OPERATION_PREPEND */
@@ -8109,7 +8109,7 @@ static hash_item *do_combine_ivblk(struct default_engine *engine,
             do_copy_ivblk(new_ivblk, it_ivblk, 0, it->nbytes - 2);
             do_copy_ivblk(new_ivblk, old_ivblk, it->nbytes -2, old_it->nbytes);
         } else {
-            if (!do_combine_internal(engine, cookie, new_it, it, old_it, fblk_bytes))
+            if (!do_combine_internal(engine, cookie, new_it, it, old_it, max_first_ivbytes))
                 return NULL;
         }
     }
