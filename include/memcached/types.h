@@ -32,7 +32,6 @@ struct iovec {
 #endif
 
 #define SUPPORT_KV_MGET
-#define TOKENIZE_SPACE
 #define OPTIMIZE_HASH
 #define CONFIG_FAILSTOP
 #define CHANGE_STANDARD_FREE_AVAIL
