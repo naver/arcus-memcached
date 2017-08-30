@@ -813,17 +813,6 @@ static void conn_coll_eitem_free(conn *c) {
         free(c->coll_strkeys); c->coll_strkeys = NULL;
         break;
 #endif
-#ifdef SUPPORT_KV_MGET
-      /* kv */
-      case OPERATION_MGET:
-        /* release items */
-        for (int x = 0; x < c->coll_ecount; x++) {
-            mc_engine.v1->release(mc_engine.v0, c, ((item **)c->coll_eitem)[x]);
-        }
-        free(c->coll_eitem);
-        free(c->coll_strkeys); c->coll_strkeys = NULL;
-        break;
-#endif
       default:
         assert(0); /* This case must not happen */
     }
@@ -2701,7 +2690,7 @@ static char *get_suffix_buffer(conn *c)
 static void process_mget_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_MGET);
-    assert(c->coll_eitem != NULL);
+    assert(c->coll_strkeys != NULL);
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     uint32_t vlen = c->coll_lenkeys;
@@ -2709,9 +2698,6 @@ static void process_mget_complete(conn *c)
     item    *it;
     char    *key;
     size_t   nkey;
-    void   **item_array = (void **)c->coll_eitem;
-    char    *respon_ptr = (char *)item_array + (kcnt * sizeof(item *));
-    int      respon_len;
     token_t *key_tokens = (token_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(vlen));
     char     delimiter = ' ';
     uint32_t k, nhit;
@@ -2747,41 +2733,76 @@ static void process_mget_complete(conn *c)
                 (void)mc_engine.v1->get_item_info(mc_engine.v0, c, it, &info);
                 assert(memcmp((char*)info.value[0].iov_base + info.nbytes - 2, "\r\n", 2) == 0);
 
-                /* save the item */
-                item_array[nhit++] = it;
+                /* prepare item array */
+                if (nhit >= c->isize) {
+                    item **new_list = realloc(c->ilist, sizeof(item *) * c->isize * 2);
+                    if (new_list) {
+                        c->isize *= 2;
+                        c->ilist = new_list;
+                    } else {
+                        mc_engine.v1->release(mc_engine.v0, c, it);
+                        break; /* out of memory */
+                    }
+                }
 
-                MEMCACHED_COMMAND_GET(c->sfd, info.key, info.nkey, info.nbytes, info.cas);
-                respon_len = sprintf(respon_ptr, " %u %u\r\n", htonl(info.flags), info.nbytes-2);
-                if (add_iov(c, "VALUE ", 6) != 0 ||
-                    add_iov(c, info.key, info.nkey) != 0 ||
-                    add_iov(c, respon_ptr, respon_len) != 0 ||
-                    add_iov(c, info.value[0].iov_base, info.value[0].iov_len) != 0)
-                {
+                /* Rebuild the suffix */
+                char *suffix = get_suffix_buffer(c);
+                if (suffix == NULL) {
+                    mc_engine.v1->release(mc_engine.v0, c, it);
                     break; /* out of memory */
                 }
-                respon_ptr += respon_len;
+                int suffix_len = snprintf(suffix, SUFFIX_SIZE, " %u %u\r\n",
+                                          htonl(info.flags), info.nbytes - 2);
+
+                MEMCACHED_COMMAND_GET(c->sfd, info.key, info.nkey, info.nbytes, info.cas);
+                if (add_iov(c, "VALUE ", 6) != 0 ||
+                    add_iov(c, info.key, info.nkey) != 0 ||
+                    add_iov(c, suffix, suffix_len) != 0 ||
+                    add_iov(c, info.value[0].iov_base, info.value[0].iov_len) != 0)
+                {
+                    mc_engine.v1->release(mc_engine.v0, c, it);
+                    break; /* out of memory */
+                }
+
+                if (settings.verbose > 1) {
+                    mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                            ">%d sending key %s\n", c->sfd, (char*)info.key);
+                }
+
+                /* item_get() has incremented it->refcount for us */
                 STATS_HIT(c, get, key, nkey);
+                *(c->ilist + nhit) = it;
+                nhit++;
             } else {
                 MEMCACHED_COMMAND_GET(c->sfd, key, nkey, -1, 0);
                 STATS_MISS(c, get, key, nkey);
             }
         }
+
+        c->icurr = c->ilist;
+        c->ileft = nhit;
+        c->suffixcurr = c->suffixlist;
+
         if (settings.verbose > 1) {
             mc_logger->log(EXTENSION_LOG_DEBUG, c, ">%d END\n", c->sfd);
         }
+
+        /* If the loop was terminated because of out-of-memory, it is not
+         * reliable to add END\r\n to the buffer, because it might not end
+         * in \r\n. So we send SERVER_ERROR instead.
+         */
         if (k < kcnt || add_iov(c, "END\r\n", 5) != 0
             || (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
-            /* release items */
-            for (k = 0; k < nhit; k++) {
-                mc_engine.v1->release(mc_engine.v0, c, item_array[k]);
-            }
+            /* Releasing items on ilist and freeing suffixes will be
+             * performed later by calling out_string() function.
+             * See conn_write() and conn_mwrite() state.
+             */
             ret = ENGINE_ENOMEM;
         }
     } while(0);
 
     switch(ret) {
       case ENGINE_SUCCESS:
-        c->coll_ecount = nhit;
         conn_set_state(c, conn_mwrite);
         c->msgcurr = 0;
         break;
@@ -2791,15 +2812,10 @@ static void process_mget_complete(conn *c)
         else handle_unexpected_errorcode_ascii(c, ret);
     }
 
-    if (ret != ENGINE_SUCCESS) {
-        if (c->coll_strkeys != NULL) {
-            free((void *)c->coll_strkeys);
-            c->coll_strkeys = NULL;
-        }
-        if (c->coll_eitem != NULL) {
-            free((void *)c->coll_eitem);
-            c->coll_eitem = NULL;
-        }
+    /* free key strings and tokens buffer */
+    if (c->coll_strkeys != NULL) {
+        free((void *)c->coll_strkeys);
+        c->coll_strkeys = NULL;
     }
 }
 #endif
@@ -8349,18 +8365,10 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
 static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt)
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    int item_array_size = kcnt * sizeof(item*);
-    int respon_hdr_size = kcnt * ((lenstr_size*2)+10);
-    int need_size = item_array_size + respon_hdr_size;
     int kmem_size = GET_8ALIGN_SIZE(vlen) + (kcnt * sizeof(token_t));
 
-    if ((c->coll_eitem = (item *)malloc(need_size)) == NULL) {
+    if ((c->coll_strkeys = malloc(kmem_size)) == NULL) {
         ret = ENGINE_ENOMEM;
-    } else {
-        if ((c->coll_strkeys = malloc(kmem_size)) == NULL) {
-            free((void*)c->coll_eitem); c->coll_eitem = NULL;
-            ret = ENGINE_ENOMEM;
-        }
     }
 
     switch (ret) {
