@@ -1560,7 +1560,8 @@ static void process_sop_exist_complete(conn *c) {
     c->coll_eitem = NULL;
 }
 
-static int tokenize_keys(char *keystr, int length, char delimiter, int keycnt, token_t *tokens) {
+static int tokenize_keys(char *keystr, int length, char delimiter, int keycnt, token_t *tokens)
+{
     int ntokens = 0;
     char *first, *s, *e;
     bool finish = false;
@@ -1572,9 +1573,6 @@ static int tokenize_keys(char *keystr, int length, char delimiter, int keycnt, t
         s++;
     first = s;
     for (e = s; ntokens < keycnt; ++e) {
-#ifndef TOKENIZE_SPACE
-        if (*e == ' ') break;
-#endif
         if (*e == delimiter) {
             if (s == e) break;
             tokens[ntokens].value = s;
@@ -1589,10 +1587,8 @@ static int tokenize_keys(char *keystr, int length, char delimiter, int keycnt, t
             if (ntokens == keycnt && (e-first) == (length-2))
                 finish = true;
             break; /* string end */
-#ifdef TOKENIZE_SPACE
         } else if (*e == ' ') {
             break; /* string end */
-#endif
         }
     }
     if (finish == true) {
@@ -1734,25 +1730,16 @@ static void process_mop_delete_complete(conn *c) {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     field_t *flist = NULL;
     uint32_t del_count = 0;
-#ifdef TOKENIZE_SPACE
     char delimiter = ' ';
     char old_delimiter = ','; /* need to keep backwards compatibility */
-#else
-    char delimiter = ',';
-#endif
     bool dropped;
 
     if (c->coll_strkeys != NULL) {
         flist = (field_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
-#ifdef TOKENIZE_SPACE
         if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
             ((tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist) == -1) &&
              (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist) == -1)))
-#else
-       if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-           (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist) == -1))
-#endif
         {
             ret = ENGINE_EBADVALUE;
         }
@@ -1833,22 +1820,13 @@ static void process_mop_get_complete(conn *c)
     assert(c->ewouldblock == false);
 
     if (ret == ENGINE_SUCCESS && c->coll_strkeys != NULL) {
-#ifdef TOKENIZE_SPACE
         char delimiter = ' ';
         char old_delimiter = ','; /* need to keep backwards compatibility */
-#else
-        char delimiter = ',';
-#endif
         flist = (field_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
-#ifdef TOKENIZE_SPACE
         if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
             ((tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist) == -1) &&
              (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist) == -1)))
-#else
-        if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-            (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist) == -1))
-#endif
         {
             ret = ENGINE_EBADVALUE;
         }
@@ -2169,22 +2147,13 @@ static void process_bop_mget_complete(conn *c) {
     eitem **elem_array = (eitem **)c->coll_eitem;
     uint32_t tot_elem_count = 0;
     uint32_t tot_access_count = 0;
-#ifdef TOKENIZE_SPACE
     char delimiter = ' ';
     char old_delimiter = ','; /* need to keep backwards compatibility */
-#else
-    char delimiter = ',';
-#endif
     token_t *key_tokens = (token_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
-#ifdef TOKENIZE_SPACE
     if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
         ((tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, delimiter, c->coll_numkeys, key_tokens) == -1) &&
          (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, old_delimiter, c->coll_numkeys, key_tokens) == -1)))
-#else
-    if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-        (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, delimiter, c->coll_numkeys, key_tokens) == -1))
-#endif
     {
         ret = ENGINE_EBADVALUE;
     }
@@ -2372,12 +2341,8 @@ static int make_smget_trim_response(char *bufptr, eitem_info *info)
 static void process_bop_smget_complete_old(conn *c) {
     int i, idx;
     char *vptr = (char*)c->coll_strkeys;
-#ifdef TOKENIZE_SPACE
     char delimiter = ' ';
     char old_delimiter = ','; /* need to keep backwards compatibility */
-#else
-    char delimiter = ',';
-#endif
     token_t *keys_array = (token_t *)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
     char *respptr;
     int   resplen;
@@ -2396,14 +2361,9 @@ static void process_bop_smget_complete_old(conn *c) {
     respptr = ((char*)kmis_array + kmis_array_size);
 
     ENGINE_ERROR_CODE ret;
-#ifdef TOKENIZE_SPACE
     if ((strncmp(vptr + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
         ((tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1) &&
          (tokenize_keys(vptr, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array) == -1)))
-#else
-    if ((strncmp(vptr + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-        (tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1))
-#endif
     {
         ret = ENGINE_EBADVALUE;
     } else {
@@ -2539,12 +2499,8 @@ static void process_bop_smget_complete(conn *c) {
 #endif
     int i, idx;
     char *vptr = (char*)c->coll_strkeys;
-#ifdef TOKENIZE_SPACE
     char delimiter = ' ';
     char old_delimiter = ','; /* need to keep backwards compatibility */
-#else
-    char delimiter = ',';
-#endif
     token_t *keys_array = (token_t *)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
     char *respptr;
     int   resplen;
@@ -2557,14 +2513,9 @@ static void process_bop_smget_complete(conn *c) {
     respptr = (char *)&smres.miss_kinfo[c->coll_numkeys];
 
     ENGINE_ERROR_CODE ret;
-#ifdef TOKENIZE_SPACE
     if ((strncmp(vptr + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
         ((tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1) &&
          (tokenize_keys(vptr, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array) == -1)))
-#else
-    if ((strncmp(vptr + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-        (tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1))
-#endif
     {
         ret = ENGINE_EBADVALUE;
     } else {
@@ -5977,12 +5928,8 @@ static void process_bin_bop_smget_complete_old(conn *c) {
     int kmis_array_size = c->coll_numkeys * sizeof(uint32_t);
     char *resultptr;
     char *vptr = (char*)c->coll_strkeys;
-#ifdef TOKENIZE_SPACE
     char delimiter = ' ';
     char old_delimiter = ','; /* need to keep backwards compatibility */
-#else
-    char delimiter = ',';
-#endif
     token_t *keys_array = (token_t*)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
     /* We don't actually receive the trailing two characters in the bin
@@ -6002,14 +5949,10 @@ static void process_bin_bop_smget_complete_old(conn *c) {
     bool duplicated;
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-#ifdef TOKENIZE_SPACE
     int ntokens = tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
     if (ntokens == -1) {
         ntokens = tokenize_keys(vptr, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
     }
-#else
-    int ntokens = tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
-#endif
     if (ntokens == -1) {
         ret = ENGINE_EBADVALUE;
     } else {
@@ -6170,12 +6113,8 @@ static void process_bin_bop_smget_complete(conn *c) {
     smget_result_t smres;
     char *resultptr;
     char *vptr = (char*)c->coll_strkeys;
-#ifdef TOKENIZE_SPACE
     char delimiter = ' ';
     char old_delimiter = ','; /* need to keep backwards compatibility */
-#else
-    char delimiter = ',';
-#endif
     token_t *keys_array = (token_t*)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
     /* We don't actually receive the trailing two characters in the bin
@@ -6189,12 +6128,8 @@ static void process_bin_bop_smget_complete(conn *c) {
     resultptr = (char *)&smres.miss_kinfo[c->coll_numkeys];
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-#ifdef TOKENIZE_SPACE
     if ((tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1) &&
         (tokenize_keys(vptr, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array) == -1))
-#else
-    if (tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1)
-#endif
     {
         ret = ENGINE_EBADVALUE;
     } else {
@@ -9314,13 +9249,8 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "mop create <key> <attributes> [noreply]\\r\\n" "\n"
         "\t" "mop insert <key> <field> <bytes> [create <attributes>] [noreply|pipe]\\r\\n<data>\\r\\n" "\n"
         "\t" "mop update <key> <field> <bytes> [noreply|pipe]\\r\\n<data>\\r\\n" "\n"
-#ifdef TOKENIZE_SPACE
         "\t" "mop delete <key> <lenfields> <numfields> [drop] [noreply|pipe]\\r\\n[<\"space separated fields\">]\\r\\n" "\n"
         "\t" "mop get <key> <lenfields> <numfields> [delete|drop]\\r\\n[<\"space separated fields\">]\\r\\n" "\n"
-#else
-        "\t" "mop delete <key> <lenfields> <numfields> [drop] [noreply|pipe]\\r\\n[<\"comma separated fields\">]\\r\\n" "\n"
-        "\t" "mop get <key> <lenfields> <numfields> [delete|drop]\\r\\n[<\"comma separated fields\">]\\r\\n" "\n"
-#endif
         "\n"
         "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
         );
@@ -9334,13 +9264,8 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "bop get <key> <bkey or \"bkey range\"> [<eflag_filter>] [[<offset>] <count>] [delete|drop]\\r\\n" "\n"
         "\t" "bop count <key> <bkey or \"bkey range\"> [<eflag_filter>] \\r\\n" "\n"
         "\t" "bop incr|decr <key> <bkey> <delta> [<initial> [<eflag>]] [noreply|pipe]\\r\\n" "\n"
-#ifdef TOKENIZE_SPACE
         "\t" "bop mget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"space separated keys\">\\r\\n" "\n"
         "\t" "bop smget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count> [duplicate|unique]\\r\\n<\"space separated keys\">\\r\\n" "\n"
-#else
-        "\t" "bop mget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"comma separated keys\">\\r\\n" "\n"
-        "\t" "bop smget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count> [duplicate|unique]\\r\\n<\"comma separated keys\">\\r\\n" "\n"
-#endif
         "\t" "bop position <key> <bkey> <order>\\r\\n" "\n"
         "\t" "bop pwg <key> <bkey> <order> [<count>]\\r\\n" "\n"
         "\t" "bop gbp <key> <order> <position or \"position range\">\\r\\n" "\n"
@@ -9361,13 +9286,8 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "bop get <key> <bkey or \"bkey range\"> [<eflag_filter>] [[<offset>] <count>] [delete|drop]\\r\\n" "\n"
         "\t" "bop count <key> <bkey or \"bkey range\"> [<eflag_filter>] \\r\\n" "\n"
         "\t" "bop incr|decr <key> <bkey> <value> [noreply|pipe]\\r\\n" "\n"
-#ifdef TOKENIZE_SPACE
         "\t" "bop mget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"space separated keys\">\\r\\n" "\n"
         "\t" "bop smget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count> [duplicate|unique]\\r\\n<\"space separated keys\">\\r\\n" "\n"
-#else
-        "\t" "bop mget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"comma separated keys\">\\r\\n" "\n"
-        "\t" "bop smget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count> [unique]\\r\\n<\"comma separated keys\">\\r\\n" "\n"
-#endif
         "\t" "bop position <key> <bkey> <order>\\r\\n" "\n"
         "\t" "bop pwg <key> <bkey> <order> [<count>]\\r\\n" "\n"
         "\t" "bop gbp <key> <order> <position or \"position range\">\\r\\n" "\n"
