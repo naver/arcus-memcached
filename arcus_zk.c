@@ -507,7 +507,7 @@ arcus_read_ZK_children(zhandle_t *zh, const char *zpath, watcher_fn watcher,
     return 1; /* The caller must free strv */
 }
 
-#ifdef DELETED_ZNODE
+#if defined(CONFIG_FAILSTOP) && defined(DELETED_ZNODE)
 static int
 check_znode_existence(struct String_vector *strv, char *znode_name)
 {
@@ -1796,7 +1796,7 @@ static void *sm_state_thread(void *arg)
 
         /* Read the latest hash ring */
         if (smreq.update_cache_list) {
-#ifdef DELETED_ZNODE
+#if defined(CONFIG_FAILSTOP) && defined(DELETED_ZNODE)
             bool znode_deleted = false;
 #endif
             struct String_vector strv_cache_list = {0, NULL};
@@ -1818,7 +1818,7 @@ static void *sm_state_thread(void *arg)
             } else if (zresult == 0) { /* NO znode */
                 arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Cannot read cache list from ZK.  No znode.\n");
-#ifdef DELETED_ZNODE
+#if defined(CONFIG_FAILSTOP) && defined(DELETED_ZNODE)
                 znode_deleted = true;
 #else
                 /* Do not retry */
@@ -1828,7 +1828,7 @@ static void *sm_state_thread(void *arg)
                 deallocate_String_vector(&sm_info.sv_cache_list);
                 sm_info.sv_cache_list = strv_cache_list;
 
-#ifdef DELETED_ZNODE
+#if defined(CONFIG_FAILSTOP) && defined(DELETED_ZNODE)
                 if (check_znode_existence(&strv_cache_list,
                                           arcus_conf.znode_name) != 0) {
                     znode_deleted = true;
@@ -1844,7 +1844,7 @@ static void *sm_state_thread(void *arg)
 #endif
             }
 
-#ifdef DELETED_ZNODE
+#if defined(CONFIG_FAILSTOP) && defined(DELETED_ZNODE)
             if (znode_deleted) {
                 arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                         "My ephemeral znode in cache_list is deleted. "
