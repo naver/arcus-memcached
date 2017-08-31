@@ -48,8 +48,8 @@ int  arcus_zk_get_ensemble(char *buf, int size);
 #ifdef CONFIG_FAILSTOP
 int  arcus_zk_rejoin_ensemble(void);
 
-void arcus_zk_set_mcfailstop(bool failstop);
-bool arcus_zk_get_mcfailstop(void);
+void arcus_zk_set_zkfailstop(bool failstop);
+bool arcus_zk_get_zkfailstop(void);
 #endif
 int  arcus_zk_set_hbtimeout(int hbtimeout);
 int  arcus_zk_get_hbtimeout(void);
