@@ -507,7 +507,10 @@ set 명령은 ZK ensemble 주소를 변경한다. ensemble_list는 \<ip:port\>,.
 
 get 명령은 ZK ensemble 주소를 조회한다. 조회 결과는 \<ip:port\>,...,\<ip:port\> 형식으로 확인할 수 있다.
 
-rejoin 명령은 cache server를 ZK ensemble에 다시 연결하도록 하는 명령이다. failstop이 off 된 상태에서 ZooKeeper session timeout이 일어날 경우 cache server는 ZooKeeper와의 연결을 끊고 cache cloud에서 빠져 대기한다. 이 때 이 rejoin 명령을 내리면 기존 data를 가진 그대로 cache cloud에 참여하게 된다.
+rejoin 명령은 ZK ensemble 과의 연결을 끊고 cache cloud에서 빠져 대기하는 cache server를 다시 ZK ensemble에 연결하도록 하는 명령이다. Cache cloud에서 cache server가 빠져나가는 경우는 아래와 같다.
+- Failstop off 상태에서 ZooKeeper session timeout이 일어난 경우
+- 운영자의 실수로 cache_list에 등록된 cache server의 ephemeral znode가 삭제된 경우
+
 
 ### Help 명령
 
