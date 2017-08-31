@@ -8605,25 +8605,25 @@ static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntok
 
 #ifdef ENABLE_ZK_INTEGRATION
 #ifdef CONFIG_FAILSTOP
-static void process_mcfailstop_command(conn *c, token_t *tokens, const size_t ntokens)
+static void process_zkfailstop_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
     if (ntokens == 3) {
         char buf[50];
-        sprintf(buf, "mcfailstop %s\r\nEND", arcus_zk_get_mcfailstop() ? "on" : "off");
+        sprintf(buf, "zkfailstop %s\r\nEND", arcus_zk_get_zkfailstop() ? "on" : "off");
         out_string(c, buf);
     } else if (ntokens == 4) {
         const char *config = tokens[COMMAND_TOKEN+2].value;
-        bool mcfailstop;
+        bool zkfailstop;
         if (strcmp(config, "on") == 0)
-            mcfailstop = true;
+            zkfailstop = true;
         else if (strcmp(config, "off") == 0)
-            mcfailstop = false;
+            zkfailstop = false;
         else {
             out_string(c, "CLIENT_ERROR bad value");
             return;
         }
-        arcus_zk_set_mcfailstop(mcfailstop);
+        arcus_zk_set_zkfailstop(zkfailstop);
         out_string(c, "END");
     } else {
         print_invalid_command(c, tokens, ntokens);
@@ -8850,8 +8850,8 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     }
 #ifdef ENABLE_ZK_INTEGRATION
 #ifdef CONFIG_FAILSTOP
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "mcfailstop") == 0) {
-        process_mcfailstop_command(c, tokens, ntokens);
+    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "zkfailstop") == 0) {
+        process_zkfailstop_command(c, tokens, ntokens);
     }
 #endif
     else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "hbtimeout") == 0) {
@@ -9161,7 +9161,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
 #endif
 #ifdef ENABLE_ZK_INTEGRATION
 #ifdef CONFIG_FAILSTOP
-        "\t" "config mcfailstop [on|off]\\r\\n" "\n"
+        "\t" "config zkfailstop [on|off]\\r\\n" "\n"
 #endif
 #endif
         "\t" "config maxconns [<maxconn>]\\r\\n" "\n"

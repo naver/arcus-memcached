@@ -148,7 +148,7 @@ typedef struct {
     char    *hostip;            // localhost server IP
     int     port;               // memcached port number
 #ifdef CONFIG_FAILSTOP
-    bool    mc_failstop;        // memcached automatic failstop on/off
+    bool    zk_failstop;        // memcached automatic failstop on/off
 #endif
     int     hb_failstop;        // memcached heartbeat failstop
     int     hb_timeout;         // memcached heartbeat timeout
@@ -176,7 +176,7 @@ arcus_zk_conf arcus_conf = {
     .mc_ipport      = NULL,
     .hostip         = NULL,
 #ifdef CONFIG_FAILSTOP
-    .mc_failstop    = true,
+    .zk_failstop    = true,
 #endif
     .hb_failstop    = HEART_BEAT_DFT_FAILSTOP,
     .hb_timeout     = HEART_BEAT_DFT_TIMEOUT,
@@ -411,14 +411,14 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
     }
     else if (state == ZOO_EXPIRED_SESSION_STATE) {
 #ifdef CONFIG_FAILSTOP
-        if (arcus_conf.mc_failstop) {
+        if (arcus_conf.zk_failstop) {
             // very likely that memcached process exited and restarted within
             // session timeout
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "Expired state. shutting down\n");
             // send SMS here??
             arcus_exit(wzh, EX_TEMPFAIL);
         } else {
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "Expired state. pausing memcached (mc_failstop: off)\n");
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "Expired state. pausing memcached (zk_failstop: off)\n");
 
             sm_lock();
             sm_info.mc_pause = true;
@@ -1629,16 +1629,16 @@ int arcus_zk_rejoin_ensemble()
     return ret;
 }
 
-void arcus_zk_set_mcfailstop(bool mcfailstop)
+void arcus_zk_set_zkfailstop(bool zkfailstop)
 {
     pthread_mutex_lock(&arcus_conf.lock);
-    arcus_conf.mc_failstop = mcfailstop;
+    arcus_conf.zk_failstop = zkfailstop;
     pthread_mutex_unlock(&arcus_conf.lock);
 }
 
-bool arcus_zk_get_mcfailstop(void)
+bool arcus_zk_get_zkfailstop(void)
 {
-    return arcus_conf.mc_failstop;
+    return arcus_conf.zk_failstop;
 }
 #endif
 
