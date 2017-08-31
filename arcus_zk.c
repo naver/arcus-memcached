@@ -1704,7 +1704,13 @@ int arcus_zk_get_hbfailstop(void)
 
 void arcus_zk_get_stats(arcus_zk_stats *stats)
 {
+#ifdef CONFIG_FAILSTOP
+    stats->zk_connected = (main_zk != NULL && main_zk->zh != NULL) ? true : false;
+#endif
     stats->zk_timeout = arcus_conf.zk_timeout;
+#ifdef CONFIG_FAILSTOP
+    stats->zk_failstop = arcus_conf.zk_failstop;
+#endif
     stats->hb_timeout = arcus_conf.hb_timeout;
     stats->hb_failstop = arcus_conf.hb_failstop;
     stats->hb_count = azk_stat.hb_count;
