@@ -507,6 +507,19 @@ arcus_read_ZK_children(zhandle_t *zh, const char *zpath, watcher_fn watcher,
     return 1; /* The caller must free strv */
 }
 
+#ifdef DELETED_ZNODE
+static int
+check_znode_existence(struct String_vector *strv, char *znode_name)
+{
+    for (int i = 0; i < strv->count; i++) {
+        if (strcmp(strv->data[i], znode_name) == 0)
+            return 0;
+    }
+
+    return -1;
+}
+#endif
+
 #ifdef ENABLE_CLUSTER_AWARE
 /* update cluster config, that is ketama hash ring. */
 static int
@@ -1783,6 +1796,9 @@ static void *sm_state_thread(void *arg)
 
         /* Read the latest hash ring */
         if (smreq.update_cache_list) {
+#ifdef DELETED_ZNODE
+            bool znode_deleted = false;
+#endif
             struct String_vector strv_cache_list = {0, NULL};
             int zresult = arcus_read_ZK_children(main_zk->zh,
                                                  arcus_conf.cluster_path,
@@ -1802,11 +1818,22 @@ static void *sm_state_thread(void *arg)
             } else if (zresult == 0) { /* NO znode */
                 arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Cannot read cache list from ZK.  No znode.\n");
+#ifdef DELETED_ZNODE
+                znode_deleted = true;
+#else
                 /* Do not retry */
+#endif
             } else {
                 /* Remember the latest cache list */
                 deallocate_String_vector(&sm_info.sv_cache_list);
                 sm_info.sv_cache_list = strv_cache_list;
+
+#ifdef DELETED_ZNODE
+                if (check_znode_existence(&strv_cache_list,
+                                          arcus_conf.znode_name) != 0) {
+                    znode_deleted = true;
+                }
+#endif
 
 #ifdef ENABLE_CLUSTER_AWARE
                 /* update cluster config */
@@ -1816,6 +1843,19 @@ static void *sm_state_thread(void *arg)
                 }
 #endif
             }
+
+#ifdef DELETED_ZNODE
+            if (znode_deleted) {
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "My ephemeral znode in cache_list is deleted. "
+                        "Please check and rejoin.");
+                sm_lock();
+                sm_info.mc_pause = true;
+                sm_unlock();
+                sm_retry = true;
+                continue;
+            }
+#endif
         }
     }
     sm_info.state_running = false;
