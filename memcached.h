@@ -370,6 +370,9 @@ struct mc_stats {
 struct settings {
     size_t maxbytes;
     int maxconns;
+#ifdef CONFIG_FAILSTOP
+    bool mc_failstop;
+#endif
     int port;
     int udpport;
     size_t sticky_limit;
