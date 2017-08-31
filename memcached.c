@@ -324,6 +324,9 @@ static void settings_init(void) {
     settings.inter = NULL;
     settings.maxbytes = 64 * 1024 * 1024; /* default is 64MB */
     settings.maxconns = 1024;         /* to limit connections-related memory to about 5MB */
+#ifdef CONFIG_FAILSTOP
+    settings.mc_failstop = true;
+#endif
     settings.sticky_limit = 0;        /* default: 0 MB */
     settings.verbose = 0;
     settings.oldest_live = 0;
@@ -7651,6 +7654,9 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("libevent", "%s", event_get_version());
     APPEND_STAT("pointer_size", "%d", (int)(8 * sizeof(void *)));
 #ifdef ENABLE_ZK_INTEGRATION
+#ifdef CONFIG_FAILSTOP
+    APPEND_STAT("zk_connected", "%s", zk_stats.zk_connected ? "true" : "false");
+#endif
     APPEND_STAT("zk_timeout", "%u", zk_stats.zk_timeout);
     APPEND_STAT("hb_timeout", "%u", zk_stats.hb_timeout);
     APPEND_STAT("hb_failstop", "%u", zk_stats.hb_failstop);
@@ -7809,6 +7815,9 @@ static void process_stat_settings(ADD_STAT add_stats, void *c) {
     assert(add_stats);
     APPEND_STAT("maxbytes", "%llu", (unsigned long long)settings.maxbytes);
     APPEND_STAT("maxconns", "%d", settings.maxconns);
+#ifdef CONFIG_FAILSTOP
+    APPEND_STAT("mc_failstop", "%s", settings.mc_failstop ? "on" : "off");
+#endif
     APPEND_STAT("tcpport", "%d", settings.port);
     APPEND_STAT("udpport", "%d", settings.udpport);
     APPEND_STAT("sticky_limit", "%llu", (unsigned long long)settings.sticky_limit);
@@ -8610,7 +8619,7 @@ static void process_mcfailstop_command(conn *c, token_t *tokens, const size_t nt
     assert(c != NULL);
     if (ntokens == 3) {
         char buf[50];
-        sprintf(buf, "mcfailstop %s\r\nEND", arcus_zk_get_mcfailstop() ? "on" : "off");
+        sprintf(buf, "mcfailstop %s\r\nEND", settings.mc_failstop ? "on" : "off");
         out_string(c, buf);
     } else if (ntokens == 4) {
         const char *config = tokens[COMMAND_TOKEN+2].value;
@@ -8624,6 +8633,7 @@ static void process_mcfailstop_command(conn *c, token_t *tokens, const size_t nt
             return;
         }
         arcus_zk_set_mcfailstop(mcfailstop);
+        settings.mc_failstop = mcfailstop;
         out_string(c, "END");
     } else {
         print_invalid_command(c, tokens, ntokens);
