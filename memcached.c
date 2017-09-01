@@ -1549,35 +1549,34 @@ static void process_sop_exist_complete(conn *c) {
     c->coll_eitem = NULL;
 }
 
-static int tokenize_keys(char *keystr, int length, char delimiter, int keycnt, token_t *tokens)
+static int tokenize_keys(char *keystr, int slength, char delimiter, int keycnt, token_t *tokens)
 {
+    char *s, *e;
+    int checked = 0;
     int ntokens = 0;
-    char *first, *s, *e;
     bool finish = false;
 
-    assert(keystr != NULL && tokens != NULL && keycnt >= 1);
+    assert(keystr != NULL && slength > 0 && tokens != NULL && keycnt > 0);
 
     s = keystr;
-    while (*s == ' ')
-        s++;
-    first = s;
-    for (e = s; ntokens < keycnt; ++e) {
+    for (e = s; ntokens < keycnt; ++e, ++checked) {
+        if (checked >= slength) {
+            if (s == e) break;
+            tokens[ntokens].value = s;
+            tokens[ntokens].length = e - s;
+            ntokens++;
+            if (ntokens == keycnt)
+                finish = true;
+            break; /* string end */
+        }
         if (*e == delimiter) {
             if (s == e) break;
             tokens[ntokens].value = s;
             tokens[ntokens].length = e - s;
             ntokens++;
             s = e + 1;
-        } else if (*e == '\r' && *(e+1) == '\n') {
-            if (s == e) break;
-            tokens[ntokens].value = s;
-            tokens[ntokens].length = e - s;
-            ntokens++;
-            if (ntokens == keycnt && (e-first) == (length-2))
-                finish = true;
-            break; /* string end */
         } else if (*e == ' ') {
-            break; /* string end */
+            break; /* invalid character in key string */
         }
     }
     if (finish == true) {
@@ -1726,9 +1725,9 @@ static void process_mop_delete_complete(conn *c) {
     if (c->coll_strkeys != NULL) {
         flist = (field_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
-        if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-            ((tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist) == -1) &&
-             (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist) == -1)))
+        if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys-2, "\r\n", 2) != 0) ||
+            ((tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys-2, delimiter, c->coll_numkeys, (token_t*)flist) == -1) &&
+             (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, (token_t*)flist) == -1)))
         {
             ret = ENGINE_EBADVALUE;
         }
@@ -1813,9 +1812,9 @@ static void process_mop_get_complete(conn *c)
         char old_delimiter = ','; /* need to keep backwards compatibility */
         flist = (field_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
-        if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-            ((tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist) == -1) &&
-             (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist) == -1)))
+        if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys-2, "\r\n", 2) != 0) ||
+            ((tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys-2, delimiter, c->coll_numkeys, (token_t*)flist) == -1) &&
+             (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, (token_t*)flist) == -1)))
         {
             ret = ENGINE_EBADVALUE;
         }
@@ -2140,9 +2139,9 @@ static void process_bop_mget_complete(conn *c) {
     char old_delimiter = ','; /* need to keep backwards compatibility */
     token_t *key_tokens = (token_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
-    if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-        ((tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, delimiter, c->coll_numkeys, key_tokens) == -1) &&
-         (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, old_delimiter, c->coll_numkeys, key_tokens) == -1)))
+    if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys-2, "\r\n", 2) != 0) ||
+        ((tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys-2, delimiter, c->coll_numkeys, key_tokens) == -1) &&
+         (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, key_tokens) == -1)))
     {
         ret = ENGINE_EBADVALUE;
     }
@@ -2350,9 +2349,9 @@ static void process_bop_smget_complete_old(conn *c) {
     respptr = ((char*)kmis_array + kmis_array_size);
 
     ENGINE_ERROR_CODE ret;
-    if ((strncmp(vptr + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-        ((tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1) &&
-         (tokenize_keys(vptr, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array) == -1)))
+    if ((strncmp(vptr + c->coll_lenkeys-2, "\r\n", 2) != 0) ||
+        ((tokenize_keys(vptr, c->coll_lenkeys-2, delimiter, c->coll_numkeys, keys_array) == -1) &&
+         (tokenize_keys(vptr, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, keys_array) == -1)))
     {
         ret = ENGINE_EBADVALUE;
     } else {
@@ -2502,9 +2501,9 @@ static void process_bop_smget_complete(conn *c) {
     respptr = (char *)&smres.miss_kinfo[c->coll_numkeys];
 
     ENGINE_ERROR_CODE ret;
-    if ((strncmp(vptr + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-        ((tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1) &&
-         (tokenize_keys(vptr, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array) == -1)))
+    if ((strncmp(vptr + c->coll_lenkeys-2, "\r\n", 2) != 0) ||
+        ((tokenize_keys(vptr, c->coll_lenkeys-2, delimiter, c->coll_numkeys, keys_array) == -1) &&
+         (tokenize_keys(vptr, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, keys_array) == -1)))
     {
         ret = ENGINE_EBADVALUE;
     } else {
@@ -2703,8 +2702,8 @@ static void process_mget_complete(conn *c)
     uint32_t k, nhit;
 
     do {
-        if ((strncmp((char*)c->coll_strkeys + vlen - 2, "\r\n", 2) != 0) ||
-            (tokenize_keys((char*)c->coll_strkeys, vlen, delimiter, kcnt, key_tokens) == -1)) {
+        if ((strncmp((char*)c->coll_strkeys + vlen-2, "\r\n", 2) != 0) ||
+            (tokenize_keys((char*)c->coll_strkeys, vlen-2, delimiter, kcnt, key_tokens) == -1)) {
             ret = ENGINE_EBADVALUE; break;
         }
         /* check key length */
@@ -5965,9 +5964,9 @@ static void process_bin_bop_smget_complete_old(conn *c) {
     bool duplicated;
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    int ntokens = tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+    int ntokens = tokenize_keys(vptr, c->coll_lenkeys-2, delimiter, c->coll_numkeys, keys_array);
     if (ntokens == -1) {
-        ntokens = tokenize_keys(vptr, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
+        ntokens = tokenize_keys(vptr, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, keys_array);
     }
     if (ntokens == -1) {
         ret = ENGINE_EBADVALUE;
@@ -6144,8 +6143,8 @@ static void process_bin_bop_smget_complete(conn *c) {
     resultptr = (char *)&smres.miss_kinfo[c->coll_numkeys];
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    if ((tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1) &&
-        (tokenize_keys(vptr, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array) == -1))
+    if ((tokenize_keys(vptr, c->coll_lenkeys-2, delimiter, c->coll_numkeys, keys_array) == -1) &&
+        (tokenize_keys(vptr, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, keys_array) == -1))
     {
         ret = ENGINE_EBADVALUE;
     } else {
