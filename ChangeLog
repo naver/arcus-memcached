@@ -1,3 +1,8 @@
+2017-09-01 [version 1.10.3]
+	* [Feature] leave and rejoin when cache_list znode is deleted.
+	* [Feature] Change the name of mcfailstop to zkfailstop.
+	* [Fix] the miscaculated checked value in tokenize_command().
+
 2017-07-28 [version 1.10.2]
 	* [Feature] Add memcached failstop on/off configuration.
 	   - default is memcached failstop on.
