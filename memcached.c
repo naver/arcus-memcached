@@ -7651,6 +7651,10 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("libevent", "%s", event_get_version());
     APPEND_STAT("pointer_size", "%d", (int)(8 * sizeof(void *)));
 #ifdef ENABLE_ZK_INTEGRATION
+#ifdef CONFIG_FAILSTOP
+    APPEND_STAT("zk_connected", "%s", zk_stats.zk_connected ? "true" : "false");
+    APPEND_STAT("zk_failstop", "%s", zk_stats.zk_failstop ? "on" : "off");
+#endif
     APPEND_STAT("zk_timeout", "%u", zk_stats.zk_timeout);
     APPEND_STAT("hb_timeout", "%u", zk_stats.hb_timeout);
     APPEND_STAT("hb_failstop", "%u", zk_stats.hb_failstop);
