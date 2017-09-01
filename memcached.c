@@ -7296,9 +7296,9 @@ static size_t tokenize_command(char *command, int cmdlen, token_t *tokens, const
                 tokens[ntokens].length = e - s;
                 ntokens++;
                 *e = '\0';
-                checked = e - command;
             }
             s = (++e);
+            checked = s - command;
         } else {
             e = command + cmdlen;
             if (s != e) {
