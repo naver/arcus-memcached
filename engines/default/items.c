@@ -1001,16 +1001,22 @@ static char *do_item_cachedump(struct default_engine *engine, const unsigned int
                                const unsigned int limit, const bool forward, const bool sticky,
                                unsigned int *bytes)
 {
-    unsigned int memlimit = 256 * 1024; /* 256KB max response size */
+    unsigned int memlimit = 512 * 1024; /* 512KB max response size */
     char *buffer;
     unsigned int bufcurr = 0;
     hash_item *it;
     unsigned int len;
     unsigned int shown = 0;
-    char key_temp[256]; /* KEY_MAX_LENGTH + 1 */
+    char *keybuf;
 
     buffer = malloc((size_t)memlimit);
     if (buffer == 0) return NULL;
+
+    keybuf = malloc(32*1024); /* must be larger than KEY_MAX_LENGTH */
+    if (keybuf == NULL) {
+        free(buffer);
+        return NULL;
+    }
 
     if (sticky) {
         it = (forward ? engine->items.sticky_heads[slabs_clsid]
@@ -1022,16 +1028,17 @@ static char *do_item_cachedump(struct default_engine *engine, const unsigned int
 
     while (it != NULL && (limit == 0 || shown < limit)) {
         /* Copy the key since it may not be null-terminated in the struct */
-        strncpy(key_temp, item_get_key(it), it->nkey);
-        key_temp[it->nkey] = 0x00; /* terminate */
+        strncpy(keybuf, item_get_key(it), it->nkey);
+        keybuf[it->nkey] = 0x00; /* terminate */
 
         if (bufcurr + it->nkey + 100 > memlimit) break;
         len = sprintf(buffer + bufcurr, "ITEM %s [acctime=%u, exptime=%d]\r\n",
-                      key_temp, it->time, (int32_t)it->exptime);
+                      keybuf, it->time, (int32_t)it->exptime);
         bufcurr += len;
         shown++;
         it = (forward ? it->next : it->prev);
     }
+    free(keybuf);
 
     len = sprintf(buffer + bufcurr, "END [curtime=%u]\r\n",
                   engine->server.core->get_current_time());
