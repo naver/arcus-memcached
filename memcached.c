@@ -666,6 +666,9 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->rcurr = c->rbuf;
     c->ritem = 0;
     c->rlbytes = 0;
+#ifdef USE_STRING_MBLOCK
+    c->rltotal = 0;
+#endif
     c->icurr = c->ilist;
     c->suffixcurr = c->suffixlist;
     c->ileft = 0;
@@ -1585,6 +1588,237 @@ static int tokenize_keys(char *keystr, int slength, char delimiter, int keycnt, 
         return -1; /* some errors */
     }
 }
+
+#ifdef USE_STRING_MBLOCK
+/*
+ * string memory block
+ */
+static int check_sblock_tail_string(mblck_list_t *sblcks, int length)
+{
+    mblck_node_t *blckptr;
+    char         *dataptr;
+    uint32_t      bodylen = MBLCK_GET_BODYLEN(sblcks);
+    uint32_t      lastlen;
+    uint32_t      numblks;
+
+    /* check the last "\r\n" string */
+    blckptr = MBLCK_GET_TAILBLK(sblcks);
+    dataptr = MBLCK_GET_BODYPTR(blckptr);
+    lastlen = (length % bodylen) > 0
+            ? (length % bodylen) : bodylen;
+
+    if (*(dataptr + lastlen - 1) != '\n') {
+        return -1; /* invalid strings */
+    }
+    if ((--lastlen) == 0) {
+        numblks = MBLCK_GET_NUMBLKS(sblcks);
+        blckptr = MBLCK_GET_HEADBLK(sblcks);
+        for (int i = 1; i < numblks-1; i++) {
+             blckptr = MBLCK_GET_NEXTBLK(blckptr);
+        }
+        dataptr = MBLCK_GET_BODYPTR(blckptr);
+        lastlen = bodylen;
+    }
+    if (*(dataptr + lastlen - 1) != '\r') {
+        return -1; /* invalid strings */
+    }
+    return 0;
+}
+
+static int tokenize_mblck(char *keystr, int slength, char delimiter, int keycnt, token_t *tokens)
+{
+    char *s, *e;
+    int checked = 0;
+    int ntokens = 0;
+    bool finish = false;
+
+    assert(keystr != NULL && slength > 0 && tokens != NULL && keycnt > 0);
+
+    s = keystr;
+    for (e = s; ntokens < keycnt; ++e, ++checked) {
+        if (checked >= slength) {
+            if (s == e) break;
+            tokens[ntokens].value = s;
+            tokens[ntokens].length = e - s;
+            ntokens++;
+            finish = true;
+            break; /* string end */
+        }
+        if (*e == delimiter) {
+            if (s == e) break;
+            tokens[ntokens].value = s;
+            tokens[ntokens].length = e - s;
+            ntokens++;
+            s = e + 1;
+        } else if (*e == ' ') {
+            break; /* invalid character in key string */
+        }
+    }
+    if (finish == true) {
+        return ntokens;
+    } else {
+        return -1; /* some errors */
+    }
+}
+
+/* segmented token structure */
+typedef struct {
+    char *value;
+    uint32_t length;
+    uint32_t tokidx;
+} segtok_t;
+
+static int build_complete_strings(conn *c, segtok_t *segtoks, int segcnt,
+                                  token_t *tokens, int keycnt)
+{
+    mblck_list_t add_blcks;
+    mblck_node_t *blckptr;
+    char         *dataptr;
+    token_t      *tok_ptr;
+    uint32_t      bodylen = MBLCK_GET_BODYLEN(&c->str_blcks);
+    uint32_t      numblks = 1;
+    uint32_t      datalen = 0;
+    uint32_t      complen, i;
+
+    /* calculate the # of blocks needed */
+    for (i = 0; i < segcnt; i++) {
+        tok_ptr = &tokens[segtoks[i].tokidx];
+        complen = segtoks[i].length + tok_ptr->length;
+        if ((datalen + complen) > bodylen) {
+            numblks += 1;
+            datalen = complen;
+        } else {
+            datalen += complen;
+        }
+    }
+
+    /* allocate new mblock list */
+    if (mblck_list_alloc(&c->thread->mblck_pool, bodylen, numblks, &add_blcks) < 0) {
+        return -1;
+    }
+
+    /* build the complete strings with new mblock */
+    blckptr = MBLCK_GET_HEADBLK(&add_blcks);
+    dataptr = MBLCK_GET_BODYPTR(blckptr);
+    datalen = 0;
+
+    for (i = 0; i < segcnt; i++) {
+        tok_ptr = &tokens[segtoks[i].tokidx];
+        complen = segtoks[i].length + tok_ptr->length;
+
+        if ((datalen + complen) > bodylen) {
+            blckptr = MBLCK_GET_NEXTBLK(blckptr);
+            dataptr = MBLCK_GET_BODYPTR(blckptr);
+            datalen = 0;
+        }
+
+        memcpy(dataptr + datalen, segtoks[i].value, segtoks[i].length);
+        datalen += segtoks[i].length;
+        memcpy(dataptr + datalen, tok_ptr->value, tok_ptr->length);
+        datalen += tok_ptr->length;
+
+        tok_ptr->value = dataptr;
+        tok_ptr->length = complen;
+    }
+
+    /* merge to main mblock list */
+    mblck_list_merge(&c->str_blcks, &add_blcks);
+    return 0;
+}
+
+static int tokenize_sblocks(conn *c, int length, char delimiter, int keycnt, token_t *tokens)
+{
+    mblck_node_t *blckptr;
+    char         *dataptr;
+    uint32_t slength;
+    uint32_t bodylen;
+    uint32_t datalen;
+    uint32_t numblks;
+    uint32_t chkblks;
+    uint32_t lastlen;
+    uint32_t ntokens = 0;
+    uint32_t nsegtok = 0;
+    segtok_t *segtoks = (segtok_t*)&tokens[keycnt];
+    bool finish_flag = false;
+    bool segmented_blck;
+
+    assert(length > 2 && tokens != NULL && keycnt > 0);
+
+    /* check the last "\r\n" string */
+    if (check_sblock_tail_string(&c->str_blcks, length) != 0) {
+        return -1; /* invalid tail string */
+    }
+
+    /* prepare block info */
+    slength = length - 2; /* exclude the last "\r\n" */
+    bodylen = MBLCK_GET_BODYLEN(&c->str_blcks);
+    numblks = (((length-2) - 1) / bodylen) + 1;
+    lastlen = ((length-2) % bodylen) > 0
+            ? ((length-2) % bodylen) : bodylen;
+
+
+    /* get the first block */
+    blckptr = MBLCK_GET_HEADBLK(&c->str_blcks);
+    dataptr = MBLCK_GET_BODYPTR(blckptr);
+    chkblks = 1;
+    datalen = (chkblks < numblks) ? bodylen : lastlen;
+
+    while (ntokens < keycnt) {
+        /* check the last character */
+        segmented_blck = false;
+        if (chkblks < numblks) {
+            if (dataptr[datalen-1] == delimiter) {
+                datalen -= 1;
+            } else {
+                segmented_blck = true;
+            }
+        }
+
+        /* tokenize string in the block */
+        int tokcnt = tokenize_mblck(dataptr, datalen, delimiter,
+                                    keycnt-ntokens, &tokens[ntokens]);
+        if (tokcnt <= 0) {
+            break;
+        }
+        ntokens += tokcnt;
+
+        /* check the end of strings */
+        if (chkblks >= numblks) {
+            if (ntokens == keycnt)
+                finish_flag = true;
+            break; /* string end */
+        }
+
+        /* get the next block */
+        blckptr = MBLCK_GET_NEXTBLK(blckptr);
+        dataptr = MBLCK_GET_BODYPTR(blckptr);
+        chkblks += 1;
+        datalen = (chkblks < numblks) ? bodylen : lastlen;
+
+        if (segmented_blck == true) {
+            if (dataptr[0] == delimiter) {
+                dataptr += 1;
+                datalen -= 1;
+                continue;
+            }
+            /* save the segmented string */
+            ntokens -= 1;
+            segtoks[nsegtok].value = tokens[ntokens].value;
+            segtoks[nsegtok].length = (uint32_t)tokens[ntokens].length;
+            segtoks[nsegtok].tokidx = ntokens;
+            nsegtok += 1;
+        }
+    }
+
+    if (finish_flag == false) {
+        return -1; /* some errors */
+    }
+    if (build_complete_strings(c, segtoks, nsegtok, tokens, ntokens) != 0) {
+        return -2; /* out of memory */
+    }
+    return 0; /* OK */
+}
+#endif
 
 static int make_mop_elem_response(char *bufptr, eitem_info *info)
 {
@@ -2697,15 +2931,34 @@ static void process_mget_complete(conn *c)
     item    *it;
     char    *key;
     size_t   nkey;
+#ifdef USE_STRING_MBLOCK
+    token_t *key_tokens;
+#else
     token_t *key_tokens = (token_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(vlen));
+#endif
     char     delimiter = ' ';
     uint32_t k, nhit;
 
     do {
+#ifdef USE_STRING_MBLOCK
+        int ntokens = kcnt + MBLCK_GET_NUMBLKS(&c->str_blcks);
+        key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, ntokens);
+        if (key_tokens == NULL) {
+            ret = ENGINE_ENOMEM; break;
+        }
+        ntokens = tokenize_sblocks(c, vlen, delimiter, kcnt, key_tokens);
+        if (ntokens == -1) {
+            ret = ENGINE_EBADVALUE; break;
+        }
+        if (ntokens == -2) {
+            ret = ENGINE_ENOMEM; break;
+        }
+#else
         if ((strncmp((char*)c->coll_strkeys + vlen-2, "\r\n", 2) != 0) ||
             (tokenize_keys((char*)c->coll_strkeys, vlen-2, delimiter, kcnt, key_tokens) == -1)) {
             ret = ENGINE_EBADVALUE; break;
         }
+#endif
         /* check key length */
         for (k = 0; k < kcnt; k++) {
             if (key_tokens[k].length > KEY_MAX_LENGTH)
@@ -2811,11 +3064,19 @@ static void process_mget_complete(conn *c)
         else handle_unexpected_errorcode_ascii(c, ret);
     }
 
+#ifdef USE_STRING_MBLOCK
+    /* free token buffer and key strings */
+    token_buff_release(&c->thread->token_buff);
+    assert(c->coll_strkeys == (void*)&c->str_blcks);
+    mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+    c->coll_strkeys = NULL;
+#else
     /* free key strings and tokens buffer */
     if (c->coll_strkeys != NULL) {
         free((void *)c->coll_strkeys);
         c->coll_strkeys = NULL;
     }
+#endif
 }
 #endif
 
@@ -8364,16 +8625,33 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
 static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt)
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#ifdef USE_STRING_MBLOCK
+
+    /* allocate memory blocks needed */
+    if (mblck_list_alloc(&c->thread->mblck_pool, 1, vlen, &c->str_blcks) < 0) {
+        ret = ENGINE_ENOMEM;
+    }
+#else
     int kmem_size = GET_8ALIGN_SIZE(vlen) + (kcnt * sizeof(token_t));
 
     if ((c->coll_strkeys = malloc(kmem_size)) == NULL) {
         ret = ENGINE_ENOMEM;
     }
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
+#ifdef USE_STRING_MBLOCK
+        c->coll_strkeys = (void*)&c->str_blcks;
+        c->mblck = MBLCK_GET_HEADBLK(&c->str_blcks);
+        c->ritem = MBLCK_GET_BODYPTR(c->mblck);
+        c->rlbytes = vlen < MBLCK_GET_BODYLEN(&c->str_blcks)
+                   ? vlen : MBLCK_GET_BODYLEN(&c->str_blcks);
+        c->rltotal = vlen;
+#else
         c->ritem       = (char *)c->coll_strkeys;
         c->rlbytes     = vlen;
+#endif
         c->coll_op     = OPERATION_MGET;
         conn_set_state(c, conn_nread);
         break;
@@ -13707,6 +13985,31 @@ bool conn_nread(conn *c) {
     }
 
     /* first check if we have leftovers in the conn_read buffer */
+#ifdef USE_STRING_MBLOCK
+    while (c->rbytes > 0) {
+        int tocopy = c->rbytes > c->rlbytes ? c->rlbytes : c->rbytes;
+        if (c->ritem != c->rcurr) {
+            memmove(c->ritem, c->rcurr, tocopy);
+        }
+        c->ritem += tocopy;
+        c->rlbytes -= tocopy;
+        c->rcurr += tocopy;
+        c->rbytes -= tocopy;
+        if (c->rltotal > 0) { /* string block read */
+            c->rltotal -= tocopy;
+            if (c->rlbytes == 0 && c->rltotal > 0) {
+                c->mblck = MBLCK_GET_NEXTBLK(c->mblck);
+                c->ritem = MBLCK_GET_BODYPTR(c->mblck);
+                c->rlbytes = c->rltotal < MBLCK_GET_BODYLEN(&c->str_blcks)
+                           ? c->rltotal : MBLCK_GET_BODYLEN(&c->str_blcks);
+                continue;
+            }
+        }
+        if (c->rlbytes == 0) {
+            return true;
+        }
+    }
+#else
     if (c->rbytes > 0) {
         int tocopy = c->rbytes > c->rlbytes ? c->rlbytes : c->rbytes;
         if (c->ritem != c->rcurr) {
@@ -13720,6 +14023,7 @@ bool conn_nread(conn *c) {
             return true;
         }
     }
+#endif
 
     /*  now try reading from the socket */
     res = read(c->sfd, c->ritem, c->rlbytes);
@@ -13730,6 +14034,17 @@ bool conn_nread(conn *c) {
         }
         c->ritem += res;
         c->rlbytes -= res;
+#ifdef USE_STRING_MBLOCK
+        if (c->rltotal > 0) {
+            c->rltotal -= res;
+            if (c->rlbytes == 0 && c->rltotal > 0) {
+                c->mblck = MBLCK_GET_NEXTBLK(c->mblck);
+                c->ritem = MBLCK_GET_BODYPTR(c->mblck);
+                c->rlbytes = c->rltotal < MBLCK_GET_BODYLEN(&c->str_blcks)
+                           ? c->rltotal : MBLCK_GET_BODYLEN(&c->str_blcks);
+            }
+        }
+#endif
         return true;
     }
     if (res == 0) { /* end of stream */
