@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 110005;
+use Test::More tests => 110021;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -164,3 +164,28 @@ assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt/2, 0, 1
 assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt, $dat_cnt+100, 0, 20, 0);
 assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt+100, $dat_cnt, 0, 20, 0);
 
+# smgets : Use comma sperated keys for backward compatibility check
+
+$key_str = "KEY_absent";
+for ($kcnt = 0; $kcnt < $key_cnt; $kcnt += 1) {
+    $key_str = "$key_str,KEY_$kcnt";
+}
+$key_len = length($key_str);
+# NEW smget test
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, 0, $dat_cnt-1, 0, 20, 1);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, 0, $dat_cnt-1, 10, 20, 1);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt/2, $dat_cnt-1, 10, 20, 1);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt-1, 0, 0, 20, 1);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt-1, 0, 10, 20, 1);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt/2, 0, 10, 20, 1);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt, $dat_cnt+100, 0, 20, 1);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt+100, $dat_cnt, 0, 20, 1);
+# OLD smget test
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, 0, $dat_cnt-1, 0, 20, 0);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, 0, $dat_cnt-1, 10, 20, 0);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt/2, $dat_cnt-1, 10, 20, 0);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt-1, 0, 0, 20, 0);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt-1, 0, 10, 20, 0);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt/2, 0, 10, 20, 0);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt, $dat_cnt+100, 0, 20, 0);
+assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt+100, $dat_cnt, 0, 20, 0);
