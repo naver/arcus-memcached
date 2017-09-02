@@ -1752,10 +1752,9 @@ static int tokenize_sblocks(conn *c, int length, char delimiter, int keycnt, tok
     /* prepare block info */
     slength = length - 2; /* exclude the last "\r\n" */
     bodylen = MBLCK_GET_BODYLEN(&c->str_blcks);
-    numblks = (((length-2) - 1) / bodylen) + 1;
-    lastlen = ((length-2) % bodylen) > 0
-            ? ((length-2) % bodylen) : bodylen;
-
+    numblks = ((slength - 1) / bodylen) + 1;
+    lastlen = (slength % bodylen) > 0
+            ? (slength % bodylen) : bodylen;
 
     /* get the first block */
     blckptr = MBLCK_GET_HEADBLK(&c->str_blcks);
