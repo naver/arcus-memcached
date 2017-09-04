@@ -442,7 +442,8 @@ my %stats = $mc->stats('detail dump');
 # This test causes a disconnection.
 {
     # diag "Key too large.";
-    my $key = "x" x 365;
+    # key string longer than KEY_MAX_LENGTH
+    my $key = "x" x 36500;
     eval {
         $mc->get($key, 'should die', 10, 10);
     };

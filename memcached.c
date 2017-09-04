@@ -13488,7 +13488,7 @@ static int try_read_command(conn *c) {
 
         el = memchr(c->rcurr, '\n', c->rbytes);
         if (!el) {
-            if (c->rbytes > 1024) {
+            if (c->rbytes >= (32* 1024)) {
                 /*
                  * We didn't have a '\n' in the first k. This _has_ to be a
                  * large multiget, if not we should just nuke the connection.
