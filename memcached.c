@@ -13488,7 +13488,7 @@ static int try_read_command(conn *c) {
 
         el = memchr(c->rcurr, '\n', c->rbytes);
         if (!el) {
-            if (c->rbytes >= (32* 1024)) {
+            if (c->rbytes > 1024) {
                 /*
                  * We didn't have a '\n' in the first k. This _has_ to be a
                  * large multiget, if not we should just nuke the connection.
@@ -13497,7 +13497,6 @@ static int try_read_command(conn *c) {
                 while (*ptr == ' ') { /* ignore leading whitespaces */
                     ++ptr;
                 }
-
                 if (ptr - c->rcurr > 100) {
                     mc_logger->log(EXTENSION_LOG_WARNING, c,
                         "%d: Too many leading whitespaces(%d). Close the connection.\n",
@@ -13505,6 +13504,8 @@ static int try_read_command(conn *c) {
                     conn_set_state(c, conn_closing);
                     return 1;
                 }
+                if (c->rbytes >= (32*1024))
+                {
                 if (strncmp(ptr, "get ", 4) && strncmp(ptr, "gets ", 5)) {
                     char buffer[16];
                     memcpy(buffer, ptr, 15); buffer[15] = '\0';
@@ -13513,6 +13514,7 @@ static int try_read_command(conn *c) {
                         c->sfd, buffer, c->client_ip);
                     conn_set_state(c, conn_closing);
                     return 1;
+                }
                 }
             }
 
