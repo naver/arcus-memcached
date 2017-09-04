@@ -1674,6 +1674,7 @@ static int build_complete_strings(conn *c, segtok_t *segtoks, int segcnt,
     mblck_list_t add_blcks;
     mblck_node_t *blckptr;
     char         *dataptr;
+    char         *saveptr;
     token_t      *tok_ptr;
     uint32_t      bodylen = MBLCK_GET_BODYLEN(&c->str_blcks);
     uint32_t      numblks = 1;
@@ -1712,12 +1713,14 @@ static int build_complete_strings(conn *c, segtok_t *segtoks, int segcnt,
             datalen = 0;
         }
 
+        saveptr = &dataptr[datalen];
+
         memcpy(dataptr + datalen, segtoks[i].value, segtoks[i].length);
         datalen += segtoks[i].length;
         memcpy(dataptr + datalen, tok_ptr->value, tok_ptr->length);
         datalen += tok_ptr->length;
 
-        tok_ptr->value = dataptr;
+        tok_ptr->value = saveptr;
         tok_ptr->length = complen;
     }
 
