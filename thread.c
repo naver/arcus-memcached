@@ -207,13 +207,18 @@ void *token_buff_get(token_buff_t *buff, uint32_t count)
     assert(buff->nused == 0);
 
     if (count > buff->count) {
-        token_t *new_array = realloc(buff->array, sizeof(token_t) * buff->count * 2);
+        token_t *new_array;
+        uint32_t new_count = buff->count;
+        while (new_count < count) {
+            new_count += 5000;
+        }
+        new_array = realloc(buff->array, sizeof(token_t) * new_count);
         if (new_array == NULL) {
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                            "Failed to grow token buffer");
             return NULL;
         }
-        buff->count *= 2;
+        buff->count = new_count;
         buff->array = new_array;
     }
     buff->nused += 1;
