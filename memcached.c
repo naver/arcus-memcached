@@ -2009,6 +2009,7 @@ static void process_mop_delete_complete(conn *c) {
         else handle_unexpected_errorcode_ascii(c, ret);
     }
 
+    /* free key strings and tokens buffer */
     if (c->coll_strkeys != NULL) {
         free((void *)c->coll_strkeys);
         c->coll_strkeys = NULL;
@@ -2151,11 +2152,13 @@ static void process_mop_get_complete(conn *c)
         else handle_unexpected_errorcode_ascii(c, ret);
     }
 
+    /* free key strings and tokens buffer */
+    if (c->coll_strkeys != NULL) {
+        free((void *)c->coll_strkeys);
+        c->coll_strkeys = NULL;
+    }
+
     if (ret != ENGINE_SUCCESS) {
-        if (c->coll_strkeys != NULL) {
-            free((void *)c->coll_strkeys);
-            c->coll_strkeys = NULL;
-        }
         if (c->coll_eitem != NULL) {
            free((void *)c->coll_eitem);
            c->coll_eitem = NULL;
