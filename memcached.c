@@ -773,18 +773,12 @@ static void conn_coll_eitem_free(conn *c) {
         if (c->coll_eitem != NULL)
             free(c->coll_eitem);
         break;
-      case OPERATION_MOP_DELETE:
-        if (c->coll_strkeys != NULL) {
-            free(c->coll_strkeys); c->coll_strkeys = NULL;
-        }
-        break;
       case OPERATION_MOP_GET:
         mc_engine.v1->map_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
         free(c->coll_eitem);
         if (c->coll_resps != NULL) {
             free(c->coll_resps); c->coll_resps = NULL;
         }
-        free(c->coll_strkeys); c->coll_strkeys = NULL;
         break;
       /* bop */
       case OPERATION_BOP_INSERT:
@@ -813,7 +807,6 @@ static void conn_coll_eitem_free(conn *c) {
 #endif
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
         free(c->coll_eitem);
-        free(c->coll_strkeys); c->coll_strkeys = NULL;
         break;
 #endif
       default:
@@ -839,6 +832,15 @@ static void conn_cleanup(conn *c) {
 
     if (c->coll_eitem != NULL) {
         conn_coll_eitem_free(c);
+    }
+    if (c->coll_strkeys != NULL) {
+#ifdef USE_STRING_MBLOCK
+        if (c->coll_strkeys == (void*)&c->str_blcks)
+            mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+        else
+#endif
+        free(c->coll_strkeys);
+        c->coll_strkeys = NULL;
     }
 
     if (c->ileft != 0) {
@@ -3070,8 +3072,10 @@ static void process_mget_complete(conn *c)
     }
 
 #ifdef USE_STRING_MBLOCK
-    /* free token buffer and key strings */
+    /* free token buffer */
     token_buff_release(&c->thread->token_buff);
+
+    /* free key string memory blocks */
     assert(c->coll_strkeys == (void*)&c->str_blcks);
     mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
     c->coll_strkeys = NULL;
@@ -7647,6 +7651,15 @@ static void reset_cmd_handler(conn *c) {
 #endif
     if (c->coll_eitem != NULL) {
         conn_coll_eitem_free(c);
+    }
+    if (c->coll_strkeys != NULL) {
+#ifdef USE_STRING_MBLOCK
+        if (c->coll_strkeys == (void*)&c->str_blcks)
+            mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+        else
+#endif
+        free(c->coll_strkeys);
+        c->coll_strkeys = NULL;
     }
     conn_shrink(c);
     if (c->rbytes > 0) {
@@ -14158,6 +14171,15 @@ bool conn_mwrite(conn *c) {
 #endif
             if (c->coll_eitem != NULL) {
                 conn_coll_eitem_free(c);
+            }
+            if (c->coll_strkeys != NULL) {
+#ifdef USE_STRING_MBLOCK
+                if (c->coll_strkeys == (void*)&c->str_blcks)
+                    mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+                else
+#endif
+                free(c->coll_strkeys);
+                c->coll_strkeys = NULL;
             }
             /* XXX:  I don't know why this wasn't the general case */
             if(c->protocol == binary_prot) {
