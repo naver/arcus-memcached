@@ -420,6 +420,7 @@ enum thread_type {
 };
 
 #define USE_STRING_MBLOCK 1
+#define USE_STRING_MBLOCK_COLL 1
 
 #ifdef USE_STRING_MBLOCK
 /*
