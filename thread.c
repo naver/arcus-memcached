@@ -200,6 +200,8 @@ void token_buff_destroy(token_buff_t *buff)
 {
     assert(buff->nused == 0);
     free(buff->array);
+    buff->array = NULL;
+    buff->count = 0;
 }
 
 void *token_buff_get(token_buff_t *buff, uint32_t count)
@@ -227,7 +229,8 @@ void *token_buff_get(token_buff_t *buff, uint32_t count)
 
 void token_buff_release(token_buff_t *buff, void *tokens)
 {
-    assert(buff->nused == 1 && tokens == (void*)buff->array);
+    assert(tokens == (void*)buff->array);
+    assert(buff->nused == 1);
     buff->nused -= 1;
 }
 #endif
@@ -343,10 +346,15 @@ int mblck_list_alloc(mblck_pool_t *pool, uint32_t item_len, uint32_t item_cnt,
 
 void mblck_list_merge(mblck_list_t *pri_list, mblck_list_t *add_list)
 {
+    //assert(pri_list->item_len == add_list->item_len);
     pri_list->tail->next = add_list->head;
     pri_list->tail = add_list->tail;
     pri_list->blck_cnt += add_list->blck_cnt;
-    /* item_cnt and item_len */
+    /* clear the add_list */
+    add_list->head = NULL;
+    add_list->tail = NULL;
+    add_list->blck_cnt = 0;
+    /* FIXME: item_cnt and item_len: how to merge them ? */
 }
 
 void mblck_list_free(mblck_pool_t *pool, mblck_list_t *list)
@@ -359,6 +367,10 @@ void mblck_list_free(mblck_pool_t *pool, mblck_list_t *list)
         }
         pool->used_cnt -= list->blck_cnt;
         pool->free_cnt += list->blck_cnt;
+        /* clear the list */
+        list->head = NULL;
+        list->tail = NULL;
+        list->blck_cnt = 0;
     }
 }
 #endif
