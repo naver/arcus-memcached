@@ -771,7 +771,7 @@ void conn_close(conn *c);
 int  token_buff_create(token_buff_t *buff, uint32_t count);
 void token_buff_destroy(token_buff_t *buff);
 void *token_buff_get(token_buff_t *buff, uint32_t count);
-void token_buff_release(token_buff_t *buff);
+void token_buff_release(token_buff_t *buff, void *tokens);
 
 /* memory block functions */
 int  mblck_pool_create(mblck_pool_t *pool, uint32_t blck_len, uint32_t blck_cnt);

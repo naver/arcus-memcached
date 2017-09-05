@@ -225,10 +225,10 @@ void *token_buff_get(token_buff_t *buff, uint32_t count)
     return (void*)buff->array;
 }
 
-void token_buff_release(token_buff_t *buff)
+void token_buff_release(token_buff_t *buff, void *tokens)
 {
+    assert(buff->nused == 1 && tokens == (void*)buff->array);
     buff->nused -= 1;
-    assert(buff->nused == 0);
 }
 #endif
 
