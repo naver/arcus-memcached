@@ -2423,6 +2423,7 @@ static void process_bop_mget_complete(conn *c) {
             }
 
             if (ret == ENGINE_SUCCESS) {
+              do {
                 sprintf(resultptr, " %s %u %u\r\n",
                         (trimmed==false ? "OK" : "TRIMMED"), htonl(flags), cur_elem_count);
                 if ((add_iov(c, valuestrp, nvaluestr) != 0) ||
@@ -2448,15 +2449,20 @@ static void process_bop_mget_complete(conn *c) {
                 }
                 if (ret == ENGINE_SUCCESS) {
                     STATS_ELEM_HITS(c, bop_get, key_tokens[k].value, key_tokens[k].length);
-                    tot_elem_count += cur_elem_count;
-                    cur_elem_count = 0;
-                    tot_access_count += cur_access_count;
-                    cur_access_count = 0;
-                } else {
+                } else { /* ret == ENGINE_ENOMEM */
                     STATS_NOKEY(c, cmd_bop_get);
-                    // ret == ENGINE_ENOMEM
-                    break;
                 }
+              } while(0);
+
+              /* calculate total elem_count and access_count */
+              tot_elem_count += cur_elem_count;
+              cur_elem_count = 0;
+              tot_access_count += cur_access_count;
+              cur_access_count = 0;
+
+              if (ret != ENGINE_SUCCESS) {
+                  break; /* ret == ENGINE_ENOMEM */
+              }
             } else {
                 if (ret == ENGINE_ELEM_ENOENT) {
                     STATS_NONE_HITS(c, bop_get,  key_tokens[k].value, key_tokens[k].length);
@@ -2492,12 +2498,11 @@ static void process_bop_mget_complete(conn *c) {
                 (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
                 ret = ENGINE_ENOMEM;
             }
-        } else {
-            // ret != ENGINE_SUCCESS
-            tot_elem_count += cur_elem_count;
-            cur_elem_count = 0;
-            tot_access_count += cur_access_count;
-            cur_access_count = 0;
+        }
+        if (ret != ENGINE_SUCCESS) {
+            /* ENGINE_ENOMEM or ENGINE_DISCONNECT or SEVERE error */
+            /* release elements */
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, tot_elem_count);
         }
     }
 
@@ -2514,14 +2519,10 @@ static void process_bop_mget_complete(conn *c) {
       case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
-      case ENGINE_ENOMEM:
-        STATS_NOKEY(c, cmd_bop_mget);
-        mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, tot_elem_count);
-        out_string(c, "SERVER_ERROR out of memory writing get response");
-        break;
       default:
         STATS_NOKEY(c, cmd_bop_mget);
         if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad data chunk");
+        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory writing get response");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, ret);
     }
