@@ -2939,7 +2939,7 @@ static void process_mget_complete(conn *c)
     char    *key;
     size_t   nkey;
 #ifdef USE_STRING_MBLOCK
-    token_t *key_tokens;
+    token_t *key_tokens = NULL;
 #else
     token_t *key_tokens = (token_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(vlen));
 #endif
@@ -3073,8 +3073,9 @@ static void process_mget_complete(conn *c)
 
 #ifdef USE_STRING_MBLOCK
     /* free token buffer */
-    token_buff_release(&c->thread->token_buff);
-
+    if (key_tokens != NULL) {
+        token_buff_release(&c->thread->token_buff, key_tokens);
+    }
     /* free key string memory blocks */
     assert(c->coll_strkeys == (void*)&c->str_blcks);
     mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
