@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 2756;
+use Test::More tests => 2846;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -167,7 +167,7 @@ sub assert_collection_test {
         #           "1,2,3", "bop_data_1,bop_data_2,bop_data_3", "END");
         #getattr_is($sock, "$keystr count", "count=3");
     }
-    for ($kcnt = 11; $kcnt < 20; $kcnt += 1) {
+    for ($kcnt = 10; $kcnt < 20; $kcnt += 1) {
         $keystr = $keyarr[$kcnt];
         $cmd = "lop create $keystr 0 0 0"; $rst = "CREATED";
         print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "lop created");
@@ -181,7 +181,7 @@ sub assert_collection_test {
         #           "lop_data_1,lop_data_2,lop_data_3", "END");
         #getattr_is($sock, "$keystr count", "count=3");
     }
-    for ($kcnt = 21; $kcnt < 30; $kcnt += 1) {
+    for ($kcnt = 20; $kcnt < 30; $kcnt += 1) {
         $keystr = $keyarr[$kcnt];
         $cmd = "sop create $keystr 0 0 0"; $rst = "CREATED";
         print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "sop created");
@@ -199,7 +199,7 @@ sub assert_collection_test {
         $cmd = "sop exist $keystr 10"; $val="sop_data_4"; $rst = "NOT_EXIST";
         print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "sop not exist");
     }
-    for ($kcnt = 31; $kcnt < 40; $kcnt += 1) {
+    for ($kcnt = 30; $kcnt < 40; $kcnt += 1) {
         $keystr = $keyarr[$kcnt];
         $cmd = "mop create $keystr 0 0 0"; $rst = "CREATED";
         print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "mop created");
@@ -213,10 +213,10 @@ sub assert_collection_test {
         #           "field_1,field_2,filed_3", "mop_data_1,mop_data_2,mop_data_3", "END");
         #getattr_is($sock, "$keystr count", "count=3");
     }
-    for ($kcnt = 31; $kcnt < 40; $kcnt += 1) {
+    for ($kcnt = 0; $kcnt < 40; $kcnt += 1) {
         $keystr = $keyarr[$kcnt];
         print $sock "delete $keystr\r\n";
-        is(scalar <$sock>, "DELETED\r\n", "collecton item deleted");
+        is(scalar <$sock>, "DELETED\r\n", "collection item deleted");
     }
 }
 
