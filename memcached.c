@@ -13870,7 +13870,11 @@ static int try_read_command(conn *c) {
                     conn_set_state(c, conn_closing);
                     return 1;
                 }
-                if (c->rbytes >= (32*1024))
+                /* Check KEY_MAX_LENGTH and eflag filter length
+                 *  - KEY_MAX_LENGTH : 32000
+                 *  - IN eflag filter : > 6400 (64*100)
+                 */
+                if (c->rbytes > ((32+8)*1024))
                 {
                 if (strncmp(ptr, "get ", 4) && strncmp(ptr, "gets ", 5)) {
                     char buffer[16];
@@ -13966,7 +13970,11 @@ static enum try_read_result try_read_network(conn *c) {
 
     while (1) {
         if (c->rbytes >= c->rsize) {
-            if (num_allocs == 4) {
+            /* Increase num_allocs: 4 => 5
+             * - 2K^5 = 64K.
+             * - Check KEY_MAX_LENGTH.
+             */
+            if (num_allocs == 5) {
                 return gotdata;
             }
             ++num_allocs;
