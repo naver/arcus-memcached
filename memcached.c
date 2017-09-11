@@ -1967,6 +1967,7 @@ static void process_mop_delete_complete(conn *c) {
     char delimiter = ' ';
     char old_delimiter = ','; /* need to keep backwards compatibility */
     bool dropped;
+    int  i;
 
     if (c->coll_strkeys != NULL) {
 #ifdef USE_STRING_MBLOCK_COLL
@@ -1995,6 +1996,15 @@ static void process_mop_delete_complete(conn *c) {
             ret = ENGINE_EBADVALUE;
         }
 #endif
+    }
+
+    if (ret == ENGINE_SUCCESS && c->coll_numkeys != 0) { /* field validation check */
+        for (i = 0; i < c->coll_numkeys; i++) {
+            if (flist[i].length > MAX_FIELD_LENG) {
+                ret = ENGINE_EBADVALUE;
+                break;
+            }
+        }
     }
 
     if (ret == ENGINE_SUCCESS) {
@@ -2069,7 +2079,7 @@ static void process_mop_get_complete(conn *c)
     bool delete = c->coll_delete;
     bool drop_if_empty = c->coll_drop;
     bool dropped;
-    int  need_size = 0;
+    int  i, need_size = 0;
 
     if (c->coll_numkeys <= 0 || c->coll_numkeys > MAX_MAP_SIZE) {
         need_size = MAX_MAP_SIZE * sizeof(eitem*);
@@ -2114,6 +2124,15 @@ static void process_mop_get_complete(conn *c)
             ret = ENGINE_EBADVALUE;
         }
 #endif
+    }
+
+    if (ret == ENGINE_SUCCESS && c->coll_numkeys != 0) { /* field validation check */
+        for (i = 0; i < c->coll_numkeys; i++) {
+            if (flist[i].length > MAX_FIELD_LENG) {
+                ret = ENGINE_EBADVALUE;
+                break;
+            }
+        }
     }
 
     if (ret == ENGINE_SUCCESS) {
