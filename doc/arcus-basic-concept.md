@@ -10,7 +10,8 @@ Arcus cache server는 하나의 데이터만을 value로 가지는 simple key-va
 Arcus cache server의 key-value 모델은 아래의 기본 제약 사항을 가진다.
 
 - 기존 key-value 모델의 제약 사항
-  - Key의 최대 크기는 250 character이다.
+  - Key의 최대 크기는 32000 character이다. (arcus-memcached 1.11 이후 버전)
+    - 기존 버전에서 key 최대 크기는 250 character이다.
   - Value의 최대 크기는 1MB(trailing 문자인 “\r\n” 포함한 길이) 이다.
 - Collection 제약 사항
   - 하나의 collection에 들어갈 수 있는 최대 element 개수는 50,000개이다.
