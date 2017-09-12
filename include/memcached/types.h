@@ -405,8 +405,9 @@ extern "C" {
 #define EBLOCK_SCAN_NEXT(s, e)                                               \
     do {                                                                     \
         if ((s)->idx < (s)->tot) {                                           \
-            if (((s)->idx % EITEMS_PER_BLOCK) == 0 && ((s)->idx != 0))       \
+            if (((s)->idx % EITEMS_PER_BLOCK) == 0 && ((s)->idx != 0)) {     \
                 (s)->blk = ((s)->blk)->next;                                 \
+            }                                                                \
             (e) = ((s)->blk)->items[(s)->idx++ % EITEMS_PER_BLOCK];          \
         } else {                                                             \
             (e) = NULL;                                                      \

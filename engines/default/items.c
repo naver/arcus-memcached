@@ -4483,7 +4483,6 @@ static ENGINE_ERROR_CODE do_btree_elem_get(struct default_engine *engine, btree_
 #endif
                                            uint32_t *access_count, bool *potentialbkeytrim)
 {
-
     btree_elem_posi  path[BTREE_MAX_DEPTH];
     btree_elem_item *elem;
     uint32_t tot_found = 0; /* total found count */

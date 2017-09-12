@@ -5827,6 +5827,7 @@ static void process_bin_bop_get(conn *c) {
     case ENGINE_SUCCESS:
         {
         protocol_binary_response_bop_get* rsp = (protocol_binary_response_bop_get*)c->wbuf;
+        eitem_info info[elem_count];
 #ifdef USE_EBLOCK_RESULT
         eitem *elem;
         eblock_scan_t eblk_sc;
@@ -5846,10 +5847,7 @@ static void process_bin_bop_get(conn *c) {
             ret = ENGINE_ENOMEM;
         } else {
             vlenptr = (uint32_t *)((char*)bkeyptr + (sizeof(uint64_t) * elem_count));
-#endif
-        eitem_info info[elem_count];
-#ifdef USE_EBLOCK_RESULT
-        EBLOCK_SCAN_INIT(&c->eblk_ret, &eblk_sc);
+            EBLOCK_SCAN_INIT(&c->eblk_ret, &eblk_sc);
 #endif
         for (i = 0; i < elem_count; i++) {
 #ifdef USE_EBLOCK_RESULT
