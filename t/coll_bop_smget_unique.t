@@ -124,9 +124,9 @@ bop_new_smget_is($sock, "11 2 0..100 10 unique", "bkey1 bkey2",
 "bkey1 11 10 6 datum1
 ,bkey2 12 20 6 datum2
 ,bkey1 11 30 6 datum3
-,bkey2 12 40 6 datum4
+,bkey1 11 40 6 datum4
 ,bkey1 11 50 6 datum5
-,bkey2 12 60 6 datum6
+,bkey1 11 60 6 datum6
 ,bkey1 11 70 6 datum7
 ,bkey2 12 80 6 datum8
 ,bkey1 11 90 6 datum9
@@ -154,9 +154,9 @@ bop_new_smget_is($sock, "11 2 100..0 10 unique", "bkey1 bkey2",
 "bkey2 12 100 7 datum10
 ,bkey1 11 90 6 datum9
 ,bkey2 12 80 6 datum8
-,bkey1 11 70 6 datum7
+,bkey2 12 70 6 datum7
 ,bkey2 12 60 6 datum6
-,bkey1 11 50 6 datum5
+,bkey2 12 50 6 datum5
 ,bkey2 12 40 6 datum4
 ,bkey1 11 30 6 datum3
 ,bkey2 12 20 6 datum2
@@ -175,9 +175,9 @@ bop_new_smget_is($sock, "11 2 70..0 4 duplicate", "bkey1 bkey2",
 "DUPLICATED");
 bop_new_smget_is($sock, "11 2 70..0 4 unique", "bkey1 bkey2",
 4,
-"bkey1 11 70 6 datum7
+"bkey2 12 70 6 datum7
 ,bkey2 12 60 6 datum6
-,bkey1 11 50 6 datum5
+,bkey2 12 50 6 datum5
 ,bkey2 12 40 6 datum4",
 0, "",
 0, "",
@@ -198,9 +198,9 @@ bop_new_smget_is($sock, "23 4 0..100 2 6 duplicate", "bkey2 bkey3 bkey1 bkey4",
 bop_new_smget_is($sock, "23 4 0..100 2 6 unique", "bkey2 bkey3 bkey1 bkey4",
 6,
 "bkey1 11 30 6 datum3
-,bkey2 12 40 6 datum4
+,bkey1 11 40 6 datum4
 ,bkey1 11 50 6 datum5
-,bkey2 12 60 6 datum6
+,bkey1 11 60 6 datum6
 ,bkey1 11 70 6 datum7
 ,bkey2 12 80 6 datum8",
 2,
@@ -226,7 +226,7 @@ bop_new_smget_is($sock, "23 4 90..30 3 9 duplicate", "bkey2 bkey3 bkey1 bkey4",
 bop_new_smget_is($sock, "23 4 90..30 3 9 unique", "bkey2 bkey3 bkey1 bkey4",
 4,
 "bkey2 12 60 6 datum6
-,bkey1 11 50 6 datum5
+,bkey2 12 50 6 datum5
 ,bkey2 12 40 6 datum4
 ,bkey1 11 30 6 datum3",
 2,
@@ -310,7 +310,7 @@ bop_new_smget_is($sock, "29 5 0..100 4 6 duplicate", "bkey2 bkey3 bkey1 bkey4 bk
 bop_new_smget_is($sock, "29 5 0..100 4 6 unique", "bkey2 bkey3 bkey1 bkey4 bkey3",
 6,
 "bkey1 11 50 6 datum5
-,bkey2 12 60 6 datum6
+,bkey1 11 60 6 datum6
 ,bkey1 11 70 6 datum7
 ,bkey2 12 80 6 datum8
 ,bkey1 11 90 6 datum9

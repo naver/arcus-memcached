@@ -143,7 +143,9 @@ sub mem_cmd_val_is {
 
     my $resp = "";
     my $line = scalar <$sock>;
-    while ($line !~ /^END/) {
+#   while ($line !~ /^END/) {
+    while ($line !~ /^END\r\n/ and $line !~ /^DUPLICATED\r\n/ and
+           $line !~ /^TRIMMED\r\n/ and $line !~ /^DUPLICATED_TRIMMED\r\n/) {
         $resp = $resp . (substr $line, 0, length($line)-2) . "\n";
         $line = scalar <$sock>;
     }
