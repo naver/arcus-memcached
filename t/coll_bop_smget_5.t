@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 47;
+use Test::More tests => 52;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -41,7 +41,7 @@ for ($num = 1; $num < 10; $num++) {
 # - key0: 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, trim
 # - key1:  9,  8,  7,  6,  5,  4,  3,  2,  1
 
-# smget: descending order (count = 10)
+# smget: descending order (20..10)
 $cmd = "bop smget 9 2 20..10 100"; $val = "key0 key1";
 $rst = "VALUE 1
 key0 0 20 5 value
@@ -62,6 +62,48 @@ key0 0 20 5 value
 MISSED_KEYS 0
 TRIMMED_KEYS 1
 key0 20
+END";
+mem_cmd_val_is($sock, $cmd, $val, $rst);
+
+# smget: descending order (20..10, offset=5, value=100)
+$cmd = "bop smget 9 2 20..10 5 100"; $val = "key0 key1";
+$rst = "VALUE 0
+MISSED_KEYS 0
+TRIMMED";
+mem_cmd_val_is($sock, $cmd, $val, $rst);
+
+# smget: descending order (22..20, offset=5, value=100)
+$cmd = "bop smget 9 2 22..20 5 100"; $val = "key0 key1";
+$rst = "VALUE 0
+MISSED_KEYS 0
+END";
+mem_cmd_val_is($sock, $cmd, $val, $rst);
+
+# smget: descending order (9..5)
+$cmd = "bop smget 9 2 9..5 100"; $val = "key0 key1"; $rst = "OUT_OF_RANGE";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop smget 9 2 9..5 100 duplicate"; $val = "key0 key1";
+$rst = "ELEMENTS 5
+key1 0 9 5 value
+key1 0 8 5 value
+key1 0 7 5 value
+key1 0 6 5 value
+key1 0 5 5 value
+MISSED_KEYS 1
+key0 OUT_OF_RANGE
+TRIMMED_KEYS 0
+END";
+mem_cmd_val_is($sock, $cmd, $val, $rst);
+$cmd = "bop smget 9 2 9..5 100 unique"; $val = "key0 key1";
+$rst = "ELEMENTS 5
+key1 0 9 5 value
+key1 0 8 5 value
+key1 0 7 5 value
+key1 0 6 5 value
+key1 0 5 5 value
+MISSED_KEYS 1
+key0 OUT_OF_RANGE
+TRIMMED_KEYS 0
 END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 
