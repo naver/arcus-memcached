@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 52;
+use Test::More tests => 53;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -74,6 +74,13 @@ mem_cmd_val_is($sock, $cmd, $val, $rst);
 
 # smget: descending order (22..20, offset=5, value=100)
 $cmd = "bop smget 9 2 22..20 5 100"; $val = "key0 key1";
+$rst = "VALUE 0
+MISSED_KEYS 0
+END";
+mem_cmd_val_is($sock, $cmd, $val, $rst);
+
+# smget: descending order (50..40, offset=0, value=100)
+$cmd = "bop smget 9 2 50..40 0 100"; $val = "key0 key1";
 $rst = "VALUE 0
 MISSED_KEYS 0
 END";
