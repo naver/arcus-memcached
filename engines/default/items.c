@@ -5574,16 +5574,15 @@ static ENGINE_ERROR_CODE do_btree_smget_elem_sort_old(btree_scan_info *btree_sca
             cmp_res = BKEY_COMP(prev->data, prev->nbkey, elem->data, elem->nbkey);
             if (cmp_res == 0) {
                 dup_bkey_found = true;
+            } else {
+                if (key_trim_found)
+                    break; /* stop smget */
             }
             if (*elem_count >= count) {
                 /* After checking duplicate bkey with the next bkey,
                  * we stop smget, now.
                  */
                 break;
-            }
-            if (key_trim_found && cmp_res != 0) {
-                *potentialbkeytrim = true;
-                break; /* stop smget */
             }
         }
 #endif
@@ -5622,10 +5621,6 @@ scan_next:
 #ifdef FIX_SMGET_BUG
                 if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
                     do_btree_overlapped_with_trimmed_space(info, &btree_scan_buf[curr_idx].posi, bkrtype)) {
-                    if (sort_count == 1) { /* the last scan */
-                        *potentialbkeytrim = true;
-                        break; /* stop smget */
-                    }
                     key_trim_found = true;
                 }
 #else
@@ -5685,6 +5680,9 @@ scan_next:
     }
 #ifdef FIX_SMGET_BUG
     *bkey_duplicated = dup_bkey_found;
+    if (key_trim_found && *elem_count < count) {
+        *potentialbkeytrim = true;
+    }
 #endif
 
     return ENGINE_SUCCESS;
@@ -5703,11 +5701,9 @@ do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     btree_meta_info *info;
     btree_elem_item *elem, *comp;
-#ifdef FIX_SMGET_BUG
     btree_elem_item *last;
+#ifdef FIX_SMGET_BUG
     btree_elem_item *prev = NULL;
-#else
-    btree_elem_item *prev;
 #endif
     uint16_t first_idx = 0;
     uint16_t curr_idx;
@@ -5781,11 +5777,7 @@ do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
 #endif
 
 scan_next:
-#ifdef FIX_SMGET_BUG
         last = elem;
-#else
-        prev = elem;
-#endif
         elem = do_btree_scan_next(&btree_scan_buf[curr_idx].posi, bkrtype, bkrange);
         if (elem == NULL) {
             if (btree_scan_buf[curr_idx].posi.node == NULL) {
@@ -5802,11 +5794,7 @@ scan_next:
                         ret = ENGINE_EBKEYOOR; break;
                     }
 #endif
-#ifdef FIX_SMGET_BUG
                     do_btree_smget_add_trim(smres, btree_scan_buf[curr_idx].kidx, last);
-#else
-                    do_btree_smget_add_trim(smres, btree_scan_buf[curr_idx].kidx, prev);
-#endif
                 }
             }
             first_idx++; sort_count--;
