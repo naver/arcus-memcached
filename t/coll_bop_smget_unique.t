@@ -133,7 +133,7 @@ bop_new_smget_is($sock, "11 2 0..100 10 unique", "bkey1 bkey2",
 ,bkey2 12 100 7 datum10",
 0, "",
 0, "",
-"DUPLICATED");
+"END");
 bop_new_smget_is($sock, "11 2 100..0 10 duplicate", "bkey1 bkey2",
 10,
 "bkey2 12 100 7 datum10
@@ -163,7 +163,7 @@ bop_new_smget_is($sock, "11 2 100..0 10 unique", "bkey1 bkey2",
 ,bkey1 11 10 6 datum1",
 0, "",
 0, "",
-"DUPLICATED");
+"END");
 bop_new_smget_is($sock, "11 2 70..0 4 duplicate", "bkey1 bkey2",
 4,
 "bkey2 12 70 6 datum7
@@ -181,7 +181,7 @@ bop_new_smget_is($sock, "11 2 70..0 4 unique", "bkey1 bkey2",
 ,bkey2 12 40 6 datum4",
 0, "",
 0, "",
-"DUPLICATED");
+"END");
 bop_new_smget_is($sock, "23 4 0..100 2 6 duplicate", "bkey2 bkey3 bkey1 bkey4",
 6,
 "bkey1 11 30 6 datum3
@@ -207,7 +207,7 @@ bop_new_smget_is($sock, "23 4 0..100 2 6 unique", "bkey2 bkey3 bkey1 bkey4",
 "bkey3 NOT_FOUND
 ,bkey4 NOT_FOUND",
 0, "",
-"DUPLICATED");
+"END");
 bop_new_smget_is($sock, "23 4 90..30 3 9 duplicate", "bkey2 bkey3 bkey1 bkey4",
 8,
 "bkey1 11 70 6 datum7
@@ -233,7 +233,7 @@ bop_new_smget_is($sock, "23 4 90..30 3 9 unique", "bkey2 bkey3 bkey1 bkey4",
 "bkey3 NOT_FOUND
 ,bkey4 NOT_FOUND",
 0, "",
-"DUPLICATED");
+"END");
 bop_new_smget_is($sock, "23 4 30..0 10 duplicate", "bkey2 bkey3 bkey1 bkey4",
 3,
 "bkey1 11 30 6 datum3
@@ -320,7 +320,7 @@ bop_new_smget_is($sock, "29 5 0..100 4 6 unique", "bkey2 bkey3 bkey1 bkey4 bkey3
 ,bkey4 NOT_FOUND
 ,bkey3 NOT_FOUND",
 0, "",
-"DUPLICATED");
+"END");
 =head
 bop_smget_is($sock, "29 5 0..100 2 6", "bkey2,bkey3,bkey1,bkey4,bkey3",
              6, "bkey1,bkey2,bkey1,bkey2,bkey1,bkey2", "11,12,11,12,11,12",

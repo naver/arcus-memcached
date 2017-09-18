@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 97;
+use Test::More tests => 85;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -83,7 +83,7 @@ TRIMMED_KEYS 0
 END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 
-# smget: descending order (count = 10, 6, 5, 3, 2, 1, 1*)
+# smget: descending order (count = 10, 6, 5, 3, 1)
 # old smget
 $cmd = "bop smget 14 3 5..0 10"; $val = "key0 key1 key2";
 $rst = "VALUE 6
@@ -125,27 +125,14 @@ key1 0 4 5 value
 MISSED_KEYS 0
 DUPLICATED";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
-$cmd = "bop smget 14 3 5..0 2"; $val = "key0 key1 key2";
-$rst = "VALUE 2
-key1 0 5 5 value
-key0 0 5 5 value
-MISSED_KEYS 0
-DUPLICATED";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
 $cmd = "bop smget 14 3 5..0 1"; $val = "key0 key1 key2";
 $rst = "VALUE 1
 key1 0 5 5 value
 MISSED_KEYS 0
-DUPLICATED";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
-$cmd = "bop smget 14 3 10..0 1"; $val = "key0 key1 key2";
-$rst = "VALUE 1
-key0 0 10 5 value
-MISSED_KEYS 0
 END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 
-# smget: descending order (count = 10, 6, 5, 3, 2, 1, 1*)
+# smget: descending order (count = 10, 6, 5, 3, 1)
 # new smget: duplicate
 $cmd = "bop smget 14 3 5..0 10 duplicate"; $val = "key0 key1 key2";
 $rst = "ELEMENTS 8
@@ -194,30 +181,15 @@ MISSED_KEYS 0
 TRIMMED_KEYS 0
 DUPLICATED";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
-$cmd = "bop smget 14 3 5..0 2 duplicate"; $val = "key0 key1 key2";
-$rst = "ELEMENTS 2
-key1 0 5 5 value
-key0 0 5 5 value
-MISSED_KEYS 0
-TRIMMED_KEYS 0
-DUPLICATED";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
 $cmd = "bop smget 14 3 5..0 1 duplicate"; $val = "key0 key1 key2";
 $rst = "ELEMENTS 1
 key1 0 5 5 value
 MISSED_KEYS 0
 TRIMMED_KEYS 0
-DUPLICATED";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
-$cmd = "bop smget 14 3 10..0 1 duplicate"; $val = "key0 key1 key2";
-$rst = "ELEMENTS 1
-key0 0 10 5 value
-MISSED_KEYS 0
-TRIMMED_KEYS 0
 END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 
-# smget: descending order (count = 10, 6, 5, 3, 2, 1, 1*)
+# smget: descending order (count = 10, 6, 5, 3, 1)
 # new smget: unique
 $cmd = "bop smget 14 3 5..0 10 unique"; $val = "key0 key1 key2";
 $rst = "ELEMENTS 5
@@ -229,7 +201,7 @@ key1 0 1 5 value
 MISSED_KEYS 0
 TRIMMED_KEYS 1
 key0 3
-DUPLICATED";
+END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 $cmd = "bop smget 14 3 5..0 6 unique"; $val = "key0 key1 key2";
 $rst = "ELEMENTS 5
@@ -241,7 +213,7 @@ key1 0 1 5 value
 MISSED_KEYS 0
 TRIMMED_KEYS 1
 key0 3
-DUPLICATED";
+END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 $cmd = "bop smget 14 3 5..0 5 unique"; $val = "key0 key1 key2";
 $rst = "ELEMENTS 5
@@ -253,7 +225,7 @@ key1 0 1 5 value
 MISSED_KEYS 0
 TRIMMED_KEYS 1
 key0 3
-DUPLICATED";
+END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 $cmd = "bop smget 14 3 5..0 3 unique"; $val = "key0 key1 key2";
 $rst = "ELEMENTS 3
@@ -262,26 +234,11 @@ key1 0 4 5 value
 key1 0 3 5 value
 MISSED_KEYS 0
 TRIMMED_KEYS 0
-DUPLICATED";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
-$cmd = "bop smget 14 3 5..0 2 unique"; $val = "key0 key1 key2";
-$rst = "ELEMENTS 2
-key1 0 5 5 value
-key1 0 4 5 value
-MISSED_KEYS 0
-TRIMMED_KEYS 0
-DUPLICATED";
+END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 $cmd = "bop smget 14 3 5..0 1 unique"; $val = "key0 key1 key2";
 $rst = "ELEMENTS 1
 key1 0 5 5 value
-MISSED_KEYS 0
-TRIMMED_KEYS 0
-DUPLICATED";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
-$cmd = "bop smget 14 3 10..0 1 unique"; $val = "key0 key1 key2";
-$rst = "ELEMENTS 1
-key0 0 10 5 value
 MISSED_KEYS 0
 TRIMMED_KEYS 0
 END";
@@ -355,7 +312,7 @@ TRIMMED_KEYS 0
 END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 
-# smget: descending order (count = 10, 6, 5, 3, 2, 1, 1*)
+# smget: descending order (count = 10, 6, 5, 3, 1)
 # old smget
 $cmd = "bop smget 14 3 5..0 10"; $val = "key0 key1 key2";
 $rst = "VALUE 6
@@ -397,27 +354,14 @@ key1 0 4 5 value
 MISSED_KEYS 0
 DUPLICATED";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
-$cmd = "bop smget 14 3 5..0 2"; $val = "key0 key1 key2";
-$rst = "VALUE 2
-key1 0 5 5 value
-key0 0 5 5 value
-MISSED_KEYS 0
-DUPLICATED";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
 $cmd = "bop smget 14 3 5..0 1"; $val = "key0 key1 key2";
 $rst = "VALUE 1
 key1 0 5 5 value
 MISSED_KEYS 0
-DUPLICATED";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
-$cmd = "bop smget 14 3 10..0 1"; $val = "key0 key1 key2";
-$rst = "VALUE 1
-key1 0 10 5 value
-MISSED_KEYS 0
 END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 
-# smget: descending order (count = 10, 6, 5, 3, 2, 1, 1*)
+# smget: descending order (count = 10, 6, 5, 3, 1)
 # new smget: duplicate
 $cmd = "bop smget 14 3 5..0 10 duplicate"; $val = "key0 key1 key2";
 $rst = "ELEMENTS 8
@@ -466,30 +410,15 @@ MISSED_KEYS 0
 TRIMMED_KEYS 0
 DUPLICATED";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
-$cmd = "bop smget 14 3 5..0 2 duplicate"; $val = "key0 key1 key2";
-$rst = "ELEMENTS 2
-key1 0 5 5 value
-key0 0 5 5 value
-MISSED_KEYS 0
-TRIMMED_KEYS 0
-DUPLICATED";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
 $cmd = "bop smget 14 3 5..0 1 duplicate"; $val = "key0 key1 key2";
 $rst = "ELEMENTS 1
 key1 0 5 5 value
 MISSED_KEYS 0
 TRIMMED_KEYS 0
-DUPLICATED";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
-$cmd = "bop smget 14 3 10..0 1 duplicate"; $val = "key0 key1 key2";
-$rst = "ELEMENTS 1
-key1 0 10 5 value
-MISSED_KEYS 0
-TRIMMED_KEYS 0
 END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 
-# smget: descending order (count = 10, 6, 5, 3, 2, 1, 1*)
+# smget: descending order (count = 10, 6, 5, 3, 1)
 # new smget: unique
 $cmd = "bop smget 14 3 5..0 10 unique"; $val = "key0 key1 key2";
 $rst = "ELEMENTS 5
@@ -501,7 +430,7 @@ key0 0 1 5 value
 MISSED_KEYS 0
 TRIMMED_KEYS 1
 key1 3
-DUPLICATED";
+END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 $cmd = "bop smget 14 3 5..0 6 unique"; $val = "key0 key1 key2";
 $rst = "ELEMENTS 5
@@ -513,7 +442,7 @@ key0 0 1 5 value
 MISSED_KEYS 0
 TRIMMED_KEYS 1
 key1 3
-DUPLICATED";
+END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 $cmd = "bop smget 14 3 5..0 5 unique"; $val = "key0 key1 key2";
 $rst = "ELEMENTS 5
@@ -525,7 +454,7 @@ key0 0 1 5 value
 MISSED_KEYS 0
 TRIMMED_KEYS 1
 key1 3
-DUPLICATED";
+END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 $cmd = "bop smget 14 3 5..0 3 unique"; $val = "key0 key1 key2";
 $rst = "ELEMENTS 3
@@ -534,26 +463,11 @@ key1 0 4 5 value
 key1 0 3 5 value
 MISSED_KEYS 0
 TRIMMED_KEYS 0
-DUPLICATED";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
-$cmd = "bop smget 14 3 5..0 2 unique"; $val = "key0 key1 key2";
-$rst = "ELEMENTS 2
-key1 0 5 5 value
-key1 0 4 5 value
-MISSED_KEYS 0
-TRIMMED_KEYS 0
-DUPLICATED";
+END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 $cmd = "bop smget 14 3 5..0 1 unique"; $val = "key0 key1 key2";
 $rst = "ELEMENTS 1
 key1 0 5 5 value
-MISSED_KEYS 0
-TRIMMED_KEYS 0
-DUPLICATED";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
-$cmd = "bop smget 14 3 10..0 1 unique"; $val = "key0 key1 key2";
-$rst = "ELEMENTS 1
-key1 0 10 5 value
 MISSED_KEYS 0
 TRIMMED_KEYS 0
 END";

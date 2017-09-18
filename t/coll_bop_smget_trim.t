@@ -167,7 +167,7 @@ bop_new_smget_is($sock, "23 4 30..90 2 9 duplicate", "bkey2 bkey3 bkey1 bkey4",
 "bkey3 NOT_FOUND
 ,bkey4 NOT_FOUND",
 0, "",
-"DUPLICATED");
+"END");
 bop_new_smget_is($sock, "23 4 100..0 2 9 duplicate", "bkey2 bkey3 bkey1 bkey4",
 8,
 "bkey2 12 80 6 datum8
@@ -196,7 +196,7 @@ bop_new_smget_is($sock, "11 2 40..0 4 10 duplicate", "bkey1 bkey2",
 0, "",
 1,
 "bkey1 30",
-"DUPLICATED");
+"END");
 # OLD smget test : Use comma separated keys
 bop_old_smget_is($sock, "11 2 100..0 10", "bkey1,bkey2",
 9,
@@ -234,7 +234,7 @@ bop_old_smget_is($sock, "23 4 30..90 2 9", "bkey2,bkey3,bkey1,bkey4",
 ,bkey1 11 90 6 datum9",
 2,
 "bkey3,bkey4",
-"DUPLICATED");
+"END");
 bop_old_smget_is($sock, "23 4 100..0 2 9", "bkey2,bkey3,bkey1,bkey4",
 7,
 "bkey2 12 80 6 datum8
@@ -255,7 +255,7 @@ bop_old_smget_is($sock, "23 4 200..300 2 6", "bkey2,bkey3,bkey1,bkey4",
 bop_old_smget_is($sock, "11 2 40..0 4 10", "bkey1,bkey2",
 0, "",
 0, "",
-"DUPLICATED_TRIMMED");
+"TRIMMED");
 =head
 $cmd = "bop smget 11 2 40..0 4 10"; $val = "bkey1,bkey2"; $rst = "OUT_OF_RANGE";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
