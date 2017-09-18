@@ -9894,7 +9894,6 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
         );
     } else if (ntokens > 2 && strcmp(type, "btree") == 0) {
-#ifdef JHPARK_OLD_SMGET_INTERFACE
         out_string(c,
         "\t" "bop create <key> <attributes> [noreply]\\r\\n" "\n"
         "\t" "bop insert|upsert <key> <bkey> [<eflag>] <bytes> [create <attributes>] [noreply|pipe|getrim]\\r\\n<data>\\r\\n" "\n"
@@ -9904,7 +9903,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "bop count <key> <bkey or \"bkey range\"> [<eflag_filter>] \\r\\n" "\n"
         "\t" "bop incr|decr <key> <bkey> <delta> [<initial> [<eflag>]] [noreply|pipe]\\r\\n" "\n"
         "\t" "bop mget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"space separated keys\">\\r\\n" "\n"
-        "\t" "bop smget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count> [duplicate|unique]\\r\\n<\"space separated keys\">\\r\\n" "\n"
+        "\t" "bop smget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] <count> [duplicate|unique]\\r\\n<\"space separated keys\">\\r\\n" "\n"
         "\t" "bop position <key> <bkey> <order>\\r\\n" "\n"
         "\t" "bop pwg <key> <bkey> <order> [<count>]\\r\\n" "\n"
         "\t" "bop gbp <key> <order> <position or \"position range\">\\r\\n" "\n"
@@ -9916,29 +9915,6 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "* <bitwop> : &, |, ^" "\n"
         "\t" "* <compop> : EQ, NE, LT, LE, GT, GE" "\n"
         );
-#else
-        out_string(c,
-        "\t" "bop create <key> <attributes> [noreply]\\r\\n" "\n"
-        "\t" "bop insert|upsert <key> <bkey> [<eflag>] <bytes> [create <attributes>] [noreply|pipe|getrim]\\r\\n<data>\\r\\n" "\n"
-        "\t" "bop update <key> <bkey> [<eflag_update>] <bytes> [noreply|pipe]\\r\\n<data>\\r\\n" "\n"
-        "\t" "bop delete <key> <bkey or \"bkey range\"> [<eflag_filter>] [<count>] [drop] [noreply|pipe]\\r\\n" "\n"
-        "\t" "bop get <key> <bkey or \"bkey range\"> [<eflag_filter>] [[<offset>] <count>] [delete|drop]\\r\\n" "\n"
-        "\t" "bop count <key> <bkey or \"bkey range\"> [<eflag_filter>] \\r\\n" "\n"
-        "\t" "bop incr|decr <key> <bkey> <value> [noreply|pipe]\\r\\n" "\n"
-        "\t" "bop mget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"space separated keys\">\\r\\n" "\n"
-        "\t" "bop smget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count> [duplicate|unique]\\r\\n<\"space separated keys\">\\r\\n" "\n"
-        "\t" "bop position <key> <bkey> <order>\\r\\n" "\n"
-        "\t" "bop pwg <key> <bkey> <order> [<count>]\\r\\n" "\n"
-        "\t" "bop gbp <key> <order> <position or \"position range\">\\r\\n" "\n"
-        "\n"
-        "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
-        "\t" "* <eflag_update> : [<fwhere> <bitwop>] <fvalue>" "\n"
-        "\t" "* <eflag_filter> : <fwhere> [<bitwop> <foperand>] <compop> <fvalue>" "\n"
-        "\t" "                 : <fwhere> [<bitwop> <foperand>] EQ|NE <comma separated fvalue list>" "\n"
-        "\t" "* <bitwop> : &, |, ^" "\n"
-        "\t" "* <compop> : EQ, NE, LT, LE, GT, GE" "\n"
-        );
-#endif
     } else if (ntokens > 2 && strcmp(type, "attr") == 0) {
         out_string(c,
         "\t" "getattr <key> [<attribute name> ...]\\r\\n" "\n"
