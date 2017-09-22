@@ -1,3 +1,10 @@
+2017-09-22 [version 1.11.0]
+	* [Feature] Support long key. KEY_MAX_LENGTH(250 => 32000).
+	* [Feature] Use space separated keys instead of comma separated keys.
+	* [Feature] Add a new mget command, efficient for getting multiple items.
+	* [Fix]     Fix the trimmed/duplicated bugs of bop smget.
+	* [Enhance] Use memory blocks to reduce alloc/free some large memory.
+
 2017-09-01 [version 1.10.3]
 	* [Feature] leave and rejoin when cache_list znode is deleted.
 	* [Feature] Change the name of mcfailstop to zkfailstop.
