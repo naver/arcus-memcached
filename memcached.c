@@ -666,6 +666,9 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->rcurr = c->rbuf;
     c->ritem = 0;
     c->rlbytes = 0;
+#ifdef USE_STRING_MBLOCK
+    c->rltotal = 0;
+#endif
     c->icurr = c->ilist;
     c->suffixcurr = c->suffixlist;
     c->ileft = 0;
@@ -770,18 +773,12 @@ static void conn_coll_eitem_free(conn *c) {
         if (c->coll_eitem != NULL)
             free(c->coll_eitem);
         break;
-      case OPERATION_MOP_DELETE:
-        if (c->coll_strkeys != NULL) {
-            free(c->coll_strkeys); c->coll_strkeys = NULL;
-        }
-        break;
       case OPERATION_MOP_GET:
         mc_engine.v1->map_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
         free(c->coll_eitem);
         if (c->coll_resps != NULL) {
             free(c->coll_resps); c->coll_resps = NULL;
         }
-        free(c->coll_strkeys); c->coll_strkeys = NULL;
         break;
       /* bop */
       case OPERATION_BOP_INSERT:
@@ -810,7 +807,6 @@ static void conn_coll_eitem_free(conn *c) {
 #endif
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
         free(c->coll_eitem);
-        free(c->coll_strkeys); c->coll_strkeys = NULL;
         break;
 #endif
       default:
@@ -836,6 +832,20 @@ static void conn_cleanup(conn *c) {
 
     if (c->coll_eitem != NULL) {
         conn_coll_eitem_free(c);
+    }
+    if (c->coll_strkeys != NULL) {
+#ifdef USE_STRING_MBLOCK_COLL
+        assert(c->coll_strkeys == (void*)&c->str_blcks);
+        mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+#else
+#ifdef USE_STRING_MBLOCK
+        if (c->coll_strkeys == (void*)&c->str_blcks)
+            mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+        else
+#endif
+        free(c->coll_strkeys);
+#endif
+        c->coll_strkeys = NULL;
     }
 
     if (c->ileft != 0) {
@@ -1549,33 +1559,36 @@ static void process_sop_exist_complete(conn *c) {
     c->coll_eitem = NULL;
 }
 
-static int tokenize_keys(char *keystr, int length, char delimiter, int keycnt, token_t *tokens) {
+#ifdef USE_STRING_MBLOCK_COLL
+#else
+static int tokenize_keys(char *keystr, int slength, char delimiter, int keycnt, token_t *tokens)
+{
+    char *s, *e;
+    int checked = 0;
     int ntokens = 0;
-    char *first, *s, *e;
     bool finish = false;
 
-    assert(keystr != NULL && tokens != NULL && keycnt >= 1);
+    assert(keystr != NULL && slength > 0 && tokens != NULL && keycnt > 0);
 
     s = keystr;
-    while (*s == ' ')
-        s++;
-    first = s;
-    for (e = s; ntokens < keycnt; ++e) {
-        if (*e == ' ') break;
+    for (e = s; ntokens < keycnt; ++e, ++checked) {
+        if (checked >= slength) {
+            if (s == e) break;
+            tokens[ntokens].value = s;
+            tokens[ntokens].length = e - s;
+            ntokens++;
+            if (ntokens == keycnt)
+                finish = true;
+            break; /* string end */
+        }
         if (*e == delimiter) {
             if (s == e) break;
             tokens[ntokens].value = s;
             tokens[ntokens].length = e - s;
             ntokens++;
             s = e + 1;
-        } else if (*e == '\r' && *(e+1) == '\n') {
-            if (s == e) break;
-            tokens[ntokens].value = s;
-            tokens[ntokens].length = e - s;
-            ntokens++;
-            if (ntokens == keycnt && (e-first) == (length-2))
-                finish = true;
-            break; /* string end */
+        } else if (*e == ' ') {
+            break; /* invalid character in key string */
         }
     }
     if (finish == true) {
@@ -1584,6 +1597,240 @@ static int tokenize_keys(char *keystr, int length, char delimiter, int keycnt, t
         return -1; /* some errors */
     }
 }
+#endif
+
+#ifdef USE_STRING_MBLOCK
+/*
+ * string memory block
+ */
+static int check_sblock_tail_string(mblck_list_t *sblcks, int length)
+{
+    mblck_node_t *blckptr;
+    char         *dataptr;
+    uint32_t      bodylen = MBLCK_GET_BODYLEN(sblcks);
+    uint32_t      lastlen;
+    uint32_t      numblks;
+
+    /* check the last "\r\n" string */
+    blckptr = MBLCK_GET_TAILBLK(sblcks);
+    dataptr = MBLCK_GET_BODYPTR(blckptr);
+    lastlen = (length % bodylen) > 0
+            ? (length % bodylen) : bodylen;
+
+    if (*(dataptr + lastlen - 1) != '\n') {
+        return -1; /* invalid strings */
+    }
+    if ((--lastlen) == 0) {
+        numblks = MBLCK_GET_NUMBLKS(sblcks);
+        blckptr = MBLCK_GET_HEADBLK(sblcks);
+        for (int i = 1; i < numblks-1; i++) {
+             blckptr = MBLCK_GET_NEXTBLK(blckptr);
+        }
+        dataptr = MBLCK_GET_BODYPTR(blckptr);
+        lastlen = bodylen;
+    }
+    if (*(dataptr + lastlen - 1) != '\r') {
+        return -1; /* invalid strings */
+    }
+    return 0;
+}
+
+static int tokenize_mblck(char *keystr, int slength, char delimiter, int keycnt, token_t *tokens)
+{
+    char *s, *e;
+    int checked = 0;
+    int ntokens = 0;
+    bool finish = false;
+
+    assert(keystr != NULL && slength > 0 && tokens != NULL && keycnt > 0);
+
+    s = keystr;
+    for (e = s; ntokens < keycnt; ++e, ++checked) {
+        if (checked >= slength) {
+            if (s == e) break;
+            tokens[ntokens].value = s;
+            tokens[ntokens].length = e - s;
+            ntokens++;
+            finish = true;
+            break; /* string end */
+        }
+        if (*e == delimiter) {
+            if (s == e) break;
+            tokens[ntokens].value = s;
+            tokens[ntokens].length = e - s;
+            ntokens++;
+            s = e + 1;
+        } else if (*e == ' ') {
+            break; /* invalid character in key string */
+        }
+    }
+    if (finish == true) {
+        return ntokens;
+    } else {
+        return -1; /* some errors */
+    }
+}
+
+/* segmented token structure */
+typedef struct {
+    char *value;
+    uint32_t length;
+    uint32_t tokidx;
+} segtok_t;
+
+static int build_complete_strings(conn *c, segtok_t *segtoks, int segcnt,
+                                  token_t *tokens, int keycnt)
+{
+    mblck_list_t add_blcks;
+    mblck_node_t *blckptr;
+    char         *dataptr;
+    char         *saveptr;
+    token_t      *tok_ptr;
+    uint32_t      bodylen = MBLCK_GET_BODYLEN(&c->str_blcks);
+    uint32_t      numblks = 1;
+    uint32_t      datalen = 0;
+    uint32_t      complen, i;
+
+    /* calculate the # of blocks needed */
+    for (i = 0; i < segcnt; i++) {
+        tok_ptr = &tokens[segtoks[i].tokidx];
+        complen = segtoks[i].length + tok_ptr->length;
+        if ((datalen + complen) > bodylen) {
+            numblks += 1;
+            datalen = complen;
+        } else {
+            datalen += complen;
+        }
+    }
+
+    /* allocate new mblock list */
+    if (mblck_list_alloc(&c->thread->mblck_pool, bodylen, numblks, &add_blcks) < 0) {
+        return -1;
+    }
+
+    /* build the complete strings with new mblock */
+    blckptr = MBLCK_GET_HEADBLK(&add_blcks);
+    dataptr = MBLCK_GET_BODYPTR(blckptr);
+    datalen = 0;
+
+    for (i = 0; i < segcnt; i++) {
+        tok_ptr = &tokens[segtoks[i].tokidx];
+        complen = segtoks[i].length + tok_ptr->length;
+
+        if ((datalen + complen) > bodylen) {
+            blckptr = MBLCK_GET_NEXTBLK(blckptr);
+            dataptr = MBLCK_GET_BODYPTR(blckptr);
+            datalen = 0;
+        }
+
+        saveptr = &dataptr[datalen];
+
+        memcpy(dataptr + datalen, segtoks[i].value, segtoks[i].length);
+        datalen += segtoks[i].length;
+        memcpy(dataptr + datalen, tok_ptr->value, tok_ptr->length);
+        datalen += tok_ptr->length;
+
+        tok_ptr->value = saveptr;
+        tok_ptr->length = complen;
+    }
+
+    /* merge to main mblock list */
+    mblck_list_merge(&c->str_blcks, &add_blcks);
+    return 0;
+}
+
+static int tokenize_sblocks(conn *c, int length, char delimiter, int keycnt, token_t *tokens)
+{
+    mblck_node_t *blckptr;
+    char         *dataptr;
+    uint32_t slength;
+    uint32_t bodylen;
+    uint32_t datalen;
+    uint32_t numblks;
+    uint32_t chkblks;
+    uint32_t lastlen;
+    uint32_t ntokens = 0;
+    uint32_t nsegtok = 0;
+    segtok_t *segtoks = (segtok_t*)&tokens[keycnt];
+    bool finish_flag = false;
+    bool segmented_blck;
+
+    assert(length > 2 && tokens != NULL && keycnt > 0);
+
+    /* check the last "\r\n" string */
+    if (check_sblock_tail_string(&c->str_blcks, length) != 0) {
+        return -1; /* invalid tail string */
+    }
+
+    /* prepare block info */
+    slength = length - 2; /* exclude the last "\r\n" */
+    bodylen = MBLCK_GET_BODYLEN(&c->str_blcks);
+    numblks = ((slength - 1) / bodylen) + 1;
+    lastlen = (slength % bodylen) > 0
+            ? (slength % bodylen) : bodylen;
+
+    /* get the first block */
+    blckptr = MBLCK_GET_HEADBLK(&c->str_blcks);
+    dataptr = MBLCK_GET_BODYPTR(blckptr);
+    chkblks = 1;
+    datalen = (chkblks < numblks) ? bodylen : lastlen;
+
+    while (ntokens < keycnt) {
+        /* check the last character */
+        segmented_blck = false;
+        if (chkblks < numblks) {
+            if (dataptr[datalen-1] == delimiter) {
+                datalen -= 1;
+            } else {
+                segmented_blck = true;
+            }
+        }
+
+        /* tokenize string in the block */
+        int tokcnt = tokenize_mblck(dataptr, datalen, delimiter,
+                                    keycnt-ntokens, &tokens[ntokens]);
+        if (tokcnt <= 0) {
+            break;
+        }
+        ntokens += tokcnt;
+
+        /* check the end of strings */
+        if (chkblks >= numblks) {
+            if (ntokens == keycnt)
+                finish_flag = true;
+            break; /* string end */
+        }
+
+        /* get the next block */
+        blckptr = MBLCK_GET_NEXTBLK(blckptr);
+        dataptr = MBLCK_GET_BODYPTR(blckptr);
+        chkblks += 1;
+        datalen = (chkblks < numblks) ? bodylen : lastlen;
+
+        if (segmented_blck == true) {
+            if (dataptr[0] == delimiter) {
+                dataptr += 1;
+                datalen -= 1;
+                continue;
+            }
+            /* save the segmented string */
+            ntokens -= 1;
+            segtoks[nsegtok].value = tokens[ntokens].value;
+            segtoks[nsegtok].length = (uint32_t)tokens[ntokens].length;
+            segtoks[nsegtok].tokidx = ntokens;
+            nsegtok += 1;
+        }
+    }
+
+    if (finish_flag == false) {
+        return -1; /* some errors */
+    }
+    if (build_complete_strings(c, segtoks, nsegtok, tokens, ntokens) != 0) {
+        return -2; /* out of memory */
+    }
+    return 0; /* OK */
+}
+#endif
 
 static int make_mop_elem_response(char *bufptr, eitem_info *info)
 {
@@ -1717,16 +1964,46 @@ static void process_mop_delete_complete(conn *c) {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     field_t *flist = NULL;
     uint32_t del_count = 0;
-    char delimiter = ',';
+    char delimiter = ' ';
+    char old_delimiter = ','; /* need to keep backwards compatibility */
     bool dropped;
+    int  i;
 
     if (c->coll_strkeys != NULL) {
+#ifdef USE_STRING_MBLOCK_COLL
+        int ntokens = c->coll_numkeys + MBLCK_GET_NUMBLKS(&c->str_blcks);
+        flist = (field_t*)token_buff_get(&c->thread->token_buff, ntokens);
+        if (flist != NULL) {
+            ntokens = tokenize_sblocks(c, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist);
+            if (ntokens == -1) {
+                ntokens = tokenize_sblocks(c, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist);
+            }
+            if (ntokens == -1) {
+                ret = ENGINE_EBADVALUE;
+            } else if (ntokens == -2) {
+                ret = ENGINE_ENOMEM;
+            }
+        } else {
+            ret = ENGINE_ENOMEM;
+        }
+#else
         flist = (field_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
-        if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-            (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist) == -1))
+        if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys-2, "\r\n", 2) != 0) ||
+            ((tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys-2, delimiter, c->coll_numkeys, (token_t*)flist) == -1) &&
+             (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, (token_t*)flist) == -1)))
         {
             ret = ENGINE_EBADVALUE;
+        }
+#endif
+    }
+
+    if (ret == ENGINE_SUCCESS && c->coll_numkeys != 0) { /* field validation check */
+        for (i = 0; i < c->coll_numkeys; i++) {
+            if (flist[i].length > MAX_FIELD_LENG) {
+                ret = ENGINE_EBADVALUE;
+                break;
+            }
         }
     }
 
@@ -1766,12 +2043,26 @@ static void process_mop_delete_complete(conn *c) {
         STATS_NOKEY(c, cmd_mop_delete);
         if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad data chunk");
+#ifdef USE_STRING_MBLOCK_COLL
+        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
+#endif
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, ret);
     }
 
+    /* free key strings and tokens buffer */
     if (c->coll_strkeys != NULL) {
+#ifdef USE_STRING_MBLOCK_COLL
+        /* free token buffer */
+        if (flist != NULL) {
+            token_buff_release(&c->thread->token_buff, flist);
+        }
+        /* free key string memory blocks */
+        assert(c->coll_strkeys == (void*)&c->str_blcks);
+        mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+#else
         free((void *)c->coll_strkeys);
+#endif
         c->coll_strkeys = NULL;
     }
 }
@@ -1788,7 +2079,7 @@ static void process_mop_get_complete(conn *c)
     bool delete = c->coll_delete;
     bool drop_if_empty = c->coll_drop;
     bool dropped;
-    int  need_size = 0;
+    int  i, need_size = 0;
 
     if (c->coll_numkeys <= 0 || c->coll_numkeys > MAX_MAP_SIZE) {
         need_size = MAX_MAP_SIZE * sizeof(eitem*);
@@ -1805,13 +2096,42 @@ static void process_mop_get_complete(conn *c)
     assert(c->ewouldblock == false);
 
     if (ret == ENGINE_SUCCESS && c->coll_strkeys != NULL) {
-        char delimiter = ',';
+        char delimiter = ' ';
+        char old_delimiter = ','; /* need to keep backwards compatibility */
+#ifdef USE_STRING_MBLOCK_COLL
+        int ntokens = c->coll_numkeys + MBLCK_GET_NUMBLKS(&c->str_blcks);
+        flist = (field_t*)token_buff_get(&c->thread->token_buff, ntokens);
+        if (flist != NULL) {
+            ntokens = tokenize_sblocks(c, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist);
+            if (ntokens == -1) {
+                ntokens = tokenize_sblocks(c, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist);
+            }
+            if (ntokens == -1) {
+                ret = ENGINE_EBADVALUE;
+            } else if (ntokens == -2) {
+                ret = ENGINE_ENOMEM;
+            }
+        } else {
+            ret = ENGINE_ENOMEM;
+        }
+#else
         flist = (field_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(c->coll_lenkeys));
 
-        if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-            (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist) == -1))
+        if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys-2, "\r\n", 2) != 0) ||
+            ((tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys-2, delimiter, c->coll_numkeys, (token_t*)flist) == -1) &&
+             (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, (token_t*)flist) == -1)))
         {
             ret = ENGINE_EBADVALUE;
+        }
+#endif
+    }
+
+    if (ret == ENGINE_SUCCESS && c->coll_numkeys != 0) { /* field validation check */
+        for (i = 0; i < c->coll_numkeys; i++) {
+            if (flist[i].length > MAX_FIELD_LENG) {
+                ret = ENGINE_EBADVALUE;
+                break;
+            }
         }
     }
 
@@ -1906,15 +2226,30 @@ static void process_mop_get_complete(conn *c)
         STATS_NOKEY(c, cmd_mop_get);
         if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad data chunk");
+#ifdef USE_STRING_MBLOCK_COLL
+        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
+#endif
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, ret);
     }
 
-    if (ret != ENGINE_SUCCESS) {
-        if (c->coll_strkeys != NULL) {
-            free((void *)c->coll_strkeys);
-            c->coll_strkeys = NULL;
+    /* free key strings and tokens buffer */
+    if (c->coll_strkeys != NULL) {
+#ifdef USE_STRING_MBLOCK_COLL
+        /* free token buffer */
+        if (flist != NULL) {
+            token_buff_release(&c->thread->token_buff, flist);
         }
+        /* free key string memory blocks */
+        assert(c->coll_strkeys == (void*)&c->str_blcks);
+        mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+#else
+        free((void *)c->coll_strkeys);
+#endif
+        c->coll_strkeys = NULL;
+    }
+
+    if (ret != ENGINE_SUCCESS) {
         if (c->coll_eitem != NULL) {
            free((void *)c->coll_eitem);
            c->coll_eitem = NULL;
@@ -2130,17 +2465,41 @@ static void process_bop_mget_complete(conn *c) {
     eitem **elem_array = (eitem **)c->coll_eitem;
     uint32_t tot_elem_count = 0;
     uint32_t tot_access_count = 0;
-    char delimiter = ',';
+    char delimiter = ' ';
+    char old_delimiter = ','; /* need to keep backwards compatibility */
+#ifdef USE_STRING_MBLOCK_COLL
+    token_t *key_tokens = NULL;
+#else
     token_t *key_tokens = (token_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(c->coll_lenkeys));
+#endif
 
-    if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-        (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys,
-                       delimiter, c->coll_numkeys, key_tokens) == -1))
+#ifdef USE_STRING_MBLOCK_COLL
+    int ntokens = c->coll_numkeys + MBLCK_GET_NUMBLKS(&c->str_blcks);
+    key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, ntokens);
+    if (key_tokens != NULL) {
+        ntokens = tokenize_sblocks(c, c->coll_lenkeys, delimiter, c->coll_numkeys, key_tokens);
+        if (ntokens == -1) {
+            ntokens = tokenize_sblocks(c, c->coll_lenkeys, old_delimiter, c->coll_numkeys, key_tokens);
+        }
+        if (ntokens == -1) {
+            ret = ENGINE_EBADVALUE;
+        } else if (ntokens == -2) {
+            ret = ENGINE_ENOMEM;
+        }
+    } else {
+        ret = ENGINE_ENOMEM;
+    }
+    if (ret == ENGINE_SUCCESS) {
+#else
+    if ((strncmp((char*)c->coll_strkeys + c->coll_lenkeys-2, "\r\n", 2) != 0) ||
+        ((tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys-2, delimiter, c->coll_numkeys, key_tokens) == -1) &&
+         (tokenize_keys((char*)c->coll_strkeys, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, key_tokens) == -1)))
     {
         ret = ENGINE_EBADVALUE;
     }
     else /* valid key_tokens */
     {
+#endif
         uint32_t cur_elem_count = 0;
         uint32_t cur_access_count = 0;
         uint32_t flags, k, e;
@@ -2176,6 +2535,7 @@ static void process_bop_mget_complete(conn *c) {
             }
 
             if (ret == ENGINE_SUCCESS) {
+              do {
                 sprintf(resultptr, " %s %u %u\r\n",
                         (trimmed==false ? "OK" : "TRIMMED"), htonl(flags), cur_elem_count);
                 if ((add_iov(c, valuestrp, nvaluestr) != 0) ||
@@ -2201,15 +2561,20 @@ static void process_bop_mget_complete(conn *c) {
                 }
                 if (ret == ENGINE_SUCCESS) {
                     STATS_ELEM_HITS(c, bop_get, key_tokens[k].value, key_tokens[k].length);
-                    tot_elem_count += cur_elem_count;
-                    cur_elem_count = 0;
-                    tot_access_count += cur_access_count;
-                    cur_access_count = 0;
-                } else {
+                } else { /* ret == ENGINE_ENOMEM */
                     STATS_NOKEY(c, cmd_bop_get);
-                    // ret == ENGINE_ENOMEM
-                    break;
                 }
+              } while(0);
+
+              /* calculate total elem_count and access_count */
+              tot_elem_count += cur_elem_count;
+              cur_elem_count = 0;
+              tot_access_count += cur_access_count;
+              cur_access_count = 0;
+
+              if (ret != ENGINE_SUCCESS) {
+                  break; /* ret == ENGINE_ENOMEM */
+              }
             } else {
                 if (ret == ENGINE_ELEM_ENOENT) {
                     STATS_NONE_HITS(c, bop_get,  key_tokens[k].value, key_tokens[k].length);
@@ -2245,12 +2610,11 @@ static void process_bop_mget_complete(conn *c) {
                 (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
                 ret = ENGINE_ENOMEM;
             }
-        } else {
-            // ret != ENGINE_SUCCESS
-            tot_elem_count += cur_elem_count;
-            cur_elem_count = 0;
-            tot_access_count += cur_access_count;
-            cur_access_count = 0;
+        }
+        if (ret != ENGINE_SUCCESS) {
+            /* ENGINE_ENOMEM or ENGINE_DISCONNECT or SEVERE error */
+            /* release elements */
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, tot_elem_count);
         }
     }
 
@@ -2267,21 +2631,30 @@ static void process_bop_mget_complete(conn *c) {
       case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
-      case ENGINE_ENOMEM:
-        STATS_NOKEY(c, cmd_bop_mget);
-        mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, tot_elem_count);
-        out_string(c, "SERVER_ERROR out of memory writing get response");
-        break;
       default:
         STATS_NOKEY(c, cmd_bop_mget);
         if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad data chunk");
+        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory writing get response");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, ret);
     }
 
+#ifdef USE_STRING_MBLOCK_COLL
+    /* free token buffer */
+    if (key_tokens != NULL) {
+        token_buff_release(&c->thread->token_buff, key_tokens);
+    }
+#endif
+
     if (ret != ENGINE_SUCCESS) {
         if (c->coll_strkeys != NULL) {
+#ifdef USE_STRING_MBLOCK_COLL
+            /* free key string memory blocks */
+            assert(c->coll_strkeys == (void*)&c->str_blcks);
+            mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+#else
             free((void *)c->coll_strkeys);
+#endif
             c->coll_strkeys = NULL;
         }
         if (c->coll_eitem != NULL) {
@@ -2322,9 +2695,17 @@ static int make_smget_trim_response(char *bufptr, eitem_info *info)
 #ifdef JHPARK_OLD_SMGET_INTERFACE
 static void process_bop_smget_complete_old(conn *c) {
     int i, idx;
+#ifdef USE_STRING_MBLOCK_COLL
+#else
     char *vptr = (char*)c->coll_strkeys;
-    char delimiter = ',';
+#endif
+    char delimiter = ' ';
+    char old_delimiter = ','; /* need to keep backwards compatibility */
+#ifdef USE_STRING_MBLOCK_COLL
+    token_t *keys_array = NULL;
+#else
     token_t *keys_array = (token_t *)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
+#endif
     char *respptr;
     int   resplen;
     int smget_count = c->coll_roffset + c->coll_rcount;
@@ -2341,11 +2722,33 @@ static void process_bop_smget_complete_old(conn *c) {
 
     respptr = ((char*)kmis_array + kmis_array_size);
 
+#ifdef USE_STRING_MBLOCK_COLL
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    int ntokens = c->coll_numkeys + MBLCK_GET_NUMBLKS(&c->str_blcks);
+    keys_array = (token_t*)token_buff_get(&c->thread->token_buff, ntokens);
+    if (keys_array != NULL) {
+        ntokens = tokenize_sblocks(c, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+        if (ntokens == -1) {
+            ntokens = tokenize_sblocks(c, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
+        }
+        if (ntokens == -1) {
+            ret = ENGINE_EBADVALUE;
+        } else if (ntokens == -2) {
+            ret = ENGINE_ENOMEM;
+        }
+    } else {
+        ret = ENGINE_ENOMEM;
+    }
+    if (ret == ENGINE_SUCCESS) {
+#else
     ENGINE_ERROR_CODE ret;
-    if ((strncmp(vptr + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-        (tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1)) {
+    if ((strncmp(vptr + c->coll_lenkeys-2, "\r\n", 2) != 0) ||
+        ((tokenize_keys(vptr, c->coll_lenkeys-2, delimiter, c->coll_numkeys, keys_array) == -1) &&
+         (tokenize_keys(vptr, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, keys_array) == -1)))
+    {
         ret = ENGINE_EBADVALUE;
     } else {
+#endif
         if (c->coll_bkrange.to_nbkey == BKEY_NULL) {
             memcpy(c->coll_bkrange.to_bkey, c->coll_bkrange.from_bkey,
                    (c->coll_bkrange.from_nbkey==0 ? sizeof(uint64_t) : c->coll_bkrange.from_nbkey));
@@ -2450,13 +2853,29 @@ static void process_bop_smget_complete_old(conn *c) {
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_EBADATTR) out_string(c, "ATTR_MISMATCH");
         else if (ret == ENGINE_EBKEYOOR) out_string(c, "OUT_OF_RANGE");
+#ifdef USE_STRING_MBLOCK_COLL
+        else if (ret == ENGINE_ENOMEM)   out_string(c, "SERVER_ERROR out of memory");
+#endif
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, ret);
     }
 
+#ifdef USE_STRING_MBLOCK_COLL
+    /* free token buffer */
+    if (keys_array != NULL) {
+        token_buff_release(&c->thread->token_buff, keys_array);
+    }
+#endif
+
     if (ret != ENGINE_SUCCESS) {
         if (c->coll_strkeys != NULL) {
+#ifdef USE_STRING_MBLOCK_COLL
+            /* free key string memory blocks */
+            assert(c->coll_strkeys == (void*)&c->str_blcks);
+            mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+#else
             free((void *)c->coll_strkeys);
+#endif
             c->coll_strkeys = NULL;
         }
         if (c->coll_eitem != NULL) {
@@ -2477,9 +2896,17 @@ static void process_bop_smget_complete(conn *c) {
     }
 #endif
     int i, idx;
+#ifdef USE_STRING_MBLOCK_COLL
+#else
     char *vptr = (char*)c->coll_strkeys;
-    char delimiter = ',';
+#endif
+    char delimiter = ' ';
+    char old_delimiter = ','; /* need to keep backwards compatibility */
+#ifdef USE_STRING_MBLOCK_COLL
+    token_t *keys_array = NULL;
+#else
     token_t *keys_array = (token_t *)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
+#endif
     char *respptr;
     int   resplen;
     smget_result_t smres;
@@ -2490,11 +2917,33 @@ static void process_bop_smget_complete(conn *c) {
 
     respptr = (char *)&smres.miss_kinfo[c->coll_numkeys];
 
+#ifdef USE_STRING_MBLOCK_COLL
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    int ntokens = c->coll_numkeys + MBLCK_GET_NUMBLKS(&c->str_blcks);
+    keys_array = (token_t*)token_buff_get(&c->thread->token_buff, ntokens);
+    if (keys_array != NULL) {
+        ntokens = tokenize_sblocks(c, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+        if (ntokens == -1) {
+            ntokens = tokenize_sblocks(c, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
+        }
+        if (ntokens == -1) {
+            ret = ENGINE_EBADVALUE;
+        } else if (ntokens == -2) {
+            ret = ENGINE_ENOMEM;
+        }
+    } else {
+        ret = ENGINE_ENOMEM;
+    }
+    if (ret == ENGINE_SUCCESS) {
+#else
     ENGINE_ERROR_CODE ret;
-    if ((strncmp(vptr + c->coll_lenkeys - 2, "\r\n", 2) != 0) ||
-        (tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array) == -1)) {
+    if ((strncmp(vptr + c->coll_lenkeys-2, "\r\n", 2) != 0) ||
+        ((tokenize_keys(vptr, c->coll_lenkeys-2, delimiter, c->coll_numkeys, keys_array) == -1) &&
+         (tokenize_keys(vptr, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, keys_array) == -1)))
+    {
         ret = ENGINE_EBADVALUE;
     } else {
+#endif
         if (c->coll_bkrange.to_nbkey == BKEY_NULL) {
             memcpy(c->coll_bkrange.to_bkey, c->coll_bkrange.from_bkey,
                    (c->coll_bkrange.from_nbkey==0 ? sizeof(uint64_t) : c->coll_bkrange.from_nbkey));
@@ -2621,6 +3070,9 @@ static void process_bop_smget_complete(conn *c) {
         else if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_EBADATTR) out_string(c, "ATTR_MISMATCH");
+#ifdef USE_STRING_MBLOCK_COLL
+        else if (ret == ENGINE_ENOMEM)   out_string(c, "SERVER_ERROR out of memory");
+#endif
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
 #if 0 // JHPARK_SMGET_OFFSET_HANDLING
         else if (ret == ENGINE_EBKEYOOR) out_string(c, "OUT_OF_RANGE");
@@ -2628,9 +3080,22 @@ static void process_bop_smget_complete(conn *c) {
         else handle_unexpected_errorcode_ascii(c, ret);
     }
 
+#ifdef USE_STRING_MBLOCK_COLL
+    /* free token buffer */
+    if (keys_array != NULL) {
+        token_buff_release(&c->thread->token_buff, keys_array);
+    }
+#endif
+
     if (ret != ENGINE_SUCCESS) {
         if (c->coll_strkeys != NULL) {
+#ifdef USE_STRING_MBLOCK_COLL
+            /* free key string memory blocks */
+            assert(c->coll_strkeys == (void*)&c->str_blcks);
+            mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+#else
             free((void *)c->coll_strkeys);
+#endif
             c->coll_strkeys = NULL;
         }
         if (c->coll_eitem != NULL) {
@@ -2638,6 +3103,202 @@ static void process_bop_smget_complete(conn *c) {
             c->coll_eitem = NULL;
         }
     }
+}
+#endif
+
+/**
+ * Get a suffix buffer and insert it into the list of used suffix buffers
+ * @param c the connection object
+ * @return a pointer to a new suffix buffer or NULL if allocation failed
+ */
+static char *get_suffix_buffer(conn *c)
+{
+    if (c->suffixleft == c->suffixsize) {
+        char **new_suffix_list;
+        size_t sz = sizeof(char*) * c->suffixsize * 2;
+
+        new_suffix_list = realloc(c->suffixlist, sz);
+        if (new_suffix_list) {
+            c->suffixsize *= 2;
+            c->suffixlist = new_suffix_list;
+        } else {
+            if (settings.verbose > 1) {
+                mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                        "=%d Failed to resize suffix buffer\n", c->sfd);
+            }
+            return NULL;
+        }
+    }
+
+    char *suffix = cache_alloc(c->thread->suffix_cache);
+    if (suffix != NULL) {
+        *(c->suffixlist + c->suffixleft) = suffix;
+        ++c->suffixleft;
+    }
+    return suffix;
+}
+
+#ifdef SUPPORT_KV_MGET
+static void process_mget_complete(conn *c)
+{
+    assert(c->coll_op == OPERATION_MGET);
+    assert(c->coll_strkeys != NULL);
+
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    uint32_t vlen = c->coll_lenkeys;
+    uint32_t kcnt = c->coll_numkeys;
+    item    *it;
+    char    *key;
+    size_t   nkey;
+#ifdef USE_STRING_MBLOCK
+    token_t *key_tokens = NULL;
+#else
+    token_t *key_tokens = (token_t *)((char*)c->coll_strkeys + GET_8ALIGN_SIZE(vlen));
+#endif
+    char     delimiter = ' ';
+    uint32_t k, nhit;
+
+    do {
+#ifdef USE_STRING_MBLOCK
+        int ntokens = kcnt + MBLCK_GET_NUMBLKS(&c->str_blcks);
+        key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, ntokens);
+        if (key_tokens == NULL) {
+            ret = ENGINE_ENOMEM; break;
+        }
+        ntokens = tokenize_sblocks(c, vlen, delimiter, kcnt, key_tokens);
+        if (ntokens == -1) {
+            ret = ENGINE_EBADVALUE; break;
+        }
+        if (ntokens == -2) {
+            ret = ENGINE_ENOMEM; break;
+        }
+#else
+        if ((strncmp((char*)c->coll_strkeys + vlen-2, "\r\n", 2) != 0) ||
+            (tokenize_keys((char*)c->coll_strkeys, vlen-2, delimiter, kcnt, key_tokens) == -1)) {
+            ret = ENGINE_EBADVALUE; break;
+        }
+#endif
+        /* check key length */
+        for (k = 0; k < kcnt; k++) {
+            if (key_tokens[k].length > KEY_MAX_LENGTH)
+                break;
+        }
+        if (k < kcnt) { /* too long key */
+            ret = ENGINE_EBADVALUE; break;
+        }
+        /* do get operation for each key */
+        nhit = 0;
+        for (k = 0; k < kcnt; k++) {
+            key = key_tokens[k].value;
+            nkey = key_tokens[k].length;
+
+            if (mc_engine.v1->get(mc_engine.v0, c, &it, key, nkey, 0) != ENGINE_SUCCESS) {
+                it = NULL;
+            }
+            if (settings.detail_enabled) {
+                stats_prefix_record_get(key, nkey, NULL != it);
+            }
+            if (it) {
+                item_info info = { .nvalue = 1 };
+                /* get_item_info() always returns true. */
+                (void)mc_engine.v1->get_item_info(mc_engine.v0, c, it, &info);
+                assert(memcmp((char*)info.value[0].iov_base + info.nbytes - 2, "\r\n", 2) == 0);
+
+                /* prepare item array */
+                if (nhit >= c->isize) {
+                    item **new_list = realloc(c->ilist, sizeof(item *) * c->isize * 2);
+                    if (new_list) {
+                        c->isize *= 2;
+                        c->ilist = new_list;
+                    } else {
+                        mc_engine.v1->release(mc_engine.v0, c, it);
+                        break; /* out of memory */
+                    }
+                }
+
+                /* Rebuild the suffix */
+                char *suffix = get_suffix_buffer(c);
+                if (suffix == NULL) {
+                    mc_engine.v1->release(mc_engine.v0, c, it);
+                    break; /* out of memory */
+                }
+                int suffix_len = snprintf(suffix, SUFFIX_SIZE, " %u %u\r\n",
+                                          htonl(info.flags), info.nbytes - 2);
+
+                MEMCACHED_COMMAND_GET(c->sfd, info.key, info.nkey, info.nbytes, info.cas);
+                if (add_iov(c, "VALUE ", 6) != 0 ||
+                    add_iov(c, info.key, info.nkey) != 0 ||
+                    add_iov(c, suffix, suffix_len) != 0 ||
+                    add_iov(c, info.value[0].iov_base, info.value[0].iov_len) != 0)
+                {
+                    mc_engine.v1->release(mc_engine.v0, c, it);
+                    break; /* out of memory */
+                }
+
+                if (settings.verbose > 1) {
+                    mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                            ">%d sending key %s\n", c->sfd, (char*)info.key);
+                }
+
+                /* item_get() has incremented it->refcount for us */
+                STATS_HIT(c, get, key, nkey);
+                *(c->ilist + nhit) = it;
+                nhit++;
+            } else {
+                MEMCACHED_COMMAND_GET(c->sfd, key, nkey, -1, 0);
+                STATS_MISS(c, get, key, nkey);
+            }
+        }
+
+        c->icurr = c->ilist;
+        c->ileft = nhit;
+        c->suffixcurr = c->suffixlist;
+
+        if (settings.verbose > 1) {
+            mc_logger->log(EXTENSION_LOG_DEBUG, c, ">%d END\n", c->sfd);
+        }
+
+        /* If the loop was terminated because of out-of-memory, it is not
+         * reliable to add END\r\n to the buffer, because it might not end
+         * in \r\n. So we send SERVER_ERROR instead.
+         */
+        if (k < kcnt || add_iov(c, "END\r\n", 5) != 0
+            || (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+            /* Releasing items on ilist and freeing suffixes will be
+             * performed later by calling out_string() function.
+             * See conn_write() and conn_mwrite() state.
+             */
+            ret = ENGINE_ENOMEM;
+        }
+    } while(0);
+
+    switch(ret) {
+      case ENGINE_SUCCESS:
+        conn_set_state(c, conn_mwrite);
+        c->msgcurr = 0;
+        break;
+     default:
+        if (ret == ENGINE_EBADVALUE)   out_string(c, "CLIENT_ERROR bad data chunk");
+        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory writing get response");
+        else handle_unexpected_errorcode_ascii(c, ret);
+    }
+
+#ifdef USE_STRING_MBLOCK
+    /* free token buffer */
+    if (key_tokens != NULL) {
+        token_buff_release(&c->thread->token_buff, key_tokens);
+    }
+    /* free key string memory blocks */
+    assert(c->coll_strkeys == (void*)&c->str_blcks);
+    mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+    c->coll_strkeys = NULL;
+#else
+    /* free key strings and tokens buffer */
+    if (c->coll_strkeys != NULL) {
+        free((void *)c->coll_strkeys);
+        c->coll_strkeys = NULL;
+    }
+#endif
 }
 #endif
 
@@ -2665,6 +3326,9 @@ static void complete_update_ascii(conn *c) {
 #endif
 #ifdef SUPPORT_BOP_SMGET
         else if (c->coll_op == OPERATION_BOP_SMGET) process_bop_smget_complete(c);
+#endif
+#ifdef SUPPORT_KV_MGET
+        else if (c->coll_op == OPERATION_MGET) process_mget_complete(c);
 #endif
         return;
     }
@@ -5695,9 +6359,14 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
         if ((elem = (eitem *)malloc(need_size)) == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
+#ifdef USE_STRING_MBLOCK_COLL
+            /* allocate memory blocks needed */
+            if (mblck_list_alloc(&c->thread->mblck_pool, 1, vlen, &c->str_blcks) < 0) {
+#else
             int kmem_size = GET_8ALIGN_SIZE(vlen+2)
                           + (sizeof(token_t) * req->message.body.key_count);
             if ((c->coll_strkeys = malloc(kmem_size)) == NULL) {
+#endif
                 free((void*)elem);
                 ret = ENGINE_ENOMEM;
             } else {
@@ -5713,8 +6382,17 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
 
     switch (ret) {
     case ENGINE_SUCCESS:
+#ifdef USE_STRING_MBLOCK_COLL
+        c->coll_strkeys = (void*)&c->str_blcks;
+        c->mblck = MBLCK_GET_HEADBLK(&c->str_blcks);
+        c->ritem = MBLCK_GET_BODYPTR(c->mblck);
+        c->rlbytes = vlen < MBLCK_GET_BODYLEN(&c->str_blcks)
+                   ? vlen : MBLCK_GET_BODYLEN(&c->str_blcks);
+        c->rltotal = vlen;
+#else
         c->ritem       = (char *)c->coll_strkeys;
         c->rlbytes     = vlen;
+#endif
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 0;
         c->coll_op     = (c->cmd==PROTOCOL_BINARY_CMD_BOP_MGET ? OPERATION_BOP_MGET : OPERATION_BOP_SMGET);
@@ -5744,7 +6422,13 @@ static void process_bin_bop_mget_complete(conn *c) {
 
     if (ret != ENGINE_SUCCESS) {
         if (c->coll_strkeys != NULL) {
+#ifdef USE_STRING_MBLOCK_COLL
+            /* free key string memory blocks */
+            assert(c->coll_strkeys == (void*)&c->str_blcks);
+            mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+#else
             free((void *)c->coll_strkeys);
+#endif
             c->coll_strkeys = NULL;
         }
         if (c->coll_eitem != NULL) {
@@ -5761,13 +6445,26 @@ static void process_bin_bop_smget_complete_old(conn *c) {
     int smget_count = c->coll_roffset + c->coll_rcount;
     int kmis_array_size = c->coll_numkeys * sizeof(uint32_t);
     char *resultptr;
+#ifdef USE_STRING_MBLOCK_COLL
+#else
     char *vptr = (char*)c->coll_strkeys;
-    char delimiter = ',';
+#endif
+    char delimiter = ' ';
+    char old_delimiter = ','; /* need to keep backwards compatibility */
+#ifdef USE_STRING_MBLOCK_COLL
+    token_t *keys_array = NULL;
+#else
     token_t *keys_array = (token_t*)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
+#endif
 
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
+#ifdef USE_STRING_MBLOCK_COLL
+    /* FIXME: how to append the last "\r\n" string ? */
+    //memcpy(vptr + c->coll_lenkeys - 2, "\r\n", 2);
+#else
     memcpy(vptr + c->coll_lenkeys - 2, "\r\n", 2);
+#endif
 
     uint32_t  kmis_count = 0;
     uint32_t  elem_count = 0;
@@ -5781,11 +6478,34 @@ static void process_bin_bop_smget_complete_old(conn *c) {
     bool trimmed;
     bool duplicated;
 
+#ifdef USE_STRING_MBLOCK_COLL
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    int ntokens = tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+    int ntokens = c->coll_numkeys + MBLCK_GET_NUMBLKS(&c->str_blcks);
+    keys_array = (token_t*)token_buff_get(&c->thread->token_buff, ntokens);
+    if (keys_array != NULL) {
+        ntokens = tokenize_sblocks(c, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+        if (ntokens == -1) {
+            ntokens = tokenize_sblocks(c, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
+        }
+        if (ntokens == -1) {
+            ret = ENGINE_EBADVALUE;
+        } else if (ntokens == -2) {
+            ret = ENGINE_ENOMEM;
+        }
+    } else {
+        ret = ENGINE_ENOMEM;
+    }
+    if (ret == ENGINE_SUCCESS) {
+#else
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    int ntokens = tokenize_keys(vptr, c->coll_lenkeys-2, delimiter, c->coll_numkeys, keys_array);
+    if (ntokens == -1) {
+        ntokens = tokenize_keys(vptr, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, keys_array);
+    }
     if (ntokens == -1) {
         ret = ENGINE_EBADVALUE;
     } else {
+#endif
         if (c->coll_bkrange.to_nbkey == BKEY_NULL) {
             memcpy(c->coll_bkrange.to_bkey, c->coll_bkrange.from_bkey,
                    (c->coll_bkrange.from_nbkey==0 ? sizeof(uint64_t) : c->coll_bkrange.from_nbkey));
@@ -5915,13 +6635,30 @@ static void process_bin_bop_smget_complete_old(conn *c) {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADATTR, 0);
         else if (ret == ENGINE_EBKEYOOR)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBKEYOOR, 0);
+#ifdef USE_STRING_MBLOCK_COLL
+        else if (ret == ENGINE_ENOMEM)
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+#endif
         else
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
     }
 
+#ifdef USE_STRING_MBLOCK_COLL
+    /* free token buffer */
+    if (keys_array != NULL) {
+        token_buff_release(&c->thread->token_buff, keys_array);
+    }
+#endif
+
     if (ret != ENGINE_SUCCESS) {
         if (c->coll_strkeys != NULL) {
+#ifdef USE_STRING_MBLOCK_COLL
+            /* free key string memory blocks */
+            assert(c->coll_strkeys == (void*)&c->str_blcks);
+            mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+#else
             free((void *)c->coll_strkeys);
+#endif
             c->coll_strkeys = NULL;
         }
         if (c->coll_eitem != NULL) {
@@ -5942,13 +6679,26 @@ static void process_bin_bop_smget_complete(conn *c) {
 #endif
     smget_result_t smres;
     char *resultptr;
+#ifdef USE_STRING_MBLOCK_COLL
+#else
     char *vptr = (char*)c->coll_strkeys;
-    char delimiter = ',';
+#endif
+    char delimiter = ' ';
+    char old_delimiter = ','; /* need to keep backwards compatibility */
+#ifdef USE_STRING_MBLOCK_COLL
+    token_t *keys_array = NULL;
+#else
     token_t *keys_array = (token_t*)(vptr + GET_8ALIGN_SIZE(c->coll_lenkeys));
+#endif
 
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
+#ifdef USE_STRING_MBLOCK_COLL
+    /* FIXME: how to append the last "\r\n" string ? */
+    //memcpy(vptr + c->coll_lenkeys - 2, "\r\n", 2);
+#else
     memcpy(vptr + c->coll_lenkeys - 2, "\r\n", 2);
+#endif
 
     smres.elem_array = (eitem **)c->coll_eitem;
     smres.elem_kinfo = (smget_ehit_t *)&smres.elem_array[c->coll_rcount+c->coll_numkeys];
@@ -5956,11 +6706,32 @@ static void process_bin_bop_smget_complete(conn *c) {
 
     resultptr = (char *)&smres.miss_kinfo[c->coll_numkeys];
 
+#ifdef USE_STRING_MBLOCK_COLL
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    int ntokens = tokenize_keys(vptr, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
-    if (ntokens == -1) {
+    int ntokens = c->coll_numkeys + MBLCK_GET_NUMBLKS(&c->str_blcks);
+    keys_array = (token_t*)token_buff_get(&c->thread->token_buff, ntokens);
+    if (keys_array != NULL) {
+        ntokens = tokenize_sblocks(c, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+        if (ntokens == -1) {
+            ntokens = tokenize_sblocks(c, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
+        }
+        if (ntokens == -1) {
+            ret = ENGINE_EBADVALUE;
+        } else if (ntokens == -2) {
+            ret = ENGINE_ENOMEM;
+        }
+    } else {
+        ret = ENGINE_ENOMEM;
+    }
+    if (ret == ENGINE_SUCCESS) {
+#else
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    if ((tokenize_keys(vptr, c->coll_lenkeys-2, delimiter, c->coll_numkeys, keys_array) == -1) &&
+        (tokenize_keys(vptr, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, keys_array) == -1))
+    {
         ret = ENGINE_EBADVALUE;
     } else {
+#endif
         if (c->coll_bkrange.to_nbkey == BKEY_NULL) {
             memcpy(c->coll_bkrange.to_bkey, c->coll_bkrange.from_bkey,
                    (c->coll_bkrange.from_nbkey==0 ? sizeof(uint64_t) : c->coll_bkrange.from_nbkey));
@@ -6112,13 +6883,30 @@ static void process_bin_bop_smget_complete(conn *c) {
         else if (ret == ENGINE_EBKEYOOR)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBKEYOOR, 0);
 #endif
+#ifdef USE_STRING_MBLOCK_COLL
+        else if (ret == ENGINE_ENOMEM)
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+#endif
         else
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
     }
 
+#ifdef USE_STRING_MBLOCK_COLL
+    /* free token buffer */
+    if (keys_array != NULL) {
+        token_buff_release(&c->thread->token_buff, keys_array);
+    }
+#endif
+
     if (ret != ENGINE_SUCCESS) {
         if (c->coll_strkeys != NULL) {
+#ifdef USE_STRING_MBLOCK_COLL
+            /* free key string memory blocks */
+            assert(c->coll_strkeys == (void*)&c->str_blcks);
+            mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+#else
             free((void *)c->coll_strkeys);
+#endif
             c->coll_strkeys = NULL;
         }
         if (c->coll_eitem != NULL) {
@@ -7195,6 +7983,20 @@ static void reset_cmd_handler(conn *c) {
     if (c->coll_eitem != NULL) {
         conn_coll_eitem_free(c);
     }
+    if (c->coll_strkeys != NULL) {
+#ifdef USE_STRING_MBLOCK_COLL
+        assert(c->coll_strkeys == (void*)&c->str_blcks);
+        mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+#else
+#ifdef USE_STRING_MBLOCK
+        if (c->coll_strkeys == (void*)&c->str_blcks)
+            mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+        else
+#endif
+        free(c->coll_strkeys);
+#endif
+        c->coll_strkeys = NULL;
+    }
     conn_shrink(c);
     if (c->rbytes > 0) {
         conn_set_state(c, conn_parse_cmd);
@@ -8015,39 +8817,6 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
     }
 }
 
-/**
- * Get a suffix buffer and insert it into the list of used suffix buffers
- * @param c the connection object
- * @return a pointer to a new suffix buffer or NULL if allocation failed
- */
-static char *get_suffix_buffer(conn *c) {
-    if (c->suffixleft == c->suffixsize) {
-        char **new_suffix_list;
-        size_t sz = sizeof(char*) * c->suffixsize * 2;
-
-        new_suffix_list = realloc(c->suffixlist, sz);
-        if (new_suffix_list) {
-            c->suffixsize *= 2;
-            c->suffixlist = new_suffix_list;
-        } else {
-            if (settings.verbose > 1) {
-                mc_logger->log(EXTENSION_LOG_DEBUG, c,
-                        "=%d Failed to resize suffix buffer\n", c->sfd);
-            }
-
-            return NULL;
-        }
-    }
-
-    char *suffix = cache_alloc(c->thread->suffix_cache);
-    if (suffix != NULL) {
-        *(c->suffixlist + c->suffixleft) = suffix;
-        ++c->suffixleft;
-    }
-
-    return suffix;
-}
-
 /* ntokens is overwritten here... shrug.. */
 static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens, bool return_cas)
 {
@@ -8210,6 +8979,70 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
 
     return;
 }
+#ifdef SUPPORT_KV_MGET
+static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt)
+{
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#ifdef USE_STRING_MBLOCK
+
+    /* allocate memory blocks needed */
+    if (mblck_list_alloc(&c->thread->mblck_pool, 1, vlen, &c->str_blcks) < 0) {
+        ret = ENGINE_ENOMEM;
+    }
+#else
+    int kmem_size = GET_8ALIGN_SIZE(vlen) + (kcnt * sizeof(token_t));
+
+    if ((c->coll_strkeys = malloc(kmem_size)) == NULL) {
+        ret = ENGINE_ENOMEM;
+    }
+#endif
+
+    switch (ret) {
+    case ENGINE_SUCCESS:
+#ifdef USE_STRING_MBLOCK
+        c->coll_strkeys = (void*)&c->str_blcks;
+        c->mblck = MBLCK_GET_HEADBLK(&c->str_blcks);
+        c->ritem = MBLCK_GET_BODYPTR(c->mblck);
+        c->rlbytes = vlen < MBLCK_GET_BODYLEN(&c->str_blcks)
+                   ? vlen : MBLCK_GET_BODYLEN(&c->str_blcks);
+        c->rltotal = vlen;
+#else
+        c->ritem       = (char *)c->coll_strkeys;
+        c->rlbytes     = vlen;
+#endif
+        c->coll_op     = OPERATION_MGET;
+        conn_set_state(c, conn_nread);
+        break;
+    default:
+        out_string(c, "SERVER_ERROR out of memory");
+        c->write_and_go = conn_swallow;
+        c->sbytes = vlen;
+    }
+}
+
+static inline void process_mget_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    uint32_t lenkeys, numkeys;
+
+    if ((! safe_strtoul(tokens[COMMAND_TOKEN+1].value, &lenkeys)) ||
+        (! safe_strtoul(tokens[COMMAND_TOKEN+2].value, &numkeys))) {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "CLIENT_ERROR bad command line format");
+        return;
+    }
+
+    if (lenkeys < 1 || numkeys < 1) {
+        /* ENGINE_EBADVALUE */
+        out_string(c, "CLIENT_ERROR bad value"); return;
+    }
+    lenkeys += 2;
+
+    c->coll_numkeys = numkeys;
+    c->coll_lenkeys = lenkeys;
+
+    process_prepare_nread_keys(c, lenkeys, numkeys);
+}
+#endif
 
 static void process_update_command(conn *c, token_t *tokens, const size_t ntokens, ENGINE_STORE_OPERATION store_op, bool handle_cas) {
     char *key;
@@ -9029,6 +9862,9 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "cas <key> <flags> <exptime> <bytes> <cas unique> [noreply]\\r\\n<data>\\r\\n" "\n"
         "\t" "get <key>[ <key> ...]\\r\\n" "\n"
         "\t" "gets <key>[ <key> ...]\\r\\n" "\n"
+#ifdef SUPPORT_KV_MGET
+        "\t" "mget <lenkeys> <numkeys>\\r\\n<\"space separated keys\">\\r\\n" "\n"
+#endif
         "\t" "incr|decr <key> <delta> [<flags> <exptime> <initial>] [noreply]\\r\\n" "\n"
         "\t" "delete <key> [<time>] [noreply]\\r\\n" "\n"
         );
@@ -9056,13 +9892,12 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "mop create <key> <attributes> [noreply]\\r\\n" "\n"
         "\t" "mop insert <key> <field> <bytes> [create <attributes>] [noreply|pipe]\\r\\n<data>\\r\\n" "\n"
         "\t" "mop update <key> <field> <bytes> [noreply|pipe]\\r\\n<data>\\r\\n" "\n"
-        "\t" "mop delete <key> <lenfields> <numfields> [drop] [noreply|pipe]\\r\\n[<\"comma separated fields\">]\\r\\n" "\n"
-        "\t" "mop get <key> <lenfields> <numfields> [delete|drop]\\r\\n[<\"comma separated fields\">]\\r\\n" "\n"
+        "\t" "mop delete <key> <lenfields> <numfields> [drop] [noreply|pipe]\\r\\n[<\"space separated fields\">]\\r\\n" "\n"
+        "\t" "mop get <key> <lenfields> <numfields> [delete|drop]\\r\\n[<\"space separated fields\">]\\r\\n" "\n"
         "\n"
         "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
         );
     } else if (ntokens > 2 && strcmp(type, "btree") == 0) {
-#ifdef JHPARK_OLD_SMGET_INTERFACE
         out_string(c,
         "\t" "bop create <key> <attributes> [noreply]\\r\\n" "\n"
         "\t" "bop insert|upsert <key> <bkey> [<eflag>] <bytes> [create <attributes>] [noreply|pipe|getrim]\\r\\n<data>\\r\\n" "\n"
@@ -9071,8 +9906,8 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "bop get <key> <bkey or \"bkey range\"> [<eflag_filter>] [[<offset>] <count>] [delete|drop]\\r\\n" "\n"
         "\t" "bop count <key> <bkey or \"bkey range\"> [<eflag_filter>] \\r\\n" "\n"
         "\t" "bop incr|decr <key> <bkey> <delta> [<initial> [<eflag>]] [noreply|pipe]\\r\\n" "\n"
-        "\t" "bop mget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"comma separated keys\">\\r\\n" "\n"
-        "\t" "bop smget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count> [duplicate|unique]\\r\\n<\"comma separated keys\">\\r\\n" "\n"
+        "\t" "bop mget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"space separated keys\">\\r\\n" "\n"
+        "\t" "bop smget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] <count> [duplicate|unique]\\r\\n<\"space separated keys\">\\r\\n" "\n"
         "\t" "bop position <key> <bkey> <order>\\r\\n" "\n"
         "\t" "bop pwg <key> <bkey> <order> [<count>]\\r\\n" "\n"
         "\t" "bop gbp <key> <order> <position or \"position range\">\\r\\n" "\n"
@@ -9084,29 +9919,6 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "* <bitwop> : &, |, ^" "\n"
         "\t" "* <compop> : EQ, NE, LT, LE, GT, GE" "\n"
         );
-#else
-        out_string(c,
-        "\t" "bop create <key> <attributes> [noreply]\\r\\n" "\n"
-        "\t" "bop insert|upsert <key> <bkey> [<eflag>] <bytes> [create <attributes>] [noreply|pipe|getrim]\\r\\n<data>\\r\\n" "\n"
-        "\t" "bop update <key> <bkey> [<eflag_update>] <bytes> [noreply|pipe]\\r\\n<data>\\r\\n" "\n"
-        "\t" "bop delete <key> <bkey or \"bkey range\"> [<eflag_filter>] [<count>] [drop] [noreply|pipe]\\r\\n" "\n"
-        "\t" "bop get <key> <bkey or \"bkey range\"> [<eflag_filter>] [[<offset>] <count>] [delete|drop]\\r\\n" "\n"
-        "\t" "bop count <key> <bkey or \"bkey range\"> [<eflag_filter>] \\r\\n" "\n"
-        "\t" "bop incr|decr <key> <bkey> <value> [noreply|pipe]\\r\\n" "\n"
-        "\t" "bop mget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count>\\r\\n<\"comma separated keys\">\\r\\n" "\n"
-        "\t" "bop smget <lenkeys> <numkeys> <bkey or \"bkey range\"> [<eflag_filter>] [<offset>] <count> [unique]\\r\\n<\"comma separated keys\">\\r\\n" "\n"
-        "\t" "bop position <key> <bkey> <order>\\r\\n" "\n"
-        "\t" "bop pwg <key> <bkey> <order> [<count>]\\r\\n" "\n"
-        "\t" "bop gbp <key> <order> <position or \"position range\">\\r\\n" "\n"
-        "\n"
-        "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
-        "\t" "* <eflag_update> : [<fwhere> <bitwop>] <fvalue>" "\n"
-        "\t" "* <eflag_filter> : <fwhere> [<bitwop> <foperand>] <compop> <fvalue>" "\n"
-        "\t" "                 : <fwhere> [<bitwop> <foperand>] EQ|NE <comma separated fvalue list>" "\n"
-        "\t" "* <bitwop> : &, |, ^" "\n"
-        "\t" "* <compop> : EQ, NE, LT, LE, GT, GE" "\n"
-        );
-#endif
     } else if (ntokens > 2 && strcmp(type, "attr") == 0) {
         out_string(c,
         "\t" "getattr <key> [<attribute name> ...]\\r\\n" "\n"
@@ -11048,19 +11860,36 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
     if ((elem = (eitem *)malloc(need_size)) == NULL) {
         ret = ENGINE_ENOMEM;
     } else {
+#ifdef USE_STRING_MBLOCK_COLL
+        /* allocate memory blocks needed */
+        if (mblck_list_alloc(&c->thread->mblck_pool, 1, vlen, &c->str_blcks) < 0) {
+            free((void*)elem);
+            ret = ENGINE_ENOMEM;
+        }
+#else
         int kmem_size = GET_8ALIGN_SIZE(vlen)
                       + (sizeof(token_t) * c->coll_numkeys);
         if ((c->coll_strkeys = malloc(kmem_size)) == NULL) {
             free((void*)elem);
             ret = ENGINE_ENOMEM;
         }
+#endif
     }
 
     switch (ret) {
     case ENGINE_SUCCESS:
         {
+#ifdef USE_STRING_MBLOCK_COLL
+        c->coll_strkeys = (void*)&c->str_blcks;
+        c->mblck = MBLCK_GET_HEADBLK(&c->str_blcks);
+        c->ritem = MBLCK_GET_BODYPTR(c->mblck);
+        c->rlbytes = vlen < MBLCK_GET_BODYLEN(&c->str_blcks)
+                   ? vlen : MBLCK_GET_BODYLEN(&c->str_blcks);
+        c->rltotal = vlen;
+#else
         c->ritem       = (char *)c->coll_strkeys;
         c->rlbytes     = vlen;
+#endif
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 0;
         c->coll_op     = cmd;
@@ -11509,17 +12338,33 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
+#ifdef USE_STRING_MBLOCK_COLL
+    /* allocate memory blocks needed */
+    if (mblck_list_alloc(&c->thread->mblck_pool, 1, flen, &c->str_blcks) < 0) {
+        ret = ENGINE_ENOMEM;
+    }
+#else
     int fmem_size = GET_8ALIGN_SIZE(flen)
                   + (sizeof(token_t) * c->coll_numkeys);
     if ((c->coll_strkeys = malloc(fmem_size)) == NULL) {
         ret = ENGINE_ENOMEM;
     }
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
         {
+#ifdef USE_STRING_MBLOCK_COLL
+        c->coll_strkeys = (void*)&c->str_blcks;
+        c->mblck = MBLCK_GET_HEADBLK(&c->str_blcks);
+        c->ritem = MBLCK_GET_BODYPTR(c->mblck);
+        c->rlbytes = flen < MBLCK_GET_BODYLEN(&c->str_blcks)
+                   ? flen : MBLCK_GET_BODYLEN(&c->str_blcks);
+        c->rltotal = flen;
+#else
         c->ritem          = (char *)c->coll_strkeys;
         c->rlbytes        = flen;
+#endif
         c->coll_ecount    = 1;
         c->coll_op        = cmd;
         c->coll_key       = key;
@@ -12779,6 +13624,12 @@ static void process_command(conn *c, char *command, int cmdlen)
     {
         process_get_command(c, tokens, ntokens, true);
     }
+#ifdef SUPPORT_KV_MGET
+    else if ((ntokens == 4) && (strcmp(tokens[COMMAND_TOKEN].value, "mget") == 0))
+    {
+        process_mget_command(c, tokens, ntokens);
+    }
+#endif
     else if ((ntokens == 6 || ntokens == 7) &&
         ((strcmp(tokens[COMMAND_TOKEN].value, "add"    ) == 0 && (comm = (int)OPERATION_ADD)) ||
          (strcmp(tokens[COMMAND_TOKEN].value, "set"    ) == 0 && (comm = (int)OPERATION_SET)) ||
@@ -13011,7 +13862,6 @@ static int try_read_command(conn *c) {
                 while (*ptr == ' ') { /* ignore leading whitespaces */
                     ++ptr;
                 }
-
                 if (ptr - c->rcurr > 100) {
                     mc_logger->log(EXTENSION_LOG_WARNING, c,
                         "%d: Too many leading whitespaces(%d). Close the connection.\n",
@@ -13019,6 +13869,12 @@ static int try_read_command(conn *c) {
                     conn_set_state(c, conn_closing);
                     return 1;
                 }
+                /* Check KEY_MAX_LENGTH and eflag filter length
+                 *  - KEY_MAX_LENGTH : 32000
+                 *  - IN eflag filter : > 6400 (64*100)
+                 */
+                if (c->rbytes > ((32+8)*1024))
+                {
                 if (strncmp(ptr, "get ", 4) && strncmp(ptr, "gets ", 5)) {
                     char buffer[16];
                     memcpy(buffer, ptr, 15); buffer[15] = '\0';
@@ -13027,6 +13883,7 @@ static int try_read_command(conn *c) {
                         c->sfd, buffer, c->client_ip);
                     conn_set_state(c, conn_closing);
                     return 1;
+                }
                 }
             }
 
@@ -13112,7 +13969,11 @@ static enum try_read_result try_read_network(conn *c) {
 
     while (1) {
         if (c->rbytes >= c->rsize) {
-            if (num_allocs == 4) {
+            /* Increase num_allocs: 4 => 5
+             * - 2K^5 = 64K.
+             * - Check KEY_MAX_LENGTH.
+             */
+            if (num_allocs == 5) {
                 return gotdata;
             }
             ++num_allocs;
@@ -13501,6 +14362,31 @@ bool conn_nread(conn *c) {
     }
 
     /* first check if we have leftovers in the conn_read buffer */
+#ifdef USE_STRING_MBLOCK
+    while (c->rbytes > 0) {
+        int tocopy = c->rbytes > c->rlbytes ? c->rlbytes : c->rbytes;
+        if (c->ritem != c->rcurr) {
+            memmove(c->ritem, c->rcurr, tocopy);
+        }
+        c->ritem += tocopy;
+        c->rlbytes -= tocopy;
+        c->rcurr += tocopy;
+        c->rbytes -= tocopy;
+        if (c->rltotal > 0) { /* string block read */
+            c->rltotal -= tocopy;
+            if (c->rlbytes == 0 && c->rltotal > 0) {
+                c->mblck = MBLCK_GET_NEXTBLK(c->mblck);
+                c->ritem = MBLCK_GET_BODYPTR(c->mblck);
+                c->rlbytes = c->rltotal < MBLCK_GET_BODYLEN(&c->str_blcks)
+                           ? c->rltotal : MBLCK_GET_BODYLEN(&c->str_blcks);
+                continue;
+            }
+        }
+        if (c->rlbytes == 0) {
+            return true;
+        }
+    }
+#else
     if (c->rbytes > 0) {
         int tocopy = c->rbytes > c->rlbytes ? c->rlbytes : c->rbytes;
         if (c->ritem != c->rcurr) {
@@ -13514,6 +14400,7 @@ bool conn_nread(conn *c) {
             return true;
         }
     }
+#endif
 
     /*  now try reading from the socket */
     res = read(c->sfd, c->ritem, c->rlbytes);
@@ -13524,6 +14411,17 @@ bool conn_nread(conn *c) {
         }
         c->ritem += res;
         c->rlbytes -= res;
+#ifdef USE_STRING_MBLOCK
+        if (c->rltotal > 0) {
+            c->rltotal -= res;
+            if (c->rlbytes == 0 && c->rltotal > 0) {
+                c->mblck = MBLCK_GET_NEXTBLK(c->mblck);
+                c->ritem = MBLCK_GET_BODYPTR(c->mblck);
+                c->rlbytes = c->rltotal < MBLCK_GET_BODYLEN(&c->str_blcks)
+                           ? c->rltotal : MBLCK_GET_BODYLEN(&c->str_blcks);
+            }
+        }
+#endif
         return true;
     }
     if (res == 0) { /* end of stream */
@@ -13630,6 +14528,20 @@ bool conn_mwrite(conn *c) {
 #endif
             if (c->coll_eitem != NULL) {
                 conn_coll_eitem_free(c);
+            }
+            if (c->coll_strkeys != NULL) {
+#ifdef USE_STRING_MBLOCK_COLL
+                assert(c->coll_strkeys == (void*)&c->str_blcks);
+                mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+#else
+#ifdef USE_STRING_MBLOCK
+                if (c->coll_strkeys == (void*)&c->str_blcks)
+                    mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+                else
+#endif
+                free(c->coll_strkeys);
+#endif
+                c->coll_strkeys = NULL;
             }
             /* XXX:  I don't know why this wasn't the general case */
             if(c->protocol == binary_prot) {

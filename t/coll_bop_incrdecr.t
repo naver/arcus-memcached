@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 46;
+use Test::More tests => 62;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -152,6 +152,57 @@ is(scalar <$sock>, "$rst\r\n", "$rst");
 print $sock "bop incr bkey2 0 10\r\n";
 $rst = "NOT_FOUND";
 is(scalar <$sock>, "$rst\r\n", "$rst");
+
+# additional tests
+$cmd = "bop insert bkey1 0x0100 0"; $val = ""; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey1 0x0110 2"; $val = "-1"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey1 0x0120 20"; $val = "18446744073709551615"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey1 0x0130 20"; $val = "18446744073709551614"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey1 0x0140 20"; $val = "18446744073709551616"; $rst = "STORED";
+print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+
+print $sock "bop incr bkey1 0x0100 1\r\n";
+is(scalar <$sock>,
+   "CLIENT_ERROR cannot increment or decrement non-numeric value\r\n",
+   "incr1 on empty");
+print $sock "bop decr bkey1 0x0100 1\r\n";
+is(scalar <$sock>,
+   "CLIENT_ERROR cannot increment or decrement non-numeric value\r\n",
+   "decr 1 on empty");
+
+print $sock "bop incr bkey1 0x0110 1\r\n";
+is(scalar <$sock>,
+   "CLIENT_ERROR cannot increment or decrement non-numeric value\r\n",
+   "incr 1 on -1");
+print $sock "bop decr bkey1 0x0110 1\r\n";
+is(scalar <$sock>,
+   "CLIENT_ERROR cannot increment or decrement non-numeric value\r\n",
+   "incr 1 on -1");
+
+print $sock "bop incr bkey1 0x0120 1\r\n";
+is(scalar <$sock>, "0\r\n", "incr 1 on 18446744073709551615");
+print $sock "bop decr bkey1 0x0120 1\r\n";
+is(scalar <$sock>, "0\r\n", "decr 1 on 0");
+
+print $sock "bop incr bkey1 0x0130 1\r\n";
+is(scalar <$sock>, "18446744073709551615\r\n", "incr 1 on 18446744073709551614");
+print $sock "bop decr bkey1 0x0130 1\r\n";
+is(scalar <$sock>, "18446744073709551614\r\n", "decr 1 on 18446744073709551615");
+print $sock "bop decr bkey1 0x0130 1\r\n";
+is(scalar <$sock>, "18446744073709551613\r\n", "decr 1 on 18446744073709551614");
+
+print $sock "bop incr bkey1 0x0140 1\r\n";
+is(scalar <$sock>,
+   "CLIENT_ERROR cannot increment or decrement non-numeric value\r\n",
+   "incr 1 on 18446744073709551616");
+print $sock "bop decr bkey1 0x0140 1\r\n";
+is(scalar <$sock>,
+   "CLIENT_ERROR cannot increment or decrement non-numeric value\r\n",
+   "decr 1 on 18446744073709551616");
 
 # Finalize
 $cmd = "delete bkey1"; $rst = "DELETED";

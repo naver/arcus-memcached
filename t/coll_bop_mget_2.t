@@ -37,22 +37,22 @@ bop get bkey1 0x00..0x1000
 bop get bkey2 0x0000..0xFFFFFFFF
 
 bop mget 11 2 0x0000..0x0100 5
-bkey1,bkey2
+bkey1 bkey2
 bop mget 23 4 0x0000..0x0100 2 6
-bkey2,bkey3,bkey1,bkey4
+bkey2 bkey3 bkey1 bkey4
 bop mget 23 4 0x0090..0x0030 2 9
-bkey2,bkey3,bkey1,bkey4
+bkey2 bkey3 bkey1 bkey4
 bop mget 23 4 0x0200..0x0300 2 6
-bkey2,bkey3,bkey1,bkey4
+bkey2 bkey3 bkey1 bkey4
 bop mget 29 5 0x0000..0x0100 1 6
-bkey2,bkey3,bkey1,bkey4,bkey3
+bkey2 bkey3 bkey1 bkey4 bkey3
 
 bop mget 28 5 0x0000..0x0100 2 6
-bkey2,bkey3,bkey1,bkey4,kvkey
+bkey2 bkey3 bkey1 bkey4 kvkey
 bop mget 29 5 0x0000..0x0100 2 6
-bkey2,bkey3,bkey1,bkey4,bkey1
+bkey2 bkey3 bkey1 bkey4 bkey1
 bop mget 23 2 0x0000..0x0100 2 6
-bkey2,bkey3,bkey1,bkey4
+bkey2 bkey3 bkey1 bkey4
 
 delete bkey1
 delete bkey2
@@ -81,22 +81,22 @@ bop get bkey1 0x00..0xFF
 bop get bkey2 0x00..0xFFFFFFFFFFFFFFFFFFFF
 
 bop mget 11 2 0x00..0xFF 5
-bkey1,bkey2
+bkey1 bkey2
 bop mget 23 4 0x00..0xFFFF 2 6
-bkey2,bkey3,bkey1,bkey4
+bkey2 bkey3 bkey1 bkey4
 bop mget 23 4 0x0090..0x0000000000000030 2 9
-bkey2,bkey3,bkey1,bkey4
+bkey2 bkey3 bkey1 bkey4
 bop mget 23 4 0x0200..0x0300 2 6
-bkey2,bkey3,bkey1,bkey4
+bkey2 bkey3 bkey1 bkey4
 bop mget 29 5 0x0000..0x0100 1 6
-bkey2,bkey3,bkey1,bkey4,bkey3
+bkey2 bkey3 bkey1 bkey4 bkey3
 
 bop mget 28 5 0x0000..0x0100 2 6
-bkey2,bkey3,bkey1,bkey4,kvkey
+bkey2 bkey3 bkey1 bkey4 kvkey
 bop mget 29 5 0x0000..0x0100 2 6
-bkey2,bkey3,bkey1,bkey4,bkey1
+bkey2 bkey3 bkey1 bkey4 bkey1
 bop mget 23 2 0x0000..0x0100 2 6
-bkey2,bkey3,bkey1,bkey4
+bkey2 bkey3 bkey1 bkey4
 
 delete bkey1
 delete bkey2
@@ -148,7 +148,7 @@ bop_ext_get_is($sock, "bkey2 0x0000..0xFFFFFFFF",
                "datum2,datum4,datum6,datum8,datum10", "END");
 
 # mgets
-$cmd = "bop mget 11 2 0x0000..0x0100 5"; $val = "bkey1,bkey2";
+$cmd = "bop mget 11 2 0x0000..0x0100 5"; $val = "bkey1 bkey2";
 $rst = "VALUE bkey1 OK 11 5
 ELEMENT 0x0010 6 datum1
 ELEMENT 0x0030 6 datum3
@@ -164,7 +164,7 @@ ELEMENT 0x0100 7 datum10
 END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 
-$cmd = "bop mget 23 4 0x0000..0x0100 2 6"; $val = "bkey2,bkey3,bkey1,bkey4";
+$cmd = "bop mget 23 4 0x0000..0x0100 2 6"; $val = "bkey2 bkey3 bkey1 bkey4";
 $rst = "VALUE bkey2 OK 12 3
 ELEMENT 0x0060 6 datum6
 ELEMENT 0x0080 6 datum8
@@ -178,7 +178,7 @@ VALUE bkey4 NOT_FOUND
 END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 
-$cmd = "bop mget 23 4 0x0090..0x0030 2 9"; $val = "bkey2,bkey3,bkey1,bkey4";
+$cmd = "bop mget 23 4 0x0090..0x0030 2 9"; $val = "bkey2 bkey3 bkey1 bkey4";
 $rst = "VALUE bkey2 OK 12 1
 ELEMENT 0x0040 6 datum4
 VALUE bkey3 NOT_FOUND
@@ -189,7 +189,7 @@ VALUE bkey4 NOT_FOUND
 END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 
-$cmd = "bop mget 23 4 0x0200..0x0300 2 6"; $val = "bkey2,bkey3,bkey1,bkey4";
+$cmd = "bop mget 23 4 0x0200..0x0300 2 6"; $val = "bkey2 bkey3 bkey1 bkey4";
 $rst = "VALUE bkey2 NOT_FOUND_ELEMENT
 VALUE bkey3 NOT_FOUND
 VALUE bkey1 NOT_FOUND_ELEMENT
@@ -197,7 +197,7 @@ VALUE bkey4 NOT_FOUND
 END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 
-$cmd = "bop mget 29 5 0x0000..0x0100 1 6"; $val = "bkey2,bkey3,bkey1,bkey4,bkey3";
+$cmd = "bop mget 29 5 0x0000..0x0100 1 6"; $val = "bkey2 bkey3 bkey1 bkey4 bkey3";
 $rst = "VALUE bkey2 OK 12 4
 ELEMENT 0x0040 6 datum4
 ELEMENT 0x0060 6 datum6
@@ -215,7 +215,7 @@ END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 
 # fails
-$cmd = "bop mget 29 5 0x0000..0x0100 2 6"; $val = "bkey2,bkey3,bkey1,bkey4,krkey";
+$cmd = "bop mget 29 5 0x0000..0x0100 2 6"; $val = "bkey2 bkey3 bkey1 bkey4 krkey";
 $rst = "VALUE bkey2 OK 12 3
 ELEMENT 0x0060 6 datum6
 ELEMENT 0x0080 6 datum8
@@ -230,7 +230,7 @@ VALUE krkey NOT_FOUND
 END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 
-$cmd = "bop mget 29 5 0x0000..0x0100 2 6"; $val = "bkey2,bkey3,bkey1,bkey4,bkey1";
+$cmd = "bop mget 29 5 0x0000..0x0100 2 6"; $val = "bkey2 bkey3 bkey1 bkey4 bkey1";
 $rst = "VALUE bkey2 OK 12 3
 ELEMENT 0x0060 6 datum6
 ELEMENT 0x0080 6 datum8
@@ -248,7 +248,7 @@ ELEMENT 0x0090 6 datum9
 END";
 mem_cmd_val_is($sock, $cmd, $val, $rst);
 
-$cmd = "bop mget 23 2 0x0000..0x0100 2 6"; $val = "bkey2,bkey3,bkey1,bkey4"; $rst = "CLIENT_ERROR bad data chunk";
+$cmd = "bop mget 23 2 0x0000..0x0100 2 6"; $val = "bkey2 bkey3 bkey1 bkey4"; $rst = "CLIENT_ERROR bad data chunk";
 print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
 
 # finalize
@@ -284,7 +284,7 @@ print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"
 bop_ext_get_is($sock, "bkey2 0x00..0xFFFFFFFFFFFFFFFFFF",
                12, 5, "0x000000000000000020,0x00000000000040,0x0000000060,0x000080,0x01", ",,,,",
                "datum2,datum4,datum6,datum8,datum10", "END");
-# mgets
+# mgets : Use comma separated keys for backward compatibility check
 $cmd = "bop mget 11 2 0x00..0xFF 5"; $val = "bkey1,bkey2";
 $rst = "VALUE bkey1 OK 11 5
 ELEMENT 0x00000000000000000010 6 datum1

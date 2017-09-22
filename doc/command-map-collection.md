@@ -102,10 +102,11 @@ Map collection에서 하나 이상의 field 이름을 주어, 그에 해당하�
 
 ```
 mop delete <key> <lenfields> <numfields> [drop] [noreply|pipe]\r\n
-[<"comma separated fields">]\r\n
+[<"space separated fields">]\r\n
 ```
 
-- "comma separated fields" - 대상 map의 field list로, 콤마(,)로 구분한다.
+- "space separated fields" - 대상 map의 field list로, 스페이스(' ')로 구분한다.
+                           - 하위 호환성(1.10.X 이하 버전)을 위해 콤마(,)도 지원하지만 권장하지 않는다.
 - \<key\> - 대상 item의 key string
 - \<lenfields>\과 \<numfields>\ - field list 문자열의 길이와 field 개수를 나타낸다. 0이면 전체 field, element를 의미한다.
 - drop - field, element 삭제로 인해 empty map이 될 경우, 그 map을 drop할 것인지를 지정한다.
@@ -128,10 +129,11 @@ Map collection에서 하나 이상의 field 이름을 주어, 그에 해당하�
 
 ```
 mop get <key> <lenfields> <numfields> [delete|drop]\r\n
-[<"comma separated fields">]\r\n
+[<"space separated fields">]\r\n
 ```
 
-- "comma separated fields" - 대상 map의 field list로, 콤마(,)로 구분한다.
+- "space separated fields" - 대상 map의 field list로, 스페이스(' ')로 구분한다.
+                           - 하위 호환성(1.10.X 이하 버전)을 위해 콤마(,)도 지원하지만 권장하지 않는다.
 - \<key\> - 대상 item의 key string
 - \<lenfields\> 과 \<numfields>\ - field list 문자열의 길이와 field 개수를 나타낸다. 0이면 전체 field, element를 의미한다.
 - delete or drop - field, element 조회하면서 그 field, element를 delete할 것인지

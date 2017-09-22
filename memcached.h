@@ -45,7 +45,8 @@
 #define ADMIN_MAX_CONNECTIONS 10
 
 /** Maximum length of a key. */
-#define KEY_MAX_LENGTH 250
+//#define KEY_MAX_LENGTH 250
+#define KEY_MAX_LENGTH 32000 /* long key support */
 
 /** Maximum length of a prefix */
 #define PREFIX_MAX_LENGTH 250
@@ -418,6 +419,58 @@ enum thread_type {
     GENERAL = 11
 };
 
+#define USE_STRING_MBLOCK 1
+#define USE_STRING_MBLOCK_COLL 1
+
+#ifdef USE_STRING_MBLOCK
+/*
+ * token buffer structure
+ */
+typedef struct _token_buff {
+    token_t *array;
+    uint32_t count;
+    uint32_t nused;
+} token_buff_t;
+
+/*
+ * memory block structure
+ */
+typedef struct _mblck_node {
+    struct _mblck_node *next;
+    char data[1];
+} mblck_node_t;
+
+typedef struct _mblck_list {
+    mblck_node_t *head;
+    mblck_node_t *tail;
+    uint32_t  blck_cnt;
+    uint32_t  body_len;
+    uint32_t  item_cnt;
+    uint32_t  item_len;
+} mblck_list_t;
+
+typedef struct _mblck_pool {
+    mblck_node_t *head;
+    mblck_node_t *tail;
+    uint32_t  blck_len;
+    uint32_t  body_len;
+    uint32_t  used_cnt;
+    uint32_t  free_cnt;
+} mblck_pool_t;
+
+/*
+ * memory block macros
+ */
+#define MBLCK_GET_HEADBLK(l) ((l)->head)
+#define MBLCK_GET_TAILBLK(l) ((l)->tail)
+#define MBLCK_GET_NUMBLKS(l) ((l)->blck_cnt)
+#define MBLCK_GET_BODYLEN(l) ((l)->body_len)
+#define MBLCK_GET_ITEMCNT(l) ((l)->item_cnt)
+#define MBLCK_GET_ITEMLEN(l) ((l)->item_len)
+#define MBLCK_GET_NEXTBLK(b) ((b)->next)
+#define MBLCK_GET_BODYPTR(b) ((b)->data)
+#endif
+
 typedef struct {
     pthread_t thread_id;        /* unique ID of this thread */
     struct event_base *base;    /* libevent handle this thread uses */
@@ -432,6 +485,10 @@ typedef struct {
     struct conn *conn_list;     /* connection list managed by this thread */
     int index;                  /* index of this thread in the threads array */
     enum thread_type type;      /* Type of IO this thread processes */
+#ifdef USE_STRING_MBLOCK
+    token_buff_t token_buff;    /* token buffer */
+    mblck_pool_t mblck_pool;    /* memory block pool */
+#endif
 } LIBEVENT_THREAD;
 
 #define LOCK_THREAD(t)                          \
@@ -491,12 +548,21 @@ struct conn {
 
     char   *ritem;  /** when we read in an item's value, it goes here */
     uint32_t    rlbytes;
+#ifdef USE_STRING_MBLOCK
+    uint32_t    rltotal;    /* Used when read data with memory block */
+    mblck_node_t *mblck;    /* current memory block pointer */
+    mblck_list_t str_blcks; /* (key or field) string memory block list */
+#endif
 
     /* collection processing fields */
     void        *coll_eitem;
     char        *coll_resps;
     int          coll_ecount;
+#ifdef SUPPORT_KV_MGET
+    int          coll_op;
+#else
     ENGINE_COLL_OPERATION coll_op;
+#endif
     char        *coll_key;
     int          coll_nkey;
     int          coll_index;   /* the list index of lop insert */
@@ -701,6 +767,21 @@ void init_check_stdin(struct event_base *base);
 
 void conn_close(conn *c);
 
+#ifdef USE_STRING_MBLOCK
+/* token buffer function */
+int  token_buff_create(token_buff_t *buff, uint32_t count);
+void token_buff_destroy(token_buff_t *buff);
+void *token_buff_get(token_buff_t *buff, uint32_t count);
+void token_buff_release(token_buff_t *buff, void *tokens);
+
+/* memory block functions */
+int  mblck_pool_create(mblck_pool_t *pool, uint32_t blck_len, uint32_t blck_cnt);
+void mblck_pool_destroy(mblck_pool_t *pool);
+int  mblck_list_alloc(mblck_pool_t *pool, uint32_t item_len, uint32_t item_cnt,
+                      mblck_list_t *list);
+void mblck_list_merge(mblck_list_t *pri_list, mblck_list_t *add_list);
+void mblck_list_free(mblck_pool_t *pool, mblck_list_t *list);
+#endif
 
 #if HAVE_DROP_PRIVILEGES
 extern void drop_privileges(void);
