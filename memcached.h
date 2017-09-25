@@ -480,6 +480,9 @@ struct conn {
     char   *rcurr;  /** but if we parsed some already, this is where we stopped */
     int    rsize;   /** total allocated size of rbuf */
     int    rbytes;  /** how much data, starting from rcur, do we have unparsed */
+#ifdef USE_IVALUE_BLOCK
+    struct iovec ivalue; /* to read ivalue block */
+#endif
 
     char   *wbuf;
     char   *wcurr;

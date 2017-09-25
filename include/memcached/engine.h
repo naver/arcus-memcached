@@ -339,6 +339,26 @@ extern "C" {
         ENGINE_ERROR_CODE (*flush)(ENGINE_HANDLE* handle, const void* cookie,
                                    const void* prefix, const int nprefix, time_t when);
 
+#ifdef USE_IVALUE_BLOCK
+        /**
+         * value to confirm the "\r\n" at the end
+         *
+         * @param handle the engine handle
+         * @param item the item to check value
+         *
+         * @return confirm the "\r\n" at the end of value and then return true
+         */
+        bool (*value_validate)(ENGINE_HANDLE* handle, item* item);
+
+        /**
+         * to find next block to read value
+         *
+         * @param handle the engine handle
+         * @param ivalue include starting point of the buffer to read and bytes to read
+         */
+        void (*iovec_next)(ENGINE_HANDLE* handle, struct iovec* ivalue);
+#endif
+
         /*
          * LIST Interface
          */

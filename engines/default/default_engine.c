@@ -349,6 +349,20 @@ default_flush(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
+#ifdef USE_IVALUE_BLOCK
+static bool
+default_value_validate(ENGINE_HANDLE* handle, item* item)
+{
+    return item_value_validate(item);
+}
+
+static void
+default_iovec_next(ENGINE_HANDLE* handle, struct iovec *ivalue)
+{
+    item_iovec_next(ivalue);
+}
+#endif
+
 /*
  * List Collection API
  */
@@ -1413,7 +1427,11 @@ get_item_info(ENGINE_HANDLE *handle, const void *cookie,
     item_info->nvalue = 1;
     item_info->key = item_get_key(it);
     item_info->value[0].iov_base = item_get_data(it);
+#ifdef USE_IVALUE_BLOCK
+    item_info->value[0].iov_len = item_get_ivbytes(it);
+#else
     item_info->value[0].iov_len = it->nbytes;
+#endif
     return true;
 }
 
@@ -1488,6 +1506,10 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .store             = default_store,
          .arithmetic        = default_arithmetic,
          .flush             = default_flush,
+#ifdef USE_IVALUE_BLOCK
+         .value_validate   = default_value_validate,
+         .iovec_next       = default_iovec_next,
+#endif
          /* LIST Collection API */
          .list_struct_create = default_list_struct_create,
          .list_elem_alloc   = default_list_elem_alloc,

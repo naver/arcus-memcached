@@ -666,6 +666,9 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->rcurr = c->rbuf;
     c->ritem = 0;
     c->rlbytes = 0;
+#ifdef USE_IVALUE_BLOCK
+    c->ivalue.iov_len = 0;
+#endif
     c->icurr = c->ilist;
     c->suffixcurr = c->suffixlist;
     c->ileft = 0;
@@ -1119,6 +1122,22 @@ static int add_iov(conn *c, const void *buf, int len) {
     return 0;
 }
 
+#ifdef USE_IVALUE_BLOCK
+static int add_iov_ivblk(conn *c, item_info info) {
+    assert(c->ivalue.iov_len == 0);
+    int len = info.nbytes;
+    c->ivalue.iov_base = info.value[0].iov_base;
+    c->ivalue.iov_len = info.value[0].iov_len;
+
+    while (len > 0) {
+        if((add_iov(c, c->ivalue.iov_base, c->ivalue.iov_len) != 0)) return -1;
+        len -= c->ivalue.iov_len;
+        if (len > 0) mc_engine.v1->iovec_next(mc_engine.v0, &c->ivalue);
+    }
+    c->ivalue.iov_len = 0;
+    return 0;
+}
+#endif
 
 /*
  * Constructs a set of UDP headers and attaches them to the outgoing messages.
@@ -2679,7 +2698,11 @@ static void complete_update_ascii(conn *c) {
         return;
     }
 
+#ifdef USE_IVALUE_BLOCK
+    if (!mc_engine.v1->value_validate(mc_engine.v0, it)) {
+#else
     if (memcmp((char*)info.value[0].iov_base + info.nbytes - 2, "\r\n", 2) != 0) {
+#endif
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         ENGINE_ERROR_CODE ret;
@@ -8083,7 +8106,11 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                     break;
                 }
 
+#ifdef USE_IVALUE_BLOCK
+                assert(mc_engine.v1->value_validate(mc_engine.v0, it) == 1);
+#else
                 assert(memcmp((char*)info.value[0].iov_base + info.nbytes - 2, "\r\n", 2) == 0);
+#endif
 
                 if (i >= c->isize) {
                     item **new_list = realloc(c->ilist, sizeof(item *) * c->isize * 2);
@@ -8128,6 +8155,17 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                   }
                   int cas_len = snprintf(cas, SUFFIX_SIZE, " %"PRIu64"\r\n",
                                          info.cas);
+#ifdef USE_IVALUE_BLOCK
+                  if (add_iov(c, "VALUE ", 6) != 0 ||
+                      add_iov(c, info.key, info.nkey) != 0 ||
+                      add_iov(c, suffix, suffix_len - 2) != 0 ||
+                      add_iov(c, cas, cas_len) != 0 ||
+                      add_iov_ivblk(c, info))
+                      {
+                          mc_engine.v1->release(mc_engine.v0, c, it);
+                          break;
+                      }
+#else
                   if (add_iov(c, "VALUE ", 6) != 0 ||
                       add_iov(c, info.key, info.nkey) != 0 ||
                       add_iov(c, suffix, suffix_len - 2) != 0 ||
@@ -8137,9 +8175,20 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                           mc_engine.v1->release(mc_engine.v0, c, it);
                           break;
                       }
+#endif
                 }
                 else
                 {
+#ifdef USE_IVALUE_BLOCK
+                  if (add_iov(c, "VALUE ", 6) != 0 ||
+                      add_iov(c, info.key, info.nkey) != 0 ||
+                      add_iov(c, suffix, suffix_len) != 0 ||
+                      add_iov_ivblk(c, info))
+                      {
+                          mc_engine.v1->release(mc_engine.v0, c, it);
+                          break;
+                      }
+#else
                   if (add_iov(c, "VALUE ", 6) != 0 ||
                       add_iov(c, info.key, info.nkey) != 0 ||
                       add_iov(c, suffix, suffix_len) != 0 ||
@@ -8148,6 +8197,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                           mc_engine.v1->release(mc_engine.v0, c, it);
                           break;
                       }
+#endif
                 }
 
 
@@ -8274,6 +8324,10 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         c->item = it;
         c->ritem = info.value[0].iov_base;
         c->rlbytes = vlen;
+#ifdef USE_IVALUE_BLOCK
+        c->ivalue.iov_base = info.value[0].iov_base;;
+        c->ivalue.iov_len = info.value[0].iov_len;
+#endif
         c->store_op = store_op;
         conn_set_state(c, conn_nread);
         break;
@@ -13496,7 +13550,32 @@ bool conn_nread(conn *c) {
         return !block;
     }
 
+#ifdef USE_IVALUE_BLOCK
     /* first check if we have leftovers in the conn_read buffer */
+    while (c->rbytes > 0) {
+        int tocopy = c->rbytes > c->rlbytes ? c->rlbytes : c->rbytes;
+        if (c->ivalue.iov_len > 0)
+            tocopy = tocopy > c->ivalue.iov_len ? c->ivalue.iov_len : tocopy;
+        if (c->ritem != c->rcurr) {
+            memmove(c->ritem, c->rcurr, tocopy);
+        }
+        c->ritem += tocopy;
+        c->rlbytes -= tocopy;
+        c->rcurr += tocopy;
+        c->rbytes -= tocopy;
+        if (c->ivalue.iov_len > 0) { // ivalue block read
+            c->ivalue.iov_len -= tocopy;
+            if (c->ivalue.iov_len == 0 && c->rlbytes > 0) {
+                mc_engine.v1->iovec_next(mc_engine.v0, &c->ivalue);
+                c->ritem = (char*)c->ivalue.iov_base;
+                continue;
+            }
+        }
+        if (c->rlbytes == 0) {
+            return true;
+        }
+    }
+#else
     if (c->rbytes > 0) {
         int tocopy = c->rbytes > c->rlbytes ? c->rlbytes : c->rbytes;
         if (c->ritem != c->rcurr) {
@@ -13510,8 +13589,14 @@ bool conn_nread(conn *c) {
             return true;
         }
     }
+#endif
 
     /*  now try reading from the socket */
+#ifdef USE_IVALUE_BLOCK
+    if (c->ivalue.iov_len > 0)
+        res = read(c->sfd, c->ritem, c->ivalue.iov_len);
+    else
+#endif
     res = read(c->sfd, c->ritem, c->rlbytes);
     if (res > 0) {
         STATS_ADD(c, bytes_read, res);
@@ -13520,6 +13605,15 @@ bool conn_nread(conn *c) {
         }
         c->ritem += res;
         c->rlbytes -= res;
+#ifdef USE_IVALUE_BLOCK
+        if (c->ivalue.iov_len > 0) {
+            c->ivalue.iov_len -= res;
+            if (c->ivalue.iov_len == 0 && c->rlbytes > 0) {
+                mc_engine.v1->iovec_next(mc_engine.v0, &c->ivalue);
+                c->ritem = (char*)c->ivalue.iov_base;
+            }
+        }
+#endif
         return true;
     }
     if (res == 0) { /* end of stream */
