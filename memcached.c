@@ -666,6 +666,9 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->rcurr = c->rbuf;
     c->ritem = 0;
     c->rlbytes = 0;
+#ifdef USE_IVALUE_BLOCK
+    c->ivalue.iov_len = 0;
+#endif
     c->icurr = c->ilist;
     c->suffixcurr = c->suffixlist;
     c->ileft = 0;
@@ -1121,6 +1124,7 @@ static int add_iov(conn *c, const void *buf, int len) {
 
 #ifdef USE_IVALUE_BLOCK
 static int add_iov_ivblk(conn *c, item_info info) {
+    assert(c->ivalue.iov_len == 0);
     int len = info.nbytes;
     c->ivalue.iov_base = info.value[0].iov_base;
     c->ivalue.iov_len = info.value[0].iov_len;
@@ -1130,6 +1134,7 @@ static int add_iov_ivblk(conn *c, item_info info) {
         len -= c->ivalue.iov_len;
         if (len > 0) mc_engine.v1->iovec_next(mc_engine.v0, &c->ivalue);
     }
+    c->ivalue.iov_len = 0;
     return 0;
 }
 #endif
@@ -3678,9 +3683,6 @@ static void bin_read_chunk(conn *c, enum bin_substates next_substate, uint32_t c
 
     /* preserve the header in the buffer.. */
     c->ritem = c->rcurr + sizeof(protocol_binary_request_header);
-#ifdef USE_IVALUE_BLOCK
-    c->ivalue.iov_len = 0; /* it mean not to use ivalue_block */
-#endif
     conn_set_state(c, conn_nread);
 }
 
@@ -3793,9 +3795,6 @@ static void process_bin_sasl_auth(conn *c) {
     c->item = data;
     c->ritem = data->data + nkey;
     c->rlbytes = vlen;
-#ifdef USE_IVALUE_BLOCK
-    c->ivalue.iov_len = 0; /* it mean not to use ivalue_block */
-#endif
     conn_set_state(c, conn_nread);
     c->substate = bin_reading_sasl_auth_data;
 }
@@ -4054,9 +4053,6 @@ static void process_bin_lop_prepare_nread(conn *c) {
         } else {
             c->coll_attrp = NULL;
         }
-#ifdef USE_IVALUE_BLOCK
-        c->ivalue.iov_len = 0; /* it mean not to use ivalue_block */
-#endif
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_lop_nread_complete;
         }
@@ -4510,9 +4506,6 @@ static void process_bin_sop_prepare_nread(conn *c) {
         } else { /* PROTOCOL_BINARY_CMD_SOP_EXIST */
             c->coll_op     = OPERATION_SOP_EXIST;
         }
-#ifdef USE_IVALUE_BLOCK
-        c->ivalue.iov_len = 0; /* it mean not to use ivalue_block */
-#endif
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_sop_nread_complete;
         break;
@@ -5012,9 +5005,6 @@ static void process_bin_bop_prepare_nread(conn *c) {
         } else {
             c->coll_attrp = NULL;
         }
-#ifdef USE_IVALUE_BLOCK
-        c->ivalue.iov_len = 0; /* it mean not to use ivalue_block */
-#endif
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_bop_nread_complete;
         }
@@ -5267,9 +5257,6 @@ static void process_bin_bop_update_prepare_nread(conn *c) {
         c->coll_key    = key;
         c->coll_nkey   = nkey;
         c->coll_op     = OPERATION_BOP_UPDATE;
-#ifdef USE_IVALUE_BLOCK
-        c->ivalue.iov_len = 0; /* it mean not to use ivalue_block */
-#endif
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_bop_update_nread_complete;
         break;
@@ -5754,9 +5741,6 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 0;
         c->coll_op     = (c->cmd==PROTOCOL_BINARY_CMD_BOP_MGET ? OPERATION_BOP_MGET : OPERATION_BOP_SMGET);
-#ifdef USE_IVALUE_BLOCK
-        c->ivalue.iov_len = 0; /* it mean not to use ivalue_block */
-#endif
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_bop_nread_keys_complete;
         break;
@@ -6867,9 +6851,6 @@ static void process_bin_update(conn *c) {
         c->item = it;
         c->ritem = info.value[0].iov_base;
         c->rlbytes = vlen;
-#ifdef USE_IVALUE_BLOCK
-        c->ivalue.iov_len = 0; /* it mean not to use ivalue_block */
-#endif
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
         break;
@@ -6949,9 +6930,6 @@ static void process_bin_append_prepend(conn *c) {
         c->item = it;
         c->ritem = info.value[0].iov_base;
         c->rlbytes = vlen;
-#ifdef USE_IVALUE_BLOCK
-        c->ivalue.iov_len = 0; /* it mean not to use ivalue_block */
-#endif
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
         break;
@@ -9237,9 +9215,6 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
         c->ritem = ptr;
         c->ascii_cmd = cmd;
         /* NOT SUPPORTED YET! */
-#ifdef USE_IVALUE_BLOCK
-        c->ivalue.iov_len = 0; /* it mean not to use ivalue_block */
-#endif
         conn_set_state(c, conn_nread);
     }
 }
@@ -9714,9 +9689,6 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
         c->coll_key    = key;
         c->coll_nkey   = nkey;
         c->coll_index  = index;
-#ifdef USE_IVALUE_BLOCK
-        c->ivalue.iov_len = 0; /* it mean not to use ivalue_block */
-#endif
         conn_set_state(c, conn_nread);
         }
         break;
@@ -10181,9 +10153,6 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
         c->coll_op     = cmd;
         c->coll_key    = key;
         c->coll_nkey   = nkey;
-#ifdef USE_IVALUE_BLOCK
-        c->ivalue.iov_len = 0; /* it mean not to use ivalue_block */
-#endif
         conn_set_state(c, conn_nread);
         break;
     case ENGINE_DISCONNECT:
@@ -10933,9 +10902,6 @@ static void process_bop_update_prepare_nread(conn *c, int cmd, char *key, size_t
         c->coll_op     = cmd;
         c->coll_key    = key;
         c->coll_nkey   = nkey;
-#ifdef USE_IVALUE_BLOCK
-        c->ivalue.iov_len = 0; /* it mean not to use ivalue_block */
-#endif
         conn_set_state(c, conn_nread);
         break;
     default:
@@ -10984,9 +10950,6 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
         c->coll_op     = cmd; /* OPERATION_BOP_INSERT | OPERATION_BOP_UPSERT */
         c->coll_key    = key;
         c->coll_nkey   = nkey;
-#ifdef USE_IVALUE_BLOCK
-        c->ivalue.iov_len = 0; /* it mean not to use ivalue_block */
-#endif
         conn_set_state(c, conn_nread);
         }
         break;
@@ -11081,9 +11044,6 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 0;
         c->coll_op     = cmd;
-#ifdef USE_IVALUE_BLOCK
-        c->ivalue.iov_len = 0; /* it mean not to use ivalue_block */
-#endif
         conn_set_state(c, conn_nread);
         }
         break;
@@ -11501,9 +11461,6 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
         c->coll_key    = key;
         c->coll_nkey   = nkey;
         c->coll_field  = *field;
-#ifdef USE_IVALUE_BLOCK
-        c->ivalue.iov_len = 0; /* it mean not to use ivalue_block */
-#endif
         conn_set_state(c, conn_nread);
         break;
         }
@@ -11548,9 +11505,6 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
         c->coll_key       = key;
         c->coll_nkey      = nkey;
         c->coll_lenkeys   = flen;
-#ifdef USE_IVALUE_BLOCK
-        c->ivalue.iov_len = 0; /* it mean not to use ivalue_block */
-#endif
         conn_set_state(c, conn_nread);
         break;
         }
@@ -13522,77 +13476,31 @@ bool conn_nread(conn *c) {
     }
 
 #ifdef USE_IVALUE_BLOCK
-    if (c->ivalue.iov_len > 0) { /* 0 mean not to use ivalue_block */
-        /* first check if we have leftovers in the conn_read buffer */
-        if (c->rbytes > 0) {
-            int tocopy = (c->rbytes > c->rlbytes) ? c->rlbytes : c->rbytes;
-            int cpivbyte;
-            if (c->ritem != c->rcurr) {
-                while (tocopy > 0) {
-                    cpivbyte = (tocopy > c->ivalue.iov_len) ? c->ivalue.iov_len : tocopy;
-                    memmove(c->ritem, c->rcurr, cpivbyte);
-
-                    c->ritem   += cpivbyte;
-                    c->rcurr   += cpivbyte;
-                    c->rlbytes -= cpivbyte;
-                    c->rbytes  -= cpivbyte;
-                    c->ivalue.iov_len -= cpivbyte;
-                    tocopy     -= cpivbyte;
-                    if (c->ivalue.iov_len == 0 && tocopy > 0) {
-                        mc_engine.v1->iovec_next(mc_engine.v0, &c->ivalue);
-                        c->ritem = (char*)c->ivalue.iov_base;
-                        c->ivalue.iov_len = c->ivalue.iov_len;
-                    }
-                    if (c->rlbytes == 0) return true;
-                }
-            }
+    /* first check if we have leftovers in the conn_read buffer */
+    while (c->rbytes > 0) {
+        int tocopy = c->rbytes > c->rlbytes ? c->rlbytes : c->rbytes;
+        if (c->ivalue.iov_len > 0)
+            tocopy = tocopy > c->ivalue.iov_len ? c->ivalue.iov_len : tocopy;
+        if (c->ritem != c->rcurr) {
+            memmove(c->ritem, c->rcurr, tocopy);
         }
-
-        /*  now try reading from the socket */
-        while (1) {
-            res = read(c->sfd, c->ritem, c->ivalue.iov_len);
-
-            if (res > 0) {
-                STATS_ADD(c, bytes_read, res);
-                if (c->rcurr == c->ritem) {
-                    c->rcurr += res;
-                }
-                c->ivalue.iov_len -= res;
-                c->ritem += res;
-                c->rlbytes -= res;
-
-                if (c->rlbytes == 0) return true;
-                if (c->ivalue.iov_len == 0) {
-                    mc_engine.v1->iovec_next(mc_engine.v0, &c->ivalue);
-                    c->ritem = (char*)c->ivalue.iov_base;
-                    c->ivalue.iov_len = c->ivalue.iov_len;
-                }
+        c->ritem += tocopy;
+        c->rlbytes -= tocopy;
+        c->rcurr += tocopy;
+        c->rbytes -= tocopy;
+        if (c->ivalue.iov_len > 0) { // ivalue block read
+            c->ivalue.iov_len -= tocopy;
+            if (c->ivalue.iov_len == 0 && c->rlbytes > 0) {
+                mc_engine.v1->iovec_next(mc_engine.v0, &c->ivalue);
+                c->ritem = (char*)c->ivalue.iov_base;
                 continue;
             }
-
-            if (res == 0) { /* end of stream */
-                if (settings.verbose > 0) {
-                    mc_logger->log(EXTENSION_LOG_INFO, c,
-                                   "Couldn't read in conn_nread: end of stream.\n");
-                }
-                conn_set_state(c, conn_closing);
-                return true;
-            }
-            if (res == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-                if (!update_event(c, EV_READ | EV_PERSIST)) {
-                    if (settings.verbose > 0) {
-                        mc_logger->log(EXTENSION_LOG_WARNING, c,
-                                       "Couldn't update event in conn_nread.\n");
-                    }
-                    conn_set_state(c, conn_closing);
-                    return true;
-                }
-                return false;
-            }
         }
-    } else {
-#endif
-    /* first check if we have leftovers in the conn_read buffer */
+        if (c->rlbytes == 0) {
+            return true;
+        }
+    }
+#else
     if (c->rbytes > 0) {
         int tocopy = c->rbytes > c->rlbytes ? c->rlbytes : c->rbytes;
         if (c->ritem != c->rcurr) {
@@ -13606,8 +13514,14 @@ bool conn_nread(conn *c) {
             return true;
         }
     }
+#endif
 
     /*  now try reading from the socket */
+#ifdef USE_IVALUE_BLOCK
+    if (c->ivalue.iov_len > 0)
+        res = read(c->sfd, c->ritem, c->ivalue.iov_len);
+    else
+#endif
     res = read(c->sfd, c->ritem, c->rlbytes);
     if (res > 0) {
         STATS_ADD(c, bytes_read, res);
@@ -13616,6 +13530,15 @@ bool conn_nread(conn *c) {
         }
         c->ritem += res;
         c->rlbytes -= res;
+#ifdef USE_IVALUE_BLOCK
+        if (c->ivalue.iov_len > 0) {
+            c->ivalue.iov_len -= res;
+            if (c->ivalue.iov_len == 0 && c->rlbytes > 0) {
+                mc_engine.v1->iovec_next(mc_engine.v0, &c->ivalue);
+                c->ritem = (char*)c->ivalue.iov_base;
+            }
+        }
+#endif
         return true;
     }
     if (res == 0) { /* end of stream */
@@ -13637,10 +13560,6 @@ bool conn_nread(conn *c) {
         }
         return false;
     }
-
-#ifdef USE_IVALUE_BLOCK
-    }
-#endif
 
     if (errno != ENOTCONN && errno != ECONNRESET) {
         /* otherwise we have a real error, on which we close the connection */
