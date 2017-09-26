@@ -510,7 +510,11 @@ extern "C" {
                                               const size_t nbytes, eitem** eitem);
 
         void (*btree_elem_release)(ENGINE_HANDLE* handle, const void *cookie,
+#ifdef USE_EBLOCK_RESULT
+                                   eitem *eitem, EITEM_TYPE type);
+#else
                                    eitem **eitem_array, const int eitem_count);
+#endif
 
         ENGINE_ERROR_CODE (*btree_elem_insert)(ENGINE_HANDLE* handle, const void* cookie,
                                               const void* key, const int nkey,
@@ -551,7 +555,11 @@ extern "C" {
                                             const uint32_t offset,
                                             const uint32_t req_count,
                                             const bool delete, const bool drop_if_empty,
+#ifdef USE_EBLOCK_RESULT
+                                            eblock_result_t *eblk_ret,
+#else
                                             eitem** eitem_array, uint32_t* eitem_count,
+#endif
                                             uint32_t* access_count, uint32_t* flags,
                                             bool* dropped_trimmed, uint16_t vbucket);
 
@@ -573,15 +581,24 @@ extern "C" {
                                              const bkey_range *bkrange,
                                              ENGINE_BTREE_ORDER order,
                                              const uint32_t count,
+#ifdef USE_EBLOCK_RESULT
+                                             int *position, eblock_result_t *eblk_ret,
+                                             uint32_t *eitem_index,
+#else
                                              int *position, eitem **eitem_array,
                                              uint32_t *eitem_count, uint32_t *eitem_index,
+#endif
                                              uint32_t *flags, uint16_t vbucket);
 
         ENGINE_ERROR_CODE (*btree_elem_get_by_posi)(ENGINE_HANDLE *handle, const void* cookie,
                                              const char *key, const size_t nkey,
                                              ENGINE_BTREE_ORDER order,
                                              uint32_t from_posi, uint32_t to_posi,
+#ifdef USE_EBLOCK_RESULT
+                                             eblock_result_t *eblk_ret,
+#else
                                              eitem **eitem_array, uint32_t *eitem_count,
+#endif
                                              uint32_t *flags, uint16_t vbucket);
 
 #ifdef SUPPORT_BOP_SMGET
@@ -592,10 +609,16 @@ extern "C" {
                                               const bkey_range *bkrange,
                                               const eflag_filter *efilter,
                                               const uint32_t offset, const uint32_t count,
+#ifdef USE_EBLOCK_RESULT
+                                              eblock_result_t *eblk_ret,
+                                              uint32_t* kfnd_array,
+                                              uint32_t* flag_array,
+#else
                                               eitem** eitem_array,
                                               uint32_t* kfnd_array,
                                               uint32_t* flag_array,
                                               uint32_t* eitem_count,
+#endif
                                               uint32_t* missed_key_array,
                                               uint32_t* missed_key_count,
                                               bool *trimmed, bool *duplicated,

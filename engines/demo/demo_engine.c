@@ -511,12 +511,21 @@ Demo_btree_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
     return ENGINE_ENOTSUP;
 }
 
+#ifdef USE_EBLOCK_RESULT
+static void
+Demo_btree_elem_release(ENGINE_HANDLE* handle, const void *cookie,
+                           eitem *eitem, EITEM_TYPE type)
+{
+    return;
+}
+#else
 static void
 Demo_btree_elem_release(ENGINE_HANDLE* handle, const void *cookie,
                            eitem **eitem_array, const int eitem_count)
 {
     return;
 }
+#endif
 
 static ENGINE_ERROR_CODE
 Demo_btree_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
@@ -567,7 +576,11 @@ Demo_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                        const bkey_range *bkrange, const eflag_filter *efilter,
                        const uint32_t offset, const uint32_t req_count,
                        const bool delete, const bool drop_if_empty,
+#ifdef USE_EBLOCK_RESULT
+                       eblock_result_t *eblk_ret,
+#else
                        eitem** eitem_array, uint32_t* eitem_count,
+#endif
                        uint32_t *access_count, uint32_t* flags,
                        bool* dropped_trimmed, uint16_t vbucket)
 {
@@ -599,8 +612,13 @@ Demo_btree_posi_find_with_get(ENGINE_HANDLE* handle, const void* cookie,
                                  const char *key, const size_t nkey,
                                  const bkey_range *bkrange,
                                  ENGINE_BTREE_ORDER order, const uint32_t count,
+#ifdef USE_EBLOCK_RESULT
+                                 int *position, eblock_result_t *eblk_ret,
+                                 uint32_t *eitem_index,
+#else
                                  int *position, eitem **eitem_array,
                                  uint32_t *eitem_count, uint32_t *eitem_index,
+#endif
                                  uint32_t *flags, uint16_t vbucket)
 {
     return ENGINE_ENOTSUP;
@@ -611,7 +629,11 @@ Demo_btree_elem_get_by_posi(ENGINE_HANDLE* handle, const void* cookie,
                                const char *key, const size_t nkey,
                                ENGINE_BTREE_ORDER order,
                                uint32_t from_posi, uint32_t to_posi,
+#ifdef USE_EBLOCK_RESULT
+                               eblock_result_t *eblk_ret,
+#else
                                eitem **eitem_array, uint32_t *eitem_count,
+#endif
                                uint32_t *flags, uint16_t vbucket)
 {
     return ENGINE_ENOTSUP;

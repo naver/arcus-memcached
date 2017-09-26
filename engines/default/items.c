@@ -2490,6 +2490,20 @@ static void do_btree_elem_free(struct default_engine *engine, btree_elem_item *e
     do_mem_slot_free(engine, elem, ntotal);
 }
 
+#ifdef USE_EBLOCK_RESULT
+static void do_btree_elem_release(struct default_engine *engine, eitem *eitem)
+{
+    /* assert(elem->status != BTREE_ITEM_STATUS_FREE); */
+    btree_elem_item *elem = (btree_elem_item *)eitem;
+    if (elem->refcount != 0) {
+        elem->refcount--;
+    }
+    if (elem->refcount == 0 && elem->status == BTREE_ITEM_STATUS_UNLINK) {
+        elem->status = BTREE_ITEM_STATUS_FREE;
+        do_btree_elem_free(engine, elem);
+    }
+}
+#else
 static void do_btree_elem_release(struct default_engine *engine, btree_elem_item *elem)
 {
     /* assert(elem->status != BTREE_ITEM_STATUS_FREE); */
@@ -2501,6 +2515,7 @@ static void do_btree_elem_release(struct default_engine *engine, btree_elem_item
         do_btree_elem_free(engine, elem);
     }
 }
+#endif
 
 static inline btree_elem_item *do_btree_get_first_elem(btree_indx_node *node)
 {
@@ -4461,7 +4476,11 @@ static bool do_btree_overlapped_with_trimmed_space(btree_meta_info *info,
 static ENGINE_ERROR_CODE do_btree_elem_get(struct default_engine *engine, btree_meta_info *info,
                                            const int bkrtype, const bkey_range *bkrange, const eflag_filter *efilter,
                                            const uint32_t offset, const uint32_t count, const bool delete,
+#ifdef USE_EBLOCK_RESULT
+                                           eblock_result_t *eblk_ret,
+#else
                                            btree_elem_item **elem_array, uint32_t *elem_count,
+#endif
                                            uint32_t *access_count, bool *potentialbkeytrim)
 {
     btree_elem_posi  path[BTREE_MAX_DEPTH];
@@ -4477,6 +4496,11 @@ static ENGINE_ERROR_CODE do_btree_elem_get(struct default_engine *engine, btree_
         return ENGINE_ELEM_ENOENT;
     }
 
+#ifdef USE_EBLOCK_RESULT
+    if (!eblk_prepare(eblk_ret, (count > 0 && count < info->ccnt) ? count : info->ccnt))
+        return ENGINE_ENOMEM;
+#endif
+
     assert(info->root->ndepth < BTREE_MAX_DEPTH);
     elem = do_btree_find_first(info->root, bkrtype, bkrange, path, delete);
     if (elem != NULL) {
@@ -4486,7 +4510,12 @@ static ENGINE_ERROR_CODE do_btree_elem_get(struct default_engine *engine, btree_
             if (offset == 0) {
                 if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
                     elem->refcount++;
+#ifdef USE_EBLOCK_RESULT
+                    eblk_add_elem(eblk_ret, elem);
+                    tot_found++;
+#else
                     elem_array[tot_found++] = elem;
+#endif
                     if (delete) {
                         do_btree_elem_unlink(engine, info, path, ELEM_DELETE_NORMAL);
                     }
@@ -4527,7 +4556,11 @@ static ENGINE_ERROR_CODE do_btree_elem_get(struct default_engine *engine, btree_
                         skip_cnt++;
                     } else {
                         elem->refcount++;
+#ifdef USE_EBLOCK_RESULT
+                        eblk_add_elem(eblk_ret, elem);
+#else
                         elem_array[tot_found+cur_found] = elem;
+#endif
                         if (delete) {
                             stotal += slabs_space_size(engine, do_btree_elem_ntotal(elem));
                             elem->status = BTREE_ITEM_STATUS_UNLINK;
@@ -4606,7 +4639,11 @@ static ENGINE_ERROR_CODE do_btree_elem_get(struct default_engine *engine, btree_
     if (access_count)
         *access_count = tot_access;
 
+#ifdef USE_EBLOCK_RESULT
+     eblk_truncate(eblk_ret);
+#else
     *elem_count = tot_found;
+#endif
     if (tot_found > 0) {
         return ENGINE_SUCCESS;
     } else {
@@ -4837,7 +4874,11 @@ static int do_btree_posi_find(btree_meta_info *info,
 
 static int do_btree_elem_batch_get(btree_elem_posi posi, const int count,
                                    const bool forward, const bool reverse,
+#ifdef USE_EBLOCK_RESULT
+                                   eblock_result_t *eblk_ret)
+#else
                                    btree_elem_item **elem_array)
+#endif
 {
     btree_elem_item *elem;
     int nfound = 0;
@@ -4848,24 +4889,41 @@ static int do_btree_elem_batch_get(btree_elem_posi posi, const int count,
 
         elem = BTREE_GET_ELEM_ITEM(posi.node, posi.indx);
         elem->refcount++;
+#ifdef USE_EBLOCK_RESULT
+        if (reverse) eblk_add_elem_with_posi(eblk_ret, elem, count-nfound-1);
+        else         eblk_add_elem(eblk_ret, elem);
+#else
         if (reverse) elem_array[count-nfound-1] = elem;
         else         elem_array[nfound] = elem;
+#endif
         nfound += 1;
     }
     return nfound;
 }
 
+#ifdef USE_EBLOCK_RESULT
+static ENGINE_ERROR_CODE do_btree_posi_find_with_get(btree_meta_info *info,
+                                                    const int bkrtype, const bkey_range *bkrange,
+                                                    ENGINE_BTREE_ORDER order, const int count,
+                                                    eblock_result_t *eblk_ret, int *position,
+                                                    uint32_t *elem_index)
+#else
 static int do_btree_posi_find_with_get(btree_meta_info *info,
                                        const int bkrtype, const bkey_range *bkrange,
                                        ENGINE_BTREE_ORDER order, const int count,
                                        btree_elem_item **elem_array,
                                        uint32_t *elem_count, uint32_t *elem_index)
+#endif
 {
     btree_elem_posi  path[BTREE_MAX_DEPTH];
     btree_elem_item *elem;
     int bpos, ecnt, eidx;
 
+#ifdef USE_EBLOCK_RESULT
+    if (info->root == NULL) return ENGINE_ELEM_ENOENT;
+#else
     if (info->root == NULL) return -1; /* not found */
+#endif
 
     elem = do_btree_find_first(info->root, bkrtype, bkrange, path, true);
     if (elem != NULL) {
@@ -4875,6 +4933,23 @@ static int do_btree_posi_find_with_get(btree_meta_info *info,
 
         ecnt = 1;                             /* elem count */
         eidx = (bpos < count) ? bpos : count; /* elem index in elem array */
+#ifdef USE_EBLOCK_RESULT
+        if (!eblk_prepare(eblk_ret, (eidx + count + 1)))
+            return ENGINE_ENOMEM;
+
+        elem->refcount++;
+        eblk_add_elem_with_posi(eblk_ret, elem, eidx);
+        if (order == BTREE_ORDER_ASC) {
+            ecnt += do_btree_elem_batch_get(path[0], eidx,  false, true,  eblk_ret);
+            assert((ecnt-1) == eidx);
+            ecnt += do_btree_elem_batch_get(path[0], count, true,  false, eblk_ret);
+        } else {
+            ecnt += do_btree_elem_batch_get(path[0], eidx,  true,  true,  eblk_ret);
+            assert((ecnt-1) == eidx);
+            ecnt += do_btree_elem_batch_get(path[0], count, false, false, eblk_ret);
+        }
+        eblk_truncate(eblk_ret);
+#else
         elem->refcount++;
         elem_array[eidx] = elem;
 
@@ -4888,16 +4963,27 @@ static int do_btree_posi_find_with_get(btree_meta_info *info,
             ecnt += do_btree_elem_batch_get(path[0], count, false, false, &elem_array[eidx+1]);
         }
         *elem_count = (uint32_t)ecnt;
+#endif
         *elem_index = (uint32_t)eidx;
     } else {
         bpos = -1; /* not found */
     }
+#ifdef USE_EBLOCK_RESULT
+    *position = bpos;
+    if (bpos < 0) return ENGINE_ELEM_ENOENT;
+    else          return ENGINE_SUCCESS;
+#else
     return bpos; /* btree_position */
+#endif
 }
 
 static ENGINE_ERROR_CODE do_btree_elem_get_by_posi(btree_meta_info *info,
                                                    const int index, const uint32_t count, const bool forward,
+#ifdef USE_EBLOCK_RESULT
+                                                   eblock_result_t *eblk_ret)
+#else
                                                    btree_elem_item **elem_array, uint32_t *elem_count)
+#endif
 {
     btree_elem_posi  posi;
     btree_indx_node *node;
@@ -4907,6 +4993,10 @@ static ENGINE_ERROR_CODE do_btree_elem_get_by_posi(btree_meta_info *info,
 
     if (info->root == NULL) return ENGINE_ELEM_ENOENT;
 
+#ifdef USE_EBLOCK_RESULT
+    if (!eblk_prepare(eblk_ret, (count < info->ccnt) ? count : info->ccnt))
+        return ENGINE_ENOMEM;
+#endif
     node = info->root;
     tot_ecnt = 0;
     while (node->ndepth > 0) {
@@ -4924,12 +5014,23 @@ static ENGINE_ERROR_CODE do_btree_elem_get_by_posi(btree_meta_info *info,
 
     elem = BTREE_GET_ELEM_ITEM(posi.node, posi.indx);
     elem->refcount++;
+#ifdef USE_EBLOCK_RESULT
+    eblk_add_elem(eblk_ret, elem);
+    nfound = 1;
+    nfound += do_btree_elem_batch_get(posi, count-1, forward, false, eblk_ret);
+#else
     elem_array[0] = elem;
     nfound = 1;
     nfound += do_btree_elem_batch_get(posi, count-1, forward, false, &elem_array[nfound]);
+#endif
 
+#ifdef USE_EBLOCK_RESULT
+    eblk_truncate(eblk_ret);
+    if (nfound > 0) {
+#else
     *elem_count = nfound;
     if (*elem_count > 0) {
+#endif
         return ENGINE_SUCCESS;
     } else {
         return ENGINE_ELEM_ENOENT;
@@ -5038,7 +5139,11 @@ static bool do_btree_smget_check_trim(smget_result_t *smres)
 
 static void do_btree_smget_adjust_trim(smget_result_t *smres)
 {
+#ifdef USE_EBLOCK_RESULT
+    eitem       **new_trim_elems = smres->trim_elems;
+#else
     eitem       **new_trim_elems = &smres->elem_array[smres->elem_count];
+#endif
     smget_emis_t *new_trim_kinfo = &smres->miss_kinfo[smres->miss_count];
     uint32_t      new_trim_count = 0;
     btree_elem_item *tail_elem = NULL;
@@ -5053,7 +5158,11 @@ static void do_btree_smget_adjust_trim(smget_result_t *smres)
          * we might trim the trimmed keys if the bkey-before-trim is behind
          * the bkey of the last found element.
          */
+#ifdef USE_EBLOCK_RESULT
+        tail_elem = (btree_elem_item *)EBLOCK_ELEM_LAST(smres->eblk_ret);
+#else
         tail_elem = smres->elem_array[smres->elem_count-1];
+#endif
     }
 
     for (idx = smres->trim_count-1; idx >= 0; idx--)
@@ -5107,6 +5216,10 @@ static void do_btree_smget_adjust_trim(smget_result_t *smres)
     smres->trim_elems = new_trim_elems;
     smres->trim_kinfo = new_trim_kinfo;
     smres->trim_count = new_trim_count;
+#ifdef USE_EBLOCK_RESULT
+    for (i = 0; i < smres->trim_count; i++)
+        eblk_add_elem(smres->eblk_ret, smres->trim_elems[i]);
+#endif
 }
 
 #ifdef JHPARK_OLD_SMGET_INTERFACE
@@ -5559,8 +5672,13 @@ scan_next:
 static ENGINE_ERROR_CODE do_btree_smget_elem_sort_old(btree_scan_info *btree_scan_buf,
                                    uint16_t *sort_sindx_buf, const int sort_sindx_cnt,
                                    const int bkrtype, const bkey_range *bkrange, const eflag_filter *efilter,
+#ifdef USE_EBLOCK_RESULT
+                                   const uint32_t offset, const uint32_t count, eblock_result_t *eblk_ret,
+                                   uint32_t *kfnd_array, uint32_t *flag_array,
+#else
                                    const uint32_t offset, const uint32_t count, btree_elem_item **elem_array,
                                    uint32_t *kfnd_array, uint32_t *flag_array, uint32_t *elem_count,
+#endif
                                    bool *potentialbkeytrim, bool *bkey_duplicated)
 {
     btree_meta_info *info;
@@ -5571,9 +5689,17 @@ static ENGINE_ERROR_CODE do_btree_smget_elem_sort_old(btree_scan_info *btree_sca
     int i, cmp_res;
     int mid, left, right;
     int skip_count = 0;
+#ifdef USE_EBLOCK_RESULT
+    int elem_count = 0;
+#endif
     int sort_count = sort_sindx_cnt;
     bool ascending = (bkrtype != BKEY_RANGE_TYPE_DSC ? true : false);
+#ifdef USE_EBLOCK_RESULT
+    if (!eblk_prepare(eblk_ret, count))
+        return ENGINE_ENOMEM;
+#else
     *elem_count = 0;
+#endif
 
     while (sort_count > 0) {
         curr_idx = sort_sindx_buf[first_idx];
@@ -5583,11 +5709,19 @@ static ENGINE_ERROR_CODE do_btree_smget_elem_sort_old(btree_scan_info *btree_sca
             skip_count++;
         } else { /* skip_count == offset */
             elem->refcount++;
+#ifdef USE_EBLOCK_RESULT
+            eblk_add_elem(eblk_ret, elem);
+            kfnd_array[elem_count] = btree_scan_buf[curr_idx].kidx;
+            flag_array[elem_count] = btree_scan_buf[curr_idx].it->flags;
+            elem_count += 1;
+            if (elem_count >= count) break;
+#else
             elem_array[*elem_count] = elem;
             kfnd_array[*elem_count] = btree_scan_buf[curr_idx].kidx;
             flag_array[*elem_count] = btree_scan_buf[curr_idx].it->flags;
             *elem_count += 1;
             if (*elem_count >= count) break;
+#endif
         }
 
 scan_next:
@@ -5646,6 +5780,9 @@ scan_next:
         }
         sort_sindx_buf[right] = curr_idx;
     }
+#ifdef USE_EBLOCK_RESULT
+    eblk_truncate(eblk_ret);
+#endif
 
     return ENGINE_SUCCESS;
 }
@@ -5672,6 +5809,10 @@ do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
     int skip_count = 0;
     int sort_count = sort_sindx_cnt;
     bool ascending = (bkrtype != BKEY_RANGE_TYPE_DSC ? true : false);
+#ifdef USE_EBLOCK_RESULT
+    if (!eblk_prepare(smres->eblk_ret, smres->elem_arrsz + smres->keys_arrsz)) /* elem_count + trim_count */
+        return ENGINE_ENOMEM;
+#endif
 
     while (sort_count > 0) {
         curr_idx = sort_sindx_buf[first_idx];
@@ -5680,7 +5821,11 @@ do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
         if (skip_count < offset) {
             skip_count++;
         } else { /* skip_count == offset */
+#ifdef USE_EBLOCK_RESULT
+            eblk_add_elem(smres->eblk_ret, elem);
+#else
             smres->elem_array[smres->elem_count] = elem;
+#endif
             smres->elem_kinfo[smres->elem_count].kidx = btree_scan_buf[curr_idx].kidx;
             smres->elem_kinfo[smres->elem_count].flag = btree_scan_buf[curr_idx].it->flags;
             smres->elem_count += 1;
@@ -5771,6 +5916,9 @@ scan_next:
             do_btree_smget_adjust_trim(smres);
         }
     }
+#ifdef USE_EBLOCK_RESULT
+    eblk_truncate(smres->eblk_ret);
+#endif
     return ret;
 }
 #endif
@@ -6892,6 +7040,13 @@ btree_elem_item *btree_elem_alloc(struct default_engine *engine,
     return elem;
 }
 
+#ifdef USE_EBLOCK_RESULT
+void btree_elem_release(struct default_engine *engine,
+                        eitem *eitem, EITEM_TYPE type)
+{
+    do_coll_elem_release(engine, eitem, type, do_btree_elem_release);
+}
+#else
 void btree_elem_release(struct default_engine *engine,
                         btree_elem_item **elem_array, const int elem_count)
 {
@@ -6906,6 +7061,7 @@ void btree_elem_release(struct default_engine *engine,
     }
     pthread_mutex_unlock(&engine->cache_lock);
 }
+#endif
 
 ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
                                     const char *key, const size_t nkey,
@@ -7084,7 +7240,11 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
                                  const bkey_range *bkrange, const eflag_filter *efilter,
                                  const uint32_t offset, const uint32_t req_count,
                                  const bool delete, const bool drop_if_empty,
+#ifdef USE_EBLOCK_RESULT
+                                 eblock_result_t *eblk_ret,
+#else
                                  btree_elem_item **elem_array, uint32_t *elem_count,
+#endif
                                  uint32_t *access_count,
                                  uint32_t *flags, bool *dropped_trimmed)
 {
@@ -7109,9 +7269,15 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
+#ifdef USE_EBLOCK_RESULT
+            ret = do_btree_elem_get(engine, info, bkrtype, bkrange, efilter,
+                                    offset, req_count, delete,
+                                    eblk_ret, access_count, &potentialbkeytrim);
+#else
             ret = do_btree_elem_get(engine, info, bkrtype, bkrange, efilter,
                                     offset, req_count, delete, elem_array,
                                     elem_count, access_count, &potentialbkeytrim);
+#endif
             if (ret == ENGINE_SUCCESS) {
                 if (delete) {
                     if (info->ccnt == 0 && drop_if_empty) {
@@ -7128,7 +7294,11 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
             } else {
                 if (potentialbkeytrim == true)
                     ret = ENGINE_EBKEYOOR;
+#ifdef USE_EBLOCK_RESULT
+                /* ret = ENGINE_ENOENT or ENGINE_ELEM_ENOENT; */
+#else
                 /* ret = ENGINE_ELEM_ENOENT; */
+#endif
             }
         } while (0);
         do_item_release(engine, it);
@@ -7209,7 +7379,11 @@ ENGINE_ERROR_CODE btree_posi_find_with_get(struct default_engine *engine,
                                            const char *key, const size_t nkey,
                                            const bkey_range *bkrange, ENGINE_BTREE_ORDER order,
                                            const int count, int *position,
+#ifdef USE_EBLOCK_RESULT
+                                           eblock_result_t *eblk_ret,
+#else
                                            btree_elem_item **elem_array, uint32_t *elem_count,
+#endif
                                            uint32_t *elem_index, uint32_t *flags)
 {
     hash_item       *it;
@@ -7234,11 +7408,17 @@ ENGINE_ERROR_CODE btree_posi_find_with_get(struct default_engine *engine,
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
+#ifdef USE_EBLOCK_RESULT
+            ret = do_btree_posi_find_with_get(info, bkrtype, bkrange, order, count,
+                                              eblk_ret, position, elem_index);
+            if (ret != ENGINE_SUCCESS) break; /* ENGINE_ELEM_ENOENT or ENGINE_ENOMEM */
+#else
             *position = do_btree_posi_find_with_get(info, bkrtype, bkrange, order, count,
                                                     elem_array, elem_count, elem_index);
             if (*position < 0) {
                 ret = ENGINE_ELEM_ENOENT; break;
             }
+#endif
             *flags = it->flags;
         } while (0);
         do_item_release(engine, it);
@@ -7250,7 +7430,11 @@ ENGINE_ERROR_CODE btree_posi_find_with_get(struct default_engine *engine,
 ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
                                          const char *key, const size_t nkey,
                                          ENGINE_BTREE_ORDER order, uint32_t from_posi, uint32_t to_posi,
+#ifdef USE_EBLOCK_RESULT
+                                         eblock_result_t *eblk_ret, uint32_t *flags)
+#else
                                          btree_elem_item **elem_array, uint32_t *elem_count, uint32_t *flags)
+#endif
 {
     hash_item       *it;
     btree_meta_info *info;
@@ -7286,9 +7470,15 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
                 forward = false;
                 rqcount = from_posi - to_posi + 1;
             }
+#ifdef USE_EBLOCK_RESULT
+            ret = do_btree_elem_get_by_posi(info, from_posi, rqcount, forward, eblk_ret);
+            if (ret != ENGINE_SUCCESS) /* ret = ENGINE_ELEM_ENOENT or ENGINE_ELEM_ENOENT */
+                break;
+#else
             ret = do_btree_elem_get_by_posi(info, from_posi, rqcount, forward, elem_array, elem_count);
             if (ret != ENGINE_SUCCESS) /* ret == ENGINE_ELEM_ENOENT */
                 break;
+#endif
             *flags = it->flags;
         } while (0);
         do_item_release(engine, it);
@@ -7303,8 +7493,13 @@ ENGINE_ERROR_CODE btree_elem_smget_old(struct default_engine *engine,
                                    token_t *key_array, const int key_count,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
                                    const uint32_t offset, const uint32_t count,
+#ifdef USE_EBLOCK_RESULT
+                                   eblock_result_t *eblk_ret, uint32_t *kfnd_array,
+                                   uint32_t *flag_array,
+#else
                                    btree_elem_item **elem_array, uint32_t *kfnd_array,
                                    uint32_t *flag_array, uint32_t *elem_count,
+#endif
                                    uint32_t *missed_key_array, uint32_t *missed_key_count,
                                    bool *trimmed, bool *duplicated)
 {
@@ -7331,10 +7526,17 @@ ENGINE_ERROR_CODE btree_elem_smget_old(struct default_engine *engine,
                                    missed_key_array, missed_key_count, duplicated);
     if (ret == ENGINE_SUCCESS) {
         /* the 2nd phase: get the sorted elems */
+#ifdef USE_EBLOCK_RESULT
+        ret = do_btree_smget_elem_sort_old(btree_scan_buf, sort_sindx_buf, sort_sindx_cnt,
+                                           bkrtype, bkrange, efilter, offset, count,
+                                           eblk_ret, kfnd_array, flag_array,
+                                           trimmed, duplicated);
+#else
         ret = do_btree_smget_elem_sort_old(btree_scan_buf, sort_sindx_buf, sort_sindx_cnt,
                                            bkrtype, bkrange, efilter, offset, count,
                                            elem_array, kfnd_array, flag_array, elem_count,
                                            trimmed, duplicated);
+#endif
         for (i = 0; i <= (offset+count); i++) {
             if (btree_scan_buf[i].it != NULL)
                 do_item_release(engine, btree_scan_buf[i].it);
@@ -7366,10 +7568,15 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
     }
 
     /* initialize smget result structure */
+#ifdef USE_EBLOCK_RESULT
+    /* trim_elems, elem_kinfo, miss_kinfo, already init */
+    assert(result->trim_elems != NULL);
+#else
     assert(result->elem_array != NULL);
     result->trim_elems = (eitem *)&result->elem_array[count];
     result->elem_kinfo = (smget_ehit_t *)&result->elem_array[count + key_count];
     result->miss_kinfo = (smget_emis_t *)&result->elem_kinfo[count];
+#endif
     result->trim_kinfo = result->miss_kinfo;
     result->elem_count = 0;
     result->miss_count = 0;
@@ -7691,25 +7898,27 @@ static void do_coll_elem_release(struct default_engine *engine, eitem *item, EIT
         pthread_mutex_unlock(&engine->cache_lock);
     } else if (type == EITEM_TYPE_BLOCK) {
         eblock_result_t *eblk_ret = (eblock_result_t *)item;
-        uint32_t elem_count = EBLOCK_ELEM_COUNT(eblk_ret);
-        uint32_t lock_count, i, j;
-        eblock_scan_t eblk_sc;
-        eitem *elem;
+        if (eblk_ret->head_blk != NULL) { //validate check
+            uint32_t elem_count = EBLOCK_ELEM_COUNT(eblk_ret);
+            uint32_t lock_count, i, j;
+            eblock_scan_t eblk_sc;
+            eitem *elem;
 
-        EBLOCK_SCAN_INIT(eblk_ret, &eblk_sc);
-        for (i = 0; i < elem_count; i += lock_count) {
-            lock_count = (elem_count-i) < 100
-                       ? (elem_count-i) : 100;
-            pthread_mutex_lock(&engine->cache_lock);
-            for (j = 0; j < lock_count; j++) {
-                EBLOCK_SCAN_NEXT(&eblk_sc, elem);
-                elem_release_func(engine, elem);
+            EBLOCK_SCAN_INIT(eblk_ret, &eblk_sc);
+            for (i = 0; i < elem_count; i += lock_count) {
+                lock_count = (elem_count-i) < 100
+                           ? (elem_count-i) : 100;
+                pthread_mutex_lock(&engine->cache_lock);
+                for (j = 0; j < lock_count; j++) {
+                    EBLOCK_SCAN_NEXT(&eblk_sc, elem);
+                    elem_release_func(engine, elem);
+                }
+                pthread_mutex_unlock(&engine->cache_lock);
             }
+            pthread_mutex_lock(&engine->cache_lock);
+            mblock_list_free(eblk_ret->blck_cnt, &eblk_ret->head_blk, &eblk_ret->tail_blk);
             pthread_mutex_unlock(&engine->cache_lock);
         }
-        pthread_mutex_lock(&engine->cache_lock);
-        mblock_list_free(eblk_ret->blck_cnt, eblk_ret->head_blk, eblk_ret->tail_blk);
-        pthread_mutex_unlock(&engine->cache_lock);
     }
 }
 #endif

@@ -810,7 +810,11 @@ static void conn_coll_eitem_free(conn *c) {
       /* bop */
       case OPERATION_BOP_INSERT:
       case OPERATION_BOP_UPSERT:
+#ifdef USE_EBLOCK_RESULT
+        mc_engine.v1->btree_elem_release(mc_engine.v0, c, c->coll_eitem, EITEM_TYPE_SINGLE);
+#else
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+#endif
         break;
       case OPERATION_BOP_UPDATE:
         if (c->coll_eitem != NULL)
@@ -819,8 +823,12 @@ static void conn_coll_eitem_free(conn *c) {
       case OPERATION_BOP_GET:
       case OPERATION_BOP_PWG: /* position with get */
       case OPERATION_BOP_GBP: /* get by position */
+#ifdef USE_EBLOCK_RESULT
+        mc_engine.v1->btree_elem_release(mc_engine.v0, c, c->coll_eitem, EITEM_TYPE_BLOCK);
+#else
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
         free(c->coll_eitem);
+#endif
         if (c->coll_resps != NULL) {
             free(c->coll_resps); c->coll_resps = NULL;
         }
@@ -832,8 +840,15 @@ static void conn_coll_eitem_free(conn *c) {
 #ifdef SUPPORT_BOP_SMGET
       case OPERATION_BOP_SMGET:
 #endif
+#ifdef USE_EBLOCK_RESULT
+        mc_engine.v1->btree_elem_release(mc_engine.v0, c, c->coll_eitem, EITEM_TYPE_BLOCK);
+        if (c->coll_resps != NULL) {
+            free(c->coll_resps); c->coll_resps = NULL;
+        }
+#else
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
         free(c->coll_eitem);
+#endif
         free(c->coll_strkeys); c->coll_strkeys = NULL;
         break;
 #endif
@@ -2035,7 +2050,11 @@ static void process_bop_insert_complete(conn *c) {
 
     if (strncmp((char*)info.value + info.nbytes - 2, "\r\n", 2) != 0) {
         // release the btree element
+#ifdef USE_EBLOCK_RESULT
+        mc_engine.v1->btree_elem_release(mc_engine.v0, c, c->coll_eitem, EITEM_TYPE_SINGLE);
+#else
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+#endif
         c->coll_eitem = NULL;
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
@@ -2055,7 +2074,11 @@ static void process_bop_insert_complete(conn *c) {
         }
 
         // release the btree element inserted.
+#ifdef USE_EBLOCK_RESULT
+        mc_engine.v1->btree_elem_release(mc_engine.v0, c, c->coll_eitem, EITEM_TYPE_SINGLE);
+#else
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+#endif
         c->coll_eitem = NULL;
 
         if (settings.detail_enabled) {
@@ -2085,15 +2108,23 @@ static void process_bop_insert_complete(conn *c) {
                     (add_iov(c, info.value, info.nbytes) != 0) ||
                     (add_iov(c, "TRIMMED\r\n", strlen("TRIMMED\r\n")) != 0))
                 {
+#ifdef USE_EBLOCK_RESULT
+                    mc_engine.v1->btree_elem_release(mc_engine.v0, c,
+                                                     &trim_result.elems, EITEM_TYPE_SINGLE);
+#else
                     mc_engine.v1->btree_elem_release(mc_engine.v0, c,
                                                      &trim_result.elems, trim_result.count);
+#endif
                     if (c->ewouldblock)
                         c->ewouldblock = false;
                     out_string(c, "SERVER_ERROR out of memory writing get response");
                 } else {
                     /* prepare for writing response */
                     c->coll_eitem = trim_result.elems;
+#ifdef USE_EBLOCK_RESULT
+#else
                     c->coll_ecount = trim_result.count; /* trim_result.count == 1 */
+#endif
                     conn_set_state(c, conn_mwrite);
                 }
             } else {
@@ -2200,10 +2231,17 @@ static void process_bop_update_complete(conn *c)
 #ifdef SUPPORT_BOP_MGET
 static void process_bop_mget_complete(conn *c) {
     assert(c->coll_op == OPERATION_BOP_MGET);
+#ifdef USE_EBLOCK_RESULT
+    assert(c->coll_resps != NULL);
+#else
     assert(c->coll_eitem != NULL);
+#endif
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#ifdef USE_EBLOCK_RESULT
+#else
     eitem **elem_array = (eitem **)c->coll_eitem;
+#endif
     uint32_t tot_elem_count = 0;
     uint32_t tot_access_count = 0;
     char delimiter = ',';
@@ -2223,7 +2261,14 @@ static void process_bop_mget_complete(conn *c) {
         bool trimmed;
         eitem_info info;
         char *resultptr;
+#ifdef USE_EBLOCK_RESULT
+        char *valuestrp = c->coll_resps;
+        bool eblk_scan_init = false;
+        eitem *elem;
+        eblock_scan_t eblk_sc;
+#else
         char *valuestrp = (char*)elem_array + (c->coll_numkeys * c->coll_rcount * sizeof(eitem*));
+#endif
         int   resultlen;
         int   nvaluestr;
 
@@ -2236,7 +2281,20 @@ static void process_bop_mget_complete(conn *c) {
             c->coll_bkrange.to_nbkey = c->coll_bkrange.from_nbkey;
         }
 
+#ifdef USE_EBLOCK_RESULT
+        EBLOCK_SCAN_INIT(&c->eblk_ret, &eblk_sc);
+#endif
         for (k = 0; k < c->coll_numkeys; k++) {
+#ifdef USE_EBLOCK_RESULT
+            ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c,
+                                             key_tokens[k].value, key_tokens[k].length,
+                                             &c->coll_bkrange,
+                                             (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
+                                             c->coll_roffset, c->coll_rcount,
+                                             false, false,
+                                             &c->eblk_ret,
+                                             &cur_access_count, &flags, &trimmed, 0);
+#else
             ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c,
                                              key_tokens[k].value, key_tokens[k].length,
                                              &c->coll_bkrange,
@@ -2245,6 +2303,7 @@ static void process_bop_mget_complete(conn *c) {
                                              false, false,
                                              &elem_array[tot_elem_count], &cur_elem_count,
                                              &cur_access_count, &flags, &trimmed, 0);
+#endif
 
             if (settings.detail_enabled) {
                 stats_prefix_record_bop_get(key_tokens[k].value, key_tokens[k].length,
@@ -2252,6 +2311,9 @@ static void process_bop_mget_complete(conn *c) {
             }
 
             if (ret == ENGINE_SUCCESS) {
+#ifdef USE_EBLOCK_RESULT
+                cur_elem_count = EBLOCK_ELEM_COUNT(&c->eblk_ret) - tot_elem_count;
+#endif
                 sprintf(resultptr, " %s %u %u\r\n",
                         (trimmed==false ? "OK" : "TRIMMED"), htonl(flags), cur_elem_count);
                 if ((add_iov(c, valuestrp, nvaluestr) != 0) ||
@@ -2262,9 +2324,18 @@ static void process_bop_mget_complete(conn *c) {
                 }
                 resultptr += strlen(resultptr);
 
+#ifdef USE_EBLOCK_RESULT
+                EBLOCK_SCAN_RESET(eblk_scan_init, &c->eblk_ret, &eblk_sc);
+#endif
                 for (e = 0; e < cur_elem_count; e++) {
+#ifdef USE_EBLOCK_RESULT
+                    EBLOCK_SCAN_NEXT(&eblk_sc, elem);
+                    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                                elem, &info);
+#else
                     mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                                 elem_array[tot_elem_count+e], &info);
+#endif
                     sprintf(resultptr, "ELEMENT ");
                     resultlen = strlen(resultptr);
                     resultlen += make_bop_elem_response(resultptr + resultlen, &info);
@@ -2321,6 +2392,9 @@ static void process_bop_mget_complete(conn *c) {
                 (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
                 ret = ENGINE_ENOMEM;
             }
+#ifdef USE_EBLOCK_RESULT
+        }
+#else
         } else {
             // ret != ENGINE_SUCCESS
             tot_elem_count += cur_elem_count;
@@ -2328,14 +2402,20 @@ static void process_bop_mget_complete(conn *c) {
             tot_access_count += cur_access_count;
             cur_access_count = 0;
         }
+#endif
     }
 
     switch (ret) {
       case ENGINE_SUCCESS:
         STATS_NOKEY2(c, cmd_bop_mget, bop_mget_oks);
         /* Remember this command so we can garbage collect it later */
+#ifdef USE_EBLOCK_RESULT
+        /* c->coll_resps  = c->eblk_ret.cur_ecnt; */
+        c->coll_eitem  = (void *)&c->eblk_ret;
+#else
         /* c->coll_eitem  = (void *)elem_array; */
         c->coll_ecount = tot_elem_count;
+#endif
         c->coll_op     = OPERATION_BOP_MGET;
         conn_set_state(c, conn_mwrite);
         c->msgcurr     = 0;
@@ -2345,7 +2425,11 @@ static void process_bop_mget_complete(conn *c) {
         break;
       case ENGINE_ENOMEM:
         STATS_NOKEY(c, cmd_bop_mget);
+#ifdef USE_EBLOCK_RESULT
+        mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->eblk_ret, EITEM_TYPE_BLOCK);
+#else
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, tot_elem_count);
+#endif
         out_string(c, "SERVER_ERROR out of memory writing get response");
         break;
       default:
@@ -2360,10 +2444,17 @@ static void process_bop_mget_complete(conn *c) {
             free((void *)c->coll_strkeys);
             c->coll_strkeys = NULL;
         }
+#ifdef USE_EBLOCK_RESULT
+        if (c->coll_resps != NULL) {
+            free((void *)c->coll_resps);
+            c->coll_resps = NULL;
+        }
+#else
         if (c->coll_eitem != NULL) {
             free((void *)c->coll_eitem);
             c->coll_eitem = NULL;
         }
+#endif
     }
 }
 #endif
@@ -2408,8 +2499,12 @@ static void process_bop_smget_complete_old(conn *c) {
 
     uint32_t  kmis_count = 0;
     uint32_t  elem_count = 0;
+#ifdef USE_EBLOCK_RESULT
+    uint32_t *kfnd_array = (uint32_t*)c->coll_resps;
+#else
     eitem   **elem_array = (eitem  **)c->coll_eitem;
     uint32_t *kfnd_array = (uint32_t*)((char*)elem_array + (smget_count*sizeof(eitem*)));
+#endif
     uint32_t *flag_array = (uint32_t*)((char*)kfnd_array + (smget_count*sizeof(uint32_t)));
     uint32_t *kmis_array = (uint32_t*)((char*)flag_array + (smget_count*sizeof(uint32_t)));
     bool trimmed;
@@ -2435,14 +2530,25 @@ static void process_bop_smget_complete_old(conn *c) {
                                              &c->coll_bkrange,
                                              (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
                                              c->coll_roffset, c->coll_rcount,
+#ifdef USE_EBLOCK_RESULT
+                                             &c->eblk_ret, kfnd_array, flag_array,
+#else
                                              elem_array, kfnd_array, flag_array, &elem_count,
+#endif
                                              kmis_array, &kmis_count, &trimmed, &duplicated, 0);
     }
+#ifdef USE_EBLOCK_RESULT
+    elem_count = EBLOCK_ELEM_COUNT(&c->eblk_ret);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
         {
         eitem_info info[elem_count+1]; /* elem_count might be 0. */
+#ifdef USE_EBLOCK_RESULT
+        eitem *elem;
+        eblock_scan_t eblk_sc;
+#endif
 
         do {
             sprintf(respptr, "VALUE %u\r\n", elem_count);
@@ -2451,13 +2557,22 @@ static void process_bop_smget_complete_old(conn *c) {
             }
             respptr += strlen(respptr);
 
+#ifdef USE_EBLOCK_RESULT
+            EBLOCK_SCAN_INIT(&c->eblk_ret, &eblk_sc);
+#endif
             for (i = 0; i < elem_count; i++) {
                 idx = kfnd_array[i];
                 if (add_iov(c, keys_array[idx].value, keys_array[idx].length) != 0) {
                     ret = ENGINE_ENOMEM; break;
                 }
+#ifdef USE_EBLOCK_RESULT
+                EBLOCK_SCAN_NEXT(&eblk_sc, elem);
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                            elem, &info[i]);
+#else
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                             elem_array[i], &info[i]);
+#endif
                 /* flags */
                 sprintf(respptr, " %u ", htonl(flag_array[i]));
                 resplen = strlen(respptr);
@@ -2504,14 +2619,23 @@ static void process_bop_smget_complete_old(conn *c) {
         if (ret == ENGINE_SUCCESS) {
             STATS_NOKEY2(c, cmd_bop_smget, bop_smget_oks);
             /* Remember this command so we can garbage collect it later */
+#ifdef USE_EBLOCK_RESULT
+            /* c->coll_resps = (void *)kfnd_array; */
+            c->coll_eitem = (void *)&c->eblk_ret;
+#else
             /* c->coll_eitem  = (void *)elem_array; */
             c->coll_ecount = elem_count;
+#endif
             c->coll_op     = OPERATION_BOP_SMGET;
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
         } else {
             STATS_NOKEY(c, cmd_bop_smget);
+#ifdef USE_EBLOCK_RESULT
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->eblk_ret, EITEM_TYPE_BLOCK);
+#else
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
+#endif
             out_string(c, "SERVER_ERROR out of memory writing get response");
         }
         }
@@ -2519,6 +2643,11 @@ static void process_bop_smget_complete_old(conn *c) {
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
+#ifdef USE_EBLOCK_RESULT
+    case ENGINE_ENOMEM:
+        out_string(c, "SERVER_ERROR out of memory getting elements");
+        break;
+#endif
     default:
         STATS_NOKEY(c, cmd_bop_smget);
         if (ret == ENGINE_EBADVALUE)     out_string(c, "CLIENT_ERROR bad data chunk");
@@ -2535,17 +2664,27 @@ static void process_bop_smget_complete_old(conn *c) {
             free((void *)c->coll_strkeys);
             c->coll_strkeys = NULL;
         }
+#ifdef USE_EBLOCK_RESULT
+        if (kfnd_array != NULL) {
+            free((void *)kfnd_array);
+        }
+#else
         if (c->coll_eitem != NULL) {
             free((void *)c->coll_eitem);
             c->coll_eitem = NULL;
         }
+#endif
     }
 }
 #endif
 
 static void process_bop_smget_complete(conn *c) {
     assert(c->coll_op == OPERATION_BOP_SMGET);
+#ifdef USE_EBLOCK_RESULT
+    assert(c->coll_resps != NULL);
+#else
     assert(c->coll_eitem != NULL);
+#endif
 #ifdef JHPARK_OLD_SMGET_INTERFACE
     if (c->coll_smgmode == 0) {
         process_bop_smget_complete_old(c);
@@ -2560,8 +2699,14 @@ static void process_bop_smget_complete(conn *c) {
     int   resplen;
     smget_result_t smres;
 
+#ifdef USE_EBLOCK_RESULT
+    smres.eblk_ret = &c->eblk_ret;
+    smres.trim_elems = (eitem **)c->coll_resps;
+    smres.elem_kinfo = (smget_ehit_t *)&smres.trim_elems[c->coll_numkeys];
+#else
     smres.elem_array = (eitem **)c->coll_eitem;
     smres.elem_kinfo = (smget_ehit_t *)&smres.elem_array[c->coll_rcount+c->coll_numkeys];
+#endif
     smres.miss_kinfo = (smget_emis_t *)&smres.elem_kinfo[c->coll_rcount];
 
     respptr = (char *)&smres.miss_kinfo[c->coll_numkeys];
@@ -2596,6 +2741,10 @@ static void process_bop_smget_complete(conn *c) {
     case ENGINE_SUCCESS:
         {
         eitem_info info[smres.elem_count+1]; /* elem_count might be 0. */
+#ifdef USE_EBLOCK_RESULT
+        eitem *elem;
+        eblock_scan_t eblk_sc;
+#endif
 
         do {
             /* Change smget response head string: VALUE => ELEMENTS.
@@ -2607,9 +2756,18 @@ static void process_bop_smget_complete(conn *c) {
             }
             respptr += strlen(respptr);
 
+#ifdef USE_EBLOCK_RESULT
+            EBLOCK_SCAN_INIT(smres.eblk_ret, &eblk_sc);
+#endif
             for (i = 0; i < smres.elem_count; i++) {
+#ifdef USE_EBLOCK_RESULT
+                EBLOCK_SCAN_NEXT(&eblk_sc, elem);
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                            elem, &info[i]);
+#else
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                             smres.elem_array[i], &info[i]);
+#endif
                 sprintf(respptr, " %u ", htonl(smres.elem_kinfo[i].flag));
                 resplen = strlen(respptr);
                 resplen += make_bop_elem_response(respptr + resplen, &info[i]);
@@ -2675,15 +2833,24 @@ static void process_bop_smget_complete(conn *c) {
         if (ret == ENGINE_SUCCESS) {
             STATS_NOKEY2(c, cmd_bop_smget, bop_smget_oks);
             /* Remember this command so we can garbage collect it later */
+#ifdef USE_EBLOCK_RESULT
+            /* c->coll_resps = (void *)smres.trim_elems; */
+            c->coll_eitem = (void *)smres.eblk_ret;
+#else
             /* c->coll_eitem  = (void *)elem_array; */
             c->coll_ecount = smres.elem_count+smres.trim_count;
+#endif
             c->coll_op     = OPERATION_BOP_SMGET;
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
         } else {
             STATS_NOKEY(c, cmd_bop_smget);
+#ifdef USE_EBLOCK_RESULT
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, smres.eblk_ret, EITEM_TYPE_BLOCK);
+#else
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, smres.elem_array,
                                              smres.elem_count+smres.trim_count);
+#endif
             out_string(c, "SERVER_ERROR out of memory writing get response");
         }
         }
@@ -2691,6 +2858,11 @@ static void process_bop_smget_complete(conn *c) {
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
         break;
+#ifdef USE_EBLOCK_RESULT
+    case ENGINE_ENOMEM:
+        out_string(c,"SERVER_ERROR out of memory getting elements");
+        break;
+#endif
     default:
         STATS_NOKEY(c, cmd_bop_smget);
         if (ret == ENGINE_EBADVALUE)     out_string(c, "CLIENT_ERROR bad data chunk");
@@ -2709,10 +2881,17 @@ static void process_bop_smget_complete(conn *c) {
             free((void *)c->coll_strkeys);
             c->coll_strkeys = NULL;
         }
+#ifdef USE_EBLOCK_RESULT
+        if (c->coll_resps != NULL) {
+            free((void *)c->coll_resps);
+            c->coll_resps = NULL;
+        }
+#else
         if (c->coll_eitem != NULL) {
             free((void *)c->coll_eitem);
             c->coll_eitem = NULL;
         }
+#endif
     }
 }
 #endif
@@ -4092,7 +4271,10 @@ static void process_bin_lop_prepare_nread(conn *c) {
         c->ritem   = (char *)info.value;
         c->rlbytes = vlen;
         c->coll_eitem  = (void *)elem;
+#ifdef USE_EBLOCK_RESULT
+#else
         c->coll_ecount = 1;
+#endif
         c->coll_op     = OPERATION_LOP_INSERT;
         c->coll_key    = key;
         c->coll_nkey   = nkey;
@@ -4594,7 +4776,10 @@ static void process_bin_sop_prepare_nread(conn *c) {
             c->rlbytes = vlen;
          }
         c->coll_eitem  = (void *)elem;
+#ifdef USE_EBLOCK_RESULT
+#else
         c->coll_ecount = 1;
+#endif
         c->coll_key    = key;
         c->coll_nkey   = nkey;
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
@@ -5166,7 +5351,10 @@ static void process_bin_bop_prepare_nread(conn *c) {
         c->ritem   = (char *)info.value;
         c->rlbytes = vlen;
         c->coll_eitem  = (void *)elem;
+#ifdef USE_EBLOCK_RESULT
+#else
         c->coll_ecount = 1;
+#endif
         c->coll_op     = (c->cmd == PROTOCOL_BINARY_CMD_BOP_INSERT ? OPERATION_BOP_INSERT
                                                                    : OPERATION_BOP_UPSERT);
         c->coll_key    = key;
@@ -5266,7 +5454,11 @@ static void process_bin_bop_insert_complete(conn *c) {
     }
 
     /* release the c->coll_eitem reference */
+#ifdef USE_EBLOCK_RESULT
+    mc_engine.v1->btree_elem_release(mc_engine.v0, c, c->coll_eitem, EITEM_TYPE_SINGLE);
+#else
     mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+#endif
     c->coll_eitem = NULL;
 }
 
@@ -5399,7 +5591,10 @@ static void process_bin_bop_update_prepare_nread(conn *c) {
 
     if (req->message.body.novalue) {
         c->coll_eitem  = NULL;
+#ifdef USE_EBLOCK_RESULT
+#else
         c->coll_ecount = 0;
+#endif
         c->coll_key    = key;
         c->coll_nkey   = nkey;
         c->coll_op     = OPERATION_BOP_UPDATE;
@@ -5428,7 +5623,10 @@ static void process_bin_bop_update_prepare_nread(conn *c) {
         c->ritem       = ((elem_value *)elem)->value;
         c->rlbytes     = vlen;
         c->coll_eitem  = (void *)elem;
+#ifdef USE_EBLOCK_RESULT
+#else
         c->coll_ecount = 1;
+#endif
         c->coll_key    = key;
         c->coll_nkey   = nkey;
         c->coll_op     = OPERATION_BOP_UPDATE;
@@ -5566,13 +5764,19 @@ static void process_bin_bop_get(conn *c) {
                 (req->message.body.delete ? "true" : "false"));
     }
 
+#ifdef USE_EBLOCK_RESULT
+#else
     eitem  **elem_array = NULL;
+#endif
     uint32_t elem_count;
     uint32_t access_count;
     uint32_t flags, i;
     bool     dropped_trimmed;
     int      est_count;
+#ifdef USE_EBLOCK_RESULT
+#else
     int      need_size;
+#endif
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
@@ -5581,6 +5785,18 @@ static void process_bin_bop_get(conn *c) {
         est_count = req->message.body.count;
         if (est_count % 2) est_count += 1;
     }
+#ifdef USE_EBLOCK_RESULT
+    ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c, key, nkey,
+                                       bkrange, efilter,
+                                       req->message.body.offset,
+                                       req->message.body.count,
+                                       (bool)req->message.body.delete,
+                                       (bool)req->message.body.drop,
+                                       &c->eblk_ret, &access_count,
+                                       &flags, &dropped_trimmed,
+                                       c->binary_header.request.vbucket);
+    elem_count = EBLOCK_ELEM_COUNT(&c->eblk_ret);
+#else
     need_size = est_count * (sizeof(eitem*)+MAX_BKEY_LENG+MAX_EFLAG_LENG+sizeof(uint32_t));
     if ((elem_array = (eitem **)malloc(need_size)) == NULL) {
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
@@ -5596,6 +5812,7 @@ static void process_bin_bop_get(conn *c) {
                                        elem_array, &elem_count, &access_count,
                                        &flags, &dropped_trimmed,
                                        c->binary_header.request.vbucket);
+#endif
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -5610,16 +5827,37 @@ static void process_bin_bop_get(conn *c) {
     case ENGINE_SUCCESS:
         {
         protocol_binary_response_bop_get* rsp = (protocol_binary_response_bop_get*)c->wbuf;
+        eitem_info info[elem_count];
+#ifdef USE_EBLOCK_RESULT
+        eitem *elem;
+        eblock_scan_t eblk_sc;
+        uint64_t *bkeyptr;
+        uint32_t *vlenptr;
+#else
         uint64_t *bkeyptr = ((elem_count % 2) == 0 /* for 8 byte align */
                              ? (uint64_t *)&elem_array[elem_count]
                              : (uint64_t *)&elem_array[elem_count+1]);
         uint32_t *vlenptr = (uint32_t *)((char*)bkeyptr + (sizeof(uint64_t) * elem_count));
+#endif
         uint32_t  bodylen;
+#ifdef USE_EBLOCK_RESULT
+        int need_size = est_count * (MAX_BKEY_LENG+MAX_EFLAG_LENG+sizeof(uint32_t));
 
-        eitem_info info[elem_count];
+        if ((bkeyptr = (uint64_t *)malloc(need_size)) == NULL) {
+            ret = ENGINE_ENOMEM;
+        } else {
+            vlenptr = (uint32_t *)((char*)bkeyptr + (sizeof(uint64_t) * elem_count));
+            EBLOCK_SCAN_INIT(&c->eblk_ret, &eblk_sc);
+#endif
         for (i = 0; i < elem_count; i++) {
+#ifdef USE_EBLOCK_RESULT
+            EBLOCK_SCAN_NEXT(&eblk_sc, elem);
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                        elem, &info[i]);
+#else
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                         elem_array[i], &info[i]);
+#endif
         }
 
         bodylen = sizeof(rsp->message.body) + (elem_count * (sizeof(uint64_t)+sizeof(uint32_t)));
@@ -5647,17 +5885,30 @@ static void process_bin_bop_get(conn *c) {
                 break;
             }
         }
+#ifdef USE_EBLOCK_RESULT
+        }
+#endif
 
         if (ret == ENGINE_SUCCESS) {
             STATS_ELEM_HITS(c, bop_get, key, nkey);
             /* Remember this command so we can garbage collect it later */
+#ifdef USE_EBLOCK_RESULT
+            c->coll_eitem  = (void *)&c->eblk_ret;
+            c->coll_resps  = (void *)bkeyptr;
+#else
             c->coll_eitem  = (void *)elem_array;
             c->coll_ecount = elem_count;
+#endif
             c->coll_op     = OPERATION_BOP_GET;
             conn_set_state(c, conn_mwrite);
         } else {
             STATS_NOKEY(c, cmd_bop_get);
+#ifdef USE_EBLOCK_RESULT
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->eblk_ret, EITEM_TYPE_BLOCK);
+            free((void *)bkeyptr);
+#else
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
+#endif
             if (c->ewouldblock)
                 c->ewouldblock = false;
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
@@ -5682,6 +5933,11 @@ static void process_bin_bop_get(conn *c) {
         else
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_UNREADABLE, 0);
         break;
+#ifdef USE_EBLOCK_RESULT
+    case ENGINE_ENOMEM:
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+        break;
+#endif
     default:
         STATS_NOKEY(c, cmd_bop_get);
         if (ret == ENGINE_EBADTYPE)
@@ -5692,9 +5948,12 @@ static void process_bin_bop_get(conn *c) {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
     }
 
+#ifdef USE_EBLOCK_RESULT
+#else
     if (ret != ENGINE_SUCCESS && elem_array != NULL) {
         free((void *)elem_array);
     }
+#endif
 }
 
 static void process_bin_bop_count(conn *c) {
@@ -5844,6 +6103,52 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
             need_size = elem_array_size;
         }
 #endif
+#ifdef USE_EBLOCK_RESULT
+#ifdef SUPPORT_BOP_SMGET
+        if (c->cmd == PROTOCOL_BINARY_CMD_BOP_SMGET) {
+#ifdef JHPARK_OLD_SMGET_INTERFACE
+          if (c->coll_smgmode == 0) {
+            int smget_count;
+            int kfnd_array_size;
+            int kmis_array_size; /* key index array where the missed key indexes are to be saved */
+            int elem_rshdr_size; /* the size of result header about the found elems */
+            int kmis_rshdr_size; /* the size of result header about the missed keys */
+
+            if (req->message.body.key_count > MAX_SMGET_KEY_COUNT ||
+                (req->message.body.req_offset + req->message.body.req_count) > MAX_SMGET_REQ_COUNT) {
+                ret = ENGINE_EBADVALUE; break;
+            }
+            smget_count = req->message.body.req_offset + req->message.body.req_count;
+            kfnd_array_size = smget_count * (2*sizeof(uint32_t));
+            kmis_array_size = req->message.body.key_count * sizeof(uint32_t);
+            elem_rshdr_size = smget_count * (sizeof(uint64_t) + (3*sizeof(uint32_t)));
+            kmis_rshdr_size = req->message.body.key_count * sizeof(uint32_t);
+            need_size = kfnd_array_size + kmis_array_size + elem_rshdr_size + kmis_rshdr_size;
+          } else {
+#endif
+            int trim_array_size; /* smget trim element array size */
+            int ehit_array_size; /* smget hitted elem array size */
+            int emis_array_size; /* element missed keys array size */
+            int elem_rshdr_size; /* the size of result header about the found elems */
+            int emis_rshdr_size; /* the size of result header about the missed keys */
+
+            if (req->message.body.key_count > MAX_SMGET_KEY_COUNT ||
+                (req->message.body.req_offset + req->message.body.req_count) > MAX_SMGET_REQ_COUNT) {
+                ret = ENGINE_EBADVALUE; break;
+            }
+            trim_array_size = req->message.body.key_count * sizeof(eitem*);
+            ehit_array_size = req->message.body.req_count * sizeof(smget_ehit_t);
+            emis_array_size = req->message.body.key_count * sizeof(smget_emis_t);
+            elem_rshdr_size = req->message.body.req_count * (sizeof(uint64_t) + (3*sizeof(uint32_t)));
+            emis_rshdr_size = req->message.body.key_count * sizeof(uint32_t);
+            need_size = trim_array_size + ehit_array_size + emis_array_size
+                      + elem_rshdr_size + emis_rshdr_size;
+#ifdef JHPARK_OLD_SMGET_INTERFACE
+          }
+#endif
+        }
+#endif
+#else /* USE_EBLOCK_RESULT */
 #ifdef SUPPORT_BOP_SMGET
         if (c->cmd == PROTOCOL_BINARY_CMD_BOP_SMGET) {
 #ifdef JHPARK_OLD_SMGET_INTERFACE
@@ -5888,6 +6193,7 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
 #endif
         }
 #endif
+#endif /* USE_EBLOCK_RESULT */
         assert(need_size > 0);
 
         if ((elem = (eitem *)malloc(need_size)) == NULL) {
@@ -5913,8 +6219,12 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
     case ENGINE_SUCCESS:
         c->ritem       = (char *)c->coll_strkeys;
         c->rlbytes     = vlen;
+#ifdef USE_EBLOCK_RESULT
+        c->coll_resps  = (void *)elem;
+#else
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 0;
+#endif
         c->coll_op     = (c->cmd==PROTOCOL_BINARY_CMD_BOP_MGET ? OPERATION_BOP_MGET : OPERATION_BOP_SMGET);
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_bop_nread_keys_complete;
@@ -5935,7 +6245,11 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
 #ifdef SUPPORT_BOP_MGET
 static void process_bin_bop_mget_complete(conn *c) {
     assert(c->coll_op == OPERATION_BOP_MGET);
+#ifdef USE_EBLOCK_RESULT
+    assert(c->coll_resps != NULL);
+#else
     assert(c->coll_eitem != NULL);
+#endif
 
     ENGINE_ERROR_CODE ret = ENGINE_ENOTSUP;
     write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
@@ -5945,10 +6259,17 @@ static void process_bin_bop_mget_complete(conn *c) {
             free((void *)c->coll_strkeys);
             c->coll_strkeys = NULL;
         }
+#ifdef USE_EBLOCK_RESULT
+        if (c->coll_resps != NULL) {
+            free((void *)c->coll_resps);
+            c->coll_resps = NULL;
+        }
+#else
         if (c->coll_eitem != NULL) {
             free((void *)c->coll_eitem);
             c->coll_eitem = NULL;
         }
+#endif
     }
 }
 #endif
@@ -5969,8 +6290,12 @@ static void process_bin_bop_smget_complete_old(conn *c) {
 
     uint32_t  kmis_count = 0;
     uint32_t  elem_count = 0;
+#ifdef USE_EBLOCK_RESULT
+    uint32_t *kfnd_array = (uint32_t*)c->coll_resps;
+#else
     eitem   **elem_array = (eitem  **)c->coll_eitem;
     uint32_t *kfnd_array = (uint32_t*)((char*)elem_array + (smget_count*sizeof(eitem*)));
+#endif
     uint32_t *flag_array = (uint32_t*)((char*)kfnd_array + (smget_count*sizeof(uint32_t)));
     uint32_t *kmis_array = (uint32_t*)((char*)flag_array + (smget_count*sizeof(uint32_t)));
 
@@ -5997,10 +6322,17 @@ static void process_bin_bop_smget_complete_old(conn *c) {
                                      &c->coll_bkrange,
                                      (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
                                      c->coll_roffset, c->coll_rcount,
+#ifdef USE_EBLOCK_RESULT
+                                     &c->eblk_ret, kfnd_array, flag_array,
+#else
                                      elem_array, kfnd_array, flag_array, &elem_count,
+#endif
                                      kmis_array, &kmis_count, &trimmed, &duplicated,
                                      c->binary_header.request.vbucket);
     }
+#ifdef USE_EBLOCK_RESULT
+    elem_count = EBLOCK_ELEM_COUNT(&c->eblk_ret);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -6013,6 +6345,10 @@ static void process_bin_bop_smget_complete_old(conn *c) {
         uint32_t *vlenptr;
         uint32_t *flagptr;
         uint32_t *klenptr;
+#ifdef USE_EBLOCK_RESULT
+        eitem *elem;
+        eblock_scan_t eblk_sc;
+#endif
 
         if (((long)resultptr % 8) != 0) /* NOT aligned */
             resultptr += (8 - ((long)resultptr % 8));
@@ -6022,9 +6358,18 @@ static void process_bin_bop_smget_complete_old(conn *c) {
         klenptr = (uint32_t *)((char*)flagptr + (sizeof(uint32_t) * elem_count));
 
         eitem_info info[elem_count+1]; /* elem_count might be 0. */
+#ifdef USE_EBLOCK_RESULT
+        EBLOCK_SCAN_INIT(&c->eblk_ret, &eblk_sc);
+#endif
         for (i = 0; i < elem_count; i++) {
+#ifdef USE_EBLOCK_RESULT
+            EBLOCK_SCAN_NEXT(&eblk_sc, elem);
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                        elem, &info[i]);
+#else
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                         elem_array[i], &info[i]);
+#endif
         }
 
         bodylen = sizeof(rsp->message.body);
@@ -6085,15 +6430,26 @@ static void process_bin_bop_smget_complete_old(conn *c) {
         }
 
         if (ret == ENGINE_SUCCESS) {
+#ifdef USE_EBLOCK_RESULT
+            STATS_NOKEY2(c, cmd_bop_smget, bop_smget_oks);
+            /* Remember this command so we can garbage collect it later */
+            /* c->coll_resps  = (void *)kfnd_array; */
+            c->coll_eitem  = (void *)&c->eblk_ret;
+#else
             /* Remember this command so we can garbage collect it later */
             /* c->coll_eitem  = (void *)elem_array; */
             STATS_NOKEY2(c, cmd_bop_smget, bop_smget_oks);
             c->coll_ecount = elem_count;
+#endif
             c->coll_op     = OPERATION_BOP_SMGET;
             conn_set_state(c, conn_mwrite);
         } else {
             STATS_NOKEY(c, cmd_bop_smget);
+#ifdef USE_EBLOCK_RESULT
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->eblk_ret, EITEM_TYPE_BLOCK);
+#else
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
+#endif
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         }
         }
@@ -6131,7 +6487,11 @@ static void process_bin_bop_smget_complete_old(conn *c) {
 #endif
 
 static void process_bin_bop_smget_complete(conn *c) {
+#ifdef USE_EBLOCK_RESULT
+    assert(c->coll_resps != NULL);
+#else
     assert(c->coll_eitem != NULL);
+#endif
 #ifdef JHPARK_OLD_SMGET_INTERFACE
     if (c->coll_smgmode == 0) {
         process_bin_bop_smget_complete_old(c);
@@ -6148,8 +6508,14 @@ static void process_bin_bop_smget_complete(conn *c) {
      * protocol, so we're going to just set them here */
     memcpy(vptr + c->coll_lenkeys - 2, "\r\n", 2);
 
+#ifdef USE_EBLOCK_RESULT
+    smres.eblk_ret = &c->eblk_ret;
+    smres.trim_elems = (void *)c->coll_resps;
+    smres.elem_kinfo = (smget_ehit_t *)&smres.trim_elems[c->coll_numkeys];
+#else
     smres.elem_array = (eitem **)c->coll_eitem;
     smres.elem_kinfo = (smget_ehit_t *)&smres.elem_array[c->coll_rcount+c->coll_numkeys];
+#endif
     smres.miss_kinfo = (smget_emis_t *)&smres.elem_kinfo[c->coll_rcount];
 
     resultptr = (char *)&smres.miss_kinfo[c->coll_numkeys];
@@ -6191,6 +6557,10 @@ static void process_bin_bop_smget_complete(conn *c) {
         uint32_t *vlenptr;
         uint32_t *flagptr;
         uint32_t *klenptr;
+#ifdef USE_EBLOCK_RESULT
+        eitem *elem;
+        eblock_scan_t eblk_sc;
+#endif
 
         if (((long)resultptr % 8) != 0) /* NOT aligned */
             resultptr += (8 - ((long)resultptr % 8));
@@ -6200,9 +6570,18 @@ static void process_bin_bop_smget_complete(conn *c) {
         klenptr = (uint32_t *)((char*)flagptr + (sizeof(uint32_t) * smres.elem_count));
 
         eitem_info info[smres.elem_count+1]; /* elem_count might be 0. */
+#ifdef USE_EBLOCK_RESULT
+        EBLOCK_SCAN_INIT(smres.eblk_ret, &eblk_sc);
+#endif
         for (i = 0; i < smres.elem_count; i++) {
+#ifdef USE_EBLOCK_RESULT
+            EBLOCK_SCAN_NEXT(&eblk_sc, elem);
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                        elem, &info[i]);
+#else
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                         smres.elem_array[i], &info[i]);
+#endif
         }
 
         bodylen = sizeof(rsp->message.body);
@@ -6279,16 +6658,27 @@ static void process_bin_bop_smget_complete(conn *c) {
         }
 
         if (ret == ENGINE_SUCCESS) {
+#ifdef USE_EBLOCK_RESULT
+            STATS_NOKEY2(c, cmd_bop_smget, bop_smget_oks);
+            /* Remember this command so we can garbage collect it later */
+            /* c->coll_resps = (void *)smres.trim_count */
+            c->coll_eitem = (void *)smres.eblk_ret;
+#else
             /* Remember this command so we can garbage collect it later */
             /* c->coll_eitem  = (void *)elem_array; */
             STATS_NOKEY2(c, cmd_bop_smget, bop_smget_oks);
             c->coll_ecount = smres.elem_count+smres.trim_count;
+#endif
             c->coll_op     = OPERATION_BOP_SMGET;
             conn_set_state(c, conn_mwrite);
         } else {
             STATS_NOKEY(c, cmd_bop_smget);
+#ifdef USE_EBLOCK_RESULT
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, smres.eblk_ret, EITEM_TYPE_BLOCK);
+#else
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, smres.elem_array,
                                              smres.elem_count+smres.trim_count);
+#endif
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         }
         }
@@ -6319,10 +6709,17 @@ static void process_bin_bop_smget_complete(conn *c) {
             free((void *)c->coll_strkeys);
             c->coll_strkeys = NULL;
         }
+#ifdef USE_EBLOCK_RESULT
+        if (c->coll_resps != NULL) {
+            free((void *)c->coll_resps);
+            c->coll_resps = NULL;
+        }
+#else
         if (c->coll_eitem != NULL) {
             free((void *)c->coll_eitem);
             c->coll_eitem = NULL;
         }
+#endif
     }
 }
 #endif
@@ -9863,6 +10260,7 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
 #else
     if (ret != ENGINE_SUCCESS && elem_array != NULL) {
         free((void *)elem_array);
+
     }
 #endif
 }
@@ -9890,7 +10288,10 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
         c->ritem   = (char *)info.value;
         c->rlbytes = vlen;
         c->coll_eitem  = (void *)elem;
+#ifdef USE_EBLOCK_RESULT
+#else
         c->coll_ecount = 1;
+#endif
         c->coll_op     = OPERATION_LOP_INSERT;
         c->coll_key    = key;
         c->coll_nkey   = nkey;
@@ -10395,7 +10796,10 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
             c->rlbytes = vlen;
         }
         c->coll_eitem  = (void *)elem;
+#ifdef USE_EBLOCK_RESULT
+#else
         c->coll_ecount = 1;
+#endif
         c->coll_op     = cmd;
         c->coll_key    = key;
         c->coll_nkey   = nkey;
@@ -10619,18 +11023,32 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
                             const uint32_t offset, const uint32_t count,
                             const bool delete, const bool drop_if_empty)
 {
+#ifdef USE_EBLOCK_RESULT
+#else
     eitem  **elem_array = NULL;
+#endif
     uint32_t elem_count;
     uint32_t access_count;
     uint32_t flags, i;
     bool     dropped_trimmed;
+#ifdef USE_EBLOCK_RESULT
+#else
     int      est_count;
     int      need_size;
+#endif
 
     assert(c->ewouldblock == false);
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
+#ifdef USE_EBLOCK_RESULT
+    ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c, key, nkey,
+                                       bkrange, efilter, offset, count,
+                                       delete, drop_if_empty,
+                                       &c->eblk_ret, &access_count,
+                                       &flags, &dropped_trimmed, 0);
+    elem_count = EBLOCK_ELEM_COUNT(&c->eblk_ret);
+#else
     est_count = MAX_BTREE_SIZE;
     if (count > 0 && count < MAX_BTREE_SIZE) {
         est_count = count;
@@ -10646,6 +11064,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
                                        delete, drop_if_empty,
                                        elem_array, &elem_count, &access_count,
                                        &flags, &dropped_trimmed, 0);
+#endif
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -10689,6 +11108,11 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
         char *respbuf; /* response string buffer */
         char *respptr;
         int   resplen;
+#ifdef USE_EBLOCK_RESULT
+        int need_size;
+        eitem *elem;
+        eblock_scan_t eblk_sc;
+#endif
 
         do {
             need_size = ((2*lenstr_size) + 30) /* response head and tail size */
@@ -10704,9 +11128,18 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
             }
             respptr += strlen(respptr);
 
+#ifdef USE_EBLOCK_RESULT
+            EBLOCK_SCAN_INIT(&c->eblk_ret, &eblk_sc);
+#endif
             for (i = 0; i < elem_count; i++) {
+#ifdef USE_EBLOCK_RESULT
+                EBLOCK_SCAN_NEXT(&eblk_sc, elem);
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                            elem, &info);
+#else
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                             elem_array[i], &info);
+#endif
                 resplen = make_bop_elem_response(respptr, &info);
                 if ((add_iov(c, respptr, resplen) != 0) ||
                     (add_iov(c, info.value, info.nbytes) != 0)) {
@@ -10729,15 +11162,23 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
 
         if (ret == ENGINE_SUCCESS) {
             STATS_ELEM_HITS(c, bop_get, key, nkey);
+#ifdef USE_EBLOCK_RESULT
+            c->coll_eitem  = (void *)&c->eblk_ret;
+#else
             c->coll_eitem  = (void *)elem_array;
             c->coll_ecount = elem_count;
+#endif
             c->coll_resps  = respbuf;
             c->coll_op     = OPERATION_BOP_GET;
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
         } else { /* ENGINE_ENOMEM */
             STATS_NOKEY(c, cmd_bop_get);
+#ifdef USE_EBLOCK_RESULT
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->eblk_ret, EITEM_TYPE_BLOCK);
+#else
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
+#endif
             free(respbuf);
             if (c->ewouldblock)
                 c->ewouldblock = false;
@@ -10760,6 +11201,11 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
         else if (ret == ENGINE_EBKEYOOR) out_string(c, "OUT_OF_RANGE");
         else                             out_string(c, "UNREADABLE");
         break;
+#ifdef USE_EBLOCK_RESULT
+    case ENGINE_ENOMEM:
+        out_string(c, "SERVER_ERROR out of memory getting elements");
+        break;
+#endif
     default:
         STATS_NOKEY(c, cmd_bop_get);
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
@@ -10768,9 +11214,12 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
         else handle_unexpected_errorcode_ascii(c, ret);
     }
 
+#ifdef USE_EBLOCK_RESULT
+#else
     if (ret != ENGINE_SUCCESS && elem_array != NULL) {
         free((void *)elem_array);
     }
+#endif
 }
 
 static void process_bop_count(conn *c, char *key, size_t nkey,
@@ -10883,15 +11332,28 @@ static void process_bop_position(conn *c, char *key, size_t nkey,
 static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *bkrange,
                             ENGINE_BTREE_ORDER order, const uint32_t count)
 {
+#ifdef USE_EBLOCK_RESULT
+#else
     eitem  **elem_array = NULL;
+#endif
     uint32_t elem_count;
     uint32_t elem_index;
     uint32_t flags, i;
     int      position;
+#ifdef USE_EBLOCK_RESULT
+#else
     int      need_size;
+#endif
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
+#ifdef USE_EBLOCK_RESULT
+    ret = mc_engine.v1->btree_posi_find_with_get(mc_engine.v0, c, key, nkey,
+                                                 bkrange, order, count, &position,
+                                                 &c->eblk_ret, &elem_index,
+                                                 &flags, 0);
+    elem_count = EBLOCK_ELEM_COUNT(&c->eblk_ret);
+#else
     need_size = ((count*2) + 1) * sizeof(eitem*);
     if ((elem_array = (eitem **)malloc(need_size)) == NULL) {
         out_string(c, "SERVER_ERROR out of memory");
@@ -10902,6 +11364,7 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
                                                  bkrange, order, count, &position,
                                                  elem_array, &elem_count, &elem_index,
                                                  &flags, 0);
+#endif
 
     if (settings.detail_enabled) {
         stats_prefix_record_bop_pwg(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
@@ -10914,6 +11377,11 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
         char *respbuf; /* response string buffer */
         char *respptr;
         int   resplen;
+#ifdef USE_EBLOCK_RESULT
+        int need_size;
+        eitem *elem;
+        eblock_scan_t eblk_sc;
+#endif
 
         do {
             need_size = ((4*lenstr_size) + 30) /* response head and tail size */
@@ -10929,9 +11397,18 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
             }
             respptr += strlen(respptr);
 
+#ifdef USE_EBLOCK_RESULT
+            EBLOCK_SCAN_INIT(&c->eblk_ret, &eblk_sc);
+#endif
             for (i = 0; i < elem_count; i++) {
+#ifdef USE_EBLOCK_RESULT
+                EBLOCK_SCAN_NEXT(&eblk_sc, elem);
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                            elem, &info);
+#else
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                             elem_array[i], &info);
+#endif
                 resplen = make_bop_elem_response(respptr, &info);
                 if ((add_iov(c, respptr, resplen) != 0) ||
                     (add_iov(c, info.value, info.nbytes) != 0)) {
@@ -10950,15 +11427,23 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
 
         if (ret == ENGINE_SUCCESS) {
             STATS_ELEM_HITS(c, bop_pwg, key, nkey);
+#ifdef USE_EBLOCK_RESULT
+            c->coll_eitem  = (void *)&c->eblk_ret;
+#else
             c->coll_eitem  = (void *)elem_array;
             c->coll_ecount = elem_count;
+#endif
             c->coll_resps  = respbuf;
             c->coll_op     = OPERATION_BOP_PWG;
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
         } else { /* ENGINE_ENOMEM */
             STATS_NOKEY(c, cmd_bop_pwg);
+#ifdef USE_EBLOCK_RESULT
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->eblk_ret, EITEM_TYPE_BLOCK);
+#else
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
+#endif
             free(respbuf);
             out_string(c, "SERVER_ERROR out of memory writing get response");
         }
@@ -10977,6 +11462,11 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
         if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
         else                          out_string(c, "UNREADABLE");
         break;
+#ifdef USE_EBLOCK_RESULT
+    case ENGINE_ENOMEM:
+        out_string(c, "SERVER_ERROR out of memory getting elements");
+        break;
+#endif
     default:
         STATS_NOKEY(c, cmd_bop_pwg);
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
@@ -10985,25 +11475,40 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
         else handle_unexpected_errorcode_ascii(c, ret);
     }
 
+#ifdef USE_EBLOCK_RESULT
+#else
     if (ret != ENGINE_SUCCESS && elem_array != NULL) {
         free((void *)elem_array);
     }
+#endif
 }
 
 static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER order,
                             uint32_t from_posi, uint32_t to_posi)
 {
+#ifdef USE_EBLOCK_RESULT
+#else
     eitem  **elem_array = NULL;
+#endif
     uint32_t elem_count;
     uint32_t flags, i;
+#ifdef USE_EBLOCK_RESULT
+#else
     int      est_count;
     int      need_size;
+#endif
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     if (from_posi > MAX_BTREE_SIZE) from_posi = MAX_BTREE_SIZE;
     if (to_posi   > MAX_BTREE_SIZE) to_posi   = MAX_BTREE_SIZE;
 
+#ifdef USE_EBLOCK_RESULT
+    ret = mc_engine.v1->btree_elem_get_by_posi(mc_engine.v0, c, key, nkey,
+                                               order, from_posi, to_posi,
+                                               &c->eblk_ret, &flags, 0);
+    elem_count = EBLOCK_ELEM_COUNT(&c->eblk_ret);
+#else
     est_count = (from_posi <= to_posi ? (to_posi - from_posi + 1)
                                       : (from_posi - to_posi + 1));
     need_size = est_count * sizeof(eitem*);
@@ -11015,6 +11520,7 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
     ret = mc_engine.v1->btree_elem_get_by_posi(mc_engine.v0, c, key, nkey,
                                                order, from_posi, to_posi,
                                                elem_array, &elem_count, &flags, 0);
+#endif
 
     if (settings.detail_enabled) {
         stats_prefix_record_bop_gbp(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
@@ -11045,6 +11551,11 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
         char *respbuf; /* response string buffer */
         char *respptr;
         int   resplen;
+#ifdef USE_EBLOCK_RESULT
+        int need_size;
+        eitem *elem;
+        eblock_scan_t eblk_sc;
+#endif
 
         do {
             need_size = ((2*lenstr_size) + 30) /* response head and tail size */
@@ -11060,9 +11571,18 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
             }
             respptr += strlen(respptr);
 
+#ifdef USE_EBLOCK_RESULT
+            EBLOCK_SCAN_INIT(&c->eblk_ret, &eblk_sc);
+#endif
             for (i = 0; i < elem_count; i++) {
+#ifdef USE_EBLOCK_RESULT
+                EBLOCK_SCAN_NEXT(&eblk_sc, elem);
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                            elem, &info);
+#else
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                             elem_array[i], &info);
+#endif
                 resplen = make_bop_elem_response(respptr, &info);
                 if ((add_iov(c, respptr, resplen) != 0) ||
                     (add_iov(c, info.value, info.nbytes) != 0)) {
@@ -11081,15 +11601,23 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
 
         if (ret == ENGINE_SUCCESS) {
             STATS_ELEM_HITS(c, bop_gbp, key, nkey);
+#ifdef USE_EBLOCK_RESULT
+            c->coll_eitem  = (void *)&c->eblk_ret;
+#else
             c->coll_eitem  = (void *)elem_array;
             c->coll_ecount = elem_count;
+#endif
             c->coll_resps  = respbuf;
             c->coll_op     = OPERATION_BOP_GBP;
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
         } else { /* ENGINE_ENOMEM */
             STATS_NOKEY(c, cmd_bop_gbp);
+#ifdef USE_EBLOCK_RESULT
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->eblk_ret, EITEM_TYPE_BLOCK);
+#else
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
+#endif
             free(respbuf);
             out_string(c, "SERVER_ERROR out of memory writing get response");
         }
@@ -11108,6 +11636,11 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
         if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
         else                          out_string(c, "UNREADABLE");
         break;
+#ifdef USE_EBLOCK_RESULT
+    case ENGINE_ENOMEM:
+        out_string(c, "SERVER_ERROR out of memory getting elements");
+        break;
+#endif
     default:
         STATS_NOKEY(c, cmd_bop_gbp);
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
@@ -11115,9 +11648,12 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
         else handle_unexpected_errorcode_ascii(c, ret);
     }
 
+#ifdef USE_EBLOCK_RESULT
+#else
     if (ret != ENGINE_SUCCESS && elem_array != NULL) {
         free((void *)elem_array);
     }
+#endif
 }
 
 static void process_bop_update_prepare_nread(conn *c, int cmd, char *key, size_t nkey, const int vlen)
@@ -11144,7 +11680,10 @@ static void process_bop_update_prepare_nread(conn *c, int cmd, char *key, size_t
         c->ritem   = ((elem_value *)elem)->value;
         c->rlbytes = vlen;
         c->coll_eitem  = (void *)elem;
+#ifdef USE_EBLOCK_RESULT
+#else
         c->coll_ecount = 1;
+#endif
         c->coll_op     = cmd;
         c->coll_key    = key;
         c->coll_nkey   = nkey;
@@ -11192,7 +11731,10 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
         c->ritem   = (char *)info.value;
         c->rlbytes = vlen;
         c->coll_eitem  = (void *)elem;
+#ifdef USE_EBLOCK_RESULT
+#else
         c->coll_ecount = 1;
+#endif
         c->coll_op     = cmd; /* OPERATION_BOP_INSERT | OPERATION_BOP_UPSERT */
         c->coll_key    = key;
         c->coll_nkey   = nkey;
@@ -11222,6 +11764,55 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     int need_size = 0;
 
+#ifdef USE_EBLOCK_RESULT
+#ifdef SUPPORT_BOP_MGET
+    if (cmd == OPERATION_BOP_MGET) {
+        int bmget_count = c->coll_numkeys * c->coll_rcount;
+        int respon_hdr_size = c->coll_numkeys * ((lenstr_size*2)+30);
+        int respon_bdy_size = bmget_count * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+lenstr_size+15);
+
+        need_size = respon_hdr_size + respon_bdy_size;
+    }
+#endif
+#ifdef SUPPORT_BOP_SMGET
+    if (cmd == OPERATION_BOP_SMGET) {
+#ifdef JHPARK_OLD_SMGET_INTERFACE
+      if (c->coll_smgmode == 0) {
+        int smget_count = c->coll_roffset + c->coll_rcount;
+        int kfnd_array_size; /* key index array where the find key indexes are to be saved */
+        int kmis_array_size; /* key index array where the missed key indexes are to be saved */
+        int respon_hdr_size; /* the size of response head and tail */
+        int respon_bdy_size; /* the size of response body */
+
+        kfnd_array_size = smget_count * (2*sizeof(uint32_t));
+        kmis_array_size = c->coll_numkeys * sizeof(uint32_t);
+        respon_hdr_size = (2*lenstr_size) + 30; /* result head and tail size */
+        respon_bdy_size = smget_count * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+(lenstr_size*2)+5); /* result body size */
+
+        need_size = kfnd_array_size + kmis_array_size + respon_hdr_size + respon_bdy_size;
+      } else {
+#endif
+        int trim_array_size; /* smget trim element array size */
+        int ehit_array_size; /* smget hitted elem array size */
+        int emis_array_size; /* element missed keys array size */
+        int respon_hdr_size; /* the size of response head and tail */
+        int respon_bdy_size; /* the size of response body */
+
+        trim_array_size = c->coll_numkeys * sizeof(eitem*);
+        ehit_array_size = c->coll_rcount * sizeof(smget_ehit_t);
+        emis_array_size = c->coll_numkeys * sizeof(smget_emis_t);
+        respon_hdr_size = (3*lenstr_size) + 50; /* result head and tail size */
+        respon_bdy_size = (c->coll_rcount * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+(lenstr_size*2)+10))
+                        + (c->coll_numkeys * ((MAX_EFLAG_LENG*2+2) + 5)); /* result body size */
+        need_size = trim_array_size + ehit_array_size + emis_array_size
+                  + respon_hdr_size + respon_bdy_size;
+#ifdef JHPARK_OLD_SMGET_INTERFACE
+     }
+#endif
+    }
+#endif
+
+#else /* USE_EBLOCK_RESULT */
 #ifdef SUPPORT_BOP_MGET
     if (cmd == OPERATION_BOP_MGET) {
         int bmget_count = c->coll_numkeys * c->coll_rcount;
@@ -11269,6 +11860,7 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
 #endif
     }
 #endif
+#endif /* USE_EBLOCK_RESULT */
     assert(need_size > 0);
 
     if ((elem = (eitem *)malloc(need_size)) == NULL) {
@@ -11287,8 +11879,12 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
         {
         c->ritem       = (char *)c->coll_strkeys;
         c->rlbytes     = vlen;
+#ifdef USE_EBLOCK_RESULT
+        c->coll_resps  = (void *)elem;
+#else
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 0;
+#endif
         c->coll_op     = cmd;
         conn_set_state(c, conn_nread);
         }
@@ -11702,7 +12298,10 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
         }
         c->rlbytes     = vlen;
         c->coll_eitem  = (void *)elem;
+#ifdef USE_EBLOCK_RESULT
+#else
         c->coll_ecount = 1;
+#endif
         c->coll_op     = cmd;
         c->coll_key    = key;
         c->coll_nkey   = nkey;
@@ -11746,7 +12345,10 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
         {
         c->ritem          = (char *)c->coll_strkeys;
         c->rlbytes        = flen;
+#ifdef USE_EBLOCK_RESULT
+#else
         c->coll_ecount    = 1;
+#endif
         c->coll_op        = cmd;
         c->coll_key       = key;
         c->coll_nkey      = nkey;
