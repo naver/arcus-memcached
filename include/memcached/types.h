@@ -31,8 +31,6 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
-#define DELETED_ZNODE
-#define CONFIG_FAILSTOP
 #define SUPPORT_BOP_MGET
 #define SUPPORT_BOP_SMGET
 #define JHPARK_OLD_SMGET_INTERFACE

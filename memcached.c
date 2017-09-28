@@ -8449,10 +8449,8 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("libevent", "%s", event_get_version());
     APPEND_STAT("pointer_size", "%d", (int)(8 * sizeof(void *)));
 #ifdef ENABLE_ZK_INTEGRATION
-#ifdef CONFIG_FAILSTOP
     APPEND_STAT("zk_connected", "%s", zk_stats.zk_connected ? "true" : "false");
     APPEND_STAT("zk_failstop", "%s", zk_stats.zk_failstop ? "on" : "off");
-#endif
     APPEND_STAT("zk_timeout", "%u", zk_stats.zk_timeout);
     APPEND_STAT("hb_timeout", "%u", zk_stats.hb_timeout);
     APPEND_STAT("hb_failstop", "%u", zk_stats.hb_failstop);
@@ -9436,7 +9434,6 @@ static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntok
 }
 
 #ifdef ENABLE_ZK_INTEGRATION
-#ifdef CONFIG_FAILSTOP
 static void process_zkfailstop_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
@@ -9462,7 +9459,6 @@ static void process_zkfailstop_command(conn *c, token_t *tokens, const size_t nt
         out_string(c, "CLIENT_ERROR bad command line format");
     }
 }
-#endif
 
 static void process_hbtimeout_command(conn *c, token_t *tokens, const size_t ntokens)
 {
@@ -9679,11 +9675,9 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
         process_maxconns_command(c, tokens, ntokens);
     }
 #ifdef ENABLE_ZK_INTEGRATION
-#ifdef CONFIG_FAILSTOP
     else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "zkfailstop") == 0) {
         process_zkfailstop_command(c, tokens, ntokens);
     }
-#endif
     else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "hbtimeout") == 0) {
         process_hbtimeout_command(c, tokens, ntokens);
     }
@@ -9744,7 +9738,6 @@ static void process_zkensemble_command(conn *c, token_t *tokens, const size_t nt
             }
             valid = true;
         }
-#ifdef CONFIG_FAILSTOP
         else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "rejoin") == 0) {
              if (arcus_zk_rejoin_ensemble() != 0) {
                out_string(c, "ERROR failed to rejoin ensemble");
@@ -9753,7 +9746,6 @@ static void process_zkensemble_command(conn *c, token_t *tokens, const size_t nt
              }
              valid = true;
         }
-#endif
     } else if (ntokens == 4) {
         if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "set") == 0) {
             /* The ensemble is a comma separated list of host:port addresses.
@@ -9948,20 +9940,13 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\n"
         "\t" "zkensemble set <ensemble_list>\\r\\n" "\n"
         "\t" "zkensemble get\\r\\n" "\n"
-#ifdef CONFIG_FAILSTOP
         "\t" "zkensemble rejoin\\r\\n" "\n"
-#endif
 #endif
         "\n"
         "\t" "config verbosity [<verbose>]\\r\\n" "\n"
         "\t" "config memlimit [<memsize(MB)>]\\r\\n" "\n"
 #ifdef ENABLE_STICKY_ITEM
         "\t" "config sticky_limit [<stickylimit(MB)>]\\r\\n" "\n"
-#endif
-#ifdef ENABLE_ZK_INTEGRATION
-#ifdef CONFIG_FAILSTOP
-        "\t" "config zkfailstop [on|off]\\r\\n" "\n"
-#endif
 #endif
         "\t" "config maxconns [<maxconn>]\\r\\n" "\n"
         "\t" "config max_list_size [<maxsize>]\\r\\n" "\n"
@@ -9971,6 +9956,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
 #ifdef ENABLE_ZK_INTEGRATION
         "\t" "config hbtimeout [<hbtimeout>]\\r\\n" "\n"
         "\t" "config hbfailstop [<hbfailstop>]\\r\\n" "\n"
+        "\t" "config zkfailstop [on|off]\\r\\n" "\n"
 #endif
         );
     } else {

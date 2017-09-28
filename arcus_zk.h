@@ -25,13 +25,9 @@
 #ifdef ENABLE_ZK_INTEGRATION
 
 typedef struct {
-#ifdef CONFIG_FAILSTOP
     bool     zk_connected;  // ZooKeeper-memcached connection state
-#endif
-    uint32_t zk_timeout;    // Zookeeper session timeout (unit: ms)
-#ifdef CONFIG_FAILSTOP
     bool     zk_failstop;   // memcached automatic failstop
-#endif
+    uint32_t zk_timeout;    // Zookeeper session timeout (unit: ms)
     uint32_t hb_timeout;    // memcached heartbeat timeout (unit: ms)
     uint32_t hb_failstop;   // memcached heartbeat failstop (unit: ms)
     uint64_t hb_count;      // heartbeat accumulated count
@@ -51,12 +47,10 @@ void arcus_zk_destroy(void);
 
 int  arcus_zk_set_ensemble(char *ensemble_list);
 int  arcus_zk_get_ensemble(char *buf, int size);
-#ifdef CONFIG_FAILSTOP
 int  arcus_zk_rejoin_ensemble(void);
 
 void arcus_zk_set_zkfailstop(bool failstop);
 bool arcus_zk_get_zkfailstop(void);
-#endif
 int  arcus_zk_set_hbtimeout(int hbtimeout);
 int  arcus_zk_get_hbtimeout(void);
 int  arcus_zk_set_hbfailstop(int hbfailstop);
