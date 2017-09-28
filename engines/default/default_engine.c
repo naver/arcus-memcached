@@ -1169,7 +1169,6 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
         pthread_mutex_unlock(&engine->cache_lock);
     }
 #endif
-#ifdef CONFIG_MAX_COLLECTION_SIZE
     else if (strcmp(config_key, "max_list_size") == 0) {
         ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_LIST, (int*)config_value);
     }
@@ -1182,7 +1181,6 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
     else if (strcmp(config_key, "max_btree_size") == 0) {
         ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_BTREE, (int*)config_value);
     }
-#endif
     else if (strcmp(config_key, "verbosity") == 0) {
         pthread_mutex_lock(&engine->cache_lock);
         engine->config.verbose = *(size_t*)config_value;
