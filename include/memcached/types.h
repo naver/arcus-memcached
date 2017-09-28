@@ -33,7 +33,6 @@ struct iovec {
 
 #define DELETED_ZNODE
 #define SUPPORT_KV_MGET
-#define OPTIMIZE_HASH
 #define CONFIG_FAILSTOP
 #define CHANGE_STANDARD_FREE_AVAIL
 #define SUPPORT_BOP_MGET
