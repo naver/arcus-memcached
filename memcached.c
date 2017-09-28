@@ -9781,7 +9781,6 @@ static void process_zkensemble_command(conn *c, token_t *tokens, const size_t nt
 }
 #endif
 
-#ifdef JHPARK_KEY_DUMP
 static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     char *opstr;
@@ -9845,7 +9844,6 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
         handle_unexpected_errorcode_ascii(c, ret);
     }
 }
-#endif
 
 static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
 {
@@ -9934,9 +9932,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "stats prefixes\\r\\n" "\n"
         "\t" "stats detail [on|off|dump]\\r\\n" "\n"
         "\t" "stats scrub\\r\\n" "\n"
-#ifdef JHPARK_KEY_DUMP
         "\t" "stats dump\\r\\n" "\n"
-#endif
         "\t" "stats cachedump <slab_clsid> <limit> [forward|backward [sticky]]\\r\\n" "\n"
         "\t" "stats reset\\r\\n" "\n"
 #ifdef COMMAND_LOGGING
@@ -9952,11 +9948,9 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "lqdetect show\\r\\n" "\n"
         "\t" "lqdetect stats\\r\\n" "\n"
 #endif
-#ifdef JHPARK_KEY_DUMP
         "\n"
         "\t" "dump start key [<prefix>] <filepath>\\r\\n" "\n"
         "\t" "dump stop\\r\\n" "\n"
-#endif
 #ifdef ENABLE_ZK_INTEGRATION
         "\n"
         "\t" "zkensemble set <ensemble_list>\\r\\n" "\n"
@@ -13701,12 +13695,10 @@ static void process_command(conn *c, char *command, int cmdlen)
     {
         out_string(c, "VERSION " VERSION);
     }
-#ifdef JHPARK_KEY_DUMP
     else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "dump") == 0))
     {
         process_dump_command(c, tokens, ntokens);
     }
-#endif
     else if ((ntokens == 2) && (strcmp(tokens[COMMAND_TOKEN].value, "quit") == 0))
     {
         STATS_LOCK();

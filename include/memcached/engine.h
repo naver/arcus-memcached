@@ -665,18 +665,23 @@ extern "C" {
         ENGINE_ERROR_CODE (*set_config)(ENGINE_HANDLE* handle, const void* cookie,
                                         const char* config_key, void* config_value);
 
+        /**
+         * Dump cache items from LRU list of slab class.
+         */
         char *(*cachedump)(ENGINE_HANDLE* handle, const void *cookie,
                           const unsigned int slabs_clsid,
                           const unsigned int limit,
                           const bool forward,
                           const bool sticky,
                           unsigned int *bytes);
-#ifdef JHPARK_KEY_DUMP
+
+        /**
+         * Dump all cache items.
+         */
         ENGINE_ERROR_CODE (*dump)(ENGINE_HANDLE* handle, const void *cookie,
                                   const char *opstr, const char *modestr,
                                   const char *prefix, const int nprefix,
                                   const char *filepath);
-#endif
 
         /**
          * Any unknown command will be considered engine specific.

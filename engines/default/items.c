@@ -6388,12 +6388,11 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
 
 void item_final(struct default_engine *engine)
 {
-#ifdef JHPARK_KEY_DUMP
     item_stop_dump(engine);
-#endif
     coll_del_thread_wakeup();
     pthread_join(coll_del_tid, NULL);
 
+    /* wait until scrubber thread is finished */
     int sleep_count = 0;
     while (engine->scrubber.running) {
         usleep(1000); // 1ms;
@@ -6403,8 +6402,8 @@ void item_final(struct default_engine *engine)
         logger->log(EXTENSION_LOG_INFO, NULL,
                 "Waited %d ms for scrubber to be stopped.\n", sleep_count);
     }
-#ifdef JHPARK_KEY_DUMP
-    /* wait until dumper thread is finiahed. */
+
+    /* wait until dumper thread is finished. */
     sleep_count = 0;
     while (engine->dumper.running) {
         usleep(1000); // 1ms;
@@ -6414,7 +6413,6 @@ void item_final(struct default_engine *engine)
         logger->log(EXTENSION_LOG_INFO, NULL,
                 "Waited %d ms for dumper to be stopped.\n", sleep_count);
     }
-#endif
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM module destroyed.\n");
 }
 
@@ -7976,7 +7974,11 @@ void item_stats_scrub(struct default_engine *engine,
     pthread_mutex_unlock(&engine->scrubber.lock);
 }
 
-#ifdef JHPARK_KEY_DUMP
+/*
+ * Dump all cache items.
+ * Currently, only key strings of cache items can be dumped.
+ * The values of cache items will be dumped in later version.
+ */
 #define DUMP_BUFFER_SIZE (64 * 1024)
 #define SCAN_ITEM_ARRAY_SIZE 64
 static void *item_dumper_main(void *arg)
@@ -8266,7 +8268,6 @@ void item_stats_dump(struct default_engine *engine,
     }
     pthread_mutex_unlock(&engine->dumper.lock);
 }
-#endif
 
 /*
  * MAP collection manangement

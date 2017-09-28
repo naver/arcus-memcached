@@ -639,7 +639,6 @@ bool item_onoff_scrub(struct default_engine *engine, bool val);
 void item_stats_scrub(struct default_engine *engine,
                       ADD_STAT add_stat, const void *cookie);
 
-#ifdef JHPARK_KEY_DUMP
 /**
  * Item dumpper
  */
@@ -655,6 +654,5 @@ int  item_start_dump(struct default_engine *engine,
 void item_stop_dump(struct default_engine *engine);
 void item_stats_dump(struct default_engine *engine,
                      ADD_STAT add_stat, const void *cookie);
-#endif
 
 #endif

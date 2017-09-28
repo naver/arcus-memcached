@@ -1063,11 +1063,9 @@ default_get_stats(ENGINE_HANDLE* handle, const void* cookie,
     else if (strncmp(stat_key, "scrub", 5) == 0) {
         item_stats_scrub(engine, add_stat, cookie);
     }
-#ifdef JHPARK_KEY_DUMP
     else if (strncmp(stat_key, "dump", 4) == 0) {
         item_stats_dump(engine, add_stat, cookie);
     }
-#endif
     else {
         ret = ENGINE_KEY_ENOENT;
     }
@@ -1111,7 +1109,6 @@ default_cachedump(ENGINE_HANDLE* handle, const void* cookie,
     return item_cachedump(engine, slabs_clsid, limit, forward, sticky, bytes);
 }
 
-#ifdef JHPARK_KEY_DUMP
 static ENGINE_ERROR_CODE
 default_dump(ENGINE_HANDLE* handle, const void* cookie,
              const char *opstr, const char *modestr,
@@ -1135,7 +1132,6 @@ default_dump(ENGINE_HANDLE* handle, const void* cookie,
     }
     return ENGINE_SUCCESS;
 }
-#endif
 
 /*
  * Config API
@@ -1539,9 +1535,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .get_prefix_stats = default_get_prefix_stats,
          /* Dump API */
          .cachedump        = default_cachedump,
-#ifdef JHPARK_KEY_DUMP
          .dump             = default_dump,
-#endif
          /* Config API */
          .set_config       = default_set_config,
          /* Unknown Command API */

@@ -98,7 +98,6 @@ struct engine_scrubber {
    time_t          stopped;
 };
 
-#ifdef JHPARK_KEY_DUMP
 /**
  * cache item dumper
  */
@@ -117,7 +116,6 @@ struct engine_dumper {
    char           *prefix;  /* prefix of keys for dumping */
    int             nprefix;
 };
-#endif
 
 /**
  * Definition of the private instance data used by the default engine.
@@ -147,9 +145,7 @@ struct default_engine {
    struct engine_config config;
    struct engine_stats stats;
    struct engine_scrubber scrubber;
-#ifdef JHPARK_KEY_DUMP
    struct engine_dumper dumper;
-#endif
    union {
        engine_info engine_info;
        char buffer[sizeof(engine_info) + (sizeof(feature_info)*LAST_REGISTERED_ENGINE_FEATURE)];
