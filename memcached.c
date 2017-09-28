@@ -9578,7 +9578,6 @@ static void process_stickylimit_command(conn *c, token_t *tokens, const size_t n
 }
 #endif
 
-#ifdef CONFIG_MAX_COLLECTION_SIZE
 static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t ntokens,
                                         int coll_type)
 {
@@ -9644,7 +9643,6 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
         out_string(c, "CLIENT_ERROR bad command line format");
     }
 }
-#endif
 
 static void process_verbosity_command(conn *c, token_t *tokens, const size_t ntokens)
 {
@@ -9706,7 +9704,6 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
         process_stickylimit_command(c, tokens, ntokens);
     }
 #endif
-#ifdef CONFIG_MAX_COLLECTION_SIZE
     else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_list_size") == 0) {
         process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_LIST);
     }
@@ -9719,7 +9716,6 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_btree_size") == 0) {
         process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_BTREE);
     }
-#endif
     else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "verbosity") == 0) {
         process_verbosity_command(c, tokens, ntokens);
     }
@@ -9981,12 +9977,10 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
 #endif
 #endif
         "\t" "config maxconns [<maxconn>]\\r\\n" "\n"
-#ifdef CONFIG_MAX_COLLECTION_SIZE
         "\t" "config max_list_size [<maxsize>]\\r\\n" "\n"
         "\t" "config max_set_size [<maxsize>]\\r\\n" "\n"
         "\t" "config max_map_size [<maxsize>]\\r\\n" "\n"
         "\t" "config max_btree_size [<maxsize>]\\r\\n" "\n"
-#endif
 #ifdef ENABLE_ZK_INTEGRATION
         "\t" "config hbtimeout [<hbtimeout>]\\r\\n" "\n"
         "\t" "config hbfailstop [<hbfailstop>]\\r\\n" "\n"
@@ -16027,9 +16021,7 @@ int main (int argc, char **argv) {
         settings.port = settings.udpport;
     }
 
-#ifdef CONFIG_MAX_COLLECTION_SIZE
     /* Following code of setting max collection size will be deprecated. */
-#endif
     if (1) { /* check max collection size from environment variables */
         int value;
 

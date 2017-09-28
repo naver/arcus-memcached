@@ -597,10 +597,8 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
 /*
  * Item config functions
  */
-#ifdef CONFIG_MAX_COLLECTION_SIZE
 ENGINE_ERROR_CODE item_conf_set_maxcollsize(struct default_engine *engine,
                                             const int coll_type, int *maxsize);
-#endif
 bool item_conf_get_evict_to_free(struct default_engine *engine);
 void item_conf_set_evict_to_free(struct default_engine *engine, bool value);
 
