@@ -32,7 +32,6 @@ struct iovec {
 #endif
 
 #define DELETED_ZNODE
-#define SUPPORT_KV_MGET
 #define CONFIG_FAILSTOP
 #define SUPPORT_BOP_MGET
 #define SUPPORT_BOP_SMGET
@@ -96,7 +95,6 @@ extern "C" {
         OPERATION_CAS      /**< Store with set semantics. */
     } ENGINE_STORE_OPERATION;
 
-#ifdef SUPPORT_KV_MGET
     /**
      * Engine retrieval operations.
      */
@@ -105,7 +103,6 @@ extern "C" {
         OPERATION_GETS,    /**< Retrieve with gets semantics */
         OPERATION_MGET     /**< Retrieve with mget semantics */
     } ENGINE_RETRIEVE_OPERATION;
-#endif
 
     /* collection operation */
     typedef enum {

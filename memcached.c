@@ -3138,7 +3138,6 @@ static char *get_suffix_buffer(conn *c)
     return suffix;
 }
 
-#ifdef SUPPORT_KV_MGET
 static void process_mget_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_MGET);
@@ -3300,7 +3299,6 @@ static void process_mget_complete(conn *c)
     }
 #endif
 }
-#endif
 
 static void complete_update_ascii(conn *c) {
     assert(c != NULL);
@@ -3327,9 +3325,7 @@ static void complete_update_ascii(conn *c) {
 #ifdef SUPPORT_BOP_SMGET
         else if (c->coll_op == OPERATION_BOP_SMGET) process_bop_smget_complete(c);
 #endif
-#ifdef SUPPORT_KV_MGET
         else if (c->coll_op == OPERATION_MGET) process_mget_complete(c);
-#endif
         return;
     }
 
@@ -8979,7 +8975,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
 
     return;
 }
-#ifdef SUPPORT_KV_MGET
+
 static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt)
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
@@ -9042,7 +9038,6 @@ static inline void process_mget_command(conn *c, token_t *tokens, const size_t n
 
     process_prepare_nread_keys(c, lenkeys, numkeys);
 }
-#endif
 
 static void process_update_command(conn *c, token_t *tokens, const size_t ntokens, ENGINE_STORE_OPERATION store_op, bool handle_cas) {
     char *key;
@@ -9856,9 +9851,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "cas <key> <flags> <exptime> <bytes> <cas unique> [noreply]\\r\\n<data>\\r\\n" "\n"
         "\t" "get <key>[ <key> ...]\\r\\n" "\n"
         "\t" "gets <key>[ <key> ...]\\r\\n" "\n"
-#ifdef SUPPORT_KV_MGET
         "\t" "mget <lenkeys> <numkeys>\\r\\n<\"space separated keys\">\\r\\n" "\n"
-#endif
         "\t" "incr|decr <key> <delta> [<flags> <exptime> <initial>] [noreply]\\r\\n" "\n"
         "\t" "delete <key> [<time>] [noreply]\\r\\n" "\n"
         );
@@ -13612,12 +13605,10 @@ static void process_command(conn *c, char *command, int cmdlen)
     {
         process_get_command(c, tokens, ntokens, true);
     }
-#ifdef SUPPORT_KV_MGET
     else if ((ntokens == 4) && (strcmp(tokens[COMMAND_TOKEN].value, "mget") == 0))
     {
         process_mget_command(c, tokens, ntokens);
     }
-#endif
     else if ((ntokens == 6 || ntokens == 7) &&
         ((strcmp(tokens[COMMAND_TOKEN].value, "add"    ) == 0 && (comm = (int)OPERATION_ADD)) ||
          (strcmp(tokens[COMMAND_TOKEN].value, "set"    ) == 0 && (comm = (int)OPERATION_SET)) ||
