@@ -107,18 +107,14 @@ typedef struct _sm_anchor {
     int         free_num_classes;   /* # of free slot classes */
     int         used_minid;         /* min sm classid of used slots */
     int         used_maxid;         /* max sm classid of used slots */
-#ifdef CHANGE_STANDARD_FREE_AVAIL
     int         used_01pct_clsid;   /* last 1% classid of total used space */
-#endif
     int         free_minid;         /* max sm classid of free slots */
     int         free_maxid;         /* max sm classid of free slots (excluding the largest free slot) */
     sm_blist_t  used_blist;         /* used block list */
     sm_slist_t *used_slist;         /* used slot info */
     sm_slist_t *free_slist;         /* free slot list */
     uint64_t    used_total_space;   /* the amount of used space */
-#ifdef CHANGE_STANDARD_FREE_AVAIL
     uint64_t    used_01pct_space;   /* the amount of last 1% total used space */
-#endif
     uint64_t    free_small_space;   /* the amount of free space that can't be used */
     uint64_t    free_avail_space;   /* the amount of free space that can be used */
     uint64_t    free_chunk_space;   /* the amount of free chunk space */
@@ -342,9 +338,7 @@ static int do_smmgr_init(struct default_engine *engine)
     sm_anchor.used_maxid = -1;
     sm_anchor.free_minid = SM_NUM_CLASSES;
     sm_anchor.free_maxid = -1;
-#ifdef CHANGE_STANDARD_FREE_AVAIL
     sm_anchor.used_01pct_clsid = -1;
-#endif
 
     /* allocate used/free slot list structure */
     int need_size = SM_NUM_CLASSES * sizeof(sm_slist_t) * 2;
@@ -413,19 +407,6 @@ static void do_smmgr_used_slot_list_add(int targ)
         sm_anchor.used_minid = targ;
     }
     if (targ > sm_anchor.used_maxid) {
-#ifdef CHANGE_STANDARD_FREE_AVAIL
-#else
-        /* adjust free small & avail space */
-        uint64_t space_adjusted = 0;
-        int smid = (sm_anchor.used_maxid < 0 ? 0 : sm_anchor.used_maxid);
-        for ( ; smid < targ; smid++) {
-            if (sm_anchor.free_slist[smid].space > 0)
-                space_adjusted += sm_anchor.free_slist[smid].space;
-        }
-        sm_anchor.free_small_space += space_adjusted;
-        sm_anchor.free_avail_space -= space_adjusted;
-#endif
-        /* set the new used_maxid */
         sm_anchor.used_maxid = targ;
     }
     sm_anchor.used_num_classes += 1;
@@ -448,28 +429,11 @@ static void do_smmgr_used_slot_list_del(int targ)
             }
             assert(smid >= sm_anchor.used_minid);
             sm_anchor.used_maxid = smid;
-#ifdef CHANGE_STANDARD_FREE_AVAIL
-#else
-            /* adjust free small & avail space */
-            uint64_t space_adjusted = 0;
-            for (smid = sm_anchor.used_maxid; smid < targ; smid++) {
-                if (sm_anchor.free_slist[smid].space > 0)
-                    space_adjusted += sm_anchor.free_slist[smid].space;
-            }
-            sm_anchor.free_small_space -= space_adjusted;
-            sm_anchor.free_avail_space += space_adjusted;
-#endif
         }
     } else {
         assert(targ == sm_anchor.used_minid && targ == sm_anchor.used_maxid);
         sm_anchor.used_minid = SM_NUM_CLASSES;
         sm_anchor.used_maxid = -1;
-#ifdef CHANGE_STANDARD_FREE_AVAIL
-#else
-        /* adjust free small & avail space */
-        sm_anchor.free_avail_space += sm_anchor.free_small_space;
-        sm_anchor.free_small_space = 0;
-#endif
     }
     sm_anchor.used_num_classes -= 1;
 }
@@ -572,19 +536,11 @@ static void do_smmgr_free_slot_link(sm_slot_t *slot, int offset, int length)
         do_smmgr_free_slot_list_add(smid);
     }
 
-#ifdef CHANGE_STANDARD_FREE_AVAIL
     if (smid < sm_anchor.used_01pct_clsid) {
         sm_anchor.free_small_space += slen;
     } else {
         sm_anchor.free_avail_space += slen;
     }
-#else
-    if (smid < sm_anchor.used_maxid) {
-        sm_anchor.free_small_space += slen;
-    } else {
-        sm_anchor.free_avail_space += slen;
-    }
-#endif
 }
 
 static void do_smmgr_free_slot_unlink(sm_slot_t *slot)
@@ -599,19 +555,11 @@ static void do_smmgr_free_slot_unlink(sm_slot_t *slot)
     }
 
     smid = do_smmgr_memid(slen, false);
-#ifdef CHANGE_STANDARD_FREE_AVAIL
     if (smid < sm_anchor.used_01pct_clsid) {
         sm_anchor.free_small_space -= slen;
     } else {
         sm_anchor.free_avail_space -= slen;
     }
-#else
-    if (smid < sm_anchor.used_maxid) {
-        sm_anchor.free_small_space -= slen;
-    } else {
-        sm_anchor.free_avail_space -= slen;
-    }
-#endif
 
     list = &sm_anchor.free_slist[smid];
     if (list->count == 1) {
@@ -717,7 +665,6 @@ static void do_smmgr_blck_free(struct default_engine *engine, sm_blck_t *blck)
     }
 }
 
-#ifdef CHANGE_STANDARD_FREE_AVAIL
 static void do_smmgr_01pct_first_set(int slen, int targ)
 {
     /* the first SM slot allocation */
@@ -857,7 +804,6 @@ static void do_smmgr_adjust_01pct_slot(int slen, int targ, bool alloc)
         }
     }
 }
-#endif
 
 static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
 {
@@ -943,10 +889,7 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
         do_smmgr_used_slot_list_add(targ);
     }
 
-#ifdef CHANGE_STANDARD_FREE_AVAIL
     do_smmgr_adjust_01pct_slot(slen, targ, true);
-#endif
-
     return (void*)cur_slot;
 }
 
@@ -1042,10 +985,7 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
         do_smmgr_used_slot_list_del(targ);
     }
 
-#ifdef CHANGE_STANDARD_FREE_AVAIL
     do_smmgr_adjust_01pct_slot(slen, targ, false);
-#endif
-
     //do_smmgr_used_blck_check();
 }
 
@@ -1378,16 +1318,12 @@ static void do_slabs_stats(struct default_engine *engine, ADD_STAT add_stats, co
     add_statistics(cookie, add_stats, "SM", -1, "free_num_classes", "%d", sm_anchor.free_num_classes);
     add_statistics(cookie, add_stats, "SM", -1, "used_min_classid", "%d", sm_anchor.used_minid);
     add_statistics(cookie, add_stats, "SM", -1, "used_max_classid", "%d", sm_anchor.used_maxid);
-#ifdef CHANGE_STANDARD_FREE_AVAIL
     add_statistics(cookie, add_stats, "SM", -1, "used_01pct_classid", "%d", sm_anchor.used_01pct_clsid);
-#endif
     add_statistics(cookie, add_stats, "SM", -1, "free_min_classid", "%d", sm_anchor.free_minid);
     add_statistics(cookie, add_stats, "SM", -1, "free_max_classid", "%d", sm_anchor.free_maxid);
     add_statistics(cookie, add_stats, "SM", -1, "free_big_slot_count", "%"PRIu64, sm_anchor.free_slist[SM_NUM_CLASSES-1].count);
     add_statistics(cookie, add_stats, "SM", -1, "used_total_space", "%"PRIu64, sm_anchor.used_total_space);
-#ifdef CHANGE_STANDARD_FREE_AVAIL
     add_statistics(cookie, add_stats, "SM", -1, "used_01pct_space", "%"PRIu64, sm_anchor.used_01pct_space);
-#endif
     add_statistics(cookie, add_stats, "SM", -1, "free_small_space", "%"PRIu64, sm_anchor.free_small_space);
     add_statistics(cookie, add_stats, "SM", -1, "free_avail_space", "%"PRIu64, sm_anchor.free_avail_space);
     add_statistics(cookie, add_stats, "SM", -1, "free_chunk_space", "%"PRIu64, sm_anchor.free_chunk_space);
