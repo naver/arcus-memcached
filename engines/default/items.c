@@ -31,7 +31,6 @@
 
 //#define SET_DELETE_NO_MERGE
 //#define BTREE_DELETE_NO_MERGE
-#define FIX_SMGET_BUG 1
 
 /* item unlink cause */
 enum item_unlink_cause {
@@ -4943,17 +4942,10 @@ static void do_btree_smget_adjust_trim(smget_result_t *smres)
         if (tail_elem != NULL) {
             res = BKEY_COMP(trim_elem->data, trim_elem->nbkey,
                             tail_elem->data, tail_elem->nbkey);
-#ifdef FIX_SMGET_BUG
             if ((smres->ascending == true && res >= 0) ||
                 (smres->ascending != true && res <= 0)) {
                 continue; /* invalid trim */
             }
-#else
-            if ((smres->ascending == true && res > 0) ||
-                (smres->ascending != true && res < 0)) {
-                continue; /* invalid trim */
-            }
-#endif
         }
         /* add the valid trim info in sorted arry */
         if (new_trim_count == 0) {
@@ -4996,7 +4988,6 @@ static void do_btree_smget_adjust_trim(smget_result_t *smres)
 }
 
 #ifdef JHPARK_OLD_SMGET_INTERFACE
-#ifdef FIX_SMGET_BUG
 static ENGINE_ERROR_CODE do_btree_smget_scan_sort_old(struct default_engine *engine,
                                     token_t *key_array, const int key_count,
                                     const int bkrtype, const bkey_range *bkrange,
@@ -5004,16 +4995,6 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort_old(struct default_engine *eng
                                     btree_scan_info *btree_scan_buf,
                                     uint16_t *sort_sindx_buf, uint32_t *sort_sindx_cnt,
                                     uint32_t *missed_key_array, uint32_t *missed_key_count)
-#else
-static ENGINE_ERROR_CODE do_btree_smget_scan_sort_old(struct default_engine *engine,
-                                    token_t *key_array, const int key_count,
-                                    const int bkrtype, const bkey_range *bkrange,
-                                    const eflag_filter *efilter, const uint32_t req_count,
-                                    btree_scan_info *btree_scan_buf,
-                                    uint16_t *sort_sindx_buf, uint32_t *sort_sindx_cnt,
-                                    uint32_t *missed_key_array, uint32_t *missed_key_count,
-                                    bool *bkey_duplicated)
-#endif
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     hash_item *it;
@@ -5151,10 +5132,6 @@ scan_next:
                     btree_scan_buf[curr_idx].it = NULL;
                     ret = ENGINE_EBADVALUE; break;
                 }
-#ifdef FIX_SMGET_BUG
-#else
-                *bkey_duplicated = true;
-#endif
             }
             if ((ascending ==  true && cmp_res > 0) ||
                 (ascending == false && cmp_res < 0)) {
@@ -5179,10 +5156,6 @@ scan_next:
                 if (cmp_res == 0) {
                     ret = ENGINE_EBADVALUE; break;
                 }
-#ifdef FIX_SMGET_BUG
-#else
-                *bkey_duplicated = true;
-#endif
             }
             if (ascending) {
                 if (cmp_res < 0) right = mid-1;
@@ -5237,10 +5210,6 @@ do_btree_smget_scan_sort(struct default_engine *engine,
                          token_t *key_array, const int key_count,
                          const int bkrtype, const bkey_range *bkrange,
                          const eflag_filter *efilter, const uint32_t req_count,
-#ifdef FIX_SMGET_BUG // unique
-#else
-                         const bool unique,
-#endif
                          btree_scan_info *btree_scan_buf,
                          uint16_t *sort_sindx_buf, uint32_t *sort_sindx_cnt,
                          smget_result_t *smres)
@@ -5372,23 +5341,9 @@ scan_next:
                     btree_scan_buf[curr_idx].it = NULL;
                     ret = ENGINE_EBADVALUE; break;
                 }
-#ifdef FIX_SMGET_BUG // unique
-#else
-                smres->duplicated = true;
-                if (unique) {
-                    cmp_res = 0;
-                }
-#endif
             }
-#ifdef FIX_SMGET_BUG // unique
             if ((ascending ==  true && cmp_res > 0) ||
-                (ascending == false && cmp_res < 0))
-#else
-            if ((cmp_res == 0) ||
-                (ascending ==  true && cmp_res > 0) ||
-                (ascending == false && cmp_res < 0))
-#endif
-            {
+                (ascending == false && cmp_res < 0)) {
                 /* do not need to proceed the current scan */
                 do_item_release(engine, btree_scan_buf[curr_idx].it);
                 btree_scan_buf[curr_idx].it = NULL;
@@ -5410,13 +5365,6 @@ scan_next:
                 if (cmp_res == 0) {
                     ret = ENGINE_EBADVALUE; break;
                 }
-#ifdef FIX_SMGET_BUG // unique
-#else
-                smres->duplicated = true;
-                if (unique) {
-                    ret = ENGINE_EDUPLICATE; break;
-                }
-#endif
             }
             if (ascending) {
                 if (cmp_res < 0) right = mid-1;
@@ -5431,13 +5379,6 @@ scan_next:
             btree_scan_buf[curr_idx].it = NULL;
             break;
         }
-#ifdef FIX_SMGET_BUG // unique
-#else
-        if (ret == ENGINE_EDUPLICATE) {
-            ret = ENGINE_SUCCESS;
-            goto scan_next;
-        }
-#endif
 
         if (sort_count >= req_count) {
             /* free the last scan */
@@ -5484,9 +5425,7 @@ static ENGINE_ERROR_CODE do_btree_smget_elem_sort_old(btree_scan_info *btree_sca
 {
     btree_meta_info *info;
     btree_elem_item *elem, *comp;
-#ifdef FIX_SMGET_BUG
     btree_elem_item *prev = NULL;
-#endif
     uint16_t first_idx = 0;
     uint16_t curr_idx;
     uint16_t comp_idx;
@@ -5495,17 +5434,14 @@ static ENGINE_ERROR_CODE do_btree_smget_elem_sort_old(btree_scan_info *btree_sca
     int skip_count = 0;
     int sort_count = sort_sindx_cnt;
     bool ascending = (bkrtype != BKEY_RANGE_TYPE_DSC ? true : false);
-#ifdef FIX_SMGET_BUG
     bool key_trim_found = false;
     bool dup_bkey_found;
-#endif
     *elem_count = 0;
 
     while (sort_count > 0) {
         curr_idx = sort_sindx_buf[first_idx];
         elem = BTREE_GET_ELEM_ITEM(btree_scan_buf[curr_idx].posi.node,
                                    btree_scan_buf[curr_idx].posi.indx);
-#ifdef FIX_SMGET_BUG
         dup_bkey_found = false;
         if (prev != NULL) { /* check duplicate bkeys */
             if (BKEY_COMP(prev->data, prev->nbkey, elem->data, elem->nbkey) == 0) {
@@ -5517,15 +5453,13 @@ static ENGINE_ERROR_CODE do_btree_smget_elem_sort_old(btree_scan_info *btree_sca
         if (key_trim_found && !dup_bkey_found) {
             break; /* stop smget */
         }
-#endif
+
         if (skip_count < offset) {
             skip_count++;
         } else { /* skip_count == offset */
-#ifdef FIX_SMGET_BUG
             if (*elem_count > 0 && dup_bkey_found) {
                 *bkey_duplicated = true;
             }
-#endif
             elem->refcount++;
             elem_array[*elem_count] = elem;
             kfnd_array[*elem_count] = btree_scan_buf[curr_idx].kidx;
@@ -5540,19 +5474,10 @@ scan_next:
             if (btree_scan_buf[curr_idx].posi.node == NULL) {
                 /* reached to the end of b+tree scan */
                 info = (btree_meta_info *)item_get_meta(btree_scan_buf[curr_idx].it);
-#ifdef FIX_SMGET_BUG
                 if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
                     do_btree_overlapped_with_trimmed_space(info, &btree_scan_buf[curr_idx].posi, bkrtype)) {
                     key_trim_found = true;
                 }
-#else
-                if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
-                    if (do_btree_overlapped_with_trimmed_space(info, &btree_scan_buf[curr_idx].posi, bkrtype)) {
-                        *potentialbkeytrim = true;
-                        break; /* stop smget */
-                    }
-                }
-#endif
             }
             first_idx++; sort_count--;
             continue;
@@ -5576,10 +5501,6 @@ scan_next:
 
             cmp_res = BKEY_COMP(elem->data, elem->nbkey, comp->data, comp->nbkey);
             if (cmp_res == 0) {
-#ifdef FIX_SMGET_BUG
-#else
-                *bkey_duplicated = true;
-#endif
                 cmp_res = do_btree_comp_hkey(btree_scan_buf[curr_idx].it,
                                              btree_scan_buf[comp_idx].it);
                 assert(cmp_res != 0);
@@ -5600,12 +5521,10 @@ scan_next:
         }
         sort_sindx_buf[right] = curr_idx;
     }
-#ifdef FIX_SMGET_BUG
+
     if (key_trim_found && *elem_count < count) {
         *potentialbkeytrim = true;
     }
-#endif
-
     return ENGINE_SUCCESS;
 }
 #endif
@@ -5623,9 +5542,7 @@ do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
     btree_meta_info *info;
     btree_elem_item *elem, *comp;
     btree_elem_item *last;
-#ifdef FIX_SMGET_BUG
     btree_elem_item *prev = NULL;
-#endif
     uint16_t first_idx = 0;
     uint16_t curr_idx;
     uint16_t comp_idx;
@@ -5634,15 +5551,12 @@ do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
     int skip_count = 0;
     int sort_count = sort_sindx_cnt;
     bool ascending = (bkrtype != BKEY_RANGE_TYPE_DSC ? true : false);
-#ifdef FIX_SMGET_BUG
     bool dup_bkey_found;
-#endif
 
     while (sort_count > 0) {
         curr_idx = sort_sindx_buf[first_idx];
         elem = BTREE_GET_ELEM_ITEM(btree_scan_buf[curr_idx].posi.node,
                                    btree_scan_buf[curr_idx].posi.indx);
-#ifdef FIX_SMGET_BUG
         dup_bkey_found = false;
         if (prev != NULL) { /* check duplicate bkeys */
             if (BKEY_COMP(prev->data, prev->nbkey, elem->data, elem->nbkey) == 0) {
@@ -5655,15 +5569,13 @@ do_btree_smget_elem_sort(btree_scan_info *btree_scan_buf,
             /* give up current duplicate bkey */
             goto scan_next;
         }
-#endif
+
         if (skip_count < offset) {
             skip_count++;
         } else { /* skip_count == offset */
-#ifdef FIX_SMGET_BUG
             if (smres->elem_count > 0 && dup_bkey_found) {
                 smres->duplicated = true;
             }
-#endif
             smres->elem_array[smres->elem_count] = elem;
             smres->elem_kinfo[smres->elem_count].kidx = btree_scan_buf[curr_idx].kidx;
             smres->elem_kinfo[smres->elem_count].flag = btree_scan_buf[curr_idx].it->flags;
@@ -5726,11 +5638,6 @@ scan_next:
 
             cmp_res = BKEY_COMP(elem->data, elem->nbkey, comp->data, comp->nbkey);
             if (cmp_res == 0) {
-#ifdef FIX_SMGET_BUG // unique
-#else
-                smres->duplicated = true;
-                if (unique) break;
-#endif
                 cmp_res = do_btree_comp_hkey(btree_scan_buf[curr_idx].it,
                                              btree_scan_buf[comp_idx].it);
                 assert(cmp_res != 0);
@@ -7273,17 +7180,10 @@ ENGINE_ERROR_CODE btree_elem_smget_old(struct default_engine *engine,
     pthread_mutex_lock(&engine->cache_lock);
 
     /* the 1st phase: get the sorted scans */
-#ifdef FIX_SMGET_BUG
     ret = do_btree_smget_scan_sort_old(engine, key_array, key_count,
                                    bkrtype, bkrange, efilter, (offset+count),
                                    btree_scan_buf, sort_sindx_buf, &sort_sindx_cnt,
                                    missed_key_array, missed_key_count);
-#else
-    ret = do_btree_smget_scan_sort_old(engine, key_array, key_count,
-                                   bkrtype, bkrange, efilter, (offset+count),
-                                   btree_scan_buf, sort_sindx_buf, &sort_sindx_cnt,
-                                   missed_key_array, missed_key_count, duplicated);
-#endif
     if (ret == ENGINE_SUCCESS) {
         /* the 2nd phase: get the sorted elems */
         ret = do_btree_smget_elem_sort_old(btree_scan_buf, sort_sindx_buf, sort_sindx_cnt,
@@ -7337,17 +7237,10 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
     pthread_mutex_lock(&engine->cache_lock);
     do {
         /* the 1st phase: get the sorted scans */
-#ifdef FIX_SMGET_BUG // unique
         ret = do_btree_smget_scan_sort(engine, key_array, key_count,
                                        bkrtype, bkrange, efilter, (offset+count),
                                        btree_scan_buf, sort_sindx_buf, &sort_sindx_cnt,
                                        result);
-#else
-        ret = do_btree_smget_scan_sort(engine, key_array, key_count,
-                                       bkrtype, bkrange, efilter, (offset+count), unique,
-                                       btree_scan_buf, sort_sindx_buf, &sort_sindx_cnt,
-                                       result);
-#endif
         if (ret != ENGINE_SUCCESS) {
             break;
         }
