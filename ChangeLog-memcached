@@ -119,7 +119,7 @@
        * Add compiler options for Sun Studio compilers with --enable-threads
 	     (Trond.Norbye@Sun.COM)
 
-       * Add --enable-64bit for mulitarget platforms (Trond.Norbye@Sun.COM)
+       * Add --enable-64bit for multitarget platforms (Trond.Norbye@Sun.COM)
 
        * Use gettimeofday(2) instead of time(2).
 
@@ -193,7 +193,7 @@
 	  Patch from Maxim Dounin <mdounin@mdounin.ru>
 
 2007-08-21 Paul Lindner <lindner@inuus.com>
-	* Incorporate incrememnt patch from Evan Miller 
+	* Incorporate increment patch from Evan Miller 
 	  <emiller@imvu.com> to define increment overflow
 	  behavior.
 
@@ -305,7 +305,7 @@
 	  uint8_t types.
 
 	* Major refactoring - move API calls for assoc/items/slabs to
-	  their own individual header files.  Add apropriate const and
+	  their own individual header files.  Add appropriate const and
 	  static declarations as appropriate.
 	
 	* Avoid type-punning.  Do a more efficient realloc inside the
