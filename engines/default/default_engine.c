@@ -777,6 +777,15 @@ default_btree_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
+#ifdef USE_EBLOCK_RESULT
+static void
+default_btree_elem_release(ENGINE_HANDLE* handle, const void *cookie,
+                           eitem *eitem, EITEM_TYPE type)
+{
+    struct default_engine *engine = get_handle(handle);
+    btree_elem_release(engine, eitem, type);
+}
+#else
 static void
 default_btree_elem_release(ENGINE_HANDLE* handle, const void *cookie,
                            eitem **eitem_array, const int eitem_count)
@@ -784,6 +793,7 @@ default_btree_elem_release(ENGINE_HANDLE* handle, const void *cookie,
     struct default_engine *engine = get_handle(handle);
     btree_elem_release(engine, (btree_elem_item**)eitem_array, eitem_count);
 }
+#endif
 
 static ENGINE_ERROR_CODE
 default_btree_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
@@ -879,7 +889,11 @@ default_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                        const bkey_range *bkrange, const eflag_filter *efilter,
                        const uint32_t offset, const uint32_t req_count,
                        const bool delete, const bool drop_if_empty,
+#ifdef USE_EBLOCK_RESULT
+                       eblock_result_t *eblk_ret,
+#else
                        eitem** eitem_array, uint32_t* eitem_count,
+#endif
                        uint32_t *access_count, uint32_t* flags,
                        bool* dropped_trimmed, uint16_t vbucket)
 {
@@ -890,7 +904,11 @@ default_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = btree_elem_get(engine, key, nkey, bkrange, efilter,
                          offset, req_count, delete, drop_if_empty,
+#ifdef USE_EBLOCK_RESULT
+                         eblk_ret,
+#else
                          (btree_elem_item**)eitem_array, eitem_count,
+#endif
                          access_count, flags, dropped_trimmed);
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
@@ -932,8 +950,13 @@ default_btree_posi_find_with_get(ENGINE_HANDLE* handle, const void* cookie,
                                  const char *key, const size_t nkey,
                                  const bkey_range *bkrange,
                                  ENGINE_BTREE_ORDER order, const uint32_t count,
+#ifdef USE_EBLOCK_RESULT
+                                 int *position, eblock_result_t *eblk_ret,
+                                 uint32_t *eitem_index,
+#else
                                  int *position, eitem **eitem_array,
                                  uint32_t *eitem_count, uint32_t *eitem_index,
+#endif
                                  uint32_t *flags, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
@@ -941,8 +964,13 @@ default_btree_posi_find_with_get(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ret = btree_posi_find_with_get(engine, key, nkey, bkrange, order, count,
+#ifdef USE_EBLOCK_RESULT
+                                   position, eblk_ret,
+                                   eitem_index, flags);
+#else
                                    position, (btree_elem_item**)eitem_array,
                                    eitem_count, eitem_index, flags);
+#endif
     return ret;
 }
 
@@ -951,7 +979,11 @@ default_btree_elem_get_by_posi(ENGINE_HANDLE* handle, const void* cookie,
                                const char *key, const size_t nkey,
                                ENGINE_BTREE_ORDER order,
                                uint32_t from_posi, uint32_t to_posi,
+#ifdef USE_EBLOCK_RESULT
+                               eblock_result_t *eblk_ret,
+#else
                                eitem **eitem_array, uint32_t *eitem_count,
+#endif
                                uint32_t *flags, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
@@ -959,7 +991,11 @@ default_btree_elem_get_by_posi(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ret = btree_elem_get_by_posi(engine, key, nkey, order, from_posi, to_posi,
+#ifdef USE_EBLOCK_RESULT
+                                 eblk_ret,
+#else
                                  (btree_elem_item**)eitem_array, eitem_count,
+#endif
                                  flags);
     return ret;
 }
@@ -973,10 +1009,16 @@ default_btree_elem_smget_old(ENGINE_HANDLE* handle, const void* cookie,
                              const bkey_range *bkrange,
                              const eflag_filter *efilter,
                              const uint32_t offset, const uint32_t count,
+#ifdef USE_EBLOCK_RESULT
+                             eblock_result_t *eblk_ret,
+                             uint32_t* kfnd_array,
+                             uint32_t* flag_array,
+#else
                              eitem** eitem_array,
                              uint32_t* kfnd_array,
                              uint32_t* flag_array,
                              uint32_t* eitem_count,
+#endif
                              uint32_t* missed_key_array,
                              uint32_t* missed_key_count,
                              bool *trimmed, bool *duplicated,
@@ -987,8 +1029,13 @@ default_btree_elem_smget_old(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ret = btree_elem_smget_old(engine, karray, kcount, bkrange, efilter,
+#ifdef USE_EBLOCK_RESULT
+                               offset, count, eblk_ret,
+                               kfnd_array, flag_array,
+#else
                                offset, count, (btree_elem_item**)eitem_array,
                                kfnd_array, flag_array, eitem_count,
+#endif
                                missed_key_array, missed_key_count,
                                trimmed, duplicated);
     return ret;
