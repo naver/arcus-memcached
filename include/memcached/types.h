@@ -41,6 +41,10 @@ struct iovec {
 #define JHPARK_OLD_SMGET_INTERFACE
 #define CONFIG_MAX_COLLECTION_SIZE
 #define MAX_EFLAG_COMPARE_COUNT 100
+#define USE_EBLOCK_RESULT
+#ifdef USE_EBLOCK_RESULT
+#define USE_IVALUE_BLOCK
+#endif
 
 #define JHPARK_KEY_DUMP
 
@@ -230,7 +234,13 @@ extern "C" {
         uint16_t nvalue; /** < IN: The number of elements available in value
                           * OUT: the number of elements used in value */
         const void *key;
+#ifdef USE_IVALUE_BLOCK
+        struct iovec *vcurr; /** not NULL mean : memory allocate & multi block read/write */
+        struct iovec value[1]; /* single block : value block addr & len
+                                * multi block : allocated memory addr & len */
+#else
         struct iovec value[1];
+#endif
     } item_info;
 
     /* collection element info */
@@ -325,6 +335,16 @@ extern "C" {
         uint32_t flag;  /* item flags */
     } smget_ehit_t;
 
+#ifdef USE_EBLOCK_RESULT
+    typedef struct _eblock_result_t {
+      struct _mem_block_t *head_blk; /* head block pointer */
+      struct _mem_block_t *tail_blk; /* tail block pointer */
+      struct _mem_block_t *last_blk; /* last block pointer */
+      uint32_t elem_cnt;             /* total element count */
+      uint32_t blck_cnt;             /* block count */
+    } eblock_result_t;
+#endif
+
     /* Key info of the missed/trimmed keys in smget */
     typedef struct {
         uint16_t kidx;  /* key index in keys array */
@@ -378,6 +398,83 @@ extern "C" {
 
     /* Forward declaration of the server handle -- to be filled in later */
     typedef struct server_handle_v1_t SERVER_HANDLE_V1;
+
+#ifdef USE_EBLOCK_RESULT
+#define EITEMS_PER_BLOCK 1023
+#define EITEMS_BLCK_SIZE sizeof(mem_block_t)
+
+#define EBLOCK_ELEM_LAST(b)  ((b)->tail_blk->items[(EBLOCK_ELEM_COUNT(b) - 1) % EITEMS_PER_BLOCK])
+#define EBLOCK_ELEM_COUNT(b) ((b)->elem_cnt)
+
+#define EBLOCK_SCAN_INIT(b, s)         \
+    do {                               \
+        (s)->blk = (b)->head_blk;      \
+        (s)->tot = (b)->elem_cnt;      \
+        (s)->idx = 0;                  \
+    } while(0)                         \
+
+#define EBLOCK_SCAN_RESET(f, b, s)     \
+    do {                               \
+        if ((f) == false) {            \
+            (s)->blk = (b)->head_blk;  \
+            (s)->idx = 0;              \
+            (f) = true;                \
+        }                              \
+        (s)->tot = (b)->elem_cnt;      \
+    } while(0)                         \
+
+#define EBLOCK_SCAN_NEXT(s, e)                                               \
+    do {                                                                     \
+        if ((s)->idx < (s)->tot) {                                           \
+            if (((s)->idx % EITEMS_PER_BLOCK) == 0 && ((s)->idx != 0)) {     \
+                (s)->blk = ((s)->blk)->next;                                 \
+            }                                                                \
+            (e) = ((s)->blk)->items[(s)->idx++ % EITEMS_PER_BLOCK];          \
+        } else {                                                             \
+            (e) = NULL;                                                      \
+        }                                                                    \
+    } while(0)                                                               \
+
+    typedef enum {
+        EITEM_TYPE_SINGLE = 1,
+        EITEM_TYPE_BLOCK
+    } EITEM_TYPE;
+
+    typedef struct _mem_block_t {
+      eitem* items[EITEMS_PER_BLOCK];
+      struct _mem_block_t *next;
+    } mem_block_t;
+
+    typedef struct _eblock_scan_t {
+        mem_block_t *blk;            /* current block pointer */
+        uint32_t     tot;            /* total element count   */
+        uint32_t     idx;            /* current element index */
+    } eblock_scan_t;
+
+    typedef struct _mblock_stats {
+      uint32_t total_mblocks;
+      uint32_t free_mblocks;
+    } mblock_stats;
+#endif
+
+#ifdef USE_IVALUE_BLOCK
+#define IVALUE_PER_BLOCK 32768 // 32K
+#define IVALUE_BLCK_SIZE sizeof(ivalue_block_t)
+#define IVALUE_INFO_SIZE sizeof(ivalue_info_t)
+
+#define IVALUE_NEXT_BLCK(b)     (b) = ((b) + 1)
+#define IVALUE_PREV_BLCK(b)     (b) = ((b) - 1)
+#define IVALUE_NEXT_NBLCK(b, c) (b) = ((b) + (c))
+
+typedef struct _ivalue_block_t {
+    void *base;
+    size_t len;
+} ivalue_block_t;
+
+typedef struct _ivalue_info_t {
+    uint16_t nblk; /* number of ivalue block */
+} ivalue_info_t;
+#endif
 
 #ifdef __cplusplus
 }

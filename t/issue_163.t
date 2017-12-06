@@ -19,7 +19,7 @@ print $sock "set key 0 1 77320\r\n$value1\r\n";
 is (scalar <$sock>, "STORED\r\n", "stored key");
 
 my $stats  = mem_stats($sock, "slabs");
-my $requested = $stats->{"31:mem_requested"};
+my $requested = $stats->{"0:mem_requested"};
 isnt ($requested, "0", "We should have requested some memory");
 
 sleep(3);
@@ -27,7 +27,7 @@ print $sock "set key 0 0 77330\r\n$value2\r\n";
 is (scalar <$sock>, "STORED\r\n", "stored key");
 
 my $stats  = mem_stats($sock, "items");
-my $reclaimed = $stats->{"items:31:reclaimed"};
+my $reclaimed = $stats->{"items:0:reclaimed"};
 is ($reclaimed, "1", "Objects should be reclaimed");
 
 print $sock "delete key\r\n";
@@ -37,5 +37,5 @@ print $sock "set key 0 0 77320\r\n$value1\r\n";
 is (scalar <$sock>, "STORED\r\n", "stored key");
 
 my $stats  = mem_stats($sock, "slabs");
-my $requested2 = $stats->{"31:mem_requested"};
+my $requested2 = $stats->{"0:mem_requested"};
 is ($requested2, $requested, "we've not allocated and freed the same amont");

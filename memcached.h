@@ -553,6 +553,9 @@ struct conn {
     mblck_node_t *mblck;    /* current memory block pointer */
     mblck_list_t str_blcks; /* (key or field) string memory block list */
 #endif
+#ifdef USE_IVALUE_BLOCK
+    item_info info; /** KV item info */
+#endif
 
     /* collection processing fields */
     void        *coll_eitem;

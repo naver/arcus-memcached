@@ -708,6 +708,14 @@ extern "C" {
          */
         bool (*get_item_info)(ENGINE_HANDLE *handle, const void *cookie,
                               const item* item, item_info *item_info);
+#ifdef USE_IVALUE_BLOCK
+        /**
+         * Release mblock in connection
+         */
+        void (*release_info)(ENGINE_HANDLE *handle, const void *cookie,
+                             item_info* item_info);
+#endif
+
         /*
          * Get information about a collection element.
          */

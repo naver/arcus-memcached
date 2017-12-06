@@ -200,6 +200,11 @@ default_initialize(ENGINE_HANDLE* handle, const char* config_str)
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
+#ifdef USE_EBLOCK_RESULT
+    if (mblock_allocator_init(0)) {
+        return ENGINE_FAILED;
+    }
+#endif
     return ENGINE_SUCCESS;
 }
 
@@ -213,6 +218,9 @@ default_destroy(ENGINE_HANDLE* handle)
         item_final(se);
         slabs_final(se);
         assoc_final(se);
+#ifdef USE_EBLOCK_RESULT
+        mblock_allocator_destroy();
+#endif
         pthread_mutex_destroy(&se->cache_lock);
         pthread_mutex_destroy(&se->stats.lock);
         pthread_mutex_destroy(&se->slabs.lock);
@@ -234,6 +242,10 @@ default_item_allocate(ENGINE_HANDLE* handle, const void* cookie,
 {
     struct default_engine* engine = get_handle(handle);
     size_t ntotal = sizeof(hash_item) + nkey + nbytes;
+#ifdef USE_IVALUE_BLOCK
+    ntotal += (IVALUE_INFO_SIZE +
+              (IVALUE_BLCK_SIZE * (((nbytes - 1) / IVALUE_PER_BLOCK) + 1)));
+#endif
     if (engine->config.use_cas) {
         ntotal += sizeof(uint64_t);
     }
@@ -999,8 +1011,18 @@ static void stats_engine(struct default_engine *engine,
 {
     char val[128];
     int len;
+#ifdef USE_EBLOCK_RESULT
+    mblock_stats blk_stat;
+    mblock_allocator_stats(&blk_stat);
+#endif
 
     pthread_mutex_lock(&engine->stats.lock);
+#ifdef USE_EBLOCK_RESULT
+    len = sprintf(val, "%"PRIu32, blk_stat.total_mblocks);
+    add_stat("total_mblocks", 13, val, len, cookie);
+    len = sprintf(val, "%"PRIu32, blk_stat.free_mblocks);
+    add_stat("free_mblocks", 12, val, len, cookie);
+#endif
     len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.evictions);
     add_stat("evictions", 9, val, len, cookie);
     len = sprintf(val, "%"PRIu64, (uint64_t)engine->assoc.tot_prefix_items);
@@ -1400,6 +1422,9 @@ static bool
 get_item_info(ENGINE_HANDLE *handle, const void *cookie,
               const item* item, item_info *item_info)
 {
+#ifdef USE_IVALUE_BLOCK
+    return item_info_get((hash_item*)item, item_info);
+#else
     hash_item* it = (hash_item*)item;
     if (item_info->nvalue < 1) {
         return false;
@@ -1415,7 +1440,17 @@ get_item_info(ENGINE_HANDLE *handle, const void *cookie,
     item_info->value[0].iov_base = item_get_data(it);
     item_info->value[0].iov_len = it->nbytes;
     return true;
+#endif
 }
+
+#ifdef USE_IVALUE_BLOCK
+static void
+release_info(ENGINE_HANDLE *handle, const void *cookie,
+             item_info* item_info)
+{
+    release_item_info(item_info);
+}
+#endif
 
 static void
 get_elem_info(ENGINE_HANDLE *handle, const void *cookie,
@@ -1548,6 +1583,9 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .unknown_command  = default_unknown_command,
          /* Info API */
          .get_item_info    = get_item_info,
+#ifdef USE_IVALUE_BLOCK
+         .release_info     = release_info,
+#endif
          .get_elem_info    = get_elem_info
       },
       .server = *api,

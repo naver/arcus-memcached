@@ -68,8 +68,13 @@ static int MAX_MAP_SIZE   = 50000;
 static int MAX_BTREE_SIZE = 50000;
 
 /* The item must always be called "it" */
+#ifdef USE_IVALUE_BLOCK
+#define SLAB_GUTS(conn, thread_stats, slab_op, thread_op) \
+    thread_stats->slab_stats[conn->info.clsid].slab_op++;
+#else
 #define SLAB_GUTS(conn, thread_stats, slab_op, thread_op) \
     thread_stats->slab_stats[info.clsid].slab_op++;
+#endif
 
 #define THREAD_GUTS(conn, thread_stats, slab_op, thread_op) \
     thread_stats->thread_op++;
@@ -150,6 +155,17 @@ static int MAX_BTREE_SIZE = 50000;
 
 #define GET_8ALIGN_SIZE(size) \
     (((size) % 8) == 0 ? (size) : ((size) + (8 - ((size) % 8))))
+
+#ifdef USE_IVALUE_BLOCK
+#define CONN_NEXT_VBLK(i) \
+    (i).vcurr += 1
+
+#define CONN_ITEM_CLEN(i) \
+    (i).vcurr->iov_len
+
+#define CONN_ITEM_CPTR(i) \
+    (i).vcurr->iov_base
+#endif
 
 volatile sig_atomic_t memcached_shutdown=0;
 
@@ -669,6 +685,9 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
 #ifdef USE_STRING_MBLOCK
     c->rltotal = 0;
 #endif
+#ifdef USE_IVALUE_BLOCK
+    c->info.vcurr = NULL;
+#endif
     c->icurr = c->ilist;
     c->suffixcurr = c->suffixlist;
     c->ileft = 0;
@@ -828,6 +847,11 @@ static void conn_cleanup(conn *c) {
         lqdetect_buffer_release(c->lq_bufcnt);
         c->lq_bufcnt = 0;
     }
+#endif
+
+#ifdef USE_IVALUE_BLOCK
+    if (c->info.vcurr != NULL)
+        mc_engine.v1->release_info(mc_engine.v0, c, &c->info);
 #endif
 
     if (c->coll_eitem != NULL) {
@@ -1129,6 +1153,23 @@ static int add_iov(conn *c, const void *buf, int len) {
     return 0;
 }
 
+#ifdef USE_IVALUE_BLOCK
+static int add_iov_ivblk(conn *c, item_info info) {
+    assert((info.nvalue == 1) || (info.vcurr != NULL));
+    uint32_t len = info.nbytes;
+
+    if (info.nvalue == 1) { // only one value block
+        if ((add_iov(c, c->info.value[0].iov_base, c->info.value[0].iov_len) != 0)) return -1;
+    } else { // 2 or more value block
+        while (len > 0) {
+            if((add_iov(c, CONN_ITEM_CPTR(c->info), CONN_ITEM_CLEN(c->info)) != 0)) return -1;
+            len -= CONN_ITEM_CLEN(c->info);
+            if (len > 0) CONN_NEXT_VBLK(c->info);
+        }
+    }
+    return 0;
+}
+#endif
 
 /*
  * Constructs a set of UDP headers and attaches them to the outgoing messages.
@@ -1558,6 +1599,29 @@ static void process_sop_exist_complete(conn *c) {
     free(c->coll_eitem);
     c->coll_eitem = NULL;
 }
+
+#ifdef USE_IVALUE_BLOCK
+static bool value_valid(item_info info)
+{
+    bool ret = false;
+    if (info.nvalue == 1) {
+        assert(info.vcurr == NULL);
+        if (memcmp((char*)info.value[0].iov_base + (info.nbytes - 2), "\r\n", 2) == 0) ret = true;
+    } else {
+        assert(info.vcurr != NULL);
+        info.vcurr = (struct iovec*)info.value[0].iov_base;
+        struct iovec *last = &info.vcurr[info.nvalue - 1];
+        struct iovec *oblast = &info.vcurr[info.nvalue - 2];
+        if (last->iov_len != 1) {
+            if (memcmp((char*)last->iov_base + (last->iov_len - 2), "\r\n", 2) == 0) ret = true;
+        } else {
+            if ((memcmp((char*)oblast->iov_base + (oblast->iov_len - 1), "\r", 1) == 0)
+             && (memcmp((char*)last->iov_base, "\n", 1) == 0)) ret = true;
+        }
+    }
+    return ret;
+}
+#endif
 
 #ifdef USE_STRING_MBLOCK_COLL
 #else
@@ -3199,10 +3263,16 @@ static void process_mget_complete(conn *c)
                 stats_prefix_record_get(key, nkey, NULL != it);
             }
             if (it) {
+#ifdef USE_IVALUE_BLOCK
+                /* get_item_info() always returns true. */
+                (void)mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->info);
+                assert(value_valid(c->info));
+#else
                 item_info info = { .nvalue = 1 };
                 /* get_item_info() always returns true. */
                 (void)mc_engine.v1->get_item_info(mc_engine.v0, c, it, &info);
                 assert(memcmp((char*)info.value[0].iov_base + info.nbytes - 2, "\r\n", 2) == 0);
+#endif
 
                 /* prepare item array */
                 if (nhit >= c->isize) {
@@ -3222,6 +3292,25 @@ static void process_mget_complete(conn *c)
                     mc_engine.v1->release(mc_engine.v0, c, it);
                     break; /* out of memory */
                 }
+#ifdef USE_IVALUE_BLOCK
+                int suffix_len = snprintf(suffix, SUFFIX_SIZE, " %u %u\r\n",
+                                          htonl(c->info.flags), c->info.nbytes - 2);
+
+                MEMCACHED_COMMAND_GET(c->sfd, c->info.key, c->info.nkey, c->info.nbytes, c->info.cas);
+                if (add_iov(c, "VALUE ", 6) != 0 ||
+                    add_iov(c, c->info.key, c->info.nkey) != 0 ||
+                    add_iov(c, suffix, suffix_len) != 0 ||
+                    add_iov_ivblk(c, c->info) != 0)
+                {
+                    mc_engine.v1->release(mc_engine.v0, c, it);
+                    break; /* out of memory */
+                }
+
+                if (settings.verbose > 1) {
+                    mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                            ">%d sending key %s\n", c->sfd, (char*)c->info.key);
+                }
+#else
                 int suffix_len = snprintf(suffix, SUFFIX_SIZE, " %u %u\r\n",
                                           htonl(info.flags), info.nbytes - 2);
 
@@ -3239,6 +3328,7 @@ static void process_mget_complete(conn *c)
                     mc_logger->log(EXTENSION_LOG_DEBUG, c,
                             ">%d sending key %s\n", c->sfd, (char*)info.key);
                 }
+#endif
 
                 /* item_get() has incremented it->refcount for us */
                 STATS_HIT(c, get, key, nkey);
@@ -3282,6 +3372,11 @@ static void process_mget_complete(conn *c)
         else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory writing get response");
         else handle_unexpected_errorcode_ascii(c, ret);
     }
+
+#ifdef USE_IVALUE_BLOCK
+    if (c->info.vcurr != NULL)
+        mc_engine.v1->release_info(mc_engine.v0, c, &c->info);
+#endif
 
 #ifdef USE_STRING_MBLOCK
     /* free token buffer */
@@ -3334,8 +3429,12 @@ static void complete_update_ascii(conn *c) {
     }
 
     item *it = c->item;
+#ifdef USE_IVALUE_BLOCK
+    if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->info)) {
+#else
     item_info info = { .nvalue = 1 };
     if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &info)) {
+#endif
         mc_engine.v1->release(mc_engine.v0, c, it);
         mc_logger->log(EXTENSION_LOG_WARNING, c,
                        "%d: Failed to get item info\n", c->sfd);
@@ -3343,7 +3442,11 @@ static void complete_update_ascii(conn *c) {
         return;
     }
 
+#ifdef USE_IVALUE_BLOCK
+    if (!value_valid(c->info)) {
+#else
     if (memcmp((char*)info.value[0].iov_base + info.nbytes - 2, "\r\n", 2) != 0) {
+#endif
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         ENGINE_ERROR_CODE ret;
@@ -3351,6 +3454,31 @@ static void complete_update_ascii(conn *c) {
 
 #ifdef ENABLE_DTRACE
         switch (c->store_op) {
+#ifdef USE_IVALUE_BLOCK
+        case OPERATION_ADD:
+            MEMCACHED_COMMAND_ADD(c->sfd, c->info.key, c->info.nkey,
+                                  (ret == ENGINE_SUCCESS) ? c->info.nbytes : -1, c->cas);
+            break;
+        case OPERATION_REPLACE:
+            MEMCACHED_COMMAND_REPLACE(c->sfd, c->info.key, c->info.nkey,
+                                      (ret == ENGINE_SUCCESS) ? c->info.nbytes : -1, c->cas);
+            break;
+        case OPERATION_APPEND:
+            MEMCACHED_COMMAND_APPEND(c->sfd, c->info.key, c->info.nkey,
+                                     (ret == ENGINE_SUCCESS) ? c->info.nbytes : -1, c->cas);
+            break;
+        case OPERATION_PREPEND:
+            MEMCACHED_COMMAND_PREPEND(c->sfd, c->info.key, c->info.nkey,
+                                      (ret == ENGINE_SUCCESS) ? c->info.nbytes : -1, c->cas);
+            break;
+        case OPERATION_SET:
+            MEMCACHED_COMMAND_SET(c->sfd, c->info.key, c->info.nkey,
+                                  (ret == ENGINE_SUCCESS) ? c->info.nbytes : -1, c->cas);
+            break;
+        case OPERATION_CAS:
+            MEMCACHED_COMMAND_CAS(c->sfd, c->info.key, c->info.nkey, c->info.nbytes, c->cas);
+            break;
+#else
         case OPERATION_ADD:
             MEMCACHED_COMMAND_ADD(c->sfd, info.key, info.nkey,
                                   (ret == ENGINE_SUCCESS) ? info.nbytes : -1, c->cas);
@@ -3374,6 +3502,7 @@ static void complete_update_ascii(conn *c) {
         case OPERATION_CAS:
             MEMCACHED_COMMAND_CAS(c->sfd, info.key, info.nkey, info.nbytes, c->cas);
             break;
+#endif
         }
 #endif
 
@@ -3429,7 +3558,13 @@ static void complete_update_ascii(conn *c) {
             handle_unexpected_errorcode_ascii(c, ret);
         }
     }
+#ifdef USE_IVALUE_BLOCK
+    SLAB_INCR(c, cmd_set, c->info.key, c->info.nkey);
+    if (c->info.vcurr != NULL)
+        mc_engine.v1->release_info(mc_engine.v0, c, &c->info);
+#else
     SLAB_INCR(c, cmd_set, info.key, info.nkey);
+#endif
 
     /* release the c->item reference */
     mc_engine.v1->release(mc_engine.v0, c, c->item);
@@ -7980,6 +8115,10 @@ static void reset_cmd_handler(conn *c) {
         c->lq_bufcnt = 0;
     }
 #endif
+#ifdef USE_IVALUE_BLOCK
+    if (c->info.vcurr != NULL)
+        mc_engine.v1->release_info(mc_engine.v0, c, &c->info);
+#endif
     if (c->coll_eitem != NULL) {
         conn_coll_eitem_free(c);
     }
@@ -8849,14 +8988,22 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
             }
 
             if (it) {
+#ifdef USE_IVALUE_BLOCK
+                if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->info)) {
+#else
                 item_info info = { .nvalue = 1 };
                 if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &info)) {
+#endif
                     mc_engine.v1->release(mc_engine.v0, c, it);
                     out_string(c, "SERVER_ERROR error getting item data");
                     break;
                 }
 
+#ifdef USE_IVALUE_BLOCK
+                assert(value_valid(c->info));
+#else
                 assert(memcmp((char*)info.value[0].iov_base + info.nbytes - 2, "\r\n", 2) == 0);
+#endif
 
                 if (i >= c->isize) {
                     item **new_list = realloc(c->ilist, sizeof(item *) * c->isize * 2);
@@ -8876,9 +9023,15 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                     mc_engine.v1->release(mc_engine.v0, c, it);
                     return;
                 }
+#ifdef USE_IVALUE_BLOCK
+                int suffix_len = snprintf(suffix, SUFFIX_SIZE,
+                                          " %u %u\r\n", htonl(c->info.flags),
+                                          c->info.nbytes - 2);
+#else
                 int suffix_len = snprintf(suffix, SUFFIX_SIZE,
                                           " %u %u\r\n", htonl(info.flags),
                                           info.nbytes - 2);
+#endif
 
                 /*
                  * Construct the response. Each hit adds three elements to the
@@ -8888,8 +9041,13 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                  *   " " + flags + " " + data length + "\r\n" + data (with \r\n)
                  */
 
+#ifdef USE_IVALUE_BLOCK
+                MEMCACHED_COMMAND_GET(c->sfd, c->info.key, c->info.nkey,
+                                      c->info.nbytes, c->info.cas);
+#else
                 MEMCACHED_COMMAND_GET(c->sfd, info.key, info.nkey,
                                       info.nbytes, info.cas);
+#endif
                 if (return_cas)
                 {
 
@@ -8899,6 +9057,19 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                     mc_engine.v1->release(mc_engine.v0, c, it);
                     return;
                   }
+#ifdef USE_IVALUE_BLOCK
+                  int cas_len = snprintf(cas, SUFFIX_SIZE, " %"PRIu64"\r\n",
+                                         c->info.cas);
+                  if (add_iov(c, "VALUE ", 6) != 0 ||
+                      add_iov(c, c->info.key, c->info.nkey) != 0 ||
+                      add_iov(c, suffix, suffix_len - 2) != 0 ||
+                      add_iov(c, cas, cas_len) != 0 ||
+                      add_iov_ivblk(c, c->info) != 0)
+                      {
+                          mc_engine.v1->release(mc_engine.v0, c, it);
+                          break;
+                      }
+#else
                   int cas_len = snprintf(cas, SUFFIX_SIZE, " %"PRIu64"\r\n",
                                          info.cas);
                   if (add_iov(c, "VALUE ", 6) != 0 ||
@@ -8910,9 +9081,20 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                           mc_engine.v1->release(mc_engine.v0, c, it);
                           break;
                       }
+#endif
                 }
                 else
                 {
+#ifdef USE_IVALUE_BLOCK
+                  if (add_iov(c, "VALUE ", 6) != 0 ||
+                      add_iov(c, c->info.key, c->info.nkey) != 0 ||
+                      add_iov(c, suffix, suffix_len) != 0 ||
+                      add_iov_ivblk(c, c->info) != 0)
+                      {
+                          mc_engine.v1->release(mc_engine.v0, c, it);
+                          break;
+                      }
+#else
                   if (add_iov(c, "VALUE ", 6) != 0 ||
                       add_iov(c, info.key, info.nkey) != 0 ||
                       add_iov(c, suffix, suffix_len) != 0 ||
@@ -8921,13 +9103,21 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                           mc_engine.v1->release(mc_engine.v0, c, it);
                           break;
                       }
+#endif
                 }
 
 
+#ifdef USE_IVALUE_BLOCK
+                if (settings.verbose > 1) {
+                    mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                            ">%d sending key %s\n", c->sfd, (char*)c->info.key);
+                }
+#else
                 if (settings.verbose > 1) {
                     mc_logger->log(EXTENSION_LOG_DEBUG, c,
                             ">%d sending key %s\n", c->sfd, (char*)info.key);
                 }
+#endif
 
                 /* item_get() has incremented it->refcount for us */
                 STATS_HIT(c, get, key, nkey);
@@ -8955,6 +9145,10 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
 
     } while(key_token->value != NULL);
 
+#ifdef USE_IVALUE_BLOCK
+    if (c->info.vcurr != NULL)
+        mc_engine.v1->release_info(mc_engine.v0, c, &c->info);
+#endif
     c->icurr = c->ilist;
     c->ileft = i;
     c->suffixcurr = c->suffixlist;
@@ -9100,16 +9294,28 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     ret = mc_engine.v1->allocate(mc_engine.v0, c, &it, key, nkey, vlen,
                                  htonl(flags), realtime(exptime), req_cas_id);
 
+#ifdef USE_IVALUE_BLOCK
+#else
     item_info info = { .nvalue = 1 };
+#endif
     switch (ret) {
     case ENGINE_SUCCESS:
+#ifdef USE_IVALUE_BLOCK
+        if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->info)) {
+#else
         if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &info)) {
+#endif
             mc_engine.v1->release(mc_engine.v0, c, it);
             out_string(c, "SERVER_ERROR error getting item data");
             break;
         }
         c->item = it;
+#ifdef USE_IVALUE_BLOCK
+        c->ritem = c->info.nvalue > 1 ? c->info.vcurr[0].iov_base
+                                      : c->info.value[0].iov_base;
+#else
         c->ritem = info.value[0].iov_base;
+#endif
         c->rlbytes = vlen;
         c->store_op = store_op;
         conn_set_state(c, conn_nread);
@@ -9290,7 +9496,11 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     }
 
     /* For some reason the SLAB_INCR tries to access this... */
+#ifdef USE_IVALUE_BLOCK
+    c->info.clsid = 0;
+#else
     item_info info = { .nvalue = 1 };
+#endif
     if (ret == ENGINE_SUCCESS) {
         out_string(c, "DELETED");
         //SLAB_INCR(c, delete_hits, key, nkey);
@@ -14362,9 +14572,13 @@ bool conn_nread(conn *c) {
     }
 
     /* first check if we have leftovers in the conn_read buffer */
-#ifdef USE_STRING_MBLOCK
+#if defined(USE_IVALUE_BLOCK) || defined(USE_STRING_MBLOCK)
     while (c->rbytes > 0) {
         int tocopy = c->rbytes > c->rlbytes ? c->rlbytes : c->rbytes;
+#ifdef USE_IVALUE_BLOCK
+        if (c->info.vcurr != NULL)
+            tocopy = tocopy > CONN_ITEM_CLEN(c->info) ? CONN_ITEM_CLEN(c->info) : tocopy;
+#endif
         if (c->ritem != c->rcurr) {
             memmove(c->ritem, c->rcurr, tocopy);
         }
@@ -14372,6 +14586,18 @@ bool conn_nread(conn *c) {
         c->rlbytes -= tocopy;
         c->rcurr += tocopy;
         c->rbytes -= tocopy;
+#ifdef USE_IVALUE_BLOCK
+        if (c->info.vcurr != NULL) { // ivalue block read
+            assert(c->rltotal == 0);
+            CONN_ITEM_CLEN(c->info) -= tocopy;
+            if (CONN_ITEM_CLEN(c->info) == 0 && c->rlbytes > 0) {
+                CONN_NEXT_VBLK(c->info);
+                c->ritem = (char*)CONN_ITEM_CPTR(c->info);
+                continue;
+            }
+        }
+#endif
+#ifdef USE_STRING_MBLOCK
         if (c->rltotal > 0) { /* string block read */
             c->rltotal -= tocopy;
             if (c->rlbytes == 0 && c->rltotal > 0) {
@@ -14382,6 +14608,7 @@ bool conn_nread(conn *c) {
                 continue;
             }
         }
+#endif
         if (c->rlbytes == 0) {
             return true;
         }
@@ -14403,6 +14630,11 @@ bool conn_nread(conn *c) {
 #endif
 
     /*  now try reading from the socket */
+#ifdef USE_IVALUE_BLOCK
+    if (c->info.vcurr != NULL)
+        res = read(c->sfd, c->ritem, CONN_ITEM_CLEN(c->info));
+    else
+#endif
     res = read(c->sfd, c->ritem, c->rlbytes);
     if (res > 0) {
         STATS_ADD(c, bytes_read, res);
@@ -14411,6 +14643,16 @@ bool conn_nread(conn *c) {
         }
         c->ritem += res;
         c->rlbytes -= res;
+#ifdef USE_IVALUE_BLOCK
+        if (c->info.vcurr != NULL) {
+            assert(c->rltotal == 0);
+            CONN_ITEM_CLEN(c->info) -= res;
+            if (CONN_ITEM_CLEN(c->info) == 0 && c->rlbytes > 0) {
+                CONN_NEXT_VBLK(c->info);
+                c->ritem = (char*)CONN_ITEM_CPTR(c->info);
+            }
+        }
+#endif
 #ifdef USE_STRING_MBLOCK
         if (c->rltotal > 0) {
             c->rltotal -= res;
@@ -14529,6 +14771,10 @@ bool conn_mwrite(conn *c) {
             if (c->coll_eitem != NULL) {
                 conn_coll_eitem_free(c);
             }
+#ifdef USE_IVALUE_BLOCK
+            if (c->info.vcurr != NULL)
+                mc_engine.v1->release_info(mc_engine.v0, c, &c->info);
+#endif
             if (c->coll_strkeys != NULL) {
 #ifdef USE_STRING_MBLOCK_COLL
                 assert(c->coll_strkeys == (void*)&c->str_blcks);
