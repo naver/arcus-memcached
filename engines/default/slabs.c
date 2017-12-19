@@ -242,6 +242,7 @@ static void do_slabs_check_space_shortage_level(struct default_engine *engine)
         } else {
             ssl = MAX_SPACE_SHORTAGE_LEVEL;
         }
+        /*** Disable printing the increment of space shortage level ***
         if (ssl > sm_anchor.space_shortage_level) {
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "Space shortage level increases: %d => %d "
@@ -251,6 +252,7 @@ static void do_slabs_check_space_shortage_level(struct default_engine *engine)
                         (unsigned long long)sm_anchor.free_avail_space,
                         (unsigned long long)sm_anchor.free_chunk_space);
         }
+        ***************************************************************/
         sm_anchor.space_shortage_level = ssl;
     } else {
         sm_anchor.space_shortage_level = 0;
