@@ -4507,6 +4507,30 @@ static uint32_t do_btree_elem_count(struct default_engine *engine, btree_meta_in
         return 0;
     }
 
+#ifdef BOP_COUNT_OPTIMIZE
+    if (bkrtype != BKEY_RANGE_TYPE_SIN && efilter == NULL) {
+        int min_comp, max_comp;
+        btree_elem_item *min_bkey_elem = do_btree_get_first_elem(info->root);
+        btree_elem_item *max_bkey_elem = do_btree_get_last_elem(info->root);
+        do {
+            if (bkrtype == BKEY_RANGE_TYPE_ASC) {
+                min_comp = BKEY_COMP(bkrange->from_bkey, bkrange->from_nbkey,
+                                 min_bkey_elem->data, min_bkey_elem->nbkey);
+                max_comp = BKEY_COMP(bkrange->to_bkey, bkrange->to_nbkey,
+                                 max_bkey_elem->data, max_bkey_elem->nbkey);
+                if (min_comp > 0 || max_comp < 0) break;
+            } else { /* BKEY_RANGE_TYPE_DSC */
+                min_comp = BKEY_COMP(bkrange->to_bkey, bkrange->to_nbkey,
+                                 min_bkey_elem->data, min_bkey_elem->nbkey);
+                max_comp = BKEY_COMP(bkrange->from_bkey, bkrange->from_nbkey,
+                                 max_bkey_elem->data, max_bkey_elem->nbkey);
+                if (min_comp > 0 || max_comp < 0) break;
+            }
+            return info->ccnt;
+        } while(0);
+    }
+#endif
+
     elem = do_btree_find_first(info->root, bkrtype, bkrange, &posi, false);
     if (elem != NULL) {
         if (bkrtype == BKEY_RANGE_TYPE_SIN) {
