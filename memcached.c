@@ -1155,12 +1155,13 @@ static int add_iov(conn *c, const void *buf, int len) {
 
 #ifdef USE_IVALUE_BLOCK
 static int add_iov_ivblk(conn *c, item_info info) {
-    assert((info.nvalue == 1) || (info.vcurr != NULL));
     uint32_t len = info.nbytes;
 
     if (info.nvalue == 1) { // only one value block
+        assert(info.vcurr == NULL);
         if ((add_iov(c, c->info.value[0].iov_base, c->info.value[0].iov_len) != 0)) return -1;
     } else { // 2 or more value block
+        assert(info.vcurr != NULL);
         while (len > 0) {
             if((add_iov(c, CONN_ITEM_CPTR(c->info), CONN_ITEM_CLEN(c->info)) != 0)) return -1;
             len -= CONN_ITEM_CLEN(c->info);
