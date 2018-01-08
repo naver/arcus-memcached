@@ -65,6 +65,18 @@ static void do_item_unlink(struct default_engine *engine, hash_item *it, enum it
 static void do_coll_all_elem_delete(struct default_engine *engine, hash_item *it);
 static uint32_t do_map_elem_delete(struct default_engine *engine, map_meta_info *info,
                                    const uint32_t count, enum elem_delete_cause cause);
+#ifdef USE_IVALUE_BLOCK
+static hash_item *do_ivalue_alloc(struct default_engine *engine,
+                                  const void *key, const size_t nkey,
+                                  const int flags, const rel_time_t exptime,
+                                  uint32_t nbytes, const bool onlyhead,
+                                  const void *cookie);
+static void do_ivalue_free(struct default_engine *engine, hash_item *it);
+static hash_item *do_combine_ivblk(struct default_engine *engine, const void *cookie,
+                                   hash_item *frt_it, hash_item *bck_it,
+                                   ENGINE_STORE_OPERATION operation);
+static void do_copy_ivblk(ivalue_block_t *new_iv, ivalue_block_t *cpy_iv, int offset, int size);
+#endif
 
 extern int genhash_string_hash(const void* p, size_t nkey);
 
@@ -217,7 +229,13 @@ static inline size_t ITEM_ntotal(struct default_engine *engine, const hash_item 
         else if (IS_MAP_ITEM(item)) ret += sizeof(map_meta_info);
         else /* BTREE_ITEM */       ret += sizeof(btree_meta_info);
     } else {
+#ifdef USE_IVALUE_BLOCK
+        ivalue_info_t *ivinfo = item_get_ivinfo(item);
         ret = sizeof(*item) + item->nkey + item->nbytes;
+        ret += (IVALUE_INFO_SIZE + (ivinfo->nblk * IVALUE_BLCK_SIZE));
+#else
+        ret = sizeof(*item) + item->nkey + item->nbytes;
+#endif
     }
     if (engine->config.use_cas) {
         ret += sizeof(uint64_t);
@@ -715,7 +733,11 @@ static hash_item *do_item_alloc(struct default_engine *engine,
 
 static void do_item_free(struct default_engine *engine, hash_item *it)
 {
+#ifdef USE_IVALUE_BLOCK
+    size_t ntotal;
+#else
     size_t ntotal = ITEM_ntotal(engine, it);
+#endif
     unsigned int clsid;
     assert((it->iflag & ITEM_LINKED) == 0);
     assert(it != engine->items.heads[it->slabs_clsid]);
@@ -730,6 +752,13 @@ static void do_item_free(struct default_engine *engine, hash_item *it)
         }
     }
 
+#ifdef USE_IVALUE_BLOCK
+    if (!IS_COLL_ITEM(it)) { /* only used for simple kv */
+        do_ivalue_free(engine, it);
+        return;
+    }
+    ntotal = ITEM_ntotal(engine, it);
+#endif
     /* so slab size changer can tell later if item is already free or not */
     clsid = it->slabs_clsid;
     it->slabs_clsid = 0;
@@ -746,7 +775,12 @@ static void item_link_q(struct default_engine *engine, hash_item *it)
     int clsid = 1;
 #else
     int clsid = it->slabs_clsid;
+#ifdef USE_IVALUE_BLOCK
+    if (IS_COLL_ITEM(it) || (((ITEM_ntotal(engine, it) - it->nbytes) <= MAX_SM_VALUE_LEN)
+                            && (IVALUE_PER_BLOCK <= MAX_SM_VALUE_LEN))) {
+#else
     if (IS_COLL_ITEM(it) || ITEM_ntotal(engine, it) <= MAX_SM_VALUE_LEN) {
+#endif
         clsid = LRU_CLSID_FOR_SMALL;
     }
 #endif
@@ -789,7 +823,12 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it)
     int clsid = 1;
 #else
     int clsid = it->slabs_clsid;
+#ifdef USE_IVALUE_BLOCK
+    if (IS_COLL_ITEM(it) || (((ITEM_ntotal(engine, it) - it->nbytes) <= MAX_SM_VALUE_LEN)
+                            && (IVALUE_PER_BLOCK <= MAX_SM_VALUE_LEN))) {
+#else
     if (IS_COLL_ITEM(it) || ITEM_ntotal(engine, it) <= MAX_SM_VALUE_LEN) {
+#endif
         clsid = LRU_CLSID_FOR_SMALL;
     }
 #endif
@@ -905,7 +944,7 @@ static void do_item_unlink(struct default_engine *engine, hash_item *it,
     MEMCACHED_ITEM_UNLINK(key, it->nkey, it->nbytes);
 
     if ((it->iflag & ITEM_LINKED) != 0) {
-        /* unlink the item from LUR list */
+        /* unlink the item from LRU list */
         item_unlink_q(engine, it);
 
         /* unlink the item from hash table */
@@ -1257,6 +1296,17 @@ static ENGINE_ERROR_CODE do_store_item(struct default_engine *engine, hash_item 
 
             if (stored == ENGINE_NOT_STORED) {
                 /* we have it and old_it here - alloc memory to hold both */
+#ifdef USE_IVALUE_BLOCK
+                new_it = do_combine_ivblk(engine, cookie, old_it, it, operation);
+                if (new_it == NULL) {
+                    // SERVER_ERROR out of memory || ENGINE_E2BIG
+                    if (old_it != NULL) {
+                        do_item_release(engine, old_it);
+                    }
+                    return ENGINE_NOT_STORED;
+                }
+                it = new_it;
+#else
                 new_it = do_item_alloc(engine, key, it->nkey,
                                        old_it->flags, old_it->exptime,
                                        it->nbytes + old_it->nbytes - 2 /* CRLF */,
@@ -1283,6 +1333,7 @@ static ENGINE_ERROR_CODE do_store_item(struct default_engine *engine, hash_item 
                 }
 
                 it = new_it;
+#endif
             }
         }
         if (stored == ENGINE_NOT_STORED) {
@@ -1336,9 +1387,16 @@ static ENGINE_ERROR_CODE do_add_delta(struct default_engine *engine, hash_item *
 
     ptr = item_get_data(it);
 
+#ifdef USE_IVALUE_BLOCK
+    ivalue_info_t *ivinfo = item_get_ivinfo(it);
+    if (ivinfo->nblk > 1 || !safe_strtoull(ptr, &value)) {
+        return ENGINE_EINVAL;
+    }
+#else
     if (!safe_strtoull(ptr, &value)) {
         return ENGINE_EINVAL;
     }
+#endif
 
     if (incr) {
         value += delta;
@@ -1355,8 +1413,13 @@ static ENGINE_ERROR_CODE do_add_delta(struct default_engine *engine, hash_item *
     if ((res = snprintf(buf, sizeof(buf), "%" PRIu64 "\r\n", value)) == -1) {
         return ENGINE_EINVAL;
     }
+#ifdef USE_IVALUE_BLOCK
+    hash_item *new_it = do_ivalue_alloc(engine, item_get_key(it), it->nkey,
+                                      it->flags, it->exptime, res, false, cookie);
+#else
     hash_item *new_it = do_item_alloc(engine, item_get_key(it), it->nkey,
                                       it->flags, it->exptime, res, cookie);
+#endif
     if (new_it == NULL) {
         return ENGINE_ENOMEM;
     }
@@ -6088,7 +6151,11 @@ hash_item *item_alloc(struct default_engine *engine,
     hash_item *it;
     pthread_mutex_lock(&engine->cache_lock);
     /* key can be NULL */
+#ifdef USE_IVALUE_BLOCK
+    it = do_ivalue_alloc(engine, key, nkey, flags, exptime, nbytes, false, cookie);
+#else
     it = do_item_alloc(engine, key, nkey, flags, exptime, nbytes, cookie);
+#endif
     pthread_mutex_unlock(&engine->cache_lock);
     return it;
 }
@@ -6116,6 +6183,59 @@ void item_release(struct default_engine *engine, hash_item *item)
     do_item_release(engine, item);
     pthread_mutex_unlock(&engine->cache_lock);
 }
+
+#ifdef USE_IVALUE_BLOCK
+bool item_info_get(hash_item *item, item_info *info)
+{
+    int s;
+    struct iovec *vector = NULL;
+
+    ivalue_info_t *ivinfo = item_get_ivinfo(item);
+    ivalue_block_t *ivblk = item_get_ivblk(item);
+    info->cas = item_get_cas(item);
+    info->exptime = item->exptime;
+    info->nbytes = item->nbytes;
+    info->flags = item->flags;
+    info->clsid = item->slabs_clsid;
+    info->nkey = item->nkey;
+    info->nvalue = ivinfo->nblk;
+    info->key = item_get_key(item);
+
+    if (info->nvalue > 1) {
+        // need more space
+        assert(info->nvalue <= (EITEMS_BLCK_SIZE / sizeof(struct iovec)));
+        if (info->vcurr != NULL) {
+            vector = (struct iovec*)info->value[0].iov_base;
+        } else if ((vector = (struct iovec*)mblock_single_alloc()) == NULL) {
+            return false;
+        }
+        info->value[0].iov_base = (void*)vector;
+        info->value[0].iov_len = EITEMS_BLCK_SIZE;
+
+        for (s = 0; s < info->nvalue; s ++) {
+            vector[s].iov_base = ivblk->base;
+            vector[s].iov_len  = ivblk->len;
+            IVALUE_NEXT_BLCK(ivblk);
+        }
+    } else {
+        if (info->vcurr != NULL)
+            mblock_single_free((void*)info->value[0].iov_base);
+        info->value[0].iov_base = ivblk->base;
+        info->value[0].iov_len = ivblk->len;
+    }
+    info->vcurr = vector; // vector != NULL : multi value block && allocate mblock;
+
+    return true;
+}
+
+void release_item_info(item_info* info)
+{
+    if (info->vcurr != NULL) {
+        mblock_single_free((void*)info->value[0].iov_base);
+        info->vcurr = NULL;
+    }
+}
+#endif
 
 /*
  * Stores an item in the cache (high level, obeys set/add/replace semantics)
@@ -6157,7 +6277,11 @@ static ENGINE_ERROR_CODE do_arithmetic(struct default_engine *engine,
             int len = snprintf(buffer, sizeof(buffer), "%"PRIu64"\r\n",
                     (uint64_t)initial);
 
+#ifdef USE_IVALUE_BLOCK
+            it = do_ivalue_alloc(engine, key, nkey, flags, exptime, len, false, cookie);
+#else
             it = do_item_alloc(engine, key, nkey, flags, exptime, len, cookie);
+#endif
             if (it == NULL) {
                 return ENGINE_ENOMEM;
             }
@@ -7801,9 +7925,29 @@ const void* item_get_key(const hash_item* item)
     return ret;
 }
 
+#ifdef USE_IVALUE_BLOCK
+ivalue_info_t* item_get_ivinfo(const hash_item* item)
+{
+    return (ivalue_info_t*)((char*)item_get_key(item) + item->nkey);
+}
+
+ivalue_block_t* item_get_ivblk(const hash_item* item)
+{
+    return (ivalue_block_t *)((char*)item_get_ivinfo(item) + IVALUE_INFO_SIZE);
+}
+#endif
+
 char* item_get_data(const hash_item* item)
 {
+#ifdef USE_IVALUE_BLOCK
+    if (IS_COLL_ITEM(item)) {
+        return ((char*)item_get_key(item)) + item->nkey;
+    } else { // return first value block.
+        return item_get_ivblk(item)->base;
+    }
+#else
     return ((char*)item_get_key(item)) + item->nkey;
+#endif
 }
 
 const void* item_get_meta(const hash_item* item)
@@ -7814,6 +7958,397 @@ const void* item_get_meta(const hash_item* item)
     else
         return NULL;
 }
+#ifdef USE_IVALUE_BLOCK
+static hash_item *do_ivalue_alloc(struct default_engine *engine,
+                                  const void *key, const size_t nkey,
+                                  const int flags, const rel_time_t exptime,
+                                  uint32_t nbytes, const bool onlyhead,
+                                  const void *cookie)
+{
+    hash_item *it = NULL;
+    ivalue_block_t *ivblk = NULL;
+    ivalue_info_t *ivinfo = NULL;
+    void *new;
+
+    size_t alloc_bytes;
+    uint32_t leftbytes = ((nbytes - 1) % IVALUE_PER_BLOCK) + 1;
+    uint16_t alloc_cnt = ((nbytes - 1) / IVALUE_PER_BLOCK) + 1;
+    uint16_t check_cnt; /* to check if all allocate is complete */
+    size_t hdsize = sizeof(hash_item) + nkey + IVALUE_INFO_SIZE + (alloc_cnt * IVALUE_BLCK_SIZE);
+    if (engine->config.use_cas) hdsize += sizeof(uint64_t);
+    alloc_bytes = hdsize;
+
+    assert(alloc_cnt > 0 && nkey > 0);
+
+    if (slabs_clsid(engine, hdsize + nbytes) == 0) return NULL; // ENGINE_E2BIG
+
+    if (onlyhead) alloc_cnt = 0; /* only header block alloc for append/prepend operation */
+
+    alloc_cnt += 1; /* header block */
+    check_cnt = alloc_cnt;
+
+    unsigned int id = slabs_clsid(engine, hdsize);
+
+#ifdef ENABLE_STICKY_ITEM
+    /* sticky memory limit check */
+    if (exptime == (rel_time_t)(-1)) { /* sticky item */
+        if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
+            return NULL;
+    }
+#endif
+
+    while (alloc_cnt > 0) {
+        if (alloc_cnt < check_cnt) {
+            if (alloc_cnt == 1) { /* last block */
+                alloc_bytes = leftbytes;
+                id = slabs_clsid(engine, alloc_bytes);
+            } else {
+                alloc_bytes = IVALUE_PER_BLOCK;
+                id = slabs_clsid(engine,alloc_bytes);
+            }
+        } /* alloc_cnt == check_cnt : header block */
+
+        if (id == 0) break;
+
+        if ((new = do_item_alloc_internal(engine, alloc_bytes, id, cookie)) == NULL) break;
+
+        if (alloc_cnt < check_cnt) {
+            ivblk[check_cnt - (alloc_cnt + 1)].base = new;
+            ivblk[check_cnt - (alloc_cnt + 1)].len = alloc_bytes;
+        } else { /* header block allocate */
+            it = new;
+            it->next = it->prev = it; /* special meaning: unlinked from LRU */
+            it->h_next = 0;
+            it->refcount = 1;     /* the caller will have a reference */
+            it->refchunk = 0;
+            DEBUG_REFCNT(it, '*');
+            it->iflag = engine->config.use_cas ? ITEM_WITH_CAS : 0;
+            it->nkey = nkey;
+            it->nbytes = nbytes;
+            it->flags = flags;
+            if (key != NULL) {
+                memcpy((void*)item_get_key(it), key, nkey);
+            }
+            it->exptime = exptime;
+            it->pfxptr = NULL;
+
+            ivinfo = item_get_ivinfo(it);
+            ivblk = (ivalue_block_t*)((char*)ivinfo + IVALUE_INFO_SIZE);
+
+            ivinfo->nblk = alloc_cnt - 1;
+
+            assert(it->slabs_clsid == 0);
+            id = slabs_clsid(engine, hdsize + nbytes);
+
+            it->slabs_clsid = id;
+            assert(it->slabs_clsid > 0);
+            assert(it != engine->items.heads[it->slabs_clsid]);
+        }
+        alloc_cnt--;
+    }
+
+    if (0 < alloc_cnt && alloc_cnt < check_cnt) { /* allocate failed */
+        it->nbytes = (check_cnt - (alloc_cnt + 1)) * IVALUE_PER_BLOCK;
+        do_ivalue_free(engine, it);
+        return NULL;
+    }
+    return it;
+}
+
+static void do_ivalue_free(struct default_engine *engine, hash_item *it)
+{
+    unsigned int clsid;
+
+    size_t   ntotal = ITEM_ntotal(engine, it);
+    int64_t  leftbytes = it->nbytes;
+    uint32_t freebytes;
+    uint16_t idx = 0;
+
+    ivalue_block_t *scan = item_get_ivblk(it);
+    void           *free = (void *)it;
+
+    do {
+        if (leftbytes > 0) {
+            leftbytes -= scan[idx].len;
+            freebytes = scan[idx].len;
+            free = scan[idx].base;
+        } else {
+            assert(leftbytes == 0);
+            leftbytes = -1;
+            freebytes = ntotal - it->nbytes;
+            free = it;
+        }
+        clsid = slabs_clsid(engine, freebytes);
+        slabs_free(engine, free, freebytes, clsid);
+        idx++;
+    } while (leftbytes > -1);
+}
+
+static void do_ivalue_free_alone(struct default_engine *engine, ivalue_block_t *free)
+{
+    unsigned int id = slabs_clsid(engine, free->len);
+    slabs_free(engine, free->base, free->len, id);
+}
+
+/*
+ * Combine the value of the frt_it block with the value of the bck_it block and return the new value
+ */
+static hash_item *do_combine_ivblk(struct default_engine *engine,
+                                   const void *cookie,
+                                   hash_item *old_it,
+                                   hash_item *add_it,
+                                   ENGINE_STORE_OPERATION operation)
+{
+    assert(operation == OPERATION_APPEND || operation == OPERATION_PREPEND);
+    hash_item *new_it = NULL;
+    hash_item *frt_it = operation == OPERATION_APPEND ? old_it : add_it;
+    hash_item *bck_it = operation == OPERATION_APPEND ? add_it : old_it;
+
+    unsigned int id;
+
+    ivalue_block_t *new_ivblk;
+    ivalue_info_t *new_ivinfo;
+
+    ivalue_block_t *frt_ivblk = item_get_ivblk(frt_it);
+    ivalue_info_t *frt_ivinfo = item_get_ivinfo(frt_it);
+
+    ivalue_block_t *bck_ivblk = item_get_ivblk(bck_it);
+    ivalue_info_t *bck_ivinfo = item_get_ivinfo(bck_it);
+
+    bool split;
+    uint32_t new_nbytes = frt_it->nbytes + bck_it->nbytes -2;
+    uint16_t cbnblk = 1; /* number of combine block */
+    uint16_t nwnblk;     /* number of new_it nblk */
+    uint16_t cpnblk;     /* number of copy nblk */
+    size_t ntotal;
+    size_t ivlen; /* value size of ivalue block */
+
+    if (ITEM_ntotal(engine, frt_it) + ITEM_ntotal(engine, bck_it) > engine->config.item_size_max) return NULL;
+
+    IVALUE_NEXT_NBLCK(frt_ivblk, frt_ivinfo->nblk - 1); /* move last block */
+    split = frt_ivblk->len == 1 ? true : false;
+    nwnblk = frt_ivinfo->nblk + bck_ivinfo->nblk;
+    if (split) IVALUE_PREV_BLCK(frt_ivblk);
+
+    if ((frt_ivblk->len + bck_ivblk->len - 2 <= IVALUE_PER_BLOCK)  && !split) {
+        /* try combine frt_it ivalue block and bck_it ivalue block */
+        nwnblk -= cbnblk;
+        ivlen = frt_ivblk->len + bck_ivblk->len - 2;
+
+        /* 1. only head block allocate */
+        new_it = do_ivalue_alloc(engine, item_get_key(old_it), old_it->nkey,
+                                 old_it->flags, old_it->exptime,
+                                 IVALUE_PER_BLOCK * nwnblk,
+                                 true, cookie); /* only headblock allocate */
+        if (new_it == NULL) return NULL;
+
+        new_it->nbytes = new_nbytes; // reset new_it nbytes
+        new_ivblk = item_get_ivblk(new_it);
+        new_ivinfo = item_get_ivinfo(new_it);
+        new_ivinfo->nblk = nwnblk;
+
+        /* 2. reuse frt ivalue block */
+        cpnblk = frt_ivinfo->nblk - 1;
+        memcpy(new_ivblk, item_get_ivblk(frt_it), (IVALUE_BLCK_SIZE * cpnblk));
+
+        /* 3. allocate single block(combine) */
+        IVALUE_NEXT_NBLCK(new_ivblk, cpnblk);
+        id = slabs_clsid(engine, ivlen);
+        if ((new_ivblk->base = do_item_alloc_internal(engine, ivlen, id, cookie)) == NULL) {
+            new_it->nbytes = 0; // for free headblock
+            ntotal = ITEM_ntotal(engine, new_it);
+            id = slabs_clsid(engine, ntotal);
+            slabs_free(engine, new_it, ntotal, id);
+            return NULL;
+        }
+        new_ivblk->len = ivlen;
+
+        /* 4. copy block */
+        do_copy_ivblk(new_ivblk, frt_ivblk, 0, frt_ivblk->len - 2);
+        do_copy_ivblk(new_ivblk, bck_ivblk, frt_ivblk->len - 2, bck_ivblk->len);
+
+        IVALUE_NEXT_BLCK(new_ivblk);
+
+        /* 5. reuse bck ivalue block */
+        cpnblk = bck_ivinfo->nblk - cbnblk;
+        IVALUE_NEXT_BLCK(bck_ivblk);
+        memcpy(new_ivblk, bck_ivblk, (IVALUE_BLCK_SIZE * cpnblk));
+
+        /* 6. free ivalue block(not used block) */
+        do_ivalue_free_alone(engine, frt_ivblk);
+        do_ivalue_free_alone(engine, item_get_ivblk(bck_it));
+
+        /* 7. reset for free */
+        frt_it->nbytes = bck_it->nbytes = 0; /* to free only head block later */
+    } else {
+        // try again with bck_it block only
+        ivlen = (split ? -1 : -2); /* reuse frt_it "\r\n" */
+        nwnblk -= (split ? 1 : 0);
+
+        ivlen += bck_ivblk->len;
+        IVALUE_NEXT_BLCK(bck_ivblk);
+        if (ivlen + bck_ivblk->len <= IVALUE_PER_BLOCK) {
+            // reuse frt_it "\r\n" combine bck_it ivalue block
+            nwnblk -= cbnblk;
+            ivlen += bck_ivblk->len;
+
+            /* 1. only head block allocate */
+            new_it = do_ivalue_alloc(engine, item_get_key(old_it), old_it->nkey,
+                                     old_it->flags, old_it->exptime,
+                                     IVALUE_PER_BLOCK * nwnblk,
+                                     true, cookie); /*only headblock allocate*/
+            if (new_it == NULL) return NULL;
+
+            new_it->nbytes = new_nbytes; // reset new_it nbytes;
+            new_ivblk = item_get_ivblk(new_it);
+            new_ivinfo = item_get_ivinfo(new_it);
+            new_ivinfo->nblk = nwnblk;
+
+            /* 2. reuse frt ivalue block */
+            cpnblk = frt_ivinfo->nblk - (1 + (split ? 1 : 0));
+            memcpy(new_ivblk, item_get_ivblk(frt_it), (IVALUE_BLCK_SIZE * cpnblk));
+
+            /* 3. allocate single block(combine) */
+            IVALUE_NEXT_NBLCK(new_ivblk, cpnblk);
+            id = slabs_clsid(engine, ivlen);
+            if ((new_ivblk->base = do_item_alloc_internal(engine, ivlen, id, cookie)) == NULL) {
+                new_it->nbytes = 0; //for free headblock
+                ntotal = ITEM_ntotal(engine, new_it);
+                id = slabs_clsid(engine, ntotal);
+                slabs_free(engine, new_it, ntotal, id);
+                return NULL;
+            }
+            new_ivblk->len = ivlen;
+
+            /* 4. copy block */
+            IVALUE_PREV_BLCK(new_ivblk);
+            do_copy_ivblk(new_ivblk, bck_ivblk, new_ivblk->len - (split ? 1 : 2), ivlen + (split ? 1 : 2));
+
+            IVALUE_NEXT_NBLCK(new_ivblk, 2);
+
+            /* 5. reuse bck ivalue block */
+            cpnblk = bck_ivinfo->nblk - 2;
+            IVALUE_NEXT_BLCK(bck_ivblk);
+            memcpy(new_ivblk, bck_ivblk, (IVALUE_BLCK_SIZE * cpnblk));
+
+            /* 6. free ivalue block */
+            bck_ivblk = item_get_ivblk(bck_it);
+            do_ivalue_free_alone(engine, bck_ivblk);
+            IVALUE_NEXT_BLCK(bck_ivblk);
+            do_ivalue_free_alone(engine, bck_ivblk);
+
+        } else {
+            // only reuse frt_it "\r\n"
+            IVALUE_PREV_BLCK(bck_ivblk);
+
+            /* 1. only head block allocate */
+            new_it = do_ivalue_alloc(engine, item_get_key(old_it), old_it->nkey,
+                                     old_it->flags, old_it->exptime,
+                                     IVALUE_PER_BLOCK * nwnblk,
+                                     true, cookie); /* only headblock allocate */
+            if (new_it == NULL) return NULL;
+
+            new_it->nbytes = new_nbytes; // reset new_it nbytes;
+            new_ivblk = item_get_ivblk(new_it);
+            new_ivinfo = item_get_ivinfo(new_it);
+            new_ivinfo->nblk = nwnblk;
+
+            /* 2. reuse frt ivalue block */
+            cpnblk = frt_ivinfo->nblk - (split ? 1 : 0);
+            memcpy(new_ivblk, item_get_ivblk(frt_it), (IVALUE_BLCK_SIZE * cpnblk));
+
+            /* 3. allocate single block(combine) */
+            IVALUE_NEXT_NBLCK(new_ivblk, cpnblk);
+            id = slabs_clsid(engine, ivlen);
+            if ((new_ivblk->base = do_item_alloc_internal(engine, ivlen, id, cookie)) == NULL) {
+                new_it->nbytes = 0; //for free headblock
+                ntotal = ITEM_ntotal(engine, new_it);
+                id = slabs_clsid(engine, ntotal);
+                slabs_free(engine, new_it, ntotal, id);
+                return NULL;
+            }
+            new_ivblk->len = ivlen;
+
+            /* 4. copy block */
+            IVALUE_PREV_BLCK(new_ivblk);
+            do_copy_ivblk(new_ivblk, bck_ivblk, new_ivblk->len - (split ? 1 : 2), bck_ivblk->len);
+
+            IVALUE_NEXT_NBLCK(new_ivblk, 2);
+
+            /* 5. reuse bck ivalue block */
+            cpnblk = bck_ivinfo->nblk - 1;
+            IVALUE_NEXT_BLCK(bck_ivblk);
+            memcpy(new_ivblk, bck_ivblk, (IVALUE_BLCK_SIZE * cpnblk));
+
+            /* 6. free ivalue block */
+            bck_ivblk = item_get_ivblk(bck_it);
+            do_ivalue_free_alone(engine, bck_ivblk);
+        }
+        /* 7. reset for free */
+        frt_it->nbytes = bck_it->nbytes = 0; /* to free only head block later */
+
+        /* 8. split block free(block containing only "\n") */
+        if (split) {
+            IVALUE_NEXT_BLCK(frt_ivblk);
+            do_ivalue_free_alone(engine, frt_ivblk);
+        }
+    }
+    return new_it;
+}
+
+/*
+ * functions like memcpy used for ivalue block
+ */
+static void do_copy_ivblk(ivalue_block_t *dest_iv, ivalue_block_t *src_iv, int offset, int size)
+{
+    assert(offset >= 0);
+    int tocopy = size;
+    int dest_size; /* size of remaining value of the destination block */
+    int src_size;  /* size of remaining value of the source block */
+    int real_size; /* real copy value size */
+    int move = 0;
+
+    char *dcurr; /* location to write down on destination block */
+    char *scurr; /* location to read from source block */
+
+    while ((dest_iv->len + move) < offset) {
+        move += dest_iv->len;
+        IVALUE_NEXT_BLCK(dest_iv);
+    }
+    dest_size = dest_iv->len - (offset - move);
+    src_size = src_iv->len;
+
+    dcurr = (char*)dest_iv->base + (offset - move);
+    scurr = (char*)src_iv->base;
+
+    while (tocopy > 0) {
+        /* real_size : the smallest of dest_size, src_size and tocopy */
+        real_size = (dest_size > src_size) ? src_size : dest_size;
+        real_size = (tocopy > real_size) ? real_size : tocopy;
+
+        memcpy(dcurr, scurr, real_size);
+
+        tocopy -= real_size;
+        dest_size -= real_size;
+        src_size -= real_size;
+
+        dcurr += real_size;
+        scurr += real_size;
+        if (tocopy > 0) {
+            if (src_size == 0) {
+                IVALUE_NEXT_BLCK(src_iv);
+                scurr = src_iv->base;
+                src_size = src_iv->len;
+            }
+            if (dest_size == 0) {
+                IVALUE_NEXT_BLCK(dest_iv);
+                dcurr = dest_iv->base;
+                dest_size = dest_iv->len;
+            }
+        }
+   }
+}
+#endif
 
 /****
 uint8_t item_get_clsid(const hash_item* item)

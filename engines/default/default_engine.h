@@ -39,6 +39,9 @@ struct default_engine;
 #include "items.h"
 #include "assoc.h"
 #include "slabs.h"
+#ifdef USE_EBLOCK_RESULT
+#include "engines/COMMON/mblock_allocator.h"
+#endif
 
 /**
  * engine configuration

@@ -726,6 +726,15 @@ Demo_get_item_info(ENGINE_HANDLE *handle, const void *cookie,
     return true;
 }
 
+#ifdef USE_IVALUE_BLOCK
+static void
+Demo_release_info(ENGINE_HANDLE *handle, const void *cookie,
+                  item_info* item_info)
+{
+    return;
+}
+#endif
+
 static void
 Demo_get_elem_info(ENGINE_HANDLE *handle, const void *cookie,
               const int type, /* collection type */
@@ -817,6 +826,9 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          /* Unknown Command API */
          /* Info API */
          .get_item_info    = Demo_get_item_info,
+#ifdef USE_IVALUE_BLOCK
+         .release_info     = Demo_release_info,
+#endif
          .get_elem_info    = Demo_get_elem_info
       },
       .server = *api,
