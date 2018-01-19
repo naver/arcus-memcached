@@ -77,6 +77,12 @@ extern int genhash_string_hash(const void* p, size_t nkey);
  */
 #define ITEM_UPDATE_INTERVAL 60
 
+/* A do_update argument value representing that
+ * we should check and reposition items in the LRU list.
+ */
+#define DO_UPDATE true
+#define DONT_UPDATE false
+
 /* LRU id of small memory items */
 #define LRU_CLSID_FOR_SMALL 0
 
@@ -1131,8 +1137,7 @@ static void do_item_stats_sizes(struct default_engine *engine, ADD_STAT add_stat
 
 /** wrapper around assoc_find which does the lazy expiration logic */
 static hash_item *do_item_get(struct default_engine *engine,
-                              const char *key, const size_t nkey,
-                              bool LRU_reposition)
+                              const char *key, const size_t nkey, bool do_update)
 {
     rel_time_t current_time = engine->server.core->get_current_time();
     const char *hkey = (nkey > MAX_HKEY_LEN) ? key+(nkey-MAX_HKEY_LEN) : key;
@@ -1148,7 +1153,7 @@ static hash_item *do_item_get(struct default_engine *engine,
     if (it != NULL) {
         ITEM_REFCOUNT_INCR(it);
         DEBUG_REFCNT(it, '+');
-        if (LRU_reposition)
+        if (do_update)
             do_item_update(engine, it);
     }
 
@@ -1174,7 +1179,7 @@ static ENGINE_ERROR_CODE do_store_item(struct default_engine *engine, hash_item 
                                        ENGINE_STORE_OPERATION operation, const void *cookie)
 {
     const char *key = item_get_key(it);
-    hash_item *old_it = do_item_get(engine, key, it->nkey, true);
+    hash_item *old_it = do_item_get(engine, key, it->nkey, DONT_UPDATE);
     ENGINE_ERROR_CODE stored = ENGINE_NOT_STORED;
     if (old_it != NULL && IS_COLL_ITEM(old_it)) {
         do_item_release(engine, old_it);
@@ -1419,10 +1424,10 @@ static inline uint32_t do_btree_elem_ntotal(btree_elem_item *elem)
  */
 static ENGINE_ERROR_CODE do_list_item_find(struct default_engine *engine,
                                            const void *key, const size_t nkey,
-                                           bool LRU_reposition, hash_item **item)
+                                           bool do_update, hash_item **item)
 {
     *item = NULL;
-    hash_item *it = do_item_get(engine, key, nkey, LRU_reposition);
+    hash_item *it = do_item_get(engine, key, nkey, do_update);
     if (it == NULL) {
         return ENGINE_KEY_ENOENT;
     }
@@ -1703,10 +1708,10 @@ static inline int set_hash_eq(const int h1, const void *v1, size_t vlen1,
 
 static ENGINE_ERROR_CODE do_set_item_find(struct default_engine *engine,
                                           const void *key, const size_t nkey,
-                                          bool LRU_reposition, hash_item **item)
+                                          bool do_update, hash_item **item)
 {
     *item = NULL;
-    hash_item *it = do_item_get(engine, key, nkey, LRU_reposition);
+    hash_item *it = do_item_get(engine, key, nkey, do_update);
     if (it == NULL) {
         return ENGINE_KEY_ENOENT;
     }
@@ -2267,10 +2272,10 @@ static ENGINE_ERROR_CODE do_set_elem_insert(struct default_engine *engine,
  */
 static ENGINE_ERROR_CODE do_btree_item_find(struct default_engine *engine,
                                             const void *key, const size_t nkey,
-                                            bool LRU_reposition, hash_item **item)
+                                            bool do_update, hash_item **item)
 {
     *item = NULL;
-    hash_item *it = do_item_get(engine, key, nkey, LRU_reposition);
+    hash_item *it = do_item_get(engine, key, nkey, do_update);
     if (it == NULL) {
         return ENGINE_KEY_ENOENT;
     }
@@ -5038,7 +5043,7 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort_old(struct default_engine *eng
 
     maxbkeyrange.len = BKEY_NULL;
     for (k = 0; k < key_count; k++) {
-        ret = do_btree_item_find(engine, key_array[k].value, key_array[k].length, true, &it);
+        ret = do_btree_item_find(engine, key_array[k].value, key_array[k].length, DO_UPDATE, &it);
         if (ret != ENGINE_SUCCESS) {
             if (ret == ENGINE_KEY_ENOENT) { /* key missed */
                 missed_key_array[*missed_key_count] = k;
@@ -5254,7 +5259,7 @@ do_btree_smget_scan_sort(struct default_engine *engine,
 
     maxbkeyrange.len = BKEY_NULL;
     for (k = 0; k < key_count; k++) {
-        ret = do_btree_item_find(engine, key_array[k].value, key_array[k].length, true, &it);
+        ret = do_btree_item_find(engine, key_array[k].value, key_array[k].length, DO_UPDATE, &it);
         if (ret != ENGINE_SUCCESS) {
             if (ret == ENGINE_KEY_ENOENT) { /* key missed */
                 do_btree_smget_add_miss(smres, k, ENGINE_KEY_ENOENT);
@@ -5966,7 +5971,7 @@ hash_item *item_get(struct default_engine *engine, const void *key, const size_t
 {
     hash_item *it;
     pthread_mutex_lock(&engine->cache_lock);
-    it = do_item_get(engine, key, nkey, true);
+    it = do_item_get(engine, key, nkey, DO_UPDATE);
     pthread_mutex_unlock(&engine->cache_lock);
     return it;
 }
@@ -6011,7 +6016,7 @@ static ENGINE_ERROR_CODE do_arithmetic(struct default_engine *engine,
                                        uint64_t *cas,
                                        uint64_t *result)
 {
-    hash_item *it = do_item_get(engine, key, nkey, true);
+    hash_item *it = do_item_get(engine, key, nkey, DONT_UPDATE);
     ENGINE_ERROR_CODE ret;
 
     if (it == NULL) {
@@ -6073,7 +6078,7 @@ static ENGINE_ERROR_CODE do_item_delete(struct default_engine *engine,
                                         uint64_t cas)
 {
     ENGINE_ERROR_CODE ret;
-    hash_item *it = do_item_get(engine, key, nkey, true);
+    hash_item *it = do_item_get(engine, key, nkey, DONT_UPDATE);
     if (it == NULL) {
         ret = ENGINE_KEY_ENOENT;
     } else {
@@ -6355,7 +6360,7 @@ ENGINE_ERROR_CODE list_struct_create(struct default_engine *engine,
     hash_item *it;
 
     pthread_mutex_lock(&engine->cache_lock);
-    it = do_item_get(engine, key, nkey, false);
+    it = do_item_get(engine, key, nkey, DONT_UPDATE);
     if (it != NULL) {
         do_item_release(engine, it);
         ret = ENGINE_KEY_EEXISTS;
@@ -6409,7 +6414,7 @@ ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
     *created = false;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_list_item_find(engine, key, nkey, false, &it);
+    ret = do_list_item_find(engine, key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
         it = do_list_item_alloc(engine, key, nkey, attrp, cookie);
         if (it == NULL) {
@@ -6470,7 +6475,7 @@ ENGINE_ERROR_CODE list_elem_delete(struct default_engine *engine,
     hash_item *it;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_list_item_find(engine, key, nkey, false, &it);
+    ret = do_list_item_find(engine, key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         list_meta_info *info = (list_meta_info *)item_get_meta(it);
         if (adjust_list_range(info->ccnt, &from_index, &to_index) != 0) {
@@ -6516,7 +6521,7 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_list_item_find(engine, key, nkey, true, &it);
+    ret = do_list_item_find(engine, key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         info = (list_meta_info *)item_get_meta(it);
         do {
@@ -6560,7 +6565,7 @@ ENGINE_ERROR_CODE set_struct_create(struct default_engine *engine,
     hash_item *it;
 
     pthread_mutex_lock(&engine->cache_lock);
-    it = do_item_get(engine, key, nkey, false);
+    it = do_item_get(engine, key, nkey, DONT_UPDATE);
     if (it != NULL) {
         do_item_release(engine, it);
         ret = ENGINE_KEY_EEXISTS;
@@ -6609,7 +6614,7 @@ ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key
     *created = false;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_set_item_find(engine, key, nkey, false, &it);
+    ret = do_set_item_find(engine, key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
         it = do_set_item_alloc(engine, key, nkey, attrp, cookie);
         if (it == NULL) {
@@ -6646,7 +6651,7 @@ ENGINE_ERROR_CODE set_elem_delete(struct default_engine *engine,
     *dropped = false;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_set_item_find(engine, key, nkey, false, &it);
+    ret = do_set_item_find(engine, key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         info = (set_meta_info *)item_get_meta(it);
         ret = do_set_elem_delete_with_value(engine, info, value, nbytes,
@@ -6673,7 +6678,7 @@ ENGINE_ERROR_CODE set_elem_exist(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_set_item_find(engine, key, nkey, true, &it);
+    ret = do_set_item_find(engine, key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (set_meta_info *)item_get_meta(it);
         do {
@@ -6702,7 +6707,7 @@ ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_set_item_find(engine, key, nkey, true, &it);
+    ret = do_set_item_find(engine, key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (set_meta_info *)item_get_meta(it);
         do {
@@ -6738,7 +6743,7 @@ ENGINE_ERROR_CODE btree_struct_create(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    it = do_item_get(engine, key, nkey, false);
+    it = do_item_get(engine, key, nkey, DONT_UPDATE);
     if (it != NULL) {
         do_item_release(engine, it);
         ret = ENGINE_KEY_EEXISTS;
@@ -6798,7 +6803,7 @@ ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
     }
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_btree_item_find(engine, key, nkey, false, &it);
+    ret = do_btree_item_find(engine, key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
         it = do_btree_item_alloc(engine, key, nkey, attrp, cookie);
         if (it == NULL) {
@@ -6840,7 +6845,7 @@ ENGINE_ERROR_CODE btree_elem_update(struct default_engine *engine,
     assert(bkrtype == BKEY_RANGE_TYPE_SIN); /* single bkey */
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_btree_item_find(engine, key, nkey, false, &it);
+    ret = do_btree_item_find(engine, key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
         do {
@@ -6871,7 +6876,7 @@ ENGINE_ERROR_CODE btree_elem_delete(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_btree_item_find(engine, key, nkey, false, &it);
+    ret = do_btree_item_find(engine, key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
         do {
@@ -6918,7 +6923,7 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(struct default_engine *engine,
     assert(bkrtype == BKEY_RANGE_TYPE_SIN); /* single bkey */
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_btree_item_find(engine, key, nkey, false, &it);
+    ret = do_btree_item_find(engine, key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         bool new_root_flag = false;
         info = (btree_meta_info *)item_get_meta(it);
@@ -6969,7 +6974,7 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_btree_item_find(engine, key, nkey, true, &it);
+    ret = do_btree_item_find(engine, key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
         do {
@@ -7022,7 +7027,7 @@ ENGINE_ERROR_CODE btree_elem_count(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_btree_item_find(engine, key, nkey, true, &it);
+    ret = do_btree_item_find(engine, key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
         do {
@@ -7054,7 +7059,7 @@ ENGINE_ERROR_CODE btree_posi_find(struct default_engine *engine,
     assert(bkrtype == BKEY_RANGE_TYPE_SIN);
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_btree_item_find(engine, key, nkey, true, &it);
+    ret = do_btree_item_find(engine, key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
         do {
@@ -7094,7 +7099,7 @@ ENGINE_ERROR_CODE btree_posi_find_with_get(struct default_engine *engine,
     assert(bkrtype == BKEY_RANGE_TYPE_SIN);
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_btree_item_find(engine, key, nkey, true, &it);
+    ret = do_btree_item_find(engine, key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
         do {
@@ -7135,7 +7140,7 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
     assert(from_posi >= 0 && to_posi >= 0);
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_btree_item_find(engine, key, nkey, true, &it);
+    ret = do_btree_item_find(engine, key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
         do {
@@ -7297,7 +7302,7 @@ ENGINE_ERROR_CODE item_getattr(struct default_engine *engine,
     hash_item *it;
 
     pthread_mutex_lock(&engine->cache_lock);
-    it = do_item_get(engine, key, nkey, true);
+    it = do_item_get(engine, key, nkey, DO_UPDATE);
     if (it == NULL) {
         ret = ENGINE_KEY_ENOENT;
     } else {
@@ -7395,7 +7400,7 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
     hash_item *it;
 
     pthread_mutex_lock(&engine->cache_lock);
-    it = do_item_get(engine, key, nkey, true);
+    it = do_item_get(engine, key, nkey, DONT_UPDATE);
     if (it == NULL) {
         ret = ENGINE_KEY_ENOENT;
     } else {
@@ -8203,10 +8208,10 @@ static inline int map_hash_eq(const int h1, const void *v1, size_t vlen1,
 
 static ENGINE_ERROR_CODE do_map_item_find(struct default_engine *engine,
                                           const void *key, const size_t nkey,
-                                          bool LRU_reposition, hash_item **item)
+                                          bool do_update, hash_item **item)
 {
     *item = NULL;
-    hash_item *it = do_item_get(engine, key, nkey, LRU_reposition);
+    hash_item *it = do_item_get(engine, key, nkey, do_update);
     if (it == NULL) {
         return ENGINE_KEY_ENOENT;
     }
@@ -8832,7 +8837,7 @@ ENGINE_ERROR_CODE map_struct_create(struct default_engine *engine,
     hash_item *it;
 
     pthread_mutex_lock(&engine->cache_lock);
-    it = do_item_get(engine, key, nkey, false);
+    it = do_item_get(engine, key, nkey, DONT_UPDATE);
     if (it != NULL) {
         do_item_release(engine, it);
         ret = ENGINE_KEY_EEXISTS;
@@ -8881,7 +8886,7 @@ ENGINE_ERROR_CODE map_elem_insert(struct default_engine *engine, const char *key
     *created = false;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_map_item_find(engine, key, nkey, false, &it);
+    ret = do_map_item_find(engine, key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
         it = do_map_item_alloc(engine, key, nkey, attrp, cookie);
         if (it == NULL) {
@@ -8914,7 +8919,7 @@ ENGINE_ERROR_CODE map_elem_update(struct default_engine *engine, const char *key
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_map_item_find(engine, key, nkey, false, &it);
+    ret = do_map_item_find(engine, key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         info = (map_meta_info *)item_get_meta(it);
         ret = do_map_elem_update(engine, info, field, value, nbytes, cookie);
@@ -8935,7 +8940,7 @@ ENGINE_ERROR_CODE map_elem_delete(struct default_engine *engine, const char *key
     *dropped = false;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_map_item_find(engine, key, nkey, false, &it);
+    ret = do_map_item_find(engine, key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         info = (map_meta_info *)item_get_meta(it);
         *del_count = do_map_elem_delete_with_field(engine, info, numfields, flist, ELEM_DELETE_NORMAL);
@@ -8964,7 +8969,7 @@ ENGINE_ERROR_CODE map_elem_get(struct default_engine *engine, const char *key, c
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_map_item_find(engine, key, nkey, true, &it);
+    ret = do_map_item_find(engine, key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (map_meta_info *)item_get_meta(it);
         do {
