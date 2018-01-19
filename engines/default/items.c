@@ -971,7 +971,6 @@ static void do_item_lru_reposition(struct default_engine *engine, hash_item *it)
 {
     if ((it->iflag & ITEM_LINKED) != 0) {
         item_unlink_q(engine, it);
-        it->time = engine->server.core->get_current_time();
         item_link_q(engine, it);
     }
 }
@@ -7490,12 +7489,18 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
             for (i = 0; i < attr_count; i++) {
                 if (attr_ids[i] == ATTR_EXPIRETIME) {
                     if (it->exptime != attr_data->exptime) {
-                        if (attr_data->exptime == 0 || it->exptime == 0) {
-                            it->exptime = attr_data->exptime;
-                            /* reposition it in LRU in order to keep curMK/lowMK concept. */
+                        rel_time_t before_exptime = it->exptime;
+                        it->exptime = attr_data->exptime;
+                        if (before_exptime == 0 && it->exptime != 0) {
+                            /* exptime: 0 => positive value */
+                            /* When update exptime, the curMK/lowMK of LRU must be considered.
+                             * The item, whose exptime is 0, might be below the lowMK of LRU list.
+                             * If we change only the exptime of the item to a positive value,
+                             * it cannot be reclaimed even if it is expired in the future.
+                             * To make it to be reclaimed after it is expired,
+                             * we move it to to the top of LRU list.
+                             */
                             do_item_lru_reposition(engine, it);
-                        } else {
-                            it->exptime = attr_data->exptime;
                         }
                     }
                 }
