@@ -977,6 +977,7 @@ static void do_item_lru_reposition(struct default_engine *engine, hash_item *it)
 {
     if ((it->iflag & ITEM_LINKED) != 0) {
         item_unlink_q(engine, it);
+        it->time = engine->server.core->get_current_time();
         item_link_q(engine, it);
     }
 }
