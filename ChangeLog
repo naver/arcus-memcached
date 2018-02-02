@@ -1,3 +1,9 @@
+2018-02-02 [version 1.11.1]
+	* [Enhance] Use element count when full range is given in bop count.
+	* [Enhance] Check/move cache items to LRU top only for read operation.
+	* [Other] Turn off printing the increament of space shortage level.
+	* [Other] Fix some typos, do some code refactoring.
+
 2017-09-22 [version 1.11.0]
 	* [Feature] Support long key. KEY_MAX_LENGTH(250 => 32000).
 	* [Feature] Use space separated keys instead of comma separated keys.
