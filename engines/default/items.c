@@ -7294,7 +7294,6 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
 /*
  * ITEM ATTRIBUTE Interface Functions
  */
-#if 1 // NEW_ATTR_CODE
 static ENGINE_ERROR_CODE
 do_item_getattr(struct default_engine *engine, hash_item *it,
                 ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
@@ -7380,23 +7379,16 @@ do_item_getattr(struct default_engine *engine, hash_item *it,
     }
     return ENGINE_SUCCESS;
 }
-#endif
 
 ENGINE_ERROR_CODE item_getattr(struct default_engine *engine,
                                const void* key, const int nkey,
                                ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
                                item_attr *attr_data)
 {
-#if 1 // NEW_ATTR_CODE
     hash_item *it;
     ENGINE_ERROR_CODE ret;
-#else
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    hash_item *it;
-#endif
 
     pthread_mutex_lock(&engine->cache_lock);
-#if 1 // NEW_ATTR_CODE
     it = do_item_get(engine, key, nkey, DO_UPDATE);
     if (it == NULL) {
         ret = ENGINE_KEY_ENOENT;
@@ -7408,98 +7400,11 @@ ENGINE_ERROR_CODE item_getattr(struct default_engine *engine,
         }
         do_item_release(engine, it);
     }
-#else
-    it = do_item_get(engine, key, nkey, DO_UPDATE);
-    if (it == NULL) {
-        ret = ENGINE_KEY_ENOENT;
-    } else {
-        /* item flags */
-        attr_data->flags = it->flags;
-
-        /* human readable expiretime */
-        if (it->exptime == 0) {
-            attr_data->exptime = it->exptime;
-#ifdef ENABLE_STICKY_ITEM
-        } else if (it->exptime == (rel_time_t)-1) {
-            attr_data->exptime = it->exptime;
-#endif
-        } else {
-            rel_time_t current_time = engine->server.core->get_current_time();
-            if (it->exptime <= current_time) {
-                attr_data->exptime = (rel_time_t)-2;
-            } else {
-                attr_data->exptime = it->exptime - current_time;
-            }
-        }
-
-        if (IS_COLL_ITEM(it)) {
-            attr_data->type = GET_ITEM_TYPE(it);
-            assert(attr_data->type < ITEM_TYPE_MAX);
-            /* attribute validation check */
-            if (attr_data->type != ITEM_TYPE_BTREE) {
-                for (int i = 0; i < attr_count; i++) {
-                    if (attr_ids[i] == ATTR_MAXBKEYRANGE || attr_ids[i] == ATTR_TRIMMED) {
-                        ret = ENGINE_EBADATTR; break;
-                    }
-                }
-            }
-            /* get collection attributes */
-            if (ret == ENGINE_SUCCESS) {
-                coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-                attr_data->count      = info->ccnt;
-                if (info->mcnt > 0) {
-                    attr_data->maxcount   = info->mcnt;
-                } else {
-                    switch (attr_data->type) {
-                      case ITEM_TYPE_LIST:
-                           attr_data->maxcount = max_list_size;
-                           break;
-                      case ITEM_TYPE_SET:
-                           attr_data->maxcount = max_set_size;
-                           break;
-                      case ITEM_TYPE_MAP:
-                           attr_data->maxcount = max_map_size;
-                           break;
-                      case ITEM_TYPE_BTREE:
-                           attr_data->maxcount = max_btree_size;
-                           break;
-                      default:
-                           attr_data->maxcount = 0;
-                    }
-                }
-                attr_data->ovflaction = info->ovflact;
-                attr_data->readable   = (((info->mflags & COLL_META_FLAG_READABLE) != 0) ? 1 : 0);
-                if (attr_data->type == ITEM_TYPE_BTREE) {
-                    btree_meta_info *binfo = (btree_meta_info *)info;
-                    attr_data->maxbkeyrange = binfo->maxbkeyrange;
-                    attr_data->trimmed = (((binfo->mflags & COLL_META_FLAG_TRIMMED) != 0) ? 1 : 0);
-                    if (info->ccnt > 0) {
-                        btree_elem_item *min_bkey_elem = do_btree_get_first_elem(binfo->root);
-                        do_btree_get_bkey(min_bkey_elem, &attr_data->minbkey);
-                        btree_elem_item *max_bkey_elem = do_btree_get_last_elem(binfo->root);
-                        do_btree_get_bkey(max_bkey_elem, &attr_data->maxbkey);
-                    }
-                }
-            }
-        } else {
-            attr_data->type = ITEM_TYPE_KV;
-            /* attribute validation check */
-            for (int i = 0; i < attr_count; i++) {
-                if (attr_ids[i] == ATTR_COUNT      || attr_ids[i] == ATTR_MAXCOUNT ||
-                    attr_ids[i] == ATTR_OVFLACTION || attr_ids[i] == ATTR_READABLE ||
-                    attr_ids[i] == ATTR_MAXBKEYRANGE || attr_ids[i] == ATTR_TRIMMED) {
-                    ret = ENGINE_EBADATTR; break;
-                }
-            }
-        }
-        do_item_release(engine, it);
-    }
-#endif
     pthread_mutex_unlock(&engine->cache_lock);
+
     return ret;
 }
 
-#if 1 // NEW_ATTR_CODE
 static ENGINE_ERROR_CODE
 do_item_setattr_check(hash_item *it,
                       ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
@@ -7671,23 +7576,16 @@ do_item_setattr_exec(struct default_engine *engine, hash_item *it,
         }
     }
 }
-#endif
 
 ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
                                const void* key, const int nkey,
                                ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
                                item_attr *attr_data)
 {
-#if 1 // NEW_ATTR_CODE
     hash_item *it;
     ENGINE_ERROR_CODE ret;
-#else
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    hash_item *it;
-#endif
 
     pthread_mutex_lock(&engine->cache_lock);
-#if 1 // NEW_ATTR_CODE
     it = do_item_get(engine, key, nkey, DONT_UPDATE);
     if (it == NULL) {
         ret = ENGINE_KEY_ENOENT;
@@ -7699,161 +7597,8 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
         }
         do_item_release(engine, it);
     }
-#else
-    it = do_item_get(engine, key, nkey, DONT_UPDATE);
-    if (it == NULL) {
-        ret = ENGINE_KEY_ENOENT;
-    } else {
-        int i;
-        coll_meta_info *info = NULL;
-        if (IS_COLL_ITEM(it)) {
-            info = (coll_meta_info *)item_get_meta(it);
-        }
-        for (i = 0; i < attr_count; i++) {
-#ifdef ENABLE_STICKY_ITEM
-            if (attr_ids[i] == ATTR_EXPIRETIME) {
-                /* do not allow sticky toggling */
-                if ((it->exptime == (rel_time_t)-1 && attr_data->exptime != (rel_time_t)-1) ||
-                    (it->exptime != (rel_time_t)-1 && attr_data->exptime == (rel_time_t)-1)) {
-                    ret = ENGINE_EBADVALUE; break;
-                }
-                continue;
-            }
-#endif
-            /* other attributes : collection attributes */
-            if (info == NULL) { /* k/v item */
-                ret = ENGINE_EBADATTR; break;
-            }
-            if (attr_ids[i] == ATTR_MAXCOUNT) {
-                attr_data->maxcount = do_coll_real_maxcount(it, attr_data->maxcount);
-                if (attr_data->maxcount > 0 && attr_data->maxcount < info->ccnt) {
-                    ret = ENGINE_EBADVALUE; break;
-                }
-            } else if (attr_ids[i] == ATTR_OVFLACTION) {
-                if (attr_data->ovflaction == OVFL_ERROR) {
-                    /* nothing to check */
-                } else if (attr_data->ovflaction == OVFL_HEAD_TRIM ||
-                           attr_data->ovflaction == OVFL_TAIL_TRIM) {
-                    if (! IS_LIST_ITEM(it)) {
-                        ret = ENGINE_EBADVALUE; break;
-                    }
-                } else if (attr_data->ovflaction == OVFL_SMALLEST_TRIM ||
-                           attr_data->ovflaction == OVFL_LARGEST_TRIM ||
-                           attr_data->ovflaction == OVFL_SMALLEST_SILENT_TRIM ||
-                           attr_data->ovflaction == OVFL_LARGEST_SILENT_TRIM) {
-                    if (! IS_BTREE_ITEM(it)) {
-                        ret = ENGINE_EBADVALUE; break;
-                    }
-                } else {
-                    ret = ENGINE_EBADVALUE; break;
-                }
-            } else if (attr_ids[i] == ATTR_READABLE) {
-                if (attr_data->readable != 1) {
-                    ret = ENGINE_EBADVALUE; break;
-                }
-            } else if (attr_ids[i] == ATTR_MAXBKEYRANGE) {
-                if (! IS_BTREE_ITEM(it)) {
-                    ret = ENGINE_EBADATTR; break;
-                }
-                btree_meta_info *binfo = (btree_meta_info *)info;
-                if (attr_data->maxbkeyrange.len == BKEY_NULL) {
-                    /* nothing to check */
-                } else { /* attr_data->maxbkeyrange.len != BKEY_NULL */
-                    if (binfo->ccnt == 0) {
-                        /* nothing to check */
-                    } else { /* binfo->ccnt > 0 */
-                        /* check bkey type of maxbkeyrange */
-                        if ((binfo->bktype == BKEY_TYPE_UINT64 && attr_data->maxbkeyrange.len >  0) ||
-                            (binfo->bktype == BKEY_TYPE_BINARY && attr_data->maxbkeyrange.len == 0)) {
-                            ret = ENGINE_EBADVALUE; break;
-                        }
-                        if (binfo->ccnt >= 2) { /* two or more elements where key range exists. */
-                            /* check if current bkey range can be contained within new maxbkeyrange */
-                            if (attr_data->maxbkeyrange.len != binfo->maxbkeyrange.len ||
-                                BKEY_ISNE(attr_data->maxbkeyrange.val, attr_data->maxbkeyrange.len,
-                                          binfo->maxbkeyrange.val, binfo->maxbkeyrange.len)) {
-                                bkey_t curbkeyrange;
-                                btree_elem_item *min_bkey_elem = do_btree_get_first_elem(binfo->root);
-                                btree_elem_item *max_bkey_elem = do_btree_get_last_elem(binfo->root);
-                                curbkeyrange.len = attr_data->maxbkeyrange.len;
-                                BKEY_DIFF(max_bkey_elem->data, max_bkey_elem->nbkey, min_bkey_elem->data, min_bkey_elem->nbkey,
-                                          curbkeyrange.len, curbkeyrange.val);
-                                if (BKEY_ISGT(curbkeyrange.val, curbkeyrange.len,
-                                              attr_data->maxbkeyrange.val, attr_data->maxbkeyrange.len)) {
-                                    ret = ENGINE_EBADVALUE; break;
-                                }
-                            }
-                        } else { /* binfo->ccnt == 1 */
-                            /* nothing to check bkey range */
-                        }
-                    }
-                }
-            }
-        }
-        if (ret == ENGINE_SUCCESS) {
-            for (i = 0; i < attr_count; i++) {
-                if (attr_ids[i] == ATTR_EXPIRETIME) {
-                    if (it->exptime != attr_data->exptime) {
-                        rel_time_t before_exptime = it->exptime;
-                        it->exptime = attr_data->exptime;
-                        if (before_exptime == 0 && it->exptime != 0) {
-                            /* exptime: 0 => positive value */
-                            /* When update exptime, the curMK/lowMK of LRU must be considered.
-                             * The item, whose exptime is 0, might be below the lowMK of LRU list.
-                             * If we change only the exptime of the item to a positive value,
-                             * it cannot be reclaimed even if it is expired in the future.
-                             * To make it to be reclaimed after it is expired,
-                             * we move it to to the top of LRU list.
-                             */
-                            do_item_lru_reposition(engine, it);
-                        }
-                    }
-                }
-                else if (attr_ids[i] == ATTR_MAXCOUNT) {
-                    info->mcnt = attr_data->maxcount;
-                }
-                else if (attr_ids[i] == ATTR_OVFLACTION) {
-                    if (IS_BTREE_ITEM(it)) {
-                        btree_meta_info *binfo = (btree_meta_info *)info;
-                        if (binfo->ovflact != attr_data->ovflaction) {
-                            binfo->mflags &= ~COLL_META_FLAG_TRIMMED; // clear trimmed
-                        }
-                    }
-                    info->ovflact = attr_data->ovflaction;
-                }
-                else if (attr_ids[i] == ATTR_READABLE) {
-                    info->mflags |= COLL_META_FLAG_READABLE;
-                }
-                else if (attr_ids[i] == ATTR_MAXBKEYRANGE) {
-                    btree_meta_info *binfo = (btree_meta_info *)info;
-                    if (attr_data->maxbkeyrange.len == BKEY_NULL) {
-                        if (binfo->maxbkeyrange.len != BKEY_NULL) {
-                            binfo->maxbkeyrange = attr_data->maxbkeyrange;
-                            if (binfo->ccnt == 0) {
-                                if (binfo->bktype != BKEY_TYPE_UNKNOWN)
-                                    binfo->bktype = BKEY_TYPE_UNKNOWN;
-                            }
-                        }
-                    } else { /* attr_data->maxbkeyrange.len != BKEY_NULL */
-                        if (binfo->ccnt == 0) {
-                            /* just reset maxbkeyrange with new value */
-                            binfo->maxbkeyrange = attr_data->maxbkeyrange;
-                            if (attr_data->maxbkeyrange.len == 0) {
-                                binfo->bktype = BKEY_TYPE_UINT64;
-                            } else {
-                                binfo->bktype = BKEY_TYPE_BINARY;
-                            }
-                        } else { /* binfo->ccnt > 0 */
-                            binfo->maxbkeyrange = attr_data->maxbkeyrange;
-                        }
-                    }
-                }
-            }
-        }
-        do_item_release(engine, it);
-    }
-#endif
     pthread_mutex_unlock(&engine->cache_lock);
+
     return ret;
 }
 
