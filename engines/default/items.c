@@ -37,15 +37,7 @@ enum item_unlink_cause {
     ITEM_UNLINK_NORMAL = 1, /* unlink by normal request */
     ITEM_UNLINK_EVICT,      /* unlink by eviction */
     ITEM_UNLINK_INVALID,    /* unlink by invalidation such like expiration/flush */
-    ITEM_UNLINK_REPLACE,    /* unlink by replacement of set/replace command,
-                             * simple kv type only
-                             */
-    ITEM_UNLINK_ABORT,      /* unlink by abortion of creating a collection
-                             * collection type only
-                             */
-    ITEM_UNLINK_EMPTY,      /* unlink by empty collection
-                             * collection type only
-                             */
+    ITEM_UNLINK_REPLACE,    /* unlink by replacement of set/replace command */
     ITEM_UNLINK_STALE       /* unlink by staleness */
 };
 
@@ -6432,7 +6424,7 @@ ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
     if (ret == ENGINE_SUCCESS) {
         ret = do_list_elem_insert(engine, it, index, elem, cookie);
         if (ret != ENGINE_SUCCESS && *created) {
-            do_item_unlink(engine, it, ITEM_UNLINK_ABORT);
+            do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
         }
     }
     if (it != NULL) do_item_release(engine, it);
@@ -6495,7 +6487,7 @@ ENGINE_ERROR_CODE list_elem_delete(struct default_engine *engine,
                                              ELEM_DELETE_NORMAL);
             if (*del_count > 0) {
                 if (info->ccnt == 0 && drop_if_empty) {
-                    do_item_unlink(engine, it, ITEM_UNLINK_EMPTY);
+                    do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
                     *dropped = true;
                 } else {
                     *dropped = false;
@@ -6540,7 +6532,7 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
                 if (ret == ENGINE_SUCCESS) {
                     if (info->ccnt == 0 && drop_if_empty) {
                         assert(delete == true);
-                        do_item_unlink(engine, it, ITEM_UNLINK_EMPTY);
+                        do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
                         *dropped = true;
                     } else {
                         *dropped = false;
@@ -6632,7 +6624,7 @@ ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key
     if (ret == ENGINE_SUCCESS) {
         ret = do_set_elem_insert(engine, it, elem, cookie);
         if (ret != ENGINE_SUCCESS && *created) {
-            do_item_unlink(engine, it, ITEM_UNLINK_ABORT);
+            do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
         }
     }
     if (it != NULL) do_item_release(engine, it);
@@ -6659,7 +6651,7 @@ ENGINE_ERROR_CODE set_elem_delete(struct default_engine *engine,
                                             ELEM_DELETE_NORMAL);
         if (ret == ENGINE_SUCCESS) {
             if (info->ccnt == 0 && drop_if_empty) {
-                do_item_unlink(engine, it, ITEM_UNLINK_EMPTY);
+                do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
                 *dropped = true;
             }
         }
@@ -6719,7 +6711,7 @@ ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
             if (ret == ENGINE_SUCCESS) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(delete == true);
-                    do_item_unlink(engine, it, ITEM_UNLINK_EMPTY);
+                    do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
                     *dropped = true;
                 } else {
                     *dropped = false;
@@ -6822,7 +6814,7 @@ ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
         ret = do_btree_elem_insert(engine, it, elem, replace_if_exist, replaced,
                                    trimmed_elems, trimmed_count, cookie);
         if (ret != ENGINE_SUCCESS && *created) {
-            do_item_unlink(engine, it, ITEM_UNLINK_ABORT);
+            do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
         }
         if (trimmed_elems != NULL && *trimmed_elems != NULL) {
             *trimmed_flags = it->flags;
@@ -6893,7 +6885,7 @@ ENGINE_ERROR_CODE btree_elem_delete(struct default_engine *engine,
             if (*del_count > 0) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(info->root == NULL);
-                    do_item_unlink(engine, it, ITEM_UNLINK_EMPTY);
+                    do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
                     *dropped = true;
                 } else {
                     *dropped = false;
@@ -6996,7 +6988,7 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
                 if (delete) {
                     if (info->ccnt == 0 && drop_if_empty) {
                         assert(info->root == NULL);
-                        do_item_unlink(engine, it, ITEM_UNLINK_EMPTY);
+                        do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
                         *dropped_trimmed = true;
                     } else {
                         *dropped_trimmed = false;
@@ -8949,7 +8941,7 @@ ENGINE_ERROR_CODE map_elem_insert(struct default_engine *engine, const char *key
     if (ret == ENGINE_SUCCESS) {
         ret = do_map_elem_insert(engine, it, elem, false /* replace_if_exist */, cookie);
         if (ret != ENGINE_SUCCESS && *created) {
-            do_item_unlink(engine, it, ITEM_UNLINK_ABORT);
+            do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
         }
     }
     if (it != NULL) do_item_release(engine, it);
@@ -8993,7 +8985,7 @@ ENGINE_ERROR_CODE map_elem_delete(struct default_engine *engine, const char *key
         if (*del_count > 0) {
             if (info->ccnt == 0 && drop_if_empty) {
                 assert(info->root == NULL);
-                do_item_unlink(engine, it, ITEM_UNLINK_EMPTY);
+                do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
                 *dropped = true;
             }
         } else {
@@ -9026,7 +9018,7 @@ ENGINE_ERROR_CODE map_elem_get(struct default_engine *engine, const char *key, c
             if (ret == ENGINE_SUCCESS) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(delete == true);
-                    do_item_unlink(engine, it, ITEM_UNLINK_EMPTY);
+                    do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
                     *dropped = true;
                 } else {
                     *dropped = false;
