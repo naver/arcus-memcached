@@ -166,7 +166,6 @@ static int gen_node_continuum(struct cont_item *continuum,
     return duplicate;
 }
 
-#if 1 // NEW_NODE_MGMT
 /*
  * Node item management
  */
@@ -247,43 +246,6 @@ static void self_node_build(struct cluster_config *config, const char *node_name
     }
     item->refcnt += 1; /* +1 refcnt for self node not to be freed */
 }
-#else
-static void self_node_build(struct cluster_config *config, const char *node_name)
-{
-    struct node_item *item = &config->self_node;
-    strncpy(item->ndname, node_name, MAX_NODE_NAME_LENGTH);
-    item->nstate = NSTATE_EXISTING;
-    item->dup_hp = gen_node_continuum(item->hslice, item->ndname, SSTATE_NORMAL);
-    if (item->dup_hp) {
-        config->logger->log(EXTENSION_LOG_INFO, NULL,
-                "[CHECK] Duplicate hssh point in %s node.\n", node_name);
-    }
-    item->refcnt = 1;
-}
-
-static struct node_item *node_item_new(void)
-{
-    return (struct node_item *)malloc(sizeof(struct node_item));
-}
-
-static struct node_item *node_item_alloc(struct cluster_config *config)
-{
-    struct node_item *item;
-
-    if (config->free_list == NULL) {
-        item = node_item_new();
-        if (item == NULL)
-            return NULL;
-    } else {
-        /* allocate it from free node_item list */
-        item = config->free_list;
-        config->free_list = item->next;
-        config->free_size -= 1;
-    }
-    item->refcnt = 0;
-    return item;
-}
-#endif
 
 static struct node_item *node_item_build(struct cluster_config *config,
                                          const char *node_name,
@@ -296,40 +258,13 @@ static struct node_item *node_item_build(struct cluster_config *config,
                             "Failed to allocate new node_item.\n");
         return NULL;
     }
-#if 1 // NEW_NODE_MGMT
     node_item_init(item, node_name, node_state, slice_state);
-#else
-    strncpy(item->ndname, node_name, MAX_NODE_NAME_LENGTH);
-    item->nstate = node_state;
-    item->dup_hp = gen_node_continuum(item->hslice, item->ndname, slice_state);
-#endif
     if (item->dup_hp) {
         config->logger->log(EXTENSION_LOG_INFO, NULL,
                 "[CHECK] Duplicate hssh point in %s node.\n", node_name);
     }
     return item;
 }
-
-#if 1 // NEW_NODE_MGMT
-#else
-static void node_item_free(struct cluster_config *config, struct node_item *item)
-{
-    /* link it to the free list */
-    item->next = config->free_list;
-    config->free_list = item;
-    config->free_size += 1;
-}
-
-static void node_list_destroy(struct node_item *node_list)
-{
-    struct node_item *item;
-
-    while ((item = node_list) != NULL) {
-        node_list = item->next;
-        free(item);
-    }
-}
-#endif
 
 static int
 nodearray_find(struct node_item **array, uint32_t count, const char *node_name)
@@ -362,32 +297,15 @@ nodearray_release(struct cluster_config *config,
 
 static int hashring_space_init(struct cluster_config *config, uint32_t num_nodes)
 {
-#if 1 // NEW_NODE_MGMT
-#else
-    struct node_item *item;
-#endif
     int ret=0;
 
     do {
         /* init free node list */
-#if 1 // NEW_NODE_MGMT
         if (node_free_list_prepare(config, num_nodes) < 0) {
             config->logger->log(EXTENSION_LOG_WARNING, NULL,
                                 "Failed to init free node list.\n");
             ret = -1; break;
         }
-#else
-        while (config->free_size < num_nodes) {
-            if ((item = node_item_new()) == NULL)
-                break;
-            node_item_free(config, item);
-        }
-        if (config->free_size < num_nodes) {
-            config->logger->log(EXTENSION_LOG_WARNING, NULL,
-                                "Failed to init free node list.\n");
-            ret = -1; break;
-        }
-#endif
 
         /* init space for new nodearray and continuum */
         config->old_memlen = (num_nodes * sizeof(void*))
@@ -403,56 +321,31 @@ static int hashring_space_init(struct cluster_config *config, uint32_t num_nodes
         if (config->cur_memory == NULL) {
             config->logger->log(EXTENSION_LOG_WARNING, NULL,
                                 "Failed to init cur memory.\n");
-#if 1 // NEW_NODE_MGMT
-#else
-            free(config->old_memory);
-#endif
             ret = -1; break;
         }
     } while(0);
 
     if (ret != 0) {
-#if 1 // NEW_NODE_MGMT
         node_free_list_destroy(config);
         if (config->old_memory) {
             free(config->old_memory);
             config->old_memory = NULL;
         }
-#else
-        node_list_destroy(config->free_list);
-#endif
     }
     return ret;
 }
 
 static int hashring_space_prepare(struct cluster_config *config, uint32_t num_nodes)
 {
-#if 1 // NEW_NODE_MGMT
-#else
-    struct node_item *item;
-#endif
     void    *new_memory;
     uint32_t new_memlen;
 
     /* prepare free node list */
-#if 1 // NEW_NODE_MGMT
     if (node_free_list_prepare(config, num_nodes) < 0) {
         config->logger->log(EXTENSION_LOG_WARNING, NULL,
                             "Failed to prepare free node list.\n");
         return -1;
     }
-#else
-    while ((config->free_size + config->num_nodes) < num_nodes) {
-        if ((item = node_item_new()) == NULL)
-            break;
-        node_item_free(config, item);
-    }
-    if ((config->free_size + config->num_nodes) < num_nodes) {
-        config->logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "Failed to prepare free node list.\n");
-        return -1;
-    }
-#endif
 
     /* prepare space for new nodearray and continuum */
     new_memlen = (num_nodes * sizeof(void*))
@@ -706,14 +599,7 @@ void cluster_config_final(struct cluster_config *config)
             nodearray_release(config, config->nodearray, config->num_nodes);
             config->nodearray = NULL;
         }
-#if 1 // NEW_NODE_MGMT
         node_free_list_destroy(config);
-#else
-        if (config->free_list) {
-            node_list_destroy(config->free_list);
-            config->free_list = NULL;
-        }
-#endif
         if (config->cur_memory) {
             free(config->cur_memory);
             config->cur_memory = NULL;
