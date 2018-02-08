@@ -633,7 +633,7 @@ uint32_t cluster_config_continuum_size(struct cluster_config *config)
 int cluster_config_reconfigure(struct cluster_config *config,
                                char **node_strs, uint32_t num_nodes)
 {
-    assert(config && node_strs && num_nodes > 0);
+    assert(config);
     struct node_item **nodearray;
     struct cont_item **continuum;
     int self_id, ret=0;
