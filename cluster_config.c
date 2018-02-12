@@ -612,24 +612,6 @@ void cluster_config_final(struct cluster_config *config)
     }
 }
 
-uint32_t cluster_config_self_id(struct cluster_config *config)
-{
-    assert(config);
-    return config->self_id;
-}
-
-uint32_t cluster_config_node_count(struct cluster_config *config)
-{
-    assert(config);
-    return config->num_nodes;
-}
-
-uint32_t cluster_config_continuum_size(struct cluster_config *config)
-{
-    assert(config);
-    return config->num_conts;
-}
-
 int cluster_config_reconfigure(struct cluster_config *config,
                                char **node_strs, uint32_t num_nodes)
 {
