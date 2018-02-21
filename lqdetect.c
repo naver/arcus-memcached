@@ -282,6 +282,7 @@ static void lqdetect_write(char client_ip[], char *key, enum lq_detect_command c
         } else {
             snprintf(bufptr, length, "%s %s\n", key, arg->range);
         }
+        break;
     case LQCMD_LOP_GET:
         if (arg->delete_or_drop != 0) {
             snprintf(bufptr, length, "%s %s %s\n", key, arg->range,
