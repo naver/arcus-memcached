@@ -1586,9 +1586,9 @@ static uint32_t do_list_elem_delete(struct default_engine *engine,
                                     const int index, const uint32_t count,
                                     enum elem_delete_cause cause)
 {
-    uint32_t fcnt = 0;
-    list_elem_item *next;
     list_elem_item *elem;
+    list_elem_item *next;
+    uint32_t fcnt = 0;
 
     elem = do_list_elem_find(info, index);
     while (elem != NULL) {
@@ -1607,16 +1607,17 @@ static ENGINE_ERROR_CODE do_list_elem_get(struct default_engine *engine,
                                           const bool forward, const bool delete,
                                           list_elem_item **elem_array, uint32_t *elem_count)
 {
-    uint32_t fcnt = 0; /* found count */
-    list_elem_item *tobe;
     list_elem_item *elem;
+    list_elem_item *tobe;
+    uint32_t fcnt = 0; /* found count */
+    enum elem_delete_cause cause = ELEM_DELETE_NORMAL;
 
     elem = do_list_elem_find(info, index);
     while (elem != NULL) {
         tobe = (forward ? elem->next : elem->prev);
         elem->refcount++;
         elem_array[fcnt++] = elem;
-        if (delete) do_list_elem_unlink(engine, info, elem, ELEM_DELETE_NORMAL);
+        if (delete) do_list_elem_unlink(engine, info, elem, cause);
         if (count > 0 && fcnt >= count) break;
         elem = tobe;
     }
@@ -1684,6 +1685,7 @@ static ENGINE_ERROR_CODE do_list_elem_insert(struct default_engine *engine,
     }
 
     ret = do_list_elem_link(engine, info, index, elem);
+    assert(ret == ENGINE_SUCCESS);
     return ret;
 }
 
@@ -3732,8 +3734,11 @@ static void do_btree_elem_replace(struct default_engine *engine, btree_meta_info
                                   btree_elem_posi *posi, btree_elem_item *new_elem)
 {
     btree_elem_item *old_elem = BTREE_GET_ELEM_ITEM(posi->node, posi->indx);
-    size_t old_stotal = slabs_space_size(engine, do_btree_elem_ntotal(old_elem));
-    size_t new_stotal = slabs_space_size(engine, do_btree_elem_ntotal(new_elem));
+    size_t old_stotal;
+    size_t new_stotal;
+
+    old_stotal = slabs_space_size(engine, do_btree_elem_ntotal(old_elem));
+    new_stotal = slabs_space_size(engine, do_btree_elem_ntotal(new_elem));
 
     if (old_elem->refcount > 0) {
         old_elem->status = BTREE_ITEM_STATUS_UNLINK;
@@ -3759,7 +3764,6 @@ static ENGINE_ERROR_CODE do_btree_elem_update(struct default_engine *engine, btr
                                               const eflag_update *eupdate,
                                               const char *value, const int nbytes, const void *cookie)
 {
-    ENGINE_ERROR_CODE ret = ENGINE_ELEM_ENOENT;
     btree_elem_posi  posi;
     btree_elem_item *elem;
     unsigned char *ptr;
@@ -3767,89 +3771,91 @@ static ENGINE_ERROR_CODE do_btree_elem_update(struct default_engine *engine, btr
     int new_neflag;
     int new_nbytes;
 
-    if (info->root == NULL) return ret;
+    if (info->root == NULL) {
+        return ENGINE_ELEM_ENOENT;
+    }
 
     elem = do_btree_find_first(info->root, bkrtype, bkrange, &posi, false);
-    if (elem != NULL) {
-        assert(posi.bkeq == true);
+    if (elem == NULL) {
+        return ENGINE_ELEM_ENOENT;
+    }
 
-        /* check eflag update validation check */
-        if (eupdate != NULL && eupdate->neflag > 0 && eupdate->bitwop < BITWISE_OP_MAX) {
-            if (eupdate->fwhere >= elem->neflag || eupdate->neflag > (elem->neflag-eupdate->fwhere)) {
-                return ENGINE_EBADEFLAG;
-            }
-        }
+    assert(posi.bkeq == true);
 
-        real_nbkey = BTREE_REAL_NBKEY(elem->nbkey);
-
-        new_neflag = (eupdate == NULL || eupdate->bitwop < BITWISE_OP_MAX ? elem->neflag : eupdate->neflag);
-        new_nbytes = (value == NULL ? elem->nbytes : nbytes);
-
-        if (elem->refcount == 0 && (elem->neflag+elem->nbytes) == (new_neflag+new_nbytes)) {
-            /* old body size == new body size */
-            /* do in-place update */
-            if (eupdate != NULL) {
-                if (eupdate->bitwop < BITWISE_OP_MAX) {
-                    ptr = elem->data + real_nbkey + eupdate->fwhere;
-                    (*BINARY_BITWISE_OP[eupdate->bitwop])(ptr, eupdate->eflag, eupdate->neflag, ptr);
-                } else {
-                    if (eupdate->neflag > 0) {
-                        memcpy(elem->data + real_nbkey, eupdate->eflag, eupdate->neflag);
-                    }
-                    elem->neflag = eupdate->neflag;
-                }
-            }
-            if (value != NULL) {
-                memcpy(elem->data + real_nbkey + elem->neflag, value, nbytes);
-                elem->nbytes = nbytes;
-            }
-            ret = ENGINE_SUCCESS;
-        } else {
-            /* old body size != new body size */
-#ifdef ENABLE_STICKY_ITEM
-            if ((info->mflags & COLL_META_FLAG_STICKY) != 0 &&
-                (elem->neflag+elem->nbytes) < (new_neflag+new_nbytes)) {
-                /* sticky memory limit check : old body size < new body size */
-                if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
-                    return ENGINE_ENOMEM;
-            }
-#endif
-
-            btree_elem_item *new_elem = do_btree_elem_alloc(engine, elem->nbkey, new_neflag, new_nbytes, cookie);
-            if (new_elem == NULL) {
-                return ENGINE_ENOMEM;
-            }
-
-            /* build the new element */
-            memcpy(new_elem->data, elem->data, real_nbkey);
-
-            if (eupdate == NULL || eupdate->bitwop < BITWISE_OP_MAX) {
-                if (elem->neflag > 0) {
-                    memcpy(new_elem->data + real_nbkey, elem->data + real_nbkey, elem->neflag);
-                }
-                if (eupdate != NULL) {
-                    ptr = new_elem->data + real_nbkey + eupdate->fwhere;
-                    (*BINARY_BITWISE_OP[eupdate->bitwop])(ptr, eupdate->eflag, eupdate->neflag, ptr);
-                }
-            } else {
-                if (eupdate->neflag > 0) {
-                    memcpy(new_elem->data + real_nbkey, eupdate->eflag, eupdate->neflag);
-                }
-            }
-
-            ptr = new_elem->data + real_nbkey + new_elem->neflag;
-            if (value != NULL) {
-                memcpy(ptr, value, nbytes);
-            } else {
-                memcpy(ptr, elem->data + real_nbkey + elem->neflag, elem->nbytes);
-            }
-
-            do_btree_elem_replace(engine, info, &posi, new_elem);
-            do_btree_elem_release(engine, new_elem);
-            ret = ENGINE_SUCCESS;
+    /* check eflag update validation check */
+    if (eupdate != NULL && eupdate->neflag > 0 && eupdate->bitwop < BITWISE_OP_MAX) {
+        if (eupdate->fwhere >= elem->neflag || eupdate->neflag > (elem->neflag-eupdate->fwhere)) {
+            return ENGINE_EBADEFLAG;
         }
     }
-    return ret;
+
+    real_nbkey = BTREE_REAL_NBKEY(elem->nbkey);
+    new_neflag = (eupdate == NULL || eupdate->bitwop < BITWISE_OP_MAX ? elem->neflag : eupdate->neflag);
+    new_nbytes = (value == NULL ? elem->nbytes : nbytes);
+
+    if (elem->refcount == 0 && (elem->neflag+elem->nbytes) == (new_neflag+new_nbytes)) {
+        /* old body size == new body size */
+        /* do in-place update */
+        if (eupdate != NULL) {
+            if (eupdate->bitwop < BITWISE_OP_MAX) {
+                ptr = elem->data + real_nbkey + eupdate->fwhere;
+                (*BINARY_BITWISE_OP[eupdate->bitwop])(ptr, eupdate->eflag, eupdate->neflag, ptr);
+            } else {
+                if (eupdate->neflag > 0) {
+                    memcpy(elem->data + real_nbkey, eupdate->eflag, eupdate->neflag);
+                }
+                elem->neflag = eupdate->neflag;
+            }
+        }
+        if (value != NULL) {
+            memcpy(elem->data + real_nbkey + elem->neflag, value, nbytes);
+            elem->nbytes = nbytes;
+        }
+    } else {
+        /* old body size != new body size */
+#ifdef ENABLE_STICKY_ITEM
+        if ((info->mflags & COLL_META_FLAG_STICKY) != 0 &&
+            (elem->neflag+elem->nbytes) < (new_neflag+new_nbytes)) {
+            /* sticky memory limit check : old body size < new body size */
+            if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
+                return ENGINE_ENOMEM;
+        }
+#endif
+
+        btree_elem_item *new_elem = do_btree_elem_alloc(engine, elem->nbkey, new_neflag, new_nbytes, cookie);
+        if (new_elem == NULL) {
+            return ENGINE_ENOMEM;
+        }
+
+        /* build the new element */
+        memcpy(new_elem->data, elem->data, real_nbkey);
+
+        if (eupdate == NULL || eupdate->bitwop < BITWISE_OP_MAX) {
+            if (elem->neflag > 0) {
+                memcpy(new_elem->data + real_nbkey, elem->data + real_nbkey, elem->neflag);
+            }
+            if (eupdate != NULL) {
+                ptr = new_elem->data + real_nbkey + eupdate->fwhere;
+                (*BINARY_BITWISE_OP[eupdate->bitwop])(ptr, eupdate->eflag, eupdate->neflag, ptr);
+            }
+        } else {
+            if (eupdate->neflag > 0) {
+                memcpy(new_elem->data + real_nbkey, eupdate->eflag, eupdate->neflag);
+            }
+        }
+
+        ptr = new_elem->data + real_nbkey + new_elem->neflag;
+        if (value != NULL) {
+            memcpy(ptr, value, nbytes);
+        } else {
+            memcpy(ptr, elem->data + real_nbkey + elem->neflag, elem->nbytes);
+        }
+
+        do_btree_elem_replace(engine, info, &posi, new_elem);
+        do_btree_elem_release(engine, new_elem);
+    }
+
+    return ENGINE_SUCCESS;
 }
 
 #ifdef BTREE_DELETE_NO_MERGE
@@ -4671,7 +4677,6 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(struct default_engine *engine,
 
         if (elem->refcount == 0 && elem->nbytes == nlen) {
             memcpy(elem->data + real_nbkey + elem->neflag, nbuf, elem->nbytes);
-            ret = ENGINE_SUCCESS;
         } else {
 #ifdef ENABLE_STICKY_ITEM
             /* sticky memory limit check : do not check it
@@ -4687,8 +4692,8 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(struct default_engine *engine,
 
             do_btree_elem_replace(engine, info, &posi, new_elem);
             do_btree_elem_release(engine, new_elem);
-            ret = ENGINE_SUCCESS;
         }
+        ret = ENGINE_SUCCESS;
         *result = value;
     }
     return ret;
@@ -8449,15 +8454,17 @@ static void do_map_elem_replace(struct default_engine *engine, map_meta_info *in
 {
     map_elem_item *prev = pinfo->prev;
     map_elem_item *old_elem;
+    size_t old_stotal;
+    size_t new_stotal;
 
     if (prev != NULL) {
-        old_elem = pinfo->prev->next;
+        old_elem = prev->next;
     } else {
         old_elem = (map_elem_item *)pinfo->node->htab[pinfo->hidx];
     }
 
-    size_t old_stotal = slabs_space_size(engine, do_map_elem_ntotal(old_elem));
-    size_t new_stotal = slabs_space_size(engine, do_map_elem_ntotal(new_elem));
+    old_stotal = slabs_space_size(engine, do_map_elem_ntotal(old_elem));
+    new_stotal = slabs_space_size(engine, do_map_elem_ntotal(new_elem));
 
     new_elem->next = old_elem->next;
     if (prev != NULL) {
@@ -8738,46 +8745,48 @@ static ENGINE_ERROR_CODE do_map_elem_update(struct default_engine *engine, map_m
                                             const field_t *field, const char *value,
                                             const int nbytes, const void *cookie)
 {
-    ENGINE_ERROR_CODE ret = ENGINE_ELEM_ENOENT;
     map_prev_info  pinfo;
     map_elem_item *elem;
 
-    if (info->root == NULL) return ret;
+    if (info->root == NULL) {
+        return ENGINE_ELEM_ENOENT;
+    }
 
     elem = do_map_elem_find(info->root, field, &pinfo);
-    if (elem != NULL) {
-        if (elem->refcount == 0 && elem->nbytes == nbytes) {
-            /* old body size == new body size */
-            /* do in-place update */
-            memcpy(elem->data + elem->nfield, value, nbytes);
-            ret = ENGINE_SUCCESS;
-        } else {
-            /* old body size != new body size */
+    if (elem == NULL) {
+        return ENGINE_ELEM_ENOENT;
+    }
+
+    if (elem->refcount == 0 && elem->nbytes == nbytes) {
+        /* old body size == new body size */
+        /* do in-place update */
+        memcpy(elem->data + elem->nfield, value, nbytes);
+    } else {
+        /* old body size != new body size */
 #ifdef ENABLE_STICKY_ITEM
-            if ((info->mflags & COLL_META_FLAG_STICKY) != 0 && elem->nbytes < nbytes) {
-                /* sticky memory limit check : old body size < new body size */
-                if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
-                    return ENGINE_ENOMEM;
-            }
+        if ((info->mflags & COLL_META_FLAG_STICKY) != 0 && elem->nbytes < nbytes) {
+            /* sticky memory limit check : old body size < new body size */
+            if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
+                return ENGINE_ENOMEM;
+        }
 #endif
 
-            map_elem_item *new_elem = do_map_elem_alloc(engine, elem->nfield, nbytes, cookie);
-            if (new_elem == NULL) {
-                return ENGINE_ENOMEM;
-            }
-
-            /* build the new element */
-            memcpy(new_elem->data, elem->data, elem->nfield);
-            memcpy(new_elem->data + elem->nfield, value, nbytes);
-            new_elem->hval = elem->hval;
-
-            /* replace the element */
-            do_map_elem_replace(engine, info, &pinfo, new_elem);
-            do_map_elem_release(engine, new_elem);
-            ret = ENGINE_SUCCESS;
+        map_elem_item *new_elem = do_map_elem_alloc(engine, elem->nfield, nbytes, cookie);
+        if (new_elem == NULL) {
+            return ENGINE_ENOMEM;
         }
+
+        /* build the new element */
+        memcpy(new_elem->data, elem->data, elem->nfield);
+        memcpy(new_elem->data + elem->nfield, value, nbytes);
+        new_elem->hval = elem->hval;
+
+        /* replace the element */
+        do_map_elem_replace(engine, info, &pinfo, new_elem);
+        do_map_elem_release(engine, new_elem);
     }
-    return ret;
+
+    return ENGINE_SUCCESS;
 }
 
 static uint32_t do_map_elem_delete(struct default_engine *engine,
