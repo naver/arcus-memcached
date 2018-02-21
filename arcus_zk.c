@@ -486,15 +486,14 @@ arcus_read_ZK_children(zhandle_t *zh, const char *zpath, watcher_fn watcher,
     return 1; /* The caller must free strv */
 }
 
-static int
+static bool
 check_znode_existence(struct String_vector *strv, char *znode_name)
 {
     for (int i = 0; i < strv->count; i++) {
         if (strcmp(strv->data[i], znode_name) == 0)
-            return 0;
+            return true;
     }
-
-    return -1;
+    return false;
 }
 
 #ifdef ENABLE_CLUSTER_AWARE
@@ -1776,9 +1775,12 @@ static void *sm_state_thread(void *arg)
                 deallocate_String_vector(&sm_info.sv_cache_list);
                 sm_info.sv_cache_list = strv_cache_list;
 
-                if (check_znode_existence(&strv_cache_list,
-                                          arcus_conf.znode_name) != 0) {
-                    znode_deleted = true;
+                if (arcus_conf.znode_created) {
+                    /* We think checking znode existence is a sort of overhead
+                     * since it must be done whenever cache list is updated. FIXME.
+                     */
+                    if (!check_znode_existence(&strv_cache_list, arcus_conf.znode_name))
+                        znode_deleted = true;
                 }
 
 #ifdef ENABLE_CLUSTER_AWARE
