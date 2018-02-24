@@ -6469,18 +6469,20 @@ ENGINE_ERROR_CODE list_elem_delete(struct default_engine *engine,
                                    const bool drop_if_empty,
                                    uint32_t *del_count, bool *dropped)
 {
-    ENGINE_ERROR_CODE ret;
     hash_item *it;
+    list_meta_info *info;
+    int      index;
+    uint32_t count;
+    ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
     ret = do_list_item_find(engine, key, nkey, DONT_UPDATE, &it);
-    if (ret == ENGINE_SUCCESS) { /* it != NULL */
-        list_meta_info *info = (list_meta_info *)item_get_meta(it);
-        if (adjust_list_range(info->ccnt, &from_index, &to_index) != 0) {
-            ret = ENGINE_ELEM_ENOENT;
-        } else {
-            int      index;
-            uint32_t count;
+    if (ret == ENGINE_SUCCESS) {
+        do {
+            info = (list_meta_info *)item_get_meta(it);
+            if (adjust_list_range(info->ccnt, &from_index, &to_index) != 0) {
+                ret = ENGINE_ELEM_ENOENT; break;
+            }
             if (from_index <= to_index) {
                 index = from_index;
                 count = to_index - from_index + 1;
@@ -6488,6 +6490,7 @@ ENGINE_ERROR_CODE list_elem_delete(struct default_engine *engine,
                 index = to_index;
                 count = from_index - to_index + 1;
             }
+
             *del_count = do_list_elem_delete(engine, info, index, count,
                                              ELEM_DELETE_NORMAL);
             if (*del_count > 0) {
@@ -6500,7 +6503,7 @@ ENGINE_ERROR_CODE list_elem_delete(struct default_engine *engine,
             } else {
                 ret = ENGINE_ELEM_ENOENT;
             }
-        }
+        } while(0);
         do_item_release(engine, it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
@@ -6514,36 +6517,46 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
                                 list_elem_item **elem_array, uint32_t *elem_count,
                                 uint32_t *flags, bool *dropped)
 {
-    hash_item      *it;
+    hash_item *it;
     list_meta_info *info;
+    int      index;
+    uint32_t count;
+    bool forward;
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
     ret = do_list_item_find(engine, key, nkey, DO_UPDATE, &it);
-    if (ret == ENGINE_SUCCESS) { /* it != NULL */
-        info = (list_meta_info *)item_get_meta(it);
+    if (ret == ENGINE_SUCCESS) {
         do {
+            info = (list_meta_info *)item_get_meta(it);
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
             }
             if (adjust_list_range(info->ccnt, &from_index, &to_index) != 0) {
-                ret = ENGINE_ELEM_ENOENT;
+                ret = ENGINE_ELEM_ENOENT; break;
+            }
+            index = from_index;
+            if (from_index <= to_index) {
+                count = to_index - from_index + 1;
+                forward = true;
             } else {
-                bool forward = (from_index <= to_index ? true : false);
-                int  index = from_index;
-                uint32_t count = (forward ? (to_index - from_index + 1)
-                                          : (from_index - to_index + 1));
-                ret = do_list_elem_get(engine, info, index, count, forward, delete, elem_array, elem_count);
-                if (ret == ENGINE_SUCCESS) {
-                    if (info->ccnt == 0 && drop_if_empty) {
-                        assert(delete == true);
-                        do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
-                        *dropped = true;
-                    } else {
-                        *dropped = false;
-                    }
-                    *flags = it->flags;
-                } /* ret = ENGINE_ELEM_ENOENT */
+                count = from_index - to_index + 1;
+                forward = false;
+            }
+
+            ret = do_list_elem_get(engine, info, index, count, forward, delete,
+                                   elem_array, elem_count);
+            if (ret == ENGINE_SUCCESS) {
+                if (info->ccnt == 0 && drop_if_empty) {
+                    assert(delete == true);
+                    do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
+                    *dropped = true;
+                } else {
+                    *dropped = false;
+                }
+                *flags = it->flags;
+            } else {
+                /* ret = ENGINE_ELEM_ENOENT */
             }
         } while (0);
         do_item_release(engine, it);
