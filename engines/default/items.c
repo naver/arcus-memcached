@@ -1504,14 +1504,17 @@ static void do_list_elem_release(struct default_engine *engine, list_elem_item *
 static list_elem_item *do_list_elem_find(list_meta_info *info, int index)
 {
     list_elem_item *elem;
-    if (index >= 0) {
+
+    if (index <= (info->ccnt/2)) {
+        assert(index >= 0);
         elem = info->head;
-        for (int i =  0; i < index && elem != NULL; i++) {
+        for (int i = 0; i < index && elem != NULL; i++) {
             elem = elem->next;
         }
     } else {
+        assert(index < info->ccnt);
         elem = info->tail;
-        for (int i = -1; i > index && elem != NULL; i--) {
+        for (int i = info->ccnt-1; i > index && elem != NULL; i--) {
             elem = elem->prev;
         }
     }
@@ -1523,25 +1526,19 @@ static ENGINE_ERROR_CODE do_list_elem_link(struct default_engine *engine,
                                            list_elem_item *elem)
 {
     list_elem_item *prev, *next;
-    if (index >= 0) {
-        if (index == 0) {
-            prev = NULL;
-            next = info->head;
-        } else {
-            assert (index <= info->ccnt);
-            prev = do_list_elem_find(info, (index-1));
-            next = prev->next;
-        }
-    } else { /* index < 0 */
-        if (index == -1) {
-            next = NULL;
-            prev = info->tail;
-        } else {
-            assert ((-index) <= (info->ccnt+1));
-            next = do_list_elem_find(info, (index+1));
-            prev = next->prev;
-        }
+
+    assert(index >= 0);
+    if (index == 0) {
+        prev = NULL;
+        next = info->head;
+    } else if (index >= info->ccnt) {
+        prev = info->tail;
+        next = NULL;
+    } else {
+        prev = do_list_elem_find(info, (index-1));
+        next = prev->next;
     }
+
     elem->prev = prev;
     elem->next = next;
     if (prev == NULL) info->head = elem;
@@ -1667,12 +1664,12 @@ static ENGINE_ERROR_CODE do_list_elem_insert(struct default_engine *engine,
         uint32_t delcnt;
         if (index == 0 || index == -1) {
             /* delete an element item of opposite side to make room */
-            delidx = (index == -1 ? 0 : -1);
+            delidx = (index == -1 ? 0 : info->ccnt-1);
             delcnt = do_list_elem_delete(engine, info, delidx, 1, ELEM_DELETE_TRIM);
             assert(delcnt == 1);
         } else {
             /* delete an element item that overflow action indicates */
-            delidx = (info->ovflact == OVFL_HEAD_TRIM ? 0 : -1);
+            delidx = (info->ovflact == OVFL_HEAD_TRIM ? 0 : info->ccnt-1);
             delcnt = do_list_elem_delete(engine, info, delidx, 1, ELEM_DELETE_TRIM);
             assert(delcnt == 1);
             /* adjust list index value */
@@ -1682,6 +1679,16 @@ static ENGINE_ERROR_CODE do_list_elem_insert(struct default_engine *engine,
               if (index < 0) index += 1;
             }
         }
+    }
+
+    if (index < 0) {
+        /* Change the negative index to a positive index.
+         * by adding (current element count + 1).  One more addition
+         * is needed since the direction of insertion is reversed.
+         */
+        index += (info->ccnt+1);
+        if (index < 0)
+            index = 0;
     }
 
     ret = do_list_elem_link(engine, info, index, elem);
@@ -6437,28 +6444,28 @@ ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
     return ret;
 }
 
-static int adjust_list_range(int num_elems, int *from_index, int *to_index)
+static int adjust_list_range(list_meta_info *info, int *from_index, int *to_index)
 {
-    if (num_elems <= 0) return -1; /* out of range */
+    if (info->ccnt <= 0) return -1; /* out of range */
 
-    if (*from_index >= 0) {
-        if (*from_index >= num_elems) {
-            if (*to_index >= num_elems) return -1; /* out of range */
-            *from_index = num_elems - 1;
-        }
-        if (*to_index < 0) {
-            *to_index += num_elems;
-            if (*to_index < 0) *to_index = 0;
-        }
-    } else { /* *from_index < 0 */
-        if (*from_index < -num_elems) {
-            if (*to_index < -num_elems) return -1; /* out of range */
-            *from_index = -num_elems;
-        }
-        if (*to_index >= 0) {
-            *to_index -= num_elems;
-            if (*to_index >= 0) *to_index = -1;
-        }
+    if (*from_index < 0) {
+        *from_index += info->ccnt;
+    }
+    if (*to_index < 0) {
+        *to_index += info->ccnt;
+    }
+
+    if (*from_index < 0) {
+        if (*to_index < 0) return -1; /* out of range */
+        *from_index = 0;
+    } else if (*from_index >= info->ccnt) {
+        if (*to_index >= info->ccnt) return -1; /* out of range */
+        *from_index = info->ccnt-1;
+    }
+    if (*to_index < 0) {
+        *to_index = 0;
+    } else if (*to_index >= info->ccnt) {
+        *to_index = info->ccnt-1;
     }
     return 0;
 }
@@ -6480,7 +6487,7 @@ ENGINE_ERROR_CODE list_elem_delete(struct default_engine *engine,
     if (ret == ENGINE_SUCCESS) {
         do {
             info = (list_meta_info *)item_get_meta(it);
-            if (adjust_list_range(info->ccnt, &from_index, &to_index) != 0) {
+            if (adjust_list_range(info, &from_index, &to_index) != 0) {
                 ret = ENGINE_ELEM_ENOENT; break;
             }
             if (from_index <= to_index) {
@@ -6532,7 +6539,7 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
             }
-            if (adjust_list_range(info->ccnt, &from_index, &to_index) != 0) {
+            if (adjust_list_range(info, &from_index, &to_index) != 0) {
                 ret = ENGINE_ELEM_ENOENT; break;
             }
             index = from_index;
@@ -6558,7 +6565,7 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
             } else {
                 /* ret = ENGINE_ELEM_ENOENT */
             }
-        } while (0);
+        } while(0);
         do_item_release(engine, it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
