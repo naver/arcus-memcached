@@ -7734,7 +7734,7 @@ uint8_t item_get_clsid(const hash_item* item)
 ****/
 
 /*
- * Check linked status
+ * Check item validity
  */
 bool item_is_valid(struct default_engine *engine, hash_item* item)
 {
@@ -7744,32 +7744,6 @@ bool item_is_valid(struct default_engine *engine, hash_item* item)
     } else {
         return false;
     }
-}
-
-bool item_is_linked(const hash_item* item)
-{
-    return (item->iflag & ITEM_LINKED);
-}
-
-bool list_elem_is_linked(list_elem_item *elem)
-{
-    return (elem->prev != (list_elem_item *)ADDR_MEANS_UNLINKED &&
-            elem->next != (list_elem_item *)ADDR_MEANS_UNLINKED);
-}
-
-bool set_elem_is_linked(set_elem_item *elem)
-{
-    return (elem->next != (set_elem_item *)ADDR_MEANS_UNLINKED);
-}
-
-bool map_elem_is_linked(map_elem_item *elem)
-{
-    return (elem->next != (map_elem_item *)ADDR_MEANS_UNLINKED);
-}
-
-bool btree_elem_is_linked(btree_elem_item *elem)
-{
-    return (elem->status == BTREE_ITEM_STATUS_USED);
 }
 
 /*

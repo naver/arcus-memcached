@@ -612,14 +612,9 @@ char*       item_get_data(const hash_item* item);
 const void* item_get_meta(const hash_item* item);
 
 /*
- * Check linked status
+ * Check item validity
  */
 bool item_is_valid(struct default_engine *engine, hash_item *item);
-bool item_is_linked(const hash_item* item);
-bool list_elem_is_linked(list_elem_item *elem);
-bool set_elem_is_linked(set_elem_item *elem);
-bool map_elem_is_linked(map_elem_item *elem);
-bool btree_elem_is_linked(btree_elem_item *elem);
 
 /*
  * Item and Element size functions
