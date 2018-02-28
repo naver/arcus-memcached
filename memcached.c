@@ -9303,7 +9303,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
 {
     char *prefix;
     int  nprefix;
-    time_t exptime;
+    int32_t exptime;
     ENGINE_ERROR_CODE ret;
 
     assert(c->ewouldblock == false);
@@ -9316,8 +9316,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
         if (ntokens == (c->noreply ? 3 : 2)) {
             exptime = 0;
         } else {
-            exptime = strtol(tokens[1].value, NULL, 10);
-            if(errno == ERANGE) {
+            if (! safe_strtol(tokens[1].value, &exptime)) {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
                 return;
@@ -9345,8 +9344,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
         if (ntokens == (c->noreply ? 4 : 3)) {
             exptime = 0;
         } else {
-            exptime = strtol(tokens[2].value, NULL, 10);
-            if (errno == ERANGE) {
+            if (! safe_strtol(tokens[2].value, &exptime)) {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
                 return;
