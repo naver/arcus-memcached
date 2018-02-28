@@ -7709,11 +7709,15 @@ static void process_bin_append_prepend(conn *c) {
 }
 
 static void process_bin_flush(conn *c) {
-    time_t exptime = 0;
     protocol_binary_request_flush* req = binary_get_request(c);
+    time_t exptime = 0;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     if (c->binary_header.request.extlen == sizeof(req->message.body)) {
         exptime = ntohl(req->message.body.expiration);
+        if (exptime < 0) {
+            ret = ENGINE_EINVAL;
+        }
     }
 
     if (settings.verbose > 1) {
@@ -7721,11 +7725,12 @@ static void process_bin_flush(conn *c) {
                        "%d: flush %ld", c->sfd, (long)exptime);
     }
 
-    ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->flush(mc_engine.v0, c, NULL, -1, exptime);
-    if (ret == ENGINE_EWOULDBLOCK) {
-        c->ewouldblock = true;
-        ret = ENGINE_SUCCESS;
+    if (ret == ENGINE_SUCCESS) {
+        ret = mc_engine.v1->flush(mc_engine.v0, c, NULL, -1, realtime(exptime));
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
     }
 
     if (ret == ENGINE_SUCCESS) {
@@ -7739,15 +7744,17 @@ static void process_bin_flush(conn *c) {
 }
 
 static void process_bin_flush_prefix(conn *c) {
-    time_t exptime = 0;
-
+    protocol_binary_request_flush_prefix *req = binary_get_request(c);
     char *prefix = binary_get_key(c);
     size_t nprefix = c->binary_header.request.keylen;
-
-    protocol_binary_request_flush_prefix *req = binary_get_request(c);
+    time_t exptime = 0;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     if (c->binary_header.request.extlen == sizeof(req->message.body)) {
         exptime = ntohl(req->message.body.expiration);
+        if (exptime < 0) {
+            ret = ENGINE_EINVAL;
+        }
     }
 
     if (settings.verbose > 1) {
@@ -7763,11 +7770,12 @@ static void process_bin_flush_prefix(conn *c) {
         nprefix = 0;
     }
 
-    ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->flush(mc_engine.v0, c, prefix, nprefix, exptime);
-    if (ret == ENGINE_EWOULDBLOCK) {
-        c->ewouldblock = true;
-        ret = ENGINE_SUCCESS;
+    if (ret == ENGINE_SUCCESS) {
+        ret = mc_engine.v1->flush(mc_engine.v0, c, prefix, nprefix, realtime(exptime));
+        if (ret == ENGINE_EWOULDBLOCK) {
+            c->ewouldblock = true;
+            ret = ENGINE_SUCCESS;
+        }
     }
 
     if (settings.detail_enabled) {
@@ -9316,14 +9324,14 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
         if (ntokens == (c->noreply ? 3 : 2)) {
             exptime = 0;
         } else {
-            if (! safe_strtol(tokens[1].value, &exptime)) {
+            if (! safe_strtol(tokens[1].value, &exptime) || exptime < 0) {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
                 return;
             }
         }
 
-        ret = mc_engine.v1->flush(mc_engine.v0, c, NULL, -1, exptime);
+        ret = mc_engine.v1->flush(mc_engine.v0, c, NULL, -1, realtime(exptime));
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
             ret = ENGINE_SUCCESS;
@@ -9344,7 +9352,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
         if (ntokens == (c->noreply ? 4 : 3)) {
             exptime = 0;
         } else {
-            if (! safe_strtol(tokens[2].value, &exptime)) {
+            if (! safe_strtol(tokens[2].value, &exptime) || exptime < 0) {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
                 return;
@@ -9362,7 +9370,8 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
             nprefix = 0;
         }
 
-        ret = mc_engine.v1->flush(mc_engine.v0, c, prefix, nprefix, exptime);
+        ret = mc_engine.v1->flush(mc_engine.v0, c, prefix, nprefix,
+                                  realtime(exptime));
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
             ret = ENGINE_SUCCESS;

@@ -6116,7 +6116,7 @@ ENGINE_ERROR_CODE item_delete(struct default_engine *engine,
 
 static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
                                                const char *prefix, const int nprefix,
-                                               time_t when, const void* cookie)
+                                               rel_time_t when, const void* cookie)
 {
     hash_item *iter, *next;
     rel_time_t oldest_live;
@@ -6133,29 +6133,29 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
             return ENGINE_PREFIX_ENOENT;
         }
 
-        if (when <= 0) {
+        if (when == 0) {
             pt->oldest_live = engine->server.core->get_current_time() - 1;
         } else {
-            pt->oldest_live = engine->server.core->realtime(when) - 1;
+            pt->oldest_live = when - 1;
         }
         oldest_live = pt->oldest_live;
 
         if (engine->config.verbose) {
             logger->log(EXTENSION_LOG_INFO, NULL, "flush prefix=%s when=%u client_ip=%s\n",
                         (prefix == NULL ? "<null>" : prefix),
-                        (unsigned)when, engine->server.core->get_client_ip(cookie));
+                        when, engine->server.core->get_client_ip(cookie));
         }
     } else { /* flush all */
-        if (when <= 0) {
+        if (when == 0) {
             engine->config.oldest_live = engine->server.core->get_current_time() - 1;
         } else {
-            engine->config.oldest_live = engine->server.core->realtime(when) - 1;
+            engine->config.oldest_live = when - 1;
         }
         oldest_live = engine->config.oldest_live;
 
         if (engine->config.verbose) {
             logger->log(EXTENSION_LOG_INFO, NULL, "flush all when=%u client_ip=%s\n",
-                        (unsigned)when, engine->server.core->get_client_ip(cookie));
+                        when, engine->server.core->get_client_ip(cookie));
         }
     }
 
@@ -6225,7 +6225,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
 
 ENGINE_ERROR_CODE item_flush_expired(struct default_engine *engine,
                                      const char *prefix, const int nprefix,
-                                     time_t when, const void* cookie)
+                                     rel_time_t when, const void* cookie)
 {
     ENGINE_ERROR_CODE ret;
     pthread_mutex_lock(&engine->cache_lock);

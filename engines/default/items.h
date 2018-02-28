@@ -353,7 +353,7 @@ char *item_cachedump(struct default_engine *engine, const unsigned int slabs_cls
  */
 ENGINE_ERROR_CODE item_flush_expired(struct default_engine *engine,
                                      const char *prefix, const int nprefix,
-                                     time_t when, const void* cookie);
+                                     rel_time_t when, const void* cookie);
 
 /**
  * Release our reference to the current item

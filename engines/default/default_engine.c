@@ -338,7 +338,7 @@ default_arithmetic(ENGINE_HANDLE* handle, const void* cookie,
 
 static ENGINE_ERROR_CODE
 default_flush(ENGINE_HANDLE* handle, const void* cookie,
-              const void* prefix, const int nprefix, time_t when)
+              const void* prefix, const int nprefix, rel_time_t when)
 {
     ENGINE_ERROR_CODE ret;
 

@@ -276,7 +276,7 @@ static ENGINE_ERROR_CODE mock_arithmetic(ENGINE_HANDLE* handle,
 }
 
 static ENGINE_ERROR_CODE mock_flush(ENGINE_HANDLE* handle, const void* cookie,
-                                    const void *prefix, const int nprefix, time_t when) {
+                                    const void *prefix, const int nprefix, rel_time_t when) {
     struct mock_engine *me = get_handle(handle);
     struct mock_connstruct *c = (void*)cookie;
     if (c == NULL) {
