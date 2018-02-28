@@ -319,8 +319,9 @@ default_store(ENGINE_HANDLE* handle, const void *cookie,
 
 static ENGINE_ERROR_CODE
 default_arithmetic(ENGINE_HANDLE* handle, const void* cookie,
-                   const void* key, const int nkey, const bool increment,
-                   const bool create, const uint64_t delta, const uint64_t initial,
+                   const void* key, const int nkey,
+                   const bool increment, const bool create,
+                   const uint64_t delta, const uint64_t initial,
                    const int flags, const rel_time_t exptime,
                    uint64_t *cas, uint64_t *result, uint16_t vbucket)
 {
@@ -329,10 +330,8 @@ default_arithmetic(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = arithmetic(engine, cookie, key, nkey, increment,
-                     create, delta, initial,
-                     flags, engine->server.core->realtime(exptime),
-                     cas, result);
+    ret = arithmetic(engine, cookie, key, nkey, increment, create,
+                     delta, initial, flags, exptime, cas, result);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }

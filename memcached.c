@@ -3755,7 +3755,7 @@ static void complete_incr_bin(conn *c) {
                                    req->message.body.delta,
                                    req->message.body.initial,
                                    0, /* flags */
-                                   req->message.body.expiration,
+                                   realtime(req->message.body.expiration),
                                    &c->cas,
                                    &rsp->message.body.value,
                                    c->binary_header.request.vbucket);
@@ -9188,8 +9188,8 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
     uint64_t result;
 
     ret = mc_engine.v1->arithmetic(mc_engine.v0, c, key, nkey,
-                                   incr, create, delta,
-                                   init_value, htonl(flags), exptime_int,
+                                   incr, create, delta, init_value,
+                                   htonl(flags), realtime(exptime_int),
                                    &cas, &result, 0);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;

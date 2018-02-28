@@ -254,8 +254,9 @@ Demo_store(ENGINE_HANDLE* handle, const void *cookie,
 
 static ENGINE_ERROR_CODE
 Demo_arithmetic(ENGINE_HANDLE* handle, const void* cookie,
-                   const void* key, const int nkey, const bool increment,
-                   const bool create, const uint64_t delta, const uint64_t initial,
+                   const void* key, const int nkey,
+                   const bool increment, const bool create,
+                   const uint64_t delta, const uint64_t initial,
                    const int flags, const rel_time_t exptime,
                    uint64_t *cas, uint64_t *result, uint16_t vbucket)
 {
