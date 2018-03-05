@@ -9027,7 +9027,8 @@ static inline void process_mget_command(conn *c, token_t *tokens, const size_t n
     uint32_t lenkeys, numkeys;
 
     if ((! safe_strtoul(tokens[COMMAND_TOKEN+1].value, &lenkeys)) ||
-        (! safe_strtoul(tokens[COMMAND_TOKEN+2].value, &numkeys))) {
+        (! safe_strtoul(tokens[COMMAND_TOKEN+2].value, &numkeys)) ||
+        (lenkeys > (UINT_MAX-2))) {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
@@ -10653,7 +10654,8 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
         if ((! safe_strtol(tokens[LOP_KEY_TOKEN+1].value, &index)) ||
-            (! safe_strtol(tokens[LOP_KEY_TOKEN+2].value, &vlen)) || (vlen < 0)) {
+            (! safe_strtol(tokens[LOP_KEY_TOKEN+2].value, &vlen)) ||
+            (vlen < 0 || vlen > (INT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
@@ -11033,7 +11035,8 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
-        if ((! safe_strtol(tokens[SOP_KEY_TOKEN+1].value, &vlen)) || (vlen < 0)) {
+        if ((! safe_strtol(tokens[SOP_KEY_TOKEN+1].value, &vlen)) ||
+            (vlen < 0 || vlen > (INT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
@@ -11102,7 +11105,8 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         c->coll_drop = false;
 
-        if (! safe_strtol(tokens[SOP_KEY_TOKEN+1].value, &vlen) || vlen < 0) {
+        if ((! safe_strtol(tokens[SOP_KEY_TOKEN+1].value, &vlen)) ||
+            (vlen < 0 || vlen > (INT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
@@ -11129,7 +11133,8 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         set_pipe_maybe(c, tokens, ntokens);
 
-        if (! safe_strtol(tokens[SOP_KEY_TOKEN+1].value, &vlen) || vlen < 0) {
+        if ((! safe_strtol(tokens[SOP_KEY_TOKEN+1].value, &vlen)) ||
+            (vlen < 0 || vlen > (INT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
@@ -12419,7 +12424,8 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
             return;
         }
 
-        if ((! safe_strtol(tokens[MOP_KEY_TOKEN+2].value, &vlen)) || (vlen < 0)) {
+        if ((! safe_strtol(tokens[MOP_KEY_TOKEN+2].value, &vlen)) ||
+            (vlen < 0 || vlen > (INT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
@@ -12490,7 +12496,8 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
             return;
         }
 
-        if ((! safe_strtol(tokens[MOP_KEY_TOKEN+2].value, &vlen)) || (vlen < 0)) {
+        if ((! safe_strtol(tokens[MOP_KEY_TOKEN+2].value, &vlen)) ||
+            (vlen < 0 || vlen > (INT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
@@ -12509,7 +12516,8 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
         if ((! safe_strtoul(tokens[MOP_KEY_TOKEN+1].value, &lenfields)) ||
-            (! safe_strtoul(tokens[MOP_KEY_TOKEN+2].value, &numfields))) {
+            (! safe_strtoul(tokens[MOP_KEY_TOKEN+2].value, &numfields)) ||
+            (lenfields > (UINT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
@@ -12564,7 +12572,8 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         bool drop_if_empty = false;
 
         if ((! safe_strtoul(tokens[MOP_KEY_TOKEN+1].value, &lenfields)) ||
-            (! safe_strtoul(tokens[MOP_KEY_TOKEN+2].value, &numfields))) {
+            (! safe_strtoul(tokens[MOP_KEY_TOKEN+2].value, &numfields)) ||
+            (lenfields > (UINT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
@@ -12674,7 +12683,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             read_ntokens++;
         }
 
-        if ((! safe_strtol(tokens[read_ntokens].value, &vlen)) || (vlen < 0)) {
+        if ((! safe_strtol(tokens[read_ntokens].value, &vlen)) ||
+            (vlen < 0 || vlen > (INT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
@@ -12803,7 +12813,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             return;
         }
 
-        if (! safe_strtol(tokens[read_ntokens].value, &vlen) || (vlen < -1)) {
+        if ((! safe_strtol(tokens[read_ntokens].value, &vlen)) ||
+            (vlen < -1 || vlen > (INT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
@@ -13058,7 +13069,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 #endif
 
         if ((! safe_strtoul(tokens[BOP_KEY_TOKEN].value, &lenkeys)) ||
-            (! safe_strtoul(tokens[BOP_KEY_TOKEN+1].value, &numkeys))) {
+            (! safe_strtoul(tokens[BOP_KEY_TOKEN+1].value, &numkeys)) ||
+            (lenkeys > (UINT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
