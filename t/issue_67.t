@@ -75,8 +75,8 @@ sub when {
 # when('no arguments', '', 11211, 11211);
 ### [ARCUS] CHANGED FOLLOWING TEST ###
 # Because of 11212 bind error in hudson server environment.
-#when('specifying tcp port', '-p 11212', 11212, 11212);
-when('specifying tcp port', '-p 11292', 11292, 11292);
+#when('specifying tcp port', '-p 11212', 11212, -1);
+when('specifying tcp port', '-p 11292', 11292, -1);
 ######################################
 when('specifying udp port', '-U 11222', 11222, 11222);
 when('specifying tcp ephemeral port', '-p -1', 0, 0);
