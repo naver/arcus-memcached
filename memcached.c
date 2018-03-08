@@ -16003,7 +16003,7 @@ int main (int argc, char **argv) {
         }
     }
 
-    if (udp_specified && !tcp_specified) {
+    if (udp_specified && settings.udpport != 0 && !tcp_specified) {
         settings.port = settings.udpport;
     }
 
