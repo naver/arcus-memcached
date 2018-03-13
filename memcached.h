@@ -85,6 +85,8 @@
 #define MIN_BIN_PKT_LENGTH 16
 #define BIN_PKT_HDR_WORDS (MIN_BIN_PKT_LENGTH/sizeof(uint32_t))
 
+#define MAX_MGET_KEY_COUNT 10000
+
 /* Max element value size */
 #define MAX_ELEMENT_BYTES  (4*1024)
 

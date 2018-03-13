@@ -6291,6 +6291,9 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
         if (req->message.body.key_count < 1 || vlen < 1 || req->message.body.req_count < 1) {
             ret = ENGINE_EBADVALUE; break;
         }
+        if (req->message.body.key_count > ((vlen/2)+1)) {
+            ret = ENGINE_EBADVALUE; break;
+        }
 #ifdef SUPPORT_BOP_MGET
         if (c->cmd == PROTOCOL_BINARY_CMD_BOP_MGET) {
             int bmget_count;
@@ -9034,8 +9037,11 @@ static inline void process_mget_command(conn *c, token_t *tokens, const size_t n
         return;
     }
 
-    if (lenkeys < 1 || numkeys < 1) {
+    if (lenkeys < 1 || numkeys < 1 || numkeys > ((lenkeys/2)+1)) {
         /* ENGINE_EBADVALUE */
+        out_string(c, "CLIENT_ERROR bad value"); return;
+    }
+    if (numkeys > MAX_MGET_KEY_COUNT) {
         out_string(c, "CLIENT_ERROR bad value"); return;
     }
     lenkeys += 2;
@@ -12534,6 +12540,13 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 return;
             }
         }
+        if (numfields > 0) {
+            if (numfields > ARCUS_COLL_SIZE_LIMIT ||
+                numfields > ((lenfields/2)+1)) {
+                out_string(c, "CLIENT_ERROR bad value");
+                return;
+            }
+        }
 
         int read_ntokens = 5;
         int post_ntokens = 1 + (c->noreply ? 1 : 0);
@@ -12586,6 +12599,13 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
             }
         } else if (numfields == 0) {
             if (lenfields != 0) {
+                out_string(c, "CLIENT_ERROR bad value");
+                return;
+            }
+        }
+        if (numfields > 0) {
+            if (numfields > ARCUS_COLL_SIZE_LIMIT ||
+                numfields > ((lenfields/2)+1)) {
                 out_string(c, "CLIENT_ERROR bad value");
                 return;
             }
@@ -13126,7 +13146,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
 
         /* validation checking on arguments */
-        if (lenkeys < 1 || numkeys < 1 || count < 1) {
+        if (lenkeys < 1 || numkeys < 1 || count < 1 || numkeys > ((lenkeys/2)+1)) {
             /* ENGINE_EBADVALUE */
             out_string(c, "CLIENT_ERROR bad value"); return;
         }
