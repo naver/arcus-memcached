@@ -498,7 +498,7 @@ int tokenize_sblocks(mblck_list_t *blist, int length, char delimiter, int keycnt
     mblck_node_t *blckptr;
     char         *dataptr;
     uint32_t slength;
-    uint32_t bodylen;
+    uint32_t bodylen = MBLCK_GET_BODYLEN(blist);
     uint32_t datalen;
     uint32_t numblks;
     uint32_t chkblks;
@@ -518,15 +518,14 @@ int tokenize_sblocks(mblck_list_t *blist, int length, char delimiter, int keycnt
 
     /* prepare block info */
     slength = length - 2; /* exclude the last "\r\n" */
-    bodylen = MBLCK_GET_BODYLEN(blist);
     numblks = ((slength - 1) / bodylen) + 1;
     lastlen = (slength % bodylen) > 0
             ? (slength % bodylen) : bodylen;
 
     /* get the first block */
+    chkblks = 1;
     blckptr = MBLCK_GET_HEADBLK(blist);
     dataptr = MBLCK_GET_BODYPTR(blckptr);
-    chkblks = 1;
     datalen = (chkblks < numblks) ? bodylen : lastlen;
 
     while (ntokens < keycnt) {
@@ -546,33 +545,36 @@ int tokenize_sblocks(mblck_list_t *blist, int length, char delimiter, int keycnt
         if (tokcnt <= 0) {
             break;
         }
-        ntokens += tokcnt;
 
-        /* check the end of strings */
-        if (chkblks >= numblks) {
-            if (ntokens == keycnt)
+        ntokens += tokcnt;
+        if (ntokens >= keycnt) {
+            if (chkblks == numblks)
                 finish_flag = true;
-            break; /* string end */
+            break;
+        }
+        if (chkblks >= numblks) {
+            break; /* No more blocks */
         }
 
         /* get the next block */
+        chkblks += 1;
         blckptr = MBLCK_GET_NEXTBLK(blckptr);
         dataptr = MBLCK_GET_BODYPTR(blckptr);
-        chkblks += 1;
         datalen = (chkblks < numblks) ? bodylen : lastlen;
 
         if (segmented_blck == true) {
             if (dataptr[0] == delimiter) {
+                /* NOT segmented string */
                 dataptr += 1;
                 datalen -= 1;
-                continue;
+            } else {
+                /* real segmented string: save it */
+                ntokens -= 1;
+                segtoks[nsegtok].value = tokens[ntokens].value;
+                segtoks[nsegtok].length = (uint32_t)tokens[ntokens].length;
+                segtoks[nsegtok].tokidx = ntokens;
+                nsegtok += 1;
             }
-            /* save the segmented string */
-            ntokens -= 1;
-            segtoks[nsegtok].value = tokens[ntokens].value;
-            segtoks[nsegtok].length = (uint32_t)tokens[ntokens].length;
-            segtoks[nsegtok].tokidx = ntokens;
-            nsegtok += 1;
         }
     }
 
