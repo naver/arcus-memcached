@@ -431,8 +431,8 @@ typedef struct {
     uint32_t tokidx;
 } segtok_t;
 
-static int build_complete_strings(mblck_list_t *blist, segtok_t *segtoks, int segcnt,
-                                  token_t *tokens, int keycnt)
+static int build_complete_strings(mblck_list_t *blist, token_t *tokens,
+                                  segtok_t *segtoks, int segcnt)
 {
     assert(blist->pool != NULL);
     mblck_list_t add_blcks;
@@ -493,6 +493,7 @@ static int build_complete_strings(mblck_list_t *blist, segtok_t *segtoks, int se
     return 0;
 }
 
+#define SEGTOK_ARRAY_SIZE 32
 int tokenize_sblocks(mblck_list_t *blist, int length, char delimiter, int keycnt, token_t *tokens)
 {
     mblck_node_t *blckptr;
@@ -505,9 +506,8 @@ int tokenize_sblocks(mblck_list_t *blist, int length, char delimiter, int keycnt
     uint32_t lastlen;
     uint32_t ntokens = 0;
     uint32_t nsegtok = 0;
-    segtok_t *segtoks = (segtok_t*)&tokens[keycnt];
-    bool finish_flag = false;
-    bool segmented_blck;
+    segtok_t segtoks[SEGTOK_ARRAY_SIZE];
+    int ret = 0;
 
     assert(length > 2 && tokens != NULL && keycnt > 0);
 
@@ -530,7 +530,7 @@ int tokenize_sblocks(mblck_list_t *blist, int length, char delimiter, int keycnt
 
     while (ntokens < keycnt) {
         /* check the last character */
-        segmented_blck = false;
+        bool segmented_blck = false;
         if (chkblks < numblks) {
             if (dataptr[datalen-1] == delimiter) {
                 datalen -= 1;
@@ -543,14 +543,13 @@ int tokenize_sblocks(mblck_list_t *blist, int length, char delimiter, int keycnt
         int tokcnt = tokenize_mblck(dataptr, datalen, delimiter,
                                     keycnt-ntokens, &tokens[ntokens]);
         if (tokcnt <= 0) {
-            break;
+            ret = -1; break;
         }
         ntokens += tokcnt;
 
         /* check the end of strings */
         if (chkblks >= numblks) {
-            if (ntokens == keycnt)
-                finish_flag = true;
+            ret = (ntokens == keycnt) ? 0 : -1;
             break; /* string end */
         }
 
@@ -559,31 +558,35 @@ int tokenize_sblocks(mblck_list_t *blist, int length, char delimiter, int keycnt
         blckptr = MBLCK_GET_NEXTBLK(blckptr);
         dataptr = MBLCK_GET_BODYPTR(blckptr);
         datalen = (chkblks < numblks) ? bodylen : lastlen;
+        if (segmented_blck == false)
+            continue;
 
-        if (segmented_blck == true) {
-            if (dataptr[0] == delimiter) {
-                /* NOT segmented string */
-                dataptr += 1;
-                datalen -= 1;
-            } else {
-                /* real segmented string: save it */
-                ntokens -= 1;
-                segtoks[nsegtok].value = tokens[ntokens].value;
-                segtoks[nsegtok].length = (uint32_t)tokens[ntokens].length;
-                segtoks[nsegtok].tokidx = ntokens;
-                nsegtok += 1;
+        /* The segmented block is found. */
+        if (dataptr[0] == delimiter) {
+            /* NOT segmented string */
+            dataptr += 1;
+            datalen -= 1;
+        } else {
+            /* real segmented string: save it */
+            if (nsegtok >= SEGTOK_ARRAY_SIZE) {
+                if (build_complete_strings(blist, tokens, segtoks, nsegtok) != 0) {
+                    ret = -2; break; /* out of memory */
+                }
+                nsegtok = 0;
             }
+            ntokens -= 1;
+            segtoks[nsegtok].value = tokens[ntokens].value;
+            segtoks[nsegtok].length = (uint32_t)tokens[ntokens].length;
+            segtoks[nsegtok].tokidx = ntokens;
+            nsegtok += 1;
         }
     }
 
-    if (finish_flag == false) {
-        return -1; /* some errors */
-    }
-    if (nsegtok > 0) {
-        if (build_complete_strings(blist, segtoks, nsegtok, tokens, ntokens) != 0) {
+    if (ret == 0 && nsegtok > 0) {
+        if (build_complete_strings(blist, tokens, segtoks, nsegtok) != 0) {
             return -2; /* out of memory */
         }
     }
-    return 0; /* OK */
+    return ret;
 }
 #endif

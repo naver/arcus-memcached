@@ -1698,10 +1698,9 @@ static void process_mop_delete_complete(conn *c) {
 
     if (c->coll_strkeys != NULL) {
 #ifdef USE_STRING_MBLOCK_COLL
-        int ntokens = c->coll_numkeys + MBLCK_GET_NUMBLKS(&c->str_blcks);
-        flist = (field_t*)token_buff_get(&c->thread->token_buff, ntokens);
+        flist = (field_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
         if (flist != NULL) {
-            ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist);
+            int ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist);
             if (ntokens == -1) {
                 ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist);
             }
@@ -1826,10 +1825,9 @@ static void process_mop_get_complete(conn *c)
         char delimiter = ' ';
         char old_delimiter = ','; /* need to keep backwards compatibility */
 #ifdef USE_STRING_MBLOCK_COLL
-        int ntokens = c->coll_numkeys + MBLCK_GET_NUMBLKS(&c->str_blcks);
-        flist = (field_t*)token_buff_get(&c->thread->token_buff, ntokens);
+        flist = (field_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
         if (flist != NULL) {
-            ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist);
+            int ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist);
             if (ntokens == -1) {
                 ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist);
             }
@@ -2201,10 +2199,9 @@ static void process_bop_mget_complete(conn *c) {
 #endif
 
 #ifdef USE_STRING_MBLOCK_COLL
-    int ntokens = c->coll_numkeys + MBLCK_GET_NUMBLKS(&c->str_blcks);
-    key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, ntokens);
+    key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (key_tokens != NULL) {
-        ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, key_tokens);
+        int ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, key_tokens);
         if (ntokens == -1) {
             ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, old_delimiter, c->coll_numkeys, key_tokens);
         }
@@ -2451,10 +2448,9 @@ static void process_bop_smget_complete_old(conn *c) {
 
 #ifdef USE_STRING_MBLOCK_COLL
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    int ntokens = c->coll_numkeys + MBLCK_GET_NUMBLKS(&c->str_blcks);
-    keys_array = (token_t*)token_buff_get(&c->thread->token_buff, ntokens);
+    keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (keys_array != NULL) {
-        ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+        int ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
         if (ntokens == -1) {
             ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
         }
@@ -2646,10 +2642,9 @@ static void process_bop_smget_complete(conn *c) {
 
 #ifdef USE_STRING_MBLOCK_COLL
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    int ntokens = c->coll_numkeys + MBLCK_GET_NUMBLKS(&c->str_blcks);
-    keys_array = (token_t*)token_buff_get(&c->thread->token_buff, ntokens);
+    keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (keys_array != NULL) {
-        ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+        int ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
         if (ntokens == -1) {
             ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
         }
@@ -2886,16 +2881,16 @@ static void process_mget_complete(conn *c)
 
     do {
 #ifdef USE_STRING_MBLOCK
-        int ntokens = kcnt + MBLCK_GET_NUMBLKS(&c->str_blcks);
-        key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, ntokens);
-        if (key_tokens == NULL) {
-            ret = ENGINE_ENOMEM; break;
-        }
-        ntokens = tokenize_sblocks(&c->str_blcks, vlen, delimiter, kcnt, key_tokens);
-        if (ntokens == -1) {
-            ret = ENGINE_EBADVALUE; break;
-        }
-        if (ntokens == -2) {
+        key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, kcnt);
+        if (key_tokens != NULL) {
+            int ntokens = tokenize_sblocks(&c->str_blcks, vlen, delimiter, kcnt, key_tokens);
+            if (ntokens == -1) {
+                ret = ENGINE_EBADVALUE; break;
+            }
+            if (ntokens == -2) {
+                ret = ENGINE_ENOMEM; break;
+            }
+        } else {
             ret = ENGINE_ENOMEM; break;
         }
 #else
@@ -6210,10 +6205,9 @@ static void process_bin_bop_smget_complete_old(conn *c) {
 
 #ifdef USE_STRING_MBLOCK_COLL
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    int ntokens = c->coll_numkeys + MBLCK_GET_NUMBLKS(&c->str_blcks);
-    keys_array = (token_t*)token_buff_get(&c->thread->token_buff, ntokens);
+    keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (keys_array != NULL) {
-        ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+        int ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
         if (ntokens == -1) {
             ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
         }
@@ -6438,10 +6432,9 @@ static void process_bin_bop_smget_complete(conn *c) {
 
 #ifdef USE_STRING_MBLOCK_COLL
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    int ntokens = c->coll_numkeys + MBLCK_GET_NUMBLKS(&c->str_blcks);
-    keys_array = (token_t*)token_buff_get(&c->thread->token_buff, ntokens);
+    keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (keys_array != NULL) {
-        ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+        int ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
         if (ntokens == -1) {
             ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
         }
