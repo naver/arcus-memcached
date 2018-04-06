@@ -2918,7 +2918,8 @@ static void process_mget_complete(conn *c)
             key = key_tokens[k].value;
             nkey = key_tokens[k].length;
 
-            if (mc_engine.v1->get(mc_engine.v0, c, &it, key, nkey, 0) != ENGINE_SUCCESS) {
+            ret = mc_engine.v1->get(mc_engine.v0, c, &it, key, nkey, 0);
+            if (ret != ENGINE_SUCCESS) {
                 it = NULL;
             }
             if (settings.detail_enabled) {
@@ -2971,6 +2972,7 @@ static void process_mget_complete(conn *c)
                 *(c->ilist + nhit) = it;
                 nhit++;
             } else {
+                ret = ENGINE_SUCCESS; /* FIXME */
                 MEMCACHED_COMMAND_GET(c->sfd, key, nkey, -1, 0);
                 STATS_MISS(c, get, key, nkey);
             }
@@ -3014,10 +3016,12 @@ static void process_mget_complete(conn *c)
     if (key_tokens != NULL) {
         token_buff_release(&c->thread->token_buff, key_tokens);
     }
-    /* free key string memory blocks */
-    assert(c->coll_strkeys == (void*)&c->str_blcks);
-    mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
-    c->coll_strkeys = NULL;
+    if (ret != ENGINE_SUCCESS) {
+        /* free key string memory blocks */
+        assert(c->coll_strkeys == (void*)&c->str_blcks);
+        mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+        c->coll_strkeys = NULL;
+    }
 #else
     /* free key strings and tokens buffer */
     if (c->coll_strkeys != NULL) {
