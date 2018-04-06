@@ -545,15 +545,13 @@ int tokenize_sblocks(mblck_list_t *blist, int length, char delimiter, int keycnt
         if (tokcnt <= 0) {
             break;
         }
-
         ntokens += tokcnt;
-        if (ntokens >= keycnt) {
-            if (chkblks == numblks)
-                finish_flag = true;
-            break;
-        }
+
+        /* check the end of strings */
         if (chkblks >= numblks) {
-            break; /* No more blocks */
+            if (ntokens == keycnt)
+                finish_flag = true;
+            break; /* string end */
         }
 
         /* get the next block */
