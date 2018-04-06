@@ -579,8 +579,10 @@ int tokenize_sblocks(mblck_list_t *blist, int length, char delimiter, int keycnt
     if (finish_flag == false) {
         return -1; /* some errors */
     }
-    if (build_complete_strings(blist, segtoks, nsegtok, tokens, ntokens) != 0) {
-        return -2; /* out of memory */
+    if (nsegtok > 0) {
+        if (build_complete_strings(blist, segtoks, nsegtok, tokens, ntokens) != 0) {
+            return -2; /* out of memory */
+        }
     }
     return 0; /* OK */
 }
