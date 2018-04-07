@@ -19,10 +19,6 @@
 
 #include <memcached/extension.h>
 
-#define USE_STRING_MBLOCK 1
-#define USE_STRING_MBLOCK_COLL 1
-
-#ifdef USE_STRING_MBLOCK
 /*
  * token buffer structure
  */
@@ -84,14 +80,11 @@ int   token_buff_create(token_buff_t *buff, uint32_t count);
 void  token_buff_destroy(token_buff_t *buff);
 void *token_buff_get(token_buff_t *buff, uint32_t count);
 void  token_buff_release(token_buff_t *buff, void *tokens);
-#endif
 
 /* tokenize functions */
 size_t tokenize_command(char *command, int cmdlen, token_t *tokens, const size_t max_tokens);
 void   detokenize(token_t *tokens, int ntokens, char **out, int *nbytes);
 int    tokenize_keys(char *keystr, int slength, char delimiter, int keycnt, token_t *tokens);
-#ifdef USE_STRING_MBLOCK
 int    tokenize_sblocks(mblck_list_t *blist, int length, char delimiter, int keycnt, token_t *tokens);
-#endif
 
 #endif

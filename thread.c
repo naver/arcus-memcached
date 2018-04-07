@@ -245,7 +245,6 @@ static void setup_thread(LIBEVENT_THREAD *me) {
                        "Failed to create suffix cache\n");
         exit(EXIT_FAILURE);
     }
-#ifdef USE_STRING_MBLOCK
 
     /* create token buffer pool: count = 5000 */
     if (token_buff_create(&me->token_buff, 5000) < 0) {
@@ -259,7 +258,6 @@ static void setup_thread(LIBEVENT_THREAD *me) {
                        "Failed to create memory block pool\n");
         exit(EXIT_FAILURE);
     }
-#endif
 }
 
 /*
@@ -293,10 +291,8 @@ static void *worker_libevent(void *arg) {
         cqi_free(item);
         item = cq_pop(me->new_conn_queue);
     }
-#ifdef USE_STRING_MBLOCK
     token_buff_destroy(&me->token_buff);
     mblck_pool_destroy(&me->mblck_pool);
-#endif
     return NULL;
 }
 

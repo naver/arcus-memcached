@@ -20,14 +20,9 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
-//#include <pthread.h>
-//#include <sys/time.h>
-//#include <fcntl.h>
-//#include <unistd.h>
 #include <assert.h>
 #include "mc_util.h"
 
-#ifdef USE_STRING_MBLOCK
 /*
  * memory block : internal functions
  */
@@ -218,7 +213,6 @@ void token_buff_release(token_buff_t *buff, void *tokens)
     assert(buff->nused == 1);
     buff->nused -= 1;
 }
-#endif
 
 /*
  * tokernize functions
@@ -352,7 +346,6 @@ int tokenize_keys(char *keystr, int slength, char delimiter, int keycnt, token_t
     }
 }
 
-#ifdef USE_STRING_MBLOCK
 /*
  * string memory block
  */
@@ -589,4 +582,3 @@ int tokenize_sblocks(mblck_list_t *blist, int length, char delimiter, int keycnt
     }
     return ret;
 }
-#endif

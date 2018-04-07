@@ -436,10 +436,8 @@ typedef struct {
     struct conn *conn_list;     /* connection list managed by this thread */
     int index;                  /* index of this thread in the threads array */
     enum thread_type type;      /* Type of IO this thread processes */
-#ifdef USE_STRING_MBLOCK
     token_buff_t token_buff;    /* token buffer */
     mblck_pool_t mblck_pool;    /* memory block pool */
-#endif
 } LIBEVENT_THREAD;
 
 #define LOCK_THREAD(t)                          \
@@ -499,11 +497,10 @@ struct conn {
 
     char   *ritem;  /** when we read in an item's value, it goes here */
     uint32_t    rlbytes;
-#ifdef USE_STRING_MBLOCK
+    /* use memory blocks */
     uint32_t    rltotal;    /* Used when read data with memory block */
     mblck_node_t *mblck;    /* current memory block pointer */
     mblck_list_t str_blcks; /* (key or field) string memory block list */
-#endif
 
     /* collection processing fields */
     void        *coll_eitem;
