@@ -487,33 +487,29 @@ static int build_complete_strings(mblck_list_t *blist, token_t *tokens,
 }
 
 #define SEGTOK_ARRAY_SIZE 32
-int tokenize_sblocks(mblck_list_t *blist, int length, char delimiter, int keycnt, token_t *tokens)
+/*
+ * Assume key string blocks without the trailing "\r\n" characters.
+ */
+int tokenize_mblocks(mblck_list_t *blist, int length, char delimiter, int keycnt, token_t *tokens)
 {
     mblck_node_t *blckptr;
     char         *dataptr;
-    uint32_t slength;
-    uint32_t bodylen = MBLCK_GET_BODYLEN(blist);
-    uint32_t datalen;
-    uint32_t numblks;
-    uint32_t chkblks;
-    uint32_t lastlen;
-    uint32_t ntokens = 0;
-    uint32_t nsegtok = 0;
-    segtok_t segtoks[SEGTOK_ARRAY_SIZE];
-    int ret = 0;
+    uint32_t    numblks;
+    uint32_t    chkblks;
+    uint32_t    bodylen = MBLCK_GET_BODYLEN(blist);
+    uint32_t    datalen;
+    uint32_t    lastlen;
+    uint32_t    ntokens = 0;
+    segtok_t    segtoks[SEGTOK_ARRAY_SIZE];
+    uint32_t    nsegtok = 0;
+    int         ret = 0;
 
-    assert(length > 2 && tokens != NULL && keycnt > 0);
-
-    /* check the last "\r\n" string */
-    if (check_sblock_tail_string(blist, length) != 0) {
-        return -1; /* invalid tail string */
-    }
+    assert(length > 0 && keycnt > 0 && tokens != NULL);
 
     /* prepare block info */
-    slength = length - 2; /* exclude the last "\r\n" */
-    numblks = ((slength - 1) / bodylen) + 1;
-    lastlen = (slength % bodylen) > 0
-            ? (slength % bodylen) : bodylen;
+    numblks = ((length - 1) / bodylen) + 1;
+    lastlen = (length % bodylen) > 0
+            ? (length % bodylen) : bodylen;
 
     /* get the first block */
     chkblks = 1;
@@ -581,4 +577,18 @@ int tokenize_sblocks(mblck_list_t *blist, int length, char delimiter, int keycnt
         }
     }
     return ret;
+}
+
+/*
+ * Assume key string blocks in ascii protocol.
+ */
+int tokenize_sblocks(mblck_list_t *blist, int length, char delimiter, int keycnt, token_t *tokens)
+{
+    assert(length > 2);
+    /* check the last "\r\n" string */
+    if (check_sblock_tail_string(blist, length) != 0) {
+        return -1; /* invalid tail string */
+    }
+
+    return tokenize_mblocks(blist, length-2, delimiter, keycnt, tokens);
 }

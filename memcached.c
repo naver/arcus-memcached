@@ -6022,12 +6022,6 @@ static void process_bin_bop_smget_complete_old(conn *c) {
     char delimiter = ' ';
     char old_delimiter = ','; /* need to keep backwards compatibility */
     token_t *keys_array = NULL;
-
-    /* We don't actually receive the trailing two characters in the bin
-     * protocol, so we're going to just set them here */
-    /* FIXME: how to append the last "\r\n" string ? */
-    //memcpy((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2);
-
     uint32_t  kmis_count = 0;
     uint32_t  elem_count = 0;
     eitem   **elem_array = (eitem  **)c->coll_eitem;
@@ -6040,12 +6034,15 @@ static void process_bin_bop_smget_complete_old(conn *c) {
     bool trimmed;
     bool duplicated;
 
+    /* We don't actually receive the trailing two("\r\n") characters in binary protocol.
+     * We should consider this when tokenizing key strings.
+     */
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (keys_array != NULL) {
-        int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+        int ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, delimiter, c->coll_numkeys, keys_array);
         if (ntokens == -1) {
-            ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
+            ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, keys_array);
         }
         if (ntokens == -1) {
             ret = ENGINE_EBADVALUE;
@@ -6225,23 +6222,21 @@ static void process_bin_bop_smget_complete(conn *c) {
     char old_delimiter = ','; /* need to keep backwards compatibility */
     token_t *keys_array = NULL;
 
-    /* We don't actually receive the trailing two characters in the bin
-     * protocol, so we're going to just set them here */
-    /* FIXME: how to append the last "\r\n" string ? */
-    //memcpy((char*)c->coll_strkeys + c->coll_lenkeys - 2, "\r\n", 2);
-
     smres.elem_array = (eitem **)c->coll_eitem;
     smres.elem_kinfo = (smget_ehit_t *)&smres.elem_array[c->coll_rcount+c->coll_numkeys];
     smres.miss_kinfo = (smget_emis_t *)&smres.elem_kinfo[c->coll_rcount];
 
     resultptr = (char *)&smres.miss_kinfo[c->coll_numkeys];
 
+    /* We don't actually receive the trailing two("\r\n") characters in binary protocol.
+     * We should consider this when tokenizing key strings.
+     */
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (keys_array != NULL) {
-        int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+        int ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, delimiter, c->coll_numkeys, keys_array);
         if (ntokens == -1) {
-            ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
+            ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, keys_array);
         }
         if (ntokens == -1) {
             ret = ENGINE_EBADVALUE;
