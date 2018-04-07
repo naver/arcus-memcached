@@ -832,8 +832,8 @@ static void conn_cleanup(conn *c) {
         conn_coll_eitem_free(c);
     }
     if (c->coll_strkeys != NULL) {
-        assert(c->coll_strkeys == (void*)&c->str_blcks);
-        mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+        assert(c->coll_strkeys == (void*)&c->memblist);
+        mblck_list_free(&c->thread->mblck_pool, &c->memblist);
         c->coll_strkeys = NULL;
     }
 
@@ -1688,9 +1688,9 @@ static void process_mop_delete_complete(conn *c) {
     if (c->coll_strkeys != NULL) {
         flist = (field_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
         if (flist != NULL) {
-            int ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist);
+            int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist);
             if (ntokens == -1) {
-                ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist);
+                ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist);
             }
             if (ntokens == -1) {
                 ret = ENGINE_EBADVALUE;
@@ -1759,8 +1759,8 @@ static void process_mop_delete_complete(conn *c) {
             token_buff_release(&c->thread->token_buff, flist);
         }
         /* free key string memory blocks */
-        assert(c->coll_strkeys == (void*)&c->str_blcks);
-        mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+        assert(c->coll_strkeys == (void*)&c->memblist);
+        mblck_list_free(&c->thread->mblck_pool, &c->memblist);
         c->coll_strkeys = NULL;
     }
 }
@@ -1799,9 +1799,9 @@ static void process_mop_get_complete(conn *c)
 
         flist = (field_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
         if (flist != NULL) {
-            int ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist);
+            int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist);
             if (ntokens == -1) {
-                ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist);
+                ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist);
             }
             if (ntokens == -1) {
                 ret = ENGINE_EBADVALUE;
@@ -1925,8 +1925,8 @@ static void process_mop_get_complete(conn *c)
             token_buff_release(&c->thread->token_buff, flist);
         }
         /* free key string memory blocks */
-        assert(c->coll_strkeys == (void*)&c->str_blcks);
-        mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+        assert(c->coll_strkeys == (void*)&c->memblist);
+        mblck_list_free(&c->thread->mblck_pool, &c->memblist);
         c->coll_strkeys = NULL;
     }
 
@@ -2152,9 +2152,9 @@ static void process_bop_mget_complete(conn *c) {
 
     key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (key_tokens != NULL) {
-        int ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, key_tokens);
+        int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, key_tokens);
         if (ntokens == -1) {
-            ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, old_delimiter, c->coll_numkeys, key_tokens);
+            ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, key_tokens);
         }
         if (ntokens == -1) {
             ret = ENGINE_EBADVALUE;
@@ -2312,8 +2312,8 @@ static void process_bop_mget_complete(conn *c) {
     if (ret != ENGINE_SUCCESS) {
         if (c->coll_strkeys != NULL) {
             /* free key string memory blocks */
-            assert(c->coll_strkeys == (void*)&c->str_blcks);
-            mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+            assert(c->coll_strkeys == (void*)&c->memblist);
+            mblck_list_free(&c->thread->mblck_pool, &c->memblist);
             c->coll_strkeys = NULL;
         }
         if (c->coll_eitem != NULL) {
@@ -2376,9 +2376,9 @@ static void process_bop_smget_complete_old(conn *c) {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (keys_array != NULL) {
-        int ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+        int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
         if (ntokens == -1) {
-            ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
+            ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
         }
         if (ntokens == -1) {
             ret = ENGINE_EBADVALUE;
@@ -2506,8 +2506,8 @@ static void process_bop_smget_complete_old(conn *c) {
     if (ret != ENGINE_SUCCESS) {
         if (c->coll_strkeys != NULL) {
             /* free key string memory blocks */
-            assert(c->coll_strkeys == (void*)&c->str_blcks);
-            mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+            assert(c->coll_strkeys == (void*)&c->memblist);
+            mblck_list_free(&c->thread->mblck_pool, &c->memblist);
             c->coll_strkeys = NULL;
         }
         if (c->coll_eitem != NULL) {
@@ -2544,9 +2544,9 @@ static void process_bop_smget_complete(conn *c) {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (keys_array != NULL) {
-        int ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+        int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
         if (ntokens == -1) {
-            ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
+            ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
         }
         if (ntokens == -1) {
             ret = ENGINE_EBADVALUE;
@@ -2699,8 +2699,8 @@ static void process_bop_smget_complete(conn *c) {
     if (ret != ENGINE_SUCCESS) {
         if (c->coll_strkeys != NULL) {
             /* free key string memory blocks */
-            assert(c->coll_strkeys == (void*)&c->str_blcks);
-            mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+            assert(c->coll_strkeys == (void*)&c->memblist);
+            mblck_list_free(&c->thread->mblck_pool, &c->memblist);
             c->coll_strkeys = NULL;
         }
         if (c->coll_eitem != NULL) {
@@ -2761,7 +2761,7 @@ static void process_mget_complete(conn *c)
     do {
         key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, kcnt);
         if (key_tokens != NULL) {
-            int ntokens = tokenize_sblocks(&c->str_blcks, vlen, delimiter, kcnt, key_tokens);
+            int ntokens = tokenize_sblocks(&c->memblist, vlen, delimiter, kcnt, key_tokens);
             if (ntokens == -1) {
                 ret = ENGINE_EBADVALUE; break;
             }
@@ -2884,8 +2884,8 @@ static void process_mget_complete(conn *c)
     }
     if (ret != ENGINE_SUCCESS) {
         /* free key string memory blocks */
-        assert(c->coll_strkeys == (void*)&c->str_blcks);
-        mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+        assert(c->coll_strkeys == (void*)&c->memblist);
+        mblck_list_free(&c->thread->mblck_pool, &c->memblist);
         c->coll_strkeys = NULL;
     }
 }
@@ -5949,7 +5949,7 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
             ret = ENGINE_ENOMEM;
         } else {
             /* allocate memory blocks needed */
-            if (mblck_list_alloc(&c->thread->mblck_pool, 1, vlen, &c->str_blcks) < 0) {
+            if (mblck_list_alloc(&c->thread->mblck_pool, 1, vlen, &c->memblist) < 0) {
                 free((void*)elem);
                 ret = ENGINE_ENOMEM;
             } else {
@@ -5965,11 +5965,11 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        c->coll_strkeys = (void*)&c->str_blcks;
-        c->mblck = MBLCK_GET_HEADBLK(&c->str_blcks);
-        c->ritem = MBLCK_GET_BODYPTR(c->mblck);
-        c->rlbytes = vlen < MBLCK_GET_BODYLEN(&c->str_blcks)
-                   ? vlen : MBLCK_GET_BODYLEN(&c->str_blcks);
+        c->coll_strkeys = (void*)&c->memblist;
+        c->membk = MBLCK_GET_HEADBLK(&c->memblist);
+        c->ritem = MBLCK_GET_BODYPTR(c->membk);
+        c->rlbytes = vlen < MBLCK_GET_BODYLEN(&c->memblist)
+                   ? vlen : MBLCK_GET_BODYLEN(&c->memblist);
         c->rltotal = vlen;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 0;
@@ -6001,8 +6001,8 @@ static void process_bin_bop_mget_complete(conn *c) {
     if (ret != ENGINE_SUCCESS) {
         if (c->coll_strkeys != NULL) {
             /* free key string memory blocks */
-            assert(c->coll_strkeys == (void*)&c->str_blcks);
-            mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+            assert(c->coll_strkeys == (void*)&c->memblist);
+            mblck_list_free(&c->thread->mblck_pool, &c->memblist);
             c->coll_strkeys = NULL;
         }
         if (c->coll_eitem != NULL) {
@@ -6043,9 +6043,9 @@ static void process_bin_bop_smget_complete_old(conn *c) {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (keys_array != NULL) {
-        int ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+        int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
         if (ntokens == -1) {
-            ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
+            ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
         }
         if (ntokens == -1) {
             ret = ENGINE_EBADVALUE;
@@ -6199,8 +6199,8 @@ static void process_bin_bop_smget_complete_old(conn *c) {
     if (ret != ENGINE_SUCCESS) {
         if (c->coll_strkeys != NULL) {
             /* free key string memory blocks */
-            assert(c->coll_strkeys == (void*)&c->str_blcks);
-            mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+            assert(c->coll_strkeys == (void*)&c->memblist);
+            mblck_list_free(&c->thread->mblck_pool, &c->memblist);
             c->coll_strkeys = NULL;
         }
         if (c->coll_eitem != NULL) {
@@ -6239,9 +6239,9 @@ static void process_bin_bop_smget_complete(conn *c) {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (keys_array != NULL) {
-        int ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+        int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
         if (ntokens == -1) {
-            ntokens = tokenize_sblocks(&c->str_blcks, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
+            ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
         }
         if (ntokens == -1) {
             ret = ENGINE_EBADVALUE;
@@ -6417,8 +6417,8 @@ static void process_bin_bop_smget_complete(conn *c) {
     if (ret != ENGINE_SUCCESS) {
         if (c->coll_strkeys != NULL) {
             /* free key string memory blocks */
-            assert(c->coll_strkeys == (void*)&c->str_blcks);
-            mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+            assert(c->coll_strkeys == (void*)&c->memblist);
+            mblck_list_free(&c->thread->mblck_pool, &c->memblist);
             c->coll_strkeys = NULL;
         }
         if (c->coll_eitem != NULL) {
@@ -7504,8 +7504,8 @@ static void reset_cmd_handler(conn *c) {
         conn_coll_eitem_free(c);
     }
     if (c->coll_strkeys != NULL) {
-        assert(c->coll_strkeys == (void*)&c->str_blcks);
-        mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+        assert(c->coll_strkeys == (void*)&c->memblist);
+        mblck_list_free(&c->thread->mblck_pool, &c->memblist);
         c->coll_strkeys = NULL;
     }
     conn_shrink(c);
@@ -8404,17 +8404,17 @@ static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt)
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     /* allocate memory blocks needed */
-    if (mblck_list_alloc(&c->thread->mblck_pool, 1, vlen, &c->str_blcks) < 0) {
+    if (mblck_list_alloc(&c->thread->mblck_pool, 1, vlen, &c->memblist) < 0) {
         ret = ENGINE_ENOMEM;
     }
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        c->coll_strkeys = (void*)&c->str_blcks;
-        c->mblck = MBLCK_GET_HEADBLK(&c->str_blcks);
-        c->ritem = MBLCK_GET_BODYPTR(c->mblck);
-        c->rlbytes = vlen < MBLCK_GET_BODYLEN(&c->str_blcks)
-                   ? vlen : MBLCK_GET_BODYLEN(&c->str_blcks);
+        c->coll_strkeys = (void*)&c->memblist;
+        c->membk = MBLCK_GET_HEADBLK(&c->memblist);
+        c->ritem = MBLCK_GET_BODYPTR(c->membk);
+        c->rlbytes = vlen < MBLCK_GET_BODYLEN(&c->memblist)
+                   ? vlen : MBLCK_GET_BODYLEN(&c->memblist);
         c->rltotal = vlen;
         c->coll_op     = OPERATION_MGET;
         conn_set_state(c, conn_nread);
@@ -11247,7 +11247,7 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
         ret = ENGINE_ENOMEM;
     } else {
         /* allocate memory blocks needed */
-        if (mblck_list_alloc(&c->thread->mblck_pool, 1, vlen, &c->str_blcks) < 0) {
+        if (mblck_list_alloc(&c->thread->mblck_pool, 1, vlen, &c->memblist) < 0) {
             free((void*)elem);
             ret = ENGINE_ENOMEM;
         }
@@ -11256,11 +11256,11 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
     switch (ret) {
     case ENGINE_SUCCESS:
         {
-        c->coll_strkeys = (void*)&c->str_blcks;
-        c->mblck = MBLCK_GET_HEADBLK(&c->str_blcks);
-        c->ritem = MBLCK_GET_BODYPTR(c->mblck);
-        c->rlbytes = vlen < MBLCK_GET_BODYLEN(&c->str_blcks)
-                   ? vlen : MBLCK_GET_BODYLEN(&c->str_blcks);
+        c->coll_strkeys = (void*)&c->memblist;
+        c->membk = MBLCK_GET_HEADBLK(&c->memblist);
+        c->ritem = MBLCK_GET_BODYPTR(c->membk);
+        c->rlbytes = vlen < MBLCK_GET_BODYLEN(&c->memblist)
+                   ? vlen : MBLCK_GET_BODYLEN(&c->memblist);
         c->rltotal = vlen;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 0;
@@ -11711,18 +11711,18 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     /* allocate memory blocks needed */
-    if (mblck_list_alloc(&c->thread->mblck_pool, 1, flen, &c->str_blcks) < 0) {
+    if (mblck_list_alloc(&c->thread->mblck_pool, 1, flen, &c->memblist) < 0) {
         ret = ENGINE_ENOMEM;
     }
 
     switch (ret) {
     case ENGINE_SUCCESS:
         {
-        c->coll_strkeys = (void*)&c->str_blcks;
-        c->mblck = MBLCK_GET_HEADBLK(&c->str_blcks);
-        c->ritem = MBLCK_GET_BODYPTR(c->mblck);
-        c->rlbytes = flen < MBLCK_GET_BODYLEN(&c->str_blcks)
-                   ? flen : MBLCK_GET_BODYLEN(&c->str_blcks);
+        c->coll_strkeys = (void*)&c->memblist;
+        c->membk = MBLCK_GET_HEADBLK(&c->memblist);
+        c->ritem = MBLCK_GET_BODYPTR(c->membk);
+        c->rlbytes = flen < MBLCK_GET_BODYLEN(&c->memblist)
+                   ? flen : MBLCK_GET_BODYLEN(&c->memblist);
         c->rltotal = flen;
         c->coll_ecount    = 1;
         c->coll_op        = cmd;
@@ -13750,10 +13750,10 @@ bool conn_nread(conn *c) {
         if (c->rltotal > 0) { /* string block read */
             c->rltotal -= tocopy;
             if (c->rlbytes == 0 && c->rltotal > 0) {
-                c->mblck = MBLCK_GET_NEXTBLK(c->mblck);
-                c->ritem = MBLCK_GET_BODYPTR(c->mblck);
-                c->rlbytes = c->rltotal < MBLCK_GET_BODYLEN(&c->str_blcks)
-                           ? c->rltotal : MBLCK_GET_BODYLEN(&c->str_blcks);
+                c->membk = MBLCK_GET_NEXTBLK(c->membk);
+                c->ritem = MBLCK_GET_BODYPTR(c->membk);
+                c->rlbytes = c->rltotal < MBLCK_GET_BODYLEN(&c->memblist)
+                           ? c->rltotal : MBLCK_GET_BODYLEN(&c->memblist);
                 continue;
             }
         }
@@ -13774,10 +13774,10 @@ bool conn_nread(conn *c) {
         if (c->rltotal > 0) {
             c->rltotal -= res;
             if (c->rlbytes == 0 && c->rltotal > 0) {
-                c->mblck = MBLCK_GET_NEXTBLK(c->mblck);
-                c->ritem = MBLCK_GET_BODYPTR(c->mblck);
-                c->rlbytes = c->rltotal < MBLCK_GET_BODYLEN(&c->str_blcks)
-                           ? c->rltotal : MBLCK_GET_BODYLEN(&c->str_blcks);
+                c->membk = MBLCK_GET_NEXTBLK(c->membk);
+                c->ritem = MBLCK_GET_BODYPTR(c->membk);
+                c->rlbytes = c->rltotal < MBLCK_GET_BODYLEN(&c->memblist)
+                           ? c->rltotal : MBLCK_GET_BODYLEN(&c->memblist);
             }
         }
         return true;
@@ -13888,8 +13888,8 @@ bool conn_mwrite(conn *c) {
                 conn_coll_eitem_free(c);
             }
             if (c->coll_strkeys != NULL) {
-                assert(c->coll_strkeys == (void*)&c->str_blcks);
-                mblck_list_free(&c->thread->mblck_pool, &c->str_blcks);
+                assert(c->coll_strkeys == (void*)&c->memblist);
+                mblck_list_free(&c->thread->mblck_pool, &c->memblist);
                 c->coll_strkeys = NULL;
             }
             /* XXX:  I don't know why this wasn't the general case */
