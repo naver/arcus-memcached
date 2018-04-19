@@ -8228,20 +8228,20 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
 static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens, bool return_cas)
 {
     ENGINE_ERROR_CODE ret;
+    item *it;
     char *key;
     size_t nkey;
     int nitems = 0;
-    item *it;
+    int cas_len = 0;
+    char *cas_val = NULL;
     token_t *key_token = &tokens[KEY_TOKEN];
     assert(c != NULL);
 
     do {
-        while(key_token->length != 0) {
-
+        while (key_token->length != 0) {
             key = key_token->value;
             nkey = key_token->length;
-
-            if(nkey > KEY_MAX_LENGTH) {
+            if (nkey > KEY_MAX_LENGTH) {
                 out_string(c, "CLIENT_ERROR bad command line format");
                 return;
             }
@@ -8250,7 +8250,6 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
             if (ret != ENGINE_SUCCESS) {
                 it = NULL;
             }
-
             if (settings.detail_enabled) {
                 stats_prefix_record_get(key, nkey, NULL != it);
             }
@@ -8262,7 +8261,6 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                     out_string(c, "SERVER_ERROR error getting item data");
                     break;
                 }
-
                 assert(memcmp((char*)hinfo.value[0].iov_base + hinfo.value[0].iov_len - 2, "\r\n", 2) == 0);
 
                 if (nitems >= c->isize) {
@@ -8286,6 +8284,19 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                 int suffix_len = snprintf(suffix, SUFFIX_SIZE, " %u %u\r\n",
                                           htonl(hinfo.flags), hinfo.nbytes - 2);
 
+                /* rebuild cas value */
+                if (return_cas) {
+                    cas_val = get_suffix_buffer(c);
+                    if (cas_val == NULL) {
+                        out_string(c, "SERVER_ERROR out of memory making CAS suffix");
+                        mc_engine.v1->release(mc_engine.v0, c, it);
+                        return;
+                    }
+                    cas_len = snprintf(cas_val, SUFFIX_SIZE, " %"PRIu64"\r\n", hinfo.cas);
+                    suffix_len -= 2; /* remove "\r\n" from suffix string */
+                }
+
+                MEMCACHED_COMMAND_GET(c->sfd, hinfo.key, hinfo.nkey, hinfo.nbytes, hinfo.cas);
                 /*
                  * Construct the response. Each hit adds three elements to the
                  * outgoing data list:
@@ -8293,46 +8304,20 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                  *   key
                  *   " " + flags + " " + data length + "\r\n" + data (with \r\n)
                  */
-
-                MEMCACHED_COMMAND_GET(c->sfd, hinfo.key, hinfo.nkey, hinfo.nbytes, hinfo.cas);
-                if (return_cas)
+                if (add_iov(c, "VALUE ", 6) != 0 ||
+                    add_iov(c, hinfo.key, hinfo.nkey) != 0 ||
+                    add_iov(c, suffix, suffix_len) != 0 ||
+                    (return_cas && add_iov(c, cas_val, cas_len) != 0) ||
+                    add_iov(c, hinfo.value[0].iov_base, hinfo.value[0].iov_len) != 0)
                 {
-
-                  char *cas = get_suffix_buffer(c);
-                  if (cas == NULL) {
-                    out_string(c, "SERVER_ERROR out of memory making CAS suffix");
                     mc_engine.v1->release(mc_engine.v0, c, it);
-                    return;
-                  }
-                  int cas_len = snprintf(cas, SUFFIX_SIZE, " %"PRIu64"\r\n", hinfo.cas);
-                  if (add_iov(c, "VALUE ", 6) != 0 ||
-                      add_iov(c, hinfo.key, hinfo.nkey) != 0 ||
-                      add_iov(c, suffix, suffix_len - 2) != 0 ||
-                      add_iov(c, cas, cas_len) != 0 ||
-                      add_iov(c, hinfo.value[0].iov_base, hinfo.value[0].iov_len) != 0)
-                      {
-                          mc_engine.v1->release(mc_engine.v0, c, it);
-                          break;
-                      }
+                    break;
                 }
-                else
-                {
-                  if (add_iov(c, "VALUE ", 6) != 0 ||
-                      add_iov(c, hinfo.key, hinfo.nkey) != 0 ||
-                      add_iov(c, suffix, suffix_len) != 0 ||
-                      add_iov(c, hinfo.value[0].iov_base, hinfo.value[0].iov_len) != 0)
-                      {
-                          mc_engine.v1->release(mc_engine.v0, c, it);
-                          break;
-                      }
-                }
-
 
                 if (settings.verbose > 1) {
-                    mc_logger->log(EXTENSION_LOG_DEBUG, c,
-                            ">%d sending key %s\n", c->sfd, (char*)hinfo.key);
+                    mc_logger->log(EXTENSION_LOG_DEBUG, c, ">%d sending key %s\n",
+                                   c->sfd, (char*)hinfo.key);
                 }
-
                 /* item_get() has incremented it->refcount for us */
                 STATS_HIT(c, get, key, nkey);
                 *(c->ilist + nitems) = it;
@@ -8349,7 +8334,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
          * If the command string hasn't been fully processed, get the next set
          * of tokens.
          */
-        if(key_token->value != NULL) {
+        if (key_token->value != NULL) {
             /* The next reserved token has the length of untokenized command. */
             ntokens = tokenize_command(key_token->value, (key_token+1)->length,
                                        tokens, MAX_TOKENS);
@@ -8379,7 +8364,6 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
         conn_set_state(c, conn_mwrite);
         c->msgcurr = 0;
     }
-
     return;
 }
 
