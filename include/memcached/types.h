@@ -211,15 +211,14 @@ extern "C" {
     typedef void eitem; /* element item */
 
     typedef struct {
-        uint64_t cas;
-        rel_time_t exptime; /**< When the item will expire (relative to process
-                             * startup) */
-        uint32_t nbytes; /**< The total size of the data (in bytes) */
-        uint32_t flags; /**< Flags associated with the item (in network byte order)*/
-        uint8_t clsid; /** class id for the object */
-        uint16_t nkey; /**< The total length of the key (in bytes) */
-        uint16_t nvalue; /** < IN: The number of elements available in value
-                          * OUT: the number of elements used in value */
+        uint64_t cas;       /* cas value */
+        uint32_t flags;     /**< Flags associated with the item (in network byte order)*/
+        rel_time_t exptime; /**< When the item will expire (relative to process startup) */
+        uint8_t clsid;      /** class id for the object */
+        uint16_t nkey;      /**< The total length of the key (in bytes) */
+        uint32_t nbytes;    /**< The total size of the data (in bytes) */
+        uint16_t nvalue;    /** < IN: The number of elements available in value
+                             **  OUT: the number of elements used in value */
         const void *key;
         struct iovec value[1];
     } item_info;
@@ -229,7 +228,7 @@ extern "C" {
         const char          *value;
         const unsigned char *score;
         const unsigned char *eflag;
-        uint16_t nbytes; /**< The size of the data (in bytes) */
+        uint16_t nbytes;    /**< The size of the data (in bytes) */
         uint8_t  nscore;
         uint8_t  neflag;
     } eitem_info;
