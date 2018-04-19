@@ -5974,7 +5974,7 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
         c->rltotal = vlen;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 0;
-        c->coll_op     = (c->cmd==PROTOCOL_BINARY_CMD_BOP_MGET ? OPERATION_BOP_MGET : OPERATION_BOP_SMGET);
+        c->coll_op = (c->cmd==PROTOCOL_BINARY_CMD_BOP_MGET ? OPERATION_BOP_MGET : OPERATION_BOP_SMGET);
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_bop_nread_keys_complete;
         break;
@@ -8384,7 +8384,7 @@ static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt)
         c->rlbytes = vlen < MBLCK_GET_BODYLEN(&c->memblist)
                    ? vlen : MBLCK_GET_BODYLEN(&c->memblist);
         c->rltotal = vlen;
-        c->coll_op     = OPERATION_MGET;
+        c->coll_op = OPERATION_MGET;
         conn_set_state(c, conn_nread);
         break;
     default:
@@ -11232,7 +11232,7 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
         c->rltotal = vlen;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 0;
-        c->coll_op     = cmd;
+        c->coll_op = cmd;
         conn_set_state(c, conn_nread);
         }
         break;
@@ -11692,11 +11692,11 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
         c->rlbytes = flen < MBLCK_GET_BODYLEN(&c->memblist)
                    ? flen : MBLCK_GET_BODYLEN(&c->memblist);
         c->rltotal = flen;
-        c->coll_ecount    = 1;
-        c->coll_op        = cmd;
-        c->coll_key       = key;
-        c->coll_nkey      = nkey;
-        c->coll_lenkeys   = flen;
+        c->coll_ecount = 1;
+        c->coll_op = cmd;
+        c->coll_key  = key;
+        c->coll_nkey = nkey;
+        c->coll_lenkeys = flen;
         conn_set_state(c, conn_nread);
         break;
         }
