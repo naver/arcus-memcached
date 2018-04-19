@@ -2755,7 +2755,7 @@ static void process_mget_complete(conn *c)
     size_t   nkey;
     token_t *key_tokens = NULL;
     char     delimiter = ' ';
-    uint32_t k, nhit;
+    uint32_t k, nitems;
 
     do {
         key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, kcnt);
@@ -2779,7 +2779,7 @@ static void process_mget_complete(conn *c)
             ret = ENGINE_EBADVALUE; break;
         }
         /* do get operation for each key */
-        nhit = 0;
+        nitems = 0;
         for (k = 0; k < kcnt; k++) {
             key = key_tokens[k].value;
             nkey = key_tokens[k].length;
@@ -2798,7 +2798,7 @@ static void process_mget_complete(conn *c)
                 assert(memcmp((char*)hinfo.value[0].iov_base + hinfo.value[0].iov_len - 2, "\r\n", 2) == 0);
 
                 /* prepare item array */
-                if (nhit >= c->isize) {
+                if (nitems >= c->isize) {
                     item **new_list = realloc(c->ilist, sizeof(item *) * c->isize * 2);
                     if (new_list) {
                         c->isize *= 2;
@@ -2835,8 +2835,8 @@ static void process_mget_complete(conn *c)
 
                 /* item_get() has incremented it->refcount for us */
                 STATS_HIT(c, get, key, nkey);
-                *(c->ilist + nhit) = it;
-                nhit++;
+                *(c->ilist + nitems) = it;
+                nitems++;
             } else {
                 ret = ENGINE_SUCCESS; /* FIXME */
                 MEMCACHED_COMMAND_GET(c->sfd, key, nkey, -1, 0);
@@ -2845,7 +2845,7 @@ static void process_mget_complete(conn *c)
         }
 
         c->icurr = c->ilist;
-        c->ileft = nhit;
+        c->ileft = nitems;
         c->suffixcurr = c->suffixlist;
 
         if (settings.verbose > 1) {
@@ -8230,7 +8230,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
     ENGINE_ERROR_CODE ret;
     char *key;
     size_t nkey;
-    int i = 0;
+    int nitems = 0;
     item *it;
     token_t *key_token = &tokens[KEY_TOKEN];
     assert(c != NULL);
@@ -8265,7 +8265,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
 
                 assert(memcmp((char*)hinfo.value[0].iov_base + hinfo.value[0].iov_len - 2, "\r\n", 2) == 0);
 
-                if (i >= c->isize) {
+                if (nitems >= c->isize) {
                     item **new_list = realloc(c->ilist, sizeof(item *) * c->isize * 2);
                     if (new_list) {
                         c->isize *= 2;
@@ -8335,9 +8335,8 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
 
                 /* item_get() has incremented it->refcount for us */
                 STATS_HIT(c, get, key, nkey);
-                *(c->ilist + i) = it;
-                i++;
-
+                *(c->ilist + nitems) = it;
+                nitems++;
             } else {
                 STATS_MISS(c, get, key, nkey);
                 MEMCACHED_COMMAND_GET(c->sfd, key, nkey, -1, 0);
@@ -8360,7 +8359,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
     } while(key_token->value != NULL);
 
     c->icurr = c->ilist;
-    c->ileft = i;
+    c->ileft = nitems;
     c->suffixcurr = c->suffixlist;
 
     if (settings.verbose > 1) {
