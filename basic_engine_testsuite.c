@@ -203,7 +203,7 @@ static enum test_result get_item_info_test(ENGINE_HANDLE *h, ENGINE_HANDLE_V1 *h
     char *key = "get_item_info_test_key";
     uint64_t cas = 0;
     const rel_time_t exp = 1;
-    item_info ii = { .nvalue = 1 };
+    item_info ii;
     assert(h1->allocate(h, NULL, &test_item, key, strlen(key), 1,0, exp, 0) == ENGINE_SUCCESS);
     assert(h1->store(h, NULL, test_item, &cas, OPERATION_SET,0) == ENGINE_SUCCESS);
     /* Had this been actual code, there'd be a connection here */
