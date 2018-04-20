@@ -204,6 +204,12 @@ extern "C" {
         BITWISE_OP_MAX
     } ENGINE_BITWISE_OP;
 
+    /* vlaue item */
+    typedef struct {
+        uint32_t len;       /* value length */
+        char     ptr[1];    /* value itself */
+    } value_item;
+
     /**
      * Data common to any item stored in memcached.
      */

@@ -463,12 +463,6 @@ typedef struct {
 typedef struct conn conn;
 typedef bool (*STATE_FUNC)(conn *);
 
-/* collection element value */
-typedef struct {
-    uint32_t   nbytes;    /* The total size of the data (in bytes) */
-    char       value[1];  /* the data itself */
-} elem_value;
-
 /**
  * The structure representing a connection into memcached.
  */

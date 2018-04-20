@@ -1450,9 +1450,9 @@ static void process_sop_insert_complete(conn *c) {
 static void process_sop_delete_complete(conn *c) {
     assert(c->coll_op == OPERATION_SOP_DELETE);
     assert(c->coll_eitem != NULL);
-    elem_value *elem = (elem_value *)c->coll_eitem;
+    value_item *value = (value_item *)c->coll_eitem;
 
-    if (strncmp(&elem->value[elem->nbytes-2], "\r\n", 2) != 0) {
+    if (strncmp(&value->ptr[value->len-2], "\r\n", 2) != 0) {
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         bool dropped;
@@ -1460,7 +1460,7 @@ static void process_sop_delete_complete(conn *c) {
 
         ret = mc_engine.v1->set_elem_delete(mc_engine.v0, c,
                                             c->coll_key, c->coll_nkey,
-                                            elem->value, elem->nbytes, c->coll_drop,
+                                            value->ptr, value->len, c->coll_drop,
                                             &dropped, 0);
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
@@ -1504,9 +1504,9 @@ static void process_sop_delete_complete(conn *c) {
 static void process_sop_exist_complete(conn *c) {
     assert(c->coll_op == OPERATION_SOP_EXIST);
     assert(c->coll_eitem != NULL);
-    elem_value *elem = (elem_value *)c->coll_eitem;
+    value_item *value = (value_item *)c->coll_eitem;
 
-    if (strncmp(&elem->value[elem->nbytes-2], "\r\n", 2) != 0) {
+    if (strncmp(&value->ptr[value->len-2], "\r\n", 2) != 0) {
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         bool exist;
@@ -1514,8 +1514,7 @@ static void process_sop_exist_complete(conn *c) {
 
         ret = mc_engine.v1->set_elem_exist(mc_engine.v0, c,
                                            c->coll_key, c->coll_nkey,
-                                           elem->value, elem->nbytes,
-                                           &exist, 0);
+                                           value->ptr, value->len, &exist, 0);
         if (settings.detail_enabled) {
             stats_prefix_record_sop_exist(c->coll_key, c->coll_nkey,
                                           (ret==ENGINE_SUCCESS));
@@ -1625,15 +1624,15 @@ static void process_mop_insert_complete(conn *c) {
 static void process_mop_update_complete(conn *c) {
     assert(c->coll_op == OPERATION_MOP_UPDATE);
     assert(c->coll_eitem != NULL);
-    elem_value *elem = (elem_value *)c->coll_eitem;
+    value_item *value = (value_item *)c->coll_eitem;
 
-    if (strncmp(&elem->value[elem->nbytes-2], "\r\n", 2) != 0) {
+    if (strncmp(&value->ptr[value->len-2], "\r\n", 2) != 0) {
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         ENGINE_ERROR_CODE ret;
         ret = mc_engine.v1->map_elem_update(mc_engine.v0, c,
                                             c->coll_key, c->coll_nkey, &c->coll_field,
-                                            elem->value, elem->nbytes, 0);
+                                            value->ptr, value->len, 0);
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
             ret = ENGINE_SUCCESS;
@@ -2077,12 +2076,12 @@ static void process_bop_update_complete(conn *c)
     eflag_update *eupdate_ptr;
 
     if (c->coll_eitem != NULL) {
-        elem_value *elem = (elem_value *)c->coll_eitem;
-        if (strncmp(&elem->value[elem->nbytes-2], "\r\n", 2) != 0) {
+        value_item *value = (value_item *)c->coll_eitem;
+        if (strncmp(&value->ptr[value->len-2], "\r\n", 2) != 0) {
             out_string(c, "CLIENT_ERROR bad data chunk");
         }
-        new_value  = elem->value;
-        new_nbytes = elem->nbytes;
+        new_value  = value->ptr;
+        new_nbytes = value->len;
     } else {
         new_value  = NULL;
         new_nbytes = 0;
@@ -4678,10 +4677,10 @@ static void process_bin_sop_prepare_nread(conn *c) {
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
             ret = mc_engine.v1->set_elem_alloc(mc_engine.v0, c, key, nkey, vlen+2, &elem);
         } else { /* PROTOCOL_BINARY_CMD_SOP_DELETE or PROTOCOL_BINARY_CMD_SOP_EXIST */
-            if ((elem = (eitem *)malloc(sizeof(elem_value) + vlen + 2)) == NULL)
+            if ((elem = (eitem *)malloc(sizeof(value_item) + vlen + 2)) == NULL)
                 ret = ENGINE_ENOMEM;
             else
-                ((elem_value*)elem)->nbytes = vlen + 2;
+                ((value_item*)elem)->len = vlen + 2;
         }
     }
 
@@ -4703,7 +4702,7 @@ static void process_bin_sop_prepare_nread(conn *c) {
             c->ritem   = (char *)einfo.value;
             c->rlbytes = vlen;
          } else {
-            c->ritem   = ((elem_value *)elem)->value;
+            c->ritem   = ((value_item *)elem)->ptr;
             c->rlbytes = vlen;
          }
         c->coll_eitem  = (void *)elem;
@@ -4825,15 +4824,15 @@ static void process_bin_sop_delete_complete(conn *c) {
 
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
-    elem_value *elem = (elem_value *)c->coll_eitem;
-    memcpy(elem->value + elem->nbytes - 2, "\r\n", 2);
+    value_item *value = (value_item *)c->coll_eitem;
+    memcpy(value->ptr + value->len - 2, "\r\n", 2);
 
     bool dropped;
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->set_elem_delete(mc_engine.v0, c,
                                         c->coll_key, c->coll_nkey,
-                                        elem->value, elem->nbytes,
+                                        value->ptr, value->len,
                                         c->coll_drop, &dropped,
                                         c->binary_header.request.vbucket);
     if (ret == ENGINE_EWOULDBLOCK) {
@@ -4880,15 +4879,15 @@ static void process_bin_sop_exist_complete(conn *c) {
 
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
-    elem_value *elem = (elem_value *)c->coll_eitem;
-    memcpy(elem->value + elem->nbytes - 2, "\r\n", 2);
+    value_item *value = (value_item *)c->coll_eitem;
+    memcpy(value->ptr + value->len - 2, "\r\n", 2);
 
     bool exist;
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->set_elem_exist(mc_engine.v0, c,
                                        c->coll_key, c->coll_nkey,
-                                       elem->value, elem->nbytes,
+                                       value->ptr, value->len,
                                        &exist, c->binary_header.request.vbucket);
 
     if (settings.detail_enabled) {
@@ -5336,10 +5335,10 @@ static void process_bin_bop_update_complete(conn *c) {
     eflag_update *eupdate_ptr;
 
     if (c->coll_eitem != NULL) {
-        elem_value *elem = (elem_value *)c->coll_eitem;
-        memcpy(elem->value + elem->nbytes - 2, "\r\n", 2);
-        new_value  = elem->value;
-        new_nbytes = elem->nbytes;
+        value_item *value = (value_item *)c->coll_eitem;
+        memcpy(value->ptr + value->len - 2, "\r\n", 2);
+        new_value  = value->ptr;
+        new_nbytes = value->len;
     } else {
         new_value  = NULL;
         new_nbytes = 0;
@@ -5466,10 +5465,10 @@ static void process_bin_bop_update_prepare_nread(conn *c) {
     if ((vlen + 2) > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
-        if ((elem = (eitem *)malloc(sizeof(elem_value) + vlen + 2)) == NULL)
+        if ((elem = (eitem *)malloc(sizeof(value_item) + vlen + 2)) == NULL)
             ret = ENGINE_ENOMEM;
         else
-            ((elem_value*)elem)->nbytes = vlen + 2;
+            ((value_item*)elem)->len = vlen + 2;
     }
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
@@ -5478,7 +5477,7 @@ static void process_bin_bop_update_prepare_nread(conn *c) {
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        c->ritem       = ((elem_value *)elem)->value;
+        c->ritem       = ((value_item *)elem)->ptr;
         c->rlbytes     = vlen;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
@@ -10303,10 +10302,10 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
         if (cmd == (int)OPERATION_SOP_INSERT) {
             ret = mc_engine.v1->set_elem_alloc(mc_engine.v0, c, key, nkey, vlen, &elem);
         } else { /* OPERATION_SOP_DELETE or OPERATION_SOP_EXIST */
-            if ((elem = (eitem *)malloc(sizeof(elem_value) + vlen)) == NULL)
+            if ((elem = (eitem *)malloc(sizeof(value_item) + vlen)) == NULL)
                 ret = ENGINE_ENOMEM;
             else
-                ((elem_value*)elem)->nbytes = vlen;
+                ((value_item*)elem)->len = vlen;
         }
     }
 
@@ -10328,7 +10327,7 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
             c->ritem   = (char *)einfo.value;
             c->rlbytes = vlen;
         } else {
-            c->ritem   = ((elem_value *)elem)->value;
+            c->ritem   = ((value_item *)elem)->ptr;
             c->rlbytes = vlen;
         }
         c->coll_eitem  = (void *)elem;
@@ -11069,10 +11068,10 @@ static void process_bop_update_prepare_nread(conn *c, int cmd, char *key, size_t
     if (vlen > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
-        if ((elem = (eitem *)malloc(sizeof(elem_value) + vlen)) == NULL)
+        if ((elem = (eitem *)malloc(sizeof(value_item) + vlen)) == NULL)
             ret = ENGINE_ENOMEM;
         else
-            ((elem_value*)elem)->nbytes = vlen;
+            ((value_item*)elem)->len = vlen;
     }
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
@@ -11081,7 +11080,7 @@ static void process_bop_update_prepare_nread(conn *c, int cmd, char *key, size_t
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        c->ritem   = ((elem_value *)elem)->value;
+        c->ritem   = ((value_item *)elem)->ptr;
         c->rlbytes = vlen;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
@@ -11623,10 +11622,10 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
     } else if (cmd == OPERATION_MOP_INSERT) {
         ret = mc_engine.v1->map_elem_alloc(mc_engine.v0, c, key, nkey, field->length, vlen, &elem);
     } else {
-        if ((elem = (eitem *)malloc(sizeof(elem_value) + vlen)) == NULL)
+        if ((elem = (eitem *)malloc(sizeof(value_item) + vlen)) == NULL)
             ret = ENGINE_ENOMEM;
         else
-            ((elem_value*)elem)->nbytes = vlen;
+            ((value_item*)elem)->len = vlen;
     }
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
@@ -11641,7 +11640,7 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem, &einfo);
             c->ritem   = (char *)einfo.value;
         } else {
-            c->ritem   = ((elem_value *)elem)->value;
+            c->ritem   = ((value_item *)elem)->ptr;
         }
         c->rlbytes     = vlen;
         c->coll_eitem  = (void *)elem;
