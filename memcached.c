@@ -69,7 +69,7 @@ static int MAX_BTREE_SIZE = 50000;
 
 /* The item must always be called "it" */
 #define SLAB_GUTS(conn, thread_stats, slab_op, thread_op) \
-    thread_stats->slab_stats[hinfo.clsid].slab_op++;
+    thread_stats->slab_stats[c->hinfo.clsid].slab_op++;
 
 #define THREAD_GUTS(conn, thread_stats, slab_op, thread_op) \
     thread_stats->thread_op++;
@@ -1324,10 +1324,9 @@ static void process_lop_insert_complete(conn *c) {
     assert(c->coll_eitem != NULL);
     eitem *elem = (eitem *)c->coll_eitem;
 
-    eitem_info einfo;
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &einfo);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &c->einfo);
 
-    if (strncmp((char*)einfo.value + einfo.nbytes - 2, "\r\n", 2) != 0) {
+    if (strncmp((char*)c->einfo.value + c->einfo.nbytes - 2, "\r\n", 2) != 0) {
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         bool created;
@@ -1397,10 +1396,9 @@ static void process_sop_insert_complete(conn *c) {
     assert(c->coll_eitem != NULL);
     eitem *elem = (eitem *)c->coll_eitem;
 
-    eitem_info einfo;
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, elem, &einfo);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, elem, &c->einfo);
 
-    if (strncmp((char*)einfo.value + einfo.nbytes - 2, "\r\n", 2) != 0) {
+    if (strncmp((char*)c->einfo.value + c->einfo.nbytes - 2, "\r\n", 2) != 0) {
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         bool created;
@@ -1568,13 +1566,12 @@ static void process_mop_insert_complete(conn *c) {
     assert(c->coll_eitem != NULL);
     eitem *elem = (eitem *)c->coll_eitem;
 
-    eitem_info einfo;
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem, &einfo);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem, &c->einfo);
 
     /* copy the field string into the element item. */
-    memcpy((void*)einfo.score, c->coll_field.value, c->coll_field.length);
+    memcpy((void*)c->einfo.score, c->coll_field.value, c->coll_field.length);
 
-    if (strncmp((char*)einfo.value + einfo.nbytes - 2, "\r\n", 2) != 0) {
+    if (strncmp((char*)c->einfo.value + c->einfo.nbytes - 2, "\r\n", 2) != 0) {
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         bool created;
@@ -1838,7 +1835,6 @@ static void process_mop_get_complete(conn *c)
     switch (ret) {
     case ENGINE_SUCCESS:
         {
-        eitem_info einfo;
         char *respbuf; /* response string buffer */
         char *respptr;
         int   resplen;
@@ -1859,10 +1855,10 @@ static void process_mop_get_complete(conn *c)
             respptr += strlen(respptr);
 
             for (f = 0; f < elem_count; f++) {
-                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem_array[f], &einfo);
-                resplen = make_mop_elem_response(respptr, &einfo);
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem_array[f], &c->einfo);
+                resplen = make_mop_elem_response(respptr, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov(c, einfo.value, einfo.nbytes) != 0)) {
+                    (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0)) {
                     ret = ENGINE_ENOMEM; break;
                 }
                 respptr += strlen(respptr);
@@ -1969,10 +1965,9 @@ static void process_bop_insert_complete(conn *c) {
     assert(c->coll_eitem != NULL);
     eitem *elem = (eitem *)c->coll_eitem;
 
-    eitem_info einfo;
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &einfo);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &c->einfo);
 
-    if (strncmp((char*)einfo.value + einfo.nbytes - 2, "\r\n", 2) != 0) {
+    if (strncmp((char*)c->einfo.value + c->einfo.nbytes - 2, "\r\n", 2) != 0) {
         // release the btree element
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         c->coll_eitem = NULL;
@@ -2016,12 +2011,12 @@ static void process_bop_insert_complete(conn *c) {
 
                 /* get trimmed element info */
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                            trim_result.elems, &einfo);
-                resplen += make_bop_elem_response(respptr + resplen, &einfo);
+                                            trim_result.elems, &c->einfo);
+                resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
 
                 /* add io vectors */
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov(c, einfo.value, einfo.nbytes) != 0) ||
+                    (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0) ||
                     (add_iov(c, "TRIMMED\r\n", strlen("TRIMMED\r\n")) != 0))
                 {
                     mc_engine.v1->btree_elem_release(mc_engine.v0, c,
@@ -2168,7 +2163,6 @@ static void process_bop_mget_complete(conn *c) {
         uint32_t cur_access_count = 0;
         uint32_t flags, k, e;
         bool trimmed;
-        eitem_info einfo;
         char *resultptr;
         char *valuestrp = (char*)elem_array + (c->coll_numkeys * c->coll_rcount * sizeof(eitem*));
         int   resultlen;
@@ -2212,13 +2206,13 @@ static void process_bop_mget_complete(conn *c) {
 
                 for (e = 0; e < cur_elem_count; e++) {
                     mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                                elem_array[tot_elem_count+e], &einfo);
+                                                elem_array[tot_elem_count+e], &c->einfo);
                     sprintf(resultptr, "ELEMENT ");
                     resultlen = strlen(resultptr);
-                    resultlen += make_bop_elem_response(resultptr + resultlen, &einfo);
+                    resultlen += make_bop_elem_response(resultptr + resultlen, &c->einfo);
 
                     if ((add_iov(c, resultptr, resultlen) != 0) ||
-                        (add_iov(c, einfo.value, einfo.nbytes) != 0)) {
+                        (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0)) {
                         ret = ENGINE_ENOMEM; break;
                     }
                     resultptr += resultlen;
@@ -2407,9 +2401,6 @@ static void process_bop_smget_complete_old(conn *c) {
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        {
-        eitem_info einfo;
-
         do {
             sprintf(respptr, "VALUE %u\r\n", elem_count);
             if (add_iov(c, respptr, strlen(respptr)) != 0) {
@@ -2423,13 +2414,13 @@ static void process_bop_smget_complete_old(conn *c) {
                     ret = ENGINE_ENOMEM; break;
                 }
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                            elem_array[i], &einfo);
+                                            elem_array[i], &c->einfo);
                 /* flags */
                 sprintf(respptr, " %u ", htonl(flag_array[i]));
                 resplen = strlen(respptr);
-                resplen += make_bop_elem_response(respptr + resplen, &einfo);
+                resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov(c, einfo.value, einfo.nbytes) != 0)) {
+                    (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0)) {
                     ret = ENGINE_ENOMEM; break;
                 }
                 respptr += resplen;
@@ -2479,7 +2470,6 @@ static void process_bop_smget_complete_old(conn *c) {
             STATS_NOKEY(c, cmd_bop_smget);
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
             out_string(c, "SERVER_ERROR out of memory writing get response");
-        }
         }
         break;
     case ENGINE_DISCONNECT:
@@ -2579,9 +2569,6 @@ static void process_bop_smget_complete(conn *c) {
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        {
-        eitem_info einfo;
-
         do {
             /* Change smget response head string: VALUE => ELEMENTS.
              * It makes incompatible with the clients of lower version.
@@ -2594,14 +2581,14 @@ static void process_bop_smget_complete(conn *c) {
 
             for (i = 0; i < smres.elem_count; i++) {
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                            smres.elem_array[i], &einfo);
+                                            smres.elem_array[i], &c->einfo);
                 sprintf(respptr, " %u ", htonl(smres.elem_kinfo[i].flag));
                 resplen = strlen(respptr);
-                resplen += make_bop_elem_response(respptr + resplen, &einfo);
+                resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
                 idx = smres.elem_kinfo[i].kidx;
                 if ((add_iov(c, keys_array[idx].value, keys_array[idx].length) != 0) ||
                     (add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov(c, einfo.value, einfo.nbytes) != 0)) {
+                    (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0)) {
                     ret = ENGINE_ENOMEM; break;
                 }
                 respptr += resplen;
@@ -2637,8 +2624,8 @@ static void process_bop_smget_complete(conn *c) {
             if (smres.trim_count > 0) {
                 for (i = 0; i < smres.trim_count; i++) {
                     mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                                smres.trim_elems[i], &einfo);
-                    resplen = make_smget_trim_response(respptr, &einfo);
+                                                smres.trim_elems[i], &c->einfo);
+                    resplen = make_smget_trim_response(respptr, &c->einfo);
                     idx = smres.trim_kinfo[i].kidx;
                     if ((add_iov(c, keys_array[idx].value, keys_array[idx].length) != 0) ||
                         (add_iov(c, respptr, resplen) != 0)) {
@@ -2669,7 +2656,6 @@ static void process_bop_smget_complete(conn *c) {
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, smres.elem_array,
                                              smres.elem_count+smres.trim_count);
             out_string(c, "SERVER_ERROR out of memory writing get response");
-        }
         }
         break;
     case ENGINE_DISCONNECT:
@@ -2791,10 +2777,9 @@ static void process_mget_complete(conn *c)
                 stats_prefix_record_get(key, nkey, NULL != it);
             }
             if (it) {
-                item_info hinfo;
                 /* get_item_info() always returns true. */
-                (void)mc_engine.v1->get_item_info(mc_engine.v0, c, it, &hinfo);
-                assert(memcmp((char*)hinfo.value + hinfo.nbytes - 2, "\r\n", 2) == 0);
+                (void)mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo);
+                assert(memcmp((char*)c->hinfo.value + c->hinfo.nbytes - 2, "\r\n", 2) == 0);
 
                 /* prepare item array */
                 if (nitems >= c->isize) {
@@ -2815,13 +2800,14 @@ static void process_mget_complete(conn *c)
                     break; /* out of memory */
                 }
                 int suffix_len = snprintf(suffix, SUFFIX_SIZE, " %u %u\r\n",
-                                          htonl(hinfo.flags), hinfo.nbytes - 2);
+                                          htonl(c->hinfo.flags), c->hinfo.nbytes - 2);
 
-                MEMCACHED_COMMAND_GET(c->sfd, hinfo.key, hinfo.nkey, hinfo.nbytes, hinfo.cas);
+                MEMCACHED_COMMAND_GET(c->sfd, c->hinfo.key, c->hinfo.nkey,
+                                      c->hinfo.nbytes, c->hinfo.cas);
                 if (add_iov(c, "VALUE ", 6) != 0 ||
-                    add_iov(c, hinfo.key, hinfo.nkey) != 0 ||
+                    add_iov(c, c->hinfo.key, c->hinfo.nkey) != 0 ||
                     add_iov(c, suffix, suffix_len) != 0 ||
-                    add_iov(c, hinfo.value, hinfo.nbytes) != 0)
+                    add_iov(c, c->hinfo.value, c->hinfo.nbytes) != 0)
                 {
                     mc_engine.v1->release(mc_engine.v0, c, it);
                     break; /* out of memory */
@@ -2829,7 +2815,7 @@ static void process_mget_complete(conn *c)
 
                 if (settings.verbose > 1) {
                     mc_logger->log(EXTENSION_LOG_DEBUG, c, ">%d sending key %s\n",
-                                   c->sfd, (char*)hinfo.key);
+                                   c->sfd, (char*)c->hinfo.key);
                 }
 
                 /* item_get() has incremented it->refcount for us */
@@ -2918,8 +2904,7 @@ static void complete_update_ascii(conn *c) {
     }
 
     item *it = c->item;
-    item_info hinfo;
-    if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &hinfo)) {
+    if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
         mc_engine.v1->release(mc_engine.v0, c, it);
         mc_logger->log(EXTENSION_LOG_WARNING, c,
                        "%d: Failed to get item info\n", c->sfd);
@@ -2927,7 +2912,7 @@ static void complete_update_ascii(conn *c) {
         return;
     }
 
-    if (memcmp((char*)hinfo.value + hinfo.nbytes - 2, "\r\n", 2) != 0) {
+    if (memcmp((char*)c->hinfo.value + c->hinfo.nbytes - 2, "\r\n", 2) != 0) {
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         ENGINE_ERROR_CODE ret;
@@ -2936,27 +2921,27 @@ static void complete_update_ascii(conn *c) {
 #ifdef ENABLE_DTRACE
         switch (c->store_op) {
         case OPERATION_ADD:
-            MEMCACHED_COMMAND_ADD(c->sfd, hinfo.key, hinfo.nkey,
-                                  (ret == ENGINE_SUCCESS) ? hinfo.nbytes : -1, c->cas);
+            MEMCACHED_COMMAND_ADD(c->sfd, c->hinfo.key, c->hinfo.nkey,
+                                  (ret == ENGINE_SUCCESS) ? c->hinfo.nbytes : -1, c->cas);
             break;
         case OPERATION_REPLACE:
-            MEMCACHED_COMMAND_REPLACE(c->sfd, hinfo.key, hinfo.nkey,
-                                      (ret == ENGINE_SUCCESS) ? hinfo.nbytes : -1, c->cas);
+            MEMCACHED_COMMAND_REPLACE(c->sfd, c->hinfo.key, c->hinfo.nkey,
+                                      (ret == ENGINE_SUCCESS) ? c->hinfo.nbytes : -1, c->cas);
             break;
         case OPERATION_APPEND:
-            MEMCACHED_COMMAND_APPEND(c->sfd, hinfo.key, hinfo.nkey,
-                                     (ret == ENGINE_SUCCESS) ? hinfo.nbytes : -1, c->cas);
+            MEMCACHED_COMMAND_APPEND(c->sfd, c->hinfo.key, c->hinfo.nkey,
+                                     (ret == ENGINE_SUCCESS) ? c->hinfo.nbytes : -1, c->cas);
             break;
         case OPERATION_PREPEND:
-            MEMCACHED_COMMAND_PREPEND(c->sfd, hinfo.key, hinfo.nkey,
-                                      (ret == ENGINE_SUCCESS) ? hinfo.nbytes : -1, c->cas);
+            MEMCACHED_COMMAND_PREPEND(c->sfd, c->hinfo.key, c->hinfo.nkey,
+                                      (ret == ENGINE_SUCCESS) ? c->hinfo.nbytes : -1, c->cas);
             break;
         case OPERATION_SET:
-            MEMCACHED_COMMAND_SET(c->sfd, hinfo.key, hinfo.nkey,
-                                  (ret == ENGINE_SUCCESS) ? hinfo.nbytes : -1, c->cas);
+            MEMCACHED_COMMAND_SET(c->sfd, c->hinfo.key, c->hinfo.nkey,
+                                  (ret == ENGINE_SUCCESS) ? c->hinfo.nbytes : -1, c->cas);
             break;
         case OPERATION_CAS:
-            MEMCACHED_COMMAND_CAS(c->sfd, hinfo.key, hinfo.nkey, hinfo.nbytes, c->cas);
+            MEMCACHED_COMMAND_CAS(c->sfd, c->hinfo.key, c->hinfo.nkey, c->hinfo.nbytes, c->cas);
             break;
         }
 #endif
@@ -3013,7 +2998,7 @@ static void complete_update_ascii(conn *c) {
             handle_unexpected_errorcode_ascii(c, ret);
         }
     }
-    SLAB_INCR(c, cmd_set, hinfo.key, hinfo.nkey);
+    SLAB_INCR(c, cmd_set, c->hinfo.key, c->hinfo.nkey);
 
     /* release the c->item reference */
     mc_engine.v1->release(mc_engine.v0, c, c->item);
@@ -3416,8 +3401,7 @@ static void complete_update_bin(conn *c) {
     assert(c != NULL);
 
     item *it = c->item;
-    item_info hinfo;
-    if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &hinfo)) {
+    if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
         mc_engine.v1->release(mc_engine.v0, c, it);
         mc_logger->log(EXTENSION_LOG_WARNING, c,
                        "%d: Failed to get item info\n", c->sfd);
@@ -3426,7 +3410,7 @@ static void complete_update_bin(conn *c) {
     }
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
-    memcpy((char*)hinfo.value + hinfo.nbytes - 2, "\r\n", 2);
+    memcpy((char*)c->hinfo.value + c->hinfo.nbytes - 2, "\r\n", 2);
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->store(mc_engine.v0, c, it, &c->cas, c->store_op,
@@ -3439,24 +3423,24 @@ static void complete_update_bin(conn *c) {
 #ifdef ENABLE_DTRACE
     switch (c->cmd) {
     case OPERATION_ADD:
-        MEMCACHED_COMMAND_ADD(c->sfd, hinfo.key, hinfo.nkey,
-                              (ret == ENGINE_SUCCESS) ? hinfo.nbytes : -1, c->cas);
+        MEMCACHED_COMMAND_ADD(c->sfd, c->hinfo.key, c->hinfo.nkey,
+                              (ret == ENGINE_SUCCESS) ? c->hinfo.nbytes : -1, c->cas);
         break;
     case OPERATION_REPLACE:
-        MEMCACHED_COMMAND_REPLACE(c->sfd, hinfo.key, hinfo.nkey,
-                                  (ret == ENGINE_SUCCESS) ? hinfo.nbytes : -1, c->cas);
+        MEMCACHED_COMMAND_REPLACE(c->sfd, c->hinfo.key, c->hinfo.nkey,
+                                  (ret == ENGINE_SUCCESS) ? c->hinfo.nbytes : -1, c->cas);
         break;
     case OPERATION_APPEND:
-        MEMCACHED_COMMAND_APPEND(c->sfd, hinfo.key, hinfo.nkey,
-                                 (ret == ENGINE_SUCCESS) ? hinfo.nbytes : -1, c->cas);
+        MEMCACHED_COMMAND_APPEND(c->sfd, c->hinfo.key, c->hinfo.nkey,
+                                 (ret == ENGINE_SUCCESS) ? c->hinfo.nbytes : -1, c->cas);
         break;
     case OPERATION_PREPEND:
-        MEMCACHED_COMMAND_PREPEND(c->sfd, hinfo.key, hinfo.nkey,
-                                  (ret == ENGINE_SUCCESS) ? hinfo.nbytes : -1, c->cas);
+        MEMCACHED_COMMAND_PREPEND(c->sfd, c->hinfo.key, c->hinfo.nkey,
+                                  (ret == ENGINE_SUCCESS) ? c->hinfo.nbytes : -1, c->cas);
         break;
     case OPERATION_SET:
-        MEMCACHED_COMMAND_SET(c->sfd, hinfo.key, hinfo.nkey,
-                              (ret == ENGINE_SUCCESS) ? hinfo.nbytes : -1, c->cas);
+        MEMCACHED_COMMAND_SET(c->sfd, c->hinfo.key, c->hinfo.nkey,
+                              (ret == ENGINE_SUCCESS) ? c->hinfo.nbytes : -1, c->cas);
         break;
     }
 #endif
@@ -3500,7 +3484,7 @@ static void complete_update_bin(conn *c) {
         }
         write_bin_packet(c, eno, 0);
     }
-    SLAB_INCR(c, cmd_set, hinfo.key, hinfo.nkey);
+    SLAB_INCR(c, cmd_set, c->hinfo.key, c->hinfo.nkey);
 
     /* release the c->item reference */
     mc_engine.v1->release(mc_engine.v0, c, c->item);
@@ -3528,11 +3512,10 @@ static void process_bin_get(conn *c) {
 
     uint16_t keylen;
     uint32_t bodylen;
-    item_info hinfo;
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &hinfo)) {
+        if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
             mc_engine.v1->release(mc_engine.v0, c, it);
             mc_logger->log(EXTENSION_LOG_WARNING, c,
                            "%d: Failed to get item info\n", c->sfd);
@@ -3542,7 +3525,7 @@ static void process_bin_get(conn *c) {
 
         /* the length has two unnecessary bytes ("\r\n") */
         keylen = 0;
-        bodylen = sizeof(rsp->message.body) + (hinfo.nbytes - 2);
+        bodylen = sizeof(rsp->message.body) + (c->hinfo.nbytes - 2);
 
         STATS_HIT(c, get, key, nkey);
 
@@ -3551,18 +3534,18 @@ static void process_bin_get(conn *c) {
             keylen = nkey;
         }
         add_bin_header(c, 0, sizeof(rsp->message.body), keylen, bodylen);
-        rsp->message.header.response.cas = htonll(hinfo.cas);
+        rsp->message.header.response.cas = htonll(c->hinfo.cas);
 
         // add the flags
-        rsp->message.body.flags = hinfo.flags;
+        rsp->message.body.flags = c->hinfo.flags;
         add_iov(c, &rsp->message.body, sizeof(rsp->message.body));
 
         if (c->cmd == PROTOCOL_BINARY_CMD_GETK) {
-            add_iov(c, hinfo.key, nkey);
+            add_iov(c, c->hinfo.key, nkey);
         }
 
         /* Add the data minus the CRLF */
-        add_iov(c, hinfo.value, hinfo.nbytes - 2);
+        add_iov(c, c->hinfo.value, c->hinfo.nbytes - 2);
         conn_set_state(c, conn_mwrite);
         /* Remember this command so we can garbage collect it later */
         c->item = it;
@@ -4259,9 +4242,8 @@ static void process_bin_lop_prepare_nread(conn *c) {
     switch (ret) {
     case ENGINE_SUCCESS:
         {
-        eitem_info einfo;
-        mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &einfo);
-        c->ritem   = (char *)einfo.value;
+        mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &c->einfo);
+        c->ritem   = (char *)c->einfo.value;
         c->rlbytes = vlen;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
@@ -4306,9 +4288,8 @@ static void process_bin_lop_insert_complete(conn *c) {
 
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
-    eitem_info einfo;
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &einfo);
-    memcpy((char*)einfo.value + einfo.nbytes - 2, "\r\n", 2);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &c->einfo);
+    memcpy((char*)c->einfo.value + c->einfo.nbytes - 2, "\r\n", 2);
 
     bool created;
 
@@ -4504,14 +4485,13 @@ static void process_bin_lop_get(conn *c) {
 
         const char *vptr_array[elem_count];
         uint32_t    vlen_array[elem_count];
-        eitem_info einfo;
 
         bodylen = sizeof(rsp->message.body) + (elem_count * sizeof(uint32_t));
         for (i = 0; i < elem_count; i++) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST,
-                                        elem_array[i], &einfo);
-            vptr_array[i] = einfo.value;
-            vlen_array[i] = einfo.nbytes - 2;
+                                        elem_array[i], &c->einfo);
+            vptr_array[i] = c->einfo.value;
+            vlen_array[i] = c->einfo.nbytes - 2;
 
             bodylen += vlen_array[i];
             vlenptr[i] = htonl(vlen_array[i]);
@@ -4696,10 +4676,9 @@ static void process_bin_sop_prepare_nread(conn *c) {
     switch (ret) {
     case ENGINE_SUCCESS:
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
-            eitem_info einfo;
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
-                                        elem, &einfo);
-            c->ritem   = (char *)einfo.value;
+                                        elem, &c->einfo);
+            c->ritem   = (char *)c->einfo.value;
             c->rlbytes = vlen;
          } else {
             c->ritem   = ((value_item *)elem)->ptr;
@@ -4765,9 +4744,8 @@ static void process_bin_sop_insert_complete(conn *c) {
 
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
-    eitem_info einfo;
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, elem, &einfo);
-    memcpy((char*)einfo.value + einfo.nbytes - 2, "\r\n", 2);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, elem, &c->einfo);
+    memcpy((char*)c->einfo.value + c->einfo.nbytes - 2, "\r\n", 2);
 
     bool created;
 
@@ -4999,14 +4977,13 @@ static void process_bin_sop_get(conn *c) {
 
         const char *vptr_array[elem_count];
         uint32_t    vlen_array[elem_count];
-        eitem_info einfo;
 
         bodylen = sizeof(rsp->message.body) + (elem_count * sizeof(uint32_t));
         for (i = 0; i < elem_count; i++) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
-                                        elem_array[i], &einfo);
-            vptr_array[i] = einfo.value;
-            vlen_array[i] = einfo.nbytes - 2;
+                                        elem_array[i], &c->einfo);
+            vptr_array[i] = c->einfo.value;
+            vlen_array[i] = c->einfo.nbytes - 2;
 
             bodylen += vlen_array[i];
             vlenptr[i] = htonl(vlen_array[i]);
@@ -5204,18 +5181,17 @@ static void process_bin_bop_prepare_nread(conn *c) {
     switch (ret) {
     case ENGINE_SUCCESS:
         {
-        eitem_info einfo;
-        mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &einfo);
-        if (einfo.nscore == 0) {
-            memcpy((void*)einfo.score, req->message.body.bkey, sizeof(uint64_t));
+        mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &c->einfo);
+        if (c->einfo.nscore == 0) {
+            memcpy((void*)c->einfo.score, req->message.body.bkey, sizeof(uint64_t));
         } else {
-            memcpy((void*)einfo.score, req->message.body.bkey, einfo.nscore);
+            memcpy((void*)c->einfo.score, req->message.body.bkey, c->einfo.nscore);
         }
-        if (einfo.neflag > 0) {
-            memcpy((void*)einfo.eflag, req->message.body.eflag, einfo.neflag);
+        if (c->einfo.neflag > 0) {
+            memcpy((void*)c->einfo.eflag, req->message.body.eflag, c->einfo.neflag);
         }
 
-        c->ritem   = (char *)einfo.value;
+        c->ritem   = (char *)c->einfo.value;
         c->rlbytes = vlen;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
@@ -5261,9 +5237,8 @@ static void process_bin_bop_insert_complete(conn *c) {
 
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
-    eitem_info einfo;
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &einfo);
-    memcpy((char*)einfo.value + einfo.nbytes - 2, "\r\n", 2);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &c->einfo);
+    memcpy((char*)c->einfo.value + c->einfo.nbytes - 2, "\r\n", 2);
 
     bool created;
     bool replaced;
@@ -5670,17 +5645,16 @@ static void process_bin_bop_get(conn *c) {
 
         const char *vptr_array[elem_count];
         uint32_t    vlen_array[elem_count];
-        eitem_info einfo;
 
         bodylen = sizeof(rsp->message.body) + (elem_count * (sizeof(uint64_t)+sizeof(uint32_t)));
         for (i = 0; i < elem_count; i++) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                        elem_array[i], &einfo);
-            vptr_array[i] = einfo.value;
-            vlen_array[i] = einfo.nbytes - 2;
+                                        elem_array[i], &c->einfo);
+            vptr_array[i] = c->einfo.value;
+            vlen_array[i] = c->einfo.nbytes - 2;
 
             bodylen += vlen_array[i];
-            bkeyptr[i] = htonll(*(uint64_t*)einfo.score);
+            bkeyptr[i] = htonll(*(uint64_t*)c->einfo.score);
             vlenptr[i] = htonl(vlen_array[i]);
         }
         add_bin_header(c, 0, sizeof(rsp->message.body), 0, bodylen);
@@ -6092,17 +6066,16 @@ static void process_bin_bop_smget_complete_old(conn *c) {
 
         const char *vptr_array[elem_count+1]; /* elem_count might be 0. */
         uint32_t    vlen_array[elem_count+1]; /* elem_count might be 0. */
-        eitem_info einfo;
 
         bodylen = sizeof(rsp->message.body) + (real_elem_hdr_size + real_kmis_hdr_size);
         for (i = 0; i < elem_count; i++) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                        elem_array[i], &einfo);
-            vptr_array[i] = einfo.value;
-            vlen_array[i] = einfo.nbytes - 2;
+                                        elem_array[i], &c->einfo);
+            vptr_array[i] = c->einfo.value;
+            vlen_array[i] = c->einfo.nbytes - 2;
 
             bodylen += (vlen_array[i] + keys_array[kfnd_array[i]].length);
-            bkeyptr[i] = htonll(*(uint64_t*)einfo.score);
+            bkeyptr[i] = htonll(*(uint64_t*)c->einfo.score);
             vlenptr[i] = htonl(vlen_array[i]);
             flagptr[i] = flag_array[i];
             klenptr[i] = htonl(keys_array[kfnd_array[i]].length);
@@ -6286,17 +6259,16 @@ static void process_bin_bop_smget_complete(conn *c) {
 
         const char *vptr_array[smres.elem_count+1]; /* elem_count might be 0. */
         uint32_t    vlen_array[smres.elem_count+1]; /* elem_count might be 0. */
-        eitem_info einfo;
 
         bodylen = sizeof(rsp->message.body) + (real_elem_hdr_size + real_emis_hdr_size);
         for (i = 0; i < smres.elem_count; i++) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                        smres.elem_array[i], &einfo);
-            vptr_array[i] = einfo.value;
-            vlen_array[i] = einfo.nbytes - 2;
+                                        smres.elem_array[i], &c->einfo);
+            vptr_array[i] = c->einfo.value;
+            vlen_array[i] = c->einfo.nbytes - 2;
 
             bodylen += (vlen_array[i] + keys_array[smres.elem_kinfo[i].kidx].length);
-            bkeyptr[i] = htonll(*(uint64_t*)einfo.score);
+            bkeyptr[i] = htonll(*(uint64_t*)c->einfo.score);
             vlenptr[i] = htonl(vlen_array[i]);
             flagptr[i] = smres.elem_kinfo[i].flag;
             klenptr[i] = htonl(keys_array[smres.elem_kinfo[i].kidx].length);
@@ -7079,14 +7051,12 @@ static void process_bin_update(conn *c) {
     }
 
     ENGINE_ERROR_CODE ret;
-    item_info hinfo;
-
     ret = mc_engine.v1->allocate(mc_engine.v0, c, &it, key, nkey, vlen+2,
                                  req->message.body.flags,
                                  realtime(req->message.body.expiration),
                                  c->binary_header.request.cas);
     if (ret == ENGINE_SUCCESS && !mc_engine.v1->get_item_info(mc_engine.v0,
-                                                              c, it, &hinfo)) {
+                                                              c, it, &c->hinfo)) {
         mc_engine.v1->release(mc_engine.v0, c, it);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
         return;
@@ -7113,7 +7083,7 @@ static void process_bin_update(conn *c) {
         }
 
         c->item = it;
-        c->ritem = (char*)hinfo.value;
+        c->ritem = (char*)c->hinfo.value;
         c->rlbytes = vlen;
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
@@ -7167,12 +7137,10 @@ static void process_bin_append_prepend(conn *c) {
     }
 
     ENGINE_ERROR_CODE ret;
-    item_info hinfo;
-
     ret = mc_engine.v1->allocate(mc_engine.v0, c, &it, key, nkey, vlen+2,
                                  0, 0, c->binary_header.request.cas);
     if (ret == ENGINE_SUCCESS && !mc_engine.v1->get_item_info(mc_engine.v0,
-                                                              c, it, &hinfo)) {
+                                                              c, it, &c->hinfo)) {
         mc_engine.v1->release(mc_engine.v0, c, it);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
         return;
@@ -7192,7 +7160,7 @@ static void process_bin_append_prepend(conn *c) {
         }
 
         c->item = it;
-        c->ritem = (char*)hinfo.value;
+        c->ritem = (char*)c->hinfo.value;
         c->rlbytes = vlen;
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
@@ -8254,13 +8222,12 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
             }
 
             if (it) {
-                item_info hinfo;
-                if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &hinfo)) {
+                if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
                     mc_engine.v1->release(mc_engine.v0, c, it);
                     out_string(c, "SERVER_ERROR error getting item data");
                     break;
                 }
-                assert(memcmp((char*)hinfo.value + hinfo.nbytes - 2, "\r\n", 2) == 0);
+                assert(memcmp((char*)c->hinfo.value + c->hinfo.nbytes - 2, "\r\n", 2) == 0);
 
                 if (nitems >= c->isize) {
                     item **new_list = realloc(c->ilist, sizeof(item *) * c->isize * 2);
@@ -8281,7 +8248,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                     return;
                 }
                 int suffix_len = snprintf(suffix, SUFFIX_SIZE, " %u %u\r\n",
-                                          htonl(hinfo.flags), hinfo.nbytes - 2);
+                                          htonl(c->hinfo.flags), c->hinfo.nbytes - 2);
 
                 /* rebuild cas value */
                 if (return_cas) {
@@ -8291,11 +8258,11 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                         mc_engine.v1->release(mc_engine.v0, c, it);
                         return;
                     }
-                    cas_len = snprintf(cas_val, SUFFIX_SIZE, " %"PRIu64"\r\n", hinfo.cas);
+                    cas_len = snprintf(cas_val, SUFFIX_SIZE, " %"PRIu64"\r\n", c->hinfo.cas);
                     suffix_len -= 2; /* remove "\r\n" from suffix string */
                 }
 
-                MEMCACHED_COMMAND_GET(c->sfd, hinfo.key, hinfo.nkey, hinfo.nbytes, hinfo.cas);
+                MEMCACHED_COMMAND_GET(c->sfd, c->hinfo.key, c->hinfo.nkey, c->hinfo.nbytes, c->hinfo.cas);
                 /*
                  * Construct the response. Each hit adds three elements to the
                  * outgoing data list:
@@ -8304,10 +8271,10 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                  *   " " + flags + " " + data length + "\r\n" + data (with \r\n)
                  */
                 if (add_iov(c, "VALUE ", 6) != 0 ||
-                    add_iov(c, hinfo.key, hinfo.nkey) != 0 ||
+                    add_iov(c, c->hinfo.key, c->hinfo.nkey) != 0 ||
                     add_iov(c, suffix, suffix_len) != 0 ||
                     (return_cas && add_iov(c, cas_val, cas_len) != 0) ||
-                    add_iov(c, hinfo.value, hinfo.nbytes) != 0)
+                    add_iov(c, c->hinfo.value, c->hinfo.nbytes) != 0)
                 {
                     mc_engine.v1->release(mc_engine.v0, c, it);
                     break;
@@ -8315,7 +8282,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
 
                 if (settings.verbose > 1) {
                     mc_logger->log(EXTENSION_LOG_DEBUG, c, ">%d sending key %s\n",
-                                   c->sfd, (char*)hinfo.key);
+                                   c->sfd, (char*)c->hinfo.key);
                 }
                 /* item_get() has incremented it->refcount for us */
                 STATS_HIT(c, get, key, nkey);
@@ -8476,16 +8443,15 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     ret = mc_engine.v1->allocate(mc_engine.v0, c, &it, key, nkey, vlen,
                                  htonl(flags), realtime(exptime), req_cas_id);
 
-    item_info hinfo;
     switch (ret) {
     case ENGINE_SUCCESS:
-        if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &hinfo)) {
+        if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
             mc_engine.v1->release(mc_engine.v0, c, it);
             out_string(c, "SERVER_ERROR error getting item data");
             break;
         }
         c->item = it;
-        c->ritem = (char*)hinfo.value;
+        c->ritem = (char*)c->hinfo.value;
         c->rlbytes = vlen;
         c->store_op = store_op;
         conn_set_state(c, conn_nread);
@@ -8666,7 +8632,6 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     }
 
     /* For some reason the SLAB_INCR tries to access this... */
-    item_info hinfo;
     if (ret == ENGINE_SUCCESS) {
         out_string(c, "DELETED");
         //SLAB_INCR(c, delete_hits, key, nkey);
@@ -9761,7 +9726,6 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
     switch (ret) {
     case ENGINE_SUCCESS:
         {
-        eitem_info einfo;
         char *respbuf; /* response string buffer */
         char *respptr;
 
@@ -9781,10 +9745,10 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
 
             for (i = 0; i < elem_count; i++) {
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST,
-                                           elem_array[i], &einfo);
-                sprintf(respptr, "%u ", einfo.nbytes-2);
+                                           elem_array[i], &c->einfo);
+                sprintf(respptr, "%u ", c->einfo.nbytes-2);
                 if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-                    (add_iov(c, einfo.value, einfo.nbytes) != 0)) {
+                    (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0)) {
                     ret = ENGINE_ENOMEM; break;
                 }
                 respptr += strlen(respptr);
@@ -9859,10 +9823,8 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        {
-        eitem_info einfo;
-        mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &einfo);
-        c->ritem   = (char *)einfo.value;
+        mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &c->einfo);
+        c->ritem   = (char *)c->einfo.value;
         c->rlbytes = vlen;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
@@ -9871,7 +9833,6 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
         c->coll_nkey   = nkey;
         c->coll_index  = index;
         conn_set_state(c, conn_nread);
-        }
         break;
     case ENGINE_DISCONNECT:
         c->state = conn_closing;
@@ -10211,7 +10172,6 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
     switch (ret) {
     case ENGINE_SUCCESS:
         {
-        eitem_info einfo;
         char *respbuf; /* response string buffer */
         char *respptr;
 
@@ -10231,10 +10191,10 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
 
             for (i = 0; i < elem_count; i++) {
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
-                                            elem_array[i], &einfo);
-                sprintf(respptr, "%u ", einfo.nbytes-2);
+                                            elem_array[i], &c->einfo);
+                sprintf(respptr, "%u ", c->einfo.nbytes-2);
                 if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-                    (add_iov(c, einfo.value, einfo.nbytes) != 0)) {
+                    (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0)) {
                     ret = ENGINE_ENOMEM; break;
                 }
                 respptr += strlen(respptr);
@@ -10321,10 +10281,9 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
     switch (ret) {
     case ENGINE_SUCCESS:
         if (cmd == (int)OPERATION_SOP_INSERT) {
-            eitem_info einfo;
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
-                                        elem, &einfo);
-            c->ritem   = (char *)einfo.value;
+                                        elem, &c->einfo);
+            c->ritem   = (char *)c->einfo.value;
             c->rlbytes = vlen;
         } else {
             c->ritem   = ((value_item *)elem)->ptr;
@@ -10624,7 +10583,6 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
     switch (ret) {
     case ENGINE_SUCCESS:
         {
-        eitem_info einfo;
         char *respbuf; /* response string buffer */
         char *respptr;
         int   resplen;
@@ -10645,10 +10603,10 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
 
             for (i = 0; i < elem_count; i++) {
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                            elem_array[i], &einfo);
-                resplen = make_bop_elem_response(respptr, &einfo);
+                                            elem_array[i], &c->einfo);
+                resplen = make_bop_elem_response(respptr, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov(c, einfo.value, einfo.nbytes) != 0)) {
+                    (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0)) {
                     ret = ENGINE_ENOMEM; break;
                 }
                 respptr += resplen;
@@ -10849,7 +10807,6 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
     switch (ret) {
     case ENGINE_SUCCESS:
         {
-        eitem_info einfo;
         char *respbuf; /* response string buffer */
         char *respptr;
         int   resplen;
@@ -10870,10 +10827,10 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
 
             for (i = 0; i < elem_count; i++) {
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                            elem_array[i], &einfo);
-                resplen = make_bop_elem_response(respptr, &einfo);
+                                            elem_array[i], &c->einfo);
+                resplen = make_bop_elem_response(respptr, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov(c, einfo.value, einfo.nbytes) != 0)) {
+                    (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0)) {
                     ret = ENGINE_ENOMEM; break;
                 }
                 respptr += resplen;
@@ -10980,7 +10937,6 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
     switch (ret) {
     case ENGINE_SUCCESS:
         {
-        eitem_info einfo;
         char *respbuf; /* response string buffer */
         char *respptr;
         int   resplen;
@@ -11001,10 +10957,10 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
 
             for (i = 0; i < elem_count; i++) {
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                            elem_array[i], &einfo);
-                resplen = make_bop_elem_response(respptr, &einfo);
+                                            elem_array[i], &c->einfo);
+                resplen = make_bop_elem_response(respptr, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov(c, einfo.value, einfo.nbytes) != 0)) {
+                    (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0)) {
                     ret = ENGINE_ENOMEM; break;
                 }
                 respptr += resplen;
@@ -11123,12 +11079,11 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
     switch (ret) {
     case ENGINE_SUCCESS:
         {
-        eitem_info einfo;
-        mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &einfo);
-        memcpy((void*)einfo.score, bkey, (einfo.nscore==0 ? sizeof(uint64_t) : einfo.nscore));
-        if (einfo.neflag > 0)
-            memcpy((void*)einfo.eflag, eflag, einfo.neflag);
-        c->ritem   = (char *)einfo.value;
+        mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &c->einfo);
+        memcpy((void*)c->einfo.score, bkey, (c->einfo.nscore==0 ? sizeof(uint64_t) : c->einfo.nscore));
+        if (c->einfo.neflag > 0)
+            memcpy((void*)c->einfo.eflag, eflag, c->einfo.neflag);
+        c->ritem   = (char *)c->einfo.value;
         c->rlbytes = vlen;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
@@ -11636,9 +11591,8 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
     case ENGINE_SUCCESS:
         {
         if (cmd == OPERATION_MOP_INSERT) {
-            eitem_info einfo;
-            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem, &einfo);
-            c->ritem   = (char *)einfo.value;
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem, &c->einfo);
+            c->ritem   = (char *)c->einfo.value;
         } else {
             c->ritem   = ((value_item *)elem)->ptr;
         }

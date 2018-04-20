@@ -487,14 +487,18 @@ struct conn {
     int    wbytes;
     /** which state to go into after finishing current write */
     STATE_FUNC   write_and_go;
-    void   *write_and_free; /** free this memory after finishing writing */
+    void        *write_and_free; /** free this memory after finishing writing */
 
-    char   *ritem;  /** when we read in an item's value, it goes here */
+    char       *ritem;  /** when we read in an item's value, it goes here */
     uint32_t    rlbytes;
     /* use memory blocks */
     uint32_t    rltotal;    /* Used when read data with memory block */
     mblck_node_t *membk;    /* current memory block pointer */
     mblck_list_t  memblist; /* (key or field) string memory block list */
+
+    /* hash item and elem item info */
+    item_info   hinfo; /* hash item info */
+    eitem_info  einfo; /* elem item info */
 
     /* collection processing fields */
     void        *coll_eitem;
