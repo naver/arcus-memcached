@@ -711,9 +711,7 @@ Demo_get_item_info(ENGINE_HANDLE *handle, const void *cookie,
               const item* item, item_info *item_info)
 {
     hash_item* it = (hash_item*)item;
-    if (item_info->nvalue < 1) {
-        return false;
-    }
+
     item_info->cas = dm_item_get_cas(it);
     item_info->exptime = it->exptime;
     item_info->nbytes = it->nbytes;
@@ -722,8 +720,7 @@ Demo_get_item_info(ENGINE_HANDLE *handle, const void *cookie,
     item_info->nkey = it->nkey;
     item_info->nvalue = 1;
     item_info->key = dm_item_get_key(it);
-    item_info->value[0].iov_base = dm_item_get_data(it);
-    item_info->value[0].iov_len = it->nbytes;
+    item_info->value = dm_item_get_data(it);
     return true;
 }
 

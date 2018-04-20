@@ -226,7 +226,7 @@ extern "C" {
         uint16_t nvalue;    /** < IN: The number of elements available in value
                              **  OUT: the number of elements used in value */
         const void *key;
-        struct iovec value[1];
+        const void *value;
     } item_info;
 
     /* collection element info */

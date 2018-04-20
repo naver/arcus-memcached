@@ -2791,10 +2791,10 @@ static void process_mget_complete(conn *c)
                 stats_prefix_record_get(key, nkey, NULL != it);
             }
             if (it) {
-                item_info hinfo = { .nvalue = 1 };
+                item_info hinfo;
                 /* get_item_info() always returns true. */
                 (void)mc_engine.v1->get_item_info(mc_engine.v0, c, it, &hinfo);
-                assert(memcmp((char*)hinfo.value[0].iov_base + hinfo.value[0].iov_len - 2, "\r\n", 2) == 0);
+                assert(memcmp((char*)hinfo.value + hinfo.nbytes - 2, "\r\n", 2) == 0);
 
                 /* prepare item array */
                 if (nitems >= c->isize) {
@@ -2821,7 +2821,7 @@ static void process_mget_complete(conn *c)
                 if (add_iov(c, "VALUE ", 6) != 0 ||
                     add_iov(c, hinfo.key, hinfo.nkey) != 0 ||
                     add_iov(c, suffix, suffix_len) != 0 ||
-                    add_iov(c, hinfo.value[0].iov_base, hinfo.value[0].iov_len) != 0)
+                    add_iov(c, hinfo.value, hinfo.nbytes) != 0)
                 {
                     mc_engine.v1->release(mc_engine.v0, c, it);
                     break; /* out of memory */
@@ -2918,7 +2918,7 @@ static void complete_update_ascii(conn *c) {
     }
 
     item *it = c->item;
-    item_info hinfo = { .nvalue = 1 };
+    item_info hinfo;
     if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &hinfo)) {
         mc_engine.v1->release(mc_engine.v0, c, it);
         mc_logger->log(EXTENSION_LOG_WARNING, c,
@@ -2927,7 +2927,7 @@ static void complete_update_ascii(conn *c) {
         return;
     }
 
-    if (memcmp((char*)hinfo.value[0].iov_base + hinfo.value[0].iov_len - 2, "\r\n", 2) != 0) {
+    if (memcmp((char*)hinfo.value + hinfo.nbytes - 2, "\r\n", 2) != 0) {
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         ENGINE_ERROR_CODE ret;
@@ -3416,7 +3416,7 @@ static void complete_update_bin(conn *c) {
     assert(c != NULL);
 
     item *it = c->item;
-    item_info hinfo = { .nvalue = 1 };
+    item_info hinfo;
     if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &hinfo)) {
         mc_engine.v1->release(mc_engine.v0, c, it);
         mc_logger->log(EXTENSION_LOG_WARNING, c,
@@ -3426,7 +3426,7 @@ static void complete_update_bin(conn *c) {
     }
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
-    memcpy((char*)hinfo.value[0].iov_base + hinfo.value[0].iov_len - 2, "\r\n", 2);
+    memcpy((char*)hinfo.value + hinfo.nbytes - 2, "\r\n", 2);
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->store(mc_engine.v0, c, it, &c->cas, c->store_op,
@@ -3528,7 +3528,7 @@ static void process_bin_get(conn *c) {
 
     uint16_t keylen;
     uint32_t bodylen;
-    item_info hinfo = { .nvalue = 1 };
+    item_info hinfo;
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -3562,7 +3562,7 @@ static void process_bin_get(conn *c) {
         }
 
         /* Add the data minus the CRLF */
-        add_iov(c, hinfo.value[0].iov_base, hinfo.value[0].iov_len - 2);
+        add_iov(c, hinfo.value, hinfo.nbytes - 2);
         conn_set_state(c, conn_mwrite);
         /* Remember this command so we can garbage collect it later */
         c->item = it;
@@ -7079,7 +7079,7 @@ static void process_bin_update(conn *c) {
     }
 
     ENGINE_ERROR_CODE ret;
-    item_info hinfo = { .nvalue = 1 };
+    item_info hinfo;
 
     ret = mc_engine.v1->allocate(mc_engine.v0, c, &it, key, nkey, vlen+2,
                                  req->message.body.flags,
@@ -7113,7 +7113,7 @@ static void process_bin_update(conn *c) {
         }
 
         c->item = it;
-        c->ritem = hinfo.value[0].iov_base;
+        c->ritem = (char*)hinfo.value;
         c->rlbytes = vlen;
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
@@ -7167,7 +7167,7 @@ static void process_bin_append_prepend(conn *c) {
     }
 
     ENGINE_ERROR_CODE ret;
-    item_info hinfo = { .nvalue = 1 };
+    item_info hinfo;
 
     ret = mc_engine.v1->allocate(mc_engine.v0, c, &it, key, nkey, vlen+2,
                                  0, 0, c->binary_header.request.cas);
@@ -7192,7 +7192,7 @@ static void process_bin_append_prepend(conn *c) {
         }
 
         c->item = it;
-        c->ritem = hinfo.value[0].iov_base;
+        c->ritem = (char*)hinfo.value;
         c->rlbytes = vlen;
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
@@ -8254,13 +8254,13 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
             }
 
             if (it) {
-                item_info hinfo = { .nvalue = 1 };
+                item_info hinfo;
                 if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &hinfo)) {
                     mc_engine.v1->release(mc_engine.v0, c, it);
                     out_string(c, "SERVER_ERROR error getting item data");
                     break;
                 }
-                assert(memcmp((char*)hinfo.value[0].iov_base + hinfo.value[0].iov_len - 2, "\r\n", 2) == 0);
+                assert(memcmp((char*)hinfo.value + hinfo.nbytes - 2, "\r\n", 2) == 0);
 
                 if (nitems >= c->isize) {
                     item **new_list = realloc(c->ilist, sizeof(item *) * c->isize * 2);
@@ -8307,7 +8307,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                     add_iov(c, hinfo.key, hinfo.nkey) != 0 ||
                     add_iov(c, suffix, suffix_len) != 0 ||
                     (return_cas && add_iov(c, cas_val, cas_len) != 0) ||
-                    add_iov(c, hinfo.value[0].iov_base, hinfo.value[0].iov_len) != 0)
+                    add_iov(c, hinfo.value, hinfo.nbytes) != 0)
                 {
                     mc_engine.v1->release(mc_engine.v0, c, it);
                     break;
@@ -8476,7 +8476,7 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     ret = mc_engine.v1->allocate(mc_engine.v0, c, &it, key, nkey, vlen,
                                  htonl(flags), realtime(exptime), req_cas_id);
 
-    item_info hinfo = { .nvalue = 1 };
+    item_info hinfo;
     switch (ret) {
     case ENGINE_SUCCESS:
         if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &hinfo)) {
@@ -8485,7 +8485,7 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
             break;
         }
         c->item = it;
-        c->ritem = hinfo.value[0].iov_base;
+        c->ritem = (char*)hinfo.value;
         c->rlbytes = vlen;
         c->store_op = store_op;
         conn_set_state(c, conn_nread);
@@ -8666,7 +8666,7 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     }
 
     /* For some reason the SLAB_INCR tries to access this... */
-    item_info hinfo = { .nvalue = 1 };
+    item_info hinfo;
     if (ret == ENGINE_SUCCESS) {
         out_string(c, "DELETED");
         //SLAB_INCR(c, delete_hits, key, nkey);

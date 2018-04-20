@@ -1394,9 +1394,7 @@ get_item_info(ENGINE_HANDLE *handle, const void *cookie,
               const item* item, item_info *item_info)
 {
     hash_item* it = (hash_item*)item;
-    if (item_info->nvalue < 1) {
-        return false;
-    }
+
     item_info->cas = item_get_cas(it);
     item_info->exptime = it->exptime;
     item_info->nbytes = it->nbytes;
@@ -1405,8 +1403,7 @@ get_item_info(ENGINE_HANDLE *handle, const void *cookie,
     item_info->nkey = it->nkey;
     item_info->nvalue = 1;
     item_info->key = item_get_key(it);
-    item_info->value[0].iov_base = item_get_data(it);
-    item_info->value[0].iov_len = it->nbytes;
+    item_info->value = item_get_data(it);
     return true;
 }
 
