@@ -222,11 +222,12 @@ extern "C" {
         rel_time_t exptime; /**< When the item will expire (relative to process startup) */
         uint8_t clsid;      /** class id for the object */
         uint16_t nkey;      /**< The total length of the key (in bytes) */
-        uint32_t nbytes;    /**< The total size of the data (in bytes) */
-        uint16_t nvalue;    /** < IN: The number of elements available in value
-                             **  OUT: the number of elements used in value */
-        const void *key;
-        const void *value;
+        uint32_t nbytes;    /**< The total length of the data (in bytes) */
+        uint32_t nvalue;    /* size of value data */
+        uint32_t naddnl;    /* additional value item count */
+        const void *key;    /* key string */
+        const void *value;  /* value data */
+        value_item **addnl; /* additional value items */
     } item_info;
 
     /* collection element info */

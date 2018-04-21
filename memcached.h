@@ -466,6 +466,12 @@ typedef bool (*STATE_FUNC)(conn *);
 /**
  * The structure representing a connection into memcached.
  */
+/* rtype in connection */
+#define CONN_RTYPE_NONE  0
+#define CONN_RTYPE_MBLCK 1
+#define CONN_RTYPE_HINFO 2
+#define CONN_RTYPE_EINFO 3
+
 struct conn {
     int    sfd;
     short  nevents;
@@ -489,6 +495,8 @@ struct conn {
     STATE_FUNC   write_and_go;
     void        *write_and_free; /** free this memory after finishing writing */
 
+    int         rtype;  /* CONN_RTYPE_XXXXX */
+    int         rindex; /* used when rtype is HINFO or EINFO */
     char       *ritem;  /** when we read in an item's value, it goes here */
     uint32_t    rlbytes;
     /* use memory blocks */

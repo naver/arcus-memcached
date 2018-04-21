@@ -1396,14 +1396,16 @@ get_item_info(ENGINE_HANDLE *handle, const void *cookie,
     hash_item* it = (hash_item*)item;
 
     item_info->cas = item_get_cas(it);
-    item_info->exptime = it->exptime;
-    item_info->nbytes = it->nbytes;
     item_info->flags = it->flags;
+    item_info->exptime = it->exptime;
     item_info->clsid = it->slabs_clsid;
     item_info->nkey = it->nkey;
-    item_info->nvalue = 1;
+    item_info->nbytes = it->nbytes;
+    item_info->nvalue = it->nbytes;
+    item_info->naddnl = 0;
     item_info->key = item_get_key(it);
     item_info->value = item_get_data(it);
+    item_info->addnl = NULL;
     return true;
 }
 
