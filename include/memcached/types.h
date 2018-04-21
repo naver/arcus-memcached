@@ -232,12 +232,15 @@ extern "C" {
 
     /* collection element info */
     typedef struct {
-        const char          *value;
-        const unsigned char *score;
-        const unsigned char *eflag;
-        uint16_t nbytes;    /**< The size of the data (in bytes) */
-        uint8_t  nscore;
-        uint8_t  neflag;
+        uint32_t   nbytes;  /* total size of the data (in bytes) */
+        uint32_t   nvalue;  /* size of value data */
+        uint32_t   naddnl;  /* additional value item count */
+        uint16_t   nscore;  /* size of score data */
+        uint16_t   neflag;  /* size of eflag data */
+        const char *value;  /* value data itself */
+        value_item **addnl; /* additional value items */
+        const unsigned char *score; /* score data */
+        const unsigned char *eflag; /* eflag data */
     } eitem_info;
 
     /* element info that is trimmed by maxcount overflow */

@@ -1417,26 +1417,37 @@ get_elem_info(ENGINE_HANDLE *handle, const void *cookie,
     if (type == ITEM_TYPE_LIST) {
         list_elem_item *elem = (list_elem_item*)eitem;
         elem_info->nbytes = elem->nbytes;
-        elem_info->value  = elem->value;
+        elem_info->nvalue = elem->nbytes;
+        elem_info->naddnl = 0;
+        elem_info->value = elem->value;
+        elem_info->addnl = NULL;
     }
     else if (type == ITEM_TYPE_SET) {
         set_elem_item *elem = (set_elem_item*)eitem;
         elem_info->nbytes = elem->nbytes;
-        elem_info->value  = elem->value;
+        elem_info->nvalue = elem->nbytes;
+        elem_info->naddnl = 0;
+        elem_info->value = elem->value;
+        elem_info->addnl = NULL;
     }
     else if (type == ITEM_TYPE_MAP) {
         map_elem_item *elem = (map_elem_item*)eitem;
         elem_info->nscore = elem->nfield;
         elem_info->nbytes = elem->nbytes;
-        elem_info->score  = elem->data;
-        elem_info->value  = (const char*)elem->data + elem->nfield;
+        elem_info->nvalue = elem->nbytes;
+        elem_info->naddnl = 0;
+        elem_info->score = elem->data;
+        elem_info->value = (const char*)elem->data + elem->nfield;
+        elem_info->addnl = NULL;
     }
     else if (type == ITEM_TYPE_BTREE) {
         btree_elem_item *elem = (btree_elem_item*)eitem;
         elem_info->nscore = elem->nbkey;
         elem_info->neflag = elem->neflag;
         elem_info->nbytes = elem->nbytes;
-        elem_info->score  = elem->data;
+        elem_info->nvalue = elem->nbytes;
+        elem_info->naddnl = 0;
+        elem_info->score = elem->data;
         if (elem->neflag > 0) {
             elem_info->eflag = elem->data
                              + (elem->nbkey==0 ? sizeof(uint64_t) : elem->nbkey);
@@ -1446,6 +1457,7 @@ get_elem_info(ENGINE_HANDLE *handle, const void *cookie,
             elem_info->value = (const char*)elem->data
                              + (elem->nbkey==0 ? sizeof(uint64_t) : elem->nbkey);
         }
+        elem_info->addnl = NULL;
     }
 }
 

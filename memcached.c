@@ -1015,7 +1015,23 @@ static void ritem_set_first(conn *c, int rtype, int vleng)
         }
     }
     else if (c->rtype == CONN_RTYPE_EINFO) {
-        /* do it later */
+        if (c->einfo.naddnl == 0) {
+            c->ritem = (char*)c->einfo.value;
+            c->rlbytes = vleng;
+        } else {
+            if (c->einfo.nvalue > 0) {
+                c->ritem = (char*)c->einfo.value;
+                c->rlbytes = vleng < c->einfo.nvalue
+                           ? vleng : c->einfo.nvalue;
+                c->rindex = 0;
+            } else {
+                c->ritem = c->einfo.addnl[0]->ptr;
+                c->rlbytes = vleng < c->einfo.addnl[0]->len
+                           ? vleng : c->einfo.addnl[0]->len;
+                c->rindex = 1;
+            }
+            c->rltotal = vleng;
+        }
     }
 }
 
@@ -1036,7 +1052,10 @@ static void ritem_set_next(conn *c)
         c->rindex += 1;
     }
     else if (c->rtype == CONN_RTYPE_EINFO) {
-        /* do it later */
+        c->ritem = c->einfo.addnl[c->rindex]->ptr;
+        c->rlbytes = c->rltotal < c->einfo.addnl[c->rindex]->len
+                   ? c->rltotal : c->einfo.addnl[c->rindex]->len;
+        c->rindex += 1;
     }
 }
 
@@ -1224,6 +1243,45 @@ static int add_iov_hinfo_some_value(conn *c, item_info *hinfo, int length)
     return 0;
 }
 
+static int add_iov_einfo_value(conn *c, eitem_info *einfo)
+{
+    if (einfo->nvalue && add_iov(c, einfo->value, einfo->nvalue) != 0) {
+        return -1;
+    }
+    if (einfo->naddnl && add_iov_addnl(c, einfo->addnl, einfo->naddnl) != 0) {
+        return -1;
+    }
+    return 0;
+}
+
+static int add_iov_einfo_some_value(conn *c, eitem_info *einfo, int length)
+{
+    int i, iosize;
+
+    if (einfo->naddnl == 0)  {
+        return add_iov(c, einfo->value, length);
+    }
+
+    /* einfo->naddnl > 0 */
+    if (einfo->nvalue > 0) {
+        iosize = length < einfo->nvalue
+               ? length : einfo->nvalue;
+        if (add_iov(c, einfo->value, iosize) != 0) {
+            return -1;
+        }
+        length -= iosize;
+    }
+    for (i = 0; i < einfo->naddnl && length > 0; i++) {
+        iosize = length < einfo->addnl[i]->len
+               ? length : einfo->addnl[i]->len;
+        if (add_iov(c, einfo->addnl[i]->ptr, iosize) != 0) {
+            return -1;
+        }
+        length -= iosize;
+    }
+    return 0;
+}
+
 static int hinfo_check_ascii_tail_string(item_info *hinfo)
 {
     if (hinfo->naddnl == 0) {
@@ -1267,6 +1325,52 @@ static void hinfo_set_ascii_tail_string(item_info *hinfo)
         memcpy(last->ptr + last->len - 1, "\r", 1);
     } else {
         memcpy((char*)hinfo->value + hinfo->nvalue - 1, "\r", 1);
+    }
+}
+
+static int einfo_check_ascii_tail_string(eitem_info *einfo)
+{
+    if (einfo->naddnl == 0) {
+        return memcmp((char*)einfo->value + einfo->nbytes - 2, "\r\n", 2);
+    }
+
+    value_item *last = einfo->addnl[einfo->naddnl-1];
+    if (last->len >= 2) {
+        return memcmp(last->ptr + last->len - 2, "\r\n", 2);
+    }
+
+    /* last->len == 1 */
+    if (memcmp(last->ptr + last->len - 1, "\n", 1) != 0) {
+        return -1;
+    }
+    if (einfo->naddnl >= 2) {
+        last = einfo->addnl[einfo->naddnl-2];
+        return memcmp(last->ptr + last->len - 1, "\r", 1);
+    } else {
+        return memcmp((char*)einfo->value + einfo->nvalue - 1, "\r", 1);
+    }
+}
+
+static void einfo_set_ascii_tail_string(eitem_info *einfo)
+{
+    if (einfo->naddnl == 0) {
+        memcpy((char*)einfo->value + einfo->nbytes - 2, "\r\n", 2);
+        return;
+    }
+
+    value_item *last = einfo->addnl[einfo->naddnl-1];
+    if (last->len >= 2) {
+        memcpy(last->ptr + last->len - 2, "\r\n", 2);
+        return;
+    }
+
+    /* last->len == 1 */
+    memcpy(last->ptr + last->len - 1, "\n", 1);
+    if (einfo->naddnl >= 2) {
+        last = einfo->addnl[einfo->naddnl-2];
+        memcpy(last->ptr + last->len - 1, "\r", 1);
+    } else {
+        memcpy((char*)einfo->value + einfo->nvalue - 1, "\r", 1);
     }
 }
 
@@ -1477,7 +1581,7 @@ static void process_lop_insert_complete(conn *c) {
 
     mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &c->einfo);
 
-    if (strncmp((char*)c->einfo.value + c->einfo.nbytes - 2, "\r\n", 2) != 0) {
+    if (einfo_check_ascii_tail_string(&c->einfo) != 0) { /* check "\r\n" */
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         bool created;
@@ -1549,7 +1653,7 @@ static void process_sop_insert_complete(conn *c) {
 
     mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, elem, &c->einfo);
 
-    if (strncmp((char*)c->einfo.value + c->einfo.nbytes - 2, "\r\n", 2) != 0) {
+    if (einfo_check_ascii_tail_string(&c->einfo) != 0) { /* check "\r\n" */
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         bool created;
@@ -1722,7 +1826,7 @@ static void process_mop_insert_complete(conn *c) {
     /* copy the field string into the element item. */
     memcpy((void*)c->einfo.score, c->coll_field.value, c->coll_field.length);
 
-    if (strncmp((char*)c->einfo.value + c->einfo.nbytes - 2, "\r\n", 2) != 0) {
+    if (einfo_check_ascii_tail_string(&c->einfo) != 0) { /* check "\r\n" */
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         bool created;
@@ -2009,7 +2113,8 @@ static void process_mop_get_complete(conn *c)
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem_array[f], &c->einfo);
                 resplen = make_mop_elem_response(respptr, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0)) {
+                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                {
                     ret = ENGINE_ENOMEM; break;
                 }
                 respptr += strlen(respptr);
@@ -2118,7 +2223,7 @@ static void process_bop_insert_complete(conn *c) {
 
     mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &c->einfo);
 
-    if (strncmp((char*)c->einfo.value + c->einfo.nbytes - 2, "\r\n", 2) != 0) {
+    if (einfo_check_ascii_tail_string(&c->einfo) != 0) { /* check "\r\n" */
         // release the btree element
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         c->coll_eitem = NULL;
@@ -2167,7 +2272,7 @@ static void process_bop_insert_complete(conn *c) {
 
                 /* add io vectors */
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0) ||
+                    (add_iov_einfo_value(c, &c->einfo) != 0) ||
                     (add_iov(c, "TRIMMED\r\n", strlen("TRIMMED\r\n")) != 0))
                 {
                     mc_engine.v1->btree_elem_release(mc_engine.v0, c,
@@ -2363,7 +2468,8 @@ static void process_bop_mget_complete(conn *c) {
                     resultlen += make_bop_elem_response(resultptr + resultlen, &c->einfo);
 
                     if ((add_iov(c, resultptr, resultlen) != 0) ||
-                        (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0)) {
+                        (add_iov_einfo_value(c, &c->einfo) != 0))
+                    {
                         ret = ENGINE_ENOMEM; break;
                     }
                     resultptr += resultlen;
@@ -2571,7 +2677,8 @@ static void process_bop_smget_complete_old(conn *c) {
                 resplen = strlen(respptr);
                 resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0)) {
+                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                {
                     ret = ENGINE_ENOMEM; break;
                 }
                 respptr += resplen;
@@ -2739,7 +2846,8 @@ static void process_bop_smget_complete(conn *c) {
                 idx = smres.elem_kinfo[i].kidx;
                 if ((add_iov(c, keys_array[idx].value, keys_array[idx].length) != 0) ||
                     (add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0)) {
+                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                {
                     ret = ENGINE_ENOMEM; break;
                 }
                 respptr += resplen;
@@ -4394,8 +4502,7 @@ static void process_bin_lop_prepare_nread(conn *c) {
     case ENGINE_SUCCESS:
         {
         mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &c->einfo);
-        c->ritem   = (char *)c->einfo.value;
-        c->rlbytes = vlen;
+        ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = OPERATION_LOP_INSERT;
@@ -4440,7 +4547,7 @@ static void process_bin_lop_insert_complete(conn *c) {
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
     mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &c->einfo);
-    memcpy((char*)c->einfo.value + c->einfo.nbytes - 2, "\r\n", 2);
+    einfo_set_ascii_tail_string(&c->einfo); /* set "\r\n" */
 
     bool created;
 
@@ -4634,18 +4741,12 @@ static void process_bin_lop_get(conn *c) {
         uint32_t *vlenptr = (uint32_t *)&elem_array[elem_count];
         uint32_t  bodylen;
 
-        const char *vptr_array[elem_count];
-        uint32_t    vlen_array[elem_count];
-
         bodylen = sizeof(rsp->message.body) + (elem_count * sizeof(uint32_t));
         for (i = 0; i < elem_count; i++) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST,
                                         elem_array[i], &c->einfo);
-            vptr_array[i] = c->einfo.value;
-            vlen_array[i] = c->einfo.nbytes - 2;
-
-            bodylen += vlen_array[i];
-            vlenptr[i] = htonl(vlen_array[i]);
+            bodylen += (c->einfo.nbytes - 2);
+            vlenptr[i] = htonl(c->einfo.nbytes - 2);
         }
         add_bin_header(c, 0, sizeof(rsp->message.body), 0, bodylen);
 
@@ -4659,7 +4760,9 @@ static void process_bin_lop_get(conn *c) {
 
         /* Add the data without CRLF */
         for (i = 0; i < elem_count; i++) {
-            if (add_iov(c, vptr_array[i], vlen_array[i]) != 0) {
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST,
+                                        elem_array[i], &c->einfo);
+            if (add_iov_einfo_some_value(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
                 ret = ENGINE_ENOMEM; break;
             }
         }
@@ -4829,8 +4932,7 @@ static void process_bin_sop_prepare_nread(conn *c) {
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
                                         elem, &c->einfo);
-            c->ritem   = (char *)c->einfo.value;
-            c->rlbytes = vlen;
+            ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
          } else {
             c->ritem   = ((value_item *)elem)->ptr;
             c->rlbytes = vlen;
@@ -4896,7 +4998,7 @@ static void process_bin_sop_insert_complete(conn *c) {
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
     mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, elem, &c->einfo);
-    memcpy((char*)c->einfo.value + c->einfo.nbytes - 2, "\r\n", 2);
+    einfo_set_ascii_tail_string(&c->einfo); /* set "\r\n" */
 
     bool created;
 
@@ -5126,18 +5228,12 @@ static void process_bin_sop_get(conn *c) {
         uint32_t *vlenptr = (uint32_t *)&elem_array[elem_count];
         uint32_t  bodylen;
 
-        const char *vptr_array[elem_count];
-        uint32_t    vlen_array[elem_count];
-
         bodylen = sizeof(rsp->message.body) + (elem_count * sizeof(uint32_t));
         for (i = 0; i < elem_count; i++) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
                                         elem_array[i], &c->einfo);
-            vptr_array[i] = c->einfo.value;
-            vlen_array[i] = c->einfo.nbytes - 2;
-
-            bodylen += vlen_array[i];
-            vlenptr[i] = htonl(vlen_array[i]);
+            bodylen += (c->einfo.nbytes - 2);
+            vlenptr[i] = htonl(c->einfo.nbytes - 2);
         }
         add_bin_header(c, 0, sizeof(rsp->message.body), 0, bodylen);
 
@@ -5151,7 +5247,9 @@ static void process_bin_sop_get(conn *c) {
 
         /* Add the data without CRLF */
         for (i = 0; i < elem_count; i++) {
-            if (add_iov(c, vptr_array[i], vlen_array[i]) != 0) {
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
+                                        elem_array[i], &c->einfo);
+            if (add_iov_einfo_some_value(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
                 ret = ENGINE_ENOMEM; break;
             }
         }
@@ -5342,8 +5440,7 @@ static void process_bin_bop_prepare_nread(conn *c) {
             memcpy((void*)c->einfo.eflag, req->message.body.eflag, c->einfo.neflag);
         }
 
-        c->ritem   = (char *)c->einfo.value;
-        c->rlbytes = vlen;
+        ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = (c->cmd == PROTOCOL_BINARY_CMD_BOP_INSERT ? OPERATION_BOP_INSERT
@@ -5389,7 +5486,7 @@ static void process_bin_bop_insert_complete(conn *c) {
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
     mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &c->einfo);
-    memcpy((char*)c->einfo.value + c->einfo.nbytes - 2, "\r\n", 2);
+    einfo_set_ascii_tail_string(&c->einfo); /* set "\r\n" */
 
     bool created;
     bool replaced;
@@ -5794,19 +5891,13 @@ static void process_bin_bop_get(conn *c) {
         uint32_t *vlenptr = (uint32_t *)((char*)bkeyptr + (sizeof(uint64_t) * elem_count));
         uint32_t  bodylen;
 
-        const char *vptr_array[elem_count];
-        uint32_t    vlen_array[elem_count];
-
         bodylen = sizeof(rsp->message.body) + (elem_count * (sizeof(uint64_t)+sizeof(uint32_t)));
         for (i = 0; i < elem_count; i++) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                         elem_array[i], &c->einfo);
-            vptr_array[i] = c->einfo.value;
-            vlen_array[i] = c->einfo.nbytes - 2;
-
-            bodylen += vlen_array[i];
+            bodylen += (c->einfo.nbytes - 2);
             bkeyptr[i] = htonll(*(uint64_t*)c->einfo.score);
-            vlenptr[i] = htonl(vlen_array[i]);
+            vlenptr[i] = htonl(c->einfo.nbytes - 2);
         }
         add_bin_header(c, 0, sizeof(rsp->message.body), 0, bodylen);
 
@@ -5815,12 +5906,14 @@ static void process_bin_bop_get(conn *c) {
         rsp->message.body.count = htonl(elem_count);
         add_iov(c, &rsp->message.body, sizeof(rsp->message.body));
 
-        // add value lengths
+        // add bkey data and value lengths
         add_iov(c, (char*)bkeyptr, elem_count*(sizeof(uint64_t)+sizeof(uint32_t)));
 
         /* Add the data without CRLF */
         for (i = 0; i < elem_count; i++) {
-            if (add_iov(c, vptr_array[i], vlen_array[i]) != 0) {
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                        elem_array[i], &c->einfo);
+            if (add_iov_einfo_some_value(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
                 ret = ENGINE_ENOMEM; break;
             }
         }
@@ -6211,19 +6304,13 @@ static void process_bin_bop_smget_complete_old(conn *c) {
         flagptr = (uint32_t *)((char*)vlenptr + (sizeof(uint32_t) * elem_count));
         klenptr = (uint32_t *)((char*)flagptr + (sizeof(uint32_t) * elem_count));
 
-        const char *vptr_array[elem_count+1]; /* elem_count might be 0. */
-        uint32_t    vlen_array[elem_count+1]; /* elem_count might be 0. */
-
         bodylen = sizeof(rsp->message.body) + (real_elem_hdr_size + real_kmis_hdr_size);
         for (i = 0; i < elem_count; i++) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                         elem_array[i], &c->einfo);
-            vptr_array[i] = c->einfo.value;
-            vlen_array[i] = c->einfo.nbytes - 2;
-
-            bodylen += (vlen_array[i] + keys_array[kfnd_array[i]].length);
+            bodylen += ((c->einfo.nbytes - 2) + keys_array[kfnd_array[i]].length);
             bkeyptr[i] = htonll(*(uint64_t*)c->einfo.score);
-            vlenptr[i] = htonl(vlen_array[i]);
+            vlenptr[i] = htonl(c->einfo.nbytes - 2);
             flagptr[i] = flag_array[i];
             klenptr[i] = htonl(keys_array[kfnd_array[i]].length);
         }
@@ -6246,7 +6333,9 @@ static void process_bin_bop_smget_complete_old(conn *c) {
         /* Add the data without CRLF */
         if (ret == ENGINE_SUCCESS) {
             for (i = 0; i < elem_count; i++) {
-                if (add_iov(c, vptr_array[i], vlen_array[i]) != 0) {
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                            elem_array[i], &c->einfo);
+                if (add_iov_einfo_some_value(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
                     ret = ENGINE_ENOMEM; break;
                 }
             }
@@ -6404,19 +6493,13 @@ static void process_bin_bop_smget_complete(conn *c) {
         flagptr = (uint32_t *)((char*)vlenptr + (sizeof(uint32_t) * smres.elem_count));
         klenptr = (uint32_t *)((char*)flagptr + (sizeof(uint32_t) * smres.elem_count));
 
-        const char *vptr_array[smres.elem_count+1]; /* elem_count might be 0. */
-        uint32_t    vlen_array[smres.elem_count+1]; /* elem_count might be 0. */
-
         bodylen = sizeof(rsp->message.body) + (real_elem_hdr_size + real_emis_hdr_size);
         for (i = 0; i < smres.elem_count; i++) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                         smres.elem_array[i], &c->einfo);
-            vptr_array[i] = c->einfo.value;
-            vlen_array[i] = c->einfo.nbytes - 2;
-
-            bodylen += (vlen_array[i] + keys_array[smres.elem_kinfo[i].kidx].length);
+            bodylen += ((c->einfo.nbytes - 2) + keys_array[smres.elem_kinfo[i].kidx].length);
             bkeyptr[i] = htonll(*(uint64_t*)c->einfo.score);
-            vlenptr[i] = htonl(vlen_array[i]);
+            vlenptr[i] = htonl(c->einfo.nbytes - 2);
             flagptr[i] = smres.elem_kinfo[i].flag;
             klenptr[i] = htonl(keys_array[smres.elem_kinfo[i].kidx].length);
         }
@@ -6444,7 +6527,9 @@ static void process_bin_bop_smget_complete(conn *c) {
         /* Add the data without CRLF */
         if (ret == ENGINE_SUCCESS) {
             for (i = 0; i < smres.elem_count; i++) {
-                if (add_iov(c, vptr_array[i], vlen_array[i]) != 0) {
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                            smres.elem_array[i], &c->einfo);
+                if (add_iov_einfo_some_value(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
                     ret = ENGINE_ENOMEM; break;
                 }
             }
@@ -9888,7 +9973,8 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
                                            elem_array[i], &c->einfo);
                 sprintf(respptr, "%u ", c->einfo.nbytes-2);
                 if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-                    (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0)) {
+                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                {
                     ret = ENGINE_ENOMEM; break;
                 }
                 respptr += strlen(respptr);
@@ -9964,8 +10050,7 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
     switch (ret) {
     case ENGINE_SUCCESS:
         mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &c->einfo);
-        c->ritem   = (char *)c->einfo.value;
-        c->rlbytes = vlen;
+        ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = OPERATION_LOP_INSERT;
@@ -10334,7 +10419,8 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
                                             elem_array[i], &c->einfo);
                 sprintf(respptr, "%u ", c->einfo.nbytes-2);
                 if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-                    (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0)) {
+                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                {
                     ret = ENGINE_ENOMEM; break;
                 }
                 respptr += strlen(respptr);
@@ -10423,8 +10509,7 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
         if (cmd == (int)OPERATION_SOP_INSERT) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
                                         elem, &c->einfo);
-            c->ritem   = (char *)c->einfo.value;
-            c->rlbytes = vlen;
+            ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
         } else {
             c->ritem   = ((value_item *)elem)->ptr;
             c->rlbytes = vlen;
@@ -10746,7 +10831,8 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
                                             elem_array[i], &c->einfo);
                 resplen = make_bop_elem_response(respptr, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0)) {
+                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                {
                     ret = ENGINE_ENOMEM; break;
                 }
                 respptr += resplen;
@@ -10970,7 +11056,8 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
                                             elem_array[i], &c->einfo);
                 resplen = make_bop_elem_response(respptr, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0)) {
+                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                {
                     ret = ENGINE_ENOMEM; break;
                 }
                 respptr += resplen;
@@ -11100,7 +11187,8 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
                                             elem_array[i], &c->einfo);
                 resplen = make_bop_elem_response(respptr, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov(c, c->einfo.value, c->einfo.nbytes) != 0)) {
+                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                {
                     ret = ENGINE_ENOMEM; break;
                 }
                 respptr += resplen;
@@ -11223,8 +11311,7 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
         memcpy((void*)c->einfo.score, bkey, (c->einfo.nscore==0 ? sizeof(uint64_t) : c->einfo.nscore));
         if (c->einfo.neflag > 0)
             memcpy((void*)c->einfo.eflag, eflag, c->einfo.neflag);
-        c->ritem   = (char *)c->einfo.value;
-        c->rlbytes = vlen;
+        ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = cmd; /* OPERATION_BOP_INSERT | OPERATION_BOP_UPSERT */
@@ -11728,11 +11815,11 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
         {
         if (cmd == OPERATION_MOP_INSERT) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem, &c->einfo);
-            c->ritem   = (char *)c->einfo.value;
+            ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
         } else {
             c->ritem   = ((value_item *)elem)->ptr;
+            c->rlbytes = vlen;
         }
-        c->rlbytes     = vlen;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = cmd;
