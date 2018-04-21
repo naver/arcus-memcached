@@ -386,7 +386,20 @@ static pid_t start_server(in_port_t *port_out, bool daemon, int timeout) {
                     strerror(errno));
             assert(false);
         }
-        assert(fgets(buffer, sizeof(buffer), fp) != NULL);
+        /* There is a potential race condition that the server just
+         * created the file but isn't finished writing the content.
+         */
+        int count = 0;
+        while (fgets(buffer, sizeof(buffer), fp) == NULL) {
+            if (++count > 100) break;
+            usleep(10);
+        }
+        if (count > 0) {
+            fprintf(stderr, "Failed to get string from %s. (count=%d)\n",
+                    pid_file, count);
+            assert(count <= 100);
+        }
+        //assert(fgets(buffer, sizeof(buffer), fp) != NULL);
         fclose(fp);
 
         int32_t val;
