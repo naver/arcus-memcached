@@ -3,16 +3,13 @@
 use strict;
 use Test::More;
 use FindBin qw($Bin);
-use lib "$Bin/lib";
+use lib "$Bin/../lib";
 use MemcachedTest;
 
 sleep 1;
 
 my $threads = 128;
 my $running = 0;
-
-# default engine start option : -m 1024
-# example) ./memcached -E .libs/default_engine.so -X .libs/ascii_scrub.so -m 512
 
 while ($running < $threads) {
 #    my $sock = IO::Socket::INET->new(PeerAddr => "$server->{host}:$server->{port}");
@@ -22,7 +19,7 @@ while ($running < $threads) {
         $running++;
         print "Launched $cpid.  Running $running threads.\n";
     } else {
-        data_work($sock);
+        stress($sock);
         exit 0;
     }
 }
@@ -33,37 +30,51 @@ while ($running > 0) {
     $running--;
 }
 
-sub data_work {
+sub stress {
     my $sock = shift;
     my $i;
     my $expire;
-    for ($i = 0; $i < 1000000; $i++) {
-        my $digit = 1 + int(rand(30));
-        my $power = $digit * $digit;
-        my $keyrand = int(rand(900000000));
-        my $valrand = 10 + int(rand($power));
+    for ($i = 0; $i < 5000000; $i++) {
+        my $keyrand = int(rand(2000000));
+        my $valrand = int(rand(500));
         my $key = "dash$keyrand";
         my $val = "B" x $valrand;
         my $len = length($val);
         my $res;
-        my $ratio = int(rand(100));
-        sleep(0.1);
-        if (($ratio ge 0) and ($ratio le 9)) {
-            $expire = 86400;
+        my $meth = int(rand(10));
+        if (($meth ge 0) and ($meth le 7)) {
+            if ($meth le 4) {
+                $expire = 30 + int(rand(30));
+            } elsif (($meth ge 5) and ($meth le 6)) {
+                $expire = 120 + int(rand(300));
+            } else {
+                $expire = 0;
+            }
             print $sock "set $key 0 $expire $len\r\n$val\r\n";
             $res = scalar <$sock>;
             if ($res ne "STORED\r\n") {
                 print "set $key $len: $res\r\n";
             }
-        } else {
+        } elsif (($meth ge 8) and ($meth le 9)) {
             print $sock "get $key\r\n";
             $res = scalar <$sock>;
             if ($res =~ /^VALUE/) {
                 $res .= scalar(<$sock>) . scalar(<$sock>);
             }
+#            print $sock "add $key 0 0 $len\r\n$val\r\n";
+#            $res = scalar <$sock>;
+#            if (($res ne "STORED\r\n") and ($res ne "NOT_STORED\r\n")) {
+#                print "add $key $len: $res\r\n";
+#            }
+       } else {
+            print $sock "delete $key\r\n";
+            $res = scalar <$sock>;
+            if (($res ne "DELETED\r\n") and ($res ne "NOT_FOUND\r\n")) {
+                print "delete $key: $res\r\n";
+            }
         }
     }
-    print "data_work end\n";
+    print "stress end\n";
 }
 
 #undef $server;
