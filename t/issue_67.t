@@ -79,12 +79,12 @@ sub when {
 when('specifying tcp port', '-p 11292', 11292, -1);
 ######################################
 when('specifying udp port', '-U 11222', 11222, 11222);
-when('specifying tcp ephemeral port', '-p -1', 0, 0);
+when('specifying tcp ephemeral port', '-p -1', 0, -1);
 when('specifying udp ephemeral port', '-U -1', 0, 0);
 when('tcp port disabled', '-p 0', -1, -1);
 when('udp port disabled', '-U 0', -1, -1);
 when('specifying tcp and udp ports', '-p 11232 -U 11233', 11232, 11233);
 when('specifying tcp and disabling udp', '-p 11242 -U 0', 11242, -1);
-when('specifying udp and disabling tcp', '-p -1 -U 11252', 0, 11252);
+when('specifying udp and disabling tcp', '-p 0 -U 11252', -1, 11252);
 when('specifying tcp and ephemeral udp', '-p 11262 -U -1', 11262, 0);
 when('specifying udp and ephemeral tcp', '-p -1 -U 11272', 0, 11272);
