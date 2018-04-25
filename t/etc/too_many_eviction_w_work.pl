@@ -3,15 +3,15 @@
 use strict;
 use Test::More;
 use FindBin qw($Bin);
-use lib "$Bin/lib";
+use lib "$Bin/../lib";
 use MemcachedTest;
 
 sleep 1;
 
-my $threads = 3;
+my $threads = 128;
 my $running = 0;
 
-# default engine start option : -m 512
+# default engine start option : -m 1024
 # example) ./memcached -E .libs/default_engine.so -X .libs/ascii_scrub.so -m 512
 
 while ($running < $threads) {
@@ -36,21 +36,31 @@ while ($running > 0) {
 sub data_work {
     my $sock = shift;
     my $i;
-    my $expire = 86400;
-    for ($i = 0; $i < 800; $i++) {
+    my $expire;
+    for ($i = 0; $i < 1000000; $i++) {
+        my $digit = 1 + int(rand(30));
+        my $power = $digit * $digit;
         my $keyrand = int(rand(900000000));
-        my $valrand = 7900;
+        my $valrand = 10 + int(rand($power));
         my $key = "dash$keyrand";
         my $val = "B" x $valrand;
         my $len = length($val);
-        sleep(0.01);
-        print $sock "set $key 0 $expire $len\r\n$val\r\n";
-        my $res = scalar <$sock>;
-        if ($res ne "STORED\r\n") {
-            print "set $key $len: $res\r\n";
-        }
-        if (($i % 100) == 99) {
-            print "$i added\n";
+        my $res;
+        my $ratio = int(rand(100));
+        sleep(0.1);
+        if (($ratio ge 0) and ($ratio le 9)) {
+            $expire = 86400;
+            print $sock "set $key 0 $expire $len\r\n$val\r\n";
+            $res = scalar <$sock>;
+            if ($res ne "STORED\r\n") {
+                print "set $key $len: $res\r\n";
+            }
+        } else {
+            print $sock "get $key\r\n";
+            $res = scalar <$sock>;
+            if ($res =~ /^VALUE/) {
+                $res .= scalar(<$sock>) . scalar(<$sock>);
+            }
         }
     }
     print "data_work end\n";

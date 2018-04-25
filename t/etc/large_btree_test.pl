@@ -3,7 +3,7 @@
 use strict;
 use Test::More tests => 1751209;
 use FindBin qw($Bin);
-use lib "$Bin/lib";
+use lib "$Bin/../lib";
 use MemcachedTest;
 
 # set environment variable

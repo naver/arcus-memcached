@@ -3,7 +3,7 @@
 use strict;
 use Test::More;
 use FindBin qw($Bin);
-use lib "$Bin/lib";
+use lib "$Bin/../lib";
 use MemcachedTest;
 
 sleep 1;
@@ -22,7 +22,7 @@ while ($running < $threads) {
         $running++;
         print "Launched $cpid.  Running $running threads.\n";
     } else {
-        data_load($sock);
+        data_work($sock);
         exit 0;
     }
 }
@@ -33,27 +33,34 @@ while ($running > 0) {
     $running--;
 }
 
-sub data_load {
+sub data_work {
     my $sock = shift;
     my $i;
     my $expire;
-    for ($i = 0; $i < 1000000; $i++) {
-        my $digit = 1 + int(rand(30));
-        my $power = $digit * $digit;
-        my $keyrand = int(rand(9000000));
-        my $valrand = 10 + int(rand($power));
+    for ($i = 0; $i < 50000000; $i++) {
+        my $keyrand = int(rand(90000000));
+        my $valrand = 30 + int(rand(30));
         my $key = "dash$keyrand";
         my $val = "B" x $valrand;
         my $len = length($val);
         my $res;
-        $expire = 86400;
-        print $sock "set $key 0 $expire $len\r\n$val\r\n";
-        $res = scalar <$sock>;
-        if ($res ne "STORED\r\n") {
+        my $meth = int(rand(10));
+        if (($meth ge 0) and ($meth le 7)) {
+            $expire = 86400;
+            print $sock "set $key 0 $expire $len\r\n$val\r\n";
+            $res = scalar <$sock>;
+            if ($res ne "STORED\r\n") {
                 print "set $key $len: $res\r\n";
+            }
+        } else {
+            print $sock "get $key\r\n";
+            $res = scalar <$sock>;
+            if ($res =~ /^VALUE/) {
+                $res .= scalar(<$sock>) . scalar(<$sock>);
+            }
         }
     }
-    print "data_load end\n";
+    print "data_work end\n";
 }
 
 #undef $server;

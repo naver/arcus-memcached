@@ -3,7 +3,7 @@
 use strict;
 use Test::More;
 use FindBin qw($Bin);
-use lib "$Bin/lib";
+use lib "$Bin/../lib";
 use MemcachedTest;
 
 sleep 1;
@@ -60,10 +60,9 @@ sub data_work {
     my $expire;
     for ($i = 0; $i < 50000000; $i++) {
         #my $keyrand = int(rand(9000000));
+        #my $valrand = 30 + int(rand(30));
         my $keyrand = int(rand(90000000));
-        my $valrand = 30 + int(rand(30));
-        #my $keyrand = int(rand(90000000));
-        #my $valrand = 100 + int(rand(100));
+        my $valrand = 100 + int(rand(100));
         #my $keyrand = int(rand(900000000));
         #my $valrand = 800 + int(rand(800));
         my $key = "dash$keyrand";
