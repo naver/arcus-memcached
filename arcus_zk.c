@@ -112,7 +112,6 @@
 #define HEART_BEAT_MAX_TIMEOUT  HEART_BEAT_MAX_FAILSTOP /* msec */
 
 #define MAX_SERVICECODE_LENGTH  32
-#define ZK_ZNODE_PATH_LENGTH    4096
 
 static const char *zk_root = NULL;
 static const char *zk_map_dir = "cache_server_mapping";
@@ -129,7 +128,6 @@ typedef struct {
 static zk_info_t zk_info;
 static zk_info_t *main_zk=NULL;
 static int        last_rc=ZOK;
-static char       global_zpath[ZK_ZNODE_PATH_LENGTH]="";
 
 #ifdef ENABLE_SUICIDE_UPON_DISCONNECT
 static bool zk_connected = false;
@@ -1047,11 +1045,11 @@ static int arcus_parse_server_mapping(const char *root, char *znode)
 static int arcus_check_server_mapping(zhandle_t *zh, const char *root)
 {
     struct String_vector strv = {0, NULL};
-    char *zpath = global_zpath;
+    char zpath[256];
     int  rc;
 
     /* sync map path */
-    snprintf(zpath, ZK_ZNODE_PATH_LENGTH, "%s/%s", root, zk_map_dir);
+    snprintf(zpath, sizeof(zpath), "%s/%s", root, zk_map_dir);
     inc_count(1);
     rc = zoo_async(zh, zpath, arcus_zk_sync_cb, NULL);
     if (rc != ZOK) {
@@ -1069,7 +1067,7 @@ static int arcus_check_server_mapping(zhandle_t *zh, const char *root)
     }
 
     /* First check: get children of "/cache_server_mapping/ip:port" */
-    snprintf(zpath, ZK_ZNODE_PATH_LENGTH, "%s/%s/%s",
+    snprintf(zpath, sizeof(zpath), "%s/%s/%s",
              root, zk_map_dir, arcus_conf.mc_ipport);
     rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
     if (rc == ZNONODE) {
@@ -1078,7 +1076,7 @@ static int arcus_check_server_mapping(zhandle_t *zh, const char *root)
                 zpath, rc, zerror(rc));
 
         /* Second check: get children of "/cache_server_mapping/ip" */
-        snprintf(zpath, ZK_ZNODE_PATH_LENGTH, "%s/%s/%s",
+        snprintf(zpath, sizeof(zpath), "%s/%s/%s",
                  root, zk_map_dir, arcus_conf.hostip);
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Recheck the server mapping without the port number."
@@ -1122,11 +1120,11 @@ static int arcus_check_server_mapping(zhandle_t *zh, const char *root)
 static int arcus_create_ephemeral_znode(zhandle_t *zh, const char *root)
 {
     int         rc;
-    char       *zpath = global_zpath;
+    char        zpath[512];
     char        value[200];
     struct Stat zstat;
 
-    snprintf(zpath, ZK_ZNODE_PATH_LENGTH, "%s/%s",
+    snprintf(zpath, sizeof(zpath), "%s/%s",
              arcus_conf.cluster_path, arcus_conf.znode_name);
     snprintf(value, sizeof(value), "%ldMB", (long)arcus_conf.maxbytes/1024/1024);
     rc = zoo_create(zh, zpath, value, strlen(value), &ZOO_OPEN_ACL_UNSAFE,
@@ -1163,7 +1161,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 {
     zk_info_t      *zinfo;
     int             rc;
-    char           *zpath = global_zpath;
+    char            zpath[256] = "";
     struct timeval  start_time, end_time;
     long            difftime_us;
 
@@ -1249,7 +1247,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         }
     }
 
-    snprintf(zpath, ZK_ZNODE_PATH_LENGTH, "%s/%s/%s", zk_root, zk_cache_dir, arcus_conf.svc);
+    snprintf(zpath, sizeof(zpath), "%s/%s/%s", zk_root, zk_cache_dir, arcus_conf.svc);
     arcus_conf.cluster_path = strdup(zpath);
     assert(arcus_conf.cluster_path);
 
