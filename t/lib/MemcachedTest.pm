@@ -937,7 +937,7 @@ sub supports_sasl {
 
 sub get_memcached {
     my ($engine, $args, $port) = @_;
-    if ("$engine" eq "default") {
+    if ("$engine" eq "default" || "$engine" eq "") {
         return new_memcached($args, $port);
     } else {
         croak("Failed to get memcached server. engine_name : \"$engine\"");
