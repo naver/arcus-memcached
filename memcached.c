@@ -14490,6 +14490,9 @@ static void usage(void) {
 #ifdef ENABLE_ZK_INTEGRATION
     printf("-z ip:port list Zookeeper ensemble cluster servers\n");
     printf("-o <secs>     Zookeeper session timeout in seconds\n");
+#ifdef PROXY_SUPPORT
+    printf("-x ip:port    Proxy server ip:port\n");
+#endif
 #endif
     printf("\nEnvironment variables:\n"
            "MEMCACHED_PORT_FILENAME   File to write port information to\n"
@@ -15163,6 +15166,9 @@ int main (int argc, char **argv) {
 
 #ifdef ENABLE_ZK_INTEGRATION
     int  arcus_zk_to=0;
+#ifdef PROXY_SUPPORT
+    char *arcus_proxy_cfg = NULL;
+#endif
 #endif
 
     if (!sanitycheck()) {
@@ -15218,6 +15224,9 @@ int main (int argc, char **argv) {
 #ifdef ENABLE_ZK_INTEGRATION
           "z:"  /* Arcus Zookeeper */
           "o:"  /* Arcus Zookeeper session timeout option (sec) */
+#ifdef PROXY_SUPPORT
+          "x:"  /* Proxy server ip:port */
+#endif
 #endif
         ))) {
         switch (c) {
@@ -15458,6 +15467,14 @@ int main (int argc, char **argv) {
 
             arcus_zk_to = atoi(optarg); // this value is in seconds
             break;
+
+#ifdef PROXY_SUPPORT
+        case 'x': /* configure for proxy server */
+
+            arcus_proxy_cfg = strdup(optarg);
+            break;
+#endif
+
 #endif
 
         default:
@@ -15832,7 +15849,11 @@ int main (int argc, char **argv) {
     // initialize Arcus ZK cluster connection
     if (arcus_zk_cfg) {
         arcus_zk_init(arcus_zk_cfg, arcus_zk_to, mc_logger,
+#ifdef PROXY_SUPPORT
+                      settings.verbose, settings.maxbytes, settings.port, arcus_proxy_cfg,
+#else
                       settings.verbose, settings.maxbytes, settings.port,
+#endif
                       mc_engine.v1);
     }
 #endif

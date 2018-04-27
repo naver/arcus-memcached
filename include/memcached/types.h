@@ -31,6 +31,7 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
+#define PROXY_SUPPORT
 #define BOP_COUNT_OPTIMIZE
 #define SUPPORT_BOP_MGET
 #define SUPPORT_BOP_SMGET

@@ -163,6 +163,9 @@ typedef struct {
         ENGINE_HANDLE_V1 *v1;
     } engine;                   // mc engine
     char   *cluster_path;       // cluster path for this memcached
+#ifdef PROXY_SUPPORT
+    char   *proxy;              // proxy server ip:port
+#endif
 #ifdef ENABLE_CLUSTER_AWARE
     struct cluster_config *ch;  // cluster configuration handle
 #endif
@@ -186,6 +189,9 @@ arcus_zk_conf arcus_conf = {
     .maxbytes       = -1,
     .logger         = NULL,
     .cluster_path   = NULL,
+#ifdef PROXY_SUPPORT
+    .proxy          = NULL,
+#endif
 #ifdef ENABLE_CLUSTER_AWARE
     .ch             = NULL,
 #endif
@@ -982,6 +988,54 @@ static int arcus_build_znode_name(char *ensemble_list)
                                arcus_conf.hostip);
     }
 
+#ifdef PROXY_SUPPORT
+    if (arcus_conf.proxy) {
+        struct hostent  *proxy_host;
+        char            *proxy_ip, *proxy_port;
+        struct in_addr   inaddr;
+        char             buf[50];
+
+        proxy_ip = strtok(arcus_conf.proxy, sep2);
+        proxy_port = strtok(NULL, sep2);
+
+        if (inet_aton(proxy_ip, &inaddr)) {
+            if (arcus_conf.verbose > 2) {
+                arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
+                        "Proxy IP: %s\n", proxy_ip);
+            }
+        } else {
+            // Must be hostname, not IP. Convert hostname to IP first
+            proxy_host = gethostbyname(proxy_ip);
+            if (!proxy_host) {
+                arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
+                        "Invalid proxy IP/hostname in arg: %s\n", proxy_ip);
+                return EX_UNAVAILABLE;
+            }
+            memcpy((char *)&inaddr,
+                   proxy_host->h_addr_list[0], proxy_host->h_length);
+            inet_ntop(AF_INET, &inaddr, buf, sizeof(buf));
+            proxy_ip = buf;
+        }
+
+        proxy_host = gethostbyaddr((char*)&inaddr, sizeof(inaddr), AF_INET);
+
+        if (!proxy_host) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "cannot get hostname: %s\n", strerror(errno));
+            return EX_NOHOST;
+        }
+
+        arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
+                               "proxy hostname: %s\n", proxy_host->h_name);
+
+        snprintf(rcbuf, sizeof(rcbuf), "%s:%s", proxy_ip, proxy_port);
+        arcus_conf.mc_ipport = strdup(rcbuf);
+        snprintf(rcbuf, sizeof(rcbuf), "%s-%s", arcus_conf.mc_ipport, proxy_host->h_name);
+        arcus_conf.znode_name = strdup(rcbuf);
+        return 0; // EX_OK
+    }
+#endif
+
     if (!arcus_conf.znode_name) {
         char *hostp=NULL;
         char  hostbuf[256];
@@ -1125,6 +1179,13 @@ static int arcus_check_server_mapping(zhandle_t *zh, const char *root)
 
 static int arcus_create_ephemeral_znode(zhandle_t *zh, const char *root)
 {
+#ifdef PROXY_SUPPORT
+    if (arcus_conf.proxy) {
+        arcus_conf.znode_created = true;
+        return 0;
+    }
+#endif
+
     int         rc;
     char        zpath[512];
     char        value[200];
@@ -1165,7 +1226,11 @@ static int arcus_create_ephemeral_znode(zhandle_t *zh, const char *root)
 
 void arcus_zk_init(char *ensemble_list, int zk_to,
                    EXTENSION_LOGGER_DESCRIPTOR *logger,
+#ifdef PROXY_SUPPORT
+                   int verbose, size_t maxbytes, int port, char *proxy,
+#else
                    int verbose, size_t maxbytes, int port,
+#endif
                    ENGINE_HANDLE_V1 *engine)
 {
     zk_info_t      *zinfo;
@@ -1200,6 +1265,9 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         arcus_conf.engine.v1     = engine;
         arcus_conf.verbose       = verbose;
         arcus_conf.maxbytes      = maxbytes;
+#ifdef PROXY_SUPPORT
+        arcus_conf.proxy         = proxy;
+#endif
         // Use the user specified timeout only if it falls within
         // [MIN, MAX).  Otherwise, silently ignore it and use
         // the default value.
@@ -1796,6 +1864,13 @@ static void *sm_state_thread(void *arg)
             }
 
             if (znode_deleted) {
+#ifdef PROXY_SUPPORT
+                if (arcus_conf.proxy) {
+                    arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "Proxy server down. shutting down\n");
+                    shutdown_by_me = true; break;
+                }
+#endif
                 arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                         "My ephemeral znode in cache_list is deleted. "
                         "Please check and rejoin.");

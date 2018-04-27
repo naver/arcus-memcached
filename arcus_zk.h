@@ -40,7 +40,11 @@ extern volatile sig_atomic_t arcus_zk_shutdown;
 
 void arcus_zk_init(char *ensemble_list, int zk_to,
                    EXTENSION_LOGGER_DESCRIPTOR *logger,
+#ifdef PROXY_SUPPORT
+                   int verbose, size_t maxbytes, int port, char *proxy,
+#else
                    int verbose, size_t maxbytes, int port,
+#endif
                    ENGINE_HANDLE_V1 *engine);
 void arcus_zk_final(const char *msg);
 void arcus_zk_destroy(void);
