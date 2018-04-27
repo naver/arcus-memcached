@@ -7,7 +7,8 @@ use lib "$Bin/lib";
 use MemcachedTest;
 
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 
@@ -97,3 +98,6 @@ while ($len < 1024*1028) {
     $len += 2048;
 }
 
+
+# after test
+release_memcached($engine);

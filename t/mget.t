@@ -40,7 +40,8 @@ delete key5
 =cut
 
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 my $cmd;
@@ -178,3 +179,6 @@ print $sock "delete key4\r\n";
 is(scalar <$sock>, "DELETED\r\n", "deleted key4");
 print $sock "delete key5\r\n";
 is(scalar <$sock>, "DELETED\r\n", "deleted key5");
+
+# after test
+release_memcached($engine);

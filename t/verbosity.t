@@ -5,7 +5,8 @@ use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 print $sock "config verbosity foo bar my\r\n";
@@ -31,3 +32,6 @@ is('1', $settings->{'verbosity'}, "Verify settings");
 
 print $sock "config verbosity 100\r\n";
 is(scalar <$sock>, "SERVER_ERROR cannot change the verbosity over the limit\r\n", "Over the max value");
+
+# after test
+release_memcached($engine);

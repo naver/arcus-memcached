@@ -11,7 +11,7 @@ $ENV{'ARCUS_MAX_BTREE_SIZE'}='1000000';
 
 my $max_btree_size = 200000;
 #my $max_btree_size = 1000000;
-my $server = new_memcached("-v -m 128 -X .libs/syslog_logger.so");
+my $server = get_memcached($engine, "-v -m 128 -X .libs/syslog_logger.so");
 my $sock = $server->sock;
 
 # BOP test sub routines

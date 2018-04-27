@@ -20,7 +20,8 @@ getattr foo expiretime
 delete foo
 =cut
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 my $cmd;
@@ -56,3 +57,6 @@ like($line, qr/ATTR expiretime=9[0-9][0-9][^0-9]/, "expiretime=999 ok");
 
 print $sock "delete foo\r\n";
 is(scalar <$sock>, "DELETED\r\n", "deleted foo");
+
+# after test
+release_memcached($engine);

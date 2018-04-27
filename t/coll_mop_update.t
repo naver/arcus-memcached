@@ -33,7 +33,8 @@ datum444
 delete mkey1
 =cut
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 my $cmd;
@@ -66,3 +67,6 @@ print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"
 # Finalize
 $cmd = "delete mkey1"; $rst = "DELETED";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+
+# after test
+release_memcached($engine);

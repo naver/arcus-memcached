@@ -6,7 +6,8 @@ use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 # BOP test sub routines
@@ -563,3 +564,6 @@ $cmd = "bop get bkey 0..100"; $rst = "NOT_FOUND";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 $cmd = "get bkey"; $rst = "END";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+
+# after test
+release_memcached($engine);

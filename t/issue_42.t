@@ -6,7 +6,8 @@ use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 my $value = "B"x10;
 my $key = 0;
@@ -26,3 +27,6 @@ my $first_stats = mem_stats($sock, "slabs");
 my $req = $first_stats->{"0:mem_requested"};
 ok ($req == "262144", "Check allocated size");
 ######################################
+
+# after test
+release_memcached($engine);

@@ -7,10 +7,11 @@ use lib "$Bin/lib";
 use MemcachedTest;
 
 =head
-#my $server = new_memcached("-m 512 -X .libs/ascii_scrub.so -z 127.0.0.1:2181");
-#my $another = new_memcached("-m 512 -X .libs/ascii_scrub.so -z 127.0.0.1:2181");
+#my $server = get_memcached($engine, "-m 512 -X .libs/ascii_scrub.so -z 127.0.0.1:2181");
+#my $another = get_memcached($engine, "-m 512 -X .libs/ascii_scrub.so -z 127.0.0.1:2181");
 =cut
-my $server = new_memcached("-m 512 -X .libs/ascii_scrub.so");
+my $engine = shift;
+my $server = get_memcached($engine, "-m 512 -X .libs/ascii_scrub.so");
 my $sock = $server->sock;
 my $kcnt = 10000;
 my $dcnt = 10;
@@ -76,3 +77,6 @@ print "last_run = $lastrun\r\n";
 is ($status,  "stopped", "stopped");
 is ($visited, $kcnt, "visited");
 is ($cleaned, $kcnt/2, "cleaned");
+
+# after test
+release_memcached($engine);

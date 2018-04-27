@@ -6,7 +6,8 @@ use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 my $cmd;
@@ -85,3 +86,6 @@ assert_kv_mget_old($key_len, $key_cnt, $key_str);
 
 # kv mget new
 assert_kv_mget_new($key_len, $key_cnt, $key_str);
+
+# after test
+release_memcached($engine);

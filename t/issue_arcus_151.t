@@ -19,11 +19,13 @@ my $test_count = 5000;
 
 my $n_threads = 4;
 
+my $engine = shift;
+
 if(@ARGV == 1){
     $n_threads = shift;
 }
 
-my $server = new_memcached();
+my $server = get_memcached($engine);
 
 # creating thread
 my @childs;
@@ -129,3 +131,6 @@ sub stress {
     print "$id: incr($n_incr_success/$n_incr_fail), set($n_set_success/$n_set_fail)\n";
     return $n_incr_success + $n_set_success;
 }
+
+# after test
+release_memcached($engine);

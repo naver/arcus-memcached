@@ -37,7 +37,8 @@ mop delete mkey1 0 0 true: DELETED_DROPPED
 get mkey1: END
 =cut
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 my $cmd;
@@ -96,3 +97,6 @@ $cmd = "get mkey1"; $rst = "END";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 
 
+
+# after test
+release_memcached($engine);

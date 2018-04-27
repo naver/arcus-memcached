@@ -11,7 +11,8 @@ use MemcachedTest;
 
 
 # start up a server with 10 maximum connections
-my $server = new_memcached('-c 20');
+my $engine = shift;
+my $server = get_memcached($engine, '-c 20');
 my $sock = $server->sock;
 my @sockets;
 
@@ -24,3 +25,6 @@ foreach my $conn (1..10) {
   ok(defined($sock), "Made connection $conn");
   push(@sockets, $sock);
 }
+
+# after test
+release_memcached($engine);

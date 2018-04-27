@@ -15,7 +15,8 @@ use lib "$Bin/lib";
 use MemcachedTest;
 use Carp;
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 ok($server, "started the server");
 
 # Based almost 100% off testClient.py which is:
@@ -384,7 +385,7 @@ $mc->silent_mutation(::CMD_ADDQ, 'silentadd', 'silentaddval');
 
 # diag "Test quit commands.";
 {
-    my $s2 = new_memcached();
+    my $s2 = get_memcached($engine);
     my $mc2 = MC::Client->new($s2);
     $mc2->send_command(CMD_QUITQ, '', '', 0, '', 0);
 
@@ -449,6 +450,9 @@ my %stats = $mc->stats('detail dump');
     };
     ok($@->einval, "Invalid key length");
 }
+
+# after test
+release_memcached($engine);
 
 # ######################################################################
 # Test ends around here.
@@ -812,3 +816,4 @@ sub einval {
 }
 
 # vim: filetype=perl
+

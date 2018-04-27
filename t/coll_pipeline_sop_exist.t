@@ -72,7 +72,8 @@ datum6
 delete skey
 =cut
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 my $cmd;
@@ -150,3 +151,6 @@ is(scalar <$sock>, "END\r\n",               "pipeline tail: END");
 $cmd = "delete skey"; $rst = "DELETED";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 
+
+# after test
+release_memcached($engine);

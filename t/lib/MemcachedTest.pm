@@ -12,7 +12,7 @@ use Cwd;
 my $builddir = getcwd;
 
 
-@EXPORT = qw(new_memcached new_memcached_engine sleep
+@EXPORT = qw(get_memcached sleep release_memcached
              mem_get_is mem_gets mem_gets_is mem_stats mem_cmd_val_is
              getattr_is lop_get_is sop_get_is mop_get_is bop_get_is bop_gbp_is bop_pwg_is bop_smget_is
              bop_ext_get_is bop_ext_smget_is bop_new_smget_is bop_old_smget_is
@@ -935,6 +935,15 @@ sub supports_sasl {
     return 0;
 }
 
+sub get_memcached {
+    my ($engine, $args, $port) = @_;
+    if ("$engine" eq "default") {
+        return new_memcached($args, $port);
+    } else {
+        croak("Failed to get memcached server. engine_name : \"$engine\"");
+    }
+}
+
 sub new_memcached {
     my ($args, $passed_port) = @_;
     my $port = $passed_port || free_port();
@@ -1069,6 +1078,10 @@ sub new_memcached_engine {
         select undef, undef, undef, 0.10;
     }
     croak("Failed to startup/connect to memcached server.");
+}
+
+sub release_memcached {
+    # does nothing in the community version
 }
 
 ############################################################################

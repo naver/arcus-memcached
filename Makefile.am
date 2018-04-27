@@ -223,7 +223,7 @@ MOSTLYCLEANFILES = *.gcov *.gcno *.gcda *.tcov
 test:	memcached sizes testapp timedrun
 	./sizes
 	./testapp
-	prove $(srcdir)/t
+	./run_test.pl "$(ENGINE)" "$(TYPE)"
 	@if test -n "$(PROFILER)"; then \
 	  if test `basename $(PROFILER)` = "gcov"; then \
 	    for file in memcached-*.gc??; do \

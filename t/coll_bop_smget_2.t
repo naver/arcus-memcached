@@ -107,7 +107,8 @@ delete bkey2
 delete kvkey
 =cut
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 my $cmd;
@@ -463,3 +464,6 @@ print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 
 
 
+
+# after test
+release_memcached($engine);

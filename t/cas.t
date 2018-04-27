@@ -7,7 +7,8 @@ use lib "$Bin/lib";
 use MemcachedTest;
 
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 my $sock2 = $server->new_sock;
 
@@ -19,7 +20,7 @@ ok($sock != $sock2, "have two different connections open");
 sub check_args {
     my ($line, $name) = @_;
 
-    my $svr = new_memcached();
+    my $svr = get_memcached($engine);
     my $s = $svr->sock;
 
     print $s $line;
@@ -156,3 +157,6 @@ is(scalar <$sock>, "1\r\n", "gets bug15 data is 0");
 is(scalar <$sock>, "END\r\n","gets bug15 END");
 
 ok($bug15_cas != $next_bug15_cas, "CAS changed");
+
+# after test
+release_memcached($engine);

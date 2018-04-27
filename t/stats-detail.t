@@ -6,7 +6,8 @@ use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 my $expire;
 
@@ -71,3 +72,6 @@ print $sock "stats detail dump\r\n";
 #is(scalar <$sock>, "PREFIX foo get 1 hit 1 set 0 del 0\r\n", "details after stats turned off");
 is(scalar <$sock>, "PREFIX foo get 1 hit 1 set 0 del 0 inc 0 dec 0 lcs 0 lis 0 lih 0 lds 0 ldh 0 lgs 0 lgh 0 scs 0 sis 0 sih 0 sds 0 sdh 0 sgs 0 sgh 0 ses 0 seh 0 mcs 0 mis 0 mih 0 mus 0 muh 0 mds 0 mdh 0 mgs 0 mgh 0 bcs 0 bis 0 bih 0 bus 0 buh 0 bds 0 bdh 0 bps 0 bph 0 bms 0 bmh 0 bgs 0 bgh 0 bns 0 bnh 0 pfs 0 pfh 0 pgs 0 pgh 0 gps 0 gph 0 gas 0 sas 0\r\n", "details after stats turned off");
 is(scalar <$sock>, "END\r\n", "end of details");
+
+# after test
+release_memcached($engine);

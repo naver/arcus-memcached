@@ -36,7 +36,8 @@ f1 f2 f8 f3
 delete mkey1
 =cut
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 my $cmd;
@@ -75,3 +76,6 @@ mop_get_is($sock, "mkey1 11 4", 11, 4, 3, "f1 f2 f8 f3", "f1,f2,f3",
 # Finalize
 $cmd = "delete mkey1"; $rst = "DELETED";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+
+# after test
+release_memcached($engine);

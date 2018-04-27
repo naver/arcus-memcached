@@ -9,7 +9,8 @@ use MemcachedTest;
 $ENV{T_MEMD_INITIAL_MALLOC} = "4294967328"; # 2**32 + 32 , just over 4GB
 $ENV{T_MEMD_SLABS_ALLOC}    = 0;  # don't preallocate slabs
 
-my $server = new_memcached("-m 4098 -M");
+my $engine = shift;
+my $server = get_memcached($engine, "-m 4098 -M");
 my $sock = $server->sock;
 
 my ($stats, $slabs) = @_;
@@ -46,3 +47,6 @@ ok($hit_limit, "hit size limit");
 
 $slabs = mem_stats($sock, 'slabs');
 is($slabs->{'active_slabs'}, 1, "1 active slab");
+
+# after test
+release_memcached($engine);
