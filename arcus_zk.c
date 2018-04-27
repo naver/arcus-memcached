@@ -112,6 +112,7 @@
 #define HEART_BEAT_MAX_TIMEOUT  HEART_BEAT_MAX_FAILSTOP /* msec */
 
 #define MAX_SERVICECODE_LENGTH  32
+#define MAX_HOSTNAME_LENGTH     128
 
 static const char *zk_root = NULL;
 static const char *zk_map_dir = "cache_server_mapping";
@@ -983,7 +984,7 @@ static int arcus_build_znode_name(char *ensemble_list)
 
     if (!arcus_conf.znode_name) {
         char *hostp=NULL;
-        char  hostbuf[100];
+        char  hostbuf[256];
         // Also get local hostname.
         // We want IP and hostname to better identify this cache
         hp = gethostbyaddr((char*)&myaddr.sin_addr.s_addr,
@@ -998,6 +999,11 @@ static int arcus_build_znode_name(char *ensemble_list)
                 return EX_NOHOST;
             }
             hostp = hostbuf;
+        }
+        if (strlen(hostp) > MAX_HOSTNAME_LENGTH) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Too long hostname. hostname=%s\n", hostp);
+            return EX_DATAERR;
         }
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
                                "local hostname: %s\n", hostp);
