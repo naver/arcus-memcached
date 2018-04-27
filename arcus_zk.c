@@ -111,7 +111,7 @@
 #define HEART_BEAT_DFT_TIMEOUT  10000 /* msec */
 #define HEART_BEAT_MAX_TIMEOUT  HEART_BEAT_MAX_FAILSTOP /* msec */
 
-#define MAX_SERVICECODE_LENGTH  32
+#define MAX_SERVICECODE_LENGTH  128
 #define MAX_HOSTNAME_LENGTH     128
 
 static const char *zk_root = NULL;
