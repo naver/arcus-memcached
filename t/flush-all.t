@@ -6,7 +6,8 @@ use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 my $expire;
 
@@ -42,3 +43,6 @@ is(scalar <$sock>, "STORED\r\n", "stored foo = '1234'");
 mem_get_is($sock, "foo", '1234');
 sleep(2.2);
 mem_get_is($sock, "foo", undef);
+
+# after test
+release_memcached($engine);

@@ -6,7 +6,8 @@ use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 # key string longer than KEY_MAX_LENGTH
@@ -17,3 +18,6 @@ is (scalar <$sock>, "STORED\r\n", "Stored key");
 
 print $sock "get a $key\r\n";
 is (scalar <$sock>, "CLIENT_ERROR bad command line format\r\n", "illegal key");
+
+# after test
+release_memcached($engine);

@@ -39,7 +39,8 @@ ok 29 - getattr minbkey1 maxbkey == 'maxbkey=0xEE0122'
 ok 30 - delete minbkey1: DELETED
 =cut
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 my $cmd;
@@ -103,3 +104,6 @@ getattr_is($sock, "minbkey1 maxbkey", "maxbkey=0xEE0122");
 
 $cmd = "delete minbkey1"; $rst = "DELETED";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+
+# after test
+release_memcached($engine);

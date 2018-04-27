@@ -6,7 +6,8 @@ use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 my $count = 1;
@@ -21,3 +22,5 @@ foreach my $blob ("mooo\0", "mumble\0\0\0\0\r\rblarg", "\0", "\r") {
     $count++;
 }
 
+# after test
+release_memcached($engine);

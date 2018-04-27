@@ -59,7 +59,8 @@ bop delete bkey1 0..10 drop: DELETED_DROPPED
 get bkey1: END
 =cut
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 my $cmd;
@@ -190,3 +191,6 @@ print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 # # Finalize
 # $cmd = "get bkey1"; $rst = "END";
 # # print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+
+# after test
+release_memcached($engine);

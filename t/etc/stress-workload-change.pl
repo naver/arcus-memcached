@@ -6,7 +6,7 @@ use FindBin qw($Bin);
 use lib "$Bin/../lib";
 use MemcachedTest;
 
-#my $server = new_memcached('-m 1024');
+#my $server = get_memcached($engine, '-m 1024');
 
 my $threads = 256;
 my $running = 0;

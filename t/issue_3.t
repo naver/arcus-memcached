@@ -6,7 +6,8 @@ use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 my $key = "del_key";
 
@@ -45,3 +46,6 @@ print $sock "delete $key noreply\r\n";
 print $sock "add $key 0 0 1\r\nx\r\n";
 is (scalar <$sock>, "STORED\r\n", "Add succeeded after deletion.");
 
+
+# after test
+release_memcached($engine);

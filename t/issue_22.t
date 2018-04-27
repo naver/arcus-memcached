@@ -12,8 +12,9 @@ use MemcachedTest;
 
 ### [ARCUS] CHANGED FOLLOWING TEST ###
 # ENABLE_MIGRATION: hash_item structure has more fields in migration.
-#my $server = new_memcached("-m 3");
-my $server = new_memcached("-m 3 -n 32");
+#my $server = get_memcached($engine, "-m 3");
+my $engine = shift;
+my $server = get_memcached($engine, "-m 3 -n 32");
 ######################################
 my $sock = $server->sock;
 my $value = "B"x77320;
@@ -53,3 +54,6 @@ for ($key = 60; $key < 100; $key++) {
 my $last_stats  = mem_stats($sock, "items");
 my $last_evicted = $last_stats->{"items:31:evicted"};
 is ($last_evicted, "40", "check evicted");
+
+# after test
+release_memcached($engine);

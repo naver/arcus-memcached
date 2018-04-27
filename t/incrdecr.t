@@ -6,7 +6,8 @@ use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 # Bug 21
@@ -93,3 +94,6 @@ is(scalar <$sock>, "19\r\n", "20 - 1-= 19");
 mem_get_is($sock, "noexists", 19);
 
 
+
+# after test
+release_memcached($engine);

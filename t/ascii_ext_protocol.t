@@ -66,7 +66,8 @@ my $val;
 my $rst;
 my $rst2;
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 # Initialize
@@ -144,7 +145,7 @@ $server->stop();
 
 #########################
 
-my $server = new_memcached("-X .libs/ascii_scrub.so");
+my $server = get_memcached($engine, "-X .libs/ascii_scrub.so");
 my $sock = $server->sock;
 
 # Initialize
@@ -220,3 +221,6 @@ print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 
 $server->stop();
 
+
+# after test
+release_memcached($engine);

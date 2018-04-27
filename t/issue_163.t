@@ -8,8 +8,9 @@ use MemcachedTest;
 
 ### [ARCUS] CHANGED FOLLOWING TEST ###
 ## ENABLE_MIGRATION: hash_item structure has more fields in migration.
-#my $server = new_memcached();
-my $server = new_memcached("-n 32");
+#my $server = get_memcached($engine);
+my $engine = shift;
+my $server = get_memcached($engine, "-n 32");
 ######################################
 my $sock = $server->sock;
 my $value1 = "A"x77320;
@@ -39,3 +40,6 @@ is (scalar <$sock>, "STORED\r\n", "stored key");
 my $stats  = mem_stats($sock, "slabs");
 my $requested2 = $stats->{"31:mem_requested"};
 is ($requested2, $requested, "we've not allocated and freed the same amont");
+
+# after test
+release_memcached($engine);

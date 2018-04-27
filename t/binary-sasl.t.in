@@ -11,6 +11,7 @@ my $supports_sasl = supports_sasl();
 my $saslpasswd2 = '@SASLPASSWD2@';
 my $sasldb;
 my $expected_mechs = 'PLAIN';
+my $engine = shift;
 
 # If sasl, then use saslpasswd
 unless ($saslpasswd2 eq "isasl") {
@@ -35,24 +36,24 @@ if (supports_sasl()) {
 } else {
     plan tests => 1;
     eval {
-        my $server = new_memcached("-S");
+        my $server = get_memcached($engine, "-S");
     };
     ok($@, "Died with illegal -S args when SASL is not supported.");
     exit 0;
 }
 
 eval {
-    my $server = new_memcached("-S -B auto");
+    my $server = get_memcached($engine, "-S -B auto");
 };
 ok($@, "SASL shouldn't be used with protocol auto negotiate");
 
 eval {
-    my $server = new_memcached("-S -B ascii");
+    my $server = get_memcached($engine, "-S -B ascii");
 };
 ok($@, "SASL isn't implemented in the ascii protocol");
 
 eval {
-    my $server = new_memcached("-S -B binary -B ascii");
+    my $server = get_memcached($engine, "-S -B binary -B ascii");
 };
 ok($@, "SASL isn't implemented in the ascii protocol");
 
@@ -122,7 +123,7 @@ else {
 my $pwd=getcwd;
 $ENV{'SASL_CONF_PATH'} = "$pwd/t/sasl";
 
-my $server = new_memcached('-B binary -S ');
+my $server = get_memcached($engine, '-B binary -S ');
 
 my $mc = MC::Client->new;
 
@@ -276,6 +277,9 @@ $empty->('x');
 # within bounds when we do a stats detail dump (detail turned on at
 # the top).
 # my %stats = $mc->stats('detail dump');
+
+# after test
+release_memcached($engine);
 
 # ######################################################################
 # Test ends around here.
@@ -655,4 +659,5 @@ sub auth_error {
 unlink $sasldb;
 
 # vim: filetype=perl
+
 

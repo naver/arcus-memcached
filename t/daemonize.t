@@ -10,7 +10,8 @@ use File::Temp qw(tempfile);
 
 my (undef, $tmpfn) = tempfile();
 
-my $server = new_memcached("-d -P $tmpfn");
+my $engine = shift;
+my $server = get_memcached($engine, "-d -P $tmpfn");
 my $sock = $server->sock;
 sleep 0.5;
 
@@ -31,3 +32,6 @@ ok($server->new_sock, "opened new socket");
 ok(kill(9, $readpid), "sent KILL signal");
 sleep 0.5;
 ok(! $server->new_sock, "failed to open new socket");
+
+# after test
+release_memcached($engine);

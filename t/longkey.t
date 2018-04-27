@@ -6,8 +6,9 @@ use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
 
-#my $server = new_memcached("-X /home/jhpark/work/arcus-memcached/.libs/syslog_logger.so -m 1024 -vv -r");
-my $server = new_memcached();
+#my $server = get_memcached($engine, "-X /home/jhpark/work/arcus-memcached/.libs/syslog_logger.so -m 1024 -vv -r");
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 #my $ksname = "keyset";
@@ -280,3 +281,6 @@ assert_kv_mget_new($kcount);
 delete_keyset_in_memory($kcount);
 # collectoin test
 assert_collection_test($kcount);
+
+# after test
+release_memcached($engine);

@@ -42,7 +42,8 @@ datum6666
 delete lkey2
 =cut
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 my $cmd;
@@ -97,3 +98,6 @@ is(scalar <$sock>, "ERROR unknown command\r\n", "Remaining characters: datum6666
 $cmd = "delete lkey2"; $rst = "DELETED";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
 
+
+# after test
+release_memcached($engine);

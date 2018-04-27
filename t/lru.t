@@ -7,7 +7,8 @@ use lib "$Bin/lib";
 use MemcachedTest;
 
 # assuming max slab is 1M and default mem is 64M
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 # create a big value for the largest slab
@@ -56,3 +57,6 @@ for (my $i = 0; $i < $evictions - 1; $i++) {
 for (my $i = $evictions - 1; $i < $evictions + 4; $i++) {
   mem_get_is($sock, "item_$i", $big);
 }
+
+# after test
+release_memcached($engine);

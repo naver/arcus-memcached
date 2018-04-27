@@ -6,7 +6,8 @@ use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 print $sock "stats topkeys\r\n";
@@ -14,7 +15,7 @@ print $sock "stats topkeys\r\n";
 is(scalar <$sock>, "NOT_SUPPORTED\r\n", "No topkeys without command line option.");
 
 $ENV{"MEMCACHED_TOP_KEYS"} = "100";
-$server = new_memcached();
+$server = get_memcached($engine);
 $sock = $server->sock;
 
 print $sock "stats topkeys\r\n";
@@ -113,3 +114,6 @@ $stats = parse_stats(mem_stats($sock, 'topkeys'));
 is($stats->{'foo99'}->{'cmd_set'}, undef);
 is($stats->{'foo100'}->{'cmd_set'}, 1);
 is($stats->{'foo199'}->{'cmd_set'}, 1);
+
+# after test
+release_memcached($engine);

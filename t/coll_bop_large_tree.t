@@ -9,7 +9,8 @@ use MemcachedTest;
 # set environment variable
 $ENV{'ARCUS_MAX_BTREE_SIZE'}='100000';
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 # BOP test sub routines
@@ -510,3 +511,6 @@ for (4..6) {
 
 # unset environment variable
 delete $ENV{'ARCUS_MAX_BTREE_SIZE'};
+
+# after test
+release_memcached($engine);

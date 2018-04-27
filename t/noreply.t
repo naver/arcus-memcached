@@ -6,10 +6,9 @@ use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
 
-
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
-
 
 # Test that commands can take 'noreply' parameter.
 print $sock "flush_all noreply\r\n";
@@ -43,3 +42,6 @@ mem_get_is($sock, "noreply:foo", "7");
 print $sock "delete noreply:foo noreply\r\n";
 mem_get_is($sock, "noreply:foo");
 
+
+# after test
+release_memcached($engine);

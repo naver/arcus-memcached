@@ -9,7 +9,8 @@ use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
 
-my $server = new_memcached('-X .libs/example_protocol.so');
+my $engine = shift;
+my $server = get_memcached($engine, '-X .libs/example_protocol.so');
 my $sock = $server->sock;
 
 ok(defined($sock), 'Connection 0');
@@ -25,3 +26,6 @@ is(scalar <$sock>, "echo [1] [2] [3] [4] [5] [6] [7] [8] [9] [0] [1] [2] [3] [4]
 
 print $sock "echo 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8\r\n";
 is(scalar <$sock>, "ERROR too many arguments\r\n", "args truncated");
+
+# after test
+release_memcached($engine);

@@ -7,7 +7,8 @@ use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 my $cmd;
 my $val;
@@ -302,3 +303,6 @@ is(scalar <$sock>, "DELETED\r\n", "deleted bb:stats_prefixes_set");
 #check again
 stats_prefixes_is($sock, "");
 
+
+# after test
+release_memcached($engine);

@@ -6,7 +6,8 @@ use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
 
-my $server = new_memcached();
+my $engine = shift;
+my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 print $sock "set issue29 0 0 0\r\n\r\n";
@@ -39,3 +40,6 @@ my $second_used = $second_stats->{"0:used_chunks"};
 
 is(1, $second_used, "Used still one chunk");
 ######################################
+
+# after test
+release_memcached($engine);
