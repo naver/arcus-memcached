@@ -181,4 +181,4 @@ print $sock "delete key5\r\n";
 is(scalar <$sock>, "DELETED\r\n", "deleted key5");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

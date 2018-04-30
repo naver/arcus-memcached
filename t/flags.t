@@ -19,4 +19,4 @@ for my $flags (0, 123, 2**16-1) {
 }
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

@@ -35,4 +35,4 @@ my $second_malloc = $second_stats->{total_malloced};
 is ($second_malloc, $first_malloc, "Memory grows..");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

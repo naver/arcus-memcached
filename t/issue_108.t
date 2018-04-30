@@ -28,4 +28,4 @@ is (scalar <$sock>, "STORED\r\n", "Add succeeded after quiet deletion.");
 
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

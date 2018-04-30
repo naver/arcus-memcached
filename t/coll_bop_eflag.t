@@ -107,4 +107,4 @@ print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "deleted");
 
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

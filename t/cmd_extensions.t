@@ -28,4 +28,4 @@ print $sock "echo 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8\r\n";
 is(scalar <$sock>, "ERROR too many arguments\r\n", "args truncated");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

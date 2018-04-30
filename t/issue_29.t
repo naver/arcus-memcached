@@ -42,4 +42,4 @@ is(1, $second_used, "Used still one chunk");
 ######################################
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

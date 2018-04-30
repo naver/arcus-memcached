@@ -96,4 +96,4 @@ mem_get_is($sock, "noexists", 19);
 
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

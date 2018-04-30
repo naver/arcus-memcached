@@ -261,4 +261,4 @@ $host = gethostbyaddr($hisiaddr, AF_INET);
 $histime = unpack("N", $rtime) - $SECS_of_70_YEARS ;
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

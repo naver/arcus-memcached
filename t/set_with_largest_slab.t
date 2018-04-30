@@ -32,4 +32,4 @@ while ($len < 1024*1028) {
 }
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

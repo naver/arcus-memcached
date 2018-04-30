@@ -74,4 +74,4 @@ is(scalar <$sock>, "PREFIX foo get 1 hit 1 set 0 del 0 inc 0 dec 0 lcs 0 lis 0 l
 is(scalar <$sock>, "END\r\n", "end of details");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

@@ -323,4 +323,4 @@ my $stats = mem_stats($sock);
 is($stats->{cmd_flush}, 1, "after one flush cmd_flush is 1");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

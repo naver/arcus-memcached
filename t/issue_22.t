@@ -56,4 +56,4 @@ my $last_evicted = $last_stats->{"items:31:evicted"};
 is ($last_evicted, "40", "check evicted");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

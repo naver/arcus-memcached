@@ -21,4 +21,4 @@ for (my $keyi = 1; $keyi < 250; $keyi++) {
 }
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

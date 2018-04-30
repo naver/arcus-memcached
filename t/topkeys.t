@@ -116,4 +116,4 @@ is($stats->{'foo100'}->{'cmd_set'}, 1);
 is($stats->{'foo199'}->{'cmd_set'}, 1);
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

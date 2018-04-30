@@ -29,4 +29,4 @@ ok ($req == "262144", "Check allocated size");
 ######################################
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

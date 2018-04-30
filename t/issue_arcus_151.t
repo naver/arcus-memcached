@@ -133,4 +133,4 @@ sub stress {
 }
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

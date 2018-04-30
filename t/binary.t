@@ -452,7 +452,7 @@ my %stats = $mc->stats('detail dump');
 }
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);
 
 # ######################################################################
 # Test ends around here.

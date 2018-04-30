@@ -44,4 +44,4 @@ mem_get_is($sock, "noreply:foo");
 
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

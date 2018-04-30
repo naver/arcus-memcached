@@ -42,4 +42,4 @@ my $requested2 = $stats->{"31:mem_requested"};
 is ($requested2, $requested, "we've not allocated and freed the same amont");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

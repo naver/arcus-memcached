@@ -34,4 +34,4 @@ print $sock "config verbosity 100\r\n";
 is(scalar <$sock>, "SERVER_ERROR cannot change the verbosity over the limit\r\n", "Over the max value");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

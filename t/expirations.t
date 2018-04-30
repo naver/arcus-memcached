@@ -65,4 +65,4 @@ is(scalar <$sock>, "STORED\r\n", "stored add again");
 mem_get_is($sock, "add", "addval3");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

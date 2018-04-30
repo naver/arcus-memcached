@@ -59,4 +59,4 @@ print $sock "delete foo\r\n";
 is(scalar <$sock>, "DELETED\r\n", "deleted foo");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

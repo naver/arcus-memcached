@@ -83,4 +83,4 @@ eval {
 ok($@, "Died with illegal 0 thread count");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

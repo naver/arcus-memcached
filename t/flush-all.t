@@ -45,4 +45,4 @@ sleep(2.2);
 mem_get_is($sock, "foo", undef);
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);
