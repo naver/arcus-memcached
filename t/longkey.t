@@ -283,4 +283,4 @@ delete_keyset_in_memory($kcount);
 assert_collection_test($kcount);
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

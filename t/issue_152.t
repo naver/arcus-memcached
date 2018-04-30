@@ -20,4 +20,4 @@ print $sock "get a $key\r\n";
 is (scalar <$sock>, "CLIENT_ERROR bad command line format\r\n", "illegal key");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

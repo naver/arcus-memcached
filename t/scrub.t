@@ -33,4 +33,4 @@ is ($visited, "80", "visited");
 is ($cleaned, "40", "cleaned");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

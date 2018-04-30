@@ -305,4 +305,4 @@ stats_prefixes_is($sock, "");
 
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

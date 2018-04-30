@@ -23,4 +23,4 @@ foreach my $blob ("mooo\0", "mumble\0\0\0\0\r\rblarg", "\0", "\r") {
 }
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

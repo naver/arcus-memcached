@@ -17,4 +17,4 @@ my $rv = <$sock>;
 ok(1, "Either the above worked and quit, or hung forever.");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

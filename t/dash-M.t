@@ -35,4 +35,4 @@ for($key = 0; $key < $max_stored; $key++) {
 }
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

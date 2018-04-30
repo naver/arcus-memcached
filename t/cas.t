@@ -159,4 +159,4 @@ is(scalar <$sock>, "END\r\n","gets bug15 END");
 ok($bug15_cas != $next_bug15_cas, "CAS changed");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

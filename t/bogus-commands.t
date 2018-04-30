@@ -14,4 +14,4 @@ print $sock "boguscommand slkdsldkfjsd\r\n";
 is(scalar <$sock>, "ERROR unknown command\r\n", "got error back");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

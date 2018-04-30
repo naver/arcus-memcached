@@ -59,4 +59,4 @@ for (my $i = $evictions - 1; $i < $evictions + 4; $i++) {
 }
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

@@ -21,4 +21,4 @@ my $stats = mem_stats($sock);
 is ($stats->{"conn_yields"}, "5", "Got a decent number of yields");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

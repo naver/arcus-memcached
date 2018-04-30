@@ -25,4 +25,4 @@ is($stats->{get_hits}, 1, "Should have 1 hit");
 is($stats->{get_misses}, 1, "Should have 1 miss");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

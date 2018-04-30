@@ -23,4 +23,4 @@ print $sock "set issue70 0 0 2147483647\r\nscoobyscoobydoo";
 is (scalar <$sock>, "CLIENT_ERROR bad command line format\r\n");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

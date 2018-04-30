@@ -47,4 +47,4 @@ like($buf, qr/abcde\]/, "buf now closes");
 mem_get_is($sock, "big", $bigval2, "big value2 got correctly from sock1");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

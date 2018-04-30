@@ -88,4 +88,4 @@ assert_kv_mget_old($key_len, $key_cnt, $key_str);
 assert_kv_mget_new($key_len, $key_cnt, $key_str);
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

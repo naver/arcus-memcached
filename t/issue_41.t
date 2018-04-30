@@ -40,4 +40,4 @@ my $v = scalar <$sock>;
 ok(defined $v && length($v), "memcached didn't respond");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

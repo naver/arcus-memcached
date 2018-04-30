@@ -34,4 +34,4 @@ sleep 0.5;
 ok(! $server->new_sock, "failed to open new socket");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

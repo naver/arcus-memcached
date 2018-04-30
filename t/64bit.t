@@ -49,4 +49,4 @@ $slabs = mem_stats($sock, 'slabs');
 is($slabs->{'active_slabs'}, 1, "1 active slab");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

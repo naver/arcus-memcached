@@ -32,4 +32,4 @@ my $evicted_nonzero = $stats->{"items:31:evicted_nonzero"};
 isnt($evicted_nonzero, "0", "check evicted_nonzero");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

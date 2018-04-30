@@ -67,4 +67,4 @@ for (0..1) {
 }
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);
