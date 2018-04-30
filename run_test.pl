@@ -22,6 +22,6 @@ if (grep $_ eq $engine_name, @engine_list) {
     # default engine test
     system("prove $opt - < $srcdir/t/tlist/engine_default_$ext\.txt :: default");
 } else {
-    system('echo -e \'\033[31mmake test [TYPE=<small || big>] [ENGINE=<default>]\033[0m\n\'');
+    system("echo -e \'\033[31mmake test [TYPE=<small || big>] [ENGINE=<@engine_list>]\033[0m\n\'");
     exit(1);
 }
