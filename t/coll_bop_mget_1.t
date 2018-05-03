@@ -129,7 +129,7 @@ bop_get_is($sock, "bkey1 0..100", 11, 5,
 bop_get_is($sock, "bkey2 0..100", 12, 5,
                   "20,40,60,80,100", "datum2,datum4,datum6,datum8,datum10", "END");
 
-$cmd = "bop mget 11 2 0..100 5"; $val = "bkey1 bkey2";
+$cmd = "bop mget 11 2 0..100 5\r\nbkey1 bkey2";
 $rst = "VALUE bkey1 OK 11 5
 ELEMENT 10 6 datum1
 ELEMENT 30 6 datum3
@@ -143,9 +143,9 @@ ELEMENT 60 6 datum6
 ELEMENT 80 6 datum8
 ELEMENT 100 7 datum10
 END";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
+mem_cmd_is($sock, $cmd, $rst);
 
-$cmd = "bop mget 11 2 100..0 10"; $val = "bkey1 bkey2";
+$cmd = "bop mget 11 2 100..0 10\r\nbkey1 bkey2";
 $rst = "VALUE bkey1 OK 11 5
 ELEMENT 90 6 datum9
 ELEMENT 70 6 datum7
@@ -159,9 +159,9 @@ ELEMENT 60 6 datum6
 ELEMENT 40 6 datum4
 ELEMENT 20 6 datum2
 END";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
+mem_cmd_is($sock, $cmd, $rst);
 
-$cmd = "bop mget 23 4 0..100 2 6"; $val = "bkey2 bkey3 bkey1 bkey4";
+$cmd = "bop mget 23 4 0..100 2 6\r\nbkey2 bkey3 bkey1 bkey4";
 $rst = "VALUE bkey2 OK 12 3
 ELEMENT 60 6 datum6
 ELEMENT 80 6 datum8
@@ -173,9 +173,9 @@ ELEMENT 70 6 datum7
 ELEMENT 90 6 datum9
 VALUE bkey4 NOT_FOUND
 END";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
+mem_cmd_is($sock, $cmd, $rst);
 
-$cmd = "bop mget 23 4 90..30 2 9"; $val = "bkey2 bkey3 bkey1 bkey4";
+$cmd = "bop mget 23 4 90..30 2 9\r\nbkey2 bkey3 bkey1 bkey4";
 $rst = "VALUE bkey2 OK 12 1
 ELEMENT 40 6 datum4
 VALUE bkey3 NOT_FOUND
@@ -184,23 +184,23 @@ ELEMENT 50 6 datum5
 ELEMENT 30 6 datum3
 VALUE bkey4 NOT_FOUND
 END";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
+mem_cmd_is($sock, $cmd, $rst);
 
-$cmd = "bop mget 23 4 200..300 2 6"; $val = "bkey2 bkey3 bkey1 bkey4";
+$cmd = "bop mget 23 4 200..300 2 6\r\nbkey2 bkey3 bkey1 bkey4";
 $rst = "VALUE bkey2 NOT_FOUND_ELEMENT
 VALUE bkey3 NOT_FOUND
 VALUE bkey1 NOT_FOUND_ELEMENT
 VALUE bkey4 NOT_FOUND
 END";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
+mem_cmd_is($sock, $cmd, $rst);
 
-$cmd = "set keyx 19 5 10"; $val = "some value"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "set keyx 19 5 10\r\nsome value"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $rst);
 
-$cmd = "bop mget 23 2 0..100 2 6"; $val = "bkey2 bkey3 bkey1 bkey4"; $rst = "CLIENT_ERROR bad data chunk";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop mget 23 2 0..100 2 6\r\nbkey2 bkey3 bkey1 bkey4"; $rst = "CLIENT_ERROR bad data chunk";
+mem_cmd_is($sock, $cmd, $rst);
 
-$cmd = "bop mget 28 5 0..100 2 6"; $val = "bkey2 bkey3 bkey1 bkey4 keyx";
+$cmd = "bop mget 28 5 0..100 2 6\r\nbkey2 bkey3 bkey1 bkey4 keyx";
 $rst = "VALUE bkey2 OK 12 3
 ELEMENT 60 6 datum6
 ELEMENT 80 6 datum8
@@ -213,9 +213,9 @@ ELEMENT 90 6 datum9
 VALUE bkey4 NOT_FOUND
 VALUE keyx TYPE_MISMATCH
 END";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
+mem_cmd_is($sock, $cmd, $rst);
 
-$cmd = "bop mget 29 5 0..100 2 6"; $val = "bkey2 bkey3 bkey1 bkey4 bkey1";
+$cmd = "bop mget 29 5 0..100 2 6\r\nbkey2 bkey3 bkey1 bkey4 bkey1";
 $rst = "VALUE bkey2 OK 12 3
 ELEMENT 60 6 datum6
 ELEMENT 80 6 datum8
@@ -231,9 +231,9 @@ ELEMENT 50 6 datum5
 ELEMENT 70 6 datum7
 ELEMENT 90 6 datum9
 END";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
+mem_cmd_is($sock, $cmd, $rst);
 
-$cmd = "bop mget 29 5 0..100 2 6"; $val = "bkey2 bkey3 bkey1 bkey4 bkey3";
+$cmd = "bop mget 29 5 0..100 2 6\r\nbkey2 bkey3 bkey1 bkey4 bkey3";
 $rst = "VALUE bkey2 OK 12 3
 ELEMENT 60 6 datum6
 ELEMENT 80 6 datum8
@@ -246,7 +246,7 @@ ELEMENT 90 6 datum9
 VALUE bkey4 NOT_FOUND
 VALUE bkey3 NOT_FOUND
 END";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
+mem_cmd_is($sock, $cmd, $rst);
 
 $cmd = "delete keyx"; $rst = "DELETED";
 print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
