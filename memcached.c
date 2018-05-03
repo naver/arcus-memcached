@@ -15849,10 +15849,9 @@ int main (int argc, char **argv) {
     // initialize Arcus ZK cluster connection
     if (arcus_zk_cfg) {
         arcus_zk_init(arcus_zk_cfg, arcus_zk_to, mc_logger,
-#ifdef PROXY_SUPPORT
-                      settings.verbose, settings.maxbytes, settings.port, arcus_proxy_cfg,
-#else
                       settings.verbose, settings.maxbytes, settings.port,
+#ifdef PROXY_SUPPORT
+                      arcus_proxy_cfg,
 #endif
                       mc_engine.v1);
     }
