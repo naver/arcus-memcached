@@ -1157,6 +1157,9 @@ static int arcus_create_ephemeral_znode(zhandle_t *zh, const char *root)
     arcus_conf.znode_created = true;
     arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
             "Joined Arcus cloud at %s(ver=%d)\n", zpath, arcus_conf.znode_ver);
+
+    /* log this join activity in /arcus/cache_server_log */
+    arcus_zk_log(main_zk->zh, sm_info.mc_pause? "rejoin" : "join");
     return 0;
 }
 
@@ -1272,9 +1275,6 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
                                "arcus_create_ephemeral_znode() failed.\n");
         arcus_exit(main_zk->zh, EX_PROTOCOL);
     }
-
-    /* log this join activity in /arcus/cache_server_log */
-    arcus_zk_log(main_zk->zh, "join");
 
     gettimeofday(&end_time, 0);
     difftime_us = (end_time.tv_sec*1000000 + end_time.tv_usec) -
@@ -1527,9 +1527,6 @@ int arcus_zk_rejoin_ensemble()
                                    "arcus_create_ephemeral_znode() failed.\n");
             break;
         }
-
-        /* log this rejoin activity in /arcus/cache_server_log */
-        arcus_zk_log(main_zk->zh, "rejoin");
 
         gettimeofday(&end_time, 0);
         difftime_us = (end_time.tv_sec*1000000 + end_time.tv_usec) -
