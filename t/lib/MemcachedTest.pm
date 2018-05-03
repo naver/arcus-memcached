@@ -13,7 +13,7 @@ my $builddir = getcwd;
 
 
 @EXPORT = qw(get_memcached sleep release_memcached
-             mem_get_is mem_gets mem_gets_is mem_stats mem_cmd_val_is
+             mem_get_is mem_gets mem_gets_is mem_stats mem_cmd_val_is mem_cmd_is
              getattr_is lop_get_is sop_get_is mop_get_is bop_get_is bop_gbp_is bop_pwg_is bop_smget_is
              bop_ext_get_is bop_ext_smget_is bop_new_smget_is bop_old_smget_is
              stats_prefixes_is stats_noprefix_is stats_prefix_is
@@ -36,6 +36,40 @@ sub mem_stats {
         $stats->{$2} = $3;
     }
     return $stats;
+}
+
+sub mem_cmd_is {
+    # works on single-line values only.  no newlines in value.
+    my ($sock_opts, $cmd, $rst, $msg) = @_;
+    my @response_list = ("ATTR_MISMATCH", "BKEY_MISMATCH", "CREATED", "CREATED_STORED"
+        , "DELETED", "DELETED_DROPPED", "DUPLICATED", "DUPLICATED_TRIMMED"
+        , "EFLAG_MISMATCH", "ELEMENT_EXISTS", "END", "EXISTS", "NOT_EXIST", "NOT_FOUND"
+        , "NOT_FOUND_ELEMENT", "NOT_STORED", "NOT_SUPPORTED", "NOTHING_TO_UPDATE", "OK"
+        , "OUT_OF_RANGE", "OVERFLOWED", "REPLACED", "RESET", "STORED", "TRIMMED"
+        , "TYPE_MISMATCH", "UNREADABLE", "UPDATED"
+        , "ATTR_ERROR", "CLIENT_ERROR", "ERROR", "PREFIX_ERROR", "SERVER_ERROR");
+
+    my $opts = ref $sock_opts eq "HASH" ? $sock_opts : {};
+    my $sock = ref $sock_opts eq "HASH" ? $opts->{sock} : $sock_opts;
+
+    print $sock "$cmd\r\n";
+    if ("$msg" eq "") {
+        $msg = $cmd;
+        $msg =~ s/\r\n/ /;
+    }
+
+    my $resp = "";
+    my $line;
+
+    while (1) {
+        $line = scalar <$sock>;
+        $resp = $resp . (substr $line, 0, length($line)-2);
+        if (grep $line =~ /^$_/, @response_list) {
+            last;
+        }
+        $resp = $resp . "\n";
+    }
+    Test::More::is("$resp", "$rst", $msg);
 }
 
 sub mem_get_is {
