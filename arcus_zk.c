@@ -1576,16 +1576,10 @@ int arcus_zk_rejoin_ensemble()
             break;
         }
 
-        /* check zk root directory and get the serice code */
-        if (zk_root == NULL) {
-            zk_root = "/arcus"; /* set zk root directory */
-            ret = arcus_check_server_mapping(main_zk->zh, zk_root);
-            if (ret != 0) {
-                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                         "Failed to check server mapping for this cache node. "
-                         "(zk_root=%s)\n", zk_root);
-            }
-        }
+        /* Use the zk root directory and the service code
+         * acquired during the execution of arcus_zk_init().
+         */
+        assert(zk_root != NULL && arcus_conf.svc != NULL);
 
         /* create "/cache_list/{svc}/ip:port-hostname" ephemeral znode */
         ret = arcus_create_ephemeral_znode(main_zk->zh, zk_root);
