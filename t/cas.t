@@ -17,21 +17,14 @@ my @result2;
 
 ok($sock != $sock2, "have two different connections open");
 
-sub check_args {
-    my ($line, $name) = @_;
-
-    my $svr = get_memcached($engine);
-    my $s = $svr->sock;
-
-    print $s $line;
-    is(scalar <$s>, "CLIENT_ERROR bad command line format\r\n", $name);
-    undef $svr;
-}
-
-check_args "cas bad blah 0 0 0\r\n\r\n", "bad flags";
-check_args "cas bad 0 blah 0 0\r\n\r\n", "bad exp";
-check_args "cas bad 0 0 blah 0\r\n\r\n", "bad cas";
-check_args "cas bad 0 0 0 blah\r\n\r\n", "bad size";
+print $sock "cas bad blah 0 0 0\r\n";
+is(scalar <$sock>, "CLIENT_ERROR bad command line format\r\n", "bad flags");
+print $sock "cas bad 0 blah 0 0\r\n";
+is(scalar <$sock>, "CLIENT_ERROR bad command line format\r\n", "bad exp");
+print $sock "cas bad 0 0 blah 0\r\n";
+is(scalar <$sock>, "CLIENT_ERROR bad command line format\r\n", "bad cas");
+print $sock "cas bad 0 0 0 blah\r\n";
+is(scalar <$sock>, "CLIENT_ERROR bad command line format\r\n", "bad size");
 
 # gets foo (should not exist)
 print $sock "gets foo\r\n";

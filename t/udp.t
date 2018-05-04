@@ -61,6 +61,9 @@ for my $prot (::IS_ASCII,::IS_BINARY) {
     udp_delete_test($prot,45,"aval$prot");
 }
 
+# after test
+release_memcached($engine, $server);
+
 sub udp_set_test {
     my ($protocol, $req_id, $key, $value, $flags, $exp) = @_;
     my $req = "";
@@ -260,5 +263,3 @@ __END__
 $host = gethostbyaddr($hisiaddr, AF_INET);
 $histime = unpack("N", $rtime) - $SECS_of_70_YEARS ;
 
-# after test
-release_memcached($engine, $server);
