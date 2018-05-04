@@ -24,7 +24,8 @@
 /* A list of operations for which we have int stats */
 #define TK_OPS(C) C(get_hits) C(get_misses) C(cmd_set) C(incr_hits) \
                    C(incr_misses) C(decr_hits) C(decr_misses) \
-                   C(delete_hits) C(delete_misses) C(evictions)
+                   C(delete_hits) C(delete_misses) C(evictions) \
+                   C(cas_hits) C(cas_misses) C(cas_badval)
 
 /* top keys - collection stats */
 #define TK_LOPS(C)  C(lop_create_oks) C(lop_insert_hits) C(lop_insert_misses) \
