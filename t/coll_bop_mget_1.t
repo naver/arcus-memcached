@@ -95,71 +95,38 @@ delete bkey1
 delete bkey2
 =cut
 
-# testBOPSMGetSimple
-$cmd = "get bkey1";
-$rst = "END";
+#
+# testBOPMGetSimple
+#
+$cmd = "get bkey1"; $rst = "END";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "get bkey2"; $rst = "END";
 mem_cmd_is($sock, $cmd, "", $rst);
 
-$cmd = "get bkey2";
-$rst = "END";
+$cmd = "bop create bkey1 11 0 0"; $rst = "CREATED";
 mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop insert bkey1 90 6"; $val = "datum9"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop insert bkey1 70 6"; $val = "datum7"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop insert bkey1 50 6"; $val = "datum5"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop insert bkey1 30 6"; $val = "datum3"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop insert bkey1 10 6"; $val = "datum1"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
-$cmd = "bop create bkey1 11 0 0";
-$rst = "CREATED";
+$cmd = "bop create bkey2 12 0 0"; $rst = "CREATED";
 mem_cmd_is($sock, $cmd, "", $rst);
-
-$cmd = "bop insert bkey1 90 6";
-$val = "datum9";
-$rst = "STORED";
+$cmd = "bop insert bkey2 100 7"; $val = "datum10"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-
-$cmd = "bop insert bkey1 70 6";
-$val = "datum7";
-$rst = "STORED";
+$cmd = "bop insert bkey2 80 6"; $val = "datum8"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-
-$cmd = "bop insert bkey1 50 6";
-$val = "datum5";
-$rst = "STORED";
+$cmd = "bop insert bkey2 60 6"; $val = "datum6"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-
-$cmd = "bop insert bkey1 30 6";
-$val = "datum3";
-$rst = "STORED";
+$cmd = "bop insert bkey2 40 6"; $val = "datum4"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-
-$cmd = "bop insert bkey1 10 6";
-$val = "datum1";
-$rst = "STORED";
-mem_cmd_is($sock, $cmd, $val, $rst);
-
-$cmd = "bop create bkey2 12 0 0";
-$rst = "CREATED";
-mem_cmd_is($sock, $cmd, "", $rst);
-
-$cmd = "bop insert bkey2 100 7";
-$val = "datum10";
-$rst = "STORED";
-mem_cmd_is($sock, $cmd, $val, $rst);
-
-$cmd = "bop insert bkey2 80 6";
-$val = "datum8";
-$rst = "STORED";
-mem_cmd_is($sock, $cmd, $val, $rst);
-
-$cmd = "bop insert bkey2 60 6";
-$val = "datum6";
-$rst = "STORED";
-mem_cmd_is($sock, $cmd, $val, $rst);
-
-$cmd = "bop insert bkey2 40 6";
-$val = "datum4";
-$rst = "STORED";
-mem_cmd_is($sock, $cmd, $val, $rst);
-
-$cmd = "bop insert bkey2 20 6";
-$val = "datum2";
-$rst = "STORED";
+$cmd = "bop insert bkey2 20 6"; $val = "datum2"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 
 $cmd = "bop get bkey1 0..100";
@@ -323,49 +290,30 @@ VALUE bkey3 NOT_FOUND
 END";
 mem_cmd_is($sock, $cmd, $val, $rst);
 
-$cmd = "delete keyx";
-$rst = "DELETED";
+$cmd = "delete keyx"; $rst = "DELETED";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "delete bkey1"; $rst = "DELETED";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "delete bkey2"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, "", $rst);
 
-$cmd = "delete bkey1";
-$rst = "DELETED";
+#
+# bop mget test 2
+#
+$cmd = "bop create bkey1 11 0 0"; $rst = "CREATED";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop create bkey2 12 0 0"; $rst = "CREATED";
 mem_cmd_is($sock, $cmd, "", $rst);
 
-$cmd = "delete bkey2";
-$rst = "DELETED";
-mem_cmd_is($sock, $cmd, "", $rst);
-
-$cmd = "bop create bkey1 11 0 0";
-$rst = "CREATED";
-mem_cmd_is($sock, $cmd, "", $rst);
-
-$cmd = "bop create bkey2 12 0 0";
-$rst = "CREATED";
-mem_cmd_is($sock, $cmd, "", $rst);
-
-$cmd = "bop insert bkey2 100 7";
-$val = "datum10";
-$rst = "STORED";
+$cmd = "bop insert bkey2 100 7"; $val = "datum10"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-
-$cmd = "bop insert bkey2 80 6";
-$val = "datum8";
-$rst = "STORED";
+$cmd = "bop insert bkey2 80 6"; $val = "datum8"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-
-$cmd = "bop insert bkey2 60 6";
-$val = "datum6";
-$rst = "STORED";
+$cmd = "bop insert bkey2 60 6"; $val = "datum6"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-
-$cmd = "bop insert bkey2 40 6";
-$val = "datum4";
-$rst = "STORED";
+$cmd = "bop insert bkey2 40 6"; $val = "datum4"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-
-$cmd = "bop insert bkey2 20 6";
-$val = "datum2";
-$rst = "STORED";
+$cmd = "bop insert bkey2 20 6"; $val = "datum2"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 
 $cmd = "bop get bkey1 0..100";
@@ -397,11 +345,10 @@ END";
 mem_cmd_is($sock, $cmd, $val, $rst);
 
 $cmd = "bop mget 146 21 0..100000 10";
-$val = "KEY_11 KEY_12 KEY_13 KEY_14 "
-     . "KEY_15 KEY_16 KEY_17 KEY_18 "
-     . "KEY_19 KEY_20 KEY_21 KEY_22 "
-     . "KEY_23 KEY_24 KEY_25 KEY_26 "
-     . "KEY_27 KEY_28 KEY_29 KEY_30 KEY_16";
+$val = "KEY_11 KEY_12 KEY_13 KEY_14 KEY_15 "
+     . "KEY_16 KEY_17 KEY_18 KEY_19 KEY_20 "
+     . "KEY_21 KEY_22 KEY_23 KEY_24 KEY_25 "
+     . "KEY_26 KEY_27 KEY_28 KEY_29 KEY_30 KEY_16";
 $rst =
 "VALUE KEY_11 NOT_FOUND
 VALUE KEY_12 NOT_FOUND
@@ -427,43 +374,25 @@ VALUE KEY_16 NOT_FOUND
 END";
 mem_cmd_is($sock, $cmd, $val, $rst);
 
-$cmd = "delete bkey1";
-$rst = "DELETED";
+$cmd = "delete bkey1"; $rst = "DELETED";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "delete bkey2"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, "", $rst);
 
-$cmd = "delete bkey2";
-$rst = "DELETED";
-mem_cmd_is($sock, $cmd, "", $rst);
-
-# EFlag Filter test
-$cmd = "bop insert bkey1 0x0090 0x11FF 6 create 3 0 0";
-$val = "datum9";
-$rst = "CREATED_STORED";
+#
+# bop mget with eflag filtering
+#
+$cmd = "bop insert bkey1 0x0090 0x11FF 6 create 3 0 0"; $val = "datum9"; $rst = "CREATED_STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-
-$cmd = "bop insert bkey1 0x0070 0x01FF 6";
-$val = "datum7";
-$rst = "STORED";
+$cmd = "bop insert bkey1 0x0070 0x01FF 6"; $val = "datum7"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-
-$cmd = "bop insert bkey1 0x0050 0x00FF 6";
-$val = "datum5";
-$rst = "STORED";
+$cmd = "bop insert bkey1 0x0050 0x00FF 6"; $val = "datum5"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-
-$cmd = "bop insert bkey2 0x0080 0x11FF 6 create 3 0 0";
-$val = "datum8";
-$rst = "CREATED_STORED";
+$cmd = "bop insert bkey2 0x0080 0x11FF 6 create 3 0 0"; $val = "datum8"; $rst = "CREATED_STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-
-$cmd = "bop insert bkey2 0x0060 0x01FF 6";
-$val = "datum6";
-$rst = "STORED";
+$cmd = "bop insert bkey2 0x0060 0x01FF 6"; $val = "datum6"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-
-$cmd = "bop insert bkey2 0x0040 0x00FF 6";
-$val = "datum4";
-$rst = "STORED";
+$cmd = "bop insert bkey2 0x0040 0x00FF 6"; $val = "datum4"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 
 $cmd = "bop mget 11 2 0x00..0x1000 0 EQ 0x11FF,0x01FF 6";
@@ -488,12 +417,9 @@ ELEMENT 0x0060 0x01FF 6 datum6
 END";
 mem_cmd_is($sock, $cmd, $val, $rst);
 
-$cmd = "delete bkey1";
-$rst = "DELETED";
+$cmd = "delete bkey1"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, "", $rst);
-
-$cmd = "delete bkey2";
-$rst = "DELETED";
+$cmd = "delete bkey2"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, "", $rst);
 
 # after test
