@@ -12,20 +12,27 @@ use MemcachedTest;
 my $engine = shift;
 my $server = get_memcached($engine, '-X .libs/example_protocol.so');
 my $sock = $server->sock;
+my $cmd;
+my $val;
+my $rst;
+
 
 ok(defined($sock), 'Connection 0');
 
-print $sock "noop\r\n";
-is(scalar <$sock>, "OK\r\n", "testing noop");
+$cmd = "noop"; $rst = "OK";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "echo foo bar\r\n";
-is(scalar <$sock>, "echo [foo] [bar]\r\n", "testing echo");
+$cmd = "echo foo bar"; $rst = "echo [foo] [bar]";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "echo 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7\r\n";
-is(scalar <$sock>, "echo [1] [2] [3] [4] [5] [6] [7] [8] [9] [0] [1] [2] [3] [4] [5] [6] [7] [8] [9] [0] [1] [2] [3] [4] [5] [6] [7]\r\n", "Max number of args");
+$cmd = "echo 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7";
+$rst = "echo [1] [2] [3] [4] [5] [6] [7] [8] [9] [0] "
+     . "[1] [2] [3] [4] [5] [6] [7] [8] [9] [0] [1] [2] [3] [4] [5] [6] [7]";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "echo 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8\r\n";
-is(scalar <$sock>, "ERROR too many arguments\r\n", "args truncated");
+$cmd = "echo 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8";
+$rst = "ERROR too many arguments";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # after test
 release_memcached($engine, $server);

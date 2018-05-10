@@ -19,17 +19,16 @@ sub do_btree_prepare {
     my $cnt;
 
     $cmd = "bop create $kstr 0 0 0"; $rst = "CREATED";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "created");
+    mem_cmd_is($sock, $cmd, "", $rst);
 
     for ($cnt = 0; $cnt < 100; $cnt += 1) {
         my $bkstr = "0x" . sprintf "%062d", $cnt;
         my $eflag = "0x" . sprintf "%062d", $cnt;
-        my $value = "element_value_$cnt";
-        my $vleng = length($value);
+        my $val   = "element_value_$cnt";
+        my $vleng = length($val);
 
         $cmd = "bop insert $kstr $bkstr $eflag $vleng"; $rst = "STORED";
-        print $sock "$cmd\r\n$value\r\n";
-        is(scalar <$sock>, "$rst\r\n", "$cnt element inserted");
+        mem_cmd_is($sock, $cmd, $val, $rst);
     }
 }
 
@@ -52,40 +51,40 @@ sub do_btree_efilter {
 
     # bop count
     $cmd = "bop count $kstr $bkrange $efilter"; $rst = "COUNT=99";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "bop count with IN list");
+    mem_cmd_is($sock, $cmd, "", $rst);
 
     # bop get
-    my $response = "VALUE 0 99\n";
+    $rst = "VALUE 0 99\n";
     for ($cnt = 1; $cnt < 100; $cnt += 1) {
         my $bkstr = "0x" . sprintf "%062d", $cnt;
         my $eflag = "0x" . sprintf "%062d", $cnt;
-        my $value = "element_value_$cnt";
-        my $vleng = length($value);
-        $response .= "$bkstr $eflag $vleng $value\n"
+        my $val   = "element_value_$cnt";
+        my $vleng = length($val);
+        $rst .= "$bkstr $eflag $vleng $val\n"
     }
-    $response .= "END";
+    $rst .= "END";
     $cmd = "bop get $kstr $bkrange $efilter 0 100";
-    mem_cmd_val_is($sock, $cmd, "", $response, "bop get with IN list");
+    mem_cmd_is($sock, $cmd, "", $rst);
 
     # longest efilter 2
     $efilter = "0 & $foperand NE $fvallist";
 
     # bop count
     $cmd = "bop count $kstr $bkrange $efilter"; $rst = "COUNT=1";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "bop count with NOT IN list");
+    mem_cmd_is($sock, $cmd, "", $rst);
 
     # bop get
-    my $response = "VALUE 0 1\n";
+    $rst = "VALUE 0 1\n";
     for ($cnt = 0; $cnt < 1; $cnt += 1) {
         my $bkstr = "0x" . sprintf "%062d", $cnt;
         my $eflag = "0x" . sprintf "%062d", $cnt;
-        my $value = "element_value_$cnt";
-        my $vleng = length($value);
-        $response .= "$bkstr $eflag $vleng $value\n"
+        my $val   = "element_value_$cnt";
+        my $vleng = length($val);
+        $rst .= "$bkstr $eflag $vleng $val\n"
     }
-    $response .= "END";
+    $rst .= "END";
     $cmd = "bop get $kstr $bkrange $efilter 0 100";
-    mem_cmd_val_is($sock, $cmd, "", $response, "bop get with NOT IN list");
+    mem_cmd_is($sock, $cmd, "", $rst);
 }
 
 # do test
@@ -96,15 +95,14 @@ $key = "A" x 250;
 do_btree_prepare($key);
 do_btree_efilter($key);
 $cmd = "delete $key"; $rst = "DELETED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "deleted");
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # KEY_MAX_LENGTH = 32000: long key test
 $key = "B" x 32000;
 do_btree_prepare($key);
 do_btree_efilter($key);
 $cmd = "delete $key"; $rst = "DELETED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "deleted");
-
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # after test
 release_memcached($engine, $server);

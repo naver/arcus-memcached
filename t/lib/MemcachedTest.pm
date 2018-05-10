@@ -43,11 +43,14 @@ sub mem_cmd_is {
     my ($sock_opts, $cmd, $val, $rst, $msg) = @_;
     my @response_list = ("ATTR_MISMATCH", "BKEY_MISMATCH", "CREATED", "CREATED_STORED"
         , "DELETED", "DELETED_DROPPED", "DUPLICATED", "DUPLICATED_TRIMMED"
-        , "EFLAG_MISMATCH", "ELEMENT_EXISTS", "END", "EXISTS", "NOT_EXIST", "NOT_FOUND"
+        , "EFLAG_MISMATCH", "ELEMENT_EXISTS", "END", "EXIST", "EXISTS", "NOT_EXIST", "NOT_FOUND"
         , "NOT_FOUND_ELEMENT", "NOT_STORED", "NOT_SUPPORTED", "NOTHING_TO_UPDATE", "OK"
         , "OUT_OF_RANGE", "OVERFLOWED", "REPLACED", "RESET", "STORED", "TRIMMED"
         , "TYPE_MISMATCH", "UNREADABLE", "UPDATED"
-        , "ATTR_ERROR", "CLIENT_ERROR", "ERROR", "PREFIX_ERROR", "SERVER_ERROR");
+        , "ATTR_ERROR", "CLIENT_ERROR", "ERROR", "PREFIX_ERROR", "SERVER_ERROR"
+        , "COUNT=");
+
+    my @exception_cmd = ("incr", "decr", "echo", "bop incr", "bop decr");
 
     my @prdct_response = split('\n', $rst);
     my $count = $#prdct_response + 1;
@@ -58,11 +61,17 @@ sub mem_cmd_is {
 
     # send command
     if ("$val" eq "") {
-        $msg = $cmd;
         print $sock "$cmd\r\n";
     } else {
-        $msg = $cmd . " " . $val;
         print $sock "$cmd\r\n$val\r\n";
+    }
+
+    # msg
+    if ("$msg" eq "") {
+        if (length($val) > 40) {
+            $val = substr($val, 0, 40);
+        }
+        $msg = $cmd . ":" . $val;
     }
 
     my $resp = "";
@@ -78,6 +87,8 @@ sub mem_cmd_is {
     }
 
     if (grep $line =~ /^$_/, @response_list) {
+        Test::More::is("$resp", "$rst", $msg);
+    } elsif (grep $cmd =~ /^$_/, @exception_cmd) {
         Test::More::is("$resp", "$rst", $msg);
     } else {
         croak("# Test failed. < test name : $msg >");

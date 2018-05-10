@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 60;
+use Test::More tests => 40;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -72,74 +72,82 @@ my $sock = $server->sock;
 
 # Initialize
 $cmd = "get bkey1"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "get kvkey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # Test
 $cmd = "set kvkey 0 0 10"; $val = "0000000000"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 0 10"; $val = "11111111111";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR unknown command";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
+$rst =
+"CLIENT_ERROR bad data chunk
+ERROR unknown command";
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 0 10"; $val = "222222222222";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR unknown command";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
-
+$rst =
+"CLIENT_ERROR bad data chunk
+ERROR unknown command";
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 10"; $val = "0000000000";
-$rst = "ERROR unknown command"; $rst2 = "ERROR unknown command";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
+$rst =
+"ERROR unknown command
+ERROR unknown command";
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 0 10"; $val = "0000000000"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 0 10 10"; $val = "0000000000"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 0 10 10 10"; $val = "0000000000";
-$rst = "ERROR unknown command"; $rst2 = "ERROR unknown command";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
+$rst =
+"ERROR unknown command
+ERROR unknown command";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 $cmd = "bop insert bkey1 10 5 create 11 0 0"; $val = "datum"; $rst = "CREATED_STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 $cmd = "bop insert bkey1 15 5"; $val = "55555"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 16 5"; $val = "666666";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR unknown command";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
+$rst =
+"CLIENT_ERROR bad data chunk
+ERROR unknown command";
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 17 5"; $val = "7777777";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR unknown command";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
+$rst =
+"CLIENT_ERROR bad data chunk
+ERROR unknown command";
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 18 5"; $val = "88888888";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR unknown command";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
+$rst =
+"CLIENT_ERROR bad data chunk
+ERROR unknown command";
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 19 5"; $val = "999999999";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR unknown command";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
+$rst =
+"CLIENT_ERROR bad data chunk
+ERROR unknown command";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 $cmd = "bop insert bkey1 21"; $val = "0000000000";
-$rst = "CLIENT_ERROR bad command line format"; $rst2 = "ERROR unknown command";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
+$rst =
+"CLIENT_ERROR bad command line format
+ERROR unknown command";
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 22 10"; $val = "0000000000"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 23 10 10"; $val = "0000000000";
-$rst = "CLIENT_ERROR bad command line format"; $rst2 = "ERROR unknown command";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
+$rst =
+"CLIENT_ERROR bad command line format
+ERROR unknown command";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 # Finalize
 $cmd = "delete bkey1"; $rst = "DELETED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "delete kvkey"; $rst = "DELETED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 
 $server->stop();
 
@@ -150,77 +158,86 @@ my $sock = $server->sock;
 
 # Initialize
 $cmd = "get bkey1"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "get kvkey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # Test
 $cmd = "set kvkey 0 0 10"; $val = "0000000000"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 $cmd = "set kvkey 0 0 10"; $val = "11111111111";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR no arguments";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
+$rst =
+"CLIENT_ERROR bad data chunk
+ERROR no arguments";
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 0 10"; $val = "222222222222";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR no matching command";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
+$rst =
+"CLIENT_ERROR bad data chunk
+ERROR no matching command";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 $cmd = "set kvkey 0 10"; $val = "0000000000";
-$rst = "ERROR no matching command"; $rst2 = "ERROR no matching command";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
+$rst =
+"ERROR no matching command
+ERROR no matching command";
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 0 10"; $val = "0000000000"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 0 10 10"; $val = "0000000000"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 0 10 10 10"; $val = "0000000000";
-$rst = "ERROR no matching command"; $rst2 = "ERROR no matching command";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
+$rst =
+"ERROR no matching command
+ERROR no matching command";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 $cmd = "bop insert bkey1 10 5 create 11 0 0"; $val = "datum"; $rst = "CREATED_STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 $cmd = "bop insert bkey1 15 5"; $val = "55555"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 16 5"; $val = "666666";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR no arguments";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
+$rst =
+"CLIENT_ERROR bad data chunk
+ERROR no arguments";
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 17 5"; $val = "7777777";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR no matching command";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
+$rst =
+"CLIENT_ERROR bad data chunk
+ERROR no matching command";
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 18 5"; $val = "88888888";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR no matching command";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
+$rst =
+"CLIENT_ERROR bad data chunk
+ERROR no matching command";
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 19 5"; $val = "999999999";
-$rst = "CLIENT_ERROR bad data chunk"; $rst2 = "ERROR no matching command";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
+$rst =
+"CLIENT_ERROR bad data chunk
+ERROR no matching command";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 $cmd = "bop insert bkey1 21"; $val = "0000000000";
-$rst = "CLIENT_ERROR bad command line format"; $rst2 = "ERROR no matching command";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
+$rst =
+"CLIENT_ERROR bad command line format
+ERROR no matching command";
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 22 10"; $val = "0000000000"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 23 10 10"; $val = "0000000000";
-$rst = "CLIENT_ERROR bad command line format"; $rst2 = "ERROR no matching command";
-print $sock "$cmd\r\n$val\r\n";
-is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst"); is(scalar <$sock>, "$rst2\r\n", "$rst2");
+$rst =
+"CLIENT_ERROR bad command line format
+ERROR no matching command";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 # Finalize
 $cmd = "delete bkey1"; $rst = "DELETED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "delete kvkey"; $rst = "DELETED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 
 $server->stop();
-
 
 # after test
 release_memcached($engine, $server);

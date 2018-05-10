@@ -9,9 +9,12 @@ use MemcachedTest;
 my $engine = shift;
 my $server = get_memcached($engine);
 my $sock = $server->sock;
+my $cmd;
+my $rst;
 
-print $sock "boguscommand slkdsldkfjsd\r\n";
-is(scalar <$sock>, "ERROR unknown command\r\n", "got error back");
+$cmd = "boguscommand slkdsldkfjsd";
+$rst = "ERROR unknown command";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # after test
 release_memcached($engine, $server);
