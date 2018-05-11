@@ -51,164 +51,216 @@ my $rst;
 
 # Initialize
 $cmd = "get bkey1"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # Prepare Keys
 $cmd = "bop insert bkey1 0x0010 1 create 11 0 0"; $val = "1"; $rst = "CREATED_STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 0x0020 1"; $val = "2"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 0x0030 1"; $val = "3"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 0x0040 1"; $val = "4"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 0x0050 1"; $val = "a"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 $cmd = "bop count bkey1 0x0010..0x0050"; $rst = "COUNT=5";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop incr bkey1 0x0010 1"; $rst = "2";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey1 0x0010";
+$rst = "VALUE 11 1
+0x0010 1 2
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "bop incr bkey1 0x0010 1\r\n";
-is(scalar <$sock>, "2\r\n", "+ 1 = 2");
-bop_ext_get_is($sock, "bkey1 0x0010", 11, 1, "0x0010", "", "2", "END");
+$cmd = "bop incr bkey1 0x0020 25"; $rst = "27";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey1 0x0020";
+$rst = "VALUE 11 1
+0x0020 2 27
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "bop incr bkey1 0x0020 25\r\n";
-is(scalar <$sock>, "27\r\n", "+ 25 = 27");
-bop_ext_get_is($sock, "bkey1 0x0020", 11, 1, "0x0020", "", "27", "END");
+$cmd = "bop decr bkey1 0x0020 20"; $rst = "7";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey1 0x0020";
+$rst = "VALUE 11 1
+0x0020 1 7
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "bop decr bkey1 0x0020 20\r\n";
-is(scalar <$sock>, "7\r\n", "- 20 = 7");
-bop_ext_get_is($sock, "bkey1 0x0020", 11, 1, "0x0020", "", "7", "END");
+$cmd = "bop decr bkey1 0x0030 2"; $rst = "1";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey1 0x0030";
+$rst = "VALUE 11 1
+0x0030 1 1
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "bop decr bkey1 0x0030 2\r\n";
-is(scalar <$sock>, "1\r\n", "- 2 = 1");
-bop_ext_get_is($sock, "bkey1 0x0030", 11, 1, "0x0030", "", "1", "END");
+$cmd = "bop decr bkey1 0x0040 10"; $rst = "0";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey1 0x0040";
+$rst = "VALUE 11 1
+0x0040 1 0
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "bop decr bkey1 0x0040 10\r\n";
-is(scalar <$sock>, "0\r\n", "- 10 = 0");
-bop_ext_get_is($sock, "bkey1 0x0040", 11, 1, "0x0040", "", "0", "END");
+$cmd = "bop incr bkey1 0x0050 10";
+$rst = "CLIENT_ERROR cannot increment or decrement non-numeric value";
+mem_cmd_is($sock, $cmd, "", $rst, "a + 10 = 0");
 
-print $sock "bop incr bkey1 0x0050 10\r\n";
-is(scalar <$sock>,
-   "CLIENT_ERROR cannot increment or decrement non-numeric value\r\n",
-   "a + 10 = 0");
+$cmd = "bop get bkey1 0x0050";
+$rst = "VALUE 11 1
+0x0050 1 a
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-bop_ext_get_is($sock, "bkey1 0x0050", 11, 1, "0x0050", "", "a", "END");
+$cmd = "bop incr bkey1 0x0060 10"; $rst = "NOT_FOUND_ELEMENT";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "bop incr bkey1 0x0060 10\r\n";
-$rst = "NOT_FOUND_ELEMENT";
-is(scalar <$sock>, "$rst\r\n", "$rst");
+$cmd = "bop incr bkey1 0x0060 10 6"; $rst = "6";
+mem_cmd_is($sock, $cmd, "", $rst, "initail = 6");
+$cmd = "bop get bkey1 0x0060";
+$rst = "VALUE 11 1
+0x0060 1 6
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "bop incr bkey1 0x0060 10 6\r\n";
-is(scalar <$sock>, "6\r\n", "initail = 6");
-bop_ext_get_is($sock, "bkey1 0x0060", 11, 1, "0x0060", "", "6", "END");
+$cmd = "bop incr bkey1 0x0060 10 6"; $rst = "16";
+mem_cmd_is($sock, $cmd, "", $rst, "+ 10 = 16");
+$cmd = "bop get bkey1 0x0060";
+$rst = "VALUE 11 1
+0x0060 2 16
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "bop incr bkey1 0x0060 10 6\r\n";
-is(scalar <$sock>, "16\r\n", "+ 10 = 16");
-bop_ext_get_is($sock, "bkey1 0x0060", 11, 1, "0x0060", "", "16", "END");
+$cmd = "bop decr bkey1 0x0070 10 7 0xFF"; $rst = "7";
+mem_cmd_is($sock, $cmd, "", $rst, "initial = 7 0xFF");
+$cmd = "bop get bkey1 0x0070";
+$rst = "VALUE 11 1
+0x0070 0xFF 1 7
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "bop decr bkey1 0x0070 10 7 0xFF\r\n";
-is(scalar <$sock>, "7\r\n", "initial = 7 0xFF");
-bop_ext_get_is($sock, "bkey1 0x0070", 11, 1, "0x0070", "0xFF", "7", "END");
+$cmd = "bop decr bkey1 0x0070 5 7 0xFF"; $rst = "2";
+mem_cmd_is($sock, $cmd, "", $rst, "- 5 = 2");
+$cmd = "bop get bkey1 0x0070";
+$rst = "VALUE 11 1
+0x0070 0xFF 1 2
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "bop decr bkey1 0x0070 5 7 0xFF\r\n";
-is(scalar <$sock>, "2\r\n", "- 5 = 2");
-bop_ext_get_is($sock, "bkey1 0x0070", 11, 1, "0x0070", "0xFF", "2", "END");
+$cmd = "bop decr bkey1 0x0070 10 7 0xFF"; $rst = "0";
+mem_cmd_is($sock, $cmd, "", $rst, "- 10 = 0");
+$cmd = "bop get bkey1 0x0070";
+$rst = "VALUE 11 1
+0x0070 0xFF 1 0
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "bop decr bkey1 0x0070 10 7 0xFF\r\n";
-is(scalar <$sock>, "0\r\n", "- 10 = 0");
-bop_ext_get_is($sock, "bkey1 0x0070", 11, 1, "0x0070", "0xFF", "0", "END");
+$cmd = "bop incr bkey1 0x0080 0 987654321 0xF0F0";
+$rst = "CLIENT_ERROR bad command line format";
+mem_cmd_is($sock, $cmd, "", $rst, "delta = 0");
 
-print $sock "bop incr bkey1 0x0080 0 987654321 0xF0F0\r\n";
-is(scalar <$sock>, "CLIENT_ERROR bad command line format\r\n", "delta = 0");
+$cmd = "bop incr bkey1 0x0080 1 987654321 0xF0F0"; $rst = "987654321";
+mem_cmd_is($sock, $cmd, "", $rst, "initial = 987654321 0xF0F0");
+$cmd = "bop get bkey1 0x0080";
+$rst = "VALUE 11 1
+0x0080 0xF0F0 9 987654321
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "bop incr bkey1 0x0080 1 987654321 0xF0F0\r\n";
-is(scalar <$sock>, "987654321\r\n", "initial = 987654321 0xF0F0");
-bop_ext_get_is($sock, "bkey1 0x0080", 11, 1, "0x0080", "0xF0F0", "987654321", "END");
+$cmd = "bop decr bkey1 0x0080 1"; $rst = "987654320";
+mem_cmd_is($sock, $cmd, "", $rst, "- 1 = 987654320");
+$cmd = "bop get bkey1 0x0080";
+$rst = "VALUE 11 1
+0x0080 0xF0F0 9 987654320
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "bop decr bkey1 0x0080 1\r\n";
-is(scalar <$sock>, "987654320\r\n", "- 1 = 987654320");
-bop_ext_get_is($sock, "bkey1 0x0080", 11, 1, "0x0080", "0xF0F0", "987654320", "END");
+$cmd = "bop decr bkey1 0x0080 900000000"; $rst = "87654320";
+mem_cmd_is($sock, $cmd, "", $rst, "- 900000000 = 87654320");
+$cmd = "bop get bkey1 0x0080";
+$rst = "VALUE 11 1
+0x0080 0xF0F0 8 87654320
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "bop decr bkey1 0x0080 900000000\r\n";
-is(scalar <$sock>, "87654320\r\n", "- 900000000 = 87654320");
-bop_ext_get_is($sock, "bkey1 0x0080", 11, 1, "0x0080", "0xF0F0", "87654320", "END");
+$cmd = "bop decr bkey1 0x0080 80000000 10"; $rst = "7654320";
+mem_cmd_is($sock, $cmd, "", $rst, "- 80000000 = 7654320");
+$cmd = "bop get bkey1 0x0080";
+$rst = "VALUE 11 1
+0x0080 0xF0F0 7 7654320
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "bop decr bkey1 0x0080 80000000 10\r\n";
-is(scalar <$sock>, "7654320\r\n", "- 80000000 = 7654320");
-bop_ext_get_is($sock, "bkey1 0x0080", 11, 1, "0x0080", "0xF0F0", "7654320", "END");
+$cmd = "bop decr bkey1 0x0080 7654000 10 0xFFFF"; $rst = "320";
+mem_cmd_is($sock, $cmd, "", $rst, "- 7654000 = 320");
+$cmd = "bop get bkey1 0x0080";
+$rst = "VALUE 11 1
+0x0080 0xF0F0 3 320
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "bop decr bkey1 0x0080 7654000 10 0xFFFF\r\n";
-is(scalar <$sock>, "320\r\n", "- 7654000 = 320");
-bop_ext_get_is($sock, "bkey1 0x0080", 11, 1, "0x0080", "0xF0F0", "320", "END");
+$cmd = "bop incr bkey1 0x0080 680 10 0xFFFF"; $rst = "1000";
+mem_cmd_is($sock, $cmd, "", $rst, "+ 680 = 1000");
+$cmd = "bop get bkey1 0x0080";
+$rst = "VALUE 11 1
+0x0080 0xF0F0 4 1000
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "bop incr bkey1 0x0080 680 10 0xFFFF\r\n";
-is(scalar <$sock>, "1000\r\n", "+ 680 = 1000");
-bop_ext_get_is($sock, "bkey1 0x0080", 11, 1, "0x0080", "0xF0F0", "1000", "END");
+$cmd = "bop incr bkey1 1 10"; $rst = "BKEY_MISMATCH";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "bop incr bkey1 1 10\r\n";
-$rst = "BKEY_MISMATCH";
-is(scalar <$sock>, "$rst\r\n", "$rst");
-
-print $sock "bop incr bkey2 0 10\r\n";
-$rst = "NOT_FOUND";
-is(scalar <$sock>, "$rst\r\n", "$rst");
+$cmd = "bop incr bkey2 0 10"; $rst = "NOT_FOUND";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # additional tests
-$cmd = "bop insert bkey1 0x0100 0"; $val = ""; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+$cmd = "bop insert bkey1 0x0100 0\r\n"; $val = ""; $rst = "STORED"; # 0 value test
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 0x0110 2"; $val = "-1"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 0x0120 20"; $val = "18446744073709551615"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 0x0130 20"; $val = "18446744073709551614"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 0x0140 20"; $val = "18446744073709551616"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 
-print $sock "bop incr bkey1 0x0100 1\r\n";
-is(scalar <$sock>,
-   "CLIENT_ERROR cannot increment or decrement non-numeric value\r\n",
-   "incr1 on empty");
-print $sock "bop decr bkey1 0x0100 1\r\n";
-is(scalar <$sock>,
-   "CLIENT_ERROR cannot increment or decrement non-numeric value\r\n",
-   "decr 1 on empty");
+$rst = "CLIENT_ERROR cannot increment or decrement non-numeric value";
+$cmd = "bop incr bkey1 0x0100 1";
+mem_cmd_is($sock, $cmd, "", $rst, "incr1 on empty");
+$cmd = "bop decr bkey1 0x0100 1";
+mem_cmd_is($sock, $cmd, "", $rst, "decr 1 on empty");
+$cmd = "bop incr bkey1 0x0110 1";
+mem_cmd_is($sock, $cmd, "", $rst, "incr 1 on -1");
+$cmd = "bop decr bkey1 0x0110 1";
+mem_cmd_is($sock, $cmd, "", $rst, "incr 1 on -1");
 
-print $sock "bop incr bkey1 0x0110 1\r\n";
-is(scalar <$sock>,
-   "CLIENT_ERROR cannot increment or decrement non-numeric value\r\n",
-   "incr 1 on -1");
-print $sock "bop decr bkey1 0x0110 1\r\n";
-is(scalar <$sock>,
-   "CLIENT_ERROR cannot increment or decrement non-numeric value\r\n",
-   "incr 1 on -1");
+$cmd = "bop incr bkey1 0x0120 1"; $rst = "0";
+mem_cmd_is($sock, $cmd, "", $rst, "incr 1 on 18446744073709551615");
+$cmd = "bop decr bkey1 0x0120 1"; $rst = "0";
+mem_cmd_is($sock, $cmd, "", $rst, "decr 1 on 0");
 
-print $sock "bop incr bkey1 0x0120 1\r\n";
-is(scalar <$sock>, "0\r\n", "incr 1 on 18446744073709551615");
-print $sock "bop decr bkey1 0x0120 1\r\n";
-is(scalar <$sock>, "0\r\n", "decr 1 on 0");
+$cmd = "bop incr bkey1 0x0130 1"; $rst = "18446744073709551615";
+mem_cmd_is($sock, $cmd, "", $rst, "incr 1 on 18446744073709551614");
+$cmd = "bop decr bkey1 0x0130 1"; $rst = "18446744073709551614";
+mem_cmd_is($sock, $cmd, "", $rst, "decr 1 on 18446744073709551615");
+$cmd = "bop decr bkey1 0x0130 1"; $rst = "18446744073709551613";
+mem_cmd_is($sock, $cmd, "", $rst, "decr 1 on 18446744073709551614");
 
-print $sock "bop incr bkey1 0x0130 1\r\n";
-is(scalar <$sock>, "18446744073709551615\r\n", "incr 1 on 18446744073709551614");
-print $sock "bop decr bkey1 0x0130 1\r\n";
-is(scalar <$sock>, "18446744073709551614\r\n", "decr 1 on 18446744073709551615");
-print $sock "bop decr bkey1 0x0130 1\r\n";
-is(scalar <$sock>, "18446744073709551613\r\n", "decr 1 on 18446744073709551614");
-
-print $sock "bop incr bkey1 0x0140 1\r\n";
-is(scalar <$sock>,
-   "CLIENT_ERROR cannot increment or decrement non-numeric value\r\n",
-   "incr 1 on 18446744073709551616");
-print $sock "bop decr bkey1 0x0140 1\r\n";
-is(scalar <$sock>,
-   "CLIENT_ERROR cannot increment or decrement non-numeric value\r\n",
-   "decr 1 on 18446744073709551616");
+$rst = "CLIENT_ERROR cannot increment or decrement non-numeric value";
+$cmd = "bop incr bkey1 0x0140 1";
+mem_cmd_is($sock, $cmd, "", $rst, "incr 1 on 18446744073709551616");
+$cmd = "bop decr bkey1 0x0140 1";
+mem_cmd_is($sock, $cmd, "", $rst, "decr 1 on 18446744073709551616");
 
 # Finalize
 $cmd = "delete bkey1"; $rst = "DELETED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # after test
 release_memcached($engine, $server);

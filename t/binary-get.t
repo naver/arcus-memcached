@@ -11,13 +11,15 @@ my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 my $count = 1;
+my $cmd;
+my $val;
+my $rst;
 
 foreach my $blob ("mooo\0", "mumble\0\0\0\0\r\rblarg", "\0", "\r") {
     my $key = "foo$count";
     my $len = length($blob);
-    print "len is $len\n";
-    print $sock "set $key 0 0 $len\r\n$blob\r\n";
-    is(scalar <$sock>, "STORED\r\n", "stored $key");
+    $cmd = "set $key 0 0 $len"; $val = $blob; $rst = "STORED";
+    mem_cmd_is($sock, $cmd, $val, $rst);
     mem_get_is($sock, $key, $blob);
     $count++;
 }

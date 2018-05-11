@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 43;
+use Test::More tests => 30;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -12,98 +12,117 @@ my $server = get_memcached($engine);
 my $sock = $server->sock;
 my $sock2 = $server->new_sock;
 
+my $cmd;
+my $val;
+my $rst;
+my $msg;
 my @result;
 my @result2;
 
 ok($sock != $sock2, "have two different connections open");
-
-print $sock "cas bad blah 0 0 0\r\n";
-is(scalar <$sock>, "CLIENT_ERROR bad command line format\r\n", "bad flags");
-print $sock "cas bad 0 blah 0 0\r\n";
-is(scalar <$sock>, "CLIENT_ERROR bad command line format\r\n", "bad exp");
-print $sock "cas bad 0 0 blah 0\r\n";
-is(scalar <$sock>, "CLIENT_ERROR bad command line format\r\n", "bad cas");
-print $sock "cas bad 0 0 0 blah\r\n";
-is(scalar <$sock>, "CLIENT_ERROR bad command line format\r\n", "bad size");
+$rst = "CLIENT_ERROR bad command line format";
+$cmd = "cas bad blah 0 0 0"; $msg = "bad flags";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
+$cmd = "cas bad 0 blah 0 0"; $msg = "bad exp";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
+$cmd = "cas bad 0 0 blah 0"; $msg = "bad cas";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
+$cmd = "cas bad 0 0 0 blah"; $msg = "bad size";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
 
 # gets foo (should not exist)
-print $sock "gets foo\r\n";
-is(scalar <$sock>, "END\r\n", "gets failed");
+$cmd = "gets foo"; $rst = "END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # set foo
-print $sock "set foo 0 0 6\r\nbarval\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored barval");
+$cmd = "set foo 0 0 6"; $val = "barval"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 # gets foo and verify identifier exists
 @result = mem_gets($sock, "foo");
-mem_gets_is($sock,$result[0],"foo","barval");
+$cmd = "gets foo";
+$rst =
+"VALUE foo 0 6 $result[0]
+barval
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # cas fail
-print $sock "cas foo 0 0 6 123\r\nbarva2\r\n";
-is(scalar <$sock>, "EXISTS\r\n", "cas failed for foo");
+$cmd = "cas foo 0 0 6 123"; $val = "barva2"; $rst = "EXISTS";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 # gets foo - success
 @result = mem_gets($sock, "foo");
-mem_gets_is($sock,$result[0],"foo","barval");
+$cmd = "gets foo";
+$rst =
+"VALUE foo 0 6 $result[0]
+barval
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # cas success
-print $sock "cas foo 0 0 6 $result[0]\r\nbarva2\r\n";
-is(scalar <$sock>, "STORED\r\n", "cas success, set foo");
+$cmd = "cas foo 0 0 6 $result[0]"; $val = "barva2"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 # cas failure (reusing the same key)
-print $sock "cas foo 0 0 6 $result[0]\r\nbarva2\r\n";
-is(scalar <$sock>, "EXISTS\r\n", "reusing a CAS ID");
+$cmd = "cas foo 0 0 6 $result[0]"; $val = "barva2"; $rst = "EXISTS";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 # delete foo
-print $sock "delete foo\r\n";
-is(scalar <$sock>, "DELETED\r\n", "deleted foo");
+$cmd = "delete foo"; $rst = "DELETED";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # cas missing
-print $sock "cas foo 0 0 6 $result[0]\r\nbarva2\r\n";
-is(scalar <$sock>, "NOT_FOUND\r\n", "cas failed, foo does not exist");
+$cmd = "cas foo 0 0 6 $result[0]"; $val = "barva2"; $rst = "NOT_FOUND";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 # cas empty
-print $sock "cas foo 0 0 6 \r\nbarva2\r\n";
-is(scalar <$sock>, "ERROR unknown command\r\n", "cas empty, throw error");
 # cant parse barval2\r\n
-is(scalar <$sock>, "ERROR unknown command\r\n", "error out on barval2 parsing");
+$cmd = "cas foo 0 0 6"; $val = "barva2";
+$rst =
+"ERROR unknown command
+ERROR unknown command";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 # set foo1
-print $sock "set foo1 0 0 1\r\n1\r\n";
-is(scalar <$sock>, "STORED\r\n", "set foo1");
+$cmd = "set foo1 0 0 1"; $val = "1"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 # set foo2
-print $sock "set foo2 0 0 1\r\n2\r\n";
-is(scalar <$sock>, "STORED\r\n", "set foo2");
+$cmd = "set foo2 0 0 1"; $val = "2"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 # gets foo1 check
-print $sock "gets foo1\r\n";
-ok(scalar <$sock> =~ /VALUE foo1 0 1 (\d+)\r\n/, "gets foo1 regexp success");
-my $foo1_cas = $1;
-is(scalar <$sock>, "1\r\n","gets foo1 data is 1");
-is(scalar <$sock>, "END\r\n","gets foo1 END");
+@result = mem_gets($sock, "foo1");
+$cmd = "gets foo1";
+$rst =
+"VALUE foo1 0 1 $result[0]
+1
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # gets foo2 check
-print $sock "gets foo2\r\n";
-ok(scalar <$sock> =~ /VALUE foo2 0 1 (\d+)\r\n/,"gets foo2 regexp success");
-my $foo2_cas = $1;
-is(scalar <$sock>, "2\r\n","gets foo2 data is 2");
-is(scalar <$sock>, "END\r\n","gets foo2 END");
+@result2 = mem_gets($sock, "foo2");
+$cmd = "gets foo2";
+$rst =
+"VALUE foo2 0 1 $result2[0]
+2
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # validate foo1 != foo2
-ok($foo1_cas != $foo2_cas,"foo1 != foo2 single-gets success");
+ok($result[0] != $result2[0],"foo1 != foo2 single-gets success");
 
 # multi-gets
-print $sock "gets foo1 foo2\r\n";
-ok(scalar <$sock> =~ /VALUE foo1 0 1 (\d+)\r\n/, "validating first set of data is foo1");
-$foo1_cas = $1;
-is(scalar <$sock>, "1\r\n", "validating foo1 set of data is 1");
-ok(scalar <$sock> =~ /VALUE foo2 0 1 (\d+)\r\n/, "validating second set of data is foo2");
-$foo2_cas = $1;
-is(scalar <$sock>, "2\r\n", "validating foo2 set of data is 2");
-is(scalar <$sock>, "END\r\n","validating foo1,foo2 gets is over - END");
+$cmd = "gets foo1 foo2";
+$rst =
+"VALUE foo1 0 1 $result[0]
+1
+VALUE foo2 0 1 $result2[0]
+2
+END";
 
 # validate foo1 != foo2
-ok($foo1_cas != $foo2_cas, "foo1 != foo2 multi-gets success");
+ok($result[0] != $result2[0],"foo1 != foo2 single-gets success");
 
 ### simulate race condition with cas
 
@@ -115,41 +134,40 @@ ok($result[0] != "", "sock - gets foo1 is not empty");
 @result2 = mem_gets($sock2, "foo1");
 ok($result2[0] != "","sock2 - gets foo1 is not empty");
 
-print $sock "cas foo1 0 0 6 $result[0]\r\nbarva2\r\n";
-print $sock2 "cas foo1 0 0 5 $result2[0]\r\napple\r\n";
-
-my $res1 = <$sock>;
-my $res2 = <$sock2>;
-
-ok( ( $res1 eq "STORED\r\n" && $res2 eq "EXISTS\r\n") ||
-    ( $res1 eq "EXISTS\r\n" && $res2 eq "STORED\r\n"),
-    "cas on same item from two sockets");
+$cmd = "cas foo1 0 0 6 $result[0]"; $val = "barva2"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "cas foo1 0 0 5 $result2[0]"; $val = "apple"; $rst = "EXISTS";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 ### bug 15: http://code.google.com/p/memcached/issues/detail?id=15
 
 # set foo
-print $sock "set bug15 0 0 1\r\n0\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored 0");
+$cmd = "set bug15 0 0 1"; $val = "0"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 # Check out the first gets.
-print $sock "gets bug15\r\n";
-ok(scalar <$sock> =~ /VALUE bug15 0 1 (\d+)\r\n/, "gets bug15 regexp success");
-my $bug15_cas = $1;
-is(scalar <$sock>, "0\r\n", "gets bug15 data is 0");
-is(scalar <$sock>, "END\r\n","gets bug15 END");
+@result = mem_gets($sock, "bug15");
+$cmd = "gets bug15";
+$rst =
+"VALUE bug15 0 1 $result[0]
+0
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # Increment
-print $sock "incr bug15 1\r\n";
-is(scalar <$sock>, "1\r\n", "incr worked");
+$cmd = "incr bug15 1"; $rst = "1";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # Validate a changed CAS
-print $sock "gets bug15\r\n";
-ok(scalar <$sock> =~ /VALUE bug15 0 1 (\d+)\r\n/, "gets bug15 regexp success");
-my $next_bug15_cas = $1;
-is(scalar <$sock>, "1\r\n", "gets bug15 data is 0");
-is(scalar <$sock>, "END\r\n","gets bug15 END");
+@result2 = mem_gets($sock, "bug15");
+$cmd = "gets bug15";
+$rst =
+"VALUE bug15 0 1 $result2[0]
+1
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-ok($bug15_cas != $next_bug15_cas, "CAS changed");
+ok($result[0] != $result2[0], "CAS changed");
 
 # after test
 release_memcached($engine, $server);
