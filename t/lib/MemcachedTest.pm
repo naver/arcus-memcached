@@ -66,12 +66,13 @@ sub mem_cmd_is {
         print $sock "$cmd\r\n$val\r\n";
     }
 
-    # msg
+    # msg string
     if ("$msg" eq "") {
-        if (length($val) > 40) {
-            $val = substr($val, 0, 40);
+        if (length($val) <= 40) {
+            $msg = $cmd . ":" . $val;
+        } else {
+            $msg = $cmd . ":" . substr($val, 0, 40);
         }
-        $msg = $cmd . ":" . $val;
     }
 
     my $resp = "";
