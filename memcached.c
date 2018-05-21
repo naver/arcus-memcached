@@ -123,6 +123,9 @@ static int MAX_BTREE_SIZE = 50000;
 #define STATS_MISS(conn, op, key, nkey) \
     STATS_TWO(conn, op##_misses, cmd_##op, key, nkey)
 
+#define STATS_BADVALUE(conn, op, key, nkey) \
+    SLAB_TWO(conn, op##_badval, cmd_##op, key, nkey)
+
 #define STATS_NOKEY(conn, op) { \
     struct thread_stats *thread_stats = \
         get_thread_stats(conn); \
@@ -219,6 +222,7 @@ static enum try_read_result try_read_udp(conn *c);
 static void stats_init(void);
 static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate);
 static void process_stat_settings(ADD_STAT add_stats, void *c);
+static void update_stat_cas(conn *c, ENGINE_ERROR_CODE ret);
 
 /* defaults */
 static void settings_init(void);
@@ -3133,6 +3137,24 @@ static void process_mget_complete(conn *c)
     }
 }
 
+static void update_stat_cas(conn *c, ENGINE_ERROR_CODE ret)
+{
+    switch (ret) {
+        case ENGINE_SUCCESS:
+            STATS_HIT(c, cas, c->hinfo.key, c->hinfo.nkey);
+            break;
+        case ENGINE_KEY_EEXISTS:
+            STATS_BADVALUE(c, cas, c->hinfo.key, c->hinfo.nkey);
+            break;
+        case ENGINE_KEY_ENOENT:
+        case ENGINE_EBADTYPE:
+            STATS_MISS(c, cas, c->hinfo.key, c->hinfo.nkey);
+            break;
+        default:
+            STATS_NOKEY(c, cmd_cas);
+    }
+}
+
 static void complete_update_ascii(conn *c) {
     assert(c != NULL);
     assert(c->ewouldblock == false);
@@ -3171,10 +3193,11 @@ static void complete_update_ascii(conn *c) {
         return;
     }
 
+    ENGINE_ERROR_CODE ret;
     if (hinfo_check_ascii_tail_string(&c->hinfo) != 0) { /* check "\r\n" */
         out_string(c, "CLIENT_ERROR bad data chunk");
+        ret = ENGINE_EBADVALUE;
     } else {
-        ENGINE_ERROR_CODE ret;
         ret = mc_engine.v1->store(mc_engine.v0, c, it, &c->cas, c->store_op, 0);
 
 #ifdef ENABLE_DTRACE
@@ -3257,7 +3280,12 @@ static void complete_update_ascii(conn *c) {
             handle_unexpected_errorcode_ascii(c, ret);
         }
     }
-    SLAB_INCR(c, cmd_set, c->hinfo.key, c->hinfo.nkey);
+
+    if (c->store_op == OPERATION_CAS) {
+        update_stat_cas(c, ret);
+    } else {
+        SLAB_INCR(c, cmd_set, c->hinfo.key, c->hinfo.nkey);
+    }
 
     /* release the c->item reference */
     mc_engine.v1->release(mc_engine.v0, c, c->item);
@@ -3743,7 +3771,12 @@ static void complete_update_bin(conn *c) {
         }
         write_bin_packet(c, eno, 0);
     }
-    SLAB_INCR(c, cmd_set, c->hinfo.key, c->hinfo.nkey);
+
+    if (c->store_op == OPERATION_CAS) {
+        update_stat_cas(c, ret);
+    } else {
+        SLAB_INCR(c, cmd_set, c->hinfo.key, c->hinfo.nkey);
+    }
 
     /* release the c->item reference */
     mc_engine.v1->release(mc_engine.v0, c, c->item);
@@ -8090,6 +8123,7 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("cmd_delete", "%"PRIu64, thread_stats.cmd_delete);
     APPEND_STAT("cmd_flush", "%"PRIu64, thread_stats.cmd_flush);
     APPEND_STAT("cmd_flush_prefix", "%"PRIu64, thread_stats.cmd_flush_prefix);
+    APPEND_STAT("cmd_cas", "%"PRIu64, thread_stats.cmd_cas);
     APPEND_STAT("cmd_lop_create", "%"PRIu64, thread_stats.cmd_lop_create);
     APPEND_STAT("cmd_lop_insert", "%"PRIu64, thread_stats.cmd_lop_insert);
     APPEND_STAT("cmd_lop_delete", "%"PRIu64, thread_stats.cmd_lop_delete);

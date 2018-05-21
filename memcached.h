@@ -217,6 +217,7 @@ struct thread_stats {
     uint64_t          decr_misses;
     uint64_t          incr_hits;
     uint64_t          decr_hits;
+    uint64_t          cmd_cas;
     uint64_t          cas_misses;
     uint64_t          bytes_read;
     uint64_t          bytes_written;

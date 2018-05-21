@@ -548,6 +548,7 @@ void threadlocal_stats_clear(struct thread_stats *stats) {
     stats->decr_misses = 0;
     stats->incr_hits = 0;
     stats->decr_hits = 0;
+    stats->cmd_cas = 0;
     stats->cas_misses = 0;
     stats->bytes_written = 0;
     stats->bytes_read = 0;
@@ -687,6 +688,7 @@ void threadlocal_stats_aggregate(struct thread_stats *thread_stats, struct threa
         stats->incr_misses += thread_stats[ii].incr_misses;
         stats->decr_hits += thread_stats[ii].decr_hits;
         stats->incr_hits += thread_stats[ii].incr_hits;
+        stats->cmd_cas += thread_stats[ii].cmd_cas;
         stats->cas_misses += thread_stats[ii].cas_misses;
         stats->bytes_read += thread_stats[ii].bytes_read;
         stats->bytes_written += thread_stats[ii].bytes_written;
