@@ -9,15 +9,22 @@ use MemcachedTest;
 my $engine = shift;
 my $server = get_memcached($engine);
 my $sock = $server->sock;
+my $cmd;
+my $val;
+my $rst;
 
 # first get should miss
-print $sock "get foo\r\n";
-is(scalar <$sock>, "END\r\n", "get foo");
+$cmd = "get foo"; $rst = "END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # Now set and get (should hit)
-print $sock "set foo 0 0 6\r\nfooval\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored foo");
-mem_get_is($sock, "foo", "fooval");
+$cmd = "set foo 0 0 6"; $val = "fooval"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "get foo";
+$rst = "VALUE foo 0 6
+fooval
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 my $stats = mem_stats($sock);
 is($stats->{cmd_get}, 2, "Should have 2 get requests");

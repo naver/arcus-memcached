@@ -9,23 +9,29 @@ use MemcachedTest;
 my $engine = shift;
 my $server = get_memcached($engine);
 my $sock = $server->sock;
+my $cmd;
+my $val;
+my $rst;
 
-print $sock "stats topkeys\r\n";
-
-is(scalar <$sock>, "NOT_SUPPORTED\r\n", "No topkeys without command line option.");
+$cmd = "stats topkeys"; $rst = "NOT_SUPPORTED";
+mem_cmd_is($sock, $cmd, "", $rst, "No topkeys without command line option.");
 
 $ENV{"MEMCACHED_TOP_KEYS"} = "100";
 $server = get_memcached($engine);
 $sock = $server->sock;
 
-print $sock "stats topkeys\r\n";
-is(scalar <$sock>, "END\r\n", "No top keys yet.");
+$cmd = "stats topkeys"; $rst = "END";
+mem_cmd_is($sock, $cmd, "", $rst, "No top keys yet.");
 
 # Do some operations
 
-print $sock "set foo 0 0 6\r\nfooval\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored foo");
-mem_get_is($sock, "foo", "fooval");
+$cmd = "set foo 0 0 6"; $val = "fooval"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "get foo";
+$rst = "VALUE foo 0 6
+fooval
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 sub parse_stats {
     my ($stats) = @_;
@@ -48,27 +54,28 @@ foreach my $key (qw(get_misses incr_hits incr_misses decr_hits decr_misses delet
     is($stats->{'foo'}->{$key}, 0, "all stats except cmd_set are zero");
 }
 
-print $sock "set foo 0 0 6\r\nfooval\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored foo");
-print $sock "set bar 0 0 6\r\nbarval\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored bar");
-mem_get_is($sock, "bar", "barval");
+$cmd = "set foo 0 0 6"; $val = "fooval"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "set bar 0 0 6"; $val = "barval"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "get bar";
+$rst = "VALUE bar 0 6
+barval
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 $stats = parse_stats(mem_stats($sock, 'topkeys'));
 
 is($stats->{'foo'}->{'cmd_set'}, '2');
 is($stats->{'bar'}->{'cmd_set'}, '1');
 
-print $sock "delete foo\r\n";
-is(scalar <$sock>, "DELETED\r\n", "deleted foo");
+$cmd = "delete foo"; $rst = "DELETED";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 $stats = parse_stats(mem_stats($sock, 'topkeys'));
 is($stats->{'foo'}->{'delete_hits'}, 1);
 is($stats->{'foo'}->{'delete_misses'}, 0);
 is($stats->{'foo'}->{'cmd_set'}, 2);
-
-#print $sock "delete foo\r\n";
-#is(scalar <$sock>, "NOT_FOUND\r\n", "shouldn't delete foo again");
 
 sub check_incr_stats {
     my ($key, $ih, $im, $dh, $dm) = @_;
@@ -80,34 +87,34 @@ sub check_incr_stats {
     is($stats->{$key}->{'decr_misses'}, $dm);
 }
 
-print $sock "incr i 1\r\n";
-is(scalar <$sock>, "NOT_FOUND\r\n", "shouldn't incr a missing thing");
+$cmd = "incr i 1"; $rst = "NOT_FOUND";
+mem_cmd_is($sock, $cmd, "", $rst, "shouldn't incr a missing thing");
 check_incr_stats("i", 0, 1, 0, 0);
 
-print $sock "decr d 1\r\n";
-is(scalar <$sock>, "NOT_FOUND\r\n", "shouldn't decr a missing thing");
+$cmd = "decr d 1"; $rst = "NOT_FOUND";
+mem_cmd_is($sock, $cmd, "", $rst, "shouldn't decr a missing thing");
 check_incr_stats("d", 0, 0, 0, 1);
 
-print $sock "set n 0 0 1\r\n0\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored n");
+$cmd = "set n 0 0 1"; $val = "0"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
-print $sock "incr n 3\r\n";
-is(scalar <$sock>, "3\r\n", "incr works");
+$cmd = "incr n 3"; $rst = "3";
+mem_cmd_is($sock, $cmd, "", $rst, "incr works");
 check_incr_stats("n", 1, 0, 0, 0);
 
-print $sock "decr n 1\r\n";
-is(scalar <$sock>, "2\r\n", "decr works");
+$cmd = "decr n 1"; $rst = "2";
+mem_cmd_is($sock, $cmd, "", $rst, "decr works");
 check_incr_stats("n", 1, 0, 1, 0);
 
-print $sock "decr n 1\r\n";
-is(scalar <$sock>, "1\r\n", "decr works");
+$cmd = "decr n 1"; $rst = "1";
+mem_cmd_is($sock, $cmd, "", $rst, "decr works");
 check_incr_stats("n", 1, 0, 2, 0);
 
 my $i;
 # Make sure older keys fall out of the LRU
 for ($i = 0; $i < 200; $i++) {
-    print $sock "set foo$i 0 0 6\r\nfooval\r\n";
-    is(scalar <$sock>, "STORED\r\n", "stored foo$i");
+    $cmd = "set foo$i 0 0 6"; $val = "fooval"; $rst = "STORED";
+    mem_cmd_is($sock, $cmd, $val, $rst);
 }
 
 $stats = parse_stats(mem_stats($sock, 'topkeys'));

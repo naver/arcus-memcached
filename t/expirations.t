@@ -10,6 +10,10 @@ my $engine = shift;
 my $server = get_memcached($engine);
 my $sock = $server->sock;
 my $expire;
+my $cmd;
+my $val;
+my $rst;
+my $msg;
 
 sub wait_for_early_second {
     my $have_hires = eval "use Time::HiRes (); 1";
@@ -29,40 +33,61 @@ sub wait_for_early_second {
 
 wait_for_early_second();
 
-print $sock "set foo 0 1 6\r\nfooval\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored foo");
+$cmd = "set foo 0 1 6"; $val = "fooval"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
-mem_get_is($sock, "foo", "fooval");
+$cmd = "get foo";
+$rst = "VALUE foo 0 6
+fooval
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 sleep(1.5);
-mem_get_is($sock, "foo", undef);
+$cmd = "get foo";
+$rst = "END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 $expire = time() - 1;
-print $sock "set foo 0 $expire 6\r\nfooval\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored foo");
-mem_get_is($sock, "foo", undef, "already expired");
+$cmd = "set foo 0 $expire 6"; $val = "fooval"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "get foo"; $rst = "END"; $msg = "already expired";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
 
 $expire = time() + 1;
-print $sock "set foo 0 $expire 6\r\nfoov+1\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored foo");
-mem_get_is($sock, "foo", "foov+1");
+$cmd = "set foo 0 $expire 6"; $val = "foov+1"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "get foo";
+$rst = "VALUE foo 0 6
+foov+1
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 sleep(2.2);
-mem_get_is($sock, "foo", undef, "now expired");
+$cmd = "get foo"; $rst = "END"; $msg = "now expired";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
 
 $expire = time() - 20;
-print $sock "set boo 0 $expire 6\r\nbooval\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored boo");
-mem_get_is($sock, "boo", undef, "now expired");
+$cmd = "set boo 0 $expire 6"; $val = "booval"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "get boo"; $rst = "END"; $msg = "now expired";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
 
-print $sock "add add 0 2 6\r\naddval\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored add");
-mem_get_is($sock, "add", "addval");
+$cmd = "add add 0 2 6"; $val = "addval"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "get add";
+$rst = "VALUE add 0 6
+addval
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 # second add fails
-print $sock "add add 0 2 7\r\naddval2\r\n";
-is(scalar <$sock>, "NOT_STORED\r\n", "add failure");
+$cmd = "add add 0 2 7"; $val = "addval2"; $rst = "NOT_STORED"; $msg = "add failure";
+mem_cmd_is($sock, $cmd, $val, $rst, $msg);
 sleep(2.3);
-print $sock "add add 0 2 7\r\naddval3\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored add again");
-mem_get_is($sock, "add", "addval3");
+$cmd = "add add 0 2 7"; $val = "addval3"; $rst = "STORED"; $msg = "stored add again";
+mem_cmd_is($sock, $cmd, $val, $rst, $msg);
+$cmd = "get add";
+$rst = "VALUE add 0 7
+addval3
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # after test
 release_memcached($engine, $server);

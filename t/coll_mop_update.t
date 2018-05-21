@@ -43,30 +43,43 @@ my $rst;
 
 # Initialize
 $cmd = "get mkey1"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "mop insert mkey1 f3 6 create 11 0 0"; $val = "datum3"; $rst = "CREATED_STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "mop insert mkey1 f2 6"; $val = "datum2"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "mop insert mkey1 f1 6"; $val = "datum1"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-mop_get_is($sock, "mkey1 8 3", 11, 3, 3, "f3 f2 f1", "f3,f2,f1",
-           "datum3,datum2,datum1","END");
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "mop get mkey1 8 3"; $val = "f3 f2 f1";
+$rst = "VALUE 11 3
+f3 6 datum3
+f2 6 datum2
+f1 6 datum1
+END";
+mem_cmd_is($sock, $cmd, $val, $rst);
+
 # Success Cases
 $cmd = "mop update mkey1 f3 8"; $val = "datum333"; $rst = "UPDATED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "mop update mkey1 f2 8"; $val = "datum222"; $rst = "UPDATED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "mop update mkey1 f1 6"; $val = "datum0"; $rst = "UPDATED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-mop_get_is($sock, "mkey1 8 3", 11, 3, 3, "f3 f2 f1", "f3,f2,f1",
-           "datum333,datum222,datum0", "END");
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "mop get mkey1 8 3"; $val = "f3 f2 f1";
+$rst = "VALUE 11 3
+f3 8 datum333
+f2 8 datum222
+f1 6 datum0
+END";
+mem_cmd_is($sock, $cmd, $val, $rst);
+
 # Fail Cases
 $cmd = "mop update mkey1 f4 8"; $val = "datum444"; $rst = "NOT_FOUND_ELEMENT";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
+
 # Finalize
 $cmd = "delete mkey1"; $rst = "DELETED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # after test
 release_memcached($engine, $server);

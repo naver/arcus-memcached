@@ -9,15 +9,18 @@ use MemcachedTest;
 my $engine = shift;
 my $server = get_memcached($engine);
 my $sock = $server->sock;
+my $cmd;
+my $val;
+my $rst;
 
 # key string longer than KEY_MAX_LENGTH
 my $key = "a"x32001;
 
-print $sock "set a 1 0 1\r\na\r\n";
-is (scalar <$sock>, "STORED\r\n", "Stored key");
+$cmd = "set a 1 0 1"; $val = "a"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
-print $sock "get a $key\r\n";
-is (scalar <$sock>, "CLIENT_ERROR bad command line format\r\n", "illegal key");
+$cmd = "get a $key"; $rst = "CLIENT_ERROR bad command line format";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # after test
 release_memcached($engine, $server);

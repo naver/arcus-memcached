@@ -17,7 +17,9 @@ my $engine = shift;
 my $server = get_memcached($engine, "-m 3 -n 32");
 ######################################
 my $sock = $server->sock;
-my $value = "B"x77320;
+my $cmd;
+my $val = "B"x77320;
+my $rst;
 my $key = 0;
 
 ### [ARCUS] CHANGED FOLLOWING TEST ###
@@ -25,8 +27,8 @@ my $key = 0;
 #for ($key = 0; $key < 40; $key++) {
 for ($key = 0; $key < 60; $key++) {
 ######################################
-    print $sock "set key$key 0 0 77320\r\n$value\r\n";
-    is (scalar <$sock>, "STORED\r\n", "stored key$key");
+    $cmd = "set key$key 0 0 77320"; $rst = "STORED";
+    mem_cmd_is($sock, $cmd, $val, $rst);
 }
 
 my $first_stats  = mem_stats($sock, "items");
@@ -35,8 +37,8 @@ my $first_evicted = $first_stats->{"items:31:evicted"};
 # Just check that I have evictions...
 isnt ($first_evicted, "0", "check evicted");
 
-print $sock "stats reset\r\n";
-is (scalar <$sock>, "RESET\r\n", "Stats reset");
+$cmd = "stats reset"; $rst = "RESET";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 my $second_stats  = mem_stats($sock, "items");
 my $second_evicted = $second_stats->{"items:31:evicted"};
@@ -47,8 +49,8 @@ is ($second_evicted, "0", "check evicted");
 #for ($key = 40; $key < 80; $key++) {
 for ($key = 60; $key < 100; $key++) {
 ######################################
-    print $sock "set key$key 0 0 77320\r\n$value\r\n";
-    is (scalar <$sock>, "STORED\r\n", "stored key$key");
+    $cmd = "set key$key 0 0 77320"; $rst = "STORED";
+    mem_cmd_is($sock, $cmd, $val, $rst);
 }
 
 my $last_stats  = mem_stats($sock, "items");

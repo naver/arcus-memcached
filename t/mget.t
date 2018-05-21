@@ -49,16 +49,16 @@ my $val;
 my $rst;
 
 # set
-print $sock "set key1 0 0 6\r\nvalue1\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored key1");
-print $sock "set key2 0 0 6\r\nvalue2\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored key2");
-print $sock "set key3 0 0 6\r\nvalue3\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored key3");
-print $sock "set key4 0 0 6\r\nvalue4\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored key4");
-print $sock "set key5 0 0 6\r\nvalue5\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored key5");
+$cmd = "set key1 0 0 6"; $val = "value1"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "set key2 0 0 6"; $val = "value2"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "set key3 0 0 6"; $val = "value3"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "set key4 0 0 6"; $val = "value4"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "set key5 0 0 6"; $val = "value5"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 # mget (OLD command)
 $cmd = "get key1 key2 key3 key4 key5"; $val = "";
@@ -73,7 +73,7 @@ value4
 VALUE key5 0 6
 value5
 END";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "get key5 key4 key3 key2 key1"; $val = "";
 $rst = "VALUE key5 0 6
 value5
@@ -86,7 +86,7 @@ value2
 VALUE key1 0 6
 value1
 END";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "get key1 key2 key3 key4 key5 key6"; $val = "";
 $rst = "VALUE key1 0 6
 value1
@@ -99,7 +99,7 @@ value4
 VALUE key5 0 6
 value5
 END";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "get key6 key5 key4 key3 key2 key1"; $val = "";
 $rst = "VALUE key5 0 6
 value5
@@ -112,7 +112,7 @@ value2
 VALUE key1 0 6
 value1
 END";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 # mget (NEW command)
 $cmd = "mget 24 5"; $val = "key1 key2 key3 key4 key5";
@@ -127,7 +127,7 @@ value4
 VALUE key5 0 6
 value5
 END";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "mget 24 5"; $val = "key5 key4 key3 key2 key1";
 $rst = "VALUE key5 0 6
 value5
@@ -140,7 +140,7 @@ value2
 VALUE key1 0 6
 value1
 END";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "mget 29 6"; $val = "key1 key2 key3 key4 key5 key6";
 $rst = "VALUE key1 0 6
 value1
@@ -153,7 +153,7 @@ value4
 VALUE key5 0 6
 value5
 END";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "mget 29 6"; $val = "key6 key5 key4 key3 key2 key1";
 $rst = "VALUE key5 0 6
 value5
@@ -166,19 +166,19 @@ value2
 VALUE key1 0 6
 value1
 END";
-mem_cmd_val_is($sock, $cmd, $val, $rst);
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 # delete
-print $sock "delete key1\r\n";
-is(scalar <$sock>, "DELETED\r\n", "deleted key1");
-print $sock "delete key2\r\n";
-is(scalar <$sock>, "DELETED\r\n", "deleted key2");
-print $sock "delete key3\r\n";
-is(scalar <$sock>, "DELETED\r\n", "deleted key3");
-print $sock "delete key4\r\n";
-is(scalar <$sock>, "DELETED\r\n", "deleted key4");
-print $sock "delete key5\r\n";
-is(scalar <$sock>, "DELETED\r\n", "deleted key5");
+$cmd = "delete key1"; $rst = "DELETED";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "delete key2"; $rst = "DELETED";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "delete key3"; $rst = "DELETED";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "delete key4"; $rst = "DELETED";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "delete key5"; $rst = "DELETED";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # after test
 release_memcached($engine, $server);

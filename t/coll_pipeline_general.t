@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 28;
+use Test::More tests => 6;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -51,53 +51,56 @@ my $val;
 my $rst;
 
 # Case 1
-print $sock "lop insert lkey1 0 6 create 11 0 0 pipe\r\ndatum0\r\n";
-print $sock "lop insert lkey1 0 6 pipe\r\ndatum1\r\n";
-print $sock "lop insert lkey1 0 6 pipe\r\ndatum2\r\n";
-print $sock "lop insert lkey1 0 6 pipe\r\ndatum3\r\n";
-print $sock "lop insert lkey1 0 6 pipe\r\ndatum4\r\n";
-print $sock "lop insert lkey1 0 6 pipe\r\ndatum5\r\n";
-print $sock "lop insert lkey1 0 6 pipe\r\ndatum6\r\n";
-print $sock "lop insert lkey1 0 6\r\ndatum7\r\n";
-is(scalar <$sock>, "RESPONSE   8\r\n",   "pipeline head: 8");
-is(scalar <$sock>, "CREATED_STORED\r\n", "CREATED_STORED");
-is(scalar <$sock>, "STORED\r\n",         "STORED");
-is(scalar <$sock>, "STORED\r\n",         "STORED");
-is(scalar <$sock>, "STORED\r\n",         "STORED");
-is(scalar <$sock>, "STORED\r\n",         "STORED");
-is(scalar <$sock>, "STORED\r\n",         "STORED");
-is(scalar <$sock>, "STORED\r\n",         "STORED");
-is(scalar <$sock>, "STORED\r\n",         "STORED");
-is(scalar <$sock>, "END\r\n",            "pipeline tail: END");
+$cmd = "lop insert lkey1 0 6 create 11 0 0 pipe\r\ndatum0\r\n"
+     . "lop insert lkey1 0 6 pipe\r\ndatum1\r\n"
+     . "lop insert lkey1 0 6 pipe\r\ndatum2\r\n"
+     . "lop insert lkey1 0 6 pipe\r\ndatum3\r\n"
+     . "lop insert lkey1 0 6 pipe\r\ndatum4\r\n"
+     . "lop insert lkey1 0 6 pipe\r\ndatum5\r\n"
+     . "lop insert lkey1 0 6 pipe\r\ndatum6\r\n"
+     . "lop insert lkey1 0 6\r\ndatum7";
+$rst = "RESPONSE   8\n"
+     . "CREATED_STORED\n"
+     . "STORED\n"
+     . "STORED\n"
+     . "STORED\n"
+     . "STORED\n"
+     . "STORED\n"
+     . "STORED\n"
+     . "STORED\n"
+     . "END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "delete lkey1"; $rst = "DELETED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "lop insert lkey2 0 6 create 11 0 0 pipe\r\ndatum0\r\n";
-print $sock "lop insert lkey2 0 6 pipe\r\ndatum1111\r\n";
-is(scalar <$sock>, "RESPONSE   2\r\n",                "pipeline head: 2");
-is(scalar <$sock>, "CREATED_STORED\r\n",              "CREATED_STORED");
-is(scalar <$sock>, "CLIENT_ERROR bad data chunk\r\n", "CLIENT_ERROR bad data chunk");
-is(scalar <$sock>, "PIPE_ERROR bad error\r\n",        "pipeline tail: PIPE_ERROR bad error");
-is(scalar <$sock>, "ERROR unknown command\r\n", "Remaining characters: 1");
-print $sock "lop insert lkey2 0 6 pipe\r\ndatum22222\r\n";
-is(scalar <$sock>, "RESPONSE   1\r\n",                "pipeline head: 1");
-is(scalar <$sock>, "CLIENT_ERROR bad data chunk\r\n", "CLIENT_ERROR bad data chunk");
-is(scalar <$sock>, "PIPE_ERROR bad error\r\n",        "pipeline tail: PIPE_ERROR bad error");
-is(scalar <$sock>, "ERROR unknown command\r\n", "Remaining characters: 22");
-print $sock "lop insert lkey2 0 9 pipe\r\ndatum3333\r\n";
-print $sock "lop insert lkey2 0 9 pipe\r\ndatum4444\r\n";
-print $sock "lop insert lkey2 0 9 pipe\r\ndatum5\r\n";
-print $sock "lop insert lkey2 0 9 pipe\r\ndatum6666\r\n";
-is(scalar <$sock>, "RESPONSE   3\r\n",                "pipeline head: 3");
-is(scalar <$sock>, "STORED\r\n",                      "STORED");
-is(scalar <$sock>, "STORED\r\n",                      "STORED");
-is(scalar <$sock>, "CLIENT_ERROR bad data chunk\r\n", "CLIENT_ERROR bad data chunk");
-is(scalar <$sock>, "PIPE_ERROR bad error\r\n",        "pipeline tail: PIPE_ERROR bad error");
-is(scalar <$sock>, "ERROR unknown command\r\n", "Remaining characters: op insert lkey2 0 9 pipe");
-is(scalar <$sock>, "ERROR unknown command\r\n", "Remaining characters: datum6666");
+$cmd = "lop insert lkey2 0 6 create 11 0 0 pipe\r\ndatum0\r\n"
+     . "lop insert lkey2 0 6 pipe\r\ndatum1111";
+$rst = "RESPONSE   2\n"
+     . "CREATED_STORED\n"
+     . "CLIENT_ERROR bad data chunk\n"
+     . "PIPE_ERROR bad error\n"
+     . "ERROR unknown command";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "lop insert lkey2 0 6 pipe\r\ndatum22222";
+$rst = "RESPONSE   1\n"
+     . "CLIENT_ERROR bad data chunk\n"
+     . "PIPE_ERROR bad error\n"
+     . "ERROR unknown command";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "lop insert lkey2 0 9 pipe\r\ndatum3333\r\n"
+     . "lop insert lkey2 0 9 pipe\r\ndatum4444\r\n"
+     . "lop insert lkey2 0 9 pipe\r\ndatum5\r\n"
+     . "lop insert lkey2 0 9 pipe\r\ndatum6666";
+$rst = "RESPONSE   3\n"
+     . "STORED\n"
+     . "STORED\n"
+     . "CLIENT_ERROR bad data chunk\n"
+     . "PIPE_ERROR bad error\n"
+     . "ERROR unknown command\n"
+     . "ERROR unknown command";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "delete lkey2"; $rst = "DELETED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # after test
 release_memcached($engine, $server);

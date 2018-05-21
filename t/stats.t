@@ -9,7 +9,9 @@ use MemcachedTest;
 my $engine = shift;
 my $server = get_memcached($engine);
 my $sock = $server->sock;
-
+my $cmd;
+my $val;
+my $rst;
 
 ## Output looks like this:
 ##
@@ -194,9 +196,13 @@ foreach my $key (qw(curr_items total_items bytes cmd_get cmd_set get_hits evicti
 
 # Do some operations
 
-print $sock "set foo 0 0 6\r\nfooval\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored foo");
-mem_get_is($sock, "foo", "fooval");
+$cmd = "set foo 0 0 6"; $val = "fooval"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "get foo";
+$rst = "VALUE foo 0 6
+fooval
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 my $stats = mem_stats($sock);
 
@@ -210,15 +216,16 @@ foreach my $key (qw(total_items curr_items cmd_get cmd_set get_hits)) {
 #my $cache_dump = mem_stats($sock, " cachedump 1 100");
 #ok(defined $cache_dump->{'foo'}, "got foo from cachedump");
 
-print $sock "delete foo\r\n";
-is(scalar <$sock>, "DELETED\r\n", "deleted foo");
+$cmd = "delete foo"; $rst = "DELETED";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 my $stats = mem_stats($sock);
 is($stats->{delete_hits}, 1);
 is($stats->{delete_misses}, 0);
 
-print $sock "delete foo\r\n";
-is(scalar <$sock>, "NOT_FOUND\r\n", "shouldn't delete foo again");
+$cmd = "delete foo"; $rst = "NOT_FOUND";
+mem_cmd_is($sock, $cmd, "", $rst, "shouldn't delete foo again");
+
 
 my $stats = mem_stats($sock);
 is($stats->{delete_hits}, 1);
@@ -236,23 +243,23 @@ sub check_incr_stats {
     is($stats->{decr_misses}, $dm);
 }
 
-print $sock "incr i 1\r\n";
-is(scalar <$sock>, "NOT_FOUND\r\n", "shouldn't incr a missing thing");
+$cmd = "incr i 1"; $rst = "NOT_FOUND";
+mem_cmd_is($sock, $cmd, "", $rst, "shouldn't incr a missing thing");
 check_incr_stats(0, 1, 0, 0);
 
-print $sock "decr d 1\r\n";
-is(scalar <$sock>, "NOT_FOUND\r\n", "shouldn't decr a missing thing");
+$cmd = "decr d 1"; $rst = "NOT_FOUND";
+mem_cmd_is($sock, $cmd, "", $rst, "shouldn't decr a missing thing");
 check_incr_stats(0, 1, 0, 1);
 
-print $sock "set n 0 0 1\r\n0\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored n");
+$cmd = "set n 0 0 1"; $val = "0"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
-print $sock "incr n 3\r\n";
-is(scalar <$sock>, "3\r\n", "incr works");
+$cmd = "incr n 3"; $rst = "3";
+mem_cmd_is($sock, $cmd, "", $rst, "incr works");
 check_incr_stats(1, 1, 0, 1);
 
-print $sock "decr n 1\r\n";
-is(scalar <$sock>, "2\r\n", "decr works");
+$cmd = "decr n 1"; $rst = "2";
+mem_cmd_is($sock, $cmd, "", $rst, "decr works");
 check_incr_stats(1, 1, 1, 1);
 
 # cas stats
@@ -268,23 +275,23 @@ sub check_cas_stats {
 
 check_cas_stats(0, 0, 0);
 
-print $sock "cas c 0 0 1 99999999\r\nz\r\n";
-is(scalar <$sock>, "NOT_FOUND\r\n", "missed cas");
+$cmd = "cas c 0 0 1 99999999"; $val = "z"; $rst = "NOT_FOUND";
+mem_cmd_is($sock, $cmd, $val, $rst, "missed cas");
 check_cas_stats(0, 1, 0);
 
-print $sock "set c 0 0 1\r\nx\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored c");
+$cmd = "set c 0 0 1"; $val = "x"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 my ($id, $v) = mem_gets($sock, 'c');
 is('x', $v, 'got the expected value');
 
-print $sock "cas c 0 0 1 99999999\r\nz\r\n";
-is(scalar <$sock>, "EXISTS\r\n", "missed cas");
+$cmd = "cas c 0 0 1 99999999"; $val = "z"; $rst = "EXISTS";
+mem_cmd_is($sock, $cmd, $val, $rst, "missed cas");
 check_cas_stats(0, 1, 1);
 my ($newid, $v) = mem_gets($sock, 'c');
 is('x', $v, 'got the expected value');
 
-print $sock "cas c 0 0 1 $id\r\nz\r\n";
-is(scalar <$sock>, "STORED\r\n", "good cas");
+$cmd = "cas c 0 0 1 $id"; $val = "z"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst, "good cas");
 check_cas_stats(1, 1, 1);
 my ($newid, $v) = mem_gets($sock, 'c');
 is('z', $v, 'got the expected value');
@@ -296,8 +303,8 @@ is('on', $settings->{'evictions'});
 is('yes', $settings->{'cas_enabled'});
 is('no', $settings->{'auth_required_sasl'});
 
-print $sock "stats reset\r\n";
-is(scalar <$sock>, "RESET\r\n", "good stats reset");
+$cmd = "stats reset"; $rst = "RESET";
+mem_cmd_is($sock, $cmd, "", $rst, "good stats reset");
 
 my $stats = mem_stats($sock);
 is(0, $stats->{'cmd_get'});
@@ -316,8 +323,8 @@ is(0, $stats->{'cas_badval'});
 is(0, $stats->{'evictions'});
 is(0, $stats->{'reclaimed'});
 
-print $sock "flush_all\r\n";
-is(scalar <$sock>, "OK\r\n", "flushed");
+$cmd = "flush_all"; $rst = "OK";
+mem_cmd_is($sock, $cmd, "", $rst, "flushed");
 
 my $stats = mem_stats($sock);
 is($stats->{cmd_flush}, 1, "after one flush cmd_flush is 1");

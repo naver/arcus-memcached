@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 6002;
+use Test::More tests => 2002;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -25,7 +25,7 @@ sub prepare_kv_mget {
         $val = "mget_test_value_$kcnt";
         my $len = length($val);
         $cmd = "set $key 0 0 $len"; $rst = "STORED";
-        print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+        mem_cmd_is($sock, $cmd, $val, $rst);
     }
 }
 
@@ -34,18 +34,16 @@ sub assert_kv_mget_old {
     my $kcnt;
 
     # old kv mget command
-    print $sock "get $key_str\r\n";
+    $cmd = "get $key_str"; $rst = "";
 
     for ($kcnt = 0; $kcnt < $key_cnt; $kcnt += 1) {
         my $kstr = "mget_test:mget_test_key_$kcnt";
         my $data = "mget_test_value_$kcnt";
         my $vlen = length($data);
-        my $head = scalar <$sock>;
-        my $body = scalar <$sock>;
-        Test::More::is("$head $body", "VALUE $kstr 0 $vlen\r\n $data\r\n", "mget $kcnt item");
+        $rst .= "VALUE $kstr 0 $vlen\n$data\n";
     }
-    my $tail = scalar <$sock>;
-    Test::More::is("$tail", "END\r\n", "mget END");
+    $rst .= "END";
+    mem_cmd_is($sock, $cmd, "", $rst);
 }
 
 sub assert_kv_mget_new {
@@ -53,18 +51,16 @@ sub assert_kv_mget_new {
     my $kcnt;
 
     # new kv mget command
-    print $sock "mget $key_len $key_cnt\r\n$key_str\r\n";
+    $cmd = "mget $key_len $key_cnt"; $val = "$key_str"; $rst = "";
 
     for ($kcnt = 0; $kcnt < $key_cnt; $kcnt += 1) {
         my $kstr = "mget_test:mget_test_key_$kcnt";
         my $data = "mget_test_value_$kcnt";
         my $vlen = length($data);
-        my $head = scalar <$sock>;
-        my $body = scalar <$sock>;
-        Test::More::is("$head $body", "VALUE $kstr 0 $vlen\r\n $data\r\n", "mget $kcnt item");
+        $rst .= "VALUE $kstr 0 $vlen\n$data\n";
     }
-    my $tail = scalar <$sock>;
-    Test::More::is("$tail", "END\r\n", "mget END");
+    $rst .= "END";
+    mem_cmd_is($sock, $cmd, $val, $rst);
 }
 
 # testKVMGet
