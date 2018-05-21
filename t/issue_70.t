@@ -9,18 +9,23 @@ use MemcachedTest;
 my $engine = shift;
 my $server = get_memcached($engine);
 my $sock = $server->sock;
+my $cmd;
+my $val;
+my $rst;
+my $msg;
 
-print $sock "set issue70 0 0 0\r\n\r\n";
-is (scalar <$sock>, "STORED\r\n", "stored issue70");
+$cmd = "set issue70 0 0 0\r\n"; $rst = "STORED"; $msg = "stored issue70";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "set issue70 0 0 -1\r\n";
-is (scalar <$sock>, "CLIENT_ERROR bad command line format\r\n");
+$cmd = "set issue70 0 0 -1"; $rst = "CLIENT_ERROR bad command line format";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "set issue70 0 0 4294967295\r\n";
-is (scalar <$sock>, "CLIENT_ERROR bad command line format\r\n");
+$cmd = "set issue70 0 0 4294967295"; $rst = "CLIENT_ERROR bad command line format";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "set issue70 0 0 2147483647\r\nscoobyscoobydoo";
-is (scalar <$sock>, "CLIENT_ERROR bad command line format\r\n");
+$cmd = "set issue70 0 0 2147483647"; $val = "scoobyscoobydoo";
+$rst = "CLIENT_ERROR bad command line format";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 # after test
 release_memcached($engine, $server);

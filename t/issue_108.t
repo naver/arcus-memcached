@@ -10,22 +10,26 @@ my $engine = shift;
 my $server = get_memcached($engine);
 my $sock = $server->sock;
 my $key = "del_key";
+my $cmd;
+my $val;
+my $rst;
+my $msg;
 
-print $sock "add $key 0 0 1\r\nx\r\n";
-is (scalar <$sock>, "STORED\r\n", "Added a key");
+$cmd = "add $key 0 0 1"; $val = "x"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
-print $sock "delete $key 0\r\n";
-is (scalar <$sock>, "DELETED\r\n", "Properly deleted with 0");
+$cmd = "delete $key 0"; $rst = "DELETED"; $msg = "Properly deleted with 0";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
 
-print $sock "add $key 0 0 1\r\nx\r\n";
-is (scalar <$sock>, "STORED\r\n", "Added again a key");
+$cmd = "add $key 0 0 1"; $val = "x"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 print $sock "delete $key 0 noreply\r\n";
 # will not reply, but a subsequent add will succeed
 
-print $sock "add $key 0 0 1\r\nx\r\n";
-is (scalar <$sock>, "STORED\r\n", "Add succeeded after quiet deletion.");
-
+$cmd = "add $key 0 0 1"; $val = "x"; $rst = "STORED";
+$msg = "Add succeeded after quiet deletion.";
+mem_cmd_is($sock, $cmd, $val, $rst, $msg);
 
 # after test
 release_memcached($engine, $server);

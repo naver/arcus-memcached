@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 21530;
+use Test::More tests => 21522;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -15,42 +15,34 @@ sub bop_insert {
     my ($key, $from_bkey, $to_bkey, $width, $create, $flags, $exptime, $maxcount) = @_;
     my $data = "_data_";
     my $bkey;
-    my $value;
+    my $val;
+    my $rst;
     my $vleng;
     my $cmd;
-    my $msg;
 
-    $value = "$key$data$from_bkey";
-    $vleng = length($value);
+    $val = "$key$data$from_bkey";
+    $vleng = length($val);
     if ($create eq "create") {
-        $cmd = "bop insert $key $from_bkey $vleng $create $flags $exptime $maxcount\r\n$value\r\n";
-        $msg = "bop insert $key $from_bkey $vleng $create $flags $exptime $maxcount : $value";
-        print $sock "$cmd";
-        is(scalar <$sock>, "CREATED_STORED\r\n", "$msg");
+        $cmd = "bop insert $key $from_bkey $vleng $create $flags $exptime $maxcount";
+        $rst = "CREATED_STORED";
     } else {
-        $cmd = "bop insert $key $from_bkey $vleng\r\n$value\r\n";
-        $msg = "bop insert $key $from_bkey $vleng : $value";
-        print $sock "$cmd";
-        is(scalar <$sock>, "STORED\r\n", "$msg");
+        $cmd = "bop insert $key $from_bkey $vleng"; $rst = "STORED";
     }
+    mem_cmd_is($sock, $cmd, $val, $rst);
 
     if ($from_bkey <= $to_bkey) {
         for ($bkey = $from_bkey + $width; $bkey <= $to_bkey; $bkey = $bkey + $width) {
-            $value = "$key$data$bkey";
-            $vleng = length($value);
-            $cmd = "bop insert $key $bkey $vleng\r\n$value\r\n";
-            $msg = "bop insert $key $bkey $vleng : $value";
-            print $sock "$cmd";
-            is(scalar <$sock>, "STORED\r\n", "$msg");
+            $val = "$key$data$bkey";
+            $vleng = length($val);
+            $cmd = "bop insert $key $bkey $vleng"; $rst = "STORED";
+            mem_cmd_is($sock, $cmd, $val, $rst);
         }
     } else {
         for ($bkey = $from_bkey - $width; $bkey >= $to_bkey; $bkey = $bkey - $width) {
-            $value = "$key$data$bkey";
-            $vleng = length($value);
-            $cmd = "bop insert $key $bkey $vleng\r\n$value\r\n";
-            $msg = "bop insert $key $bkey $vleng : $value";
-            print $sock "$cmd";
-            is(scalar <$sock>, "STORED\r\n", "$msg");
+            $val = "$key$data$bkey";
+            $vleng = length($val);
+            $cmd = "bop insert $key $bkey $vleng"; $rst = "STORED";
+            mem_cmd_is($sock, $cmd, $val, $rst);
         }
     }
 }
@@ -61,7 +53,7 @@ sub assert_bop_get {
     my $saved_to_bkey   = $to_bkey;
     my $data = "_data_";
     my $bkey;
-    my $value;
+    my $val;
     my $valcnt = 0;
     my @res_bkey = ();
     my @res_data = ();
@@ -77,9 +69,9 @@ sub assert_bop_get {
             $to_bkey = $to_bkey - ($to_bkey % $width);
         }
         for ($bkey = $from_bkey; $bkey <= $to_bkey; $bkey = $bkey + $width) {
-            $value = "$key$data$bkey";
+            $val = "$key$data$bkey";
             push(@res_bkey, $bkey);
-            push(@res_data, $value);
+            push(@res_data, $val);
             $valcnt = $valcnt + 1;
             if (($count > 0) and ($valcnt >= $count)) {
                 last;
@@ -96,9 +88,9 @@ sub assert_bop_get {
             $to_bkey = $to_bkey + ($width - ($to_bkey % $width))
         }
         for ($bkey = $from_bkey; $bkey >= $to_bkey; $bkey = $bkey - $width) {
-            $value = "$key$data$bkey";
+            $val = "$key$data$bkey";
             push(@res_bkey, $bkey);
-            push(@res_data, $value);
+            push(@res_data, $val);
             $valcnt = $valcnt + 1;
             if (($count > 0) and ($valcnt >= $count)) {
                 last;
@@ -128,7 +120,7 @@ my $rst;
 $cnt = 0;
 for (0..6) {
     $cmd = "get bkey"; $rst = "END";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     if ($cnt == 0) {
         bop_insert("bkey", $min, $max, $width, "create", $flags, 0, 0);
     } elsif ($cnt == 1) {
@@ -153,7 +145,10 @@ for (0..6) {
         bop_insert("bkey", (($min)+(2*$width)), $max, ($width*4), "", $flags, 0, 0);
         bop_insert("bkey", (($min+$max)-(3*$width)), $min, ($width*4), "", $flags, 0, 0);
     }
-    getattr_is($sock, "bkey count maxcount", "count=1000 maxcount=$default_btree_size");
+    $cmd = "getattr bkey count maxcount";
+    $rst = "ATTR count=1000\n"
+         . "ATTR maxcount=$default_btree_size\n"
+         . "END";
     assert_bop_get("bkey", $width, $flags, 6500, 6500, 0, 0, "", "END");
     assert_bop_get("bkey", $width, $flags, 2300, 2300, 0, 0, "", "END");
     assert_bop_get("bkey", $width, $flags, 2000, 2255, 0, 0, "", "END");
@@ -167,15 +162,15 @@ for (0..6) {
     assert_bop_get("bkey", $width, $flags, 5, 1000, 0, 20, "", "END");
     assert_bop_get("bkey", $width, $flags, 10005, 9000, 0, 30, "", "END");
     $cmd = "bop get bkey 655"; $rst = "NOT_FOUND_ELEMENT";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "bop get bkey 0..5"; $rst = "NOT_FOUND_ELEMENT";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "bop get bkey 20000..15000"; $rst = "NOT_FOUND_ELEMENT";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "delete bkey"; $rst = "DELETED";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "get bkey"; $rst = "END";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cnt = $cnt+1;
 }
 
@@ -184,7 +179,7 @@ $max = 20000;
 $cnt = 0;
 for (0..6) {
     $cmd = "get bkey"; $rst = "END";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     if ($cnt == 0) {
         bop_insert("bkey", $min, $max, $width, "create", $flags, 0, -1);
     } elsif ($cnt == 1) {
@@ -209,361 +204,545 @@ for (0..6) {
         bop_insert("bkey", (($min)+(2*$width)), $max, ($width*4), "", $flags, 0, -1);
         bop_insert("bkey", (($min+$max)-(3*$width)), $min, ($width*4), "", $flags, 0, -1);
     }
-    getattr_is($sock, "bkey count maxcount", "count=2000 maxcount=$maximum_btree_size");
+    $cmd = "getattr bkey count maxcount";
+    $rst = "ATTR count=2000\n"
+         . "ATTR maxcount=$maximum_btree_size\n"
+         . "END";
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "bop delete bkey 1000..1999"; $rst = "DELETED";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "bop delete bkey 10000..0 100"; $rst = "DELETED";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "bop delete bkey 15550..17000 50"; $rst = "DELETED";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "bop delete bkey 8700..4350 50"; $rst = "DELETED";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "bop delete bkey 0..2000 100"; $rst = "DELETED";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "bop delete bkey 2020..2020"; $rst = "DELETED";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "bop delete bkey 22000..2000 100"; $rst = "DELETED";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-    getattr_is($sock, "bkey count maxcount", "count=1499 maxcount=$maximum_btree_size");
+    mem_cmd_is($sock, $cmd, "", $rst);
+    $cmd = "getattr bkey count maxcount";
+    $rst = "ATTR count=1499\n"
+         . "ATTR maxcount=$maximum_btree_size\n"
+         . "END";
+    mem_cmd_is($sock, $cmd, "", $rst);
     assert_bop_get("bkey", $width, $flags, 3000, 5000, 0, 100, "delete", "DELETED");
     assert_bop_get("bkey", $width, $flags, 13000, 11000, 50, 50, "delete", "DELETED");
     assert_bop_get("bkey", $width, $flags, 13000, 11000, 0, 50, "delete", "DELETED");
     assert_bop_get("bkey", $width, $flags, 13400, 15300, 0, 50, "delete", "DELETED");
     assert_bop_get("bkey", $width, $flags, 7200, 5980, 0, 50, "delete", "DELETED");
-    getattr_is($sock, "bkey count maxcount", "count=1199 maxcount=$maximum_btree_size");
+    $cmd = "getattr bkey count maxcount";
+    $rst = "ATTR count=1199\n"
+         . "ATTR maxcount=$maximum_btree_size\n"
+         . "END";
+    mem_cmd_is($sock, $cmd, "", $rst);
     assert_bop_get("bkey", $width, $flags, 5800, 6200, 0, 40, "", "END");
     assert_bop_get("bkey", $width, $flags, 5820, 610, 0, 70, "", "END");
     assert_bop_get("bkey", $width, $flags, 2100, 3200, 0, 60, "", "END");
     assert_bop_get("bkey", $width, $flags, 15000, 14000, 0, 30, "", "END");
     assert_bop_get("bkey", $width, $flags, 14200, 14400, 0, 100, "", "END");
     assert_bop_get("bkey", $width, $flags, 14200, 14900, 0, 100, "", "END");
-    getattr_is($sock, "bkey count maxcount", "count=1199 maxcount=$maximum_btree_size");
+    $cmd = "getattr bkey count maxcount";
+    $rst = "ATTR count=1199\n"
+         . "ATTR maxcount=$maximum_btree_size\n"
+         . "END";
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "bop count bkey 2010"; $rst = "COUNT=1";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-    bop_get_is($sock, "bkey 2010", $flags, 1, "2010", "bkey_data_2010", "END");
+    mem_cmd_is($sock, $cmd, "", $rst);
+    $cmd = "bop get bkey 2010";
+    $rst = "VALUE $flags 1\n"
+         . "2010 14 bkey_data_2010\n"
+         . "END";
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "bop count bkey 10010..9000"; $rst = "COUNT=2";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-    bop_get_is($sock, "bkey 10010..9000", $flags, 2, "10010,9000", "bkey_data_10010,bkey_data_9000", "END");
+    mem_cmd_is($sock, $cmd, "", $rst);
+    $cmd = "bop get bkey 10010..9000";
+    $rst = "VALUE $flags 2\n"
+         . "10010 15 bkey_data_10010\n"
+         . "9000 14 bkey_data_9000\n"
+         . "END";
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "bop count bkey 0..900"; $rst = "COUNT=0";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "bop get bkey 0..900"; $rst = "NOT_FOUND_ELEMENT";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "bop count bkey 20000..19100"; $rst = "COUNT=0";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "bop get bkey 20000..19100"; $rst = "NOT_FOUND_ELEMENT";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "bop delete bkey 0..900"; $rst = "NOT_FOUND_ELEMENT";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "bop get bkey 0..900 delete"; $rst = "NOT_FOUND_ELEMENT";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "bop delete bkey 0..100000000 drop"; $rst = "DELETED_DROPPED";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "get bkey"; $rst = "END";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+    mem_cmd_is($sock, $cmd, "", $rst);
     $cnt = $cnt+1;
 }
 
 # testEmptyCollectionOfB+TreeType
 $cmd = "get bkey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop create bkey $flags 0 -1"; $rst = "CREATED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop insert bkey 0 6"; $val = "datum0"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 10 6"; $val = "datum1"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 20 6"; $val = "datum2"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 30 6"; $val = "datum3"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 40 6"; $val = "datum4"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-getattr_is($sock, "bkey count maxcount", "count=5 maxcount=$maximum_btree_size");
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "getattr bkey count maxcount";
+$rst = "ATTR count=5
+ATTR maxcount=$maximum_btree_size
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop count bkey 0..40"; $rst = "COUNT=5";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-bop_get_is($sock, "bkey 0..40", $flags, 5, "0,10,20,30,40", "datum0,datum1,datum2,datum3,datum4", "END");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey 0..40";
+$rst = "VALUE $flags 5
+0 6 datum0
+10 6 datum1
+20 6 datum2
+30 6 datum3
+40 6 datum4
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop delete bkey 0..20"; $rst = "DELETED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop count bkey 20..40"; $rst = "COUNT=2";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-bop_get_is($sock, "bkey 20..40 delete", $flags, 2, "30,40", "datum3,datum4", "DELETED");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey 20..40 delete";
+$rst = "VALUE $flags 2
+30 6 datum3
+40 6 datum4
+DELETED";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop delete bkey 0..20"; $rst = "NOT_FOUND_ELEMENT";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop get bkey 0..20"; $rst = "NOT_FOUND_ELEMENT";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-getattr_is($sock, "bkey count maxcount", "count=0 maxcount=$maximum_btree_size");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "getattr bkey count maxcount";
+$rst = "ATTR count=0
+ATTR maxcount=$maximum_btree_size
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop insert bkey 0 6"; $val = "datum0"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 10 6"; $val = "datum1"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 20 6"; $val = "datum2"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop count bkey 0..50"; $rst = "COUNT=3";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-bop_get_is($sock, "bkey 0..50 drop", $flags, 3, "0,10,20", "datum0,datum1,datum2", "DELETED_DROPPED");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey 0..50 drop";
+$rst = "VALUE $flags 3
+0 6 datum0
+10 6 datum1
+20 6 datum2
+DELETED_DROPPED";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "get bkey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # testBOPInsertFailCheck
 $cmd = "get bkey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop insert bkey 10 6"; $val = "datum1"; $rst = "NOT_FOUND";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 10 6 create $flags 0 1000"; $val = "datum1"; $rst = "CREATED_STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 10 6"; $val = "datum1"; $rst = "ELEMENT_EXISTS";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 15 9"; $val = "datum_new"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 20 6"; $val = "datum2"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "delete bkey"; $rst = "DELETED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "get bkey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # testBOPOverflowCheck
 $cmd = "get bkey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop insert bkey 10 6 create $flags 0 1000"; $val = "datum1"; $rst = "CREATED_STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-getattr_is($sock, "bkey count maxcount", "count=1 maxcount=1000");
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "getattr bkey count maxcount";
+$rst = "ATTR count=1
+ATTR maxcount=1000
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
+
 $cmd = "setattr bkey maxcount=5"; $rst = "OK";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-getattr_is($sock, "bkey count maxcount overflowaction",
-           "count=1 maxcount=5 overflowaction=smallest_trim");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "getattr bkey count maxcount overflowaction";
+$rst = "ATTR count=1
+ATTR maxcount=5
+ATTR overflowaction=smallest_trim
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop insert bkey 30 6"; $val = "datum3"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 50 6"; $val = "datum5"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 70 6"; $val = "datum7"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 90 6"; $val = "datum9"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-getattr_is($sock, "bkey count maxcount", "count=5 maxcount=5");
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "getattr bkey count maxcount";
+$rst = "ATTR count=5
+ATTR maxcount=5
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop count bkey 0..1000"; $rst = "COUNT=5";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-bop_get_is($sock, "bkey 0..1000", $flags, 5, "10,30,50,70,90","datum1,datum3,datum5,datum7,datum9", "END");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey 0..1000";
+$rst = "VALUE $flags 5
+10 6 datum1
+30 6 datum3
+50 6 datum5
+70 6 datum7
+90 6 datum9
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop insert bkey 80 6"; $val = "datum8"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 10 6"; $val = "datum1"; $rst = "OUT_OF_RANGE";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 60 6"; $val = "datum6"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop count bkey 0..1000"; $rst = "COUNT=5";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-bop_get_is($sock, "bkey 0..1000 0", $flags, 5, "50,60,70,80,90","datum5,datum6,datum7,datum8,datum9", "TRIMMED");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey 0..1000 0";
+$rst = "VALUE $flags 5
+50 6 datum5
+60 6 datum6
+70 6 datum7
+80 6 datum8
+90 6 datum9
+TRIMMED";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "setattr bkey overflowaction=largest_trim"; $rst = "OK";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-getattr_is($sock, "bkey overflowaction", "overflowaction=largest_trim");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "getattr bkey overflowaction";
+$rst = "ATTR overflowaction=largest_trim
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop insert bkey 30 6"; $val = "datum3"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 40 6"; $val = "datum4"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 90 6"; $val = "datum1"; $rst = "OUT_OF_RANGE";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop count bkey 0..1000"; $rst = "COUNT=5";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-bop_get_is($sock, "bkey 0..1000 0 0", $flags, 5, "30,40,50,60,70","datum3,datum4,datum5,datum6,datum7", "TRIMMED");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey 0..1000 0 0";
+$rst = "VALUE $flags 5
+30 6 datum3
+40 6 datum4
+50 6 datum5
+60 6 datum6
+70 6 datum7
+TRIMMED";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "setattr bkey overflowaction=error"; $rst = "OK";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-getattr_is($sock, "bkey overflowaction", "overflowaction=error");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "getattr bkey overflowaction";
+$rst = "ATTR overflowaction=error
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop insert bkey 20 6"; $val = "datum1"; $rst = "OVERFLOWED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 80 6"; $val = "datum1"; $rst = "OVERFLOWED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "setattr bkey overflowaction=head_trim"; $rst = "ATTR_ERROR bad value";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "setattr bkey overflowaction=tail_trim"; $rst = "ATTR_ERROR bad value";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "setattr bkey overflow=tail_trim"; $rst = "ATTR_ERROR not found";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "delete bkey"; $rst = "DELETED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "get bkey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 
 #testBOPMaxBKeyRangeCheck
 $cmd = "get bkey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop insert bkey 10 6 create $flags 0 1000"; $val = "datum1"; $rst = "CREATED_STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-getattr_is($sock, "bkey count maxcount maxbkeyrange", "count=1 maxcount=1000 maxbkeyrange=0");
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "getattr bkey count maxcount maxbkeyrange";
+$rst = "ATTR count=1
+ATTR maxcount=1000
+ATTR maxbkeyrange=0
+END";
 $cmd = "setattr bkey maxbkeyrange=80"; $rst = "OK";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-getattr_is($sock, "bkey count maxcount maxbkeyrange overflowaction",
-           "count=1 maxcount=1000 maxbkeyrange=80 overflowaction=smallest_trim");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "getattr bkey count maxcount maxbkeyrange overflowaction";
+$rst = "ATTR count=1
+ATTR maxcount=1000
+ATTR maxbkeyrange=80
+ATTR overflowaction=smallest_trim
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop insert bkey 30 6"; $val = "datum3"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 50 6"; $val = "datum5"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 70 6"; $val = "datum7"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 90 6"; $val = "datum9"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-getattr_is($sock, "bkey count maxcount", "count=5 maxcount=1000");
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "getattr bkey count maxcount";
+$rst = "ATTR count=5
+ATTR maxcount=1000
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop count bkey 0..1000"; $rst = "COUNT=5";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-bop_get_is($sock, "bkey 0..1000", $flags, 5, "10,30,50,70,90","datum1,datum3,datum5,datum7,datum9", "END");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey 0..1000";
+$rst = "VALUE $flags 5
+10 6 datum1
+30 6 datum3
+50 6 datum5
+70 6 datum7
+90 6 datum9
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop insert bkey 80 6"; $val = "datum8"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-bop_get_is($sock, "bkey 0..1000", $flags, 6, "10,30,50,70,80,90","datum1,datum3,datum5,datum7,datum8,datum9", "END");
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop get bkey 0..1000";
+$rst = "VALUE $flags 6
+10 6 datum1
+30 6 datum3
+50 6 datum5
+70 6 datum7
+80 6 datum8
+90 6 datum9
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop insert bkey 0 6"; $val = "datum0"; $rst = "OUT_OF_RANGE";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 100 7"; $val = "datum10"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-bop_get_is($sock, "bkey 0..1000", $flags, 6, "30,50,70,80,90,100","datum3,datum5,datum7,datum8,datum9,datum10", "END");
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop get bkey 0..1000";
+$rst = "VALUE $flags 6
+30 6 datum3
+50 6 datum5
+70 6 datum7
+80 6 datum8
+90 6 datum9
+100 7 datum10
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop count bkey 0..1000"; $rst = "COUNT=6";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "setattr bkey overflowaction=largest_trim"; $rst = "OK";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-getattr_is($sock, "bkey maxbkeyrange overflowaction", "maxbkeyrange=80 overflowaction=largest_trim");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "getattr bkey maxbkeyrange overflowaction";
+$rst = "ATTR maxbkeyrange=80
+ATTR overflowaction=largest_trim
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
+
 $cmd = "bop insert bkey 40 6"; $val = "datum4"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-bop_get_is($sock, "bkey 0..1000", $flags, 7, "30,40,50,70,80,90,100",
-           "datum3,datum4,datum5,datum7,datum8,datum9,datum10", "END");
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop get bkey 0..1000";
+$rst = "VALUE $flags 7
+30 6 datum3
+40 6 datum4
+50 6 datum5
+70 6 datum7
+80 6 datum8
+90 6 datum9
+100 7 datum10
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop insert bkey 120 7"; $val = "datum12"; $rst = "OUT_OF_RANGE";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 10 6"; $val = "datum1"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop count bkey 0..1000"; $rst = "COUNT=7";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-bop_get_is($sock, "bkey 0..1000", $flags, 7, "10,30,40,50,70,80,90",
-           "datum1,datum3,datum4,datum5,datum7,datum8,datum9", "END");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey 0..1000";
+$rst = "VALUE $flags 7
+10 6 datum1
+30 6 datum3
+40 6 datum4
+50 6 datum5
+70 6 datum7
+80 6 datum8
+90 6 datum9
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "setattr bkey maxbkeyrange=0"; $rst = "OK";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-getattr_is($sock, "bkey maxbkeyrange", "maxbkeyrange=0");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "getattr bkey maxbkeyrange";
+$rst = "ATTR maxbkeyrange=0
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop insert bkey 0 6"; $val = "datum0"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 60 6"; $val = "datum6"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 120 7"; $val = "datum12"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
-bop_get_is($sock, "bkey 0..1000", $flags, 10, "0,10,30,40,50,60,70,80,90,120",
-           "datum0,datum1,datum3,datum4,datum5,datum6,datum7,datum8,datum9,datum12", "END");
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop get bkey 0..1000";
+$rst = "VALUE $flags 10
+0 6 datum0
+10 6 datum1
+30 6 datum3
+40 6 datum4
+50 6 datum5
+60 6 datum6
+70 6 datum7
+80 6 datum8
+90 6 datum9
+120 7 datum12
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "delete bkey"; $rst = "DELETED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "get bkey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # testBOPNotFoundError
 $cmd = "get bkey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop get bkey 0..100"; $rst = "NOT_FOUND";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop delete bkey 0..100"; $rst = "NOT_FOUND";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop count bkey 0..100"; $rst = "NOT_FOUND";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # testBOPNotLISTError
 $cmd = "set x 19 5 10"; $val = "some value"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "get lkey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "get skey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "lop insert lkey 0 6 create 13 0 0"; $val = "datum0"; $rst = "CREATED_STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "sop insert skey 6 create 15 0 0"; $val = "datum0"; $rst = "CREATED_STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert x 10 6"; $val = "datum1"; $rst = "TYPE_MISMATCH";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert lkey 10 6"; $val = "datum1"; $rst = "TYPE_MISMATCH";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert skey 10 6"; $val = "datum1"; $rst = "TYPE_MISMATCH";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop delete x 0..100"; $rst = "TYPE_MISMATCH";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop delete lkey 0..100"; $rst = "TYPE_MISMATCH";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop delete skey 0..100"; $rst = "TYPE_MISMATCH";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop get x 0..100"; $rst = "TYPE_MISMATCH";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop get lkey 0..100"; $rst = "TYPE_MISMATCH";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop get skey 0..100"; $rst = "TYPE_MISMATCH";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop count x 0..100"; $rst = "TYPE_MISMATCH";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop count lkey 0..100"; $rst = "TYPE_MISMATCH";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop count skey 0..100"; $rst = "TYPE_MISMATCH";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "delete lkey"; $rst = "DELETED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "delete skey"; $rst = "DELETED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "get lkey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "get skey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # testBOPNotKVError
 $cmd = "get bkey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop insert bkey 10 6 create $flags 60 1000"; $val = "datum1"; $rst = "CREATED_STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 20 6"; $val = "datum2"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 30 6"; $val = "datum3"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set bkey 19 5 10"; $val = "some value"; $rst = "TYPE_MISMATCH";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "replace bkey 19 5 $flags"; $val = "other value"; $rst = "TYPE_MISMATCH";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "prepend bkey 19 5 5"; $val = "thing"; $rst = "TYPE_MISMATCH";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "append bkey 19 5 5"; $val = "thing"; $rst = "TYPE_MISMATCH";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "incr bkey 1"; $rst = "TYPE_MISMATCH";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "decr bkey 1"; $rst = "TYPE_MISMATCH";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "delete bkey"; $rst = "DELETED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "get bkey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # testBOPExpire
 $cmd = "get bkey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop insert bkey 10 6 create $flags 60 1000"; $val = "datum1"; $rst = "CREATED_STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 20 6"; $val = "datum2"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 30 6"; $val = "datum3"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "setattr bkey expiretime=2"; $rst = "OK";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop count bkey 0..100"; $rst = "COUNT=3";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-bop_get_is($sock, "bkey 0..100 0 0", $flags, 3, "10,20,30", "datum1,datum2,datum3", "END");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey 0..100 0 0";
+$rst = "VALUE $flags 3
+10 6 datum1
+20 6 datum2
+30 6 datum3
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 sleep(2.1);
 $cmd = "bop get bkey 0..100"; $rst = "NOT_FOUND";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "get bkey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # testBOPFlush
 $cmd = "get bkey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop insert bkey 10 6 create $flags 60 1000"; $val = "datum1"; $rst = "CREATED_STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 20 6"; $val = "datum2"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey 30 6"; $val = "datum3"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop count bkey 0..100"; $rst = "COUNT=3";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-bop_get_is($sock, "bkey 0..100",  $flags, 3, "10,20,30", "datum1,datum2,datum3", "END");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey 0..100";
+$rst = "VALUE $flags 3
+10 6 datum1
+20 6 datum2
+30 6 datum3
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "flush_all"; $rst = "OK";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop get bkey 0..100"; $rst = "NOT_FOUND";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "get bkey"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # after test
 release_memcached($engine, $server);

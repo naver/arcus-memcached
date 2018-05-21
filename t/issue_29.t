@@ -9,9 +9,12 @@ use MemcachedTest;
 my $engine = shift;
 my $server = get_memcached($engine);
 my $sock = $server->sock;
+my $cmd;
+my $rst;
+my $msg;
 
-print $sock "set issue29 0 0 0\r\n\r\n";
-is (scalar <$sock>, "STORED\r\n", "stored issue29");
+$cmd = "set issue29 0 0 0\r\n"; $rst = "STORED"; $msg = "stored issue29";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
 
 my $first_stats  = mem_stats($sock, "slabs");
 ### [ARCUS] CHANGED FOLLOWING TEST ###
@@ -26,8 +29,8 @@ my $first_used = $first_stats->{"0:used_chunks"};
 is(1, $first_used, "Used one chunk");
 ######################################
 
-print $sock "set issue29_b 0 0 0\r\n\r\n";
-is (scalar <$sock>, "STORED\r\n", "stored issue29_b");
+$cmd = "set issue29_b 0 0 0\r\n"; $rst = "STORED"; $msg = "stored issue29_b";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
 
 my $second_stats  = mem_stats($sock, "slabs");
 ### [ARCUS] CHANGED FOLLOWING TEST ###

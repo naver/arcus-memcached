@@ -56,60 +56,81 @@ my $rst;
 
 # Case 1
 $cmd = "get bkey1"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop create bkey1 11 0 0 unreadable"; $rst = "CREATED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 90 6"; $val = "datum9"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 70 6"; $val = "datum7"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 50 6"; $val = "datum5"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 30 6"; $val = "datum3"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 10 6"; $val = "datum1"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop get bkey1 10..90"; $rst = "UNREADABLE";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-getattr_is($sock, "bkey1 readable", "readable=off");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "getattr bkey1 readable";
+$rst = "ATTR readable=off\nEND";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "setattr bkey1 readable=on"; $rst = "OK";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-getattr_is($sock, "bkey1 readable", "readable=on");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "getattr bkey1 readable";
+$rst = "ATTR readable=on\nEND";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "setattr bkey1 readable=off"; $rst = "ATTR_ERROR bad value";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-bop_ext_get_is($sock, "bkey1 10..90",
-               11, 5, "10,30,50,70,90", ",,,,", "datum1,datum3,datum5,datum7,datum9", "END");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey1 10..90";
+$rst = "VALUE 11 5
+10 6 datum1
+30 6 datum3
+50 6 datum5
+70 6 datum7
+90 6 datum9
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "delete bkey1"; $rst = "DELETED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # Case 2
 $cmd = "get bkey1"; $rst = "END";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop create bkey1 11 0 0 unreadable"; $rst = "CREATED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop insert bkey1 0x0fff 6"; $val = "datum9"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 0x0FFA 6"; $val = "datum7"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 0x00FF 6"; $val = "datum5"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 0x000F 6"; $val = "datum3"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 0x0000 6"; $val = "datum1"; $rst = "STORED";
-print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop get bkey1 0x00..0xFF"; $rst = "UNREADABLE";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-getattr_is($sock, "bkey1 readable", "readable=off");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "getattr bkey1 readable";
+$rst = "ATTR readable=off\nEND";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "setattr bkey1 readable=on"; $rst = "OK";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-getattr_is($sock, "bkey1 readable", "readable=on");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "getattr bkey1 readable";
+$rst = "ATTR readable=on\nEND";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "setattr bkey1 readable=off"; $rst = "ATTR_ERROR bad value";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-bop_ext_get_is($sock, "bkey1 0x00..0xFF",
-               11, 5, "0x0000,0x000F,0x00FF,0x0FFA,0x0FFF", ",,,,", "datum1,datum3,datum5,datum7,datum9", "END");
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey1 0x00..0xFF";
+$rst = "VALUE 11 5
+0x0000 6 datum1
+0x000F 6 datum3
+0x00FF 6 datum5
+0x0FFA 6 datum7
+0x0FFF 6 datum9
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "delete bkey1"; $rst = "DELETED";
-print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
-
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # after test
 release_memcached($engine, $server);

@@ -23,12 +23,13 @@ my $klen;
 my $cmd;
 my $val;
 my $rst;
+my $msg;
 
 sub prepare_keyset_with_btree {
     my ($keycnt) = @_;
 
     $cmd = "bop create $ksname 0 0 $kcount"; $rst = "CREATED";
-    print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "keyset created");
+    mem_cmd_is($sock, $cmd, "", $rst);
 
     for ($kcnt = 0; $kcnt < $keycnt; $kcnt += 1) {
         $keylen = 2000 + int(rand(2000));
@@ -37,7 +38,7 @@ sub prepare_keyset_with_btree {
              $keystr .= chr( int(rand(25) + 65) );
         }
         $cmd = "bop insert $ksname $kcnt $keylen"; $val="$keystr"; $rst = "STORED";
-        print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$kcnt key created");
+        mem_cmd_is($sock, $cmd, $val, $rst);
     }
 
     for ($kcnt = 0; $kcnt < $kcount; $kcnt++) {
@@ -50,11 +51,11 @@ sub delete_keyset_with_btree {
 
     for ($kcnt = 0; $kcnt < $kcount; $kcnt++) {
         $keystr = $keyarr[$kcnt];
-        print $sock "delete $keystr\r\n";
-        is(scalar <$sock>, "DELETED\r\n", "$kcnt kv item deleted");
+        $cmd = "delete $keystr"; $rst = "DELETED";
+        mem_cmd_is($sock, $cmd, "", $rst);
     }
-    print $sock "delete $ksname\r\n";
-    is(scalar <$sock>, "DELETED\r\n", "keyset deleted");
+    $cmd = "delete $ksname"; $rst = "DELETED";
+    mem_cmd_is($sock, $cmd, "", $rst);
 }
 
 sub prepare_keyset_in_memory {
@@ -75,8 +76,8 @@ sub delete_keyset_in_memory {
 
     for ($kcnt = 0; $kcnt < $kcount; $kcnt++) {
         $keystr = $keyarr[$kcnt];
-        print $sock "delete $keystr\r\n";
-        is(scalar <$sock>, "DELETED\r\n", "$kcnt kv item deleted");
+        $cmd = "delete $keystr"; $rst = "DELETED";
+        mem_cmd_is($sock, $cmd, "", $rst);
     }
 }
 
@@ -157,13 +158,13 @@ sub assert_collection_test {
     for ($kcnt = 0; $kcnt < 10; $kcnt += 1) {
         $keystr = $keyarr[$kcnt];
         $cmd = "bop create $keystr 0 0 0"; $rst = "CREATED";
-        print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "bop created");
+        mem_cmd_is($sock, $cmd, "", $rst);
         $cmd = "bop insert $keystr 1 10"; $val="bop_data_1"; $rst = "STORED";
-        print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "bop inserted");
+        mem_cmd_is($sock, $cmd, $val, $rst);
         $cmd = "bop insert $keystr 2 10"; $val="bop_data_2"; $rst = "STORED";
-        print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "bop inserted");
+        mem_cmd_is($sock, $cmd, $val, $rst);
         $cmd = "bop insert $keystr 3 10"; $val="bop_data_3"; $rst = "STORED";
-        print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "bop inserted");
+        mem_cmd_is($sock, $cmd, $val, $rst);
         #bop_get_is($sock, "$keystr 0..100", 0, 3,
         #           "1,2,3", "bop_data_1,bop_data_2,bop_data_3", "END");
         #getattr_is($sock, "$keystr count", "count=3");
@@ -171,13 +172,13 @@ sub assert_collection_test {
     for ($kcnt = 10; $kcnt < 20; $kcnt += 1) {
         $keystr = $keyarr[$kcnt];
         $cmd = "lop create $keystr 0 0 0"; $rst = "CREATED";
-        print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "lop created");
+        mem_cmd_is($sock, $cmd, "", $rst);
         $cmd = "lop insert $keystr -1 10"; $val="lop_data_1"; $rst = "STORED";
-        print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "lop inserted");
+        mem_cmd_is($sock, $cmd, $val, $rst);
         $cmd = "lop insert $keystr -1 10"; $val="lop_data_2"; $rst = "STORED";
-        print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "lop inserted");
+        mem_cmd_is($sock, $cmd, $val, $rst);
         $cmd = "lop insert $keystr -1 10"; $val="lop_data_3"; $rst = "STORED";
-        print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "lop inserted");
+        mem_cmd_is($sock, $cmd, $val, $rst);
         #lop_get_is($sock, "$keystr 0..-1", 0, 3,
         #           "lop_data_1,lop_data_2,lop_data_3", "END");
         #getattr_is($sock, "$keystr count", "count=3");
@@ -185,39 +186,39 @@ sub assert_collection_test {
     for ($kcnt = 20; $kcnt < 30; $kcnt += 1) {
         $keystr = $keyarr[$kcnt];
         $cmd = "sop create $keystr 0 0 0"; $rst = "CREATED";
-        print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "sop created");
+        mem_cmd_is($sock, $cmd, "", $rst);
         $cmd = "sop insert $keystr 10"; $val="sop_data_1"; $rst = "STORED";
-        print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "sop inserted");
+        mem_cmd_is($sock, $cmd, $val, $rst);
         $cmd = "sop insert $keystr 10"; $val="sop_data_2"; $rst = "STORED";
-        print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "sop inserted");
+        mem_cmd_is($sock, $cmd, $val, $rst);
         $cmd = "sop insert $keystr 10"; $val="sop_data_3"; $rst = "STORED";
-        print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "sop inserted");
+        mem_cmd_is($sock, $cmd, $val, $rst);
         #sop_get_is($sock, "$keystr 3", 0, 3,
         #           "sop_data_1,sop_data_2,sop_data_3", "END");
         #getattr_is($sock, "$keystr count", "count=3");
         $cmd = "sop exist $keystr 10"; $val="sop_data_3"; $rst = "EXIST";
-        print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "sop exist");
+        mem_cmd_is($sock, $cmd, $val, $rst);
         $cmd = "sop exist $keystr 10"; $val="sop_data_4"; $rst = "NOT_EXIST";
-        print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "sop not exist");
+        mem_cmd_is($sock, $cmd, $val, $rst);
     }
     for ($kcnt = 30; $kcnt < 40; $kcnt += 1) {
         $keystr = $keyarr[$kcnt];
         $cmd = "mop create $keystr 0 0 0"; $rst = "CREATED";
-        print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "mop created");
+        mem_cmd_is($sock, $cmd, "", $rst);
         $cmd = "mop insert $keystr field_1 10"; $val="mop_data_1"; $rst = "STORED";
-        print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "mop inserted");
+        mem_cmd_is($sock, $cmd, $val, $rst);
         $cmd = "mop insert $keystr field_2 10"; $val="mop_data_2"; $rst = "STORED";
-        print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "mop inserted");
+        mem_cmd_is($sock, $cmd, $val, $rst);
         $cmd = "mop insert $keystr field_3 10"; $val="mop_data_3"; $rst = "STORED";
-        print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "mop inserted");
+        mem_cmd_is($sock, $cmd, $val, $rst);
         #mop_get_is($sock, "$keystr 23 3", 0, 3, 3, "field_1 field_2 field_3",
         #           "field_1,field_2,filed_3", "mop_data_1,mop_data_2,mop_data_3", "END");
         #getattr_is($sock, "$keystr count", "count=3");
     }
     for ($kcnt = 0; $kcnt < 40; $kcnt += 1) {
         $keystr = $keyarr[$kcnt];
-        print $sock "delete $keystr\r\n";
-        is(scalar <$sock>, "DELETED\r\n", "collection item deleted");
+        $cmd = "delete $keystr"; $rst = "DELETED";
+        mem_cmd_is($sock, $cmd, "", $rst);
     }
 }
 
@@ -227,20 +228,15 @@ prepare_keyset_with_btree($kcount);
 for ($kcnt = 0; $kcnt < $kcount; $kcnt++) {
     $keystr = $keyarr[$kcnt];
     $cmd = "set $keystr 0 0 4"; $val = "data"; $rst = "STORED";
-    print $sock "$cmd\r\n$val\r\n";
-    is(scalar <$sock>, "$rst\r\n", "set $kcnt kv item");
+    mem_cmd_is($sock, $cmd, $val, $rst);
 }
 # get
 for ($kcnt = 0; $kcnt < $kcount; $kcnt++) {
     $keystr = $keyarr[$kcnt];
-    print $sock "get $keystr\r\n";
-    my $expt = "VALUE $keystr 0 4\r\ndata\r\nEND\r\n";
-    my $resp = scalar(<$sock>);
-    if (!$resp || $resp =~ /^END/) {
-    } else {
-        $resp .= scalar(<$sock>) . scalar(<$sock>);
-    }
-    Test::More::is($resp, $expt, "get $kcnt kv item");
+    $cmd = "get $keystr";
+    $rst = "VALUE $keystr 0 4\ndata\nEND";
+    $msg = "get $kcnt kv item";
+    mem_cmd_is($sock, $cmd, "", $rst, $msg);
 }
 # mget old
 assert_kv_mget_old($kcount);
@@ -258,20 +254,15 @@ prepare_keyset_in_memory($kcount);
 for ($kcnt = 0; $kcnt < $kcount; $kcnt++) {
     $keystr = $keyarr[$kcnt];
     $cmd = "set $keystr 0 0 4"; $val = "data"; $rst = "STORED";
-    print $sock "$cmd\r\n$val\r\n";
-    is(scalar <$sock>, "$rst\r\n", "set $kcnt kv item");
+    mem_cmd_is($sock, $cmd, $val, $rst);
 }
 # get
 for ($kcnt = 0; $kcnt < $kcount; $kcnt++) {
     $keystr = $keyarr[$kcnt];
-    print $sock "get $keystr\r\n";
-    my $expt = "VALUE $keystr 0 4\r\ndata\r\nEND\r\n";
-    my $resp = scalar(<$sock>);
-    if (!$resp || $resp =~ /^END/) {
-    } else {
-        $resp .= scalar(<$sock>) . scalar(<$sock>);
-    }
-    Test::More::is($resp, $expt, "get $kcnt kv item");
+    $cmd = "get $keystr";
+    $rst = "VALUE $keystr 0 4\ndata\nEND";
+    $msg = "get $kcnt kv item";
+    mem_cmd_is($sock, $cmd, "", $rst, $msg);
 }
 # mget old
 assert_kv_mget_old($kcount);

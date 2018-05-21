@@ -10,23 +10,27 @@ use MemcachedTest;
 my $engine = shift;
 my $server = get_memcached($engine, "-f 1.04");
 my $sock = $server->sock;
+my $cmd;
+my $val;
+my $rst;
 
 # Test sets up to a large size around 1MB.
 # Everything up to 1MB - 1k should succeed, everything 1MB +1k should fail.
 
 my $len = 4096;
 while ($len < 1024*1028) {
-    my $val = "B"x$len;
+    $val = "B"x$len;
     if ($len >= (1024*1024)) {
         # Ensure causing a memory overflow doesn't leave stale data.
-        print $sock "set foo_$len 0 0 3\r\nMOO\r\n";
-        is(scalar <$sock>, "STORED\r\n");
-        print $sock "set foo_$len 0 0 $len\r\n$val\r\n";
-        is(scalar <$sock>, "SERVER_ERROR object too large for cache\r\n", "failed to store size $len");
-        mem_get_is($sock, "foo_$len");
+        $cmd = "set foo_$len 0 0 3"; $rst = "STORED";
+        mem_cmd_is($sock, $cmd, "MOO", $rst);
+        $cmd = "set foo_$len 0 0 $len"; $rst = "SERVER_ERROR object too large for cache";
+        mem_cmd_is($sock, $cmd, $val, $rst, "failed to store size $len");
+        $cmd = "get foo_$len"; $rst = "END";
+        mem_cmd_is($sock, $cmd, "", $rst);
     } else {
-        print $sock "set foo_$len 0 0 $len\r\n$val\r\n";
-        is(scalar <$sock>, "STORED\r\n", "stored size $len");
+        $cmd = "set foo_$len 0 0 $len"; $rst = "STORED";
+        mem_cmd_is($sock, $cmd, $val, $rst, "stored size $len");
     }
     $len += 4096;
 }

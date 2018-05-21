@@ -13,7 +13,9 @@ my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 my $factor = 2;
+my $cmd;
 my $val = "x" x $factor;
+my $rst;
 my $key = '';
 
 # SET items of diverse size to the daemon so it can attempt
@@ -21,8 +23,8 @@ my $key = '';
 for (my $i=0; $i<69; $i++) {
     for (my $j=0; $j<10; $j++) {
         $key = "$i:$j";
-        print $sock "set key$key 0 0 $factor\r\n$val\r\n";
-        is (scalar <$sock>, "STORED\r\n", "stored key$key");
+        $cmd = "set key$key 0 0 $factor"; $rst = "STORED";
+        mem_cmd_is($sock, $cmd, $val, $rst);
     }
     $factor *= 1.2;
     $factor = ceil($factor);

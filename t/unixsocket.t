@@ -11,14 +11,20 @@ my $filename = "/tmp/memcachetest$$";
 my $engine = shift;
 my $server = get_memcached($engine, "-s $filename");
 my $sock = $server->sock;
+my $cmd;
+my $val;
+my $rst;
 
 ok(-S $filename, "creating unix domain socket $filename");
 
 # set foo (and should get it)
-print $sock "set foo 0 0 6\r\nfooval\r\n";
-
-is(scalar <$sock>, "STORED\r\n", "stored foo");
-mem_get_is($sock, "foo", "fooval");
+$cmd = "set foo 0 0 6"; $val = "fooval"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "get foo";
+$rst = "VALUE foo 0 6
+fooval
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 unlink($filename);
 

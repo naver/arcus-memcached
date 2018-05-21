@@ -9,21 +9,24 @@ use MemcachedTest;
 my $engine = shift;
 my $server = get_memcached($engine, "-X .libs/ascii_scrub.so");
 my $sock = $server->sock;
+my $cmd;
+my $val;
+my $rst;
 my $key = 0;
 
 for ($key = 0; $key < 40; $key++) {
-    print $sock "set key$key 0 0 5\r\nvalue\r\n";
-    is (scalar <$sock>, "STORED\r\n", "stored key$key");
+    $cmd = "set key$key 0 0 5"; $val = "value"; $rst = "STORED";
+    mem_cmd_is($sock, $cmd, $val, $rst);
 }
 
 for ($key = 40; $key < 80; $key++) {
-    print $sock "set key$key 0 1 5\r\nvalue\r\n";
-    is (scalar <$sock>, "STORED\r\n", "stored key$key");
+    $cmd = "set key$key 0 1 5"; $val = "value"; $rst = "STORED";
+    mem_cmd_is($sock, $cmd, $val, $rst);
 }
 
 sleep(1.5);
-print $sock "scrub\r\n";
-is (scalar <$sock>, "OK\r\n", "scrub started");
+$cmd = "scrub"; $rst = "OK";
+mem_cmd_is($sock, $cmd, "", $rst, "scrub started");
 sleep(1.0);
 my $stats  = mem_stats($sock, "scrub");
 my $visited = $stats->{"scrubber:visited"};

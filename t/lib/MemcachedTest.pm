@@ -48,7 +48,7 @@ sub mem_cmd_is {
         , "OUT_OF_RANGE", "OVERFLOWED", "REPLACED", "RESET", "STORED", "TRIMMED"
         , "TYPE_MISMATCH", "UNREADABLE", "UPDATED"
         , "ATTR_ERROR", "CLIENT_ERROR", "ERROR", "PREFIX_ERROR", "SERVER_ERROR"
-        , "COUNT=");
+        , "COUNT=", "POSITION=");
 
     my @exception_cmd = ("incr", "decr", "echo", "bop incr", "bop decr");
 
@@ -90,6 +90,8 @@ sub mem_cmd_is {
     if (grep $line =~ /^$_/, @response_list) {
         Test::More::is("$resp", "$rst", $msg);
     } elsif (grep $cmd =~ /^$_/, @exception_cmd) {
+        Test::More::is("$resp", "$rst", $msg);
+    } elsif ($cmd =~ /noreply$/) { # command of noreply option
         Test::More::is("$resp", "$rst", $msg);
     } else {
         croak("# Test failed. < test name : $msg >");

@@ -24,14 +24,14 @@ sub prepare_bop_smget {
     for ($kcnt = 0; $kcnt < $key_cnt; $kcnt += 1) {
         $key = "KEY_$kcnt";
         $cmd = "bop create $key 11 0 0"; $rst = "CREATED";
-        print $sock "$cmd\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd: $rst");
+        mem_cmd_is($sock, $cmd, "", $rst);
     }
     for ($kcnt = 0, $dcnt = 0; $dcnt < $dat_cnt; $dcnt += 1) {
         $key  = "KEY_$kcnt";
         $val  = "DATA_$dcnt";
         my $len = length($val);
         $cmd = "bop insert $key $dcnt $len"; $rst = "STORED";
-        print $sock "$cmd\r\n$val\r\n"; is(scalar <$sock>, "$rst\r\n", "$cmd $val: $rst");
+        mem_cmd_is($sock, $cmd, $val, $rst);
         $kcnt += 1;
         if ($kcnt == $key_cnt) {
             $kcnt = 0;

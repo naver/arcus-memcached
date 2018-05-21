@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 8;
+use Test::More tests => 11;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -9,43 +9,50 @@ use MemcachedTest;
 my $engine = shift;
 my $server = get_memcached($engine);
 my $sock = $server->sock;
+my $cmd;
+my $val;
+my $rst;
+my $msg;
 my $key = "del_key";
 
-print $sock "delete $key\r\n";
-is (scalar <$sock>, "NOT_FOUND\r\n", "not found on delete");
+$cmd = "delete $key"; $rst = "NOT_FOUND";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "delete $key 10\r\n";
-is (scalar <$sock>, "CLIENT_ERROR bad command line format."
-    . "  Usage: delete <key> [noreply]\r\n", "invalid delete");
+$cmd = "delete $key 10"; $rst = "CLIENT_ERROR bad command line format.  Usage: delete <key> [noreply]";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "add $key 0 0 1\r\nx\r\n";
-is (scalar <$sock>, "STORED\r\n", "Add before a broken delete.");
+$cmd = "add $key 0 0 1"; $val = "x"; $rst = "STORED"; $msg = "Add before a broken delete.";
+mem_cmd_is($sock, $cmd, $val, $rst, $msg);
 
-print $sock "delete $key 10 noreply\r\n";
+$cmd = "delete $key 10 noreply"; $rst = "";
+mem_cmd_is($sock, $cmd, "", $rst);
 # Does not reply
 # is (scalar <$sock>, "ERROR\r\n", "Even more invalid delete");
 
-print $sock "add $key 0 0 1\r\nx\r\n";
-is (scalar <$sock>, "NOT_STORED\r\n", "Failed to add after failed silent delete.");
+$cmd = "add $key 0 0 1"; $val = "x"; $rst = "NOT_STORED";
+$msg = "Failed to add after failed silent delete.";
+mem_cmd_is($sock, $cmd, $val, $rst, $msg);
 
-print $sock "delete $key noreply\r\n";
+$cmd = "delete $key noreply"; $rst = "";
+mem_cmd_is($sock, $cmd, "", $rst);
 # Will not reply, so let's do a set and check that.
 
-print $sock "set $key 0 0 1\r\nx\r\n";
-is (scalar <$sock>, "STORED\r\n", "Stored a key");
+$cmd = "set $key 0 0 1"; $val = "x"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
-print $sock "delete $key\r\n";
-is (scalar <$sock>, "DELETED\r\n", "Properly deleted");
+$cmd = "delete $key"; $rst = "DELETED";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "set $key 0 0 1\r\nx\r\n";
-is (scalar <$sock>, "STORED\r\n", "Stored a key");
+$cmd = "set $key 0 0 1"; $val = "x"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
-print $sock "delete $key noreply\r\n";
+$cmd = "delete $key noreply"; $rst = "";
+mem_cmd_is($sock, $cmd, "", $rst);
+
 # will not reply, but a subsequent add will succeed
 
-print $sock "add $key 0 0 1\r\nx\r\n";
-is (scalar <$sock>, "STORED\r\n", "Add succeeded after deletion.");
-
+$cmd = "add $key 0 0 1"; $val = "x"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
 
 # after test
 release_memcached($engine, $server);

@@ -9,91 +9,121 @@ use MemcachedTest;
 my $engine = shift;
 my $server = get_memcached($engine);
 my $sock = $server->sock;
+my $cmd;
+my $val;
+my $rst;
+my $msg;
 
 # Bug 21
-print $sock "set bug21 0 0 19\r\n9223372036854775807\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored text");
-print $sock "incr bug21 1\r\n";
-is(scalar <$sock>, "9223372036854775808\r\n", "bug21 incr 1");
-print $sock "incr bug21 1\r\n";
-is(scalar <$sock>, "9223372036854775809\r\n", "bug21 incr 2");
-print $sock "decr bug21 1\r\n";
-is(scalar <$sock>, "9223372036854775808\r\n", "bug21 decr");
+$cmd = "set bug21 0 0 19"; $val = "9223372036854775807"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "incr bug21 1"; $rst = "9223372036854775808"; $msg = "bug21 incr 1";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "incr bug21 1"; $rst = "9223372036854775809"; $msg = "bug21 incr 2";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "decr bug21 1"; $rst = "9223372036854775808"; $msg = "bug21 decr";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "set num 0 0 1\r\n1\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored num");
-mem_get_is($sock, "num", 1, "stored 1");
+$cmd = "set num 0 0 1"; $val = "1"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "get num";
+$rst = "VALUE num 0 1
+1
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "incr num 1\r\n";
-is(scalar <$sock>, "2\r\n", "+ 1 = 2");
-mem_get_is($sock, "num", 2);
+$cmd = "incr num 1"; $rst = "2"; $msg = "+ 1 = 2";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
+$cmd = "get num";
+$rst = "VALUE num 0 1
+2
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "incr num 8\r\n";
-is(scalar <$sock>, "10\r\n", "+ 8 = 10");
-mem_get_is($sock, "num", 10);
+$cmd = "incr num 8"; $rst = "10"; $msg = "+ 8 = 10";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
+$cmd = "get num";
+$rst = "VALUE num 0 2
+10
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "decr num 1\r\n";
-is(scalar <$sock>, "9\r\n", "- 1 = 9");
+$cmd = "decr num 1"; $rst = "9"; $msg = "- 1 = 9";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "decr num 9\r\n";
-is(scalar <$sock>, "0\r\n", "- 9 = 0");
+$cmd = "decr num 9"; $rst = "0"; $msg = "- 9 = 0";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "decr num 5\r\n";
-is(scalar <$sock>, "0\r\n", "- 5 = 0");
+$cmd = "decr num 5"; $rst = "0"; $msg = "- 5 = 0";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-printf $sock "set num 0 0 10\r\n4294967296\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored 2**32");
+$cmd = "set num 0 0 10"; $val = "4294967296"; $rst = "STORED"; $msg = "stored 2**32";
+mem_cmd_is($sock, $cmd, $val, $rst, $msg);
 
-print $sock "incr num 1\r\n";
-is(scalar <$sock>, "4294967297\r\n", "4294967296 + 1 = 4294967297");
+$cmd = "incr num 1"; $rst = "4294967297"; $msg = "4294967296 + 1 = 4294967297";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
 
-printf $sock "set num 0 0 %d\r\n18446744073709551615\r\n", length("18446744073709551615");
-is(scalar <$sock>, "STORED\r\n", "stored 2**64-1");
+$cmd = "set num 0 0 20"; $val = "18446744073709551615"; $rst = "STORED";
+$msg = "stored 2**64-1";
+mem_cmd_is($sock, $cmd, $val, $rst, $msg);
 
-print $sock "incr num 1\r\n";
-is(scalar <$sock>, "0\r\n", "(2**64 - 1) + 1 = 0");
+$cmd = "incr num 1"; $rst = "0"; $msg = "(2**64 - 1) + 1 = 0";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
 
-print $sock "decr bogus 5\r\n";
-is(scalar <$sock>, "NOT_FOUND\r\n", "can't decr bogus key");
+$cmd = "decr bogus 5"; $rst = "NOT_FOUND"; $msg = "can't decr bogus key";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
 
-print $sock "decr incr 5\r\n";
-is(scalar <$sock>, "NOT_FOUND\r\n", "can't incr bogus key");
+$cmd = "decr incr 5"; $rst = "NOT_FOUND"; $msg = "can't incr bogus key";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
 
-print $sock "set bigincr 0 0 1\r\n0\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored bigincr");
-print $sock "incr bigincr 18446744073709551610\r\n";
-is(scalar <$sock>, "18446744073709551610\r\n");
+$cmd = "set bigincr 0 0 1"; $val = "0"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "incr bigincr 18446744073709551610"; $rst = "18446744073709551610";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "set text 0 0 2\r\nhi\r\n";
-is(scalar <$sock>, "STORED\r\n", "stored hi");
-print $sock "incr text 1\r\n";
-is(scalar <$sock>,
-   "CLIENT_ERROR cannot increment or decrement non-numeric value\r\n",
-   "hi - 1 = 0");
+$cmd = "set text 0 0 2"; $val = "hi"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "incr text 1"; $rst = "CLIENT_ERROR cannot increment or decrement non-numeric value";
+$msg = "hi - 1 = 0";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
 
-print $sock "delete noexists\r\n";
-is(scalar <$sock>, "NOT_FOUND\r\n", "deleted noexists, but not found");
+$cmd = "delete noexists"; $rst = "NOT_FOUND"; $msg = "deleted noexists, but not found";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
 
-print $sock "incr noexists 1 0 0 20\r\n";
-is(scalar <$sock>, "20\r\n", "init value : 20");
-mem_get_is($sock, "noexists", 20);
+$cmd = "incr noexists 1 0 0 20"; $rst = "20"; $msg = "init value : 20";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
+$cmd = "get noexists";
+$rst = "VALUE noexists 0 2
+20
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "incr noexists 1 0 0 20\r\n";
-is(scalar <$sock>, "21\r\n", "20 + 1-= 21");
-mem_get_is($sock, "noexists", 21);
+$cmd = "incr noexists 1 0 0 20"; $rst = "21"; $msg = "20 + 1-= 21";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
+$cmd = "get noexists";
+$rst = "VALUE noexists 0 2
+21
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "delete noexists2\r\n";
-is(scalar <$sock>, "NOT_FOUND\r\n", "deleted noexists2, but not found");
+$cmd = "delete noexists2"; $rst = "NOT_FOUND"; $msg = "deleted noexists2, but not found";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
 
-print $sock "decr noexists 1 0 0 20\r\n";
-is(scalar <$sock>, "20\r\n", "init value : 20");
-mem_get_is($sock, "noexists", 20);
+$cmd = "decr noexists 1 0 0 20"; $rst = "20"; $msg = "init value : 20";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
+$cmd = "get noexists";
+$rst = "VALUE noexists 0 2
+20
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
-print $sock "decr noexists 1 0 0 20\r\n";
-is(scalar <$sock>, "19\r\n", "20 - 1-= 19");
-mem_get_is($sock, "noexists", 19);
-
-
+$cmd = "decr noexists 1"; $rst = "19"; $msg = "20 - 1-= 19";
+mem_cmd_is($sock, $cmd, "", $rst, $msg);
+$cmd = "get noexists";
+$rst = "VALUE noexists 0 2
+19
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 
 # after test
 release_memcached($engine, $server);

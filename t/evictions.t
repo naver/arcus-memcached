@@ -10,19 +10,21 @@ use MemcachedTest;
 my $engine = shift;
 my $server = get_memcached($engine, "-m 3");
 my $sock = $server->sock;
-my $value = "B"x66560;
+my $cmd;
+my $val = "B"x66560;
+my $rst;
 my $key = 0;
 
 # These aren't set to expire.
 for ($key = 0; $key < 40; $key++) {
-    print $sock "set key$key 0 0 66560\r\n$value\r\n";
-    is(scalar <$sock>, "STORED\r\n", "stored key$key");
+    $cmd = "set key$key 0 0 66560"; $rst = "STORED";
+    mem_cmd_is($sock, $cmd, $val, $rst);
 }
 
 # These ones would expire in 600 seconds.
 for ($key = 0; $key < 50; $key++) {
-    print $sock "set key$key 0 600 66560\r\n$value\r\n";
-    is(scalar <$sock>, "STORED\r\n", "stored key$key");
+    $cmd = "set key$key 0 600 66560"; $rst = "STORED";
+    mem_cmd_is($sock, $cmd, $val, $rst);
 }
 
 my $stats  = mem_stats($sock, "items");
