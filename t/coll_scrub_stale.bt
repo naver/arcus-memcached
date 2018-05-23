@@ -13,14 +13,16 @@ use MemcachedTest;
 my $engine = shift;
 my $server = get_memcached($engine, "-m 512 -X .libs/ascii_scrub.so");
 my $sock = $server->sock;
-my $kcnt = 10000;
-my $dcnt = 10;
-my $kidx;
-my $didx;
+
 my $cmd;
 my $val;
 my $rst;
 my $msg;
+
+my $kcnt = 10000;
+my $ecnt = 10;
+my $kidx;
+my $eidx;
 my $len;
 my $prefix;
 
@@ -29,10 +31,10 @@ for ($kidx = 0; $kidx < $kcnt; $kidx += 2) {
     $cmd = "bop create $prefix:KEY_$kidx 11 0 0"; $rst = "CREATED";
     $msg = "B+Tree create: $prefix:KEY_$kidx";
     mem_cmd_is($sock, $cmd, "", $rst, $msg);
-    for ($didx = 0; $didx < $dcnt; $didx++) {
-        $val = "$prefix:KEY_$kidx DATA_$didx";
+    for ($eidx = 0; $eidx < $ecnt; $eidx++) {
+        $val = "$prefix:KEY_$kidx DATA_$eidx";
         $len = length($val);
-        $cmd = "bop insert $prefix:KEY_$kidx $didx $len"; $rst = "STORED";
+        $cmd = "bop insert $prefix:KEY_$kidx $eidx $len"; $rst = "STORED";
         $msg = "B+tree insert: $val";
         mem_cmd_is($sock, $cmd, $val, $rst, $msg);
     }
@@ -43,25 +45,21 @@ for ($kidx = 1; $kidx < $kcnt; $kidx += 2) {
     $cmd = "bop create $prefix:KEY_$kidx 11 0 0"; $rst = "CREATED";
     $msg = "B+Tree create: $prefix:KEY_$kidx";
     mem_cmd_is($sock, $cmd, "", $rst, $msg);
-    for ($didx = 0; $didx < $dcnt; $didx++) {
-        $val = "$prefix:KEY_$kidx DATA_$didx";
+    for ($eidx = 0; $eidx < $ecnt; $eidx++) {
+        $val = "$prefix:KEY_$kidx DATA_$eidx";
         $len = length($val);
-        $cmd = "bop insert $prefix:KEY_$kidx $didx $len"; $rst = "STORED";
+        $cmd = "bop insert $prefix:KEY_$kidx $eidx $len"; $rst = "STORED";
         $msg = "B+tree insert: $val";
         mem_cmd_is($sock, $cmd, $val, $rst, $msg);
     }
 }
 
-$prefix = "PrefixA";
-$cmd = "flush_prefix $prefix"; $rst = "OK";
-$msg = "did flush_prefix $prefix";
+$cmd = "flush_prefix PrefixA"; $rst = "OK";
 mem_cmd_is($sock, $cmd, "", $rst);
 
 $cmd = "scrub stale"; $rst = "NOT_SUPPORTED";
-$msg = "scrub stale NOT supported";
 mem_cmd_is($sock, $cmd, "", $rst);
 =head
-is (scalar <$sock>, "OK\r\n", "scrub stale NOT supported");
 sleep(1);
 my $stats  = mem_stats($sock, "scrub");
 my $status  = $stats->{"scrubber:status"};
