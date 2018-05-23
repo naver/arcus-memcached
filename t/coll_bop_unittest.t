@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 21522;
+use Test::More tests => 21529;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -10,36 +10,38 @@ my $engine = shift;
 my $server = get_memcached($engine);
 my $sock = $server->sock;
 
+my $cmd;
+my $val;
+my $rst;
+
 # BOP test sub routines
 sub bop_insert {
-    my ($key, $from_bkey, $to_bkey, $width, $create, $flags, $exptime, $maxcount) = @_;
-    my $data = "_data_";
+    my ($key, $from_bkey, $to_bkey, $width, $create) = @_;
     my $bkey;
-    my $val;
-    my $rst;
     my $vleng;
-    my $cmd;
 
-    $val = "$key$data$from_bkey";
+    $bkey = $from_bkey;
+    $val = "$key\_data_$from_bkey";
     $vleng = length($val);
-    if ($create eq "create") {
-        $cmd = "bop insert $key $from_bkey $vleng $create $flags $exptime $maxcount";
+    if ($create ne "") {
+        $cmd = "bop insert $key $bkey $vleng $create";
         $rst = "CREATED_STORED";
     } else {
-        $cmd = "bop insert $key $from_bkey $vleng"; $rst = "STORED";
+        $cmd = "bop insert $key $bkey $vleng";
+        $rst = "STORED";
     }
     mem_cmd_is($sock, $cmd, $val, $rst);
 
     if ($from_bkey <= $to_bkey) {
-        for ($bkey = $from_bkey + $width; $bkey <= $to_bkey; $bkey = $bkey + $width) {
-            $val = "$key$data$bkey";
+        for ($bkey += $width; $bkey <= $to_bkey; $bkey += $width) {
+            $val = "$key\_data_$bkey";
             $vleng = length($val);
             $cmd = "bop insert $key $bkey $vleng"; $rst = "STORED";
             mem_cmd_is($sock, $cmd, $val, $rst);
         }
     } else {
-        for ($bkey = $from_bkey - $width; $bkey >= $to_bkey; $bkey = $bkey - $width) {
-            $val = "$key$data$bkey";
+        for ($bkey -= $width; $bkey >= $to_bkey; $bkey -= $width) {
+            $val = "$key\_data_$bkey";
             $vleng = length($val);
             $cmd = "bop insert $key $bkey $vleng"; $rst = "STORED";
             mem_cmd_is($sock, $cmd, $val, $rst);
@@ -51,9 +53,7 @@ sub assert_bop_get {
     my ($key, $width, $flags, $from_bkey, $to_bkey, $offset, $count, $delete, $tailstr) = @_;
     my $saved_from_bkey = $from_bkey;
     my $saved_to_bkey   = $to_bkey;
-    my $data = "_data_";
     my $bkey;
-    my $val;
     my $valcnt = 0;
     my @res_bkey = ();
     my @res_data = ();
@@ -68,8 +68,8 @@ sub assert_bop_get {
         if (($to_bkey % $width) ne 0) {
             $to_bkey = $to_bkey - ($to_bkey % $width);
         }
-        for ($bkey = $from_bkey; $bkey <= $to_bkey; $bkey = $bkey + $width) {
-            $val = "$key$data$bkey";
+        for ($bkey = $from_bkey; $bkey <= $to_bkey; $bkey += $width) {
+            $val = "$key\_data_$bkey";
             push(@res_bkey, $bkey);
             push(@res_data, $val);
             $valcnt = $valcnt + 1;
@@ -87,8 +87,8 @@ sub assert_bop_get {
         if (($to_bkey % $width) ne 0) {
             $to_bkey = $to_bkey + ($width - ($to_bkey % $width))
         }
-        for ($bkey = $from_bkey; $bkey >= $to_bkey; $bkey = $bkey - $width) {
-            $val = "$key$data$bkey";
+        for ($bkey = $from_bkey; $bkey >= $to_bkey; $bkey -= $width) {
+            $val = "$key\_data_$bkey";
             push(@res_bkey, $bkey);
             push(@res_data, $val);
             $valcnt = $valcnt + 1;
@@ -112,43 +112,40 @@ my $min = 10;
 my $max = 10000;
 my $width = 10;
 my $cnt;
-my $cmd;
-my $val;
-my $rst;
 
 # testBOPInsertGet
-$cnt = 0;
-for (0..6) {
+for ($cnt = 0; $cnt <= 6; $cnt += 1) {
     $cmd = "get bkey"; $rst = "END";
     mem_cmd_is($sock, $cmd, "", $rst);
     if ($cnt == 0) {
-        bop_insert("bkey", $min, $max, $width, "create", $flags, 0, 0);
+        bop_insert("bkey", $min, $max, $width, "create $flags 0 0");
     } elsif ($cnt == 1) {
-        bop_insert("bkey", $max, $min, $width, "create", $flags, 0, 0);
+        bop_insert("bkey", $max, $min, $width, "create $flags 0 0");
     } elsif ($cnt == 2) {
-        bop_insert("bkey", $min, $max, ($width*2), "create", $flags, 0, 0);
-        bop_insert("bkey", ($min+$width), $max, ($width*2), "", $flags, 0, 0);
+        bop_insert("bkey", $min, $max, ($width*2), "create $flags 0 0");
+        bop_insert("bkey", ($min+$width), $max, ($width*2), "");
     } elsif ($cnt == 3) {
-        bop_insert("bkey", $max, $min, ($width*2), "create", $flags, 0, 0);
-        bop_insert("bkey", ($max-$width), $min, ($width*2), "", $flags, 0, 0);
+        bop_insert("bkey", $max, $min, ($width*2), "create $flags 0 0");
+        bop_insert("bkey", ($max-$width), $min, ($width*2), "");
     } elsif ($cnt == 4) {
-        bop_insert("bkey", ($min+(0*$width)), $max, ($width*3), "create", $flags, 0, 0);
-        bop_insert("bkey", ($min+(1*$width)), $max, ($width*3), "", $flags, 0, 0);
-        bop_insert("bkey", ($min+(2*$width)), $max, ($width*3), "", $flags, 0, 0);
+        bop_insert("bkey", ($min+(0*$width)), $max, ($width*3), "create $flags 0 0");
+        bop_insert("bkey", ($min+(1*$width)), $max, ($width*3), "");
+        bop_insert("bkey", ($min+(2*$width)), $max, ($width*3), "");
     } elsif ($cnt == 5) {
-        bop_insert("bkey", ($max-(0*$width)), $min, ($width*3), "create", $flags, 0, 0);
-        bop_insert("bkey", ($max-(1*$width)), $min, ($width*3), "", $flags, 0, 0);
-        bop_insert("bkey", ($max-(2*$width)), $min, ($width*3), "", $flags, 0, 0);
+        bop_insert("bkey", ($max-(0*$width)), $min, ($width*3), "create $flags 0 0");
+        bop_insert("bkey", ($max-(1*$width)), $min, ($width*3), "");
+        bop_insert("bkey", ($max-(2*$width)), $min, ($width*3), "");
     } else {
-        bop_insert("bkey", $min, $max, ($width*4), "create", $flags, 0, 0);
-        bop_insert("bkey", (($min+$max)-(1*$width)), $min, ($width*4), "", $flags, 0, 0);
-        bop_insert("bkey", (($min)+(2*$width)), $max, ($width*4), "", $flags, 0, 0);
-        bop_insert("bkey", (($min+$max)-(3*$width)), $min, ($width*4), "", $flags, 0, 0);
+        bop_insert("bkey", $min, $max, ($width*4), "create $flags 0 0");
+        bop_insert("bkey", (($min+$max)-(1*$width)), $min, ($width*4), "");
+        bop_insert("bkey", (($min)+(2*$width)), $max, ($width*4), "");
+        bop_insert("bkey", (($min+$max)-(3*$width)), $min, ($width*4), "");
     }
     $cmd = "getattr bkey count maxcount";
     $rst = "ATTR count=1000\n"
          . "ATTR maxcount=$default_btree_size\n"
          . "END";
+    mem_cmd_is($sock, $cmd, "", $rst);
     assert_bop_get("bkey", $width, $flags, 6500, 6500, 0, 0, "", "END");
     assert_bop_get("bkey", $width, $flags, 2300, 2300, 0, 0, "", "END");
     assert_bop_get("bkey", $width, $flags, 2000, 2255, 0, 0, "", "END");
@@ -171,38 +168,36 @@ for (0..6) {
     mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "get bkey"; $rst = "END";
     mem_cmd_is($sock, $cmd, "", $rst);
-    $cnt = $cnt+1;
 }
 
 # testBOPInsertDeletePop
 $max = 20000;
-$cnt = 0;
-for (0..6) {
+for ($cnt = 0; $cnt <= 6; $cnt += 1) {
     $cmd = "get bkey"; $rst = "END";
     mem_cmd_is($sock, $cmd, "", $rst);
     if ($cnt == 0) {
-        bop_insert("bkey", $min, $max, $width, "create", $flags, 0, -1);
+        bop_insert("bkey", $min, $max, $width, "create $flags 0 -1");
     } elsif ($cnt == 1) {
-        bop_insert("bkey", $max, $min, $width, "create", $flags, 0, -1);
+        bop_insert("bkey", $max, $min, $width, "create $flags 0 -1");
     } elsif ($cnt == 2) {
-        bop_insert("bkey", $min, $max, ($width*2), "create", $flags, 0, -1);
-        bop_insert("bkey", ($min+$width), $max, ($width*2), "", $flags, 0, -1);
+        bop_insert("bkey", $min, $max, ($width*2), "create $flags 0 -1");
+        bop_insert("bkey", ($min+$width), $max, ($width*2), "");
     } elsif ($cnt == 3) {
-        bop_insert("bkey", $max, $min, ($width*2), "create", $flags, 0, -1);
-        bop_insert("bkey", ($max-$width), $min, ($width*2), "", $flags, 0, -1);
+        bop_insert("bkey", $max, $min, ($width*2), "create $flags 0 -1");
+        bop_insert("bkey", ($max-$width), $min, ($width*2), "");
     } elsif ($cnt == 4) {
-        bop_insert("bkey", ($min+(0*$width)), $max, ($width*3), "create", $flags, 0, -1);
-        bop_insert("bkey", ($min+(1*$width)), $max, ($width*3), "", $flags, 0, -1);
-        bop_insert("bkey", ($min+(2*$width)), $max, ($width*3), "", $flags, 0, -1);
+        bop_insert("bkey", ($min+(0*$width)), $max, ($width*3), "create $flags 0 -1");
+        bop_insert("bkey", ($min+(1*$width)), $max, ($width*3), "");
+        bop_insert("bkey", ($min+(2*$width)), $max, ($width*3), "");
     } elsif ($cnt == 5) {
-        bop_insert("bkey", ($max-(0*$width)), $min, ($width*3), "create", $flags, 0, -1);
-        bop_insert("bkey", ($max-(1*$width)), $min, ($width*3), "", $flags, 0, -1);
-        bop_insert("bkey", ($max-(2*$width)), $min, ($width*3), "", $flags, 0, -1);
+        bop_insert("bkey", ($max-(0*$width)), $min, ($width*3), "create $flags 0 -1");
+        bop_insert("bkey", ($max-(1*$width)), $min, ($width*3), "");
+        bop_insert("bkey", ($max-(2*$width)), $min, ($width*3), "");
     } else {
-        bop_insert("bkey", $min, $max, ($width*4), "create", $flags, 0, -1);
-        bop_insert("bkey", (($min+$max)-(1*$width)), $min, ($width*4), "", $flags, 0, -1);
-        bop_insert("bkey", (($min)+(2*$width)), $max, ($width*4), "", $flags, 0, -1);
-        bop_insert("bkey", (($min+$max)-(3*$width)), $min, ($width*4), "", $flags, 0, -1);
+        bop_insert("bkey", $min, $max, ($width*4), "create $flags 0 -1");
+        bop_insert("bkey", (($min+$max)-(1*$width)), $min, ($width*4), "");
+        bop_insert("bkey", (($min)+(2*$width)), $max, ($width*4), "");
+        bop_insert("bkey", (($min+$max)-(3*$width)), $min, ($width*4), "");
     }
     $cmd = "getattr bkey count maxcount";
     $rst = "ATTR count=2000\n"
@@ -280,7 +275,6 @@ for (0..6) {
     mem_cmd_is($sock, $cmd, "", $rst);
     $cmd = "get bkey"; $rst = "END";
     mem_cmd_is($sock, $cmd, "", $rst);
-    $cnt = $cnt+1;
 }
 
 # testEmptyCollectionOfB+TreeType

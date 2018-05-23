@@ -16,15 +16,15 @@ my $rst;
 
 sub do_btree_prepare {
     my ($kstr) = @_;
-    my $cnt;
+    my $eidx;
 
     $cmd = "bop create $kstr 0 0 0"; $rst = "CREATED";
     mem_cmd_is($sock, $cmd, "", $rst);
 
-    for ($cnt = 0; $cnt < 100; $cnt += 1) {
-        my $bkstr = "0x" . sprintf "%062d", $cnt;
-        my $eflag = "0x" . sprintf "%062d", $cnt;
-        my $val   = "element_value_$cnt";
+    for ($eidx = 0; $eidx < 100; $eidx += 1) {
+        my $bkstr = "0x" . sprintf "%062d", $eidx;
+        my $eflag = "0x" . sprintf "%062d", $eidx;
+        my $val   = "element_value_$eidx";
         my $vleng = length($val);
 
         $cmd = "bop insert $kstr $bkstr $eflag $vleng"; $rst = "STORED";
@@ -36,17 +36,18 @@ sub do_btree_efilter {
     my ($kstr) = @_;
     my $bkrange;
     my $efilter;
-    my $cnt;
+    my $eidx;
 
-    # lonest bkrange
+    # longest bkrange
     $bkrange = "0x" . "0"x62 . ".." . "0x" . "F"x62;
 
-    # longest efilter 1
+    # prepare for making efilter.
     my $foperand = "0x" . "F"x62;
     my $fvallist = "0x" . sprintf "%062d", 1;
-    for ($cnt = 2; $cnt <= 100; $cnt += 1) {
-        $fvallist .= ",0x" . sprintf "%062d", $cnt;
+    for ($eidx = 2; $eidx <= 100; $eidx += 1) {
+        $fvallist .= ",0x" . sprintf "%062d", $eidx;
     }
+    # longest efilter case 1
     $efilter = "0 & $foperand EQ $fvallist";
 
     # bop count
@@ -54,19 +55,19 @@ sub do_btree_efilter {
     mem_cmd_is($sock, $cmd, "", $rst);
 
     # bop get
+    $cmd = "bop get $kstr $bkrange $efilter 0 100";
     $rst = "VALUE 0 99\n";
-    for ($cnt = 1; $cnt < 100; $cnt += 1) {
-        my $bkstr = "0x" . sprintf "%062d", $cnt;
-        my $eflag = "0x" . sprintf "%062d", $cnt;
-        my $val   = "element_value_$cnt";
+    for ($eidx = 1; $eidx < 100; $eidx += 1) {
+        my $bkstr = "0x" . sprintf "%062d", $eidx;
+        my $eflag = "0x" . sprintf "%062d", $eidx;
+        my $val   = "element_value_$eidx";
         my $vleng = length($val);
         $rst .= "$bkstr $eflag $vleng $val\n"
     }
     $rst .= "END";
-    $cmd = "bop get $kstr $bkrange $efilter 0 100";
     mem_cmd_is($sock, $cmd, "", $rst);
 
-    # longest efilter 2
+    # longest efilter case 2
     $efilter = "0 & $foperand NE $fvallist";
 
     # bop count
@@ -74,16 +75,16 @@ sub do_btree_efilter {
     mem_cmd_is($sock, $cmd, "", $rst);
 
     # bop get
+    $cmd = "bop get $kstr $bkrange $efilter 0 100";
     $rst = "VALUE 0 1\n";
-    for ($cnt = 0; $cnt < 1; $cnt += 1) {
-        my $bkstr = "0x" . sprintf "%062d", $cnt;
-        my $eflag = "0x" . sprintf "%062d", $cnt;
-        my $val   = "element_value_$cnt";
+    for ($eidx = 0; $eidx < 1; $eidx += 1) {
+        my $bkstr = "0x" . sprintf "%062d", $eidx;
+        my $eflag = "0x" . sprintf "%062d", $eidx;
+        my $val   = "element_value_$eidx";
         my $vleng = length($val);
         $rst .= "$bkstr $eflag $vleng $val\n"
     }
     $rst .= "END";
-    $cmd = "bop get $kstr $bkrange $efilter 0 100";
     mem_cmd_is($sock, $cmd, "", $rst);
 }
 
@@ -94,15 +95,13 @@ my $key;
 $key = "A" x 250;
 do_btree_prepare($key);
 do_btree_efilter($key);
-$cmd = "delete $key"; $rst = "DELETED";
-mem_cmd_is($sock, $cmd, "", $rst);
+mem_cmd_is($sock, "delete $key", "", "DELETED");
 
 # KEY_MAX_LENGTH = 32000: long key test
 $key = "B" x 32000;
 do_btree_prepare($key);
 do_btree_efilter($key);
-$cmd = "delete $key"; $rst = "DELETED";
-mem_cmd_is($sock, $cmd, "", $rst);
+mem_cmd_is($sock, "delete $key", "", "DELETED");
 
 # after test
 release_memcached($engine, $server);

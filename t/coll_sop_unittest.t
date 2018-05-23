@@ -10,36 +10,37 @@ my $engine = shift;
 my $server = get_memcached($engine);
 my $sock = $server->sock;
 
+my $cmd;
+my $val;
+my $rst;
+
 # SOP test sub routines
 sub sop_insert {
-    my ($key, $from, $to, $create, $flags, $exptime, $maxcount) = @_;
-    my $i=$from;
-    my $val = "datum$i";
-    my $vleng = length($val);
-    my $cmd;
-    my $rst;
+    my ($key, $from, $to, $create) = @_;
+    my $index;
+    my $vleng;
 
-    $cmd = "sop insert $key $vleng $create $flags $exptime $maxcount"; $rst = "CREATED_STORED";
-    mem_cmd_is($sock, $cmd, $val, $rst);
-
-    for ($i = $from+1; $i <= $to; $i++) {
-        $val = "datum$i";
+    for ($index = $from; $index <= $to; $index++) {
+        $val = "datum$index";
         $vleng = length($val);
-        $cmd = "sop insert $key $vleng"; $rst = "STORED";
+        if ($index == $from) {
+            $cmd = "sop insert $key $vleng $create";
+            $rst = "CREATED_STORED";
+        } else {
+            $cmd = "sop insert $key $vleng";
+            $rst = "STORED";
+        }
         mem_cmd_is($sock, $cmd, $val, $rst);
     }
 }
 
 sub sop_delete {
     my ($key, $from, $to) = @_;
-    my $i;
-    my $val;
+    my $index;
     my $vleng;
-    my $cmd;
-    my $rst;
 
-    for ($i = $from; $i <= $to; $i++) {
-        $val = "datum$i";
+    for ($index = $from; $index <= $to; $index++) {
+        $val = "datum$index";
         $vleng = length($val);
         $cmd = "sop delete $key $vleng"; $rst = "DELETED";
         mem_cmd_is($sock, $cmd, $val, $rst);
@@ -48,12 +49,11 @@ sub sop_delete {
 
 sub assert_sop_get {
     my ($args, $flags, $ecount, $from, $to) = @_;
-    my $i;
-    my $val;
+    my $index;
     my @res_data = ();
 
-    for ($i = $from; $i <= $to; $i++) {
-        $val = "datum$i";
+    for ($index = $from; $index <= $to; $index++) {
+        $val = "datum$index";
         push(@res_data, $val);
     }
     my $data_list = join(",", @res_data);
@@ -66,14 +66,11 @@ my $flags = 13;
 my $default_set_size = 4000;
 my $maximum_set_size = 50000;
 my $cnt;
-my $cmd;
-my $val;
-my $rst;
 
 # testSOPInsertGet
 $cmd = "get skey"; $rst = "END";
 mem_cmd_is($sock, $cmd, "", $rst);
-sop_insert("skey", 0, 2848, "create", $flags, 0, 0);
+sop_insert("skey", 0, 2848, "create $flags 0 0");
 $cmd = "getattr skey count maxcount";
 $rst = "ATTR count=2849
 ATTR maxcount=$default_set_size
@@ -97,7 +94,7 @@ mem_cmd_is($sock, $cmd, "", $rst);
 # testSOPInsertDeletePop
 $cmd = "get skey"; $rst = "END";
 mem_cmd_is($sock, $cmd, "", $rst);
-sop_insert("skey", 0, 9, "create", $flags, 0, -1);
+sop_insert("skey", 0, 9, "create $flags 0 -1");
 $cmd = "sop insert skey 6"; $val="datum3"; $rst = "ELEMENT_EXISTS";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "getattr skey count maxcount";
@@ -148,7 +145,7 @@ $cmd = "sop delete skey 6 drop"; $val="datum3"; $rst = "DELETED_DROPPED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "get skey"; $rst = "END";
 mem_cmd_is($sock, $cmd, "", $rst);
-sop_insert("skey", 0, 49999, "create", $flags, 0, -1);
+sop_insert("skey", 0, 49999, "create $flags 0 -1");
 $cmd = "sop insert skey 10"; $val="datum12345"; $rst = "OVERFLOWED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "getattr skey count maxcount";

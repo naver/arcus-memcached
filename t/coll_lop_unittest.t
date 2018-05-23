@@ -10,22 +10,26 @@ my $engine = shift;
 my $server = get_memcached($engine);
 my $sock = $server->sock;
 
+my $cmd;
+my $val;
+my $rst;
+
 # LOB test sub routines
 sub lop_insert {
-    my ($key, $data_prefix, $count, $create, $flags, $exptime, $maxcount) = @_;
-    my $i=0;
-    my $val = "$data_prefix$i";
-    my $vleng = length($val);
-    my $cmd;
-    my $rst;
+    my ($key, $from, $to, $create) = @_;
+    my $index;
+    my $vleng;
 
-    $cmd = "lop insert $key $i $vleng $create $flags $exptime $maxcount"; $rst = "CREATED_STORED";
-    mem_cmd_is($sock, $cmd, $val, $rst);
-
-    for ($i = 1; $i < $count; $i++) {
-        $val = "$data_prefix$i";
+    for ($index = $from; $index <= $to; $index++) {
+        $val = "datum$index";
         $vleng = length($val);
-        $cmd = "lop insert $key $i $vleng"; $rst = "STORED";
+        if ($index == $from) {
+            $cmd = "lop insert $key $index $vleng $create";
+            $rst = "CREATED_STORED";
+        } else {
+            $cmd = "lop insert $key $index $vleng";
+            $rst = "STORED";
+        }
         mem_cmd_is($sock, $cmd, $val, $rst);
     }
 }
@@ -34,14 +38,11 @@ sub lop_insert {
 my $flags = 11;
 my $default_list_size = 4000;
 my $maximum_list_size = 50000;
-my $cmd;
-my $val;
-my $rst;
 
 # testLOPInsertGet
 $cmd = "get lkey"; $rst = "END";
 mem_cmd_is($sock, $cmd, "", $rst);
-lop_insert("lkey", "datum", 5, "create", 17, 0, 0);
+lop_insert("lkey", 0, 4, "create 17 0 0");
 $cmd = "getattr lkey count maxcount";
 $rst = "ATTR count=5
 ATTR maxcount=$default_list_size
@@ -137,7 +138,7 @@ mem_cmd_is($sock, $cmd, "", $rst);
 # testLOPInsertDeletePop
 $cmd = "get lkey"; $rst = "END";
 mem_cmd_is($sock, $cmd, "", $rst);
-lop_insert("lkey", "datum", 10, "create", 17, 0, -1);
+lop_insert("lkey", 0, 9, "create 17 0 -1");
 $cmd = "getattr lkey count maxcount";
 $rst = "ATTR count=10
 ATTR maxcount=$maximum_list_size

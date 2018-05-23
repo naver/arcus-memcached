@@ -16,38 +16,39 @@ my $rst;
 
 # LOB test sub routines
 sub lop_insert {
-    my ($key, $data_prefix, $count, $create, $flags, $exptime, $maxcount) = @_;
-    my $i=0;
-    my $val = "$data_prefix$i";
-    my $vleng = length($val);
-    my $cmd;
+    my ($key, $from, $to, $create) = @_;
+    my $index;
+    my $vleng;
 
-    $cmd = "lop insert $key $i $vleng $create $flags $exptime $maxcount"; $rst = "CREATED_STORED";
-    mem_cmd_is($sock, $cmd, $val, $rst);
-
-    for ($i = 1; $i < $count; $i++) {
-        $val = "$data_prefix$i";
+    for ($index = $from; $index <= $to; $index++) {
+        $val = "datum$index";
         $vleng = length($val);
-        $cmd = "lop insert $key $i $vleng"; $rst = "STORED";
+        if ($index == $from) {
+            $cmd = "lop insert $key $index $vleng $create";
+            $rst = "CREATED_STORED";
+        } else {
+            $cmd = "lop insert $key $index $vleng";
+            $rst = "STORED";
+        }
         mem_cmd_is($sock, $cmd, $val, $rst);
     }
 }
 
 sub sop_insert {
-    my ($key, $from, $to, $create, $flags, $exptime, $maxcount) = @_;
-    my $i=$from;
-    my $val = "datum$i";
-    my $vleng = length($val);
-    my $cmd;
-    my $msg;
+    my ($key, $from, $to, $create) = @_;
+    my $index;
+    my $vleng;
 
-    $cmd = "sop insert $key $vleng $create $flags $exptime $maxcount"; $rst = "CREATED_STORED";
-    mem_cmd_is($sock, $cmd, $val, $rst);
-
-    for ($i = $from+1; $i <= $to; $i++) {
-        $val = "datum$i";
+    for ($index = $from; $index <= $to; $index++) {
+        $val = "datum$index";
         $vleng = length($val);
-        $cmd = "sop insert $key $vleng"; $rst = "STORED";
+        if ($index == $from) {
+            $cmd = "sop insert $key $vleng $create";
+            $rst = "CREATED_STORED";
+        } else {
+            $cmd = "sop insert $key $vleng";
+            $rst = "STORED";
+        }
         mem_cmd_is($sock, $cmd, $val, $rst);
     }
 }
@@ -73,19 +74,22 @@ mem_cmd_is($sock, $cmd, "", $rst);
 stats_prefixes_is($sock, "PREFIX <null> itm 2 kitm 2 litm 0 sitm 0 mitm 0 bitm 0");
 
 # insert btree
-$cmd = "bop insert stats_prefixes_btree 1 6 create 11 0 0"; $val = "datum9"; $rst = "CREATED_STORED";
+$cmd = "bop insert stats_prefixes_btree 1 6 create 11 0 0"; $val = "datum9";
+$rst = "CREATED_STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-$cmd = "bop count stats_prefixes_btree 0..20"; $rst = "COUNT=1";
+$cmd = "bop count stats_prefixes_btree 0..20";
+$rst = "COUNT=1";
 mem_cmd_is($sock, $cmd, "", $rst);
 stats_prefixes_is($sock, "PREFIX <null> itm 3 kitm 2 litm 0 sitm 0 mitm 0 bitm 1");
 
 # insert map
-$cmd = "mop insert stats_prefixes_map field 6 create 19 0 0"; $val = "datum7"; $rst = "CREATED_STORED";
+$cmd = "mop insert stats_prefixes_map field 6 create 19 0 0"; $val = "datum7";
+$rst = "CREATED_STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 stats_prefixes_is($sock, "PREFIX <null> itm 4 kitm 2 litm 0 sitm 0 mitm 1 bitm 1");
 
 # insert list
-lop_insert("stats_prefixes_list", "datum", 5, "create", 17, 0, 0);
+lop_insert("stats_prefixes_list", 0, 4, "create 17 0 0");
 $cmd = "lop get stats_prefixes_list 0..-1";
 $rst = "VALUE 17 5
 6 datum0
@@ -96,7 +100,7 @@ $rst = "VALUE 17 5
 END";
 mem_cmd_is($sock, $cmd, "", $rst);
 
-lop_insert("stats_prefixes_list2", "datum", 5, "create", 17, 0, 0);
+lop_insert("stats_prefixes_list2", 0, 4, "create 17 0 0");
 $cmd = "lop get stats_prefixes_list2 0..-1";
 $rst = "VALUE 17 5
 6 datum0
@@ -109,9 +113,8 @@ mem_cmd_is($sock, $cmd, "", $rst);
 stats_prefixes_is($sock, "PREFIX <null> itm 6 kitm 2 litm 2 sitm 0 mitm 1 bitm 1");
 
 # insert set
-sop_insert("stats_prefixes_set", 0, 2, "create", 13, 0, 0);
+sop_insert("stats_prefixes_set", 0, 2, "create 13 0 0");
 stats_prefixes_is($sock, "PREFIX <null> itm 7 kitm 2 litm 2 sitm 1 mitm 1 bitm 1");
-
 
 # delete
 $cmd = "delete stats_prefixes_aa"; $rst = "DELETED";
@@ -165,19 +168,22 @@ mem_cmd_is($sock, $cmd, "", $rst);
 stats_prefixes_is($sock, "PREFIX aa itm 2 kitm 2 litm 0 sitm 0 mitm 0 bitm 0");
 
 # insert btree
-$cmd = "bop insert aa:stats_prefixes_btree 1 6 create 11 0 0"; $val = "datum9"; $rst = "CREATED_STORED";
+$cmd = "bop insert aa:stats_prefixes_btree 1 6 create 11 0 0"; $val = "datum9";
+$rst = "CREATED_STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-$cmd = "bop count aa:stats_prefixes_btree 0..20"; $rst = "COUNT=1";
+$cmd = "bop count aa:stats_prefixes_btree 0..20";
+$rst = "COUNT=1";
 mem_cmd_is($sock, $cmd, "", $rst);
 stats_prefixes_is($sock, "PREFIX aa itm 3 kitm 2 litm 0 sitm 0 mitm 0 bitm 1");
 
 # insert map
-$cmd = "mop insert aa:stats_prefixes_map field 6 create 19 0 0"; $val = "datum7"; $rst = "CREATED_STORED";
+$cmd = "mop insert aa:stats_prefixes_map field 6 create 19 0 0"; $val = "datum7";
+$rst = "CREATED_STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 stats_prefixes_is($sock, "PREFIX aa itm 4 kitm 2 litm 0 sitm 0 mitm 1 bitm 1");
 
 # insert list
-lop_insert("aa:stats_prefixes_list", "datum", 5, "create", 17, 0, 0);
+lop_insert("aa:stats_prefixes_list", 0, 4, "create 17 0 0");
 $cmd = "lop get aa:stats_prefixes_list 0..-1";
 $rst = "VALUE 17 5
 6 datum0
@@ -188,7 +194,7 @@ $rst = "VALUE 17 5
 END";
 mem_cmd_is($sock, $cmd, "", $rst);
 
-lop_insert("aa:stats_prefixes_list2", "datum", 5, "create", 17, 0, 0);
+lop_insert("aa:stats_prefixes_list2", 0, 4, "create 17 0 0");
 $cmd = "lop get aa:stats_prefixes_list2 0..-1";
 $rst = "VALUE 17 5
 6 datum0
@@ -201,7 +207,7 @@ mem_cmd_is($sock, $cmd, "", $rst);
 stats_prefixes_is($sock, "PREFIX aa itm 6 kitm 2 litm 2 sitm 0 mitm 1 bitm 1");
 
 # insert set
-sop_insert("aa:stats_prefixes_set", 0, 2, "create", 13, 0, 0);
+sop_insert("aa:stats_prefixes_set", 0, 2, "create 13 0 0");
 stats_prefixes_is($sock, "PREFIX aa itm 7 kitm 2 litm 2 sitm 1 mitm 1 bitm 1");
 
 
@@ -257,19 +263,22 @@ mem_cmd_is($sock, $cmd, "", $rst);
 stats_prefixes_is($sock, "PREFIX aa itm 2 kitm 2 litm 0 sitm 0 mitm 0 bitm 0");
 
 # insert btree
-$cmd = "bop insert aa:stats_prefixes_btree 1 6 create 11 0 0"; $val = "datum9"; $rst = "CREATED_STORED";
+$cmd = "bop insert aa:stats_prefixes_btree 1 6 create 11 0 0"; $val = "datum9";
+$rst = "CREATED_STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-$cmd = "bop count aa:stats_prefixes_btree 0..20"; $rst = "COUNT=1";
+$cmd = "bop count aa:stats_prefixes_btree 0..20";
+$rst = "COUNT=1";
 mem_cmd_is($sock, $cmd, "", $rst);
 stats_prefixes_is($sock, "PREFIX aa itm 3 kitm 2 litm 0 sitm 0 mitm 0 bitm 1");
 
 # insert map
-$cmd = "mop insert aa:stats_prefixes_map field 6 create 19 0 0"; $val = "datum7"; $rst = "CREATED_STORED";
+$cmd = "mop insert aa:stats_prefixes_map field 6 create 19 0 0"; $val = "datum7";
+$rst = "CREATED_STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 stats_prefixes_is($sock, "PREFIX aa itm 4 kitm 2 litm 0 sitm 0 mitm 1 bitm 1");
 
 # insert list
-lop_insert("aa:stats_prefixes_list", "datum", 5, "create", 17, 0, 0);
+lop_insert("aa:stats_prefixes_list", 0, 4, "create 17 0 0");
 $cmd = "lop get aa:stats_prefixes_list 0..-1";
 $rst = "VALUE 17 5
 6 datum0
@@ -280,7 +289,7 @@ $rst = "VALUE 17 5
 END";
 mem_cmd_is($sock, $cmd, "", $rst);
 
-lop_insert("aa:stats_prefixes_list2", "datum", 5, "create", 17, 0, 0);
+lop_insert("aa:stats_prefixes_list2", 0, 4, "create 17 0 0");
 $cmd = "lop get aa:stats_prefixes_list2 0..-1";
 $rst = "VALUE 17 5
 6 datum0
@@ -293,7 +302,7 @@ mem_cmd_is($sock, $cmd, "", $rst);
 stats_prefixes_is($sock, "PREFIX aa itm 6 kitm 2 litm 2 sitm 0 mitm 1 bitm 1");
 
 # insert set
-sop_insert("aa:stats_prefixes_set", 0, 2, "create", 13, 0, 0);
+sop_insert("aa:stats_prefixes_set", 0, 2, "create 13 0 0");
 stats_prefixes_is($sock, "PREFIX aa itm 7 kitm 2 litm 2 sitm 1 mitm 1 bitm 1");
 
 
@@ -311,22 +320,28 @@ $rst = "VALUE bb:stats_prefixes_bb 0 3
 bye
 END";
 mem_cmd_is($sock, $cmd, "", $rst);
-stats_prefixes_is($sock, "PREFIX aa itm 7 kitm 2 litm 2 sitm 1 mitm 1 bitm 1,PREFIX bb itm 2 kitm 2 litm 0 sitm 0 mitm 0 bitm 0");
+stats_prefixes_is($sock, "PREFIX aa itm 7 kitm 2 litm 2 sitm 1 mitm 1 bitm 1,"
+                       . "PREFIX bb itm 2 kitm 2 litm 0 sitm 0 mitm 0 bitm 0");
 
 # insert btree
-$cmd = "bop insert bb:stats_prefixes_btree 1 6 create 11 0 0"; $val = "datum9"; $rst = "CREATED_STORED";
+$cmd = "bop insert bb:stats_prefixes_btree 1 6 create 11 0 0"; $val = "datum9";
+$rst = "CREATED_STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-$cmd = "bop count bb:stats_prefixes_btree 0..20"; $rst = "COUNT=1";
+$cmd = "bop count bb:stats_prefixes_btree 0..20";
+$rst = "COUNT=1";
 mem_cmd_is($sock, $cmd, "", $rst);
-stats_prefixes_is($sock, "PREFIX aa itm 7 kitm 2 litm 2 sitm 1 mitm 1 bitm 1,PREFIX bb itm 3 kitm 2 litm 0 sitm 0 mitm 0 bitm 1");
+stats_prefixes_is($sock, "PREFIX aa itm 7 kitm 2 litm 2 sitm 1 mitm 1 bitm 1,"
+                       . "PREFIX bb itm 3 kitm 2 litm 0 sitm 0 mitm 0 bitm 1");
 
 # insert map
-$cmd = "mop insert bb:stats_prefixes_map field 6 create 19 0 0"; $val = "datum7"; $rst = "CREATED_STORED";
+$cmd = "mop insert bb:stats_prefixes_map field 6 create 19 0 0"; $val = "datum7";
+$rst = "CREATED_STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-stats_prefixes_is($sock, "PREFIX aa itm 7 kitm 2 litm 2 sitm 1 mitm 1 bitm 1,PREFIX bb itm 4 kitm 2 litm 0 sitm 0 mitm 1 bitm 1");
+stats_prefixes_is($sock, "PREFIX aa itm 7 kitm 2 litm 2 sitm 1 mitm 1 bitm 1,"
+                       . "PREFIX bb itm 4 kitm 2 litm 0 sitm 0 mitm 1 bitm 1");
 
 # insert list
-lop_insert("bb:stats_prefixes_list", "datum", 5, "create", 17, 0, 0);
+lop_insert("bb:stats_prefixes_list", 0, 4, "create 17 0 0");
 $cmd = "lop get aa:stats_prefixes_list 0..-1";
 $rst = "VALUE 17 5
 6 datum0
@@ -337,7 +352,7 @@ $rst = "VALUE 17 5
 END";
 mem_cmd_is($sock, $cmd, "", $rst);
 
-lop_insert("bb:stats_prefixes_list2", "datum", 5, "create", 17, 0, 0);
+lop_insert("bb:stats_prefixes_list2", 0, 4, "create 17 0 0");
 $cmd = "lop get bb:stats_prefixes_list2 0..-1";
 $rst = "VALUE 17 5
 6 datum0
@@ -347,11 +362,13 @@ $rst = "VALUE 17 5
 6 datum4
 END";
 mem_cmd_is($sock, $cmd, "", $rst);
-stats_prefixes_is($sock, "PREFIX aa itm 7 kitm 2 litm 2 sitm 1 mitm 1 bitm 1,PREFIX bb itm 6 kitm 2 litm 2 sitm 0 mitm 1 bitm 1");
+stats_prefixes_is($sock, "PREFIX aa itm 7 kitm 2 litm 2 sitm 1 mitm 1 bitm 1,"
+                       . "PREFIX bb itm 6 kitm 2 litm 2 sitm 0 mitm 1 bitm 1");
 
 # insert set
-sop_insert("bb:stats_prefixes_set", 0, 2, "create", 13, 0, 0);
-stats_prefixes_is($sock, "PREFIX aa itm 7 kitm 2 litm 2 sitm 1 mitm 1 bitm 1,PREFIX bb itm 7 kitm 2 litm 2 sitm 1 mitm 1 bitm 1");
+sop_insert("bb:stats_prefixes_set", 0, 2, "create 13 0 0");
+stats_prefixes_is($sock, "PREFIX aa itm 7 kitm 2 litm 2 sitm 1 mitm 1 bitm 1,"
+                       . "PREFIX bb itm 7 kitm 2 litm 2 sitm 1 mitm 1 bitm 1");
 
 # delete
 $cmd = "delete aa:stats_prefixes_aa"; $rst = "DELETED";
