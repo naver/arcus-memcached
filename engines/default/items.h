@@ -306,6 +306,16 @@ hash_item *item_alloc(struct default_engine *engine,
  */
 hash_item *item_get(struct default_engine *engine, const void *key, const size_t nkey);
 
+#ifdef USE_IVALUE_BLOCK
+/**
+ * Get an item info from the storage
+ * @param item the item to get info
+ * @param info the item information
+ * @return true or false
+ */
+bool item_info_get(hash_item *item, item_info *info);
+#endif
+
 /**
  * Reset the item statistics
  * @param engine handle to the storage engine
@@ -608,6 +618,10 @@ void item_conf_set_evict_to_free(struct default_engine *engine, bool value);
 uint64_t    item_get_cas(const hash_item* item);
 void        item_set_cas(const hash_item* item, uint64_t val);
 const void* item_get_key(const hash_item* item);
+#ifdef USE_IVALUE_BLOCK
+ivalue_info_t* item_get_ivinfo(const hash_item* item);
+value_item**   item_get_ivblk(const hash_item* item);
+#endif
 char*       item_get_data(const hash_item* item);
 const void* item_get_meta(const hash_item* item);
 

@@ -37,6 +37,7 @@ struct iovec {
 #define SUPPORT_BOP_SMGET
 #define JHPARK_OLD_SMGET_INTERFACE
 #define MAX_EFLAG_COMPARE_COUNT 100
+#define USE_IVALUE_BLOCK
 
 #ifdef __cplusplus
 extern "C" {
@@ -379,6 +380,25 @@ extern "C" {
 
     /* Forward declaration of the server handle -- to be filled in later */
     typedef struct server_handle_v1_t SERVER_HANDLE_V1;
+
+#ifdef USE_IVALUE_BLOCK
+#define IVALUE_PER_BLCK 32768 // 32K
+#define IVALUE_PER_HDR sizeof(uint32_t) // refer : value_item->len
+#define IVALUE_PER_DTA (IVALUE_PER_BLCK - IVALUE_PER_HDR)
+
+#define IVALUE_BLCK_SIZE sizeof(ivalue_block_t)
+#define IVALUE_INFO_SIZE sizeof(ivalue_info_t)
+
+#define IVBLCK_REAL_SIZE(l) ((l) + IVALUE_PER_HDR)
+
+typedef struct _ivalue_block_t {
+    value_item *base;
+} ivalue_block_t;
+
+typedef struct _ivalue_info_t {
+    uint16_t nblk; /* number of ivalue block */
+} ivalue_info_t;
+#endif
 
 #ifdef __cplusplus
 }
