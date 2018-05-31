@@ -1201,7 +1201,11 @@ scrub_cmd(struct default_engine *e, protocol_binary_request_header *request,
 {
     bool res; /* true or false */
     if (request->request.opcode == PROTOCOL_BINARY_CMD_SCRUB) {
+#ifdef AUTO_SCRUB
+        res = item_start_scrub(e, SCRUB_MODE_NORMAL, false);
+#else
         res = item_start_scrub(e, SCRUB_MODE_NORMAL);
+#endif
     } else { /* PROTOCOL_BINARY_CMD_SCRUB_STALE */
 #ifdef ENABLE_CLUSTER_AWARE
         if (! e->server.core->is_zk_integrated())
@@ -1209,7 +1213,11 @@ scrub_cmd(struct default_engine *e, protocol_binary_request_header *request,
         {
             return PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED;
         }
+#ifdef AUTO_SCRUB
+        res = item_start_scrub(e, SCRUB_MODE_STALE, false);
+#else
         res = item_start_scrub(e, SCRUB_MODE_STALE);
+#endif
     }
     return (res) ? PROTOCOL_BINARY_RESPONSE_SUCCESS : PROTOCOL_BINARY_RESPONSE_EBUSY;
 }
@@ -1387,6 +1395,16 @@ default_unknown_command(ENGINE_HANDLE* handle, const void* cookie,
     }
 }
 
+#ifdef AUTO_SCRUB
+static ENGINE_ERROR_CODE
+default_scrub_stale(ENGINE_HANDLE* handle)
+{
+    struct default_engine* e = get_handle(handle);
+    int res = item_start_scrub(e, SCRUB_MODE_STALE, true);
+    return (res) ? ENGINE_SUCCESS : ENGINE_FAILED;
+}
+#endif
+
 /* Item/Elem Info */
 
 static bool
@@ -1548,6 +1566,10 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .set_config       = default_set_config,
          /* Unknown Command API */
          .unknown_command  = default_unknown_command,
+#ifdef AUTO_SCRUB
+         /* Scrub stale API */
+         .scrub_stale      = default_scrub_stale,
+#endif
          /* Info API */
          .get_item_info    = get_item_info,
          .get_elem_info    = get_elem_info

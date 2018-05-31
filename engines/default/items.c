@@ -7793,11 +7793,19 @@ static void *item_scrubber_main(void *arg)
 
     assert(engine->scrubber.running == true);
 
+#ifdef AUTO_SCRUB
+again:
+#endif
     assoc_scan_init(engine, &scan);
 
     pthread_mutex_lock(&engine->cache_lock);
     while (engine->initialized)
     {
+#ifdef AUTO_SCRUB
+        if (engine->scrubber.restart) {
+            break;
+        }
+#endif
         /* scan and scrub cache items */
         item_count = assoc_scan_next(&scan, item_array, array_size);
         if (item_count <= 0) { /* reached to the end */
@@ -7835,16 +7843,43 @@ static void *item_scrubber_main(void *arg)
     assoc_scan_final(&scan);
     pthread_mutex_unlock(&engine->cache_lock);
 
+#ifdef AUTO_SCRUB
+    bool restart = false;
+    pthread_mutex_lock(&engine->scrubber.lock);
+    if ((restart = engine->scrubber.restart)) {
+        engine->scrubber.started = time(NULL);
+        engine->scrubber.visited = 0;
+        engine->scrubber.cleaned = 0;
+        engine->scrubber.restart = false;
+    } else {
+        engine->scrubber.stopped = time(NULL);
+        engine->scrubber.running = false;
+    }
+    pthread_mutex_unlock(&engine->scrubber.lock);
+    if (restart) {
+        goto again; /* restart */
+    }
+#else
     pthread_mutex_lock(&engine->scrubber.lock);
     engine->scrubber.stopped = time(NULL);
     engine->scrubber.running = false;
     pthread_mutex_unlock(&engine->scrubber.lock);
+#endif
+    logger->log(EXTENSION_LOG_INFO, NULL,
+                "Scrub is done.\n");
     return NULL;
 }
 
+#ifdef AUTO_SCRUB
+bool item_start_scrub(struct default_engine *engine, int mode, bool autorun)
+#else
 bool item_start_scrub(struct default_engine *engine, int mode)
+#endif
 {
     assert(mode == (int)SCRUB_MODE_NORMAL || mode == (int)SCRUB_MODE_STALE);
+#ifdef AUTO_SCRUB
+    bool restarted = false;
+#endif
     bool ret = false;
     pthread_mutex_lock(&engine->scrubber.lock);
     if (engine->scrubber.enabled && !engine->scrubber.running) {
@@ -7852,6 +7887,9 @@ bool item_start_scrub(struct default_engine *engine, int mode)
         engine->scrubber.stopped = 0;
         engine->scrubber.visited = 0;
         engine->scrubber.cleaned = 0;
+#ifdef AUTO_SCRUB
+        engine->scrubber.restart = false;
+#endif
         engine->scrubber.runmode = (enum scrub_mode)mode;
         engine->scrubber.running = true;
 
@@ -7867,7 +7905,31 @@ bool item_start_scrub(struct default_engine *engine, int mode)
             ret = true;
         }
     }
+#ifdef AUTO_SCRUB
+    else if (engine->scrubber.enabled && autorun == true
+             && mode == SCRUB_MODE_STALE) {
+        restarted = true;
+        engine->scrubber.restart = restarted;
+        engine->scrubber.runmode = (enum scrub_mode)mode;
+        ret = true;
+    }
+#endif
     pthread_mutex_unlock(&engine->scrubber.lock);
+
+#ifdef AUTO_SCRUB
+    if (ret) {
+        if (!restarted) {
+            logger->log(EXTENSION_LOG_INFO, NULL,
+                "Scrub is succesfully started.\n");
+        } else {
+            logger->log(EXTENSION_LOG_INFO, NULL,
+                "Scrub is arleady running. Restart scrub.n");
+        }
+    } else {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+              "Failed to start scrub. Scrub is already running.\n");
+    }
+#endif
 
     return ret;
 }
