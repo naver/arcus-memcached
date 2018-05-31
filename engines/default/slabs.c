@@ -782,7 +782,6 @@ static void do_smmgr_adjust_01pct_slot(int slen, int targ, bool alloc)
 {
     if (alloc) {
         if (sm_anchor.used_total_space == slen) {
-            assert(sm_anchor.used_01pct_space == 0);
             do_smmgr_01pct_first_set(slen, targ);
         } else {
             if (targ >= sm_anchor.used_01pct_clsid) {
@@ -887,11 +886,12 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
     sm_anchor.used_total_space += slen;
     sm_anchor.used_slist[targ].space += slen;
     sm_anchor.used_slist[targ].count += 1;
+
+    do_smmgr_adjust_01pct_slot(slen, targ, true);
     if (sm_anchor.used_slist[targ].count == 1) {
         do_smmgr_used_slot_list_add(targ);
     }
 
-    do_smmgr_adjust_01pct_slot(slen, targ, true);
     return (void*)cur_slot;
 }
 
@@ -983,11 +983,12 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
     sm_anchor.used_total_space -= slen;
     sm_anchor.used_slist[targ].space -= slen;
     sm_anchor.used_slist[targ].count -= 1;
+
+    do_smmgr_adjust_01pct_slot(slen, targ, false);
     if (sm_anchor.used_slist[targ].count == 0) {
         do_smmgr_used_slot_list_del(targ);
     }
 
-    do_smmgr_adjust_01pct_slot(slen, targ, false);
     //do_smmgr_used_blck_check();
 }
 
