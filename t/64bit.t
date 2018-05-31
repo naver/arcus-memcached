@@ -35,7 +35,7 @@ my $hit_limit = 0;
 ### [ARCUS] CHANGED FOLLOWING TEST ###
 # Arcus-memcached allowed more memory to be allocated.
 #for (1..5) {
-for (1..10) {
+for (1..12) {
 ######################################
     my $size = 400 * 1024;
     my $data = "a" x $size;

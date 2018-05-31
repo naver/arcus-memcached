@@ -234,6 +234,10 @@ default_item_allocate(ENGINE_HANDLE* handle, const void* cookie,
 {
     struct default_engine* engine = get_handle(handle);
     size_t ntotal = sizeof(hash_item) + nkey + nbytes;
+#ifdef USE_IVALUE_BLOCK
+    ntotal += (IVALUE_INFO_SIZE +
+              ((IVALUE_BLCK_SIZE + IVALUE_PER_HDR) * (((nbytes - 1) / IVALUE_PER_DTA) + 1)));
+#endif
     if (engine->config.use_cas) {
         ntotal += sizeof(uint64_t);
     }
@@ -1393,6 +1397,9 @@ static bool
 get_item_info(ENGINE_HANDLE *handle, const void *cookie,
               const item* item, item_info *item_info)
 {
+#ifdef USE_IVALUE_BLOCK
+    return item_info_get((hash_item*)item, item_info);
+#else
     hash_item* it = (hash_item*)item;
 
     item_info->cas = item_get_cas(it);
@@ -1407,6 +1414,7 @@ get_item_info(ENGINE_HANDLE *handle, const void *cookie,
     item_info->value = item_get_data(it);
     item_info->addnl = NULL;
     return true;
+#endif
 }
 
 static void

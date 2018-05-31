@@ -49,6 +49,7 @@
 ./t/flags.t
 ./t/flush-all.t
 ./t/getset.t
+./t/iblock.t
 ./t/incrdecr.t
 ./t/issue_104.t
 ./t/issue_108.t

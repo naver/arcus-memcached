@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 149;
+use Test::More tests => 157;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -17,7 +17,7 @@ my $msg;
 
 # create a big value for the largest slab
 my $max = 1024 * 1024;
-my $big = 'x' x (1024 * 1024 - 250);
+my $big = 'x' x (1023 * 1024 - 250);
 
 ok(length($big) > 512 * 1024, "buffer is bigger than 512k");
 ok(length($big) < 1024 * 1024, "buffer is less than 1m");
@@ -52,7 +52,7 @@ for (my $i = 0; $i < 100; $i++) {
 # some evictions should have happened
 my $stats = mem_stats($sock);
 my $evictions = int($stats->{"evictions"});
-ok($evictions == 37, "some evictions happened");
+ok($evictions == 45, "some evictions happened");
 
 # the first big value should be gone
 $cmd = "get big"; $rst = "END";
