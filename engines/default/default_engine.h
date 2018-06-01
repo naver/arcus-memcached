@@ -91,6 +91,7 @@ struct engine_scrubber {
    pthread_mutex_t lock;
    volatile bool   enabled;
    volatile bool   running;
+   volatile bool   restart;
    enum scrub_mode runmode;
    uint64_t        visited;
    uint64_t        cleaned;
