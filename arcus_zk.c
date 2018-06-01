@@ -1844,7 +1844,6 @@ static void *sm_state_thread(void *arg)
                                           "Failed to scrub stale data.\n");
                 }
                 sm_info.node_added_time = 0;
-                sm_retry = false;
             } else {
                 sm_retry = true;
             }
