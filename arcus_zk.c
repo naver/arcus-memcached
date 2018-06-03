@@ -152,9 +152,7 @@ typedef struct {
     int     hb_failstop;        // memcached heartbeat failstop
     int     hb_timeout;         // memcached heartbeat timeout
     int     zk_timeout;         // Zookeeper session timeout
-#ifdef AUTO_SCRUB
     bool    auto_scrub;         // automactic scrub_stale
-#endif
     char   *znode_name;         // Ephemeral ZK node name for this mc identification
     int     znode_ver;          // Ephemeral ZK node version
     bool    znode_created;      // Ephemeral ZK node is created ?
@@ -184,9 +182,7 @@ arcus_zk_conf arcus_conf = {
     .hb_failstop    = HEART_BEAT_DFT_FAILSTOP,
     .hb_timeout     = HEART_BEAT_DFT_TIMEOUT,
     .zk_timeout     = DEFAULT_ZK_TO,
-#ifdef AUTO_SCRUB
     .auto_scrub     = true,
-#endif
     .znode_name     = NULL,
     .znode_ver      = -1,
     .znode_created  = false,
@@ -248,10 +244,8 @@ struct sm {
     /* Current # of nodes in cluster */
     int cluster_node_count;
 
-#ifdef AUTO_SCRUB
     /* the time a new node was added to the cluster */
     volatile uint64_t node_added_time;
-#endif
 
     volatile bool mc_pause;
 
@@ -296,7 +290,6 @@ static pthread_cond_t  hb_thread_cond;
 static void *hb_thread(void *arg);
 static int start_hb_thread(app_ping_t *data);
 
-#ifdef AUTO_SCRUB
 static int
 arcus_memcached_scrub_stale(void)
 {
@@ -304,7 +297,6 @@ arcus_memcached_scrub_stale(void)
     ret = arcus_conf.engine.v1->scrub_stale(arcus_conf.engine.v0);
     return ret == ENGINE_SUCCESS ? 0 : -1;
 }
-#endif
 
 /* Some znode names use '^' as a delimiter.
  * Return pointers to the starting and ending ('^') characters.
@@ -1832,7 +1824,6 @@ static void *sm_state_thread(void *arg)
             if (paused) continue;
         }
 
-#ifdef AUTO_SCRUB
         if (sm_info.node_added_time != 0) {
             uint64_t now = time(NULL);
             if (now - sm_info.node_added_time >= arcus_conf.zk_timeout/1000) {
@@ -1848,7 +1839,6 @@ static void *sm_state_thread(void *arg)
                 sm_retry = true;
             }
         }
-#endif
 
         /* Read the latest hash ring */
         if (smreq.update_cache_list) {
@@ -1887,22 +1877,18 @@ static void *sm_state_thread(void *arg)
                 }
 
 #ifdef ENABLE_CLUSTER_AWARE
-#ifdef AUTO_SCRUB
                 int prev_node_count = sm_info.cluster_node_count;
-#endif
                 /* update cluster config */
                 if (update_cluster_config(&sm_info.sv_cache_list) != 0) {
                     arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                             "Failed to update cluster config. Will check later.\n");
                 }
-#ifdef AUTO_SCRUB
                 else if (arcus_conf.auto_scrub &&
                          sm_info.cluster_node_count > prev_node_count) {
                     /* a new node added */
                     sm_info.node_added_time = time(NULL);
                     sm_retry = true;
                 }
-#endif
 #endif
             }
 

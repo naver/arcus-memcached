@@ -699,12 +699,10 @@ extern "C" {
                                              protocol_binary_request_header *request,
                                              ADD_RESPONSE response);
 
-#ifdef AUTO_SCRUB
         /**
          * Scrub stale items.
          */
         ENGINE_ERROR_CODE (*scrub_stale)(ENGINE_HANDLE* handle);
-#endif
 
         /**
          * Get information about an item.
