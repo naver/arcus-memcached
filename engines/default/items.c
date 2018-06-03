@@ -7864,48 +7864,59 @@ bool item_start_scrub(struct default_engine *engine, int mode, bool autorun)
     assert(mode == (int)SCRUB_MODE_NORMAL || mode == (int)SCRUB_MODE_STALE);
     bool restarted = false;
     bool ret = false;
+
     pthread_mutex_lock(&engine->scrubber.lock);
-    if (engine->scrubber.enabled && !engine->scrubber.running) {
-        engine->scrubber.started = time(NULL);
-        engine->scrubber.stopped = 0;
-        engine->scrubber.visited = 0;
-        engine->scrubber.cleaned = 0;
-        engine->scrubber.restart = false;
-        engine->scrubber.runmode = (enum scrub_mode)mode;
-        engine->scrubber.running = true;
+    if (engine->scrubber.enabled) {
+        if (!engine->scrubber.running) {
+            engine->scrubber.started = time(NULL);
+            engine->scrubber.stopped = 0;
+            engine->scrubber.visited = 0;
+            engine->scrubber.cleaned = 0;
+            engine->scrubber.restart = false;
+            engine->scrubber.runmode = (enum scrub_mode)mode;
+            engine->scrubber.running = true;
 
-        pthread_t t;
-        pthread_attr_t attr;
+            pthread_t t;
+            pthread_attr_t attr;
 
-        if (pthread_attr_init(&attr) != 0 ||
-            pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0 ||
-            pthread_create(&t, &attr, item_scrubber_main, engine) != 0)
-        {
-            engine->scrubber.running = false;
+            if (pthread_attr_init(&attr) != 0 ||
+                pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0 ||
+                pthread_create(&t, &attr, item_scrubber_main, engine) != 0)
+            {
+                engine->scrubber.running = false;
+            } else {
+                ret = true;
+            }
         } else {
-            ret = true;
+            if (autorun == true && mode == SCRUB_MODE_STALE) {
+                restarted = true;
+                engine->scrubber.restart = restarted;
+                engine->scrubber.runmode = (enum scrub_mode)mode;
+                ret = true;
+            }
         }
-    }
-    else if (engine->scrubber.enabled && autorun == true
-             && mode == SCRUB_MODE_STALE) {
-        restarted = true;
-        engine->scrubber.restart = restarted;
-        engine->scrubber.runmode = (enum scrub_mode)mode;
-        ret = true;
     }
     pthread_mutex_unlock(&engine->scrubber.lock);
 
     if (ret) {
         if (!restarted) {
             logger->log(EXTENSION_LOG_INFO, NULL,
-                "Scrub is succesfully started.\n");
+                    "Scrub is succesfully started.\n");
         } else {
             logger->log(EXTENSION_LOG_INFO, NULL,
-                "Scrub is arleady running. Restart scrub.n");
+                    "Scrub is arleady running. Restarted the scrub.\n");
         }
     } else {
-        logger->log(EXTENSION_LOG_WARNING, NULL,
-              "Failed to start scrub. Scrub is already running.\n");
+        if (!engine->scrubber.enabled) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to start scrub. Scrub is disabled.\n");
+        } else if (engine->scrubber.running) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to start scrub. Scrub is already running.\n");
+        } else {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to start scrub. Scrub thread creation problem.\n");
+        }
     }
     return ret;
 }
