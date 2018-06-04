@@ -7923,7 +7923,7 @@ bool item_start_scrub(struct default_engine *engine, int mode)
                 "Scrub is succesfully started.\n");
         } else {
             logger->log(EXTENSION_LOG_INFO, NULL,
-                "Scrub is arleady running. Restart scrub.n");
+                "Scrub is arleady running. Restart scrub.\n");
         }
     } else {
         logger->log(EXTENSION_LOG_WARNING, NULL,
