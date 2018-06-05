@@ -5025,13 +5025,9 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort_old(struct default_engine *eng
     int mid, left, right;
     bool ascending = (bkrtype != BKEY_RANGE_TYPE_DSC ? true : false);
     bool is_first;
-    bkey_t   maxbkeyrange;
-    int32_t  maxelemcount = 0;
-    uint8_t  overflowactn = OVFL_SMALLEST_TRIM;
 
     *missed_key_count = 0;
 
-    maxbkeyrange.len = BKEY_NULL;
     for (k = 0; k < key_count; k++) {
         ret = do_btree_item_find(engine, key_array[k].value, key_array[k].length, DO_UPDATE, &it);
         if (ret != ENGINE_SUCCESS) {
@@ -5058,23 +5054,6 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort_old(struct default_engine *eng
             ret = ENGINE_EBADBKEY; break;
         }
         assert(info->root != NULL);
-
-        if (sort_count == 0) {
-            /* save the b+tree attributes */
-            maxbkeyrange = info->maxbkeyrange;
-            maxelemcount = info->mcnt;
-            overflowactn = info->ovflact;
-        } else {
-            /* check if the b+trees have same attributes */
-            if (maxelemcount != info->mcnt || overflowactn != info->ovflact ||
-                maxbkeyrange.len != info->maxbkeyrange.len ||
-                (maxbkeyrange.len != BKEY_NULL &&
-                 BKEY_ISNE(maxbkeyrange.val, maxbkeyrange.len, info->maxbkeyrange.val, maxbkeyrange.len)))
-            {
-                do_item_release(engine, it);
-                ret = ENGINE_EBADATTR; break;
-            }
-        }
 
         elem = do_btree_find_first(info->root, bkrtype, bkrange, &posi, false);
         if (elem == NULL) { /* No elements within the bkey range */
@@ -5243,11 +5222,7 @@ do_btree_smget_scan_sort(struct default_engine *engine,
     int mid, left, right;
     bool ascending = (bkrtype != BKEY_RANGE_TYPE_DSC ? true : false);
     bool is_first;
-    bkey_t   maxbkeyrange;
-    int32_t  maxelemcount = 0;
-    uint8_t  overflowactn = OVFL_SMALLEST_TRIM;
 
-    maxbkeyrange.len = BKEY_NULL;
     for (k = 0; k < key_count; k++) {
         ret = do_btree_item_find(engine, key_array[k].value, key_array[k].length, DO_UPDATE, &it);
         if (ret != ENGINE_SUCCESS) {
@@ -5272,23 +5247,6 @@ do_btree_smget_scan_sort(struct default_engine *engine,
             ret = ENGINE_EBADBKEY; break;
         }
         assert(info->root != NULL);
-
-        if (sort_count == 0) {
-            /* save the b+tree attributes */
-            maxbkeyrange = info->maxbkeyrange;
-            maxelemcount = info->mcnt;
-            overflowactn = info->ovflact;
-        } else {
-            /* check if the b+trees have same attributes */
-            if (maxelemcount != info->mcnt || overflowactn != info->ovflact ||
-                maxbkeyrange.len != info->maxbkeyrange.len ||
-                (maxbkeyrange.len != BKEY_NULL &&
-                 BKEY_ISNE(maxbkeyrange.val, maxbkeyrange.len, info->maxbkeyrange.val, maxbkeyrange.len)))
-            {
-                do_item_release(engine, it);
-                ret = ENGINE_EBADATTR; break;
-            }
-        }
 
         elem = do_btree_find_first(info->root, bkrtype, bkrange, &posi, false);
         if (elem == NULL) { /* No elements within the bkey range */
