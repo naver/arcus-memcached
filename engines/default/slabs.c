@@ -748,15 +748,18 @@ static void do_smmgr_01pct_check_and_move_left(void)
             assert(smid <= sm_anchor.used_maxid);
             sm_anchor.used_01pct_clsid = smid;
         } else {
-            assert(sm_anchor.used_01pct_space == 0);
-            sm_anchor.used_01pct_clsid = sm_anchor.used_maxid;
-            sm_anchor.used_01pct_space = sm_anchor.used_slist[sm_anchor.used_maxid].space;
+            assert(sm_anchor.used_01pct_clsid > sm_anchor.used_maxid &&
+                   sm_anchor.used_01pct_space == 0);
+            /* go downward */
         }
     }
 
-    if (sm_anchor.used_01pct_space < space_standard) {
+    if (sm_anchor.used_01pct_space < space_standard ||
+        sm_anchor.used_01pct_space == 0) {
         int old_used_01pct_clsid = sm_anchor.used_01pct_clsid;
-        for (smid = old_used_01pct_clsid-1; smid >= sm_anchor.used_minid; smid--) {
+        smid = sm_anchor.used_maxid < old_used_01pct_clsid
+             ? sm_anchor.used_maxid : (old_used_01pct_clsid-1);
+        for (; smid >= sm_anchor.used_minid; smid--) {
             if (sm_anchor.used_slist[smid].space > 0) {
                 sm_anchor.used_01pct_space += sm_anchor.used_slist[smid].space;
                 if (sm_anchor.used_01pct_space >= space_standard) {
