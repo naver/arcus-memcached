@@ -159,6 +159,12 @@ static int32_t default_set_size   = 4000;
 static int32_t default_map_size  = 4000;
 static int32_t default_btree_size = 4000;
 
+/* Temporary Facility */
+/* forced btree overflow action */
+static char    forced_action_prefix[256];
+static int32_t forced_action_pfxlen = 0;
+static uint8_t forced_btree_ovflact = 0;
+
 /* collection delete queue */
 static item_queue      coll_del_queue;
 static pthread_mutex_t coll_del_lock;
@@ -2295,6 +2301,10 @@ static hash_item *do_btree_item_alloc(struct default_engine *engine,
         info->mcnt = do_coll_real_maxcount(it, attrp->maxcount);
         info->ccnt = 0;
         info->ovflact = (attrp->ovflaction==0 ? OVFL_SMALLEST_TRIM : attrp->ovflaction);
+        if (forced_btree_ovflact != 0 && forced_action_pfxlen < nkey &&
+            memcmp(forced_action_prefix, key, forced_action_pfxlen) == 0) {
+            info->ovflact = forced_btree_ovflact;
+        }
         info->mflags  = 0;
 #ifdef ENABLE_STICKY_ITEM
         if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
@@ -6214,6 +6224,52 @@ void item_stats_reset(struct default_engine *engine)
     pthread_mutex_unlock(&engine->cache_lock);
 }
 
+static void _check_forced_btree_overflow_action(void)
+{
+    char *envstr;
+    char *envval;
+
+    envstr = getenv("ARCUS_FORCED_BTREE_OVERFLOW_ACTION");
+    if (envstr != NULL) {
+        char *delimiter = memchr(envstr, ':', strlen(envstr));
+        if (delimiter == NULL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: NO prefix delimiter\n");
+            return;
+        }
+        envval = delimiter + 1;
+
+        forced_action_pfxlen = envval - envstr;
+        if (forced_action_pfxlen >= 256) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: Too long prefix name\n");
+            return;
+        }
+        memcpy(forced_action_prefix, envstr, forced_action_pfxlen);
+        forced_action_prefix[forced_action_pfxlen] = '\0';
+
+        if (strcmp(envval, "smallest_trim") == 0)
+            forced_btree_ovflact = OVFL_SMALLEST_TRIM;
+        else if (strcmp(envval, "smallest_silent_trim") == 0)
+            forced_btree_ovflact = OVFL_SMALLEST_SILENT_TRIM;
+        else if (strcmp(envval, "largest_trim") == 0)
+            forced_btree_ovflact = OVFL_LARGEST_TRIM;
+        else if (strcmp(envval, "largest_silent_trim") == 0)
+            forced_btree_ovflact = OVFL_LARGEST_SILENT_TRIM;
+        else if (strcmp(envval, "error") == 0)
+            forced_btree_ovflact = OVFL_ERROR;
+        else {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: Invalid overflow action\n");
+            forced_action_prefix[0] = '\0';
+            return;
+        }
+
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: prefix=%s action=%s\n",
+                    forced_action_prefix, envval);
+    }
+}
 
 ENGINE_ERROR_CODE item_init(struct default_engine *engine)
 {
@@ -6248,6 +6304,9 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
     logger->log(EXTENSION_LOG_INFO, NULL, "maximum set   size = %d\n", max_set_size);
     logger->log(EXTENSION_LOG_INFO, NULL, "maximum map   size = %d\n", max_map_size);
     logger->log(EXTENSION_LOG_INFO, NULL, "maximum btree size = %d\n", max_btree_size);
+
+    /* check forced btree overflow action */
+    _check_forced_btree_overflow_action();
 
     int ret = pthread_create(&coll_del_tid, NULL, collection_delete_thread, engine);
     if (ret != 0) {
@@ -7501,6 +7560,12 @@ do_item_setattr_exec(struct default_engine *engine, hash_item *it,
                 }
             }
             info->ovflact = attr_data->ovflaction;
+            if (IS_BTREE_ITEM(it)) {
+                if (forced_btree_ovflact != 0 && forced_action_pfxlen < it->nkey &&
+                    memcmp(forced_action_prefix, item_get_key(it), forced_action_pfxlen) == 0) {
+                    info->ovflact = forced_btree_ovflact;
+                }
+            }
             continue;
         }
         if (attr_ids[i] == ATTR_READABLE) {
