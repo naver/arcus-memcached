@@ -1,3 +1,21 @@
+2018-06-07 [version 1.11.3]
+	* [Feature] Removed the useless attribute compatibility check in smget.
+	* [Feature] Forced btree overflow action for temporary use.
+	* [Feature] Automatic srcub stale when a new node is added.
+	* [Feature] Proxy support where memcached operates as a backend of it.
+	* [Feature] Added "cmd_cas" memcached stat and activated cas stats.
+	* [Feature] Increased MAX_SERVICECODE_LENGTH. 32 => 128.
+	* [Feature] Added MAX_HOSTNAME_LENGTH whose value is 128.
+	* [Fix]     Slab free_small_space overflow.
+	* [Fix]     TCP port bug when UDP port of 0 is only specified.
+	* [Fix]     Disabled UDP by default.
+	* [Fix]     Incorrect value length checking of collection.
+	* [Enhance] Handled multiple scattered values of an item or an element.
+	* [Enhance] Used mblocks for command parsing and tokenizing.
+	* [Test]    Reorganized the unit tests.
+	* [Test]    Fixed the intermittent failure in the testapp test.
+	* [Other]   A lot of code refactoring.
+
 2018-02-27 [version 1.11.2]
 	* [Enhance] Improve the logic of finding list elements.
 	* [Fix]     Add missing break when print the long query string.
