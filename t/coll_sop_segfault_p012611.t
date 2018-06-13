@@ -39,21 +39,8 @@ $cmd = "get skey"; $rst = "END";
 mem_cmd_is($sock, $cmd, "", $rst);
 
 sop_insert("skey", 0, 9, "create 13 0 0");
-
-$cmd = "sop get skey 0";
-$rst = "VALUE 13 10
-6 datum9
-6 datum8
-6 datum3
-6 datum2
-6 datum1
-6 datum0
-6 datum7
-6 datum6
-6 datum5
-6 datum4
-END";
-mem_cmd_is($sock, $cmd, "", $rst);
+sop_get_is($sock, "skey 0", 13, 10,
+           "datum0,datum1,datum2,datum3,datum4,datum5,datum6,datum7,datum8,datum9");
 
 $cmd = "sop delete skey 6"; $val="datum1"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, $val, $rst);
@@ -65,16 +52,8 @@ $cmd = "sop delete skey 6"; $val="datum7"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "sop delete skey 6"; $val="datum9"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-
-$cmd = "sop get skey 0";
-$rst = "VALUE 13 5
-6 datum8
-6 datum2
-6 datum0
-6 datum6
-6 datum4
-END";
-mem_cmd_is($sock, $cmd, "", $rst);
+sop_get_is($sock, "skey 0", 13, 5,
+           "datum0,datum2,datum4,datum6,datum8");
 
 $cmd = "delete skey"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, "", $rst);

@@ -102,20 +102,8 @@ $rst = "ATTR count=10
 ATTR maxcount=$maximum_set_size
 END";
 mem_cmd_is($sock, $cmd, "", $rst);
-$cmd = "sop get skey 10";
-$rst = "VALUE $flags 10
-6 datum9
-6 datum8
-6 datum3
-6 datum2
-6 datum1
-6 datum0
-6 datum7
-6 datum6
-6 datum5
-6 datum4
-END";
-mem_cmd_is($sock, $cmd, "", $rst);
+sop_get_is($sock, "skey 10", $flags, 10,
+           "datum0,datum1,datum2,datum3,datum4,datum5,datum6,datum7,datum8,datum9");
 $cmd = "sop delete skey 6"; $val="datum1"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "sop delete skey 6"; $val="datum3"; $rst = "DELETED";
@@ -130,15 +118,8 @@ $cmd = "sop delete skey 6"; $val="datum3"; $rst = "NOT_FOUND_ELEMENT";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "sop delete skey 7"; $val="datum10"; $rst = "NOT_FOUND_ELEMENT";
 mem_cmd_is($sock, $cmd, $val, $rst);
-$cmd = "sop get skey 10 delete";
-$rst = "VALUE $flags 5
-6 datum8
-6 datum2
-6 datum0
-6 datum6
-6 datum4
-DELETED";
-mem_cmd_is($sock, $cmd, "", $rst);
+sop_get_is($sock, "skey 10 delete", $flags, 5,
+           "datum0,datum2,datum4,datum6,datum8");
 $cmd = "sop insert skey 6"; $val="datum3"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "sop delete skey 6 drop"; $val="datum3"; $rst = "DELETED_DROPPED";
@@ -225,27 +206,15 @@ $rst = "ATTR count=5
 ATTR maxcount=$maximum_set_size
 END";
 mem_cmd_is($sock, $cmd, "", $rst);
-$cmd = "sop get skey 0";
-$rst = "VALUE 13 5
-6 datum3
-6 datum2
-6 datum1
-6 datum0
-6 datum4
-END";
-mem_cmd_is($sock, $cmd, "", $rst);
+sop_get_is($sock, "skey 0", $flags, 5,
+           "datum0,datum1,datum2,datum3,datum4");
 $cmd = "sop delete skey 6"; $val="datum0"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "sop delete skey 6"; $val="datum2"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "sop delete skey 6"; $val="datum4"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-$cmd = "sop get skey 0 delete";
-$rst = "VALUE 13 2
-6 datum3
-6 datum1
-DELETED";
-mem_cmd_is($sock, $cmd, "", $rst);
+sop_get_is($sock, "skey 0 delete", $flags, 2, "datum1,datum3");
 $cmd = "sop delete skey 6"; $val="datum3"; $rst = "NOT_FOUND_ELEMENT";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "sop get skey 1"; $rst = "NOT_FOUND_ELEMENT";
@@ -261,13 +230,7 @@ $cmd = "sop insert skey 6"; $val = "datum1"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "sop insert skey 6"; $val = "datum2"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-$cmd = "sop get skey 0 drop";
-$rst = "VALUE 13 3
-6 datum2
-6 datum1
-6 datum0
-DELETED_DROPPED";
-mem_cmd_is($sock, $cmd, "", $rst);
+sop_get_is($sock, "skey 0 drop", $flags, 3, "datum0,datum1,datum2");
 $cmd = "get skey"; $rst = "END";
 mem_cmd_is($sock, $cmd, "", $rst);
 
@@ -315,15 +278,8 @@ $cmd = "sop insert skey 6"; $val = "datum4"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "sop insert skey 6"; $val = "datum5"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-$cmd = "sop get skey 5";
-$rst = "VALUE 13 5
-6 datum3
-6 datum2
-6 datum1
-6 datum5
-6 datum4
-END";
-mem_cmd_is($sock, $cmd, "", $rst);
+sop_get_is($sock, "skey 5", $flags, 5,
+           "datum1,datum2,datum3,datum4,datum5");
 $cmd = "sop insert skey 6"; $val = "datum6"; $rst = "OVERFLOWED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "setattr skey overflowaction=head_trim"; $rst = "ATTR_ERROR bad value";
@@ -432,13 +388,7 @@ $cmd = "sop insert skey 6"; $val = "datum3"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "setattr skey expiretime=2"; $rst = "OK";
 mem_cmd_is($sock, $cmd, "", $rst);
-$cmd = "sop get skey 5";
-$rst = "VALUE 13 3
-6 datum3
-6 datum2
-6 datum1
-END";
-mem_cmd_is($sock, $cmd, "", $rst);
+sop_get_is($sock, "skey 5",  $flags, 3, "datum1,datum2,datum3");
 sleep(2.1);
 $cmd = "sop get skey 5"; $rst = "NOT_FOUND";
 mem_cmd_is($sock, $cmd, "", $rst);
@@ -454,13 +404,7 @@ $cmd = "sop insert skey 6"; $val = "datum2"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "sop insert skey 6"; $val = "datum3"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-$cmd = "sop get skey 5";
-$rst = "VALUE 13 3
-6 datum3
-6 datum2
-6 datum1
-END";
-mem_cmd_is($sock, $cmd, "", $rst);
+sop_get_is($sock, "skey 5",  $flags, 3, "datum1,datum2,datum3");
 $cmd = "flush_all"; $rst = "OK";
 mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "sop get skey 5"; $rst = "NOT_FOUND";
