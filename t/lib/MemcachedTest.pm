@@ -1030,11 +1030,11 @@ sub new_memcached {
     }
     $args .= " -E $builddir/.libs/default_engine.so";
 
-    my $childpid = fork();
-
     my $exe = "$builddir/memcached";
     croak("memcached binary doesn't exist.  Haven't run 'make' ?\n") unless -e $exe;
     croak("memcached binary not executable\n") unless -x _;
+
+    my $childpid = fork();
 
     unless ($childpid) {
         exec "$builddir/timedrun 600 $exe $args";
@@ -1098,11 +1098,11 @@ sub new_memcached_engine {
     }
     $args .= " -E $builddir/.libs/$engine\_engine.so";
 
-    my $childpid = fork();
-
     my $exe = "$builddir/memcached";
     croak("memcached binary doesn't exist.  Haven't run 'make' ?\n") unless -e $exe;
     croak("memcached binary not executable\n") unless -x _;
+
+    my $childpid = fork();
 
     unless ($childpid) {
         exec "$builddir/timedrun 600 $exe $args";
