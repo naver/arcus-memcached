@@ -39,22 +39,14 @@ sub mem_stats {
 }
 
 sub mem_cmd_is {
-    # works on single-line values only.  no newlines in value.
     my ($sock_opts, $cmd, $val, $rst, $msg) = @_;
-    my @response_list = ("ATTR_MISMATCH", "BKEY_MISMATCH", "CREATED", "CREATED_STORED"
-        , "DELETED", "DELETED_DROPPED", "DUPLICATED", "DUPLICATED_TRIMMED"
-        , "EFLAG_MISMATCH", "ELEMENT_EXISTS", "END", "EXIST", "EXISTS", "NOT_EXIST", "NOT_FOUND"
-        , "NOT_FOUND_ELEMENT", "NOT_STORED", "NOT_SUPPORTED", "NOTHING_TO_UPDATE", "OK"
-        , "OUT_OF_RANGE", "OVERFLOWED", "REPLACED", "RESET", "STORED", "TRIMMED"
-        , "TYPE_MISMATCH", "UNREADABLE", "UPDATED"
-        , "ATTR_ERROR", "CLIENT_ERROR", "ERROR", "PREFIX_ERROR", "SERVER_ERROR"
-        , "COUNT=", "POSITION=");
-
-    my @exception_cmd = ("incr", "decr", "echo", "bop incr", "bop decr");
+    my @response_list;
+    my @response_error = ("ATTR_ERROR", "CLIENT_ERROR", "ERROR", "PREFIX_ERROR", "SERVER_ERROR");
 
     my @prdct_response = split('\n', $rst);
-    my $count = $#prdct_response + 1;
-    my $last_response = pop @prdct_response;
+    my @cmd_pipeline = split('\r\n', $cmd);
+    my $rst_type = 0;
+    my $count;
 
     my $opts = ref $sock_opts eq "HASH" ? $sock_opts : {};
     my $sock = ref $sock_opts eq "HASH" ? $opts->{sock} : $sock_opts;
@@ -78,24 +70,67 @@ sub mem_cmd_is {
     my $resp = "";
     my $line;
 
-    while ($count--) {
+    if ($cmd =~ /noreply$/) {
+        if ("$rst" ne "") {
+            $rst_type = 3;
+        }
+    } elsif ($#cmd_pipeline > 1) {
+        $rst_type = 3;
+    } else {
         $line = scalar <$sock>;
         $resp = $resp . (substr $line, 0, length($line)-2);
-        if ($count eq 0) {
-            last;
+
+        if ($line =~ /^VALUE/) {
+            $rst_type = 1;
+            @response_list = ("DELETED", "DELETED_DROPPED", "DUPLICATED", "DUPLICATED_TRIMMED", "END", "TRIMMED");
+        } elsif ($line =~ /^ELEMENTS/) {
+            $rst_type = 1;
+            @response_list = ("DUPLICATED", "END");
+        } elsif (grep $resp =~ /^$_/, @response_error) {
+            $rst_type = 2;
+        } elsif ($line =~ /^RESPONSE/) { # pipe command
+            $rst_type = 2;
+        } elsif ($line =~ /^(ATTR|PREFIX)/) {
+            $rst_type = 1;
+            @response_list = ("END");
+        } else {
+            # single line response
+#            @response_list = ("ATTR_MISMATCH", "BKEY_MISMATCH", "CREATED", "CREATED_STORED"
+#                , "DELETED", "DELETED_DROPPED", "DUPLICATED", "DUPLICATED_TRIMMED"
+#                , "EFLAG_MISMATCH", "ELEMENT_EXISTS", "END", "EXIST", "EXISTS", "NOT_EXIST", "NOT_FOUND"
+#                , "NOT_FOUND_ELEMENT", "NOT_STORED", "NOT_SUPPORTED", "NOTHING_TO_UPDATE", "OK"
+#                , "OUT_OF_RANGE", "OVERFLOWED", "REPLACED", "RESET", "STORED", "TRIMMED"
+#                , "TYPE_MISMATCH", "UNREADABLE", "UPDATED"
+#                , "ATTR_ERROR", "CLIENT_ERROR", "ERROR", "PREFIX_ERROR", "SERVER_ERROR"
+#                , "COUNT=", "POSITION=");
         }
-        $resp = $resp . "\n";
     }
 
-    if (grep $line =~ /^$_/, @response_list) {
-        Test::More::is("$resp", "$rst", $msg);
-    } elsif (grep $cmd =~ /^$_/, @exception_cmd) {
-        Test::More::is("$resp", "$rst", $msg);
-    } elsif ($cmd =~ /noreply$/) { # command of noreply option
-        Test::More::is("$resp", "$rst", $msg);
-    } else {
-        croak("# Test failed. < test name : $msg >");
+    if ($rst_type eq 1) {
+        do {
+            $resp = $resp . "\n";
+            $line = scalar <$sock>;
+            $resp = $resp . (substr $line, 0, length($line)-2);
+        } while (!(grep $line =~ /^$_/, @response_list));
+    } elsif ($rst_type eq 2) {
+        $count = $#prdct_response;
+        while ($count--) {
+            $resp = $resp . "\n";
+            $line = scalar <$sock>;
+            $resp = $resp . (substr $line, 0, length($line)-2);
+        }
+    } elsif ($rst_type eq 3) {
+        $count = $#prdct_response + 1;
+        while ($count--) {
+            $line = scalar <$sock>;
+            $resp = $resp . (substr $line, 0, length($line)-2);
+            if ($count eq 0) {
+                last;
+            }
+            $resp = $resp . "\n";
+        }
     }
+    Test::More::is("$resp", "$rst", $msg);
 }
 
 sub mem_get_is {
