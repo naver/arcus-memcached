@@ -2651,11 +2651,13 @@ static inline void UINT64_DIFF(const uint64_t *v1, const uint64_t *v2, uint64_t 
     *result = *v1 - *v2;
 }
 
+#if 0 // OLD_CODE
 static inline void UINT64_INCR(uint64_t *v)
 {
     assert(*v < UINT64_MAX);
     *v += 1;
 }
+#endif
 
 static inline void UINT64_DECR(uint64_t *v)
 {
@@ -2677,7 +2679,7 @@ static inline void BINARY_DIFF(unsigned char *v1, const uint8_t nv1,
     assert(length > 0);
     unsigned char bkey1_space[MAX_BKEY_LENG];
     unsigned char bkey2_space[MAX_BKEY_LENG];
-    int i, j;
+    int i, subtraction;
 
     if (nv1 < length) {
         memcpy(bkey1_space, v1, nv1);
@@ -2692,26 +2694,28 @@ static inline void BINARY_DIFF(unsigned char *v1, const uint8_t nv1,
         v2 = bkey2_space;
     }
 
-    for (i = (length-1); i >= 0; ) {
-        if (v1[i] >= v2[i]) {
-            result[i] = v1[i] - v2[i];
-            i -= 1;
-        } else {
-            result[i] = 0xFF - v2[i] + v1[i] + 1;
-            for (j = (i-1); j >= 0; j--) {
-               if (v1[j] > v2[j]) {
-                   result[j] = v1[j] - 1 - v2[j];
-                   break;
-               } else {
-                   result[j] = 0xFF - v2[j] + v1[j];
-               }
+    /* assume that the value of v1 >= the value of v2 */
+    subtraction = 0;
+    for (i = (length-1); i >= 0; i--) {
+        if (subtraction == 0) {
+            if (v1[i] >= v2[i]) {
+                result[i] = v1[i] - v2[i];
+            } else {
+                result[i] = 0xFF - v2[i] + v1[i] + 1;
+                subtraction = 1;
             }
-            assert(j >= 0);
-            i = j-1;
+        } else {
+            if (v1[i] > v2[i]) {
+                result[i] = v1[i] - v2[i] - 1;
+                subtraction = 0;
+            } else {
+                result[i] = 0xFF - v2[i] + v1[i];
+            }
         }
     }
 }
 
+#if 0 // OLD_CODE
 static inline void BINARY_INCR(unsigned char *v, const int length)
 {
     assert(length > 0);
@@ -2726,6 +2730,7 @@ static inline void BINARY_INCR(unsigned char *v, const int length)
     }
     assert(i >= 0);
 }
+#endif
 
 static inline void BINARY_DECR(unsigned char *v, const int length)
 {
@@ -2748,8 +2753,10 @@ static inline void BINARY_DECR(unsigned char *v, const int length)
 #define BKEY_DIFF(bk1, nbk1, bk2, nbk2, len, res) \
         ((len)==0 ? UINT64_DIFF((const uint64_t*)(bk1), (const uint64_t*)(bk2), (uint64_t*)(res)) \
                   : BINARY_DIFF((bk1), (nbk1), (bk2), (nbk2), (len), (res)))
+#if 0 // OLD_CODE
 #define BKEY_INCR(bk, nbk) \
         ((nbk)==0 ? UINT64_INCR((uint64_t*)(bk)) : BINARY_INCR((bk), (nbk)))
+#endif
 #define BKEY_DECR(bk, nbk) \
         ((nbk)==0 ? UINT64_DECR((uint64_t*)(bk)) : BINARY_DECR((bk), (nbk)))
 
@@ -4162,33 +4169,40 @@ static void do_btree_overflow_trim(struct default_engine *engine, btree_meta_inf
         int      bkrtype;
         bkey_range bkrange_space;
         if (info->ovflact == OVFL_SMALLEST_TRIM || info->ovflact == OVFL_SMALLEST_SILENT_TRIM) {
-            /* the bkey range to be trimmed
-               => min bkey ~ (new max bkey - maxbkeyrange - 1)
-            */
+            /* bkey range that must be trimmed.
+             * => min bkey ~ (new max bkey - maxbkeyrange - 1)
+             */
+            /* from bkey */
             edge_elem = do_btree_get_first_elem(info->root); /* min bkey elem */
-            BKEY_COPY(edge_elem->data, edge_elem->nbkey, bkrange_space.from_bkey);
             bkrange_space.from_nbkey = edge_elem->nbkey;
-            bkrange_space.to_nbkey   = info->maxbkeyrange.len;
-            BKEY_DIFF(elem->data, elem->nbkey, info->maxbkeyrange.val, info->maxbkeyrange.len,
+            BKEY_COPY(edge_elem->data, edge_elem->nbkey, bkrange_space.from_bkey);
+            /* to bkey */
+            bkrange_space.to_nbkey = info->maxbkeyrange.len;
+            BKEY_DIFF(elem->data, elem->nbkey,
+                      info->maxbkeyrange.val, info->maxbkeyrange.len,
                       bkrange_space.to_nbkey, bkrange_space.to_bkey);
             BKEY_DECR(bkrange_space.to_bkey, bkrange_space.to_nbkey);
         } else {
-            /* the bkey range to be trimmed
-               => (new min bkey + maxbkeyrange + 1) ~ max bkey
-               => (max bkey - (max bkey - maxbkeyrange - new min bkey) + 1) ~ max bkey
-            */
+            /* bkey range that must be trimmed.
+             * => (new min bkey + maxbkeyrange + 1) ~ max bkey
+             * => max bkey - (max bkey - new min bkey - maxbkeyrange - 1) ~ max bkey
+             */
+            /* from bkey */
             edge_elem = do_btree_get_last_elem(info->root);  /* max bkey elem */
-            //BKEY_PLUS(elem->data, info->maxbkeyrange.val, info->maxbkeyrange.len, bkrange_space.from_bkey);
             bkrange_space.from_nbkey = info->maxbkeyrange.len;
-            BKEY_DIFF(edge_elem->data, edge_elem->nbkey, info->maxbkeyrange.val, info->maxbkeyrange.len,
+            BKEY_DIFF(edge_elem->data, edge_elem->nbkey,
+                      elem->data, elem->nbkey,
                       bkrange_space.from_nbkey, bkrange_space.from_bkey);
-            BKEY_DIFF(bkrange_space.from_bkey, bkrange_space.from_nbkey, elem->data, elem->nbkey,
+            BKEY_DIFF(bkrange_space.from_bkey, bkrange_space.from_nbkey,
+                      info->maxbkeyrange.val, info->maxbkeyrange.len,
                       bkrange_space.from_nbkey, bkrange_space.from_bkey);
-            BKEY_DIFF(edge_elem->data, edge_elem->nbkey, bkrange_space.from_bkey, bkrange_space.from_nbkey,
+            BKEY_DECR(bkrange_space.from_bkey, bkrange_space.from_nbkey);
+            BKEY_DIFF(edge_elem->data, edge_elem->nbkey,
+                      bkrange_space.from_bkey, bkrange_space.from_nbkey,
                       bkrange_space.from_nbkey, bkrange_space.from_bkey);
-            BKEY_INCR(bkrange_space.from_bkey, bkrange_space.from_nbkey);
+            /* to bkey */
+            bkrange_space.to_nbkey = edge_elem->nbkey;
             BKEY_COPY(edge_elem->data, edge_elem->nbkey, bkrange_space.to_bkey);
-            bkrange_space.to_nbkey   = edge_elem->nbkey;
         }
         bkrtype = do_btree_bkey_range_type(&bkrange_space);
         del_count = do_btree_elem_delete(engine, info, bkrtype, &bkrange_space, NULL, 0,
