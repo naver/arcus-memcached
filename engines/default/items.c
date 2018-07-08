@@ -2720,13 +2720,12 @@ static inline void BINARY_INCR(unsigned char *v, const int length)
 {
     assert(length > 0);
     int i;
-    for (i = (length-1); i >= 0; ) {
+    for (i = (length-1); i >= 0; i--) {
         if (v[i] < 0xFF) {
             v[i] += 1;
             break;
-        } else {
-            v[i] = 0x00;
         }
+        v[i] = 0x00;
     }
     assert(i >= 0);
 }
@@ -2736,13 +2735,12 @@ static inline void BINARY_DECR(unsigned char *v, const int length)
 {
     assert(length > 0);
     int i;
-    for (i = (length-1); i >= 0; ) {
+    for (i = (length-1); i >= 0; i--) {
         if (v[i] > 0x00) {
             v[i] -= 1;
             break;
-        } else {
-            v[i] = 0xFF;
         }
+        v[i] = 0xFF;
     }
     assert(i >= 0);
 }
