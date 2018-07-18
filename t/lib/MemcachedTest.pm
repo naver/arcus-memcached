@@ -340,22 +340,26 @@ sub sop_get_is {
 # COLLECTION
 sub mop_get_is {
     # works on single-line values only.  no newlines in value.
-    my ($sock_opts, $args, $flags, $numfields, $ecount, $flist, $fields, $values, $tailstr, $msg) = @_;
+    my ($sock_opts, $args, $flags, $numfields, $flist, $ecount, $values, $tailstr, $msg) = @_;
     my $opts = ref $sock_opts eq "HASH" ? $sock_opts : {};
     my $sock = ref $sock_opts eq "HASH" ? $opts->{sock} : $sock_opts;
 
     $msg ||= "mop get $args == $flags $ecount field data";
 
+    my $expected_head = "VALUE $flags $ecount\r\n";
+    my $expected_field;
+    my $expected_body;
+    my $expected_tail = "$tailstr\r\n";
+
     if ($numfields > 0) {
         print $sock "mop get $args\r\n$flist\r\n";
+        $expected_field = $flist;
+        $expected_body = $values;
     } else {
         print $sock "mop get $args\r\n";
+        $expected_field = join(" ", sort(split(" ",$flist)));
+        $expected_body = join(" ", sort(split(" ",$values)));
     }
-
-    my $expected_head = "VALUE $flags $ecount\r\n";
-    my $expected_field = $fields;
-    my $expected_body = $values;
-    my $expected_tail = "$tailstr\r\n";
 
     my $response_head = scalar <$sock>;
     my @field_array = ();
@@ -375,9 +379,16 @@ sub mop_get_is {
         push(@value_array, $value);
         $line = scalar <$sock>;
     }
-    my $response_field = join(",", @field_array);
-    my $response_body = join(",", @value_array);
+    my $response_field;
+    my $response_body;
     my $response_tail = $line;
+
+    if ($numfields == 0) {
+        @field_array = sort @field_array;
+        @value_array = sort @value_array;
+    }
+    $response_field = join(" ", @field_array);
+    $response_body = join(" ", @value_array);
 
     Test::More::is("$response_head $response_field $response_body $response_tail",
                    "$expected_head $expected_field $expected_body $expected_tail", $msg);

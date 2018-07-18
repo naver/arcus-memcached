@@ -1,0 +1,154 @@
+#!/usr/bin/perl
+
+use strict;
+use Test::More tests => 510510;
+use FindBin qw($Bin);
+use lib "$Bin/lib";
+use MemcachedTest;
+
+my $engine = shift;
+my $server = get_memcached($engine);
+my $sock = $server->sock;
+my @eflag_filter    = ("LE", "GE");
+my @eflag_filter_op = ("<=", ">=");
+
+my $cmd;
+my $val;
+my $rst;
+my $maximum_btree_size = 50000;
+
+sub convert_hex {
+    my ($number, $digits) = @_;
+    return sprintf("0x%0$digits\X", $number);
+}
+
+sub bop_random_insert {
+    my ($key, $from_bkey, $to_bkey, $create) = @_;
+    my $bkey;
+    my @bkey_array = ();
+    my $eflag = "";
+    my $vleng;
+    my $index;
+
+    for ($index = $from_bkey; $index <= $to_bkey; $index++) {
+        $bkey = convert_hex($index, 6);
+        push(@bkey_array, $bkey);
+    }
+
+    for ($index = $from_bkey; $index <= $to_bkey; $index++) {
+        my $rn = int(rand($#bkey_array));
+        $bkey = splice(@bkey_array, $rn, 1); # bkey random pick
+        $eflag = convert_hex(((hex $bkey) % 5), 2);
+        $val = $bkey;
+        $vleng = length($val);
+        if ($index != $from_bkey) {
+            $cmd = "bop insert $key $bkey $eflag $vleng"; $rst = "STORED";
+        } else {
+            $cmd = "bop insert $key $bkey $eflag $vleng $create"; $rst = "CREATED_STORED";
+        }
+        mem_cmd_is($sock, $cmd, $val, $rst);
+    }
+}
+
+sub bop_get {
+    my ($key, $flags, $from_bkey, $to_bkey, $eflag,
+        $eflag_filter, $tailstr, $delete) = @_;
+    my $bkey;
+    my $ecnt;
+    my @res_bkey = ();
+    my @res_data = ();
+    my $index;
+
+    if ($to_bkey >= $maximum_btree_size) {
+        $to_bkey = $maximum_btree_size - 1;
+    }
+    $ecnt = 0;
+
+    for ($index = $from_bkey; $index <= $to_bkey; $index++) {
+        my $insert = 0;
+        if (($eflag_filter eq "LE") && (($index % 5) <= (hex $eflag))) {
+            $insert = 1;
+        } elsif(($eflag_filter eq "GE") && (($index % 5) >= (hex $eflag))) {
+            $insert = 1;
+        } elsif ($eflag_filter eq "") {
+            $insert = 1;
+        }
+
+        if ($insert) {
+            $bkey = convert_hex($index, 6);
+            push(@res_bkey, $bkey);
+            $ecnt++;
+        }
+    }
+    @res_data = @res_bkey;
+    $from_bkey = convert_hex($from_bkey, 6);
+    $to_bkey = convert_hex($to_bkey, 6);
+
+    my $bkey_list = join(",", @res_bkey);
+    my $data_list = join(",", @res_data);
+    my $args;
+    if ($eflag_filter eq "") {
+        $args = "$key $from_bkey..$to_bkey";
+    } else {
+        $args = "$key $from_bkey..$to_bkey 0 $eflag_filter $eflag";
+    }
+    if ($delete) {
+        $args .= " $delete";
+    }
+    if ($ecnt == 0) {
+        print $sock "bop get $args\r\n";
+        my $response = scalar <$sock>;
+        is ("$response", "NOT_FOUND_ELEMENT\r\n", "bop get $args : NOT_FOUND_ELEMENT");
+    } else {
+        bop_get_is($sock, $args, $flags, $ecnt, $bkey_list, $data_list, $tailstr);
+    }
+}
+
+my $key;
+my $from;
+my $to;
+my $eflag;
+my $keynum;
+my $nkey = 10;
+my $try = 10000;
+
+#####################################
+##### insert data($nkey * 50001) ####
+#####################################
+for ($keynum = 0; $keynum < $nkey; $keynum++) {
+    $cmd = "bop get bkey$keynum 0x00..0xff"; $rst = "NOT_FOUND";
+    mem_cmd_is($sock, $cmd, "", $rst);
+    bop_random_insert("bkey$keynum", 0, 49999, "create 7 0 $maximum_btree_size");
+}
+
+#####################################
+####### get data($nkey * 50000) #####
+#####################################
+while ($try--) {
+    $from = int(rand($maximum_btree_size));
+    $to = $from + int(rand(1000));
+    $keynum = int(rand($nkey));
+    $eflag = convert_hex(int(rand(5)), 2);
+
+    bop_get("bkey$keynum", 7, $from, $to, $eflag
+            , $eflag_filter[int(rand($#eflag_filter + 1))], "END");
+}
+
+#####################################
+########## get with delete ##########
+#####################################
+my $range = 1000;
+my $start;
+for ($start = $maximum_btree_size - $range; $start >= 0; $start -= $range) {
+    for ($keynum = 0; $keynum < $nkey; $keynum++) {
+        my $eflag_idx = int(rand($#eflag_filter + 1));
+        $from = $start;
+        $to = $from + int(rand($range));
+        $eflag = convert_hex(int(rand(5)), 2);
+        bop_get("bkey$keynum", 7, $from, $to, $eflag, @eflag_filter[$eflag_idx]
+                , "DELETED", "delete");
+    }
+}
+
+# after test
+release_memcached($engine);

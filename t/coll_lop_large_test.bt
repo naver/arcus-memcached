@@ -1,0 +1,106 @@
+#!/usr/bin/perl
+
+use strict;
+use Test::More tests => 510510;
+# tests = ($nkey * 50001) + ($try) + ($maximum_list_size / $range * $nkey)
+use FindBin qw($Bin);
+use lib "$Bin/lib";
+use MemcachedTest;
+
+my $engine = shift;
+my $server = get_memcached($engine);
+my $sock = $server->sock;
+
+my $cmd;
+my $val;
+my $rst;
+my $from;
+my $to;
+my $keynum;
+my $nkey = 10;
+my $maximum_list_size = 50000;
+my $try = 10000;
+
+sub lop_insert {
+    my ($key, $from, $to, $create) = @_;
+    my $index;
+    my $vleng;
+
+    for ($index = $from; $index <= $to; $index++) {
+        $val = "datum$index";
+        $vleng = length($val);
+        if ($index == $from) {
+            $cmd = "lop insert $key $index $vleng $create";
+            $rst = "CREATED_STORED";
+        } else {
+            $cmd = "lop insert $key $index $vleng";
+            $rst = "STORED";
+        }
+        mem_cmd_is($sock, $cmd, $val, $rst);
+    }
+}
+
+sub lop_get {
+    my ($key, $from, $to, $delete) = @_;
+    my $index;
+    my $vleng;
+    my $ecnt;
+    if ($to >= $maximum_list_size) {
+        $to = $maximum_list_size - 1;
+    }
+    $ecnt = $to - $from + 1;
+    $cmd = "lop get $key $from..$to";
+    if ($delete eq "DELETED") {
+        $cmd .= " delete";
+    }
+
+    $rst = "VALUE 7 $ecnt\n";
+    for ($index = $from; $index <= $to; $index++) {
+        $val = "datum$index";
+        $vleng = length($val);
+        $rst .= "$vleng $val\n";
+    }
+    if ($delete eq "DELETED") {
+        $rst .= "DELETED";
+    } else {
+        $rst .= "END";
+    }
+    mem_cmd_is($sock, $cmd, "", $rst);
+}
+
+#####################################
+##### insert data($nkey * 50001) ####
+#####################################
+for ($keynum = 0; $keynum < $nkey; $keynum++) {
+    $cmd = "lop get lkey$keynum 0"; $rst = "NOT_FOUND";
+    mem_cmd_is($sock, $cmd, "", $rst);
+    lop_insert("lkey$keynum", 0, 49999, "create 7 0 $maximum_list_size");
+}
+
+#####################################
+####### get data($nkey * 50000) #####
+#####################################
+while ($try--) {
+    $from = int(rand($maximum_list_size));
+    $to = $from + int(rand(1000));
+    $keynum = int(rand($nkey));
+    lop_get("lkey$keynum", $from, $to);
+}
+
+#####################################
+########## get with delete ##########
+#####################################
+# cmd : lop get $from($maximum_list_size - $range*$start)
+#               $to($from + $rand($range)) delete
+my $range = 1000;
+my $start;
+for ($start = $maximum_list_size - $range; $start >= 0; $start -= $range) {
+    for ($keynum = 0; $keynum < $nkey; $keynum++) {
+        $from = $start;
+        $to = $from + int(rand($range));
+        lop_get("lkey$keynum", $from, $to, "DELETED");
+    }
+}
+
+# after test
+release_memcached($engine, $server);
