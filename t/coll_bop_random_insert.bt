@@ -151,4 +151,4 @@ for ($start = $maximum_btree_size - $range; $start >= 0; $start -= $range) {
 }
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);
