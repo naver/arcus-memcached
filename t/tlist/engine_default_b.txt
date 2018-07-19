@@ -1,6 +1,9 @@
 ./t/coll_bop_large_tree.bt
+./t/coll_bop_random_insert.bt
 ./t/coll_bop_position_test.bt
 ./t/coll_bop_smget_test.bt
+./t/coll_lop_large_test.bt
+./t/coll_mop_large_test.bt
 ./t/coll_scrub_stale.bt
 ./t/00-startup.t
 ./t/64bit.t

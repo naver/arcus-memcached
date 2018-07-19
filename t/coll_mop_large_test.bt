@@ -1,0 +1,121 @@
+#!/usr/bin/perl
+
+use strict;
+use Test::More tests => 505510;
+# tests = ($nkey * 50001) + ($try) + ($maximum_map_size / $range * $nkey)
+use FindBin qw($Bin);
+use lib "$Bin/lib";
+use MemcachedTest;
+
+my $engine = shift;
+my $server = get_memcached($engine);
+my $sock = $server->sock;
+
+my $cmd;
+my $val;
+my $rst;
+my $from;
+my $to;
+my $keynum;
+my $nkey = 10;
+my $maximum_map_size = 50000;
+my $try = 5000;
+
+sub mop_insert {
+    my ($key, $from, $to, $create) = @_;
+    my $index;
+    my $vleng;
+    my $field;
+
+    for ($index = $from; $index <= $to; $index++) {
+        $field = "field$index";
+        $val = "datum$index";
+        $vleng = length($val);
+        if ($index == $from) {
+            $cmd = "mop insert $key $field $vleng $create";
+            $rst = "CREATED_STORED";
+        } else {
+            $cmd = "mop insert $key $field $vleng";
+            $rst = "STORED";
+        }
+        mem_cmd_is($sock, $cmd, $val, $rst);
+    }
+}
+
+sub mop_get {
+    my ($key, $flags, $from, $to, $delete) = @_;
+    my $index;
+    my $field;
+    my $vleng;
+    my $lengfield = 0;
+    my $ecount = 0;
+    my $numfield;
+    my $field_data = "";
+    my $value_data = "";
+    my $tailstr;
+
+    if ($to >= $maximum_map_size) {
+        $to = $maximum_map_size - 1;
+    }
+    $numfield = $to - $from + 1;
+
+    for ($index = $from; $index <= $to; $index++) {
+        $field = "field$index";
+        $val = "datum$index";
+        $vleng = length($val);
+        if ($index != $from) {
+            $field_data .= " $field";
+            $value_data .= " $val";
+            $lengfield += (length($field) + 1);
+        } else {
+            $field_data = $field;
+            $value_data = $val;
+            $lengfield += length($field)
+        }
+        $ecount++;
+    }
+    my $args = "$key $lengfield $numfield";
+    if ($delete) {
+        $args .= " delete";
+        $tailstr = "DELETED";
+    } else {
+        $tailstr = "END";
+    }
+    mop_get_is($sock, $args, $flags, $numfield, $field_data,
+               $ecount, $value_data, $tailstr);
+}
+
+#####################################
+##### insert data($nkey * 50001) ####
+#####################################
+for ($keynum = 0; $keynum < $nkey; $keynum++) {
+    $cmd = "mop get mkey$keynum 0 0"; $rst = "NOT_FOUND";
+    mem_cmd_is($sock, $cmd, "", $rst);
+    mop_insert("mkey$keynum", 0, 49999, "create 7 0 $maximum_map_size");
+}
+
+#####################################
+####### get data($nkey * 50000) #####
+#####################################
+while ($try--) {
+    $from = int(rand($maximum_map_size));
+    $to = $from + int(rand(1000));
+    $keynum = int(rand($nkey));
+    mop_get("mkey$keynum", 7, $from, $to);
+}
+
+#####################################
+########## get with delete ##########
+#####################################
+my $range = 1000;
+my $start;
+for ($start = $maximum_map_size - $range; $start >= 0; $start -= $range) {
+    for ($keynum = 0; $keynum < $nkey; $keynum++) {
+        $from = $start;
+        $to = $from + int(rand($range));
+        mop_get("mkey$keynum", 7, $from, $to, "delete");
+    }
+}
+
+# after test
+release_memcached($engine, $server);
