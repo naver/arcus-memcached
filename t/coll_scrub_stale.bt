@@ -86,4 +86,4 @@ is ($visited, $kcnt, "visited");
 is ($cleaned, $kcnt/2, "cleaned");
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

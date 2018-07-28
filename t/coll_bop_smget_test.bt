@@ -192,4 +192,4 @@ assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt, $dat_c
 assert_bop_smget($key_len, $key_cnt+1, $key_str, 0, $dat_cnt-1, $dat_cnt+100, $dat_cnt, 0, 20, 0);
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);

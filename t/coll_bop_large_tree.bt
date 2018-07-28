@@ -514,4 +514,4 @@ for (4..6) {
 delete $ENV{'ARCUS_MAX_BTREE_SIZE'};
 
 # after test
-release_memcached($engine);
+release_memcached($engine, $server);
