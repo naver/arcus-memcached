@@ -737,6 +737,7 @@ static void do_smmgr_01pct_check_and_move_right(void)
 static void do_smmgr_01pct_check_and_move_left(void)
 {
     uint64_t space_standard = sm_anchor.used_total_space/100; /* 1% of total_used_space */
+    uint64_t space_adjusted = 0;
     int smid, i;
 
     if (sm_anchor.used_slist[sm_anchor.used_01pct_clsid].space == 0) {
@@ -746,6 +747,14 @@ static void do_smmgr_01pct_check_and_move_left(void)
                 if (sm_anchor.used_slist[smid].space > 0) break;
             }
             assert(smid <= sm_anchor.used_maxid);
+
+            /* adjust free small & avail space */
+            for (i = sm_anchor.used_01pct_clsid; i < smid; i++) {
+                if (sm_anchor.free_slist[i].space > 0)
+                    space_adjusted += sm_anchor.free_slist[i].space;
+            }
+            sm_anchor.free_small_space += space_adjusted;
+            sm_anchor.free_avail_space -= space_adjusted;
             sm_anchor.used_01pct_clsid = smid;
         } else {
             assert(sm_anchor.used_01pct_clsid > sm_anchor.used_maxid &&
@@ -771,7 +780,7 @@ static void do_smmgr_01pct_check_and_move_left(void)
         sm_anchor.used_01pct_clsid = smid;
 
         /* adjust free small & avail space */
-        uint64_t space_adjusted = 0;
+        space_adjusted = 0;
         for (i = sm_anchor.used_01pct_clsid; i < old_used_01pct_clsid; i++) {
             if (sm_anchor.free_slist[i].space > 0)
                 space_adjusted += sm_anchor.free_slist[i].space;
