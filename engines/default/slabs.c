@@ -698,6 +698,7 @@ static void do_smmgr_01pct_last_clear(void)
 static void do_smmgr_01pct_check_and_move_right(struct default_engine *engine)
 {
     uint64_t space_standard = sm_anchor.used_total_space/100; /* 1% of total_used_space */
+    uint64_t space_adjusted;
     int smid, i;
 
     for (smid = sm_anchor.used_01pct_clsid; smid < sm_anchor.used_maxid; smid++) {
@@ -713,7 +714,7 @@ static void do_smmgr_01pct_check_and_move_right(struct default_engine *engine)
         sm_anchor.used_01pct_clsid = smid;
 
         /* adjust free small & avail space */
-        uint64_t space_adjusted = 0;
+        space_adjusted = 0;
         for (i = old_used_01pct_clsid; i < sm_anchor.used_01pct_clsid; i++) {
             if (sm_anchor.free_slist[i].space > 0)
                 space_adjusted += sm_anchor.free_slist[i].space;
@@ -739,7 +740,7 @@ static void do_smmgr_01pct_check_and_move_right(struct default_engine *engine)
 static void do_smmgr_01pct_check_and_move_left(struct default_engine *engine)
 {
     uint64_t space_standard = sm_anchor.used_total_space/100; /* 1% of total_used_space */
-    uint64_t space_adjusted = 0;
+    uint64_t space_adjusted;
     int smid, i;
 
     if (sm_anchor.used_slist[sm_anchor.used_01pct_clsid].space == 0) {
@@ -751,6 +752,7 @@ static void do_smmgr_01pct_check_and_move_left(struct default_engine *engine)
             assert(smid <= sm_anchor.used_maxid);
 
             /* adjust free small & avail space */
+            space_adjusted = 0;
             for (i = sm_anchor.used_01pct_clsid; i < smid; i++) {
                 if (sm_anchor.free_slist[i].space > 0)
                     space_adjusted += sm_anchor.free_slist[i].space;
@@ -789,35 +791,6 @@ static void do_smmgr_01pct_check_and_move_left(struct default_engine *engine)
         }
         sm_anchor.free_small_space -= space_adjusted;
         sm_anchor.free_avail_space += space_adjusted;
-    }
-}
-
-static void do_smmgr_adjust_01pct_slot(struct default_engine *engine, int slen, int targ, bool alloc)
-{
-    if (alloc) {
-        if (sm_anchor.used_total_space == slen) {
-            assert(sm_anchor.used_01pct_space == 0);
-            do_smmgr_01pct_first_set(slen, targ);
-        } else {
-            if (targ >= sm_anchor.used_01pct_clsid) {
-                sm_anchor.used_01pct_space += slen;
-                do_smmgr_01pct_check_and_move_right(engine);
-            } else {
-                do_smmgr_01pct_check_and_move_left(engine);
-            }
-        }
-    } else {
-        if (sm_anchor.used_total_space == 0) {
-            assert(sm_anchor.used_01pct_space == slen);
-            do_smmgr_01pct_last_clear();
-        } else {
-            if (targ >= sm_anchor.used_01pct_clsid) {
-                sm_anchor.used_01pct_space -= slen;
-                do_smmgr_01pct_check_and_move_left(engine);
-            } else {
-                do_smmgr_01pct_check_and_move_right(engine);
-            }
-        }
     }
 }
 
@@ -905,7 +878,18 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
         do_smmgr_used_slot_list_add(targ);
     }
 
-    do_smmgr_adjust_01pct_slot(engine, slen, targ, true);
+    /* adjust used 01pct class */
+    if (sm_anchor.used_total_space == slen) {
+        assert(sm_anchor.used_01pct_space == 0);
+        do_smmgr_01pct_first_set(slen, targ);
+    } else {
+        if (targ >= sm_anchor.used_01pct_clsid) {
+            sm_anchor.used_01pct_space += slen;
+            do_smmgr_01pct_check_and_move_right(engine);
+        } else {
+            do_smmgr_01pct_check_and_move_left(engine);
+        }
+    }
     return (void*)cur_slot;
 }
 
@@ -1001,7 +985,18 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
         do_smmgr_used_slot_list_del(targ);
     }
 
-    do_smmgr_adjust_01pct_slot(engine, slen, targ, false);
+    /* adjust used 01pct class */
+    if (sm_anchor.used_total_space == 0) {
+        assert(sm_anchor.used_01pct_space == slen);
+        do_smmgr_01pct_last_clear();
+    } else {
+        if (targ >= sm_anchor.used_01pct_clsid) {
+            sm_anchor.used_01pct_space -= slen;
+            do_smmgr_01pct_check_and_move_left(engine);
+        } else {
+            do_smmgr_01pct_check_and_move_right(engine);
+        }
+    }
     //do_smmgr_used_blck_check();
 }
 
