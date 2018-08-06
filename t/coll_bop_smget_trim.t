@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 120;
+use Test::More tests => 126;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -14,58 +14,14 @@ my $cmd;
 my $val;
 my $rst;
 
-=head
-bop insert bkey1 90 6 create 11 0 0
-datum9
-bop insert bkey1 70 6
-datum7
-bop insert bkey1 50 6
-datum5
-bop insert bkey1 30 6
-datum3
-bop insert bkey1 10 6
-datum1
-bop insert bkey2 100 7 create 11 0 0
-datum10
-bop insert bkey2 80 6
-datum8
-bop insert bkey2 60 6
-datum6
-bop insert bkey2 40 6
-datum4
-bop insert bkey2 20 6
-datum2
-bop get bkey1 0..100
-bop get bkey2 0..100
-bop smget 11 2 0..100 5
-bkey1 bkey2
-bop smget 23 4 0..100 2 6
-bkey2 bkey3 bkey1 bkey4
-bop smget 23 4 90..30 2 9
-bkey2 bkey3 bkey1 bkey4
-bop smget 23 4 200..300 2 6
-bkey2 bkey3 bkey1 bkey4
-set keyx 0 0 6
-datumx
-bop smget 28 5 0..100 2 6
-bkey2 bkey3 bkey1 bkey4 keyx
-bop smget 29 5 0..100 2 6
-bkey2 bkey3 bkey1 bkey4 bkey1
-bop smget 29 5 0..100 2 6
-bkey2 bkey3 bkey1 bkey4 bkey3
-bop smget 23 2 0..100 2 6
-bkey2 bkey3 bkey1 bkey4
-
-delete bkey1
-delete bkey2
-=cut
-
 
 # testBOPSMGetSimple
 $cmd = "get bkey1"; $rst = "END";
 mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "get bkey2"; $rst = "END";
 mem_cmd_is($sock, $cmd, "", $rst);
+
+# create "bkey1" btree collection
 $cmd = "bop create bkey1 11 0 0"; $rst = "CREATED";
 mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "setattr bkey1 maxcount=5"; $rst = "OK";
@@ -84,6 +40,12 @@ $cmd = "bop insert bkey1 70 6"; $val = "datum7"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 90 6"; $val = "datum9"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "getattr bkey1 maxcount overflowaction trimmed";
+$rst = "ATTR maxcount=5
+ATTR overflowaction=smallest_trim
+ATTR trimmed=1
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop get bkey1 0..100";
 $rst = "VALUE 11 5
 30 6 datum3
@@ -111,6 +73,17 @@ $rst = "VALUE 11 5
 90 6 datum9
 END";
 mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey1 100..30";
+$rst = "VALUE 11 5
+90 6 datum9
+70 6 datum7
+50 6 datum5
+40 6 datum4
+30 6 datum3
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
+
+# create "bkey2" btree collection
 $cmd = "bop create bkey2 12 0 0"; $rst = "CREATED";
 mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "setattr bkey2 maxcount=5"; $rst = "OK";
@@ -125,6 +98,12 @@ $cmd = "bop insert bkey2 80 6"; $val = "datum8"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey2 100 7"; $val = "datum10"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "getattr bkey2 maxcount overflowaction trimmed";
+$rst = "ATTR maxcount=5
+ATTR overflowaction=smallest_trim
+ATTR trimmed=0
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop get bkey2 0..100";
 $rst = "VALUE 12 5
 20 6 datum2
@@ -134,6 +113,18 @@ $rst = "VALUE 12 5
 100 7 datum10
 END";
 mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey2 100..0";
+$rst = "VALUE 12 5
+100 7 datum10
+80 6 datum8
+60 6 datum6
+40 6 datum4
+20 6 datum2
+END";
+mem_cmd_is($sock, $cmd, "", $rst);
+
+
+# do smget test
 $cmd = "bop smget 11 2 0..100 5 duplicate"; $val = "bkey1 bkey2";
 $rst = "ELEMENTS 5
 bkey2 12 20 6 datum2
@@ -163,6 +154,23 @@ TRIMMED_KEYS 1
 bkey1 30
 DUPLICATED";
 mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop smget 11 2 100..30 10 duplicate"; $val = "bkey1 bkey2";
+$rst = "ELEMENTS 9
+bkey2 12 100 7 datum10
+bkey1 11 90 6 datum9
+bkey2 12 80 6 datum8
+bkey1 11 70 6 datum7
+bkey2 12 60 6 datum6
+bkey1 11 50 6 datum5
+bkey2 12 40 6 datum4
+bkey1 11 40 6 datum4
+bkey1 11 30 6 datum3
+MISSED_KEYS 0
+TRIMMED_KEYS 0
+DUPLICATED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+
+
 $cmd = "bop smget 23 4 0..100 2 6 duplicate"; $val = "bkey2 bkey3 bkey1 bkey4";
 $rst = "ELEMENTS 3
 bkey2 12 60 6 datum6
@@ -251,6 +259,21 @@ bkey1 11 30 6 datum3
 MISSED_KEYS 0
 DUPLICATED_TRIMMED";
 mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop smget 11 2 100..30 10"; $val = "bkey1,bkey2";
+$rst = "VALUE 9
+bkey2 12 100 7 datum10
+bkey1 11 90 6 datum9
+bkey2 12 80 6 datum8
+bkey1 11 70 6 datum7
+bkey2 12 60 6 datum6
+bkey1 11 50 6 datum5
+bkey2 12 40 6 datum4
+bkey1 11 40 6 datum4
+bkey1 11 30 6 datum3
+MISSED_KEYS 0
+DUPLICATED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+
 $cmd = "bop smget 23 4 0..100 2 6"; $val = "bkey2,bkey3,bkey1,bkey4"; $rst = "OUT_OF_RANGE";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop smget 23 4 90..30 2 9"; $val = "bkey2,bkey3,bkey1,bkey4";

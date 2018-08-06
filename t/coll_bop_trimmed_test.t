@@ -85,8 +85,8 @@ datum10
 bop insert bkey2 120 7
 datum12
 getattr bkey2
-bop smget 11 2 120..40 10
-bkey1 bkey2
+bop get bkey2 120..0 10
+bop get bkey2 120..40 10
 delete bkey1
 delete bkey2
 =cut
@@ -334,37 +334,24 @@ $cmd = "bop insert bkey2 100 7"; $val = "datum10"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey2 120 7"; $val = "datum12"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-$cmd = "bop smget 11 2 120..40 10 duplicate"; $val = "bkey1 bkey2";
-$rst = "ELEMENTS 9
-bkey2 12 120 7 datum12
-bkey1 12 110 7 datum11
-bkey2 12 100 7 datum10
-bkey1 12 90 7 datum09
-bkey2 12 80 7 datum08
-bkey1 12 70 7 datum07
-bkey2 12 60 7 datum06
-bkey1 12 50 7 datum05
-bkey2 12 40 7 datum04
-MISSED_KEYS 0
-TRIMMED_KEYS 0
+$cmd = "bop get bkey2 120..0 10";
+$rst = "VALUE 12 5
+120 7 datum12
+100 7 datum10
+80 7 datum08
+60 7 datum06
+40 7 datum04
+TRIMMED";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey2 120..40 10";
+$rst = "VALUE 12 5
+120 7 datum12
+100 7 datum10
+80 7 datum08
+60 7 datum06
+40 7 datum04
 END";
-mem_cmd_is($sock, $cmd, $val, $rst);
-
-# OLD smget test : Use comma separated keys
-$cmd = "bop smget 11 2 120..40 10"; $val = "bkey1,bkey2";
-$rst = "VALUE 9
-bkey2 12 120 7 datum12
-bkey1 12 110 7 datum11
-bkey2 12 100 7 datum10
-bkey1 12 90 7 datum09
-bkey2 12 80 7 datum08
-bkey1 12 70 7 datum07
-bkey2 12 60 7 datum06
-bkey1 12 50 7 datum05
-bkey2 12 40 7 datum04
-MISSED_KEYS 0
-END";
-mem_cmd_is($sock, $cmd, $val, $rst);
+mem_cmd_is($sock, $cmd, "", $rst);
 
 $cmd = "delete bkey1"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, "", $rst);
