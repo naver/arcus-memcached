@@ -695,7 +695,7 @@ static void do_smmgr_01pct_last_clear(void)
     sm_anchor.free_small_space = 0;
 }
 
-static void do_smmgr_01pct_check_and_move_right(void)
+static void do_smmgr_01pct_check_and_move_right(struct default_engine *engine)
 {
     uint64_t space_standard = sm_anchor.used_total_space/100; /* 1% of total_used_space */
     int smid, i;
@@ -721,20 +721,22 @@ static void do_smmgr_01pct_check_and_move_right(void)
         sm_anchor.free_small_space += space_adjusted;
         sm_anchor.free_avail_space -= space_adjusted;
 
-        if (sm_anchor.free_limit_space > 0 && space_adjusted >= (sm_anchor.free_limit_space/10)) {
-            logger->log(EXTENSION_LOG_INFO, NULL,
-                        "Large free_avail_space reduction(%llu): small=%llu, avail=%llu, chunk=%llu "
-                        "That was caused by the change of the last 1%% clsid of used space(%d => %d).\n",
-                        (unsigned long long)space_adjusted,
-                        (unsigned long long)sm_anchor.free_small_space,
-                        (unsigned long long)sm_anchor.free_avail_space,
-                        (unsigned long long)sm_anchor.free_chunk_space,
-                        old_used_01pct_clsid, sm_anchor.used_01pct_clsid);
+        if (engine->config.verbose > 1) {
+            if (sm_anchor.free_limit_space > 0 && space_adjusted >= (sm_anchor.free_limit_space/10)) {
+                logger->log(EXTENSION_LOG_INFO, NULL,
+                            "Large free_avail_space reduction(%llu): small=%llu, avail=%llu, chunk=%llu "
+                            "That was caused by the change of the last 1%% clsid of used space(%d => %d).\n",
+                            (unsigned long long)space_adjusted,
+                            (unsigned long long)sm_anchor.free_small_space,
+                            (unsigned long long)sm_anchor.free_avail_space,
+                            (unsigned long long)sm_anchor.free_chunk_space,
+                            old_used_01pct_clsid, sm_anchor.used_01pct_clsid);
+            }
         }
     }
 }
 
-static void do_smmgr_01pct_check_and_move_left(void)
+static void do_smmgr_01pct_check_and_move_left(struct default_engine *engine)
 {
     uint64_t space_standard = sm_anchor.used_total_space/100; /* 1% of total_used_space */
     uint64_t space_adjusted = 0;
@@ -790,7 +792,7 @@ static void do_smmgr_01pct_check_and_move_left(void)
     }
 }
 
-static void do_smmgr_adjust_01pct_slot(int slen, int targ, bool alloc)
+static void do_smmgr_adjust_01pct_slot(struct default_engine *engine, int slen, int targ, bool alloc)
 {
     if (alloc) {
         if (sm_anchor.used_total_space == slen) {
@@ -799,9 +801,9 @@ static void do_smmgr_adjust_01pct_slot(int slen, int targ, bool alloc)
         } else {
             if (targ >= sm_anchor.used_01pct_clsid) {
                 sm_anchor.used_01pct_space += slen;
-                do_smmgr_01pct_check_and_move_right();
+                do_smmgr_01pct_check_and_move_right(engine);
             } else {
-                do_smmgr_01pct_check_and_move_left();
+                do_smmgr_01pct_check_and_move_left(engine);
             }
         }
     } else {
@@ -811,9 +813,9 @@ static void do_smmgr_adjust_01pct_slot(int slen, int targ, bool alloc)
         } else {
             if (targ >= sm_anchor.used_01pct_clsid) {
                 sm_anchor.used_01pct_space -= slen;
-                do_smmgr_01pct_check_and_move_left();
+                do_smmgr_01pct_check_and_move_left(engine);
             } else {
-                do_smmgr_01pct_check_and_move_right();
+                do_smmgr_01pct_check_and_move_right(engine);
             }
         }
     }
@@ -903,7 +905,7 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
         do_smmgr_used_slot_list_add(targ);
     }
 
-    do_smmgr_adjust_01pct_slot(slen, targ, true);
+    do_smmgr_adjust_01pct_slot(engine, slen, targ, true);
     return (void*)cur_slot;
 }
 
@@ -999,7 +1001,7 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
         do_smmgr_used_slot_list_del(targ);
     }
 
-    do_smmgr_adjust_01pct_slot(slen, targ, false);
+    do_smmgr_adjust_01pct_slot(engine, slen, targ, false);
     //do_smmgr_used_blck_check();
 }
 
