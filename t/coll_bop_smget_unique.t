@@ -1,10 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 58;
-=head
-use Test::More tests => 54;
-=cut
+use Test::More tests => 98;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -16,53 +13,6 @@ my $sock = $server->sock;
 my $cmd;
 my $val;
 my $rst;
-
-=head
-bop insert bkey1 90 6 create 11 0 0
-datum9
-bop insert bkey1 70 6
-datum7
-bop insert bkey1 50 6
-datum5
-bop insert bkey1 30 6
-datum3
-bop insert bkey1 10 6
-datum1
-bop insert bkey2 100 7 create 11 0 0
-datum10
-bop insert bkey2 80 6
-datum8
-bop insert bkey2 60 6
-datum6
-bop insert bkey2 40 6
-datum4
-bop insert bkey2 20 6
-datum2
-bop get bkey1 0..100
-bop get bkey2 0..100
-bop smget 11 2 0..100 5
-bkey1 bkey2
-bop smget 23 4 0..100 2 6
-bkey2 bkey3 bkey1 bkey4
-bop smget 23 4 90..30 2 9
-bkey2 bkey3 bkey1 bkey4
-bop smget 23 4 200..300 2 6
-bkey2 bkey3 bkey1 bkey4
-set keyx 0 0 6
-datumx
-bop smget 28 5 0..100 2 6
-bkey2 bkey3 bkey1 bkey4 keyx
-bop smget 29 5 0..100 2 6
-bkey2 bkey3 bkey1 bkey4 bkey1
-bop smget 29 5 0..100 2 6
-bkey2 bkey3 bkey1 bkey4 bkey3
-bop smget 23 2 0..100 2 6
-bkey2 bkey3 bkey1 bkey4
-
-delete bkey1
-delete bkey2
-=cut
-
 
 # testBOPSMGetSimple
 $cmd = "get bkey1"; $rst = "END";
@@ -461,6 +411,114 @@ $cmd = "delete bkey1"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "delete bkey2"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, "", $rst);
+
+# NEW smget unique test 1
+mem_cmd_is($sock, "bop create bkey1 12 0 0", "", "CREATED");
+mem_cmd_is($sock, "bop create bkey2 12 0 0", "", "CREATED");
+mem_cmd_is($sock, "bop create bkey3 12 0 0", "", "CREATED");
+mem_cmd_is($sock, "bop create bkey4 12 0 0", "", "CREATED");
+# - bkey1: 10, 6, 2
+$cmd = "bop insert bkey1 10 7"; $val = "datum10"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop insert bkey1 6 6"; $val = "datum6"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop insert bkey1 2 6"; $val = "datum2"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+# - bkey2: 10, 4
+$cmd = "bop insert bkey2 10 7"; $val = "datum10"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop insert bkey2 4 6"; $val = "datum4"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+# - bkey3: 9, 5, 1
+$cmd = "bop insert bkey3 9 6"; $val = "datum9"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop insert bkey3 5 6"; $val = "datum5"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop insert bkey3 1 6"; $val = "datum1"; $rst = "STORED";
+# - bkey4: 7, 3
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop insert bkey4 7 6"; $val = "datum7"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop insert bkey4 3 6"; $val = "datum3"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+
+$cmd = "bop smget 23 4 10..0 3 duplicate"; $val = "bkey1 bkey2 bkey3 bkey4";
+$rst = "ELEMENTS 3
+bkey2 12 10 7 datum10
+bkey1 12 10 7 datum10
+bkey3 12 9 6 datum9
+MISSED_KEYS 0
+TRIMMED_KEYS 0
+DUPLICATED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop smget 23 4 10..0 3 unique"; $val = "bkey1 bkey2 bkey3 bkey4";
+$rst = "ELEMENTS 3
+bkey2 12 10 7 datum10
+bkey3 12 9 6 datum9
+bkey4 12 7 6 datum7
+MISSED_KEYS 0
+TRIMMED_KEYS 0
+END";
+mem_cmd_is($sock, $cmd, $val, $rst);
+
+mem_cmd_is($sock, "delete bkey1", "", "DELETED");
+mem_cmd_is($sock, "delete bkey2", "", "DELETED");
+mem_cmd_is($sock, "delete bkey3", "", "DELETED");
+mem_cmd_is($sock, "delete bkey4", "", "DELETED");
+
+# NEW smget unique test 2
+mem_cmd_is($sock, "bop create bkey1 12 0 0", "", "CREATED");
+mem_cmd_is($sock, "bop create bkey2 12 0 0", "", "CREATED");
+mem_cmd_is($sock, "bop create bkey3 12 0 0", "", "CREATED");
+mem_cmd_is($sock, "bop create bkey4 12 0 0", "", "CREATED");
+# - bkey1: 10, 4
+$cmd = "bop insert bkey1 10 7"; $val = "datum10"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop insert bkey1 4 6"; $val = "datum4"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+# - bkey2: 10, 6, 2
+$cmd = "bop insert bkey2 10 7"; $val = "datum10"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop insert bkey2 6 6"; $val = "datum6"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop insert bkey2 2 6"; $val = "datum2"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+# - bkey3: 9, 5, 1
+$cmd = "bop insert bkey3 9 6"; $val = "datum9"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop insert bkey3 5 6"; $val = "datum5"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop insert bkey3 1 6"; $val = "datum1"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+# - bkey4: 7, 3
+$cmd = "bop insert bkey4 7 6"; $val = "datum7"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop insert bkey4 3 6"; $val = "datum3"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+
+$cmd = "bop smget 23 4 10..0 3 duplicate"; $val = "bkey1 bkey2 bkey3 bkey4";
+$rst = "ELEMENTS 3
+bkey2 12 10 7 datum10
+bkey1 12 10 7 datum10
+bkey3 12 9 6 datum9
+MISSED_KEYS 0
+TRIMMED_KEYS 0
+DUPLICATED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "bop smget 23 4 10..0 3 unique"; $val = "bkey1 bkey2 bkey3 bkey4";
+$rst = "ELEMENTS 3
+bkey2 12 10 7 datum10
+bkey3 12 9 6 datum9
+bkey4 12 7 6 datum7
+MISSED_KEYS 0
+TRIMMED_KEYS 0
+END";
+mem_cmd_is($sock, $cmd, $val, $rst);
+
+mem_cmd_is($sock, "delete bkey1", "", "DELETED");
+mem_cmd_is($sock, "delete bkey2", "", "DELETED");
+mem_cmd_is($sock, "delete bkey3", "", "DELETED");
+mem_cmd_is($sock, "delete bkey4", "", "DELETED");
 
 # after test
 release_memcached($engine, $server);

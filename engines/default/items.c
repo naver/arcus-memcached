@@ -5226,7 +5226,8 @@ static ENGINE_ERROR_CODE
 do_btree_smget_scan_sort(struct default_engine *engine,
                          token_t *key_array, const int key_count,
                          const int bkrtype, const bkey_range *bkrange,
-                         const eflag_filter *efilter, const uint32_t req_count,
+                         const eflag_filter *efilter,
+                         const uint32_t req_count, const bool unique,
                          btree_scan_info *btree_scan_buf,
                          uint16_t *sort_sindx_buf, uint32_t *sort_sindx_cnt,
                          smget_result_t *smres)
@@ -5236,20 +5237,21 @@ do_btree_smget_scan_sort(struct default_engine *engine,
     btree_meta_info *info;
     btree_elem_item *elem, *comp;
     btree_elem_posi posi;
-    uint16_t comp_idx;
-    uint16_t curr_idx = 0;
-    uint16_t free_idx = req_count;
+    int comp_idx;
+    int curr_idx = -1; /* curr scan index */
+    int free_idx = 0;  /* free scan list */
     int sort_count = 0; /* sorted scan count */
-    int k, i, cmp_res;
+    int k, i, kidx, cmp_res;
     int mid, left, right;
     bool ascending = (bkrtype != BKEY_RANGE_TYPE_DSC ? true : false);
     bool is_first;
 
     for (k = 0; k < key_count; k++) {
+        kidx = k;
         ret = do_btree_item_find(engine, key_array[k].value, key_array[k].length, DO_UPDATE, &it);
         if (ret != ENGINE_SUCCESS) {
             if (ret == ENGINE_KEY_ENOENT) { /* key missed */
-                do_btree_smget_add_miss(smres, k, ENGINE_KEY_ENOENT);
+                do_btree_smget_add_miss(smres, kidx, ENGINE_KEY_ENOENT);
                 ret = ENGINE_SUCCESS; continue;
             }
             break; /* ret == ENGINE_EBADTYPE */
@@ -5257,7 +5259,7 @@ do_btree_smget_scan_sort(struct default_engine *engine,
 
         info = (btree_meta_info *)item_get_meta(it);
         if ((info->mflags & COLL_META_FLAG_READABLE) == 0) { /* unreadable collection */
-            do_btree_smget_add_miss(smres, k, ENGINE_UNREADABLE);
+            do_btree_smget_add_miss(smres, kidx, ENGINE_UNREADABLE);
             do_item_release(engine, it); continue;
         }
         if (info->ccnt == 0) { /* empty collection */
@@ -5275,7 +5277,7 @@ do_btree_smget_scan_sort(struct default_engine *engine,
             if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
                 do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
                 /* Some elements weren't cached because of overflow trim */
-                do_btree_smget_add_miss(smres, k, ENGINE_EBKEYOOR);
+                do_btree_smget_add_miss(smres, kidx, ENGINE_EBKEYOOR);
             }
             do_item_release(engine, it); continue;
         }
@@ -5283,7 +5285,7 @@ do_btree_smget_scan_sort(struct default_engine *engine,
         if (posi.bkeq == false && (info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
             do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
             /* Some elements weren't cached because of overflow trim */
-            do_btree_smget_add_miss(smres, k, ENGINE_EBKEYOOR);
+            do_btree_smget_add_miss(smres, kidx, ENGINE_EBKEYOOR);
             do_item_release(engine, it); continue;
         }
 
@@ -5300,7 +5302,7 @@ scan_next:
                 if (posi.node == NULL && (info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
                     do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
                     /* Some elements weren't cached because of overflow trim */
-                    do_btree_smget_add_trim(smres, k, prev);
+                    do_btree_smget_add_trim(smres, kidx, prev);
                 }
                 do_item_release(engine, it); continue;
             }
@@ -5312,14 +5314,20 @@ scan_next:
         }
 
         /* found the item */
+        if (curr_idx == -1) {
+            /* allocate free scan */
+            assert(free_idx != -1);
+            curr_idx = free_idx;
+            free_idx = btree_scan_buf[free_idx].next;
+        }
         btree_scan_buf[curr_idx].it   = it;
         btree_scan_buf[curr_idx].posi = posi;
-        btree_scan_buf[curr_idx].kidx = k;
+        btree_scan_buf[curr_idx].kidx = kidx;
 
         /* add the current scan into the scan sort buffer */
         if (sort_count == 0) {
             sort_sindx_buf[sort_count++] = curr_idx;
-            curr_idx += 1;
+            curr_idx = -1;
             continue;
         }
 
@@ -5361,6 +5369,7 @@ scan_next:
                 if (cmp_res == 0) {
                     ret = ENGINE_EBADVALUE; break;
                 }
+                if (unique) break;
             }
             if (ascending) {
                 if (cmp_res < 0) right = mid-1;
@@ -5375,26 +5384,37 @@ scan_next:
             btree_scan_buf[curr_idx].it = NULL;
             break;
         }
+        if (left <= right) {
+            assert(unique == true);
+            if ((ascending ==  true && cmp_res < 0) ||
+                (ascending == false && cmp_res > 0)) {
+                assert(sort_sindx_buf[mid] == comp_idx);
+                sort_sindx_buf[mid] = curr_idx;
+                it = btree_scan_buf[comp_idx].it;
+                posi = btree_scan_buf[comp_idx].posi;
+                kidx = btree_scan_buf[comp_idx].kidx;
+                info = (btree_meta_info *)item_get_meta(it);
+                btree_scan_buf[comp_idx].it = NULL;
+                curr_idx = comp_idx;
+            }
+            goto scan_next;
+        }
 
         if (sort_count >= req_count) {
             /* free the last scan */
             comp_idx = sort_sindx_buf[sort_count-1];
             do_item_release(engine, btree_scan_buf[comp_idx].it);
             btree_scan_buf[comp_idx].it = NULL;
-            free_idx = comp_idx;
             sort_count--;
+            btree_scan_buf[comp_idx].next = free_idx;
+            free_idx = comp_idx;
         }
         for (i = sort_count-1; i >= left; i--) {
             sort_sindx_buf[i+1] = sort_sindx_buf[i];
         }
         sort_sindx_buf[left] = curr_idx;
         sort_count++;
-
-        if (sort_count < req_count) {
-            curr_idx += 1;
-        } else {
-            curr_idx = free_idx;
-        }
+        curr_idx = -1;
     }
 
     if (ret == ENGINE_SUCCESS) {
@@ -7276,6 +7296,7 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
     /* prepare */
     for (i = 0; i <= (offset+count); i++) {
         btree_scan_buf[i].it = NULL;
+        btree_scan_buf[i].next = (i < (offset+count)) ? (i+1) : -1;
     }
 
     /* initialize smget result structure */
@@ -7296,7 +7317,7 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
     do {
         /* the 1st phase: get the sorted scans */
         ret = do_btree_smget_scan_sort(engine, key_array, key_count,
-                                       bkrtype, bkrange, efilter, (offset+count),
+                                       bkrtype, bkrange, efilter, (offset+count), unique,
                                        btree_scan_buf, sort_sindx_buf, &sort_sindx_cnt,
                                        result);
         if (ret != ENGINE_SUCCESS) {

@@ -234,6 +234,7 @@ typedef struct _btree_scan_info {
     hash_item       *it;
     btree_elem_posi  posi;
     uint32_t         kidx; /* An index in the given key array as a parameter */
+    int32_t          next; /* for free scan link */
 } btree_scan_info;
 
 /* common meta info of list and set */
