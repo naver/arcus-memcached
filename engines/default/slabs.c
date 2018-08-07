@@ -697,10 +697,14 @@ static void do_smmgr_01pct_last_clear(void)
 
 static void do_smmgr_01pct_check_and_move_right(struct default_engine *engine)
 {
-    uint64_t space_standard = sm_anchor.used_total_space/100; /* 1% of total_used_space */
+    uint64_t space_standard;
     uint64_t space_adjusted;
     int smid, i;
 
+    /* get 1% of total_used_space, that is positive value. */
+    space_standard = sm_anchor.used_total_space/100 + 1;
+
+    /* find the new used_01pct_clsid */
     for (smid = sm_anchor.used_01pct_clsid; smid < sm_anchor.used_maxid; smid++) {
         if (sm_anchor.used_slist[smid].space > 0) {
             if ((sm_anchor.used_01pct_space - sm_anchor.used_slist[smid].space) < space_standard) {
@@ -710,12 +714,9 @@ static void do_smmgr_01pct_check_and_move_right(struct default_engine *engine)
         }
     }
     if (smid != sm_anchor.used_01pct_clsid) {
-        int old_used_01pct_clsid = sm_anchor.used_01pct_clsid;
-        sm_anchor.used_01pct_clsid = smid;
-
         /* adjust free small & avail space */
         space_adjusted = 0;
-        for (i = old_used_01pct_clsid; i < sm_anchor.used_01pct_clsid; i++) {
+        for (i = sm_anchor.used_01pct_clsid; i < smid; i++) {
             if (sm_anchor.free_slist[i].space > 0)
                 space_adjusted += sm_anchor.free_slist[i].space;
         }
@@ -731,21 +732,67 @@ static void do_smmgr_01pct_check_and_move_right(struct default_engine *engine)
                             (unsigned long long)sm_anchor.free_small_space,
                             (unsigned long long)sm_anchor.free_avail_space,
                             (unsigned long long)sm_anchor.free_chunk_space,
-                            old_used_01pct_clsid, sm_anchor.used_01pct_clsid);
+                            sm_anchor.used_01pct_clsid, smid);
             }
         }
+
+        /* set the new used_01pct_clsid */
+        sm_anchor.used_01pct_clsid = smid;
     }
 }
 
 static void do_smmgr_01pct_check_and_move_left(struct default_engine *engine)
 {
-    uint64_t space_standard = sm_anchor.used_total_space/100; /* 1% of total_used_space */
+    uint64_t space_standard;
     uint64_t space_adjusted;
     int smid, i;
 
-    if (sm_anchor.used_slist[sm_anchor.used_01pct_clsid].space == 0) {
-        if (sm_anchor.used_01pct_clsid < sm_anchor.used_maxid) {
-            smid = sm_anchor.used_01pct_clsid+1;
+    /* get 1% of total_used_space, that is positive value. */
+    space_standard = sm_anchor.used_total_space/100 + 1;
+
+    if (sm_anchor.used_01pct_space < space_standard) {
+        /* find the new used_01pct_clsid */
+        smid = sm_anchor.used_01pct_clsid - 1;
+        if (smid > sm_anchor.used_maxid) {
+            smid = sm_anchor.used_maxid;
+        }
+        for ( ; smid >= sm_anchor.used_minid; smid--) {
+            if (sm_anchor.used_slist[smid].space > 0) {
+                sm_anchor.used_01pct_space += sm_anchor.used_slist[smid].space;
+                if (sm_anchor.used_01pct_space >= space_standard) {
+                    break;
+                }
+            }
+        }
+        assert(smid >= sm_anchor.used_minid);
+
+        /* adjust free small & avail space */
+        space_adjusted = 0;
+        for (i = smid; i < sm_anchor.used_01pct_clsid; i++) {
+            if (sm_anchor.free_slist[i].space > 0)
+                space_adjusted += sm_anchor.free_slist[i].space;
+        }
+        sm_anchor.free_small_space -= space_adjusted;
+        sm_anchor.free_avail_space += space_adjusted;
+
+        /* set the new used_01pct_clsid */
+        sm_anchor.used_01pct_clsid = smid;
+    } else {
+         if (sm_anchor.used_slist[sm_anchor.used_01pct_clsid].space == 0) {
+            /* An uncommon case, caused by using nonprecise 01pct space.
+             * In the following state, freeing the 01pct slot is the example.
+             * - used total space: 100000, (where, 1% is 1000.)
+             * - used classes
+             *   - maxid: count=1, space=999
+             *   - 01pct: count=1, space=800
+             * After freeing the 01pct slot,
+             * the used total space becomes 99200, (where, 1% is 992.)
+             * the used 01pct space becomes 999.
+             * That is, the used 01pct space(999) > the 1% space(992).
+             * In this case, we move right the used 01pct clsid.
+             */
+            /* find the new used_01pct_clsid */
+            smid = sm_anchor.used_01pct_clsid + 1;
             for ( ; smid <= sm_anchor.used_maxid; smid++) {
                 if (sm_anchor.used_slist[smid].space > 0) break;
             }
@@ -759,38 +806,10 @@ static void do_smmgr_01pct_check_and_move_left(struct default_engine *engine)
             }
             sm_anchor.free_small_space += space_adjusted;
             sm_anchor.free_avail_space -= space_adjusted;
+
+            /* set the new used_01pct_clsid */
             sm_anchor.used_01pct_clsid = smid;
-        } else {
-            assert(sm_anchor.used_01pct_clsid > sm_anchor.used_maxid &&
-                   sm_anchor.used_01pct_space == 0);
-            /* go downward */
         }
-    }
-
-    if (sm_anchor.used_01pct_space < space_standard ||
-        sm_anchor.used_01pct_space == 0) {
-        int old_used_01pct_clsid = sm_anchor.used_01pct_clsid;
-        smid = sm_anchor.used_maxid < old_used_01pct_clsid
-             ? sm_anchor.used_maxid : (old_used_01pct_clsid-1);
-        for (; smid >= sm_anchor.used_minid; smid--) {
-            if (sm_anchor.used_slist[smid].space > 0) {
-                sm_anchor.used_01pct_space += sm_anchor.used_slist[smid].space;
-                if (sm_anchor.used_01pct_space >= space_standard) {
-                    break;
-                }
-            }
-        }
-        assert(smid >= sm_anchor.used_minid);
-        sm_anchor.used_01pct_clsid = smid;
-
-        /* adjust free small & avail space */
-        space_adjusted = 0;
-        for (i = sm_anchor.used_01pct_clsid; i < old_used_01pct_clsid; i++) {
-            if (sm_anchor.free_slist[i].space > 0)
-                space_adjusted += sm_anchor.free_slist[i].space;
-        }
-        sm_anchor.free_small_space -= space_adjusted;
-        sm_anchor.free_avail_space += space_adjusted;
     }
 }
 
