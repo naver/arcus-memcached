@@ -538,10 +538,20 @@ static void do_smmgr_free_slot_link(sm_slot_t *slot, int offset, int length)
         do_smmgr_free_slot_list_add(smid);
     }
 
-    if (smid < sm_anchor.used_01pct_clsid) {
-        sm_anchor.free_small_space += slen;
+    if (sm_anchor.used_01pct_clsid != -1) {
+        if (smid < sm_anchor.used_01pct_clsid) {
+            sm_anchor.free_small_space += slen;
+        } else {
+            sm_anchor.free_avail_space += slen;
+        }
     } else {
-        sm_anchor.free_avail_space += slen;
+        if (smid == (SM_NUM_CLASSES-1)) { /* big free slot */
+            sm_anchor.free_avail_space += slen;
+        } else {
+            /* The free small or avail space will be set
+             * in do_smmgr_01pct_first_set().
+             */
+        }
     }
 }
 
@@ -557,6 +567,7 @@ static void do_smmgr_free_slot_unlink(sm_slot_t *slot)
     }
 
     smid = do_smmgr_memid(slen, false);
+    assert(sm_anchor.used_01pct_clsid != -1);
     if (smid < sm_anchor.used_01pct_clsid) {
         sm_anchor.free_small_space -= slen;
     } else {
@@ -670,29 +681,32 @@ static void do_smmgr_blck_free(struct default_engine *engine, sm_blck_t *blck)
 static void do_smmgr_01pct_first_set(int slen, int targ)
 {
     /* the first SM slot allocation */
-    assert(sm_anchor.used_01pct_space == 0);
+    assert(sm_anchor.used_01pct_clsid == -1);
+
+    if (sm_anchor.free_maxid != -1) {
+        assert(sm_anchor.free_maxid == sm_anchor.free_minid);
+        assert(sm_anchor.free_small_space == 0);
+        assert(sm_anchor.free_avail_space == 0);
+
+        int smid = sm_anchor.free_maxid;
+        if (smid < targ) {
+            sm_anchor.free_small_space = sm_anchor.free_slist[smid].space;
+        } else {
+            sm_anchor.free_avail_space = sm_anchor.free_slist[smid].space;
+        }
+    }
     sm_anchor.used_01pct_clsid = targ;
     sm_anchor.used_01pct_space = slen;
-
-    /* adjust free small & avail space */
-    uint64_t space_adjusted = 0;
-    for (int smid = 0; smid < targ; smid++) {
-        if (sm_anchor.free_slist[smid].space > 0)
-            space_adjusted += sm_anchor.free_slist[smid].space;
-    }
-    sm_anchor.free_small_space += space_adjusted;
-    sm_anchor.free_avail_space -= space_adjusted;
 }
 
 static void do_smmgr_01pct_last_clear(void)
 {
     /* the last SM slot release */
+    assert(sm_anchor.free_small_space == 0);
+    assert(sm_anchor.free_avail_space == 0);
+
     sm_anchor.used_01pct_clsid = -1;
     sm_anchor.used_01pct_space = 0;
-
-    /* adjust free small & avail space */
-    sm_anchor.free_avail_space += sm_anchor.free_small_space;
-    sm_anchor.free_small_space = 0;
 }
 
 static void do_smmgr_01pct_check_and_move_right(struct default_engine *engine)
@@ -1357,7 +1371,7 @@ static void do_slabs_stats(struct default_engine *engine, ADD_STAT add_stats, co
     add_statistics(cookie, add_stats, "SM", -1, "used_01pct_classid", "%d", sm_anchor.used_01pct_clsid);
     add_statistics(cookie, add_stats, "SM", -1, "free_min_classid", "%d", sm_anchor.free_minid);
     add_statistics(cookie, add_stats, "SM", -1, "free_max_classid", "%d", sm_anchor.free_maxid);
-    add_statistics(cookie, add_stats, "SM", -1, "free_big_slot_count", "%"PRIu64, sm_anchor.free_slist[SM_NUM_CLASSES-1].count);
+    add_statistics(cookie, add_stats, "SM", -1, "free_big_slot_space", "%"PRIu64, sm_anchor.free_slist[SM_NUM_CLASSES-1].space);
     add_statistics(cookie, add_stats, "SM", -1, "used_total_space", "%"PRIu64, sm_anchor.used_total_space);
     add_statistics(cookie, add_stats, "SM", -1, "used_01pct_space", "%"PRIu64, sm_anchor.used_01pct_space);
     add_statistics(cookie, add_stats, "SM", -1, "free_small_space", "%"PRIu64, sm_anchor.free_small_space);
