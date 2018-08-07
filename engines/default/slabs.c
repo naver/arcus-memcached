@@ -818,6 +818,7 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
     /* find the free slot list from which we allocate a slot. */
     do {
         if (targ > sm_anchor.free_maxid) {
+            /* the clsid of big free slot */
             smid = SM_NUM_CLASSES-1; break;
         }
         if (sm_anchor.free_slist[targ].head != NULL) {
@@ -828,14 +829,19 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
         if (sm_anchor.space_shortage_level > 0) {
             /* use free small memory if possible. */
             int twice = smid;
-            smid = twice < sm_anchor.used_maxid
-                 ? twice : sm_anchor.used_maxid;
-            for (smid = smid-1; smid > targ; smid--) {
+            /* Since targ <= sm_anchor.free_maxid,
+             * sm_anchor.used_01pct_clsid != -1.
+             */
+            if (smid >= sm_anchor.used_01pct_clsid) {
+                smid = sm_anchor.used_01pct_clsid-1;
+            }
+            for ( ; smid > targ; smid--) {
                 if (sm_anchor.free_slist[smid].head != NULL) break;
             }
             if (smid > targ) break;
             smid = twice;
         }
+        /* This is a heuristic method */
         if (smid > sm_anchor.free_maxid) {
             smid = sm_anchor.free_maxid;
         } else {
