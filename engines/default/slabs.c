@@ -46,8 +46,8 @@
 #define SSL_CHECK_BY_MEM_REQUEST 100 /* space shortage level check tick by slab*/
 #define SM_MAX_CLASS_INFO 10
 
-static int RSVD_SLAB_COUNT; /* # of reserved slabs */
-static int RSVD_SLAB_RATIO; /* reserved slab ratio */
+static int RSVD_SLAB_COUNT = 4; /* # of reserved slabs */
+static int RSVD_SLAB_RATIO = 5; /* reserved slab ratio */
 
 /* sm slot head */
 typedef struct _sm_slot {
@@ -417,14 +417,18 @@ static void do_smmgr_used_slot_list_add(int targ)
 static void do_smmgr_used_slot_list_del(int targ)
 {
     int smid;
-    if (sm_anchor.used_total_space > 0) {
-        if (targ == sm_anchor.used_minid) {
+    if (targ == sm_anchor.used_minid) {
+        if (targ == sm_anchor.used_maxid) {
+            sm_anchor.used_minid = SM_NUM_CLASSES;
+            sm_anchor.used_maxid = -1;
+        } else {
             for (smid = targ+1; smid <= sm_anchor.used_maxid; smid++) {
                 if (sm_anchor.used_slist[smid].count > 0) break;
             }
             assert(smid <= sm_anchor.used_maxid);
             sm_anchor.used_minid = smid;
         }
+    } else {
         if (targ == sm_anchor.used_maxid) {
             for (smid = targ-1; smid >= sm_anchor.used_minid; smid--) {
                 if (sm_anchor.used_slist[smid].count > 0) break;
@@ -432,42 +436,46 @@ static void do_smmgr_used_slot_list_del(int targ)
             assert(smid >= sm_anchor.used_minid);
             sm_anchor.used_maxid = smid;
         }
-    } else {
-        assert(targ == sm_anchor.used_minid && targ == sm_anchor.used_maxid);
-        sm_anchor.used_minid = SM_NUM_CLASSES;
-        sm_anchor.used_maxid = -1;
     }
     sm_anchor.used_num_classes -= 1;
 }
 
 static void do_smmgr_free_slot_list_add(int targ)
 {
-    if (targ < (SM_NUM_CLASSES-1)) {
-        if (sm_anchor.free_minid > targ) {
-            sm_anchor.free_minid = targ;
-        }
-        if (sm_anchor.free_maxid < targ) {
-            sm_anchor.free_maxid = targ;
-        }
-        sm_anchor.free_num_classes += 1;
+    if (targ >= (SM_NUM_CLASSES-1)) {
+        /* big free slot */
+        return;
     }
+
+    if (targ < sm_anchor.free_minid) {
+        sm_anchor.free_minid = targ;
+    }
+    if (targ > sm_anchor.free_maxid) {
+        sm_anchor.free_maxid = targ;
+    }
+    sm_anchor.free_num_classes += 1;
 }
 
 static void do_smmgr_free_slot_list_del(int targ)
 {
-    if (targ < (SM_NUM_CLASSES-1)) {
-        int smid;
-        if (targ == sm_anchor.free_minid) {
+    if (targ >= (SM_NUM_CLASSES-1)) {
+        /* big free slot */
+        return;
+    }
+
+    int smid;
+    if (targ == sm_anchor.free_minid) {
+        if (targ == sm_anchor.free_maxid) {
+            sm_anchor.free_minid = SM_NUM_CLASSES;
+            sm_anchor.free_maxid = -1;
+        } else {
             for (smid = targ+1; smid <= sm_anchor.free_maxid; smid++) {
                 if (sm_anchor.free_slist[smid].head != NULL) break;
             }
-            if (smid <= sm_anchor.free_maxid) {
-                sm_anchor.free_minid = smid;
-            } else {
-                sm_anchor.free_minid = SM_NUM_CLASSES;
-                sm_anchor.free_maxid = -1;
-            }
+            assert(smid <= sm_anchor.free_maxid);
+            sm_anchor.free_minid = smid;
         }
+    } else {
         if (targ == sm_anchor.free_maxid) {
             for (smid = targ-1; smid >= sm_anchor.free_minid; smid--) {
                 if (sm_anchor.free_slist[smid].head != NULL) break;
@@ -475,8 +483,8 @@ static void do_smmgr_free_slot_list_del(int targ)
             assert(smid >= sm_anchor.free_minid);
             sm_anchor.free_maxid = smid;
         }
-        sm_anchor.free_num_classes -= 1;
     }
+    sm_anchor.free_num_classes -= 1;
 }
 
 static void do_smmgr_used_slot_init(sm_slot_t *slot, int offset, int length)
@@ -1068,9 +1076,6 @@ ENGINE_ERROR_CODE slabs_init(struct default_engine *engine,
     unsigned int size = sizeof(hash_item) + engine->config.chunk_size;
 
     logger = engine->server.log->get_logger();
-
-    RSVD_SLAB_COUNT = 4;
-    RSVD_SLAB_RATIO = 5;
 
     engine->slabs.mem_limit = limit;
     engine->slabs.mem_reserved = (limit / 100) * RSVD_SLAB_RATIO;
