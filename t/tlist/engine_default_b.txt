@@ -1,7 +1,7 @@
 ./t/coll_bop_large_tree.bt
 ./t/coll_bop_random_insert.bt
 ./t/coll_bop_position_test.bt
-./t/coll_bop_smget_test.bt
+./t/coll_bop_smget_many_btrees.bt
 ./t/coll_lop_large_test.bt
 ./t/coll_mop_large_test.bt
 ./t/coll_scrub_stale.bt
@@ -28,13 +28,11 @@
 ./t/coll_bop_insert.t
 ./t/coll_bop_mget_1.t
 ./t/coll_bop_mget_2.t
-./t/coll_bop_smget_1.t
-./t/coll_bop_smget_2.t
-./t/coll_bop_smget_3.t
-./t/coll_bop_smget_4.t
-./t/coll_bop_smget_5.t
-./t/coll_bop_smget_trim.t
-./t/coll_bop_smget_unique.t
+./t/coll_bop_smget_bkey_byte.t
+./t/coll_bop_smget_bkey_uint.t
+./t/coll_bop_smget_issues.t
+./t/coll_bop_smget_trim_test.t
+./t/coll_bop_smget_unique_test.t
 ./t/coll_bop_trimmed_test.t
 ./t/coll_bop_unittest.t
 ./t/coll_bop_update.t
