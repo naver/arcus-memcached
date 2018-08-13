@@ -671,8 +671,6 @@ static sm_blck_t *do_smmgr_blck_alloc(struct default_engine *engine)
             sm_anchor.free_chunk_space -= SM_BLOCK_SIZE;
         }
         do_smmgr_used_blck_link(blck);
-    } else {
-        logger->log(EXTENSION_LOG_WARNING, NULL, "no more small memory chunk\n");
     }
     return blck;
 }
