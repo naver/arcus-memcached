@@ -629,6 +629,13 @@ static void *do_item_alloc_internal(struct default_engine *engine,
 
     if (it == NULL) {
         engine->items.itemstats[id].outofmemory++;
+        if (id == LRU_CLSID_FOR_SMALL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "no more small memory chunk"
+                         "space_shortage_level=%d, item size=%lu\n", slabs_space_shortage_level(), ntotal);
+        } else {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "no more memory chunk id=%d, item size=%lu\n", id, ntotal);
+        }
+
         /* Last ditch effort. There is a very rare bug which causes
          * refcount leaks. We've fixed most of them, but it still happens,
          * and it may happen in the future.
