@@ -43,7 +43,6 @@
 
 #define MAX_SPACE_SHORTAGE_LEVEL 100
 #define SSL_FOR_BACKGROUND_EVICT 10  /* space shortage level for background evict */
-#define SSL_CHECK_BY_MEM_REQUEST 100 /* space shortage level check tick by slab*/
 #define SM_MAX_CLASS_INFO 10
 
 static int RSVD_SLAB_COUNT = 4; /* # of reserved slabs */
@@ -102,7 +101,6 @@ typedef struct _sm_class {
 
 typedef struct _sm_anchor {
     int         space_shortage_level; /* 0, 1 ~ 100 */
-    int         num_smmgr_request;  /* the number that do_smmgr_alloc/do_smmgr_free are invoked */
     int         used_num_classes;   /* # of used slot classes */
     int         free_num_classes;   /* # of free slot classes */
     int         used_minid;         /* min sm classid of used slots */
@@ -841,12 +839,9 @@ static void *do_smmgr_alloc(struct default_engine *engine, const size_t size)
     int slen;
 
     if (sm_anchor.free_limit_space > 0) {
-        if ((++sm_anchor.num_smmgr_request) > SSL_CHECK_BY_MEM_REQUEST) {
-            sm_anchor.num_smmgr_request = 0;
-            do_slabs_check_space_shortage_level(engine);
-            if (sm_anchor.space_shortage_level >= SSL_FOR_BACKGROUND_EVICT)
-                coll_del_thread_wakeup();
-        }
+        do_slabs_check_space_shortage_level(engine);
+        if (sm_anchor.space_shortage_level >= SSL_FOR_BACKGROUND_EVICT)
+            coll_del_thread_wakeup();
     }
 
     //do_smmgr_used_blck_check();
@@ -976,12 +971,9 @@ static void do_smmgr_free(struct default_engine *engine, void *ptr, const size_t
     int slen;
 
     if (sm_anchor.free_limit_space > 0) {
-        if ((++sm_anchor.num_smmgr_request) > SSL_CHECK_BY_MEM_REQUEST) {
-            sm_anchor.num_smmgr_request = 0;
-            do_slabs_check_space_shortage_level(engine);
-            if (sm_anchor.space_shortage_level >= SSL_FOR_BACKGROUND_EVICT)
-                coll_del_thread_wakeup();
-        }
+        do_slabs_check_space_shortage_level(engine);
+        if (sm_anchor.space_shortage_level >= SSL_FOR_BACKGROUND_EVICT)
+            coll_del_thread_wakeup();
     }
 
     slen = do_smmgr_slen(size);
