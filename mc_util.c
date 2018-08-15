@@ -284,29 +284,28 @@ size_t tokenize_command(char *command, int cmdlen, token_t *tokens, const size_t
     return ntokens;
 }
 
-void detokenize(token_t *tokens, int ntokens, char **out, int *nbytes)
+int detokenize(token_t *tokens, int ntokens, char *buffer, int length)
 {
     int i, nb;
-    char *buf, *p;
+    char *p;
 
     nb = ntokens; // account for spaces, which is ntokens-1, plus the null
     for (i = 0; i < ntokens; ++i) {
         nb += tokens[i].length;
     }
-
-    buf = malloc(nb * sizeof(char));
-    if (buf != NULL) {
-        p = buf;
-        for (i = 0; i < ntokens; ++i) {
-            memcpy(p, tokens[i].value, tokens[i].length);
-            p += tokens[i].length;
-            *p = ' ';
-            p++;
-        }
-        buf[nb - 1] = '\0';
-        *nbytes = nb - 1;
-        *out = buf;
+    if (nb > length) {
+        return -1; /* buffer overflow */
     }
+
+    p = buffer;
+    for (i = 0; i < ntokens; ++i) {
+        memcpy(p, tokens[i].value, tokens[i].length);
+        p += tokens[i].length;
+        *p = ' ';
+        p++;
+    }
+    buffer[nb - 1] = '\0';
+    return nb;
 }
 
 int tokenize_keys(char *keystr, int slength, char delimiter, int keycnt, token_t *tokens)

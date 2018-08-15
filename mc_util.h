@@ -83,7 +83,7 @@ void  token_buff_release(token_buff_t *buff, void *tokens);
 
 /* tokenize functions */
 size_t tokenize_command(char *command, int cmdlen, token_t *tokens, const size_t max_tokens);
-void   detokenize(token_t *tokens, int ntokens, char **out, int *nbytes);
+int    detokenize(token_t *tokens, int ntokens, char *buffer, int length);
 int    tokenize_keys(char *keystr, int slength, char delimiter, int keycnt, token_t *tokens);
 int    tokenize_mblocks(mblck_list_t *blist, int length, char delimiter, int keycnt, token_t *tokens);
 int    tokenize_sblocks(mblck_list_t *blist, int length, char delimiter, int keycnt, token_t *tokens);

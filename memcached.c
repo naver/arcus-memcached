@@ -8415,12 +8415,17 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
         /* getting here means that the subcommand is either engine specific or
            is invalid. query the engine and see. */
         ENGINE_ERROR_CODE ret;
-        char *buf = NULL;
-        int nb = -1;
-        detokenize(&tokens[1], ntokens - 2, &buf, &nb);
-        ret = mc_engine.v1->get_stats(mc_engine.v0, c, buf,
-                                      nb, append_stats);
-        free(buf);
+        int nb;
+        char buf[1024];
+
+        nb = detokenize(&tokens[1], ntokens - 2, buf, 1024);
+        if (nb <= 0) {
+            /* no matching stat */
+            ret = ENGINE_KEY_ENOENT;
+        } else {
+            ret = mc_engine.v1->get_stats(mc_engine.v0, c, buf,
+                                          nb, append_stats);
+        }
 
         switch (ret) {
         case ENGINE_SUCCESS:
