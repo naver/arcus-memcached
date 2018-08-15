@@ -71,6 +71,7 @@ struct engine_stats {
    pthread_mutex_t lock;
    uint64_t evictions;
    uint64_t reclaimed;
+   uint64_t outofmemorys;
    uint64_t sticky_bytes;
    uint64_t sticky_items;
    uint64_t curr_bytes;

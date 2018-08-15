@@ -596,6 +596,9 @@ static void *do_item_alloc_internal(struct default_engine *engine,
          */
         if (item_evict_to_free != true) {
             engine->items.itemstats[clsid_based_on_ntotal].outofmemory++;
+            pthread_mutex_lock(&engine->stats.lock);
+            engine->stats.outofmemorys++;
+            pthread_mutex_unlock(&engine->stats.lock);
             return NULL;
         }
 
@@ -625,10 +628,17 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             search = previt;
             if ((--tries) == 0) break;
         }
+        if (engine->config.verbose > 1) {
+            logger->log(EXTENSION_LOG_INFO, NULL,
+                    "Allocation retries with evict. count=%d\n", (tries == 0 ? 200 : (200-tries+1)));
+        }
     }
 
     if (it == NULL) {
         engine->items.itemstats[id].outofmemory++;
+        pthread_mutex_lock(&engine->stats.lock);
+        engine->stats.outofmemorys++;
+        pthread_mutex_unlock(&engine->stats.lock);
         if (id == LRU_CLSID_FOR_SMALL) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "no more small memory chunk"
                          "space_shortage_level=%d, item size=%lu\n", slabs_space_shortage_level(), ntotal);

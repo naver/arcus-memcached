@@ -1002,6 +1002,8 @@ static void stats_engine(struct default_engine *engine,
     pthread_mutex_lock(&engine->stats.lock);
     len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.evictions);
     add_stat("evictions", 9, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.outofmemorys);
+    add_stat("outofmemorys", 12, val, len, cookie);
     len = sprintf(val, "%"PRIu64, (uint64_t)engine->assoc.tot_prefix_items);
     add_stat("curr_prefixes", 13, val, len, cookie);
     len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.sticky_items);
@@ -1080,6 +1082,7 @@ default_reset_stats(ENGINE_HANDLE* handle, const void *cookie)
     pthread_mutex_lock(&engine->stats.lock);
     engine->stats.evictions = 0;
     engine->stats.reclaimed = 0;
+    engine->stats.outofmemorys = 0;
     engine->stats.total_items = 0;
     pthread_mutex_unlock(&engine->stats.lock);
 }
