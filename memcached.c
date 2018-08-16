@@ -9663,6 +9663,11 @@ static void process_logging_command(conn *c, token_t *tokens, const size_t ntoke
 
     if (ntokens > 2 && strcmp(type, "start") == 0) {
         if (ntokens > 3) {
+            if (tokens[SUBCOMMAND_TOKEN+1].length > CMDLOG_DIRPATH_LENGTH) {
+                out_string(c, "\tcommand logging failed to start, path exceeds 128.\n");
+                cmdlog_in_use = false;
+                return;
+            }
             fpath = tokens[SUBCOMMAND_TOKEN+1].value;
         }
 
