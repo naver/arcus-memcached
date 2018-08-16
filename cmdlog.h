@@ -22,6 +22,7 @@
 #define COMMAND_LOGGING
 #define CMDLOG_INPUT_SIZE 400
 #define CMDLOG_FILENAME_LENGTH 256 /* filename plus path's length */
+#define CMDLOG_DIRPATH_LENGTH 128 /* directory path's length */
 
 #define CMDLOG_NOT_STARTED   0  /* not started */
 #define CMDLOG_EXPLICIT_STOP 1  /* stop by user request */
@@ -37,7 +38,7 @@ struct cmd_log_stats {
     int stop_cause; /* how stopped */
     uint32_t entered_commands;   /* number of entered command */
     uint32_t skipped_commands; /* number of skipped command */
-    char dirpath[CMDLOG_FILENAME_LENGTH];
+    char dirpath[CMDLOG_DIRPATH_LENGTH];
 };
 
 void cmdlog_init(int port, EXTENSION_LOGGER_DESCRIPTOR *logger);
