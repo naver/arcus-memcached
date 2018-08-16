@@ -287,6 +287,8 @@ bop decr <key> <bkey> <delta> [<initial> [<eflag>]] [noreply|pipe]\r\n
 - \<delta\> - increment/decrement할 delta 값으로서, 0 보다 큰 숫자 값을 가져야 한다.
   - increment 연산으로 64bit unsigned integer가 overflow되면, wrap around되어 잔여 값으로 설정된다.
   - decrement 연산으로 64bit unsigned integer가 underflow되면, 새로운 값은 무조건 0으로 설정된다.
+- \<initial\> - 대상 element가 없을 경우, 새로운 element를 생성하고 initial 값으로 설정한다.
+  - \<eflag\>는 새로은 element에 eflag 값을 줄 경우에 명시할 수 있다.
 
 성공 시의 response string은 아래와 같다.
 Increment/decrement 수행 후의 데이터 값이다.
