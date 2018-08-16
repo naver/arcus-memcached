@@ -83,7 +83,6 @@ bop upsert <key> <bkey> [<eflag>] <bytes> [create <attributes>] [noreply|pipe|ge
                     pipe 사용은 [Command Pipelining](/doc/command-pipelining.md)을 참조 바란다.
 - getrim - 새로운 element 추가로 maxcount 제약에 의한 overflow trim이 발생할 경우,
            trim된 element 정보를 가져온다.
-           maxbkeyrange 제약에 의한 trimmed element 정보는 가져오지 않는다.
 
 Trimmed element 정보가 리턴되는 경우, 그 response string은 아래와 같다.
 
@@ -101,11 +100,12 @@ END\r\n
 - “NOT_FOUND” - key miss
 - “TYPE_MISMATCH” - 해당 item이 b+tree colleciton이 아님
 - "BKEY_MISMATCH" - 삽입할 bkey 유형과 대상 b+tree의 bkey 유형이 다름
-- “OVERFLOWED” : overflow 발생
-- “OUT_OF_RANGE” : b+tree의 maxcount, maxbkeyrange, overflowaction 속성에 따라,
-                   새로 삽입할 element가 자동 trim되어 삽입되지 않은 상태이다.
-                   예를 들면, overflowaction이 smallest_trim인 상황에서,
-                   새로 삽입할 element의 bkey가 b+tree의 smallest bkey 보다 작으면서
+- “OVERFLOWED” - overflow 발생
+- “OUT_OF_RANGE” - 새로운 element 삽입이 maxcount 또는 maxbkeyrange 제약을 위배하면서
+                   그 element의 bkey 값이 overflowaction에 의해 자동 삭제되는 경우이어서
+                   삽입이 실패하는 경우이다.
+                   예를 들어, smallest_trim 상황에서
+                   새로 삽입할 element의 bkey 값이 b+tree의 smallest bkey 보다 작으면서
                    maxcount 개의 elements가 이미 존재하거나 maxbkeyrange를 벗어나는 경우가 이에 해당된다.
 - "ELEMENT_EXISTS" - 동일 bkey를 가진 element가 존재
 - "NOT_SUPPORTED" - 지원하지 않음
@@ -206,12 +206,15 @@ VALUE 라인의 \<count\>는 조회된 element 개수를 나타내며,
 마지막 라인은 조회 상래로서 END, TRIMMED, DELETED, DELETED_DROPPED 중 하나를 가진다.
 END, DELEETED, DELEETD_DROPPED은 각각
 element 조회만 수행한 상태, element 조회하고 삭제한 상태,
-element 조회 및 삭제하고 b+tree collection을 drop한 상태를 의미한다.
+element 조회 및 삭제한 후 empty b+tree collection도 drop한 상태를 의미한다.
 TRIMMED는 특별한 의미로서, element 조회만 수행한 상태이면서
 element 조회 조건이 b+tree의 overflowaction으로 trim된 bkey 영역과 overlap 되었음을 나타낸다.
-이를 통해, 조회 조건을 만족하지만 overflow trim으로 조회되지 않은 element가 있을 수 있음을
+이를 통해, 조회 조건을 만족하지만 overflow trim으로 조회되지 않은 elements가 있을 수 있음을
 해당 응용이 알 수 있게 한다. 그러면, 해당 응용은 필요시, 
 back-end storage에서 조회되지 않은 나머지 elements를 다시 조회할 수 있다.
+참고로, overflow action으로 smallest_silent_trim 또는 largest_silent_trim을 사용한다면,
+b+tree collection 내부에 trim 발생 여부를 유지하지 않아 TRIMMED와 같은 trim 발생 상태를
+알려주지 않게 된다. 이 경우, trim 발생 여부에 대한 검사는 응용에서 자체적으로 수행해야 한다.
 
 ```
 VALUE <flags> <count>\r\n
@@ -227,8 +230,8 @@ END|TRIMMED|DELETED|DELETED_DROPPED\r\n
 - “NOT_FOUND” - key miss
 - “NOT_FOUND_ELEMENT” - element miss (조회 조건을 만족하는 element가 없음)
 - “OUT_OF_RANGE” - 조회 조건을 만족하는 element가 없으며,
-                   또한 주어진 bkey range가 b+tree의 overflowaction으로 trim된 bkey 영역과
-                   overlap 되었을 수 있음을 나타낸다.
+                   또한 주어진 bkey range가 b+tree의 overflowaction에 의해
+                   trim된 bkey 영역과 overlap 되었음을 나타낸다.
 - “TYPE_MISMATCH” - 해당 item이 b+tree collection이 아님
 - “BKEY_MISMATCH” - 명령 인자로 주어진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
 - “UNREADABLE” - 해당 item이 unreadable item임
@@ -285,7 +288,6 @@ bop decr <key> <bkey> <delta> [<initial> [<eflag>]] [noreply|pipe]\r\n
   - increment 연산으로 64bit unsigned integer가 overflow되면, wrap around되어 잔여 값으로 설정된다.
   - decrement 연산으로 64bit unsigned integer가 underflow되면, 새로운 값은 무조건 0으로 설정된다.
 
-
 성공 시의 response string은 아래와 같다.
 Increment/decrement 수행 후의 데이터 값이다.
 
@@ -299,10 +301,11 @@ Increment/decrement 수행 후의 데이터 값이다.
 - “NOT_FOUND_ELEMENT” - element miss
 - “TYPE_MISMATCH” - 해당 item이 b+tree collection이 아님
 - “BKEY_MISMATCH” - 명령 인자로 주언진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
-- “OUT_OF_RANGE” - b+tree의 maxcount, maxbkeyrange, overflowaction 속성에 따라,
-                   새로 삽입할 element가 자동 trim되어 삽입되지 않은 상태이다.
-                   예를 들면, overflowaction이 smallest_trim인 상황에서,
-                   새로 삽입할 element의 bkey가 b+tree의 smallest bkey 보다 작으면서
+- “OUT_OF_RANGE” - 새로운 element 삽입이 maxcount 또는 maxbkeyrange 제약을 위배하면서
+                   그 element의 bkey 값이 overflowaction에 의해 자동 삭제되는 경우이어서
+                   삽입이 실패하는 경우이다.
+                   예를 들어, smallest_trim 상황에서
+                   새로 삽입할 element의 bkey 값이 b+tree의 smallest bkey 보다 작으면서
                    maxcount 개의 elements가 이미 존재하거나 maxbkeyrange를 벗어나는 경우가 이에 해당된다.
 - “OVERFLOWED” - overflow 발생
 - "NOT_SUPPORTED" - 지원하지 않음

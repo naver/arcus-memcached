@@ -4,36 +4,38 @@ Item Attribute 설명
 Arcus cache server는 collection 기능 지원으로 인해,
 기존 key-value item 유형 외에 list, set, map, b+tree item 유형을 가진다.
 각 item 유형에 따라 설정/조회 가능한 속성들(attributes)이 구분되며, 이들의 개요는 아래 표와 같다.
-아래 표에서 각 속성이 적용되는 item 유형, 속성의 간단한 설명, 허용가능한 값들과 디폴트 값을 나타낸다.
+아래 표는 각 속성이 적용되는 item 유형, 속성의 간단한 설명, 허용가능한 값들과 디폴트 값을 나타낸다.
 
 ```
 |-----------------------------------------------------------------------------------------------------------------|
-| Attribute Name | Item Type   | Description           | Allowed Values                | Default Value            |
+| Attribute Name | Item Type   | Description           | Allowed Values                 | Default Value           |
 |-----------------------------------------------------------------------------------------------------------------|
-| flags          | all         | data specific flags   | 4 bytes unsigned integer      | 0                        |
+| flags          | all         | data specific flags   | 4 bytes unsigned integer       | 0                       |
 |-----------------------------------------------------------------------------------------------------------------|
-| expiretime     | all         | item expiration time  | 4 bytes singed integer        | 0                        |
-|                |             |                       |  -1: sticky                   |                          |
-|                |             |                       |   0: never expired            |                          |
-|                |             |                       |  >0: expired in the future    |                          |
+| expiretime     | all         | item expiration time  | 4 bytes singed integer         | 0                       |
+|                |             |                       |  -1: sticky                    |                         |
+|                |             |                       |   0: never expired             |                         |
+|                |             |                       |  >0: expired in the future     |                         |
 |-----------------------------------------------------------------------------------------------------------------|
-| type           | all         | item type             | "kv", "list", "set", "map",   | N/A                      |
-|                |             |                       | "b+tree"                      |                          |
+| type           | all         | item type             | "kv", "list", "set", "map",    | N/A                     |
+|                |             |                       | "b+tree"                       |                         |
 |-----------------------------------------------------------------------------------------------------------------|
-| count          | collection  | current # of elements | 4 bytes unsigned integer      | N/A                      |
+| count          | collection  | current # of elements | 4 bytes unsigned integer       | N/A                     |
 |-----------------------------------------------------------------------------------------------------------------|
-| maxcount       | collection  | maximum # of elements | 4 bytes unsigned integer      | 4000                     |
+| maxcount       | collection  | maximum # of elements | 4 bytes unsigned integer       | 4000                    |
 |-----------------------------------------------------------------------------------------------------------------|
-| overflowaction | collection  | overflow action       | “error” - all collections     | list - "tail_trim"       |
-|                |             |                       | “head_trim” – list only       | set - "error"            |
-|                |             |                       | “tail_trim” – list only       | map - "error"            |
-|                |             |                       | “smallest_trim” – b+tree only | b+tree = "smallest_trim" |
-|                |             |                       | “largest_trim” – b+tree only  |                          |
+| overflowaction | collection  | overflow action       | “error”: all collections       | list: "tail_trim"       |
+|                |             |                       | “head_trim”: list              | set: "error"            |
+|                |             |                       | “tail_trim”: list              | map: "error"            |
+|                |             |                       | “smallest_trim”: b+tree        | b+tree: "smallest_trim" |
+|                |             |                       | “largest_trim”: b+tree         |                         |
+|                |             |                       | “smallest_silent_trim”: b+tree |                         |
+|                |             |                       | “largest_silent_trim”: b+tree  |                         |
 |-----------------------------------------------------------------------------------------------------------------|
-| readable       | collection  | readable/unreable     | “on”, “off”                   | "on"                     |
+| readable       | collection  | readable/unreable     | “on”, “off”                    | "on"                    |
 |-----------------------------------------------------------------------------------------------------------------|
-| maxbkeyrange   | b+tree only | maximum bkey range    | 8 bytes unsigned integer or   | 0                        |
-|                |             |                       | hexadecimal (max 31 bytes)    |                          |
+| maxbkeyrange   | b+tree only | maximum bkey range    | 8 bytes unsigned integer or    | 0                       |
+|                |             |                       | hexadecimal (max 31 bytes)     |                         |
 |-----------------------------------------------------------------------------------------------------------------|
 ```
 
@@ -82,16 +84,31 @@ Event-driven processing 모델에 따라
 
 ### overflowaction 속성
 
-Collection의 maxcount를 초과하여 element 추가하면 overflow가 발생하게 되며, 이 경우에 취할 action을 지정한다.
+Collection의 maxcount를 초과하여 element 추가하면 overflow가 발생하며, 이 경우 취할 action을 지정한다.
 
-- "error"는 새로운 element 추가를 허용하지 않고 overflow 오류를 리턴한다. 
-- "head_trim"과 "tail_trim"은 list collection에 설정 가능한 overflow action으로
-  새로운 element 추가를 허용하는 대신 list의 head 또는 tail에 있는 기존 element를 제거한다.
-- "smallest_trim"과 "largest_trim"은 b+tree collecton에 설정 가능한 overflow action으로
-  새로운 element 추가를 허용하는 대신 smallest bkey 또는largest bkey를 가진 기존 element를 제거한다.
-  
-참고로, 아래에 기술하는 maxbkeyrange 속성에 따라 element를 trim해야 할 경우가 발생하며,
-이 경우에도 적용된다.
+- "error"
+  - 모든 collection 유형에 설정 가능한 속성이다.
+  - set과 map collection의 default overflow action이다.
+  - 새로운 element 추가를 허용하지 않고 overflow 오류를 리턴한다. 
+- "head_trim", "tail_trim"
+  - list collection에만 설정 가능한 overflow action이다.
+  - list collection의 default overflow action은 "tail_trim"이다.
+  - 새로운 element 추가를 허용하는 대신 list의 head 또는 tail에 위치한 기존 element를 제거한다.
+  - Overflow trim 발생 시, trim 발생 여부를 나타내는 trim flag를 내부적으로 유지하지 않는다.
+- "smallest_trim", "largest_trim"
+  - b+tree collecton에만 설정 가능한 overflow action이다.
+  - b+tree collecton의 default overflow action은 "smallest_trim"이다.
+  - 새로운 element 추가를 허용하는 대신 smallest bkey 또는largest bkey를 가진 기존 element를 제거한다.
+  - Overflow trim 발생 시, trim 발생 여부를 나타내는 trim flag를 내부적으로 유지하며,
+    trim 발생한 bkey 영역을 조회할 경우 응답 결과에 trim 발생 여부를 포함시킨다.
+- "smallest_silent_trim", "largest_silent_trim"
+  - "samllest_trim", "largest_trim"과 동일하게 동작하는 overflow action이다.
+  - 차이점은 overflow trim이 발생하더라도 trim flag를 내부적으로 유지하지 않으며,
+    trim 발생한 bkey 영역을 조회하더라도 조회 결과에 trim 발생 여부를 포함시키지 않는다.
+  - 응용에서 주의할 사항은 trim 여부나 trim된 데이터에 대한 검사를 직접 수행하여야 한다.
+
+참고로, 아래에 기술하는 maxbkeyrange 속성에 따라 element를 제거하는 경우에도
+overflow action이 참조된다.
 
 ### readable 속성
 
@@ -113,8 +130,11 @@ complete collection이 응용에 의해 조회될 수 있게 할 수 있다.
   
 B+tree only 속성으로 smallest bkey와 largest bkey의 최대 범위를 규정한다.
 B+tree에 설정된 maxbkeyrange를 위배시키는 새로운 bkey를 가진 element를 삽입하는 경우,
-b+tree의 overflow action 정책에 따라 오류를 내거나 smallest/largest bkey를 가진 elements를
-trim함으로써 항상 maxbkeyrange 특성을 준수하게 한다.
+b+tree의 overflow action 정책에 따라 오류를 내거나
+smallest/largest bkey를 가진 elements를 제거함으로써 항상 maxbkeyrange 특성을 준수하게 한다.
+
+Maxbkeyrange 속성에 의한 element 제거는 응용 요청에 의한 명시적인 element 제거와 동일하므로,
+trim으로 처리하지 않는다. 결국, maxcount 속성에 의한 overflow trim 만을 trim으로 처리한다.
 
 maxbkeyrange의 사용 예로,
 어떤 응용이 data 생성 시간을 bkey로 하여 그 data를 b+tree에 저장하고
