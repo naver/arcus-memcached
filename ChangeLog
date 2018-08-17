@@ -1,9 +1,12 @@
-2018-08-09 [version 1.11.4]
+2018-08-17 [version 1.11.4]
 	* [Fix]     Fix free space mis-calculation when the last 01pct slot is freed.
 	* [Fix]     Use free small memory if possible when sm space is short of.
 	* [Fix]     Fix the wrong result of bop smget with unique option
 	            when the first bkeys of some btrees are duplicate.
 	* [Fix]     Fix the incr/decr operation on binary bkey value.
+	* {Enhance] Reduce "no more small memory check" messages.
+	* [Manual]  Add description about smallest/largest_silent_trim.
+	* [Manual]  Add description about bop incr/decr with initial value.
 	* [Other]   Reinforce and reorganize arcus-memcached unit tests.
 
 2018-06-07 [version 1.11.3]
