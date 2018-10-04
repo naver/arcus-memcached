@@ -52,6 +52,7 @@
 ./t/evictions.t
 ./t/expirations.t
 ./t/flags.t
+./t/flush-prefix.t
 ./t/flush-all.t
 ./t/getset.t
 ./t/incrdecr.t
