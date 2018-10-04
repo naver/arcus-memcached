@@ -131,7 +131,7 @@ void stats_prefix_clear() {
 }
 
 int stats_prefix_delete(const char *prefix, const size_t nprefix) {
-    PREFIX_STATS *curr, *next, *prev;
+    PREFIX_STATS *curr, *prev;
     int hidx;
     int ret = -1;
 
@@ -153,6 +153,23 @@ int stats_prefix_delete(const char *prefix, const size_t nprefix) {
             ret = 0;
         }
     } else { /* nprefix > 0 */
+        hidx = mc_hash(prefix, nprefix, 0) % PREFIX_HASH_SIZE;
+        prev = NULL;
+        for (curr = prefix_stats[hidx]; curr != NULL; prev = curr, curr = curr->next) {
+            if (curr->prefix_len == nprefix && strncmp(curr->prefix, prefix, nprefix) == 0)
+                break;
+        }
+        if (curr != NULL) { /* found */
+            if (prev == NULL) prefix_stats[hidx] = curr->next;
+            else              prev->next = curr->next;
+            num_prefixes--;
+            total_prefix_size -= curr->prefix_len;
+
+            free(curr->prefix);
+            free(curr);
+            ret = 0;
+        }
+#if 0 // OLD_CODE for deleting multi-level prefixes
         // Full scan for sub-prefixies (we would fix it in future)
         for (hidx = 0; hidx < PREFIX_HASH_SIZE; hidx++) {
             prev = NULL;
@@ -173,6 +190,7 @@ int stats_prefix_delete(const char *prefix, const size_t nprefix) {
                 }
             }
         }
+#endif
     }
     STATS_UNLOCK();
     return ret;
