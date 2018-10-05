@@ -319,6 +319,11 @@ static void stats_reset(const void *cookie) {
     mc_engine.v1->reset_stats(mc_engine.v0, cookie);
 }
 
+static int prefix_stats_delete(const char *prefix, const size_t nprefix)
+{
+    return stats_prefix_delete(prefix, nprefix);
+}
+
 static void settings_init(void) {
     settings.use_cas = true;
     settings.access = 0700;
@@ -15045,6 +15050,7 @@ static SERVER_HANDLE_V1 *get_server_api(void)
         .realtime = realtime,
         .notify_io_complete = notify_io_complete,
         .get_current_time = get_current_time,
+        .prefix_stats_delete = prefix_stats_delete,
         .parse_config = parse_config,
 #ifdef ENABLE_CLUSTER_AWARE
         .is_zk_integrated = is_zk_integrated,

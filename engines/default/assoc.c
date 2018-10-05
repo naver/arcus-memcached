@@ -584,6 +584,7 @@ void assoc_prefix_unlink(struct default_engine *engine, hash_item *it,
             assert(pt->total_bytes_exclusive == 0);
             _prefix_delete(engine, engine->server.core->hash(_get_prefix(pt), pt->nprefix, 0),
                            _get_prefix(pt), pt->nprefix);
+            engine->server.core->prefix_stats_delete(_get_prefix(pt), pt->nprefix);
 
             pt = parent_pt;
         }

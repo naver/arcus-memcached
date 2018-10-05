@@ -129,6 +129,13 @@ extern "C" {
         void (*notify_io_complete)(const void *cookie,
                                    ENGINE_ERROR_CODE status);
 
+        /**
+         * Delete the given prefix from prefix operation stats table.
+         * @param prefix prefix name to delete
+         * @param nprefix the length of prefix name
+         */
+        int (*prefix_stats_delete)(const char *prefix, const size_t nprefix);
+
 #ifdef ENABLE_CLUSTER_AWARE
         /**
          * Check if current cache node is started with zk integration.
