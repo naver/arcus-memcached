@@ -293,6 +293,14 @@ static rel_time_t realtime(const time_t exptime) {
     }
 }
 
+static void disable_stats_detail(void)
+{
+    /* disable stats detail */
+    settings.detail_enabled = 0;
+    mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                   "Detailed stats internally disabled.\n");
+}
+
 static void stats_init(void) {
     mc_stats.daemon_conns = 0;
     mc_stats.rejected_conns = 0;
@@ -304,7 +312,7 @@ static void stats_init(void) {
        like 'settings.oldest_live' which act as booleans as well as
        values are now false in boolean context... */
     process_started = time(0) - 2;
-    stats_prefix_init();
+    stats_prefix_init(disable_stats_detail);
 }
 
 static void stats_reset(const void *cookie) {

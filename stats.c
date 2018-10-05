@@ -100,14 +100,19 @@ struct _prefix_stats {
 //#define PREFIX_HASH_SIZE 256
 #define PREFIX_HASH_SIZE 1024
 #define PREFIX_MAX_DEPTH 1
+#define PREFIX_MAX_COUNT 10000
 
 static PREFIX_STATS *prefix_stats[PREFIX_HASH_SIZE];
+static void (*func_when_prefix_overflow)(void);
+static int max_prefixes = PREFIX_MAX_COUNT;
 static int num_prefixes = 0;
 static int total_prefix_size = 0;
 static char *null_prefix_str = "<null>";
 
-void stats_prefix_init() {
+void stats_prefix_init(void (*cb_when_prefix_overflow)(void)) {
     memset(prefix_stats, 0, sizeof(prefix_stats));
+    /* callback function when prefix overflow */
+    func_when_prefix_overflow = cb_when_prefix_overflow;
 }
 
 /*
@@ -141,6 +146,12 @@ int stats_prefix_insert(const char *prefix, const size_t nprefix) {
 
     STATS_LOCK();
     do {
+        if (num_prefixes >= max_prefixes) {
+            /* prefix overflow */
+            func_when_prefix_overflow();
+            break;
+        }
+
         pfs = calloc(sizeof(PREFIX_STATS), 1);
         if (NULL == pfs) {
             perror("Can't allocate space for stats structure: calloc");
@@ -285,6 +296,12 @@ static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey) {
             /* Invalid prefix name */
             return NULL;
         }
+    }
+
+    if (num_prefixes >= max_prefixes) {
+        /* prefix overflow */
+        func_when_prefix_overflow();
+        return NULL;
     }
 
     pfs = calloc(sizeof(PREFIX_STATS), 1);

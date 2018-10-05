@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 /* stats */
-void stats_prefix_init(void);
+void stats_prefix_init(void (*cb_when_prefix_overflow)(void));
 void stats_prefix_clear(void);
 int  stats_prefix_count(void);
 #if 1 // NEW_PREFIX_STATS_MANAGEMENT
