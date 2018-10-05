@@ -130,6 +130,10 @@ void stats_prefix_clear() {
     total_prefix_size = 0;
 }
 
+int stats_prefix_count() {
+    return num_prefixes;
+}
+
 #ifdef NEW_PREFIX_STATS_MANAGEMENT
 int stats_prefix_insert(const char *prefix, const size_t nprefix) {
     PREFIX_STATS *pfs = NULL;

@@ -8261,6 +8261,7 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     APPEND_STAT("getattr_hits", "%"PRIu64, thread_stats.getattr_hits);
     APPEND_STAT("setattr_misses", "%"PRIu64, thread_stats.setattr_misses);
     APPEND_STAT("setattr_hits", "%"PRIu64, thread_stats.setattr_hits);
+    APPEND_STAT("stat_prefixes", "%"PRIu64, stats_prefix_count());
     APPEND_STAT("bytes_read", "%"PRIu64, thread_stats.bytes_read);
     APPEND_STAT("bytes_written", "%"PRIu64, thread_stats.bytes_written);
     APPEND_STAT("limit_maxbytes", "%"PRIu64, settings.maxbytes);

@@ -18,6 +18,7 @@
 /* stats */
 void stats_prefix_init(void);
 void stats_prefix_clear(void);
+int  stats_prefix_count(void);
 #if 1 // NEW_PREFIX_STATS_MANAGEMENT
 int  stats_prefix_insert(const char *prefix, const size_t nprefix);
 #endif
