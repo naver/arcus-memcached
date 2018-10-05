@@ -129,12 +129,21 @@ extern "C" {
         void (*notify_io_complete)(const void *cookie,
                                    ENGINE_ERROR_CODE status);
 
+#ifdef NEW_PREFIX_STATS_MANAGEMENT
+        /**
+         * Insert prefix operation stats entry for the given given prefix.
+         * @param prefix prefix name to delete
+         * @param nprefix the length of prefix name
+         */
+        int (*prefix_stats_insert)(const char *prefix, const size_t nprefix);
+
         /**
          * Delete the given prefix from prefix operation stats table.
          * @param prefix prefix name to delete
          * @param nprefix the length of prefix name
          */
         int (*prefix_stats_delete)(const char *prefix, const size_t nprefix);
+#endif
 
 #ifdef ENABLE_CLUSTER_AWARE
         /**

@@ -130,6 +130,46 @@ void stats_prefix_clear() {
     total_prefix_size = 0;
 }
 
+#ifdef NEW_PREFIX_STATS_MANAGEMENT
+int stats_prefix_insert(const char *prefix, const size_t nprefix) {
+    PREFIX_STATS *pfs = NULL;
+    uint32_t hashval = mc_hash(prefix, nprefix, 0) % PREFIX_HASH_SIZE;
+
+    STATS_LOCK();
+    do {
+        pfs = calloc(sizeof(PREFIX_STATS), 1);
+        if (NULL == pfs) {
+            perror("Can't allocate space for stats structure: calloc");
+            break;
+        }
+
+        pfs->prefix = malloc(nprefix + 1);
+        if (NULL == pfs->prefix) {
+            perror("Can't allocate space for copy of prefix: malloc");
+            free(pfs); pfs = NULL;
+            break;
+        }
+
+        if (nprefix > 0)
+            strncpy(pfs->prefix, prefix, nprefix);
+        pfs->prefix[nprefix] = '\0';      /* because strncpy() sucks */
+        pfs->prefix_len = nprefix;
+
+        pfs->next = prefix_stats[hashval];
+        prefix_stats[hashval] = pfs;
+        num_prefixes++;
+
+        if (nprefix > 0)
+            total_prefix_size += nprefix;
+        else /* nprefix == 0 */
+            total_prefix_size += strlen(null_prefix_str);
+    } while(0);
+    STATS_UNLOCK();
+
+    return (pfs != NULL) ? 0 : -1;
+}
+#endif
+
 int stats_prefix_delete(const char *prefix, const size_t nprefix) {
     PREFIX_STATS *curr, *prev;
     int hidx;
@@ -233,6 +273,9 @@ static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey) {
             return pfs;
     }
 
+#ifdef NEW_PREFIX_STATS_MANAGEMENT
+    return NULL;
+#else
     if (length > 0) {
         if (!mc_isvalidname(key, length)) {
             /* Invalid prefix name */
@@ -268,6 +311,7 @@ static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey) {
         total_prefix_size += strlen(null_prefix_str);
 
     return pfs;
+#endif
 }
 
 /*

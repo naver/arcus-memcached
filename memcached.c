@@ -319,10 +319,25 @@ static void stats_reset(const void *cookie) {
     mc_engine.v1->reset_stats(mc_engine.v0, cookie);
 }
 
+#ifdef NEW_PREFIX_STATS_MANAGEMENT
+static int prefix_stats_insert(const char *prefix, const size_t nprefix)
+{
+    if (settings.detail_enabled) {
+        return stats_prefix_insert(prefix, nprefix);
+    } else {
+        return -1;
+    }
+}
+
 static int prefix_stats_delete(const char *prefix, const size_t nprefix)
 {
-    return stats_prefix_delete(prefix, nprefix);
+    if (settings.detail_enabled) {
+        return stats_prefix_delete(prefix, nprefix);
+    } else {
+        return -1;
+    }
 }
+#endif
 
 static void settings_init(void) {
     settings.use_cas = true;
@@ -15050,7 +15065,10 @@ static SERVER_HANDLE_V1 *get_server_api(void)
         .realtime = realtime,
         .notify_io_complete = notify_io_complete,
         .get_current_time = get_current_time,
+#ifdef NEW_PREFIX_STATS_MANAGEMENT
+        .prefix_stats_insert = prefix_stats_insert,
         .prefix_stats_delete = prefix_stats_delete,
+#endif
         .parse_config = parse_config,
 #ifdef ENABLE_CLUSTER_AWARE
         .is_zk_integrated = is_zk_integrated,
