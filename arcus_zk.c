@@ -825,20 +825,24 @@ static void *hb_thread(void *arg)
         /* Paranoid.  Check if the clock had gone backwards. */
         start_msec = start_time.tv_sec * 1000 + start_time.tv_usec / 1000;
         end_msec = end_time.tv_sec * 1000 + end_time.tv_usec / 1000;
-        if (end_msec >= start_msec) {
+        if (start_msec <= end_msec) {
             elapsed_msec = end_msec - start_msec;
+            azk_stat.hb_count += 1;
+            azk_stat.hb_latency += elapsed_msec;
         } else {
-            elapsed_msec = 0; /* Ignore this failure */
+            elapsed_msec = 0; /* Ignore this heartbeat */
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "hb_thread: Clock has gone backwards? start_msec=%"PRIu64
                 " end_msec=%"PRIu64"\n", start_msec, end_msec);
         }
 
-        azk_stat.hb_count += 1;
-        azk_stat.hb_latency += elapsed_msec;
-
         if (elapsed_msec > cur_hb_timeout) {
-            acc_hb_latency += elapsed_msec;
+            if (cur_hb_failstop > 0) {
+                acc_hb_latency += elapsed_msec;
+            } else {
+                /* Reset the acc_hb_latency */
+                acc_hb_latency = 0;
+            }
             /* Print a message for every failure to help debugging, postmortem
              * analysis, etc.
              */
@@ -1679,18 +1683,22 @@ int arcus_zk_set_hbtimeout(int hbtimeout)
 
     if (hbtimeout < HEART_BEAT_MIN_TIMEOUT ||
         hbtimeout > HEART_BEAT_MAX_TIMEOUT)
+    {
         return -1;
+    }
 
     pthread_mutex_lock(&arcus_conf.lock);
-    do {
+    if (arcus_conf.hb_failstop > 0) {
         /* Check: heartbeat timeout <= heartbeat failstop */
         if (hbtimeout > arcus_conf.hb_failstop) {
-            ret = -1; break;
+            ret = -1;
         }
+    }
+    if (ret == 0) {
         if (hbtimeout != arcus_conf.hb_timeout) {
             arcus_conf.hb_timeout = hbtimeout;
         }
-    } while(0);
+    }
     pthread_mutex_unlock(&arcus_conf.lock);
 
     return ret;
@@ -1698,8 +1706,6 @@ int arcus_zk_set_hbtimeout(int hbtimeout)
 
 int arcus_zk_get_hbtimeout(void)
 {
-    assert(arcus_conf.hb_timeout >= HEART_BEAT_MIN_TIMEOUT &&
-           arcus_conf.hb_timeout <= HEART_BEAT_MAX_TIMEOUT);
     return arcus_conf.hb_timeout;
 }
 
@@ -1709,18 +1715,23 @@ int arcus_zk_set_hbfailstop(int hbfailstop)
 
     if (hbfailstop < HEART_BEAT_MIN_FAILSTOP ||
         hbfailstop > HEART_BEAT_MAX_FAILSTOP)
-        return -1;
+    {
+        if (hbfailstop != 0)
+            return -1;
+    }
 
     pthread_mutex_lock(&arcus_conf.lock);
-    do {
+    if (hbfailstop > 0) {
         /* Check: heartbeat failstop >= heartbeat timeout */
         if (hbfailstop < arcus_conf.hb_timeout) {
-            ret = -1; break;
+            ret = -1;
         }
+    }
+    if (ret == 0) {
         if (hbfailstop != arcus_conf.hb_failstop) {
             arcus_conf.hb_failstop = hbfailstop;
         }
-    } while(0);
+    }
     pthread_mutex_unlock(&arcus_conf.lock);
 
     return ret;
@@ -1728,8 +1739,6 @@ int arcus_zk_set_hbfailstop(int hbfailstop)
 
 int arcus_zk_get_hbfailstop(void)
 {
-    assert(arcus_conf.hb_failstop >= HEART_BEAT_MIN_FAILSTOP &&
-           arcus_conf.hb_failstop <= HEART_BEAT_MAX_FAILSTOP );
     return arcus_conf.hb_failstop;
 }
 
