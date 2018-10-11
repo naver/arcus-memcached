@@ -1,3 +1,11 @@
+2018-10-11 [version 1.11.5]
+	* [ENHANCE] Do exact search instead of full scan when do flush_prefix.
+	* [FEATURE} Increase HEART_BEAT_DFT_FAILSTOP. 30000 => 60000 (ms)
+	* [FEATURE} Increase HEART_BEAT_MAX_FAILSTOP. 60000 => 300000 (ms)
+	* [FEATURE} Add stat_prefixes(# of prefix stats) in stats result.
+	* [FEATURE} Auto-off stats detail when prefix stats count is over 10000.
+	* [FEATURE} Can disable mc heartbeat failstop by setting its value to 0.
+
 2018-08-17 [version 1.11.4]
 	* [Fix]     Fix free space mis-calculation when the last 01pct slot is freed.
 	* [Fix]     Use free small memory if possible when sm space is short of.
