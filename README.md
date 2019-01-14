@@ -19,6 +19,7 @@ data structures.
 
 * **List** - a doubly-linked list structure.
 * **Set** - an unordered set of unique data.
+* **Map** - an unordered set of \<field, value\>.
 * **B+tree** - a b+tree structure, conceptually similar to sorted map.
 
 Second, Arcus can operate as a cache cloud using Zookeeper.
