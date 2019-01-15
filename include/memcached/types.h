@@ -39,6 +39,8 @@ struct iovec {
 #define JHPARK_OLD_SMGET_INTERFACE
 #define MAX_EFLAG_COMPARE_COUNT 100
 
+#define ADD_LONGQ_MAP
+
 #ifdef __cplusplus
 extern "C" {
 #endif

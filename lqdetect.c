@@ -12,9 +12,13 @@
 #define LONGQ_INPUT_SIZE   500    /* the size of input(time, ip, command, argument) */
 
 static EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
+#ifdef ADD_LONGQ_MAP
+static char *command_str[LONGQ_COMMAND_NUM] = {"sop get","mop delete", "mop get", "lop insert", "lop delete", "lop get",
+                                              "bop delete", "bop get", "bop count", "bop gbp"};
+#else
 static char *command_str[LONGQ_COMMAND_NUM] = {"sop get", "lop insert", "lop delete", "lop get",
                                                "bop delete", "bop get", "bop count", "bop gbp"};
-
+#endif
 /* lqdetect buffer structure */
 struct lq_detect_buffer {
     char *data;
@@ -224,6 +228,10 @@ static bool lqdetect_dupcheck(char *key, enum lq_detect_command cmd, struct lq_d
             }
         }
         break;
+#ifdef ADD_LONGQ_MAP
+    case LQCMD_MOP_DELETE:
+    case LQCMD_MOP_GET:
+#endif
     case LQCMD_SOP_GET:
         for(ii = 0; ii < count; ii++) {
             if (arg->count == 0) {
@@ -276,6 +284,9 @@ static void lqdetect_write(char client_ip[], char *key, enum lq_detect_command c
     case LQCMD_SOP_GET:
         snprintf(bufptr, length, "%s %s\n", key, arg->range);
         break;
+#ifdef ADD_LONGQ_MAP
+    case LQCMD_MOP_DELETE:
+#endif
     case LQCMD_LOP_DELETE:
         if (arg->delete_or_drop == 2) {
             snprintf(bufptr, length, "%s %s %s\n", key, arg->range, "drop");
@@ -283,6 +294,9 @@ static void lqdetect_write(char client_ip[], char *key, enum lq_detect_command c
             snprintf(bufptr, length, "%s %s\n", key, arg->range);
         }
         break;
+#ifdef ADD_LONGQ_MAP
+    case LQCMD_MOP_GET:
+#endif
     case LQCMD_LOP_GET:
         if (arg->delete_or_drop != 0) {
             snprintf(bufptr, length, "%s %s %s\n", key, arg->range,
