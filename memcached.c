@@ -1999,6 +1999,33 @@ static void process_mop_delete_complete(conn *c) {
                                            c->coll_numkeys, flist, c->coll_drop, &del_count, &dropped, 0);
     }
 
+#ifdef ADD_LONGQ_MAP
+#ifdef DETECT_LONG_QUERY
+    /*long query detection*/
+    if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
+        if (lqdetect_discriminant(del_count)) {
+            struct lq_detect_argument argument;
+            char *bufptr = argument.range;
+
+            if (c->coll_numkeys == 0) {
+                snprintf(bufptr, 4, "all");
+            } else {
+                snprintf(bufptr, 16, "%d", c->coll_numkeys);
+            }
+            argument.overhead = del_count;
+            argument.count = c->coll_numkeys;
+            argument.delete_or_drop = 0;
+            if (c->coll_drop) {
+                argument.delete_or_drop = 2;
+            }
+
+            if (! lqdetect_save_cmd(c->client_ip, c->coll_key, LQCMD_MOP_DELETE, &argument)) {
+                lqdetect_in_use = false;
+            }
+        }
+    }
+#endif
+#endif
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -2110,6 +2137,35 @@ static void process_mop_get_complete(conn *c)
                                          delete, drop_if_empty, elem_array, &elem_count, &flags, &dropped, 0);
     }
 
+#ifdef ADD_LONGQ_MAP
+#ifdef DETECT_LONG_QUERY
+    /* long query detection */
+    if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
+        if (lqdetect_discriminant(elem_count)) {
+            struct lq_detect_argument argument;
+            char *bufptr = argument.range;
+
+            if (c->coll_numkeys == 0) {
+                snprintf(bufptr, 4, "all");
+            } else {
+                snprintf(bufptr, 16, "%d", c->coll_numkeys);
+            }
+            argument.overhead = elem_count;
+            argument.count = c->coll_numkeys;
+            argument.delete_or_drop = 0;
+            if (drop_if_empty) {
+                argument.delete_or_drop = 2;
+            } else if (delete) {
+                argument.delete_or_drop = 1;
+            }
+
+            if (! lqdetect_save_cmd(c->client_ip, c->coll_key, LQCMD_MOP_GET, &argument)) {
+                lqdetect_in_use = false;
+            }
+        }
+    }
+#endif
+#endif
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -9785,6 +9841,10 @@ static void lqdetect_show(conn *c)
 {
     char *shorted_str[LONGQ_COMMAND_NUM] = {
                             "sop get command entered count :",
+#ifdef ADD_LONGQ_MAP
+                            "mop delete command entered count :",
+                            "mop get command entered count :",
+#endif
                             "lop insert command entered count :",
                             "lop delete command entered count :",
                             "lop get command entered count :",
