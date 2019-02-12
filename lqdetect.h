@@ -5,14 +5,13 @@
 #include "memcached/util.h"
 
 #define DETECT_LONG_QUERY
-#define LONGQ_STAT_STRLEN        300
-#define LONGQ_STANDARD_DEFAULT   4000        /* defulat detect standard */
-#define LONGQ_RANGE_SIZE         (31*2+10*2)
+#define LONGQ_STAT_STRLEN       300
+#define LONGQ_STANDARD_DEFAULT  4000        /* defulat detect standard */
+#define LONGQ_RANGE_SIZE        (31*2+10*2)
 
-
-#define LONGQ_EXPLICIT_STOP          0    /* stop by user request */
-#define LONGQ_OVERFLOW_STOP          1    /* stop by detected command overflow (buffer or count)*/
-#define LONGQ_RUNNING                2    /* long query is running */
+#define LONGQ_EXPLICIT_STOP     0    /* stop by user request */
+#define LONGQ_OVERFLOW_STOP     1    /* stop by detected command overflow (buffer or count)*/
+#define LONGQ_RUNNING           2    /* long query is running */
 
 /* detect long query target command */
 enum lq_detect_command {
@@ -54,8 +53,8 @@ char *lqdetect_buffer_get(int cmd, uint32_t *length, uint32_t *cmdcnt);
 void lqdetect_buffer_release(int bufcnt);
 int lqdetect_start(uint32_t lqdetect_base, bool *already_started);
 void lqdetect_stop(bool *already_stopped);
-#ifdef REFACTORING_LONG_QUERY
 void lqdetect_get_stats(char* str);
+
 bool lqdetect_lop_insert(char *client_ip, char *key, int coll_index);
 bool lqdetect_lop_delete(char *client_ip, char *key, uint32_t del_count,
                          int32_t from_index, int32_t to_index, const int delete_or_drop);
@@ -77,10 +76,5 @@ bool lqdetect_bop_count(char *client_ip, char *key, uint32_t access_count,
 bool lqdetect_bop_delete(char *client_ip, char *key, uint32_t access_count,
                          const bkey_range *bkrange, const eflag_filter *efilter,
                          uint32_t count, const int delete_or_drop);
-#else
-void lqdetect_stats(struct lq_detect_stats *stats);
-bool lqdetect_discriminant(uint32_t overhead);
-bool lqdetect_save_cmd(char client_ip[], char* key,
-                       enum lq_detect_command cmd, struct lq_detect_argument *arg);
-#endif
+
 #endif

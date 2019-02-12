@@ -160,7 +160,6 @@ void lqdetect_stop(bool *already_stopped)
     pthread_mutex_unlock(&lqdetect.lock);
 }
 
-#ifdef REFACTORING_LONG_QUERY
 void lqdetect_get_stats(char* str)
 {
     int ii;
@@ -189,23 +188,6 @@ void lqdetect_get_stats(char* str)
             stats.bgndate, stats.bgntime, stats.enddate, stats.endtime,
             stats.total_lqcmds, stats.standard);
 }
-#else
-void lqdetect_stats(struct lq_detect_stats *stats)
-{
-    int ii;
-    *stats = lqdetect.stats;
-
-    if (lqdetect.on_detecting) {
-        stats->enddate = 0;
-        stats->endtime = 0;
-    }
-
-    stats->total_lqcmds = 0;
-    for (ii = 0; ii < LONGQ_COMMAND_NUM; ii++) {
-        stats->total_lqcmds += lqdetect.buffer[ii].ntotal;
-    }
-}
-#endif
 
 char *lqdetect_buffer_get(int cmd, uint32_t *length, uint32_t *cmdcnt)
 {
@@ -306,10 +288,6 @@ static void lqdetect_write(char client_ip[], char *key, enum lq_detect_command c
 
     switch (cmd) {
     case LQCMD_LOP_INSERT:
-#ifdef REFACTORING_LONG_QUERY
-#else
-    case LQCMD_SOP_GET:
-#endif
         snprintf(bufptr, length, "%s %s\n", key, arg->range);
         break;
     case LQCMD_MOP_DELETE:
@@ -320,9 +298,7 @@ static void lqdetect_write(char client_ip[], char *key, enum lq_detect_command c
             snprintf(bufptr, length, "%s %s\n", key, arg->range);
         }
         break;
-#ifdef REFACTORING_LONG_QUERY
     case LQCMD_SOP_GET:
-#endif
     case LQCMD_MOP_GET:
     case LQCMD_LOP_GET:
         if (arg->delete_or_drop != 0) {
@@ -361,11 +337,7 @@ static void lqdetect_write(char client_ip[], char *key, enum lq_detect_command c
     buffer->nsaved += 1;
 }
 
-#ifdef REFACTORING_LONG_QUERY
 static bool lqdetect_discriminant(uint32_t overhead)
-#else
-bool lqdetect_discriminant(uint32_t overhead)
-#endif
 {
     if (overhead >= lqdetect.stats.standard) {
         return true;
@@ -373,13 +345,9 @@ bool lqdetect_discriminant(uint32_t overhead)
         return false;
     }
 }
-#ifdef REFACTORING_LONG_QUERY
+
 static bool lqdetect_save_cmd(char client_ip[], char* key,
                               enum lq_detect_command cmd, struct lq_detect_argument *arg)
-#else
-bool lqdetect_save_cmd(char client_ip[], char* key,
-                       enum lq_detect_command cmd, struct lq_detect_argument *arg)
-#endif
 {
     bool ret = true;
 
@@ -419,7 +387,6 @@ bool lqdetect_save_cmd(char client_ip[], char* key,
     return ret;
 }
 
-#ifdef REFACTORING_LONG_QUERY
 static void lqdetect_make_bkeystring(const unsigned char* from_bkey, const unsigned char* to_bkey,
                                      const int from_nbkey, const int to_nbkey,
                                      const eflag_filter *efilter, char *bufptr) {
@@ -654,4 +621,3 @@ bool lqdetect_bop_delete(char *client_ip, char *key, uint32_t access_count,
     }
     return true;
 }
-#endif
