@@ -172,7 +172,7 @@ void lqdetect_get_stats(char* str)
                                "stopped by long query overflow", // LONGQ_OVERFLOW_STOP
                                "running"}; // LONGQ_RUNNING
     struct lq_detect_stats stats = lqdetect.stats;
- 
+
     if (lqdetect.on_detecting) {
         stats.enddate = 0;
         stats.endtime = 0;

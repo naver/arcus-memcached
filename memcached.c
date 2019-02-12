@@ -1625,7 +1625,7 @@ static void process_lop_insert_complete(conn *c) {
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
             ret = ENGINE_SUCCESS;
-        } 
+        }
         if (settings.detail_enabled) {
             stats_prefix_record_lop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
         }
