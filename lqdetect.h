@@ -17,10 +17,8 @@
 /* detect long query target command */
 enum lq_detect_command {
     LQCMD_SOP_GET=0,
-#ifdef ADD_LONGQ_MAP
     LQCMD_MOP_DELETE,
     LQCMD_MOP_GET,
-#endif
     LQCMD_LOP_INSERT,
     LQCMD_LOP_DELETE,
     LQCMD_LOP_GET,

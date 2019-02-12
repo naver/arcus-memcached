@@ -2004,7 +2004,6 @@ static void process_mop_delete_complete(conn *c) {
                                            c->coll_numkeys, flist, c->coll_drop, &del_count, &dropped, 0);
     }
 
-#ifdef ADD_LONGQ_MAP
 #ifdef DETECT_LONG_QUERY
     /*long query detection*/
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
@@ -2036,7 +2035,6 @@ static void process_mop_delete_complete(conn *c) {
         }
 #endif
     }
-#endif
 #endif
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
@@ -2149,7 +2147,6 @@ static void process_mop_get_complete(conn *c)
                                          delete, drop_if_empty, elem_array, &elem_count, &flags, &dropped, 0);
     }
 
-#ifdef ADD_LONGQ_MAP
 #ifdef DETECT_LONG_QUERY
     /* long query detection */
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
@@ -2183,7 +2180,6 @@ static void process_mop_get_complete(conn *c)
         }
 #endif
     }
-#endif
 #endif
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
@@ -9863,10 +9859,8 @@ static void lqdetect_show(conn *c)
 {
     char *shorted_str[LONGQ_COMMAND_NUM] = {
                             "sop get command entered count :",
-#ifdef ADD_LONGQ_MAP
                             "mop delete command entered count :",
                             "mop get command entered count :",
-#endif
                             "lop insert command entered count :",
                             "lop delete command entered count :",
                             "lop get command entered count :",
