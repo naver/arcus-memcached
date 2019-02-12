@@ -1631,7 +1631,6 @@ static void process_lop_insert_complete(conn *c) {
         }
 
 #ifdef DETECT_LONG_QUERY
-        /* long query detection */
         if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
             if (! lqdetect_lop_insert(c->client_ip, c->coll_key, c->coll_index)) {
                 lqdetect_in_use = false;
@@ -1989,15 +1988,6 @@ static void process_mop_delete_complete(conn *c) {
                                            c->coll_numkeys, flist, c->coll_drop, &del_count, &dropped, 0);
     }
 
-#ifdef DETECT_LONG_QUERY
-    /*long query detection*/
-    if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
-        if (! lqdetect_mop_delete(c->client_ip, c->coll_key, del_count,
-                                  c->coll_numkeys, c->coll_drop ? 2 : 1)) {
-            lqdetect_in_use = false;
-        }
-    }
-#endif
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -2007,6 +1997,15 @@ static void process_mop_delete_complete(conn *c) {
         stats_prefix_record_mop_delete(c->coll_key, c->coll_nkey,
                                        (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
+
+#ifdef DETECT_LONG_QUERY
+    if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
+        if (! lqdetect_mop_delete(c->client_ip, c->coll_key, del_count,
+                                  c->coll_numkeys, c->coll_drop ? 2 : 1)) {
+            lqdetect_in_use = false;
+        }
+    }
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -2109,15 +2108,6 @@ static void process_mop_get_complete(conn *c)
                                          delete, drop_if_empty, elem_array, &elem_count, &flags, &dropped, 0);
     }
 
-#ifdef DETECT_LONG_QUERY
-    /* long query detection */
-    if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
-        if (! lqdetect_mop_get(c->client_ip, c->coll_key, elem_count,
-                               c->coll_numkeys, drop_if_empty ? 2 : (delete ? 1 : 0))) {
-            lqdetect_in_use = false;
-        }
-    }
-#endif
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -2126,6 +2116,15 @@ static void process_mop_get_complete(conn *c)
     if (settings.detail_enabled) {
         stats_prefix_record_mop_get(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
+
+#ifdef DETECT_LONG_QUERY
+    if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
+        if (! lqdetect_mop_get(c->client_ip, c->coll_key, elem_count,
+                               c->coll_numkeys, drop_if_empty ? 2 : (delete ? 1 : 0))) {
+            lqdetect_in_use = false;
+        }
+    }
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -9960,7 +9959,6 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
     }
 
 #ifdef DETECT_LONG_QUERY
-    /* long query detection */
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_lop_get(c->client_ip, key, elem_count,
                                from_index, to_index, drop_if_empty ? 2 : (delete ? 1 : 0))) {
@@ -10151,7 +10149,6 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
     }
 
 #ifdef DETECT_LONG_QUERY
-    /* long query detection */
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_lop_delete(c->client_ip, key, del_count,
                                   from_index, to_index, drop_if_empty ? 2 : 1)) {
@@ -10380,7 +10377,6 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
     }
 
 #ifdef DETECT_LONG_QUERY
-    /* long query detection */
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_sop_get(c->client_ip, key, elem_count,
                                count, drop_if_empty ? 2 : (delete ? 1 : 0))) {
@@ -10774,7 +10770,6 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
     }
 
 #ifdef DETECT_LONG_QUERY
-    /* long query detection */
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_bop_get(c->client_ip, key, access_count,
                                bkrange, efilter,
@@ -10891,7 +10886,6 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
     }
 
 #ifdef DETECT_LONG_QUERY
-    /* long query detection */
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_bop_count(c->client_ip, key, access_count,
                                  bkrange, efilter)) {
@@ -11114,7 +11108,6 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
     }
 
 #ifdef DETECT_LONG_QUERY
-    /* long query detection */
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_bop_gbp(c->client_ip, key, elem_count,
                                from_posi, to_posi, order == BTREE_ORDER_ASC ? 1 : 2)) {
@@ -11450,7 +11443,6 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
     }
 
 #ifdef DETECT_LONG_QUERY
-    /* long query detection */
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_bop_delete(c->client_ip, key, acc_count,
                                   bkrange, efilter,
@@ -15726,6 +15718,7 @@ int main (int argc, char **argv) {
 #endif
 
 #ifdef DETECT_LONG_QUERY
+    /* initialise long query detection */
     if (lqdetect_init() == -1) {
         mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Can't allocate long query detection buffer\n");
