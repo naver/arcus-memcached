@@ -40,6 +40,7 @@ struct iovec {
 #define MAX_EFLAG_COMPARE_COUNT 100
 
 #define ADD_LONGQ_MAP
+#define REFACTORING_LONG_QUERY
 
 #ifdef __cplusplus
 extern "C" {
