@@ -1241,7 +1241,6 @@ static int arcus_create_ephemeral_znode(zhandle_t *zh, const char *root)
     return 0;
 }
 
-#ifdef REF_ZK
 static bool sm_check_mc_paused(void)
 {
     bool paused = false;
@@ -1345,7 +1344,6 @@ static int sm_reload_cache_list_znode(zhandle_t *zh, bool *retry)
     }
     return 0;
 }
-#endif
 
 void arcus_zk_init(char *ensemble_list, int zk_to,
                    EXTENSION_LOGGER_DESCRIPTOR *logger,
@@ -1925,124 +1923,23 @@ static void *sm_state_thread(void *arg)
             break;
 
         if (sm_info.mc_pause == true) {
-#ifdef REF_ZK
             if (sm_check_mc_paused()) {
                 continue; /* zk paused */
             }
-#else
-            bool paused = false;
-            pthread_mutex_lock(&zk_lock);
-            if (sm_info.mc_pause == true) {
-                if (main_zk->zh != NULL) {
-                    zookeeper_close(main_zk->zh);
-                    main_zk->zh = NULL;
-                    arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "zk connection closed\n");
-                }
-                paused = true;
-            }
-            pthread_mutex_unlock(&zk_lock);
-            if (paused) continue;
-#endif
         }
 
         if (sm_info.node_added_time != 0) {
-#ifdef REF_ZK
             sm_check_and_scrub_stale(&sm_retry);
-#else
-            uint64_t now = time(NULL);
-            if (now - sm_info.node_added_time >= arcus_conf.zk_timeout/1000) {
-                /* remove stale items after zk_timeout have passed
-                 * since a new node is added to the cluster
-                 */
-                if (arcus_memcached_scrub_stale() != 0) {
-                    arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                                          "Failed to scrub stale data.\n");
-                }
-                sm_info.node_added_time = 0;
-            } else {
-                sm_retry = true;
-            }
-#endif
         }
 
         /* Read the latest hash ring */
         if (smreq.update_cache_list) {
-#ifdef REF_ZK
             if (sm_reload_cache_list_znode(main_zk->zh, &sm_retry) < 0) {
                 shutdown_by_me = true; break;
             }
             if (sm_info.mc_pause) continue;
             if (arcus_zk_shutdown)
                 break;
-#else
-            bool znode_deleted = false;
-            struct String_vector strv_cache_list = {0, NULL};
-            int zresult = arcus_read_ZK_children(main_zk->zh,
-                                                 arcus_conf.cluster_path,
-                                                 arcus_cache_list_watcher,
-                                                 &strv_cache_list);
-            if (zresult < 0) {
-                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "Failed to read cache list from ZK.  Retry...\n");
-                sm_retry = true;
-                sm_lock();
-                sm_info.request.update_cache_list = true;
-                sm_unlock();
-                /* ZK operations can fail.  For example, when we are
-                 * disconnected from ZK, operations fail with connectionloss.
-                 * Or, we would see operation timeout.
-                 */
-            } else if (zresult == 0) { /* NO znode */
-                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "Cannot read cache list from ZK.  No znode.\n");
-                znode_deleted = true;
-            } else {
-                /* Remember the latest cache list */
-                deallocate_String_vector(&sm_info.sv_cache_list);
-                sm_info.sv_cache_list = strv_cache_list;
-
-                if (arcus_conf.znode_created) {
-                    /* We think checking znode existence is a sort of overhead
-                     * since it must be done whenever cache list is updated. FIXME.
-                     */
-                    if (!check_znode_existence(&strv_cache_list, arcus_conf.znode_name))
-                        znode_deleted = true;
-                }
-
-#ifdef ENABLE_CLUSTER_AWARE
-                int prev_node_count = sm_info.cluster_node_count;
-                /* update cluster config */
-                if (update_cluster_config(&sm_info.sv_cache_list) != 0) {
-                    arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "Failed to update cluster config. Will check later.\n");
-                }
-                else if (arcus_conf.auto_scrub &&
-                         sm_info.cluster_node_count > prev_node_count) {
-                    /* a new node added */
-                    sm_info.node_added_time = time(NULL);
-                    sm_retry = true;
-                }
-#endif
-            }
-
-            if (znode_deleted) {
-#ifdef PROXY_SUPPORT
-                if (arcus_conf.proxy) {
-                    arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "Proxy server down. shutting down\n");
-                    shutdown_by_me = true; break;
-                }
-#endif
-                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "My ephemeral znode in cache_list is deleted. "
-                        "Please check and rejoin.");
-                sm_lock();
-                sm_info.mc_pause = true;
-                sm_unlock();
-                sm_retry = true;
-                continue;
-            }
-#endif
         }
     }
     sm_info.state_running = false;
