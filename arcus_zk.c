@@ -146,6 +146,7 @@ volatile sig_atomic_t arcus_zk_shutdown=0;
 typedef struct {
     char    *svc;               // Service code name
     char    *mc_ipport;         // this memcached ip:port string
+    char    *mc_hostnameport;   // this memcached hostname:port string
     char    *hostip;            // localhost server IP
     int     port;               // memcached port number
     bool    zk_failstop;        // memcached automatic failstop on/off
@@ -177,6 +178,7 @@ typedef struct {
 arcus_zk_conf arcus_conf = {
     .svc            = NULL,
     .mc_ipport      = NULL,
+    .mc_hostnameport    = NULL,
     .hostip         = NULL,
     .zk_failstop    = true,
     .hb_failstop    = HEART_BEAT_DFT_FAILSTOP,
@@ -1047,6 +1049,8 @@ static int arcus_build_znode_name(char *ensemble_list)
 
         snprintf(rcbuf, sizeof(rcbuf), "%s:%s", proxy_ip, proxy_port);
         arcus_conf.mc_ipport = strdup(rcbuf);
+        snprintf(rcbuf, sizeof(rcbuf), "%s:%s", proxy_host->h_name, proxy_port);
+        arcus_conf.mc_hostnameport = strdup(rcbuf);
         snprintf(rcbuf, sizeof(rcbuf), "%s-%s", arcus_conf.mc_ipport, proxy_host->h_name);
         arcus_conf.znode_name = strdup(rcbuf);
         return 0; // EX_OK
@@ -1082,6 +1086,8 @@ static int arcus_build_znode_name(char *ensemble_list)
         // we need to keep ip:port-hostname tuple for later user (restart)
         snprintf(rcbuf, sizeof(rcbuf), "%s:%d", arcus_conf.hostip, arcus_conf.port);
         arcus_conf.mc_ipport = strdup(rcbuf);
+        snprintf(rcbuf, sizeof(rcbuf), "%s:%d", hostp, arcus_conf.port);
+        arcus_conf.mc_hostnameport = strdup(rcbuf);
         snprintf(rcbuf, sizeof(rcbuf), "%s-%s", arcus_conf.mc_ipport, hostp);
         arcus_conf.znode_name = strdup(rcbuf);
     }
@@ -1148,17 +1154,24 @@ static int arcus_check_server_mapping(zhandle_t *zh, const char *root)
              root, zk_map_dir, arcus_conf.mc_ipport);
     rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
     if (rc == ZNONODE) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Cannot find the server mapping. zpath=%s error=%d(%s)\n",
-                zpath, rc, zerror(rc));
 
-        /* Second check: get children of "/cache_server_mapping/ip" */
+        /* Second check: get children of "/cache_server_mapping/hostname:port" */
         snprintf(zpath, sizeof(zpath), "%s/%s/%s",
-                 root, zk_map_dir, arcus_conf.hostip);
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Recheck the server mapping without the port number."
-                " zpath=%s\n", zpath);
+                 root, zk_map_dir, arcus_conf.mc_hostnameport);
         rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
+        if (rc == ZNONODE) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Cannot find the server mapping. zpath=%s error=%d(%s)\n",
+                    zpath, rc, zerror(rc));
+
+            /* Third check: get children of "/cache_server_mapping/ip" */
+            snprintf(zpath, sizeof(zpath), "%s/%s/%s",
+                     root, zk_map_dir, arcus_conf.hostip);
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Recheck the server mapping without the port number."
+                    " zpath=%s\n", zpath);
+            rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
+        }
     }
     if (rc != ZOK) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
