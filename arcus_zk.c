@@ -1153,13 +1153,17 @@ static int arcus_check_server_mapping(zhandle_t *zh, const char *root)
     snprintf(zpath, sizeof(zpath), "%s/%s/%s",
              root, zk_map_dir, arcus_conf.mc_ipport);
     rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
-    if (rc == ZNONODE) {
-
+    while (rc == ZNONODE) {
         /* Second check: get children of "/cache_server_mapping/hostname:port" */
         snprintf(zpath, sizeof(zpath), "%s/%s/%s",
                  root, zk_map_dir, arcus_conf.mc_hostnameport);
         rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
         if (rc == ZNONODE) {
+#ifdef PROXY_SUPPORT
+            if (arcus_conf.proxy) {
+                break; /* skip the below third checking */
+            }
+#endif
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Cannot find the server mapping. zpath=%s error=%d(%s)\n",
                     zpath, rc, zerror(rc));
@@ -1172,6 +1176,7 @@ static int arcus_check_server_mapping(zhandle_t *zh, const char *root)
                     " zpath=%s\n", zpath);
             rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
         }
+        break;
     }
     if (rc != ZOK) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
