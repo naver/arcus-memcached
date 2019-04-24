@@ -530,8 +530,6 @@ smget 수행의 실패 시의 response string은 다음과 같다.
 
 - “TYPE_MISMATCH” - 어떤 key가 b+tree type이 아님
 - “BKEY_MISMATCH” - smget에 참여된 b+tree들의 bkey 유형이 서로 다름.
-- “ATTR_MISMATCH” - smget에 참여된 b+tree들의 속성들이 서로 다름.
-                    maxcount, maxbkeyrange, overflowaction이 모두 동일해야 함.
 - “OUT_OF_RANGE” - 기존 smget 동작에서만 발생할 수 있는 실패 response string이다.
 - "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
