@@ -2777,7 +2777,6 @@ static void process_bop_smget_complete_old(conn *c) {
         if (ret == ENGINE_EBADVALUE)     out_string(c, "CLIENT_ERROR bad data chunk");
         else if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
-        else if (ret == ENGINE_EBADATTR) out_string(c, "ATTR_MISMATCH");
         else if (ret == ENGINE_EBKEYOOR) out_string(c, "OUT_OF_RANGE");
         else if (ret == ENGINE_ENOMEM)   out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
@@ -2964,7 +2963,6 @@ static void process_bop_smget_complete(conn *c) {
         if (ret == ENGINE_EBADVALUE)     out_string(c, "CLIENT_ERROR bad data chunk");
         else if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
-        else if (ret == ENGINE_EBADATTR) out_string(c, "ATTR_MISMATCH");
         else if (ret == ENGINE_ENOMEM)   out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
 #if 0 // JHPARK_SMGET_OFFSET_HANDLING
@@ -6452,8 +6450,6 @@ static void process_bin_bop_smget_complete_old(conn *c) {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else if (ret == ENGINE_EBADBKEY)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADBKEY, 0);
-        else if (ret == ENGINE_EBADATTR)
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADATTR, 0);
         else if (ret == ENGINE_EBKEYOOR)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBKEYOOR, 0);
         else if (ret == ENGINE_ENOMEM)
@@ -6656,8 +6652,6 @@ static void process_bin_bop_smget_complete(conn *c) {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else if (ret == ENGINE_EBADBKEY)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADBKEY, 0);
-        else if (ret == ENGINE_EBADATTR)
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADATTR, 0);
 #if 0 // JHPARK_SMGET_OFFSET_HANDLING
         else if (ret == ENGINE_EBKEYOOR)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBKEYOOR, 0);
