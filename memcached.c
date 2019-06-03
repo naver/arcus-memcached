@@ -14188,6 +14188,13 @@ static int server_socket(int port, enum network_transport transport,
                 freeaddrinfo(ai);
                 return 1;
             }
+            char addr_buf[INET6_ADDRSTRLEN];
+            const void *addr = (next->ai_family == AF_INET) ?
+                               (const void*)(&((struct sockaddr_in*)next->ai_addr)->sin_addr) :
+                               (const void*)(&((struct sockaddr_in6*)next->ai_addr)->sin6_addr);
+            inet_ntop(next->ai_family, addr, addr_buf, sizeof(addr_buf));
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                           "%s:%d already in use\n", addr_buf, port);
             safe_close(sfd);
             continue;
         } else {
