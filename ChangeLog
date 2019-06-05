@@ -1,3 +1,8 @@
+2019-06-05 [version 1.11.6]
+	* [FEATURE] Add long query detection for map collection.
+	* [FEATURE] Check cache_server_mapping ZK node with hostname.
+	* [FIX]     Incorrect ip checking when it is proxy mode.
+
 2018-10-11 [version 1.11.5]
 	* [ENHANCE] Do exact search instead of full scan when do flush_prefix.
 	* [FEATURE} Increase HEART_BEAT_DFT_FAILSTOP. 30000 => 60000 (ms)
