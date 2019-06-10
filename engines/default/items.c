@@ -8338,6 +8338,158 @@ void item_stats_dump(struct default_engine *engine,
     pthread_mutex_unlock(&engine->dumper.lock);
 }
 
+#ifdef ENABLE_PERSISTENCE_01_ITEM_SCAN
+/**
+ * item scan
+ */
+/* item scan macros */
+#define MAX_ITSCAN_COUNT 10
+#define MAX_ITSCAN_ITEMS 128
+
+/* item scan structure */
+typedef struct _item_scan_t {
+    struct default_engine *engine;
+    struct assoc_scan asscan; /* assoc scan */
+    const char *prefix;
+    int        nprefix;
+    bool       is_used;
+    struct _item_scan_t *next;
+} item_scan_t;
+
+/* static global variables */
+static item_scan_t     g_itscan_array[MAX_ITSCAN_COUNT];
+static item_scan_t    *g_itscan_free_list;
+static uint32_t        g_itscan_free_count;
+static bool            g_itscan_init = false;
+static pthread_mutex_t g_itscan_lock = PTHREAD_MUTEX_INITIALIZER;
+
+/*
+ * Internal item scan functions
+ */
+static void do_itscan_prepare(void)
+{
+    item_scan_t *sp; /* scan pointer */
+
+    for (int i = 0; i < MAX_ITSCAN_COUNT; i++) {
+        sp = &g_itscan_array[i];
+        sp->is_used = false;
+        if (i < (MAX_ITSCAN_COUNT-1)) sp->next = &g_itscan_array[i+1];
+        else                          sp->next = NULL;
+    }
+    g_itscan_free_list = &g_itscan_array[0];
+    g_itscan_free_count = MAX_ITSCAN_COUNT;
+}
+
+static item_scan_t *do_itscan_alloc(void)
+{
+    item_scan_t *sp; /* scan pointer */
+
+    pthread_mutex_lock(&g_itscan_lock);
+    if (g_itscan_init != true) {
+        do_itscan_prepare();
+        g_itscan_init = true;
+    }
+    if ((sp = g_itscan_free_list) != NULL) {
+        g_itscan_free_list = sp->next;
+        g_itscan_free_count -= 1;
+    }
+    pthread_mutex_unlock(&g_itscan_lock);
+    return sp;
+}
+
+static void do_itscan_free(item_scan_t *sp)
+{
+    pthread_mutex_lock(&g_itscan_lock);
+    sp->next = g_itscan_free_list;
+    g_itscan_free_list = sp;
+    g_itscan_free_count += 1;
+    pthread_mutex_unlock(&g_itscan_lock);
+}
+
+/*
+ * External item scan functions
+ */
+void *itscan_open(struct default_engine *engine,
+                  const char *prefix, const int nprefix)
+{
+    item_scan_t *sp = do_itscan_alloc();
+    if (sp != NULL) {
+        assoc_scan_init(engine, &sp->asscan);
+        sp->engine = engine;
+        sp->prefix = prefix;
+        sp->nprefix = nprefix;
+        sp->is_used = true;
+    }
+    return (void*)sp;
+}
+
+int itscan_getnext(void *scan, void **item_array, int item_arrsz)
+{
+    item_scan_t *sp = (item_scan_t *)scan;
+    hash_item *it;
+    rel_time_t curtime = sp->engine->server.core->get_current_time();
+    int scan_count = item_arrsz < MAX_ITSCAN_ITEMS
+                   ? item_arrsz : MAX_ITSCAN_ITEMS;
+    int item_count;
+    int real_count;
+
+    pthread_mutex_lock(&sp->engine->cache_lock);
+    item_count = assoc_scan_next(&sp->asscan, (hash_item**)item_array, scan_count);
+    if (item_count > 0) {
+        real_count = 0;
+        for (int idx = 0; idx < item_count; idx++) {
+            it = (hash_item *)item_array[idx];
+            /* Is it an internal or invalid item ? */
+            if ((it->iflag & ITEM_INTERNAL) != 0 ||
+                do_item_isvalid(sp->engine, it, curtime) != true) {
+                item_array[idx] = NULL; continue;
+            }
+            /* Is it not the prefix item ? */
+            if (sp->nprefix >= 0) {
+                if ((it->pfxptr->nprefix != sp->nprefix) ||
+                    (sp->nprefix > 0 && memcmp(item_get_key(it), sp->prefix, sp->nprefix) != 0)) {
+                    item_array[idx] = NULL; continue;
+                }
+            }
+            /* Found the valid items */
+            ITEM_REFCOUNT_INCR(it);
+            if (real_count < idx) {
+                item_array[real_count] = item_array[idx];
+            }
+            real_count += 1;
+        }
+    } else {
+        real_count = -1; /* The end of assoc scan */
+    }
+    pthread_mutex_unlock(&sp->engine->cache_lock);
+
+    return real_count;
+}
+
+void itscan_release(void *scan, void **item_array, int item_count)
+{
+    item_scan_t *sp = (item_scan_t *)scan;
+
+    pthread_mutex_lock(&sp->engine->cache_lock);
+    for (int idx = 0; idx < item_count; idx++) {
+        do_item_release(sp->engine, item_array[idx]);
+    }
+    pthread_mutex_unlock(&sp->engine->cache_lock);
+}
+
+void itscan_close(void *scan)
+{
+    item_scan_t *sp = (item_scan_t *)scan;
+
+    pthread_mutex_lock(&sp->engine->cache_lock);
+    assoc_scan_final(&sp->asscan);
+    pthread_mutex_unlock(&sp->engine->cache_lock);
+
+    sp->is_used = false;
+    do_itscan_free(sp);
+}
+#endif
+
 /*
  * MAP collection manangement
  */
