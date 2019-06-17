@@ -39,6 +39,9 @@ struct default_engine;
 #include "items.h"
 #include "assoc.h"
 #include "slabs.h"
+#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
+#include "mc_snapshot.h"
+#endif
 
 /**
  * engine configuration
