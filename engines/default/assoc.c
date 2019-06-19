@@ -31,7 +31,10 @@
 #define hashmask(n) (hashsize(n)-1)
 
 #define GET_HASH_BUCKET(hash, mask)        ((hash) & (mask))
+#ifdef ENHANCE_HTABLE_EXPAND
+#else
 #define GET_HASH_TABIDX(hash, shift, mask) (((hash) >> (shift)) & (mask))
+#endif
 
 #define DEFAULT_PREFIX_HASHPOWER 10
 #define DEFAULT_PREFIX_MAX_DEPTH 1
@@ -51,9 +54,15 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
     struct assoc *assoc = &engine->assoc;
 
     logger = engine->server.log->get_logger();
-
     assoc->hashsize = hashsize(assoc->hashpower);
     assoc->hashmask = hashmask(assoc->hashpower);
+
+#ifdef ENHANCE_HTABLE_EXPANSION
+    assoc->primary_hashtable = calloc(hashsize(assoc->hashpower), sizeof(void *));
+    if (assoc->primary_hashtable == NULL) {
+        return ENGINE_ENOMEM;
+    }
+#else
     assoc->rootpower = 0;
 
     assoc->roottable = calloc(assoc->hashsize * 2, sizeof(void *));
@@ -67,11 +76,16 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
         free(assoc->roottable);
         return ENGINE_ENOMEM;
     }
+#endif
 
     assoc->prefix_hashtable = calloc(hashsize(DEFAULT_PREFIX_HASHPOWER), sizeof(void *));
     if (assoc->prefix_hashtable == NULL) {
+#ifdef ENHANCE_HTABLE_EXPANSION
+        free(assoc->primary_hashtable);
+#else
         free(assoc->roottable);
         free(assoc->infotable);
+#endif
         return ENGINE_ENOMEM;
     }
 
@@ -86,6 +100,12 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
 void assoc_final(struct default_engine *engine)
 {
     struct assoc *assoc = &engine->assoc;
+#ifdef ENHANCE_HTABLE_EXPANSION
+    free(assoc->primary_hashtable);
+    if (assoc->expanding) {
+        free(assoc->old_hashtable);
+    }
+#else
     int ii, table_count;
 
     for (ii=0; ii < assoc->rootpower; ++ii) {
@@ -94,13 +114,37 @@ void assoc_final(struct default_engine *engine)
     }
     free(assoc->roottable);
     free(assoc->infotable);
+#endif
     free(assoc->prefix_hashtable);
     logger->log(EXTENSION_LOG_INFO, NULL, "ASSOC module destroyed.\n");
 }
 
+#ifdef ENHANCE_HTABLE_EXPANSION
+static void redistribute(struct default_engine *engine)
+#else
 static void redistribute(struct default_engine *engine, unsigned int bucket)
+#endif
 {
     struct assoc *assoc = &engine->assoc;
+#ifdef ENHANCE_HTABLE_EXPANSION
+    hash_item *it, *next;
+    uint32_t ii, bucket, table_count = 1;
+    for (ii=0; ii < table_count; ++ii) {
+        for (it = assoc->old_hashtable[assoc->expand_bucket]; NULL != it; it = next) {
+            bucket = GET_HASH_BUCKET(it->khash, assoc->hashmask);
+            next = it->h_next;
+            it->h_next = assoc->primary_hashtable[bucket];
+            assoc->primary_hashtable[bucket] = it;
+        }
+
+        assoc->old_hashtable[assoc->expand_bucket] = NULL;
+        assoc->expand_bucket++;
+        if (assoc->expand_bucket == hashsize(assoc->hashpower - 1)) {
+            assoc->expanding = false;
+            free(assoc->old_hashtable);
+        }
+    }
+#else
     hash_item *it, **prev;
     uint32_t tabidx;
     uint32_t ii, table_count = hashsize(assoc->infotable[bucket].curpower);
@@ -120,6 +164,7 @@ static void redistribute(struct default_engine *engine, unsigned int bucket)
          }
     }
     assoc->infotable[bucket].curpower = assoc->rootpower;
+#endif
 }
 
 hash_item *assoc_find(struct default_engine *engine, uint32_t hash,
@@ -128,11 +173,26 @@ hash_item *assoc_find(struct default_engine *engine, uint32_t hash,
     struct assoc *assoc = &engine->assoc;
     hash_item *it;
     int depth = 0;
+#ifdef ENHANCE_HTABLE_EXPANSION
+    unsigned int oldbucket;
+
+    if (assoc->expanding) {
+        redistribute(engine);
+    }
+
+    if (assoc->expanding &&
+        (oldbucket = GET_HASH_BUCKET(hash, hashmask(assoc->hashpower - 1))) >= assoc->expand_bucket) {
+        it = assoc->old_hashtable[oldbucket];
+    } else {
+        it = assoc->primary_hashtable[GET_HASH_BUCKET(hash, assoc->hashmask)];
+    }
+#else
     uint32_t bucket = GET_HASH_BUCKET(hash, assoc->hashmask);
     uint32_t tabidx = GET_HASH_TABIDX(hash, assoc->hashpower,
                                       hashmask(assoc->infotable[bucket].curpower));
 
     it = assoc->roottable[tabidx].hashtable[bucket];
+#endif
     while (it) {
         if ((hash == it->khash) && (nkey == it->nkey) &&
             (memcmp(key, item_get_key(it), nkey) == 0)) {
@@ -152,11 +212,26 @@ static hash_item** _hashitem_before(struct default_engine *engine, uint32_t hash
 {
     struct assoc *assoc = &engine->assoc;
     hash_item **pos;
+#ifdef ENHANCE_HTABLE_EXPANSION
+    unsigned int oldbucket;
+
+    if (assoc->expanding) {
+        redistribute(engine);
+    }
+
+    if (assoc->expanding &&
+        (oldbucket = GET_HASH_BUCKET(hash, hashmask(assoc->hashpower - 1))) >= assoc->expand_bucket) {
+        pos = &assoc->old_hashtable[oldbucket];
+    } else {
+        pos = &assoc->primary_hashtable[GET_HASH_BUCKET(hash, assoc->hashmask)];
+    }
+#else
     uint32_t bucket = GET_HASH_BUCKET(hash, assoc->hashmask);
     uint32_t tabidx = GET_HASH_TABIDX(hash, assoc->hashpower,
                                       hashmask(assoc->infotable[bucket].curpower));
 
     pos = &assoc->roottable[tabidx].hashtable[bucket];
+#endif
     while (*pos && ((nkey != (*pos)->nkey) || memcmp(key, item_get_key(*pos), nkey))) {
         pos = &(*pos)->h_next;
     }
@@ -167,6 +242,20 @@ static hash_item** _hashitem_before(struct default_engine *engine, uint32_t hash
 static void assoc_expand(struct default_engine *engine)
 {
     struct assoc *assoc = &engine->assoc;
+#ifdef ENHANCE_HTABLE_EXPANSION
+    assoc->old_hashtable = assoc->primary_hashtable;
+
+    assoc->primary_hashtable = calloc(hashsize(assoc->hashpower + 1), sizeof(void *));
+    if (assoc->primary_hashtable) {
+        assoc->hashpower++;
+        assoc->expanding = true;
+        assoc->expand_bucket = 0;
+        assoc->hashsize = hashsize(assoc->hashpower);
+        assoc->hashmask = hashmask(assoc->hashpower);
+    } else {
+        assoc->primary_hashtable = assoc->old_hashtable;
+    }
+#else
     hash_item** new_hashtable;
     uint32_t ii, table_count = hashsize(assoc->rootpower); // 2 ^ n
 
@@ -177,17 +266,32 @@ static void assoc_expand(struct default_engine *engine)
         }
         assoc->rootpower++;
     }
+#endif
 }
 
 /* Note: this isn't an assoc_update.  The key must not already exist to call this */
 int assoc_insert(struct default_engine *engine, uint32_t hash, hash_item *it)
 {
     struct assoc *assoc = &engine->assoc;
+#ifdef ENHANCE_HTABLE_EXPANSION
+    unsigned int oldbucket;
+#else
     uint32_t bucket = GET_HASH_BUCKET(hash, assoc->hashmask);
     uint32_t tabidx;
+#endif
 
     assert(assoc_find(engine, hash, item_get_key(it), it->nkey) == 0); /* shouldn't have duplicately named things defined */
 
+#ifdef ENHANCE_HTABLE_EXPANSION
+    if (assoc->expanding &&
+        (oldbucket = GET_HASH_BUCKET(hash, hashmask(assoc->hashpower - 1))) >= assoc->expand_bucket) {
+        it->h_next = assoc->old_hashtable[oldbucket];
+        assoc->old_hashtable[oldbucket] = it;
+    } else {
+        it->h_next = assoc->primary_hashtable[GET_HASH_BUCKET(hash, assoc->hashmask)];
+        assoc->primary_hashtable[GET_HASH_BUCKET(hash, assoc->hashmask)] = it;
+    }
+#else
     if (assoc->infotable[bucket].curpower != assoc->rootpower &&
         assoc->infotable[bucket].refcount == 0) {
         redistribute(engine, bucket);
@@ -198,11 +302,18 @@ int assoc_insert(struct default_engine *engine, uint32_t hash, hash_item *it)
     // inserting actual hash_item to appropriate assoc_t
     it->h_next = assoc->roottable[tabidx].hashtable[bucket];
     assoc->roottable[tabidx].hashtable[bucket] = it;
+#endif
 
     assoc->hash_items++;
+#ifdef ENHANCE_HTABLE_EXPANSION
+    if (! assoc->expanding && assoc->hash_items > (hashsize(assoc->hashpower) * 3) / 2) {
+        assoc_expand(engine);
+    }
+#else
     if (assoc->hash_items > (hashsize(assoc->hashpower + assoc->rootpower) * 3) / 2) {
         assoc_expand(engine);
     }
+#endif
     MEMCACHED_ASSOC_INSERT(item_get_key(it), it->nkey, assoc->hash_items);
     return 1;
 }
@@ -256,6 +367,7 @@ void assoc_scan_init(struct default_engine *engine, struct assoc_scan *scan)
     scan->initialized = true;
 }
 
+#if 0
 static void
 unlink_scan_placeholder(struct assoc *assoc, struct assoc_scan *scan)
 {
@@ -266,9 +378,11 @@ unlink_scan_placeholder(struct assoc *assoc, struct assoc_scan *scan)
     *p = (*p)->h_next;
     scan->ph_linked = false;
 }
+#endif
 
 int assoc_scan_next(struct assoc_scan *scan, hash_item **item_array, int array_size)
 {
+#if 0
     assert(scan->initialized && array_size > 0);
     struct assoc *assoc = &scan->engine->assoc;
     hash_item *next;
@@ -332,10 +446,13 @@ int assoc_scan_next(struct assoc_scan *scan, hash_item **item_array, int array_s
         scan->tabcnt = 0;
     }
     return item_count;
+#endif
+return 1;
 }
 
 void assoc_scan_final(struct assoc_scan *scan)
 {
+#if 0
     assert(scan->initialized);
 
     if (scan->ph_linked) {
@@ -346,6 +463,7 @@ void assoc_scan_final(struct assoc_scan *scan)
         scan->engine->assoc.infotable[scan->bucket].refcount -= 1;
     }
     scan->initialized = false;
+#endif
 }
 
 /*

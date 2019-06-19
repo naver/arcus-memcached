@@ -57,15 +57,25 @@ struct assoc {
     uint32_t hashpower; /* how many hash buckets in a hash table ? (power of 2) */
     uint32_t hashsize;  /* hash table size */
     uint32_t hashmask;  /* hash bucket mask */
+#ifdef ENHANCE_HTABLE_EXPANSION
+#else
     uint32_t rootpower; /* how many hash tables we use ? (power of 2) */
+#endif
 
     /* cache item hash table : an array of hash tables */
+#ifdef ENHANCE_HTABLE_EXPANSION
+    bool expanding;
+    uint32_t expand_bucket;
+    hash_item** primary_hashtable;
+    hash_item** old_hashtable;
+#else
     struct table {
        hash_item** hashtable;
     } *roottable;
 
     /* bucket info table */
     struct bucket_info *infotable;
+#endif
 
     /* prefix hash table : single hash table */
     prefix_t**  prefix_hashtable;
