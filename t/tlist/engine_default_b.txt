@@ -89,7 +89,6 @@
 ./t/stats_prefixes.t
 ./t/stats.t
 ./t/topkeys.t
-./t/udp.t
 ./t/unixsocket.t
 ./t/verbosity.t
 ./t/whitespace.t
