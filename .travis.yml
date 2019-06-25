@@ -9,7 +9,7 @@ script:
   - ./config/autorun.sh
   - ./configure
   - make
-  - make test
+  - sudo make test
 
 notifications:
   email:
