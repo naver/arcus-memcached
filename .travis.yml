@@ -1,5 +1,8 @@
 language: c
 
+prtl:
+  - "5.18.2"
+
 compiler:
   - clang
   - gcc
