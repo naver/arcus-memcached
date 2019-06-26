@@ -1,7 +1,7 @@
 language: c
 
-prtl:
-  - "5.18.2"
+perl:
+  - "5.18"
 
 compiler:
   - clang
