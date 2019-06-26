@@ -4,16 +4,8 @@ compiler:
   - clang
   - gcc
 
-before_install:
-  - perlbrew install perl-5.18.2
-  - perlbrew switch perl-5.18.2
-
 script:
-  - sudo apt-get install -qq build-essential autoconf automake libtool libcppunit-dev libevent-dev
-  - ./config/autorun.sh
-  - ./configure
-  - make
-  - make test
+  - perlbrew list
   - perl -v
 
 notifications:
