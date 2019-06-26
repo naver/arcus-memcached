@@ -4,6 +4,9 @@ compiler:
   - clang
   - gcc
 
+perl:
+  - "5.18.2"
+
 script:
   - sudo apt-get install -qq build-essential autoconf automake libtool libcppunit-dev libevent-dev
   - ./config/autorun.sh
