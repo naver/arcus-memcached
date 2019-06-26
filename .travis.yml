@@ -10,6 +10,7 @@ script:
   - ./configure
   - make
   - make test
+  - perl t/udp.t
 
 notifications:
   email:
