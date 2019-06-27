@@ -26,7 +26,6 @@ use constant RES_PKT_FMT      => "CCnCCnNNNN";
 use constant INCRDECR_PKT_FMT => "NNNNN";
 use constant MIN_RECV_BYTES   => length(pack(RES_PKT_FMT));
 
-
 my $engine = shift;
 my $server = get_memcached($engine);
 my $sock = $server->sock;
@@ -203,7 +202,7 @@ sub construct_udp_message {
     my $cur_dg ="";
     my $cur_udp_header ="";
     for (my $cur_dg_index = 0; $cur_dg_index < $num_datagram; $cur_dg_index++) {
-        $cur_dg = %$datagrams->{$cur_dg_index};
+        $cur_dg = $datagrams->{$cur_dg_index};
         isnt($cur_dg,"","missing datagram for segment $cur_dg_index");
         $cur_udp_header=substr($cur_dg, 0, 8);
         $msg .= substr($cur_dg,8);
