@@ -1,7 +1,7 @@
 /* -*- Mode: C; tab-width: 4; c-basic-offset: 4; indent-tabs-mode: nil -*- */
 /*
  * arcus-memcached - Arcus memory cache server
- * Copyright 2019 Jam2in Corp.
+ * Copyright 2019 JaM2in Corp.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -36,5 +36,9 @@ ENGINE_ERROR_CODE mc_snapshot_start(enum mc_snapshot_mode mode,
                                     const char *filepath);
 void mc_snapshot_stop(void);
 void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie);
+#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
+bool mc_snapshot_is_running(void);
+#endif
+
 #endif
 

@@ -28,6 +28,14 @@
 #include <inttypes.h>
 
 #include "default_engine.h"
+
+#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
+#include "mc_snapshot.h"
+#endif
+#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
+#include "checkpoint.h"
+#endif
+
 #include "memcached/util.h"
 #include "memcached/config_parser.h"
 
@@ -200,6 +208,19 @@ default_initialize(ENGINE_HANDLE* handle, const char* config_str)
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
+#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
+    ret = mc_snapshot_init(se);
+    if (ret != ENGINE_SUCCESS) {
+        return ret;
+    }
+#endif
+
+#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
+    ret = chkpt_init_and_start(se);
+    if (ret != ENGINE_SUCCESS) {
+        return ret;
+    }
+#endif
     return ENGINE_SUCCESS;
 }
 
@@ -210,6 +231,12 @@ default_destroy(ENGINE_HANDLE* handle)
 
     if (se->initialized) {
         se->initialized = false;
+#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
+        chkpt_stop_and_final();
+#endif
+#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
+        mc_snapshot_final();
+#endif
         item_final(se);
         slabs_final(se);
         assoc_final(se);
