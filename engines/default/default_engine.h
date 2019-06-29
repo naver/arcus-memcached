@@ -42,12 +42,18 @@ struct default_engine;
 #ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
 #include "mc_snapshot.h"
 #endif
+#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
+#include "checkpoint.h"
+#endif
 
 /**
  * engine configuration
  */
 struct engine_config {
    bool   use_cas;
+#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
+   bool   use_persistence;
+#endif
    size_t verbose;
    rel_time_t oldest_live;
    bool   evict_to_free;
