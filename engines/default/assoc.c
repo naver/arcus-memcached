@@ -34,6 +34,7 @@
 #define GET_HASH_TABIDX(hash, shift, mask) (((hash) >> (shift)) & (mask))
 
 #define DEFAULT_PREFIX_HASHPOWER 10
+#define DEFAULT_ROOTPOWER 9
 #define DEFAULT_PREFIX_MAX_DEPTH 1
 
 typedef struct {
@@ -56,11 +57,17 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
     assoc->hashmask = hashmask(assoc->hashpower);
     assoc->rootpower = 0;
 
-    assoc->roottable = calloc(assoc->hashsize * 2, sizeof(void *));
+    int table_count = hashsize(DEFAULT_ROOTPOWER);
+
+    assoc->roottable = calloc(table_count, sizeof(void *));
+
+    for(int i=0; i<table_count; i++){
+        assoc->roottable[i].hashtable = calloc(assoc->hashsize, sizeof(void*));
+    }
+
     if (assoc->roottable == NULL) {
         return ENGINE_ENOMEM;
     }
-    assoc->roottable[0].hashtable = (hash_item**)&assoc->roottable[assoc->hashsize];
 
     assoc->infotable = calloc(assoc->hashsize, sizeof(struct bucket_info));
     if (assoc->infotable == NULL) {
@@ -170,7 +177,13 @@ static void assoc_expand(struct default_engine *engine)
     hash_item** new_hashtable;
     uint32_t ii, table_count = hashsize(assoc->rootpower); // 2 ^ n
 
+    struct table *reallocated_roottable = realloc(assoc->roottable, sizeof(void*) * table_count * 2);
+    assert(reallocated_roottable);
+
+    assoc->roottable = reallocated_roottable;
+
     new_hashtable = calloc(assoc->hashsize * table_count, sizeof(void *));
+
     if (new_hashtable) {
         for (ii=0; ii < table_count; ++ii) {
             assoc->roottable[table_count+ii].hashtable = &new_hashtable[assoc->hashsize*ii];
