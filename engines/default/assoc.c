@@ -34,6 +34,12 @@
 #define GET_HASH_TABIDX(hash, shift, mask) (((hash) >> (shift)) & (mask))
 
 #define DEFAULT_PREFIX_HASHPOWER 10
+
+#define VARIABLE_SIZED_ROOTTABLE 1
+#ifdef VARIABLE_SIZED_ROOTTABLE
+    #define DEFAULT_ROOTSIZE 512
+#endif
+
 #define DEFAULT_PREFIX_MAX_DEPTH 1
 
 typedef struct {
@@ -56,20 +62,38 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
     assoc->hashmask = hashmask(assoc->hashpower);
     assoc->rootpower = 0;
 
+#ifdef VARIABLE_SIZED_ROOTTABLE
+    assoc->rootsize = DEFAULT_ROOTSIZE;
+    assoc->roottable = calloc(assoc->rootsize, sizeof(void *));
+#else
     assoc->roottable = calloc(assoc->hashsize * 2, sizeof(void *));
+#endif
+
     if (assoc->roottable == NULL) {
         return ENGINE_ENOMEM;
     }
+
+#ifdef VARIABLE_SIZED_ROOTTABLE
+    assoc->roottable[0].hashtable = calloc(assoc->hashsize, sizeof(void*));
+#else
     assoc->roottable[0].hashtable = (hash_item**)&assoc->roottable[assoc->hashsize];
+#endif
+
+    if (assoc->roottable[0].hashtable == NULL) {
+        free(assoc->roottable);
+        return ENGINE_ENOMEM;
+    }
 
     assoc->infotable = calloc(assoc->hashsize, sizeof(struct bucket_info));
     if (assoc->infotable == NULL) {
+        free(assoc->roottable[0].hashtable);
         free(assoc->roottable);
         return ENGINE_ENOMEM;
     }
 
     assoc->prefix_hashtable = calloc(hashsize(DEFAULT_PREFIX_HASHPOWER), sizeof(void *));
     if (assoc->prefix_hashtable == NULL) {
+        free(assoc->roottable[0].hashtable);
         free(assoc->roottable);
         free(assoc->infotable);
         return ENGINE_ENOMEM;
@@ -170,6 +194,18 @@ static void assoc_expand(struct default_engine *engine)
     hash_item** new_hashtable;
     uint32_t ii, table_count = hashsize(assoc->rootpower); // 2 ^ n
 
+#ifdef VARIABLE_SIZED_ROOTTABLE
+    uint32_t roottable_size = assoc->rootsize;
+    bool need_realloc = table_count * 2 > roottable_size;
+    if(need_realloc){
+        struct table *reallocated_roottable = realloc(assoc->roottable, sizeof(void*) * roottable_size * 2);
+        if(reallocated_roottable == NULL){
+            return;
+        }
+        assoc->roottable = reallocated_roottable;
+        assoc->rootsize *= 2;
+    }
+#endif
     new_hashtable = calloc(assoc->hashsize * table_count, sizeof(void *));
     if (new_hashtable) {
         for (ii=0; ii < table_count; ++ii) {
