@@ -239,87 +239,6 @@ static int do_snapshot_data_done(snapshot_st *ss)
     return 0;
 }
 
-#if 1 // ADD_SNAPSHOT_DIRECT
-#else
-/*
- * snapshot thread main function
- */
-static void *do_snapshot_thread_main(void *arg)
-{
-    snapshot_st *ss = (snapshot_st *)arg;
-    struct default_engine *engine = ss->engine;
-    void   *shandle; /* scan handle */
-    void   *item_array[SCAN_ITEM_ARRAY_SIZE];
-    int     item_arrsz = SCAN_ITEM_ARRAY_SIZE;
-    int     item_count = 0;
-    int     ret = 0;
-
-    assert(ss->running == true);
-
-    ss->file.fd = open(ss->file.path, O_WRONLY | O_CREAT | O_TRUNC,
-                                       S_IRUSR | S_IWUSR | S_IRGRP);
-    if (ss->file.fd < 0) {
-        logger->log(EXTENSION_LOG_INFO, NULL,
-                    "Failed to open the snapshot file. path=%s err=%s\n",
-                    ss->file.path, strerror(errno));
-        ret = -1; goto done;
-    }
-
-    shandle = itscan_open(engine, ss->prefix, ss->nprefix);
-    if (shandle == NULL) {
-        logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to get item scan resource.\n");
-        ret = -1; goto done;
-    }
-    while (engine->initialized) {
-        if (ss->reqstop) {
-            logger->log(EXTENSION_LOG_INFO, NULL, "Stop the current snapshot.\n");
-            ret = -1; break;
-        }
-
-        item_count = itscan_getnext(shandle, item_array, item_arrsz);
-        if (item_count < 0) { /* reached to the end */
-            break;
-        }
-        if (item_count == 0) {
-            /* The valid items were not found in the previous scan.
-             * So, we must continue the scanning.
-             */
-            continue;
-        }
-        /* item_count > 0 */
-        ret = snapshot_func[ss->mode].dump(ss, item_array, item_count);
-        if (ret < 0) {
-            break; /* Is logging nedded ? */
-        }
-        itscan_release(shandle, item_array, item_count);
-    }
-    itscan_close(shandle);
-
-    if (engine->initialized) {
-        if (ret == 0) {
-            ret = snapshot_func[ss->mode].done(ss);
-        }
-    } else {
-        if (item_count >= 0) {
-            ret = -1;
-        }
-    }
-
-done:
-    if (ss->file.fd > 0) {
-        close(ss->file.fd);
-        ss->file.fd = -1;
-    }
-    pthread_mutex_lock(&ss->lock);
-    ss->success = (ret == 0 ? true : false);
-    ss->stopped = time(NULL);
-    ss->running = false;
-    pthread_mutex_unlock(&ss->lock);
-    return NULL;
-}
-#endif
-
 static int do_snapshot_init(snapshot_st *ss, struct default_engine *engine)
 {
     pthread_mutex_init(&ss->lock, NULL);
@@ -365,7 +284,6 @@ static void do_snapshot_final(snapshot_st *ss)
     pthread_mutex_destroy(&ss->lock);
 }
 
-#if 1 // ADD_SNAPSHOT_DIRECT
 static ENGINE_ERROR_CODE do_snapshot_argcheck(enum mc_snapshot_mode mode)
 {
     /* check snapshot mode */
@@ -383,9 +301,7 @@ static ENGINE_ERROR_CODE do_snapshot_argcheck(enum mc_snapshot_mode mode)
 
     return ENGINE_SUCCESS;
 }
-#endif
 
-#if 1 // ADD_SNAPSHOT_DIRECT
 static void do_snapshot_prepare(snapshot_st *ss,
                                 enum mc_snapshot_mode mode,
                                 const char *prefix, const int nprefix,
@@ -409,9 +325,7 @@ static void do_snapshot_prepare(snapshot_st *ss,
     /* reset snapshot buffer */
     do_snapshot_buffer_reset(ss);
 }
-#endif
 
-#if 1 // ADD_SNAPSHOT_DIRECT
 static int do_snapshot_action(snapshot_st *ss)
 {
     struct default_engine *engine = ss->engine;
@@ -480,9 +394,7 @@ done:
     ss->stopped = time(NULL);
     return ret;
 }
-#endif
 
-#if 1 // ADD_SNAPSHOT_DIRECT
 static ENGINE_ERROR_CODE do_snapshot_direct(snapshot_st *ss,
                                             enum mc_snapshot_mode mode,
                                             const char *prefix, const int nprefix,
@@ -516,9 +428,7 @@ static ENGINE_ERROR_CODE do_snapshot_direct(snapshot_st *ss,
 
     return ret;
 }
-#endif
 
-#if 1 // ADD_SNAPSHOT_DIRECT
 static void *do_snapshot_thread_main(void *arg)
 {
     snapshot_st *ss = (snapshot_st *)arg;
@@ -538,7 +448,6 @@ static void *do_snapshot_thread_main(void *arg)
     pthread_mutex_unlock(&ss->lock);
     return NULL;
 }
-#endif
 
 static ENGINE_ERROR_CODE do_snapshot_start(snapshot_st *ss,
                                            enum mc_snapshot_mode mode,
@@ -554,24 +463,7 @@ static ENGINE_ERROR_CODE do_snapshot_start(snapshot_st *ss,
         return ENGINE_FAILED;
     }
 
-#if 1 // ADD_SNAPSHOT_DIRECT
     do_snapshot_prepare(ss, mode, prefix, nprefix, filepath);
-#else
-    /* initialize snapshot anchor */
-    ss->success = false;
-    ss->reqstop = false;
-    ss->mode = mode;
-    ss->snapped = 0;
-    ss->started = time(NULL);
-    ss->stopped = 0;
-    ss->prefix = (char*)prefix;
-    ss->nprefix = nprefix;
-
-    snprintf(ss->file.path, SNAPSHOT_MAX_FILEPATH_LENGTH, "%s",
-             (filepath != NULL ? filepath : "mc_snapshot"));
-    ss->file.fd = -1;
-    do_snapshot_buffer_reset(ss);
-#endif
 
     /* start the snapshot thread */
     ss->running = true;
@@ -660,7 +552,6 @@ void mc_snapshot_final(void)
     logger->log(EXTENSION_LOG_INFO, NULL, "SNAPSHOT module destroyed.\n");
 }
 
-#if 1 // ADD_SNAPSHOT_DIRECT
 ENGINE_ERROR_CODE mc_snapshot_direct(enum mc_snapshot_mode mode,
                                      const char *prefix, const int nprefix,
                                      const char *filepath)
@@ -677,7 +568,6 @@ ENGINE_ERROR_CODE mc_snapshot_direct(enum mc_snapshot_mode mode,
     pthread_mutex_unlock(&snapshot_anch.lock);
     return ret;
 }
-#endif
 
 ENGINE_ERROR_CODE mc_snapshot_start(enum mc_snapshot_mode mode,
                                     const char *prefix, const int nprefix,
@@ -685,25 +575,10 @@ ENGINE_ERROR_CODE mc_snapshot_start(enum mc_snapshot_mode mode,
 {
     ENGINE_ERROR_CODE ret;
 
-#if 1 // ADD_SNAPSHOT_DIRECT
     ret = do_snapshot_argcheck(mode);
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
-#else
-    /* check snapshot mode */
-    if (mode >= MC_SNAPSHOT_MODE_MAX) {
-        logger->log(EXTENSION_LOG_INFO, NULL,
-                    "Failed to start snapshot. Given mode(%d) is invalid.\n", (int)mode);
-        return ENGINE_EBADVALUE;
-    }
-    if (mode != MC_SNAPSHOT_MODE_KEY) {
-        logger->log(EXTENSION_LOG_INFO, NULL,
-                    "Failed to start snapshot. Given mode(%s) is not yet supported.\n",
-                    snapshot_mode_string[mode]);
-        return ENGINE_ENOTSUP;
-    }
-#endif
 
     pthread_mutex_lock(&snapshot_anch.lock);
     ret = do_snapshot_start(&snapshot_anch, mode, prefix, nprefix, filepath);
