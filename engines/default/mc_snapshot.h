@@ -27,6 +27,12 @@ enum mc_snapshot_mode {
 ENGINE_ERROR_CODE mc_snapshot_init(struct default_engine *engine);
 void mc_snapshot_final(void);
 
+#if 1 // ADD_SNAPSHOT_DIRECT
+ENGINE_ERROR_CODE mc_snapshot_direct(enum mc_snapshot_mode mode,
+                                     const char *prefix, const int nprefix,
+                                     const char *filepath);
+#endif
+
 ENGINE_ERROR_CODE mc_snapshot_start(enum mc_snapshot_mode mode,
                                     const char *prefix, const int nprefix,
                                     const char *filepath);
