@@ -1615,8 +1615,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
       .config = {
          .use_cas = true,
 #ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
-         /* FIXME: default value must be false. now temporarily true */
-         .use_persistence = true,
+         .use_persistence = false,
 #endif
          .verbose = 0,
          .oldest_live = 0,
