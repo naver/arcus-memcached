@@ -22,12 +22,23 @@
 #include <assert.h>
 
 #include "default_engine.h"
+#ifdef ENABLE_PERSISTENCE_03_KV_DATA_SNAPSHOT
+#include "lrec.h"
+#endif
 
 #ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
+#ifdef ENABLE_PERSISTENCE_03_KV_DATA_SNAPSHOT
+#define SNAPSHOT_BUFFER_SIZE (3 * 1024 * 1024)
+#else
 #define SNAPSHOT_BUFFER_SIZE (128 * 1024)
+#endif
 #define SCAN_ITEM_ARRAY_SIZE 16
 //#define SCAN_ITEM_ARRAY_SIZE 64
 #define SNAPSHOT_MAX_FILEPATH_LENGTH 255
+
+#ifdef ENABLE_PERSISTENCE_03_KV_DATA_SNAPSHOT
+#define SNAPSHOT_END_MARK "END_SNAPSHOT"
+#endif
 
 /* snapshot file structure */
 struct snapshot_file {
@@ -228,15 +239,69 @@ static int do_snapshot_key_done(snapshot_st *ss)
  */
 static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_count)
 {
-    return 0;
+#ifdef ENABLE_PERSISTENCE_03_KV_DATA_SNAPSHOT
+    hash_item *it;
+    struct snapshot_buffer *ssb = &ss->buffer;
+    LogRec *logRec;
+    LogHdr *logHdr;
+    char *bufptr;
+    int length;
+    int needsize;
+    int i, ret = 0;
+
+    /* format: <LogHdr> <LogRec> */
+    needsize = 40; /* except string (key, value) */
+
+    for (i = 0; i < item_count; i++) {
+        it = (hash_item*)item_array[i];
+
+        if (do_snapshot_buffer_check_space(ss, needsize + it->nkey + it->nbytes) < 0) {
+            ret = -1; break;
+        }
+
+        bufptr = &ssb->memory[ssb->curlen];
+        logRec = (void*)bufptr;
+        logHdr = &logRec->header;
+
+        switch(GET_ITEM_TYPE(it))
+        {
+            case ITEM_TYPE_KV:
+                logHdr->acttype = ACT_KV_LINK;
+                break;
+        }
+
+        logHdr->body_length = lrec_it_write(logRec, it);
+        length = sizeof(logHdr) + logHdr->body_length;
+        bufptr += length;
+        ssb->curlen += length;
+    }
+    return ret;
+#endif
 }
 
 static int do_snapshot_data_done(snapshot_st *ss)
 {
+#ifdef ENABLE_PERSISTENCE_03_KV_DATA_SNAPSHOT
+    struct snapshot_buffer *ssb = &ss->buffer;
+    char *bufptr;
+    char *endmark = SNAPSHOT_END_MARK;
+    int needsize = strlen(endmark);
+    int length;
+
+    if (do_snapshot_buffer_check_space(ss, needsize) < 0) {
+        return -1;
+    }
+
+    /* record snapshot complete mark in the end of file. */
+    bufptr = &ssb->memory[ssb->curlen];
+    length = snprintf(bufptr, needsize, endmark);
+    ssb->curlen += length;
+
     if (do_snapshot_buffer_flush(ss) < 0) {
         return -1;
     }
     return 0;
+#endif
 }
 
 static int do_snapshot_init(snapshot_st *ss, struct default_engine *engine)

@@ -8489,6 +8489,78 @@ void itscan_close(void *scan)
     do_itscan_free(sp);
 }
 #endif
+#ifdef ENABLE_PERSISTENCE_03_KV_DATA_SNAPSHOT
+ENGINE_ERROR_CODE
+ha_apply_simple_item_link(struct default_engine *engine,
+                          const char *key, uint32_t nkey,
+                          uint32_t flags, rel_time_t exptime,
+                          uint32_t nbytes, const char *value, uint64_t cas)
+{
+    hash_item *old_it;
+    hash_item *new_it;
+    ENGINE_ERROR_CODE ret;
+
+    pthread_mutex_lock(&engine->cache_lock);
+    old_it = do_item_get(engine, key, nkey, DONT_UPDATE);
+    /* See item_alloc. */
+    new_it = do_item_alloc(engine, key, nkey, flags, exptime, nbytes,
+                           NULL /* cookie */);
+    if (new_it) {
+        /* Assume data is small, and copying with lock held is okay */
+        memcpy(item_get_data(new_it), value, nbytes);
+
+        /* Now link the new item into the cache hash table */
+        if (old_it) {
+            do_item_replace(engine, old_it, new_it);
+            do_item_release(engine, old_it);
+            ret = ENGINE_SUCCESS;
+        } else {
+            ret = do_item_link(engine, new_it);
+        }
+        if (ret == ENGINE_SUCCESS) {
+            /* Override the cas with the master's cas. */
+            item_set_cas(new_it, cas);
+        }
+        do_item_release(engine, new_it);
+    } else {
+        ret = ENGINE_ENOMEM;
+        if (old_it) { /* Remove inconsistent hash_item */
+            do_item_unlink(engine, old_it, ITEM_UNLINK_NORMAL);
+            do_item_release(engine, old_it);
+        }
+    }
+    pthread_mutex_unlock(&engine->cache_lock);
+
+    if (ret != ENGINE_SUCCESS) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "ha_apply_simple_item_link failed. key=%.*s code=%d",
+                    nkey, key, ret);
+    }
+    return ret;
+}
+
+ENGINE_ERROR_CODE
+ha_apply_item_unlink(struct default_engine *engine, const char *key, uint32_t nkey)
+{
+    hash_item *it;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    pthread_mutex_lock(&engine->cache_lock);
+    it = do_item_get(engine, key, nkey, DONT_UPDATE);
+    if (it) {
+        do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
+        do_item_release(engine, it);
+    } else {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "ha_apply_item_unlink failed. not found key=%.*s",
+                    nkey, key);
+        ret = ENGINE_KEY_ENOENT;
+    }
+    pthread_mutex_unlock(&engine->cache_lock);
+
+    return ret;
+}
+#endif
 
 /*
  * MAP collection manangement

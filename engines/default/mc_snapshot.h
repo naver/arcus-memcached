@@ -37,4 +37,3 @@ ENGINE_ERROR_CODE mc_snapshot_start(enum mc_snapshot_mode mode,
 void mc_snapshot_stop(void);
 void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie);
 #endif
-

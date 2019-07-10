@@ -661,5 +661,13 @@ int   itscan_getnext(void *scan, void **item_array, int item_arrsz);
 void  itscan_release(void *scan, void **item_array, int item_count);
 void  itscan_close(void *scan);
 #endif
+#ifdef ENABLE_PERSISTENCE_03_KV_DATA_SNAPSHOT
+ENGINE_ERROR_CODE ha_apply_simple_item_link(struct default_engine* engine,
+                                            const char* key, uint32_t nkey,
+                                            uint32_t flags, rel_time_t exptime,
+                                            uint32_t nbytes, const char* value, uint64_t cas);
 
+ENGINE_ERROR_CODE ha_apply_item_unlink(struct default_engine* engine,
+                                       const char* key, uint32_t nkey);
+#endif
 #endif
