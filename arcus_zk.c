@@ -1060,24 +1060,31 @@ static int arcus_build_znode_name(char *ensemble_list)
     if (!arcus_conf.znode_name) {
         char *hostp=NULL;
         char  hostbuf[256];
-        // Also get local hostname.
-        // We want IP and hostname to better identify this cache
-        hp = gethostbyaddr((char*)&myaddr.sin_addr.s_addr,
-                            sizeof(myaddr.sin_addr.s_addr), AF_INET);
-        if (hp) {
-            hostp = strdup(hp->h_name);
+        if (getenv("ARCUS_CACHE_HOSTNAME") != NULL) {
+            hostp = strdup(getenv("ARCUS_CACHE_HOSTNAME"));
+            arcus_conf.logger->log(EXTENSION_LOG_DETAIL, NULL, "ARCUS_CACHE_HOSTNAME: %s\n",
+                                hostp);
         } else {
-            // if gethostbyaddr() doesn't work, try gethostname
-            if (gethostname((char *)&hostbuf, sizeof(hostbuf))) {
-                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "cannot get hostname: %s\n", strerror(errno));
-                return EX_NOHOST;
+            // Also get local hostname.
+            // We want IP and hostname to better identify this cache
+            hp = gethostbyaddr((char*)&myaddr.sin_addr.s_addr,
+                                sizeof(myaddr.sin_addr.s_addr), AF_INET);
+            if (hp) {
+                hostp = strdup(hp->h_name);
+            } else {
+                // if gethostbyaddr() doesn't work, try gethostname
+                if (gethostname((char *)&hostbuf, sizeof(hostbuf))) {
+                    arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "cannot get hostname: %s\n", strerror(errno));
+                    return EX_NOHOST;
+                }
+                hostp = strdup(hostbuf);
             }
-            hostp = hostbuf;
         }
         if (strlen(hostp) > MAX_HOSTNAME_LENGTH) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Too long hostname. hostname=%s\n", hostp);
+            free(hostp);
             return EX_DATAERR;
         }
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
@@ -1090,6 +1097,8 @@ static int arcus_build_znode_name(char *ensemble_list)
         arcus_conf.mc_hostnameport = strdup(rcbuf);
         snprintf(rcbuf, sizeof(rcbuf), "%s-%s", arcus_conf.mc_ipport, hostp);
         arcus_conf.znode_name = strdup(rcbuf);
+
+        free(hostp);
     }
     return 0; // EX_OK
 }
