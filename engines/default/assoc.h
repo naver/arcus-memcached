@@ -58,9 +58,7 @@ struct assoc {
     uint32_t hashsize;  /* hash table size */
     uint32_t hashmask;  /* hash bucket mask */
     uint32_t rootpower; /* how many hash tables we use ? (power of 2) */
-#ifdef VARIABLE_SIZED_ROOTTABLE
     uint32_t rootsize;
-#endif
 
     /* cache item hash table : an array of hash tables */
     struct table {
