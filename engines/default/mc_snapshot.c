@@ -22,8 +22,9 @@
 #include <assert.h>
 
 #include "default_engine.h"
-
 #ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
+#include "mc_snapshot.h"
+
 #define SNAPSHOT_BUFFER_SIZE (128 * 1024)
 #define SCAN_ITEM_ARRAY_SIZE 16
 //#define SCAN_ITEM_ARRAY_SIZE 64

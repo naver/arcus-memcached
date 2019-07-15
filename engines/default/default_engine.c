@@ -30,6 +30,12 @@
 #include "default_engine.h"
 #include "memcached/util.h"
 #include "memcached/config_parser.h"
+#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
+#include "mc_snapshot.h"
+#endif
+#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
+#include "checkpoint.h"
+#endif
 
 #define ACTION_BEFORE_WRITE(c, k, l)
 #define ACTION_AFTER_WRITE(c, r)
@@ -109,6 +115,11 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
             { .key = "use_cas",
               .datatype = DT_BOOL,
               .value.dt_bool = &se->config.use_cas },
+#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
+            { .key = "use_persistence",
+              .datatype = DT_BOOL,
+              .value.dt_bool = &se->config.use_persistence },
+#endif
             { .key = "verbose",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.verbose },
@@ -200,6 +211,20 @@ default_initialize(ENGINE_HANDLE* handle, const char* config_str)
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
+#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
+    ret = mc_snapshot_init(se);
+    if (ret != ENGINE_SUCCESS) {
+        return ret;
+    }
+#endif
+#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
+    if (se->config.use_persistence) {
+        ret = chkpt_init_and_start(se);
+        if (ret != ENGINE_SUCCESS) {
+            return ret;
+        }
+    }
+#endif
     return ENGINE_SUCCESS;
 }
 
@@ -210,6 +235,14 @@ default_destroy(ENGINE_HANDLE* handle)
 
     if (se->initialized) {
         se->initialized = false;
+#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
+        if (se->config.use_persistence) {
+            chkpt_stop_and_final();
+        }
+#endif
+#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
+        mc_snapshot_final();
+#endif
         item_final(se);
         slabs_final(se);
         assoc_final(se);
@@ -1581,6 +1614,10 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
       },
       .config = {
          .use_cas = true,
+#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
+         /* FIXME: default value must be false. now temporarily true */
+         .use_persistence = true,
+#endif
          .verbose = 0,
          .oldest_live = 0,
          .evict_to_free = true,
