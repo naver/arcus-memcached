@@ -7877,9 +7877,12 @@ again:
         }
         /* scan and scrub cache items */
         item_count = assoc_scan_next(&scan, item_array, array_size);
-        if (item_count <= 0) { /* reached to the end */
+        if (item_count < 0) { /* reached to the end */
             break;
         }
+        /* Currently, item_count > 0.
+         * See the internals of assoc_scan_next(). It does not return 0.
+         */
         for (i = 0; i < item_count; i++) {
             engine->scrubber.visited++;
             if (do_item_isvalid(engine, item_array[i], current_time) == false) {
@@ -8086,9 +8089,12 @@ static void *item_dumper_main(void *arg)
     while (true)
     {
         item_count = assoc_scan_next(&scan, item_array, array_size);
-        if (item_count <= 0) { /* reached to the end */
+        if (item_count < 0) { /* reached to the end */
             break;
         }
+        /* Currently, item_count > 0.
+         * See the internals of assoc_scan_next(). It does not return 0.
+         */
         memc_curtime = engine->server.core->get_current_time();
         for (i = 0; i < item_count; i++) {
             it = item_array[i];
