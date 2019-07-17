@@ -8441,7 +8441,12 @@ int itscan_getnext(void *scan, void **item_array, int item_arrsz)
 
     pthread_mutex_lock(&sp->engine->cache_lock);
     item_count = assoc_scan_next(&sp->asscan, (hash_item**)item_array, scan_count);
-    if (item_count > 0) {
+    if (item_count < 0) {
+        real_count = -1; /* The end of assoc scan */
+    } else {
+        /* Currently, item_count > 0.
+         * See the internals of assoc_scan_next(). It does not return 0.
+         */
         real_count = 0;
         for (int idx = 0; idx < item_count; idx++) {
             it = (hash_item *)item_array[idx];
@@ -8464,8 +8469,6 @@ int itscan_getnext(void *scan, void **item_array, int item_arrsz)
             }
             real_count += 1;
         }
-    } else {
-        real_count = -1; /* The end of assoc scan */
     }
     pthread_mutex_unlock(&sp->engine->cache_lock);
 
