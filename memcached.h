@@ -602,6 +602,7 @@ struct conn {
     char   client_ip[16];
 
     bool   noreply;   /* True if the reply should not be sent. */
+    bool   force;
     /* current stats command */
 
     struct {

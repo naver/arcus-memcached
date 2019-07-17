@@ -392,7 +392,7 @@ extern "C" {
         ENGINE_ERROR_CODE (*set_elem_insert)(ENGINE_HANDLE* handle, const void* cookie,
                                              const void* key, const int nkey, eitem *eitem,
                                              item_attr *attrp, bool *created,
-                                             uint16_t vbucket);
+                                             uint16_t vbucket, bool force);
 
         ENGINE_ERROR_CODE (*set_elem_delete)(ENGINE_HANDLE* handle, const void* cookie,
                                              const void* key, const int nkey,

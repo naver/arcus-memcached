@@ -2234,7 +2234,7 @@ static ENGINE_ERROR_CODE do_set_elem_get(struct default_engine *engine,
 
 static ENGINE_ERROR_CODE do_set_elem_insert(struct default_engine *engine,
                                             hash_item *it, set_elem_item *elem,
-                                            const void *cookie)
+                                            const void *cookie, bool force)
 {
     set_meta_info *info = (set_meta_info *)item_get_meta(it);
     int32_t real_mcnt = (info->mcnt == -1 ? max_set_size : info->mcnt);
@@ -2251,7 +2251,10 @@ static ENGINE_ERROR_CODE do_set_elem_insert(struct default_engine *engine,
     /* overflow check */
     assert(info->ovflact == OVFL_ERROR);
     if (info->ccnt >= real_mcnt) {
-        return ENGINE_EOVERFLOW;
+        if (!force || info->ccnt >= max_set_size) {
+            return ENGINE_EOVERFLOW;
+        }
+        info->mcnt = info->ccnt+1;
     }
 
     /* create the root hash node if it does not exist */
@@ -6675,7 +6678,8 @@ void set_elem_release(struct default_engine *engine, set_elem_item **elem_array,
 }
 
 ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key, const size_t nkey,
-                                  set_elem_item *elem, item_attr *attrp, bool *created, const void *cookie)
+                                  set_elem_item *elem, item_attr *attrp, bool *created, const void *cookie,
+                                  bool force)
 {
     hash_item *it = NULL;
     ENGINE_ERROR_CODE ret;
@@ -6698,7 +6702,7 @@ ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key
         }
     }
     if (ret == ENGINE_SUCCESS) {
-        ret = do_set_elem_insert(engine, it, elem, cookie);
+        ret = do_set_elem_insert(engine, it, elem, cookie, force);
         if (ret != ENGINE_SUCCESS && *created) {
             do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
         }
