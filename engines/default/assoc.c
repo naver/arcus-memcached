@@ -350,6 +350,10 @@ int assoc_scan_next(struct assoc_scan *scan, hash_item **item_array, int array_s
         scan->bucket += 1;
         scan->tabcnt = 0;
     }
+    if (item_count == 0) { /* NOT found */
+        if (scan->bucket >= scan->hashsz)
+            item_count = -1; /* the end */
+    }
     return item_count;
 }
 
