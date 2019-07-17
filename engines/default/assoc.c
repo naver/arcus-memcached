@@ -253,6 +253,38 @@ void assoc_delete(struct default_engine *engine, uint32_t hash,
 /*
  * Assoc scan functions
  */
+static void _init_scan_placeholder(struct assoc_scan *scan)
+{
+    /* initialize the placeholder item */
+    scan->ph_item.refcount = 1;
+    scan->ph_item.refchunk = 0;
+    scan->ph_item.nkey = 0;
+    scan->ph_item.nbytes = 0;
+    scan->ph_item.iflag = ITEM_INTERNAL;
+    scan->ph_item.h_next = NULL;
+    scan->ph_linked = false;
+}
+
+static void _link_scan_placeholder(struct assoc_scan *scan, hash_item *item)
+{
+    /* link the placeholder item behind the given item */
+    scan->ph_item.h_next = item->h_next;
+    item->h_next = &scan->ph_item;
+    scan->ph_linked = true;
+}
+
+static hash_item *_unlink_scan_placeholder(struct assoc_scan *scan, struct assoc *assoc)
+{
+    /* unlink the placeholder item and return the next item */
+    hash_item **p = &assoc->roottable[scan->tabidx].hashtable[scan->bucket];
+    assert(*p != NULL);
+    while (*p != &scan->ph_item)
+        p = &((*p)->h_next);
+    *p = (*p)->h_next;
+    scan->ph_linked = false;
+    return *p;
+}
+
 void assoc_scan_init(struct default_engine *engine, struct assoc_scan *scan)
 {
     /* initialize assoc_scan structure */
@@ -262,28 +294,8 @@ void assoc_scan_init(struct default_engine *engine, struct assoc_scan *scan)
     scan->tabcnt = 0; /* 0 means the scan on the current
                        * bucket chain has not yet started.
                        */
-
-    /* initialize the placeholder item */
-    scan->ph_item.refcount = 1;
-    scan->ph_item.refchunk = 0;
-    scan->ph_item.nkey = 0;
-    scan->ph_item.nbytes = 0;
-    scan->ph_item.iflag = ITEM_INTERNAL;
-    scan->ph_item.h_next = NULL;
-    scan->ph_linked = false;
-
+    _init_scan_placeholder(scan);
     scan->initialized = true;
-}
-
-static void
-unlink_scan_placeholder(struct assoc *assoc, struct assoc_scan *scan)
-{
-    hash_item **p = &assoc->roottable[scan->tabidx].hashtable[scan->bucket];
-    assert(*p != NULL);
-    while (*p != &scan->ph_item)
-        p = &((*p)->h_next);
-    *p = (*p)->h_next;
-    scan->ph_linked = false;
 }
 
 int assoc_scan_next(struct assoc_scan *scan, hash_item **item_array, int array_size)
@@ -312,8 +324,7 @@ int assoc_scan_next(struct assoc_scan *scan, hash_item **item_array, int array_s
                 scan_done = true;  break;
             }
             if (scan->ph_linked) {
-                next = scan->ph_item.h_next;
-                unlink_scan_placeholder(assoc, scan);
+                next = _unlink_scan_placeholder(scan, assoc);
             } else {
                 next = assoc->roottable[scan->tabidx].hashtable[scan->bucket];
             }
@@ -329,10 +340,7 @@ int assoc_scan_next(struct assoc_scan *scan, hash_item **item_array, int array_s
             }
             if (next != NULL) {
                 if (next->h_next != NULL) {
-                    /* add a placeholder item for the next scan */
-                    scan->ph_item.h_next = next->h_next;
-                    next->h_next = &scan->ph_item;
-                    scan->ph_linked = true;
+                    _link_scan_placeholder(scan, next);
                 } else {
                     scan->tabidx += 1;
                 }
@@ -362,7 +370,7 @@ void assoc_scan_final(struct assoc_scan *scan)
     assert(scan->initialized);
 
     if (scan->ph_linked) {
-        unlink_scan_placeholder(&scan->engine->assoc, scan);
+        (void)_unlink_scan_placeholder(scan, &scan->engine->assoc);
     }
     if (scan->bucket < scan->hashsz) {
         /* decrement bucket's reference count */
