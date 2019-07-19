@@ -28,6 +28,10 @@
 #include <sys/time.h> /* gettimeofday() */
 
 #include "default_engine.h"
+#ifdef ENABLE_PERSISTENCE_05_CMDLOG
+#include "cmdlogmgr.h"
+#include "cmdlogbuf.h"
+#endif
 
 //#define SET_DELETE_NO_MERGE
 //#define BTREE_DELETE_NO_MERGE
