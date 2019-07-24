@@ -1065,7 +1065,7 @@ static int arcus_build_znode_name(char *ensemble_list)
         hp = gethostbyaddr((char*)&myaddr.sin_addr.s_addr,
                             sizeof(myaddr.sin_addr.s_addr), AF_INET);
         if (hp) {
-            hostp = strdup(hp->h_name);
+            hostp = hp->h_name;
         } else {
             // if gethostbyaddr() doesn't work, try gethostname
             if (gethostname((char *)&hostbuf, sizeof(hostbuf))) {
