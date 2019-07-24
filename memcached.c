@@ -15167,6 +15167,9 @@ int main (int argc, char **argv) {
           "e:"  /* Engine options */
           "q"   /* Disallow detailed stats */
           "X:"  /* Load extension */
+#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
+          "w" /* persistence on */
+#endif
 #ifdef ENABLE_ZK_INTEGRATION
           "z:"  /* Arcus Zookeeper */
           "o:"  /* Arcus Zookeeper session timeout option (sec) */
@@ -15400,7 +15403,11 @@ int main (int argc, char **argv) {
                 }
             }
             break;
-
+#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
+        case 'w':
+            settings.use_persistence = true;
+            break;
+#endif
 #ifdef ENABLE_ZK_INTEGRATION
         case 'z': /* configure for Arcus zookeeper cluster */
                   /* host_list in the form of
