@@ -23,6 +23,11 @@
 #ifdef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
 #include "cmdlogrec.h"
 
+#ifdef offsetof
+#error "offsetof is already defined"
+#endif
+#define offsetof(type, member) __builtin_offsetof(type, member)
+
 static char *get_logtype_text(uint8_t type)
 {
     switch (type) {
@@ -71,59 +76,64 @@ static void log_record_header_print(LogHdr *hdr)
 /* Item Link Log Record */
 static void lrec_it_link_write(LogRec *logRec, char *bufptr)
 {
-    ITLinkLog *log = (void*)logRec;
-    ITLinkData *body = &log->body;
-    struct lrec_key *key = (void*)&body->key;
-    struct lrec_val *val = (void*)((char*)(key+1) + sizeof(body->meta));
-    int kvlength = key->len + val->len + 2;
+    ITLinkLog   *log = (ITLinkLog*)logRec;
+    ITLinkData  *body = &log->body;
+    struct lrec_common *cm = (struct lrec_common*)&body->cm;
+    struct lrec_val    *val = (struct lrec_val*)&body->val;
+    int kvlength = cm->keylen + val->vallen;
     int offset = log->header.body_length - kvlength;
 
     memcpy(bufptr, logRec, offset);
-    /* key copy */
-    memcpy(bufptr+offset, log->keyptr, key->len);
-    /* value copy */
-    memcpy(bufptr+offset+key->len, log->valptr, val->len);
-    /* CRLF copy */
-    memcpy(bufptr+offset+key->len+val->len, "\r\n", 2);
+    /* key value copy */
+    memcpy(bufptr+offset, log->keyptr, kvlength);
 }
 
 static void lrec_it_link_print(LogRec *logRec)
 {
-    ITLinkLog  *log = (void*)logRec;
+    ITLinkLog  *log = (ITLinkLog*)logRec;
     ITLinkData *body = &log->body;
-    struct lrec_key *key = (void*)&body->key;
-    struct lrec_meta *meta = (void*)(key+1);
-    struct lrec_val *val = (void*)(meta+1);
+    struct lrec_common *cm = (struct lrec_common*)&body->cm;
+    struct lrec_val    *val = (struct lrec_val*)&body->val;
 
     log_record_header_print(&log->header);
     fprintf(stderr, "[BODY]   ittype: %s | keylen: %u | flags: %u | exptime: %u |"
             " cas: %"PRIu64" | vallen: %u | keystr: %.*s | valstr: %.*s",
-            get_itemtype_text(key->type), key->len, meta->flags, meta->exptime,
-            val->cas, val->len, key->len, log->keyptr, val->len, log->valptr);
+            get_itemtype_text(cm->ittype), cm->keylen, cm->flags, cm->exptime,
+            val->cas, val->vallen, cm->keylen, log->keyptr, val->vallen, log->keyptr+cm->keylen);
 }
 
-void lrec_it_link_record(LogRec *logRec, hash_item *it, uint8_t cmdtype)
+void lrec_it_link_record_for_snapshot(LogRec *logRec, hash_item *it)
 {
-    ITLinkLog *log = (void*)logRec;
+    ITLinkLog *log = (ITLinkLog*)logRec;
     ITLinkData *body = &log->body;
-    log->keyptr = (void*)item_get_key(it);
-    log->valptr = (void*)item_get_data(it);
+    log->keyptr = (char*)item_get_key(it);
 
-    struct lrec_key *key = (void*)&body->key;
-    key->type = GET_ITEM_TYPE(it);
-    key->len = it->nkey;
+    struct lrec_common *cm = (struct lrec_common*)&body->cm;
+    cm->ittype = GET_ITEM_TYPE(it);
+    cm->keylen = it->nkey;
+    cm->flags = it->flags;
+    cm->exptime = it->exptime;
 
-    struct lrec_meta *meta = (void*)(key+1);
-    meta->flags = it->flags;
-    meta->exptime = it->exptime;
-
-    struct lrec_val *val = (void*)(meta+1);
-    val->len = it->nbytes;
+    struct lrec_val *val = (struct lrec_val*)&body->val;
+    val->vallen = it->nbytes;
     val->cas = item_get_cas(it);
 
     log->header.logtype = LOG_IT_LINK;
-    log->header.cmdtype = cmdtype;
-    log->header.body_length = (int)((char*)(val+1) - (char*)body) + key->len + val->len;
+    log->header.cmdtype = CMD_SET;
+    log->header.body_length = offsetof(ITLinkData, data) + cm->keylen + val->vallen;
+}
+
+/* Collection Item Link Log Record */
+static void lrec_coll_link_write(LogRec *logRec, char *bufptr)
+{
+}
+
+static void lrec_coll_link_print(LogRec *logRec)
+{
+}
+
+void lrec_coll_link_record_for_snapshot(LogRec *logRec, hash_item *it)
+{
 }
 
 /* Item Unlink Log Record */
@@ -324,6 +334,7 @@ typedef struct _logrec_func {
 
 LOGREC_FUNC logrec_func[] = {
     { lrec_it_link_write,            lrec_it_link_print },
+    { lrec_coll_link_write,          lrec_coll_link_print },
     { lrec_it_unlink_write,          lrec_it_unlink_print },
     { lrec_it_arithmetic_write,      lrec_it_arithmetic_print },
     { lrec_it_setattr_write,         lrec_it_setattr_print },
