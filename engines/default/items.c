@@ -1191,7 +1191,6 @@ static hash_item *do_item_get(struct default_engine *engine,
  *
  * Returns the state of storage.
  */
-#ifdef REFACTOR_STORE
 static ENGINE_ERROR_CODE do_item_store_set(struct default_engine *engine, hash_item *it,
                                            uint64_t *cas, const void *cookie)
 {
@@ -1341,119 +1340,6 @@ static ENGINE_ERROR_CODE do_item_store_attach(struct default_engine *engine, has
     }
     return stored;
 }
-#else
-static ENGINE_ERROR_CODE do_store_item(struct default_engine *engine, hash_item *it, uint64_t *cas,
-                                       ENGINE_STORE_OPERATION operation, const void *cookie)
-{
-    const char *key = item_get_key(it);
-    hash_item *old_it = do_item_get(engine, key, it->nkey, DONT_UPDATE);
-    ENGINE_ERROR_CODE stored = ENGINE_NOT_STORED;
-    if (old_it != NULL && IS_COLL_ITEM(old_it)) {
-        do_item_release(engine, old_it);
-        return ENGINE_EBADTYPE;
-    }
-
-    hash_item *new_it = NULL;
-
-    if (old_it != NULL && operation == OPERATION_ADD) {
-        /* add only adds a nonexistent item, but promote to head of LRU */
-        do_item_update(engine, old_it);
-    } else if (!old_it && (operation == OPERATION_REPLACE
-        || operation == OPERATION_APPEND || operation == OPERATION_PREPEND))
-    {
-        /* replace only replaces an existing value; don't store */
-    } else if (operation == OPERATION_CAS) {
-        /* validate cas operation */
-        if (old_it == NULL) {
-            // LRU expired
-            stored = ENGINE_KEY_ENOENT;
-        }
-        else if (item_get_cas(it) == item_get_cas(old_it)) {
-            // cas validates
-            // it and old_it may belong to different classes.
-            // I'm updating the stats for the one that's getting pushed out
-            do_item_replace(engine, old_it, it);
-            stored = ENGINE_SUCCESS;
-        } else {
-            if (engine->config.verbose > 1) {
-                logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "CAS:  failure: expected %"PRIu64", got %"PRIu64"\n",
-                        item_get_cas(old_it), item_get_cas(it));
-            }
-            stored = ENGINE_KEY_EEXISTS;
-        }
-    } else {
-        /*
-         * Append - combine new and old record into single one. Here it's
-         * atomic and thread-safe.
-         */
-        if (operation == OPERATION_APPEND || operation == OPERATION_PREPEND) {
-            /*
-             * Validate CAS
-             */
-            if (item_get_cas(it) != 0) {
-                // CAS much be equal
-                if (item_get_cas(it) != item_get_cas(old_it)) {
-                    stored = ENGINE_KEY_EEXISTS;
-                }
-            }
-
-            if (stored == ENGINE_NOT_STORED) {
-                /* we have it and old_it here - alloc memory to hold both */
-                new_it = do_item_alloc(engine, key, it->nkey,
-                                       old_it->flags, old_it->exptime,
-                                       it->nbytes + old_it->nbytes - 2 /* CRLF */,
-                                       cookie);
-
-                if (new_it == NULL) {
-                    /* SERVER_ERROR out of memory */
-                    if (old_it != NULL) {
-                        do_item_release(engine, old_it);
-                    }
-
-                    return ENGINE_NOT_STORED;
-                }
-
-                /* copy data from it and old_it to new_it */
-
-                if (operation == OPERATION_APPEND) {
-                    memcpy(item_get_data(new_it), item_get_data(old_it), old_it->nbytes);
-                    memcpy(item_get_data(new_it) + old_it->nbytes - 2 /* CRLF */, item_get_data(it), it->nbytes);
-                } else {
-                    /* OPERATION_PREPEND */
-                    memcpy(item_get_data(new_it), item_get_data(it), it->nbytes);
-                    memcpy(item_get_data(new_it) + it->nbytes - 2 /* CRLF */, item_get_data(old_it), old_it->nbytes);
-                }
-
-                it = new_it;
-            }
-        }
-        if (stored == ENGINE_NOT_STORED) {
-            if (old_it != NULL) {
-                do_item_replace(engine, old_it, it);
-                stored = ENGINE_SUCCESS;
-            } else {
-                stored = do_item_link(engine, it);
-            }
-            if (stored == ENGINE_SUCCESS) {
-                *cas = item_get_cas(it);
-            }
-        }
-    }
-
-    if (old_it != NULL) {
-        do_item_release(engine, old_it);         /* release our reference */
-    }
-    if (new_it != NULL) {
-        do_item_release(engine, new_it);
-    }
-    if (stored == ENGINE_SUCCESS) {
-        *cas = item_get_cas(it);
-    }
-    return stored;
-}
-#endif
-
 
 /*
  * adds a delta value to a numeric item.
@@ -6157,7 +6043,6 @@ ENGINE_ERROR_CODE store_item(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-#ifdef REFACTOR_STORE
     switch (operation) {
       case OPERATION_SET:
            ret = do_item_store_set(engine, item, cas, cookie);
@@ -6178,9 +6063,6 @@ ENGINE_ERROR_CODE store_item(struct default_engine *engine,
       default:
            ret = ENGINE_NOT_STORED;
     }
-#else
-    ret = do_store_item(engine, item, cas, operation, cookie);
-#endif
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
 }
@@ -6215,11 +6097,7 @@ static ENGINE_ERROR_CODE do_arithmetic(struct default_engine *engine,
             }
             memcpy((void*)item_get_data(it), buffer, len);
 
-#ifdef REFACTOR_STORE
             ret = do_item_store_add(engine, it, cas, cookie);
-#else
-            ret = do_store_item(engine, it, cas, OPERATION_ADD, cookie);
-#endif
             if (ret == ENGINE_SUCCESS) {
                 *result = initial;
             }
