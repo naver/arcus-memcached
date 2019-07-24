@@ -130,6 +130,9 @@ static int do_snapshot_buffer_flush(snapshot_st *ss)
         }
         ssb->curlen = 0;
     }
+    if (1) { /* Assume that some data are written */
+        (void)fsync(ss->file.fd);
+    }
     return 0;
 }
 
