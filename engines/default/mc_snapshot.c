@@ -250,7 +250,7 @@ static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_co
         it = (hash_item*)item_array[i];
 
         ITLinkLog log;
-        lrec_it_link_record((LogRec*)&log, it, CMD_SET);
+        lrec_it_link_record_for_snapshot((LogRec*)&log, it);
         length = sizeof(log.header) + log.header.body_length;
         if (do_snapshot_buffer_check_space(ss, length) < 0) {
             ret = -1; break;
@@ -348,8 +348,7 @@ static ENGINE_ERROR_CODE do_snapshot_argcheck(enum mc_snapshot_mode mode)
                     "Failed to start snapshot. Given mode(%d) is invalid.\n", (int)mode);
         return ENGINE_EBADVALUE;
     }
-#ifdef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
-#else
+#ifndef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
     if (mode != MC_SNAPSHOT_MODE_KEY) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to start snapshot. Given mode(%s) is not yet supported.\n",

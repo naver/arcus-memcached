@@ -20,6 +20,7 @@
 
 enum log_type {
     LOG_IT_LINK = 0,
+    LOG_COLL_LINK,
     LOG_IT_UNLINK,
     LOG_IT_ARITHMETIC,
     LOG_IT_SETATTR,
@@ -72,50 +73,48 @@ enum cmd_type {
     CMD_NONE
 };
 
-struct lrec_key {
-    uint8_t     type;
-    uint16_t    len;
-};
-
-struct lrec_meta {
-    uint32_t    flags;
-    uint32_t    exptime;
+/* key hash item common */
+struct lrec_common {
+    uint8_t     ittype;     /* item type */
+    uint8_t     reserved[1];
+    uint16_t    keylen;     /* key length */
+    uint32_t    flags;      /* item flags */
+    uint32_t    exptime;    /* expire time */
 };
 
 struct lrec_val {
+    uint32_t    vallen;     /* value length */
+    uint32_t    reserved[1];
     uint64_t    cas;
-    uint32_t    len;
 };
 
 /* Log Record Structure */
 
 typedef struct loghdr {
-    uint32_t    body_length; /* LogRec body length */
     uint8_t     logtype;     /* Log type */
     uint8_t     cmdtype;     /* command type */
     uint8_t     reserved[2];
+    uint32_t    body_length; /* LogRec body length */
 } LogHdr;
 
 typedef struct logrec {
     LogHdr      header;
-    char*       body;   /* specific log record data */
+    char        *body;       /* specific log record data */
 } LogRec;
 
 /* Specific Log Record Structure */
 
 /* Item Link Log Record */
-typedef struct _IT_link_data{
-    struct lrec_key key;
-    struct lrec_meta meta;
-    struct lrec_val val;
-    char   data[1];
+typedef struct _IT_link_data {
+    struct lrec_common  cm;
+    struct lrec_val     val;
+    char data[1];
 } ITLinkData;
 
 typedef struct _IT_link_log {
     LogHdr      header;
     ITLinkData  body;
     char        *keyptr;
-    char        *valptr;
 } ITLinkLog;
 
 /* Snapshot File Tail Record */
@@ -123,9 +122,11 @@ typedef struct _snapshot_tail_log {
     LogHdr header;
 } SnapshotTailLog;
 
-/* Construct Log Record Function */
-void lrec_it_link_record(LogRec *logRec, hash_item *it, uint8_t cmdtype);
+/* Construct Log Record Function For Snapshot*/
+void lrec_it_link_record_for_snapshot(LogRec *logRec, hash_item *it);
+void lrec_coll_link_record_for_snapshot(LogRec *logRec, hash_item *it);
 /* FIXME : pass arguments according to logtype */
+/* FIXME : below record functions would be deleted if directly construct log record in items.c when command logging */
 void lrec_it_unlink_record(LogRec *logRec);
 void lrec_it_arithmetic_record(LogRec *logRec);
 void lrec_it_setattr_record(LogRec *logRec);
