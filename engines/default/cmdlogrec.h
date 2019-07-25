@@ -15,99 +15,108 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef MEMCACHED_LOGREC_H
-#define MEMCACHED_LOGREC_H
+#ifndef MEMCACHED_CMDLOGREC_H
+#define MEMCACHED_CMDLOGREC_H
 
 enum log_type {
     LOG_IT_LINK = 0,
-    LOG_COLL_LINK,
     LOG_IT_UNLINK,
     LOG_IT_ARITHMETIC,
     LOG_IT_SETATTR,
     LOG_LIST_ELEM,
+    LOG_LIST_ELEM_INSERT,
     LOG_LIST_ELEM_DELETE,
     LOG_SET_ELEM,
+    LOG_SET_ELEM_INSERT,
     LOG_SET_ELEM_DELETE,
     LOG_MAP_ELEM,
+    LOG_MAP_ELEM_INSERT,
     LOG_MAP_ELEM_DELETE,
     LOG_BT_ELEM,
+    LOG_BT_ELEM_INSERT,
     LOG_BT_ELEM_DELETE,
     LOG_BT_ELEM_ARITHMETIC,
     LOG_SNAPSHOT_HEAD,
     LOG_SNAPSHOT_TAIL
 };
 
-enum cmd_type {
+enum upd_type {
     /* key value command */
-    CMD_ADD = 0,
-    CMD_SET,
-    CMD_REPLACE,
-    CMD_APPEND,
-    CMD_PREPEND,
-    CMD_CAS,
-    CMD_INCR,
-    CMD_DECR,
-    CMD_DELETE,
-    CMD_SETATTR,
+    UPD_ADD = 0,
+    UPD_SET,
+    UPD_REPLACE,
+    UPD_APPEND,
+    UPD_PREPEND,
+    UPD_CAS,
+    UPD_INCR,
+    UPD_DECR,
+    UPD_DELETE,
+    UPD_SETATTR,
     /* list command */
-    CMD_LIST_CREATE,
-    CMD_LIST_ELEM_INSERT,
-    CMD_LIST_ELEM_DELETE,
+    UPD_LIST_CREATE,
+    UPD_LIST_ELEM_INSERT,
+    UPD_LIST_ELEM_DELETE,
     /* set command */
-    CMD_SET_CREATE,
-    CMD_SET_ELEM_INSERT,
-    CMD_SET_ELEM_DELETE,
+    UPD_SET_CREATE,
+    UPD_SET_ELEM_INSERT,
+    UPD_SET_ELEM_DELETE,
     /* map command */
-    CMD_MAP_CREATE,
-    CMD_MAP_ELEM_INSERT,
-    CMD_MAP_ELEM_DELETE,
-    CMD_MAP_ELEM_UPDATE,
+    UPD_MAP_CREATE,
+    UPD_MAP_ELEM_INSERT,
+    UPD_MAP_ELEM_DELETE,
+    UPD_MAP_ELEM_UPDATE,
     /* btree command */
-    CMD_BT_CREATE,
-    CMD_BT_ELEM_INSERT,
-    CMD_BT_ELEM_UPSERT,
-    CMD_BT_ELEM_DELETE,
-    CMD_BT_ELEM_UPDATE,
-    CMD_BT_ELEM_ARITHMETIC,
+    UPD_BT_CREATE,
+    UPD_BT_ELEM_INSERT,
+    UPD_BT_ELEM_UPSERT,
+    UPD_BT_ELEM_DELETE,
+    UPD_BT_ELEM_UPDATE,
+    UPD_BT_ELEM_ARITHMETIC,
     /* not command */
-    CMD_NONE
+    UPD_NONE
 };
 
 /* key hash item common */
-struct lrec_common {
-    uint8_t     ittype;     /* item type */
-    uint8_t     reserved[1];
-    uint16_t    keylen;     /* key length */
-    uint32_t    flags;      /* item flags */
-    uint32_t    exptime;    /* expire time */
+struct lrec_item_common {
+    uint8_t     ittype;         /* item type */
+    uint8_t     reserved_8[1];
+    uint16_t    keylen;         /* key length */
+    uint32_t    vallen;         /* value length */
+    uint32_t    flags;          /* item flags */
+    uint32_t    exptime;        /* expire time */
 };
 
-struct lrec_val {
-    uint32_t    vallen;     /* value length */
-    uint32_t    reserved[1];
-    uint64_t    cas;
+struct lrec_coll_meta {
+    uint8_t     ovflact;        /* overflow action */
+    uint8_t     mflags;         /* sticky, readable, trimmed flags */
+    uint8_t     nbkey;
+    uint8_t     reserved_8[1];
+    int32_t     mcnt;           /* maximum element count */
 };
 
 /* Log Record Structure */
 
-typedef struct loghdr {
-    uint8_t     logtype;     /* Log type */
-    uint8_t     cmdtype;     /* command type */
-    uint8_t     reserved[2];
-    uint32_t    body_length; /* LogRec body length */
+typedef struct _loghdr {
+    uint8_t     logtype;        /* Log type */
+    uint8_t     updtype;        /* update command type */
+    uint8_t     reserved_8[2];
+    uint32_t    body_length;    /* LogRec body length */
 } LogHdr;
 
-typedef struct logrec {
+typedef struct _logrec {
     LogHdr      header;
-    char        *body;       /* specific log record data */
+    char        *body;          /* specific log record data */
 } LogRec;
 
 /* Specific Log Record Structure */
 
 /* Item Link Log Record */
 typedef struct _IT_link_data {
-    struct lrec_common  cm;
-    struct lrec_val     val;
+    struct lrec_item_common cm;
+    union {
+        uint64_t cas;
+        struct lrec_coll_meta meta;
+    } ptr;
     char data[1];
 } ITLinkData;
 
@@ -122,31 +131,10 @@ typedef struct _snapshot_tail_log {
     LogHdr header;
 } SnapshotTailLog;
 
-/* Construct Log Record Function For Snapshot*/
-void lrec_it_link_record_for_snapshot(LogRec *logRec, hash_item *it);
-void lrec_coll_link_record_for_snapshot(LogRec *logRec, hash_item *it);
-/* FIXME : pass arguments according to logtype */
-/* FIXME : below record functions would be deleted if directly construct log record in items.c when command logging */
-void lrec_it_unlink_record(LogRec *logRec);
-void lrec_it_arithmetic_record(LogRec *logRec);
-void lrec_it_setattr_record(LogRec *logRec);
+/* Construct Log Record Function For Snapshot */
+int lrec_construct_snapshot_head(LogRec *logrec);
+int lrec_construct_snapshot_tail(LogRec *logrec);
+int lrec_construct_snapshot_item(LogRec *logrec, hash_item *it);
 
-void lrec_list_elem_record(LogRec *logRec);
-void lrec_list_elem_delete_record(LogRec *logRec);
-
-void lrec_set_elem_record(LogRec *logRec);
-void lrec_set_elem_delete_record(LogRec *logRec);
-
-void lrec_map_elem_record(LogRec *logRec);
-void lrec_map_elem_delete_record(LogRec *logRec);
-
-void lrec_bt_elem_record(LogRec *logRec);
-void lrec_bt_elem_delete_record(LogRec *logRec);
-void lrec_bt_elem_arithmetic_record(LogRec *logRec);
-
-void lrec_snapshot_head_record(LogRec *logRec);
-void lrec_snapshot_tail_record(LogRec *logRec);
-
-void lrec_write(LogRec *logRec, char *bufptr);
-void lrec_print(LogRec *logRec);
+void lrec_write(LogRec *logrec, char *bufptr);
 #endif

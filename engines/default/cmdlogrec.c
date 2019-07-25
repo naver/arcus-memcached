@@ -20,13 +20,19 @@
 #include <ctype.h>
 
 #include "default_engine.h"
-#ifdef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
+#ifdef ENABLE_PERSISTENCE_04_KV_DATA_SNAPSHOT
 #include "cmdlogrec.h"
+
+#define DEBUG_PERSISTENCE_DISK_FORMAT_PRINT
 
 #ifdef offsetof
 #error "offsetof is already defined"
 #endif
 #define offsetof(type, member) __builtin_offsetof(type, member)
+
+/* Get aligned size */
+#define GET_8_ALIGN_SIZE(size) \
+    (((size) % 8) == 0 ? (size) : ((size) + (8 - ((size) % 8))))
 
 static char *get_logtype_text(uint8_t type)
 {
@@ -39,12 +45,12 @@ static char *get_logtype_text(uint8_t type)
     return "unknown";
 }
 
-static char *get_cmdtype_text(uint8_t type)
+static char *get_updtype_text(uint8_t type)
 {
     switch (type) {
-        case CMD_SET:
+        case UPD_SET:
             return "SET";
-        case CMD_NONE:
+        case UPD_NONE:
             return "NONE";
     }
     return "unknown";
@@ -67,297 +73,291 @@ static char *get_itemtype_text(uint8_t type)
     return "unknown";
 }
 
+static char *get_concise_str(char *str, uint32_t strlen)
+{
+    static char dest[250] = "";
+    if (strlen <= 250) {
+        strncpy(dest, str, strlen);
+        return dest;
+    }
+
+    int nprefix = 100;
+    strncpy(dest, str, nprefix);
+    strncat(dest, "....", 4);
+    strncat(dest, str+(strlen-nprefix), nprefix);
+    return dest;
+}
+
 static void log_record_header_print(LogHdr *hdr)
 {
-    fprintf(stderr, "[HEADER] body_length: %u | logtype: %s | cmdtype: %s\n",
-            hdr->body_length, get_logtype_text(hdr->logtype), get_cmdtype_text(hdr->cmdtype));
+    fprintf(stderr, "[HEADER] body_length=%u | logtype=%s | updtype=%s\n",
+            hdr->body_length, get_logtype_text(hdr->logtype), get_updtype_text(hdr->updtype));
 }
 
 /* Item Link Log Record */
-static void lrec_it_link_write(LogRec *logRec, char *bufptr)
+static void lrec_it_link_write(LogRec *logrec, char *bufptr)
 {
-    ITLinkLog   *log = (ITLinkLog*)logRec;
+    ITLinkLog   *log = (ITLinkLog*)logrec;
     ITLinkData  *body = &log->body;
-    struct lrec_common *cm = (struct lrec_common*)&body->cm;
-    struct lrec_val    *val = (struct lrec_val*)&body->val;
-    int kvlength = cm->keylen + val->vallen;
-    int offset = log->header.body_length - kvlength;
+    int offset = offsetof(ITLinkData, data);
 
-    memcpy(bufptr, logRec, offset);
+    memcpy(bufptr, logrec, offset);
     /* key value copy */
-    memcpy(bufptr+offset, log->keyptr, kvlength);
+    memcpy(bufptr+offset, log->keyptr, body->cm.keylen+body->cm.vallen);
 }
 
-static void lrec_it_link_print(LogRec *logRec)
+static void lrec_it_link_print(LogRec *logrec)
 {
-    ITLinkLog  *log = (ITLinkLog*)logRec;
+    ITLinkLog  *log = (ITLinkLog*)logrec;
     ITLinkData *body = &log->body;
-    struct lrec_common *cm = (struct lrec_common*)&body->cm;
-    struct lrec_val    *val = (struct lrec_val*)&body->val;
+    struct lrec_item_common *cm = (struct lrec_item_common*)&body->cm;
 
     log_record_header_print(&log->header);
-    fprintf(stderr, "[BODY]   ittype: %s | keylen: %u | flags: %u | exptime: %u |"
-            " cas: %"PRIu64" | vallen: %u | keystr: %.*s | valstr: %.*s",
-            get_itemtype_text(cm->ittype), cm->keylen, cm->flags, cm->exptime,
-            val->cas, val->vallen, cm->keylen, log->keyptr, val->vallen, log->keyptr+cm->keylen);
-}
+    fprintf(stderr, "[BODY]   ittype=%s | flags=%u | exptime=%u | cas=%"PRIu64" | "
+            "keylen=%u | keystr=%s | ",
+            get_itemtype_text(cm->ittype), cm->flags, cm->exptime, body->ptr.cas,
+            cm->keylen, get_concise_str(log->keyptr, cm->keylen));
+    fprintf(stderr, "vallen=%u | valstr=%s",
+            cm->vallen, get_concise_str(log->keyptr+cm->keylen, cm->vallen));
 
-void lrec_it_link_record_for_snapshot(LogRec *logRec, hash_item *it)
-{
-    ITLinkLog *log = (ITLinkLog*)logRec;
-    ITLinkData *body = &log->body;
-    log->keyptr = (char*)item_get_key(it);
-
-    struct lrec_common *cm = (struct lrec_common*)&body->cm;
-    cm->ittype = GET_ITEM_TYPE(it);
-    cm->keylen = it->nkey;
-    cm->flags = it->flags;
-    cm->exptime = it->exptime;
-
-    struct lrec_val *val = (struct lrec_val*)&body->val;
-    val->vallen = it->nbytes;
-    val->cas = item_get_cas(it);
-
-    log->header.logtype = LOG_IT_LINK;
-    log->header.cmdtype = CMD_SET;
-    log->header.body_length = offsetof(ITLinkData, data) + cm->keylen + val->vallen;
-}
-
-/* Collection Item Link Log Record */
-static void lrec_coll_link_write(LogRec *logRec, char *bufptr)
-{
-}
-
-static void lrec_coll_link_print(LogRec *logRec)
-{
-}
-
-void lrec_coll_link_record_for_snapshot(LogRec *logRec, hash_item *it)
-{
 }
 
 /* Item Unlink Log Record */
-static void lrec_it_unlink_write(LogRec *logRec, char *bufptr)
+static void lrec_it_unlink_write(LogRec *logrec, char *bufptr)
 {
 }
 
-static void lrec_it_unlink_print(LogRec *logRec)
-{
-}
-
-void lrec_it_unlink_record(LogRec *logRec)
+static void lrec_it_unlink_print(LogRec *logrec)
 {
 }
 
 /* Item Arithmetic Log Record */
-static void lrec_it_arithmetic_write(LogRec *logRec, char *bufptr)
+static void lrec_it_arithmetic_write(LogRec *logrec, char *bufptr)
 {
 }
 
-static void lrec_it_arithmetic_print(LogRec *logRec)
-{
-}
-
-void lrec_it_arithmetic_record(LogRec *logRec)
+static void lrec_it_arithmetic_print(LogRec *logrec)
 {
 }
 
 /* Item Setattr Log Record */
-static void lrec_it_setattr_write(LogRec *logRec, char *bufptr)
+static void lrec_it_setattr_write(LogRec *logrec, char *bufptr)
 {
 }
 
-static void lrec_it_setattr_print(LogRec *logRec)
-{
-}
-
-void lrec_it_setattr_record(LogRec *logRec)
+static void lrec_it_setattr_print(LogRec *logrec)
 {
 }
 
 /* List Element Log Record */
-static void lrec_list_elem_write(LogRec *logRec, char *bufptr)
+static void lrec_list_elem_write(LogRec *logrec, char *bufptr)
 {
 }
 
-static void lrec_list_elem_print(LogRec *logRec)
+static void lrec_list_elem_print(LogRec *logrec)
 {
 }
 
-void lrec_list_elem_record(LogRec *logRec)
+/* List Element Insert Log Record */
+static void lrec_list_elem_insert_write(LogRec *logrec, char *bufptr)
+{
+}
+
+static void lrec_list_elem_insert_print(LogRec *logrec)
 {
 }
 
 /* List Element Delete Log Record */
-static void lrec_list_elem_delete_write(LogRec *logRec, char *bufptr)
+static void lrec_list_elem_delete_write(LogRec *logrec, char *bufptr)
 {
 }
 
-static void lrec_list_elem_delete_print(LogRec *logRec)
-{
-}
-
-void lrec_list_elem_delete_record(LogRec *logRec)
+static void lrec_list_elem_delete_print(LogRec *logrec)
 {
 }
 
 /* Set Element Log Record */
-static void lrec_set_elem_write(LogRec *logRec, char *bufptr)
+static void lrec_set_elem_write(LogRec *logrec, char *bufptr)
 {
 }
 
-static void lrec_set_elem_print(LogRec *logRec)
+static void lrec_set_elem_print(LogRec *logrec)
 {
 }
 
-void lrec_set_elem_record(LogRec *logRec)
+/* Set Element Insert Log Record */
+static void lrec_set_elem_insert_write(LogRec *logrec, char *bufptr)
+{
+}
+
+static void lrec_set_elem_insert_print(LogRec *logrec)
 {
 }
 
 /* Set Element Delete Log Record */
-static void lrec_set_elem_delete_write(LogRec *logRec, char *bufptr)
+static void lrec_set_elem_delete_write(LogRec *logrec, char *bufptr)
 {
 }
 
-static void lrec_set_elem_delete_print(LogRec *logRec)
-{
-}
-
-void lrec_set_elem_delete_record(LogRec *logRec)
+static void lrec_set_elem_delete_print(LogRec *logrec)
 {
 }
 
 /* Map Element Log Record */
-static void lrec_map_elem_write(LogRec *logRec, char *bufptr)
+static void lrec_map_elem_write(LogRec *logrec, char *bufptr)
 {
 }
 
-static void lrec_map_elem_print(LogRec *logRec)
+static void lrec_map_elem_print(LogRec *logrec)
 {
 }
 
-void lrec_map_elem_record(LogRec *logRec)
+/* Map Element Insert Log Record */
+static void lrec_map_elem_insert_write(LogRec *logrec, char *bufptr)
+{
+}
+
+static void lrec_map_elem_insert_print(LogRec *logrec)
 {
 }
 
 /* Map Element Delete Log Record */
-static void lrec_map_elem_delete_write(LogRec *logRec, char *bufptr)
+static void lrec_map_elem_delete_write(LogRec *logrec, char *bufptr)
 {
 }
 
-static void lrec_map_elem_delete_print(LogRec *logRec)
-{
-}
-
-void lrec_map_elem_delete_record(LogRec *logRec)
+static void lrec_map_elem_delete_print(LogRec *logrec)
 {
 }
 
 /* BTree Element Log Record */
-static void lrec_bt_elem_write(LogRec *logRec, char *bufptr)
+static void lrec_bt_elem_write(LogRec *logrec, char *bufptr)
 {
 }
 
-static void lrec_bt_elem_print(LogRec *logRec)
+static void lrec_bt_elem_print(LogRec *logrec)
 {
 }
 
-void lrec_bt_elem_record(LogRec *logRec)
+/* BTree Element Insert Log Record */
+static void lrec_bt_elem_insert_write(LogRec *logrec, char *bufptr)
+{
+}
+
+static void lrec_bt_elem_insert_print(LogRec *logrec)
 {
 }
 
 /* BTree Element Delete Log Record */
-static void lrec_bt_elem_delete_write(LogRec *logRec, char *bufptr)
+static void lrec_bt_elem_delete_write(LogRec *logrec, char *bufptr)
 {
 }
 
-static void lrec_bt_elem_delete_print(LogRec *logRec)
-{
-}
-
-void lrec_bt_elem_delete_record(LogRec *logRec)
+static void lrec_bt_elem_delete_print(LogRec *logrec)
 {
 }
 
 /* BTree Element Arithmetic Log Record */
-static void lrec_bt_elem_arithmetic_write(LogRec *logRec, char *bufptr)
+static void lrec_bt_elem_arithmetic_write(LogRec *logrec, char *bufptr)
 {
 }
 
-static void lrec_bt_elem_arithmetic_print(LogRec *logRec)
-{
-}
-
-void lrec_bt_elem_arithmetic_record(LogRec *logRec)
+static void lrec_bt_elem_arithmetic_print(LogRec *logrec)
 {
 }
 
 /* Snapshot Head Log Record */
-static void lrec_snapshot_head_write(LogRec *logRec, char *bufptr)
+static void lrec_snapshot_head_write(LogRec *logrec, char *bufptr)
 {
 }
 
-static void lrec_snapshot_head_print(LogRec *logRec)
-{
-}
-
-void lrec_snapshot_head_record(LogRec *logRec)
+static void lrec_snapshot_head_print(LogRec *logrec)
 {
 }
 
 /* Snapshot Tail Log Record */
-static void lrec_snapshot_tail_write(LogRec *logRec, char *bufptr)
+static void lrec_snapshot_tail_write(LogRec *logrec, char *bufptr)
 {
-    SnapshotTailLog *log = (void*)logRec;
+    SnapshotTailLog *log = (SnapshotTailLog*)logrec;
     memcpy(bufptr, log, sizeof(SnapshotTailLog));
 }
 
-static void lrec_snapshot_tail_print(LogRec *logRec)
+static void lrec_snapshot_tail_print(LogRec *logrec)
 {
-    LogHdr *hdr = &logRec->header;
+    LogHdr *hdr = &logrec->header;
     log_record_header_print(hdr);
-}
-
-void lrec_snapshot_tail_record(LogRec *logRec)
-{
-    SnapshotTailLog *log = (void*)logRec;
-    log->header.logtype = LOG_SNAPSHOT_TAIL;
-    log->header.cmdtype = CMD_NONE;
-    log->header.body_length = 0;
 }
 
 /* Log Record Function */
 typedef struct _logrec_func {
-    void (*write)(LogRec *logRec, char *bufptr);
-    void (*print)(LogRec *logRec);
+    void (*write)(LogRec *logrec, char *bufptr);
+    void (*print)(LogRec *logrec);
 } LOGREC_FUNC;
 
 LOGREC_FUNC logrec_func[] = {
     { lrec_it_link_write,            lrec_it_link_print },
-    { lrec_coll_link_write,          lrec_coll_link_print },
     { lrec_it_unlink_write,          lrec_it_unlink_print },
     { lrec_it_arithmetic_write,      lrec_it_arithmetic_print },
     { lrec_it_setattr_write,         lrec_it_setattr_print },
     { lrec_list_elem_write,          lrec_list_elem_print },
+    { lrec_list_elem_insert_write,   lrec_list_elem_insert_print },
     { lrec_list_elem_delete_write,   lrec_list_elem_delete_print },
     { lrec_set_elem_write,           lrec_set_elem_print },
+    { lrec_set_elem_insert_write,    lrec_set_elem_insert_print },
     { lrec_set_elem_delete_write,    lrec_set_elem_delete_print },
     { lrec_map_elem_write,           lrec_map_elem_print },
+    { lrec_map_elem_insert_write,    lrec_map_elem_insert_print },
     { lrec_map_elem_delete_write,    lrec_map_elem_delete_print },
     { lrec_bt_elem_write,            lrec_bt_elem_print },
+    { lrec_bt_elem_insert_write,     lrec_bt_elem_insert_print },
     { lrec_bt_elem_delete_write,     lrec_bt_elem_delete_print },
     { lrec_bt_elem_arithmetic_write, lrec_bt_elem_arithmetic_print },
     { lrec_snapshot_head_write,      lrec_snapshot_head_print },
     { lrec_snapshot_tail_write,      lrec_snapshot_tail_print }
 };
 
-void lrec_write(LogRec *logRec, char *bufptr)
+/* external function */
+
+void lrec_write(LogRec *logrec, char *bufptr)
 {
-    logrec_func[logRec->header.logtype].write(logRec, bufptr);
+    logrec_func[logrec->header.logtype].write(logrec, bufptr);
+#ifdef DEBUG_PERSISTENCE_DISK_FORMAT_PRINT
+    logrec_func[logrec->header.logtype].print(logrec);
+#endif
 }
 
-void lrec_print(LogRec *logRec)
+/* Construct Log Record Function For Snapshot */
+int lrec_construct_snapshot_head(LogRec *logrec)
 {
-    logrec_func[logRec->header.logtype].print(logRec);
+    return 0;
+}
+
+int lrec_construct_snapshot_tail(LogRec *logrec)
+{
+    SnapshotTailLog *log = (SnapshotTailLog*)logrec;
+    log->header.logtype = LOG_SNAPSHOT_TAIL;
+    log->header.updtype = UPD_NONE;
+    log->header.body_length = 0;
+    return sizeof(SnapshotTailLog);
+}
+
+int lrec_construct_snapshot_item(LogRec *logrec, hash_item *it)
+{
+    ITLinkLog *log = (ITLinkLog*)logrec;
+    ITLinkData *body = &log->body;
+    log->keyptr = (char*)item_get_key(it);
+
+    struct lrec_item_common *cm = (struct lrec_item_common*)&body->cm;
+    cm->ittype = GET_ITEM_TYPE(it);
+    cm->keylen = it->nkey;
+    cm->vallen = it->nbytes;
+    cm->flags = it->flags;
+    cm->exptime = it->exptime;
+    body->ptr.cas = item_get_cas(it);
+
+    log->header.logtype = LOG_IT_LINK;
+    log->header.updtype = UPD_SET;
+    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(ITLinkData, data) + cm->keylen + cm->vallen);
+    return log->header.body_length;
 }
 #endif

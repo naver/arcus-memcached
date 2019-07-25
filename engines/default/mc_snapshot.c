@@ -24,12 +24,12 @@
 #include "default_engine.h"
 #ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
 #include "mc_snapshot.h"
-#ifdef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
+#ifdef ENABLE_PERSISTENCE_04_KV_DATA_SNAPSHOT
 #include "cmdlogrec.h"
 #endif
 
-#ifdef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
-#define SNAPSHOT_BUFFER_SIZE (3 * 1024 * 1024)
+#ifdef ENABLE_PERSISTENCE_04_KV_DATA_SNAPSHOT
+#define SNAPSHOT_BUFFER_SIZE (10 * 1024 * 1024)
 #else
 #define SNAPSHOT_BUFFER_SIZE (128 * 1024)
 #endif
@@ -239,29 +239,25 @@ static int do_snapshot_key_done(snapshot_st *ss)
  */
 static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_count)
 {
-#ifdef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
+#ifdef ENABLE_PERSISTENCE_04_KV_DATA_SNAPSHOT
     hash_item *it;
     struct snapshot_buffer *ssb = &ss->buffer;
     char *bufptr;
-    int length;
+    int logsize;
     int i, ret = 0;
 
     for (i = 0; i < item_count; i++) {
         it = (hash_item*)item_array[i];
 
         ITLinkLog log;
-        lrec_it_link_record_for_snapshot((LogRec*)&log, it);
-        length = sizeof(log.header) + log.header.body_length;
-        if (do_snapshot_buffer_check_space(ss, length) < 0) {
+        logsize = lrec_construct_snapshot_item((LogRec*)&log, it);
+        if (do_snapshot_buffer_check_space(ss, logsize) < 0) {
             ret = -1; break;
         }
 
         bufptr = &ssb->memory[ssb->curlen];
         lrec_write((LogRec*)&log, bufptr);
-#ifdef DEBUG_PERSISTENCE_DISK_FORMAT_PRINT
-        lrec_print((LogRec*)&log);
-#endif
-        ssb->curlen += length;
+        ssb->curlen += logsize;
     }
     return ret;
 #else
@@ -271,23 +267,21 @@ static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_co
 
 static int do_snapshot_data_done(snapshot_st *ss)
 {
-#ifdef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
+#ifdef ENABLE_PERSISTENCE_04_KV_DATA_SNAPSHOT
     struct snapshot_buffer *ssb = &ss->buffer;
     char *bufptr;
+    int logsize = 0;
 
     SnapshotTailLog log;
-    lrec_snapshot_tail_record((LogRec*)&log);
-    if (do_snapshot_buffer_check_space(ss, sizeof(log.header)) < 0) {
+    logsize = lrec_construct_snapshot_tail((LogRec*)&log);
+    if (do_snapshot_buffer_check_space(ss, logsize) < 0) {
         return -1;
     }
 
     /* record snapshot complete mark in the end of file. */
     bufptr = &ssb->memory[ssb->curlen];
     lrec_write((LogRec*)&log, bufptr);
-#ifdef DEBUG_PERSISTENCE_DISK_FORMAT_PRINT
-    lrec_print((LogRec*)&log);
-#endif
-    ssb->curlen += sizeof(log.header);
+    ssb->curlen += logsize;
 #endif
     if (do_snapshot_buffer_flush(ss) < 0) {
         return -1;
@@ -348,7 +342,7 @@ static ENGINE_ERROR_CODE do_snapshot_argcheck(enum mc_snapshot_mode mode)
                     "Failed to start snapshot. Given mode(%d) is invalid.\n", (int)mode);
         return ENGINE_EBADVALUE;
     }
-#ifndef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
+#ifndef ENABLE_PERSISTENCE_04_KV_DATA_SNAPSHOT
     if (mode != MC_SNAPSHOT_MODE_KEY) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to start snapshot. Given mode(%s) is not yet supported.\n",
