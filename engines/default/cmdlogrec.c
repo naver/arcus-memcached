@@ -73,21 +73,6 @@ static char *get_itemtype_text(uint8_t type)
     return "unknown";
 }
 
-static char *get_concise_str(char *str, uint32_t strlen)
-{
-    static char dest[250] = "";
-    if (strlen <= 250) {
-        strncpy(dest, str, strlen);
-        return dest;
-    }
-
-    int nprefix = 100;
-    strncpy(dest, str, nprefix);
-    strncat(dest, "....", 4);
-    strncat(dest, str+(strlen-nprefix), nprefix);
-    return dest;
-}
-
 static void log_record_header_print(LogHdr *hdr)
 {
     fprintf(stderr, "[HEADER] body_length=%u | logtype=%s | updtype=%s\n",
@@ -114,12 +99,10 @@ static void lrec_it_link_print(LogRec *logrec)
 
     log_record_header_print(&log->header);
     fprintf(stderr, "[BODY]   ittype=%s | flags=%u | exptime=%u | cas=%"PRIu64" | "
-            "keylen=%u | keystr=%s | ",
+            "keylen=%u | keystr=%.*s | vallen=%u | valstr=%.*s\n",
             get_itemtype_text(cm->ittype), cm->flags, cm->exptime, body->ptr.cas,
-            cm->keylen, get_concise_str(log->keyptr, cm->keylen));
-    fprintf(stderr, "vallen=%u | valstr=%s",
-            cm->vallen, get_concise_str(log->keyptr+cm->keylen, cm->vallen));
-
+            cm->keylen, (cm->keylen <= 250 ? cm->keylen : 250), log->keyptr,
+            cm->vallen, (cm->vallen <= 250 ? cm->vallen : 250), log->keyptr+cm->keylen);
 }
 
 /* Item Unlink Log Record */
