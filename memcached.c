@@ -313,7 +313,7 @@ static void stats_init(void) {
        like 'settings.oldest_live' which act as booleans as well as
        values are now false in boolean context... */
     process_started = time(0) - 2;
-    stats_prefix_init(disable_stats_detail);
+    stats_prefix_init(settings.prefix_delimiter, disable_stats_detail);
 }
 
 static void stats_reset(const void *cookie) {

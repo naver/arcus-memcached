@@ -108,9 +108,12 @@ static int max_prefixes = PREFIX_MAX_COUNT;
 static int num_prefixes = 0;
 static int total_prefix_size = 0;
 static char *null_prefix_str = "<null>";
+static char prefix_delimiter;
 
-void stats_prefix_init(void (*cb_when_prefix_overflow)(void)) {
+void stats_prefix_init(char delimiter, void (*cb_when_prefix_overflow)(void))
+{
     memset(prefix_stats, 0, sizeof(prefix_stats));
+    prefix_delimiter = delimiter;
     /* callback function when prefix overflow */
     func_when_prefix_overflow = cb_when_prefix_overflow;
 }
@@ -231,7 +234,7 @@ int stats_prefix_delete(const char *prefix, const size_t nprefix) {
             for (curr = prefix_stats[hidx]; curr != NULL; curr = next) {
                 next = curr->next;
                 if ((curr->prefix_len >= nprefix && strncmp(curr->prefix, prefix, nprefix) == 0) &&
-                    (curr->prefix_len == nprefix || *(curr->prefix+nprefix)==settings.prefix_delimiter)) {
+                    (curr->prefix_len == nprefix || *(curr->prefix+nprefix)==prefix_delimiter)) {
                     if (prev == NULL) prefix_stats[hidx] = curr->next;
                     else              prev->next = curr->next;
                     num_prefixes--;
@@ -266,7 +269,7 @@ static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey) {
 
     assert(key != NULL);
 
-    while ((token = memchr(key + i + 1, settings.prefix_delimiter, nkey - i - 1)) != NULL) {
+    while ((token = memchr(key + i + 1, prefix_delimiter, nkey - i - 1)) != NULL) {
         i = token - key;
         prefix_depth++;
 
@@ -872,8 +875,6 @@ char *stats_prefix_dump(int *length) {
       (need assoc.o to get the hash() function).
 ****************************************************************************/
 
-struct settings settings;
-
 static char *current_test = "";
 static int test_count = 0;
 static int fail_count = 0;
@@ -1018,8 +1019,8 @@ void mt_stats_lock() { }
 void mt_stats_unlock() { }
 
 main(int argc, char **argv) {
-    stats_prefix_init();
-    settings.prefix_delimiter = ':';
+    char prefix_delimiter = ':';
+    stats_prefix_init(prefix_delimiter, NULL);
     run_test("stats_prefix_find", test_prefix_find);
     run_test("stats_prefix_record_get", test_prefix_record_get);
     run_test("stats_prefix_record_delete", test_prefix_record_delete);
