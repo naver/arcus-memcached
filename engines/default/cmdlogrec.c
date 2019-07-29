@@ -34,6 +34,11 @@
 #define GET_8_ALIGN_SIZE(size) \
     (((size) % 8) == 0 ? (size) : ((size) + (8 - ((size) % 8))))
 
+#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
+/* get bkey real size */
+#define BTREE_REAL_NBKEY(nbkey) ((nbkey)==0 ? sizeof(uint64_t) : (nbkey))
+#endif
+
 static char *get_logtype_text(uint8_t type)
 {
     switch (type) {
@@ -50,6 +55,14 @@ static char *get_updtype_text(uint8_t type)
     switch (type) {
         case UPD_SET:
             return "SET";
+        case UPD_LIST_CREATE:
+            return "LIST_CREATE";
+        case UPD_SET_CREATE:
+            return "SET_CREATE";
+        case UPD_MAP_CREATE:
+            return "MAP_CREATE";
+        case UPD_BT_CREATE:
+            return "BT_CREATE";
         case UPD_NONE:
             return "NONE";
     }
@@ -73,36 +86,132 @@ static char *get_itemtype_text(uint8_t type)
     return "unknown";
 }
 
-static void log_record_header_print(LogHdr *hdr)
+#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
+static uint8_t get_it_link_updtype(uint8_t type)
 {
-    fprintf(stderr, "[HEADER] body_length=%u | logtype=%s | updtype=%s\n",
+    switch (type) {
+        case ITEM_TYPE_LIST:
+            return UPD_LIST_CREATE;
+        case ITEM_TYPE_SET:
+            return UPD_SET_CREATE;
+        case ITEM_TYPE_MAP:
+            return UPD_MAP_CREATE;
+        case ITEM_TYPE_BTREE:
+            return UPD_BT_CREATE;
+    }
+    return UPD_SET;
+}
+#endif
+
+#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
+static char *get_coll_ovflact_text(uint8_t ovflact)
+{
+    char *ovfarr[7] = { "error", "head_trim", "tail_trim",
+                        "smallest_trim", "largest_trim",
+                        "smallest_silent_trim", "largest_silent_trim" };
+
+    return ovfarr[ovflact];
+}
+#endif
+
+static void lrec_header_print(LogHdr *hdr)
+{
+    fprintf(stderr, "\n[HEADER] body_length=%u | logtype=%s | updtype=%s\n",
             hdr->body_length, get_logtype_text(hdr->logtype), get_updtype_text(hdr->updtype));
 }
 
+#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
+static void lrec_maxbkr_print(uint8_t nbkey, unsigned char *bkey, char *str)
+{
+    if (nbkey != BKEY_NULL) {
+        if (nbkey == 0) {
+            uint64_t bkey_temp;
+            memcpy((unsigned char*)&bkey_temp, bkey, sizeof(uint64_t));
+            sprintf(str, " | maxbkeyrange len=%u val=%"PRIu64" | ",
+                    nbkey, bkey_temp);
+        } else {
+            char bkey_temp[31];
+            safe_hexatostr(bkey, nbkey, bkey_temp);
+            sprintf(str, " | maxbkeyrange len=%u val=0x%s | ",
+                    nbkey, bkey_temp);
+        }
+    } else {
+        sprintf(str, " | maxbkeyrange len=BKEY_NULL val=0 | ");
+    }
+}
+#endif
+
 /* Item Link Log Record */
+/* KV :         header | lrec_item_common | cas            | key + value
+ * Collection : header | lrec_item_common | lrec_coll_meta | key + value(\r\n)
+ * BTree :      header | lrec_item_common | lrec_coll_meta | maxbkeyrange | key + value(\r\n)
+ */
 static void lrec_it_link_write(LogRec *logrec, char *bufptr)
 {
     ITLinkLog   *log = (ITLinkLog*)logrec;
     ITLinkData  *body = &log->body;
     int offset = offsetof(ITLinkData, data);
+#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
+    struct lrec_item_common *cm = (struct lrec_item_common*)&body->cm;
+
+    memcpy(bufptr, logrec, offset);
+
+    if (cm->ittype == ITEM_TYPE_BTREE) {
+        struct lrec_coll_meta *meta = (struct lrec_coll_meta*)&body->ptr.meta;
+        if (meta->maxbkrlen != BKEY_NULL) {
+            /* maxbkeyrange value copy */
+            memcpy(bufptr + offset, log->maxbkrptr, BTREE_REAL_NBKEY(meta->maxbkrlen));
+            offset += BTREE_REAL_NBKEY(meta->maxbkrlen);
+        }
+    }
+
+    /* key value copy */
+    memcpy(bufptr + offset, log->keyptr, cm->keylen + cm->vallen);
+#else
 
     memcpy(bufptr, logrec, offset);
     /* key value copy */
     memcpy(bufptr+offset, log->keyptr, body->cm.keylen+body->cm.vallen);
+#endif
 }
 
 static void lrec_it_link_print(LogRec *logrec)
 {
-    ITLinkLog  *log = (ITLinkLog*)logrec;
+    ITLinkLog  *log  = (ITLinkLog*)logrec;
     ITLinkData *body = &log->body;
     struct lrec_item_common *cm = (struct lrec_item_common*)&body->cm;
 
-    log_record_header_print(&log->header);
+    lrec_header_print(&log->header);
+#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
+    char metastr[140];
+    if (cm->ittype == ITEM_TYPE_KV) {
+        sprintf(metastr, "cas=%"PRIu64" | ", body->ptr.cas);
+    } else {
+        struct lrec_coll_meta *meta = (struct lrec_coll_meta*)&body->ptr.meta;
+        char maxbkrstr[70];
+        if (cm->ittype == ITEM_TYPE_BTREE) {
+            lrec_maxbkr_print(meta->maxbkrlen, log->maxbkrptr, maxbkrstr);
+        }
+
+        sprintf(metastr, "ovflact=%s | mflags=%u | mcnt=%u%s",
+                get_coll_ovflact_text(meta->ovflact), meta->mflags, meta->mcnt,
+                (cm->ittype == ITEM_TYPE_BTREE ? maxbkrstr : " | "));
+    }
+
+    /* vallen >= 2, valstr = ...\r\n */
+    fprintf(stderr, "[BODY]   ittype=%s | flags=%u | exptime=%u | %s"
+            "keylen=%u | keystr=%.*s | vallen=%u | valstr=%.*s",
+            get_itemtype_text(cm->ittype), cm->flags, cm->exptime, metastr,
+            cm->keylen, (cm->keylen <= 250 ? cm->keylen : 250), log->keyptr,
+            cm->vallen, (cm->vallen <= 250 ? cm->vallen : 250), log->keyptr+cm->keylen);
+#else
+
     fprintf(stderr, "[BODY]   ittype=%s | flags=%u | exptime=%u | cas=%"PRIu64" | "
-            "keylen=%u | keystr=%.*s | vallen=%u | valstr=%.*s\n",
+            "keylen=%u | keystr=%.*s | vallen=%u | valstr=%.*s",
             get_itemtype_text(cm->ittype), cm->flags, cm->exptime, body->ptr.cas,
             cm->keylen, (cm->keylen <= 250 ? cm->keylen : 250), log->keyptr,
             cm->vallen, (cm->vallen <= 250 ? cm->vallen : 250), log->keyptr+cm->keylen);
+#endif
 }
 
 /* Item Unlink Log Record */
@@ -268,7 +377,7 @@ static void lrec_snapshot_tail_write(LogRec *logrec, char *bufptr)
 static void lrec_snapshot_tail_print(LogRec *logrec)
 {
     LogHdr *hdr = &logrec->header;
-    log_record_header_print(hdr);
+    lrec_header_print(hdr);
 }
 
 /* Log Record Function */
@@ -329,18 +438,49 @@ int lrec_construct_snapshot_item(LogRec *logrec, hash_item *it)
     ITLinkLog *log = (ITLinkLog*)logrec;
     ITLinkData *body = &log->body;
     log->keyptr = (char*)item_get_key(it);
+#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
+    int naddition = 0;
+#endif
 
     struct lrec_item_common *cm = (struct lrec_item_common*)&body->cm;
-    cm->ittype = GET_ITEM_TYPE(it);
-    cm->keylen = it->nkey;
-    cm->vallen = it->nbytes;
-    cm->flags = it->flags;
+    cm->ittype  = GET_ITEM_TYPE(it);
+    cm->keylen  = it->nkey;
+    cm->vallen  = it->nbytes;
+    cm->flags   = it->flags;
     cm->exptime = it->exptime;
+#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
+    if (IS_COLL_ITEM(it)) {
+        coll_meta_info *info = (coll_meta_info*)item_get_meta(it);
+        struct lrec_coll_meta *meta = (struct lrec_coll_meta*)&body->ptr.meta;
+        meta->ovflact = info->ovflact;
+        meta->mflags  = info->mflags;
+        meta->mcnt    = info->mcnt;
+        if (IS_BTREE_ITEM(it)) {
+            btree_meta_info *info = (btree_meta_info*)item_get_meta(it);
+            meta->maxbkrlen       = info->maxbkeyrange.len;
+            log->maxbkrptr        = info->maxbkeyrange.val;
+        } else {
+            meta->maxbkrlen = BKEY_NULL;
+            log->maxbkrptr  = NULL;
+        }
+        if (meta->maxbkrlen != BKEY_NULL) {
+            naddition = BTREE_REAL_NBKEY(meta->maxbkrlen);
+        }
+    } else {
+        body->ptr.cas = item_get_cas(it);
+    }
+#else
     body->ptr.cas = item_get_cas(it);
+#endif
 
     log->header.logtype = LOG_IT_LINK;
+#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
+    log->header.updtype = get_it_link_updtype(cm->ittype);
+    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(ITLinkData, data) + cm->keylen + cm->vallen + naddition);
+#else
     log->header.updtype = UPD_SET;
     log->header.body_length = GET_8_ALIGN_SIZE(offsetof(ITLinkData, data) + cm->keylen + cm->vallen);
+#endif
     return log->header.body_length;
 }
 #endif
