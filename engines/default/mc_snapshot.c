@@ -260,8 +260,21 @@ static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_co
         if (erst_array != NULL && IS_COLL_ITEM(it)) {
             eresult = &erst_array[i];
             for (j = 0; j < eresult->elem_count; j++) {
-                /* do dump action */
+#ifdef ENABLE_PERSISTENCE_03_ELEM_SNAPSHOT
+                SnapshotElemLog elog;
+                logsize = lrec_construct_snapshot_elem((LogRec*)&elog, it, eresult->elem_array[j]);
+                if (do_snapshot_buffer_check_space(ss, logsize) < 0) {
+                    ret = -1; break;
+                }
+
+                bufptr = &ssb->memory[ssb->curlen];
+                lrec_write_to_buffer((LogRec*)&elog, bufptr);
+                ssb->curlen += logsize;
+#endif
             }
+#ifdef ENABLE_PERSISTENCE_03_ELEM_SNAPSHOT
+            if (ret == -1) break;
+#endif
         }
     }
     return ret;

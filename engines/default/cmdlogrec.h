@@ -32,6 +32,9 @@ enum log_type {
     LOG_BT_ELEM_INSERT,
     LOG_BT_ELEM_DELETE,
     LOG_BT_ELEM_ARITHMETIC,
+#ifdef ENABLE_PERSISTENCE_03_ELEM_SNAPSHOT
+    LOG_SNAPSHOT_ELEM,
+#endif
     LOG_SNAPSHOT_HEAD,
     LOG_SNAPSHOT_TAIL
 };
@@ -163,6 +166,20 @@ typedef struct _IT_setattr_log {
     unsigned char *maxbkrptr;    /* maxbkeyrange value */
 } ITSetAttrLog;
 
+#ifdef ENABLE_PERSISTENCE_03_ELEM_SNAPSHOT
+typedef struct _snapshot_elem_data {
+    uint16_t nbytes;
+    uint8_t  nekey;          /* nbkey(btree), nfield(map) */
+    uint8_t  neflag;         /* neflag(btree) */
+    char     data[1];
+} SnapshotElemData;
+
+typedef struct _snapshot_elem_log {
+    LogHdr           header;
+    SnapshotElemData body;
+    char             *valptr;
+} SnapshotElemLog;
+#endif
 /* Snapshot File Tail Record */
 typedef struct _snapshot_tail_log {
     LogHdr header;
@@ -171,6 +188,9 @@ typedef struct _snapshot_tail_log {
 /* Construct Log Record Function For Snapshot */
 int lrec_construct_snapshot_head(LogRec *logrec);
 int lrec_construct_snapshot_tail(LogRec *logrec);
+#ifdef ENABLE_PERSISTENCE_03_ELEM_SNAPSHOT
+int lrec_construct_snapshot_elem(LogRec *logrec, hash_item *it, void *elem);
+#endif
 int lrec_construct_link_item(LogRec *logrec, hash_item *it);
 int lrec_construct_unlink_item(LogRec *logrec, hash_item *it);
 int lrec_construct_flush_item(LogRec *logrec, const char *prefix, const int nprefix);
