@@ -89,7 +89,7 @@ struct lrec_item_common {
 struct lrec_coll_meta {
     uint8_t     ovflact;        /* overflow action */
     uint8_t     mflags;         /* sticky, readable, trimmed flags */
-    uint8_t     nbkey;
+    uint8_t     maxbkrlen;      /* maxbkeyrange length */
     uint8_t     reserved_8[1];
     int32_t     mcnt;           /* maximum element count */
 };
@@ -124,6 +124,9 @@ typedef struct _IT_link_log {
     LogHdr      header;
     ITLinkData  body;
     char        *keyptr;
+#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
+    unsigned char *maxbkrptr;    /* maxbkeyrange value */
+#endif
 } ITLinkLog;
 
 /* Snapshot File Tail Record */
