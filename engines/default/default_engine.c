@@ -30,8 +30,10 @@
 #include "default_engine.h"
 #include "memcached/util.h"
 #include "memcached/config_parser.h"
-#ifdef ENABLE_PERSISTENCE
+#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
 #include "mc_snapshot.h"
+#endif
+#ifdef ENABLE_PERSISTENCE
 #include "checkpoint.h"
 #include "cmdlogmgr.h"
 #endif
@@ -210,11 +212,13 @@ default_initialize(ENGINE_HANDLE* handle, const char* config_str)
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
-#ifdef ENABLE_PERSISTENCE
+#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
     ret = mc_snapshot_init(se);
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
+#endif
+#ifdef ENABLE_PERSISTENCE
     if (se->config.use_persistence) {
         ret = cmdlog_mgr_init(se);
         if (ret != ENGINE_SUCCESS) {
@@ -241,6 +245,8 @@ default_destroy(ENGINE_HANDLE* handle)
             chkpt_stop_and_final();
             cmdlog_mgr_final();
         }
+#endif
+#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
         mc_snapshot_final();
 #endif
         item_final(se);
