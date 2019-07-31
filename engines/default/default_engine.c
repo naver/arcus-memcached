@@ -30,13 +30,9 @@
 #include "default_engine.h"
 #include "memcached/util.h"
 #include "memcached/config_parser.h"
-#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
+#ifdef ENABLE_PERSISTENCE
 #include "mc_snapshot.h"
-#endif
-#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
 #include "checkpoint.h"
-#endif
-#ifdef ENABLE_PERSISTENCE_05_CMDLOG
 #include "cmdlogmgr.h"
 #endif
 
@@ -118,7 +114,7 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
             { .key = "use_cas",
               .datatype = DT_BOOL,
               .value.dt_bool = &se->config.use_cas },
-#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
+#ifdef ENABLE_PERSISTENCE
             { .key = "use_persistence",
               .datatype = DT_BOOL,
               .value.dt_bool = &se->config.use_persistence },
@@ -214,20 +210,16 @@ default_initialize(ENGINE_HANDLE* handle, const char* config_str)
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
-#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
+#ifdef ENABLE_PERSISTENCE
     ret = mc_snapshot_init(se);
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
-#endif
-#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
     if (se->config.use_persistence) {
-#ifdef ENABLE_PERSISTENCE_05_CMDLOG
         ret = cmdlog_mgr_init(se);
         if (ret != ENGINE_SUCCESS) {
             return ret;
         }
-#endif
         ret = chkpt_init_and_start(se);
         if (ret != ENGINE_SUCCESS) {
             return ret;
@@ -244,15 +236,11 @@ default_destroy(ENGINE_HANDLE* handle)
 
     if (se->initialized) {
         se->initialized = false;
-#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
+#ifdef ENABLE_PERSISTENCE
         if (se->config.use_persistence) {
             chkpt_stop_and_final();
-#ifdef ENABLE_PERSISTENCE_05_CMDLOG
             cmdlog_mgr_final();
-#endif
         }
-#endif
-#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
         mc_snapshot_final();
 #endif
         item_final(se);
@@ -1626,7 +1614,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
       },
       .config = {
          .use_cas = true,
-#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
+#ifdef ENABLE_PERSISTENCE
          .use_persistence = false,
 #endif
          .verbose = 0,

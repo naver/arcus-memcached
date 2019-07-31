@@ -20,7 +20,7 @@
 #include <ctype.h>
 
 #include "default_engine.h"
-#ifdef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
+#ifdef ENABLE_PERSISTENCE
 #include "cmdlogrec.h"
 
 #define DEBUG_PERSISTENCE_DISK_FORMAT_PRINT

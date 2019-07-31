@@ -45,7 +45,7 @@ struct default_engine;
  */
 struct engine_config {
    bool   use_cas;
-#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
+#ifdef ENABLE_PERSISTENCE
    bool   use_persistence;
 #endif
    size_t verbose;

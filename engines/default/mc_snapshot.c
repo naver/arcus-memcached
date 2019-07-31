@@ -22,17 +22,11 @@
 #include <assert.h>
 
 #include "default_engine.h"
-#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
+#ifdef ENABLE_PERSISTENCE
 #include "mc_snapshot.h"
-#ifdef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
 #include "cmdlogrec.h"
-#endif
 
-#ifdef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
 #define SNAPSHOT_BUFFER_SIZE (10 * 1024 * 1024)
-#else
-#define SNAPSHOT_BUFFER_SIZE (128 * 1024)
-#endif
 #define SCAN_ITEM_ARRAY_SIZE 16
 //#define SCAN_ITEM_ARRAY_SIZE 64
 #define SNAPSHOT_MAX_FILEPATH_LENGTH 255
@@ -239,7 +233,6 @@ static int do_snapshot_key_done(snapshot_st *ss)
  */
 static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_count)
 {
-#ifdef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
     hash_item *it;
     struct snapshot_buffer *ssb = &ss->buffer;
     char *bufptr;
@@ -260,14 +253,10 @@ static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_co
         ssb->curlen += logsize;
     }
     return ret;
-#else
-    return 0;
-#endif
 }
 
 static int do_snapshot_data_done(snapshot_st *ss)
 {
-#ifdef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
     struct snapshot_buffer *ssb = &ss->buffer;
     char *bufptr;
     int logsize = 0;
@@ -282,7 +271,6 @@ static int do_snapshot_data_done(snapshot_st *ss)
     bufptr = &ssb->memory[ssb->curlen];
     lrec_write((LogRec*)&log, bufptr);
     ssb->curlen += logsize;
-#endif
     if (do_snapshot_buffer_flush(ss) < 0) {
         return -1;
     }
@@ -342,7 +330,7 @@ static ENGINE_ERROR_CODE do_snapshot_argcheck(enum mc_snapshot_mode mode)
                     "Failed to start snapshot. Given mode(%d) is invalid.\n", (int)mode);
         return ENGINE_EBADVALUE;
     }
-#ifndef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
+#if 0 // old code
     if (mode != MC_SNAPSHOT_MODE_KEY) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to start snapshot. Given mode(%s) is not yet supported.\n",

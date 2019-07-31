@@ -28,7 +28,7 @@
 #include <sys/time.h> /* gettimeofday() */
 
 #include "default_engine.h"
-#ifdef ENABLE_PERSISTENCE_05_CMDLOG
+#ifdef ENABLE_PERSISTENCE
 #include "cmdlogmgr.h"
 #include "cmdlogbuf.h"
 #endif

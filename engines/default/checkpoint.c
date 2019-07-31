@@ -24,20 +24,16 @@
 #include <sys/time.h>
 
 #include "default_engine.h"
-#ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
+#ifdef ENABLE_PERSISTENCE
 #include "checkpoint.h"
 #include "mc_snapshot.h"
-#ifdef ENABLE_PERSISTENCE_05_CMDLOG
 #include "cmdlogbuf.h"
-#endif
 
 #define CHKPT_MAX_FILENAME_LENGTH  255
 #define CHKPT_FILE_NAME_FORMAT     "%s/%s%d"
 #define CHKPT_DIRPATH              "backup"
 #define CHKPT_SNAPSHOT_PREFIX      "snapshot_"
-#ifdef ENABLE_PERSISTENCE_05_CMDLOG
 #define CHKPT_CMDLOG_PREFIX        "cmdlog_"
-#endif
 
 #define CHKPT_SWEEP_INTERVAL 5
 
@@ -113,14 +109,9 @@ static bool do_chkpt_sweep_files(chkpt_st *cs)
     return ret;
 }
 
-#ifdef ENABLE_PERSISTENCE_05_CMDLOG
 /* create files for next checkpoint : snapshot_(newtime), cmdlog_(newtime) */
-#else
-/* create files for next checkpoint : snapshot_(newtime) */
-#endif
 static int do_chkpt_create_files(chkpt_st *cs, int newtime)
 {
-#ifdef ENABLE_PERSISTENCE_05_CMDLOG
     sprintf(cs->path, CHKPT_FILE_NAME_FORMAT, CHKPT_DIRPATH, CHKPT_CMDLOG_PREFIX, newtime);
     int fd = open(cs->path, O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
     if (fd < 0) {
@@ -133,21 +124,14 @@ static int do_chkpt_create_files(chkpt_st *cs, int newtime)
     if (cmdlog_file_open(cs->path) < 0) {
         return -1;
     }
-#endif
 
     sprintf(cs->path, CHKPT_FILE_NAME_FORMAT, CHKPT_DIRPATH, CHKPT_SNAPSHOT_PREFIX, newtime);
-#ifdef ENABLE_PERSISTENCE_05_CMDLOG
     fd = open(cs->path, O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
-#else
-    int fd = open(cs->path, O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
-#endif
     if (fd < 0) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to create file in checkpoint. "
                     "path : %s, error : %s\n", cs->path, strerror(errno));
-#ifdef ENABLE_PERSISTENCE_05_CMDLOG
         /* FIXME: need error handling - delete old file for open failure */
-#endif
         return -1;
     }
     close(fd);
@@ -155,11 +139,7 @@ static int do_chkpt_create_files(chkpt_st *cs, int newtime)
     return 0;
 }
 
-#ifdef ENABLE_PERSISTENCE_05_CMDLOG
 /* remove files : snapshot_(oldtime), cmdlog_(oldtime) */
-#else
-/* remove files : snapshot_(oldtime) */
-#endif
 static int do_chkpt_remove_files(chkpt_st *cs, int oldtime)
 {
     sprintf(cs->path, CHKPT_FILE_NAME_FORMAT, CHKPT_DIRPATH, CHKPT_SNAPSHOT_PREFIX, oldtime);
@@ -169,7 +149,6 @@ static int do_chkpt_remove_files(chkpt_st *cs, int oldtime)
                     "path : %s, error : %s\n", cs->path, strerror(errno));
         return -1;
     }
-#ifdef ENABLE_PERSISTENCE_05_CMDLOG
     cmdlog_file_close();
     sprintf(cs->path, CHKPT_FILE_NAME_FORMAT, CHKPT_DIRPATH, CHKPT_CMDLOG_PREFIX, oldtime);
     if (unlink(cs->path) < 0) {
@@ -178,7 +157,6 @@ static int do_chkpt_remove_files(chkpt_st *cs, int oldtime)
                     "path : %s, error : %s\n", cs->path, strerror(errno));
         return -1;
     }
-#endif
     return 0;
 }
 
