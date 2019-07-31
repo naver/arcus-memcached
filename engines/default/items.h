@@ -444,7 +444,8 @@ ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine,
                                   const char *key, const size_t nkey,
                                   set_elem_item *elem,
                                   item_attr *attrp,
-                                  bool *created, const void *cookie);
+                                  bool *created, const void *cookie,
+                                  bool force);
 
 ENGINE_ERROR_CODE set_elem_delete(struct default_engine *engine,
                                   const char *key, const size_t nkey,

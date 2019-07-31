@@ -39,6 +39,7 @@
 ./t/coll_pipeline_sop_exist.t
 ./t/coll_readable_attr.t
 ./t/coll_sop_segfault_p012611.t
+./t/coll_sop_forced_insert.t
 ./t/coll_sop_unittest.t
 ./t/daemonize.t
 ./t/dash-M.t

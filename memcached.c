@@ -1683,7 +1683,7 @@ static void process_sop_insert_complete(conn *c) {
 
         ret = mc_engine.v1->set_elem_insert(mc_engine.v0, c,
                                             c->coll_key, c->coll_nkey, elem,
-                                            c->coll_attrp, &created, 0);
+                                            c->coll_attrp, &created, 0, c->force);
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
             ret = ENGINE_SUCCESS;
@@ -5073,7 +5073,7 @@ static void process_bin_sop_insert_complete(conn *c) {
     ret = mc_engine.v1->set_elem_insert(mc_engine.v0, c,
                                   c->coll_key, c->coll_nkey, elem,
                                   c->coll_attrp, &created,
-                                  c->binary_header.request.vbucket);
+                                  c->binary_header.request.vbucket, c->force);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -10587,8 +10587,10 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
         vlen += 2;
 
+        c->force = (strcmp(tokens[ntokens - 2 - (c->noreply ? 1 : 0)].value, "force") == 0);
+
         int read_ntokens = SOP_KEY_TOKEN + 2;
-        int post_ntokens = 1 + (c->noreply ? 1 : 0);
+        int post_ntokens = 1 + (c->noreply ? 1 : 0) + (c->force ? 1: 0);
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
         if (rest_ntokens >= 2) {

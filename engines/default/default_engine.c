@@ -500,7 +500,8 @@ default_set_elem_release(ENGINE_HANDLE* handle, const void *cookie,
 static ENGINE_ERROR_CODE
 default_set_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
                         const void* key, const int nkey, eitem *eitem,
-                        item_attr *attrp, bool *created, uint16_t vbucket)
+                        item_attr *attrp, bool *created, uint16_t vbucket,
+                        bool force)
 {
     struct default_engine *engine = get_handle(handle);
     ENGINE_ERROR_CODE ret;
@@ -508,7 +509,7 @@ default_set_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = set_elem_insert(engine, key, nkey, (set_elem_item*)eitem,
-                          attrp, created, cookie);
+                          attrp, created, cookie, force);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
