@@ -24,11 +24,11 @@
 #include "default_engine.h"
 #ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
 #include "mc_snapshot.h"
-#ifdef ENABLE_PERSISTENCE_04_KV_DATA_SNAPSHOT
+#ifdef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
 #include "cmdlogrec.h"
 #endif
 
-#ifdef ENABLE_PERSISTENCE_04_KV_DATA_SNAPSHOT
+#ifdef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
 #define SNAPSHOT_BUFFER_SIZE (10 * 1024 * 1024)
 #else
 #define SNAPSHOT_BUFFER_SIZE (128 * 1024)
@@ -239,7 +239,7 @@ static int do_snapshot_key_done(snapshot_st *ss)
  */
 static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_count)
 {
-#ifdef ENABLE_PERSISTENCE_04_KV_DATA_SNAPSHOT
+#ifdef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
     hash_item *it;
     struct snapshot_buffer *ssb = &ss->buffer;
     char *bufptr;
@@ -267,7 +267,7 @@ static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_co
 
 static int do_snapshot_data_done(snapshot_st *ss)
 {
-#ifdef ENABLE_PERSISTENCE_04_KV_DATA_SNAPSHOT
+#ifdef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
     struct snapshot_buffer *ssb = &ss->buffer;
     char *bufptr;
     int logsize = 0;
@@ -342,7 +342,7 @@ static ENGINE_ERROR_CODE do_snapshot_argcheck(enum mc_snapshot_mode mode)
                     "Failed to start snapshot. Given mode(%d) is invalid.\n", (int)mode);
         return ENGINE_EBADVALUE;
     }
-#ifndef ENABLE_PERSISTENCE_04_KV_DATA_SNAPSHOT
+#ifndef ENABLE_PERSISTENCE_04_DATA_SNAPSHOT
     if (mode != MC_SNAPSHOT_MODE_KEY) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to start snapshot. Given mode(%s) is not yet supported.\n",
