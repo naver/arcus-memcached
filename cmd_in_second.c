@@ -22,8 +22,8 @@ typedef enum cmd_in_second_state{
 }state;
 
 typedef struct cmd_in_second_log{
-    char key[256];
-    char client_ip[16];
+    char key[KEY_LENGTH];
+    char client_ip[IP_LENGTH];
     int32_t timer_idx;
 }logtype;
 
@@ -65,7 +65,7 @@ static bool is_bulk_cmd()
 
 static void get_whole_cmd(char* whole_cmd)
 {
-    if (this.collection_name) {
+    if (strlen(this.collection_name)) {
         sprintf(whole_cmd, "%s %s", this.collection_name, this.cmd);
         return;
     }
@@ -87,7 +87,7 @@ static void* buffer_flush_thread()
         return NULL;
     }
 
-    char whole_cmd[20] = {0};
+    char whole_cmd[20] = "";
     get_whole_cmd(whole_cmd);
 
     buffertype* buffer = &this.buffer;
@@ -102,6 +102,8 @@ static void* buffer_flush_thread()
         return NULL;
     }
 
+    int32_t expected_write_length = 0;
+
     while (!buffer_empty()) {
 
         logtype front = buffer->ring[buffer->front++];
@@ -115,14 +117,19 @@ static void* buffer_flush_thread()
 
             sprintf(time_str, "%04d-%02d-%02d %02d:%02d:%02d.%06d\n", lt ->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday, lt->tm_hour, lt->tm_min, lt->tm_sec, (int32_t)front_time->tv_usec);
             timer_idx = front.timer_idx;
+
+            expected_write_length += 27;
         }
         char log[LOG_LENGTH] = "";
         sprintf(log, "%s%s %s %s\n", time_str, whole_cmd, front.key, front.client_ip);
         strncat(log_str, log, LOG_LENGTH);
 
+        expected_write_length += LOG_LENGTH;
     }
 
-    write(fd, log_str, strlen(log_str));
+    if (write(fd, log_str, expected_write_length) != expected_write_length) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL, "write length is difference to expectation.");
+    }
 
     close(fd);
 
@@ -191,7 +198,7 @@ bool cmd_in_second_write(const char* collection_name, const char* cmd, const cha
 
     timertype *timer = &this.timer;
 
-    logtype log = { {0}, {0} };
+    logtype log = {"", "", 0};
     snprintf(log.client_ip, IP_LENGTH, "%s", client_ip);
     snprintf(log.key, KEY_LENGTH, "%s", key);
 
