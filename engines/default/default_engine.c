@@ -36,6 +36,9 @@
 #ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
 #include "checkpoint.h"
 #endif
+#ifdef ENABLE_PERSISTENCE_05_CMDLOG
+#include "cmdlogmgr.h"
+#endif
 
 #define ACTION_BEFORE_WRITE(c, k, l)
 #define ACTION_AFTER_WRITE(c, r)
@@ -219,6 +222,12 @@ default_initialize(ENGINE_HANDLE* handle, const char* config_str)
 #endif
 #ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
     if (se->config.use_persistence) {
+#ifdef ENABLE_PERSISTENCE_05_CMDLOG
+        ret = cmdlog_mgr_init(se);
+        if (ret != ENGINE_SUCCESS) {
+            return ret;
+        }
+#endif
         ret = chkpt_init_and_start(se);
         if (ret != ENGINE_SUCCESS) {
             return ret;
@@ -238,6 +247,9 @@ default_destroy(ENGINE_HANDLE* handle)
 #ifdef ENABLE_PERSISTENCE_03_CHECKPOINT
         if (se->config.use_persistence) {
             chkpt_stop_and_final();
+#ifdef ENABLE_PERSISTENCE_05_CMDLOG
+            cmdlog_mgr_final();
+#endif
         }
 #endif
 #ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
