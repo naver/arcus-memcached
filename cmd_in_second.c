@@ -156,7 +156,6 @@ static int32_t buffer_flush()
                        "Can't create buffer flush thread: %s\n", strerror(ret));
     }
 
-
     return ret;
 }
 
@@ -177,7 +176,6 @@ static void buffer_add(const logtype* log)
 
     buffer->ring[buffer->rear] = *log;
     buffer->rear = (buffer->rear+1) % buffer->capacity;
-
 }
 
 static bool is_cmd_to_log(const char* collection_name, const char* cmd)
@@ -194,7 +192,6 @@ bool cmd_in_second_write(const char* collection_name, const char* cmd, const cha
     timertype *timer = &this.timer;
 
     logtype log = { {0}, {0} };
-
     snprintf(log.client_ip, IP_LENGTH, "%s", client_ip);
     snprintf(log.key, KEY_LENGTH, "%s", key);
 

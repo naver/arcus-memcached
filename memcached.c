@@ -1628,7 +1628,7 @@ static void process_lop_insert_complete(conn *c) {
             ret = ENGINE_SUCCESS;
         }
         if (settings.detail_enabled) {
-            stats_prefix_record_lop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
+            stats_prefix_record_lop_insert(c->coll_key, c->coll_nkey, c->client_ip, (ret==ENGINE_SUCCESS));
         }
 
 #ifdef DETECT_LONG_QUERY
@@ -1690,7 +1690,7 @@ static void process_sop_insert_complete(conn *c) {
         }
 
         if (settings.detail_enabled) {
-            stats_prefix_record_sop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
+            stats_prefix_record_sop_insert(c->coll_key, c->coll_nkey, c->client_ip, (ret==ENGINE_SUCCESS));
         }
 
         switch (ret) {
@@ -1743,7 +1743,7 @@ static void process_sop_delete_complete(conn *c) {
         }
 
         if (settings.detail_enabled) {
-            stats_prefix_record_sop_delete(c->coll_key, c->coll_nkey,
+            stats_prefix_record_sop_delete(c->coll_key, c->coll_nkey, c->client_ip,
                                            (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
         }
 
@@ -1791,7 +1791,7 @@ static void process_sop_exist_complete(conn *c) {
                                            c->coll_key, c->coll_nkey,
                                            value->ptr, value->len, &exist, 0);
         if (settings.detail_enabled) {
-            stats_prefix_record_sop_exist(c->coll_key, c->coll_nkey,
+            stats_prefix_record_sop_exist(c->coll_key, c->coll_nkey, c->client_ip,
                                           (ret==ENGINE_SUCCESS));
         }
 
@@ -1863,7 +1863,7 @@ static void process_mop_insert_complete(conn *c) {
         }
 
         if (settings.detail_enabled) {
-            stats_prefix_record_mop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
+            stats_prefix_record_mop_insert(c->coll_key, c->coll_nkey, c->client_ip, (ret==ENGINE_SUCCESS));
         }
 
         switch (ret) {
@@ -1913,7 +1913,7 @@ static void process_mop_update_complete(conn *c) {
         }
 
         if (settings.detail_enabled) {
-            stats_prefix_record_mop_update(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
+            stats_prefix_record_mop_update(c->coll_key, c->coll_nkey, c->client_ip, (ret==ENGINE_SUCCESS));
         }
 
         switch (ret) {
@@ -1995,7 +1995,7 @@ static void process_mop_delete_complete(conn *c) {
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_mop_delete(c->coll_key, c->coll_nkey,
+        stats_prefix_record_mop_delete(c->coll_key, c->coll_nkey, c->client_ip,
                                        (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
@@ -2115,7 +2115,7 @@ static void process_mop_get_complete(conn *c)
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_mop_get(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+        stats_prefix_record_mop_get(c->coll_key, c->coll_nkey, c->client_ip, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
 #ifdef DETECT_LONG_QUERY
@@ -2391,7 +2391,7 @@ static void process_bop_update_complete(conn *c)
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_bop_update(c->coll_key, c->coll_nkey,
+        stats_prefix_record_bop_update(c->coll_key, c->coll_nkey, c->client_ip,
                                        (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
@@ -2484,7 +2484,7 @@ static void process_bop_mget_complete(conn *c) {
                                              &cur_access_count, &flags, &trimmed, 0);
 
             if (settings.detail_enabled) {
-                stats_prefix_record_bop_get(key_tokens[k].value, key_tokens[k].length,
+                stats_prefix_record_bop_get(key_tokens[k].value, key_tokens[k].length, c->client_ip,
                                             (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
             }
 
@@ -3071,7 +3071,7 @@ static void process_mget_complete(conn *c)
                 it = NULL;
             }
             if (settings.detail_enabled) {
-                stats_prefix_record_get(key, nkey, NULL != it);
+                stats_prefix_record_get(key, nkey, c->client_ip, NULL != it);
             }
             if (it) {
                 /* get_item_info() always returns true. */
@@ -3660,9 +3660,9 @@ static void complete_incr_bin(conn *c) {
 
     if (settings.detail_enabled) {
         if (incr) {
-            stats_prefix_record_incr(key, nkey);
+            stats_prefix_record_incr(key, nkey, c->client_ip);
         } else {
-            stats_prefix_record_decr(key, nkey);
+            stats_prefix_record_decr(key, nkey, c->client_ip);
         }
     }
 
@@ -3916,7 +3916,7 @@ static void process_bin_get(conn *c) {
     }
 
     if (settings.detail_enabled && ret != ENGINE_EWOULDBLOCK) {
-        stats_prefix_record_get(key, nkey, ret == ENGINE_SUCCESS);
+        stats_prefix_record_get(key, nkey, c->client_ip, ret == ENGINE_SUCCESS);
     }
 }
 
@@ -4494,7 +4494,7 @@ static void process_bin_lop_create(conn *c) {
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_lop_create(key, nkey);
+        stats_prefix_record_lop_create(key, nkey, c->client_ip);
     }
 
     switch (ret) {
@@ -4562,7 +4562,7 @@ static void process_bin_lop_prepare_nread(conn *c) {
     }
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_lop_insert(key, nkey, false);
+        stats_prefix_record_lop_insert(key, nkey, c->client_ip, false);
     }
 
     switch (ret) {
@@ -4629,7 +4629,7 @@ static void process_bin_lop_insert_complete(conn *c) {
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_lop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
+        stats_prefix_record_lop_insert(c->coll_key, c->coll_nkey, c->client_ip, (ret==ENGINE_SUCCESS));
     }
 
     switch (ret) {
@@ -4708,7 +4708,7 @@ static void process_bin_lop_delete(conn *c) {
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_lop_delete(key, nkey,
+        stats_prefix_record_lop_delete(key, nkey, c->client_ip,
                                        (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
@@ -4797,7 +4797,7 @@ static void process_bin_lop_get(conn *c) {
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_lop_get(key, nkey,
+        stats_prefix_record_lop_get(key, nkey, c->client_ip,
                                     (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
@@ -4914,7 +4914,7 @@ static void process_bin_sop_create(conn *c) {
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_sop_create(key, nkey);
+        stats_prefix_record_sop_create(key, nkey, c->client_ip);
     }
 
     switch (ret) {
@@ -4987,11 +4987,11 @@ static void process_bin_sop_prepare_nread(conn *c) {
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT)
-            stats_prefix_record_sop_insert(key, nkey, false);
+            stats_prefix_record_sop_insert(key, nkey, c->client_ip, false);
         else if (c->cmd == PROTOCOL_BINARY_CMD_SOP_DELETE)
-            stats_prefix_record_sop_delete(key, nkey, false);
+            stats_prefix_record_sop_delete(key, nkey, c->client_ip, false);
         else
-            stats_prefix_record_sop_exist(key, nkey, false);
+            stats_prefix_record_sop_exist(key, nkey, c->client_ip, false);
     }
 
     switch (ret) {
@@ -5080,7 +5080,7 @@ static void process_bin_sop_insert_complete(conn *c) {
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_sop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
+        stats_prefix_record_sop_insert(c->coll_key, c->coll_nkey, c->client_ip, (ret==ENGINE_SUCCESS));
     }
 
     switch (ret) {
@@ -5139,7 +5139,7 @@ static void process_bin_sop_delete_complete(conn *c) {
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_sop_delete(c->coll_key, c->coll_nkey,
+        stats_prefix_record_sop_delete(c->coll_key, c->coll_nkey, c->client_ip,
                                        (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
@@ -5189,7 +5189,7 @@ static void process_bin_sop_exist_complete(conn *c) {
                                        &exist, c->binary_header.request.vbucket);
 
     if (settings.detail_enabled) {
-        stats_prefix_record_sop_exist(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
+        stats_prefix_record_sop_exist(c->coll_key, c->coll_nkey, c->client_ip, (ret==ENGINE_SUCCESS));
     }
 
     switch (ret) {
@@ -5284,7 +5284,7 @@ static void process_bin_sop_get(conn *c) {
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_sop_get(key, nkey,
+        stats_prefix_record_sop_get(key, nkey, c->client_ip,
                                     (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
@@ -5411,7 +5411,7 @@ static void process_bin_bop_create(conn *c) {
         ret = ENGINE_SUCCESS;
     }
     if (settings.detail_enabled) {
-        stats_prefix_record_bop_create(key, nkey);
+        stats_prefix_record_bop_create(key, nkey, c->client_ip);
     }
 
     switch (ret) {
@@ -5648,7 +5648,7 @@ static void process_bin_bop_update_complete(conn *c) {
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_bop_update(c->coll_key, c->coll_nkey,
+        stats_prefix_record_bop_update(c->coll_key, c->coll_nkey, c->client_ip,
                                        (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
@@ -5762,7 +5762,7 @@ static void process_bin_bop_update_prepare_nread(conn *c) {
     }
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_bop_update(key, nkey, false);
+        stats_prefix_record_bop_update(key, nkey, c->client_ip, false);
     }
 
     switch (ret) {
@@ -5839,7 +5839,7 @@ static void process_bin_bop_delete(conn *c) {
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_bop_delete(key, nkey,
+        stats_prefix_record_bop_delete(key, nkey, c->client_ip,
                                        (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
@@ -5944,7 +5944,7 @@ static void process_bin_bop_get(conn *c) {
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_bop_get(key, nkey,
+        stats_prefix_record_bop_get(key, nkey, c->client_ip,
                                     (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
@@ -6077,7 +6077,7 @@ static void process_bin_bop_count(conn *c) {
                                          c->binary_header.request.vbucket);
 
     if (settings.detail_enabled) {
-        stats_prefix_record_bop_count(key, nkey, (ret==ENGINE_SUCCESS));
+        stats_prefix_record_bop_count(key, nkey, c->client_ip, (ret==ENGINE_SUCCESS));
     }
 
     switch (ret) {
@@ -6720,7 +6720,7 @@ static void process_bin_getattr(conn *c) {
                                 c->binary_header.request.vbucket);
 
     if (settings.detail_enabled) {
-        stats_prefix_record_getattr(key, nkey);
+        stats_prefix_record_getattr(key, nkey, c->client_ip);
     }
 
     switch (ret) {
@@ -6857,7 +6857,7 @@ static void process_bin_setattr(conn *c) {
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_setattr(key, nkey);
+        stats_prefix_record_setattr(key, nkey, c->client_ip);
     }
 
     switch (ret) {
@@ -7342,7 +7342,7 @@ static void process_bin_update(conn *c) {
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_set(key, nkey);
+        stats_prefix_record_set(key, nkey, c->client_ip);
     }
 
     ENGINE_ERROR_CODE ret;
@@ -7427,7 +7427,7 @@ static void process_bin_append_prepend(conn *c) {
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_set(key, nkey);
+        stats_prefix_record_set(key, nkey, c->client_ip);
     }
 
     ENGINE_ERROR_CODE ret;
@@ -7598,7 +7598,7 @@ static void process_bin_delete(conn *c) {
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_delete(key, nkey);
+        stats_prefix_record_delete(key, nkey, c->client_ip);
     }
 
     switch (ret) {
@@ -8518,7 +8518,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                 it = NULL;
             }
             if (settings.detail_enabled) {
-                stats_prefix_record_get(key, nkey, NULL != it);
+                stats_prefix_record_get(key, nkey, c->client_ip, NULL != it);
             }
 
             if (it) {
@@ -8732,7 +8732,7 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_set(key, nkey);
+        stats_prefix_record_set(key, nkey, c->client_ip);
     }
 
     ENGINE_ERROR_CODE ret;
@@ -8821,9 +8821,9 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
 
     if (settings.detail_enabled) {
         if (incr) {
-            stats_prefix_record_incr(key, nkey);
+            stats_prefix_record_incr(key, nkey, c->client_ip);
         } else {
-            stats_prefix_record_decr(key, nkey);
+            stats_prefix_record_decr(key, nkey, c->client_ip);
         }
     }
 
@@ -8916,7 +8916,7 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_delete(key, nkey);
+        stats_prefix_record_delete(key, nkey, c->client_ip);
     }
 
     ENGINE_ERROR_CODE ret;
@@ -9950,7 +9950,7 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_lop_get(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+        stats_prefix_record_lop_get(key, nkey, c->client_ip, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
 #ifdef DETECT_LONG_QUERY
@@ -10058,7 +10058,7 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
     }
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_lop_insert(key, nkey, false);
+        stats_prefix_record_lop_insert(key, nkey, c->client_ip, false);
     }
 
     switch (ret) {
@@ -10101,7 +10101,7 @@ static void process_lop_create(conn *c, char *key, size_t nkey, item_attr *attrp
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_lop_create(key, nkey);
+        stats_prefix_record_lop_create(key, nkey, c->client_ip);
     }
 
     switch (ret) {
@@ -10140,7 +10140,7 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_lop_delete(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+        stats_prefix_record_lop_delete(key, nkey, c->client_ip, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
 #ifdef DETECT_LONG_QUERY
@@ -10368,7 +10368,7 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_sop_get(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+        stats_prefix_record_sop_get(key, nkey, c->client_ip, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
 #ifdef DETECT_LONG_QUERY
@@ -10483,11 +10483,11 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
         if (cmd == (int)OPERATION_SOP_INSERT)
-            stats_prefix_record_sop_insert(key, nkey, false);
+            stats_prefix_record_sop_insert(key, nkey, c->client_ip, false);
         else if (cmd == (int)OPERATION_SOP_DELETE)
-            stats_prefix_record_sop_delete(key, nkey, false);
+            stats_prefix_record_sop_delete(key, nkey, c->client_ip, false);
         else
-            stats_prefix_record_sop_exist(key, nkey, false);
+            stats_prefix_record_sop_exist(key, nkey, c->client_ip, false);
     }
 
     switch (ret) {
@@ -10540,7 +10540,7 @@ static void process_sop_create(conn *c, char *key, size_t nkey, item_attr *attrp
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_sop_create(key, nkey);
+        stats_prefix_record_sop_create(key, nkey, c->client_ip);
     }
 
     switch (ret) {
@@ -10761,7 +10761,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_bop_get(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+        stats_prefix_record_bop_get(key, nkey, c->client_ip, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
 #ifdef DETECT_LONG_QUERY
@@ -10877,7 +10877,7 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
                                          &elem_count, &access_count, 0);
 
     if (settings.detail_enabled) {
-        stats_prefix_record_bop_count(key, nkey, (ret==ENGINE_SUCCESS));
+        stats_prefix_record_bop_count(key, nkey, c->client_ip, (ret==ENGINE_SUCCESS));
     }
 
 #ifdef DETECT_LONG_QUERY
@@ -10927,7 +10927,7 @@ static void process_bop_position(conn *c, char *key, size_t nkey,
                                         bkrange, order, &position, 0);
 
     if (settings.detail_enabled) {
-        stats_prefix_record_bop_position(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+        stats_prefix_record_bop_position(key, nkey, c->client_ip, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
     switch (ret) {
@@ -10986,7 +10986,7 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
                                                  &flags, 0);
 
     if (settings.detail_enabled) {
-        stats_prefix_record_bop_pwg(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+        stats_prefix_record_bop_pwg(key, nkey, c->client_ip, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
     switch (ret) {
@@ -11099,7 +11099,7 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
                                                elem_array, &elem_count, &flags, 0);
 
     if (settings.detail_enabled) {
-        stats_prefix_record_bop_gbp(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+        stats_prefix_record_bop_gbp(key, nkey, c->client_ip, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
 #ifdef DETECT_LONG_QUERY
@@ -11209,7 +11209,7 @@ static void process_bop_update_prepare_nread(conn *c, int cmd, char *key, size_t
     }
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_bop_update(key, nkey, false);
+        stats_prefix_record_bop_update(key, nkey, c->client_ip, false);
     }
 
     switch (ret) {
@@ -11393,7 +11393,7 @@ static void process_bop_create(conn *c, char *key, size_t nkey, item_attr *attrp
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_bop_create(key, nkey);
+        stats_prefix_record_bop_create(key, nkey, c->client_ip);
     }
 
     switch (ret) {
@@ -11434,7 +11434,7 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_bop_delete(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+        stats_prefix_record_bop_delete(key, nkey, c->client_ip, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
     }
 
 #ifdef DETECT_LONG_QUERY
@@ -11492,9 +11492,9 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
 
     if (settings.detail_enabled) {
         if (incr) {
-            stats_prefix_record_bop_incr(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+            stats_prefix_record_bop_incr(key, nkey, c->client_ip, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
         } else {
-            stats_prefix_record_bop_decr(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+            stats_prefix_record_bop_decr(key, nkey, c->client_ip, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
         }
     }
 
@@ -11743,7 +11743,7 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
     }
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_mop_insert(key, nkey, false);
+        stats_prefix_record_mop_insert(key, nkey, c->client_ip, false);
     }
 
     switch (ret) {
@@ -11833,7 +11833,7 @@ static void process_mop_create(conn *c, char *key, size_t nkey, item_attr *attrp
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_mop_create(key, nkey);
+        stats_prefix_record_mop_create(key, nkey, c->client_ip);
     }
 
     switch (ret) {
@@ -12850,7 +12850,7 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
                                     attr_ids, attr_count, &attr_data, 0);
 
         if (settings.detail_enabled) {
-            stats_prefix_record_getattr(key, nkey);
+            stats_prefix_record_getattr(key, nkey, c->client_ip);
         }
     }
 
@@ -13006,7 +13006,7 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
         }
 
         if (settings.detail_enabled) {
-            stats_prefix_record_setattr(key, nkey);
+            stats_prefix_record_setattr(key, nkey, c->client_ip);
         }
     }
 

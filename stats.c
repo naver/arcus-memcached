@@ -339,7 +339,7 @@ static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey) {
 /*
  * Records a "get" of a key.
  */
-void stats_prefix_record_get(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_get(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -356,7 +356,7 @@ void stats_prefix_record_get(const char *key, const size_t nkey, const bool is_h
 /*
  * Records a "delete" of a key.
  */
-void stats_prefix_record_delete(const char *key, const size_t nkey) {
+void stats_prefix_record_delete(const char *key, const size_t nkey, const char* client_ip) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -370,7 +370,7 @@ void stats_prefix_record_delete(const char *key, const size_t nkey) {
 /*
  * Records a "set" of a key.
  */
-void stats_prefix_record_set(const char *key, const size_t nkey) {
+void stats_prefix_record_set(const char *key, const size_t nkey, const char* client_ip) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -378,13 +378,14 @@ void stats_prefix_record_set(const char *key, const size_t nkey) {
     if (NULL != pfs) {
         pfs->num_sets++;
     }
+    cmd_in_second_write("", "set", key, client_ip);
     STATS_UNLOCK();
 }
 
 /*
  * Records a "incr" of a key.
  */
-void stats_prefix_record_incr(const char *key, const size_t nkey) {
+void stats_prefix_record_incr(const char *key, const size_t nkey, const char* client_ip) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -392,13 +393,14 @@ void stats_prefix_record_incr(const char *key, const size_t nkey) {
     if (NULL != pfs) {
         pfs->num_incrs++;
     }
+    cmd_in_second_write("", "incr", key, client_ip);
     STATS_UNLOCK();
 }
 
 /*
  * Records a "decr" of a key.
  */
-void stats_prefix_record_decr(const char *key, const size_t nkey) {
+void stats_prefix_record_decr(const char *key, const size_t nkey, const char* client_ip) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -406,13 +408,14 @@ void stats_prefix_record_decr(const char *key, const size_t nkey) {
     if (NULL != pfs) {
         pfs->num_decrs++;
     }
+    cmd_in_second_write("", "decr", key, client_ip);
     STATS_UNLOCK();
 }
 
 /*
  * LIST stats
  */
-void stats_prefix_record_lop_create(const char *key, const size_t nkey) {
+void stats_prefix_record_lop_create(const char *key, const size_t nkey, const char* client_ip) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -420,10 +423,11 @@ void stats_prefix_record_lop_create(const char *key, const size_t nkey) {
     if (NULL != pfs) {
         pfs->num_lop_creates++;
     }
+    cmd_in_second_write("lop", "create", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_lop_insert(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_lop_insert(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -434,10 +438,11 @@ void stats_prefix_record_lop_insert(const char *key, const size_t nkey, const bo
             pfs->num_lop_insert_hits++;
         }
     }
+    cmd_in_second_write("lop", "insert", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_lop_delete(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_lop_delete(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -448,10 +453,11 @@ void stats_prefix_record_lop_delete(const char *key, const size_t nkey, const bo
             pfs->num_lop_delete_hits++;
         }
     }
+    cmd_in_second_write("lop", "delete", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_lop_get(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_lop_get(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -462,13 +468,14 @@ void stats_prefix_record_lop_get(const char *key, const size_t nkey, const bool 
             pfs->num_lop_get_hits++;
         }
     }
+    cmd_in_second_write("lop", "get", key, client_ip);
     STATS_UNLOCK();
 }
 
 /*
  * SET stats
  */
-void stats_prefix_record_sop_create(const char *key, const size_t nkey) {
+void stats_prefix_record_sop_create(const char *key, const size_t nkey, const char* client_ip) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -476,10 +483,11 @@ void stats_prefix_record_sop_create(const char *key, const size_t nkey) {
     if (NULL != pfs) {
         pfs->num_sop_creates++;
     }
+    cmd_in_second_write("sop", "create", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_sop_insert(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_sop_insert(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -490,10 +498,11 @@ void stats_prefix_record_sop_insert(const char *key, const size_t nkey, const bo
             pfs->num_sop_insert_hits++;
         }
     }
+    cmd_in_second_write("sop", "insert", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_sop_delete(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_sop_delete(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -504,10 +513,11 @@ void stats_prefix_record_sop_delete(const char *key, const size_t nkey, const bo
             pfs->num_sop_delete_hits++;
         }
     }
+    cmd_in_second_write("sop", "delete", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_sop_get(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_sop_get(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -518,10 +528,11 @@ void stats_prefix_record_sop_get(const char *key, const size_t nkey, const bool 
             pfs->num_sop_get_hits++;
         }
     }
+    cmd_in_second_write("sop", "get", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_sop_exist(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_sop_exist(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -532,13 +543,14 @@ void stats_prefix_record_sop_exist(const char *key, const size_t nkey, const boo
             pfs->num_sop_exist_hits++;
         }
     }
+    cmd_in_second_write("sop", "exist", key, client_ip);
     STATS_UNLOCK();
 }
 
 /*
  * MAP stats
  */
-void stats_prefix_record_mop_create(const char *key, const size_t nkey) {
+void stats_prefix_record_mop_create(const char *key, const size_t nkey, const char* client_ip) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -546,10 +558,11 @@ void stats_prefix_record_mop_create(const char *key, const size_t nkey) {
     if (NULL != pfs) {
         pfs->num_mop_creates++;
     }
+    cmd_in_second_write("mop", "create", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_mop_insert(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_mop_insert(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -560,10 +573,11 @@ void stats_prefix_record_mop_insert(const char *key, const size_t nkey, const bo
             pfs->num_mop_insert_hits++;
         }
     }
+    cmd_in_second_write("mop", "insert", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_mop_update(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_mop_update(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -574,10 +588,11 @@ void stats_prefix_record_mop_update(const char *key, const size_t nkey, const bo
             pfs->num_mop_update_hits++;
         }
     }
+    cmd_in_second_write("mop", "update", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_mop_delete(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_mop_delete(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -588,10 +603,11 @@ void stats_prefix_record_mop_delete(const char *key, const size_t nkey, const bo
             pfs->num_mop_delete_hits++;
         }
     }
+    cmd_in_second_write("mop", "delete", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_mop_get(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_mop_get(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -602,13 +618,14 @@ void stats_prefix_record_mop_get(const char *key, const size_t nkey, const bool 
             pfs->num_mop_get_hits++;
         }
     }
+    cmd_in_second_write("mop", "get", key, client_ip);
     STATS_UNLOCK();
 }
 
 /*
  * B+TREE stats
  */
-void stats_prefix_record_bop_create(const char *key, const size_t nkey) {
+void stats_prefix_record_bop_create(const char *key, const size_t nkey, const char* client_ip) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -616,6 +633,7 @@ void stats_prefix_record_bop_create(const char *key, const size_t nkey) {
     if (NULL != pfs) {
         pfs->num_bop_creates++;
     }
+    cmd_in_second_write("bop", "create", key, client_ip);
     STATS_UNLOCK();
 }
 
@@ -634,7 +652,7 @@ void stats_prefix_record_bop_insert(const char *key, const size_t nkey, const ch
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_bop_update(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_update(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -645,10 +663,11 @@ void stats_prefix_record_bop_update(const char *key, const size_t nkey, const bo
             pfs->num_bop_update_hits++;
         }
     }
+    cmd_in_second_write("bop", "update", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_bop_delete(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_delete(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -659,10 +678,11 @@ void stats_prefix_record_bop_delete(const char *key, const size_t nkey, const bo
             pfs->num_bop_delete_hits++;
         }
     }
+    cmd_in_second_write("bop", "delete", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_bop_incr(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_incr(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -673,10 +693,11 @@ void stats_prefix_record_bop_incr(const char *key, const size_t nkey, const bool
             pfs->num_bop_incr_hits++;
         }
     }
+    cmd_in_second_write("bop", "incr", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_bop_decr(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_decr(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -687,10 +708,11 @@ void stats_prefix_record_bop_decr(const char *key, const size_t nkey, const bool
             pfs->num_bop_decr_hits++;
         }
     }
+    cmd_in_second_write("bop", "decr", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_bop_get(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_get(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -701,10 +723,11 @@ void stats_prefix_record_bop_get(const char *key, const size_t nkey, const bool 
             pfs->num_bop_get_hits++;
         }
     }
+    cmd_in_second_write("bop", "get", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_bop_count(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_count(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -715,10 +738,11 @@ void stats_prefix_record_bop_count(const char *key, const size_t nkey, const boo
             pfs->num_bop_count_hits++;
         }
     }
+    cmd_in_second_write("bop", "count", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_bop_position(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_position(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -729,10 +753,11 @@ void stats_prefix_record_bop_position(const char *key, const size_t nkey, const 
             pfs->num_bop_position_hits++;
         }
     }
+    cmd_in_second_write("bop", "position", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_bop_pwg(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_pwg(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -743,10 +768,11 @@ void stats_prefix_record_bop_pwg(const char *key, const size_t nkey, const bool 
             pfs->num_bop_pwg_hits++;
         }
     }
+    cmd_in_second_write("bop", "pwg", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_bop_gbp(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_gbp(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -757,13 +783,14 @@ void stats_prefix_record_bop_gbp(const char *key, const size_t nkey, const bool 
             pfs->num_bop_gbp_hits++;
         }
     }
+    cmd_in_second_write("bop", "gbp", key, client_ip);
     STATS_UNLOCK();
 }
 
 /*
  * ATTR stats
  */
-void stats_prefix_record_getattr(const char *key, const size_t nkey) {
+void stats_prefix_record_getattr(const char *key, const size_t nkey, const char* client_ip) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -771,10 +798,11 @@ void stats_prefix_record_getattr(const char *key, const size_t nkey) {
     if (NULL != pfs) {
         pfs->num_getattrs++;
     }
+    cmd_in_second_write("", "getattr", key, client_ip);
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_setattr(const char *key, const size_t nkey) {
+void stats_prefix_record_setattr(const char *key, const size_t nkey, const char* client_ip) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -782,6 +810,7 @@ void stats_prefix_record_setattr(const char *key, const size_t nkey) {
     if (NULL != pfs) {
         pfs->num_setattrs++;
     }
+    cmd_in_second_write("", "setattr", key, client_ip);
     STATS_UNLOCK();
 }
 
