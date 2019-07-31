@@ -218,15 +218,6 @@ static void lrec_it_setattr_print(LogRec *logrec)
 {
 }
 
-/* List Element Log Record */
-static void lrec_list_elem_write(LogRec *logrec, char *bufptr)
-{
-}
-
-static void lrec_list_elem_print(LogRec *logrec)
-{
-}
-
 /* List Element Insert Log Record */
 static void lrec_list_elem_insert_write(LogRec *logrec, char *bufptr)
 {
@@ -242,15 +233,6 @@ static void lrec_list_elem_delete_write(LogRec *logrec, char *bufptr)
 }
 
 static void lrec_list_elem_delete_print(LogRec *logrec)
-{
-}
-
-/* Set Element Log Record */
-static void lrec_set_elem_write(LogRec *logrec, char *bufptr)
-{
-}
-
-static void lrec_set_elem_print(LogRec *logrec)
 {
 }
 
@@ -272,15 +254,6 @@ static void lrec_set_elem_delete_print(LogRec *logrec)
 {
 }
 
-/* Map Element Log Record */
-static void lrec_map_elem_write(LogRec *logrec, char *bufptr)
-{
-}
-
-static void lrec_map_elem_print(LogRec *logrec)
-{
-}
-
 /* Map Element Insert Log Record */
 static void lrec_map_elem_insert_write(LogRec *logrec, char *bufptr)
 {
@@ -296,15 +269,6 @@ static void lrec_map_elem_delete_write(LogRec *logrec, char *bufptr)
 }
 
 static void lrec_map_elem_delete_print(LogRec *logrec)
-{
-}
-
-/* BTree Element Log Record */
-static void lrec_bt_elem_write(LogRec *logrec, char *bufptr)
-{
-}
-
-static void lrec_bt_elem_print(LogRec *logrec)
 {
 }
 
@@ -368,16 +332,12 @@ LOGREC_FUNC logrec_func[] = {
     { lrec_it_unlink_write,          lrec_it_unlink_print },
     { lrec_it_arithmetic_write,      lrec_it_arithmetic_print },
     { lrec_it_setattr_write,         lrec_it_setattr_print },
-    { lrec_list_elem_write,          lrec_list_elem_print },
     { lrec_list_elem_insert_write,   lrec_list_elem_insert_print },
     { lrec_list_elem_delete_write,   lrec_list_elem_delete_print },
-    { lrec_set_elem_write,           lrec_set_elem_print },
     { lrec_set_elem_insert_write,    lrec_set_elem_insert_print },
     { lrec_set_elem_delete_write,    lrec_set_elem_delete_print },
-    { lrec_map_elem_write,           lrec_map_elem_print },
     { lrec_map_elem_insert_write,    lrec_map_elem_insert_print },
     { lrec_map_elem_delete_write,    lrec_map_elem_delete_print },
-    { lrec_bt_elem_write,            lrec_bt_elem_print },
     { lrec_bt_elem_insert_write,     lrec_bt_elem_insert_print },
     { lrec_bt_elem_delete_write,     lrec_bt_elem_delete_print },
     { lrec_bt_elem_arithmetic_write, lrec_bt_elem_arithmetic_print },
