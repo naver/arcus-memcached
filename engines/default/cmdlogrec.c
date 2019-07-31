@@ -34,10 +34,8 @@
 #define GET_8_ALIGN_SIZE(size) \
     (((size) % 8) == 0 ? (size) : ((size) + (8 - ((size) % 8))))
 
-#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
 /* get bkey real size */
 #define BTREE_REAL_NBKEY(nbkey) ((nbkey)==0 ? sizeof(uint64_t) : (nbkey))
-#endif
 
 static char *get_logtype_text(uint8_t type)
 {
@@ -86,7 +84,6 @@ static char *get_itemtype_text(uint8_t type)
     return "unknown";
 }
 
-#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
 static uint8_t get_it_link_updtype(uint8_t type)
 {
     switch (type) {
@@ -101,9 +98,7 @@ static uint8_t get_it_link_updtype(uint8_t type)
     }
     return UPD_SET;
 }
-#endif
 
-#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
 static char *get_coll_ovflact_text(uint8_t ovflact)
 {
     char *ovfarr[7] = { "error", "head_trim", "tail_trim",
@@ -112,7 +107,6 @@ static char *get_coll_ovflact_text(uint8_t ovflact)
 
     return ovfarr[ovflact];
 }
-#endif
 
 static void lrec_header_print(LogHdr *hdr)
 {
@@ -120,7 +114,6 @@ static void lrec_header_print(LogHdr *hdr)
             hdr->body_length, get_logtype_text(hdr->logtype), get_updtype_text(hdr->updtype));
 }
 
-#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
 static void lrec_maxbkr_print(uint8_t nbkey, unsigned char *bkey, char *str)
 {
     if (nbkey != BKEY_NULL) {
@@ -139,7 +132,6 @@ static void lrec_maxbkr_print(uint8_t nbkey, unsigned char *bkey, char *str)
         sprintf(str, " | maxbkeyrange len=BKEY_NULL val=0 | ");
     }
 }
-#endif
 
 /* Item Link Log Record */
 /* KV :         header | lrec_item_common | cas            | key + value
@@ -148,11 +140,10 @@ static void lrec_maxbkr_print(uint8_t nbkey, unsigned char *bkey, char *str)
  */
 static void lrec_it_link_write(LogRec *logrec, char *bufptr)
 {
-    ITLinkLog   *log = (ITLinkLog*)logrec;
-    ITLinkData  *body = &log->body;
-    int offset = offsetof(ITLinkData, data);
-#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
+    ITLinkLog  *log = (ITLinkLog*)logrec;
+    ITLinkData *body = &log->body;
     struct lrec_item_common *cm = (struct lrec_item_common*)&body->cm;
+    int offset = offsetof(ITLinkData, data);
 
     memcpy(bufptr, logrec, offset);
 
@@ -167,12 +158,6 @@ static void lrec_it_link_write(LogRec *logrec, char *bufptr)
 
     /* key value copy */
     memcpy(bufptr + offset, log->keyptr, cm->keylen + cm->vallen);
-#else
-
-    memcpy(bufptr, logrec, offset);
-    /* key value copy */
-    memcpy(bufptr+offset, log->keyptr, body->cm.keylen+body->cm.vallen);
-#endif
 }
 
 static void lrec_it_link_print(LogRec *logrec)
@@ -182,7 +167,7 @@ static void lrec_it_link_print(LogRec *logrec)
     struct lrec_item_common *cm = (struct lrec_item_common*)&body->cm;
 
     lrec_header_print(&log->header);
-#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
+
     char metastr[140];
     if (cm->ittype == ITEM_TYPE_KV) {
         sprintf(metastr, "cas=%"PRIu64" | ", body->ptr.cas);
@@ -204,14 +189,6 @@ static void lrec_it_link_print(LogRec *logrec)
             get_itemtype_text(cm->ittype), cm->flags, cm->exptime, metastr,
             cm->keylen, (cm->keylen <= 250 ? cm->keylen : 250), log->keyptr,
             cm->vallen, (cm->vallen <= 250 ? cm->vallen : 250), log->keyptr+cm->keylen);
-#else
-
-    fprintf(stderr, "[BODY]   ittype=%s | flags=%u | exptime=%u | cas=%"PRIu64" | "
-            "keylen=%u | keystr=%.*s | vallen=%u | valstr=%.*s",
-            get_itemtype_text(cm->ittype), cm->flags, cm->exptime, body->ptr.cas,
-            cm->keylen, (cm->keylen <= 250 ? cm->keylen : 250), log->keyptr,
-            cm->vallen, (cm->vallen <= 250 ? cm->vallen : 250), log->keyptr+cm->keylen);
-#endif
 }
 
 /* Item Unlink Log Record */
@@ -438,9 +415,7 @@ int lrec_construct_snapshot_item(LogRec *logrec, hash_item *it)
     ITLinkLog *log = (ITLinkLog*)logrec;
     ITLinkData *body = &log->body;
     log->keyptr = (char*)item_get_key(it);
-#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
     int naddition = 0;
-#endif
 
     struct lrec_item_common *cm = (struct lrec_item_common*)&body->cm;
     cm->ittype  = GET_ITEM_TYPE(it);
@@ -448,7 +423,6 @@ int lrec_construct_snapshot_item(LogRec *logrec, hash_item *it)
     cm->vallen  = it->nbytes;
     cm->flags   = it->flags;
     cm->exptime = it->exptime;
-#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
     if (IS_COLL_ITEM(it)) {
         coll_meta_info *info = (coll_meta_info*)item_get_meta(it);
         struct lrec_coll_meta *meta = (struct lrec_coll_meta*)&body->ptr.meta;
@@ -469,18 +443,11 @@ int lrec_construct_snapshot_item(LogRec *logrec, hash_item *it)
     } else {
         body->ptr.cas = item_get_cas(it);
     }
-#else
-    body->ptr.cas = item_get_cas(it);
-#endif
 
     log->header.logtype = LOG_IT_LINK;
-#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
     log->header.updtype = get_it_link_updtype(cm->ittype);
-    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(ITLinkData, data) + cm->keylen + cm->vallen + naddition);
-#else
-    log->header.updtype = UPD_SET;
-    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(ITLinkData, data) + cm->keylen + cm->vallen);
-#endif
+    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(ITLinkData, data) +
+                                               naddition + cm->keylen + cm->vallen);
     return log->header.body_length;
 }
 #endif

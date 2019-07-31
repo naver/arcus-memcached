@@ -124,9 +124,7 @@ typedef struct _IT_link_log {
     LogHdr      header;
     ITLinkData  body;
     char        *keyptr;
-#ifdef ENABLE_PERSISTENCE_05_COLL_DATA_SNAPSHOT
     unsigned char *maxbkrptr;    /* maxbkeyrange value */
-#endif
 } ITLinkLog;
 
 /* Snapshot File Tail Record */
