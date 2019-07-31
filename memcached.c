@@ -36,6 +36,7 @@
 #ifdef ENABLE_ZK_INTEGRATION
 #include "arcus_zk.h"
 #endif
+#include "cmd_in_second.h"
 
 #if defined(ENABLE_SASL) || defined(ENABLE_ISASL)
 #define SASL_ENABLED
@@ -2288,7 +2289,7 @@ static void process_bop_insert_complete(conn *c) {
         c->coll_eitem = NULL;
 
         if (settings.detail_enabled) {
-            stats_prefix_record_bop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
+            stats_prefix_record_bop_insert(c->coll_key, c->coll_nkey, c->client_ip, (ret==ENGINE_SUCCESS));
         }
 
         switch (ret) {
@@ -5490,7 +5491,7 @@ static void process_bin_bop_prepare_nread(conn *c) {
     }
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_bop_insert(key, nkey, false);
+        stats_prefix_record_bop_insert(key, nkey, c->client_ip, false);
     }
 
     switch (ret) {
@@ -5569,7 +5570,7 @@ static void process_bin_bop_insert_complete(conn *c) {
     }
 
     if (settings.detail_enabled) {
-        stats_prefix_record_bop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
+        stats_prefix_record_bop_insert(c->coll_key, c->coll_nkey, c->client_ip, (ret==ENGINE_SUCCESS));
     }
 
     switch (ret) {
@@ -11250,7 +11251,7 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
     }
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_bop_insert(key, nkey, false);
+        stats_prefix_record_bop_insert(key, nkey, c->client_ip, false);
     }
 
     switch (ret) {
@@ -13030,6 +13031,100 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
     }
 }
 
+static void process_second_command(conn *c, token_t *tokens, const size_t ntokens) {
+
+    assert(c != NULL);
+
+    bool is_collection_cmd = true;
+
+    if(strlen(tokens[SUBCOMMAND_TOKEN].value) > 3){
+        out_string(c, "CLIENT_ERROR bad command line format");
+        return;
+    }
+
+    if (strcmp("lop", tokens[SUBCOMMAND_TOKEN].value) == 0) {
+        if (strcmp("create", tokens[SUBCOMMAND_TOKEN+1].value) != 0 && strcmp("insert", tokens[SUBCOMMAND_TOKEN+1].value) != 0 &&
+             strcmp("delete", tokens[SUBCOMMAND_TOKEN+1].value) != 0 && strcmp("get", tokens[SUBCOMMAND_TOKEN+1].value)) {
+
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+    } else if (strcmp("sop", tokens[SUBCOMMAND_TOKEN].value) == 0) {
+        if (strcmp("create", tokens[SUBCOMMAND_TOKEN+1].value) != 0 && strcmp("insert", tokens[SUBCOMMAND_TOKEN+1].value) != 0 &&
+            strcmp("delete", tokens[SUBCOMMAND_TOKEN+1].value) != 0  && strcmp("exist", tokens[SUBCOMMAND_TOKEN+1].value) != 0 &&
+            strcmp("get", tokens[SUBCOMMAND_TOKEN+1].value) != 0) {
+
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+    } else if (strcmp("mop", tokens[SUBCOMMAND_TOKEN].value) == 0) {
+        if (strcmp("create", tokens[SUBCOMMAND_TOKEN+1].value) != 0 && strcmp("insert", tokens[SUBCOMMAND_TOKEN+1].value) != 0 &&
+            strcmp("delete", tokens[SUBCOMMAND_TOKEN+1].value) != 0  && strcmp("update", tokens[SUBCOMMAND_TOKEN+1].value) != 0 &&
+            strcmp("get", tokens[SUBCOMMAND_TOKEN].value) != 0) {
+
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+    } else if (strcmp("bop", tokens[SUBCOMMAND_TOKEN].value) == 0) {
+        if (strcmp("create", tokens[SUBCOMMAND_TOKEN+1].value) != 0 && strcmp("insert", tokens[SUBCOMMAND_TOKEN+1].value) != 0 &&
+            strcmp("upsert", tokens[SUBCOMMAND_TOKEN+1].value) != 0 && strcmp("update", tokens[SUBCOMMAND_TOKEN+1].value) != 0 &&
+            strcmp("delete", tokens[SUBCOMMAND_TOKEN+1].value) != 0 && strcmp("update", tokens[SUBCOMMAND_TOKEN+1].value) != 0) {
+
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+    } else { /* key value command */
+        if (strcmp("set", tokens[SUBCOMMAND_TOKEN].value) != 0 && strcmp("add", tokens[SUBCOMMAND_TOKEN].value) != 0 &&
+           strcmp("replace", tokens[SUBCOMMAND_TOKEN].value) != 0 && strcmp("append", tokens[SUBCOMMAND_TOKEN].value) != 0 &&
+           strcmp("prepend", tokens[SUBCOMMAND_TOKEN].value) != 0 && strcmp("cas", tokens[SUBCOMMAND_TOKEN].value) != 0 &&
+           strcmp("get", tokens[SUBCOMMAND_TOKEN].value) != 0 && strcmp("gets", tokens[SUBCOMMAND_TOKEN].value) != 0 &&
+           strcmp("delete", tokens[SUBCOMMAND_TOKEN].value) != 0 && strcmp("incr", tokens[SUBCOMMAND_TOKEN].value) != 0 &&
+           strcmp("decr", tokens[SUBCOMMAND_TOKEN].value) != 0) {
+
+           out_string(c, "CLIENT_ERROR bad command line format");
+           return;
+        }
+        is_collection_cmd = false;
+    }
+
+    int32_t cmd_idx = SUBCOMMAND_TOKEN;
+    char collection_name[20] = "";
+    char cmd[20] = "";
+
+    if (is_collection_cmd) {
+        sprintf(collection_name, "%s", tokens[cmd_idx++].value);
+    }
+
+    sprintf(cmd, "%s", tokens[cmd_idx].value);
+
+    int32_t cnt_to_log= 0;
+
+    if (!safe_strtol(tokens[cmd_idx+1].value, &cnt_to_log)) {
+        out_string(c, "CLIENT_ERROR bad command line format");
+        return;
+    }
+
+    STATS_LOCK();
+    const int32_t start_code = cmd_in_second_start(collection_name, cmd, cnt_to_log);
+    STATS_UNLOCK();
+
+    char response[100] = "";
+
+    switch (start_code) {
+        case CMD_IN_SECOND_STARTED_ALREADY:
+            sprintf(response, "cmd in second already started");
+            break;
+        case CMD_IN_SECOND_NO_MEM:
+            sprintf(response, "SERVER_ERROR out of memory");
+            break;
+        case CMD_IN_SECOND_START:
+            settings.detail_enabled = true;
+            sprintf(response, "%s %s will be logged", collection_name, cmd);
+            break;
+    }
+    out_string(c, response);
+}
+
 static void process_command(conn *c, char *command, int cmdlen)
 {
     /* One more token is reserved in tokens strucure
@@ -13150,6 +13245,10 @@ static void process_command(conn *c, char *command, int cmdlen)
     else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "config") == 0))
     {
         process_config_command(c, tokens, ntokens);
+    }
+    else if ((ntokens == 4 || ntokens == 5) && (strcmp(tokens[COMMAND_TOKEN].value, "cmd_in_second") == 0))
+    {
+        process_second_command(c, tokens, ntokens);
     }
 #ifdef ENABLE_ZK_INTEGRATION
     else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "zkensemble") == 0)) {

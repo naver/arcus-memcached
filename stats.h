@@ -43,7 +43,7 @@ void stats_prefix_record_mop_update(const char *key, const size_t nkey, const bo
 void stats_prefix_record_mop_delete(const char *key, const size_t nkey, const bool is_hit);
 void stats_prefix_record_mop_get(const char *key, const size_t nkey, const bool is_hit);
 void stats_prefix_record_bop_create(const char *key, const size_t nkey);
-void stats_prefix_record_bop_insert(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_bop_insert(const char *key, const size_t nkey, const char* client_ip, const bool is_hit);
 void stats_prefix_record_bop_update(const char *key, const size_t nkey, const bool is_hit);
 void stats_prefix_record_bop_delete(const char *key, const size_t nkey, const bool is_hit);
 void stats_prefix_record_bop_incr(const char *key, const size_t nkey, const bool is_hit);

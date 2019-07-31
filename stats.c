@@ -25,6 +25,7 @@
  *   Steven Grimm <sgrimm@facebook.com>
  */
 #include "config.h"
+#include "cmd_in_second.h"
 #include "memcached.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -618,7 +619,7 @@ void stats_prefix_record_bop_create(const char *key, const size_t nkey) {
     STATS_UNLOCK();
 }
 
-void stats_prefix_record_bop_insert(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_insert(const char *key, const size_t nkey, const char* client_ip, const bool is_hit) {
     PREFIX_STATS *pfs;
 
     STATS_LOCK();
@@ -629,6 +630,7 @@ void stats_prefix_record_bop_insert(const char *key, const size_t nkey, const bo
             pfs->num_bop_insert_hits++;
         }
     }
+    cmd_in_second_write("bop", "insert", key, client_ip);
     STATS_UNLOCK();
 }
 
