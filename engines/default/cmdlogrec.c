@@ -114,22 +114,20 @@ static void lrec_header_print(LogHdr *hdr)
             hdr->body_length, get_logtype_text(hdr->logtype), get_updtype_text(hdr->updtype));
 }
 
-static void lrec_maxbkr_print(uint8_t nbkey, unsigned char *bkey, char *str)
+static void lrec_bkey_print(uint8_t nbkey, unsigned char *bkey, char *str)
 {
     if (nbkey != BKEY_NULL) {
         if (nbkey == 0) {
             uint64_t bkey_temp;
             memcpy((unsigned char*)&bkey_temp, bkey, sizeof(uint64_t));
-            sprintf(str, " | maxbkeyrange len=%u val=%"PRIu64" | ",
-                    nbkey, bkey_temp);
+            sprintf(str, "len=%u val=%"PRIu64, nbkey, bkey_temp);
         } else {
-            char bkey_temp[31];
+            char bkey_temp[MAX_BKEY_LENG];
             safe_hexatostr(bkey, nbkey, bkey_temp);
-            sprintf(str, " | maxbkeyrange len=%u val=0x%s | ",
-                    nbkey, bkey_temp);
+            sprintf(str, "len=%u val=0x%s", nbkey, bkey_temp);
         }
     } else {
-        sprintf(str, " | maxbkeyrange len=BKEY_NULL val=0 | ");
+        sprintf(str, "len=BKEY_NULL val=0");
     }
 }
 
@@ -170,21 +168,20 @@ static void lrec_it_link_print(LogRec *logrec)
 
     char metastr[140];
     if (cm->ittype == ITEM_TYPE_KV) {
-        sprintf(metastr, "cas=%"PRIu64" | ", body->ptr.cas);
+        sprintf(metastr, "cas=%"PRIu64, body->ptr.cas);
     } else {
         struct lrec_coll_meta *meta = (struct lrec_coll_meta*)&body->ptr.meta;
-        char maxbkrstr[70];
-        if (cm->ittype == ITEM_TYPE_BTREE) {
-            lrec_maxbkr_print(meta->maxbkrlen, log->maxbkrptr, maxbkrstr);
-        }
+        int leng = sprintf(metastr, "ovflact=%s | mflags=%u | mcnt=%u",
+                           get_coll_ovflact_text(meta->ovflact), meta->mflags, meta->mcnt);
 
-        sprintf(metastr, "ovflact=%s | mflags=%u | mcnt=%u%s",
-                get_coll_ovflact_text(meta->ovflact), meta->mflags, meta->mcnt,
-                (cm->ittype == ITEM_TYPE_BTREE ? maxbkrstr : " | "));
+        if (cm->ittype == ITEM_TYPE_BTREE) {
+            leng += sprintf(metastr + leng, " | maxbkeyrange ");
+            lrec_bkey_print(meta->maxbkrlen, log->maxbkrptr, metastr + leng);
+        }
     }
 
     /* vallen >= 2, valstr = ...\r\n */
-    fprintf(stderr, "[BODY]   ittype=%s | flags=%u | exptime=%u | %s"
+    fprintf(stderr, "[BODY]   ittype=%s | flags=%u | exptime=%u | %s | "
             "keylen=%u | keystr=%.*s | vallen=%u | valstr=%.*s",
             get_itemtype_text(cm->ittype), cm->flags, cm->exptime, metastr,
             cm->keylen, (cm->keylen <= 250 ? cm->keylen : 250), log->keyptr,
