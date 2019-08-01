@@ -22,7 +22,9 @@ int  stats_prefix_count(void);
 #if 1 // NEW_PREFIX_STATS_MANAGEMENT
 int  stats_prefix_insert(const char *prefix, const size_t nprefix);
 #endif
+
 int  stats_prefix_delete(const char *prefix, const size_t nprefix);
+#ifdef CMD_IN_SECOND
 void stats_prefix_record_get(const char *key, const size_t nkey, const char* client_ip, const bool is_hit);
 void stats_prefix_record_delete(const char *key, const size_t nkey, const char* client_ip);
 void stats_prefix_record_set(const char *key, const size_t nkey, const char* client_ip);
@@ -55,5 +57,40 @@ void stats_prefix_record_bop_pwg(const char *key, const size_t nkey, const char*
 void stats_prefix_record_bop_gbp(const char *key, const size_t nkey, const char* client_ip, const bool is_hit);
 void stats_prefix_record_getattr(const char *key, const size_t nkey, const char* client_ip);
 void stats_prefix_record_setattr(const char *key, const size_t nkey, const char* client_ip);
+#else
+void stats_prefix_record_get(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_delete(const char *key, const size_t nkey);
+void stats_prefix_record_set(const char *key, const size_t nkey);
+void stats_prefix_record_incr(const char *key, const size_t nkey);
+void stats_prefix_record_decr(const char *key, const size_t nkey);
+void stats_prefix_record_lop_create(const char *key, const size_t nkey);
+void stats_prefix_record_lop_insert(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_lop_delete(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_lop_get(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_sop_create(const char *key, const size_t nkey);
+void stats_prefix_record_sop_insert(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_sop_delete(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_sop_get(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_sop_exist(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_mop_create(const char *key, const size_t nkey);
+void stats_prefix_record_mop_insert(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_mop_update(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_mop_delete(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_mop_get(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_bop_create(const char *key, const size_t nkey);
+void stats_prefix_record_bop_insert(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_bop_update(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_bop_delete(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_bop_incr(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_bop_decr(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_bop_get(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_bop_count(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_bop_position(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_bop_pwg(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_bop_gbp(const char *key, const size_t nkey, const bool is_hit);
+void stats_prefix_record_getattr(const char *key, const size_t nkey);
+void stats_prefix_record_setattr(const char *key, const size_t nkey);
+#endif
+
 /*@null@*/
 char *stats_prefix_dump(int *length);
