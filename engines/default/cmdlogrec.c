@@ -118,11 +118,9 @@ static void lrec_bkey_print(uint8_t nbkey, unsigned char *bkey, char *str)
 {
     if (nbkey != BKEY_NULL) {
         if (nbkey == 0) {
-            uint64_t bkey_temp;
-            memcpy((unsigned char*)&bkey_temp, bkey, sizeof(uint64_t));
-            sprintf(str, "len=%u val=%"PRIu64, nbkey, bkey_temp);
+            sprintf(str, "len=%u val=%"PRIu64, nbkey, *(uint64_t*)bkey);
         } else {
-            char bkey_temp[MAX_BKEY_LENG];
+            char bkey_temp[MAX_BKEY_LENG*2 + 2];
             safe_hexatostr(bkey, nbkey, bkey_temp);
             sprintf(str, "len=%u val=0x%s", nbkey, bkey_temp);
         }
@@ -166,7 +164,7 @@ static void lrec_it_link_print(LogRec *logrec)
 
     lrec_header_print(&log->header);
 
-    char metastr[140];
+    char metastr[180];
     if (cm->ittype == ITEM_TYPE_KV) {
         sprintf(metastr, "cas=%"PRIu64, body->ptr.cas);
     } else {
