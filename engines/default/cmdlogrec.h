@@ -133,5 +133,5 @@ int lrec_construct_snapshot_head(LogRec *logrec);
 int lrec_construct_snapshot_tail(LogRec *logrec);
 int lrec_construct_snapshot_item(LogRec *logrec, hash_item *it);
 
-void lrec_write(LogRec *logrec, char *bufptr);
+void lrec_write_to_buffer(LogRec *logrec, char *bufptr);
 #endif

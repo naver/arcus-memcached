@@ -342,7 +342,7 @@ LOGREC_FUNC logrec_func[] = {
 
 /* external function */
 
-void lrec_write(LogRec *logrec, char *bufptr)
+void lrec_write_to_buffer(LogRec *logrec, char *bufptr)
 {
     logrec_func[logrec->header.logtype].write(logrec, bufptr);
 #ifdef DEBUG_PERSISTENCE_DISK_FORMAT_PRINT

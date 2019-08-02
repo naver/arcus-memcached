@@ -294,7 +294,7 @@ static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter)
     bufptr = &logbuff->data[logbuff->tail];
     memcpy(bufptr, (void*)logrec, sizeof(LogHdr));
     if (logrec->header.body_length > 0) {
-          lrec_write(logrec, bufptr+sizeof(LogHdr));
+          lrec_write_to_buffer(logrec, bufptr+sizeof(LogHdr));
     }
     logbuff->tail += total_length;
 

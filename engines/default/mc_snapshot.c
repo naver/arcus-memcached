@@ -252,7 +252,7 @@ static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_co
         }
 
         bufptr = &ssb->memory[ssb->curlen];
-        lrec_write((LogRec*)&log, bufptr);
+        lrec_write_to_buffer((LogRec*)&log, bufptr);
         ssb->curlen += logsize;
     }
     return ret;
@@ -276,7 +276,7 @@ static int do_snapshot_data_done(snapshot_st *ss)
 
     /* record snapshot complete mark in the end of file. */
     bufptr = &ssb->memory[ssb->curlen];
-    lrec_write((LogRec*)&log, bufptr);
+    lrec_write_to_buffer((LogRec*)&log, bufptr);
     ssb->curlen += logsize;
 #endif
     if (do_snapshot_buffer_flush(ss) < 0) {
