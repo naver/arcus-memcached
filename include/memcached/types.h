@@ -37,6 +37,7 @@ struct iovec {
 #define SUPPORT_BOP_MGET
 #define SUPPORT_BOP_SMGET
 #define JHPARK_OLD_SMGET_INTERFACE
+#define ADD_CHANGE_LOG
 #define MAX_EFLAG_COMPARE_COUNT 100
 
 

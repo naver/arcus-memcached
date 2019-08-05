@@ -18,6 +18,27 @@
 #ifndef ITEMS_H
 #define ITEMS_H
 
+#ifdef ADD_CHANGE_LOG
+/* item unlink cause */
+enum item_unlink_cause {
+    ITEM_UNLINK_NORMAL = 1, /* unlink by normal request */
+    ITEM_UNLINK_EVICT,      /* unlink by eviction */
+    ITEM_UNLINK_INVALID,    /* unlink by invalidation such like expiration/flush */
+    ITEM_UNLINK_REPLACE,    /* unlink by replacement of set/replace command */
+    ITEM_UNLINK_STALE       /* unlink by staleness */
+};
+
+/* element delete cause */
+enum elem_delete_cause {
+    ELEM_DELETE_NORMAL = 1, /* delete by normal request */
+    ELEM_DELETE_COLL,       /* delete by collection deletion */
+    ELEM_DELETE_TRIM        /* delete by overflow trim */
+};
+
+/* get hash item address from collection info address */
+#define COLL_GET_HASH_ITEM(info) ((size_t*)(info) - (info)->itdist)
+#endif
+
 /* Item internal flag (1 byte) : item type and flag */
 /* 1) item type: increasing order (See ENGINE_ITEM_TYPE) */
 #define ITEM_IFLAG_LIST  1   /* list item */
