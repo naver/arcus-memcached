@@ -1140,31 +1140,32 @@ static void do_item_stats_sizes(struct default_engine *engine, ADD_STAT add_stat
 static hash_item *do_item_get(struct default_engine *engine,
                               const char *key, const size_t nkey, bool do_update)
 {
-    rel_time_t current_time = engine->server.core->get_current_time();
+    hash_item *it;
     const char *hkey = (nkey > MAX_HKEY_LEN) ? key+(nkey-MAX_HKEY_LEN) : key;
     const size_t hnkey = (nkey > MAX_HKEY_LEN) ? MAX_HKEY_LEN : nkey;
-    hash_item *it = assoc_find(engine, engine->server.core->hash(hkey, hnkey, 0), key, nkey);
 
-    if (it != NULL) {
-        if (do_item_isvalid(engine, it, current_time)==false) {
+    it = assoc_find(engine, engine->server.core->hash(hkey, hnkey, 0), key, nkey);
+    if (it) {
+        rel_time_t current_time = engine->server.core->get_current_time();
+        if (do_item_isvalid(engine, it, current_time)) {
+            ITEM_REFCOUNT_INCR(it);
+            DEBUG_REFCNT(it, '+');
+            if (do_update) {
+                do_item_update(engine, it);
+            }
+        } else {
             do_item_unlink(engine, it, ITEM_UNLINK_INVALID);
             it = NULL;
         }
     }
-    if (it != NULL) {
-        ITEM_REFCOUNT_INCR(it);
-        DEBUG_REFCNT(it, '+');
-        if (do_update)
-            do_item_update(engine, it);
-    }
 
     if (engine->config.verbose > 2) {
-        if (it == NULL) {
-            logger->log(EXTENSION_LOG_INFO, NULL, "> NOT FOUND %s\n",
-                        key);
-        } else {
+        if (it) {
             logger->log(EXTENSION_LOG_INFO, NULL, "> FOUND KEY %s\n",
                         (const char*)item_get_key(it));
+        } else {
+            logger->log(EXTENSION_LOG_INFO, NULL, "> NOT FOUND %s\n",
+                        key);
         }
     }
     return it;
