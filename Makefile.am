@@ -138,6 +138,8 @@ default_engine_la_SOURCES= \
                     engines/default/default_engine.h \
                     engines/default/items.c \
                     engines/default/items.h \
+                    engines/default/item_clog.c \
+                    engines/default/item_clog.h \
                     engines/default/slabs.c \
                     engines/default/slabs.h \
                     engines/default/mc_snapshot.c \

@@ -28,6 +28,8 @@
 #include <sys/time.h> /* gettimeofday() */
 
 #include "default_engine.h"
+#include "item_clog.h"
+
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogmgr.h"
 #include "cmdlogbuf.h"
@@ -35,22 +37,6 @@
 
 //#define SET_DELETE_NO_MERGE
 //#define BTREE_DELETE_NO_MERGE
-
-/* item unlink cause */
-enum item_unlink_cause {
-    ITEM_UNLINK_NORMAL = 1, /* unlink by normal request */
-    ITEM_UNLINK_EVICT,      /* unlink by eviction */
-    ITEM_UNLINK_INVALID,    /* unlink by invalidation such like expiration/flush */
-    ITEM_UNLINK_REPLACE,    /* unlink by replacement of set/replace command */
-    ITEM_UNLINK_STALE       /* unlink by staleness */
-};
-
-/* element delete cause */
-enum elem_delete_cause {
-    ELEM_DELETE_NORMAL = 1, /* delete by normal request */
-    ELEM_DELETE_COLL,       /* delete by collection deletion */
-    ELEM_DELETE_TRIM        /* delete by overflow trim */
-};
 
 /* Forward Declarations */
 static void item_link_q(struct default_engine *engine, hash_item *it);
@@ -62,9 +48,6 @@ static uint32_t do_map_elem_delete(struct default_engine *engine, map_meta_info 
                                    const uint32_t count, enum elem_delete_cause cause);
 
 extern int genhash_string_hash(const void* p, size_t nkey);
-
-/* get hash item address from collection info address */
-#define COLL_GET_HASH_ITEM(info) ((size_t*)(info) - (info)->itdist)
 
 /*
  * We only reposition items in the LRU queue if they haven't been repositioned
@@ -894,6 +877,7 @@ static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *
 
     /* link the item to LRU list */
     item_link_q(engine, it);
+    CLOG_ITEM_LINK(it);
 
     /* update item statistics */
     pthread_mutex_lock(&engine->stats.lock);
@@ -921,6 +905,7 @@ static void do_item_unlink(struct default_engine *engine, hash_item *it,
     MEMCACHED_ITEM_UNLINK(key, it->nkey, it->nbytes);
 
     if ((it->iflag & ITEM_LINKED) != 0) {
+        CLOG_ITEM_UNLINK(it, cause);
         /* unlink the item from LUR list */
         item_unlink_q(engine, it);
 
@@ -988,6 +973,7 @@ static void do_item_update(struct default_engine *engine, hash_item *it)
             item_unlink_q(engine, it);
             it->time = current_time;
             item_link_q(engine, it);
+            CLOG_ITEM_UPDATE(it);
         }
     }
 }
@@ -1159,31 +1145,32 @@ static void do_item_stats_sizes(struct default_engine *engine, ADD_STAT add_stat
 static hash_item *do_item_get(struct default_engine *engine,
                               const char *key, const size_t nkey, bool do_update)
 {
-    rel_time_t current_time = engine->server.core->get_current_time();
+    hash_item *it;
     const char *hkey = (nkey > MAX_HKEY_LEN) ? key+(nkey-MAX_HKEY_LEN) : key;
     const size_t hnkey = (nkey > MAX_HKEY_LEN) ? MAX_HKEY_LEN : nkey;
-    hash_item *it = assoc_find(engine, engine->server.core->hash(hkey, hnkey, 0), key, nkey);
 
-    if (it != NULL) {
-        if (do_item_isvalid(engine, it, current_time)==false) {
+    it = assoc_find(engine, engine->server.core->hash(hkey, hnkey, 0), key, nkey);
+    if (it) {
+        rel_time_t current_time = engine->server.core->get_current_time();
+        if (do_item_isvalid(engine, it, current_time)) {
+            ITEM_REFCOUNT_INCR(it);
+            DEBUG_REFCNT(it, '+');
+            if (do_update) {
+                do_item_update(engine, it);
+            }
+        } else {
             do_item_unlink(engine, it, ITEM_UNLINK_INVALID);
             it = NULL;
         }
     }
-    if (it != NULL) {
-        ITEM_REFCOUNT_INCR(it);
-        DEBUG_REFCNT(it, '+');
-        if (do_update)
-            do_item_update(engine, it);
-    }
 
     if (engine->config.verbose > 2) {
-        if (it == NULL) {
-            logger->log(EXTENSION_LOG_INFO, NULL, "> NOT FOUND %s\n",
-                        key);
-        } else {
+        if (it) {
             logger->log(EXTENSION_LOG_INFO, NULL, "> FOUND KEY %s\n",
                         (const char*)item_get_key(it));
+        } else {
+            logger->log(EXTENSION_LOG_INFO, NULL, "> NOT FOUND %s\n",
+                        key);
         }
     }
     return it;
@@ -1198,16 +1185,17 @@ static hash_item *do_item_get(struct default_engine *engine,
 static ENGINE_ERROR_CODE do_item_store_set(struct default_engine *engine, hash_item *it,
                                            uint64_t *cas, const void *cookie)
 {
-    hash_item *old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
-    ENGINE_ERROR_CODE stored = ENGINE_NOT_STORED;
-    if (old_it != NULL && IS_COLL_ITEM(old_it)) {
-        do_item_release(engine, old_it);
-        return ENGINE_EBADTYPE;
-    }
+    hash_item *old_it;
+    ENGINE_ERROR_CODE stored;
 
-    if (old_it != NULL) {
-        do_item_replace(engine, old_it, it);
-        stored = ENGINE_SUCCESS;
+    old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
+    if (old_it) {
+        if (IS_COLL_ITEM(old_it)) {
+            stored = ENGINE_EBADTYPE;
+        } else {
+            do_item_replace(engine, old_it, it);
+            stored = ENGINE_SUCCESS;
+        }
         do_item_release(engine, old_it);
     } else {
         stored = do_item_link(engine, it);
@@ -1221,16 +1209,18 @@ static ENGINE_ERROR_CODE do_item_store_set(struct default_engine *engine, hash_i
 static ENGINE_ERROR_CODE do_item_store_add(struct default_engine *engine, hash_item *it,
                                            uint64_t *cas, const void *cookie)
 {
-    hash_item *old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
-    ENGINE_ERROR_CODE stored = ENGINE_NOT_STORED;
-    if (old_it != NULL && IS_COLL_ITEM(old_it)) {
-        do_item_release(engine, old_it);
-        return ENGINE_EBADTYPE;
-    }
+    hash_item *old_it;
+    ENGINE_ERROR_CODE stored;
 
-    if (old_it != NULL) {
-        /* add only adds a nonexistent item, but promote to head of LRU */
-        do_item_update(engine, old_it);
+    old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
+    if (old_it) {
+        if (IS_COLL_ITEM(old_it)) {
+            stored = ENGINE_EBADTYPE;
+        } else {
+            /* add only adds a nonexistent item, but promote to head of LRU */
+            do_item_update(engine, old_it);
+            stored = ENGINE_NOT_STORED;
+        }
         do_item_release(engine, old_it);
     } else {
         stored = do_item_link(engine, it);
@@ -1244,18 +1234,21 @@ static ENGINE_ERROR_CODE do_item_store_add(struct default_engine *engine, hash_i
 static ENGINE_ERROR_CODE do_item_store_replace(struct default_engine *engine, hash_item *it,
                                                uint64_t *cas, const void *cookie)
 {
-    hash_item *old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
-    ENGINE_ERROR_CODE stored = ENGINE_NOT_STORED;
-    if (old_it != NULL && IS_COLL_ITEM(old_it)) {
-        do_item_release(engine, old_it);
-        return ENGINE_EBADTYPE;
-    }
+    hash_item *old_it;
+    ENGINE_ERROR_CODE stored;
 
-    if (old_it != NULL) {
-        do_item_replace(engine, old_it, it);
-        stored = ENGINE_SUCCESS;
-        *cas = item_get_cas(it);
+    old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
+    if (old_it) {
+        if (IS_COLL_ITEM(old_it)) {
+            stored = ENGINE_EBADTYPE;
+        } else {
+            do_item_replace(engine, old_it, it);
+            stored = ENGINE_SUCCESS;
+            *cas = item_get_cas(it);
+        }
         do_item_release(engine, old_it);
+    } else {
+        stored = ENGINE_NOT_STORED;
     }
     return stored;
 }
@@ -1263,15 +1256,14 @@ static ENGINE_ERROR_CODE do_item_store_replace(struct default_engine *engine, ha
 static ENGINE_ERROR_CODE do_item_store_cas(struct default_engine *engine, hash_item *it,
                                            uint64_t *cas, const void *cookie)
 {
-    hash_item *old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
-    ENGINE_ERROR_CODE stored = ENGINE_NOT_STORED;
-    if (old_it != NULL && IS_COLL_ITEM(old_it)) {
-        do_item_release(engine, old_it);
-        return ENGINE_EBADTYPE;
-    }
+    hash_item *old_it;
+    ENGINE_ERROR_CODE stored;
 
-    if (old_it != NULL) {
-        if (item_get_cas(it) == item_get_cas(old_it)) {
+    old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
+    if (old_it) {
+        if (IS_COLL_ITEM(old_it)) {
+            stored = ENGINE_EBADTYPE;
+        } else if (item_get_cas(it) == item_get_cas(old_it)) {
             // cas validates
             // it and old_it may belong to different classes.
             // I'm updating the stats for the one that's getting pushed out
@@ -1297,50 +1289,46 @@ static ENGINE_ERROR_CODE do_item_store_cas(struct default_engine *engine, hash_i
 static ENGINE_ERROR_CODE do_item_store_attach(struct default_engine *engine, hash_item *it, uint64_t *cas,
                                               ENGINE_STORE_OPERATION operation, const void *cookie)
 {
-    hash_item *old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
-    ENGINE_ERROR_CODE stored = ENGINE_NOT_STORED;
-    if (old_it != NULL && IS_COLL_ITEM(old_it)) {
-        do_item_release(engine, old_it);
-        return ENGINE_EBADTYPE;
-    }
+    hash_item *old_it;
+    hash_item *new_it;
+    ENGINE_ERROR_CODE stored;
 
-    if (old_it != NULL) {
-        do {
-            if (item_get_cas(it) != 0 &&
-                item_get_cas(it) != item_get_cas(old_it)) {
-                // CAS much be equal
-                stored = ENGINE_KEY_EEXISTS; break;
-            }
-
+    old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
+    if (old_it) {
+        if (IS_COLL_ITEM(old_it)) {
+            stored = ENGINE_EBADTYPE;
+        } else if (item_get_cas(it) != 0 &&
+                   item_get_cas(it) != item_get_cas(old_it)) {
+            // CAS much be equal
+            stored = ENGINE_KEY_EEXISTS;
+        } else {
             /* we have it and old_it here - alloc memory to hold both */
-            hash_item *new_it = do_item_alloc(engine, item_get_key(it), it->nkey,
+            new_it = do_item_alloc(engine, item_get_key(it), it->nkey,
                                    old_it->flags, old_it->exptime,
-                                   it->nbytes + old_it->nbytes - 2 /* CRLF */,
-                                   cookie);
-            if (new_it == NULL) {
-                /* SERVER_ERROR out of memory */
-                break;
-            }
-
-            /* copy data from it and old_it to new_it */
-            if (operation == OPERATION_APPEND) {
-                memcpy(item_get_data(new_it), item_get_data(old_it), old_it->nbytes);
-                memcpy(item_get_data(new_it) + old_it->nbytes - 2 /* CRLF */, item_get_data(it), it->nbytes);
+                                   it->nbytes + old_it->nbytes - 2 /* CRLF */, cookie);
+            if (new_it) {
+                /* copy data from it and old_it to new_it */
+                if (operation == OPERATION_APPEND) {
+                    memcpy(item_get_data(new_it), item_get_data(old_it), old_it->nbytes);
+                    memcpy(item_get_data(new_it) + old_it->nbytes - 2 /* CRLF */, item_get_data(it), it->nbytes);
+                } else {
+                    /* OPERATION_PREPEND */
+                    memcpy(item_get_data(new_it), item_get_data(it), it->nbytes);
+                    memcpy(item_get_data(new_it) + it->nbytes - 2 /* CRLF */, item_get_data(old_it), old_it->nbytes);
+                }
+                /* replace old item with new item */
+                do_item_replace(engine, old_it, new_it);
+                stored = ENGINE_SUCCESS;
+                *cas = item_get_cas(new_it);
+                do_item_release(engine, new_it);
             } else {
-                /* OPERATION_PREPEND */
-                memcpy(item_get_data(new_it), item_get_data(it), it->nbytes);
-                memcpy(item_get_data(new_it) + it->nbytes - 2 /* CRLF */, item_get_data(old_it), old_it->nbytes);
+                /* SERVER_ERROR out of memory */
+                stored = ENGINE_NOT_STORED;
             }
-            it = new_it;
-
-            /* replace old item with new item */
-            do_item_replace(engine, old_it, it);
-            stored = ENGINE_SUCCESS;
-            *cas = item_get_cas(it);
-            do_item_release(engine, new_it);
-        } while(0);
-
+        }
         do_item_release(engine, old_it);
+    } else {
+        stored = ENGINE_NOT_STORED;
     }
     return stored;
 }
@@ -1637,6 +1625,8 @@ static uint32_t do_list_elem_delete(struct default_engine *engine,
     list_elem_item *next;
     uint32_t fcnt = 0;
 
+    CLOG_LIST_ELEM_DELETE(info, index, count, true, cause);
+
     elem = do_list_elem_find(info, index);
     while (elem != NULL) {
         next = elem->next;
@@ -1658,6 +1648,10 @@ static ENGINE_ERROR_CODE do_list_elem_get(struct default_engine *engine,
     list_elem_item *tobe;
     uint32_t fcnt = 0; /* found count */
     enum elem_delete_cause cause = ELEM_DELETE_NORMAL;
+
+    if (delete) {
+        CLOG_LIST_ELEM_DELETE(info, index, count, forward, ELEM_DELETE_NORMAL);
+    }
 
     elem = do_list_elem_find(info, index);
     while (elem != NULL) {
@@ -1707,6 +1701,8 @@ static ENGINE_ERROR_CODE do_list_elem_insert(struct default_engine *engine,
     if (info->ovflact == OVFL_ERROR && info->ccnt >= real_mcnt) {
         return ENGINE_EOVERFLOW;
     }
+
+    CLOG_LIST_ELEM_INSERT(info, index, elem);
 
     if (info->ccnt >= real_mcnt) {
         /* info->ovflact: OVFL_HEAD_TRIM or OVFL_TAIL_TRIM */
@@ -2026,8 +2022,9 @@ static void do_set_elem_unlink(struct default_engine *engine,
     elem->next = (set_elem_item *)ADDR_MEANS_UNLINKED;
     node->hcnt[hidx] -= 1;
     node->tot_elem_cnt -= 1;
-
     info->ccnt--;
+
+    CLOG_SET_ELEM_DELETE(info, elem, cause);
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(engine, do_set_elem_ntotal(elem));
@@ -2316,6 +2313,7 @@ static ENGINE_ERROR_CODE do_set_elem_insert(struct default_engine *engine,
         return ret;
     }
 
+    CLOG_SET_ELEM_INSERT(info, elem);
     return ENGINE_SUCCESS;
 }
 
@@ -3771,6 +3769,8 @@ static void do_btree_elem_unlink(struct default_engine *engine,
         decrease_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
     }
 
+    CLOG_BTREE_ELEM_DELETE(info, elem, cause);
+
     if (elem->refcount > 0) {
         elem->status = BTREE_ITEM_STATUS_UNLINK;
     } else  {
@@ -3805,6 +3805,8 @@ static void do_btree_elem_replace(struct default_engine *engine, btree_meta_info
 
     old_stotal = slabs_space_size(engine, do_btree_elem_ntotal(old_elem));
     new_stotal = slabs_space_size(engine, do_btree_elem_ntotal(new_elem));
+
+    CLOG_BTREE_ELEM_INSERT(info, old_elem, new_elem);
 
     if (old_elem->refcount > 0) {
         old_elem->status = BTREE_ITEM_STATUS_UNLINK;
@@ -3877,6 +3879,7 @@ static ENGINE_ERROR_CODE do_btree_elem_update(struct default_engine *engine, btr
             memcpy(elem->data + real_nbkey + elem->neflag, value, nbytes);
             elem->nbytes = nbytes;
         }
+        CLOG_BTREE_ELEM_INSERT(info, elem, elem);
     } else {
         /* old body size != new body size */
 #ifdef ENABLE_STICKY_ITEM
@@ -4041,6 +4044,7 @@ static uint32_t do_btree_elem_delete(struct default_engine *engine, btree_meta_i
                 if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
                     stotal += slabs_space_size(engine, do_btree_elem_ntotal(elem));
 
+                    CLOG_BTREE_ELEM_DELETE(info, elem, cause);
                     if (elem->refcount > 0) {
                         elem->status = BTREE_ITEM_STATUS_UNLINK;
                     } else {
@@ -4337,6 +4341,8 @@ static ENGINE_ERROR_CODE do_btree_elem_link(struct default_engine *engine,
                 info->bktype = BKEY_TYPE_BINARY;
         }
 
+        CLOG_BTREE_ELEM_INSERT(info, NULL, elem);
+
         /* insert the element into the leaf page */
         elem->status = BTREE_ITEM_STATUS_USED;
         if (path[0].indx < path[0].node->used_count) {
@@ -4486,6 +4492,7 @@ static ENGINE_ERROR_CODE do_btree_elem_get(struct default_engine *engine, btree_
                             stotal += slabs_space_size(engine, do_btree_elem_ntotal(elem));
                             elem->status = BTREE_ITEM_STATUS_UNLINK;
                             c_posi.node->item[c_posi.indx] = NULL;
+                            CLOG_BTREE_ELEM_DELETE(info, elem, ELEM_DELETE_NORMAL);
                         }
                         cur_found++;
                         if (count > 0 && (tot_found+cur_found) >= count) break;
@@ -4750,6 +4757,7 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(struct default_engine *engine,
 
         if (elem->refcount == 0 && elem->nbytes == nlen) {
             memcpy(elem->data + real_nbkey + elem->neflag, nbuf, elem->nbytes);
+            CLOG_BTREE_ELEM_INSERT(info, elem, elem);
         } else {
 #ifdef ENABLE_STICKY_ITEM
             /* sticky memory limit check : do not check it
@@ -6282,6 +6290,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
             }
 #endif
         }
+        CLOG_ITEM_FLUSH(prefix, nprefix, when);
     }
     return ENGINE_SUCCESS;
 }
@@ -6425,6 +6434,8 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
         return ENGINE_FAILED;
     }
 
+    item_clog_init(engine);
+
     /* remove unused function warnings */
     if (1) {
         uint64_t val1 = 10;
@@ -6463,6 +6474,8 @@ void item_final(struct default_engine *engine)
         logger->log(EXTENSION_LOG_INFO, NULL,
                 "Waited %d ms for dumper to be stopped.\n", sleep_count);
     }
+
+    item_clog_final(engine);
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM module destroyed.\n");
 }
 
@@ -7711,6 +7724,8 @@ do_item_setattr_exec(struct default_engine *engine, hash_item *it,
             continue;
         }
     }
+
+    CLOG_ITEM_SETATTR(it, attr_ids, attr_count);
 }
 
 ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
@@ -8789,6 +8804,8 @@ static void do_map_elem_replace(struct default_engine *engine, map_meta_info *in
     old_stotal = slabs_space_size(engine, do_map_elem_ntotal(old_elem));
     new_stotal = slabs_space_size(engine, do_map_elem_ntotal(new_elem));
 
+    CLOG_MAP_ELEM_INSERT(info, old_elem, new_elem);
+
     new_elem->next = old_elem->next;
     if (prev != NULL) {
         prev->next = new_elem;
@@ -8906,8 +8923,9 @@ static void do_map_elem_unlink(struct default_engine *engine,
     elem->next = (map_elem_item *)ADDR_MEANS_UNLINKED;
     node->hcnt[hidx] -= 1;
     node->tot_elem_cnt -= 1;
-
     info->ccnt--;
+
+    CLOG_MAP_ELEM_DELETE(info, elem, cause);
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(engine, do_map_elem_ntotal(elem));
@@ -9084,6 +9102,7 @@ static ENGINE_ERROR_CODE do_map_elem_update(struct default_engine *engine, map_m
         /* old body size == new body size */
         /* do in-place update */
         memcpy(elem->data + elem->nfield, value, nbytes);
+        CLOG_MAP_ELEM_INSERT(info, elem, elem);
     } else {
         /* old body size != new body size */
 #ifdef ENABLE_STICKY_ITEM
@@ -9193,6 +9212,7 @@ static ENGINE_ERROR_CODE do_map_elem_insert(struct default_engine *engine,
         return ret;
     }
 
+    CLOG_MAP_ELEM_INSERT(info, NULL, elem);
     return ENGINE_SUCCESS;
 }
 
