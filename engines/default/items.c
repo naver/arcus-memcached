@@ -1180,16 +1180,17 @@ static hash_item *do_item_get(struct default_engine *engine,
 static ENGINE_ERROR_CODE do_item_store_set(struct default_engine *engine, hash_item *it,
                                            uint64_t *cas, const void *cookie)
 {
-    hash_item *old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
-    ENGINE_ERROR_CODE stored = ENGINE_NOT_STORED;
-    if (old_it != NULL && IS_COLL_ITEM(old_it)) {
-        do_item_release(engine, old_it);
-        return ENGINE_EBADTYPE;
-    }
+    hash_item *old_it;
+    ENGINE_ERROR_CODE stored;
 
-    if (old_it != NULL) {
-        do_item_replace(engine, old_it, it);
-        stored = ENGINE_SUCCESS;
+    old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
+    if (old_it) {
+        if (IS_COLL_ITEM(old_it)) {
+            stored = ENGINE_EBADTYPE;
+        } else {
+            do_item_replace(engine, old_it, it);
+            stored = ENGINE_SUCCESS;
+        }
         do_item_release(engine, old_it);
     } else {
         stored = do_item_link(engine, it);
@@ -1203,16 +1204,18 @@ static ENGINE_ERROR_CODE do_item_store_set(struct default_engine *engine, hash_i
 static ENGINE_ERROR_CODE do_item_store_add(struct default_engine *engine, hash_item *it,
                                            uint64_t *cas, const void *cookie)
 {
-    hash_item *old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
-    ENGINE_ERROR_CODE stored = ENGINE_NOT_STORED;
-    if (old_it != NULL && IS_COLL_ITEM(old_it)) {
-        do_item_release(engine, old_it);
-        return ENGINE_EBADTYPE;
-    }
+    hash_item *old_it;
+    ENGINE_ERROR_CODE stored;
 
-    if (old_it != NULL) {
-        /* add only adds a nonexistent item, but promote to head of LRU */
-        do_item_update(engine, old_it);
+    old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
+    if (old_it) {
+        if (IS_COLL_ITEM(old_it)) {
+            stored = ENGINE_EBADTYPE;
+        } else {
+            /* add only adds a nonexistent item, but promote to head of LRU */
+            do_item_update(engine, old_it);
+            stored = ENGINE_NOT_STORED;
+        }
         do_item_release(engine, old_it);
     } else {
         stored = do_item_link(engine, it);
@@ -1226,18 +1229,21 @@ static ENGINE_ERROR_CODE do_item_store_add(struct default_engine *engine, hash_i
 static ENGINE_ERROR_CODE do_item_store_replace(struct default_engine *engine, hash_item *it,
                                                uint64_t *cas, const void *cookie)
 {
-    hash_item *old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
-    ENGINE_ERROR_CODE stored = ENGINE_NOT_STORED;
-    if (old_it != NULL && IS_COLL_ITEM(old_it)) {
-        do_item_release(engine, old_it);
-        return ENGINE_EBADTYPE;
-    }
+    hash_item *old_it;
+    ENGINE_ERROR_CODE stored;
 
-    if (old_it != NULL) {
-        do_item_replace(engine, old_it, it);
-        stored = ENGINE_SUCCESS;
-        *cas = item_get_cas(it);
+    old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
+    if (old_it) {
+        if (IS_COLL_ITEM(old_it)) {
+            stored = ENGINE_EBADTYPE;
+        } else {
+            do_item_replace(engine, old_it, it);
+            stored = ENGINE_SUCCESS;
+            *cas = item_get_cas(it);
+        }
         do_item_release(engine, old_it);
+    } else {
+        stored = ENGINE_NOT_STORED;
     }
     return stored;
 }
@@ -1245,15 +1251,14 @@ static ENGINE_ERROR_CODE do_item_store_replace(struct default_engine *engine, ha
 static ENGINE_ERROR_CODE do_item_store_cas(struct default_engine *engine, hash_item *it,
                                            uint64_t *cas, const void *cookie)
 {
-    hash_item *old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
-    ENGINE_ERROR_CODE stored = ENGINE_NOT_STORED;
-    if (old_it != NULL && IS_COLL_ITEM(old_it)) {
-        do_item_release(engine, old_it);
-        return ENGINE_EBADTYPE;
-    }
+    hash_item *old_it;
+    ENGINE_ERROR_CODE stored;
 
-    if (old_it != NULL) {
-        if (item_get_cas(it) == item_get_cas(old_it)) {
+    old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
+    if (old_it) {
+        if (IS_COLL_ITEM(old_it)) {
+            stored = ENGINE_EBADTYPE;
+        } else if (item_get_cas(it) == item_get_cas(old_it)) {
             // cas validates
             // it and old_it may belong to different classes.
             // I'm updating the stats for the one that's getting pushed out
@@ -1279,50 +1284,46 @@ static ENGINE_ERROR_CODE do_item_store_cas(struct default_engine *engine, hash_i
 static ENGINE_ERROR_CODE do_item_store_attach(struct default_engine *engine, hash_item *it, uint64_t *cas,
                                               ENGINE_STORE_OPERATION operation, const void *cookie)
 {
-    hash_item *old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
-    ENGINE_ERROR_CODE stored = ENGINE_NOT_STORED;
-    if (old_it != NULL && IS_COLL_ITEM(old_it)) {
-        do_item_release(engine, old_it);
-        return ENGINE_EBADTYPE;
-    }
+    hash_item *old_it;
+    hash_item *new_it;
+    ENGINE_ERROR_CODE stored;
 
-    if (old_it != NULL) {
-        do {
-            if (item_get_cas(it) != 0 &&
-                item_get_cas(it) != item_get_cas(old_it)) {
-                // CAS much be equal
-                stored = ENGINE_KEY_EEXISTS; break;
-            }
-
+    old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
+    if (old_it) {
+        if (IS_COLL_ITEM(old_it)) {
+            stored = ENGINE_EBADTYPE;
+        } else if (item_get_cas(it) != 0 &&
+                   item_get_cas(it) != item_get_cas(old_it)) {
+            // CAS much be equal
+            stored = ENGINE_KEY_EEXISTS;
+        } else {
             /* we have it and old_it here - alloc memory to hold both */
-            hash_item *new_it = do_item_alloc(engine, item_get_key(it), it->nkey,
+            new_it = do_item_alloc(engine, item_get_key(it), it->nkey,
                                    old_it->flags, old_it->exptime,
-                                   it->nbytes + old_it->nbytes - 2 /* CRLF */,
-                                   cookie);
-            if (new_it == NULL) {
-                /* SERVER_ERROR out of memory */
-                break;
-            }
-
-            /* copy data from it and old_it to new_it */
-            if (operation == OPERATION_APPEND) {
-                memcpy(item_get_data(new_it), item_get_data(old_it), old_it->nbytes);
-                memcpy(item_get_data(new_it) + old_it->nbytes - 2 /* CRLF */, item_get_data(it), it->nbytes);
+                                   it->nbytes + old_it->nbytes - 2 /* CRLF */, cookie);
+            if (new_it) {
+                /* copy data from it and old_it to new_it */
+                if (operation == OPERATION_APPEND) {
+                    memcpy(item_get_data(new_it), item_get_data(old_it), old_it->nbytes);
+                    memcpy(item_get_data(new_it) + old_it->nbytes - 2 /* CRLF */, item_get_data(it), it->nbytes);
+                } else {
+                    /* OPERATION_PREPEND */
+                    memcpy(item_get_data(new_it), item_get_data(it), it->nbytes);
+                    memcpy(item_get_data(new_it) + it->nbytes - 2 /* CRLF */, item_get_data(old_it), old_it->nbytes);
+                }
+                /* replace old item with new item */
+                do_item_replace(engine, old_it, new_it);
+                stored = ENGINE_SUCCESS;
+                *cas = item_get_cas(new_it);
+                do_item_release(engine, new_it);
             } else {
-                /* OPERATION_PREPEND */
-                memcpy(item_get_data(new_it), item_get_data(it), it->nbytes);
-                memcpy(item_get_data(new_it) + it->nbytes - 2 /* CRLF */, item_get_data(old_it), old_it->nbytes);
+                /* SERVER_ERROR out of memory */
+                stored = ENGINE_NOT_STORED;
             }
-            it = new_it;
-
-            /* replace old item with new item */
-            do_item_replace(engine, old_it, it);
-            stored = ENGINE_SUCCESS;
-            *cas = item_get_cas(it);
-            do_item_release(engine, new_it);
-        } while(0);
-
+        }
         do_item_release(engine, old_it);
+    } else {
+        stored = ENGINE_NOT_STORED;
     }
     return stored;
 }
