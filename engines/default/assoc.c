@@ -400,54 +400,6 @@ prefix_t *assoc_prefix_find(struct default_engine *engine, uint32_t hash,
     return NULL;
 }
 
-bool assoc_prefix_isvalid(struct default_engine *engine, hash_item *it, rel_time_t current_time)
-{
-    prefix_t *pt = it->pfxptr;
-    do {
-        if (pt->oldest_live != 0 &&
-            pt->oldest_live <= current_time &&
-            it->time <= pt->oldest_live)
-            return false;
-        /* traverse parent prefixes to validate them */
-        pt = pt->parent_prefix;
-    } while(pt != NULL && pt != root_pt);
-
-    return true;
-}
-
-void assoc_prefix_update_size(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
-                              const size_t item_size, const bool increment)
-{
-    assert(item_type >= ITEM_TYPE_KV && item_type < ITEM_TYPE_MAX);
-
-    // update prefix information
-    if (increment) {
-        pt->items_bytes[item_type] += item_size;
-        pt->total_bytes_exclusive += item_size;
-#if 0 // might be used later
-        if (1) {
-            prefix_t *curr_pt = pt->parent_prefix;
-            while (curr_pt != NULL) {
-                curr_pt->total_bytes_inclusive += item_size;
-                curr_pt = curr_pt->parent_prefix;
-            }
-        }
-#endif
-    } else { /* decrement */
-        pt->items_bytes[item_type] -= item_size;
-        pt->total_bytes_exclusive -= item_size;
-#if 0 // might be used later
-        if (1) {
-            prefix_t *curr_pt = pt->parent_prefix;
-            while (curr_pt != NULL) {
-                curr_pt->total_bytes_inclusive -= item_size;
-                curr_pt = curr_pt->parent_prefix;
-            }
-        }
-#endif
-    }
-}
-
 static int _prefix_insert(struct default_engine *engine, uint32_t hash, prefix_t *pt)
 {
     assert(assoc_prefix_find(engine, hash, _get_prefix(pt), pt->nprefix) == NULL);
@@ -629,6 +581,59 @@ void assoc_prefix_unlink(struct default_engine *engine, hash_item *it,
     }
 }
 
+void assoc_prefix_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
+                             const size_t bytes)
+{
+    /* It's called when a collection element is inserted */
+    assert(item_type > ITEM_TYPE_KV && item_type < ITEM_TYPE_MAX);
+
+    pt->items_bytes[item_type] += bytes;
+    pt->total_bytes_exclusive += bytes;
+#if 0 // might be used later
+    if (1) {
+        prefix_t *curr_pt = pt->parent_prefix;
+        while (curr_pt != NULL) {
+            curr_pt->total_bytes_inclusive += bytes;
+            curr_pt = curr_pt->parent_prefix;
+        }
+    }
+#endif
+}
+
+void assoc_prefix_bytes_decr(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
+                             const size_t bytes)
+{
+    /* It's called when a collection element is removed */
+    assert(item_type > ITEM_TYPE_KV && item_type < ITEM_TYPE_MAX);
+
+    pt->items_bytes[item_type] -= bytes;
+    pt->total_bytes_exclusive -= bytes;
+#if 0 // might be used later
+    if (1) {
+        prefix_t *curr_pt = pt->parent_prefix;
+        while (curr_pt != NULL) {
+            curr_pt->total_bytes_inclusive -= bytes;
+            curr_pt = curr_pt->parent_prefix;
+        }
+    }
+#endif
+}
+
+bool assoc_prefix_isvalid(hash_item *it, rel_time_t current_time)
+{
+    prefix_t *pt = it->pfxptr;
+    do {
+        if (pt->oldest_live != 0 &&
+            pt->oldest_live <= current_time &&
+            it->time <= pt->oldest_live)
+            return false;
+        /* traverse parent prefixes to validate them */
+        pt = pt->parent_prefix;
+    } while(pt != NULL && pt != root_pt);
+
+    return true;
+}
+
 #if 0 // might be used later
 static uint32_t do_assoc_count_invalid_prefix(struct default_engine *engine)
 {
@@ -648,10 +653,9 @@ static uint32_t do_assoc_count_invalid_prefix(struct default_engine *engine)
 }
 #endif
 
-static ENGINE_ERROR_CODE
-do_assoc_get_prefix_stats(struct default_engine *engine,
-                          const char *prefix, const int nprefix,
-                          void *prefix_data)
+ENGINE_ERROR_CODE assoc_prefix_get_stats(struct default_engine *engine,
+                                         const char *prefix, const int nprefix,
+                                         void *prefix_data)
 {
     struct assoc *assoc = &engine->assoc;
     prefix_t *pt;
@@ -773,15 +777,4 @@ do_assoc_get_prefix_stats(struct default_engine *engine,
             prefix_stats->tot_prefix_items = assoc->tot_prefix_items;
     }
     return ENGINE_SUCCESS;
-}
-
-ENGINE_ERROR_CODE assoc_get_prefix_stats(struct default_engine *engine,
-                                         const char *prefix, const int nprefix,
-                                         void *prefix_data)
-{
-    ENGINE_ERROR_CODE ret;
-    pthread_mutex_lock(&engine->cache_lock);
-    ret = do_assoc_get_prefix_stats(engine, prefix, nprefix, prefix_data);
-    pthread_mutex_unlock(&engine->cache_lock);
-    return ret;
 }

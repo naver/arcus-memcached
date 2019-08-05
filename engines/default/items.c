@@ -253,7 +253,7 @@ static void increase_collection_space(struct default_engine *engine, ENGINE_ITEM
         engine->stats.sticky_bytes += inc_space;
     }
 #endif
-    assoc_prefix_update_size(it->pfxptr, item_type, inc_space, true);
+    assoc_prefix_bytes_incr(it->pfxptr, item_type, inc_space);
     engine->stats.curr_bytes += inc_space;
     //pthread_mutex_unlock(&engine->stats.lock);
 }
@@ -271,7 +271,7 @@ static void decrease_collection_space(struct default_engine *engine, ENGINE_ITEM
         engine->stats.sticky_bytes -= dec_space;
     }
 #endif
-    assoc_prefix_update_size(it->pfxptr, item_type, dec_space, false);
+    assoc_prefix_bytes_decr(it->pfxptr, item_type, dec_space);
     engine->stats.curr_bytes -= dec_space;
     //pthread_mutex_unlock(&engine->stats.lock);
 }
@@ -332,7 +332,7 @@ static bool do_item_isvalid(struct default_engine *engine, hash_item *it, rel_ti
             return false; /* flushed by flush_all */
     }
     /* check if prefix is valid */
-    if (assoc_prefix_isvalid(engine, it, current_time) == false) {
+    if (assoc_prefix_isvalid(it, current_time) == false) {
         return false;
     }
     return true; /* Yes, it's a valid item */
@@ -6341,6 +6341,17 @@ void item_stats_reset(struct default_engine *engine)
     pthread_mutex_lock(&engine->cache_lock);
     memset(engine->items.itemstats, 0, sizeof(engine->items.itemstats));
     pthread_mutex_unlock(&engine->cache_lock);
+}
+
+ENGINE_ERROR_CODE item_stats_prefixes(struct default_engine *engine,
+                                      const char *prefix, const int nprefix,
+                                      void *prefix_data)
+{
+    ENGINE_ERROR_CODE ret;
+    pthread_mutex_lock(&engine->cache_lock);
+    ret = assoc_prefix_get_stats(engine, prefix, nprefix, prefix_data);
+    pthread_mutex_unlock(&engine->cache_lock);
+    return ret;
 }
 
 static void _check_forced_btree_overflow_action(void)

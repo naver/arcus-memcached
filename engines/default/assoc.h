@@ -107,15 +107,16 @@ void              assoc_scan_final(struct assoc_scan *scan);
 /* prefix functions */
 prefix_t *        assoc_prefix_find(struct default_engine *engine, uint32_t hash,
                                     const char *prefix, const int nprefix);
-bool              assoc_prefix_isvalid(struct default_engine *engine,
-                                       hash_item *it, rel_time_t current_time);
-void              assoc_prefix_update_size(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
-                                    const size_t item_size, const bool increment);
 ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine,
                                     hash_item *it, const size_t item_size);
 void              assoc_prefix_unlink(struct default_engine *engine, hash_item *it,
                                     const size_t item_size, bool drop_if_empty);
-ENGINE_ERROR_CODE assoc_get_prefix_stats(struct default_engine *engine,
+void              assoc_prefix_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
+                                          const size_t bytes);
+void              assoc_prefix_bytes_decr(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
+                                          const size_t bytes);
+bool              assoc_prefix_isvalid(hash_item *it, rel_time_t current_time);
+ENGINE_ERROR_CODE assoc_prefix_get_stats(struct default_engine *engine,
                                     const char *prefix, const int nprefix,
                                     void *prefix_data);
 #endif

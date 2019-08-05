@@ -416,6 +416,10 @@ ENGINE_ERROR_CODE item_delete(struct default_engine *engine,
 
 void coll_del_thread_wakeup(void);
 
+ENGINE_ERROR_CODE item_stats_prefixes(struct default_engine *engine,
+                                      const char *prefix, const int nprefix,
+                                      void *prefix_data);
+
 ENGINE_ERROR_CODE item_init(struct default_engine *engine);
 
 void              item_final(struct default_engine *engine);
