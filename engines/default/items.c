@@ -28,31 +28,10 @@
 #include <sys/time.h> /* gettimeofday() */
 
 #include "default_engine.h"
-#ifdef ADD_CHANGE_LOG
 #include "item_clog.h"
-#endif
 
 //#define SET_DELETE_NO_MERGE
 //#define BTREE_DELETE_NO_MERGE
-
-#ifdef ADD_CHANGE_LOG
-#else
-/* item unlink cause */
-enum item_unlink_cause {
-    ITEM_UNLINK_NORMAL = 1, /* unlink by normal request */
-    ITEM_UNLINK_EVICT,      /* unlink by eviction */
-    ITEM_UNLINK_INVALID,    /* unlink by invalidation such like expiration/flush */
-    ITEM_UNLINK_REPLACE,    /* unlink by replacement of set/replace command */
-    ITEM_UNLINK_STALE       /* unlink by staleness */
-};
-
-/* element delete cause */
-enum elem_delete_cause {
-    ELEM_DELETE_NORMAL = 1, /* delete by normal request */
-    ELEM_DELETE_COLL,       /* delete by collection deletion */
-    ELEM_DELETE_TRIM        /* delete by overflow trim */
-};
-#endif
 
 /* Forward Declarations */
 static void item_link_q(struct default_engine *engine, hash_item *it);
@@ -64,12 +43,6 @@ static uint32_t do_map_elem_delete(struct default_engine *engine, map_meta_info 
                                    const uint32_t count, enum elem_delete_cause cause);
 
 extern int genhash_string_hash(const void* p, size_t nkey);
-
-#ifdef ADD_CHANGE_LOG
-#else
-/* get hash item address from collection info address */
-#define COLL_GET_HASH_ITEM(info) ((size_t*)(info) - (info)->itdist)
-#endif
 
 /*
  * We only reposition items in the LRU queue if they haven't been repositioned
@@ -899,10 +872,7 @@ static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *
 
     /* link the item to LRU list */
     item_link_q(engine, it);
-
-#ifdef ADD_CHANGE_LOG
     CLOG_ITEM_LINK(it);
-#endif
 
     /* update item statistics */
     pthread_mutex_lock(&engine->stats.lock);
@@ -930,9 +900,7 @@ static void do_item_unlink(struct default_engine *engine, hash_item *it,
     MEMCACHED_ITEM_UNLINK(key, it->nkey, it->nbytes);
 
     if ((it->iflag & ITEM_LINKED) != 0) {
-#ifdef ADD_CHANGE_LOG
         CLOG_ITEM_UNLINK(it, cause);
-#endif
         /* unlink the item from LUR list */
         item_unlink_q(engine, it);
 
@@ -1000,9 +968,7 @@ static void do_item_update(struct default_engine *engine, hash_item *it)
             item_unlink_q(engine, it);
             it->time = current_time;
             item_link_q(engine, it);
-#ifdef ADD_CHANGE_LOG
             CLOG_ITEM_UPDATE(it);
-#endif
         }
     }
 }
@@ -1652,9 +1618,7 @@ static uint32_t do_list_elem_delete(struct default_engine *engine,
     list_elem_item *next;
     uint32_t fcnt = 0;
 
-#ifdef ADD_CHANGE_LOG
     CLOG_LIST_ELEM_DELETE(info, index, count, true, cause);
-#endif
 
     elem = do_list_elem_find(info, index);
     while (elem != NULL) {
@@ -1678,11 +1642,9 @@ static ENGINE_ERROR_CODE do_list_elem_get(struct default_engine *engine,
     uint32_t fcnt = 0; /* found count */
     enum elem_delete_cause cause = ELEM_DELETE_NORMAL;
 
-#ifdef ADD_CHANGE_LOG
     if (delete) {
         CLOG_LIST_ELEM_DELETE(info, index, count, forward, ELEM_DELETE_NORMAL);
     }
-#endif
 
     elem = do_list_elem_find(info, index);
     while (elem != NULL) {
@@ -1733,9 +1695,7 @@ static ENGINE_ERROR_CODE do_list_elem_insert(struct default_engine *engine,
         return ENGINE_EOVERFLOW;
     }
 
-#ifdef ADD_CHANGE_LOG
     CLOG_LIST_ELEM_INSERT(info, index, elem);
-#endif
 
     if (info->ccnt >= real_mcnt) {
         /* info->ovflact: OVFL_HEAD_TRIM or OVFL_TAIL_TRIM */
@@ -2055,12 +2015,9 @@ static void do_set_elem_unlink(struct default_engine *engine,
     elem->next = (set_elem_item *)ADDR_MEANS_UNLINKED;
     node->hcnt[hidx] -= 1;
     node->tot_elem_cnt -= 1;
-
     info->ccnt--;
 
-#ifdef ADD_CHANGE_LOG
     CLOG_SET_ELEM_DELETE(info, elem, cause);
-#endif
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(engine, do_set_elem_ntotal(elem));
@@ -2349,9 +2306,7 @@ static ENGINE_ERROR_CODE do_set_elem_insert(struct default_engine *engine,
         return ret;
     }
 
-#ifdef ADD_CHANGE_LOG
     CLOG_SET_ELEM_INSERT(info, elem);
-#endif
     return ENGINE_SUCCESS;
 }
 
@@ -3807,9 +3762,7 @@ static void do_btree_elem_unlink(struct default_engine *engine,
         decrease_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
     }
 
-#ifdef ADD_CHANGE_LOG
     CLOG_BTREE_ELEM_DELETE(info, elem, cause);
-#endif
 
     if (elem->refcount > 0) {
         elem->status = BTREE_ITEM_STATUS_UNLINK;
@@ -3846,9 +3799,7 @@ static void do_btree_elem_replace(struct default_engine *engine, btree_meta_info
     old_stotal = slabs_space_size(engine, do_btree_elem_ntotal(old_elem));
     new_stotal = slabs_space_size(engine, do_btree_elem_ntotal(new_elem));
 
-#ifdef ADD_CHANGE_LOG
     CLOG_BTREE_ELEM_INSERT(info, old_elem, new_elem);
-#endif
 
     if (old_elem->refcount > 0) {
         old_elem->status = BTREE_ITEM_STATUS_UNLINK;
@@ -3921,9 +3872,7 @@ static ENGINE_ERROR_CODE do_btree_elem_update(struct default_engine *engine, btr
             memcpy(elem->data + real_nbkey + elem->neflag, value, nbytes);
             elem->nbytes = nbytes;
         }
-#ifdef ADD_CHANGE_LOG
         CLOG_BTREE_ELEM_INSERT(info, elem, elem);
-#endif
     } else {
         /* old body size != new body size */
 #ifdef ENABLE_STICKY_ITEM
@@ -4088,9 +4037,7 @@ static uint32_t do_btree_elem_delete(struct default_engine *engine, btree_meta_i
                 if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
                     stotal += slabs_space_size(engine, do_btree_elem_ntotal(elem));
 
-#ifdef ADD_CHANGE_LOG
                     CLOG_BTREE_ELEM_DELETE(info, elem, cause);
-#endif
                     if (elem->refcount > 0) {
                         elem->status = BTREE_ITEM_STATUS_UNLINK;
                     } else {
@@ -4387,9 +4334,7 @@ static ENGINE_ERROR_CODE do_btree_elem_link(struct default_engine *engine,
                 info->bktype = BKEY_TYPE_BINARY;
         }
 
-#ifdef ADD_CHANGE_LOG
         CLOG_BTREE_ELEM_INSERT(info, NULL, elem);
-#endif
 
         /* insert the element into the leaf page */
         elem->status = BTREE_ITEM_STATUS_USED;
@@ -4540,9 +4485,7 @@ static ENGINE_ERROR_CODE do_btree_elem_get(struct default_engine *engine, btree_
                             stotal += slabs_space_size(engine, do_btree_elem_ntotal(elem));
                             elem->status = BTREE_ITEM_STATUS_UNLINK;
                             c_posi.node->item[c_posi.indx] = NULL;
-#ifdef ADD_CHANGE_LOG
                             CLOG_BTREE_ELEM_DELETE(info, elem, ELEM_DELETE_NORMAL);
-#endif
                         }
                         cur_found++;
                         if (count > 0 && (tot_found+cur_found) >= count) break;
@@ -4807,9 +4750,7 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(struct default_engine *engine,
 
         if (elem->refcount == 0 && elem->nbytes == nlen) {
             memcpy(elem->data + real_nbkey + elem->neflag, nbuf, elem->nbytes);
-#ifdef ADD_CHANGE_LOG
             CLOG_BTREE_ELEM_INSERT(info, elem, elem);
-#endif
         } else {
 #ifdef ENABLE_STICKY_ITEM
             /* sticky memory limit check : do not check it
@@ -6342,9 +6283,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
             }
 #endif
         }
-#ifdef ADD_CHANGE_LOG
         CLOG_ITEM_FLUSH(prefix, nprefix, when);
-#endif
     }
     return ENGINE_SUCCESS;
 }
@@ -6488,9 +6427,7 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
         return ENGINE_FAILED;
     }
 
-#ifdef ADD_CHANGE_LOG
     item_clog_init(engine);
-#endif
 
     /* remove unused function warnings */
     if (1) {
@@ -6530,9 +6467,8 @@ void item_final(struct default_engine *engine)
         logger->log(EXTENSION_LOG_INFO, NULL,
                 "Waited %d ms for dumper to be stopped.\n", sleep_count);
     }
-#ifdef ADD_CHANGE_LOG
+
     item_clog_final(engine);
-#endif
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM module destroyed.\n");
 }
 
@@ -7782,9 +7718,7 @@ do_item_setattr_exec(struct default_engine *engine, hash_item *it,
         }
     }
 
-#ifdef ADD_CHANGE_LOG
     CLOG_ITEM_SETATTR(it, attr_ids, attr_count);
-#endif
 }
 
 ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
@@ -8708,9 +8642,7 @@ static void do_map_elem_replace(struct default_engine *engine, map_meta_info *in
     old_stotal = slabs_space_size(engine, do_map_elem_ntotal(old_elem));
     new_stotal = slabs_space_size(engine, do_map_elem_ntotal(new_elem));
 
-#ifdef ADD_CHANGE_LOG
     CLOG_MAP_ELEM_INSERT(info, old_elem, new_elem);
-#endif
 
     new_elem->next = old_elem->next;
     if (prev != NULL) {
@@ -8829,12 +8761,9 @@ static void do_map_elem_unlink(struct default_engine *engine,
     elem->next = (map_elem_item *)ADDR_MEANS_UNLINKED;
     node->hcnt[hidx] -= 1;
     node->tot_elem_cnt -= 1;
-
     info->ccnt--;
 
-#ifdef ADD_CHANGE_LOG
     CLOG_MAP_ELEM_DELETE(info, elem, cause);
-#endif
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(engine, do_map_elem_ntotal(elem));
@@ -9011,9 +8940,7 @@ static ENGINE_ERROR_CODE do_map_elem_update(struct default_engine *engine, map_m
         /* old body size == new body size */
         /* do in-place update */
         memcpy(elem->data + elem->nfield, value, nbytes);
-#ifdef ADD_CHANGE_LOG
         CLOG_MAP_ELEM_INSERT(info, elem, elem);
-#endif
     } else {
         /* old body size != new body size */
 #ifdef ENABLE_STICKY_ITEM
@@ -9123,9 +9050,7 @@ static ENGINE_ERROR_CODE do_map_elem_insert(struct default_engine *engine,
         return ret;
     }
 
-#ifdef ADD_CHANGE_LOG
     CLOG_MAP_ELEM_INSERT(info, NULL, elem);
-#endif
     return ENGINE_SUCCESS;
 }
 

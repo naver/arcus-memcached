@@ -16,7 +16,6 @@
  * limitations under the License.
  */
 #include "default_engine.h"
-#ifdef ADD_CHANGE_LOG
 #include "item_clog.h"
 
 bool item_clog_enabled = false;
@@ -187,4 +186,3 @@ void item_clog_set_enable(bool enable)
 {
     item_clog_enabled = enable;
 }
-#endif

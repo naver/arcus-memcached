@@ -18,7 +18,6 @@
 #ifndef ITEMS_H
 #define ITEMS_H
 
-#ifdef ADD_CHANGE_LOG
 /* item unlink cause */
 enum item_unlink_cause {
     ITEM_UNLINK_NORMAL = 1, /* unlink by normal request */
@@ -37,7 +36,6 @@ enum elem_delete_cause {
 
 /* get hash item address from collection info address */
 #define COLL_GET_HASH_ITEM(info) ((size_t*)(info) - (info)->itdist)
-#endif
 
 /* Item internal flag (1 byte) : item type and flag */
 /* 1) item type: increasing order (See ENGINE_ITEM_TYPE) */
