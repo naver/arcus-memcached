@@ -1094,7 +1094,7 @@ default_get_prefix_stats(ENGINE_HANDLE* handle, const void* cookie,
     struct default_engine *engine = get_handle(handle);
     ENGINE_ERROR_CODE ret;
 
-    ret = assoc_get_prefix_stats(engine, key, nkey, prefix_data);
+    ret = item_stats_prefixes(engine, key, nkey, prefix_data);
     return ret;
 }
 
