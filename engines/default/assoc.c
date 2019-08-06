@@ -44,50 +44,55 @@ typedef struct {
     uint32_t    hash;
 } prefix_t_list_elem;
 
+static struct engine_config *config=NULL; // engine config
+static struct assoc         *assocp=NULL; // engine assoc
+static SERVER_CORE_API      *svcore=NULL; // server core api
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 static prefix_t *root_pt = NULL; /* root prefix info */
 
 
 ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
 {
-    struct assoc *assoc = &engine->assoc;
-
+    /* initialize global variables */
+    config = &engine->config;
+    assocp = &engine->assoc;
+    svcore = engine->server.core;
     logger = engine->server.log->get_logger();
 
-    assoc->hashsize = hashsize(assoc->hashpower);
-    assoc->hashmask = hashmask(assoc->hashpower);
-    assoc->rootpower = 0;
-    assoc->rootsize = DEFAULT_ROOTSIZE;
+    assocp->hashsize = hashsize(assocp->hashpower);
+    assocp->hashmask = hashmask(assocp->hashpower);
+    assocp->rootpower = 0;
+    assocp->rootsize = DEFAULT_ROOTSIZE;
 
-    assoc->roottable = calloc(assoc->rootsize, sizeof(void *));
-    if (assoc->roottable == NULL) {
+    assocp->roottable = calloc(assocp->rootsize, sizeof(void *));
+    if (assocp->roottable == NULL) {
         return ENGINE_ENOMEM;
     }
 
-    assoc->roottable[0].hashtable = calloc(assoc->hashsize, sizeof(void*));
-    if (assoc->roottable[0].hashtable == NULL) {
-        free(assoc->roottable);
+    assocp->roottable[0].hashtable = calloc(assocp->hashsize, sizeof(void*));
+    if (assocp->roottable[0].hashtable == NULL) {
+        free(assocp->roottable);
         return ENGINE_ENOMEM;
     }
 
-    assoc->infotable = calloc(assoc->hashsize, sizeof(struct bucket_info));
-    if (assoc->infotable == NULL) {
-        free(assoc->roottable[0].hashtable);
-        free(assoc->roottable);
+    assocp->infotable = calloc(assocp->hashsize, sizeof(struct bucket_info));
+    if (assocp->infotable == NULL) {
+        free(assocp->roottable[0].hashtable);
+        free(assocp->roottable);
         return ENGINE_ENOMEM;
     }
 
-    assoc->prefix_hashtable = calloc(hashsize(DEFAULT_PREFIX_HASHPOWER), sizeof(void *));
-    if (assoc->prefix_hashtable == NULL) {
-        free(assoc->roottable[0].hashtable);
-        free(assoc->roottable);
-        free(assoc->infotable);
+    assocp->prefix_hashtable = calloc(hashsize(DEFAULT_PREFIX_HASHPOWER), sizeof(void *));
+    if (assocp->prefix_hashtable == NULL) {
+        free(assocp->roottable[0].hashtable);
+        free(assocp->roottable);
+        free(assocp->infotable);
         return ENGINE_ENOMEM;
     }
 
     // initialize noprefix stats info
-    memset(&assoc->noprefix_stats, 0, sizeof(prefix_t));
-    root_pt = &assoc->noprefix_stats;
+    memset(&assocp->noprefix_stats, 0, sizeof(prefix_t));
+    root_pt = &assocp->noprefix_stats;
 
     logger->log(EXTENSION_LOG_INFO, NULL, "ASSOC module initialized.\n");
     return ENGINE_SUCCESS;
@@ -95,55 +100,51 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
 
 void assoc_final(struct default_engine *engine)
 {
-    struct assoc *assoc = &engine->assoc;
     int ii, table_count;
 
-    free(assoc->roottable[0].hashtable);
-    for (ii=0; ii < assoc->rootpower; ++ii) {
+    free(assocp->roottable[0].hashtable);
+    for (ii=0; ii < assocp->rootpower; ++ii) {
          table_count = hashsize(ii); //2 ^ n
-         free(assoc->roottable[table_count].hashtable);
+         free(assocp->roottable[table_count].hashtable);
     }
-    free(assoc->roottable);
-    free(assoc->infotable);
-    free(assoc->prefix_hashtable);
+    free(assocp->roottable);
+    free(assocp->infotable);
+    free(assocp->prefix_hashtable);
     logger->log(EXTENSION_LOG_INFO, NULL, "ASSOC module destroyed.\n");
 }
 
-static void redistribute(struct default_engine *engine, unsigned int bucket)
+static void redistribute(unsigned int bucket)
 {
-    struct assoc *assoc = &engine->assoc;
     hash_item *it, **prev;
     uint32_t tabidx;
-    uint32_t ii, table_count = hashsize(assoc->infotable[bucket].curpower);
+    uint32_t ii, table_count = hashsize(assocp->infotable[bucket].curpower);
 
     for (ii=0; ii < table_count; ++ii) {
-         prev = &assoc->roottable[ii].hashtable[bucket];
+         prev = &assocp->roottable[ii].hashtable[bucket];
          while (*prev != NULL) {
              it = *prev;
-             tabidx = GET_HASH_TABIDX(it->khash, assoc->hashpower, hashmask(assoc->rootpower));
+             tabidx = GET_HASH_TABIDX(it->khash, assocp->hashpower, hashmask(assocp->rootpower));
              if (tabidx == ii) {
                  prev = &it->h_next;
              } else {
                  *prev = it->h_next;
-                 it->h_next = assoc->roottable[tabidx].hashtable[bucket];
-                 assoc->roottable[tabidx].hashtable[bucket] = it;
+                 it->h_next = assocp->roottable[tabidx].hashtable[bucket];
+                 assocp->roottable[tabidx].hashtable[bucket] = it;
              }
          }
     }
-    assoc->infotable[bucket].curpower = assoc->rootpower;
+    assocp->infotable[bucket].curpower = assocp->rootpower;
 }
 
-hash_item *assoc_find(struct default_engine *engine, uint32_t hash,
-                      const char *key, const size_t nkey)
+hash_item *assoc_find(const char *key, const uint32_t nkey, uint32_t hash)
 {
-    struct assoc *assoc = &engine->assoc;
     hash_item *it;
     int depth = 0;
-    uint32_t bucket = GET_HASH_BUCKET(hash, assoc->hashmask);
-    uint32_t tabidx = GET_HASH_TABIDX(hash, assoc->hashpower,
-                                      hashmask(assoc->infotable[bucket].curpower));
+    uint32_t bucket = GET_HASH_BUCKET(hash, assocp->hashmask);
+    uint32_t tabidx = GET_HASH_TABIDX(hash, assocp->hashpower,
+                                      hashmask(assocp->infotable[bucket].curpower));
 
-    it = assoc->roottable[tabidx].hashtable[bucket];
+    it = assocp->roottable[tabidx].hashtable[bucket];
     while (it) {
         if ((hash == it->khash) && (nkey == it->nkey) &&
             (memcmp(key, item_get_key(it), nkey) == 0)) {
@@ -158,16 +159,14 @@ hash_item *assoc_find(struct default_engine *engine, uint32_t hash,
 
 /* returns the address of the item pointer before the key.  if *item == 0,
    the item wasn't found */
-static hash_item** _hashitem_before(struct default_engine *engine, uint32_t hash,
-                                    const char *key, const size_t nkey)
+static hash_item** _hashitem_before(const char *key, const uint32_t nkey, uint32_t hash)
 {
-    struct assoc *assoc = &engine->assoc;
     hash_item **pos;
-    uint32_t bucket = GET_HASH_BUCKET(hash, assoc->hashmask);
-    uint32_t tabidx = GET_HASH_TABIDX(hash, assoc->hashpower,
-                                      hashmask(assoc->infotable[bucket].curpower));
+    uint32_t bucket = GET_HASH_BUCKET(hash, assocp->hashmask);
+    uint32_t tabidx = GET_HASH_TABIDX(hash, assocp->hashpower,
+                                      hashmask(assocp->infotable[bucket].curpower));
 
-    pos = &assoc->roottable[tabidx].hashtable[bucket];
+    pos = &assocp->roottable[tabidx].hashtable[bucket];
     while (*pos && ((nkey != (*pos)->nkey) || memcmp(key, item_get_key(*pos), nkey))) {
         pos = &(*pos)->h_next;
     }
@@ -175,70 +174,67 @@ static hash_item** _hashitem_before(struct default_engine *engine, uint32_t hash
 }
 
 /* grows the hashtable to the next power of 2. */
-static void assoc_expand(struct default_engine *engine)
+static void assoc_expand(void)
 {
-    struct assoc *assoc = &engine->assoc;
     hash_item** new_hashtable;
-    uint32_t ii, table_count = hashsize(assoc->rootpower); // 2 ^ n
+    uint32_t ii, table_count = hashsize(assocp->rootpower); // 2 ^ n
 
-    if (table_count * 2 > assoc->rootsize) {
-        struct table *reallocated_roottable = realloc(assoc->roottable, sizeof(void*) * assoc->rootsize * 2);
+    if (table_count * 2 > assocp->rootsize) {
+        struct table *reallocated_roottable = realloc(assocp->roottable, sizeof(void*) * assocp->rootsize * 2);
         if (reallocated_roottable == NULL) {
             return;
         }
-        assoc->roottable = reallocated_roottable;
-        assoc->rootsize *= 2;
+        assocp->roottable = reallocated_roottable;
+        assocp->rootsize *= 2;
     }
-    new_hashtable = calloc(assoc->hashsize * table_count, sizeof(void *));
+    new_hashtable = calloc(assocp->hashsize * table_count, sizeof(void *));
     if (new_hashtable) {
         for (ii=0; ii < table_count; ++ii) {
-            assoc->roottable[table_count+ii].hashtable = &new_hashtable[assoc->hashsize*ii];
+            assocp->roottable[table_count+ii].hashtable = &new_hashtable[assocp->hashsize*ii];
         }
-        assoc->rootpower++;
+        assocp->rootpower++;
     }
 }
 
 /* Note: this isn't an assoc_update.  The key must not already exist to call this */
-int assoc_insert(struct default_engine *engine, uint32_t hash, hash_item *it)
+int assoc_insert(hash_item *it, uint32_t hash)
 {
-    struct assoc *assoc = &engine->assoc;
-    uint32_t bucket = GET_HASH_BUCKET(hash, assoc->hashmask);
+    uint32_t bucket = GET_HASH_BUCKET(hash, assocp->hashmask);
     uint32_t tabidx;
 
-    assert(assoc_find(engine, hash, item_get_key(it), it->nkey) == 0); /* shouldn't have duplicately named things defined */
+    assert(assoc_find(item_get_key(it), it->nkey, hash) == 0); /* shouldn't have duplicately named things defined */
 
-    if (assoc->infotable[bucket].curpower != assoc->rootpower &&
-        assoc->infotable[bucket].refcount == 0) {
-        redistribute(engine, bucket);
+    if (assocp->infotable[bucket].curpower != assocp->rootpower &&
+        assocp->infotable[bucket].refcount == 0) {
+        redistribute(bucket);
     }
-    tabidx = GET_HASH_TABIDX(hash, assoc->hashpower,
-                             hashmask(assoc->infotable[bucket].curpower));
+    tabidx = GET_HASH_TABIDX(hash, assocp->hashpower,
+                             hashmask(assocp->infotable[bucket].curpower));
 
     // inserting actual hash_item to appropriate assoc_t
-    it->h_next = assoc->roottable[tabidx].hashtable[bucket];
-    assoc->roottable[tabidx].hashtable[bucket] = it;
+    it->h_next = assocp->roottable[tabidx].hashtable[bucket];
+    assocp->roottable[tabidx].hashtable[bucket] = it;
 
-    assoc->hash_items++;
-    if (assoc->hash_items > (hashsize(assoc->hashpower + assoc->rootpower) * 3) / 2) {
-        assoc_expand(engine);
+    assocp->hash_items++;
+    if (assocp->hash_items > (hashsize(assocp->hashpower + assocp->rootpower) * 3) / 2) {
+        assoc_expand();
     }
-    MEMCACHED_ASSOC_INSERT(item_get_key(it), it->nkey, assoc->hash_items);
+    MEMCACHED_ASSOC_INSERT(item_get_key(it), it->nkey, assocp->hash_items);
     return 1;
 }
 
-void assoc_delete(struct default_engine *engine, uint32_t hash,
-                  const char *key, const size_t nkey)
+void assoc_delete(const char *key, const uint32_t nkey, uint32_t hash)
 {
-    hash_item **before = _hashitem_before(engine, hash, key, nkey);
+    hash_item **before = _hashitem_before(key, nkey, hash);
 
     if (*before) {
         hash_item *nxt;
-        engine->assoc.hash_items--;
+        assocp->hash_items--;
 
        /* The DTrace probe cannot be triggered as the last instruction
          * due to possible tail-optimization by the compiler
          */
-        MEMCACHED_ASSOC_DELETE(key, nkey, engine->assoc.hash_items);
+        MEMCACHED_ASSOC_DELETE(key, nkey, assocp->hash_items);
         nxt = (*before)->h_next;
         (*before)->h_next = 0;   /* probably pointless, but whatever. */
         *before = nxt;
@@ -273,10 +269,10 @@ static void _link_scan_placeholder(struct assoc_scan *scan, hash_item *item)
     scan->ph_linked = true;
 }
 
-static hash_item *_unlink_scan_placeholder(struct assoc_scan *scan, struct assoc *assoc)
+static hash_item *_unlink_scan_placeholder(struct assoc_scan *scan)
 {
     /* unlink the placeholder item and return the next item */
-    hash_item **p = &assoc->roottable[scan->tabidx].hashtable[scan->bucket];
+    hash_item **p = &assocp->roottable[scan->tabidx].hashtable[scan->bucket];
     assert(*p != NULL);
     while (*p != &scan->ph_item)
         p = &((*p)->h_next);
@@ -285,11 +281,10 @@ static hash_item *_unlink_scan_placeholder(struct assoc_scan *scan, struct assoc
     return *p;
 }
 
-void assoc_scan_init(struct default_engine *engine, struct assoc_scan *scan)
+void assoc_scan_init(struct assoc_scan *scan)
 {
     /* initialize assoc_scan structure */
-    scan->engine = engine;
-    scan->hashsz = engine->assoc.hashsize;
+    scan->hashsz = assocp->hashsize;
     scan->bucket = 0;
     scan->tabcnt = 0; /* 0 means the scan on the current
                        * bucket chain has not yet started.
@@ -301,7 +296,6 @@ void assoc_scan_init(struct default_engine *engine, struct assoc_scan *scan)
 int assoc_scan_next(struct assoc_scan *scan, hash_item **item_array, int array_size)
 {
     assert(scan->initialized && array_size > 0);
-    struct assoc *assoc = &scan->engine->assoc;
     hash_item *next;
     int item_count = 0;
     int scan_cost = 0;
@@ -311,11 +305,11 @@ int assoc_scan_next(struct assoc_scan *scan, hash_item **item_array, int array_s
     {
         if (scan->tabcnt == 0) {
             /* start the scan on the current bucket */
-            scan->tabcnt = hashsize(assoc->infotable[scan->bucket].curpower);
+            scan->tabcnt = hashsize(assocp->infotable[scan->bucket].curpower);
             scan->tabidx = 0;
             assert(scan->tabcnt > 0);
             /* increment bucket's reference count */
-            assoc->infotable[scan->bucket].refcount += 1;
+            assocp->infotable[scan->bucket].refcount += 1;
         }
 
         while (scan->tabidx < scan->tabcnt) {
@@ -324,9 +318,9 @@ int assoc_scan_next(struct assoc_scan *scan, hash_item **item_array, int array_s
                 scan_done = true;  break;
             }
             if (scan->ph_linked) {
-                next = _unlink_scan_placeholder(scan, assoc);
+                next = _unlink_scan_placeholder(scan);
             } else {
-                next = assoc->roottable[scan->tabidx].hashtable[scan->bucket];
+                next = assocp->roottable[scan->tabidx].hashtable[scan->bucket];
             }
             scan_cost++;
             while (next != NULL) {
@@ -353,7 +347,7 @@ int assoc_scan_next(struct assoc_scan *scan, hash_item **item_array, int array_s
 
         /* finish the scan on the current bucket */
         /* decrement bucket's reference count */
-        assoc->infotable[scan->bucket].refcount -= 1;
+        assocp->infotable[scan->bucket].refcount -= 1;
         /* goto the next bucket */
         scan->bucket += 1;
         scan->tabcnt = 0;
@@ -370,11 +364,11 @@ void assoc_scan_final(struct assoc_scan *scan)
     assert(scan->initialized);
 
     if (scan->ph_linked) {
-        (void)_unlink_scan_placeholder(scan, &scan->engine->assoc);
+        (void)_unlink_scan_placeholder(scan);
     }
     if (scan->bucket < scan->hashsz) {
         /* decrement bucket's reference count */
-        scan->engine->assoc.infotable[scan->bucket].refcount -= 1;
+        assocp->infotable[scan->bucket].refcount -= 1;
     }
     scan->initialized = false;
 }
@@ -387,10 +381,9 @@ static inline void *_get_prefix(prefix_t *prefix)
     return (void*)(prefix + 1);
 }
 
-prefix_t *assoc_prefix_find(struct default_engine *engine, uint32_t hash,
-                            const char *prefix, const int nprefix)
+static prefix_t *_prefix_find(const char *prefix, const int nprefix, uint32_t hash)
 {
-    prefix_t *pt = engine->assoc.prefix_hashtable[hash & hashmask(DEFAULT_PREFIX_HASHPOWER)];
+    prefix_t *pt = assocp->prefix_hashtable[hash & hashmask(DEFAULT_PREFIX_HASHPOWER)];
     while (pt) {
         if ((nprefix == pt->nprefix) && (memcmp(prefix, _get_prefix(pt), nprefix) == 0)) {
             return pt;
@@ -400,30 +393,29 @@ prefix_t *assoc_prefix_find(struct default_engine *engine, uint32_t hash,
     return NULL;
 }
 
-static int _prefix_insert(struct default_engine *engine, uint32_t hash, prefix_t *pt)
+static int _prefix_insert(prefix_t *pt, uint32_t hash)
 {
-    assert(assoc_prefix_find(engine, hash, _get_prefix(pt), pt->nprefix) == NULL);
+    assert(_prefix_find(_get_prefix(pt), pt->nprefix, hash) == NULL);
 
 #ifdef NEW_PREFIX_STATS_MANAGEMENT
-    (void)engine->server.core->prefix_stats_insert(_get_prefix(pt), pt->nprefix);
+    (void)svcore->prefix_stats_insert(_get_prefix(pt), pt->nprefix);
 #endif
 
     int bucket = hash & hashmask(DEFAULT_PREFIX_HASHPOWER);
-    pt->h_next = engine->assoc.prefix_hashtable[bucket];
-    engine->assoc.prefix_hashtable[bucket] = pt;
+    pt->h_next = assocp->prefix_hashtable[bucket];
+    assocp->prefix_hashtable[bucket] = pt;
 
     assert(pt->parent_prefix != NULL);
     pt->parent_prefix->prefix_items++;
-    engine->assoc.tot_prefix_items++;
+    assocp->tot_prefix_items++;
     return 1;
 }
 
-static void _prefix_delete(struct default_engine *engine, uint32_t hash,
-                           const char *prefix, const int nprefix)
+static void _prefix_delete(const char *prefix, const int nprefix, uint32_t hash)
 {
     int bucket = hash & hashmask(DEFAULT_PREFIX_HASHPOWER);
     prefix_t *prev_pt = NULL;
-    prefix_t *pt = engine->assoc.prefix_hashtable[bucket];
+    prefix_t *pt = assocp->prefix_hashtable[bucket];
     while (pt) {
         if ((nprefix == pt->nprefix) && (memcmp(prefix, _get_prefix(pt), nprefix) == 0))
             break; /* found */
@@ -432,24 +424,28 @@ static void _prefix_delete(struct default_engine *engine, uint32_t hash,
     if (pt) {
         assert(pt->parent_prefix != NULL);
         pt->parent_prefix->prefix_items--;
-        engine->assoc.tot_prefix_items--;
+        assocp->tot_prefix_items--;
 
         /* unlink and free the prefix structure */
         if (prev_pt) prev_pt->h_next = pt->h_next;
-        else         engine->assoc.prefix_hashtable[bucket] = pt->h_next;
+        else         assocp->prefix_hashtable[bucket] = pt->h_next;
         free(pt);
 
 #ifdef NEW_PREFIX_STATS_MANAGEMENT
-        (void)engine->server.core->prefix_stats_delete(prefix, nprefix);
+        (void)svcore->prefix_stats_delete(prefix, nprefix);
 #endif
     }
 }
 
-ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it,
-                                    const size_t item_size)
+prefix_t *assoc_prefix_find(const char *prefix, const int nprefix, uint32_t hash)
+{
+    return _prefix_find(prefix, nprefix, hash);
+}
+
+ENGINE_ERROR_CODE assoc_prefix_link(hash_item *it, const uint32_t item_size)
 {
     const char *key = item_get_key(it);
-    size_t     nkey = it->nkey;
+    uint32_t   nkey = it->nkey;
     int prefix_depth = 0;
     int i = 0;
     char *token;
@@ -457,7 +453,7 @@ ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it
     prefix_t_list_elem prefix_list[DEFAULT_PREFIX_MAX_DEPTH];
 
     // prefix discovering: we don't even know prefix existence at this time
-    while ((token = memchr(key+i+1, engine->config.prefix_delimiter, nkey-i-1)) != NULL) {
+    while ((token = memchr(key+i+1, config->prefix_delimiter, nkey-i-1)) != NULL) {
         i = token - key;
         prefix_list[prefix_depth].nprefix = i;
 
@@ -474,8 +470,8 @@ ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it
         it->pfxptr = pt;
     } else {
         for (i = prefix_depth - 1; i >= 0; i--) {
-            prefix_list[i].hash = engine->server.core->hash(key, prefix_list[i].nprefix, 0);
-            pt = assoc_prefix_find(engine, prefix_list[i].hash, key, prefix_list[i].nprefix);
+            prefix_list[i].hash = svcore->hash(key, prefix_list[i].nprefix, 0);
+            pt = _prefix_find(key, prefix_list[i].nprefix, prefix_list[i].hash);
             if (pt != NULL) break;
         }
 
@@ -496,7 +492,7 @@ ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it
                 if (pt == NULL) {
                     for (j = j - 1; j >= i + 1; j--) {
                         assert(prefix_list[j].pt != NULL);
-                        _prefix_delete(engine, prefix_list[j].hash, key, prefix_list[j].nprefix);
+                        _prefix_delete(key, prefix_list[j].nprefix, prefix_list[j].hash);
                     }
                     return ENGINE_ENOMEM;
                 }
@@ -513,7 +509,7 @@ ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it
                 time(&pt->create_time);
 
                 // registering allocated prefixes to prefix hastable
-                _prefix_insert(engine, prefix_list[j].hash, pt);
+                _prefix_insert(pt, prefix_list[j].hash);
                 prefix_list[j].pt = pt;
             }
         }
@@ -542,8 +538,7 @@ ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it
     return ENGINE_SUCCESS;
 }
 
-void assoc_prefix_unlink(struct default_engine *engine, hash_item *it,
-                         const size_t item_size, bool drop_if_empty)
+void assoc_prefix_unlink(hash_item *it, const uint32_t item_size, bool drop_if_empty)
 {
     prefix_t *pt = it->pfxptr;
     it->pfxptr = NULL;
@@ -573,16 +568,15 @@ void assoc_prefix_unlink(struct default_engine *engine, hash_item *it,
             if (pt->prefix_items > 0 || pt->total_count_exclusive > 0)
                 break; /* NOT empty */
             assert(pt->total_bytes_exclusive == 0);
-            _prefix_delete(engine, engine->server.core->hash(_get_prefix(pt), pt->nprefix, 0),
-                           _get_prefix(pt), pt->nprefix);
+            _prefix_delete(_get_prefix(pt), pt->nprefix,
+                           svcore->hash(_get_prefix(pt), pt->nprefix, 0));
 
             pt = parent_pt;
         }
     }
 }
 
-void assoc_prefix_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
-                             const size_t bytes)
+void assoc_prefix_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t bytes)
 {
     /* It's called when a collection element is inserted */
     assert(item_type > ITEM_TYPE_KV && item_type < ITEM_TYPE_MAX);
@@ -600,8 +594,7 @@ void assoc_prefix_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
 #endif
 }
 
-void assoc_prefix_bytes_decr(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
-                             const size_t bytes)
+void assoc_prefix_bytes_decr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t bytes)
 {
     /* It's called when a collection element is removed */
     assert(item_type > ITEM_TYPE_KV && item_type < ITEM_TYPE_MAX);
@@ -635,14 +628,14 @@ bool assoc_prefix_isvalid(hash_item *it, rel_time_t current_time)
 }
 
 #if 0 // might be used later
-static uint32_t do_assoc_count_invalid_prefix(struct default_engine *engine)
+static uint32_t do_assoc_count_invalid_prefix(void)
 {
     prefix_t *pt;
     uint32_t i, size = hashsize(DEFAULT_PREFIX_HASHPOWER);
     uint32_t invalid_prefix = 0;
 
     for (i = 0; i < size; i++) {
-        pt = engine->assoc.prefix_hashtable[i];
+        pt = assocp->prefix_hashtable[i];
         while (pt) {
             if (pt->prefix_items == 0 && pt->total_count_exclusive == 0)
                 invalid_prefix++;
@@ -653,11 +646,8 @@ static uint32_t do_assoc_count_invalid_prefix(struct default_engine *engine)
 }
 #endif
 
-ENGINE_ERROR_CODE assoc_prefix_get_stats(struct default_engine *engine,
-                                         const char *prefix, const int nprefix,
-                                         void *prefix_data)
+ENGINE_ERROR_CODE assoc_prefix_get_stats(const char *prefix, const int nprefix, void *prefix_data)
 {
-    struct assoc *assoc = &engine->assoc;
     prefix_t *pt;
 
     if (nprefix < 0) /* all prefix stats */
@@ -669,7 +659,7 @@ ENGINE_ERROR_CODE assoc_prefix_get_stats(struct default_engine *engine,
         char *buffer;
         struct tm *t;
         uint32_t prefix_hsize = hashsize(DEFAULT_PREFIX_HASHPOWER);
-        uint32_t num_prefixes = assoc->tot_prefix_items;
+        uint32_t num_prefixes = assocp->tot_prefix_items;
         uint32_t sum_nameleng = 0; /* sum of prefix name length */
         uint32_t i, buflen, pos;
 
@@ -681,7 +671,7 @@ ENGINE_ERROR_CODE assoc_prefix_get_stats(struct default_engine *engine,
             sum_nameleng += strlen("<null>");
         }
         for (i = 0; i < prefix_hsize; i++) {
-            pt = assoc->prefix_hashtable[i];
+            pt = assocp->prefix_hashtable[i];
             while (pt) {
                 sum_nameleng += pt->nprefix;
                 pt = pt->h_next;
@@ -706,7 +696,7 @@ ENGINE_ERROR_CODE assoc_prefix_get_stats(struct default_engine *engine,
 
         /* write prefix stats in the buffer */
         pos = sizeof(uint32_t);
-        if (num_prefixes > assoc->tot_prefix_items) { /* include root prefix */
+        if (num_prefixes > assocp->tot_prefix_items) { /* include root prefix */
             pt = root_pt;
             t = localtime(&pt->create_time);
             pos += snprintf(buffer+pos, buflen-pos, format, "<null>",
@@ -727,7 +717,7 @@ ENGINE_ERROR_CODE assoc_prefix_get_stats(struct default_engine *engine,
             assert(pos < buflen);
         }
         for (i = 0; i < prefix_hsize; i++) {
-            pt = assoc->prefix_hashtable[i];
+            pt = assocp->prefix_hashtable[i];
             while (pt) {
                 t = localtime(&pt->create_time);
                 pos += snprintf(buffer+pos, buflen-pos, format, _get_prefix(pt),
@@ -759,8 +749,7 @@ ENGINE_ERROR_CODE assoc_prefix_get_stats(struct default_engine *engine,
         prefix_engine_stats *prefix_stats = (prefix_engine_stats*)prefix_data;
 
         if (prefix != NULL) {
-            pt = assoc_prefix_find(engine, engine->server.core->hash(prefix,nprefix,0),
-                                   prefix, nprefix);
+            pt = _prefix_find(prefix, nprefix, svcore->hash(prefix,nprefix,0));
         } else {
             pt = root_pt;
         }
@@ -774,7 +763,7 @@ ENGINE_ERROR_CODE assoc_prefix_get_stats(struct default_engine *engine,
         if (prefix != NULL)
             prefix_stats->tot_prefix_items = pt->prefix_items;
         else
-            prefix_stats->tot_prefix_items = assoc->tot_prefix_items;
+            prefix_stats->tot_prefix_items = assocp->tot_prefix_items;
     }
     return ENGINE_SUCCESS;
 }

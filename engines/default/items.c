@@ -39,12 +39,12 @@
 //#define BTREE_DELETE_NO_MERGE
 
 /* Forward Declarations */
-static void item_link_q(struct default_engine *engine, hash_item *it);
-static void item_unlink_q(struct default_engine *engine, hash_item *it);
+static void item_link_q(hash_item *it);
+static void item_unlink_q(hash_item *it);
 static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *it);
 static void do_item_unlink(struct default_engine *engine, hash_item *it, enum item_unlink_cause cause);
-static void do_coll_all_elem_delete(struct default_engine *engine, hash_item *it);
-static uint32_t do_map_elem_delete(struct default_engine *engine, map_meta_info *info,
+static void do_coll_all_elem_delete(hash_item *it);
+static uint32_t do_map_elem_delete(map_meta_info *info,
                                    const uint32_t count, enum elem_delete_cause cause);
 
 extern int genhash_string_hash(const void* p, size_t nkey);
@@ -159,6 +159,10 @@ static pthread_cond_t  coll_del_cond;
 static bool            coll_del_sleep;
 static pthread_t       coll_del_tid; /* thread id */
 
+static struct engine_config *config=NULL; // engine config
+static struct items         *itemsp=NULL;
+static struct engine_stats  *statsp=NULL;
+static SERVER_CORE_API      *svcore=NULL; // server core api
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
 /* map element previous info internally used */
@@ -195,7 +199,7 @@ static inline void ITEM_REFCOUNT_DECR(hash_item *it)
 }
 
 /* warning: don't use these macros with a function, as it evals its arg twice */
-static inline size_t ITEM_ntotal(struct default_engine *engine, const hash_item *item)
+static inline size_t ITEM_ntotal(const hash_item *item)
 {
     size_t ret;
     if (IS_COLL_ITEM(item)) {
@@ -207,15 +211,15 @@ static inline size_t ITEM_ntotal(struct default_engine *engine, const hash_item 
     } else {
         ret = sizeof(*item) + item->nkey + item->nbytes;
     }
-    if (engine->config.use_cas) {
+    if (config->use_cas) {
         ret += sizeof(uint64_t);
     }
     return ret;
 }
 
-static inline size_t ITEM_stotal(struct default_engine *engine, const hash_item *item)
+static inline size_t ITEM_stotal(const hash_item *item)
 {
-    size_t ntotal = ITEM_ntotal(engine, item);
+    size_t ntotal = ITEM_ntotal(item);
     size_t stotal = slabs_space_size(ntotal);
     if (IS_COLL_ITEM(item)) {
         coll_meta_info *info = (coll_meta_info *)item_get_meta(item);
@@ -241,39 +245,39 @@ static uint64_t get_cas_id(void)
 # define DEBUG_REFCNT(it,op) while(0)
 #endif
 
-static void increase_collection_space(struct default_engine *engine, ENGINE_ITEM_TYPE item_type,
+static void increase_collection_space(ENGINE_ITEM_TYPE item_type,
                                       coll_meta_info *info, const size_t inc_space)
 {
     info->stotal += inc_space;
     /* Currently, stats.lock is useless since global cache lock is held. */
-    //pthread_mutex_lock(&engine->stats.lock);
+    //pthread_mutex_lock(&statsp->lock);
     hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
 #ifdef ENABLE_STICKY_ITEM
     if (it->exptime == (rel_time_t)-1) {
-        engine->stats.sticky_bytes += inc_space;
+        statsp->sticky_bytes += inc_space;
     }
 #endif
     assoc_prefix_bytes_incr(it->pfxptr, item_type, inc_space);
-    engine->stats.curr_bytes += inc_space;
-    //pthread_mutex_unlock(&engine->stats.lock);
+    statsp->curr_bytes += inc_space;
+    //pthread_mutex_unlock(&statsp->lock);
 }
 
-static void decrease_collection_space(struct default_engine *engine, ENGINE_ITEM_TYPE item_type,
+static void decrease_collection_space(ENGINE_ITEM_TYPE item_type,
                                       coll_meta_info *info, const size_t dec_space)
 {
     assert(info->stotal >= dec_space);
     info->stotal -= dec_space;
     /* Currently, stats.lock is useless since global cache lock is held. */
-    //pthread_mutex_lock(&engine->stats.lock);
+    //pthread_mutex_lock(&statsp->lock);
     hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
 #ifdef ENABLE_STICKY_ITEM
     if (it->exptime == (rel_time_t)-1) {
-        engine->stats.sticky_bytes -= dec_space;
+        statsp->sticky_bytes -= dec_space;
     }
 #endif
     assoc_prefix_bytes_decr(it->pfxptr, item_type, dec_space);
-    engine->stats.curr_bytes -= dec_space;
-    //pthread_mutex_unlock(&engine->stats.lock);
+    statsp->curr_bytes -= dec_space;
+    //pthread_mutex_unlock(&statsp->lock);
 }
 
 /*
@@ -315,7 +319,7 @@ static hash_item *pop_coll_del_queue(void)
     return it;
 }
 
-static bool do_item_isvalid(struct default_engine *engine, hash_item *it, rel_time_t current_time)
+static bool do_item_isvalid(hash_item *it, rel_time_t current_time)
 {
     /* check if it's expired */
 #ifdef ENABLE_STICKY_ITEM
@@ -327,8 +331,8 @@ static bool do_item_isvalid(struct default_engine *engine, hash_item *it, rel_ti
         return false; /* expired */
     }
     /* check flushed items as well as expired items */
-    if (engine->config.oldest_live != 0) {
-        if (engine->config.oldest_live <= current_time && it->time <= engine->config.oldest_live)
+    if (config->oldest_live != 0) {
+        if (config->oldest_live <= current_time && it->time <= config->oldest_live)
             return false; /* flushed by flush_all */
     }
     /* check if prefix is valid */
@@ -343,17 +347,17 @@ static hash_item *do_item_reclaim(struct default_engine *engine, hash_item *it,
                                   const unsigned int lruid)
 {
     /* increment # of reclaimed */
-    pthread_mutex_lock(&engine->stats.lock);
-    engine->stats.reclaimed++;
-    pthread_mutex_unlock(&engine->stats.lock);
-    engine->items.itemstats[lruid].reclaimed++;
+    pthread_mutex_lock(&statsp->lock);
+    statsp->reclaimed++;
+    pthread_mutex_unlock(&statsp->lock);
+    itemsp->itemstats[lruid].reclaimed++;
 
     /* it->refcount == 0 */
 #ifdef USE_SINGLE_LRU_LIST
 #else
     if (lruid != LRU_CLSID_FOR_SMALL) {
         it->refcount = 1;
-        slabs_adjust_mem_requested(it->slabs_clsid, ITEM_ntotal(engine,it), ntotal);
+        slabs_adjust_mem_requested(it->slabs_clsid, ITEM_ntotal(it), ntotal);
         do_item_unlink(engine, it, ITEM_UNLINK_INVALID);
         /* Initialize the item block: */
         it->slabs_clsid = 0;
@@ -363,7 +367,7 @@ static hash_item *do_item_reclaim(struct default_engine *engine, hash_item *it,
     /* collection item or small-sized kv item */
 #endif
     if (IS_COLL_ITEM(it))
-        do_coll_all_elem_delete(engine, it);
+        do_coll_all_elem_delete(it);
     do_item_unlink(engine, it, ITEM_UNLINK_INVALID);
 
     /* allocate from slab allocator */
@@ -376,21 +380,21 @@ static void do_item_evict(struct default_engine *engine, hash_item *it,
                           rel_time_t current_time, const void *cookie)
 {
     /* increment # of evicted */
-    engine->items.itemstats[lruid].evicted++;
-    engine->items.itemstats[lruid].evicted_time = current_time - it->time;
+    itemsp->itemstats[lruid].evicted++;
+    itemsp->itemstats[lruid].evicted_time = current_time - it->time;
     if (it->exptime != 0) {
-        engine->items.itemstats[lruid].evicted_nonzero++;
+        itemsp->itemstats[lruid].evicted_nonzero++;
     }
-    pthread_mutex_lock(&engine->stats.lock);
-    engine->stats.evictions++;
-    pthread_mutex_unlock(&engine->stats.lock);
+    pthread_mutex_lock(&statsp->lock);
+    statsp->evictions++;
+    pthread_mutex_unlock(&statsp->lock);
     if (cookie != NULL) {
         engine->server.stat->evicting(cookie, item_get_key(it), it->nkey);
     }
 
     /* unlink the item */
     if (IS_COLL_ITEM(it))
-        do_coll_all_elem_delete(engine, it);
+        do_coll_all_elem_delete(it);
     do_item_unlink(engine, it, ITEM_UNLINK_EVICT);
 }
 
@@ -398,13 +402,13 @@ static void do_item_repair(struct default_engine *engine, hash_item *it,
                            const unsigned int lruid)
 {
     /* increment # of repaired */
-    engine->items.itemstats[lruid].tailrepairs++;
+    itemsp->itemstats[lruid].tailrepairs++;
     it->refcount = 0;
     it->refchunk = 0;
 
     /* unlink the item */
     if (IS_COLL_ITEM(it))
-        do_coll_all_elem_delete(engine, it);
+        do_coll_all_elem_delete(it);
     do_item_unlink(engine, it, ITEM_UNLINK_EVICT);
 }
 
@@ -412,15 +416,15 @@ static void do_item_invalidate(struct default_engine *engine, hash_item *it,
                                const unsigned int lruid, bool immediate)
 {
     /* increment # of reclaimed */
-    pthread_mutex_lock(&engine->stats.lock);
-    engine->stats.reclaimed++;
-    pthread_mutex_unlock(&engine->stats.lock);
-    engine->items.itemstats[lruid].reclaimed++;
+    pthread_mutex_lock(&statsp->lock);
+    statsp->reclaimed++;
+    pthread_mutex_unlock(&statsp->lock);
+    itemsp->itemstats[lruid].reclaimed++;
 
     /* it->refcount == 0 */
     if (immediate) {
         if (IS_COLL_ITEM(it)) {
-            do_coll_all_elem_delete(engine, it);
+            do_coll_all_elem_delete(it);
         }
     }
     do_item_unlink(engine, it, ITEM_UNLINK_INVALID);
@@ -437,7 +441,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
     hash_item *search;
     hash_item *previt = NULL;
 
-    rel_time_t current_time = engine->server.core->get_current_time();
+    rel_time_t current_time = svcore->get_current_time();
 
 #ifdef USE_SINGLE_LRU_LIST
     unsigned int id = 1;
@@ -469,19 +473,19 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         && item_evict_to_free == true)
     {
         tries  = space_shortage_level;
-        search = engine->items.tails[id];
+        search = itemsp->tails[id];
         while (search != NULL) {
             assert(search->nkey > 0);
             previt = search->prev;
             if (search->refcount == 0) {
-                if (do_item_isvalid(engine, search, current_time) == false) {
+                if (do_item_isvalid(search, current_time) == false) {
                     do_item_invalidate(engine, search, id, true);
                 } else {
                     do_item_evict(engine, search, id, current_time, cookie);
                 }
             } else { /* search->refcount > 0 */
                 /* just unlink the item from LRU list. */
-                item_unlink_q(engine, search);
+                item_unlink_q(search);
             }
             search = previt;
             if ((--tries) == 0) break;
@@ -490,13 +494,13 @@ static void *do_item_alloc_internal(struct default_engine *engine,
 
 #ifdef ENABLE_STICKY_ITEM
     /* reclaim the flushed sticky items */
-    if (engine->items.sticky_curMK[id] != NULL) {
+    if (itemsp->sticky_curMK[id] != NULL) {
         tries = 20;
-        while (engine->items.sticky_curMK[id] != NULL) {
-            search = engine->items.sticky_curMK[id];
-            engine->items.sticky_curMK[id] = search->prev;
+        while (itemsp->sticky_curMK[id] != NULL) {
+            search = itemsp->sticky_curMK[id];
+            itemsp->sticky_curMK[id] = search->prev;
             if (search->refcount == 0 &&
-                do_item_isvalid(engine, search, current_time) == false) {
+                do_item_isvalid(search, current_time) == false) {
                 it = do_item_reclaim(engine, search, ntotal, clsid_based_on_ntotal, id);
                 if (it != NULL) break; /* allocated */
             }
@@ -504,9 +508,9 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         }
         if (it != NULL) {
             /* try one more invalidation */
-            search = engine->items.sticky_curMK[id];
+            search = itemsp->sticky_curMK[id];
             if (search != NULL && search->refcount == 0 &&
-                do_item_isvalid(engine, search, current_time) == false) {
+                do_item_isvalid(search, current_time) == false) {
                 do_item_invalidate(engine, search, id, false);
             }
             it->slabs_clsid = 0;
@@ -515,21 +519,21 @@ static void *do_item_alloc_internal(struct default_engine *engine,
     }
 #endif
 
-    if (engine->items.curMK[id] != NULL) {
-        assert(engine->items.lowMK[id] != NULL);
+    if (itemsp->curMK[id] != NULL) {
+        assert(itemsp->lowMK[id] != NULL);
         /* step 1) reclaim items from lowMK position */
         tries = 20;
-        search = engine->items.lowMK[id];
-        while (search != NULL && search != engine->items.curMK[id]) {
+        search = itemsp->lowMK[id];
+        while (search != NULL && search != itemsp->curMK[id]) {
             if (search->refcount == 0 &&
-                do_item_isvalid(engine, search, current_time) == false) {
+                do_item_isvalid(search, current_time) == false) {
                 previt = search->prev;
                 it = do_item_reclaim(engine, search, ntotal, clsid_based_on_ntotal, id);
                 if (it != NULL) break; /* allocated */
                 search = previt;
             } else {
-                if (search->exptime == 0 && search == engine->items.lowMK[id]) {
-                    engine->items.lowMK[id] = search->prev; /* move lowMK position upward */
+                if (search->exptime == 0 && search == itemsp->lowMK[id]) {
+                    itemsp->lowMK[id] = search->prev; /* move lowMK position upward */
                 }
                 search = search->prev;
             }
@@ -538,7 +542,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         if (it != NULL) {
             /* try one more invalidation */
             if (previt != NULL && previt->refcount == 0 &&
-                do_item_isvalid(engine, previt, current_time) == false) {
+                do_item_isvalid(previt, current_time) == false) {
                 do_item_invalidate(engine, previt, id, false);
             }
             it->slabs_clsid = 0;
@@ -546,24 +550,24 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         }
         /* step 2) reclaim items from curMK position */
         tries += 20;
-        while (engine->items.curMK[id] != NULL) {
-            search = engine->items.curMK[id];
-            engine->items.curMK[id] = search->prev;
+        while (itemsp->curMK[id] != NULL) {
+            search = itemsp->curMK[id];
+            itemsp->curMK[id] = search->prev;
             if (search->refcount == 0 &&
-                do_item_isvalid(engine, search, current_time) == false) {
+                do_item_isvalid(search, current_time) == false) {
                 it = do_item_reclaim(engine, search, ntotal, clsid_based_on_ntotal, id);
                 if (it != NULL) break; /* allocated */
             }
             if ((--tries) == 0) break;
         }
-        if (engine->items.curMK[id] == NULL) {
-            engine->items.curMK[id] = engine->items.lowMK[id];
+        if (itemsp->curMK[id] == NULL) {
+            itemsp->curMK[id] = itemsp->lowMK[id];
         }
         if (it != NULL) {
             /* try one more invalidation */
-            search = engine->items.curMK[id];
+            search = itemsp->curMK[id];
             if (search != NULL && search->refcount == 0 &&
-                do_item_isvalid(engine, search, current_time) == false) {
+                do_item_isvalid(search, current_time) == false) {
                 do_item_invalidate(engine, search, id, false);
             }
             it->slabs_clsid = 0;
@@ -582,10 +586,10 @@ static void *do_item_alloc_internal(struct default_engine *engine,
          * we're out of luck at this point...
          */
         if (item_evict_to_free != true) {
-            engine->items.itemstats[clsid_based_on_ntotal].outofmemory++;
-            pthread_mutex_lock(&engine->stats.lock);
-            engine->stats.outofmemorys++;
-            pthread_mutex_unlock(&engine->stats.lock);
+            itemsp->itemstats[clsid_based_on_ntotal].outofmemory++;
+            pthread_mutex_lock(&statsp->lock);
+            statsp->outofmemorys++;
+            pthread_mutex_unlock(&statsp->lock);
             return NULL;
         }
 
@@ -596,12 +600,12 @@ static void *do_item_alloc_internal(struct default_engine *engine,
          * tries
          */
         tries  = 200;
-        search = engine->items.tails[id];
+        search = itemsp->tails[id];
         while (search != NULL) {
             assert(search->nkey > 0);
             previt = search->prev;
             if (search->refcount == 0) {
-                if (do_item_isvalid(engine, search, current_time) == false) {
+                if (do_item_isvalid(search, current_time) == false) {
                     it = do_item_reclaim(engine, search, ntotal, clsid_based_on_ntotal, id);
                 } else {
                     do_item_evict(engine, search, id, current_time, cookie);
@@ -610,22 +614,22 @@ static void *do_item_alloc_internal(struct default_engine *engine,
                 if (it != NULL) break; /* allocated */
             } else { /* search->refcount > 0 */
                 /* just unlink the item from LRU list. */
-                item_unlink_q(engine, search);
+                item_unlink_q(search);
             }
             search = previt;
             if ((--tries) == 0) break;
         }
-        if (engine->config.verbose > 1) {
+        if (config->verbose > 1) {
             logger->log(EXTENSION_LOG_INFO, NULL,
                     "Allocation retries with evict. count=%d\n", (tries == 0 ? 200 : (200-tries+1)));
         }
     }
 
     if (it == NULL) {
-        engine->items.itemstats[id].outofmemory++;
-        pthread_mutex_lock(&engine->stats.lock);
-        engine->stats.outofmemorys++;
-        pthread_mutex_unlock(&engine->stats.lock);
+        itemsp->itemstats[id].outofmemory++;
+        pthread_mutex_lock(&statsp->lock);
+        statsp->outofmemorys++;
+        pthread_mutex_unlock(&statsp->lock);
         if (id == LRU_CLSID_FOR_SMALL) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "no more small memory chunk"
                          "space_shortage_level=%d, item size=%lu\n", slabs_space_shortage_level(), ntotal);
@@ -642,7 +646,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
          */
         if (id <= POWER_LARGEST) {
             tries  = 50;
-            search = engine->items.tails[id];
+            search = itemsp->tails[id];
             while (search != NULL) {
                 assert(search->nkey > 0);
                 if (search->refcount != 0 &&
@@ -675,7 +679,7 @@ static hash_item *do_item_alloc(struct default_engine *engine,
     assert(nkey > 0);
     hash_item *it = NULL;
     size_t ntotal = sizeof(hash_item) + nkey + nbytes;
-    if (engine->config.use_cas) {
+    if (config->use_cas) {
         ntotal += sizeof(uint64_t);
     }
 
@@ -686,7 +690,7 @@ static hash_item *do_item_alloc(struct default_engine *engine,
 #ifdef ENABLE_STICKY_ITEM
     /* sticky memory limit check */
     if (exptime == (rel_time_t)(-1)) { /* sticky item */
-        if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
+        if (statsp->sticky_bytes >= config->sticky_limit)
             return NULL;
     }
 #endif
@@ -699,14 +703,14 @@ static hash_item *do_item_alloc(struct default_engine *engine,
 
     it->slabs_clsid = id;
     assert(it->slabs_clsid > 0);
-    assert(it != engine->items.heads[it->slabs_clsid]);
+    assert(it != itemsp->heads[it->slabs_clsid]);
 
     it->next = it->prev = it; /* special meaning: unlinked from LRU */
     it->h_next = 0;
     it->refcount = 1;     /* the caller will have a reference */
     it->refchunk = 0;
     DEBUG_REFCNT(it, '*');
-    it->iflag = engine->config.use_cas ? ITEM_WITH_CAS : 0;
+    it->iflag = config->use_cas ? ITEM_WITH_CAS : 0;
     it->nkey = nkey;
     it->nbytes = nbytes;
     it->flags = flags;
@@ -718,13 +722,13 @@ static hash_item *do_item_alloc(struct default_engine *engine,
     return it;
 }
 
-static void do_item_free(struct default_engine *engine, hash_item *it)
+static void do_item_free(hash_item *it)
 {
-    size_t ntotal = ITEM_ntotal(engine, it);
+    size_t ntotal = ITEM_ntotal(it);
     unsigned int clsid;
     assert((it->iflag & ITEM_LINKED) == 0);
-    assert(it != engine->items.heads[it->slabs_clsid]);
-    assert(it != engine->items.tails[it->slabs_clsid]);
+    assert(it != itemsp->heads[it->slabs_clsid]);
+    assert(it != itemsp->tails[it->slabs_clsid]);
     assert(it->refcount == 0);
 
     if (IS_COLL_ITEM(it)) {
@@ -742,7 +746,7 @@ static void do_item_free(struct default_engine *engine, hash_item *it)
     slabs_free(it, ntotal, clsid);
 }
 
-static void item_link_q(struct default_engine *engine, hash_item *it)
+static void item_link_q(hash_item *it)
 {
     hash_item **head, **tail;
     assert(it->slabs_clsid <= POWER_LARGEST);
@@ -751,26 +755,26 @@ static void item_link_q(struct default_engine *engine, hash_item *it)
     int clsid = 1;
 #else
     int clsid = it->slabs_clsid;
-    if (IS_COLL_ITEM(it) || ITEM_ntotal(engine, it) <= MAX_SM_VALUE_LEN) {
+    if (IS_COLL_ITEM(it) || ITEM_ntotal(it) <= MAX_SM_VALUE_LEN) {
         clsid = LRU_CLSID_FOR_SMALL;
     }
 #endif
 
 #ifdef ENABLE_STICKY_ITEM
     if (it->exptime == (rel_time_t)(-1)) {
-        head = &engine->items.sticky_heads[clsid];
-        tail = &engine->items.sticky_tails[clsid];
-        engine->items.sticky_sizes[clsid]++;
+        head = &itemsp->sticky_heads[clsid];
+        tail = &itemsp->sticky_tails[clsid];
+        itemsp->sticky_sizes[clsid]++;
     } else {
 #endif
-        head = &engine->items.heads[clsid];
-        tail = &engine->items.tails[clsid];
-        engine->items.sizes[clsid]++;
+        head = &itemsp->heads[clsid];
+        tail = &itemsp->tails[clsid];
+        itemsp->sizes[clsid]++;
         if (it->exptime > 0) { /* expirable item */
-            if (engine->items.lowMK[clsid] == NULL) {
+            if (itemsp->lowMK[clsid] == NULL) {
                 /* set lowMK and curMK pointer in LRU */
-                engine->items.lowMK[clsid] = it;
-                engine->items.curMK[clsid] = it;
+                itemsp->lowMK[clsid] = it;
+                itemsp->curMK[clsid] = it;
             }
         }
 #ifdef ENABLE_STICKY_ITEM
@@ -786,7 +790,7 @@ static void item_link_q(struct default_engine *engine, hash_item *it)
     return;
 }
 
-static void item_unlink_q(struct default_engine *engine, hash_item *it)
+static void item_unlink_q(hash_item *it)
 {
     hash_item **head, **tail;
     assert(it->slabs_clsid <= POWER_LARGEST);
@@ -794,7 +798,7 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it)
     int clsid = 1;
 #else
     int clsid = it->slabs_clsid;
-    if (IS_COLL_ITEM(it) || ITEM_ntotal(engine, it) <= MAX_SM_VALUE_LEN) {
+    if (IS_COLL_ITEM(it) || ITEM_ntotal(it) <= MAX_SM_VALUE_LEN) {
         clsid = LRU_CLSID_FOR_SMALL;
     }
 #endif
@@ -805,24 +809,24 @@ static void item_unlink_q(struct default_engine *engine, hash_item *it)
 
 #ifdef ENABLE_STICKY_ITEM
     if (it->exptime == (rel_time_t)(-1)) {
-        head = &engine->items.sticky_heads[clsid];
-        tail = &engine->items.sticky_tails[clsid];
-        engine->items.sticky_sizes[clsid]--;
+        head = &itemsp->sticky_heads[clsid];
+        tail = &itemsp->sticky_tails[clsid];
+        itemsp->sticky_sizes[clsid]--;
         /* move curMK pointer in LRU */
-        if (engine->items.sticky_curMK[clsid] == it)
-            engine->items.sticky_curMK[clsid] = it->prev;
+        if (itemsp->sticky_curMK[clsid] == it)
+            itemsp->sticky_curMK[clsid] = it->prev;
     } else {
 #endif
-        head = &engine->items.heads[clsid];
-        tail = &engine->items.tails[clsid];
-        engine->items.sizes[clsid]--;
+        head = &itemsp->heads[clsid];
+        tail = &itemsp->tails[clsid];
+        itemsp->sizes[clsid]--;
         /* move lowMK, curMK pointer in LRU */
-        if (engine->items.lowMK[clsid] == it)
-            engine->items.lowMK[clsid] = it->prev;
-        if (engine->items.curMK[clsid] == it) {
-            engine->items.curMK[clsid] = it->prev;
-            if (engine->items.curMK[clsid] == NULL)
-                engine->items.curMK[clsid] = engine->items.lowMK[clsid];
+        if (itemsp->lowMK[clsid] == it)
+            itemsp->lowMK[clsid] = it->prev;
+        if (itemsp->curMK[clsid] == it) {
+            itemsp->curMK[clsid] = it->prev;
+            if (itemsp->curMK[clsid] == NULL)
+                itemsp->curMK[clsid] = itemsp->lowMK[clsid];
         }
 #ifdef ENABLE_STICKY_ITEM
     }
@@ -859,8 +863,8 @@ static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *
     item_set_cas(it, get_cas_id());
 
     /* link the item to prefix info */
-    stotal = ITEM_stotal(engine, it);
-    ENGINE_ERROR_CODE ret = assoc_prefix_link(engine, it, stotal);
+    stotal = ITEM_stotal(it);
+    ENGINE_ERROR_CODE ret = assoc_prefix_link(it, stotal);
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
@@ -871,26 +875,26 @@ static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *
 
     /* link the item to the hash table */
     it->iflag |= ITEM_LINKED;
-    it->time = engine->server.core->get_current_time();
-    it->khash = engine->server.core->hash(hkey, hnkey, 0);
-    assoc_insert(engine, it->khash, it);
+    it->time = svcore->get_current_time();
+    it->khash = svcore->hash(hkey, hnkey, 0);
+    assoc_insert(it, it->khash);
 
     /* link the item to LRU list */
-    item_link_q(engine, it);
+    item_link_q(it);
     CLOG_ITEM_LINK(it);
 
     /* update item statistics */
-    pthread_mutex_lock(&engine->stats.lock);
+    pthread_mutex_lock(&statsp->lock);
 #ifdef ENABLE_STICKY_ITEM
     if (it->exptime == (rel_time_t)(-1)) { /* sticky item */
-        engine->stats.sticky_bytes += stotal;
-        engine->stats.sticky_items += 1;
+        statsp->sticky_bytes += stotal;
+        statsp->sticky_items += 1;
     }
 #endif
-    engine->stats.curr_bytes += stotal;
-    engine->stats.curr_items += 1;
-    engine->stats.total_items += 1;
-    pthread_mutex_unlock(&engine->stats.lock);
+    statsp->curr_bytes += stotal;
+    statsp->curr_items += 1;
+    statsp->total_items += 1;
+    pthread_mutex_unlock(&statsp->lock);
 
     return ENGINE_SUCCESS;
 }
@@ -907,35 +911,35 @@ static void do_item_unlink(struct default_engine *engine, hash_item *it,
     if ((it->iflag & ITEM_LINKED) != 0) {
         CLOG_ITEM_UNLINK(it, cause);
         /* unlink the item from LUR list */
-        item_unlink_q(engine, it);
+        item_unlink_q(it);
 
         /* unlink the item from hash table */
-        assoc_delete(engine, it->khash, key, it->nkey);
+        assoc_delete(key, it->nkey, it->khash);
         it->iflag &= ~ITEM_LINKED;
 
         /* unlink the item from prefix info */
-        stotal = ITEM_stotal(engine, it);
-        assoc_prefix_unlink(engine, it, stotal, (cause != ITEM_UNLINK_REPLACE ? true : false));
+        stotal = ITEM_stotal(it);
+        assoc_prefix_unlink(it, stotal, (cause != ITEM_UNLINK_REPLACE ? true : false));
         if (IS_COLL_ITEM(it)) {
             coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
             info->stotal = 0; /* Don't need to decrease space statistics any more */
         }
 
         /* update item statistics */
-        pthread_mutex_lock(&engine->stats.lock);
+        pthread_mutex_lock(&statsp->lock);
 #ifdef ENABLE_STICKY_ITEM
         if (it->exptime == (rel_time_t)(-1)) { /* sticky item */
-            engine->stats.sticky_bytes -= stotal;
-            engine->stats.sticky_items -= 1;
+            statsp->sticky_bytes -= stotal;
+            statsp->sticky_items -= 1;
         }
 #endif
-        engine->stats.curr_bytes -= stotal;
-        engine->stats.curr_items -= 1;
-        pthread_mutex_unlock(&engine->stats.lock);
+        statsp->curr_bytes -= stotal;
+        statsp->curr_items -= 1;
+        pthread_mutex_unlock(&statsp->lock);
 
         /* free the item if no one reference it */
         if (it->refcount == 0) {
-            do_item_free(engine, it);
+            do_item_free(it);
         }
     }
 }
@@ -949,14 +953,14 @@ static void do_item_release(struct default_engine *engine, hash_item *it)
     }
     if (it->refcount == 0) {
         if ((it->iflag & ITEM_LINKED) == 0) {
-            do_item_free(engine, it);
+            do_item_free(it);
         }
         else if (it->prev == it && it->next == it) {
             /* re-link the item into the LRU list */
-            rel_time_t current_time = engine->server.core->get_current_time();
-            if (do_item_isvalid(engine, it, current_time)) {
+            rel_time_t current_time = svcore->get_current_time();
+            if (do_item_isvalid(it, current_time)) {
                 it->time = current_time;
-                item_link_q(engine, it);
+                item_link_q(it);
             } else {
                 do_item_unlink(engine, it, ITEM_UNLINK_INVALID);
             }
@@ -964,26 +968,26 @@ static void do_item_release(struct default_engine *engine, hash_item *it)
     }
 }
 
-static void do_item_update(struct default_engine *engine, hash_item *it)
+static void do_item_update(hash_item *it)
 {
-    rel_time_t current_time = engine->server.core->get_current_time();
+    rel_time_t current_time = svcore->get_current_time();
     MEMCACHED_ITEM_UPDATE(item_get_key(it), it->nkey, it->nbytes);
     if (it->time < current_time - ITEM_UPDATE_INTERVAL) {
         if ((it->iflag & ITEM_LINKED) != 0) {
-            item_unlink_q(engine, it);
+            item_unlink_q(it);
             it->time = current_time;
-            item_link_q(engine, it);
+            item_link_q(it);
             CLOG_ITEM_UPDATE(it);
         }
     }
 }
 
-static void do_item_lru_reposition(struct default_engine *engine, hash_item *it)
+static void do_item_lru_reposition(hash_item *it)
 {
     if ((it->iflag & ITEM_LINKED) != 0) {
-        item_unlink_q(engine, it);
-        it->time = engine->server.core->get_current_time();
-        item_link_q(engine, it);
+        item_unlink_q(it);
+        it->time = svcore->get_current_time();
+        item_link_q(it);
     }
 }
 
@@ -1000,7 +1004,7 @@ static void do_item_replace(struct default_engine *engine,
 }
 
 /*@null@*/
-static char *do_item_cachedump(struct default_engine *engine, const unsigned int slabs_clsid,
+static char *do_item_cachedump(const unsigned int slabs_clsid,
                                const unsigned int limit, const bool forward, const bool sticky,
                                unsigned int *bytes)
 {
@@ -1022,11 +1026,11 @@ static char *do_item_cachedump(struct default_engine *engine, const unsigned int
     }
 
     if (sticky) {
-        it = (forward ? engine->items.sticky_heads[slabs_clsid]
-                      : engine->items.sticky_tails[slabs_clsid]);
+        it = (forward ? itemsp->sticky_heads[slabs_clsid]
+                      : itemsp->sticky_tails[slabs_clsid]);
     } else {
-        it = (forward ? engine->items.heads[slabs_clsid]
-                      : engine->items.tails[slabs_clsid]);
+        it = (forward ? itemsp->heads[slabs_clsid]
+                      : itemsp->tails[slabs_clsid]);
     }
 
     while (it != NULL && (limit == 0 || shown < limit)) {
@@ -1044,48 +1048,48 @@ static char *do_item_cachedump(struct default_engine *engine, const unsigned int
     free(keybuf);
 
     len = sprintf(buffer + bufcurr, "END [curtime=%u]\r\n",
-                  engine->server.core->get_current_time());
+                  svcore->get_current_time());
     bufcurr += len;
 
     *bytes = bufcurr;
     return buffer;
 }
 
-static void do_item_stats(struct default_engine *engine, ADD_STAT add_stats, const void *c)
+static void do_item_stats(ADD_STAT add_stats, const void *c)
 {
     const char *prefix = "items";
 
     for (int i = 0; i <= POWER_LARGEST; i++)
     {
-        if (engine->items.tails[i] == NULL && engine->items.sticky_tails[i] == NULL)
+        if (itemsp->tails[i] == NULL && itemsp->sticky_tails[i] == NULL)
             continue;
 
         add_statistics(c, add_stats, prefix, i, "number", "%u",
-                       engine->items.sizes[i]+engine->items.sticky_sizes[i]);
+                       itemsp->sizes[i]+itemsp->sticky_sizes[i]);
 #ifdef ENABLE_STICKY_ITEM
         add_statistics(c, add_stats, prefix, i, "sticky", "%u",
-                       engine->items.sticky_sizes[i]);
+                       itemsp->sticky_sizes[i]);
 #endif
         add_statistics(c, add_stats, prefix, i, "age", "%u",
-                       (engine->items.tails[i] != NULL ? engine->items.tails[i]->time : 0));
+                       (itemsp->tails[i] != NULL ? itemsp->tails[i]->time : 0));
         add_statistics(c, add_stats, prefix, i, "evicted",
-                       "%u", engine->items.itemstats[i].evicted);
+                       "%u", itemsp->itemstats[i].evicted);
         add_statistics(c, add_stats, prefix, i, "evicted_nonzero",
-                       "%u", engine->items.itemstats[i].evicted_nonzero);
+                       "%u", itemsp->itemstats[i].evicted_nonzero);
         add_statistics(c, add_stats, prefix, i, "evicted_time",
-                       "%u", engine->items.itemstats[i].evicted_time);
+                       "%u", itemsp->itemstats[i].evicted_time);
         add_statistics(c, add_stats, prefix, i, "outofmemory",
-                       "%u", engine->items.itemstats[i].outofmemory);
+                       "%u", itemsp->itemstats[i].outofmemory);
         add_statistics(c, add_stats, prefix, i, "tailrepairs",
-                       "%u", engine->items.itemstats[i].tailrepairs);;
+                       "%u", itemsp->itemstats[i].tailrepairs);;
         add_statistics(c, add_stats, prefix, i, "reclaimed",
-                       "%u", engine->items.itemstats[i].reclaimed);;
+                       "%u", itemsp->itemstats[i].reclaimed);;
     }
 }
 
 /** dumps out a list of objects of each size, with granularity of 32 bytes */
 /*@null@*/
-static void do_item_stats_sizes(struct default_engine *engine, ADD_STAT add_stats, const void *c)
+static void do_item_stats_sizes(ADD_STAT add_stats, const void *c)
 {
     /* "stats sizes" has too much overhead to execute,
      * since it traverses all of the items cached in memory.
@@ -1104,18 +1108,18 @@ static void do_item_stats_sizes(struct default_engine *engine, ADD_STAT add_stat
         /* build the histogram */
         for (i = 0; i <= POWER_LARGEST; i++)
         {
-            hash_item *iter = engine->items.heads[i];
+            hash_item *iter = itemsp->heads[i];
             while (iter) {
-                int ntotal = ITEM_stotal(engine, iter);
+                int ntotal = ITEM_stotal(iter);
                 int bucket = ntotal / 32;
                 if ((ntotal % 32) != 0) bucket++;
                 if (bucket < num_buckets) histogram[bucket]++;
                 iter = iter->next;
             }
 #ifdef ENABLE_STICKY_ITEM
-            iter = engine->items.sticky_heads[i];
+            iter = itemsp->sticky_heads[i];
             while (iter) {
-                int ntotal = ITEM_stotal(engine, iter);
+                int ntotal = ITEM_stotal(iter);
                 int bucket = ntotal / 32;
                 if ((ntotal % 32) != 0) bucket++;
                 if (bucket < num_buckets) histogram[bucket]++;
@@ -1149,14 +1153,14 @@ static hash_item *do_item_get(struct default_engine *engine,
     const char *hkey = (nkey > MAX_HKEY_LEN) ? key+(nkey-MAX_HKEY_LEN) : key;
     const size_t hnkey = (nkey > MAX_HKEY_LEN) ? MAX_HKEY_LEN : nkey;
 
-    it = assoc_find(engine, engine->server.core->hash(hkey, hnkey, 0), key, nkey);
+    it = assoc_find(key, nkey, svcore->hash(hkey, hnkey, 0));
     if (it) {
-        rel_time_t current_time = engine->server.core->get_current_time();
-        if (do_item_isvalid(engine, it, current_time)) {
+        rel_time_t current_time = svcore->get_current_time();
+        if (do_item_isvalid(it, current_time)) {
             ITEM_REFCOUNT_INCR(it);
             DEBUG_REFCNT(it, '+');
             if (do_update) {
-                do_item_update(engine, it);
+                do_item_update(it);
             }
         } else {
             do_item_unlink(engine, it, ITEM_UNLINK_INVALID);
@@ -1164,7 +1168,7 @@ static hash_item *do_item_get(struct default_engine *engine,
         }
     }
 
-    if (engine->config.verbose > 2) {
+    if (config->verbose > 2) {
         if (it) {
             logger->log(EXTENSION_LOG_INFO, NULL, "> FOUND KEY %s\n",
                         (const char*)item_get_key(it));
@@ -1218,7 +1222,7 @@ static ENGINE_ERROR_CODE do_item_store_add(struct default_engine *engine, hash_i
             stored = ENGINE_EBADTYPE;
         } else {
             /* add only adds a nonexistent item, but promote to head of LRU */
-            do_item_update(engine, old_it);
+            do_item_update(old_it);
             stored = ENGINE_NOT_STORED;
         }
         do_item_release(engine, old_it);
@@ -1271,7 +1275,7 @@ static ENGINE_ERROR_CODE do_item_store_cas(struct default_engine *engine, hash_i
             stored = ENGINE_SUCCESS;
             *cas = item_get_cas(it);
         } else {
-            if (engine->config.verbose > 1) {
+            if (config->verbose > 1) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
                         "CAS:  failure: expected %"PRIu64", got %"PRIu64"\n",
                         item_get_cas(old_it), item_get_cas(it));
@@ -1391,7 +1395,7 @@ static ENGINE_ERROR_CODE do_add_delta(struct default_engine *engine, hash_item *
 }
 
 /* common functions for collection memory management */
-static void do_mem_slot_free(struct default_engine *engine, void *data, size_t ntotal)
+static void do_mem_slot_free(void *data, size_t ntotal)
 {
     /* so slab size changer can tell later if item is already free or not */
     hash_item *it = (hash_item *)data;
@@ -1521,21 +1525,21 @@ static list_elem_item *do_list_elem_alloc(struct default_engine *engine,
     return elem;
 }
 
-static void do_list_elem_free(struct default_engine *engine, list_elem_item *elem)
+static void do_list_elem_free(list_elem_item *elem)
 {
     assert(elem->refcount == 0);
     assert(elem->slabs_clsid != 0);
     size_t ntotal = do_list_elem_ntotal(elem);
-    do_mem_slot_free(engine, elem, ntotal);
+    do_mem_slot_free(elem, ntotal);
 }
 
-static void do_list_elem_release(struct default_engine *engine, list_elem_item *elem)
+static void do_list_elem_release(list_elem_item *elem)
 {
     if (elem->refcount != 0) {
         elem->refcount--;
     }
     if (elem->refcount == 0 && elem->next == (list_elem_item *)ADDR_MEANS_UNLINKED) {
-        do_list_elem_free(engine, elem);
+        do_list_elem_free(elem);
     }
 }
 
@@ -1559,8 +1563,7 @@ static list_elem_item *do_list_elem_find(list_meta_info *info, int index)
     return elem;
 }
 
-static ENGINE_ERROR_CODE do_list_elem_link(struct default_engine *engine,
-                                           list_meta_info *info, const int index,
+static ENGINE_ERROR_CODE do_list_elem_link(list_meta_info *info, const int index,
                                            list_elem_item *elem)
 {
     list_elem_item *prev, *next;
@@ -1587,13 +1590,12 @@ static ENGINE_ERROR_CODE do_list_elem_link(struct default_engine *engine,
 
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(do_list_elem_ntotal(elem));
-        increase_collection_space(engine, ITEM_TYPE_LIST, (coll_meta_info *)info, stotal);
+        increase_collection_space(ITEM_TYPE_LIST, (coll_meta_info *)info, stotal);
     }
     return ENGINE_SUCCESS;
 }
 
-static void do_list_elem_unlink(struct default_engine *engine,
-                                list_meta_info *info, list_elem_item *elem,
+static void do_list_elem_unlink(list_meta_info *info, list_elem_item *elem,
                                 enum elem_delete_cause cause)
 {
     /* if (elem->next != (list_elem_item *)ADDR_MEANS_UNLINKED) */
@@ -1607,17 +1609,16 @@ static void do_list_elem_unlink(struct default_engine *engine,
 
         if (info->stotal > 0) { /* apply memory space */
             size_t stotal = slabs_space_size(do_list_elem_ntotal(elem));
-            decrease_collection_space(engine, ITEM_TYPE_LIST, (coll_meta_info *)info, stotal);
+            decrease_collection_space(ITEM_TYPE_LIST, (coll_meta_info *)info, stotal);
         }
 
         if (elem->refcount == 0) {
-            do_list_elem_free(engine, elem);
+            do_list_elem_free(elem);
         }
     }
 }
 
-static uint32_t do_list_elem_delete(struct default_engine *engine,
-                                    list_meta_info *info,
+static uint32_t do_list_elem_delete(list_meta_info *info,
                                     const int index, const uint32_t count,
                                     enum elem_delete_cause cause)
 {
@@ -1631,15 +1632,14 @@ static uint32_t do_list_elem_delete(struct default_engine *engine,
     while (elem != NULL) {
         next = elem->next;
         fcnt++;
-        do_list_elem_unlink(engine, info, elem, cause);
+        do_list_elem_unlink(info, elem, cause);
         if (count > 0 && fcnt >= count) break;
         elem = next;
     }
     return fcnt;
 }
 
-static ENGINE_ERROR_CODE do_list_elem_get(struct default_engine *engine,
-                                          list_meta_info *info,
+static ENGINE_ERROR_CODE do_list_elem_get(list_meta_info *info,
                                           const int index, const uint32_t count,
                                           const bool forward, const bool delete,
                                           list_elem_item **elem_array, uint32_t *elem_count)
@@ -1658,7 +1658,7 @@ static ENGINE_ERROR_CODE do_list_elem_get(struct default_engine *engine,
         tobe = (forward ? elem->next : elem->prev);
         elem->refcount++;
         elem_array[fcnt++] = elem;
-        if (delete) do_list_elem_unlink(engine, info, elem, cause);
+        if (delete) do_list_elem_unlink(info, elem, cause);
         if (count > 0 && fcnt >= count) break;
         elem = tobe;
     }
@@ -1671,8 +1671,7 @@ static ENGINE_ERROR_CODE do_list_elem_get(struct default_engine *engine,
     }
 }
 
-static ENGINE_ERROR_CODE do_list_elem_insert(struct default_engine *engine,
-                                             hash_item *it,
+static ENGINE_ERROR_CODE do_list_elem_insert(hash_item *it,
                                              int index, list_elem_item *elem,
                                              const void *cookie)
 {
@@ -1692,7 +1691,7 @@ static ENGINE_ERROR_CODE do_list_elem_insert(struct default_engine *engine,
 #ifdef ENABLE_STICKY_ITEM
     /* sticky memory limit check */
     if (it->exptime == (rel_time_t)-1) {
-        if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
+        if (statsp->sticky_bytes >= config->sticky_limit)
             return ENGINE_ENOMEM;
     }
 #endif
@@ -1711,12 +1710,12 @@ static ENGINE_ERROR_CODE do_list_elem_insert(struct default_engine *engine,
         if (index == 0 || index == -1) {
             /* delete an element item of opposite side to make room */
             delidx = (index == -1 ? 0 : info->ccnt-1);
-            delcnt = do_list_elem_delete(engine, info, delidx, 1, ELEM_DELETE_TRIM);
+            delcnt = do_list_elem_delete(info, delidx, 1, ELEM_DELETE_TRIM);
             assert(delcnt == 1);
         } else {
             /* delete an element item that overflow action indicates */
             delidx = (info->ovflact == OVFL_HEAD_TRIM ? 0 : info->ccnt-1);
-            delcnt = do_list_elem_delete(engine, info, delidx, 1, ELEM_DELETE_TRIM);
+            delcnt = do_list_elem_delete(info, delidx, 1, ELEM_DELETE_TRIM);
             assert(delcnt == 1);
             /* adjust list index value */
             if (info->ovflact == OVFL_HEAD_TRIM) {
@@ -1737,7 +1736,7 @@ static ENGINE_ERROR_CODE do_list_elem_insert(struct default_engine *engine,
             index = 0;
     }
 
-    ret = do_list_elem_link(engine, info, index, elem);
+    ret = do_list_elem_link(info, index, elem);
     assert(ret == ENGINE_SUCCESS);
     return ret;
 }
@@ -1825,9 +1824,9 @@ static set_hash_node *do_set_node_alloc(struct default_engine *engine,
     return node;
 }
 
-static void do_set_node_free(struct default_engine *engine, set_hash_node *node)
+static void do_set_node_free(set_hash_node *node)
 {
-    do_mem_slot_free(engine, node, sizeof(set_hash_node));
+    do_mem_slot_free(node, sizeof(set_hash_node));
 }
 
 static set_elem_item *do_set_elem_alloc(struct default_engine *engine,
@@ -1847,26 +1846,25 @@ static set_elem_item *do_set_elem_alloc(struct default_engine *engine,
     return elem;
 }
 
-static void do_set_elem_free(struct default_engine *engine, set_elem_item *elem)
+static void do_set_elem_free(set_elem_item *elem)
 {
     assert(elem->refcount == 0);
     assert(elem->slabs_clsid != 0);
     size_t ntotal = do_set_elem_ntotal(elem);
-    do_mem_slot_free(engine, elem, ntotal);
+    do_mem_slot_free(elem, ntotal);
 }
 
-static void do_set_elem_release(struct default_engine *engine, set_elem_item *elem)
+static void do_set_elem_release(set_elem_item *elem)
 {
     if (elem->refcount != 0) {
         elem->refcount--;
     }
     if (elem->refcount == 0 && elem->next == (set_elem_item *)ADDR_MEANS_UNLINKED) {
-        do_set_elem_free(engine, elem);
+        do_set_elem_free(elem);
     }
 }
 
-static void do_set_node_link(struct default_engine *engine,
-                             set_meta_info *info,
+static void do_set_node_link(set_meta_info *info,
                              set_hash_node *par_node, const int par_hidx,
                              set_hash_node *node)
 {
@@ -1898,12 +1896,11 @@ static void do_set_node_link(struct default_engine *engine,
 
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(sizeof(set_hash_node));
-        increase_collection_space(engine, ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
+        increase_collection_space(ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
     }
 }
 
-static void do_set_node_unlink(struct default_engine *engine,
-                               set_meta_info *info,
+static void do_set_node_unlink(set_meta_info *info,
                                set_hash_node *par_node, const int par_hidx)
 {
     set_hash_node *node;
@@ -1948,11 +1945,11 @@ static void do_set_node_unlink(struct default_engine *engine,
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(sizeof(set_hash_node));
-        decrease_collection_space(engine, ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
+        decrease_collection_space(ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
     }
 
     /* free the node */
-    do_set_node_free(engine, node);
+    do_set_node_free(node);
 }
 
 static ENGINE_ERROR_CODE do_set_elem_link(struct default_engine *engine,
@@ -1990,7 +1987,7 @@ static ENGINE_ERROR_CODE do_set_elem_link(struct default_engine *engine,
         if (n_node == NULL) {
             return ENGINE_ENOMEM;
         }
-        do_set_node_link(engine, info, node, hidx, n_node);
+        do_set_node_link(info, node, hidx, n_node);
 
         node = n_node;
         hidx = SET_GET_HASHIDX(elem->hval, node->hdepth);
@@ -2005,14 +2002,13 @@ static ENGINE_ERROR_CODE do_set_elem_link(struct default_engine *engine,
 
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(do_set_elem_ntotal(elem));
-        increase_collection_space(engine, ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
+        increase_collection_space(ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
     }
 
     return ENGINE_SUCCESS;
 }
 
-static void do_set_elem_unlink(struct default_engine *engine,
-                               set_meta_info *info,
+static void do_set_elem_unlink(set_meta_info *info,
                                set_hash_node *node, const int hidx,
                                set_elem_item *prev, set_elem_item *elem,
                                enum elem_delete_cause cause)
@@ -2028,11 +2024,11 @@ static void do_set_elem_unlink(struct default_engine *engine,
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(do_set_elem_ntotal(elem));
-        decrease_collection_space(engine, ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
+        decrease_collection_space(ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
     }
 
     if (elem->refcount == 0) {
-        do_set_elem_free(engine, elem);
+        do_set_elem_free(elem);
     }
 }
 
@@ -2061,8 +2057,7 @@ static set_elem_item *do_set_elem_find(set_meta_info *info, const char *val, con
     return elem;
 }
 
-static ENGINE_ERROR_CODE do_set_elem_traverse_delete(struct default_engine *engine,
-                                                     set_meta_info *info, set_hash_node *node,
+static ENGINE_ERROR_CODE do_set_elem_traverse_delete(set_meta_info *info, set_hash_node *node,
                                                      const int hval, const char *val, const int vlen)
 {
     ENGINE_ERROR_CODE ret;
@@ -2071,11 +2066,11 @@ static ENGINE_ERROR_CODE do_set_elem_traverse_delete(struct default_engine *engi
 
     if (node->hcnt[hidx] == -1) {
         set_hash_node *child_node = node->htab[hidx];
-        ret = do_set_elem_traverse_delete(engine, info, child_node, hval, val, vlen);
+        ret = do_set_elem_traverse_delete(info, child_node, hval, val, vlen);
         if (ret == ENGINE_SUCCESS) {
             if (child_node->tot_hash_cnt == 0 &&
                 child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
-                do_set_node_unlink(engine, info, node, hidx);
+                do_set_node_unlink(info, node, hidx);
             }
         }
     } else {
@@ -2090,8 +2085,7 @@ static ENGINE_ERROR_CODE do_set_elem_traverse_delete(struct default_engine *engi
                 elem = elem->next;
             }
             if (elem != NULL) {
-                do_set_elem_unlink(engine, info, node, hidx, prev, elem,
-                                   ELEM_DELETE_NORMAL);
+                do_set_elem_unlink(info, node, hidx, prev, elem, ELEM_DELETE_NORMAL);
                 ret = ENGINE_SUCCESS;
             }
         }
@@ -2099,8 +2093,7 @@ static ENGINE_ERROR_CODE do_set_elem_traverse_delete(struct default_engine *engi
     return ret;
 }
 
-static ENGINE_ERROR_CODE do_set_elem_delete_with_value(struct default_engine *engine,
-                                                       set_meta_info *info,
+static ENGINE_ERROR_CODE do_set_elem_delete_with_value(set_meta_info *info,
                                                        const char *val, const int vlen,
                                                        enum elem_delete_cause cause)
 {
@@ -2108,10 +2101,10 @@ static ENGINE_ERROR_CODE do_set_elem_delete_with_value(struct default_engine *en
     ENGINE_ERROR_CODE ret;
     if (info->root != NULL) {
         int hval = genhash_string_hash(val, vlen);
-        ret = do_set_elem_traverse_delete(engine, info, info->root, hval, val, vlen);
+        ret = do_set_elem_traverse_delete(info, info->root, hval, val, vlen);
         if (ret == ENGINE_SUCCESS) {
             if (info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
-                do_set_node_unlink(engine, info, NULL, 0);
+                do_set_node_unlink(info, NULL, 0);
             }
         }
     } else {
@@ -2121,7 +2114,7 @@ static ENGINE_ERROR_CODE do_set_elem_delete_with_value(struct default_engine *en
 }
 
 #ifdef SET_DELETE_NO_MERGE
-static uint32_t do_set_elem_traverse_fast(struct default_engine *engine, set_meta_info *info,
+static uint32_t do_set_elem_traverse_fast(set_meta_info *info,
                                           set_hash_node *node, const uint32_t count)
 {
     int hidx;
@@ -2132,13 +2125,13 @@ static uint32_t do_set_elem_traverse_fast(struct default_engine *engine, set_met
         for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
             if (node->hcnt[hidx] == -1) {
                 set_hash_node *childnode = (set_hash_node *)node->htab[hidx];
-                fcnt += do_set_elem_traverse_fast(engine, info, childnode,
+                fcnt += do_set_elem_traverse_fast(info, childnode,
                                                   (count == 0 ? 0 : (count - fcnt)));
 
                 if (childnode->tot_hash_cnt == 0 && childnode->tot_elem_cnt == 0) {
                     node->htab[hidx] = NULL;
                     node->hcnt[hidx] = 0;
-                    do_set_node_free(engine, childnode);
+                    do_set_node_free(childnode);
                     node->tot_hash_cnt -= 1;
                 }
                 if (count > 0 && fcnt >= count) {
@@ -2154,7 +2147,7 @@ static uint32_t do_set_elem_traverse_fast(struct default_engine *engine, set_met
                 node->htab[hidx] = elem->next;
                 elem->next = (set_elem_item *)ADDR_MEANS_UNLINKED;
                 if (elem->refcount == 0)
-                    do_set_elem_free(engine, elem);
+                    do_set_elem_free(elem);
             }
             fcnt += node->hcnt[hidx];
             node->tot_elem_cnt -= node->hcnt[hidx];
@@ -2165,8 +2158,7 @@ static uint32_t do_set_elem_traverse_fast(struct default_engine *engine, set_met
 }
 #endif
 
-static int do_set_elem_traverse_dfs(struct default_engine *engine,
-                                    set_meta_info *info, set_hash_node *node,
+static int do_set_elem_traverse_dfs(set_meta_info *info, set_hash_node *node,
                                     const uint32_t count, const bool delete,
                                     set_elem_item **elem_array)
 {
@@ -2179,12 +2171,12 @@ static int do_set_elem_traverse_dfs(struct default_engine *engine,
             if (node->hcnt[hidx] == -1) {
                 set_hash_node *child_node = (set_hash_node *)node->htab[hidx];
                 if (count > 0) rcnt = count - fcnt;
-                fcnt += do_set_elem_traverse_dfs(engine, info, child_node, rcnt, delete,
+                fcnt += do_set_elem_traverse_dfs(info, child_node, rcnt, delete,
                                             (elem_array==NULL ? NULL : &elem_array[fcnt]));
                 if (delete) {
                     if  (child_node->tot_hash_cnt == 0 &&
                          child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
-                         do_set_node_unlink(engine, info, node, hidx);
+                         do_set_node_unlink(info, node, hidx);
                      }
                 }
                 if (count > 0 && fcnt >= count)
@@ -2203,7 +2195,7 @@ static int do_set_elem_traverse_dfs(struct default_engine *engine,
                     elem_array[fcnt] = elem;
                 }
                 fcnt++;
-                if (delete) do_set_elem_unlink(engine, info, node, hidx, NULL, elem,
+                if (delete) do_set_elem_unlink(info, node, hidx, NULL, elem,
                                                (elem_array==NULL ? ELEM_DELETE_COLL
                                                                  : ELEM_DELETE_NORMAL));
                 if (count > 0 && fcnt >= count) break;
@@ -2216,50 +2208,46 @@ static int do_set_elem_traverse_dfs(struct default_engine *engine,
 }
 
 #ifdef SET_DELETE_NO_MERGE
-static uint32_t do_set_elem_delete_fast(struct default_engine *engine,
-                                        set_meta_info *info, const uint32_t count)
+static uint32_t do_set_elem_delete_fast(set_meta_info *info, const uint32_t count)
 {
     uint32_t fcnt = 0;
     if (info->root != NULL) {
-        fcnt = do_set_elem_traverse_fast(engine, info, info->root, count);
+        fcnt = do_set_elem_traverse_fast(info, info->root, count);
         if (info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
-            do_set_node_free(engine, info->root);
+            do_set_node_free(info->root);
             info->root = NULL;
             info->ccnt = 0;
             if (info->stotal > 0) { /* apply memory space */
-                decrease_collection_space(engine, ITEM_TYPE_SET,
-                                          (coll_meta_info *)info, info->stotal);
+                decrease_collection_space(ITEM_TYPE_SET, (coll_meta_info *)info, info->stotal);
             }
         }
     }
     return fcnt;
 }
 #else
-static uint32_t do_set_elem_delete(struct default_engine *engine,
-                                   set_meta_info *info, const uint32_t count,
+static uint32_t do_set_elem_delete(set_meta_info *info, const uint32_t count,
                                    enum elem_delete_cause cause)
 {
     assert(cause == ELEM_DELETE_COLL);
     uint32_t fcnt = 0;
     if (info->root != NULL) {
-        fcnt = do_set_elem_traverse_dfs(engine, info, info->root, count, true, NULL);
+        fcnt = do_set_elem_traverse_dfs(info, info->root, count, true, NULL);
         if (info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
-            do_set_node_unlink(engine, info, NULL, 0);
+            do_set_node_unlink(info, NULL, 0);
         }
     }
     return fcnt;
 }
 #endif
 
-static ENGINE_ERROR_CODE do_set_elem_get(struct default_engine *engine,
-                                         set_meta_info *info, const uint32_t count, const bool delete,
+static ENGINE_ERROR_CODE do_set_elem_get(set_meta_info *info, const uint32_t count, const bool delete,
                                          set_elem_item **elem_array, uint32_t *elem_count)
 {
     uint32_t fcnt = 0;
     if (info->root != NULL) {
-        fcnt = do_set_elem_traverse_dfs(engine, info, info->root, count, delete, elem_array);
+        fcnt = do_set_elem_traverse_dfs(info, info->root, count, delete, elem_array);
         if (delete && info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
-            do_set_node_unlink(engine, info, NULL, 0);
+            do_set_node_unlink(info, NULL, 0);
         }
     }
 
@@ -2282,7 +2270,7 @@ static ENGINE_ERROR_CODE do_set_elem_insert(struct default_engine *engine,
 #ifdef ENABLE_STICKY_ITEM
     /* sticky memory limit check */
     if (it->exptime == (rel_time_t)-1) {
-        if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
+        if (statsp->sticky_bytes >= config->sticky_limit)
             return ENGINE_ENOMEM;
     }
 #endif
@@ -2300,7 +2288,7 @@ static ENGINE_ERROR_CODE do_set_elem_insert(struct default_engine *engine,
         if (r_node == NULL) {
             return ENGINE_ENOMEM;
         }
-        do_set_node_link(engine, info, NULL, 0, r_node);
+        do_set_node_link(info, NULL, 0, r_node);
         new_root_flag = true;
     }
 
@@ -2308,7 +2296,7 @@ static ENGINE_ERROR_CODE do_set_elem_insert(struct default_engine *engine,
     ret = do_set_elem_link(engine, info, elem, cookie);
     if (ret != ENGINE_SUCCESS) {
         if (new_root_flag) {
-            do_set_node_unlink(engine, info, NULL, 0);
+            do_set_node_unlink(info, NULL, 0);
         }
         return ret;
     }
@@ -2398,10 +2386,10 @@ static btree_indx_node *do_btree_node_alloc(struct default_engine *engine,
     return node;
 }
 
-static void do_btree_node_free(struct default_engine *engine, btree_indx_node *node)
+static void do_btree_node_free(btree_indx_node *node)
 {
     size_t ntotal = (node->ndepth > 0 ? sizeof(btree_indx_node) : sizeof(btree_leaf_node));
-    do_mem_slot_free(engine, node, ntotal);
+    do_mem_slot_free(node, ntotal);
 }
 
 static btree_elem_item *do_btree_elem_alloc(struct default_engine *engine,
@@ -2424,15 +2412,15 @@ static btree_elem_item *do_btree_elem_alloc(struct default_engine *engine,
     return elem;
 }
 
-static void do_btree_elem_free(struct default_engine *engine, btree_elem_item *elem)
+static void do_btree_elem_free(btree_elem_item *elem)
 {
     assert(elem->refcount == 0);
     assert(elem->slabs_clsid != 0);
     size_t ntotal = do_btree_elem_ntotal(elem);
-    do_mem_slot_free(engine, elem, ntotal);
+    do_mem_slot_free(elem, ntotal);
 }
 
-static void do_btree_elem_release(struct default_engine *engine, btree_elem_item *elem)
+static void do_btree_elem_release(btree_elem_item *elem)
 {
     /* assert(elem->status != BTREE_ITEM_STATUS_FREE); */
     if (elem->refcount != 0) {
@@ -2440,7 +2428,7 @@ static void do_btree_elem_release(struct default_engine *engine, btree_elem_item
     }
     if (elem->refcount == 0 && elem->status == BTREE_ITEM_STATUS_UNLINK) {
         elem->status = BTREE_ITEM_STATUS_FREE;
-        do_btree_elem_free(engine, elem);
+        do_btree_elem_free(elem);
     }
 }
 
@@ -3402,8 +3390,7 @@ static void do_btree_node_sbalance(btree_indx_node *node, btree_elem_posi *path,
     }
 }
 
-static void do_btree_node_link(struct default_engine *engine,
-                               btree_meta_info *info, btree_indx_node *node,
+static void do_btree_node_link(btree_meta_info *info, btree_indx_node *node,
                                btree_elem_posi *p_posi)
 {
     /*
@@ -3453,7 +3440,7 @@ static void do_btree_node_link(struct default_engine *engine,
         size_t stotal;
         if (node->ndepth > 0) stotal = slabs_space_size(sizeof(btree_indx_node));
         else                  stotal = slabs_space_size(sizeof(btree_leaf_node));
-        increase_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+        increase_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
     }
 }
 
@@ -3487,7 +3474,7 @@ static ENGINE_ERROR_CODE do_btree_node_split(struct default_engine *engine,
             if (r_node == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
-            do_btree_node_link(engine, info, r_node, NULL);
+            do_btree_node_link(info, r_node, NULL);
             path[btree_depth].node = r_node;
             path[btree_depth].indx = 0;
             break;
@@ -3508,7 +3495,7 @@ static ENGINE_ERROR_CODE do_btree_node_split(struct default_engine *engine,
             }
             p_posi = path[i+1];
             if (direction == BTREE_DIRECTION_NEXT) p_posi.indx += 1;
-            do_btree_node_link(engine, info, n_node[i], &p_posi);
+            do_btree_node_link(info, n_node[i], &p_posi);
 
             if (direction == BTREE_DIRECTION_PREV) {
                 /* adjust upper path */
@@ -3519,7 +3506,7 @@ static ENGINE_ERROR_CODE do_btree_node_split(struct default_engine *engine,
         }
     } else {
         for (i = 0; i < btree_depth; i++) {
-            do_btree_node_free(engine, n_node[i]);
+            do_btree_node_free(n_node[i]);
         }
     }
     if (btree_position_debug) {
@@ -3550,8 +3537,7 @@ static void do_btree_node_mbalance(btree_indx_node *node, btree_elem_posi *path,
     do_btree_ecnt_move_merge(path, depth+1, direction, elem_count);
 }
 
-static void do_btree_node_unlink(struct default_engine *engine,
-                                 btree_meta_info *info, btree_indx_node *node,
+static void do_btree_node_unlink(btree_meta_info *info, btree_indx_node *node,
                                  btree_elem_posi *p_posi)
 {
     if (p_posi == NULL) {
@@ -3579,23 +3565,23 @@ static void do_btree_node_unlink(struct default_engine *engine,
         size_t stotal;
         if (node->ndepth > 0) stotal = slabs_space_size(sizeof(btree_indx_node));
         else                  stotal = slabs_space_size(sizeof(btree_leaf_node));
-        decrease_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+        decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
     }
 
     /* The amount of space to be decreased become different according to node depth.
      * So, the btree node must be freed after collection space is decreased.
      */
-    do_btree_node_free(engine, node);
+    do_btree_node_free(node);
 }
 
-static void do_btree_node_detach(struct default_engine *engine, btree_indx_node *node)
+static void do_btree_node_detach(btree_indx_node *node)
 {
     /* unlink the given node from b+tree */
     if (node->prev != NULL) node->prev->next = node->next;
     if (node->next != NULL) node->next->prev = node->prev;
     node->prev = node->next = NULL;
 
-    do_btree_node_free(engine, node);
+    do_btree_node_free(node);
 }
 
 static inline void do_btree_node_remove_null_items(btree_elem_posi *posi, const bool forward, const int null_count)
@@ -3631,8 +3617,7 @@ static inline void do_btree_node_remove_null_items(btree_elem_posi *posi, const 
     node->used_count -= null_count;
 }
 
-static void do_btree_node_merge(struct default_engine *engine,
-                                btree_meta_info *info, btree_elem_posi *path,
+static void do_btree_node_merge(btree_meta_info *info, btree_elem_posi *path,
                                 const bool forward, const int leaf_node_count)
 {
     btree_indx_node *node;
@@ -3652,26 +3637,26 @@ static void do_btree_node_merge(struct default_engine *engine,
             node = path[btree_depth].node;
             if (node == info->root) {
                 if (node->used_count == 0) {
-                    do_btree_node_unlink(engine, info, node, NULL);
+                    do_btree_node_unlink(info, node, NULL);
                 } else {
                     btree_indx_node *new_root;
                     while (node->used_count == 1 && node->ndepth > 0) {
                         new_root = BTREE_GET_NODE_ITEM(node, 0);
-                        do_btree_node_unlink(engine, info, node, NULL);
+                        do_btree_node_unlink(info, node, NULL);
                         info->root = new_root;
                         node = new_root;
                     }
                 }
             } else {
                 if (node->used_count == 0) {
-                    do_btree_node_unlink(engine, info, node, &path[btree_depth+1]);
+                    do_btree_node_unlink(info, node, &path[btree_depth+1]);
                     par_node_count = 1;
                 }
                 else if (node->used_count < (BTREE_ITEM_COUNT/2)) {
                     if ((node->prev != NULL && node->prev->used_count < (BTREE_ITEM_COUNT/2)) ||
                         (node->next != NULL && node->next->used_count < (BTREE_ITEM_COUNT/2))) {
                         do_btree_node_mbalance(node, path, btree_depth);
-                        do_btree_node_unlink(engine, info, node, &path[btree_depth+1]);
+                        do_btree_node_unlink(info, node, &path[btree_depth+1]);
                         par_node_count = 1;
                     }
                 }
@@ -3694,7 +3679,7 @@ static void do_btree_node_merge(struct default_engine *engine,
                 assert(node != NULL);
 
                 if (node->used_count == 0) {
-                    do_btree_node_detach(engine, node);
+                    do_btree_node_detach(node);
                     s_posi.node->item[s_posi.indx] = NULL;
                     assert(s_posi.node->ecnt[s_posi.indx] == 0);
                 }
@@ -3715,7 +3700,7 @@ static void do_btree_node_merge(struct default_engine *engine,
                     if ((node->prev != NULL && node->prev->used_count < (BTREE_ITEM_COUNT/2)) ||
                         (node->next != NULL && node->next->used_count < (BTREE_ITEM_COUNT/2))) {
                         do_btree_node_mbalance(node, upth, btree_depth);
-                        do_btree_node_detach(engine, node);
+                        do_btree_node_detach(node);
                         upth[upp_depth].node->item[upth[upp_depth].indx] = NULL;
                         assert(upth[upp_depth].node->ecnt[upth[upp_depth].indx] == 0);
                         cur_unlink_cnt++;
@@ -3745,7 +3730,7 @@ static void do_btree_node_merge(struct default_engine *engine,
                 size_t stotal;
                 if (btree_depth > 0) stotal = tot_unlink_cnt * slabs_space_size(sizeof(btree_indx_node));
                 else                 stotal = tot_unlink_cnt * slabs_space_size(sizeof(btree_leaf_node));
-                decrease_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+                decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
             }
         }
         btree_depth += 1;
@@ -3756,8 +3741,7 @@ static void do_btree_node_merge(struct default_engine *engine,
     }
 }
 
-static void do_btree_elem_unlink(struct default_engine *engine,
-                                 btree_meta_info *info, btree_elem_posi *path,
+static void do_btree_elem_unlink(btree_meta_info *info, btree_elem_posi *path,
                                  enum elem_delete_cause cause)
 {
     btree_elem_posi *posi = &path[0];
@@ -3766,7 +3750,7 @@ static void do_btree_elem_unlink(struct default_engine *engine,
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(do_btree_elem_ntotal(elem));
-        decrease_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+        decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
     }
 
     CLOG_BTREE_ELEM_DELETE(info, elem, cause);
@@ -3775,7 +3759,7 @@ static void do_btree_elem_unlink(struct default_engine *engine,
         elem->status = BTREE_ITEM_STATUS_UNLINK;
     } else  {
         elem->status = BTREE_ITEM_STATUS_FREE;
-        do_btree_elem_free(engine, elem);
+        do_btree_elem_free(elem);
     }
 
     /* remove the element from the leaf node */
@@ -3792,11 +3776,11 @@ static void do_btree_elem_unlink(struct default_engine *engine,
     info->ccnt--;
 
     if (node->used_count < (BTREE_ITEM_COUNT/2)) {
-        do_btree_node_merge(engine, info, path, true, 1);
+        do_btree_node_merge(info, path, true, 1);
     }
 }
 
-static void do_btree_elem_replace(struct default_engine *engine, btree_meta_info *info,
+static void do_btree_elem_replace(btree_meta_info *info,
                                   btree_elem_posi *posi, btree_elem_item *new_elem)
 {
     btree_elem_item *old_elem = BTREE_GET_ELEM_ITEM(posi->node, posi->indx);
@@ -3812,7 +3796,7 @@ static void do_btree_elem_replace(struct default_engine *engine, btree_meta_info
         old_elem->status = BTREE_ITEM_STATUS_UNLINK;
     } else  {
         old_elem->status = BTREE_ITEM_STATUS_FREE;
-        do_btree_elem_free(engine, old_elem);
+        do_btree_elem_free(old_elem);
     }
 
     new_elem->status = BTREE_ITEM_STATUS_USED;
@@ -3821,9 +3805,9 @@ static void do_btree_elem_replace(struct default_engine *engine, btree_meta_info
     if (new_stotal != old_stotal) { /* apply memory space */
         assert(info->stotal > 0);
         if (new_stotal > old_stotal)
-            increase_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, (new_stotal-old_stotal));
+            increase_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, (new_stotal-old_stotal));
         else
-            decrease_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, (old_stotal-new_stotal));
+            decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, (old_stotal-new_stotal));
     }
 }
 
@@ -3886,7 +3870,7 @@ static ENGINE_ERROR_CODE do_btree_elem_update(struct default_engine *engine, btr
         if ((info->mflags & COLL_META_FLAG_STICKY) != 0 &&
             (elem->neflag+elem->nbytes) < (new_neflag+new_nbytes)) {
             /* sticky memory limit check : old body size < new body size */
-            if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
+            if (statsp->sticky_bytes >= config->sticky_limit)
                 return ENGINE_ENOMEM;
         }
 #endif
@@ -3920,15 +3904,15 @@ static ENGINE_ERROR_CODE do_btree_elem_update(struct default_engine *engine, btr
             memcpy(ptr, elem->data + real_nbkey + elem->neflag, elem->nbytes);
         }
 
-        do_btree_elem_replace(engine, info, &posi, new_elem);
-        do_btree_elem_release(engine, new_elem);
+        do_btree_elem_replace(info, &posi, new_elem);
+        do_btree_elem_release(new_elem);
     }
 
     return ENGINE_SUCCESS;
 }
 
 #ifdef BTREE_DELETE_NO_MERGE
-static int do_btree_elem_delete_fast(struct default_engine *engine, btree_meta_info *info,
+static int do_btree_elem_delete_fast(btree_meta_info *info,
                                      btree_elem_posi *path, const uint32_t count)
 {
     btree_indx_node *node;
@@ -3958,12 +3942,12 @@ static int do_btree_elem_delete_fast(struct default_engine *engine, btree_meta_i
                     elem->status = BTREE_ITEM_STATUS_UNLINK;
                 } else {
                     elem->status = BTREE_ITEM_STATUS_FREE;
-                    do_btree_elem_free(engine, elem);
+                    do_btree_elem_free(elem);
                 }
             }
         } else {
             for (i = 0; i < node->used_count; i++) {
-                do_btree_node_free(engine, node->item[i]);
+                do_btree_node_free(node->item[i]);
             }
         }
         delcnt += node->used_count;
@@ -3986,15 +3970,14 @@ static int do_btree_elem_delete_fast(struct default_engine *engine, btree_meta_i
         info->root = NULL;
         info->ccnt = 0;
         if (info->stotal > 0) {
-            decrease_collection_space(engine, ITEM_TYPE_BTREE,
-                                      (coll_meta_info *)info, info->stotal);
+            decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, info->stotal);
         }
     }
     return delcnt;
 }
 #endif
 
-static uint32_t do_btree_elem_delete(struct default_engine *engine, btree_meta_info *info,
+static uint32_t do_btree_elem_delete(btree_meta_info *info,
                                      const int bkrtype, const bkey_range *bkrange,
                                      const eflag_filter *efilter, const uint32_t count,
                                      uint32_t *access_count, enum elem_delete_cause cause)
@@ -4018,7 +4001,7 @@ static uint32_t do_btree_elem_delete(struct default_engine *engine, btree_meta_i
             tot_access++;
             if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
                 /* cause == ELEM_DELETE_NORMAL */
-                do_btree_elem_unlink(engine, info, path, cause);
+                do_btree_elem_unlink(info, path, cause);
                 tot_found = 1;
             }
         } else {
@@ -4049,7 +4032,7 @@ static uint32_t do_btree_elem_delete(struct default_engine *engine, btree_meta_i
                         elem->status = BTREE_ITEM_STATUS_UNLINK;
                     } else {
                         elem->status = BTREE_ITEM_STATUS_FREE;
-                        do_btree_elem_free(engine, elem);
+                        do_btree_elem_free(elem);
                     }
                     c_posi.node->item[c_posi.indx] = NULL;
 
@@ -4101,9 +4084,9 @@ static uint32_t do_btree_elem_delete(struct default_engine *engine, btree_meta_i
                      * So, do not need to descrese space total info.
                      */
                     assert(stotal > 0 && stotal <= info->stotal);
-                    decrease_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+                    decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
                 }
-                do_btree_node_merge(engine, info, path, forward, node_cnt);
+                do_btree_node_merge(info, path, forward, node_cnt);
             }
         }
     }
@@ -4217,7 +4200,7 @@ static ENGINE_ERROR_CODE do_btree_overflow_check(btree_meta_info *info, btree_el
     return ENGINE_SUCCESS;
 }
 
-static void do_btree_overflow_trim(struct default_engine *engine, btree_meta_info *info,
+static void do_btree_overflow_trim(btree_meta_info *info,
                                    btree_elem_item *elem, const int overflow_type,
                                    btree_elem_item **trimmed_elems, uint32_t *trimmed_count)
 {
@@ -4266,7 +4249,7 @@ static void do_btree_overflow_trim(struct default_engine *engine, btree_meta_inf
             BKEY_COPY(edge_elem->data, edge_elem->nbkey, bkrange_space.to_bkey);
         }
         bkrtype = do_btree_bkey_range_type(&bkrange_space);
-        del_count = do_btree_elem_delete(engine, info, bkrtype, &bkrange_space, NULL, 0,
+        del_count = do_btree_elem_delete(info, bkrtype, &bkrange_space, NULL, 0,
                                          NULL, ELEM_DELETE_TRIM);
         assert(del_count > 0);
         assert(info->ccnt > 0);
@@ -4290,7 +4273,7 @@ static void do_btree_overflow_trim(struct default_engine *engine, btree_meta_inf
             *trimmed_elems = edge_elem;
             *trimmed_count = 1;
         }
-        do_btree_elem_unlink(engine, info, delpath, ELEM_DELETE_TRIM);
+        do_btree_elem_unlink(info, delpath, ELEM_DELETE_TRIM);
         if (info->ovflact == OVFL_SMALLEST_TRIM || info->ovflact == OVFL_LARGEST_TRIM)
             info->mflags |= COLL_META_FLAG_TRIMMED; // set trimmed
     }
@@ -4314,7 +4297,7 @@ static ENGINE_ERROR_CODE do_btree_elem_link(struct default_engine *engine,
 #ifdef ENABLE_STICKY_ITEM
         /* sticky memory limit check */
         if ((info->mflags & COLL_META_FLAG_STICKY) != 0) {
-            if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
+            if (statsp->sticky_bytes >= config->sticky_limit)
                 return ENGINE_ENOMEM;
         }
 #endif
@@ -4360,11 +4343,11 @@ static ENGINE_ERROR_CODE do_btree_elem_link(struct default_engine *engine,
 
         if (1) { /* apply memory space */
             size_t stotal = slabs_space_size(do_btree_elem_ntotal(elem));
-            increase_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+            increase_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
         }
 
         if (ovfl_type != OVFL_TYPE_NONE) {
-            do_btree_overflow_trim(engine, info, elem, ovfl_type, trimmed_elems, trimmed_count);
+            do_btree_overflow_trim(info, elem, ovfl_type, trimmed_elems, trimmed_count);
         }
     }
     else if (res == ENGINE_ELEM_EEXISTS) {
@@ -4374,12 +4357,12 @@ static ENGINE_ERROR_CODE do_btree_elem_link(struct default_engine *engine,
             if ((info->mflags & COLL_META_FLAG_STICKY) != 0 &&
                 (find->neflag+find->nbytes) < (elem->neflag+elem->nbytes)) {
                 /* sticky memory limit check */
-                if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
+                if (statsp->sticky_bytes >= config->sticky_limit)
                     return ENGINE_ENOMEM;
             }
 #endif
 
-            do_btree_elem_replace(engine, info, &path[0], elem);
+            do_btree_elem_replace(info, &path[0], elem);
             if (replaced) *replaced = true;
             res = ENGINE_SUCCESS;
         }
@@ -4418,7 +4401,7 @@ static bool do_btree_overlapped_with_trimmed_space(btree_meta_info *info,
     return overlapped;
 }
 
-static ENGINE_ERROR_CODE do_btree_elem_get(struct default_engine *engine, btree_meta_info *info,
+static ENGINE_ERROR_CODE do_btree_elem_get(btree_meta_info *info,
                                            const int bkrtype, const bkey_range *bkrange, const eflag_filter *efilter,
                                            const uint32_t offset, const uint32_t count, const bool delete,
                                            btree_elem_item **elem_array, uint32_t *elem_count,
@@ -4448,7 +4431,7 @@ static ENGINE_ERROR_CODE do_btree_elem_get(struct default_engine *engine, btree_
                     elem->refcount++;
                     elem_array[tot_found++] = elem;
                     if (delete) {
-                        do_btree_elem_unlink(engine, info, path, ELEM_DELETE_NORMAL);
+                        do_btree_elem_unlink(info, path, ELEM_DELETE_NORMAL);
                     }
                 }
             }
@@ -4553,8 +4536,8 @@ static ENGINE_ERROR_CODE do_btree_elem_get(struct default_engine *engine, btree_
             if (tot_found > 0 && delete) { /* apply memory space */
                 info->ccnt -= tot_found;
                 assert(stotal > 0 && stotal <= info->stotal);
-                decrease_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
-                do_btree_node_merge(engine, info, path, forward, node_cnt);
+                decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+                do_btree_node_merge(info, path, forward, node_cnt);
             }
         }
     } else {
@@ -4575,7 +4558,7 @@ static ENGINE_ERROR_CODE do_btree_elem_get(struct default_engine *engine, btree_
     }
 }
 
-static uint32_t do_btree_elem_count(struct default_engine *engine, btree_meta_info *info,
+static uint32_t do_btree_elem_count(btree_meta_info *info,
                                     const int bkrtype, const bkey_range *bkrange,
                                     const eflag_filter *efilter, uint32_t *access_count)
 {
@@ -4668,7 +4651,7 @@ static ENGINE_ERROR_CODE do_btree_elem_insert(struct default_engine *engine,
         if (r_node == NULL) {
             return ENGINE_ENOMEM;
         }
-        do_btree_node_link(engine, info, r_node, NULL);
+        do_btree_node_link(info, r_node, NULL);
         new_root_flag = true;
     }
 
@@ -4677,7 +4660,7 @@ static ENGINE_ERROR_CODE do_btree_elem_insert(struct default_engine *engine,
                              trimmed_elems, trimmed_count, cookie);
     if (ret != ENGINE_SUCCESS) {
         if (new_root_flag) {
-            do_btree_node_unlink(engine, info, info->root, NULL);
+            do_btree_node_unlink(info, info->root, NULL);
         }
         return ret;
     }
@@ -4734,7 +4717,7 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(struct default_engine *engine,
             assert(ret != ENGINE_ELEM_EEXISTS);
             /* ENGINE_ENOMEM || ENGINE_BKEYOOR || ENGINE_OVERFLOW */
         }
-        do_btree_elem_release(engine, elem);
+        do_btree_elem_release(elem);
         *result = initial;
     } else {
         real_nbkey = BTREE_REAL_NBKEY(elem->nbkey);
@@ -4771,8 +4754,8 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(struct default_engine *engine,
             memcpy(new_elem->data, elem->data, real_nbkey + elem->neflag);
             memcpy(new_elem->data + real_nbkey + new_elem->neflag, nbuf, nlen);
 
-            do_btree_elem_replace(engine, info, &posi, new_elem);
-            do_btree_elem_release(engine, new_elem);
+            do_btree_elem_replace(info, &posi, new_elem);
+            do_btree_elem_release(new_elem);
         }
         ret = ENGINE_SUCCESS;
         *result = value;
@@ -5774,19 +5757,19 @@ static int check_expired_collections(struct default_engine *engine, const int cl
     }
 
     tries = space_shortage_level;
-    current_time = engine->server.core->get_current_time();
+    current_time = svcore->get_current_time();
 
     pthread_mutex_lock(&engine->cache_lock);
     if (item_evict_to_free == true)
     {
-        search = engine->items.tails[clsid];
+        search = itemsp->tails[clsid];
         while (search != NULL && tries > 0) {
             assert(search->nkey > 0);
             it = search;
             search = search->prev; tries--;
 
             if (it->refcount == 0) {
-                if (do_item_isvalid(engine, it, current_time) == false) {
+                if (do_item_isvalid(it, current_time) == false) {
                     do_item_invalidate(engine, it, clsid, true);
                 } else {
                     do_item_evict(engine, it, clsid, current_time, NULL);
@@ -5794,7 +5777,7 @@ static int check_expired_collections(struct default_engine *engine, const int cl
                 unlink_count++;
             } else { /* search->refcount > 0 */
                 /* just unlink the item from LRU list. */
-                item_unlink_q(engine, it);
+                item_unlink_q(it);
             }
         }
     }
@@ -5804,34 +5787,34 @@ static int check_expired_collections(struct default_engine *engine, const int cl
     return unlink_count;
 }
 
-static void do_coll_all_elem_delete(struct default_engine *engine, hash_item *it)
+static void do_coll_all_elem_delete(hash_item *it)
 {
     if (IS_LIST_ITEM(it)) {
         list_meta_info *info = (list_meta_info *)item_get_meta(it);
-        (void)do_list_elem_delete(engine, info, 0, 0, ELEM_DELETE_COLL);
+        (void)do_list_elem_delete(info, 0, 0, ELEM_DELETE_COLL);
         assert(info->head == NULL && info->tail == NULL);
     } else if (IS_SET_ITEM(it)) {
         set_meta_info *info = (set_meta_info *)item_get_meta(it);
 #ifdef SET_DELETE_NO_MERGE
-        (void)do_set_elem_delete_fast(engine, info, 0);
+        (void)do_set_elem_delete_fast(info, 0);
 #else
-        (void)do_set_elem_delete(engine, info, 0, ELEM_DELETE_COLL);
+        (void)do_set_elem_delete(info, 0, ELEM_DELETE_COLL);
 #endif
         assert(info->root == NULL);
     } else if (IS_MAP_ITEM(it)) {
         map_meta_info *info = (map_meta_info *)item_get_meta(it);
-        (void)do_map_elem_delete(engine, info, 0, ELEM_DELETE_COLL);
+        (void)do_map_elem_delete(info, 0, ELEM_DELETE_COLL);
         assert(info->root == NULL);
     } else if (IS_BTREE_ITEM(it)) {
         btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
 #ifdef BTREE_DELETE_NO_MERGE
         btree_elem_posi path[BTREE_MAX_DEPTH];
         path[0].node = NULL;
-        (void)do_btree_elem_delete_fast(engine, info, path, 0);
+        (void)do_btree_elem_delete_fast(info, path, 0);
 #else
         bkey_range bkrange_space;
         get_bkey_full_range(info->bktype, true, &bkrange_space);
-        (void)do_btree_elem_delete(engine, info, BKEY_RANGE_TYPE_ASC, &bkrange_space,
+        (void)do_btree_elem_delete(info, BKEY_RANGE_TYPE_ASC, &bkrange_space,
                                    NULL, 0, NULL, ELEM_DELETE_COLL);
 #endif
         assert(info->root == NULL);
@@ -5883,7 +5866,7 @@ static void *collection_delete_thread(void *arg)
             if (expired_cnt > 0) {
                 if (background_evict_flag == false) {
                     /*****
-                    if (engine->config.verbose > 1) {
+                    if (config->verbose > 1) {
                         logger->log(EXTENSION_LOG_INFO, NULL, "background evict: start\n");
                     }
                     *****/
@@ -5894,7 +5877,7 @@ static void *collection_delete_thread(void *arg)
                 nanosleep(&background_sleep_time, NULL);
                 background_evict_ccnt += expired_cnt;
                 if (background_evict_ccnt >= 10000000) {
-                    if (engine->config.verbose > 1) {
+                    if (config->verbose > 1) {
                         logger->log(EXTENSION_LOG_INFO, NULL, "background evict: cur count=%u\n",
                                                                background_evict_ccnt);
                     }
@@ -5903,7 +5886,7 @@ static void *collection_delete_thread(void *arg)
             } else {
                 if (background_evict_flag == true) {
                     /*****
-                    if (engine->config.verbose > 1) {
+                    if (config->verbose > 1) {
                         logger->log(EXTENSION_LOG_INFO, NULL, "background evict: end count=%u\n",
                                                                background_evict_ccnt);
                     }
@@ -5920,10 +5903,10 @@ static void *collection_delete_thread(void *arg)
             while (dropped == false) {
                 pthread_mutex_lock(&engine->cache_lock);
                 info = (list_meta_info *)item_get_meta(it);
-                (void)do_list_elem_delete(engine, info, 0, 30, ELEM_DELETE_COLL);
+                (void)do_list_elem_delete(info, 0, 30, ELEM_DELETE_COLL);
                 if (info->ccnt == 0) {
                     assert(info->head == NULL && info->tail == NULL);
-                    do_item_free(engine, it);
+                    do_item_free(it);
                     dropped = true;
                 }
                 pthread_mutex_unlock(&engine->cache_lock);
@@ -5935,13 +5918,13 @@ static void *collection_delete_thread(void *arg)
                 pthread_mutex_lock(&engine->cache_lock);
                 info = (set_meta_info *)item_get_meta(it);
 #ifdef SET_DELETE_NO_MERGE
-                (void)do_set_elem_delete_fast(engine, info, 30);
+                (void)do_set_elem_delete_fast(info, 30);
 #else
-                (void)do_set_elem_delete(engine, info, 30, ELEM_DELETE_COLL);
+                (void)do_set_elem_delete(info, 30, ELEM_DELETE_COLL);
 #endif
                 if (info->ccnt == 0) {
                     assert(info->root == NULL);
-                    do_item_free(engine, it);
+                    do_item_free(it);
                     dropped = true;
                 }
                 pthread_mutex_unlock(&engine->cache_lock);
@@ -5953,10 +5936,10 @@ static void *collection_delete_thread(void *arg)
             while (dropped == false) {
                 pthread_mutex_lock(&engine->cache_lock);
                 info = (map_meta_info *)item_get_meta(it);
-                (void)do_map_elem_delete(engine, info, 30, ELEM_DELETE_COLL);
+                (void)do_map_elem_delete(info, 30, ELEM_DELETE_COLL);
                 if (info->ccnt == 0) {
                     assert(info->root == NULL);
-                    do_item_free(engine, it);
+                    do_item_free(it);
                     dropped = true;
                 }
                 pthread_mutex_unlock(&engine->cache_lock);
@@ -5976,14 +5959,14 @@ static void *collection_delete_thread(void *arg)
                 pthread_mutex_lock(&engine->cache_lock);
                 info = (btree_meta_info *)item_get_meta(it);
 #ifdef BTREE_DELETE_NO_MERGE
-                (void)do_btree_elem_delete_fast(engine, info, path, 100);
+                (void)do_btree_elem_delete_fast(info, path, 100);
 #else
-                (void)do_btree_elem_delete(engine, info, BKEY_RANGE_TYPE_ASC, &bkrange_space,
+                (void)do_btree_elem_delete(info, BKEY_RANGE_TYPE_ASC, &bkrange_space,
                                            NULL, 100, NULL, ELEM_DELETE_COLL);
 #endif
                 if (info->ccnt == 0) {
                     assert(info->root == NULL);
-                    do_item_free(engine, it);
+                    do_item_free(it);
                     dropped = true;
                 }
                 pthread_mutex_unlock(&engine->cache_lock);
@@ -6197,36 +6180,35 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
         if (nprefix == 0) { /* null prefix */
             pt = &engine->assoc.noprefix_stats;
         } else {
-            pt = assoc_prefix_find(engine, engine->server.core->hash(prefix, nprefix, 0),
-                                   prefix, nprefix);
+            pt = assoc_prefix_find(prefix, nprefix, svcore->hash(prefix, nprefix, 0));
         }
         if (pt == NULL) {
             return ENGINE_PREFIX_ENOENT;
         }
 
         if (when == 0) {
-            pt->oldest_live = engine->server.core->get_current_time() - 1;
+            pt->oldest_live = svcore->get_current_time() - 1;
         } else {
             pt->oldest_live = when - 1;
         }
         oldest_live = pt->oldest_live;
 
-        if (engine->config.verbose) {
+        if (config->verbose) {
             logger->log(EXTENSION_LOG_INFO, NULL, "flush prefix=%s when=%u client_ip=%s\n",
                         (prefix == NULL ? "<null>" : prefix),
-                        when, engine->server.core->get_client_ip(cookie));
+                        when, svcore->get_client_ip(cookie));
         }
     } else { /* flush all */
         if (when == 0) {
-            engine->config.oldest_live = engine->server.core->get_current_time() - 1;
+            config->oldest_live = svcore->get_current_time() - 1;
         } else {
-            engine->config.oldest_live = when - 1;
+            config->oldest_live = when - 1;
         }
-        oldest_live = engine->config.oldest_live;
+        oldest_live = config->oldest_live;
 
-        if (engine->config.verbose) {
+        if (config->verbose) {
             logger->log(EXTENSION_LOG_INFO, NULL, "flush all when=%u client_ip=%s\n",
-                        when, engine->server.core->get_client_ip(cookie));
+                        when, svcore->get_client_ip(cookie));
         }
     }
 
@@ -6240,7 +6222,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
              * oldest_live time.
              * The oldest_live checking will auto-expire the remaining items.
              */
-            for (iter = engine->items.heads[i]; iter != NULL; iter = next) {
+            for (iter = itemsp->heads[i]; iter != NULL; iter = next) {
                 if (iter->time >= oldest_live) {
                     next = iter->next;
                     if (nprefix < 0) { /* flush all */
@@ -6252,20 +6234,20 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
                     } else { /* nprefix > 0: flush given prefix */
                         char *iter_key = (char*)item_get_key(iter);
                         if (iter->nkey > nprefix && memcmp(prefix,iter_key,nprefix) == 0 &&
-                            *(iter_key + nprefix) == engine->config.prefix_delimiter) {
+                            *(iter_key + nprefix) == config->prefix_delimiter) {
                             do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
                         }
                     }
                 } else {
                     /* We've hit the first old item. Continue to the next queue. */
                     /* reset lowMK and curMK to tail pointer */
-                    engine->items.lowMK[i] = engine->items.tails[i];
-                    engine->items.curMK[i] = engine->items.tails[i];
+                    itemsp->lowMK[i] = itemsp->tails[i];
+                    itemsp->curMK[i] = itemsp->tails[i];
                     break;
                 }
             }
 #ifdef ENABLE_STICKY_ITEM
-            for (iter = engine->items.sticky_heads[i]; iter != NULL; iter = next) {
+            for (iter = itemsp->sticky_heads[i]; iter != NULL; iter = next) {
                 if (iter->time >= oldest_live) {
                     next = iter->next;
                     if (nprefix < 0) { /* flush all */
@@ -6277,14 +6259,14 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
                     } else { /* nprefix > 0: flush given prefix */
                         char *iter_key = (char*)item_get_key(iter);
                         if (iter->nkey > nprefix && memcmp(prefix,iter_key,nprefix) == 0 &&
-                            *(iter_key + nprefix) == engine->config.prefix_delimiter) {
+                            *(iter_key + nprefix) == config->prefix_delimiter) {
                             do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
                         }
                     }
                 } else {
                     /* We've hit the first old item. Continue to the next queue. */
                     /* reset curMK to tail pointer */
-                    engine->items.sticky_curMK[i] = engine->items.sticky_tails[i];
+                    itemsp->sticky_curMK[i] = itemsp->sticky_tails[i];
                     break;
                 }
             }
@@ -6315,7 +6297,7 @@ char *item_cachedump(struct default_engine *engine,
 {
     char *ret;
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_item_cachedump(engine, slabs_clsid, limit, forward, sticky, bytes);
+    ret = do_item_cachedump(slabs_clsid, limit, forward, sticky, bytes);
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
 }
@@ -6324,7 +6306,7 @@ void item_stats(struct default_engine *engine,
                    ADD_STAT add_stat, const void *cookie)
 {
     pthread_mutex_lock(&engine->cache_lock);
-    do_item_stats(engine, add_stat, cookie);
+    do_item_stats(add_stat, cookie);
     pthread_mutex_unlock(&engine->cache_lock);
 }
 
@@ -6332,14 +6314,14 @@ void item_stats_sizes(struct default_engine *engine,
                       ADD_STAT add_stat, const void *cookie)
 {
     pthread_mutex_lock(&engine->cache_lock);
-    do_item_stats_sizes(engine, add_stat, cookie);
+    do_item_stats_sizes(add_stat, cookie);
     pthread_mutex_unlock(&engine->cache_lock);
 }
 
 void item_stats_reset(struct default_engine *engine)
 {
     pthread_mutex_lock(&engine->cache_lock);
-    memset(engine->items.itemstats, 0, sizeof(engine->items.itemstats));
+    memset(itemsp->itemstats, 0, sizeof(itemsp->itemstats));
     pthread_mutex_unlock(&engine->cache_lock);
 }
 
@@ -6349,7 +6331,7 @@ ENGINE_ERROR_CODE item_stats_prefixes(struct default_engine *engine,
 {
     ENGINE_ERROR_CODE ret;
     pthread_mutex_lock(&engine->cache_lock);
-    ret = assoc_prefix_get_stats(engine, prefix, nprefix, prefix_data);
+    ret = assoc_prefix_get_stats(prefix, nprefix, prefix_data);
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
 }
@@ -6403,6 +6385,11 @@ static void _check_forced_btree_overflow_action(void)
 
 ENGINE_ERROR_CODE item_init(struct default_engine *engine)
 {
+    /* initialize global variables */
+    config = &engine->config;
+    itemsp = &engine->items;
+    statsp = &engine->stats;
+    svcore = engine->server.core;
     logger = engine->server.log->get_logger();
 
     pthread_mutex_init(&coll_del_lock, NULL);
@@ -6411,24 +6398,24 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
     coll_del_queue.size = 0;
     coll_del_sleep = false;
 
-    item_evict_to_free = engine->config.evict_to_free;
+    item_evict_to_free = config->evict_to_free;
 
     /* adjust maximum collection size */
-    if (engine->config.max_list_size > max_list_size) {
-        max_list_size = engine->config.max_list_size < coll_size_limit
-                      ? (int32_t)engine->config.max_list_size : coll_size_limit;
+    if (config->max_list_size > max_list_size) {
+        max_list_size = config->max_list_size < coll_size_limit
+                      ? (int32_t)config->max_list_size : coll_size_limit;
     }
-    if (engine->config.max_set_size > max_set_size) {
-        max_set_size = engine->config.max_set_size < coll_size_limit
-                     ? (int32_t)engine->config.max_set_size : coll_size_limit;
+    if (config->max_set_size > max_set_size) {
+        max_set_size = config->max_set_size < coll_size_limit
+                     ? (int32_t)config->max_set_size : coll_size_limit;
     }
-    if (engine->config.max_map_size > max_map_size) {
-        max_map_size = engine->config.max_map_size < coll_size_limit
-                     ? (int32_t)engine->config.max_map_size : coll_size_limit;
+    if (config->max_map_size > max_map_size) {
+        max_map_size = config->max_map_size < coll_size_limit
+                     ? (int32_t)config->max_map_size : coll_size_limit;
     }
-    if (engine->config.max_btree_size > max_btree_size) {
-        max_btree_size = engine->config.max_btree_size < coll_size_limit
-                       ? (int32_t)engine->config.max_btree_size : coll_size_limit;
+    if (config->max_btree_size > max_btree_size) {
+        max_btree_size = config->max_btree_size < coll_size_limit
+                       ? (int32_t)config->max_btree_size : coll_size_limit;
     }
     logger->log(EXTENSION_LOG_INFO, NULL, "maximum list  size = %d\n", max_list_size);
     logger->log(EXTENSION_LOG_INFO, NULL, "maximum set   size = %d\n", max_set_size);
@@ -6534,7 +6521,7 @@ void list_elem_release(struct default_engine *engine,
     int cnt = 0;
     pthread_mutex_lock(&engine->cache_lock);
     while (cnt < elem_count) {
-        do_list_elem_release(engine, elem_array[cnt++]);
+        do_list_elem_release(elem_array[cnt++]);
         if ((cnt % 100) == 0 && cnt < elem_count) {
             pthread_mutex_unlock(&engine->cache_lock);
             pthread_mutex_lock(&engine->cache_lock);
@@ -6570,7 +6557,7 @@ ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
         }
     }
     if (ret == ENGINE_SUCCESS) {
-        ret = do_list_elem_insert(engine, it, index, elem, cookie);
+        ret = do_list_elem_insert(it, index, elem, cookie);
         if (ret != ENGINE_SUCCESS && *created) {
             do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
         }
@@ -6634,8 +6621,7 @@ ENGINE_ERROR_CODE list_elem_delete(struct default_engine *engine,
                 count = from_index - to_index + 1;
             }
 
-            *del_count = do_list_elem_delete(engine, info, index, count,
-                                             ELEM_DELETE_NORMAL);
+            *del_count = do_list_elem_delete(info, index, count, ELEM_DELETE_NORMAL);
             if (*del_count > 0) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
@@ -6687,7 +6673,7 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
                 forward = false;
             }
 
-            ret = do_list_elem_get(engine, info, index, count, forward, delete,
+            ret = do_list_elem_get(info, index, count, forward, delete,
                                    elem_array, elem_count);
             if (ret == ENGINE_SUCCESS) {
                 if (info->ccnt == 0 && drop_if_empty) {
@@ -6750,7 +6736,7 @@ void set_elem_release(struct default_engine *engine, set_elem_item **elem_array,
     int cnt = 0;
     pthread_mutex_lock(&engine->cache_lock);
     while (cnt < elem_count) {
-        do_set_elem_release(engine, elem_array[cnt++]);
+        do_set_elem_release(elem_array[cnt++]);
         if ((cnt % 100) == 0 && cnt < elem_count) {
             pthread_mutex_unlock(&engine->cache_lock);
             pthread_mutex_lock(&engine->cache_lock);
@@ -6808,8 +6794,7 @@ ENGINE_ERROR_CODE set_elem_delete(struct default_engine *engine,
     ret = do_set_item_find(engine, key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         info = (set_meta_info *)item_get_meta(it);
-        ret = do_set_elem_delete_with_value(engine, info, value, nbytes,
-                                            ELEM_DELETE_NORMAL);
+        ret = do_set_elem_delete_with_value(info, value, nbytes, ELEM_DELETE_NORMAL);
         if (ret == ENGINE_SUCCESS) {
             if (info->ccnt == 0 && drop_if_empty) {
                 do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
@@ -6868,7 +6853,7 @@ ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
             }
-            ret = do_set_elem_get(engine, info, count, delete, elem_array, elem_count);
+            ret = do_set_elem_get(info, count, delete, elem_array, elem_count);
             if (ret == ENGINE_SUCCESS) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(delete == true);
@@ -6931,7 +6916,7 @@ void btree_elem_release(struct default_engine *engine,
     int cnt = 0;
     pthread_mutex_lock(&engine->cache_lock);
     while (cnt < elem_count) {
-        do_btree_elem_release(engine, elem_array[cnt++]);
+        do_btree_elem_release(elem_array[cnt++]);
         if ((cnt % 100) == 0 && cnt < elem_count) {
             pthread_mutex_unlock(&engine->cache_lock);
             pthread_mutex_lock(&engine->cache_lock);
@@ -7041,7 +7026,7 @@ ENGINE_ERROR_CODE btree_elem_delete(struct default_engine *engine,
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
-            *del_count = do_btree_elem_delete(engine, info, bkrtype, bkrange, efilter, req_count,
+            *del_count = do_btree_elem_delete(info, bkrtype, bkrange, efilter, req_count,
                                               access_count, ELEM_DELETE_NORMAL);
             if (*del_count > 0) {
                 if (info->ccnt == 0 && drop_if_empty) {
@@ -7094,7 +7079,7 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(struct default_engine *engine,
                 if (r_node == NULL) {
                     ret = ENGINE_ENOMEM; break;
                 }
-                do_btree_node_link(engine, info, r_node, NULL);
+                do_btree_node_link(info, r_node, NULL);
                 new_root_flag = true;
             }
             ret = do_btree_elem_arithmetic(engine, info, bkrtype, bkrange, increment, create,
@@ -7102,7 +7087,7 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(struct default_engine *engine,
             if (ret != ENGINE_SUCCESS) {
                 if (new_root_flag) {
                     /* unlink the root node and free it */
-                    do_btree_node_unlink(engine, info, info->root, NULL);
+                    do_btree_node_unlink(info, info->root, NULL);
                 }
             }
         } while(0);
@@ -7142,7 +7127,7 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
-            ret = do_btree_elem_get(engine, info, bkrtype, bkrange, efilter,
+            ret = do_btree_elem_get(info, bkrtype, bkrange, efilter,
                                     offset, req_count, delete, elem_array,
                                     elem_count, access_count, &potentialbkeytrim);
             if (ret == ENGINE_SUCCESS) {
@@ -7192,8 +7177,7 @@ ENGINE_ERROR_CODE btree_elem_count(struct default_engine *engine,
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
-            *elem_count = do_btree_elem_count(engine, info, bkrtype, bkrange, efilter,
-                                              access_count);
+            *elem_count = do_btree_elem_count(info, bkrtype, bkrange, efilter, access_count);
         } while (0);
         do_item_release(engine, it);
     }
@@ -7449,7 +7433,7 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
  * ITEM ATTRIBUTE Interface Functions
  */
 static ENGINE_ERROR_CODE
-do_item_getattr(struct default_engine *engine, hash_item *it,
+do_item_getattr(hash_item *it,
                 ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
                 item_attr *attr_data)
 {
@@ -7464,7 +7448,7 @@ do_item_getattr(struct default_engine *engine, hash_item *it,
         attr_data->exptime = it->exptime;
 #endif
     } else {
-        rel_time_t current_time = engine->server.core->get_current_time();
+        rel_time_t current_time = svcore->get_current_time();
         if (it->exptime <= current_time) {
             attr_data->exptime = (rel_time_t)-2;
         } else {
@@ -7548,7 +7532,7 @@ ENGINE_ERROR_CODE item_getattr(struct default_engine *engine,
         ret = ENGINE_KEY_ENOENT;
     } else {
         /* get attrributes of the item */
-        ret = do_item_getattr(engine, it, attr_ids, attr_count, attr_data);
+        ret = do_item_getattr(it, attr_ids, attr_count, attr_data);
         if (ret != ENGINE_SUCCESS) {
             /* what should we do ? nothing */
         }
@@ -7652,7 +7636,7 @@ do_item_setattr_check(hash_item *it,
 }
 
 static void
-do_item_setattr_exec(struct default_engine *engine, hash_item *it,
+do_item_setattr_exec(hash_item *it,
                      ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
                      item_attr *attr_data)
 {
@@ -7676,7 +7660,7 @@ do_item_setattr_exec(struct default_engine *engine, hash_item *it,
                      * To make it to be reclaimed after it is expired,
                      * we move it to to the top of LRU list.
                      */
-                    do_item_lru_reposition(engine, it);
+                    do_item_lru_reposition(it);
                 }
             }
             continue;
@@ -7755,7 +7739,7 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
         ret = do_item_setattr_check(it, attr_ids, attr_count, attr_data);
         if (ret == ENGINE_SUCCESS) {
             /* do setattr operation */
-            do_item_setattr_exec(engine, it, attr_ids, attr_count, attr_data);
+            do_item_setattr_exec(it, attr_ids, attr_count, attr_data);
         }
         do_item_release(engine, it);
     }
@@ -7782,7 +7766,7 @@ ENGINE_ERROR_CODE item_conf_set_maxcollsize(struct default_engine *engine,
                ret = ENGINE_EBADVALUE;
            } else {
                max_list_size = *maxsize;
-               engine->config.max_list_size = *maxsize;
+               config->max_list_size = *maxsize;
            }
            break;
       case ITEM_TYPE_SET:
@@ -7790,7 +7774,7 @@ ENGINE_ERROR_CODE item_conf_set_maxcollsize(struct default_engine *engine,
                ret = ENGINE_EBADVALUE;
            } else {
                max_set_size = *maxsize;
-               engine->config.max_set_size = *maxsize;
+               config->max_set_size = *maxsize;
            }
            break;
       case ITEM_TYPE_MAP:
@@ -7798,7 +7782,7 @@ ENGINE_ERROR_CODE item_conf_set_maxcollsize(struct default_engine *engine,
                ret = ENGINE_EBADVALUE;
            } else {
                max_map_size = *maxsize;
-               engine->config.max_map_size = *maxsize;
+               config->max_map_size = *maxsize;
            }
            break;
       case ITEM_TYPE_BTREE:
@@ -7806,7 +7790,7 @@ ENGINE_ERROR_CODE item_conf_set_maxcollsize(struct default_engine *engine,
                ret = ENGINE_EBADVALUE;
            } else {
                max_btree_size = *maxsize;
-               engine->config.max_btree_size = *maxsize;
+               config->max_btree_size = *maxsize;
            }
            break;
     }
@@ -7884,8 +7868,8 @@ uint8_t item_get_clsid(const hash_item* item)
 bool item_is_valid(struct default_engine *engine, hash_item* item)
 {
     if (item->iflag & ITEM_LINKED) {
-        rel_time_t current_time = engine->server.core->get_current_time();
-        return do_item_isvalid(engine, item, current_time);
+        rel_time_t current_time = svcore->get_current_time();
+        return do_item_isvalid(item, current_time);
     } else {
         return false;
     }
@@ -7896,7 +7880,7 @@ bool item_is_valid(struct default_engine *engine, hash_item* item)
  */
 uint32_t item_ntotal(struct default_engine *engine, hash_item *item)
 {
-    return (uint32_t)ITEM_ntotal(engine, item);
+    return (uint32_t)ITEM_ntotal(item);
 }
 
 uint32_t list_elem_ntotal(list_elem_item *elem)
@@ -7927,12 +7911,12 @@ uint8_t  btree_real_nbkey(uint8_t nbkey)
 /*
  * ITEM SCRUB functions
  */
-static bool do_item_isstale(struct default_engine *engine, hash_item *it)
+static bool do_item_isstale(hash_item *it)
 {
     assert(it != NULL);
 #ifdef ENABLE_CLUSTER_AWARE
     if ((it->iflag & ITEM_INTERNAL) == 0 &&
-        !engine->server.core->is_my_key(item_get_key(it),it->nkey)) {
+        !svcore->is_my_key(item_get_key(it),it->nkey)) {
         return true; /* stale data */
     }
 #endif
@@ -7946,7 +7930,7 @@ static void *item_scrubber_main(void *arg)
     int        item_count;
     hash_item *item_array[array_size];
     struct assoc_scan scan;
-    rel_time_t current_time = engine->server.core->get_current_time();
+    rel_time_t current_time = svcore->get_current_time();
     struct timespec sleep_time = {0, 1000};
     long       tot_execs = 0;
     int        i,try_cnt = 9;
@@ -7954,7 +7938,7 @@ static void *item_scrubber_main(void *arg)
     assert(engine->scrubber.running == true);
 
 again:
-    assoc_scan_init(engine, &scan);
+    assoc_scan_init(&scan);
 
     pthread_mutex_lock(&engine->cache_lock);
     while (engine->initialized)
@@ -7972,12 +7956,12 @@ again:
          */
         for (i = 0; i < item_count; i++) {
             engine->scrubber.visited++;
-            if (do_item_isvalid(engine, item_array[i], current_time) == false) {
+            if (do_item_isvalid(item_array[i], current_time) == false) {
                 do_item_unlink(engine, item_array[i], ITEM_UNLINK_INVALID);
                 engine->scrubber.cleaned++;
             } else {
                 if (engine->scrubber.runmode == SCRUB_MODE_STALE &&
-                    do_item_isstale(engine, item_array[i]) == true) {
+                    do_item_isstale(item_array[i]) == true) {
                     do_item_unlink(engine, item_array[i], ITEM_UNLINK_STALE);
                     engine->scrubber.cleaned++;
                 }
@@ -8170,7 +8154,7 @@ static void *item_dumper_main(void *arg)
         ret = -1; goto done;
     }
 
-    assoc_scan_init(engine, &scan);
+    assoc_scan_init(&scan);
 
     pthread_mutex_lock(&engine->cache_lock);
     while (true)
@@ -8182,11 +8166,11 @@ static void *item_dumper_main(void *arg)
         /* Currently, item_count > 0.
          * See the internals of assoc_scan_next(). It does not return 0.
          */
-        memc_curtime = engine->server.core->get_current_time();
+        memc_curtime = svcore->get_current_time();
         for (i = 0; i < item_count; i++) {
             it = item_array[i];
             if ((it->iflag & ITEM_INTERNAL) == 0 &&
-                do_item_isvalid(engine, it, memc_curtime)) {
+                do_item_isvalid(it, memc_curtime)) {
                 ITEM_REFCOUNT_INCR(it); /* valid user item */
             } else {
                 item_array[i] = NULL;
@@ -8196,7 +8180,7 @@ static void *item_dumper_main(void *arg)
 
         /* write key string to buffer */
         real_nowtime = time(NULL);
-        memc_curtime = engine->server.core->get_current_time();
+        memc_curtime = svcore->get_current_time();
         for (i = 0; i < item_count; i++) {
             if ((it = item_array[i]) == NULL) continue;
             dumper->visited++;
@@ -8668,9 +8652,9 @@ static map_hash_node *do_map_node_alloc(struct default_engine *engine,
     return node;
 }
 
-static void do_map_node_free(struct default_engine *engine, map_hash_node *node)
+static void do_map_node_free(map_hash_node *node)
 {
-    do_mem_slot_free(engine, node, sizeof(map_hash_node));
+    do_mem_slot_free(node, sizeof(map_hash_node));
 }
 
 static map_elem_item *do_map_elem_alloc(struct default_engine *engine, const int nfield,
@@ -8690,26 +8674,25 @@ static map_elem_item *do_map_elem_alloc(struct default_engine *engine, const int
     return elem;
 }
 
-static void do_map_elem_free(struct default_engine *engine, map_elem_item *elem)
+static void do_map_elem_free(map_elem_item *elem)
 {
     assert(elem->refcount == 0);
     assert(elem->slabs_clsid != 0);
     size_t ntotal = do_map_elem_ntotal(elem);
-    do_mem_slot_free(engine, elem, ntotal);
+    do_mem_slot_free(elem, ntotal);
 }
 
-static void do_map_elem_release(struct default_engine *engine, map_elem_item *elem)
+static void do_map_elem_release(map_elem_item *elem)
 {
     if (elem->refcount != 0) {
         elem->refcount--;
     }
     if (elem->refcount == 0 && elem->next == (map_elem_item *)ADDR_MEANS_UNLINKED) {
-        do_map_elem_free(engine, elem);
+        do_map_elem_free(elem);
     }
 }
 
-static void do_map_node_link(struct default_engine *engine,
-                             map_meta_info *info,
+static void do_map_node_link(map_meta_info *info,
                              map_hash_node *par_node, const int par_hidx,
                              map_hash_node *node)
 {
@@ -8741,12 +8724,11 @@ static void do_map_node_link(struct default_engine *engine,
 
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(sizeof(map_hash_node));
-        increase_collection_space(engine, ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
+        increase_collection_space(ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
     }
 }
 
-static void do_map_node_unlink(struct default_engine *engine,
-                               map_meta_info *info,
+static void do_map_node_unlink(map_meta_info *info,
                                map_hash_node *par_node, const int par_hidx)
 {
     map_hash_node *node;
@@ -8791,14 +8773,14 @@ static void do_map_node_unlink(struct default_engine *engine,
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(sizeof(map_hash_node));
-        decrease_collection_space(engine, ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
+        decrease_collection_space(ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
     }
 
     /* free the node */
-    do_map_node_free(engine, node);
+    do_map_node_free(node);
 }
 
-static void do_map_elem_replace(struct default_engine *engine, map_meta_info *info,
+static void do_map_elem_replace(map_meta_info *info,
                                 map_prev_info *pinfo, map_elem_item *new_elem)
 {
     map_elem_item *prev = pinfo->prev;
@@ -8826,15 +8808,15 @@ static void do_map_elem_replace(struct default_engine *engine, map_meta_info *in
 
     old_elem->next = (map_elem_item *)ADDR_MEANS_UNLINKED;
     if (old_elem->refcount == 0) {
-        do_map_elem_free(engine, old_elem);
+        do_map_elem_free(old_elem);
     }
 
     if (new_stotal != old_stotal) {
         assert(info->stotal > 0);
         if (new_stotal > old_stotal) {
-            increase_collection_space(engine, ITEM_TYPE_MAP, (coll_meta_info *)info, (new_stotal-old_stotal));
+            increase_collection_space(ITEM_TYPE_MAP, (coll_meta_info *)info, (new_stotal-old_stotal));
         } else {
-            decrease_collection_space(engine, ITEM_TYPE_MAP, (coll_meta_info *)info, (old_stotal-new_stotal));
+            decrease_collection_space(ITEM_TYPE_MAP, (coll_meta_info *)info, (old_stotal-new_stotal));
         }
     }
 }
@@ -8874,14 +8856,14 @@ static ENGINE_ERROR_CODE do_map_elem_link(struct default_engine *engine,
 #ifdef ENABLE_STICKY_ITEM
             if ((info->mflags & COLL_META_FLAG_STICKY) != 0 && find->nbytes < elem->nbytes) {
                 /* sticky memory limit check : old body size < new body size */
-                if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
+                if (statsp->sticky_bytes >= config->sticky_limit)
                     return ENGINE_ENOMEM;
             }
 #endif
             pinfo.node = node;
             pinfo.prev = prev;
             pinfo.hidx = hidx;
-            do_map_elem_replace(engine, info, &pinfo, elem);
+            do_map_elem_replace(info, &pinfo, elem);
             return ENGINE_SUCCESS;
         } else {
             return ENGINE_ELEM_EEXISTS;
@@ -8891,7 +8873,7 @@ static ENGINE_ERROR_CODE do_map_elem_link(struct default_engine *engine,
 #ifdef ENABLE_STICKY_ITEM
     /* sticky memory limit check */
     if ((info->mflags & COLL_META_FLAG_STICKY) != 0) {
-        if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
+        if (statsp->sticky_bytes >= config->sticky_limit)
             return ENGINE_ENOMEM;
     }
 #endif
@@ -8902,7 +8884,7 @@ static ENGINE_ERROR_CODE do_map_elem_link(struct default_engine *engine,
             res = ENGINE_ENOMEM;
             return res;
         }
-        do_map_node_link(engine, info, node, hidx, n_node);
+        do_map_node_link(info, node, hidx, n_node);
 
         node = n_node;
         hidx = MAP_GET_HASHIDX(elem->hval, node->hdepth);
@@ -8917,14 +8899,13 @@ static ENGINE_ERROR_CODE do_map_elem_link(struct default_engine *engine,
 
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(do_map_elem_ntotal(elem));
-        increase_collection_space(engine, ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
+        increase_collection_space(ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
     }
 
     return res;
 }
 
-static void do_map_elem_unlink(struct default_engine *engine,
-                               map_meta_info *info,
+static void do_map_elem_unlink(map_meta_info *info,
                                map_hash_node *node, const int hidx,
                                map_elem_item *prev, map_elem_item *elem,
                                enum elem_delete_cause cause)
@@ -8940,16 +8921,15 @@ static void do_map_elem_unlink(struct default_engine *engine,
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(do_map_elem_ntotal(elem));
-        decrease_collection_space(engine, ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
+        decrease_collection_space(ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
     }
 
     if (elem->refcount == 0) {
-        do_map_elem_free(engine, elem);
+        do_map_elem_free(elem);
     }
 }
 
-static bool do_map_elem_traverse_dfs_byfield(struct default_engine *engine,
-                                             map_meta_info *info, map_hash_node *node, const int hval,
+static bool do_map_elem_traverse_dfs_byfield(map_meta_info *info, map_hash_node *node, const int hval,
                                              const field_t *field, const bool delete,
                                              map_elem_item **elem_array)
 {
@@ -8958,11 +8938,11 @@ static bool do_map_elem_traverse_dfs_byfield(struct default_engine *engine,
 
     if (node->hcnt[hidx] == -1) {
         map_hash_node *child_node = node->htab[hidx];
-        ret = do_map_elem_traverse_dfs_byfield(engine, info, child_node, hval, field, delete, elem_array);
+        ret = do_map_elem_traverse_dfs_byfield(info, child_node, hval, field, delete, elem_array);
         if (ret && delete) {
             if (child_node->tot_hash_cnt == 0 &&
                 child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
-                do_map_node_unlink(engine, info, node, hidx);
+                do_map_node_unlink(info, node, hidx);
             }
         }
     } else {
@@ -8978,7 +8958,7 @@ static bool do_map_elem_traverse_dfs_byfield(struct default_engine *engine,
                     }
 
                     if (delete) {
-                        do_map_elem_unlink(engine, info, node, hidx, prev, elem, ELEM_DELETE_NORMAL);
+                        do_map_elem_unlink(info, node, hidx, prev, elem, ELEM_DELETE_NORMAL);
                     }
                     ret = true;
                     break;
@@ -8991,8 +8971,7 @@ static bool do_map_elem_traverse_dfs_byfield(struct default_engine *engine,
     return ret;
 }
 
-static int do_map_elem_traverse_dfs_bycnt(struct default_engine *engine,
-                                          map_meta_info *info, map_hash_node *node,
+static int do_map_elem_traverse_dfs_bycnt(map_meta_info *info, map_hash_node *node,
                                           const uint32_t count, const bool delete,
                                           map_elem_item **elem_array, enum elem_delete_cause cause)
 {
@@ -9005,12 +8984,12 @@ static int do_map_elem_traverse_dfs_bycnt(struct default_engine *engine,
             if (node->hcnt[hidx] == -1) {
                 map_hash_node *child_node = (map_hash_node *)node->htab[hidx];
                 if (count > 0) rcnt = count - fcnt;
-                fcnt += do_map_elem_traverse_dfs_bycnt(engine, info, child_node, rcnt, delete,
+                fcnt += do_map_elem_traverse_dfs_bycnt(info, child_node, rcnt, delete,
                                             (elem_array==NULL ? NULL : &elem_array[fcnt]), cause);
                 if (delete) {
                     if  (child_node->tot_hash_cnt == 0 &&
                          child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
-                         do_map_node_unlink(engine, info, node, hidx);
+                         do_map_node_unlink(info, node, hidx);
                      }
                 }
                 if (count > 0 && fcnt >= count)
@@ -9029,7 +9008,7 @@ static int do_map_elem_traverse_dfs_bycnt(struct default_engine *engine,
                     elem_array[fcnt] = elem;
                 }
                 fcnt++;
-                if (delete) do_map_elem_unlink(engine, info, node, hidx, NULL, elem, cause);
+                if (delete) do_map_elem_unlink(info, node, hidx, NULL, elem, cause);
                 if (count > 0 && fcnt >= count) break;
                 elem = (delete ? node->htab[hidx] : elem->next);
             }
@@ -9039,8 +9018,7 @@ static int do_map_elem_traverse_dfs_bycnt(struct default_engine *engine,
     return fcnt;
 }
 
-static uint32_t do_map_elem_delete_with_field(struct default_engine *engine,
-                                              map_meta_info *info, const int numfields,
+static uint32_t do_map_elem_delete_with_field(map_meta_info *info, const int numfields,
                                               const field_t *flist, enum elem_delete_cause cause)
 {
     assert(cause == ELEM_DELETE_NORMAL);
@@ -9049,17 +9027,17 @@ static uint32_t do_map_elem_delete_with_field(struct default_engine *engine,
     uint32_t delcnt = 0;
     if (info->root != NULL) {
         if (numfields == 0) {
-            delcnt = do_map_elem_traverse_dfs_bycnt(engine, info, info->root, 0, true, NULL, cause);
+            delcnt = do_map_elem_traverse_dfs_bycnt(info, info->root, 0, true, NULL, cause);
         } else {
             for (ii = 0; ii < numfields; ii++) {
                 int hval = genhash_string_hash(flist[ii].value, flist[ii].length);
-                if (do_map_elem_traverse_dfs_byfield(engine, info, info->root, hval, &flist[ii], true, NULL)) {
+                if (do_map_elem_traverse_dfs_byfield(info, info->root, hval, &flist[ii], true, NULL)) {
                     delcnt++;
                 }
             }
         }
         if (info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
-            do_map_node_unlink(engine, info, NULL, 0);
+            do_map_node_unlink(info, NULL, 0);
         }
     }
     return delcnt;
@@ -9119,7 +9097,7 @@ static ENGINE_ERROR_CODE do_map_elem_update(struct default_engine *engine, map_m
 #ifdef ENABLE_STICKY_ITEM
         if ((info->mflags & COLL_META_FLAG_STICKY) != 0 && elem->nbytes < nbytes) {
             /* sticky memory limit check : old body size < new body size */
-            if (engine->stats.sticky_bytes >= engine->config.sticky_limit)
+            if (statsp->sticky_bytes >= config->sticky_limit)
                 return ENGINE_ENOMEM;
         }
 #endif
@@ -9135,30 +9113,28 @@ static ENGINE_ERROR_CODE do_map_elem_update(struct default_engine *engine, map_m
         new_elem->hval = elem->hval;
 
         /* replace the element */
-        do_map_elem_replace(engine, info, &pinfo, new_elem);
-        do_map_elem_release(engine, new_elem);
+        do_map_elem_replace(info, &pinfo, new_elem);
+        do_map_elem_release(new_elem);
     }
 
     return ENGINE_SUCCESS;
 }
 
-static uint32_t do_map_elem_delete(struct default_engine *engine,
-                                   map_meta_info *info, const uint32_t count,
+static uint32_t do_map_elem_delete(map_meta_info *info, const uint32_t count,
                                    enum elem_delete_cause cause)
 {
     assert(cause == ELEM_DELETE_COLL);
     uint32_t fcnt = 0;
     if (info->root != NULL) {
-        fcnt = do_map_elem_traverse_dfs_bycnt(engine, info, info->root, count, true, NULL, cause);
+        fcnt = do_map_elem_traverse_dfs_bycnt(info, info->root, count, true, NULL, cause);
         if (info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
-            do_map_node_unlink(engine, info, NULL, 0);
+            do_map_node_unlink(info, NULL, 0);
         }
     }
     return fcnt;
 }
 
-static ENGINE_ERROR_CODE do_map_elem_get(struct default_engine *engine,
-                                         map_meta_info *info, const int numfields, const field_t *flist,
+static ENGINE_ERROR_CODE do_map_elem_get(map_meta_info *info, const int numfields, const field_t *flist,
                                          const bool delete, map_elem_item **elem_array, uint32_t *elem_count)
 {
     int ii;
@@ -9166,18 +9142,18 @@ static ENGINE_ERROR_CODE do_map_elem_get(struct default_engine *engine,
 
     if (info->root != NULL) {
         if (numfields == 0) {
-            array_cnt = do_map_elem_traverse_dfs_bycnt(engine, info, info->root, 0, delete, elem_array, ELEM_DELETE_NORMAL);
+            array_cnt = do_map_elem_traverse_dfs_bycnt(info, info->root, 0, delete, elem_array, ELEM_DELETE_NORMAL);
         } else {
             for (ii = 0; ii < numfields; ii++) {
                 int hval = genhash_string_hash(flist[ii].value, flist[ii].length);
-                if (do_map_elem_traverse_dfs_byfield(engine, info, info->root, hval, &flist[ii],
+                if (do_map_elem_traverse_dfs_byfield(info, info->root, hval, &flist[ii],
                                                      delete, &elem_array[array_cnt])) {
                     array_cnt++;
                 }
             }
         }
         if (delete && info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
-            do_map_node_unlink(engine, info, NULL, 0);
+            do_map_node_unlink(info, NULL, 0);
         }
     }
 
@@ -9210,7 +9186,7 @@ static ENGINE_ERROR_CODE do_map_elem_insert(struct default_engine *engine,
         if (r_node == NULL) {
             return ENGINE_ENOMEM;
         }
-        do_map_node_link(engine, info, NULL, 0, r_node);
+        do_map_node_link(info, NULL, 0, r_node);
         new_root_flag = true;
     }
 
@@ -9218,7 +9194,7 @@ static ENGINE_ERROR_CODE do_map_elem_insert(struct default_engine *engine,
     ret = do_map_elem_link(engine, info, elem, replace_if_exist, cookie);
     if (ret != ENGINE_SUCCESS) {
         if (new_root_flag) {
-            do_map_node_unlink(engine, info, NULL, 0);
+            do_map_node_unlink(info, NULL, 0);
         }
         return ret;
     }
@@ -9269,7 +9245,7 @@ void map_elem_release(struct default_engine *engine, map_elem_item **elem_array,
     int cnt = 0;
     pthread_mutex_lock(&engine->cache_lock);
     while (cnt < elem_count) {
-        do_map_elem_release(engine, elem_array[cnt++]);
+        do_map_elem_release(elem_array[cnt++]);
         if ((cnt % 100) == 0 && cnt < elem_count) {
             pthread_mutex_unlock(&engine->cache_lock);
             pthread_mutex_lock(&engine->cache_lock);
@@ -9344,7 +9320,7 @@ ENGINE_ERROR_CODE map_elem_delete(struct default_engine *engine, const char *key
     ret = do_map_item_find(engine, key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         info = (map_meta_info *)item_get_meta(it);
-        *del_count = do_map_elem_delete_with_field(engine, info, numfields, flist, ELEM_DELETE_NORMAL);
+        *del_count = do_map_elem_delete_with_field(info, numfields, flist, ELEM_DELETE_NORMAL);
         if (*del_count > 0) {
             if (info->ccnt == 0 && drop_if_empty) {
                 assert(info->root == NULL);
@@ -9377,7 +9353,7 @@ ENGINE_ERROR_CODE map_elem_get(struct default_engine *engine, const char *key, c
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
             }
-            ret = do_map_elem_get(engine, info, numfields, flist, delete, elem_array, elem_count);
+            ret = do_map_elem_get(info, numfields, flist, delete, elem_array, elem_count);
             if (ret == ENGINE_SUCCESS) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(delete == true);
