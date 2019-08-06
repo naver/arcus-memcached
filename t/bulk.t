@@ -134,7 +134,8 @@ sub wrong_cmd_test{
 
 }
 
-sub non_bulk_cmd {
+
+sub slow_cmd {
 
     my $request_cnt = 10000;
     request_log("sop exist", $request_cnt, $start);
@@ -155,22 +156,34 @@ sub non_bulk_cmd {
     }
 }
 
+sub file_check {
+
+    my $file_handle;
+    open($file_handle, "cmd_in_second.log") or die "log file not exist\n";
+
+    my $line_cnt;
+    close($file_handle);
+}
+
 
 wrong_cmd_test();
-sleep(3);
+sleep(1);
 #extremely small cases
+
+
 =pod
 request_log("bop insert", 1, $start);
-do_bulk_coll_insert("bop", "bkey", 1);
+do_bulk_coll_insert("bop", "bkey1", 1);
+
 request_log("bop insert", 9, $start);
 do_bulk_coll_insert("bop", "bkey2", 9);
 =cut
 
-request_log("sop insert", $bulk_size, $start);
-do_bulk_coll_insert("sop", "skey", $bulk_size+1);
+request_log("bop insert", $bulk_size, $start);
+do_bulk_coll_insert("bop", "bkey3", $bulk_size+100);
 
 sleep(1);
 
-#non_bulk_cmd();
+#slow_cmd();
 
 release_memcached($engine, $server);
