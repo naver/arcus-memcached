@@ -8491,7 +8491,7 @@ void *itscan_open(struct default_engine *engine,
 {
     item_scan_t *sp = do_itscan_alloc();
     if (sp != NULL) {
-        assoc_scan_init(engine, &sp->asscan);
+        assoc_scan_init(&sp->asscan);
         sp->engine = engine;
         sp->prefix = prefix;
         sp->nprefix = nprefix;
@@ -8523,7 +8523,7 @@ int itscan_getnext(void *scan, void **item_array, int item_arrsz)
             it = (hash_item *)item_array[idx];
             /* Is it an internal or invalid item ? */
             if ((it->iflag & ITEM_INTERNAL) != 0 ||
-                do_item_isvalid(sp->engine, it, curtime) != true) {
+                do_item_isvalid(it, curtime) != true) {
                 item_array[idx] = NULL; continue;
             }
             /* Is it not the prefix item ? */
