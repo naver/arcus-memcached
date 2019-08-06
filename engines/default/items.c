@@ -8517,7 +8517,7 @@ void itscan_release(void *scan, void **item_array, int item_count)
 
     pthread_mutex_lock(&sp->engine->cache_lock);
     for (int idx = 0; idx < item_count; idx++) {
-        do_item_release(sp->engine, item_array[idx]);
+        do_item_release(item_array[idx]);
     }
     pthread_mutex_unlock(&sp->engine->cache_lock);
 }
