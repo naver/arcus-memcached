@@ -159,6 +159,7 @@ static pthread_cond_t  coll_del_cond;
 static bool            coll_del_sleep;
 static pthread_t       coll_del_tid; /* thread id */
 
+static struct default_engine *ngnptr=NULL;
 static struct engine_config *config=NULL; // engine config
 static struct items         *itemsp=NULL;
 static struct engine_stats  *statsp=NULL;
@@ -176,6 +177,15 @@ typedef struct _map_prev_info {
 /*
  * Static functions
  */
+static inline void LOCK_CACHE(void)
+{
+    pthread_mutex_lock(&ngnptr->cache_lock);
+}
+
+static inline void UNLOCK_CACHE(void)
+{
+    pthread_mutex_unlock(&ngnptr->cache_lock);
+}
 
 #define ITEM_REFCOUNT_FULL 65535
 #define ITEM_REFCOUNT_MOVE 32768
@@ -5730,7 +5740,7 @@ static int check_expired_collections(struct default_engine *engine, const int cl
     tries = space_shortage_level;
     current_time = svcore->get_current_time();
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     if (item_evict_to_free == true)
     {
         search = itemsp->tails[clsid];
@@ -5752,7 +5762,7 @@ static int check_expired_collections(struct default_engine *engine, const int cl
             }
         }
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
 
     *ssl = space_shortage_level;
     return unlink_count;
@@ -5872,7 +5882,7 @@ static void *collection_delete_thread(void *arg)
             bool dropped = false;
             list_meta_info *info;
             while (dropped == false) {
-                pthread_mutex_lock(&engine->cache_lock);
+                LOCK_CACHE();
                 info = (list_meta_info *)item_get_meta(it);
                 (void)do_list_elem_delete(info, 0, 30, ELEM_DELETE_COLL);
                 if (info->ccnt == 0) {
@@ -5880,13 +5890,13 @@ static void *collection_delete_thread(void *arg)
                     do_item_free(it);
                     dropped = true;
                 }
-                pthread_mutex_unlock(&engine->cache_lock);
+                UNLOCK_CACHE();
             }
         } else if (IS_SET_ITEM(it)) {
             bool dropped = false;
             set_meta_info *info;
             while (dropped == false) {
-                pthread_mutex_lock(&engine->cache_lock);
+                LOCK_CACHE();
                 info = (set_meta_info *)item_get_meta(it);
 #ifdef SET_DELETE_NO_MERGE
                 (void)do_set_elem_delete_fast(info, 30);
@@ -5898,14 +5908,14 @@ static void *collection_delete_thread(void *arg)
                     do_item_free(it);
                     dropped = true;
                 }
-                pthread_mutex_unlock(&engine->cache_lock);
+                UNLOCK_CACHE();
             }
         }
         else if (IS_MAP_ITEM(it)) {
             bool dropped = false;
             map_meta_info *info;
             while (dropped == false) {
-                pthread_mutex_lock(&engine->cache_lock);
+                LOCK_CACHE();
                 info = (map_meta_info *)item_get_meta(it);
                 (void)do_map_elem_delete(info, 30, ELEM_DELETE_COLL);
                 if (info->ccnt == 0) {
@@ -5913,7 +5923,7 @@ static void *collection_delete_thread(void *arg)
                     do_item_free(it);
                     dropped = true;
                 }
-                pthread_mutex_unlock(&engine->cache_lock);
+                UNLOCK_CACHE();
             }
         }
         else if (IS_BTREE_ITEM(it)) {
@@ -5927,7 +5937,7 @@ static void *collection_delete_thread(void *arg)
             get_bkey_full_range(info->bktype, true, &bkrange_space);
 #endif
             while (dropped == false) {
-                pthread_mutex_lock(&engine->cache_lock);
+                LOCK_CACHE();
                 info = (btree_meta_info *)item_get_meta(it);
 #ifdef BTREE_DELETE_NO_MERGE
                 (void)do_btree_elem_delete_fast(info, path, 100);
@@ -5940,7 +5950,7 @@ static void *collection_delete_thread(void *arg)
                     do_item_free(it);
                     dropped = true;
                 }
-                pthread_mutex_unlock(&engine->cache_lock);
+                UNLOCK_CACHE();
             }
         }
     }
@@ -5967,10 +5977,10 @@ hash_item *item_alloc(struct default_engine *engine,
                       rel_time_t exptime, int nbytes, const void *cookie)
 {
     hash_item *it;
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     /* key can be NULL */
     it = do_item_alloc(key, nkey, flags, exptime, nbytes, cookie);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return it;
 }
 
@@ -5981,9 +5991,9 @@ hash_item *item_alloc(struct default_engine *engine,
 hash_item *item_get(struct default_engine *engine, const void *key, const size_t nkey)
 {
     hash_item *it;
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     it = do_item_get(key, nkey, DO_UPDATE);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return it;
 }
 
@@ -5993,9 +6003,9 @@ hash_item *item_get(struct default_engine *engine, const void *key, const size_t
  */
 void item_release(struct default_engine *engine, hash_item *item)
 {
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     do_item_release(item);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
 }
 
 /*
@@ -6008,7 +6018,7 @@ ENGINE_ERROR_CODE store_item(struct default_engine *engine,
 {
     ENGINE_ERROR_CODE ret;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     switch (operation) {
       case OPERATION_SET:
            ret = do_item_store_set(item, cas, cookie);
@@ -6029,7 +6039,7 @@ ENGINE_ERROR_CODE store_item(struct default_engine *engine,
       default:
            ret = ENGINE_NOT_STORED;
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6091,10 +6101,10 @@ ENGINE_ERROR_CODE arithmetic(struct default_engine *engine,
 {
     ENGINE_ERROR_CODE ret;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_arithmetic(cookie, key, nkey, increment,
                         create, delta, initial, flags, exptime, cas, result);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6127,9 +6137,9 @@ ENGINE_ERROR_CODE item_delete(struct default_engine *engine,
 {
     ENGINE_ERROR_CODE ret;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_item_delete(key, nkey, cas);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6246,9 +6256,9 @@ ENGINE_ERROR_CODE item_flush_expired(struct default_engine *engine,
                                      rel_time_t when, const void* cookie)
 {
     ENGINE_ERROR_CODE ret;
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_item_flush_expired(engine, prefix, nprefix, when, cookie);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6260,33 +6270,33 @@ char *item_cachedump(struct default_engine *engine,
                      const bool sticky, unsigned int *bytes)
 {
     char *ret;
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_item_cachedump(slabs_clsid, limit, forward, sticky, bytes);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
 void item_stats(struct default_engine *engine,
                    ADD_STAT add_stat, const void *cookie)
 {
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     do_item_stats(add_stat, cookie);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
 }
 
 void item_stats_sizes(struct default_engine *engine,
                       ADD_STAT add_stat, const void *cookie)
 {
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     do_item_stats_sizes(add_stat, cookie);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
 }
 
 void item_stats_reset(struct default_engine *engine)
 {
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     memset(itemsp->itemstats, 0, sizeof(itemsp->itemstats));
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
 }
 
 ENGINE_ERROR_CODE item_stats_prefixes(struct default_engine *engine,
@@ -6294,9 +6304,9 @@ ENGINE_ERROR_CODE item_stats_prefixes(struct default_engine *engine,
                                       void *prefix_data)
 {
     ENGINE_ERROR_CODE ret;
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = assoc_prefix_get_stats(prefix, nprefix, prefix_data);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6350,6 +6360,7 @@ static void _check_forced_btree_overflow_action(void)
 ENGINE_ERROR_CODE item_init(struct default_engine *engine)
 {
     /* initialize global variables */
+    ngnptr = engine;
     config = &engine->config;
     itemsp = &engine->items;
     statsp = &engine->stats;
@@ -6452,7 +6463,7 @@ ENGINE_ERROR_CODE list_struct_create(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
     hash_item *it;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
     if (it != NULL) {
         do_item_release(it);
@@ -6466,7 +6477,7 @@ ENGINE_ERROR_CODE list_struct_create(struct default_engine *engine,
             do_item_release(it);
         }
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6474,9 +6485,9 @@ list_elem_item *list_elem_alloc(struct default_engine *engine,
                                 const int nbytes, const void *cookie)
 {
     list_elem_item *elem;
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     elem = do_list_elem_alloc(nbytes, cookie);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return elem;
 }
 
@@ -6484,15 +6495,15 @@ void list_elem_release(struct default_engine *engine,
                        list_elem_item **elem_array, const int elem_count)
 {
     int cnt = 0;
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     while (cnt < elem_count) {
         do_list_elem_release(elem_array[cnt++]);
         if ((cnt % 100) == 0 && cnt < elem_count) {
-            pthread_mutex_unlock(&engine->cache_lock);
-            pthread_mutex_lock(&engine->cache_lock);
+            UNLOCK_CACHE();
+            LOCK_CACHE();
         }
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
 }
 
 ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
@@ -6506,7 +6517,7 @@ ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
 
     *created = false;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_list_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
         it = do_list_item_alloc(key, nkey, attrp, cookie);
@@ -6528,7 +6539,7 @@ ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
         }
     }
     if (it != NULL) do_item_release(it);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6570,7 +6581,7 @@ ENGINE_ERROR_CODE list_elem_delete(struct default_engine *engine,
     uint32_t count;
     ENGINE_ERROR_CODE ret;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_list_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         do {
@@ -6600,7 +6611,7 @@ ENGINE_ERROR_CODE list_elem_delete(struct default_engine *engine,
         } while(0);
         do_item_release(it);
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6618,7 +6629,7 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
     bool forward;
     ENGINE_ERROR_CODE ret;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_list_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         do {
@@ -6655,7 +6666,7 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
         } while(0);
         do_item_release(it);
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6669,7 +6680,7 @@ ENGINE_ERROR_CODE set_struct_create(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
     hash_item *it;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
     if (it != NULL) {
         do_item_release(it);
@@ -6683,31 +6694,31 @@ ENGINE_ERROR_CODE set_struct_create(struct default_engine *engine,
             do_item_release(it);
         }
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
 set_elem_item *set_elem_alloc(struct default_engine *engine, const int nbytes, const void *cookie)
 {
     set_elem_item *elem;
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     elem = do_set_elem_alloc(nbytes, cookie);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return elem;
 }
 
 void set_elem_release(struct default_engine *engine, set_elem_item **elem_array, const int elem_count)
 {
     int cnt = 0;
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     while (cnt < elem_count) {
         do_set_elem_release(elem_array[cnt++]);
         if ((cnt % 100) == 0 && cnt < elem_count) {
-            pthread_mutex_unlock(&engine->cache_lock);
-            pthread_mutex_lock(&engine->cache_lock);
+            UNLOCK_CACHE();
+            LOCK_CACHE();
         }
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
 }
 
 ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key, const size_t nkey,
@@ -6718,7 +6729,7 @@ ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key
 
     *created = false;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_set_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
         it = do_set_item_alloc(key, nkey, attrp, cookie);
@@ -6740,7 +6751,7 @@ ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key
         }
     }
     if (it != NULL) do_item_release(it);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6755,7 +6766,7 @@ ENGINE_ERROR_CODE set_elem_delete(struct default_engine *engine,
 
     *dropped = false;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_set_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         info = (set_meta_info *)item_get_meta(it);
@@ -6768,7 +6779,7 @@ ENGINE_ERROR_CODE set_elem_delete(struct default_engine *engine,
         }
         do_item_release(it);
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6781,7 +6792,7 @@ ENGINE_ERROR_CODE set_elem_exist(struct default_engine *engine,
     set_meta_info *info;
     ENGINE_ERROR_CODE ret;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_set_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (set_meta_info *)item_get_meta(it);
@@ -6796,7 +6807,7 @@ ENGINE_ERROR_CODE set_elem_exist(struct default_engine *engine,
         } while (0);
         do_item_release(it);
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6810,7 +6821,7 @@ ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
     set_meta_info *info;
     ENGINE_ERROR_CODE ret;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_set_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (set_meta_info *)item_get_meta(it);
@@ -6832,7 +6843,7 @@ ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
         } while (0);
         do_item_release(it);
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6846,7 +6857,7 @@ ENGINE_ERROR_CODE btree_struct_create(struct default_engine *engine,
     hash_item *it;
     ENGINE_ERROR_CODE ret;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
     if (it != NULL) {
         do_item_release(it);
@@ -6860,7 +6871,7 @@ ENGINE_ERROR_CODE btree_struct_create(struct default_engine *engine,
             do_item_release(it);
         }
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6869,9 +6880,9 @@ btree_elem_item *btree_elem_alloc(struct default_engine *engine,
                                   const void *cookie)
 {
     btree_elem_item *elem;
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     elem = do_btree_elem_alloc(nbkey, neflag, nbytes, cookie);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return elem;
 }
 
@@ -6879,15 +6890,15 @@ void btree_elem_release(struct default_engine *engine,
                         btree_elem_item **elem_array, const int elem_count)
 {
     int cnt = 0;
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     while (cnt < elem_count) {
         do_btree_elem_release(elem_array[cnt++]);
         if ((cnt % 100) == 0 && cnt < elem_count) {
-            pthread_mutex_unlock(&engine->cache_lock);
-            pthread_mutex_lock(&engine->cache_lock);
+            UNLOCK_CACHE();
+            LOCK_CACHE();
         }
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
 }
 
 ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
@@ -6906,7 +6917,7 @@ ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
         *trimmed_count = 0;
     }
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
         it = do_btree_item_alloc(key, nkey, attrp, cookie);
@@ -6932,7 +6943,7 @@ ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
         }
     }
     if (it != NULL) do_item_release(it);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6948,7 +6959,7 @@ ENGINE_ERROR_CODE btree_elem_update(struct default_engine *engine,
 
     assert(bkrtype == BKEY_RANGE_TYPE_SIN); /* single bkey */
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
@@ -6964,7 +6975,7 @@ ENGINE_ERROR_CODE btree_elem_update(struct default_engine *engine,
         } while(0);
         do_item_release(it);
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6979,7 +6990,7 @@ ENGINE_ERROR_CODE btree_elem_delete(struct default_engine *engine,
     int bkrtype = do_btree_bkey_range_type(bkrange);
     ENGINE_ERROR_CODE ret;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
@@ -7007,7 +7018,7 @@ ENGINE_ERROR_CODE btree_elem_delete(struct default_engine *engine,
         } while(0);
         do_item_release(it);
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -7026,7 +7037,7 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(struct default_engine *engine,
 
     assert(bkrtype == BKEY_RANGE_TYPE_SIN); /* single bkey */
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         bool new_root_flag = false;
@@ -7058,7 +7069,7 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(struct default_engine *engine,
         } while(0);
         do_item_release(it);
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -7077,7 +7088,7 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
     bool potentialbkeytrim;
     ENGINE_ERROR_CODE ret;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
@@ -7116,7 +7127,7 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
         } while (0);
         do_item_release(it);
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -7130,7 +7141,7 @@ ENGINE_ERROR_CODE btree_elem_count(struct default_engine *engine,
     int bkrtype = do_btree_bkey_range_type(bkrange);
     ENGINE_ERROR_CODE ret;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
@@ -7146,7 +7157,7 @@ ENGINE_ERROR_CODE btree_elem_count(struct default_engine *engine,
         } while (0);
         do_item_release(it);
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -7161,7 +7172,7 @@ ENGINE_ERROR_CODE btree_posi_find(struct default_engine *engine,
     int bkrtype = do_btree_bkey_range_type(bkrange);
     assert(bkrtype == BKEY_RANGE_TYPE_SIN);
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
@@ -7183,7 +7194,7 @@ ENGINE_ERROR_CODE btree_posi_find(struct default_engine *engine,
         } while (0);
         do_item_release(it);
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -7201,7 +7212,7 @@ ENGINE_ERROR_CODE btree_posi_find_with_get(struct default_engine *engine,
     int bkrtype = do_btree_bkey_range_type(bkrange);
     assert(bkrtype == BKEY_RANGE_TYPE_SIN);
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
@@ -7225,7 +7236,7 @@ ENGINE_ERROR_CODE btree_posi_find_with_get(struct default_engine *engine,
         } while (0);
         do_item_release(it);
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -7242,7 +7253,7 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
 
     assert(from_posi >= 0 && to_posi >= 0);
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
@@ -7277,7 +7288,7 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
         } while (0);
         do_item_release(it);
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -7306,8 +7317,7 @@ ENGINE_ERROR_CODE btree_elem_smget_old(struct default_engine *engine,
     *trimmed = false;
     *duplicated = false;
 
-    pthread_mutex_lock(&engine->cache_lock);
-
+    LOCK_CACHE();
     /* the 1st phase: get the sorted scans */
     ret = do_btree_smget_scan_sort_old(key_array, key_count,
                                    bkrtype, bkrange, efilter, (offset+count),
@@ -7324,8 +7334,7 @@ ENGINE_ERROR_CODE btree_elem_smget_old(struct default_engine *engine,
                 do_item_release(btree_scan_buf[i].it);
         }
     }
-
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
 
     return ret;
 }
@@ -7364,7 +7373,7 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
     result->duplicated = false;
     result->ascending = (bkrtype != BKEY_RANGE_TYPE_DSC ? true : false);
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     do {
         /* the 1st phase: get the sorted scans */
         ret = do_btree_smget_scan_sort(key_array, key_count,
@@ -7388,7 +7397,7 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
                 do_item_release(btree_scan_buf[i].it);
         }
     } while(0);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
 
     return ret;
 }
@@ -7491,7 +7500,7 @@ ENGINE_ERROR_CODE item_getattr(struct default_engine *engine,
     hash_item *it;
     ENGINE_ERROR_CODE ret;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     it = do_item_get(key, nkey, DO_UPDATE);
     if (it == NULL) {
         ret = ENGINE_KEY_ENOENT;
@@ -7503,7 +7512,7 @@ ENGINE_ERROR_CODE item_getattr(struct default_engine *engine,
         }
         do_item_release(it);
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
 
     return ret;
 }
@@ -7696,7 +7705,7 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
     hash_item *it;
     ENGINE_ERROR_CODE ret;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
     if (it == NULL) {
         ret = ENGINE_KEY_ENOENT;
@@ -7708,7 +7717,7 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
         }
         do_item_release(it);
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
 
     return ret;
 }
@@ -7721,7 +7730,7 @@ ENGINE_ERROR_CODE item_conf_set_maxcollsize(struct default_engine *engine,
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     if (*maxsize < 0 || *maxsize > coll_size_limit) {
         *maxsize = coll_size_limit;
     }
@@ -7759,24 +7768,24 @@ ENGINE_ERROR_CODE item_conf_set_maxcollsize(struct default_engine *engine,
            }
            break;
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
 bool item_conf_get_evict_to_free(struct default_engine *engine)
 {
     bool value;
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     value = item_evict_to_free;
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return value;
 }
 
 void item_conf_set_evict_to_free(struct default_engine *engine, bool value)
 {
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     item_evict_to_free = value;
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
 }
 
 /*
@@ -9173,7 +9182,7 @@ ENGINE_ERROR_CODE map_struct_create(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
     hash_item *it;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
     if (it != NULL) {
         do_item_release(it);
@@ -9187,31 +9196,31 @@ ENGINE_ERROR_CODE map_struct_create(struct default_engine *engine,
             do_item_release(it);
         }
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
 map_elem_item *map_elem_alloc(struct default_engine *engine, const int nfield, const int nbytes, const void *cookie)
 {
     map_elem_item *elem;
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     elem = do_map_elem_alloc(nfield, nbytes, cookie);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return elem;
 }
 
 void map_elem_release(struct default_engine *engine, map_elem_item **elem_array, const int elem_count)
 {
     int cnt = 0;
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     while (cnt < elem_count) {
         do_map_elem_release(elem_array[cnt++]);
         if ((cnt % 100) == 0 && cnt < elem_count) {
-            pthread_mutex_unlock(&engine->cache_lock);
-            pthread_mutex_lock(&engine->cache_lock);
+            UNLOCK_CACHE();
+            LOCK_CACHE();
         }
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
 }
 
 ENGINE_ERROR_CODE map_elem_insert(struct default_engine *engine, const char *key, const size_t nkey,
@@ -9222,7 +9231,7 @@ ENGINE_ERROR_CODE map_elem_insert(struct default_engine *engine, const char *key
 
     *created = false;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_map_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
         it = do_map_item_alloc(key, nkey, attrp, cookie);
@@ -9244,7 +9253,7 @@ ENGINE_ERROR_CODE map_elem_insert(struct default_engine *engine, const char *key
         }
     }
     if (it != NULL) do_item_release(it);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -9255,14 +9264,14 @@ ENGINE_ERROR_CODE map_elem_update(struct default_engine *engine, const char *key
     map_meta_info *info;
     ENGINE_ERROR_CODE ret;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_map_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         info = (map_meta_info *)item_get_meta(it);
         ret = do_map_elem_update(info, field, value, nbytes, cookie);
         do_item_release(it);
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -9276,7 +9285,7 @@ ENGINE_ERROR_CODE map_elem_delete(struct default_engine *engine, const char *key
 
     *dropped = false;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_map_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         info = (map_meta_info *)item_get_meta(it);
@@ -9292,7 +9301,7 @@ ENGINE_ERROR_CODE map_elem_delete(struct default_engine *engine, const char *key
         }
         do_item_release(it);
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
 
@@ -9305,7 +9314,7 @@ ENGINE_ERROR_CODE map_elem_get(struct default_engine *engine, const char *key, c
     map_meta_info *info;
     ENGINE_ERROR_CODE ret;
 
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     ret = do_map_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (map_meta_info *)item_get_meta(it);
@@ -9327,6 +9336,6 @@ ENGINE_ERROR_CODE map_elem_get(struct default_engine *engine, const char *key, c
         } while (0);
         do_item_release(it);
     }
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
     return ret;
 }
