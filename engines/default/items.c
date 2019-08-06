@@ -6140,12 +6140,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
     rel_time_t oldest_live;
 
     if (nprefix >= 0) { /* flush the given prefix */
-        prefix_t *pt;
-        if (nprefix == 0) { /* null prefix */
-            pt = &engine->assoc.noprefix_stats;
-        } else {
-            pt = assoc_prefix_find(prefix, nprefix, svcore->hash(prefix, nprefix, 0));
-        }
+        prefix_t *pt = assoc_prefix_find(prefix, nprefix);
         if (pt == NULL) {
             return ENGINE_PREFIX_ENOENT;
         }
