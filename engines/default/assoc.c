@@ -437,9 +437,16 @@ static void _prefix_delete(const char *prefix, const int nprefix, uint32_t hash)
     }
 }
 
-prefix_t *assoc_prefix_find(const char *prefix, const int nprefix, uint32_t hash)
+prefix_t *assoc_prefix_find(const char *prefix, const int nprefix)
 {
-    return _prefix_find(prefix, nprefix, hash);
+    if (nprefix == 0) { /* null prefix */
+        return &assocp->noprefix_stats;
+    }
+    if (nprefix > 0) {
+        return _prefix_find(prefix, nprefix, svcore->hash(prefix, nprefix, 0));
+    } else {
+        return NULL;
+    }
 }
 
 ENGINE_ERROR_CODE assoc_prefix_link(hash_item *it, const uint32_t item_size)

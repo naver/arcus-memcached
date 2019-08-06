@@ -103,7 +103,7 @@ int               assoc_scan_next(struct assoc_scan *scan, hash_item **item_arra
 void              assoc_scan_final(struct assoc_scan *scan);
 
 /* prefix functions */
-prefix_t *        assoc_prefix_find(const char *prefix, const int nprefix, uint32_t hash);
+prefix_t *        assoc_prefix_find(const char *prefix, const int nprefix);
 ENGINE_ERROR_CODE assoc_prefix_link(hash_item *it, const uint32_t item_size);
 void              assoc_prefix_unlink(hash_item *it, const uint32_t item_size, bool drop_if_empty);
 void              assoc_prefix_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t bytes);
