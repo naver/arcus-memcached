@@ -36,8 +36,8 @@
 /* Forward Declarations */
 static void item_link_q(hash_item *it);
 static void item_unlink_q(hash_item *it);
-static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *it);
-static void do_item_unlink(struct default_engine *engine, hash_item *it, enum item_unlink_cause cause);
+static ENGINE_ERROR_CODE do_item_link(hash_item *it);
+static void do_item_unlink(hash_item *it, enum item_unlink_cause cause);
 static void do_coll_all_elem_delete(hash_item *it);
 static uint32_t do_map_elem_delete(map_meta_info *info,
                                    const uint32_t count, enum elem_delete_cause cause);
@@ -158,6 +158,7 @@ static struct engine_config *config=NULL; // engine config
 static struct items         *itemsp=NULL;
 static struct engine_stats  *statsp=NULL;
 static SERVER_CORE_API      *svcore=NULL; // server core api
+static SERVER_STAT_API      *svstat=NULL; // server stat api
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
 /* map element previous info internally used */
@@ -337,7 +338,7 @@ static bool do_item_isvalid(hash_item *it, rel_time_t current_time)
     return true; /* Yes, it's a valid item */
 }
 
-static hash_item *do_item_reclaim(struct default_engine *engine, hash_item *it,
+static hash_item *do_item_reclaim(hash_item *it,
                                   const size_t ntotal, const unsigned int clsid,
                                   const unsigned int lruid)
 {
@@ -353,7 +354,7 @@ static hash_item *do_item_reclaim(struct default_engine *engine, hash_item *it,
     if (lruid != LRU_CLSID_FOR_SMALL) {
         it->refcount = 1;
         slabs_adjust_mem_requested(it->slabs_clsid, ITEM_ntotal(it), ntotal);
-        do_item_unlink(engine, it, ITEM_UNLINK_INVALID);
+        do_item_unlink(it, ITEM_UNLINK_INVALID);
         /* Initialize the item block: */
         it->slabs_clsid = 0;
         it->refcount = 0;
@@ -363,15 +364,14 @@ static hash_item *do_item_reclaim(struct default_engine *engine, hash_item *it,
 #endif
     if (IS_COLL_ITEM(it))
         do_coll_all_elem_delete(it);
-    do_item_unlink(engine, it, ITEM_UNLINK_INVALID);
+    do_item_unlink(it, ITEM_UNLINK_INVALID);
 
     /* allocate from slab allocator */
     it = slabs_alloc(ntotal, clsid);
     return it;
 }
 
-static void do_item_evict(struct default_engine *engine, hash_item *it,
-                          const unsigned int lruid,
+static void do_item_evict(hash_item *it, const unsigned int lruid,
                           rel_time_t current_time, const void *cookie)
 {
     /* increment # of evicted */
@@ -384,17 +384,16 @@ static void do_item_evict(struct default_engine *engine, hash_item *it,
     statsp->evictions++;
     pthread_mutex_unlock(&statsp->lock);
     if (cookie != NULL) {
-        engine->server.stat->evicting(cookie, item_get_key(it), it->nkey);
+        svstat->evicting(cookie, item_get_key(it), it->nkey);
     }
 
     /* unlink the item */
     if (IS_COLL_ITEM(it))
         do_coll_all_elem_delete(it);
-    do_item_unlink(engine, it, ITEM_UNLINK_EVICT);
+    do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
 
-static void do_item_repair(struct default_engine *engine, hash_item *it,
-                           const unsigned int lruid)
+static void do_item_repair(hash_item *it, const unsigned int lruid)
 {
     /* increment # of repaired */
     itemsp->itemstats[lruid].tailrepairs++;
@@ -404,11 +403,10 @@ static void do_item_repair(struct default_engine *engine, hash_item *it,
     /* unlink the item */
     if (IS_COLL_ITEM(it))
         do_coll_all_elem_delete(it);
-    do_item_unlink(engine, it, ITEM_UNLINK_EVICT);
+    do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
 
-static void do_item_invalidate(struct default_engine *engine, hash_item *it,
-                               const unsigned int lruid, bool immediate)
+static void do_item_invalidate(hash_item *it, const unsigned int lruid, bool immediate)
 {
     /* increment # of reclaimed */
     pthread_mutex_lock(&statsp->lock);
@@ -422,11 +420,10 @@ static void do_item_invalidate(struct default_engine *engine, hash_item *it,
             do_coll_all_elem_delete(it);
         }
     }
-    do_item_unlink(engine, it, ITEM_UNLINK_INVALID);
+    do_item_unlink(it, ITEM_UNLINK_INVALID);
 }
 
-static void *do_item_alloc_internal(struct default_engine *engine,
-                                    const size_t ntotal, const unsigned int clsid,
+static void *do_item_alloc_internal(const size_t ntotal, const unsigned int clsid,
                                     const void *cookie)
 {
     hash_item *it = NULL;
@@ -474,9 +471,9 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             previt = search->prev;
             if (search->refcount == 0) {
                 if (do_item_isvalid(search, current_time) == false) {
-                    do_item_invalidate(engine, search, id, true);
+                    do_item_invalidate(search, id, true);
                 } else {
-                    do_item_evict(engine, search, id, current_time, cookie);
+                    do_item_evict(search, id, current_time, cookie);
                 }
             } else { /* search->refcount > 0 */
                 /* just unlink the item from LRU list. */
@@ -496,7 +493,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             itemsp->sticky_curMK[id] = search->prev;
             if (search->refcount == 0 &&
                 do_item_isvalid(search, current_time) == false) {
-                it = do_item_reclaim(engine, search, ntotal, clsid_based_on_ntotal, id);
+                it = do_item_reclaim(search, ntotal, clsid_based_on_ntotal, id);
                 if (it != NULL) break; /* allocated */
             }
             if ((--tries) == 0) break;
@@ -506,7 +503,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             search = itemsp->sticky_curMK[id];
             if (search != NULL && search->refcount == 0 &&
                 do_item_isvalid(search, current_time) == false) {
-                do_item_invalidate(engine, search, id, false);
+                do_item_invalidate(search, id, false);
             }
             it->slabs_clsid = 0;
             return (void*)it;
@@ -523,7 +520,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             if (search->refcount == 0 &&
                 do_item_isvalid(search, current_time) == false) {
                 previt = search->prev;
-                it = do_item_reclaim(engine, search, ntotal, clsid_based_on_ntotal, id);
+                it = do_item_reclaim(search, ntotal, clsid_based_on_ntotal, id);
                 if (it != NULL) break; /* allocated */
                 search = previt;
             } else {
@@ -538,7 +535,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             /* try one more invalidation */
             if (previt != NULL && previt->refcount == 0 &&
                 do_item_isvalid(previt, current_time) == false) {
-                do_item_invalidate(engine, previt, id, false);
+                do_item_invalidate(previt, id, false);
             }
             it->slabs_clsid = 0;
             return (void *)it;
@@ -550,7 +547,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             itemsp->curMK[id] = search->prev;
             if (search->refcount == 0 &&
                 do_item_isvalid(search, current_time) == false) {
-                it = do_item_reclaim(engine, search, ntotal, clsid_based_on_ntotal, id);
+                it = do_item_reclaim(search, ntotal, clsid_based_on_ntotal, id);
                 if (it != NULL) break; /* allocated */
             }
             if ((--tries) == 0) break;
@@ -563,7 +560,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             search = itemsp->curMK[id];
             if (search != NULL && search->refcount == 0 &&
                 do_item_isvalid(search, current_time) == false) {
-                do_item_invalidate(engine, search, id, false);
+                do_item_invalidate(search, id, false);
             }
             it->slabs_clsid = 0;
             return (void *)it;
@@ -601,9 +598,9 @@ static void *do_item_alloc_internal(struct default_engine *engine,
             previt = search->prev;
             if (search->refcount == 0) {
                 if (do_item_isvalid(search, current_time) == false) {
-                    it = do_item_reclaim(engine, search, ntotal, clsid_based_on_ntotal, id);
+                    it = do_item_reclaim(search, ntotal, clsid_based_on_ntotal, id);
                 } else {
-                    do_item_evict(engine, search, id, current_time, cookie);
+                    do_item_evict(search, id, current_time, cookie);
                     it = slabs_alloc(ntotal, clsid_based_on_ntotal);
                 }
                 if (it != NULL) break; /* allocated */
@@ -647,7 +644,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
                 if (search->refcount != 0 &&
                     search->time + TAIL_REPAIR_TIME < current_time) {
                     previt = search->prev;
-                    do_item_repair(engine, search, id);
+                    do_item_repair(search, id);
                     it = slabs_alloc(ntotal, clsid_based_on_ntotal);
                     if (it != NULL) break; /* allocated */
                     search = previt;
@@ -666,8 +663,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
 }
 
 /*@null@*/
-static hash_item *do_item_alloc(struct default_engine *engine,
-                                const void *key, const size_t nkey,
+static hash_item *do_item_alloc(const void *key, const size_t nkey,
                                 const int flags, const rel_time_t exptime,
                                 const int nbytes, const void *cookie)
 {
@@ -690,7 +686,7 @@ static hash_item *do_item_alloc(struct default_engine *engine,
     }
 #endif
 
-    it = do_item_alloc_internal(engine, ntotal, id, cookie);
+    it = do_item_alloc_internal(ntotal, id, cookie);
     if (it == NULL)  {
         return NULL;
     }
@@ -843,7 +839,7 @@ static void item_unlink_q(hash_item *it)
     return;
 }
 
-static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *it)
+static ENGINE_ERROR_CODE do_item_link(hash_item *it)
 {
     const char *key = item_get_key(it);
     size_t stotal;
@@ -894,8 +890,7 @@ static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *
     return ENGINE_SUCCESS;
 }
 
-static void do_item_unlink(struct default_engine *engine, hash_item *it,
-                           enum item_unlink_cause cause)
+static void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
 {
     /* cause: item unlink cause will be used, later
     */
@@ -939,7 +934,7 @@ static void do_item_unlink(struct default_engine *engine, hash_item *it,
     }
 }
 
-static void do_item_release(struct default_engine *engine, hash_item *it)
+static void do_item_release(hash_item *it)
 {
     MEMCACHED_ITEM_REMOVE(item_get_key(it), it->nkey, it->nbytes);
     if (it->refcount != 0) {
@@ -957,7 +952,7 @@ static void do_item_release(struct default_engine *engine, hash_item *it)
                 it->time = current_time;
                 item_link_q(it);
             } else {
-                do_item_unlink(engine, it, ITEM_UNLINK_INVALID);
+                do_item_unlink(it, ITEM_UNLINK_INVALID);
             }
         }
     }
@@ -986,16 +981,15 @@ static void do_item_lru_reposition(hash_item *it)
     }
 }
 
-static void do_item_replace(struct default_engine *engine,
-                            hash_item *it, hash_item *new_it)
+static void do_item_replace(hash_item *old_it, hash_item *new_it)
 {
-    MEMCACHED_ITEM_REPLACE(item_get_key(it), it->nkey, it->nbytes,
+    MEMCACHED_ITEM_REPLACE(item_get_key(old_it), old_it->nkey, old_it->nbytes,
                            item_get_key(new_it), new_it->nkey, new_it->nbytes);
-    do_item_unlink(engine, it, ITEM_UNLINK_REPLACE);
+    do_item_unlink(old_it, ITEM_UNLINK_REPLACE);
     /* Cache item replacement does not drop the prefix item even if it's empty.
      * So, the below do_item_link function always return SUCCESS.
      */
-    (void)do_item_link(engine, new_it);
+    (void)do_item_link(new_it);
 }
 
 /*@null@*/
@@ -1141,8 +1135,7 @@ static void do_item_stats_sizes(ADD_STAT add_stats, const void *c)
 }
 
 /** wrapper around assoc_find which does the lazy expiration logic */
-static hash_item *do_item_get(struct default_engine *engine,
-                              const char *key, const size_t nkey, bool do_update)
+static hash_item *do_item_get(const char *key, const size_t nkey, bool do_update)
 {
     hash_item *it;
     const char *hkey = (nkey > MAX_HKEY_LEN) ? key+(nkey-MAX_HKEY_LEN) : key;
@@ -1158,7 +1151,7 @@ static hash_item *do_item_get(struct default_engine *engine,
                 do_item_update(it);
             }
         } else {
-            do_item_unlink(engine, it, ITEM_UNLINK_INVALID);
+            do_item_unlink(it, ITEM_UNLINK_INVALID);
             it = NULL;
         }
     }
@@ -1181,23 +1174,22 @@ static hash_item *do_item_get(struct default_engine *engine,
  *
  * Returns the state of storage.
  */
-static ENGINE_ERROR_CODE do_item_store_set(struct default_engine *engine, hash_item *it,
-                                           uint64_t *cas, const void *cookie)
+static ENGINE_ERROR_CODE do_item_store_set(hash_item *it, uint64_t *cas, const void *cookie)
 {
     hash_item *old_it;
     ENGINE_ERROR_CODE stored;
 
-    old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
+    old_it = do_item_get(item_get_key(it), it->nkey, DONT_UPDATE);
     if (old_it) {
         if (IS_COLL_ITEM(old_it)) {
             stored = ENGINE_EBADTYPE;
         } else {
-            do_item_replace(engine, old_it, it);
+            do_item_replace(old_it, it);
             stored = ENGINE_SUCCESS;
         }
-        do_item_release(engine, old_it);
+        do_item_release(old_it);
     } else {
-        stored = do_item_link(engine, it);
+        stored = do_item_link(it);
     }
     if (stored == ENGINE_SUCCESS) {
         *cas = item_get_cas(it);
@@ -1205,13 +1197,12 @@ static ENGINE_ERROR_CODE do_item_store_set(struct default_engine *engine, hash_i
     return stored;
 }
 
-static ENGINE_ERROR_CODE do_item_store_add(struct default_engine *engine, hash_item *it,
-                                           uint64_t *cas, const void *cookie)
+static ENGINE_ERROR_CODE do_item_store_add(hash_item *it, uint64_t *cas, const void *cookie)
 {
     hash_item *old_it;
     ENGINE_ERROR_CODE stored;
 
-    old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
+    old_it = do_item_get(item_get_key(it), it->nkey, DONT_UPDATE);
     if (old_it) {
         if (IS_COLL_ITEM(old_it)) {
             stored = ENGINE_EBADTYPE;
@@ -1220,9 +1211,9 @@ static ENGINE_ERROR_CODE do_item_store_add(struct default_engine *engine, hash_i
             do_item_update(old_it);
             stored = ENGINE_NOT_STORED;
         }
-        do_item_release(engine, old_it);
+        do_item_release(old_it);
     } else {
-        stored = do_item_link(engine, it);
+        stored = do_item_link(it);
         if (stored == ENGINE_SUCCESS) {
             *cas = item_get_cas(it);
         }
@@ -1230,35 +1221,33 @@ static ENGINE_ERROR_CODE do_item_store_add(struct default_engine *engine, hash_i
     return stored;
 }
 
-static ENGINE_ERROR_CODE do_item_store_replace(struct default_engine *engine, hash_item *it,
-                                               uint64_t *cas, const void *cookie)
+static ENGINE_ERROR_CODE do_item_store_replace(hash_item *it, uint64_t *cas, const void *cookie)
 {
     hash_item *old_it;
     ENGINE_ERROR_CODE stored;
 
-    old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
+    old_it = do_item_get(item_get_key(it), it->nkey, DONT_UPDATE);
     if (old_it) {
         if (IS_COLL_ITEM(old_it)) {
             stored = ENGINE_EBADTYPE;
         } else {
-            do_item_replace(engine, old_it, it);
+            do_item_replace(old_it, it);
             stored = ENGINE_SUCCESS;
             *cas = item_get_cas(it);
         }
-        do_item_release(engine, old_it);
+        do_item_release(old_it);
     } else {
         stored = ENGINE_NOT_STORED;
     }
     return stored;
 }
 
-static ENGINE_ERROR_CODE do_item_store_cas(struct default_engine *engine, hash_item *it,
-                                           uint64_t *cas, const void *cookie)
+static ENGINE_ERROR_CODE do_item_store_cas(hash_item *it, uint64_t *cas, const void *cookie)
 {
     hash_item *old_it;
     ENGINE_ERROR_CODE stored;
 
-    old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
+    old_it = do_item_get(item_get_key(it), it->nkey, DONT_UPDATE);
     if (old_it) {
         if (IS_COLL_ITEM(old_it)) {
             stored = ENGINE_EBADTYPE;
@@ -1266,7 +1255,7 @@ static ENGINE_ERROR_CODE do_item_store_cas(struct default_engine *engine, hash_i
             // cas validates
             // it and old_it may belong to different classes.
             // I'm updating the stats for the one that's getting pushed out
-            do_item_replace(engine, old_it, it);
+            do_item_replace(old_it, it);
             stored = ENGINE_SUCCESS;
             *cas = item_get_cas(it);
         } else {
@@ -1277,7 +1266,7 @@ static ENGINE_ERROR_CODE do_item_store_cas(struct default_engine *engine, hash_i
             }
             stored = ENGINE_KEY_EEXISTS;
         }
-        do_item_release(engine, old_it);
+        do_item_release(old_it);
     } else {
         // LRU expired
         stored = ENGINE_KEY_ENOENT;
@@ -1285,14 +1274,14 @@ static ENGINE_ERROR_CODE do_item_store_cas(struct default_engine *engine, hash_i
     return stored;
 }
 
-static ENGINE_ERROR_CODE do_item_store_attach(struct default_engine *engine, hash_item *it, uint64_t *cas,
+static ENGINE_ERROR_CODE do_item_store_attach(hash_item *it, uint64_t *cas,
                                               ENGINE_STORE_OPERATION operation, const void *cookie)
 {
     hash_item *old_it;
     hash_item *new_it;
     ENGINE_ERROR_CODE stored;
 
-    old_it = do_item_get(engine, item_get_key(it), it->nkey, DONT_UPDATE);
+    old_it = do_item_get(item_get_key(it), it->nkey, DONT_UPDATE);
     if (old_it) {
         if (IS_COLL_ITEM(old_it)) {
             stored = ENGINE_EBADTYPE;
@@ -1302,7 +1291,7 @@ static ENGINE_ERROR_CODE do_item_store_attach(struct default_engine *engine, has
             stored = ENGINE_KEY_EEXISTS;
         } else {
             /* we have it and old_it here - alloc memory to hold both */
-            new_it = do_item_alloc(engine, item_get_key(it), it->nkey,
+            new_it = do_item_alloc(item_get_key(it), it->nkey,
                                    old_it->flags, old_it->exptime,
                                    it->nbytes + old_it->nbytes - 2 /* CRLF */, cookie);
             if (new_it) {
@@ -1316,16 +1305,16 @@ static ENGINE_ERROR_CODE do_item_store_attach(struct default_engine *engine, has
                     memcpy(item_get_data(new_it) + it->nbytes - 2 /* CRLF */, item_get_data(old_it), old_it->nbytes);
                 }
                 /* replace old item with new item */
-                do_item_replace(engine, old_it, new_it);
+                do_item_replace(old_it, new_it);
                 stored = ENGINE_SUCCESS;
                 *cas = item_get_cas(new_it);
-                do_item_release(engine, new_it);
+                do_item_release(new_it);
             } else {
                 /* SERVER_ERROR out of memory */
                 stored = ENGINE_NOT_STORED;
             }
         }
-        do_item_release(engine, old_it);
+        do_item_release(old_it);
     } else {
         stored = ENGINE_NOT_STORED;
     }
@@ -1343,8 +1332,7 @@ static ENGINE_ERROR_CODE do_item_store_attach(struct default_engine *engine, has
  *
  * returns a response string to send back to the client.
  */
-static ENGINE_ERROR_CODE do_add_delta(struct default_engine *engine, hash_item *it,
-                                      const bool incr, const int64_t delta,
+static ENGINE_ERROR_CODE do_add_delta(hash_item *it, const bool incr, const int64_t delta,
                                       uint64_t *rcas, uint64_t *result, const void *cookie)
 {
     const char *ptr;
@@ -1376,15 +1364,15 @@ static ENGINE_ERROR_CODE do_add_delta(struct default_engine *engine, hash_item *
     if ((res = snprintf(buf, sizeof(buf), "%" PRIu64 "\r\n", value)) == -1) {
         return ENGINE_EINVAL;
     }
-    hash_item *new_it = do_item_alloc(engine, item_get_key(it), it->nkey,
+    hash_item *new_it = do_item_alloc(item_get_key(it), it->nkey,
                                       it->flags, it->exptime, res, cookie);
     if (new_it == NULL) {
         return ENGINE_ENOMEM;
     }
     memcpy(item_get_data(new_it), buf, res);
-    do_item_replace(engine, it, new_it);
+    do_item_replace(it, new_it);
     *rcas = item_get_cas(new_it);
-    do_item_release(engine, new_it);       /* release our reference */
+    do_item_release(new_it);       /* release our reference */
 
     return ENGINE_SUCCESS;
 }
@@ -1452,12 +1440,11 @@ static inline uint32_t do_btree_elem_ntotal(btree_elem_item *elem)
 /*
  * LIST collection management
  */
-static ENGINE_ERROR_CODE do_list_item_find(struct default_engine *engine,
-                                           const void *key, const size_t nkey,
+static ENGINE_ERROR_CODE do_list_item_find(const void *key, const size_t nkey,
                                            bool do_update, hash_item **item)
 {
     *item = NULL;
-    hash_item *it = do_item_get(engine, key, nkey, do_update);
+    hash_item *it = do_item_get(key, nkey, do_update);
     if (it == NULL) {
         return ENGINE_KEY_ENOENT;
     }
@@ -1465,20 +1452,19 @@ static ENGINE_ERROR_CODE do_list_item_find(struct default_engine *engine,
         *item = it;
         return ENGINE_SUCCESS;
     } else {
-        do_item_release(engine, it);
+        do_item_release(it);
         return ENGINE_EBADTYPE;
     }
 }
 
-static hash_item *do_list_item_alloc(struct default_engine *engine,
-                                     const void *key, const size_t nkey,
+static hash_item *do_list_item_alloc(const void *key, const size_t nkey,
                                      item_attr *attrp, const void *cookie)
 {
     char *value = "\r\n"; //"LIST ITEM\r\n";
     int nbytes = 2; //11;
     int real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes) + sizeof(list_meta_info) - nkey;
 
-    hash_item *it = do_item_alloc(engine, key, nkey, attrp->flags, attrp->exptime,
+    hash_item *it = do_item_alloc(key, nkey, attrp->flags, attrp->exptime,
                                   real_nbytes, cookie);
     if (it != NULL) {
         it->iflag |= ITEM_IFLAG_LIST;
@@ -1503,12 +1489,11 @@ static hash_item *do_list_item_alloc(struct default_engine *engine,
     return it;
 }
 
-static list_elem_item *do_list_elem_alloc(struct default_engine *engine,
-                                          const int nbytes, const void *cookie)
+static list_elem_item *do_list_elem_alloc(const int nbytes, const void *cookie)
 {
     size_t ntotal = sizeof(list_elem_item) + nbytes;
 
-    list_elem_item *elem = do_item_alloc_internal(engine, ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    list_elem_item *elem = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
@@ -1748,12 +1733,11 @@ static inline int set_hash_eq(const int h1, const void *v1, size_t vlen1,
 #define SET_GET_HASHIDX(hval, hdepth) \
         (((hval) & (SET_HASHIDX_MASK << ((hdepth)*4))) >> ((hdepth)*4))
 
-static ENGINE_ERROR_CODE do_set_item_find(struct default_engine *engine,
-                                          const void *key, const size_t nkey,
+static ENGINE_ERROR_CODE do_set_item_find(const void *key, const size_t nkey,
                                           bool do_update, hash_item **item)
 {
     *item = NULL;
-    hash_item *it = do_item_get(engine, key, nkey, do_update);
+    hash_item *it = do_item_get(key, nkey, do_update);
     if (it == NULL) {
         return ENGINE_KEY_ENOENT;
     }
@@ -1761,20 +1745,19 @@ static ENGINE_ERROR_CODE do_set_item_find(struct default_engine *engine,
         *item = it;
         return ENGINE_SUCCESS;
     } else {
-        do_item_release(engine, it);
+        do_item_release(it);
         return ENGINE_EBADTYPE;
     }
 }
 
-static hash_item *do_set_item_alloc(struct default_engine *engine,
-                                    const void *key, const size_t nkey,
+static hash_item *do_set_item_alloc(const void *key, const size_t nkey,
                                     item_attr *attrp, const void *cookie)
 {
     char *value = "\r\n"; //SET ITEM\r\n";
     int nbytes = 2; //10;
     int real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)+sizeof(set_meta_info)-nkey;
 
-    hash_item *it = do_item_alloc(engine, key, nkey, attrp->flags, attrp->exptime,
+    hash_item *it = do_item_alloc(key, nkey, attrp->flags, attrp->exptime,
                                   real_nbytes, cookie);
     if (it != NULL) {
         it->iflag |= ITEM_IFLAG_SET;
@@ -1799,12 +1782,11 @@ static hash_item *do_set_item_alloc(struct default_engine *engine,
     return it;
 }
 
-static set_hash_node *do_set_node_alloc(struct default_engine *engine,
-                                        uint8_t hash_depth, const void *cookie)
+static set_hash_node *do_set_node_alloc(uint8_t hash_depth, const void *cookie)
 {
     size_t ntotal = sizeof(set_hash_node);
 
-    set_hash_node *node = do_item_alloc_internal(engine, ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    set_hash_node *node = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (node != NULL) {
         assert(node->slabs_clsid == 0);
         node->slabs_clsid = slabs_clsid(ntotal);
@@ -1824,12 +1806,11 @@ static void do_set_node_free(set_hash_node *node)
     do_mem_slot_free(node, sizeof(set_hash_node));
 }
 
-static set_elem_item *do_set_elem_alloc(struct default_engine *engine,
-                                        const int nbytes, const void *cookie)
+static set_elem_item *do_set_elem_alloc(const int nbytes, const void *cookie)
 {
     size_t ntotal = sizeof(set_elem_item) + nbytes;
 
-    set_elem_item *elem = do_item_alloc_internal(engine, ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    set_elem_item *elem = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
@@ -1947,8 +1928,7 @@ static void do_set_node_unlink(set_meta_info *info,
     do_set_node_free(node);
 }
 
-static ENGINE_ERROR_CODE do_set_elem_link(struct default_engine *engine,
-                                          set_meta_info *info, set_elem_item *elem,
+static ENGINE_ERROR_CODE do_set_elem_link(set_meta_info *info, set_elem_item *elem,
                                           const void *cookie)
 {
     assert(info->root != NULL);
@@ -1978,7 +1958,7 @@ static ENGINE_ERROR_CODE do_set_elem_link(struct default_engine *engine,
     }
 
     if (node->hcnt[hidx] >= SET_MAX_HASHCHAIN_SIZE) {
-        set_hash_node *n_node = do_set_node_alloc(engine, node->hdepth+1, cookie);
+        set_hash_node *n_node = do_set_node_alloc(node->hdepth+1, cookie);
         if (n_node == NULL) {
             return ENGINE_ENOMEM;
         }
@@ -2254,8 +2234,7 @@ static ENGINE_ERROR_CODE do_set_elem_get(set_meta_info *info, const uint32_t cou
     }
 }
 
-static ENGINE_ERROR_CODE do_set_elem_insert(struct default_engine *engine,
-                                            hash_item *it, set_elem_item *elem,
+static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem,
                                             const void *cookie)
 {
     set_meta_info *info = (set_meta_info *)item_get_meta(it);
@@ -2279,7 +2258,7 @@ static ENGINE_ERROR_CODE do_set_elem_insert(struct default_engine *engine,
     /* create the root hash node if it does not exist */
     bool new_root_flag = false;
     if (info->root == NULL) { /* empty set */
-        set_hash_node *r_node = do_set_node_alloc(engine, 0, cookie);
+        set_hash_node *r_node = do_set_node_alloc(0, cookie);
         if (r_node == NULL) {
             return ENGINE_ENOMEM;
         }
@@ -2288,7 +2267,7 @@ static ENGINE_ERROR_CODE do_set_elem_insert(struct default_engine *engine,
     }
 
     /* insert the element */
-    ret = do_set_elem_link(engine, info, elem, cookie);
+    ret = do_set_elem_link(info, elem, cookie);
     if (ret != ENGINE_SUCCESS) {
         if (new_root_flag) {
             do_set_node_unlink(info, NULL, 0);
@@ -2303,12 +2282,11 @@ static ENGINE_ERROR_CODE do_set_elem_insert(struct default_engine *engine,
 /*
  * B+TREE collection management
  */
-static ENGINE_ERROR_CODE do_btree_item_find(struct default_engine *engine,
-                                            const void *key, const size_t nkey,
+static ENGINE_ERROR_CODE do_btree_item_find(const void *key, const size_t nkey,
                                             bool do_update, hash_item **item)
 {
     *item = NULL;
-    hash_item *it = do_item_get(engine, key, nkey, do_update);
+    hash_item *it = do_item_get(key, nkey, do_update);
     if (it == NULL) {
         return ENGINE_KEY_ENOENT;
     }
@@ -2316,20 +2294,19 @@ static ENGINE_ERROR_CODE do_btree_item_find(struct default_engine *engine,
         *item = it;
         return ENGINE_SUCCESS;
     } else {
-        do_item_release(engine, it);
+        do_item_release(it);
         return ENGINE_EBADTYPE;
     }
 }
 
-static hash_item *do_btree_item_alloc(struct default_engine *engine,
-                                      const void *key, const size_t nkey,
+static hash_item *do_btree_item_alloc(const void *key, const size_t nkey,
                                       item_attr *attrp, const void *cookie)
 {
     char *value = "\r\n"; // "BTREE ITEM\r\n";
     int nbytes = 2; // 13;
     int real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes) + sizeof(btree_meta_info) - nkey;
 
-    hash_item *it = do_item_alloc(engine, key, nkey, attrp->flags, attrp->exptime,
+    hash_item *it = do_item_alloc(key, nkey, attrp->flags, attrp->exptime,
                                   real_nbytes, cookie);
     if (it != NULL) {
         it->iflag |= ITEM_IFLAG_BTREE;
@@ -2360,12 +2337,11 @@ static hash_item *do_btree_item_alloc(struct default_engine *engine,
     return it;
 }
 
-static btree_indx_node *do_btree_node_alloc(struct default_engine *engine,
-                                            const uint8_t node_depth, const void *cookie)
+static btree_indx_node *do_btree_node_alloc(const uint8_t node_depth, const void *cookie)
 {
     size_t ntotal = (node_depth > 0 ? sizeof(btree_indx_node) : sizeof(btree_leaf_node));
 
-    btree_indx_node *node = do_item_alloc_internal(engine, ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    btree_indx_node *node = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (node != NULL) {
         assert(node->slabs_clsid == 0);
         node->slabs_clsid = slabs_clsid(ntotal);
@@ -2387,13 +2363,12 @@ static void do_btree_node_free(btree_indx_node *node)
     do_mem_slot_free(node, ntotal);
 }
 
-static btree_elem_item *do_btree_elem_alloc(struct default_engine *engine,
-                                            const int nbkey, const int neflag, const int nbytes,
+static btree_elem_item *do_btree_elem_alloc(const int nbkey, const int neflag, const int nbytes,
                                             const void *cookie)
 {
     size_t ntotal = sizeof(btree_elem_item_fixed) + BTREE_REAL_NBKEY(nbkey) + neflag + nbytes;
 
-    btree_elem_item *elem = do_item_alloc_internal(engine, ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    btree_elem_item *elem = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
@@ -3439,8 +3414,7 @@ static void do_btree_node_link(btree_meta_info *info, btree_indx_node *node,
     }
 }
 
-static ENGINE_ERROR_CODE do_btree_node_split(struct default_engine *engine,
-                                             btree_meta_info *info, btree_elem_posi *path,
+static ENGINE_ERROR_CODE do_btree_node_split(btree_meta_info *info, btree_elem_posi *path,
                                              const void *cookie)
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
@@ -3458,14 +3432,14 @@ static ENGINE_ERROR_CODE do_btree_node_split(struct default_engine *engine,
             break;
         }
 
-        n_node[btree_depth] = do_btree_node_alloc(engine, btree_depth, cookie);
+        n_node[btree_depth] = do_btree_node_alloc(btree_depth, cookie);
         if (n_node[btree_depth] == NULL) {
             ret = ENGINE_ENOMEM; break;
         }
         btree_depth += 1;
         assert(btree_depth < BTREE_MAX_DEPTH);
         if (btree_depth > info->root->ndepth) {
-            btree_indx_node *r_node = do_btree_node_alloc(engine, btree_depth, cookie);
+            btree_indx_node *r_node = do_btree_node_alloc(btree_depth, cookie);
             if (r_node == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
@@ -3806,7 +3780,7 @@ static void do_btree_elem_replace(btree_meta_info *info,
     }
 }
 
-static ENGINE_ERROR_CODE do_btree_elem_update(struct default_engine *engine, btree_meta_info *info,
+static ENGINE_ERROR_CODE do_btree_elem_update(btree_meta_info *info,
                                               const int bkrtype, const bkey_range *bkrange,
                                               const eflag_update *eupdate,
                                               const char *value, const int nbytes, const void *cookie)
@@ -3870,7 +3844,7 @@ static ENGINE_ERROR_CODE do_btree_elem_update(struct default_engine *engine, btr
         }
 #endif
 
-        btree_elem_item *new_elem = do_btree_elem_alloc(engine, elem->nbkey, new_neflag, new_nbytes, cookie);
+        btree_elem_item *new_elem = do_btree_elem_alloc(elem->nbkey, new_neflag, new_nbytes, cookie);
         if (new_elem == NULL) {
             return ENGINE_ENOMEM;
         }
@@ -4274,8 +4248,7 @@ static void do_btree_overflow_trim(btree_meta_info *info,
     }
 }
 
-static ENGINE_ERROR_CODE do_btree_elem_link(struct default_engine *engine,
-                                            btree_meta_info *info, btree_elem_item *elem,
+static ENGINE_ERROR_CODE do_btree_elem_link(btree_meta_info *info, btree_elem_item *elem,
                                             const bool replace_if_exist, bool *replaced,
                                             btree_elem_item **trimmed_elems, uint32_t *trimmed_count,
                                             const void *cookie)
@@ -4299,7 +4272,7 @@ static ENGINE_ERROR_CODE do_btree_elem_link(struct default_engine *engine,
 
         /* If the leaf node is full of elements, split it ahead. */
         if (path[0].node->used_count >= BTREE_ITEM_COUNT) {
-            res = do_btree_node_split(engine, info, path, cookie);
+            res = do_btree_node_split(info, path, cookie);
             if (res != ENGINE_SUCCESS) {
                 return res;
             }
@@ -4618,8 +4591,7 @@ static uint32_t do_btree_elem_count(btree_meta_info *info,
     return tot_found;
 }
 
-static ENGINE_ERROR_CODE do_btree_elem_insert(struct default_engine *engine,
-                                              hash_item *it, btree_elem_item *elem,
+static ENGINE_ERROR_CODE do_btree_elem_insert(hash_item *it, btree_elem_item *elem,
                                               const bool replace_if_exist, bool *replaced,
                                               btree_elem_item **trimmed_elems,
                                               uint32_t *trimmed_count, const void *cookie)
@@ -4642,7 +4614,7 @@ static ENGINE_ERROR_CODE do_btree_elem_insert(struct default_engine *engine,
     /* create the root node if it does not exist */
     bool new_root_flag = false;
     if (info->root == NULL) {
-        btree_indx_node *r_node = do_btree_node_alloc(engine, 0, cookie);
+        btree_indx_node *r_node = do_btree_node_alloc(0, cookie);
         if (r_node == NULL) {
             return ENGINE_ENOMEM;
         }
@@ -4651,7 +4623,7 @@ static ENGINE_ERROR_CODE do_btree_elem_insert(struct default_engine *engine,
     }
 
     /* insert the element */
-    ret = do_btree_elem_link(engine, info, elem, replace_if_exist, replaced,
+    ret = do_btree_elem_link(info, elem, replace_if_exist, replaced,
                              trimmed_elems, trimmed_count, cookie);
     if (ret != ENGINE_SUCCESS) {
         if (new_root_flag) {
@@ -4663,7 +4635,7 @@ static ENGINE_ERROR_CODE do_btree_elem_insert(struct default_engine *engine,
     return ENGINE_SUCCESS;
 }
 
-static ENGINE_ERROR_CODE do_btree_elem_arithmetic(struct default_engine *engine, btree_meta_info *info,
+static ENGINE_ERROR_CODE do_btree_elem_arithmetic(btree_meta_info *info,
                                                   const int bkrtype, const bkey_range *bkrange,
                                                   const bool increment, const bool create,
                                                   const uint64_t delta, const uint64_t initial,
@@ -4691,7 +4663,7 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(struct default_engine *engine,
             return ENGINE_EINVAL;
         }
 
-        elem = do_btree_elem_alloc(engine, bkrange->from_nbkey,
+        elem = do_btree_elem_alloc(bkrange->from_nbkey,
                                    (eflagp == NULL || eflagp->len == EFLAG_NULL ? 0 : eflagp->len),
                                    nlen, cookie);
         if (elem == NULL) {
@@ -4707,7 +4679,7 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(struct default_engine *engine,
             memcpy(elem->data + real_nbkey + eflagp->len, nbuf, nlen);
         }
 
-        ret = do_btree_elem_link(engine, info, elem, false, NULL, NULL, NULL, cookie);
+        ret = do_btree_elem_link(info, elem, false, NULL, NULL, NULL, cookie);
         if (ret != ENGINE_SUCCESS) {
             assert(ret != ENGINE_ELEM_EEXISTS);
             /* ENGINE_ENOMEM || ENGINE_BKEYOOR || ENGINE_OVERFLOW */
@@ -4742,7 +4714,7 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(struct default_engine *engine,
              * Because, the space difference is negligible.
              */
 #endif
-            btree_elem_item *new_elem = do_btree_elem_alloc(engine, elem->nbkey, elem->neflag, nlen, cookie);
+            btree_elem_item *new_elem = do_btree_elem_alloc(elem->nbkey, elem->neflag, nlen, cookie);
             if (new_elem == NULL) {
                 return ENGINE_ENOMEM;
             }
@@ -5071,13 +5043,13 @@ static void do_btree_smget_adjust_trim(smget_result_t *smres)
 }
 
 #ifdef JHPARK_OLD_SMGET_INTERFACE
-static ENGINE_ERROR_CODE do_btree_smget_scan_sort_old(struct default_engine *engine,
-                                    token_t *key_array, const int key_count,
-                                    const int bkrtype, const bkey_range *bkrange,
-                                    const eflag_filter *efilter, const uint32_t req_count,
-                                    btree_scan_info *btree_scan_buf,
-                                    uint16_t *sort_sindx_buf, uint32_t *sort_sindx_cnt,
-                                    uint32_t *missed_key_array, uint32_t *missed_key_count)
+static ENGINE_ERROR_CODE
+do_btree_smget_scan_sort_old(token_t *key_array, const int key_count,
+                             const int bkrtype, const bkey_range *bkrange,
+                             const eflag_filter *efilter, const uint32_t req_count,
+                             btree_scan_info *btree_scan_buf,
+                             uint16_t *sort_sindx_buf, uint32_t *sort_sindx_cnt,
+                             uint32_t *missed_key_array, uint32_t *missed_key_count)
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     hash_item *it;
@@ -5096,7 +5068,7 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort_old(struct default_engine *eng
     *missed_key_count = 0;
 
     for (k = 0; k < key_count; k++) {
-        ret = do_btree_item_find(engine, key_array[k].value, key_array[k].length, DO_UPDATE, &it);
+        ret = do_btree_item_find(key_array[k].value, key_array[k].length, DO_UPDATE, &it);
         if (ret != ENGINE_SUCCESS) {
             if (ret == ENGINE_KEY_ENOENT) { /* key missed */
                 missed_key_array[*missed_key_count] = k;
@@ -5110,14 +5082,14 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort_old(struct default_engine *eng
         if ((info->mflags & COLL_META_FLAG_READABLE) == 0) { /* unreadable collection */
             missed_key_array[*missed_key_count] = k;
             *missed_key_count += 1;
-            do_item_release(engine, it); continue;
+            do_item_release(it); continue;
         }
         if (info->ccnt == 0) { /* empty collection */
-            do_item_release(engine, it); continue;
+            do_item_release(it); continue;
         }
         if ((info->bktype == BKEY_TYPE_UINT64 && bkrange->from_nbkey >  0) ||
             (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
-            do_item_release(engine, it);
+            do_item_release(it);
             ret = ENGINE_EBADBKEY; break;
         }
         assert(info->root != NULL);
@@ -5127,18 +5099,18 @@ static ENGINE_ERROR_CODE do_btree_smget_scan_sort_old(struct default_engine *eng
             if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
                 /* Some elements weren't cached because of overflow trim */
                 if (do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
-                    do_item_release(engine, it);
+                    do_item_release(it);
                     ret = ENGINE_EBKEYOOR; break;
                 }
             }
-            do_item_release(engine, it);
+            do_item_release(it);
             continue;
         }
 
         if (posi.bkeq == false && (info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
             /* Some elements weren't cached because of overflow trim */
             if (do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
-                do_item_release(engine, it);
+                do_item_release(it);
                 ret = ENGINE_EBKEYOOR; break;
             }
         }
@@ -5154,11 +5126,11 @@ scan_next:
             if (elem == NULL) {
                 if (posi.node == NULL && (info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
                     if (do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
-                        do_item_release(engine, it);
+                        do_item_release(it);
                         ret = ENGINE_EBKEYOOR; break;
                     }
                 }
-                do_item_release(engine, it);
+                do_item_release(it);
                 continue;
             }
         }
@@ -5190,7 +5162,7 @@ scan_next:
                 cmp_res = do_btree_comp_hkey(btree_scan_buf[curr_idx].it,
                                              btree_scan_buf[comp_idx].it);
                 if (cmp_res == 0) {
-                    do_item_release(engine, btree_scan_buf[curr_idx].it);
+                    do_item_release(btree_scan_buf[curr_idx].it);
                     btree_scan_buf[curr_idx].it = NULL;
                     ret = ENGINE_EBADVALUE; break;
                 }
@@ -5198,7 +5170,7 @@ scan_next:
             if ((ascending ==  true && cmp_res > 0) ||
                 (ascending == false && cmp_res < 0)) {
                 /* do not need to proceed the current scan */
-                do_item_release(engine, btree_scan_buf[curr_idx].it);
+                do_item_release(btree_scan_buf[curr_idx].it);
                 btree_scan_buf[curr_idx].it = NULL;
                 continue;
             }
@@ -5228,7 +5200,7 @@ scan_next:
             }
         }
         if (ret == ENGINE_EBADVALUE) {
-            do_item_release(engine, btree_scan_buf[curr_idx].it);
+            do_item_release(btree_scan_buf[curr_idx].it);
             btree_scan_buf[curr_idx].it = NULL;
             break;
         }
@@ -5236,7 +5208,7 @@ scan_next:
         if (sort_count >= req_count) {
             /* free the last scan */
             comp_idx = sort_sindx_buf[sort_count-1];
-            do_item_release(engine, btree_scan_buf[comp_idx].it);
+            do_item_release(btree_scan_buf[comp_idx].it);
             btree_scan_buf[comp_idx].it = NULL;
             free_idx = comp_idx;
             sort_count--;
@@ -5259,7 +5231,7 @@ scan_next:
     } else {
         for (i = 0; i < sort_count; i++) {
             curr_idx = sort_sindx_buf[i];
-            do_item_release(engine, btree_scan_buf[curr_idx].it);
+            do_item_release(btree_scan_buf[curr_idx].it);
             btree_scan_buf[curr_idx].it = NULL;
         }
     }
@@ -5268,8 +5240,7 @@ scan_next:
 #endif
 
 static ENGINE_ERROR_CODE
-do_btree_smget_scan_sort(struct default_engine *engine,
-                         token_t *key_array, const int key_count,
+do_btree_smget_scan_sort(token_t *key_array, const int key_count,
                          const int bkrtype, const bkey_range *bkrange,
                          const eflag_filter *efilter,
                          const uint32_t req_count, const bool unique,
@@ -5293,7 +5264,7 @@ do_btree_smget_scan_sort(struct default_engine *engine,
 
     for (k = 0; k < key_count; k++) {
         kidx = k;
-        ret = do_btree_item_find(engine, key_array[k].value, key_array[k].length, DO_UPDATE, &it);
+        ret = do_btree_item_find(key_array[k].value, key_array[k].length, DO_UPDATE, &it);
         if (ret != ENGINE_SUCCESS) {
             if (ret == ENGINE_KEY_ENOENT) { /* key missed */
                 do_btree_smget_add_miss(smres, kidx, ENGINE_KEY_ENOENT);
@@ -5305,14 +5276,14 @@ do_btree_smget_scan_sort(struct default_engine *engine,
         info = (btree_meta_info *)item_get_meta(it);
         if ((info->mflags & COLL_META_FLAG_READABLE) == 0) { /* unreadable collection */
             do_btree_smget_add_miss(smres, kidx, ENGINE_UNREADABLE);
-            do_item_release(engine, it); continue;
+            do_item_release(it); continue;
         }
         if (info->ccnt == 0) { /* empty collection */
-            do_item_release(engine, it); continue;
+            do_item_release(it); continue;
         }
         if ((info->bktype == BKEY_TYPE_UINT64 && bkrange->from_nbkey >  0) ||
             (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
-            do_item_release(engine, it);
+            do_item_release(it);
             ret = ENGINE_EBADBKEY; break;
         }
         assert(info->root != NULL);
@@ -5324,14 +5295,14 @@ do_btree_smget_scan_sort(struct default_engine *engine,
                 /* Some elements weren't cached because of overflow trim */
                 do_btree_smget_add_miss(smres, kidx, ENGINE_EBKEYOOR);
             }
-            do_item_release(engine, it); continue;
+            do_item_release(it); continue;
         }
 
         if (posi.bkeq == false && (info->mflags & COLL_META_FLAG_TRIMMED) != 0 &&
             do_btree_overlapped_with_trimmed_space(info, &posi, bkrtype)) {
             /* Some elements weren't cached because of overflow trim */
             do_btree_smget_add_miss(smres, kidx, ENGINE_EBKEYOOR);
-            do_item_release(engine, it); continue;
+            do_item_release(it); continue;
         }
 
         /* initialize for the next scan */
@@ -5349,7 +5320,7 @@ scan_next:
                     /* Some elements weren't cached because of overflow trim */
                     do_btree_smget_add_trim(smres, kidx, prev);
                 }
-                do_item_release(engine, it); continue;
+                do_item_release(it); continue;
             }
         }
         is_first = false;
@@ -5386,7 +5357,7 @@ scan_next:
                 cmp_res = do_btree_comp_hkey(btree_scan_buf[curr_idx].it,
                                              btree_scan_buf[comp_idx].it);
                 if (cmp_res == 0) {
-                    do_item_release(engine, btree_scan_buf[curr_idx].it);
+                    do_item_release(btree_scan_buf[curr_idx].it);
                     btree_scan_buf[curr_idx].it = NULL;
                     ret = ENGINE_EBADVALUE; break;
                 }
@@ -5394,7 +5365,7 @@ scan_next:
             if ((ascending ==  true && cmp_res > 0) ||
                 (ascending == false && cmp_res < 0)) {
                 /* do not need to proceed the current scan */
-                do_item_release(engine, btree_scan_buf[curr_idx].it);
+                do_item_release(btree_scan_buf[curr_idx].it);
                 btree_scan_buf[curr_idx].it = NULL;
                 continue;
             }
@@ -5425,7 +5396,7 @@ scan_next:
             }
         }
         if (ret == ENGINE_EBADVALUE) {
-            do_item_release(engine, btree_scan_buf[curr_idx].it);
+            do_item_release(btree_scan_buf[curr_idx].it);
             btree_scan_buf[curr_idx].it = NULL;
             break;
         }
@@ -5448,7 +5419,7 @@ scan_next:
         if (sort_count >= req_count) {
             /* free the last scan */
             comp_idx = sort_sindx_buf[sort_count-1];
-            do_item_release(engine, btree_scan_buf[comp_idx].it);
+            do_item_release(btree_scan_buf[comp_idx].it);
             btree_scan_buf[comp_idx].it = NULL;
             sort_count--;
             btree_scan_buf[comp_idx].next = free_idx;
@@ -5467,7 +5438,7 @@ scan_next:
     } else {
         for (i = 0; i < sort_count; i++) {
             curr_idx = sort_sindx_buf[i];
-            do_item_release(engine, btree_scan_buf[curr_idx].it);
+            do_item_release(btree_scan_buf[curr_idx].it);
             btree_scan_buf[curr_idx].it = NULL;
         }
     }
@@ -5765,9 +5736,9 @@ static int check_expired_collections(struct default_engine *engine, const int cl
 
             if (it->refcount == 0) {
                 if (do_item_isvalid(it, current_time) == false) {
-                    do_item_invalidate(engine, it, clsid, true);
+                    do_item_invalidate(it, clsid, true);
                 } else {
-                    do_item_evict(engine, it, clsid, current_time, NULL);
+                    do_item_evict(it, clsid, current_time, NULL);
                 }
                 unlink_count++;
             } else { /* search->refcount > 0 */
@@ -5993,7 +5964,7 @@ hash_item *item_alloc(struct default_engine *engine,
     hash_item *it;
     pthread_mutex_lock(&engine->cache_lock);
     /* key can be NULL */
-    it = do_item_alloc(engine, key, nkey, flags, exptime, nbytes, cookie);
+    it = do_item_alloc(key, nkey, flags, exptime, nbytes, cookie);
     pthread_mutex_unlock(&engine->cache_lock);
     return it;
 }
@@ -6006,7 +5977,7 @@ hash_item *item_get(struct default_engine *engine, const void *key, const size_t
 {
     hash_item *it;
     pthread_mutex_lock(&engine->cache_lock);
-    it = do_item_get(engine, key, nkey, DO_UPDATE);
+    it = do_item_get(key, nkey, DO_UPDATE);
     pthread_mutex_unlock(&engine->cache_lock);
     return it;
 }
@@ -6018,7 +5989,7 @@ hash_item *item_get(struct default_engine *engine, const void *key, const size_t
 void item_release(struct default_engine *engine, hash_item *item)
 {
     pthread_mutex_lock(&engine->cache_lock);
-    do_item_release(engine, item);
+    do_item_release(item);
     pthread_mutex_unlock(&engine->cache_lock);
 }
 
@@ -6035,20 +6006,20 @@ ENGINE_ERROR_CODE store_item(struct default_engine *engine,
     pthread_mutex_lock(&engine->cache_lock);
     switch (operation) {
       case OPERATION_SET:
-           ret = do_item_store_set(engine, item, cas, cookie);
+           ret = do_item_store_set(item, cas, cookie);
            break;
       case OPERATION_ADD:
-           ret = do_item_store_add(engine, item, cas, cookie);
+           ret = do_item_store_add(item, cas, cookie);
            break;
       case OPERATION_REPLACE:
-           ret = do_item_store_replace(engine, item, cas, cookie);
+           ret = do_item_store_replace(item, cas, cookie);
            break;
       case OPERATION_CAS:
-           ret = do_item_store_cas(engine, item, cas, cookie);
+           ret = do_item_store_cas(item, cas, cookie);
            break;
       case OPERATION_PREPEND:
       case OPERATION_APPEND:
-           ret = do_item_store_attach(engine, item, cas, operation, cookie);
+           ret = do_item_store_attach(item, cas, operation, cookie);
            break;
       default:
            ret = ENGINE_NOT_STORED;
@@ -6057,8 +6028,7 @@ ENGINE_ERROR_CODE store_item(struct default_engine *engine,
     return ret;
 }
 
-static ENGINE_ERROR_CODE do_arithmetic(struct default_engine *engine,
-                                       const void* cookie,
+static ENGINE_ERROR_CODE do_arithmetic(const void* cookie,
                                        const void* key,
                                        const int nkey,
                                        const bool increment,
@@ -6070,7 +6040,7 @@ static ENGINE_ERROR_CODE do_arithmetic(struct default_engine *engine,
                                        uint64_t *cas,
                                        uint64_t *result)
 {
-    hash_item *it = do_item_get(engine, key, nkey, DONT_UPDATE);
+    hash_item *it = do_item_get(key, nkey, DONT_UPDATE);
     ENGINE_ERROR_CODE ret;
 
     if (it == NULL) {
@@ -6081,21 +6051,21 @@ static ENGINE_ERROR_CODE do_arithmetic(struct default_engine *engine,
             int len = snprintf(buffer, sizeof(buffer), "%"PRIu64"\r\n",
                     (uint64_t)initial);
 
-            it = do_item_alloc(engine, key, nkey, flags, exptime, len, cookie);
+            it = do_item_alloc(key, nkey, flags, exptime, len, cookie);
             if (it == NULL) {
                 return ENGINE_ENOMEM;
             }
             memcpy((void*)item_get_data(it), buffer, len);
 
-            ret = do_item_store_add(engine, it, cas, cookie);
+            ret = do_item_store_add(it, cas, cookie);
             if (ret == ENGINE_SUCCESS) {
                 *result = initial;
             }
-            do_item_release(engine, it);
+            do_item_release(it);
         }
     } else {
-        ret = do_add_delta(engine, it, increment, delta, cas, result, cookie);
-        do_item_release(engine, it);
+        ret = do_add_delta(it, increment, delta, cas, result, cookie);
+        do_item_release(it);
     }
 
     return ret;
@@ -6117,7 +6087,7 @@ ENGINE_ERROR_CODE arithmetic(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_arithmetic(engine, cookie, key, nkey, increment,
+    ret = do_arithmetic(cookie, key, nkey, increment,
                         create, delta, initial, flags, exptime, cas, result);
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -6127,22 +6097,21 @@ ENGINE_ERROR_CODE arithmetic(struct default_engine *engine,
  * Delete an item.
  */
 
-static ENGINE_ERROR_CODE do_item_delete(struct default_engine *engine,
-                                        const void* key, const size_t nkey,
+static ENGINE_ERROR_CODE do_item_delete(const void* key, const size_t nkey,
                                         uint64_t cas)
 {
     ENGINE_ERROR_CODE ret;
-    hash_item *it = do_item_get(engine, key, nkey, DONT_UPDATE);
+    hash_item *it = do_item_get(key, nkey, DONT_UPDATE);
     if (it == NULL) {
         ret = ENGINE_KEY_ENOENT;
     } else {
         if (cas == 0 || cas == item_get_cas(it)) {
-            do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
             ret = ENGINE_SUCCESS;
         } else {
             ret = ENGINE_KEY_EEXISTS;
         }
-        do_item_release(engine, it);
+        do_item_release(it);
     }
     return ret;
 }
@@ -6154,7 +6123,7 @@ ENGINE_ERROR_CODE item_delete(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_item_delete(engine, key, nkey, cas);
+    ret = do_item_delete(key, nkey, cas);
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
 }
@@ -6221,16 +6190,16 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
                 if (iter->time >= oldest_live) {
                     next = iter->next;
                     if (nprefix < 0) { /* flush all */
-                        do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
+                        do_item_unlink(iter, ITEM_UNLINK_INVALID);
                     } else if (nprefix == 0) { /* flush null prefix */
                         if (iter->pfxptr->nprefix == 0) {
-                            do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
+                            do_item_unlink(iter, ITEM_UNLINK_INVALID);
                         }
                     } else { /* nprefix > 0: flush given prefix */
                         char *iter_key = (char*)item_get_key(iter);
                         if (iter->nkey > nprefix && memcmp(prefix,iter_key,nprefix) == 0 &&
                             *(iter_key + nprefix) == config->prefix_delimiter) {
-                            do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
+                            do_item_unlink(iter, ITEM_UNLINK_INVALID);
                         }
                     }
                 } else {
@@ -6246,16 +6215,16 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
                 if (iter->time >= oldest_live) {
                     next = iter->next;
                     if (nprefix < 0) { /* flush all */
-                        do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
+                        do_item_unlink(iter, ITEM_UNLINK_INVALID);
                     } else if (nprefix == 0) { /* flush null prefix */
                         if (iter->pfxptr->nprefix == 0) {
-                            do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
+                            do_item_unlink(iter, ITEM_UNLINK_INVALID);
                         }
                     } else { /* nprefix > 0: flush given prefix */
                         char *iter_key = (char*)item_get_key(iter);
                         if (iter->nkey > nprefix && memcmp(prefix,iter_key,nprefix) == 0 &&
                             *(iter_key + nprefix) == config->prefix_delimiter) {
-                            do_item_unlink(engine, iter, ITEM_UNLINK_INVALID);
+                            do_item_unlink(iter, ITEM_UNLINK_INVALID);
                         }
                     }
                 } else {
@@ -6385,6 +6354,7 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
     itemsp = &engine->items;
     statsp = &engine->stats;
     svcore = engine->server.core;
+    svstat = engine->server.stat;
     logger = engine->server.log->get_logger();
 
     pthread_mutex_init(&coll_del_lock, NULL);
@@ -6483,17 +6453,17 @@ ENGINE_ERROR_CODE list_struct_create(struct default_engine *engine,
     hash_item *it;
 
     pthread_mutex_lock(&engine->cache_lock);
-    it = do_item_get(engine, key, nkey, DONT_UPDATE);
+    it = do_item_get(key, nkey, DONT_UPDATE);
     if (it != NULL) {
-        do_item_release(engine, it);
+        do_item_release(it);
         ret = ENGINE_KEY_EEXISTS;
     } else {
-        it = do_list_item_alloc(engine, key, nkey, attrp, cookie);
+        it = do_list_item_alloc(key, nkey, attrp, cookie);
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
-            ret = do_item_link(engine, it);
-            do_item_release(engine, it);
+            ret = do_item_link(it);
+            do_item_release(it);
         }
     }
     pthread_mutex_unlock(&engine->cache_lock);
@@ -6505,7 +6475,7 @@ list_elem_item *list_elem_alloc(struct default_engine *engine,
 {
     list_elem_item *elem;
     pthread_mutex_lock(&engine->cache_lock);
-    elem = do_list_elem_alloc(engine, nbytes, cookie);
+    elem = do_list_elem_alloc(nbytes, cookie);
     pthread_mutex_unlock(&engine->cache_lock);
     return elem;
 }
@@ -6537,13 +6507,13 @@ ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
     *created = false;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_list_item_find(engine, key, nkey, DONT_UPDATE, &it);
+    ret = do_list_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
-        it = do_list_item_alloc(engine, key, nkey, attrp, cookie);
+        it = do_list_item_alloc(key, nkey, attrp, cookie);
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
-            ret = do_item_link(engine, it);
+            ret = do_item_link(it);
             if (ret == ENGINE_SUCCESS) {
                 *created = true;
             } else {
@@ -6554,10 +6524,10 @@ ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
     if (ret == ENGINE_SUCCESS) {
         ret = do_list_elem_insert(it, index, elem, cookie);
         if (ret != ENGINE_SUCCESS && *created) {
-            do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
     }
-    if (it != NULL) do_item_release(engine, it);
+    if (it != NULL) do_item_release(it);
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
 }
@@ -6601,7 +6571,7 @@ ENGINE_ERROR_CODE list_elem_delete(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_list_item_find(engine, key, nkey, DONT_UPDATE, &it);
+    ret = do_list_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         do {
             info = (list_meta_info *)item_get_meta(it);
@@ -6619,7 +6589,7 @@ ENGINE_ERROR_CODE list_elem_delete(struct default_engine *engine,
             *del_count = do_list_elem_delete(info, index, count, ELEM_DELETE_NORMAL);
             if (*del_count > 0) {
                 if (info->ccnt == 0 && drop_if_empty) {
-                    do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
+                    do_item_unlink(it, ITEM_UNLINK_NORMAL);
                     *dropped = true;
                 } else {
                     *dropped = false;
@@ -6628,7 +6598,7 @@ ENGINE_ERROR_CODE list_elem_delete(struct default_engine *engine,
                 ret = ENGINE_ELEM_ENOENT;
             }
         } while(0);
-        do_item_release(engine, it);
+        do_item_release(it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -6649,7 +6619,7 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_list_item_find(engine, key, nkey, DO_UPDATE, &it);
+    ret = do_list_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         do {
             info = (list_meta_info *)item_get_meta(it);
@@ -6673,7 +6643,7 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
             if (ret == ENGINE_SUCCESS) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(delete == true);
-                    do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
+                    do_item_unlink(it, ITEM_UNLINK_NORMAL);
                     *dropped = true;
                 } else {
                     *dropped = false;
@@ -6683,7 +6653,7 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
                 /* ret = ENGINE_ELEM_ENOENT */
             }
         } while(0);
-        do_item_release(engine, it);
+        do_item_release(it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -6700,17 +6670,17 @@ ENGINE_ERROR_CODE set_struct_create(struct default_engine *engine,
     hash_item *it;
 
     pthread_mutex_lock(&engine->cache_lock);
-    it = do_item_get(engine, key, nkey, DONT_UPDATE);
+    it = do_item_get(key, nkey, DONT_UPDATE);
     if (it != NULL) {
-        do_item_release(engine, it);
+        do_item_release(it);
         ret = ENGINE_KEY_EEXISTS;
     } else {
-        it = do_set_item_alloc(engine, key, nkey, attrp, cookie);
+        it = do_set_item_alloc(key, nkey, attrp, cookie);
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
-            ret = do_item_link(engine, it);
-            do_item_release(engine, it);
+            ret = do_item_link(it);
+            do_item_release(it);
         }
     }
     pthread_mutex_unlock(&engine->cache_lock);
@@ -6721,7 +6691,7 @@ set_elem_item *set_elem_alloc(struct default_engine *engine, const int nbytes, c
 {
     set_elem_item *elem;
     pthread_mutex_lock(&engine->cache_lock);
-    elem = do_set_elem_alloc(engine, nbytes, cookie);
+    elem = do_set_elem_alloc(nbytes, cookie);
     pthread_mutex_unlock(&engine->cache_lock);
     return elem;
 }
@@ -6749,13 +6719,13 @@ ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key
     *created = false;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_set_item_find(engine, key, nkey, DONT_UPDATE, &it);
+    ret = do_set_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
-        it = do_set_item_alloc(engine, key, nkey, attrp, cookie);
+        it = do_set_item_alloc(key, nkey, attrp, cookie);
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
-            ret = do_item_link(engine, it);
+            ret = do_item_link(it);
             if (ret == ENGINE_SUCCESS) {
                 *created = true;
             } else {
@@ -6764,12 +6734,12 @@ ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key
         }
     }
     if (ret == ENGINE_SUCCESS) {
-        ret = do_set_elem_insert(engine, it, elem, cookie);
+        ret = do_set_elem_insert(it, elem, cookie);
         if (ret != ENGINE_SUCCESS && *created) {
-            do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
     }
-    if (it != NULL) do_item_release(engine, it);
+    if (it != NULL) do_item_release(it);
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
 }
@@ -6786,17 +6756,17 @@ ENGINE_ERROR_CODE set_elem_delete(struct default_engine *engine,
     *dropped = false;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_set_item_find(engine, key, nkey, DONT_UPDATE, &it);
+    ret = do_set_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         info = (set_meta_info *)item_get_meta(it);
         ret = do_set_elem_delete_with_value(info, value, nbytes, ELEM_DELETE_NORMAL);
         if (ret == ENGINE_SUCCESS) {
             if (info->ccnt == 0 && drop_if_empty) {
-                do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
+                do_item_unlink(it, ITEM_UNLINK_NORMAL);
                 *dropped = true;
             }
         }
-        do_item_release(engine, it);
+        do_item_release(it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -6812,7 +6782,7 @@ ENGINE_ERROR_CODE set_elem_exist(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_set_item_find(engine, key, nkey, DO_UPDATE, &it);
+    ret = do_set_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (set_meta_info *)item_get_meta(it);
         do {
@@ -6824,7 +6794,7 @@ ENGINE_ERROR_CODE set_elem_exist(struct default_engine *engine,
             else
                 *exist = false;
         } while (0);
-        do_item_release(engine, it);
+        do_item_release(it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -6841,7 +6811,7 @@ ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_set_item_find(engine, key, nkey, DO_UPDATE, &it);
+    ret = do_set_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (set_meta_info *)item_get_meta(it);
         do {
@@ -6852,7 +6822,7 @@ ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
             if (ret == ENGINE_SUCCESS) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(delete == true);
-                    do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
+                    do_item_unlink(it, ITEM_UNLINK_NORMAL);
                     *dropped = true;
                 } else {
                     *dropped = false;
@@ -6860,7 +6830,7 @@ ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
                 *flags = it->flags;
             } /* ret = ENGINE_ELEM_ENOENT */
         } while (0);
-        do_item_release(engine, it);
+        do_item_release(it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -6877,17 +6847,17 @@ ENGINE_ERROR_CODE btree_struct_create(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    it = do_item_get(engine, key, nkey, DONT_UPDATE);
+    it = do_item_get(key, nkey, DONT_UPDATE);
     if (it != NULL) {
-        do_item_release(engine, it);
+        do_item_release(it);
         ret = ENGINE_KEY_EEXISTS;
     } else {
-        it = do_btree_item_alloc(engine, key, nkey, attrp, cookie);
+        it = do_btree_item_alloc(key, nkey, attrp, cookie);
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
-            ret = do_item_link(engine, it);
-            do_item_release(engine, it);
+            ret = do_item_link(it);
+            do_item_release(it);
         }
     }
     pthread_mutex_unlock(&engine->cache_lock);
@@ -6900,7 +6870,7 @@ btree_elem_item *btree_elem_alloc(struct default_engine *engine,
 {
     btree_elem_item *elem;
     pthread_mutex_lock(&engine->cache_lock);
-    elem = do_btree_elem_alloc(engine, nbkey, neflag, nbytes, cookie);
+    elem = do_btree_elem_alloc(nbkey, neflag, nbytes, cookie);
     pthread_mutex_unlock(&engine->cache_lock);
     return elem;
 }
@@ -6937,13 +6907,13 @@ ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
     }
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_btree_item_find(engine, key, nkey, DONT_UPDATE, &it);
+    ret = do_btree_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
-        it = do_btree_item_alloc(engine, key, nkey, attrp, cookie);
+        it = do_btree_item_alloc(key, nkey, attrp, cookie);
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
-            ret = do_item_link(engine, it);
+            ret = do_item_link(it);
             if (ret == ENGINE_SUCCESS) {
                 *created = true;
             } else {
@@ -6952,16 +6922,16 @@ ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
         }
     }
     if (ret == ENGINE_SUCCESS) {
-        ret = do_btree_elem_insert(engine, it, elem, replace_if_exist, replaced,
+        ret = do_btree_elem_insert(it, elem, replace_if_exist, replaced,
                                    trimmed_elems, trimmed_count, cookie);
         if (ret != ENGINE_SUCCESS && *created) {
-            do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
         if (trimmed_elems != NULL && *trimmed_elems != NULL) {
             *trimmed_flags = it->flags;
         }
     }
-    if (it != NULL) do_item_release(engine, it);
+    if (it != NULL) do_item_release(it);
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
 }
@@ -6979,7 +6949,7 @@ ENGINE_ERROR_CODE btree_elem_update(struct default_engine *engine,
     assert(bkrtype == BKEY_RANGE_TYPE_SIN); /* single bkey */
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_btree_item_find(engine, key, nkey, DONT_UPDATE, &it);
+    ret = do_btree_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
         do {
@@ -6990,9 +6960,9 @@ ENGINE_ERROR_CODE btree_elem_update(struct default_engine *engine,
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
-            ret = do_btree_elem_update(engine, info, bkrtype, bkrange, eupdate, value, nbytes, cookie);
+            ret = do_btree_elem_update(info, bkrtype, bkrange, eupdate, value, nbytes, cookie);
         } while(0);
-        do_item_release(engine, it);
+        do_item_release(it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -7010,7 +6980,7 @@ ENGINE_ERROR_CODE btree_elem_delete(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_btree_item_find(engine, key, nkey, DONT_UPDATE, &it);
+    ret = do_btree_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
         do {
@@ -7026,7 +6996,7 @@ ENGINE_ERROR_CODE btree_elem_delete(struct default_engine *engine,
             if (*del_count > 0) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(info->root == NULL);
-                    do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
+                    do_item_unlink(it, ITEM_UNLINK_NORMAL);
                     *dropped = true;
                 } else {
                     *dropped = false;
@@ -7035,7 +7005,7 @@ ENGINE_ERROR_CODE btree_elem_delete(struct default_engine *engine,
                 ret = ENGINE_ELEM_ENOENT;
             }
         } while(0);
-        do_item_release(engine, it);
+        do_item_release(it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -7057,7 +7027,7 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(struct default_engine *engine,
     assert(bkrtype == BKEY_RANGE_TYPE_SIN); /* single bkey */
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_btree_item_find(engine, key, nkey, DONT_UPDATE, &it);
+    ret = do_btree_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         bool new_root_flag = false;
         info = (btree_meta_info *)item_get_meta(it);
@@ -7070,14 +7040,14 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(struct default_engine *engine,
             }
             if (info->root == NULL && create == true) {
                 /* create new root node */
-                btree_indx_node *r_node = do_btree_node_alloc(engine, 0, cookie);
+                btree_indx_node *r_node = do_btree_node_alloc(0, cookie);
                 if (r_node == NULL) {
                     ret = ENGINE_ENOMEM; break;
                 }
                 do_btree_node_link(info, r_node, NULL);
                 new_root_flag = true;
             }
-            ret = do_btree_elem_arithmetic(engine, info, bkrtype, bkrange, increment, create,
+            ret = do_btree_elem_arithmetic(info, bkrtype, bkrange, increment, create,
                                            delta, initial, eflagp, result, cookie);
             if (ret != ENGINE_SUCCESS) {
                 if (new_root_flag) {
@@ -7086,7 +7056,7 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(struct default_engine *engine,
                 }
             }
         } while(0);
-        do_item_release(engine, it);
+        do_item_release(it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -7108,7 +7078,7 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_btree_item_find(engine, key, nkey, DO_UPDATE, &it);
+    ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
         do {
@@ -7129,7 +7099,7 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
                 if (delete) {
                     if (info->ccnt == 0 && drop_if_empty) {
                         assert(info->root == NULL);
-                        do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
+                        do_item_unlink(it, ITEM_UNLINK_NORMAL);
                         *dropped_trimmed = true;
                     } else {
                         *dropped_trimmed = false;
@@ -7144,7 +7114,7 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
                 /* ret = ENGINE_ELEM_ENOENT; */
             }
         } while (0);
-        do_item_release(engine, it);
+        do_item_release(it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -7161,7 +7131,7 @@ ENGINE_ERROR_CODE btree_elem_count(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_btree_item_find(engine, key, nkey, DO_UPDATE, &it);
+    ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
         do {
@@ -7174,7 +7144,7 @@ ENGINE_ERROR_CODE btree_elem_count(struct default_engine *engine,
             }
             *elem_count = do_btree_elem_count(info, bkrtype, bkrange, efilter, access_count);
         } while (0);
-        do_item_release(engine, it);
+        do_item_release(it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -7192,7 +7162,7 @@ ENGINE_ERROR_CODE btree_posi_find(struct default_engine *engine,
     assert(bkrtype == BKEY_RANGE_TYPE_SIN);
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_btree_item_find(engine, key, nkey, DO_UPDATE, &it);
+    ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
         do {
@@ -7211,7 +7181,7 @@ ENGINE_ERROR_CODE btree_posi_find(struct default_engine *engine,
                 ret = ENGINE_ELEM_ENOENT; break;
             }
         } while (0);
-        do_item_release(engine, it);
+        do_item_release(it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -7232,7 +7202,7 @@ ENGINE_ERROR_CODE btree_posi_find_with_get(struct default_engine *engine,
     assert(bkrtype == BKEY_RANGE_TYPE_SIN);
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_btree_item_find(engine, key, nkey, DO_UPDATE, &it);
+    ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
         do {
@@ -7253,7 +7223,7 @@ ENGINE_ERROR_CODE btree_posi_find_with_get(struct default_engine *engine,
             }
             *flags = it->flags;
         } while (0);
-        do_item_release(engine, it);
+        do_item_release(it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -7273,7 +7243,7 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
     assert(from_posi >= 0 && to_posi >= 0);
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_btree_item_find(engine, key, nkey, DO_UPDATE, &it);
+    ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (btree_meta_info *)item_get_meta(it);
         do {
@@ -7305,7 +7275,7 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
                 break;
             *flags = it->flags;
         } while (0);
-        do_item_release(engine, it);
+        do_item_release(it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -7339,7 +7309,7 @@ ENGINE_ERROR_CODE btree_elem_smget_old(struct default_engine *engine,
     pthread_mutex_lock(&engine->cache_lock);
 
     /* the 1st phase: get the sorted scans */
-    ret = do_btree_smget_scan_sort_old(engine, key_array, key_count,
+    ret = do_btree_smget_scan_sort_old(key_array, key_count,
                                    bkrtype, bkrange, efilter, (offset+count),
                                    btree_scan_buf, sort_sindx_buf, &sort_sindx_cnt,
                                    missed_key_array, missed_key_count);
@@ -7351,7 +7321,7 @@ ENGINE_ERROR_CODE btree_elem_smget_old(struct default_engine *engine,
                                            trimmed, duplicated);
         for (i = 0; i <= (offset+count); i++) {
             if (btree_scan_buf[i].it != NULL)
-                do_item_release(engine, btree_scan_buf[i].it);
+                do_item_release(btree_scan_buf[i].it);
         }
     }
 
@@ -7397,7 +7367,7 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
     pthread_mutex_lock(&engine->cache_lock);
     do {
         /* the 1st phase: get the sorted scans */
-        ret = do_btree_smget_scan_sort(engine, key_array, key_count,
+        ret = do_btree_smget_scan_sort(key_array, key_count,
                                        bkrtype, bkrange, efilter, (offset+count), unique,
                                        btree_scan_buf, sort_sindx_buf, &sort_sindx_cnt,
                                        result);
@@ -7415,7 +7385,7 @@ ENGINE_ERROR_CODE btree_elem_smget(struct default_engine *engine,
 
         for (i = 0; i <= (offset+count); i++) {
             if (btree_scan_buf[i].it != NULL)
-                do_item_release(engine, btree_scan_buf[i].it);
+                do_item_release(btree_scan_buf[i].it);
         }
     } while(0);
     pthread_mutex_unlock(&engine->cache_lock);
@@ -7522,7 +7492,7 @@ ENGINE_ERROR_CODE item_getattr(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    it = do_item_get(engine, key, nkey, DO_UPDATE);
+    it = do_item_get(key, nkey, DO_UPDATE);
     if (it == NULL) {
         ret = ENGINE_KEY_ENOENT;
     } else {
@@ -7531,7 +7501,7 @@ ENGINE_ERROR_CODE item_getattr(struct default_engine *engine,
         if (ret != ENGINE_SUCCESS) {
             /* what should we do ? nothing */
         }
-        do_item_release(engine, it);
+        do_item_release(it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
 
@@ -7727,7 +7697,7 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    it = do_item_get(engine, key, nkey, DONT_UPDATE);
+    it = do_item_get(key, nkey, DONT_UPDATE);
     if (it == NULL) {
         ret = ENGINE_KEY_ENOENT;
     } else {
@@ -7736,7 +7706,7 @@ ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
             /* do setattr operation */
             do_item_setattr_exec(it, attr_ids, attr_count, attr_data);
         }
-        do_item_release(engine, it);
+        do_item_release(it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
 
@@ -7952,12 +7922,12 @@ again:
         for (i = 0; i < item_count; i++) {
             engine->scrubber.visited++;
             if (do_item_isvalid(item_array[i], current_time) == false) {
-                do_item_unlink(engine, item_array[i], ITEM_UNLINK_INVALID);
+                do_item_unlink(item_array[i], ITEM_UNLINK_INVALID);
                 engine->scrubber.cleaned++;
             } else {
                 if (engine->scrubber.runmode == SCRUB_MODE_STALE &&
                     do_item_isstale(item_array[i]) == true) {
-                    do_item_unlink(engine, item_array[i], ITEM_UNLINK_STALE);
+                    do_item_unlink(item_array[i], ITEM_UNLINK_STALE);
                     engine->scrubber.cleaned++;
                 }
             }
@@ -8240,7 +8210,7 @@ static void *item_dumper_main(void *arg)
         pthread_mutex_lock(&engine->cache_lock);
         for (i = 0; i < item_count; i++) {
             if (item_array[i] != NULL) {
-                do_item_release(engine, item_array[i]);
+                do_item_release(item_array[i]);
             }
         }
         if (ret != 0) break;
@@ -8422,12 +8392,11 @@ static inline int map_hash_eq(const int h1, const void *v1, size_t vlen1,
 #define MAP_GET_HASHIDX(hval, hdepth) \
         (((hval) & (MAP_HASHIDX_MASK << ((hdepth)*4))) >> ((hdepth)*4))
 
-static ENGINE_ERROR_CODE do_map_item_find(struct default_engine *engine,
-                                          const void *key, const size_t nkey,
+static ENGINE_ERROR_CODE do_map_item_find(const void *key, const size_t nkey,
                                           bool do_update, hash_item **item)
 {
     *item = NULL;
-    hash_item *it = do_item_get(engine, key, nkey, do_update);
+    hash_item *it = do_item_get(key, nkey, do_update);
     if (it == NULL) {
         return ENGINE_KEY_ENOENT;
     }
@@ -8435,20 +8404,19 @@ static ENGINE_ERROR_CODE do_map_item_find(struct default_engine *engine,
         *item = it;
         return ENGINE_SUCCESS;
     } else {
-        do_item_release(engine, it);
+        do_item_release(it);
         return ENGINE_EBADTYPE;
     }
 }
 
-static hash_item *do_map_item_alloc(struct default_engine *engine,
-                                    const void *key, const size_t nkey,
+static hash_item *do_map_item_alloc(const void *key, const size_t nkey,
                                     item_attr *attrp, const void *cookie)
 {
     char *value = "\r\n"; //MAP ITEM\r\n";
     int nbytes = 2; //10;
     int real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)+sizeof(map_meta_info)-nkey;
 
-    hash_item *it = do_item_alloc(engine, key, nkey, attrp->flags, attrp->exptime,
+    hash_item *it = do_item_alloc(key, nkey, attrp->flags, attrp->exptime,
                                   real_nbytes, cookie);
     if (it != NULL) {
         it->iflag |= ITEM_IFLAG_MAP;
@@ -8473,12 +8441,11 @@ static hash_item *do_map_item_alloc(struct default_engine *engine,
     return it;
 }
 
-static map_hash_node *do_map_node_alloc(struct default_engine *engine,
-                                        uint8_t hash_depth, const void *cookie)
+static map_hash_node *do_map_node_alloc(uint8_t hash_depth, const void *cookie)
 {
     size_t ntotal = sizeof(map_hash_node);
 
-    map_hash_node *node = do_item_alloc_internal(engine, ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    map_hash_node *node = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (node != NULL) {
         assert(node->slabs_clsid == 0);
         node->slabs_clsid = slabs_clsid(ntotal);
@@ -8497,12 +8464,12 @@ static void do_map_node_free(map_hash_node *node)
     do_mem_slot_free(node, sizeof(map_hash_node));
 }
 
-static map_elem_item *do_map_elem_alloc(struct default_engine *engine, const int nfield,
+static map_elem_item *do_map_elem_alloc(const int nfield,
                                         const int nbytes, const void *cookie)
 {
     size_t ntotal = sizeof(map_elem_item) + nfield + nbytes;
 
-    map_elem_item *elem = do_item_alloc_internal(engine, ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    map_elem_item *elem = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
@@ -8661,8 +8628,7 @@ static void do_map_elem_replace(map_meta_info *info,
     }
 }
 
-static ENGINE_ERROR_CODE do_map_elem_link(struct default_engine *engine,
-                                          map_meta_info *info, map_elem_item *elem,
+static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *elem,
                                           const bool replace_if_exist, const void *cookie)
 {
     assert(info->root != NULL);
@@ -8719,7 +8685,7 @@ static ENGINE_ERROR_CODE do_map_elem_link(struct default_engine *engine,
 #endif
 
     if (node->hcnt[hidx] >= MAP_MAX_HASHCHAIN_SIZE) {
-        map_hash_node *n_node = do_map_node_alloc(engine, node->hdepth+1, cookie);
+        map_hash_node *n_node = do_map_node_alloc(node->hdepth+1, cookie);
         if (n_node == NULL) {
             res = ENGINE_ENOMEM;
             return res;
@@ -8911,7 +8877,7 @@ static map_elem_item *do_map_elem_find(map_hash_node *node, const field_t *field
     return elem;
 }
 
-static ENGINE_ERROR_CODE do_map_elem_update(struct default_engine *engine, map_meta_info *info,
+static ENGINE_ERROR_CODE do_map_elem_update(map_meta_info *info,
                                             const field_t *field, const char *value,
                                             const int nbytes, const void *cookie)
 {
@@ -8942,7 +8908,7 @@ static ENGINE_ERROR_CODE do_map_elem_update(struct default_engine *engine, map_m
         }
 #endif
 
-        map_elem_item *new_elem = do_map_elem_alloc(engine, elem->nfield, nbytes, cookie);
+        map_elem_item *new_elem = do_map_elem_alloc(elem->nfield, nbytes, cookie);
         if (new_elem == NULL) {
             return ENGINE_ENOMEM;
         }
@@ -9005,8 +8971,7 @@ static ENGINE_ERROR_CODE do_map_elem_get(map_meta_info *info, const int numfield
     }
 }
 
-static ENGINE_ERROR_CODE do_map_elem_insert(struct default_engine *engine,
-                                            hash_item *it, map_elem_item *elem,
+static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
                                             const bool replace_if_exist, const void *cookie)
 {
     map_meta_info *info = (map_meta_info *)item_get_meta(it);
@@ -9022,7 +8987,7 @@ static ENGINE_ERROR_CODE do_map_elem_insert(struct default_engine *engine,
     /* create the root hash node if it does not exist */
     bool new_root_flag = false;
     if (info->root == NULL) { /* empty map */
-        map_hash_node *r_node = do_map_node_alloc(engine, 0, cookie);
+        map_hash_node *r_node = do_map_node_alloc(0, cookie);
         if (r_node == NULL) {
             return ENGINE_ENOMEM;
         }
@@ -9031,7 +8996,7 @@ static ENGINE_ERROR_CODE do_map_elem_insert(struct default_engine *engine,
     }
 
     /* insert the element */
-    ret = do_map_elem_link(engine, info, elem, replace_if_exist, cookie);
+    ret = do_map_elem_link(info, elem, replace_if_exist, cookie);
     if (ret != ENGINE_SUCCESS) {
         if (new_root_flag) {
             do_map_node_unlink(info, NULL, 0);
@@ -9054,17 +9019,17 @@ ENGINE_ERROR_CODE map_struct_create(struct default_engine *engine,
     hash_item *it;
 
     pthread_mutex_lock(&engine->cache_lock);
-    it = do_item_get(engine, key, nkey, DONT_UPDATE);
+    it = do_item_get(key, nkey, DONT_UPDATE);
     if (it != NULL) {
-        do_item_release(engine, it);
+        do_item_release(it);
         ret = ENGINE_KEY_EEXISTS;
     } else {
-        it = do_map_item_alloc(engine, key, nkey, attrp, cookie);
+        it = do_map_item_alloc(key, nkey, attrp, cookie);
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
-            ret = do_item_link(engine, it);
-            do_item_release(engine, it);
+            ret = do_item_link(it);
+            do_item_release(it);
         }
     }
     pthread_mutex_unlock(&engine->cache_lock);
@@ -9075,7 +9040,7 @@ map_elem_item *map_elem_alloc(struct default_engine *engine, const int nfield, c
 {
     map_elem_item *elem;
     pthread_mutex_lock(&engine->cache_lock);
-    elem = do_map_elem_alloc(engine, nfield, nbytes, cookie);
+    elem = do_map_elem_alloc(nfield, nbytes, cookie);
     pthread_mutex_unlock(&engine->cache_lock);
     return elem;
 }
@@ -9103,13 +9068,13 @@ ENGINE_ERROR_CODE map_elem_insert(struct default_engine *engine, const char *key
     *created = false;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_map_item_find(engine, key, nkey, DONT_UPDATE, &it);
+    ret = do_map_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
-        it = do_map_item_alloc(engine, key, nkey, attrp, cookie);
+        it = do_map_item_alloc(key, nkey, attrp, cookie);
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
-            ret = do_item_link(engine, it);
+            ret = do_item_link(it);
             if (ret == ENGINE_SUCCESS) {
                 *created = true;
             } else {
@@ -9118,12 +9083,12 @@ ENGINE_ERROR_CODE map_elem_insert(struct default_engine *engine, const char *key
         }
     }
     if (ret == ENGINE_SUCCESS) {
-        ret = do_map_elem_insert(engine, it, elem, false /* replace_if_exist */, cookie);
+        ret = do_map_elem_insert(it, elem, false /* replace_if_exist */, cookie);
         if (ret != ENGINE_SUCCESS && *created) {
-            do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
     }
-    if (it != NULL) do_item_release(engine, it);
+    if (it != NULL) do_item_release(it);
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
 }
@@ -9136,11 +9101,11 @@ ENGINE_ERROR_CODE map_elem_update(struct default_engine *engine, const char *key
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_map_item_find(engine, key, nkey, DONT_UPDATE, &it);
+    ret = do_map_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         info = (map_meta_info *)item_get_meta(it);
-        ret = do_map_elem_update(engine, info, field, value, nbytes, cookie);
-        do_item_release(engine, it);
+        ret = do_map_elem_update(info, field, value, nbytes, cookie);
+        do_item_release(it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -9157,20 +9122,20 @@ ENGINE_ERROR_CODE map_elem_delete(struct default_engine *engine, const char *key
     *dropped = false;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_map_item_find(engine, key, nkey, DONT_UPDATE, &it);
+    ret = do_map_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         info = (map_meta_info *)item_get_meta(it);
         *del_count = do_map_elem_delete_with_field(info, numfields, flist, ELEM_DELETE_NORMAL);
         if (*del_count > 0) {
             if (info->ccnt == 0 && drop_if_empty) {
                 assert(info->root == NULL);
-                do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
+                do_item_unlink(it, ITEM_UNLINK_NORMAL);
                 *dropped = true;
             }
         } else {
             ret = ENGINE_ELEM_ENOENT;
         }
-        do_item_release(engine, it);
+        do_item_release(it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
@@ -9186,7 +9151,7 @@ ENGINE_ERROR_CODE map_elem_get(struct default_engine *engine, const char *key, c
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = do_map_item_find(engine, key, nkey, DO_UPDATE, &it);
+    ret = do_map_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         info = (map_meta_info *)item_get_meta(it);
         do {
@@ -9197,7 +9162,7 @@ ENGINE_ERROR_CODE map_elem_get(struct default_engine *engine, const char *key, c
             if (ret == ENGINE_SUCCESS) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(delete == true);
-                    do_item_unlink(engine, it, ITEM_UNLINK_NORMAL);
+                    do_item_unlink(it, ITEM_UNLINK_NORMAL);
                     *dropped = true;
                 } else {
                     *dropped = false;
@@ -9205,7 +9170,7 @@ ENGINE_ERROR_CODE map_elem_get(struct default_engine *engine, const char *key, c
                 *flags = it->flags;
             } /* ret = ENGINE_ELEM_ENOENT */
         } while (0);
-        do_item_release(engine, it);
+        do_item_release(it);
     }
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
