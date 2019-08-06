@@ -237,7 +237,7 @@ default_item_allocate(ENGINE_HANDLE* handle, const void* cookie,
     if (engine->config.use_cas) {
         ntotal += sizeof(uint64_t);
     }
-    unsigned int id = slabs_clsid(engine, ntotal);
+    unsigned int id = slabs_clsid(ntotal);
     if (id == 0) {
         return ENGINE_E2BIG;
     }
@@ -1050,7 +1050,7 @@ default_get_stats(ENGINE_HANDLE* handle, const void* cookie,
         stats_engine(engine, add_stat, cookie);
     }
     else if (strncmp(stat_key, "slabs", 5) == 0) {
-        slabs_stats(engine, add_stat, cookie);
+        slabs_stats(add_stat, cookie);
     }
     else if (strncmp(stat_key, "items", 5) == 0) {
         item_stats(engine, add_stat, cookie);
@@ -1149,7 +1149,7 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
         size_t new_maxbytes = *(size_t*)config_value;
         pthread_mutex_lock(&engine->cache_lock);
         if (new_maxbytes >= engine->config.sticky_limit) {
-            ret = slabs_set_memlimit(engine, new_maxbytes);
+            ret = slabs_set_memlimit(new_maxbytes);
             if (ret == ENGINE_SUCCESS) {
                 engine->config.maxbytes = new_maxbytes;
             }

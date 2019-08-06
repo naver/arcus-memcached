@@ -1128,7 +1128,7 @@ void slabs_final(struct default_engine *engine)
  * 0 means error: can't store such a large object
  */
 
-unsigned int slabs_clsid(struct default_engine *engine, const size_t size)
+unsigned int slabs_clsid(const size_t size)
 {
     int res = POWER_SMALLEST;
 
@@ -1140,12 +1140,12 @@ unsigned int slabs_clsid(struct default_engine *engine, const size_t size)
     return res;
 }
 
-unsigned int slabs_space_size(struct default_engine *engine, const size_t size)
+unsigned int slabs_space_size(const size_t size)
 {
     if (size <= MAX_SM_VALUE_LEN) {
         return do_smmgr_slen(size);
     }
-    int clsid = slabs_clsid(engine, size);
+    int clsid = slabs_clsid(size);
     if (clsid == 0)
         return 0;
     else
@@ -1474,7 +1474,7 @@ static ENGINE_ERROR_CODE do_slabs_set_memlimit(size_t memlimit)
     return ENGINE_SUCCESS;
 }
 
-void *slabs_alloc(struct default_engine *engine, size_t size, unsigned int id)
+void *slabs_alloc(size_t size, unsigned int id)
 {
     void *ret;
 
@@ -1486,7 +1486,7 @@ void *slabs_alloc(struct default_engine *engine, size_t size, unsigned int id)
     return ret;
 }
 
-void slabs_free(struct default_engine *engine, void *ptr, size_t size, unsigned int id)
+void slabs_free(void *ptr, size_t size, unsigned int id)
 {
     if (id < POWER_SMALLEST || id > slabsp->power_largest)
         return;
@@ -1495,14 +1495,14 @@ void slabs_free(struct default_engine *engine, void *ptr, size_t size, unsigned 
     pthread_mutex_unlock(&slabsp->lock);
 }
 
-void slabs_stats(struct default_engine *engine, ADD_STAT add_stats, const void *c)
+void slabs_stats(ADD_STAT add_stats, const void *c)
 {
     pthread_mutex_lock(&slabsp->lock);
     do_slabs_stats(add_stats, c);
     pthread_mutex_unlock(&slabsp->lock);
 }
 
-void slabs_adjust_mem_requested(struct default_engine *engine, unsigned int id, size_t old, size_t ntotal)
+void slabs_adjust_mem_requested(unsigned int id, size_t old, size_t ntotal)
 {
     slabclass_t *p;
 
@@ -1514,7 +1514,7 @@ void slabs_adjust_mem_requested(struct default_engine *engine, unsigned int id, 
     pthread_mutex_unlock(&slabsp->lock);
 }
 
-ENGINE_ERROR_CODE slabs_set_memlimit(struct default_engine *engine, size_t memlimit)
+ENGINE_ERROR_CODE slabs_set_memlimit(size_t memlimit)
 {
     ENGINE_ERROR_CODE ret;
     pthread_mutex_lock(&slabsp->lock);

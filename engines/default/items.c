@@ -211,7 +211,7 @@ static inline size_t ITEM_ntotal(struct default_engine *engine, const hash_item 
 static inline size_t ITEM_stotal(struct default_engine *engine, const hash_item *item)
 {
     size_t ntotal = ITEM_ntotal(engine, item);
-    size_t stotal = slabs_space_size(engine, ntotal);
+    size_t stotal = slabs_space_size(ntotal);
     if (IS_COLL_ITEM(item)) {
         coll_meta_info *info = (coll_meta_info *)item_get_meta(item);
         stotal += info->stotal;
@@ -348,7 +348,7 @@ static hash_item *do_item_reclaim(struct default_engine *engine, hash_item *it,
 #else
     if (lruid != LRU_CLSID_FOR_SMALL) {
         it->refcount = 1;
-        slabs_adjust_mem_requested(engine, it->slabs_clsid, ITEM_ntotal(engine,it), ntotal);
+        slabs_adjust_mem_requested(it->slabs_clsid, ITEM_ntotal(engine,it), ntotal);
         do_item_unlink(engine, it, ITEM_UNLINK_INVALID);
         /* Initialize the item block: */
         it->slabs_clsid = 0;
@@ -362,7 +362,7 @@ static hash_item *do_item_reclaim(struct default_engine *engine, hash_item *it,
     do_item_unlink(engine, it, ITEM_UNLINK_INVALID);
 
     /* allocate from slab allocator */
-    it = slabs_alloc(engine, ntotal, clsid);
+    it = slabs_alloc(ntotal, clsid);
     return it;
 }
 
@@ -438,7 +438,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
     unsigned int id = 1;
     unsigned int clsid_based_on_ntotal = 1;
 
-    if ((it = slabs_alloc(engine, ntotal, clsid_based_on_ntotal)) != NULL) {
+    if ((it = slabs_alloc(ntotal, clsid_based_on_ntotal)) != NULL) {
         it->slabs_clsid = 0;
         return (void*)it;
     }
@@ -447,7 +447,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
     unsigned int clsid_based_on_ntotal;
 
     if (clsid == LRU_CLSID_FOR_SMALL) {
-        clsid_based_on_ntotal = slabs_clsid(engine, ntotal);
+        clsid_based_on_ntotal = slabs_clsid(ntotal);
         id                    = clsid;
     } else {
         clsid_based_on_ntotal = clsid;
@@ -566,7 +566,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
         }
     }
 
-    it = slabs_alloc(engine, ntotal, clsid_based_on_ntotal);
+    it = slabs_alloc(ntotal, clsid_based_on_ntotal);
     if (it == NULL) {
         /*
         ** Could not find an expired item at the tail, and memory allocation
@@ -600,7 +600,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
                     it = do_item_reclaim(engine, search, ntotal, clsid_based_on_ntotal, id);
                 } else {
                     do_item_evict(engine, search, id, current_time, cookie);
-                    it = slabs_alloc(engine, ntotal, clsid_based_on_ntotal);
+                    it = slabs_alloc(ntotal, clsid_based_on_ntotal);
                 }
                 if (it != NULL) break; /* allocated */
             } else { /* search->refcount > 0 */
@@ -644,7 +644,7 @@ static void *do_item_alloc_internal(struct default_engine *engine,
                     search->time + TAIL_REPAIR_TIME < current_time) {
                     previt = search->prev;
                     do_item_repair(engine, search, id);
-                    it = slabs_alloc(engine, ntotal, clsid_based_on_ntotal);
+                    it = slabs_alloc(ntotal, clsid_based_on_ntotal);
                     if (it != NULL) break; /* allocated */
                     search = previt;
                 } else {
@@ -674,7 +674,7 @@ static hash_item *do_item_alloc(struct default_engine *engine,
         ntotal += sizeof(uint64_t);
     }
 
-    unsigned int id = slabs_clsid(engine, ntotal);
+    unsigned int id = slabs_clsid(ntotal);
     if (id == 0) {
         return NULL;
     }
@@ -734,7 +734,7 @@ static void do_item_free(struct default_engine *engine, hash_item *it)
     clsid = it->slabs_clsid;
     it->slabs_clsid = 0;
     DEBUG_REFCNT(it, 'F');
-    slabs_free(engine, it, ntotal, clsid);
+    slabs_free(it, ntotal, clsid);
 }
 
 static void item_link_q(struct default_engine *engine, hash_item *it)
@@ -1392,7 +1392,7 @@ static void do_mem_slot_free(struct default_engine *engine, void *data, size_t n
     hash_item *it = (hash_item *)data;
     unsigned int clsid = it->slabs_clsid;;
     it->slabs_clsid = 0;
-    slabs_free(engine, it, ntotal, clsid);
+    slabs_free(it, ntotal, clsid);
 }
 
 /* get real maxcount for each collection type */
@@ -1507,7 +1507,7 @@ static list_elem_item *do_list_elem_alloc(struct default_engine *engine,
     list_elem_item *elem = do_item_alloc_internal(engine, ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
-        elem->slabs_clsid = slabs_clsid(engine, ntotal);
+        elem->slabs_clsid = slabs_clsid(ntotal);
         assert(elem->slabs_clsid > 0);
         elem->refcount    = 1;
         elem->nbytes      = nbytes;
@@ -1581,7 +1581,7 @@ static ENGINE_ERROR_CODE do_list_elem_link(struct default_engine *engine,
     info->ccnt++;
 
     if (1) { /* apply memory space */
-        size_t stotal = slabs_space_size(engine, do_list_elem_ntotal(elem));
+        size_t stotal = slabs_space_size(do_list_elem_ntotal(elem));
         increase_collection_space(engine, ITEM_TYPE_LIST, (coll_meta_info *)info, stotal);
     }
     return ENGINE_SUCCESS;
@@ -1601,7 +1601,7 @@ static void do_list_elem_unlink(struct default_engine *engine,
         info->ccnt--;
 
         if (info->stotal > 0) { /* apply memory space */
-            size_t stotal = slabs_space_size(engine, do_list_elem_ntotal(elem));
+            size_t stotal = slabs_space_size(do_list_elem_ntotal(elem));
             decrease_collection_space(engine, ITEM_TYPE_LIST, (coll_meta_info *)info, stotal);
         }
 
@@ -1808,7 +1808,7 @@ static set_hash_node *do_set_node_alloc(struct default_engine *engine,
     set_hash_node *node = do_item_alloc_internal(engine, ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (node != NULL) {
         assert(node->slabs_clsid == 0);
-        node->slabs_clsid = slabs_clsid(engine, ntotal);
+        node->slabs_clsid = slabs_clsid(ntotal);
         assert(node->slabs_clsid > 0);
         node->refcount    = 0;
         node->hdepth      = hash_depth;
@@ -1833,7 +1833,7 @@ static set_elem_item *do_set_elem_alloc(struct default_engine *engine,
     set_elem_item *elem = do_item_alloc_internal(engine, ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
-        elem->slabs_clsid = slabs_clsid(engine, ntotal);
+        elem->slabs_clsid = slabs_clsid(ntotal);
         assert(elem->slabs_clsid > 0);
         elem->refcount    = 1;
         elem->nbytes      = nbytes;
@@ -1892,7 +1892,7 @@ static void do_set_node_link(struct default_engine *engine,
     }
 
     if (1) { /* apply memory space */
-        size_t stotal = slabs_space_size(engine, sizeof(set_hash_node));
+        size_t stotal = slabs_space_size(sizeof(set_hash_node));
         increase_collection_space(engine, ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
     }
 }
@@ -1942,7 +1942,7 @@ static void do_set_node_unlink(struct default_engine *engine,
     }
 
     if (info->stotal > 0) { /* apply memory space */
-        size_t stotal = slabs_space_size(engine, sizeof(set_hash_node));
+        size_t stotal = slabs_space_size(sizeof(set_hash_node));
         decrease_collection_space(engine, ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
     }
 
@@ -1999,7 +1999,7 @@ static ENGINE_ERROR_CODE do_set_elem_link(struct default_engine *engine,
     info->ccnt++;
 
     if (1) { /* apply memory space */
-        size_t stotal = slabs_space_size(engine, do_set_elem_ntotal(elem));
+        size_t stotal = slabs_space_size(do_set_elem_ntotal(elem));
         increase_collection_space(engine, ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
     }
 
@@ -2022,7 +2022,7 @@ static void do_set_elem_unlink(struct default_engine *engine,
     CLOG_SET_ELEM_DELETE(info, elem, cause);
 
     if (info->stotal > 0) { /* apply memory space */
-        size_t stotal = slabs_space_size(engine, do_set_elem_ntotal(elem));
+        size_t stotal = slabs_space_size(do_set_elem_ntotal(elem));
         decrease_collection_space(engine, ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
     }
 
@@ -2380,7 +2380,7 @@ static btree_indx_node *do_btree_node_alloc(struct default_engine *engine,
     btree_indx_node *node = do_item_alloc_internal(engine, ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (node != NULL) {
         assert(node->slabs_clsid == 0);
-        node->slabs_clsid = slabs_clsid(engine, ntotal);
+        node->slabs_clsid = slabs_clsid(ntotal);
         assert(node->slabs_clsid > 0);
         node->refcount    = 0;
         node->ndepth      = node_depth;
@@ -2408,7 +2408,7 @@ static btree_elem_item *do_btree_elem_alloc(struct default_engine *engine,
     btree_elem_item *elem = do_item_alloc_internal(engine, ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
-        elem->slabs_clsid = slabs_clsid(engine, ntotal);
+        elem->slabs_clsid = slabs_clsid(ntotal);
         assert(elem->slabs_clsid > 0);
         elem->refcount    = 1;
         elem->status      = BTREE_ITEM_STATUS_UNLINK; /* unlinked state */
@@ -3446,8 +3446,8 @@ static void do_btree_node_link(struct default_engine *engine,
 
     if (1) { /* apply memory space */
         size_t stotal;
-        if (node->ndepth > 0) stotal = slabs_space_size(engine, sizeof(btree_indx_node));
-        else                  stotal = slabs_space_size(engine, sizeof(btree_leaf_node));
+        if (node->ndepth > 0) stotal = slabs_space_size(sizeof(btree_indx_node));
+        else                  stotal = slabs_space_size(sizeof(btree_leaf_node));
         increase_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
     }
 }
@@ -3572,8 +3572,8 @@ static void do_btree_node_unlink(struct default_engine *engine,
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal;
-        if (node->ndepth > 0) stotal = slabs_space_size(engine, sizeof(btree_indx_node));
-        else                  stotal = slabs_space_size(engine, sizeof(btree_leaf_node));
+        if (node->ndepth > 0) stotal = slabs_space_size(sizeof(btree_indx_node));
+        else                  stotal = slabs_space_size(sizeof(btree_leaf_node));
         decrease_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
     }
 
@@ -3738,8 +3738,8 @@ static void do_btree_node_merge(struct default_engine *engine,
             }
             if (tot_unlink_cnt > 0 && info->stotal > 0) { /* apply memory space */
                 size_t stotal;
-                if (btree_depth > 0) stotal = tot_unlink_cnt * slabs_space_size(engine, sizeof(btree_indx_node));
-                else                 stotal = tot_unlink_cnt * slabs_space_size(engine, sizeof(btree_leaf_node));
+                if (btree_depth > 0) stotal = tot_unlink_cnt * slabs_space_size(sizeof(btree_indx_node));
+                else                 stotal = tot_unlink_cnt * slabs_space_size(sizeof(btree_leaf_node));
                 decrease_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
             }
         }
@@ -3760,7 +3760,7 @@ static void do_btree_elem_unlink(struct default_engine *engine,
     int i;
 
     if (info->stotal > 0) { /* apply memory space */
-        size_t stotal = slabs_space_size(engine, do_btree_elem_ntotal(elem));
+        size_t stotal = slabs_space_size(do_btree_elem_ntotal(elem));
         decrease_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
     }
 
@@ -3798,8 +3798,8 @@ static void do_btree_elem_replace(struct default_engine *engine, btree_meta_info
     size_t old_stotal;
     size_t new_stotal;
 
-    old_stotal = slabs_space_size(engine, do_btree_elem_ntotal(old_elem));
-    new_stotal = slabs_space_size(engine, do_btree_elem_ntotal(new_elem));
+    old_stotal = slabs_space_size(do_btree_elem_ntotal(old_elem));
+    new_stotal = slabs_space_size(do_btree_elem_ntotal(new_elem));
 
     CLOG_BTREE_ELEM_INSERT(info, old_elem, new_elem);
 
@@ -4037,7 +4037,7 @@ static uint32_t do_btree_elem_delete(struct default_engine *engine, btree_meta_i
             do {
                 tot_access++;
                 if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
-                    stotal += slabs_space_size(engine, do_btree_elem_ntotal(elem));
+                    stotal += slabs_space_size(do_btree_elem_ntotal(elem));
 
                     CLOG_BTREE_ELEM_DELETE(info, elem, cause);
                     if (elem->refcount > 0) {
@@ -4354,7 +4354,7 @@ static ENGINE_ERROR_CODE do_btree_elem_link(struct default_engine *engine,
         info->ccnt++;
 
         if (1) { /* apply memory space */
-            size_t stotal = slabs_space_size(engine, do_btree_elem_ntotal(elem));
+            size_t stotal = slabs_space_size(do_btree_elem_ntotal(elem));
             increase_collection_space(engine, ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
         }
 
@@ -4484,7 +4484,7 @@ static ENGINE_ERROR_CODE do_btree_elem_get(struct default_engine *engine, btree_
                         elem->refcount++;
                         elem_array[tot_found+cur_found] = elem;
                         if (delete) {
-                            stotal += slabs_space_size(engine, do_btree_elem_ntotal(elem));
+                            stotal += slabs_space_size(do_btree_elem_ntotal(elem));
                             elem->status = BTREE_ITEM_STATUS_UNLINK;
                             c_posi.node->item[c_posi.indx] = NULL;
                             CLOG_BTREE_ELEM_DELETE(info, elem, ELEM_DELETE_NORMAL);
@@ -8497,7 +8497,7 @@ static map_hash_node *do_map_node_alloc(struct default_engine *engine,
     map_hash_node *node = do_item_alloc_internal(engine, ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (node != NULL) {
         assert(node->slabs_clsid == 0);
-        node->slabs_clsid = slabs_clsid(engine, ntotal);
+        node->slabs_clsid = slabs_clsid(ntotal);
         node->refcount    = 0;
         node->hdepth      = hash_depth;
         node->tot_hash_cnt = 0;
@@ -8521,7 +8521,7 @@ static map_elem_item *do_map_elem_alloc(struct default_engine *engine, const int
     map_elem_item *elem = do_item_alloc_internal(engine, ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
-        elem->slabs_clsid = slabs_clsid(engine, ntotal);
+        elem->slabs_clsid = slabs_clsid(ntotal);
         elem->refcount    = 1;
         elem->nfield      = (uint8_t)nfield;
         elem->nbytes      = (uint16_t)nbytes;
@@ -8580,7 +8580,7 @@ static void do_map_node_link(struct default_engine *engine,
     }
 
     if (1) { /* apply memory space */
-        size_t stotal = slabs_space_size(engine, sizeof(map_hash_node));
+        size_t stotal = slabs_space_size(sizeof(map_hash_node));
         increase_collection_space(engine, ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
     }
 }
@@ -8630,7 +8630,7 @@ static void do_map_node_unlink(struct default_engine *engine,
     }
 
     if (info->stotal > 0) { /* apply memory space */
-        size_t stotal = slabs_space_size(engine, sizeof(map_hash_node));
+        size_t stotal = slabs_space_size(sizeof(map_hash_node));
         decrease_collection_space(engine, ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
     }
 
@@ -8652,8 +8652,8 @@ static void do_map_elem_replace(struct default_engine *engine, map_meta_info *in
         old_elem = (map_elem_item *)pinfo->node->htab[pinfo->hidx];
     }
 
-    old_stotal = slabs_space_size(engine, do_map_elem_ntotal(old_elem));
-    new_stotal = slabs_space_size(engine, do_map_elem_ntotal(new_elem));
+    old_stotal = slabs_space_size(do_map_elem_ntotal(old_elem));
+    new_stotal = slabs_space_size(do_map_elem_ntotal(new_elem));
 
     CLOG_MAP_ELEM_INSERT(info, old_elem, new_elem);
 
@@ -8756,7 +8756,7 @@ static ENGINE_ERROR_CODE do_map_elem_link(struct default_engine *engine,
     info->ccnt++;
 
     if (1) { /* apply memory space */
-        size_t stotal = slabs_space_size(engine, do_map_elem_ntotal(elem));
+        size_t stotal = slabs_space_size(do_map_elem_ntotal(elem));
         increase_collection_space(engine, ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
     }
 
@@ -8779,7 +8779,7 @@ static void do_map_elem_unlink(struct default_engine *engine,
     CLOG_MAP_ELEM_DELETE(info, elem, cause);
 
     if (info->stotal > 0) { /* apply memory space */
-        size_t stotal = slabs_space_size(engine, do_map_elem_ntotal(elem));
+        size_t stotal = slabs_space_size(do_map_elem_ntotal(elem));
         decrease_collection_space(engine, ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
     }
 
