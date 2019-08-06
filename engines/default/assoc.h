@@ -93,30 +93,21 @@ struct assoc_scan {
 ENGINE_ERROR_CODE assoc_init(struct default_engine *engine);
 void              assoc_final(struct default_engine *engine);
 
-hash_item *       assoc_find(struct default_engine *engine, uint32_t hash,
-                             const char *key, const size_t nkey);
-int               assoc_insert(struct default_engine *engine, uint32_t hash, hash_item *item);
-void              assoc_delete(struct default_engine *engine, uint32_t hash,
-                               const char *key, const size_t nkey);
+hash_item *       assoc_find(const char *key, const uint32_t nkey, uint32_t hash);
+int               assoc_insert(hash_item *item, uint32_t hash);
+void              assoc_delete(const char *key, const uint32_t nkey, uint32_t hash);
+
 /* assoc scan functions */
-void              assoc_scan_init(struct default_engine *engine, struct assoc_scan *scan);
-int               assoc_scan_next(struct assoc_scan *scan,
-                                  hash_item **item_array, int array_size);
+void              assoc_scan_init(struct assoc_scan *scan);
+int               assoc_scan_next(struct assoc_scan *scan, hash_item **item_array, int array_size);
 void              assoc_scan_final(struct assoc_scan *scan);
 
 /* prefix functions */
-prefix_t *        assoc_prefix_find(struct default_engine *engine, uint32_t hash,
-                                    const char *prefix, const int nprefix);
-ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine,
-                                    hash_item *it, const size_t item_size);
-void              assoc_prefix_unlink(struct default_engine *engine, hash_item *it,
-                                    const size_t item_size, bool drop_if_empty);
-void              assoc_prefix_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
-                                          const size_t bytes);
-void              assoc_prefix_bytes_decr(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
-                                          const size_t bytes);
+prefix_t *        assoc_prefix_find(const char *prefix, const int nprefix, uint32_t hash);
+ENGINE_ERROR_CODE assoc_prefix_link(hash_item *it, const uint32_t item_size);
+void              assoc_prefix_unlink(hash_item *it, const uint32_t item_size, bool drop_if_empty);
+void              assoc_prefix_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t bytes);
+void              assoc_prefix_bytes_decr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t bytes);
 bool              assoc_prefix_isvalid(hash_item *it, rel_time_t current_time);
-ENGINE_ERROR_CODE assoc_prefix_get_stats(struct default_engine *engine,
-                                    const char *prefix, const int nprefix,
-                                    void *prefix_data);
+ENGINE_ERROR_CODE assoc_prefix_get_stats(const char *prefix, const int nprefix, void *prefix_data);
 #endif

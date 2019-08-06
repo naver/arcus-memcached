@@ -859,7 +859,7 @@ static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *
 
     /* link the item to prefix info */
     stotal = ITEM_stotal(it);
-    ENGINE_ERROR_CODE ret = assoc_prefix_link(engine, it, stotal);
+    ENGINE_ERROR_CODE ret = assoc_prefix_link(it, stotal);
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
@@ -872,7 +872,7 @@ static ENGINE_ERROR_CODE do_item_link(struct default_engine *engine, hash_item *
     it->iflag |= ITEM_LINKED;
     it->time = svcore->get_current_time();
     it->khash = svcore->hash(hkey, hnkey, 0);
-    assoc_insert(engine, it->khash, it);
+    assoc_insert(it, it->khash);
 
     /* link the item to LRU list */
     item_link_q(it);
@@ -909,12 +909,12 @@ static void do_item_unlink(struct default_engine *engine, hash_item *it,
         item_unlink_q(it);
 
         /* unlink the item from hash table */
-        assoc_delete(engine, it->khash, key, it->nkey);
+        assoc_delete(key, it->nkey, it->khash);
         it->iflag &= ~ITEM_LINKED;
 
         /* unlink the item from prefix info */
         stotal = ITEM_stotal(it);
-        assoc_prefix_unlink(engine, it, stotal, (cause != ITEM_UNLINK_REPLACE ? true : false));
+        assoc_prefix_unlink(it, stotal, (cause != ITEM_UNLINK_REPLACE ? true : false));
         if (IS_COLL_ITEM(it)) {
             coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
             info->stotal = 0; /* Don't need to decrease space statistics any more */
@@ -1148,7 +1148,7 @@ static hash_item *do_item_get(struct default_engine *engine,
     const char *hkey = (nkey > MAX_HKEY_LEN) ? key+(nkey-MAX_HKEY_LEN) : key;
     const size_t hnkey = (nkey > MAX_HKEY_LEN) ? MAX_HKEY_LEN : nkey;
 
-    it = assoc_find(engine, svcore->hash(hkey, hnkey, 0), key, nkey);
+    it = assoc_find(key, nkey, svcore->hash(hkey, hnkey, 0));
     if (it) {
         rel_time_t current_time = svcore->get_current_time();
         if (do_item_isvalid(it, current_time)) {
@@ -6175,8 +6175,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(struct default_engine *engine,
         if (nprefix == 0) { /* null prefix */
             pt = &engine->assoc.noprefix_stats;
         } else {
-            pt = assoc_prefix_find(engine, svcore->hash(prefix, nprefix, 0),
-                                   prefix, nprefix);
+            pt = assoc_prefix_find(prefix, nprefix, svcore->hash(prefix, nprefix, 0));
         }
         if (pt == NULL) {
             return ENGINE_PREFIX_ENOENT;
@@ -6327,7 +6326,7 @@ ENGINE_ERROR_CODE item_stats_prefixes(struct default_engine *engine,
 {
     ENGINE_ERROR_CODE ret;
     pthread_mutex_lock(&engine->cache_lock);
-    ret = assoc_prefix_get_stats(engine, prefix, nprefix, prefix_data);
+    ret = assoc_prefix_get_stats(prefix, nprefix, prefix_data);
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
 }
@@ -7934,7 +7933,7 @@ static void *item_scrubber_main(void *arg)
     assert(engine->scrubber.running == true);
 
 again:
-    assoc_scan_init(engine, &scan);
+    assoc_scan_init(&scan);
 
     pthread_mutex_lock(&engine->cache_lock);
     while (engine->initialized)
@@ -8150,7 +8149,7 @@ static void *item_dumper_main(void *arg)
         ret = -1; goto done;
     }
 
-    assoc_scan_init(engine, &scan);
+    assoc_scan_init(&scan);
 
     pthread_mutex_lock(&engine->cache_lock);
     while (true)

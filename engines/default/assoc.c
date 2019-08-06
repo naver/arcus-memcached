@@ -136,8 +136,7 @@ static void redistribute(unsigned int bucket)
     assocp->infotable[bucket].curpower = assocp->rootpower;
 }
 
-hash_item *assoc_find(struct default_engine *engine, uint32_t hash,
-                      const char *key, const size_t nkey)
+hash_item *assoc_find(const char *key, const uint32_t nkey, uint32_t hash)
 {
     hash_item *it;
     int depth = 0;
@@ -160,7 +159,7 @@ hash_item *assoc_find(struct default_engine *engine, uint32_t hash,
 
 /* returns the address of the item pointer before the key.  if *item == 0,
    the item wasn't found */
-static hash_item** _hashitem_before(uint32_t hash, const char *key, const size_t nkey)
+static hash_item** _hashitem_before(const char *key, const uint32_t nkey, uint32_t hash)
 {
     hash_item **pos;
     uint32_t bucket = GET_HASH_BUCKET(hash, assocp->hashmask);
@@ -198,12 +197,12 @@ static void assoc_expand(void)
 }
 
 /* Note: this isn't an assoc_update.  The key must not already exist to call this */
-int assoc_insert(struct default_engine *engine, uint32_t hash, hash_item *it)
+int assoc_insert(hash_item *it, uint32_t hash)
 {
     uint32_t bucket = GET_HASH_BUCKET(hash, assocp->hashmask);
     uint32_t tabidx;
 
-    assert(assoc_find(engine, hash, item_get_key(it), it->nkey) == 0); /* shouldn't have duplicately named things defined */
+    assert(assoc_find(item_get_key(it), it->nkey, hash) == 0); /* shouldn't have duplicately named things defined */
 
     if (assocp->infotable[bucket].curpower != assocp->rootpower &&
         assocp->infotable[bucket].refcount == 0) {
@@ -224,10 +223,9 @@ int assoc_insert(struct default_engine *engine, uint32_t hash, hash_item *it)
     return 1;
 }
 
-void assoc_delete(struct default_engine *engine, uint32_t hash,
-                  const char *key, const size_t nkey)
+void assoc_delete(const char *key, const uint32_t nkey, uint32_t hash)
 {
-    hash_item **before = _hashitem_before(hash, key, nkey);
+    hash_item **before = _hashitem_before(key, nkey, hash);
 
     if (*before) {
         hash_item *nxt;
@@ -283,7 +281,7 @@ static hash_item *_unlink_scan_placeholder(struct assoc_scan *scan)
     return *p;
 }
 
-void assoc_scan_init(struct default_engine *engine, struct assoc_scan *scan)
+void assoc_scan_init(struct assoc_scan *scan)
 {
     /* initialize assoc_scan structure */
     scan->hashsz = assocp->hashsize;
@@ -383,7 +381,7 @@ static inline void *_get_prefix(prefix_t *prefix)
     return (void*)(prefix + 1);
 }
 
-static prefix_t *_prefix_find(uint32_t hash, const char *prefix, const int nprefix)
+static prefix_t *_prefix_find(const char *prefix, const int nprefix, uint32_t hash)
 {
     prefix_t *pt = assocp->prefix_hashtable[hash & hashmask(DEFAULT_PREFIX_HASHPOWER)];
     while (pt) {
@@ -395,9 +393,9 @@ static prefix_t *_prefix_find(uint32_t hash, const char *prefix, const int npref
     return NULL;
 }
 
-static int _prefix_insert(uint32_t hash, prefix_t *pt)
+static int _prefix_insert(prefix_t *pt, uint32_t hash)
 {
-    assert(_prefix_find(hash, _get_prefix(pt), pt->nprefix) == NULL);
+    assert(_prefix_find(_get_prefix(pt), pt->nprefix, hash) == NULL);
 
 #ifdef NEW_PREFIX_STATS_MANAGEMENT
     (void)svcore->prefix_stats_insert(_get_prefix(pt), pt->nprefix);
@@ -413,7 +411,7 @@ static int _prefix_insert(uint32_t hash, prefix_t *pt)
     return 1;
 }
 
-static void _prefix_delete(uint32_t hash, const char *prefix, const int nprefix)
+static void _prefix_delete(const char *prefix, const int nprefix, uint32_t hash)
 {
     int bucket = hash & hashmask(DEFAULT_PREFIX_HASHPOWER);
     prefix_t *prev_pt = NULL;
@@ -439,17 +437,15 @@ static void _prefix_delete(uint32_t hash, const char *prefix, const int nprefix)
     }
 }
 
-prefix_t *assoc_prefix_find(struct default_engine *engine, uint32_t hash,
-                            const char *prefix, const int nprefix)
+prefix_t *assoc_prefix_find(const char *prefix, const int nprefix, uint32_t hash)
 {
-    return _prefix_find(hash, prefix, nprefix);
+    return _prefix_find(prefix, nprefix, hash);
 }
 
-ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it,
-                                    const size_t item_size)
+ENGINE_ERROR_CODE assoc_prefix_link(hash_item *it, const uint32_t item_size)
 {
     const char *key = item_get_key(it);
-    size_t     nkey = it->nkey;
+    uint32_t   nkey = it->nkey;
     int prefix_depth = 0;
     int i = 0;
     char *token;
@@ -475,7 +471,7 @@ ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it
     } else {
         for (i = prefix_depth - 1; i >= 0; i--) {
             prefix_list[i].hash = svcore->hash(key, prefix_list[i].nprefix, 0);
-            pt = _prefix_find(prefix_list[i].hash, key, prefix_list[i].nprefix);
+            pt = _prefix_find(key, prefix_list[i].nprefix, prefix_list[i].hash);
             if (pt != NULL) break;
         }
 
@@ -496,7 +492,7 @@ ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it
                 if (pt == NULL) {
                     for (j = j - 1; j >= i + 1; j--) {
                         assert(prefix_list[j].pt != NULL);
-                        _prefix_delete(prefix_list[j].hash, key, prefix_list[j].nprefix);
+                        _prefix_delete(key, prefix_list[j].nprefix, prefix_list[j].hash);
                     }
                     return ENGINE_ENOMEM;
                 }
@@ -513,7 +509,7 @@ ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it
                 time(&pt->create_time);
 
                 // registering allocated prefixes to prefix hastable
-                _prefix_insert(prefix_list[j].hash, pt);
+                _prefix_insert(pt, prefix_list[j].hash);
                 prefix_list[j].pt = pt;
             }
         }
@@ -542,8 +538,7 @@ ENGINE_ERROR_CODE assoc_prefix_link(struct default_engine *engine, hash_item *it
     return ENGINE_SUCCESS;
 }
 
-void assoc_prefix_unlink(struct default_engine *engine, hash_item *it,
-                         const size_t item_size, bool drop_if_empty)
+void assoc_prefix_unlink(hash_item *it, const uint32_t item_size, bool drop_if_empty)
 {
     prefix_t *pt = it->pfxptr;
     it->pfxptr = NULL;
@@ -573,16 +568,15 @@ void assoc_prefix_unlink(struct default_engine *engine, hash_item *it,
             if (pt->prefix_items > 0 || pt->total_count_exclusive > 0)
                 break; /* NOT empty */
             assert(pt->total_bytes_exclusive == 0);
-            _prefix_delete(svcore->hash(_get_prefix(pt), pt->nprefix, 0),
-                           _get_prefix(pt), pt->nprefix);
+            _prefix_delete(_get_prefix(pt), pt->nprefix,
+                           svcore->hash(_get_prefix(pt), pt->nprefix, 0));
 
             pt = parent_pt;
         }
     }
 }
 
-void assoc_prefix_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
-                             const size_t bytes)
+void assoc_prefix_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t bytes)
 {
     /* It's called when a collection element is inserted */
     assert(item_type > ITEM_TYPE_KV && item_type < ITEM_TYPE_MAX);
@@ -600,8 +594,7 @@ void assoc_prefix_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
 #endif
 }
 
-void assoc_prefix_bytes_decr(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
-                             const size_t bytes)
+void assoc_prefix_bytes_decr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t bytes)
 {
     /* It's called when a collection element is removed */
     assert(item_type > ITEM_TYPE_KV && item_type < ITEM_TYPE_MAX);
@@ -653,9 +646,7 @@ static uint32_t do_assoc_count_invalid_prefix(void)
 }
 #endif
 
-ENGINE_ERROR_CODE assoc_prefix_get_stats(struct default_engine *engine,
-                                         const char *prefix, const int nprefix,
-                                         void *prefix_data)
+ENGINE_ERROR_CODE assoc_prefix_get_stats(const char *prefix, const int nprefix, void *prefix_data)
 {
     prefix_t *pt;
 
@@ -758,7 +749,7 @@ ENGINE_ERROR_CODE assoc_prefix_get_stats(struct default_engine *engine,
         prefix_engine_stats *prefix_stats = (prefix_engine_stats*)prefix_data;
 
         if (prefix != NULL) {
-            pt = _prefix_find(svcore->hash(prefix,nprefix,0), prefix, nprefix);
+            pt = _prefix_find(prefix, nprefix, svcore->hash(prefix,nprefix,0));
         } else {
             pt = root_pt;
         }
