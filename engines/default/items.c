@@ -8399,7 +8399,6 @@ void item_stats_dump(struct default_engine *engine,
 
 /* item scan structure */
 typedef struct _item_scan_t {
-    struct default_engine *engine;
     struct assoc_scan asscan; /* assoc scan */
     const char *prefix;
     int        nprefix;
@@ -8466,7 +8465,6 @@ void *itscan_open(struct default_engine *engine,
     item_scan_t *sp = do_itscan_alloc();
     if (sp != NULL) {
         assoc_scan_init(&sp->asscan);
-        sp->engine = engine;
         sp->prefix = prefix;
         sp->nprefix = nprefix;
         sp->is_used = true;
@@ -8478,13 +8476,13 @@ int itscan_getnext(void *scan, void **item_array, int item_arrsz)
 {
     item_scan_t *sp = (item_scan_t *)scan;
     hash_item *it;
-    rel_time_t curtime = sp->engine->server.core->get_current_time();
+    rel_time_t curtime = svcore->get_current_time();
     int scan_count = item_arrsz < MAX_ITSCAN_ITEMS
                    ? item_arrsz : MAX_ITSCAN_ITEMS;
     int item_count;
     int real_count;
 
-    pthread_mutex_lock(&sp->engine->cache_lock);
+    LOCK_CACHE();
     item_count = assoc_scan_next(&sp->asscan, (hash_item**)item_array, scan_count);
     if (item_count < 0) {
         real_count = -1; /* The end of assoc scan */
@@ -8515,29 +8513,27 @@ int itscan_getnext(void *scan, void **item_array, int item_arrsz)
             real_count += 1;
         }
     }
-    pthread_mutex_unlock(&sp->engine->cache_lock);
+    UNLOCK_CACHE();
 
     return real_count;
 }
 
 void itscan_release(void *scan, void **item_array, int item_count)
 {
-    item_scan_t *sp = (item_scan_t *)scan;
-
-    pthread_mutex_lock(&sp->engine->cache_lock);
+    LOCK_CACHE();
     for (int idx = 0; idx < item_count; idx++) {
         do_item_release(item_array[idx]);
     }
-    pthread_mutex_unlock(&sp->engine->cache_lock);
+    UNLOCK_CACHE();
 }
 
 void itscan_close(void *scan)
 {
     item_scan_t *sp = (item_scan_t *)scan;
 
-    pthread_mutex_lock(&sp->engine->cache_lock);
+    LOCK_CACHE();
     assoc_scan_final(&sp->asscan);
-    pthread_mutex_unlock(&sp->engine->cache_lock);
+    UNLOCK_CACHE();
 
     sp->is_used = false;
     do_itscan_free(sp);
