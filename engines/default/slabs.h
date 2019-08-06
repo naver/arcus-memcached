@@ -81,27 +81,27 @@ void              slabs_final(struct default_engine *engine);
  * Given object size, return id to use when allocating/freeing memory for object
  * 0 means error: can't store such a large object
  */
-unsigned int slabs_clsid(struct default_engine *engine, const size_t size);
+unsigned int slabs_clsid(const size_t size);
 
-unsigned int slabs_space_size(struct default_engine *engine, const size_t size);
+unsigned int slabs_space_size(const size_t size);
 
 int   slabs_space_shortage_level(void);
 
 /** Allocate object of given length. 0 on error */ /*@null@*/
-void *slabs_alloc(struct default_engine *engine, const size_t size, unsigned int id);
+void *slabs_alloc(const size_t size, unsigned int id);
 
 /** Free previously allocated object */
-void  slabs_free(struct default_engine *engine, void *ptr, size_t size, unsigned int id);
+void  slabs_free(void *ptr, size_t size, unsigned int id);
 
 /** Fill buffer with stats */ /*@null@*/
-void  slabs_stats(struct default_engine *engine, ADD_STAT add_stats, const void *c);
+void  slabs_stats(ADD_STAT add_stats, const void *c);
 
 /** Adjust the stats for memory requested */
-void  slabs_adjust_mem_requested(struct default_engine *engine, unsigned int id, size_t old, size_t ntotal);
+void  slabs_adjust_mem_requested(unsigned int id, size_t old, size_t ntotal);
 
 void  add_statistics(const void *cookie, ADD_STAT add_stats,
                      const char *prefix, int num, const char *key,
                      const char *fmt, ...);
 
-ENGINE_ERROR_CODE slabs_set_memlimit(struct default_engine *engine, size_t memlimit);
+ENGINE_ERROR_CODE slabs_set_memlimit(size_t memlimit);
 #endif
