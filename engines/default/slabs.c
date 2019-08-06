@@ -192,8 +192,6 @@ int MAX_SM_VALUE_LEN = SM_MAX_SLOT_SIZE - sizeof(sm_tail_t);
  */
 static void *do_slabs_alloc(const size_t size, unsigned int id);
 static void  do_slabs_free(void *ptr, const size_t size, unsigned int id);
-static int   do_slabs_newslab(const unsigned int id);
-static void *memory_allocate(size_t size);
 
 #ifndef DONT_PREALLOC_SLABS
 /* Preallocate as many slab pages as possible (called from slabs_init)
@@ -204,26 +202,6 @@ static void *memory_allocate(size_t size);
    smaller ones will be made.  */
 static void slabs_preallocate (const unsigned int maxslabs);
 #endif
-
-/*
- * Figures out which slab class (chunk size) is required to store an item of
- * a given size.
- *
- * Given object size, return id to use when allocating/freeing memory for object
- * 0 means error: can't store such a large object
- */
-
-unsigned int slabs_clsid(struct default_engine *engine, const size_t size)
-{
-    int res = POWER_SMALLEST;
-
-    if (size == 0)
-        return 0;
-    while (size > slabsp->slabclass[res].size)
-        if (res++ == slabsp->power_largest)     /* won't fit in the biggest slab */
-            return 0;
-    return res;
-}
 
 static void do_slabs_check_space_shortage_level(void)
 {
@@ -1039,23 +1017,6 @@ static void do_smmgr_free(void *ptr, const size_t size)
     //do_smmgr_used_blck_check();
 }
 
-unsigned int slabs_space_size(struct default_engine *engine, const size_t size)
-{
-    if (size <= MAX_SM_VALUE_LEN) {
-        return do_smmgr_slen(size);
-    }
-    int clsid = slabs_clsid(engine, size);
-    if (clsid == 0)
-        return 0;
-    else
-        return slabsp->slabclass[clsid].size;
-}
-
-int slabs_space_shortage_level(void)
-{
-    return sm_anchor.space_shortage_level;
-}
-
 /**
  * Determines the chunk sizes and initializes the slab class descriptors
  * accordingly.
@@ -1090,34 +1051,34 @@ ENGINE_ERROR_CODE slabs_init(struct default_engine *engine,
 
     /* initialize slab classes */
     slabclass_t *p;
-    int i = POWER_SMALLEST - 1;
-    unsigned int size = sizeof(hash_item) + config->chunk_size;
+    int i;
+    unsigned int size;
 
     memset(slabsp->slabclass, 0, sizeof(slabsp->slabclass));
 
-    while (++i < POWER_LARGEST && size <= config->item_size_max / factor) {
+    size = sizeof(hash_item) + config->chunk_size;
+    i = POWER_SMALLEST;
+    while (i < POWER_LARGEST && size <= config->item_size_max / factor) {
         /* Make sure items are always n-byte aligned */
-        if (size % CHUNK_ALIGN_BYTES)
+        if (size % CHUNK_ALIGN_BYTES) {
             size += CHUNK_ALIGN_BYTES - (size % CHUNK_ALIGN_BYTES);
-
+        }
         p = &slabsp->slabclass[i];
         p->size = size;
         p->perslab = config->item_size_max / p->size;
         p->rsvd_slabs = RSVD_SLAB_COUNT;
-
-        size *= factor;
         if (config->verbose > 1) {
             fprintf(stderr, "slab class %3d: chunk size %9u perslab %7u\n",
                     i, p->size, p->perslab);
         }
+        size *= factor;
+        i += 1;
     }
-
     slabsp->power_largest = i;
     p = &slabsp->slabclass[i];
     p->size = config->item_size_max;
     p->perslab = 1;
     p->rsvd_slabs = RSVD_SLAB_COUNT;
-
     if (config->verbose > 1) {
         fprintf(stderr, "slab class %3d: chunk size %9u perslab %7u\n",
                 i, p->size, p->perslab);
@@ -1159,28 +1120,42 @@ void slabs_final(struct default_engine *engine)
     logger->log(EXTENSION_LOG_INFO, NULL, "SLABS module destroyed.\n");
 }
 
-#ifndef DONT_PREALLOC_SLABS
-static void slabs_preallocate(const unsigned int maxslabs)
+/*
+ * Figures out which slab class (chunk size) is required to store an item of
+ * a given size.
+ *
+ * Given object size, return id to use when allocating/freeing memory for object
+ * 0 means error: can't store such a large object
+ */
+
+unsigned int slabs_clsid(struct default_engine *engine, const size_t size)
 {
-    int i;
-    unsigned int prealloc = 0;
+    int res = POWER_SMALLEST;
 
-    /* pre-allocate a 1MB slab in every size class so people don't get
-       confused by non-intuitive "SERVER_ERROR out of memory"
-       messages.  this is the most common question on the mailing
-       list.  if you really don't want this, you can rebuild without
-       these three lines.  */
-
-    for (i = POWER_SMALLEST; i <= POWER_LARGEST; i++) {
-        if (++prealloc > maxslabs)
-            return;
-        do_slabs_newslab(i);
-    }
-
-    /* slab class 0 is used for collection items and small-size kv items */
-    do_slabs_newslab(0);
+    if (size == 0)
+        return 0;
+    while (size > slabsp->slabclass[res].size)
+        if (res++ == slabsp->power_largest)     /* won't fit in the biggest slab */
+            return 0;
+    return res;
 }
-#endif
+
+unsigned int slabs_space_size(struct default_engine *engine, const size_t size)
+{
+    if (size <= MAX_SM_VALUE_LEN) {
+        return do_smmgr_slen(size);
+    }
+    int clsid = slabs_clsid(engine, size);
+    if (clsid == 0)
+        return 0;
+    else
+        return slabsp->slabclass[clsid].size;
+}
+
+int slabs_space_shortage_level(void)
+{
+    return sm_anchor.space_shortage_level;
+}
 
 static int grow_slab_list(const unsigned int id)
 {
@@ -1193,6 +1168,35 @@ static int grow_slab_list(const unsigned int id)
         p->slab_list = new_list;
     }
     return 1;
+}
+
+static void *memory_allocate(size_t size)
+{
+    void *ret;
+
+    if (slabsp->mem_base == NULL) {
+        /* We are not using a preallocated large memory chunk */
+        ret = malloc(size);
+    } else {
+        ret = slabsp->mem_current;
+
+        if (size > slabsp->mem_avail) {
+            return NULL;
+        }
+
+        /* mem_current pointer _must_ be aligned!!! */
+        if (size % CHUNK_ALIGN_BYTES) {
+            size += CHUNK_ALIGN_BYTES - (size % CHUNK_ALIGN_BYTES);
+        }
+
+        slabsp->mem_current = ((char*)slabsp->mem_current) + size;
+        if (size < slabsp->mem_avail) {
+            slabsp->mem_avail -= size;
+        } else {
+            slabsp->mem_avail = 0;
+        }
+    }
+    return ret;
 }
 
 static int do_slabs_newslab(const unsigned int id)
@@ -1240,6 +1244,29 @@ static int do_slabs_newslab(const unsigned int id)
 
     return 1;
 }
+
+#ifndef DONT_PREALLOC_SLABS
+static void slabs_preallocate(const unsigned int maxslabs)
+{
+    int i;
+    unsigned int prealloc = 0;
+
+    /* pre-allocate a 1MB slab in every size class so people don't get
+       confused by non-intuitive "SERVER_ERROR out of memory"
+       messages.  this is the most common question on the mailing
+       list.  if you really don't want this, you can rebuild without
+       these three lines.  */
+
+    for (i = POWER_SMALLEST; i <= POWER_LARGEST; i++) {
+        if (++prealloc > maxslabs)
+            return;
+        do_slabs_newslab(i);
+    }
+
+    /* slab class 0 is used for collection items and small-size kv items */
+    do_slabs_newslab(0);
+}
+#endif
 
 /*@null@*/
 static void *do_slabs_alloc(const size_t size, unsigned int id)
@@ -1417,35 +1444,6 @@ static void do_slabs_stats(ADD_STAT add_stats, const void *cookie)
     add_statistics(cookie, add_stats, NULL, -1, "total_malloced", "%llu", (unsigned long long)slabsp->mem_malloced);
 }
 
-static void *memory_allocate(size_t size)
-{
-    void *ret;
-
-    if (slabsp->mem_base == NULL) {
-        /* We are not using a preallocated large memory chunk */
-        ret = malloc(size);
-    } else {
-        ret = slabsp->mem_current;
-
-        if (size > slabsp->mem_avail) {
-            return NULL;
-        }
-
-        /* mem_current pointer _must_ be aligned!!! */
-        if (size % CHUNK_ALIGN_BYTES) {
-            size += CHUNK_ALIGN_BYTES - (size % CHUNK_ALIGN_BYTES);
-        }
-
-        slabsp->mem_current = ((char*)slabsp->mem_current) + size;
-        if (size < slabsp->mem_avail) {
-            slabsp->mem_avail -= size;
-        } else {
-            slabsp->mem_avail = 0;
-        }
-    }
-    return ret;
-}
-
 static ENGINE_ERROR_CODE do_slabs_set_memlimit(size_t memlimit)
 {
     if (slabsp->mem_base != NULL) {
@@ -1524,3 +1522,4 @@ ENGINE_ERROR_CODE slabs_set_memlimit(struct default_engine *engine, size_t memli
     pthread_mutex_unlock(&slabsp->lock);
     return ret;
 }
+
