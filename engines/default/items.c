@@ -673,7 +673,7 @@ static void *do_item_alloc_internal(const size_t ntotal, const unsigned int clsi
 }
 
 /*@null@*/
-static hash_item *do_item_alloc(const void *key, const size_t nkey,
+static hash_item *do_item_alloc(const void *key, const uint32_t nkey,
                                 const int flags, const rel_time_t exptime,
                                 const int nbytes, const void *cookie)
 {
@@ -854,7 +854,7 @@ static ENGINE_ERROR_CODE do_item_link(hash_item *it)
     const char *key = item_get_key(it);
     size_t stotal;
     const char *hkey = (it->nkey > MAX_HKEY_LEN) ? key+(it->nkey-MAX_HKEY_LEN) : key;
-    const size_t hnkey = (it->nkey > MAX_HKEY_LEN) ? MAX_HKEY_LEN : it->nkey;
+    const uint32_t hnkey = (it->nkey > MAX_HKEY_LEN) ? MAX_HKEY_LEN : it->nkey;
     assert((it->iflag & ITEM_LINKED) == 0);
     assert(it->nbytes < (1024 * 1024));  /* 1MB max size */
 
@@ -1145,11 +1145,11 @@ static void do_item_stats_sizes(ADD_STAT add_stats, const void *c)
 }
 
 /** wrapper around assoc_find which does the lazy expiration logic */
-static hash_item *do_item_get(const char *key, const size_t nkey, bool do_update)
+static hash_item *do_item_get(const char *key, const uint32_t nkey, bool do_update)
 {
     hash_item *it;
     const char *hkey = (nkey > MAX_HKEY_LEN) ? key+(nkey-MAX_HKEY_LEN) : key;
-    const size_t hnkey = (nkey > MAX_HKEY_LEN) ? MAX_HKEY_LEN : nkey;
+    const uint32_t hnkey = (nkey > MAX_HKEY_LEN) ? MAX_HKEY_LEN : nkey;
 
     it = assoc_find(key, nkey, svcore->hash(hkey, hnkey, 0));
     if (it) {
@@ -1450,7 +1450,7 @@ static inline uint32_t do_btree_elem_ntotal(btree_elem_item *elem)
 /*
  * LIST collection management
  */
-static ENGINE_ERROR_CODE do_list_item_find(const void *key, const size_t nkey,
+static ENGINE_ERROR_CODE do_list_item_find(const void *key, const uint32_t nkey,
                                            bool do_update, hash_item **item)
 {
     *item = NULL;
@@ -1467,7 +1467,7 @@ static ENGINE_ERROR_CODE do_list_item_find(const void *key, const size_t nkey,
     }
 }
 
-static hash_item *do_list_item_alloc(const void *key, const size_t nkey,
+static hash_item *do_list_item_alloc(const void *key, const uint32_t nkey,
                                      item_attr *attrp, const void *cookie)
 {
     char *value = "\r\n"; //"LIST ITEM\r\n";
@@ -1743,7 +1743,7 @@ static inline int set_hash_eq(const int h1, const void *v1, size_t vlen1,
 #define SET_GET_HASHIDX(hval, hdepth) \
         (((hval) & (SET_HASHIDX_MASK << ((hdepth)*4))) >> ((hdepth)*4))
 
-static ENGINE_ERROR_CODE do_set_item_find(const void *key, const size_t nkey,
+static ENGINE_ERROR_CODE do_set_item_find(const void *key, const uint32_t nkey,
                                           bool do_update, hash_item **item)
 {
     *item = NULL;
@@ -1760,7 +1760,7 @@ static ENGINE_ERROR_CODE do_set_item_find(const void *key, const size_t nkey,
     }
 }
 
-static hash_item *do_set_item_alloc(const void *key, const size_t nkey,
+static hash_item *do_set_item_alloc(const void *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie)
 {
     char *value = "\r\n"; //SET ITEM\r\n";
@@ -2292,7 +2292,7 @@ static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem,
 /*
  * B+TREE collection management
  */
-static ENGINE_ERROR_CODE do_btree_item_find(const void *key, const size_t nkey,
+static ENGINE_ERROR_CODE do_btree_item_find(const void *key, const uint32_t nkey,
                                             bool do_update, hash_item **item)
 {
     *item = NULL;
@@ -2309,7 +2309,7 @@ static ENGINE_ERROR_CODE do_btree_item_find(const void *key, const size_t nkey,
     }
 }
 
-static hash_item *do_btree_item_alloc(const void *key, const size_t nkey,
+static hash_item *do_btree_item_alloc(const void *key, const uint32_t nkey,
                                       item_attr *attrp, const void *cookie)
 {
     char *value = "\r\n"; // "BTREE ITEM\r\n";
@@ -5968,7 +5968,7 @@ void coll_del_thread_wakeup(void)
  * Allocates a new item.
  */
 hash_item *item_alloc(struct default_engine *engine,
-                      const void *key, size_t nkey, int flags,
+                      const void *key, const uint32_t nkey, int flags,
                       rel_time_t exptime, int nbytes, const void *cookie)
 {
     hash_item *it;
@@ -5983,7 +5983,7 @@ hash_item *item_alloc(struct default_engine *engine,
  * Returns an item if it hasn't been marked as expired,
  * lazy-expiring as needed.
  */
-hash_item *item_get(struct default_engine *engine, const void *key, const size_t nkey)
+hash_item *item_get(struct default_engine *engine, const void *key, const uint32_t nkey)
 {
     hash_item *it;
     LOCK_CACHE();
@@ -6040,7 +6040,7 @@ ENGINE_ERROR_CODE store_item(struct default_engine *engine,
 
 static ENGINE_ERROR_CODE do_arithmetic(const void* cookie,
                                        const void* key,
-                                       const int nkey,
+                                       const uint32_t nkey,
                                        const bool increment,
                                        const bool create,
                                        const uint64_t delta,
@@ -6084,7 +6084,7 @@ static ENGINE_ERROR_CODE do_arithmetic(const void* cookie,
 ENGINE_ERROR_CODE arithmetic(struct default_engine *engine,
                              const void* cookie,
                              const void* key,
-                             const int nkey,
+                             const uint32_t nkey,
                              const bool increment,
                              const bool create,
                              const uint64_t delta,
@@ -6107,7 +6107,7 @@ ENGINE_ERROR_CODE arithmetic(struct default_engine *engine,
  * Delete an item.
  */
 
-static ENGINE_ERROR_CODE do_item_delete(const void* key, const size_t nkey,
+static ENGINE_ERROR_CODE do_item_delete(const void* key, const uint32_t nkey,
                                         uint64_t cas)
 {
     ENGINE_ERROR_CODE ret;
@@ -6127,7 +6127,7 @@ static ENGINE_ERROR_CODE do_item_delete(const void* key, const size_t nkey,
 }
 
 ENGINE_ERROR_CODE item_delete(struct default_engine *engine,
-                              const void* key, const size_t nkey,
+                              const void* key, const uint32_t nkey,
                               uint64_t cas)
 {
     ENGINE_ERROR_CODE ret;
@@ -6452,7 +6452,7 @@ void item_final(struct default_engine *engine)
  * LIST Interface Functions
  */
 ENGINE_ERROR_CODE list_struct_create(struct default_engine *engine,
-                                     const char *key, const size_t nkey,
+                                     const char *key, const uint32_t nkey,
                                      item_attr *attrp, const void *cookie)
 {
     ENGINE_ERROR_CODE ret;
@@ -6502,7 +6502,7 @@ void list_elem_release(struct default_engine *engine,
 }
 
 ENGINE_ERROR_CODE list_elem_insert(struct default_engine *engine,
-                                   const char *key, const size_t nkey,
+                                   const char *key, const uint32_t nkey,
                                    int index, list_elem_item *elem,
                                    item_attr *attrp,
                                    bool *created, const void *cookie)
@@ -6565,7 +6565,7 @@ static int adjust_list_range(list_meta_info *info, int *from_index, int *to_inde
 }
 
 ENGINE_ERROR_CODE list_elem_delete(struct default_engine *engine,
-                                   const char *key, const size_t nkey,
+                                   const char *key, const uint32_t nkey,
                                    int from_index, int to_index,
                                    const bool drop_if_empty,
                                    uint32_t *del_count, bool *dropped)
@@ -6611,7 +6611,7 @@ ENGINE_ERROR_CODE list_elem_delete(struct default_engine *engine,
 }
 
 ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
-                                const char *key, const size_t nkey,
+                                const char *key, const uint32_t nkey,
                                 int from_index, int to_index,
                                 const bool delete, const bool drop_if_empty,
                                 list_elem_item **elem_array, uint32_t *elem_count,
@@ -6669,7 +6669,7 @@ ENGINE_ERROR_CODE list_elem_get(struct default_engine *engine,
  * SET Interface Functions
  */
 ENGINE_ERROR_CODE set_struct_create(struct default_engine *engine,
-                                    const char *key, const size_t nkey,
+                                    const char *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie)
 {
     ENGINE_ERROR_CODE ret;
@@ -6716,7 +6716,7 @@ void set_elem_release(struct default_engine *engine, set_elem_item **elem_array,
     UNLOCK_CACHE();
 }
 
-ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key, const size_t nkey,
+ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key, const uint32_t nkey,
                                   set_elem_item *elem, item_attr *attrp, bool *created, const void *cookie)
 {
     hash_item *it = NULL;
@@ -6751,7 +6751,7 @@ ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key
 }
 
 ENGINE_ERROR_CODE set_elem_delete(struct default_engine *engine,
-                                  const char *key, const size_t nkey,
+                                  const char *key, const uint32_t nkey,
                                   const char *value, const size_t nbytes,
                                   const bool drop_if_empty, bool *dropped)
 {
@@ -6779,7 +6779,7 @@ ENGINE_ERROR_CODE set_elem_delete(struct default_engine *engine,
 }
 
 ENGINE_ERROR_CODE set_elem_exist(struct default_engine *engine,
-                                 const char *key, const size_t nkey,
+                                 const char *key, const uint32_t nkey,
                                  const char *value, const size_t nbytes,
                                  bool *exist)
 {
@@ -6807,7 +6807,7 @@ ENGINE_ERROR_CODE set_elem_exist(struct default_engine *engine,
 }
 
 ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
-                               const char *key, const size_t nkey, const uint32_t count,
+                               const char *key, const uint32_t nkey, const uint32_t count,
                                const bool delete, const bool drop_if_empty,
                                set_elem_item **elem_array, uint32_t *elem_count,
                                uint32_t *flags, bool *dropped)
@@ -6846,7 +6846,7 @@ ENGINE_ERROR_CODE set_elem_get(struct default_engine *engine,
  * B+TREE Interface Functions
  */
 ENGINE_ERROR_CODE btree_struct_create(struct default_engine *engine,
-                                      const char *key, const size_t nkey,
+                                      const char *key, const uint32_t nkey,
                                       item_attr *attrp, const void *cookie)
 {
     hash_item *it;
@@ -6897,7 +6897,7 @@ void btree_elem_release(struct default_engine *engine,
 }
 
 ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
-                                    const char *key, const size_t nkey,
+                                    const char *key, const uint32_t nkey,
                                     btree_elem_item *elem, const bool replace_if_exist, item_attr *attrp,
                                     bool *replaced, bool *created, btree_elem_item **trimmed_elems,
                                     uint32_t *trimmed_count, uint32_t *trimmed_flags, const void *cookie)
@@ -6943,7 +6943,7 @@ ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
 }
 
 ENGINE_ERROR_CODE btree_elem_update(struct default_engine *engine,
-                                    const char *key, const size_t nkey, const bkey_range *bkrange,
+                                    const char *key, const uint32_t nkey, const bkey_range *bkrange,
                                     const eflag_update *eupdate, const char *value, const int nbytes,
                                     const void *cookie)
 {
@@ -6975,7 +6975,7 @@ ENGINE_ERROR_CODE btree_elem_update(struct default_engine *engine,
 }
 
 ENGINE_ERROR_CODE btree_elem_delete(struct default_engine *engine,
-                                    const char *key, const size_t nkey,
+                                    const char *key, const uint32_t nkey,
                                     const bkey_range *bkrange, const eflag_filter *efilter,
                                     const uint32_t req_count, const bool drop_if_empty,
                                     uint32_t *del_count, uint32_t *access_count, bool *dropped)
@@ -7018,7 +7018,7 @@ ENGINE_ERROR_CODE btree_elem_delete(struct default_engine *engine,
 }
 
 ENGINE_ERROR_CODE btree_elem_arithmetic(struct default_engine *engine,
-                                        const char* key, const size_t nkey,
+                                        const char* key, const uint32_t nkey,
                                         const bkey_range *bkrange,
                                         const bool increment, const bool create,
                                         const uint64_t delta, const uint64_t initial,
@@ -7069,7 +7069,7 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(struct default_engine *engine,
 }
 
 ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
-                                 const char *key, const size_t nkey,
+                                 const char *key, const uint32_t nkey,
                                  const bkey_range *bkrange, const eflag_filter *efilter,
                                  const uint32_t offset, const uint32_t req_count,
                                  const bool delete, const bool drop_if_empty,
@@ -7127,7 +7127,7 @@ ENGINE_ERROR_CODE btree_elem_get(struct default_engine *engine,
 }
 
 ENGINE_ERROR_CODE btree_elem_count(struct default_engine *engine,
-                                   const char *key, const size_t nkey,
+                                   const char *key, const uint32_t nkey,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
                                    uint32_t *elem_count, uint32_t *access_count)
 {
@@ -7157,7 +7157,7 @@ ENGINE_ERROR_CODE btree_elem_count(struct default_engine *engine,
 }
 
 ENGINE_ERROR_CODE btree_posi_find(struct default_engine *engine,
-                                  const char *key, const size_t nkey, const bkey_range *bkrange,
+                                  const char *key, const uint32_t nkey, const bkey_range *bkrange,
                                   ENGINE_BTREE_ORDER order, int *position)
 {
     hash_item       *it;
@@ -7194,7 +7194,7 @@ ENGINE_ERROR_CODE btree_posi_find(struct default_engine *engine,
 }
 
 ENGINE_ERROR_CODE btree_posi_find_with_get(struct default_engine *engine,
-                                           const char *key, const size_t nkey,
+                                           const char *key, const uint32_t nkey,
                                            const bkey_range *bkrange, ENGINE_BTREE_ORDER order,
                                            const int count, int *position,
                                            btree_elem_item **elem_array, uint32_t *elem_count,
@@ -7236,7 +7236,7 @@ ENGINE_ERROR_CODE btree_posi_find_with_get(struct default_engine *engine,
 }
 
 ENGINE_ERROR_CODE btree_elem_get_by_posi(struct default_engine *engine,
-                                         const char *key, const size_t nkey,
+                                         const char *key, const uint32_t nkey,
                                          ENGINE_BTREE_ORDER order, int from_posi, int to_posi,
                                          btree_elem_item **elem_array, uint32_t *elem_count, uint32_t *flags)
 {
@@ -7488,7 +7488,7 @@ do_item_getattr(hash_item *it,
 }
 
 ENGINE_ERROR_CODE item_getattr(struct default_engine *engine,
-                               const void* key, const int nkey,
+                               const void* key, const uint32_t nkey,
                                ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
                                item_attr *attr_data)
 {
@@ -7693,7 +7693,7 @@ do_item_setattr_exec(hash_item *it,
 }
 
 ENGINE_ERROR_CODE item_setattr(struct default_engine *engine,
-                               const void* key, const int nkey,
+                               const void* key, const uint32_t nkey,
                                ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
                                item_attr *attr_data)
 {
@@ -8398,7 +8398,7 @@ static inline int map_hash_eq(const int h1, const void *v1, size_t vlen1,
 #define MAP_GET_HASHIDX(hval, hdepth) \
         (((hval) & (MAP_HASHIDX_MASK << ((hdepth)*4))) >> ((hdepth)*4))
 
-static ENGINE_ERROR_CODE do_map_item_find(const void *key, const size_t nkey,
+static ENGINE_ERROR_CODE do_map_item_find(const void *key, const uint32_t nkey,
                                           bool do_update, hash_item **item)
 {
     *item = NULL;
@@ -8415,7 +8415,7 @@ static ENGINE_ERROR_CODE do_map_item_find(const void *key, const size_t nkey,
     }
 }
 
-static hash_item *do_map_item_alloc(const void *key, const size_t nkey,
+static hash_item *do_map_item_alloc(const void *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie)
 {
     char *value = "\r\n"; //MAP ITEM\r\n";
@@ -9018,7 +9018,7 @@ static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
  * MAP Interface Functions
  */
 ENGINE_ERROR_CODE map_struct_create(struct default_engine *engine,
-                                    const char *key, const size_t nkey,
+                                    const char *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie)
 {
     ENGINE_ERROR_CODE ret;
@@ -9065,7 +9065,7 @@ void map_elem_release(struct default_engine *engine, map_elem_item **elem_array,
     UNLOCK_CACHE();
 }
 
-ENGINE_ERROR_CODE map_elem_insert(struct default_engine *engine, const char *key, const size_t nkey,
+ENGINE_ERROR_CODE map_elem_insert(struct default_engine *engine, const char *key, const uint32_t nkey,
                                   map_elem_item *elem, item_attr *attrp, bool *created, const void *cookie)
 {
     hash_item *it = NULL;
@@ -9099,7 +9099,7 @@ ENGINE_ERROR_CODE map_elem_insert(struct default_engine *engine, const char *key
     return ret;
 }
 
-ENGINE_ERROR_CODE map_elem_update(struct default_engine *engine, const char *key, const size_t nkey,
+ENGINE_ERROR_CODE map_elem_update(struct default_engine *engine, const char *key, const uint32_t nkey,
                                   const field_t *field, const char *value, const int nbytes, const void *cookie)
 {
     hash_item     *it;
@@ -9117,7 +9117,7 @@ ENGINE_ERROR_CODE map_elem_update(struct default_engine *engine, const char *key
     return ret;
 }
 
-ENGINE_ERROR_CODE map_elem_delete(struct default_engine *engine, const char *key, const size_t nkey,
+ENGINE_ERROR_CODE map_elem_delete(struct default_engine *engine, const char *key, const uint32_t nkey,
                                   const int numfields, const field_t *flist, const bool drop_if_empty,
                                   uint32_t *del_count, bool *dropped)
 {
@@ -9147,7 +9147,7 @@ ENGINE_ERROR_CODE map_elem_delete(struct default_engine *engine, const char *key
     return ret;
 }
 
-ENGINE_ERROR_CODE map_elem_get(struct default_engine *engine, const char *key, const size_t nkey,
+ENGINE_ERROR_CODE map_elem_get(struct default_engine *engine, const char *key, const uint32_t nkey,
                                const int numfields, const field_t *flist, const bool delete,
                                const bool drop_if_empty, map_elem_item **elem_array, uint32_t *elem_count,
                                uint32_t *flags, bool *dropped)
