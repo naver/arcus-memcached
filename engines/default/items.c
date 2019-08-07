@@ -8268,6 +8268,7 @@ int item_start_dump(struct default_engine *engine,
                     const char *prefix, const int nprefix,
                     const char *filepath)
 {
+    struct engine_dumper *dumper = &engine->dumper;
     pthread_t tid;
     pthread_attr_t attr;
     int fd;
@@ -8275,38 +8276,38 @@ int item_start_dump(struct default_engine *engine,
 
     assert(mode == DUMP_MODE_KEY);
 
-    pthread_mutex_lock(&engine->dumper.lock);
+    pthread_mutex_lock(&dumper->lock);
     do {
-        if (engine->dumper.running) {
+        if (dumper->running) {
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "Failed to start dumping. Already started.\n");
             ret = -1; break;
         }
 
-        snprintf(engine->dumper.filepath, MAX_FILEPATH_LENGTH-1, "%s",
+        snprintf(dumper->filepath, MAX_FILEPATH_LENGTH-1, "%s",
                 (filepath != NULL ? filepath : "keydump"));
-        engine->dumper.prefix = (char*)prefix;
-        engine->dumper.nprefix = nprefix;
-        engine->dumper.mode = mode;
-        engine->dumper.started = time(NULL);
-        engine->dumper.stopped = 0;
-        engine->dumper.visited = 0;
-        engine->dumper.dumpped = 0;
-        engine->dumper.success = false;
-        engine->dumper.stop    = false;
+        dumper->prefix = (char*)prefix;
+        dumper->nprefix = nprefix;
+        dumper->mode = mode;
+        dumper->started = time(NULL);
+        dumper->stopped = 0;
+        dumper->visited = 0;
+        dumper->dumpped = 0;
+        dumper->success = false;
+        dumper->stop    = false;
 
         /* check if filepath is valid ? */
-        fd = open(engine->dumper.filepath, O_WRONLY | O_CREAT | O_TRUNC,
-                                           S_IRUSR | S_IWUSR | S_IRGRP);
+        fd = open(dumper->filepath, O_WRONLY | O_CREAT | O_TRUNC,
+                                     S_IRUSR | S_IWUSR | S_IRGRP);
         if (fd < 0) {
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "Failed to open the dump file. path=%s err=%s\n",
-                        engine->dumper.filepath, strerror(errno));
+                        dumper->filepath, strerror(errno));
             ret = -1; break;
         }
         close(fd);
 
-        engine->dumper.running = true;
+        dumper->running = true;
 
         if (pthread_attr_init(&attr) != 0 ||
             pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0 ||
@@ -8314,72 +8315,75 @@ int item_start_dump(struct default_engine *engine,
         {
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "Failed to create the dump thread. err=%s\n", strerror(errno));
-            engine->dumper.running = false;
+            dumper->running = false;
             ret = -1; break;
         }
     } while(0);
-    pthread_mutex_unlock(&engine->dumper.lock);
+    pthread_mutex_unlock(&dumper->lock);
 
     return ret;
 }
 
 void item_stop_dump(struct default_engine *engine)
 {
-    pthread_mutex_lock(&engine->dumper.lock);
-    if (engine->dumper.running) {
+    struct engine_dumper *dumper = &engine->dumper;
+
+    pthread_mutex_lock(&dumper->lock);
+    if (dumper->running) {
         /* stop the dumper */
-        engine->dumper.stop = true;
+        dumper->stop = true;
     }
-    pthread_mutex_unlock(&engine->dumper.lock);
+    pthread_mutex_unlock(&dumper->lock);
 }
 
 void item_stats_dump(struct default_engine *engine,
                      ADD_STAT add_stat, const void *cookie)
 {
+    struct engine_dumper *dumper = &engine->dumper;
     char val[256];
     int len;
 
-    pthread_mutex_lock(&engine->dumper.lock);
-    if (engine->dumper.running) {
+    pthread_mutex_lock(&dumper->lock);
+    if (dumper->running) {
         add_stat("dumper:status", 13, "running", 7, cookie);
     } else {
         add_stat("dumper:status", 13, "stopped", 7, cookie);
-        if (engine->dumper.success)
+        if (dumper->success)
             add_stat("dumper:success", 14, "true", 4, cookie);
         else
             add_stat("dumper:success", 14, "false", 5, cookie);
     }
-    if (engine->dumper.started != 0) {
-        if (engine->dumper.mode == DUMP_MODE_KEY) {
+    if (dumper->started != 0) {
+        if (dumper->mode == DUMP_MODE_KEY) {
             add_stat("dumper:mode", 11, "key", 3, cookie);
-        } else if (engine->dumper.mode == DUMP_MODE_ITEM) {
+        } else if (dumper->mode == DUMP_MODE_ITEM) {
             add_stat("dumper:mode", 11, "item", 4, cookie);
         } else {
             add_stat("dumper:mode", 11, "none", 4, cookie);
         }
-        if (engine->dumper.stopped != 0) {
-            time_t diff = engine->dumper.stopped - engine->dumper.started;
+        if (dumper->stopped != 0) {
+            time_t diff = dumper->stopped - dumper->started;
             len = sprintf(val, "%"PRIu64, (uint64_t)diff);
             add_stat("dumper:last_run", 15, val, len, cookie);
         }
-        len = sprintf(val, "%"PRIu64, engine->dumper.visited);
+        len = sprintf(val, "%"PRIu64, dumper->visited);
         add_stat("dumper:visited", 14, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, engine->dumper.dumpped);
+        len = sprintf(val, "%"PRIu64, dumper->dumpped);
         add_stat("dumper:dumped", 13, val, len, cookie);
-        if (engine->dumper.nprefix > 0) {
-            len = sprintf(val, "%s", engine->dumper.prefix);
+        if (dumper->nprefix > 0) {
+            len = sprintf(val, "%s", dumper->prefix);
             add_stat("dumper:prefix", 13, val, len, cookie);
-        } else if (engine->dumper.nprefix == 0) {
+        } else if (dumper->nprefix == 0) {
             add_stat("dumper:prefix", 13, "<null>", 6, cookie);
         } else {
             add_stat("dumper:prefix", 13, "<all>", 5, cookie);
         }
-        if (strlen(engine->dumper.filepath) > 0) {
-            len = sprintf(val, "%s", engine->dumper.filepath);
+        if (strlen(dumper->filepath) > 0) {
+            len = sprintf(val, "%s", dumper->filepath);
             add_stat("dumper:filepath", 15, val, len, cookie);
         }
     }
-    pthread_mutex_unlock(&engine->dumper.lock);
+    pthread_mutex_unlock(&dumper->lock);
 }
 
 /*
