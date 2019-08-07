@@ -42,8 +42,8 @@ typedef struct cmd_in_second_timer {
 } timertype;
 
 struct cmd_in_second {
-    char cmd[20];
-    char collection_name[10];
+    int cmd;
+    char cmd_str[50];
     struct cmd_in_second_buffer buffer;
     timertype timer;
     int32_t bulk_limit;
@@ -71,15 +71,6 @@ static bool is_bulk_cmd()
     return last_time->tv_sec - front_time->tv_sec <= 1;
 }
 
-static void get_whole_cmd(char* whole_cmd)
-{
-    if (strlen(this.collection_name)) {
-        snprintf(whole_cmd, 20, "%s %s", this.collection_name, this.cmd);
-        return;
-    }
-    snprintf(whole_cmd, 15, "%s", this.cmd);
-}
-
 static bool buffer_empty()
 {
     return this.buffer.front == this.buffer.rear;
@@ -104,10 +95,7 @@ static void* buffer_flush_thread()
         return NULL;
     }
 
-    char whole_cmd[20] = "";
-    get_whole_cmd(whole_cmd);
-
-    const size_t whole_cmd_len = strlen(whole_cmd);
+    const size_t cmd_len = strlen(this.cmd_str);
     const int32_t whitespaces = 3;
 
     size_t expected_write_length = 0;
@@ -138,10 +126,10 @@ static void* buffer_flush_thread()
         }
 
         char log[LOG_LENGTH] = "";
-        snprintf(log, LOG_LENGTH, "%s%s %s %s\n", time_str, whole_cmd, front.key, front.client_ip);
+        snprintf(log, LOG_LENGTH, "%s%s %s %s\n", time_str, this.cmd_str, front.key, front.client_ip);
         strncat(log_str, log, LOG_LENGTH);
 
-        expected_write_length += whole_cmd_len + strlen(front.key) + strlen(front.client_ip) + whitespaces;
+        expected_write_length += cmd_len + strlen(front.key) + strlen(front.client_ip) + whitespaces;
         circular_log_counter = (circular_log_counter+1) % this.log_per_timer;
     }
 
@@ -228,8 +216,7 @@ static bool is_cmd_to_log(const char* collection_name, const char* cmd)
            strcmp(this.cmd, cmd) == 0;
 }
 
-bool cmd_in_second_write(const char* collection_name, const char* cmd,
-                         const char* key, const char* client_ip)
+bool cmd_in_second_write(const int cmd, const char* key, const char* client_ip)
 {
     pthread_mutex_lock(&this.lock);
     if (this.cur_state != ON_LOGGING || !is_cmd_to_log(collection_name, cmd)) {
@@ -252,9 +239,9 @@ bool cmd_in_second_write(const char* collection_name, const char* cmd,
     return true;
 }
 
+/* TODO mc_logger */
 void cmd_in_second_init()
 {
-    assert("test");
     this.cur_state = NOT_STARTED;
     pthread_mutex_init(&this.lock, NULL);
 
@@ -270,8 +257,7 @@ void cmd_in_second_init()
     this.timer.ring = NULL;
 }
 
-int32_t cmd_in_second_start(const char* collection_name, const char* cmd,
-                            const int32_t bulk_limit)
+int cmd_in_second_start(const int cmd, const int bulk_limit)
 {
 
     pthread_mutex_lock(&this.lock);
@@ -281,6 +267,7 @@ int32_t cmd_in_second_start(const char* collection_name, const char* cmd,
         return CMD_IN_SECOND_STARTED_ALREADY;
     }
 
+    this.cmd = cmd;
     this.bulk_limit = bulk_limit;
 
     this.buffer.capacity = bulk_limit+1;
@@ -301,9 +288,6 @@ int32_t cmd_in_second_start(const char* collection_name, const char* cmd,
         pthread_mutex_unlock(&this.lock);
         return CMD_IN_SECOND_NO_MEM;
     }
-
-    snprintf(this.collection_name, 5, "%s", collection_name);
-    snprintf(this.cmd, 15, "%s", cmd);
 
     this.cur_state = ON_LOGGING;
 
