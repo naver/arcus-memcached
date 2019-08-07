@@ -7900,6 +7900,7 @@ static bool do_item_isstale(hash_item *it)
 static void *item_scrubber_main(void *arg)
 {
     struct default_engine *engine = arg;
+    struct engine_scrubber *scrubber = &engine->scrubber;
     int        array_size=32; /* configurable */
     int        item_count;
     hash_item *item_array[array_size];
@@ -7909,17 +7910,12 @@ static void *item_scrubber_main(void *arg)
     long       tot_execs = 0;
     int        i,try_cnt = 9;
 
-    assert(engine->scrubber.running == true);
+    assert(scrubber->running == true);
 
 again:
-    assoc_scan_init(&scan);
-
     pthread_mutex_lock(&engine->cache_lock);
-    while (engine->initialized)
-    {
-        if (engine->scrubber.restart) {
-            break;
-        }
+    assoc_scan_init(&scan);
+    while (engine->initialized && !scrubber->restart) {
         /* scan and scrub cache items */
         item_count = assoc_scan_next(&scan, item_array, array_size);
         if (item_count < 0) { /* reached to the end */
@@ -7929,16 +7925,15 @@ again:
          * See the internals of assoc_scan_next(). It does not return 0.
          */
         for (i = 0; i < item_count; i++) {
-            engine->scrubber.visited++;
+            scrubber->visited++;
             if (do_item_isvalid(item_array[i], current_time) == false) {
                 do_item_unlink(item_array[i], ITEM_UNLINK_INVALID);
-                engine->scrubber.cleaned++;
-            } else {
-                if (engine->scrubber.runmode == SCRUB_MODE_STALE &&
-                    do_item_isstale(item_array[i]) == true) {
-                    do_item_unlink(item_array[i], ITEM_UNLINK_STALE);
-                    engine->scrubber.cleaned++;
-                }
+                scrubber->cleaned++;
+            }
+            else if (scrubber->runmode == SCRUB_MODE_STALE &&
+                     do_item_isstale(item_array[i]) == true) {
+                do_item_unlink(item_array[i], ITEM_UNLINK_STALE);
+                scrubber->cleaned++;
             }
         }
 
@@ -7946,7 +7941,6 @@ again:
         if ((++tot_execs % 50) == 0) {
             nanosleep(&sleep_time, NULL); /* 1ms sleep */
         }
-
         /* pthread_mutex_lock(&engine->cache_lock); */
         for (i = 0; i < try_cnt; i++) {
             if (pthread_mutex_trylock(&engine->cache_lock) == 0)
@@ -7961,134 +7955,138 @@ again:
     pthread_mutex_unlock(&engine->cache_lock);
 
     bool restart = false;
-    pthread_mutex_lock(&engine->scrubber.lock);
-    if ((restart = engine->scrubber.restart)) {
-        engine->scrubber.started = time(NULL);
-        engine->scrubber.visited = 0;
-        engine->scrubber.cleaned = 0;
-        engine->scrubber.restart = false;
+    pthread_mutex_lock(&scrubber->lock);
+    if ((restart = scrubber->restart)) {
+        scrubber->started = time(NULL);
+        scrubber->visited = 0;
+        scrubber->cleaned = 0;
+        scrubber->restart = false;
     } else {
-        engine->scrubber.stopped = time(NULL);
-        engine->scrubber.running = false;
+        scrubber->stopped = time(NULL);
+        scrubber->running = false;
     }
-    pthread_mutex_unlock(&engine->scrubber.lock);
+    pthread_mutex_unlock(&scrubber->lock);
     if (restart) {
         goto again; /* restart */
     }
-    logger->log(EXTENSION_LOG_INFO, NULL,
-                "Scrub is done.\n");
+    logger->log(EXTENSION_LOG_INFO, NULL, "Scrub is done.\n");
     return NULL;
 }
 
 bool item_start_scrub(struct default_engine *engine, int mode, bool autorun)
 {
     assert(mode == (int)SCRUB_MODE_NORMAL || mode == (int)SCRUB_MODE_STALE);
+    struct engine_scrubber *scrubber = &engine->scrubber;
+    pthread_t tid;
+    pthread_attr_t attr;
     bool restarted = false;
-    bool ret = false;
+    bool ok = false;
 
-    pthread_mutex_lock(&engine->scrubber.lock);
-    if (engine->scrubber.enabled) {
-        if (!engine->scrubber.running) {
-            engine->scrubber.started = time(NULL);
-            engine->scrubber.stopped = 0;
-            engine->scrubber.visited = 0;
-            engine->scrubber.cleaned = 0;
-            engine->scrubber.restart = false;
-            engine->scrubber.runmode = (enum scrub_mode)mode;
-            engine->scrubber.running = true;
-
-            pthread_t t;
-            pthread_attr_t attr;
+    pthread_mutex_lock(&scrubber->lock);
+    if (scrubber->enabled) {
+        if (scrubber->running) {
+            if (autorun == true && mode == SCRUB_MODE_STALE) {
+                scrubber->restart = true;
+                scrubber->runmode = (enum scrub_mode)mode;
+                ok = restarted = true;
+            }
+        } else {
+            scrubber->started = time(NULL);
+            scrubber->stopped = 0;
+            scrubber->visited = 0;
+            scrubber->cleaned = 0;
+            scrubber->restart = false;
+            scrubber->runmode = (enum scrub_mode)mode;
+            scrubber->running = true;
+            ok = true;
 
             if (pthread_attr_init(&attr) != 0 ||
                 pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0 ||
-                pthread_create(&t, &attr, item_scrubber_main, engine) != 0)
+                pthread_create(&tid, &attr, item_scrubber_main, engine) != 0)
             {
-                engine->scrubber.running = false;
-            } else {
-                ret = true;
+                scrubber->running = false;
+                ok = false;
             }
-        } else {
-            if (autorun == true && mode == SCRUB_MODE_STALE) {
-                restarted = true;
-                engine->scrubber.restart = restarted;
-                engine->scrubber.runmode = (enum scrub_mode)mode;
-                ret = true;
-            }
-        }
-    }
-    pthread_mutex_unlock(&engine->scrubber.lock);
-
-    if (ret) {
-        if (!restarted) {
-            logger->log(EXTENSION_LOG_INFO, NULL,
-                    "Scrub is succesfully started.\n");
-        } else {
-            logger->log(EXTENSION_LOG_INFO, NULL,
-                    "Scrub is arleady running. Restarted the scrub.\n");
         }
     } else {
-        if (!engine->scrubber.enabled) {
-            logger->log(EXTENSION_LOG_WARNING, NULL,
+        logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to start scrub. Scrub is disabled.\n");
-        } else if (engine->scrubber.running) {
+    }
+    pthread_mutex_unlock(&scrubber->lock);
+
+    char *scrub_autostr = (autorun ? "auto" : "manual");
+    char *scrub_modestr = (mode == SCRUB_MODE_STALE ? "scrub stale" : "scrub");
+    if (ok) {
+        if (restarted) {
+            logger->log(EXTENSION_LOG_INFO, NULL,
+                        "The %s %s has restarted.\n", scrub_autostr, scrub_modestr);
+        } else {
+            logger->log(EXTENSION_LOG_INFO, NULL,
+                        "The %s %s has newly started.\n", scrub_autostr, scrub_modestr);
+        }
+    } else {
+        if (scrubber->running) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to start scrub. Scrub is already running.\n");
+                        "Failed to start %s %s. Scrub is already running.\n",
+                        scrub_autostr, scrub_modestr);
         } else {
             logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to start scrub. Scrub thread creation problem.\n");
+                        "Failed to start %s %s. Cannot create scrub thread.\n",
+                        scrub_autostr, scrub_modestr);
         }
     }
-    return ret;
+    return ok;
 }
 
 bool item_onoff_scrub(struct default_engine *engine, bool val)
 {
+    struct engine_scrubber *scrubber = &engine->scrubber;
     bool old_val;
 
-    pthread_mutex_lock(&engine->scrubber.lock);
+    pthread_mutex_lock(&scrubber->lock);
     /* The scrubber can be disabled even if it is running.
      * The on-going scrubbing continues its task. But, the next
      * scrubbing cannot be started until it is enabled again.
      */
-    old_val = engine->scrubber.enabled;
-    engine->scrubber.enabled = val;
-    pthread_mutex_unlock(&engine->scrubber.lock);
+    old_val = scrubber->enabled;
+    scrubber->enabled = val;
+    pthread_mutex_unlock(&scrubber->lock);
     return old_val;
 }
 
 void item_stats_scrub(struct default_engine *engine,
                       ADD_STAT add_stat, const void *cookie)
 {
+    struct engine_scrubber *scrubber = &engine->scrubber;
     char val[128];
     int len;
 
-    pthread_mutex_lock(&engine->scrubber.lock);
-    if (engine->scrubber.running) {
-        add_stat("scrubber:status", 15, "running", 7, cookie);
-    } else {
-        if (engine->scrubber.enabled)
-            add_stat("scrubber:status", 15, "stopped", 7, cookie);
+    pthread_mutex_lock(&scrubber->lock);
+    if (scrubber->enabled) {
+        if (scrubber->running)
+            add_stat("scrubber:status", 15, "running", 7, cookie);
         else
-            add_stat("scrubber:status", 15, "disabled", 8, cookie);
+            add_stat("scrubber:status", 15, "stopped", 7, cookie);
+    } else {
+        add_stat("scrubber:status", 15, "disabled", 8, cookie);
     }
-    if (engine->scrubber.started != 0) {
-        if (engine->scrubber.runmode == SCRUB_MODE_NORMAL) {
+    if (scrubber->started != 0) {
+        if (scrubber->runmode == SCRUB_MODE_NORMAL) {
             add_stat("scrubber:run_mode", 17, "scrub", 5, cookie);
         } else {
             add_stat("scrubber:run_mode", 17, "scrub stale", 11, cookie);
         }
-        if (engine->scrubber.stopped != 0) {
-            time_t diff = engine->scrubber.stopped - engine->scrubber.started;
+        if (scrubber->stopped != 0) {
+            time_t diff = scrubber->stopped - scrubber->started;
             len = sprintf(val, "%"PRIu64, (uint64_t)diff);
             add_stat("scrubber:last_run", 17, val, len, cookie);
         }
-        len = sprintf(val, "%"PRIu64, engine->scrubber.visited);
+        len = sprintf(val, "%"PRIu64, scrubber->visited);
         add_stat("scrubber:visited", 16, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, engine->scrubber.cleaned);
+        len = sprintf(val, "%"PRIu64, scrubber->cleaned);
         add_stat("scrubber:cleaned", 16, val, len, cookie);
     }
-    pthread_mutex_unlock(&engine->scrubber.lock);
+    pthread_mutex_unlock(&scrubber->lock);
 }
 
 /*
@@ -8275,6 +8273,7 @@ int item_start_dump(struct default_engine *engine,
                     const char *prefix, const int nprefix,
                     const char *filepath)
 {
+    struct engine_dumper *dumper = &engine->dumper;
     pthread_t tid;
     pthread_attr_t attr;
     int fd;
@@ -8282,38 +8281,38 @@ int item_start_dump(struct default_engine *engine,
 
     assert(mode == DUMP_MODE_KEY);
 
-    pthread_mutex_lock(&engine->dumper.lock);
+    pthread_mutex_lock(&dumper->lock);
     do {
-        if (engine->dumper.running) {
+        if (dumper->running) {
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "Failed to start dumping. Already started.\n");
             ret = -1; break;
         }
 
-        snprintf(engine->dumper.filepath, MAX_FILEPATH_LENGTH-1, "%s",
+        snprintf(dumper->filepath, MAX_FILEPATH_LENGTH-1, "%s",
                 (filepath != NULL ? filepath : "keydump"));
-        engine->dumper.prefix = (char*)prefix;
-        engine->dumper.nprefix = nprefix;
-        engine->dumper.mode = mode;
-        engine->dumper.started = time(NULL);
-        engine->dumper.stopped = 0;
-        engine->dumper.visited = 0;
-        engine->dumper.dumpped = 0;
-        engine->dumper.success = false;
-        engine->dumper.stop    = false;
+        dumper->prefix = (char*)prefix;
+        dumper->nprefix = nprefix;
+        dumper->mode = mode;
+        dumper->started = time(NULL);
+        dumper->stopped = 0;
+        dumper->visited = 0;
+        dumper->dumpped = 0;
+        dumper->success = false;
+        dumper->stop    = false;
 
         /* check if filepath is valid ? */
-        fd = open(engine->dumper.filepath, O_WRONLY | O_CREAT | O_TRUNC,
-                                           S_IRUSR | S_IWUSR | S_IRGRP);
+        fd = open(dumper->filepath, O_WRONLY | O_CREAT | O_TRUNC,
+                                     S_IRUSR | S_IWUSR | S_IRGRP);
         if (fd < 0) {
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "Failed to open the dump file. path=%s err=%s\n",
-                        engine->dumper.filepath, strerror(errno));
+                        dumper->filepath, strerror(errno));
             ret = -1; break;
         }
         close(fd);
 
-        engine->dumper.running = true;
+        dumper->running = true;
 
         if (pthread_attr_init(&attr) != 0 ||
             pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0 ||
@@ -8321,72 +8320,75 @@ int item_start_dump(struct default_engine *engine,
         {
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "Failed to create the dump thread. err=%s\n", strerror(errno));
-            engine->dumper.running = false;
+            dumper->running = false;
             ret = -1; break;
         }
     } while(0);
-    pthread_mutex_unlock(&engine->dumper.lock);
+    pthread_mutex_unlock(&dumper->lock);
 
     return ret;
 }
 
 void item_stop_dump(struct default_engine *engine)
 {
-    pthread_mutex_lock(&engine->dumper.lock);
-    if (engine->dumper.running) {
+    struct engine_dumper *dumper = &engine->dumper;
+
+    pthread_mutex_lock(&dumper->lock);
+    if (dumper->running) {
         /* stop the dumper */
-        engine->dumper.stop = true;
+        dumper->stop = true;
     }
-    pthread_mutex_unlock(&engine->dumper.lock);
+    pthread_mutex_unlock(&dumper->lock);
 }
 
 void item_stats_dump(struct default_engine *engine,
                      ADD_STAT add_stat, const void *cookie)
 {
+    struct engine_dumper *dumper = &engine->dumper;
     char val[256];
     int len;
 
-    pthread_mutex_lock(&engine->dumper.lock);
-    if (engine->dumper.running) {
+    pthread_mutex_lock(&dumper->lock);
+    if (dumper->running) {
         add_stat("dumper:status", 13, "running", 7, cookie);
     } else {
         add_stat("dumper:status", 13, "stopped", 7, cookie);
-        if (engine->dumper.success)
+        if (dumper->success)
             add_stat("dumper:success", 14, "true", 4, cookie);
         else
             add_stat("dumper:success", 14, "false", 5, cookie);
     }
-    if (engine->dumper.started != 0) {
-        if (engine->dumper.mode == DUMP_MODE_KEY) {
+    if (dumper->started != 0) {
+        if (dumper->mode == DUMP_MODE_KEY) {
             add_stat("dumper:mode", 11, "key", 3, cookie);
-        } else if (engine->dumper.mode == DUMP_MODE_ITEM) {
+        } else if (dumper->mode == DUMP_MODE_ITEM) {
             add_stat("dumper:mode", 11, "item", 4, cookie);
         } else {
             add_stat("dumper:mode", 11, "none", 4, cookie);
         }
-        if (engine->dumper.stopped != 0) {
-            time_t diff = engine->dumper.stopped - engine->dumper.started;
+        if (dumper->stopped != 0) {
+            time_t diff = dumper->stopped - dumper->started;
             len = sprintf(val, "%"PRIu64, (uint64_t)diff);
             add_stat("dumper:last_run", 15, val, len, cookie);
         }
-        len = sprintf(val, "%"PRIu64, engine->dumper.visited);
+        len = sprintf(val, "%"PRIu64, dumper->visited);
         add_stat("dumper:visited", 14, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, engine->dumper.dumpped);
+        len = sprintf(val, "%"PRIu64, dumper->dumpped);
         add_stat("dumper:dumped", 13, val, len, cookie);
-        if (engine->dumper.nprefix > 0) {
-            len = sprintf(val, "%s", engine->dumper.prefix);
+        if (dumper->nprefix > 0) {
+            len = sprintf(val, "%s", dumper->prefix);
             add_stat("dumper:prefix", 13, val, len, cookie);
-        } else if (engine->dumper.nprefix == 0) {
+        } else if (dumper->nprefix == 0) {
             add_stat("dumper:prefix", 13, "<null>", 6, cookie);
         } else {
             add_stat("dumper:prefix", 13, "<all>", 5, cookie);
         }
-        if (strlen(engine->dumper.filepath) > 0) {
-            len = sprintf(val, "%s", engine->dumper.filepath);
+        if (strlen(dumper->filepath) > 0) {
+            len = sprintf(val, "%s", dumper->filepath);
             add_stat("dumper:filepath", 15, val, len, cookie);
         }
     }
-    pthread_mutex_unlock(&engine->dumper.lock);
+    pthread_mutex_unlock(&dumper->lock);
 }
 
 #ifdef ENABLE_PERSISTENCE_01_ITEM_SCAN
