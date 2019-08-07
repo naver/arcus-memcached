@@ -674,8 +674,8 @@ static void *do_item_alloc_internal(const size_t ntotal, const unsigned int clsi
 
 /*@null@*/
 static hash_item *do_item_alloc(const void *key, const uint32_t nkey,
-                                const int flags, const rel_time_t exptime,
-                                const int nbytes, const void *cookie)
+                                const uint32_t flags, const rel_time_t exptime,
+                                const uint32_t nbytes, const void *cookie)
 {
     assert(nkey > 0);
     hash_item *it = NULL;
@@ -1471,8 +1471,9 @@ static hash_item *do_list_item_alloc(const void *key, const uint32_t nkey,
                                      item_attr *attrp, const void *cookie)
 {
     char *value = "\r\n"; //"LIST ITEM\r\n";
-    int nbytes = 2; //11;
-    int real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes) + sizeof(list_meta_info) - nkey;
+    uint32_t nbytes = 2; //11;
+    uint32_t real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)
+                         + sizeof(list_meta_info) - nkey;
 
     hash_item *it = do_item_alloc(key, nkey, attrp->flags, attrp->exptime,
                                   real_nbytes, cookie);
@@ -1499,7 +1500,7 @@ static hash_item *do_list_item_alloc(const void *key, const uint32_t nkey,
     return it;
 }
 
-static list_elem_item *do_list_elem_alloc(const int nbytes, const void *cookie)
+static list_elem_item *do_list_elem_alloc(const uint32_t nbytes, const void *cookie)
 {
     size_t ntotal = sizeof(list_elem_item) + nbytes;
 
@@ -1764,8 +1765,9 @@ static hash_item *do_set_item_alloc(const void *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie)
 {
     char *value = "\r\n"; //SET ITEM\r\n";
-    int nbytes = 2; //10;
-    int real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)+sizeof(set_meta_info)-nkey;
+    uint32_t nbytes = 2; //10;
+    uint32_t real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)
+                         + sizeof(set_meta_info) - nkey;
 
     hash_item *it = do_item_alloc(key, nkey, attrp->flags, attrp->exptime,
                                   real_nbytes, cookie);
@@ -1816,7 +1818,7 @@ static void do_set_node_free(set_hash_node *node)
     do_mem_slot_free(node, sizeof(set_hash_node));
 }
 
-static set_elem_item *do_set_elem_alloc(const int nbytes, const void *cookie)
+static set_elem_item *do_set_elem_alloc(const uint32_t nbytes, const void *cookie)
 {
     size_t ntotal = sizeof(set_elem_item) + nbytes;
 
@@ -2313,8 +2315,9 @@ static hash_item *do_btree_item_alloc(const void *key, const uint32_t nkey,
                                       item_attr *attrp, const void *cookie)
 {
     char *value = "\r\n"; // "BTREE ITEM\r\n";
-    int nbytes = 2; // 13;
-    int real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes) + sizeof(btree_meta_info) - nkey;
+    uint32_t nbytes = 2; // 13;
+    uint32_t real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)
+                         + sizeof(btree_meta_info) - nkey;
 
     hash_item *it = do_item_alloc(key, nkey, attrp->flags, attrp->exptime,
                                   real_nbytes, cookie);
@@ -2373,8 +2376,8 @@ static void do_btree_node_free(btree_indx_node *node)
     do_mem_slot_free(node, ntotal);
 }
 
-static btree_elem_item *do_btree_elem_alloc(const int nbkey, const int neflag, const int nbytes,
-                                            const void *cookie)
+static btree_elem_item *do_btree_elem_alloc(const uint32_t nbkey, const uint32_t neflag,
+                                            const uint32_t nbytes, const void *cookie)
 {
     size_t ntotal = sizeof(btree_elem_item_fixed) + BTREE_REAL_NBKEY(nbkey) + neflag + nbytes;
 
@@ -2848,7 +2851,7 @@ static void do_btree_decr_path(btree_elem_posi *path, int depth)
 }
 
 static btree_indx_node *do_btree_find_leaf(btree_indx_node *root,
-                                           const unsigned char *bkey, const int nbkey,
+                                           const unsigned char *bkey, const uint32_t nbkey,
                                            btree_elem_posi *path,
                                            btree_elem_item **found_elem)
 {
@@ -2892,7 +2895,7 @@ static btree_indx_node *do_btree_find_leaf(btree_indx_node *root,
 }
 
 static ENGINE_ERROR_CODE do_btree_find_insposi(btree_indx_node *root,
-                                               const unsigned char *ins_bkey, const int ins_nbkey,
+                                               const unsigned char *ins_bkey, const uint32_t ins_nbkey,
                                                btree_elem_posi *path)
 {
     btree_indx_node *node;
@@ -3793,14 +3796,14 @@ static void do_btree_elem_replace(btree_meta_info *info,
 static ENGINE_ERROR_CODE do_btree_elem_update(btree_meta_info *info,
                                               const int bkrtype, const bkey_range *bkrange,
                                               const eflag_update *eupdate,
-                                              const char *value, const int nbytes, const void *cookie)
+                                              const char *value, const uint32_t nbytes, const void *cookie)
 {
     btree_elem_posi  posi;
     btree_elem_item *elem;
     unsigned char *ptr;
-    int real_nbkey;
-    int new_neflag;
-    int new_nbytes;
+    uint32_t real_nbkey;
+    uint32_t new_neflag;
+    uint32_t new_nbytes;
 
     if (info->root == NULL) {
         return ENGINE_ELEM_ENOENT;
@@ -4658,7 +4661,7 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(btree_meta_info *info,
     uint64_t value;
     char     nbuf[128];
     int      nlen;
-    int      real_nbkey;
+    uint32_t real_nbkey;
 
     if (info->root == NULL) {
         assert(create != true);
@@ -5968,8 +5971,9 @@ void coll_del_thread_wakeup(void)
  * Allocates a new item.
  */
 hash_item *item_alloc(struct default_engine *engine,
-                      const void *key, const uint32_t nkey, int flags,
-                      rel_time_t exptime, int nbytes, const void *cookie)
+                      const void *key, const uint32_t nkey,
+                      const uint32_t flags, rel_time_t exptime,
+                      const uint32_t nbytes, const void *cookie)
 {
     hash_item *it;
     LOCK_CACHE();
@@ -6045,7 +6049,7 @@ static ENGINE_ERROR_CODE do_arithmetic(const void* cookie,
                                        const bool create,
                                        const uint64_t delta,
                                        const uint64_t initial,
-                                       const int flags,
+                                       const uint32_t flags,
                                        const rel_time_t exptime,
                                        uint64_t *cas,
                                        uint64_t *result)
@@ -6089,7 +6093,7 @@ ENGINE_ERROR_CODE arithmetic(struct default_engine *engine,
                              const bool create,
                              const uint64_t delta,
                              const uint64_t initial,
-                             const int flags,
+                             const uint32_t flags,
                              const rel_time_t exptime,
                              uint64_t *cas,
                              uint64_t *result)
@@ -6477,7 +6481,7 @@ ENGINE_ERROR_CODE list_struct_create(struct default_engine *engine,
 }
 
 list_elem_item *list_elem_alloc(struct default_engine *engine,
-                                const int nbytes, const void *cookie)
+                                const uint32_t nbytes, const void *cookie)
 {
     list_elem_item *elem;
     LOCK_CACHE();
@@ -6693,7 +6697,7 @@ ENGINE_ERROR_CODE set_struct_create(struct default_engine *engine,
     return ret;
 }
 
-set_elem_item *set_elem_alloc(struct default_engine *engine, const int nbytes, const void *cookie)
+set_elem_item *set_elem_alloc(struct default_engine *engine, const uint32_t nbytes, const void *cookie)
 {
     set_elem_item *elem;
     LOCK_CACHE();
@@ -6752,7 +6756,7 @@ ENGINE_ERROR_CODE set_elem_insert(struct default_engine *engine, const char *key
 
 ENGINE_ERROR_CODE set_elem_delete(struct default_engine *engine,
                                   const char *key, const uint32_t nkey,
-                                  const char *value, const size_t nbytes,
+                                  const char *value, const uint32_t nbytes,
                                   const bool drop_if_empty, bool *dropped)
 {
     hash_item     *it;
@@ -6780,7 +6784,7 @@ ENGINE_ERROR_CODE set_elem_delete(struct default_engine *engine,
 
 ENGINE_ERROR_CODE set_elem_exist(struct default_engine *engine,
                                  const char *key, const uint32_t nkey,
-                                 const char *value, const size_t nbytes,
+                                 const char *value, const uint32_t nbytes,
                                  bool *exist)
 {
     hash_item     *it;
@@ -6871,7 +6875,7 @@ ENGINE_ERROR_CODE btree_struct_create(struct default_engine *engine,
 }
 
 btree_elem_item *btree_elem_alloc(struct default_engine *engine,
-                                  const int nbkey, const int neflag, const int nbytes,
+                                  const uint32_t nbkey, const uint32_t neflag, const uint32_t nbytes,
                                   const void *cookie)
 {
     btree_elem_item *elem;
@@ -6944,7 +6948,7 @@ ENGINE_ERROR_CODE btree_elem_insert(struct default_engine *engine,
 
 ENGINE_ERROR_CODE btree_elem_update(struct default_engine *engine,
                                     const char *key, const uint32_t nkey, const bkey_range *bkrange,
-                                    const eflag_update *eupdate, const char *value, const int nbytes,
+                                    const eflag_update *eupdate, const char *value, const uint32_t nbytes,
                                     const void *cookie)
 {
     hash_item       *it;
@@ -8419,8 +8423,9 @@ static hash_item *do_map_item_alloc(const void *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie)
 {
     char *value = "\r\n"; //MAP ITEM\r\n";
-    int nbytes = 2; //10;
-    int real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)+sizeof(map_meta_info)-nkey;
+    uint32_t nbytes = 2; //10;
+    uint32_t real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)
+                         + sizeof(map_meta_info) - nkey;
 
     hash_item *it = do_item_alloc(key, nkey, attrp->flags, attrp->exptime,
                                   real_nbytes, cookie);
@@ -8471,7 +8476,7 @@ static void do_map_node_free(map_hash_node *node)
 }
 
 static map_elem_item *do_map_elem_alloc(const int nfield,
-                                        const int nbytes, const void *cookie)
+                                        const uint32_t nbytes, const void *cookie)
 {
     size_t ntotal = sizeof(map_elem_item) + nfield + nbytes;
 
@@ -8885,7 +8890,7 @@ static map_elem_item *do_map_elem_find(map_hash_node *node, const field_t *field
 
 static ENGINE_ERROR_CODE do_map_elem_update(map_meta_info *info,
                                             const field_t *field, const char *value,
-                                            const int nbytes, const void *cookie)
+                                            const uint32_t nbytes, const void *cookie)
 {
     map_prev_info  pinfo;
     map_elem_item *elem;
@@ -9042,7 +9047,7 @@ ENGINE_ERROR_CODE map_struct_create(struct default_engine *engine,
     return ret;
 }
 
-map_elem_item *map_elem_alloc(struct default_engine *engine, const int nfield, const int nbytes, const void *cookie)
+map_elem_item *map_elem_alloc(struct default_engine *engine, const int nfield, const uint32_t nbytes, const void *cookie)
 {
     map_elem_item *elem;
     LOCK_CACHE();
@@ -9100,7 +9105,7 @@ ENGINE_ERROR_CODE map_elem_insert(struct default_engine *engine, const char *key
 }
 
 ENGINE_ERROR_CODE map_elem_update(struct default_engine *engine, const char *key, const uint32_t nkey,
-                                  const field_t *field, const char *value, const int nbytes, const void *cookie)
+                                  const field_t *field, const char *value, const uint32_t nbytes, const void *cookie)
 {
     hash_item     *it;
     map_meta_info *info;
