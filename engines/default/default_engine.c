@@ -373,7 +373,7 @@ default_list_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
                         const size_t nbytes, eitem** eitem)
 {
     list_elem_item *elem;
-    ENGINE_ERROR_CODE ret = ENGINE_EINVAL;
+    ENGINE_ERROR_CODE ret = ENGINE_EINVAL; // See ACTION_AFTER_WRITE()
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     elem = list_elem_alloc(nbytes, cookie);
@@ -473,7 +473,7 @@ default_set_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
                        const size_t nbytes, eitem** eitem)
 {
     set_elem_item *elem;
-    ENGINE_ERROR_CODE ret;
+    ENGINE_ERROR_CODE ret = ENGINE_EINVAL; // See ACTION_AFTER_WRITE()
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     elem = set_elem_alloc(nbytes, cookie);
@@ -586,7 +586,7 @@ default_map_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
                        const size_t nbytes, eitem** eitem)
 {
     map_elem_item *elem;
-    ENGINE_ERROR_CODE ret = ENGINE_EINVAL;
+    ENGINE_ERROR_CODE ret = ENGINE_EINVAL; // See ACTION_AFTER_WRITE()
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     elem = map_elem_alloc(nfield, nbytes, cookie);
@@ -697,7 +697,7 @@ default_btree_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
                          const size_t nbytes, eitem** eitem)
 {
     btree_elem_item *elem;
-    ENGINE_ERROR_CODE ret;
+    ENGINE_ERROR_CODE ret = ENGINE_EINVAL; // See ACTION_AFTER_WRITE()
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     elem = btree_elem_alloc(nbkey, neflag, nbytes, cookie);
