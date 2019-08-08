@@ -285,7 +285,7 @@ default_item_allocate(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret = ENGINE_EINVAL;
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    it = item_alloc(engine, key, nkey, flags, exptime, nbytes, cookie);
+    it = item_alloc(key, nkey, flags, exptime, nbytes, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     if (it != NULL) {
         item_set_cas(it, cas);
@@ -307,7 +307,7 @@ default_item_delete(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = item_delete(engine, key, nkey, cas);
+    ret = item_delete(key, nkey, cas);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -315,7 +315,7 @@ default_item_delete(ENGINE_HANDLE* handle, const void* cookie,
 static void
 default_item_release(ENGINE_HANDLE* handle, const void *cookie, item* item)
 {
-    item_release(get_handle(handle), get_real_item(item));
+    item_release(get_real_item(item));
 }
 
 static ENGINE_ERROR_CODE
@@ -326,11 +326,11 @@ default_get(ENGINE_HANDLE* handle, const void* cookie,
     struct default_engine *engine = get_handle(handle);
     VBUCKET_GUARD(engine, vbucket);
 
-    *item = item_get(engine, key, nkey);
+    *item = item_get(key, nkey);
     if (*item != NULL) {
         hash_item *it = get_real_item(*item);
         if (IS_COLL_ITEM(it)) { /* collection item */
-            item_release(engine, it);
+            item_release(it);
             *item = NULL;
             return ENGINE_EBADTYPE;
         }
@@ -351,7 +351,7 @@ default_store(ENGINE_HANDLE* handle, const void *cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, item_get_key(it), it->nkey);
-    ret = store_item(engine, it, cas, operation, cookie);
+    ret = store_item(it, cas, operation, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -369,7 +369,7 @@ default_arithmetic(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = arithmetic(engine, cookie, key, nkey, increment, create,
+    ret = arithmetic(cookie, key, nkey, increment, create,
                      delta, initial, flags, exptime, cas, result);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
@@ -382,7 +382,7 @@ default_flush(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
 
     ACTION_BEFORE_WRITE(cookie, NULL, 0);
-    ret = item_flush_expired(get_handle(handle), prefix, nprefix, when, cookie);
+    ret = item_flush_expired(prefix, nprefix, when, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -401,7 +401,7 @@ default_list_struct_create(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = list_struct_create(engine, key, nkey, attrp, cookie);
+    ret = list_struct_create(key, nkey, attrp, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -415,7 +415,7 @@ default_list_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret = ENGINE_EINVAL;
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    elem = list_elem_alloc(get_handle(handle), nbytes, cookie);
+    elem = list_elem_alloc(nbytes, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     if (elem != NULL) {
         *eitem = elem;
@@ -430,8 +430,7 @@ static void
 default_list_elem_release(ENGINE_HANDLE* handle, const void *cookie,
                           eitem **eitem_array, const int eitem_count)
 {
-    struct default_engine *engine = get_handle(handle);
-    list_elem_release(engine, (list_elem_item**)eitem_array, eitem_count);
+    list_elem_release((list_elem_item**)eitem_array, eitem_count);
 }
 
 static ENGINE_ERROR_CODE
@@ -445,7 +444,7 @@ default_list_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = list_elem_insert(engine, key, nkey, index, (list_elem_item *)eitem,
+    ret = list_elem_insert(key, nkey, index, (list_elem_item *)eitem,
                            attrp, created, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
@@ -462,8 +461,8 @@ default_list_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = list_elem_delete(engine, key, nkey, from_index, to_index,
-                           drop_if_empty, del_count, dropped);
+    ret = list_elem_delete(key, nkey, from_index, to_index, drop_if_empty,
+                           del_count, dropped);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -481,8 +480,7 @@ default_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = list_elem_get(engine, key, nkey, from_index, to_index,
-                        delete, drop_if_empty,
+    ret = list_elem_get(key, nkey, from_index, to_index, delete, drop_if_empty,
                         (list_elem_item**)eitem_array, eitem_count,
                         flags, dropped);
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
@@ -503,7 +501,7 @@ default_set_struct_create(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = set_struct_create(engine, key, nkey, attrp, cookie);
+    ret = set_struct_create(key, nkey, attrp, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -514,10 +512,10 @@ default_set_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
                        const size_t nbytes, eitem** eitem)
 {
     set_elem_item *elem;
-    ENGINE_ERROR_CODE ret = ENGINE_EINVAL;
+    ENGINE_ERROR_CODE ret;
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    elem = set_elem_alloc(get_handle(handle), nbytes, cookie);
+    elem = set_elem_alloc(nbytes, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     if (elem != NULL) {
         *eitem = elem;
@@ -532,8 +530,7 @@ static void
 default_set_elem_release(ENGINE_HANDLE* handle, const void *cookie,
                          eitem **eitem_array, const int eitem_count)
 {
-    struct default_engine *engine = get_handle(handle);
-    set_elem_release(engine, (set_elem_item**)eitem_array, eitem_count);
+    set_elem_release((set_elem_item**)eitem_array, eitem_count);
 }
 
 static ENGINE_ERROR_CODE
@@ -546,7 +543,7 @@ default_set_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = set_elem_insert(engine, key, nkey, (set_elem_item*)eitem,
+    ret = set_elem_insert(key, nkey, (set_elem_item*)eitem,
                           attrp, created, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
@@ -564,7 +561,7 @@ default_set_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = set_elem_delete(engine, key, nkey, value, nbytes,
+    ret = set_elem_delete(key, nkey, value, nbytes,
                           drop_if_empty, dropped);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
@@ -580,7 +577,7 @@ default_set_elem_exist(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    ret = set_elem_exist(engine, key, nkey, value, nbytes, exist);
+    ret = set_elem_exist(key, nkey, value, nbytes, exist);
     return ret;
 }
 
@@ -596,7 +593,7 @@ default_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = set_elem_get(engine, key, nkey, count, delete, drop_if_empty,
+    ret = set_elem_get(key, nkey, count, delete, drop_if_empty,
                        (set_elem_item**)eitem, eitem_count, flags, dropped);
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
@@ -617,7 +614,7 @@ default_map_struct_create(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = map_struct_create(engine, key, nkey, attrp, cookie);
+    ret = map_struct_create(key, nkey, attrp, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -631,7 +628,7 @@ default_map_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret = ENGINE_EINVAL;
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    elem = map_elem_alloc(get_handle(handle), nfield, nbytes, cookie);
+    elem = map_elem_alloc(nfield, nbytes, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     if (elem != NULL) {
         *eitem = elem;
@@ -646,7 +643,7 @@ static void
 default_map_elem_release(ENGINE_HANDLE* handle, const void *cookie,
                          eitem **eitem_array, const int eitem_count)
 {
-    map_elem_release(get_handle(handle), (map_elem_item**)eitem_array, eitem_count);
+    map_elem_release((map_elem_item**)eitem_array, eitem_count);
 }
 
 static ENGINE_ERROR_CODE
@@ -659,7 +656,7 @@ default_map_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = map_elem_insert(engine, key, nkey, (map_elem_item*)eitem, attrp, created, cookie);
+    ret = map_elem_insert(key, nkey, (map_elem_item*)eitem, attrp, created, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -674,7 +671,7 @@ default_map_elem_update(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = map_elem_update(engine, key, nkey, field, value, nbytes, cookie);
+    ret = map_elem_update(key, nkey, field, value, nbytes, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -690,7 +687,7 @@ default_map_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = map_elem_delete(engine, key, nkey, numfields, flist, drop_if_empty, del_count, dropped);
+    ret = map_elem_delete(key, nkey, numfields, flist, drop_if_empty, del_count, dropped);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -707,7 +704,7 @@ default_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = map_elem_get(engine, key, nkey, numfields, flist, delete, drop_if_empty,
+    ret = map_elem_get(key, nkey, numfields, flist, delete, drop_if_empty,
                        (map_elem_item**)eitem, eitem_count, flags, dropped);
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
@@ -727,7 +724,7 @@ default_btree_struct_create(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = btree_struct_create(engine, key, nkey, attrp, cookie);
+    ret = btree_struct_create(key, nkey, attrp, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -738,12 +735,11 @@ default_btree_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
                          const size_t nbkey, const size_t neflag,
                          const size_t nbytes, eitem** eitem)
 {
-    struct default_engine *engine = get_handle(handle);
     btree_elem_item *elem;
-    ENGINE_ERROR_CODE ret = ENGINE_EINVAL;
+    ENGINE_ERROR_CODE ret;
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    elem = btree_elem_alloc(engine, nbkey, neflag, nbytes, cookie);
+    elem = btree_elem_alloc(nbkey, neflag, nbytes, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     if (elem != NULL) {
         *eitem = elem;
@@ -758,8 +754,7 @@ static void
 default_btree_elem_release(ENGINE_HANDLE* handle, const void *cookie,
                            eitem **eitem_array, const int eitem_count)
 {
-    struct default_engine *engine = get_handle(handle);
-    btree_elem_release(engine, (btree_elem_item**)eitem_array, eitem_count);
+    btree_elem_release((btree_elem_item**)eitem_array, eitem_count);
 }
 
 static ENGINE_ERROR_CODE
@@ -776,7 +771,7 @@ default_btree_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     if (trimmed == NULL) {
-        ret = btree_elem_insert(engine, key, nkey, (btree_elem_item *)eitem,
+        ret = btree_elem_insert(key, nkey, (btree_elem_item *)eitem,
                                 replace_if_exist, attrp, replaced, created,
                                 NULL, NULL, NULL, cookie);
     } else {
@@ -784,7 +779,7 @@ default_btree_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
          * "dereferencing type-punned pointer will break strict-aliasing rules".
          */
         btree_elem_item *trimmed_elems=NULL;
-        ret = btree_elem_insert(engine, key, nkey, (btree_elem_item *)eitem,
+        ret = btree_elem_insert(key, nkey, (btree_elem_item *)eitem,
                                 replace_if_exist, attrp, replaced, created,
                                 &trimmed_elems, &trimmed->count, &trimmed->flags,
                                 cookie);
@@ -805,8 +800,7 @@ default_btree_elem_update(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = btree_elem_update(engine, key, nkey, bkrange,
-                            eupdate, value, nbytes, cookie);
+    ret = btree_elem_update(key, nkey, bkrange, eupdate, value, nbytes, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -824,7 +818,7 @@ default_btree_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = btree_elem_delete(engine, key, nkey, bkrange, efilter, req_count,
+    ret = btree_elem_delete(key, nkey, bkrange, efilter, req_count,
                             drop_if_empty, del_count, access_count, dropped);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
@@ -844,7 +838,7 @@ default_btree_elem_arithmetic(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = btree_elem_arithmetic(engine, key, nkey, bkrange, increment, create,
+    ret = btree_elem_arithmetic(key, nkey, bkrange, increment, create,
                                 delta, initial, eflagp, result, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
@@ -865,7 +859,7 @@ default_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = btree_elem_get(engine, key, nkey, bkrange, efilter,
+    ret = btree_elem_get(key, nkey, bkrange, efilter,
                          offset, req_count, delete, drop_if_empty,
                          (btree_elem_item**)eitem_array, eitem_count,
                          access_count, flags, dropped_trimmed);
@@ -884,8 +878,7 @@ default_btree_elem_count(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    ret = btree_elem_count(engine, key, nkey, bkrange, efilter,
-                           eitem_count, access_count);
+    ret = btree_elem_count(key, nkey, bkrange, efilter, eitem_count, access_count);
     return ret;
 }
 
@@ -900,7 +893,7 @@ default_btree_posi_find(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    ret = btree_posi_find(engine, key, nkey, bkrange, order, position);
+    ret = btree_posi_find(key, nkey, bkrange, order, position);
     return ret;
 }
 
@@ -917,7 +910,7 @@ default_btree_posi_find_with_get(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    ret = btree_posi_find_with_get(engine, key, nkey, bkrange, order, count,
+    ret = btree_posi_find_with_get(key, nkey, bkrange, order, count,
                                    position, (btree_elem_item**)eitem_array,
                                    eitem_count, eitem_index, flags);
     return ret;
@@ -935,7 +928,7 @@ default_btree_elem_get_by_posi(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    ret = btree_elem_get_by_posi(engine, key, nkey, order, from_posi, to_posi,
+    ret = btree_elem_get_by_posi(key, nkey, order, from_posi, to_posi,
                                  (btree_elem_item**)eitem_array, eitem_count,
                                  flags);
     return ret;
@@ -963,7 +956,7 @@ default_btree_elem_smget_old(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    ret = btree_elem_smget_old(engine, karray, kcount, bkrange, efilter,
+    ret = btree_elem_smget_old(karray, kcount, bkrange, efilter,
                                offset, count, (btree_elem_item**)eitem_array,
                                kfnd_array, flag_array, eitem_count,
                                missed_key_array, missed_key_count,
@@ -986,7 +979,7 @@ default_btree_elem_smget(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    ret = btree_elem_smget(engine, karray, kcount, bkrange, efilter,
+    ret = btree_elem_smget(karray, kcount, bkrange, efilter,
                            offset, count, unique, result);
     return ret;
 }
@@ -1007,7 +1000,7 @@ default_getattr(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
-    ret = item_getattr(engine, key, nkey, attr_ids, attr_count, attr_data);
+    ret = item_getattr(key, nkey, attr_ids, attr_count, attr_data);
     return ret;
 }
 
@@ -1023,7 +1016,7 @@ default_setattr(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = item_setattr(engine, key, nkey, attr_ids, attr_count, attr_data);
+    ret = item_setattr(key, nkey, attr_ids, attr_count, attr_data);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -1092,10 +1085,10 @@ default_get_stats(ENGINE_HANDLE* handle, const void* cookie,
         slabs_stats(add_stat, cookie);
     }
     else if (strncmp(stat_key, "items", 5) == 0) {
-        item_stats(engine, add_stat, cookie);
+        item_stats(add_stat, cookie);
     }
     else if (strncmp(stat_key, "sizes", 5) == 0) {
-        item_stats_sizes(engine, add_stat, cookie);
+        item_stats_sizes(add_stat, cookie);
     }
     else if (strncmp(stat_key, "vbucket", 7) == 0) {
         stats_vbucket(engine, add_stat, cookie);
@@ -1116,7 +1109,8 @@ static void
 default_reset_stats(ENGINE_HANDLE* handle, const void *cookie)
 {
     struct default_engine *engine = get_handle(handle);
-    item_stats_reset(engine);
+
+    item_stats_reset();
 
     pthread_mutex_lock(&engine->stats.lock);
     engine->stats.evictions = 0;
@@ -1130,11 +1124,7 @@ static ENGINE_ERROR_CODE
 default_get_prefix_stats(ENGINE_HANDLE* handle, const void* cookie,
                          const void* key, const int nkey, void *prefix_data)
 {
-    struct default_engine *engine = get_handle(handle);
-    ENGINE_ERROR_CODE ret;
-
-    ret = item_stats_prefixes(engine, key, nkey, prefix_data);
-    return ret;
+    return item_stats_prefixes(key, nkey, prefix_data);
 }
 
 /*
@@ -1146,8 +1136,7 @@ default_cachedump(ENGINE_HANDLE* handle, const void* cookie,
                   const unsigned int slabs_clsid, const unsigned int limit,
                   const bool forward, const bool sticky, unsigned int *bytes)
 {
-    struct default_engine* engine = get_handle(handle);
-    return item_cachedump(engine, slabs_clsid, limit, forward, sticky, bytes);
+    return item_cachedump(slabs_clsid, limit, forward, sticky, bytes);
 }
 
 static ENGINE_ERROR_CODE
@@ -1211,16 +1200,16 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
     }
 #endif
     else if (strcmp(config_key, "max_list_size") == 0) {
-        ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_LIST, (int*)config_value);
+        ret = item_conf_set_maxcollsize(ITEM_TYPE_LIST, (int*)config_value);
     }
     else if (strcmp(config_key, "max_set_size") == 0) {
-        ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_SET, (int*)config_value);
+        ret = item_conf_set_maxcollsize(ITEM_TYPE_SET, (int*)config_value);
     }
     else if (strcmp(config_key, "max_map_size") == 0) {
-        ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_MAP, (int*)config_value);
+        ret = item_conf_set_maxcollsize(ITEM_TYPE_MAP, (int*)config_value);
     }
     else if (strcmp(config_key, "max_btree_size") == 0) {
-        ret = item_conf_set_maxcollsize(engine, ITEM_TYPE_BTREE, (int*)config_value);
+        ret = item_conf_set_maxcollsize(ITEM_TYPE_BTREE, (int*)config_value);
     }
     else if (strcmp(config_key, "verbosity") == 0) {
         pthread_mutex_lock(&engine->cache_lock);
