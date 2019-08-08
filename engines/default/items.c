@@ -937,12 +937,21 @@ static void do_item_release(hash_item *it)
     }
 }
 
-static void do_item_update(hash_item *it)
+static void do_item_update(hash_item *it, bool force)
 {
-    rel_time_t current_time = svcore->get_current_time();
     MEMCACHED_ITEM_UPDATE(item_get_key(it), it->nkey, it->nbytes);
-    if (it->time < current_time - ITEM_UPDATE_INTERVAL) {
-        if ((it->iflag & ITEM_LINKED) != 0) {
+    if ((it->iflag & ITEM_LINKED) != 0) {
+        rel_time_t current_time = svcore->get_current_time();
+        if (force) {
+            /* The exceptional case when exptime is changed.
+             * See do_item_setattr() for specific explanation.
+             */
+            item_unlink_q(it);
+            it->time = current_time;
+            item_link_q(it);
+        } else if (it->time < (current_time - ITEM_UPDATE_INTERVAL)) {
+            /* The normal case when the given item is read.
+             */
             item_unlink_q(it);
             it->time = current_time;
             item_link_q(it);
@@ -965,7 +974,7 @@ static hash_item *do_item_get(const char *key, const uint32_t nkey, bool do_upda
             ITEM_REFCOUNT_INCR(it);
             DEBUG_REFCNT(it, '+');
             if (do_update) {
-                do_item_update(it);
+                do_item_update(it, false);
             }
         } else {
             do_item_unlink(it, ITEM_UNLINK_INVALID);
@@ -1036,7 +1045,7 @@ static ENGINE_ERROR_CODE do_item_store_add(hash_item *it, uint64_t *cas, const v
             stored = ENGINE_EBADTYPE;
         } else {
             /* add only adds a nonexistent item, but promote to head of LRU */
-            do_item_update(old_it);
+            do_item_update(old_it, false);
             stored = ENGINE_NOT_STORED;
         }
         do_item_release(old_it);
@@ -1198,15 +1207,6 @@ static ENGINE_ERROR_CODE do_add_delta(hash_item *it, const bool incr, const int6
     do_item_release(new_it);       /* release our reference */
 
     return ENGINE_SUCCESS;
-}
-
-static void do_item_lru_reposition(hash_item *it)
-{
-    if ((it->iflag & ITEM_LINKED) != 0) {
-        item_unlink_q(it);
-        it->time = svcore->get_current_time();
-        item_link_q(it);
-    }
 }
 
 static void do_coll_space_incr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
@@ -7528,14 +7528,13 @@ do_item_setattr_exec(hash_item *it,
                 it->exptime = attr_data->exptime;
                 if (before_exptime == 0 && it->exptime != 0) {
                     /* exptime: 0 => positive value */
-                    /* When update exptime, the curMK/lowMK of LRU must be considered.
-                     * The item, whose exptime is 0, might be below the lowMK of LRU list.
-                     * If we change only the exptime of the item to a positive value,
-                     * it cannot be reclaimed even if it is expired in the future.
-                     * To make it to be reclaimed after it is expired,
-                     * we move it to to the top of LRU list.
+                    /* When change the exptime, we must consider that
+                     * an item, whose exptime is 0, can be below the lowMK of LRU.
+                     * If the exptime of the item is changed to a positive value,
+                     * it might not reclaimed even if it's expired in the future.
+                     * To resolve this, we move it to the top of LRU list.
                      */
-                    do_item_lru_reposition(it);
+                    do_item_update(it, true); /* force LRU update */
                 }
             }
             continue;
