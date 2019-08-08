@@ -449,7 +449,8 @@ prefix_t *assoc_prefix_find(const char *prefix, const int nprefix)
     }
 }
 
-ENGINE_ERROR_CODE assoc_prefix_link(hash_item *it, const uint32_t item_size)
+ENGINE_ERROR_CODE assoc_prefix_link(hash_item *it, const uint32_t item_size,
+                                    bool *internal)
 {
     const char *key = item_get_key(it);
     uint32_t   nkey = it->nkey;
@@ -542,6 +543,7 @@ ENGINE_ERROR_CODE assoc_prefix_link(hash_item *it, const uint32_t item_size)
     }
 #endif
 
+    *internal = (pt->internal ? true : false);
     return ENGINE_SUCCESS;
 }
 
@@ -580,6 +582,23 @@ void assoc_prefix_unlink(hash_item *it, const uint32_t item_size, bool drop_if_e
 
             pt = parent_pt;
         }
+    }
+}
+
+bool assoc_prefix_issame(prefix_t *pt, const char *prefix, const int nprefix)
+{
+    assert(nprefix >= 0);
+
+    if (nprefix == 0) { /* null prefix */
+        if (pt->nprefix == 0)
+            return true;
+        else
+            return false;
+    } else {
+        if ((nprefix == pt->nprefix) && (memcmp(prefix, _get_prefix(pt), nprefix) == 0))
+            return true;
+        else
+            return false;
     }
 }
 

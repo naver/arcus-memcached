@@ -821,7 +821,6 @@ static void item_unlink_q(hash_item *it)
 static ENGINE_ERROR_CODE do_item_link(hash_item *it)
 {
     const char *key = item_get_key(it);
-    size_t stotal;
     const char *hkey = (it->nkey > MAX_HKEY_LEN) ? key+(it->nkey-MAX_HKEY_LEN) : key;
     const uint32_t hnkey = (it->nkey > MAX_HKEY_LEN) ? MAX_HKEY_LEN : it->nkey;
     assert((it->iflag & ITEM_LINKED) == 0);
@@ -833,13 +832,14 @@ static ENGINE_ERROR_CODE do_item_link(hash_item *it)
     item_set_cas(it, get_cas_id());
 
     /* link the item to prefix info */
-    stotal = ITEM_stotal(it);
-    ENGINE_ERROR_CODE ret = assoc_prefix_link(it, stotal);
+    size_t stotal = ITEM_stotal(it);
+    bool internal_prefix = false;
+    ENGINE_ERROR_CODE ret = assoc_prefix_link(it, stotal, &internal_prefix);
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
-    if (it->pfxptr->internal) {
-        /* It's an internal cache item whose prefix name is "arcus". */
+    if (internal_prefix) {
+        /* It's an internal item whose prefix name is "arcus". */
         it->iflag |= ITEM_INTERNAL;
     }
 
@@ -5998,8 +5998,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(const char *prefix, const int npr
     }
 
     if (oldest_live != 0) {
-        for (int i = 0; i <= POWER_LARGEST; i++)
-        {
+        for (int i = 0; i <= POWER_LARGEST; i++) {
             /*
              * The LRU is sorted in decreasing time order, and an item's
              * timestamp is never newer than its last access time, so we
@@ -6007,52 +6006,38 @@ static ENGINE_ERROR_CODE do_item_flush_expired(const char *prefix, const int npr
              * oldest_live time.
              * The oldest_live checking will auto-expire the remaining items.
              */
-            for (iter = itemsp->heads[i]; iter != NULL; iter = next) {
-                if (iter->time >= oldest_live) {
-                    next = iter->next;
-                    if (nprefix < 0) { /* flush all */
-                        do_item_unlink(iter, ITEM_UNLINK_INVALID);
-                    } else if (nprefix == 0) { /* flush null prefix */
-                        if (iter->pfxptr->nprefix == 0) {
-                            do_item_unlink(iter, ITEM_UNLINK_INVALID);
-                        }
-                    } else { /* nprefix > 0: flush given prefix */
-                        char *iter_key = (char*)item_get_key(iter);
-                        if (iter->nkey > nprefix && memcmp(prefix,iter_key,nprefix) == 0 &&
-                            *(iter_key + nprefix) == config->prefix_delimiter) {
-                            do_item_unlink(iter, ITEM_UNLINK_INVALID);
-                        }
-                    }
-                } else {
+            iter = itemsp->heads[i];
+            while (iter != NULL) {
+                if (iter->time < oldest_live) {
                     /* We've hit the first old item. Continue to the next queue. */
                     /* reset lowMK and curMK to tail pointer */
                     itemsp->lowMK[i] = itemsp->tails[i];
                     itemsp->curMK[i] = itemsp->tails[i];
                     break;
                 }
+                if (nprefix < 0 || assoc_prefix_issame(iter->pfxptr, prefix, nprefix)) {
+                    next = iter->next;
+                    do_item_unlink(iter, ITEM_UNLINK_INVALID);
+                    iter = next;
+                } else {
+                    iter = iter->next;
+                }
             }
 #ifdef ENABLE_STICKY_ITEM
-            for (iter = itemsp->sticky_heads[i]; iter != NULL; iter = next) {
-                if (iter->time >= oldest_live) {
-                    next = iter->next;
-                    if (nprefix < 0) { /* flush all */
-                        do_item_unlink(iter, ITEM_UNLINK_INVALID);
-                    } else if (nprefix == 0) { /* flush null prefix */
-                        if (iter->pfxptr->nprefix == 0) {
-                            do_item_unlink(iter, ITEM_UNLINK_INVALID);
-                        }
-                    } else { /* nprefix > 0: flush given prefix */
-                        char *iter_key = (char*)item_get_key(iter);
-                        if (iter->nkey > nprefix && memcmp(prefix,iter_key,nprefix) == 0 &&
-                            *(iter_key + nprefix) == config->prefix_delimiter) {
-                            do_item_unlink(iter, ITEM_UNLINK_INVALID);
-                        }
-                    }
-                } else {
+            iter = itemsp->sticky_heads[i];
+            while (iter != NULL) {
+                if (iter->time < oldest_live) {
                     /* We've hit the first old item. Continue to the next queue. */
                     /* reset curMK to tail pointer */
                     itemsp->sticky_curMK[i] = itemsp->sticky_tails[i];
                     break;
+                }
+                if (nprefix < 0 || assoc_prefix_issame(iter->pfxptr, prefix, nprefix)) {
+                    next = iter->next;
+                    do_item_unlink(iter, ITEM_UNLINK_INVALID);
+                    iter = next;
+                } else {
+                    iter = iter->next;
                 }
             }
 #endif
@@ -8055,15 +8040,9 @@ static void *item_dumper_main(void *arg)
             if ((it = item_array[i]) == NULL) continue;
             dumper->visited++;
             /* check prefix name */
-            if (dumper->nprefix > 0) {
-                if (dumper->nprefix != it->pfxptr->nprefix ||
-                    memcmp(item_get_key(it), dumper->prefix, dumper->nprefix) != 0) {
-                    continue; /* prefix mismatch */
-                }
-            } else if (dumper->nprefix == 0) {
-                if (it->pfxptr->nprefix != 0) {
-                    continue; /* NOT null prefix */
-                }
+            if (dumper->nprefix >= 0 &&
+                !assoc_prefix_issame(it->pfxptr, dumper->prefix, dumper->nprefix)) {
+                continue; /* NOT the given prefix */
             }
             if ((cur_buflen + it->nkey + 24) > max_buflen) {
                 nwritten = write(fd, dump_buffer, cur_buflen);

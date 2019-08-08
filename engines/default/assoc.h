@@ -20,7 +20,7 @@
 
 #include <memcached/types.h>
 
-struct _prefix_t {
+typedef struct _prefix_t {
     uint8_t  nprefix;  /* the length of prefix name */
     uint8_t  internal; /* is internal prefix ? 1 or 0 */
     uint16_t dummy16;
@@ -41,7 +41,7 @@ struct _prefix_t {
     uint64_t total_bytes_exclusive;
     //uint64_t total_count_inclusive; /* NOT yet used */
     //uint64_t total_bytes_inclusive; /* NOT yet used */
-};
+} prefix_t;
 
 #define PREFIX_IS_RSVD(pfx,npfx) ((npfx) == 5 && strncmp((pfx), "arcus", 5) == 0)
 #define PREFIX_IS_USER(pfx,npfx) ((npfx) != 5 || strncmp((pfx), "arcus", 5) != 0)
@@ -104,8 +104,9 @@ void              assoc_scan_final(struct assoc_scan *scan);
 
 /* prefix functions */
 prefix_t *        assoc_prefix_find(const char *prefix, const int nprefix);
-ENGINE_ERROR_CODE assoc_prefix_link(hash_item *it, const uint32_t item_size);
+ENGINE_ERROR_CODE assoc_prefix_link(hash_item *it, const uint32_t item_size, bool *internal);
 void              assoc_prefix_unlink(hash_item *it, const uint32_t item_size, bool drop_if_empty);
+bool              assoc_prefix_issame(prefix_t *pt, const char *prefix, const int nprefix);
 void              assoc_prefix_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t bytes);
 void              assoc_prefix_bytes_decr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t bytes);
 bool              assoc_prefix_isvalid(hash_item *it, rel_time_t current_time);
