@@ -101,7 +101,7 @@ static uint8_t get_it_link_updtype(uint8_t type)
 
 static char *get_coll_ovflact_text(uint8_t ovflact)
 {
-    char *ovfarr[7] = { "error", "head_trim", "tail_trim",
+    char *ovfarr[8] = { "null", "error", "head_trim", "tail_trim",
                         "smallest_trim", "largest_trim",
                         "smallest_silent_trim", "largest_silent_trim" };
 
