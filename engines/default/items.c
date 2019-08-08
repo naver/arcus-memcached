@@ -1354,12 +1354,7 @@ static ENGINE_ERROR_CODE do_add_delta(hash_item *it, const bool incr, const int6
     uint64_t value;
     int res;
 
-    if (IS_COLL_ITEM(it)) {
-        return ENGINE_EBADTYPE;
-    }
-
     ptr = item_get_data(it);
-
     if (!safe_strtoull(ptr, &value)) {
         return ENGINE_EINVAL;
     }
@@ -6014,7 +6009,7 @@ void item_release(hash_item *item)
 /*
  * Stores an item in the cache (high level, obeys set/add/replace semantics)
  */
-ENGINE_ERROR_CODE store_item(hash_item *item, uint64_t *cas,
+ENGINE_ERROR_CODE item_store(hash_item *item, uint64_t *cas,
                              ENGINE_STORE_OPERATION operation,
                              const void *cookie)
 {
@@ -6045,66 +6040,45 @@ ENGINE_ERROR_CODE store_item(hash_item *item, uint64_t *cas,
     return ret;
 }
 
-static ENGINE_ERROR_CODE do_arithmetic(const void* cookie,
-                                       const void* key,
-                                       const uint32_t nkey,
-                                       const bool increment,
-                                       const bool create,
-                                       const uint64_t delta,
-                                       const uint64_t initial,
-                                       const uint32_t flags,
-                                       const rel_time_t exptime,
-                                       uint64_t *cas,
-                                       uint64_t *result)
+ENGINE_ERROR_CODE item_arithmetic(const void* cookie,
+                                  const void* key, const uint32_t nkey,
+                                  const bool increment, const bool create,
+                                  const uint64_t delta, const uint64_t initial,
+                                  const uint32_t flags, const rel_time_t exptime,
+                                  uint64_t *cas, uint64_t *result)
 {
-    hash_item *it = do_item_get(key, nkey, DONT_UPDATE);
-    ENGINE_ERROR_CODE ret;
-
-    if (it == NULL) {
-        if (!create) {
-            return ENGINE_KEY_ENOENT;
-        } else {
-            char buffer[128];
-            int len = snprintf(buffer, sizeof(buffer), "%"PRIu64"\r\n",
-                    (uint64_t)initial);
-
-            it = do_item_alloc(key, nkey, flags, exptime, len, cookie);
-            if (it == NULL) {
-                return ENGINE_ENOMEM;
-            }
-            memcpy((void*)item_get_data(it), buffer, len);
-
-            ret = do_item_store_add(it, cas, cookie);
-            if (ret == ENGINE_SUCCESS) {
-                *result = initial;
-            }
-            do_item_release(it);
-        }
-    } else {
-        ret = do_add_delta(it, increment, delta, cas, result, cookie);
-        do_item_release(it);
-    }
-
-    return ret;
-}
-
-ENGINE_ERROR_CODE arithmetic(const void* cookie,
-                             const void* key,
-                             const uint32_t nkey,
-                             const bool increment,
-                             const bool create,
-                             const uint64_t delta,
-                             const uint64_t initial,
-                             const uint32_t flags,
-                             const rel_time_t exptime,
-                             uint64_t *cas,
-                             uint64_t *result)
-{
+    hash_item *it;
     ENGINE_ERROR_CODE ret;
 
     LOCK_CACHE();
-    ret = do_arithmetic(cookie, key, nkey, increment,
-                        create, delta, initial, flags, exptime, cas, result);
+    it = do_item_get(key, nkey, DONT_UPDATE);
+    if (it) {
+        if (IS_COLL_ITEM(it)) {
+            ret = ENGINE_EBADTYPE;
+        } else {
+            ret = do_add_delta(it, increment, delta, cas, result, cookie);
+            do_item_release(it);
+        }
+    } else {
+        if (create) {
+            char buffer[128];
+            int len = snprintf(buffer, sizeof(buffer), "%"PRIu64"\r\n", initial);
+
+            it = do_item_alloc(key, nkey, flags, exptime, len, cookie);
+            if (it) {
+                memcpy((void*)item_get_data(it), buffer, len);
+                ret = do_item_store_add(it, cas, cookie);
+                if (ret == ENGINE_SUCCESS) {
+                    *result = initial;
+                }
+                do_item_release(it);
+            } else {
+                ret = ENGINE_ENOMEM;
+            }
+        } else {
+            ret = ENGINE_KEY_ENOENT;
+        }
+    }
     UNLOCK_CACHE();
     return ret;
 }
@@ -6112,15 +6086,14 @@ ENGINE_ERROR_CODE arithmetic(const void* cookie,
 /*
  * Delete an item.
  */
-
-static ENGINE_ERROR_CODE do_item_delete(const void* key, const uint32_t nkey,
-                                        uint64_t cas)
+ENGINE_ERROR_CODE item_delete(const void* key, const uint32_t nkey, uint64_t cas)
 {
+    hash_item *it;
     ENGINE_ERROR_CODE ret;
-    hash_item *it = do_item_get(key, nkey, DONT_UPDATE);
-    if (it == NULL) {
-        ret = ENGINE_KEY_ENOENT;
-    } else {
+
+    LOCK_CACHE();
+    it = do_item_get(key, nkey, DONT_UPDATE);
+    if (it) {
         if (cas == 0 || cas == item_get_cas(it)) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
             ret = ENGINE_SUCCESS;
@@ -6128,16 +6101,9 @@ static ENGINE_ERROR_CODE do_item_delete(const void* key, const uint32_t nkey,
             ret = ENGINE_KEY_EEXISTS;
         }
         do_item_release(it);
+    } else {
+        ret = ENGINE_KEY_ENOENT;
     }
-    return ret;
-}
-
-ENGINE_ERROR_CODE item_delete(const void* key, const uint32_t nkey, uint64_t cas)
-{
-    ENGINE_ERROR_CODE ret;
-
-    LOCK_CACHE();
-    ret = do_item_delete(key, nkey, cas);
     UNLOCK_CACHE();
     return ret;
 }

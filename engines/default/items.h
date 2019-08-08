@@ -383,11 +383,11 @@ void item_release(hash_item *it);
  * @todo should we refactor this into hash_item ** and remove the cas
  *       there so that we can get it from the item instead?
  */
-ENGINE_ERROR_CODE store_item(hash_item *item,
+ENGINE_ERROR_CODE item_store(hash_item *item,
                              uint64_t *cas, ENGINE_STORE_OPERATION operation,
                              const void *cookie);
 
-ENGINE_ERROR_CODE arithmetic(const void* cookie,
+ENGINE_ERROR_CODE item_arithmetic(const void* cookie,
                              const void* key, const uint32_t nkey, const bool increment,
                              const bool create, const uint64_t delta, const uint64_t initial,
                              const uint32_t flags, const rel_time_t exptime, uint64_t *cas,
