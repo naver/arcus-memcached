@@ -6107,15 +6107,14 @@ ENGINE_ERROR_CODE arithmetic(const void* cookie,
 /*
  * Delete an item.
  */
-
-static ENGINE_ERROR_CODE do_item_delete(const void* key, const uint32_t nkey,
-                                        uint64_t cas)
+ENGINE_ERROR_CODE item_delete(const void* key, const uint32_t nkey, uint64_t cas)
 {
+    hash_item *it;
     ENGINE_ERROR_CODE ret;
-    hash_item *it = do_item_get(key, nkey, DONT_UPDATE);
-    if (it == NULL) {
-        ret = ENGINE_KEY_ENOENT;
-    } else {
+
+    LOCK_CACHE();
+    it = do_item_get(key, nkey, DONT_UPDATE);
+    if (it) {
         if (cas == 0 || cas == item_get_cas(it)) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
             ret = ENGINE_SUCCESS;
@@ -6123,16 +6122,9 @@ static ENGINE_ERROR_CODE do_item_delete(const void* key, const uint32_t nkey,
             ret = ENGINE_KEY_EEXISTS;
         }
         do_item_release(it);
+    } else {
+        ret = ENGINE_KEY_ENOENT;
     }
-    return ret;
-}
-
-ENGINE_ERROR_CODE item_delete(const void* key, const uint32_t nkey, uint64_t cas)
-{
-    ENGINE_ERROR_CODE ret;
-
-    LOCK_CACHE();
-    ret = do_item_delete(key, nkey, cas);
     UNLOCK_CACHE();
     return ret;
 }
