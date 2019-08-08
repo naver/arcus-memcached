@@ -70,7 +70,7 @@ struct assoc {
 
     /* prefix hash table : single hash table */
     prefix_t**  prefix_hashtable;
-    prefix_t    noprefix_stats;
+    prefix_t    null_prefix_data;
 
     /* Number of items in the hash table. */
     unsigned int hash_items;

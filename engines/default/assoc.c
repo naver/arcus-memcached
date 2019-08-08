@@ -91,8 +91,8 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
     }
 
     // initialize noprefix stats info
-    memset(&assocp->noprefix_stats, 0, sizeof(prefix_t));
-    root_pt = &assocp->noprefix_stats;
+    memset(&assocp->null_prefix_data, 0, sizeof(prefix_t));
+    root_pt = &assocp->null_prefix_data;
 
     logger->log(EXTENSION_LOG_INFO, NULL, "ASSOC module initialized.\n");
     return ENGINE_SUCCESS;
@@ -440,7 +440,7 @@ static void _prefix_delete(const char *prefix, const int nprefix, uint32_t hash)
 prefix_t *assoc_prefix_find(const char *prefix, const int nprefix)
 {
     if (nprefix == 0) { /* null prefix */
-        return &assocp->noprefix_stats;
+        return &assocp->null_prefix_data;
     }
     if (nprefix > 0) {
         return _prefix_find(prefix, nprefix, svcore->hash(prefix, nprefix, 0));
