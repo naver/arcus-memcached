@@ -330,8 +330,8 @@ default_arithmetic(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = arithmetic(cookie, key, nkey, increment, create,
-                     delta, initial, flags, exptime, cas, result);
+    ret = item_arithmetic(cookie, key, nkey, increment, create,
+                          delta, initial, flags, exptime, cas, result);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
