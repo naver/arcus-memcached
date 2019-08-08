@@ -251,38 +251,38 @@ static uint64_t get_cas_id(void)
 # define DEBUG_REFCNT(it,op) while(0)
 #endif
 
-static void increase_collection_space(ENGINE_ITEM_TYPE item_type,
-                                      coll_meta_info *info, const size_t inc_space)
+static void do_coll_space_incr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
+                               const size_t nspace)
 {
-    info->stotal += inc_space;
-    /* Currently, stats.lock is useless since global cache lock is held. */
+    info->stotal += nspace;
+    /* Currently, stats.lock is not needed since the cache lock is held. */
     //pthread_mutex_lock(&statsp->lock);
     hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
 #ifdef ENABLE_STICKY_ITEM
     if (it->exptime == (rel_time_t)-1) {
-        statsp->sticky_bytes += inc_space;
+        statsp->sticky_bytes += nspace;
     }
 #endif
-    assoc_prefix_bytes_incr(it->pfxptr, item_type, inc_space);
-    statsp->curr_bytes += inc_space;
+    assoc_prefix_bytes_incr(it->pfxptr, item_type, nspace);
+    statsp->curr_bytes += nspace;
     //pthread_mutex_unlock(&statsp->lock);
 }
 
-static void decrease_collection_space(ENGINE_ITEM_TYPE item_type,
-                                      coll_meta_info *info, const size_t dec_space)
+static void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
+                               const size_t nspace)
 {
-    assert(info->stotal >= dec_space);
-    info->stotal -= dec_space;
-    /* Currently, stats.lock is useless since global cache lock is held. */
+    assert(info->stotal >= nspace);
+    info->stotal -= nspace;
+    /* Currently, stats.lock is not needed since the cache lock is held. */
     //pthread_mutex_lock(&statsp->lock);
     hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
 #ifdef ENABLE_STICKY_ITEM
     if (it->exptime == (rel_time_t)-1) {
-        statsp->sticky_bytes -= dec_space;
+        statsp->sticky_bytes -= nspace;
     }
 #endif
-    assoc_prefix_bytes_decr(it->pfxptr, item_type, dec_space);
-    statsp->curr_bytes -= dec_space;
+    assoc_prefix_bytes_decr(it->pfxptr, item_type, nspace);
+    statsp->curr_bytes -= nspace;
     //pthread_mutex_unlock(&statsp->lock);
 }
 
@@ -1570,7 +1570,7 @@ static ENGINE_ERROR_CODE do_list_elem_link(list_meta_info *info, const int index
 
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(do_list_elem_ntotal(elem));
-        increase_collection_space(ITEM_TYPE_LIST, (coll_meta_info *)info, stotal);
+        do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_LIST, stotal);
     }
     return ENGINE_SUCCESS;
 }
@@ -1589,7 +1589,7 @@ static void do_list_elem_unlink(list_meta_info *info, list_elem_item *elem,
 
         if (info->stotal > 0) { /* apply memory space */
             size_t stotal = slabs_space_size(do_list_elem_ntotal(elem));
-            decrease_collection_space(ITEM_TYPE_LIST, (coll_meta_info *)info, stotal);
+            do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_LIST, stotal);
         }
 
         if (elem->refcount == 0) {
@@ -1873,7 +1873,7 @@ static void do_set_node_link(set_meta_info *info,
 
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(sizeof(set_hash_node));
-        increase_collection_space(ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
+        do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_SET, stotal);
     }
 }
 
@@ -1922,7 +1922,7 @@ static void do_set_node_unlink(set_meta_info *info,
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(sizeof(set_hash_node));
-        decrease_collection_space(ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
+        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_SET, stotal);
     }
 
     /* free the node */
@@ -1978,7 +1978,7 @@ static ENGINE_ERROR_CODE do_set_elem_link(set_meta_info *info, set_elem_item *el
 
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(do_set_elem_ntotal(elem));
-        increase_collection_space(ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
+        do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_SET, stotal);
     }
 
     return ENGINE_SUCCESS;
@@ -2000,7 +2000,7 @@ static void do_set_elem_unlink(set_meta_info *info,
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(do_set_elem_ntotal(elem));
-        decrease_collection_space(ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
+        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_SET, stotal);
     }
 
     if (elem->refcount == 0) {
@@ -2194,7 +2194,7 @@ static uint32_t do_set_elem_delete_fast(set_meta_info *info, const uint32_t coun
             info->root = NULL;
             info->ccnt = 0;
             if (info->stotal > 0) { /* apply memory space */
-                decrease_collection_space(ITEM_TYPE_SET, (coll_meta_info *)info, info->stotal);
+                do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_SET, info->stotal);
             }
         }
     }
@@ -3412,7 +3412,7 @@ static void do_btree_node_link(btree_meta_info *info, btree_indx_node *node,
         size_t stotal;
         if (node->ndepth > 0) stotal = slabs_space_size(sizeof(btree_indx_node));
         else                  stotal = slabs_space_size(sizeof(btree_leaf_node));
-        increase_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+        do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_BTREE, stotal);
     }
 }
 
@@ -3536,7 +3536,7 @@ static void do_btree_node_unlink(btree_meta_info *info, btree_indx_node *node,
         size_t stotal;
         if (node->ndepth > 0) stotal = slabs_space_size(sizeof(btree_indx_node));
         else                  stotal = slabs_space_size(sizeof(btree_leaf_node));
-        decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, stotal);
     }
 
     /* The amount of space to be decreased become different according to node depth.
@@ -3701,7 +3701,7 @@ static void do_btree_node_merge(btree_meta_info *info, btree_elem_posi *path,
                 size_t stotal;
                 if (btree_depth > 0) stotal = tot_unlink_cnt * slabs_space_size(sizeof(btree_indx_node));
                 else                 stotal = tot_unlink_cnt * slabs_space_size(sizeof(btree_leaf_node));
-                decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+                do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, stotal);
             }
         }
         btree_depth += 1;
@@ -3721,7 +3721,7 @@ static void do_btree_elem_unlink(btree_meta_info *info, btree_elem_posi *path,
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(do_btree_elem_ntotal(elem));
-        decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, stotal);
     }
 
     CLOG_BTREE_ELEM_DELETE(info, elem, cause);
@@ -3776,9 +3776,9 @@ static void do_btree_elem_replace(btree_meta_info *info,
     if (new_stotal != old_stotal) { /* apply memory space */
         assert(info->stotal > 0);
         if (new_stotal > old_stotal)
-            increase_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, (new_stotal-old_stotal));
+            do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_BTREE, (new_stotal-old_stotal));
         else
-            decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, (old_stotal-new_stotal));
+            do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, (old_stotal-new_stotal));
     }
 }
 
@@ -3941,7 +3941,7 @@ static int do_btree_elem_delete_fast(btree_meta_info *info,
         info->root = NULL;
         info->ccnt = 0;
         if (info->stotal > 0) {
-            decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, info->stotal);
+            do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, info->stotal);
         }
     }
     return delcnt;
@@ -4055,7 +4055,7 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
                      * So, do not need to descrese space total info.
                      */
                     assert(stotal > 0 && stotal <= info->stotal);
-                    decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+                    do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, stotal);
                 }
                 do_btree_node_merge(info, path, forward, node_cnt);
             }
@@ -4313,7 +4313,7 @@ static ENGINE_ERROR_CODE do_btree_elem_link(btree_meta_info *info, btree_elem_it
 
         if (1) { /* apply memory space */
             size_t stotal = slabs_space_size(do_btree_elem_ntotal(elem));
-            increase_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+            do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_BTREE, stotal);
         }
 
         if (ovfl_type != OVFL_TYPE_NONE) {
@@ -4506,7 +4506,7 @@ static ENGINE_ERROR_CODE do_btree_elem_get(btree_meta_info *info,
             if (tot_found > 0 && delete) { /* apply memory space */
                 info->ccnt -= tot_found;
                 assert(stotal > 0 && stotal <= info->stotal);
-                decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+                do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, stotal);
                 do_btree_node_merge(info, path, forward, node_cnt);
             }
         }
@@ -8464,7 +8464,7 @@ static void do_map_node_link(map_meta_info *info,
 
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(sizeof(map_hash_node));
-        increase_collection_space(ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
+        do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_MAP, stotal);
     }
 }
 
@@ -8513,7 +8513,7 @@ static void do_map_node_unlink(map_meta_info *info,
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(sizeof(map_hash_node));
-        decrease_collection_space(ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
+        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, stotal);
     }
 
     /* free the node */
@@ -8554,9 +8554,9 @@ static void do_map_elem_replace(map_meta_info *info,
     if (new_stotal != old_stotal) {
         assert(info->stotal > 0);
         if (new_stotal > old_stotal) {
-            increase_collection_space(ITEM_TYPE_MAP, (coll_meta_info *)info, (new_stotal-old_stotal));
+            do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_MAP, (new_stotal-old_stotal));
         } else {
-            decrease_collection_space(ITEM_TYPE_MAP, (coll_meta_info *)info, (old_stotal-new_stotal));
+            do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, (old_stotal-new_stotal));
         }
     }
 }
@@ -8638,7 +8638,7 @@ static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *el
 
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(do_map_elem_ntotal(elem));
-        increase_collection_space(ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
+        do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_MAP, stotal);
     }
 
     return res;
@@ -8660,7 +8660,7 @@ static void do_map_elem_unlink(map_meta_info *info,
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(do_map_elem_ntotal(elem));
-        decrease_collection_space(ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
+        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, stotal);
     }
 
     if (elem->refcount == 0) {
