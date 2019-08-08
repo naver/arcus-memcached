@@ -212,20 +212,20 @@ static inline void ITEM_REFCOUNT_DECR(hash_item *it)
 /* warning: don't use these macros with a function, as it evals its arg twice */
 static inline size_t ITEM_ntotal(const hash_item *item)
 {
-    size_t ret;
+    size_t ntotal;
     if (IS_COLL_ITEM(item)) {
-        ret = sizeof(*item) + META_OFFSET_IN_ITEM(item->nkey, item->nbytes);
-        if (IS_LIST_ITEM(item))     ret += sizeof(list_meta_info);
-        else if (IS_SET_ITEM(item)) ret += sizeof(set_meta_info);
-        else if (IS_MAP_ITEM(item)) ret += sizeof(map_meta_info);
-        else /* BTREE_ITEM */       ret += sizeof(btree_meta_info);
+        ntotal = sizeof(*item) + META_OFFSET_IN_ITEM(item->nkey, item->nbytes);
+        if (IS_LIST_ITEM(item))     ntotal += sizeof(list_meta_info);
+        else if (IS_SET_ITEM(item)) ntotal += sizeof(set_meta_info);
+        else if (IS_MAP_ITEM(item)) ntotal += sizeof(map_meta_info);
+        else /* BTREE_ITEM */       ntotal += sizeof(btree_meta_info);
     } else {
-        ret = sizeof(*item) + item->nkey + item->nbytes;
+        ntotal = sizeof(*item) + item->nkey + item->nbytes;
     }
     if (config->use_cas) {
-        ret += sizeof(uint64_t);
+        ntotal += sizeof(uint64_t);
     }
-    return ret;
+    return ntotal;
 }
 
 static inline size_t ITEM_stotal(const hash_item *item)
@@ -256,38 +256,38 @@ static uint64_t get_cas_id(void)
 # define DEBUG_REFCNT(it,op) while(0)
 #endif
 
-static void increase_collection_space(ENGINE_ITEM_TYPE item_type,
-                                      coll_meta_info *info, const size_t inc_space)
+static void do_coll_space_incr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
+                               const size_t nspace)
 {
-    info->stotal += inc_space;
-    /* Currently, stats.lock is useless since global cache lock is held. */
+    info->stotal += nspace;
+    /* Currently, stats.lock is not needed since the cache lock is held. */
     //pthread_mutex_lock(&statsp->lock);
     hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
 #ifdef ENABLE_STICKY_ITEM
     if (it->exptime == (rel_time_t)-1) {
-        statsp->sticky_bytes += inc_space;
+        statsp->sticky_bytes += nspace;
     }
 #endif
-    assoc_prefix_bytes_incr(it->pfxptr, item_type, inc_space);
-    statsp->curr_bytes += inc_space;
+    assoc_prefix_bytes_incr(it->pfxptr, item_type, nspace);
+    statsp->curr_bytes += nspace;
     //pthread_mutex_unlock(&statsp->lock);
 }
 
-static void decrease_collection_space(ENGINE_ITEM_TYPE item_type,
-                                      coll_meta_info *info, const size_t dec_space)
+static void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
+                               const size_t nspace)
 {
-    assert(info->stotal >= dec_space);
-    info->stotal -= dec_space;
-    /* Currently, stats.lock is useless since global cache lock is held. */
+    assert(info->stotal >= nspace);
+    info->stotal -= nspace;
+    /* Currently, stats.lock is not needed since the cache lock is held. */
     //pthread_mutex_lock(&statsp->lock);
     hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
 #ifdef ENABLE_STICKY_ITEM
     if (it->exptime == (rel_time_t)-1) {
-        statsp->sticky_bytes -= dec_space;
+        statsp->sticky_bytes -= nspace;
     }
 #endif
-    assoc_prefix_bytes_decr(it->pfxptr, item_type, dec_space);
-    statsp->curr_bytes -= dec_space;
+    assoc_prefix_bytes_decr(it->pfxptr, item_type, nspace);
+    statsp->curr_bytes -= nspace;
     //pthread_mutex_unlock(&statsp->lock);
 }
 
@@ -438,8 +438,8 @@ static void do_item_invalidate(hash_item *it, const unsigned int lruid, bool imm
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 }
 
-static void *do_item_alloc_internal(const size_t ntotal, const unsigned int clsid,
-                                    const void *cookie)
+static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
+                               const void *cookie)
 {
     hash_item *it = NULL;
 
@@ -701,7 +701,7 @@ static hash_item *do_item_alloc(const void *key, const uint32_t nkey,
     }
 #endif
 
-    it = do_item_alloc_internal(ntotal, id, cookie);
+    it = do_item_mem_alloc(ntotal, id, cookie);
     if (it == NULL)  {
         return NULL;
     }
@@ -728,10 +728,16 @@ static hash_item *do_item_alloc(const void *key, const uint32_t nkey,
     return it;
 }
 
+static void do_item_mem_free(void *item, size_t ntotal)
+{
+    hash_item *it = (hash_item *)item;
+    unsigned int clsid = it->slabs_clsid;
+    it->slabs_clsid = 0; /* to notify the item memory is freed */
+    slabs_free(it, ntotal, clsid);
+}
+
 static void do_item_free(hash_item *it)
 {
-    size_t ntotal = ITEM_ntotal(it);
-    unsigned int clsid;
     assert((it->iflag & ITEM_LINKED) == 0);
     assert(it != itemsp->heads[it->slabs_clsid]);
     assert(it != itemsp->tails[it->slabs_clsid]);
@@ -746,10 +752,8 @@ static void do_item_free(hash_item *it)
     }
 
     /* so slab size changer can tell later if item is already free or not */
-    clsid = it->slabs_clsid;
-    it->slabs_clsid = 0;
     DEBUG_REFCNT(it, 'F');
-    slabs_free(it, ntotal, clsid);
+    do_item_mem_free(it, ITEM_ntotal(it));
 }
 
 static void item_link_q(hash_item *it)
@@ -1387,16 +1391,6 @@ static ENGINE_ERROR_CODE do_add_delta(hash_item *it, const bool incr, const int6
     return ENGINE_SUCCESS;
 }
 
-/* common functions for collection memory management */
-static void do_mem_slot_free(void *data, size_t ntotal)
-{
-    /* so slab size changer can tell later if item is already free or not */
-    hash_item *it = (hash_item *)data;
-    unsigned int clsid = it->slabs_clsid;;
-    it->slabs_clsid = 0;
-    slabs_free(it, ntotal, clsid);
-}
-
 /* get real maxcount for each collection type */
 static int32_t do_coll_real_maxcount(hash_item *it, int32_t maxcount)
 {
@@ -1504,7 +1498,7 @@ static list_elem_item *do_list_elem_alloc(const uint32_t nbytes, const void *coo
 {
     size_t ntotal = sizeof(list_elem_item) + nbytes;
 
-    list_elem_item *elem = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    list_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
@@ -1521,7 +1515,7 @@ static void do_list_elem_free(list_elem_item *elem)
     assert(elem->refcount == 0);
     assert(elem->slabs_clsid != 0);
     size_t ntotal = do_list_elem_ntotal(elem);
-    do_mem_slot_free(elem, ntotal);
+    do_item_mem_free(elem, ntotal);
 }
 
 static void do_list_elem_release(list_elem_item *elem)
@@ -1581,7 +1575,7 @@ static ENGINE_ERROR_CODE do_list_elem_link(list_meta_info *info, const int index
 
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(do_list_elem_ntotal(elem));
-        increase_collection_space(ITEM_TYPE_LIST, (coll_meta_info *)info, stotal);
+        do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_LIST, stotal);
     }
     return ENGINE_SUCCESS;
 }
@@ -1600,7 +1594,7 @@ static void do_list_elem_unlink(list_meta_info *info, list_elem_item *elem,
 
         if (info->stotal > 0) { /* apply memory space */
             size_t stotal = slabs_space_size(do_list_elem_ntotal(elem));
-            decrease_collection_space(ITEM_TYPE_LIST, (coll_meta_info *)info, stotal);
+            do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_LIST, stotal);
         }
 
         if (elem->refcount == 0) {
@@ -1798,7 +1792,7 @@ static set_hash_node *do_set_node_alloc(uint8_t hash_depth, const void *cookie)
 {
     size_t ntotal = sizeof(set_hash_node);
 
-    set_hash_node *node = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    set_hash_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (node != NULL) {
         assert(node->slabs_clsid == 0);
         node->slabs_clsid = slabs_clsid(ntotal);
@@ -1815,14 +1809,14 @@ static set_hash_node *do_set_node_alloc(uint8_t hash_depth, const void *cookie)
 
 static void do_set_node_free(set_hash_node *node)
 {
-    do_mem_slot_free(node, sizeof(set_hash_node));
+    do_item_mem_free(node, sizeof(set_hash_node));
 }
 
 static set_elem_item *do_set_elem_alloc(const uint32_t nbytes, const void *cookie)
 {
     size_t ntotal = sizeof(set_elem_item) + nbytes;
 
-    set_elem_item *elem = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    set_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
@@ -1839,7 +1833,7 @@ static void do_set_elem_free(set_elem_item *elem)
     assert(elem->refcount == 0);
     assert(elem->slabs_clsid != 0);
     size_t ntotal = do_set_elem_ntotal(elem);
-    do_mem_slot_free(elem, ntotal);
+    do_item_mem_free(elem, ntotal);
 }
 
 static void do_set_elem_release(set_elem_item *elem)
@@ -1884,7 +1878,7 @@ static void do_set_node_link(set_meta_info *info,
 
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(sizeof(set_hash_node));
-        increase_collection_space(ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
+        do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_SET, stotal);
     }
 }
 
@@ -1933,7 +1927,7 @@ static void do_set_node_unlink(set_meta_info *info,
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(sizeof(set_hash_node));
-        decrease_collection_space(ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
+        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_SET, stotal);
     }
 
     /* free the node */
@@ -1989,7 +1983,7 @@ static ENGINE_ERROR_CODE do_set_elem_link(set_meta_info *info, set_elem_item *el
 
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(do_set_elem_ntotal(elem));
-        increase_collection_space(ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
+        do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_SET, stotal);
     }
 
     return ENGINE_SUCCESS;
@@ -2011,7 +2005,7 @@ static void do_set_elem_unlink(set_meta_info *info,
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(do_set_elem_ntotal(elem));
-        decrease_collection_space(ITEM_TYPE_SET, (coll_meta_info *)info, stotal);
+        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_SET, stotal);
     }
 
     if (elem->refcount == 0) {
@@ -2205,7 +2199,7 @@ static uint32_t do_set_elem_delete_fast(set_meta_info *info, const uint32_t coun
             info->root = NULL;
             info->ccnt = 0;
             if (info->stotal > 0) { /* apply memory space */
-                decrease_collection_space(ITEM_TYPE_SET, (coll_meta_info *)info, info->stotal);
+                do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_SET, info->stotal);
             }
         }
     }
@@ -2354,7 +2348,7 @@ static btree_indx_node *do_btree_node_alloc(const uint8_t node_depth, const void
 {
     size_t ntotal = (node_depth > 0 ? sizeof(btree_indx_node) : sizeof(btree_leaf_node));
 
-    btree_indx_node *node = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    btree_indx_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (node != NULL) {
         assert(node->slabs_clsid == 0);
         node->slabs_clsid = slabs_clsid(ntotal);
@@ -2373,7 +2367,7 @@ static btree_indx_node *do_btree_node_alloc(const uint8_t node_depth, const void
 static void do_btree_node_free(btree_indx_node *node)
 {
     size_t ntotal = (node->ndepth > 0 ? sizeof(btree_indx_node) : sizeof(btree_leaf_node));
-    do_mem_slot_free(node, ntotal);
+    do_item_mem_free(node, ntotal);
 }
 
 static btree_elem_item *do_btree_elem_alloc(const uint32_t nbkey, const uint32_t neflag,
@@ -2381,7 +2375,7 @@ static btree_elem_item *do_btree_elem_alloc(const uint32_t nbkey, const uint32_t
 {
     size_t ntotal = sizeof(btree_elem_item_fixed) + BTREE_REAL_NBKEY(nbkey) + neflag + nbytes;
 
-    btree_elem_item *elem = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    btree_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
@@ -2400,7 +2394,7 @@ static void do_btree_elem_free(btree_elem_item *elem)
     assert(elem->refcount == 0);
     assert(elem->slabs_clsid != 0);
     size_t ntotal = do_btree_elem_ntotal(elem);
-    do_mem_slot_free(elem, ntotal);
+    do_item_mem_free(elem, ntotal);
 }
 
 static void do_btree_elem_release(btree_elem_item *elem)
@@ -3423,7 +3417,7 @@ static void do_btree_node_link(btree_meta_info *info, btree_indx_node *node,
         size_t stotal;
         if (node->ndepth > 0) stotal = slabs_space_size(sizeof(btree_indx_node));
         else                  stotal = slabs_space_size(sizeof(btree_leaf_node));
-        increase_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+        do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_BTREE, stotal);
     }
 }
 
@@ -3547,7 +3541,7 @@ static void do_btree_node_unlink(btree_meta_info *info, btree_indx_node *node,
         size_t stotal;
         if (node->ndepth > 0) stotal = slabs_space_size(sizeof(btree_indx_node));
         else                  stotal = slabs_space_size(sizeof(btree_leaf_node));
-        decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, stotal);
     }
 
     /* The amount of space to be decreased become different according to node depth.
@@ -3712,7 +3706,7 @@ static void do_btree_node_merge(btree_meta_info *info, btree_elem_posi *path,
                 size_t stotal;
                 if (btree_depth > 0) stotal = tot_unlink_cnt * slabs_space_size(sizeof(btree_indx_node));
                 else                 stotal = tot_unlink_cnt * slabs_space_size(sizeof(btree_leaf_node));
-                decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+                do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, stotal);
             }
         }
         btree_depth += 1;
@@ -3732,7 +3726,7 @@ static void do_btree_elem_unlink(btree_meta_info *info, btree_elem_posi *path,
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(do_btree_elem_ntotal(elem));
-        decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, stotal);
     }
 
     CLOG_BTREE_ELEM_DELETE(info, elem, cause);
@@ -3787,9 +3781,9 @@ static void do_btree_elem_replace(btree_meta_info *info,
     if (new_stotal != old_stotal) { /* apply memory space */
         assert(info->stotal > 0);
         if (new_stotal > old_stotal)
-            increase_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, (new_stotal-old_stotal));
+            do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_BTREE, (new_stotal-old_stotal));
         else
-            decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, (old_stotal-new_stotal));
+            do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, (old_stotal-new_stotal));
     }
 }
 
@@ -3952,7 +3946,7 @@ static int do_btree_elem_delete_fast(btree_meta_info *info,
         info->root = NULL;
         info->ccnt = 0;
         if (info->stotal > 0) {
-            decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, info->stotal);
+            do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, info->stotal);
         }
     }
     return delcnt;
@@ -4066,7 +4060,7 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
                      * So, do not need to descrese space total info.
                      */
                     assert(stotal > 0 && stotal <= info->stotal);
-                    decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+                    do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, stotal);
                 }
                 do_btree_node_merge(info, path, forward, node_cnt);
             }
@@ -4324,7 +4318,7 @@ static ENGINE_ERROR_CODE do_btree_elem_link(btree_meta_info *info, btree_elem_it
 
         if (1) { /* apply memory space */
             size_t stotal = slabs_space_size(do_btree_elem_ntotal(elem));
-            increase_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+            do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_BTREE, stotal);
         }
 
         if (ovfl_type != OVFL_TYPE_NONE) {
@@ -4517,7 +4511,7 @@ static ENGINE_ERROR_CODE do_btree_elem_get(btree_meta_info *info,
             if (tot_found > 0 && delete) { /* apply memory space */
                 info->ccnt -= tot_found;
                 assert(stotal > 0 && stotal <= info->stotal);
-                decrease_collection_space(ITEM_TYPE_BTREE, (coll_meta_info *)info, stotal);
+                do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, stotal);
                 do_btree_node_merge(info, path, forward, node_cnt);
             }
         }
@@ -8540,7 +8534,7 @@ static map_hash_node *do_map_node_alloc(uint8_t hash_depth, const void *cookie)
 {
     size_t ntotal = sizeof(map_hash_node);
 
-    map_hash_node *node = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    map_hash_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (node != NULL) {
         assert(node->slabs_clsid == 0);
         node->slabs_clsid = slabs_clsid(ntotal);
@@ -8556,7 +8550,7 @@ static map_hash_node *do_map_node_alloc(uint8_t hash_depth, const void *cookie)
 
 static void do_map_node_free(map_hash_node *node)
 {
-    do_mem_slot_free(node, sizeof(map_hash_node));
+    do_item_mem_free(node, sizeof(map_hash_node));
 }
 
 static map_elem_item *do_map_elem_alloc(const int nfield,
@@ -8564,7 +8558,7 @@ static map_elem_item *do_map_elem_alloc(const int nfield,
 {
     size_t ntotal = sizeof(map_elem_item) + nfield + nbytes;
 
-    map_elem_item *elem = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    map_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
@@ -8581,7 +8575,7 @@ static void do_map_elem_free(map_elem_item *elem)
     assert(elem->refcount == 0);
     assert(elem->slabs_clsid != 0);
     size_t ntotal = do_map_elem_ntotal(elem);
-    do_mem_slot_free(elem, ntotal);
+    do_item_mem_free(elem, ntotal);
 }
 
 static void do_map_elem_release(map_elem_item *elem)
@@ -8626,7 +8620,7 @@ static void do_map_node_link(map_meta_info *info,
 
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(sizeof(map_hash_node));
-        increase_collection_space(ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
+        do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_MAP, stotal);
     }
 }
 
@@ -8675,7 +8669,7 @@ static void do_map_node_unlink(map_meta_info *info,
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(sizeof(map_hash_node));
-        decrease_collection_space(ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
+        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, stotal);
     }
 
     /* free the node */
@@ -8716,9 +8710,9 @@ static void do_map_elem_replace(map_meta_info *info,
     if (new_stotal != old_stotal) {
         assert(info->stotal > 0);
         if (new_stotal > old_stotal) {
-            increase_collection_space(ITEM_TYPE_MAP, (coll_meta_info *)info, (new_stotal-old_stotal));
+            do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_MAP, (new_stotal-old_stotal));
         } else {
-            decrease_collection_space(ITEM_TYPE_MAP, (coll_meta_info *)info, (old_stotal-new_stotal));
+            do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, (old_stotal-new_stotal));
         }
     }
 }
@@ -8800,7 +8794,7 @@ static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *el
 
     if (1) { /* apply memory space */
         size_t stotal = slabs_space_size(do_map_elem_ntotal(elem));
-        increase_collection_space(ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
+        do_coll_space_incr((coll_meta_info *)info, ITEM_TYPE_MAP, stotal);
     }
 
     return res;
@@ -8822,7 +8816,7 @@ static void do_map_elem_unlink(map_meta_info *info,
 
     if (info->stotal > 0) { /* apply memory space */
         size_t stotal = slabs_space_size(do_map_elem_ntotal(elem));
-        decrease_collection_space(ITEM_TYPE_MAP, (coll_meta_info *)info, stotal);
+        do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_MAP, stotal);
     }
 
     if (elem->refcount == 0) {
