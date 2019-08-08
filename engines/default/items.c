@@ -433,8 +433,8 @@ static void do_item_invalidate(hash_item *it, const unsigned int lruid, bool imm
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 }
 
-static void *do_item_alloc_internal(const size_t ntotal, const unsigned int clsid,
-                                    const void *cookie)
+static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
+                               const void *cookie)
 {
     hash_item *it = NULL;
 
@@ -696,7 +696,7 @@ static hash_item *do_item_alloc(const void *key, const uint32_t nkey,
     }
 #endif
 
-    it = do_item_alloc_internal(ntotal, id, cookie);
+    it = do_item_mem_alloc(ntotal, id, cookie);
     if (it == NULL)  {
         return NULL;
     }
@@ -723,10 +723,16 @@ static hash_item *do_item_alloc(const void *key, const uint32_t nkey,
     return it;
 }
 
+static void do_item_mem_free(void *item, size_t ntotal)
+{
+    hash_item *it = (hash_item *)item;
+    unsigned int clsid = it->slabs_clsid;
+    it->slabs_clsid = 0; /* to notify the item memory is freed */
+    slabs_free(it, ntotal, clsid);
+}
+
 static void do_item_free(hash_item *it)
 {
-    size_t ntotal = ITEM_ntotal(it);
-    unsigned int clsid;
     assert((it->iflag & ITEM_LINKED) == 0);
     assert(it != itemsp->heads[it->slabs_clsid]);
     assert(it != itemsp->tails[it->slabs_clsid]);
@@ -741,10 +747,8 @@ static void do_item_free(hash_item *it)
     }
 
     /* so slab size changer can tell later if item is already free or not */
-    clsid = it->slabs_clsid;
-    it->slabs_clsid = 0;
     DEBUG_REFCNT(it, 'F');
-    slabs_free(it, ntotal, clsid);
+    do_item_mem_free(it, ITEM_ntotal(it));
 }
 
 static void item_link_q(hash_item *it)
@@ -1382,16 +1386,6 @@ static ENGINE_ERROR_CODE do_add_delta(hash_item *it, const bool incr, const int6
     return ENGINE_SUCCESS;
 }
 
-/* common functions for collection memory management */
-static void do_mem_slot_free(void *data, size_t ntotal)
-{
-    /* so slab size changer can tell later if item is already free or not */
-    hash_item *it = (hash_item *)data;
-    unsigned int clsid = it->slabs_clsid;;
-    it->slabs_clsid = 0;
-    slabs_free(it, ntotal, clsid);
-}
-
 /* get real maxcount for each collection type */
 static int32_t do_coll_real_maxcount(hash_item *it, int32_t maxcount)
 {
@@ -1499,7 +1493,7 @@ static list_elem_item *do_list_elem_alloc(const uint32_t nbytes, const void *coo
 {
     size_t ntotal = sizeof(list_elem_item) + nbytes;
 
-    list_elem_item *elem = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    list_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
@@ -1516,7 +1510,7 @@ static void do_list_elem_free(list_elem_item *elem)
     assert(elem->refcount == 0);
     assert(elem->slabs_clsid != 0);
     size_t ntotal = do_list_elem_ntotal(elem);
-    do_mem_slot_free(elem, ntotal);
+    do_item_mem_free(elem, ntotal);
 }
 
 static void do_list_elem_release(list_elem_item *elem)
@@ -1793,7 +1787,7 @@ static set_hash_node *do_set_node_alloc(uint8_t hash_depth, const void *cookie)
 {
     size_t ntotal = sizeof(set_hash_node);
 
-    set_hash_node *node = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    set_hash_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (node != NULL) {
         assert(node->slabs_clsid == 0);
         node->slabs_clsid = slabs_clsid(ntotal);
@@ -1810,14 +1804,14 @@ static set_hash_node *do_set_node_alloc(uint8_t hash_depth, const void *cookie)
 
 static void do_set_node_free(set_hash_node *node)
 {
-    do_mem_slot_free(node, sizeof(set_hash_node));
+    do_item_mem_free(node, sizeof(set_hash_node));
 }
 
 static set_elem_item *do_set_elem_alloc(const uint32_t nbytes, const void *cookie)
 {
     size_t ntotal = sizeof(set_elem_item) + nbytes;
 
-    set_elem_item *elem = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    set_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
@@ -1834,7 +1828,7 @@ static void do_set_elem_free(set_elem_item *elem)
     assert(elem->refcount == 0);
     assert(elem->slabs_clsid != 0);
     size_t ntotal = do_set_elem_ntotal(elem);
-    do_mem_slot_free(elem, ntotal);
+    do_item_mem_free(elem, ntotal);
 }
 
 static void do_set_elem_release(set_elem_item *elem)
@@ -2349,7 +2343,7 @@ static btree_indx_node *do_btree_node_alloc(const uint8_t node_depth, const void
 {
     size_t ntotal = (node_depth > 0 ? sizeof(btree_indx_node) : sizeof(btree_leaf_node));
 
-    btree_indx_node *node = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    btree_indx_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (node != NULL) {
         assert(node->slabs_clsid == 0);
         node->slabs_clsid = slabs_clsid(ntotal);
@@ -2368,7 +2362,7 @@ static btree_indx_node *do_btree_node_alloc(const uint8_t node_depth, const void
 static void do_btree_node_free(btree_indx_node *node)
 {
     size_t ntotal = (node->ndepth > 0 ? sizeof(btree_indx_node) : sizeof(btree_leaf_node));
-    do_mem_slot_free(node, ntotal);
+    do_item_mem_free(node, ntotal);
 }
 
 static btree_elem_item *do_btree_elem_alloc(const uint32_t nbkey, const uint32_t neflag,
@@ -2376,7 +2370,7 @@ static btree_elem_item *do_btree_elem_alloc(const uint32_t nbkey, const uint32_t
 {
     size_t ntotal = sizeof(btree_elem_item_fixed) + BTREE_REAL_NBKEY(nbkey) + neflag + nbytes;
 
-    btree_elem_item *elem = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    btree_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
@@ -2395,7 +2389,7 @@ static void do_btree_elem_free(btree_elem_item *elem)
     assert(elem->refcount == 0);
     assert(elem->slabs_clsid != 0);
     size_t ntotal = do_btree_elem_ntotal(elem);
-    do_mem_slot_free(elem, ntotal);
+    do_item_mem_free(elem, ntotal);
 }
 
 static void do_btree_elem_release(btree_elem_item *elem)
@@ -8384,7 +8378,7 @@ static map_hash_node *do_map_node_alloc(uint8_t hash_depth, const void *cookie)
 {
     size_t ntotal = sizeof(map_hash_node);
 
-    map_hash_node *node = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    map_hash_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (node != NULL) {
         assert(node->slabs_clsid == 0);
         node->slabs_clsid = slabs_clsid(ntotal);
@@ -8400,7 +8394,7 @@ static map_hash_node *do_map_node_alloc(uint8_t hash_depth, const void *cookie)
 
 static void do_map_node_free(map_hash_node *node)
 {
-    do_mem_slot_free(node, sizeof(map_hash_node));
+    do_item_mem_free(node, sizeof(map_hash_node));
 }
 
 static map_elem_item *do_map_elem_alloc(const int nfield,
@@ -8408,7 +8402,7 @@ static map_elem_item *do_map_elem_alloc(const int nfield,
 {
     size_t ntotal = sizeof(map_elem_item) + nfield + nbytes;
 
-    map_elem_item *elem = do_item_alloc_internal(ntotal, LRU_CLSID_FOR_SMALL, cookie);
+    map_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
@@ -8425,7 +8419,7 @@ static void do_map_elem_free(map_elem_item *elem)
     assert(elem->refcount == 0);
     assert(elem->slabs_clsid != 0);
     size_t ntotal = do_map_elem_ntotal(elem);
-    do_mem_slot_free(elem, ntotal);
+    do_item_mem_free(elem, ntotal);
 }
 
 static void do_map_elem_release(map_elem_item *elem)
