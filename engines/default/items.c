@@ -256,41 +256,6 @@ static uint64_t get_cas_id(void)
 # define DEBUG_REFCNT(it,op) while(0)
 #endif
 
-static void do_coll_space_incr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
-                               const size_t nspace)
-{
-    info->stotal += nspace;
-    /* Currently, stats.lock is not needed since the cache lock is held. */
-    //pthread_mutex_lock(&statsp->lock);
-    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
-#ifdef ENABLE_STICKY_ITEM
-    if (it->exptime == (rel_time_t)-1) {
-        statsp->sticky_bytes += nspace;
-    }
-#endif
-    assoc_prefix_bytes_incr(it->pfxptr, item_type, nspace);
-    statsp->curr_bytes += nspace;
-    //pthread_mutex_unlock(&statsp->lock);
-}
-
-static void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
-                               const size_t nspace)
-{
-    assert(info->stotal >= nspace);
-    info->stotal -= nspace;
-    /* Currently, stats.lock is not needed since the cache lock is held. */
-    //pthread_mutex_lock(&statsp->lock);
-    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
-#ifdef ENABLE_STICKY_ITEM
-    if (it->exptime == (rel_time_t)-1) {
-        statsp->sticky_bytes -= nspace;
-    }
-#endif
-    assoc_prefix_bytes_decr(it->pfxptr, item_type, nspace);
-    statsp->curr_bytes -= nspace;
-    //pthread_mutex_unlock(&statsp->lock);
-}
-
 /*
  * Collection Delete Queue Management
  */
@@ -991,168 +956,6 @@ static void do_item_update(hash_item *it)
     }
 }
 
-static void do_item_lru_reposition(hash_item *it)
-{
-    if ((it->iflag & ITEM_LINKED) != 0) {
-        item_unlink_q(it);
-        it->time = svcore->get_current_time();
-        item_link_q(it);
-    }
-}
-
-static void do_item_replace(hash_item *old_it, hash_item *new_it)
-{
-    MEMCACHED_ITEM_REPLACE(item_get_key(old_it), old_it->nkey, old_it->nbytes,
-                           item_get_key(new_it), new_it->nkey, new_it->nbytes);
-    do_item_unlink(old_it, ITEM_UNLINK_REPLACE);
-    /* Cache item replacement does not drop the prefix item even if it's empty.
-     * So, the below do_item_link function always return SUCCESS.
-     */
-    (void)do_item_link(new_it);
-}
-
-/*@null@*/
-static char *do_item_cachedump(const unsigned int slabs_clsid,
-                               const unsigned int limit, const bool forward, const bool sticky,
-                               unsigned int *bytes)
-{
-    unsigned int memlimit = 512 * 1024; /* 512KB max response size */
-    char *buffer;
-    unsigned int bufcurr = 0;
-    hash_item *it;
-    unsigned int len;
-    unsigned int shown = 0;
-    char *keybuf;
-
-    buffer = malloc((size_t)memlimit);
-    if (buffer == 0) return NULL;
-
-    keybuf = malloc(32*1024); /* must be larger than KEY_MAX_LENGTH */
-    if (keybuf == NULL) {
-        free(buffer);
-        return NULL;
-    }
-
-    if (sticky) {
-        it = (forward ? itemsp->sticky_heads[slabs_clsid]
-                      : itemsp->sticky_tails[slabs_clsid]);
-    } else {
-        it = (forward ? itemsp->heads[slabs_clsid]
-                      : itemsp->tails[slabs_clsid]);
-    }
-
-    while (it != NULL && (limit == 0 || shown < limit)) {
-        /* Copy the key since it may not be null-terminated in the struct */
-        strncpy(keybuf, item_get_key(it), it->nkey);
-        keybuf[it->nkey] = 0x00; /* terminate */
-
-        if (bufcurr + it->nkey + 100 > memlimit) break;
-        len = sprintf(buffer + bufcurr, "ITEM %s [acctime=%u, exptime=%d]\r\n",
-                      keybuf, it->time, (int32_t)it->exptime);
-        bufcurr += len;
-        shown++;
-        it = (forward ? it->next : it->prev);
-    }
-    free(keybuf);
-
-    len = sprintf(buffer + bufcurr, "END [curtime=%u]\r\n",
-                  svcore->get_current_time());
-    bufcurr += len;
-
-    *bytes = bufcurr;
-    return buffer;
-}
-
-static void do_item_stats(ADD_STAT add_stats, const void *c)
-{
-    const char *prefix = "items";
-
-    for (int i = 0; i <= POWER_LARGEST; i++)
-    {
-        if (itemsp->tails[i] == NULL && itemsp->sticky_tails[i] == NULL)
-            continue;
-
-        add_statistics(c, add_stats, prefix, i, "number", "%u",
-                       itemsp->sizes[i]+itemsp->sticky_sizes[i]);
-#ifdef ENABLE_STICKY_ITEM
-        add_statistics(c, add_stats, prefix, i, "sticky", "%u",
-                       itemsp->sticky_sizes[i]);
-#endif
-        add_statistics(c, add_stats, prefix, i, "age", "%u",
-                       (itemsp->tails[i] != NULL ? itemsp->tails[i]->time : 0));
-        add_statistics(c, add_stats, prefix, i, "evicted",
-                       "%u", itemsp->itemstats[i].evicted);
-        add_statistics(c, add_stats, prefix, i, "evicted_nonzero",
-                       "%u", itemsp->itemstats[i].evicted_nonzero);
-        add_statistics(c, add_stats, prefix, i, "evicted_time",
-                       "%u", itemsp->itemstats[i].evicted_time);
-        add_statistics(c, add_stats, prefix, i, "outofmemory",
-                       "%u", itemsp->itemstats[i].outofmemory);
-        add_statistics(c, add_stats, prefix, i, "tailrepairs",
-                       "%u", itemsp->itemstats[i].tailrepairs);;
-        add_statistics(c, add_stats, prefix, i, "reclaimed",
-                       "%u", itemsp->itemstats[i].reclaimed);;
-    }
-}
-
-/** dumps out a list of objects of each size, with granularity of 32 bytes */
-/*@null@*/
-static void do_item_stats_sizes(ADD_STAT add_stats, const void *c)
-{
-    /* "stats sizes" has too much overhead to execute,
-     * since it traverses all of the items cached in memory.
-     * So, we disabled "stats sizes" execution.
-     */
-    return;
-
-#if 0 // disabled below code.
-    /* max 1MB object, divided into 32 bytes size buckets */
-    const int num_buckets = 32768;
-    unsigned int *histogram = calloc(num_buckets, sizeof(int));
-
-    if (histogram != NULL) {
-        int i;
-
-        /* build the histogram */
-        for (i = 0; i <= POWER_LARGEST; i++)
-        {
-            hash_item *iter = itemsp->heads[i];
-            while (iter) {
-                int ntotal = ITEM_stotal(iter);
-                int bucket = ntotal / 32;
-                if ((ntotal % 32) != 0) bucket++;
-                if (bucket < num_buckets) histogram[bucket]++;
-                iter = iter->next;
-            }
-#ifdef ENABLE_STICKY_ITEM
-            iter = itemsp->sticky_heads[i];
-            while (iter) {
-                int ntotal = ITEM_stotal(iter);
-                int bucket = ntotal / 32;
-                if ((ntotal % 32) != 0) bucket++;
-                if (bucket < num_buckets) histogram[bucket]++;
-                iter = iter->next;
-            }
-#endif
-        }
-
-        /* write the buffer */
-        for (i = 0; i < num_buckets; i++) {
-            if (histogram[i] != 0) {
-                char key[8], val[32];
-                int klen, vlen;
-                klen = snprintf(key, sizeof(key), "%d", i * 32);
-                vlen = snprintf(val, sizeof(val), "%u", histogram[i]);
-                assert(klen < sizeof(key));
-                assert(vlen < sizeof(val));
-                add_stats(key, klen, val, vlen, c);
-            }
-        }
-        free(histogram);
-    }
-#endif
-}
-
 /** wrapper around assoc_find which does the lazy expiration logic */
 static hash_item *do_item_get(const char *key, const uint32_t nkey, bool do_update)
 {
@@ -1185,6 +988,17 @@ static hash_item *do_item_get(const char *key, const uint32_t nkey, bool do_upda
         }
     }
     return it;
+}
+
+static void do_item_replace(hash_item *old_it, hash_item *new_it)
+{
+    MEMCACHED_ITEM_REPLACE(item_get_key(old_it), old_it->nkey, old_it->nbytes,
+                           item_get_key(new_it), new_it->nkey, new_it->nbytes);
+    do_item_unlink(old_it, ITEM_UNLINK_REPLACE);
+    /* Cache item replacement does not drop the prefix item even if it's empty.
+     * So, the below do_item_link function always return SUCCESS.
+     */
+    (void)do_item_link(new_it);
 }
 
 /*
@@ -1389,6 +1203,50 @@ static ENGINE_ERROR_CODE do_add_delta(hash_item *it, const bool incr, const int6
     do_item_release(new_it);       /* release our reference */
 
     return ENGINE_SUCCESS;
+}
+
+static void do_item_lru_reposition(hash_item *it)
+{
+    if ((it->iflag & ITEM_LINKED) != 0) {
+        item_unlink_q(it);
+        it->time = svcore->get_current_time();
+        item_link_q(it);
+    }
+}
+
+static void do_coll_space_incr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
+                               const size_t nspace)
+{
+    info->stotal += nspace;
+    /* Currently, stats.lock is not needed since the cache lock is held. */
+    //pthread_mutex_lock(&statsp->lock);
+    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
+#ifdef ENABLE_STICKY_ITEM
+    if (it->exptime == (rel_time_t)-1) {
+        statsp->sticky_bytes += nspace;
+    }
+#endif
+    assoc_prefix_bytes_incr(it->pfxptr, item_type, nspace);
+    statsp->curr_bytes += nspace;
+    //pthread_mutex_unlock(&statsp->lock);
+}
+
+static void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
+                               const size_t nspace)
+{
+    assert(info->stotal >= nspace);
+    info->stotal -= nspace;
+    /* Currently, stats.lock is not needed since the cache lock is held. */
+    //pthread_mutex_lock(&statsp->lock);
+    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
+#ifdef ENABLE_STICKY_ITEM
+    if (it->exptime == (rel_time_t)-1) {
+        statsp->sticky_bytes -= nspace;
+    }
+#endif
+    assoc_prefix_bytes_decr(it->pfxptr, item_type, nspace);
+    statsp->curr_bytes -= nspace;
+    //pthread_mutex_unlock(&statsp->lock);
 }
 
 /* get real maxcount for each collection type */
@@ -6225,25 +6083,145 @@ ENGINE_ERROR_CODE item_flush_expired(const char *prefix, const int nprefix,
 char *item_cachedump(unsigned int slabs_clsid, unsigned int limit, const bool forward,
                      const bool sticky, unsigned int *bytes)
 {
-    char *ret;
+    unsigned int memlimit = 512 * 1024; /* 512KB max response size */
+    char *buffer;
+    unsigned int bufcurr = 0;
+    hash_item *it;
+    unsigned int len;
+    unsigned int shown = 0;
+    char *keybuf;
+
+    buffer = malloc((size_t)memlimit);
+    if (buffer == 0) return NULL;
+
+    keybuf = malloc(32*1024); /* must be larger than KEY_MAX_LENGTH */
+    if (keybuf == NULL) {
+        free(buffer);
+        return NULL;
+    }
+
     LOCK_CACHE();
-    ret = do_item_cachedump(slabs_clsid, limit, forward, sticky, bytes);
+    if (sticky) {
+        it = (forward ? itemsp->sticky_heads[slabs_clsid]
+                      : itemsp->sticky_tails[slabs_clsid]);
+    } else {
+        it = (forward ? itemsp->heads[slabs_clsid]
+                      : itemsp->tails[slabs_clsid]);
+    }
+    while (it != NULL && (limit == 0 || shown < limit)) {
+        /* Copy the key since it may not be null-terminated in the struct */
+        strncpy(keybuf, item_get_key(it), it->nkey);
+        keybuf[it->nkey] = 0x00; /* terminate */
+
+        if (bufcurr + it->nkey + 100 > memlimit) break;
+        len = sprintf(buffer + bufcurr, "ITEM %s [acctime=%u, exptime=%d]\r\n",
+                      keybuf, it->time, (int32_t)it->exptime);
+        bufcurr += len;
+        shown++;
+        it = (forward ? it->next : it->prev);
+    }
     UNLOCK_CACHE();
-    return ret;
+
+    free(keybuf);
+
+    len = sprintf(buffer + bufcurr, "END [curtime=%u]\r\n",
+                  svcore->get_current_time());
+    bufcurr += len;
+
+    *bytes = bufcurr;
+    return buffer;
 }
 
 void item_stats(ADD_STAT add_stat, const void *cookie)
 {
+    const char *prefix = "items";
+
     LOCK_CACHE();
-    do_item_stats(add_stat, cookie);
+    for (int i = 0; i <= POWER_LARGEST; i++) {
+        if (itemsp->tails[i] == NULL && itemsp->sticky_tails[i] == NULL)
+            continue;
+
+        add_statistics(cookie, add_stat, prefix, i, "number", "%u",
+                       itemsp->sizes[i]+itemsp->sticky_sizes[i]);
+#ifdef ENABLE_STICKY_ITEM
+        add_statistics(cookie, add_stat, prefix, i, "sticky", "%u",
+                       itemsp->sticky_sizes[i]);
+#endif
+        add_statistics(cookie, add_stat, prefix, i, "age", "%u",
+                       (itemsp->tails[i] != NULL ? itemsp->tails[i]->time : 0));
+        add_statistics(cookie, add_stat, prefix, i, "evicted",
+                       "%u", itemsp->itemstats[i].evicted);
+        add_statistics(cookie, add_stat, prefix, i, "evicted_nonzero",
+                       "%u", itemsp->itemstats[i].evicted_nonzero);
+        add_statistics(cookie, add_stat, prefix, i, "evicted_time",
+                       "%u", itemsp->itemstats[i].evicted_time);
+        add_statistics(cookie, add_stat, prefix, i, "outofmemory",
+                       "%u", itemsp->itemstats[i].outofmemory);
+        add_statistics(cookie, add_stat, prefix, i, "tailrepairs",
+                       "%u", itemsp->itemstats[i].tailrepairs);;
+        add_statistics(cookie, add_stat, prefix, i, "reclaimed",
+                       "%u", itemsp->itemstats[i].reclaimed);;
+    }
     UNLOCK_CACHE();
 }
 
+/** dumps out a list of objects of each size, with granularity of 32 bytes */
+/*@null@*/
 void item_stats_sizes(ADD_STAT add_stat, const void *cookie)
 {
-    LOCK_CACHE();
-    do_item_stats_sizes(add_stat, cookie);
-    UNLOCK_CACHE();
+    /* "stats sizes" has too much overhead to execute,
+     * since it traverses all of the items cached in memory.
+     * So, we disabled "stats sizes" execution.
+     */
+    return;
+
+#if 0 // disabled below code.
+    /* max 1MB object, divided into 32 bytes size buckets */
+    const int num_buckets = 32768;
+    unsigned int *histogram = calloc(num_buckets, sizeof(int));
+
+    if (histogram != NULL) {
+        int i;
+
+        /* build the histogram */
+        LOCK_CACHE();
+        for (i = 0; i <= POWER_LARGEST; i++) {
+            hash_item *iter = itemsp->heads[i];
+            while (iter) {
+                int ntotal = ITEM_stotal(iter);
+                int bucket = ntotal / 32;
+                if ((ntotal % 32) != 0) bucket++;
+                if (bucket < num_buckets) histogram[bucket]++;
+                iter = iter->next;
+            }
+#ifdef ENABLE_STICKY_ITEM
+            iter = itemsp->sticky_heads[i];
+            while (iter) {
+                int ntotal = ITEM_stotal(iter);
+                int bucket = ntotal / 32;
+                if ((ntotal % 32) != 0) bucket++;
+                if (bucket < num_buckets) histogram[bucket]++;
+                iter = iter->next;
+            }
+#endif
+        }
+        UNLOCK_CACHE();
+
+        /* write the buffer */
+        for (i = 0; i < num_buckets; i++) {
+            if (histogram[i] != 0) {
+                char key[8], val[32];
+                int klen, vlen;
+                klen = snprintf(key, sizeof(key), "%d", i * 32);
+                vlen = snprintf(val, sizeof(val), "%u", histogram[i]);
+                assert(klen < sizeof(key));
+                assert(vlen < sizeof(val));
+                add_stat(key, klen, val, vlen, c);
+            }
+        }
+        free(histogram);
+    }
+#endif
 }
 
 void item_stats_reset(void)
