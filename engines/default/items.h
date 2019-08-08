@@ -62,8 +62,6 @@ enum elem_delete_cause {
 #define COLL_META_FLAG_STICKY   4
 #define COLL_META_FLAG_TRIMMED  8
 
-typedef struct _prefix_t prefix_t;
-
 /* hash item strtucture */
 typedef struct _hash_item {
     uint16_t refcount;  /* reference count */
@@ -80,7 +78,7 @@ typedef struct _hash_item {
     uint32_t nbytes;    /* The total length of the data (in bytes) */
     /* Following fields are used to trade off memory space for performance */
     uint32_t khash;     /* The hash value of key string */
-    prefix_t *pfxptr;   /* pointer to prefix structure */
+    void    *pfxptr;    /* pointer to prefix structure */
 } hash_item;
 
 /* list element */

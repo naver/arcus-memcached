@@ -91,8 +91,8 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
     }
 
     // initialize noprefix stats info
-    memset(&assocp->noprefix_stats, 0, sizeof(prefix_t));
-    root_pt = &assocp->noprefix_stats;
+    memset(&assocp->null_prefix_data, 0, sizeof(prefix_t));
+    root_pt = &assocp->null_prefix_data;
 
     logger->log(EXTENSION_LOG_INFO, NULL, "ASSOC module initialized.\n");
     return ENGINE_SUCCESS;
@@ -440,7 +440,7 @@ static void _prefix_delete(const char *prefix, const int nprefix, uint32_t hash)
 prefix_t *assoc_prefix_find(const char *prefix, const int nprefix)
 {
     if (nprefix == 0) { /* null prefix */
-        return &assocp->noprefix_stats;
+        return &assocp->null_prefix_data;
     }
     if (nprefix > 0) {
         return _prefix_find(prefix, nprefix, svcore->hash(prefix, nprefix, 0));
@@ -449,7 +449,8 @@ prefix_t *assoc_prefix_find(const char *prefix, const int nprefix)
     }
 }
 
-ENGINE_ERROR_CODE assoc_prefix_link(hash_item *it, const uint32_t item_size)
+ENGINE_ERROR_CODE assoc_prefix_link(hash_item *it, const uint32_t item_size,
+                                    bool *internal)
 {
     const char *key = item_get_key(it);
     uint32_t   nkey = it->nkey;
@@ -542,6 +543,7 @@ ENGINE_ERROR_CODE assoc_prefix_link(hash_item *it, const uint32_t item_size)
     }
 #endif
 
+    *internal = (pt->internal ? true : false);
     return ENGINE_SUCCESS;
 }
 
@@ -580,6 +582,23 @@ void assoc_prefix_unlink(hash_item *it, const uint32_t item_size, bool drop_if_e
 
             pt = parent_pt;
         }
+    }
+}
+
+bool assoc_prefix_issame(prefix_t *pt, const char *prefix, const int nprefix)
+{
+    assert(nprefix >= 0);
+
+    if (nprefix == 0) { /* null prefix */
+        if (pt->nprefix == 0)
+            return true;
+        else
+            return false;
+    } else {
+        if ((nprefix == pt->nprefix) && (memcmp(prefix, _get_prefix(pt), nprefix) == 0))
+            return true;
+        else
+            return false;
     }
 }
 

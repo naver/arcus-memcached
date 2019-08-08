@@ -826,7 +826,6 @@ static void item_unlink_q(hash_item *it)
 static ENGINE_ERROR_CODE do_item_link(hash_item *it)
 {
     const char *key = item_get_key(it);
-    size_t stotal;
     const char *hkey = (it->nkey > MAX_HKEY_LEN) ? key+(it->nkey-MAX_HKEY_LEN) : key;
     const uint32_t hnkey = (it->nkey > MAX_HKEY_LEN) ? MAX_HKEY_LEN : it->nkey;
     assert((it->iflag & ITEM_LINKED) == 0);
@@ -838,13 +837,14 @@ static ENGINE_ERROR_CODE do_item_link(hash_item *it)
     item_set_cas(it, get_cas_id());
 
     /* link the item to prefix info */
-    stotal = ITEM_stotal(it);
-    ENGINE_ERROR_CODE ret = assoc_prefix_link(it, stotal);
+    size_t stotal = ITEM_stotal(it);
+    bool internal_prefix = false;
+    ENGINE_ERROR_CODE ret = assoc_prefix_link(it, stotal, &internal_prefix);
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
-    if (it->pfxptr->internal) {
-        /* It's an internal cache item whose prefix name is "arcus". */
+    if (internal_prefix) {
+        /* It's an internal item whose prefix name is "arcus". */
         it->iflag |= ITEM_INTERNAL;
     }
 
@@ -942,12 +942,21 @@ static void do_item_release(hash_item *it)
     }
 }
 
-static void do_item_update(hash_item *it)
+static void do_item_update(hash_item *it, bool force)
 {
-    rel_time_t current_time = svcore->get_current_time();
     MEMCACHED_ITEM_UPDATE(item_get_key(it), it->nkey, it->nbytes);
-    if (it->time < current_time - ITEM_UPDATE_INTERVAL) {
-        if ((it->iflag & ITEM_LINKED) != 0) {
+    if ((it->iflag & ITEM_LINKED) != 0) {
+        rel_time_t current_time = svcore->get_current_time();
+        if (force) {
+            /* The exceptional case when exptime is changed.
+             * See do_item_setattr() for specific explanation.
+             */
+            item_unlink_q(it);
+            it->time = current_time;
+            item_link_q(it);
+        } else if (it->time < (current_time - ITEM_UPDATE_INTERVAL)) {
+            /* The normal case when the given item is read.
+             */
             item_unlink_q(it);
             it->time = current_time;
             item_link_q(it);
@@ -970,7 +979,7 @@ static hash_item *do_item_get(const char *key, const uint32_t nkey, bool do_upda
             ITEM_REFCOUNT_INCR(it);
             DEBUG_REFCNT(it, '+');
             if (do_update) {
-                do_item_update(it);
+                do_item_update(it, false);
             }
         } else {
             do_item_unlink(it, ITEM_UNLINK_INVALID);
@@ -1041,7 +1050,7 @@ static ENGINE_ERROR_CODE do_item_store_add(hash_item *it, uint64_t *cas, const v
             stored = ENGINE_EBADTYPE;
         } else {
             /* add only adds a nonexistent item, but promote to head of LRU */
-            do_item_update(old_it);
+            do_item_update(old_it, false);
             stored = ENGINE_NOT_STORED;
         }
         do_item_release(old_it);
@@ -1203,15 +1212,6 @@ static ENGINE_ERROR_CODE do_add_delta(hash_item *it, const bool incr, const int6
     do_item_release(new_it);       /* release our reference */
 
     return ENGINE_SUCCESS;
-}
-
-static void do_item_lru_reposition(hash_item *it)
-{
-    if ((it->iflag & ITEM_LINKED) != 0) {
-        item_unlink_q(it);
-        it->time = svcore->get_current_time();
-        item_link_q(it);
-    }
 }
 
 static void do_coll_space_incr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
@@ -6003,8 +6003,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(const char *prefix, const int npr
     }
 
     if (oldest_live != 0) {
-        for (int i = 0; i <= POWER_LARGEST; i++)
-        {
+        for (int i = 0; i <= POWER_LARGEST; i++) {
             /*
              * The LRU is sorted in decreasing time order, and an item's
              * timestamp is never newer than its last access time, so we
@@ -6012,52 +6011,38 @@ static ENGINE_ERROR_CODE do_item_flush_expired(const char *prefix, const int npr
              * oldest_live time.
              * The oldest_live checking will auto-expire the remaining items.
              */
-            for (iter = itemsp->heads[i]; iter != NULL; iter = next) {
-                if (iter->time >= oldest_live) {
-                    next = iter->next;
-                    if (nprefix < 0) { /* flush all */
-                        do_item_unlink(iter, ITEM_UNLINK_INVALID);
-                    } else if (nprefix == 0) { /* flush null prefix */
-                        if (iter->pfxptr->nprefix == 0) {
-                            do_item_unlink(iter, ITEM_UNLINK_INVALID);
-                        }
-                    } else { /* nprefix > 0: flush given prefix */
-                        char *iter_key = (char*)item_get_key(iter);
-                        if (iter->nkey > nprefix && memcmp(prefix,iter_key,nprefix) == 0 &&
-                            *(iter_key + nprefix) == config->prefix_delimiter) {
-                            do_item_unlink(iter, ITEM_UNLINK_INVALID);
-                        }
-                    }
-                } else {
+            iter = itemsp->heads[i];
+            while (iter != NULL) {
+                if (iter->time < oldest_live) {
                     /* We've hit the first old item. Continue to the next queue. */
                     /* reset lowMK and curMK to tail pointer */
                     itemsp->lowMK[i] = itemsp->tails[i];
                     itemsp->curMK[i] = itemsp->tails[i];
                     break;
                 }
+                if (nprefix < 0 || assoc_prefix_issame(iter->pfxptr, prefix, nprefix)) {
+                    next = iter->next;
+                    do_item_unlink(iter, ITEM_UNLINK_INVALID);
+                    iter = next;
+                } else {
+                    iter = iter->next;
+                }
             }
 #ifdef ENABLE_STICKY_ITEM
-            for (iter = itemsp->sticky_heads[i]; iter != NULL; iter = next) {
-                if (iter->time >= oldest_live) {
-                    next = iter->next;
-                    if (nprefix < 0) { /* flush all */
-                        do_item_unlink(iter, ITEM_UNLINK_INVALID);
-                    } else if (nprefix == 0) { /* flush null prefix */
-                        if (iter->pfxptr->nprefix == 0) {
-                            do_item_unlink(iter, ITEM_UNLINK_INVALID);
-                        }
-                    } else { /* nprefix > 0: flush given prefix */
-                        char *iter_key = (char*)item_get_key(iter);
-                        if (iter->nkey > nprefix && memcmp(prefix,iter_key,nprefix) == 0 &&
-                            *(iter_key + nprefix) == config->prefix_delimiter) {
-                            do_item_unlink(iter, ITEM_UNLINK_INVALID);
-                        }
-                    }
-                } else {
+            iter = itemsp->sticky_heads[i];
+            while (iter != NULL) {
+                if (iter->time < oldest_live) {
                     /* We've hit the first old item. Continue to the next queue. */
                     /* reset curMK to tail pointer */
                     itemsp->sticky_curMK[i] = itemsp->sticky_tails[i];
                     break;
+                }
+                if (nprefix < 0 || assoc_prefix_issame(iter->pfxptr, prefix, nprefix)) {
+                    next = iter->next;
+                    do_item_unlink(iter, ITEM_UNLINK_INVALID);
+                    iter = next;
+                } else {
+                    iter = iter->next;
                 }
             }
 #endif
@@ -7533,14 +7518,13 @@ do_item_setattr_exec(hash_item *it,
                 it->exptime = attr_data->exptime;
                 if (before_exptime == 0 && it->exptime != 0) {
                     /* exptime: 0 => positive value */
-                    /* When update exptime, the curMK/lowMK of LRU must be considered.
-                     * The item, whose exptime is 0, might be below the lowMK of LRU list.
-                     * If we change only the exptime of the item to a positive value,
-                     * it cannot be reclaimed even if it is expired in the future.
-                     * To make it to be reclaimed after it is expired,
-                     * we move it to to the top of LRU list.
+                    /* When change the exptime, we must consider that
+                     * an item, whose exptime is 0, can be below the lowMK of LRU.
+                     * If the exptime of the item is changed to a positive value,
+                     * it might not reclaimed even if it's expired in the future.
+                     * To resolve this, we move it to the top of LRU list.
                      */
-                    do_item_lru_reposition(it);
+                    do_item_update(it, true); /* force LRU update */
                 }
             }
             continue;
@@ -8061,15 +8045,9 @@ static void *item_dumper_main(void *arg)
             if ((it = item_array[i]) == NULL) continue;
             dumper->visited++;
             /* check prefix name */
-            if (dumper->nprefix > 0) {
-                if (dumper->nprefix != it->pfxptr->nprefix ||
-                    memcmp(item_get_key(it), dumper->prefix, dumper->nprefix) != 0) {
-                    continue; /* prefix mismatch */
-                }
-            } else if (dumper->nprefix == 0) {
-                if (it->pfxptr->nprefix != 0) {
-                    continue; /* NOT null prefix */
-                }
+            if (dumper->nprefix >= 0 &&
+                !assoc_prefix_issame(it->pfxptr, dumper->prefix, dumper->nprefix)) {
+                continue; /* NOT the given prefix */
             }
             if ((cur_buflen + it->nkey + 24) > max_buflen) {
                 nwritten = write(fd, dump_buffer, cur_buflen);
