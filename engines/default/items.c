@@ -251,41 +251,6 @@ static uint64_t get_cas_id(void)
 # define DEBUG_REFCNT(it,op) while(0)
 #endif
 
-static void do_coll_space_incr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
-                               const size_t nspace)
-{
-    info->stotal += nspace;
-    /* Currently, stats.lock is not needed since the cache lock is held. */
-    //pthread_mutex_lock(&statsp->lock);
-    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
-#ifdef ENABLE_STICKY_ITEM
-    if (it->exptime == (rel_time_t)-1) {
-        statsp->sticky_bytes += nspace;
-    }
-#endif
-    assoc_prefix_bytes_incr(it->pfxptr, item_type, nspace);
-    statsp->curr_bytes += nspace;
-    //pthread_mutex_unlock(&statsp->lock);
-}
-
-static void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
-                               const size_t nspace)
-{
-    assert(info->stotal >= nspace);
-    info->stotal -= nspace;
-    /* Currently, stats.lock is not needed since the cache lock is held. */
-    //pthread_mutex_lock(&statsp->lock);
-    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
-#ifdef ENABLE_STICKY_ITEM
-    if (it->exptime == (rel_time_t)-1) {
-        statsp->sticky_bytes -= nspace;
-    }
-#endif
-    assoc_prefix_bytes_decr(it->pfxptr, item_type, nspace);
-    statsp->curr_bytes -= nspace;
-    //pthread_mutex_unlock(&statsp->lock);
-}
-
 /*
  * Collection Delete Queue Management
  */
@@ -986,26 +951,6 @@ static void do_item_update(hash_item *it)
     }
 }
 
-static void do_item_lru_reposition(hash_item *it)
-{
-    if ((it->iflag & ITEM_LINKED) != 0) {
-        item_unlink_q(it);
-        it->time = svcore->get_current_time();
-        item_link_q(it);
-    }
-}
-
-static void do_item_replace(hash_item *old_it, hash_item *new_it)
-{
-    MEMCACHED_ITEM_REPLACE(item_get_key(old_it), old_it->nkey, old_it->nbytes,
-                           item_get_key(new_it), new_it->nkey, new_it->nbytes);
-    do_item_unlink(old_it, ITEM_UNLINK_REPLACE);
-    /* Cache item replacement does not drop the prefix item even if it's empty.
-     * So, the below do_item_link function always return SUCCESS.
-     */
-    (void)do_item_link(new_it);
-}
-
 /** wrapper around assoc_find which does the lazy expiration logic */
 static hash_item *do_item_get(const char *key, const uint32_t nkey, bool do_update)
 {
@@ -1038,6 +983,17 @@ static hash_item *do_item_get(const char *key, const uint32_t nkey, bool do_upda
         }
     }
     return it;
+}
+
+static void do_item_replace(hash_item *old_it, hash_item *new_it)
+{
+    MEMCACHED_ITEM_REPLACE(item_get_key(old_it), old_it->nkey, old_it->nbytes,
+                           item_get_key(new_it), new_it->nkey, new_it->nbytes);
+    do_item_unlink(old_it, ITEM_UNLINK_REPLACE);
+    /* Cache item replacement does not drop the prefix item even if it's empty.
+     * So, the below do_item_link function always return SUCCESS.
+     */
+    (void)do_item_link(new_it);
 }
 
 /*
@@ -1242,6 +1198,50 @@ static ENGINE_ERROR_CODE do_add_delta(hash_item *it, const bool incr, const int6
     do_item_release(new_it);       /* release our reference */
 
     return ENGINE_SUCCESS;
+}
+
+static void do_item_lru_reposition(hash_item *it)
+{
+    if ((it->iflag & ITEM_LINKED) != 0) {
+        item_unlink_q(it);
+        it->time = svcore->get_current_time();
+        item_link_q(it);
+    }
+}
+
+static void do_coll_space_incr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
+                               const size_t nspace)
+{
+    info->stotal += nspace;
+    /* Currently, stats.lock is not needed since the cache lock is held. */
+    //pthread_mutex_lock(&statsp->lock);
+    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
+#ifdef ENABLE_STICKY_ITEM
+    if (it->exptime == (rel_time_t)-1) {
+        statsp->sticky_bytes += nspace;
+    }
+#endif
+    assoc_prefix_bytes_incr(it->pfxptr, item_type, nspace);
+    statsp->curr_bytes += nspace;
+    //pthread_mutex_unlock(&statsp->lock);
+}
+
+static void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
+                               const size_t nspace)
+{
+    assert(info->stotal >= nspace);
+    info->stotal -= nspace;
+    /* Currently, stats.lock is not needed since the cache lock is held. */
+    //pthread_mutex_lock(&statsp->lock);
+    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
+#ifdef ENABLE_STICKY_ITEM
+    if (it->exptime == (rel_time_t)-1) {
+        statsp->sticky_bytes -= nspace;
+    }
+#endif
+    assoc_prefix_bytes_decr(it->pfxptr, item_type, nspace);
+    statsp->curr_bytes -= nspace;
+    //pthread_mutex_unlock(&statsp->lock);
 }
 
 /* get real maxcount for each collection type */
