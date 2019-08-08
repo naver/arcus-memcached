@@ -207,20 +207,20 @@ static inline void ITEM_REFCOUNT_DECR(hash_item *it)
 /* warning: don't use these macros with a function, as it evals its arg twice */
 static inline size_t ITEM_ntotal(const hash_item *item)
 {
-    size_t ret;
+    size_t ntotal;
     if (IS_COLL_ITEM(item)) {
-        ret = sizeof(*item) + META_OFFSET_IN_ITEM(item->nkey, item->nbytes);
-        if (IS_LIST_ITEM(item))     ret += sizeof(list_meta_info);
-        else if (IS_SET_ITEM(item)) ret += sizeof(set_meta_info);
-        else if (IS_MAP_ITEM(item)) ret += sizeof(map_meta_info);
-        else /* BTREE_ITEM */       ret += sizeof(btree_meta_info);
+        ntotal = sizeof(*item) + META_OFFSET_IN_ITEM(item->nkey, item->nbytes);
+        if (IS_LIST_ITEM(item))     ntotal += sizeof(list_meta_info);
+        else if (IS_SET_ITEM(item)) ntotal += sizeof(set_meta_info);
+        else if (IS_MAP_ITEM(item)) ntotal += sizeof(map_meta_info);
+        else /* BTREE_ITEM */       ntotal += sizeof(btree_meta_info);
     } else {
-        ret = sizeof(*item) + item->nkey + item->nbytes;
+        ntotal = sizeof(*item) + item->nkey + item->nbytes;
     }
     if (config->use_cas) {
-        ret += sizeof(uint64_t);
+        ntotal += sizeof(uint64_t);
     }
-    return ret;
+    return ntotal;
 }
 
 static inline size_t ITEM_stotal(const hash_item *item)
