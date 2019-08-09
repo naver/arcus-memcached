@@ -20,6 +20,8 @@
 
 bool item_clog_enabled = false;
 
+static struct engine_config *config=NULL; // engine config
+
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
 /*
@@ -172,6 +174,7 @@ void CLOG_GE_ITEM_SETATTR(hash_item *it,
  */
 void item_clog_init(struct default_engine *engine)
 {
+    config = &engine->config;
     logger = engine->server.log->get_logger();
 
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM change log module initialized.\n");
