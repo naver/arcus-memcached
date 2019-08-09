@@ -342,13 +342,29 @@ static hash_item *do_item_reclaim(hash_item *it,
     }
     /* collection item or small-sized kv item */
 #endif
-    if (IS_COLL_ITEM(it))
+    if (IS_COLL_ITEM(it)) {
         do_coll_all_elem_delete(it);
+    }
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 
     /* allocate from slab allocator */
     it = slabs_alloc(ntotal, clsid);
     return it;
+}
+
+static void do_item_invalidate(hash_item *it, const unsigned int lruid, bool immediate)
+{
+    /* increment # of reclaimed */
+    pthread_mutex_lock(&statsp->lock);
+    statsp->reclaimed++;
+    pthread_mutex_unlock(&statsp->lock);
+    itemsp->itemstats[lruid].reclaimed++;
+
+    /* it->refcount == 0 */
+    if (immediate && IS_COLL_ITEM(it)) {
+        do_coll_all_elem_delete(it);
+    }
+    do_item_unlink(it, ITEM_UNLINK_INVALID);
 }
 
 static void do_item_evict(hash_item *it, const unsigned int lruid,
@@ -368,8 +384,9 @@ static void do_item_evict(hash_item *it, const unsigned int lruid,
     }
 
     /* unlink the item */
-    if (IS_COLL_ITEM(it))
+    if (IS_COLL_ITEM(it)) {
         do_coll_all_elem_delete(it);
+    }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
 
@@ -381,26 +398,48 @@ static void do_item_repair(hash_item *it, const unsigned int lruid)
     it->refchunk = 0;
 
     /* unlink the item */
-    if (IS_COLL_ITEM(it))
+    if (IS_COLL_ITEM(it)) {
         do_coll_all_elem_delete(it);
+    }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
 
-static void do_item_invalidate(hash_item *it, const unsigned int lruid, bool immediate)
+static uint32_t do_item_regain(const uint32_t count, rel_time_t current_time,
+                               const void *cookie)
 {
-    /* increment # of reclaimed */
-    pthread_mutex_lock(&statsp->lock);
-    statsp->reclaimed++;
-    pthread_mutex_unlock(&statsp->lock);
-    itemsp->itemstats[lruid].reclaimed++;
+    hash_item *previt;
+    hash_item *search;
+    uint32_t tries = count;
+    uint32_t nregains = 0;
 
-    /* it->refcount == 0 */
-    if (immediate) {
-        if (IS_COLL_ITEM(it)) {
-            do_coll_all_elem_delete(it);
+#ifdef USE_SINGLE_LRU_LIST
+    unsigned int clsid = 1;
+#else
+    unsigned int clsid = LRU_CLSID_FOR_SMALL;
+#endif
+
+    search = itemsp->tails[clsid];
+    while (search != NULL) {
+        assert(search->nkey > 0);
+        previt = search->prev;
+        if (search->refcount == 0) {
+            if (do_item_isvalid(search, current_time) == false) {
+                do_item_invalidate(search, clsid, true);
+            } else {
+                do_item_evict(search, clsid, current_time, cookie);
+            }
+            nregains += 1;
+        } else { /* search->refcount > 0 */
+            /* We just unlink the item from LRU list.
+             * It will be linked to LRU list when the refcount become 0.
+             * See do_item_release().
+             */
+            item_unlink_q(search);
         }
+        search = previt;
+        if ((--tries) == 0) break;
     }
-    do_item_unlink(it, ITEM_UNLINK_INVALID);
+    return nregains;
 }
 
 static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
@@ -440,27 +479,11 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
     }
 #endif
 
-    int space_shortage_level = slabs_space_shortage_level();
-    if (space_shortage_level > 0 && id == LRU_CLSID_FOR_SMALL
-        && item_evict_to_free == true)
-    {
-        tries  = space_shortage_level;
-        search = itemsp->tails[id];
-        while (search != NULL) {
-            assert(search->nkey > 0);
-            previt = search->prev;
-            if (search->refcount == 0) {
-                if (do_item_isvalid(search, current_time) == false) {
-                    do_item_invalidate(search, id, true);
-                } else {
-                    do_item_evict(search, id, current_time, cookie);
-                }
-            } else { /* search->refcount > 0 */
-                /* just unlink the item from LRU list. */
-                item_unlink_q(search);
-            }
-            search = previt;
-            if ((--tries) == 0) break;
+    /* Let's regain item space when space shortage level > 0. */
+    if (item_evict_to_free == true && id == LRU_CLSID_FOR_SMALL) {
+        int current_ssl = slabs_space_shortage_level();
+        if (current_ssl > 0) {
+            (void)do_item_regain(current_ssl, current_time, cookie);
         }
     }
 
@@ -2063,7 +2086,8 @@ static uint32_t do_set_elem_delete_fast(set_meta_info *info, const uint32_t coun
     }
     return fcnt;
 }
-#else
+#endif
+
 static uint32_t do_set_elem_delete(set_meta_info *info, const uint32_t count,
                                    enum elem_delete_cause cause)
 {
@@ -2077,7 +2101,6 @@ static uint32_t do_set_elem_delete(set_meta_info *info, const uint32_t count,
     }
     return fcnt;
 }
-#endif
 
 static ENGINE_ERROR_CODE do_set_elem_get(set_meta_info *info, const uint32_t count, const bool delete,
                                          set_elem_item **elem_array, uint32_t *elem_count)
@@ -5569,55 +5592,6 @@ scan_next:
 /*
  * Item Management Daemon
  */
-static int check_expired_collections(const int clsid, int *ssl)
-{
-    hash_item *search, *it;
-    int unlink_count = 0;
-    int space_shortage_level;
-    int tries;
-    rel_time_t current_time;
-
-    if (item_evict_to_free != true) {
-        *ssl = 0;
-        return unlink_count;
-    }
-    if ((space_shortage_level = slabs_space_shortage_level()) < 10) {
-        /* refer to SSL_FOR_BACKGROUND_EVICT in slabs.c */
-        *ssl = space_shortage_level;
-        return unlink_count;
-    }
-
-    tries = space_shortage_level;
-    current_time = svcore->get_current_time();
-
-    LOCK_CACHE();
-    if (item_evict_to_free == true)
-    {
-        search = itemsp->tails[clsid];
-        while (search != NULL && tries > 0) {
-            assert(search->nkey > 0);
-            it = search;
-            search = search->prev; tries--;
-
-            if (it->refcount == 0) {
-                if (do_item_isvalid(it, current_time) == false) {
-                    do_item_invalidate(it, clsid, true);
-                } else {
-                    do_item_evict(it, clsid, current_time, NULL);
-                }
-                unlink_count++;
-            } else { /* search->refcount > 0 */
-                /* just unlink the item from LRU list. */
-                item_unlink_q(it);
-            }
-        }
-    }
-    UNLOCK_CACHE();
-
-    *ssl = space_shortage_level;
-    return unlink_count;
-}
-
 static void do_coll_all_elem_delete(hash_item *it)
 {
     if (IS_LIST_ITEM(it)) {
@@ -5679,50 +5653,54 @@ static void coll_del_thread_sleep(void)
 static void *collection_delete_thread(void *arg)
 {
     struct default_engine *engine = arg;
-    hash_item *it;
-    uint32_t expired_cnt;
-    int      space_shortage_level;
-    bool     background_evict_flag = false;
-    uint32_t background_evict_ccnt = 0; /* current count */
-    struct timespec background_sleep_time = {0, 0};
+    hash_item      *it;
+    int             current_ssl;
+    uint32_t        evict_count;
+    uint32_t        bg_evict_count = 0;
+    bool            bg_evict_start = false;
+    struct timespec bg_evict_sleep = {0, 0};
 
     while (engine->initialized) {
         it = pop_coll_del_queue();
         if (it == NULL) {
-#ifdef USE_SINGLE_LRU_LIST
-            expired_cnt = check_expired_collections(1, &space_shortage_level);
-#else
-            expired_cnt = check_expired_collections(LRU_CLSID_FOR_SMALL, &space_shortage_level);
-#endif
-            if (expired_cnt > 0) {
-                if (background_evict_flag == false) {
+            evict_count = 0;
+            if (item_evict_to_free && (current_ssl = slabs_space_shortage_level()) >= 10) {
+                LOCK_CACHE();
+                if (item_evict_to_free) {
+                    rel_time_t current_time = svcore->get_current_time();
+                    evict_count = do_item_regain(current_ssl, current_time, NULL);
+                }
+                UNLOCK_CACHE();
+            }
+            if (evict_count > 0) {
+                if (bg_evict_start == false) {
                     /*****
                     if (config->verbose > 1) {
                         logger->log(EXTENSION_LOG_INFO, NULL, "background evict: start\n");
                     }
                     *****/
-                    background_evict_flag = true;
-                    background_evict_ccnt = 0;
+                    bg_evict_start = true;
+                    bg_evict_count = 0;
                 }
-                background_sleep_time.tv_nsec = 10000000 / space_shortage_level;
-                nanosleep(&background_sleep_time, NULL);
-                background_evict_ccnt += expired_cnt;
-                if (background_evict_ccnt >= 10000000) {
+                bg_evict_count += evict_count;
+                if (bg_evict_count >= 10000000) {
                     if (config->verbose > 1) {
-                        logger->log(EXTENSION_LOG_INFO, NULL, "background evict: cur count=%u\n",
-                                                               background_evict_ccnt);
+                        logger->log(EXTENSION_LOG_INFO, NULL, "background evict: count=%u\n",
+                                                               bg_evict_count);
                     }
-                    background_evict_ccnt = 0;
+                    bg_evict_count = 0;
                 }
+                bg_evict_sleep.tv_nsec = 10000000 / current_ssl;
+                nanosleep(&bg_evict_sleep, NULL);
             } else {
-                if (background_evict_flag == true) {
+                if (bg_evict_start == true) {
                     /*****
                     if (config->verbose > 1) {
-                        logger->log(EXTENSION_LOG_INFO, NULL, "background evict: end count=%u\n",
-                                                               background_evict_ccnt);
+                        logger->log(EXTENSION_LOG_INFO, NULL, "background evict: stop count=%u\n",
+                                                               bg_evict_count);
                     }
                     *****/
-                    background_evict_flag = false;
+                    bg_evict_start = false;
                 }
                 coll_del_thread_sleep();
             }

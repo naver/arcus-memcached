@@ -37,6 +37,7 @@
 ./t/coll_bop_unittest.t
 ./t/coll_bop_update.t
 ./t/coll_bop_upsert.t
+./t/coll_lop_large.t
 ./t/coll_lop_unittest.t
 ./t/coll_mop_delete.t
 ./t/coll_mop_get.t
