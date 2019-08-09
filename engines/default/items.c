@@ -2081,7 +2081,8 @@ static uint32_t do_set_elem_delete_fast(set_meta_info *info, const uint32_t coun
     }
     return fcnt;
 }
-#else
+#endif
+
 static uint32_t do_set_elem_delete(set_meta_info *info, const uint32_t count,
                                    enum elem_delete_cause cause)
 {
@@ -2095,7 +2096,6 @@ static uint32_t do_set_elem_delete(set_meta_info *info, const uint32_t count,
     }
     return fcnt;
 }
-#endif
 
 static ENGINE_ERROR_CODE do_set_elem_get(set_meta_info *info, const uint32_t count, const bool delete,
                                          set_elem_item **elem_array, uint32_t *elem_count)
