@@ -106,6 +106,19 @@ extern "C" {
         OPERATION_MGET     /**< Retrieve with mget semantics */
     } ENGINE_RETRIEVE_OPERATION;
 
+    typedef enum {
+        OPERATION_INCR = 31,
+        OPERATION_DECR,
+    } ENGINE_INCR_DECR_OPERATION;
+
+    typedef enum {
+        OPERATION_DELETE = 51
+    } ENGINE_DELETION_OPERATION;
+
+    typedef enum {
+        OPERATION_GETATTR = 61,
+        OPERATION_SETATTR = 61,
+    } ENGINE_ITEM_ATTR_OPERATION;
     /* collection operation */
     typedef enum {
         /* list operation */
@@ -142,7 +155,9 @@ extern "C" {
         // SUPPORT_BOP_MGET
         OPERATION_BOP_MGET,          /**< B+tree operation with mget(multiple get) element semantics */
         // SUPPORT_BOP_SMGET
-        OPERATION_BOP_SMGET          /**< B+tree operation with smget(sort-merge get) element semantics */
+        OPERATION_BOP_SMGET,         /**< B+tree operation with smget(sort-merge get) element semantics */
+        OPERATION_BOP_INCR,
+        OPERATION_BOP_DECR
     } ENGINE_COLL_OPERATION;
 
     /* item type */

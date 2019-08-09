@@ -1629,11 +1629,10 @@ static void process_lop_insert_complete(conn *c) {
         }
         if (settings.detail_enabled) {
             stats_prefix_record_lop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("lop", "insert", c->coll_key, c->client_ip);
-#endif
         }
-
+#ifdef CMD_IN_SECOND
+        cmd_in_second_write(OPERATION_LOP_INSERT, c->coll_key, c->client_ip);
+#endif
 #ifdef DETECT_LONG_QUERY
         if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
             if (! lqdetect_lop_insert(c->client_ip, c->coll_key, c->coll_index)) {
@@ -1694,11 +1693,11 @@ static void process_sop_insert_complete(conn *c) {
 
         if (settings.detail_enabled) {
             stats_prefix_record_sop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("sop", "insert", c->coll_key, c->client_ip);
-#endif
         }
 
+#ifdef CMD_IN_SECOND
+        cmd_in_second_write(OPERATION_SOP_INSERT, c->coll_key, c->client_ip);
+#endif
         switch (ret) {
         case ENGINE_SUCCESS:
             STATS_HITS(c, sop_insert, c->coll_key, c->coll_nkey);
@@ -1751,11 +1750,11 @@ static void process_sop_delete_complete(conn *c) {
         if (settings.detail_enabled) {
             stats_prefix_record_sop_delete(c->coll_key, c->coll_nkey,
                                            (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("sop", "delete", c->coll_key, c->client_ip);
-#endif
         }
 
+#ifdef CMD_IN_SECOND
+        cmd_in_second_write(OPERATION_SOP_DELETE, c->coll_key, c->client_ip);
+#endif
         switch (ret) {
         case ENGINE_SUCCESS:
             STATS_ELEM_HITS(c, sop_delete, c->coll_key, c->coll_nkey);
@@ -1802,10 +1801,10 @@ static void process_sop_exist_complete(conn *c) {
         if (settings.detail_enabled) {
             stats_prefix_record_sop_exist(c->coll_key, c->coll_nkey,
                                           (ret==ENGINE_SUCCESS));
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("sop", "exist", c->coll_key, c->client_ip);
-#endif
         }
+#ifdef CMD_IN_SECOND
+        cmd_in_second_write(OPERATION_SOP_EXIST, c->coll_key, c->client_ip);
+#endif
 
         switch (ret) {
         case ENGINE_SUCCESS:
@@ -1876,10 +1875,10 @@ static void process_mop_insert_complete(conn *c) {
 
         if (settings.detail_enabled) {
             stats_prefix_record_mop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("mop", "insert", c->coll_key, c->client_ip);
-#endif
         }
+#ifdef CMD_IN_SECOND
+        cmd_in_second_write(OPERATION_MOP_INSERT, c->coll_key, c->client_ip);
+#endif
 
         switch (ret) {
         case ENGINE_SUCCESS:
@@ -1929,10 +1928,10 @@ static void process_mop_update_complete(conn *c) {
 
         if (settings.detail_enabled) {
             stats_prefix_record_mop_update(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("mop", "update", c->coll_key, c->client_ip);
-#endif
         }
+#ifdef CMD_IN_SECOND
+        cmd_in_second_write(OPERATION_MOP_UPDATE, c->coll_key, c->client_ip);
+#endif
 
         switch (ret) {
         case ENGINE_SUCCESS:
@@ -2015,11 +2014,11 @@ static void process_mop_delete_complete(conn *c) {
     if (settings.detail_enabled) {
         stats_prefix_record_mop_delete(c->coll_key, c->coll_nkey,
                                        (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("mop", "delete", c->coll_key, c->client_ip);
-#endif
     }
 
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_MOP_DELETE, c->coll_key, c->client_ip);
+#endif
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_mop_delete(c->client_ip, c->coll_key, del_count,
@@ -2137,11 +2136,11 @@ static void process_mop_get_complete(conn *c)
 
     if (settings.detail_enabled) {
         stats_prefix_record_mop_get(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("mop", "get", c->coll_key, c->client_ip);
-#endif
     }
 
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_MOP_GET, c->coll_key, c->client_ip);
+#endif
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_mop_get(c->client_ip, c->coll_key, elem_count,
@@ -2314,11 +2313,11 @@ static void process_bop_insert_complete(conn *c) {
 
         if (settings.detail_enabled) {
             stats_prefix_record_bop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("bop", "insert", c->coll_key, c->client_ip);
-#endif
         }
 
+#ifdef CMD_IN_SECOND
+        cmd_in_second_write(OPERATION_BOP_INSERT, c->coll_key, c->client_ip);
+#endif
         switch (ret) {
         case ENGINE_SUCCESS:
             STATS_HITS(c, bop_insert, c->coll_key, c->coll_nkey);
@@ -2420,10 +2419,10 @@ static void process_bop_update_complete(conn *c)
     if (settings.detail_enabled) {
         stats_prefix_record_bop_update(c->coll_key, c->coll_nkey,
                                        (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("bop", "update", c->coll_key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_BOP_UPDATE, c->coll_key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -2516,10 +2515,10 @@ static void process_bop_mget_complete(conn *c) {
             if (settings.detail_enabled) {
                 stats_prefix_record_bop_get(key_tokens[k].value, key_tokens[k].length,
                                             (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("bop", "get", c->coll_key, c->client_ip);
-#endif
             }
+#ifdef CMD_IN_SECOND
+            cmd_in_second_write(OPERATION_BOP_MGET, c->coll_key, c->client_ip);
+#endif
 
             if (ret == ENGINE_SUCCESS) {
               do {
@@ -3105,10 +3104,10 @@ static void process_mget_complete(conn *c)
             }
             if (settings.detail_enabled) {
                 stats_prefix_record_get(key, nkey, NULL != it);
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("", "get", key, c->client_ip);
-#endif
             }
+#ifdef CMD_IN_SECOND
+            cmd_in_second_write(OPERATION_MGET, key, c->client_ip);
+#endif
             if (it) {
                 /* get_item_info() always returns true. */
                 (void)mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo);
@@ -3697,16 +3696,18 @@ static void complete_incr_bin(conn *c) {
     if (settings.detail_enabled) {
        if (incr) {
             stats_prefix_record_incr(key, nkey);
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("", "incr", key, c->client_ip);
-#endif
        } else {
             stats_prefix_record_decr(key, nkey);
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("", "decr", key, c->client_ip);
-#endif
        }
     }
+
+#ifdef CMD_IN_SECOND
+    if (incr) {
+        cmd_in_second_write(OPERATION_INCR, key, c->client_ip);
+    } else {
+        cmd_in_second_write(OPERATION_DECR, key, c->client_ip);
+    }
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -3959,10 +3960,10 @@ static void process_bin_get(conn *c) {
 
     if (settings.detail_enabled && ret != ENGINE_EWOULDBLOCK) {
         stats_prefix_record_get(key, nkey, ret == ENGINE_SUCCESS);
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("", "decr", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_GET, key, c->client_ip);
+#endif
 }
 
 static void append_bin_stats(const char *key, const uint16_t klen,
@@ -4540,11 +4541,11 @@ static void process_bin_lop_create(conn *c) {
 
     if (settings.detail_enabled) {
         stats_prefix_record_lop_create(key, nkey);
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("lop", "create", key, c->client_ip);
-#endif
     }
 
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_LOP_CREATE, key, c->client_ip);
+#endif
     switch (ret) {
     case ENGINE_SUCCESS:
         STATS_OKS(c, lop_create, key, nkey);
@@ -4611,10 +4612,10 @@ static void process_bin_lop_prepare_nread(conn *c) {
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
         stats_prefix_record_lop_insert(key, nkey, false);
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("lop", "insert", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_LOP_INSERT, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -4681,10 +4682,11 @@ static void process_bin_lop_insert_complete(conn *c) {
 
     if (settings.detail_enabled) {
         stats_prefix_record_lop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("lop", "insert", c->coll_key, c->client_ip);
-#endif
     }
+
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_LOP_INSERT, c->coll_key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -4764,10 +4766,10 @@ static void process_bin_lop_delete(conn *c) {
     if (settings.detail_enabled) {
         stats_prefix_record_lop_delete(key, nkey,
                                        (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("lop", "delete", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_LOP_DELETE, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -4856,10 +4858,10 @@ static void process_bin_lop_get(conn *c) {
     if (settings.detail_enabled) {
         stats_prefix_record_lop_get(key, nkey,
                                     (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("lop", "get", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_LOP_GET, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -4975,10 +4977,10 @@ static void process_bin_sop_create(conn *c) {
 
     if (settings.detail_enabled) {
         stats_prefix_record_sop_create(key, nkey);
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("sop", "create", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_SOP_CREATE, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -5051,21 +5053,21 @@ static void process_bin_sop_prepare_nread(conn *c) {
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
        if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
             stats_prefix_record_sop_insert(key, nkey, false);
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("sop", "insert", key, c->client_ip);
-#endif
        } else if (c->cmd == PROTOCOL_BINARY_CMD_SOP_DELETE) {
             stats_prefix_record_sop_delete(key, nkey, false);
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("sop", "delete", key, c->client_ip);
-#endif
        } else {
             stats_prefix_record_sop_exist(key, nkey, false);
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("sop", "exist", key, c->client_ip);
-#endif
        }
     }
+#ifdef CMD_IN_SECOND
+   if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
+       cmd_in_second_write(OPERATION_SOP_INSERT, key, c->client_ip);
+   } else if (c->cmd == PROTOCOL_BINARY_CMD_SOP_DELETE) {
+       cmd_in_second_write(OPERATION_SOP_DELETE, key, c->client_ip);
+   } else {
+       cmd_in_second_write(OPERATION_SOP_EXIST, key, c->client_ip);
+   }
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -5154,10 +5156,10 @@ static void process_bin_sop_insert_complete(conn *c) {
 
     if (settings.detail_enabled) {
         stats_prefix_record_sop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("sop", "insert", c->coll_key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_SOP_INSERT, c->coll_key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -5217,11 +5219,10 @@ static void process_bin_sop_delete_complete(conn *c) {
     if (settings.detail_enabled) {
         stats_prefix_record_sop_delete(c->coll_key, c->coll_nkey,
                                        (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("sop", "delete", c->coll_key, c->client_ip);
-#endif
     }
-
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_SOP_DELETE, c->coll_key, c->client_ip);
+#endif
     switch (ret) {
     case ENGINE_SUCCESS:
         STATS_ELEM_HITS(c, sop_delete, c->coll_key, c->coll_nkey);
@@ -5269,10 +5270,10 @@ static void process_bin_sop_exist_complete(conn *c) {
 
     if (settings.detail_enabled) {
         stats_prefix_record_sop_exist(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("sop", "exist", c->coll_key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_SOP_EXIST, c->coll_key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -5368,10 +5369,10 @@ static void process_bin_sop_get(conn *c) {
     if (settings.detail_enabled) {
         stats_prefix_record_sop_get(key, nkey,
                                     (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("sop", "get", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_SOP_GET, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -5497,10 +5498,10 @@ static void process_bin_bop_create(conn *c) {
     }
     if (settings.detail_enabled) {
         stats_prefix_record_bop_create(key, nkey);
-#ifdef CMD_IN_SECOND
-            cmd_in_second_write("bop", "create", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_BOP_CREATE, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -5580,10 +5581,10 @@ static void process_bin_bop_prepare_nread(conn *c) {
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
         stats_prefix_record_bop_insert(key, nkey, false);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("bop", "insert", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_BOP_INSERT, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -5662,10 +5663,10 @@ static void process_bin_bop_insert_complete(conn *c) {
 
     if (settings.detail_enabled) {
         stats_prefix_record_bop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("bop", "insert", c->coll_key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_BOP_INSERT, c->coll_key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -5744,11 +5745,11 @@ static void process_bin_bop_update_complete(conn *c) {
     if (settings.detail_enabled) {
         stats_prefix_record_bop_update(c->coll_key, c->coll_nkey,
                                        (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("bop", "insert", c->coll_key, c->client_ip);
-#endif
     }
 
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_BOP_UPDATE, c->coll_key, c->client_ip);
+#endif
     switch (ret) {
     case ENGINE_SUCCESS:
         STATS_ELEM_HITS(c, bop_update, c->coll_key, c->coll_nkey);
@@ -5860,11 +5861,11 @@ static void process_bin_bop_update_prepare_nread(conn *c) {
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
         stats_prefix_record_bop_update(key, nkey, false);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("bop", "update", key, c->client_ip);
-#endif
     }
 
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_BOP_UPDATE, key, c->client_ip);
+#endif
     switch (ret) {
     case ENGINE_SUCCESS:
         c->ritem       = ((value_item *)elem)->ptr;
@@ -5941,10 +5942,10 @@ static void process_bin_bop_delete(conn *c) {
     if (settings.detail_enabled) {
         stats_prefix_record_bop_delete(key, nkey,
                                        (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("bop", "delete", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_BOP_DELETE, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -6049,10 +6050,10 @@ static void process_bin_bop_get(conn *c) {
     if (settings.detail_enabled) {
         stats_prefix_record_bop_get(key, nkey,
                                     (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("bop", "get", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_BOP_GET, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -6184,10 +6185,10 @@ static void process_bin_bop_count(conn *c) {
 
     if (settings.detail_enabled) {
         stats_prefix_record_bop_count(key, nkey, (ret==ENGINE_SUCCESS));
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("bop", "count", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_BOP_COUNT, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -6830,10 +6831,10 @@ static void process_bin_getattr(conn *c) {
 
     if (settings.detail_enabled) {
         stats_prefix_record_getattr(key, nkey);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("", "getattr", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_GETATTR, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -6970,10 +6971,10 @@ static void process_bin_setattr(conn *c) {
 
     if (settings.detail_enabled) {
         stats_prefix_record_setattr(key, nkey);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("", "setattr", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_SETATTR, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -7458,10 +7459,10 @@ static void process_bin_update(conn *c) {
 
     if (settings.detail_enabled) {
         stats_prefix_record_set(key, nkey);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("", "set", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_SET, key, c->client_ip);
+#endif
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->allocate(mc_engine.v0, c, &it, key, nkey, vlen+2,
@@ -7546,10 +7547,10 @@ static void process_bin_append_prepend(conn *c) {
 
     if (settings.detail_enabled) {
         stats_prefix_record_set(key, nkey);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("", "set", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_SET, key, c->client_ip);
+#endif
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->allocate(mc_engine.v0, c, &it, key, nkey, vlen+2,
@@ -7720,10 +7721,10 @@ static void process_bin_delete(conn *c) {
 
     if (settings.detail_enabled) {
         stats_prefix_record_delete(key, nkey);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("", "delete", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_DELETE, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -8643,10 +8644,10 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
             }
             if (settings.detail_enabled) {
                 stats_prefix_record_get(key, nkey, NULL != it);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("", "get", key, c->client_ip);
-#endif
             }
+#ifdef CMD_IN_SECOND
+            cmd_in_second_write(OPERATION_GET, key, c->client_ip);
+#endif
 
             if (it) {
                 if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
@@ -8860,10 +8861,10 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
 
     if (settings.detail_enabled) {
         stats_prefix_record_set(key, nkey);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("", "set", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_SET, key, c->client_ip);
+#endif
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->allocate(mc_engine.v0, c, &it, key, nkey, vlen,
@@ -8952,16 +8953,19 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
     if (settings.detail_enabled) {
         if (incr) {
             stats_prefix_record_incr(key, nkey);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("", "incr", key, c->client_ip);
-#endif
         } else {
             stats_prefix_record_decr(key, nkey);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("", "decr", key, c->client_ip);
-#endif
         }
     }
+#ifdef CMD_IN_SECOND
+    if (incr) {
+        stats_prefix_record_incr(key, nkey);
+        cmd_in_second_write(OPERATION_INCR, key, c->client_ip);
+    } else {
+        stats_prefix_record_decr(key, nkey);
+        cmd_in_second_write(OPERATION_DECR, key, c->client_ip);
+    }
+#endif
 
     ENGINE_ERROR_CODE ret;
     uint64_t cas;
@@ -9053,10 +9057,10 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
 
     if (settings.detail_enabled) {
        stats_prefix_record_delete(key, nkey);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("", "delete", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_DELETE, key, c->client_ip);
+#endif
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->remove(mc_engine.v0, c, key, nkey, 0, 0);
@@ -10090,10 +10094,10 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
 
     if (settings.detail_enabled) {
        stats_prefix_record_lop_get(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("", "get", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_LOP_GET, key, c->client_ip);
+#endif
 
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
@@ -10201,10 +10205,10 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
        stats_prefix_record_lop_insert(key, nkey, false);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("lop", "insert", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_LOP_INSERT, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -10247,10 +10251,10 @@ static void process_lop_create(conn *c, char *key, size_t nkey, item_attr *attrp
 
     if (settings.detail_enabled) {
        stats_prefix_record_lop_create(key, nkey);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("lop", "create", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_LOP_CREATE, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -10289,10 +10293,10 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
 
     if (settings.detail_enabled) {
        stats_prefix_record_lop_delete(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("lop", "delete", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_LOP_DELETE, key, c->client_ip);
+#endif
 
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
@@ -10520,10 +10524,10 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
 
     if (settings.detail_enabled) {
        stats_prefix_record_sop_get(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("sop", "get", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_SOP_GET, key, c->client_ip);
+#endif
 
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
@@ -10638,19 +10642,10 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
         if (cmd == (int)OPERATION_SOP_INSERT) {
             stats_prefix_record_sop_insert(key, nkey, false);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("sop", "insert", key, c->client_ip);
-#endif
         } else if (cmd == (int)OPERATION_SOP_DELETE) {
             stats_prefix_record_sop_delete(key, nkey, false);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("sop", "delete", key, c->client_ip);
-#endif
         } else {
             stats_prefix_record_sop_exist(key, nkey, false);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("sop", "exist", key, c->client_ip);
-#endif
         }
     }
 
@@ -10705,10 +10700,10 @@ static void process_sop_create(conn *c, char *key, size_t nkey, item_attr *attrp
 
     if (settings.detail_enabled) {
         stats_prefix_record_sop_create(key, nkey);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("sop", "create", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_SOP_CREATE, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -10929,10 +10924,10 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
 
     if (settings.detail_enabled) {
         stats_prefix_record_bop_get(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("bop", "get", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_BOP_GET, key, c->client_ip);
+#endif
 
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
@@ -11048,10 +11043,10 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
 
     if (settings.detail_enabled) {
         stats_prefix_record_bop_count(key, nkey, (ret==ENGINE_SUCCESS));
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("bop", "get", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_BOP_COUNT, key, c->client_ip);
+#endif
 
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
@@ -11101,10 +11096,10 @@ static void process_bop_position(conn *c, char *key, size_t nkey,
 
     if (settings.detail_enabled) {
         stats_prefix_record_bop_position(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("bop", "position", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_BOP_POSITION, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -11163,10 +11158,10 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
 
     if (settings.detail_enabled) {
         stats_prefix_record_bop_pwg(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("bop", "pwg", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_BOP_PWG, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -11279,10 +11274,10 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
 
     if (settings.detail_enabled) {
         stats_prefix_record_bop_gbp(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("bop", "gbp", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_BOP_GBP, key, c->client_ip);
+#endif
 
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
@@ -11392,10 +11387,10 @@ static void process_bop_update_prepare_nread(conn *c, int cmd, char *key, size_t
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
         stats_prefix_record_bop_update(key, nkey, false);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("bop", "update", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_BOP_UPDATE, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -11437,10 +11432,10 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
         stats_prefix_record_bop_insert(key, nkey, false);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("bop", "insert", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_BOP_INSERT, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -11582,10 +11577,10 @@ static void process_bop_create(conn *c, char *key, size_t nkey, item_attr *attrp
 
     if (settings.detail_enabled) {
         stats_prefix_record_bop_create(key, nkey);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("bop", "create", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_BOP_CREATE, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -11626,10 +11621,10 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
 
     if (settings.detail_enabled) {
         stats_prefix_record_bop_delete(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("bop", "delete", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_BOP_DELETE, key, c->client_ip);
+#endif
 
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
@@ -11683,22 +11678,30 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
     }
-
+#ifdef CMD_IN_SECOND
+    if (incr) {
+        cmd_in_second_write(OPERATION_BOP_INCR, key, c->client_ip);
+        if (settings.detail_enabled) {
+            stats_prefix_record_bop_incr(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+        }
+    } else {
+        cmd_in_second_write(OPERATION_BOP_DECR, key, c->client_ip);
+       
+        if (settings.detail_enabled) {
+            stats_prefix_record_bop_decr(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+        }
+    }
+#else
     if (settings.detail_enabled) {
         if (incr) {
             stats_prefix_record_bop_incr(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("bop", "incr", key, c->client_ip);
-#endif
         } else {
             stats_prefix_record_bop_decr(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("bop", "decr", key, c->client_ip);
-#endif
         }
     }
+#endif
 
-    switch (ret) {
+   switch (ret) {
     case ENGINE_SUCCESS:
         if (incr) {
             STATS_ELEM_HITS(c, bop_incr, key, nkey);
@@ -11944,10 +11947,10 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
         stats_prefix_record_mop_insert(key, nkey, false);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("mop", "insert", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_MOP_INSERT, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -12037,10 +12040,10 @@ static void process_mop_create(conn *c, char *key, size_t nkey, item_attr *attrp
 
     if (settings.detail_enabled) {
         stats_prefix_record_mop_create(key, nkey);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("mop", "create", key, c->client_ip);
-#endif
     }
+#ifdef CMD_IN_SECOND
+    cmd_in_second_write(OPERATION_MOP_CREATE, key, c->client_ip);
+#endif
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -13057,10 +13060,10 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
 
         if (settings.detail_enabled) {
             stats_prefix_record_getattr(key, nkey);
-#ifdef CMD_IN_SECOND
-        cmd_in_second_write("", "getattr", key, c->client_ip);
-#endif
         }
+#ifdef CMD_IN_SECOND
+        cmd_in_second_write(OPERATION_GETATTR, key, c->client_ip);
+#endif
     }
 
     switch (ret) {
@@ -13217,7 +13220,7 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
         if (settings.detail_enabled) {
             stats_prefix_record_setattr(key, nkey);
 #ifdef CMD_IN_SECOND
-        cmd_in_second_write("", "setattr", key, c->client_ip);
+        cmd_in_second_write(OPERATION_SETATTR, key, c->client_ip);
 #endif
         }
     }
@@ -13248,57 +13251,159 @@ static void process_second_command(conn *c, token_t *tokens, const size_t ntoken
 
     assert(c != NULL);
 
-    bool is_collection_cmd = true;
 
     if(strlen(tokens[SUBCOMMAND_TOKEN].value) > 3){
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
 
-    if (strcmp("lop", tokens[SUBCOMMAND_TOKEN].value) == 0) {
-        if (strcmp("create", tokens[SUBCOMMAND_TOKEN+1].value) != 0 && strcmp("insert", tokens[SUBCOMMAND_TOKEN+1].value) != 0 &&
-             strcmp("delete", tokens[SUBCOMMAND_TOKEN+1].value) != 0 && strcmp("get", tokens[SUBCOMMAND_TOKEN+1].value)) {
+    int operation_enum = 0;
+    char cmd[20] = "";
+    bool is_collection_cmd = true;
 
+
+    if (strcmp("lop", tokens[SUBCOMMAND_TOKEN].value) == 0) {
+        if (strcmp("create", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "lop create");
+            operation_enum = OPERATION_LOP_CREATE;
+        } else if (strcmp("insert", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "lop insert");
+            operation_enum = OPERATION_LOP_INSERT;
+        } else if (strcmp("delete", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "lop delete");
+            operation_enum = OPERATION_LOP_DELETE;
+        } else if (strcmp("get", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "lop get");
+            operation_enum = OPERATION_LOP_GET;
+        } else {
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
     } else if (strcmp("sop", tokens[SUBCOMMAND_TOKEN].value) == 0) {
-        if (strcmp("create", tokens[SUBCOMMAND_TOKEN+1].value) != 0 && strcmp("insert", tokens[SUBCOMMAND_TOKEN+1].value) != 0 &&
-            strcmp("delete", tokens[SUBCOMMAND_TOKEN+1].value) != 0  && strcmp("exist", tokens[SUBCOMMAND_TOKEN+1].value) != 0 &&
-            strcmp("get", tokens[SUBCOMMAND_TOKEN+1].value) != 0) {
-
+        if (strcmp("create", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "sop create");
+            operation_enum = OPERATION_SOP_CREATE;
+        } else if (strcmp("insert", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "sop insert");
+            operation_enum = OPERATION_SOP_INSERT;
+        } else if (strcmp("delete", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "sop delete");
+            operation_enum = OPERATION_SOP_DELETE;
+        } else if (strcmp("exist", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "sop exist");
+            operation_enum = OPERATION_SOP_EXIST;
+        } else if (strcmp("get", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "sop get");
+            operation_enum = OPERATION_SOP_GET;
+        } else {
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
     } else if (strcmp("mop", tokens[SUBCOMMAND_TOKEN].value) == 0) {
-        if (strcmp("create", tokens[SUBCOMMAND_TOKEN+1].value) != 0 && strcmp("insert", tokens[SUBCOMMAND_TOKEN+1].value) != 0 &&
-            strcmp("delete", tokens[SUBCOMMAND_TOKEN+1].value) != 0  && strcmp("update", tokens[SUBCOMMAND_TOKEN+1].value) != 0 &&
-            strcmp("get", tokens[SUBCOMMAND_TOKEN].value) != 0) {
-
+        if (strcmp("create", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "mop create");
+            operation_enum = OPERATION_MOP_CREATE;
+        } else if (strcmp("insert", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "mop insert");
+            operation_enum = OPERATION_MOP_INSERT;
+        } else if (strcmp("delete", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "mop delete");
+            operation_enum = OPERATION_MOP_DELETE;
+        } else if (strcmp("update", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "mop update");
+            operation_enum = OPERATION_MOP_UPDATE;
+        } else if (strcmp("get", tokens[SUBCOMMAND_TOKEN].value) == 0) {
+            sprintf(cmd, "mop get");
+            operation_enum = OPERATION_MOP_GET;
+        } else {
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
     } else if (strcmp("bop", tokens[SUBCOMMAND_TOKEN].value) == 0) {
-        if (strcmp("create", tokens[SUBCOMMAND_TOKEN+1].value) != 0 && strcmp("insert", tokens[SUBCOMMAND_TOKEN+1].value) != 0 &&
-            strcmp("upsert", tokens[SUBCOMMAND_TOKEN+1].value) != 0 && strcmp("update", tokens[SUBCOMMAND_TOKEN+1].value) != 0 &&
-            strcmp("delete", tokens[SUBCOMMAND_TOKEN+1].value) != 0 && strcmp("count", tokens[SUBCOMMAND_TOKEN+1].value) != 0 &&
-            strcmp("incr", tokens[SUBCOMMAND_TOKEN+1].value) != 0 && strcmp("decr", tokens[SUBCOMMAND_TOKEN+1].value) != 0 &&
-            strcmp("get", tokens[SUBCOMMAND_TOKEN+1].value) != 0 && strcmp("mget", tokens[SUBCOMMAND_TOKEN+1].value) != 0 &&
-            strcmp("smget", tokens[SUBCOMMAND_TOKEN+1].value) != 0 && strcmp("position", tokens[SUBCOMMAND_TOKEN+1].value) != 0 &&
-            strcmp("gbp", tokens[SUBCOMMAND_TOKEN+1].value) != 0 && strcmp("pwg", tokens[SUBCOMMAND_TOKEN+1].value) != 0) {
-
-
+        if (strcmp("create", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "bop create");
+            operation_enum = OPERATION_BOP_CREATE;
+        } else if (strcmp("insert", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "bop insert");
+            operation_enum = OPERATION_BOP_INSERT;
+        } else if (strcmp("upsert", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "bop upsert");
+            operation_enum = OPERATION_BOP_UPSERT;
+        } else if (strcmp("update", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "bop update");
+            operation_enum = OPERATION_BOP_UPDATE;
+        } else if (strcmp("delete", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "bop delete");
+            operation_enum = OPERATION_BOP_DELETE;
+        } else if (strcmp("count", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "bop count");
+            operation_enum = OPERATION_BOP_COUNT;
+        } else if (strcmp("incr", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "bop incr");
+            operation_enum = OPERATION_BOP_INCR;
+        } else if (strcmp("decr", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "bop decr");
+            operation_enum = OPERATION_BOP_DECR;
+        } else if (strcmp("get", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "bop get");
+            operation_enum = OPERATION_BOP_GET;
+        } else if (strcmp("mget", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "bop mget");
+            operation_enum = OPERATION_BOP_MGET;
+        } else if (strcmp("smget", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "bop smget");
+            operation_enum = OPERATION_BOP_SMGET;
+        } else if (strcmp("position", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "bop position");
+            operation_enum = OPERATION_BOP_POSITION;
+        } else if (strcmp("gbp", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "bop gbp");
+            operation_enum = OPERATION_BOP_GBP;
+        } else if (strcmp("pwg", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
+            sprintf(cmd, "bop pwg");
+            operation_enum = OPERATION_BOP_PWG;
+        } else {
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
     } else { /* key value command */
-        if (strcmp("set", tokens[SUBCOMMAND_TOKEN].value) != 0 && strcmp("add", tokens[SUBCOMMAND_TOKEN].value) != 0 &&
-           strcmp("replace", tokens[SUBCOMMAND_TOKEN].value) != 0 && strcmp("append", tokens[SUBCOMMAND_TOKEN].value) != 0 &&
-           strcmp("prepend", tokens[SUBCOMMAND_TOKEN].value) != 0 && strcmp("delete", tokens[SUBCOMMAND_TOKEN].value) != 0 &&
-           strcmp("get", tokens[SUBCOMMAND_TOKEN].value) != 0 && strcmp("gets", tokens[SUBCOMMAND_TOKEN].value) != 0 &&
-           strcmp("mget", tokens[SUBCOMMAND_TOKEN].value) != 0 && strcmp("cas", tokens[SUBCOMMAND_TOKEN].value) != 0 &&
-           strcmp("incr", tokens[SUBCOMMAND_TOKEN].value) != 0 && strcmp("decr", tokens[SUBCOMMAND_TOKEN].value) != 0) {
-
+        if (strcmp("set", tokens[SUBCOMMAND_TOKEN].value) == 0) {
+            sprintf(cmd, "set");
+            operation_enum = OPERATION_SET;
+        } else if (strcmp("add", tokens[SUBCOMMAND_TOKEN].value) == 0) {
+            sprintf(cmd, "add");
+            operation_enum = OPERATION_ADD;
+        } else if (strcmp("replace", tokens[SUBCOMMAND_TOKEN].value) == 0) {
+            sprintf(cmd, "replace");
+            operation_enum = OPERATION_REPLACE;
+        } else if (strcmp("append", tokens[SUBCOMMAND_TOKEN].value) == 0) {
+            sprintf(cmd, "append");
+            operation_enum = OPERATION_APPEND;
+        } else if (strcmp("prepend", tokens[SUBCOMMAND_TOKEN].value) == 0) {
+            sprintf(cmd, "prepend");
+            operation_enum = OPERATION_PREPEND;
+        } else if (strcmp("delete", tokens[SUBCOMMAND_TOKEN].value) == 0) {
+            sprintf(cmd, "delete");
+            operation_enum = OPERATION_DELETE;
+        } else if (strcmp("get", tokens[SUBCOMMAND_TOKEN].value) == 0) {
+            sprintf(cmd, "get");
+            operation_enum = OPERATION_GET;
+        } else if (strcmp("gets", tokens[SUBCOMMAND_TOKEN].value) == 0) {
+            sprintf(cmd, "get");
+            operation_enum = OPERATION_GETS;
+        } else if (strcmp("mget", tokens[SUBCOMMAND_TOKEN].value) == 0) {
+            sprintf(cmd, "mget");
+            operation_enum = OPERATION_MGET;
+        } else if (strcmp("cas", tokens[SUBCOMMAND_TOKEN].value) == 0) {
+            sprintf(cmd, "cas");
+            operation_enum = OPERATION_CAS;
+        } else if (strcmp("incr", tokens[SUBCOMMAND_TOKEN].value) == 0) {
+            sprintf(cmd, "incr");
+            operation_enum = OPERATION_INCR;
+        } else if (strcmp("decr", tokens[SUBCOMMAND_TOKEN].value) == 0) {
+            sprintf(cmd, "decr");
+            operation_enum = OPERATION_DECR;
+        } else {
            out_string(c, "CLIENT_ERROR bad command line format");
            return;
         }
@@ -13312,26 +13417,18 @@ static void process_second_command(conn *c, token_t *tokens, const size_t ntoken
         return;
     }
 
-    char collection_name[20] = "";
-    char cmd[20] = "";
-    int32_t cmd_idx = SUBCOMMAND_TOKEN;
+    const int cmd_idx = SUBCOMMAND_TOKEN;
+    const int cnt_idx = cmd_idx + 1 + is_collection_cmd;
 
-    if (is_collection_cmd) {
-        sprintf(collection_name, "%s", tokens[cmd_idx++].value);
-    }
 
-    sprintf(cmd, "%s", tokens[cmd_idx].value);
+    int cnt_to_log= 0;
 
-    int32_t cnt_to_log= 0;
-
-    if (!safe_strtol(tokens[cmd_idx+1].value, &cnt_to_log) || cnt_to_log <= 0) {
+    if (!safe_strtol(tokens[cnt_idx].value, &cnt_to_log) || cnt_to_log <= 0) {
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
 
-    STATS_LOCK();
-    const int32_t start_code = cmd_in_second_start(collection_name, cmd, cnt_to_log);
-    STATS_UNLOCK();
+    const int start_code = cmd_in_second_start(operation_enum, cmd, cnt_to_log);
 
     char response[100] = "";
 
@@ -13344,7 +13441,7 @@ static void process_second_command(conn *c, token_t *tokens, const size_t ntoken
             break;
         case CMD_IN_SECOND_START:
             settings.detail_enabled = true;
-            sprintf(response, "%s %s will be logged", collection_name, cmd);
+            sprintf(response, "%s will be logged", cmd);
             break;
     }
     out_string(c, response);
@@ -16046,7 +16143,7 @@ int main (int argc, char **argv) {
 #endif
 
 #ifdef CMD_IN_SECOND
-    cmd_in_second_init();
+    cmd_in_second_init(mc_logger);
 #endif
 
 #ifdef DETECT_LONG_QUERY

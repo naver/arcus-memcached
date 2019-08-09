@@ -13,6 +13,7 @@
 #define LOG_LENGTH 400
 #define IP_LENGTH 16
 #define KEY_LENGTH 256
+#define CMD_STR_LEN 30
 
 typedef enum cmd_in_second_state {
     NOT_STARTED,
@@ -41,14 +42,24 @@ typedef struct cmd_in_second_timer {
     int32_t circular_counter;
 } timertype;
 
+typedef struct cmd_in_second_flush_thread {
+    pthread_t tid;
+    pthread_attr_t attr;
+    pthread_cond_t cond; 
+    pthread_mutex_t lock;
+    bool sleep;
+} flush_thread;
+
 struct cmd_in_second {
-    int cmd;
+    int operation;
     char cmd_str[50];
     struct cmd_in_second_buffer buffer;
     timertype timer;
     int32_t bulk_limit;
     int32_t log_per_timer;
     state cur_state;
+    flush_thread flusher;
+    EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
     pthread_mutex_t lock;
 };
 
@@ -65,9 +76,6 @@ static bool is_bulk_cmd()
     const struct timeval* front_time = &this.timer.ring[this.timer.front];
     const struct timeval* last_time = &this.timer.ring[this.timer.last_elem_idx];
 
-    //printf("%d\n", this.timer.last_elem_idx);
-    //assert(0);
-
     return last_time->tv_sec - front_time->tv_sec <= 1;
 }
 
@@ -76,71 +84,124 @@ static bool buffer_empty()
     return this.buffer.front == this.buffer.rear;
 }
 
-static void* buffer_flush_thread()
+static bool buffer_full() {
+    return (this.buffer.rear+1) % this.buffer.capacity == this.buffer.front;
+}
+
+static void put_flusher_to_sleep() {
+    struct timeval now;
+    struct timespec timeout;
+
+    pthread_mutex_lock(&this.flusher.lock);
+    gettimeofday(&now, NULL);
+
+    now.tv_usec += 50000;
+
+    if (now.tv_usec >= 1000000) {
+        now.tv_sec += 1;
+        now.tv_usec -= 1000000;
+    }
+
+    timeout.tv_sec = now.tv_sec;
+    timeout.tv_nsec = now.tv_usec * 1000;
+
+    flush_thread* const flusher = &this.flusher;
+
+    flusher->sleep = true;
+    pthread_cond_timedwait(&flusher->cond, &flusher->lock, &timeout);
+    flusher->sleep = false;
+
+    pthread_mutex_unlock(&this.flusher.lock);
+}
+
+static void wake_flusher_up(){
+    printf("in\n");
+    pthread_mutex_lock(&this.flusher.lock);
+    if (this.flusher.sleep) {
+        printf("signaled\n");
+        pthread_cond_signal(&this.flusher.cond);
+    }
+    pthread_mutex_unlock(&this.flusher.lock);
+}
+
+static void* flush_buffer()
 {
     const int32_t fd = open("cmd_in_second.log", O_CREAT | O_WRONLY | O_TRUNC,  0644);
 
-    if (fd < 0) {
-        perror("Can't open cmd_in_second log file: cmd_in_second.log");
-        return NULL;
-    }
-
-    buffertype* const buffer = &this.buffer;
-    timertype* const timer = &this.timer;
-
-    char* log_str = (char*)malloc(LOG_LENGTH * this.bulk_limit * sizeof(char));
-
-    if (log_str == NULL) {
-        perror("Can't allocate memory");
-        return NULL;
-    }
-
-    const size_t cmd_len = strlen(this.cmd_str);
-    const int32_t whitespaces = 3;
-
-    size_t expected_write_length = 0;
-    int32_t circular_log_counter = 0;
-
-    while (!buffer_empty()) {
-
-        const logtype front = buffer->ring[buffer->front];
-        buffer->front = (buffer->front+1) % buffer->capacity;
-
-        char time_str[50] = "";
-
-        if (circular_log_counter == 0) {
-
-            const struct timeval* front_time = &timer->ring[timer->front];
-            const struct tm* lt = localtime((time_t*)&front_time->tv_sec);
-
-            timer->front = (timer->front+1) % timer->capacity;
-
-            if (lt == NULL) {
-                perror("localtime failed");
-                continue;
-            }
-
-            sprintf(time_str, "%04d-%02d-%02d %02d:%02d:%02d.%06d\n", lt ->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
-                                                                      lt->tm_hour, lt->tm_min, lt->tm_sec, (int32_t)front_time->tv_usec);
-            expected_write_length += 27;
+    while(1) {
+        if (fd < 0) {
+            perror("Can't open cmd_in_second log file: cmd_in_second.log");
+            break;
         }
 
-        char log[LOG_LENGTH] = "";
-        snprintf(log, LOG_LENGTH, "%s%s %s %s\n", time_str, this.cmd_str, front.key, front.client_ip);
-        strncat(log_str, log, LOG_LENGTH);
+        if (this.cur_state != ON_FLUSHING) {
+            put_flusher_to_sleep();
+            continue;
+        }
 
-        expected_write_length += cmd_len + strlen(front.key) + strlen(front.client_ip) + whitespaces;
-        circular_log_counter = (circular_log_counter+1) % this.log_per_timer;
+        buffertype* const buffer = &this.buffer;
+        timertype* const timer = &this.timer;
+
+        char* log_str = (char*)malloc(LOG_LENGTH * this.bulk_limit * sizeof(char));
+
+        if (log_str == NULL) {
+            break;
+        }
+
+        const size_t cmd_len = strlen(this.cmd_str);
+        const int32_t whitespaces = 3;
+
+        size_t expected_write_length = 0;
+        int32_t circular_log_counter = 0;
+
+        while (!buffer_empty()) {
+
+            const logtype front = buffer->ring[buffer->front];
+            buffer->front = (buffer->front+1) % buffer->capacity;
+
+            char time_str[50] = "";
+
+            if (circular_log_counter == 0) {
+
+                const struct timeval* front_time = &timer->ring[timer->front];
+                const struct tm* lt = localtime((time_t*)&front_time->tv_sec);
+
+                timer->front = (timer->front+1) % timer->capacity;
+
+                if (lt == NULL) {
+                    perror("localtime failed");
+                    continue;
+                }
+
+                sprintf(time_str, "%04d-%02d-%02d %02d:%02d:%02d.%06d\n", lt ->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
+                        lt->tm_hour, lt->tm_min, lt->tm_sec, (int32_t)front_time->tv_usec);
+                expected_write_length += 27;
+            }
+
+            char log[LOG_LENGTH] = "";
+            snprintf(log, LOG_LENGTH, "%s%s %s %s\n", time_str, this.cmd_str, front.key, front.client_ip);
+            strncat(log_str, log, LOG_LENGTH);
+
+            expected_write_length += cmd_len + strlen(front.key) + strlen(front.client_ip) + whitespaces;
+            circular_log_counter = (circular_log_counter+1) % this.log_per_timer;
+        }
+
+        const int written_length = write(fd, log_str, expected_write_length);
+        printf("%s", log_str);
+        free(log_str);
+
+        if (written_length != expected_write_length) {
+            perror("write length is difference to expectation.");
+            break;
+        }
+
+        break;
     }
 
-    if (write(fd, log_str, expected_write_length) != expected_write_length) {
-        perror("write length is difference to expectation.");
+    if (fd >= 0) {
+        close(fd);
     }
-
-    close(fd);
-
-    free(log_str);
-
+         
     free(this.timer.ring);
     this.timer.ring = NULL;
 
@@ -152,49 +213,32 @@ static void* buffer_flush_thread()
     return NULL;
 }
 
-static int32_t buffer_flush()
-{
-
-    pthread_t tid;
-    pthread_attr_t attr;
-
-    int32_t ret = 0;
-
-    if (pthread_attr_init(&attr) != 0 ||
-        pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0 ||
-        (ret = pthread_create(&tid, &attr, buffer_flush_thread, NULL)) != 0)
-    {
-        perror("Can't create buffer flush thread");
-        return ret;
-    }
-
-    return ret;
-}
-
 static void buffer_add(const logtype* log)
 {
-
+    printf("add ready\n");
     struct cmd_in_second_buffer* const buffer = &this.buffer;
 
     buffer->ring[buffer->rear] = *log;
     buffer->rear = (buffer->rear+1) % buffer->capacity;
+    printf("enqueued\n");
 
-    const bool buffer_full = (buffer->rear+1) % buffer->capacity == buffer->front;
-
-    if (buffer_full) {
+    if (buffer_full()) {
+        printf("buffer full\n");
         if (is_bulk_cmd()) {
+            printf("bulk_cmd\n");
             this.cur_state = ON_FLUSHING;
-            buffer_flush();
+            wake_flusher_up();
+            printf("flush woked up\n");
             return;
         }
         buffer->front = (buffer->front+1) % buffer->capacity;
+        printf("buffer popped\n");
     }
 }
 
 static void timer_add()
 {
     struct cmd_in_second_timer* const timer = &this.timer;
-
     const bool timer_full = (timer->rear+1) % timer->capacity == timer->front;
 
     if (timer_full) {
@@ -210,17 +254,19 @@ static void timer_add()
     timer->rear = (timer->rear+1) % timer->capacity;
 }
 
-static bool is_cmd_to_log(const char* collection_name, const char* cmd)
+static bool is_cmd_to_log(const int operation)
 {
-    return strcmp(this.collection_name, collection_name) == 0 &&
-           strcmp(this.cmd, cmd) == 0;
+    return this.operation == operation;
 }
 
-bool cmd_in_second_write(const int cmd, const char* key, const char* client_ip)
+bool cmd_in_second_write(const int operation, const char* key, const char* client_ip)
 {
     pthread_mutex_lock(&this.lock);
-    if (this.cur_state != ON_LOGGING || !is_cmd_to_log(collection_name, cmd)) {
+    printf("locked %s %d \n", key, this.cur_state);
+
+    if (this.cur_state != ON_LOGGING || !is_cmd_to_log(operation)) {
         pthread_mutex_unlock(&this.lock);
+        printf("already locked\n");
         return false;
     }
 
@@ -233,17 +279,19 @@ bool cmd_in_second_write(const int cmd, const char* key, const char* client_ip)
     }
 
     buffer_add(&log);
+    printf("buffer add finished\n");
     this.timer.circular_counter = (this.timer.circular_counter+1) % this.log_per_timer;
 
     pthread_mutex_unlock(&this.lock);
+    printf("unlocked\n");
     return true;
 }
 
 /* TODO mc_logger */
-void cmd_in_second_init()
+void cmd_in_second_init(EXTENSION_LOGGER_DESCRIPTOR *mc_logger)
 {
+    this.mc_logger = mc_logger;
     this.cur_state = NOT_STARTED;
-    pthread_mutex_init(&this.lock, NULL);
 
     this.buffer.front = 0;
     this.buffer.rear = 0;
@@ -255,9 +303,16 @@ void cmd_in_second_init()
     this.timer.circular_counter = 0;
     this.timer.last_elem_idx = 0;
     this.timer.ring = NULL;
+
+    pthread_mutex_init(&this.lock, NULL);
+
+    flush_thread* const flusher = &this.flusher;
+    pthread_attr_init(&flusher->attr);
+    pthread_mutex_init(&flusher->lock, NULL); 
+    pthread_cond_init(&flusher->cond, NULL);
 }
 
-int cmd_in_second_start(const int cmd, const int bulk_limit)
+int cmd_in_second_start(const int operation, const char cmd_str[], const int bulk_limit)
 {
 
     pthread_mutex_lock(&this.lock);
@@ -267,8 +322,21 @@ int cmd_in_second_start(const int cmd, const int bulk_limit)
         return CMD_IN_SECOND_STARTED_ALREADY;
     }
 
-    this.cmd = cmd;
+    int thread_created = -1;
+
+    flush_thread* const flusher = &this.flusher;
+
+    if (pthread_attr_init(&flusher->attr) != 0 ||
+            pthread_attr_setdetachstate(&flusher->attr, PTHREAD_CREATE_DETACHED) != 0 ||
+            (thread_created = pthread_create(&flusher->tid, &flusher->attr, 
+                                             flush_buffer, NULL)) != 0)
+    {
+        return CMD_IN_SECOND_THREAD_FAILED;
+    }
+
+    this.operation = operation;
     this.bulk_limit = bulk_limit;
+    snprintf(this.cmd_str, CMD_STR_LEN, cmd_str);
 
     this.buffer.capacity = bulk_limit+1;
     this.buffer.ring = (logtype*)malloc(this.buffer.capacity * sizeof(logtype));
@@ -280,7 +348,6 @@ int cmd_in_second_start(const int cmd, const int bulk_limit)
 
     this.log_per_timer = bulk_limit / 10 + (bulk_limit % 10 != 0);
     this.timer.capacity = this.log_per_timer + 1;
-
     this.timer.ring = (struct timeval*)malloc(this.timer.capacity * sizeof(struct timeval));
 
     if (this.timer.ring == NULL) {
@@ -291,6 +358,7 @@ int cmd_in_second_start(const int cmd, const int bulk_limit)
 
     this.cur_state = ON_LOGGING;
 
+    printf("log start\n");
     pthread_mutex_unlock(&this.lock);
 
     return CMD_IN_SECOND_START;

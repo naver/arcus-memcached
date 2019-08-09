@@ -42,9 +42,6 @@ sub request_log{
 
 sub do_bulk_coll_insert {
 
-    if (-e "cmd_in_second.log") {
-        unlink "cmd_in_second.log" or die "can't remove old file\n";
-    }
 
     my ($collection, $key, $count) = @_;
     my $start_time = time;
@@ -92,7 +89,7 @@ sub do_bulk_coll_insert {
             $rst = "CREATED_STORED";
         }
 
-        if ($count >= 10) {
+        if ($count >= 10 and $count < $bulk_size) {
             if ($index % (int($count/10)) == 0) {
                 request_log("mop insert", 1000, $on_logging);
             }
@@ -106,6 +103,7 @@ sub do_bulk_coll_insert {
     my $end_time = time;
 
     cmp_ok($end_time - $start_time, "<=", 1000, "all commands are done in a second");
+    sleep(1);
 
     my $file_handle;
     open($file_handle, "cmd_in_second.log") or die "log file not exist\n";
@@ -169,18 +167,15 @@ sub file_check {
 wrong_cmd_test();
 sleep(1);
 #extremely small cases
-
-
-=pod
 request_log("bop insert", 1, $start);
 do_bulk_coll_insert("bop", "bkey1", 1);
-
 request_log("bop insert", 9, $start);
 do_bulk_coll_insert("bop", "bkey2", 9);
-=cut
 
+=pod
 request_log("bop insert", $bulk_size, $start);
-do_bulk_coll_insert("bop", "bkey3", $bulk_size+100);
+do_bulk_coll_insert("bop", "bkey3", $bulk_size);
+=cut
 
 sleep(1);
 
