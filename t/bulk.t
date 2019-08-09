@@ -172,10 +172,8 @@ do_bulk_coll_insert("bop", "bkey1", 1);
 request_log("bop insert", 9, $start);
 do_bulk_coll_insert("bop", "bkey2", 9);
 
-=pod
 request_log("bop insert", $bulk_size, $start);
 do_bulk_coll_insert("bop", "bkey3", $bulk_size);
-=cut
 
 sleep(1);
 

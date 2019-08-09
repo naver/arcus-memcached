@@ -1,5 +1,4 @@
 #include "cmd_in_second.h"
-#include "include/memcached/extension.h"
 #include <string.h>
 #include <stdint.h>
 #include <assert.h>
@@ -45,7 +44,7 @@ typedef struct cmd_in_second_timer {
 typedef struct cmd_in_second_flush_thread {
     pthread_t tid;
     pthread_attr_t attr;
-    pthread_cond_t cond; 
+    pthread_cond_t cond;
     pthread_mutex_t lock;
     bool sleep;
 } flush_thread;
@@ -59,11 +58,11 @@ struct cmd_in_second {
     int32_t log_per_timer;
     state cur_state;
     flush_thread flusher;
-    EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
     pthread_mutex_t lock;
 };
 
 static struct cmd_in_second this;
+static EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
 
 static bool is_bulk_cmd()
 {
@@ -115,10 +114,8 @@ static void put_flusher_to_sleep() {
 }
 
 static void wake_flusher_up(){
-    printf("in\n");
     pthread_mutex_lock(&this.flusher.lock);
     if (this.flusher.sleep) {
-        printf("signaled\n");
         pthread_cond_signal(&this.flusher.cond);
     }
     pthread_mutex_unlock(&this.flusher.lock);
@@ -130,7 +127,8 @@ static void* flush_buffer()
 
     while(1) {
         if (fd < 0) {
-            perror("Can't open cmd_in_second log file: cmd_in_second.log");
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                           "Can't open cmd_in_second.log");
             break;
         }
 
@@ -169,7 +167,8 @@ static void* flush_buffer()
                 timer->front = (timer->front+1) % timer->capacity;
 
                 if (lt == NULL) {
-                    perror("localtime failed");
+                    mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                           "localtime failed");
                     continue;
                 }
 
@@ -187,11 +186,12 @@ static void* flush_buffer()
         }
 
         const int written_length = write(fd, log_str, expected_write_length);
-        printf("%s", log_str);
         free(log_str);
 
         if (written_length != expected_write_length) {
-            perror("write length is difference to expectation.");
+            printf("log\n");
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                           "write length is difference to expectation");
             break;
         }
 
@@ -201,7 +201,7 @@ static void* flush_buffer()
     if (fd >= 0) {
         close(fd);
     }
-         
+
     free(this.timer.ring);
     this.timer.ring = NULL;
 
@@ -215,24 +215,18 @@ static void* flush_buffer()
 
 static void buffer_add(const logtype* log)
 {
-    printf("add ready\n");
     struct cmd_in_second_buffer* const buffer = &this.buffer;
 
     buffer->ring[buffer->rear] = *log;
     buffer->rear = (buffer->rear+1) % buffer->capacity;
-    printf("enqueued\n");
 
     if (buffer_full()) {
-        printf("buffer full\n");
         if (is_bulk_cmd()) {
-            printf("bulk_cmd\n");
             this.cur_state = ON_FLUSHING;
             wake_flusher_up();
-            printf("flush woked up\n");
             return;
         }
         buffer->front = (buffer->front+1) % buffer->capacity;
-        printf("buffer popped\n");
     }
 }
 
@@ -262,11 +256,9 @@ static bool is_cmd_to_log(const int operation)
 bool cmd_in_second_write(const int operation, const char* key, const char* client_ip)
 {
     pthread_mutex_lock(&this.lock);
-    printf("locked %s %d \n", key, this.cur_state);
 
     if (this.cur_state != ON_LOGGING || !is_cmd_to_log(operation)) {
         pthread_mutex_unlock(&this.lock);
-        printf("already locked\n");
         return false;
     }
 
@@ -279,18 +271,16 @@ bool cmd_in_second_write(const int operation, const char* key, const char* clien
     }
 
     buffer_add(&log);
-    printf("buffer add finished\n");
     this.timer.circular_counter = (this.timer.circular_counter+1) % this.log_per_timer;
 
     pthread_mutex_unlock(&this.lock);
-    printf("unlocked\n");
     return true;
 }
 
 /* TODO mc_logger */
-void cmd_in_second_init(EXTENSION_LOGGER_DESCRIPTOR *mc_logger)
+void cmd_in_second_init(EXTENSION_LOGGER_DESCRIPTOR *global_logger)
 {
-    this.mc_logger = mc_logger;
+    mc_logger = global_logger;
     this.cur_state = NOT_STARTED;
 
     this.buffer.front = 0;
@@ -308,7 +298,7 @@ void cmd_in_second_init(EXTENSION_LOGGER_DESCRIPTOR *mc_logger)
 
     flush_thread* const flusher = &this.flusher;
     pthread_attr_init(&flusher->attr);
-    pthread_mutex_init(&flusher->lock, NULL); 
+    pthread_mutex_init(&flusher->lock, NULL);
     pthread_cond_init(&flusher->cond, NULL);
 }
 
@@ -328,7 +318,7 @@ int cmd_in_second_start(const int operation, const char cmd_str[], const int bul
 
     if (pthread_attr_init(&flusher->attr) != 0 ||
             pthread_attr_setdetachstate(&flusher->attr, PTHREAD_CREATE_DETACHED) != 0 ||
-            (thread_created = pthread_create(&flusher->tid, &flusher->attr, 
+            (thread_created = pthread_create(&flusher->tid, &flusher->attr,
                                              flush_buffer, NULL)) != 0)
     {
         return CMD_IN_SECOND_THREAD_FAILED;
@@ -358,7 +348,6 @@ int cmd_in_second_start(const int operation, const char cmd_str[], const int bul
 
     this.cur_state = ON_LOGGING;
 
-    printf("log start\n");
     pthread_mutex_unlock(&this.lock);
 
     return CMD_IN_SECOND_START;
