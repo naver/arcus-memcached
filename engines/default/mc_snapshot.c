@@ -246,7 +246,11 @@ static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_co
         it = (hash_item*)item_array[i];
 
         ITLinkLog log;
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
+        logsize = lrec_construct_link_item((LogRec*)&log, it);
+#else
         logsize = lrec_construct_snapshot_item((LogRec*)&log, it);
+#endif
         if (do_snapshot_buffer_check_space(ss, logsize) < 0) {
             ret = -1; break;
         }
