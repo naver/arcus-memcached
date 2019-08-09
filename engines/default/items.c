@@ -5648,55 +5648,54 @@ static void coll_del_thread_sleep(void)
 static void *collection_delete_thread(void *arg)
 {
     struct default_engine *engine = arg;
-    hash_item *it;
-    uint32_t expired_cnt;
-    int      current_ssl;
-    bool     background_evict_flag = false;
-    uint32_t background_evict_ccnt = 0; /* current count */
-    struct timespec background_sleep_time = {0, 0};
+    hash_item      *it;
+    int             current_ssl;
+    uint32_t        evict_count;
+    uint32_t        bg_evict_count = 0;
+    bool            bg_evict_start = false;
+    struct timespec bg_evict_sleep = {0, 0};
 
     while (engine->initialized) {
         it = pop_coll_del_queue();
         if (it == NULL) {
-            expired_cnt = 0;
-            if (item_evict_to_free == true &&
-                (current_ssl = slabs_space_shortage_level()) >= 10) {
+            evict_count = 0;
+            if (item_evict_to_free && (current_ssl = slabs_space_shortage_level()) >= 10) {
                 LOCK_CACHE();
-                if (item_evict_to_free == true) {
+                if (item_evict_to_free) {
                     rel_time_t current_time = svcore->get_current_time();
-                    expired_cnt = do_item_regain(current_ssl, current_time, NULL);
+                    evict_count = do_item_regain(current_ssl, current_time, NULL);
                 }
                 UNLOCK_CACHE();
             }
-            if (expired_cnt > 0) {
-                if (background_evict_flag == false) {
+            if (evict_count > 0) {
+                if (bg_evict_start == false) {
                     /*****
                     if (config->verbose > 1) {
                         logger->log(EXTENSION_LOG_INFO, NULL, "background evict: start\n");
                     }
                     *****/
-                    background_evict_flag = true;
-                    background_evict_ccnt = 0;
+                    bg_evict_start = true;
+                    bg_evict_count = 0;
                 }
-                background_sleep_time.tv_nsec = 10000000 / current_ssl;
-                nanosleep(&background_sleep_time, NULL);
-                background_evict_ccnt += expired_cnt;
-                if (background_evict_ccnt >= 10000000) {
+                bg_evict_count += evict_count;
+                if (bg_evict_count >= 10000000) {
                     if (config->verbose > 1) {
-                        logger->log(EXTENSION_LOG_INFO, NULL, "background evict: cur count=%u\n",
-                                                               background_evict_ccnt);
+                        logger->log(EXTENSION_LOG_INFO, NULL, "background evict: count=%u\n",
+                                                               bg_evict_count);
                     }
-                    background_evict_ccnt = 0;
+                    bg_evict_count = 0;
                 }
+                bg_evict_sleep.tv_nsec = 10000000 / current_ssl;
+                nanosleep(&bg_evict_sleep, NULL);
             } else {
-                if (background_evict_flag == true) {
+                if (bg_evict_start == true) {
                     /*****
                     if (config->verbose > 1) {
-                        logger->log(EXTENSION_LOG_INFO, NULL, "background evict: end count=%u\n",
-                                                               background_evict_ccnt);
+                        logger->log(EXTENSION_LOG_INFO, NULL, "background evict: stop count=%u\n",
+                                                               bg_evict_count);
                     }
                     *****/
-                    background_evict_flag = false;
+                    bg_evict_start = false;
                 }
                 coll_del_thread_sleep();
             }
