@@ -256,6 +256,13 @@ extern "C" {
         uint32_t flags;
     } eitem_result;
 
+    /* used to get elements */
+    typedef struct {
+        void     **elem_array;
+        uint32_t elem_arrsz;
+        uint32_t elem_count;
+    } elems_result_t;
+
     /*
      * bkey and eflag
      */
