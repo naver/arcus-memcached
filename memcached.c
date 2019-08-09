@@ -11686,7 +11686,7 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
         }
     } else {
         cmd_in_second_write(OPERATION_BOP_DECR, key, c->client_ip);
-       
+
         if (settings.detail_enabled) {
             stats_prefix_record_bop_decr(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
         }

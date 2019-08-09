@@ -27,18 +27,18 @@ typedef struct cmd_in_second_log {
 
 typedef struct cmd_in_second_buffer {
     logtype* ring;
-    int32_t front;
-    int32_t rear;
-    int32_t capacity;
+    int front;
+    int rear;
+    int capacity;
 } buffertype;
 
 typedef struct cmd_in_second_timer {
     struct timeval* ring;
-    int32_t front;
-    int32_t rear;
-    int32_t capacity;
-    int32_t last_elem_idx;
-    int32_t circular_counter;
+    int front;
+    int rear;
+    int capacity;
+    int last_elem_idx;
+    int circular_counter;
 } timertype;
 
 typedef struct cmd_in_second_flush_thread {
@@ -54,8 +54,8 @@ struct cmd_in_second {
     char cmd_str[50];
     struct cmd_in_second_buffer buffer;
     timertype timer;
-    int32_t bulk_limit;
-    int32_t log_per_timer;
+    int bulk_limit;
+    int log_per_timer;
     state cur_state;
     flush_thread flusher;
     pthread_mutex_t lock;
@@ -123,7 +123,7 @@ static void wake_flusher_up(){
 
 static void* flush_buffer()
 {
-    const int32_t fd = open("cmd_in_second.log", O_CREAT | O_WRONLY | O_TRUNC,  0644);
+    const int fd = open("cmd_in_second.log", O_CREAT | O_WRONLY | O_TRUNC,  0644);
 
     while(1) {
         if (fd < 0) {
@@ -147,10 +147,10 @@ static void* flush_buffer()
         }
 
         const size_t cmd_len = strlen(this.cmd_str);
-        const int32_t whitespaces = 3;
+        const int whitespaces = 3;
 
         size_t expected_write_length = 0;
-        int32_t circular_log_counter = 0;
+        int circular_log_counter = 0;
 
         while (!buffer_empty()) {
 
@@ -173,7 +173,7 @@ static void* flush_buffer()
                 }
 
                 sprintf(time_str, "%04d-%02d-%02d %02d:%02d:%02d.%06d\n", lt ->tm_year + 1900, lt->tm_mon + 1, lt->tm_mday,
-                        lt->tm_hour, lt->tm_min, lt->tm_sec, (int32_t)front_time->tv_usec);
+                        lt->tm_hour, lt->tm_min, lt->tm_sec, (int)front_time->tv_usec);
                 expected_write_length += 27;
             }
 
@@ -326,7 +326,7 @@ int cmd_in_second_start(const int operation, const char cmd_str[], const int bul
 
     this.operation = operation;
     this.bulk_limit = bulk_limit;
-    snprintf(this.cmd_str, CMD_STR_LEN, cmd_str);
+    snprintf(this.cmd_str, CMD_STR_LEN, "%s", cmd_str);
 
     this.buffer.capacity = bulk_limit+1;
     this.buffer.ring = (logtype*)malloc(this.buffer.capacity * sizeof(logtype));
