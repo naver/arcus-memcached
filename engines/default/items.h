@@ -567,6 +567,11 @@ ENGINE_ERROR_CODE item_setattr(const void* key, const uint32_t nkey,
                                ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
                                item_attr *attr_data);
 
+/* Get all elements from collection hash item
+ */
+ENGINE_ERROR_CODE coll_elem_get_all(hash_item *it, elems_result_t *eresult, bool lock_hold);
+void              coll_elem_release(elems_result_t *eresult, int type);
+
 /*
  * Item config functions
  */
@@ -621,10 +626,6 @@ int  item_start_dump(struct default_engine *engine,
 void item_stop_dump(struct default_engine *engine);
 void item_stats_dump(struct default_engine *engine,
                      ADD_STAT add_stat, const void *cookie);
-
-/* get all elements from collection hash item */
-ENGINE_ERROR_CODE coll_elem_get_all(hash_item *it, elems_result_t *eresult, bool lock_hold);
-void              coll_elem_release(elems_result_t *eresult, int type);
 
 #ifdef ENABLE_PERSISTENCE_01_ITEM_SCAN
 /**
