@@ -572,6 +572,17 @@ ENGINE_ERROR_CODE item_setattr(const void* key, const uint32_t nkey,
 ENGINE_ERROR_CODE coll_elem_get_all(hash_item *it, elems_result_t *eresult, bool lock_hold);
 void              coll_elem_release(elems_result_t *eresult, int type);
 
+#ifdef ENABLE_PERSISTENCE_01_ITEM_SCAN
+/**
+ * item scan
+ */
+void *itscan_open(struct default_engine *engine,
+                  const char *prefix, const int nprefix);
+int   itscan_getnext(void *scan, void **item_array, int item_arrsz);
+void  itscan_release(void *scan, void **item_array, int item_count);
+void  itscan_close(void *scan);
+#endif
+
 /*
  * Item config functions
  */
@@ -626,16 +637,5 @@ int  item_start_dump(struct default_engine *engine,
 void item_stop_dump(struct default_engine *engine);
 void item_stats_dump(struct default_engine *engine,
                      ADD_STAT add_stat, const void *cookie);
-
-#ifdef ENABLE_PERSISTENCE_01_ITEM_SCAN
-/**
- * item scan
- */
-void *itscan_open(struct default_engine *engine,
-                  const char *prefix, const int nprefix);
-int   itscan_getnext(void *scan, void **item_array, int item_arrsz);
-void  itscan_release(void *scan, void **item_array, int item_count);
-void  itscan_close(void *scan);
-#endif
 
 #endif
