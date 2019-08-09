@@ -31,7 +31,6 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
-#define GET_ELEMENTS
 #define PROXY_SUPPORT
 #define BOP_COUNT_OPTIMIZE
 //#define NEW_PREFIX_STATS_MANAGEMENT
@@ -254,14 +253,12 @@ extern "C" {
         uint32_t flags;
     } eitem_result;
 
-#ifdef GET_ELEMENTS
     /* used to get elements */
     typedef struct {
         void     **elem_array;
         uint32_t elem_arrsz;
         uint32_t elem_count;
     } elems_result_t;
-#endif
 
     /*
      * bkey and eflag

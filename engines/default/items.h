@@ -622,8 +622,7 @@ void item_stop_dump(struct default_engine *engine);
 void item_stats_dump(struct default_engine *engine,
                      ADD_STAT add_stat, const void *cookie);
 
-#ifdef GET_ELEMENTS
+/* get all elements from collection hash item */
 ENGINE_ERROR_CODE coll_elem_get_all(hash_item *it, elems_result_t *eresult, bool lock_hold);
-void coll_elem_release(elems_result_t *eresult, int type);
-#endif
+void              coll_elem_release(elems_result_t *eresult, int type);
 #endif

@@ -9063,7 +9063,10 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
     UNLOCK_CACHE();
     return ret;
 }
-#ifdef GET_ELEMENTS
+
+/*
+ * Get elements from collection hash item
+ */
 static int do_coll_eresult_realloc(elems_result_t *eresult, uint32_t size)
 {
     if (eresult->elem_array != NULL) {
@@ -9313,4 +9316,3 @@ void coll_elem_release(elems_result_t *eresult, int type)
            break;
     }
 }
-#endif
