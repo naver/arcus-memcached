@@ -8384,8 +8384,7 @@ int itscan_getnext(void *scan, void **item_array, int item_arrsz)
             }
             /* Is it not the prefix item ? */
             if (sp->nprefix >= 0) {
-                if ((it->pfxptr->nprefix != sp->nprefix) ||
-                    (sp->nprefix > 0 && memcmp(item_get_key(it), sp->prefix, sp->nprefix) != 0)) {
+                if (!assoc_prefix_issame(it->pfxptr, sp->prefix, sp->nprefix)) {
                     item_array[idx] = NULL; continue;
                 }
             }
