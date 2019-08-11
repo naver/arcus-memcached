@@ -2804,6 +2804,22 @@ static btree_elem_item *do_btree_find_first(btree_indx_node *root,
     btree_elem_item *elem;
     int mid, left, right, comp;
 
+    if (bkrange == NULL) {
+        assert(bkrtype != BKEY_RANGE_TYPE_SIN);
+        if (bkrtype == BKEY_RANGE_TYPE_ASC) {
+            path[0].node = do_btree_get_first_leaf(root, (path_flag ? path : NULL));
+            path[0].indx = 0;
+        } else {
+            path[0].node = do_btree_get_last_leaf(root, (path_flag ? path : NULL));
+            path[0].indx = path[0].node->used_count - 1;
+        }
+        path[0].bkeq = false;
+
+        elem = BTREE_GET_ELEM_ITEM(path[0].node, path[0].indx);
+        assert(elem != NULL);
+        return elem;
+    }
+
     /* find leaf node */
     node = do_btree_find_leaf(root, bkrange->from_bkey, bkrange->from_nbkey,
                               (path_flag ? path : NULL), &elem);
@@ -2911,46 +2927,56 @@ static btree_elem_item *do_btree_find_first(btree_indx_node *root,
     return elem;
 }
 
-static btree_elem_item *do_btree_find_next(btree_elem_posi *posi, const bkey_range *bkrange)
+static btree_elem_item *do_btree_find_next(btree_elem_posi *posi,
+                                           const bkey_range *bkrange)
 {
     btree_elem_item *elem;
-    int comp;
 
     do_btree_incr_posi(posi);
     if (posi->node == NULL) {
         posi->bkeq = false;
-        elem = NULL;
-    } else {
-        elem = BTREE_GET_ELEM_ITEM(posi->node, posi->indx);
-        comp = BKEY_COMP(elem->data, elem->nbkey, bkrange->to_bkey, bkrange->to_nbkey);
+        return NULL;
+    }
+
+    elem = BTREE_GET_ELEM_ITEM(posi->node, posi->indx);
+    if (bkrange != NULL) {
+        int comp = BKEY_COMP(elem->data, elem->nbkey,
+                             bkrange->to_bkey, bkrange->to_nbkey);
         if (comp == 0) {
             posi->bkeq = true;
         } else {
             posi->bkeq = false;
             if (comp > 0) elem = NULL;
         }
+    } else {
+        posi->bkeq = false;
     }
     return elem;
 }
 
-static btree_elem_item *do_btree_find_prev(btree_elem_posi *posi, const bkey_range *bkrange)
+static btree_elem_item *do_btree_find_prev(btree_elem_posi *posi,
+                                           const bkey_range *bkrange)
 {
     btree_elem_item *elem;
-    int comp;
 
     do_btree_decr_posi(posi);
     if (posi->node == NULL) {
         posi->bkeq = false;
-        elem = NULL;
-    } else {
-        elem = BTREE_GET_ELEM_ITEM(posi->node, posi->indx);
-        comp = BKEY_COMP(elem->data, elem->nbkey, bkrange->to_bkey, bkrange->to_nbkey);
+        return NULL;
+    }
+
+    elem = BTREE_GET_ELEM_ITEM(posi->node, posi->indx);
+    if (bkrange != NULL) {
+        int comp = BKEY_COMP(elem->data, elem->nbkey,
+                             bkrange->to_bkey, bkrange->to_nbkey);
         if (comp == 0) {
             posi->bkeq = true;
         } else {
             posi->bkeq = false;
             if (comp < 0) elem = NULL;
         }
+    } else {
+        posi->bkeq = false;
     }
     return elem;
 }
@@ -5597,10 +5623,8 @@ static void do_coll_all_elem_delete(hash_item *it)
         path[0].node = NULL;
         (void)do_btree_elem_delete_fast(info, path, 0);
 #else
-        bkey_range bkrange_space;
-        get_bkey_full_range(info->bktype, true, &bkrange_space);
-        (void)do_btree_elem_delete(info, BKEY_RANGE_TYPE_ASC, &bkrange_space,
-                                   NULL, 0, NULL, ELEM_DELETE_COLL);
+        (void)do_btree_elem_delete(info, BKEY_RANGE_TYPE_ASC, NULL, NULL,
+                                   0, NULL, ELEM_DELETE_COLL);
 #endif
         assert(info->root == NULL);
     }
@@ -5740,9 +5764,6 @@ static void *collection_delete_thread(void *arg)
 #ifdef BTREE_DELETE_NO_MERGE
             btree_elem_posi path[BTREE_MAX_DEPTH];
             path[0].node = NULL;
-#else
-            bkey_range bkrange_space;
-            get_bkey_full_range(info->bktype, true, &bkrange_space);
 #endif
             while (dropped == false) {
                 LOCK_CACHE();
@@ -5750,8 +5771,8 @@ static void *collection_delete_thread(void *arg)
 #ifdef BTREE_DELETE_NO_MERGE
                 (void)do_btree_elem_delete_fast(info, path, 100);
 #else
-                (void)do_btree_elem_delete(info, BKEY_RANGE_TYPE_ASC, &bkrange_space,
-                                           NULL, 100, NULL, ELEM_DELETE_COLL);
+                (void)do_btree_elem_delete(info, BKEY_RANGE_TYPE_ASC, NULL, NULL,
+                                           100, NULL, ELEM_DELETE_COLL);
 #endif
                 if (info->ccnt == 0) {
                     assert(info->root == NULL);
@@ -7762,17 +7783,13 @@ static void do_btree_elem_get_all(btree_meta_info *info, elems_result_t *eresult
     assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
     btree_elem_item *elem;
     btree_elem_posi  posi;
-    int              bkrtype;
-    bkey_range       bkrange;
 
-    get_bkey_full_range(info->bktype, true, &bkrange);
-    bkrtype = do_btree_bkey_range_type(&bkrange);
-    elem = do_btree_find_first(info->root, bkrtype, &bkrange, &posi, false);
+    elem = do_btree_find_first(info->root, BKEY_RANGE_TYPE_ASC, NULL, &posi, false);
     while (elem != NULL) {
         elem->refcount++;
         eresult->elem_array[eresult->elem_count++] = elem;
         /* Never have to go backward?  FIXME */
-        elem = do_btree_find_next(&posi, &bkrange);
+        elem = do_btree_find_next(&posi, NULL);
     }
     assert(eresult->elem_count == info->ccnt);
 }
