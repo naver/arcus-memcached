@@ -5606,11 +5606,10 @@ static void do_coll_all_elem_delete(hash_item *it)
         assert(info->head == NULL && info->tail == NULL);
     } else if (IS_SET_ITEM(it)) {
         set_meta_info *info = (set_meta_info *)item_get_meta(it);
-#ifdef SET_DELETE_NO_MERGE
-        (void)do_set_elem_delete_fast(info, 0);
-#else
         (void)do_set_elem_delete(info, 0, ELEM_DELETE_COLL);
-#endif
+        /***
+        (void)do_set_elem_delete_fast(info, 0);
+        ***/
         assert(info->root == NULL);
     } else if (IS_MAP_ITEM(it)) {
         map_meta_info *info = (map_meta_info *)item_get_meta(it);
@@ -5618,14 +5617,13 @@ static void do_coll_all_elem_delete(hash_item *it)
         assert(info->root == NULL);
     } else if (IS_BTREE_ITEM(it)) {
         btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
-#ifdef BTREE_DELETE_NO_MERGE
+        (void)do_btree_elem_delete(info, BKEY_RANGE_TYPE_ASC, NULL, NULL,
+                                   0, NULL, ELEM_DELETE_COLL);
+        /***
         btree_elem_posi path[BTREE_MAX_DEPTH];
         path[0].node = NULL;
         (void)do_btree_elem_delete_fast(info, path, 0);
-#else
-        (void)do_btree_elem_delete(info, BKEY_RANGE_TYPE_ASC, NULL, NULL,
-                                   0, NULL, ELEM_DELETE_COLL);
-#endif
+        ***/
         assert(info->root == NULL);
     }
 }
@@ -5730,11 +5728,8 @@ static void *collection_delete_thread(void *arg)
             while (dropped == false) {
                 LOCK_CACHE();
                 info = (set_meta_info *)item_get_meta(it);
-#ifdef SET_DELETE_NO_MERGE
-                (void)do_set_elem_delete_fast(info, 30);
-#else
                 (void)do_set_elem_delete(info, 30, ELEM_DELETE_COLL);
-#endif
+                /* (void)do_set_elem_delete_fast(info, 30); */
                 if (info->ccnt == 0) {
                     assert(info->root == NULL);
                     do_item_free(it);
@@ -5761,19 +5756,16 @@ static void *collection_delete_thread(void *arg)
         else if (IS_BTREE_ITEM(it)) {
             bool dropped = false;
             btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
-#ifdef BTREE_DELETE_NO_MERGE
+            /***
             btree_elem_posi path[BTREE_MAX_DEPTH];
             path[0].node = NULL;
-#endif
+            ***/
             while (dropped == false) {
                 LOCK_CACHE();
                 info = (btree_meta_info *)item_get_meta(it);
-#ifdef BTREE_DELETE_NO_MERGE
-                (void)do_btree_elem_delete_fast(info, path, 100);
-#else
                 (void)do_btree_elem_delete(info, BKEY_RANGE_TYPE_ASC, NULL, NULL,
                                            100, NULL, ELEM_DELETE_COLL);
-#endif
+                /* (void)do_btree_elem_delete_fast(info, path, 100); */
                 if (info->ccnt == 0) {
                     assert(info->root == NULL);
                     do_item_free(it);
