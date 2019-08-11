@@ -38,7 +38,7 @@ static void item_link_q(hash_item *it);
 static void item_unlink_q(hash_item *it);
 static ENGINE_ERROR_CODE do_item_link(hash_item *it);
 static void do_item_unlink(hash_item *it, enum item_unlink_cause cause);
-static void do_coll_all_elem_delete(hash_item *it);
+static void do_coll_elem_delete_all(hash_item *it);
 static uint32_t do_map_elem_delete(map_meta_info *info,
                                    const uint32_t count, enum elem_delete_cause cause);
 
@@ -327,7 +327,7 @@ static hash_item *do_item_reclaim(hash_item *it,
     /* collection item or small-sized kv item */
 #endif
     if (IS_COLL_ITEM(it)) {
-        do_coll_all_elem_delete(it);
+        do_coll_elem_delete_all(it);
     }
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 
@@ -346,7 +346,7 @@ static void do_item_invalidate(hash_item *it, const unsigned int lruid, bool imm
 
     /* it->refcount == 0 */
     if (immediate && IS_COLL_ITEM(it)) {
-        do_coll_all_elem_delete(it);
+        do_coll_elem_delete_all(it);
     }
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 }
@@ -369,7 +369,7 @@ static void do_item_evict(hash_item *it, const unsigned int lruid,
 
     /* unlink the item */
     if (IS_COLL_ITEM(it)) {
-        do_coll_all_elem_delete(it);
+        do_coll_elem_delete_all(it);
     }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
@@ -383,7 +383,7 @@ static void do_item_repair(hash_item *it, const unsigned int lruid)
 
     /* unlink the item */
     if (IS_COLL_ITEM(it)) {
-        do_coll_all_elem_delete(it);
+        do_coll_elem_delete_all(it);
     }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
@@ -5598,33 +5598,34 @@ scan_next:
 /*
  * Item Management Daemon
  */
-static void do_coll_all_elem_delete(hash_item *it)
+static void do_coll_elem_delete_all(hash_item *it)
 {
-    if (IS_LIST_ITEM(it)) {
-        list_meta_info *info = (list_meta_info *)item_get_meta(it);
-        (void)do_list_elem_delete(info, 0, 0, ELEM_DELETE_COLL);
-        assert(info->head == NULL && info->tail == NULL);
-    } else if (IS_SET_ITEM(it)) {
-        set_meta_info *info = (set_meta_info *)item_get_meta(it);
-        (void)do_set_elem_delete(info, 0, ELEM_DELETE_COLL);
-        /***
-        (void)do_set_elem_delete_fast(info, 0);
-        ***/
-        assert(info->root == NULL);
-    } else if (IS_MAP_ITEM(it)) {
-        map_meta_info *info = (map_meta_info *)item_get_meta(it);
-        (void)do_map_elem_delete(info, 0, ELEM_DELETE_COLL);
-        assert(info->root == NULL);
-    } else if (IS_BTREE_ITEM(it)) {
-        btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
-        (void)do_btree_elem_delete(info, BKEY_RANGE_TYPE_ASC, NULL, NULL,
-                                   0, NULL, ELEM_DELETE_COLL);
+    coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
+
+    if (IS_BTREE_ITEM(it)) {
+        (void)do_btree_elem_delete((btree_meta_info *)info, BKEY_RANGE_TYPE_ASC,
+                                   NULL, NULL, 0, NULL, ELEM_DELETE_COLL);
         /***
         btree_elem_posi path[BTREE_MAX_DEPTH];
         path[0].node = NULL;
         (void)do_btree_elem_delete_fast(info, path, 0);
         ***/
-        assert(info->root == NULL);
+        assert(info->ccnt == 0);
+    }
+    else if (IS_SET_ITEM(it)) {
+        (void)do_set_elem_delete((set_meta_info *)info, 0, ELEM_DELETE_COLL);
+        /***
+        (void)do_set_elem_delete_fast(info, 0);
+        ***/
+        assert(info->ccnt == 0);
+    }
+    else if (IS_MAP_ITEM(it)) {
+        (void)do_map_elem_delete((map_meta_info *)info, 0, ELEM_DELETE_COLL);
+        assert(info->ccnt == 0);
+    }
+    else if (IS_LIST_ITEM(it)) {
+        (void)do_list_elem_delete((list_meta_info *)info, 0, 0, ELEM_DELETE_COLL);
+        assert(info->ccnt == 0);
     }
 }
 
