@@ -3962,6 +3962,7 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
     return tot_found;
 }
 
+#if 0 /* Might be used later */
 static inline void get_bkey_full_range(const int bktype, const bool ascend, bkey_range *bkrange)
 {
     if (bktype == BKEY_TYPE_BINARY) {
@@ -3987,6 +3988,7 @@ static inline void get_bkey_full_range(const int bktype, const bool ascend, bkey
         bkrange->from_nbkey = bkrange->to_nbkey = 0;
     }
 }
+#endif
 
 static ENGINE_ERROR_CODE do_btree_overflow_check(btree_meta_info *info, btree_elem_item *elem,
                                                  int *overflow_type)
