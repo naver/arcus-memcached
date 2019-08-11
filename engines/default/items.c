@@ -75,14 +75,6 @@ extern int genhash_string_hash(const void* p, size_t nkey);
 #define BKEY_TYPE_UINT64  1
 #define BKEY_TYPE_BINARY  2
 
-/* binary bkey min & max length */
-#define BKEY_MIN_BINARY_LENG 1
-#define BKEY_MAX_BINARY_LENG MAX_BKEY_LENG
-
-/* uint64 bkey min & max value */
-#define BTREE_UINT64_MIN_BKEY 0
-#define BTREE_UINT64_MAX_BKEY (uint64_t)((int64_t)-1) /* need check */
-
 /* btree element item or btree node item */
 #define BTREE_GET_ELEM_ITEM(node, indx) ((btree_elem_item *)((node)->item[indx]))
 #define BTREE_GET_NODE_ITEM(node, indx) ((btree_indx_node *)((node)->item[indx]))
@@ -119,14 +111,11 @@ static bool btree_position_debug = false;
 /* config: evict items to free memory */
 static bool item_evict_to_free = true;
 
-/* min & max bkey constants */
-static uint64_t      btree_uint64_min_bkey = BTREE_UINT64_MIN_BKEY;
-static uint64_t      btree_uint64_max_bkey = BTREE_UINT64_MAX_BKEY;
-static unsigned char btree_binary_min_bkey[BKEY_MIN_BINARY_LENG] = { 0x00 };
-static unsigned char btree_binary_max_bkey[BKEY_MAX_BINARY_LENG] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                                     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                                     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                                     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+/* bkey min & max value */
+static uint64_t      bkey_uint64_min;
+static uint64_t      bkey_uint64_max;
+static unsigned char bkey_binary_min[MIN_BKEY_LENG];
+static unsigned char bkey_binary_max[MAX_BKEY_LENG];
 
 /* maximum collection size  */
 static int32_t coll_size_limit = 1000000;
@@ -3951,27 +3940,23 @@ static inline void get_bkey_full_range(const int bktype, const bool ascend, bkey
 {
     if (bktype == BKEY_TYPE_BINARY) {
         if (ascend) {
-            memcpy(bkrange->from_bkey, btree_binary_min_bkey, BKEY_MIN_BINARY_LENG);
-            memcpy(bkrange->to_bkey,   btree_binary_max_bkey, BKEY_MAX_BINARY_LENG);
-            bkrange->from_nbkey = BKEY_MIN_BINARY_LENG;
-            bkrange->to_nbkey   = BKEY_MAX_BINARY_LENG;
+            memcpy(bkrange->from_bkey, bkey_binary_min, MIN_BKEY_LENG);
+            memcpy(bkrange->to_bkey,   bkey_binary_max, MAX_BKEY_LENG);
+            bkrange->from_nbkey = MIN_BKEY_LENG;
+            bkrange->to_nbkey   = MAX_BKEY_LENG;
         } else {
-            memcpy(bkrange->from_bkey, btree_binary_max_bkey, BKEY_MAX_BINARY_LENG);
-            memcpy(bkrange->to_bkey,   btree_binary_min_bkey, BKEY_MIN_BINARY_LENG);
-            bkrange->from_nbkey = BKEY_MAX_BINARY_LENG;
-            bkrange->to_nbkey   = BKEY_MIN_BINARY_LENG;
+            memcpy(bkrange->from_bkey, bkey_binary_max, MAX_BKEY_LENG);
+            memcpy(bkrange->to_bkey,   bkey_binary_min, MIN_BKEY_LENG);
+            bkrange->from_nbkey = MAX_BKEY_LENG;
+            bkrange->to_nbkey   = MIN_BKEY_LENG;
         }
     } else { /* bktype == BKEY_TYPE_UINT64 or BKEY_TYPE_UNKNOWN */
         if (ascend) {
-            memcpy(bkrange->from_bkey, (unsigned char*)&btree_uint64_min_bkey, sizeof(uint64_t));
-            memcpy(bkrange->to_bkey,   (unsigned char*)&btree_uint64_max_bkey, sizeof(uint64_t));
-            //*(uint64_t*)bkrange->from_bkey = btree_uint64_min_bkey;
-            //*(uint64_t*)bkrange->to_bkey   = btree_uint64_max_bkey;
+            memcpy(bkrange->from_bkey, (void*)&bkey_uint64_min, sizeof(uint64_t));
+            memcpy(bkrange->to_bkey,   (void*)&bkey_uint64_max, sizeof(uint64_t));
         } else {
-            memcpy(bkrange->from_bkey, (unsigned char*)&btree_uint64_max_bkey, sizeof(uint64_t));
-            memcpy(bkrange->to_bkey,   (unsigned char*)&btree_uint64_min_bkey, sizeof(uint64_t));
-            //*(uint64_t*)bkrange->from_bkey = btree_uint64_max_bkey;
-            //*(uint64_t*)bkrange->to_bkey   = btree_uint64_min_bkey;
+            memcpy(bkrange->from_bkey, (void*)&bkey_uint64_max, sizeof(uint64_t));
+            memcpy(bkrange->to_bkey,   (void*)&bkey_uint64_min, sizeof(uint64_t));
         }
         bkrange->from_nbkey = bkrange->to_nbkey = 0;
     }
@@ -6298,6 +6283,14 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
     }
 
     item_clog_init(engine);
+
+    /* prepare bkey min & max value */
+    bkey_uint64_min = 0;
+    bkey_uint64_max = (uint64_t)((int64_t)-1); /* need check */
+    bkey_binary_min[0] = 0x00;
+    for (int i=0; i < MAX_BKEY_LENG; i++) {
+        bkey_binary_max[i] = 0xFF;
+    }
 
     /* remove unused function warnings */
     if (1) {
