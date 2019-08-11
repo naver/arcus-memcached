@@ -43,7 +43,7 @@ static void item_link_q(hash_item *it);
 static void item_unlink_q(hash_item *it);
 static ENGINE_ERROR_CODE do_item_link(hash_item *it);
 static void do_item_unlink(hash_item *it, enum item_unlink_cause cause);
-static void do_coll_all_elem_delete(hash_item *it);
+static void do_coll_elem_delete_all(hash_item *it);
 static uint32_t do_map_elem_delete(map_meta_info *info,
                                    const uint32_t count, enum elem_delete_cause cause);
 
@@ -79,14 +79,6 @@ extern int genhash_string_hash(const void* p, size_t nkey);
 #define BKEY_TYPE_UNKNOWN 0
 #define BKEY_TYPE_UINT64  1
 #define BKEY_TYPE_BINARY  2
-
-/* binary bkey min & max length */
-#define BKEY_MIN_BINARY_LENG 1
-#define BKEY_MAX_BINARY_LENG MAX_BKEY_LENG
-
-/* uint64 bkey min & max value */
-#define BTREE_UINT64_MIN_BKEY 0
-#define BTREE_UINT64_MAX_BKEY (uint64_t)((int64_t)-1) /* need check */
 
 /* btree element item or btree node item */
 #define BTREE_GET_ELEM_ITEM(node, indx) ((btree_elem_item *)((node)->item[indx]))
@@ -124,14 +116,11 @@ static bool btree_position_debug = false;
 /* config: evict items to free memory */
 static bool item_evict_to_free = true;
 
-/* min & max bkey constants */
-static uint64_t      btree_uint64_min_bkey = BTREE_UINT64_MIN_BKEY;
-static uint64_t      btree_uint64_max_bkey = BTREE_UINT64_MAX_BKEY;
-static unsigned char btree_binary_min_bkey[BKEY_MIN_BINARY_LENG] = { 0x00 };
-static unsigned char btree_binary_max_bkey[BKEY_MAX_BINARY_LENG] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                                     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                                     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-                                                                     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+/* bkey min & max value */
+static uint64_t      bkey_uint64_min;
+static uint64_t      bkey_uint64_max;
+static unsigned char bkey_binary_min[MIN_BKEY_LENG];
+static unsigned char bkey_binary_max[MAX_BKEY_LENG];
 
 /* maximum collection size  */
 static int32_t coll_size_limit = 1000000;
@@ -343,7 +332,7 @@ static hash_item *do_item_reclaim(hash_item *it,
     /* collection item or small-sized kv item */
 #endif
     if (IS_COLL_ITEM(it)) {
-        do_coll_all_elem_delete(it);
+        do_coll_elem_delete_all(it);
     }
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 
@@ -362,7 +351,7 @@ static void do_item_invalidate(hash_item *it, const unsigned int lruid, bool imm
 
     /* it->refcount == 0 */
     if (immediate && IS_COLL_ITEM(it)) {
-        do_coll_all_elem_delete(it);
+        do_coll_elem_delete_all(it);
     }
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 }
@@ -385,7 +374,7 @@ static void do_item_evict(hash_item *it, const unsigned int lruid,
 
     /* unlink the item */
     if (IS_COLL_ITEM(it)) {
-        do_coll_all_elem_delete(it);
+        do_coll_elem_delete_all(it);
     }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
@@ -399,7 +388,7 @@ static void do_item_repair(hash_item *it, const unsigned int lruid)
 
     /* unlink the item */
     if (IS_COLL_ITEM(it)) {
-        do_coll_all_elem_delete(it);
+        do_coll_elem_delete_all(it);
     }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
@@ -2820,6 +2809,22 @@ static btree_elem_item *do_btree_find_first(btree_indx_node *root,
     btree_elem_item *elem;
     int mid, left, right, comp;
 
+    if (bkrange == NULL) {
+        assert(bkrtype != BKEY_RANGE_TYPE_SIN);
+        if (bkrtype == BKEY_RANGE_TYPE_ASC) {
+            path[0].node = do_btree_get_first_leaf(root, (path_flag ? path : NULL));
+            path[0].indx = 0;
+        } else {
+            path[0].node = do_btree_get_last_leaf(root, (path_flag ? path : NULL));
+            path[0].indx = path[0].node->used_count - 1;
+        }
+        path[0].bkeq = false;
+
+        elem = BTREE_GET_ELEM_ITEM(path[0].node, path[0].indx);
+        assert(elem != NULL);
+        return elem;
+    }
+
     /* find leaf node */
     node = do_btree_find_leaf(root, bkrange->from_bkey, bkrange->from_nbkey,
                               (path_flag ? path : NULL), &elem);
@@ -2927,46 +2932,56 @@ static btree_elem_item *do_btree_find_first(btree_indx_node *root,
     return elem;
 }
 
-static btree_elem_item *do_btree_find_next(btree_elem_posi *posi, const bkey_range *bkrange)
+static btree_elem_item *do_btree_find_next(btree_elem_posi *posi,
+                                           const bkey_range *bkrange)
 {
     btree_elem_item *elem;
-    int comp;
 
     do_btree_incr_posi(posi);
     if (posi->node == NULL) {
         posi->bkeq = false;
-        elem = NULL;
-    } else {
-        elem = BTREE_GET_ELEM_ITEM(posi->node, posi->indx);
-        comp = BKEY_COMP(elem->data, elem->nbkey, bkrange->to_bkey, bkrange->to_nbkey);
+        return NULL;
+    }
+
+    elem = BTREE_GET_ELEM_ITEM(posi->node, posi->indx);
+    if (bkrange != NULL) {
+        int comp = BKEY_COMP(elem->data, elem->nbkey,
+                             bkrange->to_bkey, bkrange->to_nbkey);
         if (comp == 0) {
             posi->bkeq = true;
         } else {
             posi->bkeq = false;
             if (comp > 0) elem = NULL;
         }
+    } else {
+        posi->bkeq = false;
     }
     return elem;
 }
 
-static btree_elem_item *do_btree_find_prev(btree_elem_posi *posi, const bkey_range *bkrange)
+static btree_elem_item *do_btree_find_prev(btree_elem_posi *posi,
+                                           const bkey_range *bkrange)
 {
     btree_elem_item *elem;
-    int comp;
 
     do_btree_decr_posi(posi);
     if (posi->node == NULL) {
         posi->bkeq = false;
-        elem = NULL;
-    } else {
-        elem = BTREE_GET_ELEM_ITEM(posi->node, posi->indx);
-        comp = BKEY_COMP(elem->data, elem->nbkey, bkrange->to_bkey, bkrange->to_nbkey);
+        return NULL;
+    }
+
+    elem = BTREE_GET_ELEM_ITEM(posi->node, posi->indx);
+    if (bkrange != NULL) {
+        int comp = BKEY_COMP(elem->data, elem->nbkey,
+                             bkrange->to_bkey, bkrange->to_nbkey);
         if (comp == 0) {
             posi->bkeq = true;
         } else {
             posi->bkeq = false;
             if (comp < 0) elem = NULL;
         }
+    } else {
+        posi->bkeq = false;
     }
     return elem;
 }
@@ -3956,27 +3971,23 @@ static inline void get_bkey_full_range(const int bktype, const bool ascend, bkey
 {
     if (bktype == BKEY_TYPE_BINARY) {
         if (ascend) {
-            memcpy(bkrange->from_bkey, btree_binary_min_bkey, BKEY_MIN_BINARY_LENG);
-            memcpy(bkrange->to_bkey,   btree_binary_max_bkey, BKEY_MAX_BINARY_LENG);
-            bkrange->from_nbkey = BKEY_MIN_BINARY_LENG;
-            bkrange->to_nbkey   = BKEY_MAX_BINARY_LENG;
+            memcpy(bkrange->from_bkey, bkey_binary_min, MIN_BKEY_LENG);
+            memcpy(bkrange->to_bkey,   bkey_binary_max, MAX_BKEY_LENG);
+            bkrange->from_nbkey = MIN_BKEY_LENG;
+            bkrange->to_nbkey   = MAX_BKEY_LENG;
         } else {
-            memcpy(bkrange->from_bkey, btree_binary_max_bkey, BKEY_MAX_BINARY_LENG);
-            memcpy(bkrange->to_bkey,   btree_binary_min_bkey, BKEY_MIN_BINARY_LENG);
-            bkrange->from_nbkey = BKEY_MAX_BINARY_LENG;
-            bkrange->to_nbkey   = BKEY_MIN_BINARY_LENG;
+            memcpy(bkrange->from_bkey, bkey_binary_max, MAX_BKEY_LENG);
+            memcpy(bkrange->to_bkey,   bkey_binary_min, MIN_BKEY_LENG);
+            bkrange->from_nbkey = MAX_BKEY_LENG;
+            bkrange->to_nbkey   = MIN_BKEY_LENG;
         }
     } else { /* bktype == BKEY_TYPE_UINT64 or BKEY_TYPE_UNKNOWN */
         if (ascend) {
-            memcpy(bkrange->from_bkey, (unsigned char*)&btree_uint64_min_bkey, sizeof(uint64_t));
-            memcpy(bkrange->to_bkey,   (unsigned char*)&btree_uint64_max_bkey, sizeof(uint64_t));
-            //*(uint64_t*)bkrange->from_bkey = btree_uint64_min_bkey;
-            //*(uint64_t*)bkrange->to_bkey   = btree_uint64_max_bkey;
+            memcpy(bkrange->from_bkey, (void*)&bkey_uint64_min, sizeof(uint64_t));
+            memcpy(bkrange->to_bkey,   (void*)&bkey_uint64_max, sizeof(uint64_t));
         } else {
-            memcpy(bkrange->from_bkey, (unsigned char*)&btree_uint64_max_bkey, sizeof(uint64_t));
-            memcpy(bkrange->to_bkey,   (unsigned char*)&btree_uint64_min_bkey, sizeof(uint64_t));
-            //*(uint64_t*)bkrange->from_bkey = btree_uint64_max_bkey;
-            //*(uint64_t*)bkrange->to_bkey   = btree_uint64_min_bkey;
+            memcpy(bkrange->from_bkey, (void*)&bkey_uint64_max, sizeof(uint64_t));
+            memcpy(bkrange->to_bkey,   (void*)&bkey_uint64_min, sizeof(uint64_t));
         }
         bkrange->from_nbkey = bkrange->to_nbkey = 0;
     }
@@ -5592,37 +5603,34 @@ scan_next:
 /*
  * Item Management Daemon
  */
-static void do_coll_all_elem_delete(hash_item *it)
+static void do_coll_elem_delete_all(hash_item *it)
 {
-    if (IS_LIST_ITEM(it)) {
-        list_meta_info *info = (list_meta_info *)item_get_meta(it);
-        (void)do_list_elem_delete(info, 0, 0, ELEM_DELETE_COLL);
-        assert(info->head == NULL && info->tail == NULL);
-    } else if (IS_SET_ITEM(it)) {
-        set_meta_info *info = (set_meta_info *)item_get_meta(it);
-#ifdef SET_DELETE_NO_MERGE
-        (void)do_set_elem_delete_fast(info, 0);
-#else
-        (void)do_set_elem_delete(info, 0, ELEM_DELETE_COLL);
-#endif
-        assert(info->root == NULL);
-    } else if (IS_MAP_ITEM(it)) {
-        map_meta_info *info = (map_meta_info *)item_get_meta(it);
-        (void)do_map_elem_delete(info, 0, ELEM_DELETE_COLL);
-        assert(info->root == NULL);
-    } else if (IS_BTREE_ITEM(it)) {
-        btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
-#ifdef BTREE_DELETE_NO_MERGE
+    coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
+
+    if (IS_BTREE_ITEM(it)) {
+        (void)do_btree_elem_delete((btree_meta_info *)info, BKEY_RANGE_TYPE_ASC,
+                                   NULL, NULL, 0, NULL, ELEM_DELETE_COLL);
+        /***
         btree_elem_posi path[BTREE_MAX_DEPTH];
         path[0].node = NULL;
         (void)do_btree_elem_delete_fast(info, path, 0);
-#else
-        bkey_range bkrange_space;
-        get_bkey_full_range(info->bktype, true, &bkrange_space);
-        (void)do_btree_elem_delete(info, BKEY_RANGE_TYPE_ASC, &bkrange_space,
-                                   NULL, 0, NULL, ELEM_DELETE_COLL);
-#endif
-        assert(info->root == NULL);
+        ***/
+        assert(info->ccnt == 0);
+    }
+    else if (IS_SET_ITEM(it)) {
+        (void)do_set_elem_delete((set_meta_info *)info, 0, ELEM_DELETE_COLL);
+        /***
+        (void)do_set_elem_delete_fast(info, 0);
+        ***/
+        assert(info->ccnt == 0);
+    }
+    else if (IS_MAP_ITEM(it)) {
+        (void)do_map_elem_delete((map_meta_info *)info, 0, ELEM_DELETE_COLL);
+        assert(info->ccnt == 0);
+    }
+    else if (IS_LIST_ITEM(it)) {
+        (void)do_list_elem_delete((list_meta_info *)info, 0, 0, ELEM_DELETE_COLL);
+        assert(info->ccnt == 0);
     }
 }
 
@@ -5726,11 +5734,8 @@ static void *collection_delete_thread(void *arg)
             while (dropped == false) {
                 LOCK_CACHE();
                 info = (set_meta_info *)item_get_meta(it);
-#ifdef SET_DELETE_NO_MERGE
-                (void)do_set_elem_delete_fast(info, 30);
-#else
                 (void)do_set_elem_delete(info, 30, ELEM_DELETE_COLL);
-#endif
+                /* (void)do_set_elem_delete_fast(info, 30); */
                 if (info->ccnt == 0) {
                     assert(info->root == NULL);
                     do_item_free(it);
@@ -5757,22 +5762,16 @@ static void *collection_delete_thread(void *arg)
         else if (IS_BTREE_ITEM(it)) {
             bool dropped = false;
             btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
-#ifdef BTREE_DELETE_NO_MERGE
+            /***
             btree_elem_posi path[BTREE_MAX_DEPTH];
             path[0].node = NULL;
-#else
-            bkey_range bkrange_space;
-            get_bkey_full_range(info->bktype, true, &bkrange_space);
-#endif
+            ***/
             while (dropped == false) {
                 LOCK_CACHE();
                 info = (btree_meta_info *)item_get_meta(it);
-#ifdef BTREE_DELETE_NO_MERGE
-                (void)do_btree_elem_delete_fast(info, path, 100);
-#else
-                (void)do_btree_elem_delete(info, BKEY_RANGE_TYPE_ASC, &bkrange_space,
-                                           NULL, 100, NULL, ELEM_DELETE_COLL);
-#endif
+                (void)do_btree_elem_delete(info, BKEY_RANGE_TYPE_ASC, NULL, NULL,
+                                           100, NULL, ELEM_DELETE_COLL);
+                /* (void)do_btree_elem_delete_fast(info, path, 100); */
                 if (info->ccnt == 0) {
                     assert(info->root == NULL);
                     do_item_free(it);
@@ -6303,6 +6302,14 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
     }
 
     item_clog_init(engine);
+
+    /* prepare bkey min & max value */
+    bkey_uint64_min = 0;
+    bkey_uint64_max = (uint64_t)((int64_t)-1); /* need check */
+    bkey_binary_min[0] = 0x00;
+    for (int i=0; i < MAX_BKEY_LENG; i++) {
+        bkey_binary_max[i] = 0xFF;
+    }
 
     /* remove unused function warnings */
     if (1) {
@@ -7774,17 +7781,13 @@ static void do_btree_elem_get_all(btree_meta_info *info, elems_result_t *eresult
     assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
     btree_elem_item *elem;
     btree_elem_posi  posi;
-    int              bkrtype;
-    bkey_range       bkrange;
 
-    get_bkey_full_range(info->bktype, true, &bkrange);
-    bkrtype = do_btree_bkey_range_type(&bkrange);
-    elem = do_btree_find_first(info->root, bkrtype, &bkrange, &posi, false);
+    elem = do_btree_find_first(info->root, BKEY_RANGE_TYPE_ASC, NULL, &posi, false);
     while (elem != NULL) {
         elem->refcount++;
         eresult->elem_array[eresult->elem_count++] = elem;
         /* Never have to go backward?  FIXME */
-        elem = do_btree_find_next(&posi, &bkrange);
+        elem = do_btree_find_next(&posi, NULL);
     }
     assert(eresult->elem_count == info->ccnt);
 }
