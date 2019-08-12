@@ -52,9 +52,9 @@ void CLOG_GE_ITEM_UPDATE(hash_item *it)
 
 void CLOG_GE_ITEM_FLUSH(const char *prefix, const int nprefix, time_t when)
 {
-    if (1)
-    {
-    }
+    do {
+        if (when > 0) break;
+    } while (0);
 }
 
 void CLOG_GE_LIST_ELEM_INSERT(list_meta_info *info,
