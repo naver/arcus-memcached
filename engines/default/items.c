@@ -108,9 +108,6 @@ extern int genhash_string_hash(const void* p, size_t nkey);
 /* btree position debugging */
 static bool btree_position_debug = false;
 
-/* config: evict items to free memory */
-static bool item_evict_to_free = true;
-
 /* bkey min & max value */
 static uint64_t      bkey_uint64_min;
 static uint64_t      bkey_uint64_max;
@@ -480,7 +477,7 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
 #endif
 
     /* Let's regain item space when space shortage level > 0. */
-    if (item_evict_to_free == true && id == LRU_CLSID_FOR_SMALL) {
+    if (config->evict_to_free && id == LRU_CLSID_FOR_SMALL) {
         int current_ssl = slabs_space_shortage_level();
         if (current_ssl > 0) {
             (void)do_item_regain(current_ssl, current_time, cookie);
@@ -580,7 +577,7 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
         /* If requested to not push old items out of cache when memory runs out,
          * we're out of luck at this point...
          */
-        if (item_evict_to_free != true) {
+        if (!config->evict_to_free) {
             itemsp->itemstats[clsid_based_on_ntotal].outofmemory++;
             pthread_mutex_lock(&statsp->lock);
             statsp->outofmemorys++;
@@ -5692,11 +5689,11 @@ static void *collection_delete_thread(void *arg)
         }
 
         evict_count = 0;
-        if (item_evict_to_free) {
+        if (config->evict_to_free) {
             current_ssl = slabs_space_shortage_level();
             if (current_ssl >= 10) {
                 LOCK_CACHE();
-                if (item_evict_to_free) {
+                if (config->evict_to_free) {
                     rel_time_t current_time = svcore->get_current_time();
                     evict_count = do_item_regain(current_ssl, current_time, NULL);
                 }
@@ -6221,8 +6218,6 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
     coll_del_queue.head = coll_del_queue.tail = NULL;
     coll_del_queue.size = 0;
     coll_del_sleep = false;
-
-    item_evict_to_free = config->evict_to_free;
 
     /* adjust maximum collection size */
     if (config->max_list_size > max_list_size) {
@@ -7853,7 +7848,7 @@ bool item_conf_get_evict_to_free(void)
 {
     bool value;
     LOCK_CACHE();
-    value = item_evict_to_free;
+    value = config->evict_to_free;
     UNLOCK_CACHE();
     return value;
 }
@@ -7861,7 +7856,7 @@ bool item_conf_get_evict_to_free(void)
 void item_conf_set_evict_to_free(bool value)
 {
     LOCK_CACHE();
-    item_evict_to_free = value;
+    config->evict_to_free = value;
     UNLOCK_CACHE();
 }
 
