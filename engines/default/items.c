@@ -38,7 +38,7 @@ static void item_link_q(hash_item *it);
 static void item_unlink_q(hash_item *it);
 static ENGINE_ERROR_CODE do_item_link(hash_item *it);
 static void do_item_unlink(hash_item *it, enum item_unlink_cause cause);
-static void do_coll_elem_delete_all(hash_item *it);
+static inline void do_coll_elem_delete(coll_meta_info *info, int type, uint32_t count);
 static uint32_t do_map_elem_delete(map_meta_info *info,
                                    const uint32_t count, enum elem_delete_cause cause);
 
@@ -327,7 +327,11 @@ static hash_item *do_item_reclaim(hash_item *it,
     /* collection item or small-sized kv item */
 #endif
     if (IS_COLL_ITEM(it)) {
-        do_coll_elem_delete_all(it);
+        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
+        if (info->ccnt > 0) {
+            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 0);
+            assert(info->ccnt == 0);
+        }
     }
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 
@@ -346,7 +350,11 @@ static void do_item_invalidate(hash_item *it, const unsigned int lruid, bool imm
 
     /* it->refcount == 0 */
     if (immediate && IS_COLL_ITEM(it)) {
-        do_coll_elem_delete_all(it);
+        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
+        if (info->ccnt > 0) {
+            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 0);
+            assert(info->ccnt == 0);
+        }
     }
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 }
@@ -369,7 +377,11 @@ static void do_item_evict(hash_item *it, const unsigned int lruid,
 
     /* unlink the item */
     if (IS_COLL_ITEM(it)) {
-        do_coll_elem_delete_all(it);
+        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
+        if (info->ccnt > 0) {
+            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 0);
+            assert(info->ccnt == 0);
+        }
     }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
@@ -383,7 +395,11 @@ static void do_item_repair(hash_item *it, const unsigned int lruid)
 
     /* unlink the item */
     if (IS_COLL_ITEM(it)) {
-        do_coll_elem_delete_all(it);
+        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
+        if (info->ccnt > 0) {
+            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 0);
+            assert(info->ccnt == 0);
+        }
     }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
@@ -5600,34 +5616,23 @@ scan_next:
 /*
  * Item Management Daemon
  */
-static void do_coll_elem_delete_all(hash_item *it)
+static inline void do_coll_elem_delete(coll_meta_info *info, int type, uint32_t count)
 {
-    coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-
-    if (IS_BTREE_ITEM(it)) {
-        (void)do_btree_elem_delete((btree_meta_info *)info, BKEY_RANGE_TYPE_ASC,
-                                   NULL, NULL, 0, NULL, ELEM_DELETE_COLL);
-        /***
-        btree_elem_posi path[BTREE_MAX_DEPTH];
-        path[0].node = NULL;
-        (void)do_btree_elem_delete_fast(info, path, 0);
-        ***/
-        assert(info->ccnt == 0);
-    }
-    else if (IS_SET_ITEM(it)) {
-        (void)do_set_elem_delete((set_meta_info *)info, 0, ELEM_DELETE_COLL);
-        /***
-        (void)do_set_elem_delete_fast(info, 0);
-        ***/
-        assert(info->ccnt == 0);
-    }
-    else if (IS_MAP_ITEM(it)) {
-        (void)do_map_elem_delete((map_meta_info *)info, 0, ELEM_DELETE_COLL);
-        assert(info->ccnt == 0);
-    }
-    else if (IS_LIST_ITEM(it)) {
-        (void)do_list_elem_delete((list_meta_info *)info, 0, 0, ELEM_DELETE_COLL);
-        assert(info->ccnt == 0);
+    switch (type) {
+      case ITEM_TYPE_BTREE:
+           (void)do_btree_elem_delete((void *)info, BKEY_RANGE_TYPE_ASC, NULL,
+                                      NULL, count, NULL, ELEM_DELETE_COLL);
+           break;
+      case ITEM_TYPE_SET:
+           (void)do_set_elem_delete((void *)info, count, ELEM_DELETE_COLL);
+           break;
+      case ITEM_TYPE_MAP:
+           (void)do_map_elem_delete((void *)info, count, ELEM_DELETE_COLL);
+           break;
+      case ITEM_TYPE_LIST:
+           (void)do_list_elem_delete((void *)info, 0, count, ELEM_DELETE_COLL);
+           break;
+      default: break;
     }
 }
 
@@ -5711,72 +5716,22 @@ static void *collection_delete_thread(void *arg)
             }
             continue;
         }
-        if (IS_LIST_ITEM(it)) {
-            bool dropped = false;
-            list_meta_info *info;
-            while (dropped == false) {
-                LOCK_CACHE();
-                info = (list_meta_info *)item_get_meta(it);
-                (void)do_list_elem_delete(info, 0, 30, ELEM_DELETE_COLL);
-                if (info->ccnt == 0) {
-                    assert(info->head == NULL && info->tail == NULL);
-                    do_item_free(it);
-                    dropped = true;
-                }
+
+        assert(IS_COLL_ITEM(it));
+        ENGINE_ITEM_TYPE type = GET_ITEM_TYPE(it);
+        coll_meta_info *info;
+
+        LOCK_CACHE();
+        info = (coll_meta_info *)item_get_meta(it);
+        while (info->ccnt > 0) {
+            do_coll_elem_delete(info, type, 100);
+            if (info->ccnt > 0) {
                 UNLOCK_CACHE();
-            }
-        } else if (IS_SET_ITEM(it)) {
-            bool dropped = false;
-            set_meta_info *info;
-            while (dropped == false) {
                 LOCK_CACHE();
-                info = (set_meta_info *)item_get_meta(it);
-                (void)do_set_elem_delete(info, 30, ELEM_DELETE_COLL);
-                /* (void)do_set_elem_delete_fast(info, 30); */
-                if (info->ccnt == 0) {
-                    assert(info->root == NULL);
-                    do_item_free(it);
-                    dropped = true;
-                }
-                UNLOCK_CACHE();
             }
         }
-        else if (IS_MAP_ITEM(it)) {
-            bool dropped = false;
-            map_meta_info *info;
-            while (dropped == false) {
-                LOCK_CACHE();
-                info = (map_meta_info *)item_get_meta(it);
-                (void)do_map_elem_delete(info, 30, ELEM_DELETE_COLL);
-                if (info->ccnt == 0) {
-                    assert(info->root == NULL);
-                    do_item_free(it);
-                    dropped = true;
-                }
-                UNLOCK_CACHE();
-            }
-        }
-        else if (IS_BTREE_ITEM(it)) {
-            bool dropped = false;
-            btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
-            /***
-            btree_elem_posi path[BTREE_MAX_DEPTH];
-            path[0].node = NULL;
-            ***/
-            while (dropped == false) {
-                LOCK_CACHE();
-                info = (btree_meta_info *)item_get_meta(it);
-                (void)do_btree_elem_delete(info, BKEY_RANGE_TYPE_ASC, NULL, NULL,
-                                           100, NULL, ELEM_DELETE_COLL);
-                /* (void)do_btree_elem_delete_fast(info, path, 100); */
-                if (info->ccnt == 0) {
-                    assert(info->root == NULL);
-                    do_item_free(it);
-                    dropped = true;
-                }
-                UNLOCK_CACHE();
-            }
-        }
+        do_item_free(it);
+        UNLOCK_CACHE();
     }
     return NULL;
 }
