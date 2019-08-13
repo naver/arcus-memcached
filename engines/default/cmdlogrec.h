@@ -21,14 +21,8 @@
 enum log_type {
     LOG_IT_LINK = 0,
     LOG_IT_UNLINK,
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
-#else
-    LOG_IT_ARITHMETIC,
-#endif
     LOG_IT_SETATTR,
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
     LOG_IT_FLUSH,
-#endif
     LOG_LIST_ELEM_INSERT,
     LOG_LIST_ELEM_DELETE,
     LOG_SET_ELEM_INSERT,
@@ -44,27 +38,12 @@ enum log_type {
 
 enum upd_type {
     /* key value command */
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
     UPD_SET = 0,
-#else
-    UPD_ADD = 0,
-    UPD_SET,
-    UPD_REPLACE,
-    UPD_APPEND,
-    UPD_PREPEND,
-    UPD_CAS,
-    UPD_INCR,
-    UPD_DECR,
-#endif
     UPD_DELETE,
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
     UPD_SETATTR_EXPTIME,
     UPD_SETATTR_EXPTIME_INFO,
     UPD_SETATTR_EXPTIME_INFO_BKEY,
     UPD_FLUSH,
-#else
-    UPD_SETATTR,
-#endif
     /* list command */
     UPD_LIST_CREATE,
     UPD_LIST_ELEM_INSERT,
@@ -140,7 +119,6 @@ typedef struct _IT_link_log {
     unsigned char *maxbkrptr;    /* maxbkeyrange value */
 } ITLinkLog;
 
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
 /* Item Unlink Log Record */
 typedef struct _IT_unlink_data {
     uint16_t keylen;         /* key length */
@@ -184,7 +162,6 @@ typedef struct _IT_setattr_log {
     char          *keyptr;
     unsigned char *maxbkrptr;    /* maxbkeyrange value */
 } ITSetAttrLog;
-#endif
 
 /* Snapshot File Tail Record */
 typedef struct _snapshot_tail_log {
@@ -194,14 +171,10 @@ typedef struct _snapshot_tail_log {
 /* Construct Log Record Function For Snapshot */
 int lrec_construct_snapshot_head(LogRec *logrec);
 int lrec_construct_snapshot_tail(LogRec *logrec);
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
 int lrec_construct_link_item(LogRec *logrec, hash_item *it);
 int lrec_construct_unlink_item(LogRec *logrec, hash_item *it);
 int lrec_construct_flush_item(LogRec *logrec, const char *prefix, const int nprefix);
 int lrec_construct_setattr(LogRec *logrec, hash_item *it, uint8_t updtype);
-#else
-int lrec_construct_snapshot_item(LogRec *logrec, hash_item *it);
-#endif
 
 void lrec_write_to_buffer(LogRec *logrec, char *bufptr);
 #endif

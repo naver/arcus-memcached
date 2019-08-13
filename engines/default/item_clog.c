@@ -17,12 +17,10 @@
  */
 #include "default_engine.h"
 #include "item_clog.h"
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogmgr.h"
 #include "cmdlogrec.h"
 #include "cmdlogbuf.h"
-#endif
 #endif
 
 bool item_clog_enabled = false;
@@ -38,14 +36,12 @@ void CLOG_GE_ITEM_LINK(hash_item *it)
 {
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
             ITLinkLog log;
             (void)lrec_construct_link_item((LogRec*)&log, it);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
         }
-#endif
 #endif
     }
 }
@@ -56,14 +52,12 @@ void CLOG_GE_ITEM_UNLINK(hash_item *it, enum item_unlink_cause cause)
          cause == ITEM_UNLINK_EVICT || cause == ITEM_UNLINK_STALE) &&
         (it->iflag & ITEM_INTERNAL) == 0)
     {
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
             ITUnlinkLog log;
             (void)lrec_construct_unlink_item((LogRec*)&log, it);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
         }
-#endif
 #endif
     }
 }
@@ -79,7 +73,6 @@ void CLOG_GE_ITEM_FLUSH(const char *prefix, const int nprefix, time_t when)
 {
     if (1)
     {
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
             if (when <= 0) {
@@ -88,7 +81,6 @@ void CLOG_GE_ITEM_FLUSH(const char *prefix, const int nprefix, time_t when)
                 log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
             }
         }
-#endif
 #endif
     }
 }
@@ -202,7 +194,6 @@ void CLOG_GE_ITEM_SETATTR(hash_item *it,
 {
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
             uint8_t attr_type = 0;
@@ -229,7 +220,6 @@ void CLOG_GE_ITEM_SETATTR(hash_item *it,
             }
         }
 #endif
-#endif
     }
 }
 
@@ -241,11 +231,9 @@ void item_clog_init(struct default_engine *engine)
     config = &engine->config;
     logger = engine->server.log->get_logger();
 
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
     /* set enable change log */
 #ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) item_clog_set_enable(true);
-#endif
 #endif
 
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM change log module initialized.\n");

@@ -42,14 +42,12 @@ static char *get_logtype_text(uint8_t type)
     switch (type) {
         case LOG_IT_LINK:
             return "IT_LINK";
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
         case LOG_IT_UNLINK:
             return "IT_UNLINK";
         case LOG_IT_SETATTR:
             return "IT_SETATTR";
         case LOG_IT_FLUSH:
             return "IT_FLUSH";
-#endif
         case LOG_SNAPSHOT_TAIL:
             return "SNAPSHOT_TAIL";
     }
@@ -61,7 +59,6 @@ static char *get_updtype_text(uint8_t type)
     switch (type) {
         case UPD_SET:
             return "SET";
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
         case UPD_DELETE:
             return "DELETE";
         case UPD_SETATTR_EXPTIME:
@@ -72,7 +69,6 @@ static char *get_updtype_text(uint8_t type)
             return "SETATTR_EXPTIME_BKEY";
         case UPD_FLUSH:
             return "UPD_FLUSH";
-#endif
         case UPD_LIST_CREATE:
             return "LIST_CREATE";
         case UPD_SET_CREATE:
@@ -209,49 +205,30 @@ static void lrec_it_link_print(LogRec *logrec)
 /* Item Unlink Log Record */
 static void lrec_it_unlink_write(LogRec *logrec, char *bufptr)
 {
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
     ITUnlinkLog *log = (ITUnlinkLog*)logrec;
     int offset = sizeof(LogHdr) + offsetof(ITUnlinkData, data);
 
     memcpy(bufptr, (void*)logrec, offset);
     /* key copy */
     memcpy(bufptr + offset, log->keyptr, log->body.keylen);
-#endif
 }
 
 static void lrec_it_unlink_print(LogRec *logrec)
 {
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
     ITUnlinkLog *log  = (ITUnlinkLog*)logrec;
     lrec_header_print(&log->header);
 
     fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s\r\n",
             log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr);
-#endif
 }
-
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
-#else
-/* Item Arithmetic Log Record */
-static void lrec_it_arithmetic_write(LogRec *logrec, char *bufptr)
-{
-}
-
-static void lrec_it_arithmetic_print(LogRec *logrec)
-{
-}
-#endif
 
 /* Item SetAttr Log Record */
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
 /* UPD_SETATTR_EXPTIME           : header | body | key
  * UPD_SETATTR_EXPTIME_INFO      : header | body | key
  * UPD_SETATTR_EXPTIME_INFO_BKEY : header | body | maxbkeyrange | key
  */
-#endif
 static void lrec_it_setattr_write(LogRec *logrec, char *bufptr)
 {
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
     ITSetAttrLog *log = (ITSetAttrLog*)logrec;
     int offset = sizeof(LogHdr) + offsetof(ITSetAttrData, data);
 
@@ -265,12 +242,10 @@ static void lrec_it_setattr_write(LogRec *logrec, char *bufptr)
 
     /* key copy */
     memcpy(bufptr + offset, log->keyptr, log->body.keylen);
-#endif
 }
 
 static void lrec_it_setattr_print(LogRec *logrec)
 {
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
     ITSetAttrLog *log  = (ITSetAttrLog*)logrec;
     lrec_header_print(&log->header);
 
@@ -299,10 +274,8 @@ static void lrec_it_setattr_print(LogRec *logrec)
       }
       break;
     }
-#endif
 }
 
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
 /* Item Flush Log Record */
 static void lrec_it_flush_write(LogRec *logrec, char *bufptr)
 {
@@ -327,7 +300,6 @@ static void lrec_it_flush_print(LogRec *logrec)
             log->body.nprefix, (print_prefix ? log->body.nprefix : 4),
             (print_prefix ? log->prefixptr : "NULL"));
 }
-#endif
 
 /* List Element Insert Log Record */
 static void lrec_list_elem_insert_write(LogRec *logrec, char *bufptr)
@@ -441,14 +413,8 @@ typedef struct _logrec_func {
 LOGREC_FUNC logrec_func[] = {
     { lrec_it_link_write,            lrec_it_link_print },
     { lrec_it_unlink_write,          lrec_it_unlink_print },
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
-#else
-    { lrec_it_arithmetic_write,      lrec_it_arithmetic_print },
-#endif
     { lrec_it_setattr_write,         lrec_it_setattr_print },
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
     { lrec_it_flush_write,           lrec_it_flush_print },
-#endif
     { lrec_list_elem_insert_write,   lrec_list_elem_insert_print },
     { lrec_list_elem_delete_write,   lrec_list_elem_delete_print },
     { lrec_set_elem_insert_write,    lrec_set_elem_insert_print },
@@ -472,11 +438,7 @@ void lrec_write_to_buffer(LogRec *logrec, char *bufptr)
 #endif
 }
 
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
 /* Construct Log Record Functions */
-#else
-/* Construct Log Record Function For Snapshot */
-#endif
 int lrec_construct_snapshot_head(LogRec *logrec)
 {
     return 0;
@@ -491,11 +453,7 @@ int lrec_construct_snapshot_tail(LogRec *logrec)
     return sizeof(SnapshotTailLog);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
 int lrec_construct_link_item(LogRec *logrec, hash_item *it)
-#else
-int lrec_construct_snapshot_item(LogRec *logrec, hash_item *it)
-#endif
 {
     ITLinkLog *log = (ITLinkLog*)logrec;
     ITLinkData *body = &log->body;
@@ -536,7 +494,6 @@ int lrec_construct_snapshot_item(LogRec *logrec, hash_item *it)
     return log->header.body_length;
 }
 
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_KV
 int lrec_construct_unlink_item(LogRec *logrec, hash_item *it)
 {
     ITUnlinkLog *log = (ITUnlinkLog*)logrec;
@@ -610,5 +567,4 @@ int lrec_construct_setattr(LogRec *logrec, hash_item *it, uint8_t updtype)
                                                naddition + log->body.keylen);
     return log->header.body_length+sizeof(LogHdr);
 }
-#endif
 #endif
