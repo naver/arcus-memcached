@@ -7955,6 +7955,7 @@ static void *item_scrubber_main(void *arg)
     int        array_size=32; /* configurable */
     int        item_count;
     hash_item *item_array[array_size];
+    hash_item *it;
     struct assoc_scan scan;
     rel_time_t current_time = svcore->get_current_time();
     struct timespec sleep_time = {0, 1000};
@@ -7976,14 +7977,15 @@ again:
          * See the internals of assoc_scan_next(). It does not return 0.
          */
         for (i = 0; i < item_count; i++) {
+            it = item_array[i];
             scrubber->visited++;
-            if (do_item_isvalid(item_array[i], current_time) == false) {
-                do_item_unlink(item_array[i], ITEM_UNLINK_INVALID);
+            if (do_item_isvalid(it, current_time) == false) {
+                do_item_unlink(it, ITEM_UNLINK_INVALID);
                 scrubber->cleaned++;
             }
-            else if (scrubber->runmode == SCRUB_MODE_STALE &&
-                     do_item_isstale(item_array[i]) == true) {
-                do_item_unlink(item_array[i], ITEM_UNLINK_STALE);
+            else if (scrubber->runmode == SCRUB_MODE_STALE
+                     && do_item_isstale(it)) {
+                do_item_unlink(it, ITEM_UNLINK_STALE);
                 scrubber->cleaned++;
             }
         }
