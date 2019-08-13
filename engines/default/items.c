@@ -323,13 +323,7 @@ static hash_item *do_item_reclaim(hash_item *it,
     }
     /* collection item or small-sized kv item */
 #endif
-    if (IS_COLL_ITEM(it)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        if (info->ccnt > 0) {
-            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 0);
-            assert(info->ccnt == 0);
-        }
-    }
+
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 
     /* allocate from slab allocator */
@@ -346,13 +340,6 @@ static void do_item_invalidate(hash_item *it, const unsigned int lruid, bool imm
     itemsp->itemstats[lruid].reclaimed++;
 
     /* it->refcount == 0 */
-    if (immediate && IS_COLL_ITEM(it)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        if (info->ccnt > 0) {
-            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 0);
-            assert(info->ccnt == 0);
-        }
-    }
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 }
 
@@ -373,13 +360,6 @@ static void do_item_evict(hash_item *it, const unsigned int lruid,
     }
 
     /* unlink the item */
-    if (IS_COLL_ITEM(it)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        if (info->ccnt > 0) {
-            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 0);
-            assert(info->ccnt == 0);
-        }
-    }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
 
@@ -391,13 +371,6 @@ static void do_item_repair(hash_item *it, const unsigned int lruid)
     it->refchunk = 0;
 
     /* unlink the item */
-    if (IS_COLL_ITEM(it)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        if (info->ccnt > 0) {
-            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 0);
-            assert(info->ccnt == 0);
-        }
-    }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
 
@@ -730,9 +703,12 @@ static void do_item_free(hash_item *it)
 
     if (IS_COLL_ITEM(it)) {
         coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        if (info->ccnt > 0) { /* NOT empty collection (list or set) */
-            push_coll_del_queue(it);
-            return;
+        if (info->ccnt > 0) {
+            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 1000);
+            if (info->ccnt > 0) { /* still NOT empty */
+                push_coll_del_queue(it);
+                return;
+            }
         }
     }
 
@@ -5677,9 +5653,12 @@ static void *collection_delete_thread(void *arg)
             LOCK_CACHE();
             info = (coll_meta_info *)item_get_meta(it);
             while (info->ccnt > 0) {
-                do_coll_elem_delete(info, type, 100);
+                do_coll_elem_delete(info, type, 1000);
                 if (info->ccnt > 0) {
                     UNLOCK_CACHE();
+                    if (slabs_space_shortage_level() < 10) {
+                        pthread_yield();
+                    }
                     LOCK_CACHE();
                 }
             }
