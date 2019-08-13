@@ -155,9 +155,9 @@ static void lrec_it_link_write(LogRec *logrec, char *bufptr)
     ITLinkLog  *log = (ITLinkLog*)logrec;
     ITLinkData *body = &log->body;
     struct lrec_item_common *cm = (struct lrec_item_common*)&body->cm;
-    int offset = offsetof(ITLinkData, data);
+    int offset = sizeof(LogHdr) + offsetof(ITLinkData, data);
 
-    memcpy(bufptr, logrec, offset);
+    memcpy(bufptr, (void*)logrec, offset);
 
     if (cm->ittype == ITEM_TYPE_BTREE) {
         struct lrec_coll_meta *meta = (struct lrec_coll_meta*)&body->ptr.meta;
@@ -395,7 +395,7 @@ static void lrec_snapshot_head_print(LogRec *logrec)
 static void lrec_snapshot_tail_write(LogRec *logrec, char *bufptr)
 {
     SnapshotTailLog *log = (SnapshotTailLog*)logrec;
-    memcpy(bufptr, log, sizeof(SnapshotTailLog));
+    memcpy(bufptr, (void*)log, sizeof(SnapshotTailLog));
 }
 
 static void lrec_snapshot_tail_print(LogRec *logrec)
@@ -491,7 +491,7 @@ int lrec_construct_link_item(LogRec *logrec, hash_item *it)
     log->header.updtype = get_it_link_updtype(cm->ittype);
     log->header.body_length = GET_8_ALIGN_SIZE(offsetof(ITLinkData, data) +
                                                naddition + cm->keylen + cm->vallen);
-    return log->header.body_length;
+    return log->header.body_length+sizeof(LogHdr);
 }
 
 int lrec_construct_unlink_item(LogRec *logrec, hash_item *it)
