@@ -328,13 +328,7 @@ static hash_item *do_item_reclaim(hash_item *it,
     }
     /* collection item or small-sized kv item */
 #endif
-    if (IS_COLL_ITEM(it)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        if (info->ccnt > 0) {
-            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 0);
-            assert(info->ccnt == 0);
-        }
-    }
+
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 
     /* allocate from slab allocator */
@@ -351,13 +345,6 @@ static void do_item_invalidate(hash_item *it, const unsigned int lruid, bool imm
     itemsp->itemstats[lruid].reclaimed++;
 
     /* it->refcount == 0 */
-    if (immediate && IS_COLL_ITEM(it)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        if (info->ccnt > 0) {
-            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 0);
-            assert(info->ccnt == 0);
-        }
-    }
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 }
 
@@ -378,13 +365,6 @@ static void do_item_evict(hash_item *it, const unsigned int lruid,
     }
 
     /* unlink the item */
-    if (IS_COLL_ITEM(it)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        if (info->ccnt > 0) {
-            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 0);
-            assert(info->ccnt == 0);
-        }
-    }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
 
@@ -396,13 +376,6 @@ static void do_item_repair(hash_item *it, const unsigned int lruid)
     it->refchunk = 0;
 
     /* unlink the item */
-    if (IS_COLL_ITEM(it)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        if (info->ccnt > 0) {
-            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 0);
-            assert(info->ccnt == 0);
-        }
-    }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
 
@@ -546,7 +519,7 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
             return (void *)it;
         }
         /* step 2) reclaim items from curMK position */
-        tries += 20;
+        tries += 40;
         while (itemsp->curMK[id] != NULL) {
             search = itemsp->curMK[id];
             itemsp->curMK[id] = search->prev;
@@ -735,9 +708,12 @@ static void do_item_free(hash_item *it)
 
     if (IS_COLL_ITEM(it)) {
         coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        if (info->ccnt > 0) { /* NOT empty collection (list or set) */
-            push_coll_del_queue(it);
-            return;
+        if (info->ccnt > 0) {
+            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 1000);
+            if (info->ccnt > 0) { /* still NOT empty */
+                push_coll_del_queue(it);
+                return;
+            }
         }
     }
 
@@ -5682,9 +5658,12 @@ static void *collection_delete_thread(void *arg)
             LOCK_CACHE();
             info = (coll_meta_info *)item_get_meta(it);
             while (info->ccnt > 0) {
-                do_coll_elem_delete(info, type, 100);
+                do_coll_elem_delete(info, type, 1000);
                 if (info->ccnt > 0) {
                     UNLOCK_CACHE();
+                    if (slabs_space_shortage_level() < 10) {
+                        pthread_yield();
+                    }
                     LOCK_CACHE();
                 }
             }
@@ -8077,6 +8056,7 @@ static void *item_scrubber_main(void *arg)
     int        array_size=32; /* configurable */
     int        item_count;
     hash_item *item_array[array_size];
+    hash_item *it;
     struct assoc_scan scan;
     rel_time_t current_time = svcore->get_current_time();
     struct timespec sleep_time = {0, 1000};
@@ -8098,14 +8078,15 @@ again:
          * See the internals of assoc_scan_next(). It does not return 0.
          */
         for (i = 0; i < item_count; i++) {
+            it = item_array[i];
             scrubber->visited++;
-            if (do_item_isvalid(item_array[i], current_time) == false) {
-                do_item_unlink(item_array[i], ITEM_UNLINK_INVALID);
+            if (do_item_isvalid(it, current_time) == false) {
+                do_item_unlink(it, ITEM_UNLINK_INVALID);
                 scrubber->cleaned++;
             }
-            else if (scrubber->runmode == SCRUB_MODE_STALE &&
-                     do_item_isstale(item_array[i]) == true) {
-                do_item_unlink(item_array[i], ITEM_UNLINK_STALE);
+            else if (scrubber->runmode == SCRUB_MODE_STALE
+                     && do_item_isstale(it)) {
+                do_item_unlink(it, ITEM_UNLINK_STALE);
                 scrubber->cleaned++;
             }
         }
