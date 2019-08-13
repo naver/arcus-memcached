@@ -514,7 +514,7 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
             return (void *)it;
         }
         /* step 2) reclaim items from curMK position */
-        tries += 20;
+        tries += 40;
         while (itemsp->curMK[id] != NULL) {
             search = itemsp->curMK[id];
             itemsp->curMK[id] = search->prev;
