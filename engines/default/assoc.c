@@ -672,6 +672,11 @@ static uint32_t do_assoc_count_invalid_prefix(void)
 }
 #endif
 
+uint32_t assoc_prefix_count(void)
+{
+    return assocp->tot_prefix_items;
+}
+
 ENGINE_ERROR_CODE assoc_prefix_get_stats(const char *prefix, const int nprefix, void *prefix_data)
 {
     prefix_t *pt;
