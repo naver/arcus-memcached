@@ -110,5 +110,6 @@ bool              assoc_prefix_issame(prefix_t *pt, const char *prefix, const in
 void              assoc_prefix_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t bytes);
 void              assoc_prefix_bytes_decr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t bytes);
 bool              assoc_prefix_isvalid(hash_item *it, rel_time_t current_time);
+uint32_t          assoc_prefix_count(void);
 ENGINE_ERROR_CODE assoc_prefix_get_stats(const char *prefix, const int nprefix, void *prefix_data);
 #endif
