@@ -24,6 +24,7 @@
 #include <string.h>
 #include <time.h>
 #include <assert.h>
+#include <sched.h>
 #include <inttypes.h>
 #include <sys/time.h> /* gettimeofday() */
 
@@ -5662,7 +5663,7 @@ static void *collection_delete_thread(void *arg)
                 if (info->ccnt > 0) {
                     UNLOCK_CACHE();
                     if (slabs_space_shortage_level() < 10) {
-                        pthread_yield();
+                        sched_yield();
                     }
                     LOCK_CACHE();
                 }
