@@ -992,9 +992,12 @@ static void stats_engine(struct default_engine *engine,
     char val[128];
     int len;
 
-    pthread_mutex_lock(&engine->stats.lock);
+    pthread_mutex_lock(&engine->cache_lock);
     len = sprintf(val, "%"PRIu64, (uint64_t)assoc_prefix_count());
     add_stat("curr_prefixes", 13, val, len, cookie);
+    pthread_mutex_unlock(&engine->cache_lock);
+
+    pthread_mutex_lock(&engine->stats.lock);
     len = sprintf(val, "%"PRIu64, engine->stats.reclaimed);
     add_stat("reclaimed", 9, val, len, cookie);
     len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.evictions);
@@ -1011,11 +1014,14 @@ static void stats_engine(struct default_engine *engine,
     add_stat("sticky_bytes", 12, val, len, cookie);
     len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.curr_bytes);
     add_stat("bytes", 5, val, len, cookie);
+    pthread_mutex_unlock(&engine->stats.lock);
+
+    pthread_mutex_lock(&engine->cache_lock);
     len = sprintf(val, "%"PRIu64, (uint64_t)engine->config.sticky_limit);
     add_stat("sticky_limit", 12, val, len, cookie);
     len = sprintf(val, "%"PRIu64, (uint64_t)engine->config.maxbytes);
     add_stat("engine_maxbytes", 15, val, len, cookie);
-    pthread_mutex_unlock(&engine->stats.lock);
+    pthread_mutex_unlock(&engine->cache_lock);
 }
 
 static void stats_vbucket(struct default_engine *engine,
