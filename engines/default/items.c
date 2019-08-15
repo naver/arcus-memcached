@@ -111,6 +111,12 @@ extern int genhash_string_hash(const void* p, size_t nkey);
 /* max hash key length for calculation hash value */
 #define MAX_HKEY_LEN 250
 
+#ifdef ENABLE_STICKY_ITEM
+/* macros for identifying sticky items */
+#define IS_STICKY_EXPTIME(e) ((e) == (rel_time_t)(-1))
+#define IS_STICKY_COLLFLG(i) (((i)->mflags & COLL_META_FLAG_STICKY) != 0)
+#endif
+
 /* btree position debugging */
 static bool btree_position_debug = false;
 
@@ -195,6 +201,16 @@ static inline void ITEM_REFCOUNT_DECR(hash_item *it)
         it->refcount = ITEM_REFCOUNT_MOVE;
     }
 }
+
+#ifdef ENABLE_STICKY_ITEM
+static inline bool do_item_sticky_overflowed(void)
+{
+    if (statsp->sticky_bytes < config->sticky_limit) {
+        return false;
+    }
+    return true;
+}
+#endif
 
 /* warning: don't use these macros with a function, as it evals its arg twice */
 static inline size_t ITEM_ntotal(const hash_item *item)
@@ -286,8 +302,8 @@ static bool do_item_isvalid(hash_item *it, rel_time_t current_time)
 {
     /* check if it's expired */
 #ifdef ENABLE_STICKY_ITEM
-    /* The sticky item has an exptime((rel_tiem_t)(-1)) larger than current_item.
-     * So, it cannot be expired.
+    /* The sticky item has an exptime((rel_tiem_t)(-1)) that is
+     * larger than any current_time.  So, it never be expired.
      **/
 #endif
     if (it->exptime != 0 && it->exptime <= current_time) {
@@ -657,10 +673,11 @@ static hash_item *do_item_alloc(const void *key, const uint32_t nkey,
     if (id == 0) {
         return NULL;
     }
+
 #ifdef ENABLE_STICKY_ITEM
     /* sticky memory limit check */
-    if (exptime == (rel_time_t)(-1)) { /* sticky item */
-        if (statsp->sticky_bytes >= config->sticky_limit)
+    if (IS_STICKY_EXPTIME(exptime)) {
+        if (do_item_sticky_overflowed())
             return NULL;
     }
 #endif
@@ -738,7 +755,7 @@ static void item_link_q(hash_item *it)
 #endif
 
 #ifdef ENABLE_STICKY_ITEM
-    if (it->exptime == (rel_time_t)(-1)) {
+    if (IS_STICKY_EXPTIME(it->exptime)) {
         head = &itemsp->sticky_heads[clsid];
         tail = &itemsp->sticky_tails[clsid];
         itemsp->sticky_sizes[clsid]++;
@@ -785,7 +802,7 @@ static void item_unlink_q(hash_item *it)
     }
 
 #ifdef ENABLE_STICKY_ITEM
-    if (it->exptime == (rel_time_t)(-1)) {
+    if (IS_STICKY_EXPTIME(it->exptime)) {
         head = &itemsp->sticky_heads[clsid];
         tail = &itemsp->sticky_tails[clsid];
         itemsp->sticky_sizes[clsid]--;
@@ -863,7 +880,7 @@ static ENGINE_ERROR_CODE do_item_link(hash_item *it)
     /* update item statistics */
     pthread_mutex_lock(&statsp->lock);
 #ifdef ENABLE_STICKY_ITEM
-    if (it->exptime == (rel_time_t)(-1)) { /* sticky item */
+    if (IS_STICKY_EXPTIME(it->exptime)) {
         statsp->sticky_bytes += stotal;
         statsp->sticky_items += 1;
     }
@@ -904,7 +921,7 @@ static void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
         /* update item statistics */
         pthread_mutex_lock(&statsp->lock);
 #ifdef ENABLE_STICKY_ITEM
-        if (it->exptime == (rel_time_t)(-1)) { /* sticky item */
+        if (IS_STICKY_EXPTIME(it->exptime)) {
             statsp->sticky_bytes -= stotal;
             statsp->sticky_items -= 1;
         }
@@ -1224,7 +1241,7 @@ static void do_coll_space_incr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
     //pthread_mutex_lock(&statsp->lock);
     hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
 #ifdef ENABLE_STICKY_ITEM
-    if (it->exptime == (rel_time_t)-1) {
+    if (IS_STICKY_EXPTIME(it->exptime)) {
         statsp->sticky_bytes += nspace;
     }
 #endif
@@ -1242,7 +1259,7 @@ static void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
     //pthread_mutex_lock(&statsp->lock);
     hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
 #ifdef ENABLE_STICKY_ITEM
-    if (it->exptime == (rel_time_t)-1) {
+    if (IS_STICKY_EXPTIME(it->exptime)) {
         statsp->sticky_bytes -= nspace;
     }
 #endif
@@ -1343,9 +1360,9 @@ static hash_item *do_list_item_alloc(const void *key, const uint32_t nkey,
         info->ovflact = (attrp->ovflaction==0 ? OVFL_TAIL_TRIM : attrp->ovflaction);
         info->mflags  = 0;
 #ifdef ENABLE_STICKY_ITEM
-        if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
+        if (IS_STICKY_EXPTIME(attrp->exptime)) info->mflags |= COLL_META_FLAG_STICKY;
 #endif
-        if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
+        if (attrp->readable == 1)              info->mflags |= COLL_META_FLAG_READABLE;
         info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
         info->stotal  = 0;
         info->head = info->tail = NULL;
@@ -1535,8 +1552,8 @@ static ENGINE_ERROR_CODE do_list_elem_insert(hash_item *it,
 
 #ifdef ENABLE_STICKY_ITEM
     /* sticky memory limit check */
-    if (it->exptime == (rel_time_t)-1) {
-        if (statsp->sticky_bytes >= config->sticky_limit)
+    if (IS_STICKY_EXPTIME(it->exptime)) {
+        if (do_item_sticky_overflowed())
             return ENGINE_ENOMEM;
     }
 #endif
@@ -1637,9 +1654,9 @@ static hash_item *do_set_item_alloc(const void *key, const uint32_t nkey,
         info->ovflact = OVFL_ERROR;
         info->mflags  = 0;
 #ifdef ENABLE_STICKY_ITEM
-        if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
+        if (IS_STICKY_EXPTIME(attrp->exptime)) info->mflags |= COLL_META_FLAG_STICKY;
 #endif
-        if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
+        if (attrp->readable == 1)              info->mflags |= COLL_META_FLAG_READABLE;
         info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
         info->stotal  = 0;
         info->root    = NULL;
@@ -2109,8 +2126,8 @@ static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem,
 
 #ifdef ENABLE_STICKY_ITEM
     /* sticky memory limit check */
-    if (it->exptime == (rel_time_t)-1) {
-        if (statsp->sticky_bytes >= config->sticky_limit)
+    if (IS_STICKY_EXPTIME(it->exptime)) {
+        if (do_item_sticky_overflowed())
             return ENGINE_ENOMEM;
     }
 #endif
@@ -2191,9 +2208,9 @@ static hash_item *do_btree_item_alloc(const void *key, const uint32_t nkey,
         }
         info->mflags  = 0;
 #ifdef ENABLE_STICKY_ITEM
-        if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
+        if (IS_STICKY_EXPTIME(attrp->exptime)) info->mflags |= COLL_META_FLAG_STICKY;
 #endif
-        if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
+        if (attrp->readable == 1)              info->mflags |= COLL_META_FLAG_READABLE;
         info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
         info->stotal  = 0;
         info->bktype  = BKEY_TYPE_UNKNOWN;
@@ -3729,12 +3746,13 @@ static ENGINE_ERROR_CODE do_btree_elem_update(btree_meta_info *info,
     } else {
         /* old body size != new body size */
 #ifdef ENABLE_STICKY_ITEM
-        if ((info->mflags & COLL_META_FLAG_STICKY) != 0 &&
-            (elem->neflag+elem->nbytes) < (new_neflag+new_nbytes)) {
-            /* sticky memory limit check : old body size < new body size */
-            if (statsp->sticky_bytes >= config->sticky_limit)
-                return ENGINE_ENOMEM;
-        }
+         /* sticky memory limit check */
+         if (IS_STICKY_COLLFLG(info)) {
+             if ((elem->neflag + elem->nbytes) < (new_neflag + new_nbytes)) {
+                 if (do_item_sticky_overflowed())
+                     return ENGINE_ENOMEM;
+             }
+         }
 #endif
 
         btree_elem_item *new_elem = do_btree_elem_alloc(elem->nbkey, new_neflag, new_nbytes, cookie);
@@ -4155,8 +4173,8 @@ static ENGINE_ERROR_CODE do_btree_elem_link(btree_meta_info *info, btree_elem_it
     if (res == ENGINE_SUCCESS) {
 #ifdef ENABLE_STICKY_ITEM
         /* sticky memory limit check */
-        if ((info->mflags & COLL_META_FLAG_STICKY) != 0) {
-            if (statsp->sticky_bytes >= config->sticky_limit)
+        if (IS_STICKY_COLLFLG(info)) {
+            if (do_item_sticky_overflowed())
                 return ENGINE_ENOMEM;
         }
 #endif
@@ -4212,12 +4230,13 @@ static ENGINE_ERROR_CODE do_btree_elem_link(btree_meta_info *info, btree_elem_it
     else if (res == ENGINE_ELEM_EEXISTS) {
         if (replace_if_exist) {
 #ifdef ENABLE_STICKY_ITEM
-            btree_elem_item *find = BTREE_GET_ELEM_ITEM(path[0].node, path[0].indx);
-            if ((info->mflags & COLL_META_FLAG_STICKY) != 0 &&
-                (find->neflag+find->nbytes) < (elem->neflag+elem->nbytes)) {
-                /* sticky memory limit check */
-                if (statsp->sticky_bytes >= config->sticky_limit)
-                    return ENGINE_ENOMEM;
+            /* sticky memory limit check */
+            if (IS_STICKY_COLLFLG(info)) {
+                btree_elem_item *find = BTREE_GET_ELEM_ITEM(path[0].node, path[0].indx);
+                if ((find->neflag + find->nbytes) < (elem->neflag + elem->nbytes)) {
+                    if (do_item_sticky_overflowed())
+                        return ENGINE_ENOMEM;
+                }
             }
 #endif
 
@@ -4601,7 +4620,7 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(btree_meta_info *info,
             CLOG_BTREE_ELEM_INSERT(info, elem, elem);
         } else {
 #ifdef ENABLE_STICKY_ITEM
-            /* sticky memory limit check : do not check it
+            /* Do not check sticky memory limit.
              * Because, the space difference is negligible.
              */
 #endif
@@ -8741,9 +8760,9 @@ static hash_item *do_map_item_alloc(const void *key, const uint32_t nkey,
         info->ovflact = OVFL_ERROR;
         info->mflags  = 0;
 #ifdef ENABLE_STICKY_ITEM
-        if (attrp->exptime == (rel_time_t)(-1)) info->mflags |= COLL_META_FLAG_STICKY;
+        if (IS_STICKY_EXPTIME(attrp->exptime)) info->mflags |= COLL_META_FLAG_STICKY;
 #endif
-        if (attrp->readable == 1)               info->mflags |= COLL_META_FLAG_READABLE;
+        if (attrp->readable == 1)              info->mflags |= COLL_META_FLAG_READABLE;
         info->itdist  = (uint16_t)((size_t*)info-(size_t*)it);
         info->stotal  = 0;
         info->root    = NULL;
@@ -8971,10 +8990,12 @@ static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *el
     if (find != NULL) {
         if (replace_if_exist) {
 #ifdef ENABLE_STICKY_ITEM
-            if ((info->mflags & COLL_META_FLAG_STICKY) != 0 && find->nbytes < elem->nbytes) {
-                /* sticky memory limit check : old body size < new body size */
-                if (statsp->sticky_bytes >= config->sticky_limit)
-                    return ENGINE_ENOMEM;
+            /* sticky memory limit check */
+            if (IS_STICKY_COLLFLG(info)) {
+                if (find->nbytes < elem->nbytes) {
+                    if (do_item_sticky_overflowed())
+                        return ENGINE_ENOMEM;
+                }
             }
 #endif
             pinfo.node = node;
@@ -8989,8 +9010,8 @@ static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *el
 
 #ifdef ENABLE_STICKY_ITEM
     /* sticky memory limit check */
-    if ((info->mflags & COLL_META_FLAG_STICKY) != 0) {
-        if (statsp->sticky_bytes >= config->sticky_limit)
+    if (IS_STICKY_COLLFLG(info)) {
+        if (do_item_sticky_overflowed())
             return ENGINE_ENOMEM;
     }
 #endif
@@ -9212,10 +9233,12 @@ static ENGINE_ERROR_CODE do_map_elem_update(map_meta_info *info,
     } else {
         /* old body size != new body size */
 #ifdef ENABLE_STICKY_ITEM
-        if ((info->mflags & COLL_META_FLAG_STICKY) != 0 && elem->nbytes < nbytes) {
-            /* sticky memory limit check : old body size < new body size */
-            if (statsp->sticky_bytes >= config->sticky_limit)
-                return ENGINE_ENOMEM;
+        /* sticky memory limit check */
+        if (IS_STICKY_COLLFLG(info)) {
+            if (elem->nbytes < nbytes) {
+                if (do_item_sticky_overflowed())
+                    return ENGINE_ENOMEM;
+            }
         }
 #endif
 
