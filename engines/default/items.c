@@ -479,6 +479,12 @@ static hash_item *do_item_reclaim(hash_item *it,
     /* collection item or small-sized kv item */
 #endif
 
+    if (IS_COLL_ITEM(it)) {
+        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
+        if (info->ccnt > 0) {
+            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 500);
+        }
+    }
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 
     /* allocate from slab allocator */
@@ -492,6 +498,12 @@ static void do_item_invalidate(hash_item *it, const unsigned int lruid, bool imm
     do_item_stat_reclaim(lruid);
 
     /* it->refcount == 0 */
+    if (immediate && IS_COLL_ITEM(it)) {
+        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
+        if (info->ccnt > 0) {
+            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 500);
+        }
+    }
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 }
 
@@ -502,6 +514,12 @@ static void do_item_evict(hash_item *it, const unsigned int lruid,
     do_item_stat_evict(lruid, current_time, it, cookie);
 
     /* unlink the item */
+    if (IS_COLL_ITEM(it)) {
+        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
+        if (info->ccnt > 0) {
+            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 500);
+        }
+    }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
 
@@ -513,6 +531,12 @@ static void do_item_repair(hash_item *it, const unsigned int lruid)
     it->refchunk = 0;
 
     /* unlink the item */
+    if (IS_COLL_ITEM(it)) {
+        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
+        if (info->ccnt > 0) {
+            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 500);
+        }
+    }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
 
@@ -842,12 +866,9 @@ static void do_item_free(hash_item *it)
 
     if (IS_COLL_ITEM(it)) {
         coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        if (info->ccnt > 0) {
-            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 500);
-            if (info->ccnt > 0) { /* still NOT empty */
-                push_coll_del_queue(it);
-                return;
-            }
+        if (info->ccnt > 0) { /* still NOT empty */
+            push_coll_del_queue(it);
+            return;
         }
     }
 
@@ -5755,6 +5776,7 @@ static void *collection_delete_thread(void *arg)
     hash_item      *it;
     coll_meta_info *info;
     struct timespec sleep_time = {0, 0};
+    ENGINE_ITEM_TYPE item_type;
     int             current_ssl;
     uint32_t        evict_count;
     uint32_t        bg_evict_count = 0;
@@ -5763,16 +5785,15 @@ static void *collection_delete_thread(void *arg)
     while (engine->initialized) {
         it = pop_coll_del_queue();
         if (it != NULL) {
-            assert(IS_COLL_ITEM(it));
-            ENGINE_ITEM_TYPE type = GET_ITEM_TYPE(it);
+            item_type = GET_ITEM_TYPE(it);
 
             LOCK_CACHE();
             info = (coll_meta_info *)item_get_meta(it);
             while (info->ccnt > 0) {
-                do_coll_elem_delete(info, type, 500);
+                do_coll_elem_delete(info, item_type, 100);
                 if (info->ccnt > 0) {
                     UNLOCK_CACHE();
-                    if (slabs_space_shortage_level() < 10) {
+                    if (slabs_space_shortage_level() <= 2) {
                         sleep_time.tv_nsec = 10000; /* 10 us */
                         nanosleep(&sleep_time, NULL);
                     }
