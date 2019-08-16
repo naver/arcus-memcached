@@ -843,7 +843,7 @@ static void do_item_free(hash_item *it)
     if (IS_COLL_ITEM(it)) {
         coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
         if (info->ccnt > 0) {
-            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 1000);
+            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 500);
             if (info->ccnt > 0) { /* still NOT empty */
                 push_coll_del_queue(it);
                 return;
@@ -5761,7 +5761,7 @@ static void *collection_delete_thread(void *arg)
             LOCK_CACHE();
             info = (coll_meta_info *)item_get_meta(it);
             while (info->ccnt > 0) {
-                do_coll_elem_delete(info, type, 1000);
+                do_coll_elem_delete(info, type, 500);
                 if (info->ccnt > 0) {
                     UNLOCK_CACHE();
                     if (slabs_space_shortage_level() < 10) {
