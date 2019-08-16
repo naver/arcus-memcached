@@ -19,7 +19,7 @@ my $bulk_size = 3461;
 
 #mem_cmd_is($sock, $cmd, $val, $rst);
 #
-sub request_log{
+sub request_log {
     my ($whole_cmd, $cnt, $state) = @_;
 
     if ($cnt <= 0) {
@@ -38,6 +38,12 @@ sub request_log{
         my $rst = "cmd in second already started";
         mem_cmd_is($sock, "cmd_in_second $whole_cmd $cnt", "", $rst);
     }
+}
+
+sub stop_log {
+    request_log("bop insert", 1000, $start);
+    mem_cmd_is($sock, "cmd_in_second stop", "", "cmd_in_second stopped");
+    mem_cmd_is($sock, "cmd_in_second stop", "", "cmd_in_second already stopped");
 }
 
 sub do_bulk_coll_insert {
@@ -67,7 +73,6 @@ sub do_bulk_coll_insert {
             $whole_cmd = "$collection $cmd $key $field $vleng";
         }
 
-
         my $rst = "STORED";
 
         if ($index == 0) {
@@ -95,8 +100,7 @@ sub do_bulk_coll_insert {
             }
         }
 
-        mem_cmd_is($sock, $whole_cmd, $val, $rst) or die;
-
+        mem_cmd_is($sock, $whole_cmd, $val, $rst);
     }
 
 
@@ -105,9 +109,7 @@ sub do_bulk_coll_insert {
     cmp_ok($end_time - $start_time, "<=", 1000, "all commands are done in a second");
     sleep(1);
 
-    my $file_handle;
-    open($file_handle, "cmd_in_second.log") or die "log file not exist\n";
-    close($file_handle);
+    file_check()
 }
 
 
@@ -124,9 +126,10 @@ sub wrong_cmd_test{
     mem_cmd_is($sock, "cmd_in_second bop insert", "", $bad_format);
     mem_cmd_is($sock, "cmd_in_second bop insert blahblah", "", $bad_format);
     mem_cmd_is($sock, "cmd_in_second set 1000 blahblah", "", $bad_format);
+    mem_cmd_is($sock, "cmd_in_second bop", "", $bad_format);
+    mem_cmd_is($sock, "cmd_in_second stop blahblah", "", $bad_format);
 
     my $unknown = "ERROR unknown command";
-    mem_cmd_is($sock, "cmd_in_second bop", "", $unknown);
     mem_cmd_is($sock, "cmd_in_second bop insert 1000 blahblah", "", $unknown);
     mem_cmd_is($sock, "cmd_in_second bop insert 1000 1000", "", $unknown);
 
@@ -159,24 +162,32 @@ sub file_check {
     my $file_handle;
     open($file_handle, "cmd_in_second.log") or die "log file not exist\n";
 
+    if (-s "cmd_in_second.log" == 0) {
+        die "empty log";
+    }
+
     my $line_cnt;
     close($file_handle);
 }
 
 
 wrong_cmd_test();
-sleep(1);
+sleep(0.3);
+
+stop_log();
+
+sleep(0.3);
 #extremely small cases
 request_log("bop insert", 1, $start);
 do_bulk_coll_insert("bop", "bkey1", 1);
+sleep(0.3);
+
 request_log("bop insert", 9, $start);
 do_bulk_coll_insert("bop", "bkey2", 9);
 
+sleep(0.3);
 request_log("bop insert", $bulk_size, $start);
 do_bulk_coll_insert("bop", "bkey3", $bulk_size);
 
-sleep(1);
-
 #slow_cmd();
-
 release_memcached($engine, $server);

@@ -13251,16 +13251,29 @@ static void process_second_command(conn *c, token_t *tokens, const size_t ntoken
 
     assert(c != NULL);
 
+    if (ntokens == 3) {
+        if (strcmp("stop", tokens[SUBCOMMAND_TOKEN].value) != 0) {
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
 
-    if(strlen(tokens[SUBCOMMAND_TOKEN].value) > 3){
-        out_string(c, "CLIENT_ERROR bad command line format");
+        bool already_stop = false;
+        cmd_in_second_stop(&already_stop);
+
+        if (already_stop) {
+            out_string(c, "cmd_in_second already stopped");
+            return;
+        }
+
+        out_string(c, "cmd_in_second stopped");
         return;
     }
 
+
     int operation_enum = 0;
     char cmd[20] = "";
-    bool is_collection_cmd = true;
 
+    bool is_collection_cmd = true;
 
     if (strcmp("lop", tokens[SUBCOMMAND_TOKEN].value) == 0) {
         if (strcmp("create", tokens[SUBCOMMAND_TOKEN+1].value) == 0) {
@@ -13412,14 +13425,12 @@ static void process_second_command(conn *c, token_t *tokens, const size_t ntoken
 
     if ((is_collection_cmd && ntokens != 5) ||
         (!is_collection_cmd && ntokens != 4)) {
-
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
 
-    const int cmd_idx = SUBCOMMAND_TOKEN;
-    const int cnt_idx = cmd_idx + 1 + is_collection_cmd;
-
+    int cmd_idx = SUBCOMMAND_TOKEN;
+    int cnt_idx = cmd_idx + 1 + is_collection_cmd;
 
     int cnt_to_log= 0;
 
@@ -13428,7 +13439,7 @@ static void process_second_command(conn *c, token_t *tokens, const size_t ntoken
         return;
     }
 
-    const int start_code = cmd_in_second_start(operation_enum, cmd, cnt_to_log);
+    int start_code = cmd_in_second_start(operation_enum, cmd, cnt_to_log);
 
     char response[100] = "";
 
@@ -13438,6 +13449,12 @@ static void process_second_command(conn *c, token_t *tokens, const size_t ntoken
             break;
         case CMD_IN_SECOND_NO_MEM:
             sprintf(response, "SERVER_ERROR out of memory");
+            break;
+        case CMD_IN_SECOND_THREAD_FAILED:
+            sprintf(response, "cmd_in_second failed to create a flush thread");
+            break;
+        case CMD_IN_SECOND_FILE_FAILED:
+            sprintf(response, "cmd_in_second failed to create a log file");
             break;
         case CMD_IN_SECOND_START:
             settings.detail_enabled = true;
@@ -13570,7 +13587,7 @@ static void process_command(conn *c, char *command, int cmdlen)
         process_config_command(c, tokens, ntokens);
     }
 #ifdef CMD_IN_SECOND
-    else if ((ntokens == 4 || ntokens == 5) && (strcmp(tokens[COMMAND_TOKEN].value, "cmd_in_second") == 0))
+    else if ((ntokens >= 3 && ntokens <= 5) && (strcmp(tokens[COMMAND_TOKEN].value, "cmd_in_second") == 0))
     {
         process_second_command(c, tokens, ntokens);
     }
