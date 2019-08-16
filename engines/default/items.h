@@ -409,9 +409,6 @@ ENGINE_ERROR_CODE item_delete(const void* key, const uint32_t nkey, uint64_t cas
 
 void coll_del_thread_wakeup(void);
 
-ENGINE_ERROR_CODE item_stats_prefixes(const char *prefix, const int nprefix,
-                                      void *prefix_data);
-
 ENGINE_ERROR_CODE item_init(struct default_engine *engine);
 
 void              item_final(struct default_engine *engine);

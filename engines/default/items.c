@@ -6246,16 +6246,6 @@ void item_stats_reset(void)
     UNLOCK_CACHE();
 }
 
-ENGINE_ERROR_CODE item_stats_prefixes(const char *prefix, const int nprefix,
-                                      void *prefix_data)
-{
-    ENGINE_ERROR_CODE ret;
-    LOCK_CACHE();
-    ret = assoc_prefix_get_stats(prefix, nprefix, prefix_data);
-    UNLOCK_CACHE();
-    return ret;
-}
-
 static void _check_forced_btree_overflow_action(void)
 {
     char *envstr;

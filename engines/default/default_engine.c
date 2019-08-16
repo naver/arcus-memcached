@@ -1043,7 +1043,13 @@ static ENGINE_ERROR_CODE
 default_get_prefix_stats(ENGINE_HANDLE* handle, const void* cookie,
                          const void* key, const int nkey, void *prefix_data)
 {
-    return item_stats_prefixes(key, nkey, prefix_data);
+    struct default_engine* engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+
+    pthread_mutex_lock(&engine->cache_lock);
+    ret = assoc_prefix_get_stats(key, nkey, prefix_data);
+    pthread_mutex_unlock(&engine->cache_lock);
+    return ret;
 }
 
 /*
