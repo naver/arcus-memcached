@@ -1009,6 +1009,7 @@ static void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
 
     if ((it->iflag & ITEM_LINKED) != 0) {
         CLOG_ITEM_UNLINK(it, cause);
+
         /* unlink the item from LUR list */
         item_unlink_q(it);
 
@@ -1019,13 +1020,20 @@ static void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
         /* unlink the item from prefix info */
         stotal = ITEM_stotal(it);
         assoc_prefix_unlink(it, stotal, (cause != ITEM_UNLINK_REPLACE ? true : false));
-        if (IS_COLL_ITEM(it)) {
-            coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-            info->stotal = 0; /* Don't need to decrease space statistics any more */
-        }
 
         /* update item statistics */
         do_item_stat_unlink(it, stotal);
+
+        if (IS_COLL_ITEM(it)) {
+            /* IMPORTANT NOTE)
+             * The element space statistics has already been decreased.
+             * So, we must not decrease the space statistics any more
+             * even if the elements are freed later.
+             * For that purpose, we set info->stotal to 0 like below.
+             */
+            coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
+            info->stotal = 0;
+        }
 
         /* free the item if no one reference it */
         if (it->refcount == 0) {
