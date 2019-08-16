@@ -24,7 +24,6 @@
 #include <string.h>
 #include <time.h>
 #include <assert.h>
-#include <sched.h>
 #include <inttypes.h>
 #include <sys/time.h> /* gettimeofday() */
 
@@ -5747,11 +5746,11 @@ static void *collection_delete_thread(void *arg)
     struct default_engine *engine = arg;
     hash_item      *it;
     coll_meta_info *info;
+    struct timespec sleep_time = {0, 0};
     int             current_ssl;
     uint32_t        evict_count;
     uint32_t        bg_evict_count = 0;
     bool            bg_evict_start = false;
-    struct timespec bg_evict_sleep = {0, 0};
 
     while (engine->initialized) {
         it = pop_coll_del_queue();
@@ -5766,7 +5765,8 @@ static void *collection_delete_thread(void *arg)
                 if (info->ccnt > 0) {
                     UNLOCK_CACHE();
                     if (slabs_space_shortage_level() < 10) {
-                        sched_yield();
+                        sleep_time.tv_nsec = 10000; /* 10 us */
+                        nanosleep(&sleep_time, NULL);
                     }
                     LOCK_CACHE();
                 }
@@ -5806,8 +5806,8 @@ static void *collection_delete_thread(void *arg)
                 }
                 bg_evict_count = 0;
             }
-            bg_evict_sleep.tv_nsec = 10000000 / current_ssl;
-            nanosleep(&bg_evict_sleep, NULL);
+            sleep_time.tv_nsec = 10000000 / current_ssl; /* 10000us / ssl */
+            nanosleep(&sleep_time, NULL);
         } else {
             if (bg_evict_start == true) {
                 /*****
