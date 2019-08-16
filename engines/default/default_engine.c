@@ -985,45 +985,6 @@ default_setattr(ENGINE_HANDLE* handle, const void* cookie,
 /*
  * Stats API
  */
-
-static void stats_engine(struct default_engine *engine,
-                         ADD_STAT add_stat, const void *cookie)
-{
-    char val[128];
-    int len;
-
-    pthread_mutex_lock(&engine->cache_lock);
-    len = sprintf(val, "%"PRIu64, (uint64_t)assoc_prefix_count());
-    add_stat("curr_prefixes", 13, val, len, cookie);
-    pthread_mutex_unlock(&engine->cache_lock);
-
-    pthread_mutex_lock(&engine->stats.lock);
-    len = sprintf(val, "%"PRIu64, engine->stats.reclaimed);
-    add_stat("reclaimed", 9, val, len, cookie);
-    len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.evictions);
-    add_stat("evictions", 9, val, len, cookie);
-    len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.outofmemorys);
-    add_stat("outofmemorys", 12, val, len, cookie);
-    len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.sticky_items);
-    add_stat("sticky_items", 12, val, len, cookie);
-    len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.curr_items);
-    add_stat("curr_items", 10, val, len, cookie);
-    len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.total_items);
-    add_stat("total_items", 11, val, len, cookie);
-    len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.sticky_bytes);
-    add_stat("sticky_bytes", 12, val, len, cookie);
-    len = sprintf(val, "%"PRIu64, (uint64_t)engine->stats.curr_bytes);
-    add_stat("bytes", 5, val, len, cookie);
-    pthread_mutex_unlock(&engine->stats.lock);
-
-    pthread_mutex_lock(&engine->cache_lock);
-    len = sprintf(val, "%"PRIu64, (uint64_t)engine->config.sticky_limit);
-    add_stat("sticky_limit", 12, val, len, cookie);
-    len = sprintf(val, "%"PRIu64, (uint64_t)engine->config.maxbytes);
-    add_stat("engine_maxbytes", 15, val, len, cookie);
-    pthread_mutex_unlock(&engine->cache_lock);
-}
-
 static void stats_vbucket(struct default_engine *engine,
                           ADD_STAT add_stat, const void *cookie)
 {
@@ -1046,16 +1007,16 @@ default_get_stats(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     if (stat_key == NULL) {
-        stats_engine(engine, add_stat, cookie);
-    }
-    else if (strncmp(stat_key, "slabs", 5) == 0) {
-        slabs_stats(add_stat, cookie);
+        item_stats_global(add_stat, cookie);
     }
     else if (strncmp(stat_key, "items", 5) == 0) {
         item_stats(add_stat, cookie);
     }
     else if (strncmp(stat_key, "sizes", 5) == 0) {
         item_stats_sizes(add_stat, cookie);
+    }
+    else if (strncmp(stat_key, "slabs", 5) == 0) {
+        slabs_stats(add_stat, cookie);
     }
     else if (strncmp(stat_key, "vbucket", 7) == 0) {
         stats_vbucket(engine, add_stat, cookie);
@@ -1075,16 +1036,7 @@ default_get_stats(ENGINE_HANDLE* handle, const void* cookie,
 static void
 default_reset_stats(ENGINE_HANDLE* handle, const void *cookie)
 {
-    struct default_engine *engine = get_handle(handle);
-
     item_stats_reset();
-
-    pthread_mutex_lock(&engine->stats.lock);
-    engine->stats.evictions = 0;
-    engine->stats.reclaimed = 0;
-    engine->stats.outofmemorys = 0;
-    engine->stats.total_items = 0;
-    pthread_mutex_unlock(&engine->stats.lock);
 }
 
 static ENGINE_ERROR_CODE

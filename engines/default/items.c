@@ -207,6 +207,146 @@ static inline bool do_item_sticky_overflowed(void)
 }
 #endif
 
+static inline void LOCK_STATS(void)
+{
+    //pthread_mutex_lock(&statsp->lock);
+}
+
+static inline void UNLOCK_STATS(void)
+{
+    //pthread_mutex_unlock(&statsp->lock);
+}
+
+static inline void do_item_stat_reclaim(const unsigned int lruid)
+{
+    itemsp->itemstats[lruid].reclaimed++;
+    LOCK_STATS();
+    statsp->reclaimed++;
+    UNLOCK_STATS();
+}
+
+static inline void do_item_stat_evict(const unsigned int lruid,
+                                      rel_time_t current_time,
+                                      hash_item *it, const void *cookie)
+{
+    itemsp->itemstats[lruid].evicted++;
+    itemsp->itemstats[lruid].evicted_time = current_time - it->time;
+    if (it->exptime > 0) {
+        itemsp->itemstats[lruid].evicted_nonzero++;
+    }
+    LOCK_STATS();
+    statsp->evictions++;
+    UNLOCK_STATS();
+    if (cookie != NULL) {
+        svstat->evicting(cookie, item_get_key(it), it->nkey);
+    }
+}
+
+static inline void do_item_stat_outofmemory(const unsigned int lruid)
+{
+    itemsp->itemstats[lruid].outofmemory++;
+    LOCK_STATS();
+    statsp->outofmemorys++;
+    UNLOCK_STATS();
+}
+
+static inline void do_item_stat_link(hash_item *it, size_t stotal)
+{
+    LOCK_STATS();
+#ifdef ENABLE_STICKY_ITEM
+    if (IS_STICKY_EXPTIME(it->exptime)) {
+        statsp->sticky_bytes += stotal;
+        statsp->sticky_items += 1;
+    }
+#endif
+    statsp->curr_bytes += stotal;
+    statsp->curr_items += 1;
+    statsp->total_items += 1;
+    UNLOCK_STATS();
+}
+
+static inline void do_item_stat_unlink(hash_item *it, size_t stotal)
+{
+    LOCK_STATS();
+#ifdef ENABLE_STICKY_ITEM
+    if (IS_STICKY_EXPTIME(it->exptime)) {
+        statsp->sticky_bytes -= stotal;
+        statsp->sticky_items -= 1;
+    }
+#endif
+    statsp->curr_bytes -= stotal;
+    statsp->curr_items -= 1;
+    UNLOCK_STATS();
+}
+
+static inline void do_item_stat_bytes_incr(hash_item *it, size_t stotal)
+{
+    LOCK_STATS();
+#ifdef ENABLE_STICKY_ITEM
+    if (IS_STICKY_EXPTIME(it->exptime)) {
+        statsp->sticky_bytes += stotal;
+    }
+#endif
+    statsp->curr_bytes += stotal;
+    UNLOCK_STATS();
+}
+
+static inline void do_item_stat_bytes_decr(hash_item *it, size_t stotal)
+{
+    LOCK_STATS();
+#ifdef ENABLE_STICKY_ITEM
+    if (IS_STICKY_EXPTIME(it->exptime)) {
+        statsp->sticky_bytes -= stotal;
+    }
+#endif
+    statsp->curr_bytes -= stotal;
+    UNLOCK_STATS();
+}
+
+static inline void do_item_stat_get(ADD_STAT add_stat, const void *cookie)
+{
+    char val[128];
+    int len;
+
+    LOCK_STATS();
+    len = sprintf(val, "%"PRIu64, statsp->reclaimed);
+    add_stat("reclaimed", 9, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)statsp->evictions);
+    add_stat("evictions", 9, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)statsp->outofmemorys);
+    add_stat("outofmemorys", 12, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)statsp->sticky_items);
+    add_stat("sticky_items", 12, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)statsp->curr_items);
+    add_stat("curr_items", 10, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)statsp->total_items);
+    add_stat("total_items", 11, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)statsp->sticky_bytes);
+    add_stat("sticky_bytes", 12, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)statsp->curr_bytes);
+    add_stat("bytes", 5, val, len, cookie);
+    UNLOCK_STATS();
+
+    len = sprintf(val, "%"PRIu64, (uint64_t)config->sticky_limit);
+    add_stat("sticky_limit", 12, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)config->maxbytes);
+    add_stat("engine_maxbytes", 15, val, len, cookie);
+}
+
+static inline void do_item_stat_reset(void)
+{
+    /* reset engine->items.itemstats */
+    memset(itemsp->itemstats, 0, sizeof(itemsp->itemstats));
+
+    /* reset engine->stats */
+    LOCK_STATS();
+    statsp->evictions = 0;
+    statsp->reclaimed = 0;
+    statsp->outofmemorys = 0;
+    statsp->total_items = 0;
+    UNLOCK_STATS();
+}
+
 /* warning: don't use these macros with a function, as it evals its arg twice */
 static inline size_t ITEM_ntotal(const hash_item *item)
 {
@@ -253,6 +393,8 @@ static uint64_t get_cas_id(void)
 #else
 # define DEBUG_REFCNT(it,op) while(0)
 #endif
+
+
 
 /*
  * Collection Delete Queue Management
@@ -321,10 +463,7 @@ static hash_item *do_item_reclaim(hash_item *it,
                                   const unsigned int lruid)
 {
     /* increment # of reclaimed */
-    pthread_mutex_lock(&statsp->lock);
-    statsp->reclaimed++;
-    pthread_mutex_unlock(&statsp->lock);
-    itemsp->itemstats[lruid].reclaimed++;
+    do_item_stat_reclaim(lruid);
 
     /* it->refcount == 0 */
 #ifdef USE_SINGLE_LRU_LIST
@@ -351,10 +490,7 @@ static hash_item *do_item_reclaim(hash_item *it,
 static void do_item_invalidate(hash_item *it, const unsigned int lruid, bool immediate)
 {
     /* increment # of reclaimed */
-    pthread_mutex_lock(&statsp->lock);
-    statsp->reclaimed++;
-    pthread_mutex_unlock(&statsp->lock);
-    itemsp->itemstats[lruid].reclaimed++;
+    do_item_stat_reclaim(lruid);
 
     /* it->refcount == 0 */
     do_item_unlink(it, ITEM_UNLINK_INVALID);
@@ -364,17 +500,7 @@ static void do_item_evict(hash_item *it, const unsigned int lruid,
                           rel_time_t current_time, const void *cookie)
 {
     /* increment # of evicted */
-    itemsp->itemstats[lruid].evicted++;
-    itemsp->itemstats[lruid].evicted_time = current_time - it->time;
-    if (it->exptime != 0) {
-        itemsp->itemstats[lruid].evicted_nonzero++;
-    }
-    pthread_mutex_lock(&statsp->lock);
-    statsp->evictions++;
-    pthread_mutex_unlock(&statsp->lock);
-    if (cookie != NULL) {
-        svstat->evicting(cookie, item_get_key(it), it->nkey);
-    }
+    do_item_stat_evict(lruid, current_time, it, cookie);
 
     /* unlink the item */
     do_item_unlink(it, ITEM_UNLINK_EVICT);
@@ -568,10 +694,7 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
          * we're out of luck at this point...
          */
         if (!config->evict_to_free) {
-            itemsp->itemstats[clsid_based_on_ntotal].outofmemory++;
-            pthread_mutex_lock(&statsp->lock);
-            statsp->outofmemorys++;
-            pthread_mutex_unlock(&statsp->lock);
+            do_item_stat_outofmemory(clsid_based_on_ntotal);
             return NULL;
         }
 
@@ -608,15 +731,14 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
     }
 
     if (it == NULL) {
-        itemsp->itemstats[id].outofmemory++;
-        pthread_mutex_lock(&statsp->lock);
-        statsp->outofmemorys++;
-        pthread_mutex_unlock(&statsp->lock);
+        do_item_stat_outofmemory(id);
         if (id == LRU_CLSID_FOR_SMALL) {
-            logger->log(EXTENSION_LOG_WARNING, NULL, "no more small memory chunk"
-                         "space_shortage_level=%d, item size=%lu\n", slabs_space_shortage_level(), ntotal);
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "No more small memory. space_shortage_level=%d, size=%lu\n",
+                        slabs_space_shortage_level(), ntotal);
         } else {
-            logger->log(EXTENSION_LOG_WARNING, NULL, "no more memory chunk id=%d, item size=%lu\n", id, ntotal);
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "No more memory. clsid=%d, size=%lu\n", id, ntotal);
         }
 
         /* Last ditch effort. There is a very rare bug which causes
@@ -873,17 +995,7 @@ static ENGINE_ERROR_CODE do_item_link(hash_item *it)
     CLOG_ITEM_LINK(it);
 
     /* update item statistics */
-    pthread_mutex_lock(&statsp->lock);
-#ifdef ENABLE_STICKY_ITEM
-    if (IS_STICKY_EXPTIME(it->exptime)) {
-        statsp->sticky_bytes += stotal;
-        statsp->sticky_items += 1;
-    }
-#endif
-    statsp->curr_bytes += stotal;
-    statsp->curr_items += 1;
-    statsp->total_items += 1;
-    pthread_mutex_unlock(&statsp->lock);
+    do_item_stat_link(it, stotal);
 
     return ENGINE_SUCCESS;
 }
@@ -914,16 +1026,7 @@ static void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
         }
 
         /* update item statistics */
-        pthread_mutex_lock(&statsp->lock);
-#ifdef ENABLE_STICKY_ITEM
-        if (IS_STICKY_EXPTIME(it->exptime)) {
-            statsp->sticky_bytes -= stotal;
-            statsp->sticky_items -= 1;
-        }
-#endif
-        statsp->curr_bytes -= stotal;
-        statsp->curr_items -= 1;
-        pthread_mutex_unlock(&statsp->lock);
+        do_item_stat_unlink(it, stotal);
 
         /* free the item if no one reference it */
         if (it->refcount == 0) {
@@ -1232,17 +1335,10 @@ static void do_coll_space_incr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
                                const size_t nspace)
 {
     info->stotal += nspace;
-    /* Currently, stats.lock is not needed since the cache lock is held. */
-    //pthread_mutex_lock(&statsp->lock);
+
     hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
-#ifdef ENABLE_STICKY_ITEM
-    if (IS_STICKY_EXPTIME(it->exptime)) {
-        statsp->sticky_bytes += nspace;
-    }
-#endif
+    do_item_stat_bytes_incr(it, nspace);
     assoc_prefix_bytes_incr(it->pfxptr, item_type, nspace);
-    statsp->curr_bytes += nspace;
-    //pthread_mutex_unlock(&statsp->lock);
 }
 
 static void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
@@ -1250,17 +1346,10 @@ static void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
 {
     assert(info->stotal >= nspace);
     info->stotal -= nspace;
-    /* Currently, stats.lock is not needed since the cache lock is held. */
-    //pthread_mutex_lock(&statsp->lock);
+
     hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
-#ifdef ENABLE_STICKY_ITEM
-    if (IS_STICKY_EXPTIME(it->exptime)) {
-        statsp->sticky_bytes -= nspace;
-    }
-#endif
+    do_item_stat_bytes_decr(it, nspace);
     assoc_prefix_bytes_decr(it->pfxptr, item_type, nspace);
-    statsp->curr_bytes -= nspace;
-    //pthread_mutex_unlock(&statsp->lock);
 }
 
 /* get real maxcount for each collection type */
@@ -6045,6 +6134,19 @@ char *item_cachedump(unsigned int slabs_clsid, unsigned int limit, const bool fo
     return buffer;
 }
 
+void item_stats_global(ADD_STAT add_stat, const void *cookie)
+{
+    char val[128];
+    int len;
+
+    LOCK_CACHE();
+    len = sprintf(val, "%"PRIu64, (uint64_t)assoc_prefix_count());
+    add_stat("curr_prefixes", 13, val, len, cookie);
+
+    do_item_stat_get(add_stat, cookie);
+    UNLOCK_CACHE();
+}
+
 void item_stats(ADD_STAT add_stat, const void *cookie)
 {
     const char *prefix = "items";
@@ -6140,7 +6242,7 @@ void item_stats_sizes(ADD_STAT add_stat, const void *cookie)
 void item_stats_reset(void)
 {
     LOCK_CACHE();
-    memset(itemsp->itemstats, 0, sizeof(itemsp->itemstats));
+    do_item_stat_reset();
     UNLOCK_CACHE();
 }
 
