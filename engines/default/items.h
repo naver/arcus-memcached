@@ -323,9 +323,12 @@ hash_item *item_alloc(const void *key, const uint32_t nkey,
 hash_item *item_get(const void *key, const uint32_t nkey);
 
 /**
- * Reset the item statistics
+ * Get item global statitistics
+ * @param add_stat callback provided by the core used to
+ *                 push statistics into the response
+ * @param cookie cookie provided by the core to identify the client
  */
-void item_stats_reset(void);
+void item_stats_global(ADD_STAT add_stat, const void *cookie);
 
 /**
  * Get item statitistics
@@ -342,6 +345,11 @@ void item_stats(ADD_STAT add_stat, const void *cookie);
  * @param cookie cookie provided by the core to identify the client
  */
 void item_stats_sizes(ADD_STAT add_stat, const void *cookie);
+
+/**
+ * Reset the item statistics
+ */
+void item_stats_reset(void);
 
 /**
  * Dump items from the cache
@@ -400,9 +408,6 @@ ENGINE_ERROR_CODE item_arithmetic(const void* cookie,
 ENGINE_ERROR_CODE item_delete(const void* key, const uint32_t nkey, uint64_t cas);
 
 void coll_del_thread_wakeup(void);
-
-ENGINE_ERROR_CODE item_stats_prefixes(const char *prefix, const int nprefix,
-                                      void *prefix_data);
 
 ENGINE_ERROR_CODE item_init(struct default_engine *engine);
 
