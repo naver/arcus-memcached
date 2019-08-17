@@ -8803,7 +8803,7 @@ int itscan_getnext(void *scan, void **item_array, int item_arrsz)
     int real_count;
 
     LOCK_CACHE();
-    item_count = assoc_scan_next(&sp->asscan, (hash_item**)item_array, scan_count);
+    item_count = assoc_scan_next(&sp->asscan, (hash_item**)item_array, scan_count, 0);
     if (item_count < 0) {
         real_count = -1; /* The end of assoc scan */
     } else {
