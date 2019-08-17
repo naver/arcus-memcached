@@ -8779,8 +8779,7 @@ static void do_itscan_free(item_scan_t *sp)
 /*
  * External item scan functions
  */
-void *itscan_open(struct default_engine *engine,
-                  const char *prefix, const int nprefix)
+void *itscan_open(struct default_engine *engine, const char *prefix, const int nprefix)
 {
     item_scan_t *sp = do_itscan_alloc();
     if (sp != NULL) {
@@ -8792,18 +8791,21 @@ void *itscan_open(struct default_engine *engine,
     return (void*)sp;
 }
 
-int itscan_getnext(void *scan, void **item_array, int item_arrsz)
+int itscan_getnext(void *scan, void **item_array, elems_result_t *erst_array, int item_arrsz)
 {
     item_scan_t *sp = (item_scan_t *)scan;
     hash_item *it;
+    elems_result_t *eresult;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     rel_time_t curtime = svcore->get_current_time();
     int scan_count = item_arrsz < MAX_ITSCAN_ITEMS
                    ? item_arrsz : MAX_ITSCAN_ITEMS;
+    int elem_limit = (erst_array ? 1000 : 0);
     int item_count;
     int real_count;
 
     LOCK_CACHE();
-    item_count = assoc_scan_next(&sp->asscan, (hash_item**)item_array, scan_count, 0);
+    item_count = assoc_scan_next(&sp->asscan, (hash_item**)item_array, scan_count, elem_limit);
     if (item_count < 0) {
         real_count = -1; /* The end of assoc scan */
     } else {
@@ -8825,20 +8827,44 @@ int itscan_getnext(void *scan, void **item_array, int item_arrsz)
                 }
             }
             /* Found the valid items */
-            ITEM_REFCOUNT_INCR(it);
             if (real_count < idx) {
                 item_array[real_count] = item_array[idx];
             }
+            if (erst_array != NULL) {
+                eresult = &erst_array[real_count];
+                eresult->elem_count = 0;
+                if (IS_COLL_ITEM(it)) {
+                    ret = coll_elem_get_all(it, eresult, false);
+                    if (ret == ENGINE_ENOMEM) break;
+                }
+            }
+            ITEM_REFCOUNT_INCR(it);
             real_count += 1;
         }
     }
     UNLOCK_CACHE();
 
+    if (ret == ENGINE_ENOMEM) {
+        if (real_count > 0) {
+            itscan_release(scan, item_array, erst_array, real_count);
+        }
+        real_count = -2; /* OUT OF MEMORY */
+    }
     return real_count;
 }
 
-void itscan_release(void *scan, void **item_array, int item_count)
+void itscan_release(void *scan, void **item_array, elems_result_t *erst_array, int item_count)
 {
+    if (erst_array != NULL) {
+        for (int idx = 0; idx < item_count; idx++) {
+            if (erst_array[idx].elem_count > 0) {
+                hash_item *it = (hash_item *)item_array[idx];
+                assert(IS_COLL_ITEM(it));
+                coll_elem_release(&erst_array[idx], GET_ITEM_TYPE(it));
+            }
+        }
+    }
+
     LOCK_CACHE();
     for (int idx = 0; idx < item_count; idx++) {
         do_item_release(item_array[idx]);

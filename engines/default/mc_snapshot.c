@@ -81,16 +81,16 @@ static const char *item_type_string[] = {
 typedef struct _snapshot_func {
     /* The dump function called for the given item array.
      */
-    int (*dump)(snapshot_st *ss, void **item_array, int item_count);
+    int (*dump)(snapshot_st *ss, void **item_array, int item_count, void *args);
     /* The done function called after dumping items.
      * It's usually called for recording the summary.
      */
     int (*done)(snapshot_st *ss);
 } SNAPSHOT_FUNC;
 
-static int do_snapshot_key_dump(snapshot_st *ss, void **item_array, int item_count);
+static int do_snapshot_key_dump(snapshot_st *ss, void **item_array, int item_count, void *args);
 static int do_snapshot_key_done(snapshot_st *ss);
-static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_count);
+static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_count, void *args);
 static int do_snapshot_data_done(snapshot_st *ss);
 
 /* snapshot function array for each snapshot mode */
@@ -148,7 +148,7 @@ static void do_snapshot_buffer_reset(snapshot_st *ss)
  * dump: do_snapshot_key_dump()
  * done: do_snapshot_key_done()
  */
-static int do_snapshot_key_dump(snapshot_st *ss, void **item_array, int item_count)
+static int do_snapshot_key_dump(snapshot_st *ss, void **item_array, int item_count, void *args)
 {
     struct default_engine *engine = ss->engine;
     hash_item *it;
@@ -233,14 +233,16 @@ static int do_snapshot_key_done(snapshot_st *ss)
  * dump: do_snapshot_data_dump()
  * done: do_snapshot_data_done()
  */
-static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_count)
+static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_count, void *args)
 {
 #ifdef ENABLE_PERSISTENCE
+    elems_result_t *erst_array = (elems_result_t *)args;
+    elems_result_t *eresult;
     hash_item *it;
     struct snapshot_buffer *ssb = &ss->buffer;
     char *bufptr;
     int logsize;
-    int i, ret = 0;
+    int i, j, ret = 0;
 
     for (i = 0; i < item_count; i++) {
         it = (hash_item*)item_array[i];
@@ -254,6 +256,13 @@ static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_co
         bufptr = &ssb->memory[ssb->curlen];
         lrec_write_to_buffer((LogRec*)&log, bufptr);
         ssb->curlen += logsize;
+
+        if (erst_array != NULL && IS_COLL_ITEM(it)) {
+            eresult = &erst_array[i];
+            for (j = 0; j < eresult->elem_count; j++) {
+                /* do dump action */
+            }
+        }
     }
     return ret;
 #else
@@ -378,11 +387,13 @@ static void do_snapshot_prepare(snapshot_st *ss,
 static bool do_snapshot_action(snapshot_st *ss)
 {
     struct default_engine *engine = ss->engine;
-    void   *shandle; /* scan handle */
-    void   *item_array[SCAN_ITEM_ARRAY_SIZE];
-    int     item_arrsz = SCAN_ITEM_ARRAY_SIZE;
-    int     item_count = 0;
-    bool    snapshot_done = false;
+    void           *shandle; /* scan handle */
+    elems_result_t  eresults[SCAN_ITEM_ARRAY_SIZE];
+    elems_result_t *erst_array = NULL;
+    void           *item_array[SCAN_ITEM_ARRAY_SIZE];
+    int             item_arrsz = SCAN_ITEM_ARRAY_SIZE;
+    int             item_count = 0;
+    bool            snapshot_done = false;
 
     ss->file.fd = open(ss->file.path, O_WRONLY | O_CREAT | O_TRUNC,
                                        S_IRUSR | S_IWUSR | S_IRGRP);
@@ -391,6 +402,13 @@ static bool do_snapshot_action(snapshot_st *ss)
                     "Failed to open the snapshot file. path=%s err=%s\n",
                     ss->file.path, strerror(errno));
         goto done;
+    }
+
+    if (ss->mode == MC_SNAPSHOT_MODE_DATA) {
+        for (int i = 0; i < SCAN_ITEM_ARRAY_SIZE; i++) {
+            (void)coll_elem_result_init(&eresults[i], 0);
+        }
+        erst_array = eresults;
     }
 
     shandle = itscan_open(engine, ss->prefix, ss->nprefix);
@@ -404,7 +422,13 @@ static bool do_snapshot_action(snapshot_st *ss)
             logger->log(EXTENSION_LOG_INFO, NULL, "Stop the current snapshot.\n");
             break;
         }
-        item_count = itscan_getnext(shandle, item_array, item_arrsz);
+        item_count = itscan_getnext(shandle, item_array, erst_array, item_arrsz);
+        if (item_count == -2) { /* FIXME: rethink itscan_getnext() interface */
+            /* OUT OF MEMORY */
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "The item scan function has failed by out of memory.\n");
+            break;
+        }
         if (item_count < 0) { /* reached to the end */
             if (snapshot_func[ss->mode].done(ss) < 0) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -415,8 +439,8 @@ static bool do_snapshot_action(snapshot_st *ss)
             break;
         }
         if (item_count > 0) {
-            int ret = snapshot_func[ss->mode].dump(ss, item_array, item_count);
-            itscan_release(shandle, item_array, item_count);
+            int ret = snapshot_func[ss->mode].dump(ss, item_array, item_count, erst_array);
+            itscan_release(shandle, item_array, erst_array, item_count);
             if (ret < 0) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
                             "The snapshot dump function has failed.\n");
@@ -430,6 +454,12 @@ static bool do_snapshot_action(snapshot_st *ss)
     itscan_close(shandle);
 
 done:
+    if (erst_array != NULL) {
+        for (int i = 0; i < SCAN_ITEM_ARRAY_SIZE; i++) {
+            (void)coll_elem_result_free(&erst_array[i]);
+        }
+        erst_array = NULL;
+    }
     if (ss->file.fd > 0) {
         close(ss->file.fd);
         ss->file.fd = -1;
