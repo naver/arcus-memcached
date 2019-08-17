@@ -99,7 +99,8 @@ void              assoc_delete(const char *key, const uint32_t nkey, uint32_t ha
 
 /* assoc scan functions */
 void              assoc_scan_init(struct assoc_scan *scan);
-int               assoc_scan_next(struct assoc_scan *scan, hash_item **item_array, int array_size);
+int               assoc_scan_next(struct assoc_scan *scan, hash_item **item_array,
+                                  int array_size, int elem_limit);
 void              assoc_scan_final(struct assoc_scan *scan);
 
 /* prefix functions */

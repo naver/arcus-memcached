@@ -293,11 +293,14 @@ void assoc_scan_init(struct assoc_scan *scan)
     scan->initialized = true;
 }
 
-int assoc_scan_next(struct assoc_scan *scan, hash_item **item_array, int array_size)
+int assoc_scan_next(struct assoc_scan *scan, hash_item **item_array,
+                    int array_size, int elem_limit)
 {
     assert(scan->initialized && array_size > 0);
     hash_item *next;
+    coll_meta_info *info;
     int item_count = 0;
+    int elem_count = 0;
     int scan_cost = 0;
     int scan_done = false;
 
@@ -325,9 +328,16 @@ int assoc_scan_next(struct assoc_scan *scan, hash_item **item_array, int array_s
             scan_cost++;
             while (next != NULL) {
                 if (next->nkey > 0) { /* Not placeholder item */
-                    item_array[item_count] = next; /* user cache item */
-                    if (++item_count >= array_size)
+                    item_array[item_count++] = next; /* user cache item */
+                    if (item_count >= array_size) {
                         break;
+                    }
+                    if (elem_limit > 0 && IS_COLL_ITEM(next)) {
+                        info = (coll_meta_info *)item_get_meta(next);
+                        elem_count += info->ccnt;
+                        if (elem_count > elem_limit)
+                            break;
+                    }
                 }
                 next = next->h_next;
                 scan_cost++;

@@ -574,6 +574,8 @@ ENGINE_ERROR_CODE item_setattr(const void* key, const uint32_t nkey,
 
 /* Get all elements from collection hash item
  */
+int               coll_elem_result_init(elems_result_t *eresult, uint32_t size);
+void              coll_elem_result_free(elems_result_t *eresult);
 ENGINE_ERROR_CODE coll_elem_get_all(hash_item *it, elems_result_t *eresult, bool lock_hold);
 void              coll_elem_release(elems_result_t *eresult, int type);
 
