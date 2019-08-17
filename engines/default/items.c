@@ -8110,7 +8110,7 @@ again:
     assoc_scan_init(&scan);
     while (engine->initialized && !scrubber->restart) {
         /* scan and scrub cache items */
-        item_count = assoc_scan_next(&scan, item_array, array_size);
+        item_count = assoc_scan_next(&scan, item_array, array_size, 0);
         if (item_count < 0) { /* reached to the end */
             break;
         }
@@ -8325,7 +8325,7 @@ static void *item_dumper_main(void *arg)
     pthread_mutex_lock(&engine->cache_lock);
     while (true)
     {
-        item_count = assoc_scan_next(&scan, item_array, array_size);
+        item_count = assoc_scan_next(&scan, item_array, array_size, 0);
         if (item_count < 0) { /* reached to the end */
             break;
         }
