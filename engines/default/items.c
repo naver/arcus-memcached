@@ -7671,6 +7671,10 @@ ENGINE_ERROR_CODE item_setattr(const void* key, const uint32_t nkey,
  */
 static int do_coll_eresult_realloc(elems_result_t *eresult, uint32_t size)
 {
+    if (size <= eresult->elem_arrsz) {
+        return 0; /* nothing to realloc */
+    }
+
     if (eresult->elem_array != NULL) {
         free(eresult->elem_array);
     }
@@ -7686,6 +7690,31 @@ static int do_coll_eresult_realloc(elems_result_t *eresult, uint32_t size)
         eresult->elem_arrsz = 0;
         eresult->elem_count = 0;
         return -1;
+    }
+}
+
+int coll_elem_result_init(elems_result_t *eresult, uint32_t size)
+{
+    if (size > 0) {
+        eresult->elem_array = malloc(sizeof(void*) * size);
+        if (eresult->elem_array == NULL) {
+            return -1; /* out of memory */
+        }
+        eresult->elem_arrsz = size;
+    } else {
+        eresult->elem_array = NULL;
+        eresult->elem_arrsz = 0;
+    }
+    eresult->elem_count = 0;
+    return 0;
+}
+
+void coll_elem_result_free(elems_result_t *eresult)
+{
+    if (eresult->elem_array != NULL) {
+        free(eresult->elem_array);
+        eresult->elem_array = NULL;
+        eresult->elem_arrsz = 0;
     }
 }
 
