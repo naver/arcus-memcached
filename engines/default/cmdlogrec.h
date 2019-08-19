@@ -166,7 +166,7 @@ typedef struct _IT_setattr_log {
 
 /* Snapshot Element Log Record */
 typedef struct _snapshot_elem_data {
-    uint16_t nbytes;
+    uint32_t nbytes;
     uint8_t  nekey;          /* nbkey(btree), nfield(map) */
     uint8_t  neflag;         /* neflag(btree) */
     char     data[1];
