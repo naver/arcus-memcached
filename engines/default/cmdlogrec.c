@@ -48,6 +48,10 @@ static char *get_logtype_text(uint8_t type)
             return "IT_SETATTR";
         case LOG_IT_FLUSH:
             return "IT_FLUSH";
+#ifdef ENABLE_PERSISTENCE_03_ELEM_SNAPSHOT
+        case LOG_SNAPSHOT_ELEM:
+            return "SNAPSHOT_ELEM";
+#endif
         case LOG_SNAPSHOT_TAIL:
             return "SNAPSHOT_TAIL";
     }
@@ -77,6 +81,16 @@ static char *get_updtype_text(uint8_t type)
             return "MAP_CREATE";
         case UPD_BT_CREATE:
             return "BT_CREATE";
+#ifdef ENABLE_PERSISTENCE_03_ELEM_SNAPSHOT
+        case UPD_LIST_ELEM_INSERT:
+            return "LIST_ELEM_INSERT";
+        case UPD_SET_ELEM_INSERT:
+            return "SET_ELEM_INSERT";
+        case UPD_MAP_ELEM_INSERT:
+            return "MAP_ELEM_INSERT";
+        case UPD_BT_ELEM_INSERT:
+            return "BT_ELEM_INSERT";
+#endif
         case UPD_NONE:
             return "NONE";
     }
@@ -382,6 +396,60 @@ static void lrec_bt_elem_arithmetic_print(LogRec *logrec)
 {
 }
 
+#ifdef ENABLE_PERSISTENCE_03_ELEM_SNAPSHOT
+/* Snapshot Element Log Record */
+static void lrec_snapshot_elem_link_write(LogRec *logrec, char *bufptr)
+{
+    SnapshotElemLog  *log  = (SnapshotElemLog*)logrec;
+    SnapshotElemData *body = &log->body;
+    int offset = sizeof(LogHdr) + offsetof(SnapshotElemData, data);
+
+    memcpy(bufptr, logrec, offset);
+    if (log->header.updtype == UPD_MAP_ELEM_INSERT) {
+        /* field, value copy */
+        memcpy(bufptr + offset, log->valptr, body->nekey + body->nbytes);
+    } else if (log->header.updtype == UPD_BT_ELEM_INSERT) {
+        /* bkey, <eflag>, value copy */
+        memcpy(bufptr + offset, log->valptr, BTREE_REAL_NBKEY(body->nekey) + body->neflag + body->nbytes);
+    } else {
+        /* value copy */
+        memcpy(bufptr + offset, log->valptr, body->nbytes);
+    }
+}
+
+static void lrec_snapshot_elem_link_print(LogRec *logrec)
+{
+    SnapshotElemLog  *log  = (SnapshotElemLog*)logrec;
+    SnapshotElemData *body = &log->body;
+
+    lrec_header_print(&log->header);
+    /* vallen >= 2, valstr = ...\r\n */
+    if (log->header.updtype == UPD_MAP_ELEM_INSERT) {
+        fprintf(stderr, "[BODY]   nfield=%u | field=%.*s | vallen=%u | value=%.*s",
+                body->nekey, body->nekey, log->valptr,
+                body->nbytes, (body->nbytes <= 250 ? body->nbytes : 250), (log->valptr + body->nekey));
+    } else if (log->header.updtype == UPD_BT_ELEM_INSERT) {
+        char bkeystr[60];
+        char eflagstr[60];
+
+        int leng = sprintf(bkeystr, "bkey ");
+        lrec_bkey_print(body->nekey, (unsigned char*)log->valptr, bkeystr + leng);
+        if (body->neflag != 0) {
+            leng = sprintf(eflagstr, " | eflag ");
+            lrec_bkey_print(body->neflag, (unsigned char*)(log->valptr + BTREE_REAL_NBKEY(body->nekey)), eflagstr + leng);
+        }
+
+        /* <key> <bkey> [<eflag>] <bytes> <data> */
+        fprintf(stderr, "[BODY]   %s%s | vallen=%u | value=%.*s",
+                bkeystr, (body->neflag != 0 ? eflagstr : ""), body->nbytes,
+                (body->nbytes <= 250 ? body->nbytes : 250),
+                (log->valptr + BTREE_REAL_NBKEY(body->nekey) + body->neflag));
+    } else {
+        fprintf(stderr, "[BODY]   nbytes=%u | value=%.*s",
+                body->nbytes, body->nbytes, log->valptr);
+    }
+}
+#endif
 /* Snapshot Head Log Record */
 static void lrec_snapshot_head_write(LogRec *logrec, char *bufptr)
 {
@@ -424,6 +492,9 @@ LOGREC_FUNC logrec_func[] = {
     { lrec_bt_elem_insert_write,     lrec_bt_elem_insert_print },
     { lrec_bt_elem_delete_write,     lrec_bt_elem_delete_print },
     { lrec_bt_elem_arithmetic_write, lrec_bt_elem_arithmetic_print },
+#ifdef ENABLE_PERSISTENCE_03_ELEM_SNAPSHOT
+    { lrec_snapshot_elem_link_write, lrec_snapshot_elem_link_print },
+#endif
     { lrec_snapshot_head_write,      lrec_snapshot_head_print },
     { lrec_snapshot_tail_write,      lrec_snapshot_tail_print }
 };
@@ -567,4 +638,49 @@ int lrec_construct_setattr(LogRec *logrec, hash_item *it, uint8_t updtype)
                                                naddition + log->body.keylen);
     return log->header.body_length+sizeof(LogHdr);
 }
+#ifdef ENABLE_PERSISTENCE_03_ELEM_SNAPSHOT
+int lrec_construct_snapshot_elem(LogRec *logrec, hash_item *it, void *elem)
+{
+    SnapshotElemLog  *log   = (SnapshotElemLog*)logrec;
+    SnapshotElemData *body  = &log->body;
+    uint8_t updtype = UPD_NONE;
+    int bodylen = offsetof(SnapshotElemData, data) + body->nbytes;
+
+    if (IS_LIST_ITEM(it)) {
+        list_elem_item *e = (list_elem_item*)elem;
+        body->nbytes      = e->nbytes;
+
+        log->valptr = e->value;
+        updtype = UPD_LIST_ELEM_INSERT;
+    } else if (IS_SET_ITEM(it)) {
+        set_elem_item *e = (set_elem_item*)elem;
+        body->nbytes     = e->nbytes;
+
+        log->valptr = e->value;
+        updtype = UPD_SET_ELEM_INSERT;
+    } else if (IS_MAP_ITEM(it)) {
+        map_elem_item *e = (map_elem_item*)elem;
+        body->nbytes     = e->nbytes;
+        body->nekey      = e->nfield;
+
+        bodylen += body->nekey;
+        log->valptr = (char*)e->data;
+        updtype = UPD_MAP_ELEM_INSERT;
+    } else if (IS_BTREE_ITEM(it)) {
+        btree_elem_item *e = (btree_elem_item*)elem;
+        body->nbytes       = e->nbytes;
+        body->nekey        = e->nbkey;
+        body->neflag       = e->neflag;
+
+        bodylen += BTREE_REAL_NBKEY(body->nekey) + body->neflag;
+        log->valptr = (char*)e->data;
+        updtype = UPD_BT_ELEM_INSERT;
+    }
+
+    log->header.logtype = LOG_SNAPSHOT_ELEM;
+    log->header.updtype = updtype;
+    log->header.body_length = GET_8_ALIGN_SIZE(bodylen);
+    return log->header.body_length+sizeof(LogHdr);
+}
+#endif
 #endif
