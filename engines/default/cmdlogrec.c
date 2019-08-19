@@ -18,6 +18,7 @@
 
 #include <string.h>
 #include <ctype.h>
+#include <assert.h>
 
 #include "default_engine.h"
 #ifdef ENABLE_PERSISTENCE
@@ -153,6 +154,15 @@ static void lrec_bkey_print(uint8_t nbkey, unsigned char *bkey, char *str)
     } else {
         sprintf(str, "len=BKEY_NULL val=0");
     }
+}
+
+static void lrec_eflag_print(uint8_t neflag, unsigned char *eflag, char *str)
+{
+    assert(neflag > 0);
+
+    char eflag_temp[MAX_EFLAG_LENG*2 + 2];
+    safe_hexatostr(eflag, neflag, eflag_temp);
+    sprintf(str, "len=%u val=0x%s", neflag, eflag_temp);
 }
 
 /* Item Link Log Record */
@@ -431,7 +441,7 @@ static void lrec_snapshot_elem_link_print(LogRec *logrec)
         lrec_bkey_print(body->nekey, (unsigned char*)log->valptr, bkeystr + leng);
         if (body->neflag != 0) {
             leng = sprintf(eflagstr, " | eflag ");
-            lrec_bkey_print(body->neflag, (unsigned char*)(log->valptr + BTREE_REAL_NBKEY(body->nekey)), eflagstr + leng);
+            lrec_eflag_print(body->neflag, (unsigned char*)(log->valptr + BTREE_REAL_NBKEY(body->nekey)), eflagstr + leng);
         }
 
         /* <key> <bkey> [<eflag>] <bytes> <data> */
