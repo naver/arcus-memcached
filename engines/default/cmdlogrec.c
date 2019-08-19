@@ -48,10 +48,8 @@ static char *get_logtype_text(uint8_t type)
             return "IT_SETATTR";
         case LOG_IT_FLUSH:
             return "IT_FLUSH";
-#ifdef ENABLE_PERSISTENCE_03_ELEM_SNAPSHOT
         case LOG_SNAPSHOT_ELEM:
             return "SNAPSHOT_ELEM";
-#endif
         case LOG_SNAPSHOT_TAIL:
             return "SNAPSHOT_TAIL";
     }
@@ -75,22 +73,20 @@ static char *get_updtype_text(uint8_t type)
             return "UPD_FLUSH";
         case UPD_LIST_CREATE:
             return "LIST_CREATE";
-        case UPD_SET_CREATE:
-            return "SET_CREATE";
-        case UPD_MAP_CREATE:
-            return "MAP_CREATE";
-        case UPD_BT_CREATE:
-            return "BT_CREATE";
-#ifdef ENABLE_PERSISTENCE_03_ELEM_SNAPSHOT
         case UPD_LIST_ELEM_INSERT:
             return "LIST_ELEM_INSERT";
+        case UPD_SET_CREATE:
+            return "SET_CREATE";
         case UPD_SET_ELEM_INSERT:
             return "SET_ELEM_INSERT";
+        case UPD_MAP_CREATE:
+            return "MAP_CREATE";
         case UPD_MAP_ELEM_INSERT:
             return "MAP_ELEM_INSERT";
+        case UPD_BT_CREATE:
+            return "BT_CREATE";
         case UPD_BT_ELEM_INSERT:
             return "BT_ELEM_INSERT";
-#endif
         case UPD_NONE:
             return "NONE";
     }
@@ -396,7 +392,6 @@ static void lrec_bt_elem_arithmetic_print(LogRec *logrec)
 {
 }
 
-#ifdef ENABLE_PERSISTENCE_03_ELEM_SNAPSHOT
 /* Snapshot Element Log Record */
 static void lrec_snapshot_elem_link_write(LogRec *logrec, char *bufptr)
 {
@@ -449,7 +444,7 @@ static void lrec_snapshot_elem_link_print(LogRec *logrec)
                 body->nbytes, body->nbytes, log->valptr);
     }
 }
-#endif
+
 /* Snapshot Head Log Record */
 static void lrec_snapshot_head_write(LogRec *logrec, char *bufptr)
 {
@@ -492,9 +487,7 @@ LOGREC_FUNC logrec_func[] = {
     { lrec_bt_elem_insert_write,     lrec_bt_elem_insert_print },
     { lrec_bt_elem_delete_write,     lrec_bt_elem_delete_print },
     { lrec_bt_elem_arithmetic_write, lrec_bt_elem_arithmetic_print },
-#ifdef ENABLE_PERSISTENCE_03_ELEM_SNAPSHOT
     { lrec_snapshot_elem_link_write, lrec_snapshot_elem_link_print },
-#endif
     { lrec_snapshot_head_write,      lrec_snapshot_head_print },
     { lrec_snapshot_tail_write,      lrec_snapshot_tail_print }
 };
@@ -638,7 +631,7 @@ int lrec_construct_setattr(LogRec *logrec, hash_item *it, uint8_t updtype)
                                                naddition + log->body.keylen);
     return log->header.body_length+sizeof(LogHdr);
 }
-#ifdef ENABLE_PERSISTENCE_03_ELEM_SNAPSHOT
+
 int lrec_construct_snapshot_elem(LogRec *logrec, hash_item *it, void *elem)
 {
     SnapshotElemLog  *log   = (SnapshotElemLog*)logrec;
@@ -682,5 +675,4 @@ int lrec_construct_snapshot_elem(LogRec *logrec, hash_item *it, void *elem)
     log->header.body_length = GET_8_ALIGN_SIZE(bodylen);
     return log->header.body_length+sizeof(LogHdr);
 }
-#endif
 #endif
