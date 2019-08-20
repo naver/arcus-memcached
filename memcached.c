@@ -2180,7 +2180,8 @@ static void process_mop_get_complete(conn *c)
         } else { /* ENGINE_ENOMEM */
             STATS_NOKEY(c, cmd_mop_get);
             mc_engine.v1->map_elem_release(mc_engine.v0, c, elem_array, elem_count);
-            free(respbuf);
+            if (respbuf != NULL)
+                free(respbuf);
             if (c->ewouldblock)
                 c->ewouldblock = false;
             out_string(c, "SERVER_ERROR out of memory writing get response");
@@ -10014,7 +10015,8 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
         } else { /* ENGINE_ENOMEM */
             STATS_NOKEY(c, cmd_lop_get);
             mc_engine.v1->list_elem_release(mc_engine.v0, c, elem_array, elem_count);
-            free(respbuf);
+            if (respbuf != NULL)
+                free(respbuf);
             if (c->ewouldblock)
                 c->ewouldblock = false;
             out_string(c, "SERVER_ERROR out of memory writing get response");
@@ -10432,7 +10434,8 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
         } else { /* ENGINE_ENOMEM */
             STATS_NOKEY(c, cmd_sop_get);
             mc_engine.v1->set_elem_release(mc_engine.v0, c, elem_array, elem_count);
-            free(respbuf);
+            if (respbuf != NULL)
+                free(respbuf);
             if (c->ewouldblock)
                 c->ewouldblock = false;
             out_string(c, "SERVER_ERROR out of memory writing get response");
@@ -10830,7 +10833,8 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
         } else { /* ENGINE_ENOMEM */
             STATS_NOKEY(c, cmd_bop_get);
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
-            free(respbuf);
+            if (respbuf != NULL)
+                free(respbuf);
             if (c->ewouldblock)
                 c->ewouldblock = false;
             out_string(c, "SERVER_ERROR out of memory writing get response");
@@ -11041,7 +11045,8 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
         } else { /* ENGINE_ENOMEM */
             STATS_NOKEY(c, cmd_bop_pwg);
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
-            free(respbuf);
+            if (respbuf != NULL)
+                free(respbuf);
             out_string(c, "SERVER_ERROR out of memory writing get response");
         }
         }
@@ -11163,7 +11168,8 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
         } else { /* ENGINE_ENOMEM */
             STATS_NOKEY(c, cmd_bop_gbp);
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
-            free(respbuf);
+            if (respbuf != NULL)
+                free(respbuf);
             out_string(c, "SERVER_ERROR out of memory writing get response");
         }
         }
