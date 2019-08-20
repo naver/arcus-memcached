@@ -793,18 +793,20 @@ int lrec_construct_snapshot_elem(LogRec *logrec, hash_item *it, void *elem)
     SnapshotElemLog  *log   = (SnapshotElemLog*)logrec;
     SnapshotElemData *body  = &log->body;
     uint8_t updtype = UPD_NONE;
-    int bodylen = offsetof(SnapshotElemData, data) + body->nbytes;
+    int bodylen = offsetof(SnapshotElemData, data);
 
     if (IS_LIST_ITEM(it)) {
         list_elem_item *e = (list_elem_item*)elem;
         body->nbytes      = e->nbytes;
 
+        bodylen += body->nbytes;
         log->valptr = e->value;
         updtype = UPD_LIST_ELEM_INSERT;
     } else if (IS_SET_ITEM(it)) {
         set_elem_item *e = (set_elem_item*)elem;
         body->nbytes     = e->nbytes;
 
+        bodylen += body->nbytes;
         log->valptr = e->value;
         updtype = UPD_SET_ELEM_INSERT;
     } else if (IS_MAP_ITEM(it)) {
@@ -812,7 +814,7 @@ int lrec_construct_snapshot_elem(LogRec *logrec, hash_item *it, void *elem)
         body->nbytes     = e->nbytes;
         body->nekey      = e->nfield;
 
-        bodylen += body->nekey;
+        bodylen += body->nbytes + body->nekey;
         log->valptr = (char*)e->data;
         updtype = UPD_MAP_ELEM_INSERT;
     } else if (IS_BTREE_ITEM(it)) {
@@ -821,7 +823,7 @@ int lrec_construct_snapshot_elem(LogRec *logrec, hash_item *it, void *elem)
         body->nekey        = e->nbkey;
         body->neflag       = e->neflag;
 
-        bodylen += BTREE_REAL_NBKEY(body->nekey) + body->neflag;
+        bodylen += body->nbytes + BTREE_REAL_NBKEY(body->nekey) + body->neflag;
         log->valptr = (char*)e->data;
         updtype = UPD_BT_ELEM_INSERT;
     }
