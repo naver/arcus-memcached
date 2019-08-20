@@ -51,6 +51,24 @@ static char *get_logtype_text(uint8_t type)
             return "IT_FLUSH";
         case LOG_SNAPSHOT_ELEM:
             return "SNAPSHOT_ELEM";
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+        case LOG_LIST_ELEM_INSERT:
+            return "LIST_ELEM_INSERT";
+        case LOG_LIST_ELEM_DELETE:
+            return "LIST_ELEM_DELETE";
+        case LOG_SET_ELEM_INSERT:
+            return "SET_ELEM_INSERT";
+        case LOG_SET_ELEM_DELETE:
+            return "SET_ELEM_DELETE";
+        case LOG_MAP_ELEM_INSERT:
+            return "MAP_ELEM_INSERT";
+        case LOG_MAP_ELEM_DELETE:
+            return "MAP_ELEM_DELETE";
+        case LOG_BT_ELEM_INSERT:
+            return "BT_ELEM_INSERT";
+        case LOG_BT_ELEM_DELETE:
+            return "BT_ELEM_DELETE";
+#endif
         case LOG_SNAPSHOT_TAIL:
             return "SNAPSHOT_TAIL";
     }
@@ -76,18 +94,34 @@ static char *get_updtype_text(uint8_t type)
             return "LIST_CREATE";
         case UPD_LIST_ELEM_INSERT:
             return "LIST_ELEM_INSERT";
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+        case UPD_LIST_ELEM_DELETE:
+            return "LIST_ELEM_DELETE";
+#endif
         case UPD_SET_CREATE:
             return "SET_CREATE";
         case UPD_SET_ELEM_INSERT:
             return "SET_ELEM_INSERT";
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+        case UPD_SET_ELEM_DELETE:
+            return "SET_ELEM_DELETE";
+#endif
         case UPD_MAP_CREATE:
             return "MAP_CREATE";
         case UPD_MAP_ELEM_INSERT:
             return "MAP_ELEM_INSERT";
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+        case UPD_MAP_ELEM_DELETE:
+            return "MAP_ELEM_DELETE";
+#endif
         case UPD_BT_CREATE:
             return "BT_CREATE";
         case UPD_BT_ELEM_INSERT:
             return "BT_ELEM_INSERT";
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+        case UPD_BT_ELEM_DELETE:
+            return "BT_ELEM_DELETE";
+#endif
         case UPD_NONE:
             return "NONE";
     }
@@ -324,75 +358,241 @@ static void lrec_it_flush_print(LogRec *logrec)
 /* List Element Insert Log Record */
 static void lrec_list_elem_insert_write(LogRec *logrec, char *bufptr)
 {
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+    ListElemInsLog *log = (ListElemInsLog*)logrec;
+    int offset = sizeof(LogHdr) + offsetof(ListElemInsData, data);
+
+    memcpy(bufptr, (void*)logrec, offset);
+    /* key copy */
+    memcpy(bufptr + offset, log->keyptr, log->body.keylen);
+    /* value copy */
+    memcpy(bufptr + offset + log->body.keylen, log->valptr, log->body.vallen);
+#endif
 }
 
 static void lrec_list_elem_insert_print(LogRec *logrec)
 {
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+    ListElemInsLog *log = (ListElemInsLog*)logrec;
+    lrec_header_print(&log->header);
+
+    fprintf(stderr, "[BODY]   totcnt=%u | eindex=%d | "
+            "keylen=%u | keystr=%.*s | vallen=%u | valstr=%.*s",
+            log->body.totcnt, log->body.eindex,
+            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr,
+            log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250), log->valptr);
+#endif
 }
 
 /* List Element Delete Log Record */
 static void lrec_list_elem_delete_write(LogRec *logrec, char *bufptr)
 {
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+    ListElemDelLog *log = (ListElemDelLog*)logrec;
+    int offset = sizeof(LogHdr) + offsetof(ListElemDelData, data);
+
+    memcpy(bufptr, (void*)logrec, offset);
+    /* key copy */
+    memcpy(bufptr + offset, log->keyptr, log->body.keylen);
+#endif
 }
 
 static void lrec_list_elem_delete_print(LogRec *logrec)
 {
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+    ListElemDelLog *log = (ListElemDelLog*)logrec;
+    lrec_header_print(&log->header);
+
+    fprintf(stderr, "[BODY]   totcnt=%u | eindex=%d | delcnt=%u | keylen=%u | keystr=%.*s\r\n",
+            log->body.totcnt, log->body.eindex, log->body.delcnt,
+            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr);
+#endif
 }
 
 /* Set Element Insert Log Record */
 static void lrec_set_elem_insert_write(LogRec *logrec, char *bufptr)
 {
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+    SetElemInsLog *log = (SetElemInsLog*)logrec;
+    int offset = sizeof(LogHdr) + offsetof(SetElemInsData, data);
+
+    memcpy(bufptr, (void*)logrec, offset);
+    /* key copy */
+    memcpy(bufptr + offset, log->keyptr, log->body.keylen);
+    /* value copy */
+    memcpy(bufptr + offset + log->body.keylen, log->valptr, log->body.vallen);
+#endif
 }
 
 static void lrec_set_elem_insert_print(LogRec *logrec)
 {
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+    SetElemInsLog *log = (SetElemInsLog*)logrec;
+    lrec_header_print(&log->header);
+
+    fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | vallen=%u | valstr=%.*s",
+            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr,
+            log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250), log->valptr);
+#endif
 }
 
 /* Set Element Delete Log Record */
 static void lrec_set_elem_delete_write(LogRec *logrec, char *bufptr)
 {
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+    SetElemDelLog *log = (SetElemDelLog*)logrec;
+    int offset = sizeof(LogHdr) + offsetof(SetElemDelData, data);
+
+    memcpy(bufptr, (void*)logrec, offset);
+    /* key copy */
+    memcpy(bufptr + offset, log->keyptr, log->body.keylen);
+    /* value copy */
+    memcpy(bufptr + offset + log->body.keylen, log->valptr, log->body.vallen);
+#endif
 }
 
 static void lrec_set_elem_delete_print(LogRec *logrec)
 {
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+    SetElemDelLog *log = (SetElemDelLog*)logrec;
+    lrec_header_print(&log->header);
+
+    fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | vallen=%u | valstr=%.*s",
+            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr,
+            log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250), log->valptr);
+#endif
 }
 
 /* Map Element Insert Log Record */
 static void lrec_map_elem_insert_write(LogRec *logrec, char *bufptr)
 {
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+    MapElemInsLog *log = (MapElemInsLog*)logrec;
+    int offset = sizeof(LogHdr) + offsetof(MapElemInsData, data);
+
+    memcpy(bufptr, (void*)logrec, offset);
+    /* key copy */
+    memcpy(bufptr + offset, log->keyptr, log->body.keylen);
+    /* field + value copy */
+    memcpy(bufptr + offset + log->body.keylen, log->datptr, log->body.fldlen + log->body.vallen);
+#endif
 }
 
 static void lrec_map_elem_insert_print(LogRec *logrec)
 {
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+    MapElemInsLog *log = (MapElemInsLog*)logrec;
+    lrec_header_print(&log->header);
+
+    fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | fldlen=%u | fldstr=%.*s | vallen=%u | valstr=%.*s",
+            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr,
+            log->body.fldlen, log->body.fldlen, log->datptr,
+            log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250), log->datptr+log->body.fldlen);
+#endif
 }
 
 /* Map Element Delete Log Record */
 static void lrec_map_elem_delete_write(LogRec *logrec, char *bufptr)
 {
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+    MapElemDelLog *log = (MapElemDelLog*)logrec;
+    int offset = sizeof(LogHdr) + offsetof(MapElemDelData, data);
+
+    memcpy(bufptr, (void*)logrec, offset);
+    /* key copy */
+    memcpy(bufptr + offset, log->keyptr, log->body.keylen);
+    /* field copy */
+    memcpy(bufptr + offset + log->body.keylen, log->datptr, log->body.fldlen);
+#endif
 }
 
 static void lrec_map_elem_delete_print(LogRec *logrec)
 {
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+    MapElemDelLog *log = (MapElemDelLog*)logrec;
+    lrec_header_print(&log->header);
+
+    fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | fldlen=%u | fldstr=%.*s\r\n",
+            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr,
+            log->body.fldlen, log->body.fldlen, log->datptr);
+#endif
 }
 
 /* BTree Element Insert Log Record */
 static void lrec_bt_elem_insert_write(LogRec *logrec, char *bufptr)
 {
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+    BtreeElemInsLog *log = (BtreeElemInsLog*)logrec;
+    int offset = sizeof(LogHdr) + offsetof(BtreeElemInsData, data);
+    int datlen = BTREE_REAL_NBKEY(log->body.nbkey) + log->body.neflag + log->body.vallen;
+
+    memcpy(bufptr, (void*)logrec, offset);
+    /* key copy */
+    memcpy(bufptr + offset, log->keyptr, log->body.keylen);
+    /* bkey | eflag | value copy */
+    memcpy(bufptr + offset + log->body.keylen, log->datptr, datlen);
+#endif
 }
 
 static void lrec_bt_elem_insert_print(LogRec *logrec)
 {
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+    BtreeElemInsLog *log = (BtreeElemInsLog*)logrec;
+    lrec_header_print(&log->header);
+
+    char bkeystr[60];
+    char eflagstr[60];
+    uint64_t real_nbkey = BTREE_REAL_NBKEY(log->body.nbkey);
+    int leng = sprintf(bkeystr, "bkey");
+    lrec_bkey_print(log->body.nbkey, (unsigned char*)log->datptr, bkeystr + leng);
+    if (log->body.neflag != 0) {
+        leng = sprintf(eflagstr, "eflag");
+        lrec_eflag_print(log->body.neflag, (unsigned char*)log->datptr + real_nbkey, eflagstr + leng);
+    }
+
+    /* <key> <bkey> [<eflag>] <data> */
+    fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | "
+            "%s | %s | vallen = %u | valstr=%.*s",
+            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr,
+            bkeystr, (log->body.neflag != 0 ? eflagstr : ""),
+            log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250),
+            log->datptr + real_nbkey + log->body.neflag);
+#endif
 }
 
 /* BTree Element Delete Log Record */
 static void lrec_bt_elem_delete_write(LogRec *logrec, char *bufptr)
 {
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+    BtreeElemDelLog *log = (BtreeElemDelLog*)logrec;
+    int offset = sizeof(LogHdr) + offsetof(BtreeElemDelData, data);
+    int datlen = BTREE_REAL_NBKEY(log->body.nbkey);
+
+    memcpy(bufptr, (void*)logrec, offset);
+    /* key copy */
+    memcpy(bufptr + offset, log->keyptr, log->body.keylen);
+    /* bkey copy */
+    memcpy(bufptr + offset + log->body.keylen, log->datptr, datlen);
+#endif
 }
 
 static void lrec_bt_elem_delete_print(LogRec *logrec)
 {
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+    BtreeElemDelLog *log = (BtreeElemDelLog*)logrec;
+    lrec_header_print(&log->header);
+
+    char metastr[180];
+    int leng = sprintf(metastr, "bkey");
+    lrec_bkey_print(log->body.nbkey, (unsigned char*)log->datptr, metastr + leng);
+
+    fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | %s\r\n",
+            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr, metastr);
+#endif
 }
 
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+#else
 /* BTree Element Arithmetic Log Record */
 static void lrec_bt_elem_arithmetic_write(LogRec *logrec, char *bufptr)
 {
@@ -401,6 +601,7 @@ static void lrec_bt_elem_arithmetic_write(LogRec *logrec, char *bufptr)
 static void lrec_bt_elem_arithmetic_print(LogRec *logrec)
 {
 }
+#endif
 
 /* Snapshot Element Log Record */
 static void lrec_snapshot_elem_link_write(LogRec *logrec, char *bufptr)
@@ -496,7 +697,10 @@ LOGREC_FUNC logrec_func[] = {
     { lrec_map_elem_delete_write,    lrec_map_elem_delete_print },
     { lrec_bt_elem_insert_write,     lrec_bt_elem_insert_print },
     { lrec_bt_elem_delete_write,     lrec_bt_elem_delete_print },
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+#else
     { lrec_bt_elem_arithmetic_write, lrec_bt_elem_arithmetic_print },
+#endif
     { lrec_snapshot_elem_link_write, lrec_snapshot_elem_link_print },
     { lrec_snapshot_head_write,      lrec_snapshot_head_print },
     { lrec_snapshot_tail_write,      lrec_snapshot_tail_print }
@@ -685,4 +889,131 @@ int lrec_construct_snapshot_elem(LogRec *logrec, hash_item *it, void *elem)
     log->header.body_length = GET_8_ALIGN_SIZE(bodylen);
     return log->header.body_length+sizeof(LogHdr);
 }
+
+#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
+int lrec_construct_list_elem_insert(LogRec *logrec, hash_item *it, uint32_t totcnt, int eindex, list_elem_item *elem)
+{
+    ListElemInsLog *log = (ListElemInsLog*)logrec;
+    log->keyptr = (char*)item_get_key(it);
+    log->valptr = (char*)elem->value;
+    log->body.keylen = it->nkey;
+    log->body.vallen = elem->nbytes;
+    log->body.totcnt = totcnt;
+    log->body.eindex = eindex;
+
+    log->header.logtype = LOG_LIST_ELEM_INSERT;
+    log->header.updtype = UPD_LIST_ELEM_INSERT;
+    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(ListElemInsData, data) +
+                                               log->body.keylen + log->body.vallen);
+    return log->header.body_length+sizeof(LogHdr);
+}
+
+int lrec_construct_list_elem_delete(LogRec *logrec, hash_item *it, uint32_t totcnt, int eindex, uint32_t delcnt)
+{
+    ListElemDelLog *log = (ListElemDelLog*)logrec;
+    log->keyptr = (char*)item_get_key(it);
+    log->body.keylen = it->nkey;
+    log->body.totcnt = totcnt;
+    log->body.eindex = eindex;
+    log->body.delcnt = delcnt;
+
+    log->header.logtype = LOG_LIST_ELEM_DELETE;
+    log->header.updtype = UPD_LIST_ELEM_DELETE;
+    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(ListElemDelData, data) + log->body.keylen);
+    return log->header.body_length+sizeof(LogHdr);
+}
+
+int lrec_construct_map_elem_insert(LogRec *logrec, hash_item *it, map_elem_item *elem)
+{
+    MapElemInsLog *log = (MapElemInsLog*)logrec;
+    log->keyptr = (char*)item_get_key(it);
+    log->datptr = (char*)elem->data;
+    log->body.keylen = it->nkey;
+    log->body.fldlen = elem->nfield;
+    log->body.vallen = elem->nbytes;
+
+    log->header.logtype = LOG_MAP_ELEM_INSERT;
+    log->header.updtype = UPD_MAP_ELEM_INSERT;
+    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(MapElemDelData, data) +
+                                               log->body.keylen + log->body.fldlen + log->body.vallen);
+    return log->header.body_length+sizeof(LogHdr);
+}
+
+int lrec_construct_map_elem_delete(LogRec *logrec, hash_item *it, map_elem_item *elem)
+{
+    MapElemDelLog *log = (MapElemDelLog*)logrec;
+    log->keyptr = (char*)item_get_key(it);
+    log->datptr = (char*)elem->data;
+    log->body.keylen = it->nkey;
+    log->body.fldlen = elem->nfield;
+
+    log->header.logtype = LOG_MAP_ELEM_DELETE;
+    log->header.updtype = UPD_MAP_ELEM_DELETE;
+    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(MapElemDelData, data) +
+                                               log->body.keylen + log->body.fldlen);
+    return log->header.body_length+sizeof(LogHdr);
+}
+
+int lrec_construct_set_elem_insert(LogRec *logrec, hash_item *it, set_elem_item *elem)
+{
+    SetElemInsLog *log = (SetElemInsLog*)logrec;
+    log->keyptr = (char*)item_get_key(it);
+    log->valptr = (char*)elem->value;
+    log->body.keylen = it->nkey;
+    log->body.vallen = elem->nbytes;
+
+    log->header.logtype = LOG_SET_ELEM_INSERT;
+    log->header.updtype = UPD_SET_ELEM_INSERT;
+    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(SetElemInsData, data) +
+                                               log->body.keylen + log->body.vallen);
+    return log->header.body_length+sizeof(LogHdr);
+}
+
+int lrec_construct_set_elem_delete(LogRec *logrec, hash_item *it, set_elem_item *elem)
+{
+    SetElemDelLog *log = (SetElemDelLog*)logrec;
+    log->keyptr = (char*)item_get_key(it);
+    log->valptr = (char*)elem->value;
+    log->body.keylen = it->nkey;
+    log->body.vallen = elem->nbytes;
+
+    log->header.logtype = LOG_SET_ELEM_DELETE;
+    log->header.updtype = UPD_SET_ELEM_DELETE;
+    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(SetElemDelData, data) +
+                                               log->body.keylen + log->body.vallen);
+    return log->header.body_length+sizeof(LogHdr);
+}
+
+int lrec_construct_btree_elem_insert(LogRec *logrec, hash_item *it, btree_elem_item *elem)
+{
+    BtreeElemInsLog *log = (BtreeElemInsLog*)logrec;
+    log->keyptr = (char*)item_get_key(it);
+    log->datptr = (char*)elem->data;
+    log->body.keylen = it->nkey;
+    log->body.nbkey  = elem->nbkey;
+    log->body.neflag = elem->neflag;
+    log->body.vallen = elem->nbytes;
+
+    log->header.logtype = LOG_BT_ELEM_INSERT;
+    log->header.updtype = UPD_BT_ELEM_INSERT;
+    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(BtreeElemInsData, data) + log->body.keylen +
+                              BTREE_REAL_NBKEY(log->body.nbkey) + log->body.neflag + log->body.vallen);
+    return log->header.body_length+sizeof(LogHdr);
+}
+
+int lrec_construct_btree_elem_delete(LogRec *logrec, hash_item *it, btree_elem_item *elem)
+{
+    BtreeElemDelLog *log = (BtreeElemDelLog*)logrec;
+    log->keyptr = (char*)item_get_key(it);
+    log->datptr = (char*)elem->data;
+    log->body.keylen = it->nkey;
+    log->body.nbkey = elem->nbkey;
+
+    log->header.logtype = LOG_BT_ELEM_DELETE;
+    log->header.updtype = UPD_BT_ELEM_DELETE;
+    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(BtreeElemDelData, data) +
+                              BTREE_REAL_NBKEY(log->body.nbkey) + log->body.keylen);
+    return log->header.body_length+sizeof(LogHdr);
+}
+#endif
 #endif
