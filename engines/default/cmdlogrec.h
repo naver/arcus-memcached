@@ -31,10 +31,6 @@ enum log_type {
     LOG_MAP_ELEM_DELETE,
     LOG_BT_ELEM_INSERT,
     LOG_BT_ELEM_DELETE,
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
-#else
-    LOG_BT_ELEM_ARITHMETIC,
-#endif
     LOG_SNAPSHOT_ELEM,
     LOG_SNAPSHOT_HEAD,
     LOG_SNAPSHOT_TAIL
@@ -181,7 +177,6 @@ typedef struct _snapshot_elem_log {
     char             *valptr;
 } SnapshotElemLog;
 
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
 /* List Elem Insert Log Record */
 typedef struct _List_elem_insert_data {
     uint16_t keylen;  /* key length */
@@ -304,7 +299,6 @@ typedef struct _Btree_elem_delete_log {
     char             *keyptr;
     char             *datptr;
 } BtreeElemDelLog;
-#endif
 
 /* Snapshot File Tail Record */
 typedef struct _snapshot_tail_log {
@@ -319,7 +313,6 @@ int lrec_construct_link_item(LogRec *logrec, hash_item *it);
 int lrec_construct_unlink_item(LogRec *logrec, hash_item *it);
 int lrec_construct_flush_item(LogRec *logrec, const char *prefix, const int nprefix);
 int lrec_construct_setattr(LogRec *logrec, hash_item *it, uint8_t updtype);
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
 int lrec_construct_list_elem_insert(LogRec *logrec, hash_item *it, uint32_t totcnt, int eindex, list_elem_item *elem);
 int lrec_construct_list_elem_delete(LogRec *logrec, hash_item *it, uint32_t totcnt, int eindex, uint32_t delcnt);
 int lrec_construct_map_elem_insert(LogRec *logrec, hash_item *it, map_elem_item *elem);
@@ -328,7 +321,7 @@ int lrec_construct_set_elem_insert(LogRec *logrec, hash_item *it, set_elem_item 
 int lrec_construct_set_elem_delete(LogRec *logrec, hash_item *it, set_elem_item *elem);
 int lrec_construct_btree_elem_insert(LogRec *logrec, hash_item *it, btree_elem_item *elem);
 int lrec_construct_btree_elem_delete(LogRec *logrec, hash_item *it, btree_elem_item *elem);
-#endif
 
+/* Function to write the given log record to log buffer */
 void lrec_write_to_buffer(LogRec *logrec, char *bufptr);
 #endif

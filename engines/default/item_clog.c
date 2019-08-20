@@ -92,14 +92,12 @@ void CLOG_GE_LIST_ELEM_INSERT(list_meta_info *info,
 
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
             ListElemInsLog log;
             (void)lrec_construct_list_elem_insert((LogRec*)&log, it, info->ccnt, index, elem);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
         }
-#endif
 #endif
     }
 }
@@ -127,14 +125,12 @@ void CLOG_GE_LIST_ELEM_DELETE(list_meta_info *info,
                 index -= (count-1);
             }
         }
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
             ListElemDelLog log;
             (void)lrec_construct_list_elem_delete((LogRec*)&log, it, info->ccnt, index, count);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
         }
-#endif
 #endif
     }
 }
@@ -147,14 +143,12 @@ void CLOG_GE_MAP_ELEM_INSERT(map_meta_info *info,
 
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
             MapElemInsLog log;
             (void)lrec_construct_map_elem_insert((LogRec*)&log, it, new_elem);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
         }
-#endif
 #endif
     }
 }
@@ -168,14 +162,12 @@ void CLOG_GE_MAP_ELEM_DELETE(map_meta_info *info,
     if ((cause == ELEM_DELETE_NORMAL) &&
         (it->iflag & ITEM_INTERNAL) == 0)
     {
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
             MapElemDelLog log;
             (void)lrec_construct_map_elem_delete((LogRec*)&log, it, elem);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
         }
-#endif
 #endif
     }
 }
@@ -187,14 +179,12 @@ void CLOG_GE_SET_ELEM_INSERT(set_meta_info *info,
 
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
             SetElemInsLog log;
             (void)lrec_construct_set_elem_insert((LogRec*)&log, it, elem);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
         }
-#endif
 #endif
     }
 }
@@ -208,14 +198,12 @@ void CLOG_GE_SET_ELEM_DELETE(set_meta_info *info,
     if ((cause == ELEM_DELETE_NORMAL) &&
         (it->iflag & ITEM_INTERNAL) == 0)
     {
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
             SetElemDelLog log;
             (void)lrec_construct_set_elem_delete((LogRec*)&log, it, elem);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
         }
-#endif
 #endif
     }
 }
@@ -228,14 +216,12 @@ void CLOG_GE_BTREE_ELEM_INSERT(btree_meta_info *info,
 
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
             BtreeElemInsLog log;
             (void)lrec_construct_btree_elem_insert((LogRec*)&log, it, new_elem);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
         }
-#endif
 #endif
     }
 }
@@ -249,14 +235,12 @@ void CLOG_GE_BTREE_ELEM_DELETE(btree_meta_info *info,
     if ((cause == ELEM_DELETE_NORMAL) &&
         (it->iflag & ITEM_INTERNAL) == 0)
     {
-#ifdef ENABLE_PERSISTENCE_03_CMDLOG_COLL
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
             BtreeElemDelLog log;
             (void)lrec_construct_btree_elem_delete((LogRec*)&log, it, elem);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
         }
-#endif
 #endif
     }
 }
