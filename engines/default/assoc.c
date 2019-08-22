@@ -369,6 +369,42 @@ int assoc_scan_next(struct assoc_scan *scan, hash_item **item_array,
     return item_count;
 }
 
+bool assoc_scan_in_visited_area(struct assoc_scan *scan, hash_item *it)
+{
+    assert(scan->initialized);
+    uint32_t bucket = GET_HASH_BUCKET(it->khash, assocp->hashmask);
+    uint32_t tabidx;
+
+    /* The given item is in the visited area if
+     * (1) it's bucket < scan's bucket
+     * (2) it's bucker == scan's bucket, but it's tabidx < scan's tabidx
+     * (3) or, it comes before the scan
+     */
+    if (bucket < scan->bucket) {
+        return true;
+    }
+    if (bucket == scan->bucket) {
+        tabidx = GET_HASH_TABIDX(it->khash, assocp->hashpower,
+                 hashmask(assocp->infotable[bucket].curpower));
+        if (tabidx < scan->tabidx) {
+            return true;
+        }
+        if (tabidx == scan->tabidx) {
+            hash_item *p = assocp->roottable[tabidx].hashtable[scan->bucket];
+            if (scan->ph_linked) {
+                while (p != &scan->ph_item) {
+                    if (p == it) { /* We hit it before scan */
+                        return true;
+                    }
+                    p = p->h_next;
+                }
+            }
+            /* No, we hit the scan first */
+        }
+    }
+    return false;
+}
+
 void assoc_scan_final(struct assoc_scan *scan)
 {
     assert(scan->initialized);
