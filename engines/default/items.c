@@ -2855,21 +2855,22 @@ static btree_indx_node *do_btree_find_leaf(btree_indx_node *root,
 
         while (left <= right) {
             mid  = (left + right) / 2;
-            elem = do_btree_get_first_elem((btree_indx_node *)(node->item[mid])); /* separator */
+            elem = do_btree_get_first_elem(node->item[mid]); /* separator */
             comp = BKEY_COMP(bkey, nbkey, elem->data, elem->nbkey);
-            if (comp == 0) break;
+            if (comp == 0) { /* the same bkey is found */
+                *found_elem = elem;
+                if (path) {
+                    path[node->ndepth].node = node;
+                    path[node->ndepth].indx = mid;
+                }
+                node = do_btree_get_first_leaf(node->item[mid], path);
+                assert(node->ndepth == 0);
+                break;
+            }
             if (comp <  0) right = mid-1;
             else           left  = mid+1;
         }
-
         if (left <= right) { /* found the element */
-            *found_elem = elem; /* the same bkey is found */
-            if (path) {
-                path[node->ndepth].node = node;
-                path[node->ndepth].indx = mid;
-            }
-            node = do_btree_get_first_leaf((btree_indx_node *)(node->item[mid]), path);
-            assert(node->ndepth == 0);
             break;
         }
 
