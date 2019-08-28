@@ -200,7 +200,7 @@ static int do_checkpoint(chkpt_st *cs, bool *need_remove)
         return CHKPT_ERROR;
     }
 
-    if (mc_snapshot_direct(MC_SNAPSHOT_MODE_DATA, NULL, 0, cs->path) == ENGINE_SUCCESS) {
+    if (mc_snapshot_direct(MC_SNAPSHOT_MODE_DATA, NULL, -1, cs->path) == ENGINE_SUCCESS) {
         cs->lasttime = newtime;
         ret = CHKPT_SUCCESS;
     } else {
