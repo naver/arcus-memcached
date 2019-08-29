@@ -4877,6 +4877,7 @@ static ENGINE_ERROR_CODE do_btree_elem_get_by_posi(btree_meta_info *info,
     assert(node->ndepth == 0);
     posi.node = node;
     posi.indx = index-tot_ecnt;
+    posi.bkeq = false;
 
     elem = BTREE_GET_ELEM_ITEM(posi.node, posi.indx);
     elem->refcount++;
