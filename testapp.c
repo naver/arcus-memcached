@@ -599,6 +599,7 @@ static enum test_return test_config_parser(void) {
     items[3].found = false;
     */
     /* Plain string */
+    assert(string_val);
     assert(parse_config("string=sval", items, error) == 0);
     assert(items[3].found);
     assert(strcmp(string_val, "sval") == 0);
@@ -698,6 +699,7 @@ static enum test_return test_config_parser(void) {
     assert(fgets(buffer, sizeof(buffer), error) == NULL);
 
     remove(outfile);
+    fclose(error);
     return TEST_PASS;
 }
 
@@ -1953,6 +1955,7 @@ static enum test_return test_binary_pipeline_hickup(void)
     if ((ret = pthread_create(&tid, NULL,
                               binary_hickup_recv_verification_thread, NULL)) != 0) {
         fprintf(stderr, "Can't create thread: %s\n", strerror(ret));
+        free(buffer);
         return TEST_FAIL;
     }
 
