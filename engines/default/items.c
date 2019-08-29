@@ -1030,7 +1030,6 @@ static void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
     /* cause: item unlink cause will be used, later
     */
     const char *key = item_get_key(it);
-    size_t stotal;
     MEMCACHED_ITEM_UNLINK(key, it->nkey, it->nbytes);
 
     if ((it->iflag & ITEM_LINKED) != 0) {
@@ -1044,7 +1043,7 @@ static void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
         it->iflag &= ~ITEM_LINKED;
 
         /* unlink the item from prefix info */
-        stotal = ITEM_stotal(it);
+        size_t stotal = ITEM_stotal(it);
         assoc_prefix_unlink(it, stotal, (cause != ITEM_UNLINK_REPLACE ? true : false));
 
         /* update item statistics */
@@ -1071,6 +1070,7 @@ static void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
 static void do_item_release(hash_item *it)
 {
     MEMCACHED_ITEM_REMOVE(item_get_key(it), it->nkey, it->nbytes);
+
     if (it->refcount != 0) {
         ITEM_REFCOUNT_DECR(it);
         DEBUG_REFCNT(it, '-');
@@ -1095,6 +1095,7 @@ static void do_item_release(hash_item *it)
 static void do_item_update(hash_item *it, bool force)
 {
     MEMCACHED_ITEM_UPDATE(item_get_key(it), it->nkey, it->nbytes);
+
     if ((it->iflag & ITEM_LINKED) != 0) {
         rel_time_t current_time = svcore->get_current_time();
         if (force) {
@@ -1219,18 +1220,18 @@ static ENGINE_ERROR_CODE do_item_store_replace(hash_item *it, uint64_t *cas, con
     ENGINE_ERROR_CODE stored;
 
     old_it = do_item_get(item_get_key(it), it->nkey, DONT_UPDATE);
-    if (old_it) {
-        if (IS_COLL_ITEM(old_it)) {
-            stored = ENGINE_EBADTYPE;
-        } else {
-            do_item_replace(old_it, it);
-            stored = ENGINE_SUCCESS;
-            *cas = item_get_cas(it);
-        }
-        do_item_release(old_it);
-    } else {
-        stored = ENGINE_NOT_STORED;
+    if (old_it == NULL) {
+        return ENGINE_NOT_STORED;
     }
+
+    if (IS_COLL_ITEM(old_it)) {
+        stored = ENGINE_EBADTYPE;
+    } else {
+        do_item_replace(old_it, it);
+        stored = ENGINE_SUCCESS;
+        *cas = item_get_cas(it);
+    }
+    do_item_release(old_it);
     return stored;
 }
 
@@ -1240,76 +1241,79 @@ static ENGINE_ERROR_CODE do_item_store_cas(hash_item *it, uint64_t *cas, const v
     ENGINE_ERROR_CODE stored;
 
     old_it = do_item_get(item_get_key(it), it->nkey, DONT_UPDATE);
-    if (old_it) {
-        if (IS_COLL_ITEM(old_it)) {
-            stored = ENGINE_EBADTYPE;
-        } else if (item_get_cas(it) == item_get_cas(old_it)) {
-            // cas validates
-            // it and old_it may belong to different classes.
-            // I'm updating the stats for the one that's getting pushed out
-            do_item_replace(old_it, it);
-            stored = ENGINE_SUCCESS;
-            *cas = item_get_cas(it);
-        } else {
-            if (config->verbose > 1) {
-                logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "CAS:  failure: expected %"PRIu64", got %"PRIu64"\n",
-                        item_get_cas(old_it), item_get_cas(it));
-            }
-            stored = ENGINE_KEY_EEXISTS;
-        }
-        do_item_release(old_it);
-    } else {
+    if (old_it == NULL) {
         // LRU expired
-        stored = ENGINE_KEY_ENOENT;
+        return ENGINE_KEY_ENOENT;
     }
+
+    if (IS_COLL_ITEM(old_it)) {
+        stored = ENGINE_EBADTYPE;
+    } else if (item_get_cas(it) == item_get_cas(old_it)) {
+        // cas validates
+        // it and old_it may belong to different classes.
+        // I'm updating the stats for the one that's getting pushed out
+        do_item_replace(old_it, it);
+        stored = ENGINE_SUCCESS;
+        *cas = item_get_cas(it);
+    } else {
+        if (config->verbose > 1) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "CAS:  failure: expected %"PRIu64", got %"PRIu64"\n",
+                    item_get_cas(old_it), item_get_cas(it));
+        }
+        stored = ENGINE_KEY_EEXISTS;
+    }
+    do_item_release(old_it);
     return stored;
 }
 
 static ENGINE_ERROR_CODE do_item_store_attach(hash_item *it, uint64_t *cas,
-                                              ENGINE_STORE_OPERATION operation, const void *cookie)
+                                              ENGINE_STORE_OPERATION operation,
+                                              const void *cookie)
 {
     hash_item *old_it;
-    hash_item *new_it;
     ENGINE_ERROR_CODE stored;
 
     old_it = do_item_get(item_get_key(it), it->nkey, DONT_UPDATE);
-    if (old_it) {
-        if (IS_COLL_ITEM(old_it)) {
-            stored = ENGINE_EBADTYPE;
-        } else if (item_get_cas(it) != 0 &&
-                   item_get_cas(it) != item_get_cas(old_it)) {
-            // CAS much be equal
-            stored = ENGINE_KEY_EEXISTS;
-        } else {
-            /* we have it and old_it here - alloc memory to hold both */
-            new_it = do_item_alloc(item_get_key(it), it->nkey,
-                                   old_it->flags, old_it->exptime,
-                                   it->nbytes + old_it->nbytes - 2 /* CRLF */, cookie);
-            if (new_it) {
-                /* copy data from it and old_it to new_it */
-                if (operation == OPERATION_APPEND) {
-                    memcpy(item_get_data(new_it), item_get_data(old_it), old_it->nbytes);
-                    memcpy(item_get_data(new_it) + old_it->nbytes - 2 /* CRLF */, item_get_data(it), it->nbytes);
-                } else {
-                    /* OPERATION_PREPEND */
-                    memcpy(item_get_data(new_it), item_get_data(it), it->nbytes);
-                    memcpy(item_get_data(new_it) + it->nbytes - 2 /* CRLF */, item_get_data(old_it), old_it->nbytes);
-                }
-                /* replace old item with new item */
-                do_item_replace(old_it, new_it);
-                stored = ENGINE_SUCCESS;
-                *cas = item_get_cas(new_it);
-                do_item_release(new_it);
-            } else {
-                /* SERVER_ERROR out of memory */
-                stored = ENGINE_NOT_STORED;
-            }
-        }
-        do_item_release(old_it);
-    } else {
-        stored = ENGINE_NOT_STORED;
+    if (old_it == NULL) {
+        return ENGINE_NOT_STORED;
     }
+
+    if (IS_COLL_ITEM(old_it)) {
+        stored = ENGINE_EBADTYPE;
+    } else if (item_get_cas(it) != 0 &&
+               item_get_cas(it) != item_get_cas(old_it)) {
+        // CAS much be equal
+        stored = ENGINE_KEY_EEXISTS;
+    } else {
+        /* we have it and old_it here - alloc memory to hold both */
+        hash_item *new_it = do_item_alloc(item_get_key(it), it->nkey,
+                                          old_it->flags, old_it->exptime,
+                                          it->nbytes + old_it->nbytes - 2 /* CRLF */,
+                                          cookie);
+        if (new_it) {
+            /* copy data from it and old_it to new_it */
+            if (operation == OPERATION_APPEND) {
+                memcpy(item_get_data(new_it), item_get_data(old_it), old_it->nbytes);
+                memcpy(item_get_data(new_it) + old_it->nbytes - 2 /* CRLF */,
+                       item_get_data(it), it->nbytes);
+            } else {
+                /* OPERATION_PREPEND */
+                memcpy(item_get_data(new_it), item_get_data(it), it->nbytes);
+                memcpy(item_get_data(new_it) + it->nbytes - 2 /* CRLF */,
+                       item_get_data(old_it), old_it->nbytes);
+            }
+            /* replace old item with new item */
+            do_item_replace(old_it, new_it);
+            stored = ENGINE_SUCCESS;
+            *cas = item_get_cas(new_it);
+            do_item_release(new_it);
+        } else {
+            /* SERVER_ERROR out of memory */
+            stored = ENGINE_NOT_STORED;
+        }
+    }
+    do_item_release(old_it);
     return stored;
 }
 
@@ -1458,8 +1462,7 @@ static ENGINE_ERROR_CODE do_list_item_find(const void *key, const uint32_t nkey,
 static hash_item *do_list_item_alloc(const void *key, const uint32_t nkey,
                                      item_attr *attrp, const void *cookie)
 {
-    char *value = "\r\n"; //"LIST ITEM\r\n";
-    uint32_t nbytes = 2; //11;
+    uint32_t nbytes = 2; /* "\r\n" */
     uint32_t real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)
                          + sizeof(list_meta_info) - nkey;
 
@@ -1468,7 +1471,7 @@ static hash_item *do_list_item_alloc(const void *key, const uint32_t nkey,
     if (it != NULL) {
         it->iflag |= ITEM_IFLAG_LIST;
         it->nbytes = nbytes; /* NOT real_nbytes */
-        memcpy(item_get_data(it), value, nbytes);
+        memcpy(item_get_data(it), "\r\n", nbytes);
 
         /* initialize list meta information */
         list_meta_info *info = (list_meta_info *)item_get_meta(it);
@@ -1752,8 +1755,7 @@ static ENGINE_ERROR_CODE do_set_item_find(const void *key, const uint32_t nkey,
 static hash_item *do_set_item_alloc(const void *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie)
 {
-    char *value = "\r\n"; //SET ITEM\r\n";
-    uint32_t nbytes = 2; //10;
+    uint32_t nbytes = 2; /* "\r\n" */
     uint32_t real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)
                          + sizeof(set_meta_info) - nkey;
 
@@ -1761,8 +1763,8 @@ static hash_item *do_set_item_alloc(const void *key, const uint32_t nkey,
                                   real_nbytes, cookie);
     if (it != NULL) {
         it->iflag |= ITEM_IFLAG_SET;
-        it->nbytes = nbytes;
-        memcpy(item_get_data(it), value, nbytes);
+        it->nbytes = nbytes; /* NOT real_nbytes */
+        memcpy(item_get_data(it), "\r\n", nbytes);
 
         /* initialize set meta information */
         set_meta_info *info = (set_meta_info *)item_get_meta(it);
@@ -1849,24 +1851,24 @@ static void do_set_node_link(set_meta_info *info,
     } else {
         set_elem_item *elem;
         int num_elems = par_node->hcnt[par_hidx];
-        int hidx, fcnt=0;
+        int num_found =0;
 
         while (par_node->htab[par_hidx] != NULL) {
             elem = par_node->htab[par_hidx];
             par_node->htab[par_hidx] = elem->next;
 
-            hidx = SET_GET_HASHIDX(elem->hval, node->hdepth);
+            int hidx = SET_GET_HASHIDX(elem->hval, node->hdepth);
             elem->next = node->htab[hidx];
             node->htab[hidx] = elem;
             node->hcnt[hidx] += 1;
-            fcnt++;
+            num_found++;
         }
-        assert(fcnt == num_elems);
-        node->tot_elem_cnt = fcnt;
+        assert(num_found == num_elems);
+        node->tot_elem_cnt = num_found;
 
         par_node->htab[par_hidx] = node;
         par_node->hcnt[par_hidx] = -1; /* child hash node */
-        par_node->tot_elem_cnt -= fcnt;
+        par_node->tot_elem_cnt -= num_found;
         par_node->tot_hash_cnt += 1;
     }
 
@@ -2138,14 +2140,15 @@ static int do_set_elem_traverse_dfs(set_meta_info *info, set_hash_node *node,
                                     set_elem_item **elem_array)
 {
     int hidx;
-    int rcnt = 0; /* request count */
     int fcnt = 0; /* found count */
 
     if (node->tot_hash_cnt > 0) {
+        set_hash_node *child_node;
+        int rcnt; /* request count */
         for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
             if (node->hcnt[hidx] == -1) {
-                set_hash_node *child_node = (set_hash_node *)node->htab[hidx];
-                if (count > 0) rcnt = count - fcnt;
+                child_node = (set_hash_node *)node->htab[hidx];
+                rcnt = (count > 0 ? (count - fcnt) : 0);
                 fcnt += do_set_elem_traverse_dfs(info, child_node, rcnt, delete,
                                             (elem_array==NULL ? NULL : &elem_array[fcnt]));
                 if (delete) {
@@ -2302,8 +2305,7 @@ static ENGINE_ERROR_CODE do_btree_item_find(const void *key, const uint32_t nkey
 static hash_item *do_btree_item_alloc(const void *key, const uint32_t nkey,
                                       item_attr *attrp, const void *cookie)
 {
-    char *value = "\r\n"; // "BTREE ITEM\r\n";
-    uint32_t nbytes = 2; // 13;
+    uint32_t nbytes = 2; /* "\r\n" */
     uint32_t real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)
                          + sizeof(btree_meta_info) - nkey;
 
@@ -2312,7 +2314,7 @@ static hash_item *do_btree_item_alloc(const void *key, const uint32_t nkey,
     if (it != NULL) {
         it->iflag |= ITEM_IFLAG_BTREE;
         it->nbytes = nbytes; /* NOT real_nbytes */
-        memcpy(item_get_data(it), value, nbytes);
+        memcpy(item_get_data(it), "\r\n", nbytes);
 
         /* initialize b+tree meta information */
         btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
@@ -4281,7 +4283,7 @@ static ENGINE_ERROR_CODE do_btree_elem_link(btree_meta_info *info, btree_elem_it
                                             const void *cookie)
 {
     btree_elem_posi path[BTREE_MAX_DEPTH];
-    int i, ovfl_type = OVFL_TYPE_NONE;
+    int ovfl_type = OVFL_TYPE_NONE;
     ENGINE_ERROR_CODE res;
 
     if (replaced) *replaced = false;
@@ -4324,14 +4326,14 @@ static ENGINE_ERROR_CODE do_btree_elem_link(btree_meta_info *info, btree_elem_it
         /* insert the element into the leaf page */
         elem->status = BTREE_ITEM_STATUS_USED;
         if (path[0].indx < path[0].node->used_count) {
-            for (i = (path[0].node->used_count-1); i >= path[0].indx; i--) {
+            for (int i = (path[0].node->used_count-1); i >= path[0].indx; i--) {
                 path[0].node->item[i+1] = path[0].node->item[i];
             }
         }
         path[0].node->item[path[0].indx] = elem;
         path[0].node->used_count++;
         /* increment element count in upper nodes */
-        for (i = 1; i <= info->root->ndepth; i++) {
+        for (int i = 1; i <= info->root->ndepth; i++) {
             path[i].node->ecnt[path[i].indx]++;
         }
         info->ccnt++;
@@ -4824,12 +4826,13 @@ static int do_btree_posi_find_with_get(btree_meta_info *info,
 {
     btree_elem_posi  path[BTREE_MAX_DEPTH];
     btree_elem_item *elem;
-    int bpos, ecnt, eidx;
+    int bpos = -1; /* NOT found */
 
     if (info->root == NULL) return -1; /* not found */
 
     elem = do_btree_find_first(info->root, bkrtype, bkrange, path, true);
     if (elem != NULL) {
+        int ecnt, eidx;
         assert(path[0].bkeq == true);
         bpos = do_btree_posi_from_path(info, path, order);
         assert(bpos >= 0);
@@ -4850,8 +4853,6 @@ static int do_btree_posi_find_with_get(btree_meta_info *info,
         }
         *elem_count = (uint32_t)ecnt;
         *elem_index = (uint32_t)eidx;
-    } else {
-        bpos = -1; /* not found */
     }
     return bpos; /* btree_position */
 }
@@ -4882,6 +4883,7 @@ static ENGINE_ERROR_CODE do_btree_elem_get_by_posi(btree_meta_info *info,
     assert(node->ndepth == 0);
     posi.node = node;
     posi.indx = index-tot_ecnt;
+    posi.bkeq = false;
 
     elem = BTREE_GET_ELEM_ITEM(posi.node, posi.indx);
     elem->refcount++;
@@ -6513,8 +6515,8 @@ void item_final(struct default_engine *engine)
 ENGINE_ERROR_CODE list_struct_create(const char *key, const uint32_t nkey,
                                      item_attr *attrp, const void *cookie)
 {
-    ENGINE_ERROR_CODE ret;
     hash_item *it;
+    ENGINE_ERROR_CODE ret;
 
     LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
@@ -6644,9 +6646,6 @@ ENGINE_ERROR_CODE list_elem_delete(const char *key, const uint32_t nkey,
                                    uint32_t *del_count, bool *dropped)
 {
     hash_item *it;
-    list_meta_info *info;
-    int      index;
-    uint32_t count;
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
@@ -6666,8 +6665,10 @@ ENGINE_ERROR_CODE list_elem_delete(const char *key, const uint32_t nkey,
 #endif
     ret = do_list_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
+        int      index;
+        uint32_t count;
+        list_meta_info *info = (list_meta_info *)item_get_meta(it);
         do {
-            info = (list_meta_info *)item_get_meta(it);
             if (adjust_list_range(info, &from_index, &to_index) != 0) {
                 ret = ENGINE_ELEM_ENOENT; break;
             }
@@ -6709,10 +6710,6 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
                                 uint32_t *flags, bool *dropped)
 {
     hash_item *it;
-    list_meta_info *info;
-    int      index;
-    uint32_t count;
-    bool forward;
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
@@ -6732,8 +6729,11 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
 #endif
     ret = do_list_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
+        int      index;
+        uint32_t count;
+        bool forward;
+        list_meta_info *info = (list_meta_info *)item_get_meta(it);
         do {
-            info = (list_meta_info *)item_get_meta(it);
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
             }
@@ -6781,8 +6781,8 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
 ENGINE_ERROR_CODE set_struct_create(const char *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie)
 {
-    ENGINE_ERROR_CODE ret;
     hash_item *it;
+    ENGINE_ERROR_CODE ret;
 
     LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
@@ -6826,7 +6826,8 @@ void set_elem_release(set_elem_item **elem_array, const int elem_count)
 }
 
 ENGINE_ERROR_CODE set_elem_insert(const char *key, const uint32_t nkey,
-                                  set_elem_item *elem, item_attr *attrp, bool *created, const void *cookie)
+                                  set_elem_item *elem, item_attr *attrp,
+                                  bool *created, const void *cookie)
 {
     hash_item *it = NULL;
     ENGINE_ERROR_CODE ret;
@@ -6882,8 +6883,7 @@ ENGINE_ERROR_CODE set_elem_delete(const char *key, const uint32_t nkey,
                                   const char *value, const uint32_t nbytes,
                                   const bool drop_if_empty, bool *dropped)
 {
-    hash_item     *it;
-    set_meta_info *info;
+    hash_item *it;
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
@@ -6905,7 +6905,7 @@ ENGINE_ERROR_CODE set_elem_delete(const char *key, const uint32_t nkey,
 #endif
     ret = do_set_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
-        info = (set_meta_info *)item_get_meta(it);
+        set_meta_info *info = (set_meta_info *)item_get_meta(it);
         ret = do_set_elem_delete_with_value(info, value, nbytes, ELEM_DELETE_NORMAL);
         if (ret == ENGINE_SUCCESS) {
             if (info->ccnt == 0 && drop_if_empty) {
@@ -6928,14 +6928,13 @@ ENGINE_ERROR_CODE set_elem_exist(const char *key, const uint32_t nkey,
                                  const char *value, const uint32_t nbytes,
                                  bool *exist)
 {
-    hash_item     *it;
-    set_meta_info *info;
+    hash_item *it;
     ENGINE_ERROR_CODE ret;
 
     LOCK_CACHE();
     ret = do_set_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
-        info = (set_meta_info *)item_get_meta(it);
+        set_meta_info *info = (set_meta_info *)item_get_meta(it);
         do {
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
@@ -6956,8 +6955,7 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey, const uint3
                                set_elem_item **elem_array, uint32_t *elem_count,
                                uint32_t *flags, bool *dropped)
 {
-    hash_item     *it;
-    set_meta_info *info;
+    hash_item *it;
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
@@ -6977,7 +6975,7 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey, const uint3
 #endif
     ret = do_set_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
-        info = (set_meta_info *)item_get_meta(it);
+        set_meta_info *info = (set_meta_info *)item_get_meta(it);
         do {
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
@@ -7124,15 +7122,13 @@ ENGINE_ERROR_CODE btree_elem_update(const char *key, const uint32_t nkey, const 
                                     const eflag_update *eupdate, const char *value, const uint32_t nbytes,
                                     const void *cookie)
 {
-    hash_item       *it;
-    btree_meta_info *info;
-    int bkrtype = do_btree_bkey_range_type(bkrange);
+    hash_item *it;
     ENGINE_ERROR_CODE ret;
+    int bkrtype = do_btree_bkey_range_type(bkrange);
+    assert(bkrtype == BKEY_RANGE_TYPE_SIN); /* single bkey */
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
 #endif
-
-    assert(bkrtype == BKEY_RANGE_TYPE_SIN); /* single bkey */
 
     LOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
@@ -7148,7 +7144,7 @@ ENGINE_ERROR_CODE btree_elem_update(const char *key, const uint32_t nkey, const 
 #endif
     ret = do_btree_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
-        info = (btree_meta_info *)item_get_meta(it);
+        btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
         do {
             if (info->ccnt == 0) {
                 ret = ENGINE_ELEM_ENOENT; break;
@@ -7175,10 +7171,9 @@ ENGINE_ERROR_CODE btree_elem_delete(const char *key, const uint32_t nkey,
                                     const uint32_t req_count, const bool drop_if_empty,
                                     uint32_t *del_count, uint32_t *access_count, bool *dropped)
 {
-    hash_item       *it;
-    btree_meta_info *info;
-    int bkrtype = do_btree_bkey_range_type(bkrange);
+    hash_item *it;
     ENGINE_ERROR_CODE ret;
+    int bkrtype = do_btree_bkey_range_type(bkrange);
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
 #endif
@@ -7197,7 +7192,7 @@ ENGINE_ERROR_CODE btree_elem_delete(const char *key, const uint32_t nkey,
 #endif
     ret = do_btree_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
-        info = (btree_meta_info *)item_get_meta(it);
+        btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
         do {
             if (info->ccnt == 0) {
                 ret = ENGINE_ELEM_ENOENT; break;
@@ -7238,15 +7233,13 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(const char* key, const uint32_t nkey,
                                         const eflag_t *eflagp,
                                         uint64_t *result, const void* cookie)
 {
-    hash_item       *it;
-    btree_meta_info *info;
-    int bkrtype = do_btree_bkey_range_type(bkrange);
+    hash_item *it;
     ENGINE_ERROR_CODE ret;
+    int bkrtype = do_btree_bkey_range_type(bkrange);
+    assert(bkrtype == BKEY_RANGE_TYPE_SIN); /* single bkey */
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
 #endif
-
-    assert(bkrtype == BKEY_RANGE_TYPE_SIN); /* single bkey */
 
     LOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
@@ -7263,7 +7256,7 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(const char* key, const uint32_t nkey,
     ret = do_btree_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         bool new_root_flag = false;
-        info = (btree_meta_info *)item_get_meta(it);
+        btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
         do {
             if (info->ccnt > 0 || info->maxbkeyrange.len != BKEY_NULL) {
                 if ((info->bktype == BKEY_TYPE_UINT64 && bkrange->from_nbkey >  0) ||
@@ -7308,11 +7301,10 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
                                  uint32_t *access_count,
                                  uint32_t *flags, bool *dropped_trimmed)
 {
-    hash_item       *it;
-    btree_meta_info *info;
+    hash_item *it;
+    ENGINE_ERROR_CODE ret;
     int bkrtype = do_btree_bkey_range_type(bkrange);
     bool potentialbkeytrim;
-    ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
 #endif
@@ -7331,7 +7323,7 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
 #endif
     ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
-        info = (btree_meta_info *)item_get_meta(it);
+        btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
         do {
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
@@ -7380,15 +7372,14 @@ ENGINE_ERROR_CODE btree_elem_count(const char *key, const uint32_t nkey,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
                                    uint32_t *elem_count, uint32_t *access_count)
 {
-    hash_item       *it;
-    btree_meta_info *info;
-    int bkrtype = do_btree_bkey_range_type(bkrange);
+    hash_item *it;
     ENGINE_ERROR_CODE ret;
+    int bkrtype = do_btree_bkey_range_type(bkrange);
 
     LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
-        info = (btree_meta_info *)item_get_meta(it);
+        btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
         do {
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
@@ -7408,17 +7399,15 @@ ENGINE_ERROR_CODE btree_elem_count(const char *key, const uint32_t nkey,
 ENGINE_ERROR_CODE btree_posi_find(const char *key, const uint32_t nkey, const bkey_range *bkrange,
                                   ENGINE_BTREE_ORDER order, int *position)
 {
-    hash_item       *it;
-    btree_meta_info *info;
+    hash_item *it;
     ENGINE_ERROR_CODE ret;
-
     int bkrtype = do_btree_bkey_range_type(bkrange);
     assert(bkrtype == BKEY_RANGE_TYPE_SIN);
 
     LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
-        info = (btree_meta_info *)item_get_meta(it);
+        btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
         do {
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
@@ -7447,17 +7436,15 @@ ENGINE_ERROR_CODE btree_posi_find_with_get(const char *key, const uint32_t nkey,
                                            btree_elem_item **elem_array, uint32_t *elem_count,
                                            uint32_t *elem_index, uint32_t *flags)
 {
-    hash_item       *it;
-    btree_meta_info *info;
+    hash_item *it;
     ENGINE_ERROR_CODE ret;
-
     int bkrtype = do_btree_bkey_range_type(bkrange);
     assert(bkrtype == BKEY_RANGE_TYPE_SIN);
 
     LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
-        info = (btree_meta_info *)item_get_meta(it);
+        btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
         do {
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
@@ -7486,18 +7473,16 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(const char *key, const uint32_t nkey,
                                          ENGINE_BTREE_ORDER order, int from_posi, int to_posi,
                                          btree_elem_item **elem_array, uint32_t *elem_count, uint32_t *flags)
 {
-    hash_item       *it;
-    btree_meta_info *info;
-    ENGINE_ERROR_CODE ret;
-    uint32_t rqcount;
-    bool     forward;
-
     assert(from_posi >= 0 && to_posi >= 0);
+    hash_item *it;
+    ENGINE_ERROR_CODE ret;
 
     LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
-        info = (btree_meta_info *)item_get_meta(it);
+        uint32_t rqcount;
+        bool     forward;
+        btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
         do {
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
@@ -8592,8 +8577,6 @@ void item_stats_scrub(struct default_engine *engine,
                       ADD_STAT add_stat, const void *cookie)
 {
     struct engine_scrubber *scrubber = &engine->scrubber;
-    char val[128];
-    int len;
 
     pthread_mutex_lock(&scrubber->lock);
     if (scrubber->enabled) {
@@ -8605,6 +8588,8 @@ void item_stats_scrub(struct default_engine *engine,
         add_stat("scrubber:status", 15, "disabled", 8, cookie);
     }
     if (scrubber->started != 0) {
+        char val[128];
+        int len;
         if (scrubber->runmode == SCRUB_MODE_NORMAL) {
             add_stat("scrubber:run_mode", 17, "scrub", 5, cookie);
         } else {
@@ -8804,7 +8789,6 @@ int item_start_dump(struct default_engine *engine,
     struct engine_dumper *dumper = &engine->dumper;
     pthread_t tid;
     pthread_attr_t attr;
-    int fd;
     int ret=0;
 
     assert(mode == DUMP_MODE_KEY);
@@ -8830,8 +8814,8 @@ int item_start_dump(struct default_engine *engine,
         dumper->stop    = false;
 
         /* check if filepath is valid ? */
-        fd = open(dumper->filepath, O_WRONLY | O_CREAT | O_TRUNC,
-                                     S_IRUSR | S_IWUSR | S_IRGRP);
+        int fd = open(dumper->filepath, O_WRONLY | O_CREAT | O_TRUNC,
+                                         S_IRUSR | S_IWUSR | S_IRGRP);
         if (fd < 0) {
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "Failed to open the dump file. path=%s err=%s\n",
@@ -8873,8 +8857,6 @@ void item_stats_dump(struct default_engine *engine,
                      ADD_STAT add_stat, const void *cookie)
 {
     struct engine_dumper *dumper = &engine->dumper;
-    char val[256];
-    int len;
 
     pthread_mutex_lock(&dumper->lock);
     if (dumper->running) {
@@ -8887,6 +8869,8 @@ void item_stats_dump(struct default_engine *engine,
             add_stat("dumper:success", 14, "false", 5, cookie);
     }
     if (dumper->started != 0) {
+        char val[256];
+        int len;
         if (dumper->mode == DUMP_MODE_KEY) {
             add_stat("dumper:mode", 11, "key", 3, cookie);
         } else if (dumper->mode == DUMP_MODE_ITEM) {
@@ -9127,8 +9111,7 @@ static ENGINE_ERROR_CODE do_map_item_find(const void *key, const uint32_t nkey,
 static hash_item *do_map_item_alloc(const void *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie)
 {
-    char *value = "\r\n"; //MAP ITEM\r\n";
-    uint32_t nbytes = 2; //10;
+    uint32_t nbytes = 2; /* "\r\n" */
     uint32_t real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)
                          + sizeof(map_meta_info) - nkey;
 
@@ -9136,8 +9119,8 @@ static hash_item *do_map_item_alloc(const void *key, const uint32_t nkey,
                                   real_nbytes, cookie);
     if (it != NULL) {
         it->iflag |= ITEM_IFLAG_MAP;
-        it->nbytes = nbytes;
-        memcpy(item_get_data(it), value, nbytes);
+        it->nbytes = nbytes; /* NOT real_nbytes */
+        memcpy(item_get_data(it), "\r\n", nbytes);
 
         /* initialize map meta information */
         map_meta_info *info = (map_meta_info *)item_get_meta(it);
@@ -9224,24 +9207,24 @@ static void do_map_node_link(map_meta_info *info,
     } else {
         map_elem_item *elem;
         int num_elems = par_node->hcnt[par_hidx];
-        int hidx, fcnt=0;
+        int num_found =0;
 
         while (par_node->htab[par_hidx] != NULL) {
             elem = par_node->htab[par_hidx];
             par_node->htab[par_hidx] = elem->next;
 
-            hidx = MAP_GET_HASHIDX(elem->hval, node->hdepth);
+            int hidx = MAP_GET_HASHIDX(elem->hval, node->hdepth);
             elem->next = node->htab[hidx];
             node->htab[hidx] = elem;
             node->hcnt[hidx] += 1;
-            fcnt++;
+            num_found ++;
         }
-        assert(fcnt == num_elems);
-        node->tot_elem_cnt = fcnt;
+        assert(num_found  == num_elems);
+        node->tot_elem_cnt = num_found ;
 
         par_node->htab[par_hidx] = node;
         par_node->hcnt[par_hidx] = -1; /* child hash node */
-        par_node->tot_elem_cnt -= fcnt;
+        par_node->tot_elem_cnt -= num_found ;
         par_node->tot_hash_cnt += 1;
     }
 
@@ -9499,15 +9482,16 @@ static int do_map_elem_traverse_dfs_bycnt(map_meta_info *info, map_hash_node *no
                                           const uint32_t count, const bool delete,
                                           map_elem_item **elem_array, enum elem_delete_cause cause)
 {
-    int hidx = -1;
-    int rcnt = 0; /* request count */
+    int hidx;
     int fcnt = 0; /* found count */
 
     if (node->tot_hash_cnt > 0) {
+        map_hash_node *child_node;
+        int rcnt; /* request count */
         for (hidx = 0; hidx < MAP_HASHTAB_SIZE; hidx++) {
             if (node->hcnt[hidx] == -1) {
-                map_hash_node *child_node = (map_hash_node *)node->htab[hidx];
-                if (count > 0) rcnt = count - fcnt;
+                child_node = (map_hash_node *)node->htab[hidx];
+                rcnt = (count > 0 ? (count - fcnt) : 0);
                 fcnt += do_map_elem_traverse_dfs_bycnt(info, child_node, rcnt, delete,
                                             (elem_array==NULL ? NULL : &elem_array[fcnt]), cause);
                 if (delete) {
@@ -9546,14 +9530,13 @@ static uint32_t do_map_elem_delete_with_field(map_meta_info *info, const int num
                                               const field_t *flist, enum elem_delete_cause cause)
 {
     assert(cause == ELEM_DELETE_NORMAL);
-
-    int ii;
     uint32_t delcnt = 0;
+
     if (info->root != NULL) {
         if (numfields == 0) {
             delcnt = do_map_elem_traverse_dfs_bycnt(info, info->root, 0, true, NULL, cause);
         } else {
-            for (ii = 0; ii < numfields; ii++) {
+            for (int ii = 0; ii < numfields; ii++) {
                 int hval = genhash_string_hash(flist[ii].value, flist[ii].length);
                 if (do_map_elem_traverse_dfs_byfield(info, info->root, hval, &flist[ii], true, NULL)) {
                     delcnt++;
@@ -9663,14 +9646,13 @@ static uint32_t do_map_elem_delete(map_meta_info *info, const uint32_t count,
 static ENGINE_ERROR_CODE do_map_elem_get(map_meta_info *info, const int numfields, const field_t *flist,
                                          const bool delete, map_elem_item **elem_array, uint32_t *elem_count)
 {
-    int ii;
     uint32_t array_cnt = 0;
 
     if (info->root != NULL) {
         if (numfields == 0) {
             array_cnt = do_map_elem_traverse_dfs_bycnt(info, info->root, 0, delete, elem_array, ELEM_DELETE_NORMAL);
         } else {
-            for (ii = 0; ii < numfields; ii++) {
+            for (int ii = 0; ii < numfields; ii++) {
                 int hval = genhash_string_hash(flist[ii].value, flist[ii].length);
                 if (do_map_elem_traverse_dfs_byfield(info, info->root, hval, &flist[ii],
                                                      delete, &elem_array[array_cnt])) {
@@ -9734,8 +9716,8 @@ static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
 ENGINE_ERROR_CODE map_struct_create(const char *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie)
 {
-    ENGINE_ERROR_CODE ret;
     hash_item *it;
+    ENGINE_ERROR_CODE ret;
 
     LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
@@ -9832,10 +9814,10 @@ ENGINE_ERROR_CODE map_elem_insert(const char *key, const uint32_t nkey,
 }
 
 ENGINE_ERROR_CODE map_elem_update(const char *key, const uint32_t nkey,
-                                  const field_t *field, const char *value, const uint32_t nbytes, const void *cookie)
+                                  const field_t *field, const char *value,
+                                  const uint32_t nbytes, const void *cookie)
 {
-    hash_item     *it;
-    map_meta_info *info;
+    hash_item *it;
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
@@ -9855,7 +9837,7 @@ ENGINE_ERROR_CODE map_elem_update(const char *key, const uint32_t nkey,
 #endif
     ret = do_map_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
-        info = (map_meta_info *)item_get_meta(it);
+        map_meta_info *info = (map_meta_info *)item_get_meta(it);
         ret = do_map_elem_update(info, field, value, nbytes, cookie);
         do_item_release(it);
     }
@@ -9869,11 +9851,11 @@ ENGINE_ERROR_CODE map_elem_update(const char *key, const uint32_t nkey,
 }
 
 ENGINE_ERROR_CODE map_elem_delete(const char *key, const uint32_t nkey,
-                                  const int numfields, const field_t *flist, const bool drop_if_empty,
+                                  const int numfields, const field_t *flist,
+                                  const bool drop_if_empty,
                                   uint32_t *del_count, bool *dropped)
 {
-    hash_item     *it;
-    map_meta_info *info;
+    hash_item *it;
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
@@ -9895,7 +9877,7 @@ ENGINE_ERROR_CODE map_elem_delete(const char *key, const uint32_t nkey,
 #endif
     ret = do_map_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
-        info = (map_meta_info *)item_get_meta(it);
+        map_meta_info *info = (map_meta_info *)item_get_meta(it);
         *del_count = do_map_elem_delete_with_field(info, numfields, flist, ELEM_DELETE_NORMAL);
         if (*del_count > 0) {
             if (info->ccnt == 0 && drop_if_empty) {
@@ -9922,8 +9904,7 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
                                const bool drop_if_empty, map_elem_item **elem_array, uint32_t *elem_count,
                                uint32_t *flags, bool *dropped)
 {
-    hash_item     *it;
-    map_meta_info *info;
+    hash_item *it;
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
@@ -9943,7 +9924,7 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
 #endif
     ret = do_map_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
-        info = (map_meta_info *)item_get_meta(it);
+        map_meta_info *info = (map_meta_info *)item_get_meta(it);
         do {
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;

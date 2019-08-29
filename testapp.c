@@ -315,7 +315,7 @@ static pid_t start_server(in_port_t *port_out, bool daemon, int timeout) {
         char *argv[20];
         int arg = 0;
         char tmo[24];
-        snprintf(tmo, sizeof(tmo), "%u", timeout);
+        snprintf(tmo, sizeof(tmo), "%d", timeout);
 
         putenv(environment);
 
@@ -595,44 +595,52 @@ static enum test_return test_config_parser(void) {
     /* XXX:  This test fails on Linux, but works on OS X.
     assert(parse_config("string=", items, error) == 0);
     assert(items[3].found);
-    assert(strcmp(string_val, "") == 0);
+    assert(string_val && strcmp(string_val, "") == 0);
     items[3].found = false;
+    free(string_val); string_val = NULL;
     */
     /* Plain string */
     assert(parse_config("string=sval", items, error) == 0);
     assert(items[3].found);
-    assert(strcmp(string_val, "sval") == 0);
+    assert(string_val && strcmp(string_val, "sval") == 0);
     items[3].found = false;
+    free(string_val); string_val = NULL;
     /* Leading space */
     assert(parse_config("string= sval", items, error) == 0);
     assert(items[3].found);
-    assert(strcmp(string_val, "sval") == 0);
+    assert(string_val && strcmp(string_val, "sval") == 0);
     items[3].found = false;
+    free(string_val); string_val = NULL;
     /* Escaped leading space */
     assert(parse_config("string=\\ sval", items, error) == 0);
     assert(items[3].found);
-    assert(strcmp(string_val, " sval") == 0);
+    assert(string_val && strcmp(string_val, " sval") == 0);
     items[3].found = false;
+    free(string_val); string_val = NULL;
     /* trailing space */
     assert(parse_config("string=sval ", items, error) == 0);
     assert(items[3].found);
-    assert(strcmp(string_val, "sval") == 0);
+    assert(string_val && strcmp(string_val, "sval") == 0);
     items[3].found = false;
+    free(string_val); string_val = NULL;
     /* escaped trailing space */
     assert(parse_config("string=sval\\ ", items, error) == 0);
     assert(items[3].found);
-    assert(strcmp(string_val, "sval ") == 0);
+    assert(string_val && strcmp(string_val, "sval ") == 0);
     items[3].found = false;
+    free(string_val); string_val = NULL;
     /* escaped stop char */
     assert(parse_config("string=sval\\;blah=x", items, error) == 0);
     assert(items[3].found);
-    assert(strcmp(string_val, "sval;blah=x") == 0);
+    assert(string_val && strcmp(string_val, "sval;blah=x") == 0);
     items[3].found = false;
+    free(string_val); string_val = NULL;
     /* middle space */
     assert(parse_config("string=s val", items, error) == 0);
     assert(items[3].found);
-    assert(strcmp(string_val, "s val") == 0);
+    assert(string_val && strcmp(string_val, "s val") == 0);
     items[3].found = false;
+    free(string_val); string_val = NULL;
 
     /* And all of the variables */
     assert(parse_config("bool=true;size_t=1024;float=12.5;string=somestr",
@@ -640,10 +648,11 @@ static enum test_return test_config_parser(void) {
     assert(bool_val);
     assert(size_val == 1024);
     assert(float_val == 12.5f);
-    assert(strcmp(string_val, "somestr") == 0);
+    assert(string_val && strcmp(string_val, "somestr") == 0);
     for (int ii = 0; ii < 5; ++ii) {
         items[ii].found = false;
     }
+    free(string_val); string_val = NULL;
 
     assert(parse_config("size_t=1k", items, error) == 0);
     assert(items[1].found);
@@ -697,6 +706,7 @@ static enum test_return test_config_parser(void) {
     assert(strcmp("WARNING: Found duplicate entry for \"size_t\"", trim(buffer)) == 0);
     assert(fgets(buffer, sizeof(buffer), error) == NULL);
 
+    fclose(error);
     remove(outfile);
     return TEST_PASS;
 }
@@ -1953,6 +1963,7 @@ static enum test_return test_binary_pipeline_hickup(void)
     if ((ret = pthread_create(&tid, NULL,
                               binary_hickup_recv_verification_thread, NULL)) != 0) {
         fprintf(stderr, "Can't create thread: %s\n", strerror(ret));
+        free(buffer);
         return TEST_FAIL;
     }
 
