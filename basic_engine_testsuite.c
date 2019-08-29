@@ -52,7 +52,8 @@ static enum test_result get_info_features_test(ENGINE_HANDLE *h, ENGINE_HANDLE_V
     assert (nfeats > 0);
     const feature_info *fi = info->features;
     while (nfeats-- > 0) {
-        assert(fi++ != NULL);
+        assert(fi != NULL);
+        fi++;
     }
 
     return SUCCESS;

@@ -31,7 +31,7 @@ static int sasl_server_userdb_checkpass(sasl_conn_t *conn,
     size_t unmlen = strlen(user);
     if ((passlen + unmlen) > (MAX_ENTRY_LEN - 4)) {
         fprintf(stderr,
-                "WARNING: Failed to authenticate <%s> due to too long password (%d)\n",
+                "WARNING: Failed to authenticate <%s> due to too long password (%u)\n",
                 user, passlen);
         return SASL_NOAUTHZ;
     }

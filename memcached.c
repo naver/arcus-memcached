@@ -9287,7 +9287,7 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
 
     if (ntokens == 3) {
         char buf[50];
-        sprintf(buf, "verbosity %u\r\nEND", settings.verbose);
+        sprintf(buf, "verbosity %d\r\nEND", settings.verbose);
         out_string(c, buf);
     } else if (ntokens == 4 && safe_strtoul(config_val, &level)) {
         if (level > MAX_VERBOSITY_LEVEL) {
@@ -15284,7 +15284,7 @@ int main (int argc, char **argv) {
                         "Chunk size must be greater than 0\n");
                 return 1;
             }
-            old_opts += sprintf(old_opts, "chunk_size=%u;", settings.chunk_size);
+            old_opts += sprintf(old_opts, "chunk_size=%d;", settings.chunk_size);
             break;
         case 't':
             settings.num_threads = atoi(optarg);

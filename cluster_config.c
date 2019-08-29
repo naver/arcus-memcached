@@ -137,7 +137,7 @@ static int gen_node_continuum(struct cont_item *continuum,
 {
     char buffer[MAX_NODE_NAME_LENGTH+1] = "";
     int  length;
-    int  hh, nn, pp;
+    unsigned int  hh, nn, pp;
     unsigned char digest[16];
     bool duplicate = 0;
 
