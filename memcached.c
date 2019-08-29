@@ -1953,14 +1953,13 @@ static void process_mop_delete_complete(conn *c) {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     field_t *flist = NULL;
     uint32_t del_count = 0;
-    char delimiter = ' ';
-    char old_delimiter = ','; /* need to keep backwards compatibility */
     bool dropped;
-    int  i;
 
     if (c->coll_strkeys != NULL) {
         flist = (field_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
         if (flist != NULL) {
+            char delimiter = ' ';
+            char old_delimiter = ','; /* need to keep backwards compatibility */
             int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist);
             if (ntokens == -1) {
                 ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist);
@@ -1975,8 +1974,8 @@ static void process_mop_delete_complete(conn *c) {
         }
     }
 
-    if (ret == ENGINE_SUCCESS && c->coll_numkeys != 0) { /* field validation check */
-        for (i = 0; i < c->coll_numkeys; i++) {
+    if (ret == ENGINE_SUCCESS && c->coll_numkeys > 0) { /* field validation check */
+        for (int i = 0; i < c->coll_numkeys; i++) {
             if (flist[i].length > MAX_FIELD_LENG) {
                 ret = ENGINE_EBADVALUE;
                 break;
@@ -2059,7 +2058,7 @@ static void process_mop_get_complete(conn *c)
     bool delete = c->coll_delete;
     bool drop_if_empty = c->coll_drop;
     bool dropped;
-    int  i, need_size = 0;
+    int  need_size;
 
     if (c->coll_numkeys <= 0 || c->coll_numkeys > MAX_MAP_SIZE) {
         need_size = MAX_MAP_SIZE * sizeof(eitem*);
@@ -2076,11 +2075,10 @@ static void process_mop_get_complete(conn *c)
     assert(c->ewouldblock == false);
 
     if (ret == ENGINE_SUCCESS && c->coll_strkeys != NULL) {
-        char delimiter = ' ';
-        char old_delimiter = ','; /* need to keep backwards compatibility */
-
         flist = (field_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
         if (flist != NULL) {
+            char delimiter = ' ';
+            char old_delimiter = ','; /* need to keep backwards compatibility */
             int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist);
             if (ntokens == -1) {
                 ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist);
@@ -2095,8 +2093,8 @@ static void process_mop_get_complete(conn *c)
         }
     }
 
-    if (ret == ENGINE_SUCCESS && c->coll_numkeys != 0) { /* field validation check */
-        for (i = 0; i < c->coll_numkeys; i++) {
+    if (ret == ENGINE_SUCCESS && c->coll_numkeys > 0) { /* field validation check */
+        for (int i = 0; i < c->coll_numkeys; i++) {
             if (flist[i].length > MAX_FIELD_LENG) {
                 ret = ENGINE_EBADVALUE;
                 break;
@@ -2437,12 +2435,12 @@ static void process_bop_mget_complete(conn *c) {
     eitem **elem_array = (eitem **)c->coll_eitem;
     uint32_t tot_elem_count = 0;
     uint32_t tot_access_count = 0;
-    char delimiter = ' ';
-    char old_delimiter = ','; /* need to keep backwards compatibility */
     token_t *key_tokens = NULL;
 
     key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (key_tokens != NULL) {
+        char delimiter = ' ';
+        char old_delimiter = ','; /* need to keep backwards compatibility */
         int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, key_tokens);
         if (ntokens == -1) {
             ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, key_tokens);
@@ -2644,29 +2642,23 @@ static int make_smget_trim_response(char *bufptr, eitem_info *einfo)
 
 #ifdef JHPARK_OLD_SMGET_INTERFACE
 static void process_bop_smget_complete_old(conn *c) {
-    int i, idx;
-    char delimiter = ' ';
-    char old_delimiter = ','; /* need to keep backwards compatibility */
-    token_t *keys_array = NULL;
-    char *respptr;
-    int   resplen;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     int smget_count = c->coll_roffset + c->coll_rcount;
-    int kmis_array_size = c->coll_numkeys * sizeof(uint32_t);
+    token_t *keys_array;
 
-    uint32_t  kmis_count = 0;
-    uint32_t  elem_count = 0;
     eitem   **elem_array = (eitem  **)c->coll_eitem;
     uint32_t *kfnd_array = (uint32_t*)((char*)elem_array + (smget_count*sizeof(eitem*)));
     uint32_t *flag_array = (uint32_t*)((char*)kfnd_array + (smget_count*sizeof(uint32_t)));
     uint32_t *kmis_array = (uint32_t*)((char*)flag_array + (smget_count*sizeof(uint32_t)));
+    uint32_t  elem_count = 0;
+    uint32_t  kmis_count = 0;
     bool trimmed;
     bool duplicated;
 
-    respptr = ((char*)kmis_array + kmis_array_size);
-
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (keys_array != NULL) {
+        char delimiter = ' ';
+        char old_delimiter = ','; /* need to keep backwards compatibility */
         int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
         if (ntokens == -1) {
             ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
@@ -2700,6 +2692,10 @@ static void process_bop_smget_complete_old(conn *c) {
     switch (ret) {
     case ENGINE_SUCCESS:
         do {
+            char *respptr = ((char*)kmis_array + (c->coll_numkeys * sizeof(uint32_t)));
+            int resplen;
+            int i, idx;
+
             sprintf(respptr, "VALUE %u\r\n", elem_count);
             if (add_iov(c, respptr, strlen(respptr)) != 0) {
                 ret = ENGINE_ENOMEM; break;
@@ -2814,23 +2810,18 @@ static void process_bop_smget_complete(conn *c) {
         return;
     }
 #endif
-    int i, idx;
-    char delimiter = ' ';
-    char old_delimiter = ','; /* need to keep backwards compatibility */
-    token_t *keys_array = NULL;
-    char *respptr;
-    int   resplen;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    token_t *keys_array;
     smget_result_t smres;
 
     smres.elem_array = (eitem **)c->coll_eitem;
     smres.elem_kinfo = (smget_ehit_t *)&smres.elem_array[c->coll_rcount+c->coll_numkeys];
     smres.miss_kinfo = (smget_emis_t *)&smres.elem_kinfo[c->coll_rcount];
 
-    respptr = (char *)&smres.miss_kinfo[c->coll_numkeys];
-
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (keys_array != NULL) {
+        char delimiter = ' ';
+        char old_delimiter = ','; /* need to keep backwards compatibility */
         int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
         if (ntokens == -1) {
             ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
@@ -2868,6 +2859,10 @@ static void process_bop_smget_complete(conn *c) {
     switch (ret) {
     case ENGINE_SUCCESS:
         do {
+            char *respptr = (char *)&smres.miss_kinfo[c->coll_numkeys];
+            int resplen;
+            int i, idx;
+
             /* Change smget response head string: VALUE => ELEMENTS.
              * It makes incompatible with the clients of lower version.
              */
@@ -3037,12 +3032,12 @@ static void process_mget_complete(conn *c)
     char    *key;
     size_t   nkey;
     token_t *key_tokens = NULL;
-    char     delimiter = ' ';
     uint32_t k, nitems;
 
     do {
         key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, kcnt);
         if (key_tokens != NULL) {
+            char delimiter = ' ';
             int ntokens = tokenize_sblocks(&c->memblist, vlen, delimiter, kcnt, key_tokens);
             if (ntokens == -1) {
                 ret = ENGINE_EBADVALUE; break;
@@ -6298,30 +6293,26 @@ static void process_bin_bop_mget_complete(conn *c) {
 #ifdef SUPPORT_BOP_SMGET
 #ifdef JHPARK_OLD_SMGET_INTERFACE
 static void process_bin_bop_smget_complete_old(conn *c) {
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     int smget_count = c->coll_roffset + c->coll_rcount;
-    int kmis_array_size = c->coll_numkeys * sizeof(uint32_t);
-    char *resultptr;
-    char delimiter = ' ';
-    char old_delimiter = ','; /* need to keep backwards compatibility */
-    token_t *keys_array = NULL;
-    uint32_t  kmis_count = 0;
-    uint32_t  elem_count = 0;
+    token_t *keys_array;
+
     eitem   **elem_array = (eitem  **)c->coll_eitem;
     uint32_t *kfnd_array = (uint32_t*)((char*)elem_array + (smget_count*sizeof(eitem*)));
     uint32_t *flag_array = (uint32_t*)((char*)kfnd_array + (smget_count*sizeof(uint32_t)));
     uint32_t *kmis_array = (uint32_t*)((char*)flag_array + (smget_count*sizeof(uint32_t)));
-
-    resultptr = ((char *)kmis_array + kmis_array_size);
-
+    uint32_t  elem_count = 0;
+    uint32_t  kmis_count = 0;
     bool trimmed;
     bool duplicated;
 
     /* We don't actually receive the trailing two("\r\n") characters in binary protocol.
      * We should consider this when tokenizing key strings.
      */
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (keys_array != NULL) {
+        char delimiter = ' ';
+        char old_delimiter = ','; /* need to keep backwards compatibility */
         int ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, delimiter, c->coll_numkeys, keys_array);
         if (ntokens == -1) {
             ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, keys_array);
@@ -6365,8 +6356,10 @@ static void process_bin_bop_smget_complete_old(conn *c) {
         uint32_t *flagptr;
         uint32_t *klenptr;
 
-        if (((long)resultptr % 8) != 0) /* NOT aligned */
+        char *resultptr = ((char *)kmis_array + (c->coll_numkeys * sizeof(uint32_t)));
+        if (((long)resultptr % 8) != 0) { /* NOT aligned */
             resultptr += (8 - ((long)resultptr % 8));
+        }
         bkeyptr = (uint64_t *)resultptr;
         vlenptr = (uint32_t *)((char*)bkeyptr + (sizeof(uint64_t) * elem_count));
         flagptr = (uint32_t *)((char*)vlenptr + (sizeof(uint32_t) * elem_count));
@@ -6488,24 +6481,21 @@ static void process_bin_bop_smget_complete(conn *c) {
         return;
     }
 #endif
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    token_t *keys_array;
     smget_result_t smres;
-    char *resultptr;
-    char delimiter = ' ';
-    char old_delimiter = ','; /* need to keep backwards compatibility */
-    token_t *keys_array = NULL;
 
     smres.elem_array = (eitem **)c->coll_eitem;
     smres.elem_kinfo = (smget_ehit_t *)&smres.elem_array[c->coll_rcount+c->coll_numkeys];
     smres.miss_kinfo = (smget_emis_t *)&smres.elem_kinfo[c->coll_rcount];
 
-    resultptr = (char *)&smres.miss_kinfo[c->coll_numkeys];
-
     /* We don't actually receive the trailing two("\r\n") characters in binary protocol.
      * We should consider this when tokenizing key strings.
      */
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (keys_array != NULL) {
+        char delimiter = ' ';
+        char old_delimiter = ','; /* need to keep backwards compatibility */
         int ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, delimiter, c->coll_numkeys, keys_array);
         if (ntokens == -1) {
             ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, keys_array);
@@ -6552,8 +6542,10 @@ static void process_bin_bop_smget_complete(conn *c) {
         uint32_t *flagptr;
         uint32_t *klenptr;
 
-        if (((long)resultptr % 8) != 0) /* NOT aligned */
+        char *resultptr = (char *)&smres.miss_kinfo[c->coll_numkeys];
+        if (((long)resultptr % 8) != 0) { /* NOT aligned */
             resultptr += (8 - ((long)resultptr % 8));
+        }
         bkeyptr = (uint64_t *)resultptr;
         vlenptr = (uint32_t *)((char*)bkeyptr + (sizeof(uint64_t) * smres.elem_count));
         flagptr = (uint32_t *)((char*)vlenptr + (sizeof(uint32_t) * smres.elem_count));
