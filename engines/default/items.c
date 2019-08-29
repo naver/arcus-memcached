@@ -1025,7 +1025,6 @@ static void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
     /* cause: item unlink cause will be used, later
     */
     const char *key = item_get_key(it);
-    size_t stotal;
     MEMCACHED_ITEM_UNLINK(key, it->nkey, it->nbytes);
 
     if ((it->iflag & ITEM_LINKED) != 0) {
@@ -1039,7 +1038,7 @@ static void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
         it->iflag &= ~ITEM_LINKED;
 
         /* unlink the item from prefix info */
-        stotal = ITEM_stotal(it);
+        size_t stotal = ITEM_stotal(it);
         assoc_prefix_unlink(it, stotal, (cause != ITEM_UNLINK_REPLACE ? true : false));
 
         /* update item statistics */
@@ -1066,6 +1065,7 @@ static void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
 static void do_item_release(hash_item *it)
 {
     MEMCACHED_ITEM_REMOVE(item_get_key(it), it->nkey, it->nbytes);
+
     if (it->refcount != 0) {
         ITEM_REFCOUNT_DECR(it);
         DEBUG_REFCNT(it, '-');
@@ -1090,6 +1090,7 @@ static void do_item_release(hash_item *it)
 static void do_item_update(hash_item *it, bool force)
 {
     MEMCACHED_ITEM_UPDATE(item_get_key(it), it->nkey, it->nbytes);
+
     if ((it->iflag & ITEM_LINKED) != 0) {
         rel_time_t current_time = svcore->get_current_time();
         if (force) {
@@ -1214,18 +1215,18 @@ static ENGINE_ERROR_CODE do_item_store_replace(hash_item *it, uint64_t *cas, con
     ENGINE_ERROR_CODE stored;
 
     old_it = do_item_get(item_get_key(it), it->nkey, DONT_UPDATE);
-    if (old_it) {
-        if (IS_COLL_ITEM(old_it)) {
-            stored = ENGINE_EBADTYPE;
-        } else {
-            do_item_replace(old_it, it);
-            stored = ENGINE_SUCCESS;
-            *cas = item_get_cas(it);
-        }
-        do_item_release(old_it);
-    } else {
-        stored = ENGINE_NOT_STORED;
+    if (old_it == NULL) {
+        return ENGINE_NOT_STORED;
     }
+
+    if (IS_COLL_ITEM(old_it)) {
+        stored = ENGINE_EBADTYPE;
+    } else {
+        do_item_replace(old_it, it);
+        stored = ENGINE_SUCCESS;
+        *cas = item_get_cas(it);
+    }
+    do_item_release(old_it);
     return stored;
 }
 
@@ -1235,76 +1236,79 @@ static ENGINE_ERROR_CODE do_item_store_cas(hash_item *it, uint64_t *cas, const v
     ENGINE_ERROR_CODE stored;
 
     old_it = do_item_get(item_get_key(it), it->nkey, DONT_UPDATE);
-    if (old_it) {
-        if (IS_COLL_ITEM(old_it)) {
-            stored = ENGINE_EBADTYPE;
-        } else if (item_get_cas(it) == item_get_cas(old_it)) {
-            // cas validates
-            // it and old_it may belong to different classes.
-            // I'm updating the stats for the one that's getting pushed out
-            do_item_replace(old_it, it);
-            stored = ENGINE_SUCCESS;
-            *cas = item_get_cas(it);
-        } else {
-            if (config->verbose > 1) {
-                logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "CAS:  failure: expected %"PRIu64", got %"PRIu64"\n",
-                        item_get_cas(old_it), item_get_cas(it));
-            }
-            stored = ENGINE_KEY_EEXISTS;
-        }
-        do_item_release(old_it);
-    } else {
+    if (old_it == NULL) {
         // LRU expired
-        stored = ENGINE_KEY_ENOENT;
+        return ENGINE_KEY_ENOENT;
     }
+
+    if (IS_COLL_ITEM(old_it)) {
+        stored = ENGINE_EBADTYPE;
+    } else if (item_get_cas(it) == item_get_cas(old_it)) {
+        // cas validates
+        // it and old_it may belong to different classes.
+        // I'm updating the stats for the one that's getting pushed out
+        do_item_replace(old_it, it);
+        stored = ENGINE_SUCCESS;
+        *cas = item_get_cas(it);
+    } else {
+        if (config->verbose > 1) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "CAS:  failure: expected %"PRIu64", got %"PRIu64"\n",
+                    item_get_cas(old_it), item_get_cas(it));
+        }
+        stored = ENGINE_KEY_EEXISTS;
+    }
+    do_item_release(old_it);
     return stored;
 }
 
 static ENGINE_ERROR_CODE do_item_store_attach(hash_item *it, uint64_t *cas,
-                                              ENGINE_STORE_OPERATION operation, const void *cookie)
+                                              ENGINE_STORE_OPERATION operation,
+                                              const void *cookie)
 {
     hash_item *old_it;
-    hash_item *new_it;
     ENGINE_ERROR_CODE stored;
 
     old_it = do_item_get(item_get_key(it), it->nkey, DONT_UPDATE);
-    if (old_it) {
-        if (IS_COLL_ITEM(old_it)) {
-            stored = ENGINE_EBADTYPE;
-        } else if (item_get_cas(it) != 0 &&
-                   item_get_cas(it) != item_get_cas(old_it)) {
-            // CAS much be equal
-            stored = ENGINE_KEY_EEXISTS;
-        } else {
-            /* we have it and old_it here - alloc memory to hold both */
-            new_it = do_item_alloc(item_get_key(it), it->nkey,
-                                   old_it->flags, old_it->exptime,
-                                   it->nbytes + old_it->nbytes - 2 /* CRLF */, cookie);
-            if (new_it) {
-                /* copy data from it and old_it to new_it */
-                if (operation == OPERATION_APPEND) {
-                    memcpy(item_get_data(new_it), item_get_data(old_it), old_it->nbytes);
-                    memcpy(item_get_data(new_it) + old_it->nbytes - 2 /* CRLF */, item_get_data(it), it->nbytes);
-                } else {
-                    /* OPERATION_PREPEND */
-                    memcpy(item_get_data(new_it), item_get_data(it), it->nbytes);
-                    memcpy(item_get_data(new_it) + it->nbytes - 2 /* CRLF */, item_get_data(old_it), old_it->nbytes);
-                }
-                /* replace old item with new item */
-                do_item_replace(old_it, new_it);
-                stored = ENGINE_SUCCESS;
-                *cas = item_get_cas(new_it);
-                do_item_release(new_it);
-            } else {
-                /* SERVER_ERROR out of memory */
-                stored = ENGINE_NOT_STORED;
-            }
-        }
-        do_item_release(old_it);
-    } else {
-        stored = ENGINE_NOT_STORED;
+    if (old_it == NULL) {
+        return ENGINE_NOT_STORED;
     }
+
+    if (IS_COLL_ITEM(old_it)) {
+        stored = ENGINE_EBADTYPE;
+    } else if (item_get_cas(it) != 0 &&
+               item_get_cas(it) != item_get_cas(old_it)) {
+        // CAS much be equal
+        stored = ENGINE_KEY_EEXISTS;
+    } else {
+        /* we have it and old_it here - alloc memory to hold both */
+        hash_item *new_it = do_item_alloc(item_get_key(it), it->nkey,
+                                          old_it->flags, old_it->exptime,
+                                          it->nbytes + old_it->nbytes - 2 /* CRLF */,
+                                          cookie);
+        if (new_it) {
+            /* copy data from it and old_it to new_it */
+            if (operation == OPERATION_APPEND) {
+                memcpy(item_get_data(new_it), item_get_data(old_it), old_it->nbytes);
+                memcpy(item_get_data(new_it) + old_it->nbytes - 2 /* CRLF */,
+                       item_get_data(it), it->nbytes);
+            } else {
+                /* OPERATION_PREPEND */
+                memcpy(item_get_data(new_it), item_get_data(it), it->nbytes);
+                memcpy(item_get_data(new_it) + it->nbytes - 2 /* CRLF */,
+                       item_get_data(old_it), old_it->nbytes);
+            }
+            /* replace old item with new item */
+            do_item_replace(old_it, new_it);
+            stored = ENGINE_SUCCESS;
+            *cas = item_get_cas(new_it);
+            do_item_release(new_it);
+        } else {
+            /* SERVER_ERROR out of memory */
+            stored = ENGINE_NOT_STORED;
+        }
+    }
+    do_item_release(old_it);
     return stored;
 }
 
