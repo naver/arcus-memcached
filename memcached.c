@@ -2131,7 +2131,6 @@ static void process_mop_get_complete(conn *c)
         char *respbuf; /* response string buffer */
         char *respptr;
         int   resplen;
-        int   need_size;
 
         do {
             need_size = ((2*lenstr_size) + 30) /* response head and tail size */
@@ -5688,12 +5687,10 @@ static void process_bin_bop_update_prepare_nread(conn *c) {
     assert(c != NULL);
     assert(c->cmd == PROTOCOL_BINARY_CMD_BOP_UPDATE);
     char *key = binary_get_key(c);
-
-    uint32_t nkey = 0;
+    uint32_t nkey = c->binary_header.request.keylen;
     uint32_t vlen = 0;
     int  real_nbkey;
 
-    nkey = c->binary_header.request.keylen;
     if (nkey + c->binary_header.request.extlen <= c->binary_header.request.bodylen) {
         vlen = c->binary_header.request.bodylen - (nkey + c->binary_header.request.extlen);
     } else {
@@ -6825,13 +6822,13 @@ static void process_bin_setattr(conn *c) {
              else if (attr_ids[ii] == ATTR_READABLE)
                  fprintf(stderr, " readable=%s", (attr_data.readable ? "on" : "off"));
              else if (attr_ids[ii] == ATTR_MAXBKEYRANGE) {
-                 char buffer[MAX_BKEY_LENG*2+4];
                  if (attr_data.maxbkeyrange.len == 0) {
                      uint64_t bkey_temp;
                      memcpy((unsigned char*)&bkey_temp, attr_data.maxbkeyrange.val, sizeof(uint64_t));
                      fprintf(stderr, "maxbkeyrange=%"PRIu64, bkey_temp);
                      //fprintf(stderr, "maxbkeyrange=%"PRIu64, *(uint64_t*)attr_data.maxbkeyrange.val);
                  } else {
+                     char buffer[MAX_BKEY_LENG*2+4];
                      safe_hexatostr(attr_data.maxbkeyrange.val, attr_data.maxbkeyrange.len, buffer);
                      fprintf(stderr, "maxbkeyrange=0x%s", buffer);
                  }
@@ -7293,10 +7290,9 @@ static void dispatch_bin_command(conn *c) {
 static void process_bin_update(conn *c) {
     assert(c != NULL);
 
-    char *key;
-    item *it;
     protocol_binary_request_set* req = binary_get_request(c);
-    key = binary_get_key(c);
+    item *it;
+    char *key = binary_get_key(c);
     uint32_t nkey = c->binary_header.request.keylen;
     uint32_t vlen = 0;
 
@@ -7405,13 +7401,11 @@ static void process_bin_update(conn *c) {
 static void process_bin_append_prepend(conn *c) {
     assert(c != NULL);
 
-    char *key;
     item *it;
+    char *key = binary_get_key(c);
     uint32_t nkey = c->binary_header.request.keylen;
     uint32_t vlen = 0;
 
-    key = binary_get_key(c);
-    nkey = c->binary_header.request.keylen;
     if (nkey <= c->binary_header.request.bodylen) {
         vlen = c->binary_header.request.bodylen - nkey;
     } else {
@@ -8937,12 +8931,9 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
 
 static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens, bool flush_all)
 {
-    char *prefix;
-    int  nprefix;
+    assert(c->ewouldblock == false);
     int32_t exptime;
     ENGINE_ERROR_CODE ret;
-
-    assert(c->ewouldblock == false);
 
     set_noreply_maybe(c, tokens, ntokens);
 
@@ -8986,8 +8977,8 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
                 return;
             }
         }
-        prefix = tokens[PREFIX_TOKEN].value;
-        nprefix = tokens[PREFIX_TOKEN].length;
+        char *prefix = tokens[PREFIX_TOKEN].value;
+        int nprefix = tokens[PREFIX_TOKEN].length;
         if (nprefix > PREFIX_MAX_LENGTH) {
             out_string(c, "CLIENT_ERROR too long prefix name");
             return;
@@ -9032,10 +9023,10 @@ static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntok
 {
     int new_max;
     int curr_conns = mc_stats.curr_conns;
-    char buf[50];
     struct rlimit rlim;
 
     if (ntokens == 3) {
+        char buf[32];
         sprintf(buf, "maxconns %d\r\nEND", settings.maxconns);
         out_string(c, buf);
     } else if (ntokens == 4 && safe_strtol(tokens[SUBCOMMAND_TOKEN+1].value, &new_max)) {
@@ -9617,7 +9608,7 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
         }
     }
     /* ntokens must be larger than 0 in order to avoid segfault in the next for statement. */
-    if (ntokens <= 0) {
+    if (ntokens == 0) {
         out_string(c, "ERROR no arguments");
         return;
     }
@@ -9681,11 +9672,10 @@ static void get_cmdlog_stats(char* str)
 static void process_logging_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     char *type = tokens[COMMAND_TOKEN+1].value;
-    char *fpath = NULL;
     bool already_check = false;
-    int ret;
 
     if (ntokens > 2 && strcmp(type, "start") == 0) {
+        char *fpath = NULL;
         if (ntokens > 3) {
             if (tokens[SUBCOMMAND_TOKEN+1].length > CMDLOG_DIRPATH_LENGTH) {
                 out_string(c, "\tcommand logging failed to start, path exceeds 128.\n");
@@ -9695,7 +9685,7 @@ static void process_logging_command(conn *c, token_t *tokens, const size_t ntoke
             fpath = tokens[SUBCOMMAND_TOKEN+1].value;
         }
 
-        ret = cmdlog_start(fpath, &already_check);
+        int ret = cmdlog_start(fpath, &already_check);
         if (already_check) {
             out_string(c, "\tcommand logging already started.\n");
         } else if (! already_check && ret == 0) {
@@ -9741,14 +9731,13 @@ static void lqdetect_show(conn *c)
                             "bop get command entered count :",
                             "bop count command entered count :",
                             "bop gbp command entered count :"};
-    char *data;
     uint32_t length;
     uint32_t cmdcnt;
     int ii, ret = 0;
 
     /* create detected long query return string */
     for(ii = 0; ii < LONGQ_COMMAND_NUM; ii++) {
-        data = lqdetect_buffer_get(ii, &length, &cmdcnt);
+        char *data = lqdetect_buffer_get(ii, &length, &cmdcnt);
         c->lq_bufcnt++;
 
         char *count = get_suffix_buffer(c);
@@ -9783,21 +9772,17 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
 {
     char *type = tokens[COMMAND_TOKEN+1].value;
     bool already_check = false;
-    uint32_t standard;
-    int ret;
 
     if (ntokens > 2 && strcmp(type, "start") == 0) {
-        if (ntokens == 3) {
-            standard = LONGQ_STANDARD_DEFAULT;
-        } else {
+        uint32_t standard = LONGQ_STANDARD_DEFAULT;
+        if (ntokens > 3) {
             if (! safe_strtoul(tokens[SUBCOMMAND_TOKEN+1].value, &standard)) {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
                 return;
             }
         }
-
-        ret = lqdetect_start(standard, &already_check);
+        int ret = lqdetect_start(standard, &already_check);
         if (ret == 0) {
             if (already_check) {
                 out_string(c, "\tlong query detection already started.\n");
@@ -12508,7 +12493,6 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
                 out_string(c, "CLIENT_ERROR bad command line format");
                 return;
             }
-            read_ntokens += used_ntokens;
             rest_ntokens -= used_ntokens;
         } else {
             c->coll_efilter.ncompval = 0;
@@ -12822,9 +12806,8 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
     int i;
 
     if (ntokens > 3) {
-        char *name;
         for (i = KEY_TOKEN+1; i < ntokens-1; i++) {
-            name = tokens[i].value;
+            char *name = tokens[i].value;
             if (strcmp(name, "flags")==0)               attr_ids[attr_count++] = ATTR_FLAGS;
             else if (strcmp(name, "expiretime")==0)     attr_ids[attr_count++] = ATTR_EXPIRETIME;
             else if (strcmp(name, "type")==0)           attr_ids[attr_count++] = ATTR_TYPE;
@@ -12836,10 +12819,9 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
             else if (strcmp(name, "minbkey")==0)        attr_ids[attr_count++] = ATTR_MINBKEY;
             else if (strcmp(name, "maxbkey")==0)        attr_ids[attr_count++] = ATTR_MAXBKEY;
             else if (strcmp(name, "trimmed")==0)        attr_ids[attr_count++] = ATTR_TRIMMED;
-            else break;
-        }
-        if (i < ntokens-1) {
-            ret = ENGINE_EBADATTR;
+            else {
+                ret = ENGINE_EBADATTR; break;
+            }
         }
     }
 
@@ -13407,7 +13389,6 @@ static enum try_read_result try_read_udp(conn *c) {
  */
 static enum try_read_result try_read_network(conn *c) {
     enum try_read_result gotdata = READ_NO_DATA_RECEIVED;
-    int res;
     int num_allocs = 0;
     assert(c != NULL);
 
@@ -13443,7 +13424,7 @@ static enum try_read_result try_read_network(conn *c) {
         }
 
         int avail = c->rsize - c->rbytes;
-        res = read(c->sfd, c->rbuf + c->rbytes, avail);
+        int res = read(c->sfd, c->rbuf + c->rbytes, avail);
         if (res > 0) {
             STATS_ADD(c, bytes_read, res);
             gotdata = READ_DATA_RECEIVED;
