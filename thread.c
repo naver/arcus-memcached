@@ -471,7 +471,8 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
         conn->next = thr->pending_io;
         thr->pending_io = conn;
     }
-    assert(number_of_pending(conn, thr->pending_io) == 1);
+    int pending = number_of_pending(conn, thr->pending_io);
+    assert(pending == 1);
 
     UNLOCK_THREAD(thr);
 

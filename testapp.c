@@ -315,7 +315,7 @@ static pid_t start_server(in_port_t *port_out, bool daemon, int timeout) {
         char *argv[20];
         int arg = 0;
         char tmo[24];
-        snprintf(tmo, sizeof(tmo), "%u", timeout);
+        snprintf(tmo, sizeof(tmo), "%d", timeout);
 
         putenv(environment);
 
