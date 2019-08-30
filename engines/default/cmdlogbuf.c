@@ -26,6 +26,9 @@
 #include "default_engine.h"
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogbuf.h"
+#ifdef ENABLE_PERSISTENCE_03_PERSISTENCE_FILE
+#include "psfile.h"
+#endif
 
 /* FIXME: config log buffer size */
 #define CMDLOG_BUFFER_SIZE (100 * 1024 * 1024) /* 100 MB */
@@ -466,7 +469,11 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
     log_FILE *logfile = &log_gl.log_file;
     /* TODO: check and initialize log file exist */
     logfile->path[0] = '\0';
+#ifdef ENABLE_PERSISTENCE_03_PERSISTENCE_FILE
+    logfile->fd = psfile_get_last_cmdlog_fd();
+#else
     logfile->fd = -1;
+#endif
     logfile->prev_fd = -1;
 
     /* log buffer init */

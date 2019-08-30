@@ -48,6 +48,20 @@ typedef struct _psfile_st {
 static EXTENSION_LOGGER_DESCRIPTOR* logger = NULL;
 static psfile_st ps_anch;
 
+static int getnowtime(void)
+{
+    int ltime;
+    time_t clock;
+    struct tm *date;
+
+    clock = time(0);
+    date = localtime(&clock);
+    ltime = date->tm_hour * 10000;
+    ltime += date->tm_min * 100;
+    ltime += date->tm_sec;
+    return(ltime);
+}
+
 /* check that a SnapshotTailLog record exists at the end of the file. */
 static int do_psfile_check_snapshot_taillog(int fd)
 {
@@ -114,7 +128,7 @@ static int do_psfile_check_cmdlog(psfile_st *ps, struct dirent **cmdloglist, int
                 return -1;
             } else {
                 return 0;
-            }        
+            }
         }
     }
     return -1;
@@ -123,12 +137,66 @@ static int do_psfile_check_cmdlog(psfile_st *ps, struct dirent **cmdloglist, int
 /* create cmdlog file */
 static int do_psfile_create_cmdlog(psfile_st *ps)
 {
+    assert(ps->last_checkpoint_time > 0);
+
+    sprintf(ps->path, PS_CHECKPOINT_NAME_FORMAT, PS_DIRPATH, PS_CMDLOG_PREFIX, ps->last_checkpoint_time);
+    ps->cmdlog_fd = open(ps->path, O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
+    if (ps->cmdlog_fd < 0) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to create cmdlog file. path=%s err=%s\n",
+                    ps->path, strerror(errno));
+        return -1;
+    }
+    close(ps->cmdlog_fd);
     return 0;
 }
 
 /* create empty snapshot and cmdlog file */
 static int do_psfile_create_set(psfile_st *ps)
 {
+    /* create snapshot file.
+    * This file is a dummy file that will never be used.
+    */
+    int nowtime = getnowtime();
+    sprintf(ps->path, PS_CHECKPOINT_NAME_FORMAT, PS_DIRPATH, PS_SNAPSHOT_PREFIX, nowtime);
+    ps->snapshot_fd = open(ps->path, O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
+    if (ps->snapshot_fd < 0) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to create snapshot file. path=%s err=%s\n",
+                    ps->path, strerror(errno));
+        return -1;
+    }
+
+    /* write tail log */
+    SnapshotTailLog log;
+    int logsize = sizeof(SnapshotTailLog);
+    char buffer[logsize];
+    logsize = lrec_construct_snapshot_tail((LogRec*)&log);
+    lrec_write_to_buffer((LogRec*)&log, buffer);
+    int nwritten = write(ps->snapshot_fd, buffer, logsize);
+    close(ps->snapshot_fd);
+    if (nwritten != logsize) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to write the snapshot tail log: nwritten(%d) != request(%d)\n",
+                    nwritten, logsize);
+        return -1;
+    }
+
+    /* create cmdlog file.
+    * Only in this case, sequence number of log file is 1, the others are greater than 1.
+    * Even if the empty snapshot file would gone, this log file could be used for recovery.
+    */
+    sprintf(ps->path, PS_SINGLE_CMDLOG_NAME_FORMAT, PS_DIRPATH, PS_CMDLOG_PREFIX, nowtime, 1);
+    ps->cmdlog_fd = open(ps->path, O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
+    if (ps->cmdlog_fd < 0) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to create cmdlog file. path=%s err=%s\n",
+                    ps->path, strerror(errno));
+        sprintf(ps->path, PS_CHECKPOINT_NAME_FORMAT, PS_DIRPATH, PS_SNAPSHOT_PREFIX, nowtime);
+        unlink(ps->path);
+        return -1;
+    }
+    ps->last_checkpoint_time = nowtime;
     return 0;
 }
 
@@ -204,6 +272,7 @@ static int do_psfile_check(psfile_st *ps)
                     close(ps->snapshot_fd);
                     ret = -1; goto freelist;
                 }
+                /* TODO: delete incompleted command log bytes */
             }
             close(ps->snapshot_fd);
             ret = 0; goto freelist;
@@ -293,5 +362,15 @@ ENGINE_ERROR_CODE psfile_init_and_prepare(struct default_engine *engine)
     }
 
     return ENGINE_SUCCESS;
+}
+
+int psfile_get_last_cmdlog_fd(void)
+{
+    return ps_anch.cmdlog_fd;
+}
+
+int psfile_get_lasttime(void)
+{
+    return ps_anch.last_checkpoint_time;
 }
 #endif

@@ -25,6 +25,9 @@
 
 #include "default_engine.h"
 #ifdef ENABLE_PERSISTENCE
+#ifdef ENABLE_PERSISTENCE_03_PERSISTENCE_FILE
+#include "psfile.h"
+#endif
 #include "checkpoint.h"
 #include "mc_snapshot.h"
 #include "cmdlogbuf.h"
@@ -267,7 +270,11 @@ static void do_chkpt_init(chkpt_st *cs, struct default_engine *engine)
     cs->stop = false;
     cs->sleep = false;
     cs->interval = 60;
+#ifdef ENABLE_PERSISTENCE_03_PERSISTENCE_FILE
+    cs->lasttime = psfile_get_lasttime();
+#else
     cs->lasttime = -1;
+#endif
     cs->path[0] = '\0';
 }
 

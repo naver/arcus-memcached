@@ -19,5 +19,7 @@
 #define MEMCACHED_PSFILE_H
 
 ENGINE_ERROR_CODE psfile_init_and_prepare(struct default_engine* engine);
+int psfile_get_last_cmdlog_fd(void);
+int psfile_get_lasttime(void);
 
 #endif
