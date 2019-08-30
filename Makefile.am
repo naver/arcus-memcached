@@ -151,7 +151,9 @@ default_engine_la_SOURCES= \
                     engines/default/cmdlogbuf.c \
                     engines/default/cmdlogbuf.h \
                     engines/default/cmdlogrec.c \
-                    engines/default/cmdlogrec.h
+                    engines/default/cmdlogrec.h \
+                    engines/default/psfile.c \
+                    engines/default/psfile.h
 default_engine_la_DEPENDENCIES= libmcd_util.la
 default_engine_la_LIBADD= libmcd_util.la $(LIBM)
 default_engine_la_LDFLAGS= -avoid-version -shared -module -no-undefined

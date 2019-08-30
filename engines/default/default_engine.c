@@ -36,6 +36,9 @@
 #ifdef ENABLE_PERSISTENCE
 #include "checkpoint.h"
 #include "cmdlogmgr.h"
+#ifdef ENABLE_PERSISTENCE_03_PERSISTENCE_FILE
+#include "psfile.h"
+#endif
 #endif
 
 #define ACTION_BEFORE_WRITE(c, k, l)
@@ -220,6 +223,12 @@ default_initialize(ENGINE_HANDLE* handle, const char* config_str)
 #endif
 #ifdef ENABLE_PERSISTENCE
     if (se->config.use_persistence) {
+#ifdef ENABLE_PERSISTENCE_03_PERSISTENCE_FILE
+        ret = psfile_init_and_prepare(se);
+        if (ret != ENGINE_SUCCESS) {
+            return ret;
+        }
+#endif
         ret = cmdlog_mgr_init(se);
         if (ret != ENGINE_SUCCESS) {
             return ret;
