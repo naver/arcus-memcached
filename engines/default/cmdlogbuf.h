@@ -31,6 +31,9 @@ void log_get_flush_lsn(LogSN *lsn);
 void log_get_fsync_lsn(LogSN *lsn);
 
 int               cmdlog_file_open(char *path);
+#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
+size_t            cmdlog_file_getsize(void);
+#endif
 void              cmdlog_file_close(bool shutdown);
 int               cmdlog_file_apply(void);
 void              cmdlog_complete_dual_write(bool success);

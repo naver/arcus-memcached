@@ -41,6 +41,10 @@ typedef struct _log_file {
     int       prev_fd;
     int       fd;
     int       next_fd;
+#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
+    size_t    size;
+    size_t    next_size;
+#endif
 } log_FILE;
 
 /* flush request structure */
@@ -178,6 +182,9 @@ static void do_log_file_write(char *log_ptr, uint32_t log_size, bool dual_write)
     }
     /* FIXME::need error handling */
     assert(nwrite == log_size);
+#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
+    logfile->size += log_size;
+#endif
 
     if (dual_write && logfile->next_fd != -1) {
         /* next_fd is guaranteed concurrency by log_flush_lock */
@@ -192,6 +199,9 @@ static void do_log_file_write(char *log_ptr, uint32_t log_size, bool dual_write)
         }
         /* FIXME::need error handling */
         assert(nwrite == log_size);
+#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
+        logfile->next_size += log_size;
+#endif
     }
 }
 
@@ -476,6 +486,10 @@ void cmdlog_complete_dual_write(bool success)
             log_gl.log_file.prev_fd = log_gl.log_file.fd;
             log_gl.log_file.fd      = log_gl.log_file.next_fd;
             log_gl.log_file.next_fd = -1;
+#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
+            log_gl.log_file.size = log_gl.log_file.next_size;
+            log_gl.log_file.next_size = 0;
+#endif
         } else {
             pthread_mutex_lock(&log_gl.log_write_lock);
             /* reset dual_write flag in flush reqeust queue */
@@ -491,6 +505,9 @@ void cmdlog_complete_dual_write(bool success)
             assert(log_gl.log_file.prev_fd == -1);
             log_gl.log_file.prev_fd = log_gl.log_file.next_fd;
             log_gl.log_file.next_fd = -1;
+#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
+            log_gl.log_file.next_size = 0;
+#endif
         }
     } while(0);
     pthread_mutex_unlock(&log_gl.log_flush_lock);
@@ -546,6 +563,24 @@ void cmdlog_file_close(bool shutdown)
     pthread_mutex_unlock(&log_gl.log_flush_lock);
 }
 
+#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
+size_t cmdlog_file_getsize(void)
+{
+    log_FILE *logfile = &log_gl.log_file;
+    size_t file_size = 0;
+
+    pthread_mutex_lock(&log_gl.log_flush_lock);
+    pthread_mutex_lock(&log_gl.log_write_lock);
+    if (log_gl.log_buffer.dw_end == -1) {
+        file_size = logfile->size;
+    }
+    pthread_mutex_unlock(&log_gl.log_write_lock);
+    pthread_mutex_unlock(&log_gl.log_flush_lock);
+
+    return file_size;
+}
+#endif
+
 int cmdlog_file_apply(void)
 {
     return 0;
@@ -570,11 +605,20 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
 
     /* log file init */
     log_FILE *logfile = &log_gl.log_file;
+#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
+    logfile->path[0]   = '\0';
+    logfile->prev_fd   = -1;
+    logfile->fd        = -1;
+    logfile->next_fd   = -1;
+    logfile->size      = 0;
+    logfile->next_size = 0;
+#else
     /* TODO: check and initialize log file exist */
     logfile->path[0] = '\0';
     logfile->prev_fd = -1;
     logfile->fd      = -1;
     logfile->next_fd = -1;
+#endif
 
     /* log buffer init */
     log_BUFFER *logbuff = &log_gl.log_buffer;
