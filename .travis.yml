@@ -4,12 +4,30 @@ compiler:
   - clang
   - gcc
 
+env:
+  - COVERAGE_FLAGS="--enable-coverage"
+  - COVERAGE_FLAGS=""
+
+matrix:
+  exclude:
+    - compiler: clang
+      env: COVERAGE_FLAGS="--enable-coverage"
+
 script:
   - sudo apt-get install -qq build-essential autoconf automake libtool libcppunit-dev libevent-dev
   - ./config/autorun.sh
-  - ./configure
+  - ./configure $COVERAGE_FLAGS
   - make
   - make test
+
+after_success:
+  - |
+    if [[ ! -z $COVERAGE_FLAGS ]]
+    then
+        sudo apt-get install lcov
+        gem install coveralls-lcov
+        lcov -d . -c -o coverage.info && coveralls-lcov coverage.info
+    fi
 
 notifications:
   email:
