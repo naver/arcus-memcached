@@ -8977,7 +8977,9 @@ void *itscan_open(struct default_engine *engine, const char *prefix, const int n
 {
     item_scan_t *sp = do_itscan_alloc();
     if (sp != NULL) {
+        LOCK_CACHE();
         assoc_scan_init(&sp->asscan);
+        UNLOCK_CACHE();
         sp->prefix = prefix;
         sp->nprefix = nprefix;
         sp->is_used = true;
