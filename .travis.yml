@@ -1,15 +1,31 @@
 language: c
 
+env:
+  - COVERAGE_FLAGS="--enable-coverage"
+  - COVERAGE_FLAGS=""
 compiler:
   - clang
   - gcc
 
 script:
   - sudo apt-get install -qq build-essential autoconf automake libtool libcppunit-dev libevent-dev
+  - |
+    if [[ ! -z $COVERAGE_FLAGS ]]
+    then
+        sudo apt-get install lcov
+        gem install coveralls-lcov
+    fi
   - ./config/autorun.sh
-  - ./configure
+  - ./configure $COVERAGE_FLAGS
   - make
   - make test
+
+after_success:
+  - |
+    if [[ ! -z $COVERAGE_FLAGS ]]
+    then
+        lcov -d . -c -o coverage.info && coveralls-lcov coverage.info
+    fi
 
 notifications:
   email:
