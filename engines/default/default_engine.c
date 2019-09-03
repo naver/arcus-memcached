@@ -120,6 +120,15 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
             { .key = "use_persistence",
               .datatype = DT_BOOL,
               .value.dt_bool = &se->config.use_persistence },
+            { .key = "data_path",
+              .datatype = DT_STRING,
+              .value.dt_string = &se->config.data_path },
+            { .key = "logs_path",
+              .datatype = DT_STRING,
+              .value.dt_string = &se->config.logs_path },
+            { .key = "async_logging",
+              .datatype = DT_BOOL,
+              .value.dt_bool = &se->config.async_logging },
 #endif
             { .key = "verbose",
               .datatype = DT_SIZE,
@@ -1575,6 +1584,9 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .use_cas = true,
 #ifdef ENABLE_PERSISTENCE
          .use_persistence = false,
+         .data_path = NULL,
+         .logs_path = NULL,
+         .async_logging = true, /* FIXME: change it after implementing sync logging(default=false). */
 #endif
          .verbose = 0,
          .oldest_live = 0,

@@ -47,6 +47,9 @@ struct engine_config {
    bool   use_cas;
 #ifdef ENABLE_PERSISTENCE
    bool   use_persistence;
+   char   *data_path;
+   char   *logs_path;
+   bool   async_logging;
 #endif
    size_t verbose;
    rel_time_t oldest_live;
