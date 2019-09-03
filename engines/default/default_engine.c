@@ -34,6 +34,8 @@
 #define ACTION_BEFORE_WRITE(c, k, l)
 #define ACTION_AFTER_WRITE(c, r)
 
+static EXTENSION_LOGGER_DESCRIPTOR *logger;
+
 /*
  * vbucket static functions
  */
@@ -97,6 +99,11 @@ static const engine_info*
 default_get_info(ENGINE_HANDLE* handle)
 {
     return &get_handle(handle)->info.engine_info;
+}
+
+static int check_configuration(struct engine_config *conf)
+{
+    return 0;
 }
 
 static ENGINE_ERROR_CODE
@@ -167,7 +174,9 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
             return ENGINE_FAILED;
         }
     }
-
+    if (check_configuration(&se->config) < 0) {
+        return ENGINE_FAILED;
+    }
     if (se->config.vb0) {
         set_vbucket_state(se, 0, VBUCKET_STATE_ACTIVE);
     }
@@ -178,6 +187,7 @@ static ENGINE_ERROR_CODE
 default_initialize(ENGINE_HANDLE* handle, const char* config_str)
 {
     struct default_engine* se = get_handle(handle);
+    logger = se->server.log->get_logger();
 
     ENGINE_ERROR_CODE ret = initialize_configuration(se, config_str);
     if (ret != ENGINE_SUCCESS) {
