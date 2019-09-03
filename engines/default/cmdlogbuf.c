@@ -246,7 +246,6 @@ static uint32_t do_log_buff_flush(bool flush_all)
 static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter)
 {
     log_BUFFER *logbuff = &log_gl.log_buffer;
-    char       *bufptr;
 
     bool     dual_write = (waiter != NULL ? waiter->dual_write : false);
     uint32_t total_length = sizeof(LogHdr) + logrec->header.body_length;
@@ -291,11 +290,7 @@ static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter)
     }
 
     /* write log record at the found location of log buffer */
-    bufptr = &logbuff->data[logbuff->tail];
-    memcpy(bufptr, (void*)logrec, sizeof(LogHdr));
-    if (logrec->header.body_length > 0) {
-          lrec_write_to_buffer(logrec, bufptr+sizeof(LogHdr));
-    }
+    lrec_write_to_buffer(logrec, &logbuff->data[logbuff->tail]);
     logbuff->tail += total_length;
 
     /* update nxt_write_lsn */
