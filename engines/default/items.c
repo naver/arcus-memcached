@@ -526,6 +526,9 @@ static void do_item_evict(hash_item *it, const unsigned int lruid,
         }
     }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+    CLOG_OPERATION_END(it, OPERATION_END_EVICT);
+#endif
 }
 
 static void do_item_repair(hash_item *it, const unsigned int lruid)
@@ -543,6 +546,9 @@ static void do_item_repair(hash_item *it, const unsigned int lruid)
         }
     }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+    CLOG_OPERATION_END(it, OPERATION_END_EVICT);
+#endif
 }
 
 static uint32_t do_item_regain(const uint32_t count, rel_time_t current_time,
@@ -5956,6 +5962,11 @@ ENGINE_ERROR_CODE item_store(hash_item *item, uint64_t *cas,
       default:
            ret = ENGINE_NOT_STORED;
     }
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+    if (ret == ENGINE_SUCCESS) {
+        CLOG_OPERATION_END(item, OPERATION_END_NORMAL);
+    }
+#endif
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
@@ -6018,6 +6029,11 @@ ENGINE_ERROR_CODE item_arithmetic(const void* cookie,
             ret = ENGINE_KEY_ENOENT;
         }
     }
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+    if (ret == ENGINE_SUCCESS) {
+        CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+    }
+#endif
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
@@ -6054,6 +6070,9 @@ ENGINE_ERROR_CODE item_delete(const void* key, const uint32_t nkey, uint64_t cas
     if (it) {
         if (cas == 0 || cas == item_get_cas(it)) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+            CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+#endif
             ret = ENGINE_SUCCESS;
         } else {
             ret = ENGINE_KEY_EEXISTS;
@@ -6159,6 +6178,9 @@ static ENGINE_ERROR_CODE do_item_flush_expired(const char *prefix, const int npr
 #endif
         }
         CLOG_ITEM_FLUSH(prefix, nprefix, when);
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+        CLOG_OPERATION_END(NULL, OPERATION_END_NORMAL);
+#endif
     }
     return ENGINE_SUCCESS;
 }
@@ -6546,6 +6568,11 @@ ENGINE_ERROR_CODE list_struct_create(const char *key, const uint32_t nkey,
             do_item_release(it);
         }
     }
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+    if (ret == ENGINE_SUCCESS) {
+        CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+    }
+#endif
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
@@ -6622,6 +6649,9 @@ ENGINE_ERROR_CODE list_elem_insert(const char *key, const uint32_t nkey,
         if (ret != ENGINE_SUCCESS && *created) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+        CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+#endif
     }
     if (it != NULL) do_item_release(it);
 #ifdef ENABLE_PERSISTENCE
@@ -6707,6 +6737,9 @@ ENGINE_ERROR_CODE list_elem_delete(const char *key, const uint32_t nkey,
                 } else {
                     *dropped = false;
                 }
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+                CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+#endif
             } else {
                 ret = ENGINE_ELEM_ENOENT;
             }
@@ -6779,6 +6812,11 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
                     *dropped = false;
                 }
                 *flags = it->flags;
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+                if (delete) {
+                    CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+                }
+#endif
             } else {
                 /* ret = ENGINE_ELEM_ENOENT */
             }
@@ -6831,6 +6869,11 @@ ENGINE_ERROR_CODE set_struct_create(const char *key, const uint32_t nkey,
             do_item_release(it);
         }
     }
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+    if (ret == ENGINE_SUCCESS) {
+        CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+    }
+#endif
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
@@ -6906,6 +6949,9 @@ ENGINE_ERROR_CODE set_elem_insert(const char *key, const uint32_t nkey,
         if (ret != ENGINE_SUCCESS && *created) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+        CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+#endif
     }
     if (it != NULL) do_item_release(it);
 #ifdef ENABLE_PERSISTENCE
@@ -6951,6 +6997,9 @@ ENGINE_ERROR_CODE set_elem_delete(const char *key, const uint32_t nkey,
                 *dropped = true;
             }
         }
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+        CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+#endif
         do_item_release(it);
     }
 #ifdef ENABLE_PERSISTENCE
@@ -7029,6 +7078,11 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey, const uint3
                 }
                 *flags = it->flags;
             } /* ret = ENGINE_ELEM_ENOENT */
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+            if (delete) {
+                CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+            }
+#endif
         } while (0);
         do_item_release(it);
     }
@@ -7078,6 +7132,11 @@ ENGINE_ERROR_CODE btree_struct_create(const char *key, const uint32_t nkey,
             do_item_release(it);
         }
     }
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+    if (ret == ENGINE_SUCCESS) {
+        CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+    }
+#endif
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
@@ -7164,6 +7223,9 @@ ENGINE_ERROR_CODE btree_elem_insert(const char *key, const uint32_t nkey,
         if (trimmed_elems != NULL && *trimmed_elems != NULL) {
             *trimmed_flags = it->flags;
         }
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+        CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+#endif
     }
     if (it != NULL) do_item_release(it);
 #ifdef ENABLE_PERSISTENCE
@@ -7212,6 +7274,11 @@ ENGINE_ERROR_CODE btree_elem_update(const char *key, const uint32_t nkey, const 
             }
             ret = do_btree_elem_update(info, bkrtype, bkrange, eupdate, value, nbytes, cookie);
         } while(0);
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+        if (ret == ENGINE_SUCCESS) {
+            CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+        }
+#endif
         do_item_release(it);
     }
 #ifdef ENABLE_PERSISTENCE
@@ -7268,6 +7335,9 @@ ENGINE_ERROR_CODE btree_elem_delete(const char *key, const uint32_t nkey,
                 } else {
                     *dropped = false;
                 }
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+                CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+#endif
             } else {
                 ret = ENGINE_ELEM_ENOENT;
             }
@@ -7339,6 +7409,11 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(const char* key, const uint32_t nkey,
                 }
             }
         } while(0);
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+        if (ret == ENGINE_SUCCESS) {
+            CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+        }
+#endif
         do_item_release(it);
     }
 #ifdef ENABLE_PERSISTENCE
@@ -7404,6 +7479,9 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
                     } else {
                         *dropped_trimmed = false;
                     }
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+                    CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+#endif
                 } else {
                     *dropped_trimmed = potentialbkeytrim;
                 }
@@ -8006,6 +8084,9 @@ ENGINE_ERROR_CODE item_setattr(const void* key, const uint32_t nkey,
         if (ret == ENGINE_SUCCESS) {
             /* do setattr operation */
             do_item_setattr_exec(it, attr_ids, attr_count, attr_data);
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+            CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+#endif
         }
         do_item_release(it);
     }
@@ -8509,6 +8590,9 @@ again:
             else if (scrubber->runmode == SCRUB_MODE_STALE
                      && do_item_isstale(it)) {
                 do_item_unlink(it, ITEM_UNLINK_STALE);
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+                CLOG_OPERATION_END(it, OPERATION_END_STALE);
+#endif
                 scrubber->cleaned++;
             }
         }
@@ -9818,6 +9902,11 @@ ENGINE_ERROR_CODE map_struct_create(const char *key, const uint32_t nkey,
             do_item_release(it);
         }
     }
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+    if (ret == ENGINE_SUCCESS) {
+        CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+    }
+#endif
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
@@ -9892,6 +9981,9 @@ ENGINE_ERROR_CODE map_elem_insert(const char *key, const uint32_t nkey,
         if (ret != ENGINE_SUCCESS && *created) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+        CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+#endif
     }
     if (it != NULL) do_item_release(it);
 #ifdef ENABLE_PERSISTENCE
@@ -9929,6 +10021,9 @@ ENGINE_ERROR_CODE map_elem_update(const char *key, const uint32_t nkey,
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         map_meta_info *info = (map_meta_info *)item_get_meta(it);
         ret = do_map_elem_update(info, field, value, nbytes, cookie);
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+        CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+#endif
         do_item_release(it);
     }
 #ifdef ENABLE_PERSISTENCE
@@ -9975,6 +10070,9 @@ ENGINE_ERROR_CODE map_elem_delete(const char *key, const uint32_t nkey,
                 do_item_unlink(it, ITEM_UNLINK_NORMAL);
                 *dropped = true;
             }
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+            CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+#endif
         } else {
             ret = ENGINE_ELEM_ENOENT;
         }
@@ -10029,6 +10127,11 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
                     *dropped = false;
                 }
                 *flags = it->flags;
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+                if (delete) {
+                    CLOG_OPERATION_END(it, OPERATION_END_NORMAL);
+                }
+#endif
             } /* ret = ENGINE_ELEM_ENOENT */
         } while (0);
         do_item_release(it);

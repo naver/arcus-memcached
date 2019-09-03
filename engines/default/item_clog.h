@@ -20,6 +20,15 @@
 
 extern bool item_clog_enabled;
 
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+/* operation end cause */
+enum op_end_cause {
+    OPERATION_END_NORMAL = 1, /* operation end of noraml request */
+    OPERATION_END_EVICT,      /* operation end of evict process */
+    OPERATION_END_STALE       /* operation end of stale process */
+};
+#endif
+
 /* functions for generate change logs */
 void CLOG_GE_ITEM_LINK(hash_item *it);
 void CLOG_GE_ITEM_UNLINK(hash_item *it, enum item_unlink_cause cause);
@@ -49,6 +58,9 @@ void CLOG_GE_BTREE_ELEM_DELETE(btree_meta_info *info,
                                enum elem_delete_cause cause);
 void CLOG_GE_ITEM_SETATTR(hash_item *it,
                           ENGINE_ITEM_ATTR *attr_ids, uint32_t attr_cnt);
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+void CLOG_GE_OPERATION_END(hash_item *it, enum op_end_cause cause);
+#endif
 
 /* macros for CLOG function substitution. */
 #define CLOG_ITEM_LINK(a) \
@@ -103,6 +115,12 @@ void CLOG_GE_ITEM_SETATTR(hash_item *it,
     if (item_clog_enabled) { \
         CLOG_GE_ITEM_SETATTR(a,b,c); \
     }
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+#define CLOG_OPERATION_END(a,b) \
+    if (item_clog_enabled) { \
+        CLOG_GE_OPERATION_END(a,b); \
+    }
+#endif
 
 /* functions for initialize change log module */
 void item_clog_init(struct default_engine *engine);

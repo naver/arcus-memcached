@@ -64,7 +64,12 @@ void CLOG_GE_ITEM_UNLINK(hash_item *it, enum item_unlink_cause cause)
         if (config->use_persistence) {
             ITUnlinkLog log;
             (void)lrec_construct_unlink_item((LogRec*)&log, it);
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+            log_waiter_t *cur_waiter = (cause == ITEM_UNLINK_NORMAL ? cmdlog_get_cur_waiter() : NULL);
+            log_record_write((LogRec*)&log, cur_waiter, NEED_DUAL_WRITE(it));
+#else
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+#endif
         }
 #endif
     }
@@ -287,6 +292,24 @@ void CLOG_GE_ITEM_SETATTR(hash_item *it,
 #endif
     }
 }
+
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+void CLOG_GE_OPERATION_END(hash_item *it, enum op_end_cause cause)
+{
+    if (1)
+    {
+#ifdef ENABLE_PERSISTENCE
+        if (config->use_persistence) {
+            OperationEndLog log;
+            (void)lrec_construct_operation_end((LogRec*)&log);
+            bool need_dual_write = (it != NULL ? NEED_DUAL_WRITE(it) : (scanp != NULL ? true : false));
+            log_waiter_t *cur_waiter = (cause == OPERATION_END_NORMAL ? cmdlog_get_cur_waiter() : NULL);
+            log_record_write((LogRec*)&log, cur_waiter, need_dual_write);
+        }
+#endif
+    }
+}
+#endif
 
 /*
  * Initialize change log module

@@ -31,6 +31,9 @@ enum log_type {
     LOG_MAP_ELEM_DELETE,
     LOG_BT_ELEM_INSERT,
     LOG_BT_ELEM_DELETE,
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+    LOG_OPERATION_END,
+#endif
     LOG_SNAPSHOT_ELEM,
     LOG_SNAPSHOT_HEAD,
     LOG_SNAPSHOT_TAIL
@@ -305,6 +308,13 @@ typedef struct _snapshot_tail_log {
     LogHdr header;
 } SnapshotTailLog;
 
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+/* Operation End Record */
+typedef struct _operation_end_log {
+    LogHdr header;
+} OperationEndLog;
+#endif
+
 /* Construct Log Record Functions */
 int lrec_construct_snapshot_head(LogRec *logrec);
 int lrec_construct_snapshot_tail(LogRec *logrec);
@@ -321,6 +331,9 @@ int lrec_construct_set_elem_insert(LogRec *logrec, hash_item *it, set_elem_item 
 int lrec_construct_set_elem_delete(LogRec *logrec, hash_item *it, set_elem_item *elem);
 int lrec_construct_btree_elem_insert(LogRec *logrec, hash_item *it, btree_elem_item *elem);
 int lrec_construct_btree_elem_delete(LogRec *logrec, hash_item *it, btree_elem_item *elem);
+#ifdef ENABLE_PERSISTENCE_05_ADD_END
+int lrec_construct_operation_end(LogRec *logrec);
+#endif
 
 /* Function to write the given log record to log buffer */
 void lrec_write_to_buffer(LogRec *logrec, char *bufptr);
