@@ -51,10 +51,13 @@ static int trim_copy(char *dest, size_t size, const char *src,
 
    /* Find the last non-escaped non-space character */
    const char *lastchar = src + strlen(src) - 1;
+   if (lastchar < src) {
+       return -1;
+   }
    while (lastchar > src && isspace(*lastchar)) {
        lastchar--;
    }
-   if (lastchar < src || *lastchar == '\\') {
+   if (*lastchar == '\\') {
        lastchar++;
    }
    assert(lastchar >= src);
