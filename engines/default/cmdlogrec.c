@@ -24,7 +24,7 @@
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogrec.h"
 
-#define DEBUG_PERSISTENCE_DISK_FORMAT_PRINT
+//#define DEBUG_PERSISTENCE_DISK_FORMAT_PRINT
 
 #ifdef offsetof
 #error "offsetof is already defined"
