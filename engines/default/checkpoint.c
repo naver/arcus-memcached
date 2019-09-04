@@ -52,12 +52,8 @@ typedef struct _chkpt_st {
     bool     sleep;       /* checkpoint thread sleep */
     int      interval;    /* checkpoint execution interval */
     int      lasttime;    /* last checkpoint time */
-#ifdef ENABLE_PERSISTENCE_04_REF_CHKPT
     char     snapshot_path[CHKPT_MAX_FILENAME_LENGTH+1]; /* snapshot file path */
     char     cmdlog_path[CHKPT_MAX_FILENAME_LENGTH+1];   /* cmdlog file path */
-#else
-    char     path[CHKPT_MAX_FILENAME_LENGTH+1]; /* file path for checkpoint */
-#endif
     char    *data_path;   /* snapshot directory path */
     char    *logs_path;   /* command log directory path */
 } chkpt_st;
@@ -144,7 +140,6 @@ static bool do_chkpt_sweep_files(chkpt_st *cs)
 /* create files for next checkpoint : snapshot_(newtime), cmdlog_(newtime) */
 static int do_chkpt_create_files(chkpt_st *cs, int newtime)
 {
-#ifdef ENABLE_PERSISTENCE_04_REF_CHKPT
     sprintf(cs->snapshot_path, CHKPT_FILE_NAME_FORMAT, cs->data_path, CHKPT_SNAPSHOT_PREFIX, newtime);
     int fd = open(cs->snapshot_path, O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
     if (fd < 0) {
@@ -172,31 +167,6 @@ static int do_chkpt_create_files(chkpt_st *cs, int newtime)
         return CHKPT_ERROR;
     }
     close(fd);
-#else
-    sprintf(cs->path, CHKPT_FILE_NAME_FORMAT, cs->logs_path, CHKPT_CMDLOG_PREFIX, newtime);
-    int fd = open(cs->path, O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
-    if (fd < 0) {
-        logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to create file in checkpoint. "
-                    "path : %s, error : %s\n", cs->path, strerror(errno));
-        return -1;
-    }
-    close(fd);
-    if (cmdlog_file_open(cs->path) < 0) {
-        return -1;
-    }
-
-    sprintf(cs->path, CHKPT_FILE_NAME_FORMAT, cs->data_path, CHKPT_SNAPSHOT_PREFIX, newtime);
-    fd = open(cs->path, O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
-    if (fd < 0) {
-        logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to create file in checkpoint. "
-                    "path : %s, error : %s\n", cs->path, strerror(errno));
-        /* FIXME: need error handling - delete old file for open failure */
-        return -1;
-    }
-    close(fd);
-#endif
 
     return 0;
 }
@@ -204,7 +174,6 @@ static int do_chkpt_create_files(chkpt_st *cs, int newtime)
 /* remove files : snapshot_(oldtime), cmdlog_(oldtime) */
 static int do_chkpt_remove_files(chkpt_st *cs, int oldtime)
 {
-#ifdef ENABLE_PERSISTENCE_04_REF_CHKPT
     sprintf(cs->snapshot_path, CHKPT_FILE_NAME_FORMAT, cs->data_path, CHKPT_SNAPSHOT_PREFIX, oldtime);
     if (unlink(cs->snapshot_path) < 0) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -219,23 +188,6 @@ static int do_chkpt_remove_files(chkpt_st *cs, int oldtime)
                     "path : %s, error : %s\n", cs->cmdlog_path, strerror(errno));
         return -1;
     }
-#else
-    sprintf(cs->path, CHKPT_FILE_NAME_FORMAT, cs->data_path, CHKPT_SNAPSHOT_PREFIX, oldtime);
-    if (unlink(cs->path) < 0) {
-        logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to remove file in checkpoint. "
-                    "path : %s, error : %s\n", cs->path, strerror(errno));
-        return -1;
-    }
-    cmdlog_file_close();
-    sprintf(cs->path, CHKPT_FILE_NAME_FORMAT, cs->logs_path, CHKPT_CMDLOG_PREFIX, oldtime);
-    if (unlink(cs->path) < 0) {
-        logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to remove file in checkpoint. "
-                    "path : %s, error : %s\n", cs->path, strerror(errno));
-        return -1;
-    }
-#endif
     return 0;
 }
 
@@ -269,7 +221,6 @@ static void do_chkpt_wakeup(chkpt_st *cs, bool lock_hold)
 }
 
 /* FIXME : Error handling(Disk I/O etc) */
-#ifdef ENABLE_PERSISTENCE_04_REF_CHKPT
 static int do_checkpoint(chkpt_st *cs)
 {
     int ret;
@@ -306,33 +257,6 @@ static int do_checkpoint(chkpt_st *cs)
 
     return ret;
 }
-#else
-static int do_checkpoint(chkpt_st *cs, bool *need_remove)
-{
-    int ret;
-    int oldtime = cs->lasttime;
-    int newtime = getnowtime();
-
-    if (do_chkpt_create_files(cs, newtime) < 0) {
-        return CHKPT_ERROR;
-    }
-
-    if (mc_snapshot_direct(MC_SNAPSHOT_MODE_DATA, NULL, -1, cs->path) == ENGINE_SUCCESS) {
-        cs->lasttime = newtime;
-        ret = CHKPT_SUCCESS;
-    } else {
-        oldtime = newtime;
-        ret = CHKPT_ERROR;
-    }
-
-    if (oldtime != -1) {
-        if (do_chkpt_remove_files(cs, oldtime) < 0) {
-            *need_remove = true;
-        }
-    }
-    return ret;
-}
-#endif
 
 static void* chkpt_thread_main(void* arg)
 {
@@ -362,19 +286,13 @@ static void* chkpt_thread_main(void* arg)
         }
 
         if (elapsed_time >= cs->interval) {
-#ifdef ENABLE_PERSISTENCE_04_REF_CHKPT
             ret = do_checkpoint(cs);
-#else
-            ret = do_checkpoint(cs, &need_remove);
-#endif
             if (ret == CHKPT_SUCCESS) {
                 elapsed_time = 0;
             } else {
                 logger->log(EXTENSION_LOG_WARNING, NULL, "Failed in checkpoint. "
                             "Retry checkpoint in 5 seconds.\n");
-#ifdef ENABLE_PERSISTENCE_04_REF_CHKPT
                 if (ret == CHKPT_ERROR_FILE_REMOVE) need_remove = true;
-#endif
                 elapsed_time -= 5;
             }
         }
@@ -393,12 +311,8 @@ static void do_chkpt_init(chkpt_st *cs, struct default_engine *engine)
     cs->sleep = false;
     cs->interval = 60;
     cs->lasttime = -1;
-#ifdef ENABLE_PERSISTENCE_04_REF_CHKPT
     cs->snapshot_path[0] = '\0';
     cs->cmdlog_path[0] = '\0';
-#else
-    cs->path[0] = '\0';
-#endif
     cs->data_path = engine->config.data_path;
     cs->logs_path = engine->config.logs_path;
 }
