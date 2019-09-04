@@ -30,7 +30,10 @@ typedef struct _log_waiter {
     int16_t             curr_eid;   /* curr entry id */
     int16_t             next_eid;   /* next entry id */
     int16_t             prev_eid;   /* prev entry id */
+#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
+#else
     bool                dual_write;
+#endif
 } log_waiter_t;
 
 /* external command log manager functions */

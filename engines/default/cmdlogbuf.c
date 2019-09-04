@@ -243,11 +243,18 @@ static uint32_t do_log_buff_flush(bool flush_all)
     return nflush;
 }
 
+#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
+static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_write)
+#else
 static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter)
+#endif
 {
     log_BUFFER *logbuff = &log_gl.log_buffer;
 
+#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
+#else
     bool     dual_write = (waiter != NULL ? waiter->dual_write : false);
+#endif
     uint32_t total_length = sizeof(LogHdr) + logrec->header.body_length;
     assert(total_length < logbuff->size);
 
@@ -375,11 +382,19 @@ void log_file_sync(LogSN *prev_flush_lsn)
     /* TODO: file sync and update nxt_fsync_lsn with log_fsync_lock and fsync_lsn_lock */
 }
 
+#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
+void log_record_write(LogRec *logrec, log_waiter_t *waiter, bool dual_write)
+{
+    /* write the log record on the log buffer */
+    do_log_buff_write(logrec, waiter, dual_write);
+}
+#else
 void log_record_write(LogRec *logrec, log_waiter_t *waiter)
 {
     /* write the log record on the log buffer */
     do_log_buff_write(logrec, waiter);
 }
+#endif
 
 /* FIXME: remove later, if not used */
 /*
