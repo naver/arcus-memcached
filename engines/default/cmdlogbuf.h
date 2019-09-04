@@ -22,11 +22,7 @@
 #include "cmdlogrec.h"
 
 /* external log functions */
-#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
 void log_record_write(LogRec *logrec, log_waiter_t *waiter, bool dual_write);
-#else
-void log_record_write(LogRec *logrec, log_waiter_t *waiter);
-#endif
 void log_file_sync(LogSN *prev_flush_lsn);
 
 /* FIXME: remove later, if not used */

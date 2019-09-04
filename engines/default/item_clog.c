@@ -29,16 +29,10 @@ static struct engine_config *config=NULL; // engine config
 
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
-#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
 #ifdef ENABLE_PERSISTENCE
 static struct assoc_scan *scanp=NULL; // checkpoint scan pointer
-#endif
-#endif
 
-#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
-#ifdef ENABLE_PERSISTENCE
 #define NEED_DUAL_WRITE(it) ((scanp != NULL) && (assoc_scan_in_visited_area(scanp, it)))
-#endif
 #endif
 
 /*
@@ -52,11 +46,7 @@ void CLOG_GE_ITEM_LINK(hash_item *it)
         if (config->use_persistence) {
             ITLinkLog log;
             (void)lrec_construct_link_item((LogRec*)&log, it);
-#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
-#else
-            log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
-#endif
         }
 #endif
     }
@@ -72,11 +62,7 @@ void CLOG_GE_ITEM_UNLINK(hash_item *it, enum item_unlink_cause cause)
         if (config->use_persistence) {
             ITUnlinkLog log;
             (void)lrec_construct_unlink_item((LogRec*)&log, it);
-#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
-#else
-            log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
-#endif
         }
 #endif
     }
@@ -98,12 +84,8 @@ void CLOG_GE_ITEM_FLUSH(const char *prefix, const int nprefix, time_t when)
             if (when <= 0) {
                 ITFlushLog log;
                 (void)lrec_construct_flush_item((LogRec*)&log, prefix, nprefix);
-#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
                 bool need_dual_write = (scanp != NULL ? true : false);
                 log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), need_dual_write);
-#else
-                log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
-#endif
             }
         }
 #endif
@@ -121,11 +103,7 @@ void CLOG_GE_LIST_ELEM_INSERT(list_meta_info *info,
         if (config->use_persistence) {
             ListElemInsLog log;
             (void)lrec_construct_list_elem_insert((LogRec*)&log, it, info->ccnt, index, elem);
-#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
-#else
-            log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
-#endif
         }
 #endif
     }
@@ -158,11 +136,7 @@ void CLOG_GE_LIST_ELEM_DELETE(list_meta_info *info,
         if (config->use_persistence) {
             ListElemDelLog log;
             (void)lrec_construct_list_elem_delete((LogRec*)&log, it, info->ccnt, index, count);
-#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
-#else
-            log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
-#endif
         }
 #endif
     }
@@ -180,11 +154,7 @@ void CLOG_GE_MAP_ELEM_INSERT(map_meta_info *info,
         if (config->use_persistence) {
             MapElemInsLog log;
             (void)lrec_construct_map_elem_insert((LogRec*)&log, it, new_elem);
-#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
-#else
-            log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
-#endif
         }
 #endif
     }
@@ -203,11 +173,7 @@ void CLOG_GE_MAP_ELEM_DELETE(map_meta_info *info,
         if (config->use_persistence) {
             MapElemDelLog log;
             (void)lrec_construct_map_elem_delete((LogRec*)&log, it, elem);
-#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
-#else
-            log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
-#endif
         }
 #endif
     }
@@ -224,11 +190,7 @@ void CLOG_GE_SET_ELEM_INSERT(set_meta_info *info,
         if (config->use_persistence) {
             SetElemInsLog log;
             (void)lrec_construct_set_elem_insert((LogRec*)&log, it, elem);
-#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
-#else
-            log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
-#endif
         }
 #endif
     }
@@ -247,11 +209,7 @@ void CLOG_GE_SET_ELEM_DELETE(set_meta_info *info,
         if (config->use_persistence) {
             SetElemDelLog log;
             (void)lrec_construct_set_elem_delete((LogRec*)&log, it, elem);
-#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
-#else
-            log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
-#endif
         }
 #endif
     }
@@ -269,11 +227,7 @@ void CLOG_GE_BTREE_ELEM_INSERT(btree_meta_info *info,
         if (config->use_persistence) {
             BtreeElemInsLog log;
             (void)lrec_construct_btree_elem_insert((LogRec*)&log, it, new_elem);
-#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
-#else
-            log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
-#endif
         }
 #endif
     }
@@ -292,11 +246,7 @@ void CLOG_GE_BTREE_ELEM_DELETE(btree_meta_info *info,
         if (config->use_persistence) {
             BtreeElemDelLog log;
             (void)lrec_construct_btree_elem_delete((LogRec*)&log, it, elem);
-#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
-#else
-            log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
-#endif
         }
 #endif
     }
@@ -329,11 +279,7 @@ void CLOG_GE_ITEM_SETATTR(hash_item *it,
             if (attr_type > 0) {
                 ITSetAttrLog log;
                 (void)lrec_construct_setattr((LogRec*)&log, it, attr_type);
-#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
                 log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
-#else
-                log_record_write((LogRec*)&log, cmdlog_get_cur_waiter());
-#endif
             }
         }
 #endif

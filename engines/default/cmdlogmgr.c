@@ -73,10 +73,6 @@ log_waiter_t *cmdlog_waiter_alloc(void)
 void cmdlog_waiter_free(log_waiter_t *waiter)
 {
     LOGSN_SET_NULL(&waiter->lsn);
-#ifdef ENABLE_PERSISTENCE_04_ADD_SCANP
-#else
-    waiter->dual_write = false;
-#endif
 
     log_wait_entry_info *info = &logmgr_gl.wait_entry_info;
     if (waiter->prev_eid == -1) info->used_head = waiter->next_eid;
