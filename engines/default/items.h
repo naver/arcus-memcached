@@ -583,7 +583,7 @@ void              coll_elem_release(elems_result_t *eresult, int type);
 /**
  * item scan
  */
-void *itscan_open(struct default_engine *engine, const char *prefix, const int nprefix);
+void *itscan_open(struct default_engine *engine, const char *prefix, const int nprefix, bool chkpt);
 int   itscan_getnext(void *scan, void **item_array, elems_result_t *erst_array, int item_arrsz);
 void  itscan_release(void *scan, void **item_array, elems_result_t *erst_array, int item_count);
 void  itscan_close(void *scan);

@@ -8916,6 +8916,7 @@ typedef struct _item_scan_t {
     struct assoc_scan asscan; /* assoc scan */
     const char *prefix;
     int        nprefix;
+    bool       by_chkpt;
     bool       is_used;
     struct _item_scan_t *next;
 } item_scan_t;
@@ -8973,7 +8974,7 @@ static void do_itscan_free(item_scan_t *sp)
 /*
  * External item scan functions
  */
-void *itscan_open(struct default_engine *engine, const char *prefix, const int nprefix)
+void *itscan_open(struct default_engine *engine, const char *prefix, const int nprefix, bool chkpt)
 {
     item_scan_t *sp = do_itscan_alloc();
     if (sp != NULL) {
@@ -8982,6 +8983,7 @@ void *itscan_open(struct default_engine *engine, const char *prefix, const int n
         UNLOCK_CACHE();
         sp->prefix = prefix;
         sp->nprefix = nprefix;
+        sp->by_chkpt = chkpt;
         sp->is_used = true;
     }
     return (void*)sp;

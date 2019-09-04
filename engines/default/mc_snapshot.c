@@ -68,7 +68,7 @@ static EXTENSION_LOGGER_DESCRIPTOR *logger = NULL;
 static snapshot_st snapshot_anch;
 
 static const char *snapshot_mode_string[] = {
-    "KEY", "DATA"
+    "KEY", "DATA", "CHKPT"
 };
 
 static const char *item_type_string[] = {
@@ -96,6 +96,7 @@ static int do_snapshot_data_done(snapshot_st *ss);
 /* snapshot function array for each snapshot mode */
 SNAPSHOT_FUNC snapshot_func[MC_SNAPSHOT_MODE_MAX] = {
     { do_snapshot_key_dump,  do_snapshot_key_done },
+    { do_snapshot_data_dump, do_snapshot_data_done },
     { do_snapshot_data_dump, do_snapshot_data_done }
 };
 
@@ -229,7 +230,7 @@ static int do_snapshot_key_done(snapshot_st *ss)
     return 0;
 }
 
-/* mode == MC_SNAPSHOT_MODE_DATA
+/* mode == MC_SNAPSHOT_MODE_DATA || mode == MC_SNAPSHOT_MODE_CHKPT
  * dump: do_snapshot_data_dump()
  * done: do_snapshot_data_done()
  */
@@ -413,14 +414,15 @@ static bool do_snapshot_action(snapshot_st *ss)
         goto done;
     }
 
-    if (ss->mode == MC_SNAPSHOT_MODE_DATA) {
+    if (ss->mode == MC_SNAPSHOT_MODE_DATA || ss->mode == MC_SNAPSHOT_MODE_CHKPT) {
         for (int i = 0; i < SCAN_ITEM_ARRAY_SIZE; i++) {
             (void)coll_elem_result_init(&eresults[i], 0);
         }
         erst_array = eresults;
     }
 
-    shandle = itscan_open(engine, ss->prefix, ss->nprefix);
+    bool chkpt = (ss->mode == MC_SNAPSHOT_MODE_CHKPT ? true : false);
+    shandle = itscan_open(engine, ss->prefix, ss->nprefix, chkpt);
     if (shandle == NULL) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to get item scan resource.\n");

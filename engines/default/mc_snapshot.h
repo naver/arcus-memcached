@@ -21,6 +21,7 @@
 enum mc_snapshot_mode {
     MC_SNAPSHOT_MODE_KEY = 0,
     MC_SNAPSHOT_MODE_DATA,
+    MC_SNAPSHOT_MODE_CHKPT,
     MC_SNAPSHOT_MODE_MAX
 };
 
