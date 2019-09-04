@@ -31,7 +31,6 @@
 
 #define CHKPT_MAX_FILENAME_LENGTH  255
 #define CHKPT_FILE_NAME_FORMAT     "%s/%s%d"
-#define CHKPT_DIRPATH              "backup"
 #define CHKPT_SNAPSHOT_PREFIX      "snapshot_"
 #define CHKPT_CMDLOG_PREFIX        "cmdlog_"
 
@@ -54,6 +53,8 @@ typedef struct _chkpt_st {
     int      interval;    /* checkpoint execution interval */
     int      lasttime;    /* last checkpoint time */
     char     path[CHKPT_MAX_FILENAME_LENGTH+1]; /* file path for checkpoint */
+    char    *data_path;   /* snapshot directory path */
+    char    *logs_path;   /* command log directory path */
 } chkpt_st;
 
 /* global data */
@@ -79,13 +80,15 @@ static bool do_chkpt_sweep_files(chkpt_st *cs)
 {
     int ret = true;
     int slen = strlen(CHKPT_SNAPSHOT_PREFIX); /* 9 */
+    int clen = strlen(CHKPT_CMDLOG_PREFIX);   /* 7 */
     DIR *dir;
     struct dirent *ent;
 
-    if ((dir = opendir(CHKPT_DIRPATH)) == NULL) {
+    /* delete snapshot files. */
+    if ((dir = opendir(cs->data_path)) == NULL) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to open backup directory. path : %s. error : %s\n",
-                    CHKPT_DIRPATH, strerror(errno));
+                    "Failed to open snapshot directory. path : %s. error : %s.\n",
+                    cs->data_path, strerror(errno));
         return false;
     }
 
@@ -95,11 +98,35 @@ static bool do_chkpt_sweep_files(chkpt_st *cs)
             continue;
         }
         ptr += slen;
-
         if (cs->lasttime != atoi(ptr)) {
             if (unlink(ent->d_name) < 0) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "Failed to remove file. name : %s. error : %s\n",
+                            "Failed to remove snapshot file. name : %s. error : %s.\n",
+                            ent->d_name, strerror(errno));
+                ret = false; break;
+            }
+        }
+    }
+    closedir(dir);
+
+    /* delete command log files. */
+    if ((dir = opendir(cs->logs_path)) == NULL) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to open cmdlog directory. path : %s. error : %s.\n",
+                    cs->logs_path, strerror(errno));
+        return false;
+    }
+
+    while ((ent = readdir(dir)) != NULL) {
+        char *ptr = ent->d_name;
+        if (strncmp(CHKPT_CMDLOG_PREFIX, ptr, clen) != 0) {
+            continue;
+        }
+        ptr += clen;
+        if (cs->lasttime != atoi(ptr)) {
+            if (unlink(ent->d_name) < 0) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "Failed to remove cmdlog file. name : %s. error : %s.\n",
                             ent->d_name, strerror(errno));
                 ret = false; break;
             }
@@ -112,7 +139,7 @@ static bool do_chkpt_sweep_files(chkpt_st *cs)
 /* create files for next checkpoint : snapshot_(newtime), cmdlog_(newtime) */
 static int do_chkpt_create_files(chkpt_st *cs, int newtime)
 {
-    sprintf(cs->path, CHKPT_FILE_NAME_FORMAT, CHKPT_DIRPATH, CHKPT_CMDLOG_PREFIX, newtime);
+    sprintf(cs->path, CHKPT_FILE_NAME_FORMAT, cs->logs_path, CHKPT_CMDLOG_PREFIX, newtime);
     int fd = open(cs->path, O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
     if (fd < 0) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -125,7 +152,7 @@ static int do_chkpt_create_files(chkpt_st *cs, int newtime)
         return -1;
     }
 
-    sprintf(cs->path, CHKPT_FILE_NAME_FORMAT, CHKPT_DIRPATH, CHKPT_SNAPSHOT_PREFIX, newtime);
+    sprintf(cs->path, CHKPT_FILE_NAME_FORMAT, cs->data_path, CHKPT_SNAPSHOT_PREFIX, newtime);
     fd = open(cs->path, O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
     if (fd < 0) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -142,7 +169,7 @@ static int do_chkpt_create_files(chkpt_st *cs, int newtime)
 /* remove files : snapshot_(oldtime), cmdlog_(oldtime) */
 static int do_chkpt_remove_files(chkpt_st *cs, int oldtime)
 {
-    sprintf(cs->path, CHKPT_FILE_NAME_FORMAT, CHKPT_DIRPATH, CHKPT_SNAPSHOT_PREFIX, oldtime);
+    sprintf(cs->path, CHKPT_FILE_NAME_FORMAT, cs->data_path, CHKPT_SNAPSHOT_PREFIX, oldtime);
     if (unlink(cs->path) < 0) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to remove file in checkpoint. "
@@ -150,7 +177,7 @@ static int do_chkpt_remove_files(chkpt_st *cs, int oldtime)
         return -1;
     }
     cmdlog_file_close();
-    sprintf(cs->path, CHKPT_FILE_NAME_FORMAT, CHKPT_DIRPATH, CHKPT_CMDLOG_PREFIX, oldtime);
+    sprintf(cs->path, CHKPT_FILE_NAME_FORMAT, cs->logs_path, CHKPT_CMDLOG_PREFIX, oldtime);
     if (unlink(cs->path) < 0) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to remove file in checkpoint. "
@@ -269,6 +296,8 @@ static void do_chkpt_init(chkpt_st *cs, struct default_engine *engine)
     cs->interval = 60;
     cs->lasttime = -1;
     cs->path[0] = '\0';
+    cs->data_path = engine->config.data_path;
+    cs->logs_path = engine->config.logs_path;
 }
 
 static int do_chkpt_start(chkpt_st *cs)

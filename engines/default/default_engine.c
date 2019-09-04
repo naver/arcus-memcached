@@ -26,6 +26,7 @@
 #include <unistd.h>
 #include <stddef.h>
 #include <inttypes.h>
+#include <dirent.h>
 
 #include "default_engine.h"
 #include "memcached/util.h"
@@ -40,6 +41,10 @@
 
 #define ACTION_BEFORE_WRITE(c, k, l)
 #define ACTION_AFTER_WRITE(c, r)
+
+#ifdef ENABLE_PERSISTENCE
+#define BACKUP_DIRPATH "ARCUS-DB"
+#endif
 
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
@@ -110,6 +115,45 @@ default_get_info(ENGINE_HANDLE* handle)
 
 static int check_configuration(struct engine_config *conf)
 {
+#ifdef ENABLE_PERSISTENCE
+    /* check data & logs directory path */
+    if (conf->use_persistence) {
+        if (conf->data_path == NULL && conf->logs_path == NULL) {
+            logger->log(EXTENSION_LOG_INFO, NULL,
+                        "default engine - No backup directory path defined. "
+                        "%s will be used as the default path.\n", BACKUP_DIRPATH);
+            if(mkdir(BACKUP_DIRPATH, 0766) == -1 && errno != EEXIST) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "default engine - Failed to create directory. "
+                            "path : %s. error : %s.\n", BACKUP_DIRPATH, strerror(errno));
+                return -1;
+            }
+            conf->data_path = BACKUP_DIRPATH;
+            conf->logs_path = BACKUP_DIRPATH;
+        } else if (conf->data_path != NULL && conf->logs_path != NULL) {
+            DIR *dir = opendir(conf->data_path);
+            if (dir == NULL) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "default engine - Error in data directory path. "
+                            "path : %s. error : %s.\n", conf->data_path, strerror(errno));
+                return -1;
+            }
+            closedir(dir);
+            dir = opendir(conf->logs_path);
+            if (dir == NULL) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "default engine - Error in logs directory path. "
+                            "path : %s. error : %s.\n", conf->logs_path, strerror(errno));
+                return -1;
+            }
+            closedir(dir);
+        } else {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "default engine - Data or logs directory path is not defined.\n");
+            return -1;
+        }
+    }
+#endif
     return 0;
 }
 
