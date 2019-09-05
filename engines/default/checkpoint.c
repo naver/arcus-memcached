@@ -306,6 +306,94 @@ static void* chkpt_thread_main(void* arg)
 /*
  * External Functions
  */
+#ifdef ENABLE_PERSISTENCE_RECOVERY_ANALYSIS
+/*
+ * Recovery Functions
+ */
+
+static int chkptsnapshotfilter(const struct dirent *ent)
+{
+    return (strncmp(ent->d_name, CHKPT_SNAPSHOT_PREFIX, strlen(CHKPT_SNAPSHOT_PREFIX)) == 0);
+}
+
+int chkpt_recovery_analysis(void)
+{
+    chkpt_st *cs = &chkpt_anch;
+    /* Sort snapshot files in alphabetical order. */
+    struct dirent **snapshotlist;
+    int snapshot_count = scandir(cs->data_path, &snapshotlist, chkptsnapshotfilter, alphasort);
+    if (snapshot_count < 0) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to scan snapshot directory. path : %s. error : %s.\n",
+                    cs->data_path, strerror(errno));
+        return -1;
+    }
+
+    int ret = 0;
+    struct dirent *ent;
+    int lastidx = snapshot_count -1;
+
+    /* Find valid last snapshot file and get lasttime. */
+    while (lastidx >= 0) {
+        ent = snapshotlist[lastidx];
+        sprintf(cs->snapshot_path, "%s/%s", cs->data_path, ent->d_name);
+        int snapshot_fd = open(cs->snapshot_path, O_RDONLY);
+        if (snapshot_fd < 0) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "Failed to open snapshot file. path : %s. error : %s.\n",
+                        cs->snapshot_path, strerror(errno));
+            ret = -1; break;
+        }
+        if (mc_snapshot_get_chkpttime(snapshot_fd, &cs->lasttime) > 0) {
+            close(snapshot_fd);
+            break;
+        }
+        close(snapshot_fd);
+        lastidx--;
+    }
+
+    for (int i = 0; i < snapshot_count; i++) {
+        free(snapshotlist[i]);
+    }
+    free(snapshotlist);
+
+    return ret;
+}
+
+int chkpt_recovery_redo(void)
+{
+    chkpt_st *cs = &chkpt_anch;
+    if (cs->lasttime > 0) {
+        /* apply snapshot log records. */
+        if (mc_snapshot_file_apply(cs->snapshot_path) < 0) {
+            return -1;
+        }
+        sprintf(cs->cmdlog_path, CHKPT_FILE_NAME_FORMAT, cs->logs_path, CHKPT_CMDLOG_PREFIX, cs->lasttime);
+        if (cmdlog_file_open(cs->cmdlog_path) < 0) {
+            return -1;
+        }
+        /* apply cmd log records if they exist. */
+        if (cmdlog_file_apply() < 0) {
+            return -1;
+        }
+        /* FIXME: Truncate incompleted command bytes. */
+    } else {
+        /* create empty checkpoint snapshot and create/open cmdlog file. */
+        logger->log(EXTENSION_LOG_INFO, NULL,
+                    "There are no files needed for recovery. "
+                    "Do checkpoint to create checkpoint file set.\n");
+        if (do_checkpoint(cs) == CHKPT_ERROR) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "Checkpoint failed in chkpt_recovery_redo().\n");
+            return -1;
+        }
+    }
+    return 0;
+}
+
+/* Checkpoint Functions */
+#endif
+
 ENGINE_ERROR_CODE chkpt_init(struct default_engine* engine)
 {
     logger = engine->server.log->get_logger();
@@ -333,8 +421,7 @@ ENGINE_ERROR_CODE chkpt_thread_start(void)
     chkpt_anch.start = true;
     if (pthread_create(&tid, NULL, chkpt_thread_main, &chkpt_anch) != 0) {
         chkpt_anch.start = false;
-        logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Failed to create chkpt thread\n");
+        logger->log(EXTENSION_LOG_WARNING, NULL, "Failed to create chkpt thread\n");
         return ENGINE_FAILED;
     }
     logger->log(EXTENSION_LOG_INFO, NULL, "[INIT] checkpoint thread started.\n");
