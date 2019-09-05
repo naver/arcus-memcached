@@ -100,7 +100,7 @@ static bool do_chkpt_sweep_files(chkpt_st *cs)
         }
         ptr += slen;
         if (cs->lasttime != atoi(ptr)) {
-            if (unlink(ent->d_name) < 0) {
+            if (unlink(ent->d_name) < 0 && errno != ENOENT) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
                             "Failed to remove snapshot file. name : %s. error : %s.\n",
                             ent->d_name, strerror(errno));
@@ -125,7 +125,7 @@ static bool do_chkpt_sweep_files(chkpt_st *cs)
         }
         ptr += clen;
         if (cs->lasttime != atoi(ptr)) {
-            if (unlink(ent->d_name) < 0) {
+            if (unlink(ent->d_name) < 0 && errno != ENOENT) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
                             "Failed to remove cmdlog file. name : %s. error : %s.\n",
                             ent->d_name, strerror(errno));
@@ -158,7 +158,7 @@ static int do_chkpt_create_files(chkpt_st *cs, int newtime)
                     "path : %s, error : %s\n", cs->cmdlog_path, strerror(errno));
 
         /* remove created snapshot file */
-        if (unlink(cs->snapshot_path) < 0) {
+        if (unlink(cs->snapshot_path) < 0 && errno != ENOENT) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Failed to remove file in checkpoint. "
                         "path : %s, error : %s\n", cs->snapshot_path, strerror(errno));
@@ -175,14 +175,14 @@ static int do_chkpt_create_files(chkpt_st *cs, int newtime)
 static int do_chkpt_remove_files(chkpt_st *cs, int oldtime)
 {
     sprintf(cs->snapshot_path, CHKPT_FILE_NAME_FORMAT, cs->data_path, CHKPT_SNAPSHOT_PREFIX, oldtime);
-    if (unlink(cs->snapshot_path) < 0) {
+    if (unlink(cs->snapshot_path) < 0 && errno != ENOENT) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to remove file in checkpoint. "
                     "path : %s, error : %s\n", cs->snapshot_path, strerror(errno));
         return -1;
     }
     sprintf(cs->cmdlog_path, CHKPT_FILE_NAME_FORMAT, cs->logs_path, CHKPT_CMDLOG_PREFIX, oldtime);
-    if (unlink(cs->cmdlog_path) < 0) {
+    if (unlink(cs->cmdlog_path) < 0 && errno != ENOENT) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to remove file in checkpoint. "
                     "path : %s, error : %s\n", cs->cmdlog_path, strerror(errno));
