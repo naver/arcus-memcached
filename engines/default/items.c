@@ -5957,7 +5957,7 @@ ENGINE_ERROR_CODE item_store(hash_item *item, uint64_t *cas,
            ret = ENGINE_NOT_STORED;
     }
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence) {
+    if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
     }
 #endif
@@ -6019,7 +6019,7 @@ ENGINE_ERROR_CODE item_arithmetic(const void* cookie,
         }
     }
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence) {
+    if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
     }
 #endif
@@ -6063,7 +6063,7 @@ ENGINE_ERROR_CODE item_delete(const void* key, const uint32_t nkey, uint64_t cas
         ret = ENGINE_KEY_ENOENT;
     }
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence) {
+    if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
     }
 #endif
@@ -6185,7 +6185,7 @@ ENGINE_ERROR_CODE item_flush_expired(const char *prefix, const int nprefix,
 #endif
     ret = do_item_flush_expired(prefix, nprefix, when, cookie);
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence) {
+    if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
     }
 #endif
@@ -6606,7 +6606,7 @@ ENGINE_ERROR_CODE list_elem_insert(const char *key, const uint32_t nkey,
     }
     if (it != NULL) do_item_release(it);
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence) {
+    if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
     }
 #endif
@@ -6695,7 +6695,7 @@ ENGINE_ERROR_CODE list_elem_delete(const char *key, const uint32_t nkey,
         do_item_release(it);
     }
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence) {
+    if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
     }
 #endif
@@ -6767,7 +6767,7 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
         do_item_release(it);
     }
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence && delete) {
+    if (waiter != NULL && delete) {
         cmdlog_waiter_free(waiter);
     }
 #endif
@@ -6871,7 +6871,7 @@ ENGINE_ERROR_CODE set_elem_insert(const char *key, const uint32_t nkey,
     }
     if (it != NULL) do_item_release(it);
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence) {
+    if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
     }
 #endif
@@ -6916,7 +6916,7 @@ ENGINE_ERROR_CODE set_elem_delete(const char *key, const uint32_t nkey,
         do_item_release(it);
     }
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence) {
+    if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
     }
 #endif
@@ -6995,7 +6995,7 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey, const uint3
         do_item_release(it);
     }
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence && delete) {
+    if (waiter != NULL && delete) {
         cmdlog_waiter_free(waiter);
     }
 #endif
@@ -7110,7 +7110,7 @@ ENGINE_ERROR_CODE btree_elem_insert(const char *key, const uint32_t nkey,
     }
     if (it != NULL) do_item_release(it);
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence) {
+    if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
     }
 #endif
@@ -7158,7 +7158,7 @@ ENGINE_ERROR_CODE btree_elem_update(const char *key, const uint32_t nkey, const 
         do_item_release(it);
     }
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence) {
+    if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
     }
 #endif
@@ -7218,7 +7218,7 @@ ENGINE_ERROR_CODE btree_elem_delete(const char *key, const uint32_t nkey,
         do_item_release(it);
     }
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence) {
+    if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
     }
 #endif
@@ -7285,7 +7285,7 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(const char* key, const uint32_t nkey,
         do_item_release(it);
     }
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence) {
+    if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
     }
 #endif
@@ -7360,7 +7360,7 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
         do_item_release(it);
     }
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence && delete) {
+    if (waiter != NULL && delete) {
         cmdlog_waiter_free(waiter);
     }
 #endif
@@ -7953,7 +7953,7 @@ ENGINE_ERROR_CODE item_setattr(const void* key, const uint32_t nkey,
         do_item_release(it);
     }
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence) {
+    if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
     }
 #endif
@@ -9809,7 +9809,7 @@ ENGINE_ERROR_CODE map_elem_insert(const char *key, const uint32_t nkey,
     }
     if (it != NULL) do_item_release(it);
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence) {
+    if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
     }
 #endif
@@ -9846,7 +9846,7 @@ ENGINE_ERROR_CODE map_elem_update(const char *key, const uint32_t nkey,
         do_item_release(it);
     }
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence) {
+    if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
     }
 #endif
@@ -9895,7 +9895,7 @@ ENGINE_ERROR_CODE map_elem_delete(const char *key, const uint32_t nkey,
         do_item_release(it);
     }
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence) {
+    if (waiter != NULL) {
         cmdlog_waiter_free(waiter);
     }
 #endif
@@ -9948,7 +9948,7 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
         do_item_release(it);
     }
 #ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence && delete) {
+    if (waiter != NULL && delete) {
         cmdlog_waiter_free(waiter);
     }
 #endif
