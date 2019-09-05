@@ -18,7 +18,10 @@
 #ifndef MEMCACHED_CHECKPOINT_H
 #define MEMCACHED_CHECKPOINT_H
 
-ENGINE_ERROR_CODE chkpt_init_and_start(struct default_engine* engine);
-void chkpt_stop_and_final(void);
+ENGINE_ERROR_CODE chkpt_init(struct default_engine* engine);
+ENGINE_ERROR_CODE chkpt_thread_start(void);
+
+void chkpt_thread_stop(void);
+void chkpt_final(void);
 
 #endif
