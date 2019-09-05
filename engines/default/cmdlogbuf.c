@@ -593,4 +593,15 @@ void cmdlog_buf_flush_thread_stop(void)
 
     /* TODO: fsync thread stop and wait until stopped */
 }
+#ifdef ENABLE_PERSISTENCE_CHKPT_INIT
+int cmdlog_file_trim_incompleted_command(void)
+{
+    return 0;
+}
+
+ENGINE_ERROR_CODE cmdlog_recovery(const char *path)
+{
+    return ENGINE_SUCCESS;
+}
+#endif
 #endif

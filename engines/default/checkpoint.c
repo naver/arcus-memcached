@@ -76,6 +76,12 @@ static int getnowtime(void)
     return(ltime);
 }
 
+#ifdef ENABLE_PERSISTENCE_CHKPT_INIT
+static int do_chkpt_snapshotfilter(const struct dirent *ent)
+{
+    return (strncmp(ent->d_name, CHKPT_SNAPSHOT_PREFIX, strlen(CHKPT_SNAPSHOT_PREFIX)) == 0);
+}
+#endif
 /* Delete all backup files except last checkpoint file. */
 static bool do_chkpt_sweep_files(chkpt_st *cs)
 {
@@ -301,7 +307,11 @@ static void* chkpt_thread_main(void* arg)
     return NULL;
 }
 
+#ifdef ENABLE_PERSISTENCE_CHKPT_INIT
+static void do_chkpt_struct_init(chkpt_st *cs, struct default_engine *engine)
+#else
 static void do_chkpt_init(chkpt_st *cs, struct default_engine *engine)
+#endif
 {
     pthread_mutex_init(&cs->lock, NULL);
     pthread_cond_init(&cs->cond, NULL);
@@ -317,6 +327,87 @@ static void do_chkpt_init(chkpt_st *cs, struct default_engine *engine)
     cs->logs_path = engine->config.logs_path;
 }
 
+#ifdef ENABLE_PERSISTENCE_CHKPT_INIT
+static int do_chkpt_find_last_snapshotfile(chkpt_st *cs)
+{
+    /* Sort snapshot files in alphabetical order. */
+    struct dirent **snapshotlist;
+    int snapshot_count = scandir(cs->data_path, &snapshotlist, *do_chkpt_snapshotfilter, alphasort);
+    if (snapshot_count < 0) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to scan snapshot directory. path : %s. error : %s.\n",
+                    cs->data_path, strerror(errno));
+        return -1;
+    }
+
+    int ret = 0;
+    struct dirent *ent;
+    int lastidx = snapshot_count -1;
+    int lasttime = -1;
+
+    /* Find valid last snapshot file. */
+    while (lastidx >= 0) {
+        ent = snapshotlist[lastidx];
+        lasttime = atoi(strchr(ent->d_name, '_') + 1);
+        sprintf(cs->snapshot_path, CHKPT_FILE_NAME_FORMAT, cs->data_path, CHKPT_SNAPSHOT_PREFIX, lasttime);
+
+        int snapshot_fd = open(cs->snapshot_path, O_RDONLY);
+        if (snapshot_fd < 0) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to open snapshot file. path : %s. error : %s.\n",
+                    cs->snapshot_path, strerror(errno));
+            ret = -1; break;
+        }
+        if (mc_snapshot_check_taillog_in_file(snapshot_fd) == 0) {
+            cs->lasttime = lasttime;
+            break;
+        }
+        lastidx--;
+    }
+
+    for (int i = 0; i < snapshot_count; i++) {
+        free(snapshotlist[i]);
+    }
+    free(snapshotlist);
+    return ret;
+}
+
+static int do_chkpt_file_analysis(chkpt_st *cs)
+{
+    if (do_chkpt_find_last_snapshotfile(cs) < 0) {
+        return -1;
+    }
+
+    if (cs->lasttime == -1) {
+        /* There is no valid snapshot file in data_path.
+         * Do checkpoint to create checkpoint file set.
+         */
+        if (do_checkpoint(cs) != CHKPT_SUCCESS) {
+            return -1;
+        }
+    } else {
+        /* Open last cmdlog file. */
+        sprintf(cs->cmdlog_path, CHKPT_FILE_NAME_FORMAT, cs->logs_path, CHKPT_CMDLOG_PREFIX, cs->lasttime);
+        if (access(cs->cmdlog_path, F_OK) < 0) {
+            int cmdlog_fd = open(cs->cmdlog_path, O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
+            if (cmdlog_fd < 0) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "Failed to create cmdlog file. "
+                            "path : %s, error : %s\n", cs->cmdlog_path, strerror(errno));
+                return -1;
+            }
+            close(cmdlog_fd);
+        }
+        if (cmdlog_file_open(cs->cmdlog_path) < 0) {
+            return -1;
+        }
+        if (cmdlog_file_trim_incompleted_command() < 0) {
+            return -1;
+        }
+    }
+    return 0;
+}
+#endif
 static int do_chkpt_start(chkpt_st *cs)
 {
     pthread_t tid;
@@ -336,7 +427,21 @@ static int do_chkpt_start(chkpt_st *cs)
 ENGINE_ERROR_CODE chkpt_init_and_start(struct default_engine* engine)
 {
     logger = engine->server.log->get_logger();
+#ifdef ENABLE_PERSISTENCE_CHKPT_INIT
+    do_chkpt_struct_init(&chkpt_anch, engine);
+    if (do_chkpt_file_analysis(&chkpt_anch) < 0) {
+        return ENGINE_FAILED;
+    }
+    if (mc_snapshot_recovery(chkpt_anch.snapshot_path) != ENGINE_SUCCESS) {
+        return ENGINE_FAILED;
+    }
+    if (cmdlog_recovery(chkpt_anch.cmdlog_path) != ENGINE_SUCCESS) {
+        return ENGINE_FAILED;
+    }
+    do_chkpt_sweep_files(&chkpt_anch);
+#else
     do_chkpt_init(&chkpt_anch, engine);
+#endif
 
     if (do_chkpt_start(&chkpt_anch) < 0) {
         return ENGINE_FAILED;

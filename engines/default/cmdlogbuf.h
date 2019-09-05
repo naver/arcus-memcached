@@ -32,9 +32,15 @@ void log_get_fsync_lsn(LogSN *lsn);
 
 int               cmdlog_file_open(char *path);
 void              cmdlog_file_close(bool shutdown);
+#ifdef ENABLE_PERSISTENCE_CHKPT_INIT
+int               cmdlog_file_trim_incompleted_command(void);
+#endif
 ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine *engine);
 void              cmdlog_buf_final(void);
 ENGINE_ERROR_CODE cmdlog_buf_flush_thread_start(void);
 void              cmdlog_buf_flush_thread_stop(void);
+#ifdef ENABLE_PERSISTENCE_CHKPT_INIT
+ENGINE_ERROR_CODE cmdlog_recovery(const char *path);
+#endif
 
 #endif

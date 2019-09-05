@@ -682,4 +682,36 @@ void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie)
     do_snapshot_stats(&snapshot_anch, add_stat, cookie);
     pthread_mutex_unlock(&snapshot_anch.lock);
 }
+#ifdef ENABLE_PERSISTENCE_CHKPT_INIT
+ENGINE_ERROR_CODE mc_snapshot_recovery(const char *filepath)
+{
+    return ENGINE_SUCCESS;
+}
+
+int mc_snapshot_check_taillog_in_file(const int fd)
+{
+    assert(fd > 0);
+
+    SnapshotTailLog log;
+    off_t offset;
+    ssize_t nread;
+
+    offset = lseek(fd, -sizeof(log), SEEK_END);
+    if (offset < 0) {
+        return -1;
+    }
+
+    nread = read(fd, &log, sizeof(log));
+    if (nread != sizeof(log)) {
+        return -1;
+    }
+
+    if (log.header.logtype == LOG_SNAPSHOT_TAIL &&
+        log.header.updtype == UPD_NONE &&
+        log.header.body_length == 0) {
+        return 0;
+    }
+    return -1;
+}
+#endif
 #endif
