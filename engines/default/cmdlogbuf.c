@@ -479,11 +479,9 @@ void cmdlog_complete_dual_write(bool success)
     pthread_mutex_lock(&log_gl.log_flush_lock);
     if (success) {
         pthread_mutex_lock(&log_gl.log_write_lock);
-
         if (logbuff->fque[logbuff->fend].nflush > 0) {
             if ((++logbuff->fend) == logbuff->fqsz) logbuff->fend = 0;
         }
-
         /* Set the position where a dual write end. */
         assert(logbuff->dw_end == -1);
         logbuff->dw_end = logbuff->fend;
@@ -508,6 +506,9 @@ void cmdlog_complete_dual_write(bool success)
             if ((++index) == logbuff->fqsz) index = 0;
         }
         pthread_mutex_unlock(&log_gl.log_write_lock);
+
+        assert(log_gl.log_file.prev_fd == -1);
+        log_gl.log_file.prev_fd = log_gl.log_file.next_fd;
         log_gl.log_file.next_fd = -1;
     }
     pthread_mutex_unlock(&log_gl.log_flush_lock);
