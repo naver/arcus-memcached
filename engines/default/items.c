@@ -6517,8 +6517,22 @@ ENGINE_ERROR_CODE list_struct_create(const char *key, const uint32_t nkey,
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
+#ifdef ENABLE_PERSISTENCE
+    log_waiter_t *waiter = NULL;
+#endif
 
     LOCK_CACHE();
+#ifdef ENABLE_PERSISTENCE
+    if (config->use_persistence) {
+        waiter = cmdlog_waiter_alloc();
+        if (waiter == NULL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "list struct create - cmdlog waiter alloc fail\n");
+            UNLOCK_CACHE();
+            return ENGINE_ENOMEM; /* FIXME: define error code */
+        }
+    }
+#endif
     it = do_item_get(key, nkey, DONT_UPDATE);
     if (it != NULL) {
         do_item_release(it);
@@ -6532,6 +6546,11 @@ ENGINE_ERROR_CODE list_struct_create(const char *key, const uint32_t nkey,
             do_item_release(it);
         }
     }
+#ifdef ENABLE_PERSISTENCE
+    if (waiter != NULL) {
+        cmdlog_waiter_free(waiter);
+    }
+#endif
     UNLOCK_CACHE();
     return ret;
 }
@@ -6783,8 +6802,22 @@ ENGINE_ERROR_CODE set_struct_create(const char *key, const uint32_t nkey,
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
+#ifdef ENABLE_PERSISTENCE
+    log_waiter_t *waiter = NULL;
+#endif
 
     LOCK_CACHE();
+#ifdef ENABLE_PERSISTENCE
+    if (config->use_persistence) {
+        waiter = cmdlog_waiter_alloc();
+        if (waiter == NULL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "set struct create - cmdlog waiter alloc fail\n");
+            UNLOCK_CACHE();
+            return ENGINE_ENOMEM; /* FIXME: define error code */
+        }
+    }
+#endif
     it = do_item_get(key, nkey, DONT_UPDATE);
     if (it != NULL) {
         do_item_release(it);
@@ -6798,6 +6831,11 @@ ENGINE_ERROR_CODE set_struct_create(const char *key, const uint32_t nkey,
             do_item_release(it);
         }
     }
+#ifdef ENABLE_PERSISTENCE
+    if (waiter != NULL) {
+        cmdlog_waiter_free(waiter);
+    }
+#endif
     UNLOCK_CACHE();
     return ret;
 }
@@ -7011,8 +7049,22 @@ ENGINE_ERROR_CODE btree_struct_create(const char *key, const uint32_t nkey,
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
+#ifdef ENABLE_PERSISTENCE
+    log_waiter_t *waiter = NULL;
+#endif
 
     LOCK_CACHE();
+#ifdef ENABLE_PERSISTENCE
+    if (config->use_persistence) {
+        waiter = cmdlog_waiter_alloc();
+        if (waiter == NULL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "btree struct create - cmdlog waiter alloc fail\n");
+            UNLOCK_CACHE();
+            return ENGINE_ENOMEM; /* FIXME: define error code */
+        }
+    }
+#endif
     it = do_item_get(key, nkey, DONT_UPDATE);
     if (it != NULL) {
         do_item_release(it);
@@ -7026,6 +7078,11 @@ ENGINE_ERROR_CODE btree_struct_create(const char *key, const uint32_t nkey,
             do_item_release(it);
         }
     }
+#ifdef ENABLE_PERSISTENCE
+    if (waiter != NULL) {
+        cmdlog_waiter_free(waiter);
+    }
+#endif
     UNLOCK_CACHE();
     return ret;
 }
@@ -9722,8 +9779,22 @@ ENGINE_ERROR_CODE map_struct_create(const char *key, const uint32_t nkey,
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
+#ifdef ENABLE_PERSISTENCE
+    log_waiter_t *waiter = NULL;
+#endif
 
     LOCK_CACHE();
+#ifdef ENABLE_PERSISTENCE
+    if (config->use_persistence) {
+        waiter = cmdlog_waiter_alloc();
+        if (waiter == NULL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "map struct create - cmdlog waiter alloc fail\n");
+            UNLOCK_CACHE();
+            return ENGINE_ENOMEM; /* FIXME: define error code */
+        }
+    }
+#endif
     it = do_item_get(key, nkey, DONT_UPDATE);
     if (it != NULL) {
         do_item_release(it);
@@ -9737,6 +9808,11 @@ ENGINE_ERROR_CODE map_struct_create(const char *key, const uint32_t nkey,
             do_item_release(it);
         }
     }
+#ifdef ENABLE_PERSISTENCE
+    if (waiter != NULL) {
+        cmdlog_waiter_free(waiter);
+    }
+#endif
     UNLOCK_CACHE();
     return ret;
 }
