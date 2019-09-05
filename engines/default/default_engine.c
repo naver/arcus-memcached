@@ -35,7 +35,6 @@
 #include "mc_snapshot.h"
 #endif
 #ifdef ENABLE_PERSISTENCE
-#include "checkpoint.h"
 #include "cmdlogmgr.h"
 #endif
 
@@ -287,10 +286,6 @@ default_initialize(ENGINE_HANDLE* handle, const char* config_str)
         if (ret != ENGINE_SUCCESS) {
             return ret;
         }
-        ret = chkpt_init_and_start(se);
-        if (ret != ENGINE_SUCCESS) {
-            return ret;
-        }
     }
 #endif
     return ENGINE_SUCCESS;
@@ -305,7 +300,6 @@ default_destroy(ENGINE_HANDLE* handle)
         se->initialized = false;
 #ifdef ENABLE_PERSISTENCE
         if (se->config.use_persistence) {
-            chkpt_stop_and_final();
             cmdlog_mgr_final();
         }
 #endif

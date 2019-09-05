@@ -301,51 +301,45 @@ static void* chkpt_thread_main(void* arg)
     return NULL;
 }
 
-static void do_chkpt_init(chkpt_st *cs, struct default_engine *engine)
-{
-    pthread_mutex_init(&cs->lock, NULL);
-    pthread_cond_init(&cs->cond, NULL);
-    cs->engine = (void*)engine;
-    cs->start = false;
-    cs->stop = false;
-    cs->sleep = false;
-    cs->interval = 60;
-    cs->lasttime = -1;
-    cs->snapshot_path[0] = '\0';
-    cs->cmdlog_path[0] = '\0';
-    cs->data_path = engine->config.data_path;
-    cs->logs_path = engine->config.logs_path;
-}
-
-static int do_chkpt_start(chkpt_st *cs)
-{
-    pthread_t tid;
-    cs->start = true;
-    if (pthread_create(&tid, NULL, chkpt_thread_main, cs) != 0) {
-        cs->start = false;
-        logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Failed to create chkpt thread\n");
-        return -1;
-    }
-    return 0;
-}
-
 /*
  * External Functions
  */
-ENGINE_ERROR_CODE chkpt_init_and_start(struct default_engine* engine)
+ENGINE_ERROR_CODE chkpt_init(struct default_engine* engine)
 {
     logger = engine->server.log->get_logger();
-    do_chkpt_init(&chkpt_anch, engine);
 
-    if (do_chkpt_start(&chkpt_anch) < 0) {
-        return ENGINE_FAILED;
-    }
+    pthread_mutex_init(&chkpt_anch.lock, NULL);
+    pthread_cond_init(&chkpt_anch.cond, NULL);
+    chkpt_anch.engine = (void*)engine;
+    chkpt_anch.start = false;
+    chkpt_anch.stop = false;
+    chkpt_anch.sleep = false;
+    chkpt_anch.interval = 60;
+    chkpt_anch.lasttime = -1;
+    chkpt_anch.snapshot_path[0] = '\0';
+    chkpt_anch.cmdlog_path[0] = '\0';
+    chkpt_anch.data_path = engine->config.data_path;
+    chkpt_anch.logs_path = engine->config.logs_path;
+
     logger->log(EXTENSION_LOG_INFO, NULL, "CHECKPOINT module initialized.\n");
     return ENGINE_SUCCESS;
 }
 
-void chkpt_stop_and_final(void)
+ENGINE_ERROR_CODE chkpt_thread_start(void)
+{
+    pthread_t tid;
+    chkpt_anch.start = true;
+    if (pthread_create(&tid, NULL, chkpt_thread_main, &chkpt_anch) != 0) {
+        chkpt_anch.start = false;
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Failed to create chkpt thread\n");
+        return ENGINE_FAILED;
+    }
+    logger->log(EXTENSION_LOG_INFO, NULL, "[INIT] checkpoint thread started.\n");
+    return ENGINE_SUCCESS;
+}
+
+void chkpt_thread_stop(void)
 {
     pthread_mutex_lock(&chkpt_anch.lock);
     while (chkpt_anch.start) {
@@ -358,6 +352,11 @@ void chkpt_stop_and_final(void)
         pthread_mutex_lock(&chkpt_anch.lock);
     }
     pthread_mutex_unlock(&chkpt_anch.lock);
+    logger->log(EXTENSION_LOG_INFO, NULL, "[FINAL] checkpoint thread stopped.\n");
+}
+
+void chkpt_final(void)
+{
     pthread_mutex_destroy(&chkpt_anch.lock);
     pthread_cond_destroy(&chkpt_anch.cond);
     logger->log(EXTENSION_LOG_INFO, NULL, "CHECKPOINT module destroyed\n");

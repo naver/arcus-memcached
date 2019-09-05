@@ -23,6 +23,7 @@
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogmgr.h"
 #include "cmdlogbuf.h"
+#include "checkpoint.h"
 
 typedef struct _wait_entry_info {
     int16_t           free_list;
@@ -150,7 +151,15 @@ ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine)
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
+    ret = chkpt_init(engine);
+    if (ret != ENGINE_SUCCESS) {
+        return ret;
+    }
     ret = cmdlog_buf_flush_thread_start();
+    if (ret != ENGINE_SUCCESS) {
+        return ret;
+    }
+    ret = chkpt_thread_start();
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
@@ -164,7 +173,10 @@ void cmdlog_mgr_final(void)
 {
     logmgr_gl.initialized = false;
 
+    chkpt_thread_stop();
     cmdlog_buf_flush_thread_stop();
+    /* CONSIDER: do last checkpoint before shutdown engine. */
+    chkpt_final();
     cmdlog_buf_final();
     cmdlog_waiter_final();
 
