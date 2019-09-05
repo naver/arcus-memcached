@@ -228,11 +228,11 @@ static int do_checkpoint(chkpt_st *cs)
     int newtime = getnowtime();
 
     do {
-        if ((ret = do_chkpt_create_files(cs, newtime)) != CHKPT_SUCCESS) {
+        if ((ret = do_chkpt_create_files(cs, newtime)) != 0) {
             break;
         }
 
-        if ((ret = cmdlog_file_open(cs->cmdlog_path)) != CHKPT_SUCCESS) {
+        if ((ret = cmdlog_file_open(cs->cmdlog_path)) != 0) {
             if (do_chkpt_remove_files(cs, newtime) < 0) {
                 ret = CHKPT_ERROR_FILE_REMOVE;
             }
@@ -247,7 +247,7 @@ static int do_checkpoint(chkpt_st *cs)
             ret = CHKPT_ERROR;
         }
 
-        cmdlog_file_close();
+        cmdlog_file_close(false);
         if (oldtime != -1) {
             if (do_chkpt_remove_files(cs, oldtime) < 0) {
                 ret = CHKPT_ERROR_FILE_REMOVE;
