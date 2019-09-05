@@ -38,8 +38,9 @@
 /* log file structure */
 typedef struct _log_file {
     char      path[CMDLOG_MAX_FILEPATH_LENGTH+1];
-    int       fd;
     int       prev_fd;
+    int       fd;
+    int       next_fd;
 } log_FILE;
 
 /* flush request structure */
@@ -51,17 +52,17 @@ typedef struct _log_freq {
 /* log buffer structure */
 typedef struct _log_buffer {
     /* log buffer */
-    char       *data; /* log buffer pointer */
-    uint32_t    size; /* log buffer size */
-    uint32_t    head; /* the head position in log buffer */
-    uint32_t    tail; /* the tail position in log buffer */
-    uint32_t    last; /* the last position in log buffer */
+    char       *data;   /* log buffer pointer */
+    uint32_t    size;   /* log buffer size */
+    uint32_t    head;   /* the head position in log buffer */
+    uint32_t    tail;   /* the tail position in log buffer */
+    int32_t     last;   /* the last position in log buffer */
 
     /* flush request queue */
-    log_FREQ   *fque; /* flush request queue pointer */
-    uint32_t    fqsz; /* flush request queue size */
-    uint32_t    fbgn; /* the queue index to begin flush */
-    uint32_t    fend; /* the queue index to end flush */
+    log_FREQ   *fque;   /* flush request queue pointer */
+    uint32_t    fqsz;   /* flush request queue size */
+    uint32_t    fbgn;   /* the queue index to begin flush */
+    uint32_t    fend;   /* the queue index to end flush */
 } log_BUFFER;
 
 /* log flusher structure */
@@ -412,29 +413,46 @@ int cmdlog_file_open(char *path)
 
     pthread_mutex_lock(&log_gl.log_flush_lock);
     /* prepare cmdlog file */
-    snprintf(logfile->path, CMDLOG_MAX_FILEPATH_LENGTH, "%s", path);
-    logfile->prev_fd = logfile->fd;
-    logfile->fd = disk_open(logfile->path, O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP);
-    if (logfile->fd < 0) {
-        logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to open the cmdlog file. path=%s err=%s\n",
-                    logfile->path, strerror(errno));
-        logfile->fd = logfile->prev_fd;
-        logfile->prev_fd = -1;
-        ret = -1;
-    }
+    do {
+        int fd = disk_open(path, O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP);
+        if (fd < 0) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "Failed to open the cmdlog file. path=%s err=%s\n",
+                        logfile->path, strerror(errno));
+            ret = -1;
+            break;
+        }
+        snprintf(logfile->path, CMDLOG_MAX_FILEPATH_LENGTH, "%s", path);
+        if (logfile->fd == -1) {
+            logfile->fd = fd;
+        } else {
+            /* fd != -1 means that a new cmdlog file is created by checkpoint */
+            logfile->next_fd = fd;
+        }
+    } while(0);
     pthread_mutex_unlock(&log_gl.log_flush_lock);
 
     return ret;
 }
 
-void cmdlog_file_close(void)
+void cmdlog_file_close(bool shutdown)
 {
+    log_FILE *logfile = &log_gl.log_file;
+
     pthread_mutex_lock(&log_gl.log_flush_lock);
-    /* FIXME: close location change */
-    close(log_gl.log_file.prev_fd);
-    /* FIXME: need handling for log record of dual_write */
-    log_gl.log_file.prev_fd = -1;
+    if (logfile->next_fd != -1) {
+        (void)disk_close(logfile->next_fd);
+        logfile->next_fd = -1;
+    }
+    if (logfile->prev_fd != -1) {
+        (void)disk_close(logfile->prev_fd);
+        logfile->prev_fd = -1;
+    }
+    if (shutdown && logfile->fd != -1) {
+        (void)disk_fsync(logfile->fd);
+        (void)disk_close(logfile->fd);
+        logfile->fd = -1;
+    }
     pthread_mutex_unlock(&log_gl.log_flush_lock);
 }
 
@@ -459,8 +477,9 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
     log_FILE *logfile = &log_gl.log_file;
     /* TODO: check and initialize log file exist */
     logfile->path[0] = '\0';
-    logfile->fd = -1;
     logfile->prev_fd = -1;
+    logfile->fd      = -1;
+    logfile->next_fd = -1;
 
     /* log buffer init */
     log_BUFFER *logbuff = &log_gl.log_buffer;
@@ -519,18 +538,7 @@ void cmdlog_buf_final(void)
     }
 
     /* log file final */
-    log_FILE *logfile = &log_gl.log_file;
-
-    if (logfile->prev_fd != -1) {
-        (void)disk_fsync(logfile->prev_fd);
-        (void)disk_close(logfile->prev_fd);
-        logfile->prev_fd = -1;
-    }
-    if (logfile->fd != -1) {
-        (void)disk_fsync(logfile->fd);
-        (void)disk_close(logfile->fd);
-        logfile->fd = -1;
-    }
+    cmdlog_file_close(true);
 
     logger->log(EXTENSION_LOG_INFO, NULL, "CMDLOG BUFFER module destroyed.\n");
 }
