@@ -100,10 +100,11 @@ static bool do_chkpt_sweep_files(chkpt_st *cs)
         }
         ptr += slen;
         if (cs->lasttime != atoi(ptr)) {
-            if (unlink(ent->d_name) < 0 && errno != ENOENT) {
+            sprintf(cs->snapshot_path, "%s/%s", cs->data_path, ent->d_name);
+            if (unlink(cs->snapshot_path) < 0 && errno != ENOENT) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "Failed to remove snapshot file. name : %s. error : %s.\n",
-                            ent->d_name, strerror(errno));
+                            "Failed to remove snapshot file. path : %s. error : %s.\n",
+                            cs->snapshot_path, strerror(errno));
                 ret = false; break;
             }
         }
@@ -125,10 +126,11 @@ static bool do_chkpt_sweep_files(chkpt_st *cs)
         }
         ptr += clen;
         if (cs->lasttime != atoi(ptr)) {
-            if (unlink(ent->d_name) < 0 && errno != ENOENT) {
+            sprintf(cs->cmdlog_path, "%s/%s", cs->logs_path, ent->d_name);
+            if (unlink(cs->cmdlog_path) < 0 && errno != ENOENT) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "Failed to remove cmdlog file. name : %s. error : %s.\n",
-                            ent->d_name, strerror(errno));
+                            "Failed to remove cmdlog file. path : %s. error : %s.\n",
+                            cs->cmdlog_path, strerror(errno));
                 ret = false; break;
             }
         }
