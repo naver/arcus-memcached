@@ -32,9 +32,7 @@ void log_get_fsync_lsn(LogSN *lsn);
 
 int               cmdlog_file_open(char *path);
 void              cmdlog_file_close(bool shutdown);
-#ifdef ENABLE_PERSISTENCE_03_DUAL_WRITE
 void              cmdlog_complete_dual_write(bool success);
-#endif
 ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine *engine);
 void              cmdlog_buf_final(void);
 ENGINE_ERROR_CODE cmdlog_buf_flush_thread_start(void);

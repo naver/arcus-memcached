@@ -9037,12 +9037,10 @@ void *itscan_open(struct default_engine *engine, const char *prefix, const int n
     if (sp != NULL) {
         LOCK_CACHE();
         assoc_scan_init(&sp->asscan);
-#ifdef ENABLE_PERSISTENCE_03_DUAL_WRITE
 #ifdef ENABLE_PERSISTENCE
         if (chkpt) {
             item_clog_set_scan(&sp->asscan);
         }
-#endif
 #endif
         UNLOCK_CACHE();
         sp->prefix = prefix;
@@ -9134,22 +9132,16 @@ void itscan_release(void *scan, void **item_array, elems_result_t *erst_array, i
     UNLOCK_CACHE();
 }
 
-#ifdef ENABLE_PERSISTENCE_03_DUAL_WRITE
 void itscan_close(void *scan, bool success)
-#else
-void itscan_close(void *scan)
-#endif
 {
     item_scan_t *sp = (item_scan_t *)scan;
 
     LOCK_CACHE();
     assoc_scan_final(&sp->asscan);
-#ifdef ENABLE_PERSISTENCE_03_DUAL_WRITE
 #ifdef ENABLE_PERSISTENCE
     if (sp->by_chkpt) {
         item_clog_reset_scan(success);
     }
-#endif
 #endif
     UNLOCK_CACHE();
 

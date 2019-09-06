@@ -63,9 +63,7 @@ typedef struct _log_buffer {
     uint32_t    fqsz;   /* flush request queue size */
     uint32_t    fbgn;   /* the queue index to begin flush */
     uint32_t    fend;   /* the queue index to end flush */
-#ifdef ENABLE_PERSISTENCE_03_DUAL_WRITE
     int32_t     dw_end; /* the queue index to end dual write */
-#endif
 } log_BUFFER;
 
 /* log flusher structure */
@@ -181,7 +179,6 @@ static void do_log_file_write(char *log_ptr, uint32_t log_size, bool dual_write)
     /* FIXME::need error handling */
     assert(nwrite == log_size);
 
-#ifdef ENABLE_PERSISTENCE_03_DUAL_WRITE
     if (dual_write && logfile->next_fd != -1) {
         /* next_fd is guaranteed concurrency by log_flush_lock */
 
@@ -196,17 +193,6 @@ static void do_log_file_write(char *log_ptr, uint32_t log_size, bool dual_write)
         /* FIXME::need error handling */
         assert(nwrite == log_size);
     }
-#else
-    /* TODO: add dual write with prev_fd & fd */
-#endif
-
-#ifdef ENABLE_PERSISTENCE_03_DUAL_WRITE
-#else
-    /* update nxt_flush_lsn */
-    pthread_mutex_lock(&log_gl.flush_lsn_lock);
-    log_gl.nxt_flush_lsn.roffset += log_size;
-    pthread_mutex_unlock(&log_gl.flush_lsn_lock);
-#endif
 }
 
 static uint32_t do_log_buff_flush(bool flush_all)
@@ -215,14 +201,11 @@ static uint32_t do_log_buff_flush(bool flush_all)
     uint32_t    nflush = 0;
     bool        dual_write_flag = false;
     bool        last_flush_flag = false;
-#ifdef ENABLE_PERSISTENCE_03_DUAL_WRITE
     bool        next_fhlsn_flag = false;
     bool        cleanup_process = false;
-#endif
 
     /* computate flush size */
     pthread_mutex_lock(&log_gl.log_write_lock);
-#ifdef ENABLE_PERSISTENCE_03_DUAL_WRITE
     if (logbuff->dw_end != -1) {
         cleanup_process = true;
     }
@@ -230,7 +213,6 @@ static uint32_t do_log_buff_flush(bool flush_all)
         logbuff->dw_end = -1;
         next_fhlsn_flag = true;
     }
-#endif
     if (logbuff->fbgn != logbuff->fend) {
         nflush = logbuff->fque[logbuff->fbgn].nflush;
         dual_write_flag = logbuff->fque[logbuff->fbgn].dual_write;
@@ -250,17 +232,14 @@ static uint32_t do_log_buff_flush(bool flush_all)
     }
     pthread_mutex_unlock(&log_gl.log_write_lock);
 
-#ifdef ENABLE_PERSISTENCE_03_DUAL_WRITE
     if (next_fhlsn_flag) {
         pthread_mutex_lock(&log_gl.flush_lsn_lock);
         log_gl.nxt_flush_lsn.filenum += 1;
         log_gl.nxt_flush_lsn.roffset = 0;
         pthread_mutex_unlock(&log_gl.flush_lsn_lock);
     }
-#endif
 
     if (nflush > 0) {
-#ifdef ENABLE_PERSISTENCE_03_DUAL_WRITE
         if (cleanup_process) {
             /* Cleanup process. (fd was set to next_fd in the previous step)
              * Skip if requested by old cmdlog file only.
@@ -271,16 +250,11 @@ static uint32_t do_log_buff_flush(bool flush_all)
         } else {
             do_log_file_write(&logbuff->data[logbuff->head], nflush, dual_write_flag);
         }
-#else
-        do_log_file_write(&logbuff->data[logbuff->head], nflush, dual_write_flag);
-#endif
 
-#ifdef ENABLE_PERSISTENCE_03_DUAL_WRITE
         /* update nxt_flush_lsn */
         pthread_mutex_lock(&log_gl.flush_lsn_lock);
         log_gl.nxt_flush_lsn.roffset += nflush;
         pthread_mutex_unlock(&log_gl.flush_lsn_lock);
-#endif
 
         /* update next flush position */
         pthread_mutex_lock(&log_gl.log_write_lock);
@@ -471,7 +445,6 @@ void log_get_fsync_lsn(LogSN *lsn)
 //    pthread_mutex_unlock(&log_gl.fsync_lsn_lock);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_DUAL_WRITE
 void cmdlog_complete_dual_write(bool success)
 {
     log_BUFFER *logbuff = &log_gl.log_buffer;
@@ -513,7 +486,6 @@ void cmdlog_complete_dual_write(bool success)
     }
     pthread_mutex_unlock(&log_gl.log_flush_lock);
 }
-#endif
 
 int cmdlog_file_open(char *path)
 {
@@ -612,9 +584,7 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
     memset(logbuff->fque, 0, logbuff->fqsz * sizeof(log_FREQ));
     logbuff->fbgn = 0;
     logbuff->fend = 0;
-#ifdef ENABLE_PERSISTENCE_03_DUAL_WRITE
     logbuff->dw_end = -1;
-#endif
 
     /* log flush thread init */
     log_FLUSHER *flusher = &log_gl.log_flusher;

@@ -314,7 +314,6 @@ void item_clog_set_enable(bool enable)
     item_clog_enabled = enable;
 }
 
-#ifdef ENABLE_PERSISTENCE_03_DUAL_WRITE
 #ifdef ENABLE_PERSISTENCE
 void item_clog_set_scan(struct assoc_scan *cs)
 {
@@ -333,5 +332,4 @@ void item_clog_reset_scan(bool success)
         cmdlog_complete_dual_write(success);
     }
 }
-#endif
 #endif

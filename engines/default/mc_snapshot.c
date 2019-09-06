@@ -462,11 +462,7 @@ static bool do_snapshot_action(snapshot_st *ss)
          * We continue the scan.
          */
     }
-#ifdef ENABLE_PERSISTENCE_03_DUAL_WRITE
     itscan_close(shandle, snapshot_done);
-#else
-    itscan_close(shandle);
-#endif
 
 done:
     if (erst_array != NULL) {
