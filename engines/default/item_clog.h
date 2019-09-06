@@ -108,4 +108,10 @@ void CLOG_GE_ITEM_SETATTR(hash_item *it,
 void item_clog_init(struct default_engine *engine);
 void item_clog_final(struct default_engine *engine);
 void item_clog_set_enable(bool enable);
+#ifdef ENABLE_PERSISTENCE_03_DUAL_WRITE
+#ifdef ENABLE_PERSISTENCE
+void item_clog_set_scan(struct assoc_scan *cs);
+void item_clog_reset_scan(bool success);
+#endif
+#endif
 #endif

@@ -15,6 +15,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include <assert.h>
+
 #include "default_engine.h"
 #include "item_clog.h"
 #ifdef ENABLE_PERSISTENCE
@@ -311,3 +313,25 @@ void item_clog_set_enable(bool enable)
 {
     item_clog_enabled = enable;
 }
+
+#ifdef ENABLE_PERSISTENCE_03_DUAL_WRITE
+#ifdef ENABLE_PERSISTENCE
+void item_clog_set_scan(struct assoc_scan *cs)
+{
+    /* Cache locked */
+    if (config->use_persistence) {
+        assert(scanp == NULL);
+        scanp = cs;
+    }
+}
+
+void item_clog_reset_scan(bool success)
+{
+    /* Cache locked */
+    if (scanp != NULL) {
+        scanp = NULL;
+        cmdlog_complete_dual_write(success);
+    }
+}
+#endif
+#endif

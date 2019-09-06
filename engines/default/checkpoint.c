@@ -239,7 +239,11 @@ static int do_checkpoint(chkpt_st *cs)
             break;
         }
 
+#ifdef ENABLE_PERSISTENCE_03_DUAL_WRITE
+        if (mc_snapshot_direct(MC_SNAPSHOT_MODE_CHKPT, NULL, -1, cs->snapshot_path) == ENGINE_SUCCESS) {
+#else
         if (mc_snapshot_direct(MC_SNAPSHOT_MODE_DATA, NULL, -1, cs->snapshot_path) == ENGINE_SUCCESS) {
+#endif
             cs->lasttime = newtime;
             ret = CHKPT_SUCCESS;
         } else {
