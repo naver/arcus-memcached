@@ -18,6 +18,12 @@
 #ifndef MEMCACHED_CHECKPOINT_H
 #define MEMCACHED_CHECKPOINT_H
 
+#ifdef ENABLE_PERSISTENCE_RECOVERY_ANALYSIS
+/* Recovery Functions */
+int chkpt_recovery_analysis(void);
+int chkpt_recovery_redo(void);
+#endif
+
 ENGINE_ERROR_CODE chkpt_init(struct default_engine* engine);
 ENGINE_ERROR_CODE chkpt_thread_start(void);
 

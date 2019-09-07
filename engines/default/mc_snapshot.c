@@ -682,4 +682,15 @@ void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie)
     do_snapshot_stats(&snapshot_anch, add_stat, cookie);
     pthread_mutex_unlock(&snapshot_anch.lock);
 }
+#ifdef ENABLE_PERSISTENCE_RECOVERY_ANALYSIS
+int mc_snapshot_file_apply(const char *filepath)
+{
+    return 0;
+}
+
+int mc_snapshot_get_chkpttime(const int fd, int *lasttime)
+{
+    return 0;
+}
+#endif
 #endif

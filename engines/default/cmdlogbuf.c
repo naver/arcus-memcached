@@ -495,7 +495,11 @@ int cmdlog_file_open(char *path)
     pthread_mutex_lock(&log_gl.log_flush_lock);
     /* prepare cmdlog file */
     do {
+#ifdef ENABLE_PERSISTENCE_RECOVERY_ANALYSIS
+        int fd = disk_open(path, O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP);
+#else
         int fd = disk_open(path, O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP);
+#endif
         if (fd < 0) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Failed to open the cmdlog file. path=%s err=%s\n",
@@ -537,6 +541,12 @@ void cmdlog_file_close(bool shutdown)
     pthread_mutex_unlock(&log_gl.log_flush_lock);
 }
 
+#ifdef ENABLE_PERSISTENCE_RECOVERY_ANALYSIS
+int cmdlog_file_apply(void)
+{
+    return 0;
+}
+#endif
 ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
 {
     logger = engine->server.log->get_logger();

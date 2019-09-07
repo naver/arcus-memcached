@@ -37,5 +37,9 @@ ENGINE_ERROR_CODE mc_snapshot_start(enum mc_snapshot_mode mode,
                                     const char *filepath);
 void mc_snapshot_stop(void);
 void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie);
+#ifdef ENABLE_PERSISTENCE_RECOVERY_ANALYSIS
+int mc_snapshot_file_apply(const char *filepath);
+int mc_snapshot_get_chkpttime(const int fd, int *lasttime);
+#endif
 #endif
 

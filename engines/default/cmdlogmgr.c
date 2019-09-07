@@ -45,6 +45,23 @@ struct cmdlog_global {
 static EXTENSION_LOGGER_DESCRIPTOR* logger = NULL;
 static struct cmdlog_global logmgr_gl;
 
+#ifdef ENABLE_PERSISTENCE_RECOVERY_ANALYSIS
+/* Recovery Function */
+static ENGINE_ERROR_CODE cmdlog_mgr_recovery()
+{
+    /* find and set the last completed snapshot info. */
+    int ret = chkpt_recovery_analysis();
+    if (ret < 0) {
+        return ENGINE_FAILED;
+    }
+    /* do recovery. */
+    ret = chkpt_recovery_redo();
+    if (ret < 0) {
+        return ENGINE_FAILED;
+    }
+    return ENGINE_SUCCESS;
+}
+#endif
 /*
  * External Functions
  */
@@ -155,6 +172,12 @@ ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine)
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
+#ifdef ENABLE_PERSISTENCE_RECOVERY_ANALYSIS
+    ret = cmdlog_mgr_recovery();
+    if (ret != ENGINE_SUCCESS) {
+        return ret;
+    }
+#endif
     ret = cmdlog_buf_flush_thread_start();
     if (ret != ENGINE_SUCCESS) {
         return ret;
