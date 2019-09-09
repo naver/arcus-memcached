@@ -65,7 +65,7 @@ libmcd_util_la_SOURCES= \
                         mock_server.c \
                         util.c
 
-AM_CFLAGS = @COMMON_CFLAGS@
+AM_CFLAGS = @PROFILER_FLAGS@ @COMMON_CFLAGS@
 memcached_SOURCES = \
                     cache.h \
                     config_static.h \
