@@ -613,6 +613,36 @@ static void do_snapshot_stats(snapshot_st *ss, ADD_STAT add_stat, const void *co
     }
 }
 
+#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
+/* Check that a SnapshotTailLog record exists at the end of file. */
+static int do_snapshot_check_file_validity(int fd)
+{
+    assert(fd > 0);
+
+    SnapshotTailLog log;
+    off_t offset;
+    ssize_t nread;
+
+    offset = lseek(fd, -sizeof(log), SEEK_END);
+    if (offset < 0) {
+        return -1;
+    }
+
+    nread = read(fd, &log, sizeof(log));
+    if (nread != sizeof(log)) {
+        return -1;
+    }
+
+    lseek(fd, 0, SEEK_SET);
+    /* it can be true by accident. */
+    if (log.header.logtype == LOG_SNAPSHOT_TAIL &&
+        log.header.updtype == UPD_NONE &&
+        log.header.body_length == 0) {
+        return 0;
+    }
+    return -1;
+}
+#endif
 /*
  * External Functions
  */
@@ -685,6 +715,94 @@ void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie)
 #ifdef ENABLE_PERSISTENCE_RECOVERY_ANALYSIS
 int mc_snapshot_file_apply(const char *filepath)
 {
+#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
+    logger->log(EXTENSION_LOG_WARNING, NULL,
+                "[RECOVERY - SNAPSHOT] applying snapshot file. path=%s\n", filepath);
+
+    int fd = open(filepath, O_RDONLY);
+    if (fd < 0) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "[RECOVERY - SNAPSHOT] failed : file open. "
+                    "path=%s, error=%s\n", filepath, strerror(errno));
+        return -1;
+    }
+
+    if (do_snapshot_check_file_validity(fd) < 0) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "[RECOVERY - SNAPSHOT] failed : invalid file. "
+                    "path=%s\n", filepath);
+        close(fd);
+        return -1;
+    }
+
+    struct default_engine *engine = (struct default_engine*)snapshot_anch.engine;
+    int ret = 0;
+    char buf[MAX_LOG_RECORD_SIZE];
+    hash_item *last_coll_it = NULL;
+
+    while (engine->initialized) {
+        LogRec *logrec = (LogRec*)buf;
+        LogHdr *loghdr = &logrec->header;
+
+        ssize_t nread = read(fd, loghdr, sizeof(LogHdr));
+        if (nread != sizeof(LogHdr)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "[RECOVERY - SNAPSHOT] failed : read header data "
+                        "nread(%zd) != header_length(%lu).\n",
+                        nread, sizeof(LogHdr));
+            ret = -1; break;
+        }
+
+        if (loghdr->body_length > 0) {
+            int free = MAX_LOG_RECORD_SIZE - nread;
+            if (free < loghdr->body_length) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "[RECOVERY - SNAPSHOT] failed : insufficient memory "
+                            "free(%d) != body_length(%u).\n",
+                            free, loghdr->body_length);
+                ret = -1; break;
+            }
+            logrec->body = buf + nread;
+            nread = read(fd, logrec->body, loghdr->body_length);
+            if (nread != loghdr->body_length) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "[RECOVERY - SNAPSHOT] failed : read body data "
+                            "nread(%zd) != body_length(%u).\n",
+                            nread, loghdr->body_length);
+                ret = -1; break;
+            }
+        }
+
+        if (loghdr->logtype == LOG_IT_LINK) {
+            if (lrec_redo_from_record(logrec) != ENGINE_SUCCESS) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "[RECOVERY - SNAPSHOT] failed : log record redo.\n");
+                ret = -1; break;
+            }
+            if (last_coll_it != NULL) {
+                item_release(last_coll_it);
+            }
+            last_coll_it = lrec_get_item_if_collection_link((ITLinkLog*)logrec);
+        } else if (loghdr->logtype == LOG_SNAPSHOT_ELEM) {
+            assert(last_coll_it != NULL && IS_COLL_ITEM(last_coll_it));
+            lrec_set_item_in_snapshot_elem((SnapshotElemLog*)logrec, last_coll_it);
+            if (lrec_redo_from_record(logrec) != ENGINE_SUCCESS) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "[RECOVERY - SNAPSHOT] failed : snapshot elem link log record redo.\n");
+                ret = -1; break;
+            }
+        } else if (loghdr->logtype == LOG_SNAPSHOT_TAIL) {
+            if (last_coll_it != NULL) {
+                item_release(last_coll_it);
+            }
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "[RECOVERY - SNAPSHOT] success.\n");
+            break;
+        }
+    }
+    close(fd);
+    return ret;
+#endif
     return 0;
 }
 
