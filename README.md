@@ -1,4 +1,6 @@
-## arcus-memcached : Arcus Memory Cache Server [![Build Status](https://travis-ci.org/naver/arcus-memcached.svg?branch=develop)](https://travis-ci.org/naver/arcus-memcached)
+## arcus-memcached : Arcus Memory Cache Server
+[![Build Status](https://travis-ci.org/naver/arcus-memcached.svg?branch=develop)](https://travis-ci.org/naver/arcus-memcached)
+[![Coverage Status](https://coveralls.io/repos/github/naver/arcus-memcached/badge.svg?branch=develop)](https://coveralls.io/github/naver/arcus-memcached)
 
 Arcus is a memcached-based cache cloud developed by NAVER Corp.
 Memcached has been heavily modified to support functional and performance

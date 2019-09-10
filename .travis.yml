@@ -5,8 +5,9 @@ compiler:
   - gcc
 
 env:
-  - COVERAGE_FLAGS="--enable-coverage"
-  - COVERAGE_FLAGS=""
+  matrix:
+    - COVERAGE_FLAGS="--enable-coverage"
+    - COVERAGE_FLAGS=""
 
 matrix:
   exclude:
