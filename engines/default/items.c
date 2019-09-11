@@ -24,6 +24,7 @@
 #include <string.h>
 #include <time.h>
 #include <assert.h>
+#include <sched.h>
 #include <inttypes.h>
 #include <sys/time.h> /* gettimeofday() */
 
@@ -172,6 +173,20 @@ static inline void LOCK_CACHE(void)
 static inline void UNLOCK_CACHE(void)
 {
     pthread_mutex_unlock(&ngnptr->cache_lock);
+}
+
+static inline void TRYLOCK_CACHE(int ntries)
+{
+    int i;
+
+    for (i = 0; i < ntries; i++) {
+        if (pthread_mutex_trylock(&ngnptr->cache_lock) == 0)
+            break;
+        sched_yield();
+    }
+    if (i == ntries) {
+        pthread_mutex_lock(&ngnptr->cache_lock);
+    }
 }
 
 #define ITEM_REFCOUNT_FULL 65535
@@ -8104,64 +8119,60 @@ static bool do_item_isstale(hash_item *it)
     return false; /* not-stale data */
 }
 
+/* scan count definitions */
+#define SCRUB_MIN_SCAN_COUNT 32
+#define SCRUB_DFT_SCAN_COUNT 96
+#define SCRUB_MAX_SCAN_COUNT 320
 static void *item_scrubber_main(void *arg)
 {
     struct default_engine *engine = arg;
     struct engine_scrubber *scrubber = &engine->scrubber;
-    int        array_size=32; /* configurable */
-    int        item_count;
-    hash_item *item_array[array_size];
-    hash_item *it;
     struct assoc_scan scan;
+    hash_item *item_array[SCRUB_MAX_SCAN_COUNT];
+    int        item_count;
+    int        scan_count = SCRUB_DFT_SCAN_COUNT; /* configurable */
+    int        scan_execs = 0; /* the number of scan executions */
+    int        scan_break = 1; /* break after N scan executions.
+                                * N = 1 is the best choice, we think.
+                                */
     rel_time_t current_time = svcore->get_current_time();
-    struct timespec sleep_time = {0, 1000};
-    long       tot_execs = 0;
-    int        i,try_cnt = 9;
-
     assert(scrubber->running == true);
 
 again:
-    pthread_mutex_lock(&engine->cache_lock);
+    LOCK_CACHE();
     assoc_scan_init(&scan);
     while (engine->initialized && !scrubber->restart) {
         /* scan and scrub cache items */
-        item_count = assoc_scan_next(&scan, item_array, array_size, 0);
+        item_count = assoc_scan_next(&scan, item_array, scan_count, 0);
         if (item_count < 0) { /* reached to the end */
             break;
         }
         /* Currently, item_count > 0.
          * See the internals of assoc_scan_next(). It does not return 0.
          */
-        for (i = 0; i < item_count; i++) {
-            it = item_array[i];
+        for (int i = 0; i < item_count; i++) {
             scrubber->visited++;
-            if (do_item_isvalid(it, current_time) == false) {
-                do_item_unlink(it, ITEM_UNLINK_INVALID);
+            if (do_item_isvalid(item_array[i], current_time) == false) {
+                do_item_unlink(item_array[i], ITEM_UNLINK_INVALID);
                 scrubber->cleaned++;
             }
-            else if (scrubber->runmode == SCRUB_MODE_STALE
-                     && do_item_isstale(it)) {
-                do_item_unlink(it, ITEM_UNLINK_STALE);
+            else if (scrubber->runmode == SCRUB_MODE_STALE &&
+                     do_item_isstale(item_array[i]) == true) {
+                do_item_unlink(item_array[i], ITEM_UNLINK_STALE);
                 scrubber->cleaned++;
             }
         }
 
-        pthread_mutex_unlock(&engine->cache_lock);
-        if ((++tot_execs % 50) == 0) {
-            nanosleep(&sleep_time, NULL); /* 1ms sleep */
+        UNLOCK_CACHE();
+        if (++scan_execs >= scan_break) {
+            struct timespec sleep_time = {0, (scan_count*1000)};
+            nanosleep(&sleep_time, NULL); /* default 96 usec */
+            scan_execs = 0;
         }
-        /* pthread_mutex_lock(&engine->cache_lock); */
-        for (i = 0; i < try_cnt; i++) {
-            if (pthread_mutex_trylock(&engine->cache_lock) == 0)
-                break;
-            nanosleep(&sleep_time, NULL); /* 1ms sleep */
-        }
-        if (i == try_cnt) {
-            pthread_mutex_lock(&engine->cache_lock);
-        }
+        TRYLOCK_CACHE(5);
     }
     assoc_scan_final(&scan);
-    pthread_mutex_unlock(&engine->cache_lock);
+    UNLOCK_CACHE();
 
     bool restart = false;
     pthread_mutex_lock(&scrubber->lock);
