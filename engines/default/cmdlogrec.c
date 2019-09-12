@@ -303,6 +303,20 @@ static void lrec_it_unlink_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset, log->keyptr, log->body.keylen);
 }
 
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+static ENGINE_ERROR_CODE lrec_it_unlink_redo(LogRec *logrec)
+{
+    ENGINE_ERROR_CODE ret;
+    ITUnlinkLog  *log  = (ITUnlinkLog*)logrec;
+    ITUnlinkData *body = &log->body;
+
+    ret = item_apply_unlink(body->data, body->keylen);
+    if (ret != ENGINE_SUCCESS) {
+        logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_it_unlink_redo failed.\n");
+    }
+    return ret;
+}
+#endif
 static void lrec_it_unlink_print(LogRec *logrec)
 {
     ITUnlinkLog *log  = (ITUnlinkLog*)logrec;
@@ -334,6 +348,46 @@ static void lrec_it_setattr_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset, log->keyptr, log->body.keylen);
 }
 
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+static ENGINE_ERROR_CODE lrec_it_setattr_redo(LogRec *logrec)
+{
+    ENGINE_ERROR_CODE ret;
+    ITSetAttrLog  *log  = (ITSetAttrLog*)logrec;
+    ITSetAttrData *body = &log->body;
+
+    if (log->header.updtype == UPD_SETATTR_EXPTIME) {
+        ret = item_apply_setattr_exptime(body->data, body->keylen, body->exptime);
+        if (ret != ENGINE_SUCCESS) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_it_setattr_redo failed.\n");
+        }
+    } else {
+        hash_item *it = item_get(body->data, body->keylen);
+        if (it) {
+            if (body->maxbkrlen != BKEY_NULL) {
+                bkey_t maxbkeyrange;
+                maxbkeyrange.len = body->maxbkrlen;
+                memcpy(maxbkeyrange.val, (body->data + body->keylen), body->maxbkrlen);
+                ret = item_apply_setattr_meta_info(it, body->ovflact, body->mflags,
+                                                   body->exptime, body->mcnt, &maxbkeyrange);
+            } else {
+                ret = item_apply_setattr_meta_info(it, body->ovflact, body->mflags,
+                                                   body->exptime, body->mcnt, NULL);
+            }
+            if (ret == ENGINE_SUCCESS) {
+                item_release(it);
+            } else {
+                logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_it_setattr_redo failed.\n");
+            }
+        } else {
+            ret = ENGINE_KEY_ENOENT;
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_it_setattr_redo failed."
+                        "not found. key=%.*s\n", body->keylen, body->data);
+        }
+    }
+
+    return ret;
+}
+#endif
 static void lrec_it_setattr_print(LogRec *logrec)
 {
     ITSetAttrLog *log  = (ITSetAttrLog*)logrec;
@@ -380,6 +434,27 @@ static void lrec_it_flush_write(LogRec *logrec, char *bufptr)
     }
 }
 
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+static ENGINE_ERROR_CODE lrec_it_flush_redo(LogRec *logrec)
+{
+    ENGINE_ERROR_CODE ret;
+    ITFlushLog  *log  = (ITFlushLog*)logrec;
+    ITFlushData *body = &log->body;
+
+    if (body->nprefix == 255) {
+        ret = item_apply_flush(NULL, -1); /* flush_all */
+    } else if (body->nprefix == 0) {
+        ret = item_apply_flush(NULL, 0); /* null prefix */
+    } else {
+        ret = item_apply_flush(body->data, body->nprefix); /* flush specific prefix */
+    }
+
+    if (ret != ENGINE_SUCCESS) {
+        logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_it_flush_redo failed.\n");
+    }
+    return ret;
+}
+#endif
 static void lrec_it_flush_print(LogRec *logrec)
 {
     ITFlushLog *log = (ITFlushLog*)logrec;
@@ -404,6 +479,29 @@ static void lrec_list_elem_insert_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset + log->body.keylen, log->valptr, log->body.vallen);
 }
 
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+static ENGINE_ERROR_CODE lrec_list_elem_insert_redo(LogRec *logrec)
+{
+    ENGINE_ERROR_CODE ret = ENGINE_FAILED;
+    ListElemInsLog  *log  = (ListElemInsLog*)logrec;
+    ListElemInsData *body = &log->body;
+
+    hash_item *it = item_get(body->data, body->keylen);
+    if (it) {
+        ret = item_apply_list_elem_insert(it, body->totcnt, body->eindex, (body->data + body->keylen), body->vallen);
+        if (ret == ENGINE_SUCCESS) {
+            item_release(it);
+        } else {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_list_elem_insert_redo failed.\n");
+        }
+    } else {
+        ret = ENGINE_KEY_ENOENT;
+        logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_list_elem_insert_redo failed. "
+                    "not found. nkey=%d, key=%.*s\n", body->keylen, body->keylen, body->data);
+    }
+    return ret;
+}
+#endif
 static void lrec_list_elem_insert_print(LogRec *logrec)
 {
     ListElemInsLog *log = (ListElemInsLog*)logrec;
@@ -427,6 +525,29 @@ static void lrec_list_elem_delete_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset, log->keyptr, log->body.keylen);
 }
 
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+static ENGINE_ERROR_CODE lrec_list_elem_delete_redo(LogRec *logrec)
+{
+    ENGINE_ERROR_CODE ret;
+    ListElemDelLog  *log  = (ListElemDelLog*)logrec;
+    ListElemDelData *body = &log->body;
+
+    hash_item *it = item_get(body->data, body->keylen);
+    if (it) {
+        ret = item_apply_list_elem_delete(it, body->totcnt, body->eindex, body->delcnt);
+        if (ret == ENGINE_SUCCESS) {
+            item_release(it);
+        } else {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_list_elem_delete_redo failed.\n");
+        }
+    } else {
+        ret = ENGINE_KEY_ENOENT;
+        logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_list_elem_delete_redo failed. "
+                    "not found. key=%.*s\n", body->keylen, body->data);
+    }
+    return ret;
+}
+#endif
 static void lrec_list_elem_delete_print(LogRec *logrec)
 {
     ListElemDelLog *log = (ListElemDelLog*)logrec;
@@ -450,6 +571,29 @@ static void lrec_set_elem_insert_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset + log->body.keylen, log->valptr, log->body.vallen);
 }
 
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+static ENGINE_ERROR_CODE lrec_set_elem_insert_redo(LogRec *logrec)
+{
+    ENGINE_ERROR_CODE ret;
+    SetElemInsLog  *log  = (SetElemInsLog*)logrec;
+    SetElemInsData *body = &log->body;
+
+    hash_item *it = item_get(body->data, body->keylen);
+    if (it) {
+        ret = item_apply_set_elem_insert(it, (body->data + body->keylen), body->vallen);
+        if (ret == ENGINE_SUCCESS) {
+            item_release(it);
+        } else {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_set_elem_insert_redo failed.\n");
+        }
+    } else {
+        ret = ENGINE_KEY_ENOENT;
+        logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_set_elem_insert_redo failed. "
+                    "not found. key=%.*s\n", body->keylen, body->data);
+    }
+    return ret;
+}
+#endif
 static void lrec_set_elem_insert_print(LogRec *logrec)
 {
     SetElemInsLog *log = (SetElemInsLog*)logrec;
@@ -473,6 +617,29 @@ static void lrec_set_elem_delete_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset + log->body.keylen, log->valptr, log->body.vallen);
 }
 
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+static ENGINE_ERROR_CODE lrec_set_elem_delete_redo(LogRec *logrec)
+{
+    ENGINE_ERROR_CODE ret;
+    SetElemDelLog  *log  = (SetElemDelLog*)logrec;
+    SetElemDelData *body = &log->body;
+
+    hash_item *it = item_get(body->data, body->keylen);
+    if (it) {
+        ret = item_apply_set_elem_delete(it, (body->data + body->keylen), body->vallen);
+        if (ret == ENGINE_SUCCESS) {
+            item_release(it);
+        } else {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_set_elem_delete_redo failed.\n");
+        }
+    } else {
+        ret = ENGINE_KEY_ENOENT;
+        logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_set_elem_delete_redo failed. "
+                    "not found. key=%.*s\n", body->keylen, body->data);
+    }
+    return ret;
+}
+#endif
 static void lrec_set_elem_delete_print(LogRec *logrec)
 {
     SetElemDelLog *log = (SetElemDelLog*)logrec;
@@ -496,6 +663,29 @@ static void lrec_map_elem_insert_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset + log->body.keylen, log->datptr, log->body.fldlen + log->body.vallen);
 }
 
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+static ENGINE_ERROR_CODE lrec_map_elem_insert_redo(LogRec *logrec)
+{
+    ENGINE_ERROR_CODE ret;
+    MapElemInsLog  *log  = (MapElemInsLog*)logrec;
+    MapElemInsData *body = &log->body;
+
+    hash_item *it = item_get(body->data, body->keylen);
+    if (it) {
+        ret = item_apply_map_elem_insert(it, (body->data + body->keylen), body->fldlen, body->vallen);
+        if (ret == ENGINE_SUCCESS) {
+            item_release(it);
+        } else {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_map_elem_insert_redo failed.\n");
+        }
+    } else {
+        ret = ENGINE_KEY_ENOENT;
+        logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_map_elem_insert_redo failed. "
+                    "not found. key=%.*s\n", body->keylen, body->data);
+    }
+    return ret;
+}
+#endif
 static void lrec_map_elem_insert_print(LogRec *logrec)
 {
     MapElemInsLog *log = (MapElemInsLog*)logrec;
@@ -520,6 +710,29 @@ static void lrec_map_elem_delete_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset + log->body.keylen, log->datptr, log->body.fldlen);
 }
 
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+static ENGINE_ERROR_CODE lrec_map_elem_delete_redo(LogRec *logrec)
+{
+    ENGINE_ERROR_CODE ret;
+    MapElemDelLog  *log  = (MapElemDelLog*)logrec;
+    MapElemDelData *body = &log->body;
+
+    hash_item *it = item_get(body->data, body->keylen);
+    if (it) {
+        ret = item_apply_map_elem_delete(it, (body->data + body->keylen), body->fldlen);
+        if (ret == ENGINE_SUCCESS) {
+            item_release(it);
+        } else {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_map_elem_delete_redo failed.\n");
+        }
+    } else {
+        ret = ENGINE_KEY_ENOENT;
+        logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_map_elem_delete_redo failed. "
+                    "not found. key=%.*s\n", body->keylen, body->data);
+    }
+    return ret;
+}
+#endif
 static void lrec_map_elem_delete_print(LogRec *logrec)
 {
     MapElemDelLog *log = (MapElemDelLog*)logrec;
@@ -544,6 +757,29 @@ static void lrec_bt_elem_insert_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset + log->body.keylen, log->datptr, datlen);
 }
 
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+static ENGINE_ERROR_CODE lrec_bt_elem_insert_redo(LogRec *logrec)
+{
+    ENGINE_ERROR_CODE ret;
+    BtreeElemInsLog  *log  = (BtreeElemInsLog*)logrec;
+    BtreeElemInsData *body = &log->body;
+
+    hash_item *it = item_get(body->data, body->keylen);
+    if (it) {
+        ret = item_apply_btree_elem_insert(it, (body->data + body->keylen), body->nbkey, body->neflag, body->vallen);
+        if (ret == ENGINE_SUCCESS) {
+            item_release(it);
+        } else {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_insert_redo failed.\n");
+        }
+    } else {
+        ret = ENGINE_KEY_ENOENT;
+        logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_insert_redo failed. "
+                    "not found. key=%.*s\n", body->keylen, body->data);
+    }
+    return ret;
+}
+#endif
 static void lrec_bt_elem_insert_print(LogRec *logrec)
 {
     BtreeElemInsLog *log = (BtreeElemInsLog*)logrec;
@@ -582,6 +818,29 @@ static void lrec_bt_elem_delete_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset + log->body.keylen, log->datptr, datlen);
 }
 
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+static ENGINE_ERROR_CODE lrec_bt_elem_delete_redo(LogRec *logrec)
+{
+    ENGINE_ERROR_CODE ret;
+    BtreeElemDelLog  *log  = (BtreeElemDelLog*)logrec;
+    BtreeElemDelData *body = &log->body;
+
+    hash_item *it = item_get(body->data, body->keylen);
+    if (it) {
+        ret = item_apply_btree_elem_delete(it, (body->data + body->keylen), body->nbkey);
+        if (ret == ENGINE_SUCCESS) {
+            item_release(it);
+        } else {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_delete_redo failed.\n");
+        }
+    } else {
+        ret = ENGINE_KEY_ENOENT;
+        logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_delete_redo failed. "
+                    "not found. key=%.*s\n", body->keylen, body->data);
+    }
+    return ret;
+}
+#endif
 static void lrec_bt_elem_delete_print(LogRec *logrec)
 {
     BtreeElemDelLog *log = (BtreeElemDelLog*)logrec;
@@ -701,6 +960,19 @@ typedef struct _logrec_func {
 
 LOGREC_FUNC logrec_func[] = {
     { lrec_it_link_write,            lrec_it_link_redo,            lrec_it_link_print },
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+    { lrec_it_unlink_write,          lrec_it_unlink_redo,          lrec_it_unlink_print },
+    { lrec_it_setattr_write,         lrec_it_setattr_redo,         lrec_it_setattr_print },
+    { lrec_it_flush_write,           lrec_it_flush_redo,           lrec_it_flush_print },
+    { lrec_list_elem_insert_write,   lrec_list_elem_insert_redo,   lrec_list_elem_insert_print },
+    { lrec_list_elem_delete_write,   lrec_list_elem_delete_redo,   lrec_list_elem_delete_print },
+    { lrec_set_elem_insert_write,    lrec_set_elem_insert_redo,    lrec_set_elem_insert_print },
+    { lrec_set_elem_delete_write,    lrec_set_elem_delete_redo,    lrec_set_elem_delete_print },
+    { lrec_map_elem_insert_write,    lrec_map_elem_insert_redo,    lrec_map_elem_insert_print },
+    { lrec_map_elem_delete_write,    lrec_map_elem_delete_redo,    lrec_map_elem_delete_print },
+    { lrec_bt_elem_insert_write,     lrec_bt_elem_insert_redo,     lrec_bt_elem_insert_print },
+    { lrec_bt_elem_delete_write,     lrec_bt_elem_delete_redo,     lrec_bt_elem_delete_print },
+#else
     { lrec_it_unlink_write,          NULL,                         lrec_it_unlink_print },
     { lrec_it_setattr_write,         NULL,                         lrec_it_setattr_print },
     { lrec_it_flush_write,           NULL,                         lrec_it_flush_print },
@@ -712,6 +984,7 @@ LOGREC_FUNC logrec_func[] = {
     { lrec_map_elem_delete_write,    NULL,                         lrec_map_elem_delete_print },
     { lrec_bt_elem_insert_write,     NULL,                         lrec_bt_elem_insert_print },
     { lrec_bt_elem_delete_write,     NULL,                         lrec_bt_elem_delete_print },
+#endif
     { lrec_snapshot_elem_link_write, lrec_snapshot_elem_link_redo, lrec_snapshot_elem_link_print },
     { lrec_snapshot_head_write,      NULL,                         lrec_snapshot_head_print },
     { lrec_snapshot_tail_write,      NULL,                         lrec_snapshot_tail_print }

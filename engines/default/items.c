@@ -10270,6 +10270,29 @@ item_apply_btree_link(const char *key, const uint32_t nkey, item_attr *attrp)
     return ret;
 }
 
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+ENGINE_ERROR_CODE
+item_apply_unlink(const char *key, const uint32_t nkey)
+{
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#ifdef DEBUG_ITEM_APPLY
+    logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_unlink. key=%.*s\n", nkey, key);
+#endif
+
+    LOCK_CACHE();
+    hash_item *it = do_item_get(key, nkey, DONT_UPDATE);
+    if (it) {
+        do_item_unlink(it, ITEM_UNLINK_NORMAL); /* must unlink first. */
+        do_item_release(it);
+    } else {
+        logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_unlink failed."
+                    " not found key=%.*s", nkey, key);
+        ret = ENGINE_KEY_ENOENT;
+    }
+    UNLOCK_CACHE();
+    return ret;
+}
+#endif
 ENGINE_ERROR_CODE
 item_apply_list_elem_insert(hash_item *it, const int nelems, const int index,
                             const char *value, const uint32_t nbytes)
@@ -10323,6 +10346,52 @@ item_apply_list_elem_insert(hash_item *it, const int nelems, const int index,
     return ret;
 }
 
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+ENGINE_ERROR_CODE
+item_apply_list_elem_delete(hash_item *it, const int nelems,
+                            const int index, const int count)
+{
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    const char *key = item_get_key(it);
+#ifdef DEBUG_ITEM_APPLY
+    logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_list_elem_delete. key=%.*s "
+                "index=%d, count=%d\n", it->nkey, key, index, count);
+#endif
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_list_elem_delete failed."
+                        " invalid item.\n");
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+
+        list_meta_info *info = (list_meta_info*)item_get_meta(it);
+        if (info->ccnt != nelems) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_list_elem_delete failed."
+                        "element count mismatch. ecnt(%d) != nelems(%d)",
+                        info->ccnt, nelems);
+            ret = ENGINE_EINVAL; break;
+        }
+
+        uint32_t del_count = do_list_elem_delete(info, index, count, ELEM_DELETE_NORMAL);
+        if (del_count == 0) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_list_elem_delete failed."
+                        " no element deleted. key=%.*s index=%d count=%d\n",
+                        it->nkey, key, index, count);
+            ret = ENGINE_FAILED; break;
+        }
+    } while(0);
+
+    if (ret != ENGINE_SUCCESS) { /* Remove inconsistent hash_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        do_item_release(it);
+    }
+    UNLOCK_CACHE();
+
+    return ret;
+}
+#endif
 ENGINE_ERROR_CODE
 item_apply_set_elem_insert(hash_item *it, const char *value, const uint32_t nbytes)
 {
@@ -10366,6 +10435,43 @@ item_apply_set_elem_insert(hash_item *it, const char *value, const uint32_t nbyt
     return ret;
 }
 
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+ENGINE_ERROR_CODE
+item_apply_set_elem_delete(hash_item *it, const char *value, const uint32_t nbytes)
+{
+    ENGINE_ERROR_CODE ret;
+    const char *key = item_get_key(it);
+#ifdef DEBUG_ITEM_APPLY
+    logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_set_elem_delete. key=%.*s\n", it->nkey, key);
+#endif
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_set_elem_delete failed."
+                        " invalid item.\n");
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+
+        set_meta_info *info = (set_meta_info *)item_get_meta(it);
+        ret = do_set_elem_delete_with_value(info, value, nbytes,
+                                            ELEM_DELETE_NORMAL);
+        if (ret == ENGINE_ELEM_ENOENT) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_set_elem_delete failed."
+                        " no element deleted. key=%.*s\n", it->nkey, key);
+            break;
+        }
+    } while(0);
+
+    if (ret != ENGINE_SUCCESS) { /* Remove inconsistent hash_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        do_item_release(it);
+    }
+    UNLOCK_CACHE();
+
+    return ret;
+}
+#endif
 ENGINE_ERROR_CODE
 item_apply_map_elem_insert(hash_item *it, const char *data, const uint32_t nfield, const uint32_t nbytes)
 {
@@ -10410,6 +10516,53 @@ item_apply_map_elem_insert(hash_item *it, const char *data, const uint32_t nfiel
     return ret;
 }
 
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+ENGINE_ERROR_CODE
+item_apply_map_elem_delete(hash_item *it, const char *field, const uint32_t nfield)
+{
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    const char *key = item_get_key(it);
+    field_t flist;
+    flist.value = (char*)field;
+    flist.length = nfield;
+#ifdef DEBUG_ITEM_APPLY
+    logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_map_elem_delete. key=%.*s field=%.*s\n",
+                it->nkey, key, nfield, field);
+#endif
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_map_elem_delete failed."
+                        " invalid item.\n");
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+
+        map_meta_info *info = (map_meta_info *)item_get_meta(it);
+        if (info->ccnt == 0) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_map_elem_delete failed."
+                        " no element.\n");
+            ret = ENGINE_ELEM_ENOENT; break;
+        }
+
+        uint32_t del_count = do_map_elem_delete_with_field(info, 1, &flist, ELEM_DELETE_NORMAL);
+        if (del_count == 0) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_map_elem_delete failed."
+                        " no element deleted. key=%.*s field=%.*s\n",
+                        it->nkey, key, nfield, field);
+            ret = ENGINE_FAILED; break;
+        }
+    } while(0);
+
+    if (ret != ENGINE_SUCCESS) { /* Remove inconsistent hash_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        do_item_release(it);
+    }
+    UNLOCK_CACHE();
+
+    return ret;
+}
+#endif
 ENGINE_ERROR_CODE
 item_apply_btree_elem_insert(hash_item *it, const char *data, const uint32_t nbkey,
                              const uint32_t neflag, const uint32_t nbytes)
@@ -10456,4 +10609,145 @@ item_apply_btree_elem_insert(hash_item *it, const char *data, const uint32_t nbk
 
     return ret;
 }
+
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+ENGINE_ERROR_CODE
+item_apply_btree_elem_delete(hash_item *it, const char *bkey, const uint32_t nbkey)
+{
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    const char *key = item_get_key(it);
+
+    bkey_range bkrange;
+    /* one-element range */
+    memcpy(bkrange.from_bkey, bkey, BTREE_REAL_NBKEY(nbkey));
+    bkrange.from_nbkey = nbkey;
+    /* bkey_range.to_bkey */
+    bkrange.to_nbkey = BKEY_NULL;
+#ifdef DEBUG_ITEM_APPLY
+    logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_btree_elem_delete. key=%.*s bkey=%.*s\n",
+                it->nkey, key, nbkey, bkey);
+#endif
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_btree_elem_delete failed."
+                        " invalid item.\n");
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+
+        btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
+        if (info->ccnt == 0) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_btree_elem_delete failed."
+                        " no element.\n");
+            ret = ENGINE_ELEM_ENOENT; break;
+        }
+        if ((info->bktype == BKEY_TYPE_UINT64 && bkrange.from_nbkey > 0) ||
+            (info->bktype == BKEY_TYPE_BINARY && bkrange.from_nbkey == 0)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_btree_elem_delete failed."
+                        " bkey mismatch. key=%.*s bkey=%.*s\n", it->nkey, key, nbkey, bkey);
+            ret = ENGINE_EBADBKEY; break;
+        }
+
+        uint32_t del_count = do_btree_elem_delete(info, BKEY_RANGE_TYPE_SIN, &bkrange,
+                                                  NULL, 0, NULL, ELEM_DELETE_NORMAL);
+        if (del_count == 0) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_btree_elem_delete failed."
+                        " no element deleted. key=%.*s bkey=%.*s", it->nkey, key, nbkey, bkey);
+            ret = ENGINE_FAILED; break;
+        }
+    } while(0);
+
+    if (ret != ENGINE_SUCCESS) { /* Remove inconsistent has_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        do_item_release(it);
+    }
+    UNLOCK_CACHE();
+
+    return ret;
+}
+
+ENGINE_ERROR_CODE
+item_apply_setattr_exptime(const char *key, const uint32_t nkey, rel_time_t exptime)
+{
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#ifdef DEBUG_ITEM_APPLY
+    logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_setattr_exptime. key=%.*s\n", nkey, key);
+#endif
+
+    LOCK_CACHE();
+    hash_item *it = do_item_get(key, nkey, DONT_UPDATE);
+    if (it) {
+        it->exptime = exptime;
+        do_item_release(it);
+    } else {
+        logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_setattr_exptime failed."
+                    " not found key=%.*s\n", nkey, key);
+        ret = ENGINE_KEY_ENOENT;
+    }
+    UNLOCK_CACHE();
+    return ret;
+}
+
+ENGINE_ERROR_CODE
+item_apply_setattr_meta_info(hash_item *it, const uint8_t ovflact, const uint8_t mflags,
+                             rel_time_t exptime, const int32_t mcnt, bkey_t *maxbkeyrange)
+{
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    const char *key = item_get_key(it);
+#ifdef DEBUG_ITEM_APPLY
+    logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_setattr_meta_info. key=%.*s\n", it->nkey, key);
+#endif
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_setattr_meta_info failed."
+                        " invalid item. key=%.*s\n", it->nkey, key);
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+        if (!IS_COLL_ITEM(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_setattr_meta_info failed."
+                        " The item is not a collection. key=%.*s\n", it->nkey, key);
+            ret = ENGINE_EBADTYPE; break;
+        }
+        if (maxbkeyrange != NULL && (it->iflag & ITEM_IFLAG_BTREE) == 0) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_setattr_meta_info failed."
+                        " The item is not a btree. key=%.*s\n", it->nkey, key);
+            ret = ENGINE_EBADTYPE; break;
+        }
+        coll_meta_info *info = (coll_meta_info*)item_get_meta(it);
+        info->mcnt = mcnt;
+        info->ovflact = ovflact;
+        info->mflags = mflags;
+        it->exptime = exptime;
+        if (maxbkeyrange) {
+            ((btree_meta_info*)info)->maxbkeyrange = *maxbkeyrange;
+        }
+    } while(0);
+
+    if (ret != ENGINE_SUCCESS) { /* Remove inconsistent has_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        do_item_release(it);
+    }
+    UNLOCK_CACHE();
+
+    return ENGINE_SUCCESS;
+}
+
+ENGINE_ERROR_CODE
+item_apply_flush(const char *prefix, const int nprefix)
+{
+    ENGINE_ERROR_CODE ret;
+#ifdef DEBUG_ITEM_APPLY
+    logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_flush. prefix=%s nprefix=%d\n",
+                prefix ? prefix : "<null>", nprefix);
+#endif
+
+    LOCK_CACHE();
+    ret = do_item_flush_expired(prefix, nprefix, 0 /* right now */, NULL);
+    UNLOCK_CACHE();
+    return ret;
+}
+#endif
 #endif
