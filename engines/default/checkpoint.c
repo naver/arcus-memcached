@@ -306,10 +306,8 @@ static void* chkpt_thread_main(void* arg)
 /*
  * External Functions
  */
-#ifdef ENABLE_PERSISTENCE_RECOVERY_ANALYSIS
-/*
- * Recovery Functions
- */
+
+/* Recovery Functions */
 
 static int chkptsnapshotfilter(const struct dirent *ent)
 {
@@ -392,7 +390,6 @@ int chkpt_recovery_redo(void)
 }
 
 /* Checkpoint Functions */
-#endif
 
 ENGINE_ERROR_CODE chkpt_init(struct default_engine* engine)
 {

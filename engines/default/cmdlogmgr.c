@@ -45,7 +45,6 @@ struct cmdlog_global {
 static EXTENSION_LOGGER_DESCRIPTOR* logger = NULL;
 static struct cmdlog_global logmgr_gl;
 
-#ifdef ENABLE_PERSISTENCE_RECOVERY_ANALYSIS
 /* Recovery Function */
 static ENGINE_ERROR_CODE cmdlog_mgr_recovery()
 {
@@ -61,7 +60,7 @@ static ENGINE_ERROR_CODE cmdlog_mgr_recovery()
     }
     return ENGINE_SUCCESS;
 }
-#endif
+
 /*
  * External Functions
  */
@@ -175,12 +174,10 @@ ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine)
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
-#ifdef ENABLE_PERSISTENCE_RECOVERY_ANALYSIS
     ret = cmdlog_mgr_recovery();
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
-#endif
     ret = cmdlog_buf_flush_thread_start();
     if (ret != ENGINE_SUCCESS) {
         return ret;
