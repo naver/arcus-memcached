@@ -8165,8 +8165,8 @@ again:
 
         UNLOCK_CACHE();
         if (++scan_execs >= scan_break) {
-            struct timespec sleep_time = {0, (scan_count*1000)};
-            nanosleep(&sleep_time, NULL); /* default 96 usec */
+            struct timespec sleep_time = {0, (64*1000)};
+            nanosleep(&sleep_time, NULL); /* 64 usec */
             scan_execs = 0;
         }
         TRYLOCK_CACHE(5);
