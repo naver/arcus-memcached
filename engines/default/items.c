@@ -10053,11 +10053,11 @@ item_apply_kv_link(const char *key, const uint32_t nkey,
                    const uint32_t flags, const rel_time_t exptime,
                    const uint32_t nbytes, const char *value, const uint64_t cas)
 {
+    ENGINE_ERROR_CODE ret;
 #ifdef DEBUG_ITEM_APPLY
     logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_kv_link."
                 " key=%.*s, nbytes=%u\n", nkey, key, nbytes);
 #endif
-    ENGINE_ERROR_CODE ret;
 
     LOCK_CACHE();
     hash_item *old_it = do_item_get(key, nkey, DONT_UPDATE);
@@ -10098,10 +10098,10 @@ item_apply_kv_link(const char *key, const uint32_t nkey,
 ENGINE_ERROR_CODE
 item_apply_list_link(const char *key, const uint32_t nkey, item_attr *attrp)
 {
+    ENGINE_ERROR_CODE ret;
 #ifdef DEBUG_ITEM_APPLY
     logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_list_link. key=%.*s\n", nkey, key);
 #endif
-    ENGINE_ERROR_CODE ret;
 
     LOCK_CACHE();
     hash_item *old_it = do_item_get(key, nkey, DONT_UPDATE);
@@ -10137,10 +10137,10 @@ item_apply_list_link(const char *key, const uint32_t nkey, item_attr *attrp)
 ENGINE_ERROR_CODE
 item_apply_set_link(const char *key, const uint32_t nkey, item_attr *attrp)
 {
+    ENGINE_ERROR_CODE ret;
 #ifdef DEBUG_ITEM_APPLY
     logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_set_link. key=%.*s\n", nkey, key);
 #endif
-    ENGINE_ERROR_CODE ret;
 
     LOCK_CACHE();
     hash_item *old_it = do_item_get(key, nkey, DONT_UPDATE);
@@ -10176,10 +10176,10 @@ item_apply_set_link(const char *key, const uint32_t nkey, item_attr *attrp)
 ENGINE_ERROR_CODE
 item_apply_map_link(const char *key, const uint32_t nkey, item_attr *attrp)
 {
+    ENGINE_ERROR_CODE ret;
 #ifdef DEBUG_ITEM_APPLY
     logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_map_link. key=%.*s\n", nkey, key);
 #endif
-    ENGINE_ERROR_CODE ret;
 
     LOCK_CACHE();
     hash_item *old_it = do_item_get(key, nkey, DONT_UPDATE);
@@ -10215,10 +10215,10 @@ item_apply_map_link(const char *key, const uint32_t nkey, item_attr *attrp)
 ENGINE_ERROR_CODE
 item_apply_btree_link(const char *key, const uint32_t nkey, item_attr *attrp)
 {
+    ENGINE_ERROR_CODE ret;
 #ifdef DEBUG_ITEM_APPLY
     logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_btree_link. key=%.*s\n", nkey, key);
 #endif
-    ENGINE_ERROR_CODE ret;
 
     LOCK_CACHE();
     hash_item *old_it = do_item_get(key, nkey, DONT_UPDATE);
@@ -10263,12 +10263,12 @@ ENGINE_ERROR_CODE
 item_apply_list_elem_insert(hash_item *it, const int nelems, const int index,
                             const char *value, const uint32_t nbytes)
 {
-#ifdef DEBUG_ITEM_APPLY
-    logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_list_elem_insert. key=%.*s "
-                "nelems=%d index=%d.\n", nkey, key, nelems, index);
-#endif
     ENGINE_ERROR_CODE ret;
     const char *key = item_get_key(it);
+#ifdef DEBUG_ITEM_APPLY
+    logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_list_elem_insert. key=%.*s "
+                "nelems=%d index=%d.\n", it->nkey, key, nelems, index);
+#endif
 
     LOCK_CACHE();
     do {
@@ -10315,11 +10315,11 @@ item_apply_list_elem_insert(hash_item *it, const int nelems, const int index,
 ENGINE_ERROR_CODE
 item_apply_set_elem_insert(hash_item *it, const char *value, const uint32_t nbytes)
 {
-#ifdef DEBUG_ITEM_APPLY
-    logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_set_elem_insert. key=%.*s\n", nkey, key);
-#endif
     ENGINE_ERROR_CODE ret;
     const char *key = item_get_key(it);
+#ifdef DEBUG_ITEM_APPLY
+    logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_set_elem_insert. key=%.*s\n", it->nkey, key);
+#endif
 
     LOCK_CACHE();
     do {
@@ -10358,12 +10358,12 @@ item_apply_set_elem_insert(hash_item *it, const char *value, const uint32_t nbyt
 ENGINE_ERROR_CODE
 item_apply_map_elem_insert(hash_item *it, const char *data, const uint32_t nfield, const uint32_t nbytes)
 {
-#ifdef DEBUG_ITEM_APPLY
-    logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_map_elem_insert. key=%.*s "
-                "nfield=%u field=%.*s", nkey, key, nfield, nfield, data);
-#endif
     ENGINE_ERROR_CODE ret;
     const char *key = item_get_key(it);
+#ifdef DEBUG_ITEM_APPLY
+    logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_map_elem_insert. key=%.*s "
+                "nfield=%u field=%.*s\n", it->nkey, key, nfield, nfield, data);
+#endif
 
     LOCK_CACHE();
     do {
@@ -10403,13 +10403,13 @@ ENGINE_ERROR_CODE
 item_apply_btree_elem_insert(hash_item *it, const char *data, const uint32_t nbkey,
                              const uint32_t neflag, const uint32_t nbytes)
 {
-#ifdef DEBUG_ITEM_APPLY
-    logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_btree_elem_insert. key=%.*s "
-                "nbkey=%u bkey=%.*s", nkey, key, nbkey, nbkey, data);
-#endif
     ENGINE_ERROR_CODE ret;
     bool replaced;
     const char *key = item_get_key(it);
+#ifdef DEBUG_ITEM_APPLY
+    logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_btree_elem_insert. key=%.*s "
+                "nbkey=%u bkey=%.*s\n", it->nkey, key, nbkey, nbkey, data);
+#endif
 
     LOCK_CACHE();
     do {
