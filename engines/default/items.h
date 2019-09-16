@@ -644,4 +644,22 @@ void item_stop_dump(struct default_engine *engine);
 void item_stats_dump(struct default_engine *engine,
                      ADD_STAT add_stat, const void *cookie);
 
+#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
+/*
+ * Apply functions by recovery.
+ */
+ENGINE_ERROR_CODE item_apply_kv_link(const char *key, const uint32_t nkey,
+                                     const uint32_t flags, const rel_time_t exptime,
+                                     const uint32_t nbytes, const char *value, const uint64_t cas);
+ENGINE_ERROR_CODE item_apply_list_link(const char *key, const uint32_t nkey, item_attr *attrp);
+ENGINE_ERROR_CODE item_apply_set_link(const char *key, const uint32_t nkey, item_attr *attrp);
+ENGINE_ERROR_CODE item_apply_map_link(const char *key, const uint32_t nkey, item_attr *attrp);
+ENGINE_ERROR_CODE item_apply_btree_link(const char *key, const uint32_t nkey, item_attr *attrp);
+ENGINE_ERROR_CODE item_apply_list_elem_insert(hash_item *it, const int nelems, const int index,
+                                              const char *value, const uint32_t nbytes);
+ENGINE_ERROR_CODE item_apply_set_elem_insert(hash_item *it, const char *value, const uint32_t nbytes);
+ENGINE_ERROR_CODE item_apply_map_elem_insert(hash_item *it, const char *data, const uint32_t nfield, const uint32_t nbytes);
+ENGINE_ERROR_CODE item_apply_btree_elem_insert(hash_item *it, const char *data, const uint32_t nbkey,
+                                               const uint32_t neflag, const uint32_t nbytes);
+#endif
 #endif

@@ -168,6 +168,9 @@ ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine)
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
+#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
+    (void)cmdlog_rec_init(engine);
+#endif
     ret = chkpt_init(engine);
     if (ret != ENGINE_SUCCESS) {
         return ret;

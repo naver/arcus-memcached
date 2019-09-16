@@ -38,6 +38,9 @@
 /* get bkey real size */
 #define BTREE_REAL_NBKEY(nbkey) ((nbkey)==0 ? sizeof(uint64_t) : (nbkey))
 
+#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
+static EXTENSION_LOGGER_DESCRIPTOR *logger;
+#endif
 static char *get_logtype_text(uint8_t type)
 {
     switch (type) {
@@ -216,6 +219,50 @@ static void lrec_it_link_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset, log->keyptr, cm->keylen + cm->vallen);
 }
 
+#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
+static ENGINE_ERROR_CODE lrec_it_link_redo(LogRec *logrec)
+{
+    ENGINE_ERROR_CODE ret = ENGINE_FAILED;
+    ITLinkLog  *log  = (ITLinkLog*)logrec;
+    ITLinkData *body = &log->body;
+    struct lrec_item_common cm = body->cm;
+
+    char *keyptr = body->data;
+    if (cm.ittype == ITEM_TYPE_KV) {
+        ret = item_apply_kv_link(keyptr, cm.keylen, cm.flags, cm.exptime,
+                                        cm.vallen, (keyptr + cm.keylen), body->ptr.cas);
+    } else {
+        struct lrec_coll_meta meta = body->ptr.meta;
+        item_attr attr;
+        attr.flags      = cm.flags;
+        attr.exptime    = cm.exptime;
+        attr.maxcount   = meta.mcnt;
+        attr.ovflaction = meta.ovflact;
+        attr.readable   = (meta.mflags & COLL_META_FLAG_READABLE ? 1 : 0);
+        attr.trimmed    = (meta.mflags & COLL_META_FLAG_TRIMMED ? 1 : 0);
+        if (cm.ittype == ITEM_TYPE_LIST) {
+            ret = item_apply_list_link(keyptr, cm.keylen, &attr);
+        } else if (cm.ittype == ITEM_TYPE_SET) {
+            ret = item_apply_set_link(keyptr, cm.keylen, &attr);
+        } else if (cm.ittype == ITEM_TYPE_MAP) {
+            ret = item_apply_map_link(keyptr, cm.keylen, &attr);
+        } else if (cm.ittype == ITEM_TYPE_BTREE) {
+            struct lrec_coll_meta meta = body->ptr.meta;
+            if (meta.maxbkrlen != BKEY_NULL) {
+                attr.maxbkeyrange.len = meta.maxbkrlen;
+                memcpy(attr.maxbkeyrange.val, keyptr, BTREE_REAL_NBKEY(attr.maxbkeyrange.len));
+                keyptr += BTREE_REAL_NBKEY(attr.maxbkeyrange.len);
+            }
+            ret = item_apply_btree_link(keyptr, cm.keylen, &attr);
+        }
+    }
+
+    if (ret != ENGINE_SUCCESS) {
+        logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_it_link_redo failed.\n");
+    }
+    return ret;
+}
+#endif
 static void lrec_it_link_print(LogRec *logrec)
 {
     ITLinkLog  *log  = (ITLinkLog*)logrec;
@@ -569,6 +616,29 @@ static void lrec_snapshot_elem_link_write(LogRec *logrec, char *bufptr)
     }
 }
 
+#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
+static ENGINE_ERROR_CODE lrec_snapshot_elem_link_redo(LogRec *logrec)
+{
+    ENGINE_ERROR_CODE ret = ENGINE_FAILED;
+    SnapshotElemLog  *log  = (SnapshotElemLog*)logrec;
+    SnapshotElemData *body = &log->body;
+
+    if (IS_LIST_ITEM(log->it)) {
+        ret = item_apply_list_elem_insert(log->it, -1, -1, body->data, body->nbytes);
+    } else if (IS_SET_ITEM(log->it)) {
+        ret = item_apply_set_elem_insert(log->it, body->data, body->nbytes);
+    } else if (IS_MAP_ITEM(log->it)) {
+        ret = item_apply_map_elem_insert(log->it, body->data, body->nekey, body->nbytes);
+    } else if (IS_BTREE_ITEM(log->it)) {
+        ret = item_apply_btree_elem_insert(log->it, body->data, body->nekey, body->neflag, body->nbytes);
+    }
+
+    if (ret != ENGINE_SUCCESS) {
+        logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_snapshot_elem_link_redo failed.\n");
+    }
+    return ret;
+}
+#endif
 static void lrec_snapshot_elem_link_print(LogRec *logrec)
 {
     SnapshotElemLog  *log  = (SnapshotElemLog*)logrec;
@@ -627,9 +697,31 @@ static void lrec_snapshot_tail_print(LogRec *logrec)
 /* Log Record Function */
 typedef struct _logrec_func {
     void (*write)(LogRec *logrec, char *bufptr);
+#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
+    ENGINE_ERROR_CODE (*redo)(LogRec *logrec);
+#endif
     void (*print)(LogRec *logrec);
 } LOGREC_FUNC;
 
+#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
+LOGREC_FUNC logrec_func[] = {
+    { lrec_it_link_write,            lrec_it_link_redo,            lrec_it_link_print },
+    { lrec_it_unlink_write,          NULL,                         lrec_it_unlink_print },
+    { lrec_it_setattr_write,         NULL,                         lrec_it_setattr_print },
+    { lrec_it_flush_write,           NULL,                         lrec_it_flush_print },
+    { lrec_list_elem_insert_write,   NULL,                         lrec_list_elem_insert_print },
+    { lrec_list_elem_delete_write,   NULL,                         lrec_list_elem_delete_print },
+    { lrec_set_elem_insert_write,    NULL,                         lrec_set_elem_insert_print },
+    { lrec_set_elem_delete_write,    NULL,                         lrec_set_elem_delete_print },
+    { lrec_map_elem_insert_write,    NULL,                         lrec_map_elem_insert_print },
+    { lrec_map_elem_delete_write,    NULL,                         lrec_map_elem_delete_print },
+    { lrec_bt_elem_insert_write,     NULL,                         lrec_bt_elem_insert_print },
+    { lrec_bt_elem_delete_write,     NULL,                         lrec_bt_elem_delete_print },
+    { lrec_snapshot_elem_link_write, lrec_snapshot_elem_link_redo, lrec_snapshot_elem_link_print },
+    { lrec_snapshot_head_write,      NULL,                         lrec_snapshot_head_print },
+    { lrec_snapshot_tail_write,      NULL,                         lrec_snapshot_tail_print }
+};
+#else
 LOGREC_FUNC logrec_func[] = {
     { lrec_it_link_write,            lrec_it_link_print },
     { lrec_it_unlink_write,          lrec_it_unlink_print },
@@ -647,9 +739,17 @@ LOGREC_FUNC logrec_func[] = {
     { lrec_snapshot_head_write,      lrec_snapshot_head_print },
     { lrec_snapshot_tail_write,      lrec_snapshot_tail_print }
 };
+#endif
 
 /* external function */
 
+#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
+void cmdlog_rec_init(struct default_engine *engine)
+{
+    logger = engine->server.log->get_logger();
+    logger->log(EXTENSION_LOG_INFO, NULL, "COMMNAD LOG RECORD module initialized.\n");
+}
+#endif
 void lrec_write_to_buffer(LogRec *logrec, char *bufptr)
 {
     logrec_func[logrec->header.logtype].write(logrec, bufptr);
@@ -658,6 +758,21 @@ void lrec_write_to_buffer(LogRec *logrec, char *bufptr)
 #endif
 }
 
+#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
+ENGINE_ERROR_CODE lrec_redo_from_record(LogRec *logrec)
+{
+#ifdef DEBUG_PERSISTENCE_DISK_FORMAT_PRINT
+    logrec_func[logrec->header.logtype].print(logrec);
+#endif
+    if(logrec_func[logrec->header.logtype].redo != NULL) {
+        return logrec_func[logrec->header.logtype].redo(logrec);
+    } else {
+        logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_redo_from_record(logtype=%s) "
+                    "is not supported.\n", get_logtype_text(logrec->header.logtype));
+        return ENGINE_ENOTSUP;
+    }
+}
+#endif
 /* Construct Log Record Functions */
 int lrec_construct_snapshot_head(LogRec *logrec)
 {
@@ -958,4 +1073,26 @@ int lrec_construct_btree_elem_delete(LogRec *logrec, hash_item *it, btree_elem_i
                               BTREE_REAL_NBKEY(log->body.nbkey) + log->body.keylen);
     return log->header.body_length+sizeof(LogHdr);
 }
+#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
+hash_item *lrec_get_item_if_collection_link(ITLinkLog *log)
+{
+    if (log->header.logtype != LOG_IT_LINK ||
+        log->header.updtype == UPD_SET) {
+        return NULL;
+    }
+    hash_item *it = item_get(&log->body.data, log->body.cm.keylen);
+    assert(it != NULL && IS_COLL_ITEM(it));
+
+    return it;
+}
+
+void lrec_set_item_in_snapshot_elem(SnapshotElemLog *log, hash_item *it)
+{
+    assert(it != NULL);
+    if (log->header.logtype != LOG_SNAPSHOT_ELEM) {
+        return;
+    }
+    log->it = it;
+}
+#endif
 #endif

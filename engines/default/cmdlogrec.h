@@ -18,6 +18,9 @@
 #ifndef MEMCACHED_CMDLOGREC_H
 #define MEMCACHED_CMDLOGREC_H
 
+#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
+#define MAX_LOG_RECORD_SIZE (2 * 1024 * 1024)
+#endif
 enum log_type {
     LOG_IT_LINK = 0,
     LOG_IT_UNLINK,
@@ -175,6 +178,9 @@ typedef struct _snapshot_elem_log {
     LogHdr           header;
     SnapshotElemData body;
     char             *valptr;
+#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
+    hash_item        *it;
+#endif
 } SnapshotElemLog;
 
 /* List Elem Insert Log Record */
@@ -305,6 +311,9 @@ typedef struct _snapshot_tail_log {
     LogHdr header;
 } SnapshotTailLog;
 
+#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
+void cmdlog_rec_init(struct default_engine *engine);
+#endif
 /* Construct Log Record Functions */
 int lrec_construct_snapshot_head(LogRec *logrec);
 int lrec_construct_snapshot_tail(LogRec *logrec);
@@ -324,4 +333,13 @@ int lrec_construct_btree_elem_delete(LogRec *logrec, hash_item *it, btree_elem_i
 
 /* Function to write the given log record to log buffer */
 void lrec_write_to_buffer(LogRec *logrec, char *bufptr);
+#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
+/* Function to redo from the given log record. */
+ENGINE_ERROR_CODE lrec_redo_from_record(LogRec *logrec);
+
+/* get collection hashitem having ITLinkLog's key. */
+hash_item *lrec_get_item_if_collection_link(ITLinkLog *log);
+/* set collection hashitem in snapshot elem log record. */
+void lrec_set_item_in_snapshot_elem(SnapshotElemLog *log, hash_item *it);
+#endif
 #endif
