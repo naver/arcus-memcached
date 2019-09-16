@@ -716,7 +716,7 @@ void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie)
 #ifdef ENABLE_PERSISTENCE
 int mc_snapshot_file_apply(const char *filepath)
 {
-    logger->log(EXTENSION_LOG_WARNING, NULL,
+    logger->log(EXTENSION_LOG_INFO, NULL,
                 "[RECOVERY - SNAPSHOT] applying snapshot file. path=%s\n", filepath);
 
     int fd = open(filepath, O_RDONLY);
@@ -758,7 +758,7 @@ int mc_snapshot_file_apply(const char *filepath)
             if (free < loghdr->body_length) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
                             "[RECOVERY - SNAPSHOT] failed : insufficient memory "
-                            "free(%d) != body_length(%u).\n",
+                            "free(%d) < body_length(%u).\n",
                             free, loghdr->body_length);
                 ret = -1; break;
             }
@@ -795,7 +795,7 @@ int mc_snapshot_file_apply(const char *filepath)
             if (last_coll_it != NULL) {
                 item_release(last_coll_it);
             }
-            logger->log(EXTENSION_LOG_WARNING, NULL,
+            logger->log(EXTENSION_LOG_INFO, NULL,
                         "[RECOVERY - SNAPSHOT] success.\n");
             break;
         }
