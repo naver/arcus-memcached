@@ -644,7 +644,7 @@ void item_stop_dump(struct default_engine *engine);
 void item_stats_dump(struct default_engine *engine,
                      ADD_STAT add_stat, const void *cookie);
 
-#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
+#ifdef ENABLE_PERSISTENCE
 /*
  * Apply functions by recovery.
  */

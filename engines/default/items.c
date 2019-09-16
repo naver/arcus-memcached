@@ -33,10 +33,6 @@
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogmgr.h"
 #include "cmdlogbuf.h"
-#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
-
-//#define DEBUG_ITEM_APPLY
-#endif
 #endif
 
 //#define SET_DELETE_NO_MERGE
@@ -10046,7 +10042,9 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
     return ret;
 }
 
-#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
+#ifdef ENABLE_PERSISTENCE
+//#define DEBUG_ITEM_APPLY
+
 /*
  * Apply functions by recovery.
  */

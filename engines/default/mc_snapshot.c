@@ -613,7 +613,7 @@ static void do_snapshot_stats(snapshot_st *ss, ADD_STAT add_stat, const void *co
     }
 }
 
-#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
+#ifdef ENABLE_PERSISTENCE
 /* Check that a SnapshotTailLog record exists at the end of file. */
 static int do_snapshot_check_file_validity(int fd)
 {
@@ -716,7 +716,6 @@ void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie)
 #ifdef ENABLE_PERSISTENCE
 int mc_snapshot_file_apply(const char *filepath)
 {
-#ifdef ENABLE_PERSISTENCE_04_RECOVERY_SNAPSHOT
     logger->log(EXTENSION_LOG_WARNING, NULL,
                 "[RECOVERY - SNAPSHOT] applying snapshot file. path=%s\n", filepath);
 
@@ -803,8 +802,6 @@ int mc_snapshot_file_apply(const char *filepath)
     }
     close(fd);
     return ret;
-#endif
-    return 0;
 }
 
 int mc_snapshot_get_chkpttime(const int fd, int *lasttime)
