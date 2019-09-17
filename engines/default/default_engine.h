@@ -65,11 +65,9 @@ struct engine_config {
    size_t max_set_size;
    size_t max_map_size;
    size_t max_btree_size;
-#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
 #ifdef ENABLE_PERSISTENCE
    size_t chkpt_interval_pct_snapshot;
    size_t chkpt_interval_min_logsize;
-#endif
 #endif
    bool   ignore_vbucket;
    char   prefix_delimiter;

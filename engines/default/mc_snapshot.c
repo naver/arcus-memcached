@@ -35,14 +35,9 @@
 
 /* snapshot file structure */
 struct snapshot_file {
-#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
     char   path[SNAPSHOT_MAX_FILEPATH_LENGTH+1];
     int    fd;
     size_t size;
-#else
-    char path[SNAPSHOT_MAX_FILEPATH_LENGTH+1];
-    int  fd;
-#endif
 };
 
 /* snapshot buffer structure */
@@ -395,9 +390,7 @@ static void do_snapshot_prepare(snapshot_st *ss,
     snprintf(ss->file.path, SNAPSHOT_MAX_FILEPATH_LENGTH, "%s",
              (filepath != NULL ? filepath : "mc_snapshot"));
     ss->file.fd = -1;
-#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
     ss->file.size = 0;
-#endif
 
     /* reset snapshot buffer */
     do_snapshot_buffer_reset(ss);
@@ -481,9 +474,7 @@ done:
         erst_array = NULL;
     }
     if (ss->file.fd > 0) {
-#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
         ss->file.size = lseek(ss->file.fd, 0, SEEK_END);
-#endif
         close(ss->file.fd);
         ss->file.fd = -1;
     }
@@ -677,15 +668,9 @@ void mc_snapshot_final(void)
     logger->log(EXTENSION_LOG_INFO, NULL, "SNAPSHOT module destroyed.\n");
 }
 
-#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
 ENGINE_ERROR_CODE mc_snapshot_direct(enum mc_snapshot_mode mode,
                                      const char *prefix, const int nprefix,
                                      const char *filepath, size_t *filesize)
-#else
-ENGINE_ERROR_CODE mc_snapshot_direct(enum mc_snapshot_mode mode,
-                                     const char *prefix, const int nprefix,
-                                     const char *filepath)
-#endif
 {
     ENGINE_ERROR_CODE ret;
 
@@ -696,11 +681,9 @@ ENGINE_ERROR_CODE mc_snapshot_direct(enum mc_snapshot_mode mode,
 
     pthread_mutex_lock(&snapshot_anch.lock);
     ret = do_snapshot_direct(&snapshot_anch, mode, prefix, nprefix, filepath);
-#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
     if (ret == ENGINE_SUCCESS && filesize != NULL) {
         *filesize = snapshot_anch.file.size;
     }
-#endif
     pthread_mutex_unlock(&snapshot_anch.lock);
     return ret;
 }

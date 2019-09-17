@@ -34,9 +34,7 @@
 #define CHKPT_SNAPSHOT_PREFIX      "snapshot_"
 #define CHKPT_CMDLOG_PREFIX        "cmdlog_"
 
-#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
 #define CHKPT_CHECK_INTERVAL 5
-#endif
 #define CHKPT_SWEEP_INTERVAL 5
 
 enum chkpt_error_code {
@@ -50,20 +48,12 @@ typedef struct _chkpt_st {
     pthread_mutex_t lock;
     pthread_cond_t cond;
     void    *engine;
-#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
     void    *config;
-#endif
     bool     start;       /* checkpoint module start */
     bool     stop;        /* stop to do checkpoint */
     bool     sleep;       /* checkpoint thread sleep */
-#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
-#else
-    int      interval;    /* checkpoint execution interval */
-#endif
     int      lasttime;    /* last checkpoint time */
-#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
     size_t   lastsize;    /* last snapshot log file size */
-#endif
     char     snapshot_path[CHKPT_MAX_FILENAME_LENGTH+1]; /* snapshot file path */
     char     cmdlog_path[CHKPT_MAX_FILENAME_LENGTH+1];   /* cmdlog file path */
     char    *data_path;   /* snapshot directory path */
@@ -253,11 +243,8 @@ static int do_checkpoint(chkpt_st *cs)
             break;
         }
 
-#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
-        if (mc_snapshot_direct(MC_SNAPSHOT_MODE_CHKPT, NULL, -1, cs->snapshot_path, &cs->lastsize) == ENGINE_SUCCESS) {
-#else
-        if (mc_snapshot_direct(MC_SNAPSHOT_MODE_CHKPT, NULL, -1, cs->snapshot_path) == ENGINE_SUCCESS) {
-#endif
+        if (mc_snapshot_direct(MC_SNAPSHOT_MODE_CHKPT, NULL, -1,
+                               cs->snapshot_path, &cs->lastsize) == ENGINE_SUCCESS) {
             cs->lasttime = newtime;
             ret = CHKPT_SUCCESS;
         } else {
@@ -276,7 +263,6 @@ static int do_checkpoint(chkpt_st *cs)
     return ret;
 }
 
-#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
 static bool do_checkpoint_needed(chkpt_st *cs)
 {
     struct engine_config *config = cs->config;
@@ -289,10 +275,8 @@ static bool do_checkpoint_needed(chkpt_st *cs)
         (cmdlog_file_size < (snapshot_file_size + (snapshot_file_size*(pct_snapshot*0.01))))) {
         return false;
     }
-
     return true;
 }
-#endif
 
 static void* chkpt_thread_main(void* arg)
 {
@@ -321,7 +305,6 @@ static void* chkpt_thread_main(void* arg)
             }
         }
 
-#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
         if (elapsed_time >= CHKPT_CHECK_INTERVAL) {
             if (do_checkpoint_needed(cs)) {
                 ret = do_checkpoint(cs);
@@ -333,19 +316,6 @@ static void* chkpt_thread_main(void* arg)
             }
             elapsed_time = 0;
         }
-#else
-        if (elapsed_time >= cs->interval) {
-            ret = do_checkpoint(cs);
-            if (ret == CHKPT_SUCCESS) {
-                elapsed_time = 0;
-            } else {
-                logger->log(EXTENSION_LOG_WARNING, NULL, "Failed in checkpoint. "
-                            "Retry checkpoint in 5 seconds.\n");
-                if (ret == CHKPT_ERROR_FILE_REMOVE) need_remove = true;
-                elapsed_time -= 5;
-            }
-        }
-#endif
     }
     cs->start = false;
     return NULL;
@@ -446,16 +416,10 @@ ENGINE_ERROR_CODE chkpt_init(struct default_engine* engine)
     pthread_mutex_init(&chkpt_anch.lock, NULL);
     pthread_cond_init(&chkpt_anch.cond, NULL);
     chkpt_anch.engine = (void*)engine;
-#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
     chkpt_anch.config = (void*)&engine->config;
-#endif
     chkpt_anch.start = false;
     chkpt_anch.stop = false;
     chkpt_anch.sleep = false;
-#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
-#else
-    chkpt_anch.interval = 60;
-#endif
     chkpt_anch.lasttime = -1;
     chkpt_anch.snapshot_path[0] = '\0';
     chkpt_anch.cmdlog_path[0] = '\0';

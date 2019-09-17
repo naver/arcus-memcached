@@ -115,8 +115,8 @@ default_get_info(ENGINE_HANDLE* handle)
 static int check_configuration(struct engine_config *conf)
 {
 #ifdef ENABLE_PERSISTENCE
-    /* check data & logs directory path */
     if (conf->use_persistence) {
+        /* check data & logs directory path */
         if (conf->data_path == NULL && conf->logs_path == NULL) {
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "default engine - No backup directory path defined. "
@@ -151,9 +151,9 @@ static int check_configuration(struct engine_config *conf)
                         "default engine - Data or logs directory path is not defined.\n");
             return -1;
         }
-#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
+
+        /* adjust checkpoint interval */
         conf->chkpt_interval_min_logsize = conf->chkpt_interval_min_logsize * 1024 * 1024; /* MB to B */
-#endif
     }
 #endif
     return 0;
@@ -224,7 +224,6 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
             { .key = "max_btree_size",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.max_btree_size },
-#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
 #ifdef ENABLE_PERSISTENCE
             { .key = "chkpt_interval_pct_snapshot",
               .datatype = DT_SIZE,
@@ -232,7 +231,6 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
             { .key = "chkpt_interval_min_logsize",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.chkpt_interval_min_logsize },
-#endif
 #endif
             { .key = "ignore_vbucket",
               .datatype = DT_BOOL,
