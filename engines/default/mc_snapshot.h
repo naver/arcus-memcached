@@ -28,9 +28,15 @@ enum mc_snapshot_mode {
 ENGINE_ERROR_CODE mc_snapshot_init(struct default_engine *engine);
 void mc_snapshot_final(void);
 
+#ifdef ENABLE_PERSISTENCE_04_CHECKPOINT_REF
+ENGINE_ERROR_CODE mc_snapshot_direct(enum mc_snapshot_mode mode,
+                                     const char *prefix, const int nprefix,
+                                     const char *filepath, size_t *filesize);
+#else
 ENGINE_ERROR_CODE mc_snapshot_direct(enum mc_snapshot_mode mode,
                                      const char *prefix, const int nprefix,
                                      const char *filepath);
+#endif
 
 ENGINE_ERROR_CODE mc_snapshot_start(enum mc_snapshot_mode mode,
                                     const char *prefix, const int nprefix,
