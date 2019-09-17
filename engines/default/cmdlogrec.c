@@ -840,6 +840,7 @@ int lrec_construct_setattr(LogRec *logrec, hash_item *it, uint8_t updtype)
     ITSetAttrLog *log = (ITSetAttrLog*)logrec;
     log->keyptr = (char*)item_get_key(it);
     log->body.keylen = it->nkey;
+    log->body.maxbkrlen = BKEY_NULL;
 
     int naddition = 0;
     switch (updtype) {
@@ -859,12 +860,9 @@ int lrec_construct_setattr(LogRec *logrec, hash_item *it, uint8_t updtype)
           if (updtype == UPD_SETATTR_EXPTIME_INFO_BKEY) {
               log->body.maxbkrlen = ((btree_meta_info*)info)->maxbkeyrange.len;
               log->maxbkrptr      = ((btree_meta_info*)info)->maxbkeyrange.val;
-          } else {
-              log->body.maxbkrlen = BKEY_NULL;
-              log->maxbkrptr      = NULL;
-          }
-          if (log->body.maxbkrlen != BKEY_NULL) {
-              naddition = BTREE_REAL_NBKEY(log->body.maxbkrlen);
+              if (log->body.maxbkrlen != BKEY_NULL) {
+                  naddition = BTREE_REAL_NBKEY(log->body.maxbkrlen);
+              }
           }
       }
       break;
