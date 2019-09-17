@@ -15,6 +15,7 @@ matrix:
       env: COVERAGE_FLAGS="--enable-coverage"
 
 script:
+  - sudo apt-get update -qq
   - sudo apt-get install -qq build-essential autoconf automake libtool libcppunit-dev libevent-dev
   - ./config/autorun.sh
   - ./configure $COVERAGE_FLAGS
