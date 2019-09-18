@@ -40,7 +40,7 @@ void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie);
 
 #ifdef ENABLE_PERSISTENCE
 int mc_snapshot_file_apply(const char *filepath);
-int mc_snapshot_get_chkpttime(const int fd, int *lasttime);
+int mc_snapshot_get_chkpttime(const int fd, int64_t *lasttime);
 #endif
 
 #endif
