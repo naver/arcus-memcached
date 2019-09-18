@@ -24,6 +24,7 @@
 #include "cmdlogmgr.h"
 #include "cmdlogbuf.h"
 #include "checkpoint.h"
+#include "item_clog.h"
 
 typedef struct _wait_entry_info {
     int16_t           free_list;
@@ -176,6 +177,9 @@ ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine)
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
+    /* set enable change log */
+    (void)item_clog_set_enable(true);
+
     ret = cmdlog_buf_flush_thread_start();
     if (ret != ENGINE_SUCCESS) {
         return ret;

@@ -296,11 +296,6 @@ void item_clog_init(struct default_engine *engine)
     config = &engine->config;
     logger = engine->server.log->get_logger();
 
-    /* set enable change log */
-#ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence) item_clog_set_enable(true);
-#endif
-
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM change log module initialized.\n");
 }
 
