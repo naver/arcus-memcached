@@ -810,7 +810,7 @@ int mc_snapshot_file_apply(const char *filepath)
     return ret;
 }
 
-int mc_snapshot_get_chkpttime(const int fd, int *lasttime)
+int mc_snapshot_get_chkpttime(const int fd, int64_t *lasttime)
 {
     return 0;
 }

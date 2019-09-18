@@ -30,7 +30,7 @@
 #include "cmdlogbuf.h"
 
 #define CHKPT_MAX_FILENAME_LENGTH  255
-#define CHKPT_FILE_NAME_FORMAT     "%s/%s%d"
+#define CHKPT_FILE_NAME_FORMAT     "%s/%s%ld"
 #define CHKPT_SNAPSHOT_PREFIX      "snapshot_"
 #define CHKPT_CMDLOG_PREFIX        "cmdlog_"
 
@@ -52,7 +52,7 @@ typedef struct _chkpt_st {
     bool     start;       /* checkpoint module start */
     bool     stop;        /* stop to do checkpoint */
     bool     sleep;       /* checkpoint thread sleep */
-    int      lasttime;    /* last checkpoint time */
+    int64_t  lasttime;    /* last checkpoint time */
     size_t   lastsize;    /* last snapshot log file size */
     char     snapshot_path[CHKPT_MAX_FILENAME_LENGTH+1]; /* snapshot file path */
     char     cmdlog_path[CHKPT_MAX_FILENAME_LENGTH+1];   /* cmdlog file path */
@@ -64,18 +64,19 @@ typedef struct _chkpt_st {
 static EXTENSION_LOGGER_DESCRIPTOR* logger = NULL;
 static chkpt_st chkpt_anch;
 
-static int getnowtime(void)
+static int64_t getnowtime(void)
 {
-    int ltime;
-    time_t clock;
-    struct tm *date;
+    int64_t ltime;
+    time_t clock = time(0);
+    struct tm *date = localtime(&clock);
 
-    clock = time(0);
-    date = localtime(&clock);
-    ltime = date->tm_hour * 10000;
-    ltime += date->tm_min * 100;
+    ltime  = date->tm_year * 10000000000;
+    ltime += date->tm_mon  * 100000000;
+    ltime += date->tm_mday * 1000000;
+    ltime += date->tm_hour * 10000;
+    ltime += date->tm_min  * 100;
     ltime += date->tm_sec;
-    return(ltime);
+    return ltime;
 }
 
 /* Delete all backup files except last checkpoint file. */
@@ -142,7 +143,7 @@ static bool do_chkpt_sweep_files(chkpt_st *cs)
 }
 
 /* create files for next checkpoint : snapshot_(newtime), cmdlog_(newtime) */
-static int do_chkpt_create_files(chkpt_st *cs, int newtime)
+static int do_chkpt_create_files(chkpt_st *cs, int64_t newtime)
 {
     sprintf(cs->snapshot_path, CHKPT_FILE_NAME_FORMAT, cs->data_path, CHKPT_SNAPSHOT_PREFIX, newtime);
     int fd = open(cs->snapshot_path, O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
@@ -176,7 +177,7 @@ static int do_chkpt_create_files(chkpt_st *cs, int newtime)
 }
 
 /* remove files : snapshot_(oldtime), cmdlog_(oldtime) */
-static int do_chkpt_remove_files(chkpt_st *cs, int oldtime)
+static int do_chkpt_remove_files(chkpt_st *cs, int64_t oldtime)
 {
     sprintf(cs->snapshot_path, CHKPT_FILE_NAME_FORMAT, cs->data_path, CHKPT_SNAPSHOT_PREFIX, oldtime);
     if (unlink(cs->snapshot_path) < 0 && errno != ENOENT) {
@@ -228,8 +229,8 @@ static void do_chkpt_wakeup(chkpt_st *cs, bool lock_hold)
 static int do_checkpoint(chkpt_st *cs)
 {
     int ret;
-    int oldtime = cs->lasttime;
-    int newtime = getnowtime();
+    int64_t oldtime = cs->lasttime;
+    int64_t newtime = getnowtime();
 
     do {
         if ((ret = do_chkpt_create_files(cs, newtime)) != 0) {
