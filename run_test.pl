@@ -5,7 +5,7 @@ use Cwd;
 my $engine_name = shift;
 my $script_type = shift;
 my @engine_list = ("default");
-my $opt = '--job 5'; # --job N : run N test jobs in parallel
+my $opt = '--job 3'; # --job N : run N test jobs in parallel
 my $srcdir = getcwd;
 my $ext = "s";
 
