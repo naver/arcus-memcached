@@ -303,6 +303,20 @@ typedef struct _Btree_elem_delete_log {
     char             *datptr;
 } BtreeElemDelLog;
 
+#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_HEAD_LOG
+/* Snapshot File Head Record */
+typedef struct _Snapshot_head_data {
+    char     engine_name[32];     /* engine name containing null character. */
+    int64_t  checkpoint_time;     /* -1 : normal file, > 0 : checkpoint file */
+    uint32_t persistence_version; /* latest persistence version */
+    char     data[1];
+} SnapshotHeadData;
+
+typedef struct _snapshot_head_log {
+    LogHdr           header;
+    SnapshotHeadData body;
+} SnapshotHeadLog;
+#endif
 /* Snapshot File Tail Record */
 typedef struct _snapshot_tail_log {
     LogHdr header;
@@ -312,7 +326,11 @@ typedef struct _snapshot_tail_log {
 void cmdlog_rec_init(struct default_engine *engine);
 
 /* Construct Log Record Functions */
+#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_HEAD_LOG
+int lrec_construct_snapshot_head(LogRec *logrec, int64_t chkpt_time);
+#else
 int lrec_construct_snapshot_head(LogRec *logrec);
+#endif
 int lrec_construct_snapshot_tail(LogRec *logrec);
 int lrec_construct_snapshot_elem(LogRec *logrec, hash_item *it, void *elem);
 int lrec_construct_link_item(LogRec *logrec, hash_item *it);

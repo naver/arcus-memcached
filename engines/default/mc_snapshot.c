@@ -38,6 +38,9 @@ struct snapshot_file {
     char   path[SNAPSHOT_MAX_FILEPATH_LENGTH+1];
     int    fd;
     size_t size;
+#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_HEAD_LOG
+    int64_t time;
+#endif
 };
 
 /* snapshot buffer structure */
@@ -324,6 +327,9 @@ static int do_snapshot_init(snapshot_st *ss, struct default_engine *engine)
     /* snapshot file */
     ss->file.path[0] = '\0';
     ss->file.fd = -1;
+#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_HEAD_LOG
+    ss->file.time = -1;
+#endif
 
     /* snapshot buffer */
     ss->buffer.memory = (char*)malloc(SNAPSHOT_BUFFER_SIZE);
@@ -396,6 +402,26 @@ static void do_snapshot_prepare(snapshot_st *ss,
     do_snapshot_buffer_reset(ss);
 }
 
+#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_HEAD_LOG
+static int do_snapshot_write_headlog(bool chkpt, snapshot_st *ss)
+{
+    SnapshotHeadLog log;
+    ss->file.time = (chkpt) ? ss->file.time : -1;
+    int logsize = lrec_construct_snapshot_head((LogRec*)&log, ss->file.time);
+    if (do_snapshot_buffer_check_space(ss, logsize) < 0) {
+        return -1;
+    }
+
+    struct snapshot_buffer *ssb = &ss->buffer;
+    char *bufptr = &ssb->memory[ssb->curlen];
+    lrec_write_to_buffer((LogRec*)&log, bufptr);
+    ssb->curlen += logsize;
+    if (do_snapshot_buffer_flush(ss) < 0) {
+        return -1;
+    }
+    return 0;
+}
+#endif
 static bool do_snapshot_action(snapshot_st *ss)
 {
     struct default_engine *engine = ss->engine;
@@ -424,6 +450,12 @@ static bool do_snapshot_action(snapshot_st *ss)
     }
 
     bool chkpt = (ss->mode == MC_SNAPSHOT_MODE_CHKPT ? true : false);
+#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_HEAD_LOG
+    if (do_snapshot_write_headlog(chkpt, ss) < 0) {
+        logger->log(EXTENSION_LOG_WARNING, NULL, "Failed to write snapshot head log.\n");
+        goto done;
+    }
+#endif
     shandle = itscan_open(engine, ss->prefix, ss->nprefix, chkpt);
     if (shandle == NULL) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -668,9 +700,15 @@ void mc_snapshot_final(void)
     logger->log(EXTENSION_LOG_INFO, NULL, "SNAPSHOT module destroyed.\n");
 }
 
+#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_HEAD_LOG
+ENGINE_ERROR_CODE mc_snapshot_direct(enum mc_snapshot_mode mode,
+                                     const char *prefix, const int nprefix,
+                                     const char *filepath, size_t *filesize, int64_t filetime)
+#else
 ENGINE_ERROR_CODE mc_snapshot_direct(enum mc_snapshot_mode mode,
                                      const char *prefix, const int nprefix,
                                      const char *filepath, size_t *filesize)
+#endif
 {
     ENGINE_ERROR_CODE ret;
 
@@ -680,6 +718,9 @@ ENGINE_ERROR_CODE mc_snapshot_direct(enum mc_snapshot_mode mode,
     }
 
     pthread_mutex_lock(&snapshot_anch.lock);
+#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_HEAD_LOG
+    snapshot_anch.file.time = filetime;
+#endif
     ret = do_snapshot_direct(&snapshot_anch, mode, prefix, nprefix, filepath);
     if (ret == ENGINE_SUCCESS && filesize != NULL) {
         *filesize = snapshot_anch.file.size;

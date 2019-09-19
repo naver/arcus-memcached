@@ -244,8 +244,13 @@ static int do_checkpoint(chkpt_st *cs)
             break;
         }
 
+#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_HEAD_LOG
+        if (mc_snapshot_direct(MC_SNAPSHOT_MODE_CHKPT, NULL, -1,
+                               cs->snapshot_path, &cs->lastsize, newtime) == ENGINE_SUCCESS) {
+#else
         if (mc_snapshot_direct(MC_SNAPSHOT_MODE_CHKPT, NULL, -1,
                                cs->snapshot_path, &cs->lastsize) == ENGINE_SUCCESS) {
+#endif
             cs->lasttime = newtime;
             ret = CHKPT_SUCCESS;
         } else {

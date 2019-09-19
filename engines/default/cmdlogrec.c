@@ -24,6 +24,12 @@
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogrec.h"
 
+#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_HEAD_LOG
+/* persistence meta data */
+#define PERSISTENCE_ENGINE_NAME "ARCUS-DEFAULT_ENGINE"
+#define PERSISTENCE_VERSION     1 /* latest version */
+#endif
+
 //#define DEBUG_PERSISTENCE_DISK_FORMAT_PRINT
 
 #ifdef offsetof
@@ -921,10 +927,26 @@ static void lrec_snapshot_elem_link_print(LogRec *logrec)
 /* Snapshot Head Log Record */
 static void lrec_snapshot_head_write(LogRec *logrec, char *bufptr)
 {
+#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_HEAD_LOG
+    SnapshotHeadLog *log = (SnapshotHeadLog*)logrec;
+    int offset = sizeof(LogHdr) + offsetof(SnapshotHeadData, data);
+
+    memcpy(bufptr, (void*)log, offset);
+#endif
 }
 
 static void lrec_snapshot_head_print(LogRec *logrec)
 {
+#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_HEAD_LOG
+    SnapshotHeadLog  *log  = (SnapshotHeadLog*)logrec;
+    SnapshotHeadData *body = &log->body;
+
+    lrec_header_print(&log->header);
+
+    fprintf(stderr, "[BODY]   engine_name=%s | checkpoint_time=%"PRId64" | "
+            "persistence_version=%u\n",
+            body->engine_name, body->checkpoint_time, body->persistence_version);
+#endif
 }
 
 /* Snapshot Tail Log Record */
@@ -996,11 +1018,31 @@ ENGINE_ERROR_CODE lrec_redo_from_record(LogRec *logrec)
 }
 
 /* Construct Log Record Functions */
+
+#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_HEAD_LOG
+int lrec_construct_snapshot_head(LogRec *logrec, int64_t chkpt_time)
+{
+    SnapshotHeadLog  *log  = (SnapshotHeadLog*)logrec;
+    SnapshotHeadData *body = &log->body;
+
+    assert(sizeof(body->engine_name) > strlen(PERSISTENCE_ENGINE_NAME));
+    memset(body->engine_name, 0, sizeof(body->engine_name));
+    memcpy(body->engine_name, PERSISTENCE_ENGINE_NAME, strlen(PERSISTENCE_ENGINE_NAME));
+    body->checkpoint_time = chkpt_time;
+    body->persistence_version = PERSISTENCE_VERSION;
+
+    log->header.logtype = LOG_SNAPSHOT_HEAD;
+    log->header.updtype = UPD_NONE;
+    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(SnapshotHeadData, data));
+    return log->header.body_length+sizeof(LogHdr);
+}
+#else
 int lrec_construct_snapshot_head(LogRec *logrec)
 {
     return 0;
 }
 
+#endif
 int lrec_construct_snapshot_tail(LogRec *logrec)
 {
     SnapshotTailLog *log = (SnapshotTailLog*)logrec;
