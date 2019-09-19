@@ -511,7 +511,11 @@ int cmdlog_file_open(char *path)
     pthread_mutex_lock(&log_gl.log_flush_lock);
     /* prepare cmdlog file */
     do {
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+        int fd = disk_open(path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP);
+#else
         int fd = disk_open(path, O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP);
+#endif
         if (fd < 0) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Failed to open the cmdlog file. path=%s err=%s\n",
@@ -571,7 +575,93 @@ size_t cmdlog_file_getsize(void)
 
 int cmdlog_file_apply(void)
 {
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+    log_FILE *logfile = &log_gl.log_file;
+    assert(logfile->fd > 0);
+
+    logger->log(EXTENSION_LOG_INFO, NULL,
+                "[RECOVERY - CMDLOG] applying command log file. path=%s\n", logfile->path);
+
+    struct stat file_stat;
+    fstat(logfile->fd, &file_stat);
+    logfile->size = file_stat.st_size;
+    if (logfile->size == 0) {
+        logger->log(EXTENSION_LOG_INFO, NULL,
+                    "[RECOVERY - CMDLOG] log file is empty.\n");
+        return 0;
+    }
+
+    int ret = 0;
+    int seek_offset = 0;
+    char buf[MAX_LOG_RECORD_SIZE];
+    while (log_gl.initialized && seek_offset < logfile->size) {
+        LogRec *logrec = (LogRec*)buf;
+        LogHdr *loghdr = &logrec->header;
+
+        if (logfile->size - seek_offset < sizeof(LogHdr)) {
+            logger->log(EXTENSION_LOG_INFO, NULL,
+                        "[RECOVERY - CMDLOG] header of last command was not completely written. "
+                        "header_length=%ld\n", sizeof(LogHdr));
+            break;
+        }
+
+        ssize_t nread = read(logfile->fd, loghdr, sizeof(LogHdr));
+        if (nread != sizeof(LogHdr)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "[RECOVERY - CMDLOG] failed : read header data "
+                        "nread(%zd) != header_length(%lu).\n", nread, sizeof(LogHdr));
+            ret = -1; break;
+        }
+        seek_offset += nread;
+
+        if (logfile->size - seek_offset < loghdr->body_length) {
+            seek_offset = lseek(logfile->fd, -nread, SEEK_CUR);
+            if (seek_offset < 0) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "[RECOVERY - CMDLOG] failed : lseek(SEEK_CUR-%zd). path=%s, error=%s.\n",
+                            nread, logfile->path, strerror(errno));
+                ret = -1; break;
+            }
+            logger->log(EXTENSION_LOG_INFO, NULL,
+                        "[RECOVERY - CMDLOG] body of last command was not completely written. "
+                        "body_length=%d\n", loghdr->body_length);
+            break;
+        }
+
+        if (loghdr->body_length > 0) {
+            int free = MAX_LOG_RECORD_SIZE - nread;
+            if (free < loghdr->body_length) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "[RECOVERY - CMDLOG] failed : insufficient memory "
+                            "free(%d) < body_length(%u).\n", free, loghdr->body_length);
+                ret = -1; break;
+            }
+            logrec->body = buf + nread;
+            nread = read(logfile->fd, logrec->body, loghdr->body_length);
+            if (nread != loghdr->body_length) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "[RECOVERY - CMDLOG] failed : read body data "
+                            "nread(%zd) != body_length(%u).\n", nread, loghdr->body_length);
+                ret = -1; break;
+            }
+            seek_offset += nread;
+            if (lrec_redo_from_record(logrec) != ENGINE_SUCCESS) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "[RECOVERY - CMDLOG] failed : log record redo.\n");
+                ret = -1; break;
+            }
+        }
+    }
+    if (ret < 0) {
+        close(logfile->fd);
+    } else {
+        logfile->size = seek_offset;
+        logger->log(EXTENSION_LOG_INFO, NULL, "[RECOVERY - CMDLOG] success.\n");
+    }
+    return ret;
+#else
     return 0;
+#endif
 }
 
 ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)

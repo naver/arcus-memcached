@@ -655,11 +655,32 @@ ENGINE_ERROR_CODE item_apply_list_link(const char *key, const uint32_t nkey, ite
 ENGINE_ERROR_CODE item_apply_set_link(const char *key, const uint32_t nkey, item_attr *attrp);
 ENGINE_ERROR_CODE item_apply_map_link(const char *key, const uint32_t nkey, item_attr *attrp);
 ENGINE_ERROR_CODE item_apply_btree_link(const char *key, const uint32_t nkey, item_attr *attrp);
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+ENGINE_ERROR_CODE item_apply_unlink(const char *key, const uint32_t nkey);
+
+#endif
 ENGINE_ERROR_CODE item_apply_list_elem_insert(hash_item *it, const int nelems, const int index,
                                               const char *value, const uint32_t nbytes);
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+ENGINE_ERROR_CODE item_apply_list_elem_delete(hash_item *it, const int nelems, const int index, const int count);
+#endif
 ENGINE_ERROR_CODE item_apply_set_elem_insert(hash_item *it, const char *value, const uint32_t nbytes);
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+ENGINE_ERROR_CODE item_apply_set_elem_delete(hash_item *it, const char *value, const uint32_t nbytes);
+#endif
 ENGINE_ERROR_CODE item_apply_map_elem_insert(hash_item *it, const char *data, const uint32_t nfield, const uint32_t nbytes);
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+ENGINE_ERROR_CODE item_apply_map_elem_delete(hash_item *it, const char *field, const uint32_t nfield);
+#endif
 ENGINE_ERROR_CODE item_apply_btree_elem_insert(hash_item *it, const char *data, const uint32_t nbkey,
                                                const uint32_t neflag, const uint32_t nbytes);
+#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
+ENGINE_ERROR_CODE item_apply_btree_elem_delete(hash_item *it, const char *bkey, const uint32_t nbkey);
+
+ENGINE_ERROR_CODE item_apply_setattr_exptime(const char *key, const uint32_t nkey, rel_time_t exptime);
+ENGINE_ERROR_CODE item_apply_setattr_meta_info(hash_item *it, const uint8_t ovflact, const uint8_t mflags,
+                                               rel_time_t exptime, const int32_t mcnt, bkey_t *maxbkeyrange);
+ENGINE_ERROR_CODE item_apply_flush(const char *prefix, const int nprefix);
+#endif
 #endif
 #endif
