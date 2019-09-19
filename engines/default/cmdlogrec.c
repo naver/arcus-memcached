@@ -303,7 +303,6 @@ static void lrec_it_unlink_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset, log->keyptr, log->body.keylen);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
 static ENGINE_ERROR_CODE lrec_it_unlink_redo(LogRec *logrec)
 {
     ENGINE_ERROR_CODE ret;
@@ -316,7 +315,7 @@ static ENGINE_ERROR_CODE lrec_it_unlink_redo(LogRec *logrec)
     }
     return ret;
 }
-#endif
+
 static void lrec_it_unlink_print(LogRec *logrec)
 {
     ITUnlinkLog *log  = (ITUnlinkLog*)logrec;
@@ -348,7 +347,6 @@ static void lrec_it_setattr_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset, log->keyptr, log->body.keylen);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
 static ENGINE_ERROR_CODE lrec_it_setattr_redo(LogRec *logrec)
 {
     ENGINE_ERROR_CODE ret;
@@ -387,7 +385,7 @@ static ENGINE_ERROR_CODE lrec_it_setattr_redo(LogRec *logrec)
 
     return ret;
 }
-#endif
+
 static void lrec_it_setattr_print(LogRec *logrec)
 {
     ITSetAttrLog *log  = (ITSetAttrLog*)logrec;
@@ -434,7 +432,6 @@ static void lrec_it_flush_write(LogRec *logrec, char *bufptr)
     }
 }
 
-#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
 static ENGINE_ERROR_CODE lrec_it_flush_redo(LogRec *logrec)
 {
     ENGINE_ERROR_CODE ret;
@@ -454,7 +451,7 @@ static ENGINE_ERROR_CODE lrec_it_flush_redo(LogRec *logrec)
     }
     return ret;
 }
-#endif
+
 static void lrec_it_flush_print(LogRec *logrec)
 {
     ITFlushLog *log = (ITFlushLog*)logrec;
@@ -479,7 +476,6 @@ static void lrec_list_elem_insert_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset + log->body.keylen, log->valptr, log->body.vallen);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
 static ENGINE_ERROR_CODE lrec_list_elem_insert_redo(LogRec *logrec)
 {
     ENGINE_ERROR_CODE ret = ENGINE_FAILED;
@@ -501,7 +497,7 @@ static ENGINE_ERROR_CODE lrec_list_elem_insert_redo(LogRec *logrec)
     }
     return ret;
 }
-#endif
+
 static void lrec_list_elem_insert_print(LogRec *logrec)
 {
     ListElemInsLog *log = (ListElemInsLog*)logrec;
@@ -525,7 +521,6 @@ static void lrec_list_elem_delete_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset, log->keyptr, log->body.keylen);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
 static ENGINE_ERROR_CODE lrec_list_elem_delete_redo(LogRec *logrec)
 {
     ENGINE_ERROR_CODE ret;
@@ -547,7 +542,7 @@ static ENGINE_ERROR_CODE lrec_list_elem_delete_redo(LogRec *logrec)
     }
     return ret;
 }
-#endif
+
 static void lrec_list_elem_delete_print(LogRec *logrec)
 {
     ListElemDelLog *log = (ListElemDelLog*)logrec;
@@ -571,7 +566,6 @@ static void lrec_set_elem_insert_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset + log->body.keylen, log->valptr, log->body.vallen);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
 static ENGINE_ERROR_CODE lrec_set_elem_insert_redo(LogRec *logrec)
 {
     ENGINE_ERROR_CODE ret;
@@ -593,7 +587,7 @@ static ENGINE_ERROR_CODE lrec_set_elem_insert_redo(LogRec *logrec)
     }
     return ret;
 }
-#endif
+
 static void lrec_set_elem_insert_print(LogRec *logrec)
 {
     SetElemInsLog *log = (SetElemInsLog*)logrec;
@@ -617,7 +611,6 @@ static void lrec_set_elem_delete_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset + log->body.keylen, log->valptr, log->body.vallen);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
 static ENGINE_ERROR_CODE lrec_set_elem_delete_redo(LogRec *logrec)
 {
     ENGINE_ERROR_CODE ret;
@@ -639,7 +632,7 @@ static ENGINE_ERROR_CODE lrec_set_elem_delete_redo(LogRec *logrec)
     }
     return ret;
 }
-#endif
+
 static void lrec_set_elem_delete_print(LogRec *logrec)
 {
     SetElemDelLog *log = (SetElemDelLog*)logrec;
@@ -663,7 +656,6 @@ static void lrec_map_elem_insert_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset + log->body.keylen, log->datptr, log->body.fldlen + log->body.vallen);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
 static ENGINE_ERROR_CODE lrec_map_elem_insert_redo(LogRec *logrec)
 {
     ENGINE_ERROR_CODE ret;
@@ -685,7 +677,7 @@ static ENGINE_ERROR_CODE lrec_map_elem_insert_redo(LogRec *logrec)
     }
     return ret;
 }
-#endif
+
 static void lrec_map_elem_insert_print(LogRec *logrec)
 {
     MapElemInsLog *log = (MapElemInsLog*)logrec;
@@ -710,7 +702,6 @@ static void lrec_map_elem_delete_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset + log->body.keylen, log->datptr, log->body.fldlen);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
 static ENGINE_ERROR_CODE lrec_map_elem_delete_redo(LogRec *logrec)
 {
     ENGINE_ERROR_CODE ret;
@@ -732,7 +723,7 @@ static ENGINE_ERROR_CODE lrec_map_elem_delete_redo(LogRec *logrec)
     }
     return ret;
 }
-#endif
+
 static void lrec_map_elem_delete_print(LogRec *logrec)
 {
     MapElemDelLog *log = (MapElemDelLog*)logrec;
@@ -757,7 +748,6 @@ static void lrec_bt_elem_insert_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset + log->body.keylen, log->datptr, datlen);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
 static ENGINE_ERROR_CODE lrec_bt_elem_insert_redo(LogRec *logrec)
 {
     ENGINE_ERROR_CODE ret;
@@ -779,7 +769,7 @@ static ENGINE_ERROR_CODE lrec_bt_elem_insert_redo(LogRec *logrec)
     }
     return ret;
 }
-#endif
+
 static void lrec_bt_elem_insert_print(LogRec *logrec)
 {
     BtreeElemInsLog *log = (BtreeElemInsLog*)logrec;
@@ -818,7 +808,6 @@ static void lrec_bt_elem_delete_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr + offset + log->body.keylen, log->datptr, datlen);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
 static ENGINE_ERROR_CODE lrec_bt_elem_delete_redo(LogRec *logrec)
 {
     ENGINE_ERROR_CODE ret;
@@ -840,7 +829,7 @@ static ENGINE_ERROR_CODE lrec_bt_elem_delete_redo(LogRec *logrec)
     }
     return ret;
 }
-#endif
+
 static void lrec_bt_elem_delete_print(LogRec *logrec)
 {
     BtreeElemDelLog *log = (BtreeElemDelLog*)logrec;
@@ -960,7 +949,6 @@ typedef struct _logrec_func {
 
 LOGREC_FUNC logrec_func[] = {
     { lrec_it_link_write,            lrec_it_link_redo,            lrec_it_link_print },
-#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
     { lrec_it_unlink_write,          lrec_it_unlink_redo,          lrec_it_unlink_print },
     { lrec_it_setattr_write,         lrec_it_setattr_redo,         lrec_it_setattr_print },
     { lrec_it_flush_write,           lrec_it_flush_redo,           lrec_it_flush_print },
@@ -972,19 +960,6 @@ LOGREC_FUNC logrec_func[] = {
     { lrec_map_elem_delete_write,    lrec_map_elem_delete_redo,    lrec_map_elem_delete_print },
     { lrec_bt_elem_insert_write,     lrec_bt_elem_insert_redo,     lrec_bt_elem_insert_print },
     { lrec_bt_elem_delete_write,     lrec_bt_elem_delete_redo,     lrec_bt_elem_delete_print },
-#else
-    { lrec_it_unlink_write,          NULL,                         lrec_it_unlink_print },
-    { lrec_it_setattr_write,         NULL,                         lrec_it_setattr_print },
-    { lrec_it_flush_write,           NULL,                         lrec_it_flush_print },
-    { lrec_list_elem_insert_write,   NULL,                         lrec_list_elem_insert_print },
-    { lrec_list_elem_delete_write,   NULL,                         lrec_list_elem_delete_print },
-    { lrec_set_elem_insert_write,    NULL,                         lrec_set_elem_insert_print },
-    { lrec_set_elem_delete_write,    NULL,                         lrec_set_elem_delete_print },
-    { lrec_map_elem_insert_write,    NULL,                         lrec_map_elem_insert_print },
-    { lrec_map_elem_delete_write,    NULL,                         lrec_map_elem_delete_print },
-    { lrec_bt_elem_insert_write,     NULL,                         lrec_bt_elem_insert_print },
-    { lrec_bt_elem_delete_write,     NULL,                         lrec_bt_elem_delete_print },
-#endif
     { lrec_snapshot_elem_link_write, lrec_snapshot_elem_link_redo, lrec_snapshot_elem_link_print },
     { lrec_snapshot_head_write,      NULL,                         lrec_snapshot_head_print },
     { lrec_snapshot_tail_write,      NULL,                         lrec_snapshot_tail_print }

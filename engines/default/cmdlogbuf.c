@@ -511,11 +511,7 @@ int cmdlog_file_open(char *path)
     pthread_mutex_lock(&log_gl.log_flush_lock);
     /* prepare cmdlog file */
     do {
-#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
         int fd = disk_open(path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP);
-#else
-        int fd = disk_open(path, O_CREAT | O_WRONLY, S_IRUSR | S_IWUSR | S_IRGRP);
-#endif
         if (fd < 0) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Failed to open the cmdlog file. path=%s err=%s\n",
@@ -575,7 +571,6 @@ size_t cmdlog_file_getsize(void)
 
 int cmdlog_file_apply(void)
 {
-#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
     log_FILE *logfile = &log_gl.log_file;
     assert(logfile->fd > 0);
 
@@ -615,16 +610,16 @@ int cmdlog_file_apply(void)
         seek_offset += nread;
 
         if (logfile->size - seek_offset < loghdr->body_length) {
+            logger->log(EXTENSION_LOG_INFO, NULL,
+                        "[RECOVERY - CMDLOG] body of last command was not completely written. "
+                        "body_length=%d\n", loghdr->body_length);
             seek_offset = lseek(logfile->fd, -nread, SEEK_CUR);
             if (seek_offset < 0) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
                             "[RECOVERY - CMDLOG] failed : lseek(SEEK_CUR-%zd). path=%s, error=%s.\n",
                             nread, logfile->path, strerror(errno));
-                ret = -1; break;
+                ret = -1;
             }
-            logger->log(EXTENSION_LOG_INFO, NULL,
-                        "[RECOVERY - CMDLOG] body of last command was not completely written. "
-                        "body_length=%d\n", loghdr->body_length);
             break;
         }
 
@@ -659,9 +654,6 @@ int cmdlog_file_apply(void)
         logger->log(EXTENSION_LOG_INFO, NULL, "[RECOVERY - CMDLOG] success.\n");
     }
     return ret;
-#else
-    return 0;
-#endif
 }
 
 ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)

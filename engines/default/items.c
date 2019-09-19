@@ -10270,7 +10270,6 @@ item_apply_btree_link(const char *key, const uint32_t nkey, item_attr *attrp)
     return ret;
 }
 
-#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
 ENGINE_ERROR_CODE
 item_apply_unlink(const char *key, const uint32_t nkey)
 {
@@ -10292,7 +10291,7 @@ item_apply_unlink(const char *key, const uint32_t nkey)
     UNLOCK_CACHE();
     return ret;
 }
-#endif
+
 ENGINE_ERROR_CODE
 item_apply_list_elem_insert(hash_item *it, const int nelems, const int index,
                             const char *value, const uint32_t nbytes)
@@ -10346,7 +10345,6 @@ item_apply_list_elem_insert(hash_item *it, const int nelems, const int index,
     return ret;
 }
 
-#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
 ENGINE_ERROR_CODE
 item_apply_list_elem_delete(hash_item *it, const int nelems,
                             const int index, const int count)
@@ -10391,7 +10389,7 @@ item_apply_list_elem_delete(hash_item *it, const int nelems,
 
     return ret;
 }
-#endif
+
 ENGINE_ERROR_CODE
 item_apply_set_elem_insert(hash_item *it, const char *value, const uint32_t nbytes)
 {
@@ -10435,7 +10433,6 @@ item_apply_set_elem_insert(hash_item *it, const char *value, const uint32_t nbyt
     return ret;
 }
 
-#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
 ENGINE_ERROR_CODE
 item_apply_set_elem_delete(hash_item *it, const char *value, const uint32_t nbytes)
 {
@@ -10471,7 +10468,7 @@ item_apply_set_elem_delete(hash_item *it, const char *value, const uint32_t nbyt
 
     return ret;
 }
-#endif
+
 ENGINE_ERROR_CODE
 item_apply_map_elem_insert(hash_item *it, const char *data, const uint32_t nfield, const uint32_t nbytes)
 {
@@ -10516,7 +10513,6 @@ item_apply_map_elem_insert(hash_item *it, const char *data, const uint32_t nfiel
     return ret;
 }
 
-#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
 ENGINE_ERROR_CODE
 item_apply_map_elem_delete(hash_item *it, const char *field, const uint32_t nfield)
 {
@@ -10562,7 +10558,7 @@ item_apply_map_elem_delete(hash_item *it, const char *field, const uint32_t nfie
 
     return ret;
 }
-#endif
+
 ENGINE_ERROR_CODE
 item_apply_btree_elem_insert(hash_item *it, const char *data, const uint32_t nbkey,
                              const uint32_t neflag, const uint32_t nbytes)
@@ -10610,7 +10606,6 @@ item_apply_btree_elem_insert(hash_item *it, const char *data, const uint32_t nbk
     return ret;
 }
 
-#ifdef ENABLE_PERSISTENCE_03_RECOVERY_CMDLOG
 ENGINE_ERROR_CODE
 item_apply_btree_elem_delete(hash_item *it, const char *bkey, const uint32_t nbkey)
 {
@@ -10749,5 +10744,5 @@ item_apply_flush(const char *prefix, const int nprefix)
     UNLOCK_CACHE();
     return ret;
 }
-#endif
+
 #endif
