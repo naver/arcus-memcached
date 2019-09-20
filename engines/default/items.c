@@ -2217,6 +2217,7 @@ static ENGINE_ERROR_CODE do_set_elem_get(set_meta_info *info, const uint32_t cou
                                          set_elem_item **elem_array, uint32_t *elem_count)
 {
     uint32_t fcnt = 0;
+
     if (info->root != NULL) {
         fcnt = do_set_elem_traverse_dfs(info, info->root, count, delete, elem_array);
         if (delete && info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
@@ -4419,7 +4420,7 @@ static ENGINE_ERROR_CODE do_btree_elem_get(btree_meta_info *info,
         if (bkrtype == BKEY_RANGE_TYPE_SIN) { /* single bkey */
             assert(path[0].bkeq == true);
             tot_access++;
-            if (offset == 0) {
+			if (offset == 0) {
                 if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
                     elem->refcount++;
                     elem_array[tot_found++] = elem;
@@ -6583,6 +6584,65 @@ ENGINE_ERROR_CODE list_elem_delete(const char *key, const uint32_t nkey,
     return ret;
 }
 
+#ifdef COLLGET_RES
+ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
+                                int from_index, int to_index,
+                                const bool delete, const bool drop_if_empty,
+                                struct collget_res* collget_res)
+{
+    hash_item *it;
+    ENGINE_ERROR_CODE ret;
+
+    LOCK_CACHE();
+    ret = do_list_item_find(key, nkey, DO_UPDATE, &it);
+    if (ret == ENGINE_SUCCESS) {
+        int      index;
+        uint32_t count;
+        bool forward;
+        list_meta_info *info = (list_meta_info *)item_get_meta(it);
+        do {
+            if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
+                ret = ENGINE_UNREADABLE; break;
+            }
+            if (adjust_list_range(info, &from_index, &to_index) != 0) {
+                ret = ENGINE_ELEM_ENOENT; break;
+            }
+            index = from_index;
+            if (from_index <= to_index) {
+                count = to_index - from_index + 1;
+                forward = true;
+            } else {
+                count = from_index - to_index + 1;
+                forward = false;
+            }
+#ifdef ELEM_ARRAY
+		if((collget_res->elem_array = (eitem **)malloc(count * sizeof(eitem*))) == NULL){
+				ret = ENGINE_ENOMEM;
+				return ret;
+		}
+#endif
+
+            ret = do_list_elem_get(info, index, count, forward, delete,
+                                   (list_elem_item**)(collget_res->elem_array), &(collget_res->elem_count));
+            if (ret == ENGINE_SUCCESS) {
+                if (info->ccnt == 0 && drop_if_empty) {
+                    assert(delete == true);
+                    do_item_unlink(it, ITEM_UNLINK_NORMAL);
+                    collget_res->dropped = true;
+                } else {
+                    collget_res->dropped = false;
+                }
+                collget_res->flags = it->flags;
+            } else {
+                /* ret = ENGINE_ELEM_ENOENT */
+            }
+        } while(0);
+        do_item_release(it);
+    }
+    UNLOCK_CACHE();
+    return ret;
+}
+#else
 ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
                                 int from_index, int to_index,
                                 const bool delete, const bool drop_if_empty,
@@ -6635,6 +6695,7 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
     UNLOCK_CACHE();
     return ret;
 }
+#endif
 
 /*
  * SET Interface Functions
@@ -6773,6 +6834,45 @@ ENGINE_ERROR_CODE set_elem_exist(const char *key, const uint32_t nkey,
     return ret;
 }
 
+#ifdef COLLGET_RES
+ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey, const uint32_t count,
+                               const bool delete, const bool drop_if_empty, struct collget_res *collget_res)
+{
+    hash_item *it;
+    ENGINE_ERROR_CODE ret;
+
+    LOCK_CACHE();
+    ret = do_set_item_find(key, nkey, DO_UPDATE, &it);
+    if (ret == ENGINE_SUCCESS) {
+        set_meta_info *info = (set_meta_info *)item_get_meta(it);
+        do {
+            if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
+                ret = ENGINE_UNREADABLE; break;
+            }
+#ifdef ELEM_ARRAY
+	    if ((collget_res->elem_array = (eitem **)malloc(info->ccnt * sizeof(eitem *))) == NULL) {
+            ret = ENGINE_ENOMEM;
+            return ret;
+	    }
+#endif
+            ret = do_set_elem_get(info, count, delete, (set_elem_item**)(collget_res->elem_array), &(collget_res->elem_count));
+            if (ret == ENGINE_SUCCESS) {
+                if (info->ccnt == 0 && drop_if_empty) {
+                    assert(delete == true);
+                    do_item_unlink(it, ITEM_UNLINK_NORMAL);
+                    collget_res->dropped = true;
+                } else {
+                    collget_res->dropped = false;
+                }
+                collget_res->flags = it->flags;
+            } /* ret = ENGINE_ELEM_ENOENT */
+        } while (0);
+        do_item_release(it);
+    }
+    UNLOCK_CACHE();
+    return ret;
+}
+#else
 ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey, const uint32_t count,
                                const bool delete, const bool drop_if_empty,
                                set_elem_item **elem_array, uint32_t *elem_count,
@@ -6806,6 +6906,7 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey, const uint3
     UNLOCK_CACHE();
     return ret;
 }
+#endif
 
 /*
  * B+TREE Interface Functions
@@ -7021,6 +7122,65 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(const char* key, const uint32_t nkey,
     return ret;
 }
 
+#ifdef COLLGET_RES
+ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
+                                 const bkey_range *bkrange, const eflag_filter *efilter,
+                                 const uint32_t offset, const uint32_t req_count,
+                                 const bool delete, const bool drop_if_empty,
+								 struct collget_res *collget_res)
+{
+    hash_item *it;
+    ENGINE_ERROR_CODE ret;
+    int bkrtype = do_btree_bkey_range_type(bkrange);
+    bool potentialbkeytrim;
+
+    LOCK_CACHE();
+    ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
+    if (ret == ENGINE_SUCCESS) {
+        btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
+        do {
+            if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
+                ret = ENGINE_UNREADABLE; break;
+            }
+            if (info->ccnt == 0 || offset >= info->ccnt) {
+                ret = ENGINE_ELEM_ENOENT; break;
+            }
+            if ((info->bktype == BKEY_TYPE_UINT64 && bkrange->from_nbkey >  0) ||
+                (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
+                ret = ENGINE_EBADBKEY; break;
+            }
+#ifdef ELEM_ARRAY
+            if(collget_res->elem_array !=NULL);
+            else collget_res->elem_array = (eitem **)malloc(info->ccnt * sizeof(eitem *));
+#endif
+            ret = do_btree_elem_get(info, bkrtype, bkrange, efilter,
+                                    offset, req_count, delete, (btree_elem_item **)(collget_res->elem_array),
+                                    &(collget_res->elem_count), &(collget_res->access_count), &potentialbkeytrim);
+            if (ret == ENGINE_SUCCESS) {
+                if (delete) {
+                    if (info->ccnt == 0 && drop_if_empty) {
+                        assert(info->root == NULL);
+                        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+                        collget_res->trimmed = true;
+                    } else {
+                        collget_res->trimmed = false;
+                    }
+                } else {
+                    collget_res->trimmed = potentialbkeytrim;
+                }
+                collget_res->flags = it->flags;
+            } else {
+                if (potentialbkeytrim == true)
+                    ret = ENGINE_EBKEYOOR;
+                /* ret = ENGINE_ELEM_ENOENT; */
+            }
+        } while (0);
+        do_item_release(it);
+    }
+    UNLOCK_CACHE();
+    return ret;
+}
+#else
 ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
                                  const bkey_range *bkrange, const eflag_filter *efilter,
                                  const uint32_t offset, const uint32_t req_count,
@@ -7076,6 +7236,7 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
     UNLOCK_CACHE();
     return ret;
 }
+#endif
 
 ENGINE_ERROR_CODE btree_elem_count(const char *key, const uint32_t nkey,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
@@ -9356,6 +9517,44 @@ ENGINE_ERROR_CODE map_elem_delete(const char *key, const uint32_t nkey,
     return ret;
 }
 
+#ifdef COLLGET_RES
+ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
+                               const int numfields, const field_t *flist, const bool delete,
+                               const bool drop_if_empty, struct collget_res *collget_res)
+{
+    hash_item *it;
+    ENGINE_ERROR_CODE ret;
+
+    LOCK_CACHE();
+    ret = do_map_item_find(key, nkey, DO_UPDATE, &it);
+    if (ret == ENGINE_SUCCESS) {
+        map_meta_info *info = (map_meta_info *)item_get_meta(it);
+		do {
+            if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
+                ret = ENGINE_UNREADABLE; break;
+            }
+#ifdef ELEM_ARRAY
+		collget_res->elem_array = (eitem **)malloc(info->ccnt * sizeof(eitem *));
+#endif
+            ret = do_map_elem_get(info, numfields, flist, delete, (map_elem_item **)collget_res->elem_array, &(collget_res->elem_count));
+            if (ret == ENGINE_SUCCESS) {
+                if (info->ccnt == 0 && drop_if_empty) {
+                    assert(delete == true);
+                    do_item_unlink(it, ITEM_UNLINK_NORMAL);
+                    collget_res->dropped = true;
+                } else {
+                    collget_res->dropped = false;
+                }
+                collget_res->flags = it->flags;
+            } /* ret = ENGINE_ELEM_ENOENT */
+        } while (0);
+        do_item_release(it);
+    }
+    UNLOCK_CACHE();
+    return ret;
+}
+
+#else
 ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
                                const int numfields, const field_t *flist, const bool delete,
                                const bool drop_if_empty, map_elem_item **elem_array, uint32_t *elem_count,
@@ -9389,4 +9588,6 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
     UNLOCK_CACHE();
     return ret;
 }
+#endif
+
 

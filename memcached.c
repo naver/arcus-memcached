@@ -2051,6 +2051,15 @@ static void process_mop_get_complete(conn *c)
     assert(c->coll_op == OPERATION_MOP_GET);
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#ifdef COLLGET_RES
+    struct collget_res collget_res;
+    collget_res.elem_array = NULL;
+    field_t *flist = NULL;
+    uint32_t f;
+    bool delete = c->coll_delete;
+    bool drop_if_empty = c->coll_drop;
+    int  need_size;
+#else
     eitem **elem_array = NULL;
     field_t *flist = NULL;
     uint32_t elem_count = 0;
@@ -2059,7 +2068,23 @@ static void process_mop_get_complete(conn *c)
     bool drop_if_empty = c->coll_drop;
     bool dropped;
     int  need_size;
+#endif
 
+#ifndef ELEM_ARRAY
+#ifdef COllGET_RES
+    if (c->coll_numkeys <= 0 || c->coll_numkeys > MAX_MAP_SIZE) {
+        need_size = MAX_MAP_SIZE * sizeof(eitem*);
+    } else {
+        need_size = c->coll_numkeys * sizeof(eitem*);
+    }
+
+    if ((c->coll_eitem = (eitem *)malloc(need_size)) == NULL) {
+        ret = ENGINE_ENOMEM;
+    } else {
+        collget_res.elem_array = (eitem **)c->coll_eitem;
+    }
+#endif
+#ifndef COLLGET_RES
     if (c->coll_numkeys <= 0 || c->coll_numkeys > MAX_MAP_SIZE) {
         need_size = MAX_MAP_SIZE * sizeof(eitem*);
     } else {
@@ -2071,6 +2096,8 @@ static void process_mop_get_complete(conn *c)
     } else {
         elem_array = (eitem **)c->coll_eitem;
     }
+#endif
+#endif
 
     assert(c->ewouldblock == false);
 
@@ -2103,8 +2130,13 @@ static void process_mop_get_complete(conn *c)
     }
 
     if (ret == ENGINE_SUCCESS) {
+#ifdef COLLGET_RES
+        ret = mc_engine.v1->map_elem_get(mc_engine.v0, c, c->coll_key, c->coll_nkey, c->coll_numkeys, flist,
+                                         delete, drop_if_empty, &collget_res, 0);
+#else
         ret = mc_engine.v1->map_elem_get(mc_engine.v0, c, c->coll_key, c->coll_nkey, c->coll_numkeys, flist,
                                          delete, drop_if_empty, elem_array, &elem_count, &flags, &dropped, 0);
+#endif
     }
 
     if (ret == ENGINE_EWOULDBLOCK) {
@@ -2118,10 +2150,17 @@ static void process_mop_get_complete(conn *c)
 
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
-        if (! lqdetect_mop_get(c->client_ip, c->coll_key, elem_count,
+#ifdef COLLGET_RES
+            if (! lqdetect_mop_get(c->client_ip, c->coll_key, collget_res.elem_count,
                                c->coll_numkeys, drop_if_empty ? 2 : (delete ? 1 : 0))) {
             lqdetect_in_use = false;
         }
+#else
+            if (! lqdetect_mop_get(c->client_ip, c->coll_key, elem_count,
+                               c->coll_numkeys, drop_if_empty ? 2 : (delete ? 1 : 0))) {
+            lqdetect_in_use = false;
+        }
+#endif
     }
 #endif
 
@@ -2133,6 +2172,48 @@ static void process_mop_get_complete(conn *c)
         int   resplen;
 
         do {
+#ifdef COLLGET_RES
+            need_size = ((2*lenstr_size) + 30) /* response head and tail size */
+                      + (collget_res.elem_count * ((MAX_FIELD_LENG+2) + (lenstr_size+2))); /* response body size */
+            if ((respbuf = (char*)malloc(need_size)) == NULL) {
+                ret = ENGINE_ENOMEM; break;
+            }
+            respptr = respbuf;
+
+            sprintf(respptr, "VALUE %u %u\r\n", htonl(collget_res.flags), collget_res.elem_count);
+            if (add_iov(c, respptr, strlen(respptr)) != 0) {
+                ret = ENGINE_ENOMEM; break;
+            }
+            respptr += strlen(respptr);
+
+            for (f = 0; f < collget_res.elem_count; f++) {
+#ifdef COLLGET_RES
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, collget_res.elem_array[f], &c->einfo);
+#else
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem_array[f], &c->einfo);
+#endif
+                resplen = make_mop_elem_response(respptr, &c->einfo);
+                if ((add_iov(c, respptr, resplen) != 0) ||
+                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                {
+                    ret = ENGINE_ENOMEM; break;
+                }
+                respptr += strlen(respptr);
+            }
+            if (ret == ENGINE_ENOMEM) break;
+
+#ifdef COLLGET_RES
+            sprintf(respptr, "%s\r\n",
+                    (delete ? (collget_res.dropped ? "DELETED_DROPPED" : "DELETED") : "END"));
+#else
+            sprintf(respptr, "%s\r\n",
+                    (delete ? (dropped ? "DELETED_DROPPED" : "DELETED") : "END"));
+#endif
+            if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
+                (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+                ret = ENGINE_ENOMEM; break;
+            }
+#else
             need_size = ((2*lenstr_size) + 30) /* response head and tail size */
                       + (elem_count * ((MAX_FIELD_LENG+2) + (lenstr_size+2))); /* response body size */
             if ((respbuf = (char*)malloc(need_size)) == NULL) {
@@ -2164,19 +2245,33 @@ static void process_mop_get_complete(conn *c)
                 (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
                 ret = ENGINE_ENOMEM; break;
             }
+#endif
         } while(0);
 
         if (ret == ENGINE_SUCCESS) {
             STATS_ELEM_HITS(c, mop_get, c->coll_key, c->coll_nkey);
+#ifdef COLLGET_RES
+            c->coll_eitem  = (void *)(collget_res.elem_array);
+            c->coll_ecount = collget_res.elem_count;
+            c->coll_resps  = respbuf;
+            c->coll_op     = OPERATION_MOP_GET;
+            conn_set_state(c, conn_mwrite);
+            c->msgcurr     = 0;
+#else
             c->coll_eitem  = (void *)elem_array;
             c->coll_ecount = elem_count;
             c->coll_resps  = respbuf;
             c->coll_op     = OPERATION_MOP_GET;
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
+#endif
         } else { /* ENGINE_ENOMEM */
             STATS_NOKEY(c, cmd_mop_get);
+#ifdef COLLGET_RES
+            mc_engine.v1->map_elem_release(mc_engine.v0, c, collget_res.elem_array, collget_res.elem_count);
+#else
             mc_engine.v1->map_elem_release(mc_engine.v0, c, elem_array, elem_count);
+#endif
             if (respbuf != NULL)
                 free(respbuf);
             if (c->ewouldblock)
@@ -2431,11 +2526,19 @@ static void process_bop_mget_complete(conn *c) {
     assert(c->coll_eitem != NULL);
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+#ifdef COLLGET_RES
+    struct collget_res collget_arr[200];
+    struct collget_res collget_res;
+    collget_res.elem_array = (eitem **)c->coll_eitem;
+    uint32_t tot_elem_count = 0;
+    uint32_t tot_access_count = 0;
+    token_t *key_tokens = NULL;
+#else
     eitem **elem_array = (eitem **)c->coll_eitem;
     uint32_t tot_elem_count = 0;
     uint32_t tot_access_count = 0;
     token_t *key_tokens = NULL;
-
+#endif
     key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (key_tokens != NULL) {
         char delimiter = ' ';
@@ -2453,12 +2556,26 @@ static void process_bop_mget_complete(conn *c) {
         ret = ENGINE_ENOMEM;
     }
     if (ret == ENGINE_SUCCESS) {
+#ifdef COLLGET_RES
+//CCCCCCCCCCCCC
+        /*char *valuestrp;
+        int bmget_count = c->coll_numkeys * c->coll_rcount;
+        int respon_hdr_size = c->coll_numkeys * ((lenstr_size*2)+30);
+        int respon_bdy_size = bmget_count * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+lenstr_size+15);
+
+        valuestrp = (char *)malloc(respon_hdr_size+respon_bdy_size);
+       */
+       // char *valuestrp = (char*)(collget_arr[0].elem_array) + (c->coll_numkeys * c->coll_rcount * sizeof(eitem*));
+       char *valuestrp = (char*)(collget_res.elem_array) + (c->coll_numkeys * c->coll_rcount * sizeof(eitem*));
+#else
         uint32_t cur_elem_count = 0;
         uint32_t cur_access_count = 0;
-        uint32_t flags, k, e;
+        uint32_t flags;
         bool trimmed;
-        char *resultptr;
         char *valuestrp = (char*)elem_array + (c->coll_numkeys * c->coll_rcount * sizeof(eitem*));
+#endif
+        int32_t k, e;
+        char *resultptr;
         int   resultlen;
         int   nvaluestr;
 
@@ -2472,6 +2589,20 @@ static void process_bop_mget_complete(conn *c) {
         }
 
         for (k = 0; k < c->coll_numkeys; k++) {
+#ifdef COLLGET_RES
+           // collget_arr[k].elem_array = collget_res.elem_array;
+           collget_arr[k].elem_array = &collget_res.elem_array[tot_elem_count];
+           // eitem **temp = collget_res.elem_array;
+           // collget_res.elem_array = &collget_res.elem_array[tot_elem_count];
+            ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c,
+                                             key_tokens[k].value, key_tokens[k].length,
+                                             &c->coll_bkrange,
+                                             (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
+                                             c->coll_roffset, c->coll_rcount,
+                                             false, false,
+                                             &collget_arr[k], 0);
+            //collget_res.elem_array = temp;
+#else
             ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c,
                                              key_tokens[k].value, key_tokens[k].length,
                                              &c->coll_bkrange,
@@ -2480,6 +2611,7 @@ static void process_bop_mget_complete(conn *c) {
                                              false, false,
                                              &elem_array[tot_elem_count], &cur_elem_count,
                                              &cur_access_count, &flags, &trimmed, 0);
+#endif
 
             if (settings.detail_enabled) {
                 stats_prefix_record_bop_get(key_tokens[k].value, key_tokens[k].length,
@@ -2488,6 +2620,42 @@ static void process_bop_mget_complete(conn *c) {
 
             if (ret == ENGINE_SUCCESS) {
               do {
+#ifdef COLLGET_RES
+
+                sprintf(resultptr, " %s %u %u\r\n",
+                        (collget_arr[k].trimmed==false ? "OK" : "TRIMMED"), htonl(collget_arr[k].flags), collget_arr[k].elem_count);
+                if ((add_iov(c, valuestrp, nvaluestr) != 0) ||
+                    (add_iov(c, key_tokens[k].value, key_tokens[k].length) != 0) ||
+                    (add_iov(c, resultptr, strlen(resultptr)) != 0)) {
+                    STATS_NOKEY(c, cmd_bop_get);
+                    ret = ENGINE_ENOMEM; break;
+                }
+                resultptr += strlen(resultptr);
+
+                for (e = 0; e < collget_arr[k].elem_count; e++) {
+                    /*
+                    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                                collget_res.elem_array[tot_elem_count+e], &c->einfo);
+                    */
+                    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                                collget_arr[k].elem_array[e], &c->einfo);
+                    sprintf(resultptr, "ELEMENT ");
+                    resultlen = strlen(resultptr);
+                    resultlen += make_bop_elem_response(resultptr + resultlen, &c->einfo);
+
+                    if ((add_iov(c, resultptr, resultlen) != 0) ||
+                        (add_iov_einfo_value(c, &c->einfo) != 0))
+                    {
+                        ret = ENGINE_ENOMEM; break;
+                    }
+                    resultptr += resultlen;
+                }
+                if (ret == ENGINE_SUCCESS) {
+                    STATS_ELEM_HITS(c, bop_get, key_tokens[k].value, key_tokens[k].length);
+                } else { /* ret == ENGINE_ENOMEM */
+                    STATS_NOKEY(c, cmd_bop_get);
+                }
+#else
                 sprintf(resultptr, " %s %u %u\r\n",
                         (trimmed==false ? "OK" : "TRIMMED"), htonl(flags), cur_elem_count);
                 if ((add_iov(c, valuestrp, nvaluestr) != 0) ||
@@ -2512,18 +2680,30 @@ static void process_bop_mget_complete(conn *c) {
                     }
                     resultptr += resultlen;
                 }
-                if (ret == ENGINE_SUCCESS) {
+
+              //CCCCCCCCCCCCCCCCCC
+               if (ret == ENGIN(eitem **)collget_arr[k].elem_array;E_SUCCESl) {
+               // if (ret == ENGIN(eitem **)c->coll_eitem;E_SUCCESl) {
                     STATS_ELEM_HITS(c, bop_get, key_tokens[k].value, key_tokens[k].length);
                 } else { /* ret == ENGINE_ENOMEM */
                     STATS_NOKEY(c, cmd_bop_get);
                 }
+
+#endif
               } while(0);
 
               /* calculate total elem_count and access_count */
+#ifdef COLLGET_RES
+              tot_elem_count += collget_arr[k].elem_count;
+              tot_access_count += collget_arr[k].access_count;
+             // collget_res.elem_count = 0;
+              //collget_res.access_count = 0;
+#else
               tot_elem_count += cur_elem_count;
               cur_elem_count = 0;
               tot_access_count += cur_access_count;
               cur_access_count = 0;
+#endif
 
               if (ret != ENGINE_SUCCESS) {
                   break; /* ret == ENGINE_ENOMEM */
@@ -2567,7 +2747,13 @@ static void process_bop_mget_complete(conn *c) {
         if (ret != ENGINE_SUCCESS) {
             /* ENGINE_ENOMEM or ENGINE_DISCONNECT or SEVERE error */
             /* release elements */
+#ifdef COLLGET_RES
+            for(int e = 0; e < c->coll_numkeys; e++) {
+                mc_engine.v1->btree_elem_release(mc_engine.v0, c, collget_arr[e].elem_array, collget_arr[e].elem_count);
+            }
+#else
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, tot_elem_count);
+#endif
         }
     }
 
@@ -4732,6 +4918,148 @@ static void process_bin_lop_delete(conn *c) {
     }
 }
 
+#ifdef COLLGET_RES
+static void process_bin_lop_get(conn *c) {
+    assert(c != NULL);
+    assert(c->ewouldblock == false);
+    assert(c->cmd == PROTOCOL_BINARY_CMD_LOP_GET);
+    char *key = binary_get_key(c);
+    int  nkey = c->binary_header.request.keylen;
+
+    /* fix byteorder in the request */
+    protocol_binary_request_lop_get* req = binary_get_request(c);
+    int from_index = ntohl(req->message.body.from_index);
+    int to_index   = ntohl(req->message.body.to_index);
+
+    if (settings.verbose > 1) {
+        fprintf(stderr, "<%d LOP GET ", c->sfd);
+        for (int ii = 0; ii < nkey; ++ii) {
+            fprintf(stderr, "%c", key[ii]);
+        }
+        fprintf(stderr, " From_Index(%d) To_Index(%d) Delete(%s)\n",
+                from_index, to_index,
+                (req->message.body.delete ? "true" : "false"));
+    }
+
+
+    struct collget_res collget_res;
+    collget_res.elem_array = NULL;
+    uint32_t i;
+    int      est_count;
+    int      need_size;
+
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    /* adjust list index */
+    if (from_index > MAX_LIST_SIZE)           from_index = MAX_LIST_SIZE;
+    else if (from_index < -(MAX_LIST_SIZE+1)) from_index = -(MAX_LIST_SIZE+1);
+    if (to_index > MAX_LIST_SIZE)             to_index   = MAX_LIST_SIZE;
+    else if (to_index < -(MAX_LIST_SIZE+1))   to_index   = -(MAX_LIST_SIZE+1);
+
+    est_count = MAX_LIST_SIZE;
+    if ((from_index >= 0 && to_index >= 0) || (from_index  < 0 && to_index < 0)) {
+        est_count = (from_index <= to_index ? to_index - from_index + 1
+                                            : from_index - to_index + 1);
+        if (est_count > MAX_LIST_SIZE) est_count = MAX_LIST_SIZE;
+    }
+    need_size = est_count * (sizeof(eitem*)+sizeof(uint32_t));
+    if ((collget_res.elem_array = (eitem **)malloc(need_size)) == NULL) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+        return;
+    }
+
+    ret = mc_engine.v1->list_elem_get(mc_engine.v0, c, key, nkey,
+                                      from_index, to_index,
+                                      (bool)req->message.body.delete,
+                                      (bool)req->message.body.drop,
+                                      &collget_res, c->binary_header.request.vbucket);
+    if (ret == ENGINE_EWOULDBLOCK) {
+        c->ewouldblock = true;
+        ret = ENGINE_SUCCESS;
+    }
+
+    if (settings.detail_enabled) {
+        stats_prefix_record_lop_get(key, nkey,
+                                    (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+    }
+
+    switch (ret) {
+    case ENGINE_SUCCESS:
+        {
+        protocol_binary_response_lop_get* rsp = (protocol_binary_response_lop_get*)c->wbuf;
+        uint32_t *vlenptr = (uint32_t *)&(collget_res.elem_array[collget_res.elem_count]);
+        uint32_t  bodylen;
+
+        bodylen = sizeof(rsp->message.body) + (collget_res.elem_count * sizeof(uint32_t));
+        for (i = 0; i < collget_res.elem_count; i++) {
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST,
+                                        collget_res.elem_array[i], &c->einfo);
+            bodylen += (c->einfo.nbytes - 2);
+            vlenptr[i] = htonl(c->einfo.nbytes - 2);
+        }
+        add_bin_header(c, 0, sizeof(rsp->message.body), 0, bodylen);
+
+        // add the flags and count
+        rsp->message.body.flags = collget_res.flags;
+        rsp->message.body.count = htonl(collget_res.elem_count);
+        add_iov(c, &rsp->message.body, sizeof(rsp->message.body));
+
+        // add value lengths
+        add_iov(c, (char*)vlenptr, collget_res.elem_count*sizeof(uint32_t));
+
+        /* Add the data without CRLF */
+        for (i = 0; i < collget_res.elem_count; i++) {
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST,
+                                        collget_res.elem_array[i], &c->einfo);
+            if (add_iov_einfo_some_value(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
+                ret = ENGINE_ENOMEM; break;
+            }
+        }
+
+        if (ret == ENGINE_SUCCESS) {
+            STATS_ELEM_HITS(c, lop_get, key, nkey);
+            /* Remember this command so we can garbage collect it later */
+            c->coll_eitem  = (void *)collget_res.elem_array;
+            c->coll_ecount = collget_res.elem_count;
+            c->coll_op     = OPERATION_LOP_GET;
+            conn_set_state(c, conn_mwrite);
+        } else {
+            STATS_NOKEY(c, cmd_lop_get);
+            mc_engine.v1->list_elem_release(mc_engine.v0, c, collget_res.elem_array, collget_res.elem_count);
+            if (c->ewouldblock)
+                c->ewouldblock = false;
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+        }
+        }
+        break;
+    case ENGINE_ELEM_ENOENT:
+        STATS_NONE_HITS(c, lop_get, key, nkey);
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINDEXOOR, 0);
+        break;
+    case ENGINE_DISCONNECT:
+        c->state = conn_closing;
+        break;
+    case ENGINE_KEY_ENOENT:
+    case ENGINE_UNREADABLE:
+        STATS_MISS(c, lop_get, key, nkey);
+        if (ret == ENGINE_KEY_ENOENT)
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
+        else
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_UNREADABLE, 0);
+        break;
+    default:
+        STATS_NOKEY(c, cmd_lop_get);
+        if (ret == ENGINE_EBADTYPE)
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
+        else
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+    }
+
+    if (ret != ENGINE_SUCCESS && collget_res.elem_array != NULL) {
+        free((void *)collget_res.elem_array);
+    }
+}
+#else
 static void process_bin_lop_get(conn *c) {
     assert(c != NULL);
     assert(c->ewouldblock == false);
@@ -4780,6 +5108,7 @@ static void process_bin_lop_get(conn *c) {
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         return;
     }
+
     ret = mc_engine.v1->list_elem_get(mc_engine.v0, c, key, nkey,
                                       from_index, to_index,
                                       (bool)req->message.body.delete,
@@ -4872,6 +5201,7 @@ static void process_bin_lop_get(conn *c) {
         free((void *)elem_array);
     }
 }
+#endif
 
 static void process_bin_sop_create(conn *c) {
     assert(c != NULL);
@@ -5253,26 +5583,46 @@ static void process_bin_sop_get(conn *c) {
                 (req->message.body.delete ? "true" : "false"));
     }
 
+#ifdef COLLGET_RES
+    struct collget_res collget_res;
+    collget_res.elem_array = NULL;
+    uint32_t i;
+    int need_size;
+#else
     eitem  **elem_array = NULL;
     uint32_t elem_count;
     uint32_t flags, i;
     bool     dropped;
     int      need_size;
-
+#endif
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     if (req_count <= 0 || req_count > MAX_SET_SIZE) req_count = MAX_SET_SIZE;
     need_size = req_count * (sizeof(eitem*)+sizeof(uint32_t));
+#ifdef COLLGET_RES
+    if ((collget_res.elem_array = (eitem **)malloc(need_size)) == NULL) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+        return;
+    }
+#else
     if ((elem_array = (eitem **)malloc(need_size)) == NULL) {
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         return;
     }
+#endif
 
+#ifdef COLLGET_RES
+    ret = mc_engine.v1->set_elem_get(mc_engine.v0, c, key, nkey, req_count,
+                                     (bool)req->message.body.delete,
+                                     (bool)req->message.body.drop,
+                                     &collget_res, c->binary_header.request.vbucket);
+#else
     ret = mc_engine.v1->set_elem_get(mc_engine.v0, c, key, nkey, req_count,
                                      (bool)req->message.body.delete,
                                      (bool)req->message.body.drop,
                                      elem_array, &elem_count, &flags, &dropped,
                                      c->binary_header.request.vbucket);
+#endif
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -5287,6 +5637,52 @@ static void process_bin_sop_get(conn *c) {
     case ENGINE_SUCCESS:
         {
         protocol_binary_response_sop_get* rsp = (protocol_binary_response_sop_get*)c->wbuf;
+#ifdef COLLGET_RES
+    uint32_t *vlenptr = (uint32_t *)&(collget_res.elem_array[collget_res.elem_count]);
+        uint32_t  bodylen;
+
+        bodylen = sizeof(rsp->message.body) + (collget_res.elem_count * sizeof(uint32_t));
+        for (i = 0; i < collget_res.elem_count; i++) {
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
+                                        collget_res.elem_array[i], &c->einfo);
+            bodylen += (c->einfo.nbytes - 2);
+            vlenptr[i] = htonl(c->einfo.nbytes - 2);
+        }
+        add_bin_header(c, 0, sizeof(rsp->message.body), 0, bodylen);
+
+        // add the flags and count
+        rsp->message.body.flags = collget_res.flags;
+        rsp->message.body.count = htonl(collget_res.elem_count);
+        add_iov(c, &rsp->message.body, sizeof(rsp->message.body));
+
+        // add value lengths
+        add_iov(c, (char*)vlenptr, collget_res.elem_count*sizeof(uint32_t));
+
+        /* Add the data without CRLF */
+        for (i = 0; i < collget_res.elem_count; i++) {
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
+                                        collget_res.elem_array[i], &c->einfo);
+            if (add_iov_einfo_some_value(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
+                ret = ENGINE_ENOMEM; break;
+            }
+        }
+
+        if (ret == ENGINE_SUCCESS) {
+            STATS_ELEM_HITS(c, sop_get, key, nkey);
+            /* Remember this command so we can garbage collect it later */
+            c->coll_eitem  = (void *)(collget_res.elem_array);
+            c->coll_ecount = collget_res.elem_count;
+            c->coll_op     = OPERATION_SOP_GET;
+            conn_set_state(c, conn_mwrite);
+        } else {
+            STATS_NOKEY(c, cmd_sop_get);
+            mc_engine.v1->set_elem_release(mc_engine.v0, c, collget_res.elem_array, collget_res.elem_count);
+            if (c->ewouldblock)
+                c->ewouldblock = false;
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+        }
+
+#else
         uint32_t *vlenptr = (uint32_t *)&elem_array[elem_count];
         uint32_t  bodylen;
 
@@ -5330,6 +5726,7 @@ static void process_bin_sop_get(conn *c) {
                 c->ewouldblock = false;
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         }
+#endif
         }
         break;
     case ENGINE_ELEM_ENOENT:
@@ -5355,9 +5752,15 @@ static void process_bin_sop_get(conn *c) {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
     }
 
+#ifdef COLLGET_RES
+    if (ret != ENGINE_SUCCESS && collget_res.elem_array != NULL) {
+        free((void *)(collget_res.elem_array));
+    }
+#else
     if (ret != ENGINE_SUCCESS && elem_array != NULL) {
         free((void *)elem_array);
     }
+#endif
 }
 
 static void process_bin_bop_create(conn *c) {
@@ -5901,14 +6304,19 @@ static void process_bin_bop_get(conn *c) {
                 (req->message.body.delete ? "true" : "false"));
     }
 
+#ifdef COLLGET_RES
+    struct collget_res collget_res;
+    collget_res.elem_array = NULL;
+    uint32_t i;
+#else
     eitem  **elem_array = NULL;
     uint32_t elem_count;
     uint32_t access_count;
     uint32_t flags, i;
     bool     dropped_trimmed;
+#endif
     int      est_count;
     int      need_size;
-
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     est_count = MAX_BTREE_SIZE;
@@ -5917,11 +6325,27 @@ static void process_bin_bop_get(conn *c) {
         if (est_count % 2) est_count += 1;
     }
     need_size = est_count * (sizeof(eitem*)+MAX_BKEY_LENG+MAX_EFLAG_LENG+sizeof(uint32_t));
+#ifdef COLLGET_RES
+    if ((collget_res.elem_array = (eitem **)malloc(need_size)) == NULL) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+        return;
+    }
+#else
     if ((elem_array = (eitem **)malloc(need_size)) == NULL) {
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         return;
     }
+#endif
 
+#ifdef COLLGET_RES
+    ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c, key, nkey,
+                                       bkrange, efilter,
+                                       req->message.body.offset,
+                                       req->message.body.count,
+                                       (bool)req->message.body.delete,
+                                       (bool)req->message.body.drop,
+                                       &collget_res, c->binary_header.request.vbucket);
+#else
     ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c, key, nkey,
                                        bkrange, efilter,
                                        req->message.body.offset,
@@ -5931,6 +6355,7 @@ static void process_bin_bop_get(conn *c) {
                                        elem_array, &elem_count, &access_count,
                                        &flags, &dropped_trimmed,
                                        c->binary_header.request.vbucket);
+#endif
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -5945,6 +6370,55 @@ static void process_bin_bop_get(conn *c) {
     case ENGINE_SUCCESS:
         {
         protocol_binary_response_bop_get* rsp = (protocol_binary_response_bop_get*)c->wbuf;
+#ifdef COLLGET_RES
+        uint64_t *bkeyptr = ((collget_res.elem_count % 2) == 0 /* for 8 byte align */
+                             ? (uint64_t *)&(collget_res.elem_array[collget_res.elem_count])
+                             : (uint64_t *)&(collget_res.elem_array[collget_res.elem_count+1]));
+        uint32_t *vlenptr = (uint32_t *)((char*)bkeyptr + (sizeof(uint64_t) * collget_res.elem_count));
+        uint32_t  bodylen;
+
+        bodylen = sizeof(rsp->message.body) + (collget_res.elem_count * (sizeof(uint64_t)+sizeof(uint32_t)));
+        for (i = 0; i < collget_res.elem_count; i++) {
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                        collget_res.elem_array[i], &c->einfo);
+            bodylen += (c->einfo.nbytes - 2);
+            bkeyptr[i] = htonll(*(uint64_t*)c->einfo.score);
+            vlenptr[i] = htonl(c->einfo.nbytes - 2);
+        }
+        add_bin_header(c, 0, sizeof(rsp->message.body), 0, bodylen);
+
+        // add the flags and count
+        rsp->message.body.flags = collget_res.flags;
+        rsp->message.body.count = htonl(collget_res.elem_count);
+        add_iov(c, &rsp->message.body, sizeof(rsp->message.body));
+
+        // add bkey data and value lengths
+        add_iov(c, (char*)bkeyptr, collget_res.elem_count*(sizeof(uint64_t)+sizeof(uint32_t)));
+
+        /* Add the data without CRLF */
+        for (i = 0; i < collget_res.elem_count; i++) {
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                        collget_res.elem_array[i], &c->einfo);
+            if (add_iov_einfo_some_value(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
+                ret = ENGINE_ENOMEM; break;
+            }
+        }
+
+        if (ret == ENGINE_SUCCESS) {
+            STATS_ELEM_HITS(c, bop_get, key, nkey);
+            /* Remember this command so we can garbage collect it later */
+            c->coll_eitem  = (void *)(collget_res.elem_array);
+            c->coll_ecount = collget_res.elem_count;
+            c->coll_op     = OPERATION_BOP_GET;
+            conn_set_state(c, conn_mwrite);
+        } else {
+            STATS_NOKEY(c, cmd_bop_get);
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, collget_res.elem_array, collget_res.elem_count);
+            if (c->ewouldblock)
+                c->ewouldblock = false;
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+        }
+#else
         uint64_t *bkeyptr = ((elem_count % 2) == 0 /* for 8 byte align */
                              ? (uint64_t *)&elem_array[elem_count]
                              : (uint64_t *)&elem_array[elem_count+1]);
@@ -5992,6 +6466,7 @@ static void process_bin_bop_get(conn *c) {
                 c->ewouldblock = false;
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         }
+#endif
         }
         break;
     case ENGINE_ELEM_ENOENT:
@@ -6022,9 +6497,15 @@ static void process_bin_bop_get(conn *c) {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
     }
 
+#ifdef COLLGET_RES
+    if (ret != ENGINE_SUCCESS && collget_res.elem_array != NULL) {
+        free((void *)(collget_res.elem_array));
+    }
+#else
     if (ret != ENGINE_SUCCESS && elem_array != NULL) {
         free((void *)elem_array);
     }
+#endif
 }
 
 static void process_bin_bop_count(conn *c) {
@@ -9886,11 +10367,158 @@ static inline int get_coll_create_attr_from_tokens(token_t *tokens, const int nt
     return 0;
 }
 
+#ifdef COLLGET_RES
 static void process_lop_get(conn *c, char *key, size_t nkey,
                             int32_t from_index, int32_t to_index,
                             bool delete, bool drop_if_empty)
 {
-    eitem  **elem_array = NULL;
+    struct collget_res collget_res;
+    collget_res.elem_array = NULL;
+    uint32_t i;
+    int      est_count;
+    int      need_size;
+
+    assert(c->ewouldblock == false);
+
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    /* adjust list index */
+    if (from_index > MAX_LIST_SIZE)           from_index = MAX_LIST_SIZE;
+    else if (from_index < -(MAX_LIST_SIZE+1)) from_index = -(MAX_LIST_SIZE+1);
+    if (to_index > MAX_LIST_SIZE)             to_index   = MAX_LIST_SIZE;
+    else if (to_index < -(MAX_LIST_SIZE+1))   to_index   = -(MAX_LIST_SIZE+1);
+
+#ifndef ELEM_ARRAY
+    est_count = MAX_LIST_SIZE;
+    if ((from_index >= 0 && to_index >= 0) || (from_index < 0 && to_index < 0)) {
+        est_count = (from_index <= to_index ? to_index - from_index + 1
+                                            : from_index - to_index + 1);
+        if (est_count > MAX_LIST_SIZE) est_count = MAX_LIST_SIZE;
+    }
+    need_size = est_count * sizeof(eitem*);
+#ifdef COLLGET_RES
+    if ((collget_res.elem_array = (eitem **)malloc(need_size)) == NULL) {
+        out_string(c, "SERVER_ERROR out of memory");
+        return;
+    }
+#else
+    if ((elem_array = (eitem **)malloc(need_size)) == NULL) {
+        out_string(c, "SERVER_ERROR out of memory");
+        return;
+    }
+#endif
+#endif
+
+    ret = mc_engine.v1->list_elem_get(mc_engine.v0, c, key, nkey,
+                                      from_index, to_index, delete, drop_if_empty,
+                                      &collget_res, 0);
+    if (ret == ENGINE_EWOULDBLOCK) {
+        c->ewouldblock = true;
+        ret = ENGINE_SUCCESS;
+    }
+
+    if (settings.detail_enabled) {
+        stats_prefix_record_lop_get(key, nkey, (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT));
+    }
+
+#ifdef DETECT_LONG_QUERY
+    if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
+        if (! lqdetect_lop_get(c->client_ip, key, collget_res.elem_count,
+                               from_index, to_index, drop_if_empty ? 2 : (delete ? 1 : 0))) {
+            lqdetect_in_use = false;
+        }
+    }
+#endif
+
+    switch (ret) {
+    case ENGINE_SUCCESS:
+        {
+        char *respbuf; /* response string buffer */
+        char *respptr;
+
+        do {
+            need_size = ((2*lenstr_size) + 30) /* response head and tail size */
+                      + (collget_res.elem_count * (lenstr_size+2)); /* response body size */
+            if ((respbuf = (char*)malloc(need_size)) == NULL) {
+                ret = ENGINE_ENOMEM; break;
+            }
+            respptr = respbuf;
+
+            sprintf(respptr, "VALUE %u %u\r\n", htonl(collget_res.flags), collget_res.elem_count);
+            if (add_iov(c, respptr, strlen(respptr)) != 0) {
+                ret = ENGINE_ENOMEM; break;
+            }
+            respptr += strlen(respptr);
+
+            for (i = 0; i < collget_res.elem_count; i++) {
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST,
+                                           collget_res.elem_array[i], &c->einfo);
+                sprintf(respptr, "%u ", c->einfo.nbytes-2);
+                if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
+                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                {
+                    ret = ENGINE_ENOMEM; break;
+                }
+                respptr += strlen(respptr);
+            }
+            if (ret == ENGINE_ENOMEM) break;
+
+            sprintf(respptr, "%s\r\n",
+                    (delete ? (collget_res.dropped ? "DELETED_DROPPED" : "DELETED") : "END"));
+            if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
+                (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+                ret = ENGINE_ENOMEM; break;
+            }
+        } while(0);
+
+        if (ret == ENGINE_SUCCESS) {
+            STATS_ELEM_HITS(c, lop_get, key, nkey);
+            c->coll_eitem  = (void *)collget_res.elem_array;
+            c->coll_ecount = collget_res.elem_count;
+            c->coll_resps  = respbuf;
+            c->coll_op     = OPERATION_LOP_GET;
+            conn_set_state(c, conn_mwrite);
+            c->msgcurr     = 0;
+        } else { /* ENGINE_ENOMEM */
+            STATS_NOKEY(c, cmd_lop_get);
+            mc_engine.v1->list_elem_release(mc_engine.v0, c, collget_res.elem_array, collget_res.elem_count);
+            if (respbuf != NULL)
+                free(respbuf);
+            if (c->ewouldblock)
+                c->ewouldblock = false;
+            out_string(c, "SERVER_ERROR out of memory writing get response");
+        }
+        }
+        break;
+    case ENGINE_ELEM_ENOENT:
+        STATS_NONE_HITS(c, lop_get, key, nkey);
+        out_string(c, "NOT_FOUND_ELEMENT");
+        break;
+    case ENGINE_DISCONNECT:
+        c->state = conn_closing;
+        break;
+    case ENGINE_KEY_ENOENT:
+    case ENGINE_UNREADABLE:
+        STATS_MISS(c, lop_get, key, nkey);
+        if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
+        else                          out_string(c, "UNREADABLE");
+        break;
+    default:
+        STATS_NOKEY(c, cmd_lop_get);
+        if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
+        else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+        else handle_unexpected_errorcode_ascii(c, ret);
+    }
+    if (ret != ENGINE_SUCCESS && collget_res.elem_array != NULL) {
+        free((void *)collget_res.elem_array);
+    }
+}
+#else
+static void process_lop_get(conn *c, char *key, size_t nkey,
+                            int32_t from_index, int32_t to_index,
+                            bool delete, bool drop_if_empty)
+{
+   eitem  **elem_array = NULL;
     uint32_t elem_count;
     uint32_t flags, i;
     bool     dropped;
@@ -10019,12 +10647,11 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, ret);
     }
-
     if (ret != ENGINE_SUCCESS && elem_array != NULL) {
         free((void *)elem_array);
     }
 }
-
+#endif
 static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
                                       char *key, size_t nkey, int32_t index) {
     eitem *elem;
@@ -10320,27 +10947,50 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
 static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
                             bool delete, bool drop_if_empty)
 {
+#ifdef COLLGET_RES
+        struct collget_res collget_res;
+        collget_res.elem_array = NULL;
+        uint32_t req_count = count;
+        uint32_t i;
+        int need_size;
+#else
     eitem  **elem_array = NULL;
     uint32_t elem_count;
     uint32_t req_count = count;
     uint32_t flags, i;
     bool     dropped;
     int      need_size;
+#endif
 
     assert(c->ewouldblock == false);
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     if (req_count <= 0 || req_count > MAX_SET_SIZE) req_count = MAX_SET_SIZE;
+
     need_size = req_count * sizeof(eitem*);
+#ifndef ELEM_ARRAY
+#ifdef COLLGET_RES
+    if ((collget_res.elem_array = (eitem **)malloc(need_size)) == NULL) {
+        out_string(c, "SERVER_ERROR out of memory");
+        return;
+    }
+#else
     if ((elem_array = (eitem **)malloc(need_size)) == NULL) {
         out_string(c, "SERVER_ERROR out of memory");
         return;
     }
+#endif
+#endif
 
+#ifdef COLLGET_RES
+    ret = mc_engine.v1->set_elem_get(mc_engine.v0, c, key, nkey, req_count,
+                                     delete, drop_if_empty, &collget_res, 0);
+#else
     ret = mc_engine.v1->set_elem_get(mc_engine.v0, c, key, nkey, req_count,
                                      delete, drop_if_empty, elem_array, &elem_count,
                                      &flags, &dropped, 0);
+#endif
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -10352,10 +11002,17 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
 
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
+#ifdef COLLGET_RES
+        if (! lqdetect_sop_get(c->client_ip, key, collget_res.elem_count,
+                               count, drop_if_empty ? 2 : (delete ? 1 : 0))) {
+            lqdetect_in_use = false;
+        }
+#else
         if (! lqdetect_sop_get(c->client_ip, key, elem_count,
                                count, drop_if_empty ? 2 : (delete ? 1 : 0))) {
             lqdetect_in_use = false;
         }
+#endif
     }
 #endif
 
@@ -10366,6 +11023,40 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
         char *respptr;
 
         do {
+#ifdef COLLGET_RES
+            need_size = ((2*lenstr_size) + 30) /* response head and tail size */
+                      + (collget_res.elem_count * (lenstr_size+2)); /* response body size */
+            if ((respbuf = (char*)malloc(need_size)) == NULL) {
+                ret = ENGINE_ENOMEM; break;
+            }
+            respptr = respbuf;
+
+            sprintf(respptr, "VALUE %u %u\r\n", htonl(collget_res.flags), collget_res.elem_count);
+            if (add_iov(c, respptr, strlen(respptr)) != 0) {
+                ret = ENGINE_ENOMEM; break;
+            }
+            respptr += strlen(respptr);
+
+            for (i = 0; i < collget_res.elem_count; i++) {
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
+                                            collget_res.elem_array[i], &c->einfo);
+                sprintf(respptr, "%u ", c->einfo.nbytes-2);
+                if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
+                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                {
+                    ret = ENGINE_ENOMEM; break;
+                }
+                respptr += strlen(respptr);
+            }
+            if (ret == ENGINE_ENOMEM) break;
+
+            sprintf(respptr, "%s\r\n",
+                    (delete ? (collget_res.dropped ? "DELETED_DROPPED" : "DELETED") : "END"));
+            if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
+                (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+                ret = ENGINE_ENOMEM; break;
+            }
+#else
             need_size = ((2*lenstr_size) + 30) /* response head and tail size */
                       + (elem_count * (lenstr_size+2)); /* response body size */
             if ((respbuf = (char*)malloc(need_size)) == NULL) {
@@ -10398,8 +11089,28 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
                 (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
                 ret = ENGINE_ENOMEM; break;
             }
+#endif
         } while(0);
 
+#ifdef COLLGET_RES
+        if (ret == ENGINE_SUCCESS) {
+            STATS_ELEM_HITS(c, sop_get, key, nkey);
+            c->coll_eitem  = (void *)collget_res.elem_array;
+            c->coll_ecount = collget_res.elem_count;
+            c->coll_resps  = respbuf;
+            c->coll_op     = OPERATION_SOP_GET;
+            conn_set_state(c, conn_mwrite);
+            c->msgcurr     = 0;
+        } else { /* ENGINE_ENOMEM */
+            STATS_NOKEY(c, cmd_sop_get);
+            mc_engine.v1->set_elem_release(mc_engine.v0, c, collget_res.elem_array, collget_res.elem_count);
+            if (respbuf != NULL)
+                free(respbuf);
+            if (c->ewouldblock)
+                c->ewouldblock = false;
+            out_string(c, "SERVER_ERROR out of memory writing get response");
+        }
+#else
         if (ret == ENGINE_SUCCESS) {
             STATS_ELEM_HITS(c, sop_get, key, nkey);
             c->coll_eitem  = (void *)elem_array;
@@ -10417,6 +11128,7 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
                 c->ewouldblock = false;
             out_string(c, "SERVER_ERROR out of memory writing get response");
         }
+#endif
         }
         break;
     case ENGINE_ELEM_ENOENT:
@@ -10439,9 +11151,15 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
         else handle_unexpected_errorcode_ascii(c, ret);
     }
 
+#ifdef COLLGET_RES
+    if (ret != ENGINE_SUCCESS && collget_res.elem_array != NULL) {
+        free((void *)collget_res.elem_array);
+    }
+#else
     if (ret != ENGINE_SUCCESS && elem_array != NULL) {
         free((void *)elem_array);
     }
+#endif
 }
 
 static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, size_t nkey) {
@@ -10708,6 +11426,14 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
                             const uint32_t offset, const uint32_t count,
                             const bool delete, const bool drop_if_empty)
 {
+#ifdef COLLGET_RES
+    struct collget_res collget_res;
+    collget_res.elem_array = NULL;
+    uint32_t i;
+    int      est_count;
+    int      need_size;
+
+#else
     eitem  **elem_array = NULL;
     uint32_t elem_count;
     uint32_t access_count;
@@ -10715,26 +11441,43 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
     bool     dropped_trimmed;
     int      est_count;
     int      need_size;
+#endif
 
     assert(c->ewouldblock == false);
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
+#ifndef ELEM_ARRAY
     est_count = MAX_BTREE_SIZE;
     if (count > 0 && count < MAX_BTREE_SIZE) {
         est_count = count;
     }
     need_size = est_count * sizeof(eitem*);
+#ifdef COLLGET_RES
+    if ((collget_res.elem_array = (eitem **)malloc(need_size)) == NULL) {
+        out_string(c, "SERVER_ERROR out of memory");
+        return;
+    }
+#else
     if ((elem_array = (eitem **)malloc(need_size)) == NULL) {
         out_string(c, "SERVER_ERROR out of memory");
         return;
     }
+#endif
+#endif
 
+#ifdef COLLGET_RES
+    ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c, key, nkey,
+                                       bkrange, efilter, offset, count,
+                                       delete, drop_if_empty,
+                                       &collget_res, 0);
+#else
     ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c, key, nkey,
                                        bkrange, efilter, offset, count,
                                        delete, drop_if_empty,
                                        elem_array, &elem_count, &access_count,
                                        &flags, &dropped_trimmed, 0);
+#endif
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -10746,11 +11489,19 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
 
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
+#ifdef COLLGET_RES
+    if (! lqdetect_bop_get(c->client_ip, key, collget_res.access_count,
+                               bkrange, efilter,
+                               offset, count, drop_if_empty ? 2 : (delete ? 1 : 0))) {
+            lqdetect_in_use = false;
+        }
+#else
         if (! lqdetect_bop_get(c->client_ip, key, access_count,
                                bkrange, efilter,
                                offset, count, drop_if_empty ? 2 : (delete ? 1 : 0))) {
             lqdetect_in_use = false;
         }
+#endif
     }
 #endif
 
@@ -10762,19 +11513,41 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
         int   resplen;
 
         do {
-            need_size = ((2*lenstr_size) + 30) /* response head and tail size */
+#ifdef COLLGET_RES
+                need_size = ((2*lenstr_size) + 30) /* response head and tail size */
+                      + (collget_res.elem_count * ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + lenstr_size+3)); /* response body size */
+#else
+                need_size = ((2*lenstr_size) + 30) /* response head and tail size */
                       + (elem_count * ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + lenstr_size+3)); /* response body size */
-            if ((respbuf = (char*)malloc(need_size)) == NULL) {
+#endif
+                if ((respbuf = (char*)malloc(need_size)) == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
             respptr = respbuf;
 
+#ifdef COLLGET_RES
+            sprintf(respptr, "VALUE %u %u\r\n", htonl(collget_res.flags), collget_res.elem_count);
+#else
             sprintf(respptr, "VALUE %u %u\r\n", htonl(flags), elem_count);
+#endif
             if (add_iov(c, respptr, strlen(respptr)) != 0) {
                 ret = ENGINE_ENOMEM; break;
             }
             respptr += strlen(respptr);
 
+#ifdef COLLGET_RES
+            for (i = 0; i < collget_res.elem_count; i++) {
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                            collget_res.elem_array[i], &c->einfo);
+                resplen = make_bop_elem_response(respptr, &c->einfo);
+                if ((add_iov(c, respptr, resplen) != 0) ||
+                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                {
+                    ret = ENGINE_ENOMEM; break;
+                }
+                respptr += resplen;
+            }
+#else
             for (i = 0; i < elem_count; i++) {
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                             elem_array[i], &c->einfo);
@@ -10786,13 +11559,22 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
                 }
                 respptr += resplen;
             }
+#endif
             if (ret == ENGINE_ENOMEM) break;
 
+#ifdef COLLGET_RES
+            if (delete) {
+                sprintf(respptr, "%s\r\n", (collget_res.trimmed ? "DELETED_DROPPED" : "DELETED"));
+            } else {
+                sprintf(respptr, "%s\r\n", (collget_res.trimmed ? "TRIMMED" : "END"));
+            }
+#else
             if (delete) {
                 sprintf(respptr, "%s\r\n", (dropped_trimmed ? "DELETED_DROPPED" : "DELETED"));
             } else {
                 sprintf(respptr, "%s\r\n", (dropped_trimmed ? "TRIMMED" : "END"));
             }
+#endif
             if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
                 (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
                 ret = ENGINE_ENOMEM; break;
@@ -10801,15 +11583,28 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
 
         if (ret == ENGINE_SUCCESS) {
             STATS_ELEM_HITS(c, bop_get, key, nkey);
+#ifdef COLLGET_RES
+            c->coll_eitem  = (void *)(collget_res.elem_array);
+            c->coll_ecount = collget_res.elem_count;
+            c->coll_resps  = respbuf;
+            c->coll_op     = OPERATION_BOP_GET;
+            conn_set_state(c, conn_mwrite);
+            c->msgcurr     = 0;
+#else
             c->coll_eitem  = (void *)elem_array;
             c->coll_ecount = elem_count;
             c->coll_resps  = respbuf;
             c->coll_op     = OPERATION_BOP_GET;
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
+#endif
         } else { /* ENGINE_ENOMEM */
             STATS_NOKEY(c, cmd_bop_get);
+#ifdef COLLGET_RES
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, collget_res.elem_array, collget_res.elem_count);
+#else
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
+#endif
             if (respbuf != NULL)
                 free(respbuf);
             if (c->ewouldblock)
@@ -10841,9 +11636,15 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
         else handle_unexpected_errorcode_ascii(c, ret);
     }
 
+#ifdef COLLGET_RES
+    if (ret != ENGINE_SUCCESS && collget_res.elem_array != NULL) {
+        free((void *)(collget_res.elem_array));
+    }
+#else
     if (ret != ENGINE_SUCCESS && elem_array != NULL) {
         free((void *)elem_array);
     }
+#endif
 }
 
 static void process_bop_count(conn *c, char *key, size_t nkey,

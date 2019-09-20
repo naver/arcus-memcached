@@ -18,7 +18,6 @@
  */
 #ifndef MEMCACHED_ENGINE_H
 #define MEMCACHED_ENGINE_H
-
 #include <sys/types.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -367,6 +366,14 @@ extern "C" {
                                               uint32_t* del_count, bool* dropped,
                                               uint16_t vbucket);
 
+#ifdef COLLGET_RES
+        ENGINE_ERROR_CODE (*list_elem_get)(ENGINE_HANDLE* handle, const void* cookie,
+                                           const void* key, const int nkey,
+                                           int from_index, int to_index,
+                                           const bool delete, const bool drop_if_empty,
+                                           struct collget_res* collget_res, uint16_t vbucket);
+
+#else
         ENGINE_ERROR_CODE (*list_elem_get)(ENGINE_HANDLE* handle, const void* cookie,
                                            const void* key, const int nkey,
                                            int from_index, int to_index,
@@ -374,7 +381,7 @@ extern "C" {
                                            eitem** eitem_array, uint32_t* eitem_count,
                                            uint32_t* flags, bool* dropped,
                                            uint16_t vbucket);
-
+#endif
         /*
          * SET Interface
          */
@@ -405,6 +412,13 @@ extern "C" {
                                             const void* value, const int nbytes,
                                             bool *exist, uint16_t vbucket);
 
+#ifdef COLLGET_RES
+        ENGINE_ERROR_CODE (*set_elem_get)(ENGINE_HANDLE* handle, const void* cookie,
+                                          const void* key, const int nkey,
+                                          const uint32_t count,
+                                          const bool delete, const bool drop_if_empty,
+                                          struct collget_res *collget_res, uint16_t vbucket);
+#else
         ENGINE_ERROR_CODE (*set_elem_get)(ENGINE_HANDLE* handle, const void* cookie,
                                           const void* key, const int nkey,
                                           const uint32_t count,
@@ -412,6 +426,7 @@ extern "C" {
                                           eitem** eitem, uint32_t* eitem_count,
                                           uint32_t* flags, bool* dropped,
                                           uint16_t vbucket);
+#endif
 
         /*
          * MAP Interface
@@ -459,6 +474,18 @@ extern "C" {
                                              uint32_t* del_count,
                                              bool *dropped,
                                              uint16_t vbucket);
+#ifdef COLLGET_RES
+ENGINE_ERROR_CODE (*map_elem_get)(ENGINE_HANDLE* handle,
+                                          const void* cookie,
+                                          const void* key,
+                                          const int nkey,
+                                          const int numfields,
+                                          const field_t *flist,
+                                          const bool delete,
+                                          const bool drop_if_empty,
+                                          struct collget_res *collget_res,
+                                          uint16_t vbucket);
+#else
         ENGINE_ERROR_CODE (*map_elem_get)(ENGINE_HANDLE* handle,
                                           const void* cookie,
                                           const void* key,
@@ -472,6 +499,7 @@ extern "C" {
                                           uint32_t* flags,
                                           bool* dropped,
                                           uint16_t vbucket);
+#endif
 
         /*
          * B+Tree Interface
@@ -520,6 +548,16 @@ extern "C" {
                                                    const eflag_t *eflagp, uint64_t *result,
                                                    uint16_t vbucket);
 
+#ifdef COLLGET_RES
+        ENGINE_ERROR_CODE (*btree_elem_get)(ENGINE_HANDLE* handle, const void* cookie,
+                                            const void* key, const int nkey,
+                                            const bkey_range *bkrange,
+                                            const eflag_filter *efilter,
+                                            const uint32_t offset,
+                                            const uint32_t req_count,
+                                            const bool delete, const bool drop_if_empty,
+                                            struct collget_res* collget_res, uint16_t vbucket);
+#else
         ENGINE_ERROR_CODE (*btree_elem_get)(ENGINE_HANDLE* handle, const void* cookie,
                                             const void* key, const int nkey,
                                             const bkey_range *bkrange,
@@ -530,6 +568,7 @@ extern "C" {
                                             eitem** eitem_array, uint32_t* eitem_count,
                                             uint32_t* access_count, uint32_t* flags,
                                             bool* dropped_trimmed, uint16_t vbucket);
+#endif
 
         ENGINE_ERROR_CODE (*btree_elem_count)(ENGINE_HANDLE* handle, const void* cookie,
                                               const void* key, const int nkey,
@@ -717,6 +756,7 @@ extern "C" {
          * @param item_info
          * @return true if successful
          */
+
         bool (*get_item_info)(ENGINE_HANDLE *handle, const void *cookie,
                               const item* item, item_info *item_info);
         /*
