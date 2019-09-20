@@ -30,7 +30,7 @@
 #include "cmdlogbuf.h"
 
 #define CHKPT_MAX_FILENAME_LENGTH  255
-#define CHKPT_FILE_NAME_FORMAT     "%s/%s%ld"
+#define CHKPT_FILE_NAME_FORMAT     "%s/%s%"PRId64
 #define CHKPT_SNAPSHOT_PREFIX      "snapshot_"
 #define CHKPT_CMDLOG_PREFIX        "cmdlog_"
 
