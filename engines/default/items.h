@@ -18,6 +18,7 @@
 #ifndef ITEMS_H
 #define ITEMS_H
 
+#define ELEM_ARRAY
 /* item unlink cause */
 enum item_unlink_cause {
     ITEM_UNLINK_NORMAL = 1, /* unlink by normal request */
@@ -430,11 +431,18 @@ ENGINE_ERROR_CODE list_elem_delete(const char *key, const uint32_t nkey,
                                    const bool drop_if_empty,
                                    uint32_t *del_count, bool *dropped);
 
+#ifdef COLLGET_RES
+ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
+                                int from_index, int to_index,
+                                const bool delete, const bool drop_if_empty,
+                                struct collget_res * collget_res);
+#else
 ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
                                 int from_index, int to_index,
                                 const bool delete, const bool drop_if_empty,
                                 list_elem_item **elem_array, uint32_t *elem_count,
                                 uint32_t *flags, bool *dropped);
+#endif
 
 ENGINE_ERROR_CODE set_struct_create(const char *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie);
@@ -457,10 +465,16 @@ ENGINE_ERROR_CODE set_elem_exist(const char *key, const uint32_t nkey,
                                  const char *value, const uint32_t nbytes,
                                  bool *exist);
 
+#ifdef COLLGET_RES
+ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey, const uint32_t count,
+                               const bool delete, const bool drop_if_empty,
+                               struct collget_res *collget_res);
+#else
 ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey, const uint32_t count,
                                const bool delete, const bool drop_if_empty,
                                set_elem_item **elem_array, uint32_t *elem_count,
                                uint32_t *flags, bool *dropped);
+#endif
 
 ENGINE_ERROR_CODE map_struct_create(const char *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie);
@@ -485,10 +499,16 @@ ENGINE_ERROR_CODE map_elem_delete(const char *key, const uint32_t nkey,
                                   const bool drop_if_empty, uint32_t *del_count,
                                   bool *dropped);
 
+#ifdef COLLGET_RES
+ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
+                               const int numfields, const field_t *flist, const bool delete,
+                               const bool drop_if_empty, struct collget_res *collget_res);
+#else
 ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
                                const int numfields, const field_t *flist, const bool delete,
                                const bool drop_if_empty, map_elem_item **elem_array,
                                uint32_t *elem_count, uint32_t *flags, bool *dropped);
+#endif
 
 ENGINE_ERROR_CODE btree_struct_create(const char *key, const uint32_t nkey,
                                       item_attr *attrp, const void *cookie);
@@ -519,6 +539,13 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(const char* key, const uint32_t nkey,
                                         const eflag_t *eflagp,
                                         uint64_t *result, const void* cookie);
 
+#ifdef COLLGET_RES
+ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
+                                 const bkey_range *bkrange, const eflag_filter *efilter,
+                                 const uint32_t offset, const uint32_t req_count,
+                                 const bool delete, const bool drop_if_empty,
+								 struct collget_res *collget_res);
+#else
 ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
                                  const bkey_range *bkrange, const eflag_filter *efilter,
                                  const uint32_t offset, const uint32_t req_count,
@@ -526,6 +553,7 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
                                  btree_elem_item **elem_array, uint32_t *elem_count,
                                  uint32_t *access_count,
                                  uint32_t *flags, bool *dropped_trimmed);
+#endif
 
 ENGINE_ERROR_CODE btree_elem_count(const char *key, const uint32_t nkey,
                                    const bkey_range *bkrange, const eflag_filter *efilter,

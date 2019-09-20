@@ -441,6 +441,25 @@ default_list_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
+#ifdef COLLGET_RES
+static ENGINE_ERROR_CODE
+default_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
+                      const void* key, const int nkey,
+                      int from_index, int to_index,
+                      const bool delete, const bool drop_if_empty,
+                      struct collget_res* collget_res, uint16_t vbucket)
+{
+    struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
+    ret = list_elem_get(key, nkey, from_index, to_index, delete, drop_if_empty,
+                        collget_res);
+    if (delete) ACTION_AFTER_WRITE(cookie, ret);
+    return ret;
+}
+#else
 static ENGINE_ERROR_CODE
 default_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                       const void* key, const int nkey,
@@ -460,6 +479,7 @@ default_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
+#endif
 
 /*
  * Set Collection API
@@ -555,6 +575,23 @@ default_set_elem_exist(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
+#ifdef COLLGET_RES
+static ENGINE_ERROR_CODE
+default_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
+                     const void* key, const int nkey, const uint32_t count,
+                     const bool delete, const bool drop_if_empty,
+                     struct collget_res *collget_res, uint16_t vbucket)
+{
+    struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
+    ret = set_elem_get(key, nkey, count, delete, drop_if_empty, collget_res);
+    if (delete) ACTION_AFTER_WRITE(cookie, ret);
+    return ret;
+}
+#else
 static ENGINE_ERROR_CODE
 default_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                      const void* key, const int nkey, const uint32_t count,
@@ -572,6 +609,7 @@ default_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
+#endif
 
 
 /*
@@ -666,6 +704,24 @@ default_map_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
+#ifdef COLLGET_RES
+static ENGINE_ERROR_CODE
+default_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
+                     const void* key, const int nkey, const int numfields,
+                     const field_t *flist, const bool delete, const bool drop_if_empty,
+                     struct collget_res *collget_res, uint16_t vbucket)
+{
+    struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
+    ret = map_elem_get(key, nkey, numfields, flist, delete, drop_if_empty,
+                       collget_res);
+    if (delete) ACTION_AFTER_WRITE(cookie, ret);
+    return ret;
+}
+#else
 static ENGINE_ERROR_CODE
 default_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                      const void* key, const int nkey, const int numfields,
@@ -683,6 +739,7 @@ default_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
+#endif
 
 /*
  * B+Tree Collection API
@@ -818,6 +875,27 @@ default_btree_elem_arithmetic(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
+#ifdef COLLGET_RES
+static ENGINE_ERROR_CODE
+default_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
+                       const void* key, const int nkey,
+                       const bkey_range *bkrange, const eflag_filter *efilter,
+                       const uint32_t offset, const uint32_t req_count,
+                       const bool delete, const bool drop_if_empty,
+                       struct collget_res *collget_res, uint16_t vbucket)
+{
+    struct default_engine *engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret;
+    VBUCKET_GUARD(engine, vbucket);
+
+    if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
+    ret = btree_elem_get(key, nkey, bkrange, efilter,
+                         offset, req_count, delete, drop_if_empty,
+                         collget_res);
+    if (delete) ACTION_AFTER_WRITE(cookie, ret);
+    return ret;
+}
+#else
 static ENGINE_ERROR_CODE
 default_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                        const void* key, const int nkey,
@@ -840,6 +918,7 @@ default_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
+#endif
 
 static ENGINE_ERROR_CODE
 default_btree_elem_count(ENGINE_HANDLE* handle, const void* cookie,

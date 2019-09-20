@@ -315,6 +315,17 @@ Demo_list_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
     return ENGINE_ENOTSUP;
 }
 
+#ifdef COLLGET_RES
+static ENGINE_ERROR_CODE
+Demo_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
+                      const void* key, const int nkey,
+                      int from_index, int to_index,
+                      const bool delete, const bool drop_if_empty,
+                      struct collget_res *collget_res, uint16_t vbucket)
+{
+    return ENGINE_ENOTSUP;
+}
+#else
 static ENGINE_ERROR_CODE
 Demo_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                       const void* key, const int nkey,
@@ -325,6 +336,7 @@ Demo_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
 {
     return ENGINE_ENOTSUP;
 }
+#endif
 
 /*
  * Set Collection API
@@ -380,6 +392,16 @@ Demo_set_elem_exist(ENGINE_HANDLE* handle, const void* cookie,
     return ENGINE_ENOTSUP;
 }
 
+#ifdef COLLGET_RES
+static ENGINE_ERROR_CODE
+Demo_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
+                     const void* key, const int nkey, const uint32_t count,
+                     const bool delete, const bool drop_if_empty,
+                     struct collget_res *collget_res, uint16_t vbucket)
+{
+    return ENGINE_ENOTSUP;
+}
+#else
 static ENGINE_ERROR_CODE
 Demo_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                      const void* key, const int nkey, const uint32_t count,
@@ -389,6 +411,7 @@ Demo_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
 {
     return ENGINE_ENOTSUP;
 }
+#endif
 
 /*
  * Map Collection API
@@ -442,6 +465,16 @@ Demo_map_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
     return ENGINE_ENOTSUP;
 }
 
+#ifdef COLLGET_RES
+static ENGINE_ERROR_CODE
+Demo_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
+                     const void* key, const int nkey, const int numfields,
+                     const field_t *flist, const bool delete, const bool drop_if_empty,
+                     struct collget_res *collget_res, uint16_t vbucket)
+{
+    return ENGINE_ENOTSUP;
+}
+#else
 static ENGINE_ERROR_CODE
 Demo_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                      const void* key, const int nkey, const int numfields,
@@ -451,6 +484,7 @@ Demo_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
 {
     return ENGINE_ENOTSUP;
 }
+#endif
 
 /*
  * B+Tree Collection API
@@ -523,6 +557,18 @@ Demo_btree_elem_arithmetic(ENGINE_HANDLE* handle, const void* cookie,
     return ENGINE_ENOTSUP;
 }
 
+#ifdef COLLGET_RES
+static ENGINE_ERROR_CODE
+Demo_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
+                       const void* key, const int nkey,
+                       const bkey_range *bkrange, const eflag_filter *efilter,
+                       const uint32_t offset, const uint32_t req_count,
+                       const bool delete, const bool drop_if_empty,
+                       struct collget_res *collget_res, uint16_t vbucket)
+{
+    return ENGINE_ENOTSUP;
+}
+#else
 static ENGINE_ERROR_CODE
 Demo_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                        const void* key, const int nkey,
@@ -535,6 +581,7 @@ Demo_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
 {
     return ENGINE_ENOTSUP;
 }
+#endif
 
 static ENGINE_ERROR_CODE
 Demo_btree_elem_count(ENGINE_HANDLE* handle, const void* cookie,
