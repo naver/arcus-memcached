@@ -133,6 +133,11 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.sticky_limit},
 #endif
+#ifdef SCRUB_CONFIG
+            { .key = "scrub_count",
+              .datatype = DT_SIZE,
+              .value.dt_size = &se->config.scrub_count},
+#endif
             { .key = "preallocate",
               .datatype = DT_BOOL,
               .value.dt_bool = &se->config.preallocate },
@@ -1134,6 +1139,11 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
         pthread_mutex_unlock(&engine->cache_lock);
     }
 #endif
+#ifdef SCRUB_CONFIG
+    else if (strcmp(config_key, "scrub_count") == 0) {
+        ret = item_conf_set_scrub_count((int*)config_value);
+    }
+#endif
     else if (strcmp(config_key, "max_list_size") == 0) {
         ret = item_conf_set_maxcollsize(ITEM_TYPE_LIST, (int*)config_value);
     }
@@ -1550,6 +1560,9 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .num_threads = 0,
          .maxbytes = 64 * 1024 * 1024,
          .sticky_limit = 0,
+#ifdef SCRUB_CONFIG
+         .scrub_count = 96,
+#endif
          .preallocate = false,
          .factor = 1.25,
          .chunk_size = 48,
