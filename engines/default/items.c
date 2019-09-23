@@ -117,6 +117,10 @@ extern int genhash_string_hash(const void* p, size_t nkey);
 #define IS_STICKY_COLLFLG(i) (((i)->mflags & COLL_META_FLAG_STICKY) != 0)
 #endif
 
+/* scan count definitions */
+#define SCRUB_MIN_COUNT 32
+#define SCRUB_MAX_COUNT 320
+
 /* btree position debugging */
 static bool btree_position_debug = false;
 
@@ -8315,6 +8319,21 @@ void coll_elem_release(elems_result_t *eresult, int type)
 /*
  * Item config functions
  */
+ENGINE_ERROR_CODE item_conf_set_scrub_count(int *count)
+{
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    LOCK_CACHE();
+    if (SCRUB_MIN_COUNT <= *count &&
+        SCRUB_MAX_COUNT >= *count) {
+        config->scrub_count = *count;
+    } else {
+        ret = ENGINE_EBADVALUE;
+    }
+    UNLOCK_CACHE();
+    return ret;
+}
+
 ENGINE_ERROR_CODE item_conf_set_maxcollsize(const int coll_type, int *maxsize)
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
@@ -8486,18 +8505,13 @@ static bool do_item_isstale(hash_item *it)
     return false; /* not-stale data */
 }
 
-/* scan count definitions */
-#define SCRUB_MIN_SCAN_COUNT 32
-#define SCRUB_DFT_SCAN_COUNT 96
-#define SCRUB_MAX_SCAN_COUNT 320
 static void *item_scrubber_main(void *arg)
 {
     struct default_engine *engine = arg;
     struct engine_scrubber *scrubber = &engine->scrubber;
     struct assoc_scan scan;
-    hash_item *item_array[SCRUB_MAX_SCAN_COUNT];
+    hash_item *item_array[SCRUB_MAX_COUNT];
     int        item_count;
-    int        scan_count = SCRUB_DFT_SCAN_COUNT; /* configurable */
     int        scan_execs = 0; /* the number of scan executions */
     int        scan_break = 1; /* break after N scan executions.
                                 * N = 1 is the best choice, we think.
@@ -8510,7 +8524,8 @@ again:
     assoc_scan_init(&scan);
     while (engine->initialized && !scrubber->restart) {
         /* scan and scrub cache items */
-        item_count = assoc_scan_next(&scan, item_array, scan_count, 0);
+        /* NOTE: scrub_count can be changed while scrubbing */
+        item_count = assoc_scan_next(&scan, item_array, config->scrub_count, 0);
         if (item_count < 0) { /* reached to the end */
             break;
         }

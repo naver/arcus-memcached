@@ -592,6 +592,7 @@ void  itscan_close(void *scan, bool success);
 /*
  * Item config functions
  */
+ENGINE_ERROR_CODE item_conf_set_scrub_count(int *count);
 ENGINE_ERROR_CODE item_conf_set_maxcollsize(const int coll_type, int *maxsize);
 bool item_conf_get_evict_to_free(void);
 void item_conf_set_evict_to_free(bool value);
