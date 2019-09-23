@@ -358,6 +358,9 @@ static void settings_init(void) {
     settings.maxbytes = 64 * 1024 * 1024; /* default is 64MB */
     settings.maxconns = 1024;         /* to limit connections-related memory to about 5MB */
     settings.sticky_limit = 0;        /* default: 0 MB */
+#ifdef SCRUB_CONFIG
+    settings.scrub_count = 96;        /* scrub item count at once */
+#endif
     settings.verbose = 0;
     settings.oldest_live = 0;
     settings.evict_to_free = 1;       /* push old items out of cache when memory runs out */
@@ -9195,6 +9198,39 @@ static void process_stickylimit_command(conn *c, token_t *tokens, const size_t n
 }
 #endif
 
+#ifdef SCRUB_CONFIG
+static void process_scrubcount_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    char *config_key = tokens[SUBCOMMAND_TOKEN].value;
+    char *config_val = tokens[SUBCOMMAND_TOKEN+1].value;
+    int new_scrub_count;
+
+    if (ntokens == 3) {
+        char buf[32];
+        sprintf(buf, "scrub_count %d\r\nEND", settings.scrub_count);
+        out_string(c, buf);
+    } else if (ntokens == 4 && safe_strtol(config_val, &new_scrub_count)) {
+        ENGINE_ERROR_CODE ret;
+        SETTING_LOCK();
+        ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&new_scrub_count);
+        if (ret == ENGINE_SUCCESS) {
+            settings.scrub_count = new_scrub_count;
+        }
+        SETTING_UNLOCK();
+        if (ret == ENGINE_SUCCESS) {
+            out_string(c, "END");
+        } else if (ret == ENGINE_ENOTSUP) {
+            out_string(c, "NOT_SUPPORTED");
+        } else { /* ENGINE_EBADVALUE */
+            out_string(c, "CLIENT_ERROR bad value");
+        }
+    } else {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "CLIENT_ERROR bad command line format");
+    }
+}
+#endif
+
 static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t ntokens,
                                         int coll_type)
 {
@@ -9317,6 +9353,11 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
 #ifdef ENABLE_STICKY_ITEM
     else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "sticky_limit") == 0) {
         process_stickylimit_command(c, tokens, ntokens);
+    }
+#endif
+#ifdef SCRUB_CONFIG
+    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "scrub_count") == 0) {
+        process_scrubcount_command(c, tokens, ntokens);
     }
 #endif
     else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_list_size") == 0) {
@@ -9575,6 +9616,9 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "config sticky_limit [<stickylimit(MB)>]\\r\\n" "\n"
 #endif
         "\t" "config maxconns [<maxconn>]\\r\\n" "\n"
+#ifdef SCRUB_CONFIG
+        "\t" "config scrub_count [<count>]\\r\\n" "\n"
+#endif
         "\t" "config max_list_size [<maxsize>]\\r\\n" "\n"
         "\t" "config max_set_size [<maxsize>]\\r\\n" "\n"
         "\t" "config max_map_size [<maxsize>]\\r\\n" "\n"

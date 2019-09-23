@@ -378,6 +378,9 @@ struct settings {
     int port;
     int udpport;
     size_t sticky_limit;
+#ifdef SCRUB_CONFIG
+    int scrub_count;
+#endif
     char *inter;
     int verbose;
     rel_time_t oldest_live; /* ignore existing items older than this */
