@@ -24,6 +24,12 @@
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogrec.h"
 
+#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_TAIL_BODY
+/* persistence meta data */
+#define PERSISTENCE_ENGINE_NAME   "ARCUS-DEFAULT_ENGINE"
+#define PERSISTENCE_MAJOR_VERSION 1
+#define PERSISTENCE_MINOR_VERSION 0 /* backward compatibility */
+#endif
 //#define DEBUG_PERSISTENCE_DISK_FORMAT_PRINT
 
 #ifdef offsetof
@@ -918,26 +924,31 @@ static void lrec_snapshot_elem_link_print(LogRec *logrec)
     }
 }
 
-/* Snapshot Head Log Record */
-static void lrec_snapshot_head_write(LogRec *logrec, char *bufptr)
-{
-}
-
-static void lrec_snapshot_head_print(LogRec *logrec)
-{
-}
-
 /* Snapshot Tail Log Record */
 static void lrec_snapshot_tail_write(LogRec *logrec, char *bufptr)
 {
     SnapshotTailLog *log = (SnapshotTailLog*)logrec;
+#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_TAIL_BODY
+    memcpy(bufptr, (void*)log, sizeof(LogHdr) + log->header.body_length);
+#else
     memcpy(bufptr, (void*)log, sizeof(SnapshotTailLog));
+#endif
 }
 
 static void lrec_snapshot_tail_print(LogRec *logrec)
 {
+#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_TAIL_BODY
+    SnapshotTailLog  *log  = (SnapshotTailLog*)logrec;
+    SnapshotTailData *body = &log->body;
+
+    lrec_header_print(&log->header);
+    fprintf(stderr, "[BODY]   engine_name=%s | persistence_major_version=%u | "
+            "persistence_minor_version=%u\n",
+            body->engine_name, body->persistence_major_version, body->persistence_minor_version);
+#else
     LogHdr *hdr = &logrec->header;
     lrec_header_print(hdr);
+#endif
 }
 
 /* Log Record Function */
@@ -961,7 +972,6 @@ LOGREC_FUNC logrec_func[] = {
     { lrec_bt_elem_insert_write,     lrec_bt_elem_insert_redo,     lrec_bt_elem_insert_print },
     { lrec_bt_elem_delete_write,     lrec_bt_elem_delete_redo,     lrec_bt_elem_delete_print },
     { lrec_snapshot_elem_link_write, lrec_snapshot_elem_link_redo, lrec_snapshot_elem_link_print },
-    { lrec_snapshot_head_write,      NULL,                         lrec_snapshot_head_print },
     { lrec_snapshot_tail_write,      NULL,                         lrec_snapshot_tail_print }
 };
 
@@ -996,18 +1006,29 @@ ENGINE_ERROR_CODE lrec_redo_from_record(LogRec *logrec)
 }
 
 /* Construct Log Record Functions */
-int lrec_construct_snapshot_head(LogRec *logrec)
-{
-    return 0;
-}
-
 int lrec_construct_snapshot_tail(LogRec *logrec)
 {
+#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_TAIL_BODY
+    SnapshotTailLog  *log  = (SnapshotTailLog*)logrec;
+    SnapshotTailData *body = &log->body;
+
+    assert(sizeof(body->engine_name) > strlen(PERSISTENCE_ENGINE_NAME));
+    memset(body->engine_name, 0, sizeof(body->engine_name));
+    memcpy(body->engine_name, PERSISTENCE_ENGINE_NAME, strlen(PERSISTENCE_ENGINE_NAME));
+    body->persistence_major_version = PERSISTENCE_MAJOR_VERSION;
+    body->persistence_minor_version = PERSISTENCE_MINOR_VERSION;
+
+    log->header.logtype = LOG_SNAPSHOT_TAIL;
+    log->header.updtype = UPD_NONE;
+    log->header.body_length = GET_8_ALIGN_SIZE(sizeof(SnapshotTailData));
+    return log->header.body_length+sizeof(LogHdr);
+#else
     SnapshotTailLog *log = (SnapshotTailLog*)logrec;
     log->header.logtype = LOG_SNAPSHOT_TAIL;
     log->header.updtype = UPD_NONE;
     log->header.body_length = 0;
     return sizeof(SnapshotTailLog);
+#endif
 }
 
 int lrec_construct_link_item(LogRec *logrec, hash_item *it)
@@ -1312,4 +1333,37 @@ void lrec_set_item_in_snapshot_elem(SnapshotElemLog *log, hash_item *it)
         log->it = it;
     }
 }
+#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_TAIL_BODY
+int lrec_check_snapshot_tail(SnapshotTailLog *log)
+{
+    /* check header */
+    if (log->header.logtype != LOG_SNAPSHOT_TAIL ||
+        log->header.updtype != UPD_NONE) {
+        logger->log(EXTENSION_LOG_WARNING, NULL, "no snapshot tail log record. incompleted file.\n");
+        return -1;
+    }
+
+    /* check body */
+    /* engine_name */
+    if (strncmp(log->body.engine_name, PERSISTENCE_ENGINE_NAME, strlen(PERSISTENCE_ENGINE_NAME)) != 0) {
+        logger->log(EXTENSION_LOG_WARNING, NULL, "%s is invalid engine name."
+                    " expected=%s\n", log->body.engine_name, PERSISTENCE_ENGINE_NAME);
+        return -1;
+    }
+    /* persistence_version */
+    if (log->body.persistence_major_version != PERSISTENCE_MAJOR_VERSION) {
+        logger->log(EXTENSION_LOG_WARNING, NULL, "persistence major version-%u is not supported."
+                    " current latest version(%u.%u)\n",
+                    log->body.persistence_major_version, PERSISTENCE_MAJOR_VERSION, PERSISTENCE_MINOR_VERSION);
+        return -1;
+    }
+    if (log->body.persistence_minor_version > PERSISTENCE_MINOR_VERSION) {
+        logger->log(EXTENSION_LOG_WARNING, NULL, "persistence minor version-%u is not supported."
+                    " current latest version(%u.%u)\n",
+                    log->body.persistence_minor_version, PERSISTENCE_MAJOR_VERSION, PERSISTENCE_MINOR_VERSION);
+        return -1;
+    }
+    return 0;
+}
+#endif
 #endif
