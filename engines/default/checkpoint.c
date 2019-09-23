@@ -361,10 +361,10 @@ int chkpt_recovery_analysis(void)
                         cs->snapshot_path, strerror(errno));
             ret = -1; break;
         }
-#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_TAIL_BODY
+
         logger->log(EXTENSION_LOG_INFO, NULL,
-                    "Check that %s is valid snapshot file for recovery.\n", cs->snapshot_path);
-#endif
+                    "Check that %s is valid snapshot file for recovery.\n",
+                    cs->snapshot_path);
         if (mc_snapshot_check_file_validity(snapshot_fd) == 0) {
             cs->lasttime = atoll(strchr(ent->d_name, '_') + 1);
             assert(cs->lasttime != 0);

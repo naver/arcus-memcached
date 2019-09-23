@@ -302,22 +302,16 @@ typedef struct _Btree_elem_delete_log {
     char             *datptr;
 } BtreeElemDelLog;
 
-/* Snapshot File Tail Record */
-#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_TAIL_BODY
+/* Snapshot Tail Log Record */
 typedef struct _snapshot_tail_data {
     char             engine_name[32];
     uint32_t         persistence_major_version;
     uint32_t         persistence_minor_version;
 } SnapshotTailData;
 
-#endif
 typedef struct _snapshot_tail_log {
-#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_TAIL_BODY
     LogHdr            header;
     SnapshotTailData  body;
-#else
-    LogHdr header;
-#endif
 } SnapshotTailLog;
 
 /* Function to initialize log record manager */
@@ -349,7 +343,5 @@ ENGINE_ERROR_CODE lrec_redo_from_record(LogRec *logrec);
 hash_item *lrec_get_item_if_collection_link(ITLinkLog *log);
 /* set collection hashitem in snapshot elem log record. */
 void lrec_set_item_in_snapshot_elem(SnapshotElemLog *log, hash_item *it);
-#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_TAIL_BODY
 int lrec_check_snapshot_tail(SnapshotTailLog *log);
-#endif
 #endif

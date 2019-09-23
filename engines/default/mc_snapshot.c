@@ -710,17 +710,8 @@ int mc_snapshot_check_file_validity(const int fd)
     }
 
     lseek(fd, 0, SEEK_SET);
-#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_TAIL_BODY
+
     return lrec_check_snapshot_tail(&log);
-#else
-    /* it can be true by accident. */
-    if (log.header.logtype == LOG_SNAPSHOT_TAIL &&
-        log.header.updtype == UPD_NONE &&
-        log.header.body_length == 0) {
-        return 0;
-    }
-    return -1;
-#endif
 }
 
 int mc_snapshot_file_apply(const char *filepath)

@@ -24,12 +24,10 @@
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogrec.h"
 
-#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_TAIL_BODY
 /* persistence meta data */
 #define PERSISTENCE_ENGINE_NAME   "ARCUS-DEFAULT_ENGINE"
 #define PERSISTENCE_MAJOR_VERSION 1
 #define PERSISTENCE_MINOR_VERSION 0 /* backward compatibility */
-#endif
 //#define DEBUG_PERSISTENCE_DISK_FORMAT_PRINT
 
 #ifdef offsetof
@@ -928,16 +926,11 @@ static void lrec_snapshot_elem_link_print(LogRec *logrec)
 static void lrec_snapshot_tail_write(LogRec *logrec, char *bufptr)
 {
     SnapshotTailLog *log = (SnapshotTailLog*)logrec;
-#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_TAIL_BODY
     memcpy(bufptr, (void*)log, sizeof(LogHdr) + log->header.body_length);
-#else
-    memcpy(bufptr, (void*)log, sizeof(SnapshotTailLog));
-#endif
 }
 
 static void lrec_snapshot_tail_print(LogRec *logrec)
 {
-#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_TAIL_BODY
     SnapshotTailLog  *log  = (SnapshotTailLog*)logrec;
     SnapshotTailData *body = &log->body;
 
@@ -945,10 +938,6 @@ static void lrec_snapshot_tail_print(LogRec *logrec)
     fprintf(stderr, "[BODY]   engine_name=%s | persistence_major_version=%u | "
             "persistence_minor_version=%u\n",
             body->engine_name, body->persistence_major_version, body->persistence_minor_version);
-#else
-    LogHdr *hdr = &logrec->header;
-    lrec_header_print(hdr);
-#endif
 }
 
 /* Log Record Function */
@@ -1008,7 +997,6 @@ ENGINE_ERROR_CODE lrec_redo_from_record(LogRec *logrec)
 /* Construct Log Record Functions */
 int lrec_construct_snapshot_tail(LogRec *logrec)
 {
-#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_TAIL_BODY
     SnapshotTailLog  *log  = (SnapshotTailLog*)logrec;
     SnapshotTailData *body = &log->body;
 
@@ -1022,13 +1010,6 @@ int lrec_construct_snapshot_tail(LogRec *logrec)
     log->header.updtype = UPD_NONE;
     log->header.body_length = GET_8_ALIGN_SIZE(sizeof(SnapshotTailData));
     return log->header.body_length+sizeof(LogHdr);
-#else
-    SnapshotTailLog *log = (SnapshotTailLog*)logrec;
-    log->header.logtype = LOG_SNAPSHOT_TAIL;
-    log->header.updtype = UPD_NONE;
-    log->header.body_length = 0;
-    return sizeof(SnapshotTailLog);
-#endif
 }
 
 int lrec_construct_link_item(LogRec *logrec, hash_item *it)
@@ -1333,7 +1314,7 @@ void lrec_set_item_in_snapshot_elem(SnapshotElemLog *log, hash_item *it)
         log->it = it;
     }
 }
-#ifdef ENABLE_PERSISTENCE_03_SNAPSHOT_TAIL_BODY
+
 int lrec_check_snapshot_tail(SnapshotTailLog *log)
 {
     /* check header */
@@ -1365,5 +1346,4 @@ int lrec_check_snapshot_tail(SnapshotTailLog *log)
     }
     return 0;
 }
-#endif
 #endif
