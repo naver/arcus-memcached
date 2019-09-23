@@ -616,36 +616,6 @@ static void do_snapshot_stats(snapshot_st *ss, ADD_STAT add_stat, const void *co
     }
 }
 
-#ifdef ENABLE_PERSISTENCE
-/* Check that a SnapshotTailLog record exists at the end of file. */
-static int do_snapshot_check_file_validity(int fd)
-{
-    assert(fd > 0);
-
-    SnapshotTailLog log;
-    off_t offset;
-    ssize_t nread;
-
-    offset = lseek(fd, -sizeof(log), SEEK_END);
-    if (offset < 0) {
-        return -1;
-    }
-
-    nread = read(fd, &log, sizeof(log));
-    if (nread != sizeof(log)) {
-        return -1;
-    }
-
-    lseek(fd, 0, SEEK_SET);
-    /* it can be true by accident. */
-    if (log.header.logtype == LOG_SNAPSHOT_TAIL &&
-        log.header.updtype == UPD_NONE &&
-        log.header.body_length == 0) {
-        return 0;
-    }
-    return -1;
-}
-#endif
 /*
  * External Functions
  */
@@ -720,6 +690,35 @@ void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie)
 }
 
 #ifdef ENABLE_PERSISTENCE
+/* Check that a SnapshotTailLog record exists at the end of file. */
+int mc_snapshot_check_file_validity(const int fd)
+{
+    assert(fd > 0);
+
+    SnapshotTailLog log;
+    off_t offset;
+    ssize_t nread;
+
+    offset = lseek(fd, -sizeof(log), SEEK_END);
+    if (offset < 0) {
+        return -1;
+    }
+
+    nread = read(fd, &log, sizeof(log));
+    if (nread != sizeof(log)) {
+        return -1;
+    }
+
+    lseek(fd, 0, SEEK_SET);
+    /* it can be true by accident. */
+    if (log.header.logtype == LOG_SNAPSHOT_TAIL &&
+        log.header.updtype == UPD_NONE &&
+        log.header.body_length == 0) {
+        return 0;
+    }
+    return -1;
+}
+
 int mc_snapshot_file_apply(const char *filepath)
 {
     logger->log(EXTENSION_LOG_INFO, NULL,
@@ -730,14 +729,6 @@ int mc_snapshot_file_apply(const char *filepath)
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "[RECOVERY - SNAPSHOT] failed : file open. "
                     "path=%s, error=%s\n", filepath, strerror(errno));
-        return -1;
-    }
-
-    if (do_snapshot_check_file_validity(fd) < 0) {
-        logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "[RECOVERY - SNAPSHOT] failed : invalid file. "
-                    "path=%s\n", filepath);
-        close(fd);
         return -1;
     }
 
@@ -808,11 +799,6 @@ int mc_snapshot_file_apply(const char *filepath)
     }
     close(fd);
     return ret;
-}
-
-int mc_snapshot_get_chkpttime(const int fd, int64_t *lasttime)
-{
-    return 0;
 }
 #endif
 

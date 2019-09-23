@@ -361,7 +361,9 @@ int chkpt_recovery_analysis(void)
                         cs->snapshot_path, strerror(errno));
             ret = -1; break;
         }
-        if (mc_snapshot_get_chkpttime(snapshot_fd, &cs->lasttime) > 0) {
+        if (mc_snapshot_check_file_validity(snapshot_fd) == 0) {
+            cs->lasttime = atoll(strchr(ent->d_name, '_') + 1);
+            assert(cs->lasttime != 0);
             close(snapshot_fd);
             break;
         }
@@ -393,7 +395,6 @@ int chkpt_recovery_redo(void)
         if (cmdlog_file_apply() < 0) {
             return -1;
         }
-        /* FIXME: Truncate incompleted command bytes. */
     } else {
         /* create empty checkpoint snapshot and create/open cmdlog file. */
         logger->log(EXTENSION_LOG_INFO, NULL,
