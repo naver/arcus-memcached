@@ -33,6 +33,10 @@
 
 #define CMDLOG_MAX_FILEPATH_LENGTH 255
 
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+#define FRQUEUE_CHUNK_SIZE 4096
+#endif
+
 #define ENABLE_DEBUG 0
 
 /* log file structure */
@@ -45,27 +49,49 @@ typedef struct _log_file {
     size_t    next_size;
 } log_FILE;
 
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+/* flush request info */
+typedef struct _log_freq_info {
+    int32_t   max_requests; /* flush request queue size */
+    int32_t   cur_requests; /* the number of current flush requests */
+
+    int32_t   free_list;    /* the next queue index of free list */
+    int32_t   fbgn;         /* the queue index to begin flush */
+    int32_t   fend;         /* the queue index to end flush */
+    int32_t   dw_end;       /* the queue index to end dual write */
+} log_FREQ_info;
+#endif
+
 /* flush request structure */
 typedef struct _log_freq {
     uint32_t  nflush;     /* amount of log buffer to flush */
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+    int32_t   curr_eid;   /* curr request index id */
+    int32_t   next_eid;   /* next request index id */
+    int32_t   prev_eid;   /* prev request index id */
+#endif
     bool      dual_write; /* flag of dual write */
 } log_FREQ;
 
 /* log buffer structure */
 typedef struct _log_buffer {
     /* log buffer */
-    char       *data;   /* log buffer pointer */
-    uint32_t    size;   /* log buffer size */
-    uint32_t    head;   /* the head position in log buffer */
-    uint32_t    tail;   /* the tail position in log buffer */
-    int32_t     last;   /* the last position in log buffer */
+    char          *data;   /* log buffer pointer */
+    uint32_t       size;   /* log buffer size */
+    uint32_t       head;   /* the head position in log buffer */
+    uint32_t       tail;   /* the tail position in log buffer */
+    int32_t        last;   /* the last position in log buffer */
 
     /* flush request queue */
-    log_FREQ   *fque;   /* flush request queue pointer */
+    log_FREQ      *fque;   /* flush request queue pointer */
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+    log_FREQ_info  fqinfo; /* flush request queue info */
+#else
     uint32_t    fqsz;   /* flush request queue size */
     uint32_t    fbgn;   /* the queue index to begin flush */
     uint32_t    fend;   /* the queue index to end flush */
     int32_t     dw_end; /* the queue index to end dual write */
+#endif
 } log_BUFFER;
 
 /* log flusher structure */
@@ -154,6 +180,79 @@ static int disk_close(int fd)
 }
 /***************/
 
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+static void grow_flush_request_queue(void)
+{
+    int i;
+    log_FREQ_info *fqinfo = &log_gl.log_buffer.fqinfo;
+    int32_t cur_requests = fqinfo->max_requests;
+    int32_t new_requests = fqinfo->max_requests + FRQUEUE_CHUNK_SIZE;
+
+    log_FREQ *new_fque = realloc(log_gl.log_buffer.fque, new_requests * sizeof(log_FREQ));
+    if (new_fque == NULL) {
+        return;
+    }
+    log_gl.log_buffer.fque = new_fque;
+    fqinfo->max_requests = new_requests;
+
+    for (i = cur_requests; i < fqinfo->max_requests; i++) {
+        log_gl.log_buffer.fque[i].nflush = 0;
+        log_gl.log_buffer.fque[i].curr_eid = i;
+        if (i < (fqinfo->max_requests-1)) log_gl.log_buffer.fque[i].next_eid = i+1;
+        else                              log_gl.log_buffer.fque[i].next_eid = -1;
+        log_gl.log_buffer.fque[i].prev_eid = -1;
+        log_gl.log_buffer.fque[i].dual_write = false;
+    }
+    fqinfo->free_list = cur_requests;
+}
+
+static void do_flush_request_alloc(void)
+{
+    /* log_write locked */
+    log_FREQ      *tail = NULL;
+    log_FREQ_info *fqinfo = &log_gl.log_buffer.fqinfo;
+
+    if (fqinfo->free_list == -1) {
+        grow_flush_request_queue();
+
+        /* TODO: More complete handling is needed */
+        assert(fqinfo->free_list != -1);
+    }
+
+    tail = &log_gl.log_buffer.fque[fqinfo->free_list];
+    fqinfo->free_list = tail->next_eid;
+
+    tail->next_eid = -1;
+    if (fqinfo->fend == -1) {
+        tail->prev_eid = -1;
+        fqinfo->fbgn = tail->curr_eid;
+        fqinfo->fend = tail->curr_eid;
+    } else {
+        tail->prev_eid = fqinfo->fend;
+        log_gl.log_buffer.fque[fqinfo->fend].next_eid = tail->curr_eid;
+        fqinfo->fend = tail->curr_eid;
+    }
+    fqinfo->cur_requests += 1;
+}
+
+static void do_flush_request_free(void)
+{
+    /* log_wirte locked */
+    log_FREQ      *head = NULL;
+    log_FREQ_info *fqinfo = &log_gl.log_buffer.fqinfo;
+
+    head = &log_gl.log_buffer.fque[fqinfo->fbgn];
+    if (head->prev_eid == -1) fqinfo->fbgn = head->next_eid;
+    else log_gl.log_buffer.fque[head->prev_eid].next_eid = head->next_eid;
+    if (head->next_eid == -1) fqinfo->fend = head->prev_eid;
+    else log_gl.log_buffer.fque[head->next_eid].prev_eid = head->prev_eid;
+    head->prev_eid = -1;
+    head->next_eid = fqinfo->free_list;
+    fqinfo->free_list = head->curr_eid;
+    fqinfo->cur_requests -= 1;
+}
+#endif
+
 static void do_log_flusher_wakeup(void)
 {
     log_FLUSHER *flusher = &log_gl.log_flusher;
@@ -202,6 +301,9 @@ static void do_log_file_write(char *log_ptr, uint32_t log_size, bool dual_write)
 static uint32_t do_log_buff_flush(bool flush_all)
 {
     log_BUFFER *logbuff = &log_gl.log_buffer;
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+    log_FREQ_info *fqinfo = &log_gl.log_buffer.fqinfo;
+#endif
     uint32_t    nflush = 0;
     bool        dual_write_flag = false;
     bool        last_flush_flag = false;
@@ -210,6 +312,28 @@ static uint32_t do_log_buff_flush(bool flush_all)
 
     /* computate flush size */
     pthread_mutex_lock(&log_gl.log_write_lock);
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+    if (fqinfo->fend != -1) {
+        if (fqinfo->dw_end != -1) {
+            cleanup_process = true;
+        }
+        if (fqinfo->fbgn == fqinfo->dw_end) {
+            fqinfo->dw_end = -1;
+            next_fhlsn_flag = true;
+        }
+        if (fqinfo->fbgn != fqinfo->fend) {
+            nflush = logbuff->fque[fqinfo->fbgn].nflush;
+            dual_write_flag = logbuff->fque[fqinfo->fbgn].dual_write;
+            assert(nflush > 0);
+        } else {
+            if (flush_all) {
+                nflush = logbuff->fque[fqinfo->fend].nflush;
+                dual_write_flag = logbuff->fque[fqinfo->fend].dual_write;
+                last_flush_flag = true;
+            }
+        }
+    }
+#else
     if (logbuff->dw_end != -1) {
         cleanup_process = true;
     }
@@ -228,6 +352,7 @@ static uint32_t do_log_buff_flush(bool flush_all)
             last_flush_flag = true;
         }
     }
+#endif
     if (nflush > 0) {
         if (logbuff->head == logbuff->last) {
             logbuff->last = -1;
@@ -267,6 +392,12 @@ static uint32_t do_log_buff_flush(bool flush_all)
             logbuff->last = -1;
             logbuff->head = 0;
         }
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+        logbuff->fque[fqinfo->fbgn].nflush -= nflush;
+        if (logbuff->fque[fqinfo->fbgn].nflush == 0) {
+            do_flush_request_free();
+        }
+#else
         if (last_flush_flag) {
             /* decrement the flush request size */
             logbuff->fque[logbuff->fbgn].nflush -= nflush;
@@ -282,6 +413,7 @@ static uint32_t do_log_buff_flush(bool flush_all)
                 logbuff->fbgn = 0;
             }
         }
+#endif
         pthread_mutex_unlock(&log_gl.log_write_lock);
     }
     return nflush;
@@ -290,6 +422,9 @@ static uint32_t do_log_buff_flush(bool flush_all)
 static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_write)
 {
     log_BUFFER *logbuff = &log_gl.log_buffer;
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+    log_FREQ_info *fqinfo = &log_gl.log_buffer.fqinfo;
+#endif
     uint32_t total_length = sizeof(LogHdr) + logrec->header.body_length;
     assert(total_length < logbuff->size);
 
@@ -309,10 +444,16 @@ static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_wr
                 /* increase log flush end pointer
                  * to make to-be-flushed log data contiguous in memory.
                  */
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+                if (fqinfo->fend != -1 && logbuff->fque[fqinfo->fend].nflush > 0) {
+                    do_flush_request_alloc();
+                }
+#else
                 /* TODO: ensure flush request not full */
                 if (logbuff->fque[logbuff->fend].nflush > 0) {
                     if ((++logbuff->fend) == logbuff->fqsz) logbuff->fend = 0;
                 }
+#endif
                 if (total_length < logbuff->head) {
                     break; /* enough buffer space */
                 }
@@ -339,6 +480,26 @@ static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_wr
     log_gl.nxt_write_lsn.roffset += total_length;
 
     /* update log flush reqeust */
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+    if (fqinfo->fend == -1) {
+        do_flush_request_alloc();
+    }
+    assert(fqinfo->fend != -1);
+
+    if (logbuff->fque[fqinfo->fend].nflush == 0) {
+        logbuff->fque[fqinfo->fend].nflush = total_length;
+        logbuff->fque[fqinfo->fend].dual_write = dual_write;
+    } else {
+        if (logbuff->fque[fqinfo->fend].dual_write != dual_write) {
+            do_flush_request_alloc();
+        }
+        logbuff->fque[fqinfo->fend].nflush += total_length;
+        logbuff->fque[fqinfo->fend].dual_write = dual_write;
+    }
+    if (logbuff->fque[fqinfo->fend].nflush > CMDLOG_FLUSH_AUTO_SIZE) {
+        do_flush_request_alloc();
+    }
+#else
     if (logbuff->fque[logbuff->fend].nflush == 0) {
         logbuff->fque[logbuff->fend].nflush = total_length;
         logbuff->fque[logbuff->fend].dual_write = dual_write;
@@ -353,6 +514,7 @@ static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_wr
     if (logbuff->fque[logbuff->fend].nflush > CMDLOG_FLUSH_AUTO_SIZE) {
         if ((++logbuff->fend) == logbuff->fqsz) logbuff->fend = 0;
     }
+#endif
 
     if (waiter != NULL) {
         waiter->lsn = log_gl.nxt_write_lsn;
@@ -361,7 +523,11 @@ static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_wr
     pthread_mutex_unlock(&log_gl.log_write_lock);
 
     /* wake up log flush thread if flush requests exist */
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+    if (fqinfo->fbgn != fqinfo->fend) {
+#else
     if (logbuff->fbgn != logbuff->fend) {
+#endif
         if (log_gl.log_flusher.sleep == true) {
             do_log_flusher_wakeup();
         }
@@ -452,6 +618,9 @@ void log_get_fsync_lsn(LogSN *lsn)
 void cmdlog_complete_dual_write(bool success)
 {
     log_BUFFER *logbuff = &log_gl.log_buffer;
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+    log_FREQ_info *fqinfo = &log_gl.log_buffer.fqinfo;
+#endif
 
     pthread_mutex_lock(&log_gl.log_flush_lock);
     do {
@@ -464,12 +633,27 @@ void cmdlog_complete_dual_write(bool success)
         }
         if (success) {
             pthread_mutex_lock(&log_gl.log_write_lock);
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+            bool next_fhlsn_flag = false;
+            if (fqinfo->fend != -1) {
+                if (logbuff->fque[fqinfo->fend].nflush > 0) {
+                    do_flush_request_alloc();
+                }
+                /* Set the position where a dual write end. */
+                assert(fqinfo->dw_end == -1);
+                fqinfo->dw_end = fqinfo->fend;
+            } else {
+                /* flush request is empty, update flush_lsn */
+                next_fhlsn_flag = true;
+            }
+#else
             if (logbuff->fque[logbuff->fend].nflush > 0) {
                 if ((++logbuff->fend) == logbuff->fqsz) logbuff->fend = 0;
             }
             /* Set the position where a dual write end. */
             assert(logbuff->dw_end == -1);
             logbuff->dw_end = logbuff->fend;
+#endif
 
             /* update nxt_write_lsn */
             log_gl.nxt_write_lsn.filenum += 1;
@@ -482,9 +666,25 @@ void cmdlog_complete_dual_write(bool success)
             log_gl.log_file.next_fd = -1;
             log_gl.log_file.size = log_gl.log_file.next_size;
             log_gl.log_file.next_size = 0;
+
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+            if (next_fhlsn_flag) {
+                pthread_mutex_lock(&log_gl.flush_lsn_lock);
+                log_gl.nxt_flush_lsn.filenum += 1;
+                log_gl.nxt_flush_lsn.roffset = 0;
+                pthread_mutex_unlock(&log_gl.flush_lsn_lock);
+            }
+#endif
         } else {
             pthread_mutex_lock(&log_gl.log_write_lock);
             /* reset dual_write flag in flush reqeust queue */
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+            int32_t index = fqinfo->fbgn;
+            while (index != -1) {
+                logbuff->fque[index].dual_write = false;
+                index = logbuff->fque[index].next_eid;
+            }
+#else
             int index = logbuff->fbgn;
             while (logbuff->fque[index].nflush > 0) {
                 if (logbuff->fque[index].dual_write) {
@@ -492,6 +692,7 @@ void cmdlog_complete_dual_write(bool success)
                 }
                 if ((++index) == logbuff->fqsz) index = 0;
             }
+#endif
             pthread_mutex_unlock(&log_gl.log_write_lock);
 
             assert(log_gl.log_file.prev_fd == -1);
@@ -560,9 +761,15 @@ size_t cmdlog_file_getsize(void)
 
     pthread_mutex_lock(&log_gl.log_flush_lock);
     pthread_mutex_lock(&log_gl.log_write_lock);
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+    if (log_gl.log_buffer.fqinfo.dw_end == -1) {
+        file_size = logfile->size;
+    }
+#else
     if (log_gl.log_buffer.dw_end == -1) {
         file_size = logfile->size;
     }
+#endif
     pthread_mutex_unlock(&log_gl.log_write_lock);
     pthread_mutex_unlock(&log_gl.log_flush_lock);
 
@@ -658,6 +865,9 @@ int cmdlog_file_apply(void)
 
 ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
 {
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+    int i;
+#endif
     logger = engine->server.log->get_logger();
 
     memset(&log_gl, 0, sizeof(log_gl));
@@ -695,16 +905,38 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
     logbuff->last = -1;
 
     /* log flush request queue init - ring shaped queue */
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+    log_FREQ_info *fqinfo = &log_gl.log_buffer.fqinfo;
+    fqinfo->cur_requests = 0;
+    fqinfo->max_requests = FRQUEUE_CHUNK_SIZE;
+    logbuff->fque = (log_FREQ*)malloc(fqinfo->max_requests * sizeof(log_FREQ));
+#else
     logbuff->fqsz = (logbuff->size / CMDLOG_FLUSH_AUTO_SIZE) * 2;
     logbuff->fque = (log_FREQ*)malloc(logbuff->fqsz * sizeof(log_FREQ));
+#endif
     if (logbuff->fque == NULL) {
         free(logbuff->data);
         return ENGINE_ENOMEM;
     }
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+    for (i = 0; i < fqinfo->max_requests; i++) {
+        logbuff->fque[i].nflush = 0;
+        logbuff->fque[i].curr_eid = i;
+        if (i < (fqinfo->max_requests-1)) logbuff->fque[i].next_eid = i+1;
+        else                              logbuff->fque[i].next_eid = -1;
+        logbuff->fque[i].prev_eid = -1;
+        logbuff->fque[i].dual_write = false;
+    }
+    fqinfo->free_list = 0;
+    fqinfo->fbgn = -1;
+    fqinfo->fend = -1;
+    fqinfo->dw_end = -1;
+#else
     memset(logbuff->fque, 0, logbuff->fqsz * sizeof(log_FREQ));
     logbuff->fbgn = 0;
     logbuff->fend = 0;
     logbuff->dw_end = -1;
+#endif
 
     /* log flush thread init */
     log_FLUSHER *flusher = &log_gl.log_flusher;
