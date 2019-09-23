@@ -113,8 +113,8 @@ extern int genhash_string_hash(const void* p, size_t nkey);
 #endif
 
 /* scan count definitions */
-#define SCRUB_MIN_SCAN_COUNT 32
-#define SCRUB_MAX_SCAN_COUNT 320
+#define SCRUB_MIN_COUNT 32
+#define SCRUB_MAX_COUNT 320
 
 /* btree position debugging */
 static bool btree_position_debug = false;
@@ -7957,8 +7957,8 @@ ENGINE_ERROR_CODE item_conf_set_scrub_count(int *scan_count)
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     LOCK_CACHE();
-    if (SCRUB_MIN_SCAN_COUNT <= *scan_count &&
-        SCRUB_MAX_SCAN_COUNT >= *scan_count) {
+    if (SCRUB_MIN_COUNT <= *scan_count &&
+        SCRUB_MAX_COUNT >= *scan_count) {
         config->scrub_count = *scan_count;
     } else {
         ret = ENGINE_EBADVALUE;
@@ -8143,7 +8143,7 @@ static void *item_scrubber_main(void *arg)
     struct default_engine *engine = arg;
     struct engine_scrubber *scrubber = &engine->scrubber;
     struct assoc_scan scan;
-    hash_item *item_array[SCRUB_MAX_SCAN_COUNT];
+    hash_item *item_array[SCRUB_MAX_COUNT];
     int        item_count;
     int        scan_count = config->scrub_count;
     int        scan_execs = 0; /* the number of scan executions */
