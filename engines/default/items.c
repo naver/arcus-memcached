@@ -7952,14 +7952,14 @@ void coll_elem_release(elems_result_t *eresult, int type)
 /*
  * Item config functions
  */
-ENGINE_ERROR_CODE item_conf_set_scrub_count(int *scan_count)
+ENGINE_ERROR_CODE item_conf_set_scrub_count(int *count)
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     LOCK_CACHE();
-    if (SCRUB_MIN_COUNT <= *scan_count &&
-        SCRUB_MAX_COUNT >= *scan_count) {
-        config->scrub_count = *scan_count;
+    if (SCRUB_MIN_COUNT <= *count &&
+        SCRUB_MAX_COUNT >= *count) {
+        config->scrub_count = *count;
     } else {
         ret = ENGINE_EBADVALUE;
     }
@@ -8145,7 +8145,6 @@ static void *item_scrubber_main(void *arg)
     struct assoc_scan scan;
     hash_item *item_array[SCRUB_MAX_COUNT];
     int        item_count;
-    int        scan_count = config->scrub_count;
     int        scan_execs = 0; /* the number of scan executions */
     int        scan_break = 1; /* break after N scan executions.
                                 * N = 1 is the best choice, we think.
@@ -8158,7 +8157,8 @@ again:
     assoc_scan_init(&scan);
     while (engine->initialized && !scrubber->restart) {
         /* scan and scrub cache items */
-        item_count = assoc_scan_next(&scan, item_array, scan_count, 0);
+        /* NOTE: scrub_count can be changed while scrubbing */
+        item_count = assoc_scan_next(&scan, item_array, config->scrub_count, 0);
         if (item_count < 0) { /* reached to the end */
             break;
         }
