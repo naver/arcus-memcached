@@ -39,8 +39,8 @@ void mc_snapshot_stop(void);
 void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie);
 
 #ifdef ENABLE_PERSISTENCE
+int mc_snapshot_check_file_validity(const int fd);
 int mc_snapshot_file_apply(const char *filepath);
-int mc_snapshot_get_chkpttime(const int fd, int64_t *lasttime);
 #endif
 
 #endif
