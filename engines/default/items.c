@@ -112,11 +112,9 @@ extern int genhash_string_hash(const void* p, size_t nkey);
 #define IS_STICKY_COLLFLG(i) (((i)->mflags & COLL_META_FLAG_STICKY) != 0)
 #endif
 
-#ifdef SCRUB_CONFIG
 /* scan count definitions */
 #define SCRUB_MIN_SCAN_COUNT 32
 #define SCRUB_MAX_SCAN_COUNT 320
-#endif
 
 /* btree position debugging */
 static bool btree_position_debug = false;
@@ -7954,7 +7952,6 @@ void coll_elem_release(elems_result_t *eresult, int type)
 /*
  * Item config functions
  */
-#ifdef SCRUB_CONFIG
 ENGINE_ERROR_CODE item_conf_set_scrub_count(int *scan_count)
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
@@ -7969,7 +7966,6 @@ ENGINE_ERROR_CODE item_conf_set_scrub_count(int *scan_count)
     UNLOCK_CACHE();
     return ret;
 }
-#endif
 
 ENGINE_ERROR_CODE item_conf_set_maxcollsize(const int coll_type, int *maxsize)
 {
@@ -8142,13 +8138,6 @@ static bool do_item_isstale(hash_item *it)
     return false; /* not-stale data */
 }
 
-#ifdef SCRUB_CONFIG
-#else
-/* scan count definitions */
-#define SCRUB_MIN_SCAN_COUNT 32
-#define SCRUB_DFT_SCAN_COUNT 96
-#define SCRUB_MAX_SCAN_COUNT 320
-#endif
 static void *item_scrubber_main(void *arg)
 {
     struct default_engine *engine = arg;
@@ -8156,11 +8145,7 @@ static void *item_scrubber_main(void *arg)
     struct assoc_scan scan;
     hash_item *item_array[SCRUB_MAX_SCAN_COUNT];
     int        item_count;
-#ifdef SCRUB_CONFIG
     int        scan_count = config->scrub_count;
-#else
-    int        scan_count = SCRUB_DFT_SCAN_COUNT; /* configurable */
-#endif
     int        scan_execs = 0; /* the number of scan executions */
     int        scan_break = 1; /* break after N scan executions.
                                 * N = 1 is the best choice, we think.

@@ -51,9 +51,7 @@ struct engine_config {
    size_t num_threads;
    size_t maxbytes;
    size_t sticky_limit;
-#ifdef SCRUB_CONFIG
    size_t scrub_count;
-#endif
    bool   preallocate;
    float  factor;
    size_t chunk_size;
