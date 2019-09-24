@@ -238,10 +238,9 @@ static int do_snapshot_key_done(snapshot_st *ss)
 static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_count, void *args)
 {
 #ifdef ENABLE_PERSISTENCE
-    elems_result_t *erst_array = (elems_result_t *)args;
-    elems_result_t *eresult;
-    hash_item *it;
     struct snapshot_buffer *ssb = &ss->buffer;
+    elems_result_t *erst_array = (elems_result_t *)args;
+    hash_item *it;
     char *bufptr;
     int logsize;
     int i, j, ret = 0;
@@ -260,10 +259,11 @@ static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_co
         ssb->curlen += logsize;
 
         if (erst_array != NULL && IS_COLL_ITEM(it)) {
-            eresult = &erst_array[i];
+            elems_result_t *eresult = &erst_array[i];
             for (j = 0; j < eresult->elem_count; j++) {
                 SnapshotElemLog elog;
-                logsize = lrec_construct_snapshot_elem((LogRec*)&elog, it, eresult->elem_array[j]);
+                logsize = lrec_construct_snapshot_elem((LogRec*)&elog, it,
+                                                       eresult->elem_array[j]);
                 if (do_snapshot_buffer_check_space(ss, logsize) < 0) {
                     ret = -1; break;
                 }
@@ -286,7 +286,7 @@ static int do_snapshot_data_done(snapshot_st *ss)
 #ifdef ENABLE_PERSISTENCE
     struct snapshot_buffer *ssb = &ss->buffer;
     char *bufptr;
-    int logsize = 0;
+    int logsize;
 
     SnapshotDoneLog log;
     logsize = lrec_construct_snapshot_done((LogRec*)&log);
@@ -294,7 +294,7 @@ static int do_snapshot_data_done(snapshot_st *ss)
         return -1;
     }
 
-    /* record snapshot complete mark in the end of file. */
+    /* record snapshot done mark in the end of file. */
     bufptr = &ssb->memory[ssb->curlen];
     lrec_write_to_buffer((LogRec*)&log, bufptr);
     ssb->curlen += logsize;
@@ -693,25 +693,23 @@ void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie)
 /* Check snapshot file validity by inspecting SnapshotDone log record. */
 int mc_snapshot_check_file_validity(const int fd, size_t *filesize)
 {
-    assert(fd > 0);
-
     SnapshotDoneLog log;
     off_t offset;
     ssize_t nread;
+
+    assert(fd > 0);
 
     offset = lseek(fd, -sizeof(log), SEEK_END);
     if (offset < 0) {
         return -1;
     }
-
     nread = read(fd, &log, sizeof(log));
     if (nread != sizeof(log)) {
         return -1;
     }
-
-    *filesize = sizeof(log) + offset;
     lseek(fd, 0, SEEK_SET);
 
+    *filesize = offset + sizeof(log);
     return lrec_check_snapshot_done(&log);
 }
 
@@ -769,7 +767,7 @@ int mc_snapshot_file_apply(const char *filepath)
         if (loghdr->logtype == LOG_IT_LINK) {
             if (lrec_redo_from_record(logrec) != ENGINE_SUCCESS) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "[RECOVERY - SNAPSHOT] failed : log record redo.\n");
+                            "[RECOVERY - SNAPSHOT] failed : item link log record redo.\n");
                 ret = -1; break;
             }
             if (last_coll_it != NULL) {
@@ -781,18 +779,18 @@ int mc_snapshot_file_apply(const char *filepath)
             lrec_set_item_in_snapshot_elem((SnapshotElemLog*)logrec, last_coll_it);
             if (lrec_redo_from_record(logrec) != ENGINE_SUCCESS) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "[RECOVERY - SNAPSHOT] failed : snapshot elem link log record redo.\n");
+                            "[RECOVERY - SNAPSHOT] failed : snapshot elem log record redo.\n");
                 ret = -1; break;
             }
         } else if (loghdr->logtype == LOG_SNAPSHOT_DONE) {
             if (last_coll_it != NULL) {
                 item_release(last_coll_it);
             }
-            logger->log(EXTENSION_LOG_INFO, NULL,
-                        "[RECOVERY - SNAPSHOT] success.\n");
+            logger->log(EXTENSION_LOG_INFO, NULL, "[RECOVERY - SNAPSHOT] success.\n");
             break;
         }
     }
+
     close(fd);
     return ret;
 }
