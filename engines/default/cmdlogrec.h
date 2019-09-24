@@ -34,7 +34,7 @@ enum log_type {
     LOG_BT_ELEM_INSERT,
     LOG_BT_ELEM_DELETE,
     LOG_SNAPSHOT_ELEM,
-    LOG_SNAPSHOT_TAIL
+    LOG_SNAPSHOT_DONE
 };
 
 enum upd_type {
@@ -302,24 +302,23 @@ typedef struct _Btree_elem_delete_log {
     char             *datptr;
 } BtreeElemDelLog;
 
-/* Snapshot Tail Log Record */
-typedef struct _snapshot_tail_data {
+/* Snapshot Done Log Record */
+typedef struct _snapshot_done_data {
     char             engine_name[32];
     uint32_t         persistence_major_version;
     uint32_t         persistence_minor_version;
-} SnapshotTailData;
+} SnapshotDoneData;
 
-typedef struct _snapshot_tail_log {
+typedef struct _snapshot_done_log {
     LogHdr            header;
-    SnapshotTailData  body;
-} SnapshotTailLog;
+    SnapshotDoneData  body;
+} SnapshotDoneLog;
 
 /* Function to initialize log record manager */
 void cmdlog_rec_init(struct default_engine *engine);
 
 /* Construct Log Record Functions */
-int lrec_construct_snapshot_head(LogRec *logrec);
-int lrec_construct_snapshot_tail(LogRec *logrec);
+int lrec_construct_snapshot_done(LogRec *logrec);
 int lrec_construct_snapshot_elem(LogRec *logrec, hash_item *it, void *elem);
 int lrec_construct_link_item(LogRec *logrec, hash_item *it);
 int lrec_construct_unlink_item(LogRec *logrec, hash_item *it);
@@ -343,5 +342,5 @@ ENGINE_ERROR_CODE lrec_redo_from_record(LogRec *logrec);
 hash_item *lrec_get_item_if_collection_link(ITLinkLog *log);
 /* set collection hashitem in snapshot elem log record. */
 void lrec_set_item_in_snapshot_elem(SnapshotElemLog *log, hash_item *it);
-int lrec_check_snapshot_tail(SnapshotTailLog *log);
+int lrec_check_snapshot_done(SnapshotDoneLog *log);
 #endif
