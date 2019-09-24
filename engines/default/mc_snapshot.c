@@ -691,7 +691,7 @@ void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie)
 
 #ifdef ENABLE_PERSISTENCE
 /* Check snapshot file validity by inspecting snapshottail log record. */
-int mc_snapshot_check_file_validity(const int fd)
+int mc_snapshot_check_file_validity(const int fd, size_t *filesize)
 {
     assert(fd > 0);
 
@@ -709,6 +709,7 @@ int mc_snapshot_check_file_validity(const int fd)
         return -1;
     }
 
+    *filesize = sizeof(log) + offset;
     lseek(fd, 0, SEEK_SET);
 
     return lrec_check_snapshot_tail(&log);
