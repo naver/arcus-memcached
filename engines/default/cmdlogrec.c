@@ -74,8 +74,8 @@ static char *get_logtype_text(uint8_t type)
             return "BT_ELEM_INSERT";
         case LOG_BT_ELEM_DELETE:
             return "BT_ELEM_DELETE";
-        case LOG_SNAPSHOT_TAIL:
-            return "SNAPSHOT_TAIL";
+        case LOG_SNAPSHOT_DONE:
+            return "SNAPSHOT_DONE";
     }
     return "unknown";
 }
@@ -922,17 +922,17 @@ static void lrec_snapshot_elem_link_print(LogRec *logrec)
     }
 }
 
-/* Snapshot Tail Log Record */
-static void lrec_snapshot_tail_write(LogRec *logrec, char *bufptr)
+/* Snapshot Done Log Record */
+static void lrec_snapshot_done_write(LogRec *logrec, char *bufptr)
 {
-    SnapshotTailLog *log = (SnapshotTailLog*)logrec;
+    SnapshotDoneLog *log = (SnapshotDoneLog*)logrec;
     memcpy(bufptr, (void*)log, sizeof(LogHdr) + log->header.body_length);
 }
 
-static void lrec_snapshot_tail_print(LogRec *logrec)
+static void lrec_snapshot_done_print(LogRec *logrec)
 {
-    SnapshotTailLog  *log  = (SnapshotTailLog*)logrec;
-    SnapshotTailData *body = &log->body;
+    SnapshotDoneLog  *log  = (SnapshotDoneLog*)logrec;
+    SnapshotDoneData *body = &log->body;
 
     lrec_header_print(&log->header);
     fprintf(stderr, "[BODY]   engine_name=%s | persistence_major_version=%u | "
@@ -961,7 +961,7 @@ LOGREC_FUNC logrec_func[] = {
     { lrec_bt_elem_insert_write,     lrec_bt_elem_insert_redo,     lrec_bt_elem_insert_print },
     { lrec_bt_elem_delete_write,     lrec_bt_elem_delete_redo,     lrec_bt_elem_delete_print },
     { lrec_snapshot_elem_link_write, lrec_snapshot_elem_link_redo, lrec_snapshot_elem_link_print },
-    { lrec_snapshot_tail_write,      NULL,                         lrec_snapshot_tail_print }
+    { lrec_snapshot_done_write,      NULL,                         lrec_snapshot_done_print }
 };
 
 /* external function */
@@ -995,10 +995,10 @@ ENGINE_ERROR_CODE lrec_redo_from_record(LogRec *logrec)
 }
 
 /* Construct Log Record Functions */
-int lrec_construct_snapshot_tail(LogRec *logrec)
+int lrec_construct_snapshot_done(LogRec *logrec)
 {
-    SnapshotTailLog  *log  = (SnapshotTailLog*)logrec;
-    SnapshotTailData *body = &log->body;
+    SnapshotDoneLog  *log  = (SnapshotDoneLog*)logrec;
+    SnapshotDoneData *body = &log->body;
 
     assert(sizeof(body->engine_name) > strlen(PERSISTENCE_ENGINE_NAME));
     memset(body->engine_name, 0, sizeof(body->engine_name));
@@ -1006,9 +1006,9 @@ int lrec_construct_snapshot_tail(LogRec *logrec)
     body->persistence_major_version = PERSISTENCE_MAJOR_VERSION;
     body->persistence_minor_version = PERSISTENCE_MINOR_VERSION;
 
-    log->header.logtype = LOG_SNAPSHOT_TAIL;
+    log->header.logtype = LOG_SNAPSHOT_DONE;
     log->header.updtype = UPD_NONE;
-    log->header.body_length = GET_8_ALIGN_SIZE(sizeof(SnapshotTailData));
+    log->header.body_length = GET_8_ALIGN_SIZE(sizeof(SnapshotDoneData));
     return log->header.body_length+sizeof(LogHdr);
 }
 
@@ -1315,12 +1315,12 @@ void lrec_set_item_in_snapshot_elem(SnapshotElemLog *log, hash_item *it)
     }
 }
 
-int lrec_check_snapshot_tail(SnapshotTailLog *log)
+int lrec_check_snapshot_done(SnapshotDoneLog *log)
 {
     /* check header */
-    if (log->header.logtype != LOG_SNAPSHOT_TAIL ||
+    if (log->header.logtype != LOG_SNAPSHOT_DONE ||
         log->header.updtype != UPD_NONE) {
-        logger->log(EXTENSION_LOG_WARNING, NULL, "no snapshot tail log record. incompleted file.\n");
+        logger->log(EXTENSION_LOG_WARNING, NULL, "no snapshot done log record. incompleted file.\n");
         return -1;
     }
 

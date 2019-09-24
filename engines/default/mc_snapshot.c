@@ -288,8 +288,8 @@ static int do_snapshot_data_done(snapshot_st *ss)
     char *bufptr;
     int logsize = 0;
 
-    SnapshotTailLog log;
-    logsize = lrec_construct_snapshot_tail((LogRec*)&log);
+    SnapshotDoneLog log;
+    logsize = lrec_construct_snapshot_done((LogRec*)&log);
     if (do_snapshot_buffer_check_space(ss, logsize) < 0) {
         return -1;
     }
@@ -690,12 +690,12 @@ void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie)
 }
 
 #ifdef ENABLE_PERSISTENCE
-/* Check snapshot file validity by inspecting snapshottail log record. */
+/* Check snapshot file validity by inspecting SnapshotDone log record. */
 int mc_snapshot_check_file_validity(const int fd, size_t *filesize)
 {
     assert(fd > 0);
 
-    SnapshotTailLog log;
+    SnapshotDoneLog log;
     off_t offset;
     ssize_t nread;
 
@@ -712,7 +712,7 @@ int mc_snapshot_check_file_validity(const int fd, size_t *filesize)
     *filesize = sizeof(log) + offset;
     lseek(fd, 0, SEEK_SET);
 
-    return lrec_check_snapshot_tail(&log);
+    return lrec_check_snapshot_done(&log);
 }
 
 int mc_snapshot_file_apply(const char *filepath)
@@ -784,7 +784,7 @@ int mc_snapshot_file_apply(const char *filepath)
                             "[RECOVERY - SNAPSHOT] failed : snapshot elem link log record redo.\n");
                 ret = -1; break;
             }
-        } else if (loghdr->logtype == LOG_SNAPSHOT_TAIL) {
+        } else if (loghdr->logtype == LOG_SNAPSHOT_DONE) {
             if (last_coll_it != NULL) {
                 item_release(last_coll_it);
             }
