@@ -365,7 +365,7 @@ int chkpt_recovery_analysis(void)
         logger->log(EXTENSION_LOG_INFO, NULL,
                     "Check that %s is valid snapshot file for recovery.\n",
                     cs->snapshot_path);
-        if (mc_snapshot_check_file_validity(snapshot_fd) == 0) {
+        if (mc_snapshot_check_file_validity(snapshot_fd, &cs->lastsize) == 0) {
             cs->lasttime = atoll(strchr(ent->d_name, '_') + 1);
             assert(cs->lasttime != 0);
             close(snapshot_fd);
