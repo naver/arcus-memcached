@@ -63,6 +63,9 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
     assocp->hashmask = hashmask(assocp->hashpower);
     assocp->rootpower = 0;
     assocp->rootsize = DEFAULT_ROOTSIZE;
+    assocp->roottable = NULL;
+    assocp->infotable = NULL;
+    assocp->prefix_hashtable = NULL;
 
     assocp->roottable = calloc(assocp->rootsize, sizeof(void *));
     if (assocp->roottable == NULL) {
@@ -100,16 +103,26 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
 
 void assoc_final(struct default_engine *engine)
 {
-    int ii, table_count;
-
-    free(assocp->roottable[0].hashtable);
-    for (ii=0; ii < assocp->rootpower; ++ii) {
-         table_count = hashsize(ii); //2 ^ n
-         free(assocp->roottable[table_count].hashtable);
+    if (assocp == NULL) {
+        return; /* nothing to do */
     }
-    free(assocp->roottable);
-    free(assocp->infotable);
-    free(assocp->prefix_hashtable);
+
+    if (assocp->roottable) {
+        if (assocp->roottable[0].hashtable)
+            free(assocp->roottable[0].hashtable);
+        for (int ii=0; ii < assocp->rootpower; ++ii) {
+            int table_count = hashsize(ii); //2 ^ n
+            if (assocp->roottable[table_count].hashtable)
+                free(assocp->roottable[table_count].hashtable);
+        }
+        free(assocp->roottable);
+    }
+    if (assocp->infotable) {
+        free(assocp->infotable);
+    }
+    if (assocp->prefix_hashtable) {
+        free(assocp->prefix_hashtable);
+    }
     logger->log(EXTENSION_LOG_INFO, NULL, "ASSOC module destroyed.\n");
 }
 

@@ -1115,7 +1115,14 @@ ENGINE_ERROR_CODE slabs_init(struct default_engine *engine,
 
 void slabs_final(struct default_engine *engine)
 {
+    if (slabsp == NULL) {
+        return; /* nothing to do */
+    }
+
     /* Free memory allocated. */
+    if (slabsp->mem_base) {
+        free(slabsp->mem_base);
+    }
     do_smmgr_final();
     logger->log(EXTENSION_LOG_INFO, NULL, "SLABS module destroyed.\n");
 }
