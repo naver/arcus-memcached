@@ -107,7 +107,7 @@ struct engine_scrubber {
 #define MAX_FILEPATH_LENGTH 256
 struct engine_dumper {
    pthread_mutex_t lock;
-   bool            running;
+   volatile bool   running;
    bool            success; /* dump final status: success or fail */
    bool            stop;    /* request to stop dump */
    enum dump_mode  mode;    /* dump mode: key dump is only supported. */
