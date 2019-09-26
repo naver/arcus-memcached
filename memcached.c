@@ -2078,7 +2078,6 @@ static void process_mop_get_complete(conn *c)
     } else {
         need_size = c->coll_numkeys * sizeof(eitem*);
     }
-
     if ((c->coll_eitem = (eitem *)malloc(need_size)) == NULL) {
         ret = ENGINE_ENOMEM;
     } else {
@@ -2667,7 +2666,7 @@ static void process_bop_mget_complete(conn *c) {
                 }
 
                if (ret == ENGINE_SUCCESS) {
-                   STATS_ELEM_HITS(c, bop_get, key_tokens[k].value, key_tokens[k].length);
+                    STATS_ELEM_HITS(c, bop_get, key_tokens[k].value, key_tokens[k].length);
                 } else { /* ret == ENGINE_ENOMEM */
                     STATS_NOKEY(c, cmd_bop_get);
                 }

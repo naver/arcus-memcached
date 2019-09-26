@@ -9560,7 +9560,7 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
                 ret = ENGINE_UNREADABLE; break;
             }
 #ifdef ELEM_ARRAY
-        collget_res->elem_array = (eitem **)malloc(info->ccnt * sizeof(eitem *));
+            collget_res->elem_array = (eitem **)malloc(info->ccnt * sizeof(eitem *));
 #endif
             ret = do_map_elem_get(info, numfields, flist, delete, (map_elem_item **)collget_res->elem_array, &(collget_res->elem_count));
             if (ret == ENGINE_SUCCESS) {
