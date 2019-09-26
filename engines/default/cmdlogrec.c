@@ -229,8 +229,8 @@ static ENGINE_ERROR_CODE lrec_it_link_redo(LogRec *logrec)
     ITLinkLog  *log  = (ITLinkLog*)logrec;
     ITLinkData *body = &log->body;
     struct lrec_item_common cm = body->cm;
-
     char *keyptr = body->data;
+
     if (cm.ittype == ITEM_TYPE_KV) {
         ret = item_apply_kv_link(keyptr, cm.keylen, cm.flags, cm.exptime,
                                         cm.vallen, (keyptr + cm.keylen), body->ptr.cas);
@@ -252,8 +252,9 @@ static ENGINE_ERROR_CODE lrec_it_link_redo(LogRec *logrec)
         } else if (cm.ittype == ITEM_TYPE_BTREE) {
             struct lrec_coll_meta meta = body->ptr.meta;
             if (meta.maxbkrlen != BKEY_NULL) {
+                unsigned char *maxbkrptr = (unsigned char*)body->data;
                 attr.maxbkeyrange.len = meta.maxbkrlen;
-                memcpy(attr.maxbkeyrange.val, keyptr, BTREE_REAL_NBKEY(attr.maxbkeyrange.len));
+                memcpy(attr.maxbkeyrange.val, maxbkrptr, BTREE_REAL_NBKEY(attr.maxbkeyrange.len));
                 keyptr += BTREE_REAL_NBKEY(attr.maxbkeyrange.len);
             }
             ret = item_apply_btree_link(keyptr, cm.keylen, &attr);
@@ -271,8 +272,7 @@ static void lrec_it_link_print(LogRec *logrec)
     ITLinkLog  *log  = (ITLinkLog*)logrec;
     ITLinkData *body = &log->body;
     struct lrec_item_common *cm = (struct lrec_item_common*)&body->cm;
-
-    lrec_header_print(&log->header);
+    char *keyptr = body->data;
 
     char metastr[180];
     if (cm->ittype == ITEM_TYPE_KV) {
@@ -283,17 +283,22 @@ static void lrec_it_link_print(LogRec *logrec)
                            get_coll_ovflact_text(meta->ovflact), meta->mflags, meta->mcnt);
 
         if (cm->ittype == ITEM_TYPE_BTREE) {
+            unsigned char *maxbkrptr = (unsigned char*)body->data;
             leng += sprintf(metastr + leng, " | maxbkeyrange ");
-            lrec_bkey_print(meta->maxbkrlen, log->maxbkrptr, metastr + leng);
+            lrec_bkey_print(meta->maxbkrlen, maxbkrptr, metastr + leng);
+            if (meta->maxbkrlen != BKEY_NULL) {
+                keyptr += BTREE_REAL_NBKEY(meta->maxbkrlen);
+            }
         }
     }
 
+    lrec_header_print(&log->header);
     /* vallen >= 2, valstr = ...\r\n */
     fprintf(stderr, "[BODY]   ittype=%s | flags=%u | exptime=%u | %s | "
             "keylen=%u | keystr=%.*s | vallen=%u | valstr=%.*s",
             get_itemtype_text(cm->ittype), cm->flags, cm->exptime, metastr,
-            cm->keylen, (cm->keylen <= 250 ? cm->keylen : 250), log->keyptr,
-            cm->vallen, (cm->vallen <= 250 ? cm->vallen : 250), log->keyptr+cm->keylen);
+            cm->keylen, (cm->keylen <= 250 ? cm->keylen : 250), keyptr,
+            cm->vallen, (cm->vallen <= 250 ? cm->vallen : 250), keyptr + cm->keylen);
 }
 
 /* Item Unlink Log Record */
@@ -312,8 +317,9 @@ static ENGINE_ERROR_CODE lrec_it_unlink_redo(LogRec *logrec)
     ENGINE_ERROR_CODE ret;
     ITUnlinkLog  *log  = (ITUnlinkLog*)logrec;
     ITUnlinkData *body = &log->body;
+    char *keyptr = body->data;
 
-    ret = item_apply_unlink(body->data, body->keylen);
+    ret = item_apply_unlink(keyptr, body->keylen);
     if (ret != ENGINE_SUCCESS) {
         logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_it_unlink_redo failed.\n");
     }
@@ -322,11 +328,12 @@ static ENGINE_ERROR_CODE lrec_it_unlink_redo(LogRec *logrec)
 
 static void lrec_it_unlink_print(LogRec *logrec)
 {
-    ITUnlinkLog *log  = (ITUnlinkLog*)logrec;
-    lrec_header_print(&log->header);
+    ITUnlinkLog *log = (ITUnlinkLog*)logrec;
+    char *keyptr = log->body.data;
 
+    lrec_header_print(&log->header);
     fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s\r\n",
-            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr);
+            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr);
 }
 
 /* Item SetAttr Log Record */
@@ -356,34 +363,35 @@ static ENGINE_ERROR_CODE lrec_it_setattr_redo(LogRec *logrec)
     ENGINE_ERROR_CODE ret;
     ITSetAttrLog  *log  = (ITSetAttrLog*)logrec;
     ITSetAttrData *body = &log->body;
+    char *keyptr = body->data;
 
     if (log->header.updtype == UPD_SETATTR_EXPTIME) {
-        ret = item_apply_setattr_exptime(body->data, body->keylen, body->exptime);
+        ret = item_apply_setattr_exptime(keyptr, body->keylen, body->exptime);
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_it_setattr_redo failed.\n");
         }
     } else {
-        hash_item *it = item_get(body->data, body->keylen);
+        bkey_t maxbkeyrange;
+        bkey_t *maxbkrptr = NULL;
+        if (body->maxbkrlen != BKEY_NULL) {
+            maxbkeyrange.len = body->maxbkrlen;
+            memcpy(maxbkeyrange.val, body->data, BTREE_REAL_NBKEY(body->maxbkrlen));
+            maxbkrptr = &maxbkeyrange;
+            keyptr += BTREE_REAL_NBKEY(body->maxbkrlen);
+        }
+        hash_item *it = item_get(keyptr, body->keylen);
         if (it) {
-            if (body->maxbkrlen != BKEY_NULL) {
-                bkey_t maxbkeyrange;
-                maxbkeyrange.len = body->maxbkrlen;
-                memcpy(maxbkeyrange.val, (body->data + body->keylen), body->maxbkrlen);
-                ret = item_apply_setattr_meta_info(it, body->ovflact, body->mflags,
-                                                   body->exptime, body->mcnt, &maxbkeyrange);
-            } else {
-                ret = item_apply_setattr_meta_info(it, body->ovflact, body->mflags,
-                                                   body->exptime, body->mcnt, NULL);
-            }
-            if (ret == ENGINE_SUCCESS) {
-                item_release(it);
-            } else {
+            ret = item_apply_setattr_meta_info(it, body->ovflact, body->mflags,
+                                               body->exptime, body->mcnt, maxbkrptr);
+            if (ret != ENGINE_SUCCESS) {
                 logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_it_setattr_redo failed.\n");
+            } else {
+                item_release(it);
             }
         } else {
             ret = ENGINE_KEY_ENOENT;
-            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_it_setattr_redo failed."
-                        "not found. key=%.*s\n", body->keylen, body->data);
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_it_setattr_redo failed. "
+                        "not found. key=%.*s\n", body->keylen, keyptr);
         }
     }
 
@@ -392,14 +400,16 @@ static ENGINE_ERROR_CODE lrec_it_setattr_redo(LogRec *logrec)
 
 static void lrec_it_setattr_print(LogRec *logrec)
 {
-    ITSetAttrLog *log  = (ITSetAttrLog*)logrec;
+    ITSetAttrLog *log = (ITSetAttrLog*)logrec;
+    char *keyptr = log->body.data;
+
     lrec_header_print(&log->header);
 
     switch (log->header.updtype) {
       case UPD_SETATTR_EXPTIME:
       {
         fprintf(stderr, "[BODY]   exptime=%u | keylen=%u | keystr=%.*s\r\n",
-                log->body.exptime, log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr);
+                log->body.exptime, log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr);
       }
       break;
       case UPD_SETATTR_EXPTIME_INFO:
@@ -407,8 +417,10 @@ static void lrec_it_setattr_print(LogRec *logrec)
       {
         char metastr[180];
         if (log->body.maxbkrlen != BKEY_NULL) {
+            unsigned char *maxbkrptr = (unsigned char*)log->body.data;
             int leng = sprintf(metastr, "maxbkeyrange ");
-            lrec_bkey_print(log->body.maxbkrlen, log->maxbkrptr, metastr + leng);
+            lrec_bkey_print(log->body.maxbkrlen, maxbkrptr, metastr + leng);
+            keyptr += BTREE_REAL_NBKEY(log->body.maxbkrlen);
         } else {
             sprintf(metastr, "maxbkeyrange NULL");
         }
@@ -416,7 +428,8 @@ static void lrec_it_setattr_print(LogRec *logrec)
         fprintf(stderr, "[BODY]   ovflact=%s | mflags=%u | mcnt=%u | "
                 "exptime=%u | %s | keylen=%u | keystr=%.*s\r\n",
                 get_coll_ovflact_text(log->body.ovflact), log->body.mflags, log->body.mcnt,
-                log->body.exptime, metastr, log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr);
+                log->body.exptime, metastr,
+                log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr);
       }
       break;
     }
@@ -441,13 +454,14 @@ static ENGINE_ERROR_CODE lrec_it_flush_redo(LogRec *logrec)
     ENGINE_ERROR_CODE ret;
     ITFlushLog  *log  = (ITFlushLog*)logrec;
     ITFlushData *body = &log->body;
+    char *prefixptr = body->data;
 
     if (body->nprefix == 255) {
         ret = item_apply_flush(NULL, -1); /* flush_all */
     } else if (body->nprefix == 0) {
         ret = item_apply_flush(NULL, 0); /* null prefix */
     } else {
-        ret = item_apply_flush(body->data, body->nprefix); /* flush specific prefix */
+        ret = item_apply_flush(prefixptr, body->nprefix); /* flush specific prefix */
     }
 
     if (ret != ENGINE_SUCCESS) {
@@ -459,12 +473,13 @@ static ENGINE_ERROR_CODE lrec_it_flush_redo(LogRec *logrec)
 static void lrec_it_flush_print(LogRec *logrec)
 {
     ITFlushLog *log = (ITFlushLog*)logrec;
-    lrec_header_print(&log->header);
-
+    char *prefixptr = log->body.data;
     bool print_prefix = (log->body.nprefix > 0 && log->body.nprefix < 255 ? true : false);
+
+    lrec_header_print(&log->header);
     fprintf(stderr, "[BODY]   nprefix=%u | keystr=%.*s\r\n",
             log->body.nprefix, (print_prefix ? log->body.nprefix : 4),
-            (print_prefix ? log->prefixptr : "NULL"));
+            (print_prefix ? prefixptr : "NULL"));
 }
 
 /* List Element Insert Log Record */
@@ -485,10 +500,11 @@ static ENGINE_ERROR_CODE lrec_list_elem_insert_redo(LogRec *logrec)
     ENGINE_ERROR_CODE ret = ENGINE_FAILED;
     ListElemInsLog  *log  = (ListElemInsLog*)logrec;
     ListElemInsData *body = &log->body;
+    char *keyptr = body->data;
 
-    hash_item *it = item_get(body->data, body->keylen);
+    hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
-        ret = item_apply_list_elem_insert(it, body->totcnt, body->eindex, (body->data + body->keylen), body->vallen);
+        ret = item_apply_list_elem_insert(it, body->totcnt, body->eindex, (keyptr + body->keylen), body->vallen);
         if (ret == ENGINE_SUCCESS) {
             item_release(it);
         } else {
@@ -497,7 +513,7 @@ static ENGINE_ERROR_CODE lrec_list_elem_insert_redo(LogRec *logrec)
     } else {
         ret = ENGINE_KEY_ENOENT;
         logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_list_elem_insert_redo failed. "
-                    "not found. nkey=%d, key=%.*s\n", body->keylen, body->keylen, body->data);
+                    "not found. nkey=%d, key=%.*s\n", body->keylen, body->keylen, keyptr);
     }
     return ret;
 }
@@ -505,13 +521,15 @@ static ENGINE_ERROR_CODE lrec_list_elem_insert_redo(LogRec *logrec)
 static void lrec_list_elem_insert_print(LogRec *logrec)
 {
     ListElemInsLog *log = (ListElemInsLog*)logrec;
-    lrec_header_print(&log->header);
+    char *keyptr = log->body.data;
+    char *valptr = keyptr + log->body.keylen;
 
+    lrec_header_print(&log->header);
     fprintf(stderr, "[BODY]   totcnt=%u | eindex=%d | "
             "keylen=%u | keystr=%.*s | vallen=%u | valstr=%.*s",
             log->body.totcnt, log->body.eindex,
-            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr,
-            log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250), log->valptr);
+            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
+            log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250), valptr);
 }
 
 /* List Element Delete Log Record */
@@ -530,8 +548,9 @@ static ENGINE_ERROR_CODE lrec_list_elem_delete_redo(LogRec *logrec)
     ENGINE_ERROR_CODE ret;
     ListElemDelLog  *log  = (ListElemDelLog*)logrec;
     ListElemDelData *body = &log->body;
+    char *keyptr = body->data;
 
-    hash_item *it = item_get(body->data, body->keylen);
+    hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
         ret = item_apply_list_elem_delete(it, body->totcnt, body->eindex, body->delcnt);
         if (ret == ENGINE_SUCCESS) {
@@ -542,7 +561,7 @@ static ENGINE_ERROR_CODE lrec_list_elem_delete_redo(LogRec *logrec)
     } else {
         ret = ENGINE_KEY_ENOENT;
         logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_list_elem_delete_redo failed. "
-                    "not found. key=%.*s\n", body->keylen, body->data);
+                    "not found. key=%.*s\n", body->keylen, keyptr);
     }
     return ret;
 }
@@ -550,11 +569,12 @@ static ENGINE_ERROR_CODE lrec_list_elem_delete_redo(LogRec *logrec)
 static void lrec_list_elem_delete_print(LogRec *logrec)
 {
     ListElemDelLog *log = (ListElemDelLog*)logrec;
-    lrec_header_print(&log->header);
+    char *keyptr = log->body.data;
 
+    lrec_header_print(&log->header);
     fprintf(stderr, "[BODY]   totcnt=%u | eindex=%d | delcnt=%u | keylen=%u | keystr=%.*s\r\n",
             log->body.totcnt, log->body.eindex, log->body.delcnt,
-            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr);
+            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr);
 }
 
 /* Set Element Insert Log Record */
@@ -575,10 +595,12 @@ static ENGINE_ERROR_CODE lrec_set_elem_insert_redo(LogRec *logrec)
     ENGINE_ERROR_CODE ret;
     SetElemInsLog  *log  = (SetElemInsLog*)logrec;
     SetElemInsData *body = &log->body;
+    char *keyptr = body->data;
+    char *valptr = keyptr + body->keylen;
 
-    hash_item *it = item_get(body->data, body->keylen);
+    hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
-        ret = item_apply_set_elem_insert(it, (body->data + body->keylen), body->vallen);
+        ret = item_apply_set_elem_insert(it, valptr, body->vallen);
         if (ret == ENGINE_SUCCESS) {
             item_release(it);
         } else {
@@ -587,7 +609,7 @@ static ENGINE_ERROR_CODE lrec_set_elem_insert_redo(LogRec *logrec)
     } else {
         ret = ENGINE_KEY_ENOENT;
         logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_set_elem_insert_redo failed. "
-                    "not found. key=%.*s\n", body->keylen, body->data);
+                    "not found. key=%.*s\n", body->keylen, keyptr);
     }
     return ret;
 }
@@ -595,11 +617,13 @@ static ENGINE_ERROR_CODE lrec_set_elem_insert_redo(LogRec *logrec)
 static void lrec_set_elem_insert_print(LogRec *logrec)
 {
     SetElemInsLog *log = (SetElemInsLog*)logrec;
-    lrec_header_print(&log->header);
+    char *keyptr = log->body.data;
+    char *valptr = keyptr + log->body.keylen;
 
+    lrec_header_print(&log->header);
     fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | vallen=%u | valstr=%.*s",
-            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr,
-            log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250), log->valptr);
+            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
+            log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250), valptr);
 }
 
 /* Set Element Delete Log Record */
@@ -620,10 +644,12 @@ static ENGINE_ERROR_CODE lrec_set_elem_delete_redo(LogRec *logrec)
     ENGINE_ERROR_CODE ret;
     SetElemDelLog  *log  = (SetElemDelLog*)logrec;
     SetElemDelData *body = &log->body;
+    char *keyptr = body->data;
+    char *valptr = keyptr + body->keylen;
 
-    hash_item *it = item_get(body->data, body->keylen);
+    hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
-        ret = item_apply_set_elem_delete(it, (body->data + body->keylen), body->vallen);
+        ret = item_apply_set_elem_delete(it, valptr, body->vallen);
         if (ret == ENGINE_SUCCESS) {
             item_release(it);
         } else {
@@ -632,7 +658,7 @@ static ENGINE_ERROR_CODE lrec_set_elem_delete_redo(LogRec *logrec)
     } else {
         ret = ENGINE_KEY_ENOENT;
         logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_set_elem_delete_redo failed. "
-                    "not found. key=%.*s\n", body->keylen, body->data);
+                    "not found. key=%.*s\n", body->keylen, keyptr);
     }
     return ret;
 }
@@ -640,11 +666,13 @@ static ENGINE_ERROR_CODE lrec_set_elem_delete_redo(LogRec *logrec)
 static void lrec_set_elem_delete_print(LogRec *logrec)
 {
     SetElemDelLog *log = (SetElemDelLog*)logrec;
-    lrec_header_print(&log->header);
+    char *keyptr = log->body.data;
+    char *valptr = keyptr + log->body.keylen;
 
+    lrec_header_print(&log->header);
     fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | vallen=%u | valstr=%.*s",
-            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr,
-            log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250), log->valptr);
+            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
+            log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250), valptr);
 }
 
 /* Map Element Insert Log Record */
@@ -665,10 +693,12 @@ static ENGINE_ERROR_CODE lrec_map_elem_insert_redo(LogRec *logrec)
     ENGINE_ERROR_CODE ret;
     MapElemInsLog  *log  = (MapElemInsLog*)logrec;
     MapElemInsData *body = &log->body;
+    char *keyptr = body->data;
+    char *datptr = keyptr + body->keylen;
 
-    hash_item *it = item_get(body->data, body->keylen);
+    hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
-        ret = item_apply_map_elem_insert(it, (body->data + body->keylen), body->fldlen, body->vallen);
+        ret = item_apply_map_elem_insert(it, datptr, body->fldlen, body->vallen);
         if (ret == ENGINE_SUCCESS) {
             item_release(it);
         } else {
@@ -677,7 +707,7 @@ static ENGINE_ERROR_CODE lrec_map_elem_insert_redo(LogRec *logrec)
     } else {
         ret = ENGINE_KEY_ENOENT;
         logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_map_elem_insert_redo failed. "
-                    "not found. key=%.*s\n", body->keylen, body->data);
+                    "not found. key=%.*s\n", body->keylen, keyptr);
     }
     return ret;
 }
@@ -685,12 +715,15 @@ static ENGINE_ERROR_CODE lrec_map_elem_insert_redo(LogRec *logrec)
 static void lrec_map_elem_insert_print(LogRec *logrec)
 {
     MapElemInsLog *log = (MapElemInsLog*)logrec;
-    lrec_header_print(&log->header);
+    char *keyptr = log->body.data;
+    char *fldptr = keyptr + log->body.keylen;
+    char *valptr = fldptr + log->body.fldlen;
 
+    lrec_header_print(&log->header);
     fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | fldlen=%u | fldstr=%.*s | vallen=%u | valstr=%.*s",
-            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr,
-            log->body.fldlen, log->body.fldlen, log->datptr,
-            log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250), log->datptr+log->body.fldlen);
+            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
+            log->body.fldlen, log->body.fldlen, fldptr,
+            log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250), valptr);
 }
 
 /* Map Element Delete Log Record */
@@ -711,10 +744,12 @@ static ENGINE_ERROR_CODE lrec_map_elem_delete_redo(LogRec *logrec)
     ENGINE_ERROR_CODE ret;
     MapElemDelLog  *log  = (MapElemDelLog*)logrec;
     MapElemDelData *body = &log->body;
+    char *keyptr = body->data;
+    char *fldptr = keyptr + body->keylen;
 
-    hash_item *it = item_get(body->data, body->keylen);
+    hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
-        ret = item_apply_map_elem_delete(it, (body->data + body->keylen), body->fldlen);
+        ret = item_apply_map_elem_delete(it, fldptr, body->fldlen);
         if (ret == ENGINE_SUCCESS) {
             item_release(it);
         } else {
@@ -723,7 +758,7 @@ static ENGINE_ERROR_CODE lrec_map_elem_delete_redo(LogRec *logrec)
     } else {
         ret = ENGINE_KEY_ENOENT;
         logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_map_elem_delete_redo failed. "
-                    "not found. key=%.*s\n", body->keylen, body->data);
+                    "not found. key=%.*s\n", body->keylen, keyptr);
     }
     return ret;
 }
@@ -731,11 +766,13 @@ static ENGINE_ERROR_CODE lrec_map_elem_delete_redo(LogRec *logrec)
 static void lrec_map_elem_delete_print(LogRec *logrec)
 {
     MapElemDelLog *log = (MapElemDelLog*)logrec;
-    lrec_header_print(&log->header);
+    char *keyptr = log->body.data;
+    char *fldptr = keyptr + log->body.keylen;
 
+    lrec_header_print(&log->header);
     fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | fldlen=%u | fldstr=%.*s\r\n",
-            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr,
-            log->body.fldlen, log->body.fldlen, log->datptr);
+            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
+            log->body.fldlen, log->body.fldlen, fldptr);
 }
 
 /* BTree Element Insert Log Record */
@@ -757,10 +794,12 @@ static ENGINE_ERROR_CODE lrec_bt_elem_insert_redo(LogRec *logrec)
     ENGINE_ERROR_CODE ret;
     BtreeElemInsLog  *log  = (BtreeElemInsLog*)logrec;
     BtreeElemInsData *body = &log->body;
+    char *keyptr = body->data;
+    char *datptr = keyptr + body->keylen;
 
-    hash_item *it = item_get(body->data, body->keylen);
+    hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
-        ret = item_apply_btree_elem_insert(it, (body->data + body->keylen), body->nbkey, body->neflag, body->vallen);
+        ret = item_apply_btree_elem_insert(it, datptr, body->nbkey, body->neflag, body->vallen);
         if (ret == ENGINE_SUCCESS) {
             item_release(it);
         } else {
@@ -769,7 +808,7 @@ static ENGINE_ERROR_CODE lrec_bt_elem_insert_redo(LogRec *logrec)
     } else {
         ret = ENGINE_KEY_ENOENT;
         logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_insert_redo failed. "
-                    "not found. key=%.*s\n", body->keylen, body->data);
+                    "not found. key=%.*s\n", body->keylen, keyptr);
     }
     return ret;
 }
@@ -777,25 +816,27 @@ static ENGINE_ERROR_CODE lrec_bt_elem_insert_redo(LogRec *logrec)
 static void lrec_bt_elem_insert_print(LogRec *logrec)
 {
     BtreeElemInsLog *log = (BtreeElemInsLog*)logrec;
-    lrec_header_print(&log->header);
+    char *keyptr = log->body.data;
+    unsigned char *bkeyptr = (unsigned char*)(keyptr + log->body.keylen);
 
     char bkeystr[60];
     char eflagstr[60];
     uint64_t real_nbkey = BTREE_REAL_NBKEY(log->body.nbkey);
     int leng = sprintf(bkeystr, "bkey");
-    lrec_bkey_print(log->body.nbkey, (unsigned char*)log->datptr, bkeystr + leng);
+    lrec_bkey_print(log->body.nbkey, bkeyptr, bkeystr + leng);
     if (log->body.neflag != 0) {
         leng = sprintf(eflagstr, "eflag");
-        lrec_eflag_print(log->body.neflag, (unsigned char*)log->datptr + real_nbkey, eflagstr + leng);
+        lrec_eflag_print(log->body.neflag, bkeyptr + real_nbkey, eflagstr + leng);
     }
 
+    lrec_header_print(&log->header);
     /* <key> <bkey> [<eflag>] <data> */
     fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | "
             "%s | %s | vallen = %u | valstr=%.*s",
-            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr,
-            bkeystr, (log->body.neflag != 0 ? eflagstr : ""),
+            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
+            bkeystr, (log->body.neflag != 0 ? eflagstr : "[eflag]"),
             log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250),
-            log->datptr + real_nbkey + log->body.neflag);
+            bkeyptr + real_nbkey + log->body.neflag);
 }
 
 /* BTree Element Delete Log Record */
@@ -817,10 +858,12 @@ static ENGINE_ERROR_CODE lrec_bt_elem_delete_redo(LogRec *logrec)
     ENGINE_ERROR_CODE ret;
     BtreeElemDelLog  *log  = (BtreeElemDelLog*)logrec;
     BtreeElemDelData *body = &log->body;
+    char *keyptr  = body->data;
+    char *bkeyptr = keyptr + body->keylen;
 
-    hash_item *it = item_get(body->data, body->keylen);
+    hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
-        ret = item_apply_btree_elem_delete(it, (body->data + body->keylen), body->nbkey);
+        ret = item_apply_btree_elem_delete(it, bkeyptr, body->nbkey);
         if (ret == ENGINE_SUCCESS) {
             item_release(it);
         } else {
@@ -829,7 +872,7 @@ static ENGINE_ERROR_CODE lrec_bt_elem_delete_redo(LogRec *logrec)
     } else {
         ret = ENGINE_KEY_ENOENT;
         logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_delete_redo failed. "
-                    "not found. key=%.*s\n", body->keylen, body->data);
+                    "not found. key=%.*s\n", body->keylen, keyptr);
     }
     return ret;
 }
@@ -837,14 +880,16 @@ static ENGINE_ERROR_CODE lrec_bt_elem_delete_redo(LogRec *logrec)
 static void lrec_bt_elem_delete_print(LogRec *logrec)
 {
     BtreeElemDelLog *log = (BtreeElemDelLog*)logrec;
-    lrec_header_print(&log->header);
+    char *keyptr = log->body.data;
+    unsigned char *bkeyptr = (unsigned char*)(keyptr + log->body.keylen);
 
     char metastr[180];
     int leng = sprintf(metastr, "bkey");
-    lrec_bkey_print(log->body.nbkey, (unsigned char*)log->datptr, metastr + leng);
+    lrec_bkey_print(log->body.nbkey, bkeyptr, metastr + leng);
 
+    lrec_header_print(&log->header);
     fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | %s\r\n",
-            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), log->keyptr, metastr);
+            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr, metastr);
 }
 
 /* Snapshot Element Log Record */
@@ -872,15 +917,16 @@ static ENGINE_ERROR_CODE lrec_snapshot_elem_link_redo(LogRec *logrec)
     ENGINE_ERROR_CODE ret = ENGINE_FAILED;
     SnapshotElemLog  *log  = (SnapshotElemLog*)logrec;
     SnapshotElemData *body = &log->body;
+    char *valptr = body->data;
 
     if (IS_LIST_ITEM(log->it)) {
-        ret = item_apply_list_elem_insert(log->it, -1, -1, body->data, body->nbytes);
+        ret = item_apply_list_elem_insert(log->it, -1, -1, valptr, body->nbytes);
     } else if (IS_SET_ITEM(log->it)) {
-        ret = item_apply_set_elem_insert(log->it, body->data, body->nbytes);
+        ret = item_apply_set_elem_insert(log->it, valptr, body->nbytes);
     } else if (IS_MAP_ITEM(log->it)) {
-        ret = item_apply_map_elem_insert(log->it, body->data, body->nekey, body->nbytes);
+        ret = item_apply_map_elem_insert(log->it, valptr, body->nekey, body->nbytes);
     } else if (IS_BTREE_ITEM(log->it)) {
-        ret = item_apply_btree_elem_insert(log->it, body->data, body->nekey, body->neflag, body->nbytes);
+        ret = item_apply_btree_elem_insert(log->it, valptr, body->nekey, body->neflag, body->nbytes);
     }
 
     if (ret != ENGINE_SUCCESS) {
@@ -893,32 +939,33 @@ static void lrec_snapshot_elem_link_print(LogRec *logrec)
 {
     SnapshotElemLog  *log  = (SnapshotElemLog*)logrec;
     SnapshotElemData *body = &log->body;
+    char *valptr = body->data;
 
     lrec_header_print(&log->header);
     /* vallen >= 2, valstr = ...\r\n */
     if (log->header.updtype == UPD_MAP_ELEM_INSERT) {
         fprintf(stderr, "[BODY]   nfield=%u | field=%.*s | vallen=%u | value=%.*s",
-                body->nekey, body->nekey, log->valptr,
-                body->nbytes, (body->nbytes <= 250 ? body->nbytes : 250), (log->valptr + body->nekey));
+                body->nekey, body->nekey, valptr,
+                body->nbytes, (body->nbytes <= 250 ? body->nbytes : 250), (valptr + body->nekey));
     } else if (log->header.updtype == UPD_BT_ELEM_INSERT) {
         char bkeystr[60];
         char eflagstr[60];
 
         int leng = sprintf(bkeystr, "bkey ");
-        lrec_bkey_print(body->nekey, (unsigned char*)log->valptr, bkeystr + leng);
+        lrec_bkey_print(body->nekey, (unsigned char*)valptr, bkeystr + leng);
         if (body->neflag != 0) {
             leng = sprintf(eflagstr, " | eflag ");
-            lrec_eflag_print(body->neflag, (unsigned char*)(log->valptr + BTREE_REAL_NBKEY(body->nekey)), eflagstr + leng);
+            lrec_eflag_print(body->neflag, (unsigned char*)(valptr + BTREE_REAL_NBKEY(body->nekey)), eflagstr + leng);
         }
 
         /* <key> <bkey> [<eflag>] <bytes> <data> */
         fprintf(stderr, "[BODY]   %s%s | vallen=%u | value=%.*s",
                 bkeystr, (body->neflag != 0 ? eflagstr : ""), body->nbytes,
                 (body->nbytes <= 250 ? body->nbytes : 250),
-                (log->valptr + BTREE_REAL_NBKEY(body->nekey) + body->neflag));
+                (valptr + BTREE_REAL_NBKEY(body->nekey) + body->neflag));
     } else {
         fprintf(stderr, "[BODY]   nbytes=%u | value=%.*s",
-                body->nbytes, body->nbytes, log->valptr);
+                body->nbytes, body->nbytes, valptr);
     }
 }
 
@@ -976,7 +1023,7 @@ void lrec_write_to_buffer(LogRec *logrec, char *bufptr)
 {
     logrec_func[logrec->header.logtype].write(logrec, bufptr);
 #ifdef DEBUG_PERSISTENCE_DISK_FORMAT_PRINT
-    logrec_func[logrec->header.logtype].print(logrec);
+    logrec_func[logrec->header.logtype].print((LogRec*)bufptr);
 #endif
 }
 
