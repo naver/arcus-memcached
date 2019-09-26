@@ -171,12 +171,14 @@ static void assoc_expand(struct default_engine *engine)
     uint32_t ii, table_count = hashsize(assoc->rootpower); // 2 ^ n
 
     new_hashtable = calloc(assoc->hashsize * table_count, sizeof(void *));
+    logger->log(EXTENSION_LOG_INFO, NULL, "expand start table-cnt: .%d\n", table-cnt);
     if (new_hashtable) {
         for (ii=0; ii < table_count; ++ii) {
             assoc->roottable[table_count+ii].hashtable = &new_hashtable[assoc->hashsize*ii];
         }
         assoc->rootpower++;
     }
+    logger->log(EXTENSION_LOG_INFO, NULL, "expand end.\n");
 }
 
 /* Note: this isn't an assoc_update.  The key must not already exist to call this */
