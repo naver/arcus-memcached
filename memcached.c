@@ -2558,16 +2558,7 @@ static void process_bop_mget_complete(conn *c) {
     }
     if (ret == ENGINE_SUCCESS) {
 #ifdef COLLGET_RES
-//CCCCCCCCCCCCC
-        /*char *valuestrp;
-        int bmget_count = c->coll_numkeys * c->coll_rcount;
-        int respon_hdr_size = c->coll_numkeys * ((lenstr_size*2)+30);
-        int respon_bdy_size = bmget_count * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+lenstr_size+15);
-
-        valuestrp = (char *)malloc(respon_hdr_size+respon_bdy_size);
-       */
-       // char *valuestrp = (char*)(collget_arr[0].elem_array) + (c->coll_numkeys * c->coll_rcount * sizeof(eitem*));
-       char *valuestrp = (char*)(collget_res.elem_array) + (c->coll_numkeys * c->coll_rcount * sizeof(eitem*));
+        char *valuestrp = (char*)(collget_res.elem_array) + (c->coll_numkeys * c->coll_rcount * sizeof(eitem*));
 #else
         uint32_t cur_elem_count = 0;
         uint32_t cur_access_count = 0;
@@ -2591,9 +2582,7 @@ static void process_bop_mget_complete(conn *c) {
 
         for (k = 0; k < c->coll_numkeys; k++) {
 #ifdef COLLGET_RES
-           collget_arr[k].elem_array = &collget_res.elem_array[tot_elem_count];
-           // eitem **temp = collget_res.elem_array;
-           // collget_res.elem_array = &collget_res.elem_array[tot_elem_count];
+            collget_arr[k].elem_array = &collget_res.elem_array[tot_elem_count];
             ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c,
                                              key_tokens[k].value, key_tokens[k].length,
                                              &c->coll_bkrange,
@@ -2633,10 +2622,6 @@ static void process_bop_mget_complete(conn *c) {
                 resultptr += strlen(resultptr);
 
                 for (e = 0; e < collget_arr[k].elem_count; e++) {
-                    /*
-                    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                                collget_res.elem_array[tot_elem_count+e], &c->einfo);
-                    */
                     mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                                 collget_arr[k].elem_array[e], &c->einfo);
                     sprintf(resultptr, "ELEMENT ");
@@ -2694,8 +2679,6 @@ static void process_bop_mget_complete(conn *c) {
 #ifdef COLLGET_RES
               tot_elem_count += collget_arr[k].elem_count;
               tot_access_count += collget_arr[k].access_count;
-             // collget_res.elem_count = 0;
-              //collget_res.access_count = 0;
 #else
               tot_elem_count += cur_elem_count;
               cur_elem_count = 0;

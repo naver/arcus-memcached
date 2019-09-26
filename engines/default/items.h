@@ -544,7 +544,7 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
                                  const bkey_range *bkrange, const eflag_filter *efilter,
                                  const uint32_t offset, const uint32_t req_count,
                                  const bool delete, const bool drop_if_empty,
-								 struct collget_res *collget_res);
+                                 struct collget_res *collget_res);
 #else
 ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
                                  const bkey_range *bkrange, const eflag_filter *efilter,
