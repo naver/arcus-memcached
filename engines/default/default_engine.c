@@ -1642,9 +1642,6 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .lock = PTHREAD_MUTEX_INITIALIZER
       },
       .cache_lock = PTHREAD_MUTEX_INITIALIZER,
-      .stats = {
-         .lock = PTHREAD_MUTEX_INITIALIZER,
-      },
       .config = {
          .use_cas = true,
 #ifdef ENABLE_PERSISTENCE
@@ -1670,9 +1667,16 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .max_btree_size = 50000,
          .prefix_delimiter = ':',
        },
+      .stats = {
+         .lock = PTHREAD_MUTEX_INITIALIZER,
+      },
       .scrubber = {
          .lock = PTHREAD_MUTEX_INITIALIZER,
          .enabled = true,
+         .running = false,
+      },
+      .dumper = {
+         .lock = PTHREAD_MUTEX_INITIALIZER,
          .running = false,
       },
       .info.engine_info = {

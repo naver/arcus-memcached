@@ -153,8 +153,9 @@ static uint8_t forced_btree_ovflact = 0;
 static item_queue      coll_del_queue;
 static pthread_mutex_t coll_del_lock;
 static pthread_cond_t  coll_del_cond;
-static bool            coll_del_sleep;
 static pthread_t       coll_del_tid; /* thread id */
+static bool            coll_del_sleep = false;
+static volatile bool   coll_del_thread_running = false;
 
 static struct default_engine *ngnptr=NULL;
 static struct engine_config *config=NULL; // engine config
@@ -5809,6 +5810,8 @@ static void *collection_delete_thread(void *arg)
     uint32_t        bg_evict_count = 0;
     bool            bg_evict_start = false;
 
+    coll_del_thread_running = true;
+
     while (engine->initialized) {
         it = pop_coll_del_queue();
         if (it != NULL) {
@@ -5877,6 +5880,8 @@ static void *collection_delete_thread(void *arg)
             coll_del_thread_sleep();
         }
     }
+
+    coll_del_thread_running = false;
     return NULL;
 }
 
@@ -6441,7 +6446,6 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
     pthread_cond_init(&coll_del_cond, NULL);
     coll_del_queue.head = coll_del_queue.tail = NULL;
     coll_del_queue.size = 0;
-    coll_del_sleep = false;
 
     /* adjust maximum collection size */
     if (config->max_list_size > max_list_size) {
@@ -6465,6 +6469,8 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
     logger->log(EXTENSION_LOG_INFO, NULL, "maximum map   size = %d\n", max_map_size);
     logger->log(EXTENSION_LOG_INFO, NULL, "maximum btree size = %d\n", max_btree_size);
 
+    item_clog_init(engine);
+
     /* check forced btree overflow action */
     _check_forced_btree_overflow_action();
 
@@ -6474,8 +6480,6 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
                     "Can't create thread: %s\n", strerror(ret));
         return ENGINE_FAILED;
     }
-
-    item_clog_init(engine);
 
     /* prepare bkey min & max value */
     bkey_uint64_min = 0;
@@ -6498,9 +6502,17 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
 
 void item_final(struct default_engine *engine)
 {
-    item_stop_dump(engine);
-    coll_del_thread_wakeup();
-    pthread_join(coll_del_tid, NULL);
+    if (itemsp == NULL) {
+        return; /* nothing to do */
+    }
+
+    if (engine->dumper.running) {
+        item_stop_dump(engine);
+    }
+    if (coll_del_thread_running) {
+        coll_del_thread_wakeup();
+        pthread_join(coll_del_tid, NULL);
+    }
 
     /* wait until scrubber thread is finished */
     int sleep_count = 0;
