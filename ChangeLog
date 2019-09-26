@@ -1,3 +1,23 @@
+2019-09-26 [version 1.11.7]
+	* [FEATURE] Added scrub_count config command.
+	* [FEATURE] Reflect immediately the changed scrub_count while scrubbing.
+	* [ENHANCE] New scrub execution to reduce CPU usage and cache lock duration.
+	* [ENHANCE] Consider the number of collection elements when do scan next.
+	* [ENHANCE] Reduce cache lock duration when evict/reclaim collection items.
+	* [ENHANCE] Define and use NULL bkrange to access all elements of b+tree.
+	* [ENHANCE] Reduce initial size of roottable and realloc as necessary.
+	* [FIX]     Fixed invalid memory access in trim_copy().
+	* [FIX]     Freed the response string buffer only when it exists.
+	* [FIX]     Fixed memory leak when getting hostname by address.
+	* [TEST]    Added code coverage test.
+	* [TEST]    Added lop operation test on a large list collection.
+	* [INTERNAL] Added functions for getting all collection elements.
+	* [INTERNAL] Added change log generation macros for future use.
+	* [CLEANUP] Fixed cppcheck's errors and warnings.
+	* [CLEANUP] Devided store_item() into detailed store functions.
+	* [CLEANUP] Used global engine pointer instead of passing engine argument.
+	* [CLEANUP] Refactored a lot of code for readbility and others.
+
 2019-06-05 [version 1.11.6]
 	* [FEATURE] Add long query detection for map collection.
 	* [FEATURE] Check cache_server_mapping ZK node with hostname.
