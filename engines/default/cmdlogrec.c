@@ -296,7 +296,7 @@ static void lrec_it_link_print(LogRec *logrec)
     /* vallen >= 2, valstr = ...\r\n */
     fprintf(stderr, "[BODY]   ittype=%s | flags=%u | exptime=%u | %s | "
             "keylen=%u | keystr=%.*s | vallen=%u | valstr=%.*s",
-            get_itemtype_text(cm->ittype), cm->flags, cm->exptime, metastr,
+            get_itemtype_text(cm->ittype), htonl(cm->flags), cm->exptime, metastr,
             cm->keylen, (cm->keylen <= 250 ? cm->keylen : 250), keyptr,
             cm->vallen, (cm->vallen <= 250 ? cm->vallen : 250), keyptr + cm->keylen);
 }
