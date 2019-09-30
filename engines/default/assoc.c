@@ -142,6 +142,7 @@ static void redistribute(struct default_engine *engine, unsigned int bucket)
         if (assoc->expand_bucket == hashsize(assoc->hashpower - 1)) {
             assoc->expanding = false;
             free(assoc->old_hashtable);
+            logger->log(EXTENSION_LOG_INFO, NULL, "expansion end\n");
         }
     }
 #else
@@ -255,6 +256,7 @@ static void assoc_expand(struct default_engine *engine)
     } else {
         assoc->primary_hashtable = assoc->old_hashtable;
     }
+    logger->log(EXTENSION_LOG_INFO, NULL, "expansion start\n");
 #else
     hash_item** new_hashtable;
     uint32_t ii, table_count = hashsize(assoc->rootpower); // 2 ^ n
