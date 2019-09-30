@@ -57,14 +57,10 @@ enum upd_type {
     UPD_MAP_CREATE,
     UPD_MAP_ELEM_INSERT,
     UPD_MAP_ELEM_DELETE,
-    UPD_MAP_ELEM_UPDATE,
     /* btree command */
     UPD_BT_CREATE,
     UPD_BT_ELEM_INSERT,
-    UPD_BT_ELEM_UPSERT,
     UPD_BT_ELEM_DELETE,
-    UPD_BT_ELEM_UPDATE,
-    UPD_BT_ELEM_ARITHMETIC,
     /* not command */
     UPD_NONE
 };
