@@ -55,6 +55,7 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
     assoc->hashsize = hashsize(assoc->hashpower);
     assoc->hashmask = hashmask(assoc->hashpower);
     assoc->rootpower = 0;
+    assoc->expand_bucket = 0;
 
     assoc->roottable = calloc(assoc->hashsize * 2, sizeof(void *));
     if (assoc->roottable == NULL) {
@@ -118,6 +119,10 @@ static void redistribute(struct default_engine *engine, unsigned int bucket)
                  assoc->roottable[tabidx].hashtable[bucket] = it;
              }
          }
+         assoc->expand_bucket++;
+         if(assoc->expand_bucket == hashsize(assoc->hashpower-1)) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "expand end");
+         }
     }
     assoc->infotable[bucket].curpower = assoc->rootpower;
 }
@@ -178,7 +183,7 @@ static void assoc_expand(struct default_engine *engine)
         }
         assoc->rootpower++;
     }
-    logger->log(EXTENSION_LOG_INFO, NULL, "expand end.\n");
+    assoc->expand_bucket = 0;
 }
 
 /* Note: this isn't an assoc_update.  The key must not already exist to call this */
