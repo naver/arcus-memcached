@@ -73,7 +73,7 @@ typedef struct _hash_item {
     struct _hash_item *h_next; /* hash chain next */
     rel_time_t time;    /* least recent access */
     rel_time_t exptime; /* When the item will expire (relative to process startup) */
-    uint8_t  iflag;     /* Intermal flags: item type and flag */
+    uint8_t  iflag;     /* Internal flags: item type and flag */
     uint16_t nkey;      /* The total length of the key (in bytes) */
     uint32_t nbytes;    /* The total length of the data (in bytes) */
     /* Following fields are used to trade off memory space for performance */

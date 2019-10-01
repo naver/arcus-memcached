@@ -265,20 +265,18 @@ static rel_time_t get_current_time(void)
 }
 
 #define REALTIME_MAXDELTA 60*60*24*30
-
 /*
  * given time value that's either unix time or delta from current unix time,
  * return unix time. Use the fact that delta can't exceed one month
  * (and real time value can't be that low).
  */
-static rel_time_t realtime(const time_t exptime) {
-    /* no. of seconds in 30 days - largest possible delta exptime */
-
+static rel_time_t realtime(const time_t exptime)
+{
     if (exptime == 0) return 0; /* 0 means never expire */
 #ifdef ENABLE_STICKY_ITEM
     if (exptime == -1) return (rel_time_t)(-1);
 #endif
-
+    /* no. of seconds in 30 days - largest possible delta exptime */
     if (exptime > REALTIME_MAXDELTA) {
         /* if item expiration is at/before the server started, give it an
            expiration time of 1 second after the server started.
@@ -296,13 +294,13 @@ static rel_time_t realtime(const time_t exptime) {
 
 static void disable_stats_detail(void)
 {
-    /* disable stats detail */
     settings.detail_enabled = 0;
     mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                    "Detailed stats internally disabled.\n");
 }
 
-static void stats_init(void) {
+static void stats_init(void)
+{
     mc_stats.daemon_conns = 0;
     mc_stats.rejected_conns = 0;
     mc_stats.quit_conns = 0;
@@ -316,7 +314,8 @@ static void stats_init(void) {
     stats_prefix_init(settings.prefix_delimiter, disable_stats_detail);
 }
 
-static void stats_reset(const void *cookie) {
+static void stats_reset(const void *cookie)
+{
     struct conn *conn = (struct conn*)cookie;
     STATS_LOCK();
     mc_stats.rejected_conns = 0;
@@ -348,7 +347,8 @@ static int prefix_stats_delete(const char *prefix, const size_t nprefix)
 }
 #endif
 
-static void settings_init(void) {
+static void settings_init(void)
+{
     settings.use_cas = true;
     settings.access = 0700;
     settings.port = 11211;
@@ -389,9 +389,8 @@ static void settings_init(void) {
  */
 static int add_msghdr(conn *c)
 {
-    struct msghdr *msg;
-
     assert(c != NULL);
+    struct msghdr *msg;
 
     if (c->msgsize == c->msgused) {
         msg = realloc(c->msglist, c->msgsize * 2 * sizeof(struct msghdr));
@@ -404,7 +403,8 @@ static int add_msghdr(conn *c)
     msg = c->msglist + c->msgused;
 
     /* this wipes msg_iovlen, msg_control, msg_controllen, and
-       msg_flags, the last 3 of which aren't defined on solaris: */
+     * msg_flags, the last 3 of which aren't defined on solaris:
+     */
     memset(msg, 0, sizeof(struct msghdr));
 
     msg->msg_iov = &c->iov[c->iovused];
@@ -425,7 +425,8 @@ static int add_msghdr(conn *c)
     return 0;
 }
 
-static const char *prot_text(enum protocol prot) {
+static const char *prot_text(enum protocol prot)
+{
     char *rv = "unknown";
     switch(prot) {
         case ascii_prot:
@@ -441,7 +442,8 @@ static const char *prot_text(enum protocol prot) {
     return rv;
 }
 
-void safe_close(int sfd) {
+void safe_close(int sfd)
+{
     if (sfd != -1) {
         int rval;
         while ((rval = close(sfd)) == -1 &&
@@ -464,7 +466,8 @@ void safe_close(int sfd) {
 // Register a callback.
 static void register_callback(ENGINE_HANDLE *eh,
                               ENGINE_EVENT_TYPE type,
-                              EVENT_CALLBACK cb, const void *cb_data) {
+                              EVENT_CALLBACK cb, const void *cb_data)
+{
     struct engine_event_handler *h =
         calloc(sizeof(struct engine_event_handler), 1);
 
@@ -477,14 +480,13 @@ static void register_callback(ENGINE_HANDLE *eh,
 
 // Perform all callbacks of a given type for the given connection.
 static void perform_callbacks(ENGINE_EVENT_TYPE type,
-                              const void *data,
-                              const void *c) {
+                              const void *data, const void *c)
+{
     for (struct engine_event_handler *h = engine_event_handlers[type];
          h; h = h->next) {
         h->cb(c, type, data, h->cb_data);
     }
 }
-
 
 /*
  * Free list management for connections.
@@ -503,7 +505,8 @@ cache_t *conn_cache;      /* suffix cache */
  * @return true if all allocations succeeded, false if one or more of the
  *         allocations failed.
  */
-static bool conn_reset_buffersize(conn *c) {
+static bool conn_reset_buffersize(conn *c)
+{
     bool ret = true;
 
     if (c->rsize != DATA_BUFFER_SIZE) {
@@ -584,7 +587,8 @@ static bool conn_reset_buffersize(conn *c) {
  * @param unused2 not used
  * @return 0 on success, 1 if we failed to allocate memory
  */
-static int conn_constructor(void *buffer, void *unused1, int unused2) {
+static int conn_constructor(void *buffer, void *unused1, int unused2)
+{
     (void)unused1; (void)unused2;
 
     conn *c = buffer;
@@ -616,7 +620,8 @@ static int conn_constructor(void *buffer, void *unused1, int unused2) {
  * @param buffer The memory allocated by the objec cache
  * @param unused not used
  */
-static void conn_destructor(void *buffer, void *unused) {
+static void conn_destructor(void *buffer, void *unused)
+{
     (void)unused;
     conn *c = buffer;
     free(c->rbuf);
@@ -634,13 +639,12 @@ static void conn_destructor(void *buffer, void *unused) {
 conn *conn_new(const int sfd, STATE_FUNC init_state,
                 const int event_flags,
                 const int read_buffer_size, enum network_transport transport,
-                struct event_base *base, struct timeval *timeout) {
+                struct event_base *base, struct timeval *timeout)
+{
     conn *c = cache_alloc(conn_cache);
-
     if (c == NULL) {
         return NULL;
     }
-
     assert(c->thread == NULL);
 
     if (c->rsize < read_buffer_size) {
@@ -765,13 +769,13 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     snprintf(c->client_ip, 16, "%s", inet_ntoa(addr.sin_addr));
 
     MEMCACHED_CONN_ALLOCATE(c->sfd);
-
     perform_callbacks(ON_CONNECT, NULL, c);
 
     return c;
 }
 
-static void conn_coll_eitem_free(conn *c) {
+static void conn_coll_eitem_free(conn *c)
+{
     switch (c->coll_op) {
       /* lop */
       case OPERATION_LOP_INSERT:
@@ -849,7 +853,8 @@ static void conn_coll_eitem_free(conn *c) {
     c->coll_eitem = NULL;
 }
 
-static void conn_cleanup(conn *c) {
+static void conn_cleanup(conn *c)
+{
     assert(c != NULL);
 
     if (c->item) {
@@ -916,7 +921,8 @@ static void conn_cleanup(conn *c) {
     c->premature_notify_io_complete = false;
 }
 
-void conn_close(conn *c) {
+void conn_close(conn *c)
+{
     assert(c != NULL);
 
     /* delete the event, the socket and the conn */
@@ -968,7 +974,8 @@ void conn_close(conn *c) {
  * This should only be called in between requests since it can wipe output
  * buffers!
  */
-static void conn_shrink(conn *c) {
+static void conn_shrink(conn *c)
+{
     assert(c != NULL);
 
     if (IS_UDP(c->transport))
@@ -1096,7 +1103,8 @@ static void ritem_set_next(conn *c)
 /**
  * Convert a state name to a human readable form.
  */
-const char *state_text(STATE_FUNC state) {
+const char *state_text(STATE_FUNC state)
+{
     if (state == conn_listening) {
         return "conn_listening";
     } else if (state == conn_new_cmd) {
@@ -1127,7 +1135,8 @@ const char *state_text(STATE_FUNC state) {
  * processing that needs to happen on certain state transitions can
  * happen here.
  */
-void conn_set_state(conn *c, STATE_FUNC state) {
+void conn_set_state(conn *c, STATE_FUNC state)
+{
     assert(c != NULL);
 
     if (state != c->state) {
@@ -1150,7 +1159,8 @@ void conn_set_state(conn *c, STATE_FUNC state) {
  *
  * Returns 0 on success, -1 on out-of-memory.
  */
-static int ensure_iov_space(conn *c) {
+static int ensure_iov_space(conn *c)
+{
     assert(c != NULL);
 
     if (c->iovused >= c->iovsize) {
@@ -1180,12 +1190,12 @@ static int ensure_iov_space(conn *c) {
  * Returns 0 on success, -1 on out-of-memory.
  */
 
-static int add_iov(conn *c, const void *buf, int len) {
+static int add_iov(conn *c, const void *buf, int len)
+{
+    assert(c != NULL);
     struct msghdr *m;
     int leftover;
     bool limit_to_mtu;
-
-    assert(c != NULL);
 
     do {
         m = &c->msglist[c->msgused - 1];
@@ -1411,11 +1421,10 @@ static void einfo_set_ascii_tail_string(eitem_info *einfo)
 /*
  * Constructs a set of UDP headers and attaches them to the outgoing messages.
  */
-static int build_udp_headers(conn *c) {
-    int i;
-    unsigned char *hdr;
-
+static int build_udp_headers(conn *c)
+{
     assert(c != NULL);
+    unsigned char *hdr;
 
     if (c->msgused > c->hdrsize) {
         void *new_hdrbuf;
@@ -1430,7 +1439,7 @@ static int build_udp_headers(conn *c) {
     }
 
     hdr = c->hdrbuf;
-    for (i = 0; i < c->msgused; i++) {
+    for (int i = 0; i < c->msgused; i++) {
         c->msglist[i].msg_iov[0].iov_base = (void*)hdr;
         c->msglist[i].msg_iov[0].iov_len = UDP_HEADER_SIZE;
         *hdr++ = c->request_id / 256;
@@ -1447,13 +1456,10 @@ static int build_udp_headers(conn *c) {
     return 0;
 }
 
-
-static void out_string(conn *c, const char *str) {
-    size_t len;
-
+static void out_string(conn *c, const char *str)
+{
     assert(c != NULL);
-
-    len = strlen(str);
+    size_t len = strlen(str);
 
     if (settings.verbose > 1) {
         if (c->noreply)
@@ -1578,7 +1584,8 @@ static void out_string(conn *c, const char *str) {
     return;
 }
 
-static inline char *get_item_type_str(uint8_t type) {
+static inline char *get_item_type_str(uint8_t type)
+{
     if (type == ITEM_TYPE_KV)          return "kv";
     else if (type == ITEM_TYPE_LIST)   return "list";
     else if (type == ITEM_TYPE_SET)    return "set";
@@ -1587,7 +1594,8 @@ static inline char *get_item_type_str(uint8_t type) {
     else                               return "unknown";
 }
 
-static inline char *get_ovflaction_str(uint8_t ovflact) {
+static inline char *get_ovflaction_str(uint8_t ovflact)
+{
     if (ovflact == OVFL_HEAD_TRIM)          return "head_trim";
     else if (ovflact == OVFL_TAIL_TRIM)     return "tail_trim";
     else if (ovflact == OVFL_SMALLEST_TRIM) return "smallest_trim";
@@ -1608,7 +1616,8 @@ handle_unexpected_errorcode_ascii(conn *c, ENGINE_ERROR_CODE ret)
  * we get here after reading the value in set/add/replace commands. The command
  * has been stored in c->cmd, and the item is ready in c->item.
  */
-static void process_lop_insert_complete(conn *c) {
+static void process_lop_insert_complete(conn *c)
+{
     assert(c->coll_op == OPERATION_LOP_INSERT);
     assert(c->coll_eitem != NULL);
     eitem *elem = (eitem *)c->coll_eitem;
@@ -1669,7 +1678,8 @@ static void process_lop_insert_complete(conn *c) {
     c->coll_eitem = NULL;
 }
 
-static void process_sop_insert_complete(conn *c) {
+static void process_sop_insert_complete(conn *c)
+{
     assert(c->coll_op == OPERATION_SOP_INSERT);
     assert(c->coll_eitem != NULL);
     eitem *elem = (eitem *)c->coll_eitem;
@@ -1723,7 +1733,8 @@ static void process_sop_insert_complete(conn *c) {
     c->coll_eitem = NULL;
 }
 
-static void process_sop_delete_complete(conn *c) {
+static void process_sop_delete_complete(conn *c)
+{
     assert(c->coll_op == OPERATION_SOP_DELETE);
     assert(c->coll_eitem != NULL);
     value_item *value = (value_item *)c->coll_eitem;
@@ -1777,7 +1788,8 @@ static void process_sop_delete_complete(conn *c) {
     c->coll_eitem = NULL;
 }
 
-static void process_sop_exist_complete(conn *c) {
+static void process_sop_exist_complete(conn *c)
+{
     assert(c->coll_op == OPERATION_SOP_EXIST);
     assert(c->coll_eitem != NULL);
     value_item *value = (value_item *)c->coll_eitem;
@@ -1839,7 +1851,8 @@ static int make_mop_elem_response(char *bufptr, eitem_info *einfo)
     return (int)(tmpptr - bufptr);
 }
 
-static void process_mop_insert_complete(conn *c) {
+static void process_mop_insert_complete(conn *c)
+{
     assert(c->coll_op == OPERATION_MOP_INSERT);
     assert(c->coll_eitem != NULL);
     eitem *elem = (eitem *)c->coll_eitem;
@@ -1896,7 +1909,8 @@ static void process_mop_insert_complete(conn *c) {
     c->coll_eitem = NULL;
 }
 
-static void process_mop_update_complete(conn *c) {
+static void process_mop_update_complete(conn *c)
+{
     assert(c->coll_op == OPERATION_MOP_UPDATE);
     assert(c->coll_eitem != NULL);
     value_item *value = (value_item *)c->coll_eitem;
@@ -1948,7 +1962,8 @@ static void process_mop_update_complete(conn *c) {
     }
 }
 
-static void process_mop_delete_complete(conn *c) {
+static void process_mop_delete_complete(conn *c)
+{
     assert(c->coll_op == OPERATION_MOP_DELETE);
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
@@ -1978,15 +1993,15 @@ static void process_mop_delete_complete(conn *c) {
     if (ret == ENGINE_SUCCESS && c->coll_numkeys > 0) { /* field validation check */
         for (int i = 0; i < c->coll_numkeys; i++) {
             if (flist[i].length > MAX_FIELD_LENG) {
-                ret = ENGINE_EBADVALUE;
-                break;
+                ret = ENGINE_EBADVALUE; break;
             }
         }
     }
 
     if (ret == ENGINE_SUCCESS) {
         ret = mc_engine.v1->map_elem_delete(mc_engine.v0, c, c->coll_key, c->coll_nkey,
-                                           c->coll_numkeys, flist, c->coll_drop, &del_count, &dropped, 0);
+                                            c->coll_numkeys, flist,
+                                            c->coll_drop, &del_count, &dropped, 0);
     }
 
     if (ret == ENGINE_EWOULDBLOCK) {
@@ -2097,8 +2112,7 @@ static void process_mop_get_complete(conn *c)
     if (ret == ENGINE_SUCCESS && c->coll_numkeys > 0) { /* field validation check */
         for (int i = 0; i < c->coll_numkeys; i++) {
             if (flist[i].length > MAX_FIELD_LENG) {
-                ret = ENGINE_EBADVALUE;
-                break;
+                ret = ENGINE_EBADVALUE; break;
             }
         }
     }
@@ -2254,7 +2268,8 @@ static int make_bop_elem_response(char *bufptr, eitem_info *einfo)
     return (int)(tmpptr - bufptr);
 }
 
-static void process_bop_insert_complete(conn *c) {
+static void process_bop_insert_complete(conn *c)
+{
     assert(c->coll_op == OPERATION_BOP_INSERT ||
            c->coll_op == OPERATION_BOP_UPSERT);
     assert(c->coll_eitem != NULL);
@@ -2427,7 +2442,8 @@ static void process_bop_update_complete(conn *c)
 }
 
 #ifdef SUPPORT_BOP_MGET
-static void process_bop_mget_complete(conn *c) {
+static void process_bop_mget_complete(conn *c)
+{
     assert(c->coll_op == OPERATION_BOP_MGET);
     assert(c->coll_eitem != NULL);
 
@@ -2641,7 +2657,8 @@ static int make_smget_trim_response(char *bufptr, eitem_info *einfo)
 }
 
 #ifdef JHPARK_OLD_SMGET_INTERFACE
-static void process_bop_smget_complete_old(conn *c) {
+static void process_bop_smget_complete_old(conn *c)
+{
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     int smget_count = c->coll_roffset + c->coll_rcount;
     token_t *keys_array;
@@ -2801,7 +2818,8 @@ static void process_bop_smget_complete_old(conn *c) {
 }
 #endif
 
-static void process_bop_smget_complete(conn *c) {
+static void process_bop_smget_complete(conn *c)
+{
     assert(c->coll_op == OPERATION_BOP_SMGET);
     assert(c->coll_eitem != NULL);
 #ifdef JHPARK_OLD_SMGET_INTERFACE
@@ -3185,7 +3203,8 @@ static void update_stat_cas(conn *c, ENGINE_ERROR_CODE ret)
     }
 }
 
-static void complete_update_ascii(conn *c) {
+static void complete_update_ascii(conn *c)
+{
     assert(c != NULL);
     assert(c->ewouldblock == false);
 
@@ -3325,7 +3344,8 @@ static void complete_update_ascii(conn *c) {
 /**
  * get a pointer to the start of the request struct for the current command
  */
-static void* binary_get_request(conn *c) {
+static void* binary_get_request(conn *c)
+{
     char *ret = c->rcurr;
     ret -= (sizeof(c->binary_header) + c->binary_header.request.keylen +
             c->binary_header.request.extlen);
@@ -3337,7 +3357,8 @@ static void* binary_get_request(conn *c) {
 /**
  * get a pointer to the key in this request
  */
-static char* binary_get_key(conn *c) {
+static char* binary_get_key(conn *c)
+{
     return c->rcurr - (c->binary_header.request.keylen);
 }
 
@@ -3357,8 +3378,7 @@ static char* binary_get_key(conn *c) {
 static ssize_t key_to_printable_buffer(char *dest, size_t destsz,
                                        int client, bool from_client,
                                        const char *prefix,
-                                       const char *key,
-                                       size_t nkey)
+                                       const char *key, size_t nkey)
 {
     ssize_t nw = snprintf(dest, destsz, "%c%d %s ", from_client ? '>' : '<',
                           client, prefix);
@@ -3399,8 +3419,7 @@ static ssize_t key_to_printable_buffer(char *dest, size_t destsz,
 static ssize_t bytes_to_output_string(char *dest, size_t destsz,
                                       int client, bool from_client,
                                       const char *prefix,
-                                      const char *data,
-                                      size_t size)
+                                      const char *data, size_t size)
 {
     ssize_t nw = snprintf(dest, destsz, "%c%d %s", from_client ? '>' : '<',
                           client, prefix);
@@ -3431,9 +3450,9 @@ static ssize_t bytes_to_output_string(char *dest, size_t destsz,
     return offset + nw;
 }
 
-static void add_bin_header(conn *c, uint16_t err, uint8_t hdr_len, uint16_t key_len, uint32_t body_len) {
+static void add_bin_header(conn *c, uint16_t err, uint8_t hdr_len, uint16_t key_len, uint32_t body_len)
+{
     protocol_binary_response_header* header;
-
     assert(c);
 
     c->msgcurr = 0;
@@ -3472,7 +3491,8 @@ static void add_bin_header(conn *c, uint16_t err, uint8_t hdr_len, uint16_t key_
     add_iov(c, c->wbuf, sizeof(header->response));
 }
 
-static void write_bin_packet(conn *c, protocol_binary_response_status err, int swallow) {
+static void write_bin_packet(conn *c, protocol_binary_response_status err, int swallow)
+{
     ssize_t len;
     char buffer[1024] = { [sizeof(buffer) - 1] = '\0' };
 
@@ -3554,7 +3574,6 @@ static void write_bin_packet(conn *c, protocol_binary_response_status err, int s
         len = snprintf(buffer, sizeof(buffer),
                        "I'm not responsible for this vbucket");
         break;
-
     default:
         len = snprintf(buffer, sizeof(buffer), "UNHANDLED ERROR (%d)", err);
         mc_logger->log(EXTENSION_LOG_WARNING, c,
@@ -3565,7 +3584,6 @@ static void write_bin_packet(conn *c, protocol_binary_response_status err, int s
     if (mc_engine.v1->errinfo != NULL) {
         size_t elen = mc_engine.v1->errinfo(mc_engine.v0, c, buffer + len + 2,
                                             sizeof(buffer) - len - 3);
-
         if (elen > 0) {
             memcpy(buffer + len, ": ", 2);
             len += elen + 2;
@@ -3591,11 +3609,12 @@ static void write_bin_packet(conn *c, protocol_binary_response_status err, int s
 }
 
 /* Form and send a response to a command over the binary protocol */
-static void write_bin_response(conn *c, void *d, int hlen, int keylen, int dlen) {
+static void write_bin_response(conn *c, void *d, int hlen, int keylen, int dlen)
+{
     if (!c->noreply || c->cmd == PROTOCOL_BINARY_CMD_GET ||
         c->cmd == PROTOCOL_BINARY_CMD_GETK) {
         add_bin_header(c, 0, hlen, keylen, dlen);
-        if(dlen > 0) {
+        if (dlen > 0) {
             add_iov(c, d, dlen);
         }
         conn_set_state(c, conn_mwrite);
@@ -3605,8 +3624,8 @@ static void write_bin_response(conn *c, void *d, int hlen, int keylen, int dlen)
     }
 }
 
-
-static void complete_incr_bin(conn *c) {
+static void complete_incr_bin(conn *c)
+{
     protocol_binary_response_incr* rsp = (protocol_binary_response_incr*)c->wbuf;
     protocol_binary_request_incr* req = binary_get_request(c);
 
@@ -3713,7 +3732,8 @@ static void complete_incr_bin(conn *c) {
     }
 }
 
-static void complete_update_bin(conn *c) {
+static void complete_update_bin(conn *c)
+{
     protocol_binary_response_status eno = PROTOCOL_BINARY_RESPONSE_EINVAL;
     assert(c != NULL);
 
@@ -3794,7 +3814,7 @@ static void complete_update_bin(conn *c) {
     default:
         if (c->store_op == OPERATION_ADD) {
             eno = PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS;
-        } else if(c->store_op == OPERATION_REPLACE) {
+        } else if (c->store_op == OPERATION_REPLACE) {
             eno = PROTOCOL_BINARY_RESPONSE_KEY_ENOENT;
         } else {
             eno = PROTOCOL_BINARY_RESPONSE_NOT_STORED;
@@ -3813,9 +3833,9 @@ static void complete_update_bin(conn *c) {
     c->item = 0;
 }
 
-static void process_bin_get(conn *c) {
+static void process_bin_get(conn *c)
+{
     item *it;
-
     protocol_binary_response_get* rsp = (protocol_binary_response_get*)c->wbuf;
     char* key = binary_get_key(c);
     size_t nkey = c->binary_header.request.keylen;
@@ -3918,7 +3938,8 @@ static void process_bin_get(conn *c) {
 
 static void append_bin_stats(const char *key, const uint16_t klen,
                              const char *val, const uint32_t vlen,
-                             conn *c) {
+                             conn *c)
+{
     char *buf = c->dynamic_buffer.buffer + c->dynamic_buffer.offset;
     uint32_t bodylen = klen + vlen;
     protocol_binary_response_header header = {
@@ -3952,7 +3973,8 @@ static void append_bin_stats(const char *key, const uint16_t klen,
  */
 static void append_ascii_stats(const char *key, const uint16_t klen,
                                const char *val, const uint32_t vlen,
-                               conn *c) {
+                               conn *c)
+{
     char *pos = c->dynamic_buffer.buffer + c->dynamic_buffer.offset;
     uint32_t nbytes = 5; /* "END\r\n" or "STAT " */
 
@@ -3975,7 +3997,8 @@ static void append_ascii_stats(const char *key, const uint16_t klen,
     c->dynamic_buffer.offset += nbytes;
 }
 
-static bool grow_dynamic_buffer(conn *c, size_t needed) {
+static bool grow_dynamic_buffer(conn *c, size_t needed)
+{
     size_t nsize = c->dynamic_buffer.size;
     size_t available = nsize - c->dynamic_buffer.offset;
     bool rv = true;
@@ -4006,12 +4029,12 @@ static bool grow_dynamic_buffer(conn *c, size_t needed) {
 }
 
 static void append_stats(const char *key, const uint16_t klen,
-                  const char *val, const uint32_t vlen,
-                  const void *cookie)
+                         const char *val, const uint32_t vlen,
+                         const void *cookie)
 {
     /* value without a key is invalid */
     if (klen == 0 && vlen > 0) {
-        return ;
+        return;
     }
 
     conn *c = (conn*)cookie;
@@ -4019,13 +4042,13 @@ static void append_stats(const char *key, const uint16_t klen,
     if (c->protocol == binary_prot) {
         size_t needed = vlen + klen + sizeof(protocol_binary_response_header);
         if (!grow_dynamic_buffer(c, needed)) {
-            return ;
+            return;
         }
         append_bin_stats(key, klen, val, vlen, c);
     } else {
         size_t needed = vlen + klen + 10; // 10 == "STAT = \r\n"
         if (!grow_dynamic_buffer(c, needed)) {
-            return ;
+            return;
         }
         append_ascii_stats(key, klen, val, vlen, c);
     }
@@ -4033,7 +4056,8 @@ static void append_stats(const char *key, const uint16_t klen,
     assert(c->dynamic_buffer.offset <= c->dynamic_buffer.size);
 }
 
-static void process_bin_stat(conn *c) {
+static void process_bin_stat(conn *c)
+{
     char *subcommand = binary_get_key(c);
     size_t nkey = c->binary_header.request.keylen;
 
@@ -4065,7 +4089,7 @@ static void process_bin_stat(conn *c) {
                 char *dump_buf = stats_prefix_dump(&len);
                 if (dump_buf == NULL || len <= 0) {
                     write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
-                    return ;
+                    return;
                 } else {
                     append_stats("detailed", strlen("detailed"), dump_buf, len, c);
                     free(dump_buf);
@@ -4165,7 +4189,8 @@ static void process_bin_stat(conn *c) {
     }
 }
 
-static void bin_read_chunk(conn *c, enum bin_substates next_substate, uint32_t chunk) {
+static void bin_read_chunk(conn *c, enum bin_substates next_substate, uint32_t chunk)
+{
     assert(c);
     c->substate = next_substate;
     c->rlbytes = chunk;
@@ -4216,13 +4241,14 @@ static void bin_read_chunk(conn *c, enum bin_substates next_substate, uint32_t c
     conn_set_state(c, conn_nread);
 }
 
-static void bin_read_key(conn *c, enum bin_substates next_substate, int extra) {
+static void bin_read_key(conn *c, enum bin_substates next_substate, int extra)
+{
     bin_read_chunk(c, next_substate, c->keylen + extra);
 }
 
-
 /* Just write an error message and disconnect the client */
-static void handle_binary_protocol_error(conn *c) {
+static void handle_binary_protocol_error(conn *c)
+{
     write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
     if (settings.verbose) {
         mc_logger->log(EXTENSION_LOG_INFO, c,
@@ -4232,8 +4258,10 @@ static void handle_binary_protocol_error(conn *c) {
     c->write_and_go = conn_closing;
 }
 
-static void init_sasl_conn(conn *c) {
+static void init_sasl_conn(conn *c)
+{
     assert(c);
+
     if (!c->sasl_conn) {
         int result=sasl_server_new("memcached",
                                    NULL, NULL, NULL, NULL,
@@ -4248,7 +4276,8 @@ static void init_sasl_conn(conn *c) {
     }
 }
 
-static void get_auth_data(const void *cookie, auth_data_t *data) {
+static void get_auth_data(const void *cookie, auth_data_t *data)
+{
     conn *c = (conn*)cookie;
     if (c->sasl_conn) {
         sasl_getprop(c->sasl_conn, SASL_USERNAME, (void*)&data->username);
@@ -4259,7 +4288,8 @@ static void get_auth_data(const void *cookie, auth_data_t *data) {
 }
 
 #ifdef SASL_ENABLED
-static void bin_list_sasl_mechs(conn *c) {
+static void bin_list_sasl_mechs(conn *c)
+{
     init_sasl_conn(c);
     const char *result_string = NULL;
     unsigned int string_length = 0;
@@ -4288,7 +4318,8 @@ struct sasl_tmp {
     char data[]; /* data + ksize == value */
 };
 
-static void process_bin_sasl_auth(conn *c) {
+static void process_bin_sasl_auth(conn *c)
+{
     assert(c->binary_header.request.extlen == 0);
 
     uint32_t nkey = c->binary_header.request.keylen;
@@ -4329,7 +4360,8 @@ static void process_bin_sasl_auth(conn *c) {
     c->substate = bin_reading_sasl_auth_data;
 }
 
-static void process_bin_complete_sasl_auth(conn *c) {
+static void process_bin_complete_sasl_auth(conn *c)
+{
     const char *out = NULL;
     unsigned int outlen = 0;
 
@@ -4402,7 +4434,7 @@ static void process_bin_complete_sasl_auth(conn *c) {
         break;
     case SASL_CONTINUE:
         add_bin_header(c, PROTOCOL_BINARY_RESPONSE_AUTH_CONTINUE, 0, 0, outlen);
-        if(outlen > 0) {
+        if (outlen > 0) {
             add_iov(c, out, outlen);
         }
         conn_set_state(c, conn_mwrite);
@@ -4418,7 +4450,8 @@ static void process_bin_complete_sasl_auth(conn *c) {
     }
 }
 
-static bool authenticated(conn *c) {
+static bool authenticated(conn *c)
+{
     bool rv = false;
 
     switch (c->cmd) {
@@ -4445,7 +4478,8 @@ static bool authenticated(conn *c) {
     return rv;
 }
 
-static void process_bin_lop_create(conn *c) {
+static void process_bin_lop_create(conn *c)
+{
     assert(c != NULL);
     assert(c->ewouldblock == false);
     char *key = binary_get_key(c);
@@ -4514,7 +4548,8 @@ static void process_bin_lop_create(conn *c) {
     }
 }
 
-static void process_bin_lop_prepare_nread(conn *c) {
+static void process_bin_lop_prepare_nread(conn *c)
+{
     assert(c != NULL);
     assert(c->cmd == PROTOCOL_BINARY_CMD_LOP_INSERT);
 
@@ -4602,7 +4637,8 @@ static void process_bin_lop_prepare_nread(conn *c) {
     }
 }
 
-static void process_bin_lop_insert_complete(conn *c) {
+static void process_bin_lop_insert_complete(conn *c)
+{
     assert(c->coll_op == OPERATION_LOP_INSERT);
     assert(c->coll_eitem != NULL);
     eitem *elem = (eitem *)c->coll_eitem;
@@ -4613,7 +4649,6 @@ static void process_bin_lop_insert_complete(conn *c) {
     einfo_set_ascii_tail_string(&c->einfo); /* set "\r\n" */
 
     bool created;
-
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->list_elem_insert(mc_engine.v0, c,
                                    c->coll_key, c->coll_nkey, c->coll_index, elem,
@@ -4662,13 +4697,15 @@ static void process_bin_lop_insert_complete(conn *c) {
     c->coll_eitem = NULL;
 }
 
-static void process_bin_lop_nread_complete(conn *c) {
+static void process_bin_lop_nread_complete(conn *c)
+{
     //protocol_binary_response_status eno = PROTOCOL_BINARY_RESPONSE_EINVAL;
     assert(c != NULL);
     process_bin_lop_insert_complete(c);
 }
 
-static void process_bin_lop_delete(conn *c) {
+static void process_bin_lop_delete(conn *c)
+{
     assert(c != NULL);
     assert(c->ewouldblock == false);
     char *key = binary_get_key(c);
@@ -4690,7 +4727,6 @@ static void process_bin_lop_delete(conn *c) {
 
     uint32_t del_count;
     bool     dropped;
-
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->list_elem_delete(mc_engine.v0, c, key, nkey,
                                          req->message.body.from_index,
@@ -4733,7 +4769,8 @@ static void process_bin_lop_delete(conn *c) {
     }
 }
 
-static void process_bin_lop_get(conn *c) {
+static void process_bin_lop_get(conn *c)
+{
     assert(c != NULL);
     assert(c->ewouldblock == false);
     assert(c->cmd == PROTOCOL_BINARY_CMD_LOP_GET);
@@ -4874,7 +4911,8 @@ static void process_bin_lop_get(conn *c) {
     }
 }
 
-static void process_bin_sop_create(conn *c) {
+static void process_bin_sop_create(conn *c)
+{
     assert(c != NULL);
     assert(c->ewouldblock == false);
     char *key = binary_get_key(c);
@@ -4934,7 +4972,8 @@ static void process_bin_sop_create(conn *c) {
     }
 }
 
-static void process_bin_sop_prepare_nread(conn *c) {
+static void process_bin_sop_prepare_nread(conn *c)
+{
     assert(c != NULL);
     assert(c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT ||
            c->cmd == PROTOCOL_BINARY_CMD_SOP_DELETE ||
@@ -5054,7 +5093,8 @@ static void process_bin_sop_prepare_nread(conn *c) {
     }
 }
 
-static void process_bin_sop_insert_complete(conn *c) {
+static void process_bin_sop_insert_complete(conn *c)
+{
     assert(c->coll_eitem != NULL);
     eitem *elem = c->coll_eitem;
 
@@ -5113,7 +5153,8 @@ static void process_bin_sop_insert_complete(conn *c) {
     c->coll_eitem = NULL;
 }
 
-static void process_bin_sop_delete_complete(conn *c) {
+static void process_bin_sop_delete_complete(conn *c)
+{
     assert(c->coll_eitem != NULL);
 
     /* We don't actually receive the trailing two characters in the bin
@@ -5122,7 +5163,6 @@ static void process_bin_sop_delete_complete(conn *c) {
     memcpy(value->ptr + value->len - 2, "\r\n", 2);
 
     bool dropped;
-
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->set_elem_delete(mc_engine.v0, c,
                                         c->coll_key, c->coll_nkey,
@@ -5168,7 +5208,8 @@ static void process_bin_sop_delete_complete(conn *c) {
     c->coll_eitem = NULL;
 }
 
-static void process_bin_sop_exist_complete(conn *c) {
+static void process_bin_sop_exist_complete(conn *c)
+{
     assert(c->coll_eitem != NULL);
 
     /* We don't actually receive the trailing two characters in the bin
@@ -5177,7 +5218,6 @@ static void process_bin_sop_exist_complete(conn *c) {
     memcpy(value->ptr + value->len - 2, "\r\n", 2);
 
     bool exist;
-
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->set_elem_exist(mc_engine.v0, c,
                                        c->coll_key, c->coll_nkey,
@@ -5222,7 +5262,8 @@ static void process_bin_sop_exist_complete(conn *c) {
     c->coll_eitem = NULL;
 }
 
-static void process_bin_sop_nread_complete(conn *c) {
+static void process_bin_sop_nread_complete(conn *c)
+{
     //protocol_binary_response_status eno = PROTOCOL_BINARY_RESPONSE_EINVAL;
     assert(c != NULL);
 
@@ -5234,7 +5275,8 @@ static void process_bin_sop_nread_complete(conn *c) {
         process_bin_sop_exist_complete(c);
 }
 
-static void process_bin_sop_get(conn *c) {
+static void process_bin_sop_get(conn *c)
+{
     assert(c != NULL);
     assert(c->ewouldblock == false);
     assert(c->cmd == PROTOCOL_BINARY_CMD_SOP_GET);
@@ -5361,7 +5403,8 @@ static void process_bin_sop_get(conn *c) {
     }
 }
 
-static void process_bin_bop_create(conn *c) {
+static void process_bin_bop_create(conn *c)
+{
     assert(c != NULL);
     assert(c->ewouldblock == false);
     char *key = binary_get_key(c);
@@ -5431,7 +5474,8 @@ static void process_bin_bop_create(conn *c) {
     }
 }
 
-static void process_bin_bop_prepare_nread(conn *c) {
+static void process_bin_bop_prepare_nread(conn *c)
+{
     assert(c != NULL);
     assert(c->cmd == PROTOCOL_BINARY_CMD_BOP_INSERT ||
            c->cmd == PROTOCOL_BINARY_CMD_BOP_UPSERT);
@@ -5540,7 +5584,8 @@ static void process_bin_bop_prepare_nread(conn *c) {
     }
 }
 
-static void process_bin_bop_insert_complete(conn *c) {
+static void process_bin_bop_insert_complete(conn *c)
+{
     assert(c->coll_op == OPERATION_BOP_INSERT ||
            c->coll_op == OPERATION_BOP_UPSERT);
     assert(c->coll_eitem != NULL);
@@ -5608,13 +5653,15 @@ static void process_bin_bop_insert_complete(conn *c) {
     c->coll_eitem = NULL;
 }
 
-static void process_bin_bop_nread_complete(conn *c) {
+static void process_bin_bop_nread_complete(conn *c)
+{
     //protocol_binary_response_status eno = PROTOCOL_BINARY_RESPONSE_EINVAL;
     assert(c != NULL);
     process_bin_bop_insert_complete(c);
 }
 
-static void process_bin_bop_update_complete(conn *c) {
+static void process_bin_bop_update_complete(conn *c)
+{
     assert(c->coll_op == OPERATION_BOP_UPDATE);
     char *new_value;
     int  new_nbytes;
@@ -5684,13 +5731,14 @@ static void process_bin_bop_update_complete(conn *c) {
     }
 }
 
-static void process_bin_bop_update_prepare_nread(conn *c) {
+static void process_bin_bop_update_prepare_nread(conn *c)
+{
     assert(c != NULL);
     assert(c->cmd == PROTOCOL_BINARY_CMD_BOP_UPDATE);
     char *key = binary_get_key(c);
     uint32_t nkey = c->binary_header.request.keylen;
     uint32_t vlen = 0;
-    int  real_nbkey;
+    int real_nbkey;
 
     if (nkey + c->binary_header.request.extlen <= c->binary_header.request.bodylen) {
         vlen = c->binary_header.request.bodylen - (nkey + c->binary_header.request.extlen);
@@ -5784,7 +5832,8 @@ static void process_bin_bop_update_prepare_nread(conn *c) {
     }
 }
 
-static void process_bin_bop_delete(conn *c) {
+static void process_bin_bop_delete(conn *c)
+{
     assert(c != NULL);
     assert(c->ewouldblock == false);
     char *key = binary_get_key(c);
@@ -5864,7 +5913,8 @@ static void process_bin_bop_delete(conn *c) {
     }
 }
 
-static void process_bin_bop_get(conn *c) {
+static void process_bin_bop_get(conn *c)
+{
     assert(c != NULL);
     assert(c->ewouldblock == false);
     assert(c->cmd == PROTOCOL_BINARY_CMD_BOP_GET);
@@ -6028,7 +6078,8 @@ static void process_bin_bop_get(conn *c) {
     }
 }
 
-static void process_bin_bop_count(conn *c) {
+static void process_bin_bop_count(conn *c)
+{
     assert(c != NULL);
     assert(c->cmd == PROTOCOL_BINARY_CMD_BOP_COUNT);
     char *key = binary_get_key(c);
@@ -6106,7 +6157,8 @@ static void process_bin_bop_count(conn *c) {
 }
 
 #if defined(SUPPORT_BOP_MGET) || defined(SUPPORT_BOP_SMGET)
-static void process_bin_bop_prepare_nread_keys(conn *c) {
+static void process_bin_bop_prepare_nread_keys(conn *c)
+{
     assert(c != NULL);
     assert(c->cmd == PROTOCOL_BINARY_CMD_BOP_MGET || c->cmd == PROTOCOL_BINARY_CMD_BOP_SMGET);
 
@@ -6266,7 +6318,8 @@ static void process_bin_bop_prepare_nread_keys(conn *c) {
 #endif
 
 #ifdef SUPPORT_BOP_MGET
-static void process_bin_bop_mget_complete(conn *c) {
+static void process_bin_bop_mget_complete(conn *c)
+{
     assert(c->coll_op == OPERATION_BOP_MGET);
     assert(c->coll_eitem != NULL);
 
@@ -6290,7 +6343,8 @@ static void process_bin_bop_mget_complete(conn *c) {
 
 #ifdef SUPPORT_BOP_SMGET
 #ifdef JHPARK_OLD_SMGET_INTERFACE
-static void process_bin_bop_smget_complete_old(conn *c) {
+static void process_bin_bop_smget_complete_old(conn *c)
+{
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     int smget_count = c->coll_roffset + c->coll_rcount;
     token_t *keys_array;
@@ -6471,7 +6525,8 @@ static void process_bin_bop_smget_complete_old(conn *c) {
 }
 #endif
 
-static void process_bin_bop_smget_complete(conn *c) {
+static void process_bin_bop_smget_complete(conn *c)
+{
     assert(c->coll_eitem != NULL);
 #ifdef JHPARK_OLD_SMGET_INTERFACE
     if (c->coll_smgmode == 0) {
@@ -6479,6 +6534,7 @@ static void process_bin_bop_smget_complete(conn *c) {
         return;
     }
 #endif
+
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     token_t *keys_array;
     smget_result_t smres;
@@ -6675,7 +6731,8 @@ static void process_bin_bop_smget_complete(conn *c) {
 #endif
 
 #if defined(SUPPORT_BOP_MGET) || defined(SUPPORT_BOP_SMGET)
-static void process_bin_bop_nread_keys_complete(conn *c) {
+static void process_bin_bop_nread_keys_complete(conn *c)
+{
     assert(c != NULL);
 #ifdef SUPPORT_BOP_MGET
     if (c->coll_op == OPERATION_BOP_MGET)
@@ -6688,7 +6745,8 @@ static void process_bin_bop_nread_keys_complete(conn *c) {
 }
 #endif
 
-static void process_bin_getattr(conn *c) {
+static void process_bin_getattr(conn *c)
+{
     assert(c != NULL);
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
@@ -6763,7 +6821,8 @@ static void process_bin_getattr(conn *c) {
     }
 }
 
-static void process_bin_setattr(conn *c) {
+static void process_bin_setattr(conn *c)
+{
     assert(c != NULL);
     assert(c->ewouldblock == false);
     char *key = binary_get_key(c);
@@ -6926,7 +6985,8 @@ static bool binary_response_handler(const void *key, uint16_t keylen,
     return true;
 }
 
-static void process_bin_unknown_packet(conn *c) {
+static void process_bin_unknown_packet(conn *c)
+{
     void *packet = c->rcurr - (c->binary_header.request.bodylen +
                                sizeof(c->binary_header));
 
@@ -6948,9 +7008,9 @@ static void process_bin_unknown_packet(conn *c) {
     }
 }
 
-static void dispatch_bin_command(conn *c) {
+static void dispatch_bin_command(conn *c)
+{
     int protocol_error = 0;
-
     int extlen = c->binary_header.request.extlen;
     int keylen = c->binary_header.request.keylen;
     uint32_t bodylen = c->binary_header.request.bodylen;
@@ -7288,9 +7348,9 @@ static void dispatch_bin_command(conn *c) {
         handle_binary_protocol_error(c);
 }
 
-static void process_bin_update(conn *c) {
+static void process_bin_update(conn *c)
+{
     assert(c != NULL);
-
     protocol_binary_request_set* req = binary_get_request(c);
     item *it;
     char *key = binary_get_key(c);
@@ -7399,9 +7459,9 @@ static void process_bin_update(conn *c) {
     }
 }
 
-static void process_bin_append_prepend(conn *c) {
+static void process_bin_append_prepend(conn *c)
+{
     assert(c != NULL);
-
     item *it;
     char *key = binary_get_key(c);
     uint32_t nkey = c->binary_header.request.keylen;
@@ -7460,7 +7520,8 @@ static void process_bin_append_prepend(conn *c) {
     }
 }
 
-static void process_bin_flush(conn *c) {
+static void process_bin_flush(conn *c)
+{
     protocol_binary_request_flush* req = binary_get_request(c);
     time_t exptime = 0;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
@@ -7495,7 +7556,8 @@ static void process_bin_flush(conn *c) {
     STATS_NOKEY(c, cmd_flush);
 }
 
-static void process_bin_flush_prefix(conn *c) {
+static void process_bin_flush_prefix(conn *c)
+{
     protocol_binary_request_flush_prefix *req = binary_get_request(c);
     char *prefix = binary_get_key(c);
     size_t nprefix = c->binary_header.request.keylen;
@@ -7560,13 +7622,12 @@ static void process_bin_flush_prefix(conn *c) {
     return;
 }
 
-static void process_bin_delete(conn *c) {
+static void process_bin_delete(conn *c)
+{
+    assert(c != NULL);
     protocol_binary_request_delete* req = binary_get_request(c);
-
     char* key = binary_get_key(c);
     size_t nkey = c->binary_header.request.keylen;
-
-    assert(c != NULL);
 
     if (settings.verbose > 1) {
         char buffer[1024];
@@ -7607,14 +7668,15 @@ static void process_bin_delete(conn *c) {
     }
 }
 
-static void complete_nread_binary(conn *c) {
+static void complete_nread_binary(conn *c)
+{
     assert(c != NULL);
     assert(c->cmd >= 0);
 
     switch(c->substate) {
     case bin_reading_set_header:
         if (c->cmd == PROTOCOL_BINARY_CMD_APPEND ||
-                c->cmd == PROTOCOL_BINARY_CMD_PREPEND) {
+            c->cmd == PROTOCOL_BINARY_CMD_PREPEND) {
             process_bin_append_prepend(c);
         } else {
             process_bin_update(c);
@@ -7722,11 +7784,12 @@ static void complete_nread_binary(conn *c) {
     }
 }
 
-static void reset_cmd_handler(conn *c) {
+static void reset_cmd_handler(conn *c)
+{
     c->ascii_cmd = NULL;
     c->cmd = -1;
     c->substate = bin_no_state;
-    if(c->item != NULL) {
+    if (c->item != NULL) {
         mc_engine.v1->release(mc_engine.v0, c, c->item);
         c->item = NULL;
     }
@@ -7753,8 +7816,7 @@ static void reset_cmd_handler(conn *c) {
 }
 
 static bool ascii_response_handler(const void *cookie,
-                                   int nbytes,
-                                   const char *dta)
+                                   int nbytes, const char *dta)
 {
     conn *c = (conn*)cookie;
     if (!grow_dynamic_buffer(c, nbytes)) {
@@ -7768,11 +7830,11 @@ static bool ascii_response_handler(const void *cookie,
     char *buf = c->dynamic_buffer.buffer + c->dynamic_buffer.offset;
     memcpy(buf, dta, nbytes);
     c->dynamic_buffer.offset += nbytes;
-
     return true;
 }
 
-static void complete_nread_ascii(conn *c) {
+static void complete_nread_ascii(conn *c)
+{
     if (c->ascii_cmd != NULL) {
         if (!c->ascii_cmd->execute(c->ascii_cmd->cookie, c, 0, NULL,
                                    ascii_response_handler)) {
@@ -7835,7 +7897,8 @@ print_invalid_command(conn *c, token_t *tokens, const size_t ntokens)
 }
 
 /* set up a connection to write a buffer then free it, used for stats */
-static void write_and_free(conn *c, char *buf, int bytes) {
+static void write_and_free(conn *c, char *buf, int bytes)
+{
     if (buf) {
         c->write_and_free = buf;
         c->wcurr = buf;
@@ -7961,7 +8024,8 @@ static bool check_and_handle_pipe_state(conn *c, size_t swallow)
 }
 
 void append_stat(const char *name, ADD_STAT add_stats, conn *c,
-                 const char *fmt, ...) {
+                 const char *fmt, ...)
+{
     char val_str[STAT_VAL_LEN];
     int vlen;
     va_list ap;
@@ -7978,7 +8042,8 @@ void append_stat(const char *name, ADD_STAT add_stats, conn *c,
     add_stats(name, strlen(name), val_str, vlen, c);
 }
 
-inline static void process_stats_detail(conn *c, const char *command) {
+inline static void process_stats_detail(conn *c, const char *command)
+{
     assert(c != NULL);
 
     if (settings.allow_detailed) {
@@ -7998,13 +8063,13 @@ inline static void process_stats_detail(conn *c, const char *command) {
         else {
             out_string(c, "CLIENT_ERROR usage: stats detail on|off|dump");
         }
-    }
-    else {
+    } else {
         out_string(c, "CLIENT_ERROR detailed stats disabled");
     }
 }
 
-static void process_stats_prefix(conn *c, const char *prefix, const int nprefix) {
+static void process_stats_prefix(conn *c, const char *prefix, const int nprefix)
+{
     assert(c != NULL);
     ENGINE_ERROR_CODE ret;
 
@@ -8065,7 +8130,8 @@ static void process_stats_prefix(conn *c, const char *prefix, const int nprefix)
     return;
 }
 
-static void aggregate_callback(void *in, void *out) {
+static void aggregate_callback(void *in, void *out)
+{
     struct thread_stats *out_thread_stats = out;
     struct independent_stats *in_independent_stats = in;
     threadlocal_stats_aggregate(in_independent_stats->thread_stats,
@@ -8073,7 +8139,8 @@ static void aggregate_callback(void *in, void *out) {
 }
 
 /* return server specific stats only */
-static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
+static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
+{
     pid_t pid = getpid();
     rel_time_t now = current_time;
 
@@ -8268,7 +8335,8 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate) {
     STATS_UNLOCK();
 }
 
-static void process_stat_settings(ADD_STAT add_stats, void *c) {
+static void process_stat_settings(ADD_STAT add_stats, void *c)
+{
     assert(add_stats);
     APPEND_STAT("maxbytes", "%llu", (unsigned long long)settings.maxbytes);
     APPEND_STAT("maxconns", "%d", settings.maxconns);
@@ -8331,9 +8399,10 @@ static void process_stat_settings(ADD_STAT add_stats, void *c) {
     }
 }
 
-static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
-    const char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
+static void process_stat(conn *c, token_t *tokens, const size_t ntokens)
+{
     assert(c != NULL);
+    const char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
 
     if (ntokens < 2) {
         out_string(c, "CLIENT_ERROR bad command line");
@@ -8347,7 +8416,7 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
     } else if (strcmp(subcommand, "reset") == 0) {
         stats_reset(c);
         out_string(c, "RESET");
-        return ;
+        return;
     } else if (strcmp(subcommand, "detail") == 0) {
         /* NOTE: how to tackle detail with binary? */
         if (ntokens < 4)
@@ -8355,7 +8424,7 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
         else
             process_stats_detail(c, tokens[2].value);
         /* Output already generated */
-        return ;
+        return;
     } else if (strcmp(subcommand, "settings") == 0) {
         process_stat_settings(&append_stats, c);
     } else if (strcmp(subcommand, "cachedump") == 0) {
@@ -8404,7 +8473,7 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
         buf = mc_engine.v1->cachedump(mc_engine.v0, c, id, limit,
                                       forward, sticky,  &bytes);
         write_and_free(c, buf, bytes);
-        return ;
+        return;
     } else if (strcmp(subcommand, "aggregate") == 0) {
         server_stats(&append_stats, c, true);
     } else if (strcmp(subcommand, "topkeys") == 0) {
@@ -8465,7 +8534,7 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
             out_string(c, "ERROR no matching stat");
             break;
         }
-        return ;
+        return;
     }
 
     /* append terminator and start the transfer */
@@ -8482,6 +8551,7 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens) {
 /* ntokens is overwritten here... shrug.. */
 static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens, bool return_cas)
 {
+    assert(c != NULL);
     ENGINE_ERROR_CODE ret;
     item *it;
     char *key;
@@ -8490,7 +8560,6 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
     int cas_len = 0;
     char *cas_val = NULL;
     token_t *key_token = &tokens[KEY_TOKEN];
-    assert(c != NULL);
 
     do {
         while (key_token->length != 0) {
@@ -8671,7 +8740,10 @@ static inline void process_mget_command(conn *c, token_t *tokens, const size_t n
     process_prepare_nread_keys(c, lenkeys, numkeys);
 }
 
-static void process_update_command(conn *c, token_t *tokens, const size_t ntokens, ENGINE_STORE_OPERATION store_op, bool handle_cas) {
+static void process_update_command(conn *c, token_t *tokens, const size_t ntokens,
+                                   ENGINE_STORE_OPERATION store_op, bool handle_cas)
+{
+    assert(c != NULL);
     char *key;
     size_t nkey;
     unsigned int flags;
@@ -8680,8 +8752,6 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     int vlen;
     uint64_t req_cas_id=0;
     item *it;
-
-    assert(c != NULL);
 
     set_noreply_maybe(c, tokens, ntokens);
 
@@ -8767,14 +8837,14 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     }
 }
 
-static void process_arithmetic_command(conn *c, token_t *tokens, const size_t ntokens, const bool incr) {
-
+static void process_arithmetic_command(conn *c, token_t *tokens, const size_t ntokens,
+                                       const bool incr)
+{
+    assert(c != NULL);
+    assert(c->ewouldblock == false);
     uint64_t delta;
     char *key;
     size_t nkey;
-
-    assert(c != NULL);
-    assert(c->ewouldblock == false);
 
     set_noreply_maybe(c, tokens, ntokens);
 
@@ -8874,12 +8944,12 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
     }
 }
 
-static void process_delete_command(conn *c, token_t *tokens, const size_t ntokens) {
-    char *key;
-    size_t nkey;
-
+static void process_delete_command(conn *c, token_t *tokens, const size_t ntokens)
+{
     assert(c != NULL);
     assert(c->ewouldblock == false);
+    char *key;
+    size_t nkey;
 
     if (ntokens > 3) {
         bool hold_is_zero = strcmp(tokens[KEY_TOKEN+1].value, "0") == 0;
@@ -8894,11 +8964,10 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
         }
     }
 
-
     key = tokens[KEY_TOKEN].value;
     nkey = tokens[KEY_TOKEN].length;
 
-    if(nkey > KEY_MAX_LENGTH) {
+    if (nkey > KEY_MAX_LENGTH) {
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
@@ -8938,8 +9007,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
 
     set_noreply_maybe(c, tokens, ntokens);
 
-    if (flush_all)
-    {
+    if (flush_all) {
         /* flush_all [<delay>] [noreply]\r\n */
         if (ntokens == (c->noreply ? 3 : 2)) {
             exptime = 0;
@@ -8965,9 +9033,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
             handle_unexpected_errorcode_ascii(c, ret);
         }
         STATS_NOKEY(c, cmd_flush);
-    }
-    else /* flush_prefix */
-    {
+    } else { /* flush_prefix */
         /* flush_prefix <prefix> [<delay>] [noreply]\r\n */
         if (ntokens == (c->noreply ? 4 : 3)) {
             exptime = 0;
@@ -9772,7 +9838,7 @@ static void lqdetect_show(conn *c)
     int ii, ret = 0;
 
     /* create detected long query return string */
-    for(ii = 0; ii < LONGQ_COMMAND_NUM; ii++) {
+    for (ii = 0; ii < LONGQ_COMMAND_NUM; ii++) {
         char *data = lqdetect_buffer_get(ii, &length, &cmdcnt);
         c->lq_bufcnt++;
 
@@ -9789,12 +9855,12 @@ static void lqdetect_show(conn *c)
             add_iov(c, count, count_len) != 0 ||
             add_iov(c, data, length) != 0 ||
             add_iov(c, "\n", 1) != 0)
-            {
-                out_string(c, "SERVER ERROR out of memory wrting show response");
-                lqdetect_buffer_release(c->lq_bufcnt);
-                c->lq_bufcnt = 0;
-                ret = -1; break;
-            }
+        {
+            out_string(c, "SERVER ERROR out of memory wrting show response");
+            lqdetect_buffer_release(c->lq_bufcnt);
+            c->lq_bufcnt = 0;
+            ret = -1; break;
+        }
     }
     c->suffixcurr = c->suffixlist;
 
@@ -9926,16 +9992,13 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
                             int32_t from_index, int32_t to_index,
                             bool delete, bool drop_if_empty)
 {
+    assert(c->ewouldblock == false);
     eitem  **elem_array = NULL;
     uint32_t elem_count;
     uint32_t flags, i;
     bool     dropped;
     int      est_count;
     int      need_size;
-
-    assert(c->ewouldblock == false);
-
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     /* adjust list index */
     if (from_index > MAX_LIST_SIZE)           from_index = MAX_LIST_SIZE;
@@ -9955,6 +10018,7 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
         return;
     }
 
+    ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->list_elem_get(mc_engine.v0, c, key, nkey,
                                       from_index, to_index, delete, drop_if_empty,
                                       elem_array, &elem_count, &flags, &dropped, 0);
@@ -10062,10 +10126,11 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
 }
 
 static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
-                                      char *key, size_t nkey, int32_t index) {
+                                      char *key, size_t nkey, int32_t index)
+{
     eitem *elem;
-
     ENGINE_ERROR_CODE ret;
+
     if (vlen > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
@@ -10104,11 +10169,11 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
     }
 }
 
-static void process_lop_create(conn *c, char *key, size_t nkey, item_attr *attrp) {
-
+static void process_lop_create(conn *c, char *key, size_t nkey, item_attr *attrp)
+{
     assert(c->ewouldblock == false);
-
     ENGINE_ERROR_CODE ret;
+
     ret = mc_engine.v1->list_struct_create(mc_engine.v0, c, key, nkey, attrp, 0);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
@@ -10140,10 +10205,9 @@ static void process_lop_create(conn *c, char *key, size_t nkey, item_attr *attrp
 static void process_lop_delete(conn *c, char *key, size_t nkey,
                                int32_t from_index, int32_t to_index, bool drop_if_empty)
 {
+    assert(c->ewouldblock == false);
     uint32_t del_count;
     bool     dropped;
-
-    assert(c->ewouldblock == false);
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->list_elem_delete(mc_engine.v0, c, key, nkey,
@@ -10356,16 +10420,13 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
 static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
                             bool delete, bool drop_if_empty)
 {
+    assert(c->ewouldblock == false);
     eitem  **elem_array = NULL;
     uint32_t elem_count;
     uint32_t req_count = count;
     uint32_t flags, i;
     bool     dropped;
     int      need_size;
-
-    assert(c->ewouldblock == false);
-
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     if (req_count <= 0 || req_count > MAX_SET_SIZE) req_count = MAX_SET_SIZE;
     need_size = req_count * sizeof(eitem*);
@@ -10374,6 +10435,7 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
         return;
     }
 
+    ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->set_elem_get(mc_engine.v0, c, key, nkey, req_count,
                                      delete, drop_if_empty, elem_array, &elem_count,
                                      &flags, &dropped, 0);
@@ -10480,7 +10542,8 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
     }
 }
 
-static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, size_t nkey) {
+static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, size_t nkey)
+{
     eitem *elem = NULL;
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
@@ -10546,8 +10609,10 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
     }
 }
 
-static void process_sop_create(conn *c, char *key, size_t nkey, item_attr *attrp) {
+static void process_sop_create(conn *c, char *key, size_t nkey, item_attr *attrp)
+{
     assert(c->ewouldblock == false);
+
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->set_struct_create(mc_engine.v0, c, key, nkey, attrp, 0);
     if (ret == ENGINE_EWOULDBLOCK) {
@@ -10744,6 +10809,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
                             const uint32_t offset, const uint32_t count,
                             const bool delete, const bool drop_if_empty)
 {
+    assert(c->ewouldblock == false);
     eitem  **elem_array = NULL;
     uint32_t elem_count;
     uint32_t access_count;
@@ -10751,10 +10817,6 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
     bool     dropped_trimmed;
     int      est_count;
     int      need_size;
-
-    assert(c->ewouldblock == false);
-
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     est_count = MAX_BTREE_SIZE;
     if (count > 0 && count < MAX_BTREE_SIZE) {
@@ -10766,6 +10828,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
         return;
     }
 
+    ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c, key, nkey,
                                        bkrange, efilter, offset, count,
                                        delete, drop_if_empty,
@@ -10989,14 +11052,13 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
     int      position;
     int      need_size;
 
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-
     need_size = ((count*2) + 1) * sizeof(eitem*);
     if ((elem_array = (eitem **)malloc(need_size)) == NULL) {
         out_string(c, "SERVER_ERROR out of memory");
         return;
     }
 
+    ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_posi_find_with_get(mc_engine.v0, c, key, nkey,
                                                  bkrange, order, count, &position,
                                                  elem_array, &elem_count, &elem_index,
@@ -11090,7 +11152,8 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
     }
 }
 
-static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER order,
+static void process_bop_gbp(conn *c, char *key, size_t nkey,
+                            ENGINE_BTREE_ORDER order,
                             uint32_t from_posi, uint32_t to_posi)
 {
     eitem  **elem_array = NULL;
@@ -11098,8 +11161,6 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
     uint32_t flags, i;
     int      est_count;
     int      need_size;
-
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     if (from_posi > MAX_BTREE_SIZE) from_posi = MAX_BTREE_SIZE;
     if (to_posi   > MAX_BTREE_SIZE) to_posi   = MAX_BTREE_SIZE;
@@ -11112,6 +11173,7 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
         return;
     }
 
+    ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_elem_get_by_posi(mc_engine.v0, c, key, nkey,
                                                order, from_posi, to_posi,
                                                elem_array, &elem_count, &flags, 0);
@@ -11212,7 +11274,8 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey, ENGINE_BTREE_ORDER 
     }
 }
 
-static void process_bop_update_prepare_nread(conn *c, int cmd, char *key, size_t nkey, const int vlen)
+static void process_bop_update_prepare_nread(conn *c, int cmd,
+                                             char *key, size_t nkey, const int vlen)
 {
     assert(cmd == (int)OPERATION_BOP_UPDATE);
     eitem *elem = NULL;
@@ -11401,9 +11464,10 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
 }
 #endif
 
-static void process_bop_create(conn *c, char *key, size_t nkey, item_attr *attrp) {
-
+static void process_bop_create(conn *c, char *key, size_t nkey, item_attr *attrp)
+{
     assert(c->ewouldblock == false);
+
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_struct_create(mc_engine.v0, c, key, nkey, attrp, 0);
     if (ret == ENGINE_EWOULDBLOCK) {
@@ -11437,11 +11501,10 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
                                bkey_range *bkrange, eflag_filter *efilter,
                                uint32_t count, bool drop_if_empty)
 {
+    assert(c->ewouldblock == false);
     uint32_t del_count;
     uint32_t acc_count; /* access count */
     bool     dropped;
-
-    assert(c->ewouldblock == false);
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_elem_delete(mc_engine.v0, c, key, nkey,
@@ -11494,14 +11557,14 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
 
 static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *bkrange,
                                    const bool incr, const bool create,
-                                   const uint64_t delta, const uint64_t initial, const eflag_t *eflagp)
+                                   const uint64_t delta, const uint64_t initial,
+                                   const eflag_t *eflagp)
 {
-    ENGINE_ERROR_CODE ret;
+    assert(c->ewouldblock == false);
     uint64_t result;
     char temp[INCR_MAX_STORAGE_LEN];
 
-    assert(c->ewouldblock == false);
-
+    ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_elem_arithmetic(mc_engine.v0, c, key, nkey, bkrange, incr, create,
                                               delta, initial, eflagp, &result, 0);
     if (ret == ENGINE_EWOULDBLOCK) {
@@ -11842,8 +11905,10 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
     }
 }
 
-static void process_mop_create(conn *c, char *key, size_t nkey, item_attr *attrp) {
+static void process_mop_create(conn *c, char *key, size_t nkey, item_attr *attrp)
+{
     assert(c->ewouldblock == false);
+
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->map_struct_create(mc_engine.v0, c, key, nkey, attrp, 0);
     if (ret == ENGINE_EWOULDBLOCK) {
@@ -12747,7 +12812,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
     }
 }
 
-static size_t attr_to_printable_buffer(char *ptr, ENGINE_ITEM_ATTR attr_id, item_attr *attr_datap) {
+static size_t attr_to_printable_buffer(char *ptr, ENGINE_ITEM_ATTR attr_id, item_attr *attr_datap)
+{
     if (attr_id == ATTR_TYPE)
         sprintf(ptr, "ATTR type=%s\r\n", get_item_type_str(attr_datap->type));
     else if (attr_id == ATTR_FLAGS)
@@ -12825,7 +12891,8 @@ static size_t attr_to_printable_buffer(char *ptr, ENGINE_ITEM_ATTR attr_id, item
     return strlen(ptr);
 }
 
-static void process_getattr_command(conn *c, token_t *tokens, const size_t ntokens) {
+static void process_getattr_command(conn *c, token_t *tokens, const size_t ntokens)
+{
     assert(c != NULL);
     char   *key = tokens[KEY_TOKEN].value;
     size_t nkey = tokens[KEY_TOKEN].length;
@@ -12919,7 +12986,8 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
     }
 }
 
-static void process_setattr_command(conn *c, token_t *tokens, const size_t ntokens) {
+static void process_setattr_command(conn *c, token_t *tokens, const size_t ntokens)
+{
     assert(c != NULL);
     assert(c->ewouldblock == false);
     char *key = tokens[KEY_TOKEN].value;
@@ -13218,7 +13286,8 @@ static void process_command(conn *c, char *command, int cmdlen)
 /*
  * if we have a complete line in the buffer, process it.
  */
-static int try_read_command(conn *c) {
+static int try_read_command(conn *c)
+{
     assert(c != NULL);
     assert(c->rcurr <= (c->rbuf + c->rsize));
     assert(c->rbytes > 0);
@@ -13242,77 +13311,75 @@ static int try_read_command(conn *c) {
         if (c->rbytes < sizeof(c->binary_header)) {
             /* need more data! */
             return 0;
-        } else {
-#ifdef NEED_ALIGN
-            if (((long)(c->rcurr)) % 8 != 0) {
-                /* must realign input buffer */
-                memmove(c->rbuf, c->rcurr, c->rbytes);
-                c->rcurr = c->rbuf;
-                if (settings.verbose > 1) {
-                    mc_logger->log(EXTENSION_LOG_DEBUG, c,
-                            "%d: Realign input buffer\n", c->sfd);
-                }
-            }
-#endif
-            protocol_binary_request_header* req;
-            req = (protocol_binary_request_header*)c->rcurr;
-
-            if (settings.verbose > 1) {
-                /* Dump the packet before we convert it to host order */
-                char buffer[1024];
-                ssize_t nw;
-                nw = bytes_to_output_string(buffer, sizeof(buffer), c->sfd,
-                                            true, "Read binary protocol data:",
-                                            (const char*)req->bytes,
-                                            sizeof(req->bytes));
-                if (nw != -1) {
-                    mc_logger->log(EXTENSION_LOG_DEBUG, c, "%s", buffer);
-                }
-            }
-
-            c->binary_header = *req;
-            c->binary_header.request.keylen = ntohs(req->request.keylen);
-            c->binary_header.request.bodylen = ntohl(req->request.bodylen);
-            c->binary_header.request.vbucket = ntohs(req->request.vbucket);
-            c->binary_header.request.cas = ntohll(req->request.cas);
-
-
-            if (c->binary_header.request.magic != PROTOCOL_BINARY_REQ)
-            {
-                if (settings.verbose) {
-                    if (c->binary_header.request.magic != PROTOCOL_BINARY_RES) {
-                        mc_logger->log(EXTENSION_LOG_INFO, c,
-                                "%d: Invalid magic:  %x\n", c->sfd,
-                                c->binary_header.request.magic);
-                    } else {
-                        mc_logger->log(EXTENSION_LOG_INFO, c,
-                                "%d: ERROR: Unsupported response packet received: %u\n",
-                                c->sfd, (unsigned int)c->binary_header.request.opcode);
-                    }
-                }
-                conn_set_state(c, conn_closing);
-                return -1;
-            }
-
-            c->msgcurr = 0;
-            c->msgused = 0;
-            c->iovused = 0;
-            if (add_msghdr(c) != 0) {
-                out_string(c, "SERVER_ERROR out of memory");
-                return 0;
-            }
-
-            c->cmd = c->binary_header.request.opcode;
-            c->keylen = c->binary_header.request.keylen;
-            c->opaque = c->binary_header.request.opaque;
-            /* clear the returned cas value */
-            c->cas = 0;
-
-            dispatch_bin_command(c);
-
-            c->rbytes -= sizeof(c->binary_header);
-            c->rcurr += sizeof(c->binary_header);
         }
+
+#ifdef NEED_ALIGN
+        if (((long)(c->rcurr)) % 8 != 0) {
+            /* must realign input buffer */
+            memmove(c->rbuf, c->rcurr, c->rbytes);
+            c->rcurr = c->rbuf;
+            if (settings.verbose > 1) {
+                mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                        "%d: Realign input buffer\n", c->sfd);
+            }
+        }
+#endif
+        protocol_binary_request_header* req;
+        req = (protocol_binary_request_header*)c->rcurr;
+
+        if (settings.verbose > 1) {
+            /* Dump the packet before we convert it to host order */
+            char buffer[1024];
+            ssize_t nw;
+            nw = bytes_to_output_string(buffer, sizeof(buffer), c->sfd,
+                                        true, "Read binary protocol data:",
+                                        (const char*)req->bytes,
+                                        sizeof(req->bytes));
+            if (nw != -1) {
+                mc_logger->log(EXTENSION_LOG_DEBUG, c, "%s", buffer);
+            }
+        }
+
+        c->binary_header = *req;
+        c->binary_header.request.keylen = ntohs(req->request.keylen);
+        c->binary_header.request.bodylen = ntohl(req->request.bodylen);
+        c->binary_header.request.vbucket = ntohs(req->request.vbucket);
+        c->binary_header.request.cas = ntohll(req->request.cas);
+
+        if (c->binary_header.request.magic != PROTOCOL_BINARY_REQ) {
+            if (settings.verbose) {
+                if (c->binary_header.request.magic != PROTOCOL_BINARY_RES) {
+                    mc_logger->log(EXTENSION_LOG_INFO, c,
+                            "%d: Invalid magic:  %x\n", c->sfd,
+                            c->binary_header.request.magic);
+                } else {
+                    mc_logger->log(EXTENSION_LOG_INFO, c,
+                            "%d: ERROR: Unsupported response packet received: %u\n",
+                            c->sfd, (unsigned int)c->binary_header.request.opcode);
+                }
+            }
+            conn_set_state(c, conn_closing);
+            return -1;
+        }
+
+        c->msgcurr = 0;
+        c->msgused = 0;
+        c->iovused = 0;
+        if (add_msghdr(c) != 0) {
+            out_string(c, "SERVER_ERROR out of memory");
+            return 0;
+        }
+
+        c->cmd = c->binary_header.request.opcode;
+        c->keylen = c->binary_header.request.keylen;
+        c->opaque = c->binary_header.request.opaque;
+        /* clear the returned cas value */
+        c->cas = 0;
+
+        dispatch_bin_command(c);
+
+        c->rbytes -= sizeof(c->binary_header);
+        c->rcurr += sizeof(c->binary_header);
     } else {
         char *el, *cont;
 
@@ -13341,20 +13408,18 @@ static int try_read_command(conn *c) {
                  *  - KEY_MAX_LENGTH : 32000
                  *  - IN eflag filter : > 6400 (64*100)
                  */
-                if (c->rbytes > ((32+8)*1024))
-                {
-                if (strncmp(ptr, "get ", 4) && strncmp(ptr, "gets ", 5)) {
-                    char buffer[16];
-                    memcpy(buffer, ptr, 15); buffer[15] = '\0';
-                    mc_logger->log(EXTENSION_LOG_WARNING, c,
-                        "%d: Too long ascii command(%s). Close the connection. client_ip: %s\n",
-                        c->sfd, buffer, c->client_ip);
-                    conn_set_state(c, conn_closing);
-                    return 1;
-                }
+                if (c->rbytes > ((32+8)*1024)) {
+                    if (strncmp(ptr, "get ", 4) && strncmp(ptr, "gets ", 5)) {
+                        char buffer[16];
+                        memcpy(buffer, ptr, 15); buffer[15] = '\0';
+                        mc_logger->log(EXTENSION_LOG_WARNING, c,
+                            "%d: Too long ascii command(%s). Close the connection. client_ip: %s\n",
+                            c->sfd, buffer, c->client_ip);
+                        conn_set_state(c, conn_closing);
+                        return 1;
+                    }
                 }
             }
-
             return 0;
         }
         cont = el + 1;
@@ -13379,10 +13444,10 @@ static int try_read_command(conn *c) {
 /*
  * read a UDP request.
  */
-static enum try_read_result try_read_udp(conn *c) {
-    int res;
-
+static enum try_read_result try_read_udp(conn *c)
+{
     assert(c != NULL);
+    int res;
 
     c->request_addr_size = sizeof(c->request_addr);
     res = recvfrom(c->sfd, c->rbuf, c->rsize,
@@ -13423,10 +13488,11 @@ static enum try_read_result try_read_udp(conn *c) {
  *
  * @return enum try_read_result
  */
-static enum try_read_result try_read_network(conn *c) {
+static enum try_read_result try_read_network(conn *c)
+{
+    assert(c != NULL);
     enum try_read_result gotdata = READ_NO_DATA_RECEIVED;
     int num_allocs = 0;
-    assert(c != NULL);
 
     if (c->rcurr != c->rbuf) {
         if (c->rbytes != 0) /* otherwise there's nothing to copy */
@@ -13495,10 +13561,11 @@ static enum try_read_result try_read_network(conn *c) {
     return gotdata;
 }
 
-static bool update_event(conn *c, const int new_flags) {
+static bool update_event(conn *c, const int new_flags)
+{
     assert(c != NULL);
-
     struct event_base *base = c->event.ev_base;
+
     if (c->ev_flags == new_flags)
         return true;
 
@@ -13524,11 +13591,11 @@ static bool update_event(conn *c, const int new_flags) {
  *   TRANSMIT_SOFT_ERROR Can't write any more right now.
  *   TRANSMIT_HARD_ERROR Can't write (c->state is set to conn_closing)
  */
-static enum transmit_result transmit(conn *c) {
+static enum transmit_result transmit(conn *c)
+{
     assert(c != NULL);
 
-    if (c->msgcurr < c->msgused &&
-            c->msglist[c->msgcurr].msg_iovlen == 0) {
+    if (c->msgcurr < c->msgused && c->msglist[c->msgcurr].msg_iovlen == 0) {
         /* Finished writing the current msg; advance to the next. */
         c->msgcurr++;
     }
@@ -13640,11 +13707,11 @@ bool conn_listening(conn *c)
 
     dispatch_conn_new(sfd, conn_new_cmd, EV_READ | EV_PERSIST,
                       DATA_BUFFER_SIZE, tcp_transport);
-
     return false;
 }
 
-bool conn_waiting(conn *c) {
+bool conn_waiting(conn *c)
+{
     if (!update_event(c, EV_READ | EV_PERSIST)) {
         if (settings.verbose > 0) {
             mc_logger->log(EXTENSION_LOG_WARNING, c,
@@ -13657,7 +13724,8 @@ bool conn_waiting(conn *c) {
     return false;
 }
 
-bool conn_read(conn *c) {
+bool conn_read(conn *c)
+{
     int res = IS_UDP(c->transport) ? try_read_udp(c) : try_read_network(c);
     switch (res) {
     case READ_NO_DATA_RECEIVED:
@@ -13677,7 +13745,8 @@ bool conn_read(conn *c) {
     return true;
 }
 
-bool conn_parse_cmd(conn *c) {
+bool conn_parse_cmd(conn *c)
+{
     if (try_read_command(c) == 0) {
         /* wee need more data! */
         conn_set_state(c, conn_waiting);
@@ -13712,7 +13781,8 @@ bool conn_parse_cmd(conn *c) {
     return true;
 }
 
-bool conn_new_cmd(conn *c) {
+bool conn_new_cmd(conn *c)
+{
     /* Only process nreqs at a time to avoid starving other connections */
     --c->nevents;
     if (c->nevents >= 0) {
@@ -13741,9 +13811,10 @@ bool conn_new_cmd(conn *c) {
     return true;
 }
 
-
-bool conn_swallow(conn *c) {
+bool conn_swallow(conn *c)
+{
     ssize_t res;
+
     /* we are reading sbytes and throwing them away */
     if (c->sbytes == 0) {
         conn_set_state(c, conn_new_cmd);
@@ -13803,7 +13874,8 @@ bool conn_swallow(conn *c) {
 
 }
 
-bool conn_nread(conn *c) {
+bool conn_nread(conn *c)
+{
     ssize_t res;
 
     if (c->rlbytes == 0) {
@@ -13907,7 +13979,8 @@ bool conn_nread(conn *c) {
     return true;
 }
 
-bool conn_write(conn *c) {
+bool conn_write(conn *c)
+{
     /*
      * We want to write out a simple response. If we haven't already,
      * assemble it into a msgbuf list (this will be a single-entry
@@ -13927,7 +14000,8 @@ bool conn_write(conn *c) {
     return conn_mwrite(c);
 }
 
-bool conn_mwrite(conn *c) {
+bool conn_mwrite(conn *c)
+{
     /* c->aiostat was set by notify_io_complete function.  */
     if (c->aiostat != ENGINE_SUCCESS) {
         /* The response must be reset according to c->aiostat. */
@@ -13978,7 +14052,7 @@ bool conn_mwrite(conn *c) {
                 c->coll_strkeys = NULL;
             }
             /* XXX:  I don't know why this wasn't the general case */
-            if(c->protocol == binary_prot) {
+            if (c->protocol == binary_prot) {
                 conn_set_state(c, c->write_and_go);
             } else {
                 conn_set_state(c, conn_new_cmd);
@@ -14009,7 +14083,8 @@ bool conn_mwrite(conn *c) {
     return true;
 }
 
-bool conn_closing(conn *c) {
+bool conn_closing(conn *c)
+{
     if (IS_UDP(c->transport)) {
         conn_cleanup(c);
     } else {
@@ -14018,10 +14093,9 @@ bool conn_closing(conn *c) {
     return false;
 }
 
-void event_handler(const int fd, const short which, void *arg) {
-    conn *c;
-
-    c = (conn *)arg;
+void event_handler(const int fd, const short which, void *arg)
+{
+    conn *c = (conn *)arg;
     assert(c != NULL);
 
     if (memcached_shutdown) {
@@ -14031,7 +14105,7 @@ void event_handler(const int fd, const short which, void *arg) {
                         "Main thread is now terminating from event handler.\n");
             }
             event_base_loopbreak(c->event.ev_base);
-            return ;
+            return;
         }
         if (memcached_shutdown > 1) {
             if (settings.verbose > 0) {
@@ -14040,7 +14114,7 @@ void event_handler(const int fd, const short which, void *arg) {
                         c->thread->index);
             }
             event_base_loopbreak(c->event.ev_base);
-            return ;
+            return;
         }
     }
 
@@ -14065,7 +14139,8 @@ void event_handler(const int fd, const short which, void *arg) {
     }
 }
 
-static int new_socket(struct addrinfo *ai) {
+static int new_socket(struct addrinfo *ai)
+{
     int sfd;
     int flags;
 
@@ -14086,7 +14161,8 @@ static int new_socket(struct addrinfo *ai) {
 /*
  * Sets a socket's send buffer size to the maximum allowed by the system.
  */
-static void maximize_sndbuf(const int sfd) {
+static void maximize_sndbuf(const int sfd)
+{
     socklen_t intsize = sizeof(int);
     int last_good = 0;
     int min, max, avg;
@@ -14120,7 +14196,6 @@ static void maximize_sndbuf(const int sfd) {
 }
 
 
-
 /**
  * Create a socket and bind it to a specific port number
  * @param port the port number to bind to
@@ -14130,7 +14205,8 @@ static void maximize_sndbuf(const int sfd) {
  *        listen on.
  */
 static int server_socket(int port, enum network_transport transport,
-                         FILE *portnumber_file) {
+                         FILE *portnumber_file)
+{
     int sfd;
     struct linger ling = {0, 0};
     struct addrinfo *ai;
@@ -14276,7 +14352,8 @@ static int server_socket(int port, enum network_transport transport,
     return success == 0;
 }
 
-static int new_socket_unix(void) {
+static int new_socket_unix(void)
+{
     int sfd;
     int flags;
 
@@ -14295,7 +14372,8 @@ static int new_socket_unix(void) {
 }
 
 /* this will probably not work on windows */
-static int server_socket_unix(const char *path, int access_mask) {
+static int server_socket_unix(const char *path, int access_mask)
+{
     int sfd;
     struct linger ling = {0, 0};
     struct sockaddr_un addr;
@@ -14362,7 +14440,8 @@ static int server_socket_unix(const char *path, int access_mask) {
 
 static struct event clockevent;
 
-static void clock_handler(const int fd, const short which, void *arg) {
+static void clock_handler(const int fd, const short which, void *arg)
+{
     struct timeval t = {.tv_sec = 1, .tv_usec = 0};
     static bool initialized = false;
 
@@ -14372,7 +14451,7 @@ static void clock_handler(const int fd, const short which, void *arg) {
                     "Main thread is now terminating from clock handler.\n");
         }
         event_base_loopbreak(main_base);
-        return ;
+        return;
     }
 
     if (initialized) {
@@ -14389,7 +14468,8 @@ static void clock_handler(const int fd, const short which, void *arg) {
     set_current_time();
 }
 
-static void usage(void) {
+static void usage(void)
+{
     printf(PACKAGE " " VERSION "\n");
     printf("-p <num>      TCP port number to listen on (default: 11211)\n"
            "-U <num>      UDP port number to listen on (default: 11211, 0 is off)\n"
@@ -14457,7 +14537,8 @@ static void usage(void) {
            "MEMCACHED_TOP_KEYS        Number of top keys to keep track of\n");
 }
 
-static void usage_license(void) {
+static void usage_license(void)
+{
     printf(PACKAGE " " VERSION "\n\n");
     printf(
     "Copyright (c) 2003, Danga Interactive, Inc. <http://www.danga.com/>\n"
@@ -14528,7 +14609,8 @@ static void usage_license(void) {
     return;
 }
 
-static void save_pid(const pid_t pid, const char *pid_file) {
+static void save_pid(const pid_t pid, const char *pid_file)
+{
     FILE *fp;
     if (pid_file == NULL) {
         return;
@@ -14549,7 +14631,8 @@ static void save_pid(const pid_t pid, const char *pid_file) {
     }
 }
 
-static void remove_pidfile(const char *pid_file) {
+static void remove_pidfile(const char *pid_file)
+{
     if (pid_file != NULL) {
         if (unlink(pid_file) != 0) {
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -14560,7 +14643,8 @@ static void remove_pidfile(const char *pid_file) {
 }
 
 #ifndef HAVE_SIGIGNORE
-static int sigignore(int sig) {
+static int sigignore(int sig)
+{
     struct sigaction sa = { .sa_handler = SIG_IGN, .sa_flags = 0 };
 
     if (sigemptyset(&sa.sa_mask) == -1 || sigaction(sig, &sa, 0) == -1) {
@@ -14588,14 +14672,14 @@ static void sigterm_handler(int sig)
 #endif
 }
 
-static int install_sigterm_handler(void) {
+static int install_sigterm_handler(void)
+{
     struct sigaction sa = {.sa_handler = sigterm_handler, .sa_flags = 0};
 
     if (sigemptyset(&sa.sa_mask) == -1 || sigaction(SIGTERM, &sa, 0) == -1 ||
         sigaction(SIGINT, &sa, 0) == -1) {
         return -1;
     }
-
     return 0;
 }
 
@@ -14603,7 +14687,8 @@ static int install_sigterm_handler(void) {
  * On systems that supports multiple page sizes we may reduce the
  * number of TLB-misses by using the biggest available page size
  */
-static int enable_large_pages(void) {
+static int enable_large_pages(void)
+{
 #if defined(HAVE_GETPAGESIZES) && defined(HAVE_MEMCNTL)
     int ret = -1;
     size_t sizes[32];
@@ -14642,41 +14727,48 @@ static int enable_large_pages(void) {
 #endif
 }
 
-static const char* get_server_version(void) {
+static const char* get_server_version(void)
+{
     return VERSION;
 }
 
-static void store_engine_specific(const void *cookie,
-                                  void *engine_data) {
+static void store_engine_specific(const void *cookie, void *engine_data)
+{
     conn *c = (conn*)cookie;
     c->engine_storage = engine_data;
 }
 
-static void *get_engine_specific(const void *cookie) {
+static void *get_engine_specific(const void *cookie)
+{
     conn *c = (conn*)cookie;
     return c->engine_storage;
 }
 
-static int get_socket_fd(const void *cookie) {
+static int get_socket_fd(const void *cookie)
+{
     conn *c = (conn *)cookie;
     return c->sfd;
 }
 
-static const char* get_client_ip(const void *cookie) {
+static const char* get_client_ip(const void *cookie)
+{
     conn *c = (conn *)cookie;
     return (c != NULL ? c->client_ip : "null");
 }
 
-static int get_thread_index(const void *cookie) {
+static int get_thread_index(const void *cookie)
+{
     conn *c = (conn *)cookie;
     return c->thread->index;
 }
 
-static int num_independent_stats(void) {
+static int num_independent_stats(void)
+{
     return settings.num_threads + 1;
 }
 
-static void *new_independent_stats(void) {
+static void *new_independent_stats(void)
+{
     int ii;
     int nrecords = num_independent_stats();
     struct independent_stats *independent_stats = calloc(sizeof(independent_stats) + sizeof(struct thread_stats) * nrecords, 1);
@@ -14687,7 +14779,8 @@ static void *new_independent_stats(void) {
     return independent_stats;
 }
 
-static void release_independent_stats(void *stats) {
+static void release_independent_stats(void *stats)
+{
     int ii;
     int nrecords = num_independent_stats();
     struct independent_stats *independent_stats = stats;
@@ -14698,7 +14791,8 @@ static void release_independent_stats(void *stats) {
     free(independent_stats);
 }
 
-static inline struct independent_stats *get_independent_stats(conn *c) {
+static inline struct independent_stats *get_independent_stats(conn *c)
+{
     struct independent_stats *independent_stats;
     if (mc_engine.v1->get_stats_struct != NULL) {
         independent_stats = mc_engine.v1->get_stats_struct(mc_engine.v0, (const void *)c);
@@ -14710,13 +14804,15 @@ static inline struct independent_stats *get_independent_stats(conn *c) {
     return independent_stats;
 }
 
-static inline struct thread_stats *get_thread_stats(conn *c) {
+static inline struct thread_stats *get_thread_stats(conn *c)
+{
     struct independent_stats *independent_stats = get_independent_stats(c);
     assert(c->thread->index < num_independent_stats());
     return &independent_stats->thread_stats[c->thread->index];
 }
 
-static void count_eviction(const void *cookie, const void *key, const int nkey) {
+static void count_eviction(const void *cookie, const void *key, const int nkey)
+{
     topkeys_t *tk = get_independent_stats((conn*)cookie)->topkeys;
     TK(tk, evictions, key, nkey, get_current_time());
 }
@@ -14832,11 +14928,9 @@ static void unregister_extension(extension_type_t type, void *extension)
             }
         }
         break;
-
     default:
         ;
     }
-
 }
 
 /**
@@ -15018,7 +15112,8 @@ static SERVER_HANDLE_V1 *get_server_api(void)
  * @param config optional configuration parameters
  * @return true if success, false otherwise
  */
-static bool load_extension(const char *soname, const char *config) {
+static bool load_extension(const char *soname, const char *config)
+{
     if (soname == NULL) {
         return false;
     }
@@ -15070,7 +15165,8 @@ static bool load_extension(const char *soname, const char *config) {
  * Do basic sanity check of the runtime environment
  * @return true if no errors found, false if we can't use this env
  */
-static bool sanitycheck(void) {
+static bool sanitycheck(void)
+{
     /* One of our biggest problems is old and bogus libevents */
     const char *ever = event_get_version();
     if (ever != NULL) {
@@ -15102,7 +15198,8 @@ static void close_listen_sockets(void)
     }
 }
 
-int main (int argc, char **argv) {
+int main (int argc, char **argv)
+{
     int c;
     bool lock_memory = false;
     bool do_daemonize = false;
@@ -15447,7 +15544,6 @@ int main (int argc, char **argv) {
     }
 
     old_opts += sprintf(old_opts, "num_threads=%lu;", (unsigned long)settings.num_threads);
-
     if (settings.verbose) {
         old_opts += sprintf(old_opts, "verbose=%lu;", (unsigned long)settings.verbose);
     }
@@ -15758,7 +15854,6 @@ int main (int argc, char **argv) {
     /* create the listening socket, bind it, and init */
     if (settings.socketpath == NULL) {
         //int udp_port;
-
         const char *portnumber_filename = getenv("MEMCACHED_PORT_FILENAME");
         char temp_portnumber_filename[PATH_MAX];
         FILE *portnumber_file = NULL;
@@ -15867,9 +15962,11 @@ int main (int argc, char **argv) {
         free(arcus_zk_cfg);
     }
 #endif
+
     /* Clean up strdup() call for bind() address */
-    if (settings.inter)
-      free(settings.inter);
+    if (settings.inter) {
+        free(settings.inter);
+    }
 
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Arcus memcached terminated.\n");
     return EXIT_SUCCESS;
