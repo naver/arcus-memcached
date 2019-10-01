@@ -251,9 +251,9 @@ static ENGINE_ERROR_CODE lrec_it_link_redo(LogRec *logrec)
             ret = item_apply_map_link(keyptr, cm.keylen, &attr);
         } else if (cm.ittype == ITEM_TYPE_BTREE) {
             struct lrec_coll_meta meta = body->ptr.meta;
-            if (meta.maxbkrlen != BKEY_NULL) {
+            attr.maxbkeyrange.len = meta.maxbkrlen;
+            if (attr.maxbkeyrange.len != BKEY_NULL) {
                 unsigned char *maxbkrptr = (unsigned char*)body->data;
-                attr.maxbkeyrange.len = meta.maxbkrlen;
                 memcpy(attr.maxbkeyrange.val, maxbkrptr, BTREE_REAL_NBKEY(attr.maxbkeyrange.len));
                 keyptr += BTREE_REAL_NBKEY(attr.maxbkeyrange.len);
             }
