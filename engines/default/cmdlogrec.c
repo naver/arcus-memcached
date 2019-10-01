@@ -832,7 +832,7 @@ static void lrec_bt_elem_insert_print(LogRec *logrec)
     lrec_header_print(&log->header);
     /* <key> <bkey> [<eflag>] <data> */
     fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | "
-            "%s | %s | vallen = %u | valstr=%.*s",
+            "%s | %s | vallen=%u | valstr=%.*s",
             log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
             bkeystr, (log->body.neflag != 0 ? eflagstr : "[eflag]"),
             log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250),
