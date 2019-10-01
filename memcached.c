@@ -808,8 +808,7 @@ static void conn_coll_eitem_free(conn *c)
         mc_engine.v1->map_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         break;
       case OPERATION_MOP_UPDATE:
-        if (c->coll_eitem != NULL)
-            free(c->coll_eitem);
+        free(c->coll_eitem);
         break;
       case OPERATION_MOP_GET:
         mc_engine.v1->map_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
@@ -824,8 +823,7 @@ static void conn_coll_eitem_free(conn *c)
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         break;
       case OPERATION_BOP_UPDATE:
-        if (c->coll_eitem != NULL)
-            free(c->coll_eitem);
+        free(c->coll_eitem);
         break;
       case OPERATION_BOP_GET:
       case OPERATION_BOP_PWG: /* position with get */
@@ -850,7 +848,6 @@ static void conn_coll_eitem_free(conn *c)
       default:
         assert(0); /* This case must not happen */
     }
-    c->coll_eitem = NULL;
 }
 
 static void conn_cleanup(conn *c)
@@ -871,6 +868,7 @@ static void conn_cleanup(conn *c)
 
     if (c->coll_eitem != NULL) {
         conn_coll_eitem_free(c);
+        c->coll_eitem = NULL;
     }
     if (c->coll_strkeys != NULL) {
         assert(c->coll_strkeys == (void*)&c->memblist);
@@ -7801,6 +7799,7 @@ static void reset_cmd_handler(conn *c)
 #endif
     if (c->coll_eitem != NULL) {
         conn_coll_eitem_free(c);
+        c->coll_eitem = NULL;
     }
     if (c->coll_strkeys != NULL) {
         assert(c->coll_strkeys == (void*)&c->memblist);
@@ -14045,6 +14044,7 @@ bool conn_mwrite(conn *c)
 #endif
             if (c->coll_eitem != NULL) {
                 conn_coll_eitem_free(c);
+                c->coll_eitem = NULL;
             }
             if (c->coll_strkeys != NULL) {
                 assert(c->coll_strkeys == (void*)&c->memblist);
