@@ -354,6 +354,9 @@ extern "C" {
         void (*list_elem_release)(ENGINE_HANDLE* handle, const void *cookie,
                                   eitem **eitem_array, const int eitem_count);
 
+#ifdef INSERT_FIX
+        void (*list_elem_free)(ENGINE_HANDLE* handle, const void* cookie, eitem *eitem);
+#endif
         ENGINE_ERROR_CODE (*list_elem_insert)(ENGINE_HANDLE* handle, const void* cookie,
                                               const void* key, const int nkey,
                                               int index, eitem *eitem,

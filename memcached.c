@@ -775,7 +775,11 @@ static void conn_coll_eitem_free(conn *c) {
     switch (c->coll_op) {
       /* lop */
       case OPERATION_LOP_INSERT:
+#ifdef INSERT_FIX
+        mc_engine.v1->list_elem_free(mc_engine.v0, c, &c->coll_eitem);
+#else
         mc_engine.v1->list_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+#endif
         break;
       case OPERATION_LOP_GET:
         mc_engine.v1->list_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
@@ -1663,9 +1667,17 @@ static void process_lop_insert_complete(conn *c) {
             else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
             else handle_unexpected_errorcode_ascii(c, ret);
         }
+#ifdef INSERT_FIX
+        if (ret != ENGINE_SUCCESS) {
+            mc_engine.v1->list_elem_free(mc_engine.v0, c, elem);
+        }
+#endif
     }
 
+#ifdef INSERT_FIX
+#else
     mc_engine.v1->list_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+#endif
     c->coll_eitem = NULL;
 }
 

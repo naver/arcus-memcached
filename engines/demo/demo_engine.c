@@ -297,6 +297,14 @@ Demo_list_elem_release(ENGINE_HANDLE* handle, const void *cookie,
     return;
 }
 
+#ifdef INSERT_FIX
+static void
+Demo_list_elem_free(ENGINE_HANDLE* handle, const void *cookie, eitem *eitem)
+{
+    return;
+}
+#endif
+
 static ENGINE_ERROR_CODE
 Demo_list_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
                          const void* key, const int nkey,
@@ -769,6 +777,9 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .list_struct_create = Demo_list_struct_create,
          .list_elem_alloc   = Demo_list_elem_alloc,
          .list_elem_release = Demo_list_elem_release,
+#ifdef INSERT_FIX
+         .list_elem_free    = Demo_list_elem_free,
+#endif
          .list_elem_insert  = Demo_list_elem_insert,
          .list_elem_delete  = Demo_list_elem_delete,
          .list_elem_get     = Demo_list_elem_get,

@@ -407,6 +407,13 @@ default_list_elem_release(ENGINE_HANDLE* handle, const void *cookie,
     list_elem_release((list_elem_item**)eitem_array, eitem_count);
 }
 
+#ifdef INSERT_FIX
+static void
+default_list_elem_free(ENGINE_HANDLE* handle, const void *cookie, eitem *eitem)
+{
+    list_elem_free((list_elem_item*)eitem);
+}
+#endif
 static ENGINE_ERROR_CODE
 default_list_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
                          const void* key, const int nkey,
@@ -1479,6 +1486,9 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .list_elem_insert  = default_list_elem_insert,
          .list_elem_delete  = default_list_elem_delete,
          .list_elem_get     = default_list_elem_get,
+#ifdef INSERT_FIX
+         .list_elem_free    = default_list_elem_free,
+#endif
          /* SET Colleciton API */
          .set_struct_create = default_set_struct_create,
          .set_elem_alloc    = default_set_elem_alloc,
