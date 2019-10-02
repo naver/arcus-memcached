@@ -306,7 +306,10 @@ static uint32_t do_log_buff_flush(bool flush_all)
 #endif
     uint32_t    nflush = 0;
     bool        dual_write_flag = false;
+#ifdef ENABLE_PERSISTENCE_03_ENHANCE_FQUEUE
+#else
     bool        last_flush_flag = false;
+#endif
     bool        next_fhlsn_flag = false;
     bool        cleanup_process = false;
 
@@ -329,7 +332,6 @@ static uint32_t do_log_buff_flush(bool flush_all)
             if (flush_all) {
                 nflush = logbuff->fque[fqinfo->fend].nflush;
                 dual_write_flag = logbuff->fque[fqinfo->fend].dual_write;
-                last_flush_flag = true;
             }
         }
     }
