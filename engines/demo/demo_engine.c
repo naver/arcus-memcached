@@ -290,6 +290,13 @@ Demo_list_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
     return ENGINE_ENOTSUP;
 }
 
+#ifdef INSERT_FIX
+static void
+Demo_list_elem_free(ENGINE_HANDLE* handle, const void *cookie, eitem *eitem)
+{
+    return;
+}
+#endif
 static void
 Demo_list_elem_release(ENGINE_HANDLE* handle, const void *cookie,
                           eitem **eitem_array, const int eitem_count)
@@ -768,6 +775,9 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          /* LIST Collection API */
          .list_struct_create = Demo_list_struct_create,
          .list_elem_alloc   = Demo_list_elem_alloc,
+#ifdef INSERT_FIX
+         .list_elem_free    = Demo_list_elem_free,
+#endif
          .list_elem_release = Demo_list_elem_release,
          .list_elem_insert  = Demo_list_elem_insert,
          .list_elem_delete  = Demo_list_elem_delete,
