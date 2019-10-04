@@ -128,16 +128,14 @@ static int MAX_BTREE_SIZE = 50000;
     SLAB_TWO(conn, op##_badval, cmd_##op, key, nkey)
 
 #define STATS_NOKEY(conn, op) { \
-    struct thread_stats *thread_stats = \
-        get_thread_stats(conn); \
+    struct thread_stats *thread_stats = get_thread_stats(conn); \
     pthread_mutex_lock(&thread_stats->mutex); \
     thread_stats->op++; \
     pthread_mutex_unlock(&thread_stats->mutex); \
 }
 
 #define STATS_NOKEY2(conn, op1, op2) { \
-    struct thread_stats *thread_stats = \
-        get_thread_stats(conn); \
+    struct thread_stats *thread_stats = get_thread_stats(conn); \
     pthread_mutex_lock(&thread_stats->mutex); \
     thread_stats->op1++; \
     thread_stats->op2++; \
@@ -145,15 +143,11 @@ static int MAX_BTREE_SIZE = 50000;
 }
 
 #define STATS_ADD(conn, op, amt) { \
-    struct thread_stats *thread_stats = \
-        get_thread_stats(conn); \
+    struct thread_stats *thread_stats = get_thread_stats(conn); \
     pthread_mutex_lock(&thread_stats->mutex); \
     thread_stats->op += amt; \
     pthread_mutex_unlock(&thread_stats->mutex); \
 }
-
-#define GET_8ALIGN_SIZE(size) \
-    (((size) % 8) == 0 ? (size) : ((size) + (8 - ((size) % 8))))
 
 volatile sig_atomic_t memcached_shutdown=0;
 
