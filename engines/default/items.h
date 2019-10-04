@@ -418,9 +418,8 @@ ENGINE_ERROR_CODE list_struct_create(const char *key, const uint32_t nkey,
 
 list_elem_item *list_elem_alloc(const uint32_t nbytes, const void *cookie);
 
-#ifdef INSERT_FIX
 void list_elem_free(list_elem_item *elem);
-#endif
+
 void list_elem_release(list_elem_item **elem_array, const int elem_count);
 
 ENGINE_ERROR_CODE list_elem_insert(const char *key, const uint32_t nkey,

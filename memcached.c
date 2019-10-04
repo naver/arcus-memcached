@@ -779,11 +779,7 @@ static void conn_coll_eitem_free(conn *c)
     switch (c->coll_op) {
       /* lop */
       case OPERATION_LOP_INSERT:
-#ifdef INSERT_FIX
         mc_engine.v1->list_elem_free(mc_engine.v0, c, c->coll_eitem);
-#else
-        mc_engine.v1->list_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
-#endif
         break;
       case OPERATION_LOP_GET:
         mc_engine.v1->list_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
@@ -1623,24 +1619,15 @@ static void process_lop_insert_complete(conn *c)
     assert(c->coll_op == OPERATION_LOP_INSERT);
     assert(c->coll_eitem != NULL);
     eitem *elem = (eitem *)c->coll_eitem;
-#ifdef INSERT_FIX
     ENGINE_ERROR_CODE ret;
-#endif
 
     mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &c->einfo);
 
     if (einfo_check_ascii_tail_string(&c->einfo) != 0) { /* check "\r\n" */
-#ifdef INSERT_FIX
         ret = ENGINE_EINVAL;
-#endif
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         bool created;
-#ifdef INSERT_FIX
-#else
-        ENGINE_ERROR_CODE ret;
-#endif
-
         ret = mc_engine.v1->list_elem_insert(mc_engine.v0, c,
                                              c->coll_key, c->coll_nkey, c->coll_index, elem,
                                              c->coll_attrp, &created, 0);
@@ -1685,13 +1672,9 @@ static void process_lop_insert_complete(conn *c)
         }
     }
 
-#ifdef INSERT_FIX
     if (ret != ENGINE_SUCCESS) {
         mc_engine.v1->list_elem_free(mc_engine.v0, c, elem);
     }
-#else
-    mc_engine.v1->list_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
-#endif
     c->coll_eitem = NULL;
 }
 
@@ -4709,14 +4692,9 @@ static void process_bin_lop_insert_complete(conn *c)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
     }
 
-#ifdef INSERT_FIX
     if (ret != ENGINE_SUCCESS) {
         mc_engine.v1->list_elem_free(mc_engine.v0, c, elem);
     }
-#else
-    /* release the c->coll_eitem reference */
-    mc_engine.v1->list_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
-#endif
     c->coll_eitem = NULL;
 }
 
