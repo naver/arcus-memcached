@@ -1237,27 +1237,23 @@ static int add_iov(conn *c, const void *buf, int len)
     return 0;
 }
 
-static int add_iov_addnl(conn *c, value_item **addnl, int naddnl)
+static int add_iov_hinfo_value_all(conn *c, item_info *hinfo)
 {
-    for (int i = 0; i < naddnl; i++) {
-         if (add_iov(c, addnl[i]->ptr, addnl[i]->len) != 0)
-             return -1;
+    if (hinfo->nvalue > 0) {
+        if (add_iov(c, hinfo->value, hinfo->nvalue) != 0)
+            return -1;
+    }
+    if (hinfo->naddnl > 0) {
+        value_item **addnl = hinfo->addnl;
+        for (int i = 0; i < hinfo->naddnl; i++) {
+            if (add_iov(c, addnl[i]->ptr, addnl[i]->len) != 0)
+                return -1;
+        }
     }
     return 0;
 }
 
-static int add_iov_hinfo_value(conn *c, item_info *hinfo)
-{
-    if (hinfo->nvalue && add_iov(c, hinfo->value, hinfo->nvalue) != 0) {
-        return -1;
-    }
-    if (hinfo->naddnl && add_iov_addnl(c, hinfo->addnl, hinfo->naddnl) != 0) {
-        return -1;
-    }
-    return 0;
-}
-
-static int add_iov_hinfo_some_value(conn *c, item_info *hinfo, int length)
+static int add_iov_hinfo_value_some(conn *c, item_info *hinfo, int length)
 {
     int i, iosize;
 
@@ -1269,34 +1265,37 @@ static int add_iov_hinfo_some_value(conn *c, item_info *hinfo, int length)
     if (hinfo->nvalue > 0) {
         iosize = length < hinfo->nvalue
                ? length : hinfo->nvalue;
-        if (add_iov(c, hinfo->value, iosize) != 0) {
+        if (add_iov(c, hinfo->value, iosize) != 0)
             return -1;
-        }
         length -= iosize;
     }
     for (i = 0; i < hinfo->naddnl && length > 0; i++) {
         iosize = length < hinfo->addnl[i]->len
                ? length : hinfo->addnl[i]->len;
-        if (add_iov(c, hinfo->addnl[i]->ptr, iosize) != 0) {
+        if (add_iov(c, hinfo->addnl[i]->ptr, iosize) != 0)
             return -1;
-        }
         length -= iosize;
     }
     return 0;
 }
 
-static int add_iov_einfo_value(conn *c, eitem_info *einfo)
+static int add_iov_einfo_value_all(conn *c, eitem_info *einfo)
 {
-    if (einfo->nvalue && add_iov(c, einfo->value, einfo->nvalue) != 0) {
-        return -1;
+    if (einfo->nvalue > 0) {
+        if (add_iov(c, einfo->value, einfo->nvalue) != 0)
+            return -1;
     }
-    if (einfo->naddnl && add_iov_addnl(c, einfo->addnl, einfo->naddnl) != 0) {
-        return -1;
+    if (einfo->naddnl > 0) {
+        value_item **addnl = einfo->addnl;
+        for (int i = 0; i < einfo->naddnl; i++) {
+            if (add_iov(c, addnl[i]->ptr, addnl[i]->len) != 0)
+                return -1;
+        }
     }
     return 0;
 }
 
-static int add_iov_einfo_some_value(conn *c, eitem_info *einfo, int length)
+static int add_iov_einfo_value_some(conn *c, eitem_info *einfo, int length)
 {
     int i, iosize;
 
@@ -1308,17 +1307,15 @@ static int add_iov_einfo_some_value(conn *c, eitem_info *einfo, int length)
     if (einfo->nvalue > 0) {
         iosize = length < einfo->nvalue
                ? length : einfo->nvalue;
-        if (add_iov(c, einfo->value, iosize) != 0) {
+        if (add_iov(c, einfo->value, iosize) != 0)
             return -1;
-        }
         length -= iosize;
     }
     for (i = 0; i < einfo->naddnl && length > 0; i++) {
         iosize = length < einfo->addnl[i]->len
                ? length : einfo->addnl[i]->len;
-        if (add_iov(c, einfo->addnl[i]->ptr, iosize) != 0) {
+        if (add_iov(c, einfo->addnl[i]->ptr, iosize) != 0)
             return -1;
-        }
         length -= iosize;
     }
     return 0;
@@ -2165,7 +2162,7 @@ static void process_mop_get_complete(conn *c)
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem_array[f], &c->einfo);
                 resplen = make_mop_elem_response(respptr, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
                 {
                     ret = ENGINE_ENOMEM; break;
                 }
@@ -2326,7 +2323,7 @@ static void process_bop_insert_complete(conn *c)
 
                 /* add io vectors */
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value(c, &c->einfo) != 0) ||
+                    (add_iov_einfo_value_all(c, &c->einfo) != 0) ||
                     (add_iov(c, "TRIMMED\r\n", strlen("TRIMMED\r\n")) != 0))
                 {
                     mc_engine.v1->btree_elem_release(mc_engine.v0, c,
@@ -2523,7 +2520,7 @@ static void process_bop_mget_complete(conn *c)
                     resultlen += make_bop_elem_response(resultptr + resultlen, &c->einfo);
 
                     if ((add_iov(c, resultptr, resultlen) != 0) ||
-                        (add_iov_einfo_value(c, &c->einfo) != 0))
+                        (add_iov_einfo_value_all(c, &c->einfo) != 0))
                     {
                         ret = ENGINE_ENOMEM; break;
                     }
@@ -2731,7 +2728,7 @@ static void process_bop_smget_complete_old(conn *c)
                 resplen = strlen(respptr);
                 resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
                 {
                     ret = ENGINE_ENOMEM; break;
                 }
@@ -2899,7 +2896,7 @@ static void process_bop_smget_complete(conn *c)
                 idx = smres.elem_kinfo[i].kidx;
                 if ((add_iov(c, keys_array[idx].value, keys_array[idx].length) != 0) ||
                     (add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
                 {
                     ret = ENGINE_ENOMEM; break;
                 }
@@ -3118,7 +3115,7 @@ static void process_mget_complete(conn *c)
                 if (add_iov(c, "VALUE ", 6) != 0 ||
                     add_iov(c, c->hinfo.key, c->hinfo.nkey) != 0 ||
                     add_iov(c, suffix, suffix_len) != 0 ||
-                    add_iov_hinfo_value(c, &c->hinfo) != 0)
+                    add_iov_hinfo_value_all(c, &c->hinfo) != 0)
                 {
                     mc_engine.v1->release(mc_engine.v0, c, it);
                     break; /* out of memory */
@@ -3887,7 +3884,7 @@ static void process_bin_get(conn *c)
         }
 
         /* Add the data minus the CRLF */
-        add_iov_hinfo_some_value(c, &c->hinfo, c->hinfo.nbytes - 2);
+        add_iov_hinfo_value_some(c, &c->hinfo, c->hinfo.nbytes - 2);
         conn_set_state(c, conn_mwrite);
         /* Remember this command so we can garbage collect it later */
         c->item = it;
@@ -4863,7 +4860,7 @@ static void process_bin_lop_get(conn *c)
         for (i = 0; i < elem_count; i++) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST,
                                         elem_array[i], &c->einfo);
-            if (add_iov_einfo_some_value(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
+            if (add_iov_einfo_value_some(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
                 ret = ENGINE_ENOMEM; break;
             }
         }
@@ -5355,7 +5352,7 @@ static void process_bin_sop_get(conn *c)
         for (i = 0; i < elem_count; i++) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
                                         elem_array[i], &c->einfo);
-            if (add_iov_einfo_some_value(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
+            if (add_iov_einfo_value_some(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
                 ret = ENGINE_ENOMEM; break;
             }
         }
@@ -6025,7 +6022,7 @@ static void process_bin_bop_get(conn *c)
         for (i = 0; i < elem_count; i++) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                         elem_array[i], &c->einfo);
-            if (add_iov_einfo_some_value(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
+            if (add_iov_einfo_value_some(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
                 ret = ENGINE_ENOMEM; break;
             }
         }
@@ -6449,7 +6446,7 @@ static void process_bin_bop_smget_complete_old(conn *c)
             for (i = 0; i < elem_count; i++) {
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                             elem_array[i], &c->einfo);
-                if (add_iov_einfo_some_value(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
+                if (add_iov_einfo_value_some(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
                     ret = ENGINE_ENOMEM; break;
                 }
             }
@@ -6642,7 +6639,7 @@ static void process_bin_bop_smget_complete(conn *c)
             for (i = 0; i < smres.elem_count; i++) {
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                             smres.elem_array[i], &c->einfo);
-                if (add_iov_einfo_some_value(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
+                if (add_iov_einfo_value_some(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
                     ret = ENGINE_ENOMEM; break;
                 }
             }
@@ -8633,7 +8630,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                     add_iov(c, c->hinfo.key, c->hinfo.nkey) != 0 ||
                     add_iov(c, suffix, suffix_len) != 0 ||
                     (return_cas && add_iov(c, cas_val, cas_len) != 0) ||
-                    add_iov_hinfo_value(c, &c->hinfo) != 0)
+                    add_iov_hinfo_value_all(c, &c->hinfo) != 0)
                 {
                     mc_engine.v1->release(mc_engine.v0, c, it);
                     break;
@@ -10067,7 +10064,7 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
                                            elem_array[i], &c->einfo);
                 sprintf(respptr, "%u ", c->einfo.nbytes-2);
                 if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
                 {
                     ret = ENGINE_ENOMEM; break;
                 }
@@ -10484,7 +10481,7 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
                                             elem_array[i], &c->einfo);
                 sprintf(respptr, "%u ", c->einfo.nbytes-2);
                 if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
                 {
                     ret = ENGINE_ENOMEM; break;
                 }
@@ -10881,7 +10878,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
                                             elem_array[i], &c->einfo);
                 resplen = make_bop_elem_response(respptr, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
                 {
                     ret = ENGINE_ENOMEM; break;
                 }
@@ -11096,7 +11093,7 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
                                             elem_array[i], &c->einfo);
                 resplen = make_bop_elem_response(respptr, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
                 {
                     ret = ENGINE_ENOMEM; break;
                 }
@@ -11219,7 +11216,7 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey,
                                             elem_array[i], &c->einfo);
                 resplen = make_bop_elem_response(respptr, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
                 {
                     ret = ENGINE_ENOMEM; break;
                 }
