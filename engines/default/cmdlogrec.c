@@ -1261,7 +1261,7 @@ int lrec_construct_map_elem_insert(LogRec *logrec, hash_item *it, map_elem_item 
 
     log->header.logtype = LOG_MAP_ELEM_INSERT;
     log->header.updtype = UPD_MAP_ELEM_INSERT;
-    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(MapElemDelData, data) +
+    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(MapElemInsData, data) +
                                                log->body.keylen + log->body.fldlen + log->body.vallen);
     return log->header.body_length+sizeof(LogHdr);
 }
