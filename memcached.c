@@ -1967,9 +1967,9 @@ static void process_mop_delete_complete(conn *c)
         if (flist != NULL) {
             char delimiter = ' ';
             char old_delimiter = ','; /* need to keep backwards compatibility */
-            int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist);
+            int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, delimiter, (token_t*)flist);
             if (ntokens == -1) {
-                ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist);
+                ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, old_delimiter, (token_t*)flist);
             }
             if (ntokens == -1) {
                 ret = ENGINE_EBADVALUE;
@@ -2086,9 +2086,9 @@ static void process_mop_get_complete(conn *c)
         if (flist != NULL) {
             char delimiter = ' ';
             char old_delimiter = ','; /* need to keep backwards compatibility */
-            int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist);
+            int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, delimiter, (token_t*)flist);
             if (ntokens == -1) {
-                ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist);
+                ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, old_delimiter, (token_t*)flist);
             }
             if (ntokens == -1) {
                 ret = ENGINE_EBADVALUE;
@@ -2448,9 +2448,9 @@ static void process_bop_mget_complete(conn *c)
     if (key_tokens != NULL) {
         char delimiter = ' ';
         char old_delimiter = ','; /* need to keep backwards compatibility */
-        int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, key_tokens);
+        int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, delimiter, key_tokens);
         if (ntokens == -1) {
-            ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, key_tokens);
+            ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, old_delimiter, key_tokens);
         }
         if (ntokens == -1) {
             ret = ENGINE_EBADVALUE;
@@ -2667,9 +2667,9 @@ static void process_bop_smget_complete_old(conn *c)
     if (keys_array != NULL) {
         char delimiter = ' ';
         char old_delimiter = ','; /* need to keep backwards compatibility */
-        int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+        int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, delimiter, keys_array);
         if (ntokens == -1) {
-            ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
+            ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, old_delimiter, keys_array);
         }
         if (ntokens == -1) {
             ret = ENGINE_EBADVALUE;
@@ -2831,9 +2831,9 @@ static void process_bop_smget_complete(conn *c)
     if (keys_array != NULL) {
         char delimiter = ' ';
         char old_delimiter = ','; /* need to keep backwards compatibility */
-        int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
+        int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, delimiter, keys_array);
         if (ntokens == -1) {
-            ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
+            ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, old_delimiter, keys_array);
         }
         if (ntokens == -1) {
             ret = ENGINE_EBADVALUE;
@@ -3047,7 +3047,7 @@ static void process_mget_complete(conn *c)
         key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, kcnt);
         if (key_tokens != NULL) {
             char delimiter = ' ';
-            int ntokens = tokenize_sblocks(&c->memblist, vlen, delimiter, kcnt, key_tokens);
+            int ntokens = tokenize_sblocks(&c->memblist, vlen, kcnt, delimiter, key_tokens);
             if (ntokens == -1) {
                 ret = ENGINE_EBADVALUE; break;
             }
@@ -6357,9 +6357,9 @@ static void process_bin_bop_smget_complete_old(conn *c)
     if (keys_array != NULL) {
         char delimiter = ' ';
         char old_delimiter = ','; /* need to keep backwards compatibility */
-        int ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, delimiter, c->coll_numkeys, keys_array);
+        int ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, c->coll_numkeys, delimiter, keys_array);
         if (ntokens == -1) {
-            ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, keys_array);
+            ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, c->coll_numkeys, old_delimiter, keys_array);
         }
         if (ntokens == -1) {
             ret = ENGINE_EBADVALUE;
@@ -6542,9 +6542,9 @@ static void process_bin_bop_smget_complete(conn *c)
     if (keys_array != NULL) {
         char delimiter = ' ';
         char old_delimiter = ','; /* need to keep backwards compatibility */
-        int ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, delimiter, c->coll_numkeys, keys_array);
+        int ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, c->coll_numkeys, delimiter, keys_array);
         if (ntokens == -1) {
-            ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, keys_array);
+            ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, c->coll_numkeys, old_delimiter, keys_array);
         }
         if (ntokens == -1) {
             ret = ENGINE_EBADVALUE;

@@ -308,18 +308,17 @@ int detokenize(token_t *tokens, int ntokens, char *buffer, int length)
     return nb;
 }
 
-int tokenize_keys(char *keystr, int slength, char delimiter, int keycnt, token_t *tokens)
+int tokenize_keys(char *keystr, int keylen, int keycnt, char delimiter, token_t *tokens)
 {
+    assert(keystr != NULL && keylen > 0 && keycnt > 0 && tokens != NULL);
     char *s, *e;
     int checked = 0;
     int ntokens = 0;
     bool finish = false;
 
-    assert(keystr != NULL && slength > 0 && tokens != NULL && keycnt > 0);
-
     s = keystr;
     for (e = s; ntokens < keycnt; ++e, ++checked) {
-        if (checked >= slength) {
+        if (checked >= keylen) {
             if (s == e) break;
             tokens[ntokens].value = s;
             tokens[ntokens].length = e - s;
@@ -489,7 +488,7 @@ static int build_complete_strings(mblck_list_t *blist, token_t *tokens,
 /*
  * Assume key string blocks without the trailing "\r\n" characters.
  */
-int tokenize_mblocks(mblck_list_t *blist, int length, char delimiter, int keycnt, token_t *tokens)
+int tokenize_mblocks(mblck_list_t *blist, int keylen, int keycnt, char delimiter, token_t *tokens)
 {
     mblck_node_t *blckptr;
     char         *dataptr;
@@ -503,12 +502,12 @@ int tokenize_mblocks(mblck_list_t *blist, int length, char delimiter, int keycnt
     uint32_t    nsegtok = 0;
     int         ret = 0;
 
-    assert(length > 0 && keycnt > 0 && tokens != NULL);
+    assert(keylen > 0 && keycnt > 0 && tokens != NULL);
 
     /* prepare block info */
-    numblks = ((length - 1) / bodylen) + 1;
-    lastlen = (length % bodylen) > 0
-            ? (length % bodylen) : bodylen;
+    numblks = ((keylen - 1) / bodylen) + 1;
+    lastlen = (keylen % bodylen) > 0
+            ? (keylen % bodylen) : bodylen;
 
     /* get the first block */
     chkblks = 1;
@@ -581,13 +580,13 @@ int tokenize_mblocks(mblck_list_t *blist, int length, char delimiter, int keycnt
 /*
  * Assume key string blocks in ascii protocol.
  */
-int tokenize_sblocks(mblck_list_t *blist, int length, char delimiter, int keycnt, token_t *tokens)
+int tokenize_sblocks(mblck_list_t *blist, int keylen, int keycnt, char delimiter, token_t *tokens)
 {
-    assert(length > 2);
+    assert(keylen > 2);
+
     /* check the last "\r\n" string */
-    if (check_sblock_tail_string(blist, length) != 0) {
+    if (check_sblock_tail_string(blist, keylen) != 0) {
         return -1; /* invalid tail string */
     }
-
-    return tokenize_mblocks(blist, length-2, delimiter, keycnt, tokens);
+    return tokenize_mblocks(blist, keylen-2, keycnt, delimiter, tokens);
 }
