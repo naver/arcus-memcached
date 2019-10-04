@@ -237,11 +237,10 @@ void token_buff_release(token_buff_t *buff, void *tokens)
  */
 size_t tokenize_command(char *command, int cmdlen, token_t *tokens, const size_t max_tokens)
 {
+    assert(command != NULL && tokens != NULL && max_tokens > 1);
     char *s, *e = NULL;
     size_t ntokens = 0;
     size_t checked = 0;
-
-    assert(command != NULL && tokens != NULL && max_tokens > 1);
 
     s = command;
     while (ntokens < max_tokens - 1) {
@@ -379,18 +378,16 @@ static int check_sblock_tail_string(mblck_list_t *sblcks, int length)
     return 0;
 }
 
-static int tokenize_mblck(char *keystr, int slength, char delimiter, int keycnt, token_t *tokens)
+static int tokenize_mblck(char *keystr, int keylen, int keycnt, char delimiter, token_t *tokens)
 {
     char *s, *e;
     int checked = 0;
     int ntokens = 0;
     bool finish = false;
 
-    assert(keystr != NULL && slength > 0 && tokens != NULL && keycnt > 0);
-
     s = keystr;
     for (e = s; ntokens < keycnt; ++e, ++checked) {
-        if (checked >= slength) {
+        if (checked >= keylen) {
             if (s == e) break;
             tokens[ntokens].value = s;
             tokens[ntokens].length = e - s;
@@ -490,6 +487,7 @@ static int build_complete_strings(mblck_list_t *blist, token_t *tokens,
  */
 int tokenize_mblocks(mblck_list_t *blist, int keylen, int keycnt, char delimiter, token_t *tokens)
 {
+    assert(keylen > 0 && keycnt > 0 && tokens != NULL);
     mblck_node_t *blckptr;
     char         *dataptr;
     uint32_t    numblks;
@@ -501,8 +499,6 @@ int tokenize_mblocks(mblck_list_t *blist, int keylen, int keycnt, char delimiter
     segtok_t    segtoks[SEGTOK_ARRAY_SIZE];
     uint32_t    nsegtok = 0;
     int         ret = 0;
-
-    assert(keylen > 0 && keycnt > 0 && tokens != NULL);
 
     /* prepare block info */
     numblks = ((keylen - 1) / bodylen) + 1;
@@ -527,8 +523,8 @@ int tokenize_mblocks(mblck_list_t *blist, int keylen, int keycnt, char delimiter
         }
 
         /* tokenize string in the block */
-        int tokcnt = tokenize_mblck(dataptr, datalen, delimiter,
-                                    keycnt-ntokens, &tokens[ntokens]);
+        int tokcnt = tokenize_mblck(dataptr, datalen, keycnt-ntokens, delimiter,
+                                    &tokens[ntokens]);
         if (tokcnt <= 0) {
             ret = -1; break;
         }
