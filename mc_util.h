@@ -85,7 +85,9 @@ void  token_buff_release(token_buff_t *buff, void *tokens);
 size_t tokenize_command(char *command, int cmdlen, token_t *tokens, const size_t max_tokens);
 int    detokenize(token_t *tokens, int ntokens, char *buffer, int length);
 int    tokenize_keys(char *keystr, int keylen, int keycnt, char delimiter, token_t *tokens);
-int    tokenize_mblocks(mblck_list_t *blist, int keylen, int keycnt, char delimiter, token_t *tokens);
-int    tokenize_sblocks(mblck_list_t *blist, int keylen, int keycnt, char delimiter, token_t *tokens);
+ENGINE_ERROR_CODE tokenize_mblocks(mblck_list_t *blist, int keylen, int keycnt,
+                                   token_t *tokens, bool must_backward_compatible);
+ENGINE_ERROR_CODE tokenize_sblocks(mblck_list_t *blist, int keylen, int keycnt,
+                                   token_t *tokens, bool must_backward_compatible);
 
 #endif

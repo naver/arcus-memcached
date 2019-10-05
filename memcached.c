@@ -1965,17 +1965,10 @@ static void process_mop_delete_complete(conn *c)
     if (c->coll_strkeys != NULL) {
         flist = (field_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
         if (flist != NULL) {
-            char delimiter = ' ';
-            char old_delimiter = ','; /* need to keep backwards compatibility */
-            int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, delimiter, (token_t*)flist);
-            if (ntokens == -1) {
-                ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, old_delimiter, (token_t*)flist);
-            }
-            if (ntokens == -1) {
-                ret = ENGINE_EBADVALUE;
-            } else if (ntokens == -2) {
-                ret = ENGINE_ENOMEM;
-            }
+            bool must_backward_compatible = true; /* Must be backward compatible */
+            ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, (token_t*)flist,
+                                   must_backward_compatible);
+            /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
         } else {
             ret = ENGINE_ENOMEM;
         }
@@ -2084,17 +2077,10 @@ static void process_mop_get_complete(conn *c)
     if (ret == ENGINE_SUCCESS && c->coll_strkeys != NULL) {
         flist = (field_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
         if (flist != NULL) {
-            char delimiter = ' ';
-            char old_delimiter = ','; /* need to keep backwards compatibility */
-            int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, delimiter, (token_t*)flist);
-            if (ntokens == -1) {
-                ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, old_delimiter, (token_t*)flist);
-            }
-            if (ntokens == -1) {
-                ret = ENGINE_EBADVALUE;
-            } else if (ntokens == -2) {
-                ret = ENGINE_ENOMEM;
-            }
+            bool must_backward_compatible = true; /* Must be backward compatible */
+            ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, (token_t*)flist,
+                                   must_backward_compatible);
+            /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
         } else {
             ret = ENGINE_ENOMEM;
         }
@@ -2446,17 +2432,10 @@ static void process_bop_mget_complete(conn *c)
 
     key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (key_tokens != NULL) {
-        char delimiter = ' ';
-        char old_delimiter = ','; /* need to keep backwards compatibility */
-        int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, delimiter, key_tokens);
-        if (ntokens == -1) {
-            ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, old_delimiter, key_tokens);
-        }
-        if (ntokens == -1) {
-            ret = ENGINE_EBADVALUE;
-        } else if (ntokens == -2) {
-            ret = ENGINE_ENOMEM;
-        }
+        bool must_backward_compatible = true; /* Must be backward compatible */
+        ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, key_tokens,
+                               must_backward_compatible);
+        /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
     } else {
         ret = ENGINE_ENOMEM;
     }
@@ -2665,17 +2644,10 @@ static void process_bop_smget_complete_old(conn *c)
 
     keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (keys_array != NULL) {
-        char delimiter = ' ';
-        char old_delimiter = ','; /* need to keep backwards compatibility */
-        int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, delimiter, keys_array);
-        if (ntokens == -1) {
-            ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, old_delimiter, keys_array);
-        }
-        if (ntokens == -1) {
-            ret = ENGINE_EBADVALUE;
-        } else if (ntokens == -2) {
-            ret = ENGINE_ENOMEM;
-        }
+        bool must_backward_compatible = true; /* Must be backward compatible */
+        ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, keys_array,
+                               must_backward_compatible);
+        /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
     } else {
         ret = ENGINE_ENOMEM;
     }
@@ -2829,17 +2801,10 @@ static void process_bop_smget_complete(conn *c)
 
     keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (keys_array != NULL) {
-        char delimiter = ' ';
-        char old_delimiter = ','; /* need to keep backwards compatibility */
-        int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, delimiter, keys_array);
-        if (ntokens == -1) {
-            ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, old_delimiter, keys_array);
-        }
-        if (ntokens == -1) {
-            ret = ENGINE_EBADVALUE;
-        } else if (ntokens == -2) {
-            ret = ENGINE_ENOMEM;
-        }
+        bool must_backward_compatible = true; /* Must be backward compatible */
+        ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, keys_array,
+                               must_backward_compatible);
+        /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
     } else {
         ret = ENGINE_ENOMEM;
     }
@@ -3046,13 +3011,11 @@ static void process_mget_complete(conn *c)
     do {
         key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, kcnt);
         if (key_tokens != NULL) {
-            char delimiter = ' ';
-            int ntokens = tokenize_sblocks(&c->memblist, vlen, kcnt, delimiter, key_tokens);
-            if (ntokens == -1) {
-                ret = ENGINE_EBADVALUE; break;
-            }
-            if (ntokens == -2) {
-                ret = ENGINE_ENOMEM; break;
+            bool must_backward_compatible = false;
+            ret = tokenize_sblocks(&c->memblist, vlen, kcnt, key_tokens,
+                                   must_backward_compatible);
+            if (ret != ENGINE_SUCCESS) {
+                break; /* ENGINE_EBADVALUE | ENGINE_ENOMEM */
             }
         } else {
             ret = ENGINE_ENOMEM; break;
@@ -6355,17 +6318,10 @@ static void process_bin_bop_smget_complete_old(conn *c)
      */
     keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (keys_array != NULL) {
-        char delimiter = ' ';
-        char old_delimiter = ','; /* need to keep backwards compatibility */
-        int ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, c->coll_numkeys, delimiter, keys_array);
-        if (ntokens == -1) {
-            ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, c->coll_numkeys, old_delimiter, keys_array);
-        }
-        if (ntokens == -1) {
-            ret = ENGINE_EBADVALUE;
-        } else if (ntokens == -2) {
-            ret = ENGINE_ENOMEM;
-        }
+        bool must_backward_compatible = true; /* Must be backward compatible */
+        ret = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, c->coll_numkeys, keys_array,
+                               must_backward_compatible);
+        /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
     } else {
         ret = ENGINE_ENOMEM;
     }
@@ -6540,17 +6496,10 @@ static void process_bin_bop_smget_complete(conn *c)
      */
     keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (keys_array != NULL) {
-        char delimiter = ' ';
-        char old_delimiter = ','; /* need to keep backwards compatibility */
-        int ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, c->coll_numkeys, delimiter, keys_array);
-        if (ntokens == -1) {
-            ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, c->coll_numkeys, old_delimiter, keys_array);
-        }
-        if (ntokens == -1) {
-            ret = ENGINE_EBADVALUE;
-        } else if (ntokens == -2) {
-            ret = ENGINE_ENOMEM;
-        }
+        bool must_backward_compatible = true; /* Must be backward compatible */
+        ret = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, c->coll_numkeys, keys_array,
+                               must_backward_compatible);
+        /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
     } else {
         ret = ENGINE_ENOMEM;
     }
