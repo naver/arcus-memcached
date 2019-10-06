@@ -1609,10 +1609,9 @@ static void process_lop_insert_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_LOP_INSERT);
     assert(c->coll_eitem != NULL);
-    eitem *elem = (eitem *)c->coll_eitem;
     ENGINE_ERROR_CODE ret;
 
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &c->einfo);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, c->coll_eitem, &c->einfo);
 
     if (einfo_check_ascii_tail_string(&c->einfo) != 0) { /* check "\r\n" */
         ret = ENGINE_EINVAL;
@@ -1620,7 +1619,7 @@ static void process_lop_insert_complete(conn *c)
     } else {
         bool created;
         ret = mc_engine.v1->list_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
-                                             c->coll_index, elem,
+                                             c->coll_index, c->coll_eitem,
                                              c->coll_attrp, &created, 0);
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
@@ -1664,7 +1663,7 @@ static void process_lop_insert_complete(conn *c)
     }
 
     if (ret != ENGINE_SUCCESS) {
-        mc_engine.v1->list_elem_free(mc_engine.v0, c, elem);
+        mc_engine.v1->list_elem_free(mc_engine.v0, c, c->coll_eitem);
     }
     c->coll_eitem = NULL;
 }
@@ -1673,9 +1672,8 @@ static void process_sop_insert_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_SOP_INSERT);
     assert(c->coll_eitem != NULL);
-    eitem *elem = (eitem *)c->coll_eitem;
 
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, elem, &c->einfo);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, c->coll_eitem, &c->einfo);
 
     if (einfo_check_ascii_tail_string(&c->einfo) != 0) { /* check "\r\n" */
         out_string(c, "CLIENT_ERROR bad data chunk");
@@ -1684,7 +1682,7 @@ static void process_sop_insert_complete(conn *c)
         ENGINE_ERROR_CODE ret;
 
         ret = mc_engine.v1->set_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
-                                            elem, c->coll_attrp, &created, 0);
+                                            c->coll_eitem, c->coll_attrp, &created, 0);
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
             ret = ENGINE_SUCCESS;
@@ -1843,9 +1841,8 @@ static void process_mop_insert_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_MOP_INSERT);
     assert(c->coll_eitem != NULL);
-    eitem *elem = (eitem *)c->coll_eitem;
 
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem, &c->einfo);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, c->coll_eitem, &c->einfo);
 
     /* copy the field string into the element item. */
     memcpy((void*)c->einfo.score, c->coll_field.value, c->coll_field.length);
@@ -1857,7 +1854,7 @@ static void process_mop_insert_complete(conn *c)
         ENGINE_ERROR_CODE ret;
 
         ret = mc_engine.v1->map_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
-                                            elem, c->coll_attrp, &created, 0);
+                                            c->coll_eitem, c->coll_attrp, &created, 0);
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
             ret = ENGINE_SUCCESS;
@@ -1942,10 +1939,8 @@ static void process_mop_update_complete(conn *c)
         }
     }
 
-    if (c->coll_eitem != NULL) {
-        free((void*)c->coll_eitem);
-        c->coll_eitem = NULL;
-    }
+    free((void*)c->coll_eitem);
+    c->coll_eitem = NULL;
 }
 
 static void process_mop_delete_complete(conn *c)
@@ -2246,9 +2241,8 @@ static void process_bop_insert_complete(conn *c)
     assert(c->coll_op == OPERATION_BOP_INSERT ||
            c->coll_op == OPERATION_BOP_UPSERT);
     assert(c->coll_eitem != NULL);
-    eitem *elem = (eitem *)c->coll_eitem;
 
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &c->einfo);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, c->coll_eitem, &c->einfo);
 
     if (einfo_check_ascii_tail_string(&c->einfo) != 0) { /* check "\r\n" */
         // release the btree element
@@ -2263,7 +2257,7 @@ static void process_bop_insert_complete(conn *c)
         ENGINE_ERROR_CODE ret;
 
         ret = mc_engine.v1->btree_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
-                                              elem, replace_if_exist,
+                                              c->coll_eitem, replace_if_exist,
                                               c->coll_attrp, &replaced, &created,
                                               (c->coll_drop ? &trim_result : NULL), 0);
         if (ret == ENGINE_EWOULDBLOCK) {
@@ -2271,7 +2265,7 @@ static void process_bop_insert_complete(conn *c)
             ret = ENGINE_SUCCESS;
         }
 
-        // release the btree element inserted.
+        // release the btree element in advance since coll_eitem field is to be used, soon.
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         c->coll_eitem = NULL;
 
@@ -4585,17 +4579,16 @@ static void process_bin_lop_insert_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_LOP_INSERT);
     assert(c->coll_eitem != NULL);
-    eitem *elem = (eitem *)c->coll_eitem;
 
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &c->einfo);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, c->coll_eitem, &c->einfo);
     einfo_set_ascii_tail_string(&c->einfo); /* set "\r\n" */
 
     bool created;
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->list_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
-                                         c->coll_index, elem,
+                                         c->coll_index, c->coll_eitem,
                                          c->coll_attrp, &created,
                                          c->binary_header.request.vbucket);
     if (ret == ENGINE_EWOULDBLOCK) {
@@ -4637,7 +4630,7 @@ static void process_bin_lop_insert_complete(conn *c)
     }
 
     if (ret != ENGINE_SUCCESS) {
-        mc_engine.v1->list_elem_free(mc_engine.v0, c, elem);
+        mc_engine.v1->list_elem_free(mc_engine.v0, c, c->coll_eitem);
     }
     c->coll_eitem = NULL;
 }
@@ -5041,18 +5034,17 @@ static void process_bin_sop_prepare_nread(conn *c)
 static void process_bin_sop_insert_complete(conn *c)
 {
     assert(c->coll_eitem != NULL);
-    eitem *elem = c->coll_eitem;
 
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, elem, &c->einfo);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, c->coll_eitem, &c->einfo);
     einfo_set_ascii_tail_string(&c->einfo); /* set "\r\n" */
 
     bool created;
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->set_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
-                                        elem, c->coll_attrp, &created,
+                                        c->coll_eitem, c->coll_attrp, &created,
                                         c->binary_header.request.vbucket);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
@@ -5529,11 +5521,10 @@ static void process_bin_bop_insert_complete(conn *c)
     assert(c->coll_op == OPERATION_BOP_INSERT ||
            c->coll_op == OPERATION_BOP_UPSERT);
     assert(c->coll_eitem != NULL);
-    eitem *elem = (eitem *)c->coll_eitem;
 
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &c->einfo);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, c->coll_eitem, &c->einfo);
     einfo_set_ascii_tail_string(&c->einfo); /* set "\r\n" */
 
     bool created;
@@ -5542,7 +5533,7 @@ static void process_bin_bop_insert_complete(conn *c)
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
-                                          elem, replace_if_exist,
+                                          c->coll_eitem, replace_if_exist,
                                           c->coll_attrp, &replaced, &created, NULL,
                                           c->binary_header.request.vbucket);
     if (ret == ENGINE_EWOULDBLOCK) {
