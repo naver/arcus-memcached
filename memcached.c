@@ -1619,8 +1619,8 @@ static void process_lop_insert_complete(conn *c)
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         bool created;
-        ret = mc_engine.v1->list_elem_insert(mc_engine.v0, c,
-                                             c->coll_key, c->coll_nkey, c->coll_index, elem,
+        ret = mc_engine.v1->list_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                             c->coll_index, elem,
                                              c->coll_attrp, &created, 0);
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
@@ -1683,9 +1683,8 @@ static void process_sop_insert_complete(conn *c)
         bool created;
         ENGINE_ERROR_CODE ret;
 
-        ret = mc_engine.v1->set_elem_insert(mc_engine.v0, c,
-                                            c->coll_key, c->coll_nkey, elem,
-                                            c->coll_attrp, &created, 0);
+        ret = mc_engine.v1->set_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                            elem, c->coll_attrp, &created, 0);
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
             ret = ENGINE_SUCCESS;
@@ -1736,8 +1735,7 @@ static void process_sop_delete_complete(conn *c)
         bool dropped;
         ENGINE_ERROR_CODE ret;
 
-        ret = mc_engine.v1->set_elem_delete(mc_engine.v0, c,
-                                            c->coll_key, c->coll_nkey,
+        ret = mc_engine.v1->set_elem_delete(mc_engine.v0, c, c->coll_key, c->coll_nkey,
                                             value->ptr, value->len, c->coll_drop,
                                             &dropped, 0);
         if (ret == ENGINE_EWOULDBLOCK) {
@@ -1791,8 +1789,7 @@ static void process_sop_exist_complete(conn *c)
         bool exist;
         ENGINE_ERROR_CODE ret;
 
-        ret = mc_engine.v1->set_elem_exist(mc_engine.v0, c,
-                                           c->coll_key, c->coll_nkey,
+        ret = mc_engine.v1->set_elem_exist(mc_engine.v0, c, c->coll_key, c->coll_nkey,
                                            value->ptr, value->len, &exist, 0);
         if (settings.detail_enabled) {
             stats_prefix_record_sop_exist(c->coll_key, c->coll_nkey,
@@ -1859,9 +1856,8 @@ static void process_mop_insert_complete(conn *c)
         bool created;
         ENGINE_ERROR_CODE ret;
 
-        ret = mc_engine.v1->map_elem_insert(mc_engine.v0, c,
-                                            c->coll_key, c->coll_nkey, elem,
-                                            c->coll_attrp, &created, 0);
+        ret = mc_engine.v1->map_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                            elem, c->coll_attrp, &created, 0);
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
             ret = ENGINE_SUCCESS;
@@ -1910,9 +1906,8 @@ static void process_mop_update_complete(conn *c)
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         ENGINE_ERROR_CODE ret;
-        ret = mc_engine.v1->map_elem_update(mc_engine.v0, c,
-                                            c->coll_key, c->coll_nkey, &c->coll_field,
-                                            value->ptr, value->len, 0);
+        ret = mc_engine.v1->map_elem_update(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                            &c->coll_field, value->ptr, value->len, 0);
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
             ret = ENGINE_SUCCESS;
@@ -1984,8 +1979,8 @@ static void process_mop_delete_complete(conn *c)
 
     if (ret == ENGINE_SUCCESS) {
         ret = mc_engine.v1->map_elem_delete(mc_engine.v0, c, c->coll_key, c->coll_nkey,
-                                            c->coll_numkeys, fld_tokens,
-                                            c->coll_drop, &del_count, &dropped, 0);
+                                            c->coll_numkeys, fld_tokens, c->coll_drop,
+                                            &del_count, &dropped, 0);
     }
 
     if (ret == ENGINE_EWOULDBLOCK) {
@@ -2095,8 +2090,9 @@ static void process_mop_get_complete(conn *c)
     }
 
     if (ret == ENGINE_SUCCESS) {
-        ret = mc_engine.v1->map_elem_get(mc_engine.v0, c, c->coll_key, c->coll_nkey, c->coll_numkeys, fld_tokens,
-                                         delete, drop_if_empty, elem_array, &elem_count, &flags, &dropped, 0);
+        ret = mc_engine.v1->map_elem_get(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                         c->coll_numkeys, fld_tokens, delete, drop_if_empty,
+                                         elem_array, &elem_count, &flags, &dropped, 0);
     }
 
     if (ret == ENGINE_EWOULDBLOCK) {
@@ -2266,8 +2262,8 @@ static void process_bop_insert_complete(conn *c)
         bool replace_if_exist = (c->coll_op == OPERATION_BOP_UPSERT ? true : false);
         ENGINE_ERROR_CODE ret;
 
-        ret = mc_engine.v1->btree_elem_insert(mc_engine.v0, c,
-                                              c->coll_key, c->coll_nkey, elem, replace_if_exist,
+        ret = mc_engine.v1->btree_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                              elem, replace_if_exist,
                                               c->coll_attrp, &replaced, &created,
                                               (c->coll_drop ? &trim_result : NULL), 0);
         if (ret == ENGINE_EWOULDBLOCK) {
@@ -2372,8 +2368,7 @@ static void process_bop_update_complete(conn *c)
     eupdate_ptr = (c->coll_eupdate.neflag == EFLAG_NULL ? NULL : &c->coll_eupdate);
 
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->btree_elem_update(mc_engine.v0, c,
-                                          c->coll_key, c->coll_nkey,
+    ret = mc_engine.v1->btree_elem_update(mc_engine.v0, c, c->coll_key, c->coll_nkey,
                                           &c->coll_bkrange, eupdate_ptr,
                                           new_value, new_nbytes, 0);
     if (ret == ENGINE_EWOULDBLOCK) {
@@ -2460,13 +2455,12 @@ static void process_bop_mget_complete(conn *c)
 
         for (k = 0; k < c->coll_numkeys; k++) {
             ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c,
-                                             key_tokens[k].value, key_tokens[k].length,
-                                             &c->coll_bkrange,
-                                             (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
-                                             c->coll_roffset, c->coll_rcount,
-                                             false, false,
-                                             &elem_array[tot_elem_count], &cur_elem_count,
-                                             &cur_access_count, &flags, &trimmed, 0);
+                                               key_tokens[k].value, key_tokens[k].length,
+                                               &c->coll_bkrange,
+                                               (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
+                                               c->coll_roffset, c->coll_rcount, false, false,
+                                               &elem_array[tot_elem_count], &cur_elem_count,
+                                               &cur_access_count, &flags, &trimmed, 0);
 
             if (settings.detail_enabled) {
                 stats_prefix_record_bop_get(key_tokens[k].value, key_tokens[k].length,
@@ -2660,8 +2654,7 @@ static void process_bop_smget_complete_old(conn *c)
         assert(c->coll_numkeys > 0);
         assert(c->coll_rcount > 0);
         assert((c->coll_roffset + c->coll_rcount) <= MAX_SMGET_REQ_COUNT);
-        ret = mc_engine.v1->btree_elem_smget_old(mc_engine.v0, c,
-                                             key_tokens, c->coll_numkeys,
+        ret = mc_engine.v1->btree_elem_smget_old(mc_engine.v0, c, key_tokens, c->coll_numkeys,
                                              &c->coll_bkrange,
                                              (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
                                              c->coll_roffset, c->coll_rcount,
@@ -2817,8 +2810,7 @@ static void process_bop_smget_complete(conn *c)
         assert(c->coll_numkeys > 0);
         assert(c->coll_rcount > 0);
         assert((c->coll_roffset + c->coll_rcount) <= MAX_SMGET_REQ_COUNT);
-        ret = mc_engine.v1->btree_elem_smget(mc_engine.v0, c,
-                                             key_tokens, c->coll_numkeys,
+        ret = mc_engine.v1->btree_elem_smget(mc_engine.v0, c, key_tokens, c->coll_numkeys,
                                              &c->coll_bkrange,
                                              (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
                                              c->coll_roffset, c->coll_rcount,
@@ -4602,10 +4594,10 @@ static void process_bin_lop_insert_complete(conn *c)
 
     bool created;
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->list_elem_insert(mc_engine.v0, c,
-                                   c->coll_key, c->coll_nkey, c->coll_index, elem,
-                                   c->coll_attrp, &created,
-                                   c->binary_header.request.vbucket);
+    ret = mc_engine.v1->list_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                         c->coll_index, elem,
+                                         c->coll_attrp, &created,
+                                         c->binary_header.request.vbucket);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -5059,10 +5051,9 @@ static void process_bin_sop_insert_complete(conn *c)
     bool created;
 
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->set_elem_insert(mc_engine.v0, c,
-                                  c->coll_key, c->coll_nkey, elem,
-                                  c->coll_attrp, &created,
-                                  c->binary_header.request.vbucket);
+    ret = mc_engine.v1->set_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                        elem, c->coll_attrp, &created,
+                                        c->binary_header.request.vbucket);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -5117,11 +5108,9 @@ static void process_bin_sop_delete_complete(conn *c)
 
     bool dropped;
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->set_elem_delete(mc_engine.v0, c,
-                                        c->coll_key, c->coll_nkey,
-                                        value->ptr, value->len,
-                                        c->coll_drop, &dropped,
-                                        c->binary_header.request.vbucket);
+    ret = mc_engine.v1->set_elem_delete(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                        value->ptr, value->len, c->coll_drop,
+                                        &dropped, c->binary_header.request.vbucket);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -5172,10 +5161,9 @@ static void process_bin_sop_exist_complete(conn *c)
 
     bool exist;
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->set_elem_exist(mc_engine.v0, c,
-                                       c->coll_key, c->coll_nkey,
-                                       value->ptr, value->len,
-                                       &exist, c->binary_header.request.vbucket);
+    ret = mc_engine.v1->set_elem_exist(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                       value->ptr, value->len, &exist,
+                                       c->binary_header.request.vbucket);
 
     if (settings.detail_enabled) {
         stats_prefix_record_sop_exist(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
@@ -5479,8 +5467,7 @@ static void process_bin_bop_prepare_nread(conn *c)
     } else {
         ret = mc_engine.v1->btree_elem_alloc(mc_engine.v0, c, key, nkey,
                                              req->message.body.nbkey,
-                                             req->message.body.neflag, vlen+2,
-                                             &elem);
+                                             req->message.body.neflag, vlen+2, &elem);
     }
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
@@ -5554,10 +5541,10 @@ static void process_bin_bop_insert_complete(conn *c)
     bool replace_if_exist = (c->coll_op == OPERATION_BOP_UPSERT ? true : false);
 
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->btree_elem_insert(mc_engine.v0, c,
-                                   c->coll_key, c->coll_nkey, elem, replace_if_exist,
-                                   c->coll_attrp, &replaced, &created, NULL,
-                                   c->binary_header.request.vbucket);
+    ret = mc_engine.v1->btree_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                          elem, replace_if_exist,
+                                          c->coll_attrp, &replaced, &created, NULL,
+                                          c->binary_header.request.vbucket);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -5633,11 +5620,10 @@ static void process_bin_bop_update_complete(conn *c)
     eupdate_ptr = (c->coll_eupdate.neflag == EFLAG_NULL ? NULL : &c->coll_eupdate);
 
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->btree_elem_update(mc_engine.v0, c,
-                                       c->coll_key, c->coll_nkey,
-                                       &c->coll_bkrange, eupdate_ptr,
-                                       new_value, new_nbytes,
-                                       c->binary_header.request.vbucket);
+    ret = mc_engine.v1->btree_elem_update(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                          &c->coll_bkrange, eupdate_ptr,
+                                          new_value, new_nbytes,
+                                          c->binary_header.request.vbucket);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -6071,7 +6057,8 @@ static void process_bin_bop_count(conn *c)
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_elem_count(mc_engine.v0, c, key, nkey,
-                                         bkrange, efilter, &elem_count, &access_count,
+                                         bkrange, efilter,
+                                         &elem_count, &access_count,
                                          c->binary_header.request.vbucket);
 
     if (settings.detail_enabled) {
@@ -6332,14 +6319,13 @@ static void process_bin_bop_smget_complete_old(conn *c)
         assert(c->coll_numkeys > 0);
         assert(c->coll_rcount > 0);
         assert((c->coll_roffset + c->coll_rcount) <= MAX_SMGET_REQ_COUNT);
-        ret = mc_engine.v1->btree_elem_smget_old(mc_engine.v0, c,
-                                     key_tokens, c->coll_numkeys,
-                                     &c->coll_bkrange,
-                                     (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
-                                     c->coll_roffset, c->coll_rcount,
-                                     elem_array, kfnd_array, flag_array, &elem_count,
-                                     kmis_array, &kmis_count, &trimmed, &duplicated,
-                                     c->binary_header.request.vbucket);
+        ret = mc_engine.v1->btree_elem_smget_old(mc_engine.v0, c, key_tokens, c->coll_numkeys,
+                                             &c->coll_bkrange,
+                                             (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
+                                             c->coll_roffset, c->coll_rcount,
+                                             elem_array, kfnd_array, flag_array, &elem_count,
+                                             kmis_array, &kmis_count, &trimmed, &duplicated,
+                                             c->binary_header.request.vbucket);
     }
 
     switch (ret) {
@@ -6510,17 +6496,16 @@ static void process_bin_bop_smget_complete(conn *c)
         assert(c->coll_numkeys > 0);
         assert(c->coll_rcount > 0);
         assert((c->coll_roffset + c->coll_rcount) <= MAX_SMGET_REQ_COUNT);
-        ret = mc_engine.v1->btree_elem_smget(mc_engine.v0, c,
-                                     key_tokens, c->coll_numkeys,
-                                     &c->coll_bkrange,
-                                     (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
-                                     c->coll_roffset, c->coll_rcount,
+        ret = mc_engine.v1->btree_elem_smget(mc_engine.v0, c, key_tokens, c->coll_numkeys,
+                                             &c->coll_bkrange,
+                                             (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
+                                             c->coll_roffset, c->coll_rcount,
 #ifdef JHPARK_OLD_SMGET_INTERFACE
-                                     (c->coll_smgmode == 2 ? true : false), &smres,
+                                             (c->coll_smgmode == 2 ? true : false), &smres,
 #else
-                                     c->coll_unique, &smres,
+                                             c->coll_unique, &smres,
 #endif
-                                     c->binary_header.request.vbucket);
+                                             c->binary_header.request.vbucket);
     }
 
     switch (ret) {
@@ -10376,9 +10361,9 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
     }
 
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->set_elem_get(mc_engine.v0, c, key, nkey, req_count,
-                                     delete, drop_if_empty, elem_array, &elem_count,
-                                     &flags, &dropped, 0);
+    ret = mc_engine.v1->set_elem_get(mc_engine.v0, c, key, nkey,
+                                     req_count, delete, drop_if_empty,
+                                     elem_array, &elem_count, &flags, &dropped, 0);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -10892,8 +10877,8 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
     uint32_t access_count;
 
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->btree_elem_count(mc_engine.v0, c,
-                                         key, nkey, bkrange, efilter,
+    ret = mc_engine.v1->btree_elem_count(mc_engine.v0, c, key, nkey,
+                                         bkrange, efilter,
                                          &elem_count, &access_count, 0);
 
     if (settings.detail_enabled) {
@@ -11505,7 +11490,8 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
     char temp[INCR_MAX_STORAGE_LEN];
 
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->btree_elem_arithmetic(mc_engine.v0, c, key, nkey, bkrange, incr, create,
+    ret = mc_engine.v1->btree_elem_arithmetic(mc_engine.v0, c, key, nkey,
+                                              bkrange, incr, create,
                                               delta, initial, eflagp, &result, 0);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
