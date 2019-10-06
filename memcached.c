@@ -2343,9 +2343,8 @@ static void process_bop_update_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_BOP_UPDATE);
     assert(c->ewouldblock == false);
-    char *new_value;
-    int  new_nbytes;
-    eflag_update *eupdate_ptr;
+    char *new_value = NULL;
+    int  new_nbytes = 0;
 
     if (c->coll_eitem != NULL) {
         value_item *value = (value_item *)c->coll_eitem;
@@ -2354,16 +2353,12 @@ static void process_bop_update_complete(conn *c)
         }
         new_value  = value->ptr;
         new_nbytes = value->len;
-    } else {
-        new_value  = NULL;
-        new_nbytes = 0;
     }
-
-    eupdate_ptr = (c->coll_eupdate.neflag == EFLAG_NULL ? NULL : &c->coll_eupdate);
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_elem_update(mc_engine.v0, c, c->coll_key, c->coll_nkey,
-                                          &c->coll_bkrange, eupdate_ptr,
+                                          &c->coll_bkrange,
+                                          (c->coll_eupdate.neflag == EFLAG_NULL ? NULL : &c->coll_eupdate),
                                           new_value, new_nbytes, 0);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
@@ -5594,25 +5589,20 @@ static void process_bin_bop_nread_complete(conn *c)
 static void process_bin_bop_update_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_BOP_UPDATE);
-    char *new_value;
-    int  new_nbytes;
-    eflag_update *eupdate_ptr;
+    char *new_value = NULL;
+    int  new_nbytes = 0;
 
     if (c->coll_eitem != NULL) {
         value_item *value = (value_item *)c->coll_eitem;
         memcpy(value->ptr + value->len - 2, "\r\n", 2);
         new_value  = value->ptr;
         new_nbytes = value->len;
-    } else {
-        new_value  = NULL;
-        new_nbytes = 0;
     }
-
-    eupdate_ptr = (c->coll_eupdate.neflag == EFLAG_NULL ? NULL : &c->coll_eupdate);
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_elem_update(mc_engine.v0, c, c->coll_key, c->coll_nkey,
-                                          &c->coll_bkrange, eupdate_ptr,
+                                          &c->coll_bkrange,
+                                          (c->coll_eupdate.neflag == EFLAG_NULL ? NULL : &c->coll_eupdate),
                                           new_value, new_nbytes,
                                           c->binary_header.request.vbucket);
     if (ret == ENGINE_EWOULDBLOCK) {
