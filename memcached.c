@@ -2350,6 +2350,9 @@ static void process_bop_update_complete(conn *c)
         value_item *value = (value_item *)c->coll_eitem;
         if (strncmp(&value->ptr[value->len-2], "\r\n", 2) != 0) {
             out_string(c, "CLIENT_ERROR bad data chunk");
+            free((void*)c->coll_eitem);
+            c->coll_eitem = NULL;
+            return;
         }
         new_value  = value->ptr;
         new_nbytes = value->len;

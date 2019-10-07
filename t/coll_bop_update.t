@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 60;
+use Test::More tests => 69;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -190,6 +190,35 @@ mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop update bkey1 60 8"; $val = "datum666"; $rst = "NOT_FOUND_ELEMENT";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop update bkey1 60 -1"; $rst = "NOTHING_TO_UPDATE";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop update bkey1 70 8"; $val = "datum7777";
+$rst = "CLIENT_ERROR bad data chunk";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$rst = "ERROR unknown command";
+Test::More::is(scalar(<$sock>), "$rst\r\n", "bop update : $rst");
+$cmd = "bop update bkey1 70 8"; $val = "datum77777";
+$rst = "CLIENT_ERROR bad data chunk";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$rst = "ERROR unknown command";
+Test::More::is(scalar(<$sock>), "$rst\r\n", "bop update : $rst");
+$cmd = "bop update bkey1 70 8"; $val = "datum777777";
+$rst = "CLIENT_ERROR bad data chunk";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$rst = "ERROR unknown command";
+Test::More::is(scalar(<$sock>), "$rst\r\n", "bop update : $rst");
+$cmd = "bop update bkey1 70 8"; $val = "datum7777777";
+$rst = "CLIENT_ERROR bad data chunk";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$rst = "ERROR unknown command";
+Test::More::is(scalar(<$sock>), "$rst\r\n", "bop update : $rst");
+$cmd = "bop get bkey1 0..100";
+$rst = "VALUE 11 5
+10 10 datum11111
+30 10 datum33333
+50 10 datum55555
+70 8 datum777
+90 8 datum999
+END";
 mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop update bkey1 0x60 8"; $val = "datum666"; $rst = "BKEY_MISMATCH";
 mem_cmd_is($sock, $cmd, $val, $rst);
