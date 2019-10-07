@@ -41,10 +41,6 @@
 #define ACTION_BEFORE_WRITE(c, k, l)
 #define ACTION_AFTER_WRITE(c, r)
 
-#ifdef ENABLE_PERSISTENCE
-#define BACKUP_DIRPATH "ARCUS-DB"
-#endif
-
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
 /*
@@ -116,42 +112,25 @@ static int check_configuration(struct engine_config *conf)
 {
 #ifdef ENABLE_PERSISTENCE
     if (conf->use_persistence) {
-        /* check data & logs directory path */
-        if (conf->data_path == NULL && conf->logs_path == NULL) {
-            logger->log(EXTENSION_LOG_INFO, NULL,
-                        "default engine - No backup directory path defined. "
-                        "%s will be used as the default path.\n", BACKUP_DIRPATH);
-            if(mkdir(BACKUP_DIRPATH, 0766) == -1 && errno != EEXIST) {
-                logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "default engine - Failed to create directory. "
-                            "path : %s. error : %s.\n", BACKUP_DIRPATH, strerror(errno));
-                return -1;
-            }
-            conf->data_path = BACKUP_DIRPATH;
-            conf->logs_path = BACKUP_DIRPATH;
-        } else if (conf->data_path != NULL && conf->logs_path != NULL) {
-            DIR *dir = opendir(conf->data_path);
-            if (dir == NULL) {
-                logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "default engine - Error in data directory path. "
-                            "path : %s. error : %s.\n", conf->data_path, strerror(errno));
-                return -1;
-            }
-            closedir(dir);
-            dir = opendir(conf->logs_path);
-            if (dir == NULL) {
-                logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "default engine - Error in logs directory path. "
-                            "path : %s. error : %s.\n", conf->logs_path, strerror(errno));
-                return -1;
-            }
-            closedir(dir);
-        } else {
+        /* check data & logs directory path. */
+        if (conf->data_path == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "default engine - Data or logs directory path is not defined.\n");
+                        "default engine - No snapshot path defined in the default_engine.conf.\n");
+            return -1;
+        } else if (access(conf->data_path, F_OK) < 0) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "default engine - No exist snapshot path. path=%s, error=%s\n", conf->data_path, strerror(errno));
             return -1;
         }
-
+        if (conf->logs_path == NULL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "default engine - No command log path defined in the default_engine.conf.\n");
+            return -1;
+        } else if (access(conf->logs_path, F_OK) < 0) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "default engine - No exist command log path. path=%s, error=%s\n", conf->data_path, strerror(errno));
+            return -1;
+        }
         /* adjust checkpoint interval */
         conf->chkpt_interval_min_logsize = conf->chkpt_interval_min_logsize * 1024 * 1024; /* MB to B */
     }
