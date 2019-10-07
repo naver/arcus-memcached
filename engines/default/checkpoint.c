@@ -66,16 +66,14 @@ static chkpt_st chkpt_anch;
 
 static int64_t getnowtime(void)
 {
+    char buf[20] = {0};
     int64_t ltime;
     time_t clock = time(0);
     struct tm *date = localtime(&clock);
 
-    ltime  = date->tm_year * 10000000000;
-    ltime += date->tm_mon  * 100000000;
-    ltime += date->tm_mday * 1000000;
-    ltime += date->tm_hour * 10000;
-    ltime += date->tm_min  * 100;
-    ltime += date->tm_sec;
+    /* year(YYYY) month(01-12) day(01-31) hour(00-23) minute(00-59) second(00-61). */
+    strftime(buf, 20, "%Y%m%d%H%M%S", date);
+    sscanf(buf, "%" SCNd64, &ltime);
     return ltime;
 }
 
