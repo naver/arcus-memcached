@@ -498,6 +498,12 @@ default_list_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
 }
 
 static void
+default_list_elem_free(ENGINE_HANDLE* handle, const void *cookie, eitem *eitem)
+{
+    list_elem_free((list_elem_item*)eitem);
+}
+
+static void
 default_list_elem_release(ENGINE_HANDLE* handle, const void *cookie,
                           eitem **eitem_array, const int eitem_count)
 {
@@ -1572,6 +1578,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          /* LIST Collection API */
          .list_struct_create = default_list_struct_create,
          .list_elem_alloc   = default_list_elem_alloc,
+         .list_elem_free    = default_list_elem_free,
          .list_elem_release = default_list_elem_release,
          .list_elem_insert  = default_list_elem_insert,
          .list_elem_delete  = default_list_elem_delete,

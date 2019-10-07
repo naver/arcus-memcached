@@ -1520,7 +1520,7 @@ static list_elem_item *do_list_elem_alloc(const uint32_t nbytes, const void *coo
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
         assert(elem->slabs_clsid > 0);
-        elem->refcount    = 1;
+        elem->refcount    = 0;
         elem->nbytes      = nbytes;
         elem->prev = elem->next = (list_elem_item *)ADDR_MEANS_UNLINKED; /* Unliked state */
     }
@@ -6593,6 +6593,13 @@ list_elem_item *list_elem_alloc(const uint32_t nbytes, const void *cookie)
     elem = do_list_elem_alloc(nbytes, cookie);
     UNLOCK_CACHE();
     return elem;
+}
+
+void list_elem_free(list_elem_item *elem)
+{
+    LOCK_CACHE();
+    do_list_elem_free(elem);
+    UNLOCK_CACHE();
 }
 
 void list_elem_release(list_elem_item **elem_array, const int elem_count)

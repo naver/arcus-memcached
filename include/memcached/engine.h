@@ -351,6 +351,8 @@ extern "C" {
                                              const void* key, const int nkey,
                                              const size_t nbytes, eitem** eitem);
 
+        void (*list_elem_free)(ENGINE_HANDLE* handle, const void* cookie, eitem *eitem);
+
         void (*list_elem_release)(ENGINE_HANDLE* handle, const void *cookie,
                                   eitem **eitem_array, const int eitem_count);
 

@@ -128,16 +128,14 @@ static int MAX_BTREE_SIZE = 50000;
     SLAB_TWO(conn, op##_badval, cmd_##op, key, nkey)
 
 #define STATS_NOKEY(conn, op) { \
-    struct thread_stats *thread_stats = \
-        get_thread_stats(conn); \
+    struct thread_stats *thread_stats = get_thread_stats(conn); \
     pthread_mutex_lock(&thread_stats->mutex); \
     thread_stats->op++; \
     pthread_mutex_unlock(&thread_stats->mutex); \
 }
 
 #define STATS_NOKEY2(conn, op1, op2) { \
-    struct thread_stats *thread_stats = \
-        get_thread_stats(conn); \
+    struct thread_stats *thread_stats = get_thread_stats(conn); \
     pthread_mutex_lock(&thread_stats->mutex); \
     thread_stats->op1++; \
     thread_stats->op2++; \
@@ -145,15 +143,11 @@ static int MAX_BTREE_SIZE = 50000;
 }
 
 #define STATS_ADD(conn, op, amt) { \
-    struct thread_stats *thread_stats = \
-        get_thread_stats(conn); \
+    struct thread_stats *thread_stats = get_thread_stats(conn); \
     pthread_mutex_lock(&thread_stats->mutex); \
     thread_stats->op += amt; \
     pthread_mutex_unlock(&thread_stats->mutex); \
 }
-
-#define GET_8ALIGN_SIZE(size) \
-    (((size) % 8) == 0 ? (size) : ((size) + (8 - ((size) % 8))))
 
 volatile sig_atomic_t memcached_shutdown=0;
 
@@ -779,7 +773,7 @@ static void conn_coll_eitem_free(conn *c)
     switch (c->coll_op) {
       /* lop */
       case OPERATION_LOP_INSERT:
-        mc_engine.v1->list_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+        mc_engine.v1->list_elem_free(mc_engine.v0, c, c->coll_eitem);
         break;
       case OPERATION_LOP_GET:
         mc_engine.v1->list_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
@@ -808,8 +802,7 @@ static void conn_coll_eitem_free(conn *c)
         mc_engine.v1->map_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         break;
       case OPERATION_MOP_UPDATE:
-        if (c->coll_eitem != NULL)
-            free(c->coll_eitem);
+        free(c->coll_eitem);
         break;
       case OPERATION_MOP_GET:
         mc_engine.v1->map_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
@@ -824,8 +817,7 @@ static void conn_coll_eitem_free(conn *c)
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         break;
       case OPERATION_BOP_UPDATE:
-        if (c->coll_eitem != NULL)
-            free(c->coll_eitem);
+        free(c->coll_eitem);
         break;
       case OPERATION_BOP_GET:
       case OPERATION_BOP_PWG: /* position with get */
@@ -850,7 +842,6 @@ static void conn_coll_eitem_free(conn *c)
       default:
         assert(0); /* This case must not happen */
     }
-    c->coll_eitem = NULL;
 }
 
 static void conn_cleanup(conn *c)
@@ -871,6 +862,7 @@ static void conn_cleanup(conn *c)
 
     if (c->coll_eitem != NULL) {
         conn_coll_eitem_free(c);
+        c->coll_eitem = NULL;
     }
     if (c->coll_strkeys != NULL) {
         assert(c->coll_strkeys == (void*)&c->memblist);
@@ -1239,27 +1231,23 @@ static int add_iov(conn *c, const void *buf, int len)
     return 0;
 }
 
-static int add_iov_addnl(conn *c, value_item **addnl, int naddnl)
+static int add_iov_hinfo_value_all(conn *c, item_info *hinfo)
 {
-    for (int i = 0; i < naddnl; i++) {
-         if (add_iov(c, addnl[i]->ptr, addnl[i]->len) != 0)
-             return -1;
+    if (hinfo->nvalue > 0) {
+        if (add_iov(c, hinfo->value, hinfo->nvalue) != 0)
+            return -1;
+    }
+    if (hinfo->naddnl > 0) {
+        value_item **addnl = hinfo->addnl;
+        for (int i = 0; i < hinfo->naddnl; i++) {
+            if (add_iov(c, addnl[i]->ptr, addnl[i]->len) != 0)
+                return -1;
+        }
     }
     return 0;
 }
 
-static int add_iov_hinfo_value(conn *c, item_info *hinfo)
-{
-    if (hinfo->nvalue && add_iov(c, hinfo->value, hinfo->nvalue) != 0) {
-        return -1;
-    }
-    if (hinfo->naddnl && add_iov_addnl(c, hinfo->addnl, hinfo->naddnl) != 0) {
-        return -1;
-    }
-    return 0;
-}
-
-static int add_iov_hinfo_some_value(conn *c, item_info *hinfo, int length)
+static int add_iov_hinfo_value_some(conn *c, item_info *hinfo, int length)
 {
     int i, iosize;
 
@@ -1271,34 +1259,37 @@ static int add_iov_hinfo_some_value(conn *c, item_info *hinfo, int length)
     if (hinfo->nvalue > 0) {
         iosize = length < hinfo->nvalue
                ? length : hinfo->nvalue;
-        if (add_iov(c, hinfo->value, iosize) != 0) {
+        if (add_iov(c, hinfo->value, iosize) != 0)
             return -1;
-        }
         length -= iosize;
     }
     for (i = 0; i < hinfo->naddnl && length > 0; i++) {
         iosize = length < hinfo->addnl[i]->len
                ? length : hinfo->addnl[i]->len;
-        if (add_iov(c, hinfo->addnl[i]->ptr, iosize) != 0) {
+        if (add_iov(c, hinfo->addnl[i]->ptr, iosize) != 0)
             return -1;
-        }
         length -= iosize;
     }
     return 0;
 }
 
-static int add_iov_einfo_value(conn *c, eitem_info *einfo)
+static int add_iov_einfo_value_all(conn *c, eitem_info *einfo)
 {
-    if (einfo->nvalue && add_iov(c, einfo->value, einfo->nvalue) != 0) {
-        return -1;
+    if (einfo->nvalue > 0) {
+        if (add_iov(c, einfo->value, einfo->nvalue) != 0)
+            return -1;
     }
-    if (einfo->naddnl && add_iov_addnl(c, einfo->addnl, einfo->naddnl) != 0) {
-        return -1;
+    if (einfo->naddnl > 0) {
+        value_item **addnl = einfo->addnl;
+        for (int i = 0; i < einfo->naddnl; i++) {
+            if (add_iov(c, addnl[i]->ptr, addnl[i]->len) != 0)
+                return -1;
+        }
     }
     return 0;
 }
 
-static int add_iov_einfo_some_value(conn *c, eitem_info *einfo, int length)
+static int add_iov_einfo_value_some(conn *c, eitem_info *einfo, int length)
 {
     int i, iosize;
 
@@ -1310,17 +1301,15 @@ static int add_iov_einfo_some_value(conn *c, eitem_info *einfo, int length)
     if (einfo->nvalue > 0) {
         iosize = length < einfo->nvalue
                ? length : einfo->nvalue;
-        if (add_iov(c, einfo->value, iosize) != 0) {
+        if (add_iov(c, einfo->value, iosize) != 0)
             return -1;
-        }
         length -= iosize;
     }
     for (i = 0; i < einfo->naddnl && length > 0; i++) {
         iosize = length < einfo->addnl[i]->len
                ? length : einfo->addnl[i]->len;
-        if (add_iov(c, einfo->addnl[i]->ptr, iosize) != 0) {
+        if (add_iov(c, einfo->addnl[i]->ptr, iosize) != 0)
             return -1;
-        }
         length -= iosize;
     }
     return 0;
@@ -1620,18 +1609,17 @@ static void process_lop_insert_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_LOP_INSERT);
     assert(c->coll_eitem != NULL);
-    eitem *elem = (eitem *)c->coll_eitem;
+    ENGINE_ERROR_CODE ret;
 
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &c->einfo);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, c->coll_eitem, &c->einfo);
 
     if (einfo_check_ascii_tail_string(&c->einfo) != 0) { /* check "\r\n" */
+        ret = ENGINE_EINVAL;
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         bool created;
-        ENGINE_ERROR_CODE ret;
-
-        ret = mc_engine.v1->list_elem_insert(mc_engine.v0, c,
-                                             c->coll_key, c->coll_nkey, c->coll_index, elem,
+        ret = mc_engine.v1->list_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                             c->coll_index, c->coll_eitem,
                                              c->coll_attrp, &created, 0);
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
@@ -1674,7 +1662,9 @@ static void process_lop_insert_complete(conn *c)
         }
     }
 
-    mc_engine.v1->list_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+    if (ret != ENGINE_SUCCESS) {
+        mc_engine.v1->list_elem_free(mc_engine.v0, c, c->coll_eitem);
+    }
     c->coll_eitem = NULL;
 }
 
@@ -1682,9 +1672,8 @@ static void process_sop_insert_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_SOP_INSERT);
     assert(c->coll_eitem != NULL);
-    eitem *elem = (eitem *)c->coll_eitem;
 
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, elem, &c->einfo);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, c->coll_eitem, &c->einfo);
 
     if (einfo_check_ascii_tail_string(&c->einfo) != 0) { /* check "\r\n" */
         out_string(c, "CLIENT_ERROR bad data chunk");
@@ -1692,9 +1681,8 @@ static void process_sop_insert_complete(conn *c)
         bool created;
         ENGINE_ERROR_CODE ret;
 
-        ret = mc_engine.v1->set_elem_insert(mc_engine.v0, c,
-                                            c->coll_key, c->coll_nkey, elem,
-                                            c->coll_attrp, &created, 0);
+        ret = mc_engine.v1->set_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                            c->coll_eitem, c->coll_attrp, &created, 0);
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
             ret = ENGINE_SUCCESS;
@@ -1745,8 +1733,7 @@ static void process_sop_delete_complete(conn *c)
         bool dropped;
         ENGINE_ERROR_CODE ret;
 
-        ret = mc_engine.v1->set_elem_delete(mc_engine.v0, c,
-                                            c->coll_key, c->coll_nkey,
+        ret = mc_engine.v1->set_elem_delete(mc_engine.v0, c, c->coll_key, c->coll_nkey,
                                             value->ptr, value->len, c->coll_drop,
                                             &dropped, 0);
         if (ret == ENGINE_EWOULDBLOCK) {
@@ -1800,8 +1787,7 @@ static void process_sop_exist_complete(conn *c)
         bool exist;
         ENGINE_ERROR_CODE ret;
 
-        ret = mc_engine.v1->set_elem_exist(mc_engine.v0, c,
-                                           c->coll_key, c->coll_nkey,
+        ret = mc_engine.v1->set_elem_exist(mc_engine.v0, c, c->coll_key, c->coll_nkey,
                                            value->ptr, value->len, &exist, 0);
         if (settings.detail_enabled) {
             stats_prefix_record_sop_exist(c->coll_key, c->coll_nkey,
@@ -1855,9 +1841,8 @@ static void process_mop_insert_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_MOP_INSERT);
     assert(c->coll_eitem != NULL);
-    eitem *elem = (eitem *)c->coll_eitem;
 
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem, &c->einfo);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, c->coll_eitem, &c->einfo);
 
     /* copy the field string into the element item. */
     memcpy((void*)c->einfo.score, c->coll_field.value, c->coll_field.length);
@@ -1868,9 +1853,8 @@ static void process_mop_insert_complete(conn *c)
         bool created;
         ENGINE_ERROR_CODE ret;
 
-        ret = mc_engine.v1->map_elem_insert(mc_engine.v0, c,
-                                            c->coll_key, c->coll_nkey, elem,
-                                            c->coll_attrp, &created, 0);
+        ret = mc_engine.v1->map_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                            c->coll_eitem, c->coll_attrp, &created, 0);
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
             ret = ENGINE_SUCCESS;
@@ -1919,9 +1903,8 @@ static void process_mop_update_complete(conn *c)
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         ENGINE_ERROR_CODE ret;
-        ret = mc_engine.v1->map_elem_update(mc_engine.v0, c,
-                                            c->coll_key, c->coll_nkey, &c->coll_field,
-                                            value->ptr, value->len, 0);
+        ret = mc_engine.v1->map_elem_update(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                            &c->coll_field, value->ptr, value->len, 0);
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
             ret = ENGINE_SUCCESS;
@@ -1956,10 +1939,8 @@ static void process_mop_update_complete(conn *c)
         }
     }
 
-    if (c->coll_eitem != NULL) {
-        free((void*)c->coll_eitem);
-        c->coll_eitem = NULL;
-    }
+    free((void*)c->coll_eitem);
+    c->coll_eitem = NULL;
 }
 
 static void process_mop_delete_complete(conn *c)
@@ -1967,24 +1948,17 @@ static void process_mop_delete_complete(conn *c)
     assert(c->coll_op == OPERATION_MOP_DELETE);
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    field_t *flist = NULL;
+    field_t *fld_tokens = NULL;
     uint32_t del_count = 0;
     bool dropped;
 
     if (c->coll_strkeys != NULL) {
-        flist = (field_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
-        if (flist != NULL) {
-            char delimiter = ' ';
-            char old_delimiter = ','; /* need to keep backwards compatibility */
-            int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist);
-            if (ntokens == -1) {
-                ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist);
-            }
-            if (ntokens == -1) {
-                ret = ENGINE_EBADVALUE;
-            } else if (ntokens == -2) {
-                ret = ENGINE_ENOMEM;
-            }
+        fld_tokens = (field_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
+        if (fld_tokens != NULL) {
+            bool must_backward_compatible = true; /* Must be backward compatible */
+            ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, (token_t*)fld_tokens,
+                                   must_backward_compatible);
+            /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
         } else {
             ret = ENGINE_ENOMEM;
         }
@@ -1992,7 +1966,7 @@ static void process_mop_delete_complete(conn *c)
 
     if (ret == ENGINE_SUCCESS && c->coll_numkeys > 0) { /* field validation check */
         for (int i = 0; i < c->coll_numkeys; i++) {
-            if (flist[i].length > MAX_FIELD_LENG) {
+            if (fld_tokens[i].length > MAX_FIELD_LENG) {
                 ret = ENGINE_EBADVALUE; break;
             }
         }
@@ -2000,8 +1974,8 @@ static void process_mop_delete_complete(conn *c)
 
     if (ret == ENGINE_SUCCESS) {
         ret = mc_engine.v1->map_elem_delete(mc_engine.v0, c, c->coll_key, c->coll_nkey,
-                                            c->coll_numkeys, flist,
-                                            c->coll_drop, &del_count, &dropped, 0);
+                                            c->coll_numkeys, fld_tokens, c->coll_drop,
+                                            &del_count, &dropped, 0);
     }
 
     if (ret == ENGINE_EWOULDBLOCK) {
@@ -2052,8 +2026,8 @@ static void process_mop_delete_complete(conn *c)
     /* free key strings and tokens buffer */
     if (c->coll_strkeys != NULL) {
         /* free token buffer */
-        if (flist != NULL) {
-            token_buff_release(&c->thread->token_buff, flist);
+        if (fld_tokens != NULL) {
+            token_buff_release(&c->thread->token_buff, fld_tokens);
         }
         /* free key string memory blocks */
         assert(c->coll_strkeys == (void*)&c->memblist);
@@ -2068,7 +2042,7 @@ static void process_mop_get_complete(conn *c)
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     eitem **elem_array = NULL;
-    field_t *flist = NULL;
+    field_t *fld_tokens = NULL;
     uint32_t elem_count = 0;
     uint32_t flags, f;
     bool delete = c->coll_delete;
@@ -2091,19 +2065,12 @@ static void process_mop_get_complete(conn *c)
     assert(c->ewouldblock == false);
 
     if (ret == ENGINE_SUCCESS && c->coll_strkeys != NULL) {
-        flist = (field_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
-        if (flist != NULL) {
-            char delimiter = ' ';
-            char old_delimiter = ','; /* need to keep backwards compatibility */
-            int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, (token_t*)flist);
-            if (ntokens == -1) {
-                ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, (token_t*)flist);
-            }
-            if (ntokens == -1) {
-                ret = ENGINE_EBADVALUE;
-            } else if (ntokens == -2) {
-                ret = ENGINE_ENOMEM;
-            }
+        fld_tokens = (field_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
+        if (fld_tokens != NULL) {
+            bool must_backward_compatible = true; /* Must be backward compatible */
+            ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, (token_t*)fld_tokens,
+                                   must_backward_compatible);
+            /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
         } else {
             ret = ENGINE_ENOMEM;
         }
@@ -2111,15 +2078,16 @@ static void process_mop_get_complete(conn *c)
 
     if (ret == ENGINE_SUCCESS && c->coll_numkeys > 0) { /* field validation check */
         for (int i = 0; i < c->coll_numkeys; i++) {
-            if (flist[i].length > MAX_FIELD_LENG) {
+            if (fld_tokens[i].length > MAX_FIELD_LENG) {
                 ret = ENGINE_EBADVALUE; break;
             }
         }
     }
 
     if (ret == ENGINE_SUCCESS) {
-        ret = mc_engine.v1->map_elem_get(mc_engine.v0, c, c->coll_key, c->coll_nkey, c->coll_numkeys, flist,
-                                         delete, drop_if_empty, elem_array, &elem_count, &flags, &dropped, 0);
+        ret = mc_engine.v1->map_elem_get(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                         c->coll_numkeys, fld_tokens, delete, drop_if_empty,
+                                         elem_array, &elem_count, &flags, &dropped, 0);
     }
 
     if (ret == ENGINE_EWOULDBLOCK) {
@@ -2165,7 +2133,7 @@ static void process_mop_get_complete(conn *c)
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem_array[f], &c->einfo);
                 resplen = make_mop_elem_response(respptr, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
                 {
                     ret = ENGINE_ENOMEM; break;
                 }
@@ -2225,8 +2193,8 @@ static void process_mop_get_complete(conn *c)
     /* free key strings and tokens buffer */
     if (c->coll_strkeys != NULL) {
         /* free token buffer */
-        if (flist != NULL) {
-            token_buff_release(&c->thread->token_buff, flist);
+        if (fld_tokens != NULL) {
+            token_buff_release(&c->thread->token_buff, fld_tokens);
         }
         /* free key string memory blocks */
         assert(c->coll_strkeys == (void*)&c->memblist);
@@ -2273,9 +2241,8 @@ static void process_bop_insert_complete(conn *c)
     assert(c->coll_op == OPERATION_BOP_INSERT ||
            c->coll_op == OPERATION_BOP_UPSERT);
     assert(c->coll_eitem != NULL);
-    eitem *elem = (eitem *)c->coll_eitem;
 
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &c->einfo);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, c->coll_eitem, &c->einfo);
 
     if (einfo_check_ascii_tail_string(&c->einfo) != 0) { /* check "\r\n" */
         // release the btree element
@@ -2289,8 +2256,8 @@ static void process_bop_insert_complete(conn *c)
         bool replace_if_exist = (c->coll_op == OPERATION_BOP_UPSERT ? true : false);
         ENGINE_ERROR_CODE ret;
 
-        ret = mc_engine.v1->btree_elem_insert(mc_engine.v0, c,
-                                              c->coll_key, c->coll_nkey, elem, replace_if_exist,
+        ret = mc_engine.v1->btree_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                              c->coll_eitem, replace_if_exist,
                                               c->coll_attrp, &replaced, &created,
                                               (c->coll_drop ? &trim_result : NULL), 0);
         if (ret == ENGINE_EWOULDBLOCK) {
@@ -2298,7 +2265,7 @@ static void process_bop_insert_complete(conn *c)
             ret = ENGINE_SUCCESS;
         }
 
-        // release the btree element inserted.
+        // release the btree element in advance since coll_eitem field is to be used, soon.
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
         c->coll_eitem = NULL;
 
@@ -2326,7 +2293,7 @@ static void process_bop_insert_complete(conn *c)
 
                 /* add io vectors */
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value(c, &c->einfo) != 0) ||
+                    (add_iov_einfo_value_all(c, &c->einfo) != 0) ||
                     (add_iov(c, "TRIMMED\r\n", strlen("TRIMMED\r\n")) != 0))
                 {
                     mc_engine.v1->btree_elem_release(mc_engine.v0, c,
@@ -2376,28 +2343,25 @@ static void process_bop_update_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_BOP_UPDATE);
     assert(c->ewouldblock == false);
-    char *new_value;
-    int  new_nbytes;
-    eflag_update *eupdate_ptr;
+    char *new_value = NULL;
+    int  new_nbytes = 0;
 
     if (c->coll_eitem != NULL) {
         value_item *value = (value_item *)c->coll_eitem;
         if (strncmp(&value->ptr[value->len-2], "\r\n", 2) != 0) {
             out_string(c, "CLIENT_ERROR bad data chunk");
+            free((void*)c->coll_eitem);
+            c->coll_eitem = NULL;
+            return;
         }
         new_value  = value->ptr;
         new_nbytes = value->len;
-    } else {
-        new_value  = NULL;
-        new_nbytes = 0;
     }
 
-    eupdate_ptr = (c->coll_eupdate.neflag == EFLAG_NULL ? NULL : &c->coll_eupdate);
-
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->btree_elem_update(mc_engine.v0, c,
-                                          c->coll_key, c->coll_nkey,
-                                          &c->coll_bkrange, eupdate_ptr,
+    ret = mc_engine.v1->btree_elem_update(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                          &c->coll_bkrange,
+                                          (c->coll_eupdate.neflag == EFLAG_NULL ? NULL : &c->coll_eupdate),
                                           new_value, new_nbytes, 0);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
@@ -2451,21 +2415,14 @@ static void process_bop_mget_complete(conn *c)
     eitem **elem_array = (eitem **)c->coll_eitem;
     uint32_t tot_elem_count = 0;
     uint32_t tot_access_count = 0;
-    token_t *key_tokens = NULL;
+    token_t *key_tokens;
 
     key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (key_tokens != NULL) {
-        char delimiter = ' ';
-        char old_delimiter = ','; /* need to keep backwards compatibility */
-        int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, key_tokens);
-        if (ntokens == -1) {
-            ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, key_tokens);
-        }
-        if (ntokens == -1) {
-            ret = ENGINE_EBADVALUE;
-        } else if (ntokens == -2) {
-            ret = ENGINE_ENOMEM;
-        }
+        bool must_backward_compatible = true; /* Must be backward compatible */
+        ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, key_tokens,
+                               must_backward_compatible);
+        /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
     } else {
         ret = ENGINE_ENOMEM;
     }
@@ -2490,13 +2447,12 @@ static void process_bop_mget_complete(conn *c)
 
         for (k = 0; k < c->coll_numkeys; k++) {
             ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c,
-                                             key_tokens[k].value, key_tokens[k].length,
-                                             &c->coll_bkrange,
-                                             (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
-                                             c->coll_roffset, c->coll_rcount,
-                                             false, false,
-                                             &elem_array[tot_elem_count], &cur_elem_count,
-                                             &cur_access_count, &flags, &trimmed, 0);
+                                               key_tokens[k].value, key_tokens[k].length,
+                                               &c->coll_bkrange,
+                                               (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
+                                               c->coll_roffset, c->coll_rcount, false, false,
+                                               &elem_array[tot_elem_count], &cur_elem_count,
+                                               &cur_access_count, &flags, &trimmed, 0);
 
             if (settings.detail_enabled) {
                 stats_prefix_record_bop_get(key_tokens[k].value, key_tokens[k].length,
@@ -2523,7 +2479,7 @@ static void process_bop_mget_complete(conn *c)
                     resultlen += make_bop_elem_response(resultptr + resultlen, &c->einfo);
 
                     if ((add_iov(c, resultptr, resultlen) != 0) ||
-                        (add_iov_einfo_value(c, &c->einfo) != 0))
+                        (add_iov_einfo_value_all(c, &c->einfo) != 0))
                     {
                         ret = ENGINE_ENOMEM; break;
                     }
@@ -2661,7 +2617,7 @@ static void process_bop_smget_complete_old(conn *c)
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     int smget_count = c->coll_roffset + c->coll_rcount;
-    token_t *keys_array;
+    token_t *key_tokens;
 
     eitem   **elem_array = (eitem  **)c->coll_eitem;
     uint32_t *kfnd_array = (uint32_t*)((char*)elem_array + (smget_count*sizeof(eitem*)));
@@ -2672,19 +2628,12 @@ static void process_bop_smget_complete_old(conn *c)
     bool trimmed;
     bool duplicated;
 
-    keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
-    if (keys_array != NULL) {
-        char delimiter = ' ';
-        char old_delimiter = ','; /* need to keep backwards compatibility */
-        int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
-        if (ntokens == -1) {
-            ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
-        }
-        if (ntokens == -1) {
-            ret = ENGINE_EBADVALUE;
-        } else if (ntokens == -2) {
-            ret = ENGINE_ENOMEM;
-        }
+    key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
+    if (key_tokens != NULL) {
+        bool must_backward_compatible = true; /* Must be backward compatible */
+        ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, key_tokens,
+                               must_backward_compatible);
+        /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
     } else {
         ret = ENGINE_ENOMEM;
     }
@@ -2697,8 +2646,7 @@ static void process_bop_smget_complete_old(conn *c)
         assert(c->coll_numkeys > 0);
         assert(c->coll_rcount > 0);
         assert((c->coll_roffset + c->coll_rcount) <= MAX_SMGET_REQ_COUNT);
-        ret = mc_engine.v1->btree_elem_smget_old(mc_engine.v0, c,
-                                             keys_array, c->coll_numkeys,
+        ret = mc_engine.v1->btree_elem_smget_old(mc_engine.v0, c, key_tokens, c->coll_numkeys,
                                              &c->coll_bkrange,
                                              (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
                                              c->coll_roffset, c->coll_rcount,
@@ -2721,7 +2669,7 @@ static void process_bop_smget_complete_old(conn *c)
 
             for (i = 0; i < elem_count; i++) {
                 idx = kfnd_array[i];
-                if (add_iov(c, keys_array[idx].value, keys_array[idx].length) != 0) {
+                if (add_iov(c, key_tokens[idx].value, key_tokens[idx].length) != 0) {
                     ret = ENGINE_ENOMEM; break;
                 }
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
@@ -2731,7 +2679,7 @@ static void process_bop_smget_complete_old(conn *c)
                 resplen = strlen(respptr);
                 resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
                 {
                     ret = ENGINE_ENOMEM; break;
                 }
@@ -2750,7 +2698,7 @@ static void process_bop_smget_complete_old(conn *c)
                 for (i = 0; i < kmis_count; i++) {
                     /* the last key string does not have delimiter character */
                     idx = kmis_array[i];
-                    if ((add_iov(c, keys_array[idx].value, keys_array[idx].length) != 0) ||
+                    if ((add_iov(c, key_tokens[idx].value, key_tokens[idx].length) != 0) ||
                         (add_iov(c, respptr, resplen) != 0)) {
                         ret = ENGINE_ENOMEM; break;
                     }
@@ -2799,8 +2747,8 @@ static void process_bop_smget_complete_old(conn *c)
     }
 
     /* free token buffer */
-    if (keys_array != NULL) {
-        token_buff_release(&c->thread->token_buff, keys_array);
+    if (key_tokens != NULL) {
+        token_buff_release(&c->thread->token_buff, key_tokens);
     }
 
     if (ret != ENGINE_SUCCESS) {
@@ -2829,26 +2777,19 @@ static void process_bop_smget_complete(conn *c)
     }
 #endif
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    token_t *keys_array;
+    token_t *key_tokens;
     smget_result_t smres;
 
     smres.elem_array = (eitem **)c->coll_eitem;
     smres.elem_kinfo = (smget_ehit_t *)&smres.elem_array[c->coll_rcount+c->coll_numkeys];
     smres.miss_kinfo = (smget_emis_t *)&smres.elem_kinfo[c->coll_rcount];
 
-    keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
-    if (keys_array != NULL) {
-        char delimiter = ' ';
-        char old_delimiter = ','; /* need to keep backwards compatibility */
-        int ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, delimiter, c->coll_numkeys, keys_array);
-        if (ntokens == -1) {
-            ntokens = tokenize_sblocks(&c->memblist, c->coll_lenkeys, old_delimiter, c->coll_numkeys, keys_array);
-        }
-        if (ntokens == -1) {
-            ret = ENGINE_EBADVALUE;
-        } else if (ntokens == -2) {
-            ret = ENGINE_ENOMEM;
-        }
+    key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
+    if (key_tokens != NULL) {
+        bool must_backward_compatible = true; /* Must be backward compatible */
+        ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, key_tokens,
+                               must_backward_compatible);
+        /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
     } else {
         ret = ENGINE_ENOMEM;
     }
@@ -2861,8 +2802,7 @@ static void process_bop_smget_complete(conn *c)
         assert(c->coll_numkeys > 0);
         assert(c->coll_rcount > 0);
         assert((c->coll_roffset + c->coll_rcount) <= MAX_SMGET_REQ_COUNT);
-        ret = mc_engine.v1->btree_elem_smget(mc_engine.v0, c,
-                                             keys_array, c->coll_numkeys,
+        ret = mc_engine.v1->btree_elem_smget(mc_engine.v0, c, key_tokens, c->coll_numkeys,
                                              &c->coll_bkrange,
                                              (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
                                              c->coll_roffset, c->coll_rcount,
@@ -2897,9 +2837,9 @@ static void process_bop_smget_complete(conn *c)
                 resplen = strlen(respptr);
                 resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
                 idx = smres.elem_kinfo[i].kidx;
-                if ((add_iov(c, keys_array[idx].value, keys_array[idx].length) != 0) ||
+                if ((add_iov(c, key_tokens[idx].value, key_tokens[idx].length) != 0) ||
                     (add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
                 {
                     ret = ENGINE_ENOMEM; break;
                 }
@@ -2919,7 +2859,7 @@ static void process_bop_smget_complete(conn *c)
                     /* the last key string does not have delimiter character */
                     idx = smres.miss_kinfo[i].kidx;
                     str = get_smget_miss_response(smres.miss_kinfo[i].code);
-                    if ((add_iov(c, keys_array[idx].value, keys_array[idx].length) != 0) ||
+                    if ((add_iov(c, key_tokens[idx].value, key_tokens[idx].length) != 0) ||
                         (add_iov(c, str, strlen(str)) != 0)) {
                         ret = ENGINE_ENOMEM; break;
                     }
@@ -2939,7 +2879,7 @@ static void process_bop_smget_complete(conn *c)
                                                 smres.trim_elems[i], &c->einfo);
                     resplen = make_smget_trim_response(respptr, &c->einfo);
                     idx = smres.trim_kinfo[i].kidx;
-                    if ((add_iov(c, keys_array[idx].value, keys_array[idx].length) != 0) ||
+                    if ((add_iov(c, key_tokens[idx].value, key_tokens[idx].length) != 0) ||
                         (add_iov(c, respptr, resplen) != 0)) {
                         ret = ENGINE_ENOMEM; break;
                     }
@@ -2987,8 +2927,8 @@ static void process_bop_smget_complete(conn *c)
     }
 
     /* free token buffer */
-    if (keys_array != NULL) {
-        token_buff_release(&c->thread->token_buff, keys_array);
+    if (key_tokens != NULL) {
+        token_buff_release(&c->thread->token_buff, key_tokens);
     }
 
     if (ret != ENGINE_SUCCESS) {
@@ -3044,39 +2984,35 @@ static void process_mget_complete(conn *c)
     assert(c->coll_strkeys != NULL);
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    uint32_t vlen = c->coll_lenkeys;
-    uint32_t kcnt = c->coll_numkeys;
+    token_t *key_tokens;
     item    *it;
     char    *key;
     size_t   nkey;
-    token_t *key_tokens = NULL;
     uint32_t k, nitems;
 
     do {
-        key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, kcnt);
+        key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
         if (key_tokens != NULL) {
-            char delimiter = ' ';
-            int ntokens = tokenize_sblocks(&c->memblist, vlen, delimiter, kcnt, key_tokens);
-            if (ntokens == -1) {
-                ret = ENGINE_EBADVALUE; break;
-            }
-            if (ntokens == -2) {
-                ret = ENGINE_ENOMEM; break;
+            bool must_backward_compatible = false;
+            ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, key_tokens,
+                                   must_backward_compatible);
+            if (ret != ENGINE_SUCCESS) {
+                break; /* ENGINE_EBADVALUE | ENGINE_ENOMEM */
             }
         } else {
             ret = ENGINE_ENOMEM; break;
         }
         /* check key length */
-        for (k = 0; k < kcnt; k++) {
+        for (k = 0; k < c->coll_numkeys; k++) {
             if (key_tokens[k].length > KEY_MAX_LENGTH)
                 break;
         }
-        if (k < kcnt) { /* too long key */
+        if (k < c->coll_numkeys) { /* too long key */
             ret = ENGINE_EBADVALUE; break;
         }
         /* do get operation for each key */
         nitems = 0;
-        for (k = 0; k < kcnt; k++) {
+        for (k = 0; k < c->coll_numkeys; k++) {
             key = key_tokens[k].value;
             nkey = key_tokens[k].length;
 
@@ -3118,7 +3054,7 @@ static void process_mget_complete(conn *c)
                 if (add_iov(c, "VALUE ", 6) != 0 ||
                     add_iov(c, c->hinfo.key, c->hinfo.nkey) != 0 ||
                     add_iov(c, suffix, suffix_len) != 0 ||
-                    add_iov_hinfo_value(c, &c->hinfo) != 0)
+                    add_iov_hinfo_value_all(c, &c->hinfo) != 0)
                 {
                     mc_engine.v1->release(mc_engine.v0, c, it);
                     break; /* out of memory */
@@ -3152,7 +3088,7 @@ static void process_mget_complete(conn *c)
          * reliable to add END\r\n to the buffer, because it might not end
          * in \r\n. So we send SERVER_ERROR instead.
          */
-        if (k < kcnt || add_iov(c, "END\r\n", 5) != 0
+        if (k < c->coll_numkeys || add_iov(c, "END\r\n", 5) != 0
             || (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
             /* Releasing items on ilist and freeing suffixes will be
              * performed later by calling out_string() function.
@@ -3887,7 +3823,7 @@ static void process_bin_get(conn *c)
         }
 
         /* Add the data minus the CRLF */
-        add_iov_hinfo_some_value(c, &c->hinfo, c->hinfo.nbytes - 2);
+        add_iov_hinfo_value_some(c, &c->hinfo, c->hinfo.nbytes - 2);
         conn_set_state(c, conn_mwrite);
         /* Remember this command so we can garbage collect it later */
         c->item = it;
@@ -4641,19 +4577,18 @@ static void process_bin_lop_insert_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_LOP_INSERT);
     assert(c->coll_eitem != NULL);
-    eitem *elem = (eitem *)c->coll_eitem;
 
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &c->einfo);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, c->coll_eitem, &c->einfo);
     einfo_set_ascii_tail_string(&c->einfo); /* set "\r\n" */
 
     bool created;
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->list_elem_insert(mc_engine.v0, c,
-                                   c->coll_key, c->coll_nkey, c->coll_index, elem,
-                                   c->coll_attrp, &created,
-                                   c->binary_header.request.vbucket);
+    ret = mc_engine.v1->list_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                         c->coll_index, c->coll_eitem,
+                                         c->coll_attrp, &created,
+                                         c->binary_header.request.vbucket);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -4692,8 +4627,9 @@ static void process_bin_lop_insert_complete(conn *c)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
     }
 
-    /* release the c->coll_eitem reference */
-    mc_engine.v1->list_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+    if (ret != ENGINE_SUCCESS) {
+        mc_engine.v1->list_elem_free(mc_engine.v0, c, c->coll_eitem);
+    }
     c->coll_eitem = NULL;
 }
 
@@ -4862,7 +4798,7 @@ static void process_bin_lop_get(conn *c)
         for (i = 0; i < elem_count; i++) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST,
                                         elem_array[i], &c->einfo);
-            if (add_iov_einfo_some_value(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
+            if (add_iov_einfo_value_some(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
                 ret = ENGINE_ENOMEM; break;
             }
         }
@@ -5096,20 +5032,18 @@ static void process_bin_sop_prepare_nread(conn *c)
 static void process_bin_sop_insert_complete(conn *c)
 {
     assert(c->coll_eitem != NULL);
-    eitem *elem = c->coll_eitem;
 
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, elem, &c->einfo);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, c->coll_eitem, &c->einfo);
     einfo_set_ascii_tail_string(&c->einfo); /* set "\r\n" */
 
     bool created;
 
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->set_elem_insert(mc_engine.v0, c,
-                                  c->coll_key, c->coll_nkey, elem,
-                                  c->coll_attrp, &created,
-                                  c->binary_header.request.vbucket);
+    ret = mc_engine.v1->set_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                        c->coll_eitem, c->coll_attrp, &created,
+                                        c->binary_header.request.vbucket);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -5164,11 +5098,9 @@ static void process_bin_sop_delete_complete(conn *c)
 
     bool dropped;
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->set_elem_delete(mc_engine.v0, c,
-                                        c->coll_key, c->coll_nkey,
-                                        value->ptr, value->len,
-                                        c->coll_drop, &dropped,
-                                        c->binary_header.request.vbucket);
+    ret = mc_engine.v1->set_elem_delete(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                        value->ptr, value->len, c->coll_drop,
+                                        &dropped, c->binary_header.request.vbucket);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -5219,10 +5151,9 @@ static void process_bin_sop_exist_complete(conn *c)
 
     bool exist;
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->set_elem_exist(mc_engine.v0, c,
-                                       c->coll_key, c->coll_nkey,
-                                       value->ptr, value->len,
-                                       &exist, c->binary_header.request.vbucket);
+    ret = mc_engine.v1->set_elem_exist(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                       value->ptr, value->len, &exist,
+                                       c->binary_header.request.vbucket);
 
     if (settings.detail_enabled) {
         stats_prefix_record_sop_exist(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
@@ -5354,7 +5285,7 @@ static void process_bin_sop_get(conn *c)
         for (i = 0; i < elem_count; i++) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
                                         elem_array[i], &c->einfo);
-            if (add_iov_einfo_some_value(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
+            if (add_iov_einfo_value_some(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
                 ret = ENGINE_ENOMEM; break;
             }
         }
@@ -5526,8 +5457,7 @@ static void process_bin_bop_prepare_nread(conn *c)
     } else {
         ret = mc_engine.v1->btree_elem_alloc(mc_engine.v0, c, key, nkey,
                                              req->message.body.nbkey,
-                                             req->message.body.neflag, vlen+2,
-                                             &elem);
+                                             req->message.body.neflag, vlen+2, &elem);
     }
 
     if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
@@ -5589,11 +5519,10 @@ static void process_bin_bop_insert_complete(conn *c)
     assert(c->coll_op == OPERATION_BOP_INSERT ||
            c->coll_op == OPERATION_BOP_UPSERT);
     assert(c->coll_eitem != NULL);
-    eitem *elem = (eitem *)c->coll_eitem;
 
     /* We don't actually receive the trailing two characters in the bin
      * protocol, so we're going to just set them here */
-    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &c->einfo);
+    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, c->coll_eitem, &c->einfo);
     einfo_set_ascii_tail_string(&c->einfo); /* set "\r\n" */
 
     bool created;
@@ -5601,10 +5530,10 @@ static void process_bin_bop_insert_complete(conn *c)
     bool replace_if_exist = (c->coll_op == OPERATION_BOP_UPSERT ? true : false);
 
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->btree_elem_insert(mc_engine.v0, c,
-                                   c->coll_key, c->coll_nkey, elem, replace_if_exist,
-                                   c->coll_attrp, &replaced, &created, NULL,
-                                   c->binary_header.request.vbucket);
+    ret = mc_engine.v1->btree_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                          c->coll_eitem, replace_if_exist,
+                                          c->coll_attrp, &replaced, &created, NULL,
+                                          c->binary_header.request.vbucket);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -5663,28 +5592,22 @@ static void process_bin_bop_nread_complete(conn *c)
 static void process_bin_bop_update_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_BOP_UPDATE);
-    char *new_value;
-    int  new_nbytes;
-    eflag_update *eupdate_ptr;
+    char *new_value = NULL;
+    int  new_nbytes = 0;
 
     if (c->coll_eitem != NULL) {
         value_item *value = (value_item *)c->coll_eitem;
         memcpy(value->ptr + value->len - 2, "\r\n", 2);
         new_value  = value->ptr;
         new_nbytes = value->len;
-    } else {
-        new_value  = NULL;
-        new_nbytes = 0;
     }
 
-    eupdate_ptr = (c->coll_eupdate.neflag == EFLAG_NULL ? NULL : &c->coll_eupdate);
-
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->btree_elem_update(mc_engine.v0, c,
-                                       c->coll_key, c->coll_nkey,
-                                       &c->coll_bkrange, eupdate_ptr,
-                                       new_value, new_nbytes,
-                                       c->binary_header.request.vbucket);
+    ret = mc_engine.v1->btree_elem_update(mc_engine.v0, c, c->coll_key, c->coll_nkey,
+                                          &c->coll_bkrange,
+                                          (c->coll_eupdate.neflag == EFLAG_NULL ? NULL : &c->coll_eupdate),
+                                          new_value, new_nbytes,
+                                          c->binary_header.request.vbucket);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -6024,7 +5947,7 @@ static void process_bin_bop_get(conn *c)
         for (i = 0; i < elem_count; i++) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                         elem_array[i], &c->einfo);
-            if (add_iov_einfo_some_value(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
+            if (add_iov_einfo_value_some(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
                 ret = ENGINE_ENOMEM; break;
             }
         }
@@ -6118,7 +6041,8 @@ static void process_bin_bop_count(conn *c)
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_elem_count(mc_engine.v0, c, key, nkey,
-                                         bkrange, efilter, &elem_count, &access_count,
+                                         bkrange, efilter,
+                                         &elem_count, &access_count,
                                          c->binary_header.request.vbucket);
 
     if (settings.detail_enabled) {
@@ -6347,7 +6271,7 @@ static void process_bin_bop_smget_complete_old(conn *c)
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     int smget_count = c->coll_roffset + c->coll_rcount;
-    token_t *keys_array;
+    token_t *key_tokens;
 
     eitem   **elem_array = (eitem  **)c->coll_eitem;
     uint32_t *kfnd_array = (uint32_t*)((char*)elem_array + (smget_count*sizeof(eitem*)));
@@ -6361,19 +6285,12 @@ static void process_bin_bop_smget_complete_old(conn *c)
     /* We don't actually receive the trailing two("\r\n") characters in binary protocol.
      * We should consider this when tokenizing key strings.
      */
-    keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
-    if (keys_array != NULL) {
-        char delimiter = ' ';
-        char old_delimiter = ','; /* need to keep backwards compatibility */
-        int ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, delimiter, c->coll_numkeys, keys_array);
-        if (ntokens == -1) {
-            ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, keys_array);
-        }
-        if (ntokens == -1) {
-            ret = ENGINE_EBADVALUE;
-        } else if (ntokens == -2) {
-            ret = ENGINE_ENOMEM;
-        }
+    key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
+    if (key_tokens != NULL) {
+        bool must_backward_compatible = true; /* Must be backward compatible */
+        ret = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, c->coll_numkeys, key_tokens,
+                               must_backward_compatible);
+        /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
     } else {
         ret = ENGINE_ENOMEM;
     }
@@ -6386,14 +6303,13 @@ static void process_bin_bop_smget_complete_old(conn *c)
         assert(c->coll_numkeys > 0);
         assert(c->coll_rcount > 0);
         assert((c->coll_roffset + c->coll_rcount) <= MAX_SMGET_REQ_COUNT);
-        ret = mc_engine.v1->btree_elem_smget_old(mc_engine.v0, c,
-                                     keys_array, c->coll_numkeys,
-                                     &c->coll_bkrange,
-                                     (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
-                                     c->coll_roffset, c->coll_rcount,
-                                     elem_array, kfnd_array, flag_array, &elem_count,
-                                     kmis_array, &kmis_count, &trimmed, &duplicated,
-                                     c->binary_header.request.vbucket);
+        ret = mc_engine.v1->btree_elem_smget_old(mc_engine.v0, c, key_tokens, c->coll_numkeys,
+                                             &c->coll_bkrange,
+                                             (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
+                                             c->coll_roffset, c->coll_rcount,
+                                             elem_array, kfnd_array, flag_array, &elem_count,
+                                             kmis_array, &kmis_count, &trimmed, &duplicated,
+                                             c->binary_header.request.vbucket);
     }
 
     switch (ret) {
@@ -6421,15 +6337,15 @@ static void process_bin_bop_smget_complete_old(conn *c)
         for (i = 0; i < elem_count; i++) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                         elem_array[i], &c->einfo);
-            bodylen += ((c->einfo.nbytes - 2) + keys_array[kfnd_array[i]].length);
+            bodylen += ((c->einfo.nbytes - 2) + key_tokens[kfnd_array[i]].length);
             bkeyptr[i] = htonll(*(uint64_t*)c->einfo.score);
             vlenptr[i] = htonl(c->einfo.nbytes - 2);
             flagptr[i] = flag_array[i];
-            klenptr[i] = htonl(keys_array[kfnd_array[i]].length);
+            klenptr[i] = htonl(key_tokens[kfnd_array[i]].length);
         }
         for (i = 0; i < kmis_count; i++) {
-            bodylen += keys_array[kmis_array[i]].length;
-            klenptr[elem_count+i] = htonl(keys_array[kmis_array[i]].length);
+            bodylen += key_tokens[kmis_array[i]].length;
+            klenptr[elem_count+i] = htonl(key_tokens[kmis_array[i]].length);
         }
         add_bin_header(c, 0, sizeof(rsp->message.body), 0, bodylen);
 
@@ -6448,7 +6364,7 @@ static void process_bin_bop_smget_complete_old(conn *c)
             for (i = 0; i < elem_count; i++) {
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                             elem_array[i], &c->einfo);
-                if (add_iov_einfo_some_value(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
+                if (add_iov_einfo_value_some(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
                     ret = ENGINE_ENOMEM; break;
                 }
             }
@@ -6456,8 +6372,8 @@ static void process_bin_bop_smget_complete_old(conn *c)
         /* Add the found key */
         if (ret == ENGINE_SUCCESS) {
             for (i = 0; i < elem_count; i++) {
-                if (add_iov(c, keys_array[kfnd_array[i]].value,
-                               keys_array[kfnd_array[i]].length) != 0) {
+                if (add_iov(c, key_tokens[kfnd_array[i]].value,
+                               key_tokens[kfnd_array[i]].length) != 0) {
                     ret = ENGINE_ENOMEM; break;
                 }
             }
@@ -6465,8 +6381,8 @@ static void process_bin_bop_smget_complete_old(conn *c)
         /* Add the missed key */
         if (ret == ENGINE_SUCCESS) {
             for (i = 0; i < kmis_count; i++) {
-                if (add_iov(c, keys_array[kmis_array[i]].value,
-                               keys_array[kmis_array[i]].length) != 0) {
+                if (add_iov(c, key_tokens[kmis_array[i]].value,
+                               key_tokens[kmis_array[i]].length) != 0) {
                     ret = ENGINE_ENOMEM; break;
                 }
             }
@@ -6506,8 +6422,8 @@ static void process_bin_bop_smget_complete_old(conn *c)
     }
 
     /* free token buffer */
-    if (keys_array != NULL) {
-        token_buff_release(&c->thread->token_buff, keys_array);
+    if (key_tokens != NULL) {
+        token_buff_release(&c->thread->token_buff, key_tokens);
     }
 
     if (ret != ENGINE_SUCCESS) {
@@ -6536,7 +6452,7 @@ static void process_bin_bop_smget_complete(conn *c)
 #endif
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    token_t *keys_array;
+    token_t *key_tokens;
     smget_result_t smres;
 
     smres.elem_array = (eitem **)c->coll_eitem;
@@ -6546,19 +6462,12 @@ static void process_bin_bop_smget_complete(conn *c)
     /* We don't actually receive the trailing two("\r\n") characters in binary protocol.
      * We should consider this when tokenizing key strings.
      */
-    keys_array = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
-    if (keys_array != NULL) {
-        char delimiter = ' ';
-        char old_delimiter = ','; /* need to keep backwards compatibility */
-        int ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, delimiter, c->coll_numkeys, keys_array);
-        if (ntokens == -1) {
-            ntokens = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, old_delimiter, c->coll_numkeys, keys_array);
-        }
-        if (ntokens == -1) {
-            ret = ENGINE_EBADVALUE;
-        } else if (ntokens == -2) {
-            ret = ENGINE_ENOMEM;
-        }
+    key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
+    if (key_tokens != NULL) {
+        bool must_backward_compatible = true; /* Must be backward compatible */
+        ret = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, c->coll_numkeys, key_tokens,
+                               must_backward_compatible);
+        /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
     } else {
         ret = ENGINE_ENOMEM;
     }
@@ -6571,17 +6480,16 @@ static void process_bin_bop_smget_complete(conn *c)
         assert(c->coll_numkeys > 0);
         assert(c->coll_rcount > 0);
         assert((c->coll_roffset + c->coll_rcount) <= MAX_SMGET_REQ_COUNT);
-        ret = mc_engine.v1->btree_elem_smget(mc_engine.v0, c,
-                                     keys_array, c->coll_numkeys,
-                                     &c->coll_bkrange,
-                                     (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
-                                     c->coll_roffset, c->coll_rcount,
+        ret = mc_engine.v1->btree_elem_smget(mc_engine.v0, c, key_tokens, c->coll_numkeys,
+                                             &c->coll_bkrange,
+                                             (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
+                                             c->coll_roffset, c->coll_rcount,
 #ifdef JHPARK_OLD_SMGET_INTERFACE
-                                     (c->coll_smgmode == 2 ? true : false), &smres,
+                                             (c->coll_smgmode == 2 ? true : false), &smres,
 #else
-                                     c->coll_unique, &smres,
+                                             c->coll_unique, &smres,
 #endif
-                                     c->binary_header.request.vbucket);
+                                             c->binary_header.request.vbucket);
     }
 
     switch (ret) {
@@ -6609,19 +6517,19 @@ static void process_bin_bop_smget_complete(conn *c)
         for (i = 0; i < smres.elem_count; i++) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                         smres.elem_array[i], &c->einfo);
-            bodylen += ((c->einfo.nbytes - 2) + keys_array[smres.elem_kinfo[i].kidx].length);
+            bodylen += ((c->einfo.nbytes - 2) + key_tokens[smres.elem_kinfo[i].kidx].length);
             bkeyptr[i] = htonll(*(uint64_t*)c->einfo.score);
             vlenptr[i] = htonl(c->einfo.nbytes - 2);
             flagptr[i] = smres.elem_kinfo[i].flag;
-            klenptr[i] = htonl(keys_array[smres.elem_kinfo[i].kidx].length);
+            klenptr[i] = htonl(key_tokens[smres.elem_kinfo[i].kidx].length);
         }
         for (i = 0; i < smres.miss_count; i++) {
-            bodylen += keys_array[smres.miss_kinfo[i].kidx].length;
-            klenptr[smres.elem_count+i] = htonl(keys_array[smres.miss_kinfo[i].kidx].length);
+            bodylen += key_tokens[smres.miss_kinfo[i].kidx].length;
+            klenptr[smres.elem_count+i] = htonl(key_tokens[smres.miss_kinfo[i].kidx].length);
         }
         for (i = 0; i < smres.trim_count; i++) {
-            bodylen += keys_array[smres.trim_kinfo[i].kidx].length;
-            klenptr[smres.elem_count+smres.miss_count+i] = htonl(keys_array[smres.trim_kinfo[i].kidx].length);
+            bodylen += key_tokens[smres.trim_kinfo[i].kidx].length;
+            klenptr[smres.elem_count+smres.miss_count+i] = htonl(key_tokens[smres.trim_kinfo[i].kidx].length);
         }
         add_bin_header(c, 0, sizeof(rsp->message.body), 0, bodylen);
 
@@ -6641,7 +6549,7 @@ static void process_bin_bop_smget_complete(conn *c)
             for (i = 0; i < smres.elem_count; i++) {
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                             smres.elem_array[i], &c->einfo);
-                if (add_iov_einfo_some_value(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
+                if (add_iov_einfo_value_some(c, &c->einfo, c->einfo.nbytes - 2) != 0) {
                     ret = ENGINE_ENOMEM; break;
                 }
             }
@@ -6649,8 +6557,8 @@ static void process_bin_bop_smget_complete(conn *c)
         /* Add the found key */
         if (ret == ENGINE_SUCCESS) {
             for (i = 0; i < smres.elem_count; i++) {
-                if (add_iov(c, keys_array[smres.elem_kinfo[i].kidx].value,
-                               keys_array[smres.elem_kinfo[i].kidx].length) != 0) {
+                if (add_iov(c, key_tokens[smres.elem_kinfo[i].kidx].value,
+                               key_tokens[smres.elem_kinfo[i].kidx].length) != 0) {
                     ret = ENGINE_ENOMEM; break;
                 }
             }
@@ -6658,8 +6566,8 @@ static void process_bin_bop_smget_complete(conn *c)
         /* Add the missed key */
         if (ret == ENGINE_SUCCESS) {
             for (i = 0; i < smres.miss_count; i++) {
-                if (add_iov(c, keys_array[smres.miss_kinfo[i].kidx].value,
-                               keys_array[smres.miss_kinfo[i].kidx].length) != 0) {
+                if (add_iov(c, key_tokens[smres.miss_kinfo[i].kidx].value,
+                               key_tokens[smres.miss_kinfo[i].kidx].length) != 0) {
                     ret = ENGINE_ENOMEM; break;
                 }
             }
@@ -6667,8 +6575,8 @@ static void process_bin_bop_smget_complete(conn *c)
         /* Add the trimmed key */
         if (ret == ENGINE_SUCCESS) {
             for (i = 0; i < smres.trim_count; i++) {
-                if (add_iov(c, keys_array[smres.trim_kinfo[i].kidx].value,
-                               keys_array[smres.trim_kinfo[i].kidx].length) != 0) {
+                if (add_iov(c, key_tokens[smres.trim_kinfo[i].kidx].value,
+                               key_tokens[smres.trim_kinfo[i].kidx].length) != 0) {
                     ret = ENGINE_ENOMEM; break;
                 }
             }
@@ -6711,8 +6619,8 @@ static void process_bin_bop_smget_complete(conn *c)
     }
 
     /* free token buffer */
-    if (keys_array != NULL) {
-        token_buff_release(&c->thread->token_buff, keys_array);
+    if (key_tokens != NULL) {
+        token_buff_release(&c->thread->token_buff, key_tokens);
     }
 
     if (ret != ENGINE_SUCCESS) {
@@ -7801,6 +7709,7 @@ static void reset_cmd_handler(conn *c)
 #endif
     if (c->coll_eitem != NULL) {
         conn_coll_eitem_free(c);
+        c->coll_eitem = NULL;
     }
     if (c->coll_strkeys != NULL) {
         assert(c->coll_strkeys == (void*)&c->memblist);
@@ -8631,7 +8540,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                     add_iov(c, c->hinfo.key, c->hinfo.nkey) != 0 ||
                     add_iov(c, suffix, suffix_len) != 0 ||
                     (return_cas && add_iov(c, cas_val, cas_len) != 0) ||
-                    add_iov_hinfo_value(c, &c->hinfo) != 0)
+                    add_iov_hinfo_value_all(c, &c->hinfo) != 0)
                 {
                     mc_engine.v1->release(mc_engine.v0, c, it);
                     break;
@@ -10065,7 +9974,7 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
                                            elem_array[i], &c->einfo);
                 sprintf(respptr, "%u ", c->einfo.nbytes-2);
                 if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
                 {
                     ret = ENGINE_ENOMEM; break;
                 }
@@ -10436,9 +10345,9 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
     }
 
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->set_elem_get(mc_engine.v0, c, key, nkey, req_count,
-                                     delete, drop_if_empty, elem_array, &elem_count,
-                                     &flags, &dropped, 0);
+    ret = mc_engine.v1->set_elem_get(mc_engine.v0, c, key, nkey,
+                                     req_count, delete, drop_if_empty,
+                                     elem_array, &elem_count, &flags, &dropped, 0);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -10482,7 +10391,7 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
                                             elem_array[i], &c->einfo);
                 sprintf(respptr, "%u ", c->einfo.nbytes-2);
                 if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
                 {
                     ret = ENGINE_ENOMEM; break;
                 }
@@ -10879,7 +10788,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
                                             elem_array[i], &c->einfo);
                 resplen = make_bop_elem_response(respptr, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
                 {
                     ret = ENGINE_ENOMEM; break;
                 }
@@ -10952,8 +10861,8 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
     uint32_t access_count;
 
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->btree_elem_count(mc_engine.v0, c,
-                                         key, nkey, bkrange, efilter,
+    ret = mc_engine.v1->btree_elem_count(mc_engine.v0, c, key, nkey,
+                                         bkrange, efilter,
                                          &elem_count, &access_count, 0);
 
     if (settings.detail_enabled) {
@@ -11094,7 +11003,7 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
                                             elem_array[i], &c->einfo);
                 resplen = make_bop_elem_response(respptr, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
                 {
                     ret = ENGINE_ENOMEM; break;
                 }
@@ -11217,7 +11126,7 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey,
                                             elem_array[i], &c->einfo);
                 resplen = make_bop_elem_response(respptr, &c->einfo);
                 if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value(c, &c->einfo) != 0))
+                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
                 {
                     ret = ENGINE_ENOMEM; break;
                 }
@@ -11565,7 +11474,8 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
     char temp[INCR_MAX_STORAGE_LEN];
 
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->btree_elem_arithmetic(mc_engine.v0, c, key, nkey, bkrange, incr, create,
+    ret = mc_engine.v1->btree_elem_arithmetic(mc_engine.v0, c, key, nkey,
+                                              bkrange, incr, create,
                                               delta, initial, eflagp, &result, 0);
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
@@ -14045,6 +13955,7 @@ bool conn_mwrite(conn *c)
 #endif
             if (c->coll_eitem != NULL) {
                 conn_coll_eitem_free(c);
+                c->coll_eitem = NULL;
             }
             if (c->coll_strkeys != NULL) {
                 assert(c->coll_strkeys == (void*)&c->memblist);

@@ -8,6 +8,7 @@ use MemcachedTest;
 
 my $engine = shift;
 my $server = get_memcached($engine);
+#my $server = get_memcached($engine, "", "11333");
 my $sock = $server->sock;
 
 my $cmd;

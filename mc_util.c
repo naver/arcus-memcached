@@ -237,11 +237,10 @@ void token_buff_release(token_buff_t *buff, void *tokens)
  */
 size_t tokenize_command(char *command, int cmdlen, token_t *tokens, const size_t max_tokens)
 {
+    assert(command != NULL && tokens != NULL && max_tokens > 1);
     char *s, *e = NULL;
     size_t ntokens = 0;
     size_t checked = 0;
-
-    assert(command != NULL && tokens != NULL && max_tokens > 1);
 
     s = command;
     while (ntokens < max_tokens - 1) {
@@ -308,18 +307,17 @@ int detokenize(token_t *tokens, int ntokens, char *buffer, int length)
     return nb;
 }
 
-int tokenize_keys(char *keystr, int slength, char delimiter, int keycnt, token_t *tokens)
+int tokenize_keys(char *keystr, int keylen, int keycnt, char delimiter, token_t *tokens)
 {
+    assert(keystr != NULL && keylen > 0 && keycnt > 0 && tokens != NULL);
     char *s, *e;
     int checked = 0;
     int ntokens = 0;
     bool finish = false;
 
-    assert(keystr != NULL && slength > 0 && tokens != NULL && keycnt > 0);
-
     s = keystr;
     for (e = s; ntokens < keycnt; ++e, ++checked) {
-        if (checked >= slength) {
+        if (checked >= keylen) {
             if (s == e) break;
             tokens[ntokens].value = s;
             tokens[ntokens].length = e - s;
@@ -380,18 +378,18 @@ static int check_sblock_tail_string(mblck_list_t *sblcks, int length)
     return 0;
 }
 
-static int tokenize_mblck(char *keystr, int slength, char delimiter, int keycnt, token_t *tokens)
+static int tokenize_mblck(char *keystr, int keylen, int keycnt,
+                          char delimiter, token_t *tokens)
 {
+    assert(keylen > 0 && keycnt > 0);
     char *s, *e;
     int checked = 0;
     int ntokens = 0;
     bool finish = false;
 
-    assert(keystr != NULL && slength > 0 && tokens != NULL && keycnt > 0);
-
     s = keystr;
     for (e = s; ntokens < keycnt; ++e, ++checked) {
-        if (checked >= slength) {
+        if (checked >= keylen) {
             if (s == e) break;
             tokens[ntokens].value = s;
             tokens[ntokens].length = e - s;
@@ -423,11 +421,11 @@ typedef struct {
     uint32_t tokidx;
 } segtok_t;
 
-static int build_complete_strings(mblck_list_t *blist, token_t *tokens,
-                                  segtok_t *segtoks, int segcnt)
+static int concat_segmented_tokens(mblck_list_t *blist, token_t *tokens,
+                                   segtok_t *segtoks, int nsegtok)
 {
     assert(blist->pool != NULL);
-    mblck_list_t add_blcks;
+    mblck_list_t newblcks;
     mblck_node_t *blckptr;
     char         *dataptr;
     char         *saveptr;
@@ -438,7 +436,7 @@ static int build_complete_strings(mblck_list_t *blist, token_t *tokens,
     uint32_t      complen, i;
 
     /* calculate the # of blocks needed */
-    for (i = 0; i < segcnt; i++) {
+    for (i = 0; i < nsegtok; i++) {
         tok_ptr = &tokens[segtoks[i].tokidx];
         complen = segtoks[i].length + tok_ptr->length;
         if ((datalen + complen) > bodylen) {
@@ -450,16 +448,16 @@ static int build_complete_strings(mblck_list_t *blist, token_t *tokens,
     }
 
     /* allocate new mblock list */
-    if (mblck_list_alloc((mblck_pool_t*)blist->pool, bodylen, numblks, &add_blcks) < 0) {
+    if (mblck_list_alloc((mblck_pool_t*)blist->pool, bodylen, numblks, &newblcks) < 0) {
         return -1;
     }
 
     /* build the complete strings with new mblock */
-    blckptr = MBLCK_GET_HEADBLK(&add_blcks);
+    blckptr = MBLCK_GET_HEADBLK(&newblcks);
     dataptr = MBLCK_GET_BODYPTR(blckptr);
     datalen = 0;
 
-    for (i = 0; i < segcnt; i++) {
+    for (i = 0; i < nsegtok; i++) {
         tok_ptr = &tokens[segtoks[i].tokidx];
         complen = segtoks[i].length + tok_ptr->length;
 
@@ -481,35 +479,36 @@ static int build_complete_strings(mblck_list_t *blist, token_t *tokens,
     }
 
     /* merge to main mblock list */
-    mblck_list_merge(blist, &add_blcks);
+    mblck_list_merge(blist, &newblcks);
     return 0;
 }
 
-#define SEGTOK_ARRAY_SIZE 32
+#define SEGTOK_ARRAY_SIZE 128
 /*
  * Assume key string blocks without the trailing "\r\n" characters.
  */
-int tokenize_mblocks(mblck_list_t *blist, int length, char delimiter, int keycnt, token_t *tokens)
+ENGINE_ERROR_CODE tokenize_mblocks(mblck_list_t *blist, int keylen, int keycnt,
+                                   token_t *tokens, bool must_backward_compatible)
 {
+    assert(keylen > 0 && keycnt > 0 && tokens != NULL);
     mblck_node_t *blckptr;
     char         *dataptr;
-    uint32_t    numblks;
-    uint32_t    chkblks;
-    uint32_t    bodylen = MBLCK_GET_BODYLEN(blist);
-    uint32_t    datalen;
-    uint32_t    lastlen;
-    uint32_t    ntokens = 0;
-    segtok_t    segtoks[SEGTOK_ARRAY_SIZE];
-    uint32_t    nsegtok = 0;
-    int         ret = 0;
+    uint32_t bodylen = MBLCK_GET_BODYLEN(blist);
+    uint32_t numblks = ((keylen - 1) / bodylen) + 1;
+    uint32_t lastlen = (keylen % bodylen) > 0
+                     ? (keylen % bodylen) : bodylen;
+    uint32_t ntokens;
+    uint32_t chkblks;
+    uint32_t datalen;
+    segtok_t segtoks[SEGTOK_ARRAY_SIZE];
+    uint32_t nsegtok;
+    char delimiter = ' ';
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
-    assert(length > 0 && keycnt > 0 && tokens != NULL);
-
-    /* prepare block info */
-    numblks = ((length - 1) / bodylen) + 1;
-    lastlen = (length % bodylen) > 0
-            ? (length % bodylen) : bodylen;
-
+do_again:
+    /* reset ntokens */
+    ntokens = 0;
+    nsegtok = 0;
     /* get the first block */
     chkblks = 1;
     blckptr = MBLCK_GET_HEADBLK(blist);
@@ -528,16 +527,17 @@ int tokenize_mblocks(mblck_list_t *blist, int length, char delimiter, int keycnt
         }
 
         /* tokenize string in the block */
-        int tokcnt = tokenize_mblck(dataptr, datalen, delimiter,
-                                    keycnt-ntokens, &tokens[ntokens]);
+        int tokcnt = tokenize_mblck(dataptr, datalen, keycnt-ntokens,
+                                    delimiter, &tokens[ntokens]);
         if (tokcnt <= 0) {
-            ret = -1; break;
+            ret = ENGINE_EBADVALUE; break;
         }
         ntokens += tokcnt;
 
         /* check the end of strings */
         if (chkblks >= numblks) {
-            ret = (ntokens == keycnt) ? 0 : -1;
+            ret = (ntokens == keycnt) ? ENGINE_SUCCESS
+                                      : ENGINE_EBADVALUE;
             break; /* string end */
         }
 
@@ -557,8 +557,8 @@ int tokenize_mblocks(mblck_list_t *blist, int length, char delimiter, int keycnt
         } else {
             /* real segmented string: save it */
             if (nsegtok >= SEGTOK_ARRAY_SIZE) {
-                if (build_complete_strings(blist, tokens, segtoks, nsegtok) != 0) {
-                    ret = -2; break; /* out of memory */
+                if (concat_segmented_tokens(blist, tokens, segtoks, nsegtok) != 0) {
+                    ret = ENGINE_ENOMEM; break; /* out of memory */
                 }
                 nsegtok = 0;
             }
@@ -570,9 +570,17 @@ int tokenize_mblocks(mblck_list_t *blist, int length, char delimiter, int keycnt
         }
     }
 
-    if (ret == 0 && nsegtok > 0) {
-        if (build_complete_strings(blist, tokens, segtoks, nsegtok) != 0) {
-            return -2; /* out of memory */
+    if (ret == ENGINE_EBADVALUE) {
+        if (delimiter == ' ' && must_backward_compatible) {
+            delimiter = ','; /* do again to ensure backward compatibility */
+            goto do_again;
+        }
+        return ret;
+    }
+
+    if (ret == ENGINE_SUCCESS && nsegtok > 0) {
+        if (concat_segmented_tokens(blist, tokens, segtoks, nsegtok) != 0) {
+            ret = ENGINE_ENOMEM; /* out of memory */
         }
     }
     return ret;
@@ -581,13 +589,15 @@ int tokenize_mblocks(mblck_list_t *blist, int length, char delimiter, int keycnt
 /*
  * Assume key string blocks in ascii protocol.
  */
-int tokenize_sblocks(mblck_list_t *blist, int length, char delimiter, int keycnt, token_t *tokens)
+ENGINE_ERROR_CODE tokenize_sblocks(mblck_list_t *blist, int keylen, int keycnt,
+                                   token_t *tokens, bool must_backward_compatible)
 {
-    assert(length > 2);
-    /* check the last "\r\n" string */
-    if (check_sblock_tail_string(blist, length) != 0) {
-        return -1; /* invalid tail string */
-    }
+    assert(keylen > 2);
 
-    return tokenize_mblocks(blist, length-2, delimiter, keycnt, tokens);
+    /* check the last "\r\n" string */
+    if (check_sblock_tail_string(blist, keylen) != 0) {
+        return ENGINE_EBADVALUE;
+    }
+    return tokenize_mblocks(blist, keylen-2, keycnt, tokens,
+                            must_backward_compatible);
 }
