@@ -443,6 +443,9 @@ ENGINE_ERROR_CODE set_struct_create(const char *key, const uint32_t nkey,
 
 set_elem_item *set_elem_alloc(const uint32_t nbytes, const void *cookie);
 
+#ifdef INSERT_FIX
+void set_elem_free(set_elem_item *elem);
+#endif
 void set_elem_release(set_elem_item **elem_array, const int elem_count);
 
 ENGINE_ERROR_CODE set_elem_insert(const char *key, const uint32_t nkey,
@@ -470,6 +473,9 @@ ENGINE_ERROR_CODE map_struct_create(const char *key, const uint32_t nkey,
 map_elem_item *map_elem_alloc(const int nfield,
                               const uint32_t nbytes, const void *cookie);
 
+#ifdef INSERT_FIX
+void map_elem_free(map_elem_item *elem);
+#endif
 void map_elem_release(map_elem_item **elem_array, const int elem_count);
 
 ENGINE_ERROR_CODE map_elem_insert(const char *key, const uint32_t nkey,
@@ -498,6 +504,9 @@ ENGINE_ERROR_CODE btree_struct_create(const char *key, const uint32_t nkey,
 btree_elem_item *btree_elem_alloc(const uint32_t nbkey, const uint32_t neflag, const uint32_t nbytes,
                                   const void *cookie);
 
+#ifdef INSERT_FIX
+void btree_elem_free(btree_elem_item *elem);
+#endif
 void btree_elem_release(btree_elem_item **elem_array, const int elem_count);
 
 ENGINE_ERROR_CODE btree_elem_insert(const char *key, const uint32_t nkey,
