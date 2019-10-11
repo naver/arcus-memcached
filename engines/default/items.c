@@ -1832,11 +1832,7 @@ static set_elem_item *do_set_elem_alloc(const uint32_t nbytes, const void *cooki
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
         assert(elem->slabs_clsid > 0);
-#ifdef INSERT_FIX
         elem->refcount    = 0;
-#else
-        elem->refcount    = 1;
-#endif
         elem->nbytes      = nbytes;
         elem->next = (set_elem_item *)ADDR_MEANS_UNLINKED; /* Unliked state */
     }
@@ -2395,11 +2391,7 @@ static btree_elem_item *do_btree_elem_alloc(const uint32_t nbkey, const uint32_t
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
         assert(elem->slabs_clsid > 0);
-#ifdef INSERT_FIX
         elem->refcount    = 0;
-#else
-        elem->refcount    = 1;
-#endif
         elem->status      = BTREE_ITEM_STATUS_UNLINK; /* unlinked state */
         elem->nbkey       = (uint8_t)nbkey;
         elem->neflag      = (uint8_t)neflag;
@@ -6505,9 +6497,7 @@ list_elem_item *list_elem_alloc(const uint32_t nbytes, const void *cookie)
 void list_elem_free(list_elem_item *elem)
 {
     LOCK_CACHE();
-#ifdef INSERT_FIX
     assert(elem->next == (list_elem_item *)ADDR_MEANS_UNLINKED);
-#endif
     do_list_elem_free(elem);
     UNLOCK_CACHE();
 }
@@ -6720,7 +6710,7 @@ set_elem_item *set_elem_alloc(const uint32_t nbytes, const void *cookie)
     UNLOCK_CACHE();
     return elem;
 }
-#ifdef INSERT_FIX
+
 void set_elem_free(set_elem_item *elem)
 {
     LOCK_CACHE();
@@ -6728,7 +6718,6 @@ void set_elem_free(set_elem_item *elem)
     do_set_elem_free(elem);
     UNLOCK_CACHE();
 }
-#endif
 
 void set_elem_release(set_elem_item **elem_array, const int elem_count)
 {
@@ -6902,11 +6891,10 @@ btree_elem_item *btree_elem_alloc(const uint32_t nbkey, const uint32_t neflag, c
     return elem;
 }
 
-#ifdef INSERT_FIX
 void btree_elem_free(btree_elem_item *elem)
 {
     LOCK_CACHE();
-    assert (elem->status == BTREE_ITEM_STATUS_UNLINK);
+    assert(elem->status == BTREE_ITEM_STATUS_UNLINK);
     /* for cases with trimmed element, refcount can be over 0 */
     if (elem->refcount != 0) {
         elem->refcount--;
@@ -6917,7 +6905,7 @@ void btree_elem_free(btree_elem_item *elem)
     }
     UNLOCK_CACHE();
 }
-#endif
+
 void btree_elem_release(btree_elem_item **elem_array, const int elem_count)
 {
     int cnt = 0;
@@ -8767,11 +8755,7 @@ static map_elem_item *do_map_elem_alloc(const int nfield,
     if (elem != NULL) {
         assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
-#ifdef INSERT_FIX
         elem->refcount    = 0;
-#else
-        elem->refcount    = 1;
-#endif
         elem->nfield      = (uint8_t)nfield;
         elem->nbytes      = (uint16_t)nbytes;
         elem->next = (map_elem_item *)ADDR_MEANS_UNLINKED; /* Unliked state */
@@ -9345,7 +9329,6 @@ map_elem_item *map_elem_alloc(const int nfield, const uint32_t nbytes, const voi
     return elem;
 }
 
-#ifdef INSERT_FIX
 void map_elem_free(map_elem_item *elem)
 {
     LOCK_CACHE();
@@ -9353,7 +9336,7 @@ void map_elem_free(map_elem_item *elem)
     do_map_elem_free(elem);
     UNLOCK_CACHE();
 }
-#endif
+
 void map_elem_release(map_elem_item **elem_array, const int elem_count)
 {
     int cnt = 0;

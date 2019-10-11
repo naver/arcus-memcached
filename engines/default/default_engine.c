@@ -506,13 +506,12 @@ default_set_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
-#ifdef INSERT_FIX
 static void
 default_set_elem_free(ENGINE_HANDLE* handle, const void *cookie, eitem *eitem)
 {
     set_elem_free((set_elem_item*)eitem);
 }
-#endif
+
 static void
 default_set_elem_release(ENGINE_HANDLE* handle, const void *cookie,
                          eitem **eitem_array, const int eitem_count)
@@ -625,13 +624,12 @@ default_map_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
     }
     return ret;
 }
-#ifdef INSERT_FIX
+
 static void
 default_map_elem_free(ENGINE_HANDLE* handle, const void *cookie, eitem *eitem)
 {
     map_elem_free((map_elem_item*)eitem);
 }
-#endif
 
 static void
 default_map_elem_release(ENGINE_HANDLE* handle, const void *cookie,
@@ -744,13 +742,12 @@ default_btree_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
-#ifdef INSERT_FIX
 static void
 default_btree_elem_free(ENGINE_HANDLE* handle, const void *cookie, eitem *eitem)
 {
     btree_elem_free((btree_elem_item*)eitem);
 }
-#endif
+
 static void
 default_btree_elem_release(ENGINE_HANDLE* handle, const void *cookie,
                            eitem **eitem_array, const int eitem_count)
@@ -1510,9 +1507,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          /* SET Colleciton API */
          .set_struct_create = default_set_struct_create,
          .set_elem_alloc    = default_set_elem_alloc,
-#ifdef INSERT_FIX
          .set_elem_free     = default_set_elem_free,
-#endif
          .set_elem_release  = default_set_elem_release,
          .set_elem_insert   = default_set_elem_insert,
          .set_elem_delete   = default_set_elem_delete,
@@ -1521,9 +1516,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          /* MAP Collection API */
          .map_struct_create = default_map_struct_create,
          .map_elem_alloc    = default_map_elem_alloc,
-#ifdef INSERT_FIX
          .map_elem_free     = default_map_elem_free,
-#endif
          .map_elem_release  = default_map_elem_release,
          .map_elem_insert   = default_map_elem_insert,
          .map_elem_update   = default_map_elem_update,
@@ -1532,9 +1525,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          /* B+Tree Collection API */
          .btree_struct_create = default_btree_struct_create,
          .btree_elem_alloc   = default_btree_elem_alloc,
-#ifdef INSERT_FIX
          .btree_elem_free    = default_btree_elem_free,
-#endif
          .btree_elem_release = default_btree_elem_release,
          .btree_elem_insert  = default_btree_elem_insert,
          .btree_elem_update  = default_btree_elem_update,

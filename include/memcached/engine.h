@@ -388,9 +388,8 @@ extern "C" {
                                             const void* key, const int nkey,
                                             const size_t nbytes, eitem** eitem);
 
-#ifdef INSERT_FIX
         void (*set_elem_free)(ENGINE_HANDLE* handle, const void* cookie, eitem *eitem);
-#endif
+
         void (*set_elem_release)(ENGINE_HANDLE* handle, const void *cookie,
                                  eitem **eitem_array, const int eitem_count);
 
@@ -434,9 +433,8 @@ extern "C" {
                                             const size_t nfield,
                                             const size_t nbytes,
                                             eitem** eitem);
-#ifdef INSERT_FIX
-        void (*map_elem_free) (ENGINE_HANDLE* handle, const void* cookie, eitem *eitem);
-#endif
+
+        void (*map_elem_free)(ENGINE_HANDLE* handle, const void* cookie, eitem *eitem);
 
         void (*map_elem_release)(ENGINE_HANDLE* handle,
                                  const void *cookie,
@@ -494,9 +492,8 @@ extern "C" {
                                               const size_t nbkey, const size_t neflag,
                                               const size_t nbytes, eitem** eitem);
 
-#ifdef INSERT_FIX
-        void (*btree_elem_free) (ENGINE_HANDLE* handle, const void *cookie, eitem *eitem);
-#endif
+        void (*btree_elem_free)(ENGINE_HANDLE* handle, const void *cookie, eitem *eitem);
+
         void (*btree_elem_release)(ENGINE_HANDLE* handle, const void *cookie,
                                    eitem **eitem_array, const int eitem_count);
 

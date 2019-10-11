@@ -352,13 +352,12 @@ Demo_set_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
     return ENGINE_ENOTSUP;
 }
 
-#ifdef INSERT_FIX
 static void
 Demo_set_elem_free(ENGINE_HANDLE* handle, const void *cookie, eitem *eitem)
 {
     return;
 }
-#endif
+
 static void
 Demo_set_elem_release(ENGINE_HANDLE* handle, const void *cookie,
                          eitem **eitem_array, const int eitem_count)
@@ -422,13 +421,12 @@ Demo_map_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
 {
     return ENGINE_ENOTSUP;
 }
-#ifdef INSERT_FIX
+
 static void
 Demo_map_elem_free(ENGINE_HANDLE* handle, const void *cookie, eitem *eitem)
 {
     return;
 }
-#endif
 
 static void
 Demo_map_elem_release(ENGINE_HANDLE* handle, const void *cookie,
@@ -493,13 +491,12 @@ Demo_btree_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
     return ENGINE_ENOTSUP;
 }
 
-#ifdef INSERT_FIX
 static void
 Demo_btree_elem_free(ENGINE_HANDLE* handle, const void *cookie, eitem *eitem)
 {
     return;
 }
-#endif
+
 static void
 Demo_btree_elem_release(ENGINE_HANDLE* handle, const void *cookie,
                            eitem **eitem_array, const int eitem_count)
@@ -803,9 +800,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          /* SET Colleciton API */
          .set_struct_create = Demo_set_struct_create,
          .set_elem_alloc    = Demo_set_elem_alloc,
-#ifdef INSERT_FIX
          .set_elem_free     = Demo_set_elem_free,
-#endif
          .set_elem_release  = Demo_set_elem_release,
          .set_elem_insert   = Demo_set_elem_insert,
          .set_elem_delete   = Demo_set_elem_delete,
@@ -814,9 +809,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          /* MAP Collection API */
          .map_struct_create = Demo_map_struct_create,
          .map_elem_alloc    = Demo_map_elem_alloc,
-#ifdef INSERT_FIX
          .map_elem_free     = Demo_map_elem_free,
-#endif
          .map_elem_release  = Demo_map_elem_release,
          .map_elem_insert   = Demo_map_elem_insert,
          .map_elem_update   = Demo_map_elem_update,
@@ -825,9 +818,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          /* B+Tree Collection API */
          .btree_struct_create = Demo_btree_struct_create,
          .btree_elem_alloc   = Demo_btree_elem_alloc,
-#ifdef INSERT_FIX
          .btree_elem_free    = Demo_btree_elem_free,
-#endif
          .btree_elem_release = Demo_btree_elem_release,
          .btree_elem_insert  = Demo_btree_elem_insert,
          .btree_elem_update  = Demo_btree_elem_update,
