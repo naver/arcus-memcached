@@ -10392,11 +10392,11 @@ item_apply_list_elem_insert(hash_item *it, const int nelems, const int index,
 
         ret = do_list_elem_insert(it, index, elem, NULL);
         if (ret != ENGINE_SUCCESS) {
+            do_list_elem_free(elem);
             logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_list_elem_insert failed."
                         " key=%.*s index=%d code=%d\n",
                         it->nkey, key, index, ret);
         }
-        do_list_elem_release(elem);
     } while(0);
 
     if (ret != ENGINE_SUCCESS) { /* Remove inconsistent hash_item */
@@ -10480,11 +10480,11 @@ item_apply_set_elem_insert(hash_item *it, const char *value, const uint32_t nbyt
 
         ret = do_set_elem_insert(it, elem, NULL);
         if (ret != ENGINE_SUCCESS) {
+            do_set_elem_free(elem);
             logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_set_elem_insert failed."
                         " key=%.*s code=%d\n",
                         it->nkey, key, ret);
         }
-        do_set_elem_release(elem);
     } while(0);
 
     if (ret != ENGINE_SUCCESS) { /* Remove inconsistent hash_item */
@@ -10560,11 +10560,11 @@ item_apply_map_elem_insert(hash_item *it, const char *data, const uint32_t nfiel
 
         ret = do_map_elem_insert(it, elem, true /* replace_if_exist */,  NULL);
         if (ret != ENGINE_SUCCESS) {
+            do_map_elem_free(elem);
             logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_map_elem_insert failed."
                         " key=%.*s nfield=%d field=%.*s code=%d\n",
                         it->nkey, key, nfield, nfield, data + it->nkey, ret);
         }
-        do_map_elem_release(elem);
     } while(0);
 
     if (ret != ENGINE_SUCCESS) { /* Remove inconsistent has_item */
@@ -10653,11 +10653,11 @@ item_apply_btree_elem_insert(hash_item *it, const char *data, const uint32_t nbk
         ret = do_btree_elem_insert(it, elem, true /* replace_if_exist */,
                                    &replaced, NULL, NULL, NULL);
         if (ret != ENGINE_SUCCESS) {
+            do_btree_elem_free(elem);
             logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_btree_elem_insert failed."
                         " key=%.*s nbkey=%d bkey=%.*s code=%d\n",
                         it->nkey, key, nbkey, nbkey, (data + it->nkey), ret);
         }
-        do_btree_elem_release(elem);
     } while(0);
 
     if (ret != ENGINE_SUCCESS) { /* Remove inconsistent has_item */
