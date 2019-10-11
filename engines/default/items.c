@@ -3920,7 +3920,6 @@ static ENGINE_ERROR_CODE do_btree_elem_update(btree_meta_info *info,
         }
 
         do_btree_elem_replace(info, &posi, new_elem);
-        do_btree_elem_release(new_elem);
     }
 
     return ENGINE_SUCCESS;
@@ -4728,8 +4727,8 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(btree_meta_info *info,
         if (ret != ENGINE_SUCCESS) {
             assert(ret != ENGINE_ELEM_EEXISTS);
             /* ENGINE_ENOMEM || ENGINE_BKEYOOR || ENGINE_OVERFLOW */
+            do_btree_elem_free(elem);
         }
-        do_btree_elem_release(elem);
         *result = initial;
     } else {
         real_nbkey = BTREE_REAL_NBKEY(elem->nbkey);
@@ -4767,7 +4766,6 @@ static ENGINE_ERROR_CODE do_btree_elem_arithmetic(btree_meta_info *info,
             memcpy(new_elem->data + real_nbkey + new_elem->neflag, nbuf, nlen);
 
             do_btree_elem_replace(info, &posi, new_elem);
-            do_btree_elem_release(new_elem);
         }
         ret = ENGINE_SUCCESS;
         *result = value;
@@ -9206,7 +9204,6 @@ static ENGINE_ERROR_CODE do_map_elem_update(map_meta_info *info,
 
         /* replace the element */
         do_map_elem_replace(info, &pinfo, new_elem);
-        do_map_elem_release(new_elem);
     }
 
     return ENGINE_SUCCESS;
