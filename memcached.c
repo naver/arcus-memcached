@@ -784,7 +784,7 @@ static void conn_coll_eitem_free(conn *c)
         break;
       /* sop */
       case OPERATION_SOP_INSERT:
-        mc_engine.v1->set_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+        mc_engine.v1->set_elem_free(mc_engine.v0, c, c->coll_eitem);
         break;
       case OPERATION_SOP_DELETE:
       case OPERATION_SOP_EXIST:
@@ -799,7 +799,7 @@ static void conn_coll_eitem_free(conn *c)
         break;
       /* mop */
       case OPERATION_MOP_INSERT:
-        mc_engine.v1->map_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+        mc_engine.v1->map_elem_free(mc_engine.v0, c, c->coll_eitem);
         break;
       case OPERATION_MOP_UPDATE:
         free(c->coll_eitem);
@@ -814,7 +814,7 @@ static void conn_coll_eitem_free(conn *c)
       /* bop */
       case OPERATION_BOP_INSERT:
       case OPERATION_BOP_UPSERT:
-        mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+        mc_engine.v1->btree_elem_free(mc_engine.v0, c, c->coll_eitem);
         break;
       case OPERATION_BOP_UPDATE:
         free(c->coll_eitem);
@@ -1672,15 +1672,15 @@ static void process_sop_insert_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_SOP_INSERT);
     assert(c->coll_eitem != NULL);
+    ENGINE_ERROR_CODE ret;
 
     mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, c->coll_eitem, &c->einfo);
 
     if (einfo_check_ascii_tail_string(&c->einfo) != 0) { /* check "\r\n" */
+        ret = ENGINE_EINVAL;
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         bool created;
-        ENGINE_ERROR_CODE ret;
-
         ret = mc_engine.v1->set_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
                                             c->coll_eitem, c->coll_attrp, &created, 0);
         if (ret == ENGINE_EWOULDBLOCK) {
@@ -1717,7 +1717,9 @@ static void process_sop_insert_complete(conn *c)
         }
     }
 
-    mc_engine.v1->set_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+    if (ret != ENGINE_SUCCESS) {
+        mc_engine.v1->set_elem_free(mc_engine.v0, c, c->coll_eitem);
+    }
     c->coll_eitem = NULL;
 }
 
@@ -1841,6 +1843,7 @@ static void process_mop_insert_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_MOP_INSERT);
     assert(c->coll_eitem != NULL);
+    ENGINE_ERROR_CODE ret;
 
     mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, c->coll_eitem, &c->einfo);
 
@@ -1848,11 +1851,10 @@ static void process_mop_insert_complete(conn *c)
     memcpy((void*)c->einfo.score, c->coll_field.value, c->coll_field.length);
 
     if (einfo_check_ascii_tail_string(&c->einfo) != 0) { /* check "\r\n" */
+        ret = ENGINE_EINVAL;
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         bool created;
-        ENGINE_ERROR_CODE ret;
-
         ret = mc_engine.v1->map_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
                                             c->coll_eitem, c->coll_attrp, &created, 0);
         if (ret == ENGINE_EWOULDBLOCK) {
@@ -1889,7 +1891,9 @@ static void process_mop_insert_complete(conn *c)
         }
     }
 
-    mc_engine.v1->map_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+    if (ret != ENGINE_SUCCESS) {
+        mc_engine.v1->map_elem_free(mc_engine.v0, c, c->coll_eitem);
+    }
     c->coll_eitem = NULL;
 }
 
@@ -2246,7 +2250,7 @@ static void process_bop_insert_complete(conn *c)
 
     if (einfo_check_ascii_tail_string(&c->einfo) != 0) { /* check "\r\n" */
         // release the btree element
-        mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+        mc_engine.v1->btree_elem_free(mc_engine.v0, c, c->coll_eitem);
         c->coll_eitem = NULL;
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
@@ -2266,7 +2270,9 @@ static void process_bop_insert_complete(conn *c)
         }
 
         // release the btree element in advance since coll_eitem field is to be used, soon.
-        mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+        if (ret != ENGINE_SUCCESS) {
+            mc_engine.v1->btree_elem_free(mc_engine.v0, c, c->coll_eitem);
+        }
         c->coll_eitem = NULL;
 
         if (settings.detail_enabled) {
@@ -5083,7 +5089,9 @@ static void process_bin_sop_insert_complete(conn *c)
     }
 
     /* release the c->coll_eitem reference */
-    mc_engine.v1->set_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+    if (ret != ENGINE_SUCCESS) {
+        mc_engine.v1->set_elem_free(mc_engine.v0, c, c->coll_eitem);
+    }
     c->coll_eitem = NULL;
 }
 
@@ -5578,7 +5586,9 @@ static void process_bin_bop_insert_complete(conn *c)
     }
 
     /* release the c->coll_eitem reference */
-    mc_engine.v1->btree_elem_release(mc_engine.v0, c, &c->coll_eitem, 1);
+    if (ret != ENGINE_SUCCESS) {
+        mc_engine.v1->btree_elem_free(mc_engine.v0, c, c->coll_eitem);
+    }
     c->coll_eitem = NULL;
 }
 
