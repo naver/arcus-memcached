@@ -2302,8 +2302,7 @@ static void process_bop_insert_complete(conn *c)
                     (add_iov_einfo_value_all(c, &c->einfo) != 0) ||
                     (add_iov(c, "TRIMMED\r\n", strlen("TRIMMED\r\n")) != 0))
                 {
-                    mc_engine.v1->btree_elem_release(mc_engine.v0, c,
-                                                     &trim_result.elems, trim_result.count);
+                    mc_engine.v1->btree_elem_free(mc_engine.v0, c, trim_result.elems);
                     if (c->ewouldblock)
                         c->ewouldblock = false;
                     out_string(c, "SERVER_ERROR out of memory writing get response");
