@@ -818,13 +818,23 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
 }
 
 /*@null@*/
+#ifdef SUPPORT_NULL_VALUE
+static hash_item *do_item_alloc(const void *key, const uint32_t nkey,
+                                const uint32_t flags, const rel_time_t exptime,
+                                const int64_t nbytes, const void *cookie)
+#else
 static hash_item *do_item_alloc(const void *key, const uint32_t nkey,
                                 const uint32_t flags, const rel_time_t exptime,
                                 const uint32_t nbytes, const void *cookie)
+#endif
 {
     assert(nkey > 0);
     hash_item *it = NULL;
+#ifdef SUPPORT_NULL_VALUE
+    size_t ntotal = sizeof(hash_item) + nkey + (nbytes == -1 ? 0 : nbytes);
+#else
     size_t ntotal = sizeof(hash_item) + nkey + nbytes;
+#endif
     if (config->use_cas) {
         ntotal += sizeof(uint64_t);
     }
@@ -5894,9 +5904,15 @@ void coll_del_thread_wakeup(void)
 /*
  * Allocates a new item.
  */
+#ifdef SUPPORT_NULL_VALUE
+hash_item *item_alloc(const void *key, const uint32_t nkey,
+                      const uint32_t flags, rel_time_t exptime,
+                      const int64_t nbytes, const void *cookie)
+#else
 hash_item *item_alloc(const void *key, const uint32_t nkey,
                       const uint32_t flags, rel_time_t exptime,
                       const uint32_t nbytes, const void *cookie)
+#endif
 {
     hash_item *it;
     LOCK_CACHE();

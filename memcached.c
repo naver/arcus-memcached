@@ -1032,6 +1032,12 @@ static void ritem_set_first(conn *c, int rtype, int vleng)
 {
     c->rtype = rtype;
 
+#ifdef SUPPORT_NULL_VALUE
+    if (vleng == -1) {
+        c->rlbytes = 0;
+        return;
+    }
+#endif
     if (c->rtype == CONN_RTYPE_MBLCK) {
         c->membk = MBLCK_GET_HEADBLK(&c->memblist);
         c->ritem = MBLCK_GET_BODYPTR(c->membk);
@@ -1328,6 +1334,11 @@ static int add_iov_einfo_value_some(conn *c, eitem_info *einfo, int length)
 
 static int hinfo_check_ascii_tail_string(item_info *hinfo)
 {
+#ifdef SUPPORT_NULL_VALUE
+    if (hinfo->nbytes == -1) {
+        return 0;
+    }
+#endif
     if (hinfo->naddnl == 0) {
         return memcmp((char*)hinfo->value + hinfo->nbytes - 2, "\r\n", 2);
     }
@@ -3059,8 +3070,13 @@ static void process_mget_complete(conn *c)
                     mc_engine.v1->release(mc_engine.v0, c, it);
                     break; /* out of memory */
                 }
+#ifdef SUPPORT_NULL_VALUE
+                int suffix_len = snprintf(suffix, SUFFIX_SIZE, " %u %ld\r\n", htonl(c->hinfo.flags),
+                                          c->hinfo.nbytes - (c->hinfo.nbytes == -1 ? 0 : 2));
+#else
                 int suffix_len = snprintf(suffix, SUFFIX_SIZE, " %u %u\r\n",
                                           htonl(c->hinfo.flags), c->hinfo.nbytes - 2);
+#endif
 
                 MEMCACHED_COMMAND_GET(c->sfd, c->hinfo.key, c->hinfo.nkey,
                                       c->hinfo.nbytes, c->hinfo.cas);
@@ -8526,8 +8542,13 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                     mc_engine.v1->release(mc_engine.v0, c, it);
                     return;
                 }
+#ifdef SUPPORT_NULL_VALUE
+                int suffix_len = snprintf(suffix, SUFFIX_SIZE, " %u %ld\r\n", htonl(c->hinfo.flags),
+                                          c->hinfo.nbytes - (c->hinfo.nbytes == -1 ? 0 : 2));
+#else
                 int suffix_len = snprintf(suffix, SUFFIX_SIZE, " %u %u\r\n",
                                           htonl(c->hinfo.flags), c->hinfo.nbytes - 2);
+#endif
 
                 /* rebuild cas value */
                 if (return_cas) {
@@ -8671,7 +8692,11 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     unsigned int flags;
     int32_t exptime_int=0;
     time_t exptime;
+#ifdef SUPPORT_NULL_VALUE
+    int64_t vlen;
+#else
     int vlen;
+#endif
     uint64_t req_cas_id=0;
     item *it;
 
@@ -8687,17 +8712,29 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
 
     if (! (safe_strtoul(tokens[2].value, (uint32_t *)&flags)
            && safe_strtol(tokens[3].value, &exptime_int)
+#ifdef SUPPORT_NULL_VALUE
+           && safe_strtoll(tokens[4].value, &vlen))) {
+#else
            && safe_strtol(tokens[4].value, (int32_t *)&vlen))) {
+#endif
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
+#ifdef SUPPORT_NULL_VALUE
+    if (vlen < -1 || vlen > (INT_MAX-2)) {
+#else
     if (vlen < 0 || vlen > (INT_MAX-2)) {
+#endif
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
+#ifdef SUPPORT_NULL_VALUE
+    vlen += (vlen == -1 ? 0 : 2);
+#else
     vlen += 2;
+#endif
 
     /* Ubuntu 8.04 breaks when I pass exptime to safe_strtol */
     exptime = exptime_int;

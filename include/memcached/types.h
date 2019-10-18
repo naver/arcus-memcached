@@ -31,6 +31,7 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
+#define SUPPORT_NULL_VALUE
 #define PROXY_SUPPORT
 #define BOP_COUNT_OPTIMIZE
 //#define NEW_PREFIX_STATS_MANAGEMENT
@@ -224,8 +225,13 @@ extern "C" {
         rel_time_t exptime; /**< When the item will expire (relative to process startup) */
         uint8_t clsid;      /** class id for the object */
         uint16_t nkey;      /**< The total length of the key (in bytes) */
+#ifdef SUPPORT_NULL_VALUE
+        int64_t nbytes;     /**< The total length of the data (in bytes) */
+        int32_t nvalue;     /* size of value data */
+#else
         uint32_t nbytes;    /**< The total length of the data (in bytes) */
         uint32_t nvalue;    /* size of value data */
+#endif
         uint32_t naddnl;    /* additional value item count */
         const void *key;    /* key string */
         const void *value;  /* value data */

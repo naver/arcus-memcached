@@ -75,7 +75,11 @@ typedef struct _hash_item {
     rel_time_t exptime; /* When the item will expire (relative to process startup) */
     uint8_t  iflag;     /* Internal flags: item type and flag */
     uint16_t nkey;      /* The total length of the key (in bytes) */
+#ifdef SUPPORT_NULL_VALUE
+    int64_t nbytes;     /* The total length of the data (in bytes) */
+#else
     uint32_t nbytes;    /* The total length of the data (in bytes) */
+#endif
     /* Following fields are used to trade off memory space for performance */
     uint32_t khash;     /* The hash value of key string */
     void    *pfxptr;    /* pointer to prefix structure */
@@ -309,9 +313,15 @@ typedef struct {
  * @param nbytes the number of bytes in the body for the item
  * @return a pointer to an item on success NULL otherwise
  */
+#ifdef SUPPORT_NULL_VALUE
+hash_item *item_alloc(const void *key, const uint32_t nkey,
+                      const uint32_t flags, rel_time_t exptime,
+                      const int64_t nbytes, const void *cookie);
+#else
 hash_item *item_alloc(const void *key, const uint32_t nkey,
                       const uint32_t flags, rel_time_t exptime,
                       const uint32_t nbytes, const void *cookie);
+#endif
 
 /**
  * Get an item from the cache

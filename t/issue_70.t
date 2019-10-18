@@ -17,7 +17,7 @@ my $msg;
 $cmd = "set issue70 0 0 0\r\n"; $rst = "STORED"; $msg = "stored issue70";
 mem_cmd_is($sock, $cmd, "", $rst);
 
-$cmd = "set issue70 0 0 -1"; $rst = "CLIENT_ERROR bad command line format";
+$cmd = "set issue70 0 0 -1"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, "", $rst);
 
 $cmd = "set issue70 0 0 4294967295"; $rst = "CLIENT_ERROR bad command line format";
