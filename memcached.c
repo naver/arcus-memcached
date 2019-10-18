@@ -15702,10 +15702,16 @@ int main (int argc, char **argv)
     /* initialize main thread libevent instance */
     main_base = event_init();
 
-    /* Load the storage engine */
+    /* initialize other stuff */
+    stats_init();
+
+    /* initialize clock event */
+    clock_handler(0, 0, 0);
+
+    /* load and initialize the storage engine */
     ENGINE_HANDLE *engine_handle = NULL;
     if (!load_engine(engine, get_server_api, mc_logger, &engine_handle)) {
-        /* Error already reported */
+        /* error already reported */
         exit(EXIT_FAILURE);
     }
 
@@ -15717,9 +15723,6 @@ int main (int argc, char **argv)
         log_engine_details(engine_handle, mc_logger);
     }
     mc_engine.v1 = (ENGINE_HANDLE_V1 *) engine_handle;
-
-    /* initialize other stuff */
-    stats_init();
 
     if (!(conn_cache = cache_create("conn", sizeof(conn), sizeof(void*),
                                     conn_constructor, conn_destructor))) {
@@ -15743,12 +15746,12 @@ int main (int argc, char **argv)
 #endif
 
 #ifdef COMMAND_LOGGING
-    /* initialise command logging */
+    /* initialize command logging */
     cmdlog_init(settings.port, mc_logger);
 #endif
 
 #ifdef DETECT_LONG_QUERY
-    /* initialise long query detection */
+    /* initialize long query detection */
     if (lqdetect_init() == -1) {
         mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Can't allocate long query detection buffer\n");
@@ -15758,9 +15761,6 @@ int main (int argc, char **argv)
 
     /* start up worker threads if MT mode */
     thread_init(settings.num_threads, main_base);
-
-    /* initialise clock event */
-    clock_handler(0, 0, 0);
 
     /* create unix mode sockets after dropping privileges */
     if (settings.socketpath != NULL) {
