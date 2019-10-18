@@ -523,6 +523,7 @@ struct conn {
     int          coll_index;   /* the list index of lop insert */
     item_attr    coll_attr_space;
     item_attr   *coll_attrp;
+    bool         coll_getrim;  /* getrim flag. See process_bop_command() */
     bool         coll_delete;  /* delete flag. See process_mop_get_complete() */
     bool         coll_drop;    /* drop flag */
 #ifdef JHPARK_OLD_SMGET_INTERFACE

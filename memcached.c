@@ -2263,7 +2263,7 @@ static void process_bop_insert_complete(conn *c)
         ret = mc_engine.v1->btree_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
                                               c->coll_eitem, replace_if_exist,
                                               c->coll_attrp, &replaced, &created,
-                                              (c->coll_drop ? &trim_result : NULL), 0);
+                                              (c->coll_getrim ? &trim_result : NULL), 0);
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
             ret = ENGINE_SUCCESS;
@@ -2282,7 +2282,7 @@ static void process_bop_insert_complete(conn *c)
         switch (ret) {
         case ENGINE_SUCCESS:
             STATS_HITS(c, bop_insert, c->coll_key, c->coll_nkey);
-            if (c->coll_drop && trim_result.elems != NULL) { /* getrim flag */
+            if (c->coll_getrim && trim_result.elems != NULL) { /* getrim flag */
                 assert(trim_result.count == 1);
                 char  buffer[256];
                 char *respptr = &buffer[0];
@@ -12125,15 +12125,14 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
-        /* [NOTE] c->coll_drop is also used as getrim flag in bop insert/upsert */
-        c->coll_drop = false;
+        c->coll_getrim = false;
         if (c->noreply == false) {
             if (strcmp(tokens[ntokens-2].value, "getrim") == 0) {
                 /* The getrim flag in bop insert/upsert command
                  * If an element is trimmed by maxcount overflow,
                  * the trimmed element must be gotten by clients.
                  */
-                c->coll_drop = true;
+                c->coll_getrim = true;
             }
         }
 
@@ -12165,7 +12164,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         vlen += 2;
         read_ntokens += 1;
 
-        int post_ntokens = 1 + ((c->noreply || c->coll_drop) ? 1 : 0);
+        int post_ntokens = 1 + ((c->noreply || c->coll_getrim) ? 1 : 0);
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
         if (rest_ntokens >= 2) {
@@ -15703,10 +15702,16 @@ int main (int argc, char **argv)
     /* initialize main thread libevent instance */
     main_base = event_init();
 
-    /* Load the storage engine */
+    /* initialize other stuff */
+    stats_init();
+
+    /* initialize clock event */
+    clock_handler(0, 0, 0);
+
+    /* load and initialize the storage engine */
     ENGINE_HANDLE *engine_handle = NULL;
     if (!load_engine(engine, get_server_api, mc_logger, &engine_handle)) {
-        /* Error already reported */
+        /* error already reported */
         exit(EXIT_FAILURE);
     }
 
@@ -15718,9 +15723,6 @@ int main (int argc, char **argv)
         log_engine_details(engine_handle, mc_logger);
     }
     mc_engine.v1 = (ENGINE_HANDLE_V1 *) engine_handle;
-
-    /* initialize other stuff */
-    stats_init();
 
     if (!(conn_cache = cache_create("conn", sizeof(conn), sizeof(void*),
                                     conn_constructor, conn_destructor))) {
@@ -15744,12 +15746,12 @@ int main (int argc, char **argv)
 #endif
 
 #ifdef COMMAND_LOGGING
-    /* initialise command logging */
+    /* initialize command logging */
     cmdlog_init(settings.port, mc_logger);
 #endif
 
 #ifdef DETECT_LONG_QUERY
-    /* initialise long query detection */
+    /* initialize long query detection */
     if (lqdetect_init() == -1) {
         mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Can't allocate long query detection buffer\n");
@@ -15759,9 +15761,6 @@ int main (int argc, char **argv)
 
     /* start up worker threads if MT mode */
     thread_init(settings.num_threads, main_base);
-
-    /* initialise clock event */
-    clock_handler(0, 0, 0);
 
     /* create unix mode sockets after dropping privileges */
     if (settings.socketpath != NULL) {
