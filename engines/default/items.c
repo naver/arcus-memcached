@@ -8387,7 +8387,6 @@ static void *item_dumper_main(void *arg)
     int max_buflen = DUMP_BUFFER_SIZE;
     static char dump_buffer[DUMP_BUFFER_SIZE];
     char *cur_bufptr = dump_buffer;
-    time_t     real_nowtime; /* real now time */
     rel_time_t memc_curtime; /* current time of cache server */
     int str_length;
 
@@ -8427,7 +8426,6 @@ static void *item_dumper_main(void *arg)
         pthread_mutex_unlock(&engine->cache_lock);
 
         /* write key string to buffer */
-        real_nowtime = time(NULL);
         memc_curtime = svcore->get_current_time();
         for (i = 0; i < item_count; i++) {
             if ((it = item_array[i]) == NULL) continue;
@@ -8473,10 +8471,9 @@ static void *item_dumper_main(void *arg)
 #endif
             } else {
                 if (it->exptime > memc_curtime) {
-                    snprintf(cur_bufptr, 22, " %"PRIu64"\n",
-                             (uint64_t)(real_nowtime + (it->exptime - memc_curtime)));
+                    snprintf(cur_bufptr, 13, " %u\n", it->exptime - memc_curtime);
                 } else {
-                    snprintf(cur_bufptr, 22, " %"PRIu64"\n", (uint64_t)real_nowtime);
+                    snprintf(cur_bufptr, 13, " -2\n"); /* this case may not occur */
                 }
                 str_length = strlen(cur_bufptr);
                 cur_bufptr += str_length;
