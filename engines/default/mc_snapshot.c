@@ -201,6 +201,7 @@ static int do_snapshot_key_dump(snapshot_st *ss, void **item_array, int item_cou
         }
         bufptr += length;
         ssb->curlen += (length + it->nkey + 2);
+        ss->snapped++;
     }
     return ret;
 }
