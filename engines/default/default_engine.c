@@ -1140,6 +1140,11 @@ default_get_stats(ENGINE_HANDLE* handle, const void* cookie,
     else if (strncmp(stat_key, "dump", 4) == 0) {
         item_stats_dump(engine, add_stat, cookie);
     }
+#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT_COMMAND
+    else if (strncmp(stat_key, "snapshot", 8) == 0) {
+        mc_snapshot_stats(add_stat, cookie);
+    }
+#endif
     else {
         ret = ENGINE_KEY_ENOENT;
     }
@@ -1201,6 +1206,33 @@ default_dump(ENGINE_HANDLE* handle, const void* cookie,
         return ENGINE_ENOTSUP;
     }
 }
+
+#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT_COMMAND
+static ENGINE_ERROR_CODE
+default_snapshot(ENGINE_HANDLE* handle, const void* cookie,
+                 const char *opstr, const char *modestr,
+                 const char *prefix, const int nprefix, const char *filepath)
+{
+    if (memcmp(opstr, "start", 5) == 0) {
+        enum mc_snapshot_mode mode;
+        if (memcmp(modestr, "key", 3) == 0) {
+            mode = MC_SNAPSHOT_MODE_KEY;
+        } else if (memcmp(modestr, "data", 4) == 0) {
+            mode = MC_SNAPSHOT_MODE_DATA;
+        } else {
+            return ENGINE_ENOTSUP;
+        }
+        return mc_snapshot_start(mode, prefix, nprefix, filepath);
+    }
+
+    if (memcmp(opstr, "stop", 4) == 0) {
+        mc_snapshot_stop();
+        return ENGINE_SUCCESS;
+    } else {
+        return ENGINE_ENOTSUP;
+    }
+}
+#endif
 
 /*
  * Config API
@@ -1629,6 +1661,9 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          /* Dump API */
          .cachedump        = default_cachedump,
          .dump             = default_dump,
+#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT_COMMAND
+         .snapshot         = default_snapshot,
+#endif
          /* Config API */
          .set_config       = default_set_config,
          /* Unknown Command API */
