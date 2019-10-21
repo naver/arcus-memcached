@@ -641,14 +641,13 @@ void item_stats_scrub(struct default_engine *engine,
  * Item dumpper
  */
 enum dump_mode {
-    DUMP_MODE_NONE = 0,
-    DUMP_MODE_KEY  = 1, /* key string only */
-    DUMP_MODE_ITEM = 2  /* key string & item value */
+    DUMP_MODE_KEY = 0, /* key string only */
+    DUMP_MODE_ITEM     /* key string & item value */
 };
-int  item_start_dump(struct default_engine *engine,
-                     enum dump_mode mode,
-                     const char *prefix, const int nprefix,
-                     const char *filepath);
+ENGINE_ERROR_CODE item_start_dump(struct default_engine *engine,
+                                  enum dump_mode mode,
+                                  const char *prefix, const int nprefix,
+                                  const char *filepath);
 void item_stop_dump(struct default_engine *engine);
 void item_stats_dump(struct default_engine *engine,
                      ADD_STAT add_stat, const void *cookie);

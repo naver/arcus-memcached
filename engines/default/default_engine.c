@@ -1185,20 +1185,21 @@ default_dump(ENGINE_HANDLE* handle, const void* cookie,
     struct default_engine* engine = get_handle(handle);
 
     if (memcmp(opstr, "start", 5) == 0) {
-        if (memcmp(modestr, "key", 3) != 0) {
+        enum dump_mode mode;
+        if (memcmp(modestr, "key", 3) == 0) {
+            mode = DUMP_MODE_KEY;
+        } else {
             return ENGINE_ENOTSUP;
         }
-        if (item_start_dump(engine, DUMP_MODE_KEY, prefix, nprefix, filepath) != 0) {
-            return ENGINE_FAILED;
-        }
+        return item_start_dump(engine, mode, prefix, nprefix, filepath);
     }
-    else if (memcmp(opstr, "stop", 4) == 0) {
+
+    if (memcmp(opstr, "stop", 4) == 0) {
         item_stop_dump(engine);
-    }
-    else {
+        return ENGINE_SUCCESS;
+    } else {
         return ENGINE_ENOTSUP;
     }
-    return ENGINE_SUCCESS;
 }
 
 /*

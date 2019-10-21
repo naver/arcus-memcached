@@ -8737,8 +8737,62 @@ void item_stats_scrub(struct default_engine *engine,
  * Currently, only key strings of cache items can be dumped.
  * The values of cache items will be dumped in later version.
  */
+static int item_dump_space_key(hash_item *it)
+{
+    /* dump format : < type, key, exptime > */
+    return (int)it->nkey + 15;
+}
+
+static int item_dump_write_key(char *buffer, hash_item *it, rel_time_t mc_curtime)
+{
+    char *bufptr = buffer;
+    int   length = 0;
+
+    /* dump format : < type, key, exptime > */
+    /* item type: L(list), S(set), M(map), B(b+tree), K(kv) */
+    if (IS_LIST_ITEM(it))       memcpy(bufptr, "L ", 2);
+    else if (IS_SET_ITEM(it))   memcpy(bufptr, "S ", 2);
+    else if (IS_MAP_ITEM(it))   memcpy(bufptr, "M ", 2);
+    else if (IS_BTREE_ITEM(it)) memcpy(bufptr, "B ", 2);
+    else                        memcpy(bufptr, "K ", 2);
+    bufptr += 2;
+    length += 2;
+
+    /* key string */
+    memcpy(bufptr, item_get_key(it), it->nkey);
+    bufptr += it->nkey;
+    length += it->nkey;
+
+    /* exptime and new line */
+    if (it->exptime == 0) {
+        memcpy(bufptr, " 0\n", 3);
+        length += 3;
+#ifdef ENABLE_STICKY_ITEM
+    } else if (it->exptime == (rel_time_t)-1) {
+        memcpy(bufptr, " -1\n", 4);
+        length += 4;
+#endif
+    } else {
+        if (it->exptime > mc_curtime) {
+            snprintf(bufptr, 12, " %u\n", it->exptime - mc_curtime);
+            length += strlen(bufptr);
+        } else {
+            memcpy(bufptr, " -2\n", 4); /* this case may not occur */
+            length += 4;
+        }
+    }
+
+    return length; /* total length */
+}
+
+/* dump constants */
 #define DUMP_BUFFER_SIZE (64 * 1024)
 #define SCAN_ITEM_ARRAY_SIZE 64
+
+/* dump space & write functions */
+typedef int (*DUMP_SPACE_FUNC)(hash_item *it);
+typedef int (*DUMP_WRITE_FUNC)(char *buffer, hash_item *it, rel_time_t mc_curtime);
+
 static void *item_dumper_main(void *arg)
 {
     struct default_engine *engine = arg;
@@ -8754,11 +8808,22 @@ static void *item_dumper_main(void *arg)
     int max_buflen = DUMP_BUFFER_SIZE;
     static char dump_buffer[DUMP_BUFFER_SIZE];
     char *cur_bufptr = dump_buffer;
-    time_t     real_nowtime; /* real now time */
     rel_time_t memc_curtime; /* current time of cache server */
     int str_length;
+    DUMP_SPACE_FUNC dump_space_func = NULL;
+    DUMP_WRITE_FUNC dump_write_func = NULL;
 
     assert(dumper->running == true);
+
+    /* set dump functions */
+    if (dumper->mode == DUMP_MODE_KEY) {
+        dump_space_func = item_dump_space_key;
+        dump_write_func = item_dump_write_key;
+    } else {
+        logger->log(EXTENSION_LOG_WARNING, NULL, "Invalid dump mode=%d\n",
+                    (int)dumper->mode);
+        ret = -1; goto done;
+    }
 
     fd = open(dumper->filepath, O_WRONLY | O_CREAT | O_TRUNC,
                                 S_IRUSR | S_IWUSR | S_IRGRP);
@@ -8769,9 +8834,9 @@ static void *item_dumper_main(void *arg)
         ret = -1; goto done;
     }
 
-    assoc_scan_init(&scan);
-
     pthread_mutex_lock(&engine->cache_lock);
+
+    assoc_scan_init(&scan);
     while (true)
     {
         item_count = assoc_scan_next(&scan, item_array, array_size, 0);
@@ -8784,8 +8849,7 @@ static void *item_dumper_main(void *arg)
         memc_curtime = svcore->get_current_time();
         for (i = 0; i < item_count; i++) {
             it = item_array[i];
-            if ((it->iflag & ITEM_INTERNAL) == 0 &&
-                do_item_isvalid(it, memc_curtime)) {
+            if ((it->iflag & ITEM_INTERNAL) == 0 && do_item_isvalid(it, memc_curtime)) {
                 ITEM_REFCOUNT_INCR(it); /* valid user item */
             } else {
                 item_array[i] = NULL;
@@ -8794,7 +8858,6 @@ static void *item_dumper_main(void *arg)
         pthread_mutex_unlock(&engine->cache_lock);
 
         /* write key string to buffer */
-        real_nowtime = time(NULL);
         memc_curtime = svcore->get_current_time();
         for (i = 0; i < item_count; i++) {
             if ((it = item_array[i]) == NULL) continue;
@@ -8804,7 +8867,7 @@ static void *item_dumper_main(void *arg)
                 !assoc_prefix_issame(it->pfxptr, dumper->prefix, dumper->nprefix)) {
                 continue; /* NOT the given prefix */
             }
-            if ((cur_buflen + it->nkey + 24) > max_buflen) {
+            if ((cur_buflen + dump_space_func(it)) > max_buflen) {
                 nwritten = write(fd, dump_buffer, cur_buflen);
                 if (nwritten != cur_buflen) {
                     logger->log(EXTENSION_LOG_WARNING, NULL, "Failed to write the dump: "
@@ -8814,41 +8877,10 @@ static void *item_dumper_main(void *arg)
                 cur_buflen = 0;
                 cur_bufptr = dump_buffer;
             }
+            str_length = dump_write_func(cur_bufptr, it, memc_curtime);
+            cur_bufptr += str_length;
+            cur_buflen += str_length;
             dumper->dumpped++;
-            /* key item type: L(list), S(set), B(b+tree), K(kv) */
-            if (IS_LIST_ITEM(it))       memcpy(cur_bufptr, "L ", 2);
-            else if (IS_SET_ITEM(it))   memcpy(cur_bufptr, "S ", 2);
-            else if (IS_MAP_ITEM(it))   memcpy(cur_bufptr, "M ", 2);
-            else if (IS_BTREE_ITEM(it)) memcpy(cur_bufptr, "B ", 2);
-            else                        memcpy(cur_bufptr, "K ", 2);
-            cur_bufptr += 2;
-            cur_buflen += 2;
-            /* key string */
-            memcpy(cur_bufptr, item_get_key(it), it->nkey);
-            cur_bufptr += it->nkey;
-            cur_buflen += it->nkey;
-            /* exptime and new line */
-            if (it->exptime == 0) {
-                memcpy(cur_bufptr, " 0\n", 3);
-                cur_bufptr += 3;
-                cur_buflen += 3;
-#ifdef ENABLE_STICKY_ITEM
-            } else if (it->exptime == (rel_time_t)-1) {
-                memcpy(cur_bufptr, " -1\n", 4);
-                cur_bufptr += 4;
-                cur_buflen += 4;
-#endif
-            } else {
-                if (it->exptime > memc_curtime) {
-                    snprintf(cur_bufptr, 22, " %"PRIu64"\n",
-                             (uint64_t)(real_nowtime + (it->exptime - memc_curtime)));
-                } else {
-                    snprintf(cur_bufptr, 22, " %"PRIu64"\n", (uint64_t)real_nowtime);
-                }
-                str_length = strlen(cur_bufptr);
-                cur_bufptr += str_length;
-                cur_buflen += str_length;
-            }
         }
 
         pthread_mutex_lock(&engine->cache_lock);
@@ -8905,28 +8937,26 @@ done:
     return NULL;
 }
 
-int item_start_dump(struct default_engine *engine,
-                    enum dump_mode mode,
-                    const char *prefix, const int nprefix,
-                    const char *filepath)
+ENGINE_ERROR_CODE item_start_dump(struct default_engine *engine,
+                                  enum dump_mode mode,
+                                  const char *prefix, const int nprefix,
+                                  const char *filepath)
 {
     struct engine_dumper *dumper = &engine->dumper;
     pthread_t tid;
     pthread_attr_t attr;
-    int ret=0;
-
-    assert(mode == DUMP_MODE_KEY);
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     pthread_mutex_lock(&dumper->lock);
     do {
         if (dumper->running) {
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "Failed to start dumping. Already started.\n");
-            ret = -1; break;
+            ret = ENGINE_FAILED; break;
         }
 
         snprintf(dumper->filepath, MAX_FILEPATH_LENGTH-1, "%s",
-                (filepath != NULL ? filepath : "keydump"));
+                (filepath != NULL ? filepath : "arcus_dump.txt"));
         dumper->prefix = (char*)prefix;
         dumper->nprefix = nprefix;
         dumper->mode = mode;
@@ -8944,7 +8974,7 @@ int item_start_dump(struct default_engine *engine,
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "Failed to open the dump file. path=%s err=%s\n",
                         dumper->filepath, strerror(errno));
-            ret = -1; break;
+            ret = ENGINE_FAILED; break;
         }
         close(fd);
 
@@ -8957,7 +8987,7 @@ int item_start_dump(struct default_engine *engine,
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "Failed to create the dump thread. err=%s\n", strerror(errno));
             dumper->running = false;
-            ret = -1; break;
+            ret = ENGINE_FAILED; break;
         }
     } while(0);
     pthread_mutex_unlock(&dumper->lock);
