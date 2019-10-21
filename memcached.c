@@ -9422,7 +9422,8 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
     int  nprefix = -1; /* all prefixes */
 
     /* dump ascii command
-     * dump start key [<prefix>] filepath\r\n
+     * dump start <mode> [<prefix>] filepath\r\n
+     *   <mode> : key
      * dump stop\r\n
      */
     opstr = tokens[1].value;
@@ -9433,12 +9434,12 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
             return;
         }
     } else if (ntokens == 5 || ntokens == 6) {
-        modestr = tokens[2].value;
-        if (memcmp(opstr, "start", 5) != 0 || memcmp(modestr, "key", 3) != 0) {
+        if (memcmp(opstr, "start", 5) != 0) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
+        modestr = tokens[2].value;
         if (ntokens == 5) {
             filepath = tokens[3].value;
         } else {
@@ -9579,7 +9580,8 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "lqdetect stats\\r\\n" "\n"
 #endif
         "\n"
-        "\t" "dump start key [<prefix>] <filepath>\\r\\n" "\n"
+        "\t" "dump start <mode> [<prefix>] <filepath>\\r\\n" "\n"
+        "\t" "  * <mode> : key" "\n"
         "\t" "dump stop\\r\\n" "\n"
 #ifdef ENABLE_ZK_INTEGRATION
         "\n"
