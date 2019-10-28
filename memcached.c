@@ -2182,10 +2182,11 @@ static void process_mop_get_complete(conn *c)
             }
             if (ret == ENGINE_ENOMEM) break;
 
-            sprintf(respptr, "%s\r\n",
 #ifdef COLLGET_RESULT
+            sprintf(respptr, "%s\r\n",
                     (delete ? (eresult.dropped ? "DELETED_DROPPED" : "DELETED") : "END"));
 #else
+            sprintf(respptr, "%s\r\n",
                     (delete ? (dropped ? "DELETED_DROPPED" : "DELETED") : "END"));
 #endif
             if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
