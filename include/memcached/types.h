@@ -31,7 +31,6 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
-#define COLLGET_RESULT
 #define PROXY_SUPPORT
 #define BOP_COUNT_OPTIMIZE
 //#define NEW_PREFIX_STATS_MANAGEMENT
@@ -260,7 +259,6 @@ extern "C" {
         uint32_t elem_count;
     } elems_result_t;
 
-#ifdef COLLGET_RESULT
     /* result fields in common for each collection on get operation */
     struct elems_result {
         eitem** elem_array; //output variable that will receive the located item
@@ -270,7 +268,7 @@ extern "C" {
         bool dropped; //dropped if empty
         bool trimmed; //trimmed on btree
     };
-#endif
+
     /*
      * bkey and eflag
      */

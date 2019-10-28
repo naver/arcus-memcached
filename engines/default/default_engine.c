@@ -447,35 +447,20 @@ default_list_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
-#ifdef COLLGET_RESULT
 static ENGINE_ERROR_CODE
 default_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                       const void* key, const int nkey,
                       int from_index, int to_index,
                       const bool delete, const bool drop_if_empty,
                       struct elems_result *eresult, uint16_t vbucket)
-#else
-static ENGINE_ERROR_CODE
-default_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
-                      const void* key, const int nkey,
-                      int from_index, int to_index,
-                      const bool delete, const bool drop_if_empty,
-                      eitem** eitem_array, uint32_t* eitem_count,
-                      uint32_t* flags, bool* dropped, uint16_t vbucket)
-#endif
 {
     struct default_engine *engine = get_handle(handle);
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
-#ifdef COLLGET_RESULT
-    ret = list_elem_get(key, nkey, from_index, to_index, delete, drop_if_empty, eresult);
-#else
     ret = list_elem_get(key, nkey, from_index, to_index, delete, drop_if_empty,
-                        (list_elem_item**)eitem_array, eitem_count,
-                        flags, dropped);
-#endif
+                        eresult);
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -580,32 +565,19 @@ default_set_elem_exist(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
-#ifdef COLLGET_RESULT
 static ENGINE_ERROR_CODE
 default_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
-                     const void* key, const int nkey, const uint32_t count,
+                     const void* key, const int nkey,
+                     const uint32_t count,
                      const bool delete, const bool drop_if_empty,
                      struct elems_result *eresult, uint16_t vbucket)
-#else
-static ENGINE_ERROR_CODE
-default_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
-                     const void* key, const int nkey, const uint32_t count,
-                     const bool delete, const bool drop_if_empty,
-                     eitem** eitem, uint32_t* eitem_count,
-                     uint32_t* flags, bool* dropped, uint16_t vbucket)
-#endif
 {
     struct default_engine *engine = get_handle(handle);
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
-#ifdef COLLGET_RESULT
     ret = set_elem_get(key, nkey, count, delete, drop_if_empty, eresult);
-#else
-    ret = set_elem_get(key, nkey, count, delete, drop_if_empty,
-                       (set_elem_item**)eitem, eitem_count, flags, dropped);
-#endif
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -709,32 +681,20 @@ default_map_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
-#ifdef COLLGET_RESULT
 static ENGINE_ERROR_CODE
 default_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
-                     const void* key, const int nkey, const int numfields,
-                     const field_t *flist, const bool delete, const bool drop_if_empty,
+                     const void* key, const int nkey,
+                     const int numfields, const field_t *flist,
+                     const bool delete, const bool drop_if_empty,
                      struct elems_result *eresult, uint16_t vbucket)
-#else
-static ENGINE_ERROR_CODE
-default_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
-                     const void* key, const int nkey, const int numfields,
-                     const field_t *flist, const bool delete, const bool drop_if_empty,
-                     eitem** eitem, uint32_t* eitem_count, uint32_t* flags,
-                     bool* dropped, uint16_t vbucket)
-#endif
 {
     struct default_engine *engine = get_handle(handle);
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
-#ifdef COLLGET_RESULT
-    ret = map_elem_get(key, nkey, numfields, flist, delete, drop_if_empty, eresult);
-#else
     ret = map_elem_get(key, nkey, numfields, flist, delete, drop_if_empty,
-                       (map_elem_item**)eitem, eitem_count, flags, dropped);
-#endif
+                       eresult);
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -879,7 +839,6 @@ default_btree_elem_arithmetic(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
-#ifdef COLLGET_RESULT
 static ENGINE_ERROR_CODE
 default_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                        const void* key, const int nkey,
@@ -887,32 +846,14 @@ default_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                        const uint32_t offset, const uint32_t req_count,
                        const bool delete, const bool drop_if_empty,
                        struct elems_result *eresult, uint16_t vbucket)
-#else
-static ENGINE_ERROR_CODE
-default_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
-                       const void* key, const int nkey,
-                       const bkey_range *bkrange, const eflag_filter *efilter,
-                       const uint32_t offset, const uint32_t req_count,
-                       const bool delete, const bool drop_if_empty,
-                       eitem** eitem_array, uint32_t* eitem_count,
-                       uint32_t *access_count, uint32_t* flags,
-                       bool* dropped_trimmed, uint16_t vbucket)
-#endif
 {
     struct default_engine *engine = get_handle(handle);
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
-#ifdef COLLGET_RESULT
-    ret = btree_elem_get(key, nkey, bkrange, efilter,
-                         offset, req_count, delete, drop_if_empty, eresult);
-#else
-    ret = btree_elem_get(key, nkey, bkrange, efilter,
-                         offset, req_count, delete, drop_if_empty,
-                         (btree_elem_item**)eitem_array, eitem_count,
-                         access_count, flags, dropped_trimmed);
-#endif
+    ret = btree_elem_get(key, nkey, bkrange, efilter, offset, req_count,
+                         delete, drop_if_empty, eresult);
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
