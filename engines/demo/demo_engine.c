@@ -322,20 +322,11 @@ Demo_list_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
 }
 
 static ENGINE_ERROR_CODE
-#ifdef COLLGET_RESULT
 Demo_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                       const void* key, const int nkey,
                       int from_index, int to_index,
                       const bool delete, const bool drop_if_empty,
                       struct elems_result *eresult, uint16_t vbucket)
-#else
-Demo_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
-                      const void* key, const int nkey,
-                      int from_index, int to_index,
-                      const bool delete, const bool drop_if_empty,
-                      eitem** eitem_array, uint32_t* eitem_count,
-                      uint32_t* flags, bool* dropped, uint16_t vbucket)
-#endif
 {
     return ENGINE_ENOTSUP;
 }
@@ -401,18 +392,11 @@ Demo_set_elem_exist(ENGINE_HANDLE* handle, const void* cookie,
 }
 
 static ENGINE_ERROR_CODE
-#ifdef COLLGET_RESULT
 Demo_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
-                     const void* key, const int nkey, const uint32_t count,
+                     const void* key, const int nkey,
+                     const uint32_t count,
                      const bool delete, const bool drop_if_empty,
                      struct elems_result *eresult, uint16_t vbucket)
-#else
-Demo_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
-                     const void* key, const int nkey, const uint32_t count,
-                     const bool delete, const bool drop_if_empty,
-                     eitem** eitem, uint32_t* eitem_count,
-                     uint32_t* flags, bool* dropped, uint16_t vbucket)
-#endif
 {
     return ENGINE_ENOTSUP;
 }
@@ -476,18 +460,11 @@ Demo_map_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
 }
 
 static ENGINE_ERROR_CODE
-#ifdef COLLGET_RESULT
 Demo_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
-                     const void* key, const int nkey, const int numfields,
-                     const field_t *flist, const bool delete, const bool drop_if_empty,
+                     const void* key, const int nkey,
+                     const int numfields, const field_t *flist,
+                     const bool delete, const bool drop_if_empty,
                      struct elems_result *eresult, uint16_t vbucket)
-#else
-Demo_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
-                     const void* key, const int nkey, const int numfields,
-                     const field_t *flist, const bool delete, const bool drop_if_empty,
-                     eitem** eitem, uint32_t* eitem_count, uint32_t* flags,
-                     bool* dropped, uint16_t vbucket)
-#endif
 {
     return ENGINE_ENOTSUP;
 }
@@ -570,23 +547,12 @@ Demo_btree_elem_arithmetic(ENGINE_HANDLE* handle, const void* cookie,
 }
 
 static ENGINE_ERROR_CODE
-#ifdef COLLGET_RESULT
 Demo_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                        const void* key, const int nkey,
                        const bkey_range *bkrange, const eflag_filter *efilter,
                        const uint32_t offset, const uint32_t req_count,
                        const bool delete, const bool drop_if_empty,
                        struct elems_result *eresult, uint16_t vbucket)
-#else
-Demo_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
-                       const void* key, const int nkey,
-                       const bkey_range *bkrange, const eflag_filter *efilter,
-                       const uint32_t offset, const uint32_t req_count,
-                       const bool delete, const bool drop_if_empty,
-                       eitem** eitem_array, uint32_t* eitem_count,
-                       uint32_t *access_count, uint32_t* flags,
-                       bool* dropped_trimmed, uint16_t vbucket)
-#endif
 {
     return ENGINE_ENOTSUP;
 }

@@ -6759,18 +6759,10 @@ ENGINE_ERROR_CODE list_elem_delete(const char *key, const uint32_t nkey,
     return ret;
 }
 
-#ifdef COLLGET_RESULT
 ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
                                 int from_index, int to_index,
                                 const bool delete, const bool drop_if_empty,
                                 struct elems_result *eresult)
-#else
-ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
-                                int from_index, int to_index,
-                                const bool delete, const bool drop_if_empty,
-                                list_elem_item **elem_array, uint32_t *elem_count,
-                                uint32_t *flags, bool *dropped)
-#endif
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
@@ -6778,10 +6770,9 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
     log_waiter_t *waiter = NULL;
 #endif
 
-#ifdef COLLGET_RESULT
     eresult->elem_array = NULL;
     eresult->elem_count = 0;
-#endif
+
     LOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (config->use_persistence && delete) {
@@ -6815,23 +6806,16 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
                 count = from_index - to_index + 1;
                 forward = false;
             }
-#ifdef COLLGET_RESULT
             if ((eresult->elem_array = (eitem **)malloc(count * sizeof(eitem*))) == NULL) {
-                ret = ENGINE_ENOMEM;
-                break;
+                ret = ENGINE_ENOMEM; break;
             }
 
             ret = do_list_elem_get(info, index, count, forward, delete,
                                   (list_elem_item**)(eresult->elem_array), &(eresult->elem_count));
-#else
-            ret = do_list_elem_get(info, index, count, forward, delete,
-                                   elem_array, elem_count);
-#endif
             if (ret == ENGINE_SUCCESS) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(delete == true);
                     do_item_unlink(it, ITEM_UNLINK_NORMAL);
-#ifdef COLLGET_RESULT
                     eresult->dropped = true;
                 } else {
                     eresult->dropped = false;
@@ -6842,16 +6826,6 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
                 free(eresult->elem_array);
                 eresult->elem_array = NULL;
             }
-#else
-                    *dropped = true;
-                } else {
-                    *dropped = false;
-                }
-                *flags = it->flags;
-            } else {
-                /* ret = ENGINE_ELEM_ENOENT */
-            }
-#endif
         } while(0);
         do_item_release(it);
     }
@@ -7066,15 +7040,10 @@ ENGINE_ERROR_CODE set_elem_exist(const char *key, const uint32_t nkey,
     return ret;
 }
 
-#ifdef COLLGET_RESULT
-ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey, const uint32_t count,
-                               const bool delete, const bool drop_if_empty, struct elems_result *eresult)
-#else
-ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey, const uint32_t count,
+ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
+                               const uint32_t count,
                                const bool delete, const bool drop_if_empty,
-                               set_elem_item **elem_array, uint32_t *elem_count,
-                               uint32_t *flags, bool *dropped)
-#endif
+                               struct elems_result *eresult)
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
@@ -7082,10 +7051,9 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey, const uint3
     log_waiter_t *waiter = NULL;
 #endif
 
-#ifdef COLLGET_RESULT
     eresult->elem_array = NULL;
     eresult->elem_count = 0;
-#endif
+
     LOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (config->use_persistence && delete) {
@@ -7105,7 +7073,6 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey, const uint3
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
             }
-#ifdef COLLGET_RESULT
             if (count == 0 || info->ccnt < count) {
                 eresult->elem_array = (eitem **)malloc(info->ccnt * sizeof(eitem*));
             } else {
@@ -7114,15 +7081,12 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey, const uint3
             if (eresult->elem_array == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
-            ret = do_set_elem_get(info, count, delete, (set_elem_item**)(eresult->elem_array), &(eresult->elem_count));
-#else
-            ret = do_set_elem_get(info, count, delete, elem_array, elem_count);
-#endif
+            ret = do_set_elem_get(info, count, delete,
+                                  (set_elem_item**)(eresult->elem_array), &(eresult->elem_count));
             if (ret == ENGINE_SUCCESS) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(delete == true);
                     do_item_unlink(it, ITEM_UNLINK_NORMAL);
-#ifdef COLLGET_RESULT
                     eresult->dropped = true;
                 } else {
                     eresult->dropped = false;
@@ -7133,14 +7097,6 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey, const uint3
                 free(eresult->elem_array);
                 eresult->elem_array = NULL;
             }
-#else
-                    *dropped = true;
-                } else {
-                    *dropped = false;
-                }
-                *flags = it->flags;
-            } /* ret = ENGINE_ELEM_ENOENT */
-#endif
         } while (0);
         do_item_release(it);
     }
@@ -7477,21 +7433,11 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(const char* key, const uint32_t nkey,
     return ret;
 }
 
-#ifdef COLLGET_RESULT
 ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
                                  const bkey_range *bkrange, const eflag_filter *efilter,
                                  const uint32_t offset, const uint32_t req_count,
                                  const bool delete, const bool drop_if_empty,
                                  struct elems_result *eresult)
-#else
-ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
-                                 const bkey_range *bkrange, const eflag_filter *efilter,
-                                 const uint32_t offset, const uint32_t req_count,
-                                 const bool delete, const bool drop_if_empty,
-                                 btree_elem_item **elem_array, uint32_t *elem_count,
-                                 uint32_t *access_count,
-                                 uint32_t *flags, bool *dropped_trimmed)
-#endif
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
@@ -7501,10 +7447,9 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
     log_waiter_t *waiter = NULL;
 #endif
 
-#ifdef COLLGET_RESULT
     eresult->elem_array = NULL;
     eresult->elem_count = 0;
-#endif
+
     LOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (config->use_persistence && delete) {
@@ -7531,7 +7476,6 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
-#ifdef COLLGET_RESULT
             if (req_count == 0 || info->ccnt < req_count) {
                 eresult->elem_array = (eitem **)malloc(info->ccnt * sizeof(eitem*));
             } else {
@@ -7543,17 +7487,11 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
             ret = do_btree_elem_get(info, bkrtype, bkrange, efilter,
                                     offset, req_count, delete, (btree_elem_item **)(eresult->elem_array),
                                     &(eresult->elem_count), &(eresult->access_count), &potentialbkeytrim);
-#else
-            ret = do_btree_elem_get(info, bkrtype, bkrange, efilter,
-                                    offset, req_count, delete, elem_array,
-                                    elem_count, access_count, &potentialbkeytrim);
-#endif
             if (ret == ENGINE_SUCCESS) {
                 if (delete) {
                     if (info->ccnt == 0 && drop_if_empty) {
                         assert(info->root == NULL);
                         do_item_unlink(it, ITEM_UNLINK_NORMAL);
-#ifdef COLLGET_RESULT
                         eresult->dropped = true;
                     } else {
                         eresult->dropped = false;
@@ -7562,24 +7500,12 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
                     eresult->trimmed = potentialbkeytrim;
                 }
                 eresult->flags = it->flags;
-#else
-                        *dropped_trimmed = true;
-                    } else {
-                        *dropped_trimmed = false;
-                    }
-                } else {
-                    *dropped_trimmed = potentialbkeytrim;
-                }
-                *flags = it->flags;
-#endif
             } else {
                 if (potentialbkeytrim == true)
                     ret = ENGINE_EBKEYOOR;
                 /* ret = ENGINE_ELEM_ENOENT; */
-#ifdef COLLGET_RESULT
                 free(eresult->elem_array);
                 eresult->elem_array = NULL;
-#endif
             }
         } while (0);
         do_item_release(it);
@@ -10201,16 +10127,10 @@ ENGINE_ERROR_CODE map_elem_delete(const char *key, const uint32_t nkey,
     return ret;
 }
 
-#ifdef COLLGET_RESULT
 ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
-                               const int numfields, const field_t *flist, const bool delete,
-                               const bool drop_if_empty, struct elems_result *eresult)
-#else
-ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
-                               const int numfields, const field_t *flist, const bool delete,
-                               const bool drop_if_empty, map_elem_item **elem_array, uint32_t *elem_count,
-                               uint32_t *flags, bool *dropped)
-#endif
+                               const int numfields, const field_t *flist,
+                               const bool delete, const bool drop_if_empty,
+                               struct elems_result *eresult)
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
@@ -10218,10 +10138,9 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
     log_waiter_t *waiter = NULL;
 #endif
 
-#ifdef COLLGET_RESULT
     eresult->elem_array = NULL;
     eresult->elem_count = 0;
-#endif
+
     LOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (config->use_persistence && delete) {
@@ -10241,7 +10160,6 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
             }
-#ifdef COLLGET_RESULT
             if (numfields == 0 || info->ccnt < numfields) {
                 eresult->elem_array = (eitem **)malloc(info->ccnt * sizeof(eitem*));
             } else {
@@ -10250,15 +10168,12 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
             if (eresult->elem_array == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
-            ret = do_map_elem_get(info, numfields, flist, delete, (map_elem_item **)eresult->elem_array, &(eresult->elem_count));
-#else
-            ret = do_map_elem_get(info, numfields, flist, delete, elem_array, elem_count);
-#endif
+            ret = do_map_elem_get(info, numfields, flist, delete,
+                                  (map_elem_item **)eresult->elem_array, &(eresult->elem_count));
             if (ret == ENGINE_SUCCESS) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(delete == true);
                     do_item_unlink(it, ITEM_UNLINK_NORMAL);
-#ifdef COLLGET_RESULT
                     eresult->dropped = true;
                 } else {
                     eresult->dropped = false;
@@ -10269,14 +10184,6 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
                 free(eresult->elem_array);
                 eresult->elem_array = NULL;
             }
-#else
-                    *dropped = true;
-                } else {
-                    *dropped = false;
-                }
-                *flags = it->flags;
-            } /* ret = ENGINE_ELEM_ENOENT */
-#endif
         } while (0);
         do_item_release(it);
     }
