@@ -33,13 +33,13 @@ typedef struct _log_waiter {
 } log_waiter_t;
 
 /* external command log manager functions */
-log_waiter_t      *cmdlog_waiter_alloc(void);
-void               cmdlog_waiter_free(log_waiter_t *logmgr);
+log_waiter_t      *cmdlog_waiter_alloc(const void *cookie);
+void               cmdlog_waiter_free(log_waiter_t *logmgr, ENGINE_ERROR_CODE *result);
 log_waiter_t      *cmdlog_get_cur_waiter(void);
 ENGINE_ERROR_CODE  cmdlog_waiter_init(struct default_engine *engine);
 void               cmdlog_waiter_final(void);
 
-ENGINE_ERROR_CODE  cmdlog_mgr_init(struct default_engine *engine);
+ENGINE_ERROR_CODE  cmdlog_mgr_init(struct default_engine *engine_ptr);
 void               cmdlog_mgr_final(void);
 
 

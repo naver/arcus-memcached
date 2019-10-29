@@ -18,6 +18,8 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
+#include <sys/time.h>
 
 #include "default_engine.h"
 #ifdef ENABLE_PERSISTENCE
@@ -43,6 +45,7 @@ struct cmdlog_global {
 };
 
 /* global data */
+static struct default_engine *engine = NULL;
 static EXTENSION_LOGGER_DESCRIPTOR* logger = NULL;
 static struct cmdlog_global logmgr_gl;
 
@@ -65,7 +68,7 @@ static ENGINE_ERROR_CODE cmdlog_mgr_recovery()
 /*
  * External Functions
  */
-log_waiter_t *cmdlog_waiter_alloc(void)
+log_waiter_t *cmdlog_waiter_alloc(const void *cookie)
 {
     log_waiter_t *waiter = NULL;
     log_wait_entry_info *info = &logmgr_gl.wait_entry_info;
@@ -88,8 +91,10 @@ log_waiter_t *cmdlog_waiter_alloc(void)
     return waiter;
 }
 
-void cmdlog_waiter_free(log_waiter_t *waiter)
+void cmdlog_waiter_free(log_waiter_t *waiter, ENGINE_ERROR_CODE *result)
 {
+    assert(waiter && result);
+
     LOGSN_SET_NULL(&waiter->lsn);
 
     log_wait_entry_info *info = &logmgr_gl.wait_entry_info;
@@ -153,9 +158,11 @@ void cmdlog_waiter_final(void)
     free((void*)logmgr_gl.wait_entry_table);
 }
 
-ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine)
+ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine_ptr)
 {
     ENGINE_ERROR_CODE ret;
+
+    engine = engine_ptr;
     logger = engine->server.log->get_logger();
 
     memset(&logmgr_gl, 0, sizeof(logmgr_gl));
