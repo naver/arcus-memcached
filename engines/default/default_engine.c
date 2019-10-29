@@ -281,7 +281,7 @@ default_item_delete(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = item_delete(key, nkey, cas);
+    ret = item_delete(key, nkey, cas, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -343,8 +343,8 @@ default_arithmetic(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = item_arithmetic(cookie, key, nkey, increment, create,
-                          delta, initial, flags, exptime, cas, result);
+    ret = item_arithmetic(key, nkey, increment, create,
+                          delta, initial, flags, exptime, cas, result, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -442,7 +442,7 @@ default_list_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = list_elem_delete(key, nkey, from_index, to_index, drop_if_empty,
-                           del_count, dropped);
+                           del_count, dropped, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -460,7 +460,7 @@ default_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = list_elem_get(key, nkey, from_index, to_index, delete, drop_if_empty,
-                        eresult);
+                        eresult, cookie);
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -546,7 +546,7 @@ default_set_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = set_elem_delete(key, nkey, value, nbytes,
-                          drop_if_empty, dropped);
+                          drop_if_empty, dropped, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -577,7 +577,8 @@ default_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = set_elem_get(key, nkey, count, delete, drop_if_empty, eresult);
+    ret = set_elem_get(key, nkey, count, delete, drop_if_empty,
+                       eresult, cookie);
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -676,7 +677,8 @@ default_map_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = map_elem_delete(key, nkey, numfields, flist, drop_if_empty, del_count, dropped);
+    ret = map_elem_delete(key, nkey, numfields, flist, drop_if_empty, del_count,
+                          dropped, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -694,7 +696,7 @@ default_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = map_elem_get(key, nkey, numfields, flist, delete, drop_if_empty,
-                       eresult);
+                       eresult, cookie);
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -814,7 +816,7 @@ default_btree_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = btree_elem_delete(key, nkey, bkrange, efilter, req_count,
-                            drop_if_empty, del_count, access_count, dropped);
+                            drop_if_empty, del_count, access_count, dropped, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -853,7 +855,7 @@ default_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = btree_elem_get(key, nkey, bkrange, efilter, offset, req_count,
-                         delete, drop_if_empty, eresult);
+                         delete, drop_if_empty, eresult, cookie);
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -1007,7 +1009,7 @@ default_setattr(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = item_setattr(key, nkey, attr_ids, attr_count, attr_data);
+    ret = item_setattr(key, nkey, attr_ids, attr_count, attr_data, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
