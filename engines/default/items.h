@@ -371,7 +371,7 @@ char *item_cachedump(const unsigned int slabs_clsid,
  * @param when when the items should be flushed
  */
 ENGINE_ERROR_CODE item_flush_expired(const char *prefix, const int nprefix,
-                                     rel_time_t when, const void* cookie);
+                                     rel_time_t when, const void *cookie);
 
 /**
  * Release our reference to the current item
@@ -393,11 +393,11 @@ ENGINE_ERROR_CODE item_store(hash_item *item,
                              uint64_t *cas, ENGINE_STORE_OPERATION operation,
                              const void *cookie);
 
-ENGINE_ERROR_CODE item_arithmetic(const void* cookie,
-                             const void* key, const uint32_t nkey, const bool increment,
-                             const bool create, const uint64_t delta, const uint64_t initial,
-                             const uint32_t flags, const rel_time_t exptime, uint64_t *cas,
-                             uint64_t *result);
+ENGINE_ERROR_CODE item_arithmetic(const void *key, const uint32_t nkey,
+                                  const bool increment,
+                                  const bool create, const uint64_t delta, const uint64_t initial,
+                                  const uint32_t flags, const rel_time_t exptime, uint64_t *cas,
+                                  uint64_t *result, const void *cookie);
 
 /**
  * Delete an item of the given key.
@@ -405,7 +405,8 @@ ENGINE_ERROR_CODE item_arithmetic(const void* cookie,
  * @param nkey the number of bytes in the key
  * @param cas the cas value
  */
-ENGINE_ERROR_CODE item_delete(const void* key, const uint32_t nkey, uint64_t cas);
+ENGINE_ERROR_CODE item_delete(const void *key, const uint32_t nkey,
+                              uint64_t cas, const void *cookie);
 
 void coll_del_thread_wakeup(void);
 
@@ -430,12 +431,14 @@ ENGINE_ERROR_CODE list_elem_insert(const char *key, const uint32_t nkey,
 ENGINE_ERROR_CODE list_elem_delete(const char *key, const uint32_t nkey,
                                    int from_index, int to_index,
                                    const bool drop_if_empty,
-                                   uint32_t *del_count, bool *dropped);
+                                   uint32_t *del_count, bool *dropped,
+                                   const void *cookie);
 
 ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
                                 int from_index, int to_index,
                                 const bool delete, const bool drop_if_empty,
-                                struct elems_result *eresult);
+                                struct elems_result *eresult,
+                                const void *cookie);
 
 ENGINE_ERROR_CODE set_struct_create(const char *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie);
@@ -454,7 +457,7 @@ ENGINE_ERROR_CODE set_elem_insert(const char *key, const uint32_t nkey,
 ENGINE_ERROR_CODE set_elem_delete(const char *key, const uint32_t nkey,
                                   const char *value, const uint32_t nbytes,
                                   const bool drop_if_empty,
-                                  bool *dropped);
+                                  bool *dropped, const void *cookie);
 
 ENGINE_ERROR_CODE set_elem_exist(const char *key, const uint32_t nkey,
                                  const char *value, const uint32_t nbytes,
@@ -463,7 +466,8 @@ ENGINE_ERROR_CODE set_elem_exist(const char *key, const uint32_t nkey,
 ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
                                const uint32_t count,
                                const bool delete, const bool drop_if_empty,
-                               struct elems_result *eresult);
+                               struct elems_result *eresult,
+                               const void *cookie);
 
 ENGINE_ERROR_CODE map_struct_create(const char *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie);
@@ -488,12 +492,13 @@ ENGINE_ERROR_CODE map_elem_update(const char *key, const uint32_t nkey,
 ENGINE_ERROR_CODE map_elem_delete(const char *key, const uint32_t nkey,
                                   const int numfields, const field_t *flist,
                                   const bool drop_if_empty, uint32_t *del_count,
-                                  bool *dropped);
+                                  bool *dropped, const void *cookie);
 
 ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
                                const int numfields, const field_t *flist,
                                const bool delete, const bool drop_if_empty,
-                               struct elems_result *eresult);
+                               struct elems_result *eresult,
+                               const void *cookie);
 
 ENGINE_ERROR_CODE btree_struct_create(const char *key, const uint32_t nkey,
                                       item_attr *attrp, const void *cookie);
@@ -517,20 +522,22 @@ ENGINE_ERROR_CODE btree_elem_update(const char *key, const uint32_t nkey, const 
 ENGINE_ERROR_CODE btree_elem_delete(const char *key, const uint32_t nkey,
                                     const bkey_range *bkrange, const eflag_filter *efilter,
                                     const uint32_t req_count, const bool drop_if_empty,
-                                    uint32_t *del_count, uint32_t *access_count, bool *dropped);
+                                    uint32_t *del_count, uint32_t *access_count, bool *dropped,
+                                    const void *cookie);
 
-ENGINE_ERROR_CODE btree_elem_arithmetic(const char* key, const uint32_t nkey,
+ENGINE_ERROR_CODE btree_elem_arithmetic(const char *key, const uint32_t nkey,
                                         const bkey_range *bkrange,
                                         const bool increment, const bool create,
                                         const uint64_t delta, const uint64_t initial,
                                         const eflag_t *eflagp,
-                                        uint64_t *result, const void* cookie);
+                                        uint64_t *result, const void *cookie);
 
 ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
                                  const bkey_range *bkrange, const eflag_filter *efilter,
                                  const uint32_t offset, const uint32_t req_count,
                                  const bool delete, const bool drop_if_empty,
-                                 struct elems_result *eresult);
+                                 struct elems_result *eresult,
+                                 const void *cookie);
 
 ENGINE_ERROR_CODE btree_elem_count(const char *key, const uint32_t nkey,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
@@ -569,13 +576,13 @@ ENGINE_ERROR_CODE btree_elem_smget(token_t *key_array, const int key_count,
                                    smget_result_t *result);
 #endif
 
-ENGINE_ERROR_CODE item_getattr(const void* key, const uint32_t nkey,
+ENGINE_ERROR_CODE item_getattr(const void *key, const uint32_t nkey,
                                ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
                                item_attr *attr_data);
 
-ENGINE_ERROR_CODE item_setattr(const void* key, const uint32_t nkey,
+ENGINE_ERROR_CODE item_setattr(const void *key, const uint32_t nkey,
                                ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
-                               item_attr *attr_data);
+                               item_attr *attr_data, const void *cookie);
 
 /* Get all elements from collection hash item
  */
