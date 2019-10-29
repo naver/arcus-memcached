@@ -47,7 +47,7 @@ struct cmdlog_global {
 /* global data */
 static struct default_engine *engine = NULL;
 static EXTENSION_LOGGER_DESCRIPTOR* logger = NULL;
-static struct cmdlog_global logmgr_gl;
+static __thread struct cmdlog_global logmgr_gl;
 
 /* Recovery Function */
 static ENGINE_ERROR_CODE cmdlog_mgr_recovery()

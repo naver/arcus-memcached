@@ -5945,20 +5945,18 @@ ENGINE_ERROR_CODE item_store(hash_item *item, uint64_t *cas,
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
-#endif
 
-    LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) {
         waiter = cmdlog_waiter_alloc(cookie);
         if (waiter == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "item store - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
     }
 #endif
+
+    LOCK_CACHE();
     switch (operation) {
       case OPERATION_SET:
            ret = do_item_store_set(item, cas, cookie);
@@ -5979,12 +5977,12 @@ ENGINE_ERROR_CODE item_store(hash_item *item, uint64_t *cas,
       default:
            ret = ENGINE_NOT_STORED;
     }
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -5999,20 +5997,17 @@ ENGINE_ERROR_CODE item_arithmetic(const void *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
-#endif
-
-    LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) {
         waiter = cmdlog_waiter_alloc(cookie);
         if (waiter == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "item arithmetic - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
     }
 #endif
+
+    LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
     if (it) {
         if (IS_COLL_ITEM(it)) {
@@ -6041,12 +6036,12 @@ ENGINE_ERROR_CODE item_arithmetic(const void *key, const uint32_t nkey,
             ret = ENGINE_KEY_ENOENT;
         }
     }
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6060,20 +6055,17 @@ ENGINE_ERROR_CODE item_delete(const void *key, const uint32_t nkey, uint64_t cas
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
-#endif
-
-    LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) {
         waiter = cmdlog_waiter_alloc(cookie);
         if (waiter == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "item delete - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
     }
 #endif
+
+    LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
     if (it) {
         if (cas == 0 || cas == item_get_cas(it)) {
@@ -6086,12 +6078,12 @@ ENGINE_ERROR_CODE item_delete(const void *key, const uint32_t nkey, uint64_t cas
     } else {
         ret = ENGINE_KEY_ENOENT;
     }
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6193,27 +6185,24 @@ ENGINE_ERROR_CODE item_flush_expired(const char *prefix, const int nprefix,
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
-#endif
-
-    LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) {
         waiter = cmdlog_waiter_alloc(cookie);
         if (waiter == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "item flush - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
     }
 #endif
+
+    LOCK_CACHE();
     ret = do_item_flush_expired(prefix, nprefix, when, cookie);
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6550,20 +6539,17 @@ ENGINE_ERROR_CODE list_struct_create(const char *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
-#endif
-
-    LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) {
         waiter = cmdlog_waiter_alloc(cookie);
         if (waiter == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "list struct create - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
     }
 #endif
+
+    LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
     if (it != NULL) {
         do_item_release(it);
@@ -6577,12 +6563,12 @@ ENGINE_ERROR_CODE list_struct_create(const char *key, const uint32_t nkey,
             do_item_release(it);
         }
     }
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6626,22 +6612,19 @@ ENGINE_ERROR_CODE list_elem_insert(const char *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
-#endif
-
-    *created = false;
-
-    LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) {
         waiter = cmdlog_waiter_alloc(cookie);
         if (waiter == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "list elem insert - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
     }
 #endif
+
+    *created = false;
+
+    LOCK_CACHE();
     ret = do_list_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
         it = do_list_item_alloc(key, nkey, attrp, cookie);
@@ -6663,12 +6646,12 @@ ENGINE_ERROR_CODE list_elem_insert(const char *key, const uint32_t nkey,
         }
     }
     if (it != NULL) do_item_release(it);
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6708,20 +6691,17 @@ ENGINE_ERROR_CODE list_elem_delete(const char *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
-#endif
-
-    LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) {
         waiter = cmdlog_waiter_alloc(cookie);
         if (waiter == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "list elem delete - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
     }
 #endif
+
+    LOCK_CACHE();
     ret = do_list_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         int      index;
@@ -6753,12 +6733,12 @@ ENGINE_ERROR_CODE list_elem_delete(const char *key, const uint32_t nkey,
         } while(0);
         do_item_release(it);
     }
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6772,23 +6752,20 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
+    if (config->use_persistence && delete) {
+        waiter = cmdlog_waiter_alloc(cookie);
+        if (waiter == NULL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "list elem get - cmdlog waiter alloc fail\n");
+            return ENGINE_ENOMEM; /* FIXME: define error code */
+        }
+    }
 #endif
 
     eresult->elem_array = NULL;
     eresult->elem_count = 0;
 
     LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence && delete) {
-        waiter = cmdlog_waiter_alloc(cookie);
-        if (waiter == NULL) {
-            logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "list elem get - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
-            return ENGINE_ENOMEM; /* FIXME: define error code */
-        }
-    }
-#endif
     ret = do_list_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         int      index;
@@ -6833,12 +6810,12 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
         } while(0);
         do_item_release(it);
     }
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL && delete) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6852,20 +6829,17 @@ ENGINE_ERROR_CODE set_struct_create(const char *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
-#endif
-
-    LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) {
         waiter = cmdlog_waiter_alloc(cookie);
         if (waiter == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "set struct create - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
     }
 #endif
+
+    LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
     if (it != NULL) {
         do_item_release(it);
@@ -6879,12 +6853,12 @@ ENGINE_ERROR_CODE set_struct_create(const char *key, const uint32_t nkey,
             do_item_release(it);
         }
     }
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6927,22 +6901,19 @@ ENGINE_ERROR_CODE set_elem_insert(const char *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
-#endif
-
-    *created = false;
-
-    LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) {
         waiter = cmdlog_waiter_alloc(cookie);
         if (waiter == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "set elem insert - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
     }
 #endif
+
+    *created = false;
+
+    LOCK_CACHE();
     ret = do_set_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
         it = do_set_item_alloc(key, nkey, attrp, cookie);
@@ -6964,12 +6935,12 @@ ENGINE_ERROR_CODE set_elem_insert(const char *key, const uint32_t nkey,
         }
     }
     if (it != NULL) do_item_release(it);
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -6982,22 +6953,19 @@ ENGINE_ERROR_CODE set_elem_delete(const char *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
-#endif
-
-    *dropped = false;
-
-    LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) {
         waiter = cmdlog_waiter_alloc(cookie);
         if (waiter == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "set elem delete - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
     }
 #endif
+
+    *dropped = false;
+
+    LOCK_CACHE();
     ret = do_set_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         set_meta_info *info = (set_meta_info *)item_get_meta(it);
@@ -7010,12 +6978,12 @@ ENGINE_ERROR_CODE set_elem_delete(const char *key, const uint32_t nkey,
         }
         do_item_release(it);
     }
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -7055,23 +7023,20 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
+    if (config->use_persistence && delete) {
+        waiter = cmdlog_waiter_alloc(cookie);
+        if (waiter == NULL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "set elem get - cmdlog waiter alloc fail\n");
+            return ENGINE_ENOMEM; /* FIXME: define error code */
+        }
+    }
 #endif
 
     eresult->elem_array = NULL;
     eresult->elem_count = 0;
 
     LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence && delete) {
-        waiter = cmdlog_waiter_alloc(cookie);
-        if (waiter == NULL) {
-            logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "set elem get - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
-            return ENGINE_ENOMEM; /* FIXME: define error code */
-        }
-    }
-#endif
     ret = do_set_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         set_meta_info *info = (set_meta_info *)item_get_meta(it);
@@ -7106,12 +7071,12 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
         } while (0);
         do_item_release(it);
     }
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL && delete) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -7125,20 +7090,17 @@ ENGINE_ERROR_CODE btree_struct_create(const char *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
-#endif
-
-    LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) {
         waiter = cmdlog_waiter_alloc(cookie);
         if (waiter == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "btree struct create - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
     }
 #endif
+
+    LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
     if (it != NULL) {
         do_item_release(it);
@@ -7152,12 +7114,12 @@ ENGINE_ERROR_CODE btree_struct_create(const char *key, const uint32_t nkey,
             do_item_release(it);
         }
     }
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -7209,6 +7171,14 @@ ENGINE_ERROR_CODE btree_elem_insert(const char *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
+    if (config->use_persistence) {
+        waiter = cmdlog_waiter_alloc(cookie);
+        if (waiter == NULL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "btree elem insert - cmdlog waiter alloc fail\n");
+            return ENGINE_ENOMEM; /* FIXME: define error code */
+        }
+    }
 #endif
 
     *created = false;
@@ -7219,17 +7189,6 @@ ENGINE_ERROR_CODE btree_elem_insert(const char *key, const uint32_t nkey,
     }
 
     LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence) {
-        waiter = cmdlog_waiter_alloc(cookie);
-        if (waiter == NULL) {
-            logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "btree elem insert - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
-            return ENGINE_ENOMEM; /* FIXME: define error code */
-        }
-    }
-#endif
     ret = do_btree_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
         it = do_btree_item_alloc(key, nkey, attrp, cookie);
@@ -7255,12 +7214,12 @@ ENGINE_ERROR_CODE btree_elem_insert(const char *key, const uint32_t nkey,
         }
     }
     if (it != NULL) do_item_release(it);
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -7274,20 +7233,17 @@ ENGINE_ERROR_CODE btree_elem_update(const char *key, const uint32_t nkey, const 
     assert(bkrtype == BKEY_RANGE_TYPE_SIN); /* single bkey */
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
-#endif
-
-    LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) {
         waiter = cmdlog_waiter_alloc(cookie);
         if (waiter == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "btree elem update - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
     }
 #endif
+
+    LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
@@ -7303,12 +7259,12 @@ ENGINE_ERROR_CODE btree_elem_update(const char *key, const uint32_t nkey, const 
         } while(0);
         do_item_release(it);
     }
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -7323,20 +7279,17 @@ ENGINE_ERROR_CODE btree_elem_delete(const char *key, const uint32_t nkey,
     int bkrtype = do_btree_bkey_range_type(bkrange);
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
-#endif
-
-    LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) {
         waiter = cmdlog_waiter_alloc(cookie);
         if (waiter == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "btree elem delete - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
     }
 #endif
+
+    LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
@@ -7364,12 +7317,12 @@ ENGINE_ERROR_CODE btree_elem_delete(const char *key, const uint32_t nkey,
         } while(0);
         do_item_release(it);
     }
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -7386,20 +7339,17 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(const char *key, const uint32_t nkey,
     assert(bkrtype == BKEY_RANGE_TYPE_SIN); /* single bkey */
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
-#endif
-
-    LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) {
         waiter = cmdlog_waiter_alloc(cookie);
         if (waiter == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "btree elem arithmetic - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
     }
 #endif
+
+    LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         bool new_root_flag = false;
@@ -7431,12 +7381,12 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(const char *key, const uint32_t nkey,
         } while(0);
         do_item_release(it);
     }
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -7453,23 +7403,20 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
     bool potentialbkeytrim;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
+    if (config->use_persistence && delete) {
+        waiter = cmdlog_waiter_alloc(cookie);
+        if (waiter == NULL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "btree elem get - cmdlog waiter alloc fail\n");
+            return ENGINE_ENOMEM; /* FIXME: define error code */
+        }
+    }
 #endif
 
     eresult->elem_array = NULL;
     eresult->elem_count = 0;
 
     LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence && delete) {
-        waiter = cmdlog_waiter_alloc(cookie);
-        if (waiter == NULL) {
-            logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "btree elem get - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
-            return ENGINE_ENOMEM; /* FIXME: define error code */
-        }
-    }
-#endif
     ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
@@ -7518,12 +7465,12 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
         } while (0);
         do_item_release(it);
     }
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL && delete) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -8086,20 +8033,17 @@ ENGINE_ERROR_CODE item_setattr(const void *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
-#endif
-
-    LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) {
         waiter = cmdlog_waiter_alloc(cookie);
         if (waiter == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "item setattr - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
     }
 #endif
+
+    LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
     if (it == NULL) {
         ret = ENGINE_KEY_ENOENT;
@@ -8111,12 +8055,12 @@ ENGINE_ERROR_CODE item_setattr(const void *key, const uint32_t nkey,
         }
         do_item_release(it);
     }
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
 
     return ret;
 }
@@ -9929,20 +9873,17 @@ ENGINE_ERROR_CODE map_struct_create(const char *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
-#endif
-
-    LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) {
         waiter = cmdlog_waiter_alloc(cookie);
         if (waiter == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "map struct create - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
     }
 #endif
+
+    LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
     if (it != NULL) {
         do_item_release(it);
@@ -9956,12 +9897,12 @@ ENGINE_ERROR_CODE map_struct_create(const char *key, const uint32_t nkey,
             do_item_release(it);
         }
     }
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -10004,22 +9945,19 @@ ENGINE_ERROR_CODE map_elem_insert(const char *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
-#endif
-
-    *created = false;
-
-    LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) {
         waiter = cmdlog_waiter_alloc(cookie);
         if (waiter == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "map elem insert - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
     }
 #endif
+
+    *created = false;
+
+    LOCK_CACHE();
     ret = do_map_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
         it = do_map_item_alloc(key, nkey, attrp, cookie);
@@ -10041,12 +9979,12 @@ ENGINE_ERROR_CODE map_elem_insert(const char *key, const uint32_t nkey,
         }
     }
     if (it != NULL) do_item_release(it);
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -10058,32 +9996,29 @@ ENGINE_ERROR_CODE map_elem_update(const char *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
-#endif
-
-    LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) {
         waiter = cmdlog_waiter_alloc(cookie);
         if (waiter == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "map elem update - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
     }
 #endif
+
+    LOCK_CACHE();
     ret = do_map_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         map_meta_info *info = (map_meta_info *)item_get_meta(it);
         ret = do_map_elem_update(info, field, value, nbytes, cookie);
         do_item_release(it);
     }
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -10097,22 +10032,19 @@ ENGINE_ERROR_CODE map_elem_delete(const char *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
-#endif
-
-    *dropped = false;
-
-    LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
     if (config->use_persistence) {
         waiter = cmdlog_waiter_alloc(cookie);
         if (waiter == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "map elem delete - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
     }
 #endif
+
+    *dropped = false;
+
+    LOCK_CACHE();
     ret = do_map_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) { /* it != NULL */
         map_meta_info *info = (map_meta_info *)item_get_meta(it);
@@ -10128,12 +10060,12 @@ ENGINE_ERROR_CODE map_elem_delete(const char *key, const uint32_t nkey,
         }
         do_item_release(it);
     }
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
@@ -10147,23 +10079,20 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 #ifdef ENABLE_PERSISTENCE
     log_waiter_t *waiter = NULL;
+    if (config->use_persistence && delete) {
+        waiter = cmdlog_waiter_alloc(cookie);
+        if (waiter == NULL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "map elem get - cmdlog waiter alloc fail\n");
+            return ENGINE_ENOMEM; /* FIXME: define error code */
+        }
+    }
 #endif
 
     eresult->elem_array = NULL;
     eresult->elem_count = 0;
 
     LOCK_CACHE();
-#ifdef ENABLE_PERSISTENCE
-    if (config->use_persistence && delete) {
-        waiter = cmdlog_waiter_alloc(cookie);
-        if (waiter == NULL) {
-            logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "map elem get - cmdlog waiter alloc fail\n");
-            UNLOCK_CACHE();
-            return ENGINE_ENOMEM; /* FIXME: define error code */
-        }
-    }
-#endif
     ret = do_map_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         map_meta_info *info = (map_meta_info *)item_get_meta(it);
@@ -10198,12 +10127,12 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
         } while (0);
         do_item_release(it);
     }
+    UNLOCK_CACHE();
 #ifdef ENABLE_PERSISTENCE
     if (waiter != NULL && delete) {
         cmdlog_waiter_free(waiter, &ret);
     }
 #endif
-    UNLOCK_CACHE();
     return ret;
 }
 
