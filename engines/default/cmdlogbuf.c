@@ -742,6 +742,9 @@ void cmdlog_buf_final(void)
     /* log file final */
     cmdlog_file_close(true);
 
+    pthread_mutex_destroy(&log_gl.log_write_lock);
+    pthread_mutex_destroy(&log_gl.log_flush_lock);
+    pthread_mutex_destroy(&log_gl.flush_lsn_lock);
     logger->log(EXTENSION_LOG_INFO, NULL, "CMDLOG BUFFER module destroyed.\n");
 }
 
