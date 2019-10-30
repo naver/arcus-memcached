@@ -41,6 +41,7 @@ struct cmdlog_global {
     log_waiter_t        *wait_entry_table;
     log_waiter_t        *waiters;
     log_wait_entry_info  wait_entry_info;
+    pthread_mutex_t      wait_entry_lock;
     volatile bool        initialized;
 };
 
@@ -48,6 +49,7 @@ struct cmdlog_global {
 static struct default_engine *engine = NULL;
 static EXTENSION_LOGGER_DESCRIPTOR* logger = NULL;
 static struct cmdlog_global logmgr_gl;
+static __thread log_waiter_t *tls_waiter = NULL;
 
 /* Recovery Function */
 static ENGINE_ERROR_CODE cmdlog_mgr_recovery()
@@ -72,6 +74,7 @@ log_waiter_t *cmdlog_waiter_alloc(const void *cookie)
 {
     log_waiter_t *waiter = NULL;
     log_wait_entry_info *info = &logmgr_gl.wait_entry_info;
+    pthread_mutex_lock(&logmgr_gl.wait_entry_lock);
     if (info->free_list != -1) {
         waiter = &logmgr_gl.wait_entry_table[info->free_list];
         info->free_list = waiter->next_eid;
@@ -88,6 +91,10 @@ log_waiter_t *cmdlog_waiter_alloc(const void *cookie)
         }
         info->cur_waiters += 1;
     }
+    pthread_mutex_unlock(&logmgr_gl.wait_entry_lock);
+    if (waiter) {
+      tls_waiter = waiter;
+    }
     return waiter;
 }
 
@@ -98,6 +105,7 @@ void cmdlog_waiter_free(log_waiter_t *waiter, ENGINE_ERROR_CODE *result)
     LOGSN_SET_NULL(&waiter->lsn);
 
     log_wait_entry_info *info = &logmgr_gl.wait_entry_info;
+    pthread_mutex_lock(&logmgr_gl.wait_entry_lock);
     if (waiter->prev_eid == -1) info->used_head = waiter->next_eid;
     else logmgr_gl.wait_entry_table[waiter->prev_eid].next_eid = waiter->next_eid;
     if (waiter->next_eid == -1) info->used_tail = waiter->prev_eid;
@@ -106,14 +114,12 @@ void cmdlog_waiter_free(log_waiter_t *waiter, ENGINE_ERROR_CODE *result)
     waiter->next_eid = info->free_list;
     info->free_list = waiter->curr_eid;
     info->cur_waiters -= 1;
+    pthread_mutex_unlock(&logmgr_gl.wait_entry_lock);
 }
 
 log_waiter_t *cmdlog_get_cur_waiter(void)
 {
-    log_wait_entry_info *info = &logmgr_gl.wait_entry_info;
-    log_waiter_t *waiter = (info->used_tail == -1 ? NULL :
-                            &logmgr_gl.wait_entry_table[info->used_tail]);
-    return waiter;
+    return tls_waiter;
 }
 
 ENGINE_ERROR_CODE cmdlog_waiter_init(struct default_engine *engine)
@@ -138,6 +144,7 @@ ENGINE_ERROR_CODE cmdlog_waiter_init(struct default_engine *engine)
     info->free_list = 0; /* the first entry */
     info->used_head = -1;
     info->used_tail = -1;
+    pthread_mutex_init(&logmgr_gl.wait_entry_lock, NULL);
 
     /* TODO::initialize group commit with waiters */
 
@@ -156,6 +163,7 @@ void cmdlog_waiter_final(void)
     /* TODO::check wait count is 0 */
 
     free((void*)logmgr_gl.wait_entry_table);
+    pthread_mutex_destroy(&logmgr_gl.wait_entry_lock);
 }
 
 ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine_ptr)
