@@ -582,6 +582,7 @@ static void do_snapshot_stop(snapshot_st *ss, bool wait_stop)
             break;
         }
     }
+    logger->log(EXTENSION_LOG_INFO, NULL, "Snapshot thread stopped.\n");
 }
 
 static void do_snapshot_stats(snapshot_st *ss, ADD_STAT add_stat, const void *cookie)

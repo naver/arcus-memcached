@@ -401,6 +401,13 @@ extern "C" {
         const char *config;
     } auth_data_t;
 
+    /* thread running state */
+    typedef enum {
+        RUNNING_UNSTARTED,
+        RUNNING_STARTED,
+        RUNNING_STOPPED
+    } THREAD_RUNNING_STATE;
+
     /* Forward declaration of the server handle -- to be filled in later */
     typedef struct server_handle_v1_t SERVER_HANDLE_V1;
 

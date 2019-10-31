@@ -760,8 +760,7 @@ ENGINE_ERROR_CODE cmdlog_buf_flush_thread_start(void)
     log_gl.log_flusher.init = true;
     if (pthread_create(&tid, NULL, log_flush_thread_main, NULL) != 0) {
         log_gl.log_flusher.init = false;
-        logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Failed to create cmdlog flush thread\n");
+        logger->log(EXTENSION_LOG_WARNING, NULL, "Failed to create command log flush thread.\n");
         return ENGINE_FAILED;
     }
 
@@ -771,7 +770,7 @@ ENGINE_ERROR_CODE cmdlog_buf_flush_thread_start(void)
     while (log_gl.log_flusher.start == false) {
         nanosleep(&sleep_time, NULL);
     }
-    logger->log(EXTENSION_LOG_INFO, NULL, "[INIT] daemon thread - cmdlog flush thread started.\n");
+    logger->log(EXTENSION_LOG_INFO, NULL, "Command log flush thread started.\n");
 
     /* TODO: wait until log fsync thread starts */
 
@@ -801,7 +800,7 @@ void cmdlog_buf_flush_thread_stop(void)
             nanosleep(&sleep_time, NULL);
         }
     }
-    logger->log(EXTENSION_LOG_INFO, NULL, "[FINAL] daemon thread - cmdlog flush thread stopped.\n");
+    logger->log(EXTENSION_LOG_INFO, NULL, "Command log flush thread stopped.\n");
 
     /* TODO: fsync thread stop and wait until stopped */
 }
