@@ -58,6 +58,7 @@ typedef struct _chkpt_st {
     char     cmdlog_path[CHKPT_MAX_FILENAME_LENGTH+1];   /* cmdlog file path */
     char    *data_path;   /* snapshot directory path */
     char    *logs_path;   /* command log directory path */
+    volatile bool initialized; /* checkpoint module init */
 } chkpt_st;
 
 /* global data */
@@ -430,6 +431,7 @@ ENGINE_ERROR_CODE chkpt_init(struct default_engine* engine)
     chkpt_anch.data_path = engine->config.data_path;
     chkpt_anch.logs_path = engine->config.logs_path;
 
+    chkpt_anch.initialized = true;
     logger->log(EXTENSION_LOG_INFO, NULL, "CHECKPOINT module initialized.\n");
     return ENGINE_SUCCESS;
 }
@@ -449,6 +451,10 @@ ENGINE_ERROR_CODE chkpt_thread_start(void)
 
 void chkpt_thread_stop(void)
 {
+    if (chkpt_anch.initialized == false) {
+        return;
+    }
+
     pthread_mutex_lock(&chkpt_anch.lock);
     while (chkpt_anch.start) {
         chkpt_anch.stop = true;
@@ -465,8 +471,13 @@ void chkpt_thread_stop(void)
 
 void chkpt_final(void)
 {
+    if (chkpt_anch.initialized == false) {
+        return;
+    }
+
     pthread_mutex_destroy(&chkpt_anch.lock);
     pthread_cond_destroy(&chkpt_anch.cond);
-    logger->log(EXTENSION_LOG_INFO, NULL, "CHECKPOINT module destroyed\n");
+    chkpt_anch.initialized = false;
+    logger->log(EXTENSION_LOG_INFO, NULL, "CHECKPOINT module destroyed.\n");
 }
 #endif

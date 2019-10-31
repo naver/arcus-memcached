@@ -211,8 +211,6 @@ ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine_ptr)
 
 void cmdlog_mgr_final(void)
 {
-    logmgr_gl.initialized = false;
-
     chkpt_thread_stop();
     cmdlog_buf_flush_thread_stop();
     /* CONSIDER: do last checkpoint before shutdown engine. */
@@ -220,6 +218,9 @@ void cmdlog_mgr_final(void)
     cmdlog_buf_final();
     cmdlog_waiter_final();
 
-    logger->log(EXTENSION_LOG_INFO, NULL, "COMMAND LOG MANAGER module destroted.\n");
+    if (logmgr_gl.initialized == true) {
+        logmgr_gl.initialized = false;
+        logger->log(EXTENSION_LOG_INFO, NULL, "COMMAND LOG MANAGER module destroyed.\n");
+    }
 }
 #endif

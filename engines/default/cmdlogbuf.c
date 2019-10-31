@@ -724,7 +724,9 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
 
 void cmdlog_buf_final(void)
 {
-    log_gl.initialized = false;
+    if (log_gl.initialized == false) {
+        return;
+    }
 
     /* log buffer final */
     log_BUFFER *logbuff = &log_gl.log_buffer;
@@ -745,6 +747,7 @@ void cmdlog_buf_final(void)
     pthread_mutex_destroy(&log_gl.log_write_lock);
     pthread_mutex_destroy(&log_gl.log_flush_lock);
     pthread_mutex_destroy(&log_gl.flush_lsn_lock);
+    log_gl.initialized = false;
     logger->log(EXTENSION_LOG_INFO, NULL, "CMDLOG BUFFER module destroyed.\n");
 }
 
@@ -778,6 +781,10 @@ ENGINE_ERROR_CODE cmdlog_buf_flush_thread_start(void)
 
 void cmdlog_buf_flush_thread_stop(void)
 {
+    if (log_gl.initialized == false) {
+        return;
+    }
+
     struct timespec sleep_time = {0, 10000000}; // 10 msec.
 
     if (log_gl.log_flusher.init == true) {
