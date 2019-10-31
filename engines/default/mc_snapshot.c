@@ -62,6 +62,7 @@ typedef struct _snapshot_st {
    int      nprefix;    /* prefix name length */
    struct snapshot_file   file;
    struct snapshot_buffer buffer;
+   volatile bool initialized;
 } snapshot_st;
 
 /* global data */
@@ -627,15 +628,21 @@ ENGINE_ERROR_CODE mc_snapshot_init(struct default_engine *engine)
     if (do_snapshot_init(&snapshot_anch, engine) < 0) {
         return ENGINE_FAILED;
     }
+    snapshot_anch.initialized = true;
     logger->log(EXTENSION_LOG_INFO, NULL, "SNAPSHOT module initialized.\n");
     return ENGINE_SUCCESS;
 }
 
 void mc_snapshot_final(void)
 {
+    if (snapshot_anch.initialized == false) {
+        return;
+    }
+
     mc_snapshot_stop();
 
     do_snapshot_final(&snapshot_anch);
+    snapshot_anch.initialized = false;
     logger->log(EXTENSION_LOG_INFO, NULL, "SNAPSHOT module destroyed.\n");
 }
 
