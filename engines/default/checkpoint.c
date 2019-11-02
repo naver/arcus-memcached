@@ -49,16 +49,16 @@ typedef struct _chkpt_st {
     pthread_cond_t cond;
     void    *engine;
     void    *config;
-    bool     start;       /* checkpoint module start */
-    bool     stop;        /* stop to do checkpoint */
-    bool     sleep;       /* checkpoint thread sleep */
-    int64_t  lasttime;    /* last checkpoint time */
-    size_t   lastsize;    /* last snapshot log file size */
+    bool     sleep;               /* checkpoint thread sleep */
+    int64_t  lasttime;            /* last checkpoint time */
+    size_t   lastsize;            /* last snapshot log file size */
     char     snapshot_path[CHKPT_MAX_FILENAME_LENGTH+1]; /* snapshot file path */
     char     cmdlog_path[CHKPT_MAX_FILENAME_LENGTH+1];   /* cmdlog file path */
-    char    *data_path;   /* snapshot directory path */
-    char    *logs_path;   /* command log directory path */
-    volatile bool initialized; /* checkpoint module init */
+    char    *data_path;           /* snapshot directory path */
+    char    *logs_path;           /* command log directory path */
+    volatile uint8_t running;     /* Is it running, now ? */
+    volatile bool    reqstop;     /* stop to do checkpoint */
+    volatile bool    initialized; /* checkpoint module init */
 } chkpt_st;
 
 /* global data */
@@ -287,12 +287,11 @@ static void* chkpt_thread_main(void* arg)
     bool need_remove = false;
     int ret = CHKPT_SUCCESS;
 
-    logger->log(EXTENSION_LOG_INFO, NULL, "chkpt thread has started.\n");
-
+    cs->running = RUNNING_STARTED;
     while (engine->initialized) {
         elapsed_time += do_chkpt_sleep(cs, 1);
 
-        if (cs->stop) {
+        if (cs->reqstop) {
             logger->log(EXTENSION_LOG_INFO, NULL, "Stop the current checkpoint.\n");
             break;
         }
@@ -317,7 +316,7 @@ static void* chkpt_thread_main(void* arg)
             elapsed_time = 0;
         }
     }
-    cs->start = false;
+    cs->running = RUNNING_STOPPED;
     return NULL;
 }
 
@@ -422,14 +421,14 @@ ENGINE_ERROR_CODE chkpt_init(struct default_engine* engine)
     pthread_cond_init(&chkpt_anch.cond, NULL);
     chkpt_anch.engine = (void*)engine;
     chkpt_anch.config = (void*)&engine->config;
-    chkpt_anch.start = false;
-    chkpt_anch.stop = false;
     chkpt_anch.sleep = false;
     chkpt_anch.lasttime = -1;
     chkpt_anch.snapshot_path[0] = '\0';
     chkpt_anch.cmdlog_path[0] = '\0';
     chkpt_anch.data_path = engine->config.data_path;
     chkpt_anch.logs_path = engine->config.logs_path;
+    chkpt_anch.running = RUNNING_UNSTARTED;
+    chkpt_anch.reqstop = false;
 
     chkpt_anch.initialized = true;
     logger->log(EXTENSION_LOG_INFO, NULL, "CHECKPOINT module initialized.\n");
@@ -439,13 +438,18 @@ ENGINE_ERROR_CODE chkpt_init(struct default_engine* engine)
 ENGINE_ERROR_CODE chkpt_thread_start(void)
 {
     pthread_t tid;
-    chkpt_anch.start = true;
+    chkpt_anch.running = RUNNING_UNSTARTED;
+    /* create checkpoint thread */
     if (pthread_create(&tid, NULL, chkpt_thread_main, &chkpt_anch) != 0) {
-        chkpt_anch.start = false;
-        logger->log(EXTENSION_LOG_WARNING, NULL, "Failed to create chkpt thread\n");
+        logger->log(EXTENSION_LOG_WARNING, NULL, "Failed to create chkpt thread.\n");
         return ENGINE_FAILED;
     }
-    logger->log(EXTENSION_LOG_INFO, NULL, "[INIT] checkpoint thread started.\n");
+
+    /* wait until checkpoint thread starts */
+    while (chkpt_anch.running == RUNNING_UNSTARTED) {
+        usleep(5000); /* sleep 5ms */
+    }
+    logger->log(EXTENSION_LOG_INFO, NULL, "Checkpoint thread started.\n");
     return ENGINE_SUCCESS;
 }
 
@@ -456,8 +460,8 @@ void chkpt_thread_stop(void)
     }
 
     pthread_mutex_lock(&chkpt_anch.lock);
-    while (chkpt_anch.start) {
-        chkpt_anch.stop = true;
+    while (chkpt_anch.running == RUNNING_STARTED) {
+        chkpt_anch.reqstop = true;
         if (chkpt_anch.sleep) {
             do_chkpt_wakeup(&chkpt_anch, false); /* false: doesn't hold lock */
         }
@@ -466,7 +470,7 @@ void chkpt_thread_stop(void)
         pthread_mutex_lock(&chkpt_anch.lock);
     }
     pthread_mutex_unlock(&chkpt_anch.lock);
-    logger->log(EXTENSION_LOG_INFO, NULL, "[FINAL] checkpoint thread stopped.\n");
+    logger->log(EXTENSION_LOG_INFO, NULL, "Checkpoint thread stopped.\n");
 }
 
 void chkpt_final(void)
