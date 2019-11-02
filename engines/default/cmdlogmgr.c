@@ -19,7 +19,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-#include <sys/time.h>
 
 #include "default_engine.h"
 #ifdef ENABLE_PERSISTENCE

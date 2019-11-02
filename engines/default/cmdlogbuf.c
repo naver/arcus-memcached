@@ -154,10 +154,8 @@ static int disk_close(int fd)
 }
 /***************/
 
-static void do_log_flusher_wakeup(void)
+static void do_log_flusher_wakeup(log_FLUSHER *flusher)
 {
-    log_FLUSHER *flusher = &log_gl.log_flusher;
-
     pthread_mutex_lock(&flusher->lock);
     if (flusher->sleep) {
         pthread_cond_signal(&flusher->cond);
@@ -363,7 +361,7 @@ static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_wr
     /* wake up log flush thread if flush requests exist */
     if (logbuff->fbgn != logbuff->fend) {
         if (log_gl.log_flusher.sleep == true) {
-            do_log_flusher_wakeup();
+            do_log_flusher_wakeup(&log_gl.log_flusher);
         }
     }
 }
@@ -753,9 +751,7 @@ void cmdlog_buf_final(void)
 
 ENGINE_ERROR_CODE cmdlog_buf_flush_thread_start(void)
 {
-    struct timespec sleep_time = {0, 10000000}; // 10 msec.
     pthread_t tid;
-
     /* create log flush thread */
     log_gl.log_flusher.init = true;
     if (pthread_create(&tid, NULL, log_flush_thread_main, NULL) != 0) {
@@ -768,12 +764,11 @@ ENGINE_ERROR_CODE cmdlog_buf_flush_thread_start(void)
 
     /* wait until log flush thread starts */
     while (log_gl.log_flusher.start == false) {
-        nanosleep(&sleep_time, NULL);
+        usleep(5000); /* sleep 5ms */
     }
     logger->log(EXTENSION_LOG_INFO, NULL, "Command log flush thread started.\n");
 
     /* TODO: wait until log fsync thread starts */
-
 
     return ENGINE_SUCCESS;
 }
@@ -784,20 +779,17 @@ void cmdlog_buf_flush_thread_stop(void)
         return;
     }
 
-    struct timespec sleep_time = {0, 10000000}; // 10 msec.
-
-    if (log_gl.log_flusher.init == true) {
+    log_FLUSHER *flusher = &log_gl.log_flusher;
+    if (flusher->init == true) {
         /* stop request */
-        pthread_mutex_lock(&log_gl.log_flusher.lock);
-        log_gl.log_flusher.init = false;
-        pthread_mutex_unlock(&log_gl.log_flusher.lock);
+        pthread_mutex_lock(&flusher->lock);
+        flusher->init = false;
+        pthread_mutex_unlock(&flusher->lock);
 
         /* wait until the log flush thread stops */
-        while (log_gl.log_flusher.start == true) {
-            if (log_gl.log_flusher.sleep == true) {
-                do_log_flusher_wakeup();
-            }
-            nanosleep(&sleep_time, NULL);
+        while (flusher->start == true) {
+            do_log_flusher_wakeup(flusher);
+            usleep(5000); /* sleep 5ms */
         }
     }
     logger->log(EXTENSION_LOG_INFO, NULL, "Command log flush thread stopped.\n");
