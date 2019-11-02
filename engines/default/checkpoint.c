@@ -213,15 +213,13 @@ static int do_chkpt_sleep(chkpt_st *cs, int sleep_sec)
     return sleep_sec;
 }
 
-static void do_chkpt_wakeup(chkpt_st *cs, bool lock_hold)
+static void do_chkpt_wakeup(chkpt_st *cs)
 {
-    if (lock_hold)
-        pthread_mutex_lock(&cs->lock);
+    pthread_mutex_lock(&cs->lock);
     if (cs->sleep) {
         pthread_cond_signal(&cs->cond);
     }
-    if (lock_hold)
-        pthread_mutex_unlock(&cs->lock);
+    pthread_mutex_unlock(&cs->lock);
 }
 
 /* FIXME : Error handling(Disk I/O etc) */
@@ -441,7 +439,7 @@ ENGINE_ERROR_CODE chkpt_thread_start(void)
     chkpt_anch.running = RUNNING_UNSTARTED;
     /* create checkpoint thread */
     if (pthread_create(&tid, NULL, chkpt_thread_main, &chkpt_anch) != 0) {
-        logger->log(EXTENSION_LOG_WARNING, NULL, "Failed to create chkpt thread.\n");
+        logger->log(EXTENSION_LOG_WARNING, NULL, "Failed to create checkpoint thread.\n");
         return ENGINE_FAILED;
     }
 
@@ -459,17 +457,11 @@ void chkpt_thread_stop(void)
         return;
     }
 
-    pthread_mutex_lock(&chkpt_anch.lock);
     while (chkpt_anch.running == RUNNING_STARTED) {
         chkpt_anch.reqstop = true;
-        if (chkpt_anch.sleep) {
-            do_chkpt_wakeup(&chkpt_anch, false); /* false: doesn't hold lock */
-        }
-        pthread_mutex_unlock(&chkpt_anch.lock);
+        do_chkpt_wakeup(&chkpt_anch);
         usleep(5000); /* sleep 5ms */
-        pthread_mutex_lock(&chkpt_anch.lock);
     }
-    pthread_mutex_unlock(&chkpt_anch.lock);
     logger->log(EXTENSION_LOG_INFO, NULL, "Checkpoint thread stopped.\n");
 }
 
