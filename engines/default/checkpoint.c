@@ -47,7 +47,6 @@ enum chkpt_error_code {
 typedef struct _chkpt_st {
     pthread_mutex_t lock;
     pthread_cond_t cond;
-    void    *engine;
     void    *config;
     bool     sleep;               /* checkpoint thread sleep */
     int64_t  lasttime;            /* last checkpoint time */
@@ -279,18 +278,17 @@ static bool do_checkpoint_needed(chkpt_st *cs)
 static void* chkpt_thread_main(void* arg)
 {
     chkpt_st *cs = (chkpt_st *)arg;
-    struct default_engine *engine = cs->engine;
     size_t elapsed_time = 0; /* unit : second */
     size_t flsweep_time = 0; /* unit : second */
     bool need_remove = false;
     int ret = CHKPT_SUCCESS;
 
     cs->running = RUNNING_STARTED;
-    while (engine->initialized) {
+    while (1) {
         elapsed_time += do_chkpt_sleep(cs, 1);
 
         if (cs->reqstop) {
-            logger->log(EXTENSION_LOG_INFO, NULL, "Stop the current checkpoint.\n");
+            logger->log(EXTENSION_LOG_INFO, NULL, "Checkpoint thread recognized stop request.\n");
             break;
         }
 
@@ -417,7 +415,6 @@ ENGINE_ERROR_CODE chkpt_init(struct default_engine* engine)
 
     pthread_mutex_init(&chkpt_anch.lock, NULL);
     pthread_cond_init(&chkpt_anch.cond, NULL);
-    chkpt_anch.engine = (void*)engine;
     chkpt_anch.config = (void*)&engine->config;
     chkpt_anch.sleep = false;
     chkpt_anch.lasttime = -1;

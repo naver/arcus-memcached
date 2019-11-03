@@ -432,9 +432,9 @@ static bool do_snapshot_action(snapshot_st *ss)
                     "Failed to get item scan resource.\n");
         goto done;
     }
-    while (engine->initialized) {
+    while (1) {
         if (ss->reqstop) {
-            logger->log(EXTENSION_LOG_INFO, NULL, "Stop the current snapshot.\n");
+            logger->log(EXTENSION_LOG_INFO, NULL, "Ongoing snapshot recognized stop request.\n");
             break;
         }
         item_count = itscan_getnext(shandle, item_array, erst_array, item_arrsz);
@@ -571,6 +571,10 @@ static ENGINE_ERROR_CODE do_snapshot_start(snapshot_st *ss,
 
 static void do_snapshot_stop(snapshot_st *ss, bool wait_stop)
 {
+    if (!ss->running) {
+        return;
+    }
+
     while (ss->running) {
         ss->reqstop = true; /* request to stop the snapshot */
 
