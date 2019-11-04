@@ -571,7 +571,7 @@ static ENGINE_ERROR_CODE do_snapshot_start(snapshot_st *ss,
 
 static void do_snapshot_stop(snapshot_st *ss, bool wait_stop)
 {
-    if (!ss->running) {
+    if (!ss->running || ss->mode == MC_SNAPSHOT_MODE_CHKPT) {
         return;
     }
 
