@@ -29,7 +29,12 @@
 
 /* FIXME: config log buffer size */
 #define CMDLOG_BUFFER_SIZE (100 * 1024 * 1024) /* 100 MB */
+#ifdef ENABLE_PERSISTENCE_04_ENHANCE_FQUE
+#define CMDLOG_FLUSH_AUTO_SIZE (32 * 1024) /* 32 KB : see the nflush data type of log_FREQ */
+#define CMDLOG_RECORD_MIN_SIZE 16          /* 8 bytes header + 8 bytes body */
+#else
 #define CMDLOG_FLUSH_AUTO_SIZE (64 * 1024) /* 64 KB */
+#endif
 
 #define CMDLOG_MAX_FILEPATH_LENGTH 255
 
@@ -45,11 +50,19 @@ typedef struct _log_file {
     size_t    next_size;
 } log_FILE;
 
+#ifdef ENABLE_PERSISTENCE_04_ENHANCE_FQUE
+typedef struct _log_freq {
+    uint16_t  nflush;     /* amount of log buffer to flush */
+    uint8_t   dual_write; /* flag of dual write */
+    uint8_t   unused;
+} log_FREQ;
+#else
 /* flush request structure */
 typedef struct _log_freq {
     uint32_t  nflush;     /* amount of log buffer to flush */
     bool      dual_write; /* flag of dual write */
 } log_FREQ;
+#endif
 
 /* log buffer structure */
 typedef struct _log_buffer {
@@ -306,6 +319,9 @@ static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_wr
 {
     log_BUFFER *logbuff = &log_gl.log_buffer;
     uint32_t total_length = sizeof(LogHdr) + logrec->header.body_length;
+#ifdef ENABLE_PERSISTENCE_04_ENHANCE_FQUE
+    uint32_t spare_length;
+#endif
     assert(total_length < logbuff->size);
 
     pthread_mutex_lock(&log_gl.log_write_lock);
@@ -330,7 +346,10 @@ static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_wr
                 /* increase log flush end pointer
                  * to make to-be-flushed log data contiguous in memory.
                  */
+#ifdef ENABLE_PERSISTENCE_04_ENHANCE_FQUE
+#else
                 /* TODO: ensure flush request not full */
+#endif
                 if (logbuff->fque[logbuff->fend].nflush > 0) {
                     if ((++logbuff->fend) == logbuff->fqsz) logbuff->fend = 0;
                 }
@@ -360,6 +379,24 @@ static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_wr
     log_gl.nxt_write_lsn.roffset += total_length;
 
     /* update log flush reqeust */
+#ifdef ENABLE_PERSISTENCE_04_ENHANCE_FQUE
+    if (logbuff->fque[logbuff->fend].nflush > 0 &&
+        logbuff->fque[logbuff->fend].dual_write != dual_write) {
+        if ((++logbuff->fend) == logbuff->fqsz) logbuff->fend = 0;
+    }
+    while (total_length > 0) {
+        /* check remain length */
+        spare_length = CMDLOG_FLUSH_AUTO_SIZE - logbuff->fque[logbuff->fend].nflush;
+        if (spare_length >= total_length) spare_length = total_length;
+
+        logbuff->fque[logbuff->fend].nflush += spare_length;
+        logbuff->fque[logbuff->fend].dual_write = dual_write;
+        if (logbuff->fque[logbuff->fend].nflush == CMDLOG_FLUSH_AUTO_SIZE) {
+            if ((++logbuff->fend) == logbuff->fqsz) logbuff->fend = 0;
+        }
+        total_length -= spare_length;
+    }
+#else
     if (logbuff->fque[logbuff->fend].nflush == 0) {
         logbuff->fque[logbuff->fend].nflush = total_length;
         logbuff->fque[logbuff->fend].dual_write = dual_write;
@@ -374,6 +411,7 @@ static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_wr
     if (logbuff->fque[logbuff->fend].nflush > CMDLOG_FLUSH_AUTO_SIZE) {
         if ((++logbuff->fend) == logbuff->fqsz) logbuff->fend = 0;
     }
+#endif
 
 #ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
 #else
@@ -808,7 +846,11 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
     logbuff->last = -1;
 
     /* log flush request queue init - ring shaped queue */
+#ifdef ENABLE_PERSISTENCE_04_ENHANCE_FQUE
+    logbuff->fqsz = (logbuff->size / CMDLOG_RECORD_MIN_SIZE);
+#else
     logbuff->fqsz = (logbuff->size / CMDLOG_FLUSH_AUTO_SIZE) * 2;
+#endif
     logbuff->fque = (log_FREQ*)malloc(logbuff->fqsz * sizeof(log_FREQ));
     if (logbuff->fque == NULL) {
         free(logbuff->data);
