@@ -23,7 +23,12 @@
 
 /* external log functions */
 void log_record_write(LogRec *logrec, log_waiter_t *waiter, bool dual_write);
+#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
+void log_file_sync(void);
+void log_buffer_flush(LogSN *upto_lsn);
+#else
 void log_file_sync(LogSN *prev_flush_lsn);
+#endif
 
 /* FIXME: remove later, if not used */
 //void log_get_write_lsn(LogSN *lsn);
