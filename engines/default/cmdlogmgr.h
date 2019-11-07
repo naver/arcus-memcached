@@ -30,9 +30,7 @@ typedef struct _log_waiter {
     int16_t             curr_eid;   /* curr entry id */
     int16_t             next_eid;   /* next entry id */
     int16_t             prev_eid;   /* prev entry id */
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
     const void         *cookie;
-#endif
 } log_waiter_t;
 
 /* external command log manager functions */
@@ -52,16 +50,14 @@ void               cmdlog_mgr_final(void);
 
 #endif
 
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
 /* LogSN comparison */
 #define LOGSN_IS_EQ(lsn1, lsn2) ((lsn1)->filenum == (lsn2)->filenum && (lsn1)->roffset == (lsn2)->roffset)
 #define LOGSN_IS_NE(lsn1, lsn2) ((lsn1)->filenum != (lsn2)->filenum || (lsn1)->roffset != (lsn2)->roffset)
 #define LOGSN_IS_LT(lsn1, lsn2) (((lsn1)->filenum <  (lsn2)->filenum) || \
-                                         ((lsn1)->filenum == (lsn2)->filenum && (lsn1)->roffset <  (lsn2)->roffset))
+                                 ((lsn1)->filenum == (lsn2)->filenum && (lsn1)->roffset <  (lsn2)->roffset))
 #define LOGSN_IS_LE(lsn1, lsn2) (((lsn1)->filenum <  (lsn2)->filenum) || \
-                                         ((lsn1)->filenum == (lsn2)->filenum && (lsn1)->roffset <= (lsn2)->roffset))
+                                 ((lsn1)->filenum == (lsn2)->filenum && (lsn1)->roffset <= (lsn2)->roffset))
 #define LOGSN_IS_GT(lsn1, lsn2) (((lsn1)->filenum >  (lsn2)->filenum) || \
-                                         ((lsn1)->filenum == (lsn2)->filenum && (lsn1)->roffset >  (lsn2)->roffset))
+                                 ((lsn1)->filenum == (lsn2)->filenum && (lsn1)->roffset >  (lsn2)->roffset))
 #define LOGSN_IS_GE(lsn1, lsn2) (((lsn1)->filenum >  (lsn2)->filenum) || \
-                                         ((lsn1)->filenum == (lsn2)->filenum && (lsn1)->roffset >= (lsn2)->roffset))
-#endif
+                                 ((lsn1)->filenum == (lsn2)->filenum && (lsn1)->roffset >= (lsn2)->roffset))

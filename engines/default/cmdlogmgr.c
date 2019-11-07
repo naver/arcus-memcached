@@ -28,7 +28,6 @@
 #include "checkpoint.h"
 #include "item_clog.h"
 
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
 typedef struct _group_commit {
     log_waiter_t *    wait_head;
     log_waiter_t *    wait_tail;
@@ -39,7 +38,6 @@ typedef struct _group_commit {
     pthread_mutex_t   lock;       /* group commit mutex */
     pthread_cond_t    cond;       /* group commit conditional variable */
 } group_commit_t;
-#endif
 
 typedef struct _wait_entry_info {
     int16_t           free_list;
@@ -52,16 +50,10 @@ typedef struct _wait_entry_info {
 /* commandlog global structure */
 struct cmdlog_global {
     log_waiter_t        *wait_entry_table;
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
-#else
-    log_waiter_t        *waiters;
-#endif
     log_wait_entry_info  wait_entry_info;
     pthread_mutex_t      wait_entry_lock;
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
     group_commit_t       group_commit;
     bool                 async_mode;
-#endif
     volatile bool        initialized;
 };
 
@@ -111,9 +103,7 @@ log_waiter_t *cmdlog_waiter_alloc(const void *cookie)
         }
         info->cur_waiters += 1;
 
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
         waiter->cookie = cookie;
-#endif
     }
     pthread_mutex_unlock(&logmgr_gl.wait_entry_lock);
     if (waiter) {
@@ -122,7 +112,6 @@ log_waiter_t *cmdlog_waiter_alloc(const void *cookie)
     return waiter;
 }
 
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
 static log_waiter_t* do_cmdlog_get_commit_waiter(group_commit_t *gcommit, LogSN *now_fsync_lsn)
 {
     log_waiter_t *waiters;
@@ -314,11 +303,9 @@ do_cmdlog_add_commit_waiter(log_waiter_t *waiter)
     }
     logmgr_gl.group_commit.wait_cnt += 1;
 }
-#endif
 
 void cmdlog_waiter_free(log_waiter_t *waiter, ENGINE_ERROR_CODE *result)
 {
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
     if (logmgr_gl.async_mode == false && *result == ENGINE_SUCCESS) {
         group_commit_t *gcommit = &logmgr_gl.group_commit;
         LogSN now_flush_lsn, now_fsync_lsn;
@@ -343,23 +330,6 @@ void cmdlog_waiter_free(log_waiter_t *waiter, ENGINE_ERROR_CODE *result)
         }
     }
     do_cmdlog_waiter_free(waiter, false);
-#else
-    assert(waiter && result);
-
-    LOGSN_SET_NULL(&waiter->lsn);
-
-    log_wait_entry_info *info = &logmgr_gl.wait_entry_info;
-    pthread_mutex_lock(&logmgr_gl.wait_entry_lock);
-    if (waiter->prev_eid == -1) info->used_head = waiter->next_eid;
-    else logmgr_gl.wait_entry_table[waiter->prev_eid].next_eid = waiter->next_eid;
-    if (waiter->next_eid == -1) info->used_tail = waiter->prev_eid;
-    else logmgr_gl.wait_entry_table[waiter->next_eid].prev_eid = waiter->prev_eid;
-    waiter->prev_eid = -1;
-    waiter->next_eid = info->free_list;
-    info->free_list = waiter->curr_eid;
-    info->cur_waiters -= 1;
-    pthread_mutex_unlock(&logmgr_gl.wait_entry_lock);
-#endif
 }
 
 log_waiter_t *cmdlog_get_cur_waiter(void)
@@ -391,7 +361,6 @@ ENGINE_ERROR_CODE cmdlog_waiter_init(struct default_engine *engine)
     info->used_tail = -1;
     pthread_mutex_init(&logmgr_gl.wait_entry_lock, NULL);
 
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
     /* initialize group commit */
     logmgr_gl.group_commit.wait_head = NULL;
     logmgr_gl.group_commit.wait_cnt = 0;
@@ -400,7 +369,6 @@ ENGINE_ERROR_CODE cmdlog_waiter_init(struct default_engine *engine)
     logmgr_gl.group_commit.init = false;
     pthread_mutex_init(&logmgr_gl.group_commit.lock, NULL);
     pthread_cond_init(&logmgr_gl.group_commit.cond, NULL);
-#endif
 
     return ENGINE_SUCCESS;
 }
@@ -426,9 +394,7 @@ ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine_ptr)
     logger = engine->server.log->get_logger();
 
     memset(&logmgr_gl, 0, sizeof(logmgr_gl));
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
     logmgr_gl.async_mode = engine->config.async_logging;
-#endif
 
     ret = cmdlog_waiter_init(engine);
     if (ret != ENGINE_SUCCESS) {
@@ -450,12 +416,10 @@ ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine_ptr)
     /* set enable change log */
     (void)item_clog_set_enable(true);
 
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
     ret = do_cmdlog_gcommit_thread_start();
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
-#endif
 
     ret = cmdlog_buf_flush_thread_start();
     if (ret != ENGINE_SUCCESS) {
@@ -475,9 +439,8 @@ void cmdlog_mgr_final(void)
 {
     chkpt_thread_stop();
     cmdlog_buf_flush_thread_stop();
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
     do_cmdlog_gcommit_thread_stop();
-#endif
+
     /* CONSIDER: do last checkpoint before shutdown engine. */
     chkpt_final();
     cmdlog_buf_final();

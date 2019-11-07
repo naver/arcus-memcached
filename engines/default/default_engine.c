@@ -1686,11 +1686,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .use_persistence = false,
          .data_path = NULL,
          .logs_path = NULL,
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
-         .async_logging = false,
-#else
-         .async_logging = true, /* FIXME: change it after implementing sync logging(default=false). */
-#endif
+         .async_logging = false, /* default, sync logging */
 #endif
          .verbose = 0,
          .oldest_live = 0,

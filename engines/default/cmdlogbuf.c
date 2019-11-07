@@ -88,13 +88,9 @@ struct log_global {
     LogSN           nxt_fsync_lsn;
     pthread_mutex_t log_write_lock;
     pthread_mutex_t log_flush_lock;
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
     pthread_mutex_t log_fsync_lock;
-#endif
     pthread_mutex_t flush_lsn_lock;
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
     pthread_mutex_t fsync_lsn_lock;
-#endif
     volatile bool   initialized;
 };
 
@@ -168,7 +164,6 @@ static void do_log_flusher_wakeup(log_FLUSHER *flusher)
     pthread_mutex_unlock(&flusher->lock);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
 static void do_log_file_sync(int fd, bool close)
 {
     int ret = disk_fsync(fd);
@@ -191,7 +186,6 @@ static void do_log_file_sync(int fd, bool close)
         assert(ret == 0);
     }
 }
-#endif
 
 static void do_log_file_write(char *log_ptr, uint32_t log_size, bool dual_write)
 {
@@ -312,11 +306,9 @@ static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_wr
 
     pthread_mutex_lock(&log_gl.log_write_lock);
 
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
     if (waiter != NULL) {
         waiter->lsn = log_gl.nxt_write_lsn;
     }
-#endif
 
     /* find the positon to write in log buffer */
     while (1) {
@@ -378,13 +370,6 @@ static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_wr
         total_length -= spare_length;
     }
 
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
-#else
-    if (waiter != NULL) {
-        waiter->lsn = log_gl.nxt_write_lsn;
-    }
-#endif
-
     pthread_mutex_unlock(&log_gl.log_write_lock);
 
     /* wake up log flush thread if flush requests exist */
@@ -437,7 +422,6 @@ static void *log_flush_thread_main(void *arg)
 /*
  * External Functions
  */
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
 void log_file_sync(void)
 {
     LogSN now_flush_lsn;
@@ -461,14 +445,7 @@ void log_file_sync(void)
     }
     pthread_mutex_unlock(&log_gl.log_fsync_lock);
 }
-#else
-void log_file_sync(LogSN *prev_flush_lsn)
-{
-    /* TODO: file sync and update nxt_fsync_lsn with log_fsync_lock and fsync_lsn_lock */
-}
-#endif
 
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
 void log_buffer_flush(LogSN *upto_lsn)
 {
     assert(upto_lsn);
@@ -488,7 +465,6 @@ void log_buffer_flush(LogSN *upto_lsn)
         pthread_mutex_unlock(&log_gl.log_flush_lock);
     } while (nflush > 0);
 }
-#endif
 
 void log_record_write(LogRec *logrec, log_waiter_t *waiter, bool dual_write)
 {
@@ -515,13 +491,9 @@ void log_get_flush_lsn(LogSN *lsn)
 
 void log_get_fsync_lsn(LogSN *lsn)
 {
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
     pthread_mutex_lock(&log_gl.fsync_lsn_lock);
-#endif
     *lsn = log_gl.nxt_fsync_lsn;
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
     pthread_mutex_unlock(&log_gl.fsync_lsn_lock);
-#endif
 }
 
 void cmdlog_complete_dual_write(bool success)
@@ -552,15 +524,11 @@ void cmdlog_complete_dual_write(bool success)
             pthread_mutex_unlock(&log_gl.log_write_lock);
 
             assert(log_gl.log_file.prev_fd == -1);
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
             pthread_mutex_lock(&log_gl.log_fsync_lock);
-#endif
             log_gl.log_file.prev_fd = log_gl.log_file.fd;
             log_gl.log_file.fd      = log_gl.log_file.next_fd;
             log_gl.log_file.next_fd = -1;
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
             pthread_mutex_unlock(&log_gl.log_fsync_lock);
-#endif
             log_gl.log_file.size = log_gl.log_file.next_size;
             log_gl.log_file.next_size = 0;
         } else {
@@ -576,14 +544,10 @@ void cmdlog_complete_dual_write(bool success)
             pthread_mutex_unlock(&log_gl.log_write_lock);
 
             assert(log_gl.log_file.prev_fd == -1);
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
             pthread_mutex_lock(&log_gl.log_fsync_lock);
-#endif
             log_gl.log_file.prev_fd = log_gl.log_file.next_fd;
             log_gl.log_file.next_fd = -1;
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
             pthread_mutex_unlock(&log_gl.log_fsync_lock);
-#endif
             log_gl.log_file.next_size = 0;
         }
     } while(0);
@@ -607,18 +571,14 @@ int cmdlog_file_open(char *path)
             break;
         }
         snprintf(logfile->path, CMDLOG_MAX_FILEPATH_LENGTH, "%s", path);
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
         pthread_mutex_lock(&log_gl.log_fsync_lock);
-#endif
         if (logfile->fd == -1) {
             logfile->fd = fd;
         } else {
             /* fd != -1 means that a new cmdlog file is created by checkpoint */
             logfile->next_fd = fd;
         }
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
         pthread_mutex_unlock(&log_gl.log_fsync_lock);
-#endif
     } while(0);
     pthread_mutex_unlock(&log_gl.log_flush_lock);
 
@@ -631,29 +591,21 @@ void cmdlog_file_close(bool shutdown)
 
     pthread_mutex_lock(&log_gl.log_flush_lock);
     if (logfile->next_fd != -1) {
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
         pthread_mutex_lock(&log_gl.log_fsync_lock);
-#endif
         (void)disk_close(logfile->next_fd);
         logfile->next_fd = -1;
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
         pthread_mutex_unlock(&log_gl.log_fsync_lock);
-#endif
     }
     if (logfile->prev_fd != -1) {
         (void)disk_close(logfile->prev_fd);
         logfile->prev_fd = -1;
     }
     if (shutdown && logfile->fd != -1) {
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
         pthread_mutex_lock(&log_gl.log_fsync_lock);
-#endif
         (void)disk_fsync(logfile->fd);
         (void)disk_close(logfile->fd);
         logfile->fd = -1;
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
         pthread_mutex_unlock(&log_gl.log_fsync_lock);
-#endif
     }
     pthread_mutex_unlock(&log_gl.log_flush_lock);
 }
@@ -768,26 +720,16 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
     memset(&log_gl, 0, sizeof(log_gl));
 
     /* log global init */
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
     log_gl.nxt_fsync_lsn.filenum = 1;
     log_gl.nxt_fsync_lsn.roffset = 0;
     log_gl.nxt_flush_lsn = log_gl.nxt_fsync_lsn;
     log_gl.nxt_write_lsn = log_gl.nxt_fsync_lsn;
-#else
-    LOGSN_SET_NULL(&log_gl.nxt_write_lsn);
-    LOGSN_SET_NULL(&log_gl.nxt_flush_lsn);
-    LOGSN_SET_NULL(&log_gl.nxt_fsync_lsn);
-#endif
 
     pthread_mutex_init(&log_gl.log_write_lock, NULL);
     pthread_mutex_init(&log_gl.log_flush_lock, NULL);
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
     pthread_mutex_init(&log_gl.log_fsync_lock, NULL);
-#endif
     pthread_mutex_init(&log_gl.flush_lsn_lock, NULL);
-#ifdef ENABLE_PERSISTENCE_03_SYNC_LOGGING
     pthread_mutex_init(&log_gl.fsync_lsn_lock, NULL);
-#endif
 
     /* log file init */
     log_FILE *logfile = &log_gl.log_file;
