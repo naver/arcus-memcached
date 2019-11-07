@@ -202,7 +202,6 @@ static uint32_t do_log_buff_flush(bool flush_all)
     log_BUFFER *logbuff = &log_gl.log_buffer;
     uint32_t    nflush = 0;
     bool        dual_write_flag = false;
-    bool        last_flush_flag = false;
     bool        next_fhlsn_flag = false;
     bool        cleanup_process = false;
 
@@ -223,7 +222,7 @@ static uint32_t do_log_buff_flush(bool flush_all)
         if (flush_all && logbuff->fque[logbuff->fend].nflush > 0) {
             nflush = logbuff->fque[logbuff->fend].nflush;
             dual_write_flag = logbuff->fque[logbuff->fend].dual_write;
-            last_flush_flag = true;
+            if ((++logbuff->fend) == logbuff->fqsz) logbuff->fend = 0;
         }
     }
     if (nflush > 0) {
@@ -265,21 +264,10 @@ static uint32_t do_log_buff_flush(bool flush_all)
             logbuff->last = -1;
             logbuff->head = 0;
         }
-        if (last_flush_flag) {
-            /* decrement the flush request size */
-            logbuff->fque[logbuff->fbgn].nflush -= nflush;
-            if (logbuff->fque[logbuff->fbgn].nflush == 0 && logbuff->fbgn != logbuff->fend) {
-                if ((++logbuff->fbgn) == logbuff->fqsz) {
-                    logbuff->fbgn = 0;
-                }
-            }
-        } else {
-            /* clear the flush request itself */
-            logbuff->fque[logbuff->fbgn].nflush = 0;
-            if ((++logbuff->fbgn) == logbuff->fqsz) {
-                logbuff->fbgn = 0;
-            }
-        }
+        /* clear the flush request itself */
+        logbuff->fque[logbuff->fbgn].nflush = 0;
+        logbuff->fque[logbuff->fbgn].dual_write = false;
+        if ((++logbuff->fbgn) == logbuff->fqsz) logbuff->fbgn = 0;
         pthread_mutex_unlock(&log_gl.log_write_lock);
     }
     return nflush;
