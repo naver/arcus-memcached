@@ -302,8 +302,11 @@ static void* chkpt_thread_main(void* arg)
 
         if (elapsed_time >= CHKPT_CHECK_INTERVAL) {
             if (do_checkpoint_needed(cs)) {
+                logger->log(EXTENSION_LOG_INFO, NULL, "Checkpoint started.\n");
                 ret = do_checkpoint(cs);
-                if (ret != CHKPT_SUCCESS) {
+                if (ret == CHKPT_SUCCESS) {
+                    logger->log(EXTENSION_LOG_INFO, NULL, "Checkpoint has been done.\n");
+                } else {
                     logger->log(EXTENSION_LOG_WARNING, NULL, "Failed in checkpoint. "
                                 "Retry checkpoint in 5 seconds.\n");
                     if (ret == CHKPT_ERROR_FILE_REMOVE) need_remove = true;
