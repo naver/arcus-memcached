@@ -74,8 +74,8 @@ typedef struct _log_flusher {
     pthread_mutex_t  lock;
     pthread_cond_t   cond;
     bool             sleep;
-    bool             start;
-    bool             init;   /* start or stop request */
+    volatile uint8_t running;
+    volatile bool    reqstop;
 } log_FLUSHER;
 
 /* log global structure */
@@ -388,16 +388,19 @@ static void *log_flush_thread_main(void *arg)
     struct timespec to;
     uint32_t nflush;
 
-    assert(flusher->init == true);
-
-    flusher->start = true;
-    while (flusher->init)
+    flusher->running = RUNNING_STARTED;
+    while (1)
     {
+        if (flusher->reqstop) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "Command log flush thread recognized stop request.\n");
+            break;
+        }
+
         pthread_mutex_lock(&log_gl.log_flush_lock);
         nflush = do_log_buff_flush(false);
         pthread_mutex_unlock(&log_gl.log_flush_lock);
 
-        if (nflush == 0 && flusher->init) {
+        if (nflush == 0) {
             /* nothing to flush: do 10 ms sleep */
             gettimeofday(&tv, NULL);
             if ((tv.tv_usec + 10000) < 1000000) {
@@ -415,7 +418,7 @@ static void *log_flush_thread_main(void *arg)
             pthread_mutex_unlock(&flusher->lock);
         }
     }
-    flusher->start = false;
+    flusher->running = RUNNING_STOPPED;
     return NULL;
 }
 
@@ -769,8 +772,8 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
     pthread_mutex_init(&flusher->lock, NULL);
     pthread_cond_init(&flusher->cond, NULL);
     flusher->sleep = false;
-    flusher->start = false;
-    flusher->init = false;
+    flusher->running = RUNNING_UNSTARTED;
+    flusher->reqstop = false;
 
     log_gl.initialized = true;
     logger->log(EXTENSION_LOG_INFO, NULL, "CMDLOG BUFFER module initialized.\n");
@@ -809,17 +812,18 @@ void cmdlog_buf_final(void)
 
 ENGINE_ERROR_CODE cmdlog_buf_flush_thread_start(void)
 {
+    assert(log_gl.initialized == true);
+
     pthread_t tid;
+    log_gl.log_flusher.running = RUNNING_UNSTARTED;
     /* create log flush thread */
-    log_gl.log_flusher.init = true;
     if (pthread_create(&tid, NULL, log_flush_thread_main, NULL) != 0) {
-        log_gl.log_flusher.init = false;
         logger->log(EXTENSION_LOG_WARNING, NULL, "Failed to create command log flush thread.\n");
         return ENGINE_FAILED;
     }
 
     /* wait until log flush thread starts */
-    while (log_gl.log_flusher.start == false) {
+    while (log_gl.log_flusher.running == RUNNING_UNSTARTED) {
         usleep(5000); /* sleep 5ms */
     }
     logger->log(EXTENSION_LOG_INFO, NULL, "Command log flush thread started.\n");
@@ -834,17 +838,10 @@ void cmdlog_buf_flush_thread_stop(void)
     }
 
     log_FLUSHER *flusher = &log_gl.log_flusher;
-    if (flusher->init == true) {
-        /* stop request */
-        pthread_mutex_lock(&flusher->lock);
-        flusher->init = false;
-        pthread_mutex_unlock(&flusher->lock);
-
-        /* wait until the log flush thread stops */
-        while (flusher->start == true) {
-            do_log_flusher_wakeup(flusher);
-            usleep(5000); /* sleep 5ms */
-        }
+    while (flusher->running == RUNNING_STARTED) {
+        flusher->reqstop = true;
+        do_log_flusher_wakeup(flusher);
+        usleep(5000); /* sleep 5ms */
     }
     logger->log(EXTENSION_LOG_INFO, NULL, "Command log flush thread stopped.\n");
 }
