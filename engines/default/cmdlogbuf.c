@@ -824,7 +824,8 @@ ENGINE_ERROR_CODE cmdlog_buf_flush_thread_start(void)
     log_gl.log_flusher.running = RUNNING_UNSTARTED;
     /* create log flush thread */
     if (pthread_create(&tid, NULL, log_flush_thread_main, NULL) != 0) {
-        logger->log(EXTENSION_LOG_WARNING, NULL, "Failed to create command log flush thread.\n");
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to create command log flush thread. error=%s\n", strerror(errno));
         return ENGINE_FAILED;
     }
 
@@ -839,11 +840,11 @@ ENGINE_ERROR_CODE cmdlog_buf_flush_thread_start(void)
 
 void cmdlog_buf_flush_thread_stop(void)
 {
-    if (log_gl.initialized == false) {
+    log_FLUSHER *flusher = &log_gl.log_flusher;
+    if (flusher->running == RUNNING_UNSTARTED) {
         return;
     }
 
-    log_FLUSHER *flusher = &log_gl.log_flusher;
     while (flusher->running == RUNNING_STARTED) {
         flusher->reqstop = true;
         do_log_flusher_wakeup(flusher);

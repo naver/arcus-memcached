@@ -439,7 +439,8 @@ ENGINE_ERROR_CODE chkpt_thread_start(void)
     chkpt_anch.running = RUNNING_UNSTARTED;
     /* create checkpoint thread */
     if (pthread_create(&tid, NULL, chkpt_thread_main, &chkpt_anch) != 0) {
-        logger->log(EXTENSION_LOG_WARNING, NULL, "Failed to create checkpoint thread.\n");
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to create checkpoint thread. error=%s.\n", strerror(errno));
         return ENGINE_FAILED;
     }
 
@@ -453,7 +454,7 @@ ENGINE_ERROR_CODE chkpt_thread_start(void)
 
 void chkpt_thread_stop(void)
 {
-    if (chkpt_anch.initialized == false) {
+    if (chkpt_anch.running == RUNNING_UNSTARTED) {
         return;
     }
 

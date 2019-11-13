@@ -20,6 +20,7 @@
 #include <string.h>
 #include <assert.h>
 #include <sys/time.h>
+#include <errno.h>
 
 #include "default_engine.h"
 #ifdef ENABLE_PERSISTENCE
@@ -29,14 +30,14 @@
 #include "item_clog.h"
 
 typedef struct _group_commit {
+    pthread_mutex_t   lock;       /* group commit mutex */
+    pthread_cond_t    cond;       /* group commit conditional variable */
     log_waiter_t *    wait_head;
     log_waiter_t *    wait_tail;
     uint32_t          wait_cnt;   /* group commit wait count */
-    bool              sleep;      /* used for group commit thread */
-    bool              start;      /* used for group commit thread */
-    bool              init;       /* used for group commit thread */
-    pthread_mutex_t   lock;       /* group commit mutex */
-    pthread_cond_t    cond;       /* group commit conditional variable */
+    bool              sleep;      /* group commit thread sleep */
+    volatile uint8_t  running;    /* Is it running, now ? */
+    volatile bool     reqstop;    /* request to stop group commit thread */
 } group_commit_t;
 
 typedef struct _wait_entry_info {
@@ -152,7 +153,7 @@ static log_waiter_t* do_cmdlog_get_commit_waiter(group_commit_t *gcommit, LogSN 
     return waiters;
 }
 
-static void do_cmdlog_waiter_free(log_waiter_t *waiter, bool lock_hold)
+static void do_cmdlog_waiter_free(log_waiter_t *waiter)
 {
     LOGSN_SET_NULL(&waiter->lsn);
     waiter->wait_next = NULL;
@@ -170,16 +171,16 @@ static void do_cmdlog_waiter_free(log_waiter_t *waiter, bool lock_hold)
     pthread_mutex_unlock(&logmgr_gl.wait_entry_lock);
 }
 
-static void do_cmdlog_gcommit_thread_wakeup(bool lock_hold)
+static void do_cmdlog_gcommit_thread_wakeup(group_commit_t *gcommit, bool lock_hold)
 {
     if (lock_hold)
-        pthread_mutex_lock(&logmgr_gl.group_commit.lock);
-    if (logmgr_gl.group_commit.sleep == true) {
+        pthread_mutex_lock(&gcommit->lock);
+    if (gcommit->sleep == true) {
         /* wake up group commit thead */
-        pthread_cond_signal(&logmgr_gl.group_commit.cond);
+        pthread_cond_signal(&gcommit->cond);
     }
     if (lock_hold)
-        pthread_mutex_unlock(&logmgr_gl.group_commit.lock);
+        pthread_mutex_unlock(&gcommit->lock);
 }
 
 static void do_cmdlog_callback_and_free_waiters(log_waiter_t *waiters)
@@ -196,7 +197,7 @@ static void do_cmdlog_callback_and_free_waiters(log_waiter_t *waiters)
     while (waiters != NULL) {
         waiter = waiters;
         waiters = waiter->wait_next;
-        do_cmdlog_waiter_free(waiter, true);
+        do_cmdlog_waiter_free(waiter);
     }
 }
 
@@ -208,11 +209,14 @@ static void *do_cmdlog_gcommit_thread_main(void *arg)
     struct timeval  tv;
     struct timespec to;
 
-    assert(gcommit->init == true);
-    gcommit->start = true;
-    logger->log(EXTENSION_LOG_INFO, NULL, "group commit thread started\n");
-    while (gcommit->init)
+    gcommit->running = RUNNING_STARTED;
+    while (1)
     {
+        if (gcommit->reqstop) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "Group commit thread recognized stop request.\n");
+            break;
+        }
+
         pthread_mutex_lock(&gcommit->lock);
         if (gcommit->wait_cnt == 0) {
             /* 1 second sleep */
@@ -225,7 +229,7 @@ static void *do_cmdlog_gcommit_thread_main(void *arg)
         } else {
             pthread_mutex_unlock(&gcommit->lock);
 
-            /* synchronize log file after 2ms*/
+            /* synchronize log file after 2ms */
             usleep(2000);
             log_file_sync();
             log_get_fsync_lsn(&now_fsync_lsn);
@@ -240,54 +244,45 @@ static void *do_cmdlog_gcommit_thread_main(void *arg)
             waiters = NULL;
         }
     }
-    logger->log(EXTENSION_LOG_INFO, NULL, "group commit thread terminated\n");
-    gcommit->start = false;
+    gcommit->running = RUNNING_STOPPED;
     return NULL;
 }
 
 static int do_cmdlog_gcommit_thread_start(void)
 {
-    group_commit_t *gcommit = &logmgr_gl.group_commit;
-    struct timespec sleep_time = {0, 10000000}; // 10 msec.
     pthread_t tid;
-    int       ret;
-
-    /* start request */
-    gcommit->init = true;
-    ret = pthread_create(&tid, NULL, do_cmdlog_gcommit_thread_main, NULL);
-    if (ret != 0) {
-        gcommit->init = false;
+    group_commit_t *gcommit = &logmgr_gl.group_commit;
+    gcommit->running = RUNNING_UNSTARTED;
+    /* create group commit thread */
+    if (pthread_create(&tid, NULL, do_cmdlog_gcommit_thread_main, NULL) != 0) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Can't create item gc thread: %s\n", strerror(ret));
+                    "Failed to create group commit thread. error=%s\n", strerror(errno));
         return -1;
     }
-    /* wait until item gc thread starts */
-    while (gcommit->start == false) {
-        nanosleep(&sleep_time, NULL);
+
+    /* wait until group commit thread starts */
+    while (gcommit->running == RUNNING_UNSTARTED) {
+        usleep(5000); /* sleep 5ms */
     }
+    logger->log(EXTENSION_LOG_INFO, NULL, "Group commit thread started.\n");
+
     return 0;
 }
 
 static void do_cmdlog_gcommit_thread_stop(void)
 {
     group_commit_t *gcommit = &logmgr_gl.group_commit;
-    struct timespec sleep_time = {0, 10000000}; // 10 msec.
+    if (gcommit->running == RUNNING_UNSTARTED) {
+        return;
+    }
 
-    if (gcommit->init) {
-        /* stop request */
-        pthread_mutex_lock(&gcommit->lock);
-        gcommit->init = false;
-        pthread_mutex_unlock(&gcommit->lock);
-
-        /* wait until item gc thread finishes its task */
-        while (gcommit->start == true) {
-            if (gcommit->sleep == true) {
-                do_cmdlog_gcommit_thread_wakeup(true);
-            }
-            nanosleep(&sleep_time, NULL);
-        }
+    while (gcommit->running == RUNNING_STARTED) {
+        gcommit->reqstop = true;
+        do_cmdlog_gcommit_thread_wakeup(gcommit, true);
+        usleep(5000); /* sleep 5ms */
     }
     assert(logmgr_gl.group_commit.wait_cnt == 0);
+    logger->log(EXTENSION_LOG_INFO, NULL, "Group commit thread stopped.\n");
 }
 
 static inline void
@@ -322,14 +317,14 @@ void cmdlog_waiter_free(log_waiter_t *waiter, ENGINE_ERROR_CODE *result)
             pthread_mutex_lock(&gcommit->lock);
             do_cmdlog_add_commit_waiter(waiter);
             if (gcommit->wait_cnt == 1) {
-                do_cmdlog_gcommit_thread_wakeup(false);
+                do_cmdlog_gcommit_thread_wakeup(gcommit, false);
             }
             pthread_mutex_unlock(&gcommit->lock);
             *result = ENGINE_EWOULDBLOCK;
             return;
         }
     }
-    do_cmdlog_waiter_free(waiter, false);
+    do_cmdlog_waiter_free(waiter);
 }
 
 log_waiter_t *cmdlog_get_cur_waiter(void)
@@ -362,13 +357,13 @@ ENGINE_ERROR_CODE cmdlog_waiter_init(struct default_engine *engine)
     pthread_mutex_init(&logmgr_gl.wait_entry_lock, NULL);
 
     /* initialize group commit */
+    pthread_mutex_init(&logmgr_gl.group_commit.lock, NULL);
+    pthread_cond_init(&logmgr_gl.group_commit.cond, NULL);
     logmgr_gl.group_commit.wait_head = NULL;
     logmgr_gl.group_commit.wait_cnt = 0;
     logmgr_gl.group_commit.sleep = false;
-    logmgr_gl.group_commit.start = false;
-    logmgr_gl.group_commit.init = false;
-    pthread_mutex_init(&logmgr_gl.group_commit.lock, NULL);
-    pthread_cond_init(&logmgr_gl.group_commit.cond, NULL);
+    logmgr_gl.group_commit.running = RUNNING_UNSTARTED;
+    logmgr_gl.group_commit.reqstop = false;
 
     return ENGINE_SUCCESS;
 }
@@ -420,7 +415,6 @@ ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine_ptr)
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
-
     ret = cmdlog_buf_flush_thread_start();
     if (ret != ENGINE_SUCCESS) {
         return ret;
