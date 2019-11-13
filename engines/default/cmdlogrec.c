@@ -1350,7 +1350,6 @@ hash_item *lrec_get_item_if_collection_link(ITLinkLog *log)
         return NULL;
     }
     hash_item *it = item_get(&log->body.data, log->body.cm.keylen);
-    assert(it != NULL && IS_COLL_ITEM(it));
     return it;
 }
 
