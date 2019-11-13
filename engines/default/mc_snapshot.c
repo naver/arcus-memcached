@@ -793,8 +793,8 @@ int mc_snapshot_file_apply(const char *filepath)
                 item_release(last_coll_it);
             }
             last_coll_it = lrec_get_item_if_collection_link((ITLinkLog*)logrec);
-        } else if (loghdr->logtype == LOG_SNAPSHOT_ELEM) {
-            assert(last_coll_it != NULL && IS_COLL_ITEM(last_coll_it));
+        } else if (loghdr->logtype == LOG_SNAPSHOT_ELEM && last_coll_it) {
+            assert(IS_COLL_ITEM(last_coll_it));
             lrec_set_item_in_snapshot_elem((SnapshotElemLog*)logrec, last_coll_it);
             err = lrec_redo_from_record(logrec);
             if (err != ENGINE_SUCCESS) {
