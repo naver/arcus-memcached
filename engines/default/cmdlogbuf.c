@@ -684,11 +684,12 @@ int cmdlog_file_apply(void)
         }
 
         if (loghdr->body_length > 0) {
-            int free = MAX_LOG_RECORD_SIZE - nread;
-            if (free < loghdr->body_length) {
+            int max_body_length = MAX_LOG_RECORD_SIZE - nread;
+            if (max_body_length < loghdr->body_length) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "[RECOVERY - CMDLOG] failed : insufficient memory "
-                            "free(%d) < body_length(%u).\n", free, loghdr->body_length);
+                            "[RECOVERY - CMDLOG] failed : body length is abnormally too big "
+                            "max_body_length(%d) < body_length(%u).\n",
+                            max_body_length, loghdr->body_length);
                 ret = -1; break;
             }
             logrec->body = buf + nread;
@@ -700,10 +701,15 @@ int cmdlog_file_apply(void)
                 ret = -1; break;
             }
             seek_offset += nread;
-            if (lrec_redo_from_record(logrec) != ENGINE_SUCCESS) {
+            ENGINE_ERROR_CODE err = lrec_redo_from_record(logrec);
+            if (err != ENGINE_SUCCESS) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "[RECOVERY - CMDLOG] failed : log record redo.\n");
-                ret = -1; break;
+                            "[RECOVERY - CMDLOG] warning : log record redo failed.\n");
+                if (err == ENGINE_ENOMEM) {
+                    logger->log(EXTENSION_LOG_WARNING, NULL,
+                                "[RECOVERY - CMDLOG] failed : out of memory.\n");
+                    ret = -1; break;
+                }
             }
         }
     }

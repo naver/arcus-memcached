@@ -739,6 +739,7 @@ int mc_snapshot_file_apply(const char *filepath)
         return -1;
     }
 
+    ENGINE_ERROR_CODE err;
     struct default_engine *engine = (struct default_engine*)snapshot_anch.engine;
     int ret = 0;
     char buf[MAX_LOG_RECORD_SIZE];
@@ -758,12 +759,12 @@ int mc_snapshot_file_apply(const char *filepath)
         }
 
         if (loghdr->body_length > 0) {
-            int free = MAX_LOG_RECORD_SIZE - nread;
-            if (free < loghdr->body_length) {
+            int max_body_length = MAX_LOG_RECORD_SIZE - nread;
+            if (max_body_length < loghdr->body_length) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "[RECOVERY - SNAPSHOT] failed : insufficient memory "
-                            "free(%d) < body_length(%u).\n",
-                            free, loghdr->body_length);
+                            "[RECOVERY - SNAPSHOT] failed : body length is abnormally too big "
+                            "max_body_length(%d) < body_length(%u).\n",
+                            max_body_length, loghdr->body_length);
                 ret = -1; break;
             }
             logrec->body = buf + nread;
@@ -778,10 +779,15 @@ int mc_snapshot_file_apply(const char *filepath)
         }
 
         if (loghdr->logtype == LOG_IT_LINK) {
-            if (lrec_redo_from_record(logrec) != ENGINE_SUCCESS) {
+            err = lrec_redo_from_record(logrec);
+            if (err != ENGINE_SUCCESS) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "[RECOVERY - SNAPSHOT] failed : item link log record redo.\n");
-                ret = -1; break;
+                            "[RECOVERY - SNAPSHOT] warning : item link log record redo failed.\n");
+                if (err == ENGINE_ENOMEM) {
+                    logger->log(EXTENSION_LOG_WARNING, NULL,
+                                "[RECOVERY - SNAPSHOT] failed : out of memory.\n");
+                    ret = -1; break;
+                }
             }
             if (last_coll_it != NULL) {
                 item_release(last_coll_it);
@@ -790,10 +796,15 @@ int mc_snapshot_file_apply(const char *filepath)
         } else if (loghdr->logtype == LOG_SNAPSHOT_ELEM) {
             assert(last_coll_it != NULL && IS_COLL_ITEM(last_coll_it));
             lrec_set_item_in_snapshot_elem((SnapshotElemLog*)logrec, last_coll_it);
-            if (lrec_redo_from_record(logrec) != ENGINE_SUCCESS) {
+            err = lrec_redo_from_record(logrec);
+            if (err != ENGINE_SUCCESS) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "[RECOVERY - SNAPSHOT] failed : snapshot elem log record redo.\n");
-                ret = -1; break;
+                            "[RECOVERY - SNAPSHOT] warning : snapshot elem log record redo failed.\n");
+                if (err == ENGINE_ENOMEM) {
+                    logger->log(EXTENSION_LOG_WARNING, NULL,
+                                "[RECOVERY - SNAPSHOT] failed : out of memory.\n");
+                    ret = -1; break;
+                }
             }
         } else if (loghdr->logtype == LOG_SNAPSHOT_DONE) {
             if (last_coll_it != NULL) {
