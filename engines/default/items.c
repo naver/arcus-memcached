@@ -579,10 +579,10 @@ static uint32_t do_item_regain(const uint32_t count, rel_time_t current_time,
         assert(search->nkey > 0);
         previt = search->prev;
         if (search->refcount == 0) {
-            if (do_item_isvalid(search, current_time) == false) {
-                do_item_invalidate(search, clsid, true);
-            } else {
+            if (do_item_isvalid(search, current_time)) {
                 do_item_evict(search, clsid, current_time, cookie);
+            } else {
+                do_item_invalidate(search, clsid, true);
             }
             nregains += 1;
         } else { /* search->refcount > 0 */
@@ -650,8 +650,7 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
         while (itemsp->sticky_curMK[lruid] != NULL) {
             search = itemsp->sticky_curMK[lruid];
             itemsp->sticky_curMK[lruid] = search->prev;
-            if (search->refcount == 0 &&
-                do_item_isvalid(search, current_time) == false) {
+            if (search->refcount == 0 && !do_item_isvalid(search, current_time)) {
                 it = do_item_reclaim(search, ntotal, clsid_based_on_ntotal, lruid);
                 if (it != NULL) break; /* allocated */
             }
@@ -660,8 +659,8 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
         if (it != NULL) {
             /* try one more invalidation */
             search = itemsp->sticky_curMK[lruid];
-            if (search != NULL && search->refcount == 0 &&
-                do_item_isvalid(search, current_time) == false) {
+            if (search != NULL &&
+                search->refcount == 0 && !do_item_isvalid(search, current_time)) {
                 do_item_invalidate(search, lruid, false);
             }
             it->slabs_clsid = 0;
@@ -676,8 +675,7 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
         tries = 20;
         search = itemsp->lowMK[lruid];
         while (search != NULL && search != itemsp->curMK[lruid]) {
-            if (search->refcount == 0 &&
-                do_item_isvalid(search, current_time) == false) {
+            if (search->refcount == 0 && !do_item_isvalid(search, current_time)) {
                 previt = search->prev;
                 it = do_item_reclaim(search, ntotal, clsid_based_on_ntotal, lruid);
                 if (it != NULL) break; /* allocated */
@@ -692,8 +690,8 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
         }
         if (it != NULL) {
             /* try one more invalidation */
-            if (previt != NULL && previt->refcount == 0 &&
-                do_item_isvalid(previt, current_time) == false) {
+            if (previt != NULL &&
+                previt->refcount == 0 && !do_item_isvalid(previt, current_time)) {
                 do_item_invalidate(previt, lruid, false);
             }
             it->slabs_clsid = 0;
@@ -704,8 +702,7 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
         while (itemsp->curMK[lruid] != NULL) {
             search = itemsp->curMK[lruid];
             itemsp->curMK[lruid] = search->prev;
-            if (search->refcount == 0 &&
-                do_item_isvalid(search, current_time) == false) {
+            if (search->refcount == 0 && !do_item_isvalid(search, current_time)) {
                 it = do_item_reclaim(search, ntotal, clsid_based_on_ntotal, lruid);
                 if (it != NULL) break; /* allocated */
             }
@@ -717,8 +714,8 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
         if (it != NULL) {
             /* try one more invalidation */
             search = itemsp->curMK[lruid];
-            if (search != NULL && search->refcount == 0 &&
-                do_item_isvalid(search, current_time) == false) {
+            if (search != NULL &&
+                search->refcount == 0 && !do_item_isvalid(search, current_time)) {
                 do_item_invalidate(search, lruid, false);
             }
             it->slabs_clsid = 0;
@@ -753,11 +750,11 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
             assert(search->nkey > 0);
             previt = search->prev;
             if (search->refcount == 0) {
-                if (do_item_isvalid(search, current_time) == false) {
-                    it = do_item_reclaim(search, ntotal, clsid_based_on_ntotal, lruid);
-                } else {
+                if (do_item_isvalid(search, current_time)) {
                     do_item_evict(search, lruid, current_time, cookie);
                     it = slabs_alloc(ntotal, clsid_based_on_ntotal);
+                } else {
+                    it = do_item_reclaim(search, ntotal, clsid_based_on_ntotal, lruid);
                 }
                 if (it != NULL) break; /* allocated */
             } else { /* search->refcount > 0 */
