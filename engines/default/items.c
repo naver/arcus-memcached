@@ -846,10 +846,7 @@ static hash_item *do_item_alloc(const void *key, const uint32_t nkey,
     if (it == NULL)  {
         return NULL;
     }
-    assert(it->slabs_clsid == 0);
-
     it->slabs_clsid = id;
-    assert(it->slabs_clsid > 0);
     assert(it != itemsp->heads[it->slabs_clsid]);
 
     it->next = it->prev = it; /* special meaning: unlinked from LRU */
@@ -1512,9 +1509,9 @@ static list_elem_item *do_list_elem_alloc(const uint32_t nbytes, const void *coo
 
     list_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
-        assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
         assert(elem->slabs_clsid > 0);
+
         elem->refcount    = 0;
         elem->nbytes      = nbytes;
         elem->prev = elem->next = (list_elem_item *)ADDR_MEANS_UNLINKED; /* Unliked state */
@@ -1805,9 +1802,9 @@ static set_hash_node *do_set_node_alloc(uint8_t hash_depth, const void *cookie)
 
     set_hash_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (node != NULL) {
-        assert(node->slabs_clsid == 0);
         node->slabs_clsid = slabs_clsid(ntotal);
         assert(node->slabs_clsid > 0);
+
         node->refcount    = 0;
         node->hdepth      = hash_depth;
         node->tot_hash_cnt = 0;
@@ -1829,9 +1826,9 @@ static set_elem_item *do_set_elem_alloc(const uint32_t nbytes, const void *cooki
 
     set_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
-        assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
         assert(elem->slabs_clsid > 0);
+
         elem->refcount    = 0;
         elem->nbytes      = nbytes;
         elem->next = (set_elem_item *)ADDR_MEANS_UNLINKED; /* Unliked state */
@@ -2361,9 +2358,9 @@ static btree_indx_node *do_btree_node_alloc(const uint8_t node_depth, const void
 
     btree_indx_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (node != NULL) {
-        assert(node->slabs_clsid == 0);
         node->slabs_clsid = slabs_clsid(ntotal);
         assert(node->slabs_clsid > 0);
+
         node->refcount    = 0;
         node->ndepth      = node_depth;
         node->used_count  = 0;
@@ -2388,9 +2385,9 @@ static btree_elem_item *do_btree_elem_alloc(const uint32_t nbkey, const uint32_t
 
     btree_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
-        assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
         assert(elem->slabs_clsid > 0);
+
         elem->refcount    = 0;
         elem->status      = BTREE_ITEM_STATUS_UNLINK; /* unlinked state */
         elem->nbkey       = (uint8_t)nbkey;
@@ -8799,8 +8796,9 @@ static map_hash_node *do_map_node_alloc(uint8_t hash_depth, const void *cookie)
 
     map_hash_node *node = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (node != NULL) {
-        assert(node->slabs_clsid == 0);
         node->slabs_clsid = slabs_clsid(ntotal);
+        assert(node->slabs_clsid > 0);
+
         node->refcount    = 0;
         node->hdepth      = hash_depth;
         node->tot_hash_cnt = 0;
@@ -8823,8 +8821,9 @@ static map_elem_item *do_map_elem_alloc(const int nfield,
 
     map_elem_item *elem = do_item_mem_alloc(ntotal, LRU_CLSID_FOR_SMALL, cookie);
     if (elem != NULL) {
-        assert(elem->slabs_clsid == 0);
         elem->slabs_clsid = slabs_clsid(ntotal);
+        assert(elem->slabs_clsid > 0);
+
         elem->refcount    = 0;
         elem->nfield      = (uint8_t)nfield;
         elem->nbytes      = (uint16_t)nbytes;
