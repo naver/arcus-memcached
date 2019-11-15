@@ -838,22 +838,35 @@ static void *do_smmgr_alloc(const size_t size)
         if (sm_anchor.free_slist[targ].head != NULL) {
             smid = targ; break;
         }
-        /* look for a 2 times larger free slot */
-        smid = do_smmgr_memid(slen*2, false);
-        if (sm_anchor.space_shortage_level > 0) {
-            /* use free small memory if possible. */
-            int twice = smid;
-            /* Since targ <= sm_anchor.free_maxid,
-             * sm_anchor.used_01pct_clsid != -1.
-             */
-            if (smid >= sm_anchor.used_01pct_clsid) {
-                smid = sm_anchor.used_01pct_clsid-1;
+        /* targ < sm_anchor.free_maxid.
+         * It means that sm_anchor.free_maxid != -1
+         *           and sm_anchor.used_01pct_clsid != -1.
+         * since some sm slots are already allocated.
+         */
+        if (targ >= sm_anchor.used_01pct_clsid) {
+            /* we should allocate the next free avail memory */
+            smid = targ + 1;
+        } else {
+            /* look for a 2 times larger free slot */
+            int twice = do_smmgr_memid(slen*2, false);
+            if (sm_anchor.space_shortage_level > 0) {
+                /* use free small memory if possible. */
+                if (twice < sm_anchor.used_01pct_clsid) {
+                    smid = twice-1;
+                } else {
+                    smid = sm_anchor.used_01pct_clsid-1;
+                }
+                for ( ; smid > targ; smid--) {
+                    if (sm_anchor.free_slist[smid].head != NULL) break;
+                }
+                if (smid > targ) break;
             }
-            for ( ; smid > targ; smid--) {
-                if (sm_anchor.free_slist[smid].head != NULL) break;
+            if (twice < sm_anchor.used_01pct_clsid) {
+                smid = twice;
+            } else {
+                /* we should allocate the smallest free avail memory */
+                smid = sm_anchor.used_01pct_clsid;
             }
-            if (smid > targ) break;
-            smid = twice;
         }
         /* This is a heuristic method */
         if (smid > sm_anchor.free_maxid) {
