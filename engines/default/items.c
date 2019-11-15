@@ -646,7 +646,7 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
 #ifdef ENABLE_STICKY_ITEM
     /* reclaim the flushed sticky items */
     if (itemsp->sticky_curMK[lruid] != NULL) {
-        tries = 20;
+        tries = 10;
         while (itemsp->sticky_curMK[lruid] != NULL) {
             search = itemsp->sticky_curMK[lruid];
             itemsp->sticky_curMK[lruid] = search->prev;
@@ -672,7 +672,7 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
     if (itemsp->curMK[lruid] != NULL) {
         assert(itemsp->lowMK[lruid] != NULL);
         /* step 1) reclaim items from lowMK position */
-        tries = 20;
+        tries = 10;
         search = itemsp->lowMK[lruid];
         while (search != NULL && search != itemsp->curMK[lruid]) {
             if (search->refcount == 0 && !do_item_isvalid(search, current_time)) {
@@ -698,7 +698,7 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
             return (void *)it;
         }
         /* step 2) reclaim items from curMK position */
-        tries += 40;
+        tries += 20;
         while (itemsp->curMK[lruid] != NULL) {
             search = itemsp->curMK[lruid];
             itemsp->curMK[lruid] = search->prev;
@@ -764,9 +764,10 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
             search = previt;
             if ((--tries) == 0) break;
         }
-        if (config->verbose > 1) {
+        if (config->verbose > 1 && (tries > 0 && tries <= 195)) {
+            /* succeed to allocate an item in more than 5 retries. */
             logger->log(EXTENSION_LOG_INFO, NULL,
-                    "Allocation retries with evict. count=%d\n", (tries == 0 ? 200 : (200-tries+1)));
+                        "Succeed to allocate an item in %d retries.\n", (201-tries));
         }
     }
 
