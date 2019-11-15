@@ -205,18 +205,33 @@ static void slabs_preallocate (const unsigned int maxslabs);
 
 static void do_slabs_check_space_shortage_level(void)
 {
-    uint64_t curr_avail_space = sm_anchor.free_chunk_space
-                              + sm_anchor.free_avail_space;
-    if (curr_avail_space < sm_anchor.free_limit_space) {
+    uint64_t free_large_space;
+    uint64_t curr_avail_space;
+    uint64_t curr_limit_space;
+
+    /* sum of free big slot space and free chunk space */
+    free_large_space = sm_anchor.free_slist[SM_NUM_CLASSES-1].space
+                     + sm_anchor.free_chunk_space;
+    if (free_large_space >= sm_anchor.free_limit_space) {
+        sm_anchor.space_shortage_level = 0;
+        return;
+    }
+
+    curr_avail_space = sm_anchor.free_chunk_space + sm_anchor.free_avail_space;
+    curr_limit_space = sm_anchor.free_limit_space +
+                      (sm_anchor.free_limit_space - free_large_space);
+
+    if (curr_avail_space < curr_limit_space) {
         /* How do we compute the space_shortage_level ?
          * Use the following formula.
-         * => (free_limit_space / (curr_avail_space / N)) - (N-1)
+         * => (curr_limit_space / (curr_avail_space / N)) - (N-1)
          */
         int ssl;    /* space shortage level */
         int num=10; /* N */
         if ((curr_avail_space / num) > 0) {
-            ssl = (sm_anchor.free_limit_space / (curr_avail_space / num)) - (num-1);
-            if (ssl > MAX_SPACE_SHORTAGE_LEVEL) ssl = MAX_SPACE_SHORTAGE_LEVEL;
+            ssl = (curr_limit_space / (curr_avail_space / num)) - (num-1);
+            if (ssl > MAX_SPACE_SHORTAGE_LEVEL)
+                ssl = MAX_SPACE_SHORTAGE_LEVEL;
         } else {
             ssl = MAX_SPACE_SHORTAGE_LEVEL;
         }
