@@ -19,6 +19,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
+#include <time.h>
 
 #include "default_engine.h"
 #ifdef ENABLE_PERSISTENCE
@@ -35,6 +36,8 @@
 #endif
 #define offsetof(type, member) __builtin_offsetof(type, member)
 
+#define EXPIRED_REL_EXPTIME(exptime) ((exptime) == 1)
+
 /* Get aligned size */
 #define GET_8_ALIGN_SIZE(size) \
     (((size) % 8) == 0 ? (size) : ((size) + (8 - ((size) % 8))))
@@ -42,8 +45,40 @@
 /* get bkey real size */
 #define BTREE_REAL_NBKEY(nbkey) ((nbkey)==0 ? sizeof(uint64_t) : (nbkey))
 
+static SERVER_CORE_API *svcore = NULL; /* server core api */
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
+/* Convert server-start-relative time to absolute unix time */
+static rel_time_t CONVERT_ABS_EXPTIME(rel_time_t exptime)
+{
+    if (exptime == 0 || exptime == (rel_time_t)(-1)) {
+        return exptime; /* 0 (never), -1 (sticky) */
+    }
+
+    rel_time_t curtime = svcore->get_current_time();
+    if (exptime > curtime) {
+        return time(NULL) + (exptime - curtime);
+    } else {
+        /* expired. */
+        return time(NULL);
+    }
+}
+
+/* Convert absolute unix time to server-start-relative time */
+static rel_time_t CONVERT_REL_EXPTIME(rel_time_t exptime)
+{
+    if (exptime == 0 || exptime == (rel_time_t)(-1)) {
+        return exptime; /* 0 (never), -1 (sticky) */
+    }
+
+    rel_time_t abstime = time(NULL);
+    if (exptime > abstime) {
+        return svcore->get_current_time() + (exptime - abstime);
+    } else {
+        /* expired. */
+        return 1;
+    }
+}
 
 static char *get_logtype_text(uint8_t type)
 {
@@ -231,9 +266,14 @@ static ENGINE_ERROR_CODE lrec_it_link_redo(LogRec *logrec)
     struct lrec_item_common cm = body->cm;
     char *keyptr = body->data;
 
+    cm.exptime = CONVERT_REL_EXPTIME(cm.exptime);
+    if (EXPIRED_REL_EXPTIME(cm.exptime)) {
+        return ENGINE_SUCCESS;
+    }
+
     if (cm.ittype == ITEM_TYPE_KV) {
         ret = item_apply_kv_link(keyptr, cm.keylen, cm.flags, cm.exptime,
-                                        cm.vallen, (keyptr + cm.keylen), body->ptr.cas);
+                                 cm.vallen, (keyptr + cm.keylen), body->ptr.cas);
     } else {
         struct lrec_coll_meta meta = body->ptr.meta;
         item_attr attr;
@@ -365,6 +405,7 @@ static ENGINE_ERROR_CODE lrec_it_setattr_redo(LogRec *logrec)
     ITSetAttrData *body = &log->body;
     char *keyptr = body->data;
 
+    body->exptime = CONVERT_REL_EXPTIME(body->exptime);
     if (log->header.updtype == UPD_SETATTR_EXPTIME) {
         ret = item_apply_setattr_exptime(keyptr, body->keylen, body->exptime);
         if (ret != ENGINE_SUCCESS) {
@@ -1016,6 +1057,7 @@ LOGREC_FUNC logrec_func[] = {
 void cmdlog_rec_init(struct default_engine *engine)
 {
     logger = engine->server.log->get_logger();
+    svcore = engine->server.core;
     logger->log(EXTENSION_LOG_INFO, NULL, "COMMNAD LOG RECORD module initialized.\n");
 }
 
@@ -1071,7 +1113,7 @@ int lrec_construct_link_item(LogRec *logrec, hash_item *it)
     cm->keylen  = it->nkey;
     cm->vallen  = it->nbytes;
     cm->flags   = it->flags;
-    cm->exptime = it->exptime;
+    cm->exptime = CONVERT_ABS_EXPTIME(it->exptime);
     if (IS_COLL_ITEM(it)) {
         coll_meta_info *info = (coll_meta_info*)item_get_meta(it);
         struct lrec_coll_meta *meta = (struct lrec_coll_meta*)&body->ptr.meta;
@@ -1143,14 +1185,14 @@ int lrec_construct_setattr(LogRec *logrec, hash_item *it, uint8_t updtype)
     switch (updtype) {
       case UPD_SETATTR_EXPTIME:
       {
-          log->body.exptime = it->exptime;
+          log->body.exptime = CONVERT_ABS_EXPTIME(it->exptime);
       }
       break;
       case UPD_SETATTR_EXPTIME_INFO:
       case UPD_SETATTR_EXPTIME_INFO_BKEY:
       {
           coll_meta_info *info = (coll_meta_info*)item_get_meta(it);
-          log->body.exptime = it->exptime;
+          log->body.exptime = CONVERT_ABS_EXPTIME(it->exptime);
           log->body.ovflact = info->ovflact;
           log->body.mflags = info->mflags;
           log->body.mcnt = info->mcnt;
