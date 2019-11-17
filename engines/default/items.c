@@ -784,7 +784,7 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
         }
     }
 
-    if (it == NULL) {
+    if (it == NULL && lruid != LRU_CLSID_FOR_SMALL) {
         /* Last ditch effort. There is a very rare bug which causes
          * refcount leaks. We've fixed most of them, but it still happens,
          * and it may happen in the future.
