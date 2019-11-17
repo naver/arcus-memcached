@@ -598,15 +598,16 @@ static void do_smmgr_free_slot_unlink(sm_slot_t *slot)
 #if 0 // can be used later
 static void do_smmgr_used_blck_check(void)
 {
-    sm_blck_t *blck;
-    sm_slot_t *slot;
-    sm_tail_t *tail;
+    sm_blist_t *list = &sm_anchor.used_blist;
+    sm_blck_t  *blck;
+    sm_slot_t  *slot;
+    sm_tail_t  *tail;
     uint64_t blck_count = 0;
     uint64_t used_count = 0;
     uint64_t free_count = 0;
     uint32_t comp_length;
 
-    blck = sm_anchor.used_blist.head;
+    blck = list->head;
     while (blck != NULL) {
         blck_count += 1;
         tail = (sm_tail_t*)((char*)blck + SM_BLOCK_SIZE - sizeof(sm_tail_t));
@@ -626,52 +627,54 @@ static void do_smmgr_used_blck_check(void)
         }
         blck = blck->next;
     }
-    assert(blck_count == sm_anchor.used_blist.count);
+    assert(blck_count == list->count);
 }
 #endif
 
-static void do_smmgr_used_blck_link(sm_blck_t *blck)
+static void do_smmgr_used_blck_link(sm_blist_t *list, sm_blck_t *blck)
 {
     blck->frspc = 0;
     blck->frcnt = 0;
 
-    blck->prev = sm_anchor.used_blist.tail;
+    /* insert it into the tail of given list */
+    blck->prev = list->tail;
     blck->next = NULL;
-    if (sm_anchor.used_blist.head == NULL) {
-        sm_anchor.used_blist.head = blck;
-        sm_anchor.used_blist.tail = blck;
-    } else {
+    if (blck->prev != NULL) {
         blck->prev->next = blck;
-        sm_anchor.used_blist.tail = blck;
+    } else {
+        list->head = blck;
     }
-    sm_anchor.used_blist.count += 1;
+    list->tail = blck;
+    list->count += 1;
 }
 
-static void do_smmgr_used_blck_unlink(sm_blck_t *blck)
+static void do_smmgr_used_blck_unlink(sm_blist_t *list, sm_blck_t *blck)
 {
     if (blck->prev != NULL) blck->prev->next = blck->next;
+    else                    list->head = blck->next;
     if (blck->next != NULL) blck->next->prev = blck->prev;
-    if (sm_anchor.used_blist.head == blck) sm_anchor.used_blist.head = blck->next;
-    if (sm_anchor.used_blist.tail == blck) sm_anchor.used_blist.tail = blck->prev;
-    sm_anchor.used_blist.count -= 1;
+    else                    list->tail = blck->prev;
+    list->count -= 1;
 }
 
 static sm_blck_t *do_smmgr_blck_alloc(void)
 {
     sm_blck_t *blck = (sm_blck_t *)do_slabs_alloc(SM_BLOCK_SIZE, SM_SLAB_CLSID);
     if (blck != NULL) {
+        do_smmgr_used_blck_link(&sm_anchor.used_blist, blck);
+
         if (sm_anchor.free_limit_space > 0) {
             sm_anchor.free_chunk_space -= SM_BLOCK_SIZE;
         }
-        do_smmgr_used_blck_link(blck);
     }
     return blck;
 }
 
 static void do_smmgr_blck_free(sm_blck_t *blck)
 {
-    do_smmgr_used_blck_unlink(blck);
+    do_smmgr_used_blck_unlink(&sm_anchor.used_blist, blck);
     do_slabs_free(blck, SM_BLOCK_SIZE, SM_SLAB_CLSID);
+
     if (sm_anchor.free_limit_space > 0) {
         sm_anchor.free_chunk_space += SM_BLOCK_SIZE;
     }
