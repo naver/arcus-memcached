@@ -465,12 +465,12 @@ static bool do_item_isvalid(hash_item *it, rel_time_t current_time)
     if (it->exptime != 0 && it->exptime <= current_time) {
         return false; /* expired */
     }
-    /* check flushed items as well as expired items */
-    if (config->oldest_live != 0) {
-        if (config->oldest_live <= current_time && it->time <= config->oldest_live)
-            return false; /* flushed by flush_all */
+    /* check if it's flushed */
+    if (config->oldest_live != 0 &&
+        config->oldest_live <= current_time && it->time <= config->oldest_live) {
+        return false; /* flushed by flush_all */
     }
-    /* check if prefix is valid */
+    /* check if its prefix is invalid */
     if (assoc_prefix_isvalid(it, current_time) == false) {
         return false;
     }
