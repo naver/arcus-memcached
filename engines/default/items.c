@@ -734,12 +734,11 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
          * we're out of luck at this point...
          */
         if (!config->evict_to_free) {
-            do_item_stat_outofmemory(clsid_based_on_ntotal);
+            do_item_stat_outofmemory(lruid);
             return NULL;
         }
 
-        /*
-         * try to get one off the right LRU
+        /* try to get one off the right LRU
          * don't necessariuly unlink the tail because it may be locked: refcount>0
          * search up from tail an item with refcount==0 and unlink it; give up after 50
          * tries
@@ -764,24 +763,28 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
             search = previt;
             if ((--tries) == 0) break;
         }
-        if (config->verbose > 1 && (tries > 0 && tries <= 195)) {
-            /* succeed to allocate an item in more than 5 retries. */
-            logger->log(EXTENSION_LOG_INFO, NULL,
-                        "Succeed to allocate an item in %d retries.\n", (201-tries));
+        if (it != NULL) {
+            if (config->verbose > 1) {
+                logger->log(EXTENSION_LOG_INFO, NULL,
+                        "Succeed to allocate an item in %d retries of eviction.\n",
+                        (201-tries));
+            }
+        } else {
+            /* Failed to allocate an item even if we evict itmes */
+            do_item_stat_outofmemory(lruid);
+
+            if (lruid == LRU_CLSID_FOR_SMALL) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "No more small memory. space_shortage_level=%d, size=%lu\n",
+                        slabs_space_shortage_level(), ntotal);
+            } else {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "No more memory. lruid=%d, size=%lu\n", lruid, ntotal);
+            }
         }
     }
 
     if (it == NULL) {
-        do_item_stat_outofmemory(lruid);
-        if (lruid == LRU_CLSID_FOR_SMALL) {
-            logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "No more small memory. space_shortage_level=%d, size=%lu\n",
-                        slabs_space_shortage_level(), ntotal);
-        } else {
-            logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "No more memory. lruid=%d, size=%lu\n", lruid, ntotal);
-        }
-
         /* Last ditch effort. There is a very rare bug which causes
          * refcount leaks. We've fixed most of them, but it still happens,
          * and it may happen in the future.
