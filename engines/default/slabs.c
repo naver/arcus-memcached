@@ -1482,6 +1482,103 @@ static void do_slabs_stats(ADD_STAT add_stats, const void *cookie)
     add_statistics(cookie, add_stats, NULL, -1, "total_malloced", "%llu", (unsigned long long)slabsp->mem_malloced);
 }
 
+static void do_dump_stats(){
+
+    logger->log(EXTENSION_LOG_INFO, NULL, "dumping stats start");
+
+    logger->log(EXTENSION_LOG_INFO, NULL,
+            "SM:used_num_classes = %d "
+            "SM:free_num_classes = %d "
+            "SM:used_min_classid = %d "
+            "SM:used_max_classid = %d "
+            "SM:used_01pct_classid = %d "
+            "SM:free_min_classid = %d "
+            "SM:free_max_classid = %d "
+            "SM:free_big_slot_space = %"PRIu64" "
+            "SM:used_total_space = %"PRIu64" "
+            "SM:used_01pct_space = %"PRIu64" "
+            "SM:free_small_space = %"PRIu64" "
+            "SM:free_avail_space = %"PRIu64" "
+            "SM:free_chunk_space = %"PRIu64" "
+            "SM:free_limit_space = %"PRIu64" "
+            "SM:space_shortage_level = %d",
+            sm_anchor.used_num_classes,
+            sm_anchor.free_num_classes,
+            sm_anchor.used_minid,
+            sm_anchor.used_maxid,
+            sm_anchor.used_01pct_clsid,
+            sm_anchor.free_minid,
+            sm_anchor.free_maxid,
+            sm_anchor.free_slist[SM_NUM_CLASSES-1].space,
+            sm_anchor.used_total_space,
+            sm_anchor.used_01pct_space,
+            sm_anchor.free_small_space,
+            sm_anchor.free_avail_space,
+            sm_anchor.free_chunk_space,
+            sm_anchor.free_limit_space,
+            sm_anchor.space_shortage_level
+            );
+
+    int total = 0;
+
+    for (int i = SM_SLAB_CLSID; i <= slabsp->power_largest; i++) {
+        slabclass_t *p = &slabsp->slabclass[i];
+
+        if (p->slabs == 0) {
+            continue;
+        }
+
+        logger->log(EXTENSION_LOG_INFO, NULL,
+                "%d:chunk_size = %u "
+                "%d:chunks_per_page = %u "
+                "%d:reserved_pages = %u "
+                "%d:total_pages = %u "
+                "%d:total_chunks = %u "
+                "%d:used_chunks = %u "
+                "%d:free_chunks = %u "
+                "%d:free_chunks_end = %u "
+                "%d:mem_requested = %zd "
+#ifdef FUTURE
+                "%d:get_hits = %"PRIu64" "
+                "%d:cmd_set = %"PRIu64" "
+                "%d:delete_hits = %"PRIu64" "
+                "%d:cas_hits = %"PRIu64" "
+                "%d:cas_badval = %"PRIu64" "
+#endif
+                ,
+                i, p->size,
+                i, p->perslab,
+                i, p->rsvd_slabs,
+                i, p->slabs,
+                i, p->slabs * p->perslab,
+                i, (p->slabs*p->perslab) - p->sl_curr - p->end_page_free,
+                i, p->sl_curr,
+                i, p->end_page_free,
+                i, p->requested
+#ifdef FUTURE
+                ,
+                i, thread_stats.slab_stats[i].get_hits,
+                i, thread_stats.slab_stats[i].set_cmds,
+                i, thread_stats.slab_stats[i].delete_hits,
+                i, thread_stats.slab_stats[i].cas_hits,
+                i, thread_stats.slab_stats[i].cas_badval
+#endif
+                );
+        total++;
+    }
+
+    logger->log(EXTENSION_LOG_INFO, NULL,
+            "active_slabs = %d "
+            "memory_limit = %zu "
+            "total_malloced = %zu",
+            total,
+            slabsp->mem_limit,
+            slabsp->mem_malloced
+            );
+
+    logger->log(EXTENSION_LOG_INFO, NULL, "dumping stats end");
+}
+
 static ENGINE_ERROR_CODE do_slabs_set_memlimit(size_t memlimit)
 {
     if (slabsp->mem_base != NULL) {
@@ -1503,6 +1600,7 @@ static ENGINE_ERROR_CODE do_slabs_set_memlimit(size_t memlimit)
             return ENGINE_EBADVALUE;
         }
     }
+    do_dump_stats();
     slabsp->mem_limit = memlimit;
     slabsp->mem_reserved = new_mem_reserved;
     slabsp->slabclass[SM_SLAB_CLSID].rsvd_slabs = 0; /* undefined */
