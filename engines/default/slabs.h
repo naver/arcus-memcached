@@ -87,6 +87,9 @@ unsigned int slabs_space_size(const size_t size);
 
 int   slabs_space_shortage_level(void);
 
+/* temporary SM dump function */
+void  slabs_dump_SM_info(void);
+
 /** Allocate object of given length. 0 on error */ /*@null@*/
 void *slabs_alloc(const size_t size, unsigned int id);
 
