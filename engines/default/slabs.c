@@ -1195,6 +1195,23 @@ int slabs_space_shortage_level(void)
     return sm_anchor.space_shortage_level;
 }
 
+void slabs_dump_SM_info(void)
+{
+    logger->log(EXTENSION_LOG_WARNING, NULL,
+            "\tSM class: used %d(%d-%d-%d), free %d(%d-%d)\n"
+            "\tSM space: used %llu(1=%llu), free s=%llu a=%llu(b=%llu) c=%llu l=%llu\n",
+            sm_anchor.used_num_classes,
+            sm_anchor.used_minid, sm_anchor.used_01pct_clsid, sm_anchor.used_maxid,
+            sm_anchor.free_num_classes, sm_anchor.free_minid, sm_anchor.free_maxid,
+            (unsigned long long)sm_anchor.used_total_space,
+            (unsigned long long)sm_anchor.used_01pct_space,
+            (unsigned long long)sm_anchor.free_small_space,
+            (unsigned long long)sm_anchor.free_avail_space,
+            (unsigned long long)sm_anchor.free_slist[SM_NUM_CLASSES-1].space,
+            (unsigned long long)sm_anchor.free_chunk_space,
+            (unsigned long long)sm_anchor.free_limit_space);
+}
+
 static int grow_slab_list(const unsigned int id)
 {
     slabclass_t *p = &slabsp->slabclass[id];
@@ -1433,14 +1450,14 @@ static void do_slabs_stats(ADD_STAT add_stats, const void *cookie)
     add_statistics(cookie, add_stats, "SM", -1, "used_num_classes", "%d", sm_anchor.used_num_classes);
     add_statistics(cookie, add_stats, "SM", -1, "free_num_classes", "%d", sm_anchor.free_num_classes);
     add_statistics(cookie, add_stats, "SM", -1, "used_min_classid", "%d", sm_anchor.used_minid);
+    add_statistics(cookie, add_stats, "SM", -1, "used_01p_classid", "%d", sm_anchor.used_01pct_clsid);
     add_statistics(cookie, add_stats, "SM", -1, "used_max_classid", "%d", sm_anchor.used_maxid);
-    add_statistics(cookie, add_stats, "SM", -1, "used_01pct_classid", "%d", sm_anchor.used_01pct_clsid);
     add_statistics(cookie, add_stats, "SM", -1, "free_min_classid", "%d", sm_anchor.free_minid);
     add_statistics(cookie, add_stats, "SM", -1, "free_max_classid", "%d", sm_anchor.free_maxid);
-    add_statistics(cookie, add_stats, "SM", -1, "free_big_slot_space", "%"PRIu64, sm_anchor.free_slist[SM_NUM_CLASSES-1].space);
     add_statistics(cookie, add_stats, "SM", -1, "used_total_space", "%"PRIu64, sm_anchor.used_total_space);
     add_statistics(cookie, add_stats, "SM", -1, "used_01pct_space", "%"PRIu64, sm_anchor.used_01pct_space);
     add_statistics(cookie, add_stats, "SM", -1, "free_small_space", "%"PRIu64, sm_anchor.free_small_space);
+    add_statistics(cookie, add_stats, "SM", -1, "free_bslot_space", "%"PRIu64, sm_anchor.free_slist[SM_NUM_CLASSES-1].space);
     add_statistics(cookie, add_stats, "SM", -1, "free_avail_space", "%"PRIu64, sm_anchor.free_avail_space);
     add_statistics(cookie, add_stats, "SM", -1, "free_chunk_space", "%"PRIu64, sm_anchor.free_chunk_space);
     add_statistics(cookie, add_stats, "SM", -1, "free_limit_space", "%"PRIu64, sm_anchor.free_limit_space);

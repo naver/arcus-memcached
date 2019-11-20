@@ -782,6 +782,7 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
                 logger->log(EXTENSION_LOG_WARNING, NULL,
                         "No more small memory. space_shortage_level=%d, size=%lu\n",
                         slabs_space_shortage_level(), ntotal);
+                slabs_dump_SM_info();
             } else {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
                         "No more memory. lruid=%d, size=%lu\n", lruid, ntotal);
