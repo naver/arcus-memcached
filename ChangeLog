@@ -1,3 +1,14 @@
+2019-11-20 [version 1.11.8]
+	* [FEATURE] Dump SM info summary when "no more small memory" occurs.
+	* [FEATURE] Print out not absolute but the remaining exptime in key dump.
+	* [FIX]     Fix memory leak when bad data is given in bop update.
+	* [ENHANCE] Increase SSL as free big slot and chunk space decreases.
+	* [ENHANCE] Change SM logic to alloc the smaller avail memory first.
+	* [ENHANCE] Use proper sized memory within engine to get coll elements.
+	* [ENHANCE] DO not increase refcount when allocate an element.
+	* [DOC]     Include contribution process document.
+	* [CLEANUP] Do lots of code refactoring.
+
 2019-09-26 [version 1.11.7]
 	* [FEATURE] Added scrub_count config command.
 	* [FEATURE] Reflect immediately the changed scrub_count while scrubbing.
