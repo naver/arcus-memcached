@@ -366,11 +366,12 @@ static inline int do_smmgr_memid(int slen, bool above)
     }
     int smid = cls->tocnt + ((slen-cls->tolen) / cls->sulen);
     /* The above code logic likes followings.
-    if (slen < ( 2*1024)) return (  0 + ((slen          ) /  16));
-    if (slen < ( 6*1024)) return (128 + ((slen-( 2*1024)) /  32));
-    if (slen < (14*1024)) return (256 + ((slen-( 6*1024)) /  64));
-    if (slen < (30*1024)) return (384 + ((slen-(14*1024)) / 128));
-    else                  return (512 + ((slen-(30*1024)) / 256));
+    if (slen < (   1024)) return (  0 + ((slen          ) /   8));
+    if (slen < ( 3*1024)) return (128 + ((slen-(   1024)) /  16));
+    if (slen < ( 7*1024)) return (256 + ((slen-( 3*1024)) /  32));
+    if (slen < (15*1024)) return (384 + ((slen-( 7*1024)) /  64));
+    if (slen < (31*1024)) return (512 + ((slen-(15*1024)) / 128));
+    else                  return (640 + ((slen-(31*1024)) / 256));
     *****************************************/
     if (above && ((slen-cls->tolen) % cls->sulen) != 0) {
         smid++;
