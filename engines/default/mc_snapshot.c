@@ -276,6 +276,7 @@ static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_co
             }
             if (ret == -1) break;
         }
+        ss->snapped++;
     }
     return ret;
 #else
