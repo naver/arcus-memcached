@@ -29,6 +29,9 @@
 #include "checkpoint.h"
 #include "item_clog.h"
 
+#ifdef ENABLE_PERSISTENCE_03_REFACTOR_LOG_WAITER_LIST
+#define LOG_WAITER_CHUNK_SIZE (4 * 1024)
+#endif
 typedef struct _group_commit {
     pthread_mutex_t   lock;       /* group commit mutex */
     pthread_cond_t    cond;       /* group commit conditional variable */
@@ -40,6 +43,21 @@ typedef struct _group_commit {
     volatile bool     reqstop;    /* request to stop group commit thread */
 } group_commit_t;
 
+#ifdef ENABLE_PERSISTENCE_03_REFACTOR_LOG_WAITER_LIST
+typedef struct _waiter_chunk {
+    struct _waiter_chunk *next;
+    log_waiter_t          waiters[1];
+} log_waiter_chunk;
+
+typedef struct _waiter_info {
+    pthread_mutex_t   waiter_lock;
+    log_waiter_chunk *chunk_list;
+    log_waiter_t     *free_list;
+    uint16_t          chunk_count; /* chunk count */
+    uint16_t          waiter_pchk; /* wait entry per chunk */
+    uint32_t          cur_waiters; /* wait entry count in use */
+} log_waiter_info;
+#else
 typedef struct _wait_entry_info {
     int16_t           free_list;
     int16_t           used_head;
@@ -47,15 +65,23 @@ typedef struct _wait_entry_info {
     uint16_t          cur_waiters;
     uint16_t          max_waiters;
 } log_wait_entry_info;
+#endif
 
 /* commandlog global structure */
 struct cmdlog_global {
+#ifdef ENABLE_PERSISTENCE_03_REFACTOR_LOG_WAITER_LIST
+    log_waiter_info waiter_info;
+    group_commit_t  group_commit;
+    bool            async_mode;
+    volatile bool   initialized;
+#else
     log_waiter_t        *wait_entry_table;
     log_wait_entry_info  wait_entry_info;
     pthread_mutex_t      wait_entry_lock;
     group_commit_t       group_commit;
     bool                 async_mode;
     volatile bool        initialized;
+#endif
 };
 
 /* global data */
@@ -79,12 +105,59 @@ static ENGINE_ERROR_CODE cmdlog_mgr_recovery()
     }
     return ENGINE_SUCCESS;
 }
+#ifdef ENABLE_PERSISTENCE_03_REFACTOR_LOG_WAITER_LIST
+static int do_cmdlog_waiter_grow(log_waiter_info *info)
+{
+    log_waiter_chunk *chunk = (log_waiter_chunk *)malloc(LOG_WAITER_CHUNK_SIZE);
+    if (chunk == NULL) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to allocate cmdlog waiter chunk. chunk size : %d\n", LOG_WAITER_CHUNK_SIZE);
+        return -1;
+    }
+
+    int i;
+    for (i = 0; i < info->waiter_pchk; i++) {
+        log_waiter_t *waiter = &chunk->waiters[i];
+        if (i < (info->waiter_pchk-1)) waiter->free_next = &chunk->waiters[i+1];
+        else                           waiter->free_next = NULL;
+        LOGSN_SET_NULL(&waiter->lsn);
+    }
+    chunk->next = info->chunk_list;
+    info->free_list = &chunk->waiters[0];
+    info->chunk_list = chunk;
+    info->chunk_count += 1;
+
+    return 0;
+}
+
+static log_waiter_t *do_cmdlog_waiter_alloc(void)
+{
+    log_waiter_t *waiter = NULL;
+    log_waiter_info *info = &logmgr_gl.waiter_info;
+    pthread_mutex_lock(&info->waiter_lock);
+    if (info->free_list == NULL) {
+        if (do_cmdlog_waiter_grow(info) < 0) {
+            pthread_mutex_unlock(&info->waiter_lock);
+            return NULL;
+        }
+    }
+    waiter = info->free_list;
+    info->free_list = waiter->free_next;
+    waiter->free_next = NULL;
+    info->cur_waiters += 1;
+    pthread_mutex_unlock(&info->waiter_lock);
+    return waiter;
+}
+#endif
 
 /*
  * External Functions
  */
 log_waiter_t *cmdlog_waiter_alloc(const void *cookie)
 {
+#ifdef ENABLE_PERSISTENCE_03_REFACTOR_LOG_WAITER_LIST
+    log_waiter_t *waiter = do_cmdlog_waiter_alloc();
+#else
     log_waiter_t *waiter = NULL;
     log_wait_entry_info *info = &logmgr_gl.wait_entry_info;
     pthread_mutex_lock(&logmgr_gl.wait_entry_lock);
@@ -107,7 +180,11 @@ log_waiter_t *cmdlog_waiter_alloc(const void *cookie)
         waiter->cookie = cookie;
     }
     pthread_mutex_unlock(&logmgr_gl.wait_entry_lock);
+#endif
     if (waiter) {
+#ifdef ENABLE_PERSISTENCE_03_REFACTOR_LOG_WAITER_LIST
+      waiter->cookie = cookie;
+#endif
       tls_waiter = waiter;
     }
     return waiter;
@@ -158,6 +235,14 @@ static void do_cmdlog_waiter_free(log_waiter_t *waiter)
     LOGSN_SET_NULL(&waiter->lsn);
     waiter->wait_next = NULL;
 
+#ifdef ENABLE_PERSISTENCE_03_REFACTOR_LOG_WAITER_LIST
+    log_waiter_info *info = &logmgr_gl.waiter_info;
+    pthread_mutex_lock(&info->waiter_lock);
+    waiter->free_next = info->free_list;
+    info->free_list = waiter;
+    info->cur_waiters -= 1;
+    pthread_mutex_unlock(&info->waiter_lock);
+#else
     log_wait_entry_info *info = &logmgr_gl.wait_entry_info;
     pthread_mutex_lock(&logmgr_gl.wait_entry_lock);
     if (waiter->prev_eid == -1) info->used_head = waiter->next_eid;
@@ -169,6 +254,7 @@ static void do_cmdlog_waiter_free(log_waiter_t *waiter)
     info->free_list = waiter->curr_eid;
     info->cur_waiters -= 1;
     pthread_mutex_unlock(&logmgr_gl.wait_entry_lock);
+#endif
 }
 
 static void do_cmdlog_gcommit_thread_wakeup(group_commit_t *gcommit, bool lock_hold)
@@ -334,6 +420,19 @@ log_waiter_t *cmdlog_get_cur_waiter(void)
 
 ENGINE_ERROR_CODE cmdlog_waiter_init(struct default_engine *engine)
 {
+#ifdef ENABLE_PERSISTENCE_03_REFACTOR_LOG_WAITER_LIST
+    log_waiter_info *info = &logmgr_gl.waiter_info;
+    info->chunk_list  = NULL;
+    info->free_list   = NULL;
+    info->chunk_count = 0;
+    info->waiter_pchk = (LOG_WAITER_CHUNK_SIZE - sizeof(void*)) / sizeof(log_waiter_t);
+    info->cur_waiters = 0;
+
+    if (do_cmdlog_waiter_grow(info) < 0) {
+        return ENGINE_ENOMEM;
+    }
+    pthread_mutex_init(&info->waiter_lock, NULL);
+#else
     int i;
 
     log_wait_entry_info *info = &logmgr_gl.wait_entry_info;
@@ -355,6 +454,7 @@ ENGINE_ERROR_CODE cmdlog_waiter_init(struct default_engine *engine)
     info->used_head = -1;
     info->used_tail = -1;
     pthread_mutex_init(&logmgr_gl.wait_entry_lock, NULL);
+#endif
 
     /* initialize group commit */
     pthread_mutex_init(&logmgr_gl.group_commit.lock, NULL);
@@ -372,6 +472,20 @@ void cmdlog_waiter_final(void)
 {
     struct timespec sleep_time = {0, 10000000}; // 10 msec.
 
+#ifdef ENABLE_PERSISTENCE_03_REFACTOR_LOG_WAITER_LIST
+    log_waiter_info *info = &logmgr_gl.waiter_info;
+    while (info->cur_waiters > 0) {
+        nanosleep(&sleep_time, NULL);
+    }
+
+    log_waiter_chunk *chunk;
+    while (info->chunk_list != NULL) {
+        chunk = info->chunk_list;
+        info->chunk_list = chunk->next;
+        free((void*)chunk);
+    }
+    pthread_mutex_destroy(&info->waiter_lock);
+#else
     log_wait_entry_info *info = &logmgr_gl.wait_entry_info;
     while (info->cur_waiters > 0) {
         nanosleep(&sleep_time, NULL);
@@ -379,6 +493,7 @@ void cmdlog_waiter_final(void)
 
     free((void*)logmgr_gl.wait_entry_table);
     pthread_mutex_destroy(&logmgr_gl.wait_entry_lock);
+#endif
 }
 
 ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine_ptr)
