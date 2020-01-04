@@ -49,7 +49,7 @@ typedef struct _prefix_t {
 struct bucket_info {
     uint16_t refcount; /* reference count */
     uint16_t curpower; /* current hash power:
-                        * how may hash tables each hash bucket use ? (power of 2)
+                        * how many hash tables each hash bucket use ? (power of 2)
                         */
 };
 

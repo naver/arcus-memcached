@@ -425,7 +425,7 @@ void assoc_scan_final(struct assoc_scan *scan)
     if (scan->ph_linked) {
         (void)_unlink_scan_placeholder(scan);
     }
-    if (scan->bucket < scan->hashsz) {
+    if (scan->bucket < scan->hashsz && scan->tabcnt > 0) {
         /* decrement bucket's reference count */
         assocp->infotable[scan->bucket].refcount -= 1;
     }
