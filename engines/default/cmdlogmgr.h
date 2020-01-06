@@ -26,15 +26,8 @@ typedef struct logsn {
 /* command log manager entry structure */
 typedef struct _log_waiter {
     struct _log_waiter *wait_next;
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_LOG_WAITER_LIST
     struct _log_waiter *free_next;
     LogSN               lsn;
-#else
-    LogSN               lsn;
-    int16_t             curr_eid;   /* curr entry id */
-    int16_t             next_eid;   /* next entry id */
-    int16_t             prev_eid;   /* prev entry id */
-#endif
     const void         *cookie;
 } log_waiter_t;
 
