@@ -44,6 +44,16 @@ delete 명령이 있으며 syntax는 다음과 같다.
 delete <key> [noreply]\r\n
 ```
 
+한번에 여러 cache item들을 삭제하기 위한 mdelete 명령이 있으며, syntax는 다음과 같다.
+mdelete 명령은 1.11.8을 초과하는 버전부터 제공한다.
+
+```
+mdelete <lenkeys> <numkeys>\r\n
+<"space separated keys">\r\n
+```
+- \<”space separated keys”\> - key list로, 스페이스(' ')로 구분한다.
+- \<lenkeys\>과 \<numkeys> - key list 문자열의 길이와 key 개수를 나타낸다.
+
 **Increment/Decrement 명령**
 
 incr, decr 명령이 있으며, syntax는 아래와 같다.
