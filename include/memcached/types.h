@@ -34,6 +34,7 @@ struct iovec {
 #define PROXY_SUPPORT
 #define BOP_COUNT_OPTIMIZE
 //#define NEW_PREFIX_STATS_MANAGEMENT
+#define SUPPORT_MDELETE
 #define SUPPORT_BOP_MGET
 #define SUPPORT_BOP_SMGET
 #define JHPARK_OLD_SMGET_INTERFACE
@@ -104,6 +105,13 @@ extern "C" {
         OPERATION_GETS,    /**< Retrieve with gets semantics */
         OPERATION_MGET     /**< Retrieve with mget semantics */
     } ENGINE_RETRIEVE_OPERATION;
+
+#ifdef SUPPORT_MDELETE
+    typedef enum {
+        OPERATION_DELETE = 22,
+        OPERATION_MDELETE
+    } ENGINE_DELETION_OPERATION;
+#endif
 
     /* collection operation */
     typedef enum {
