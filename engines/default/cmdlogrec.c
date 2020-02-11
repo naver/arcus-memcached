@@ -238,10 +238,11 @@ static void lrec_attr_print(lrec_attr_info *attr)
             (attr->mflags & COLL_META_FLAG_READABLE ? 1 : 0));
 }
 
-static inline void do_construct_item_attr(char *ptr, int size, item_attr *attr)
+static inline void do_construct_item_attr(char *ptr, item_attr *attr)
 {
     lrec_attr_info info;
-    memcpy(&info, (char*)(ptr + size), sizeof(lrec_attr_info));
+    /* because lrec_attr_info is not aligned, set info with memcpy */
+    memcpy(&info, ptr, sizeof(lrec_attr_info));
     attr->flags      = info.flags;
     attr->exptime    = CONVERT_REL_EXPTIME(info.exptime);
     attr->maxcount   = info.maxcount;
@@ -588,7 +589,7 @@ static ENGINE_ERROR_CODE lrec_list_elem_insert_redo(LogRec *logrec)
 
         /* create collection item */
         item_attr attr;
-        do_construct_item_attr(keyptr, body->keylen + body->vallen, &attr);
+        do_construct_item_attr(keyptr + body->keylen + body->vallen, &attr);
         if (EXPIRED_REL_EXPTIME(attr.exptime)) {
             return ENGINE_SUCCESS;
         }
@@ -717,7 +718,7 @@ static ENGINE_ERROR_CODE lrec_set_elem_insert_redo(LogRec *logrec)
 
         /* create collection item */
         item_attr attr;
-        do_construct_item_attr(valptr, body->vallen, &attr);
+        do_construct_item_attr(valptr + body->vallen, &attr);
         if (EXPIRED_REL_EXPTIME(attr.exptime)) {
             return ENGINE_SUCCESS;
         }
@@ -848,7 +849,7 @@ static ENGINE_ERROR_CODE lrec_map_elem_insert_redo(LogRec *logrec)
 
         /* create collection item */
         item_attr attr;
-        do_construct_item_attr(datptr, body->fldlen + body->vallen, &attr);
+        do_construct_item_attr(datptr + body->fldlen + body->vallen, &attr);
         if (EXPIRED_REL_EXPTIME(attr.exptime)) {
             return ENGINE_SUCCESS;
         }
@@ -984,7 +985,7 @@ static ENGINE_ERROR_CODE lrec_bt_elem_insert_redo(LogRec *logrec)
         /* create collection item */
         item_attr attr;
         int datlen = BTREE_REAL_NBKEY(log->body.nbkey) + log->body.neflag + log->body.vallen;
-        do_construct_item_attr(datptr, datlen, &attr);
+        do_construct_item_attr(datptr + datlen, &attr);
         if (EXPIRED_REL_EXPTIME(attr.exptime)) {
             return ENGINE_SUCCESS;
         }
