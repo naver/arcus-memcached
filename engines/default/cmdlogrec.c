@@ -231,6 +231,37 @@ static void lrec_eflag_print(uint8_t neflag, unsigned char *eflag, char *str)
     sprintf(str, "len=%u val=0x%s", neflag, eflag_temp);
 }
 
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+static void lrec_attr_print(lrec_attr_info *attr)
+{
+    fprintf(stderr, "[ATTR]   flags=%u | exptime=%u | maxcount=%d | ovflaction=%u | readable=%u\n",
+            attr->flags, attr->exptime, attr->maxcount, attr->ovflaction,
+            (attr->mflags & COLL_META_FLAG_READABLE ? 1 : 0));
+}
+
+static inline void do_construct_item_attr(char *ptr, int size, item_attr *attr)
+{
+    lrec_attr_info info;
+    memcpy(&info, (char*)(ptr + size), sizeof(lrec_attr_info));
+    attr->flags      = info.flags;
+    attr->exptime    = CONVERT_REL_EXPTIME(info.exptime);
+    attr->maxcount   = info.maxcount;
+    attr->ovflaction = info.ovflaction;
+    attr->readable   = (info.mflags & COLL_META_FLAG_READABLE ? 1 : 0);
+    attr->trimmed    = 0;
+}
+
+static inline void do_construct_lrec_attr(hash_item *it, lrec_attr_info *attr)
+{
+    coll_meta_info *info = (coll_meta_info*)item_get_meta(it);
+    attr->flags      = it->flags;
+    attr->exptime    = CONVERT_ABS_EXPTIME(it->exptime);
+    attr->maxcount   = info->mcnt;
+    attr->ovflaction = info->ovflact;
+    attr->mflags     = info->mflags;
+}
+#endif
+
 /* Item Link Log Record */
 /* KV :         header | lrec_item_common | cas            | key + value
  * Collection : header | lrec_item_common | lrec_coll_meta | key + value(\r\n)
@@ -532,8 +563,19 @@ static void lrec_list_elem_insert_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr, (void*)logrec, offset);
     /* key copy */
     memcpy(bufptr + offset, log->keyptr, log->body.keylen);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    offset += log->body.keylen;
+    /* value copy */
+    memcpy(bufptr + offset, log->valptr, log->body.vallen);
+    offset += log->body.vallen;
+    /* attribute copy */
+    if (log->body.create) {
+        memcpy(bufptr + offset, log->attrp, sizeof(lrec_attr_info));
+    }
+#else
     /* value copy */
     memcpy(bufptr + offset + log->body.keylen, log->valptr, log->body.vallen);
+#endif
 }
 
 static ENGINE_ERROR_CODE lrec_list_elem_insert_redo(LogRec *logrec)
@@ -544,6 +586,30 @@ static ENGINE_ERROR_CODE lrec_list_elem_insert_redo(LogRec *logrec)
     char *keyptr = body->data;
 
     hash_item *it = item_get(keyptr, body->keylen);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    if (body->create) {
+        if (it) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_list_elem_insert_redo failed. "
+                                                     "already exist.\n");
+            return ENGINE_KEY_EEXISTS;
+        }
+
+        /* create collection item */
+        item_attr attr;
+        do_construct_item_attr(keyptr, body->keylen + body->vallen, &attr);
+        if (EXPIRED_REL_EXPTIME(attr.exptime)) {
+            return ENGINE_SUCCESS;
+        }
+        ret = item_apply_list_link(keyptr, body->keylen, &attr);
+        if (ret != ENGINE_SUCCESS) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_list_elem_insert_redo failed. "
+                                                     "item allocate failed.\n");
+            return ret;
+        }
+        it = item_get(keyptr, body->keylen);
+    }
+#endif
+
     if (it) {
         ret = item_apply_list_elem_insert(it, body->totcnt, body->eindex, (keyptr + body->keylen), body->vallen);
         if (ret == ENGINE_SUCCESS) {
@@ -571,6 +637,13 @@ static void lrec_list_elem_insert_print(LogRec *logrec)
             log->body.totcnt, log->body.eindex,
             log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
             log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250), valptr);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    if (log->body.create) {
+        lrec_attr_info info;
+        memcpy(&info, (char*)(valptr + log->body.vallen), sizeof(lrec_attr_info));
+        lrec_attr_print(&info);
+    }
+#endif
 }
 
 /* List Element Delete Log Record */
@@ -627,8 +700,19 @@ static void lrec_set_elem_insert_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr, (void*)logrec, offset);
     /* key copy */
     memcpy(bufptr + offset, log->keyptr, log->body.keylen);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    offset += log->body.keylen;
+    /* value copy */
+    memcpy(bufptr + offset, log->valptr, log->body.vallen);
+    offset += log->body.vallen;
+    /* attribute copy */
+    if (log->body.create) {
+        memcpy(bufptr + offset, log->attrp, sizeof(lrec_attr_info));
+    }
+#else
     /* value copy */
     memcpy(bufptr + offset + log->body.keylen, log->valptr, log->body.vallen);
+#endif
 }
 
 static ENGINE_ERROR_CODE lrec_set_elem_insert_redo(LogRec *logrec)
@@ -640,6 +724,30 @@ static ENGINE_ERROR_CODE lrec_set_elem_insert_redo(LogRec *logrec)
     char *valptr = keyptr + body->keylen;
 
     hash_item *it = item_get(keyptr, body->keylen);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    if (body->create) {
+        if (it) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_set_elem_insert_redo failed. "
+                                                     "already exist.\n");
+            return ENGINE_KEY_EEXISTS;
+        }
+
+        /* create collection item */
+        item_attr attr;
+        do_construct_item_attr(valptr, body->vallen, &attr);
+        if (EXPIRED_REL_EXPTIME(attr.exptime)) {
+            return ENGINE_SUCCESS;
+        }
+        ret = item_apply_set_link(keyptr, body->keylen, &attr);
+        if (ret != ENGINE_SUCCESS) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_set_elem_insert_redo failed. "
+                                                     "item allocate failed.\n");
+            return ret;
+        }
+        it = item_get(keyptr, body->keylen);
+    }
+#endif
+
     if (it) {
         ret = item_apply_set_elem_insert(it, valptr, body->vallen);
         if (ret == ENGINE_SUCCESS) {
@@ -665,6 +773,13 @@ static void lrec_set_elem_insert_print(LogRec *logrec)
     fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | vallen=%u | valstr=%.*s",
             log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
             log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250), valptr);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    if (log->body.create) {
+        lrec_attr_info info;
+        memcpy(&info, (char*)(valptr + log->body.vallen), sizeof(lrec_attr_info));
+        lrec_attr_print(&info);
+    }
+#endif
 }
 
 /* Set Element Delete Log Record */
@@ -725,8 +840,19 @@ static void lrec_map_elem_insert_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr, (void*)logrec, offset);
     /* key copy */
     memcpy(bufptr + offset, log->keyptr, log->body.keylen);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    offset += log->body.keylen;
+    /* field + value copy */
+    memcpy(bufptr + offset, log->datptr, log->body.fldlen + log->body.vallen);
+    offset += log->body.fldlen + log->body.vallen;
+    /* attribute copy */
+    if (log->body.create) {
+        memcpy(bufptr + offset, log->attrp, sizeof(lrec_attr_info));
+    }
+#else
     /* field + value copy */
     memcpy(bufptr + offset + log->body.keylen, log->datptr, log->body.fldlen + log->body.vallen);
+#endif
 }
 
 static ENGINE_ERROR_CODE lrec_map_elem_insert_redo(LogRec *logrec)
@@ -738,6 +864,30 @@ static ENGINE_ERROR_CODE lrec_map_elem_insert_redo(LogRec *logrec)
     char *datptr = keyptr + body->keylen;
 
     hash_item *it = item_get(keyptr, body->keylen);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    if (body->create) {
+        if (it) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_map_elem_insert_redo failed. "
+                                                     "already exist.\n");
+            return ENGINE_KEY_EEXISTS;
+        }
+
+        /* create collection item */
+        item_attr attr;
+        do_construct_item_attr(datptr, body->fldlen + body->vallen, &attr);
+        if (EXPIRED_REL_EXPTIME(attr.exptime)) {
+            return ENGINE_SUCCESS;
+        }
+        ret = item_apply_map_link(keyptr, body->keylen, &attr);
+        if (ret != ENGINE_SUCCESS) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_map_elem_insert_redo failed. "
+                                                     "item allocate failed.\n");
+            return ret;
+        }
+        it = item_get(keyptr, body->keylen);
+    }
+#endif
+
     if (it) {
         ret = item_apply_map_elem_insert(it, datptr, body->fldlen, body->vallen);
         if (ret == ENGINE_SUCCESS) {
@@ -765,6 +915,13 @@ static void lrec_map_elem_insert_print(LogRec *logrec)
             log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
             log->body.fldlen, log->body.fldlen, fldptr,
             log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250), valptr);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    if (log->body.create) {
+        lrec_attr_info info;
+        memcpy(&info, (char*)(valptr + log->body.vallen), sizeof(lrec_attr_info));
+        lrec_attr_print(&info);
+    }
+#endif
 }
 
 /* Map Element Delete Log Record */
@@ -826,8 +983,19 @@ static void lrec_bt_elem_insert_write(LogRec *logrec, char *bufptr)
     memcpy(bufptr, (void*)logrec, offset);
     /* key copy */
     memcpy(bufptr + offset, log->keyptr, log->body.keylen);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    offset += log->body.keylen;
+    /* bkey | eflag | value copy */
+    memcpy(bufptr + offset, log->datptr, datlen);
+    offset += datlen;
+    /* attribute copy */
+    if (log->body.create) {
+        memcpy(bufptr + offset, log->attrp, sizeof(lrec_attr_info));
+    }
+#else
     /* bkey | eflag | value copy */
     memcpy(bufptr + offset + log->body.keylen, log->datptr, datlen);
+#endif
 }
 
 static ENGINE_ERROR_CODE lrec_bt_elem_insert_redo(LogRec *logrec)
@@ -839,6 +1007,33 @@ static ENGINE_ERROR_CODE lrec_bt_elem_insert_redo(LogRec *logrec)
     char *datptr = keyptr + body->keylen;
 
     hash_item *it = item_get(keyptr, body->keylen);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    if (body->create) {
+        if (it) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_insert_redo failed. "
+                                                     "already exist.\n");
+            return ENGINE_KEY_EEXISTS;
+        }
+
+
+        /* create collection item */
+        item_attr attr;
+        int datlen = BTREE_REAL_NBKEY(log->body.nbkey) + log->body.neflag + log->body.vallen;
+        do_construct_item_attr(datptr, datlen, &attr);
+        if (EXPIRED_REL_EXPTIME(attr.exptime)) {
+            return ENGINE_SUCCESS;
+        }
+        attr.maxbkeyrange.len = BKEY_NULL;
+        ret = item_apply_btree_link(keyptr, body->keylen, &attr);
+        if (ret != ENGINE_SUCCESS) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_insert_redo failed. "
+                                                     "item allocate failed.\n");
+            return ret;
+        }
+        it = item_get(keyptr, body->keylen);
+    }
+#endif
+
     if (it) {
         ret = item_apply_btree_elem_insert(it, datptr, body->nbkey, body->neflag, body->vallen);
         if (ret == ENGINE_SUCCESS) {
@@ -878,6 +1073,13 @@ static void lrec_bt_elem_insert_print(LogRec *logrec)
             bkeystr, (log->body.neflag != 0 ? eflagstr : "[eflag]"),
             log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250),
             bkeyptr + real_nbkey + log->body.neflag);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    if (log->body.create) {
+        lrec_attr_info info;
+        memcpy(&info, (char*)(bkeyptr + real_nbkey + log->body.neflag + log->body.vallen), sizeof(lrec_attr_info));
+        lrec_attr_print(&info);
+    }
+#endif
 }
 
 /* BTree Element Delete Log Record */
@@ -1260,7 +1462,12 @@ int lrec_construct_snapshot_elem(LogRec *logrec, hash_item *it, void *elem)
     return log->header.body_length+sizeof(LogHdr);
 }
 
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+int lrec_construct_list_elem_insert(LogRec *logrec, hash_item *it, uint32_t totcnt,
+                                    int eindex, list_elem_item *elem, bool create, lrec_attr_info *attr)
+#else
 int lrec_construct_list_elem_insert(LogRec *logrec, hash_item *it, uint32_t totcnt, int eindex, list_elem_item *elem)
+#endif
 {
     ListElemInsLog *log = (ListElemInsLog*)logrec;
     log->keyptr = (char*)item_get_key(it);
@@ -1269,11 +1476,24 @@ int lrec_construct_list_elem_insert(LogRec *logrec, hash_item *it, uint32_t totc
     log->body.vallen = elem->nbytes;
     log->body.totcnt = totcnt;
     log->body.eindex = eindex;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    log->body.create = create;
+    if (log->body.create) {
+        do_construct_lrec_attr(it, attr);
+        log->attrp = attr;
+    }
+#endif
 
     log->header.logtype = LOG_LIST_ELEM_INSERT;
     log->header.updtype = UPD_LIST_ELEM_INSERT;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(ListElemInsData, data)
+                                               + log->body.keylen + log->body.vallen)
+                                               + (log->body.create ? sizeof(lrec_attr_info) : 0);
+#else
     log->header.body_length = GET_8_ALIGN_SIZE(offsetof(ListElemInsData, data) +
                                                log->body.keylen + log->body.vallen);
+#endif
     return log->header.body_length+sizeof(LogHdr);
 }
 
@@ -1292,7 +1512,12 @@ int lrec_construct_list_elem_delete(LogRec *logrec, hash_item *it, uint32_t totc
     return log->header.body_length+sizeof(LogHdr);
 }
 
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+int lrec_construct_map_elem_insert(LogRec *logrec, hash_item *it, map_elem_item *elem,
+                                   bool create, lrec_attr_info *attr)
+#else
 int lrec_construct_map_elem_insert(LogRec *logrec, hash_item *it, map_elem_item *elem)
+#endif
 {
     MapElemInsLog *log = (MapElemInsLog*)logrec;
     log->keyptr = (char*)item_get_key(it);
@@ -1300,11 +1525,24 @@ int lrec_construct_map_elem_insert(LogRec *logrec, hash_item *it, map_elem_item 
     log->body.keylen = it->nkey;
     log->body.fldlen = elem->nfield;
     log->body.vallen = elem->nbytes;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    log->body.create = create;
+    if (log->body.create) {
+        do_construct_lrec_attr(it, attr);
+        log->attrp = attr;
+    }
+#endif
 
     log->header.logtype = LOG_MAP_ELEM_INSERT;
     log->header.updtype = UPD_MAP_ELEM_INSERT;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(MapElemInsData, data)
+                                               + log->body.keylen + log->body.fldlen + log->body.vallen)
+                                               + (log->body.create ? sizeof(lrec_attr_info) : 0);
+#else
     log->header.body_length = GET_8_ALIGN_SIZE(offsetof(MapElemInsData, data) +
                                                log->body.keylen + log->body.fldlen + log->body.vallen);
+#endif
     return log->header.body_length+sizeof(LogHdr);
 }
 
@@ -1323,18 +1561,36 @@ int lrec_construct_map_elem_delete(LogRec *logrec, hash_item *it, map_elem_item 
     return log->header.body_length+sizeof(LogHdr);
 }
 
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+int lrec_construct_set_elem_insert(LogRec *logrec, hash_item *it, set_elem_item *elem,
+                                   bool create, lrec_attr_info *attr)
+#else
 int lrec_construct_set_elem_insert(LogRec *logrec, hash_item *it, set_elem_item *elem)
+#endif
 {
     SetElemInsLog *log = (SetElemInsLog*)logrec;
     log->keyptr = (char*)item_get_key(it);
     log->valptr = (char*)elem->value;
     log->body.keylen = it->nkey;
     log->body.vallen = elem->nbytes;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    log->body.create = create;
+    if (log->body.create) {
+        do_construct_lrec_attr(it, attr);
+        log->attrp = attr;
+    }
+#endif
 
     log->header.logtype = LOG_SET_ELEM_INSERT;
     log->header.updtype = UPD_SET_ELEM_INSERT;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(SetElemInsData, data)
+                                               + log->body.keylen + log->body.vallen)
+                                               + (log->body.create ? sizeof(lrec_attr_info) : 0);
+#else
     log->header.body_length = GET_8_ALIGN_SIZE(offsetof(SetElemInsData, data) +
                                                log->body.keylen + log->body.vallen);
+#endif
     return log->header.body_length+sizeof(LogHdr);
 }
 
@@ -1353,7 +1609,12 @@ int lrec_construct_set_elem_delete(LogRec *logrec, hash_item *it, set_elem_item 
     return log->header.body_length+sizeof(LogHdr);
 }
 
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+int lrec_construct_btree_elem_insert(LogRec *logrec, hash_item *it, btree_elem_item *elem,
+                                     bool create, lrec_attr_info *attr)
+#else
 int lrec_construct_btree_elem_insert(LogRec *logrec, hash_item *it, btree_elem_item *elem)
+#endif
 {
     BtreeElemInsLog *log = (BtreeElemInsLog*)logrec;
     log->keyptr = (char*)item_get_key(it);
@@ -1362,11 +1623,24 @@ int lrec_construct_btree_elem_insert(LogRec *logrec, hash_item *it, btree_elem_i
     log->body.nbkey  = elem->nbkey;
     log->body.neflag = elem->neflag;
     log->body.vallen = elem->nbytes;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    log->body.create = create;
+    if (log->body.create) {
+        do_construct_lrec_attr(it, attr);
+        log->attrp = attr;
+    }
+#endif
 
     log->header.logtype = LOG_BT_ELEM_INSERT;
     log->header.updtype = UPD_BT_ELEM_INSERT;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(BtreeElemInsData, data) + log->body.keylen
+                              + BTREE_REAL_NBKEY(log->body.nbkey) + log->body.neflag + log->body.vallen)
+                              + (log->body.create ? sizeof(lrec_attr_info) : 0);
+#else
     log->header.body_length = GET_8_ALIGN_SIZE(offsetof(BtreeElemInsData, data) + log->body.keylen +
                               BTREE_REAL_NBKEY(log->body.nbkey) + log->body.neflag + log->body.vallen);
+#endif
     return log->header.body_length+sizeof(LogHdr);
 }
 

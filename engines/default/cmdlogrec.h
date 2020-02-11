@@ -176,9 +176,25 @@ typedef struct _snapshot_elem_log {
 } SnapshotElemLog;
 
 /* List Elem Insert Log Record */
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+typedef struct _lrec_attr_info {
+    uint32_t flags;        /* flags */
+    uint32_t exptime;      /* expire time */
+    int32_t  maxcount;     /* collection max count */
+    uint8_t  reserved_8[2];
+    uint8_t  ovflaction;   /* overflow action */
+    uint8_t  mflags;       /* sticky, readable, trimmedflags */
+} lrec_attr_info;
+#endif
+
 typedef struct _List_elem_insert_data {
     uint16_t keylen;  /* key length */
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    uint8_t  create;  /* create flag */
+    uint8_t  reserved_8[1];
+#else
     uint16_t reserved_16[1];
+#endif
     uint32_t vallen;  /* value length */
     uint32_t totcnt;  /* total element count */
     int32_t  eindex;  /* element index */
@@ -190,6 +206,9 @@ typedef struct _List_elem_insert_log {
     ListElemInsData body;
     char            *keyptr;
     char            *valptr;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    lrec_attr_info  *attrp;
+#endif
 } ListElemInsLog;
 
 /* List Elem Delete Log Record */
@@ -211,8 +230,13 @@ typedef struct _List_elem_delete_log {
 /* Map Elem Insert Log Record */
 typedef struct _Map_elem_insert_data {
     uint16_t keylen;  /* key length */
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    uint8_t  create;  /* create flag */
+    uint8_t  fldlen;  /* field length */
+#else
     uint8_t  fldlen;  /* field length */
     uint8_t  reserved_8[1];
+#endif
     uint32_t vallen;  /* value length */
     char     data[1];
 } MapElemInsData;
@@ -222,6 +246,9 @@ typedef struct _Map_elem_insert_log {
     MapElemInsData body;
     char           *keyptr;
     char           *datptr;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    lrec_attr_info *attrp;
+#endif
 } MapElemInsLog;
 
 /* Map Elem Delete Log Record */
@@ -241,7 +268,12 @@ typedef struct _Map_elem_delete_log {
 /* Set Elem Insert Log Record */
 typedef struct _Set_elem_insert_data {
     uint16_t keylen;  /* key length */
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    uint8_t  create;  /* create flag */
+    uint8_t  reserved_8[1];
+#else
     uint16_t reserved_16[1];
+#endif
     uint32_t vallen;  /* value length */
     char     data[1];
 } SetElemInsData;
@@ -251,6 +283,9 @@ typedef struct _Set_elem_insert_log {
     SetElemInsData body;
     char           *keyptr;
     char           *valptr;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    lrec_attr_info *attrp;
+#endif
 } SetElemInsLog;
 
 /* Set Elem Delete Log Record */
@@ -271,8 +306,14 @@ typedef struct _Set_elem_delete_log {
 /* Btree Elem Insert Log Record */
 typedef struct _Btree_elem_insert_data {
     uint16_t keylen;  /* key length */
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    uint8_t  create;  /* create flag */
+#endif
     uint8_t  nbkey;   /* bkey length */
     uint8_t  neflag;  /* eflag length */
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    uint8_t  reserved_8[3];
+#endif
     uint32_t vallen;  /* value length */
     char     data[1];
 } BtreeElemInsData;
@@ -282,6 +323,9 @@ typedef struct _Btree_elem_insert_log {
     BtreeElemInsData body;
     char             *keyptr;
     char             *datptr;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    lrec_attr_info   *attrp;
+#endif
 } BtreeElemInsLog;
 
 /* Btree Elem Delete Log Record */
@@ -320,13 +364,33 @@ int lrec_construct_link_item(LogRec *logrec, hash_item *it);
 int lrec_construct_unlink_item(LogRec *logrec, hash_item *it);
 int lrec_construct_flush_item(LogRec *logrec, const char *prefix, const int nprefix);
 int lrec_construct_setattr(LogRec *logrec, hash_item *it, uint8_t updtype);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+int lrec_construct_list_elem_insert(LogRec *logrec, hash_item *it, uint32_t totcnt, int eindex, list_elem_item *elem,
+                                    bool create, lrec_attr_info *attr);
+#else
 int lrec_construct_list_elem_insert(LogRec *logrec, hash_item *it, uint32_t totcnt, int eindex, list_elem_item *elem);
+#endif
 int lrec_construct_list_elem_delete(LogRec *logrec, hash_item *it, uint32_t totcnt, int eindex, uint32_t delcnt);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+int lrec_construct_map_elem_insert(LogRec *logrec, hash_item *it, map_elem_item *elem,
+                                   bool create, lrec_attr_info *attr);
+#else
 int lrec_construct_map_elem_insert(LogRec *logrec, hash_item *it, map_elem_item *elem);
+#endif
 int lrec_construct_map_elem_delete(LogRec *logrec, hash_item *it, map_elem_item *elem);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+int lrec_construct_set_elem_insert(LogRec *logrec, hash_item *it, set_elem_item *elem,
+                                   bool create, lrec_attr_info *attr);
+#else
 int lrec_construct_set_elem_insert(LogRec *logrec, hash_item *it, set_elem_item *elem);
+#endif
 int lrec_construct_set_elem_delete(LogRec *logrec, hash_item *it, set_elem_item *elem);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+int lrec_construct_btree_elem_insert(LogRec *logrec, hash_item *it, btree_elem_item *elem,
+                                     bool create, lrec_attr_info *attr);
+#else
 int lrec_construct_btree_elem_insert(LogRec *logrec, hash_item *it, btree_elem_item *elem);
+#endif
 int lrec_construct_btree_elem_delete(LogRec *logrec, hash_item *it, btree_elem_item *elem);
 
 /* Function to write the given log record to log buffer */

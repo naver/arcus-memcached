@@ -28,6 +28,9 @@ typedef struct _log_waiter {
     struct _log_waiter *wait_next;
     struct _log_waiter *free_next;
     LogSN               lsn;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    bool                elem_clog_with_collection;
+#endif
     const void         *cookie;
 } log_waiter_t;
 

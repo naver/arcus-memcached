@@ -102,6 +102,9 @@ static int do_cmdlog_waiter_grow(log_waiter_info *info)
         if (i < (info->waiter_pchk-1)) waiter->free_next = &chunk->waiters[i+1];
         else                           waiter->free_next = NULL;
         LOGSN_SET_NULL(&waiter->lsn);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+        waiter->elem_clog_with_collection = false;
+#endif
     }
     chunk->next = info->chunk_list;
     info->free_list = &chunk->waiters[0];
@@ -191,6 +194,9 @@ static void do_cmdlog_waiter_free(log_waiter_t *waiter)
     log_waiter_info *info = &logmgr_gl.waiter_info;
     pthread_mutex_lock(&info->waiter_lock);
     waiter->free_next = info->free_list;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    waiter->elem_clog_with_collection = false;
+#endif
     info->free_list = waiter;
     info->cur_waiters -= 1;
     pthread_mutex_unlock(&info->waiter_lock);
