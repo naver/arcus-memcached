@@ -6622,9 +6622,7 @@ ENGINE_ERROR_CODE list_elem_insert(const char *key, const uint32_t nkey,
                         "list elem insert - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
-#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
         waiter->elem_clog_with_collection = true;
-#endif
     }
 #endif
 
@@ -6918,9 +6916,7 @@ ENGINE_ERROR_CODE set_elem_insert(const char *key, const uint32_t nkey,
                         "set elem insert - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
-#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
         waiter->elem_clog_with_collection = true;
-#endif
     }
 #endif
 
@@ -7195,9 +7191,7 @@ ENGINE_ERROR_CODE btree_elem_insert(const char *key, const uint32_t nkey,
                         "btree elem insert - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
-#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
         waiter->elem_clog_with_collection = true;
-#endif
     }
 #endif
 
@@ -9981,9 +9975,7 @@ ENGINE_ERROR_CODE map_elem_insert(const char *key, const uint32_t nkey,
                         "map elem insert - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
-#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
         waiter->elem_clog_with_collection = true;
-#endif
     }
 #endif
 
