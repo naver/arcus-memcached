@@ -45,11 +45,22 @@ void CLOG_GE_ITEM_LINK(hash_item *it)
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
 #ifdef ENABLE_PERSISTENCE
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+        if (config->use_persistence) {
+            log_waiter_t *waiter = cmdlog_get_cur_waiter();
+            if (waiter->elem_clog_with_collection == false) {
+                ITLinkLog log;
+                (void)lrec_construct_link_item((LogRec*)&log, it);
+                log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+            }
+        }
+#else
         if (config->use_persistence) {
             ITLinkLog log;
             (void)lrec_construct_link_item((LogRec*)&log, it);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
         }
+#endif
 #endif
     }
 }
@@ -61,11 +72,23 @@ void CLOG_GE_ITEM_UNLINK(hash_item *it, enum item_unlink_cause cause)
         (it->iflag & ITEM_INTERNAL) == 0)
     {
 #ifdef ENABLE_PERSISTENCE
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+        if (config->use_persistence) {
+            log_waiter_t *waiter = cmdlog_get_cur_waiter();
+            /* TODO::remove waiter == NULL condition after waiter process in eviction logic */
+            if (waiter == NULL || waiter->elem_clog_with_collection == false) {
+                ITUnlinkLog log;
+                (void)lrec_construct_unlink_item((LogRec*)&log, it);
+                log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+            }
+        }
+#else
         if (config->use_persistence) {
             ITUnlinkLog log;
             (void)lrec_construct_unlink_item((LogRec*)&log, it);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
         }
+#endif
 #endif
     }
 }
@@ -104,8 +127,16 @@ void CLOG_GE_LIST_ELEM_INSERT(list_meta_info *info,
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
             ListElemInsLog log;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+            lrec_attr_info attr;
+            log_waiter_t *waiter = cmdlog_get_cur_waiter();
+            bool create = waiter->elem_clog_with_collection;
+            (void)lrec_construct_list_elem_insert((LogRec*)&log, it, info->ccnt, index, elem, create, &attr);
+            log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+#else
             (void)lrec_construct_list_elem_insert((LogRec*)&log, it, info->ccnt, index, elem);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+#endif
         }
 #endif
     }
@@ -155,8 +186,16 @@ void CLOG_GE_MAP_ELEM_INSERT(map_meta_info *info,
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
             MapElemInsLog log;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+            lrec_attr_info attr;
+            log_waiter_t *waiter = cmdlog_get_cur_waiter();
+            bool create = waiter->elem_clog_with_collection;
+            (void)lrec_construct_map_elem_insert((LogRec*)&log, it, new_elem, create, &attr);
+            log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+#else
             (void)lrec_construct_map_elem_insert((LogRec*)&log, it, new_elem);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+#endif
         }
 #endif
     }
@@ -191,8 +230,16 @@ void CLOG_GE_SET_ELEM_INSERT(set_meta_info *info,
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
             SetElemInsLog log;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+            lrec_attr_info attr;
+            log_waiter_t *waiter = cmdlog_get_cur_waiter();
+            bool create = waiter->elem_clog_with_collection;
+            (void)lrec_construct_set_elem_insert((LogRec*)&log, it, elem, create, &attr);
+            log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+#else
             (void)lrec_construct_set_elem_insert((LogRec*)&log, it, elem);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+#endif
         }
 #endif
     }
@@ -228,8 +275,16 @@ void CLOG_GE_BTREE_ELEM_INSERT(btree_meta_info *info,
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
             BtreeElemInsLog log;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+            lrec_attr_info attr;
+            log_waiter_t *waiter = cmdlog_get_cur_waiter();
+            bool create = waiter->elem_clog_with_collection;
+            (void)lrec_construct_btree_elem_insert((LogRec*)&log, it, new_elem, create, &attr);
+            log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+#else
             (void)lrec_construct_btree_elem_insert((LogRec*)&log, it, new_elem);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+#endif
         }
 #endif
     }
