@@ -600,6 +600,18 @@ void cmdlog_generate_btree_elem_delete(hash_item *it, btree_elem_item *elem)
     log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
 }
 
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+void cmdlog_generate_btree_elem_delete_logical(hash_item *it,
+                                               const bkey_range *bkrange,
+                                               const eflag_filter *efilter,
+                                               uint32_t offset, uint32_t reqcount)
+{
+    BtreeElemDelLgcLog log;
+    (void)lrec_construct_btree_elem_delete_logical((LogRec*)&log, it, bkrange, efilter, offset, reqcount);
+    log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+}
+#endif
+
 void cmdlog_set_chkpt_scan(struct assoc_scan *cs)
 {
     /* Cache locked */

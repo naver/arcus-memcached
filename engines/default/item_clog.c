@@ -29,6 +29,12 @@ static struct engine_config *config=NULL; // engine config
 
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+#ifdef ENABLE_PERSISTENCE
+static bool gen_logical_btree_delete_log=false; // generate logical btree delete log
+#endif
+#endif
+
 /*
  * Generate change logs
  */
@@ -214,7 +220,11 @@ void CLOG_GE_BTREE_ELEM_DELETE(btree_meta_info *info,
         (it->iflag & ITEM_INTERNAL) == 0)
     {
 #ifdef ENABLE_PERSISTENCE
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+        if (config->use_persistence && !gen_logical_btree_delete_log) {
+#else
         if (config->use_persistence) {
+#endif
             cmdlog_generate_btree_elem_delete(it, elem);
         }
 #endif
@@ -230,6 +240,13 @@ void CLOG_GE_BTREE_ELEM_DELETE_LOGICAL(btree_meta_info *info,
 
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+#ifdef ENABLE_PERSISTENCE
+        if (config->use_persistence && gen_logical_btree_delete_log) {
+            cmdlog_generate_btree_elem_delete_logical(it, bkrange, efilter, offset, reqcount);
+        }
+#endif
+#endif
     }
 }
 
