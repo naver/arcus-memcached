@@ -678,8 +678,11 @@ ENGINE_ERROR_CODE item_apply_map_elem_insert(hash_item *it, const char *data, co
 ENGINE_ERROR_CODE item_apply_map_elem_delete(hash_item *it, const char *field, const uint32_t nfield);
 ENGINE_ERROR_CODE item_apply_btree_elem_insert(hash_item *it, const char *data, const uint32_t nbkey,
                                                const uint32_t neflag, const uint32_t nbytes);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+ENGINE_ERROR_CODE item_apply_btree_elem_delete(hash_item *it, bkey_range *bkrange, eflag_filter *efilter, uint32_t reqcount);
+#else
 ENGINE_ERROR_CODE item_apply_btree_elem_delete(hash_item *it, const char *bkey, const uint32_t nbkey);
-
+#endif
 ENGINE_ERROR_CODE item_apply_setattr_exptime(const char *key, const uint32_t nkey, rel_time_t exptime);
 ENGINE_ERROR_CODE item_apply_setattr_meta_info(hash_item *it, const uint8_t ovflact, const uint8_t mflags,
                                                rel_time_t exptime, const int32_t mcnt, bkey_t *maxbkeyrange);
