@@ -33,6 +33,9 @@ enum log_type {
     LOG_MAP_ELEM_DELETE,
     LOG_BT_ELEM_INSERT,
     LOG_BT_ELEM_DELETE,
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    LOG_BT_ELEM_LGCAL_DELETE,
+#endif
     LOG_SNAPSHOT_ELEM,
     LOG_SNAPSHOT_DONE
 };
@@ -302,6 +305,32 @@ typedef struct _Btree_elem_insert_log {
 } BtreeElemInsLog;
 
 /* Btree Elem Delete Log Record */
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+typedef struct _Btree_elem_lgcal_delete_data {
+    uint16_t keylen;     /* key length */
+    uint8_t  reserved_8[1];
+    uint8_t  from_nbkey; /* fbkey length */
+    uint8_t  to_nbkey;   /* tbkey length */
+    uint8_t  filtering;  /* enable eflag filter */
+    uint8_t  nbitwval;   /* bitwise value length */
+    uint8_t  ncompval;   /* compare value length */
+    uint8_t  compvcnt;   /* # of compare values */
+    uint8_t  fwhere;     /* filter offset */
+    uint8_t  bitwop;     /* bitwise operation */
+    uint8_t  compop;     /* compare operation */
+    uint32_t reqcount;   /* request count */
+    char     data[1];
+} BtreeElemLgcDelData;
+
+typedef struct _Btree_elem_lgcal_delete_log {
+    LogHdr              header;
+    BtreeElemLgcDelData body;
+    char                *keyptr;
+    bkey_range          *bkrangep;
+    eflag_filter        *efilterp;
+} BtreeElemLgcDelLog;
+#endif
+
 typedef struct _Btree_elem_delete_data {
     uint16_t keylen;  /* key length */
     uint8_t  nbkey;   /* bkey length */
@@ -349,6 +378,10 @@ int lrec_construct_set_elem_delete(LogRec *logrec, hash_item *it, set_elem_item 
 int lrec_construct_btree_elem_insert(LogRec *logrec, hash_item *it, btree_elem_item *elem,
                                      bool create, lrec_attr_info *attr);
 int lrec_construct_btree_elem_delete(LogRec *logrec, hash_item *it, btree_elem_item *elem);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+int lrec_construct_btree_elem_lgcal_delete(LogRec *logrec, hash_item *it, uint32_t reqcount,
+                                           const bkey_range *bkrange, const eflag_filter *efilter);
+#endif
 
 /* Function to write the given log record to log buffer */
 void lrec_write_to_buffer(LogRec *logrec, char *bufptr);

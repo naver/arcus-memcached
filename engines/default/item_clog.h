@@ -47,6 +47,12 @@ void CLOG_GE_BTREE_ELEM_INSERT(btree_meta_info *info,
 void CLOG_GE_BTREE_ELEM_DELETE(btree_meta_info *info,
                                btree_elem_item *elem,
                                enum elem_delete_cause cause);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+void CLOG_GE_LGCAL_BTREE_ELEM_DELETE(btree_meta_info *info,
+                                     uint32_t reqcount,
+                                     const bkey_range *bkrange,
+                                     const eflag_filter *efilter);
+#endif
 void CLOG_GE_ITEM_SETATTR(hash_item *it,
                           ENGINE_ITEM_ATTR *attr_ids, uint32_t attr_cnt);
 
@@ -99,6 +105,12 @@ void CLOG_GE_ITEM_SETATTR(hash_item *it,
     if (item_clog_enabled) { \
         CLOG_GE_BTREE_ELEM_DELETE(a,b,c); \
     }
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+#define CLOG_LGCAL_BTREE_ELEM_DELETE(a,b,c,d) \
+    if (item_clog_enabled) { \
+        CLOG_GE_LGCAL_BTREE_ELEM_DELETE(a,b,c,d); \
+    }
+#endif
 #define CLOG_ITEM_SETATTR(a,b,c) \
     if (item_clog_enabled) { \
         CLOG_GE_ITEM_SETATTR(a,b,c); \

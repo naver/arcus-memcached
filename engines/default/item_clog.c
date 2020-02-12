@@ -35,6 +35,9 @@ static EXTENSION_LOGGER_DESCRIPTOR *logger;
 static struct assoc_scan *scanp=NULL; // checkpoint scan pointer
 
 #define NEED_DUAL_WRITE(it) ((scanp != NULL) && (assoc_scan_in_visited_area(scanp, it)))
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+static bool optimize_btree_del = false;
+#endif
 #endif
 
 /*
@@ -264,7 +267,11 @@ void CLOG_GE_BTREE_ELEM_DELETE(btree_meta_info *info,
         (it->iflag & ITEM_INTERNAL) == 0)
     {
 #ifdef ENABLE_PERSISTENCE
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+        if (config->use_persistence && !optimize_btree_del) {
+#else
         if (config->use_persistence) {
+#endif
             BtreeElemDelLog log;
             (void)lrec_construct_btree_elem_delete((LogRec*)&log, it, elem);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
@@ -272,6 +279,25 @@ void CLOG_GE_BTREE_ELEM_DELETE(btree_meta_info *info,
 #endif
     }
 }
+
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+void CLOG_GE_LGCAL_BTREE_ELEM_DELETE(btree_meta_info *info, uint32_t reqcount,
+                                     const bkey_range *bkrange, const eflag_filter *efilter)
+{
+    hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
+
+    if ((it->iflag & ITEM_INTERNAL) == 0)
+    {
+#ifdef ENABLE_PERSISTENCE
+        if (config->use_persistence && optimize_btree_del) {
+            BtreeElemLgcDelLog log;
+            (void)lrec_construct_btree_elem_lgcal_delete((LogRec*)&log, it, reqcount, bkrange, efilter);
+            log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+        }
+#endif
+    }
+}
+#endif
 
 void CLOG_GE_ITEM_SETATTR(hash_item *it,
                           ENGINE_ITEM_ATTR *attr_ids, uint32_t attr_cnt)
