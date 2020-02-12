@@ -284,10 +284,10 @@ static enum test_return test_safe_strtof(void) {
 static pid_t start_server(in_port_t *port_out, bool daemon, int timeout) {
     char environment[80];
     snprintf(environment, sizeof(environment),
-             "MEMCACHED_PORT_FILENAME=/tmp/ports.%lu", (long)getpid());
+             "MEMCACHED_PORT_FILENAME=/tmp/ports.%ld", (long)getpid());
     char *filename= environment + strlen("MEMCACHED_PORT_FILENAME=");
     char pid_file[80];
-    snprintf(pid_file, sizeof(pid_file), "/tmp/pid.%lu", (long)getpid());
+    snprintf(pid_file, sizeof(pid_file), "/tmp/pid.%ld", (long)getpid());
 
     remove(filename);
     remove(pid_file);

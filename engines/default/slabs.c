@@ -297,7 +297,7 @@ static int do_smmgr_build_class_info(void)
         fprintf(stderr, "-------------------------------------------------\n");
         for (int i=0; i < sm_anchor.class_info_count; i++) {
             cls = &sm_anchor.class_info[i];
-            fprintf(stderr, "%5d %10d %10d %10d %10d\n",
+            fprintf(stderr, "%5d %10u %10u %10u %10u\n",
                     i, cls->sulen, cls->sucnt, cls->tolen, cls->tocnt);
         }
         fprintf(stderr, "-------------------------------------------------\n");
