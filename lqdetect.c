@@ -182,7 +182,7 @@ void lqdetect_get_stats(char* str)
             "\t" "Long query detection stats : %s" "\n"
             "\t" "The last running time : %d_%d ~ %d_%d" "\n"
             "\t" "The number of total long query commands : %d" "\n"
-            "\t" "The detection standard : %d" "\n",
+            "\t" "The detection standard : %u" "\n",
             (stats.stop_cause >= 0 && stats.stop_cause <= 2 ?
              stop_cause_str[stats.stop_cause] : "unknown"),
             stats.bgndate, stats.bgntime, stats.enddate, stats.endtime,
@@ -276,7 +276,7 @@ static void lqdetect_write(char client_ip[], char *key, enum lq_detect_command c
     ptm = localtime(&val.tv_sec);
     length = ((nsaved+1) * LONGQ_INPUT_SIZE) - offset - 1;
 
-    snprintf(bufptr, length, "%02d:%02d:%02d.%06ld %s <%d> %s ",
+    snprintf(bufptr, length, "%02d:%02d:%02d.%06ld %s <%u> %s ",
         ptm->tm_hour, ptm->tm_min, ptm->tm_sec, (long)val.tv_usec, client_ip,
         arg->overhead, command_str[cmd]);
 
@@ -313,10 +313,10 @@ static void lqdetect_write(char client_ip[], char *key, enum lq_detect_command c
         break;
     case LQCMD_BOP_GET:
         if (arg->delete_or_drop != 0) {
-            snprintf(bufptr, length, "%s %s %d %d %s\n", key, arg->range,
+            snprintf(bufptr, length, "%s %s %u %u %s\n", key, arg->range,
                         arg->offset, arg->count, (arg->delete_or_drop == 2 ? "drop" : "delete"));
         } else {
-            snprintf(bufptr, length, "%s %s %d %d\n", key, arg->range,
+            snprintf(bufptr, length, "%s %s %u %u\n", key, arg->range,
                         arg->offset, arg->count);
         }
         break;
@@ -325,9 +325,9 @@ static void lqdetect_write(char client_ip[], char *key, enum lq_detect_command c
         break;
     case LQCMD_BOP_DELETE:
         if (arg->delete_or_drop == 2) {
-            snprintf(bufptr, length, "%s %s %d %s\n", key, arg->range, arg->count, "drop");
+            snprintf(bufptr, length, "%s %s %u %s\n", key, arg->range, arg->count, "drop");
         } else {
-            snprintf(bufptr, length, "%s %s %d\n", key, arg->range, arg->count);
+            snprintf(bufptr, length, "%s %s %u\n", key, arg->range, arg->count);
         }
         break;
     }
@@ -481,7 +481,7 @@ bool lqdetect_sop_get(char *client_ip, char *key, uint32_t elem_count,
         if (count == 0) {
             snprintf(bufptr, 4, "all");
         } else {
-            snprintf(bufptr, 16, "%d", count);
+            snprintf(bufptr, 16, "%u", count);
         }
         argument.overhead = elem_count;
         argument.count = count;
@@ -504,7 +504,7 @@ bool lqdetect_mop_get(char *client_ip, char *key, uint32_t elem_count,
         if (coll_numkeys == 0) {
             snprintf(bufptr, 4, "all");
         } else {
-            snprintf(bufptr, 16, "%d", coll_numkeys);
+            snprintf(bufptr, 16, "%u", coll_numkeys);
         }
         argument.overhead = elem_count;
         argument.count = coll_numkeys;
@@ -527,7 +527,7 @@ bool lqdetect_mop_delete(char *client_ip, char *key, uint32_t del_count,
         if (coll_numkeys == 0) {
             snprintf(bufptr, 4, "all");
         } else {
-            snprintf(bufptr, 16, "%d", coll_numkeys);
+            snprintf(bufptr, 16, "%u", coll_numkeys);
         }
         argument.overhead = del_count;
         argument.count = coll_numkeys;
@@ -547,7 +547,7 @@ bool lqdetect_bop_gbp(char *client_ip, char *key, uint32_t elem_count,
         struct lq_detect_argument argument;
         char *bufptr = argument.range;
 
-        snprintf(bufptr, 36, "%d..%d", from_posi, to_posi);
+        snprintf(bufptr, 36, "%u..%u", from_posi, to_posi);
         argument.overhead = elem_count;
         argument.asc_or_desc = order;
 
