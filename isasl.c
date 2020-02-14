@@ -206,7 +206,7 @@ static void* check_isasl_db_thread(void* arg)
 {
     uint32_t sleep_time = *(int*)arg;
     if (settings.verbose > 1) {
-        fprintf(stderr, "isasl checking DB every %ds\n", sleep_time);
+        fprintf(stderr, "isasl checking DB every %us\n", sleep_time);
     }
 
     run_sasl_db_thread = true;
