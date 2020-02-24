@@ -41,7 +41,7 @@ mget <lenkeys> <numkeys>\r\n
 delete 명령이 있으며 syntax는 다음과 같다.
 
 ```
-delete <key> [<time>] [noreply]\r\n
+delete <key> [noreply]\r\n
 ```
 
 **Increment/Decrement 명령**
