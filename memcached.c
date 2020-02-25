@@ -3192,11 +3192,11 @@ static void process_mdelete_complete(conn *c)
                     ret = ENGINE_ENOMEM;
                     break; /* out of memory */
                 }
-                STATS_MISS(c, delete, key, nkey);
                 /* mdelete responds to requests whether the key exists or not.
                 * Thus, ENGINE_KEY_ENOENT state is not error.
                 */
                 ret = ENGINE_SUCCESS;
+                STATS_MISS(c, delete, key, nkey);
             } else if (ret == ENGINE_EWOULDBLOCK) {
                 c->ewouldblock = true;
                 ret = ENGINE_SUCCESS;
@@ -3210,6 +3210,14 @@ static void process_mdelete_complete(conn *c)
             }
         }
     } while(0);
+
+    if (settings.verbose > 1) {
+        mc_logger->log(EXTENSION_LOG_DEBUG, c, ">%d END\n", c->sfd);
+    }
+
+    if (ret == ENGINE_SUCCESS && add_iov(c, "END\r\n", 5) != 0) {
+        ret = ENGINE_ENOMEM;
+    }
 
     switch(ret) {
       case ENGINE_SUCCESS:

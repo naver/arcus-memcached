@@ -59,6 +59,7 @@ sub kv_mdelete_hits {
     for (my $kcnt = 0; $kcnt < $key_cnt; $kcnt += 1) {
         $rst .= "key_$kcnt DELETED\n";
     }
+    $rst .= "END\n";
 
     my $cmd = "mdelete $key_len $key_cnt";
     mem_cmd_is($sock, $cmd, $key_str, $rst);
@@ -76,6 +77,7 @@ sub kv_mdelete_not_found {
         $rst .= "not_found_$kcnt NOT_FOUND\n";
     }
 
+    $rst .= "END\n";
     my $key_len = length($val);
     my $cmd = "mdelete $key_len $key_cnt";
     mem_cmd_is($sock, $cmd, $val, $rst);
