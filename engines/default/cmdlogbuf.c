@@ -38,7 +38,6 @@
 /* log file structure */
 typedef struct _log_file {
     char      path[CMDLOG_MAX_FILEPATH_LENGTH+1];
-    int       prev_fd;
     int       fd;
     int       next_fd;
     size_t    size;
@@ -502,6 +501,7 @@ void log_get_fsync_lsn(LogSN *lsn)
 void cmdlog_complete_dual_write(bool success)
 {
     log_BUFFER *logbuff = &log_gl.log_buffer;
+    int prev_fd = -1;
 
     pthread_mutex_lock(&log_gl.log_flush_lock);
     do {
@@ -526,9 +526,8 @@ void cmdlog_complete_dual_write(bool success)
             log_gl.nxt_write_lsn.roffset = 0;
             pthread_mutex_unlock(&log_gl.log_write_lock);
 
-            assert(log_gl.log_file.prev_fd == -1);
             pthread_mutex_lock(&log_gl.log_fsync_lock);
-            log_gl.log_file.prev_fd = log_gl.log_file.fd;
+            prev_fd                 = log_gl.log_file.fd;
             log_gl.log_file.fd      = log_gl.log_file.next_fd;
             log_gl.log_file.next_fd = -1;
             pthread_mutex_unlock(&log_gl.log_fsync_lock);
@@ -546,15 +545,18 @@ void cmdlog_complete_dual_write(bool success)
             }
             pthread_mutex_unlock(&log_gl.log_write_lock);
 
-            assert(log_gl.log_file.prev_fd == -1);
             pthread_mutex_lock(&log_gl.log_fsync_lock);
-            log_gl.log_file.prev_fd = log_gl.log_file.next_fd;
+            prev_fd                 = log_gl.log_file.next_fd;
             log_gl.log_file.next_fd = -1;
             pthread_mutex_unlock(&log_gl.log_fsync_lock);
             log_gl.log_file.next_size = 0;
         }
     } while(0);
     pthread_mutex_unlock(&log_gl.log_flush_lock);
+
+    if (prev_fd != -1) {
+        (void)disk_close(prev_fd);
+    }
 }
 
 int cmdlog_file_open(char *path)
@@ -598,10 +600,6 @@ void cmdlog_file_close(bool shutdown)
         (void)disk_close(logfile->next_fd);
         logfile->next_fd = -1;
         pthread_mutex_unlock(&log_gl.log_fsync_lock);
-    }
-    if (logfile->prev_fd != -1) {
-        (void)disk_close(logfile->prev_fd);
-        logfile->prev_fd = -1;
     }
     if (shutdown && logfile->fd != -1) {
         pthread_mutex_lock(&log_gl.log_fsync_lock);
@@ -743,7 +741,6 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
     /* log file init */
     log_FILE *logfile = &log_gl.log_file;
     logfile->path[0]   = '\0';
-    logfile->prev_fd   = -1;
     logfile->fd        = -1;
     logfile->next_fd   = -1;
     logfile->size      = 0;
