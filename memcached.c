@@ -8327,7 +8327,7 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens)
     const char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
 
     if (ntokens < 2) {
-        out_string(c, "CLIENT_ERROR bad command line");
+        out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
 
