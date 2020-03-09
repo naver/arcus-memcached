@@ -1282,11 +1282,13 @@ static void sm_check_and_scrub_stale(bool *retry)
        /* remove stale items after zk_timeout have passed
         * since a new node is added to the cluster
         */
-        if (arcus_memcached_scrub_stale() != 0) {
+        if (arcus_memcached_scrub_stale() == 0) {
+            sm_info.node_added_time = 0;
+        } else {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                                   "Failed to scrub stale data.\n");
+            *retry = true; /* Do retry */
         }
-        sm_info.node_added_time = 0;
     } else {
         *retry = true; /* Do retry */
     }
