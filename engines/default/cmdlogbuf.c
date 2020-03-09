@@ -40,6 +40,10 @@ typedef struct _log_file {
     char      path[CMDLOG_MAX_FILEPATH_LENGTH+1];
     int       fd;
     int       next_fd;
+    bool      fd_fsync_ongoing;
+    bool      next_fd_fsync_ongoing;
+    bool      fd_close_request;
+    bool      next_fd_close_request;
     size_t    size;
     size_t    next_size;
 } log_FILE;
@@ -87,7 +91,6 @@ struct log_global {
     LogSN           nxt_fsync_lsn;
     pthread_mutex_t log_write_lock;
     pthread_mutex_t log_flush_lock;
-    pthread_mutex_t log_fsync_lock;
     pthread_mutex_t flush_lsn_lock;
     pthread_mutex_t fsync_lsn_lock;
     volatile bool   initialized;
@@ -427,25 +430,64 @@ static void *log_flush_thread_main(void *arg)
 void log_file_sync(void)
 {
     LogSN now_flush_lsn;
+    int  fd      = -1;
+    int  next_fd = -1;
 
+    pthread_mutex_lock(&log_gl.log_flush_lock);
     /* get current nxt_flush_lsn */
     log_get_flush_lsn(&now_flush_lsn);
 
-    /* fsync the log files */
-    pthread_mutex_lock(&log_gl.log_fsync_lock);
-    if (1) {
-        do_log_file_sync(log_gl.log_file.fd, false); /* do not close */
-        if (log_gl.log_file.next_fd != -1) {
-            /* fsync and close the prev log file */
-            do_log_file_sync(log_gl.log_file.next_fd, false); /* do close */
-        }
-
-        /* update nxt_fsync_lsn */
-        pthread_mutex_lock(&log_gl.fsync_lsn_lock);
-        log_gl.nxt_fsync_lsn = now_flush_lsn;
-        pthread_mutex_unlock(&log_gl.fsync_lsn_lock);
+    fd      = log_gl.log_file.fd;
+    next_fd = log_gl.log_file.next_fd;
+    log_gl.log_file.fd_fsync_ongoing = true;
+    if (next_fd != -1) {
+        log_gl.log_file.next_fd_fsync_ongoing = true;
     }
-    pthread_mutex_unlock(&log_gl.log_fsync_lock);
+    pthread_mutex_unlock(&log_gl.log_flush_lock);
+
+    /* fsync the log files */
+    do_log_file_sync(fd, false); /* do not close */
+    if (next_fd != -1) {
+        /* fsync and close the prev log file */
+        do_log_file_sync(next_fd, false); /* do close */
+    }
+
+    /* update nxt_fsync_lsn */
+    pthread_mutex_lock(&log_gl.fsync_lsn_lock);
+    log_gl.nxt_fsync_lsn = now_flush_lsn;
+    pthread_mutex_unlock(&log_gl.fsync_lsn_lock);
+
+    pthread_mutex_lock(&log_gl.log_flush_lock);
+    if (fd == log_gl.log_file.fd) {
+        if (log_gl.log_file.fd_close_request) {
+            (void)disk_close(log_gl.log_file.fd);
+            log_gl.log_file.fd               = -1;
+            log_gl.log_file.fd_close_request = false;
+        }
+        log_gl.log_file.fd_fsync_ongoing = false;
+    } else {
+        (void)disk_close(fd);
+    }
+    if (next_fd != -1) {
+        if (next_fd == log_gl.log_file.next_fd) {
+            if (log_gl.log_file.next_fd_close_request) {
+                (void)disk_close(log_gl.log_file.next_fd);
+                log_gl.log_file.next_fd               = -1;
+                log_gl.log_file.next_fd_close_request = false;
+            }
+            log_gl.log_file.next_fd_fsync_ongoing = false;
+        } else if (next_fd == log_gl.log_file.fd) {
+            if (log_gl.log_file.fd_close_request) {
+                (void)disk_close(log_gl.log_file.fd);
+                log_gl.log_file.fd               = -1;
+                log_gl.log_file.fd_close_request = false;
+            }
+            log_gl.log_file.fd_fsync_ongoing = false;
+        } else {
+            (void)disk_close(next_fd);
+        }
+    }
+    pthread_mutex_unlock(&log_gl.log_flush_lock);
 }
 
 void log_buffer_flush(LogSN *upto_lsn)
@@ -501,7 +543,8 @@ void log_get_fsync_lsn(LogSN *lsn)
 void cmdlog_complete_dual_write(bool success)
 {
     log_BUFFER *logbuff = &log_gl.log_buffer;
-    int prev_fd = -1;
+    int  prev_fd               = -1;
+    bool prev_fd_fsync_ongoing = false;
 
     pthread_mutex_lock(&log_gl.log_flush_lock);
     do {
@@ -526,11 +569,14 @@ void cmdlog_complete_dual_write(bool success)
             log_gl.nxt_write_lsn.roffset = 0;
             pthread_mutex_unlock(&log_gl.log_write_lock);
 
-            pthread_mutex_lock(&log_gl.log_fsync_lock);
             prev_fd                 = log_gl.log_file.fd;
+            prev_fd_fsync_ongoing   = log_gl.log_file.fd_fsync_ongoing;
             log_gl.log_file.fd      = log_gl.log_file.next_fd;
-            log_gl.log_file.next_fd = -1;
-            pthread_mutex_unlock(&log_gl.log_fsync_lock);
+            log_gl.log_file.fd_fsync_ongoing = log_gl.log_file.next_fd_fsync_ongoing;
+            log_gl.log_file.fd_close_request = log_gl.log_file.next_fd_close_request;
+            log_gl.log_file.next_fd               = -1;
+            log_gl.log_file.next_fd_fsync_ongoing = false;
+            log_gl.log_file.next_fd_close_request = false;
             log_gl.log_file.size = log_gl.log_file.next_size;
             log_gl.log_file.next_size = 0;
         } else {
@@ -545,16 +591,17 @@ void cmdlog_complete_dual_write(bool success)
             }
             pthread_mutex_unlock(&log_gl.log_write_lock);
 
-            pthread_mutex_lock(&log_gl.log_fsync_lock);
             prev_fd                 = log_gl.log_file.next_fd;
-            log_gl.log_file.next_fd = -1;
-            pthread_mutex_unlock(&log_gl.log_fsync_lock);
+            prev_fd_fsync_ongoing   = log_gl.log_file.next_fd_fsync_ongoing;
+            log_gl.log_file.next_fd               = -1;
+            log_gl.log_file.next_fd_fsync_ongoing = false;
+            log_gl.log_file.next_fd_close_request = false;
             log_gl.log_file.next_size = 0;
         }
     } while(0);
     pthread_mutex_unlock(&log_gl.log_flush_lock);
 
-    if (prev_fd != -1) {
+    if (prev_fd != -1 && !prev_fd_fsync_ongoing) {
         (void)disk_close(prev_fd);
     }
 }
@@ -576,14 +623,16 @@ int cmdlog_file_open(char *path)
             break;
         }
         snprintf(logfile->path, CMDLOG_MAX_FILEPATH_LENGTH, "%s", path);
-        pthread_mutex_lock(&log_gl.log_fsync_lock);
         if (logfile->fd == -1) {
             logfile->fd = fd;
+            logfile->fd_fsync_ongoing = false;
+            logfile->fd_close_request = false;
         } else {
             /* fd != -1 means that a new cmdlog file is created by checkpoint */
             logfile->next_fd = fd;
+            logfile->next_fd_fsync_ongoing = false;
+            logfile->next_fd_close_request = false;
         }
-        pthread_mutex_unlock(&log_gl.log_fsync_lock);
     } while(0);
     pthread_mutex_unlock(&log_gl.log_flush_lock);
 
@@ -596,17 +645,21 @@ void cmdlog_file_close(bool shutdown)
 
     pthread_mutex_lock(&log_gl.log_flush_lock);
     if (logfile->next_fd != -1) {
-        pthread_mutex_lock(&log_gl.log_fsync_lock);
-        (void)disk_close(logfile->next_fd);
-        logfile->next_fd = -1;
-        pthread_mutex_unlock(&log_gl.log_fsync_lock);
+        if (log_gl.log_file.next_fd_fsync_ongoing) {
+            log_gl.log_file.next_fd_close_request = true;
+        } else {
+            (void)disk_close(logfile->next_fd);
+            logfile->next_fd = -1;
+        }
     }
     if (shutdown && logfile->fd != -1) {
-        pthread_mutex_lock(&log_gl.log_fsync_lock);
         (void)disk_fsync(logfile->fd);
-        (void)disk_close(logfile->fd);
-        logfile->fd = -1;
-        pthread_mutex_unlock(&log_gl.log_fsync_lock);
+        if (log_gl.log_file.fd_fsync_ongoing) {
+            log_gl.log_file.fd_close_request = true;
+        } else {
+            (void)disk_close(logfile->fd);
+            logfile->fd = -1;
+        }
     }
     pthread_mutex_unlock(&log_gl.log_flush_lock);
 }
@@ -734,7 +787,6 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
 
     pthread_mutex_init(&log_gl.log_write_lock, NULL);
     pthread_mutex_init(&log_gl.log_flush_lock, NULL);
-    pthread_mutex_init(&log_gl.log_fsync_lock, NULL);
     pthread_mutex_init(&log_gl.flush_lsn_lock, NULL);
     pthread_mutex_init(&log_gl.fsync_lsn_lock, NULL);
 
