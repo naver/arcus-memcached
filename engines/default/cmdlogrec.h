@@ -318,6 +318,7 @@ typedef struct _Btree_elem_lgcal_delete_data {
     uint8_t  fwhere;     /* filter offset */
     uint8_t  bitwop;     /* bitwise operation */
     uint8_t  compop;     /* compare operation */
+    uint32_t offset;     /* element offset */
     uint32_t reqcount;   /* request count */
     char     data[1];
 } BtreeElemLgcDelData;
@@ -379,8 +380,8 @@ int lrec_construct_btree_elem_insert(LogRec *logrec, hash_item *it, btree_elem_i
                                      bool create, lrec_attr_info *attr);
 int lrec_construct_btree_elem_delete(LogRec *logrec, hash_item *it, btree_elem_item *elem);
 #ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
-int lrec_construct_btree_elem_lgcal_delete(LogRec *logrec, hash_item *it, uint32_t reqcount,
-                                           const bkey_range *bkrange, const eflag_filter *efilter);
+int lrec_construct_btree_elem_delete_lgcal(LogRec *logrec, hash_item *it, const bkey_range *bkrange,
+                                           const eflag_filter *efilter, uint32_t offset, uint32_t reqcount);
 #endif
 
 /* Function to write the given log record to log buffer */

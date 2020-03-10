@@ -1102,8 +1102,8 @@ static void lrec_bt_elem_delete_print(LogRec *logrec)
 }
 
 #ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
-/* BTree Element Logical Delete Log Record */
-static void lrec_bt_elem_lgcal_delete_write(LogRec *logrec, char *bufptr)
+/* BTree Element Delete Logical Log Record */
+static void lrec_bt_elem_delete_lgcal_write(LogRec *logrec, char *bufptr)
 {
     BtreeElemLgcDelLog *log = (BtreeElemLgcDelLog*)logrec;
     int offset = sizeof(LogHdr) + offsetof(BtreeElemLgcDelData, data);
@@ -1132,7 +1132,7 @@ static void lrec_bt_elem_lgcal_delete_write(LogRec *logrec, char *bufptr)
     }
 }
 
-static ENGINE_ERROR_CODE lrec_bt_elem_lgcal_delete_redo(LogRec *logrec)
+static ENGINE_ERROR_CODE lrec_bt_elem_delete_lgcal_redo(LogRec *logrec)
 {
     ENGINE_ERROR_CODE ret;
     BtreeElemLgcDelLog  *log  = (BtreeElemLgcDelLog*)logrec;
@@ -1170,7 +1170,8 @@ static ENGINE_ERROR_CODE lrec_bt_elem_lgcal_delete_redo(LogRec *logrec)
 
     hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
-        ret = item_apply_btree_elem_lgcal_delete(it, &bkrange, (body->filtering ? &efilter : NULL), body->reqcount);
+        ret = item_apply_btree_elem_delete_lgcal(it, &bkrange, (body->filtering ? &efilter : NULL),
+                                                 body->offset, body->reqcount);
         if (ret == ENGINE_SUCCESS) {
             item_release(it);
         } else {
@@ -1184,7 +1185,7 @@ static ENGINE_ERROR_CODE lrec_bt_elem_lgcal_delete_redo(LogRec *logrec)
     return ret;
 }
 
-static void lrec_bt_elem_lgcal_delete_print(LogRec *logrec)
+static void lrec_bt_elem_delete_lgcal_print(LogRec *logrec)
 {
     BtreeElemLgcDelLog *log = (BtreeElemLgcDelLog*)logrec;
     char *keyptr = log->body.data;
@@ -1199,8 +1200,8 @@ static void lrec_bt_elem_lgcal_delete_print(LogRec *logrec)
     lrec_header_print(&log->header);
     fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s",
             log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr);
-    fprintf(stderr, "[BKRNG]  from_bkey%s | to_bkey%s | reqcount=%u\r\n",
-            fbkeystr, tbkeystr, log->body.reqcount);
+    fprintf(stderr, "[BKRNG]  from_bkey%s | to_bkey%s | offset=%u | reqcount=%u\r\n",
+            fbkeystr, tbkeystr, log->body.offset, log->body.reqcount);
     if (log->body.filtering) {
         bool single_bkey = (BTREE_REAL_NBKEY(log->body.to_nbkey) == BKEY_NULL ? true : false);
         char *bitwvalptr = tbkeyptr + (single_bkey ? 0 : BTREE_REAL_NBKEY(log->body.to_nbkey));
@@ -1331,7 +1332,7 @@ LOGREC_FUNC logrec_func[] = {
     { lrec_bt_elem_insert_write,       lrec_bt_elem_insert_redo,       lrec_bt_elem_insert_print },
     { lrec_bt_elem_delete_write,       lrec_bt_elem_delete_redo,       lrec_bt_elem_delete_print },
 #ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
-    { lrec_bt_elem_lgcal_delete_write, lrec_bt_elem_lgcal_delete_redo, lrec_bt_elem_lgcal_delete_print },
+    { lrec_bt_elem_delete_lgcal_write, lrec_bt_elem_delete_lgcal_redo, lrec_bt_elem_delete_lgcal_print },
 #endif
     { lrec_snapshot_elem_link_write,   lrec_snapshot_elem_link_redo,   lrec_snapshot_elem_link_print },
     { lrec_snapshot_done_write,        NULL,                           lrec_snapshot_done_print }
@@ -1699,13 +1700,14 @@ int lrec_construct_btree_elem_delete(LogRec *logrec, hash_item *it, btree_elem_i
 }
 
 #ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
-int lrec_construct_btree_elem_lgcal_delete(LogRec *logrec, hash_item *it, uint32_t reqcount,
-                                           const bkey_range *bkrange, const eflag_filter *efilter)
+int lrec_construct_btree_elem_delete_lgcal(LogRec *logrec, hash_item *it, const bkey_range *bkrange,
+                                           const eflag_filter *efilter, uint32_t offset, uint32_t reqcount)
 {
     BtreeElemLgcDelLog *log = (BtreeElemLgcDelLog*)logrec;
     log->keyptr = (char*)item_get_key(it);
 
     log->body.keylen = it->nkey;
+    log->body.offset = offset;
     log->body.reqcount = reqcount;
     log->body.from_nbkey = bkrange->from_nbkey;
     log->body.to_nbkey = bkrange->to_nbkey;

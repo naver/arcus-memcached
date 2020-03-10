@@ -3996,10 +3996,18 @@ static int do_btree_elem_delete_fast(btree_meta_info *info,
 }
 #endif
 
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+static uint32_t do_btree_elem_delete(btree_meta_info *info,
+                                     const int bkrtype, const bkey_range *bkrange,
+                                     const eflag_filter *efilter, const uint32_t offset,
+                                     const uint32_t count, uint32_t *access_count,
+                                     enum elem_delete_cause cause)
+#else
 static uint32_t do_btree_elem_delete(btree_meta_info *info,
                                      const int bkrtype, const bkey_range *bkrange,
                                      const eflag_filter *efilter, const uint32_t count,
                                      uint32_t *access_count, enum elem_delete_cause cause)
+#endif
 {
     btree_elem_posi  path[BTREE_MAX_DEPTH];
     btree_elem_item *elem;
@@ -4018,17 +4026,30 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
         if (bkrtype == BKEY_RANGE_TYPE_SIN) {
             assert(path[0].bkeq == true);
             tot_access++;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+            if (offset == 0) {
+                if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
+                    /* cause == ELEM_DELETE_NORMAL */
+                    do_btree_elem_unlink(info, path, cause);
+                    tot_found = 1;
+                }
+            }
+#else
             if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
                 /* cause == ELEM_DELETE_NORMAL */
                 do_btree_elem_unlink(info, path, cause);
                 tot_found = 1;
             }
+#endif
         } else {
             btree_elem_posi upth[BTREE_MAX_DEPTH]; /* upper node path */
             btree_elem_posi c_posi = path[0];
             btree_elem_posi s_posi = c_posi;
             size_t stotal = 0;
             int cur_found = 0;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+            int skip_cnt = 0;
+#endif
             int node_cnt = 1;
             bool forward = (bkrtype == BKEY_RANGE_TYPE_ASC ? true : false);
             int i;
@@ -4044,6 +4065,25 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
             do {
                 tot_access++;
                 if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+                    if (skip_cnt < offset) {
+                        skip_cnt++;
+                    } else {
+                        stotal += slabs_space_size(do_btree_elem_ntotal(elem));
+
+                        CLOG_BTREE_ELEM_DELETE(info, elem, cause);
+                        if (elem->refcount > 0) {
+                            elem->status = BTREE_ITEM_STATUS_UNLINK;
+                        } else {
+                            elem->status = BTREE_ITEM_STATUS_FREE;
+                            do_btree_elem_free(elem);
+                        }
+                        c_posi.node->item[c_posi.indx] = NULL;
+
+                        cur_found++;
+                        if (count > 0 && (tot_found+cur_found) >= count) break;
+                    }
+#else
                     stotal += slabs_space_size(do_btree_elem_ntotal(elem));
 
                     CLOG_BTREE_ELEM_DELETE(info, elem, cause);
@@ -4057,6 +4097,7 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
 
                     cur_found++;
                     if (count > 0 && (tot_found+cur_found) >= count) break;
+#endif
                 }
 
                 if (c_posi.bkeq == true) {
@@ -4266,8 +4307,13 @@ static void do_btree_overflow_trim(btree_meta_info *info,
             BKEY_COPY(edge_elem->data, edge_elem->nbkey, bkrange_space.to_bkey);
         }
         bkrtype = do_btree_bkey_range_type(&bkrange_space);
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+        del_count = do_btree_elem_delete(info, bkrtype, &bkrange_space, NULL, 0,
+                                         0, NULL, ELEM_DELETE_TRIM);
+#else
         del_count = do_btree_elem_delete(info, bkrtype, &bkrange_space, NULL, 0,
                                          NULL, ELEM_DELETE_TRIM);
+#endif
         assert(del_count > 0);
         assert(info->ccnt > 0);
         if (info->ovflact == OVFL_SMALLEST_TRIM || info->ovflact == OVFL_LARGEST_TRIM)
@@ -5756,8 +5802,13 @@ static inline void do_coll_elem_delete(coll_meta_info *info, int type, uint32_t 
 {
     switch (type) {
       case ITEM_TYPE_BTREE:
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+           (void)do_btree_elem_delete((void *)info, BKEY_RANGE_TYPE_ASC, NULL,
+                                      NULL, 0, count, NULL, ELEM_DELETE_COLL);
+#else
            (void)do_btree_elem_delete((void *)info, BKEY_RANGE_TYPE_ASC, NULL,
                                       NULL, count, NULL, ELEM_DELETE_COLL);
+#endif
            break;
       case ITEM_TYPE_SET:
            (void)do_set_elem_delete((void *)info, count, ELEM_DELETE_COLL);
@@ -7323,11 +7374,16 @@ ENGINE_ERROR_CODE btree_elem_delete(const char *key, const uint32_t nkey,
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+            *del_count = do_btree_elem_delete(info, bkrtype, bkrange, efilter, 0, req_count,
+                                              access_count, ELEM_DELETE_NORMAL);
+#else
             *del_count = do_btree_elem_delete(info, bkrtype, bkrange, efilter, req_count,
                                               access_count, ELEM_DELETE_NORMAL);
+#endif
             if (*del_count > 0) {
 #ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
-                CLOG_LGCAL_BTREE_ELEM_DELETE(info, req_count, bkrange, efilter);
+                CLOG_BTREE_ELEM_DELETE_LGCAL(info, bkrange, efilter, 0, req_count);
 #endif
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(info->root == NULL);
@@ -7472,7 +7528,7 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
             if (ret == ENGINE_SUCCESS) {
                 if (delete) {
 #ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
-                    CLOG_LGCAL_BTREE_ELEM_DELETE(info, req_count, bkrange, efilter);
+                    CLOG_BTREE_ELEM_DELETE_LGCAL(info, bkrange, efilter, offset, req_count);
 #endif
                     if (info->ccnt == 0 && drop_if_empty) {
                         assert(info->root == NULL);
@@ -10769,8 +10825,13 @@ item_apply_btree_elem_delete(hash_item *it, const char *bkey, const uint32_t nbk
             ret = ENGINE_EBADBKEY; break;
         }
 
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+        uint32_t del_count = do_btree_elem_delete(info, BKEY_RANGE_TYPE_SIN, &bkrange,
+                                                  NULL, 0, 0, NULL, ELEM_DELETE_NORMAL);
+#else
         uint32_t del_count = do_btree_elem_delete(info, BKEY_RANGE_TYPE_SIN, &bkrange,
                                                   NULL, 0, NULL, ELEM_DELETE_NORMAL);
+#endif
         if (del_count == 0) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_btree_elem_delete failed."
                         " no element deleted. key=%.*s bkey=%.*s", it->nkey, key, nbkey, bkey);
@@ -10789,8 +10850,8 @@ item_apply_btree_elem_delete(hash_item *it, const char *bkey, const uint32_t nbk
 
 #ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
 ENGINE_ERROR_CODE
-item_apply_btree_elem_lgcal_delete(hash_item *it, bkey_range *bkrange,
-                                   eflag_filter *efilter, uint32_t reqcount)
+item_apply_btree_elem_delete_lgcal(hash_item *it, bkey_range *bkrange,
+                                   eflag_filter *efilter, uint32_t offset, uint32_t reqcount)
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     const char *key = item_get_key(it);
@@ -10823,7 +10884,7 @@ item_apply_btree_elem_lgcal_delete(hash_item *it, bkey_range *bkrange,
             ret = ENGINE_EBADBKEY; break;
         }
 
-        uint32_t del_count = do_btree_elem_delete(info, bkrtype, bkrange, efilter,
+        uint32_t del_count = do_btree_elem_delete(info, bkrtype, bkrange, efilter, offset,
                                                   reqcount, NULL, ELEM_DELETE_NORMAL);
         if (del_count == 0) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_btree_elem_delete failed."
