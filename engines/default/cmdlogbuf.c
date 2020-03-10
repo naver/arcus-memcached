@@ -430,8 +430,10 @@ static void *log_flush_thread_main(void *arg)
 void log_file_sync(void)
 {
     LogSN now_flush_lsn;
-    int  fd      = -1;
-    int  next_fd = -1;
+    int  fd            = -1;
+    bool fd_close      = false;
+    int  next_fd       = -1;
+    int  next_fd_close = false;
 
     pthread_mutex_lock(&log_gl.log_flush_lock);
     /* get current nxt_flush_lsn */
@@ -448,8 +450,7 @@ void log_file_sync(void)
     /* fsync the log files */
     do_log_file_sync(fd, false); /* do not close */
     if (next_fd != -1) {
-        /* fsync and close the prev log file */
-        do_log_file_sync(next_fd, false); /* do close */
+        do_log_file_sync(next_fd, false); /* do not close */
     }
 
     /* update nxt_fsync_lsn */
@@ -460,34 +461,39 @@ void log_file_sync(void)
     pthread_mutex_lock(&log_gl.log_flush_lock);
     if (fd == log_gl.log_file.fd) {
         if (log_gl.log_file.fd_close_request) {
-            (void)disk_close(log_gl.log_file.fd);
             log_gl.log_file.fd               = -1;
             log_gl.log_file.fd_close_request = false;
+            fd_close = true;
         }
         log_gl.log_file.fd_fsync_ongoing = false;
     } else {
-        (void)disk_close(fd);
+        /* fd is not used anymore */
+        fd_close = true;
     }
     if (next_fd != -1) {
         if (next_fd == log_gl.log_file.next_fd) {
             if (log_gl.log_file.next_fd_close_request) {
-                (void)disk_close(log_gl.log_file.next_fd);
                 log_gl.log_file.next_fd               = -1;
                 log_gl.log_file.next_fd_close_request = false;
+                next_fd_close = true;
             }
             log_gl.log_file.next_fd_fsync_ongoing = false;
         } else if (next_fd == log_gl.log_file.fd) {
             if (log_gl.log_file.fd_close_request) {
-                (void)disk_close(log_gl.log_file.fd);
                 log_gl.log_file.fd               = -1;
                 log_gl.log_file.fd_close_request = false;
+                next_fd_close = true;
             }
             log_gl.log_file.fd_fsync_ongoing = false;
         } else {
-            (void)disk_close(next_fd);
+            /* next_fd is not used anymore */
+            next_fd_close = true;
         }
     }
     pthread_mutex_unlock(&log_gl.log_flush_lock);
+
+    if (fd_close)      (void)disk_close(fd);
+    if (next_fd_close) (void)disk_close(next_fd);
 }
 
 void log_buffer_flush(LogSN *upto_lsn)
@@ -642,26 +648,35 @@ int cmdlog_file_open(char *path)
 void cmdlog_file_close(bool shutdown)
 {
     log_FILE *logfile = &log_gl.log_file;
+    int fd      = -1;
+    int next_fd = -1;
 
     pthread_mutex_lock(&log_gl.log_flush_lock);
     if (logfile->next_fd != -1) {
         if (log_gl.log_file.next_fd_fsync_ongoing) {
             log_gl.log_file.next_fd_close_request = true;
         } else {
-            (void)disk_close(logfile->next_fd);
+            fd = logfile->next_fd;
             logfile->next_fd = -1;
         }
     }
     if (shutdown && logfile->fd != -1) {
-        (void)disk_fsync(logfile->fd);
         if (log_gl.log_file.fd_fsync_ongoing) {
             log_gl.log_file.fd_close_request = true;
         } else {
-            (void)disk_close(logfile->fd);
+            next_fd = logfile->fd;
             logfile->fd = -1;
         }
     }
     pthread_mutex_unlock(&log_gl.log_flush_lock);
+
+    if (fd != -1) {
+        (void)disk_fsync(fd);
+        (void)disk_close(fd);
+    }
+    if (next_fd != -1) {
+        (void)disk_close(next_fd);
+    }
 }
 
 size_t cmdlog_file_getsize(void)
