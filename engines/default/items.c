@@ -124,6 +124,11 @@ extern int genhash_string_hash(const void* p, size_t nkey);
 /* btree position debugging */
 static bool btree_position_debug = false;
 
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+/* generate logical btree delete log */
+static bool gen_logical_btree_delete_log = false;
+#endif
+
 /* bkey min & max value */
 static uint64_t      bkey_uint64_min;
 static uint64_t      bkey_uint64_max;
@@ -3771,7 +3776,11 @@ static void do_btree_elem_unlink(btree_meta_info *info, btree_elem_posi *path,
         do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, stotal);
     }
 
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    CLOG_BTREE_ELEM_DELETE(gen_logical_btree_delete_log, info, elem, cause);
+#else
     CLOG_BTREE_ELEM_DELETE(info, elem, cause);
+#endif
 
     if (elem->refcount > 0) {
         elem->status = BTREE_ITEM_STATUS_UNLINK;
@@ -4071,7 +4080,7 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
                     } else {
                         stotal += slabs_space_size(do_btree_elem_ntotal(elem));
 
-                        CLOG_BTREE_ELEM_DELETE(info, elem, cause);
+                        CLOG_BTREE_ELEM_DELETE(gen_logical_btree_delete_log, info, elem, cause);
                         if (elem->refcount > 0) {
                             elem->status = BTREE_ITEM_STATUS_UNLINK;
                         } else {
@@ -4538,7 +4547,12 @@ static ENGINE_ERROR_CODE do_btree_elem_get(btree_meta_info *info,
                             stotal += slabs_space_size(do_btree_elem_ntotal(elem));
                             elem->status = BTREE_ITEM_STATUS_UNLINK;
                             c_posi.node->item[c_posi.indx] = NULL;
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+                            CLOG_BTREE_ELEM_DELETE(gen_logical_btree_delete_log, info,
+                                                   elem, ELEM_DELETE_NORMAL);
+#else
                             CLOG_BTREE_ELEM_DELETE(info, elem, ELEM_DELETE_NORMAL);
+#endif
                         }
                         cur_found++;
                         if (count > 0 && (tot_found+cur_found) >= count) break;
@@ -7383,7 +7397,8 @@ ENGINE_ERROR_CODE btree_elem_delete(const char *key, const uint32_t nkey,
 #endif
             if (*del_count > 0) {
 #ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
-                CLOG_BTREE_ELEM_DELETE_LGCAL(info, bkrange, efilter, 0, req_count);
+                CLOG_BTREE_ELEM_DELETE_LGCAL(gen_logical_btree_delete_log, info,
+                                             bkrange, efilter, 0, req_count);
 #endif
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(info->root == NULL);
@@ -7528,7 +7543,8 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
             if (ret == ENGINE_SUCCESS) {
                 if (delete) {
 #ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
-                    CLOG_BTREE_ELEM_DELETE_LGCAL(info, bkrange, efilter, offset, req_count);
+                    CLOG_BTREE_ELEM_DELETE_LGCAL(gen_logical_btree_delete_log, info,
+                                                 bkrange, efilter, offset, req_count);
 #endif
                     if (info->ccnt == 0 && drop_if_empty) {
                         assert(info->root == NULL);

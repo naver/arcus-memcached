@@ -101,14 +101,19 @@ void CLOG_GE_ITEM_SETATTR(hash_item *it,
     if (item_clog_enabled) { \
         CLOG_GE_BTREE_ELEM_INSERT(a,b,c); \
     }
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+#define CLOG_BTREE_ELEM_DELETE(gen_logical,a,b,c) \
+    if (item_clog_enabled && !gen_logical) { \
+        CLOG_GE_BTREE_ELEM_DELETE(a,b,c); \
+    }
+#define CLOG_BTREE_ELEM_DELETE_LGCAL(gen_logical,a,b,c,d,e) \
+    if (item_clog_enabled && gen_logical) { \
+        CLOG_GE_BTREE_ELEM_DELETE_LGCAL(a,b,c,d,e); \
+    }
+#else
 #define CLOG_BTREE_ELEM_DELETE(a,b,c) \
     if (item_clog_enabled) { \
         CLOG_GE_BTREE_ELEM_DELETE(a,b,c); \
-    }
-#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
-#define CLOG_BTREE_ELEM_DELETE_LGCAL(a,b,c,d,e) \
-    if (item_clog_enabled) { \
-        CLOG_GE_BTREE_ELEM_DELETE_LGCAL(a,b,c,d,e); \
     }
 #endif
 #define CLOG_ITEM_SETATTR(a,b,c) \

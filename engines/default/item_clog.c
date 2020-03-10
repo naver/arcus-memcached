@@ -35,9 +35,6 @@ static EXTENSION_LOGGER_DESCRIPTOR *logger;
 static struct assoc_scan *scanp=NULL; // checkpoint scan pointer
 
 #define NEED_DUAL_WRITE(it) ((scanp != NULL) && (assoc_scan_in_visited_area(scanp, it)))
-#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
-static bool gen_logical_btree_delete_log = false;
-#endif
 #endif
 
 /*
@@ -268,7 +265,7 @@ void CLOG_GE_BTREE_ELEM_DELETE(btree_meta_info *info,
     {
 #ifdef ENABLE_PERSISTENCE
 #ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
-        if (config->use_persistence && !gen_logical_btree_delete_log) {
+        if (config->use_persistence) {
 #else
         if (config->use_persistence) {
 #endif
@@ -289,7 +286,7 @@ void CLOG_GE_BTREE_ELEM_DELETE_LGCAL(btree_meta_info *info, const bkey_range *bk
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
 #ifdef ENABLE_PERSISTENCE
-        if (config->use_persistence && gen_logical_btree_delete_log) {
+        if (config->use_persistence) {
             BtreeElemLgcDelLog log;
             (void)lrec_construct_btree_elem_delete_lgcal((LogRec*)&log, it, bkrange, efilter, offset, reqcount);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
