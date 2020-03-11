@@ -35,17 +35,19 @@
 
 #define ENABLE_DEBUG 0
 
+/* log file state */
+typedef struct _log_fstate {
+    int       fd;
+    bool      fsync_ongoing;
+    bool      close_request;
+    size_t    size;
+} log_FSTATE;
+
 /* log file structure */
 typedef struct _log_file {
-    char      path[CMDLOG_MAX_FILEPATH_LENGTH+1];
-    int       fd;
-    int       next_fd;
-    bool      fd_fsync_ongoing;
-    bool      next_fd_fsync_ongoing;
-    bool      fd_close_request;
-    bool      next_fd_close_request;
-    size_t    size;
-    size_t    next_size;
+    char       path[CMDLOG_MAX_FILEPATH_LENGTH+1];
+    log_FSTATE curr;
+    log_FSTATE next;
 } log_FILE;
 
 /* flush request structure */
@@ -192,34 +194,34 @@ static void do_log_file_sync(int fd, bool close)
 static void do_log_file_write(char *log_ptr, uint32_t log_size, bool dual_write)
 {
     log_FILE *logfile = &log_gl.log_file;
-    assert(logfile->fd != -1);
+    assert(logfile->curr.fd != -1);
 
     /* The log data is appended */
-    ssize_t nwrite = disk_byte_write(logfile->fd, log_ptr, log_size);
+    ssize_t nwrite = disk_byte_write(logfile->curr.fd, log_ptr, log_size);
     if (nwrite != log_size) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "log file(%d) write - write(%ld!=%ld) error=(%d:%s)\n",
-                    logfile->fd, nwrite, (ssize_t)log_size,
+                    logfile->curr.fd, nwrite, (ssize_t)log_size,
                     errno, strerror(errno));
     }
     /* FIXME::need error handling */
     assert(nwrite == log_size);
-    logfile->size += log_size;
+    logfile->curr.size += log_size;
 
-    if (dual_write && logfile->next_fd != -1) {
+    if (dual_write && logfile->next.fd != -1) {
         /* next_fd is guaranteed concurrency by log_flush_lock */
 
         /* The log data is appended */
-        nwrite = disk_byte_write(logfile->next_fd, log_ptr, log_size);
+        nwrite = disk_byte_write(logfile->next.fd, log_ptr, log_size);
         if (nwrite != log_size) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "log file(%d) write - write(%ld!=%ld) error=(%d:%s)\n",
-                        logfile->next_fd, nwrite, (ssize_t)log_size,
+                        logfile->next.fd, nwrite, (ssize_t)log_size,
                         errno, strerror(errno));
         }
         /* FIXME::need error handling */
         assert(nwrite == log_size);
-        logfile->next_size += log_size;
+        logfile->next.size += log_size;
     }
 }
 
@@ -439,18 +441,15 @@ void log_file_sync(void)
     /* get current nxt_flush_lsn */
     log_get_flush_lsn(&now_flush_lsn);
 
-    fd      = log_gl.log_file.fd;
-    next_fd = log_gl.log_file.next_fd;
-    log_gl.log_file.fd_fsync_ongoing = true;
+    fd      = log_gl.log_file.curr.fd;
+    next_fd = log_gl.log_file.next.fd;
+    log_gl.log_file.curr.fsync_ongoing = true;
     if (next_fd != -1) {
-        log_gl.log_file.next_fd_fsync_ongoing = true;
+        log_gl.log_file.next.fsync_ongoing = true;
     }
     pthread_mutex_unlock(&log_gl.log_flush_lock);
 
-    if (fd == -1 && next_fd == -1) {
-        /* shutdown in progress */
-        return;
-    }
+    assert(fd != -1);
 
     /* fsync the log files */
     do_log_file_sync(fd, false); /* do not close */
@@ -464,32 +463,32 @@ void log_file_sync(void)
     pthread_mutex_unlock(&log_gl.fsync_lsn_lock);
 
     pthread_mutex_lock(&log_gl.log_flush_lock);
-    if (fd == log_gl.log_file.fd) {
-        if (log_gl.log_file.fd_close_request) {
-            log_gl.log_file.fd               = -1;
-            log_gl.log_file.fd_close_request = false;
+    if (fd == log_gl.log_file.curr.fd) {
+        if (log_gl.log_file.curr.close_request) {
+            log_gl.log_file.curr.fd               = -1;
+            log_gl.log_file.curr.close_request = false;
             fd_close = true;
         }
-        log_gl.log_file.fd_fsync_ongoing = false;
+        log_gl.log_file.curr.fsync_ongoing = false;
     } else {
         /* fd is not used anymore */
         fd_close = true;
     }
     if (next_fd != -1) {
-        if (next_fd == log_gl.log_file.next_fd) {
-            if (log_gl.log_file.next_fd_close_request) {
-                log_gl.log_file.next_fd               = -1;
-                log_gl.log_file.next_fd_close_request = false;
+        if (next_fd == log_gl.log_file.next.fd) {
+            if (log_gl.log_file.next.close_request) {
+                log_gl.log_file.next.fd               = -1;
+                log_gl.log_file.next.close_request = false;
                 next_fd_close = true;
             }
-            log_gl.log_file.next_fd_fsync_ongoing = false;
-        } else if (next_fd == log_gl.log_file.fd) {
-            if (log_gl.log_file.fd_close_request) {
-                log_gl.log_file.fd               = -1;
-                log_gl.log_file.fd_close_request = false;
+            log_gl.log_file.next.fsync_ongoing = false;
+        } else if (next_fd == log_gl.log_file.curr.fd) {
+            if (log_gl.log_file.curr.close_request) {
+                log_gl.log_file.curr.fd            = -1;
+                log_gl.log_file.curr.close_request = false;
                 next_fd_close = true;
             }
-            log_gl.log_file.fd_fsync_ongoing = false;
+            log_gl.log_file.curr.fsync_ongoing = false;
         } else {
             /* next_fd is not used anymore */
             next_fd_close = true;
@@ -555,11 +554,11 @@ void cmdlog_complete_dual_write(bool success)
 {
     log_BUFFER *logbuff = &log_gl.log_buffer;
     int  prev_fd               = -1;
-    bool prev_fd_fsync_ongoing = false;
+    bool prev_fsync_ongoing = false;
 
     pthread_mutex_lock(&log_gl.log_flush_lock);
     do {
-        if (log_gl.log_file.next_fd == -1) {
+        if (log_gl.log_file.next.fd == -1) {
             /* next_fd == -1 means the first state without log file.
              * created first log file by checkpoint.
              * do not cleanup file fds.
@@ -580,19 +579,19 @@ void cmdlog_complete_dual_write(bool success)
             log_gl.nxt_write_lsn.roffset = 0;
             pthread_mutex_unlock(&log_gl.log_write_lock);
 
-            prev_fd                 = log_gl.log_file.fd;
-            prev_fd_fsync_ongoing   = log_gl.log_file.fd_fsync_ongoing;
-            log_gl.log_file.fd      = log_gl.log_file.next_fd;
-            log_gl.log_file.fd_fsync_ongoing = log_gl.log_file.next_fd_fsync_ongoing;
-            log_gl.log_file.fd_close_request = log_gl.log_file.next_fd_close_request;
-            log_gl.log_file.next_fd               = -1;
-            log_gl.log_file.next_fd_fsync_ongoing = false;
-            log_gl.log_file.next_fd_close_request = false;
-            log_gl.log_file.size = log_gl.log_file.next_size;
-            log_gl.log_file.next_size = 0;
+            prev_fd                            = log_gl.log_file.curr.fd;
+            prev_fsync_ongoing                 = log_gl.log_file.curr.fsync_ongoing;
+            log_gl.log_file.curr.fd            = log_gl.log_file.next.fd;
+            log_gl.log_file.curr.fsync_ongoing = log_gl.log_file.next.fsync_ongoing;
+            log_gl.log_file.curr.close_request = log_gl.log_file.next.close_request;
+            log_gl.log_file.curr.size          = log_gl.log_file.next.size;
+            log_gl.log_file.next.fd            = -1;
+            log_gl.log_file.next.fsync_ongoing = false;
+            log_gl.log_file.next.close_request = false;
+            log_gl.log_file.next.size          = 0;
         } else {
             pthread_mutex_lock(&log_gl.log_write_lock);
-            /* reset dual_write flag in flush reqeust queue */
+            /* reset dual_write flag in flush request queue */
             int index = logbuff->fbgn;
             while (logbuff->fque[index].nflush > 0) {
                 if (logbuff->fque[index].dual_write) {
@@ -602,17 +601,18 @@ void cmdlog_complete_dual_write(bool success)
             }
             pthread_mutex_unlock(&log_gl.log_write_lock);
 
-            prev_fd                 = log_gl.log_file.next_fd;
-            prev_fd_fsync_ongoing   = log_gl.log_file.next_fd_fsync_ongoing;
-            log_gl.log_file.next_fd               = -1;
-            log_gl.log_file.next_fd_fsync_ongoing = false;
-            log_gl.log_file.next_fd_close_request = false;
-            log_gl.log_file.next_size = 0;
+            prev_fd                            = log_gl.log_file.next.fd;
+            prev_fsync_ongoing                 = log_gl.log_file.next.fsync_ongoing;
+            log_gl.log_file.next.fd            = -1;
+            log_gl.log_file.next.fsync_ongoing = false;
+            log_gl.log_file.next.close_request = false;
+            log_gl.log_file.next.size          = 0;
         }
     } while(0);
     pthread_mutex_unlock(&log_gl.log_flush_lock);
 
-    if (prev_fd != -1 && !prev_fd_fsync_ongoing) {
+    if (prev_fd != -1 && !prev_fsync_ongoing) {
+        /* prev_fd is not used anymore */
         (void)disk_close(prev_fd);
     }
 }
@@ -634,15 +634,17 @@ int cmdlog_file_open(char *path)
             break;
         }
         snprintf(logfile->path, CMDLOG_MAX_FILEPATH_LENGTH, "%s", path);
-        if (logfile->fd == -1) {
-            logfile->fd = fd;
-            logfile->fd_fsync_ongoing = false;
-            logfile->fd_close_request = false;
+        if (logfile->curr.fd == -1) {
+            logfile->curr.fd            = fd;
+            logfile->curr.fsync_ongoing = false;
+            logfile->curr.close_request = false;
+            logfile->curr.size          = 0;
         } else {
             /* fd != -1 means that a new cmdlog file is created by checkpoint */
-            logfile->next_fd = fd;
-            logfile->next_fd_fsync_ongoing = false;
-            logfile->next_fd_close_request = false;
+            logfile->next.fd            = fd;
+            logfile->next.fsync_ongoing = false;
+            logfile->next.close_request = false;
+            logfile->next.size          = 0;
         }
     } while(0);
     pthread_mutex_unlock(&log_gl.log_flush_lock);
@@ -656,21 +658,20 @@ void cmdlog_file_close(bool shutdown)
     int fd      = -1;
     int next_fd = -1;
 
-    pthread_mutex_lock(&log_gl.log_flush_lock);
-    if (logfile->next_fd != -1) {
-        if (log_gl.log_file.next_fd_fsync_ongoing) {
-            log_gl.log_file.next_fd_close_request = true;
+    if (logfile->next.fd != -1) {
+        if (log_gl.log_file.next.fsync_ongoing) {
+            log_gl.log_file.next.close_request = true;
         } else {
-            next_fd = logfile->next_fd;
-            logfile->next_fd = -1;
+            next_fd = logfile->next.fd;
+            logfile->next.fd = -1;
         }
     }
-    if (shutdown && logfile->fd != -1) {
-        if (log_gl.log_file.fd_fsync_ongoing) {
-            log_gl.log_file.fd_close_request = true;
+    if (shutdown && logfile->curr.fd != -1) {
+        if (log_gl.log_file.curr.fsync_ongoing) {
+            log_gl.log_file.curr.close_request = true;
         } else {
-            fd = logfile->fd;
-            logfile->fd = -1;
+            fd = logfile->curr.fd;
+            logfile->curr.fd = -1;
         }
     }
     pthread_mutex_unlock(&log_gl.log_flush_lock);
@@ -692,7 +693,7 @@ size_t cmdlog_file_getsize(void)
     pthread_mutex_lock(&log_gl.log_flush_lock);
     pthread_mutex_lock(&log_gl.log_write_lock);
     if (log_gl.log_buffer.dw_end == -1) {
-        file_size = logfile->size;
+        file_size = logfile->curr.size;
     }
     pthread_mutex_unlock(&log_gl.log_write_lock);
     pthread_mutex_unlock(&log_gl.log_flush_lock);
@@ -703,15 +704,15 @@ size_t cmdlog_file_getsize(void)
 int cmdlog_file_apply(void)
 {
     log_FILE *logfile = &log_gl.log_file;
-    assert(logfile->fd > 0);
+    assert(logfile->curr.fd > 0);
 
     logger->log(EXTENSION_LOG_INFO, NULL,
                 "[RECOVERY - CMDLOG] applying command log file. path=%s\n", logfile->path);
 
     struct stat file_stat;
-    fstat(logfile->fd, &file_stat);
-    logfile->size = file_stat.st_size;
-    if (logfile->size == 0) {
+    fstat(logfile->curr.fd, &file_stat);
+    logfile->curr.size = file_stat.st_size;
+    if (logfile->curr.size == 0) {
         logger->log(EXTENSION_LOG_INFO, NULL,
                     "[RECOVERY - CMDLOG] log file is empty.\n");
         return 0;
@@ -720,18 +721,18 @@ int cmdlog_file_apply(void)
     int ret = 0;
     int seek_offset = 0;
     char buf[MAX_LOG_RECORD_SIZE];
-    while (log_gl.initialized && seek_offset < logfile->size) {
+    while (log_gl.initialized && seek_offset < logfile->curr.size) {
         LogRec *logrec = (LogRec*)buf;
         LogHdr *loghdr = &logrec->header;
 
-        if (logfile->size - seek_offset < sizeof(LogHdr)) {
+        if (logfile->curr.size - seek_offset < sizeof(LogHdr)) {
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "[RECOVERY - CMDLOG] header of last command was not completely written. "
                         "header_length=%ld\n", sizeof(LogHdr));
             break;
         }
 
-        ssize_t nread = read(logfile->fd, loghdr, sizeof(LogHdr));
+        ssize_t nread = read(logfile->curr.fd, loghdr, sizeof(LogHdr));
         if (nread != sizeof(LogHdr)) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "[RECOVERY - CMDLOG] failed : read header data "
@@ -740,11 +741,11 @@ int cmdlog_file_apply(void)
         }
         seek_offset += nread;
 
-        if (logfile->size - seek_offset < loghdr->body_length) {
+        if (logfile->curr.size - seek_offset < loghdr->body_length) {
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "[RECOVERY - CMDLOG] body of last command was not completely written. "
                         "body_length=%d\n", loghdr->body_length);
-            seek_offset = lseek(logfile->fd, -nread, SEEK_CUR);
+            seek_offset = lseek(logfile->curr.fd, -nread, SEEK_CUR);
             if (seek_offset < 0) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
                             "[RECOVERY - CMDLOG] failed : lseek(SEEK_CUR-%zd). path=%s, error=%s.\n",
@@ -764,7 +765,7 @@ int cmdlog_file_apply(void)
                 ret = -1; break;
             }
             logrec->body = buf + nread;
-            nread = read(logfile->fd, logrec->body, loghdr->body_length);
+            nread = read(logfile->curr.fd, logrec->body, loghdr->body_length);
             if (nread != loghdr->body_length) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
                             "[RECOVERY - CMDLOG] failed : read body data "
@@ -785,9 +786,9 @@ int cmdlog_file_apply(void)
         }
     }
     if (ret < 0) {
-        close(logfile->fd);
+        close(logfile->curr.fd);
     } else {
-        logfile->size = seek_offset;
+        logfile->curr.size = seek_offset;
         logger->log(EXTENSION_LOG_INFO, NULL, "[RECOVERY - CMDLOG] success.\n");
     }
     return ret;
@@ -813,10 +814,14 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
     /* log file init */
     log_FILE *logfile = &log_gl.log_file;
     logfile->path[0]   = '\0';
-    logfile->fd        = -1;
-    logfile->next_fd   = -1;
-    logfile->size      = 0;
-    logfile->next_size = 0;
+    logfile->curr.fd   = -1;
+    logfile->next.fd   = -1;
+    logfile->curr.fsync_ongoing = false;
+    logfile->next.fsync_ongoing = false;
+    logfile->curr.close_request = false;
+    logfile->next.close_request = false;
+    logfile->curr.size = 0;
+    logfile->next.size = 0;
 
     /* log buffer init */
     log_BUFFER *logbuff = &log_gl.log_buffer;
