@@ -3993,8 +3993,9 @@ static int do_btree_elem_delete_fast(btree_meta_info *info,
 
 static uint32_t do_btree_elem_delete(btree_meta_info *info,
                                      const int bkrtype, const bkey_range *bkrange,
-                                     const eflag_filter *efilter, const uint32_t count,
-                                     uint32_t *access_count, enum elem_delete_cause cause)
+                                     const eflag_filter *efilter, const uint32_t offset,
+                                     const uint32_t count, uint32_t *access_count,
+                                     enum elem_delete_cause cause)
 {
     btree_elem_posi  path[BTREE_MAX_DEPTH];
     btree_elem_item *elem;
@@ -4013,10 +4014,12 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
         if (bkrtype == BKEY_RANGE_TYPE_SIN) {
             assert(path[0].bkeq == true);
             tot_access++;
-            if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
-                /* cause == ELEM_DELETE_NORMAL */
-                do_btree_elem_unlink(info, path, cause);
-                tot_found = 1;
+            if (offset == 0) {
+                if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
+                    /* cause == ELEM_DELETE_NORMAL */
+                    do_btree_elem_unlink(info, path, cause);
+                    tot_found = 1;
+                }
             }
         } else {
             btree_elem_posi upth[BTREE_MAX_DEPTH]; /* upper node path */
@@ -4024,6 +4027,7 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
             btree_elem_posi s_posi = c_posi;
             size_t stotal = 0;
             int cur_found = 0;
+            int skip_cnt = 0;
             int node_cnt = 1;
             bool forward = (bkrtype == BKEY_RANGE_TYPE_ASC ? true : false);
             int i;
@@ -4039,19 +4043,23 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
             do {
                 tot_access++;
                 if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
-                    stotal += slabs_space_size(do_btree_elem_ntotal(elem));
-
-                    CLOG_BTREE_ELEM_DELETE(info, elem, cause);
-                    if (elem->refcount > 0) {
-                        elem->status = BTREE_ITEM_STATUS_UNLINK;
+                    if (skip_cnt < offset) {
+                        skip_cnt++;
                     } else {
-                        elem->status = BTREE_ITEM_STATUS_FREE;
-                        do_btree_elem_free(elem);
-                    }
-                    c_posi.node->item[c_posi.indx] = NULL;
+                        stotal += slabs_space_size(do_btree_elem_ntotal(elem));
 
-                    cur_found++;
-                    if (count > 0 && (tot_found+cur_found) >= count) break;
+                        CLOG_BTREE_ELEM_DELETE(info, elem, cause);
+                        if (elem->refcount > 0) {
+                            elem->status = BTREE_ITEM_STATUS_UNLINK;
+                        } else {
+                            elem->status = BTREE_ITEM_STATUS_FREE;
+                            do_btree_elem_free(elem);
+                        }
+                        c_posi.node->item[c_posi.indx] = NULL;
+
+                        cur_found++;
+                        if (count > 0 && (tot_found+cur_found) >= count) break;
+                    }
                 }
 
                 if (c_posi.bkeq == true) {
@@ -4262,7 +4270,7 @@ static void do_btree_overflow_trim(btree_meta_info *info,
         }
         bkrtype = do_btree_bkey_range_type(&bkrange_space);
         del_count = do_btree_elem_delete(info, bkrtype, &bkrange_space, NULL, 0,
-                                         NULL, ELEM_DELETE_TRIM);
+                                         0, NULL, ELEM_DELETE_TRIM);
         assert(del_count > 0);
         assert(info->ccnt > 0);
         if (info->ovflact == OVFL_SMALLEST_TRIM || info->ovflact == OVFL_LARGEST_TRIM)
@@ -5752,7 +5760,7 @@ static inline void do_coll_elem_delete(coll_meta_info *info, int type, uint32_t 
     switch (type) {
       case ITEM_TYPE_BTREE:
            (void)do_btree_elem_delete((void *)info, BKEY_RANGE_TYPE_ASC, NULL,
-                                      NULL, count, NULL, ELEM_DELETE_COLL);
+                                      NULL, 0, count, NULL, ELEM_DELETE_COLL);
            break;
       case ITEM_TYPE_SET:
            (void)do_set_elem_delete((void *)info, count, ELEM_DELETE_COLL);
@@ -7042,9 +7050,10 @@ ENGINE_ERROR_CODE btree_elem_delete(const char *key, const uint32_t nkey,
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
-            *del_count = do_btree_elem_delete(info, bkrtype, bkrange, efilter, req_count,
+            *del_count = do_btree_elem_delete(info, bkrtype, bkrange, efilter, 0, req_count,
                                               access_count, ELEM_DELETE_NORMAL);
             if (*del_count > 0) {
+                CLOG_BTREE_ELEM_DELETE_LOGICAL(info, bkrange, efilter, 0, req_count);
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(info->root == NULL);
                     do_item_unlink(it, ITEM_UNLINK_NORMAL);
@@ -7153,6 +7162,7 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
                                     &(eresult->elem_count), &(eresult->access_count), &potentialbkeytrim);
             if (ret == ENGINE_SUCCESS) {
                 if (delete) {
+                    CLOG_BTREE_ELEM_DELETE_LOGICAL(info, bkrange, efilter, offset, req_count);
                     if (info->ccnt == 0 && drop_if_empty) {
                         assert(info->root == NULL);
                         do_item_unlink(it, ITEM_UNLINK_NORMAL);
