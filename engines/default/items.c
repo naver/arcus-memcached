@@ -10774,7 +10774,7 @@ item_apply_btree_elem_delete(hash_item *it, const char *bkey, const uint32_t nbk
         }
 
         uint32_t del_count = do_btree_elem_delete(info, BKEY_RANGE_TYPE_SIN, &bkrange,
-                                                  NULL, 0, NULL, ELEM_DELETE_NORMAL);
+                                                  NULL, 0, 0, NULL, ELEM_DELETE_NORMAL);
         if (del_count == 0) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_btree_elem_delete failed."
                         " no element deleted. key=%.*s bkey=%.*s", it->nkey, key, nbkey, bkey);
