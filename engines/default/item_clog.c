@@ -273,6 +273,18 @@ void CLOG_GE_BTREE_ELEM_DELETE(btree_meta_info *info,
     }
 }
 
+void CLOG_GE_BTREE_ELEM_DELETE_LOGICAL(btree_meta_info *info,
+                                       const bkey_range *bkrange,
+                                       const eflag_filter *efilter,
+                                       uint32_t offset, uint32_t reqcount)
+{
+    hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
+
+    if ((it->iflag & ITEM_INTERNAL) == 0)
+    {
+    }
+}
+
 void CLOG_GE_ITEM_SETATTR(hash_item *it,
                           ENGINE_ITEM_ATTR *attr_ids, uint32_t attr_cnt)
 {

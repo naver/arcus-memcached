@@ -47,6 +47,10 @@ void CLOG_GE_BTREE_ELEM_INSERT(btree_meta_info *info,
 void CLOG_GE_BTREE_ELEM_DELETE(btree_meta_info *info,
                                btree_elem_item *elem,
                                enum elem_delete_cause cause);
+void CLOG_GE_BTREE_ELEM_DELETE_LOGICAL(btree_meta_info *info,
+                                       const bkey_range *bkrange,
+                                       const eflag_filter *efilter,
+                                       uint32_t offset, uint32_t reqcount);
 void CLOG_GE_ITEM_SETATTR(hash_item *it,
                           ENGINE_ITEM_ATTR *attr_ids, uint32_t attr_cnt);
 
@@ -98,6 +102,10 @@ void CLOG_GE_ITEM_SETATTR(hash_item *it,
 #define CLOG_BTREE_ELEM_DELETE(a,b,c) \
     if (item_clog_enabled) { \
         CLOG_GE_BTREE_ELEM_DELETE(a,b,c); \
+    }
+#define CLOG_BTREE_ELEM_DELETE_LOGICAL(a,b,c,d,e) \
+    if (item_clog_enabled) { \
+        CLOG_GE_BTREE_ELEM_DELETE_LOGICAL(a,b,c,d,e); \
     }
 #define CLOG_ITEM_SETATTR(a,b,c) \
     if (item_clog_enabled) { \
