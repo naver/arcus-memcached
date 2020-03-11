@@ -447,6 +447,11 @@ void log_file_sync(void)
     }
     pthread_mutex_unlock(&log_gl.log_flush_lock);
 
+    if (fd == -1 && next_fd == -1) {
+        /* shutdown in progress */
+        return;
+    }
+
     /* fsync the log files */
     do_log_file_sync(fd, false); /* do not close */
     if (next_fd != -1) {
@@ -656,7 +661,7 @@ void cmdlog_file_close(bool shutdown)
         if (log_gl.log_file.next_fd_fsync_ongoing) {
             log_gl.log_file.next_fd_close_request = true;
         } else {
-            fd = logfile->next_fd;
+            next_fd = logfile->next_fd;
             logfile->next_fd = -1;
         }
     }
@@ -664,7 +669,7 @@ void cmdlog_file_close(bool shutdown)
         if (log_gl.log_file.fd_fsync_ongoing) {
             log_gl.log_file.fd_close_request = true;
         } else {
-            next_fd = logfile->fd;
+            fd = logfile->fd;
             logfile->fd = -1;
         }
     }
