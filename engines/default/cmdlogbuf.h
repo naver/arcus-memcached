@@ -31,9 +31,8 @@ void log_buffer_flush(LogSN *upto_lsn);
 void log_get_flush_lsn(LogSN *lsn);
 void log_get_fsync_lsn(LogSN *lsn);
 
-int               cmdlog_file_open(char *path);
+int               cmdlog_file_prepare(char *path);
 size_t            cmdlog_file_getsize(void);
-void              cmdlog_file_close(bool shutdown);
 int               cmdlog_file_apply(void);
 void              cmdlog_complete_dual_write(bool success);
 ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine *engine);

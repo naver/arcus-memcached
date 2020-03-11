@@ -233,7 +233,7 @@ static int do_checkpoint(chkpt_st *cs)
             break;
         }
 
-        if ((ret = cmdlog_file_open(cs->cmdlog_path)) != 0) {
+        if ((ret = cmdlog_file_prepare(cs->cmdlog_path)) != 0) {
             if (do_chkpt_remove_files(cs, newtime) < 0) {
                 ret = CHKPT_ERROR_FILE_REMOVE;
             }
@@ -249,7 +249,6 @@ static int do_checkpoint(chkpt_st *cs)
             ret = CHKPT_ERROR;
         }
 
-        cmdlog_file_close(false);
         if (oldtime != -1) {
             if (do_chkpt_remove_files(cs, oldtime) < 0) {
                 ret = CHKPT_ERROR_FILE_REMOVE;
@@ -389,7 +388,7 @@ int chkpt_recovery_redo(void)
             return -1;
         }
         sprintf(cs->cmdlog_path, CHKPT_FILE_NAME_FORMAT, cs->logs_path, CHKPT_CMDLOG_PREFIX, cs->lasttime);
-        if (cmdlog_file_open(cs->cmdlog_path) < 0) {
+        if (cmdlog_file_prepare(cs->cmdlog_path) < 0) {
             return -1;
         }
         /* apply cmd log records if they exist. */
