@@ -268,6 +268,7 @@ Arcus cache server는 특정 configuration에 대해 동적으로 변경하거�
 - memlimit
 - zkfailstop
 - maxconns
+- max_element_bytes
 
 **config verbosity**
 
@@ -312,6 +313,15 @@ config maxconns [<maxconn>]\r\n
 
 \<maxconn\>는 새로 지정할 최대 연결 수로서, 현재의 연결 수보다 10% 이상의 큰 값으로만 설정이 가능하다.
 이 인자가 생략되면 현재 설정되어 있는 최대 연결 수 값을 조회한다.
+
+**config max_element_bytes**
+
+Collection element가 가지는 value의 최대 크기를 byte 단위로 설정한다. 기본 설정은 16KB이며 1~32KB까지 설정 가능하다.
+
+```
+config max_element_bytes [<maxbytes>]\r\n
+```
+
 
 ### Command Logging 명령
 
