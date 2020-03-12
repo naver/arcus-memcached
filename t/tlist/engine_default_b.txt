@@ -16,6 +16,7 @@
 ./t/bogus-commands.t
 ./t/cas.t
 ./t/cmd_extensions.t
+./t/coll_max_elembytes_test.t
 ./t/coll_bkeymismatch_test.t
 ./t/coll_bkeyoor_test.t
 ./t/coll_bop_attr_min_max_bkey.t

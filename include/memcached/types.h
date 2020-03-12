@@ -31,6 +31,7 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
+#define MAX_ELEMENT_BYTES_CONFIG
 #define PROXY_SUPPORT
 #define BOP_COUNT_OPTIMIZE
 //#define NEW_PREFIX_STATS_MANAGEMENT
