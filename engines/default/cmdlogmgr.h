@@ -42,7 +42,6 @@ void               cmdlog_waiter_final(void);
 ENGINE_ERROR_CODE  cmdlog_mgr_init(struct default_engine *engine_ptr);
 void               cmdlog_mgr_final(void);
 
-#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
 /* Generate Log Record Functions */
 void cmdlog_generate_link_item(hash_item *it);
 void cmdlog_generate_unlink_item(hash_item *it);
@@ -59,7 +58,6 @@ void cmdlog_generate_btree_elem_delete(hash_item *it, btree_elem_item *elem);
 
 void cmdlog_set_chkpt_scan(struct assoc_scan *cs);
 void cmdlog_reset_chkpt_scan(bool chkpt_success);
-#endif
 
 /* LogSN : SET_NULL */
 #define LOGSN_SET_NULL(lsn) \

@@ -29,11 +29,10 @@
 #include "checkpoint.h"
 #include "item_clog.h"
 
-#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
 static struct assoc_scan *chkpt_scanp=NULL; // checkpoint scan pointer
 
 #define NEED_DUAL_WRITE(it) (chkpt_scanp != NULL && (it == NULL || assoc_scan_in_visited_area(chkpt_scanp, it)))
-#endif
+
 /* The size of memory chunk for log waiters */
 #define LOG_WAITER_CHUNK_SIZE (4 * 1024)
 
@@ -472,7 +471,7 @@ void cmdlog_mgr_final(void)
         logger->log(EXTENSION_LOG_INFO, NULL, "COMMAND LOG MANAGER module destroyed.\n");
     }
 }
-#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
+
 /* Generate Log Record Functions */
 void cmdlog_generate_link_item(hash_item *it)
 {
@@ -616,5 +615,4 @@ void cmdlog_reset_chkpt_scan(bool chkpt_success)
         cmdlog_complete_dual_write(chkpt_success);
     }
 }
-#endif
 #endif
