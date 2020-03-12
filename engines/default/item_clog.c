@@ -20,9 +20,12 @@
 #include "default_engine.h"
 #include "item_clog.h"
 #ifdef ENABLE_PERSISTENCE
+#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
 #include "cmdlogmgr.h"
+#else
 #include "cmdlogrec.h"
 #include "cmdlogbuf.h"
+#endif
 #endif
 
 bool item_clog_enabled = false;
@@ -31,10 +34,12 @@ static struct engine_config *config=NULL; // engine config
 
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
+#ifndef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
 #ifdef ENABLE_PERSISTENCE
 static struct assoc_scan *scanp=NULL; // checkpoint scan pointer
 
 #define NEED_DUAL_WRITE(it) ((scanp != NULL) && (assoc_scan_in_visited_area(scanp, it)))
+#endif
 #endif
 
 /*
@@ -46,12 +51,16 @@ void CLOG_GE_ITEM_LINK(hash_item *it)
     {
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
+#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
+            cmdlog_generate_link_item(it);
+#else
             log_waiter_t *waiter = cmdlog_get_cur_waiter();
             if (waiter->elem_clog_with_collection == false) {
                 ITLinkLog log;
                 (void)lrec_construct_link_item((LogRec*)&log, it);
                 log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
             }
+#endif
         }
 #endif
     }
@@ -65,6 +74,9 @@ void CLOG_GE_ITEM_UNLINK(hash_item *it, enum item_unlink_cause cause)
     {
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
+#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
+            cmdlog_generate_unlink_item(it);
+#else
             log_waiter_t *waiter = cmdlog_get_cur_waiter();
             /* TODO::remove waiter == NULL condition after waiter process in eviction logic */
             if (waiter == NULL || waiter->elem_clog_with_collection == false) {
@@ -72,6 +84,7 @@ void CLOG_GE_ITEM_UNLINK(hash_item *it, enum item_unlink_cause cause)
                 (void)lrec_construct_unlink_item((LogRec*)&log, it);
                 log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
             }
+#endif
         }
 #endif
     }
@@ -90,12 +103,16 @@ void CLOG_GE_ITEM_FLUSH(const char *prefix, const int nprefix, time_t when)
     {
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
+#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
+            cmdlog_generate_flush_item(prefix, nprefix, when);
+#else
             if (when <= 0) {
                 ITFlushLog log;
                 (void)lrec_construct_flush_item((LogRec*)&log, prefix, nprefix);
                 bool need_dual_write = (scanp != NULL ? true : false);
                 log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), need_dual_write);
             }
+#endif
         }
 #endif
     }
@@ -110,12 +127,16 @@ void CLOG_GE_LIST_ELEM_INSERT(list_meta_info *info,
     {
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
+#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
+            cmdlog_generate_list_elem_insert(it, info->ccnt, index, elem);
+#else
             ListElemInsLog log;
             lrec_attr_info attr;
             log_waiter_t *waiter = cmdlog_get_cur_waiter();
             bool create = waiter->elem_clog_with_collection;
             (void)lrec_construct_list_elem_insert((LogRec*)&log, it, info->ccnt, index, elem, create, &attr);
             log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+#endif
         }
 #endif
     }
@@ -146,9 +167,13 @@ void CLOG_GE_LIST_ELEM_DELETE(list_meta_info *info,
         }
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
+#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
+            cmdlog_generate_list_elem_delete(it, info->ccnt, index, count);
+#else
             ListElemDelLog log;
             (void)lrec_construct_list_elem_delete((LogRec*)&log, it, info->ccnt, index, count);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+#endif
         }
 #endif
     }
@@ -164,12 +189,16 @@ void CLOG_GE_MAP_ELEM_INSERT(map_meta_info *info,
     {
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
+#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
+            cmdlog_generate_map_elem_insert(it, new_elem);
+#else
             MapElemInsLog log;
             lrec_attr_info attr;
             log_waiter_t *waiter = cmdlog_get_cur_waiter();
             bool create = waiter->elem_clog_with_collection;
             (void)lrec_construct_map_elem_insert((LogRec*)&log, it, new_elem, create, &attr);
             log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+#endif
         }
 #endif
     }
@@ -186,9 +215,13 @@ void CLOG_GE_MAP_ELEM_DELETE(map_meta_info *info,
     {
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
+#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
+            cmdlog_generate_map_elem_delete(it, elem);
+#else
             MapElemDelLog log;
             (void)lrec_construct_map_elem_delete((LogRec*)&log, it, elem);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+#endif
         }
 #endif
     }
@@ -203,12 +236,16 @@ void CLOG_GE_SET_ELEM_INSERT(set_meta_info *info,
     {
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
+#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
+            cmdlog_generate_set_elem_insert(it, elem);
+#else
             SetElemInsLog log;
             lrec_attr_info attr;
             log_waiter_t *waiter = cmdlog_get_cur_waiter();
             bool create = waiter->elem_clog_with_collection;
             (void)lrec_construct_set_elem_insert((LogRec*)&log, it, elem, create, &attr);
             log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+#endif
         }
 #endif
     }
@@ -225,9 +262,13 @@ void CLOG_GE_SET_ELEM_DELETE(set_meta_info *info,
     {
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
+#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
+            cmdlog_generate_set_elem_delete(it, elem);
+#else
             SetElemDelLog log;
             (void)lrec_construct_set_elem_delete((LogRec*)&log, it, elem);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+#endif
         }
 #endif
     }
@@ -243,12 +284,16 @@ void CLOG_GE_BTREE_ELEM_INSERT(btree_meta_info *info,
     {
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
+#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
+            cmdlog_generate_btree_elem_insert(it, new_elem);
+#else
             BtreeElemInsLog log;
             lrec_attr_info attr;
             log_waiter_t *waiter = cmdlog_get_cur_waiter();
             bool create = waiter->elem_clog_with_collection;
             (void)lrec_construct_btree_elem_insert((LogRec*)&log, it, new_elem, create, &attr);
             log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+#endif
         }
 #endif
     }
@@ -265,9 +310,13 @@ void CLOG_GE_BTREE_ELEM_DELETE(btree_meta_info *info,
     {
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
+#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
+            cmdlog_generate_btree_elem_delete(it, elem);
+#else
             BtreeElemDelLog log;
             (void)lrec_construct_btree_elem_delete((LogRec*)&log, it, elem);
             log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+#endif
         }
 #endif
     }
@@ -292,6 +341,9 @@ void CLOG_GE_ITEM_SETATTR(hash_item *it,
     {
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
+#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
+            cmdlog_generate_setattr(it, attr_ids, attr_cnt);
+#else
             uint8_t attr_type = 0;
             for (int i = 0; i < attr_cnt; i++) {
                 if (attr_ids[i] == ATTR_EXPIRETIME) {
@@ -314,6 +366,7 @@ void CLOG_GE_ITEM_SETATTR(hash_item *it,
                 (void)lrec_construct_setattr((LogRec*)&log, it, attr_type);
                 log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
             }
+#endif
         }
 #endif
     }
@@ -340,6 +393,7 @@ void item_clog_set_enable(bool enable)
     item_clog_enabled = enable;
 }
 
+#ifndef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
 #ifdef ENABLE_PERSISTENCE
 void item_clog_set_scan(struct assoc_scan *cs)
 {
@@ -358,4 +412,5 @@ void item_clog_reset_scan(bool success)
         cmdlog_complete_dual_write(success);
     }
 }
+#endif
 #endif

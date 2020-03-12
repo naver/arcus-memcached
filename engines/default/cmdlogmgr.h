@@ -42,12 +42,28 @@ void               cmdlog_waiter_final(void);
 ENGINE_ERROR_CODE  cmdlog_mgr_init(struct default_engine *engine_ptr);
 void               cmdlog_mgr_final(void);
 
+#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
+/* Generate Log Record Functions */
+void cmdlog_generate_link_item(hash_item *it);
+void cmdlog_generate_unlink_item(hash_item *it);
+void cmdlog_generate_flush_item(const char *prefix, const int nprefix, const time_t when);
+void cmdlog_generate_setattr(hash_item *it, const ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
+void cmdlog_generate_list_elem_insert(hash_item *it, const uint32_t total, const int index, list_elem_item *elem);
+void cmdlog_generate_list_elem_delete(hash_item *it, const uint32_t total, const int index, const uint32_t count);
+void cmdlog_generate_map_elem_insert(hash_item *it, map_elem_item *elem);
+void cmdlog_generate_map_elem_delete(hash_item *it, map_elem_item *elem);
+void cmdlog_generate_set_elem_insert(hash_item *it, set_elem_item *elem);
+void cmdlog_generate_set_elem_delete(hash_item *it, set_elem_item *elem);
+void cmdlog_generate_btree_elem_insert(hash_item *it, btree_elem_item *elem);
+void cmdlog_generate_btree_elem_delete(hash_item *it, btree_elem_item *elem);
+
+void cmdlog_set_chkpt_scan(struct assoc_scan *cs);
+void cmdlog_reset_chkpt_scan(bool chkpt_success);
+#endif
 
 /* LogSN : SET_NULL */
 #define LOGSN_SET_NULL(lsn) \
         do { (lsn)->filenum = 0; (lsn)->roffset = 0; } while(0)
-
-#endif
 
 /* LogSN comparison */
 #define LOGSN_IS_EQ(lsn1, lsn2) ((lsn1)->filenum == (lsn2)->filenum && (lsn1)->roffset == (lsn2)->roffset)
@@ -60,3 +76,4 @@ void               cmdlog_mgr_final(void);
                                  ((lsn1)->filenum == (lsn2)->filenum && (lsn1)->roffset >  (lsn2)->roffset))
 #define LOGSN_IS_GE(lsn1, lsn2) (((lsn1)->filenum >  (lsn2)->filenum) || \
                                  ((lsn1)->filenum == (lsn2)->filenum && (lsn1)->roffset >= (lsn2)->roffset))
+#endif

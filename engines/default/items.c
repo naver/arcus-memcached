@@ -9158,7 +9158,11 @@ void *itscan_open(struct default_engine *engine, const char *prefix, const int n
         assoc_scan_init(&sp->asscan);
 #ifdef ENABLE_PERSISTENCE
         if (chkpt) {
+#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
+            cmdlog_set_chkpt_scan(&sp->asscan);
+#else
             item_clog_set_scan(&sp->asscan);
+#endif
         }
 #endif
         UNLOCK_CACHE();
@@ -9259,7 +9263,11 @@ void itscan_close(void *scan, bool success)
     assoc_scan_final(&sp->asscan);
 #ifdef ENABLE_PERSISTENCE
     if (sp->by_chkpt) {
+#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
+        cmdlog_reset_chkpt_scan(success);
+#else
         item_clog_reset_scan(success);
+#endif
     }
 #endif
     UNLOCK_CACHE();
