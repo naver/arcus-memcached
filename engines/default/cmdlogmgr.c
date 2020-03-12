@@ -29,6 +29,11 @@
 #include "checkpoint.h"
 #include "item_clog.h"
 
+#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
+static struct assoc_scan *chkpt_scanp=NULL; // checkpoint scan pointer
+
+#define NEED_DUAL_WRITE(it) (chkpt_scanp != NULL && (it == NULL || assoc_scan_in_visited_area(chkpt_scanp, it)))
+#endif
 /* The size of memory chunk for log waiters */
 #define LOG_WAITER_CHUNK_SIZE (4 * 1024)
 
@@ -467,4 +472,149 @@ void cmdlog_mgr_final(void)
         logger->log(EXTENSION_LOG_INFO, NULL, "COMMAND LOG MANAGER module destroyed.\n");
     }
 }
+#ifdef ENABLE_PERSISTENCE_03_CLOG_REFACTORING
+/* Generate Log Record Functions */
+void cmdlog_generate_link_item(hash_item *it)
+{
+    log_waiter_t *waiter = cmdlog_get_cur_waiter();
+    if (waiter->elem_clog_with_collection == false) {
+        ITLinkLog log;
+        (void)lrec_construct_link_item((LogRec*)&log, it);
+        log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+    }
+}
+
+void cmdlog_generate_unlink_item(hash_item *it)
+{
+    log_waiter_t *waiter = cmdlog_get_cur_waiter();
+    /* TODO::remove waiter == NULL condition after waiter process in eviction logic */
+    if (waiter == NULL || waiter->elem_clog_with_collection == false) {
+        ITUnlinkLog log;
+        (void)lrec_construct_unlink_item((LogRec*)&log, it);
+        log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+    }
+}
+
+void cmdlog_generate_flush_item(const char *prefix, const int nprefix, const time_t when)
+{
+    if (when <= 0) {
+        ITFlushLog log;
+        (void)lrec_construct_flush_item((LogRec*)&log, prefix, nprefix);
+        log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(NULL));
+    }
+}
+
+void cmdlog_generate_setattr(hash_item *it, const ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
+{
+    uint8_t attr_type = 0;
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_EXPIRETIME) {
+            if (attr_type < UPD_SETATTR_EXPTIME)
+                attr_type = UPD_SETATTR_EXPTIME;
+        }
+        else if (attr_ids[i] == ATTR_MAXCOUNT ||
+                 attr_ids[i] == ATTR_OVFLACTION ||
+                 attr_ids[i] == ATTR_READABLE) {
+            if (attr_type < UPD_SETATTR_EXPTIME_INFO)
+                attr_type = UPD_SETATTR_EXPTIME_INFO;
+        }
+        else if (attr_ids[i] == ATTR_MAXBKEYRANGE) {
+            if (attr_type < UPD_SETATTR_EXPTIME_INFO_BKEY)
+                attr_type = UPD_SETATTR_EXPTIME_INFO_BKEY;
+        }
+    }
+    if (attr_type > 0) {
+        ITSetAttrLog log;
+        (void)lrec_construct_setattr((LogRec*)&log, it, attr_type);
+        log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+    }
+}
+
+void cmdlog_generate_list_elem_insert(hash_item *it, const uint32_t total,
+                                      const int index, list_elem_item *elem)
+{
+    ListElemInsLog log;
+    lrec_attr_info attr;
+    log_waiter_t *waiter = cmdlog_get_cur_waiter();
+    bool create = waiter->elem_clog_with_collection;
+    (void)lrec_construct_list_elem_insert((LogRec*)&log, it, total,
+                                          index, elem, create, &attr);
+    log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+}
+
+void cmdlog_generate_list_elem_delete(hash_item *it, const uint32_t total,
+                                      const int index, const uint32_t count)
+{
+    ListElemDelLog log;
+    (void)lrec_construct_list_elem_delete((LogRec*)&log, it, total, index, count);
+    log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+}
+
+void cmdlog_generate_map_elem_insert(hash_item *it, map_elem_item *elem)
+{
+    MapElemInsLog log;
+    lrec_attr_info attr;
+    log_waiter_t *waiter = cmdlog_get_cur_waiter();
+    bool create = waiter->elem_clog_with_collection;
+    (void)lrec_construct_map_elem_insert((LogRec*)&log, it, elem, create, &attr);
+    log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+}
+
+void cmdlog_generate_map_elem_delete(hash_item *it, map_elem_item *elem)
+{
+    MapElemDelLog log;
+    (void)lrec_construct_map_elem_delete((LogRec*)&log, it, elem);
+    log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+}
+
+void cmdlog_generate_set_elem_insert(hash_item *it, set_elem_item *elem)
+{
+    SetElemInsLog log;
+    lrec_attr_info attr;
+    log_waiter_t *waiter = cmdlog_get_cur_waiter();
+    bool create = waiter->elem_clog_with_collection;
+    (void)lrec_construct_set_elem_insert((LogRec*)&log, it, elem, create, &attr);
+    log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+}
+
+void cmdlog_generate_set_elem_delete(hash_item *it, set_elem_item *elem)
+{
+    SetElemDelLog log;
+    (void)lrec_construct_set_elem_delete((LogRec*)&log, it, elem);
+    log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+}
+
+void cmdlog_generate_btree_elem_insert(hash_item *it, btree_elem_item *elem)
+{
+    BtreeElemInsLog log;
+    lrec_attr_info attr;
+    log_waiter_t *waiter = cmdlog_get_cur_waiter();
+    bool create = waiter->elem_clog_with_collection;
+    (void)lrec_construct_btree_elem_insert((LogRec*)&log, it, elem, create, &attr);
+    log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+}
+
+void cmdlog_generate_btree_elem_delete(hash_item *it, btree_elem_item *elem)
+{
+    BtreeElemDelLog log;
+    (void)lrec_construct_btree_elem_delete((LogRec*)&log, it, elem);
+    log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+}
+
+void cmdlog_set_chkpt_scan(struct assoc_scan *cs)
+{
+    /* Cache locked */
+    assert(chkpt_scanp == NULL);
+    chkpt_scanp = cs;
+}
+
+void cmdlog_reset_chkpt_scan(bool chkpt_success)
+{
+    /* Cache locked */
+    if (chkpt_scanp != NULL) {
+        chkpt_scanp = NULL;
+        cmdlog_complete_dual_write(chkpt_success);
+    }
+}
+#endif
 #endif
