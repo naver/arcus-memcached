@@ -1,4 +1,4 @@
-Arcus-memcached Ascii Protocol
+Arcus memcached Ascii Protocol
 ==============================
 
 Arcus cache server가 제공하는 명령들에 대한 ascii protocol을 기술한다.

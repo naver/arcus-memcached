@@ -13,7 +13,7 @@ Map element에 관한 명령은 아래와 같다.
 - [Map element 삭제: mop delete](command-map-collection.md#mop-delete---map-element-삭제)
 - [Map element 조회: mop get](command-map-collection.md#mop-get---map-field-element-조회)
 
-### mop create - Map Collection 생성
+### mop create (Map Collection 생성)
 
 Map collection을 empty 상태로 생성한다.
 
@@ -34,7 +34,7 @@ Response string과 그 의미는 아래와 같다.
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “SERVER_ERROR out of memory” - 메모리 부족
 
-### mop insert - Map Element 삽입
+### mop insert (Map Element 삽입)
 
 Map collection에 하나의 field, element를 삽입한다.
 Map collection을 생성하면서 \<field, value\>로 구성된 하나의 element를 삽입할 수도 있다.
@@ -68,7 +68,7 @@ Response string과 그 의미는 아래와 같다.
 - “CLIENT_ERROR invalid prefix name” - 유효하지(존재하지) 않는 prefix 명
 - “SERVER_ERROR out of memory” - 메모리 부족
 
-### mop update - Map Element 변경
+### mop update (Map Element 변경)
 
 Map collection에서 하나의 field에 대해 element 변경을 수행한다.
 현재 다수 field에 대한 변경연산은 제공하지 않는다.
@@ -96,7 +96,7 @@ Response string과 그 의미는 아래와 같다.
 - “CLIENT_ERROR bad data chunk” - 삽입할 데이터 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
 - “SERVER_ERROR out of memory” - 메모리 부족
 
-### mop delete - Map Element 삭제
+### mop delete (Map Element 삭제)
 
 Map collection에서 하나 이상의 field 이름을 주어, 그에 해당하는 element를 삭제한다.
 
@@ -123,7 +123,7 @@ Response string과 그 의미는 아래와 같다.
 - "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 
-### mop get - Map Field, Element 조회
+### mop get (Map Field, Element 조회)
 
 Map collection에서 하나 이상의 field 이름을 주어, 그에 해당하는 element를 조회한다.
 
