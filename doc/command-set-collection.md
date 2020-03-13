@@ -13,7 +13,7 @@ Set element에 관한 명령은 아래와 같다.
 - [Set element 조회: sop get](command-set-collection.md#sop-get---set-element-%EC%A1%B0%ED%9A%8C)
 - [Set element 존재유무 검사: sop exist](command-set-collection.md#sop-exist---set-element-%EC%A1%B4%EC%9E%AC%EC%9C%A0%EB%AC%B4-%EA%B2%80%EC%82%AC)
 
-### sop create - Set Collection 생성
+### sop create (Set Collection 생성)
 
 Set collection을 empty 상태로 생성한다.
 
@@ -34,7 +34,7 @@ Response string과 그 의미는 아래와 같다.
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “SERVER_ERROR out of memory” - 메모리 부족
 
-### sop insert - Set Element 삽입
+### sop insert (Set Element 삽입)
 
 Set collection에 하나의 element를 삽입한다.
 Set collection을 생성하면서 하나의 element를 삽입할 수도 있다.
@@ -66,7 +66,7 @@ Response string과 그 의미는 아래와 같다.
 - “CLIENT_ERROR bad data chunk” - 삽입할 데이터 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
 - “SERVER_ERROR out of memory” - 메모리 부족
 
-### sop delete - Set Element 삭제
+### sop delete (Set Element 삭제)
 
 Set collection에서 하나의 element를 삭제한다.
 
@@ -93,7 +93,7 @@ Response string과 그 의미는 아래와 같다.
 - “CLIENT_ERROR too large value” - 삭제할 데이터가 4KB 보다 큼
 - “CLIENT_ERROR bad data chunk” - 삭제할 데이터의 길이가 \<bytes\>와 다르거나 “\r\n”으로 끝나지 않음
 
-### sop get - Set Element 조회
+### sop get (Set Element 조회)
 
 Set collection에서 N 개의 elements를 조회한다.
 
@@ -131,7 +131,7 @@ END|DELETED|DELETED_DROPPED\r\n
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - "SERVER_ERROR out of memory [writing get response]”	- 메모리 부족
 
-### sop exist - Set Element 존재유무 검사
+### sop exist (Set Element 존재유무 검사)
 
 Set collection에 특정 element의 존재 유무를 검사한다.
 
