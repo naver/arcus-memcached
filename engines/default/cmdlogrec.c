@@ -458,9 +458,8 @@ static ENGINE_ERROR_CODE lrec_it_setattr_redo(LogRec *logrec)
                                                body->exptime, body->mcnt, maxbkrptr);
             if (ret != ENGINE_SUCCESS) {
                 logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_it_setattr_redo failed.\n");
-            } else {
-                item_release(it);
             }
+            item_release(it);
         } else {
             ret = ENGINE_KEY_ENOENT;
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_it_setattr_redo failed. "
@@ -606,11 +605,10 @@ static ENGINE_ERROR_CODE lrec_list_elem_insert_redo(LogRec *logrec)
 
     if (it) {
         ret = item_apply_list_elem_insert(it, body->totcnt, body->eindex, (keyptr + body->keylen), body->vallen);
-        if (ret == ENGINE_SUCCESS) {
-            item_release(it);
-        } else {
+        if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_list_elem_insert_redo failed.\n");
         }
+        item_release(it);
     } else {
         ret = ENGINE_KEY_ENOENT;
         logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_list_elem_insert_redo failed. "
@@ -659,11 +657,10 @@ static ENGINE_ERROR_CODE lrec_list_elem_delete_redo(LogRec *logrec)
     hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
         ret = item_apply_list_elem_delete(it, body->totcnt, body->eindex, body->delcnt);
-        if (ret == ENGINE_SUCCESS) {
-            item_release(it);
-        } else {
+        if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_list_elem_delete_redo failed.\n");
         }
+        item_release(it);
     } else {
         ret = ENGINE_KEY_ENOENT;
         logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_list_elem_delete_redo failed. "
@@ -735,11 +732,10 @@ static ENGINE_ERROR_CODE lrec_set_elem_insert_redo(LogRec *logrec)
 
     if (it) {
         ret = item_apply_set_elem_insert(it, valptr, body->vallen);
-        if (ret == ENGINE_SUCCESS) {
-            item_release(it);
-        } else {
+        if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_set_elem_insert_redo failed.\n");
         }
+        item_release(it);
     } else {
         ret = ENGINE_KEY_ENOENT;
         logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_set_elem_insert_redo failed. "
@@ -789,11 +785,10 @@ static ENGINE_ERROR_CODE lrec_set_elem_delete_redo(LogRec *logrec)
     hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
         ret = item_apply_set_elem_delete(it, valptr, body->vallen);
-        if (ret == ENGINE_SUCCESS) {
-            item_release(it);
-        } else {
+        if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_set_elem_delete_redo failed.\n");
         }
+        item_release(it);
     } else {
         ret = ENGINE_KEY_ENOENT;
         logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_set_elem_delete_redo failed. "
@@ -866,11 +861,10 @@ static ENGINE_ERROR_CODE lrec_map_elem_insert_redo(LogRec *logrec)
 
     if (it) {
         ret = item_apply_map_elem_insert(it, datptr, body->fldlen, body->vallen);
-        if (ret == ENGINE_SUCCESS) {
-            item_release(it);
-        } else {
+        if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_map_elem_insert_redo failed.\n");
         }
+        item_release(it);
     } else {
         ret = ENGINE_KEY_ENOENT;
         logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_map_elem_insert_redo failed. "
@@ -922,11 +916,10 @@ static ENGINE_ERROR_CODE lrec_map_elem_delete_redo(LogRec *logrec)
     hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
         ret = item_apply_map_elem_delete(it, fldptr, body->fldlen);
-        if (ret == ENGINE_SUCCESS) {
-            item_release(it);
-        } else {
+        if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_map_elem_delete_redo failed.\n");
         }
+        item_release(it);
     } else {
         ret = ENGINE_KEY_ENOENT;
         logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_map_elem_delete_redo failed. "
@@ -1002,11 +995,10 @@ static ENGINE_ERROR_CODE lrec_bt_elem_insert_redo(LogRec *logrec)
 
     if (it) {
         ret = item_apply_btree_elem_insert(it, datptr, body->nbkey, body->neflag, body->vallen);
-        if (ret == ENGINE_SUCCESS) {
-            item_release(it);
-        } else {
+        if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_insert_redo failed.\n");
         }
+        item_release(it);
     } else {
         ret = ENGINE_KEY_ENOENT;
         logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_insert_redo failed. "
@@ -1071,11 +1063,10 @@ static ENGINE_ERROR_CODE lrec_bt_elem_delete_redo(LogRec *logrec)
     hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
         ret = item_apply_btree_elem_delete(it, bkeyptr, body->nbkey);
-        if (ret == ENGINE_SUCCESS) {
-            item_release(it);
-        } else {
+        if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_delete_redo failed.\n");
         }
+        item_release(it);
     } else {
         ret = ENGINE_KEY_ENOENT;
         logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_delete_redo failed. "
@@ -1171,11 +1162,10 @@ static ENGINE_ERROR_CODE lrec_bt_elem_delete_logical_redo(LogRec *logrec)
     if (it) {
         ret = item_apply_btree_elem_delete_logical(it, &bkrange, (body->filtering ? &efilter : NULL),
                                                    body->offset, body->reqcount);
-        if (ret == ENGINE_SUCCESS) {
-            item_release(it);
-        } else {
+        if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_delete_logical_redo failed.\n");
         }
+        item_release(it);
     } else {
         ret = ENGINE_KEY_ENOENT;
         logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_delete_logical_redo failed. "
