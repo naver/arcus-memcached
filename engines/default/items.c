@@ -10467,7 +10467,6 @@ item_apply_list_elem_insert(hash_item *it, const int nelems, const int index,
 
     if (ret != ENGINE_SUCCESS) { /* Remove inconsistent hash_item */
         do_item_unlink(it, ITEM_UNLINK_NORMAL);
-        do_item_release(it);
     }
     UNLOCK_CACHE();
 
@@ -10512,7 +10511,6 @@ item_apply_list_elem_delete(hash_item *it, const int nelems,
 
     if (ret != ENGINE_SUCCESS) { /* Remove inconsistent hash_item */
         do_item_unlink(it, ITEM_UNLINK_NORMAL);
-        do_item_release(it);
     }
     UNLOCK_CACHE();
 
@@ -10555,7 +10553,6 @@ item_apply_set_elem_insert(hash_item *it, const char *value, const uint32_t nbyt
 
     if (ret != ENGINE_SUCCESS) { /* Remove inconsistent hash_item */
         do_item_unlink(it, ITEM_UNLINK_NORMAL);
-        do_item_release(it);
     }
     UNLOCK_CACHE();
 
@@ -10591,7 +10588,6 @@ item_apply_set_elem_delete(hash_item *it, const char *value, const uint32_t nbyt
 
     if (ret != ENGINE_SUCCESS) { /* Remove inconsistent hash_item */
         do_item_unlink(it, ITEM_UNLINK_NORMAL);
-        do_item_release(it);
     }
     UNLOCK_CACHE();
 
@@ -10635,7 +10631,6 @@ item_apply_map_elem_insert(hash_item *it, const char *data, const uint32_t nfiel
 
     if (ret != ENGINE_SUCCESS) { /* Remove inconsistent has_item */
         do_item_unlink(it, ITEM_UNLINK_NORMAL);
-        do_item_release(it);
     }
     UNLOCK_CACHE();
 
@@ -10681,7 +10676,6 @@ item_apply_map_elem_delete(hash_item *it, const char *field, const uint32_t nfie
 
     if (ret != ENGINE_SUCCESS) { /* Remove inconsistent hash_item */
         do_item_unlink(it, ITEM_UNLINK_NORMAL);
-        do_item_release(it);
     }
     UNLOCK_CACHE();
 
@@ -10728,7 +10722,6 @@ item_apply_btree_elem_insert(hash_item *it, const char *data, const uint32_t nbk
 
     if (ret != ENGINE_SUCCESS) { /* Remove inconsistent has_item */
         do_item_unlink(it, ITEM_UNLINK_NORMAL);
-        do_item_release(it);
     }
     UNLOCK_CACHE();
 
@@ -10784,7 +10777,6 @@ item_apply_btree_elem_delete(hash_item *it, const char *bkey, const uint32_t nbk
 
     if (ret != ENGINE_SUCCESS) { /* Remove inconsistent has_item */
         do_item_unlink(it, ITEM_UNLINK_NORMAL);
-        do_item_release(it);
     }
     UNLOCK_CACHE();
 
@@ -10838,7 +10830,6 @@ item_apply_btree_elem_delete_logical(hash_item *it, bkey_range *bkrange,
 
     if (ret != ENGINE_SUCCESS) { /* Remove inconsistent has_item */
         do_item_unlink(it, ITEM_UNLINK_NORMAL);
-        do_item_release(it);
     }
     UNLOCK_CACHE();
 
@@ -10906,7 +10897,6 @@ item_apply_setattr_meta_info(hash_item *it, const uint8_t ovflact, const uint8_t
 
     if (ret != ENGINE_SUCCESS) { /* Remove inconsistent has_item */
         do_item_unlink(it, ITEM_UNLINK_NORMAL);
-        do_item_release(it);
     }
     UNLOCK_CACHE();
 
