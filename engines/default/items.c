@@ -10791,7 +10791,6 @@ item_apply_btree_elem_delete(hash_item *it, const char *bkey, const uint32_t nbk
     return ret;
 }
 
-#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
 ENGINE_ERROR_CODE
 item_apply_btree_elem_delete_logical(hash_item *it, bkey_range *bkrange,
                                      eflag_filter *efilter, uint32_t offset, uint32_t reqcount)
@@ -10845,7 +10844,6 @@ item_apply_btree_elem_delete_logical(hash_item *it, bkey_range *bkrange,
 
     return ret;
 }
-#endif
 
 ENGINE_ERROR_CODE
 item_apply_setattr_exptime(const char *key, const uint32_t nkey, rel_time_t exptime)

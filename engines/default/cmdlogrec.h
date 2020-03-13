@@ -33,9 +33,7 @@ enum log_type {
     LOG_MAP_ELEM_DELETE,
     LOG_BT_ELEM_INSERT,
     LOG_BT_ELEM_DELETE,
-#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
     LOG_BT_ELEM_DELETE_LOGICAL,
-#endif
     LOG_SNAPSHOT_ELEM,
     LOG_SNAPSHOT_DONE
 };
@@ -318,7 +316,6 @@ typedef struct _Btree_elem_delete_log {
     char             *datptr;
 } BtreeElemDelLog;
 
-#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
 /* Btree Elem Delete Logical Log Record */
 typedef struct _Btree_elem_delete_logical_data {
     uint16_t keylen;     /* key length */
@@ -344,7 +341,6 @@ typedef struct _Btree_elem_delete_logical_log {
     bkey_range          *bkrangep;
     eflag_filter        *efilterp;
 } BtreeElemDelLgcLog;
-#endif
 
 /* Snapshot Done Log Record */
 typedef struct _snapshot_done_data {
@@ -380,10 +376,8 @@ int lrec_construct_set_elem_delete(LogRec *logrec, hash_item *it, set_elem_item 
 int lrec_construct_btree_elem_insert(LogRec *logrec, hash_item *it, btree_elem_item *elem,
                                      bool create, lrec_attr_info *attr);
 int lrec_construct_btree_elem_delete(LogRec *logrec, hash_item *it, btree_elem_item *elem);
-#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
 int lrec_construct_btree_elem_delete_logical(LogRec *logrec, hash_item *it, const bkey_range *bkrange,
                                              const eflag_filter *efilter, uint32_t offset, uint32_t reqcount);
-#endif
 
 /* Function to write the given log record to log buffer */
 void lrec_write_to_buffer(LogRec *logrec, char *bufptr);

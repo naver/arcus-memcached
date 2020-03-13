@@ -55,10 +55,8 @@ void cmdlog_generate_set_elem_insert(hash_item *it, set_elem_item *elem);
 void cmdlog_generate_set_elem_delete(hash_item *it, set_elem_item *elem);
 void cmdlog_generate_btree_elem_insert(hash_item *it, btree_elem_item *elem);
 void cmdlog_generate_btree_elem_delete(hash_item *it, btree_elem_item *elem);
-#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
 void cmdlog_generate_btree_elem_delete_logical(hash_item *it, const bkey_range *bkrange,
                                                const eflag_filter *efilter, uint32_t offset, uint32_t reqcount);
-#endif
 
 void cmdlog_set_chkpt_scan(struct assoc_scan *cs);
 void cmdlog_reset_chkpt_scan(bool chkpt_success);

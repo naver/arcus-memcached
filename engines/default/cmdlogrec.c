@@ -109,10 +109,8 @@ static char *get_logtype_text(uint8_t type)
             return "BT_ELEM_INSERT";
         case LOG_BT_ELEM_DELETE:
             return "BT_ELEM_DELETE";
-#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
         case LOG_BT_ELEM_DELETE_LOGICAL:
             return "BT_ELEM_DELETE_LOGICAL";
-#endif
         case LOG_SNAPSHOT_DONE:
             return "SNAPSHOT_DONE";
     }
@@ -1101,7 +1099,6 @@ static void lrec_bt_elem_delete_print(LogRec *logrec)
             log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr, metastr);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
 /* BTree Element Delete Logical Log Record */
 static void lrec_bt_elem_delete_logical_write(LogRec *logrec, char *bufptr)
 {
@@ -1233,7 +1230,6 @@ static void lrec_bt_elem_delete_logical_print(LogRec *logrec)
                 log->body.compop, log->body.compvcnt, compvalstr);
     }
 }
-#endif
 
 /* Snapshot Element Log Record */
 static void lrec_snapshot_elem_link_write(LogRec *logrec, char *bufptr)
@@ -1350,9 +1346,7 @@ LOGREC_FUNC logrec_func[] = {
     { lrec_map_elem_delete_write,        lrec_map_elem_delete_redo,        lrec_map_elem_delete_print },
     { lrec_bt_elem_insert_write,         lrec_bt_elem_insert_redo,         lrec_bt_elem_insert_print },
     { lrec_bt_elem_delete_write,         lrec_bt_elem_delete_redo,         lrec_bt_elem_delete_print },
-#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
     { lrec_bt_elem_delete_logical_write, lrec_bt_elem_delete_logical_redo, lrec_bt_elem_delete_logical_print },
-#endif
     { lrec_snapshot_elem_link_write,     lrec_snapshot_elem_link_redo,     lrec_snapshot_elem_link_print },
     { lrec_snapshot_done_write,          NULL,                             lrec_snapshot_done_print }
 };
@@ -1718,7 +1712,6 @@ int lrec_construct_btree_elem_delete(LogRec *logrec, hash_item *it, btree_elem_i
     return log->header.body_length+sizeof(LogHdr);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
 int lrec_construct_btree_elem_delete_logical(LogRec *logrec, hash_item *it, const bkey_range *bkrange,
                                              const eflag_filter *efilter, uint32_t offset, uint32_t reqcount)
 {
@@ -1753,7 +1746,6 @@ int lrec_construct_btree_elem_delete_logical(LogRec *logrec, hash_item *it, cons
                             + log->body.nbitwval + (log->body.compvcnt*log->body.ncompval));
     return log->header.body_length+sizeof(LogHdr);
 }
-#endif
 
 hash_item *lrec_get_item_if_collection_link(ITLinkLog *log)
 {
