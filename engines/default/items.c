@@ -10791,6 +10791,62 @@ item_apply_btree_elem_delete(hash_item *it, const char *bkey, const uint32_t nbk
     return ret;
 }
 
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+ENGINE_ERROR_CODE
+item_apply_btree_elem_delete_logical(hash_item *it, bkey_range *bkrange,
+                                     eflag_filter *efilter, uint32_t offset, uint32_t reqcount)
+{
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    const char *key = item_get_key(it);
+    int bkrtype = do_btree_bkey_range_type(bkrange);
+
+#ifdef DEBUG_ITEM_APPLY
+    logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_btree_elem_delete_logical. key=%.*s\n",
+                it->nkey, key);
+#endif
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_btree_elem_delete_logical failed."
+                        " invalid item.\n");
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+
+        btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
+        if (info->ccnt == 0) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_btree_elem_delete_logical failed."
+                        " no element.\n");
+            ret = ENGINE_ELEM_ENOENT; break;
+        }
+        if ((info->bktype == BKEY_TYPE_UINT64 && bkrange->from_nbkey > 0) ||
+            (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_btree_elem_delete_logical failed."
+                        " bkey mismatch. key=%.*s from_bkey=%.*s\n", it->nkey, key,
+                        bkrange->from_nbkey, bkrange->from_bkey);
+            ret = ENGINE_EBADBKEY; break;
+        }
+
+        uint32_t del_count = do_btree_elem_delete(info, bkrtype, bkrange, efilter, offset,
+                                                  reqcount, NULL, ELEM_DELETE_NORMAL);
+        if (del_count == 0) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_btree_elem_delete_logical failed."
+                        " no element deleted. key=%.*s from_bkey=%.*s to_bkey=%.*s", it->nkey, key,
+                        bkrange->from_nbkey, bkrange->from_bkey, bkrange->to_nbkey, bkrange->to_bkey);
+            ret = ENGINE_FAILED; break;
+        }
+    } while(0);
+
+    if (ret != ENGINE_SUCCESS) { /* Remove inconsistent has_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        do_item_release(it);
+    }
+    UNLOCK_CACHE();
+
+    return ret;
+}
+#endif
+
 ENGINE_ERROR_CODE
 item_apply_setattr_exptime(const char *key, const uint32_t nkey, rel_time_t exptime)
 {

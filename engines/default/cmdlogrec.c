@@ -109,6 +109,10 @@ static char *get_logtype_text(uint8_t type)
             return "BT_ELEM_INSERT";
         case LOG_BT_ELEM_DELETE:
             return "BT_ELEM_DELETE";
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+        case LOG_BT_ELEM_DELETE_LOGICAL:
+            return "BT_ELEM_DELETE_LOGICAL";
+#endif
         case LOG_SNAPSHOT_DONE:
             return "SNAPSHOT_DONE";
     }
@@ -981,7 +985,6 @@ static ENGINE_ERROR_CODE lrec_bt_elem_insert_redo(LogRec *logrec)
             return ENGINE_KEY_EEXISTS;
         }
 
-
         /* create collection item */
         item_attr attr;
         int datlen = BTREE_REAL_NBKEY(log->body.nbkey) + log->body.neflag + log->body.vallen;
@@ -1098,6 +1101,140 @@ static void lrec_bt_elem_delete_print(LogRec *logrec)
             log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr, metastr);
 }
 
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+/* BTree Element Delete Logical Log Record */
+static void lrec_bt_elem_delete_logical_write(LogRec *logrec, char *bufptr)
+{
+    BtreeElemDelLgcLog *log = (BtreeElemDelLgcLog*)logrec;
+    int offset = sizeof(LogHdr) + offsetof(BtreeElemDelLgcData, data);
+    int real_from_nbkey = BTREE_REAL_NBKEY(log->body.from_nbkey);
+    int real_to_nbkey = BTREE_REAL_NBKEY(log->body.to_nbkey);
+
+    memcpy(bufptr, (void*)logrec, offset);
+    /* key copy */
+    memcpy(bufptr + offset, log->keyptr, log->body.keylen);
+    offset += log->body.keylen;
+    /* from bkey copy */
+    memcpy(bufptr + offset, log->bkrangep->from_bkey, real_from_nbkey);
+    offset += real_from_nbkey;
+    /* to bkey copy */
+    if (real_to_nbkey != BKEY_NULL) {
+        memcpy(bufptr + offset, log->bkrangep->to_bkey, real_to_nbkey);
+        offset += real_to_nbkey;
+    }
+    /* eflag filter copy */
+    if (log->body.filtering) {
+        if (log->body.nbitwval > 0) {
+            /* bitwval */
+            memcpy(bufptr + offset, log->efilterp->bitwval, log->body.nbitwval);
+            offset += log->body.nbitwval;
+        }
+        /* compval */
+        memcpy(bufptr + offset, log->efilterp->compval, log->body.compvcnt*log->body.ncompval);
+    }
+}
+
+static ENGINE_ERROR_CODE lrec_bt_elem_delete_logical_redo(LogRec *logrec)
+{
+    ENGINE_ERROR_CODE ret;
+    BtreeElemDelLgcLog  *log  = (BtreeElemDelLgcLog*)logrec;
+    BtreeElemDelLgcData *body = &log->body;
+    char *keyptr  = body->data;
+    int  real_from_nbkey = BTREE_REAL_NBKEY(body->from_nbkey);
+    int  real_to_nbkey = BTREE_REAL_NBKEY(body->to_nbkey);
+    char *from_bkeyptr = keyptr + body->keylen;
+    char *to_bkeyptr = from_bkeyptr + real_from_nbkey;
+
+    /* element range */
+    bkey_range bkrange;
+    memcpy(bkrange.from_bkey, from_bkeyptr, real_from_nbkey);
+    bkrange.from_nbkey = body->from_nbkey;
+    if (real_to_nbkey != BKEY_NULL) {
+        memcpy(bkrange.to_bkey, to_bkeyptr, real_to_nbkey);
+    }
+    bkrange.to_nbkey = body->to_nbkey;
+
+    /* efilter */
+    eflag_filter efilter;
+    if (body->filtering) {
+        char *bitwvalptr = to_bkeyptr + (real_to_nbkey == BKEY_NULL ? 0 : real_to_nbkey);
+        char *compvalptr = bitwvalptr + body->nbitwval;
+
+        memcpy(efilter.bitwval, bitwvalptr, body->nbitwval);
+        efilter.nbitwval = body->nbitwval;
+        memcpy(efilter.compval, compvalptr, body->compvcnt*body->ncompval);
+        efilter.ncompval = body->ncompval;
+        efilter.compvcnt = body->compvcnt;
+        efilter.fwhere   = body->fwhere;
+        efilter.bitwop   = body->bitwop;
+        efilter.compop   = body->compop;
+    }
+
+    hash_item *it = item_get(keyptr, body->keylen);
+    if (it) {
+        ret = item_apply_btree_elem_delete_logical(it, &bkrange, (body->filtering ? &efilter : NULL),
+                                                   body->offset, body->reqcount);
+        if (ret == ENGINE_SUCCESS) {
+            item_release(it);
+        } else {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_delete_logical_redo failed.\n");
+        }
+    } else {
+        ret = ENGINE_KEY_ENOENT;
+        logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_delete_logical_redo failed. "
+                    "not found. key=%.*s\n", body->keylen, keyptr);
+    }
+    return ret;
+}
+
+static void lrec_bt_elem_delete_logical_print(LogRec *logrec)
+{
+    BtreeElemDelLgcLog *log = (BtreeElemDelLgcLog*)logrec;
+    char *keyptr = log->body.data;
+    char *fbkeyptr = keyptr + log->body.keylen;
+    char *tbkeyptr = fbkeyptr + BTREE_REAL_NBKEY(log->body.from_nbkey);
+
+    char fbkeystr[32];
+    char tbkeystr[32];
+    lrec_bkey_print(log->body.from_nbkey, (unsigned char *)fbkeyptr, fbkeystr);
+    lrec_bkey_print(log->body.to_nbkey, (unsigned char*)tbkeyptr, tbkeystr);
+
+    lrec_header_print(&log->header);
+    fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s\r\n",
+            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr);
+    fprintf(stderr, "[BKRNG]  from_bkey%s | to_bkey%s | offset=%u | reqcount=%u\r\n",
+            fbkeystr, tbkeystr, log->body.offset, log->body.reqcount);
+    if (log->body.filtering) {
+        bool single_bkey = (BTREE_REAL_NBKEY(log->body.to_nbkey) == BKEY_NULL ? true : false);
+        char *bitwvalptr = tbkeyptr + (single_bkey ? 0 : BTREE_REAL_NBKEY(log->body.to_nbkey));
+        char *compvalptr = bitwvalptr + log->body.nbitwval;
+        char bitwvalstr[MAX_EFLAG_LENG*2];
+        char compvalstr[(MAX_EFLAG_LENG*2+3)*MAX_EFLAG_COMPARE_COUNT];
+
+        /* bitwval string prepare */
+        if (log->body.nbitwval > 0) {
+            safe_hexatostr((const unsigned char*)bitwvalptr, log->body.nbitwval, bitwvalstr);
+        }
+
+        /* compval string prepare */
+        char *tmpptr = &compvalstr[0];
+        char *tmpstr;
+        for (int i = 0; i < log->body.compvcnt; i++) {
+            tmpstr = &compvalptr[i*log->body.ncompval];
+            safe_hexatostr((const unsigned char*)tmpstr, log->body.ncompval, tmpptr);
+            tmpptr += strlen(tmpptr);
+            if (i + 1 < log->body.compvcnt) {
+                memcpy(tmpptr, ",0x", 3); tmpptr += 3;
+            }
+        }
+
+        fprintf(stderr, "[FILTER] fwhere=%u | bitwop=%u | bitwval=0x%s | compop=%u | compval(count=%u)=0x%s\r\n",
+                log->body.fwhere, log->body.bitwop, (log->body.nbitwval > 0 ? bitwvalstr : "NULL"),
+                log->body.compop, log->body.compvcnt, compvalstr);
+    }
+}
+#endif
+
 /* Snapshot Element Log Record */
 static void lrec_snapshot_elem_link_write(LogRec *logrec, char *bufptr)
 {
@@ -1201,20 +1338,23 @@ typedef struct _logrec_func {
 } LOGREC_FUNC;
 
 LOGREC_FUNC logrec_func[] = {
-    { lrec_it_link_write,            lrec_it_link_redo,            lrec_it_link_print },
-    { lrec_it_unlink_write,          lrec_it_unlink_redo,          lrec_it_unlink_print },
-    { lrec_it_setattr_write,         lrec_it_setattr_redo,         lrec_it_setattr_print },
-    { lrec_it_flush_write,           lrec_it_flush_redo,           lrec_it_flush_print },
-    { lrec_list_elem_insert_write,   lrec_list_elem_insert_redo,   lrec_list_elem_insert_print },
-    { lrec_list_elem_delete_write,   lrec_list_elem_delete_redo,   lrec_list_elem_delete_print },
-    { lrec_set_elem_insert_write,    lrec_set_elem_insert_redo,    lrec_set_elem_insert_print },
-    { lrec_set_elem_delete_write,    lrec_set_elem_delete_redo,    lrec_set_elem_delete_print },
-    { lrec_map_elem_insert_write,    lrec_map_elem_insert_redo,    lrec_map_elem_insert_print },
-    { lrec_map_elem_delete_write,    lrec_map_elem_delete_redo,    lrec_map_elem_delete_print },
-    { lrec_bt_elem_insert_write,     lrec_bt_elem_insert_redo,     lrec_bt_elem_insert_print },
-    { lrec_bt_elem_delete_write,     lrec_bt_elem_delete_redo,     lrec_bt_elem_delete_print },
-    { lrec_snapshot_elem_link_write, lrec_snapshot_elem_link_redo, lrec_snapshot_elem_link_print },
-    { lrec_snapshot_done_write,      NULL,                         lrec_snapshot_done_print }
+    { lrec_it_link_write,                lrec_it_link_redo,                lrec_it_link_print },
+    { lrec_it_unlink_write,              lrec_it_unlink_redo,              lrec_it_unlink_print },
+    { lrec_it_setattr_write,             lrec_it_setattr_redo,             lrec_it_setattr_print },
+    { lrec_it_flush_write,               lrec_it_flush_redo,               lrec_it_flush_print },
+    { lrec_list_elem_insert_write,       lrec_list_elem_insert_redo,       lrec_list_elem_insert_print },
+    { lrec_list_elem_delete_write,       lrec_list_elem_delete_redo,       lrec_list_elem_delete_print },
+    { lrec_set_elem_insert_write,        lrec_set_elem_insert_redo,        lrec_set_elem_insert_print },
+    { lrec_set_elem_delete_write,        lrec_set_elem_delete_redo,        lrec_set_elem_delete_print },
+    { lrec_map_elem_insert_write,        lrec_map_elem_insert_redo,        lrec_map_elem_insert_print },
+    { lrec_map_elem_delete_write,        lrec_map_elem_delete_redo,        lrec_map_elem_delete_print },
+    { lrec_bt_elem_insert_write,         lrec_bt_elem_insert_redo,         lrec_bt_elem_insert_print },
+    { lrec_bt_elem_delete_write,         lrec_bt_elem_delete_redo,         lrec_bt_elem_delete_print },
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+    { lrec_bt_elem_delete_logical_write, lrec_bt_elem_delete_logical_redo, lrec_bt_elem_delete_logical_print },
+#endif
+    { lrec_snapshot_elem_link_write,     lrec_snapshot_elem_link_redo,     lrec_snapshot_elem_link_print },
+    { lrec_snapshot_done_write,          NULL,                             lrec_snapshot_done_print }
 };
 
 /* external function */
@@ -1577,6 +1717,43 @@ int lrec_construct_btree_elem_delete(LogRec *logrec, hash_item *it, btree_elem_i
                               BTREE_REAL_NBKEY(log->body.nbkey) + log->body.keylen);
     return log->header.body_length+sizeof(LogHdr);
 }
+
+#ifdef ENABLE_PERSISTENCE_03_OPTIMIZE
+int lrec_construct_btree_elem_delete_logical(LogRec *logrec, hash_item *it, const bkey_range *bkrange,
+                                             const eflag_filter *efilter, uint32_t offset, uint32_t reqcount)
+{
+    BtreeElemDelLgcLog *log = (BtreeElemDelLgcLog*)logrec;
+    log->keyptr = (char*)item_get_key(it);
+
+    memset(&log->body, 0, sizeof(log->body));
+    log->body.keylen = it->nkey;
+    log->body.offset = offset;
+    log->body.reqcount = reqcount;
+    log->body.from_nbkey = bkrange->from_nbkey;
+    log->body.to_nbkey = bkrange->to_nbkey;
+    log->body.filtering = (efilter == NULL ? 0 : 1);
+    if (log->body.filtering) {
+        log->body.nbitwval = efilter->nbitwval;
+        log->body.ncompval = efilter->ncompval;
+        log->body.compvcnt = efilter->compvcnt;
+        log->body.fwhere   = efilter->fwhere;
+        log->body.bitwop   = efilter->bitwop;
+        log->body.compop   = efilter->compop;
+    }
+    log->bkrangep = (bkey_range*)bkrange;
+    log->efilterp = (eflag_filter*)efilter;
+
+    uint8_t real_from_nbkey = BTREE_REAL_NBKEY(log->body.from_nbkey);
+    uint8_t real_to_nbkey = BTREE_REAL_NBKEY(log->body.to_nbkey);
+    log->header.logtype = LOG_BT_ELEM_DELETE_LOGICAL;
+    log->header.updtype = UPD_BT_ELEM_DELETE;
+    log->header.body_length = GET_8_ALIGN_SIZE(offsetof(BtreeElemDelLgcData, data)
+                            + log->body.keylen
+                            + real_from_nbkey + (real_to_nbkey == BKEY_NULL ? 0 : real_to_nbkey)
+                            + log->body.nbitwval + (log->body.compvcnt*log->body.ncompval));
+    return log->header.body_length+sizeof(LogHdr);
+}
+#endif
 
 hash_item *lrec_get_item_if_collection_link(ITLinkLog *log)
 {
