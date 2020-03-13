@@ -585,6 +585,7 @@ static ENGINE_ERROR_CODE lrec_list_elem_insert_redo(LogRec *logrec)
         if (it) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_list_elem_insert_redo failed. "
                                                      "already exist.\n");
+            item_release(it);
             return ENGINE_KEY_EEXISTS;
         }
 
@@ -712,6 +713,7 @@ static ENGINE_ERROR_CODE lrec_set_elem_insert_redo(LogRec *logrec)
         if (it) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_set_elem_insert_redo failed. "
                                                      "already exist.\n");
+            item_release(it);
             return ENGINE_KEY_EEXISTS;
         }
 
@@ -841,6 +843,7 @@ static ENGINE_ERROR_CODE lrec_map_elem_insert_redo(LogRec *logrec)
         if (it) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_map_elem_insert_redo failed. "
                                                      "already exist.\n");
+            item_release(it);
             return ENGINE_KEY_EEXISTS;
         }
 
@@ -973,6 +976,7 @@ static ENGINE_ERROR_CODE lrec_bt_elem_insert_redo(LogRec *logrec)
         if (it) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_insert_redo failed. "
                                                      "already exist.\n");
+            item_release(it);
             return ENGINE_KEY_EEXISTS;
         }
 
