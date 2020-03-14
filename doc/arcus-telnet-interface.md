@@ -29,7 +29,7 @@ telnet 명령으로 memcached에 연결한 이후에는 Arcus ASCII 명령을 �
 아래에서 그 예들을 든다. Arcus ASCII 명령의 자세한 설명은 [Arcus cache server ascii protocol](/doc/arcus-ascii-protocol.md)을 참고하기 바란다.
 
 
-### 예제 1 - get/set
+### 예제 1.  get/set
 
 하나의 key-value item으로 <"foo", "fooval">을 저장하기 위해, set 명령을 입력한다.
 
@@ -60,7 +60,7 @@ fooval
 END
 ```
 
-### 예제 2 - b+tree
+### 예제 2.  b+tree
 
 하나의 b+tree item을 생성하면서 5개의 elements를 추가하기 위해,
 아래의 5개 bop insert 명령을 차례로 수행한다.

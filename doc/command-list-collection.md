@@ -3,16 +3,16 @@ LIST 명령
 
 List collection에 관한 명령은 아래와 같다.
 
-- [List collection 생성: lop create](command-list-collection.md#lop-create---list-collection-%EC%83%9D%EC%84%B1)
+- [List collection 생성: lop create](command-list-collection.md#lop-create-list-collection-생성)
 - List collection 삭제: delete (기존 key-value item의 삭제 명령을 그대로 사용)
 
 List element에 관한 명령은 아래와 같다.
 
-- [List element 삽입: lop insert](command-list-collection.md#lop-insert---list-element-%EC%82%BD%EC%9E%85)
-- [List element 삭제: lop delete](command-list-collection.md#lop-delete---list-element-%EC%82%AD%EC%A0%9C)
-- [List element 조회: lop get](command-list-collection.md#lop-get---list-element-%EC%A1%B0%ED%9A%8C)
+- [List element 삽입: lop insert](command-list-collection.md#lop-insert-list-element-삽입)
+- [List element 삭제: lop delete](command-list-collection.md#lop-delete-list-element-삭제)
+- [List element 조회: lop get](command-list-collection.md#lop-get-list-element-조회)
 
-### lop create - List Collection 생성
+### lop create (List Collection 생성)
 
 List collection을 empty 상태로 생성한다.
 
@@ -33,7 +33,7 @@ Response string과 그 의미는 아래와 같다.
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “SERVER_ERROR out of memory” - 메모리 부족
 
-### lop insert - List Element 삽입
+### lop insert (List Element 삽입)
 
 List collection에 하나의 element를 삽입한다.
 List collection을 생성하면서 하나의 element를 삽입할 수도 있다.
@@ -69,7 +69,7 @@ Response string과 그 의미는 아래와 같다.
 - “CLIENT_ERROR bad data chunk” - 삽입할 데이터 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
 - “SERVER_ERROR out of memory” - 메모리 부족
 
-### lop delete - List Element 삭제
+### lop delete (List Element 삭제)
 
 List collection에 하나의 index 또는 index range에 해당하는 elements를 삭제한다.
 
@@ -100,7 +100,7 @@ Response string과 그 의미는 아래와 같다.
 - "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 
-### lop get - List Element 조회
+### lop get (List Element 조회)
 
 List collection에 하나의 index 또는 index range에 해당하는 elements를 조회한다.
 
