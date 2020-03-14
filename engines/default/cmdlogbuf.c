@@ -98,11 +98,43 @@ static EXTENSION_LOGGER_DESCRIPTOR* logger = NULL;
 static struct log_global log_gl;
 
 /*
- * Static Functions
+ * Static Functions for DIsk IO
+ * FIXME: These can be moved to a separate disk.c file later.
  */
-/* FIXME: disk_byte_write is temporary function move to disk.c later */
 /***************/
-static ssize_t disk_byte_write(int fd, void *buf, size_t count)
+
+static int disk_open(const char *fname, int flags, int mode)
+{
+    int fd;
+    while (1) {
+        if ((fd = open(fname, flags, mode)) == -1) {
+            if (errno == EINTR) continue;
+        }
+        break;
+    }
+    return fd;
+}
+
+static ssize_t disk_read(int fd, void *buf, size_t count)
+{
+    char   *bfptr = (char*)buf;
+    ssize_t nleft = count;
+    ssize_t nread;
+
+    while (nleft > 0) {
+        nread = read(fd, bfptr, nleft);
+        if (nread == 0) break;
+        if (nread <  0) {
+            if (errno == EINTR) continue;
+            return nread;
+        }
+        nleft -= nread;
+        bfptr += nread;
+    }
+    return (count - nleft);
+}
+
+static ssize_t disk_write(int fd, void *buf, size_t count)
 {
     char   *bfptr = (char*)buf;
     ssize_t nleft = count;
@@ -119,18 +151,6 @@ static ssize_t disk_byte_write(int fd, void *buf, size_t count)
         bfptr += nwrite;
     }
     return (count - nleft);
-}
-
-static int disk_open(const char *fname, int flags, int mode)
-{
-    int fd;
-    while (1) {
-        if ((fd = open(fname, flags, mode)) == -1) {
-            if (errno == EINTR) continue;
-        }
-        break;
-    }
-    return fd;
 }
 
 static int disk_fsync(int fd)
@@ -192,7 +212,7 @@ static void do_log_file_write(char *log_ptr, uint32_t log_size, bool dual_write)
     assert(logfile->fd != -1);
 
     /* The log data is appended */
-    ssize_t nwrite = disk_byte_write(logfile->fd, log_ptr, log_size);
+    ssize_t nwrite = disk_write(logfile->fd, log_ptr, log_size);
     if (nwrite != log_size) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "log file(%d) write - write(%ld!=%ld) error=(%d:%s)\n",
@@ -207,7 +227,7 @@ static void do_log_file_write(char *log_ptr, uint32_t log_size, bool dual_write)
         /* next_fd is guaranteed concurrency by log_flush_lock */
 
         /* The log data is appended */
-        nwrite = disk_byte_write(logfile->next_fd, log_ptr, log_size);
+        nwrite = disk_write(logfile->next_fd, log_ptr, log_size);
         if (nwrite != log_size) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "log file(%d) write - write(%ld!=%ld) error=(%d:%s)\n",
@@ -658,7 +678,7 @@ int cmdlog_file_apply(void)
             break;
         }
 
-        ssize_t nread = read(logfile->fd, loghdr, sizeof(LogHdr));
+        ssize_t nread = disk_read(logfile->fd, loghdr, sizeof(LogHdr));
         if (nread != sizeof(LogHdr)) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "[RECOVERY - CMDLOG] failed : read header data "
@@ -691,7 +711,7 @@ int cmdlog_file_apply(void)
                 ret = -1; break;
             }
             logrec->body = buf + nread;
-            nread = read(logfile->fd, logrec->body, loghdr->body_length);
+            nread = disk_read(logfile->fd, logrec->body, loghdr->body_length);
             if (nread != loghdr->body_length) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
                             "[RECOVERY - CMDLOG] failed : read body data "
