@@ -3,14 +3,14 @@ LIST 명령
 
 List collection에 관한 명령은 아래와 같다.
 
-- [List collection 생성: lop create](command-list-collection.md#lop-create---list-collection-%EC%83%9D%EC%84%B1)
+- [List collection 생성: lop create](command-list-collection.md#lop-create-list-collection-생성)
 - List collection 삭제: delete (기존 key-value item의 삭제 명령을 그대로 사용)
 
 List element에 관한 명령은 아래와 같다.
 
-- [List element 삽입: lop insert](command-list-collection.md#lop-insert---list-element-%EC%82%BD%EC%9E%85)
-- [List element 삭제: lop delete](command-list-collection.md#lop-delete---list-element-%EC%82%AD%EC%A0%9C)
-- [List element 조회: lop get](command-list-collection.md#lop-get---list-element-%EC%A1%B0%ED%9A%8C)
+- [List element 삽입: lop insert](command-list-collection.md#lop-insert-list-element-삽입)
+- [List element 삭제: lop delete](command-list-collection.md#lop-delete-list-element-삭제)
+- [List element 조회: lop get](command-list-collection.md#lop-get-list-element-조회)
 
 ### lop create (List Collection 생성)
 

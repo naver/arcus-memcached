@@ -3,15 +3,15 @@ MAP 명령
 
 Map collection에 관한 명령은 아래와 같다.
 
-- [Map collection 생성: mop create](command-map-collection.md#mop-create---map-collection-생성)
+- [Map collection 생성: mop create](command-map-collection.md#mop-create-map-collection-생성)
 - Map collection 삭제: delete (기존 key-value item의 삭제 명령을 그대로 사용)
 
 Map element에 관한 명령은 아래와 같다. 
 
-- [Map element 삽입: mop insert](command-map-collection.md#mop-insert---map-element-삽입)
-- [Map element 변경: mop update](command-map-collection.md#mop-update---map-element-변경)
-- [Map element 삭제: mop delete](command-map-collection.md#mop-delete---map-element-삭제)
-- [Map element 조회: mop get](command-map-collection.md#mop-get---map-field-element-조회)
+- [Map element 삽입: mop insert](command-map-collection.md#mop-insert-map-element-삽입)
+- [Map element 변경: mop update](command-map-collection.md#mop-update-map-element-변경)
+- [Map element 삭제: mop delete](command-map-collection.md#mop-delete-map-element-삭제)
+- [Map element 조회: mop get](command-map-collection.md#mop-get-map-field-element-조회)
 
 ### mop create (Map Collection 생성)
 
