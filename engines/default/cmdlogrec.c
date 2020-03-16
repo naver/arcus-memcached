@@ -366,19 +366,11 @@ static void lrec_it_link_print(LogRec *logrec)
 
     lrec_header_print(&log->header);
     /* vallen >= 2, valstr = ...\r\n */
-#ifdef ENABLE_PERSISTENCE_03_DROP
     fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | ittype=%s | "
             "flags=%u | exptime=%u | %s | vallen=%u | valstr=%.*s",
             cm->keylen, (cm->keylen <= 250 ? cm->keylen : 250), keyptr,
             get_itemtype_text(cm->ittype), htonl(cm->flags), cm->exptime, metastr,
             cm->vallen, (cm->vallen <= 250 ? cm->vallen : 250), keyptr + cm->keylen);
-#else
-    fprintf(stderr, "[BODY]   ittype=%s | flags=%u | exptime=%u | %s | "
-            "keylen=%u | keystr=%.*s | vallen=%u | valstr=%.*s",
-            get_itemtype_text(cm->ittype), htonl(cm->flags), cm->exptime, metastr,
-            cm->keylen, (cm->keylen <= 250 ? cm->keylen : 250), keyptr,
-            cm->vallen, (cm->vallen <= 250 ? cm->vallen : 250), keyptr + cm->keylen);
-#endif
 }
 
 /* Item Unlink Log Record */
@@ -488,13 +480,9 @@ static void lrec_it_setattr_print(LogRec *logrec)
     switch (log->header.updtype) {
       case UPD_SETATTR_EXPTIME:
       {
-#ifdef ENABLE_PERSISTENCE_03_DROP
         fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | exptime=%u\r\n",
-                log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr, log->body.exptime);
-#else
-        fprintf(stderr, "[BODY]   exptime=%u | keylen=%u | keystr=%.*s\r\n",
-                log->body.exptime, log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr);
-#endif
+                log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
+                log->body.exptime);
       }
       break;
       case UPD_SETATTR_EXPTIME_INFO:
@@ -510,19 +498,11 @@ static void lrec_it_setattr_print(LogRec *logrec)
             sprintf(metastr, "maxbkeyrange NULL");
         }
 
-#ifdef ENABLE_PERSISTENCE_03_DROP
         fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | ovflact=%s | "
                 "mflags=%u | mcnt=%u | exptime=%u | %s\r\n",
                 log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
                 get_coll_ovflact_text(log->body.ovflact), log->body.mflags, log->body.mcnt,
                 log->body.exptime, metastr);
-#else
-        fprintf(stderr, "[BODY]   ovflact=%s | mflags=%u | mcnt=%u | "
-                "exptime=%u | %s | keylen=%u | keystr=%.*s\r\n",
-                get_coll_ovflact_text(log->body.ovflact), log->body.mflags, log->body.mcnt,
-                log->body.exptime, metastr,
-                log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr);
-#endif
       }
       break;
     }
@@ -570,15 +550,9 @@ static void lrec_it_flush_print(LogRec *logrec)
     bool print_prefix = (log->body.nprefix > 0 && log->body.nprefix < 255 ? true : false);
 
     lrec_header_print(&log->header);
-#ifdef ENABLE_PERSISTENCE_03_DROP
     fprintf(stderr, "[BODY]   nprefix=%u | prefixstr=%.*s\r\n",
             log->body.nprefix, (print_prefix ? log->body.nprefix : 4),
             (print_prefix ? prefixptr : "NULL"));
-#else
-    fprintf(stderr, "[BODY]   nprefix=%u | keystr=%.*s\r\n",
-            log->body.nprefix, (print_prefix ? log->body.nprefix : 4),
-            (print_prefix ? prefixptr : "NULL"));
-#endif
 }
 
 /* List Element Insert Log Record */
@@ -652,19 +626,11 @@ static void lrec_list_elem_insert_print(LogRec *logrec)
     char *valptr = keyptr + log->body.keylen;
 
     lrec_header_print(&log->header);
-#ifdef ENABLE_PERSISTENCE_03_DROP
     fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | "
             "totcnt=%u | eindex=%d | vallen=%u | valstr=%.*s",
             log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
             log->body.totcnt, log->body.eindex,
             log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250), valptr);
-#else
-    fprintf(stderr, "[BODY]   totcnt=%u | eindex=%d | "
-            "keylen=%u | keystr=%.*s | vallen=%u | valstr=%.*s",
-            log->body.totcnt, log->body.eindex,
-            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
-            log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250), valptr);
-#endif
     if (log->body.create) {
         lrec_attr_info info;
         memcpy(&info, (char*)(valptr + log->body.vallen), sizeof(lrec_attr_info));
@@ -692,11 +658,7 @@ static ENGINE_ERROR_CODE lrec_list_elem_delete_redo(LogRec *logrec)
 
     hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
-#ifdef ENABLE_PERSISTENCE_03_DROP
         ret = item_apply_list_elem_delete(it, body->totcnt, body->eindex, body->delcnt, body->drop);
-#else
-        ret = item_apply_list_elem_delete(it, body->totcnt, body->eindex, body->delcnt);
-#endif
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_list_elem_delete_redo failed.\n");
         }
@@ -715,15 +677,9 @@ static void lrec_list_elem_delete_print(LogRec *logrec)
     char *keyptr = log->body.data;
 
     lrec_header_print(&log->header);
-#ifdef ENABLE_PERSISTENCE_03_DROP
     fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | totcnt=%u | eindex=%d | delcnt=%u | drop=%s\r\n",
             log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
             log->body.totcnt, log->body.eindex, log->body.delcnt, (log->body.drop ? "true" : "false"));
-#else
-    fprintf(stderr, "[BODY]   totcnt=%u | eindex=%d | delcnt=%u | keylen=%u | keystr=%.*s\r\n",
-            log->body.totcnt, log->body.eindex, log->body.delcnt,
-            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr);
-#endif
 }
 
 /* Set Element Insert Log Record */
@@ -831,11 +787,7 @@ static ENGINE_ERROR_CODE lrec_set_elem_delete_redo(LogRec *logrec)
 
     hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
-#ifdef ENABLE_PERSISTENCE_03_DROP
         ret = item_apply_set_elem_delete(it, valptr, body->vallen, body->drop);
-#else
-        ret = item_apply_set_elem_delete(it, valptr, body->vallen);
-#endif
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_set_elem_delete_redo failed.\n");
         }
@@ -855,16 +807,10 @@ static void lrec_set_elem_delete_print(LogRec *logrec)
     char *valptr = keyptr + log->body.keylen;
 
     lrec_header_print(&log->header);
-#ifdef ENABLE_PERSISTENCE_03_DROP
     fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | vallen=%u | valstr=%.*s | drop=%s\r\n",
             log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
             log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250), valptr,
             (log->body.drop ? "true" : "false"));
-#else
-    fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | vallen=%u | valstr=%.*s",
-            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
-            log->body.vallen, (log->body.vallen <= 250 ? log->body.vallen : 250), valptr);
-#endif
 }
 
 /* Map Element Insert Log Record */
@@ -974,11 +920,7 @@ static ENGINE_ERROR_CODE lrec_map_elem_delete_redo(LogRec *logrec)
 
     hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
-#ifdef ENABLE_PERSISTENCE_03_DROP
         ret = item_apply_map_elem_delete(it, fldptr, body->fldlen, body->drop);
-#else
-        ret = item_apply_map_elem_delete(it, fldptr, body->fldlen);
-#endif
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_map_elem_delete_redo failed.\n");
         }
@@ -998,15 +940,9 @@ static void lrec_map_elem_delete_print(LogRec *logrec)
     char *fldptr = keyptr + log->body.keylen;
 
     lrec_header_print(&log->header);
-#ifdef ENABLE_PERSISTENCE_03_DROP
     fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | fldlen=%u | fldstr=%.*s | drop=%s\r\n",
             log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
             log->body.fldlen, log->body.fldlen, fldptr, (log->body.drop ? "true" : "false"));
-#else
-    fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | fldlen=%u | fldstr=%.*s\r\n",
-            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
-            log->body.fldlen, log->body.fldlen, fldptr);
-#endif
 }
 
 /* BTree Element Insert Log Record */
@@ -1132,11 +1068,7 @@ static ENGINE_ERROR_CODE lrec_bt_elem_delete_redo(LogRec *logrec)
 
     hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
-#ifdef ENABLE_PERSISTENCE_03_DROP
         ret = item_apply_btree_elem_delete(it, bkeyptr, body->nbkey, body->drop);
-#else
-        ret = item_apply_btree_elem_delete(it, bkeyptr, body->nbkey);
-#endif
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_delete_redo failed.\n");
         }
@@ -1160,14 +1092,9 @@ static void lrec_bt_elem_delete_print(LogRec *logrec)
     lrec_bkey_print(log->body.nbkey, bkeyptr, metastr + leng);
 
     lrec_header_print(&log->header);
-#ifdef ENABLE_PERSISTENCE_03_DROP
     fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | %s | drop=%s\r\n",
             log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
             metastr, (log->body.drop ? "true" : "false"));
-#else
-    fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | %s\r\n",
-            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr, metastr);
-#endif
 }
 
 /* BTree Element Delete Logical Log Record */
@@ -1240,13 +1167,8 @@ static ENGINE_ERROR_CODE lrec_bt_elem_delete_logical_redo(LogRec *logrec)
 
     hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
-#ifdef ENABLE_PERSISTENCE_03_DROP
         ret = item_apply_btree_elem_delete_logical(it, &bkrange, (body->filtering ? &efilter : NULL),
                                                    body->offset, body->reqcount, body->drop);
-#else
-        ret = item_apply_btree_elem_delete_logical(it, &bkrange, (body->filtering ? &efilter : NULL),
-                                                   body->offset, body->reqcount);
-#endif
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_delete_logical_redo failed.\n");
         }
@@ -1272,14 +1194,9 @@ static void lrec_bt_elem_delete_logical_print(LogRec *logrec)
     lrec_bkey_print(log->body.to_nbkey, (unsigned char*)tbkeyptr, tbkeystr);
 
     lrec_header_print(&log->header);
-#ifdef ENABLE_PERSISTENCE_03_DROP
     fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s | drop=%s\r\n",
             log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
             (log->body.drop ? "true" : "false"));
-#else
-    fprintf(stderr, "[BODY]   keylen=%u | keystr=%.*s\r\n",
-            log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr);
-#endif
     fprintf(stderr, "[BKRNG]  from_bkey%s | to_bkey%s | offset=%u | reqcount=%u\r\n",
             fbkeystr, tbkeystr, log->body.offset, log->body.reqcount);
     if (log->body.filtering) {
@@ -1640,8 +1557,9 @@ int lrec_construct_snapshot_elem(LogRec *logrec, hash_item *it, void *elem)
     return log->header.body_length+sizeof(LogHdr);
 }
 
-int lrec_construct_list_elem_insert(LogRec *logrec, hash_item *it, uint32_t totcnt,
-                                    int eindex, list_elem_item *elem, bool create, lrec_attr_info *attr)
+int lrec_construct_list_elem_insert(LogRec *logrec, hash_item *it,
+                                    uint32_t totcnt, int eindex, list_elem_item *elem,
+                                    bool create, lrec_attr_info *attr)
 {
     ListElemInsLog *log = (ListElemInsLog*)logrec;
     log->keyptr = (char*)item_get_key(it);
@@ -1664,19 +1582,14 @@ int lrec_construct_list_elem_insert(LogRec *logrec, hash_item *it, uint32_t totc
     return log->header.body_length+sizeof(LogHdr);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_DROP
-int lrec_construct_list_elem_delete(LogRec *logrec, hash_item *it, uint32_t totcnt,
-                                    int eindex, uint32_t delcnt, bool drop)
-#else
-int lrec_construct_list_elem_delete(LogRec *logrec, hash_item *it, uint32_t totcnt, int eindex, uint32_t delcnt)
-#endif
+int lrec_construct_list_elem_delete(LogRec *logrec, hash_item *it,
+                                    uint32_t totcnt, int eindex, uint32_t delcnt,
+                                    bool drop)
 {
     ListElemDelLog *log = (ListElemDelLog*)logrec;
     log->keyptr = (char*)item_get_key(it);
     log->body.keylen = it->nkey;
-#ifdef ENABLE_PERSISTENCE_03_DROP
     log->body.drop   = drop;
-#endif
     log->body.totcnt = totcnt;
     log->body.eindex = eindex;
     log->body.delcnt = delcnt;
@@ -1710,19 +1623,14 @@ int lrec_construct_map_elem_insert(LogRec *logrec, hash_item *it, map_elem_item 
     return log->header.body_length+sizeof(LogHdr);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_DROP
-int lrec_construct_map_elem_delete(LogRec *logrec, hash_item *it, map_elem_item *elem, bool drop)
-#else
-int lrec_construct_map_elem_delete(LogRec *logrec, hash_item *it, map_elem_item *elem)
-#endif
+int lrec_construct_map_elem_delete(LogRec *logrec, hash_item *it, map_elem_item *elem,
+                                   bool drop)
 {
     MapElemDelLog *log = (MapElemDelLog*)logrec;
     log->keyptr = (char*)item_get_key(it);
     log->datptr = (char*)elem->data;
     log->body.keylen = it->nkey;
-#ifdef ENABLE_PERSISTENCE_03_DROP
     log->body.drop   = drop;
-#endif
     log->body.fldlen = elem->nfield;
 
     log->header.logtype = LOG_MAP_ELEM_DELETE;
@@ -1754,19 +1662,14 @@ int lrec_construct_set_elem_insert(LogRec *logrec, hash_item *it, set_elem_item 
     return log->header.body_length+sizeof(LogHdr);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_DROP
-int lrec_construct_set_elem_delete(LogRec *logrec, hash_item *it, set_elem_item *elem, bool drop)
-#else
-int lrec_construct_set_elem_delete(LogRec *logrec, hash_item *it, set_elem_item *elem)
-#endif
+int lrec_construct_set_elem_delete(LogRec *logrec, hash_item *it, set_elem_item *elem,
+                                   bool drop)
 {
     SetElemDelLog *log = (SetElemDelLog*)logrec;
     log->keyptr = (char*)item_get_key(it);
     log->valptr = (char*)elem->value;
     log->body.keylen = it->nkey;
-#ifdef ENABLE_PERSISTENCE_03_DROP
     log->body.drop   = drop;
-#endif
     log->body.vallen = elem->nbytes;
 
     log->header.logtype = LOG_SET_ELEM_DELETE;
@@ -1800,19 +1703,14 @@ int lrec_construct_btree_elem_insert(LogRec *logrec, hash_item *it, btree_elem_i
     return log->header.body_length+sizeof(LogHdr);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_DROP
-int lrec_construct_btree_elem_delete(LogRec *logrec, hash_item *it, btree_elem_item *elem, bool drop)
-#else
-int lrec_construct_btree_elem_delete(LogRec *logrec, hash_item *it, btree_elem_item *elem)
-#endif
+int lrec_construct_btree_elem_delete(LogRec *logrec, hash_item *it, btree_elem_item *elem,
+                                     bool drop)
 {
     BtreeElemDelLog *log = (BtreeElemDelLog*)logrec;
     log->keyptr = (char*)item_get_key(it);
     log->datptr = (char*)elem->data;
     log->body.keylen = it->nkey;
-#ifdef ENABLE_PERSISTENCE_03_DROP
     log->body.drop  = drop;
-#endif
     log->body.nbkey = elem->nbkey;
 
     log->header.logtype = LOG_BT_ELEM_DELETE;
@@ -1822,22 +1720,17 @@ int lrec_construct_btree_elem_delete(LogRec *logrec, hash_item *it, btree_elem_i
     return log->header.body_length+sizeof(LogHdr);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_DROP
-int lrec_construct_btree_elem_delete_logical(LogRec *logrec, hash_item *it, const bkey_range *bkrange,
-                                             const eflag_filter *efilter, uint32_t offset, uint32_t reqcount, bool drop)
-#else
-int lrec_construct_btree_elem_delete_logical(LogRec *logrec, hash_item *it, const bkey_range *bkrange,
-                                             const eflag_filter *efilter, uint32_t offset, uint32_t reqcount)
-#endif
+int lrec_construct_btree_elem_delete_logical(LogRec *logrec, hash_item *it,
+                                             const bkey_range *bkrange,
+                                             const eflag_filter *efilter,
+                                             uint32_t offset, uint32_t reqcount, bool drop)
 {
     BtreeElemDelLgcLog *log = (BtreeElemDelLgcLog*)logrec;
     log->keyptr = (char*)item_get_key(it);
 
     memset(&log->body, 0, sizeof(log->body));
     log->body.keylen = it->nkey;
-#ifdef ENABLE_PERSISTENCE_03_DROP
     log->body.drop   = drop;
-#endif
     log->body.offset = offset;
     log->body.reqcount = reqcount;
     log->body.from_nbkey = bkrange->from_nbkey;

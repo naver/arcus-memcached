@@ -669,36 +669,29 @@ ENGINE_ERROR_CODE item_apply_map_link(const char *key, const uint32_t nkey, item
 ENGINE_ERROR_CODE item_apply_btree_link(const char *key, const uint32_t nkey, item_attr *attrp);
 ENGINE_ERROR_CODE item_apply_unlink(const char *key, const uint32_t nkey);
 
-ENGINE_ERROR_CODE item_apply_list_elem_insert(hash_item *it, const int nelems, const int index,
+ENGINE_ERROR_CODE item_apply_list_elem_insert(hash_item *it,
+                                              const int nelems, const int index,
                                               const char *value, const uint32_t nbytes);
-#ifdef ENABLE_PERSISTENCE_03_DROP
-ENGINE_ERROR_CODE item_apply_list_elem_delete(hash_item *it, const int nelems, const int index, const int count, const bool drop_if_empty);
-#else
-ENGINE_ERROR_CODE item_apply_list_elem_delete(hash_item *it, const int nelems, const int index, const int count);
-#endif
+ENGINE_ERROR_CODE item_apply_list_elem_delete(hash_item *it,
+                                              const int nelems, const int index, const int count,
+                                              const bool drop_if_empty);
 ENGINE_ERROR_CODE item_apply_set_elem_insert(hash_item *it, const char *value, const uint32_t nbytes);
-#ifdef ENABLE_PERSISTENCE_03_DROP
-ENGINE_ERROR_CODE item_apply_set_elem_delete(hash_item *it, const char *value, const uint32_t nbytes, const bool drop_if_empty);
-#else
-ENGINE_ERROR_CODE item_apply_set_elem_delete(hash_item *it, const char *value, const uint32_t nbytes);
-#endif
-ENGINE_ERROR_CODE item_apply_map_elem_insert(hash_item *it, const char *data, const uint32_t nfield, const uint32_t nbytes);
-#ifdef ENABLE_PERSISTENCE_03_DROP
-ENGINE_ERROR_CODE item_apply_map_elem_delete(hash_item *it, const char *field, const uint32_t nfield, const bool drop_if_empty);
-#else
-ENGINE_ERROR_CODE item_apply_map_elem_delete(hash_item *it, const char *field, const uint32_t nfield);
-#endif
+ENGINE_ERROR_CODE item_apply_set_elem_delete(hash_item *it, const char *value, const uint32_t nbytes,
+                                             const bool drop_if_empty);
+ENGINE_ERROR_CODE item_apply_map_elem_insert(hash_item *it,
+                                             const char *data, const uint32_t nfield, const uint32_t nbytes);
+ENGINE_ERROR_CODE item_apply_map_elem_delete(hash_item *it,
+                                             const char *field, const uint32_t nfield,
+                                             const bool drop_if_empty);
 ENGINE_ERROR_CODE item_apply_btree_elem_insert(hash_item *it, const char *data, const uint32_t nbkey,
                                                const uint32_t neflag, const uint32_t nbytes);
-#ifdef ENABLE_PERSISTENCE_03_DROP
-ENGINE_ERROR_CODE item_apply_btree_elem_delete(hash_item *it, const char *bkey, const uint32_t nbkey, const bool drop_if_empty);
-ENGINE_ERROR_CODE item_apply_btree_elem_delete_logical(hash_item *it, const bkey_range *bkrange, const eflag_filter *efilter,
-                                                       const uint32_t offset, const uint32_t reqcount, const bool drop_if_empty);
-#else
-ENGINE_ERROR_CODE item_apply_btree_elem_delete(hash_item *it, const char *bkey, const uint32_t nbkey);
-ENGINE_ERROR_CODE item_apply_btree_elem_delete_logical(hash_item *it, bkey_range *bkrange, eflag_filter *efilter,
-                                                       uint32_t offset, uint32_t reqcount);
-#endif
+ENGINE_ERROR_CODE item_apply_btree_elem_delete(hash_item *it, const char *bkey, const uint32_t nbkey,
+                                               const bool drop_if_empty);
+ENGINE_ERROR_CODE item_apply_btree_elem_delete_logical(hash_item *it,
+                                                       const bkey_range *bkrange,
+                                                       const eflag_filter *efilter,
+                                                       const uint32_t offset, const uint32_t reqcount,
+                                                       const bool drop_if_empty);
 ENGINE_ERROR_CODE item_apply_setattr_exptime(const char *key, const uint32_t nkey, rel_time_t exptime);
 ENGINE_ERROR_CODE item_apply_setattr_meta_info(hash_item *it, const uint8_t ovflact, const uint8_t mflags,
                                                rel_time_t exptime, const int32_t mcnt, bkey_t *maxbkeyrange);
