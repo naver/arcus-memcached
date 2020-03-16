@@ -1,3 +1,13 @@
+2020-03-16 [version 1.12.0]
+	* [FEATURE] Changed max_element_bytes(4KB=>16KB) and set configurable.
+	* [FIX]     Added the error handling of retry when an auto scrub fails.
+	* [INTERNAL] Added CLOG_BTREE_ELEM_DELETE_LOGICAL macro.
+	* [CLEANUP] Fixed improper type specifiers and wrong response string.
+	* [CLEANUP] Fixed condition to decrease bucket refcount when scan ends.
+	* [CLEANUP] Fixed some mistakes on code comments.
+	* [DOC]     Removed hyphen in chapter titles.
+	* [DOC]     Removed time option in delete command.
+
 2019-11-20 [version 1.11.8]
 	* [FEATURE] Dump SM info summary when "no more small memory" occurs.
 	* [FEATURE] Print out not absolute but the remaining exptime in key dump.
