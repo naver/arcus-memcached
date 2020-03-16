@@ -22,14 +22,14 @@
 #include "cmdlogrec.h"
 
 /* external log functions */
-void log_record_write(LogRec *logrec, log_waiter_t *waiter, bool dual_write);
-void log_file_sync(void);
-void log_buffer_flush(LogSN *upto_lsn);
+void cmdlog_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_write);
+void cmdlog_buff_flush(LogSN *upto_lsn);
+void cmdlog_file_sync(void);
 
 /* FIXME: remove later, if not used */
 //void log_get_write_lsn(LogSN *lsn);
-void log_get_flush_lsn(LogSN *lsn);
-void log_get_fsync_lsn(LogSN *lsn);
+void cmdlog_get_flush_lsn(LogSN *lsn);
+void cmdlog_get_fsync_lsn(LogSN *lsn);
 
 int               cmdlog_file_open(char *path);
 size_t            cmdlog_file_getsize(void);
