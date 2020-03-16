@@ -545,8 +545,15 @@ void cmdlog_generate_list_elem_delete(hash_item *it, const uint32_t total,
                                       const int index, const uint32_t count)
 {
     ListElemDelLog log;
+#ifdef ENABLE_PERSISTENCE_03_DROP
+    log_waiter_t *waiter = cmdlog_get_cur_waiter();
+    bool drop = waiter->elem_clog_with_collection;
+    (void)lrec_construct_list_elem_delete((LogRec*)&log, it, total, index, count, drop);
+    cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+#else
     (void)lrec_construct_list_elem_delete((LogRec*)&log, it, total, index, count);
     cmdlog_buff_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+#endif
 }
 
 void cmdlog_generate_map_elem_insert(hash_item *it, map_elem_item *elem)
@@ -562,8 +569,15 @@ void cmdlog_generate_map_elem_insert(hash_item *it, map_elem_item *elem)
 void cmdlog_generate_map_elem_delete(hash_item *it, map_elem_item *elem)
 {
     MapElemDelLog log;
+#ifdef ENABLE_PERSISTENCE_03_DROP
+    log_waiter_t *waiter = cmdlog_get_cur_waiter();
+    bool drop = waiter->elem_clog_with_collection;
+    (void)lrec_construct_map_elem_delete((LogRec*)&log, it, elem, drop);
+    cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+#else
     (void)lrec_construct_map_elem_delete((LogRec*)&log, it, elem);
     cmdlog_buff_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+#endif
 }
 
 void cmdlog_generate_set_elem_insert(hash_item *it, set_elem_item *elem)
@@ -579,8 +593,15 @@ void cmdlog_generate_set_elem_insert(hash_item *it, set_elem_item *elem)
 void cmdlog_generate_set_elem_delete(hash_item *it, set_elem_item *elem)
 {
     SetElemDelLog log;
+#ifdef ENABLE_PERSISTENCE_03_DROP
+    log_waiter_t *waiter = cmdlog_get_cur_waiter();
+    bool drop = waiter->elem_clog_with_collection;
+    (void)lrec_construct_set_elem_delete((LogRec*)&log, it, elem, drop);
+    cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+#else
     (void)lrec_construct_set_elem_delete((LogRec*)&log, it, elem);
     cmdlog_buff_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+#endif
 }
 
 void cmdlog_generate_btree_elem_insert(hash_item *it, btree_elem_item *elem)
@@ -596,8 +617,15 @@ void cmdlog_generate_btree_elem_insert(hash_item *it, btree_elem_item *elem)
 void cmdlog_generate_btree_elem_delete(hash_item *it, btree_elem_item *elem)
 {
     BtreeElemDelLog log;
+#ifdef ENABLE_PERSISTENCE_03_DROP
+    log_waiter_t *waiter = cmdlog_get_cur_waiter();
+    bool drop = waiter->elem_clog_with_collection;
+    (void)lrec_construct_btree_elem_delete((LogRec*)&log, it, elem, drop);
+    cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+#else
     (void)lrec_construct_btree_elem_delete((LogRec*)&log, it, elem);
     cmdlog_buff_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+#endif
 }
 
 void cmdlog_generate_btree_elem_delete_logical(hash_item *it,
@@ -606,8 +634,16 @@ void cmdlog_generate_btree_elem_delete_logical(hash_item *it,
                                                uint32_t offset, uint32_t reqcount)
 {
     BtreeElemDelLgcLog log;
+#ifdef ENABLE_PERSISTENCE_03_DROP
+    log_waiter_t *waiter = cmdlog_get_cur_waiter();
+    bool drop = waiter->elem_clog_with_collection;
+    (void)lrec_construct_btree_elem_delete_logical((LogRec*)&log, it, bkrange, efilter,
+                                                   offset, reqcount, drop);
+    cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+#else
     (void)lrec_construct_btree_elem_delete_logical((LogRec*)&log, it, bkrange, efilter, offset, reqcount);
     cmdlog_buff_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+#endif
 }
 
 void cmdlog_set_chkpt_scan(struct assoc_scan *cs)

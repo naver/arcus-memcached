@@ -207,7 +207,12 @@ typedef struct _List_elem_insert_log {
 /* List Elem Delete Log Record */
 typedef struct _List_elem_delete_data {
     uint16_t keylen;  /* key length */
+#ifdef ENABLE_PERSISTENCE_03_DROP
+    uint8_t  drop;    /* drop if empty */
+    uint8_t  reserved_8[1];
+#else
     uint16_t reserved_16[1];
+#endif
     uint32_t totcnt;  /* total element count */
     int32_t  eindex;  /* element index */
     uint32_t delcnt;  /* delete count */
@@ -240,6 +245,9 @@ typedef struct _Map_elem_insert_log {
 /* Map Elem Delete Log Record */
 typedef struct _Map_elem_delete_data {
     uint16_t keylen;  /* key length */
+#ifdef ENABLE_PERSISTENCE_03_DROP
+    uint8_t  drop;    /* drop if empty */
+#endif
     uint8_t  fldlen;  /* field length */
     char     data[1];
 } MapElemDelData;
@@ -271,7 +279,12 @@ typedef struct _Set_elem_insert_log {
 /* Set Elem Delete Log Record */
 typedef struct _Set_elem_delete_data {
     uint16_t keylen;  /* key length */
+#ifdef ENABLE_PERSISTENCE_03_DROP
+    uint8_t  drop;    /* drop if empty */
+    uint8_t  reserved_8[1];
+#else
     uint16_t reserved_16[1];
+#endif
     uint32_t vallen;  /* value length */
     char     data[1];
 } SetElemDelData;
@@ -305,6 +318,9 @@ typedef struct _Btree_elem_insert_log {
 /* Btree Elem Delete Log Record */
 typedef struct _Btree_elem_delete_data {
     uint16_t keylen;  /* key length */
+#ifdef ENABLE_PERSISTENCE_03_DROP
+    uint8_t  drop;    /* drop if empty */
+#endif
     uint8_t  nbkey;   /* bkey length */
     char     data[1];
 } BtreeElemDelData;
@@ -319,7 +335,11 @@ typedef struct _Btree_elem_delete_log {
 /* Btree Elem Delete Logical Log Record */
 typedef struct _Btree_elem_delete_logical_data {
     uint16_t keylen;     /* key length */
+#ifdef ENABLE_PERSISTENCE_03_DROP
+    uint8_t  drop;       /* drop if empty */
+#else
     uint8_t  reserved_8[1];
+#endif
     uint8_t  from_nbkey; /* fbkey length */
     uint8_t  to_nbkey;   /* tbkey length */
     uint8_t  filtering;  /* enable eflag filter */
@@ -366,18 +386,36 @@ int lrec_construct_flush_item(LogRec *logrec, const char *prefix, const int npre
 int lrec_construct_setattr(LogRec *logrec, hash_item *it, uint8_t updtype);
 int lrec_construct_list_elem_insert(LogRec *logrec, hash_item *it, uint32_t totcnt, int eindex, list_elem_item *elem,
                                     bool create, lrec_attr_info *attr);
+#ifdef ENABLE_PERSISTENCE_03_DROP
+int lrec_construct_list_elem_delete(LogRec *logrec, hash_item *it, uint32_t totcnt, int eindex, uint32_t delcnt, bool drop);
+#else
 int lrec_construct_list_elem_delete(LogRec *logrec, hash_item *it, uint32_t totcnt, int eindex, uint32_t delcnt);
+#endif
 int lrec_construct_map_elem_insert(LogRec *logrec, hash_item *it, map_elem_item *elem,
                                    bool create, lrec_attr_info *attr);
+#ifdef ENABLE_PERSISTENCE_03_DROP
+int lrec_construct_map_elem_delete(LogRec *logrec, hash_item *it, map_elem_item *elem, bool drop);
+#else
 int lrec_construct_map_elem_delete(LogRec *logrec, hash_item *it, map_elem_item *elem);
+#endif
 int lrec_construct_set_elem_insert(LogRec *logrec, hash_item *it, set_elem_item *elem,
                                    bool create, lrec_attr_info *attr);
+#ifdef ENABLE_PERSISTENCE_03_DROP
+int lrec_construct_set_elem_delete(LogRec *logrec, hash_item *it, set_elem_item *elem, bool drop);
+#else
 int lrec_construct_set_elem_delete(LogRec *logrec, hash_item *it, set_elem_item *elem);
+#endif
 int lrec_construct_btree_elem_insert(LogRec *logrec, hash_item *it, btree_elem_item *elem,
                                      bool create, lrec_attr_info *attr);
+#ifdef ENABLE_PERSISTENCE_03_DROP
+int lrec_construct_btree_elem_delete(LogRec *logrec, hash_item *it, btree_elem_item *elem, bool drop);
+int lrec_construct_btree_elem_delete_logical(LogRec *logrec, hash_item *it, const bkey_range *bkrange,
+                                             const eflag_filter *efilter, uint32_t offset, uint32_t reqcount, bool drop);
+#else
 int lrec_construct_btree_elem_delete(LogRec *logrec, hash_item *it, btree_elem_item *elem);
 int lrec_construct_btree_elem_delete_logical(LogRec *logrec, hash_item *it, const bkey_range *bkrange,
                                              const eflag_filter *efilter, uint32_t offset, uint32_t reqcount);
+#endif
 
 /* Function to write the given log record to log buffer */
 void lrec_write_to_buffer(LogRec *logrec, char *bufptr);
