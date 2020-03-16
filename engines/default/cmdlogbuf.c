@@ -444,31 +444,13 @@ static void *log_flush_thread_main(void *arg)
 /*
  * External Functions
  */
-void log_file_sync(void)
+void cmdlog_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_write)
 {
-    LogSN now_flush_lsn;
-
-    /* get current nxt_flush_lsn */
-    log_get_flush_lsn(&now_flush_lsn);
-
-    /* fsync the log files */
-    pthread_mutex_lock(&log_gl.log_fsync_lock);
-    if (1) {
-        do_log_file_sync(log_gl.log_file.fd, false); /* do not close */
-        if (log_gl.log_file.next_fd != -1) {
-            /* fsync and close the prev log file */
-            do_log_file_sync(log_gl.log_file.next_fd, false); /* do close */
-        }
-
-        /* update nxt_fsync_lsn */
-        pthread_mutex_lock(&log_gl.fsync_lsn_lock);
-        log_gl.nxt_fsync_lsn = now_flush_lsn;
-        pthread_mutex_unlock(&log_gl.fsync_lsn_lock);
-    }
-    pthread_mutex_unlock(&log_gl.log_fsync_lock);
+    /* write the log record on the log buffer */
+    do_log_buff_write(logrec, waiter, dual_write);
 }
 
-void log_buffer_flush(LogSN *upto_lsn)
+void cmdlog_buff_flush(LogSN *upto_lsn)
 {
     assert(upto_lsn);
     uint32_t nflush;
@@ -488,10 +470,28 @@ void log_buffer_flush(LogSN *upto_lsn)
     } while (nflush > 0);
 }
 
-void log_record_write(LogRec *logrec, log_waiter_t *waiter, bool dual_write)
+void cmdlog_file_sync(void)
 {
-    /* write the log record on the log buffer */
-    do_log_buff_write(logrec, waiter, dual_write);
+    LogSN now_flush_lsn;
+
+    /* get current nxt_flush_lsn */
+    cmdlog_get_flush_lsn(&now_flush_lsn);
+
+    /* fsync the log files */
+    pthread_mutex_lock(&log_gl.log_fsync_lock);
+    if (1) {
+        do_log_file_sync(log_gl.log_file.fd, false); /* do not close */
+        if (log_gl.log_file.next_fd != -1) {
+            /* fsync and close the prev log file */
+            do_log_file_sync(log_gl.log_file.next_fd, false); /* do close */
+        }
+
+        /* update nxt_fsync_lsn */
+        pthread_mutex_lock(&log_gl.fsync_lsn_lock);
+        log_gl.nxt_fsync_lsn = now_flush_lsn;
+        pthread_mutex_unlock(&log_gl.fsync_lsn_lock);
+    }
+    pthread_mutex_unlock(&log_gl.log_fsync_lock);
 }
 
 /* FIXME: remove later, if not used */
@@ -504,14 +504,14 @@ void log_get_write_lsn(LogSN *lsn)
 }
 */
 
-void log_get_flush_lsn(LogSN *lsn)
+void cmdlog_get_flush_lsn(LogSN *lsn)
 {
     pthread_mutex_lock(&log_gl.flush_lsn_lock);
     *lsn = log_gl.nxt_flush_lsn;
     pthread_mutex_unlock(&log_gl.flush_lsn_lock);
 }
 
-void log_get_fsync_lsn(LogSN *lsn)
+void cmdlog_get_fsync_lsn(LogSN *lsn)
 {
     pthread_mutex_lock(&log_gl.fsync_lsn_lock);
     *lsn = log_gl.nxt_fsync_lsn;

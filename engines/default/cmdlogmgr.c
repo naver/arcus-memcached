@@ -262,8 +262,8 @@ static void *do_cmdlog_gcommit_thread_main(void *arg)
 
             /* synchronize log file after 2ms */
             usleep(2000);
-            log_file_sync();
-            log_get_fsync_lsn(&now_fsync_lsn);
+            cmdlog_file_sync();
+            cmdlog_get_fsync_lsn(&now_fsync_lsn);
 
             pthread_mutex_lock(&gcommit->lock);
             waiters = do_cmdlog_get_commit_waiter(gcommit, &now_fsync_lsn);
@@ -337,12 +337,12 @@ void cmdlog_waiter_free(log_waiter_t *waiter, ENGINE_ERROR_CODE *result)
         LogSN now_flush_lsn, now_fsync_lsn;
 
         /* flush log records from now_flush_lsn to waiter->lsn */
-        log_get_flush_lsn(&now_flush_lsn);
+        cmdlog_get_flush_lsn(&now_flush_lsn);
         if (LOGSN_IS_LE(&now_flush_lsn, &waiter->lsn)) {
-            log_buffer_flush(&waiter->lsn);
+            cmdlog_buff_flush(&waiter->lsn);
         }
 
-        log_get_fsync_lsn(&now_fsync_lsn);
+        cmdlog_get_fsync_lsn(&now_fsync_lsn);
         if (LOGSN_IS_LE(&now_fsync_lsn, &waiter->lsn)) {
             /* add waiter to group commit list */
             pthread_mutex_lock(&gcommit->lock);
@@ -479,7 +479,7 @@ void cmdlog_generate_link_item(hash_item *it)
     if (waiter->elem_clog_with_collection == false) {
         ITLinkLog log;
         (void)lrec_construct_link_item((LogRec*)&log, it);
-        log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+        cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
     }
 }
 
@@ -490,7 +490,7 @@ void cmdlog_generate_unlink_item(hash_item *it)
     if (waiter == NULL || waiter->elem_clog_with_collection == false) {
         ITUnlinkLog log;
         (void)lrec_construct_unlink_item((LogRec*)&log, it);
-        log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+        cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
     }
 }
 
@@ -499,7 +499,7 @@ void cmdlog_generate_flush_item(const char *prefix, const int nprefix, const tim
     if (when <= 0) {
         ITFlushLog log;
         (void)lrec_construct_flush_item((LogRec*)&log, prefix, nprefix);
-        log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(NULL));
+        cmdlog_buff_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(NULL));
     }
 }
 
@@ -525,7 +525,7 @@ void cmdlog_generate_setattr(hash_item *it, const ENGINE_ITEM_ATTR *attr_ids, co
     if (attr_type > 0) {
         ITSetAttrLog log;
         (void)lrec_construct_setattr((LogRec*)&log, it, attr_type);
-        log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+        cmdlog_buff_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
     }
 }
 
@@ -538,7 +538,7 @@ void cmdlog_generate_list_elem_insert(hash_item *it, const uint32_t total,
     bool create = waiter->elem_clog_with_collection;
     (void)lrec_construct_list_elem_insert((LogRec*)&log, it, total,
                                           index, elem, create, &attr);
-    log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+    cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
 }
 
 void cmdlog_generate_list_elem_delete(hash_item *it, const uint32_t total,
@@ -546,7 +546,7 @@ void cmdlog_generate_list_elem_delete(hash_item *it, const uint32_t total,
 {
     ListElemDelLog log;
     (void)lrec_construct_list_elem_delete((LogRec*)&log, it, total, index, count);
-    log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+    cmdlog_buff_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
 }
 
 void cmdlog_generate_map_elem_insert(hash_item *it, map_elem_item *elem)
@@ -556,14 +556,14 @@ void cmdlog_generate_map_elem_insert(hash_item *it, map_elem_item *elem)
     log_waiter_t *waiter = cmdlog_get_cur_waiter();
     bool create = waiter->elem_clog_with_collection;
     (void)lrec_construct_map_elem_insert((LogRec*)&log, it, elem, create, &attr);
-    log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+    cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
 }
 
 void cmdlog_generate_map_elem_delete(hash_item *it, map_elem_item *elem)
 {
     MapElemDelLog log;
     (void)lrec_construct_map_elem_delete((LogRec*)&log, it, elem);
-    log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+    cmdlog_buff_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
 }
 
 void cmdlog_generate_set_elem_insert(hash_item *it, set_elem_item *elem)
@@ -573,14 +573,14 @@ void cmdlog_generate_set_elem_insert(hash_item *it, set_elem_item *elem)
     log_waiter_t *waiter = cmdlog_get_cur_waiter();
     bool create = waiter->elem_clog_with_collection;
     (void)lrec_construct_set_elem_insert((LogRec*)&log, it, elem, create, &attr);
-    log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+    cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
 }
 
 void cmdlog_generate_set_elem_delete(hash_item *it, set_elem_item *elem)
 {
     SetElemDelLog log;
     (void)lrec_construct_set_elem_delete((LogRec*)&log, it, elem);
-    log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+    cmdlog_buff_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
 }
 
 void cmdlog_generate_btree_elem_insert(hash_item *it, btree_elem_item *elem)
@@ -590,14 +590,14 @@ void cmdlog_generate_btree_elem_insert(hash_item *it, btree_elem_item *elem)
     log_waiter_t *waiter = cmdlog_get_cur_waiter();
     bool create = waiter->elem_clog_with_collection;
     (void)lrec_construct_btree_elem_insert((LogRec*)&log, it, elem, create, &attr);
-    log_record_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
+    cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
 }
 
 void cmdlog_generate_btree_elem_delete(hash_item *it, btree_elem_item *elem)
 {
     BtreeElemDelLog log;
     (void)lrec_construct_btree_elem_delete((LogRec*)&log, it, elem);
-    log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+    cmdlog_buff_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
 }
 
 void cmdlog_generate_btree_elem_delete_logical(hash_item *it,
@@ -607,7 +607,7 @@ void cmdlog_generate_btree_elem_delete_logical(hash_item *it,
 {
     BtreeElemDelLgcLog log;
     (void)lrec_construct_btree_elem_delete_logical((LogRec*)&log, it, bkrange, efilter, offset, reqcount);
-    log_record_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
+    cmdlog_buff_write((LogRec*)&log, cmdlog_get_cur_waiter(), NEED_DUAL_WRITE(it));
 }
 
 void cmdlog_set_chkpt_scan(struct assoc_scan *cs)
