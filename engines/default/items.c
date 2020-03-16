@@ -6713,6 +6713,9 @@ ENGINE_ERROR_CODE list_elem_delete(const char *key, const uint32_t nkey,
                         "list elem delete - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
+#ifdef ENABLE_PERSISTENCE_03_DROP
+        if (drop_if_empty) waiter->elem_clog_with_collection = true;
+#endif
     }
 #endif
 
@@ -6775,6 +6778,9 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
                         "list elem get - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
+#ifdef ENABLE_PERSISTENCE_03_DROP
+        if (drop_if_empty) waiter->elem_clog_with_collection = true;
+#endif
     }
 #endif
 
@@ -6982,6 +6988,9 @@ ENGINE_ERROR_CODE set_elem_delete(const char *key, const uint32_t nkey,
                         "set elem delete - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
+#ifdef ENABLE_PERSISTENCE_03_DROP
+        if (drop_if_empty) waiter->elem_clog_with_collection = true;
+#endif
     }
 #endif
 
@@ -7053,6 +7062,9 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
                         "set elem get - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
+#ifdef ENABLE_PERSISTENCE_03_DROP
+        if (drop_if_empty) waiter->elem_clog_with_collection = true;
+#endif
     }
 #endif
 
@@ -7316,6 +7328,9 @@ ENGINE_ERROR_CODE btree_elem_delete(const char *key, const uint32_t nkey,
                         "btree elem delete - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
+#ifdef ENABLE_PERSISTENCE_03_DROP
+        if (drop_if_empty) waiter->elem_clog_with_collection = true;
+#endif
     }
 #endif
 
@@ -7443,6 +7458,9 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
                         "btree elem get - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
+#ifdef ENABLE_PERSISTENCE_03_DROP
+        if (drop_if_empty) waiter->elem_clog_with_collection = true;
+#endif
     }
 #endif
 
@@ -10083,6 +10101,9 @@ ENGINE_ERROR_CODE map_elem_delete(const char *key, const uint32_t nkey,
                         "map elem delete - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
+#ifdef ENABLE_PERSISTENCE_03_DROP
+        if (drop_if_empty) waiter->elem_clog_with_collection = true;
+#endif
     }
 #endif
 
@@ -10131,6 +10152,9 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
                         "map elem get - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
+#ifdef ENABLE_PERSISTENCE_03_DROP
+        if (drop_if_empty) waiter->elem_clog_with_collection = true;
+#endif
     }
 #endif
 
@@ -10473,9 +10497,16 @@ item_apply_list_elem_insert(hash_item *it, const int nelems, const int index,
     return ret;
 }
 
+#ifdef ENABLE_PERSISTENCE_03_DROP
+ENGINE_ERROR_CODE
+item_apply_list_elem_delete(hash_item *it, const int nelems,
+                            const int index, const int count,
+                            const bool drop_if_empty)
+#else
 ENGINE_ERROR_CODE
 item_apply_list_elem_delete(hash_item *it, const int nelems,
                             const int index, const int count)
+#endif
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     const char *key = item_get_key(it);
@@ -10507,6 +10538,12 @@ item_apply_list_elem_delete(hash_item *it, const int nelems,
                         it->nkey, key, index, count);
             ret = ENGINE_FAILED; break;
         }
+
+#ifdef ENABLE_PERSISTENCE_03_DROP
+        if (info->ccnt == 0 && drop_if_empty) {
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        }
+#endif
     } while(0);
 
     if (ret != ENGINE_SUCCESS) { /* Remove inconsistent hash_item */
@@ -10559,8 +10596,13 @@ item_apply_set_elem_insert(hash_item *it, const char *value, const uint32_t nbyt
     return ret;
 }
 
+#ifdef ENABLE_PERSISTENCE_03_DROP
+ENGINE_ERROR_CODE
+item_apply_set_elem_delete(hash_item *it, const char *value, const uint32_t nbytes, const bool drop_if_empty)
+#else
 ENGINE_ERROR_CODE
 item_apply_set_elem_delete(hash_item *it, const char *value, const uint32_t nbytes)
+#endif
 {
     ENGINE_ERROR_CODE ret;
     const char *key = item_get_key(it);
@@ -10584,6 +10626,12 @@ item_apply_set_elem_delete(hash_item *it, const char *value, const uint32_t nbyt
                         " no element deleted. key=%.*s\n", it->nkey, key);
             break;
         }
+
+#ifdef ENABLE_PERSISTENCE_03_DROP
+        if (info->ccnt == 0 && drop_if_empty) {
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        }
+#endif
     } while(0);
 
     if (ret != ENGINE_SUCCESS) { /* Remove inconsistent hash_item */
@@ -10637,8 +10685,13 @@ item_apply_map_elem_insert(hash_item *it, const char *data, const uint32_t nfiel
     return ret;
 }
 
+#ifdef ENABLE_PERSISTENCE_03_DROP
+ENGINE_ERROR_CODE
+item_apply_map_elem_delete(hash_item *it, const char *field, const uint32_t nfield, const bool drop_if_empty)
+#else
 ENGINE_ERROR_CODE
 item_apply_map_elem_delete(hash_item *it, const char *field, const uint32_t nfield)
+#endif
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     const char *key = item_get_key(it);
@@ -10672,6 +10725,12 @@ item_apply_map_elem_delete(hash_item *it, const char *field, const uint32_t nfie
                         it->nkey, key, nfield, field);
             ret = ENGINE_FAILED; break;
         }
+
+#ifdef ENABLE_PERSISTENCE_03_DROP
+        if (info->ccnt == 0 && drop_if_empty) {
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        }
+#endif
     } while(0);
 
     if (ret != ENGINE_SUCCESS) { /* Remove inconsistent hash_item */
@@ -10728,8 +10787,13 @@ item_apply_btree_elem_insert(hash_item *it, const char *data, const uint32_t nbk
     return ret;
 }
 
+#ifdef ENABLE_PERSISTENCE_03_DROP
+ENGINE_ERROR_CODE
+item_apply_btree_elem_delete(hash_item *it, const char *bkey, const uint32_t nbkey, const bool drop_if_empty)
+#else
 ENGINE_ERROR_CODE
 item_apply_btree_elem_delete(hash_item *it, const char *bkey, const uint32_t nbkey)
+#endif
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     const char *key = item_get_key(it);
@@ -10773,6 +10837,12 @@ item_apply_btree_elem_delete(hash_item *it, const char *bkey, const uint32_t nbk
                         " no element deleted. key=%.*s bkey=%.*s", it->nkey, key, nbkey, bkey);
             ret = ENGINE_FAILED; break;
         }
+
+#ifdef ENABLE_PERSISTENCE_03_DROP
+        if (info->ccnt == 0 && drop_if_empty) {
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        }
+#endif
     } while(0);
 
     if (ret != ENGINE_SUCCESS) { /* Remove inconsistent has_item */
@@ -10783,9 +10853,16 @@ item_apply_btree_elem_delete(hash_item *it, const char *bkey, const uint32_t nbk
     return ret;
 }
 
+#ifdef ENABLE_PERSISTENCE_03_DROP
+ENGINE_ERROR_CODE
+item_apply_btree_elem_delete_logical(hash_item *it, const bkey_range *bkrange,
+                                     const eflag_filter *efilter, const uint32_t offset,
+                                     const uint32_t reqcount, const bool drop_if_empty)
+#else
 ENGINE_ERROR_CODE
 item_apply_btree_elem_delete_logical(hash_item *it, bkey_range *bkrange,
                                      eflag_filter *efilter, uint32_t offset, uint32_t reqcount)
+#endif
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     const char *key = item_get_key(it);
@@ -10826,6 +10903,12 @@ item_apply_btree_elem_delete_logical(hash_item *it, bkey_range *bkrange,
                         bkrange->from_nbkey, bkrange->from_bkey, bkrange->to_nbkey, bkrange->to_bkey);
             ret = ENGINE_FAILED; break;
         }
+
+#ifdef ENABLE_PERSISTENCE_03_DROP
+        if (info->ccnt == 0 && drop_if_empty) {
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        }
+#endif
     } while(0);
 
     if (ret != ENGINE_SUCCESS) { /* Remove inconsistent has_item */
