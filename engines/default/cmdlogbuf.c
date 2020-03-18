@@ -240,6 +240,25 @@ static void do_log_file_write(char *log_ptr, uint32_t log_size, bool dual_write)
     }
 }
 
+static int do_log_file_complete_dual_write(bool success)
+{
+    int prev_fd = -1;
+
+    pthread_mutex_lock(&log_gl.log_fsync_lock);
+    if (success) {
+        prev_fd                 = log_gl.log_file.fd;
+        log_gl.log_file.fd      = log_gl.log_file.next_fd;
+        log_gl.log_file.size    = log_gl.log_file.next_size;
+    } else {
+        prev_fd                 = log_gl.log_file.next_fd;
+    }
+    log_gl.log_file.next_fd = -1;
+    log_gl.log_file.next_size = 0;
+    pthread_mutex_unlock(&log_gl.log_fsync_lock);
+
+    return prev_fd;
+}
+
 static uint32_t do_log_buff_flush(bool flush_all)
 {
     log_BUFFER *logbuff = &log_gl.log_buffer;
@@ -399,6 +418,35 @@ static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_wr
     }
 }
 
+static void do_log_buff_complete_dual_write(bool success)
+{
+    log_BUFFER *logbuff = &log_gl.log_buffer;
+
+    pthread_mutex_lock(&log_gl.log_write_lock);
+    if (success) {
+        if (logbuff->fque[logbuff->fend].nflush > 0) {
+            if ((++logbuff->fend) == logbuff->fqsz) logbuff->fend = 0;
+        }
+        /* Set the position where a dual write end. */
+        assert(logbuff->dw_end == -1);
+        logbuff->dw_end = logbuff->fend;
+
+        /* update nxt_write_lsn */
+        log_gl.nxt_write_lsn.filenum += 1;
+        log_gl.nxt_write_lsn.roffset = 0;
+    } else {
+        /* reset dual_write flag in flush reqeust queue */
+        int index = logbuff->fbgn;
+        while (logbuff->fque[index].nflush > 0) {
+            if (logbuff->fque[index].dual_write) {
+                logbuff->fque[index].dual_write = false;
+            }
+            if ((++index) == logbuff->fqsz) index = 0;
+        }
+    }
+    pthread_mutex_unlock(&log_gl.log_write_lock);
+}
+
 /* Log Flush Thread */
 static void *log_flush_thread_main(void *arg)
 {
@@ -520,58 +568,13 @@ void cmdlog_get_fsync_lsn(LogSN *lsn)
 
 void cmdlog_complete_dual_write(bool success)
 {
-    log_BUFFER *logbuff = &log_gl.log_buffer;
     int prev_fd = -1;
 
     pthread_mutex_lock(&log_gl.log_flush_lock);
-    do {
-        if (log_gl.log_file.next_fd == -1) {
-            /* next_fd == -1 means the first state without log file.
-             * created first log file by checkpoint.
-             * do not cleanup file fds.
-             */
-            break;
-        }
-        if (success) {
-            pthread_mutex_lock(&log_gl.log_write_lock);
-            if (logbuff->fque[logbuff->fend].nflush > 0) {
-                if ((++logbuff->fend) == logbuff->fqsz) logbuff->fend = 0;
-            }
-            /* Set the position where a dual write end. */
-            assert(logbuff->dw_end == -1);
-            logbuff->dw_end = logbuff->fend;
-
-            /* update nxt_write_lsn */
-            log_gl.nxt_write_lsn.filenum += 1;
-            log_gl.nxt_write_lsn.roffset = 0;
-            pthread_mutex_unlock(&log_gl.log_write_lock);
-
-            pthread_mutex_lock(&log_gl.log_fsync_lock);
-            prev_fd                 = log_gl.log_file.fd;
-            log_gl.log_file.fd      = log_gl.log_file.next_fd;
-            log_gl.log_file.next_fd = -1;
-            pthread_mutex_unlock(&log_gl.log_fsync_lock);
-            log_gl.log_file.size = log_gl.log_file.next_size;
-            log_gl.log_file.next_size = 0;
-        } else {
-            pthread_mutex_lock(&log_gl.log_write_lock);
-            /* reset dual_write flag in flush reqeust queue */
-            int index = logbuff->fbgn;
-            while (logbuff->fque[index].nflush > 0) {
-                if (logbuff->fque[index].dual_write) {
-                    logbuff->fque[index].dual_write = false;
-                }
-                if ((++index) == logbuff->fqsz) index = 0;
-            }
-            pthread_mutex_unlock(&log_gl.log_write_lock);
-
-            pthread_mutex_lock(&log_gl.log_fsync_lock);
-            prev_fd                 = log_gl.log_file.next_fd;
-            log_gl.log_file.next_fd = -1;
-            pthread_mutex_unlock(&log_gl.log_fsync_lock);
-            log_gl.log_file.next_size = 0;
-        }
-    } while(0);
+    if (log_gl.log_file.next_fd != -1) {
+        do_log_buff_complete_dual_write(success);
+        prev_fd = do_log_file_complete_dual_write(success);
+    }
     pthread_mutex_unlock(&log_gl.log_flush_lock);
 
     if (prev_fd != -1) {
