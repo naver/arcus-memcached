@@ -56,6 +56,8 @@ The use of ZooKeeper based clustering is optional.
 To enable it, use `--enable-zk-integration` along with `--with-zookeeper` when running configure.
 Make sure to use the ZooKeeper library with Arcus modifications.
 
+To test arcus-memcached, you can execute `make test`. If any problem exists in compilation, please refer to [compilation FAQ](/doc/compilation_faq.md).
+
 ## Run
 
 arcus-memcached has a pluggable engine structure.
