@@ -20,6 +20,7 @@
 ./t/coll_bop_incrdecr.t
 ./t/coll_bop_insert_getrim.t
 ./t/coll_bop_insert.t
+./t/coll_bop_maxbkeyrange.t
 ./t/coll_bop_mget_1.t
 ./t/coll_bop_mget_2.t
 ./t/coll_bop_smget_bkey_byte.t
