@@ -75,6 +75,29 @@ static int ARCUS_ELEMENT_BYTES_MAX = 32*1024;
 static int MAX_ELEMENT_BYTES = 16*1024;
 #endif
 
+/* Lock for global stats */
+static pthread_mutex_t stats_lock = PTHREAD_MUTEX_INITIALIZER;
+
+
+void STATS_LOCK() {
+    pthread_mutex_lock(&stats_lock);
+}
+
+void STATS_UNLOCK() {
+    pthread_mutex_unlock(&stats_lock);
+}
+
+/* Lock for global settings */
+static pthread_mutex_t setting_lock = PTHREAD_MUTEX_INITIALIZER;
+
+void SETTING_LOCK() {
+    pthread_mutex_lock(&setting_lock);
+}
+
+void SETTING_UNLOCK() {
+    pthread_mutex_unlock(&setting_lock);
+}
+
 /* The item must always be called "it" */
 #define SLAB_GUTS(conn, thread_stats, slab_op, thread_op) \
     thread_stats->slab_stats[c->hinfo.clsid].slab_op++;
