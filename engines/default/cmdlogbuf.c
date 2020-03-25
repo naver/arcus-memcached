@@ -115,6 +115,12 @@ static int disk_open(const char *fname, int flags, int mode)
     return fd;
 }
 
+static off_t disk_lseek(int fd, off_t offset, int whence)
+{
+    off_t ret = lseek(fd, offset, whence);
+    return ret;
+}
+
 static ssize_t disk_read(int fd, void *buf, size_t count)
 {
     char   *bfptr = (char*)buf;
@@ -694,7 +700,7 @@ int cmdlog_file_apply(void)
             logger->log(EXTENSION_LOG_INFO, NULL,
                         "[RECOVERY - CMDLOG] body of last command was not completely written. "
                         "body_length=%d\n", loghdr->body_length);
-            seek_offset = lseek(logfile->fd, -nread, SEEK_CUR);
+            seek_offset = disk_lseek(logfile->fd, -nread, SEEK_CUR);
             if (seek_offset < 0) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
                             "[RECOVERY - CMDLOG] failed : lseek(SEEK_CUR-%zd). path=%s, error=%s.\n",
