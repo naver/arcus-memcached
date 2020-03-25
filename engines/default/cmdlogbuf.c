@@ -341,18 +341,15 @@ static uint32_t do_log_buff_flush(bool flush_all)
     return nflush;
 }
 
-static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_write)
+static LogSN do_log_buff_write(LogRec *logrec, bool dual_write)
 {
     log_BUFFER *logbuff = &log_gl.log_buffer;
+    LogSN current_lsn;
     uint32_t total_length = sizeof(LogHdr) + logrec->header.body_length;
     uint32_t spare_length;
     assert(total_length < logbuff->size);
 
     pthread_mutex_lock(&log_gl.log_write_lock);
-
-    if (waiter != NULL) {
-        waiter->lsn = log_gl.nxt_write_lsn;
-    }
 
     /* find the positon to write in log buffer */
     while (1) {
@@ -394,9 +391,10 @@ static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_wr
     logbuff->tail += total_length;
 
     /* update nxt_write_lsn */
+    current_lsn = log_gl.nxt_write_lsn;
     log_gl.nxt_write_lsn.roffset += total_length;
 
-    /* update log flush reqeust */
+    /* update log flush request */
     if (logbuff->fque[logbuff->fend].nflush > 0 &&
         logbuff->fque[logbuff->fend].dual_write != dual_write) {
         if ((++logbuff->fend) == logbuff->fqsz) logbuff->fend = 0;
@@ -422,6 +420,7 @@ static void do_log_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_wr
             do_log_flusher_wakeup(&log_gl.log_flusher);
         }
     }
+    return current_lsn;
 }
 
 static void do_log_buff_complete_dual_write(bool success)
@@ -501,7 +500,10 @@ static void *log_flush_thread_main(void *arg)
 void cmdlog_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_write)
 {
     /* write the log record on the log buffer */
-    do_log_buff_write(logrec, waiter, dual_write);
+    LogSN current_lsn = do_log_buff_write(logrec, dual_write);
+    if (waiter) {
+        waiter->lsn = current_lsn;
+    }
 }
 
 void cmdlog_buff_flush(LogSN *upto_lsn)
