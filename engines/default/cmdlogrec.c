@@ -1391,11 +1391,9 @@ ENGINE_ERROR_CODE lrec_redo_from_record(LogRec *logrec)
 #endif
     if (logrec_func[logrec->header.logtype].redo != NULL) {
         return logrec_func[logrec->header.logtype].redo(logrec);
-    } else {
-        logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_redo_from_record(logtype=%s) "
-                    "is not supported.\n", get_logtype_text(logrec->header.logtype));
-        return ENGINE_ENOTSUP;
     }
+    /* exist some log records don't need to redo (ex. SnapshotDoneLog). */
+    return ENGINE_SUCCESS;
 }
 
 /* Construct Log Record Functions */
