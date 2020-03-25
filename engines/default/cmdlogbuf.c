@@ -676,13 +676,15 @@ int cmdlog_file_apply(void)
     int ret = 0;
     int seek_offset = 0;
     char buf[MAX_LOG_RECORD_SIZE];
-    while (log_gl.initialized && seek_offset < logfile->size) {
-        LogRec *logrec = (LogRec*)buf;
-        LogHdr *loghdr = &logrec->header;
+    LogRec *logrec = (LogRec*)buf;
+    LogHdr *loghdr = &logrec->header;
 
+    while (log_gl.initialized && seek_offset < logfile->size) {
+
+        /* read header */
         if (logfile->size - seek_offset < sizeof(LogHdr)) {
             logger->log(EXTENSION_LOG_INFO, NULL,
-                        "[RECOVERY - CMDLOG] header of last command was not completely written. "
+                        "[RECOVERY - CMDLOG] header of last log record was not completely written. "
                         "header_length=%ld\n", sizeof(LogHdr));
             break;
         }
@@ -696,22 +698,23 @@ int cmdlog_file_apply(void)
         }
         seek_offset += nread;
 
-        if (logfile->size - seek_offset < loghdr->body_length) {
-            logger->log(EXTENSION_LOG_INFO, NULL,
-                        "[RECOVERY - CMDLOG] body of last command was not completely written. "
-                        "body_length=%d\n", loghdr->body_length);
-            seek_offset = disk_lseek(logfile->fd, -nread, SEEK_CUR);
-            if (seek_offset < 0) {
-                logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "[RECOVERY - CMDLOG] failed : lseek(SEEK_CUR-%zd). path=%s, error=%s.\n",
-                            nread, logfile->path, strerror(errno));
-                ret = -1;
-            }
-            break;
-        }
-
+        /* read body */
         if (loghdr->body_length > 0) {
-            int max_body_length = MAX_LOG_RECORD_SIZE - nread;
+            if (logfile->size - seek_offset < loghdr->body_length) {
+                logger->log(EXTENSION_LOG_INFO, NULL,
+                            "[RECOVERY - CMDLOG] body of last log record was not completely written. "
+                            "body_length=%d\n", loghdr->body_length);
+                seek_offset = disk_lseek(logfile->fd, -sizeof(LogHdr), SEEK_CUR);
+                if (seek_offset < 0) {
+                    logger->log(EXTENSION_LOG_WARNING, NULL,
+                                "[RECOVERY - CMDLOG] failed : lseek(SEEK_CUR-%zd). path=%s, error=%s.\n",
+                                sizeof(LogHdr), logfile->path, strerror(errno));
+                    ret = -1;
+                }
+                break;
+            }
+
+            int max_body_length = MAX_LOG_RECORD_SIZE - sizeof(LogHdr);
             if (max_body_length < loghdr->body_length) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
                             "[RECOVERY - CMDLOG] failed : body length is abnormally too big "
@@ -719,7 +722,7 @@ int cmdlog_file_apply(void)
                             max_body_length, loghdr->body_length);
                 ret = -1; break;
             }
-            logrec->body = buf + nread;
+            logrec->body = buf + sizeof(LogHdr);
             nread = disk_read(logfile->fd, logrec->body, loghdr->body_length);
             if (nread != loghdr->body_length) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -727,16 +730,19 @@ int cmdlog_file_apply(void)
                             "nread(%zd) != body_length(%u).\n", nread, loghdr->body_length);
                 ret = -1; break;
             }
-            seek_offset += nread;
-            ENGINE_ERROR_CODE err = lrec_redo_from_record(logrec);
-            if (err != ENGINE_SUCCESS) {
+            seek_offset += loghdr->body_length;
+        }
+
+        /* redo log record */
+        ENGINE_ERROR_CODE err = lrec_redo_from_record(logrec);
+        if (err != ENGINE_SUCCESS) {
+            /* don't care a log record redo failure. read next log record and redo it. */
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "[RECOVERY - CMDLOG] warning : log record redo failed.\n");
+            if (err == ENGINE_ENOMEM) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "[RECOVERY - CMDLOG] warning : log record redo failed.\n");
-                if (err == ENGINE_ENOMEM) {
-                    logger->log(EXTENSION_LOG_WARNING, NULL,
-                                "[RECOVERY - CMDLOG] failed : out of memory.\n");
-                    ret = -1; break;
-                }
+                            "[RECOVERY - CMDLOG] failed : out of memory.\n");
+                ret = -1; break;
             }
         }
     }
