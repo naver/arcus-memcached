@@ -740,27 +740,25 @@ int mc_snapshot_file_apply(const char *filepath)
         return -1;
     }
 
-    ENGINE_ERROR_CODE err;
     struct default_engine *engine = (struct default_engine*)snapshot_anch.engine;
     int ret = 0;
-    char buf[MAX_LOG_RECORD_SIZE];
+    ENGINE_ERROR_CODE err;
     hash_item *last_coll_it = NULL;
+    char buf[MAX_LOG_RECORD_SIZE];
+    LogRec *logrec = (LogRec*)buf;
+    LogHdr *loghdr = &logrec->header;
 
     while (engine->initialized) {
-        LogRec *logrec = (LogRec*)buf;
-        LogHdr *loghdr = &logrec->header;
-
         ssize_t nread = read(fd, loghdr, sizeof(LogHdr));
         if (nread != sizeof(LogHdr)) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "[RECOVERY - SNAPSHOT] failed : read header data "
-                        "nread(%zd) != header_length(%lu).\n",
-                        nread, sizeof(LogHdr));
+                        "nread(%zd) != header_length(%lu).\n", nread, sizeof(LogHdr));
             ret = -1; break;
         }
 
         if (loghdr->body_length > 0) {
-            int max_body_length = MAX_LOG_RECORD_SIZE - nread;
+            int max_body_length = MAX_LOG_RECORD_SIZE - sizeof(LogHdr);
             if (max_body_length < loghdr->body_length) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
                             "[RECOVERY - SNAPSHOT] failed : body length is abnormally too big "
@@ -768,13 +766,12 @@ int mc_snapshot_file_apply(const char *filepath)
                             max_body_length, loghdr->body_length);
                 ret = -1; break;
             }
-            logrec->body = buf + nread;
+            logrec->body = buf + sizeof(LogHdr);
             nread = read(fd, logrec->body, loghdr->body_length);
             if (nread != loghdr->body_length) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
                             "[RECOVERY - SNAPSHOT] failed : read body data "
-                            "nread(%zd) != body_length(%u).\n",
-                            nread, loghdr->body_length);
+                            "nread(%zd) != body_length(%u).\n", nread, loghdr->body_length);
                 ret = -1; break;
             }
         }
