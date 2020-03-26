@@ -477,13 +477,16 @@ extern int daemonize(int nochdir, int noclose);
 #include "hash.h"
 #include <memcached/util.h>
 
+void LOCK_STATS(void);
+void UNLOCK_STATS(void);
+
+void LOCK_SETTING(void);
+void UNLOCK_SETTING(void);
+
 /* Lock wrappers for cache functions that are called from main loop. */
 void accept_new_conns(const bool do_accept);
 conn *conn_from_freelist(void);
 bool  conn_add_to_freelist(conn *c);
-
-void STATS_LOCK(void);
-void STATS_UNLOCK(void);
 
 /* Stat processing functions */
 void append_stat(const char *name, ADD_STAT add_stats, conn *c,
@@ -492,9 +495,6 @@ void append_stat(const char *name, ADD_STAT add_stats, conn *c,
 void conn_set_state(conn *c, STATE_FUNC state);
 const char *state_text(STATE_FUNC state);
 void safe_close(int sfd);
-
-void SETTING_LOCK(void);
-void SETTING_UNLOCK(void);
 
 void init_check_stdin(struct event_base *base);
 
