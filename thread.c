@@ -55,19 +55,14 @@ struct conn_queue {
     pthread_cond_t  cond;
 };
 
-/* Connection lock around accepting new connections */
-pthread_mutex_t conn_lock = PTHREAD_MUTEX_INITIALIZER;
-
-/* Lock for global stats */
-static pthread_mutex_t stats_lock;
-
-/* Lock for global settings */
-static pthread_mutex_t setting_lock;
-
 /* Free list of CQ_ITEM structs */
 static CQ_ITEM *cqi_freelist;
 static pthread_mutex_t cqi_freelist_lock;
 
+typedef struct {
+    pthread_t thread_id;        /* unique ID of this thread */
+    struct event_base *base;    /* libevent handle this thread uses */
+} LIBEVENT_DISPATCHER_THREAD;
 static LIBEVENT_DISPATCHER_THREAD dispatcher_thread;
 
 /*
@@ -381,8 +376,6 @@ static void thread_libevent_process(int fd, short which, void *arg) {
     }
 }
 
-extern volatile rel_time_t current_time;
-
 bool has_cycle(conn *c) {
     if (!c) {
         return false;
@@ -529,14 +522,6 @@ int is_listen_thread() {
 
 
 /******************************* GLOBAL STATS ******************************/
-
-void STATS_LOCK() {
-    pthread_mutex_lock(&stats_lock);
-}
-
-void STATS_UNLOCK() {
-    pthread_mutex_unlock(&stats_lock);
-}
 
 void threadlocal_stats_clear(struct thread_stats *stats) {
     stats->cmd_get = 0;
@@ -838,14 +823,6 @@ void slab_stats_aggregate(struct thread_stats *stats, struct slab_stats *out) {
     }
 }
 
-void SETTING_LOCK() {
-    pthread_mutex_lock(&setting_lock);
-}
-
-void SETTING_UNLOCK() {
-    pthread_mutex_unlock(&setting_lock);
-}
-
 /*
  * Initializes the thread subsystem, creating various worker threads.
  *
@@ -862,9 +839,6 @@ void thread_init(int nthr, struct event_base *main_base) {
     if ((sockfd = createLocalListSock(&serv_addr)) < 0)
         exit(1);
 #endif
-
-    pthread_mutex_init(&stats_lock, NULL);
-    pthread_mutex_init(&setting_lock, NULL);
 
     pthread_mutex_init(&init_lock, NULL);
     pthread_cond_init(&init_cond, NULL);

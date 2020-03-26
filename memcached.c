@@ -75,6 +75,29 @@ static int ARCUS_ELEMENT_BYTES_MAX = 32*1024;
 static int MAX_ELEMENT_BYTES = 16*1024;
 #endif
 
+/* Lock for global stats */
+static pthread_mutex_t stats_lock = PTHREAD_MUTEX_INITIALIZER;
+
+
+void LOCK_STATS() {
+    pthread_mutex_lock(&stats_lock);
+}
+
+void UNLOCK_STATS() {
+    pthread_mutex_unlock(&stats_lock);
+}
+
+/* Lock for global settings */
+static pthread_mutex_t setting_lock = PTHREAD_MUTEX_INITIALIZER;
+
+void LOCK_SETTING() {
+    pthread_mutex_lock(&setting_lock);
+}
+
+void UNLOCK_SETTING() {
+    pthread_mutex_unlock(&setting_lock);
+}
+
 /* The item must always be called "it" */
 #define SLAB_GUTS(conn, thread_stats, slab_op, thread_op) \
     thread_stats->slab_stats[c->hinfo.clsid].slab_op++;
@@ -318,12 +341,12 @@ static void stats_init(void)
 static void stats_reset(const void *cookie)
 {
     struct conn *conn = (struct conn*)cookie;
-    STATS_LOCK();
+    LOCK_STATS();
     mc_stats.rejected_conns = 0;
     mc_stats.quit_conns = 0;
     mc_stats.total_conns = 0;
     stats_prefix_clear();
-    STATS_UNLOCK();
+    UNLOCK_STATS();
     threadlocal_stats_reset(get_independent_stats(conn)->thread_stats);
     mc_engine.v1->reset_stats(mc_engine.v0, cookie);
 }
@@ -460,9 +483,9 @@ void safe_close(int sfd)
                            "Failed to close socket %d (%s)!!\n",
                            (int)sfd, strerror(errno));
         } else {
-            STATS_LOCK();
+            LOCK_STATS();
             mc_stats.curr_conns--;
-            STATS_UNLOCK();
+            UNLOCK_STATS();
         }
     }
 }
@@ -611,9 +634,9 @@ static int conn_constructor(void *buffer, void *unused1, int unused2)
         return 1;
     }
 
-    STATS_LOCK();
+    LOCK_STATS();
     mc_stats.conn_structs++;
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 
     return 0;
 }
@@ -635,9 +658,9 @@ static void conn_destructor(void *buffer, void *unused)
     free(c->iov);
     free(c->msglist);
 
-    STATS_LOCK();
+    LOCK_STATS();
     mc_stats.conn_structs--;
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 conn *conn_new(const int sfd, STATE_FUNC init_state,
@@ -751,9 +774,9 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
         return NULL;
     }
 
-    STATS_LOCK();
+    LOCK_STATS();
     mc_stats.total_conns++;
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
@@ -8100,7 +8123,7 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
     arcus_zk_get_stats(&zk_stats);
 #endif
 
-    STATS_LOCK();
+    LOCK_STATS();
 
     APPEND_STAT("pid", "%lu", (long)pid);
     APPEND_STAT("uptime", "%u", now);
@@ -8264,7 +8287,7 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
     APPEND_STAT("limit_maxbytes", "%"PRIu64, settings.maxbytes);
     APPEND_STAT("threads", "%d", settings.num_threads);
     APPEND_STAT("conn_yields", "%"PRIu64, thread_stats.conn_yields);
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 static void process_stat_settings(ADD_STAT add_stats, void *c)
@@ -9051,9 +9074,9 @@ static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntok
             out_string(c, "SERVER_ERROR cannot change to the maxconns over the soft limit");
             return;
         }
-        SETTING_LOCK();
+        LOCK_SETTING();
         settings.maxconns = new_max;
-        SETTING_UNLOCK();
+        UNLOCK_SETTING();
         out_string(c, "END");
     } else {
         print_invalid_command(c, tokens, ntokens);
@@ -9143,12 +9166,12 @@ static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntok
     } else if (ntokens == 4 && safe_strtoul(config_val, &mlimit)) {
         ENGINE_ERROR_CODE ret;
         size_t new_maxbytes = (size_t)mlimit * 1024 * 1024;
-        SETTING_LOCK();
+        LOCK_SETTING();
         ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&new_maxbytes);
         if (ret == ENGINE_SUCCESS) {
             settings.maxbytes = new_maxbytes;
         }
-        SETTING_UNLOCK();
+        UNLOCK_SETTING();
         if (ret == ENGINE_SUCCESS) {
             out_string(c, "END");
         } else if (ret == ENGINE_ENOTSUP) {
@@ -9177,12 +9200,12 @@ static void process_stickylimit_command(conn *c, token_t *tokens, const size_t n
     } else if (ntokens == 4 && safe_strtoul(config_val, &sticky_limit)) {
         ENGINE_ERROR_CODE ret;
         size_t new_sticky_limit = (size_t)sticky_limit * 1024 * 1024;
-        SETTING_LOCK();
+        LOCK_SETTING();
         ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&new_sticky_limit);
         if (ret == ENGINE_SUCCESS) {
             settings.sticky_limit = new_sticky_limit;
         }
-        SETTING_UNLOCK();
+        UNLOCK_SETTING();
         if (ret == ENGINE_SUCCESS) {
             out_string(c, "END");
         } else if (ret == ENGINE_ENOTSUP) {
@@ -9209,12 +9232,12 @@ static void process_scrubcount_command(conn *c, token_t *tokens, const size_t nt
         out_string(c, buf);
     } else if (ntokens == 4 && safe_strtol(config_val, &new_scrub_count)) {
         ENGINE_ERROR_CODE ret;
-        SETTING_LOCK();
+        LOCK_SETTING();
         ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&new_scrub_count);
         if (ret == ENGINE_SUCCESS) {
             settings.scrub_count = new_scrub_count;
         }
-        SETTING_UNLOCK();
+        UNLOCK_SETTING();
         if (ret == ENGINE_SUCCESS) {
             out_string(c, "END");
         } else if (ret == ENGINE_ENOTSUP) {
@@ -9257,7 +9280,7 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
     else if (ntokens == 4 && safe_strtol(config_val, &maxsize)) {
         ENGINE_ERROR_CODE ret;
 
-        SETTING_LOCK();
+        LOCK_SETTING();
         ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&maxsize);
         if (ret == ENGINE_SUCCESS) {
             switch (coll_type) {
@@ -9279,7 +9302,7 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
                    break;
             }
         }
-        SETTING_UNLOCK();
+        UNLOCK_SETTING();
         if (ret == ENGINE_SUCCESS) {
             out_string(c, "END");
         } else if (ret == ENGINE_ENOTSUP) {
@@ -9310,10 +9333,10 @@ static void process_maxelembytes_command(conn *c, token_t *tokens, const size_t 
             out_string(c, "CLIENT_ERROR bad value");
             return;
         }
-        SETTING_LOCK();
+        LOCK_SETTING();
         MAX_ELEMENT_BYTES = maxbytes;
         settings.max_element_bytes = maxbytes;
-        SETTING_UNLOCK();
+        UNLOCK_SETTING();
         out_string(c, "END");
     }
     else {
@@ -9339,11 +9362,11 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
             out_string(c, "SERVER_ERROR cannot change the verbosity over the limit");
             return;
         }
-        SETTING_LOCK();
+        LOCK_SETTING();
         mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&level);
         settings.verbose = level;
         perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
-        SETTING_UNLOCK();
+        UNLOCK_SETTING();
         out_string(c, "END");
     } else {
         print_invalid_command(c, tokens, ntokens);
@@ -13287,9 +13310,9 @@ static void process_command(conn *c, char *command, int cmdlen)
 #endif
     else if ((ntokens == 2) && (strcmp(tokens[COMMAND_TOKEN].value, "quit") == 0))
     {
-        STATS_LOCK();
+        LOCK_STATS();
         mc_stats.quit_conns++;
-        STATS_UNLOCK();
+        UNLOCK_STATS();
         conn_set_state(c, conn_closing);
     }
     else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "help") == 0))
@@ -13709,9 +13732,9 @@ bool conn_listening(conn *c)
         return false;
     }
 
-    STATS_LOCK();
+    LOCK_STATS();
     int curr_conns = mc_stats.curr_conns++;
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 
     if (curr_conns >= settings.maxconns) {
         /* Allow admin connection even if # of connections is over maxconns */
@@ -13720,9 +13743,9 @@ bool conn_listening(conn *c)
         if (strcmp(inet_ntoa(sin->sin_addr), ADMIN_CLIENT_IP) != 0 ||
             curr_conns >= settings.maxconns + ADMIN_MAX_CONNECTIONS)
         {
-            STATS_LOCK();
+            LOCK_STATS();
             ++mc_stats.rejected_conns;
-            STATS_UNLOCK();
+            UNLOCK_STATS();
 
             if (settings.verbose > 0) {
                 mc_logger->log(EXTENSION_LOG_INFO, c,
@@ -14363,9 +14386,9 @@ static int server_socket(int port, enum network_transport transport,
                 /* this is guaranteed to hit all threads because we round-robin */
                 dispatch_conn_new(sfd, conn_read, EV_READ | EV_PERSIST,
                                   UDP_READ_BUFFER_SIZE, transport);
-                STATS_LOCK();
+                LOCK_STATS();
                 ++mc_stats.daemon_conns;
-                STATS_UNLOCK();
+                UNLOCK_STATS();
             }
         } else {
             if (!(listen_conn_add = conn_new(sfd, conn_listening,
@@ -14377,9 +14400,9 @@ static int server_socket(int port, enum network_transport transport,
             }
             listen_conn_add->next = listen_conn;
             listen_conn = listen_conn_add;
-            STATS_LOCK();
+            LOCK_STATS();
             ++mc_stats.daemon_conns;
-            STATS_UNLOCK();
+            UNLOCK_STATS();
         }
     }
 
@@ -14468,9 +14491,9 @@ static int server_socket_unix(const char *path, int access_mask)
         exit(EXIT_FAILURE);
     }
 
-    STATS_LOCK();
+    LOCK_STATS();
     ++mc_stats.daemon_conns;
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 
     return 0;
 }

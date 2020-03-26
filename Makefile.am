@@ -77,6 +77,7 @@ memcached_SOURCES = \
                     sasl_defs.h \
                     stats.c stats.h \
                     thread.c \
+                    thread.h \
                     mc_util.c \
                     mc_util.h \
                     topkeys.c \

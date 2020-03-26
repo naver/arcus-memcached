@@ -147,7 +147,7 @@ int stats_prefix_insert(const char *prefix, const size_t nprefix) {
     PREFIX_STATS *pfs = NULL;
     uint32_t hashval = mc_hash(prefix, nprefix, 0) % PREFIX_HASH_SIZE;
 
-    STATS_LOCK();
+    LOCK_STATS();
     do {
         if (num_prefixes >= max_prefixes) {
             /* prefix overflow */
@@ -182,7 +182,7 @@ int stats_prefix_insert(const char *prefix, const size_t nprefix) {
         else /* nprefix == 0 */
             total_prefix_size += strlen(null_prefix_str);
     } while(0);
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 
     return (pfs != NULL) ? 0 : -1;
 }
@@ -193,7 +193,7 @@ int stats_prefix_delete(const char *prefix, const size_t nprefix) {
     int hidx;
     int ret = -1;
 
-    STATS_LOCK();
+    LOCK_STATS();
     if (nprefix == 0) {
         hidx = mc_hash(prefix, nprefix, 0) % PREFIX_HASH_SIZE;
         prev = NULL;
@@ -250,7 +250,7 @@ int stats_prefix_delete(const char *prefix, const size_t nprefix) {
         }
 #endif
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
     return ret;
 }
 
@@ -344,7 +344,7 @@ static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey) {
 void stats_prefix_record_get(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_gets++;
@@ -352,7 +352,7 @@ void stats_prefix_record_get(const char *key, const size_t nkey, const bool is_h
             pfs->num_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 /*
@@ -361,12 +361,12 @@ void stats_prefix_record_get(const char *key, const size_t nkey, const bool is_h
 void stats_prefix_record_delete(const char *key, const size_t nkey) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_deletes++;
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 /*
@@ -375,12 +375,12 @@ void stats_prefix_record_delete(const char *key, const size_t nkey) {
 void stats_prefix_record_set(const char *key, const size_t nkey) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_sets++;
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 /*
@@ -389,12 +389,12 @@ void stats_prefix_record_set(const char *key, const size_t nkey) {
 void stats_prefix_record_incr(const char *key, const size_t nkey) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_incrs++;
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 /*
@@ -403,12 +403,12 @@ void stats_prefix_record_incr(const char *key, const size_t nkey) {
 void stats_prefix_record_decr(const char *key, const size_t nkey) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_decrs++;
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 /*
@@ -417,18 +417,18 @@ void stats_prefix_record_decr(const char *key, const size_t nkey) {
 void stats_prefix_record_lop_create(const char *key, const size_t nkey) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_lop_creates++;
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_lop_insert(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_lop_inserts++;
@@ -436,13 +436,13 @@ void stats_prefix_record_lop_insert(const char *key, const size_t nkey, const bo
             pfs->num_lop_insert_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_lop_delete(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_lop_deletes++;
@@ -450,13 +450,13 @@ void stats_prefix_record_lop_delete(const char *key, const size_t nkey, const bo
             pfs->num_lop_delete_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_lop_get(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_lop_gets++;
@@ -464,7 +464,7 @@ void stats_prefix_record_lop_get(const char *key, const size_t nkey, const bool 
             pfs->num_lop_get_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 /*
@@ -473,18 +473,18 @@ void stats_prefix_record_lop_get(const char *key, const size_t nkey, const bool 
 void stats_prefix_record_sop_create(const char *key, const size_t nkey) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_sop_creates++;
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_sop_insert(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_sop_inserts++;
@@ -492,13 +492,13 @@ void stats_prefix_record_sop_insert(const char *key, const size_t nkey, const bo
             pfs->num_sop_insert_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_sop_delete(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_sop_deletes++;
@@ -506,13 +506,13 @@ void stats_prefix_record_sop_delete(const char *key, const size_t nkey, const bo
             pfs->num_sop_delete_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_sop_get(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_sop_gets++;
@@ -520,13 +520,13 @@ void stats_prefix_record_sop_get(const char *key, const size_t nkey, const bool 
             pfs->num_sop_get_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_sop_exist(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_sop_exists++;
@@ -534,7 +534,7 @@ void stats_prefix_record_sop_exist(const char *key, const size_t nkey, const boo
             pfs->num_sop_exist_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 /*
@@ -543,18 +543,18 @@ void stats_prefix_record_sop_exist(const char *key, const size_t nkey, const boo
 void stats_prefix_record_mop_create(const char *key, const size_t nkey) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_mop_creates++;
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_mop_insert(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_mop_inserts++;
@@ -562,13 +562,13 @@ void stats_prefix_record_mop_insert(const char *key, const size_t nkey, const bo
             pfs->num_mop_insert_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_mop_update(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_mop_updates++;
@@ -576,13 +576,13 @@ void stats_prefix_record_mop_update(const char *key, const size_t nkey, const bo
             pfs->num_mop_update_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_mop_delete(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_mop_deletes++;
@@ -590,13 +590,13 @@ void stats_prefix_record_mop_delete(const char *key, const size_t nkey, const bo
             pfs->num_mop_delete_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_mop_get(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_mop_gets++;
@@ -604,7 +604,7 @@ void stats_prefix_record_mop_get(const char *key, const size_t nkey, const bool 
             pfs->num_mop_get_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 /*
@@ -613,18 +613,18 @@ void stats_prefix_record_mop_get(const char *key, const size_t nkey, const bool 
 void stats_prefix_record_bop_create(const char *key, const size_t nkey) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_bop_creates++;
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_bop_insert(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_bop_inserts++;
@@ -632,13 +632,13 @@ void stats_prefix_record_bop_insert(const char *key, const size_t nkey, const bo
             pfs->num_bop_insert_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_bop_update(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_bop_updates++;
@@ -646,13 +646,13 @@ void stats_prefix_record_bop_update(const char *key, const size_t nkey, const bo
             pfs->num_bop_update_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_bop_delete(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_bop_deletes++;
@@ -660,13 +660,13 @@ void stats_prefix_record_bop_delete(const char *key, const size_t nkey, const bo
             pfs->num_bop_delete_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_bop_incr(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_bop_incrs++;
@@ -674,13 +674,13 @@ void stats_prefix_record_bop_incr(const char *key, const size_t nkey, const bool
             pfs->num_bop_incr_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_bop_decr(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_bop_decrs++;
@@ -688,13 +688,13 @@ void stats_prefix_record_bop_decr(const char *key, const size_t nkey, const bool
             pfs->num_bop_decr_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_bop_get(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_bop_gets++;
@@ -702,13 +702,13 @@ void stats_prefix_record_bop_get(const char *key, const size_t nkey, const bool 
             pfs->num_bop_get_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_bop_count(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_bop_counts++;
@@ -716,13 +716,13 @@ void stats_prefix_record_bop_count(const char *key, const size_t nkey, const boo
             pfs->num_bop_count_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_bop_position(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_bop_positions++;
@@ -730,13 +730,13 @@ void stats_prefix_record_bop_position(const char *key, const size_t nkey, const 
             pfs->num_bop_position_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_bop_pwg(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_bop_pwgs++;
@@ -744,13 +744,13 @@ void stats_prefix_record_bop_pwg(const char *key, const size_t nkey, const bool 
             pfs->num_bop_pwg_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_bop_gbp(const char *key, const size_t nkey, const bool is_hit) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_bop_gbps++;
@@ -758,7 +758,7 @@ void stats_prefix_record_bop_gbp(const char *key, const size_t nkey, const bool 
             pfs->num_bop_gbp_hits++;
         }
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 /*
@@ -767,23 +767,23 @@ void stats_prefix_record_bop_gbp(const char *key, const size_t nkey, const bool 
 void stats_prefix_record_getattr(const char *key, const size_t nkey) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_getattrs++;
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 void stats_prefix_record_setattr(const char *key, const size_t nkey) {
     PREFIX_STATS *pfs;
 
-    STATS_LOCK();
+    LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
     if (NULL != pfs) {
         pfs->num_setattrs++;
     }
-    STATS_UNLOCK();
+    UNLOCK_STATS();
 }
 
 /*
@@ -809,7 +809,7 @@ char *stats_prefix_dump(int *length) {
      * the per-prefix output with 20-digit values for all the counts,
      * plus space for the "END" at the end.
      */
-    STATS_LOCK();
+    LOCK_STATS();
     size = strlen(format) + total_prefix_size +
            num_prefixes * (strlen(format) - 2 /* %s */
                            + 54 * (20 - 4)) /* %llu replaced by 20-digit num */
@@ -817,7 +817,7 @@ char *stats_prefix_dump(int *length) {
     buf = malloc(size);
     if (NULL == buf) {
         perror("Can't allocate stats response: malloc");
-        STATS_UNLOCK();
+        UNLOCK_STATS();
         return NULL;
     }
 
@@ -860,7 +860,7 @@ char *stats_prefix_dump(int *length) {
         }
     }
 
-    STATS_UNLOCK();
+    UNLOCK_STATS();
     memcpy(buf + pos, "END\r\n", 6);
 
     *length = pos + 5;
