@@ -28,7 +28,8 @@ typedef struct _log_waiter {
     struct _log_waiter *wait_next;
     struct _log_waiter *free_next;
     LogSN               lsn;
-    bool                elem_clog_with_collection;
+    bool                elem_insert_with_create;
+    bool                elem_delete_with_drop;
     const void         *cookie;
 } log_waiter_t;
 

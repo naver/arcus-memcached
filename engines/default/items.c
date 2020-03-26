@@ -6624,7 +6624,7 @@ ENGINE_ERROR_CODE list_elem_insert(const char *key, const uint32_t nkey,
             ret = ENGINE_ENOMEM;
         } else {
 #ifdef ENABLE_PERSISTENCE
-            if (waiter != NULL) waiter->elem_clog_with_collection = true;
+            if (waiter != NULL) waiter->elem_insert_with_create = true;
 #endif
             ret = do_item_link(it);
             if (ret == ENGINE_SUCCESS) {
@@ -6694,7 +6694,7 @@ ENGINE_ERROR_CODE list_elem_delete(const char *key, const uint32_t nkey,
                         "list elem delete - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
-        if (drop_if_empty) waiter->elem_clog_with_collection = true;
+        if (drop_if_empty) waiter->elem_delete_with_drop = true;
     }
 #endif
 
@@ -6757,7 +6757,7 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
                         "list elem get - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
-        if (drop_if_empty) waiter->elem_clog_with_collection = true;
+        if (drop_if_empty) waiter->elem_delete_with_drop = true;
     }
 #endif
 
@@ -6917,7 +6917,7 @@ ENGINE_ERROR_CODE set_elem_insert(const char *key, const uint32_t nkey,
             ret = ENGINE_ENOMEM;
         } else {
 #ifdef ENABLE_PERSISTENCE
-            if (waiter != NULL) waiter->elem_clog_with_collection = true;
+            if (waiter != NULL) waiter->elem_insert_with_create = true;
 #endif
             ret = do_item_link(it);
             if (ret == ENGINE_SUCCESS) {
@@ -6960,7 +6960,7 @@ ENGINE_ERROR_CODE set_elem_delete(const char *key, const uint32_t nkey,
                         "set elem delete - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
-        if (drop_if_empty) waiter->elem_clog_with_collection = true;
+        if (drop_if_empty) waiter->elem_delete_with_drop = true;
     }
 #endif
 
@@ -7032,7 +7032,7 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
                         "set elem get - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
-        if (drop_if_empty) waiter->elem_clog_with_collection = true;
+        if (drop_if_empty) waiter->elem_delete_with_drop = true;
     }
 #endif
 
@@ -7199,7 +7199,7 @@ ENGINE_ERROR_CODE btree_elem_insert(const char *key, const uint32_t nkey,
             ret = ENGINE_ENOMEM;
         } else {
 #ifdef ENABLE_PERSISTENCE
-            if (waiter != NULL) waiter->elem_clog_with_collection = true;
+            if (waiter != NULL) waiter->elem_insert_with_create = true;
 #endif
             ret = do_item_link(it);
             if (ret == ENGINE_SUCCESS) {
@@ -7294,7 +7294,7 @@ ENGINE_ERROR_CODE btree_elem_delete(const char *key, const uint32_t nkey,
                         "btree elem delete - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
-        if (drop_if_empty) waiter->elem_clog_with_collection = true;
+        if (drop_if_empty) waiter->elem_delete_with_drop = true;
     }
 #endif
 
@@ -7422,7 +7422,7 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
                         "btree elem get - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
-        if (drop_if_empty) waiter->elem_clog_with_collection = true;
+        if (drop_if_empty) waiter->elem_delete_with_drop = true;
     }
 #endif
 
@@ -9982,7 +9982,7 @@ ENGINE_ERROR_CODE map_elem_insert(const char *key, const uint32_t nkey,
             ret = ENGINE_ENOMEM;
         } else {
 #ifdef ENABLE_PERSISTENCE
-            if (waiter != NULL) waiter->elem_clog_with_collection = true;
+            if (waiter != NULL) waiter->elem_insert_with_create = true;
 #endif
             ret = do_item_link(it);
             if (ret == ENGINE_SUCCESS) {
@@ -10061,7 +10061,7 @@ ENGINE_ERROR_CODE map_elem_delete(const char *key, const uint32_t nkey,
                         "map elem delete - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
-        if (drop_if_empty) waiter->elem_clog_with_collection = true;
+        if (drop_if_empty) waiter->elem_delete_with_drop = true;
     }
 #endif
 
@@ -10110,7 +10110,7 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
                         "map elem get - cmdlog waiter alloc fail\n");
             return ENGINE_ENOMEM; /* FIXME: define error code */
         }
-        if (drop_if_empty) waiter->elem_clog_with_collection = true;
+        if (drop_if_empty) waiter->elem_delete_with_drop = true;
     }
 #endif
 
