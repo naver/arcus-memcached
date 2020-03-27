@@ -189,29 +189,6 @@ static void do_log_flusher_wakeup(log_FLUSHER *flusher)
     pthread_mutex_unlock(&flusher->lock);
 }
 
-static void do_log_file_sync(int fd, bool close)
-{
-    int ret = disk_fsync(fd);
-    if (ret < 0) {
-        logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "log file fsync error (%d:%s)\n",
-                    errno, strerror(errno));
-        /* [FATAL] untreatable error => abnormal shutdown by assertion */
-    }
-    assert(ret == 0);
-
-    if (close) {
-        ret = disk_close(fd);
-        if (ret < 0) {
-            logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "log file close error (%d:%s)\n",
-                        errno, strerror(errno));
-            /* [FATAL] untreatable error => abnormal shutdown by assertion */
-        }
-        assert(ret == 0);
-    }
-}
-
 static void do_log_file_write(char *log_ptr, uint32_t log_size, bool dual_write)
 {
     log_FILE *logfile = &log_gl.log_file;
@@ -536,10 +513,26 @@ void cmdlog_file_sync(void)
     /* fsync the log files */
     pthread_mutex_lock(&log_gl.log_fsync_lock);
     if (1) {
-        do_log_file_sync(log_gl.log_file.fd, false); /* do not close */
+        /* fsync curr fd */
+        int ret = disk_fsync(log_gl.log_file.fd);
+        if (ret < 0) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "log file fsync error (%d:%s)\n",
+                        errno, strerror(errno));
+            /* [FATAL] untreatable error => abnormal shutdown by assertion */
+        }
+        assert(ret == 0);
+
+        /* fsync next fd */
         if (log_gl.log_file.next_fd != -1) {
-            /* fsync and close the prev log file */
-            do_log_file_sync(log_gl.log_file.next_fd, false); /* do close */
+            ret = disk_fsync(log_gl.log_file.next_fd);
+            if (ret < 0) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "log file fsync error (%d:%s)\n",
+                            errno, strerror(errno));
+                /* [FATAL] untreatable error => abnormal shutdown by assertion */
+            }
+            assert(ret == 0);
         }
 
         /* update nxt_fsync_lsn */
