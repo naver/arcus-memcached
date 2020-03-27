@@ -150,7 +150,7 @@ log_waiter_t *cmdlog_waiter_alloc(const void *cookie)
     log_waiter_t *waiter = do_cmdlog_waiter_alloc();
     if (waiter) {
       waiter->cookie = cookie;
-      tls_waiter = waiter;
+      tls_waiter = waiter; /* set tls_waiter */
     }
     return waiter;
 }
@@ -338,6 +338,8 @@ do_cmdlog_add_commit_waiter(log_waiter_t *waiter)
 
 void cmdlog_waiter_free(log_waiter_t *waiter, ENGINE_ERROR_CODE *result)
 {
+    tls_waiter = NULL; /* clear tls_waiter */
+
     if (logmgr_gl.async_mode == false && *result == ENGINE_SUCCESS) {
         group_commit_t *gcommit = &logmgr_gl.group_commit;
         LogSN now_flush_lsn, now_fsync_lsn;
@@ -362,7 +364,6 @@ void cmdlog_waiter_free(log_waiter_t *waiter, ENGINE_ERROR_CODE *result)
         }
     }
     do_cmdlog_waiter_free(waiter);
-    tls_waiter = NULL;
 }
 
 log_waiter_t *cmdlog_get_my_waiter(void)
