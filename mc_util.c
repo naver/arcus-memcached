@@ -421,8 +421,8 @@ typedef struct {
     uint32_t tokidx;
 } segtok_t;
 
-static int concat_segmented_tokens(mblck_list_t *blist, token_t *tokens,
-                                   segtok_t *segtoks, int nsegtok)
+static ENGINE_ERROR_CODE concat_segmented_tokens(mblck_list_t *blist, token_t *tokens,
+                                                 segtok_t *segtoks, int nsegtok, int maxklen)
 {
     assert(blist->pool != NULL);
     mblck_list_t newblcks;
@@ -439,6 +439,8 @@ static int concat_segmented_tokens(mblck_list_t *blist, token_t *tokens,
     for (i = 0; i < nsegtok; i++) {
         tok_ptr = &tokens[segtoks[i].tokidx];
         complen = segtoks[i].length + tok_ptr->length;
+        if (complen > maxklen) break;
+
         if ((datalen + complen) > bodylen) {
             numblks += 1;
             datalen = complen;
@@ -446,10 +448,13 @@ static int concat_segmented_tokens(mblck_list_t *blist, token_t *tokens,
             datalen += complen;
         }
     }
+    if (i < nsegtok) {
+        return ENGINE_EBADVALUE;
+    }
 
     /* allocate new mblock list */
     if (mblck_list_alloc((mblck_pool_t*)blist->pool, bodylen, numblks, &newblcks) < 0) {
-        return -1;
+        return ENGINE_ENOMEM; /* out of memory */
     }
 
     /* build the complete strings with new mblock */
@@ -480,7 +485,7 @@ static int concat_segmented_tokens(mblck_list_t *blist, token_t *tokens,
 
     /* merge to main mblock list */
     mblck_list_merge(blist, &newblcks);
-    return 0;
+    return ENGINE_SUCCESS;
 }
 
 #define SEGTOK_ARRAY_SIZE 128
@@ -488,7 +493,8 @@ static int concat_segmented_tokens(mblck_list_t *blist, token_t *tokens,
  * Assume key string blocks without the trailing "\r\n" characters.
  */
 ENGINE_ERROR_CODE tokenize_mblocks(mblck_list_t *blist, int keylen, int keycnt,
-                                   token_t *tokens, bool must_backward_compatible)
+                                   int maxklen, bool must_backward_compatible,
+                                   token_t *tokens)
 {
     assert(keylen > 0 && keycnt > 0 && tokens != NULL);
     mblck_node_t *blckptr;
@@ -503,9 +509,13 @@ ENGINE_ERROR_CODE tokenize_mblocks(mblck_list_t *blist, int keylen, int keycnt,
     segtok_t segtoks[SEGTOK_ARRAY_SIZE];
     uint32_t nsegtok;
     char delimiter = ' ';
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    ENGINE_ERROR_CODE ret;
+    /* More than 2 keys must be found in each block except the last block */
+    assert(maxklen < (bodylen-2)); /* 2 delimiters */
 
 do_again:
+    /* reset return value */
+    ret = ENGINE_SUCCESS;
     /* reset ntokens */
     ntokens = 0;
     nsegtok = 0;
@@ -531,6 +541,15 @@ do_again:
                                     delimiter, &tokens[ntokens]);
         if (tokcnt <= 0) {
             ret = ENGINE_EBADVALUE; break;
+        } else {
+            int i;
+            for (i = 0; i < tokcnt; i++) {
+                if (tokens[ntokens+i].length > maxklen)
+                    break;
+            }
+            if (i < tokcnt) {
+                ret = ENGINE_EBADVALUE; break;
+            }
         }
         ntokens += tokcnt;
 
@@ -546,6 +565,7 @@ do_again:
         blckptr = MBLCK_GET_NEXTBLK(blckptr);
         dataptr = MBLCK_GET_BODYPTR(blckptr);
         datalen = (chkblks < numblks) ? bodylen : lastlen;
+
         if (segmented_blck == false)
             continue;
 
@@ -557,8 +577,9 @@ do_again:
         } else {
             /* real segmented string: save it */
             if (nsegtok >= SEGTOK_ARRAY_SIZE) {
-                if (concat_segmented_tokens(blist, tokens, segtoks, nsegtok) != 0) {
-                    ret = ENGINE_ENOMEM; break; /* out of memory */
+                ret = concat_segmented_tokens(blist, tokens, segtoks, nsegtok, maxklen);
+                if (ret != ENGINE_SUCCESS) {
+                    break; /* ENGINE_EBADVALUE or ENGINE_ENOMEM */
                 }
                 nsegtok = 0;
             }
@@ -579,9 +600,8 @@ do_again:
     }
 
     if (ret == ENGINE_SUCCESS && nsegtok > 0) {
-        if (concat_segmented_tokens(blist, tokens, segtoks, nsegtok) != 0) {
-            ret = ENGINE_ENOMEM; /* out of memory */
-        }
+        ret = concat_segmented_tokens(blist, tokens, segtoks, nsegtok, maxklen);
+        /* ret: ENGINE_SUCCESS or ENGINE_EBADVALUE or ENGINE_ENOMEM */
     }
     return ret;
 }
@@ -590,7 +610,8 @@ do_again:
  * Assume key string blocks in ascii protocol.
  */
 ENGINE_ERROR_CODE tokenize_sblocks(mblck_list_t *blist, int keylen, int keycnt,
-                                   token_t *tokens, bool must_backward_compatible)
+                                   int maxklen, bool must_backward_compatible,
+                                   token_t *tokens)
 {
     assert(keylen > 2);
 
@@ -598,6 +619,6 @@ ENGINE_ERROR_CODE tokenize_sblocks(mblck_list_t *blist, int keylen, int keycnt,
     if (check_sblock_tail_string(blist, keylen) != 0) {
         return ENGINE_EBADVALUE;
     }
-    return tokenize_mblocks(blist, keylen-2, keycnt, tokens,
-                            must_backward_compatible);
+    return tokenize_mblocks(blist, keylen-2, keycnt, maxklen,
+                            must_backward_compatible, tokens);
 }
