@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 49;
+use Test::More tests => 67;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -421,6 +421,85 @@ $cmd = "delete bkey2"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "delete kvkey"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, "", $rst);
+
+# long key test
+my $key1;
+my $key2;
+
+$cmd = "bop mget 600291 2 0..1000 2";
+$key1 = "a"x300145;
+$key2 = "b"x300145;
+$val = "$key1 $key2";
+mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad value");
+$val = "$key1,$key2";
+mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad value");
+$val = "$key1?$key2";
+mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad value");
+
+$cmd = "bop mget 66001 2 0..1000 2";
+$key1 = "a"x33000;
+$key2 = "b"x33000;
+$val = "$key1 $key2";
+mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad value");
+$val = "$key1,$key2";
+mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad value");
+$val = "$key1?$key2";
+mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad value");
+
+$cmd = "bop mget 60001 3 0..1000 2";
+$key1 = "a"x30000;
+$key2 = "b"x30000;
+$val = "$key1 $key2";
+mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad data chunk");
+$val = "$key1,$key2";
+mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad data chunk");
+$val = "$key1?$key2";
+mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad data chunk");
+
+$cmd = "bop mget 60001 2 0..1000 2";
+$key1 = "a"x30000;
+$key2 = "b"x30000;
+$rst =
+"VALUE $key1 NOT_FOUND
+VALUE $key2 NOT_FOUND
+END";
+$val = "$key1 $key2";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$val = "$key1,$key2";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$val = "$key1?$key2";
+mem_cmd_is($sock, $cmd, $val,  "CLIENT_ERROR bad data chunk");
+
+# case) the last char is delimiter in mblock
+$cmd = "bop mget 49139 3 0..1000 2";
+$key1 = "a"x16379;
+$rst =
+"VALUE $key1 NOT_FOUND
+VALUE $key1 NOT_FOUND
+VALUE $key1 NOT_FOUND
+END";
+$val = "$key1 $key1 $key1";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$val = "$key1,$key1,$key1";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$val = "$key1?$key1?$key1";
+mem_cmd_is($sock, $cmd, $val,  "CLIENT_ERROR bad data chunk");
+
+# case) the first char is delimiter in mblock
+$cmd = "bop mget 49140 3 0..1000 2";
+$key1 = "a"x16379;
+$key2 = "b"x16380;
+$rst =
+"VALUE $key1 NOT_FOUND
+VALUE $key2 NOT_FOUND
+VALUE $key1 NOT_FOUND
+END";
+$val = "$key1 $key2 $key1";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$val = "$key1,$key2,$key1";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$val = "$key1?$key2?$key1";
+mem_cmd_is($sock, $cmd, $val,  "CLIENT_ERROR bad data chunk");
 
 # after test
 release_memcached($engine, $server);

@@ -2004,19 +2004,11 @@ static void process_mop_delete_complete(conn *c)
         fld_tokens = (field_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
         if (fld_tokens != NULL) {
             bool must_backward_compatible = true; /* Must be backward compatible */
-            ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, (token_t*)fld_tokens,
-                                   must_backward_compatible);
+            ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys,
+                                   MAX_FIELD_LENG, must_backward_compatible, (token_t*)fld_tokens);
             /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
         } else {
             ret = ENGINE_ENOMEM;
-        }
-    }
-
-    if (ret == ENGINE_SUCCESS && c->coll_numkeys > 0) { /* field validation check */
-        for (int i = 0; i < c->coll_numkeys; i++) {
-            if (fld_tokens[i].length > MAX_FIELD_LENG) {
-                ret = ENGINE_EBADVALUE; break;
-            }
         }
     }
 
@@ -2025,7 +2017,6 @@ static void process_mop_delete_complete(conn *c)
                                             c->coll_numkeys, fld_tokens, c->coll_drop,
                                             &del_count, &dropped, 0);
     }
-
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -2103,19 +2094,11 @@ static void process_mop_get_complete(conn *c)
         fld_tokens = (field_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
         if (fld_tokens != NULL) {
             bool must_backward_compatible = true; /* Must be backward compatible */
-            ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, (token_t*)fld_tokens,
-                                   must_backward_compatible);
+            ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys,
+                                   MAX_FIELD_LENG, must_backward_compatible, (token_t*)fld_tokens);
             /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
         } else {
             ret = ENGINE_ENOMEM;
-        }
-    }
-
-    if (ret == ENGINE_SUCCESS && c->coll_numkeys > 0) { /* field validation check */
-        for (int i = 0; i < c->coll_numkeys; i++) {
-            if (fld_tokens[i].length > MAX_FIELD_LENG) {
-                ret = ENGINE_EBADVALUE; break;
-            }
         }
     }
 
@@ -2126,7 +2109,6 @@ static void process_mop_get_complete(conn *c)
         elem_array = eresult.elem_array;
         elem_count = eresult.elem_count;
     }
-
     if (ret == ENGINE_EWOULDBLOCK) {
         c->ewouldblock = true;
         ret = ENGINE_SUCCESS;
@@ -2455,8 +2437,8 @@ static void process_bop_mget_complete(conn *c)
     key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (key_tokens != NULL) {
         bool must_backward_compatible = true; /* Must be backward compatible */
-        ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, key_tokens,
-                               must_backward_compatible);
+        ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys,
+                               KEY_MAX_LENGTH, must_backward_compatible, key_tokens);
         /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
     } else {
         ret = ENGINE_ENOMEM;
@@ -2677,8 +2659,8 @@ static void process_bop_smget_complete_old(conn *c)
     key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (key_tokens != NULL) {
         bool must_backward_compatible = true; /* Must be backward compatible */
-        ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, key_tokens,
-                               must_backward_compatible);
+        ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys,
+                               KEY_MAX_LENGTH, must_backward_compatible, key_tokens);
         /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
     } else {
         ret = ENGINE_ENOMEM;
@@ -2833,8 +2815,8 @@ static void process_bop_smget_complete(conn *c)
     key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (key_tokens != NULL) {
         bool must_backward_compatible = true; /* Must be backward compatible */
-        ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, key_tokens,
-                               must_backward_compatible);
+        ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys,
+                               KEY_MAX_LENGTH, must_backward_compatible, key_tokens);
         /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
     } else {
         ret = ENGINE_ENOMEM;
@@ -3040,21 +3022,13 @@ static void process_mget_complete(conn *c)
         key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
         if (key_tokens != NULL) {
             bool must_backward_compatible = false;
-            ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys, key_tokens,
-                                   must_backward_compatible);
+            ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys,
+                                   KEY_MAX_LENGTH, must_backward_compatible, key_tokens);
             if (ret != ENGINE_SUCCESS) {
                 break; /* ENGINE_EBADVALUE | ENGINE_ENOMEM */
             }
         } else {
             ret = ENGINE_ENOMEM; break;
-        }
-        /* check key length */
-        for (k = 0; k < c->coll_numkeys; k++) {
-            if (key_tokens[k].length > KEY_MAX_LENGTH)
-                break;
-        }
-        if (k < c->coll_numkeys) { /* too long key */
-            ret = ENGINE_EBADVALUE; break;
         }
         /* do get operation for each key */
         nitems = 0;
@@ -6334,8 +6308,8 @@ static void process_bin_bop_smget_complete_old(conn *c)
     key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (key_tokens != NULL) {
         bool must_backward_compatible = true; /* Must be backward compatible */
-        ret = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, c->coll_numkeys, key_tokens,
-                               must_backward_compatible);
+        ret = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, c->coll_numkeys,
+                               KEY_MAX_LENGTH, must_backward_compatible, key_tokens);
         /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
     } else {
         ret = ENGINE_ENOMEM;
@@ -6511,8 +6485,8 @@ static void process_bin_bop_smget_complete(conn *c)
     key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (key_tokens != NULL) {
         bool must_backward_compatible = true; /* Must be backward compatible */
-        ret = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, c->coll_numkeys, key_tokens,
-                               must_backward_compatible);
+        ret = tokenize_mblocks(&c->memblist, c->coll_lenkeys-2, c->coll_numkeys,
+                               KEY_MAX_LENGTH, must_backward_compatible, key_tokens);
         /* ret : ENGINE_SUCCESS | ENGINE_EBADVALUE | ENGINE_ENOMEM */
     } else {
         ret = ENGINE_ENOMEM;
@@ -8677,18 +8651,20 @@ static inline void process_mget_command(conn *c, token_t *tokens, const size_t n
 
     if ((! safe_strtoul(tokens[COMMAND_TOKEN+1].value, &lenkeys)) ||
         (! safe_strtoul(tokens[COMMAND_TOKEN+2].value, &numkeys)) ||
-        (lenkeys > (UINT_MAX-2))) {
+        (lenkeys > (UINT_MAX-2)) || (lenkeys == 0) || (numkeys == 0)) {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
 
-    if (lenkeys < 1 || numkeys < 1 || numkeys > ((lenkeys/2)+1)) {
+    if (numkeys > MAX_MGET_KEY_COUNT ||
+        numkeys > ((lenkeys/2) + 1) ||
+        lenkeys > ((numkeys*KEY_MAX_LENGTH) + numkeys-1)) {
         /* ENGINE_EBADVALUE */
-        out_string(c, "CLIENT_ERROR bad value"); return;
-    }
-    if (numkeys > MAX_MGET_KEY_COUNT) {
-        out_string(c, "CLIENT_ERROR bad value"); return;
+        out_string(c, "CLIENT_ERROR bad value");
+        c->write_and_go = conn_swallow;
+        c->sbytes = lenkeys + 2;
+        return;
     }
     lenkeys += 2;
 
@@ -12117,25 +12093,6 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
             return;
         }
 
-        if (lenfields == 0) {
-            if (numfields != 0) {
-                out_string(c, "CLIENT_ERROR bad value");
-                return;
-            }
-        } else if (numfields == 0) {
-            if (lenfields != 0) {
-                out_string(c, "CLIENT_ERROR bad value");
-                return;
-            }
-        }
-        if (numfields > 0) {
-            if (numfields > ARCUS_COLL_SIZE_MAX ||
-                numfields > ((lenfields/2)+1)) {
-                out_string(c, "CLIENT_ERROR bad value");
-                return;
-            }
-        }
-
         int read_ntokens = 5;
         int post_ntokens = 1 + (c->noreply ? 1 : 0);
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
@@ -12146,6 +12103,28 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
             } else {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
+                return;
+            }
+        }
+
+        if (numfields == 0) {
+            if (lenfields != 0)  {
+                out_string(c, "CLIENT_ERROR bad value");
+                c->write_and_go = conn_swallow;
+                c->sbytes = lenfields + 2;
+                return;
+            }
+        } else { /* numfields != 0 */
+            if (lenfields == 0) {
+                out_string(c, "CLIENT_ERROR bad value");
+                return;
+            }
+            if (numfields > ARCUS_COLL_SIZE_MAX ||
+                numfields > ((lenfields/2) + 1) ||
+                lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1)) {
+                out_string(c, "CLIENT_ERROR bad value");
+                c->write_and_go = conn_swallow;
+                c->sbytes = lenfields + 2;
                 return;
             }
         }
@@ -12180,25 +12159,6 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
             return;
         }
 
-        if (lenfields == 0) {
-            if (numfields != 0) {
-                out_string(c, "CLIENT_ERROR bad value");
-                return;
-            }
-        } else if (numfields == 0) {
-            if (lenfields != 0) {
-                out_string(c, "CLIENT_ERROR bad value");
-                return;
-            }
-        }
-        if (numfields > 0) {
-            if (numfields > ARCUS_COLL_SIZE_MAX ||
-                numfields > ((lenfields/2)+1)) {
-                out_string(c, "CLIENT_ERROR bad value");
-                return;
-            }
-        }
-
         int read_ntokens = 5;
         if (ntokens == read_ntokens + 2) {
             if (strcmp(tokens[read_ntokens].value, "delete")==0) {
@@ -12209,6 +12169,28 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
             } else {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
+                return;
+            }
+        }
+
+        if (numfields == 0) {
+            if (lenfields != 0)  {
+                out_string(c, "CLIENT_ERROR bad value");
+                c->write_and_go = conn_swallow;
+                c->sbytes = lenfields + 2;
+                return;
+            }
+        } else { /* numfields != 0 */
+            if (lenfields == 0) {
+                out_string(c, "CLIENT_ERROR bad value");
+                return;
+            }
+            if (numfields > ARCUS_COLL_SIZE_MAX ||
+                numfields > ((lenfields/2) + 1) ||
+                lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1)) {
+                out_string(c, "CLIENT_ERROR bad value");
+                c->write_and_go = conn_swallow;
+                c->sbytes = lenfields + 2;
                 return;
             }
         }
@@ -12676,7 +12658,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if ((! safe_strtoul(tokens[BOP_KEY_TOKEN].value, &lenkeys)) ||
             (! safe_strtoul(tokens[BOP_KEY_TOKEN+1].value, &numkeys)) ||
-            (lenkeys > (UINT_MAX-2))) {
+            (lenkeys > (UINT_MAX-2)) || (lenkeys == 0) || (numkeys == 0)) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
@@ -12717,7 +12699,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
 
         if (rest_ntokens == 0) {
-            if (! safe_strtoul(tokens[read_ntokens].value, &count)) {
+            if (! safe_strtoul(tokens[read_ntokens].value, &count) || count == 0) {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
                 return;
@@ -12732,25 +12714,34 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
 
         /* validation checking on arguments */
-        if (lenkeys < 1 || numkeys < 1 || count < 1 || numkeys > ((lenkeys/2)+1)) {
+        if (numkeys > ((lenkeys/2) + 1) ||
+            lenkeys > ((numkeys*KEY_MAX_LENGTH) + numkeys-1)) {
             /* ENGINE_EBADVALUE */
-            out_string(c, "CLIENT_ERROR bad value"); return;
+            out_string(c, "CLIENT_ERROR bad value");
+            c->write_and_go = conn_swallow;
+            c->sbytes = lenkeys + 2;
+            return;
         }
         lenkeys += 2;
 #ifdef SUPPORT_BOP_MGET
         if (subcommid == OPERATION_BOP_MGET) {
             if (numkeys > MAX_BMGET_KEY_COUNT || count > MAX_BMGET_ELM_COUNT) {
                 /* ENGINE_EBADVALUE */
-                out_string(c, "CLIENT_ERROR bad value"); return;
+                out_string(c, "CLIENT_ERROR bad value");
+                c->write_and_go = conn_swallow;
+                c->sbytes = lenkeys;
+                return;
             }
         }
 #endif
 #ifdef SUPPORT_BOP_SMGET
         if (subcommid == OPERATION_BOP_SMGET) {
-            if (numkeys > MAX_SMGET_KEY_COUNT ||
-                (offset+count) > MAX_SMGET_REQ_COUNT) {
+            if (numkeys > MAX_SMGET_KEY_COUNT || (offset+count) > MAX_SMGET_REQ_COUNT) {
                 /* ENGINE_EBADVALUE */
-                out_string(c, "CLIENT_ERROR bad value"); return;
+                out_string(c, "CLIENT_ERROR bad value");
+                c->write_and_go = conn_swallow;
+                c->sbytes = lenkeys;
+                return;
             }
         }
 #endif

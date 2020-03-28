@@ -113,9 +113,388 @@ stats [<args>]\r\n
  scrub              | scrub 수행 상태 조회
  cachedump          | slab class 별 cache key dump
  reset              | 모든 통계 정보를 reset
-``` 
+```
 
 stats 명령은 직접 한번씩 수행해 보기를 권하며, 아래에서는 추가 설명이 필요한 부분들만 기술한다.
+
+**General purpose 정보**
+
+특정 분류에 국한되지 않은 일반적인 통계를 알기 위한 명령이다. 다음은 stats 명령 결과의 예이다.
+
+```
+STAT pid 3553
+STAT uptime 6910
+STAT time 1584942539
+STAT version 1.11.7
+STAT libevent 2.1.11-stable
+STAT pointer_size 64
+STAT rusage_user 1.241010
+STAT rusage_system 2.843840
+STAT daemon_connections 2
+STAT curr_connections 1
+STAT quit_connections 0
+STAT reject_connections 0
+STAT total_connections 3
+STAT connection_structures 3
+STAT cmd_get 0
+STAT cmd_set 0
+STAT cmd_incr 0
+STAT cmd_decr 0
+STAT cmd_delete 0
+STAT cmd_flush 0
+STAT cmd_flush_prefix 0
+STAT cmd_cas 0
+STAT cmd_lop_create 0
+STAT cmd_lop_insert 0
+STAT cmd_lop_delete 0
+STAT cmd_lop_get 0
+STAT cmd_sop_create 0
+STAT cmd_sop_insert 0
+STAT cmd_sop_delete 0
+STAT cmd_sop_get 0
+STAT cmd_sop_exist 0
+STAT cmd_mop_create 0
+STAT cmd_mop_insert 0
+STAT cmd_mop_update 0
+STAT cmd_mop_delete 0
+STAT cmd_mop_get 0
+STAT cmd_bop_create 0
+STAT cmd_bop_insert 0
+STAT cmd_bop_update 0
+STAT cmd_bop_delete 0
+STAT cmd_bop_get 0
+STAT cmd_bop_count 0
+STAT cmd_bop_position 0
+STAT cmd_bop_pwg 0
+STAT cmd_bop_gbp 0
+STAT cmd_bop_mget 0
+STAT cmd_bop_smget 0
+STAT cmd_bop_incr 0
+STAT cmd_bop_decr 0
+STAT cmd_getattr 0
+STAT cmd_setattr 0
+STAT auth_cmds 0
+STAT auth_errors 0
+STAT get_hits 0
+STAT get_misses 0
+STAT delete_misses 0
+STAT delete_hits 0
+STAT incr_misses 0
+STAT incr_hits 0
+STAT decr_misses 0
+STAT decr_hits 0
+STAT cas_misses 0
+STAT cas_hits 0
+STAT cas_badval 0
+STAT lop_create_oks 0
+STAT lop_insert_misses 0
+STAT lop_insert_hits 0
+STAT lop_delete_misses 0
+STAT lop_delete_elem_hits 0
+STAT lop_delete_none_hits 0
+STAT lop_get_misses 0
+STAT lop_get_elem_hits 0
+STAT lop_get_none_hits 0
+STAT sop_create_oks 0
+STAT sop_insert_misses 0
+STAT sop_insert_hits 0
+STAT sop_delete_misses 0
+STAT sop_delete_elem_hits 0
+STAT sop_delete_none_hits 0
+STAT sop_get_misses 0
+STAT sop_get_elem_hits 0
+STAT sop_get_none_hits 0
+STAT sop_exist_misses 0
+STAT sop_exist_hits 0
+STAT mop_create_oks 0
+STAT mop_insert_misses 0
+STAT mop_insert_hits 0
+STAT mop_update_misses 0
+STAT mop_update_elem_hits 0
+STAT mop_update_none_hits 0
+STAT mop_delete_misses 0
+STAT mop_delete_elem_hits 0
+STAT mop_delete_none_hits 0
+STAT mop_get_misses 0
+STAT mop_get_elem_hits 0
+STAT mop_get_none_hits 0
+STAT bop_create_oks 0
+STAT bop_insert_misses 0
+STAT bop_insert_hits 0
+STAT bop_update_misses 0
+STAT bop_update_elem_hits 0
+STAT bop_update_none_hits 0
+STAT bop_delete_misses 0
+STAT bop_delete_elem_hits 0
+STAT bop_delete_none_hits 0
+STAT bop_get_misses 0
+STAT bop_get_elem_hits 0
+STAT bop_get_none_hits 0
+STAT bop_count_misses 0
+STAT bop_count_hits 0
+STAT bop_position_misses 0
+STAT bop_position_elem_hits 0
+STAT bop_position_none_hits 0
+STAT bop_pwg_misses 0
+STAT bop_pwg_elem_hits 0
+STAT bop_pwg_none_hits 0
+STAT bop_gbp_misses 0
+STAT bop_gbp_elem_hits 0
+STAT bop_gbp_none_hits 0
+STAT bop_mget_oks 0
+STAT bop_smget_oks 0
+STAT bop_incr_elem_hits 0
+STAT bop_incr_none_hits 0
+STAT bop_incr_misses 0
+STAT bop_decr_elem_hits 0
+STAT bop_decr_none_hits 0
+STAT bop_decr_misses 0
+STAT getattr_misses 0
+STAT getattr_hits 0
+STAT setattr_misses 0
+STAT setattr_hits 0
+STAT stat_prefixes 0
+STAT bytes_read 23
+STAT bytes_written 771
+STAT limit_maxbytes 8589934592
+STAT threads 6
+STAT conn_yields 0
+STAT curr_prefixes 0
+STAT reclaimed 0
+STAT evictions 0
+STAT outofmemorys 0
+STAT sticky_items 0
+STAT curr_items 0
+STAT total_items 0
+STAT sticky_bytes 0
+STAT bytes 0
+STAT sticky_limit 0
+STAT engine_maxbytes 8589934592
+```
+
+명령 별 주요 통계를 정리하면 다음과 같다.
+
+- cmd_<command_name>: 해당 명령의 수행 횟수
+- <command_name>_hits: 해당 명령의 key hit 횟수
+- <command_name>_misses: 해당 명령의 key miss 횟수
+- 콜렉션 명령의 key hit 횟수는 따로 제공하지 않으며, 아래 횟수의 합으로 계산할 수 있다.
+  - <collection_name>\_<command_name>\_elem_hits: 콜렉션 명령의 key hit 그리고 element hit 횟수 
+  - <collection_name>\_<command_name>\_none_hits: 콜렉션 명령의 key hit 그러나 element miss 횟수
+
+다음은 그 외의 개별 통계이다. 
+
+| stats                 | 설명                                                         |
+| --------------------- | ------------------------------------------------------------ |
+| pid                   | 캐시 노드의 프로세스 id                                      |
+| uptime                | 캐시 서버를 구동한 시간(초)                                  |
+| time                  | 현재 시간 (unix time)                                        |
+| version               | 현재 arcus-memcached 버전                                    |
+| libevent              | 사용중인 libevent 버전                                       |
+| pointer_size          | 포인터의 크기(bit 단위)                                      |
+| rusage_user           | 프로세스의 누적 user time.                                   |
+| rusage_system         | 프로세스의 누적 system time.                                 |
+| daemon_connections    | 서버가 사용하는 daemon connection 개수                       |
+| curr_connections      | 현재 열려있는 connection 개수                                |
+| quit_connections      | 클라이언트가 quit 명령을 이용해 연결을 끊은 횟수             |
+| reject_connections    | 클라이언트와의 연결을 거절한 횟수                            |
+| total_connections     | 서버 구동 이후 누적 connection 총합                          |
+| connection_structures | 서버가 할당한 connection 구조체 개수                         |
+| auth_cmds             | sasl 인증 횟수                                               |
+| auth_errors           | sasl 인증 실패 횟수                                          |
+| cas_badval            | 키는 찾았으나 cas 값이 맞지 않은 요청의 횟수                 |
+| bytes_read            | 서버가 네트워크에서 읽은 데이터 용량 총합(bytes)             |
+| bytes_written         | 서버가 네트워크에 쓴 데이터 용량 총합(bytes)                 |
+| limit_maxbytes        | 서버에 허용된 최대 메모리 용량(bytes)                        |
+| threads               | worker thread 개수                                           |
+| conn_yields           | 이벤트당 최대 요청 수의 제한                                 |
+| curr_prefixes         | 현재 저장된 prefix 개수                                      |
+| reclaimed             | expired된 아이템의 공간을 사용해 새로운 아이템을 저장한 횟수 |
+| evictions             | eviction 횟수                                                |
+| outofmemorys          | outofmemory (메모리가 부족한 상황에서 eviction이 허용되지 않거나 실패) 발생 횟수 |
+| sticky_items          | 현재 sticky 아이템의 개수                                    |
+| curr_items            | 현재 서버에 저장된 아이템의 개수                             |
+| total_items           | 서버 구동 후 저장한 아이템의 누적 개수                       |
+| sticky_bytes          | sticky 아이템이 차지하는 메모리 용량(bytes)                  |
+| bytes                 | 현재 사용중인 메모리 용량(bytes)                             |
+| sticky_limit          | sticky item을 저장할 수 있는 최대 메모리 용량(bytes)         |
+| engine_maxbytes       | 엔진에 허용된 최대 저장 용량                                 |
+
+**settings 통계 정보**
+
+각종 설정값에 대한 통계 정보를 보는 명령이다. 다음은 stats settings 실행 결과의 예이다.
+
+```
+STAT maxbytes 8589934592
+STAT maxconns 3000
+STAT tcpport 11911
+STAT udpport 0
+STAT sticky_limit 0
+STAT inter NULL
+STAT verbosity 1
+STAT oldest 0
+STAT evictions on
+STAT domain_socket NULL
+STAT umask 700
+STAT growth_factor 1.25
+STAT chunk_size 48
+STAT num_threads 6
+STAT stat_key_prefix :
+STAT detail_enabled yes
+STAT allow_detailed yes
+STAT reqs_per_event 5
+STAT cas_enabled yes
+STAT tcp_backlog 8192
+STAT binding_protocol auto-negotiate
+STAT auth_enabled_sasl no
+STAT auth_sasl_engine none
+STAT auth_required_sasl no
+STAT item_size_max 1048576
+STAT max_list_size 50000
+STAT max_set_size 50000
+STAT max_map_size 50000
+STAT max_btree_size 50000
+STAT max_element_bytes 16384
+STAT topkeys 0
+STAT logger syslog
+STAT ascii_extension scrub
+```
+
+| stats              | 설명                                                         |
+| ------------------ | ------------------------------------------------------------ |
+| maxbytes           | 캐시 서버의 최대 저장 용량(byte)                             |
+| maxconns           | 접속할 수 있는 클라이언트의 최대 개수                        |
+| tcpport            | listen하고 있는 TCP port                                     |
+| udpport            | listen하고 있는 UDP port                                     |
+| sticky_limit       | sticky 아이템을 저장할 수 있는 최대 공간의 크기(bytes)       |
+| inter              | listen interface                                             |
+| verbosity          | 현재 verbosity 레벨(0~3)                                     |
+| oldest             | 가장 오래된 아이템이 저장되고 지난 시간                      |
+| evictions          | eviction의 허용 여부                                         |
+| domain_socket      | domain socket의 경로                                         |
+| umask              | domain socket의 umask                                        |
+| growth_factor      | slab class의 chunk 크기 증가 팩터                            |
+| chunk_size         | 아이템을 저장하기 위해 할당하는 최소의 공간(key + value + flags)의 크기(bytes) |
+| stat_key_prefix    | prefix와 key를 구분하는 문자                                 |
+| detail_enabled     | detailed stat(prefix별 통계) 수집 여부                       |
+| allow_detailed     | stat detail 명령 허용 여부                                   |
+| reqs_per_event     | io 이벤트에서 처리할 수 있는 최대 io 연산 수                 |
+| cas_enabled        | cas 연산 허용 여부                                           |
+| tcp_backlog        | tcp의 backlog 큐 크기                                        |
+| binding_protocol   | 사용중인 프로토콜. ascii, binary, auto(negotiating) 세 가지임 |
+| auth_enabled_sasl  | sasl 인증 사용 여부                                          |
+| auth_sasl_engine   | sasl 인증에 사용할 엔진                                      |
+| auth_required_sasl | sasl 인증 필수 여부                                          |
+| item_size_max      | 아이템의 최대 사이즈                                         |
+| max_list_size      | list collection의 최대 element 갯수                          |
+| max_set_size       | set collection의 최대 element 갯수                           |
+| max_map_size       | map collection의 최대 element 갯수                           |
+| max_btree_size     | btree collection의 최대 element 갯수                         |
+| max_element_bytes  | collection element 데이터의 최대 크기                        |
+| topkeys            | 추적하고 있는 topkey 개수                                    |
+| logger             | 사용 중인 logger extension                                   |
+| ascii_extension    | 사용 중인 ascii protocol extension                           |
+
+**items 통계 정보**
+
+item에 대한 slab class 별 통계 정보를 조회하는 명령이다. 다음은 stats items 실행 결과의 예이다.
+
+```
+STAT items:0:number 2000002
+STAT items:0:sticky 0
+STAT items:0:age 5401
+STAT items:0:evicted 0
+STAT items:0:evicted_nonzero 0
+STAT items:0:evicted_time 0
+STAT items:0:outofmemory 0
+STAT items:0:tailrepairs 0
+STAT items:0:reclaimed 0
+```
+
+'items:' 옆에 표기된 숫자가 slab class id이다. 통계 정보의 의미는 다음과 같다.
+
+| Stats           | 설명                                                         |
+| --------------- | ------------------------------------------------------------ |
+| number          | 해당 클래스에 저장된 아이템의 개수                           |
+| sticky          | sticky로 설정된 아이템의 개수. [basic concept 문서](arcus-basic-concept.md#expiration-eviction-and-sticky) 참조 |
+| age             | LRU 체인에서 가장 오래된 아이템이 생성되고 나서 지난 시간(초) |
+| evicted         | evict된 아이템의 개수                                        |
+| evicted_nonzero | evict된 아이템 중, expired time이 명시적인 양수 값으로 설정되어 있던 아이템의 개수 |
+| evicted_time    | 가장 최근에 evict된 아이템에 마지막으로 접근하고 나서 지난 시간(초) |
+| out_of_memory   | 메모리 부족으로 아이템을 저장하는데 실패한 횟수              |
+| tailrepairs     | slab allocator를 refcount leak에서 복구한 횟수               |
+| reclaimed       | expired된 아이템의 공간을 사용해 새로운 아이템을 저장한 횟수 |
+
+**slabs 통계 정보**
+
+각 slab 클래스의 통계 정보와 전체 클래스에 대한 메타 정보를 조회하는 명령이다. 다음은 stats slabs 실행 결과의 예이다.
+
+```
+STAT SM:free_min_classid 709
+STAT SM:free_max_classid -1
+STAT SM:used_total_space 472
+STAT SM:used_01pct_space 288
+STAT SM:free_small_space 0
+STAT SM:free_bslot_space 261640
+STAT SM:free_avail_space 261640
+STAT SM:free_chunk_space 0
+STAT SM:free_limit_space 0
+STAT SM:space_shortage_level 0
+STAT 0:chunk_size 262144
+STAT 0:chunks_per_page 4
+STAT 0:reserved_pages 0
+STAT 0:total_pages 1
+STAT 0:total_chunks 4
+STAT 0:used_chunks 1
+STAT 0:free_chunks 0
+STAT 0:free_chunks_end 3
+STAT 0:mem_requested 262144
+STAT active_slabs 1
+STAT memory_limit 8589934592
+STAT total_malloced 1048576
+```
+
+콜론(:)앞의 문자는 slab 클래스 번호를 의미한다. 'SM'이라고 표기된 클래스는 작은 크기의 데이터를 관리하는 small manager 클래스이다.
+
+일반 클래스의 통계 정보가 뜻하는 의미는 다음과 같다.
+
+| stats           | 설명                                                         |
+| --------------- | ------------------------------------------------------------ |
+| chunk_size      | 각 chunk가 사용하는 메모리 공간들의 크기 합(bytes)           |
+| chunks_per_page | 페이지 당 chunk의 개수                                       |
+| reserved_pages  | 해당 클래스에 할당하기 위해 예약된 페이지 수                 |
+| total_pages     | 해당 클래스에 할당된 페이지의 개수                           |
+| total_chunks    | 해당 클래스에 할당된 청크의 개수                             |
+| used_chunks     | 이미 아이템에게 할당된 chunk의 개수                          |
+| free_chunks     | 아직 할당되지 않았거나 삭제 연산으로 인해 free된 chunk의 개수 |
+| free_chunks_end | 마지막으로 할당된 페이지 끝에 남아있는 chunk 개수            |
+| mem_requested   | 해당 클래스에 요청된 메모리 공간의 크기 합(bytes)            |
+
+ small manager 클래스의 통계 정보가 뜻하는 의미는 다음과 같다.
+
+| stats                | 설명                                                         |
+| -------------------- | ------------------------------------------------------------ |
+| free_min_classid     | free slot의 id 중 최소값                                     |
+| free_max_classid     | free slot의 id 중 최대값(마지막 슬롯인 big free slot의 id는 제외) |
+| used_total_space     | 사용중인 공간의 크기 합(bytes)                               |
+| used_01pct_space     | 크기가 상위 1퍼센트에 속하는 슬롯들이 사용하는 공간의 크기 합(bytes) |
+| free_small_space     | 할당되지 않았고, 할당될 가능성이 낮은 작은 메모리 공간의 크기 합(bytes) |
+| free_bslot_space     | big free slot의 남은 공간의 크기 합(bytes)                   |
+| free_avail_space     | 할당되지 않았고, 할당될 가능성이 높은 큰 메모리 공간의 크기 합(bytes) |
+| free_chunk_space     | 메모리 블락(chunk)를 할당할 수 있는 공간의 크기 합(bytes)    |
+| free_limit_space     | 항상 비운 채로 유지되어야 하는 최소한의 여유 공간의 크기 합(bytes) |
+| space_shortage_level | 공간이 부족한 정도를 0~100 으로 수치화한 레벨.               |
+
+space_shortage_level이 10 이상으로 올라가면, background에서 아이템을 evict 하는 별도의 쓰레드를 실행해 메모리 공간을 확보한다. LRU 체인의 끝부터 space_shortage_level 만큼 아이템을 삭제하게 된다. (ssl이 10이라면 10개의 아이템 삭제)
+
+기타 메타 통계를 정리하면 다음과 같다.
+
+| stats          | 설명                                            |
+| -------------- | ----------------------------------------------- |
+| active_slabs   | 할당된 slab class의 총 개수                     |
+| memory_limit   | 캐시 서버의 최대 용량(bytes)                    |
+| total_malloced | slab page에 할당된 메모리 공간의 크기 합(bytes) |
+
+
 
 **Prefix 통계 정보**
 
