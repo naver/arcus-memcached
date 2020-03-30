@@ -242,12 +242,22 @@ struct settings {
     size_t item_size_max;   /* Maximum item size, and upper end for slabs */
     bool sasl;              /* SASL on/off */
     bool require_sasl;      /* require SASL auth */
+#ifdef LOAD_ENGINE_CONFFILE
+    size_t max_list_size;      /* Maximum elements in list collection */
+    size_t max_set_size;       /* Maximum elements in set collection */
+    size_t max_map_size;       /* Maximum elements in map collection */
+    size_t max_btree_size;     /* Maximum elements in b+tree collection */
+#ifdef MAX_ELEMENT_BYTES_CONFIG
+    size_t max_element_bytes;  /* Maximum element bytes of collections */
+#endif
+#else
     int max_list_size;      /* Maximum elements in list collection */
     int max_set_size;       /* Maximum elements in set collection */
     int max_map_size;       /* Maximum elements in map collection */
     int max_btree_size;     /* Maximum elements in b+tree collection */
 #ifdef MAX_ELEMENT_BYTES_CONFIG
     int max_element_bytes;  /* Maximum element bytes of collections */
+#endif
 #endif
     int topkeys;            /* Number of top keys to track */
     struct {

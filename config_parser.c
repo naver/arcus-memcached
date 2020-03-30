@@ -25,6 +25,7 @@
 
 #include <memcached/config_parser.h>
 #include <memcached/util.h>
+#define LOAD_ENGINE_CONFFILE
 
 static int read_config_file(const char *fname, struct config_item items[],
                             FILE *error);
@@ -185,6 +186,9 @@ int parse_config(const char *str, struct config_item *items, FILE *error) {
                break;
             case DT_CONFIGFILE:
                {
+#ifdef LOAD_ENGINE_CONFFILE
+                  *items[ii].value.dt_bool = true;
+#endif
                   int r = read_config_file(value, items, error);
                   if (r != 0) {
                      ret = r;

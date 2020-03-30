@@ -532,6 +532,7 @@ static char* trim(char* ptr) {
 
 static enum test_return test_config_parser(void) {
     bool bool_val = false;
+    bool exist_val = false;
     size_t size_val = 0;
     float float_val = 0;
     char *string_val = 0;
@@ -551,7 +552,8 @@ static enum test_return test_config_parser(void) {
           .datatype = DT_STRING,
           .value.dt_string = &string_val},
         { .key = "config_file",
-          .datatype = DT_CONFIGFILE },
+          .datatype = DT_CONFIGFILE,
+          .value.dt_bool = &exist_val},
         { .key = NULL}
     };
 
@@ -689,6 +691,7 @@ static enum test_return test_config_parser(void) {
     sprintf(buffer, "config_file=%s", cfgfile);
     assert(parse_config(buffer, items, error) == 0);
     assert(bool_val);
+    assert(exist_val);
     assert(size_val == 1023);
     assert(float_val == 12.4f);
     fclose(error);

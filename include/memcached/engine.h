@@ -197,6 +197,15 @@ extern "C" {
          */
         const engine_info* (*get_info)(ENGINE_HANDLE* handle);
 
+#ifdef LOAD_ENGINE_CONFFILE
+        /**
+         * Get engine configuration as a "<key>=<value>;" format string.
+         *
+         * @param handle the engine handle
+         * @param config_buffer buffer for containing engine configuration string.
+         */
+        void (*get_engine_config)(ENGINE_HANDLE* handle, char* config_buffer);
+#endif
         /**
          * Initialize an engine instance.
          * This is called *after* creation, but before the engine may be used.

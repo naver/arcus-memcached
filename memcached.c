@@ -61,18 +61,33 @@
 #include <stddef.h>
 
 /* max collection size */
+#ifdef LOAD_ENGINE_CONFFILE
+static size_t ARCUS_COLL_SIZE_MIN = 50000;
+static size_t ARCUS_COLL_SIZE_MAX = 1000000;
+static size_t MAX_LIST_SIZE  = 50000;
+static size_t MAX_SET_SIZE   = 50000;
+static size_t MAX_MAP_SIZE   = 50000;
+static size_t MAX_BTREE_SIZE = 50000;
+#else
 static int ARCUS_COLL_SIZE_MIN = 50000;
 static int ARCUS_COLL_SIZE_MAX = 1000000;
 static int MAX_LIST_SIZE  = 50000;
 static int MAX_SET_SIZE   = 50000;
 static int MAX_MAP_SIZE   = 50000;
 static int MAX_BTREE_SIZE = 50000;
+#endif
 
 #ifdef MAX_ELEMENT_BYTES_CONFIG
 /* max element bytes */
+#ifdef LOAD_ENGINE_CONFFILE
+static size_t ARCUS_ELEMENT_BYTES_MIN = 1024;
+static size_t ARCUS_ELEMENT_BYTES_MAX = 32*1024;
+static size_t MAX_ELEMENT_BYTES = 16*1024;
+#else
 static int ARCUS_ELEMENT_BYTES_MIN = 1024;
 static int ARCUS_ELEMENT_BYTES_MAX = 32*1024;
 static int MAX_ELEMENT_BYTES = 16*1024;
+#endif
 #endif
 
 /* Lock for global stats */
@@ -251,6 +266,9 @@ static void update_stat_cas(conn *c, ENGINE_ERROR_CODE ret);
 
 /* defaults */
 static void settings_init(void);
+#ifdef LOAD_ENGINE_CONFFILE
+static int set_engine_config(void);
+#endif
 
 /* event handling, network IO */
 static void event_handler(const int fd, const short which, void *arg);
@@ -408,6 +426,62 @@ static void settings_init(void)
     settings.require_sasl = false;
     settings.extensions.logger = get_stderr_logger();
 }
+
+#ifdef LOAD_ENGINE_CONFFILE
+static int set_engine_config(void)
+{
+    char cfg_str[400];
+    mc_engine.v1->get_engine_config(mc_engine.v0, cfg_str);
+    if (cfg_str[0] != '\0') {
+        struct config_item items[] = {
+            { .key = "item_size_max",
+              .datatype = DT_SIZE,
+              .value.dt_size = &settings.item_size_max },
+            { .key = "max_list_size",
+              .datatype = DT_SIZE,
+              .value.dt_size = &settings.max_list_size },
+            { .key = "max_set_size",
+              .datatype = DT_SIZE,
+              .value.dt_size = &settings.max_set_size },
+            { .key = "max_map_size",
+              .datatype = DT_SIZE,
+              .value.dt_size = &settings.max_map_size },
+            { .key = "max_btree_size",
+              .datatype = DT_SIZE,
+              .value.dt_size = &settings.max_btree_size },
+            { .key = "engine_coll_size_max",
+              .datatype = DT_SIZE,
+              .value.dt_size = &ARCUS_COLL_SIZE_MAX },
+            { .key = "engine_coll_size_min",
+              .datatype = DT_SIZE,
+              .value.dt_size = &ARCUS_COLL_SIZE_MIN },
+#ifdef MAX_ELEMENT_BYTES_CONFIG
+            { .key = "max_element_bytes",
+              .datatype = DT_SIZE,
+              .value.dt_size = &settings.max_element_bytes },
+            { .key = "engine_element_bytes_max",
+              .datatype = DT_SIZE,
+              .value.dt_size = &ARCUS_ELEMENT_BYTES_MAX },
+            { .key = "engine_element_bytes_min",
+              .datatype = DT_SIZE,
+              .value.dt_size = &ARCUS_ELEMENT_BYTES_MIN },
+#endif
+            { .key = NULL }
+        };
+        if (parse_config(cfg_str, items, stderr) != 0) {
+            return -1;
+        }
+        MAX_LIST_SIZE  = settings.max_list_size;
+        MAX_SET_SIZE   = settings.max_set_size;
+        MAX_MAP_SIZE   = settings.max_map_size;
+        MAX_BTREE_SIZE = settings.max_btree_size;
+#ifdef MAX_ELEMENT_BYTES_CONFIG
+        MAX_ELEMENT_BYTES = settings.max_element_bytes;
+#endif
+    }
+    return 0;
+}
+#endif
 
 /*
  * Adds a message header to a connection.
@@ -8307,6 +8381,16 @@ static void process_stat_settings(ADD_STAT add_stats, void *c)
     APPEND_STAT("auth_sasl_engine", "%s", "none");
 #endif
     APPEND_STAT("auth_required_sasl", "%s", settings.require_sasl ? "yes" : "no");
+#ifdef LOAD_ENGINE_CONFFILE
+    APPEND_STAT("item_size_max", "%zu", settings.item_size_max);
+    APPEND_STAT("max_list_size", "%zu", settings.max_list_size);
+    APPEND_STAT("max_set_size", "%zu", settings.max_set_size);
+    APPEND_STAT("max_map_size", "%zu", settings.max_map_size);
+    APPEND_STAT("max_btree_size", "%zu", settings.max_btree_size);
+#ifdef MAX_ELEMENT_BYTES_CONFIG
+    APPEND_STAT("max_element_bytes", "%zu", settings.max_element_bytes);
+#endif
+#else
     APPEND_STAT("item_size_max", "%llu", settings.item_size_max);
     APPEND_STAT("max_list_size", "%d", settings.max_list_size);
     APPEND_STAT("max_set_size", "%d", settings.max_set_size);
@@ -8314,6 +8398,7 @@ static void process_stat_settings(ADD_STAT add_stats, void *c)
     APPEND_STAT("max_btree_size", "%d", settings.max_btree_size);
 #ifdef MAX_ELEMENT_BYTES_CONFIG
     APPEND_STAT("max_element_bytes", "%d", settings.max_element_bytes);
+#endif
 #endif
     APPEND_STAT("topkeys", "%d", settings.topkeys);
 #ifdef ENABLE_ZK_INTEGRATION
@@ -9246,16 +9331,32 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
         char buf[50];
         switch (coll_type) {
           case ITEM_TYPE_LIST:
+#ifdef LOAD_ENGINE_CONFFILE
+               sprintf(buf, "max_list_size %zu\r\nEND", settings.max_list_size);
+#else
                sprintf(buf, "max_list_size %d\r\nEND", settings.max_list_size);
+#endif
                break;
           case ITEM_TYPE_SET:
+#ifdef LOAD_ENGINE_CONFFILE
+               sprintf(buf, "max_set_size %zu\r\nEND", settings.max_set_size);
+#else
                sprintf(buf, "max_set_size %d\r\nEND", settings.max_set_size);
+#endif
                break;
           case ITEM_TYPE_MAP:
+#ifdef LOAD_ENGINE_CONFFILE
+               sprintf(buf, "max_map_size %zu\r\nEND", settings.max_map_size);
+#else
                sprintf(buf, "max_map_size %d\r\nEND", settings.max_map_size);
+#endif
                break;
           case ITEM_TYPE_BTREE:
+#ifdef LOAD_ENGINE_CONFFILE
+               sprintf(buf, "max_btree_size %zu\r\nEND", settings.max_btree_size);
+#else
                sprintf(buf, "max_btree_size %d\r\nEND", settings.max_btree_size);
+#endif
                break;
         }
         out_string(c, buf);
@@ -9308,7 +9409,11 @@ static void process_maxelembytes_command(conn *c, token_t *tokens, const size_t 
 
     if (ntokens == 3) {
         char buf[50];
+#ifdef LOAD_ENGINE_CONFFILE
+        sprintf(buf, "max_element_bytes %zu\r\nEND", settings.max_element_bytes);
+#else
         sprintf(buf, "max_element_bytes %d\r\nEND", settings.max_element_bytes);
+#endif
         out_string(c, buf);
     }
     else if (ntokens == 4 && safe_strtol(tokens[SUBCOMMAND_TOKEN+1].value, &maxbytes)) {
@@ -15574,10 +15679,18 @@ int main (int argc, char **argv)
             if (value >= ARCUS_COLL_SIZE_MIN && value <= ARCUS_COLL_SIZE_MAX) {
                 MAX_LIST_SIZE = value;
                 settings.max_list_size = MAX_LIST_SIZE;
+#ifdef LOAD_ENGINE_CONFFILE
+                old_opts += sprintf(old_opts, "max_list_size=%zu;", MAX_LIST_SIZE);
+#else
                 old_opts += sprintf(old_opts, "max_list_size=%d;", MAX_LIST_SIZE);
+#endif
             } else {
                 mc_logger->log(EXTENSION_LOG_INFO, NULL,
+#ifdef LOAD_ENGINE_CONFFILE
+                        "ARCUS_MAX_LIST_SIZE incorrect value: %d, (Allowable values: %zu ~ %zu)\n",
+#else
                         "ARCUS_MAX_LIST_SIZE incorrect value: %d, (Allowable values: %d ~ %d)\n",
+#endif
                          value, ARCUS_COLL_SIZE_MIN, ARCUS_COLL_SIZE_MAX);
             }
         }
@@ -15587,10 +15700,18 @@ int main (int argc, char **argv)
             if (value >= ARCUS_COLL_SIZE_MIN && value <= ARCUS_COLL_SIZE_MAX) {
                 MAX_SET_SIZE = value;
                 settings.max_set_size = MAX_SET_SIZE;
+#ifdef LOAD_ENGINE_CONFFILE
+                old_opts += sprintf(old_opts, "max_set_size=%zu;", MAX_SET_SIZE);
+#else
                 old_opts += sprintf(old_opts, "max_set_size=%d;", MAX_SET_SIZE);
+#endif
             } else {
                 mc_logger->log(EXTENSION_LOG_INFO, NULL,
+#ifdef LOAD_ENGINE_CONFFILE
+                        "ARCUS_MAX_SET_SIZE incorrect value: %d, (Allowable values: %zu ~ %zu)\n",
+#else
                         "ARCUS_MAX_SET_SIZE incorrect value: %d, (Allowable values: %d ~ %d)\n",
+#endif
                          value, ARCUS_COLL_SIZE_MIN, ARCUS_COLL_SIZE_MAX);
             }
         }
@@ -15600,10 +15721,18 @@ int main (int argc, char **argv)
             if (value >= ARCUS_COLL_SIZE_MIN && value <= ARCUS_COLL_SIZE_MAX) {
                 MAX_MAP_SIZE = value;
                 settings.max_map_size = MAX_MAP_SIZE;
+#ifdef LOAD_ENGINE_CONFFILE
+                old_opts += sprintf(old_opts, "max_map_size=%zu;", MAX_MAP_SIZE);
+#else
                 old_opts += sprintf(old_opts, "max_map_size=%d;", MAX_MAP_SIZE);
+#endif
             } else {
                 mc_logger->log(EXTENSION_LOG_INFO, NULL,
+#ifdef LOAD_ENGINE_CONFFILE
+                        "ARCUS_MAX_MAP_SIZE incorrect value: %d, (Allowable values: %zu ~ %zu)\n",
+#else
                         "ARCUS_MAX_MAP_SIZE incorrect value: %d, (Allowable values: %d ~ %d)\n",
+#endif
                          value, ARCUS_COLL_SIZE_MIN, ARCUS_COLL_SIZE_MAX);
             }
         }
@@ -15613,10 +15742,18 @@ int main (int argc, char **argv)
             if (value >= ARCUS_COLL_SIZE_MIN && value <= ARCUS_COLL_SIZE_MAX) {
                 MAX_BTREE_SIZE = value;
                 settings.max_btree_size = MAX_BTREE_SIZE;
+#ifdef LOAD_ENGINE_CONFFILE
+                old_opts += sprintf(old_opts, "max_btree_size=%zu;", MAX_BTREE_SIZE);
+#else
                 old_opts += sprintf(old_opts, "max_btree_size=%d;", MAX_BTREE_SIZE);
+#endif
             } else {
                 mc_logger->log(EXTENSION_LOG_INFO, NULL,
+#ifdef LOAD_ENGINE_CONFFILE
+                        "ARCUS_MAX_BTREE_SIZE incorrect value: %d, (Allowable values: %zu ~ %zu)\n",
+#else
                         "ARCUS_MAX_BTREE_SIZE incorrect value: %d, (Allowable values: %d ~ %d)\n",
+#endif
                          value, ARCUS_COLL_SIZE_MIN, ARCUS_COLL_SIZE_MAX);
             }
         }
@@ -15785,6 +15922,13 @@ int main (int argc, char **argv)
         log_engine_details(engine_handle, mc_logger);
     }
     mc_engine.v1 = (ENGINE_HANDLE_V1 *) engine_handle;
+#ifdef LOAD_ENGINE_CONFFILE
+    if (set_engine_config() == -1) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                       "Failed to set engine configuration in settings.\n");
+        exit(EXIT_FAILURE);
+    }
+#endif
 
     if (!(conn_cache = cache_create("conn", sizeof(conn), sizeof(void*),
                                     conn_constructor, conn_destructor))) {

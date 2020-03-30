@@ -256,3 +256,7 @@ docs:
 
 dist-hook:
 	rm -f $(distdir)/*/*~ $(distdir)/t/lib/*~ $(distdir)/*~
+
+# engine configuration file path
+install-exec-hook:
+	mkdir -p conf

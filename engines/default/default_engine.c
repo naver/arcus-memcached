@@ -34,6 +34,26 @@
 #define ACTION_BEFORE_WRITE(c, k, l)
 #define ACTION_AFTER_WRITE(c, r)
 
+#ifdef LOAD_ENGINE_CONFFILE
+#define ENGINE_CONFIG_NAME "default_engine.conf"
+#define ENGINE_CONFIG_PATH "engines/default"
+#define ENGINE_CONFIG_INSTALL_PATH "conf" /* this path is created when make install */
+
+/* max collection size */
+static size_t DEFAULT_COLL_SIZE_MAX = 1000000;
+static size_t DEFAULT_COLL_SIZE_MIN = 50000;
+static size_t DEFAULT_LIST_SIZE = 50000;
+static size_t DEFAULT_SET_SIZE = 50000;
+static size_t DEFAULT_MAP_SIZE = 50000;
+static size_t DEFAULT_BTREE_SIZE = 50000;
+
+#ifdef MAX_ELEMENT_BYTES_CONFIG
+/* max element bytes */
+static size_t DEFAULT_ELEMENT_BYTES_MAX = 32*1024;
+static size_t DEFAULT_ELEMENT_BYTES_MIN = 1024;
+static size_t DEFAULT_ELEMENT_BYTES = 16*1024;
+#endif
+#endif
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
 /*
@@ -101,14 +121,144 @@ default_get_info(ENGINE_HANDLE* handle)
     return &get_handle(handle)->info.engine_info;
 }
 
+#ifdef LOAD_ENGINE_CONFFILE
+static void
+default_get_engine_config(ENGINE_HANDLE* handle, char *config_buffer)
+{
+    struct engine_config *conf = &get_handle(handle)->config;
+    if (conf->config_file) {
+        config_buffer += sprintf(config_buffer, "item_size_max=%zu;", conf->item_size_max);
+        config_buffer += sprintf(config_buffer, "max_list_size=%zu;", conf->max_list_size);
+        config_buffer += sprintf(config_buffer, "max_set_size=%zu;", conf->max_set_size);
+        config_buffer += sprintf(config_buffer, "max_map_size=%zu;", conf->max_map_size);
+        config_buffer += sprintf(config_buffer, "max_btree_size=%zu;", conf->max_btree_size);
+        config_buffer += sprintf(config_buffer, "engine_coll_size_max=%zu;", DEFAULT_COLL_SIZE_MAX);
+        config_buffer += sprintf(config_buffer, "engine_coll_size_min=%zu;", DEFAULT_COLL_SIZE_MIN);
+#ifdef MAX_ELEMENT_BYTES_CONFIG
+        config_buffer += sprintf(config_buffer, "max_element_bytes=%zu;", conf->max_element_bytes);
+        config_buffer += sprintf(config_buffer, "engine_element_bytes_max=%zu;", DEFAULT_ELEMENT_BYTES_MAX);
+        config_buffer += sprintf(config_buffer, "engine_element_bytes_min=%zu;", DEFAULT_ELEMENT_BYTES_MIN);
+#endif
+    } else {
+        config_buffer[0] = '\0';
+    }
+}
+#endif
 static int check_configuration(struct engine_config *conf)
 {
+#ifdef LOAD_ENGINE_CONFFILE
+    /* check item_size_max */
+    if (conf->item_size_max < 1024 * 20) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Item max size cannot be less than 20KB. item_size_max=%zu\n",
+                    conf->item_size_max);
+        return -1;
+    }
+    if (conf->item_size_max > 1024 * 1024 * 128) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Cannot set item size limit higher than 128 mb. item_size_max=%zu\n",
+                    conf->item_size_max);
+        return -1;
+    }
+    if (conf->item_size_max > 1024 * 1024) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "WARNING: Setting item max size above 1MB is not recommended!\n"
+                    "Raising this limit increases the minimum memory requirements\n"
+                    "and will decrease your memory efficiency. item_size_max=%zu\n",
+                    conf->item_size_max);
+    }
+    /* check max_coll_size */
+    if (conf->max_list_size < DEFAULT_COLL_SIZE_MIN || conf->max_list_size > DEFAULT_COLL_SIZE_MAX) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Element max size requires minimum=%zu, maximum=%zu. max_list_size=%zu\n",
+                    DEFAULT_COLL_SIZE_MIN, DEFAULT_COLL_SIZE_MAX, conf->max_list_size);
+        return -1;
+    }
+    if (conf->max_set_size < DEFAULT_COLL_SIZE_MIN || conf->max_set_size > DEFAULT_COLL_SIZE_MAX) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Element max size requires minimum=%zu, maximum=%zu. max_set_size=%zu\n",
+                    DEFAULT_COLL_SIZE_MIN, DEFAULT_COLL_SIZE_MAX, conf->max_set_size);
+        return -1;
+    }
+    if (conf->max_map_size < DEFAULT_COLL_SIZE_MIN || conf->max_map_size > DEFAULT_COLL_SIZE_MAX) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Element max size requires minimum=%zu, maximum=%zu. max_map_size=%zu\n",
+                    DEFAULT_COLL_SIZE_MIN, DEFAULT_COLL_SIZE_MAX, conf->max_map_size);
+        return -1;
+    }
+    if (conf->max_btree_size < DEFAULT_COLL_SIZE_MIN || conf->max_btree_size > DEFAULT_COLL_SIZE_MAX) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Element max size requires minimum=%zu, maximum=%zu. max_btree_size=%zu\n",
+                    DEFAULT_COLL_SIZE_MIN, DEFAULT_COLL_SIZE_MAX, conf->max_btree_size);
+        return -1;
+    }
+#ifdef MAX_ELEMENT_BYTES_CONFIG
+    /* check max_element_bytes */
+    if (conf->max_element_bytes < DEFAULT_ELEMENT_BYTES_MIN || conf->max_element_bytes > DEFAULT_ELEMENT_BYTES_MAX) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Element max bytes requires minimum=%zu, maximum=%zu. max_element_bytes=%zu\n",
+                    DEFAULT_ELEMENT_BYTES_MIN, DEFAULT_ELEMENT_BYTES_MAX, conf->max_element_bytes);
+        return -1;
+    }
+#endif
+#endif
     return 0;
 }
+
+#ifdef LOAD_ENGINE_CONFFILE
+static int
+get_engine_config_path(char *config_path)
+{
+    struct stat stats;
+    stat(ENGINE_CONFIG_INSTALL_PATH, &stats);
+    if (S_ISDIR(stats.st_mode)) {
+        sprintf(config_path, "%s/%s", ENGINE_CONFIG_INSTALL_PATH, ENGINE_CONFIG_NAME);
+        if (access(config_path, F_OK) != -1) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+    stat(ENGINE_CONFIG_PATH, &stats);
+    if (S_ISDIR(stats.st_mode)) {
+        sprintf(config_path, "%s/%s", ENGINE_CONFIG_PATH, ENGINE_CONFIG_NAME);
+        if (access(config_path, F_OK) != -1) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int load_default_config_file(struct default_engine *se, struct config_item *items)
+{
+    char default_cfgpath[50];
+    int len = sprintf(default_cfgpath, "config_file=");
+    char *cfgptr = default_cfgpath + len;
+    int exist = get_engine_config_path(cfgptr);
+    if (exist) {
+        if (se->server.core->parse_config(default_cfgpath, items, stderr) != 0) {
+            return -1;
+        }
+        logger->log(EXTENSION_LOG_INFO, NULL,
+                    "Automatically loaded engine config file. path=%s\n", cfgptr);
+    }
+    return 0;
+}
+#endif
 
 static ENGINE_ERROR_CODE
 initialize_configuration(struct default_engine *se, const char *cfg_str)
 {
+#ifdef LOAD_ENGINE_CONFFILE
+    se->config.item_size_max = 1024 * 1024;
+    se->config.max_list_size = DEFAULT_LIST_SIZE;
+    se->config.max_set_size = DEFAULT_SET_SIZE;
+    se->config.max_map_size = DEFAULT_MAP_SIZE;
+    se->config.max_btree_size = DEFAULT_BTREE_SIZE;
+#ifdef MAX_ELEMENT_BYTES_CONFIG
+    se->config.max_element_bytes = DEFAULT_ELEMENT_BYTES;
+#endif
+#endif
     se->config.vb0 = true;
 
     if (cfg_str != NULL) {
@@ -160,6 +310,13 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
             { .key = "max_btree_size",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.max_btree_size },
+#ifdef LOAD_ENGINE_CONFFILE
+#ifdef MAX_ELEMENT_BYTES_CONFIG
+            { .key = "max_element_bytes",
+              .datatype = DT_SIZE,
+              .value.dt_size = &se->config.max_element_bytes },
+#endif
+#endif
             { .key = "ignore_vbucket",
               .datatype = DT_BOOL,
               .value.dt_bool = &se->config.ignore_vbucket },
@@ -170,12 +327,24 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
               .datatype = DT_BOOL,
               .value.dt_bool = &se->config.vb0 },
             { .key = "config_file",
+#ifdef LOAD_ENGINE_CONFFILE
+              .datatype = DT_CONFIGFILE,
+              .value.dt_bool = &se->config.config_file },
+#else
               .datatype = DT_CONFIGFILE },
+#endif
             { .key = NULL}
         };
         if (se->server.core->parse_config(cfg_str, items, stderr) != 0) {
             return ENGINE_FAILED;
         }
+#ifdef LOAD_ENGINE_CONFFILE
+        if (!se->config.config_file) {
+            if (load_default_config_file(se, items) < 0) {
+                return ENGINE_FAILED;
+            }
+        }
+#endif
     }
     if (check_configuration(&se->config) < 0) {
         return ENGINE_FAILED;
@@ -1482,6 +1651,9 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          },
          /* Engine API */
          .get_info          = default_get_info,
+#ifdef LOAD_ENGINE_CONFFILE
+         .get_engine_config = default_get_engine_config,
+#endif
          .initialize        = default_initialize,
          .destroy           = default_destroy,
          /* Item API */

@@ -44,6 +44,9 @@ struct default_engine;
  * engine configuration
  */
 struct engine_config {
+#ifdef LOAD_ENGINE_CONFFILE
+   bool   config_file;
+#endif
    bool   use_cas;
    size_t verbose;
    rel_time_t oldest_live;
@@ -60,6 +63,11 @@ struct engine_config {
    size_t max_set_size;
    size_t max_map_size;
    size_t max_btree_size;
+#ifdef LOAD_ENGINE_CONFFILE
+#ifdef MAX_ELEMENT_BYTES_CONFIG
+   size_t max_element_bytes;
+#endif
+#endif
    bool   ignore_vbucket;
    char   prefix_delimiter;
    bool   vb0;
