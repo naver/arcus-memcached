@@ -1,4 +1,4 @@
-SET 명령
+# Chapter 4. SET 명령
 --------
 
 Set collection에 관한 명령은 아래와 같다.

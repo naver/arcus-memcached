@@ -1,4 +1,4 @@
-MAP 명령
+# Chapter 5. MAP 명령
 --------
 
 Map collection에 관한 명령은 아래와 같다.

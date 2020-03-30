@@ -1,4 +1,4 @@
-Arcus Basic Concept
+# Chapter 1. Arcus Basic Concept
 -------------------
 
 Arcus cache server는 하나의 데이터만을 value로 가지는 simple key-value 외에도

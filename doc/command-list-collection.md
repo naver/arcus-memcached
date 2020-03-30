@@ -1,4 +1,4 @@
-LIST 명령
+# Chapter 3. LIST 명령
 ---------
 
 List collection에 관한 명령은 아래와 같다.
