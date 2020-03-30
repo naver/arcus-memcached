@@ -1,3 +1,10 @@
+2020-03-30 [version 1.12.1]
+	* [FIX]     Fixed memory overwrite when tokernize strings in memory blocks.
+	* [FIX]     Added ENGINE_ENOMEM error handling where it is missed.
+	* [DOC]     Provided the more specific explanation about stats command.
+	* [DOC]     Added a compilation FAQ page.
+	* [TEST]    Added tests for verifying binary bkey OUT_OF_RANGE response.
+
 2020-03-16 [version 1.12.0]
 	* [FEATURE] Changed max_element_bytes(4KB=>16KB) and set configurable.
 	* [FIX]     Added the error handling of retry when an auto scrub fails.
