@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 69;
+use Test::More tests => 70;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -525,6 +525,13 @@ for ($kidx = 1; $kidx < $kcnt; $kidx += 1) {
 $klen = length($val);
 $cmd = "bop mget $klen $kcnt 0..1000 10";
 mem_cmd_is($sock, $cmd, $val, $rst);
+$val = "$kstr" . "0";
+for ($kidx = 1; $kidx < $kcnt; $kidx += 1) {
+   $val .= "?$kstr$kidx";
+}
+$klen = length($val);
+$cmd = "bop mget $klen $kcnt 0..1000 10";
+mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad data chunk");
 
 # after test
 release_memcached($engine, $server);
