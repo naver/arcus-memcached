@@ -33,7 +33,7 @@ after_success:
 
 notifications:
   email:
-    if: fork = false
+    if: (fork = false) OR (type = pull_request AND head_repo = naver/arcus-memcached)
     recipients:
       - junhyun.park@jam2in.com
       - minkikim89@jam2in.com
