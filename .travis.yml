@@ -33,6 +33,8 @@ after_success:
 
 notifications:
   email:
-    - junhyun.park@jam2in.com
-    - minkikim89@jam2in.com
-    - alsdn653@jam2in.com
+    if: fork = false OR type = pull_request
+    recipients:
+      - junhyun.park@jam2in.com
+      - minkikim89@jam2in.com
+      - alsdn653@jam2in.com

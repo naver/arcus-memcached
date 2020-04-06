@@ -173,9 +173,9 @@ typedef struct {
 #endif
     pthread_mutex_t lock;
     bool    init;               // is this structure initialized?
-} arcus_zk_conf;
+} arcus_zk_config;
 
-arcus_zk_conf arcus_conf = {
+arcus_zk_config arcus_conf = {
     .svc            = NULL,
     .mc_ipport      = NULL,
     .mc_hostnameport    = NULL,
@@ -1869,12 +1869,16 @@ int arcus_zk_get_hbfailstop(void)
 void arcus_zk_get_stats(arcus_zk_stats *stats)
 {
     stats->zk_connected = (main_zk != NULL && main_zk->zh != NULL) ? true : false;
-    stats->zk_failstop = arcus_conf.zk_failstop;
-    stats->zk_timeout = arcus_conf.zk_timeout;
-    stats->hb_timeout = arcus_conf.hb_timeout;
-    stats->hb_failstop = arcus_conf.hb_failstop;
     stats->hb_count = azk_stat.hb_count;
     stats->hb_latency = azk_stat.hb_latency;
+}
+
+void arcus_zk_get_confs(arcus_zk_confs *confs)
+{
+    confs->zk_failstop = arcus_conf.zk_failstop;
+    confs->zk_timeout = arcus_conf.zk_timeout;
+    confs->hb_timeout = arcus_conf.hb_timeout;
+    confs->hb_failstop = arcus_conf.hb_failstop;
 }
 
 #ifdef ENABLE_CLUSTER_AWARE

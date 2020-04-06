@@ -8108,10 +8108,6 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
     APPEND_STAT("pointer_size", "%d", (int)(8 * sizeof(void *)));
 #ifdef ENABLE_ZK_INTEGRATION
     APPEND_STAT("zk_connected", "%s", zk_stats.zk_connected ? "true" : "false");
-    APPEND_STAT("zk_failstop", "%s", zk_stats.zk_failstop ? "on" : "off");
-    APPEND_STAT("zk_timeout", "%u", zk_stats.zk_timeout);
-    APPEND_STAT("hb_timeout", "%u", zk_stats.hb_timeout);
-    APPEND_STAT("hb_failstop", "%u", zk_stats.hb_failstop);
     APPEND_STAT("hb_count", "%"PRIu64, zk_stats.hb_count);
     APPEND_STAT("hb_latency", "%"PRIu64, zk_stats.hb_latency);
 #endif
@@ -8268,6 +8264,10 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
 static void process_stat_settings(ADD_STAT add_stats, void *c)
 {
     assert(add_stats);
+#ifdef ENABLE_ZK_INTEGRATION
+    arcus_zk_confs zk_confs;
+    arcus_zk_get_confs(&zk_confs);
+#endif
     APPEND_STAT("maxbytes", "%llu", (unsigned long long)settings.maxbytes);
     APPEND_STAT("maxconns", "%d", settings.maxconns);
     APPEND_STAT("tcpport", "%d", settings.port);
@@ -8316,6 +8316,12 @@ static void process_stat_settings(ADD_STAT add_stats, void *c)
     APPEND_STAT("max_element_bytes", "%d", settings.max_element_bytes);
 #endif
     APPEND_STAT("topkeys", "%d", settings.topkeys);
+#ifdef ENABLE_ZK_INTEGRATION
+    APPEND_STAT("zk_failstop", "%s", zk_confs.zk_failstop ? "on" : "off");
+    APPEND_STAT("zk_timeout", "%u", zk_confs.zk_timeout);
+    APPEND_STAT("hb_timeout", "%u", zk_confs.hb_timeout);
+    APPEND_STAT("hb_failstop", "%u", zk_confs.hb_failstop);
+#endif
 
     for (EXTENSION_DAEMON_DESCRIPTOR *ptr = settings.extensions.daemons;
          ptr != NULL;

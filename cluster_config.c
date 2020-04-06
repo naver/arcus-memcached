@@ -486,6 +486,15 @@ static void hashring_replace(struct cluster_config *config, struct cont_item **c
 
     if (old_num_nodes > 0) {
         nodearray_release(config, config->old_memory, old_num_nodes);
+    } else {
+        for (int i=1; i < config->num_conts; i++) {
+            if (continuum[i-1]->hpoint == continuum[i]->hpoint) {
+                config->logger->log(EXTENSION_LOG_INFO, NULL,
+                        "[CHECK] Duplicate hash point in (%s:%d) and (%s:%d).\n",
+                        nodearray[continuum[i-1]->nindex]->ndname, continuum[i-1]->sindex,
+                        nodearray[continuum[i]->nindex]->ndname, continuum[i]->sindex);
+            }
+        }
     }
 }
 
