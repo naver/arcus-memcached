@@ -12129,7 +12129,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 out_string(c, "CLIENT_ERROR bad value");
                 return;
             }
-            if (numfields > ARCUS_COLL_SIZE_MAX ||
+            if (numfields > MAX_MAP_SIZE ||
                 numfields > ((lenfields/2) + 1) ||
                 lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1)) {
                 out_string(c, "CLIENT_ERROR bad value");
@@ -12195,7 +12195,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 out_string(c, "CLIENT_ERROR bad value");
                 return;
             }
-            if (numfields > ARCUS_COLL_SIZE_MAX ||
+            if (numfields > MAX_MAP_SIZE ||
                 numfields > ((lenfields/2) + 1) ||
                 lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1)) {
                 out_string(c, "CLIENT_ERROR bad value");
