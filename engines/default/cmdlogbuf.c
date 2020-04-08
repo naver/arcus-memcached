@@ -614,25 +614,56 @@ int cmdlog_file_open(char *path)
     return ret;
 }
 
-void cmdlog_file_close(bool shutdown)
+void cmdlog_file_close(bool first_chkpt_fail)
 {
     log_FILE *logfile = &log_gl.log_file;
 
     pthread_mutex_lock(&log_gl.log_flush_lock);
-    if (logfile->next_fd != -1) {
-        pthread_mutex_lock(&log_gl.log_fsync_lock);
-        (void)disk_close(logfile->next_fd);
-        logfile->next_fd = -1;
-        pthread_mutex_unlock(&log_gl.log_fsync_lock);
-    }
-    if (shutdown && logfile->fd != -1) {
-        pthread_mutex_lock(&log_gl.log_fsync_lock);
-        (void)disk_fsync(logfile->fd);
-        (void)disk_close(logfile->fd);
-        logfile->fd = -1;
-        pthread_mutex_unlock(&log_gl.log_fsync_lock);
+    if (first_chkpt_fail) {
+        if (logfile->fd != -1) {
+            pthread_mutex_lock(&log_gl.log_fsync_lock);
+            (void)disk_close(logfile->fd);
+            logfile->fd = -1;
+            pthread_mutex_unlock(&log_gl.log_fsync_lock);
+        }
+    } else {
+        if (logfile->next_fd != -1) {
+            pthread_mutex_lock(&log_gl.log_fsync_lock);
+            (void)disk_close(logfile->next_fd);
+            logfile->next_fd = -1;
+            pthread_mutex_unlock(&log_gl.log_fsync_lock);
+        }
     }
     pthread_mutex_unlock(&log_gl.log_flush_lock);
+}
+
+void cmdlog_file_init(void)
+{
+    log_FILE *logfile  = &log_gl.log_file;
+    logfile->path[0]   = '\0';
+    logfile->fd        = -1;
+    logfile->next_fd   = -1;
+    logfile->size      = 0;
+    logfile->next_size = 0;
+    logger->log(EXTENSION_LOG_INFO, NULL, "CMDLOG FILE module initialized.\n");
+}
+
+void cmdlog_file_final(void)
+{
+     log_FILE *logfile = &log_gl.log_file;
+
+     /* Don't need to hold log_fsync_lock because this function is called
+      * after stopping cmdlog thread. See cmdlog_mgr_final().
+      */
+     if (logfile->fd != -1) {
+         (void)disk_fsync(logfile->fd);
+         (void)disk_close(logfile->fd);
+         logfile->fd = -1;
+     }
+     if (logfile->next_fd != -1) {
+         (void)disk_close(logfile->next_fd);
+         logfile->next_fd = -1;
+     }
 }
 
 size_t cmdlog_file_getsize(void)
@@ -769,12 +800,7 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
     pthread_mutex_init(&log_gl.fsync_lsn_lock, NULL);
 
     /* log file init */
-    log_FILE *logfile = &log_gl.log_file;
-    logfile->path[0]   = '\0';
-    logfile->fd        = -1;
-    logfile->next_fd   = -1;
-    logfile->size      = 0;
-    logfile->next_size = 0;
+    cmdlog_file_init();
 
     /* log buffer init */
     log_BUFFER *logbuff = &log_gl.log_buffer;
@@ -834,7 +860,7 @@ void cmdlog_buf_final(void)
     }
 
     /* log file final */
-    cmdlog_file_close(true);
+    cmdlog_file_final();
 
     pthread_mutex_destroy(&log_gl.log_write_lock);
     pthread_mutex_destroy(&log_gl.log_flush_lock);
