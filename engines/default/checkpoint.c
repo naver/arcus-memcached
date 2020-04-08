@@ -249,7 +249,9 @@ static int do_checkpoint(chkpt_st *cs)
             ret = CHKPT_ERROR;
         }
 
-        cmdlog_file_close(false);
+        /* close the current log file when the first checkpoint has failed. */
+        bool first_chkpt_fail = (ret == CHKPT_ERROR && cs->lasttime == -1);
+        cmdlog_file_close(first_chkpt_fail);
         if (oldtime != -1) {
             if (do_chkpt_remove_files(cs, oldtime) < 0) {
                 ret = CHKPT_ERROR_FILE_REMOVE;
