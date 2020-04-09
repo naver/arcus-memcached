@@ -36,6 +36,14 @@
 
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
+#ifdef SET_IN_ENGINE
+#ifdef MAX_ELEMENT_BYTES_CONFIG
+/* max element bytes */
+static size_t DEFAULT_ELEMENT_BYTES_MAX = 32*1024;
+static size_t DEFAULT_ELEMENT_BYTES_MIN = 1024;
+static size_t DEFAULT_ELEMENT_BYTES = 16*1024;
+#endif
+#endif
 /*
  * vbucket static functions
  */
@@ -160,6 +168,13 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
             { .key = "max_btree_size",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.max_btree_size },
+#ifdef SET_IN_ENGINE
+#ifdef MAX_ELEMENT_BYTES_CONFIG
+            { .key = "max_element_bytes",
+              .datatype = DT_SIZE,
+              .value.dt_size = &se->config.max_element_bytes },
+#endif
+#endif
             { .key = "ignore_vbucket",
               .datatype = DT_BOOL,
               .value.dt_bool = &se->config.ignore_vbucket },
@@ -1172,6 +1187,21 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
     else if (strcmp(config_key, "max_btree_size") == 0) {
         ret = item_conf_set_maxcollsize(ITEM_TYPE_BTREE, (int*)config_value);
     }
+#ifdef SET_IN_ENGINE
+#ifdef MAX_ELEMENT_BYTES_CONFIG
+    else if (strcmp(config_key, "max_element_bytes") == 0) {
+        size_t new_maxelembytes = *(size_t*)config_value;
+        pthread_mutex_lock(&engine->cache_lock);
+        if (new_maxelembytes >= DEFAULT_ELEMENT_BYTES_MIN &&
+            new_maxelembytes <= DEFAULT_ELEMENT_BYTES_MAX) {
+            engine->config.max_element_bytes = new_maxelembytes;
+        } else {
+            ret = ENGINE_EBADVALUE;
+        }
+        pthread_mutex_unlock(&engine->cache_lock);
+    }
+#endif
+#endif
     else if (strcmp(config_key, "verbosity") == 0) {
         pthread_mutex_lock(&engine->cache_lock);
         engine->config.verbose = *(size_t*)config_value;
@@ -1586,6 +1616,11 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .max_set_size = 50000,
          .max_map_size = 50000,
          .max_btree_size = 50000,
+#ifdef SET_IN_ENGINE
+#ifdef MAX_ELEMENT_BYTES_CONFIG
+         .max_element_bytes = DEFAULT_ELEMENT_BYTES,
+#endif
+#endif
          .prefix_delimiter = ':',
        },
       .stats = {
