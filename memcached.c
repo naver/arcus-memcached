@@ -61,16 +61,16 @@
 #include <stddef.h>
 
 /* max collection size */
-static int ARCUS_COLL_SIZE_MIN = 50000;
-static int ARCUS_COLL_SIZE_MAX = 1000000;
-static int MAX_LIST_SIZE  = 50000;
-static int MAX_SET_SIZE   = 50000;
-static int MAX_MAP_SIZE   = 50000;
-static int MAX_BTREE_SIZE = 50000;
+static uint32_t ARCUS_COLL_SIZE_MIN = 50000;
+static uint32_t ARCUS_COLL_SIZE_MAX = 1000000;
+static uint32_t MAX_LIST_SIZE  = 50000;
+static uint32_t MAX_SET_SIZE   = 50000;
+static uint32_t MAX_MAP_SIZE   = 50000;
+static uint32_t MAX_BTREE_SIZE = 50000;
 
 #ifdef MAX_ELEMENT_BYTES_CONFIG
 /* max element bytes */
-static int MAX_ELEMENT_BYTES = 16*1024;
+static uint32_t MAX_ELEMENT_BYTES = 16*1024;
 #endif
 
 /* Lock for global stats */
@@ -8306,12 +8306,12 @@ static void process_stat_settings(ADD_STAT add_stats, void *c)
 #endif
     APPEND_STAT("auth_required_sasl", "%s", settings.require_sasl ? "yes" : "no");
     APPEND_STAT("item_size_max", "%llu", settings.item_size_max);
-    APPEND_STAT("max_list_size", "%d", settings.max_list_size);
-    APPEND_STAT("max_set_size", "%d", settings.max_set_size);
-    APPEND_STAT("max_map_size", "%d", settings.max_map_size);
-    APPEND_STAT("max_btree_size", "%d", settings.max_btree_size);
+    APPEND_STAT("max_list_size", "%u", settings.max_list_size);
+    APPEND_STAT("max_set_size", "%u", settings.max_set_size);
+    APPEND_STAT("max_map_size", "%u", settings.max_map_size);
+    APPEND_STAT("max_btree_size", "%u", settings.max_btree_size);
 #ifdef MAX_ELEMENT_BYTES_CONFIG
-    APPEND_STAT("max_element_bytes", "%d", settings.max_element_bytes);
+    APPEND_STAT("max_element_bytes", "%u", settings.max_element_bytes);
 #endif
     APPEND_STAT("topkeys", "%d", settings.topkeys);
 #ifdef ENABLE_ZK_INTEGRATION
@@ -9244,16 +9244,16 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
         char buf[50];
         switch (coll_type) {
           case ITEM_TYPE_LIST:
-               sprintf(buf, "max_list_size %d\r\nEND", settings.max_list_size);
+               sprintf(buf, "max_list_size %u\r\nEND", settings.max_list_size);
                break;
           case ITEM_TYPE_SET:
-               sprintf(buf, "max_set_size %d\r\nEND", settings.max_set_size);
+               sprintf(buf, "max_set_size %u\r\nEND", settings.max_set_size);
                break;
           case ITEM_TYPE_MAP:
-               sprintf(buf, "max_map_size %d\r\nEND", settings.max_map_size);
+               sprintf(buf, "max_map_size %u\r\nEND", settings.max_map_size);
                break;
           case ITEM_TYPE_BTREE:
-               sprintf(buf, "max_btree_size %d\r\nEND", settings.max_btree_size);
+               sprintf(buf, "max_btree_size %u\r\nEND", settings.max_btree_size);
                break;
         }
         out_string(c, buf);
@@ -15581,10 +15581,10 @@ int main (int argc, char **argv)
             if (value >= ARCUS_COLL_SIZE_MIN && value <= ARCUS_COLL_SIZE_MAX) {
                 MAX_LIST_SIZE = value;
                 settings.max_list_size = MAX_LIST_SIZE;
-                old_opts += sprintf(old_opts, "max_list_size=%d;", MAX_LIST_SIZE);
+                old_opts += sprintf(old_opts, "max_list_size=%u;", MAX_LIST_SIZE);
             } else {
                 mc_logger->log(EXTENSION_LOG_INFO, NULL,
-                        "ARCUS_MAX_LIST_SIZE incorrect value: %d, (Allowable values: %d ~ %d)\n",
+                        "ARCUS_MAX_LIST_SIZE incorrect value: %u, (Allowable values: %u ~ %u)\n",
                          value, ARCUS_COLL_SIZE_MIN, ARCUS_COLL_SIZE_MAX);
             }
         }
@@ -15594,10 +15594,10 @@ int main (int argc, char **argv)
             if (value >= ARCUS_COLL_SIZE_MIN && value <= ARCUS_COLL_SIZE_MAX) {
                 MAX_SET_SIZE = value;
                 settings.max_set_size = MAX_SET_SIZE;
-                old_opts += sprintf(old_opts, "max_set_size=%d;", MAX_SET_SIZE);
+                old_opts += sprintf(old_opts, "max_set_size=%u;", MAX_SET_SIZE);
             } else {
                 mc_logger->log(EXTENSION_LOG_INFO, NULL,
-                        "ARCUS_MAX_SET_SIZE incorrect value: %d, (Allowable values: %d ~ %d)\n",
+                        "ARCUS_MAX_SET_SIZE incorrect value: %u, (Allowable values: %u ~ %u)\n",
                          value, ARCUS_COLL_SIZE_MIN, ARCUS_COLL_SIZE_MAX);
             }
         }
@@ -15607,10 +15607,10 @@ int main (int argc, char **argv)
             if (value >= ARCUS_COLL_SIZE_MIN && value <= ARCUS_COLL_SIZE_MAX) {
                 MAX_MAP_SIZE = value;
                 settings.max_map_size = MAX_MAP_SIZE;
-                old_opts += sprintf(old_opts, "max_map_size=%d;", MAX_MAP_SIZE);
+                old_opts += sprintf(old_opts, "max_map_size=%u;", MAX_MAP_SIZE);
             } else {
                 mc_logger->log(EXTENSION_LOG_INFO, NULL,
-                        "ARCUS_MAX_MAP_SIZE incorrect value: %d, (Allowable values: %d ~ %d)\n",
+                        "ARCUS_MAX_MAP_SIZE incorrect value: %u, (Allowable values: %u ~ %u)\n",
                          value, ARCUS_COLL_SIZE_MIN, ARCUS_COLL_SIZE_MAX);
             }
         }
@@ -15620,10 +15620,10 @@ int main (int argc, char **argv)
             if (value >= ARCUS_COLL_SIZE_MIN && value <= ARCUS_COLL_SIZE_MAX) {
                 MAX_BTREE_SIZE = value;
                 settings.max_btree_size = MAX_BTREE_SIZE;
-                old_opts += sprintf(old_opts, "max_btree_size=%d;", MAX_BTREE_SIZE);
+                old_opts += sprintf(old_opts, "max_btree_size=%u;", MAX_BTREE_SIZE);
             } else {
                 mc_logger->log(EXTENSION_LOG_INFO, NULL,
-                        "ARCUS_MAX_BTREE_SIZE incorrect value: %d, (Allowable values: %d ~ %d)\n",
+                        "ARCUS_MAX_BTREE_SIZE incorrect value: %u, (Allowable values: %u ~ %u)\n",
                          value, ARCUS_COLL_SIZE_MIN, ARCUS_COLL_SIZE_MAX);
             }
         }
