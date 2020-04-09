@@ -70,10 +70,6 @@ static int MAX_BTREE_SIZE = 50000;
 
 #ifdef MAX_ELEMENT_BYTES_CONFIG
 /* max element bytes */
-#ifndef SET_IN_ENGINE
-static int ARCUS_ELEMENT_BYTES_MIN = 1024;
-static int ARCUS_ELEMENT_BYTES_MAX = 32*1024;
-#endif
 static int MAX_ELEMENT_BYTES = 16*1024;
 #endif
 
@@ -9306,24 +9302,15 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
 static void process_maxelembytes_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
-#ifdef SET_IN_ENGINE
     char *config_key = tokens[SUBCOMMAND_TOKEN].value;
     char *config_val = tokens[SUBCOMMAND_TOKEN+1].value;
     unsigned int maxelembytes;
-#else
-    int32_t maxbytes;
-#endif
 
     if (ntokens == 3) {
         char buf[50];
-#ifdef SET_IN_ENGINE
         sprintf(buf, "max_element_bytes %u\r\nEND", settings.max_element_bytes);
-#else
-        sprintf(buf, "max_element_bytes %d\r\nEND", settings.max_element_bytes);
-#endif
         out_string(c, buf);
     }
-#ifdef SET_IN_ENGINE
     else if (ntokens == 4 && safe_strtoul(config_val, &maxelembytes)) {
         ENGINE_ERROR_CODE ret;
         size_t new_maxelembytes = (size_t)maxelembytes;
@@ -9341,18 +9328,6 @@ static void process_maxelembytes_command(conn *c, token_t *tokens, const size_t 
         } else { /* ENGINE_EBADVALUE */
             out_string(c, "CLIENT_ERROR bad value");
         }
-#else
-    else if (ntokens == 4 && safe_strtol(tokens[SUBCOMMAND_TOKEN+1].value, &maxbytes)) {
-        if (maxbytes < ARCUS_ELEMENT_BYTES_MIN || maxbytes > ARCUS_ELEMENT_BYTES_MAX) {
-            out_string(c, "CLIENT_ERROR bad value");
-            return;
-        }
-        LOCK_SETTING();
-        MAX_ELEMENT_BYTES = maxbytes;
-        settings.max_element_bytes = maxbytes;
-        UNLOCK_SETTING();
-        out_string(c, "END");
-#endif
     }
     else {
         print_invalid_command(c, tokens, ntokens);

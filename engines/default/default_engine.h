@@ -60,10 +60,8 @@ struct engine_config {
    size_t max_set_size;
    size_t max_map_size;
    size_t max_btree_size;
-#ifdef SET_IN_ENGINE
 #ifdef MAX_ELEMENT_BYTES_CONFIG
    size_t max_element_bytes;
-#endif
 #endif
    bool   ignore_vbucket;
    char   prefix_delimiter;
