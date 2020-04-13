@@ -24,6 +24,9 @@
 #include "default_engine.h"
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogrec.h"
+#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
+#include "cmdlogmgr.h"
+#endif
 
 /* persistence meta data */
 #define PERSISTENCE_ENGINE_NAME   "ARCUS-DEFAULT_ENGINE"
@@ -120,8 +123,13 @@ static char *get_logtype_text(uint8_t type)
 static char *get_updtype_text(uint8_t type)
 {
     switch (type) {
+#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
+        case UPD_STORE:
+            return "STORE";
+#else
         case UPD_SET:
             return "SET";
+#endif
         case UPD_DELETE:
             return "DELETE";
         case UPD_SETATTR_EXPTIME:
@@ -191,7 +199,11 @@ static uint8_t get_it_link_updtype(uint8_t type)
         case ITEM_TYPE_BTREE:
             return UPD_BT_CREATE;
     }
+#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
+    return UPD_STORE;
+#else
     return UPD_SET;
+#endif
 }
 
 static char *get_coll_ovflact_text(uint8_t ovflact)
@@ -1776,8 +1788,13 @@ int lrec_construct_btree_elem_delete_logical(LogRec *logrec, hash_item *it,
 
 hash_item *lrec_get_item_if_collection_link(ITLinkLog *log)
 {
+#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
+    if (log->header.logtype != LOG_IT_LINK ||
+        log->header.updtype == UPD_STORE) {
+#else
     if (log->header.logtype != LOG_IT_LINK ||
         log->header.updtype == UPD_SET) {
+#endif
         return NULL;
     }
     hash_item *it = item_get(&log->body.data, log->body.cm.keylen);
