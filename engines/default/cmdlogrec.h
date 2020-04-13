@@ -38,6 +38,8 @@ enum log_type {
     LOG_SNAPSHOT_DONE
 };
 
+#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
+#else
 enum upd_type {
     /* key value command */
     UPD_SET = 0,
@@ -65,6 +67,7 @@ enum upd_type {
     /* not command */
     UPD_NONE
 };
+#endif
 
 /* key hash item common */
 struct lrec_item_common {

@@ -18,6 +18,36 @@
 #ifndef CMDLOGMGR_H
 #define CMDLOGMGR_H
 
+#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
+enum upd_type {
+    /* key value command */
+    UPD_STORE = 0,
+    UPD_DELETE,
+    UPD_SETATTR_EXPTIME,
+    UPD_SETATTR_EXPTIME_INFO,
+    UPD_SETATTR_EXPTIME_INFO_BKEY,
+    UPD_FLUSH,
+    /* list command */
+    UPD_LIST_CREATE,
+    UPD_LIST_ELEM_INSERT,
+    UPD_LIST_ELEM_DELETE,
+    /* set command */
+    UPD_SET_CREATE,
+    UPD_SET_ELEM_INSERT,
+    UPD_SET_ELEM_DELETE,
+    /* map command */
+    UPD_MAP_CREATE,
+    UPD_MAP_ELEM_INSERT,
+    UPD_MAP_ELEM_DELETE,
+    /* btree command */
+    UPD_BT_CREATE,
+    UPD_BT_ELEM_INSERT,
+    UPD_BT_ELEM_DELETE,
+    /* not command */
+    UPD_NONE
+};
+#endif
+
 typedef struct logsn {
     uint32_t filenum;  /* cmdlog file number : 1, 2, ... */
     uint32_t roffset;  /* cmdlog record offset */
@@ -28,13 +58,20 @@ typedef struct _log_waiter {
     struct _log_waiter *wait_next;
     struct _log_waiter *free_next;
     LogSN               lsn;
+#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
+    uint8_t             updtype;
+#endif
     bool                elem_insert_with_create;
     bool                elem_delete_with_drop;
     const void         *cookie;
 } log_waiter_t;
 
 /* external command log manager functions */
+#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
+log_waiter_t      *cmdlog_waiter_alloc(const void *cookie, uint8_t updtype);
+#else
 log_waiter_t      *cmdlog_waiter_alloc(const void *cookie);
+#endif
 void               cmdlog_waiter_free(log_waiter_t *logmgr, ENGINE_ERROR_CODE *result);
 log_waiter_t      *cmdlog_get_my_waiter(void);
 ENGINE_ERROR_CODE  cmdlog_waiter_init(struct default_engine *engine);
