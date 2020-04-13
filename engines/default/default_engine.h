@@ -66,6 +66,9 @@ struct engine_config {
    size_t max_set_size;
    size_t max_map_size;
    size_t max_btree_size;
+#ifdef MAX_ELEMENT_BYTES_CONFIG
+   size_t max_element_bytes;
+#endif
 #ifdef ENABLE_PERSISTENCE
    size_t chkpt_interval_pct_snapshot;
    size_t chkpt_interval_min_logsize;
