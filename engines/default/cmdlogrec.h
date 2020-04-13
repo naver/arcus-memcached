@@ -38,37 +38,6 @@ enum log_type {
     LOG_SNAPSHOT_DONE
 };
 
-#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
-#else
-enum upd_type {
-    /* key value command */
-    UPD_SET = 0,
-    UPD_DELETE,
-    UPD_SETATTR_EXPTIME,
-    UPD_SETATTR_EXPTIME_INFO,
-    UPD_SETATTR_EXPTIME_INFO_BKEY,
-    UPD_FLUSH,
-    /* list command */
-    UPD_LIST_CREATE,
-    UPD_LIST_ELEM_INSERT,
-    UPD_LIST_ELEM_DELETE,
-    /* set command */
-    UPD_SET_CREATE,
-    UPD_SET_ELEM_INSERT,
-    UPD_SET_ELEM_DELETE,
-    /* map command */
-    UPD_MAP_CREATE,
-    UPD_MAP_ELEM_INSERT,
-    UPD_MAP_ELEM_DELETE,
-    /* btree command */
-    UPD_BT_CREATE,
-    UPD_BT_ELEM_INSERT,
-    UPD_BT_ELEM_DELETE,
-    /* not command */
-    UPD_NONE
-};
-#endif
-
 /* key hash item common */
 struct lrec_item_common {
     uint8_t     ittype;         /* item type */

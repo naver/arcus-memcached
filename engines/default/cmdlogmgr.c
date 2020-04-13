@@ -36,14 +36,12 @@ static struct assoc_scan *chkpt_scanp=NULL; // checkpoint scan pointer
 /* The size of memory chunk for log waiters */
 #define LOG_WAITER_CHUNK_SIZE (4 * 1024)
 
-#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
 #define IS_UPD_ELEM_INSERT(updtype)                                           \
     ((updtype) == UPD_LIST_ELEM_INSERT || (updtype) == UPD_SET_ELEM_INSERT || \
      (updtype) == UPD_MAP_ELEM_INSERT  || (updtype) == UPD_BT_ELEM_INSERT)
 #define IS_UPD_ELEM_DELETE(updtype)                                           \
     ((updtype) == UPD_LIST_ELEM_DELETE || (updtype) == UPD_SET_ELEM_DELETE || \
      (updtype) == UPD_MAP_ELEM_DELETE  || (updtype) == UPD_BT_ELEM_DELETE)
-#endif
 
 typedef struct _group_commit {
     pthread_mutex_t   lock;       /* group commit mutex */
@@ -103,9 +101,7 @@ static ENGINE_ERROR_CODE cmdlog_mgr_recovery()
 inline static void do_cmdlog_waiter_entry_reset(log_waiter_t *waiter)
 {
     LOGSN_SET_NULL(&waiter->lsn);
-#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
     waiter->updtype = UPD_NONE;
-#endif
     waiter->elem_insert_with_create = false;
     waiter->elem_delete_with_drop = false;
     waiter->wait_next = NULL;
@@ -157,18 +153,12 @@ static log_waiter_t *do_cmdlog_waiter_alloc(void)
 /*
  * External Functions
  */
-#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
 log_waiter_t *cmdlog_waiter_alloc(const void *cookie, uint8_t updtype)
-#else
-log_waiter_t *cmdlog_waiter_alloc(const void *cookie)
-#endif
 {
     log_waiter_t *waiter = do_cmdlog_waiter_alloc();
     if (waiter) {
       waiter->cookie = cookie;
-#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
       waiter->updtype = updtype;
-#endif
       tls_waiter = waiter; /* set tls_waiter */
     }
     return waiter;
@@ -503,7 +493,6 @@ void cmdlog_mgr_final(void)
 void cmdlog_generate_link_item(hash_item *it)
 {
     log_waiter_t *waiter = cmdlog_get_my_waiter();
-#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
     if (!IS_UPD_ELEM_INSERT(waiter->updtype)) {
         ITLinkLog log;
         (void)lrec_construct_link_item((LogRec*)&log, it);
@@ -514,13 +503,6 @@ void cmdlog_generate_link_item(hash_item *it)
          */
         waiter->elem_insert_with_create = true;
     }
-#else
-    if (waiter->elem_insert_with_create == false) {
-        ITLinkLog log;
-        (void)lrec_construct_link_item((LogRec*)&log, it);
-        cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
-    }
-#endif
 }
 
 void cmdlog_generate_unlink_item(hash_item *it)
@@ -576,9 +558,7 @@ void cmdlog_generate_list_elem_insert(hash_item *it, const uint32_t total,
     lrec_attr_info attr;
     log_waiter_t *waiter = cmdlog_get_my_waiter();
     bool create = waiter->elem_insert_with_create;
-#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
     waiter->elem_insert_with_create = false;
-#endif
     (void)lrec_construct_list_elem_insert((LogRec*)&log, it, total,
                                           index, elem, create, &attr);
     cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
@@ -600,9 +580,7 @@ void cmdlog_generate_map_elem_insert(hash_item *it, map_elem_item *elem)
     lrec_attr_info attr;
     log_waiter_t *waiter = cmdlog_get_my_waiter();
     bool create = waiter->elem_insert_with_create;
-#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
     waiter->elem_insert_with_create = false;
-#endif
     (void)lrec_construct_map_elem_insert((LogRec*)&log, it, elem, create, &attr);
     cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
 }
@@ -622,9 +600,7 @@ void cmdlog_generate_set_elem_insert(hash_item *it, set_elem_item *elem)
     lrec_attr_info attr;
     log_waiter_t *waiter = cmdlog_get_my_waiter();
     bool create = waiter->elem_insert_with_create;
-#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
     waiter->elem_insert_with_create = false;
-#endif
     (void)lrec_construct_set_elem_insert((LogRec*)&log, it, elem, create, &attr);
     cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
 }
@@ -644,9 +620,7 @@ void cmdlog_generate_btree_elem_insert(hash_item *it, btree_elem_item *elem)
     lrec_attr_info attr;
     log_waiter_t *waiter = cmdlog_get_my_waiter();
     bool create = waiter->elem_insert_with_create;
-#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
     waiter->elem_insert_with_create = false;
-#endif
     (void)lrec_construct_btree_elem_insert((LogRec*)&log, it, elem, create, &attr);
     cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
 }

@@ -18,7 +18,6 @@
 #ifndef CMDLOGMGR_H
 #define CMDLOGMGR_H
 
-#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
 enum upd_type {
     /* key value command */
     UPD_STORE = 0,
@@ -46,7 +45,6 @@ enum upd_type {
     /* not command */
     UPD_NONE
 };
-#endif
 
 typedef struct logsn {
     uint32_t filenum;  /* cmdlog file number : 1, 2, ... */
@@ -58,20 +56,14 @@ typedef struct _log_waiter {
     struct _log_waiter *wait_next;
     struct _log_waiter *free_next;
     LogSN               lsn;
-#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
     uint8_t             updtype;
-#endif
     bool                elem_insert_with_create;
     bool                elem_delete_with_drop;
     const void         *cookie;
 } log_waiter_t;
 
 /* external command log manager functions */
-#ifdef ENABLE_PERSISTENCE_03_ADD_UPD_TYPE
 log_waiter_t      *cmdlog_waiter_alloc(const void *cookie, uint8_t updtype);
-#else
-log_waiter_t      *cmdlog_waiter_alloc(const void *cookie);
-#endif
 void               cmdlog_waiter_free(log_waiter_t *logmgr, ENGINE_ERROR_CODE *result);
 log_waiter_t      *cmdlog_get_my_waiter(void);
 ENGINE_ERROR_CODE  cmdlog_waiter_init(struct default_engine *engine);
