@@ -1487,6 +1487,92 @@ static int build_udp_headers(conn *c)
     return 0;
 }
 
+static void pipe_response_save(conn *c, const char *str, size_t len)
+{
+    if (c->pipe_state == PIPE_STATE_ON) {
+        if (c->pipe_count == 0) {
+            /* initialize pipe responses */
+            /* response header format : "RESPONSE %d\r\n" */
+            c->pipe_reslen = PIPE_HEAD_RES_SIZE;
+            c->pipe_resptr = &c->pipe_response[c->pipe_reslen];
+        }
+        if ((c->pipe_reslen + (len+2)) < (PIPE_MAX_RES_SIZE-40)) {
+            sprintf(c->pipe_resptr, "%s\r\n", str);
+            c->pipe_reslen += (len+2);
+            c->pipe_resptr = &c->pipe_response[c->pipe_reslen];
+            c->pipe_count++;
+            if (c->pipe_count >= PIPE_MAX_CMD_COUNT && c->noreply == true) {
+                c->pipe_state = PIPE_STATE_ERR_CFULL; /* pipe count overflow */
+                c->noreply = false; /* stop pipelining */
+            }
+            else if ((strncmp(str, "CLIENT_ERROR", 12) == 0) ||
+                     (strncmp(str, "SERVER_ERROR", 12) == 0) ||
+                     (strncmp(str, "ERROR", 5) == 0)) { /* severe error */
+                c->pipe_state = PIPE_STATE_ERR_BAD; /* bad error in pipelining */
+                c->noreply = false; /* stop pipelining */
+            }
+        } else {
+            c->pipe_state = PIPE_STATE_ERR_MFULL; /* pipe memory overflow */
+            c->noreply = false; /* stop pipelining */
+        }
+    } else {
+        /* A response message has come here before pipe error is reset.
+         * Maybe, clients may not send all the commands of the pipelining.
+         * So, force to reset the current pipelining.
+         */
+        mc_logger->log(EXTENSION_LOG_INFO, c,
+                       "%d: response message before pipe error is reset. %s\n",
+                       c->sfd, str);
+        /* clear pipe_state: the end of pipe */
+        c->pipe_state = PIPE_STATE_OFF;
+        c->pipe_count = 0;
+    }
+}
+
+static void pipe_response_done(conn *c)
+{
+    char headbuf[PIPE_HEAD_RES_SIZE];
+    int headlen;
+    int headidx;
+
+    /* pipe head response string */
+    headlen = sprintf(headbuf, "RESPONSE %d", c->pipe_count);
+    assert(headlen > 0);
+    headidx = PIPE_HEAD_RES_SIZE - headlen - 2;
+    memcpy(&c->pipe_response[headidx], headbuf, headlen);
+    memcpy(&c->pipe_response[PIPE_HEAD_RES_SIZE-2], "\r\n", 2);
+
+    /* pipe tail response string */
+    if (c->pipe_state == PIPE_STATE_ON) {
+        sprintf(c->pipe_resptr, "END\r\n");
+        c->pipe_reslen += 5;
+
+        /* clear pipe_state: the end of pipe */
+        c->pipe_state = PIPE_STATE_OFF;
+        c->pipe_count = 0;
+    } else {
+        if (c->pipe_state == PIPE_STATE_ERR_CFULL) {
+            sprintf(c->pipe_resptr, "PIPE_ERROR command overflow\r\n");
+            c->pipe_reslen += 29;
+        } else if (c->pipe_state == PIPE_STATE_ERR_MFULL) {
+            sprintf(c->pipe_resptr, "PIPE_ERROR memory overflow\r\n");
+            c->pipe_reslen += 28;
+        } else { /* PIPE_STATE_ERR_BAD */
+            sprintf(c->pipe_resptr, "PIPE_ERROR bad error\r\n");
+            c->pipe_reslen += 22;
+        }
+        /* The pipe_state will be cleared
+         * after swallowing the remaining data.
+         */
+    }
+
+    c->wbytes = c->pipe_reslen - headidx;
+    c->wcurr = &c->pipe_response[headidx];
+
+    conn_set_state(c, conn_write);
+    c->write_and_go = conn_new_cmd;
+}
+
 static void out_string(conn *c, const char *str)
 {
     assert(c != NULL);
@@ -1500,46 +1586,7 @@ static void out_string(conn *c, const char *str)
     }
 
     if (c->pipe_state != PIPE_STATE_OFF) {
-        if (c->pipe_state == PIPE_STATE_ON) {
-            if (c->pipe_count == 0) {
-                /* initialize pipe responses */
-                /* response header format : "RESPONSE %d\r\n" */
-                c->pipe_reslen = PIPE_HEAD_RES_SIZE;
-                c->pipe_resptr = &c->pipe_response[c->pipe_reslen];
-            }
-            if ((c->pipe_reslen + (len+2)) < (PIPE_MAX_RES_SIZE-40)) {
-                sprintf(c->pipe_resptr, "%s\r\n", str);
-                c->pipe_reslen += (len+2);
-                c->pipe_resptr = &c->pipe_response[c->pipe_reslen];
-                c->pipe_count++;
-                if (c->pipe_count >= PIPE_MAX_CMD_COUNT && c->noreply == true) {
-                    c->pipe_state = PIPE_STATE_ERR_CFULL; /* pipe count overflow */
-                    c->noreply = false; /* stop pipelining */
-                }
-            } else {
-                c->pipe_state = PIPE_STATE_ERR_MFULL; /* pipe memory overflow */
-                c->noreply = false; /* stop pipelining */
-            }
-            if (c->pipe_state == PIPE_STATE_ON) {
-                if ((strncmp(str, "CLIENT_ERROR", 12) == 0) ||
-                    (strncmp(str, "SERVER_ERROR", 12) == 0) ||
-                    (strncmp(str, "ERROR", 5) == 0)) { /* severe error */
-                    c->pipe_state = PIPE_STATE_ERR_BAD; /* bad error in pipelining */
-                    c->noreply = false; /* stop pipelining */
-                }
-            }
-        } else {
-            /* A response message has come here before pipe error is reset.
-             * Maybe, clients may not send all the commands of the pipelining.
-             * So, force to reset the current pipelining.
-             */
-            mc_logger->log(EXTENSION_LOG_INFO, c,
-                           "%d: response message before pipe error is reset. %s\n",
-                           c->sfd, str);
-            /* clear pipe_state: the end of pipe */
-            c->pipe_state = PIPE_STATE_OFF;
-            c->pipe_count = 0;
-        }
+        pipe_response_save(c, str, len);
     }
 
     if (c->noreply) {
@@ -1563,46 +1610,7 @@ static void out_string(conn *c, const char *str)
     add_msghdr(c);
 
     if (c->pipe_state != PIPE_STATE_OFF) {
-        char headbuf[PIPE_HEAD_RES_SIZE];
-        int headlen;
-        int headidx;
-
-        /* pipe head response string */
-        headlen = sprintf(headbuf, "RESPONSE %d", c->pipe_count);
-        assert(headlen > 0);
-        headidx = PIPE_HEAD_RES_SIZE - headlen - 2;
-        memcpy(&c->pipe_response[headidx], headbuf, headlen);
-        memcpy(&c->pipe_response[PIPE_HEAD_RES_SIZE-2], "\r\n", 2);
-
-        /* pipe tail response string */
-        if (c->pipe_state == PIPE_STATE_ON) {
-            sprintf(c->pipe_resptr, "END\r\n");
-            c->pipe_reslen += 5;
-
-            /* clear pipe_state: the end of pipe */
-            c->pipe_state = PIPE_STATE_OFF;
-            c->pipe_count = 0;
-        } else {
-            if (c->pipe_state == PIPE_STATE_ERR_CFULL) {
-                sprintf(c->pipe_resptr, "PIPE_ERROR command overflow\r\n");
-                c->pipe_reslen += 29;
-            } else if (c->pipe_state == PIPE_STATE_ERR_MFULL) {
-                sprintf(c->pipe_resptr, "PIPE_ERROR memory overflow\r\n");
-                c->pipe_reslen += 28;
-            } else { /* PIPE_STATE_ERR_BAD */
-                sprintf(c->pipe_resptr, "PIPE_ERROR bad error\r\n");
-                c->pipe_reslen += 22;
-            }
-            /* The pipe_state will be cleared
-             * after swallowing the remaining data.
-             */
-        }
-
-        c->wbytes = c->pipe_reslen - headidx;
-        c->wcurr  = &c->pipe_response[headidx];
-
-        conn_set_state(c, conn_write);
-        c->write_and_go = conn_new_cmd;
+        pipe_response_done(c);
         return;
     }
 
