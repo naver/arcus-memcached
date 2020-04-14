@@ -1504,7 +1504,7 @@ static void out_string(conn *c, const char *str)
             if (c->pipe_count == 0) {
                 /* initialize pipe responses */
                 /* response header format : "RESPONSE %d\r\n" */
-                c->pipe_reslen = 11 + 3; /* 3: max length of count */
+                c->pipe_reslen = PIPE_HEAD_RES_SIZE;
                 c->pipe_resptr = &c->pipe_response[c->pipe_reslen];
             }
             if ((c->pipe_reslen + (len+2)) < (PIPE_MAX_RES_SIZE-40)) {
@@ -1563,9 +1563,25 @@ static void out_string(conn *c, const char *str)
     add_msghdr(c);
 
     if (c->pipe_state != PIPE_STATE_OFF) {
+        char headbuf[PIPE_HEAD_RES_SIZE];
+        int headlen;
+        int headidx;
+
+        /* pipe head response string */
+        headlen = sprintf(headbuf, "RESPONSE %d", c->pipe_count);
+        assert(headlen > 0);
+        headidx = PIPE_HEAD_RES_SIZE - headlen - 2;
+        memcpy(&c->pipe_response[headidx], headbuf, headlen);
+        memcpy(&c->pipe_response[PIPE_HEAD_RES_SIZE-2], "\r\n", 2);
+
+        /* pipe tail response string */
         if (c->pipe_state == PIPE_STATE_ON) {
             sprintf(c->pipe_resptr, "END\r\n");
             c->pipe_reslen += 5;
+
+            /* clear pipe_state: the end of pipe */
+            c->pipe_state = PIPE_STATE_OFF;
+            c->pipe_count = 0;
         } else {
             if (c->pipe_state == PIPE_STATE_ERR_CFULL) {
                 sprintf(c->pipe_resptr, "PIPE_ERROR command overflow\r\n");
@@ -1577,22 +1593,13 @@ static void out_string(conn *c, const char *str)
                 sprintf(c->pipe_resptr, "PIPE_ERROR bad error\r\n");
                 c->pipe_reslen += 22;
             }
-        }
-        sprintf(&c->pipe_response[0], "RESPONSE %3d", c->pipe_count);
-        memcpy(&c->pipe_response[12], "\r\n", 2);
-
-        if (c->pipe_state == PIPE_STATE_ON) {
-            /* clear pipe_state: the end of pipe */
-            c->pipe_state = PIPE_STATE_OFF;
-            c->pipe_count = 0;
-        } else {
-            /* The pipe_state will be reset
+            /* The pipe_state will be cleared
              * after swallowing the remaining data.
              */
         }
 
-        c->wbytes = c->pipe_reslen;
-        c->wcurr  = c->pipe_response;
+        c->wbytes = c->pipe_reslen - headidx;
+        c->wcurr  = &c->pipe_response[headidx];
 
         conn_set_state(c, conn_write);
         c->write_and_go = conn_new_cmd;

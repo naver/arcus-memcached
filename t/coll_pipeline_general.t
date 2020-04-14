@@ -59,7 +59,7 @@ $cmd = "lop insert lkey1 0 6 create 11 0 0 pipe\r\ndatum0\r\n"
      . "lop insert lkey1 0 6 pipe\r\ndatum5\r\n"
      . "lop insert lkey1 0 6 pipe\r\ndatum6\r\n"
      . "lop insert lkey1 0 6\r\ndatum7";
-$rst = "RESPONSE   8\n"
+$rst = "RESPONSE 8\n"
      . "CREATED_STORED\n"
      . "STORED\n"
      . "STORED\n"
@@ -75,14 +75,14 @@ mem_cmd_is($sock, $cmd, "", $rst);
 
 $cmd = "lop insert lkey2 0 6 create 11 0 0 pipe\r\ndatum0\r\n"
      . "lop insert lkey2 0 6 pipe\r\ndatum1111";
-$rst = "RESPONSE   2\n"
+$rst = "RESPONSE 2\n"
      . "CREATED_STORED\n"
      . "CLIENT_ERROR bad data chunk\n"
      . "PIPE_ERROR bad error\n"
      . "ERROR unknown command";
 mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "lop insert lkey2 0 6 pipe\r\ndatum22222";
-$rst = "RESPONSE   1\n"
+$rst = "RESPONSE 1\n"
      . "CLIENT_ERROR bad data chunk\n"
      . "PIPE_ERROR bad error\n"
      . "ERROR unknown command";
@@ -91,7 +91,7 @@ $cmd = "lop insert lkey2 0 9 pipe\r\ndatum3333\r\n"
      . "lop insert lkey2 0 9 pipe\r\ndatum4444\r\n"
      . "lop insert lkey2 0 9 pipe\r\ndatum5\r\n"
      . "lop insert lkey2 0 9 pipe\r\ndatum6666";
-$rst = "RESPONSE   3\n"
+$rst = "RESPONSE 3\n"
      . "STORED\n"
      . "STORED\n"
      . "CLIENT_ERROR bad data chunk\n"

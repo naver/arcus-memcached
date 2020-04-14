@@ -110,6 +110,8 @@
 
 /* command pipelining limits */
 #define PIPE_MAX_CMD_COUNT  500
+#define PIPE_HEAD_RES_SIZE  20 /* head response string size */
+#define PIPE_TAIL_RES_SIZE  40 /* tail response string size */
 #define PIPE_MAX_RES_SIZE   ((PIPE_MAX_CMD_COUNT*40)+60) // 60: for head and tail response
 
 /* command pipelining states */
