@@ -31,6 +31,10 @@
 #include "memcached/util.h"
 #include "memcached/config_parser.h"
 
+/*
+ * Define actions executed before/after operation.
+ */
+#define ACTION_BEFORE_READ(c, k, l)
 #define ACTION_BEFORE_WRITE(c, k, l)
 #define ACTION_AFTER_WRITE(c, r)
 
@@ -311,6 +315,7 @@ default_get(ENGINE_HANDLE* handle, const void* cookie,
     struct default_engine *engine = get_handle(handle);
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_READ(cookie, key, nkey);
     *item = item_get(key, nkey);
     if (*item != NULL) {
         hash_item *it = get_real_item(*item);
@@ -470,6 +475,7 @@ default_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
+    else        ACTION_BEFORE_READ(cookie, key, nkey);
     ret = list_elem_get(key, nkey, from_index, to_index, delete, drop_if_empty,
                         eresult, cookie);
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
@@ -572,6 +578,7 @@ default_set_elem_exist(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_READ(cookie, key, nkey);
     ret = set_elem_exist(key, nkey, value, nbytes, exist);
     return ret;
 }
@@ -588,6 +595,7 @@ default_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
+    else        ACTION_BEFORE_READ(cookie, key, nkey);
     ret = set_elem_get(key, nkey, count, delete, drop_if_empty,
                        eresult, cookie);
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
@@ -706,6 +714,7 @@ default_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
+    else        ACTION_BEFORE_READ(cookie, key, nkey);
     ret = map_elem_get(key, nkey, numfields, flist, delete, drop_if_empty,
                        eresult, cookie);
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
@@ -865,6 +874,7 @@ default_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
+    else        ACTION_BEFORE_READ(cookie, key, nkey);
     ret = btree_elem_get(key, nkey, bkrange, efilter, offset, req_count,
                          delete, drop_if_empty, eresult, cookie);
     if (delete) ACTION_AFTER_WRITE(cookie, ret);
@@ -882,6 +892,7 @@ default_btree_elem_count(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_READ(cookie, key, nkey);
     ret = btree_elem_count(key, nkey, bkrange, efilter, eitem_count, access_count);
     return ret;
 }
@@ -897,6 +908,7 @@ default_btree_posi_find(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_READ(cookie, key, nkey);
     ret = btree_posi_find(key, nkey, bkrange, order, position);
     return ret;
 }
@@ -914,6 +926,7 @@ default_btree_posi_find_with_get(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_READ(cookie, key, nkey);
     ret = btree_posi_find_with_get(key, nkey, bkrange, order, count,
                                    position, (btree_elem_item**)eitem_array,
                                    eitem_count, eitem_index, flags);
@@ -932,6 +945,7 @@ default_btree_elem_get_by_posi(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_READ(cookie, key, nkey);
     ret = btree_elem_get_by_posi(key, nkey, order, from_posi, to_posi,
                                  (btree_elem_item**)eitem_array, eitem_count,
                                  flags);
@@ -1004,6 +1018,7 @@ default_getattr(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_READ(cookie, key, nkey);
     ret = item_getattr(key, nkey, attr_ids, attr_count, attr_data);
     return ret;
 }

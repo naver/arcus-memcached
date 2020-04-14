@@ -30,8 +30,14 @@
 #include "memcached/util.h"
 #include "memcached/config_parser.h"
 
+/*
+ * Define actions executed before/after operation.
+ */
+#define ACTION_BEFORE_READ(c, k, l)
 #define ACTION_BEFORE_WRITE(c, k, l)
 #define ACTION_AFTER_WRITE(c, r)
+
+/* mechanism for handling bad vbucket requests */
 #define VBUCKET_GUARD(e, v)
 
 /*
@@ -228,6 +234,7 @@ Demo_get(ENGINE_HANDLE* handle, const void* cookie,
     struct demo_engine *engine = get_handle(handle);
     VBUCKET_GUARD(engine, vbucket);
 
+    ACTION_BEFORE_READ(cookie, key, nkey);
     *item = dm_item_get(engine, key, nkey);
     if (*item != NULL) {
         return ENGINE_SUCCESS;
