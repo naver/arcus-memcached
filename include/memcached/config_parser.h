@@ -30,6 +30,7 @@ extern "C" {
  */
 enum config_datatype {
    DT_SIZE,
+   DT_UINT32,
    DT_FLOAT,
    DT_BOOL,
    DT_STRING,
@@ -42,6 +43,7 @@ enum config_datatype {
  */
 union config_value {
    size_t *dt_size;
+   uint32_t *dt_uint32;
    float *dt_float;
    bool *dt_bool;
    char **dt_string;
