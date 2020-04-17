@@ -78,6 +78,15 @@ bool init_engine(ENGINE_HANDLE * engine,
         engine_v1 = (ENGINE_HANDLE_V1*)engine;
 
         // validate that the required engine interface is implemented:
+#ifdef LOAD_ENGINE_CONFFILE
+        if (engine_v1->get_info == NULL || engine_v1->get_config == NULL ||
+            engine_v1->initialize == NULL || engine_v1->destroy == NULL ||
+            engine_v1->allocate == NULL || engine_v1->remove == NULL ||
+            engine_v1->release == NULL || engine_v1->get == NULL ||
+            engine_v1->store == NULL || engine_v1->arithmetic == NULL ||
+            engine_v1->flush == NULL || engine_v1->get_stats == NULL ||
+            engine_v1->reset_stats == NULL || engine_v1->get_item_info == NULL)
+#else
         if (engine_v1->get_info == NULL || engine_v1->initialize == NULL ||
             engine_v1->destroy == NULL || engine_v1->allocate == NULL ||
             engine_v1->remove == NULL || engine_v1->release == NULL ||
@@ -85,6 +94,7 @@ bool init_engine(ENGINE_HANDLE * engine,
             engine_v1->arithmetic == NULL || engine_v1->flush == NULL ||
             engine_v1->get_stats == NULL || engine_v1->reset_stats == NULL ||
             engine_v1->get_item_info == NULL)
+#endif
         {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Failed to initialize engine; it does not implement the engine interface.");

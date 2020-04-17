@@ -61,8 +61,10 @@
 #include <stddef.h>
 
 /* max collection size */
+#ifndef LOAD_ENGINE_CONFFILE
 static uint32_t ARCUS_COLL_SIZE_MIN = 50000;
 static uint32_t ARCUS_COLL_SIZE_MAX = 1000000;
+#endif
 static uint32_t MAX_LIST_SIZE  = 50000;
 static uint32_t MAX_SET_SIZE   = 50000;
 static uint32_t MAX_MAP_SIZE   = 50000;
@@ -249,6 +251,9 @@ static void update_stat_cas(conn *c, ENGINE_ERROR_CODE ret);
 
 /* defaults */
 static void settings_init(void);
+#ifdef LOAD_ENGINE_CONFFILE
+static int  settings_set_engine_config(void);
+#endif
 
 /* event handling, network IO */
 static void event_handler(const int fd, const short which, void *arg);
@@ -406,6 +411,45 @@ static void settings_init(void)
     settings.require_sasl = false;
     settings.extensions.logger = get_stderr_logger();
 }
+
+#ifdef LOAD_ENGINE_CONFFILE
+static int settings_set_engine_config(void)
+{
+    char cfg_str[200];
+    mc_engine.v1->get_config(mc_engine.v0, cfg_str);
+    struct config_item items[] = {
+        { .key = "max_list_size",
+          .datatype = DT_UINT32,
+          .value.dt_uint32 = &settings.max_list_size },
+        { .key = "max_set_size",
+          .datatype = DT_UINT32,
+          .value.dt_uint32 = &settings.max_set_size },
+        { .key = "max_map_size",
+          .datatype = DT_UINT32,
+          .value.dt_uint32 = &settings.max_map_size },
+        { .key = "max_btree_size",
+          .datatype = DT_UINT32,
+          .value.dt_uint32 = &settings.max_btree_size },
+#ifdef MAX_ELEMENT_BYTES_CONFIG
+        { .key = "max_element_bytes",
+          .datatype = DT_UINT32,
+          .value.dt_uint32 = &settings.max_element_bytes },
+#endif
+        { .key = NULL }
+    };
+    if (parse_config(cfg_str, items, stderr) != 0) {
+        return -1;
+    }
+    MAX_LIST_SIZE = settings.max_list_size;
+    MAX_SET_SIZE = settings.max_set_size;
+    MAX_MAP_SIZE = settings.max_map_size;
+    MAX_BTREE_SIZE = settings.max_btree_size;
+#ifdef MAX_ELEMENT_BYTES_CONFIG
+    MAX_ELEMENT_BYTES = settings.max_element_bytes;
+#endif
+    return 0;
+}
+#endif
 
 /*
  * Adds a message header to a connection.
@@ -15586,6 +15630,7 @@ int main (int argc, char **argv)
         settings.port = settings.udpport;
     }
 
+#ifndef LOAD_ENGINE_CONFFILE
     /* Following code of setting max collection size will be deprecated. */
     if (1) { /* check max collection size from environment variables */
         int value;
@@ -15644,6 +15689,7 @@ int main (int argc, char **argv)
         }
     }
 
+#endif
     if (engine_config != NULL && strlen(old_options) > 0) {
         /* If there is -e, just append it to the "old" options that we have
          * accumulated so far.
@@ -15807,6 +15853,13 @@ int main (int argc, char **argv)
         log_engine_details(engine_handle, mc_logger);
     }
     mc_engine.v1 = (ENGINE_HANDLE_V1 *) engine_handle;
+#ifdef LOAD_ENGINE_CONFFILE
+    if (settings_set_engine_config() == -1) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                       "Failed to set engine configuration in settings.\n");
+        exit(EXIT_FAILURE);
+    }
+#endif
 
     if (!(conn_cache = cache_create("conn", sizeof(conn), sizeof(void*),
                                     conn_constructor, conn_destructor))) {

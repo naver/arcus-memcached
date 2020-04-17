@@ -34,6 +34,9 @@ endif
 
 noinst_LTLIBRARIES=libmcd_util.la
 
+# Engine configuration file
+engineconfdir = $(prefix)/conf
+dist_engineconf_DATA =
 
 # Test application to test stuff from C
 testapp_SOURCES = testapp.c
@@ -146,6 +149,7 @@ default_engine_la_SOURCES= \
 default_engine_la_DEPENDENCIES= libmcd_util.la
 default_engine_la_LIBADD= libmcd_util.la $(LIBM)
 default_engine_la_LDFLAGS= -avoid-version -shared -module -no-undefined
+dist_engineconf_DATA += engines/default/default_engine.conf
 
 # The demo storage engine
 demo_engine_la_SOURCES= \
@@ -158,6 +162,7 @@ demo_engine_la_SOURCES= \
 demo_engine_la_DEPENDENCIES= libmcd_util.la
 demo_engine_la_LIBADD= libmcd_util.la $(LIBM)
 demo_engine_la_LDFLAGS= -avoid-version -shared -module -no-undefined
+dist_engineconf_DATA += engines/demo/demo_engine.conf
 
 if BUILD_DTRACE
 BUILT_SOURCES += memcached_dtrace.h

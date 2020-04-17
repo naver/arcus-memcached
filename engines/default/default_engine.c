@@ -40,6 +40,15 @@
 
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
+#ifdef LOAD_ENGINE_CONFFILE
+/* max collection size */
+static size_t DEFAULT_COLL_SIZE_MAX = 1000000;
+static size_t DEFAULT_COLL_SIZE_MIN = 50000;
+static size_t DEFAULT_LIST_SIZE = 50000;
+static size_t DEFAULT_SET_SIZE = 50000;
+static size_t DEFAULT_MAP_SIZE = 50000;
+static size_t DEFAULT_BTREE_SIZE = 50000;
+#endif
 #ifdef MAX_ELEMENT_BYTES_CONFIG
 /* max element bytes */
 static size_t DEFAULT_ELEMENT_BYTES_MAX = 32*1024;
@@ -111,8 +120,58 @@ default_get_info(ENGINE_HANDLE* handle)
     return &get_handle(handle)->info.engine_info;
 }
 
+#ifdef LOAD_ENGINE_CONFFILE
+static void
+default_get_config(ENGINE_HANDLE* handle, char *config_buffer)
+{
+    struct engine_config *conf = &get_handle(handle)->config;
+#ifdef MAX_ELEMENT_BYTES_CONFIG
+    config_buffer += sprintf(config_buffer, "max_element_bytes=%u;", (uint32_t)conf->max_element_bytes);
+#endif
+    config_buffer += sprintf(config_buffer, "max_list_size=%u;", (uint32_t)conf->max_list_size);
+    config_buffer += sprintf(config_buffer, "max_set_size=%u;", (uint32_t)conf->max_set_size);
+    config_buffer += sprintf(config_buffer, "max_map_size=%u;", (uint32_t)conf->max_map_size);
+    config_buffer += sprintf(config_buffer, "max_btree_size=%u\n", (uint32_t)conf->max_btree_size);
+}
+#endif
 static int check_configuration(struct engine_config *conf)
 {
+#ifdef LOAD_ENGINE_CONFFILE
+    /* check max_coll_size */
+    if (conf->max_list_size < DEFAULT_COLL_SIZE_MIN || conf->max_list_size > DEFAULT_COLL_SIZE_MAX) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Element max size requires minimum=%u, maximum=%u. max_list_size=%u\n",
+                    (uint32_t)DEFAULT_COLL_SIZE_MIN, (uint32_t)DEFAULT_COLL_SIZE_MAX, (uint32_t)conf->max_list_size);
+        return -1;
+    }
+    if (conf->max_set_size < DEFAULT_COLL_SIZE_MIN || conf->max_set_size > DEFAULT_COLL_SIZE_MAX) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Element max size requires minimum=%u, maximum=%u. max_set_size=%u\n",
+                    (uint32_t)DEFAULT_COLL_SIZE_MIN, (uint32_t)DEFAULT_COLL_SIZE_MAX, (uint32_t)conf->max_set_size);
+        return -1;
+    }
+    if (conf->max_map_size < DEFAULT_COLL_SIZE_MIN || conf->max_map_size > DEFAULT_COLL_SIZE_MAX) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Element max size requires minimum=%u, maximum=%u. max_map_size=%u\n",
+                    (uint32_t)DEFAULT_COLL_SIZE_MIN, (uint32_t)DEFAULT_COLL_SIZE_MAX, (uint32_t)conf->max_map_size);
+        return -1;
+    }
+    if (conf->max_btree_size < DEFAULT_COLL_SIZE_MIN || conf->max_btree_size > DEFAULT_COLL_SIZE_MAX) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Element max size requires minimum=%u, maximum=%u. max_btree_size=%u\n",
+                    (uint32_t)DEFAULT_COLL_SIZE_MIN, (uint32_t)DEFAULT_COLL_SIZE_MAX, (uint32_t)conf->max_btree_size);
+        return -1;
+    }
+#ifdef MAX_ELEMENT_BYTES_CONFIG
+    /* check max_element_bytes */
+    if (conf->max_element_bytes < DEFAULT_ELEMENT_BYTES_MIN || conf->max_element_bytes > DEFAULT_ELEMENT_BYTES_MAX) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Element max bytes requires minimum=%u, maximum=%u. max_element_bytes=%u\n",
+                    (uint32_t)DEFAULT_ELEMENT_BYTES_MIN, (uint32_t)DEFAULT_ELEMENT_BYTES_MAX, (uint32_t)conf->max_element_bytes);
+        return -1;
+    }
+#endif
+#endif
     return 0;
 }
 
@@ -1521,6 +1580,9 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          },
          /* Engine API */
          .get_info          = default_get_info,
+#ifdef LOAD_ENGINE_CONFFILE
+         .get_config        = default_get_config,
+#endif
          .initialize        = default_initialize,
          .destroy           = default_destroy,
          /* Item API */
@@ -1621,10 +1683,17 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .factor = 1.25,
          .chunk_size = 48,
          .item_size_max= 1024 * 1024,
+#ifdef LOAD_ENGINE_CONFFILE
+         .max_list_size = DEFAULT_LIST_SIZE,
+         .max_set_size = DEFAULT_SET_SIZE,
+         .max_map_size = DEFAULT_MAP_SIZE,
+         .max_btree_size = DEFAULT_BTREE_SIZE,
+#else
          .max_list_size = 50000,
          .max_set_size = 50000,
          .max_map_size = 50000,
          .max_btree_size = 50000,
+#endif
 #ifdef MAX_ELEMENT_BYTES_CONFIG
          .max_element_bytes = DEFAULT_ELEMENT_BYTES,
 #endif
