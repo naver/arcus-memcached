@@ -4102,6 +4102,9 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
             do_btree_node_merge(info, path, forward, node_cnt);
         }
     }
+    if (tot_found > 0) {
+        CLOG_BTREE_ELEM_DELETE_LOGICAL(info, bkrange, efilter, offset, count, cause);
+    }
     return tot_found;
 }
 
@@ -4548,6 +4551,10 @@ static uint32_t do_btree_elem_get(btree_meta_info *info,
             if (do_btree_overlapped_with_trimmed_space(info, &c_posi, bkrtype))
                 *potentialbkeytrim = true;
         }
+    }
+    if (delete && tot_found > 0) {
+        CLOG_BTREE_ELEM_DELETE_LOGICAL(info, bkrange, efilter, offset, count,
+                                       ELEM_DELETE_NORMAL);
     }
     return tot_found;
 }
@@ -7022,7 +7029,6 @@ ENGINE_ERROR_CODE btree_elem_delete(const char *key, const uint32_t nkey,
             *del_count = do_btree_elem_delete(info, bkrtype, bkrange, efilter, 0, req_count,
                                               access_count, ELEM_DELETE_NORMAL);
             if (*del_count > 0) {
-                CLOG_BTREE_ELEM_DELETE_LOGICAL(info, bkrange, efilter, 0, req_count);
                 if (info->ccnt == 0 && drop_if_empty) {
                     assert(info->root == NULL);
                     do_item_unlink(it, ITEM_UNLINK_NORMAL);
@@ -7132,7 +7138,6 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
                                                     &(eresult->access_count), &potentialbkeytrim);
             if (eresult->elem_count > 0) {
                 if (delete) {
-                    CLOG_BTREE_ELEM_DELETE_LOGICAL(info, bkrange, efilter, offset, req_count);
                     if (info->ccnt == 0 && drop_if_empty) {
                         assert(info->root == NULL);
                         do_item_unlink(it, ITEM_UNLINK_NORMAL);

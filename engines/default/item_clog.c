@@ -164,11 +164,13 @@ void CLOG_GE_BTREE_ELEM_DELETE(btree_meta_info *info,
 void CLOG_GE_BTREE_ELEM_DELETE_LOGICAL(btree_meta_info *info,
                                        const bkey_range *bkrange,
                                        const eflag_filter *efilter,
-                                       uint32_t offset, uint32_t reqcount)
+                                       uint32_t offset, uint32_t count,
+                                       enum elem_delete_cause cause)
 {
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
 
-    if ((it->iflag & ITEM_INTERNAL) == 0)
+    if ((cause == ELEM_DELETE_NORMAL) &&
+        (it->iflag & ITEM_INTERNAL) == 0)
     {
     }
 }
