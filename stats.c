@@ -122,11 +122,11 @@ void stats_prefix_init(char delimiter, void (*cb_when_prefix_overflow)(void))
  * Cleans up all our previously collected stats. NOTE: the stats lock is
  * assumed to be held when this is called.
  */
-void stats_prefix_clear() {
+void stats_prefix_clear()
+{
     PREFIX_STATS *curr, *next;
-    int hidx;
 
-    for (hidx = 0; hidx < PREFIX_HASH_SIZE; hidx++) {
+    for (int hidx = 0; hidx < PREFIX_HASH_SIZE; hidx++) {
         for (curr = prefix_stats[hidx]; curr != NULL; curr = next) {
             next = curr->next;
             free(curr->prefix);
@@ -138,12 +138,14 @@ void stats_prefix_clear() {
     total_prefix_size = 0;
 }
 
-int stats_prefix_count() {
+int stats_prefix_count()
+{
     return num_prefixes;
 }
 
 #ifdef NEW_PREFIX_STATS_MANAGEMENT
-int stats_prefix_insert(const char *prefix, const size_t nprefix) {
+int stats_prefix_insert(const char *prefix, const size_t nprefix)
+{
     PREFIX_STATS *pfs = NULL;
     uint32_t hashval = mc_hash(prefix, nprefix, 0) % PREFIX_HASH_SIZE;
 
@@ -156,13 +158,12 @@ int stats_prefix_insert(const char *prefix, const size_t nprefix) {
         }
 
         pfs = calloc(sizeof(PREFIX_STATS), 1);
-        if (NULL == pfs) {
+        if (pfs == NULL) {
             perror("Can't allocate space for stats structure: calloc");
             break;
         }
-
         pfs->prefix = malloc(nprefix + 1);
-        if (NULL == pfs->prefix) {
+        if (pfs->prefix == NULL) {
             perror("Can't allocate space for copy of prefix: malloc");
             free(pfs); pfs = NULL;
             break;
@@ -175,12 +176,10 @@ int stats_prefix_insert(const char *prefix, const size_t nprefix) {
 
         pfs->next = prefix_stats[hashval];
         prefix_stats[hashval] = pfs;
-        num_prefixes++;
 
-        if (nprefix > 0)
-            total_prefix_size += nprefix;
-        else /* nprefix == 0 */
-            total_prefix_size += strlen(null_prefix_str);
+        num_prefixes++;
+        total_prefix_size += (nprefix > 0 ? nprefix
+                                          : strlen(null_prefix_str));
     } while(0);
     UNLOCK_STATS();
 
@@ -188,7 +187,8 @@ int stats_prefix_insert(const char *prefix, const size_t nprefix) {
 }
 #endif
 
-int stats_prefix_delete(const char *prefix, const size_t nprefix) {
+int stats_prefix_delete(const char *prefix, const size_t nprefix)
+{
     PREFIX_STATS *curr, *prev;
     int hidx;
     int ret = -1;
@@ -259,15 +259,15 @@ int stats_prefix_delete(const char *prefix, const size_t nprefix) {
  * in the list.
  */
 /*@null@*/
-static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey) {
+static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey)
+{
+    assert(key != NULL);
     PREFIX_STATS *pfs;
     uint32_t hashval;
     size_t length;
     char *token = NULL;
     int i = 0;
     int prefix_depth = 0;
-
-    assert(key != NULL);
 
     while ((token = memchr(key + i + 1, prefix_delimiter, nkey - i - 1)) != NULL) {
         i = token - key;
@@ -286,7 +286,7 @@ static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey) {
 
     hashval = mc_hash(key, length, 0) % PREFIX_HASH_SIZE;
 
-    for (pfs = prefix_stats[hashval]; NULL != pfs; pfs = pfs->next) {
+    for (pfs = prefix_stats[hashval]; pfs != NULL; pfs = pfs->next) {
         if ((pfs->prefix_len==length) && (length==0 || strncmp(pfs->prefix, key, length)==0))
             return pfs;
     }
@@ -308,13 +308,12 @@ static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey) {
     }
 
     pfs = calloc(sizeof(PREFIX_STATS), 1);
-    if (NULL == pfs) {
+    if (pfs == NULL) {
         perror("Can't allocate space for stats structure: calloc");
         return NULL;
     }
-
     pfs->prefix = malloc(length + 1);
-    if (NULL == pfs->prefix) {
+    if (pfs->prefix == NULL) {
         perror("Can't allocate space for copy of prefix: malloc");
         free(pfs);
         return NULL;
@@ -327,13 +326,10 @@ static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey) {
 
     pfs->next = prefix_stats[hashval];
     prefix_stats[hashval] = pfs;
+
     num_prefixes++;
-
-    if (length > 0)
-        total_prefix_size += length;
-    else /* length == 0 */
-        total_prefix_size += strlen(null_prefix_str);
-
+    total_prefix_size += (length > 0 ? length
+                                     : strlen(null_prefix_str));
     return pfs;
 #endif
 }
@@ -341,16 +337,16 @@ static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey) {
 /*
  * Records a "get" of a key.
  */
-void stats_prefix_record_get(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_get(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_gets++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_hits++;
-        }
     }
     UNLOCK_STATS();
 }
@@ -358,12 +354,13 @@ void stats_prefix_record_get(const char *key, const size_t nkey, const bool is_h
 /*
  * Records a "delete" of a key.
  */
-void stats_prefix_record_delete(const char *key, const size_t nkey) {
+void stats_prefix_record_delete(const char *key, const size_t nkey)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_deletes++;
     }
     UNLOCK_STATS();
@@ -372,12 +369,13 @@ void stats_prefix_record_delete(const char *key, const size_t nkey) {
 /*
  * Records a "set" of a key.
  */
-void stats_prefix_record_set(const char *key, const size_t nkey) {
+void stats_prefix_record_set(const char *key, const size_t nkey)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_sets++;
     }
     UNLOCK_STATS();
@@ -386,12 +384,13 @@ void stats_prefix_record_set(const char *key, const size_t nkey) {
 /*
  * Records a "incr" of a key.
  */
-void stats_prefix_record_incr(const char *key, const size_t nkey) {
+void stats_prefix_record_incr(const char *key, const size_t nkey)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_incrs++;
     }
     UNLOCK_STATS();
@@ -400,12 +399,13 @@ void stats_prefix_record_incr(const char *key, const size_t nkey) {
 /*
  * Records a "decr" of a key.
  */
-void stats_prefix_record_decr(const char *key, const size_t nkey) {
+void stats_prefix_record_decr(const char *key, const size_t nkey)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_decrs++;
     }
     UNLOCK_STATS();
@@ -414,55 +414,56 @@ void stats_prefix_record_decr(const char *key, const size_t nkey) {
 /*
  * LIST stats
  */
-void stats_prefix_record_lop_create(const char *key, const size_t nkey) {
+void stats_prefix_record_lop_create(const char *key, const size_t nkey)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_lop_creates++;
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_lop_insert(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_lop_insert(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_lop_inserts++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_lop_insert_hits++;
-        }
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_lop_delete(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_lop_delete(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_lop_deletes++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_lop_delete_hits++;
-        }
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_lop_get(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_lop_get(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_lop_gets++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_lop_get_hits++;
-        }
     }
     UNLOCK_STATS();
 }
@@ -470,69 +471,70 @@ void stats_prefix_record_lop_get(const char *key, const size_t nkey, const bool 
 /*
  * SET stats
  */
-void stats_prefix_record_sop_create(const char *key, const size_t nkey) {
+void stats_prefix_record_sop_create(const char *key, const size_t nkey)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_sop_creates++;
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_sop_insert(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_sop_insert(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_sop_inserts++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_sop_insert_hits++;
-        }
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_sop_delete(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_sop_delete(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_sop_deletes++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_sop_delete_hits++;
-        }
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_sop_get(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_sop_get(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_sop_gets++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_sop_get_hits++;
-        }
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_sop_exist(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_sop_exist(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_sop_exists++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_sop_exist_hits++;
-        }
     }
     UNLOCK_STATS();
 }
@@ -540,69 +542,70 @@ void stats_prefix_record_sop_exist(const char *key, const size_t nkey, const boo
 /*
  * MAP stats
  */
-void stats_prefix_record_mop_create(const char *key, const size_t nkey) {
+void stats_prefix_record_mop_create(const char *key, const size_t nkey)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_mop_creates++;
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_mop_insert(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_mop_insert(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_mop_inserts++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_mop_insert_hits++;
-        }
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_mop_update(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_mop_update(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_mop_updates++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_mop_update_hits++;
-        }
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_mop_delete(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_mop_delete(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_mop_deletes++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_mop_delete_hits++;
-        }
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_mop_get(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_mop_get(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_mop_gets++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_mop_get_hits++;
-        }
     }
     UNLOCK_STATS();
 }
@@ -610,153 +613,154 @@ void stats_prefix_record_mop_get(const char *key, const size_t nkey, const bool 
 /*
  * B+TREE stats
  */
-void stats_prefix_record_bop_create(const char *key, const size_t nkey) {
+void stats_prefix_record_bop_create(const char *key, const size_t nkey)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_bop_creates++;
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_bop_insert(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_insert(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_bop_inserts++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_bop_insert_hits++;
-        }
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_bop_update(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_update(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_bop_updates++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_bop_update_hits++;
-        }
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_bop_delete(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_delete(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_bop_deletes++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_bop_delete_hits++;
-        }
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_bop_incr(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_incr(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_bop_incrs++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_bop_incr_hits++;
-        }
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_bop_decr(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_decr(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_bop_decrs++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_bop_decr_hits++;
-        }
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_bop_get(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_get(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_bop_gets++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_bop_get_hits++;
-        }
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_bop_count(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_count(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_bop_counts++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_bop_count_hits++;
-        }
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_bop_position(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_position(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_bop_positions++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_bop_position_hits++;
-        }
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_bop_pwg(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_pwg(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_bop_pwgs++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_bop_pwg_hits++;
-        }
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_bop_gbp(const char *key, const size_t nkey, const bool is_hit) {
+void stats_prefix_record_bop_gbp(const char *key, const size_t nkey, const bool is_hit)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_bop_gbps++;
-        if (is_hit) {
+        if (is_hit)
             pfs->num_bop_gbp_hits++;
-        }
     }
     UNLOCK_STATS();
 }
@@ -764,23 +768,25 @@ void stats_prefix_record_bop_gbp(const char *key, const size_t nkey, const bool 
 /*
  * ATTR stats
  */
-void stats_prefix_record_getattr(const char *key, const size_t nkey) {
+void stats_prefix_record_getattr(const char *key, const size_t nkey)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_getattrs++;
     }
     UNLOCK_STATS();
 }
 
-void stats_prefix_record_setattr(const char *key, const size_t nkey) {
+void stats_prefix_record_setattr(const char *key, const size_t nkey)
+{
     PREFIX_STATS *pfs;
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
-    if (NULL != pfs) {
+    if (pfs) {
         pfs->num_setattrs++;
     }
     UNLOCK_STATS();
@@ -790,7 +796,8 @@ void stats_prefix_record_setattr(const char *key, const size_t nkey) {
  * Returns stats in textual form suitable for writing to a client.
  */
 /*@null@*/
-char *stats_prefix_dump(int *length) {
+char *stats_prefix_dump(int *length)
+{
     const char *format = "PREFIX %s "
                          "get %llu hit %llu set %llu del %llu inc %llu dec %llu lcs %llu lis %llu lih %llu lds %llu "
                          "ldh %llu lgs %llu lgh %llu scs %llu sis %llu sih %llu sds %llu sdh %llu sgs %llu sgh %llu "
@@ -815,7 +822,7 @@ char *stats_prefix_dump(int *length) {
                            + 54 * (20 - 4)) /* %llu replaced by 20-digit num */
                            + sizeof("END\r\n");
     buf = malloc(size);
-    if (NULL == buf) {
+    if (buf == NULL) {
         perror("Can't allocate stats response: malloc");
         UNLOCK_STATS();
         return NULL;
@@ -885,9 +892,10 @@ static void test_equals_ptr(char *what, void *a, void *b) { test_count++; if (a 
 static void test_equals_str(char *what, const char *a, const char *b) { test_count++; if (strcmp(a, b)) fail(what); }
 static void test_equals_ull(char *what, uint64_t a, uint64_t b) { test_count++; if (a != b) fail(what); }
 static void test_notequals_ptr(char *what, void *a, void *b) { test_count++; if (a == b) fail(what); }
-static void test_notnull_ptr(char *what, void *a) { test_count++; if (NULL == a) fail(what); }
+static void test_notnull_ptr(char *what, void *a) { test_count++; if (a == NULL) fail(what); }
 
-static void test_prefix_find() {
+static void test_prefix_find()
+{
     PREFIX_STATS *pfs1, *pfs2;
 
     pfs1 = stats_prefix_find("abc");
@@ -906,7 +914,8 @@ static void test_prefix_find() {
     test_notequals_ptr("find of shorter prefix", pfs1, pfs2);
 }
 
-static void test_prefix_record_get() {
+static void test_prefix_record_get()
+{
     PREFIX_STATS *pfs;
 
     stats_prefix_record_get("abc:123", 0);
@@ -924,7 +933,8 @@ static void test_prefix_record_get() {
     test_equals_ull("hit count after get #4", 1, pfs->num_hits);
 }
 
-static void test_prefix_record_delete() {
+static void test_prefix_record_delete()
+{
     PREFIX_STATS *pfs;
 
     stats_prefix_record_delete("abc:123");
@@ -937,7 +947,8 @@ static void test_prefix_record_delete() {
     test_equals_ull("delete count after delete #2", 1, pfs->num_deletes);
 }
 
-static void test_prefix_record_set() {
+static void test_prefix_record_set()
+{
     PREFIX_STATS *pfs;
 
     stats_prefix_record_set("abc:123");
@@ -950,7 +961,8 @@ static void test_prefix_record_set() {
     test_equals_ull("set count after set #2", 1, pfs->num_sets);
 }
 
-static void test_prefix_dump() {
+static void test_prefix_dump()
+{
     int hashval = mc_hash("abc", 3, 0) % PREFIX_HASH_SIZE;
     char tmp[500];
     char *expected;
@@ -1003,7 +1015,8 @@ static void test_prefix_dump() {
                     strlen(tmp), length);
 }
 
-static void run_test(char *what, void (*func)(void)) {
+static void run_test(char *what, void (*func)(void))
+{
     current_test = what;
     test_count = fail_count = 0;
     puts(what);
@@ -1018,7 +1031,8 @@ static void run_test(char *what, void (*func)(void)) {
 void mt_stats_lock() { }
 void mt_stats_unlock() { }
 
-main(int argc, char **argv) {
+main(int argc, char **argv)
+{
     char prefix_delimiter = ':';
     stats_prefix_init(prefix_delimiter, NULL);
     run_test("stats_prefix_find", test_prefix_find);
