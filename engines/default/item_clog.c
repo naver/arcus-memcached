@@ -61,7 +61,6 @@ void CLOG_GE_LIST_ELEM_INSERT(list_meta_info *info,
                               const int index, list_elem_item *elem)
 {
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
-
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
     }
@@ -71,10 +70,11 @@ void CLOG_GE_LIST_ELEM_DELETE(list_meta_info *info,
                               int index, uint32_t count, const bool forward,
                               enum elem_delete_cause cause)
 {
+    if (cause != ELEM_DELETE_NORMAL) {
+        return;
+    }
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
-
-    if ((cause == ELEM_DELETE_NORMAL) &&
-        (it->iflag & ITEM_INTERNAL) == 0)
+    if ((it->iflag & ITEM_INTERNAL) == 0)
     {
         if (forward == false) {
             /* change it to the forward delete */
@@ -98,7 +98,6 @@ void CLOG_GE_MAP_ELEM_INSERT(map_meta_info *info,
                              map_elem_item *new_elem)
 {
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
-
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
     }
@@ -108,10 +107,11 @@ void CLOG_GE_MAP_ELEM_DELETE(map_meta_info *info,
                              map_elem_item *elem,
                              enum elem_delete_cause cause)
 {
+    if (cause != ELEM_DELETE_NORMAL) {
+        return;
+    }
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
-
-    if ((cause == ELEM_DELETE_NORMAL) &&
-        (it->iflag & ITEM_INTERNAL) == 0)
+    if ((it->iflag & ITEM_INTERNAL) == 0)
     {
     }
 }
@@ -120,7 +120,6 @@ void CLOG_GE_SET_ELEM_INSERT(set_meta_info *info,
                              set_elem_item *elem)
 {
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
-
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
     }
@@ -130,10 +129,11 @@ void CLOG_GE_SET_ELEM_DELETE(set_meta_info *info,
                              set_elem_item *elem,
                              enum elem_delete_cause cause)
 {
+    if (cause != ELEM_DELETE_NORMAL) {
+        return;
+    }
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
-
-    if ((cause == ELEM_DELETE_NORMAL) &&
-        (it->iflag & ITEM_INTERNAL) == 0)
+    if ((it->iflag & ITEM_INTERNAL) == 0)
     {
     }
 }
@@ -143,7 +143,6 @@ void CLOG_GE_BTREE_ELEM_INSERT(btree_meta_info *info,
                                btree_elem_item *new_elem)
 {
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
-
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
     }
@@ -153,10 +152,11 @@ void CLOG_GE_BTREE_ELEM_DELETE(btree_meta_info *info,
                                btree_elem_item *elem,
                                enum elem_delete_cause cause)
 {
+    if (cause != ELEM_DELETE_NORMAL) {
+        return;
+    }
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
-
-    if ((cause == ELEM_DELETE_NORMAL) &&
-        (it->iflag & ITEM_INTERNAL) == 0)
+    if ((it->iflag & ITEM_INTERNAL) == 0)
     {
     }
 }
@@ -167,10 +167,11 @@ void CLOG_GE_BTREE_ELEM_DELETE_LOGICAL(btree_meta_info *info,
                                        uint32_t offset, uint32_t count,
                                        enum elem_delete_cause cause)
 {
+    if (cause != ELEM_DELETE_NORMAL) {
+        return;
+    }
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
-
-    if ((cause == ELEM_DELETE_NORMAL) &&
-        (it->iflag & ITEM_INTERNAL) == 0)
+    if ((it->iflag & ITEM_INTERNAL) == 0)
     {
     }
 }
@@ -190,7 +191,6 @@ void item_clog_init(struct default_engine *engine)
 {
     config = &engine->config;
     logger = engine->server.log->get_logger();
-
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM change log module initialized.\n");
 }
 
