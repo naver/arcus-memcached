@@ -3987,7 +3987,6 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
                                      const uint32_t count, uint32_t *access_count,
                                      enum elem_delete_cause cause)
 {
-#if 1 // REFACTOR_BTREE_CODE
     btree_indx_node *root = info->root;
     btree_elem_item *elem;
     btree_elem_posi path[BTREE_MAX_DEPTH];
@@ -4103,125 +4102,6 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
             do_btree_node_merge(info, path, forward, node_cnt);
         }
     }
-#else
-    btree_elem_posi  path[BTREE_MAX_DEPTH];
-    btree_elem_item *elem;
-    uint32_t tot_found = 0; /* found count */
-    uint32_t tot_access = 0; /* access count */
-
-    if (info->root == NULL) {
-        if (access_count)
-            *access_count = 0;
-        return 0;
-    }
-
-    assert(info->root->ndepth < BTREE_MAX_DEPTH);
-    elem = do_btree_find_first(info->root, bkrtype, bkrange, path, true);
-    if (elem != NULL) {
-        if (bkrtype == BKEY_RANGE_TYPE_SIN) {
-            assert(path[0].bkeq == true);
-            tot_access++;
-            if (offset == 0) {
-                if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
-                    /* cause == ELEM_DELETE_NORMAL */
-                    do_btree_elem_unlink(info, path, cause);
-                    tot_found = 1;
-                }
-            }
-        } else {
-            btree_elem_posi upth[BTREE_MAX_DEPTH]; /* upper node path */
-            btree_elem_posi c_posi = path[0];
-            btree_elem_posi s_posi = c_posi;
-            size_t stotal = 0;
-            int cur_found = 0;
-            int skip_cnt = 0;
-            int node_cnt = 1;
-            bool forward = (bkrtype == BKEY_RANGE_TYPE_ASC ? true : false);
-            int i;
-
-            /* prepare upper node path
-             * used to incr/decr element counts  in upper nodes.
-             */
-            for (i = 1; i <= info->root->ndepth; i++) {
-                upth[i] = path[i];
-            }
-
-            c_posi.bkeq = false;
-            do {
-                tot_access++;
-                if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
-                    if (skip_cnt < offset) {
-                        skip_cnt++;
-                    } else {
-                        stotal += slabs_space_size(do_btree_elem_ntotal(elem));
-
-                        CLOG_BTREE_ELEM_DELETE(info, elem, cause);
-                        if (elem->refcount > 0) {
-                            elem->status = BTREE_ITEM_STATUS_UNLINK;
-                        } else {
-                            elem->status = BTREE_ITEM_STATUS_FREE;
-                            do_btree_elem_free(elem);
-                        }
-                        c_posi.node->item[c_posi.indx] = NULL;
-
-                        cur_found++;
-                        if (count > 0 && (tot_found+cur_found) >= count) break;
-                    }
-                }
-
-                if (c_posi.bkeq == true) {
-                    elem = NULL; break;
-                }
-                elem = (forward ? do_btree_find_next(&c_posi, bkrange)
-                                : do_btree_find_prev(&c_posi, bkrange));
-                if (elem == NULL) break;
-
-                if (s_posi.node != c_posi.node) {
-                    if (cur_found > 0) {
-                        do_btree_node_remove_null_items(&s_posi, forward, cur_found);
-                        /* decrement element count in upper nodes */
-                        for (i = 1; i <= info->root->ndepth; i++) {
-                            assert(upth[i].node->ecnt[upth[i].indx] >= cur_found);
-                            upth[i].node->ecnt[upth[i].indx] -= cur_found;
-                        }
-                        tot_found += cur_found; cur_found = 0;
-                    }
-                    if (info->root->ndepth > 0) {
-                        /* adjust upper node path */
-                        if (forward) do_btree_incr_path(upth, 1);
-                        else         do_btree_decr_path(upth, 1);
-                    }
-                    s_posi = c_posi;
-                    node_cnt += 1;
-                }
-            } while (elem != NULL);
-
-            if (cur_found > 0) {
-                do_btree_node_remove_null_items(&s_posi, forward, cur_found);
-                /* decrement element count in upper nodes */
-                for (i = 1; i <= info->root->ndepth; i++) {
-                    assert(upth[i].node->ecnt[upth[i].indx] >= cur_found);
-                    upth[i].node->ecnt[upth[i].indx] -= cur_found;
-                }
-                tot_found += cur_found;
-            }
-            if (tot_found > 0) {
-                info->ccnt -= tot_found;
-                if (info->stotal > 0) { /* apply memory space */
-                    /* The btree has already been unlinked from hash table.
-                     * If then, the btree doesn't have prefix info and has stotal of 0.
-                     * So, do not need to descrese space total info.
-                     */
-                    assert(stotal > 0 && stotal <= info->stotal);
-                    do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, stotal);
-                }
-                do_btree_node_merge(info, path, forward, node_cnt);
-            }
-        }
-    }
-    if (access_count)
-        *access_count = tot_access;
-#endif
     return tot_found;
 }
 
@@ -4536,7 +4416,6 @@ static uint32_t do_btree_elem_get(btree_meta_info *info,
                                   btree_elem_item **elem_array,
                                   uint32_t *access_count, bool *potentialbkeytrim)
 {
-#if 1 // REFACTOR_BTREE_CODE
     assert(info->root);
     btree_indx_node *root = info->root;
     btree_elem_item *elem;
@@ -4670,146 +4549,6 @@ static uint32_t do_btree_elem_get(btree_meta_info *info,
                 *potentialbkeytrim = true;
         }
     }
-#else
-    btree_elem_posi  path[BTREE_MAX_DEPTH];
-    btree_elem_item *elem;
-    uint32_t tot_found = 0; /* total found count */
-    uint32_t tot_access = 0; /* total access count */
-
-    *potentialbkeytrim = false;
-
-    assert(info->root->ndepth < BTREE_MAX_DEPTH);
-    elem = do_btree_find_first(info->root, bkrtype, bkrange, path, delete);
-    if (elem != NULL) {
-        if (bkrtype == BKEY_RANGE_TYPE_SIN) { /* single bkey */
-            assert(path[0].bkeq == true);
-            tot_access++;
-            if (offset == 0) {
-                if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
-                    elem->refcount++;
-                    elem_array[tot_found++] = elem;
-                    if (delete) {
-                        do_btree_elem_unlink(info, path, ELEM_DELETE_NORMAL);
-                    }
-                }
-            }
-        } else {
-            btree_elem_posi upth[BTREE_MAX_DEPTH]; /* upper node path */
-            btree_elem_posi c_posi = path[0];
-            btree_elem_posi s_posi = c_posi;
-            size_t stotal = 0;
-            int cur_found = 0;
-            int skip_cnt = 0;
-            int node_cnt = 1;
-            bool forward = (bkrtype == BKEY_RANGE_TYPE_ASC ? true : false);
-            int i;
-
-            /* check if start position might be trimmed */
-            if (c_posi.bkeq == false && (info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
-                if (do_btree_overlapped_with_trimmed_space(info, &c_posi, bkrtype)) {
-                    *potentialbkeytrim = true;
-                }
-            }
-
-            if (delete) {
-                /* prepare upper node path
-                 * used to incr/decr element counts  in upper nodes.
-                 */
-                for (i = 1; i <= info->root->ndepth; i++) {
-                    upth[i] = path[i];
-                }
-            }
-
-            c_posi.bkeq = false;
-            do {
-                tot_access++;
-                if (efilter == NULL || do_btree_elem_filter(elem, efilter)) {
-                    if (skip_cnt < offset) {
-                        skip_cnt++;
-                    } else {
-                        elem->refcount++;
-                        elem_array[tot_found+cur_found] = elem;
-                        if (delete) {
-                            stotal += slabs_space_size(do_btree_elem_ntotal(elem));
-                            elem->status = BTREE_ITEM_STATUS_UNLINK;
-                            c_posi.node->item[c_posi.indx] = NULL;
-                            CLOG_BTREE_ELEM_DELETE(info, elem, ELEM_DELETE_NORMAL);
-                        }
-                        cur_found++;
-                        if (count > 0 && (tot_found+cur_found) >= count) break;
-                    }
-                }
-
-                if (c_posi.bkeq == true) {
-                    elem = NULL; break;
-                }
-                elem = (forward ? do_btree_find_next(&c_posi, bkrange)
-                                : do_btree_find_prev(&c_posi, bkrange));
-                if (elem == NULL) break;
-
-                if (s_posi.node != c_posi.node) {
-                    if (cur_found > 0) {
-                        if (delete) {
-                            do_btree_node_remove_null_items(&s_posi, forward, cur_found);
-                            /* decrement element count in upper nodes */
-                            for (i = 1; i <= info->root->ndepth; i++) {
-                                assert(upth[i].node->ecnt[upth[i].indx] >= cur_found);
-                                upth[i].node->ecnt[upth[i].indx] -= cur_found;
-                            }
-                        }
-                        tot_found += cur_found; cur_found = 0;
-                    }
-                    if (delete) {
-                        if (info->root->ndepth > 0) {
-                            /* adjust upper node path */
-                            if (forward) do_btree_incr_path(upth, 1);
-                            else         do_btree_decr_path(upth, 1);
-                        }
-                    }
-                    s_posi = c_posi;
-                    node_cnt += 1;
-                }
-            } while (elem != NULL);
-
-            /* check if end position might be trimmed */
-            if (elem == NULL) {
-                if (c_posi.node == NULL && (info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
-                    if (do_btree_overlapped_with_trimmed_space(info, &c_posi, bkrtype)) {
-                        *potentialbkeytrim = true;
-                    }
-                }
-            }
-
-            if (cur_found > 0) {
-                if (delete) {
-                    do_btree_node_remove_null_items(&s_posi, forward, cur_found);
-                    /* decrement element count in upper nodes */
-                    for (i = 1; i <= info->root->ndepth; i++) {
-                        assert(upth[i].node->ecnt[upth[i].indx] >= cur_found);
-                        upth[i].node->ecnt[upth[i].indx] -= cur_found;
-                    }
-                }
-                tot_found += cur_found;
-            }
-            if (tot_found > 0 && delete) { /* apply memory space */
-                info->ccnt -= tot_found;
-                assert(stotal > 0 && stotal <= info->stotal);
-                do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, stotal);
-                do_btree_node_merge(info, path, forward, node_cnt);
-            }
-        }
-    } else {
-        if ((info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
-            if (do_btree_overlapped_with_trimmed_space(info, &path[0], bkrtype)) {
-                *potentialbkeytrim = true;
-            }
-        }
-    }
-
-    if (access_count) {
-        *access_count = tot_access;
-    }
-#endif
     return tot_found;
 }
 
@@ -5992,9 +5731,7 @@ scan_next:
  */
 static inline void do_coll_elem_delete(coll_meta_info *info, int type, uint32_t count)
 {
-#if 1 // REFACTOR_BTREE_CODE
     assert(info->ccnt > 0);
-#endif
 
     switch (type) {
       case ITEM_TYPE_BTREE:
