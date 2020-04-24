@@ -1701,7 +1701,7 @@ static void process_lop_insert_complete(conn *c)
             else                  out_string(c, "CREATED_STORED");
             break;
         case ENGINE_DISCONNECT:
-            c->state = conn_closing;
+            conn_set_state(c, conn_closing);
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISS(c, lop_insert, c->coll_key, c->coll_nkey);
@@ -1756,7 +1756,7 @@ static void process_sop_insert_complete(conn *c)
             else                  out_string(c, "CREATED_STORED");
             break;
         case ENGINE_DISCONNECT:
-            c->state = conn_closing;
+            conn_set_state(c, conn_closing);
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISS(c, sop_insert, c->coll_key, c->coll_nkey);
@@ -1816,7 +1816,7 @@ static void process_sop_delete_complete(conn *c)
             out_string(c, "NOT_FOUND_ELEMENT");
             break;
         case ENGINE_DISCONNECT:
-            c->state = conn_closing;
+            conn_set_state(c, conn_closing);
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISS(c, sop_delete, c->coll_key, c->coll_nkey);
@@ -1860,7 +1860,7 @@ static void process_sop_exist_complete(conn *c)
             else       out_string(c, "NOT_EXIST");
             break;
         case ENGINE_DISCONNECT:
-            c->state = conn_closing;
+            conn_set_state(c, conn_closing);
             break;
         case ENGINE_KEY_ENOENT:
         case ENGINE_UNREADABLE:
@@ -1930,7 +1930,7 @@ static void process_mop_insert_complete(conn *c)
             else                  out_string(c, "CREATED_STORED");
             break;
         case ENGINE_DISCONNECT:
-            c->state = conn_closing;
+            conn_set_state(c, conn_closing);
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISS(c, mop_insert, c->coll_key, c->coll_nkey);
@@ -1985,7 +1985,7 @@ static void process_mop_update_complete(conn *c)
             out_string(c, "NOT_FOUND_ELEMENT");
             break;
         case ENGINE_DISCONNECT:
-            c->state = conn_closing;
+            conn_set_state(c, conn_closing);
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISS(c, mop_update, c->coll_key, c->coll_nkey);
@@ -2060,7 +2060,7 @@ static void process_mop_delete_complete(conn *c)
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISS(c, mop_delete, c->coll_key, c->coll_nkey);
@@ -2209,7 +2209,7 @@ static void process_mop_get_complete(conn *c)
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
@@ -2348,7 +2348,7 @@ static void process_bop_insert_complete(conn *c)
             }
             break;
         case ENGINE_DISCONNECT:
-            c->state = conn_closing;
+            conn_set_state(c, conn_closing);
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISS(c, bop_insert, c->coll_key, c->coll_nkey);
@@ -2413,7 +2413,7 @@ static void process_bop_update_complete(conn *c)
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISS(c, bop_update, c->coll_key, c->coll_nkey);
@@ -2597,7 +2597,7 @@ static void process_bop_mget_complete(conn *c)
         c->msgcurr     = 0;
         break;
       case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
       default:
         STATS_NOKEY(c, cmd_bop_mget);
@@ -2775,7 +2775,7 @@ static void process_bop_smget_complete_old(conn *c)
         }
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         STATS_NOKEY(c, cmd_bop_smget);
@@ -2953,7 +2953,7 @@ static void process_bop_smget_complete(conn *c)
         }
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         STATS_NOKEY(c, cmd_bop_smget);
@@ -3266,7 +3266,7 @@ static void complete_update_ascii(conn *c)
             out_string(c, "NOT_STORED");
             break;
         case ENGINE_DISCONNECT:
-            c->state = conn_closing;
+            conn_set_state(c, conn_closing);
             break;
         case ENGINE_ENOTSUP:
             out_string(c, "NOT_SUPPORTED");
@@ -3686,7 +3686,7 @@ static void complete_incr_bin(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_STORED, 0);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_ENOTSUP:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
@@ -3770,7 +3770,7 @@ static void complete_update_bin(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_ENOTSUP:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
@@ -3883,7 +3883,7 @@ static void process_bin_get(conn *c)
         }
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_ENOTSUP:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
@@ -4146,7 +4146,7 @@ static void process_bin_stat(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_ENOTSUP:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
@@ -4503,7 +4503,7 @@ static void process_bin_lop_create(conn *c)
         write_bin_response(c, NULL, 0, 0, 0);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         STATS_NOKEY(c, cmd_lop_create);
@@ -4591,7 +4591,7 @@ static void process_bin_lop_prepare_nread(conn *c)
         }
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         STATS_NOKEY(c, cmd_lop_insert);
@@ -4639,7 +4639,7 @@ static void process_bin_lop_insert_complete(conn *c)
         write_bin_response(c, NULL, 0, 0, 0);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISS(c, lop_insert, c->coll_key, c->coll_nkey);
@@ -4724,7 +4724,7 @@ static void process_bin_lop_delete(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINDEXOOR, 0);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISS(c, lop_delete, key, nkey);
@@ -4856,7 +4856,7 @@ static void process_bin_lop_get(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINDEXOOR, 0);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
@@ -4921,7 +4921,7 @@ static void process_bin_sop_create(conn *c)
         write_bin_response(c, NULL, 0, 0, 0);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         STATS_NOKEY(c, cmd_sop_create);
@@ -5034,7 +5034,7 @@ static void process_bin_sop_prepare_nread(conn *c)
         c->substate = bin_reading_sop_nread_complete;
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
@@ -5088,7 +5088,7 @@ static void process_bin_sop_insert_complete(conn *c)
         write_bin_response(c, NULL, 0, 0, 0);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISS(c, sop_insert, c->coll_key, c->coll_nkey);
@@ -5151,7 +5151,7 @@ static void process_bin_sop_delete_complete(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT, 0);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISS(c, sop_delete, c->coll_key, c->coll_nkey);
@@ -5200,7 +5200,7 @@ static void process_bin_sop_exist_complete(conn *c)
         }
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
@@ -5350,7 +5350,7 @@ static void process_bin_sop_get(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT, 0);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
@@ -5425,7 +5425,7 @@ static void process_bin_bop_create(conn *c)
         write_bin_response(c, NULL, 0, 0, 0);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         STATS_NOKEY(c, cmd_bop_create);
@@ -5533,7 +5533,7 @@ static void process_bin_bop_prepare_nread(conn *c)
         }
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         STATS_NOKEY(c, cmd_bop_insert);
@@ -5585,7 +5585,7 @@ static void process_bin_bop_insert_complete(conn *c)
         write_bin_response(c, NULL, 0, 0, 0);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISS(c, bop_insert, c->coll_key, c->coll_nkey);
@@ -5665,7 +5665,7 @@ static void process_bin_bop_update_complete(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT, 0);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISS(c, bop_update, c->coll_key, c->coll_nkey);
@@ -5856,7 +5856,7 @@ static void process_bin_bop_delete(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT, 0);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISS(c, bop_delete, key, nkey);
@@ -6011,7 +6011,7 @@ static void process_bin_bop_get(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT, 0);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_EBKEYOOR:
@@ -6093,7 +6093,7 @@ static void process_bin_bop_count(conn *c)
         write_bin_response(c, &rsp->message.body, 0, 0, sizeof(rsp->message.body));
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
@@ -6437,7 +6437,7 @@ static void process_bin_bop_smget_complete_old(conn *c)
         }
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         STATS_NOKEY(c, cmd_bop_smget);
@@ -6632,7 +6632,7 @@ static void process_bin_bop_smget_complete(conn *c)
         }
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         STATS_NOKEY(c, cmd_bop_smget);
@@ -6748,7 +6748,7 @@ static void process_bin_getattr(conn *c)
         }
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISS(c, getattr, key, nkey);
@@ -6858,7 +6858,7 @@ static void process_bin_setattr(conn *c)
         write_bin_response(c, NULL, 0, 0, 0);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISS(c, setattr, key, nkey);
@@ -7375,7 +7375,7 @@ static void process_bin_update(conn *c)
         c->substate = bin_read_set_value;
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         if (ret == ENGINE_E2BIG) {
@@ -7449,7 +7449,7 @@ static void process_bin_append_prepend(conn *c)
         c->substate = bin_read_set_value;
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         if (ret == ENGINE_E2BIG) {
@@ -7547,7 +7547,7 @@ static void process_bin_flush_prefix(conn *c)
         write_bin_response(c, NULL, 0, 0, 0);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_PREFIX_ENOENT:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_PREFIX_ENOENT, 0);
@@ -8028,7 +8028,7 @@ static void process_stats_prefix(conn *c, const char *prefix, const int nprefix)
                 c->write_and_go = conn_new_cmd;
                 break;
             case ENGINE_DISCONNECT:
-                c->state = conn_closing;
+                conn_set_state(c, conn_closing);
                 break;
             case ENGINE_ENOMEM:
                 out_string(c, "SERVER_ERROR no more memory");
@@ -8060,7 +8060,7 @@ static void process_stats_prefix(conn *c, const char *prefix, const int nprefix)
                 }
                 break;
             case ENGINE_DISCONNECT:
-                c->state = conn_closing;
+                conn_set_state(c, conn_closing);
                 break;
             case ENGINE_PREFIX_ENOENT:
                 out_string(c, "NOT_FOUND");
@@ -8477,7 +8477,7 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens)
             out_string(c, "SERVER_ERROR out of memory writing stats");
             break;
         case ENGINE_DISCONNECT:
-            c->state = conn_closing;
+            conn_set_state(c, conn_closing);
             break;
         case ENGINE_ENOTSUP:
             out_string(c, "NOT_SUPPORTED");
@@ -8764,7 +8764,7 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         conn_set_state(c, conn_nread);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_E2BIG:
     case ENGINE_ENOMEM:
@@ -8885,7 +8885,7 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
         out_string(c, "SERVER_ERROR failed to store item");
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_ENOTSUP:
         out_string(c, "NOT_SUPPORTED");
@@ -9028,7 +9028,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
         if (ret == ENGINE_SUCCESS) {
             out_string(c, "OK");
         } else if (ret == ENGINE_DISCONNECT) {
-            c->state = conn_closing;
+            conn_set_state(c, conn_closing);
         } else if (ret == ENGINE_PREFIX_ENOENT) {
             out_string(c, "NOT_FOUND");
         } else if (ret == ENGINE_ENOTSUP) {
@@ -9547,7 +9547,7 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
     if (ret == ENGINE_SUCCESS) {
         out_string(c, "OK");
     } else if (ret == ENGINE_DISCONNECT) {
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
     } else if (ret == ENGINE_ENOTSUP) {
         out_string(c, "NOT_SUPPORTED");
     } else if (ret == ENGINE_FAILED) {
@@ -10098,7 +10098,7 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
@@ -10144,7 +10144,7 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
         conn_set_state(c, conn_nread);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         STATS_NOKEY(c, cmd_lop_insert);
@@ -10180,7 +10180,7 @@ static void process_lop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         out_string(c, "CREATED");
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         STATS_NOKEY(c, cmd_lop_create);
@@ -10232,7 +10232,7 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISS(c, lop_delete, key, nkey);
@@ -10515,7 +10515,7 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
@@ -10577,7 +10577,7 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
         conn_set_state(c, conn_nread);
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         if (cmd == (int)OPERATION_SOP_INSERT) {
@@ -10620,7 +10620,7 @@ static void process_sop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         out_string(c, "CREATED");
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         STATS_NOKEY(c, cmd_sop_create);
@@ -10912,7 +10912,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_EBKEYOOR:
@@ -10967,7 +10967,7 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
         }
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
@@ -11012,7 +11012,7 @@ static void process_bop_position(conn *c, char *key, size_t nkey,
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
@@ -11118,7 +11118,7 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
@@ -11241,7 +11241,7 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey,
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
@@ -11340,7 +11340,7 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
         }
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         STATS_NOKEY(c, cmd_bop_insert);
@@ -11472,7 +11472,7 @@ static void process_bop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         out_string(c, "CREATED");
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         STATS_NOKEY(c, cmd_bop_create);
@@ -11527,7 +11527,7 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISS(c, bop_delete, key, nkey);
@@ -11595,7 +11595,7 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_EINVAL:
         out_string(c, "CLIENT_ERROR cannot increment or decrement non-numeric value");
@@ -11836,7 +11836,7 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
         break;
         }
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         if (cmd == OPERATION_MOP_INSERT) {
@@ -11914,7 +11914,7 @@ static void process_mop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         out_string(c, "CREATED");
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     default:
         STATS_NOKEY(c, cmd_mop_create);
@@ -12974,7 +12974,7 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
         }
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISS(c, getattr, key, nkey);
@@ -13102,7 +13102,7 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
         out_string(c, "OK");
         break;
     case ENGINE_DISCONNECT:
-        c->state = conn_closing;
+        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISS(c, setattr, key, nkey);
