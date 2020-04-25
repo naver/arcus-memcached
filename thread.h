@@ -76,18 +76,50 @@ struct thread_stats {
     uint64_t          cmd_lop_insert;
     uint64_t          cmd_lop_delete;
     uint64_t          cmd_lop_get;
+    uint64_t          lop_create_oks;
+    uint64_t          lop_insert_hits;
+    uint64_t          lop_insert_misses;
+    uint64_t          lop_delete_elem_hits;
+    uint64_t          lop_delete_none_hits;
+    uint64_t          lop_delete_misses;
+    uint64_t          lop_get_elem_hits;
+    uint64_t          lop_get_none_hits;
+    uint64_t          lop_get_misses;
     /* set command stats */
     uint64_t          cmd_sop_create;
     uint64_t          cmd_sop_insert;
     uint64_t          cmd_sop_delete;
     uint64_t          cmd_sop_get;
     uint64_t          cmd_sop_exist;
+    uint64_t          sop_create_oks;
+    uint64_t          sop_insert_hits;
+    uint64_t          sop_insert_misses;
+    uint64_t          sop_delete_elem_hits;
+    uint64_t          sop_delete_none_hits;
+    uint64_t          sop_delete_misses;
+    uint64_t          sop_get_elem_hits;
+    uint64_t          sop_get_none_hits;
+    uint64_t          sop_get_misses;
+    uint64_t          sop_exist_hits;
+    uint64_t          sop_exist_misses;
     /* map command stats */
     uint64_t          cmd_mop_create;
     uint64_t          cmd_mop_insert;
     uint64_t          cmd_mop_update;
     uint64_t          cmd_mop_delete;
     uint64_t          cmd_mop_get;
+    uint64_t          mop_create_oks;
+    uint64_t          mop_insert_hits;
+    uint64_t          mop_insert_misses;
+    uint64_t          mop_update_elem_hits;
+    uint64_t          mop_update_none_hits;
+    uint64_t          mop_update_misses;
+    uint64_t          mop_delete_elem_hits;
+    uint64_t          mop_delete_none_hits;
+    uint64_t          mop_delete_misses;
+    uint64_t          mop_get_elem_hits;
+    uint64_t          mop_get_none_hits;
+    uint64_t          mop_get_misses;
     /* btree command stats */
     uint64_t          cmd_bop_create;
     uint64_t          cmd_bop_insert;
@@ -106,45 +138,6 @@ struct thread_stats {
 #endif
     uint64_t          cmd_bop_incr;
     uint64_t          cmd_bop_decr;
-    /* attr command stats */
-    uint64_t          cmd_getattr;
-    uint64_t          cmd_setattr;
-    /* list hit & miss stats */
-    uint64_t          lop_create_oks;
-    uint64_t          lop_insert_hits;
-    uint64_t          lop_insert_misses;
-    uint64_t          lop_delete_elem_hits;
-    uint64_t          lop_delete_none_hits;
-    uint64_t          lop_delete_misses;
-    uint64_t          lop_get_elem_hits;
-    uint64_t          lop_get_none_hits;
-    uint64_t          lop_get_misses;
-    /* set hit & miss stats */
-    uint64_t          sop_create_oks;
-    uint64_t          sop_insert_hits;
-    uint64_t          sop_insert_misses;
-    uint64_t          sop_delete_elem_hits;
-    uint64_t          sop_delete_none_hits;
-    uint64_t          sop_delete_misses;
-    uint64_t          sop_get_elem_hits;
-    uint64_t          sop_get_none_hits;
-    uint64_t          sop_get_misses;
-    uint64_t          sop_exist_hits;
-    uint64_t          sop_exist_misses;
-    /* map hit & miss stats */
-    uint64_t          mop_create_oks;
-    uint64_t          mop_insert_hits;
-    uint64_t          mop_insert_misses;
-    uint64_t          mop_update_elem_hits;
-    uint64_t          mop_update_none_hits;
-    uint64_t          mop_update_misses;
-    uint64_t          mop_delete_elem_hits;
-    uint64_t          mop_delete_none_hits;
-    uint64_t          mop_delete_misses;
-    uint64_t          mop_get_elem_hits;
-    uint64_t          mop_get_none_hits;
-    uint64_t          mop_get_misses;
-    /* btree hit & miss stats */
     uint64_t          bop_create_oks;
     uint64_t          bop_insert_hits;
     uint64_t          bop_insert_misses;
@@ -180,11 +173,14 @@ struct thread_stats {
     uint64_t          bop_decr_elem_hits;
     uint64_t          bop_decr_none_hits;
     uint64_t          bop_decr_misses;
-    /* attr hit & miss stats */
+    /* attribute command stats */
+    uint64_t          cmd_getattr;
+    uint64_t          cmd_setattr;
     uint64_t          getattr_hits;
     uint64_t          getattr_misses;
     uint64_t          setattr_hits;
     uint64_t          setattr_misses;
+    /* slab stats */
     struct slab_stats slab_stats[MAX_SLAB_CLASSES];
 };
 
