@@ -110,7 +110,12 @@ typedef struct topkeys {
 
 topkeys_t *topkeys_init(int max_keys);
 void topkeys_free(topkeys_t *topkeys);
-topkey_item_t *topkeys_item_get_or_create(topkeys_t *tk, const void *key, size_t nkey, const rel_time_t ctime);
-ENGINE_ERROR_CODE topkeys_stats(topkeys_t *tk, const void *cookie, const rel_time_t current_time, ADD_STAT add_stat);
+topkey_item_t *topkeys_item_get_or_create(topkeys_t *tk,
+                                          const void *key, size_t nkey,
+                                          const rel_time_t ctime);
+ENGINE_ERROR_CODE topkeys_stats(topkeys_t *tk,
+                                const void *cookie,
+                                const rel_time_t current_time,
+                                ADD_STAT add_stat);
 
 #endif
