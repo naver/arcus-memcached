@@ -135,7 +135,7 @@ void UNLOCK_SETTING() {
 #define STATS_NONE_HITS(conn, op, key, nkey) \
     STATS_INCR_TWO(conn, op##_none_hits, cmd_##op, key, nkey)
 
-#define STATS_MISS(conn, op, key, nkey) \
+#define STATS_MISSES(conn, op, key, nkey) \
     STATS_INCR_TWO(conn, op##_misses, cmd_##op, key, nkey)
 
 #define STATS_BADVALUE(conn, op, key, nkey) \
@@ -1690,7 +1690,7 @@ static void process_lop_insert_complete(conn *c)
             conn_set_state(c, conn_closing);
             break;
         case ENGINE_KEY_ENOENT:
-            STATS_MISS(c, lop_insert, c->coll_key, c->coll_nkey);
+            STATS_MISSES(c, lop_insert, c->coll_key, c->coll_nkey);
             out_string(c, "NOT_FOUND");
             break;
         default:
@@ -1745,7 +1745,7 @@ static void process_sop_insert_complete(conn *c)
             conn_set_state(c, conn_closing);
             break;
         case ENGINE_KEY_ENOENT:
-            STATS_MISS(c, sop_insert, c->coll_key, c->coll_nkey);
+            STATS_MISSES(c, sop_insert, c->coll_key, c->coll_nkey);
             out_string(c, "NOT_FOUND");
             break;
         default:
@@ -1805,7 +1805,7 @@ static void process_sop_delete_complete(conn *c)
             conn_set_state(c, conn_closing);
             break;
         case ENGINE_KEY_ENOENT:
-            STATS_MISS(c, sop_delete, c->coll_key, c->coll_nkey);
+            STATS_MISSES(c, sop_delete, c->coll_key, c->coll_nkey);
             out_string(c, "NOT_FOUND");
             break;
         default:
@@ -1850,7 +1850,7 @@ static void process_sop_exist_complete(conn *c)
             break;
         case ENGINE_KEY_ENOENT:
         case ENGINE_UNREADABLE:
-            STATS_MISS(c, sop_exist, c->coll_key, c->coll_nkey);
+            STATS_MISSES(c, sop_exist, c->coll_key, c->coll_nkey);
             if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
             else                          out_string(c, "UNREADABLE");
             break;
@@ -1919,7 +1919,7 @@ static void process_mop_insert_complete(conn *c)
             conn_set_state(c, conn_closing);
             break;
         case ENGINE_KEY_ENOENT:
-            STATS_MISS(c, mop_insert, c->coll_key, c->coll_nkey);
+            STATS_MISSES(c, mop_insert, c->coll_key, c->coll_nkey);
             out_string(c, "NOT_FOUND");
             break;
         default:
@@ -1974,7 +1974,7 @@ static void process_mop_update_complete(conn *c)
             conn_set_state(c, conn_closing);
             break;
         case ENGINE_KEY_ENOENT:
-            STATS_MISS(c, mop_update, c->coll_key, c->coll_nkey);
+            STATS_MISSES(c, mop_update, c->coll_key, c->coll_nkey);
             out_string(c, "NOT_FOUND");
             break;
         default:
@@ -2049,7 +2049,7 @@ static void process_mop_delete_complete(conn *c)
         conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
-        STATS_MISS(c, mop_delete, c->coll_key, c->coll_nkey);
+        STATS_MISSES(c, mop_delete, c->coll_key, c->coll_nkey);
         out_string(c, "NOT_FOUND");
         break;
     default:
@@ -2199,7 +2199,7 @@ static void process_mop_get_complete(conn *c)
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
-        STATS_MISS(c, mop_get, c->coll_key, c->coll_nkey);
+        STATS_MISSES(c, mop_get, c->coll_key, c->coll_nkey);
         if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
         else                          out_string(c, "UNREADABLE");
         break;
@@ -2337,7 +2337,7 @@ static void process_bop_insert_complete(conn *c)
             conn_set_state(c, conn_closing);
             break;
         case ENGINE_KEY_ENOENT:
-            STATS_MISS(c, bop_insert, c->coll_key, c->coll_nkey);
+            STATS_MISSES(c, bop_insert, c->coll_key, c->coll_nkey);
             out_string(c, "NOT_FOUND");
             break;
         default:
@@ -2402,7 +2402,7 @@ static void process_bop_update_complete(conn *c)
         conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
-        STATS_MISS(c, bop_update, c->coll_key, c->coll_nkey);
+        STATS_MISSES(c, bop_update, c->coll_key, c->coll_nkey);
         out_string(c, "NOT_FOUND");
         break;
     default:
@@ -2526,7 +2526,7 @@ static void process_bop_mget_complete(conn *c)
                     sprintf(resultptr, " %s\r\n", "NOT_FOUND_ELEMENT");
                 }
                 else if (ret == ENGINE_KEY_ENOENT || ret == ENGINE_EBKEYOOR || ret == ENGINE_UNREADABLE) {
-                    STATS_MISS(c, bop_get, key_tokens[k].value, key_tokens[k].length);
+                    STATS_MISSES(c, bop_get, key_tokens[k].value, key_tokens[k].length);
                     if (ret == ENGINE_KEY_ENOENT)    sprintf(resultptr, " %s\r\n", "NOT_FOUND");
                     else if (ret == ENGINE_EBKEYOOR) sprintf(resultptr, " %s\r\n", "OUT_OF_RANGE");
                     else                             sprintf(resultptr, " %s\r\n", "UNREADABLE");
@@ -3092,7 +3092,7 @@ static void process_mget_complete(conn *c)
             } else {
                 ret = ENGINE_SUCCESS; /* FIXME */
                 MEMCACHED_COMMAND_GET(c->sfd, key, nkey, -1, 0);
-                STATS_MISS(c, get, key, nkey);
+                STATS_MISSES(c, get, key, nkey);
             }
         }
 
@@ -3152,7 +3152,7 @@ static void update_stat_cas(conn *c, ENGINE_ERROR_CODE ret)
             break;
         case ENGINE_KEY_ENOENT:
         case ENGINE_EBADTYPE:
-            STATS_MISS(c, cas, c->hinfo.key, c->hinfo.nkey);
+            STATS_MISSES(c, cas, c->hinfo.key, c->hinfo.nkey);
             break;
         default:
             STATS_NOKEY(c, cmd_cas);
@@ -3654,9 +3654,9 @@ static void complete_incr_bin(conn *c)
     case ENGINE_KEY_ENOENT:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         if (c->cmd == PROTOCOL_BINARY_CMD_INCREMENT) {
-            STATS_MISS(c, incr, key, nkey);
+            STATS_MISSES(c, incr, key, nkey);
         } else {
-            STATS_MISS(c, decr, key, nkey);
+            STATS_MISSES(c, decr, key, nkey);
         }
         break;
     case ENGINE_PREFIX_ENAME:
@@ -3849,7 +3849,7 @@ static void process_bin_get(conn *c)
         c->item = it;
         break;
     case ENGINE_KEY_ENOENT:
-        STATS_MISS(c, get, key, nkey);
+        STATS_MISSES(c, get, key, nkey);
 
         MEMCACHED_COMMAND_GET(c->sfd, key, nkey, -1, 0);
 
@@ -4628,7 +4628,7 @@ static void process_bin_lop_insert_complete(conn *c)
         conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
-        STATS_MISS(c, lop_insert, c->coll_key, c->coll_nkey);
+        STATS_MISSES(c, lop_insert, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
     default:
@@ -4713,7 +4713,7 @@ static void process_bin_lop_delete(conn *c)
         conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
-        STATS_MISS(c, lop_delete, key, nkey);
+        STATS_MISSES(c, lop_delete, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
     default:
@@ -4846,7 +4846,7 @@ static void process_bin_lop_get(conn *c)
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
-        STATS_MISS(c, lop_get, key, nkey);
+        STATS_MISSES(c, lop_get, key, nkey);
         if (ret == ENGINE_KEY_ENOENT)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         else
@@ -5077,7 +5077,7 @@ static void process_bin_sop_insert_complete(conn *c)
         conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
-        STATS_MISS(c, sop_insert, c->coll_key, c->coll_nkey);
+        STATS_MISSES(c, sop_insert, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
     default:
@@ -5140,7 +5140,7 @@ static void process_bin_sop_delete_complete(conn *c)
         conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
-        STATS_MISS(c, sop_delete, c->coll_key, c->coll_nkey);
+        STATS_MISSES(c, sop_delete, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
     default:
@@ -5190,7 +5190,7 @@ static void process_bin_sop_exist_complete(conn *c)
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
-        STATS_MISS(c, sop_exist, c->coll_key, c->coll_nkey);
+        STATS_MISSES(c, sop_exist, c->coll_key, c->coll_nkey);
         if (ret == ENGINE_KEY_ENOENT)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         else
@@ -5340,7 +5340,7 @@ static void process_bin_sop_get(conn *c)
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
-        STATS_MISS(c, sop_get, key, nkey);
+        STATS_MISSES(c, sop_get, key, nkey);
         if (ret == ENGINE_KEY_ENOENT)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         else
@@ -5574,7 +5574,7 @@ static void process_bin_bop_insert_complete(conn *c)
         conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
-        STATS_MISS(c, bop_insert, c->coll_key, c->coll_nkey);
+        STATS_MISSES(c, bop_insert, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
     default:
@@ -5654,7 +5654,7 @@ static void process_bin_bop_update_complete(conn *c)
         conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
-        STATS_MISS(c, bop_update, c->coll_key, c->coll_nkey);
+        STATS_MISSES(c, bop_update, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
     default:
@@ -5845,7 +5845,7 @@ static void process_bin_bop_delete(conn *c)
         conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
-        STATS_MISS(c, bop_delete, key, nkey);
+        STATS_MISSES(c, bop_delete, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
     default:
@@ -6002,7 +6002,7 @@ static void process_bin_bop_get(conn *c)
     case ENGINE_KEY_ENOENT:
     case ENGINE_EBKEYOOR:
     case ENGINE_UNREADABLE:
-        STATS_MISS(c, bop_get, key, nkey);
+        STATS_MISSES(c, bop_get, key, nkey);
         if (ret == ENGINE_KEY_ENOENT)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         else if (ret == ENGINE_EBKEYOOR)
@@ -6083,7 +6083,7 @@ static void process_bin_bop_count(conn *c)
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
-        STATS_MISS(c, bop_count, key, nkey);
+        STATS_MISSES(c, bop_count, key, nkey);
         if (ret == ENGINE_KEY_ENOENT)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         else
@@ -6737,7 +6737,7 @@ static void process_bin_getattr(conn *c)
         conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
-        STATS_MISS(c, getattr, key, nkey);
+        STATS_MISSES(c, getattr, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
     default:
@@ -6847,7 +6847,7 @@ static void process_bin_setattr(conn *c)
         conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
-        STATS_MISS(c, setattr, key, nkey);
+        STATS_MISSES(c, setattr, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
     default:
@@ -8581,7 +8581,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                 *(c->ilist + nitems) = it;
                 nitems++;
             } else {
-                STATS_MISS(c, get, key, nkey);
+                STATS_MISSES(c, get, key, nkey);
                 MEMCACHED_COMMAND_GET(c->sfd, key, nkey, -1, 0);
             }
 
@@ -8848,9 +8848,9 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
         break;
     case ENGINE_KEY_ENOENT:
         if (incr) {
-            STATS_MISS(c, incr, key, nkey);
+            STATS_MISSES(c, incr, key, nkey);
         } else {
-            STATS_MISS(c, decr, key, nkey);
+            STATS_MISSES(c, decr, key, nkey);
         }
         out_string(c, "NOT_FOUND");
         break;
@@ -8926,7 +8926,7 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
         STATS_HITS(c, delete, key, nkey);
     } else if (ret == ENGINE_KEY_ENOENT) {
         out_string(c, "NOT_FOUND");
-        STATS_MISS(c, delete, key, nkey);
+        STATS_MISSES(c, delete, key, nkey);
     } else if (ret == ENGINE_ENOTSUP) {
         out_string(c, "NOT_SUPPORTED");
     } else {
@@ -10083,7 +10083,7 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
-        STATS_MISS(c, lop_get, key, nkey);
+        STATS_MISSES(c, lop_get, key, nkey);
         if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
         else                          out_string(c, "UNREADABLE");
         break;
@@ -10216,7 +10216,7 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
         conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
-        STATS_MISS(c, lop_delete, key, nkey);
+        STATS_MISSES(c, lop_delete, key, nkey);
         out_string(c, "NOT_FOUND");
         break;
     default:
@@ -10500,7 +10500,7 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
-        STATS_MISS(c, sop_get, key, nkey);
+        STATS_MISSES(c, sop_get, key, nkey);
         if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
         else                          out_string(c, "UNREADABLE");
         break;
@@ -10898,7 +10898,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
     case ENGINE_KEY_ENOENT:
     case ENGINE_EBKEYOOR:
     case ENGINE_UNREADABLE:
-        STATS_MISS(c, bop_get, key, nkey);
+        STATS_MISSES(c, bop_get, key, nkey);
         if (ret == ENGINE_KEY_ENOENT)    out_string(c, "NOT_FOUND");
         else if (ret == ENGINE_EBKEYOOR) out_string(c, "OUT_OF_RANGE");
         else                             out_string(c, "UNREADABLE");
@@ -10952,7 +10952,7 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
-        STATS_MISS(c, bop_count, key, nkey);
+        STATS_MISSES(c, bop_count, key, nkey);
         if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
         else                          out_string(c, "UNREADABLE");
         break;
@@ -10997,7 +10997,7 @@ static void process_bop_position(conn *c, char *key, size_t nkey,
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
-        STATS_MISS(c, bop_position, key, nkey);
+        STATS_MISSES(c, bop_position, key, nkey);
         if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
         else                          out_string(c, "UNREADABLE");
         break;
@@ -11103,7 +11103,7 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
-        STATS_MISS(c, bop_pwg, key, nkey);
+        STATS_MISSES(c, bop_pwg, key, nkey);
         if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
         else                          out_string(c, "UNREADABLE");
         break;
@@ -11226,7 +11226,7 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey,
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
-        STATS_MISS(c, bop_gbp, key, nkey);
+        STATS_MISSES(c, bop_gbp, key, nkey);
         if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
         else                          out_string(c, "UNREADABLE");
         break;
@@ -11511,7 +11511,7 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
         conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
-        STATS_MISS(c, bop_delete, key, nkey);
+        STATS_MISSES(c, bop_delete, key, nkey);
         out_string(c, "NOT_FOUND");
         break;
     default:
@@ -11561,9 +11561,9 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
         break;
     case ENGINE_KEY_ENOENT:
         if (incr) {
-            STATS_MISS(c, bop_incr, key, nkey);
+            STATS_MISSES(c, bop_incr, key, nkey);
         } else {
-            STATS_MISS(c, bop_decr, key, nkey);
+            STATS_MISSES(c, bop_decr, key, nkey);
         }
         out_string(c, "NOT_FOUND");
         break;
@@ -12958,7 +12958,7 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
         conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
-        STATS_MISS(c, getattr, key, nkey);
+        STATS_MISSES(c, getattr, key, nkey);
         out_string(c, "NOT_FOUND");
         break;
     default:
@@ -13086,7 +13086,7 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
         conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
-        STATS_MISS(c, setattr, key, nkey);
+        STATS_MISSES(c, setattr, key, nkey);
         out_string(c, "NOT_FOUND");
         break;
     default:
