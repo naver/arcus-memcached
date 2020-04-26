@@ -96,64 +96,50 @@ void UNLOCK_SETTING() {
     pthread_mutex_unlock(&setting_lock);
 }
 
-/* The item must always be called "it" */
-#define SLAB_GUTS(conn, thread_stats, slab_op, thread_op) \
-    thread_stats->slab_op++;
-
-#define THREAD_GUTS(conn, thread_stats, slab_op, thread_op) \
-    thread_stats->thread_op++;
-
-#define THREAD_GUTS2(conn, thread_stats, slab_op, thread_op) \
-    thread_stats->slab_op++; \
-    thread_stats->thread_op++;
-
-#define SLAB_THREAD_GUTS(conn, thread_stats, slab_op, thread_op) \
-    SLAB_GUTS(conn, thread_stats, slab_op, thread_op) \
-    THREAD_GUTS(conn, thread_stats, slab_op, thread_op)
-
-#define STATS_INCR1(GUTS, conn, slab_op, thread_op, key, nkey) { \
+/* Macros for incrementing thread_stats */
+#define STATS_INCR_ONE(conn, op, key, nkey) { \
     struct independent_stats *independent_stats = get_independent_stats(conn); \
     struct thread_stats *thread_stats = \
         &independent_stats->thread_stats[conn->thread->index]; \
     topkeys_t *topkeys = independent_stats->topkeys; \
     pthread_mutex_lock(&thread_stats->mutex); \
-    GUTS(conn, thread_stats, slab_op, thread_op); \
+    thread_stats->op++; \
     pthread_mutex_unlock(&thread_stats->mutex); \
-    TK(topkeys, slab_op, key, nkey, current_time); \
+    TK(topkeys, op, key, nkey, current_time); \
+}
+
+#define STATS_INCR_TWO(conn, op1, op2, key, nkey) { \
+    struct independent_stats *independent_stats = get_independent_stats(conn); \
+    struct thread_stats *thread_stats = \
+        &independent_stats->thread_stats[conn->thread->index]; \
+    topkeys_t *topkeys = independent_stats->topkeys; \
+    pthread_mutex_lock(&thread_stats->mutex); \
+    thread_stats->op1++; \
+    thread_stats->op2++; \
+    pthread_mutex_unlock(&thread_stats->mutex); \
+    TK(topkeys, op1, key, nkey, current_time); \
 }
 
 #define STATS_INCR(conn, op, key, nkey) \
-    STATS_INCR1(THREAD_GUTS, conn, op, op, key, nkey)
-
-#define SLAB_INCR(conn, op, key, nkey) \
-    STATS_INCR1(SLAB_GUTS, conn, op, op, key, nkey)
-
-#define STATS_TWO(conn, slab_op, thread_op, key, nkey) \
-    STATS_INCR1(THREAD_GUTS2, conn, slab_op, thread_op, key, nkey)
-
-#define SLAB_TWO(conn, slab_op, thread_op, key, nkey) \
-    STATS_INCR1(SLAB_THREAD_GUTS, conn, slab_op, thread_op, key, nkey)
-
-#define STATS_HIT(conn, op, key, nkey) \
-    SLAB_TWO(conn, op##_hits, cmd_##op, key, nkey)
-
-#define STATS_HITS(conn, op, key, nkey) \
-    STATS_TWO(conn, op##_hits, cmd_##op, key, nkey)
+    STATS_INCR_ONE(conn, op, key, nkey)
 
 #define STATS_OKS(conn, op, key, nkey) \
-    STATS_TWO(conn, op##_oks, cmd_##op, key, nkey)
+    STATS_INCR_TWO(conn, op##_oks, cmd_##op, key, nkey)
+
+#define STATS_HITS(conn, op, key, nkey) \
+    STATS_INCR_TWO(conn, op##_hits, cmd_##op, key, nkey)
 
 #define STATS_ELEM_HITS(conn, op, key, nkey) \
-    STATS_TWO(conn, op##_elem_hits, cmd_##op, key, nkey)
+    STATS_INCR_TWO(conn, op##_elem_hits, cmd_##op, key, nkey)
 
 #define STATS_NONE_HITS(conn, op, key, nkey) \
-    STATS_TWO(conn, op##_none_hits, cmd_##op, key, nkey)
+    STATS_INCR_TWO(conn, op##_none_hits, cmd_##op, key, nkey)
 
 #define STATS_MISS(conn, op, key, nkey) \
-    STATS_TWO(conn, op##_misses, cmd_##op, key, nkey)
+    STATS_INCR_TWO(conn, op##_misses, cmd_##op, key, nkey)
 
 #define STATS_BADVALUE(conn, op, key, nkey) \
-    SLAB_TWO(conn, op##_badval, cmd_##op, key, nkey)
+    STATS_INCR_TWO(conn, op##_badval, cmd_##op, key, nkey)
 
 #define STATS_NOKEY(conn, op) { \
     struct thread_stats *thread_stats = get_thread_stats(conn); \
@@ -3100,7 +3086,7 @@ static void process_mget_complete(conn *c)
                 }
 
                 /* item_get() has incremented it->refcount for us */
-                STATS_HIT(c, get, key, nkey);
+                STATS_HITS(c, get, key, nkey);
                 *(c->ilist + nitems) = it;
                 nitems++;
             } else {
@@ -3159,7 +3145,7 @@ static void update_stat_cas(conn *c, ENGINE_ERROR_CODE ret)
 {
     switch (ret) {
         case ENGINE_SUCCESS:
-            STATS_HIT(c, cas, c->hinfo.key, c->hinfo.nkey);
+            STATS_HITS(c, cas, c->hinfo.key, c->hinfo.nkey);
             break;
         case ENGINE_KEY_EEXISTS:
             STATS_BADVALUE(c, cas, c->hinfo.key, c->hinfo.nkey);
@@ -3303,7 +3289,7 @@ static void complete_update_ascii(conn *c)
     if (c->store_op == OPERATION_CAS) {
         update_stat_cas(c, ret);
     } else {
-        SLAB_INCR(c, cmd_set, c->hinfo.key, c->hinfo.nkey);
+        STATS_INCR(c, cmd_set, c->hinfo.key, c->hinfo.nkey);
     }
 
     /* release the c->item reference */
@@ -3795,7 +3781,7 @@ static void complete_update_bin(conn *c)
     if (c->store_op == OPERATION_CAS) {
         update_stat_cas(c, ret);
     } else {
-        SLAB_INCR(c, cmd_set, c->hinfo.key, c->hinfo.nkey);
+        STATS_INCR(c, cmd_set, c->hinfo.key, c->hinfo.nkey);
     }
 
     /* release the c->item reference */
@@ -3839,7 +3825,7 @@ static void process_bin_get(conn *c)
         keylen = 0;
         bodylen = sizeof(rsp->message.body) + (c->hinfo.nbytes - 2);
 
-        STATS_HIT(c, get, key, nkey);
+        STATS_HITS(c, get, key, nkey);
 
         if (c->cmd == PROTOCOL_BINARY_CMD_GETK) {
             bodylen += nkey;
@@ -8591,7 +8577,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                                    c->sfd, (char*)c->hinfo.key);
                 }
                 /* item_get() has incremented it->refcount for us */
-                STATS_HIT(c, get, key, nkey);
+                STATS_HITS(c, get, key, nkey);
                 *(c->ilist + nitems) = it;
                 nitems++;
             } else {
@@ -8937,11 +8923,9 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     /* For some reason the SLAB_INCR tries to access this... */
     if (ret == ENGINE_SUCCESS) {
         out_string(c, "DELETED");
-        //SLAB_INCR(c, delete_hits, key, nkey);
-        STATS_HIT(c, delete, key, nkey);
+        STATS_HITS(c, delete, key, nkey);
     } else if (ret == ENGINE_KEY_ENOENT) {
         out_string(c, "NOT_FOUND");
-        //STATS_INCR(c, delete_misses, key, nkey);
         STATS_MISS(c, delete, key, nkey);
     } else if (ret == ENGINE_ENOTSUP) {
         out_string(c, "NOT_SUPPORTED");
