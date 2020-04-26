@@ -98,7 +98,7 @@ void UNLOCK_SETTING() {
 
 /* The item must always be called "it" */
 #define SLAB_GUTS(conn, thread_stats, slab_op, thread_op) \
-    thread_stats->slab_stats[c->hinfo.clsid].slab_op++;
+    thread_stats->slab_op++;
 
 #define THREAD_GUTS(conn, thread_stats, slab_op, thread_op) \
     thread_stats->thread_op++;
@@ -8098,9 +8098,6 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
                                     &thread_stats);
     }
 
-    struct slab_stats slab_stats;
-    slab_stats_aggregate(&thread_stats, &slab_stats);
-
 #ifndef __WIN32__
     struct rusage usage;
     getrusage(RUSAGE_SELF, &usage);
@@ -8141,7 +8138,7 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
     APPEND_STAT("total_connections", "%u", mc_stats.total_conns);
     APPEND_STAT("connection_structures", "%u", mc_stats.conn_structs);
     APPEND_STAT("cmd_get", "%"PRIu64, thread_stats.cmd_get);
-    APPEND_STAT("cmd_set", "%"PRIu64, slab_stats.cmd_set);
+    APPEND_STAT("cmd_set", "%"PRIu64, thread_stats.cmd_set);
     APPEND_STAT("cmd_incr", "%"PRIu64, thread_stats.cmd_incr);
     APPEND_STAT("cmd_decr", "%"PRIu64, thread_stats.cmd_decr);
     APPEND_STAT("cmd_delete", "%"PRIu64, thread_stats.cmd_delete);
@@ -8183,17 +8180,17 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
     APPEND_STAT("cmd_setattr", "%"PRIu64, thread_stats.cmd_setattr);
     APPEND_STAT("auth_cmds", "%"PRIu64, thread_stats.auth_cmds);
     APPEND_STAT("auth_errors", "%"PRIu64, thread_stats.auth_errors);
-    APPEND_STAT("get_hits", "%"PRIu64, slab_stats.get_hits);
+    APPEND_STAT("get_hits", "%"PRIu64, thread_stats.get_hits);
     APPEND_STAT("get_misses", "%"PRIu64, thread_stats.get_misses);
     APPEND_STAT("delete_misses", "%"PRIu64, thread_stats.delete_misses);
-    APPEND_STAT("delete_hits", "%"PRIu64, slab_stats.delete_hits);
+    APPEND_STAT("delete_hits", "%"PRIu64, thread_stats.delete_hits);
     APPEND_STAT("incr_misses", "%"PRIu64, thread_stats.incr_misses);
     APPEND_STAT("incr_hits", "%"PRIu64, thread_stats.incr_hits);
     APPEND_STAT("decr_misses", "%"PRIu64, thread_stats.decr_misses);
     APPEND_STAT("decr_hits", "%"PRIu64, thread_stats.decr_hits);
     APPEND_STAT("cas_misses", "%"PRIu64, thread_stats.cas_misses);
-    APPEND_STAT("cas_hits", "%"PRIu64, slab_stats.cas_hits);
-    APPEND_STAT("cas_badval", "%"PRIu64, slab_stats.cas_badval);
+    APPEND_STAT("cas_hits", "%"PRIu64, thread_stats.cas_hits);
+    APPEND_STAT("cas_badval", "%"PRIu64, thread_stats.cas_badval);
     APPEND_STAT("lop_create_oks", "%"PRIu64, thread_stats.lop_create_oks);
     APPEND_STAT("lop_insert_misses", "%"PRIu64, thread_stats.lop_insert_misses);
     APPEND_STAT("lop_insert_hits", "%"PRIu64, thread_stats.lop_insert_hits);

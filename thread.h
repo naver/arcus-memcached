@@ -38,31 +38,27 @@
         abort();                                 \
     }
 
-/** Stats stored per slab (and per thread). */
-struct slab_stats {
-    uint64_t  cmd_set;
-    uint64_t  get_hits;
-    uint64_t  delete_hits;
-    uint64_t  cas_hits;
-    uint64_t  cas_badval;
-};
-
 /**
  * Stats stored per-thread.
  */
 struct thread_stats {
     pthread_mutex_t   mutex;
     uint64_t          cmd_get;
+    uint64_t          cmd_set;
     uint64_t          cmd_incr;
     uint64_t          cmd_decr;
     uint64_t          cmd_delete;
+    uint64_t          get_hits;
     uint64_t          get_misses;
+    uint64_t          delete_hits;
     uint64_t          delete_misses;
     uint64_t          incr_misses;
     uint64_t          decr_misses;
     uint64_t          incr_hits;
     uint64_t          decr_hits;
     uint64_t          cmd_cas;
+    uint64_t          cas_hits;
+    uint64_t          cas_badval;
     uint64_t          cas_misses;
     uint64_t          bytes_read;
     uint64_t          bytes_written;
@@ -180,8 +176,6 @@ struct thread_stats {
     uint64_t          getattr_misses;
     uint64_t          setattr_hits;
     uint64_t          setattr_misses;
-    /* slab stats */
-    struct slab_stats slab_stats[MAX_SLAB_CLASSES];
 };
 
 /**
@@ -230,7 +224,6 @@ int  is_listen_thread(void);
 void threadlocal_stats_clear(struct thread_stats *stats);
 void threadlocal_stats_reset(struct thread_stats *thread_stats);
 void threadlocal_stats_aggregate(struct thread_stats *thread_stats, struct thread_stats *stats);
-void slab_stats_aggregate(struct thread_stats *stats, struct slab_stats *out);
 
 void thread_init(int nthreads, struct event_base *main_base);
 void threads_shutdown(void);

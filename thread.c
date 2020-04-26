@@ -533,16 +533,21 @@ int is_listen_thread()
 void threadlocal_stats_clear(struct thread_stats *stats)
 {
     stats->cmd_get = 0;
+    stats->cmd_set = 0;
     stats->cmd_incr = 0;
     stats->cmd_decr = 0;
     stats->cmd_delete = 0;
+    stats->get_hits = 0;
     stats->get_misses = 0;
+    stats->delete_hits = 0;
     stats->delete_misses = 0;
     stats->incr_misses = 0;
     stats->decr_misses = 0;
     stats->incr_hits = 0;
     stats->decr_hits = 0;
     stats->cmd_cas = 0;
+    stats->cas_hits = 0;
+    stats->cas_badval = 0;
     stats->cas_misses = 0;
     stats->bytes_written = 0;
     stats->bytes_read = 0;
@@ -660,8 +665,6 @@ void threadlocal_stats_clear(struct thread_stats *stats)
     stats->getattr_misses = 0;
     stats->setattr_hits = 0;
     stats->setattr_misses = 0;
-
-    memset(stats->slab_stats, 0, sizeof(struct slab_stats)*MAX_SLAB_CLASSES);
 }
 
 void threadlocal_stats_reset(struct thread_stats *thread_stats)
@@ -676,20 +679,25 @@ void threadlocal_stats_reset(struct thread_stats *thread_stats)
 
 void threadlocal_stats_aggregate(struct thread_stats *thread_stats, struct thread_stats *stats)
 {
-    int ii, sid;
+    int ii;
     for (ii = 0; ii < settings.num_threads; ++ii) {
         pthread_mutex_lock(&thread_stats[ii].mutex);
         stats->cmd_get += thread_stats[ii].cmd_get;
+        stats->cmd_set += thread_stats[ii].cmd_set;
         stats->cmd_incr += thread_stats[ii].cmd_incr;
         stats->cmd_decr += thread_stats[ii].cmd_decr;
         stats->cmd_delete += thread_stats[ii].cmd_delete;
+        stats->get_hits += thread_stats[ii].get_hits;
         stats->get_misses += thread_stats[ii].get_misses;
+        stats->delete_hits += thread_stats[ii].delete_hits;
         stats->delete_misses += thread_stats[ii].delete_misses;
         stats->decr_misses += thread_stats[ii].decr_misses;
         stats->incr_misses += thread_stats[ii].incr_misses;
         stats->decr_hits += thread_stats[ii].decr_hits;
         stats->incr_hits += thread_stats[ii].incr_hits;
         stats->cmd_cas += thread_stats[ii].cmd_cas;
+        stats->cas_hits += thread_stats[ii].cas_hits;
+        stats->cas_badval += thread_stats[ii].cas_badval;
         stats->cas_misses += thread_stats[ii].cas_misses;
         stats->bytes_read += thread_stats[ii].bytes_read;
         stats->bytes_written += thread_stats[ii].bytes_written;
@@ -808,39 +816,7 @@ void threadlocal_stats_aggregate(struct thread_stats *thread_stats, struct threa
         stats->setattr_hits += thread_stats[ii].setattr_hits;
         stats->setattr_misses += thread_stats[ii].setattr_misses;
 
-        for (sid = 0; sid < MAX_SLAB_CLASSES; sid++) {
-            stats->slab_stats[sid].cmd_set +=
-                thread_stats[ii].slab_stats[sid].cmd_set;
-            stats->slab_stats[sid].get_hits +=
-                thread_stats[ii].slab_stats[sid].get_hits;
-            stats->slab_stats[sid].delete_hits +=
-                thread_stats[ii].slab_stats[sid].delete_hits;
-            stats->slab_stats[sid].cas_hits +=
-                thread_stats[ii].slab_stats[sid].cas_hits;
-            stats->slab_stats[sid].cas_badval +=
-                thread_stats[ii].slab_stats[sid].cas_badval;
-        }
-
         pthread_mutex_unlock(&thread_stats[ii].mutex);
-    }
-}
-
-void slab_stats_aggregate(struct thread_stats *stats, struct slab_stats *out)
-{
-    int sid;
-
-    out->cmd_set = 0;
-    out->get_hits = 0;
-    out->delete_hits = 0;
-    out->cas_hits = 0;
-    out->cas_badval = 0;
-
-    for (sid = 0; sid < MAX_SLAB_CLASSES; sid++) {
-        out->cmd_set += stats->slab_stats[sid].cmd_set;
-        out->get_hits += stats->slab_stats[sid].get_hits;
-        out->delete_hits += stats->slab_stats[sid].delete_hits;
-        out->cas_hits += stats->slab_stats[sid].cas_hits;
-        out->cas_badval += stats->slab_stats[sid].cas_badval;
     }
 }
 
