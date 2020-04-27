@@ -15947,6 +15947,9 @@ int main (int argc, char **argv)
     }
 #endif
 
+    /* release independent_stats */
+    release_independent_stats(default_independent_stats);
+
     /* Clean up strdup() call for bind() address */
     if (settings.inter) {
         free(settings.inter);
