@@ -50,23 +50,23 @@ struct thread_stats {
     uint64_t          cmd_delete;
     uint64_t          get_hits;
     uint64_t          get_misses;
+    uint64_t          incr_hits;
+    uint64_t          incr_misses;
+    uint64_t          decr_hits;
+    uint64_t          decr_misses;
     uint64_t          delete_hits;
     uint64_t          delete_misses;
-    uint64_t          incr_misses;
-    uint64_t          decr_misses;
-    uint64_t          incr_hits;
-    uint64_t          decr_hits;
     uint64_t          cmd_cas;
     uint64_t          cas_hits;
     uint64_t          cas_badval;
     uint64_t          cas_misses;
-    uint64_t          bytes_read;
-    uint64_t          bytes_written;
     uint64_t          cmd_flush;
     uint64_t          cmd_flush_prefix;
-    uint64_t          conn_yields; /* # of yields for connections (-R option)*/
-    uint64_t          auth_cmds;
+    uint64_t          cmd_auth;
     uint64_t          auth_errors;
+    uint64_t          bytes_read;
+    uint64_t          bytes_written;
+    uint64_t          conn_yields; /* # of yields for connections (-R option)*/
     /* list command stats */
     uint64_t          cmd_lop_create;
     uint64_t          cmd_lop_insert;

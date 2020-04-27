@@ -4386,7 +4386,7 @@ static void process_bin_complete_sasl_auth(conn *c)
         auth_data_t data;
         get_auth_data(c, &data);
         perform_callbacks(ON_AUTH, (const void*)&data, c);
-        STATS_NOKEY(c, auth_cmds);
+        STATS_NOKEY(c, cmd_auth);
         break;
     case SASL_CONTINUE:
         add_bin_header(c, PROTOCOL_BINARY_RESPONSE_AUTH_CONTINUE, 0, 0, outlen);
@@ -4402,7 +4402,7 @@ static void process_bin_complete_sasl_auth(conn *c)
                            "%d: Unknown sasl response:  %d\n", c->sfd, result);
         }
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
-        STATS_NOKEY2(c, auth_cmds, auth_errors);
+        STATS_NOKEY2(c, cmd_auth, auth_errors);
     }
 }
 
@@ -8128,9 +8128,10 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
     APPEND_STAT("cmd_incr", "%"PRIu64, thread_stats.cmd_incr);
     APPEND_STAT("cmd_decr", "%"PRIu64, thread_stats.cmd_decr);
     APPEND_STAT("cmd_delete", "%"PRIu64, thread_stats.cmd_delete);
+    APPEND_STAT("cmd_cas", "%"PRIu64, thread_stats.cmd_cas);
     APPEND_STAT("cmd_flush", "%"PRIu64, thread_stats.cmd_flush);
     APPEND_STAT("cmd_flush_prefix", "%"PRIu64, thread_stats.cmd_flush_prefix);
-    APPEND_STAT("cmd_cas", "%"PRIu64, thread_stats.cmd_cas);
+    APPEND_STAT("cmd_auth", "%"PRIu64, thread_stats.cmd_auth);
     APPEND_STAT("cmd_lop_create", "%"PRIu64, thread_stats.cmd_lop_create);
     APPEND_STAT("cmd_lop_insert", "%"PRIu64, thread_stats.cmd_lop_insert);
     APPEND_STAT("cmd_lop_delete", "%"PRIu64, thread_stats.cmd_lop_delete);
@@ -8164,19 +8165,18 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
     APPEND_STAT("cmd_bop_decr", "%"PRIu64, thread_stats.cmd_bop_decr);
     APPEND_STAT("cmd_getattr", "%"PRIu64, thread_stats.cmd_getattr);
     APPEND_STAT("cmd_setattr", "%"PRIu64, thread_stats.cmd_setattr);
-    APPEND_STAT("auth_cmds", "%"PRIu64, thread_stats.auth_cmds);
-    APPEND_STAT("auth_errors", "%"PRIu64, thread_stats.auth_errors);
     APPEND_STAT("get_hits", "%"PRIu64, thread_stats.get_hits);
     APPEND_STAT("get_misses", "%"PRIu64, thread_stats.get_misses);
-    APPEND_STAT("delete_misses", "%"PRIu64, thread_stats.delete_misses);
-    APPEND_STAT("delete_hits", "%"PRIu64, thread_stats.delete_hits);
-    APPEND_STAT("incr_misses", "%"PRIu64, thread_stats.incr_misses);
     APPEND_STAT("incr_hits", "%"PRIu64, thread_stats.incr_hits);
-    APPEND_STAT("decr_misses", "%"PRIu64, thread_stats.decr_misses);
+    APPEND_STAT("incr_misses", "%"PRIu64, thread_stats.incr_misses);
     APPEND_STAT("decr_hits", "%"PRIu64, thread_stats.decr_hits);
-    APPEND_STAT("cas_misses", "%"PRIu64, thread_stats.cas_misses);
+    APPEND_STAT("decr_misses", "%"PRIu64, thread_stats.decr_misses);
+    APPEND_STAT("delete_hits", "%"PRIu64, thread_stats.delete_hits);
+    APPEND_STAT("delete_misses", "%"PRIu64, thread_stats.delete_misses);
     APPEND_STAT("cas_hits", "%"PRIu64, thread_stats.cas_hits);
     APPEND_STAT("cas_badval", "%"PRIu64, thread_stats.cas_badval);
+    APPEND_STAT("cas_misses", "%"PRIu64, thread_stats.cas_misses);
+    APPEND_STAT("auth_errors", "%"PRIu64, thread_stats.auth_errors);
     APPEND_STAT("lop_create_oks", "%"PRIu64, thread_stats.lop_create_oks);
     APPEND_STAT("lop_insert_misses", "%"PRIu64, thread_stats.lop_insert_misses);
     APPEND_STAT("lop_insert_hits", "%"PRIu64, thread_stats.lop_insert_hits);
