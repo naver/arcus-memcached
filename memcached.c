@@ -127,9 +127,9 @@ void UNLOCK_SETTING() {
     } \
 }
 
-#define STATS_INCR(conn, op, key, nkey) { \
-    THSTATS_INCR_ONE(conn, op); \
-    TOPKEYS_INCR(op, key, nkey); \
+#define STATS_CMD(conn, op, key, nkey) { \
+    THSTATS_INCR_ONE(conn, cmd_##op); \
+    TOPKEYS_INCR(cmd_##op, key, nkey); \
 }
 
 #define STATS_OKS(conn, op, key, nkey) { \
@@ -162,12 +162,16 @@ void UNLOCK_SETTING() {
     TOPKEYS_INCR(op##_badval, key, nkey); \
 }
 
-#define STATS_NOKEY(conn, op) { \
-    THSTATS_INCR_ONE(conn, op); \
+#define STATS_CMD_NOKEY(conn, op) { \
+    THSTATS_INCR_ONE(conn, cmd_##op); \
 }
 
-#define STATS_NOKEY2(conn, op1, op2) { \
-    THSTATS_INCR_TWO(conn, op1, op2); \
+#define STATS_OKS_NOKEY(conn, op) { \
+    THSTATS_INCR_TWO(conn, op##_oks, cmd_##op); \
+}
+
+#define STATS_ERRORS_NOKEY(conn, op) { \
+    THSTATS_INCR_TWO(conn, op##_errors, cmd_##op); \
 }
 
 #define STATS_ADD(conn, op, amt) { \
@@ -1706,7 +1710,7 @@ static void process_lop_insert_complete(conn *c)
             out_string(c, "NOT_FOUND");
             break;
         default:
-            STATS_NOKEY(c, cmd_lop_insert);
+            STATS_CMD_NOKEY(c, lop_insert);
             if (ret == ENGINE_EBADTYPE)          out_string(c, "TYPE_MISMATCH");
             else if (ret == ENGINE_EOVERFLOW)    out_string(c, "OVERFLOWED");
             else if (ret == ENGINE_EINDEXOOR)    out_string(c, "OUT_OF_RANGE");
@@ -1761,7 +1765,7 @@ static void process_sop_insert_complete(conn *c)
             out_string(c, "NOT_FOUND");
             break;
         default:
-            STATS_NOKEY(c, cmd_sop_insert);
+            STATS_CMD_NOKEY(c, sop_insert);
             if (ret == ENGINE_EBADTYPE)          out_string(c, "TYPE_MISMATCH");
             else if (ret == ENGINE_EOVERFLOW)    out_string(c, "OVERFLOWED");
             else if (ret == ENGINE_ELEM_EEXISTS) out_string(c, "ELEMENT_EXISTS");
@@ -1821,7 +1825,7 @@ static void process_sop_delete_complete(conn *c)
             out_string(c, "NOT_FOUND");
             break;
         default:
-            STATS_NOKEY(c, cmd_sop_delete);
+            STATS_CMD_NOKEY(c, sop_delete);
             if (ret == ENGINE_EBADTYPE)     out_string(c, "TYPE_MISMATCH");
             else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
             else handle_unexpected_errorcode_ascii(c, ret);
@@ -1867,7 +1871,7 @@ static void process_sop_exist_complete(conn *c)
             else                          out_string(c, "UNREADABLE");
             break;
         default:
-            STATS_NOKEY(c, cmd_sop_exist);
+            STATS_CMD_NOKEY(c, sop_exist);
             if (ret == ENGINE_EBADTYPE)     out_string(c, "TYPE_MISMATCH");
             else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
             else handle_unexpected_errorcode_ascii(c, ret);
@@ -1935,7 +1939,7 @@ static void process_mop_insert_complete(conn *c)
             out_string(c, "NOT_FOUND");
             break;
         default:
-            STATS_NOKEY(c, cmd_mop_insert);
+            STATS_CMD_NOKEY(c, mop_insert);
             if (ret == ENGINE_EBADTYPE)          out_string(c, "TYPE_MISMATCH");
             else if (ret == ENGINE_EOVERFLOW)    out_string(c, "OVERFLOWED");
             else if (ret == ENGINE_ELEM_EEXISTS) out_string(c, "ELEMENT_EXISTS");
@@ -1990,7 +1994,7 @@ static void process_mop_update_complete(conn *c)
             out_string(c, "NOT_FOUND");
             break;
         default:
-            STATS_NOKEY(c, cmd_mop_update);
+            STATS_CMD_NOKEY(c, mop_update);
             if (ret == ENGINE_EBADTYPE)     out_string(c, "TYPE_MISMATCH");
             else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
             else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
@@ -2065,7 +2069,7 @@ static void process_mop_delete_complete(conn *c)
         out_string(c, "NOT_FOUND");
         break;
     default:
-        STATS_NOKEY(c, cmd_mop_delete);
+        STATS_CMD_NOKEY(c, mop_delete);
         if (ret == ENGINE_EBADTYPE)       out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad data chunk");
         else if (ret == ENGINE_ENOMEM)    out_string(c, "SERVER_ERROR out of memory");
@@ -2188,7 +2192,7 @@ static void process_mop_get_complete(conn *c)
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
         } else { /* ENGINE_ENOMEM */
-            STATS_NOKEY(c, cmd_mop_get);
+            STATS_CMD_NOKEY(c, mop_get);
             mc_engine.v1->map_elem_release(mc_engine.v0, c, elem_array, elem_count);
             if (elem_array != NULL) {
                 free(elem_array);
@@ -2216,7 +2220,7 @@ static void process_mop_get_complete(conn *c)
         else                          out_string(c, "UNREADABLE");
         break;
     default:
-        STATS_NOKEY(c, cmd_mop_get);
+        STATS_CMD_NOKEY(c, mop_get);
         if (ret == ENGINE_EBADTYPE)       out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad data chunk");
         else if (ret == ENGINE_ENOMEM)    out_string(c, "SERVER_ERROR out of memory");
@@ -2353,7 +2357,7 @@ static void process_bop_insert_complete(conn *c)
             out_string(c, "NOT_FOUND");
             break;
         default:
-            STATS_NOKEY(c, cmd_bop_insert);
+            STATS_CMD_NOKEY(c, bop_insert);
             if (ret == ENGINE_EBADTYPE)          out_string(c, "TYPE_MISMATCH");
             else if (ret == ENGINE_EBADBKEY)     out_string(c, "BKEY_MISMATCH");
             else if (ret == ENGINE_EOVERFLOW)    out_string(c, "OVERFLOWED");
@@ -2418,7 +2422,7 @@ static void process_bop_update_complete(conn *c)
         out_string(c, "NOT_FOUND");
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_update);
+        STATS_CMD_NOKEY(c, bop_update);
         if (ret == ENGINE_EBADTYPE)       out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY)  out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_EBADEFLAG) out_string(c, "EFLAG_MISMATCH");
@@ -2497,7 +2501,7 @@ static void process_bop_mget_complete(conn *c)
                 if ((add_iov(c, valuestrp, nvaluestr) != 0) ||
                     (add_iov(c, key_tokens[k].value, key_tokens[k].length) != 0) ||
                     (add_iov(c, resultptr, strlen(resultptr)) != 0)) {
-                    STATS_NOKEY(c, cmd_bop_get);
+                    STATS_CMD_NOKEY(c, bop_get);
                     ret = ENGINE_ENOMEM; break;
                 }
                 resultptr += strlen(resultptr);
@@ -2519,7 +2523,7 @@ static void process_bop_mget_complete(conn *c)
                 if (ret == ENGINE_SUCCESS) {
                     STATS_ELEM_HITS(c, bop_get, key_tokens[k].value, key_tokens[k].length);
                 } else { /* ret == ENGINE_ENOMEM */
-                    STATS_NOKEY(c, cmd_bop_get);
+                    STATS_CMD_NOKEY(c, bop_get);
                 }
               } while(0);
 
@@ -2544,7 +2548,7 @@ static void process_bop_mget_complete(conn *c)
                     else                             sprintf(resultptr, " %s\r\n", "UNREADABLE");
                 }
                 else if (ret == ENGINE_EBADTYPE || ret == ENGINE_EBADBKEY) {
-                    STATS_NOKEY(c, cmd_bop_get);
+                    STATS_CMD_NOKEY(c, bop_get);
                     if (ret == ENGINE_EBADTYPE) sprintf(resultptr, " %s\r\n", "TYPE_MISMATCH");
                     else                        sprintf(resultptr, " %s\r\n", "BKEY_MISMATCH");
                 }
@@ -2586,7 +2590,7 @@ static void process_bop_mget_complete(conn *c)
 
     switch (ret) {
       case ENGINE_SUCCESS:
-        STATS_NOKEY2(c, cmd_bop_mget, bop_mget_oks);
+        STATS_OKS_NOKEY(c, bop_mget);
         /* Remember this command so we can garbage collect it later */
         /* c->coll_eitem  = (void *)elem_array; */
         c->coll_ecount = tot_elem_count;
@@ -2598,7 +2602,7 @@ static void process_bop_mget_complete(conn *c)
         conn_set_state(c, conn_closing);
         break;
       default:
-        STATS_NOKEY(c, cmd_bop_mget);
+        STATS_CMD_NOKEY(c, bop_mget);
         if (ret == ENGINE_EBADVALUE)    out_string(c, "CLIENT_ERROR bad data chunk");
         else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
@@ -2759,7 +2763,7 @@ static void process_bop_smget_complete_old(conn *c)
         } while(0);
 
         if (ret == ENGINE_SUCCESS) {
-            STATS_NOKEY2(c, cmd_bop_smget, bop_smget_oks);
+            STATS_OKS_NOKEY(c, bop_smget);
             /* Remember this command so we can garbage collect it later */
             /* c->coll_eitem  = (void *)elem_array; */
             c->coll_ecount = elem_count;
@@ -2767,7 +2771,7 @@ static void process_bop_smget_complete_old(conn *c)
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
         } else {
-            STATS_NOKEY(c, cmd_bop_smget);
+            STATS_CMD_NOKEY(c, bop_smget);
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
             out_string(c, "SERVER_ERROR out of memory writing get response");
         }
@@ -2776,7 +2780,7 @@ static void process_bop_smget_complete_old(conn *c)
         conn_set_state(c, conn_closing);
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_smget);
+        STATS_CMD_NOKEY(c, bop_smget);
         if (ret == ENGINE_EBADVALUE)     out_string(c, "CLIENT_ERROR bad data chunk");
         else if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
@@ -2936,7 +2940,7 @@ static void process_bop_smget_complete(conn *c)
         } while(0);
 
         if (ret == ENGINE_SUCCESS) {
-            STATS_NOKEY2(c, cmd_bop_smget, bop_smget_oks);
+            STATS_OKS_NOKEY(c, bop_smget);
             /* Remember this command so we can garbage collect it later */
             /* c->coll_eitem  = (void *)elem_array; */
             c->coll_ecount = smres.elem_count+smres.trim_count;
@@ -2944,7 +2948,7 @@ static void process_bop_smget_complete(conn *c)
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
         } else {
-            STATS_NOKEY(c, cmd_bop_smget);
+            STATS_CMD_NOKEY(c, bop_smget);
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, smres.elem_array,
                                              smres.elem_count+smres.trim_count);
             out_string(c, "SERVER_ERROR out of memory writing get response");
@@ -2954,7 +2958,7 @@ static void process_bop_smget_complete(conn *c)
         conn_set_state(c, conn_closing);
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_smget);
+        STATS_CMD_NOKEY(c, bop_smget);
         if (ret == ENGINE_EBADVALUE)     out_string(c, "CLIENT_ERROR bad data chunk");
         else if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
@@ -3167,7 +3171,7 @@ static void update_stat_cas(conn *c, ENGINE_ERROR_CODE ret)
             STATS_MISSES(c, cas, c->hinfo.key, c->hinfo.nkey);
             break;
         default:
-            STATS_NOKEY(c, cmd_cas);
+            STATS_CMD_NOKEY(c, cas);
     }
 }
 
@@ -3301,7 +3305,7 @@ static void complete_update_ascii(conn *c)
     if (c->store_op == OPERATION_CAS) {
         update_stat_cas(c, ret);
     } else {
-        STATS_INCR(c, cmd_set, c->hinfo.key, c->hinfo.nkey);
+        STATS_CMD(c, set, c->hinfo.key, c->hinfo.nkey);
     }
 
     /* release the c->item reference */
@@ -3793,7 +3797,7 @@ static void complete_update_bin(conn *c)
     if (c->store_op == OPERATION_CAS) {
         update_stat_cas(c, ret);
     } else {
-        STATS_INCR(c, cmd_set, c->hinfo.key, c->hinfo.nkey);
+        STATS_CMD(c, set, c->hinfo.key, c->hinfo.nkey);
     }
 
     /* release the c->item reference */
@@ -4397,7 +4401,7 @@ static void process_bin_complete_sasl_auth(conn *c)
         auth_data_t data;
         get_auth_data(c, &data);
         perform_callbacks(ON_AUTH, (const void*)&data, c);
-        STATS_NOKEY(c, cmd_auth);
+        STATS_CMD_NOKEY(c, auth);
         break;
     case SASL_CONTINUE:
         add_bin_header(c, PROTOCOL_BINARY_RESPONSE_AUTH_CONTINUE, 0, 0, outlen);
@@ -4413,7 +4417,7 @@ static void process_bin_complete_sasl_auth(conn *c)
                            "%d: Unknown sasl response:  %d\n", c->sfd, result);
         }
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
-        STATS_NOKEY2(c, cmd_auth, auth_errors);
+        STATS_ERRORS_NOKEY(c, auth);
     }
 }
 
@@ -4503,7 +4507,7 @@ static void process_bin_lop_create(conn *c)
         conn_set_state(c, conn_closing);
         break;
     default:
-        STATS_NOKEY(c, cmd_lop_create);
+        STATS_CMD_NOKEY(c, lop_create);
         if (ret == ENGINE_KEY_EEXISTS)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS, 0);
         else if (ret == ENGINE_PREFIX_ENAME)
@@ -4591,7 +4595,7 @@ static void process_bin_lop_prepare_nread(conn *c)
         conn_set_state(c, conn_closing);
         break;
     default:
-        STATS_NOKEY(c, cmd_lop_insert);
+        STATS_CMD_NOKEY(c, lop_insert);
         if (ret == ENGINE_E2BIG)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
         else if (ret == ENGINE_ENOMEM)
@@ -4643,7 +4647,7 @@ static void process_bin_lop_insert_complete(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
     default:
-        STATS_NOKEY(c, cmd_lop_insert);
+        STATS_CMD_NOKEY(c, lop_insert);
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else if (ret == ENGINE_EOVERFLOW)
@@ -4728,7 +4732,7 @@ static void process_bin_lop_delete(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
     default:
-        STATS_NOKEY(c, cmd_lop_delete);
+        STATS_CMD_NOKEY(c, lop_delete);
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
@@ -4832,7 +4836,7 @@ static void process_bin_lop_get(conn *c)
             c->coll_op     = OPERATION_LOP_GET;
             conn_set_state(c, conn_mwrite);
         } else {
-            STATS_NOKEY(c, cmd_lop_get);
+            STATS_CMD_NOKEY(c, lop_get);
             mc_engine.v1->list_elem_release(mc_engine.v0, c, elem_array, elem_count);
             if (elem_array != NULL) {
                 free(elem_array);
@@ -4864,7 +4868,7 @@ static void process_bin_lop_get(conn *c)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_UNREADABLE, 0);
         break;
     default:
-        STATS_NOKEY(c, cmd_lop_get);
+        STATS_CMD_NOKEY(c, lop_get);
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
@@ -4921,7 +4925,7 @@ static void process_bin_sop_create(conn *c)
         conn_set_state(c, conn_closing);
         break;
     default:
-        STATS_NOKEY(c, cmd_sop_create);
+        STATS_CMD_NOKEY(c, sop_create);
         if (ret == ENGINE_KEY_EEXISTS)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS, 0);
         else if (ret == ENGINE_PREFIX_ENAME)
@@ -5035,11 +5039,11 @@ static void process_bin_sop_prepare_nread(conn *c)
         break;
     default:
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
-            STATS_NOKEY(c, cmd_sop_insert);
+            STATS_CMD_NOKEY(c, sop_insert);
         } else if (c->cmd == PROTOCOL_BINARY_CMD_SOP_DELETE) {
-            STATS_NOKEY(c, cmd_sop_delete);
+            STATS_CMD_NOKEY(c, sop_delete);
         } else {
-            STATS_NOKEY(c, cmd_sop_exist);
+            STATS_CMD_NOKEY(c, sop_exist);
         }
 
         if (ret == ENGINE_E2BIG)
@@ -5092,7 +5096,7 @@ static void process_bin_sop_insert_complete(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
     default:
-        STATS_NOKEY(c, cmd_sop_insert);
+        STATS_CMD_NOKEY(c, sop_insert);
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else if (ret == ENGINE_EOVERFLOW)
@@ -5155,7 +5159,7 @@ static void process_bin_sop_delete_complete(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
     default:
-        STATS_NOKEY(c, cmd_sop_delete);
+        STATS_CMD_NOKEY(c, sop_delete);
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
@@ -5208,7 +5212,7 @@ static void process_bin_sop_exist_complete(conn *c)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_UNREADABLE, 0);
         break;
     default:
-        STATS_NOKEY(c, cmd_sop_exist);
+        STATS_CMD_NOKEY(c, sop_exist);
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
@@ -5326,7 +5330,7 @@ static void process_bin_sop_get(conn *c)
             c->coll_op     = OPERATION_SOP_GET;
             conn_set_state(c, conn_mwrite);
         } else {
-            STATS_NOKEY(c, cmd_sop_get);
+            STATS_CMD_NOKEY(c, sop_get);
             mc_engine.v1->set_elem_release(mc_engine.v0, c, elem_array, elem_count);
             if (elem_array != NULL) {
                 free(elem_array);
@@ -5358,7 +5362,7 @@ static void process_bin_sop_get(conn *c)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_UNREADABLE, 0);
         break;
     default:
-        STATS_NOKEY(c, cmd_sop_get);
+        STATS_CMD_NOKEY(c, sop_get);
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
@@ -5425,7 +5429,7 @@ static void process_bin_bop_create(conn *c)
         conn_set_state(c, conn_closing);
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_create);
+        STATS_CMD_NOKEY(c, bop_create);
         if (ret == ENGINE_KEY_EEXISTS)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS, 0);
         else if (ret == ENGINE_PREFIX_ENAME)
@@ -5533,7 +5537,7 @@ static void process_bin_bop_prepare_nread(conn *c)
         conn_set_state(c, conn_closing);
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_insert);
+        STATS_CMD_NOKEY(c, bop_insert);
         if (ret == ENGINE_E2BIG)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
         else if (ret == ENGINE_ENOMEM)
@@ -5589,7 +5593,7 @@ static void process_bin_bop_insert_complete(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_insert);
+        STATS_CMD_NOKEY(c, bop_insert);
 
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
@@ -5669,7 +5673,7 @@ static void process_bin_bop_update_complete(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_update);
+        STATS_CMD_NOKEY(c, bop_update);
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else if (ret == ENGINE_EBADBKEY)
@@ -5777,7 +5781,7 @@ static void process_bin_bop_update_prepare_nread(conn *c)
         c->substate = bin_reading_bop_update_nread_complete;
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_update);
+        STATS_CMD_NOKEY(c, bop_update);
         /* ret == ENGINE_E2BIG || ret == ENGINE_ENOMEM */
         if (ret == ENGINE_E2BIG)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
@@ -5860,7 +5864,7 @@ static void process_bin_bop_delete(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_delete);
+        STATS_CMD_NOKEY(c, bop_delete);
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else if (ret == ENGINE_EBADBKEY)
@@ -5987,7 +5991,7 @@ static void process_bin_bop_get(conn *c)
             c->coll_op     = OPERATION_BOP_GET;
             conn_set_state(c, conn_mwrite);
         } else {
-            STATS_NOKEY(c, cmd_bop_get);
+            STATS_CMD_NOKEY(c, bop_get);
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
             if (elem_array != NULL) {
                 free(elem_array);
@@ -6022,7 +6026,7 @@ static void process_bin_bop_get(conn *c)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_UNREADABLE, 0);
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_get);
+        STATS_CMD_NOKEY(c, bop_get);
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else if (ret == ENGINE_EBADBKEY)
@@ -6101,7 +6105,7 @@ static void process_bin_bop_count(conn *c)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_UNREADABLE, 0);
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_count);
+        STATS_CMD_NOKEY(c, bop_count);
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else if (ret == ENGINE_EBADBKEY)
@@ -6422,12 +6426,12 @@ static void process_bin_bop_smget_complete_old(conn *c)
         if (ret == ENGINE_SUCCESS) {
             /* Remember this command so we can garbage collect it later */
             /* c->coll_eitem  = (void *)elem_array; */
-            STATS_NOKEY2(c, cmd_bop_smget, bop_smget_oks);
+            STATS_OKS_NOKEY(c, bop_smget);
             c->coll_ecount = elem_count;
             c->coll_op     = OPERATION_BOP_SMGET;
             conn_set_state(c, conn_mwrite);
         } else {
-            STATS_NOKEY(c, cmd_bop_smget);
+            STATS_CMD_NOKEY(c, bop_smget);
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         }
@@ -6437,7 +6441,7 @@ static void process_bin_bop_smget_complete_old(conn *c)
         conn_set_state(c, conn_closing);
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_smget);
+        STATS_CMD_NOKEY(c, bop_smget);
         if (ret == ENGINE_EBADVALUE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADVALUE, 0);
         else if (ret == ENGINE_EBADTYPE)
@@ -6616,12 +6620,12 @@ static void process_bin_bop_smget_complete(conn *c)
         if (ret == ENGINE_SUCCESS) {
             /* Remember this command so we can garbage collect it later */
             /* c->coll_eitem  = (void *)elem_array; */
-            STATS_NOKEY2(c, cmd_bop_smget, bop_smget_oks);
+            STATS_OKS_NOKEY(c, bop_smget);
             c->coll_ecount = smres.elem_count+smres.trim_count;
             c->coll_op     = OPERATION_BOP_SMGET;
             conn_set_state(c, conn_mwrite);
         } else {
-            STATS_NOKEY(c, cmd_bop_smget);
+            STATS_CMD_NOKEY(c, bop_smget);
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, smres.elem_array,
                                              smres.elem_count+smres.trim_count);
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
@@ -6632,7 +6636,7 @@ static void process_bin_bop_smget_complete(conn *c)
         conn_set_state(c, conn_closing);
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_smget);
+        STATS_CMD_NOKEY(c, bop_smget);
         if (ret == ENGINE_EBADVALUE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADVALUE, 0);
         else if (ret == ENGINE_EBADTYPE)
@@ -6752,7 +6756,7 @@ static void process_bin_getattr(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
     default:
-        STATS_NOKEY(c, cmd_getattr);
+        STATS_CMD_NOKEY(c, getattr);
         if (ret == ENGINE_EBADATTR)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADATTR, 0);
         else
@@ -6862,7 +6866,7 @@ static void process_bin_setattr(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
     default:
-        STATS_NOKEY(c, cmd_setattr);
+        STATS_CMD_NOKEY(c, setattr);
         if (ret == ENGINE_EBADATTR)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADATTR, 0);
         else if (ret == ENGINE_EBADVALUE)
@@ -7492,7 +7496,7 @@ static void process_bin_flush(conn *c)
     } else {
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
     }
-    STATS_NOKEY(c, cmd_flush);
+    STATS_CMD_NOKEY(c, flush);
 }
 
 static void process_bin_flush_prefix(conn *c)
@@ -7557,7 +7561,7 @@ static void process_bin_flush_prefix(conn *c)
         break;
     }
 
-    STATS_NOKEY(c, cmd_flush_prefix);
+    STATS_CMD_NOKEY(c, flush_prefix);
     return;
 }
 
@@ -8977,7 +8981,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
         } else {
             handle_unexpected_errorcode_ascii(c, ret);
         }
-        STATS_NOKEY(c, cmd_flush);
+        STATS_CMD_NOKEY(c, flush);
     } else { /* flush_prefix */
         /* flush_prefix <prefix> [<delay>] [noreply]\r\n */
         if (ntokens == (c->noreply ? 4 : 3)) {
@@ -9027,7 +9031,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
         } else {
             handle_unexpected_errorcode_ascii(c, ret);
         }
-        STATS_NOKEY(c, cmd_flush_prefix);
+        STATS_CMD_NOKEY(c, flush_prefix);
     }
 }
 
@@ -10070,7 +10074,7 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
         } else { /* ENGINE_ENOMEM */
-            STATS_NOKEY(c, cmd_lop_get);
+            STATS_CMD_NOKEY(c, lop_get);
             mc_engine.v1->list_elem_release(mc_engine.v0, c, elem_array, elem_count);
             if (elem_array != NULL) {
                 free(elem_array);
@@ -10098,7 +10102,7 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
         else                          out_string(c, "UNREADABLE");
         break;
     default:
-        STATS_NOKEY(c, cmd_lop_get);
+        STATS_CMD_NOKEY(c, lop_get);
         if (ret == ENGINE_EBADTYPE)     out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
         else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
@@ -10138,7 +10142,7 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
         conn_set_state(c, conn_closing);
         break;
     default:
-        STATS_NOKEY(c, cmd_lop_insert);
+        STATS_CMD_NOKEY(c, lop_insert);
         if (ret == ENGINE_E2BIG)        out_string(c, "CLIENT_ERROR too large value");
         else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
@@ -10174,7 +10178,7 @@ static void process_lop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         conn_set_state(c, conn_closing);
         break;
     default:
-        STATS_NOKEY(c, cmd_lop_create);
+        STATS_CMD_NOKEY(c, lop_create);
         if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
         else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
         else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
@@ -10230,7 +10234,7 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
         out_string(c, "NOT_FOUND");
         break;
     default:
-        STATS_NOKEY(c, cmd_lop_delete);
+        STATS_CMD_NOKEY(c, lop_delete);
         if (ret == ENGINE_EBADTYPE)     out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, ret);
@@ -10487,7 +10491,7 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
         } else { /* ENGINE_ENOMEM */
-            STATS_NOKEY(c, cmd_sop_get);
+            STATS_CMD_NOKEY(c, sop_get);
             mc_engine.v1->set_elem_release(mc_engine.v0, c, elem_array, elem_count);
             if (elem_array != NULL) {
                 free(elem_array);
@@ -10515,7 +10519,7 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
         else                          out_string(c, "UNREADABLE");
         break;
     default:
-        STATS_NOKEY(c, cmd_sop_get);
+        STATS_CMD_NOKEY(c, sop_get);
         if (ret == ENGINE_EBADTYPE)     out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
         else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
@@ -10572,11 +10576,11 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
         break;
     default:
         if (cmd == (int)OPERATION_SOP_INSERT) {
-            STATS_NOKEY(c, cmd_sop_insert);
+            STATS_CMD_NOKEY(c, sop_insert);
         } else if (cmd == (int)OPERATION_SOP_DELETE) {
-            STATS_NOKEY(c, cmd_sop_delete);
+            STATS_CMD_NOKEY(c, sop_delete);
         } else {
-            STATS_NOKEY(c, cmd_sop_exist);
+            STATS_CMD_NOKEY(c, sop_exist);
         }
 
         if (ret == ENGINE_E2BIG)        out_string(c, "CLIENT_ERROR too large value");
@@ -10614,7 +10618,7 @@ static void process_sop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         conn_set_state(c, conn_closing);
         break;
     default:
-        STATS_NOKEY(c, cmd_sop_create);
+        STATS_CMD_NOKEY(c, sop_create);
         if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
         else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
         else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
@@ -10884,7 +10888,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
         } else { /* ENGINE_ENOMEM */
-            STATS_NOKEY(c, cmd_bop_get);
+            STATS_CMD_NOKEY(c, bop_get);
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
             if (elem_array != NULL) {
                 free(elem_array);
@@ -10914,7 +10918,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
         else                             out_string(c, "UNREADABLE");
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_get);
+        STATS_CMD_NOKEY(c, bop_get);
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
@@ -10967,7 +10971,7 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
         else                          out_string(c, "UNREADABLE");
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_count);
+        STATS_CMD_NOKEY(c, bop_count);
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
@@ -11012,7 +11016,7 @@ static void process_bop_position(conn *c, char *key, size_t nkey,
         else                          out_string(c, "UNREADABLE");
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_position);
+        STATS_CMD_NOKEY(c, bop_position);
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
@@ -11096,7 +11100,7 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
         } else { /* ENGINE_ENOMEM */
-            STATS_NOKEY(c, cmd_bop_pwg);
+            STATS_CMD_NOKEY(c, bop_pwg);
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
             if (respbuf != NULL)
                 free(respbuf);
@@ -11118,7 +11122,7 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
         else                          out_string(c, "UNREADABLE");
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_pwg);
+        STATS_CMD_NOKEY(c, bop_pwg);
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
@@ -11219,7 +11223,7 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey,
             conn_set_state(c, conn_mwrite);
             c->msgcurr     = 0;
         } else { /* ENGINE_ENOMEM */
-            STATS_NOKEY(c, cmd_bop_gbp);
+            STATS_CMD_NOKEY(c, bop_gbp);
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
             if (respbuf != NULL)
                 free(respbuf);
@@ -11241,7 +11245,7 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey,
         else                          out_string(c, "UNREADABLE");
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_gbp);
+        STATS_CMD_NOKEY(c, bop_gbp);
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, ret);
@@ -11285,7 +11289,7 @@ static void process_bop_update_prepare_nread(conn *c, int cmd,
         break;
     default:
         /* ret == ENGINE_E2BIG || ret == ENGINE_ENOMEM */
-        STATS_NOKEY(c, cmd_bop_update);
+        STATS_CMD_NOKEY(c, bop_update);
         if (ret == ENGINE_E2BIG) out_string(c, "CLIENT_ERROR too large value");
         else                     out_string(c, "SERVER_ERROR out of memory");
 
@@ -11334,7 +11338,7 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
         conn_set_state(c, conn_closing);
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_insert);
+        STATS_CMD_NOKEY(c, bop_insert);
         if (ret == ENGINE_E2BIG)        out_string(c, "CLIENT_ERROR too large value");
         else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
@@ -11426,11 +11430,11 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
     default:
 #ifdef SUPPORT_BOP_MGET
         if (cmd == OPERATION_BOP_MGET)
-            STATS_NOKEY(c, cmd_bop_mget);
+            STATS_CMD_NOKEY(c, bop_mget);
 #endif
 #ifdef SUPPORT_BOP_SMGET
         if (cmd == OPERATION_BOP_SMGET)
-            STATS_NOKEY(c, cmd_bop_smget);
+            STATS_CMD_NOKEY(c, bop_smget);
 #endif
         /* ret == ENGINE_ENOMEM */
         out_string(c, "SERVER_ERROR out of memory");
@@ -11466,7 +11470,7 @@ static void process_bop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         conn_set_state(c, conn_closing);
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_create);
+        STATS_CMD_NOKEY(c, bop_create);
         if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
         else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
         else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
@@ -11525,7 +11529,7 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
         out_string(c, "NOT_FOUND");
         break;
     default:
-        STATS_NOKEY(c, cmd_bop_delete);
+        STATS_CMD_NOKEY(c, bop_delete);
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
@@ -11831,9 +11835,9 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
         break;
     default:
         if (cmd == OPERATION_MOP_INSERT) {
-            STATS_NOKEY(c, cmd_mop_insert);
+            STATS_CMD_NOKEY(c, mop_insert);
         } else if (cmd == OPERATION_MOP_UPDATE) {
-            STATS_NOKEY(c, cmd_mop_update);
+            STATS_CMD_NOKEY(c, mop_update);
         }
 
         if (ret == ENGINE_E2BIG)        out_string(c, "CLIENT_ERROR too large value");
@@ -11871,9 +11875,9 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
         }
     default:
         if (cmd == OPERATION_MOP_DELETE) {
-            STATS_NOKEY(c, cmd_mop_delete);
+            STATS_CMD_NOKEY(c, mop_delete);
         } else if (cmd == OPERATION_MOP_GET) {
-            STATS_NOKEY(c, cmd_mop_get);
+            STATS_CMD_NOKEY(c, mop_get);
         }
         /* ret == ENGINE_ENOMEM */
         out_string(c, "SERVER_ERROR out of memory");
@@ -11908,7 +11912,7 @@ static void process_mop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         conn_set_state(c, conn_closing);
         break;
     default:
-        STATS_NOKEY(c, cmd_mop_create);
+        STATS_CMD_NOKEY(c, mop_create);
         if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
         else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
         else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
@@ -12972,7 +12976,7 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
         out_string(c, "NOT_FOUND");
         break;
     default:
-        STATS_NOKEY(c, cmd_getattr);
+        STATS_CMD_NOKEY(c, getattr);
         if (ret == ENGINE_EBADATTR)     out_string(c, "ATTR_ERROR not found");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, ret);
@@ -13100,7 +13104,7 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
         out_string(c, "NOT_FOUND");
         break;
     default:
-        STATS_NOKEY(c, cmd_setattr);
+        STATS_CMD_NOKEY(c, setattr);
         if (ret == ENGINE_EBADATTR)       out_string(c, "ATTR_ERROR not found");
         else if (ret == ENGINE_EBADVALUE) out_string(c, "ATTR_ERROR bad value");
         else if (ret == ENGINE_ENOTSUP)   out_string(c, "NOT_SUPPORTED");
@@ -13781,7 +13785,7 @@ bool conn_new_cmd(conn *c)
     if (c->nevents >= 0) {
         reset_cmd_handler(c);
     } else {
-        STATS_NOKEY(c, conn_yields);
+        STATS_ADD(c, conn_yields, 1);
         if (c->rbytes > 0) {
             /* We have already read in data into the input buffer,
                so libevent will most likely not signal read events
