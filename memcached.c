@@ -97,70 +97,81 @@ void UNLOCK_SETTING() {
 }
 
 /* Macros for incrementing thread_stats */
-#define STATS_INCR_ONE(conn, op, key, nkey) { \
-    struct independent_stats *independent_stats = get_independent_stats(conn); \
-    struct thread_stats *thread_stats = \
-        &independent_stats->thread_stats[conn->thread->index]; \
-    topkeys_t *topkeys = independent_stats->topkeys; \
-    pthread_mutex_lock(&thread_stats->mutex); \
-    thread_stats->op++; \
-    pthread_mutex_unlock(&thread_stats->mutex); \
-    TK(topkeys, op, key, nkey, current_time); \
-}
-
-#define STATS_INCR_TWO(conn, op1, op2, key, nkey) { \
-    struct independent_stats *independent_stats = get_independent_stats(conn); \
-    struct thread_stats *thread_stats = \
-        &independent_stats->thread_stats[conn->thread->index]; \
-    topkeys_t *topkeys = independent_stats->topkeys; \
-    pthread_mutex_lock(&thread_stats->mutex); \
-    thread_stats->op1++; \
-    thread_stats->op2++; \
-    pthread_mutex_unlock(&thread_stats->mutex); \
-    TK(topkeys, op1, key, nkey, current_time); \
-}
-
-#define STATS_INCR(conn, op, key, nkey) \
-    STATS_INCR_ONE(conn, op, key, nkey)
-
-#define STATS_OKS(conn, op, key, nkey) \
-    STATS_INCR_TWO(conn, op##_oks, cmd_##op, key, nkey)
-
-#define STATS_HITS(conn, op, key, nkey) \
-    STATS_INCR_TWO(conn, op##_hits, cmd_##op, key, nkey)
-
-#define STATS_ELEM_HITS(conn, op, key, nkey) \
-    STATS_INCR_TWO(conn, op##_elem_hits, cmd_##op, key, nkey)
-
-#define STATS_NONE_HITS(conn, op, key, nkey) \
-    STATS_INCR_TWO(conn, op##_none_hits, cmd_##op, key, nkey)
-
-#define STATS_MISSES(conn, op, key, nkey) \
-    STATS_INCR_TWO(conn, op##_misses, cmd_##op, key, nkey)
-
-#define STATS_BADVALUE(conn, op, key, nkey) \
-    STATS_INCR_TWO(conn, op##_badval, cmd_##op, key, nkey)
-
-#define STATS_NOKEY(conn, op) { \
+#define THSTATS_INCR_ONE(conn, op) { \
     struct thread_stats *thread_stats = get_thread_stats(conn); \
     pthread_mutex_lock(&thread_stats->mutex); \
     thread_stats->op++; \
     pthread_mutex_unlock(&thread_stats->mutex); \
+}
+
+#define THSTATS_INCR_TWO(conn, op1, op2) { \
+    struct thread_stats *thread_stats = get_thread_stats(conn); \
+    pthread_mutex_lock(&thread_stats->mutex); \
+    thread_stats->op1++; \
+    thread_stats->op2++; \
+    pthread_mutex_unlock(&thread_stats->mutex); \
+}
+
+#define THSTATS_INCR_AMT(conn, op, amt) { \
+    struct thread_stats *thread_stats = get_thread_stats(conn); \
+    pthread_mutex_lock(&thread_stats->mutex); \
+    thread_stats->op += (amt); \
+    pthread_mutex_unlock(&thread_stats->mutex); \
+}
+
+/* Macros for incrementing topkeys */
+#define TOPKEYS_INCR(op, key, nkey) { \
+    if (default_topkeys) { \
+        rel_time_t ctime = get_current_time(); \
+        TK(default_topkeys, op, key, nkey, ctime); \
+    } \
+}
+
+#define STATS_INCR(conn, op, key, nkey) { \
+    THSTATS_INCR_ONE(conn, op); \
+    TOPKEYS_INCR(op, key, nkey); \
+}
+
+#define STATS_OKS(conn, op, key, nkey) { \
+    THSTATS_INCR_TWO(conn, op##_oks, cmd_##op); \
+    TOPKEYS_INCR(op##_oks, key, nkey); \
+}
+
+#define STATS_HITS(conn, op, key, nkey) { \
+    THSTATS_INCR_TWO(conn, op##_hits, cmd_##op); \
+    TOPKEYS_INCR(op##_hits, key, nkey); \
+}
+
+#define STATS_ELEM_HITS(conn, op, key, nkey) { \
+    THSTATS_INCR_TWO(conn, op##_elem_hits, cmd_##op); \
+    TOPKEYS_INCR(op##_elem_hits, key, nkey); \
+}
+
+#define STATS_NONE_HITS(conn, op, key, nkey) { \
+    THSTATS_INCR_TWO(conn, op##_none_hits, cmd_##op); \
+    TOPKEYS_INCR(op##_none_hits, key, nkey); \
+}
+
+#define STATS_MISSES(conn, op, key, nkey) { \
+    THSTATS_INCR_TWO(conn, op##_misses, cmd_##op); \
+    TOPKEYS_INCR(op##_misses, key, nkey); \
+}
+
+#define STATS_BADVALUE(conn, op, key, nkey) { \
+    THSTATS_INCR_TWO(conn, op##_badval, cmd_##op); \
+    TOPKEYS_INCR(op##_badval, key, nkey); \
+}
+
+#define STATS_NOKEY(conn, op) { \
+    THSTATS_INCR_ONE(conn, op); \
 }
 
 #define STATS_NOKEY2(conn, op1, op2) { \
-    struct thread_stats *thread_stats = get_thread_stats(conn); \
-    pthread_mutex_lock(&thread_stats->mutex); \
-    thread_stats->op1++; \
-    thread_stats->op2++; \
-    pthread_mutex_unlock(&thread_stats->mutex); \
+    THSTATS_INCR_TWO(conn, op1, op2); \
 }
 
 #define STATS_ADD(conn, op, amt) { \
-    struct thread_stats *thread_stats = get_thread_stats(conn); \
-    pthread_mutex_lock(&thread_stats->mutex); \
-    thread_stats->op += amt; \
-    pthread_mutex_unlock(&thread_stats->mutex); \
+    THSTATS_INCR_AMT(conn, op, amt); \
 }
 
 volatile sig_atomic_t memcached_shutdown=0;
@@ -194,6 +205,7 @@ static int lenstr_size = 10;
 static conn *listen_conn = NULL;
 static struct event_base *main_base;
 static struct independent_stats *default_independent_stats;
+static topkeys_t *default_topkeys = NULL;
 
 static struct engine_event_handler *engine_event_handlers[MAX_ENGINE_EVENT_TYPE + 1];
 
@@ -4065,9 +4077,8 @@ static void process_bin_stat(conn *c)
     } else if (strncmp(subcommand, "aggregate", 9) == 0) {
         server_stats(&append_stats, c, true);
     } else if (strncmp(subcommand, "topkeys", 7) == 0) {
-        topkeys_t *tk = get_independent_stats(c)->topkeys;
-        if (tk != NULL) {
-            topkeys_stats(tk, c, current_time, append_stats);
+        if (default_topkeys) {
+            topkeys_stats(default_topkeys, c, get_current_time(), append_stats);
         } else {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
             return;
@@ -8412,9 +8423,8 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens)
     } else if (strcmp(subcommand, "aggregate") == 0) {
         server_stats(&append_stats, c, true);
     } else if (strcmp(subcommand, "topkeys") == 0) {
-        topkeys_t *tk = get_independent_stats(c)->topkeys;
-        if (tk != NULL) {
-            topkeys_stats(tk, c, current_time, append_stats);
+        if (default_topkeys) {
+            topkeys_stats(default_topkeys, c, get_current_time(), append_stats);
         } else {
             out_string(c, "NOT_SUPPORTED");
             return;
@@ -14756,8 +14766,6 @@ static void *new_independent_stats(void)
     int ii;
     int nrecords = num_independent_stats();
     struct independent_stats *independent_stats = calloc(sizeof(independent_stats) + sizeof(struct thread_stats) * nrecords, 1);
-    if (settings.topkeys > 0)
-        independent_stats->topkeys = topkeys_init(settings.topkeys);
     for (ii = 0; ii < nrecords; ii++)
         pthread_mutex_init(&independent_stats->thread_stats[ii].mutex, NULL);
     return independent_stats;
@@ -14768,8 +14776,6 @@ static void release_independent_stats(void *stats)
     int ii;
     int nrecords = num_independent_stats();
     struct independent_stats *independent_stats = stats;
-    if (independent_stats->topkeys)
-        topkeys_free(independent_stats->topkeys);
     for (ii = 0; ii < nrecords; ii++)
         pthread_mutex_destroy(&independent_stats->thread_stats[ii].mutex);
     free(independent_stats);
@@ -14797,8 +14803,7 @@ static inline struct thread_stats *get_thread_stats(conn *c)
 
 static void count_eviction(const void *cookie, const void *key, const int nkey)
 {
-    topkeys_t *tk = get_independent_stats((conn*)cookie)->topkeys;
-    TK(tk, evictions, key, nkey, get_current_time());
+    TOPKEYS_INCR(evictions, key, nkey);
 }
 
 /**
@@ -15797,6 +15802,9 @@ int main (int argc, char **argv)
     }
 
     default_independent_stats = new_independent_stats();
+    if (settings.topkeys > 0) {
+        default_topkeys = topkeys_init(settings.topkeys);
+    }
 
 #ifndef __WIN32__
     /*
@@ -15949,6 +15957,10 @@ int main (int argc, char **argv)
 
     /* release independent_stats */
     release_independent_stats(default_independent_stats);
+    /* free topkeys */
+    if (default_topkeys) {
+        topkeys_free(default_topkeys);
+    }
 
     /* Clean up strdup() call for bind() address */
     if (settings.inter) {
