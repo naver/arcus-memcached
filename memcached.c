@@ -8947,62 +8947,56 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
 static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens, bool flush_all)
 {
     assert(c->ewouldblock == false);
-    int32_t exptime;
+    int32_t exptime = 0; /* default delay value */
+    bool delay_flag;
     ENGINE_ERROR_CODE ret;
 
     set_noreply_maybe(c, tokens, ntokens);
 
     if (flush_all) {
         /* flush_all [<delay>] [noreply]\r\n */
-        if (ntokens == (c->noreply ? 3 : 2)) {
-            exptime = 0;
-        } else {
-            if (! safe_strtol(tokens[1].value, &exptime) || exptime < 0) {
-                print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
-                return;
-            }
+        delay_flag = (ntokens == (c->noreply ? 4 : 3));
+    } else {
+        /* flush_prefix <prefix> [<delay>] [noreply]\r\n */
+        if (tokens[PREFIX_TOKEN].length > PREFIX_MAX_LENGTH) {
+            out_string(c, "CLIENT_ERROR too long prefix name");
+            return;
         }
+        delay_flag = (ntokens == (c->noreply ? 5 : 4));
+    }
+    if (delay_flag) {
+        if (! safe_strtol(tokens[1].value, &exptime) || exptime < 0) {
+            print_invalid_command(c, tokens, ntokens);
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+    }
 
+    if (flush_all) {
         ret = mc_engine.v1->flush(mc_engine.v0, c, NULL, -1, realtime(exptime));
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
             ret = ENGINE_SUCCESS;
         }
 
+        STATS_CMD_NOKEY(c, flush);
         if (ret == ENGINE_SUCCESS) {
             out_string(c, "OK");
-        } else if (ret == ENGINE_ENOTSUP) {
-            out_string(c, "NOT_SUPPORTED");
         } else {
-            handle_unexpected_errorcode_ascii(c, ret);
+            if (ret == ENGINE_DISCONNECT) conn_set_state(c, conn_closing);
+            else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+            else handle_unexpected_errorcode_ascii(c, ret);
         }
-        STATS_CMD_NOKEY(c, flush);
     } else { /* flush_prefix */
-        /* flush_prefix <prefix> [<delay>] [noreply]\r\n */
-        if (ntokens == (c->noreply ? 4 : 3)) {
-            exptime = 0;
-        } else {
-            if (! safe_strtol(tokens[2].value, &exptime) || exptime < 0) {
-                print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
-                return;
-            }
-        }
         char *prefix = tokens[PREFIX_TOKEN].value;
         int nprefix = tokens[PREFIX_TOKEN].length;
-        if (nprefix > PREFIX_MAX_LENGTH) {
-            out_string(c, "CLIENT_ERROR too long prefix name");
-            return;
-        }
         if (nprefix == 6 && strncmp(prefix, "<null>", 6) == 0) {
             /* flush null prefix */
             prefix = NULL;
             nprefix = 0;
         }
 
-        ret = mc_engine.v1->flush(mc_engine.v0, c, prefix, nprefix,
-                                  realtime(exptime));
+        ret = mc_engine.v1->flush(mc_engine.v0, c, prefix, nprefix, realtime(exptime));
         if (ret == ENGINE_EWOULDBLOCK) {
             c->ewouldblock = true;
             ret = ENGINE_SUCCESS;
@@ -9016,18 +9010,15 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
             }
         }
 
+        STATS_CMD_NOKEY(c, flush_prefix);
         if (ret == ENGINE_SUCCESS) {
             out_string(c, "OK");
-        } else if (ret == ENGINE_DISCONNECT) {
-            conn_set_state(c, conn_closing);
-        } else if (ret == ENGINE_PREFIX_ENOENT) {
-            out_string(c, "NOT_FOUND");
-        } else if (ret == ENGINE_ENOTSUP) {
-            out_string(c, "NOT_SUPPORTED");
         } else {
-            handle_unexpected_errorcode_ascii(c, ret);
+            if (ret == ENGINE_DISCONNECT) conn_set_state(c, conn_closing);
+            else if (ret == ENGINE_PREFIX_ENOENT) out_string(c, "NOT_FOUND");
+            else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+            else handle_unexpected_errorcode_ascii(c, ret);
         }
-        STATS_CMD_NOKEY(c, flush_prefix);
     }
 }
 
