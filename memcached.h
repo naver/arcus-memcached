@@ -467,6 +467,14 @@ struct conn {
     bool premature_notify_io_complete;
 };
 
+/* set connection's ewouldblock according to the given return value */
+#define CONN_CHECK_AND_SET_EWOULDBLOCK(ret, conn) { \
+    if ((ret) == ENGINE_EWOULDBLOCK) { \
+        (conn)->ewouldblock = true; \
+        (ret) = ENGINE_SUCCESS; \
+    } \
+}
+
 /*
  * Functions
  */
