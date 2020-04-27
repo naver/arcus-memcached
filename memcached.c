@@ -278,7 +278,6 @@ static enum transmit_result transmit(conn *c);
 static void set_current_time(void)
 {
     struct timeval timer;
-
     gettimeofday(&timer, NULL);
     current_time = (rel_time_t) (timer.tv_sec - process_started);
 }
@@ -8086,7 +8085,7 @@ static void aggregate_callback(void *in, void *out)
 static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
 {
     pid_t pid = getpid();
-    rel_time_t now = current_time;
+    rel_time_t now = get_current_time();
 
     struct thread_stats thread_stats;
     threadlocal_stats_clear(&thread_stats);
