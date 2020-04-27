@@ -208,7 +208,7 @@ static int lenstr_size = 10;
 /** file scope variables **/
 static conn *listen_conn = NULL;
 static struct event_base *main_base;
-static struct independent_stats *default_independent_stats;
+struct thread_stats *default_thread_stats;
 static topkeys_t *default_topkeys = NULL;
 
 static struct engine_event_handler *engine_event_handlers[MAX_ENGINE_EVENT_TYPE + 1];
@@ -230,7 +230,6 @@ static bool lqdetect_in_use = false;
  */
 static int new_socket(struct addrinfo *ai);
 static int try_read_command(conn *c);
-static inline struct independent_stats *get_independent_stats(conn *c);
 static inline struct thread_stats *get_thread_stats(conn *c);
 
 enum try_read_result {
@@ -346,7 +345,7 @@ static void stats_reset(const void *cookie)
     mc_stats.total_conns = 0;
     stats_prefix_clear();
     UNLOCK_STATS();
-    threadlocal_stats_reset(get_independent_stats(conn)->thread_stats);
+    threadlocal_stats_reset(get_thread_stats(conn));
     mc_engine.v1->reset_stats(mc_engine.v0, cookie);
 }
 
@@ -8076,9 +8075,8 @@ static void process_stats_prefix(conn *c, const char *prefix, const int nprefix)
 static void aggregate_callback(void *in, void *out)
 {
     struct thread_stats *out_thread_stats = out;
-    struct independent_stats *in_independent_stats = in;
-    threadlocal_stats_aggregate(in_independent_stats->thread_stats,
-                                out_thread_stats);
+    struct thread_stats *in_thread_stats = in;
+    threadlocal_stats_aggregate(in_thread_stats, out_thread_stats);
 }
 
 /* return server specific stats only */
@@ -8094,8 +8092,7 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
         mc_engine.v1->aggregate_stats(mc_engine.v0, (const void *)c,
                                       aggregate_callback, &thread_stats);
     } else {
-        threadlocal_stats_aggregate(get_independent_stats(c)->thread_stats,
-                                    &thread_stats);
+        threadlocal_stats_aggregate(get_thread_stats(c), &thread_stats);
     }
 
 #ifndef __WIN32__
@@ -14759,49 +14756,26 @@ static int get_thread_index(const void *cookie)
     return c->thread->index;
 }
 
-static int num_independent_stats(void)
-{
-    return settings.num_threads + 1;
-}
-
 static void *new_independent_stats(void)
 {
-    int ii;
-    int nrecords = num_independent_stats();
-    struct independent_stats *independent_stats = calloc(sizeof(independent_stats) + sizeof(struct thread_stats) * nrecords, 1);
-    for (ii = 0; ii < nrecords; ii++)
-        pthread_mutex_init(&independent_stats->thread_stats[ii].mutex, NULL);
-    return independent_stats;
+    return threadlocal_stats_create(settings.num_threads);
 }
 
 static void release_independent_stats(void *stats)
 {
-    int ii;
-    int nrecords = num_independent_stats();
-    struct independent_stats *independent_stats = stats;
-    for (ii = 0; ii < nrecords; ii++)
-        pthread_mutex_destroy(&independent_stats->thread_stats[ii].mutex);
-    free(independent_stats);
-}
-
-static inline struct independent_stats *get_independent_stats(conn *c)
-{
-    struct independent_stats *independent_stats;
-    if (mc_engine.v1->get_stats_struct != NULL) {
-        independent_stats = mc_engine.v1->get_stats_struct(mc_engine.v0, (const void *)c);
-        if (independent_stats == NULL)
-            independent_stats = default_independent_stats;
-    } else {
-        independent_stats = default_independent_stats;
-    }
-    return independent_stats;
+    threadlocal_stats_destroy(stats);
 }
 
 static inline struct thread_stats *get_thread_stats(conn *c)
 {
-    struct independent_stats *independent_stats = get_independent_stats(c);
-    assert(c->thread->index < num_independent_stats());
-    return &independent_stats->thread_stats[c->thread->index];
+    if (mc_engine.v1->get_stats_struct != NULL) {
+        struct thread_stats *stats = mc_engine.v1->get_stats_struct(mc_engine.v0, (const void *)c);
+        if (stats == NULL) {
+            stats = default_thread_stats;
+        }
+        return stats;
+    }
+    return default_thread_stats;
 }
 
 static void count_eviction(const void *cookie, const void *key, const int nkey)
@@ -15804,11 +15778,6 @@ int main (int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
-    default_independent_stats = new_independent_stats();
-    if (settings.topkeys > 0) {
-        default_topkeys = topkeys_init(settings.topkeys);
-    }
-
 #ifndef __WIN32__
     /*
      * ignore SIGPIPE signals; we can use errno == EPIPE if we
@@ -15837,6 +15806,14 @@ int main (int argc, char **argv)
 
     /* start up worker threads if MT mode */
     thread_init(settings.num_threads, main_base);
+    if ((default_thread_stats = new_independent_stats()) == NULL) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Failed to create thread stats.\n");
+        exit(EXIT_FAILURE);
+    }
+    if (settings.topkeys > 0) {
+        default_topkeys = topkeys_init(settings.topkeys);
+    }
 
     /* create unix mode sockets after dropping privileges */
     if (settings.socketpath != NULL) {
@@ -15938,6 +15915,10 @@ int main (int argc, char **argv)
     /* 4) shutdown all threads */
     memcached_shutdown = 2;
     threads_shutdown();
+    release_independent_stats(default_thread_stats);
+    if (default_topkeys) {
+        topkeys_free(default_topkeys);
+    }
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Worker threads terminated.\n");
 
     /* 5) destroy data structures */
@@ -15957,13 +15938,6 @@ int main (int argc, char **argv)
         free(arcus_zk_cfg);
     }
 #endif
-
-    /* release independent_stats */
-    release_independent_stats(default_independent_stats);
-    /* free topkeys */
-    if (default_topkeys) {
-        topkeys_free(default_topkeys);
-    }
 
     /* Clean up strdup() call for bind() address */
     if (settings.inter) {

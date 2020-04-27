@@ -69,7 +69,7 @@ static LIBEVENT_DISPATCHER_THREAD dispatcher_thread;
  * Each libevent instance has a wakeup pipe, which other threads
  * can use to signal that they've put a new connection on its queue.
  */
-static int nthreads;
+static int nthreads = 0;
 static LIBEVENT_THREAD *threads;
 static pthread_t *thread_ids;
 
@@ -665,6 +665,30 @@ void threadlocal_stats_clear(struct thread_stats *stats)
     stats->getattr_misses = 0;
     stats->setattr_hits = 0;
     stats->setattr_misses = 0;
+}
+
+void *threadlocal_stats_create(int num_threads)
+{
+    struct thread_stats *thread_stats;
+
+    if (nthreads > 0 && nthreads != num_threads) {
+        return NULL; /* invalid argument */
+    }
+
+    thread_stats = calloc(sizeof(struct thread_stats) * nthreads, 1);
+    for (int i = 0; i < nthreads; i++) {
+        pthread_mutex_init(&thread_stats[i].mutex, NULL);
+    }
+    return thread_stats;
+}
+
+void threadlocal_stats_destroy(void *stats)
+{
+    struct thread_stats *thread_stats = stats;
+    for (int i = 0; i < nthreads; i++) {
+        pthread_mutex_destroy(&thread_stats[i].mutex);
+    }
+    free(thread_stats);
 }
 
 void threadlocal_stats_reset(struct thread_stats *thread_stats)

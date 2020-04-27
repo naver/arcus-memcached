@@ -21,7 +21,6 @@
 
 #include <event.h>
 #include "cache.h"
-#include "topkeys.h"
 #include "mc_util.h"
 
 #define LOCK_THREAD(t)                          \
@@ -178,14 +177,6 @@ struct thread_stats {
     uint64_t          setattr_misses;
 };
 
-/**
- * The stats structure the engine keeps track of
- */
-struct independent_stats {
-    topkeys_t *topkeys;
-    struct thread_stats thread_stats[];
-};
-
 enum thread_type {
     GENERAL = 11
 };
@@ -221,6 +212,8 @@ void dispatch_conn_new(int sfd, STATE_FUNC init_state, int event_flags,
                        int read_buffer_size, enum network_transport transport);
 int  is_listen_thread(void);
 
+void *threadlocal_stats_create(int num_threads);
+void threadlocal_stats_destroy(void *stats);
 void threadlocal_stats_clear(struct thread_stats *stats);
 void threadlocal_stats_reset(struct thread_stats *thread_stats);
 void threadlocal_stats_aggregate(struct thread_stats *thread_stats, struct thread_stats *stats);
