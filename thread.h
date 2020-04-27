@@ -21,7 +21,6 @@
 
 #include <event.h>
 #include "cache.h"
-#include "topkeys.h"
 #include "mc_util.h"
 
 #define LOCK_THREAD(t)                          \
@@ -38,56 +37,84 @@
         abort();                                 \
     }
 
-/** Stats stored per slab (and per thread). */
-struct slab_stats {
-    uint64_t  cmd_set;
-    uint64_t  get_hits;
-    uint64_t  delete_hits;
-    uint64_t  cas_hits;
-    uint64_t  cas_badval;
-};
-
 /**
  * Stats stored per-thread.
  */
 struct thread_stats {
     pthread_mutex_t   mutex;
     uint64_t          cmd_get;
+    uint64_t          cmd_set;
     uint64_t          cmd_incr;
     uint64_t          cmd_decr;
     uint64_t          cmd_delete;
+    uint64_t          get_hits;
     uint64_t          get_misses;
-    uint64_t          delete_misses;
-    uint64_t          incr_misses;
-    uint64_t          decr_misses;
     uint64_t          incr_hits;
+    uint64_t          incr_misses;
     uint64_t          decr_hits;
+    uint64_t          decr_misses;
+    uint64_t          delete_hits;
+    uint64_t          delete_misses;
     uint64_t          cmd_cas;
+    uint64_t          cas_hits;
+    uint64_t          cas_badval;
     uint64_t          cas_misses;
-    uint64_t          bytes_read;
-    uint64_t          bytes_written;
     uint64_t          cmd_flush;
     uint64_t          cmd_flush_prefix;
-    uint64_t          conn_yields; /* # of yields for connections (-R option)*/
-    uint64_t          auth_cmds;
+    uint64_t          cmd_auth;
     uint64_t          auth_errors;
+    uint64_t          bytes_read;
+    uint64_t          bytes_written;
+    uint64_t          conn_yields; /* # of yields for connections (-R option)*/
     /* list command stats */
     uint64_t          cmd_lop_create;
     uint64_t          cmd_lop_insert;
     uint64_t          cmd_lop_delete;
     uint64_t          cmd_lop_get;
+    uint64_t          lop_create_oks;
+    uint64_t          lop_insert_hits;
+    uint64_t          lop_insert_misses;
+    uint64_t          lop_delete_elem_hits;
+    uint64_t          lop_delete_none_hits;
+    uint64_t          lop_delete_misses;
+    uint64_t          lop_get_elem_hits;
+    uint64_t          lop_get_none_hits;
+    uint64_t          lop_get_misses;
     /* set command stats */
     uint64_t          cmd_sop_create;
     uint64_t          cmd_sop_insert;
     uint64_t          cmd_sop_delete;
     uint64_t          cmd_sop_get;
     uint64_t          cmd_sop_exist;
+    uint64_t          sop_create_oks;
+    uint64_t          sop_insert_hits;
+    uint64_t          sop_insert_misses;
+    uint64_t          sop_delete_elem_hits;
+    uint64_t          sop_delete_none_hits;
+    uint64_t          sop_delete_misses;
+    uint64_t          sop_get_elem_hits;
+    uint64_t          sop_get_none_hits;
+    uint64_t          sop_get_misses;
+    uint64_t          sop_exist_hits;
+    uint64_t          sop_exist_misses;
     /* map command stats */
     uint64_t          cmd_mop_create;
     uint64_t          cmd_mop_insert;
     uint64_t          cmd_mop_update;
     uint64_t          cmd_mop_delete;
     uint64_t          cmd_mop_get;
+    uint64_t          mop_create_oks;
+    uint64_t          mop_insert_hits;
+    uint64_t          mop_insert_misses;
+    uint64_t          mop_update_elem_hits;
+    uint64_t          mop_update_none_hits;
+    uint64_t          mop_update_misses;
+    uint64_t          mop_delete_elem_hits;
+    uint64_t          mop_delete_none_hits;
+    uint64_t          mop_delete_misses;
+    uint64_t          mop_get_elem_hits;
+    uint64_t          mop_get_none_hits;
+    uint64_t          mop_get_misses;
     /* btree command stats */
     uint64_t          cmd_bop_create;
     uint64_t          cmd_bop_insert;
@@ -106,45 +133,6 @@ struct thread_stats {
 #endif
     uint64_t          cmd_bop_incr;
     uint64_t          cmd_bop_decr;
-    /* attr command stats */
-    uint64_t          cmd_getattr;
-    uint64_t          cmd_setattr;
-    /* list hit & miss stats */
-    uint64_t          lop_create_oks;
-    uint64_t          lop_insert_hits;
-    uint64_t          lop_insert_misses;
-    uint64_t          lop_delete_elem_hits;
-    uint64_t          lop_delete_none_hits;
-    uint64_t          lop_delete_misses;
-    uint64_t          lop_get_elem_hits;
-    uint64_t          lop_get_none_hits;
-    uint64_t          lop_get_misses;
-    /* set hit & miss stats */
-    uint64_t          sop_create_oks;
-    uint64_t          sop_insert_hits;
-    uint64_t          sop_insert_misses;
-    uint64_t          sop_delete_elem_hits;
-    uint64_t          sop_delete_none_hits;
-    uint64_t          sop_delete_misses;
-    uint64_t          sop_get_elem_hits;
-    uint64_t          sop_get_none_hits;
-    uint64_t          sop_get_misses;
-    uint64_t          sop_exist_hits;
-    uint64_t          sop_exist_misses;
-    /* map hit & miss stats */
-    uint64_t          mop_create_oks;
-    uint64_t          mop_insert_hits;
-    uint64_t          mop_insert_misses;
-    uint64_t          mop_update_elem_hits;
-    uint64_t          mop_update_none_hits;
-    uint64_t          mop_update_misses;
-    uint64_t          mop_delete_elem_hits;
-    uint64_t          mop_delete_none_hits;
-    uint64_t          mop_delete_misses;
-    uint64_t          mop_get_elem_hits;
-    uint64_t          mop_get_none_hits;
-    uint64_t          mop_get_misses;
-    /* btree hit & miss stats */
     uint64_t          bop_create_oks;
     uint64_t          bop_insert_hits;
     uint64_t          bop_insert_misses;
@@ -180,20 +168,13 @@ struct thread_stats {
     uint64_t          bop_decr_elem_hits;
     uint64_t          bop_decr_none_hits;
     uint64_t          bop_decr_misses;
-    /* attr hit & miss stats */
+    /* attribute command stats */
+    uint64_t          cmd_getattr;
+    uint64_t          cmd_setattr;
     uint64_t          getattr_hits;
     uint64_t          getattr_misses;
     uint64_t          setattr_hits;
     uint64_t          setattr_misses;
-    struct slab_stats slab_stats[MAX_SLAB_CLASSES];
-};
-
-/**
- * The stats structure the engine keeps track of
- */
-struct independent_stats {
-    topkeys_t *topkeys;
-    struct thread_stats thread_stats[];
 };
 
 enum thread_type {
@@ -231,10 +212,11 @@ void dispatch_conn_new(int sfd, STATE_FUNC init_state, int event_flags,
                        int read_buffer_size, enum network_transport transport);
 int  is_listen_thread(void);
 
+void *threadlocal_stats_create(int num_threads);
+void threadlocal_stats_destroy(void *stats);
 void threadlocal_stats_clear(struct thread_stats *stats);
 void threadlocal_stats_reset(struct thread_stats *thread_stats);
 void threadlocal_stats_aggregate(struct thread_stats *thread_stats, struct thread_stats *stats);
-void slab_stats_aggregate(struct thread_stats *stats, struct slab_stats *out);
 
 void thread_init(int nthreads, struct event_base *main_base);
 void threads_shutdown(void);

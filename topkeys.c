@@ -7,7 +7,8 @@
 #include <memcached/genhash.h>
 #include "topkeys.h"
 
-static topkey_item_t *topkey_item_init(const void *key, int nkey, rel_time_t ctime) {
+static topkey_item_t *topkey_item_init(const void *key, int nkey, rel_time_t ctime)
+{
     topkey_item_t *item = calloc(sizeof(topkey_item_t) + nkey, 1);
     assert(item);
     assert(key);
@@ -20,20 +21,24 @@ static topkey_item_t *topkey_item_init(const void *key, int nkey, rel_time_t cti
     return item;
 }
 
-static inline size_t topkey_item_size(const topkey_item_t *item) {
+static inline size_t topkey_item_size(const topkey_item_t *item)
+{
     return sizeof(topkey_item_t) + item->nkey;
 }
 
-static inline topkey_item_t* topkeys_tail(topkeys_t *tk) {
+static inline topkey_item_t* topkeys_tail(topkeys_t *tk)
+{
     return (topkey_item_t*)(tk->list.prev);
 }
 
 static int my_hash_eq(const void *k1, size_t nkey1,
-                      const void *k2, size_t nkey2) {
+                      const void *k2, size_t nkey2)
+{
     return nkey1 == nkey2 && memcmp(k1, k2, nkey1) == 0;
 }
 
-topkeys_t *topkeys_init(int max_keys) {
+topkeys_t *topkeys_init(int max_keys)
+{
     topkeys_t *tk = calloc(sizeof(topkeys_t), 1);
     if (tk == NULL) {
         return NULL;
@@ -60,7 +65,8 @@ topkeys_t *topkeys_init(int max_keys) {
     return tk;
 }
 
-void topkeys_free(topkeys_t *tk) {
+void topkeys_free(topkeys_t *tk)
+{
     pthread_mutex_destroy(&tk->mutex);
     genhash_free(tk->hash);
     dlist_t *p = tk->list.next;
@@ -71,14 +77,16 @@ void topkeys_free(topkeys_t *tk) {
     }
 }
 
-static inline void dlist_remove(dlist_t *list) {
+static inline void dlist_remove(dlist_t *list)
+{
     assert(list->prev->next == list);
     assert(list->next->prev == list);
     list->prev->next = list->next;
     list->next->prev = list->prev;
 }
 
-static inline void dlist_insert_after(dlist_t *list, dlist_t *new) {
+static inline void dlist_insert_after(dlist_t *list, dlist_t *new)
+{
     new->next = list->next;
     new->prev = list;
     list->next->prev = new;
@@ -95,14 +103,18 @@ static inline void dlist_iter(dlist_t *list,
     }
 }
 
-static inline void topkeys_item_delete(topkeys_t *tk, topkey_item_t *item) {
+static inline void topkeys_item_delete(topkeys_t *tk, topkey_item_t *item)
+{
     genhash_delete(tk->hash, item->key, item->nkey);
     dlist_remove(&item->list);
     --tk->nkeys;
     free(item);
 }
 
-topkey_item_t *topkeys_item_get_or_create(topkeys_t *tk, const void *key, size_t nkey, const rel_time_t ctime) {
+topkey_item_t *topkeys_item_get_or_create(topkeys_t *tk,
+                                          const void *key, size_t nkey,
+                                          const rel_time_t ctime)
+{
     topkey_item_t *item = genhash_find(tk->hash, key, nkey);
     if (item == NULL) {
         item = topkey_item_init(key, nkey, ctime);
@@ -129,7 +141,8 @@ static inline void append_stat(const void *cookie,
                                const char *key,
                                size_t nkey,
                                int value,
-                               ADD_STAT add_stats) {
+                               ADD_STAT add_stats)
+{
     char key_str[128];
     char val_str[128];
     int klen, vlen;
@@ -156,12 +169,17 @@ struct tk_context {
 #define TK_FMT(name) #name "=%d,"
 #define TK_ARGS(name) item->name,
 
-static void tk_iterfunc(dlist_t *list, void *arg) {
+static void tk_iterfunc(dlist_t *list, void *arg)
+{
     struct tk_context *c = arg;
     topkey_item_t *item = (topkey_item_t*)list;
     char val_str[TK_MAX_VAL_LEN];
-    /* This line is magical. The missing comma before item->ctime is because the TK_ARGS macro ends with a comma. */
-    int vlen = snprintf(val_str, sizeof(val_str) - 1, TK_OPS(TK_FMT)"ctime=%"PRIu32",atime=%"PRIu32, TK_OPS(TK_ARGS)
+    /* This line is magical.
+     * The missing comma before item->ctime is
+     * because the TK_ARGS macro ends with a comma.
+     */
+    int vlen = snprintf(val_str, sizeof(val_str) - 1,
+                        TK_OPS(TK_FMT)"ctime=%"PRIu32",atime=%"PRIu32, TK_OPS(TK_ARGS)
                         c->current_time - item->ctime, c->current_time - item->atime);
     c->add_stat(item->key, item->nkey, val_str, vlen, c->cookie);
 }
@@ -169,7 +187,8 @@ static void tk_iterfunc(dlist_t *list, void *arg) {
 ENGINE_ERROR_CODE topkeys_stats(topkeys_t *tk,
                                 const void *cookie,
                                 const rel_time_t current_time,
-                                ADD_STAT add_stat) {
+                                ADD_STAT add_stat)
+{
     struct tk_context context;
     context.cookie = cookie;
     context.add_stat = add_stat;

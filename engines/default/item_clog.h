@@ -50,9 +50,14 @@ void CLOG_GE_BTREE_ELEM_DELETE(btree_meta_info *info,
 void CLOG_GE_BTREE_ELEM_DELETE_LOGICAL(btree_meta_info *info,
                                        const bkey_range *bkrange,
                                        const eflag_filter *efilter,
-                                       uint32_t offset, uint32_t reqcount);
+                                       uint32_t offset, uint32_t count,
+                                       enum elem_delete_cause cause);
 void CLOG_GE_ITEM_SETATTR(hash_item *it,
                           ENGINE_ITEM_ATTR *attr_ids, uint32_t attr_cnt);
+void CLOG_GE_ELEM_DELETE_BEGIN(coll_meta_info *info, uint32_t reqcount,
+                               enum elem_delete_cause cause);
+void CLOG_GE_ELEM_DELETE_END(coll_meta_info *info,
+                             enum elem_delete_cause cause);
 
 /* macros for CLOG function substitution. */
 #define CLOG_ITEM_LINK(a) \
@@ -103,13 +108,21 @@ void CLOG_GE_ITEM_SETATTR(hash_item *it,
     if (item_clog_enabled) { \
         CLOG_GE_BTREE_ELEM_DELETE(a,b,c); \
     }
-#define CLOG_BTREE_ELEM_DELETE_LOGICAL(a,b,c,d,e) \
+#define CLOG_BTREE_ELEM_DELETE_LOGICAL(a,b,c,d,e,f) \
     if (item_clog_enabled) { \
-        CLOG_GE_BTREE_ELEM_DELETE_LOGICAL(a,b,c,d,e); \
+        CLOG_GE_BTREE_ELEM_DELETE_LOGICAL(a,b,c,d,e,f); \
     }
 #define CLOG_ITEM_SETATTR(a,b,c) \
     if (item_clog_enabled) { \
         CLOG_GE_ITEM_SETATTR(a,b,c); \
+    }
+#define CLOG_ELEM_DELETE_BEGIN(a,b,c) \
+    if (item_clog_enabled) { \
+        CLOG_GE_ELEM_DELETE_BEGIN(a,b,c); \
+    }
+#define CLOG_ELEM_DELETE_END(a,b) \
+    if (item_clog_enabled) { \
+        CLOG_GE_ELEM_DELETE_END(a,b); \
     }
 
 /* functions for initialize change log module */

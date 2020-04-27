@@ -69,7 +69,7 @@ static LIBEVENT_DISPATCHER_THREAD dispatcher_thread;
  * Each libevent instance has a wakeup pipe, which other threads
  * can use to signal that they've put a new connection on its queue.
  */
-static int nthreads;
+static int nthreads = 0;
 static LIBEVENT_THREAD *threads;
 static pthread_t *thread_ids;
 
@@ -97,14 +97,14 @@ static void cq_init(CQ *cq) {
  * one.
  * Returns the item, or NULL if no item is available
  */
-static CQ_ITEM *cq_pop(CQ *cq) {
+static CQ_ITEM *cq_pop(CQ *cq)
+{
     CQ_ITEM *item;
 
     pthread_mutex_lock(&cq->lock);
-    item = cq->head;
-    if (NULL != item) {
+    if ((item = cq->head) != NULL) {
         cq->head = item->next;
-        if (NULL == cq->head)
+        if (cq->head == NULL)
             cq->tail = NULL;
     }
     pthread_mutex_unlock(&cq->lock);
@@ -115,11 +115,12 @@ static CQ_ITEM *cq_pop(CQ *cq) {
 /*
  * Adds an item to a connection queue.
  */
-static void cq_push(CQ *cq, CQ_ITEM *item) {
+static void cq_push(CQ *cq, CQ_ITEM *item)
+{
     item->next = NULL;
 
     pthread_mutex_lock(&cq->lock);
-    if (NULL == cq->tail)
+    if (cq->tail == NULL)
         cq->head = item;
     else
         cq->tail->next = item;
@@ -131,8 +132,10 @@ static void cq_push(CQ *cq, CQ_ITEM *item) {
 /*
  * Returns a fresh connection queue item.
  */
-static CQ_ITEM *cqi_new(void) {
+static CQ_ITEM *cqi_new(void)
+{
     CQ_ITEM *item = NULL;
+
     pthread_mutex_lock(&cqi_freelist_lock);
     if (cqi_freelist) {
         item = cqi_freelist;
@@ -140,12 +143,10 @@ static CQ_ITEM *cqi_new(void) {
     }
     pthread_mutex_unlock(&cqi_freelist_lock);
 
-    if (NULL == item) {
-        int i;
-
+    if (item == NULL) {
         /* Allocate a bunch of items at once to reduce fragmentation */
         item = malloc(sizeof(CQ_ITEM) * ITEMS_PER_ALLOC);
-        if (NULL == item)
+        if (item == NULL)
             return NULL;
 
         /*
@@ -153,15 +154,14 @@ static CQ_ITEM *cqi_new(void) {
          * (which we'll return to the caller) for placement on
          * the freelist.
          */
-        for (i = 2; i < ITEMS_PER_ALLOC; i++)
+        for (int i = 2; i < ITEMS_PER_ALLOC; i++)
             item[i - 1].next = &item[i];
 
         pthread_mutex_lock(&cqi_freelist_lock);
-        item[ITEMS_PER_ALLOC - 1].next = cqi_freelist;
+        item[ITEMS_PER_ALLOC-1].next = cqi_freelist;
         cqi_freelist = &item[1];
         pthread_mutex_unlock(&cqi_freelist_lock);
     }
-
     return item;
 }
 
@@ -169,7 +169,8 @@ static CQ_ITEM *cqi_new(void) {
 /*
  * Frees a connection queue item (adds it to the freelist.)
  */
-static void cqi_free(CQ_ITEM *item) {
+static void cqi_free(CQ_ITEM *item)
+{
     pthread_mutex_lock(&cqi_freelist_lock);
     item->next = cqi_freelist;
     cqi_freelist = item;
@@ -179,7 +180,8 @@ static void cqi_free(CQ_ITEM *item) {
 /*
  * Creates a worker thread.
  */
-static void create_worker(void *(*func)(void *), void *arg, pthread_t *id) {
+static void create_worker(void *(*func)(void *), void *arg, pthread_t *id)
+{
     pthread_attr_t  attr;
     int             ret;
 
@@ -197,7 +199,8 @@ static void create_worker(void *(*func)(void *), void *arg, pthread_t *id) {
 /*
  * Set up a thread's information.
  */
-static void setup_thread(LIBEVENT_THREAD *me) {
+static void setup_thread(LIBEVENT_THREAD *me)
+{
     me->type = GENERAL;
     me->base = event_init();
     if (! me->base) {
@@ -258,7 +261,8 @@ static void setup_thread(LIBEVENT_THREAD *me) {
 /*
  * Worker thread: main event loop
  */
-static void *worker_libevent(void *arg) {
+static void *worker_libevent(void *arg)
+{
     LIBEVENT_THREAD *me = arg;
     struct conn *conn;
     CQ_ITEM *item;
@@ -276,12 +280,12 @@ static void *worker_libevent(void *arg) {
 
     /* close all connections */
     conn = me->conn_list;
-    while (conn != NULL) {
+    while (conn) {
         close(conn->sfd);
         conn = conn->conn_next;
     }
     item = cq_pop(me->new_conn_queue);
-    while (item != NULL) {
+    while (item) {
         close(item->sfd);
         cqi_free(item);
         item = cq_pop(me->new_conn_queue);
@@ -291,11 +295,12 @@ static void *worker_libevent(void *arg) {
     return NULL;
 }
 
-int number_of_pending(conn *c, conn *list) {
+int number_of_pending(conn *c, conn *list)
+{
     int rv = 0;
     for (; list; list = list->next) {
         if (list == c) {
-            rv ++;
+            rv++;
         }
     }
     return rv;
@@ -305,7 +310,8 @@ int number_of_pending(conn *c, conn *list) {
  * Processes an incoming "handle a new connection" item. This is called when
  * input arrives on the libevent wakeup pipe.
  */
-static void thread_libevent_process(int fd, short which, void *arg) {
+static void thread_libevent_process(int fd, short which, void *arg)
+{
     LIBEVENT_THREAD *me = arg;
     assert(me->type == GENERAL);
     CQ_ITEM *item;
@@ -329,8 +335,7 @@ static void thread_libevent_process(int fd, short which, void *arg) {
     }
 
     item = cq_pop(me->new_conn_queue);
-
-    if (NULL != item) {
+    if (item) {
         conn *c = conn_new(item->sfd, item->init_state, item->event_flags,
                            item->read_buffer_size, item->transport, me->base, NULL);
         if (c == NULL) {
@@ -362,7 +367,7 @@ static void thread_libevent_process(int fd, short which, void *arg) {
     conn* pending = me->pending_io;
     me->pending_io = NULL;
     pthread_mutex_unlock(&me->mutex);
-    while (pending != NULL) {
+    while (pending) {
         conn *c = pending;
         assert(me == c->thread);
         pending = pending->next;
@@ -376,7 +381,8 @@ static void thread_libevent_process(int fd, short which, void *arg) {
     }
 }
 
-bool has_cycle(conn *c) {
+bool has_cycle(conn *c)
+{
     if (!c) {
         return false;
     }
@@ -391,7 +397,8 @@ bool has_cycle(conn *c) {
     return false;
 }
 
-bool list_contains(conn *haystack, conn *needle) {
+bool list_contains(conn *haystack, conn *needle)
+{
     for (; haystack; haystack = haystack -> next) {
         if (needle == haystack) {
             return true;
@@ -400,21 +407,20 @@ bool list_contains(conn *haystack, conn *needle) {
     return false;
 }
 
-conn* list_remove(conn *haystack, conn *needle) {
+conn* list_remove(conn *haystack, conn *needle)
+{
     if (!haystack) {
         return NULL;
     }
-
     if (haystack == needle) {
         return haystack->next;
     }
-
     haystack->next = list_remove(haystack->next, needle);
-
     return haystack;
 }
 
-size_t list_to_array(conn **dest, size_t max_items, conn **l) {
+size_t list_to_array(conn **dest, size_t max_items, conn **l)
+{
     size_t n_items = 0;
     for (; *l && n_items < max_items - 1; ++n_items) {
         dest[n_items] = *l;
@@ -485,7 +491,8 @@ static int last_thread = -1;
  * of an incoming connection.
  */
 void dispatch_conn_new(int sfd, STATE_FUNC init_state, int event_flags,
-                       int read_buffer_size, enum network_transport transport) {
+                       int read_buffer_size, enum network_transport transport)
+{
     CQ_ITEM *item = cqi_new();
     int tid = (last_thread + 1) % settings.num_threads;
 
@@ -511,7 +518,8 @@ void dispatch_conn_new(int sfd, STATE_FUNC init_state, int event_flags,
 /*
  * Returns true if this is the thread that listens for new TCP connections.
  */
-int is_listen_thread() {
+int is_listen_thread()
+{
 #ifdef __WIN32__
     pthread_t tid = pthread_self();
     return(tid.p == dispatcher_thread.thread_id.p && tid.x == dispatcher_thread.thread_id.x);
@@ -520,43 +528,84 @@ int is_listen_thread() {
 #endif
 }
 
-
 /******************************* GLOBAL STATS ******************************/
 
-void threadlocal_stats_clear(struct thread_stats *stats) {
+void threadlocal_stats_clear(struct thread_stats *stats)
+{
     stats->cmd_get = 0;
+    stats->cmd_set = 0;
     stats->cmd_incr = 0;
     stats->cmd_decr = 0;
     stats->cmd_delete = 0;
+    stats->get_hits = 0;
     stats->get_misses = 0;
-    stats->delete_misses = 0;
-    stats->incr_misses = 0;
-    stats->decr_misses = 0;
     stats->incr_hits = 0;
+    stats->incr_misses = 0;
     stats->decr_hits = 0;
+    stats->decr_misses = 0;
+    stats->delete_hits = 0;
+    stats->delete_misses = 0;
     stats->cmd_cas = 0;
+    stats->cas_hits = 0;
+    stats->cas_badval = 0;
     stats->cas_misses = 0;
-    stats->bytes_written = 0;
-    stats->bytes_read = 0;
     stats->cmd_flush = 0;
     stats->cmd_flush_prefix = 0;
-    stats->conn_yields = 0;
-    stats->auth_cmds = 0;
+    stats->cmd_auth = 0;
     stats->auth_errors = 0;
+    stats->bytes_written = 0;
+    stats->bytes_read = 0;
+    stats->conn_yields = 0;
+    /* list command stats */
     stats->cmd_lop_create = 0;
     stats->cmd_lop_insert = 0;
     stats->cmd_lop_delete = 0;
     stats->cmd_lop_get = 0;
+    stats->lop_create_oks = 0;
+    stats->lop_insert_hits = 0;
+    stats->lop_insert_misses = 0;
+    stats->lop_delete_elem_hits = 0;
+    stats->lop_delete_none_hits = 0;
+    stats->lop_delete_misses = 0;
+    stats->lop_get_elem_hits = 0;
+    stats->lop_get_none_hits = 0;
+    stats->lop_get_misses = 0;
+    /* set command stats */
     stats->cmd_sop_create = 0;
     stats->cmd_sop_insert = 0;
     stats->cmd_sop_delete = 0;
     stats->cmd_sop_get = 0;
     stats->cmd_sop_exist = 0;
+    stats->sop_create_oks = 0;
+    stats->sop_insert_hits = 0;
+    stats->sop_insert_misses = 0;
+    stats->sop_delete_elem_hits = 0;
+    stats->sop_delete_none_hits = 0;
+    stats->sop_delete_misses = 0;
+    stats->sop_get_elem_hits = 0;
+    stats->sop_get_none_hits = 0;
+    stats->sop_get_misses = 0;
+    stats->sop_exist_hits = 0;
+    stats->sop_exist_misses = 0;
+    /* map command stats */
     stats->cmd_mop_create = 0;
     stats->cmd_mop_insert = 0;
     stats->cmd_mop_update = 0;
     stats->cmd_mop_delete = 0;
     stats->cmd_mop_get = 0;
+    stats->mop_create_oks = 0;
+    stats->mop_insert_hits = 0;
+    stats->mop_insert_misses = 0;
+    stats->mop_update_elem_hits = 0;
+    stats->mop_update_none_hits = 0;
+    stats->mop_update_misses = 0;
+    stats->mop_delete_elem_hits = 0;
+    stats->mop_delete_none_hits = 0;
+    stats->mop_delete_misses = 0;
+    stats->mop_get_elem_hits = 0;
+    stats->mop_get_none_hits = 0;
+    stats->mop_get_misses = 0;
+    /* btree command stats */
     stats->cmd_bop_create = 0;
     stats->cmd_bop_insert = 0;
     stats->cmd_bop_update = 0;
@@ -574,40 +623,6 @@ void threadlocal_stats_clear(struct thread_stats *stats) {
 #endif
     stats->cmd_bop_incr = 0;
     stats->cmd_bop_decr = 0;
-    stats->cmd_getattr = 0;
-    stats->cmd_setattr = 0;
-    stats->lop_create_oks = 0;
-    stats->lop_insert_hits = 0;
-    stats->lop_insert_misses = 0;
-    stats->lop_delete_elem_hits = 0;
-    stats->lop_delete_none_hits = 0;
-    stats->lop_delete_misses = 0;
-    stats->lop_get_elem_hits = 0;
-    stats->lop_get_none_hits = 0;
-    stats->lop_get_misses = 0;
-    stats->sop_create_oks = 0;
-    stats->sop_insert_hits = 0;
-    stats->sop_insert_misses = 0;
-    stats->sop_delete_elem_hits = 0;
-    stats->sop_delete_none_hits = 0;
-    stats->sop_delete_misses = 0;
-    stats->sop_get_elem_hits = 0;
-    stats->sop_get_none_hits = 0;
-    stats->sop_get_misses = 0;
-    stats->sop_exist_hits = 0;
-    stats->sop_exist_misses = 0;
-    stats->mop_create_oks = 0;
-    stats->mop_insert_hits = 0;
-    stats->mop_insert_misses = 0;
-    stats->mop_update_elem_hits = 0;
-    stats->mop_update_none_hits = 0;
-    stats->mop_update_misses = 0;
-    stats->mop_delete_elem_hits = 0;
-    stats->mop_delete_none_hits = 0;
-    stats->mop_delete_misses = 0;
-    stats->mop_get_elem_hits = 0;
-    stats->mop_get_none_hits = 0;
-    stats->mop_get_misses = 0;
     stats->bop_create_oks = 0;
     stats->bop_insert_hits = 0;
     stats->bop_insert_misses = 0;
@@ -643,15 +658,41 @@ void threadlocal_stats_clear(struct thread_stats *stats) {
     stats->bop_decr_elem_hits = 0;
     stats->bop_decr_none_hits = 0;
     stats->bop_decr_misses = 0;
+    /* attribute command stats */
+    stats->cmd_getattr = 0;
+    stats->cmd_setattr = 0;
     stats->getattr_hits = 0;
     stats->getattr_misses = 0;
     stats->setattr_hits = 0;
     stats->setattr_misses = 0;
-
-    memset(stats->slab_stats, 0, sizeof(struct slab_stats)*MAX_SLAB_CLASSES);
 }
 
-void threadlocal_stats_reset(struct thread_stats *thread_stats) {
+void *threadlocal_stats_create(int num_threads)
+{
+    struct thread_stats *thread_stats;
+
+    if (nthreads > 0 && nthreads != num_threads) {
+        return NULL; /* invalid argument */
+    }
+
+    thread_stats = calloc(sizeof(struct thread_stats) * nthreads, 1);
+    for (int i = 0; i < nthreads; i++) {
+        pthread_mutex_init(&thread_stats[i].mutex, NULL);
+    }
+    return thread_stats;
+}
+
+void threadlocal_stats_destroy(void *stats)
+{
+    struct thread_stats *thread_stats = stats;
+    for (int i = 0; i < nthreads; i++) {
+        pthread_mutex_destroy(&thread_stats[i].mutex);
+    }
+    free(thread_stats);
+}
+
+void threadlocal_stats_reset(struct thread_stats *thread_stats)
+{
     int ii;
     for (ii = 0; ii < settings.num_threads; ++ii) {
         pthread_mutex_lock(&thread_stats[ii].mutex);
@@ -660,43 +701,85 @@ void threadlocal_stats_reset(struct thread_stats *thread_stats) {
     }
 }
 
-void threadlocal_stats_aggregate(struct thread_stats *thread_stats, struct thread_stats *stats) {
-    int ii, sid;
+void threadlocal_stats_aggregate(struct thread_stats *thread_stats, struct thread_stats *stats)
+{
+    int ii;
     for (ii = 0; ii < settings.num_threads; ++ii) {
         pthread_mutex_lock(&thread_stats[ii].mutex);
         stats->cmd_get += thread_stats[ii].cmd_get;
+        stats->cmd_set += thread_stats[ii].cmd_set;
         stats->cmd_incr += thread_stats[ii].cmd_incr;
         stats->cmd_decr += thread_stats[ii].cmd_decr;
         stats->cmd_delete += thread_stats[ii].cmd_delete;
+        stats->get_hits += thread_stats[ii].get_hits;
         stats->get_misses += thread_stats[ii].get_misses;
-        stats->delete_misses += thread_stats[ii].delete_misses;
-        stats->decr_misses += thread_stats[ii].decr_misses;
+        stats->incr_hits += thread_stats[ii].incr_hits;
         stats->incr_misses += thread_stats[ii].incr_misses;
         stats->decr_hits += thread_stats[ii].decr_hits;
-        stats->incr_hits += thread_stats[ii].incr_hits;
+        stats->decr_misses += thread_stats[ii].decr_misses;
+        stats->delete_hits += thread_stats[ii].delete_hits;
+        stats->delete_misses += thread_stats[ii].delete_misses;
         stats->cmd_cas += thread_stats[ii].cmd_cas;
+        stats->cas_hits += thread_stats[ii].cas_hits;
+        stats->cas_badval += thread_stats[ii].cas_badval;
         stats->cas_misses += thread_stats[ii].cas_misses;
-        stats->bytes_read += thread_stats[ii].bytes_read;
-        stats->bytes_written += thread_stats[ii].bytes_written;
         stats->cmd_flush += thread_stats[ii].cmd_flush;
         stats->cmd_flush_prefix += thread_stats[ii].cmd_flush_prefix;
-        stats->conn_yields += thread_stats[ii].conn_yields;
-        stats->auth_cmds += thread_stats[ii].auth_cmds;
+        stats->cmd_auth += thread_stats[ii].cmd_auth;
         stats->auth_errors += thread_stats[ii].auth_errors;
+        stats->bytes_read += thread_stats[ii].bytes_read;
+        stats->bytes_written += thread_stats[ii].bytes_written;
+        stats->conn_yields += thread_stats[ii].conn_yields;
+        /* list command stats */
         stats->cmd_lop_create += thread_stats[ii].cmd_lop_create;
         stats->cmd_lop_insert += thread_stats[ii].cmd_lop_insert;
         stats->cmd_lop_delete += thread_stats[ii].cmd_lop_delete;
         stats->cmd_lop_get += thread_stats[ii].cmd_lop_get;
+        stats->lop_create_oks += thread_stats[ii].lop_create_oks;
+        stats->lop_insert_hits += thread_stats[ii].lop_insert_hits;
+        stats->lop_insert_misses += thread_stats[ii].lop_insert_misses;
+        stats->lop_delete_elem_hits += thread_stats[ii].lop_delete_elem_hits;
+        stats->lop_delete_none_hits += thread_stats[ii].lop_delete_none_hits;
+        stats->lop_delete_misses += thread_stats[ii].lop_delete_misses;
+        stats->lop_get_elem_hits += thread_stats[ii].lop_get_elem_hits;
+        stats->lop_get_none_hits += thread_stats[ii].lop_get_none_hits;
+        stats->lop_get_misses += thread_stats[ii].lop_get_misses;
+        /* set command stats */
         stats->cmd_sop_create += thread_stats[ii].cmd_sop_create;
         stats->cmd_sop_insert += thread_stats[ii].cmd_sop_insert;
         stats->cmd_sop_delete += thread_stats[ii].cmd_sop_delete;
         stats->cmd_sop_get += thread_stats[ii].cmd_sop_get;
         stats->cmd_sop_exist += thread_stats[ii].cmd_sop_exist;
+        stats->sop_create_oks += thread_stats[ii].sop_create_oks;
+        stats->sop_insert_hits += thread_stats[ii].sop_insert_hits;
+        stats->sop_insert_misses += thread_stats[ii].sop_insert_misses;
+        stats->sop_delete_elem_hits += thread_stats[ii].sop_delete_elem_hits;
+        stats->sop_delete_none_hits += thread_stats[ii].sop_delete_none_hits;
+        stats->sop_delete_misses += thread_stats[ii].sop_delete_misses;
+        stats->sop_get_elem_hits += thread_stats[ii].sop_get_elem_hits;
+        stats->sop_get_none_hits += thread_stats[ii].sop_get_none_hits;
+        stats->sop_get_misses += thread_stats[ii].sop_get_misses;
+        stats->sop_exist_hits += thread_stats[ii].sop_exist_hits;
+        stats->sop_exist_misses += thread_stats[ii].sop_exist_misses;
+        /* map command stats */
         stats->cmd_mop_create += thread_stats[ii].cmd_mop_create;
         stats->cmd_mop_insert += thread_stats[ii].cmd_mop_insert;
         stats->cmd_mop_update += thread_stats[ii].cmd_mop_update;
         stats->cmd_mop_delete += thread_stats[ii].cmd_mop_delete;
         stats->cmd_mop_get += thread_stats[ii].cmd_mop_get;
+        stats->mop_create_oks += thread_stats[ii].mop_create_oks;
+        stats->mop_insert_hits += thread_stats[ii].mop_insert_hits;
+        stats->mop_insert_misses += thread_stats[ii].mop_insert_misses;
+        stats->mop_update_elem_hits += thread_stats[ii].mop_update_elem_hits;
+        stats->mop_update_none_hits += thread_stats[ii].mop_update_none_hits;
+        stats->mop_update_misses += thread_stats[ii].mop_update_misses;
+        stats->mop_delete_elem_hits += thread_stats[ii].mop_delete_elem_hits;
+        stats->mop_delete_none_hits += thread_stats[ii].mop_delete_none_hits;
+        stats->mop_delete_misses += thread_stats[ii].mop_delete_misses;
+        stats->mop_get_elem_hits += thread_stats[ii].mop_get_elem_hits;
+        stats->mop_get_none_hits += thread_stats[ii].mop_get_none_hits;
+        stats->mop_get_misses += thread_stats[ii].mop_get_misses;
+        /* btree command stats */
         stats->cmd_bop_create += thread_stats[ii].cmd_bop_create;
         stats->cmd_bop_insert += thread_stats[ii].cmd_bop_insert;
         stats->cmd_bop_update += thread_stats[ii].cmd_bop_update;
@@ -714,40 +797,6 @@ void threadlocal_stats_aggregate(struct thread_stats *thread_stats, struct threa
 #endif
         stats->cmd_bop_incr += thread_stats[ii].cmd_bop_incr;
         stats->cmd_bop_decr += thread_stats[ii].cmd_bop_decr;
-        stats->cmd_getattr += thread_stats[ii].cmd_getattr;
-        stats->cmd_setattr += thread_stats[ii].cmd_setattr;
-        stats->lop_create_oks += thread_stats[ii].lop_create_oks;
-        stats->lop_insert_hits += thread_stats[ii].lop_insert_hits;
-        stats->lop_insert_misses += thread_stats[ii].lop_insert_misses;
-        stats->lop_delete_elem_hits += thread_stats[ii].lop_delete_elem_hits;
-        stats->lop_delete_none_hits += thread_stats[ii].lop_delete_none_hits;
-        stats->lop_delete_misses += thread_stats[ii].lop_delete_misses;
-        stats->lop_get_elem_hits += thread_stats[ii].lop_get_elem_hits;
-        stats->lop_get_none_hits += thread_stats[ii].lop_get_none_hits;
-        stats->lop_get_misses += thread_stats[ii].lop_get_misses;
-        stats->sop_create_oks += thread_stats[ii].sop_create_oks;
-        stats->sop_insert_hits += thread_stats[ii].sop_insert_hits;
-        stats->sop_insert_misses += thread_stats[ii].sop_insert_misses;
-        stats->sop_delete_elem_hits += thread_stats[ii].sop_delete_elem_hits;
-        stats->sop_delete_none_hits += thread_stats[ii].sop_delete_none_hits;
-        stats->sop_delete_misses += thread_stats[ii].sop_delete_misses;
-        stats->sop_get_elem_hits += thread_stats[ii].sop_get_elem_hits;
-        stats->sop_get_none_hits += thread_stats[ii].sop_get_none_hits;
-        stats->sop_get_misses += thread_stats[ii].sop_get_misses;
-        stats->sop_exist_hits += thread_stats[ii].sop_exist_hits;
-        stats->sop_exist_misses += thread_stats[ii].sop_exist_misses;
-        stats->mop_create_oks += thread_stats[ii].mop_create_oks;
-        stats->mop_insert_hits += thread_stats[ii].mop_insert_hits;
-        stats->mop_insert_misses += thread_stats[ii].mop_insert_misses;
-        stats->mop_update_elem_hits += thread_stats[ii].mop_update_elem_hits;
-        stats->mop_update_none_hits += thread_stats[ii].mop_update_none_hits;
-        stats->mop_update_misses += thread_stats[ii].mop_update_misses;
-        stats->mop_delete_elem_hits += thread_stats[ii].mop_delete_elem_hits;
-        stats->mop_delete_none_hits += thread_stats[ii].mop_delete_none_hits;
-        stats->mop_delete_misses += thread_stats[ii].mop_delete_misses;
-        stats->mop_get_elem_hits += thread_stats[ii].mop_get_elem_hits;
-        stats->mop_get_none_hits += thread_stats[ii].mop_get_none_hits;
-        stats->mop_get_misses += thread_stats[ii].mop_get_misses;
         stats->bop_create_oks += thread_stats[ii].bop_create_oks;
         stats->bop_insert_hits += thread_stats[ii].bop_insert_hits;
         stats->bop_insert_misses += thread_stats[ii].bop_insert_misses;
@@ -783,43 +832,15 @@ void threadlocal_stats_aggregate(struct thread_stats *thread_stats, struct threa
         stats->bop_decr_elem_hits += thread_stats[ii].bop_decr_elem_hits;
         stats->bop_decr_none_hits += thread_stats[ii].bop_decr_none_hits;
         stats->bop_decr_misses += thread_stats[ii].bop_decr_misses;
+        /* attribute command stats */
+        stats->cmd_getattr += thread_stats[ii].cmd_getattr;
+        stats->cmd_setattr += thread_stats[ii].cmd_setattr;
         stats->getattr_hits += thread_stats[ii].getattr_hits;
         stats->getattr_misses += thread_stats[ii].getattr_misses;
         stats->setattr_hits += thread_stats[ii].setattr_hits;
         stats->setattr_misses += thread_stats[ii].setattr_misses;
 
-        for (sid = 0; sid < MAX_SLAB_CLASSES; sid++) {
-            stats->slab_stats[sid].cmd_set +=
-                thread_stats[ii].slab_stats[sid].cmd_set;
-            stats->slab_stats[sid].get_hits +=
-                thread_stats[ii].slab_stats[sid].get_hits;
-            stats->slab_stats[sid].delete_hits +=
-                thread_stats[ii].slab_stats[sid].delete_hits;
-            stats->slab_stats[sid].cas_hits +=
-                thread_stats[ii].slab_stats[sid].cas_hits;
-            stats->slab_stats[sid].cas_badval +=
-                thread_stats[ii].slab_stats[sid].cas_badval;
-        }
-
         pthread_mutex_unlock(&thread_stats[ii].mutex);
-    }
-}
-
-void slab_stats_aggregate(struct thread_stats *stats, struct slab_stats *out) {
-    int sid;
-
-    out->cmd_set = 0;
-    out->get_hits = 0;
-    out->delete_hits = 0;
-    out->cas_hits = 0;
-    out->cas_badval = 0;
-
-    for (sid = 0; sid < MAX_SLAB_CLASSES; sid++) {
-        out->cmd_set += stats->slab_stats[sid].cmd_set;
-        out->get_hits += stats->slab_stats[sid].get_hits;
-        out->delete_hits += stats->slab_stats[sid].delete_hits;
-        out->cas_hits += stats->slab_stats[sid].cas_hits;
-        out->cas_badval += stats->slab_stats[sid].cas_badval;
     }
 }
 
@@ -829,9 +850,9 @@ void slab_stats_aggregate(struct thread_stats *stats, struct slab_stats *out) {
  * nthreads  Number of worker event handler threads to spawn
  * main_base Event base for main thread
  */
-void thread_init(int nthr, struct event_base *main_base) {
+void thread_init(int nthr, struct event_base *main_base)
+{
     int i;
-    nthreads = nthr;
 #ifdef __WIN32__
     struct sockaddr_in serv_addr;
     int sockfd;
@@ -839,6 +860,8 @@ void thread_init(int nthr, struct event_base *main_base) {
     if ((sockfd = createLocalListSock(&serv_addr)) < 0)
         exit(1);
 #endif
+
+    nthreads = nthr;
 
     pthread_mutex_init(&init_lock, NULL);
     pthread_cond_init(&init_cond, NULL);

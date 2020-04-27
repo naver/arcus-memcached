@@ -9,10 +9,7 @@ static void display(const char *name, size_t size) {
 
 int main(int argc, char **argv) {
 
-    display("Slab Stats", sizeof(struct slab_stats));
-    display("Thread stats",
-            sizeof(struct thread_stats)
-            - (200 * sizeof(struct slab_stats)));
+    display("Thread stats", sizeof(struct thread_stats));
     display("Global stats", sizeof(struct mc_stats));
     display("Settings", sizeof(struct settings));
     display("Libevent thread",

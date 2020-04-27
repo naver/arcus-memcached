@@ -29,6 +29,8 @@ static struct engine_config *config=NULL; // engine config
 
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
+#define IS_ELEM_DELETE_MULTI(rcnt, ccnt) ((rcnt) != 1 && (ccnt) > 1)
+
 #ifdef ENABLE_PERSISTENCE
 static bool gen_logical_btree_delete_log=false; // generate logical btree delete log
 #endif
@@ -85,7 +87,6 @@ void CLOG_GE_LIST_ELEM_INSERT(list_meta_info *info,
                               const int index, list_elem_item *elem)
 {
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
-
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
 #ifdef ENABLE_PERSISTENCE
@@ -100,10 +101,11 @@ void CLOG_GE_LIST_ELEM_DELETE(list_meta_info *info,
                               int index, uint32_t count, const bool forward,
                               enum elem_delete_cause cause)
 {
+    if (cause != ELEM_DELETE_NORMAL) {
+        return;
+    }
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
-
-    if ((cause == ELEM_DELETE_NORMAL) &&
-        (it->iflag & ITEM_INTERNAL) == 0)
+    if ((it->iflag & ITEM_INTERNAL) == 0)
     {
         if (forward == false) {
             /* change it to the forward delete */
@@ -132,7 +134,6 @@ void CLOG_GE_MAP_ELEM_INSERT(map_meta_info *info,
                              map_elem_item *new_elem)
 {
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
-
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
 #ifdef ENABLE_PERSISTENCE
@@ -147,10 +148,11 @@ void CLOG_GE_MAP_ELEM_DELETE(map_meta_info *info,
                              map_elem_item *elem,
                              enum elem_delete_cause cause)
 {
+    if (cause != ELEM_DELETE_NORMAL) {
+        return;
+    }
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
-
-    if ((cause == ELEM_DELETE_NORMAL) &&
-        (it->iflag & ITEM_INTERNAL) == 0)
+    if ((it->iflag & ITEM_INTERNAL) == 0)
     {
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
@@ -164,7 +166,6 @@ void CLOG_GE_SET_ELEM_INSERT(set_meta_info *info,
                              set_elem_item *elem)
 {
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
-
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
 #ifdef ENABLE_PERSISTENCE
@@ -179,10 +180,11 @@ void CLOG_GE_SET_ELEM_DELETE(set_meta_info *info,
                              set_elem_item *elem,
                              enum elem_delete_cause cause)
 {
+    if (cause != ELEM_DELETE_NORMAL) {
+        return;
+    }
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
-
-    if ((cause == ELEM_DELETE_NORMAL) &&
-        (it->iflag & ITEM_INTERNAL) == 0)
+    if ((it->iflag & ITEM_INTERNAL) == 0)
     {
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
@@ -197,7 +199,6 @@ void CLOG_GE_BTREE_ELEM_INSERT(btree_meta_info *info,
                                btree_elem_item *new_elem)
 {
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
-
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
 #ifdef ENABLE_PERSISTENCE
@@ -212,10 +213,11 @@ void CLOG_GE_BTREE_ELEM_DELETE(btree_meta_info *info,
                                btree_elem_item *elem,
                                enum elem_delete_cause cause)
 {
+    if (cause != ELEM_DELETE_NORMAL) {
+        return;
+    }
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
-
-    if ((cause == ELEM_DELETE_NORMAL) &&
-        (it->iflag & ITEM_INTERNAL) == 0)
+    if ((it->iflag & ITEM_INTERNAL) == 0)
     {
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence && !gen_logical_btree_delete_log) {
@@ -228,15 +230,18 @@ void CLOG_GE_BTREE_ELEM_DELETE(btree_meta_info *info,
 void CLOG_GE_BTREE_ELEM_DELETE_LOGICAL(btree_meta_info *info,
                                        const bkey_range *bkrange,
                                        const eflag_filter *efilter,
-                                       uint32_t offset, uint32_t reqcount)
+                                       uint32_t offset, uint32_t count,
+                                       enum elem_delete_cause cause)
 {
+    if (cause != ELEM_DELETE_NORMAL) {
+        return;
+    }
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
-
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence && gen_logical_btree_delete_log) {
-            cmdlog_generate_btree_elem_delete_logical(it, bkrange, efilter, offset, reqcount);
+            cmdlog_generate_btree_elem_delete_logical(it, bkrange, efilter, offset, count);
         }
 #endif
     }
@@ -255,6 +260,31 @@ void CLOG_GE_ITEM_SETATTR(hash_item *it,
     }
 }
 
+void CLOG_GE_ELEM_DELETE_BEGIN(coll_meta_info *info,
+                               uint32_t reqcount,
+                               enum elem_delete_cause cause)
+{
+    if (cause != ELEM_DELETE_NORMAL) {
+        return;
+    }
+    hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
+    if ((it->iflag & ITEM_INTERNAL) == 0 && IS_ELEM_DELETE_MULTI(reqcount, info->ccnt))
+    {
+    }
+}
+
+void CLOG_GE_ELEM_DELETE_END(coll_meta_info *info,
+                             enum elem_delete_cause cause)
+{
+    if (cause != ELEM_DELETE_NORMAL) {
+        return;
+    }
+    hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
+    if ((it->iflag & ITEM_INTERNAL) == 0)
+    {
+    }
+}
+
 /*
  * Initialize change log module
  */
@@ -262,7 +292,6 @@ void item_clog_init(struct default_engine *engine)
 {
     config = &engine->config;
     logger = engine->server.log->get_logger();
-
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM change log module initialized.\n");
 }
 
