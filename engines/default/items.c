@@ -2234,9 +2234,15 @@ static uint32_t do_set_elem_get(set_meta_info *info,
     assert(info->root);
     uint32_t fcnt;
 
+    if (delete) {
+        CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, count, ELEM_DELETE_NORMAL);
+    }
     fcnt = do_set_elem_traverse_dfs(info, info->root, count, delete, elem_array);
     if (delete && info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
         do_set_node_unlink(info, NULL, 0);
+    }
+    if (delete) {
+        CLOG_ELEM_DELETE_END((coll_meta_info*)info, ELEM_DELETE_NORMAL);
     }
     return fcnt;
 }
@@ -4018,6 +4024,7 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
         int i;
         bool forward = (bkrtype == BKEY_RANGE_TYPE_ASC ? true : false);
 
+        CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, count, cause);
         /* prepare upper node path
          * used to incr/decr element counts in upper nodes.
          */
@@ -4101,6 +4108,7 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
             }
             do_btree_node_merge(info, path, forward, node_cnt);
         }
+        CLOG_ELEM_DELETE_END((coll_meta_info*)info, cause);
     }
     if (tot_found > 0) {
         CLOG_BTREE_ELEM_DELETE_LOGICAL(info, bkrange, efilter, offset, count, cause);
@@ -4466,6 +4474,7 @@ static uint32_t do_btree_elem_get(btree_meta_info *info,
         }
 
         if (delete) {
+            CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, count, ELEM_DELETE_NORMAL);
             /* prepare upper node path
              * used to incr/decr element counts  in upper nodes.
              */
@@ -4550,6 +4559,10 @@ static uint32_t do_btree_elem_get(btree_meta_info *info,
         if (c_posi.node == NULL && (info->mflags & COLL_META_FLAG_TRIMMED) != 0) {
             if (do_btree_overlapped_with_trimmed_space(info, &c_posi, bkrtype))
                 *potentialbkeytrim = true;
+        }
+
+        if (delete) {
+            CLOG_ELEM_DELETE_END((coll_meta_info*)info, ELEM_DELETE_NORMAL);
         }
     }
     if (delete && tot_found > 0) {
@@ -9174,6 +9187,7 @@ static uint32_t do_map_elem_delete_with_field(map_meta_info *info, const int num
     uint32_t delcnt = 0;
 
     if (info->root != NULL) {
+        CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, numfields, cause);
         if (numfields == 0) {
             delcnt = do_map_elem_traverse_dfs_bycnt(info, info->root, 0, true, NULL, cause);
         } else {
@@ -9187,6 +9201,7 @@ static uint32_t do_map_elem_delete_with_field(map_meta_info *info, const int num
         if (info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
             do_map_node_unlink(info, NULL, 0);
         }
+        CLOG_ELEM_DELETE_END((coll_meta_info*)info, cause);
     }
     return delcnt;
 }
@@ -9290,6 +9305,9 @@ static uint32_t do_map_elem_get(map_meta_info *info,
     assert(info->root);
     uint32_t fcnt = 0;
 
+    if (delete) {
+        CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, numfields, ELEM_DELETE_NORMAL);
+    }
     if (numfields == 0) {
         fcnt = do_map_elem_traverse_dfs_bycnt(info, info->root, 0, delete,
                                               elem_array, ELEM_DELETE_NORMAL);
@@ -9304,6 +9322,9 @@ static uint32_t do_map_elem_get(map_meta_info *info,
     }
     if (delete && info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
         do_map_node_unlink(info, NULL, 0);
+    }
+    if (delete) {
+        CLOG_ELEM_DELETE_END((coll_meta_info*)info, ELEM_DELETE_NORMAL);
     }
     return fcnt;
 }
