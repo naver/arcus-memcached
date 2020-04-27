@@ -9025,14 +9025,14 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
 static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     int new_max;
-    int curr_conns = mc_stats.curr_conns;
-    struct rlimit rlim;
 
     if (ntokens == 3) {
         char buf[32];
         sprintf(buf, "maxconns %d\r\nEND", settings.maxconns);
         out_string(c, buf);
     } else if (ntokens == 4 && safe_strtol(tokens[SUBCOMMAND_TOKEN+1].value, &new_max)) {
+        struct rlimit rlim;
+        int curr_conns;
         int extra_nfiles = ADMIN_MAX_CONNECTIONS + ZK_CONNECTIONS;
         if (settings.port != 0) {
             extra_nfiles += 2;
@@ -9040,6 +9040,9 @@ static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntok
         if (settings.udpport != 0) {
             extra_nfiles += settings.num_threads * 2;
         }
+        LOCK_STATS();
+        curr_conns = mc_stats.curr_conns;
+        UNLOCK_STATS();
         if (new_max + extra_nfiles < (int)(curr_conns * 1.1) || new_max + extra_nfiles > 1000000) {
             out_string(c, "CLIENT_ERROR the value is out of range");
             return;
