@@ -24,6 +24,8 @@ static struct engine_config *config=NULL; // engine config
 
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
+#define IS_ELEM_DELETE_MULTI(rcnt, ccnt) ((rcnt) != 1 && (ccnt) > 1)
+
 /*
  * Generate change logs
  */
@@ -179,6 +181,31 @@ void CLOG_GE_BTREE_ELEM_DELETE_LOGICAL(btree_meta_info *info,
 void CLOG_GE_ITEM_SETATTR(hash_item *it,
                           ENGINE_ITEM_ATTR *attr_ids, uint32_t attr_cnt)
 {
+    if ((it->iflag & ITEM_INTERNAL) == 0)
+    {
+    }
+}
+
+void CLOG_GE_ELEM_DELETE_BEGIN(coll_meta_info *info,
+                               uint32_t reqcount,
+                               enum elem_delete_cause cause)
+{
+    if (cause != ELEM_DELETE_NORMAL) {
+        return;
+    }
+    hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
+    if ((it->iflag & ITEM_INTERNAL) == 0 && IS_ELEM_DELETE_MULTI(reqcount, info->ccnt))
+    {
+    }
+}
+
+void CLOG_GE_ELEM_DELETE_END(coll_meta_info *info,
+                             enum elem_delete_cause cause)
+{
+    if (cause != ELEM_DELETE_NORMAL) {
+        return;
+    }
+    hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
     }
