@@ -60,18 +60,15 @@
 #include <stdarg.h>
 #include <stddef.h>
 
-/* max collection size */
+/* max collection element count */
 static uint32_t ARCUS_COLL_SIZE_MIN = 50000;
 static uint32_t ARCUS_COLL_SIZE_MAX = 1000000;
 static uint32_t MAX_LIST_SIZE  = 50000;
 static uint32_t MAX_SET_SIZE   = 50000;
 static uint32_t MAX_MAP_SIZE   = 50000;
 static uint32_t MAX_BTREE_SIZE = 50000;
-
-#ifdef MAX_ELEMENT_BYTES_CONFIG
-/* max element bytes */
+/* max collection element bytes */
 static uint32_t MAX_ELEMENT_BYTES = 16*1024;
-#endif
 
 /* Lock for global stats */
 static pthread_mutex_t stats_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -314,9 +311,7 @@ static void settings_init(void)
     settings.max_set_size = MAX_SET_SIZE;
     settings.max_map_size = MAX_MAP_SIZE;
     settings.max_btree_size = MAX_BTREE_SIZE;
-#ifdef MAX_ELEMENT_BYTES_CONFIG
     settings.max_element_bytes = MAX_ELEMENT_BYTES;
-#endif
     settings.topkeys = 0;
     settings.require_sasl = false;
     settings.extensions.logger = get_stderr_logger();
@@ -8116,9 +8111,7 @@ static void process_stat_settings(ADD_STAT add_stats, void *c)
     APPEND_STAT("max_set_size", "%u", settings.max_set_size);
     APPEND_STAT("max_map_size", "%u", settings.max_map_size);
     APPEND_STAT("max_btree_size", "%u", settings.max_btree_size);
-#ifdef MAX_ELEMENT_BYTES_CONFIG
     APPEND_STAT("max_element_bytes", "%u", settings.max_element_bytes);
-#endif
     APPEND_STAT("topkeys", "%d", settings.topkeys);
 #ifdef ENABLE_ZK_INTEGRATION
     APPEND_STAT("zk_failstop", "%s", zk_confs.zk_failstop ? "on" : "off");
@@ -9079,7 +9072,6 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
     }
 }
 
-#ifdef MAX_ELEMENT_BYTES_CONFIG
 static void process_maxelembytes_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
@@ -9115,7 +9107,6 @@ static void process_maxelembytes_command(conn *c, token_t *tokens, const size_t 
         out_string(c, "CLIENT_ERROR bad command line format");
     }
 }
-#endif
 
 static void process_verbosity_command(conn *c, token_t *tokens, const size_t ntokens)
 {
@@ -9190,11 +9181,9 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_btree_size") == 0) {
         process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_BTREE);
     }
-#ifdef MAX_ELEMENT_BYTES_CONFIG
     else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_element_bytes") == 0) {
         process_maxelembytes_command(c, tokens, ntokens);
     }
-#endif
     else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "verbosity") == 0) {
         process_verbosity_command(c, tokens, ntokens);
     }
@@ -9446,9 +9435,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "config max_set_size [<maxsize>]\\r\\n" "\n"
         "\t" "config max_map_size [<maxsize>]\\r\\n" "\n"
         "\t" "config max_btree_size [<maxsize>]\\r\\n" "\n"
-#ifdef MAX_ELEMENT_BYTES_CONFIG
         "\t" "config max_element_bytes [<maxbytes>]\\r\\n" "\n"
-#endif
 #ifdef ENABLE_ZK_INTEGRATION
         "\t" "config hbtimeout [<hbtimeout>]\\r\\n" "\n"
         "\t" "config hbfailstop [<hbfailstop>]\\r\\n" "\n"

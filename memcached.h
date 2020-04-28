@@ -88,12 +88,6 @@
 
 #define MAX_MGET_KEY_COUNT 10000
 
-/* Max element value size */
-#ifdef MAX_ELEMENT_BYTES_CONFIG
-#else
-#define MAX_ELEMENT_BYTES          (4*1024)
-#endif
-
 #ifdef SUPPORT_BOP_MGET
 /* In bop mget, max limit on the number of given keys */
 #define MAX_BMGET_KEY_COUNT     200
@@ -246,9 +240,7 @@ struct settings {
     uint32_t max_set_size;       /* Maximum elements in set collection */
     uint32_t max_map_size;       /* Maximum elements in map collection */
     uint32_t max_btree_size;     /* Maximum elements in b+tree collection */
-#ifdef MAX_ELEMENT_BYTES_CONFIG
     uint32_t max_element_bytes;  /* Maximum element bytes of collections */
-#endif
     int topkeys;            /* Number of top keys to track */
     struct {
         EXTENSION_DAEMON_DESCRIPTOR *daemons;
