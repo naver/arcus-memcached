@@ -119,47 +119,39 @@ void UNLOCK_SETTING() {
     pthread_mutex_unlock(&thread_stats->mutex); \
 }
 
-/* Macros for incrementing topkeys */
-#define TOPKEYS_INCR(op, key, nkey) { \
-    if (default_topkeys) { \
-        rel_time_t ctime = get_current_time(); \
-        TK(default_topkeys, op, key, nkey, ctime); \
-    } \
-}
-
 #define STATS_CMD(conn, op, key, nkey) { \
     THSTATS_INCR_ONE(conn, cmd_##op); \
-    TOPKEYS_INCR(cmd_##op, key, nkey); \
+    TK(default_topkeys, cmd_##op, key, nkey, get_current_time()); \
 }
 
 #define STATS_OKS(conn, op, key, nkey) { \
     THSTATS_INCR_TWO(conn, op##_oks, cmd_##op); \
-    TOPKEYS_INCR(op##_oks, key, nkey); \
+    TK(default_topkeys, op##_oks, key, nkey, get_current_time()); \
 }
 
 #define STATS_HITS(conn, op, key, nkey) { \
     THSTATS_INCR_TWO(conn, op##_hits, cmd_##op); \
-    TOPKEYS_INCR(op##_hits, key, nkey); \
+    TK(default_topkeys, op##_hits, key, nkey, get_current_time()); \
 }
 
 #define STATS_ELEM_HITS(conn, op, key, nkey) { \
     THSTATS_INCR_TWO(conn, op##_elem_hits, cmd_##op); \
-    TOPKEYS_INCR(op##_elem_hits, key, nkey); \
+    TK(default_topkeys, op##_elem_hits, key, nkey, get_current_time()); \
 }
 
 #define STATS_NONE_HITS(conn, op, key, nkey) { \
     THSTATS_INCR_TWO(conn, op##_none_hits, cmd_##op); \
-    TOPKEYS_INCR(op##_none_hits, key, nkey); \
+    TK(default_topkeys, op##_none_hits, key, nkey, get_current_time()); \
 }
 
 #define STATS_MISSES(conn, op, key, nkey) { \
     THSTATS_INCR_TWO(conn, op##_misses, cmd_##op); \
-    TOPKEYS_INCR(op##_misses, key, nkey); \
+    TK(default_topkeys, op##_misses, key, nkey, get_current_time()); \
 }
 
-#define STATS_BADVALUE(conn, op, key, nkey) { \
+#define STATS_BADVAL(conn, op, key, nkey) { \
     THSTATS_INCR_TWO(conn, op##_badval, cmd_##op); \
-    TOPKEYS_INCR(op##_badval, key, nkey); \
+    TK(default_topkeys, op##_badval, key, nkey, get_current_time()); \
 }
 
 #define STATS_CMD_NOKEY(conn, op) { \
@@ -3129,7 +3121,7 @@ static void update_stat_cas(conn *c, ENGINE_ERROR_CODE ret)
             STATS_HITS(c, cas, c->hinfo.key, c->hinfo.nkey);
             break;
         case ENGINE_KEY_EEXISTS:
-            STATS_BADVALUE(c, cas, c->hinfo.key, c->hinfo.nkey);
+            STATS_BADVAL(c, cas, c->hinfo.key, c->hinfo.nkey);
             break;
         case ENGINE_KEY_ENOENT:
         case ENGINE_EBADTYPE:
@@ -14601,7 +14593,7 @@ static inline struct thread_stats *get_thread_stats(conn *c)
 
 static void count_eviction(const void *cookie, const void *key, const int nkey)
 {
-    TOPKEYS_INCR(evictions, key, nkey);
+    TK(default_topkeys, evictions, key, nkey, get_current_time());
 }
 
 /**
