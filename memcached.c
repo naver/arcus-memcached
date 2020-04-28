@@ -3426,6 +3426,18 @@ static void write_bin_response(conn *c, void *d, int hlen, int keylen, int dlen)
     }
 }
 
+static void
+handle_unexpected_errorcode_bin(conn *c, const char *func_name, ENGINE_ERROR_CODE ret)
+{
+    if (ret == ENGINE_DISCONNECT) {
+        conn_set_state(c, conn_closing);
+    } else {
+        mc_logger->log(EXTENSION_LOG_WARNING, c, "[%s] Unexpected Error: %d\n",
+                       func_name, (int)ret);
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+    }
+}
+
 static void complete_incr_bin(conn *c)
 {
     protocol_binary_response_incr* rsp = (protocol_binary_response_incr*)c->wbuf;
@@ -3510,9 +3522,6 @@ static void complete_incr_bin(conn *c)
     case ENGINE_NOT_STORED:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_STORED, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_ENOTSUP:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
         break;
@@ -3523,13 +3532,15 @@ static void complete_incr_bin(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         break;
     default:
-        abort();
+        handle_unexpected_errorcode_bin(c, __func__, ret);
+        if (ret != ENGINE_DISCONNECT) {
+            abort();
+        }
     }
 }
 
 static void complete_update_bin(conn *c)
 {
-    protocol_binary_response_status eno = PROTOCOL_BINARY_RESPONSE_EINVAL;
     assert(c != NULL);
 
     item *it = c->item;
@@ -3584,14 +3595,28 @@ static void complete_update_bin(conn *c)
     case ENGINE_KEY_ENOENT:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
+    case ENGINE_NOT_STORED:
+        /* FIXME: check below code, later. */
+        if (c->store_op == OPERATION_ADD) {
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS, 0);
+        } else if (c->store_op == OPERATION_REPLACE) {
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
+        } else {
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_STORED, 0);
+        }
+        //write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_STORED, 0);
+        break;
     case ENGINE_PREFIX_ENAME:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_PREFIX_ENAME, 0);
         break;
     case ENGINE_ENOMEM:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
+    case ENGINE_EINVAL:
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
+        break;
+    case ENGINE_E2BIG:
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, 0);
         break;
     case ENGINE_ENOTSUP:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
@@ -3603,14 +3628,7 @@ static void complete_update_bin(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         break;
     default:
-        if (c->store_op == OPERATION_ADD) {
-            eno = PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS;
-        } else if (c->store_op == OPERATION_REPLACE) {
-            eno = PROTOCOL_BINARY_RESPONSE_KEY_ENOENT;
-        } else {
-            eno = PROTOCOL_BINARY_RESPONSE_NOT_STORED;
-        }
-        write_bin_packet(c, eno, 0);
+        handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 
     if (c->store_op == OPERATION_CAS) {
@@ -3706,9 +3724,6 @@ static void process_bin_get(conn *c)
             }
         }
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_ENOTSUP:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
         break;
@@ -3719,10 +3734,14 @@ static void process_bin_get(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         break;
     default:
-        /* @todo add proper error handling! */
-        mc_logger->log(EXTENSION_LOG_WARNING, c,
-                       "Unknown error code: %d\n", ret);
-        abort();
+        handle_unexpected_errorcode_bin(c, __func__, ret);
+
+        if (ret != ENGINE_DISCONNECT) {
+            /* @todo add proper error handling! */
+            mc_logger->log(EXTENSION_LOG_WARNING, c,
+                           "Unknown error code: %d\n", ret);
+            abort();
+        }
     }
 }
 
@@ -3964,17 +3983,17 @@ static void process_bin_stat(conn *c)
     case ENGINE_KEY_ENOENT:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_ENOTSUP:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
         break;
     case ENGINE_PREFIX_ENOENT:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_PREFIX_ENOENT, 0);
         break;
-    default:
+    case ENGINE_EINVAL:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
+        break;
+    default:
+        handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -4317,9 +4336,6 @@ static void process_bin_lop_create(conn *c)
         STATS_OKS(c, lop_create, key, nkey);
         write_bin_response(c, NULL, 0, 0, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     default:
         STATS_CMD_NOKEY(c, lop_create);
         if (ret == ENGINE_KEY_EEXISTS)
@@ -4329,7 +4345,7 @@ static void process_bin_lop_create(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -4405,9 +4421,6 @@ static void process_bin_lop_prepare_nread(conn *c)
         c->substate = bin_reading_lop_nread_complete;
         }
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     default:
         STATS_CMD_NOKEY(c, lop_insert);
         if (ret == ENGINE_E2BIG)
@@ -4415,10 +4428,12 @@ static void process_bin_lop_prepare_nread(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
 
-        /* swallow the data line */
-        c->write_and_go = conn_swallow;
+        if (ret != ENGINE_DISCONNECT) {
+            /* swallow the data line */
+            c->write_and_go = conn_swallow;
+        }
     }
 }
 
@@ -4449,9 +4464,6 @@ static void process_bin_lop_insert_complete(conn *c)
         /* Stored */
         write_bin_response(c, NULL, 0, 0, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, lop_insert, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
@@ -4469,7 +4481,7 @@ static void process_bin_lop_insert_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 
     if (ret != ENGINE_SUCCESS) {
@@ -4530,9 +4542,6 @@ static void process_bin_lop_delete(conn *c)
         STATS_NONE_HITS(c, lop_delete, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINDEXOOR, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, lop_delete, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
@@ -4542,7 +4551,7 @@ static void process_bin_lop_delete(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -4658,9 +4667,6 @@ static void process_bin_lop_get(conn *c)
         STATS_NONE_HITS(c, lop_get, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINDEXOOR, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, lop_get, key, nkey);
@@ -4674,7 +4680,7 @@ static void process_bin_lop_get(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -4719,9 +4725,6 @@ static void process_bin_sop_create(conn *c)
         STATS_OKS(c, sop_create, key, nkey);
         write_bin_response(c, NULL, 0, 0, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     default:
         STATS_CMD_NOKEY(c, sop_create);
         if (ret == ENGINE_KEY_EEXISTS)
@@ -4731,7 +4734,7 @@ static void process_bin_sop_create(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -4832,9 +4835,6 @@ static void process_bin_sop_prepare_nread(conn *c)
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_sop_nread_complete;
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     default:
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
             STATS_CMD_NOKEY(c, sop_insert);
@@ -4849,10 +4849,12 @@ static void process_bin_sop_prepare_nread(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
 
-        /* swallow the data line */
-        c->write_and_go = conn_swallow;
+        if (ret != ENGINE_DISCONNECT) {
+            /* swallow the data line */
+            c->write_and_go = conn_swallow;
+        }
     }
 }
 
@@ -4882,9 +4884,6 @@ static void process_bin_sop_insert_complete(conn *c)
         /* Stored */
         write_bin_response(c, NULL, 0, 0, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, sop_insert, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
@@ -4902,7 +4901,7 @@ static void process_bin_sop_insert_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 
     /* release the c->coll_eitem reference */
@@ -4941,9 +4940,6 @@ static void process_bin_sop_delete_complete(conn *c)
         STATS_NONE_HITS(c, sop_delete, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, sop_delete, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
@@ -4953,7 +4949,7 @@ static void process_bin_sop_delete_complete(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 
     /* release the c->coll_eitem reference */
@@ -4990,9 +4986,6 @@ static void process_bin_sop_exist_complete(conn *c)
         write_bin_response(c, &rsp->message.body, 0, 0, sizeof(rsp->message.body));
         }
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, sop_exist, c->coll_key, c->coll_nkey);
@@ -5006,7 +4999,7 @@ static void process_bin_sop_exist_complete(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 
     /* release the c->coll_eitem reference */
@@ -5136,9 +5129,6 @@ static void process_bin_sop_get(conn *c)
         STATS_NONE_HITS(c, sop_get, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, sop_get, key, nkey);
@@ -5152,7 +5142,7 @@ static void process_bin_sop_get(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -5208,9 +5198,6 @@ static void process_bin_bop_create(conn *c)
         STATS_OKS(c, bop_create, key, nkey);
         write_bin_response(c, NULL, 0, 0, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     default:
         STATS_CMD_NOKEY(c, bop_create);
         if (ret == ENGINE_KEY_EEXISTS)
@@ -5220,7 +5207,7 @@ static void process_bin_bop_create(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -5316,9 +5303,6 @@ static void process_bin_bop_prepare_nread(conn *c)
         c->substate = bin_reading_bop_nread_complete;
         }
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     default:
         STATS_CMD_NOKEY(c, bop_insert);
         if (ret == ENGINE_E2BIG)
@@ -5326,10 +5310,12 @@ static void process_bin_bop_prepare_nread(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
 
-        /* swallow the data line */
-        c->write_and_go = conn_swallow;
+        if (ret != ENGINE_DISCONNECT) {
+            /* swallow the data line */
+            c->write_and_go = conn_swallow;
+        }
     }
 }
 
@@ -5364,9 +5350,6 @@ static void process_bin_bop_insert_complete(conn *c)
         /* Stored */
         write_bin_response(c, NULL, 0, 0, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, bop_insert, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
@@ -5389,7 +5372,7 @@ static void process_bin_bop_insert_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 
     /* release the c->coll_eitem reference */
@@ -5440,9 +5423,6 @@ static void process_bin_bop_update_complete(conn *c)
         STATS_NONE_HITS(c, bop_update, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, bop_update, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
@@ -5458,7 +5438,7 @@ static void process_bin_bop_update_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 
     if (c->coll_eitem != NULL) {
@@ -5627,9 +5607,6 @@ static void process_bin_bop_delete(conn *c)
         STATS_NONE_HITS(c, bop_delete, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, bop_delete, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
@@ -5641,7 +5618,7 @@ static void process_bin_bop_delete(conn *c)
         else if (ret == ENGINE_EBADBKEY)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADBKEY, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -5778,9 +5755,6 @@ static void process_bin_bop_get(conn *c)
         STATS_NONE_HITS(c, bop_get, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_EBKEYOOR:
     case ENGINE_UNREADABLE:
@@ -5799,7 +5773,7 @@ static void process_bin_bop_get(conn *c)
         else if (ret == ENGINE_EBADBKEY)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADBKEY, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -5859,9 +5833,6 @@ static void process_bin_bop_count(conn *c)
         rsp->message.body.count = htonl(elem_count);
         write_bin_response(c, &rsp->message.body, 0, 0, sizeof(rsp->message.body));
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, bop_count, key, nkey);
@@ -5877,7 +5848,7 @@ static void process_bin_bop_count(conn *c)
         else if (ret == ENGINE_EBADBKEY)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADBKEY, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -6203,9 +6174,6 @@ static void process_bin_bop_smget_complete_old(conn *c)
         }
         }
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     default:
         STATS_CMD_NOKEY(c, bop_smget);
         if (ret == ENGINE_EBADVALUE)
@@ -6219,7 +6187,7 @@ static void process_bin_bop_smget_complete_old(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 
     /* free token buffer */
@@ -6398,9 +6366,6 @@ static void process_bin_bop_smget_complete(conn *c)
         }
         }
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     default:
         STATS_CMD_NOKEY(c, bop_smget);
         if (ret == ENGINE_EBADVALUE)
@@ -6416,7 +6381,7 @@ static void process_bin_bop_smget_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 
     /* free token buffer */
@@ -6513,9 +6478,6 @@ static void process_bin_getattr(conn *c)
         write_bin_response(c, &rsp->message.body, 0, 0, sizeof(rsp->message.body));
         }
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, getattr, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
@@ -6525,7 +6487,7 @@ static void process_bin_getattr(conn *c)
         if (ret == ENGINE_EBADATTR)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADATTR, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -6619,9 +6581,6 @@ static void process_bin_setattr(conn *c)
         STATS_HITS(c, setattr, key, nkey);
         write_bin_response(c, NULL, 0, 0, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, setattr, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
@@ -6633,7 +6592,7 @@ static void process_bin_setattr(conn *c)
         else if (ret == ENGINE_EBADVALUE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADVALUE, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -7136,10 +7095,8 @@ static void process_bin_update(conn *c)
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
-    default:
+    case ENGINE_E2BIG:
+    case ENGINE_ENOMEM:
         if (ret == ENGINE_E2BIG) {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
         } else {
@@ -7160,6 +7117,14 @@ static void process_bin_update(conn *c)
 
         /* swallow the data line */
         c->write_and_go = conn_swallow;
+        break;
+    default:
+        handle_unexpected_errorcode_bin(c, __func__, ret);
+
+        if (ret != ENGINE_DISCONNECT) {
+            /* swallow the data line */
+            c->write_and_go = conn_swallow;
+        }
     }
 }
 
@@ -7210,10 +7175,8 @@ static void process_bin_append_prepend(conn *c)
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
-    default:
+    case ENGINE_E2BIG:
+    case ENGINE_ENOMEM:
         if (ret == ENGINE_E2BIG) {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
         } else {
@@ -7221,6 +7184,14 @@ static void process_bin_append_prepend(conn *c)
         }
         /* swallow the data line */
         c->write_and_go = conn_swallow;
+        break;
+    default:
+        handle_unexpected_errorcode_bin(c, __func__, ret);
+
+        if (ret != ENGINE_DISCONNECT) {
+            /* swallow the data line */
+            c->write_and_go = conn_swallow;
+        }
     }
 }
 
@@ -7302,9 +7273,6 @@ static void process_bin_flush_prefix(conn *c)
     case ENGINE_SUCCESS:
         write_bin_response(c, NULL, 0, 0, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_PREFIX_ENOENT:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_PREFIX_ENOENT, 0);
         break;
@@ -7312,7 +7280,7 @@ static void process_bin_flush_prefix(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
         break;
     default:
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
+        handle_unexpected_errorcode_bin(c, __func__, ret);
         break;
     }
 
