@@ -107,6 +107,7 @@ volatile sig_atomic_t memcached_shutdown=0;
  * sizeof(time_t) > sizeof(unsigned int).
  */
 volatile rel_time_t current_time;
+static time_t process_started; /* when the process was started */
 
 /** exported globals **/
 struct settings settings;
@@ -117,8 +118,6 @@ static union {
     ENGINE_HANDLE *v0;
     ENGINE_HANDLE_V1 *v1;
 } mc_engine;
-
-static time_t process_started;     /* when the process was started */
 
 /* The size of string representing 4 bytes integer is 10. */
 static int lenstr_size = 10;

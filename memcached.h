@@ -121,7 +121,6 @@
 #define PIPE_STATE_ERR_MFULL 3
 #define PIPE_STATE_ERR_BAD   4
 
-
 #define STAT_KEY_LEN 128
 #define STAT_VAL_LEN 128
 
@@ -209,7 +208,6 @@ struct mc_stats {
     unsigned int  rejected_conns; /* number of times I reject a client */
     unsigned int  total_conns;
     unsigned int  conn_structs;
-    time_t        started;          /* when the process was started */
 };
 
 #define MAX_VERBOSITY_LEVEL 2
@@ -265,7 +263,6 @@ struct engine_event_handler {
     struct engine_event_handler *next;
 };
 
-extern struct stats stats;
 extern struct settings settings;
 extern EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
 
