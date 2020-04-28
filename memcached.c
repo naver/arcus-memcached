@@ -96,80 +96,6 @@ void UNLOCK_SETTING() {
     pthread_mutex_unlock(&setting_lock);
 }
 
-/* Macros for incrementing thread_stats */
-#define THSTATS_INCR_ONE(conn, op) { \
-    struct thread_stats *thread_stats = get_thread_stats(conn); \
-    pthread_mutex_lock(&thread_stats->mutex); \
-    thread_stats->op++; \
-    pthread_mutex_unlock(&thread_stats->mutex); \
-}
-
-#define THSTATS_INCR_TWO(conn, op1, op2) { \
-    struct thread_stats *thread_stats = get_thread_stats(conn); \
-    pthread_mutex_lock(&thread_stats->mutex); \
-    thread_stats->op1++; \
-    thread_stats->op2++; \
-    pthread_mutex_unlock(&thread_stats->mutex); \
-}
-
-#define THSTATS_INCR_AMT(conn, op, amt) { \
-    struct thread_stats *thread_stats = get_thread_stats(conn); \
-    pthread_mutex_lock(&thread_stats->mutex); \
-    thread_stats->op += (amt); \
-    pthread_mutex_unlock(&thread_stats->mutex); \
-}
-
-#define STATS_CMD(conn, op, key, nkey) { \
-    THSTATS_INCR_ONE(conn, cmd_##op); \
-    TK(default_topkeys, cmd_##op, key, nkey, get_current_time()); \
-}
-
-#define STATS_OKS(conn, op, key, nkey) { \
-    THSTATS_INCR_TWO(conn, op##_oks, cmd_##op); \
-    TK(default_topkeys, op##_oks, key, nkey, get_current_time()); \
-}
-
-#define STATS_HITS(conn, op, key, nkey) { \
-    THSTATS_INCR_TWO(conn, op##_hits, cmd_##op); \
-    TK(default_topkeys, op##_hits, key, nkey, get_current_time()); \
-}
-
-#define STATS_ELEM_HITS(conn, op, key, nkey) { \
-    THSTATS_INCR_TWO(conn, op##_elem_hits, cmd_##op); \
-    TK(default_topkeys, op##_elem_hits, key, nkey, get_current_time()); \
-}
-
-#define STATS_NONE_HITS(conn, op, key, nkey) { \
-    THSTATS_INCR_TWO(conn, op##_none_hits, cmd_##op); \
-    TK(default_topkeys, op##_none_hits, key, nkey, get_current_time()); \
-}
-
-#define STATS_MISSES(conn, op, key, nkey) { \
-    THSTATS_INCR_TWO(conn, op##_misses, cmd_##op); \
-    TK(default_topkeys, op##_misses, key, nkey, get_current_time()); \
-}
-
-#define STATS_BADVAL(conn, op, key, nkey) { \
-    THSTATS_INCR_TWO(conn, op##_badval, cmd_##op); \
-    TK(default_topkeys, op##_badval, key, nkey, get_current_time()); \
-}
-
-#define STATS_CMD_NOKEY(conn, op) { \
-    THSTATS_INCR_ONE(conn, cmd_##op); \
-}
-
-#define STATS_OKS_NOKEY(conn, op) { \
-    THSTATS_INCR_TWO(conn, op##_oks, cmd_##op); \
-}
-
-#define STATS_ERRORS_NOKEY(conn, op) { \
-    THSTATS_INCR_TWO(conn, op##_errors, cmd_##op); \
-}
-
-#define STATS_ADD(conn, op, amt) { \
-    THSTATS_INCR_AMT(conn, op, amt); \
-}
-
 volatile sig_atomic_t memcached_shutdown=0;
 
 /*
@@ -201,7 +127,7 @@ static int lenstr_size = 10;
 static conn *listen_conn = NULL;
 static struct event_base *main_base;
 struct thread_stats *default_thread_stats;
-static topkeys_t *default_topkeys = NULL;
+topkeys_t *default_topkeys = NULL;
 
 static struct engine_event_handler *engine_event_handlers[MAX_ENGINE_EVENT_TYPE + 1];
 
@@ -222,8 +148,6 @@ static bool lqdetect_in_use = false;
  */
 static int new_socket(struct addrinfo *ai);
 static int try_read_command(conn *c);
-static inline struct thread_stats *get_independent_stats(conn *c);
-static inline struct thread_stats *get_thread_stats(conn *c);
 
 enum try_read_result {
     READ_DATA_RECEIVED,
@@ -331,14 +255,13 @@ static void stats_init(void)
 
 static void stats_reset(const void *cookie)
 {
-    struct conn *conn = (struct conn*)cookie;
     LOCK_STATS();
     mc_stats.rejected_conns = 0;
     mc_stats.quit_conns = 0;
     mc_stats.total_conns = 0;
     stats_prefix_clear();
     UNLOCK_STATS();
-    threadlocal_stats_reset(get_independent_stats(conn));
+    threadlocal_stats_reset(default_thread_stats);
     mc_engine.v1->reset_stats(mc_engine.v0, cookie);
 }
 
@@ -7967,7 +7890,7 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
         mc_engine.v1->aggregate_stats(mc_engine.v0, (const void *)c,
                                       aggregate_callback, &thread_stats);
     } else {
-        threadlocal_stats_aggregate(get_independent_stats(c), &thread_stats);
+        threadlocal_stats_aggregate(default_thread_stats, &thread_stats);
     }
 
 #ifndef __WIN32__
@@ -14575,22 +14498,6 @@ static void release_independent_stats(void *stats)
     threadlocal_stats_destroy(stats);
 }
 
-static inline struct thread_stats *get_independent_stats(conn *c)
-{
-    if (mc_engine.v1->get_stats_struct != NULL) {
-        struct thread_stats *stats;
-        stats = mc_engine.v1->get_stats_struct(mc_engine.v0, (const void *)c);
-        if (stats) return stats;
-    }
-    return default_thread_stats;
-}
-
-static inline struct thread_stats *get_thread_stats(conn *c)
-{
-    struct thread_stats *stats = get_independent_stats(c);
-    return &stats[c->thread->index];
-}
-
 static void count_eviction(const void *cookie, const void *key, const int nkey)
 {
     TK(default_topkeys, evictions, key, nkey, get_current_time());
@@ -15626,6 +15533,15 @@ int main (int argc, char **argv)
     }
     if (settings.topkeys > 0) {
         default_topkeys = topkeys_init(settings.topkeys);
+    }
+    /* Do not use the thread_stats maintained by engine.
+     * Let's rethink about the mechanism and APIs. (FIXME)
+     */
+    if (mc_engine.v1->get_stats_struct != NULL ||
+        mc_engine.v1->aggregate_stats != NULL) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Failed to validate the engine stats API.\n");
+        exit(EXIT_FAILURE);
     }
 
     /* create unix mode sockets after dropping privileges */

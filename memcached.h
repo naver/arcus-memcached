@@ -473,6 +473,77 @@ struct conn {
 }
 
 /*
+ * Macros for incrementing thread_stats
+ */
+/* The external variables used in below macros */
+extern struct thread_stats *default_thread_stats;
+extern topkeys_t *default_topkeys;
+
+#define MY_THREAD_STATS(c) (&default_thread_stats[(c)->thread->index])
+
+#define STATS_CMD(c, op, key, nkey) { \
+    struct thread_stats *my_thread_stats = MY_THREAD_STATS(c); \
+    THREAD_STATS_INCR_ONE(my_thread_stats, cmd_##op); \
+    TK(default_topkeys, cmd_##op, key, nkey, get_current_time()); \
+}
+
+#define STATS_OKS(c, op, key, nkey) { \
+    struct thread_stats *my_thread_stats = MY_THREAD_STATS(c); \
+    THREAD_STATS_INCR_TWO(my_thread_stats, op##_oks, cmd_##op); \
+    TK(default_topkeys, op##_oks, key, nkey, get_current_time()); \
+}
+
+#define STATS_HITS(c, op, key, nkey) { \
+    struct thread_stats *my_thread_stats = MY_THREAD_STATS(c); \
+    THREAD_STATS_INCR_TWO(my_thread_stats, op##_hits, cmd_##op); \
+    TK(default_topkeys, op##_hits, key, nkey, get_current_time()); \
+}
+
+#define STATS_ELEM_HITS(c, op, key, nkey) { \
+    struct thread_stats *my_thread_stats = MY_THREAD_STATS(c); \
+    THREAD_STATS_INCR_TWO(my_thread_stats, op##_elem_hits, cmd_##op); \
+    TK(default_topkeys, op##_elem_hits, key, nkey, get_current_time()); \
+}
+
+#define STATS_NONE_HITS(c, op, key, nkey) { \
+    struct thread_stats *my_thread_stats = MY_THREAD_STATS(c); \
+    THREAD_STATS_INCR_TWO(my_thread_stats, op##_none_hits, cmd_##op); \
+    TK(default_topkeys, op##_none_hits, key, nkey, get_current_time()); \
+}
+
+#define STATS_MISSES(c, op, key, nkey) { \
+    struct thread_stats *my_thread_stats = MY_THREAD_STATS(c); \
+    THREAD_STATS_INCR_TWO(my_thread_stats, op##_misses, cmd_##op); \
+    TK(default_topkeys, op##_misses, key, nkey, get_current_time()); \
+}
+
+#define STATS_BADVAL(c, op, key, nkey) { \
+    struct thread_stats *my_thread_stats = MY_THREAD_STATS(c); \
+    THREAD_STATS_INCR_TWO(my_thread_stats, op##_badval, cmd_##op); \
+    TK(default_topkeys, op##_badval, key, nkey, get_current_time()); \
+}
+
+#define STATS_CMD_NOKEY(c, op) { \
+    struct thread_stats *my_thread_stats = MY_THREAD_STATS(c); \
+    THREAD_STATS_INCR_ONE(my_thread_stats, cmd_##op); \
+}
+
+#define STATS_OKS_NOKEY(c, op) { \
+    struct thread_stats *my_thread_stats = MY_THREAD_STATS(c); \
+    THREAD_STATS_INCR_TWO(my_thread_stats, op##_oks, cmd_##op); \
+}
+
+#define STATS_ERRORS_NOKEY(c, op) { \
+    struct thread_stats *my_thread_stats = MY_THREAD_STATS(c); \
+    THREAD_STATS_INCR_TWO(my_thread_stats, op##_errors, cmd_##op); \
+}
+
+#define STATS_ADD(c, op, amt) { \
+    struct thread_stats *my_thread_stats = MY_THREAD_STATS(c); \
+    THREAD_STATS_INCR_AMT(my_thread_stats, op, amt); \
+}
+
+/*
  * Functions
  */
 conn *conn_new(const int sfd, STATE_FUNC init_state, const int event_flags,
