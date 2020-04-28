@@ -3492,7 +3492,7 @@ static void complete_incr_bin(conn *c)
         break;
     case ENGINE_KEY_ENOENT:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
-        if (c->cmd == PROTOCOL_BINARY_CMD_INCREMENT) {
+        if (incr) {
             STATS_MISSES(c, incr, key, nkey);
         } else {
             STATS_MISSES(c, decr, key, nkey);
@@ -8603,27 +8603,26 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
         }
         out_string(c, "NOT_FOUND");
         break;
-    case ENGINE_PREFIX_ENAME:
-        out_string(c, "CLIENT_ERROR invalid prefix name");
-
-        break;
-    case ENGINE_ENOMEM:
-        out_string(c, "SERVER_ERROR out of memory");
-        break;
-    case ENGINE_EINVAL:
-        out_string(c, "CLIENT_ERROR cannot increment or decrement non-numeric value");
-        break;
-    case ENGINE_NOT_STORED:
-        out_string(c, "SERVER_ERROR failed to store item");
-        break;
-    case ENGINE_ENOTSUP:
-        out_string(c, "NOT_SUPPORTED");
-        break;
-    case ENGINE_EBADTYPE:
-        out_string(c, "TYPE_MISMATCH");
-        break;
     default:
-        handle_unexpected_errorcode_ascii(c, __func__, ret);
+        if (incr) {
+            STATS_CMD_NOKEY(c, incr);
+        } else {
+            STATS_CMD_NOKEY(c, decr);
+        }
+        if (ret == ENGINE_EINVAL)
+            out_string(c, "CLIENT_ERROR cannot increment or decrement non-numeric value");
+        else if (ret == ENGINE_PREFIX_ENAME)
+            out_string(c, "CLIENT_ERROR invalid prefix name");
+        else if (ret == ENGINE_ENOMEM)
+            out_string(c, "SERVER_ERROR out of memory");
+        else if (ret == ENGINE_NOT_STORED)
+            out_string(c, "SERVER_ERROR failed to store item");
+        else if (ret == ENGINE_ENOTSUP)
+            out_string(c, "NOT_SUPPORTED");
+        else if (ret == ENGINE_EBADTYPE)
+            out_string(c, "TYPE_MISMATCH");
+        else
+            handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
@@ -11206,14 +11205,6 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
         snprintf(temp, sizeof(temp), "%"PRIu64, result);
         out_string(c, temp);
         break;
-    case ENGINE_KEY_ENOENT:
-        if (incr) {
-            STATS_MISSES(c, bop_incr, key, nkey);
-        } else {
-            STATS_MISSES(c, bop_decr, key, nkey);
-        }
-        out_string(c, "NOT_FOUND");
-        break;
     case ENGINE_ELEM_ENOENT:
         if (incr) {
             STATS_NONE_HITS(c, bop_incr, key, nkey);
@@ -11222,11 +11213,22 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
         }
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
-    case ENGINE_EINVAL:
-        out_string(c, "CLIENT_ERROR cannot increment or decrement non-numeric value");
+    case ENGINE_KEY_ENOENT:
+        if (incr) {
+            STATS_MISSES(c, bop_incr, key, nkey);
+        } else {
+            STATS_MISSES(c, bop_decr, key, nkey);
+        }
+        out_string(c, "NOT_FOUND");
         break;
     default:
-        if (ret == ENGINE_EBADTYPE)       out_string(c, "TYPE_MISMATCH");
+        if (incr) {
+            STATS_CMD_NOKEY(c, bop_incr);
+        } else {
+            STATS_CMD_NOKEY(c, bop_decr);
+        }
+        if (ret == ENGINE_EINVAL) out_string(c, "CLIENT_ERROR cannot increment or decrement non-numeric value");
+        else if (ret == ENGINE_EBADTYPE)  out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY)  out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_EBKEYOOR)  out_string(c, "OUT_OF_RANGE");
         else if (ret == ENGINE_EOVERFLOW) out_string(c, "OVERFLOWED");
