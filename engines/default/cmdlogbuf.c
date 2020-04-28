@@ -682,6 +682,51 @@ size_t cmdlog_file_getsize(void)
     return file_size;
 }
 
+#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
+static int do_redo_pending_lrec(int fd, int start_offset, int end_offset)
+{
+    char buf[MAX_LOG_RECORD_SIZE];
+    LogRec *logrec = (LogRec*)buf;
+    LogHdr *loghdr = &logrec->header;
+
+    int ret = 0;
+    ssize_t nread = 0;
+    int redo_offset = lseek(fd, (start_offset - end_offset), SEEK_CUR);
+    while (redo_offset < end_offset) {
+        nread = disk_read(fd, loghdr, sizeof(LogHdr));
+        if (nread != sizeof(LogHdr)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "[RECOVERY - CMDLOG] failed : read header data "
+                        "nread(%zd) != header_length(%lu).\n", nread, sizeof(LogHdr));
+            ret = -1; break;
+        }
+        redo_offset += nread;
+        if (loghdr->body_length > 0) {
+            logrec->body = buf + nread;
+            nread = disk_read(fd, logrec->body, loghdr->body_length);
+            if (nread != loghdr->body_length) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "[RECOVERY - CMDLOG] failed : read body data "
+                            "nread(%zd) != body_length(%u).\n", nread, loghdr->body_length);
+                ret = -1; break;
+            }
+            redo_offset += nread;
+            ENGINE_ERROR_CODE err = lrec_redo_from_record(logrec);
+            if (err != ENGINE_SUCCESS) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "[RECOVERY - CMDLOG] warning : log record redo failed.\n");
+                if (err == ENGINE_ENOMEM) {
+                    logger->log(EXTENSION_LOG_WARNING, NULL,
+                                "[RECOVERY - CMDLOG] failed : out of memory.\n");
+                    ret = -1; break;
+                }
+            }
+        }
+    }
+    return ret;
+}
+#endif
+
 int cmdlog_file_apply(void)
 {
     log_FILE *logfile = &log_gl.log_file;
@@ -699,8 +744,13 @@ int cmdlog_file_apply(void)
         return 0;
     }
 
-    int ret = 0;
-    int seek_offset = 0;
+    int  ret = 0;
+    int  seek_offset = 0;
+#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
+    int  pending_start_offset = 0;
+    int  pending_end_offset = 0;
+    bool pending = false;
+#endif
     char buf[MAX_LOG_RECORD_SIZE];
     LogRec *logrec = (LogRec*)buf;
     LogHdr *loghdr = &logrec->header;
@@ -723,6 +773,42 @@ int cmdlog_file_apply(void)
             ret = -1; break;
         }
         seek_offset += nread;
+
+#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
+        if (loghdr->logtype == LOG_OPERATION_BEGIN) {
+            if (pending == true) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "[RECOVERY - CMDLOG] failed : LOG_OPERATION_BEGIN recorded "
+                            "before previous kept log record is processed.\n");
+                ret = -1; break;
+            }
+            pending_start_offset = seek_offset;
+            pending = true;
+            continue;
+        }
+
+        if (loghdr->logtype == LOG_OPERATION_END) {
+            if (pending == false) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "[RECOVERY - CMDLOG] failed : "
+                            "LOG_OPERATION_END recorded without LOG_OPERATION_BEGIN.\n");
+                ret = -1; break;
+            }
+            /* redo pending normal log records */
+            pending_end_offset = seek_offset;
+            if (do_redo_pending_lrec(logfile->fd, pending_start_offset, pending_end_offset) < 0) {
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "[RECOVERY - CMDLOG] failed : pending log record redo failed\n");
+                ret = -1; break;
+            }
+
+            /* Complete redo of pending log records. cleanup pending info */
+            pending_start_offset = 0;
+            pending_end_offset = 0;
+            pending = false;
+            continue;
+        }
+#endif
 
         /* read body */
         if (loghdr->body_length > 0) {
@@ -759,6 +845,9 @@ int cmdlog_file_apply(void)
             seek_offset += loghdr->body_length;
         }
 
+#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
+        if (pending) continue;
+#endif
         /* redo log record */
         ENGINE_ERROR_CODE err = lrec_redo_from_record(logrec);
         if (err != ENGINE_SUCCESS) {
