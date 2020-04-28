@@ -119,47 +119,39 @@ void UNLOCK_SETTING() {
     pthread_mutex_unlock(&thread_stats->mutex); \
 }
 
-/* Macros for incrementing topkeys */
-#define TOPKEYS_INCR(op, key, nkey) { \
-    if (default_topkeys) { \
-        rel_time_t ctime = get_current_time(); \
-        TK(default_topkeys, op, key, nkey, ctime); \
-    } \
-}
-
 #define STATS_CMD(conn, op, key, nkey) { \
     THSTATS_INCR_ONE(conn, cmd_##op); \
-    TOPKEYS_INCR(cmd_##op, key, nkey); \
+    TK(default_topkeys, cmd_##op, key, nkey, get_current_time()); \
 }
 
 #define STATS_OKS(conn, op, key, nkey) { \
     THSTATS_INCR_TWO(conn, op##_oks, cmd_##op); \
-    TOPKEYS_INCR(op##_oks, key, nkey); \
+    TK(default_topkeys, op##_oks, key, nkey, get_current_time()); \
 }
 
 #define STATS_HITS(conn, op, key, nkey) { \
     THSTATS_INCR_TWO(conn, op##_hits, cmd_##op); \
-    TOPKEYS_INCR(op##_hits, key, nkey); \
+    TK(default_topkeys, op##_hits, key, nkey, get_current_time()); \
 }
 
 #define STATS_ELEM_HITS(conn, op, key, nkey) { \
     THSTATS_INCR_TWO(conn, op##_elem_hits, cmd_##op); \
-    TOPKEYS_INCR(op##_elem_hits, key, nkey); \
+    TK(default_topkeys, op##_elem_hits, key, nkey, get_current_time()); \
 }
 
 #define STATS_NONE_HITS(conn, op, key, nkey) { \
     THSTATS_INCR_TWO(conn, op##_none_hits, cmd_##op); \
-    TOPKEYS_INCR(op##_none_hits, key, nkey); \
+    TK(default_topkeys, op##_none_hits, key, nkey, get_current_time()); \
 }
 
 #define STATS_MISSES(conn, op, key, nkey) { \
     THSTATS_INCR_TWO(conn, op##_misses, cmd_##op); \
-    TOPKEYS_INCR(op##_misses, key, nkey); \
+    TK(default_topkeys, op##_misses, key, nkey, get_current_time()); \
 }
 
-#define STATS_BADVALUE(conn, op, key, nkey) { \
+#define STATS_BADVAL(conn, op, key, nkey) { \
     THSTATS_INCR_TWO(conn, op##_badval, cmd_##op); \
-    TOPKEYS_INCR(op##_badval, key, nkey); \
+    TK(default_topkeys, op##_badval, key, nkey, get_current_time()); \
 }
 
 #define STATS_CMD_NOKEY(conn, op) { \
@@ -230,6 +222,7 @@ static bool lqdetect_in_use = false;
  */
 static int new_socket(struct addrinfo *ai);
 static int try_read_command(conn *c);
+static inline struct thread_stats *get_independent_stats(conn *c);
 static inline struct thread_stats *get_thread_stats(conn *c);
 
 enum try_read_result {
@@ -345,7 +338,7 @@ static void stats_reset(const void *cookie)
     mc_stats.total_conns = 0;
     stats_prefix_clear();
     UNLOCK_STATS();
-    threadlocal_stats_reset(get_thread_stats(conn));
+    threadlocal_stats_reset(get_independent_stats(conn));
     mc_engine.v1->reset_stats(mc_engine.v0, cookie);
 }
 
@@ -3128,7 +3121,7 @@ static void update_stat_cas(conn *c, ENGINE_ERROR_CODE ret)
             STATS_HITS(c, cas, c->hinfo.key, c->hinfo.nkey);
             break;
         case ENGINE_KEY_EEXISTS:
-            STATS_BADVALUE(c, cas, c->hinfo.key, c->hinfo.nkey);
+            STATS_BADVAL(c, cas, c->hinfo.key, c->hinfo.nkey);
             break;
         case ENGINE_KEY_ENOENT:
         case ENGINE_EBADTYPE:
@@ -7974,7 +7967,7 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
         mc_engine.v1->aggregate_stats(mc_engine.v0, (const void *)c,
                                       aggregate_callback, &thread_stats);
     } else {
-        threadlocal_stats_aggregate(get_thread_stats(c), &thread_stats);
+        threadlocal_stats_aggregate(get_independent_stats(c), &thread_stats);
     }
 
 #ifndef __WIN32__
@@ -14662,21 +14655,25 @@ static void release_independent_stats(void *stats)
     threadlocal_stats_destroy(stats);
 }
 
-static inline struct thread_stats *get_thread_stats(conn *c)
+static inline struct thread_stats *get_independent_stats(conn *c)
 {
     if (mc_engine.v1->get_stats_struct != NULL) {
-        struct thread_stats *stats = mc_engine.v1->get_stats_struct(mc_engine.v0, (const void *)c);
-        if (stats == NULL) {
-            stats = default_thread_stats;
-        }
-        return stats;
+        struct thread_stats *stats;
+        stats = mc_engine.v1->get_stats_struct(mc_engine.v0, (const void *)c);
+        if (stats) return stats;
     }
     return default_thread_stats;
 }
 
+static inline struct thread_stats *get_thread_stats(conn *c)
+{
+    struct thread_stats *stats = get_independent_stats(c);
+    return &stats[c->thread->index];
+}
+
 static void count_eviction(const void *cookie, const void *key, const int nkey)
 {
-    TOPKEYS_INCR(evictions, key, nkey);
+    TK(default_topkeys, evictions, key, nkey, get_current_time());
 }
 
 /**
