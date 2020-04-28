@@ -230,6 +230,7 @@ static bool lqdetect_in_use = false;
  */
 static int new_socket(struct addrinfo *ai);
 static int try_read_command(conn *c);
+static inline struct thread_stats *get_independent_stats(conn *c);
 static inline struct thread_stats *get_thread_stats(conn *c);
 
 enum try_read_result {
@@ -345,7 +346,7 @@ static void stats_reset(const void *cookie)
     mc_stats.total_conns = 0;
     stats_prefix_clear();
     UNLOCK_STATS();
-    threadlocal_stats_reset(get_thread_stats(conn));
+    threadlocal_stats_reset(get_independent_stats(conn));
     mc_engine.v1->reset_stats(mc_engine.v0, cookie);
 }
 
@@ -7974,7 +7975,7 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
         mc_engine.v1->aggregate_stats(mc_engine.v0, (const void *)c,
                                       aggregate_callback, &thread_stats);
     } else {
-        threadlocal_stats_aggregate(get_thread_stats(c), &thread_stats);
+        threadlocal_stats_aggregate(get_independent_stats(c), &thread_stats);
     }
 
 #ifndef __WIN32__
@@ -14582,16 +14583,20 @@ static void release_independent_stats(void *stats)
     threadlocal_stats_destroy(stats);
 }
 
-static inline struct thread_stats *get_thread_stats(conn *c)
+static inline struct thread_stats *get_independent_stats(conn *c)
 {
     if (mc_engine.v1->get_stats_struct != NULL) {
-        struct thread_stats *stats = mc_engine.v1->get_stats_struct(mc_engine.v0, (const void *)c);
-        if (stats == NULL) {
-            stats = default_thread_stats;
-        }
-        return stats;
+        struct thread_stats *stats;
+        stats = mc_engine.v1->get_stats_struct(mc_engine.v0, (const void *)c);
+        if (stats) return stats;
     }
     return default_thread_stats;
+}
+
+static inline struct thread_stats *get_thread_stats(conn *c)
+{
+    struct thread_stats *stats = get_independent_stats(c);
+    return &stats[c->thread->index];
 }
 
 static void count_eviction(const void *cookie, const void *key, const int nkey)
