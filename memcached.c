@@ -4387,19 +4387,13 @@ static void process_bin_lop_prepare_nread(conn *c)
 
     eitem *elem;
     ENGINE_ERROR_CODE ret;
+
     if ((vlen + 2) > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
         ret = mc_engine.v1->list_elem_alloc(mc_engine.v0, c, key, nkey, vlen+2, &elem);
     }
-
-    if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_lop_insert(key, nkey, false);
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
-        {
+    if (ret == ENGINE_SUCCESS) {
         mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &c->einfo);
         ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
         c->coll_eitem  = (void *)elem;
@@ -4419,9 +4413,10 @@ static void process_bin_lop_prepare_nread(conn *c)
         }
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_lop_nread_complete;
+    } else {
+        if (settings.detail_enabled) {
+            stats_prefix_record_lop_insert(key, nkey, false);
         }
-        break;
-    default:
         STATS_CMD_NOKEY(c, lop_insert);
         if (ret == ENGINE_E2BIG)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
@@ -4771,8 +4766,8 @@ static void process_bin_sop_prepare_nread(conn *c)
     }
 
     eitem *elem = NULL;
-
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
     if ((vlen + 2) > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
@@ -4785,21 +4780,9 @@ static void process_bin_sop_prepare_nread(conn *c)
                 ((value_item*)elem)->len = vlen + 2;
         }
     }
-
-    if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT)
-            stats_prefix_record_sop_insert(key, nkey, false);
-        else if (c->cmd == PROTOCOL_BINARY_CMD_SOP_DELETE)
-            stats_prefix_record_sop_delete(key, nkey, false);
-        else
-            stats_prefix_record_sop_exist(key, nkey, false);
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
+    if (ret == ENGINE_SUCCESS) {
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
-            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
-                                        elem, &c->einfo);
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, elem, &c->einfo);
             ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
          } else {
             c->ritem   = ((value_item *)elem)->ptr;
@@ -4834,16 +4817,20 @@ static void process_bin_sop_prepare_nread(conn *c)
         }
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_sop_nread_complete;
-        break;
-    default:
+    } else {
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
+            if (settings.detail_enabled)
+                stats_prefix_record_sop_insert(key, nkey, false);
             STATS_CMD_NOKEY(c, sop_insert);
         } else if (c->cmd == PROTOCOL_BINARY_CMD_SOP_DELETE) {
+            if (settings.detail_enabled)
+                stats_prefix_record_sop_delete(key, nkey, false);
             STATS_CMD_NOKEY(c, sop_delete);
         } else {
+            if (settings.detail_enabled)
+               stats_prefix_record_sop_exist(key, nkey, false);
             STATS_CMD_NOKEY(c, sop_exist);
         }
-
         if (ret == ENGINE_E2BIG)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
         else if (ret == ENGINE_ENOMEM)
@@ -5256,8 +5243,8 @@ static void process_bin_bop_prepare_nread(conn *c)
     }
 
     eitem *elem;
-
     ENGINE_ERROR_CODE ret;
+
     if ((vlen + 2) > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
@@ -5265,14 +5252,7 @@ static void process_bin_bop_prepare_nread(conn *c)
                                              req->message.body.nbkey,
                                              req->message.body.neflag, vlen+2, &elem);
     }
-
-    if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_bop_insert(key, nkey, false);
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
-        {
+    if (ret == ENGINE_SUCCESS) {
         mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &c->einfo);
         if (c->einfo.nscore == 0) {
             memcpy((void*)c->einfo.score, req->message.body.bkey, sizeof(uint64_t));
@@ -5301,9 +5281,10 @@ static void process_bin_bop_prepare_nread(conn *c)
         }
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_bop_nread_complete;
+    } else {
+        if (settings.detail_enabled) {
+            stats_prefix_record_bop_insert(key, nkey, false);
         }
-        break;
-    default:
         STATS_CMD_NOKEY(c, bop_insert);
         if (ret == ENGINE_E2BIG)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
@@ -5508,8 +5489,8 @@ static void process_bin_bop_update_prepare_nread(conn *c)
     }
 
     eitem *elem = NULL;
-
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
     if ((vlen + 2) > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
@@ -5518,13 +5499,7 @@ static void process_bin_bop_update_prepare_nread(conn *c)
         else
             ((value_item*)elem)->len = vlen + 2;
     }
-
-    if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_bop_update(key, nkey, false);
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
+    if (ret == ENGINE_SUCCESS) {
         c->ritem       = ((value_item *)elem)->ptr;
         c->rlbytes     = vlen;
         c->coll_eitem  = (void *)elem;
@@ -5534,8 +5509,10 @@ static void process_bin_bop_update_prepare_nread(conn *c)
         c->coll_op     = OPERATION_BOP_UPDATE;
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_bop_update_nread_complete;
-        break;
-    default:
+    } else {
+        if (settings.detail_enabled) {
+            stats_prefix_record_bop_update(key, nkey, false);
+        }
         STATS_CMD_NOKEY(c, bop_update);
         /* ret == ENGINE_E2BIG || ret == ENGINE_ENOMEM */
         if (ret == ENGINE_E2BIG)
@@ -5900,7 +5877,6 @@ static void process_bin_bop_prepare_nread_keys(conn *c)
     }
 
     eitem *elem=NULL;
-
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     int need_size = 0;
     do {
@@ -5990,8 +5966,7 @@ static void process_bin_bop_prepare_nread_keys(conn *c)
         }
     } while(0);
 
-    switch (ret) {
-    case ENGINE_SUCCESS:
+    if (ret == ENGINE_SUCCESS) {
         c->coll_strkeys = (void*)&c->memblist;
         ritem_set_first(c, CONN_RTYPE_MBLCK, vlen);
         c->coll_eitem  = (void *)elem;
@@ -5999,8 +5974,7 @@ static void process_bin_bop_prepare_nread_keys(conn *c)
         c->coll_op = (c->cmd==PROTOCOL_BINARY_CMD_BOP_MGET ? OPERATION_BOP_MGET : OPERATION_BOP_SMGET);
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_bop_nread_keys_complete;
-        break;
-    default:
+    } else {
         /* ret == ENGINE_EBADVALUE || ret == ENGINE_ENOMEM */
         if (ret == ENGINE_EBADVALUE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADVALUE, vlen);
@@ -8356,15 +8330,12 @@ static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt)
     if (mblck_list_alloc(&c->thread->mblck_pool, 1, vlen, &c->memblist) < 0) {
         ret = ENGINE_ENOMEM;
     }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
+    if (ret == ENGINE_SUCCESS) {
         c->coll_strkeys = (void*)&c->memblist;
         ritem_set_first(c, CONN_RTYPE_MBLCK, vlen);
         c->coll_op = OPERATION_MGET;
         conn_set_state(c, conn_nread);
-        break;
-    default:
+    } else {
         out_string(c, "SERVER_ERROR out of memory");
         c->write_and_go = conn_swallow;
         c->sbytes = vlen;
@@ -9784,13 +9755,7 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
     } else {
         ret = mc_engine.v1->list_elem_alloc(mc_engine.v0, c, key, nkey, vlen, &elem);
     }
-
-    if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_lop_insert(key, nkey, false);
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
+    if (ret == ENGINE_SUCCESS) {
         mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &c->einfo);
         ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
         c->coll_eitem  = (void *)elem;
@@ -9800,8 +9765,10 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
         c->coll_nkey   = nkey;
         c->coll_index  = index;
         conn_set_state(c, conn_nread);
-        break;
-    default:
+    } else {
+        if (settings.detail_enabled) {
+            stats_prefix_record_lop_insert(key, nkey, false);
+        }
         STATS_CMD_NOKEY(c, lop_insert);
         if (ret == ENGINE_E2BIG)        out_string(c, "CLIENT_ERROR too large value");
         else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
@@ -10173,8 +10140,8 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
 static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, size_t nkey)
 {
     eitem *elem = NULL;
-
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
     if (vlen > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
@@ -10187,24 +10154,12 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
                 ((value_item*)elem)->len = vlen;
         }
     }
-
-    if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        if (cmd == (int)OPERATION_SOP_INSERT)
-            stats_prefix_record_sop_insert(key, nkey, false);
-        else if (cmd == (int)OPERATION_SOP_DELETE)
-            stats_prefix_record_sop_delete(key, nkey, false);
-        else
-            stats_prefix_record_sop_exist(key, nkey, false);
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
+    if (ret == ENGINE_SUCCESS) {
         if (cmd == (int)OPERATION_SOP_INSERT) {
-            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
-                                        elem, &c->einfo);
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, elem, &c->einfo);
             ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
         } else {
-            c->ritem   = ((value_item *)elem)->ptr;
+            c->ritem = ((value_item *)elem)->ptr;
             c->rlbytes = vlen;
         }
         c->coll_eitem  = (void *)elem;
@@ -10213,16 +10168,20 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
         c->coll_key    = key;
         c->coll_nkey   = nkey;
         conn_set_state(c, conn_nread);
-        break;
-    default:
+    } else {
         if (cmd == (int)OPERATION_SOP_INSERT) {
+            if (settings.detail_enabled)
+                stats_prefix_record_sop_insert(key, nkey, false);
             STATS_CMD_NOKEY(c, sop_insert);
         } else if (cmd == (int)OPERATION_SOP_DELETE) {
+            if (settings.detail_enabled)
+                stats_prefix_record_sop_delete(key, nkey, false);
             STATS_CMD_NOKEY(c, sop_delete);
         } else {
+            if (settings.detail_enabled)
+                stats_prefix_record_sop_exist(key, nkey, false);
             STATS_CMD_NOKEY(c, sop_exist);
         }
-
         if (ret == ENGINE_E2BIG)        out_string(c, "CLIENT_ERROR too large value");
         else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
@@ -10871,8 +10830,8 @@ static void process_bop_update_prepare_nread(conn *c, int cmd,
 {
     assert(cmd == (int)OPERATION_BOP_UPDATE);
     eitem *elem = NULL;
-
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
     if (vlen > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
@@ -10881,13 +10840,7 @@ static void process_bop_update_prepare_nread(conn *c, int cmd,
         else
             ((value_item*)elem)->len = vlen;
     }
-
-    if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_bop_update(key, nkey, false);
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
+    if (ret == ENGINE_SUCCESS) {
         c->ritem   = ((value_item *)elem)->ptr;
         c->rlbytes = vlen;
         c->coll_eitem  = (void *)elem;
@@ -10896,9 +10849,10 @@ static void process_bop_update_prepare_nread(conn *c, int cmd,
         c->coll_key    = key;
         c->coll_nkey   = nkey;
         conn_set_state(c, conn_nread);
-        break;
-    default:
-        /* ret == ENGINE_E2BIG || ret == ENGINE_ENOMEM */
+    } else {
+        if (settings.detail_enabled) {
+            stats_prefix_record_bop_update(key, nkey, false);
+        }
         STATS_CMD_NOKEY(c, bop_update);
         if (ret == ENGINE_E2BIG) out_string(c, "CLIENT_ERROR too large value");
         else                     out_string(c, "SERVER_ERROR out of memory");
@@ -10915,22 +10869,15 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
                                       const int vlen)
 {
     eitem *elem;
-
     ENGINE_ERROR_CODE ret;
+
     if (vlen > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
         ret = mc_engine.v1->btree_elem_alloc(mc_engine.v0, c, key, nkey,
                                              nbkey, neflag, vlen, &elem);
     }
-
-    if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_bop_insert(key, nkey, false);
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
-        {
+    if (ret == ENGINE_SUCCESS) {
         mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &c->einfo);
         memcpy((void*)c->einfo.score, bkey, (c->einfo.nscore==0 ? sizeof(uint64_t) : c->einfo.nscore));
         if (c->einfo.neflag > 0)
@@ -10942,9 +10889,10 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
         c->coll_key    = key;
         c->coll_nkey   = nkey;
         conn_set_state(c, conn_nread);
+    } else {
+        if (settings.detail_enabled) {
+            stats_prefix_record_bop_insert(key, nkey, false);
         }
-        break;
-    default:
         STATS_CMD_NOKEY(c, bop_insert);
         if (ret == ENGINE_E2BIG)        out_string(c, "CLIENT_ERROR too large value");
         else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
@@ -11024,19 +10972,14 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
             ret = ENGINE_ENOMEM;
         }
     }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
-        {
+    if (ret == ENGINE_SUCCESS) {
         c->coll_strkeys = (void*)&c->memblist;
         ritem_set_first(c, CONN_RTYPE_MBLCK, vlen);
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 0;
         c->coll_op = cmd;
         conn_set_state(c, conn_nread);
-        }
-        break;
-    default:
+    } else {
 #ifdef SUPPORT_BOP_MGET
         if (cmd == OPERATION_BOP_MGET)
             STATS_CMD_NOKEY(c, bop_mget);
@@ -11384,8 +11327,8 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
 {
     assert(cmd == (int)OPERATION_MOP_INSERT || (int)OPERATION_MOP_UPDATE);
     eitem *elem = NULL;
-
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
     if (vlen > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else if (cmd == OPERATION_MOP_INSERT) {
@@ -11396,14 +11339,7 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
         else
             ((value_item*)elem)->len = vlen;
     }
-
-    if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_mop_insert(key, nkey, false);
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
-        {
+    if (ret == ENGINE_SUCCESS) {
         if (cmd == OPERATION_MOP_INSERT) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem, &c->einfo);
             ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
@@ -11418,15 +11354,15 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
         c->coll_nkey   = nkey;
         c->coll_field  = *field;
         conn_set_state(c, conn_nread);
-        break;
+    } else {
+        if (settings.detail_enabled) {
+            stats_prefix_record_mop_insert(key, nkey, false);
         }
-    default:
         if (cmd == OPERATION_MOP_INSERT) {
             STATS_CMD_NOKEY(c, mop_insert);
         } else if (cmd == OPERATION_MOP_UPDATE) {
             STATS_CMD_NOKEY(c, mop_update);
         }
-
         if (ret == ENGINE_E2BIG)        out_string(c, "CLIENT_ERROR too large value");
         else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
@@ -11448,10 +11384,7 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
     if (mblck_list_alloc(&c->thread->mblck_pool, 1, flen, &c->memblist) < 0) {
         ret = ENGINE_ENOMEM;
     }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
-        {
+    if (ret == ENGINE_SUCCESS) {
         c->coll_strkeys = (void*)&c->memblist;
         ritem_set_first(c, CONN_RTYPE_MBLCK, flen);
         c->coll_ecount = 1;
@@ -11460,9 +11393,7 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
         c->coll_nkey = nkey;
         c->coll_lenkeys = flen;
         conn_set_state(c, conn_nread);
-        break;
-        }
-    default:
+    } else {
         if (cmd == OPERATION_MOP_DELETE) {
             STATS_CMD_NOKEY(c, mop_delete);
         } else if (cmd == OPERATION_MOP_GET) {
