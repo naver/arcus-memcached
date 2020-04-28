@@ -31,9 +31,7 @@
 
 static struct assoc_scan *chkpt_scanp=NULL; // checkpoint scan pointer
 
-#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
 static bool gen_logical_btree_delete_log=false; // btree generate logical delete log
-#endif
 
 #define NEED_DUAL_WRITE(it) (chkpt_scanp != NULL && (it == NULL || assoc_scan_in_visited_area(chkpt_scanp, it)))
 
@@ -108,9 +106,7 @@ inline static void do_cmdlog_waiter_entry_reset(log_waiter_t *waiter)
     waiter->updtype = UPD_NONE;
     waiter->elem_insert_with_create = false;
     waiter->elem_delete_with_drop = false;
-#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
     waiter->generated_range_clog = false;
-#endif
     waiter->wait_next = NULL;
 }
 
@@ -634,7 +630,6 @@ void cmdlog_generate_btree_elem_insert(hash_item *it, btree_elem_item *elem)
 
 void cmdlog_generate_btree_elem_delete(hash_item *it, btree_elem_item *elem)
 {
-#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
     if (!gen_logical_btree_delete_log) {
         BtreeElemDelLog log;
         log_waiter_t *waiter = cmdlog_get_my_waiter();
@@ -642,13 +637,6 @@ void cmdlog_generate_btree_elem_delete(hash_item *it, btree_elem_item *elem)
         (void)lrec_construct_btree_elem_delete((LogRec*)&log, it, elem, drop);
         cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
     }
-#else
-    BtreeElemDelLog log;
-    log_waiter_t *waiter = cmdlog_get_my_waiter();
-    bool drop = waiter->elem_delete_with_drop;
-    (void)lrec_construct_btree_elem_delete((LogRec*)&log, it, elem, drop);
-    cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
-#endif
 }
 
 void cmdlog_generate_btree_elem_delete_logical(hash_item *it,
@@ -656,7 +644,6 @@ void cmdlog_generate_btree_elem_delete_logical(hash_item *it,
                                                const eflag_filter *efilter,
                                                uint32_t offset, uint32_t reqcount)
 {
-#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
     if (gen_logical_btree_delete_log) {
         BtreeElemDelLgcLog log;
         log_waiter_t *waiter = cmdlog_get_my_waiter();
@@ -665,17 +652,8 @@ void cmdlog_generate_btree_elem_delete_logical(hash_item *it,
                                                        offset, reqcount, drop);
         cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
     }
-#else
-    BtreeElemDelLgcLog log;
-    log_waiter_t *waiter = cmdlog_get_my_waiter();
-    bool drop = waiter->elem_delete_with_drop;
-    (void)lrec_construct_btree_elem_delete_logical((LogRec*)&log, it, bkrange, efilter,
-                                                   offset, reqcount, drop);
-    cmdlog_buff_write((LogRec*)&log, waiter, NEED_DUAL_WRITE(it));
-#endif
 }
 
-#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
 void cmdlog_generate_operation_range(bool begin)
 {
     log_waiter_t *waiter = cmdlog_get_my_waiter();
@@ -695,7 +673,6 @@ void cmdlog_generate_operation_range(bool begin)
         waiter->generated_range_clog = (begin ? true : false);
     }
 }
-#endif
 
 void cmdlog_set_chkpt_scan(struct assoc_scan *cs)
 {

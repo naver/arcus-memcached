@@ -112,12 +112,10 @@ static char *get_logtype_text(uint8_t type)
             return "BT_ELEM_DELETE";
         case LOG_BT_ELEM_DELETE_LOGICAL:
             return "BT_ELEM_DELETE_LOGICAL";
-#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
         case LOG_OPERATION_BEGIN:
             return "OPERATION_BEGIN";
         case LOG_OPERATION_END:
             return "OPERATION_END";
-#endif
         case LOG_SNAPSHOT_DONE:
             return "SNAPSHOT_DONE";
     }
@@ -1253,7 +1251,6 @@ static void lrec_bt_elem_delete_logical_print(LogRec *logrec)
             log->body.offset, log->body.reqcount, fbkeystr, tbkeystr, efilterstr);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
 /* Operation Begin Log Record */
 static void lrec_operation_begin_write(LogRec *logrec, char *bufptr)
 {
@@ -1279,7 +1276,6 @@ static void lrec_operation_end_print(LogRec *logrec)
     LogHdr *hdr = &logrec->header;
     lrec_header_print(hdr);
 }
-#endif
 
 /* Snapshot Element Log Record */
 static void lrec_snapshot_elem_link_write(LogRec *logrec, char *bufptr)
@@ -1398,10 +1394,8 @@ LOGREC_FUNC logrec_func[] = {
     { lrec_bt_elem_insert_write,         lrec_bt_elem_insert_redo,         lrec_bt_elem_insert_print },
     { lrec_bt_elem_delete_write,         lrec_bt_elem_delete_redo,         lrec_bt_elem_delete_print },
     { lrec_bt_elem_delete_logical_write, lrec_bt_elem_delete_logical_redo, lrec_bt_elem_delete_logical_print },
-#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
     { lrec_operation_begin_write,        NULL,                             lrec_operation_begin_print },
     { lrec_operation_end_write,          NULL,                             lrec_operation_end_print },
-#endif
     { lrec_snapshot_elem_link_write,     lrec_snapshot_elem_link_redo,     lrec_snapshot_elem_link_print },
     { lrec_snapshot_done_write,          NULL,                             lrec_snapshot_done_print }
 };
@@ -1813,7 +1807,6 @@ int lrec_construct_btree_elem_delete_logical(LogRec *logrec, hash_item *it,
     return log->header.body_length+sizeof(LogHdr);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
 int lrec_construct_operation_range(LogRec *logrec, bool begin)
 {
     OperationRangeLog *log = (OperationRangeLog*)logrec;
@@ -1822,7 +1815,6 @@ int lrec_construct_operation_range(LogRec *logrec, bool begin)
     log->header.body_length = 0;
     return sizeof(LogHdr);
 }
-#endif
 
 hash_item *lrec_get_item_if_collection_link(ITLinkLog *log)
 {

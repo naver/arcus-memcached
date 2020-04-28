@@ -682,7 +682,6 @@ size_t cmdlog_file_getsize(void)
     return file_size;
 }
 
-#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
 static int do_redo_pending_lrec(int fd, int start_offset, int end_offset)
 {
     char buf[MAX_LOG_RECORD_SIZE];
@@ -725,7 +724,6 @@ static int do_redo_pending_lrec(int fd, int start_offset, int end_offset)
     }
     return ret;
 }
-#endif
 
 int cmdlog_file_apply(void)
 {
@@ -746,11 +744,9 @@ int cmdlog_file_apply(void)
 
     int  ret = 0;
     int  seek_offset = 0;
-#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
     int  pending_start_offset = 0;
     int  pending_end_offset = 0;
     bool pending = false;
-#endif
     char buf[MAX_LOG_RECORD_SIZE];
     LogRec *logrec = (LogRec*)buf;
     LogHdr *loghdr = &logrec->header;
@@ -774,7 +770,6 @@ int cmdlog_file_apply(void)
         }
         seek_offset += nread;
 
-#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
         if (loghdr->logtype == LOG_OPERATION_BEGIN) {
             if (pending == true) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -808,7 +803,6 @@ int cmdlog_file_apply(void)
             pending = false;
             continue;
         }
-#endif
 
         /* read body */
         if (loghdr->body_length > 0) {
@@ -845,9 +839,8 @@ int cmdlog_file_apply(void)
             seek_offset += loghdr->body_length;
         }
 
-#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
         if (pending) continue;
-#endif
+
         /* redo log record */
         ENGINE_ERROR_CODE err = lrec_redo_from_record(logrec);
         if (err != ENGINE_SUCCESS) {

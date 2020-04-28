@@ -30,12 +30,6 @@ static struct engine_config *config=NULL; // engine config
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
 #define IS_ELEM_DELETE_MULTI(rcnt, ccnt) ((rcnt) != 1 && (ccnt) > 1)
-#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
-#else
-#ifdef ENABLE_PERSISTENCE
-static bool gen_logical_btree_delete_log=false; // generate logical btree delete log
-#endif
-#endif
 
 /*
  * Generate change logs
@@ -222,11 +216,7 @@ void CLOG_GE_BTREE_ELEM_DELETE(btree_meta_info *info,
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
 #ifdef ENABLE_PERSISTENCE
-#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
         if (config->use_persistence) {
-#else
-        if (config->use_persistence && !gen_logical_btree_delete_log) {
-#endif
             cmdlog_generate_btree_elem_delete(it, elem);
         }
 #endif
@@ -246,11 +236,7 @@ void CLOG_GE_BTREE_ELEM_DELETE_LOGICAL(btree_meta_info *info,
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
 #ifdef ENABLE_PERSISTENCE
-#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
         if (config->use_persistence) {
-#else
-        if (config->use_persistence && gen_logical_btree_delete_log) {
-#endif
             cmdlog_generate_btree_elem_delete_logical(it, bkrange, efilter, offset, count);
         }
 #endif
@@ -280,12 +266,10 @@ void CLOG_GE_ELEM_DELETE_BEGIN(coll_meta_info *info,
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
     if ((it->iflag & ITEM_INTERNAL) == 0 && IS_ELEM_DELETE_MULTI(reqcount, info->ccnt))
     {
-#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
             cmdlog_generate_operation_range(true);
         }
-#endif
 #endif
     }
 }
@@ -299,12 +283,10 @@ void CLOG_GE_ELEM_DELETE_END(coll_meta_info *info,
     hash_item *it = (hash_item *)COLL_GET_HASH_ITEM(info);
     if ((it->iflag & ITEM_INTERNAL) == 0)
     {
-#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
 #ifdef ENABLE_PERSISTENCE
         if (config->use_persistence) {
             cmdlog_generate_operation_range(false);
         }
-#endif
 #endif
     }
 }
