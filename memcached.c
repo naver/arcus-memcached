@@ -8508,14 +8508,12 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
 
     set_noreply_maybe(c, tokens, ntokens);
 
-    if (tokens[KEY_TOKEN].length > KEY_MAX_LENGTH) {
+    key = tokens[KEY_TOKEN].value;
+    nkey = tokens[KEY_TOKEN].length;
+    if (nkey > KEY_MAX_LENGTH) {
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
-
-    key = tokens[KEY_TOKEN].value;
-    nkey = tokens[KEY_TOKEN].length;
-
     if (!safe_strtoull(tokens[2].value, &delta)) {
         out_string(c, "CLIENT_ERROR invalid numeric delta argument");
         return;
@@ -8596,7 +8594,6 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
 
 static void process_delete_command(conn *c, token_t *tokens, const size_t ntokens)
 {
-    assert(c != NULL);
     assert(c->ewouldblock == false);
     char *key;
     size_t nkey;
@@ -8616,7 +8613,6 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
 
     key = tokens[KEY_TOKEN].value;
     nkey = tokens[KEY_TOKEN].length;
-
     if (nkey > KEY_MAX_LENGTH) {
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
@@ -8631,15 +8627,15 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
 
     /* For some reason the SLAB_INCR tries to access this... */
     if (ret == ENGINE_SUCCESS) {
-        out_string(c, "DELETED");
         STATS_HITS(c, delete, key, nkey);
+        out_string(c, "DELETED");
     } else if (ret == ENGINE_KEY_ENOENT) {
-        out_string(c, "NOT_FOUND");
         STATS_MISSES(c, delete, key, nkey);
-    } else if (ret == ENGINE_ENOTSUP) {
-        out_string(c, "NOT_SUPPORTED");
+        out_string(c, "NOT_FOUND");
     } else {
-        handle_unexpected_errorcode_ascii(c, __func__, ret);
+        STATS_CMD_NOKEY(c, delete);
+        if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
@@ -10563,6 +10559,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
 static void process_bop_count(conn *c, char *key, size_t nkey,
                               const bkey_range *bkrange, const eflag_filter *efilter)
 {
+    char buffer[32];
     uint32_t elem_count;
     uint32_t access_count;
 
@@ -10585,13 +10582,9 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        {
-        char buffer[32];
         STATS_HITS(c, bop_count, key, nkey);
-
         sprintf(buffer, "COUNT=%u", elem_count);
         out_string(c, buffer);
-        }
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
@@ -10611,6 +10604,7 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
 static void process_bop_position(conn *c, char *key, size_t nkey,
                                  const bkey_range *bkrange, ENGINE_BTREE_ORDER order)
 {
+    char buffer[32];
     int position;
 
     ENGINE_ERROR_CODE ret;
@@ -10623,13 +10617,9 @@ static void process_bop_position(conn *c, char *key, size_t nkey,
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        {
-        char buffer[32];
         STATS_ELEM_HITS(c, bop_position, key, nkey);
-
         sprintf(buffer, "POSITION=%d", position);
         out_string(c, buffer);
-        }
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, bop_position, key, nkey);
