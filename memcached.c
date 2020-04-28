@@ -116,9 +116,6 @@ static union {
     ENGINE_HANDLE_V1 *v1;
 } mc_engine;
 
-/* The size of string representing 4 bytes integer is 10. */
-static int lenstr_size = 10;
-
 /** file scope variables **/
 static conn *listen_conn = NULL;
 static struct event_base *main_base;
@@ -2032,8 +2029,8 @@ static void process_mop_get_complete(conn *c)
         int   resplen;
 
         do {
-            need_size = ((2*lenstr_size) + 30) /* response head and tail size */
-                      + (elem_count * ((MAX_FIELD_LENG+2) + (lenstr_size+2))); /* response body size */
+            need_size = ((2*UINT32_STR_LENG) + 30) /* response head and tail size */
+                      + (elem_count * ((MAX_FIELD_LENG+2) + (UINT32_STR_LENG+2))); /* response body size */
             if ((respbuf = (char*)malloc(need_size)) == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
@@ -9786,8 +9783,8 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
         char *respptr;
 
         do {
-            need_size = ((2*lenstr_size) + 30) /* response head and tail size */
-                      + (elem_count * (lenstr_size+2)); /* response body size */
+            need_size = ((2*UINT32_STR_LENG) + 30) /* response head and tail size */
+                      + (elem_count * (UINT32_STR_LENG+2)); /* response body size */
             if ((respbuf = (char*)malloc(need_size)) == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
@@ -10193,8 +10190,8 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
         char *respptr;
 
         do {
-            need_size = ((2*lenstr_size) + 30) /* response head and tail size */
-                      + (elem_count * (lenstr_size+2)); /* response body size */
+            need_size = ((2*UINT32_STR_LENG) + 30) /* response head and tail size */
+                      + (elem_count * (UINT32_STR_LENG+2)); /* response body size */
             if ((respbuf = (char*)malloc(need_size)) == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
@@ -10580,8 +10577,8 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
         int   resplen;
 
         do {
-            need_size = ((2*lenstr_size) + 30) /* response head and tail size */
-                      + (elem_count * ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + lenstr_size+3)); /* response body size */
+            need_size = ((2*UINT32_STR_LENG) + 30) /* response head and tail size */
+                      + (elem_count * ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + UINT32_STR_LENG+3)); /* response body size */
             if ((respbuf = (char*)malloc(need_size)) == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
@@ -10795,8 +10792,8 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
         int   resplen;
 
         do {
-            need_size = ((4*lenstr_size) + 30) /* response head and tail size */
-                      + (elem_count * ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + lenstr_size+3)); /* result body size */
+            need_size = ((4*UINT32_STR_LENG) + 30) /* response head and tail size */
+                      + (elem_count * ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + UINT32_STR_LENG+3)); /* result body size */
             if ((respbuf = (char*)malloc(need_size)) == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
@@ -10918,8 +10915,8 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey,
         int   resplen;
 
         do {
-            need_size = ((2*lenstr_size) + 30) /* response head and tail size */
-                      + (elem_count * ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + lenstr_size+3)); /* result body size */
+            need_size = ((2*UINT32_STR_LENG) + 30) /* response head and tail size */
+                      + (elem_count * ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + UINT32_STR_LENG+3)); /* result body size */
             if ((respbuf = (char*)malloc(need_size)) == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
@@ -11098,8 +11095,8 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
     if (cmd == OPERATION_BOP_MGET) {
         int bmget_count = c->coll_numkeys * c->coll_rcount;
         int eresult_array_size = c->coll_numkeys * sizeof(struct elems_result);
-        int respon_hdr_size = c->coll_numkeys * ((lenstr_size*2)+30);
-        int respon_bdy_size = bmget_count * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+lenstr_size+15);
+        int respon_hdr_size = c->coll_numkeys * ((UINT32_STR_LENG*2)+30);
+        int respon_bdy_size = bmget_count * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+UINT32_STR_LENG+15);
 
         need_size = eresult_array_size + respon_hdr_size + respon_bdy_size;
     }
@@ -11116,8 +11113,8 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
 
         elem_array_size = smget_count * (sizeof(eitem*) + (2*sizeof(uint32_t)));
         kmis_array_size = c->coll_numkeys * sizeof(uint32_t);
-        respon_hdr_size = (2*lenstr_size) + 30; /* result head and tail size */
-        respon_bdy_size = smget_count * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+(lenstr_size*2)+5); /* result body size */
+        respon_hdr_size = (2*UINT32_STR_LENG) + 30; /* result head and tail size */
+        respon_bdy_size = smget_count * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+(UINT32_STR_LENG*2)+5); /* result body size */
 
         need_size = elem_array_size + kmis_array_size + respon_hdr_size + respon_bdy_size;
       } else {
@@ -11131,8 +11128,8 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
         elem_array_size = (c->coll_rcount + c->coll_numkeys) * sizeof(eitem*);
         ehit_array_size = c->coll_rcount * sizeof(smget_ehit_t);
         emis_array_size = c->coll_numkeys * sizeof(smget_emis_t);
-        respon_hdr_size = (3*lenstr_size) + 50; /* result head and tail size */
-        respon_bdy_size = (c->coll_rcount * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+(lenstr_size*2)+10))
+        respon_hdr_size = (3*UINT32_STR_LENG) + 50; /* result head and tail size */
+        respon_bdy_size = (c->coll_rcount * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+(UINT32_STR_LENG*2)+10))
                         + (c->coll_numkeys * ((MAX_EFLAG_LENG*2+2) + 5)); /* result body size */
         need_size = elem_array_size + ehit_array_size + emis_array_size
                   + respon_hdr_size + respon_bdy_size;

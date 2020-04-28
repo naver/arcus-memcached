@@ -19,6 +19,9 @@
 
 #include <memcached/extension.h>
 
+/* length of string representing 4 bytes integer is 10 */
+#define UINT32_STR_LENG 10
+
 /*
  * token buffer structure
  */
