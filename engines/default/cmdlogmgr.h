@@ -59,6 +59,9 @@ typedef struct _log_waiter {
     uint8_t             updtype;
     bool                elem_insert_with_create;
     bool                elem_delete_with_drop;
+#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
+    bool                generated_range_clog;
+#endif
     const void         *cookie;
 } log_waiter_t;
 
@@ -87,6 +90,9 @@ void cmdlog_generate_btree_elem_insert(hash_item *it, btree_elem_item *elem);
 void cmdlog_generate_btree_elem_delete(hash_item *it, btree_elem_item *elem);
 void cmdlog_generate_btree_elem_delete_logical(hash_item *it, const bkey_range *bkrange,
                                                const eflag_filter *efilter, uint32_t offset, uint32_t reqcount);
+#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
+void cmdlog_generate_operation_range(bool begin);
+#endif
 
 void cmdlog_set_chkpt_scan(struct assoc_scan *cs);
 void cmdlog_reset_chkpt_scan(bool chkpt_success);

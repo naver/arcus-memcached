@@ -34,6 +34,10 @@ enum log_type {
     LOG_BT_ELEM_INSERT,
     LOG_BT_ELEM_DELETE,
     LOG_BT_ELEM_DELETE_LOGICAL,
+#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
+    LOG_OPERATION_BEGIN,
+    LOG_OPERATION_END,
+#endif
     LOG_SNAPSHOT_ELEM,
     LOG_SNAPSHOT_DONE
 };
@@ -318,6 +322,13 @@ typedef struct _Btree_elem_delete_logical_log {
     eflag_filter        *efilterp;
 } BtreeElemDelLgcLog;
 
+#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
+/* Operation Range Log Record */
+typedef struct _operation_range_log {
+    LogHdr header;
+} OperationRangeLog;
+#endif
+
 /* Snapshot Done Log Record */
 typedef struct _snapshot_done_data {
     char             engine_name[32];
@@ -362,6 +373,9 @@ int lrec_construct_btree_elem_delete_logical(LogRec *logrec, hash_item *it,
                                              const bkey_range *bkrange,
                                              const eflag_filter *efilter,
                                              uint32_t offset, uint32_t reqcount, bool drop);
+#ifdef ENABLE_PERSISTENCE_03_ATOMICITY
+int lrec_construct_operation_range(LogRec *logrec, bool begin);
+#endif
 
 /* Function to write the given log record to log buffer */
 void lrec_write_to_buffer(LogRec *logrec, char *bufptr);
