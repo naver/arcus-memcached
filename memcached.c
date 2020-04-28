@@ -1607,8 +1607,8 @@ static void process_lop_insert_complete(conn *c)
         switch (ret) {
         case ENGINE_SUCCESS:
             STATS_HITS(c, lop_insert, c->coll_key, c->coll_nkey);
-            if (created == false) out_string(c, "STORED");
-            else                  out_string(c, "CREATED_STORED");
+            if (created) out_string(c, "CREATED_STORED");
+            else         out_string(c, "STORED");
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISSES(c, lop_insert, c->coll_key, c->coll_nkey);
@@ -1655,8 +1655,8 @@ static void process_sop_insert_complete(conn *c)
         switch (ret) {
         case ENGINE_SUCCESS:
             STATS_HITS(c, sop_insert, c->coll_key, c->coll_nkey);
-            if (created == false) out_string(c, "STORED");
-            else                  out_string(c, "CREATED_STORED");
+            if (created) out_string(c, "CREATED_STORED");
+            else         out_string(c, "STORED");
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISSES(c, sop_insert, c->coll_key, c->coll_nkey);
@@ -1704,8 +1704,8 @@ static void process_sop_delete_complete(conn *c)
         switch (ret) {
         case ENGINE_SUCCESS:
             STATS_ELEM_HITS(c, sop_delete, c->coll_key, c->coll_nkey);
-            if (dropped == false) out_string(c, "DELETED");
-            else                  out_string(c, "DELETED_DROPPED");
+            if (dropped) out_string(c, "DELETED_DROPPED");
+            else         out_string(c, "DELETED");
             break;
         case ENGINE_ELEM_ENOENT:
             STATS_NONE_HITS(c, sop_delete, c->coll_key, c->coll_nkey);
@@ -1811,8 +1811,8 @@ static void process_mop_insert_complete(conn *c)
         switch (ret) {
         case ENGINE_SUCCESS:
             STATS_HITS(c, mop_insert, c->coll_key, c->coll_nkey);
-            if (created == false) out_string(c, "STORED");
-            else                  out_string(c, "CREATED_STORED");
+            if (created) out_string(c, "CREATED_STORED");
+            else         out_string(c, "STORED");
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISSES(c, mop_insert, c->coll_key, c->coll_nkey);
@@ -1923,8 +1923,8 @@ static void process_mop_delete_complete(conn *c)
     switch (ret) {
     case ENGINE_SUCCESS:
         STATS_ELEM_HITS(c, mop_delete, c->coll_key, c->coll_nkey);
-        if (dropped == false) out_string(c, "DELETED");
-        else                  out_string(c, "DELETED_DROPPED");
+        if (dropped) out_string(c, "DELETED_DROPPED");
+        else         out_string(c, "DELETED");
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, mop_delete, c->coll_key, c->coll_nkey);
@@ -2198,11 +2198,11 @@ static void process_bop_insert_complete(conn *c)
                 }
             } else {
                 /* no getrim flag or no trimmed element */
-                if (replaced == false) {
-                    if (created == false) out_string(c, "STORED");
-                    else                  out_string(c, "CREATED_STORED");
-                } else {
+                if (replaced) {
                     out_string(c, "REPLACED");
+                } else {
+                    if (created) out_string(c, "CREATED_STORED");
+                    else         out_string(c, "STORED");
                 }
             }
             break;
@@ -9908,8 +9908,8 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
     switch (ret) {
     case ENGINE_SUCCESS:
         STATS_ELEM_HITS(c, lop_delete, key, nkey);
-        if (dropped == false) out_string(c, "DELETED");
-        else                  out_string(c, "DELETED_DROPPED");
+        if (dropped) out_string(c, "DELETED_DROPPED");
+        else         out_string(c, "DELETED");
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, lop_delete, key, nkey);
@@ -11156,8 +11156,8 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
     switch (ret) {
     case ENGINE_SUCCESS:
         STATS_ELEM_HITS(c, bop_delete, key, nkey);
-        if (dropped == false) out_string(c, "DELETED");
-        else                  out_string(c, "DELETED_DROPPED");
+        if (dropped) out_string(c, "DELETED_DROPPED");
+        else         out_string(c, "DELETED");
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, bop_delete, key, nkey);
