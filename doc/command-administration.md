@@ -680,7 +680,27 @@ Arcus cache server의 automatic failstop 기능을 on 또는 off 한다.
 config zkfailstop [on|off]\r\n
 ```
 
-Network failure 상태에서 정상적인 서비스를 진행하지 못하는 cache server가 cache cloud에 그대로 존재할 경우, 해당 cache server가 담당하고 있는 data 범위에 대한 요청이 모두 실패하고 DB에 부담을 주게 된다. 또한 이후에 ZooKeeper에 재연결 되더라도 old data를 가지고 있을 가능성이 있으며 이로 인해 응용에 오동작을 발생시킬 수 있다. Arcus cache server는 이를 해결하기위해 ZooKeeper session timeout이 발생할 경우 failed cache server를 cache cloud에서 자동으로 제거하는 automatic failstop 기능을 기본적으로 제공한다.
+Network failure 상태에서 정상적인 서비스를 진행하지 못하는 cache server가 cache cloud에 그대로 존재할 경우, 해당 cache server가 담당하고 있는 data 범위에 대한 요청이 모두 실패하고 DB에 부담을 주게 된다. 또한 이후에 ZooKeeper에 재연결 되더라도 old data를 가지고 있을 가능성이 있으며 이로 인해 응용에 오동작을 발생시킬 수 있다. Arcus cache server는 이를 해결하기 위해 ZooKeeper session timeout이 발생할 경우 failed cache server를 cache cloud에서 자동으로 제거하는 automatic failstop 기능을 기본적으로 제공한다.
+
+**config hbtimeout**
+
+hbtimeout 값을 변경/조회한다.
+
+```
+config hbtimeout [<hbtimeout>]\r\n
+```
+
+Arcus cache server에는 주기적으로 노드의 정상 작동 여부를 확인하는 heartbeat 연산이 존재한다. hbtimeout은 heartbeat 연산의 timeout 시간을 의미한다. hbtimeout으로 설정한 시간이 지나도 heartbeat 연산이 이루어지지 않으면 해당 heartbeat는 timeout된 것으로 간주한다. 최소 50ms, 최대 10000ms로 설정할 수 있으며 디폴트 값은 10000ms이다.
+
+**config hbfailstop**
+
+hbfailstop 값을 변경/조회한다.
+
+```
+config hbfailstop [hbfailstop]\r\n
+```
+
+Arcus cache server는 heartbeat 지연이 계속될 경우 서버를 강제 종료할 수 있다. 연속된 timeout이 발생할 때마다 hbtimeout 값을 누적하여 더하고, 누적된 값이 hbfailstop 값을 넘길 경우 failstop을 수행한다. 예를 들어 hbfailstop이 30초, hbtimeout이 10초이면 hbtimeout이 연속으로 3번 발생하였을 경우 failstop이 발생한다. 최소 3000ms, 최대 300000ms로 설정할 수 있으며 디폴트 값은 60000ms이다.
 
 **config maxconns**
 
@@ -701,6 +721,24 @@ Collection element가 가지는 value의 최대 크기를 byte 단위로 설정�
 config max_element_bytes [<maxbytes>]\r\n
 ```
 
+**config max_collection_size**
+
+콜렉션 아이템의 최대 element 수를 조회/변경한다.
+
+```
+config max_<collection>_size [<max_size>]\r\n
+* <collection>: list|set|btree|map
+```
+
+기본 설정은 50000개이며 최소 50000개, 최대 1000000개 까지 설정할 수 있다. 기존 값보다 작게 설정할 수 없다. 기본 설정보다 큰 값으로 설정하고 나서, 한 번에 많은 element 들을 조회한다면 조회 응답 속도가 느려질 뿐만 아니라 다른 연산의 응답 속도에도 부정적 영향을 미친다. 따라서, 주의 사항으로, 최대 element 수를 늘리더라도 응용은  한번에 적은 수의 element 만을 조회하는 요청을 반복하는 형태로 구현하여야 한다.
+
+**config scrub_count**
+
+Arcus cache server에는 더 이상 유효하지 않은 아이템을 일괄 삭제하는 scrub 명령이 존재한다. config scrub_count 명령은 daemon thread가 scrub 명령을 수행할 때, 한 번의 연산마다 몇 개의 아이템을 지울지를 설정/조회한다. 기본 값은 96이며 최소 32, 최대 320으로 설정할 수 있다.
+
+```
+config scrub_count [<scrub_count>]\r\n
+```
 
 ### Command Logging 명령
 
