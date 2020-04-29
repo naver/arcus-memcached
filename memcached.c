@@ -2295,6 +2295,8 @@ static void process_bop_mget_complete(conn *c)
     uint32_t tot_elem_count = 0;
     uint32_t tot_access_count = 0;
     token_t *key_tokens;
+    char    *key;
+    size_t   nkey;
 
     key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (key_tokens != NULL) {
@@ -2310,13 +2312,8 @@ static void process_bop_mget_complete(conn *c)
         uint32_t cur_access_count = 0;
         uint32_t flags, k, e;
         bool trimmed;
-        char *resultptr;
-        char *valuestrp = (char*)eresult + (c->coll_numkeys * sizeof(struct elems_result));
+        char *resultptr = (char*)eresult + (c->coll_numkeys * sizeof(struct elems_result));
         int   resultlen;
-        int   nvaluestr;
-
-        sprintf(valuestrp, "VALUE "); nvaluestr = strlen("VALUE ");
-        resultptr = valuestrp + nvaluestr;
 
         if (c->coll_bkrange.to_nbkey == BKEY_NULL) {
             memcpy(c->coll_bkrange.to_bkey, c->coll_bkrange.from_bkey,
@@ -2325,8 +2322,10 @@ static void process_bop_mget_complete(conn *c)
         }
 
         for (k = 0; k < c->coll_numkeys; k++) {
-            ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c,
-                                               key_tokens[k].value, key_tokens[k].length,
+            key = key_tokens[k].value;
+            nkey = key_tokens[k].length;
+
+            ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c, key, nkey,
                                                &c->coll_bkrange,
                                                (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
                                                c->coll_roffset, c->coll_rcount, false, false,
@@ -2334,7 +2333,7 @@ static void process_bop_mget_complete(conn *c)
             /* The read-only operation do not return ENGINE_EWOULDBLOCK */
             if (settings.detail_enabled) {
                 bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
-                stats_prefix_record_bop_get(key_tokens[k].value, key_tokens[k].length, is_hit);
+                stats_prefix_record_bop_get(key, nkey, is_hit);
             }
 
             if (ret == ENGINE_SUCCESS) {
@@ -2345,8 +2344,8 @@ static void process_bop_mget_complete(conn *c)
               do {
                 sprintf(resultptr, " %s %u %u\r\n",
                         (trimmed==false ? "OK" : "TRIMMED"), htonl(flags), cur_elem_count);
-                if ((add_iov(c, valuestrp, nvaluestr) != 0) ||
-                    (add_iov(c, key_tokens[k].value, key_tokens[k].length) != 0) ||
+                if ((add_iov(c, "VALUE ", 6) != 0) ||
+                    (add_iov(c, key, nkey) != 0) ||
                     (add_iov(c, resultptr, strlen(resultptr)) != 0)) {
                     STATS_CMD_NOKEY(c, bop_get);
                     ret = ENGINE_ENOMEM; break;
@@ -2368,7 +2367,7 @@ static void process_bop_mget_complete(conn *c)
                     resultptr += resultlen;
                 }
                 if (ret == ENGINE_SUCCESS) {
-                    STATS_ELEM_HITS(c, bop_get, key_tokens[k].value, key_tokens[k].length);
+                    STATS_ELEM_HITS(c, bop_get, key, nkey);
                 } else { /* ret == ENGINE_ENOMEM */
                     STATS_CMD_NOKEY(c, bop_get);
                 }
@@ -2385,11 +2384,11 @@ static void process_bop_mget_complete(conn *c)
               }
             } else {
                 if (ret == ENGINE_ELEM_ENOENT) {
-                    STATS_NONE_HITS(c, bop_get,  key_tokens[k].value, key_tokens[k].length);
+                    STATS_NONE_HITS(c, bop_get, key, nkey);
                     sprintf(resultptr, " %s\r\n", "NOT_FOUND_ELEMENT");
                 }
                 else if (ret == ENGINE_KEY_ENOENT || ret == ENGINE_EBKEYOOR || ret == ENGINE_UNREADABLE) {
-                    STATS_MISSES(c, bop_get, key_tokens[k].value, key_tokens[k].length);
+                    STATS_MISSES(c, bop_get, key, nkey);
                     if (ret == ENGINE_KEY_ENOENT)    sprintf(resultptr, " %s\r\n", "NOT_FOUND");
                     else if (ret == ENGINE_EBKEYOOR) sprintf(resultptr, " %s\r\n", "OUT_OF_RANGE");
                     else                             sprintf(resultptr, " %s\r\n", "UNREADABLE");
@@ -2403,9 +2402,8 @@ static void process_bop_mget_complete(conn *c)
                     /* ENGINE_ENOMEM or ENGINE_DISCONNECT or SERVER error */
                     break;
                 }
-
-                if ((add_iov(c, valuestrp, nvaluestr) != 0) ||
-                    (add_iov(c, key_tokens[k].value, key_tokens[k].length) != 0) ||
+                if ((add_iov(c, "VALUE ", 6) != 0) ||
+                    (add_iov(c, key, nkey) != 0) ||
                     (add_iov(c, resultptr, strlen(resultptr)) != 0)) {
                     ret = ENGINE_ENOMEM; break;
                 }
