@@ -177,6 +177,28 @@ struct thread_stats {
     uint64_t          setattr_misses;
 };
 
+/*
+ * Macros for incrementing thread_stats
+ */
+#define THREAD_STATS_INCR_ONE(thread_stats, op) { \
+    pthread_mutex_lock(&thread_stats->mutex); \
+    thread_stats->op++; \
+    pthread_mutex_unlock(&thread_stats->mutex); \
+}
+
+#define THREAD_STATS_INCR_TWO(thread_stats, op1, op2) { \
+    pthread_mutex_lock(&thread_stats->mutex); \
+    thread_stats->op1++; \
+    thread_stats->op2++; \
+    pthread_mutex_unlock(&thread_stats->mutex); \
+}
+
+#define THREAD_STATS_INCR_AMT(thread_stats, op, amt) { \
+    pthread_mutex_lock(&thread_stats->mutex); \
+    thread_stats->op += (amt); \
+    pthread_mutex_unlock(&thread_stats->mutex); \
+}
+
 enum thread_type {
     GENERAL = 11
 };

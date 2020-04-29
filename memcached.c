@@ -60,18 +60,15 @@
 #include <stdarg.h>
 #include <stddef.h>
 
-/* max collection size */
+/* max collection element count */
 static uint32_t ARCUS_COLL_SIZE_MIN = 50000;
 static uint32_t ARCUS_COLL_SIZE_MAX = 1000000;
 static uint32_t MAX_LIST_SIZE  = 50000;
 static uint32_t MAX_SET_SIZE   = 50000;
 static uint32_t MAX_MAP_SIZE   = 50000;
 static uint32_t MAX_BTREE_SIZE = 50000;
-
-#ifdef MAX_ELEMENT_BYTES_CONFIG
-/* max element bytes */
+/* max collection element bytes */
 static uint32_t MAX_ELEMENT_BYTES = 16*1024;
-#endif
 
 /* Lock for global stats */
 static pthread_mutex_t stats_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -96,80 +93,6 @@ void UNLOCK_SETTING() {
     pthread_mutex_unlock(&setting_lock);
 }
 
-/* Macros for incrementing thread_stats */
-#define THSTATS_INCR_ONE(conn, op) { \
-    struct thread_stats *thread_stats = get_thread_stats(conn); \
-    pthread_mutex_lock(&thread_stats->mutex); \
-    thread_stats->op++; \
-    pthread_mutex_unlock(&thread_stats->mutex); \
-}
-
-#define THSTATS_INCR_TWO(conn, op1, op2) { \
-    struct thread_stats *thread_stats = get_thread_stats(conn); \
-    pthread_mutex_lock(&thread_stats->mutex); \
-    thread_stats->op1++; \
-    thread_stats->op2++; \
-    pthread_mutex_unlock(&thread_stats->mutex); \
-}
-
-#define THSTATS_INCR_AMT(conn, op, amt) { \
-    struct thread_stats *thread_stats = get_thread_stats(conn); \
-    pthread_mutex_lock(&thread_stats->mutex); \
-    thread_stats->op += (amt); \
-    pthread_mutex_unlock(&thread_stats->mutex); \
-}
-
-#define STATS_CMD(conn, op, key, nkey) { \
-    THSTATS_INCR_ONE(conn, cmd_##op); \
-    TK(default_topkeys, cmd_##op, key, nkey, get_current_time()); \
-}
-
-#define STATS_OKS(conn, op, key, nkey) { \
-    THSTATS_INCR_TWO(conn, op##_oks, cmd_##op); \
-    TK(default_topkeys, op##_oks, key, nkey, get_current_time()); \
-}
-
-#define STATS_HITS(conn, op, key, nkey) { \
-    THSTATS_INCR_TWO(conn, op##_hits, cmd_##op); \
-    TK(default_topkeys, op##_hits, key, nkey, get_current_time()); \
-}
-
-#define STATS_ELEM_HITS(conn, op, key, nkey) { \
-    THSTATS_INCR_TWO(conn, op##_elem_hits, cmd_##op); \
-    TK(default_topkeys, op##_elem_hits, key, nkey, get_current_time()); \
-}
-
-#define STATS_NONE_HITS(conn, op, key, nkey) { \
-    THSTATS_INCR_TWO(conn, op##_none_hits, cmd_##op); \
-    TK(default_topkeys, op##_none_hits, key, nkey, get_current_time()); \
-}
-
-#define STATS_MISSES(conn, op, key, nkey) { \
-    THSTATS_INCR_TWO(conn, op##_misses, cmd_##op); \
-    TK(default_topkeys, op##_misses, key, nkey, get_current_time()); \
-}
-
-#define STATS_BADVAL(conn, op, key, nkey) { \
-    THSTATS_INCR_TWO(conn, op##_badval, cmd_##op); \
-    TK(default_topkeys, op##_badval, key, nkey, get_current_time()); \
-}
-
-#define STATS_CMD_NOKEY(conn, op) { \
-    THSTATS_INCR_ONE(conn, cmd_##op); \
-}
-
-#define STATS_OKS_NOKEY(conn, op) { \
-    THSTATS_INCR_TWO(conn, op##_oks, cmd_##op); \
-}
-
-#define STATS_ERRORS_NOKEY(conn, op) { \
-    THSTATS_INCR_TWO(conn, op##_errors, cmd_##op); \
-}
-
-#define STATS_ADD(conn, op, amt) { \
-    THSTATS_INCR_AMT(conn, op, amt); \
-}
-
 volatile sig_atomic_t memcached_shutdown=0;
 
 /*
@@ -181,6 +104,7 @@ volatile sig_atomic_t memcached_shutdown=0;
  * sizeof(time_t) > sizeof(unsigned int).
  */
 volatile rel_time_t current_time;
+static time_t process_started; /* when the process was started */
 
 /** exported globals **/
 struct settings settings;
@@ -192,16 +116,11 @@ static union {
     ENGINE_HANDLE_V1 *v1;
 } mc_engine;
 
-static time_t process_started;     /* when the process was started */
-
-/* The size of string representing 4 bytes integer is 10. */
-static int lenstr_size = 10;
-
 /** file scope variables **/
 static conn *listen_conn = NULL;
 static struct event_base *main_base;
 struct thread_stats *default_thread_stats;
-static topkeys_t *default_topkeys = NULL;
+topkeys_t *default_topkeys = NULL;
 
 static struct engine_event_handler *engine_event_handlers[MAX_ENGINE_EVENT_TYPE + 1];
 
@@ -222,8 +141,6 @@ static bool lqdetect_in_use = false;
  */
 static int new_socket(struct addrinfo *ai);
 static int try_read_command(conn *c);
-static inline struct thread_stats *get_independent_stats(conn *c);
-static inline struct thread_stats *get_thread_stats(conn *c);
 
 enum try_read_result {
     READ_DATA_RECEIVED,
@@ -331,14 +248,13 @@ static void stats_init(void)
 
 static void stats_reset(const void *cookie)
 {
-    struct conn *conn = (struct conn*)cookie;
     LOCK_STATS();
     mc_stats.rejected_conns = 0;
     mc_stats.quit_conns = 0;
     mc_stats.total_conns = 0;
     stats_prefix_clear();
     UNLOCK_STATS();
-    threadlocal_stats_reset(get_independent_stats(conn));
+    threadlocal_stats_reset(default_thread_stats);
     mc_engine.v1->reset_stats(mc_engine.v0, cookie);
 }
 
@@ -392,9 +308,7 @@ static void settings_init(void)
     settings.max_set_size = MAX_SET_SIZE;
     settings.max_map_size = MAX_MAP_SIZE;
     settings.max_btree_size = MAX_BTREE_SIZE;
-#ifdef MAX_ELEMENT_BYTES_CONFIG
     settings.max_element_bytes = MAX_ELEMENT_BYTES;
-#endif
     settings.topkeys = 0;
     settings.require_sasl = false;
     settings.extensions.logger = get_stderr_logger();
@@ -1646,9 +1560,15 @@ static inline char *get_ovflaction_str(uint8_t ovflact)
 }
 
 static void
-handle_unexpected_errorcode_ascii(conn *c, ENGINE_ERROR_CODE ret)
+handle_unexpected_errorcode_ascii(conn *c, const char *func_name, ENGINE_ERROR_CODE ret)
 {
-    out_string(c, "SERVER_ERROR internal");
+    if (ret == ENGINE_DISCONNECT) {
+        conn_set_state(c, conn_closing);
+    } else {
+        mc_logger->log(EXTENSION_LOG_WARNING, c, "[%s] Unexpected Error: %d\n",
+                       func_name, (int)ret);
+        out_string(c, "SERVER_ERROR internal");
+    }
 }
 
 /*
@@ -1687,11 +1607,8 @@ static void process_lop_insert_complete(conn *c)
         switch (ret) {
         case ENGINE_SUCCESS:
             STATS_HITS(c, lop_insert, c->coll_key, c->coll_nkey);
-            if (created == false) out_string(c, "STORED");
-            else                  out_string(c, "CREATED_STORED");
-            break;
-        case ENGINE_DISCONNECT:
-            conn_set_state(c, conn_closing);
+            if (created) out_string(c, "CREATED_STORED");
+            else         out_string(c, "STORED");
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISSES(c, lop_insert, c->coll_key, c->coll_nkey);
@@ -1705,7 +1622,7 @@ static void process_lop_insert_complete(conn *c)
             else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
             else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
             else if (ret == ENGINE_ENOTSUP)      out_string(c, "NOT_SUPPORTED");
-            else handle_unexpected_errorcode_ascii(c, ret);
+            else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
 
@@ -1738,11 +1655,8 @@ static void process_sop_insert_complete(conn *c)
         switch (ret) {
         case ENGINE_SUCCESS:
             STATS_HITS(c, sop_insert, c->coll_key, c->coll_nkey);
-            if (created == false) out_string(c, "STORED");
-            else                  out_string(c, "CREATED_STORED");
-            break;
-        case ENGINE_DISCONNECT:
-            conn_set_state(c, conn_closing);
+            if (created) out_string(c, "CREATED_STORED");
+            else         out_string(c, "STORED");
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISSES(c, sop_insert, c->coll_key, c->coll_nkey);
@@ -1756,7 +1670,7 @@ static void process_sop_insert_complete(conn *c)
             else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
             else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
             else if (ret == ENGINE_ENOTSUP)      out_string(c, "NOT_SUPPORTED");
-            else handle_unexpected_errorcode_ascii(c, ret);
+            else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
 
@@ -1790,15 +1704,12 @@ static void process_sop_delete_complete(conn *c)
         switch (ret) {
         case ENGINE_SUCCESS:
             STATS_ELEM_HITS(c, sop_delete, c->coll_key, c->coll_nkey);
-            if (dropped == false) out_string(c, "DELETED");
-            else                  out_string(c, "DELETED_DROPPED");
+            if (dropped) out_string(c, "DELETED_DROPPED");
+            else         out_string(c, "DELETED");
             break;
         case ENGINE_ELEM_ENOENT:
             STATS_NONE_HITS(c, sop_delete, c->coll_key, c->coll_nkey);
             out_string(c, "NOT_FOUND_ELEMENT");
-            break;
-        case ENGINE_DISCONNECT:
-            conn_set_state(c, conn_closing);
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISSES(c, sop_delete, c->coll_key, c->coll_nkey);
@@ -1808,7 +1719,7 @@ static void process_sop_delete_complete(conn *c)
             STATS_CMD_NOKEY(c, sop_delete);
             if (ret == ENGINE_EBADTYPE)     out_string(c, "TYPE_MISMATCH");
             else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-            else handle_unexpected_errorcode_ascii(c, ret);
+            else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
 
@@ -1840,9 +1751,6 @@ static void process_sop_exist_complete(conn *c)
             if (exist) out_string(c, "EXIST");
             else       out_string(c, "NOT_EXIST");
             break;
-        case ENGINE_DISCONNECT:
-            conn_set_state(c, conn_closing);
-            break;
         case ENGINE_KEY_ENOENT:
         case ENGINE_UNREADABLE:
             STATS_MISSES(c, sop_exist, c->coll_key, c->coll_nkey);
@@ -1853,7 +1761,7 @@ static void process_sop_exist_complete(conn *c)
             STATS_CMD_NOKEY(c, sop_exist);
             if (ret == ENGINE_EBADTYPE)     out_string(c, "TYPE_MISMATCH");
             else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-            else handle_unexpected_errorcode_ascii(c, ret);
+            else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
 
@@ -1903,11 +1811,8 @@ static void process_mop_insert_complete(conn *c)
         switch (ret) {
         case ENGINE_SUCCESS:
             STATS_HITS(c, mop_insert, c->coll_key, c->coll_nkey);
-            if (created == false) out_string(c, "STORED");
-            else                  out_string(c, "CREATED_STORED");
-            break;
-        case ENGINE_DISCONNECT:
-            conn_set_state(c, conn_closing);
+            if (created) out_string(c, "CREATED_STORED");
+            else         out_string(c, "STORED");
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISSES(c, mop_insert, c->coll_key, c->coll_nkey);
@@ -1921,7 +1826,7 @@ static void process_mop_insert_complete(conn *c)
             else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
             else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
             else if (ret == ENGINE_ENOTSUP)      out_string(c, "NOT_SUPPORTED");
-            else handle_unexpected_errorcode_ascii(c, ret);
+            else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
 
@@ -1957,9 +1862,6 @@ static void process_mop_update_complete(conn *c)
             STATS_NONE_HITS(c, mop_update, c->coll_key, c->coll_nkey);
             out_string(c, "NOT_FOUND_ELEMENT");
             break;
-        case ENGINE_DISCONNECT:
-            conn_set_state(c, conn_closing);
-            break;
         case ENGINE_KEY_ENOENT:
             STATS_MISSES(c, mop_update, c->coll_key, c->coll_nkey);
             out_string(c, "NOT_FOUND");
@@ -1969,7 +1871,7 @@ static void process_mop_update_complete(conn *c)
             if (ret == ENGINE_EBADTYPE)     out_string(c, "TYPE_MISMATCH");
             else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
             else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-            else handle_unexpected_errorcode_ascii(c, ret);
+            else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
 
@@ -2021,15 +1923,12 @@ static void process_mop_delete_complete(conn *c)
     switch (ret) {
     case ENGINE_SUCCESS:
         STATS_ELEM_HITS(c, mop_delete, c->coll_key, c->coll_nkey);
-        if (dropped == false) out_string(c, "DELETED");
-        else                  out_string(c, "DELETED_DROPPED");
+        if (dropped) out_string(c, "DELETED_DROPPED");
+        else         out_string(c, "DELETED");
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, mop_delete, c->coll_key, c->coll_nkey);
         out_string(c, "NOT_FOUND_ELEMENT");
-        break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, mop_delete, c->coll_key, c->coll_nkey);
@@ -2041,7 +1940,7 @@ static void process_mop_delete_complete(conn *c)
         else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad data chunk");
         else if (ret == ENGINE_ENOMEM)    out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP)   out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
     /* free key strings and tokens buffer */
@@ -2115,8 +2014,8 @@ static void process_mop_get_complete(conn *c)
         int   resplen;
 
         do {
-            need_size = ((2*lenstr_size) + 30) /* response head and tail size */
-                      + (elem_count * ((MAX_FIELD_LENG+2) + (lenstr_size+2))); /* response body size */
+            need_size = ((2*UINT32_STR_LENG) + 30) /* response head and tail size */
+                      + (elem_count * ((MAX_FIELD_LENG+2) + (UINT32_STR_LENG+2))); /* response body size */
             if ((respbuf = (char*)malloc(need_size)) == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
@@ -2175,9 +2074,6 @@ static void process_mop_get_complete(conn *c)
         STATS_NONE_HITS(c, mop_get, c->coll_key, c->coll_nkey);
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, mop_get, c->coll_key, c->coll_nkey);
@@ -2190,7 +2086,7 @@ static void process_mop_get_complete(conn *c)
         else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad data chunk");
         else if (ret == ENGINE_ENOMEM)    out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP)   out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
     /* free key strings and tokens buffer */
@@ -2302,16 +2198,13 @@ static void process_bop_insert_complete(conn *c)
                 }
             } else {
                 /* no getrim flag or no trimmed element */
-                if (replaced == false) {
-                    if (created == false) out_string(c, "STORED");
-                    else                  out_string(c, "CREATED_STORED");
-                } else {
+                if (replaced) {
                     out_string(c, "REPLACED");
+                } else {
+                    if (created) out_string(c, "CREATED_STORED");
+                    else         out_string(c, "STORED");
                 }
             }
-            break;
-        case ENGINE_DISCONNECT:
-            conn_set_state(c, conn_closing);
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISSES(c, bop_insert, c->coll_key, c->coll_nkey);
@@ -2327,7 +2220,7 @@ static void process_bop_insert_complete(conn *c)
             else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
             else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
             else if (ret == ENGINE_ENOTSUP)      out_string(c, "NOT_SUPPORTED");
-            else handle_unexpected_errorcode_ascii(c, ret);
+            else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
 }
@@ -2371,9 +2264,6 @@ static void process_bop_update_complete(conn *c)
         STATS_NONE_HITS(c, bop_update, c->coll_key, c->coll_nkey);
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, bop_update, c->coll_key, c->coll_nkey);
         out_string(c, "NOT_FOUND");
@@ -2385,7 +2275,7 @@ static void process_bop_update_complete(conn *c)
         else if (ret == ENGINE_EBADEFLAG) out_string(c, "EFLAG_MISMATCH");
         else if (ret == ENGINE_ENOMEM)    out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP)   out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
     if (c->coll_eitem != NULL) {
@@ -2555,15 +2445,12 @@ static void process_bop_mget_complete(conn *c)
         conn_set_state(c, conn_mwrite);
         c->msgcurr     = 0;
         break;
-      case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
       default:
         STATS_CMD_NOKEY(c, bop_mget);
         if (ret == ENGINE_EBADVALUE)    out_string(c, "CLIENT_ERROR bad data chunk");
         else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
     /* free token buffer */
@@ -2733,9 +2620,6 @@ static void process_bop_smget_complete_old(conn *c)
             out_string(c, "SERVER_ERROR out of memory writing get response");
         }
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     default:
         STATS_CMD_NOKEY(c, bop_smget);
         if (ret == ENGINE_EBADVALUE)     out_string(c, "CLIENT_ERROR bad data chunk");
@@ -2744,7 +2628,7 @@ static void process_bop_smget_complete_old(conn *c)
         else if (ret == ENGINE_EBKEYOOR) out_string(c, "OUT_OF_RANGE");
         else if (ret == ENGINE_ENOMEM)   out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
     /* free token buffer */
@@ -2911,9 +2795,6 @@ static void process_bop_smget_complete(conn *c)
             out_string(c, "SERVER_ERROR out of memory writing get response");
         }
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     default:
         STATS_CMD_NOKEY(c, bop_smget);
         if (ret == ENGINE_EBADVALUE)     out_string(c, "CLIENT_ERROR bad data chunk");
@@ -2924,7 +2805,7 @@ static void process_bop_smget_complete(conn *c)
 #if 0 // JHPARK_SMGET_OFFSET_HANDLING
         else if (ret == ENGINE_EBKEYOOR) out_string(c, "OUT_OF_RANGE");
 #endif
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
     /* free token buffer */
@@ -3099,7 +2980,7 @@ static void process_mget_complete(conn *c)
      default:
         if (ret == ENGINE_EBADVALUE)   out_string(c, "CLIENT_ERROR bad data chunk");
         else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory writing get response");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
     /* free token buffer */
@@ -3219,9 +3100,6 @@ static void complete_update_ascii(conn *c)
         case ENGINE_NOT_STORED:
             out_string(c, "NOT_STORED");
             break;
-        case ENGINE_DISCONNECT:
-            conn_set_state(c, conn_closing);
-            break;
         case ENGINE_ENOTSUP:
             out_string(c, "NOT_SUPPORTED");
             break;
@@ -3250,7 +3128,7 @@ static void complete_update_ascii(conn *c)
             out_string(c, "SERVER_ERROR failure");
             break;
         default:
-            handle_unexpected_errorcode_ascii(c, ret);
+            handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
 
@@ -3548,6 +3426,18 @@ static void write_bin_response(conn *c, void *d, int hlen, int keylen, int dlen)
     }
 }
 
+static void
+handle_unexpected_errorcode_bin(conn *c, const char *func_name, ENGINE_ERROR_CODE ret)
+{
+    if (ret == ENGINE_DISCONNECT) {
+        conn_set_state(c, conn_closing);
+    } else {
+        mc_logger->log(EXTENSION_LOG_WARNING, c, "[%s] Unexpected Error: %d\n",
+                       func_name, (int)ret);
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+    }
+}
+
 static void complete_incr_bin(conn *c)
 {
     protocol_binary_response_incr* rsp = (protocol_binary_response_incr*)c->wbuf;
@@ -3614,7 +3504,7 @@ static void complete_incr_bin(conn *c)
         break;
     case ENGINE_KEY_ENOENT:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
-        if (c->cmd == PROTOCOL_BINARY_CMD_INCREMENT) {
+        if (incr) {
             STATS_MISSES(c, incr, key, nkey);
         } else {
             STATS_MISSES(c, decr, key, nkey);
@@ -3632,9 +3522,6 @@ static void complete_incr_bin(conn *c)
     case ENGINE_NOT_STORED:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_STORED, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_ENOTSUP:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
         break;
@@ -3645,13 +3532,15 @@ static void complete_incr_bin(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         break;
     default:
-        abort();
+        handle_unexpected_errorcode_bin(c, __func__, ret);
+        if (ret != ENGINE_DISCONNECT) {
+            abort();
+        }
     }
 }
 
 static void complete_update_bin(conn *c)
 {
-    protocol_binary_response_status eno = PROTOCOL_BINARY_RESPONSE_EINVAL;
     assert(c != NULL);
 
     item *it = c->item;
@@ -3706,14 +3595,28 @@ static void complete_update_bin(conn *c)
     case ENGINE_KEY_ENOENT:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
+    case ENGINE_NOT_STORED:
+        /* FIXME: check below code, later. */
+        if (c->store_op == OPERATION_ADD) {
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS, 0);
+        } else if (c->store_op == OPERATION_REPLACE) {
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
+        } else {
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_STORED, 0);
+        }
+        //write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_STORED, 0);
+        break;
     case ENGINE_PREFIX_ENAME:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_PREFIX_ENAME, 0);
         break;
     case ENGINE_ENOMEM:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
+    case ENGINE_EINVAL:
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
+        break;
+    case ENGINE_E2BIG:
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, 0);
         break;
     case ENGINE_ENOTSUP:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
@@ -3725,14 +3628,7 @@ static void complete_update_bin(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         break;
     default:
-        if (c->store_op == OPERATION_ADD) {
-            eno = PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS;
-        } else if (c->store_op == OPERATION_REPLACE) {
-            eno = PROTOCOL_BINARY_RESPONSE_KEY_ENOENT;
-        } else {
-            eno = PROTOCOL_BINARY_RESPONSE_NOT_STORED;
-        }
-        write_bin_packet(c, eno, 0);
+        handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 
     if (c->store_op == OPERATION_CAS) {
@@ -3828,9 +3724,6 @@ static void process_bin_get(conn *c)
             }
         }
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_ENOTSUP:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
         break;
@@ -3841,10 +3734,14 @@ static void process_bin_get(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         break;
     default:
-        /* @todo add proper error handling! */
-        mc_logger->log(EXTENSION_LOG_WARNING, c,
-                       "Unknown error code: %d\n", ret);
-        abort();
+        handle_unexpected_errorcode_bin(c, __func__, ret);
+
+        if (ret != ENGINE_DISCONNECT) {
+            /* @todo add proper error handling! */
+            mc_logger->log(EXTENSION_LOG_WARNING, c,
+                           "Unknown error code: %d\n", ret);
+            abort();
+        }
     }
 }
 
@@ -4086,17 +3983,17 @@ static void process_bin_stat(conn *c)
     case ENGINE_KEY_ENOENT:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_ENOTSUP:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
         break;
     case ENGINE_PREFIX_ENOENT:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_PREFIX_ENOENT, 0);
         break;
-    default:
+    case ENGINE_EINVAL:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
+        break;
+    default:
+        handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -4439,9 +4336,6 @@ static void process_bin_lop_create(conn *c)
         STATS_OKS(c, lop_create, key, nkey);
         write_bin_response(c, NULL, 0, 0, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     default:
         STATS_CMD_NOKEY(c, lop_create);
         if (ret == ENGINE_KEY_EEXISTS)
@@ -4451,7 +4345,7 @@ static void process_bin_lop_create(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -4493,19 +4387,13 @@ static void process_bin_lop_prepare_nread(conn *c)
 
     eitem *elem;
     ENGINE_ERROR_CODE ret;
+
     if ((vlen + 2) > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
         ret = mc_engine.v1->list_elem_alloc(mc_engine.v0, c, key, nkey, vlen+2, &elem);
     }
-
-    if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_lop_insert(key, nkey, false);
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
-        {
+    if (ret == ENGINE_SUCCESS) {
         mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &c->einfo);
         ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
         c->coll_eitem  = (void *)elem;
@@ -4525,22 +4413,22 @@ static void process_bin_lop_prepare_nread(conn *c)
         }
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_lop_nread_complete;
+    } else {
+        if (settings.detail_enabled) {
+            stats_prefix_record_lop_insert(key, nkey, false);
         }
-        break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
-    default:
         STATS_CMD_NOKEY(c, lop_insert);
         if (ret == ENGINE_E2BIG)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
 
-        /* swallow the data line */
-        c->write_and_go = conn_swallow;
+        if (ret != ENGINE_DISCONNECT) {
+            /* swallow the data line */
+            c->write_and_go = conn_swallow;
+        }
     }
 }
 
@@ -4571,9 +4459,6 @@ static void process_bin_lop_insert_complete(conn *c)
         /* Stored */
         write_bin_response(c, NULL, 0, 0, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, lop_insert, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
@@ -4591,7 +4476,7 @@ static void process_bin_lop_insert_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 
     if (ret != ENGINE_SUCCESS) {
@@ -4652,9 +4537,6 @@ static void process_bin_lop_delete(conn *c)
         STATS_NONE_HITS(c, lop_delete, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINDEXOOR, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, lop_delete, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
@@ -4664,7 +4546,7 @@ static void process_bin_lop_delete(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -4780,9 +4662,6 @@ static void process_bin_lop_get(conn *c)
         STATS_NONE_HITS(c, lop_get, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINDEXOOR, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, lop_get, key, nkey);
@@ -4796,7 +4675,7 @@ static void process_bin_lop_get(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -4841,9 +4720,6 @@ static void process_bin_sop_create(conn *c)
         STATS_OKS(c, sop_create, key, nkey);
         write_bin_response(c, NULL, 0, 0, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     default:
         STATS_CMD_NOKEY(c, sop_create);
         if (ret == ENGINE_KEY_EEXISTS)
@@ -4853,7 +4729,7 @@ static void process_bin_sop_create(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -4890,8 +4766,8 @@ static void process_bin_sop_prepare_nread(conn *c)
     }
 
     eitem *elem = NULL;
-
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
     if ((vlen + 2) > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
@@ -4904,21 +4780,9 @@ static void process_bin_sop_prepare_nread(conn *c)
                 ((value_item*)elem)->len = vlen + 2;
         }
     }
-
-    if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT)
-            stats_prefix_record_sop_insert(key, nkey, false);
-        else if (c->cmd == PROTOCOL_BINARY_CMD_SOP_DELETE)
-            stats_prefix_record_sop_delete(key, nkey, false);
-        else
-            stats_prefix_record_sop_exist(key, nkey, false);
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
+    if (ret == ENGINE_SUCCESS) {
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
-            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
-                                        elem, &c->einfo);
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, elem, &c->einfo);
             ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
          } else {
             c->ritem   = ((value_item *)elem)->ptr;
@@ -4953,28 +4817,31 @@ static void process_bin_sop_prepare_nread(conn *c)
         }
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_sop_nread_complete;
-        break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
-    default:
+    } else {
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
+            if (settings.detail_enabled)
+                stats_prefix_record_sop_insert(key, nkey, false);
             STATS_CMD_NOKEY(c, sop_insert);
         } else if (c->cmd == PROTOCOL_BINARY_CMD_SOP_DELETE) {
+            if (settings.detail_enabled)
+                stats_prefix_record_sop_delete(key, nkey, false);
             STATS_CMD_NOKEY(c, sop_delete);
         } else {
+            if (settings.detail_enabled)
+               stats_prefix_record_sop_exist(key, nkey, false);
             STATS_CMD_NOKEY(c, sop_exist);
         }
-
         if (ret == ENGINE_E2BIG)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
 
-        /* swallow the data line */
-        c->write_and_go = conn_swallow;
+        if (ret != ENGINE_DISCONNECT) {
+            /* swallow the data line */
+            c->write_and_go = conn_swallow;
+        }
     }
 }
 
@@ -5004,9 +4871,6 @@ static void process_bin_sop_insert_complete(conn *c)
         /* Stored */
         write_bin_response(c, NULL, 0, 0, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, sop_insert, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
@@ -5024,7 +4888,7 @@ static void process_bin_sop_insert_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 
     /* release the c->coll_eitem reference */
@@ -5063,9 +4927,6 @@ static void process_bin_sop_delete_complete(conn *c)
         STATS_NONE_HITS(c, sop_delete, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, sop_delete, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
@@ -5075,7 +4936,7 @@ static void process_bin_sop_delete_complete(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 
     /* release the c->coll_eitem reference */
@@ -5112,9 +4973,6 @@ static void process_bin_sop_exist_complete(conn *c)
         write_bin_response(c, &rsp->message.body, 0, 0, sizeof(rsp->message.body));
         }
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, sop_exist, c->coll_key, c->coll_nkey);
@@ -5128,7 +4986,7 @@ static void process_bin_sop_exist_complete(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 
     /* release the c->coll_eitem reference */
@@ -5258,9 +5116,6 @@ static void process_bin_sop_get(conn *c)
         STATS_NONE_HITS(c, sop_get, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, sop_get, key, nkey);
@@ -5274,7 +5129,7 @@ static void process_bin_sop_get(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -5330,9 +5185,6 @@ static void process_bin_bop_create(conn *c)
         STATS_OKS(c, bop_create, key, nkey);
         write_bin_response(c, NULL, 0, 0, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     default:
         STATS_CMD_NOKEY(c, bop_create);
         if (ret == ENGINE_KEY_EEXISTS)
@@ -5342,7 +5194,7 @@ static void process_bin_bop_create(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -5391,8 +5243,8 @@ static void process_bin_bop_prepare_nread(conn *c)
     }
 
     eitem *elem;
-
     ENGINE_ERROR_CODE ret;
+
     if ((vlen + 2) > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
@@ -5400,14 +5252,7 @@ static void process_bin_bop_prepare_nread(conn *c)
                                              req->message.body.nbkey,
                                              req->message.body.neflag, vlen+2, &elem);
     }
-
-    if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_bop_insert(key, nkey, false);
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
-        {
+    if (ret == ENGINE_SUCCESS) {
         mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &c->einfo);
         if (c->einfo.nscore == 0) {
             memcpy((void*)c->einfo.score, req->message.body.bkey, sizeof(uint64_t));
@@ -5436,22 +5281,22 @@ static void process_bin_bop_prepare_nread(conn *c)
         }
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_bop_nread_complete;
+    } else {
+        if (settings.detail_enabled) {
+            stats_prefix_record_bop_insert(key, nkey, false);
         }
-        break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
-    default:
         STATS_CMD_NOKEY(c, bop_insert);
         if (ret == ENGINE_E2BIG)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
 
-        /* swallow the data line */
-        c->write_and_go = conn_swallow;
+        if (ret != ENGINE_DISCONNECT) {
+            /* swallow the data line */
+            c->write_and_go = conn_swallow;
+        }
     }
 }
 
@@ -5486,9 +5331,6 @@ static void process_bin_bop_insert_complete(conn *c)
         /* Stored */
         write_bin_response(c, NULL, 0, 0, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, bop_insert, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
@@ -5511,7 +5353,7 @@ static void process_bin_bop_insert_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 
     /* release the c->coll_eitem reference */
@@ -5562,9 +5404,6 @@ static void process_bin_bop_update_complete(conn *c)
         STATS_NONE_HITS(c, bop_update, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, bop_update, c->coll_key, c->coll_nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
@@ -5580,7 +5419,7 @@ static void process_bin_bop_update_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 
     if (c->coll_eitem != NULL) {
@@ -5650,8 +5489,8 @@ static void process_bin_bop_update_prepare_nread(conn *c)
     }
 
     eitem *elem = NULL;
-
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
     if ((vlen + 2) > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
@@ -5660,13 +5499,7 @@ static void process_bin_bop_update_prepare_nread(conn *c)
         else
             ((value_item*)elem)->len = vlen + 2;
     }
-
-    if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_bop_update(key, nkey, false);
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
+    if (ret == ENGINE_SUCCESS) {
         c->ritem       = ((value_item *)elem)->ptr;
         c->rlbytes     = vlen;
         c->coll_eitem  = (void *)elem;
@@ -5676,8 +5509,10 @@ static void process_bin_bop_update_prepare_nread(conn *c)
         c->coll_op     = OPERATION_BOP_UPDATE;
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_bop_update_nread_complete;
-        break;
-    default:
+    } else {
+        if (settings.detail_enabled) {
+            stats_prefix_record_bop_update(key, nkey, false);
+        }
         STATS_CMD_NOKEY(c, bop_update);
         /* ret == ENGINE_E2BIG || ret == ENGINE_ENOMEM */
         if (ret == ENGINE_E2BIG)
@@ -5749,9 +5584,6 @@ static void process_bin_bop_delete(conn *c)
         STATS_NONE_HITS(c, bop_delete, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, bop_delete, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
@@ -5763,7 +5595,7 @@ static void process_bin_bop_delete(conn *c)
         else if (ret == ENGINE_EBADBKEY)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADBKEY, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -5900,9 +5732,6 @@ static void process_bin_bop_get(conn *c)
         STATS_NONE_HITS(c, bop_get, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_EBKEYOOR:
     case ENGINE_UNREADABLE:
@@ -5921,7 +5750,7 @@ static void process_bin_bop_get(conn *c)
         else if (ret == ENGINE_EBADBKEY)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADBKEY, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -5981,9 +5810,6 @@ static void process_bin_bop_count(conn *c)
         rsp->message.body.count = htonl(elem_count);
         write_bin_response(c, &rsp->message.body, 0, 0, sizeof(rsp->message.body));
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, bop_count, key, nkey);
@@ -5999,7 +5825,7 @@ static void process_bin_bop_count(conn *c)
         else if (ret == ENGINE_EBADBKEY)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADBKEY, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -6051,7 +5877,6 @@ static void process_bin_bop_prepare_nread_keys(conn *c)
     }
 
     eitem *elem=NULL;
-
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     int need_size = 0;
     do {
@@ -6141,8 +5966,7 @@ static void process_bin_bop_prepare_nread_keys(conn *c)
         }
     } while(0);
 
-    switch (ret) {
-    case ENGINE_SUCCESS:
+    if (ret == ENGINE_SUCCESS) {
         c->coll_strkeys = (void*)&c->memblist;
         ritem_set_first(c, CONN_RTYPE_MBLCK, vlen);
         c->coll_eitem  = (void *)elem;
@@ -6150,8 +5974,7 @@ static void process_bin_bop_prepare_nread_keys(conn *c)
         c->coll_op = (c->cmd==PROTOCOL_BINARY_CMD_BOP_MGET ? OPERATION_BOP_MGET : OPERATION_BOP_SMGET);
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_bop_nread_keys_complete;
-        break;
-    default:
+    } else {
         /* ret == ENGINE_EBADVALUE || ret == ENGINE_ENOMEM */
         if (ret == ENGINE_EBADVALUE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADVALUE, vlen);
@@ -6325,9 +6148,6 @@ static void process_bin_bop_smget_complete_old(conn *c)
         }
         }
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     default:
         STATS_CMD_NOKEY(c, bop_smget);
         if (ret == ENGINE_EBADVALUE)
@@ -6341,7 +6161,7 @@ static void process_bin_bop_smget_complete_old(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 
     /* free token buffer */
@@ -6520,9 +6340,6 @@ static void process_bin_bop_smget_complete(conn *c)
         }
         }
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     default:
         STATS_CMD_NOKEY(c, bop_smget);
         if (ret == ENGINE_EBADVALUE)
@@ -6538,7 +6355,7 @@ static void process_bin_bop_smget_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 
     /* free token buffer */
@@ -6635,9 +6452,6 @@ static void process_bin_getattr(conn *c)
         write_bin_response(c, &rsp->message.body, 0, 0, sizeof(rsp->message.body));
         }
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, getattr, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
@@ -6647,7 +6461,7 @@ static void process_bin_getattr(conn *c)
         if (ret == ENGINE_EBADATTR)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADATTR, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -6741,9 +6555,6 @@ static void process_bin_setattr(conn *c)
         STATS_HITS(c, setattr, key, nkey);
         write_bin_response(c, NULL, 0, 0, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, setattr, key, nkey);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
@@ -6755,7 +6566,7 @@ static void process_bin_setattr(conn *c)
         else if (ret == ENGINE_EBADVALUE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADVALUE, 0);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            handle_unexpected_errorcode_bin(c, __func__, ret);
     }
 }
 
@@ -7258,10 +7069,8 @@ static void process_bin_update(conn *c)
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
-    default:
+    case ENGINE_E2BIG:
+    case ENGINE_ENOMEM:
         if (ret == ENGINE_E2BIG) {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
         } else {
@@ -7282,6 +7091,14 @@ static void process_bin_update(conn *c)
 
         /* swallow the data line */
         c->write_and_go = conn_swallow;
+        break;
+    default:
+        handle_unexpected_errorcode_bin(c, __func__, ret);
+
+        if (ret != ENGINE_DISCONNECT) {
+            /* swallow the data line */
+            c->write_and_go = conn_swallow;
+        }
     }
 }
 
@@ -7332,10 +7149,8 @@ static void process_bin_append_prepend(conn *c)
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
-    default:
+    case ENGINE_E2BIG:
+    case ENGINE_ENOMEM:
         if (ret == ENGINE_E2BIG) {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
         } else {
@@ -7343,6 +7158,14 @@ static void process_bin_append_prepend(conn *c)
         }
         /* swallow the data line */
         c->write_and_go = conn_swallow;
+        break;
+    default:
+        handle_unexpected_errorcode_bin(c, __func__, ret);
+
+        if (ret != ENGINE_DISCONNECT) {
+            /* swallow the data line */
+            c->write_and_go = conn_swallow;
+        }
     }
 }
 
@@ -7424,9 +7247,6 @@ static void process_bin_flush_prefix(conn *c)
     case ENGINE_SUCCESS:
         write_bin_response(c, NULL, 0, 0, 0);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_PREFIX_ENOENT:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_PREFIX_ENOENT, 0);
         break;
@@ -7434,7 +7254,7 @@ static void process_bin_flush_prefix(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
         break;
     default:
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
+        handle_unexpected_errorcode_bin(c, __func__, ret);
         break;
     }
 
@@ -7901,14 +7721,11 @@ static void process_stats_prefix(conn *c, const char *prefix, const int nprefix)
                 conn_set_state(c, conn_write);
                 c->write_and_go = conn_new_cmd;
                 break;
-            case ENGINE_DISCONNECT:
-                conn_set_state(c, conn_closing);
-                break;
             case ENGINE_ENOMEM:
                 out_string(c, "SERVER_ERROR no more memory");
                 break;
             default:
-                out_string(c, "PREFIX_ERROR");
+                handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     } else {
         /****** SPEC-OUT FUNCTIONS **********
@@ -7933,14 +7750,11 @@ static void process_stats_prefix(conn *c, const char *prefix, const int nprefix)
                 out_string(c, str);
                 }
                 break;
-            case ENGINE_DISCONNECT:
-                conn_set_state(c, conn_closing);
-                break;
             case ENGINE_PREFIX_ENOENT:
                 out_string(c, "NOT_FOUND");
                 break;
             default:
-                out_string(c, "PREFIX_ERROR");
+                handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
         ************************************/
     }
@@ -7967,7 +7781,7 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
         mc_engine.v1->aggregate_stats(mc_engine.v0, (const void *)c,
                                       aggregate_callback, &thread_stats);
     } else {
-        threadlocal_stats_aggregate(get_independent_stats(c), &thread_stats);
+        threadlocal_stats_aggregate(default_thread_stats, &thread_stats);
     }
 
 #ifndef __WIN32__
@@ -8194,9 +8008,7 @@ static void process_stat_settings(ADD_STAT add_stats, void *c)
     APPEND_STAT("max_set_size", "%u", settings.max_set_size);
     APPEND_STAT("max_map_size", "%u", settings.max_map_size);
     APPEND_STAT("max_btree_size", "%u", settings.max_btree_size);
-#ifdef MAX_ELEMENT_BYTES_CONFIG
     APPEND_STAT("max_element_bytes", "%u", settings.max_element_bytes);
-#endif
     APPEND_STAT("topkeys", "%d", settings.topkeys);
 #ifdef ENABLE_ZK_INTEGRATION
     APPEND_STAT("zk_failstop", "%s", zk_confs.zk_failstop ? "on" : "off");
@@ -8344,14 +8156,14 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens)
         case ENGINE_ENOMEM:
             out_string(c, "SERVER_ERROR out of memory writing stats");
             break;
-        case ENGINE_DISCONNECT:
-            conn_set_state(c, conn_closing);
-            break;
         case ENGINE_ENOTSUP:
             out_string(c, "NOT_SUPPORTED");
             break;
-        default:
+        case ENGINE_KEY_ENOENT:
             out_string(c, "ERROR no matching stat");
+            break;
+        default:
+            handle_unexpected_errorcode_ascii(c, __func__, ret);
             break;
         }
         return;
@@ -8518,15 +8330,12 @@ static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt)
     if (mblck_list_alloc(&c->thread->mblck_pool, 1, vlen, &c->memblist) < 0) {
         ret = ENGINE_ENOMEM;
     }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
+    if (ret == ENGINE_SUCCESS) {
         c->coll_strkeys = (void*)&c->memblist;
         ritem_set_first(c, CONN_RTYPE_MBLCK, vlen);
         c->coll_op = OPERATION_MGET;
         conn_set_state(c, conn_nread);
-        break;
-    default:
+    } else {
         out_string(c, "SERVER_ERROR out of memory");
         c->write_and_go = conn_swallow;
         c->sbytes = vlen;
@@ -8631,9 +8440,6 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         c->store_op = store_op;
         conn_set_state(c, conn_nread);
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_E2BIG:
     case ENGINE_ENOMEM:
         if (ret == ENGINE_E2BIG) {
@@ -8652,10 +8458,13 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         }
         break;
     default:
-        handle_unexpected_errorcode_ascii(c, ret);
-        /* swallow the data line */
-        c->write_and_go = conn_swallow;
-        c->sbytes = vlen;
+        handle_unexpected_errorcode_ascii(c, __func__, ret);
+
+        if (ret != ENGINE_DISCONNECT) {
+            /* swallow the data line */
+            c->write_and_go = conn_swallow;
+            c->sbytes = vlen;
+        }
     }
 }
 
@@ -8670,14 +8479,12 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
 
     set_noreply_maybe(c, tokens, ntokens);
 
-    if (tokens[KEY_TOKEN].length > KEY_MAX_LENGTH) {
+    key = tokens[KEY_TOKEN].value;
+    nkey = tokens[KEY_TOKEN].length;
+    if (nkey > KEY_MAX_LENGTH) {
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
-
-    key = tokens[KEY_TOKEN].value;
-    nkey = tokens[KEY_TOKEN].length;
-
     if (!safe_strtoull(tokens[2].value, &delta)) {
         out_string(c, "CLIENT_ERROR invalid numeric delta argument");
         return;
@@ -8733,36 +8540,31 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
         }
         out_string(c, "NOT_FOUND");
         break;
-    case ENGINE_PREFIX_ENAME:
-        out_string(c, "CLIENT_ERROR invalid prefix name");
-
-        break;
-    case ENGINE_ENOMEM:
-        out_string(c, "SERVER_ERROR out of memory");
-        break;
-    case ENGINE_EINVAL:
-        out_string(c, "CLIENT_ERROR cannot increment or decrement non-numeric value");
-        break;
-    case ENGINE_NOT_STORED:
-        out_string(c, "SERVER_ERROR failed to store item");
-        break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
-    case ENGINE_ENOTSUP:
-        out_string(c, "NOT_SUPPORTED");
-        break;
-    case ENGINE_EBADTYPE:
-        out_string(c, "TYPE_MISMATCH");
-        break;
     default:
-        handle_unexpected_errorcode_ascii(c, ret);
+        if (incr) {
+            STATS_CMD_NOKEY(c, incr);
+        } else {
+            STATS_CMD_NOKEY(c, decr);
+        }
+        if (ret == ENGINE_EINVAL)
+            out_string(c, "CLIENT_ERROR cannot increment or decrement non-numeric value");
+        else if (ret == ENGINE_PREFIX_ENAME)
+            out_string(c, "CLIENT_ERROR invalid prefix name");
+        else if (ret == ENGINE_ENOMEM)
+            out_string(c, "SERVER_ERROR out of memory");
+        else if (ret == ENGINE_NOT_STORED)
+            out_string(c, "SERVER_ERROR failed to store item");
+        else if (ret == ENGINE_ENOTSUP)
+            out_string(c, "NOT_SUPPORTED");
+        else if (ret == ENGINE_EBADTYPE)
+            out_string(c, "TYPE_MISMATCH");
+        else
+            handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
 static void process_delete_command(conn *c, token_t *tokens, const size_t ntokens)
 {
-    assert(c != NULL);
     assert(c->ewouldblock == false);
     char *key;
     size_t nkey;
@@ -8782,7 +8584,6 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
 
     key = tokens[KEY_TOKEN].value;
     nkey = tokens[KEY_TOKEN].length;
-
     if (nkey > KEY_MAX_LENGTH) {
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
@@ -8797,15 +8598,15 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
 
     /* For some reason the SLAB_INCR tries to access this... */
     if (ret == ENGINE_SUCCESS) {
-        out_string(c, "DELETED");
         STATS_HITS(c, delete, key, nkey);
+        out_string(c, "DELETED");
     } else if (ret == ENGINE_KEY_ENOENT) {
-        out_string(c, "NOT_FOUND");
         STATS_MISSES(c, delete, key, nkey);
-    } else if (ret == ENGINE_ENOTSUP) {
-        out_string(c, "NOT_SUPPORTED");
+        out_string(c, "NOT_FOUND");
     } else {
-        handle_unexpected_errorcode_ascii(c, ret);
+        STATS_CMD_NOKEY(c, delete);
+        if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
@@ -8845,9 +8646,8 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
         if (ret == ENGINE_SUCCESS) {
             out_string(c, "OK");
         } else {
-            if (ret == ENGINE_DISCONNECT) conn_set_state(c, conn_closing);
-            else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-            else handle_unexpected_errorcode_ascii(c, ret);
+            if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+            else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     } else { /* flush_prefix */
         char *prefix = tokens[PREFIX_TOKEN].value;
@@ -8873,10 +8673,9 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
         if (ret == ENGINE_SUCCESS) {
             out_string(c, "OK");
         } else {
-            if (ret == ENGINE_DISCONNECT) conn_set_state(c, conn_closing);
-            else if (ret == ENGINE_PREFIX_ENOENT) out_string(c, "NOT_FOUND");
+            if (ret == ENGINE_PREFIX_ENOENT) out_string(c, "NOT_FOUND");
             else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-            else handle_unexpected_errorcode_ascii(c, ret);
+            else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
 }
@@ -9157,7 +8956,6 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
     }
 }
 
-#ifdef MAX_ELEMENT_BYTES_CONFIG
 static void process_maxelembytes_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
@@ -9193,7 +8991,6 @@ static void process_maxelembytes_command(conn *c, token_t *tokens, const size_t 
         out_string(c, "CLIENT_ERROR bad command line format");
     }
 }
-#endif
 
 static void process_verbosity_command(conn *c, token_t *tokens, const size_t ntokens)
 {
@@ -9225,55 +9022,55 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
 
 static void process_config_command(conn *c, token_t *tokens, const size_t ntokens)
 {
+    char *config_key = tokens[SUBCOMMAND_TOKEN].value;
+
     if (ntokens < 3 || ntokens > 4) {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
 
-    if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "maxconns") == 0) {
+    if (strcmp(config_key, "maxconns") == 0) {
         process_maxconns_command(c, tokens, ntokens);
     }
+    else if (strcmp(config_key, "memlimit") == 0) {
+        process_memlimit_command(c, tokens, ntokens);
+    }
+    else if (strcmp(config_key, "max_list_size") == 0) {
+        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_LIST);
+    }
+    else if (strcmp(config_key, "max_set_size") == 0) {
+        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_SET);
+    }
+    else if (strcmp(config_key, "max_map_size") == 0) {
+        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_MAP);
+    }
+    else if (strcmp(config_key, "max_btree_size") == 0) {
+        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_BTREE);
+    }
+    else if (strcmp(config_key, "max_element_bytes") == 0) {
+        process_maxelembytes_command(c, tokens, ntokens);
+    }
+    else if (strcmp(config_key, "scrub_count") == 0) {
+        process_scrubcount_command(c, tokens, ntokens);
+    }
 #ifdef ENABLE_ZK_INTEGRATION
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "zkfailstop") == 0) {
+    else if (strcmp(config_key, "zkfailstop") == 0) {
         process_zkfailstop_command(c, tokens, ntokens);
     }
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "hbtimeout") == 0) {
+    else if (strcmp(config_key, "hbtimeout") == 0) {
         process_hbtimeout_command(c, tokens, ntokens);
     }
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "hbfailstop") == 0) {
+    else if (strcmp(config_key, "hbfailstop") == 0) {
         process_hbfailstop_command(c, tokens, ntokens);
     }
 #endif
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "memlimit") == 0) {
-        process_memlimit_command(c, tokens, ntokens);
-    }
 #ifdef ENABLE_STICKY_ITEM
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "sticky_limit") == 0) {
+    else if (strcmp(config_key, "sticky_limit") == 0) {
         process_stickylimit_command(c, tokens, ntokens);
     }
 #endif
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "scrub_count") == 0) {
-        process_scrubcount_command(c, tokens, ntokens);
-    }
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_list_size") == 0) {
-        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_LIST);
-    }
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_set_size") == 0) {
-        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_SET);
-    }
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_map_size") == 0) {
-        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_MAP);
-    }
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_btree_size") == 0) {
-        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_BTREE);
-    }
-#ifdef MAX_ELEMENT_BYTES_CONFIG
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_element_bytes") == 0) {
-        process_maxelembytes_command(c, tokens, ntokens);
-    }
-#endif
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "verbosity") == 0) {
+    else if (strcmp(config_key, "verbosity") == 0) {
         process_verbosity_command(c, tokens, ntokens);
     }
     else {
@@ -9285,19 +9082,17 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
 #ifdef ENABLE_ZK_INTEGRATION
 static void process_zkensemble_command(conn *c, token_t *tokens, const size_t ntokens)
 {
-    assert(c != NULL);
+    char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
+    bool valid = false;
 
     if (arcus_zk_cfg == NULL) {
         out_string(c, "ERROR not using ZooKeeper");
         return;
     }
 
-    bool valid = false;
-
     if (ntokens == 3) {
-        if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "get") == 0) {
+        if (strcmp(subcommand, "get") == 0) {
             char buf[1024];
-
             if (arcus_zk_get_ensemble(buf, sizeof(buf)-16) != 0) {
                 out_string(c, "ERROR failed to get the ensemble address");
             } else {
@@ -9305,17 +9100,16 @@ static void process_zkensemble_command(conn *c, token_t *tokens, const size_t nt
                 out_string(c, buf);
             }
             valid = true;
-        }
-        else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "rejoin") == 0) {
-             if (arcus_zk_rejoin_ensemble() != 0) {
-               out_string(c, "ERROR failed to rejoin ensemble");
-             } else {
-               out_string(c, "Successfully rejoined");
-             }
-             valid = true;
+        } else if (strcmp(subcommand, "rejoin") == 0) {
+            if (arcus_zk_rejoin_ensemble() != 0) {
+                out_string(c, "ERROR failed to rejoin ensemble");
+            } else {
+                out_string(c, "Successfully rejoined");
+            }
+            valid = true;
         }
     } else if (ntokens == 4) {
-        if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "set") == 0) {
+        if (strcmp(subcommand, "set") == 0) {
             /* The ensemble is a comma separated list of host:port addresses.
              * host1:port1,host2:port2,...
              */
@@ -9327,77 +9121,71 @@ static void process_zkensemble_command(conn *c, token_t *tokens, const size_t nt
             valid = true;
         }
     }
-
     if (valid == false) {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
-        return;
     }
 }
 #endif
 
 static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
 {
-    char *opstr;
-    char *modestr = NULL;
-    char *filepath = NULL;
+    char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
+    char *modestr;
+    char *filepath;
     char *prefix = NULL;
     int  nprefix = -1; /* all prefixes */
+    bool valid = false;
 
     /* dump ascii command
      * dump start <mode> [<prefix>] filepath\r\n
      *   <mode> : key
      * dump stop\r\n
      */
-    opstr = tokens[1].value;
     if (ntokens == 3) {
-        if (memcmp(opstr, "stop", 4) != 0) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
+        if (memcmp(subcommand, "stop", 4) == 0) {
+            modestr = filepath = NULL;
+            valid = true;
         }
     } else if (ntokens == 5 || ntokens == 6) {
-        if (memcmp(opstr, "start", 5) != 0) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
-        }
-        modestr = tokens[2].value;
-        if (ntokens == 5) {
-            filepath = tokens[3].value;
-        } else {
-            prefix = tokens[3].value;
-            nprefix = tokens[3].length;
-            if (nprefix > PREFIX_MAX_LENGTH) {
-                out_string(c, "CLIENT_ERROR too long prefix name");
-                return;
+        if (memcmp(subcommand, "start", 5) == 0) {
+            modestr = tokens[2].value;
+            if (ntokens == 5) {
+                filepath = tokens[3].value;
+            } else {
+                prefix = tokens[3].value;
+                nprefix = tokens[3].length;
+                if (nprefix > PREFIX_MAX_LENGTH) {
+                    out_string(c, "CLIENT_ERROR too long prefix name");
+                    return;
+                }
+                if (nprefix == 6 && strncmp(prefix, "<null>", 6) == 0) {
+                    /* dump null prefix */
+                    prefix = NULL;
+                    nprefix = 0;
+                }
+                filepath = tokens[4].value;
             }
-            if (nprefix == 6 && strncmp(prefix, "<null>", 6) == 0) {
-                /* dump null prefix */
-                prefix = NULL;
-                nprefix = 0;
-            }
-            filepath = tokens[4].value;
+            valid = true;
         }
-    } else {
+    }
+    if (valid == false) {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
 
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->dump(mc_engine.v0, c, opstr, modestr,
+    ret = mc_engine.v1->dump(mc_engine.v0, c, subcommand, modestr,
                              prefix, nprefix, filepath);
     if (ret == ENGINE_SUCCESS) {
         out_string(c, "OK");
-    } else if (ret == ENGINE_DISCONNECT) {
-        conn_set_state(c, conn_closing);
     } else if (ret == ENGINE_ENOTSUP) {
         out_string(c, "NOT_SUPPORTED");
     } else if (ret == ENGINE_FAILED) {
         out_string(c, "SERVER_ERROR failed. refer to the reason in server log.");
     } else {
-        handle_unexpected_errorcode_ascii(c, ret);
+        handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
@@ -9462,7 +9250,7 @@ static void process_snapshot_command(conn *c, token_t *tokens, const size_t ntok
     } else if (ret == ENGINE_FAILED) {
         out_string(c, "SERVER_ERROR failed. refer to the reason in server log.");
     } else {
-        handle_unexpected_errorcode_ascii(c, ret);
+        handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 #endif
@@ -9598,9 +9386,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "config max_set_size [<maxsize>]\\r\\n" "\n"
         "\t" "config max_map_size [<maxsize>]\\r\\n" "\n"
         "\t" "config max_btree_size [<maxsize>]\\r\\n" "\n"
-#ifdef MAX_ELEMENT_BYTES_CONFIG
         "\t" "config max_element_bytes [<maxbytes>]\\r\\n" "\n"
-#endif
 #ifdef ENABLE_ZK_INTEGRATION
         "\t" "config hbtimeout [<hbtimeout>]\\r\\n" "\n"
         "\t" "config hbfailstop [<hbfailstop>]\\r\\n" "\n"
@@ -9951,8 +9737,8 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
         char *respptr;
 
         do {
-            need_size = ((2*lenstr_size) + 30) /* response head and tail size */
-                      + (elem_count * (lenstr_size+2)); /* response body size */
+            need_size = ((2*UINT32_STR_LENG) + 30) /* response head and tail size */
+                      + (elem_count * (UINT32_STR_LENG+2)); /* response body size */
             if ((respbuf = (char*)malloc(need_size)) == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
@@ -10012,9 +9798,6 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
         STATS_NONE_HITS(c, lop_get, key, nkey);
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, lop_get, key, nkey);
@@ -10026,7 +9809,7 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
         if (ret == ENGINE_EBADTYPE)     out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
         else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
@@ -10041,13 +9824,7 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
     } else {
         ret = mc_engine.v1->list_elem_alloc(mc_engine.v0, c, key, nkey, vlen, &elem);
     }
-
-    if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_lop_insert(key, nkey, false);
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
+    if (ret == ENGINE_SUCCESS) {
         mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &c->einfo);
         ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
         c->coll_eitem  = (void *)elem;
@@ -10057,20 +9834,21 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
         c->coll_nkey   = nkey;
         c->coll_index  = index;
         conn_set_state(c, conn_nread);
-        break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
-    default:
+    } else {
+        if (settings.detail_enabled) {
+            stats_prefix_record_lop_insert(key, nkey, false);
+        }
         STATS_CMD_NOKEY(c, lop_insert);
         if (ret == ENGINE_E2BIG)        out_string(c, "CLIENT_ERROR too large value");
         else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
 
-        /* swallow the data line */
-        c->write_and_go = conn_swallow;
-        c->sbytes = vlen;
+        if (ret != ENGINE_DISCONNECT) {
+            /* swallow the data line */
+            c->write_and_go = conn_swallow;
+            c->sbytes = vlen;
+        }
     }
 }
 
@@ -10090,16 +9868,13 @@ static void process_lop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         STATS_OKS(c, lop_create, key, nkey);
         out_string(c, "CREATED");
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     default:
         STATS_CMD_NOKEY(c, lop_create);
         if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
         else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
         else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP)      out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
@@ -10132,15 +9907,12 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
     switch (ret) {
     case ENGINE_SUCCESS:
         STATS_ELEM_HITS(c, lop_delete, key, nkey);
-        if (dropped == false) out_string(c, "DELETED");
-        else                  out_string(c, "DELETED_DROPPED");
+        if (dropped) out_string(c, "DELETED_DROPPED");
+        else         out_string(c, "DELETED");
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, lop_delete, key, nkey);
         out_string(c, "NOT_FOUND_ELEMENT");
-        break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, lop_delete, key, nkey);
@@ -10150,7 +9922,7 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
         STATS_CMD_NOKEY(c, lop_delete);
         if (ret == ENGINE_EBADTYPE)     out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
@@ -10358,8 +10130,8 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
         char *respptr;
 
         do {
-            need_size = ((2*lenstr_size) + 30) /* response head and tail size */
-                      + (elem_count * (lenstr_size+2)); /* response body size */
+            need_size = ((2*UINT32_STR_LENG) + 30) /* response head and tail size */
+                      + (elem_count * (UINT32_STR_LENG+2)); /* response body size */
             if ((respbuf = (char*)malloc(need_size)) == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
@@ -10419,9 +10191,6 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
         STATS_NONE_HITS(c, sop_get, key, nkey);
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, sop_get, key, nkey);
@@ -10433,15 +10202,15 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
         if (ret == ENGINE_EBADTYPE)     out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
         else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
 static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, size_t nkey)
 {
     eitem *elem = NULL;
-
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
     if (vlen > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
@@ -10454,24 +10223,12 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
                 ((value_item*)elem)->len = vlen;
         }
     }
-
-    if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        if (cmd == (int)OPERATION_SOP_INSERT)
-            stats_prefix_record_sop_insert(key, nkey, false);
-        else if (cmd == (int)OPERATION_SOP_DELETE)
-            stats_prefix_record_sop_delete(key, nkey, false);
-        else
-            stats_prefix_record_sop_exist(key, nkey, false);
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
+    if (ret == ENGINE_SUCCESS) {
         if (cmd == (int)OPERATION_SOP_INSERT) {
-            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
-                                        elem, &c->einfo);
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, elem, &c->einfo);
             ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
         } else {
-            c->ritem   = ((value_item *)elem)->ptr;
+            c->ritem = ((value_item *)elem)->ptr;
             c->rlbytes = vlen;
         }
         c->coll_eitem  = (void *)elem;
@@ -10480,27 +10237,30 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
         c->coll_key    = key;
         c->coll_nkey   = nkey;
         conn_set_state(c, conn_nread);
-        break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
-    default:
+    } else {
         if (cmd == (int)OPERATION_SOP_INSERT) {
+            if (settings.detail_enabled)
+                stats_prefix_record_sop_insert(key, nkey, false);
             STATS_CMD_NOKEY(c, sop_insert);
         } else if (cmd == (int)OPERATION_SOP_DELETE) {
+            if (settings.detail_enabled)
+                stats_prefix_record_sop_delete(key, nkey, false);
             STATS_CMD_NOKEY(c, sop_delete);
         } else {
+            if (settings.detail_enabled)
+                stats_prefix_record_sop_exist(key, nkey, false);
             STATS_CMD_NOKEY(c, sop_exist);
         }
-
         if (ret == ENGINE_E2BIG)        out_string(c, "CLIENT_ERROR too large value");
         else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
 
-        /* swallow the data line */
-        c->write_and_go = conn_swallow;
-        c->sbytes = vlen;
+        if (ret != ENGINE_DISCONNECT) {
+            /* swallow the data line */
+            c->write_and_go = conn_swallow;
+            c->sbytes = vlen;
+        }
     }
 }
 
@@ -10520,16 +10280,13 @@ static void process_sop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         STATS_OKS(c, sop_create, key, nkey);
         out_string(c, "CREATED");
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     default:
         STATS_CMD_NOKEY(c, sop_create);
         if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
         else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
         else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP)      out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
@@ -10745,8 +10502,8 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
         int   resplen;
 
         do {
-            need_size = ((2*lenstr_size) + 30) /* response head and tail size */
-                      + (elem_count * ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + lenstr_size+3)); /* response body size */
+            need_size = ((2*UINT32_STR_LENG) + 30) /* response head and tail size */
+                      + (elem_count * ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + UINT32_STR_LENG+3)); /* response body size */
             if ((respbuf = (char*)malloc(need_size)) == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
@@ -10809,9 +10566,6 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
         STATS_NONE_HITS(c, bop_get, key, nkey);
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_EBKEYOOR:
     case ENGINE_UNREADABLE:
@@ -10826,13 +10580,14 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
         else if (ret == ENGINE_ENOMEM)   out_string(c, "SERVER_ERROR out of memory");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
 static void process_bop_count(conn *c, char *key, size_t nkey,
                               const bkey_range *bkrange, const eflag_filter *efilter)
 {
+    char buffer[32];
     uint32_t elem_count;
     uint32_t access_count;
 
@@ -10855,16 +10610,9 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        {
-        char buffer[32];
         STATS_HITS(c, bop_count, key, nkey);
-
         sprintf(buffer, "COUNT=%u", elem_count);
         out_string(c, buffer);
-        }
-        break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
@@ -10877,13 +10625,14 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
 static void process_bop_position(conn *c, char *key, size_t nkey,
                                  const bkey_range *bkrange, ENGINE_BTREE_ORDER order)
 {
+    char buffer[32];
     int position;
 
     ENGINE_ERROR_CODE ret;
@@ -10896,20 +10645,13 @@ static void process_bop_position(conn *c, char *key, size_t nkey,
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        {
-        char buffer[32];
         STATS_ELEM_HITS(c, bop_position, key, nkey);
-
         sprintf(buffer, "POSITION=%d", position);
         out_string(c, buffer);
-        }
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, bop_position, key, nkey);
         out_string(c, "NOT_FOUND_ELEMENT");
-        break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
@@ -10922,7 +10664,7 @@ static void process_bop_position(conn *c, char *key, size_t nkey,
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
@@ -10960,8 +10702,8 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
         int   resplen;
 
         do {
-            need_size = ((4*lenstr_size) + 30) /* response head and tail size */
-                      + (elem_count * ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + lenstr_size+3)); /* result body size */
+            need_size = ((4*UINT32_STR_LENG) + 30) /* response head and tail size */
+                      + (elem_count * ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + UINT32_STR_LENG+3)); /* result body size */
             if ((respbuf = (char*)malloc(need_size)) == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
@@ -11014,9 +10756,6 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
         STATS_NONE_HITS(c, bop_pwg, key, nkey);
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, bop_pwg, key, nkey);
@@ -11028,7 +10767,7 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
     if (ret != ENGINE_SUCCESS && elem_array != NULL) {
@@ -11083,8 +10822,8 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey,
         int   resplen;
 
         do {
-            need_size = ((2*lenstr_size) + 30) /* response head and tail size */
-                      + (elem_count * ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + lenstr_size+3)); /* result body size */
+            need_size = ((2*UINT32_STR_LENG) + 30) /* response head and tail size */
+                      + (elem_count * ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + UINT32_STR_LENG+3)); /* result body size */
             if ((respbuf = (char*)malloc(need_size)) == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
@@ -11137,9 +10876,6 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey,
         STATS_NONE_HITS(c, bop_gbp, key, nkey);
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, bop_gbp, key, nkey);
@@ -11150,7 +10886,7 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey,
         STATS_CMD_NOKEY(c, bop_gbp);
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
     if (ret != ENGINE_SUCCESS && elem_array != NULL) {
@@ -11163,8 +10899,8 @@ static void process_bop_update_prepare_nread(conn *c, int cmd,
 {
     assert(cmd == (int)OPERATION_BOP_UPDATE);
     eitem *elem = NULL;
-
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
     if (vlen > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
@@ -11173,13 +10909,7 @@ static void process_bop_update_prepare_nread(conn *c, int cmd,
         else
             ((value_item*)elem)->len = vlen;
     }
-
-    if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_bop_update(key, nkey, false);
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
+    if (ret == ENGINE_SUCCESS) {
         c->ritem   = ((value_item *)elem)->ptr;
         c->rlbytes = vlen;
         c->coll_eitem  = (void *)elem;
@@ -11188,9 +10918,10 @@ static void process_bop_update_prepare_nread(conn *c, int cmd,
         c->coll_key    = key;
         c->coll_nkey   = nkey;
         conn_set_state(c, conn_nread);
-        break;
-    default:
-        /* ret == ENGINE_E2BIG || ret == ENGINE_ENOMEM */
+    } else {
+        if (settings.detail_enabled) {
+            stats_prefix_record_bop_update(key, nkey, false);
+        }
         STATS_CMD_NOKEY(c, bop_update);
         if (ret == ENGINE_E2BIG) out_string(c, "CLIENT_ERROR too large value");
         else                     out_string(c, "SERVER_ERROR out of memory");
@@ -11207,22 +10938,15 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
                                       const int vlen)
 {
     eitem *elem;
-
     ENGINE_ERROR_CODE ret;
+
     if (vlen > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else {
         ret = mc_engine.v1->btree_elem_alloc(mc_engine.v0, c, key, nkey,
                                              nbkey, neflag, vlen, &elem);
     }
-
-    if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_bop_insert(key, nkey, false);
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
-        {
+    if (ret == ENGINE_SUCCESS) {
         mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &c->einfo);
         memcpy((void*)c->einfo.score, bkey, (c->einfo.nscore==0 ? sizeof(uint64_t) : c->einfo.nscore));
         if (c->einfo.neflag > 0)
@@ -11234,21 +10958,21 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
         c->coll_key    = key;
         c->coll_nkey   = nkey;
         conn_set_state(c, conn_nread);
+    } else {
+        if (settings.detail_enabled) {
+            stats_prefix_record_bop_insert(key, nkey, false);
         }
-        break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
-    default:
         STATS_CMD_NOKEY(c, bop_insert);
         if (ret == ENGINE_E2BIG)        out_string(c, "CLIENT_ERROR too large value");
         else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
 
-        /* swallow the data line */
-        c->write_and_go = conn_swallow;
-        c->sbytes = vlen;
+        if (ret != ENGINE_DISCONNECT) {
+            /* swallow the data line */
+            c->write_and_go = conn_swallow;
+            c->sbytes = vlen;
+        }
     }
 }
 
@@ -11263,8 +10987,8 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
     if (cmd == OPERATION_BOP_MGET) {
         int bmget_count = c->coll_numkeys * c->coll_rcount;
         int eresult_array_size = c->coll_numkeys * sizeof(struct elems_result);
-        int respon_hdr_size = c->coll_numkeys * ((lenstr_size*2)+30);
-        int respon_bdy_size = bmget_count * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+lenstr_size+15);
+        int respon_hdr_size = c->coll_numkeys * ((UINT32_STR_LENG*2)+30);
+        int respon_bdy_size = bmget_count * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+UINT32_STR_LENG+15);
 
         need_size = eresult_array_size + respon_hdr_size + respon_bdy_size;
     }
@@ -11281,8 +11005,8 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
 
         elem_array_size = smget_count * (sizeof(eitem*) + (2*sizeof(uint32_t)));
         kmis_array_size = c->coll_numkeys * sizeof(uint32_t);
-        respon_hdr_size = (2*lenstr_size) + 30; /* result head and tail size */
-        respon_bdy_size = smget_count * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+(lenstr_size*2)+5); /* result body size */
+        respon_hdr_size = (2*UINT32_STR_LENG) + 30; /* result head and tail size */
+        respon_bdy_size = smget_count * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+(UINT32_STR_LENG*2)+5); /* result body size */
 
         need_size = elem_array_size + kmis_array_size + respon_hdr_size + respon_bdy_size;
       } else {
@@ -11296,8 +11020,8 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
         elem_array_size = (c->coll_rcount + c->coll_numkeys) * sizeof(eitem*);
         ehit_array_size = c->coll_rcount * sizeof(smget_ehit_t);
         emis_array_size = c->coll_numkeys * sizeof(smget_emis_t);
-        respon_hdr_size = (3*lenstr_size) + 50; /* result head and tail size */
-        respon_bdy_size = (c->coll_rcount * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+(lenstr_size*2)+10))
+        respon_hdr_size = (3*UINT32_STR_LENG) + 50; /* result head and tail size */
+        respon_bdy_size = (c->coll_rcount * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+(UINT32_STR_LENG*2)+10))
                         + (c->coll_numkeys * ((MAX_EFLAG_LENG*2+2) + 5)); /* result body size */
         need_size = elem_array_size + ehit_array_size + emis_array_size
                   + respon_hdr_size + respon_bdy_size;
@@ -11317,19 +11041,14 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
             ret = ENGINE_ENOMEM;
         }
     }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
-        {
+    if (ret == ENGINE_SUCCESS) {
         c->coll_strkeys = (void*)&c->memblist;
         ritem_set_first(c, CONN_RTYPE_MBLCK, vlen);
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 0;
         c->coll_op = cmd;
         conn_set_state(c, conn_nread);
-        }
-        break;
-    default:
+    } else {
 #ifdef SUPPORT_BOP_MGET
         if (cmd == OPERATION_BOP_MGET)
             STATS_CMD_NOKEY(c, bop_mget);
@@ -11364,16 +11083,13 @@ static void process_bop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         STATS_OKS(c, bop_create, key, nkey);
         out_string(c, "CREATED");
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     default:
         STATS_CMD_NOKEY(c, bop_create);
         if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
         else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
         else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP)      out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
@@ -11409,15 +11125,12 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
     switch (ret) {
     case ENGINE_SUCCESS:
         STATS_ELEM_HITS(c, bop_delete, key, nkey);
-        if (dropped == false) out_string(c, "DELETED");
-        else                  out_string(c, "DELETED_DROPPED");
+        if (dropped) out_string(c, "DELETED_DROPPED");
+        else         out_string(c, "DELETED");
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, bop_delete, key, nkey);
         out_string(c, "NOT_FOUND_ELEMENT");
-        break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, bop_delete, key, nkey);
@@ -11428,7 +11141,7 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
@@ -11462,14 +11175,6 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
         snprintf(temp, sizeof(temp), "%"PRIu64, result);
         out_string(c, temp);
         break;
-    case ENGINE_KEY_ENOENT:
-        if (incr) {
-            STATS_MISSES(c, bop_incr, key, nkey);
-        } else {
-            STATS_MISSES(c, bop_decr, key, nkey);
-        }
-        out_string(c, "NOT_FOUND");
-        break;
     case ENGINE_ELEM_ENOENT:
         if (incr) {
             STATS_NONE_HITS(c, bop_incr, key, nkey);
@@ -11478,20 +11183,28 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
         }
         out_string(c, "NOT_FOUND_ELEMENT");
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
-    case ENGINE_EINVAL:
-        out_string(c, "CLIENT_ERROR cannot increment or decrement non-numeric value");
+    case ENGINE_KEY_ENOENT:
+        if (incr) {
+            STATS_MISSES(c, bop_incr, key, nkey);
+        } else {
+            STATS_MISSES(c, bop_decr, key, nkey);
+        }
+        out_string(c, "NOT_FOUND");
         break;
     default:
-        if (ret == ENGINE_EBADTYPE)       out_string(c, "TYPE_MISMATCH");
+        if (incr) {
+            STATS_CMD_NOKEY(c, bop_incr);
+        } else {
+            STATS_CMD_NOKEY(c, bop_decr);
+        }
+        if (ret == ENGINE_EINVAL) out_string(c, "CLIENT_ERROR cannot increment or decrement non-numeric value");
+        else if (ret == ENGINE_EBADTYPE)  out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY)  out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_EBKEYOOR)  out_string(c, "OUT_OF_RANGE");
         else if (ret == ENGINE_EOVERFLOW) out_string(c, "OVERFLOWED");
         else if (ret == ENGINE_ENOMEM)    out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP)   out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
@@ -11683,8 +11396,8 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
 {
     assert(cmd == (int)OPERATION_MOP_INSERT || (int)OPERATION_MOP_UPDATE);
     eitem *elem = NULL;
-
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
     if (vlen > MAX_ELEMENT_BYTES) {
         ret = ENGINE_E2BIG;
     } else if (cmd == OPERATION_MOP_INSERT) {
@@ -11695,14 +11408,7 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
         else
             ((value_item*)elem)->len = vlen;
     }
-
-    if (settings.detail_enabled && ret != ENGINE_SUCCESS) {
-        stats_prefix_record_mop_insert(key, nkey, false);
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
-        {
+    if (ret == ENGINE_SUCCESS) {
         if (cmd == OPERATION_MOP_INSERT) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem, &c->einfo);
             ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
@@ -11717,26 +11423,25 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
         c->coll_nkey   = nkey;
         c->coll_field  = *field;
         conn_set_state(c, conn_nread);
-        break;
+    } else {
+        if (settings.detail_enabled) {
+            stats_prefix_record_mop_insert(key, nkey, false);
         }
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
-    default:
         if (cmd == OPERATION_MOP_INSERT) {
             STATS_CMD_NOKEY(c, mop_insert);
         } else if (cmd == OPERATION_MOP_UPDATE) {
             STATS_CMD_NOKEY(c, mop_update);
         }
-
         if (ret == ENGINE_E2BIG)        out_string(c, "CLIENT_ERROR too large value");
         else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
 
-        /* swallow the data line */
-        c->write_and_go = conn_swallow;
-        c->sbytes = vlen;
+        if (ret != ENGINE_DISCONNECT) {
+            /* swallow the data line */
+            c->write_and_go = conn_swallow;
+            c->sbytes = vlen;
+        }
     }
 }
 
@@ -11748,10 +11453,7 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
     if (mblck_list_alloc(&c->thread->mblck_pool, 1, flen, &c->memblist) < 0) {
         ret = ENGINE_ENOMEM;
     }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
-        {
+    if (ret == ENGINE_SUCCESS) {
         c->coll_strkeys = (void*)&c->memblist;
         ritem_set_first(c, CONN_RTYPE_MBLCK, flen);
         c->coll_ecount = 1;
@@ -11760,9 +11462,7 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
         c->coll_nkey = nkey;
         c->coll_lenkeys = flen;
         conn_set_state(c, conn_nread);
-        break;
-        }
-    default:
+    } else {
         if (cmd == OPERATION_MOP_DELETE) {
             STATS_CMD_NOKEY(c, mop_delete);
         } else if (cmd == OPERATION_MOP_GET) {
@@ -11793,16 +11493,13 @@ static void process_mop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         STATS_OKS(c, mop_create, key, nkey);
         out_string(c, "CREATED");
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     default:
         STATS_CMD_NOKEY(c, mop_create);
         if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
         else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
         else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_ENOTSUP)      out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
@@ -12852,9 +12549,6 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
         out_string(c, str);
         }
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, getattr, key, nkey);
         out_string(c, "NOT_FOUND");
@@ -12863,7 +12557,7 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
         STATS_CMD_NOKEY(c, getattr);
         if (ret == ENGINE_EBADATTR)     out_string(c, "ATTR_ERROR not found");
         else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
@@ -12975,9 +12669,6 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
         STATS_HITS(c, setattr, key, nkey);
         out_string(c, "OK");
         break;
-    case ENGINE_DISCONNECT:
-        conn_set_state(c, conn_closing);
-        break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, setattr, key, nkey);
         out_string(c, "NOT_FOUND");
@@ -12987,7 +12678,7 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
         if (ret == ENGINE_EBADATTR)       out_string(c, "ATTR_ERROR not found");
         else if (ret == ENGINE_EBADVALUE) out_string(c, "ATTR_ERROR bad value");
         else if (ret == ENGINE_ENOTSUP)   out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, ret);
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
@@ -14655,22 +14346,6 @@ static void release_independent_stats(void *stats)
     threadlocal_stats_destroy(stats);
 }
 
-static inline struct thread_stats *get_independent_stats(conn *c)
-{
-    if (mc_engine.v1->get_stats_struct != NULL) {
-        struct thread_stats *stats;
-        stats = mc_engine.v1->get_stats_struct(mc_engine.v0, (const void *)c);
-        if (stats) return stats;
-    }
-    return default_thread_stats;
-}
-
-static inline struct thread_stats *get_thread_stats(conn *c)
-{
-    struct thread_stats *stats = get_independent_stats(c);
-    return &stats[c->thread->index];
-}
-
 static void count_eviction(const void *cookie, const void *key, const int nkey)
 {
     TK(default_topkeys, evictions, key, nkey, get_current_time());
@@ -15706,6 +15381,15 @@ int main (int argc, char **argv)
     }
     if (settings.topkeys > 0) {
         default_topkeys = topkeys_init(settings.topkeys);
+    }
+    /* Do not use the thread_stats maintained by engine.
+     * Let's rethink about the mechanism and APIs. (FIXME)
+     */
+    if (mc_engine.v1->get_stats_struct != NULL ||
+        mc_engine.v1->aggregate_stats != NULL) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Failed to validate the engine stats API.\n");
+        exit(EXIT_FAILURE);
     }
 
     /* create unix mode sockets after dropping privileges */
