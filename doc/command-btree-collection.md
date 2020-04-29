@@ -93,7 +93,7 @@ END\r\n
 
 그 외의 response string과 의미는 아래와 같다.
 
-- "STROED" - 성공 (element만 삽입)
+- "STORED" - 성공 (element만 삽입)
 - “CREATED_STORED” - 성공 (collection 생성하고 element 삽입)
 - "REPLACED" : 성공 (element를 대체)
 - “NOT_FOUND” - key miss

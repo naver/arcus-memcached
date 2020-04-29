@@ -55,7 +55,7 @@ mop insert <key> <field> <bytes> [create <attributes>] [noreply|pipe]\r\n<data>\
 
 Response string과 그 의미는 아래와 같다.
 
-- "STROED" - 성공 (field, element 삽입)
+- "STORED" - 성공 (field, element 삽입)
 - “CREATED_STORED” - 성공 (collection 생성하고 field, element 삽입)
 - “NOT_FOUND” - key miss
 - “TYPE_MISMATCH” - 해당 item이 map collection이 아님
