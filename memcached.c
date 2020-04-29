@@ -9022,53 +9022,55 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
 
 static void process_config_command(conn *c, token_t *tokens, const size_t ntokens)
 {
+    char *config_key = tokens[SUBCOMMAND_TOKEN].value;
+
     if (ntokens < 3 || ntokens > 4) {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
 
-    if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "maxconns") == 0) {
+    if (strcmp(config_key, "maxconns") == 0) {
         process_maxconns_command(c, tokens, ntokens);
     }
+    else if (strcmp(config_key, "memlimit") == 0) {
+        process_memlimit_command(c, tokens, ntokens);
+    }
+    else if (strcmp(config_key, "max_list_size") == 0) {
+        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_LIST);
+    }
+    else if (strcmp(config_key, "max_set_size") == 0) {
+        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_SET);
+    }
+    else if (strcmp(config_key, "max_map_size") == 0) {
+        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_MAP);
+    }
+    else if (strcmp(config_key, "max_btree_size") == 0) {
+        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_BTREE);
+    }
+    else if (strcmp(config_key, "max_element_bytes") == 0) {
+        process_maxelembytes_command(c, tokens, ntokens);
+    }
+    else if (strcmp(config_key, "scrub_count") == 0) {
+        process_scrubcount_command(c, tokens, ntokens);
+    }
 #ifdef ENABLE_ZK_INTEGRATION
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "zkfailstop") == 0) {
+    else if (strcmp(config_key, "zkfailstop") == 0) {
         process_zkfailstop_command(c, tokens, ntokens);
     }
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "hbtimeout") == 0) {
+    else if (strcmp(config_key, "hbtimeout") == 0) {
         process_hbtimeout_command(c, tokens, ntokens);
     }
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "hbfailstop") == 0) {
+    else if (strcmp(config_key, "hbfailstop") == 0) {
         process_hbfailstop_command(c, tokens, ntokens);
     }
 #endif
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "memlimit") == 0) {
-        process_memlimit_command(c, tokens, ntokens);
-    }
 #ifdef ENABLE_STICKY_ITEM
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "sticky_limit") == 0) {
+    else if (strcmp(config_key, "sticky_limit") == 0) {
         process_stickylimit_command(c, tokens, ntokens);
     }
 #endif
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "scrub_count") == 0) {
-        process_scrubcount_command(c, tokens, ntokens);
-    }
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_list_size") == 0) {
-        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_LIST);
-    }
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_set_size") == 0) {
-        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_SET);
-    }
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_map_size") == 0) {
-        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_MAP);
-    }
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_btree_size") == 0) {
-        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_BTREE);
-    }
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "max_element_bytes") == 0) {
-        process_maxelembytes_command(c, tokens, ntokens);
-    }
-    else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "verbosity") == 0) {
+    else if (strcmp(config_key, "verbosity") == 0) {
         process_verbosity_command(c, tokens, ntokens);
     }
     else {
