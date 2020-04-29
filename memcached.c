@@ -10020,14 +10020,13 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
     struct elems_result eresult;
     eitem  **elem_array = NULL;
     uint32_t elem_count;
-    uint32_t req_count = count;
     uint32_t flags, i;
     bool     dropped;
     int      need_size;
     ENGINE_ERROR_CODE ret;
 
     ret = mc_engine.v1->set_elem_get(mc_engine.v0, c, key, nkey,
-                                     req_count, delete, drop_if_empty,
+                                     count, delete, drop_if_empty,
                                      &eresult, 0);
     CONN_CHECK_AND_SET_EWOULDBLOCK(ret, c);
     if (settings.detail_enabled) {
