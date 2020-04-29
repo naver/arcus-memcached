@@ -54,7 +54,7 @@ sop insert <key> <bytes> [create <attributes>] [noreply|pipe]\r\n<data>\r\n
 
 Response string과 그 의미는 아래와 같다.
 
-- "STROED" - 성공 (element만 삽입)
+- "STORED" - 성공 (element만 삽입)
 - “CREATED_STORED” - 성공 (collection 생성하고 element 삽입)
 - “NOT_FOUND” - key miss
 - “TYPE_MISMATCH” - 해당 item이 set collection이 아님
