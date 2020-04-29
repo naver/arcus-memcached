@@ -9082,19 +9082,17 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
 #ifdef ENABLE_ZK_INTEGRATION
 static void process_zkensemble_command(conn *c, token_t *tokens, const size_t ntokens)
 {
-    assert(c != NULL);
+    char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
+    bool valid = false;
 
     if (arcus_zk_cfg == NULL) {
         out_string(c, "ERROR not using ZooKeeper");
         return;
     }
 
-    bool valid = false;
-
     if (ntokens == 3) {
-        if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "get") == 0) {
+        if (strcmp(subcommand, "get") == 0) {
             char buf[1024];
-
             if (arcus_zk_get_ensemble(buf, sizeof(buf)-16) != 0) {
                 out_string(c, "ERROR failed to get the ensemble address");
             } else {
@@ -9102,17 +9100,16 @@ static void process_zkensemble_command(conn *c, token_t *tokens, const size_t nt
                 out_string(c, buf);
             }
             valid = true;
-        }
-        else if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "rejoin") == 0) {
-             if (arcus_zk_rejoin_ensemble() != 0) {
-               out_string(c, "ERROR failed to rejoin ensemble");
-             } else {
-               out_string(c, "Successfully rejoined");
-             }
-             valid = true;
+        } else if (strcmp(subcommand, "rejoin") == 0) {
+            if (arcus_zk_rejoin_ensemble() != 0) {
+                out_string(c, "ERROR failed to rejoin ensemble");
+            } else {
+                out_string(c, "Successfully rejoined");
+            }
+            valid = true;
         }
     } else if (ntokens == 4) {
-        if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "set") == 0) {
+        if (strcmp(subcommand, "set") == 0) {
             /* The ensemble is a comma separated list of host:port addresses.
              * host1:port1,host2:port2,...
              */
@@ -9124,66 +9121,62 @@ static void process_zkensemble_command(conn *c, token_t *tokens, const size_t nt
             valid = true;
         }
     }
-
     if (valid == false) {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
-        return;
     }
 }
 #endif
 
 static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
 {
-    char *opstr;
-    char *modestr = NULL;
-    char *filepath = NULL;
+    char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
+    char *modestr;
+    char *filepath;
     char *prefix = NULL;
     int  nprefix = -1; /* all prefixes */
+    bool valid = false;
 
     /* dump ascii command
      * dump start <mode> [<prefix>] filepath\r\n
      *   <mode> : key
      * dump stop\r\n
      */
-    opstr = tokens[1].value;
     if (ntokens == 3) {
-        if (memcmp(opstr, "stop", 4) != 0) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
+        if (memcmp(subcommand, "stop", 4) == 0) {
+            modestr = filepath = NULL;
+            valid = true;
         }
     } else if (ntokens == 5 || ntokens == 6) {
-        if (memcmp(opstr, "start", 5) != 0) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
-        }
-        modestr = tokens[2].value;
-        if (ntokens == 5) {
-            filepath = tokens[3].value;
-        } else {
-            prefix = tokens[3].value;
-            nprefix = tokens[3].length;
-            if (nprefix > PREFIX_MAX_LENGTH) {
-                out_string(c, "CLIENT_ERROR too long prefix name");
-                return;
+        if (memcmp(subcommand, "start", 5) == 0) {
+            modestr = tokens[2].value;
+            if (ntokens == 5) {
+                filepath = tokens[3].value;
+            } else {
+                prefix = tokens[3].value;
+                nprefix = tokens[3].length;
+                if (nprefix > PREFIX_MAX_LENGTH) {
+                    out_string(c, "CLIENT_ERROR too long prefix name");
+                    return;
+                }
+                if (nprefix == 6 && strncmp(prefix, "<null>", 6) == 0) {
+                    /* dump null prefix */
+                    prefix = NULL;
+                    nprefix = 0;
+                }
+                filepath = tokens[4].value;
             }
-            if (nprefix == 6 && strncmp(prefix, "<null>", 6) == 0) {
-                /* dump null prefix */
-                prefix = NULL;
-                nprefix = 0;
-            }
-            filepath = tokens[4].value;
+            valid = true;
         }
-    } else {
+    }
+    if (valid == false) {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
 
     ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->dump(mc_engine.v0, c, opstr, modestr,
+    ret = mc_engine.v1->dump(mc_engine.v0, c, subcommand, modestr,
                              prefix, nprefix, filepath);
     if (ret == ENGINE_SUCCESS) {
         out_string(c, "OK");
