@@ -2285,6 +2285,106 @@ static void process_bop_update_complete(conn *c)
 }
 
 #ifdef SUPPORT_BOP_MGET
+static ENGINE_ERROR_CODE
+process_bop_mget_single(conn *c, const char *key, size_t nkey,
+                        struct elems_result *eresultp,
+                        char *resultbuf, int *resultlen)
+{
+    char *respptr = resultbuf;
+    int   resplen;
+    ENGINE_ERROR_CODE ret;
+
+    ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c, key, nkey,
+                                       &c->coll_bkrange,
+                                       (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
+                                       c->coll_roffset, c->coll_rcount, false, false,
+                                       eresultp, 0);
+    /* The read-only operation do not return ENGINE_EWOULDBLOCK */
+    if (settings.detail_enabled) {
+        bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
+        stats_prefix_record_bop_get(key, nkey, is_hit);
+    }
+
+    if (ret == ENGINE_SUCCESS) {
+        do {
+            /* format : VALUE <key> <status> <flags> <ecount>\r\n */
+            sprintf(respptr, " %s %u %u\r\n",
+                             (eresultp->trimmed ? "TRIMMED" : "OK"),
+                             htonl(eresultp->flags), eresultp->elem_count);
+            resplen = strlen(respptr);
+
+            if ((add_iov(c, "VALUE ", 6) != 0) ||
+                (add_iov(c, key, nkey) != 0) ||
+                (add_iov(c, respptr, resplen) != 0)) {
+                ret = ENGINE_ENOMEM; break;
+            }
+            respptr += resplen;
+
+            for (int e = 0; e < eresultp->elem_count; e++) {
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                            eresultp->elem_array[e], &c->einfo);
+                sprintf(respptr, "ELEMENT ");
+                resplen = strlen(respptr);
+                resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
+
+                if ((add_iov(c, respptr, resplen) != 0) ||
+                    (add_iov_einfo_value_all(c, &c->einfo) != 0)) {
+                    ret = ENGINE_ENOMEM; break;
+                }
+                respptr += resplen;
+            }
+        } while(0);
+
+        if (ret == ENGINE_SUCCESS) {
+            STATS_ELEM_HITS(c, bop_get, key, nkey);
+        } else { /* ret == ENGINE_ENOMEM */
+            STATS_CMD_NOKEY(c, bop_get);
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c,
+                                             eresultp->elem_array,
+                                             eresultp->elem_count);
+            free(eresultp->elem_array);
+            eresultp->elem_array = NULL;
+            eresultp->elem_count = 0;
+        }
+    } else {
+        if (ret == ENGINE_ELEM_ENOENT) {
+            STATS_NONE_HITS(c, bop_get, key, nkey);
+            sprintf(respptr, " %s\r\n", "NOT_FOUND_ELEMENT");
+            ret = ENGINE_SUCCESS;
+        }
+        else if (ret == ENGINE_KEY_ENOENT || ret == ENGINE_EBKEYOOR || ret == ENGINE_UNREADABLE) {
+            STATS_MISSES(c, bop_get, key, nkey);
+            if (ret == ENGINE_KEY_ENOENT)    sprintf(respptr, " %s\r\n", "NOT_FOUND");
+            else if (ret == ENGINE_EBKEYOOR) sprintf(respptr, " %s\r\n", "OUT_OF_RANGE");
+            else                             sprintf(respptr, " %s\r\n", "UNREADABLE");
+            ret = ENGINE_SUCCESS;
+        }
+        else if (ret == ENGINE_EBADTYPE || ret == ENGINE_EBADBKEY) {
+            STATS_CMD_NOKEY(c, bop_get);
+            if (ret == ENGINE_EBADTYPE) sprintf(respptr, " %s\r\n", "TYPE_MISMATCH");
+            else                        sprintf(respptr, " %s\r\n", "BKEY_MISMATCH");
+            ret = ENGINE_SUCCESS;
+        }
+        else {
+            /* ENGINE_ENOMEM or ENGINE_DISCONNECT or SERVER error */
+            STATS_CMD_NOKEY(c, bop_get);
+        }
+        if (ret == ENGINE_SUCCESS) {
+            resplen = strlen(respptr);
+            if ((add_iov(c, "VALUE ", 6) != 0) ||
+                (add_iov(c, key, nkey) != 0) ||
+                (add_iov(c, respptr, resplen) != 0)) {
+                ret = ENGINE_ENOMEM;
+            }
+            respptr += resplen;
+        }
+    }
+    if (ret == ENGINE_SUCCESS) {
+        *resultlen = (respptr - resultbuf);
+    }
+    return ret;
+}
+
 static void process_bop_mget_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_BOP_MGET);
@@ -2292,11 +2392,9 @@ static void process_bop_mget_complete(conn *c)
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     struct elems_result *eresult = (struct elems_result *)c->coll_eitem;
-    uint32_t tot_elem_count = 0;
-    uint32_t tot_access_count = 0;
+    char *resultptr = (char*)eresult + (c->coll_numkeys * sizeof(struct elems_result));
+    int k,resultlen;
     token_t *key_tokens;
-    char    *key;
-    size_t   nkey;
 
     key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
     if (key_tokens != NULL) {
@@ -2308,126 +2406,39 @@ static void process_bop_mget_complete(conn *c)
         ret = ENGINE_ENOMEM;
     }
     if (ret == ENGINE_SUCCESS) {
-        uint32_t cur_elem_count = 0;
-        uint32_t cur_access_count = 0;
-        uint32_t flags, k, e;
-        bool trimmed;
-        char *resultptr = (char*)eresult + (c->coll_numkeys * sizeof(struct elems_result));
-        int   resultlen;
-
         if (c->coll_bkrange.to_nbkey == BKEY_NULL) {
             memcpy(c->coll_bkrange.to_bkey, c->coll_bkrange.from_bkey,
                    (c->coll_bkrange.from_nbkey==0 ? sizeof(uint64_t) : c->coll_bkrange.from_nbkey));
             c->coll_bkrange.to_nbkey = c->coll_bkrange.from_nbkey;
         }
-
         for (k = 0; k < c->coll_numkeys; k++) {
-            key = key_tokens[k].value;
-            nkey = key_tokens[k].length;
-
-            ret = mc_engine.v1->btree_elem_get(mc_engine.v0, c, key, nkey,
-                                               &c->coll_bkrange,
-                                               (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
-                                               c->coll_roffset, c->coll_rcount, false, false,
-                                               &eresult[k], 0);
-            /* The read-only operation do not return ENGINE_EWOULDBLOCK */
-            if (settings.detail_enabled) {
-                bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
-                stats_prefix_record_bop_get(key, nkey, is_hit);
+            ret = process_bop_mget_single(c, key_tokens[k].value, key_tokens[k].length,
+                                          &eresult[k], resultptr, &resultlen);
+            if (ret != ENGINE_SUCCESS) {
+                break; /* ENGINE_ENOMEM or ENGINE_DISCONNECT or SEVERE error */
             }
-
-            if (ret == ENGINE_SUCCESS) {
-              cur_elem_count = eresult[k].elem_count;
-              cur_access_count = eresult[k].access_count;
-              flags = eresult[k].flags;
-              trimmed = eresult[k].trimmed;
-              do {
-                sprintf(resultptr, " %s %u %u\r\n",
-                        (trimmed==false ? "OK" : "TRIMMED"), htonl(flags), cur_elem_count);
-                if ((add_iov(c, "VALUE ", 6) != 0) ||
-                    (add_iov(c, key, nkey) != 0) ||
-                    (add_iov(c, resultptr, strlen(resultptr)) != 0)) {
-                    STATS_CMD_NOKEY(c, bop_get);
-                    ret = ENGINE_ENOMEM; break;
-                }
-                resultptr += strlen(resultptr);
-
-                for (e = 0; e < cur_elem_count; e++) {
-                    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                                eresult[k].elem_array[e], &c->einfo);
-                    sprintf(resultptr, "ELEMENT ");
-                    resultlen = strlen(resultptr);
-                    resultlen += make_bop_elem_response(resultptr + resultlen, &c->einfo);
-
-                    if ((add_iov(c, resultptr, resultlen) != 0) ||
-                        (add_iov_einfo_value_all(c, &c->einfo) != 0))
-                    {
-                        ret = ENGINE_ENOMEM; break;
-                    }
-                    resultptr += resultlen;
-                }
-                if (ret == ENGINE_SUCCESS) {
-                    STATS_ELEM_HITS(c, bop_get, key, nkey);
-                } else { /* ret == ENGINE_ENOMEM */
-                    STATS_CMD_NOKEY(c, bop_get);
-                }
-              } while(0);
-
-              /* calculate total elem_count and access_count */
-              tot_elem_count += cur_elem_count;
-              cur_elem_count = 0;
-              tot_access_count += cur_access_count;
-              cur_access_count = 0;
-
-              if (ret != ENGINE_SUCCESS) {
-                  break; /* ret == ENGINE_ENOMEM */
-              }
-            } else {
-                if (ret == ENGINE_ELEM_ENOENT) {
-                    STATS_NONE_HITS(c, bop_get, key, nkey);
-                    sprintf(resultptr, " %s\r\n", "NOT_FOUND_ELEMENT");
-                }
-                else if (ret == ENGINE_KEY_ENOENT || ret == ENGINE_EBKEYOOR || ret == ENGINE_UNREADABLE) {
-                    STATS_MISSES(c, bop_get, key, nkey);
-                    if (ret == ENGINE_KEY_ENOENT)    sprintf(resultptr, " %s\r\n", "NOT_FOUND");
-                    else if (ret == ENGINE_EBKEYOOR) sprintf(resultptr, " %s\r\n", "OUT_OF_RANGE");
-                    else                             sprintf(resultptr, " %s\r\n", "UNREADABLE");
-                }
-                else if (ret == ENGINE_EBADTYPE || ret == ENGINE_EBADBKEY) {
-                    STATS_CMD_NOKEY(c, bop_get);
-                    if (ret == ENGINE_EBADTYPE) sprintf(resultptr, " %s\r\n", "TYPE_MISMATCH");
-                    else                        sprintf(resultptr, " %s\r\n", "BKEY_MISMATCH");
-                }
-                else {
-                    /* ENGINE_ENOMEM or ENGINE_DISCONNECT or SERVER error */
-                    break;
-                }
-                if ((add_iov(c, "VALUE ", 6) != 0) ||
-                    (add_iov(c, key, nkey) != 0) ||
-                    (add_iov(c, resultptr, strlen(resultptr)) != 0)) {
-                    ret = ENGINE_ENOMEM; break;
-                }
-                resultptr += strlen(resultptr);
-            }
+            resultptr += resultlen;
         }
         if (k == c->coll_numkeys) {
-            ret = ENGINE_SUCCESS;
             sprintf(resultptr, "END\r\n");
             if ((add_iov(c, resultptr, strlen(resultptr)) != 0) ||
                 (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
                 ret = ENGINE_ENOMEM;
             }
         }
-        if (ret != ENGINE_SUCCESS) {
-            /* ENGINE_ENOMEM or ENGINE_DISCONNECT or SEVERE error */
-            /* release elements */
-            /* In case k == c->coll_numkeys when ret is ENGINE_ENOMEM */
-            for (int e = 0; e <= k && e < c->coll_numkeys; e++) {
-                if (eresult[e].elem_array != NULL) {
+        if (ret != ENGINE_SUCCESS) { /* release elements */
+            int bop_get_count = k;
+            for (k = 0; k < bop_get_count; k++) {
+                /* Individual bop get might not get elements.
+                 * So, we check the element array is not empty.
+                 */
+                if (eresult[k].elem_array != NULL) {
                     mc_engine.v1->btree_elem_release(mc_engine.v0, c,
-                                                     eresult[e].elem_array, eresult[e].elem_count);
-                    free(eresult[e].elem_array);
-                    eresult[e].elem_array = NULL;
+                                                     eresult[k].elem_array,
+                                                     eresult[k].elem_count);
+                    free(eresult[k].elem_array);
+                    eresult[k].elem_array = NULL;
+                    eresult[k].elem_count = 0;
                 }
             }
         }
@@ -2438,10 +2449,15 @@ static void process_bop_mget_complete(conn *c)
         STATS_OKS_NOKEY(c, bop_mget);
         /* Remember this command so we can garbage collect it later */
         /* c->coll_eitem  = (void *)elem_array; */
-        c->coll_ecount = tot_elem_count;
-        c->coll_op     = OPERATION_BOP_MGET;
+        c->coll_ecount = 0;
+        for (k = 0; k < c->coll_numkeys; k++) {
+            if (eresult[k].elem_array != NULL) {
+                c->coll_ecount += eresult[k].elem_count;
+            }
+        }
+        c->coll_op = OPERATION_BOP_MGET;
         conn_set_state(c, conn_mwrite);
-        c->msgcurr     = 0;
+        c->msgcurr = 0;
         break;
       default:
         STATS_CMD_NOKEY(c, bop_mget);
@@ -2455,7 +2471,6 @@ static void process_bop_mget_complete(conn *c)
     if (key_tokens != NULL) {
         token_buff_release(&c->thread->token_buff, key_tokens);
     }
-
     if (ret != ENGINE_SUCCESS) {
         if (c->coll_strkeys != NULL) {
             /* free key string memory blocks */
