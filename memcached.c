@@ -2873,6 +2873,92 @@ static char *get_suffix_buffer(conn *c)
     return suffix;
 }
 
+static ENGINE_ERROR_CODE
+process_get_single(conn *c, char *key, size_t nkey, bool return_cas)
+{
+    item *it;
+    char *cas_val = NULL;
+    int   cas_len = 0;
+    ENGINE_ERROR_CODE ret;
+
+    ret = mc_engine.v1->get(mc_engine.v0, c, &it, key, nkey, 0);
+    if (ret != ENGINE_SUCCESS) {
+        it = NULL;
+    }
+    if (settings.detail_enabled) {
+        stats_prefix_record_get(key, nkey, (it != NULL));
+    }
+
+    if (it) {
+        if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
+            mc_engine.v1->release(mc_engine.v0, c, it);
+            return ENGINE_ENOMEM;
+        }
+        assert(hinfo_check_ascii_tail_string(&c->hinfo) == 0); /* check "\r\n" */
+
+        /* Rebuild the suffix */
+        char *suffix = get_suffix_buffer(c);
+        if (suffix == NULL) {
+            mc_engine.v1->release(mc_engine.v0, c, it);
+            return ENGINE_ENOMEM;
+        }
+        int suffix_len = snprintf(suffix, SUFFIX_SIZE, " %u %u\r\n",
+                                  htonl(c->hinfo.flags), c->hinfo.nbytes - 2);
+
+        /* rebuild cas value */
+        if (return_cas) {
+            cas_val = get_suffix_buffer(c);
+            if (cas_val == NULL) {
+                mc_engine.v1->release(mc_engine.v0, c, it);
+                return ENGINE_ENOMEM;
+            }
+            cas_len = snprintf(cas_val, SUFFIX_SIZE, " %"PRIu64"\r\n", c->hinfo.cas);
+            suffix_len -= 2; /* remove "\r\n" from suffix string */
+        }
+
+        /* Construct the response. Each hit adds three elements to the
+         * outgoing data list:
+         *   VALUE <key> <falgs> <bytes>[ <cas>]\r\n" + "<data>\r\n"
+         */
+        if (add_iov(c, "VALUE ", 6) != 0 ||
+            add_iov(c, c->hinfo.key, c->hinfo.nkey) != 0 ||
+            add_iov(c, suffix, suffix_len) != 0 ||
+            (return_cas && add_iov(c, cas_val, cas_len) != 0) ||
+            add_iov_hinfo_value_all(c, &c->hinfo) != 0)
+        {
+            mc_engine.v1->release(mc_engine.v0, c, it);
+            return ENGINE_ENOMEM;
+        }
+
+        /* save the item */
+        if (c->ileft >= c->isize) {
+            item **new_list = realloc(c->ilist, sizeof(item *) * c->isize * 2);
+            if (new_list) {
+                c->isize *= 2;
+                c->ilist = new_list;
+            } else {
+                mc_engine.v1->release(mc_engine.v0, c, it);
+                return ENGINE_ENOMEM;/* out of memory */
+            }
+        }
+        *(c->ilist + c->ileft) = it;
+        c->ileft++;
+
+        if (settings.verbose > 1) {
+            mc_logger->log(EXTENSION_LOG_DEBUG, c, ">%d sending key %s\n",
+                           c->sfd, key);
+        }
+        /* item_get() has incremented it->refcount for us */
+        STATS_HITS(c, get, key, nkey);
+        MEMCACHED_COMMAND_GET(c->sfd, key, nkey, c->hinfo.nbytes, c->hinfo.cas);
+    } else {
+        STATS_MISSES(c, get, key, nkey);
+        MEMCACHED_COMMAND_GET(c->sfd, key, nkey, -1, 0);
+    }
+    /* Even if the key is not found, return ENGINE_SUCCESS.  */
+    return ENGINE_SUCCESS;
+}
+
 static void process_mget_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_MGET);
@@ -2880,10 +2966,7 @@ static void process_mget_complete(conn *c)
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     token_t *key_tokens;
-    item    *it;
-    char    *key;
-    size_t   nkey;
-    uint32_t k, nitems;
+    bool return_cas = false;
 
     do {
         key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
@@ -2897,75 +2980,29 @@ static void process_mget_complete(conn *c)
         } else {
             ret = ENGINE_ENOMEM; break;
         }
+
         /* do get operation for each key */
-        nitems = 0;
-        for (k = 0; k < c->coll_numkeys; k++) {
-            key = key_tokens[k].value;
-            nkey = key_tokens[k].length;
-
-            ret = mc_engine.v1->get(mc_engine.v0, c, &it, key, nkey, 0);
+        for (int k = 0; k < c->coll_numkeys; k++) {
+            ret = process_get_single(c, key_tokens[k].value, key_tokens[k].length,
+                                     return_cas);
             if (ret != ENGINE_SUCCESS) {
-                it = NULL;
-            }
-            if (settings.detail_enabled) {
-                stats_prefix_record_get(key, nkey, NULL != it);
-            }
-            if (it) {
-                /* get_item_info() always returns true. */
-                (void)mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo);
-                assert(hinfo_check_ascii_tail_string(&c->hinfo) == 0); /* check "\r\n" */
-
-                /* prepare item array */
-                if (nitems >= c->isize) {
-                    item **new_list = realloc(c->ilist, sizeof(item *) * c->isize * 2);
-                    if (new_list) {
-                        c->isize *= 2;
-                        c->ilist = new_list;
-                    } else {
-                        mc_engine.v1->release(mc_engine.v0, c, it);
-                        break; /* out of memory */
-                    }
-                }
-
-                /* Rebuild the suffix */
-                char *suffix = get_suffix_buffer(c);
-                if (suffix == NULL) {
-                    mc_engine.v1->release(mc_engine.v0, c, it);
-                    break; /* out of memory */
-                }
-                int suffix_len = snprintf(suffix, SUFFIX_SIZE, " %u %u\r\n",
-                                          htonl(c->hinfo.flags), c->hinfo.nbytes - 2);
-
-                MEMCACHED_COMMAND_GET(c->sfd, c->hinfo.key, c->hinfo.nkey,
-                                      c->hinfo.nbytes, c->hinfo.cas);
-                if (add_iov(c, "VALUE ", 6) != 0 ||
-                    add_iov(c, c->hinfo.key, c->hinfo.nkey) != 0 ||
-                    add_iov(c, suffix, suffix_len) != 0 ||
-                    add_iov_hinfo_value_all(c, &c->hinfo) != 0)
-                {
-                    mc_engine.v1->release(mc_engine.v0, c, it);
-                    break; /* out of memory */
-                }
-
-                if (settings.verbose > 1) {
-                    mc_logger->log(EXTENSION_LOG_DEBUG, c, ">%d sending key %s\n",
-                                   c->sfd, (char*)c->hinfo.key);
-                }
-
-                /* item_get() has incremented it->refcount for us */
-                STATS_HITS(c, get, key, nkey);
-                *(c->ilist + nitems) = it;
-                nitems++;
-            } else {
-                ret = ENGINE_SUCCESS; /* FIXME */
-                MEMCACHED_COMMAND_GET(c->sfd, key, nkey, -1, 0);
-                STATS_MISSES(c, get, key, nkey);
+                break; /* ret == ENGINE_ENOMEM*/
             }
         }
 
+        /* Some items and suffixes might have saved in the above execution.
+         * To release the items and free the suffixes, the below code is needed.
+         */
         c->icurr = c->ilist;
-        c->ileft = nitems;
         c->suffixcurr = c->suffixlist;
+
+        if (ret != ENGINE_SUCCESS) {
+            /* Releasing items on ilist and freeing suffixes will be
+             * performed later by calling out_string() function.
+             * See conn_write() and conn_mwrite() state.
+             */
+            break;
+        }
 
         if (settings.verbose > 1) {
             mc_logger->log(EXTENSION_LOG_DEBUG, c, ">%d END\n", c->sfd);
@@ -2975,8 +3012,8 @@ static void process_mget_complete(conn *c)
          * reliable to add END\r\n to the buffer, because it might not end
          * in \r\n. So we send SERVER_ERROR instead.
          */
-        if (k < c->coll_numkeys || add_iov(c, "END\r\n", 5) != 0
-            || (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+        if ((add_iov(c, "END\r\n", 5) != 0) ||
+            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
             /* Releasing items on ilist and freeing suffixes will be
              * performed later by calling out_string() function.
              * See conn_write() and conn_mwrite() state.
@@ -2985,12 +3022,10 @@ static void process_mget_complete(conn *c)
         }
     } while(0);
 
-    switch(ret) {
-      case ENGINE_SUCCESS:
+    if (ret == ENGINE_SUCCESS) {
         conn_set_state(c, conn_mwrite);
         c->msgcurr = 0;
-        break;
-     default:
+    } else {
         if (ret == ENGINE_EBADVALUE)   out_string(c, "CLIENT_ERROR bad data chunk");
         else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory writing get response");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
@@ -8197,142 +8232,66 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens)
 static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens, bool return_cas)
 {
     assert(c != NULL);
-    ENGINE_ERROR_CODE ret;
-    item *it;
-    char *key;
-    size_t nkey;
-    int nitems = 0;
-    int cas_len = 0;
-    char *cas_val = NULL;
     token_t *key_token = &tokens[KEY_TOKEN];
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     do {
         while (key_token->length != 0) {
-            key = key_token->value;
-            nkey = key_token->length;
-            if (nkey > KEY_MAX_LENGTH) {
-                out_string(c, "CLIENT_ERROR bad command line format");
-                return;
+            if (key_token->length > KEY_MAX_LENGTH) {
+                ret = ENGINE_EINVAL; break;
             }
-
-            ret = mc_engine.v1->get(mc_engine.v0, c, &it, key, nkey, 0);
+            /* do get operation for each key */
+            ret = process_get_single(c, key_token->value, key_token->length,
+                                     return_cas);
             if (ret != ENGINE_SUCCESS) {
-                it = NULL;
+                break; /* ret == ENGINE_ENOMEM */
             }
-            if (settings.detail_enabled) {
-                stats_prefix_record_get(key, nkey, NULL != it);
-            }
-
-            if (it) {
-                if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
-                    mc_engine.v1->release(mc_engine.v0, c, it);
-                    out_string(c, "SERVER_ERROR error getting item data");
-                    break;
-                }
-                assert(hinfo_check_ascii_tail_string(&c->hinfo) == 0); /* check "\r\n" */
-
-                if (nitems >= c->isize) {
-                    item **new_list = realloc(c->ilist, sizeof(item *) * c->isize * 2);
-                    if (new_list) {
-                        c->isize *= 2;
-                        c->ilist = new_list;
-                    } else {
-                        mc_engine.v1->release(mc_engine.v0, c, it);
-                        break;
-                    }
-                }
-
-                /* Rebuild the suffix */
-                char *suffix = get_suffix_buffer(c);
-                if (suffix == NULL) {
-                    out_string(c, "SERVER_ERROR out of memory rebuilding suffix");
-                    mc_engine.v1->release(mc_engine.v0, c, it);
-                    return;
-                }
-                int suffix_len = snprintf(suffix, SUFFIX_SIZE, " %u %u\r\n",
-                                          htonl(c->hinfo.flags), c->hinfo.nbytes - 2);
-
-                /* rebuild cas value */
-                if (return_cas) {
-                    cas_val = get_suffix_buffer(c);
-                    if (cas_val == NULL) {
-                        out_string(c, "SERVER_ERROR out of memory making CAS suffix");
-                        mc_engine.v1->release(mc_engine.v0, c, it);
-                        return;
-                    }
-                    cas_len = snprintf(cas_val, SUFFIX_SIZE, " %"PRIu64"\r\n", c->hinfo.cas);
-                    suffix_len -= 2; /* remove "\r\n" from suffix string */
-                }
-
-                MEMCACHED_COMMAND_GET(c->sfd, c->hinfo.key, c->hinfo.nkey, c->hinfo.nbytes, c->hinfo.cas);
-                /*
-                 * Construct the response. Each hit adds three elements to the
-                 * outgoing data list:
-                 *   "VALUE "
-                 *   key
-                 *   " " + flags + " " + data length + "\r\n" + data (with \r\n)
-                 */
-                if (add_iov(c, "VALUE ", 6) != 0 ||
-                    add_iov(c, c->hinfo.key, c->hinfo.nkey) != 0 ||
-                    add_iov(c, suffix, suffix_len) != 0 ||
-                    (return_cas && add_iov(c, cas_val, cas_len) != 0) ||
-                    add_iov_hinfo_value_all(c, &c->hinfo) != 0)
-                {
-                    mc_engine.v1->release(mc_engine.v0, c, it);
-                    break;
-                }
-
-                if (settings.verbose > 1) {
-                    mc_logger->log(EXTENSION_LOG_DEBUG, c, ">%d sending key %s\n",
-                                   c->sfd, (char*)c->hinfo.key);
-                }
-                /* item_get() has incremented it->refcount for us */
-                STATS_HITS(c, get, key, nkey);
-                *(c->ilist + nitems) = it;
-                nitems++;
-            } else {
-                STATS_MISSES(c, get, key, nkey);
-                MEMCACHED_COMMAND_GET(c->sfd, key, nkey, -1, 0);
-            }
-
             key_token++;
         }
+        if (ret != ENGINE_SUCCESS) break;
 
-        /*
-         * If the command string hasn't been fully processed, get the next set
-         * of tokens.
-         */
+        /* If the command string hasn't been fully processed, get the next set of tokens. */
         if (key_token->value != NULL) {
             /* The next reserved token has the length of untokenized command. */
             ntokens = tokenize_command(key_token->value, (key_token+1)->length,
                                        tokens, MAX_TOKENS);
             key_token = tokens;
         }
-
     } while(key_token->value != NULL);
 
+    /* Some items and suffixes might have saved in the above execution.
+     * To release the items and free the suffixes, the below code is needed.
+     */
     c->icurr = c->ilist;
-    c->ileft = nitems;
     c->suffixcurr = c->suffixlist;
+
+    if (ret != ENGINE_SUCCESS) {
+        /* Releasing items on ilist and freeing suffixes will be
+         * performed later by calling out_string() function.
+         * See conn_write() and conn_mwrite() state.
+         */
+        if (ret == ENGINE_EINVAL)
+            out_string(c, "CLIENT_ERROR bad command line format");
+        else /* ret == ENGINE_ENOMEM */
+            out_string(c, "SERVER_ERROR out of memory writing get response");
+        return;
+    }
 
     if (settings.verbose > 1) {
         mc_logger->log(EXTENSION_LOG_DEBUG, c, ">%d END\n", c->sfd);
     }
 
-    /*
-        If the loop was terminated because of out-of-memory, it is not
-        reliable to add END\r\n to the buffer, because it might not end
-        in \r\n. So we send SERVER_ERROR instead.
-    */
-    if (key_token->value != NULL || add_iov(c, "END\r\n", 5) != 0
-        || (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+    /* If the loop was terminated because of out-of-memory, it is not
+     * reliable to add END\r\n to the buffer, because it might not end
+     * in \r\n. So we send SERVER_ERROR instead.
+     */
+    if ((add_iov(c, "END\r\n", 5) != 0) ||
+        (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
         out_string(c, "SERVER_ERROR out of memory writing get response");
-    }
-    else {
+    } else {
         conn_set_state(c, conn_mwrite);
         c->msgcurr = 0;
     }
-    return;
 }
 
 static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt)
