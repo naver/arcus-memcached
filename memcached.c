@@ -2487,33 +2487,86 @@ static void process_bop_mget_complete(conn *c)
 #endif
 
 #ifdef SUPPORT_BOP_SMGET
-static char *get_smget_miss_response(int res)
-{
-    if (res == ENGINE_KEY_ENOENT)      return " NOT_FOUND\r\n";
-    else if (res == ENGINE_UNREADABLE) return " UNREADABLE\r\n";
-    else if (res == ENGINE_EBKEYOOR)   return " OUT_OF_RANGE\r\n";
-    else                               return " UNKNOWN\r\n";
-}
-
-static int make_smget_trim_response(char *bufptr, eitem_info *einfo)
-{
-    char *tmpptr = bufptr;
-
-    /* bkey */
-    if (einfo->nscore > 0) {
-        memcpy(tmpptr, " 0x", 3); tmpptr += 3;
-        safe_hexatostr(einfo->score, einfo->nscore, tmpptr);
-        tmpptr += strlen(tmpptr);
-    } else {
-        sprintf(tmpptr, " %"PRIu64"", *(uint64_t*)einfo->score);
-        tmpptr += strlen(tmpptr);
-    }
-    sprintf(tmpptr, "\r\n");
-    tmpptr += 2;
-    return (int)(tmpptr - bufptr);
-}
-
 #ifdef JHPARK_OLD_SMGET_INTERFACE
+static ENGINE_ERROR_CODE
+out_bop_smget_old_response(conn *c, token_t *key_tokens,
+                           eitem **elem_array, uint32_t *kfnd_array,
+                           uint32_t *flag_array, uint32_t *kmis_array,
+                           uint32_t elem_count, uint32_t kmis_count,
+                           bool trimmed, bool duplicated)
+{
+    char *respptr = ((char*)kmis_array + (c->coll_numkeys * sizeof(uint32_t)));
+    int   resplen;
+    int   i, kidx;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    do {
+        sprintf(respptr, "VALUE %u\r\n", elem_count);
+        if (add_iov(c, respptr, strlen(respptr)) != 0) {
+            ret = ENGINE_ENOMEM; break;
+        }
+        respptr += strlen(respptr);
+
+        for (i = 0; i < elem_count; i++) {
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                        elem_array[i], &c->einfo);
+            sprintf(respptr, " %u ", htonl(flag_array[i])); /* flags */
+            resplen = strlen(respptr);
+            resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
+            kidx = kfnd_array[i];
+            if ((add_iov(c, key_tokens[kidx].value, key_tokens[kidx].length) != 0) ||
+                (add_iov(c, respptr, resplen) != 0) ||
+                (add_iov_einfo_value_all(c, &c->einfo) != 0))
+            {
+                ret = ENGINE_ENOMEM; break;
+            }
+            respptr += resplen;
+        }
+        if (ret == ENGINE_ENOMEM) break;
+
+        sprintf(respptr, "MISSED_KEYS %u\r\n", kmis_count);
+        if (add_iov(c, respptr, strlen(respptr)) != 0) {
+            ret = ENGINE_ENOMEM; break;
+        }
+        respptr += strlen(respptr);
+
+        if (kmis_count > 0) {
+            for (i = 0; i < kmis_count; i++) {
+                /* the last key string does not have delimiter character */
+                kidx = kmis_array[i];
+                if ((add_iov(c, key_tokens[kidx].value, key_tokens[kidx].length) != 0) ||
+                    (add_iov(c, "\r\n", 2) != 0)) {
+                    ret = ENGINE_ENOMEM; break;
+                }
+            }
+            if (ret == ENGINE_ENOMEM) break;
+        }
+
+        if (trimmed == true) {
+            sprintf(respptr, (duplicated ? "DUPLICATED_TRIMMED\r\n" : "TRIMMED\r\n"));
+        } else {
+            sprintf(respptr, (duplicated ? "DUPLICATED\r\n" : "END\r\n"));
+        }
+        if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
+            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+            ret = ENGINE_ENOMEM; break;
+        }
+    } while(0);
+
+    if (ret == ENGINE_SUCCESS) {
+        /* Remember this command so we can garbage collect it later */
+        /* c->coll_eitem  = (void *)elem_array; */
+        c->coll_ecount = elem_count;
+        c->coll_op     = OPERATION_BOP_SMGET;
+        conn_set_state(c, conn_mwrite);
+        c->msgcurr     = 0;
+    } else {
+        mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
+        out_string(c, "SERVER_ERROR out of memory writing get response");
+    }
+    return ret;
+}
+
 static void process_bop_smget_complete_old(conn *c)
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
@@ -2557,80 +2610,13 @@ static void process_bop_smget_complete_old(conn *c)
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        do {
-            char *respptr = ((char*)kmis_array + (c->coll_numkeys * sizeof(uint32_t)));
-            int resplen;
-            int i, idx;
-
-            sprintf(respptr, "VALUE %u\r\n", elem_count);
-            if (add_iov(c, respptr, strlen(respptr)) != 0) {
-                ret = ENGINE_ENOMEM; break;
-            }
-            respptr += strlen(respptr);
-
-            for (i = 0; i < elem_count; i++) {
-                idx = kfnd_array[i];
-                if (add_iov(c, key_tokens[idx].value, key_tokens[idx].length) != 0) {
-                    ret = ENGINE_ENOMEM; break;
-                }
-                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                            elem_array[i], &c->einfo);
-                /* flags */
-                sprintf(respptr, " %u ", htonl(flag_array[i]));
-                resplen = strlen(respptr);
-                resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
-                if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
-                {
-                    ret = ENGINE_ENOMEM; break;
-                }
-                respptr += resplen;
-            }
-            if (ret == ENGINE_ENOMEM) break;
-
-            sprintf(respptr, "MISSED_KEYS %u\r\n", kmis_count);
-            if (add_iov(c, respptr, strlen(respptr)) != 0) {
-                ret = ENGINE_ENOMEM; break;
-            }
-            respptr += strlen(respptr);
-
-            if (kmis_count > 0) {
-                sprintf(respptr, "\r\n"); resplen = 2;
-                for (i = 0; i < kmis_count; i++) {
-                    /* the last key string does not have delimiter character */
-                    idx = kmis_array[i];
-                    if ((add_iov(c, key_tokens[idx].value, key_tokens[idx].length) != 0) ||
-                        (add_iov(c, respptr, resplen) != 0)) {
-                        ret = ENGINE_ENOMEM; break;
-                    }
-                }
-                respptr += resplen;
-                if (ret == ENGINE_ENOMEM) break;
-            }
-
-            if (trimmed == true) {
-                sprintf(respptr, (duplicated ? "DUPLICATED_TRIMMED\r\n" : "TRIMMED\r\n"));
-            } else {
-                sprintf(respptr, (duplicated ? "DUPLICATED\r\n" : "END\r\n"));
-            }
-            if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-                (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
-                ret = ENGINE_ENOMEM; break;
-            }
-        } while(0);
-
-        if (ret == ENGINE_SUCCESS) {
+        if (out_bop_smget_old_response(c, key_tokens, elem_array,
+                                       kfnd_array, flag_array, kmis_array,
+                                       elem_count, kmis_count,
+                                       trimmed, duplicated) == ENGINE_SUCCESS) {
             STATS_OKS_NOKEY(c, bop_smget);
-            /* Remember this command so we can garbage collect it later */
-            /* c->coll_eitem  = (void *)elem_array; */
-            c->coll_ecount = elem_count;
-            c->coll_op     = OPERATION_BOP_SMGET;
-            conn_set_state(c, conn_mwrite);
-            c->msgcurr     = 0;
         } else {
             STATS_CMD_NOKEY(c, bop_smget);
-            mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
-            out_string(c, "SERVER_ERROR out of memory writing get response");
         }
         break;
     default:
@@ -2663,6 +2649,130 @@ static void process_bop_smget_complete_old(conn *c)
     }
 }
 #endif
+
+static char *get_smget_miss_response(int res)
+{
+    if (res == ENGINE_KEY_ENOENT)      return " NOT_FOUND\r\n";
+    else if (res == ENGINE_UNREADABLE) return " UNREADABLE\r\n";
+    else if (res == ENGINE_EBKEYOOR)   return " OUT_OF_RANGE\r\n";
+    else                               return " UNKNOWN\r\n";
+}
+
+static int make_smget_trim_response(char *bufptr, eitem_info *einfo)
+{
+    char *tmpptr = bufptr;
+
+    /* bkey */
+    if (einfo->nscore > 0) {
+        memcpy(tmpptr, " 0x", 3); tmpptr += 3;
+        safe_hexatostr(einfo->score, einfo->nscore, tmpptr);
+        tmpptr += strlen(tmpptr);
+    } else {
+        sprintf(tmpptr, " %"PRIu64"", *(uint64_t*)einfo->score);
+        tmpptr += strlen(tmpptr);
+    }
+    sprintf(tmpptr, "\r\n");
+    tmpptr += 2;
+    return (int)(tmpptr - bufptr);
+}
+
+static ENGINE_ERROR_CODE
+out_bop_smget_response(conn *c, token_t *key_tokens, smget_result_t *smresp)
+{
+    char *respptr = (char *)&smresp->miss_kinfo[c->coll_numkeys];
+    int   resplen;
+    int   i, kidx;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    do {
+        /* Change smget response head string: VALUE => ELEMENTS.
+         * It makes incompatible with the clients of lower version.
+         */
+        sprintf(respptr, "ELEMENTS %u\r\n", smresp->elem_count);
+        if (add_iov(c, respptr, strlen(respptr)) != 0) {
+            ret = ENGINE_ENOMEM; break;
+        }
+        respptr += strlen(respptr);
+
+        for (i = 0; i < smresp->elem_count; i++) {
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                        smresp->elem_array[i], &c->einfo);
+            sprintf(respptr, " %u ", htonl(smresp->elem_kinfo[i].flag));
+            resplen = strlen(respptr);
+            resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
+            kidx = smresp->elem_kinfo[i].kidx;
+            if ((add_iov(c, key_tokens[kidx].value, key_tokens[kidx].length) != 0) ||
+                (add_iov(c, respptr, resplen) != 0) ||
+                (add_iov_einfo_value_all(c, &c->einfo) != 0))
+            {
+                ret = ENGINE_ENOMEM; break;
+            }
+            respptr += resplen;
+        }
+        if (ret == ENGINE_ENOMEM) break;
+
+        sprintf(respptr, "MISSED_KEYS %u\r\n", smresp->miss_count);
+        if (add_iov(c, respptr, strlen(respptr)) != 0) {
+            ret = ENGINE_ENOMEM; break;
+        }
+        respptr += strlen(respptr);
+
+        if (smresp->miss_count > 0) {
+            char *str = NULL;
+            for (i = 0; i < smresp->miss_count; i++) {
+                /* the last key string does not have delimiter character */
+                kidx = smresp->miss_kinfo[i].kidx;
+                str = get_smget_miss_response(smresp->miss_kinfo[i].code);
+                if ((add_iov(c, key_tokens[kidx].value, key_tokens[kidx].length) != 0) ||
+                    (add_iov(c, str, strlen(str)) != 0)) {
+                    ret = ENGINE_ENOMEM; break;
+                }
+            }
+            if (ret == ENGINE_ENOMEM) break;
+        }
+
+        sprintf(respptr, "TRIMMED_KEYS %u\r\n", smresp->trim_count);
+        if (add_iov(c, respptr, strlen(respptr)) != 0) {
+            ret = ENGINE_ENOMEM; break;
+        }
+        respptr += strlen(respptr);
+
+        if (smresp->trim_count > 0) {
+            for (i = 0; i < smresp->trim_count; i++) {
+                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                            smresp->trim_elems[i], &c->einfo);
+                resplen = make_smget_trim_response(respptr, &c->einfo);
+                kidx = smresp->trim_kinfo[i].kidx;
+                if ((add_iov(c, key_tokens[kidx].value, key_tokens[kidx].length) != 0) ||
+                    (add_iov(c, respptr, resplen) != 0)) {
+                    ret = ENGINE_ENOMEM; break;
+                }
+                respptr += resplen;
+            }
+            if (ret == ENGINE_ENOMEM) break;
+        }
+
+        sprintf(respptr, (smresp->duplicated ? "DUPLICATED\r\n" : "END\r\n"));
+        if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
+            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+            ret = ENGINE_ENOMEM; break;
+        }
+    } while(0);
+
+    if (ret == ENGINE_SUCCESS) {
+        /* Remember this command so we can garbage collect it later */
+        /* c->coll_eitem  = (void *)elem_array; */
+        c->coll_ecount = smresp->elem_count+smresp->trim_count;
+        c->coll_op     = OPERATION_BOP_SMGET;
+        conn_set_state(c, conn_mwrite);
+        c->msgcurr     = 0;
+    } else {
+        mc_engine.v1->btree_elem_release(mc_engine.v0, c, smresp->elem_array,
+                                         smresp->elem_count+smresp->trim_count);
+        out_string(c, "SERVER_ERROR out of memory writing get response");
+    }
+    return ret;
+}
 
 static void process_bop_smget_complete(conn *c)
 {
@@ -2714,98 +2824,10 @@ static void process_bop_smget_complete(conn *c)
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        do {
-            char *respptr = (char *)&smres.miss_kinfo[c->coll_numkeys];
-            int resplen;
-            int i, idx;
-
-            /* Change smget response head string: VALUE => ELEMENTS.
-             * It makes incompatible with the clients of lower version.
-             */
-            sprintf(respptr, "ELEMENTS %u\r\n", smres.elem_count);
-            if (add_iov(c, respptr, strlen(respptr)) != 0) {
-                ret = ENGINE_ENOMEM; break;
-            }
-            respptr += strlen(respptr);
-
-            for (i = 0; i < smres.elem_count; i++) {
-                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                            smres.elem_array[i], &c->einfo);
-                sprintf(respptr, " %u ", htonl(smres.elem_kinfo[i].flag));
-                resplen = strlen(respptr);
-                resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
-                idx = smres.elem_kinfo[i].kidx;
-                if ((add_iov(c, key_tokens[idx].value, key_tokens[idx].length) != 0) ||
-                    (add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
-                {
-                    ret = ENGINE_ENOMEM; break;
-                }
-                respptr += resplen;
-            }
-            if (ret == ENGINE_ENOMEM) break;
-
-            sprintf(respptr, "MISSED_KEYS %u\r\n", smres.miss_count);
-            if (add_iov(c, respptr, strlen(respptr)) != 0) {
-                ret = ENGINE_ENOMEM; break;
-            }
-            respptr += strlen(respptr);
-
-            if (smres.miss_count > 0) {
-                char *str = NULL;
-                for (i = 0; i < smres.miss_count; i++) {
-                    /* the last key string does not have delimiter character */
-                    idx = smres.miss_kinfo[i].kidx;
-                    str = get_smget_miss_response(smres.miss_kinfo[i].code);
-                    if ((add_iov(c, key_tokens[idx].value, key_tokens[idx].length) != 0) ||
-                        (add_iov(c, str, strlen(str)) != 0)) {
-                        ret = ENGINE_ENOMEM; break;
-                    }
-                }
-                if (ret == ENGINE_ENOMEM) break;
-            }
-
-            sprintf(respptr, "TRIMMED_KEYS %u\r\n", smres.trim_count);
-            if (add_iov(c, respptr, strlen(respptr)) != 0) {
-                ret = ENGINE_ENOMEM; break;
-            }
-            respptr += strlen(respptr);
-
-            if (smres.trim_count > 0) {
-                for (i = 0; i < smres.trim_count; i++) {
-                    mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                                smres.trim_elems[i], &c->einfo);
-                    resplen = make_smget_trim_response(respptr, &c->einfo);
-                    idx = smres.trim_kinfo[i].kidx;
-                    if ((add_iov(c, key_tokens[idx].value, key_tokens[idx].length) != 0) ||
-                        (add_iov(c, respptr, resplen) != 0)) {
-                        ret = ENGINE_ENOMEM; break;
-                    }
-                    respptr += resplen;
-                }
-                if (ret == ENGINE_ENOMEM) break;
-            }
-
-            sprintf(respptr, (smres.duplicated ? "DUPLICATED\r\n" : "END\r\n"));
-            if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-                (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
-                ret = ENGINE_ENOMEM; break;
-            }
-        } while(0);
-
-        if (ret == ENGINE_SUCCESS) {
+        if (out_bop_smget_response(c, key_tokens, &smres) == ENGINE_SUCCESS) {
             STATS_OKS_NOKEY(c, bop_smget);
-            /* Remember this command so we can garbage collect it later */
-            /* c->coll_eitem  = (void *)elem_array; */
-            c->coll_ecount = smres.elem_count+smres.trim_count;
-            c->coll_op     = OPERATION_BOP_SMGET;
-            conn_set_state(c, conn_mwrite);
-            c->msgcurr     = 0;
         } else {
             STATS_CMD_NOKEY(c, bop_smget);
-            mc_engine.v1->btree_elem_release(mc_engine.v0, c, smres.elem_array,
-                                             smres.elem_count+smres.trim_count);
-            out_string(c, "SERVER_ERROR out of memory writing get response");
         }
         break;
     default:
