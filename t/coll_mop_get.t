@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 14;
+use Test::More tests => 23;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -49,7 +49,7 @@ $cmd = "get mkey1"; $rst = "END";
 mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "get mkey2"; $rst = "END";
 mem_cmd_is($sock, $cmd, "", $rst);
-# Prepare Keys
+# Prepare Keys: mkey1
 $cmd = "mop insert mkey1 f7 6 create 11 0 0"; $val = "datum7"; $rst = "CREATED_STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "mop insert mkey1 f6 6"; $val = "datum6"; $rst = "STORED";
@@ -73,6 +73,34 @@ f4 6 datum4
 f5 6 datum5
 f6 6 datum6
 f7 6 datum7
+END";
+mem_cmd_is($sock, $cmd, $val, $rst);
+# Prepare Keys: mkey2
+my $data = "a"x4000;
+my $vlen = 4001;
+$cmd = "mop insert mkey2 f7 $vlen create 11 0 0"; $val = "$data" . "7"; $rst = "CREATED_STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "mop insert mkey2 f6 $vlen"; $val = "$data" . "6"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "mop insert mkey2 f5 $vlen"; $val = "$data" . "5"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "mop insert mkey2 f4 $vlen"; $val = "$data" . "4"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "mop insert mkey2 f3 $vlen"; $val = "$data" . "3"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "mop insert mkey2 f2 $vlen"; $val = "$data" . "2"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "mop insert mkey2 f1 $vlen"; $val = "$data" . "1"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "mop get mkey2 20 7"; $val = "f1 f2 f3 f4 f5 f6 f7";
+$rst = "VALUE 11 7
+f1 $vlen $data" . "1
+f2 $vlen $data" . "2
+f3 $vlen $data" . "3
+f4 $vlen $data" . "4
+f5 $vlen $data" . "5
+f6 $vlen $data" . "6
+f7 $vlen $data" . "7
 END";
 mem_cmd_is($sock, $cmd, $val, $rst);
 
@@ -100,6 +128,8 @@ mem_cmd_is($sock, $cmd, $val, $rst);
 
 # Finalize
 $cmd = "delete mkey1"; $rst = "DELETED";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "delete mkey2"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, "", $rst);
 
 # after test
