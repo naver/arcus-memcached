@@ -9473,9 +9473,6 @@ static void lqdetect_show(conn *c)
 
         char *count = get_suffix_buffer(c);
         if (count == NULL) {
-            out_string(c, "SERVER ERROR out of memory wrting show response");
-            lqdetect_buffer_release(c->lq_bufcnt);
-            c->lq_bufcnt = 0;
             ret = -1; break;
         }
         int count_len = snprintf(count, SUFFIX_SIZE, " %d\n", cmdcnt);
@@ -9485,9 +9482,6 @@ static void lqdetect_show(conn *c)
             add_iov(c, data, length) != 0 ||
             add_iov(c, "\n", 1) != 0)
         {
-            out_string(c, "SERVER ERROR out of memory wrting show response");
-            lqdetect_buffer_release(c->lq_bufcnt);
-            c->lq_bufcnt = 0;
             ret = -1; break;
         }
     }
@@ -9496,6 +9490,10 @@ static void lqdetect_show(conn *c)
     if (ret == 0) {
         conn_set_state(c, conn_mwrite);
         c->msgcurr = 0;
+    } else {
+        out_string(c, "SERVER ERROR out of memory writing show response");
+        lqdetect_buffer_release(c->lq_bufcnt);
+        c->lq_bufcnt = 0;
     }
 }
 
