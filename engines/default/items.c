@@ -7243,13 +7243,15 @@ ENGINE_ERROR_CODE btree_posi_find(const char *key, const uint32_t nkey, const bk
 ENGINE_ERROR_CODE btree_posi_find_with_get(const char *key, const uint32_t nkey,
                                            const bkey_range *bkrange, ENGINE_BTREE_ORDER order,
                                            const int count, int *position,
-                                           btree_elem_item **elem_array, uint32_t *elem_count,
-                                           uint32_t *elem_index, uint32_t *flags)
+                                           struct elems_result *eresult)
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
     int bkrtype = do_btree_bkey_range_type(bkrange);
     assert(bkrtype == BKEY_RANGE_TYPE_SIN);
+
+    eresult->elem_array = NULL;
+    eresult->elem_count = 0;
 
     LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
@@ -7266,12 +7268,20 @@ ENGINE_ERROR_CODE btree_posi_find_with_get(const char *key, const uint32_t nkey,
                 (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
                 ret = ENGINE_EBADBKEY; break;
             }
-            *position = do_btree_posi_find_with_get(info, bkrtype, bkrange, order, count,
-                                                    elem_array, elem_count, elem_index);
-            if (*position < 0) {
-                ret = ENGINE_ELEM_ENOENT; break;
+            if ((eresult->elem_array = (eitem **)malloc((2*count+1)*sizeof(eitem*))) == NULL) {
+                ret = ENGINE_ENOMEM; break;
             }
-            *flags = it->flags;
+            *position = do_btree_posi_find_with_get(info, bkrtype, bkrange, order, count,
+                                                    (btree_elem_item**)(eresult->elem_array),
+                                                    &(eresult->elem_count),
+                                                    &(eresult->access_count));
+            if (*position >= 0) {
+                eresult->flags = it->flags;
+            } else {
+                ret = ENGINE_ELEM_ENOENT;
+                free(eresult->elem_array);
+                eresult->elem_array = NULL;
+            }
         } while (0);
         do_item_release(it);
     }
@@ -7281,11 +7291,14 @@ ENGINE_ERROR_CODE btree_posi_find_with_get(const char *key, const uint32_t nkey,
 
 ENGINE_ERROR_CODE btree_elem_get_by_posi(const char *key, const uint32_t nkey,
                                          ENGINE_BTREE_ORDER order, int from_posi, int to_posi,
-                                         btree_elem_item **elem_array, uint32_t *elem_count, uint32_t *flags)
+                                         struct elems_result *eresult)
 {
     assert(from_posi >= 0 && to_posi >= 0);
     hash_item *it;
     ENGINE_ERROR_CODE ret;
+
+    eresult->elem_array = NULL;
+    eresult->elem_count = 0;
 
     LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
@@ -7317,10 +7330,19 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(const char *key, const uint32_t nkey,
                 forward = false;
                 rqcount = from_posi - to_posi + 1;
             }
-            ret = do_btree_elem_get_by_posi(info, from_posi, rqcount, forward, elem_array, elem_count);
-            if (ret != ENGINE_SUCCESS) /* ret == ENGINE_ELEM_ENOENT */
-                break;
-            *flags = it->flags;
+            if ((eresult->elem_array = (eitem **)malloc(rqcount * sizeof(eitem*))) == NULL) {
+                ret = ENGINE_ENOMEM; break;
+            }
+            ret = do_btree_elem_get_by_posi(info, from_posi, rqcount, forward,
+                                            (btree_elem_item**)(eresult->elem_array),
+                                            &(eresult->elem_count));
+            if (ret == ENGINE_SUCCESS) {
+                eresult->flags = it->flags;
+            } else {
+                /* ret == ENGINE_ELEM_ENOENT */
+                free(eresult->elem_array);
+                eresult->elem_array = NULL;
+            }
         } while (0);
         do_item_release(it);
     }

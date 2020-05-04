@@ -10627,6 +10627,7 @@ static void process_bop_position(conn *c, char *key, size_t nkey,
 static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *bkrange,
                             ENGINE_BTREE_ORDER order, const uint32_t count)
 {
+    struct elems_result eresult;
     eitem  **elem_array = NULL;
     uint32_t elem_count;
     uint32_t elem_index;
@@ -10634,21 +10635,19 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
     int      position;
     int      need_size;
 
-    need_size = ((count*2) + 1) * sizeof(eitem*);
-    if ((elem_array = (eitem **)malloc(need_size)) == NULL) {
-        out_string(c, "SERVER_ERROR out of memory");
-        return;
-    }
-
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_posi_find_with_get(mc_engine.v0, c, key, nkey,
                                                  bkrange, order, count, &position,
-                                                 elem_array, &elem_count, &elem_index,
-                                                 &flags, 0);
+                                                 &eresult, 0);
     if (settings.detail_enabled) {
         bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
         stats_prefix_record_bop_pwg(key, nkey, is_hit);
     }
+
+    elem_array = eresult.elem_array;
+    elem_count = eresult.elem_count;
+    elem_index = eresult.access_count;
+    flags = eresult.flags;
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -10702,6 +10701,10 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
         } else { /* ENGINE_ENOMEM */
             STATS_CMD_NOKEY(c, bop_pwg);
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
+            if (elem_array != NULL) {
+                free(elem_array);
+                elem_array = NULL;
+            }
             if (respbuf != NULL)
                 free(respbuf);
             out_string(c, "SERVER_ERROR out of memory writing get response");
@@ -10725,41 +10728,29 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
-
-    if (ret != ENGINE_SUCCESS && elem_array != NULL) {
-        free((void *)elem_array);
-    }
 }
 
 static void process_bop_gbp(conn *c, char *key, size_t nkey,
                             ENGINE_BTREE_ORDER order,
                             uint32_t from_posi, uint32_t to_posi)
 {
+    struct elems_result eresult;
     eitem  **elem_array = NULL;
     uint32_t elem_count;
     uint32_t flags, i;
-    int      est_count;
     int      need_size;
-
-    if (from_posi > MAX_BTREE_SIZE) from_posi = MAX_BTREE_SIZE;
-    if (to_posi   > MAX_BTREE_SIZE) to_posi   = MAX_BTREE_SIZE;
-
-    est_count = (from_posi <= to_posi ? (to_posi - from_posi + 1)
-                                      : (from_posi - to_posi + 1));
-    need_size = est_count * sizeof(eitem*);
-    if ((elem_array = (eitem **)malloc(need_size)) == NULL) {
-        out_string(c, "SERVER_ERROR out of memory");
-        return;
-    }
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_elem_get_by_posi(mc_engine.v0, c, key, nkey,
-                                               order, from_posi, to_posi,
-                                               elem_array, &elem_count, &flags, 0);
+                                               order, from_posi, to_posi, &eresult, 0);
     if (settings.detail_enabled) {
         bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
         stats_prefix_record_bop_gbp(key, nkey, is_hit);
     }
+
+    elem_array = eresult.elem_array;
+    elem_count = eresult.elem_count;
+    flags = eresult.flags;
 
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
@@ -10822,6 +10813,10 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey,
         } else { /* ENGINE_ENOMEM */
             STATS_CMD_NOKEY(c, bop_gbp);
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
+            if (elem_array != NULL) {
+                free(elem_array);
+                elem_array = NULL;
+            }
             if (respbuf != NULL)
                 free(respbuf);
             out_string(c, "SERVER_ERROR out of memory writing get response");
@@ -10843,10 +10838,6 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey,
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
-    }
-
-    if (ret != ENGINE_SUCCESS && elem_array != NULL) {
-        free((void *)elem_array);
     }
 }
 

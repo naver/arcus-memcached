@@ -549,12 +549,11 @@ ENGINE_ERROR_CODE btree_posi_find(const char *key, const uint32_t nkey, const bk
 ENGINE_ERROR_CODE btree_posi_find_with_get(const char *key, const uint32_t nkey,
                                            const bkey_range *bkrange, ENGINE_BTREE_ORDER order,
                                            const int count, int *position,
-                                           btree_elem_item **elem_array, uint32_t *elem_count,
-                                           uint32_t *elem_index, uint32_t *flags);
+                                           struct elems_result *eresult);
 
 ENGINE_ERROR_CODE btree_elem_get_by_posi(const char *key, const uint32_t nkey,
                                   ENGINE_BTREE_ORDER order, int from_posi, int to_posi,
-                                  btree_elem_item **elem_array, uint32_t *elem_count, uint32_t *flags);
+                                  struct elems_result *eresult);
 
 #ifdef SUPPORT_BOP_SMGET
 #ifdef JHPARK_OLD_SMGET_INTERFACE
