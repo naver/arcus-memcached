@@ -899,7 +899,7 @@ default_btree_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
                           const void* key, const int nkey,
                           const bkey_range *bkrange, const eflag_filter *efilter,
                           const uint32_t req_count, const bool drop_if_empty,
-                          uint32_t* del_count, uint32_t *access_count,
+                          uint32_t* del_count, uint32_t *opcost,
                           bool* dropped, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
@@ -908,7 +908,7 @@ default_btree_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = btree_elem_delete(key, nkey, bkrange, efilter, req_count,
-                            drop_if_empty, del_count, access_count, dropped, cookie);
+                            drop_if_empty, del_count, opcost, dropped, cookie);
     ACTION_AFTER_WRITE(cookie, ret);
     return ret;
 }
@@ -957,7 +957,7 @@ static ENGINE_ERROR_CODE
 default_btree_elem_count(ENGINE_HANDLE* handle, const void* cookie,
                          const void* key, const int nkey,
                          const bkey_range *bkrange, const eflag_filter *efilter,
-                         uint32_t* eitem_count, uint32_t* access_count,
+                         uint32_t* eitem_count, uint32_t* opcost,
                          uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
@@ -965,7 +965,7 @@ default_btree_elem_count(ENGINE_HANDLE* handle, const void* cookie,
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_READ(cookie, key, nkey);
-    ret = btree_elem_count(key, nkey, bkrange, efilter, eitem_count, access_count);
+    ret = btree_elem_count(key, nkey, bkrange, efilter, eitem_count, opcost);
     return ret;
 }
 
@@ -990,9 +990,8 @@ default_btree_posi_find_with_get(ENGINE_HANDLE* handle, const void* cookie,
                                  const char *key, const size_t nkey,
                                  const bkey_range *bkrange,
                                  ENGINE_BTREE_ORDER order, const uint32_t count,
-                                 int *position, eitem **eitem_array,
-                                 uint32_t *eitem_count, uint32_t *eitem_index,
-                                 uint32_t *flags, uint16_t vbucket)
+                                 int *position, struct elems_result *eresult,
+                                 uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
     ENGINE_ERROR_CODE ret;
@@ -1000,27 +999,22 @@ default_btree_posi_find_with_get(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_READ(cookie, key, nkey);
     ret = btree_posi_find_with_get(key, nkey, bkrange, order, count,
-                                   position, (btree_elem_item**)eitem_array,
-                                   eitem_count, eitem_index, flags);
+                                   position, eresult);
     return ret;
 }
 
 static ENGINE_ERROR_CODE
 default_btree_elem_get_by_posi(ENGINE_HANDLE* handle, const void* cookie,
                                const char *key, const size_t nkey,
-                               ENGINE_BTREE_ORDER order,
-                               int from_posi, int to_posi,
-                               eitem **eitem_array, uint32_t *eitem_count,
-                               uint32_t *flags, uint16_t vbucket)
+                               ENGINE_BTREE_ORDER order, int from_posi, int to_posi,
+                               struct elems_result *eresult, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_READ(cookie, key, nkey);
-    ret = btree_elem_get_by_posi(key, nkey, order, from_posi, to_posi,
-                                 (btree_elem_item**)eitem_array, eitem_count,
-                                 flags);
+    ret = btree_elem_get_by_posi(key, nkey, order, from_posi, to_posi, eresult);
     return ret;
 }
 

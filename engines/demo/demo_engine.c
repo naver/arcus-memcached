@@ -535,7 +535,7 @@ Demo_btree_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
                           const void* key, const int nkey,
                           const bkey_range *bkrange, const eflag_filter *efilter,
                           const uint32_t req_count, const bool drop_if_empty,
-                          uint32_t* del_count, uint32_t *access_count,
+                          uint32_t* del_count, uint32_t *opcost,
                           bool* dropped, uint16_t vbucket)
 {
     return ENGINE_ENOTSUP;
@@ -568,7 +568,7 @@ static ENGINE_ERROR_CODE
 Demo_btree_elem_count(ENGINE_HANDLE* handle, const void* cookie,
                          const void* key, const int nkey,
                          const bkey_range *bkrange, const eflag_filter *efilter,
-                         uint32_t* eitem_count, uint32_t* access_count,
+                         uint32_t* eitem_count, uint32_t* opcost,
                          uint16_t vbucket)
 {
     return ENGINE_ENOTSUP;
@@ -589,9 +589,8 @@ Demo_btree_posi_find_with_get(ENGINE_HANDLE* handle, const void* cookie,
                                  const char *key, const size_t nkey,
                                  const bkey_range *bkrange,
                                  ENGINE_BTREE_ORDER order, const uint32_t count,
-                                 int *position, eitem **eitem_array,
-                                 uint32_t *eitem_count, uint32_t *eitem_index,
-                                 uint32_t *flags, uint16_t vbucket)
+                                 int *position, struct elems_result *eresult,
+                                 uint16_t vbucket)
 {
     return ENGINE_ENOTSUP;
 }
@@ -601,8 +600,7 @@ Demo_btree_elem_get_by_posi(ENGINE_HANDLE* handle, const void* cookie,
                                const char *key, const size_t nkey,
                                ENGINE_BTREE_ORDER order,
                                int from_posi, int to_posi,
-                               eitem **eitem_array, uint32_t *eitem_count,
-                               uint32_t *flags, uint16_t vbucket)
+                               struct elems_result *eresult, uint16_t vbucket)
 {
     return ENGINE_ENOTSUP;
 }

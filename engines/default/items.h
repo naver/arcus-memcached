@@ -522,7 +522,7 @@ ENGINE_ERROR_CODE btree_elem_update(const char *key, const uint32_t nkey, const 
 ENGINE_ERROR_CODE btree_elem_delete(const char *key, const uint32_t nkey,
                                     const bkey_range *bkrange, const eflag_filter *efilter,
                                     const uint32_t req_count, const bool drop_if_empty,
-                                    uint32_t *del_count, uint32_t *access_count, bool *dropped,
+                                    uint32_t *del_count, uint32_t *opcost, bool *dropped,
                                     const void *cookie);
 
 ENGINE_ERROR_CODE btree_elem_arithmetic(const char *key, const uint32_t nkey,
@@ -541,7 +541,7 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
 
 ENGINE_ERROR_CODE btree_elem_count(const char *key, const uint32_t nkey,
                                    const bkey_range *bkrange, const eflag_filter *efilter,
-                                   uint32_t *elem_count, uint32_t *access_count);
+                                   uint32_t *elem_count, uint32_t *opcost);
 
 ENGINE_ERROR_CODE btree_posi_find(const char *key, const uint32_t nkey, const bkey_range *bkrange,
                                   ENGINE_BTREE_ORDER order, int *position);
@@ -549,12 +549,11 @@ ENGINE_ERROR_CODE btree_posi_find(const char *key, const uint32_t nkey, const bk
 ENGINE_ERROR_CODE btree_posi_find_with_get(const char *key, const uint32_t nkey,
                                            const bkey_range *bkrange, ENGINE_BTREE_ORDER order,
                                            const int count, int *position,
-                                           btree_elem_item **elem_array, uint32_t *elem_count,
-                                           uint32_t *elem_index, uint32_t *flags);
+                                           struct elems_result *eresult);
 
 ENGINE_ERROR_CODE btree_elem_get_by_posi(const char *key, const uint32_t nkey,
                                   ENGINE_BTREE_ORDER order, int from_posi, int to_posi,
-                                  btree_elem_item **elem_array, uint32_t *elem_count, uint32_t *flags);
+                                  struct elems_result *eresult);
 
 #ifdef SUPPORT_BOP_SMGET
 #ifdef JHPARK_OLD_SMGET_INTERFACE

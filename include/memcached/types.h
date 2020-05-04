@@ -268,7 +268,7 @@ extern "C" {
     struct elems_result {
         eitem** elem_array; //output variable that will receive the located item
         uint32_t elem_count; //number of output elements
-        uint32_t access_count; //for b+tree
+        uint32_t opcost_or_eindex; //for b+tree
         uint32_t flags;
         bool dropped; //dropped if empty
         bool trimmed; //trimmed on btree
