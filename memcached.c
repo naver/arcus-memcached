@@ -7717,7 +7717,7 @@ static inline bool set_pipe_maybe(conn *c, token_t *tokens, size_t ntokens)
     return c->noreply;
 }
 
-static bool check_and_handle_pipe_state(conn *c, size_t swallow)
+static bool check_and_handle_pipe_state(conn *c)
 {
     if (c->pipe_state == PIPE_STATE_OFF || c->pipe_state == PIPE_STATE_ON) {
         return true;
@@ -7732,10 +7732,6 @@ static bool check_and_handle_pipe_state(conn *c, size_t swallow)
             /* clear pipe_state: the end of pipe */
             c->pipe_state = PIPE_STATE_OFF;
             c->pipe_count = 0;
-        }
-        if (swallow > 0) {
-            c->sbytes = swallow;
-            conn_set_state(c, conn_swallow);
         }
         return false;
     }
@@ -9939,8 +9935,11 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
             c->coll_attrp = NULL;
         }
 
-        if (check_and_handle_pipe_state(c, vlen)) {
+        if (check_and_handle_pipe_state(c)) {
             process_lop_prepare_nread(c, (int)OPERATION_LOP_INSERT, vlen, key, nkey, index);
+        } else {
+            c->sbytes = vlen;
+            conn_set_state(c, conn_swallow);
         }
     }
     else if ((ntokens >= 7 && ntokens <= 10) && (strcmp(subcommand, "create") == 0))
@@ -9989,7 +9988,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
             }
         }
 
-        if (check_and_handle_pipe_state(c, 0)) {
+        if (check_and_handle_pipe_state(c)) {
             process_lop_delete(c, key, nkey, from_index, to_index, drop_if_empty);
         }
     }
@@ -10290,8 +10289,11 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
             c->coll_attrp = NULL;
         }
 
-        if (check_and_handle_pipe_state(c, vlen)) {
+        if (check_and_handle_pipe_state(c)) {
             process_sop_prepare_nread(c, (int)OPERATION_SOP_INSERT, vlen, key, nkey);
+        } else {
+            c->sbytes = vlen;
+            conn_set_state(c, conn_swallow);
         }
     }
     else if ((ntokens >= 7 && ntokens <= 10) && (strcmp(subcommand, "create") == 0))
@@ -10343,8 +10345,11 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
             }
         }
 
-        if (check_and_handle_pipe_state(c, vlen)) {
+        if (check_and_handle_pipe_state(c)) {
             process_sop_prepare_nread(c, (int)OPERATION_SOP_DELETE, vlen, key, nkey);
+        } else {
+            c->sbytes = vlen;
+            conn_set_state(c, conn_swallow);
         }
     }
     else if ((ntokens==5 || ntokens==6) && strcmp(subcommand, "exist") == 0)
@@ -10361,8 +10366,11 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
         vlen += 2;
 
-        if (check_and_handle_pipe_state(c, vlen)) {
+        if (check_and_handle_pipe_state(c)) {
             process_sop_prepare_nread(c, (int)OPERATION_SOP_EXIST, vlen, key, nkey);
+        } else {
+            c->sbytes = vlen;
+            conn_set_state(c, conn_swallow);
         }
     }
     else if ((ntokens==5 || ntokens==6) && (strcmp(subcommand, "get") == 0))
@@ -11512,8 +11520,11 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
             c->coll_attrp = NULL;
         }
 
-        if (check_and_handle_pipe_state(c, vlen)) {
+        if (check_and_handle_pipe_state(c)) {
             process_mop_prepare_nread(c, (int)OPERATION_MOP_INSERT, key, nkey, &field, vlen);
+        } else {
+            c->sbytes = vlen;
+            conn_set_state(c, conn_swallow);
         }
     }
     else if ((ntokens >= 7 && ntokens <= 10) && (strcmp(subcommand, "create") == 0))
@@ -11557,8 +11568,11 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
         vlen += 2;
 
-        if (check_and_handle_pipe_state(c, vlen)) {
+        if (check_and_handle_pipe_state(c)) {
             process_mop_prepare_nread(c, (int)OPERATION_MOP_UPDATE, key, nkey, &field, vlen);
+        } else {
+            c->sbytes = vlen;
+            conn_set_state(c, conn_swallow);
         }
     }
     else if ((ntokens >= 6 && ntokens <= 8) && (strcmp(subcommand, "delete") == 0))
@@ -11615,7 +11629,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         c->coll_numkeys = numfields;
         c->coll_drop = drop_if_empty;
 
-        if (check_and_handle_pipe_state(c, lenfields)) {
+        if (check_and_handle_pipe_state(c)) {
             if (lenfields == 0 && numfields == 0) {
                 c->coll_key     = key;
                 c->coll_nkey    = nkey;
@@ -11625,6 +11639,11 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
             } else {
                 lenfields += 2;
                 process_mop_prepare_nread_fields(c, (int)OPERATION_MOP_DELETE, key, nkey, lenfields);
+            }
+        } else {
+            if (lenfields > 0) {
+                c->sbytes = lenfields;
+                conn_set_state(c, conn_swallow);
             }
         }
     }
@@ -11790,8 +11809,11 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             c->coll_attrp = NULL;
         }
 
-        if (check_and_handle_pipe_state(c, vlen)) {
+        if (check_and_handle_pipe_state(c)) {
             process_bop_prepare_nread(c, subcommid, key, nkey, bkey, nbkey, eflag, neflag, vlen);
+        } else {
+            c->sbytes = vlen;
+            conn_set_state(c, conn_swallow);
         }
     }
     else if ((ntokens >= 7 && ntokens <= 10) && (strcmp(subcommand, "create") == 0))
@@ -11892,7 +11914,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             return;
         }
         if (vlen == -1) {
-            if (check_and_handle_pipe_state(c, 0)) {
+            if (check_and_handle_pipe_state(c)) {
                 if (c->coll_eupdate.neflag == EFLAG_NULL) {
                     /* Nothing to update */
                     //out_string(c, "CLIENT_ERROR nothing to update");
@@ -11906,8 +11928,11 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             }
         } else { /* vlen >= 0 */
             vlen += 2;
-            if (check_and_handle_pipe_state(c, vlen)) {
+            if (check_and_handle_pipe_state(c)) {
                 process_bop_update_prepare_nread(c, (int)OPERATION_BOP_UPDATE, key, nkey, vlen);
+            } else {
+                c->sbytes = vlen;
+                conn_set_state(c, conn_swallow);
             }
         }
     }
@@ -11963,7 +11988,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             }
         }
 
-        if (check_and_handle_pipe_state(c, 0)) {
+        if (check_and_handle_pipe_state(c)) {
             process_bop_delete(c, key, nkey, &c->coll_bkrange,
                                (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
                                count, drop_if_empty);
@@ -12020,7 +12045,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             create = true;
         }
 
-        if (check_and_handle_pipe_state(c, 0)) {
+        if (check_and_handle_pipe_state(c)) {
             process_bop_arithmetic(c, key, nkey, &c->coll_bkrange, incr,
                                    create, delta, initial, eflagptr);
         }
