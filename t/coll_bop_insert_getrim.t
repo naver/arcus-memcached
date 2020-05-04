@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 206;
+use Test::More tests => 406;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -78,8 +78,7 @@ sub bop_insert_getrim_trim {
 }
 
 # BOP test global variables
-my $count = 100;
-my $bkey;
+my $count = 200;
 
 $cmd = "get bkey"; $rst = "END";
 mem_cmd_is($sock, $cmd, "", $rst);
@@ -102,10 +101,17 @@ ATTR trimmed=1
 END";
 mem_cmd_is($sock, $cmd, "", $rst);
 
-$cmd = "bop get bkey 101..200 0 0";
-$rst = "VALUE 11 100\n";
-for ($bkey = 101; $bkey <= 200; $bkey++) {
-    $rst .= "$bkey 13 bkey-data-$bkey\n";
+my $from = $count+1;
+my $to = $count*2;
+my $bkey;
+my $len;
+
+$cmd = "bop get bkey $from..$to 0 0";
+$rst = "VALUE 11 $count\n";
+for ($bkey = $from; $bkey <= $to; $bkey++) {
+    $val = "bkey-data-$bkey";
+    $len = length($val);
+    $rst .= "$bkey $len $val\n";
 }
 $rst .= "END";
 mem_cmd_is($sock, $cmd, "", $rst);
