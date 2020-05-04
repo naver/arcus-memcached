@@ -10622,18 +10622,81 @@ static void process_bop_position(conn *c, char *key, size_t nkey,
     }
 }
 
+static ENGINE_ERROR_CODE
+out_bop_pwg_response(conn *c, int position, struct elems_result *eresultp)
+{
+    eitem  **elem_array = eresultp->elem_array;
+    uint32_t elem_count = eresultp->elem_count;
+    int      bufsize;
+    int      resplen;
+    char    *respbuf; /* response string buffer */
+    char    *respptr;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    do {
+        /* allocate response string buffer */
+        bufsize = ((4*UINT32_STR_LENG) + 30) /* response head and tail size */
+                  + (elem_count * ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + UINT32_STR_LENG+3)); /* result body size */
+        respbuf = (char*)malloc(bufsize);
+        if (respbuf == NULL) {
+            ret = ENGINE_ENOMEM; break;
+        }
+        respptr = respbuf;
+
+        /* make response head */
+        sprintf(respptr, "VALUE %d %u %u %u\r\n", position, htonl(eresultp->flags), elem_count,
+                                                  eresultp->opcost_or_eindex);
+        if (add_iov(c, respptr, strlen(respptr)) != 0) {
+            ret = ENGINE_ENOMEM; break;
+        }
+        respptr += strlen(respptr);
+
+        /* make response body */
+        for (int i = 0; i < elem_count; i++) {
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                        elem_array[i], &c->einfo);
+            resplen = make_bop_elem_response(respptr, &c->einfo);
+            if ((add_iov(c, respptr, resplen) != 0) ||
+                (add_iov_einfo_value_all(c, &c->einfo) != 0))
+            {
+                ret = ENGINE_ENOMEM; break;
+            }
+            respptr += resplen;
+        }
+        if (ret == ENGINE_ENOMEM) break;
+
+        /* make response tail */
+        if ((add_iov(c, "END\r\n", 5) != 0) ||
+            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+            ret = ENGINE_ENOMEM; break;
+        }
+    } while(0);
+
+    if (ret == ENGINE_SUCCESS) {
+        c->coll_eitem  = (void *)elem_array;
+        c->coll_ecount = elem_count;
+        c->coll_resps  = respbuf;
+        c->coll_op     = OPERATION_BOP_PWG;
+        conn_set_state(c, conn_mwrite);
+        c->msgcurr     = 0;
+    } else { /* ENGINE_ENOMEM */
+        mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
+        if (elem_array)
+            free(elem_array);
+        if (respbuf)
+            free(respbuf);
+        out_string(c, "SERVER_ERROR out of memory writing get response");
+    }
+    return ret;
+}
+
 static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *bkrange,
                             ENGINE_BTREE_ORDER order, const uint32_t count)
 {
     struct elems_result eresult;
-    eitem  **elem_array = NULL;
-    uint32_t elem_count;
-    uint32_t elem_index;
-    uint32_t flags, i;
-    int      position;
-    int      need_size;
-
+    int position;
     ENGINE_ERROR_CODE ret;
+
     ret = mc_engine.v1->btree_posi_find_with_get(mc_engine.v0, c, key, nkey,
                                                  bkrange, order, count, &position,
                                                  &eresult, 0);
@@ -10642,71 +10705,13 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
         stats_prefix_record_bop_pwg(key, nkey, is_hit);
     }
 
-    elem_array = eresult.elem_array;
-    elem_count = eresult.elem_count;
-    elem_index = eresult.opcost_or_eindex;
-    flags = eresult.flags;
-
     switch (ret) {
     case ENGINE_SUCCESS:
-        {
-        char *respbuf; /* response string buffer */
-        char *respptr;
-        int   resplen;
-
-        do {
-            need_size = ((4*UINT32_STR_LENG) + 30) /* response head and tail size */
-                      + (elem_count * ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + UINT32_STR_LENG+3)); /* result body size */
-            if ((respbuf = (char*)malloc(need_size)) == NULL) {
-                ret = ENGINE_ENOMEM; break;
-            }
-            respptr = respbuf;
-
-            sprintf(respptr, "VALUE %d %u %u %u\r\n", position, htonl(flags), elem_count, elem_index);
-            if (add_iov(c, respptr, strlen(respptr)) != 0) {
-                ret = ENGINE_ENOMEM; break;
-            }
-            respptr += strlen(respptr);
-
-            for (i = 0; i < elem_count; i++) {
-                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                            elem_array[i], &c->einfo);
-                resplen = make_bop_elem_response(respptr, &c->einfo);
-                if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
-                {
-                    ret = ENGINE_ENOMEM; break;
-                }
-                respptr += resplen;
-            }
-            if (ret == ENGINE_ENOMEM) break;
-
-            sprintf(respptr, "%s\r\n", "END");
-            if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-                (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
-                ret = ENGINE_ENOMEM; break;
-            }
-        } while(0);
-
+        ret = out_bop_pwg_response(c, position, &eresult);
         if (ret == ENGINE_SUCCESS) {
             STATS_ELEM_HITS(c, bop_pwg, key, nkey);
-            c->coll_eitem  = (void *)elem_array;
-            c->coll_ecount = elem_count;
-            c->coll_resps  = respbuf;
-            c->coll_op     = OPERATION_BOP_PWG;
-            conn_set_state(c, conn_mwrite);
-            c->msgcurr     = 0;
-        } else { /* ENGINE_ENOMEM */
+        } else {
             STATS_CMD_NOKEY(c, bop_pwg);
-            mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
-            if (elem_array != NULL) {
-                free(elem_array);
-                elem_array = NULL;
-            }
-            if (respbuf != NULL)
-                free(respbuf);
-            out_string(c, "SERVER_ERROR out of memory writing get response");
-        }
         }
         break;
     case ENGINE_ELEM_ENOENT:
@@ -10728,17 +10733,80 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
     }
 }
 
+static ENGINE_ERROR_CODE
+out_bop_gbp_response(conn *c, struct elems_result *eresultp)
+{
+    eitem  **elem_array = eresultp->elem_array;
+    uint32_t elem_count = eresultp->elem_count;
+    int      bufsize;
+    int      resplen;
+    char    *respbuf; /* response string buffer */
+    char    *respptr;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    do {
+        /* allocate response string buffer */
+        bufsize = ((2*UINT32_STR_LENG) + 30) /* response head and tail size */
+                  + (elem_count * ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + UINT32_STR_LENG+3)); /* result body size */
+        respbuf = (char*)malloc(bufsize);
+        if (respbuf == NULL) {
+            ret = ENGINE_ENOMEM; break;
+        }
+        respptr = respbuf;
+
+        /* make response head */
+        sprintf(respptr, "VALUE %u %u\r\n", htonl(eresultp->flags), elem_count);
+        if (add_iov(c, respptr, strlen(respptr)) != 0) {
+            ret = ENGINE_ENOMEM; break;
+        }
+        respptr += strlen(respptr);
+
+        /* make response body */
+        for (int i = 0; i < elem_count; i++) {
+            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
+                                        elem_array[i], &c->einfo);
+            resplen = make_bop_elem_response(respptr, &c->einfo);
+            if ((add_iov(c, respptr, resplen) != 0) ||
+                (add_iov_einfo_value_all(c, &c->einfo) != 0))
+            {
+                ret = ENGINE_ENOMEM; break;
+            }
+            respptr += resplen;
+        }
+        if (ret == ENGINE_ENOMEM) break;
+
+        /* make response tail */
+        if ((add_iov(c, "END\r\n", 5) != 0) ||
+            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+            ret = ENGINE_ENOMEM; break;
+        }
+    } while(0);
+
+    if (ret == ENGINE_SUCCESS) {
+        c->coll_eitem  = (void *)elem_array;
+        c->coll_ecount = elem_count;
+        c->coll_resps  = respbuf;
+        c->coll_op     = OPERATION_BOP_GBP;
+        conn_set_state(c, conn_mwrite);
+        c->msgcurr     = 0;
+    } else { /* ENGINE_ENOMEM */
+        mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
+        if (elem_array)
+            free(elem_array);
+        if (respbuf)
+            free(respbuf);
+        out_string(c, "SERVER_ERROR out of memory writing get response");
+    }
+    return ret;
+}
+
 static void process_bop_gbp(conn *c, char *key, size_t nkey,
                             ENGINE_BTREE_ORDER order,
                             uint32_t from_posi, uint32_t to_posi)
 {
     struct elems_result eresult;
-    eitem  **elem_array = NULL;
-    uint32_t elem_count;
-    uint32_t flags, i;
-    int      need_size;
-
     ENGINE_ERROR_CODE ret;
+
     ret = mc_engine.v1->btree_elem_get_by_posi(mc_engine.v0, c, key, nkey,
                                                order, from_posi, to_posi, &eresult, 0);
     if (settings.detail_enabled) {
@@ -10746,13 +10814,9 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey,
         stats_prefix_record_bop_gbp(key, nkey, is_hit);
     }
 
-    elem_array = eresult.elem_array;
-    elem_count = eresult.elem_count;
-    flags = eresult.flags;
-
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
-        if (! lqdetect_bop_gbp(c->client_ip, key, elem_count,
+        if (! lqdetect_bop_gbp(c->client_ip, key, eresult.elem_count,
                                from_posi, to_posi, order == BTREE_ORDER_ASC ? 1 : 2)) {
             lqdetect_in_use = false;
         }
@@ -10761,64 +10825,11 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey,
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        {
-        char *respbuf; /* response string buffer */
-        char *respptr;
-        int   resplen;
-
-        do {
-            need_size = ((2*UINT32_STR_LENG) + 30) /* response head and tail size */
-                      + (elem_count * ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + UINT32_STR_LENG+3)); /* result body size */
-            if ((respbuf = (char*)malloc(need_size)) == NULL) {
-                ret = ENGINE_ENOMEM; break;
-            }
-            respptr = respbuf;
-
-            sprintf(respptr, "VALUE %u %u\r\n", htonl(flags), elem_count);
-            if (add_iov(c, respptr, strlen(respptr)) != 0) {
-                ret = ENGINE_ENOMEM; break;
-            }
-            respptr += strlen(respptr);
-
-            for (i = 0; i < elem_count; i++) {
-                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                            elem_array[i], &c->einfo);
-                resplen = make_bop_elem_response(respptr, &c->einfo);
-                if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value_all(c, &c->einfo) != 0))
-                {
-                    ret = ENGINE_ENOMEM; break;
-                }
-                respptr += resplen;
-            }
-            if (ret == ENGINE_ENOMEM) break;
-
-            sprintf(respptr, "%s\r\n", "END");
-            if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-                (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
-                ret = ENGINE_ENOMEM; break;
-            }
-        } while(0);
-
+        ret = out_bop_gbp_response(c, &eresult);
         if (ret == ENGINE_SUCCESS) {
             STATS_ELEM_HITS(c, bop_gbp, key, nkey);
-            c->coll_eitem  = (void *)elem_array;
-            c->coll_ecount = elem_count;
-            c->coll_resps  = respbuf;
-            c->coll_op     = OPERATION_BOP_GBP;
-            conn_set_state(c, conn_mwrite);
-            c->msgcurr     = 0;
-        } else { /* ENGINE_ENOMEM */
+        } else {
             STATS_CMD_NOKEY(c, bop_gbp);
-            mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
-            if (elem_array != NULL) {
-                free(elem_array);
-                elem_array = NULL;
-            }
-            if (respbuf != NULL)
-                free(respbuf);
-            out_string(c, "SERVER_ERROR out of memory writing get response");
-        }
         }
         break;
     case ENGINE_ELEM_ENOENT:
