@@ -5870,13 +5870,12 @@ static void process_bin_bop_count(conn *c)
     }
 
     uint32_t elem_count;
-    uint32_t access_count;
+    uint32_t opcost; /* operation cost */
     uint32_t flags = 0;
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_elem_count(mc_engine.v0, c, key, nkey,
-                                         bkrange, efilter,
-                                         &elem_count, &access_count,
+                                         bkrange, efilter, &elem_count, &opcost,
                                          c->binary_header.request.vbucket);
     if (settings.detail_enabled) {
         stats_prefix_record_bop_count(key, nkey, (ret==ENGINE_SUCCESS));
@@ -10499,7 +10498,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
 
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
-        if (! lqdetect_bop_get(c->client_ip, key, eresult.access_count,
+        if (! lqdetect_bop_get(c->client_ip, key, eresult.opcost_or_eindex,
                                bkrange, efilter, offset, count,
                                drop_if_empty ? 2 : (delete ? 1 : 0))) {
             lqdetect_in_use = false;
@@ -10545,20 +10544,19 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
 {
     char buffer[32];
     uint32_t elem_count;
-    uint32_t access_count;
+    uint32_t opcost; /* operation cost */
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_elem_count(mc_engine.v0, c, key, nkey,
                                          bkrange, efilter,
-                                         &elem_count, &access_count, 0);
+                                         &elem_count, &opcost, 0);
     if (settings.detail_enabled) {
         stats_prefix_record_bop_count(key, nkey, (ret==ENGINE_SUCCESS));
     }
 
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
-        if (! lqdetect_bop_count(c->client_ip, key, access_count,
-                                 bkrange, efilter)) {
+        if (! lqdetect_bop_count(c->client_ip, key, opcost, bkrange, efilter)) {
             lqdetect_in_use = false;
         }
     }
@@ -10646,7 +10644,7 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
 
     elem_array = eresult.elem_array;
     elem_count = eresult.elem_count;
-    elem_index = eresult.access_count;
+    elem_index = eresult.opcost_or_eindex;
     flags = eresult.flags;
 
     switch (ret) {
