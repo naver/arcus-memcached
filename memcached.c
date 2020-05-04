@@ -1595,7 +1595,6 @@ static void process_lop_insert_complete(conn *c)
         if (settings.detail_enabled) {
             stats_prefix_record_lop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
         }
-
 #ifdef DETECT_LONG_QUERY
         if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
             if (! lqdetect_lop_insert(c->client_ip, c->coll_key, c->coll_index)) {
@@ -1909,16 +1908,15 @@ static void process_mop_delete_complete(conn *c)
             bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
             stats_prefix_record_mop_delete(c->coll_key, c->coll_nkey, is_hit);
         }
-    }
-
 #ifdef DETECT_LONG_QUERY
-    if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
-        if (! lqdetect_mop_delete(c->client_ip, c->coll_key, del_count,
-                                  c->coll_numkeys, c->coll_drop ? 2 : 1)) {
-            lqdetect_in_use = false;
+        if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
+            if (! lqdetect_mop_delete(c->client_ip, c->coll_key, del_count,
+                                      c->coll_numkeys, c->coll_drop ? 2 : 1)) {
+                lqdetect_in_use = false;
+            }
         }
-    }
 #endif
+    }
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -2059,16 +2057,15 @@ static void process_mop_get_complete(conn *c)
             bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
             stats_prefix_record_mop_get(c->coll_key, c->coll_nkey, is_hit);
         }
-    }
-
 #ifdef DETECT_LONG_QUERY
-    if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
-        if (! lqdetect_mop_get(c->client_ip, c->coll_key, eresult.elem_count,
-                               c->coll_numkeys, drop_if_empty ? 2 : (delete ? 1 : 0))) {
-            lqdetect_in_use = false;
+        if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
+            if (! lqdetect_mop_get(c->client_ip, c->coll_key, eresult.elem_count,
+                                   c->coll_numkeys, drop_if_empty ? 2 : (delete ? 1 : 0))) {
+                lqdetect_in_use = false;
+            }
         }
-    }
 #endif
+    }
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -9708,11 +9705,11 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
         bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
         stats_prefix_record_lop_get(key, nkey, is_hit);
     }
-
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_lop_get(c->client_ip, key, eresult.elem_count,
-                               from_index, to_index, drop_if_empty ? 2 : (delete ? 1 : 0))) {
+                               from_index, to_index,
+                               drop_if_empty ? 2 : (delete ? 1 : 0))) {
             lqdetect_in_use = false;
         }
     }
@@ -9829,7 +9826,6 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
         bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
         stats_prefix_record_lop_delete(key, nkey, is_hit);
     }
-
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_lop_delete(c->client_ip, key, del_count,
@@ -10111,7 +10107,6 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
         bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
         stats_prefix_record_sop_get(key, nkey, is_hit);
     }
-
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_sop_get(c->client_ip, key, eresult.elem_count,
@@ -10495,7 +10490,6 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
         bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
         stats_prefix_record_bop_get(key, nkey, is_hit);
     }
-
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_bop_get(c->client_ip, key, eresult.opcost_or_eindex,
@@ -10553,7 +10547,6 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
     if (settings.detail_enabled) {
         stats_prefix_record_bop_count(key, nkey, (ret==ENGINE_SUCCESS));
     }
-
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_bop_count(c->client_ip, key, opcost, bkrange, efilter)) {
@@ -10813,7 +10806,6 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey,
         bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
         stats_prefix_record_bop_gbp(key, nkey, is_hit);
     }
-
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_bop_gbp(c->client_ip, key, eresult.elem_count,
@@ -11067,7 +11059,6 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
         bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
         stats_prefix_record_bop_delete(key, nkey, is_hit);
     }
-
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_bop_delete(c->client_ip, key, acc_count,
