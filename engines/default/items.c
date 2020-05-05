@@ -7149,14 +7149,8 @@ void btree_elem_free(btree_elem_item *elem)
 {
     LOCK_CACHE();
     assert(elem->status == BTREE_ITEM_STATUS_UNLINK);
-    /* for cases with trimmed element, refcount can be over 0 */
-    if (elem->refcount != 0) {
-        elem->refcount--;
-    }
-    if (elem->refcount == 0) {
-        elem->status = BTREE_ITEM_STATUS_FREE;
-        do_btree_elem_free(elem);
-    }
+    elem->status = BTREE_ITEM_STATUS_FREE;
+    do_btree_elem_free(elem);
     UNLOCK_CACHE();
 }
 

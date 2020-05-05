@@ -752,7 +752,14 @@ static void conn_coll_eitem_free(conn *c)
       /* bop */
       case OPERATION_BOP_INSERT:
       case OPERATION_BOP_UPSERT:
-        mc_engine.v1->btree_elem_free(mc_engine.v0, c, c->coll_eitem);
+        if (c->coll_resps != NULL) {
+            /* release the element trimmed by insertion */
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, c->coll_eitem, 1);
+            free(c->coll_resps); c->coll_resps = NULL;
+        } else {
+            /* free the element allocated for insertion */
+            mc_engine.v1->btree_elem_free(mc_engine.v0, c, c->coll_eitem);
+        }
         break;
       case OPERATION_BOP_UPDATE:
         free(c->coll_eitem);
@@ -1595,7 +1602,6 @@ static void process_lop_insert_complete(conn *c)
         if (settings.detail_enabled) {
             stats_prefix_record_lop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
         }
-
 #ifdef DETECT_LONG_QUERY
         if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
             if (! lqdetect_lop_insert(c->client_ip, c->coll_key, c->coll_index)) {
@@ -1909,16 +1915,15 @@ static void process_mop_delete_complete(conn *c)
             bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
             stats_prefix_record_mop_delete(c->coll_key, c->coll_nkey, is_hit);
         }
-    }
-
 #ifdef DETECT_LONG_QUERY
-    if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
-        if (! lqdetect_mop_delete(c->client_ip, c->coll_key, del_count,
-                                  c->coll_numkeys, c->coll_drop ? 2 : 1)) {
-            lqdetect_in_use = false;
+        if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
+            if (! lqdetect_mop_delete(c->client_ip, c->coll_key, del_count,
+                                      c->coll_numkeys, c->coll_drop ? 2 : 1)) {
+                lqdetect_in_use = false;
+            }
         }
-    }
 #endif
+    }
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -2059,16 +2064,15 @@ static void process_mop_get_complete(conn *c)
             bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
             stats_prefix_record_mop_get(c->coll_key, c->coll_nkey, is_hit);
         }
-    }
-
 #ifdef DETECT_LONG_QUERY
-    if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
-        if (! lqdetect_mop_get(c->client_ip, c->coll_key, eresult.elem_count,
-                               c->coll_numkeys, drop_if_empty ? 2 : (delete ? 1 : 0))) {
-            lqdetect_in_use = false;
+        if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
+            if (! lqdetect_mop_get(c->client_ip, c->coll_key, eresult.elem_count,
+                                   c->coll_numkeys, drop_if_empty ? 2 : (delete ? 1 : 0))) {
+                lqdetect_in_use = false;
+            }
         }
-    }
 #endif
+    }
 
     switch (ret) {
     case ENGINE_SUCCESS:
@@ -2139,6 +2143,62 @@ static int make_bop_elem_response(char *bufptr, eitem_info *einfo)
     return (int)(tmpptr - bufptr);
 }
 
+static ENGINE_ERROR_CODE
+out_bop_trim_response(conn *c, void *elem, uint32_t flags)
+{
+    eitem **elem_array;
+    int   bufsize;
+    int   resplen;
+    char *respbuf; /* response string buffer */
+    char *respptr;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    do {
+        /* allocate response string buffer */
+        bufsize = sizeof(void*) /* an element pointer */
+                + ((2*UINT32_STR_LENG) + 30) /* response head and tail size */
+                + ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + UINT32_STR_LENG+3); /* response body size */
+        respbuf = (char*)malloc(bufsize);
+        if (respbuf == NULL) {
+            ret = ENGINE_ENOMEM; break;
+        }
+        respptr = respbuf;
+
+        /* save the trimmed element */
+        elem_array = (eitem **)respptr;
+        elem_array[0] = elem;
+        respptr = (char*)&elem_array[1];
+
+        /* make response */
+        mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &c->einfo);
+        sprintf(respptr, "VALUE %u 1\r\n", htonl(flags));
+        resplen = strlen(respptr);
+        resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
+
+        if ((add_iov(c, respptr, resplen) != 0) ||
+            (add_iov_einfo_value_all(c, &c->einfo) != 0) ||
+            (add_iov(c, "TRIMMED\r\n", 9) != 0) ||
+            (IS_UDP(c->transport) && build_udp_headers(c) != 0))
+        {
+            ret = ENGINE_ENOMEM; break;
+        }
+    } while(0);
+
+    if (ret == ENGINE_SUCCESS) {
+        c->coll_eitem  = elem_array;
+        c->coll_ecount = 1;
+        c->coll_resps  = respbuf;
+        conn_set_state(c, conn_mwrite);
+        c->msgcurr     = 0;
+    } else { /* ENGINE_ENOMEM */
+        mc_engine.v1->btree_elem_release(mc_engine.v0, c, &elem, 1);
+        if (respbuf)
+            free(respbuf);
+        out_string(c, "SERVER_ERROR out of memory writing trim response");
+    }
+    return ret;
+}
+
 static void process_bop_insert_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_BOP_INSERT ||
@@ -2179,34 +2239,7 @@ static void process_bop_insert_complete(conn *c)
             STATS_HITS(c, bop_insert, c->coll_key, c->coll_nkey);
             if (c->coll_getrim && trim_result.elems != NULL) { /* getrim flag */
                 assert(trim_result.count == 1);
-                char  buffer[256];
-                char *respptr = &buffer[0];
-                int   resplen;
-
-                /* return the trimmed element info to the client */
-                sprintf(respptr, "VALUE %u %u\r\n", htonl(trim_result.flags), trim_result.count);
-                resplen = strlen(respptr);
-
-                /* get trimmed element info */
-                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                            trim_result.elems, &c->einfo);
-                resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
-
-                /* add io vectors */
-                if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value_all(c, &c->einfo) != 0) ||
-                    (add_iov(c, "TRIMMED\r\n", strlen("TRIMMED\r\n")) != 0))
-                {
-                    mc_engine.v1->btree_elem_free(mc_engine.v0, c, trim_result.elems);
-                    if (c->ewouldblock)
-                        c->ewouldblock = false;
-                    out_string(c, "SERVER_ERROR out of memory writing get response");
-                } else {
-                    /* prepare for writing response */
-                    c->coll_eitem = trim_result.elems;
-                    c->coll_ecount = trim_result.count; /* trim_result.count == 1 */
-                    conn_set_state(c, conn_mwrite);
-                }
+                (void)out_bop_trim_response(c, trim_result.elems, trim_result.flags);
             } else {
                 /* no getrim flag or no trimmed element */
                 if (replaced) {
@@ -3508,14 +3541,14 @@ static void write_bin_response(conn *c, void *d, int hlen, int keylen, int dlen)
 }
 
 static void
-handle_unexpected_errorcode_bin(conn *c, const char *func_name, ENGINE_ERROR_CODE ret)
+handle_unexpected_errorcode_bin(conn *c, const char *func_name, ENGINE_ERROR_CODE ret, int swallow)
 {
     if (ret == ENGINE_DISCONNECT) {
         conn_set_state(c, conn_closing);
     } else {
         mc_logger->log(EXTENSION_LOG_WARNING, c, "[%s] Unexpected Error: %d\n",
                        func_name, (int)ret);
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, swallow);
     }
 }
 
@@ -3613,7 +3646,7 @@ static void complete_incr_bin(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         break;
     default:
-        handle_unexpected_errorcode_bin(c, __func__, ret);
+        handle_unexpected_errorcode_bin(c, __func__, ret, 0);
         if (ret != ENGINE_DISCONNECT) {
             abort();
         }
@@ -3709,7 +3742,7 @@ static void complete_update_bin(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         break;
     default:
-        handle_unexpected_errorcode_bin(c, __func__, ret);
+        handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 
     if (c->store_op == OPERATION_CAS) {
@@ -3815,7 +3848,7 @@ static void process_bin_get(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         break;
     default:
-        handle_unexpected_errorcode_bin(c, __func__, ret);
+        handle_unexpected_errorcode_bin(c, __func__, ret, 0);
 
         if (ret != ENGINE_DISCONNECT) {
             /* @todo add proper error handling! */
@@ -4074,7 +4107,7 @@ static void process_bin_stat(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
         break;
     default:
-        handle_unexpected_errorcode_bin(c, __func__, ret);
+        handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -4223,7 +4256,6 @@ static void process_bin_sasl_auth(conn *c)
 
     if (nkey > MAX_SASL_MECH_LEN) {
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, vlen);
-        c->write_and_go = conn_swallow;
         return;
     }
 
@@ -4234,7 +4266,6 @@ static void process_bin_sasl_auth(conn *c)
     struct sasl_tmp *data = calloc(sizeof(struct sasl_tmp) + buffer_size, 1);
     if (!data) {
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
-        c->write_and_go = conn_swallow;
         return;
     }
 
@@ -4426,7 +4457,7 @@ static void process_bin_lop_create(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -4504,12 +4535,7 @@ static void process_bin_lop_prepare_nread(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
-
-        if (ret != ENGINE_DISCONNECT) {
-            /* swallow the data line */
-            c->write_and_go = conn_swallow;
-        }
+            handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
     }
 }
 
@@ -4557,7 +4583,7 @@ static void process_bin_lop_insert_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 
     if (ret != ENGINE_SUCCESS) {
@@ -4627,7 +4653,7 @@ static void process_bin_lop_delete(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -4756,7 +4782,7 @@ static void process_bin_lop_get(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -4810,7 +4836,7 @@ static void process_bin_sop_create(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -4917,12 +4943,7 @@ static void process_bin_sop_prepare_nread(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
-
-        if (ret != ENGINE_DISCONNECT) {
-            /* swallow the data line */
-            c->write_and_go = conn_swallow;
-        }
+            handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
     }
 }
 
@@ -4969,7 +4990,7 @@ static void process_bin_sop_insert_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 
     /* release the c->coll_eitem reference */
@@ -5017,7 +5038,7 @@ static void process_bin_sop_delete_complete(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 
     /* release the c->coll_eitem reference */
@@ -5067,7 +5088,7 @@ static void process_bin_sop_exist_complete(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 
     /* release the c->coll_eitem reference */
@@ -5210,7 +5231,7 @@ static void process_bin_sop_get(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -5275,7 +5296,7 @@ static void process_bin_bop_create(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -5372,12 +5393,7 @@ static void process_bin_bop_prepare_nread(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
-
-        if (ret != ENGINE_DISCONNECT) {
-            /* swallow the data line */
-            c->write_and_go = conn_swallow;
-        }
+            handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
     }
 }
 
@@ -5434,7 +5450,7 @@ static void process_bin_bop_insert_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 
     /* release the c->coll_eitem reference */
@@ -5500,7 +5516,7 @@ static void process_bin_bop_update_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 
     if (c->coll_eitem != NULL) {
@@ -5598,11 +5614,10 @@ static void process_bin_bop_update_prepare_nread(conn *c)
         /* ret == ENGINE_E2BIG || ret == ENGINE_ENOMEM */
         if (ret == ENGINE_E2BIG)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
+        else if (ret == ENGINE_ENOMEM)
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
-
-        /* swallow the data line */
-        c->write_and_go = conn_swallow;
+            handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
     }
 }
 
@@ -5676,7 +5691,7 @@ static void process_bin_bop_delete(conn *c)
         else if (ret == ENGINE_EBADBKEY)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADBKEY, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -5831,7 +5846,7 @@ static void process_bin_bop_get(conn *c)
         else if (ret == ENGINE_EBADBKEY)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADBKEY, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -5905,7 +5920,7 @@ static void process_bin_bop_count(conn *c)
         else if (ret == ENGINE_EBADBKEY)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADBKEY, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -6058,11 +6073,10 @@ static void process_bin_bop_prepare_nread_keys(conn *c)
         /* ret == ENGINE_EBADVALUE || ret == ENGINE_ENOMEM */
         if (ret == ENGINE_EBADVALUE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADVALUE, vlen);
-        else
+        else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
-
-        /* swallow the data line */
-        c->write_and_go = conn_swallow;
+        else
+            handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
     }
 }
 #endif
@@ -6241,7 +6255,7 @@ static void process_bin_bop_smget_complete_old(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 
     /* free token buffer */
@@ -6435,7 +6449,7 @@ static void process_bin_bop_smget_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 
     /* free token buffer */
@@ -6541,7 +6555,7 @@ static void process_bin_getattr(conn *c)
         if (ret == ENGINE_EBADATTR)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADATTR, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -6646,7 +6660,7 @@ static void process_bin_setattr(conn *c)
         else if (ret == ENGINE_EBADVALUE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADVALUE, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -7168,17 +7182,9 @@ static void process_bin_update(conn *c)
                                  ntohll(req->message.header.request.cas),
                                  c->binary_header.request.vbucket);
         }
-
-        /* swallow the data line */
-        c->write_and_go = conn_swallow;
         break;
     default:
-        handle_unexpected_errorcode_bin(c, __func__, ret);
-
-        if (ret != ENGINE_DISCONNECT) {
-            /* swallow the data line */
-            c->write_and_go = conn_swallow;
-        }
+        handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
     }
 }
 
@@ -7236,16 +7242,9 @@ static void process_bin_append_prepend(conn *c)
         } else {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         }
-        /* swallow the data line */
-        c->write_and_go = conn_swallow;
         break;
     default:
-        handle_unexpected_errorcode_bin(c, __func__, ret);
-
-        if (ret != ENGINE_DISCONNECT) {
-            /* swallow the data line */
-            c->write_and_go = conn_swallow;
-        }
+        handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
     }
 }
 
@@ -7334,7 +7333,7 @@ static void process_bin_flush_prefix(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
         break;
     default:
-        handle_unexpected_errorcode_bin(c, __func__, ret);
+        handle_unexpected_errorcode_bin(c, __func__, ret, 0);
         break;
     }
 
@@ -8337,8 +8336,8 @@ static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt)
         conn_set_state(c, conn_nread);
     } else {
         out_string(c, "SERVER_ERROR out of memory");
-        c->write_and_go = conn_swallow;
         c->sbytes = vlen;
+        c->write_and_go = conn_swallow;
     }
 }
 
@@ -8359,8 +8358,8 @@ static inline void process_mget_command(conn *c, token_t *tokens, const size_t n
         lenkeys > ((numkeys*KEY_MAX_LENGTH) + numkeys-1)) {
         /* ENGINE_EBADVALUE */
         out_string(c, "CLIENT_ERROR bad value");
-        c->write_and_go = conn_swallow;
         c->sbytes = lenkeys + 2;
+        c->write_and_go = conn_swallow;
         return;
     }
     lenkeys += 2;
@@ -8448,8 +8447,8 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
             out_string(c, "SERVER_ERROR out of memory storing object");
         }
         /* swallow the data line */
-        c->write_and_go = conn_swallow;
         c->sbytes = vlen;
+        c->write_and_go = conn_swallow;
 
         /* Avoid stale data persisting in cache because we failed alloc.
          * Unacceptable for SET. Anywhere else too? */
@@ -8462,8 +8461,8 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
-            c->write_and_go = conn_swallow;
             c->sbytes = vlen;
+            c->write_and_go = conn_swallow;
         }
     }
 }
@@ -9550,9 +9549,6 @@ static void lqdetect_show(conn *c)
 
         char *count = get_suffix_buffer(c);
         if (count == NULL) {
-            out_string(c, "SERVER ERROR out of memory wrting show response");
-            lqdetect_buffer_release(c->lq_bufcnt);
-            c->lq_bufcnt = 0;
             ret = -1; break;
         }
         int count_len = snprintf(count, SUFFIX_SIZE, " %d\n", cmdcnt);
@@ -9562,9 +9558,6 @@ static void lqdetect_show(conn *c)
             add_iov(c, data, length) != 0 ||
             add_iov(c, "\n", 1) != 0)
         {
-            out_string(c, "SERVER ERROR out of memory wrting show response");
-            lqdetect_buffer_release(c->lq_bufcnt);
-            c->lq_bufcnt = 0;
             ret = -1; break;
         }
     }
@@ -9573,6 +9566,10 @@ static void lqdetect_show(conn *c)
     if (ret == 0) {
         conn_set_state(c, conn_mwrite);
         c->msgcurr = 0;
+    } else {
+        out_string(c, "SERVER ERROR out of memory writing show response");
+        lqdetect_buffer_release(c->lq_bufcnt);
+        c->lq_bufcnt = 0;
     }
 }
 
@@ -9782,11 +9779,11 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
         bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
         stats_prefix_record_lop_get(key, nkey, is_hit);
     }
-
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_lop_get(c->client_ip, key, eresult.elem_count,
-                               from_index, to_index, drop_if_empty ? 2 : (delete ? 1 : 0))) {
+                               from_index, to_index,
+                               drop_if_empty ? 2 : (delete ? 1 : 0))) {
             lqdetect_in_use = false;
         }
     }
@@ -9855,8 +9852,8 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
-            c->write_and_go = conn_swallow;
             c->sbytes = vlen;
+            c->write_and_go = conn_swallow;
         }
     }
 }
@@ -9903,7 +9900,6 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
         bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
         stats_prefix_record_lop_delete(key, nkey, is_hit);
     }
-
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_lop_delete(c->client_ip, key, del_count,
@@ -10185,7 +10181,6 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
         bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
         stats_prefix_record_sop_get(key, nkey, is_hit);
     }
-
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_sop_get(c->client_ip, key, eresult.elem_count,
@@ -10277,8 +10272,8 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
-            c->write_and_go = conn_swallow;
             c->sbytes = vlen;
+            c->write_and_go = conn_swallow;
         }
     }
 }
@@ -10569,7 +10564,6 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
         bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
         stats_prefix_record_bop_get(key, nkey, is_hit);
     }
-
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_bop_get(c->client_ip, key, eresult.opcost_or_eindex,
@@ -10627,7 +10621,6 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
     if (settings.detail_enabled) {
         stats_prefix_record_bop_count(key, nkey, (ret==ENGINE_SUCCESS));
     }
-
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_bop_count(c->client_ip, key, opcost, bkrange, efilter)) {
@@ -10887,7 +10880,6 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey,
         bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
         stats_prefix_record_bop_gbp(key, nkey, is_hit);
     }
-
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_bop_gbp(c->client_ip, key, eresult.elem_count,
@@ -10957,8 +10949,8 @@ static void process_bop_update_prepare_nread(conn *c, int cmd,
         else                     out_string(c, "SERVER_ERROR out of memory");
 
         /* swallow the data line */
-        c->write_and_go = conn_swallow;
         c->sbytes = vlen;
+        c->write_and_go = conn_swallow;
     }
 }
 
@@ -11000,8 +10992,8 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
-            c->write_and_go = conn_swallow;
             c->sbytes = vlen;
+            c->write_and_go = conn_swallow;
         }
     }
 }
@@ -11091,8 +11083,8 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
         out_string(c, "SERVER_ERROR out of memory");
 
         /* swallow the data line */
-        c->write_and_go = conn_swallow;
         c->sbytes = vlen;
+        c->write_and_go = conn_swallow;
     }
 }
 #endif
@@ -11141,7 +11133,6 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
         bool is_hit = (ret==ENGINE_SUCCESS || ret==ENGINE_ELEM_ENOENT);
         stats_prefix_record_bop_delete(key, nkey, is_hit);
     }
-
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_bop_delete(c->client_ip, key, acc_count,
@@ -11469,8 +11460,8 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
-            c->write_and_go = conn_swallow;
             c->sbytes = vlen;
+            c->write_and_go = conn_swallow;
         }
     }
 }
@@ -11501,9 +11492,9 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
         /* ret == ENGINE_ENOMEM */
         out_string(c, "SERVER_ERROR out of memory");
 
-        //swallow the data line
-        c->write_and_go = conn_swallow;
+        /* swallow the data line */
         c->sbytes = flen;
+        c->write_and_go = conn_swallow;
     }
 }
 
@@ -11681,8 +11672,8 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         if (numfields == 0) {
             if (lenfields != 0)  {
                 out_string(c, "CLIENT_ERROR bad value");
-                c->write_and_go = conn_swallow;
                 c->sbytes = lenfields + 2;
+                c->write_and_go = conn_swallow;
                 return;
             }
         } else { /* numfields != 0 */
@@ -11694,8 +11685,8 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 numfields > ((lenfields/2) + 1) ||
                 lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1)) {
                 out_string(c, "CLIENT_ERROR bad value");
-                c->write_and_go = conn_swallow;
                 c->sbytes = lenfields + 2;
+                c->write_and_go = conn_swallow;
                 return;
             }
         }
@@ -11752,8 +11743,8 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         if (numfields == 0) {
             if (lenfields != 0)  {
                 out_string(c, "CLIENT_ERROR bad value");
-                c->write_and_go = conn_swallow;
                 c->sbytes = lenfields + 2;
+                c->write_and_go = conn_swallow;
                 return;
             }
         } else { /* numfields != 0 */
@@ -11765,8 +11756,8 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 numfields > ((lenfields/2) + 1) ||
                 lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1)) {
                 out_string(c, "CLIENT_ERROR bad value");
-                c->write_and_go = conn_swallow;
                 c->sbytes = lenfields + 2;
+                c->write_and_go = conn_swallow;
                 return;
             }
         }
@@ -12300,8 +12291,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             lenkeys > ((numkeys*KEY_MAX_LENGTH) + numkeys-1)) {
             /* ENGINE_EBADVALUE */
             out_string(c, "CLIENT_ERROR bad value");
-            c->write_and_go = conn_swallow;
             c->sbytes = lenkeys + 2;
+            c->write_and_go = conn_swallow;
             return;
         }
         lenkeys += 2;
@@ -12310,8 +12301,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             if (numkeys > MAX_BMGET_KEY_COUNT || count > MAX_BMGET_ELM_COUNT) {
                 /* ENGINE_EBADVALUE */
                 out_string(c, "CLIENT_ERROR bad value");
-                c->write_and_go = conn_swallow;
                 c->sbytes = lenkeys;
+                c->write_and_go = conn_swallow;
                 return;
             }
         }
@@ -12321,8 +12312,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             if (numkeys > MAX_SMGET_KEY_COUNT || (offset+count) > MAX_SMGET_REQ_COUNT) {
                 /* ENGINE_EBADVALUE */
                 out_string(c, "CLIENT_ERROR bad value");
-                c->write_and_go = conn_swallow;
                 c->sbytes = lenkeys;
+                c->write_and_go = conn_swallow;
                 return;
             }
         }
