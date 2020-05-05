@@ -3541,14 +3541,14 @@ static void write_bin_response(conn *c, void *d, int hlen, int keylen, int dlen)
 }
 
 static void
-handle_unexpected_errorcode_bin(conn *c, const char *func_name, ENGINE_ERROR_CODE ret)
+handle_unexpected_errorcode_bin(conn *c, const char *func_name, ENGINE_ERROR_CODE ret, int swallow)
 {
     if (ret == ENGINE_DISCONNECT) {
         conn_set_state(c, conn_closing);
     } else {
         mc_logger->log(EXTENSION_LOG_WARNING, c, "[%s] Unexpected Error: %d\n",
                        func_name, (int)ret);
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, swallow);
     }
 }
 
@@ -3646,7 +3646,7 @@ static void complete_incr_bin(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         break;
     default:
-        handle_unexpected_errorcode_bin(c, __func__, ret);
+        handle_unexpected_errorcode_bin(c, __func__, ret, 0);
         if (ret != ENGINE_DISCONNECT) {
             abort();
         }
@@ -3742,7 +3742,7 @@ static void complete_update_bin(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         break;
     default:
-        handle_unexpected_errorcode_bin(c, __func__, ret);
+        handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 
     if (c->store_op == OPERATION_CAS) {
@@ -3848,7 +3848,7 @@ static void process_bin_get(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         break;
     default:
-        handle_unexpected_errorcode_bin(c, __func__, ret);
+        handle_unexpected_errorcode_bin(c, __func__, ret, 0);
 
         if (ret != ENGINE_DISCONNECT) {
             /* @todo add proper error handling! */
@@ -4107,7 +4107,7 @@ static void process_bin_stat(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
         break;
     default:
-        handle_unexpected_errorcode_bin(c, __func__, ret);
+        handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -4459,7 +4459,7 @@ static void process_bin_lop_create(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -4537,7 +4537,7 @@ static void process_bin_lop_prepare_nread(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
@@ -4590,7 +4590,7 @@ static void process_bin_lop_insert_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 
     if (ret != ENGINE_SUCCESS) {
@@ -4660,7 +4660,7 @@ static void process_bin_lop_delete(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -4789,7 +4789,7 @@ static void process_bin_lop_get(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -4843,7 +4843,7 @@ static void process_bin_sop_create(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -4950,7 +4950,7 @@ static void process_bin_sop_prepare_nread(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
@@ -5002,7 +5002,7 @@ static void process_bin_sop_insert_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 
     /* release the c->coll_eitem reference */
@@ -5050,7 +5050,7 @@ static void process_bin_sop_delete_complete(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 
     /* release the c->coll_eitem reference */
@@ -5100,7 +5100,7 @@ static void process_bin_sop_exist_complete(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 
     /* release the c->coll_eitem reference */
@@ -5243,7 +5243,7 @@ static void process_bin_sop_get(conn *c)
         if (ret == ENGINE_EBADTYPE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -5308,7 +5308,7 @@ static void process_bin_bop_create(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -5405,7 +5405,7 @@ static void process_bin_bop_prepare_nread(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
@@ -5467,7 +5467,7 @@ static void process_bin_bop_insert_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 
     /* release the c->coll_eitem reference */
@@ -5533,7 +5533,7 @@ static void process_bin_bop_update_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 
     if (c->coll_eitem != NULL) {
@@ -5709,7 +5709,7 @@ static void process_bin_bop_delete(conn *c)
         else if (ret == ENGINE_EBADBKEY)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADBKEY, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -5864,7 +5864,7 @@ static void process_bin_bop_get(conn *c)
         else if (ret == ENGINE_EBADBKEY)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADBKEY, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -5938,7 +5938,7 @@ static void process_bin_bop_count(conn *c)
         else if (ret == ENGINE_EBADBKEY)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADBKEY, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -6274,7 +6274,7 @@ static void process_bin_bop_smget_complete_old(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 
     /* free token buffer */
@@ -6468,7 +6468,7 @@ static void process_bin_bop_smget_complete(conn *c)
         else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 
     /* free token buffer */
@@ -6574,7 +6574,7 @@ static void process_bin_getattr(conn *c)
         if (ret == ENGINE_EBADATTR)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADATTR, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -6679,7 +6679,7 @@ static void process_bin_setattr(conn *c)
         else if (ret == ENGINE_EBADVALUE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADVALUE, 0);
         else
-            handle_unexpected_errorcode_bin(c, __func__, ret);
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 }
 
@@ -7206,7 +7206,7 @@ static void process_bin_update(conn *c)
         c->write_and_go = conn_swallow;
         break;
     default:
-        handle_unexpected_errorcode_bin(c, __func__, ret);
+        handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
@@ -7273,7 +7273,7 @@ static void process_bin_append_prepend(conn *c)
         c->write_and_go = conn_swallow;
         break;
     default:
-        handle_unexpected_errorcode_bin(c, __func__, ret);
+        handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
@@ -7367,7 +7367,7 @@ static void process_bin_flush_prefix(conn *c)
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
         break;
     default:
-        handle_unexpected_errorcode_bin(c, __func__, ret);
+        handle_unexpected_errorcode_bin(c, __func__, ret, 0);
         break;
     }
 
