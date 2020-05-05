@@ -752,7 +752,14 @@ static void conn_coll_eitem_free(conn *c)
       /* bop */
       case OPERATION_BOP_INSERT:
       case OPERATION_BOP_UPSERT:
-        mc_engine.v1->btree_elem_free(mc_engine.v0, c, c->coll_eitem);
+        if (c->coll_resps != NULL) {
+            /* release the element trimmed by insertion */
+            mc_engine.v1->btree_elem_release(mc_engine.v0, c, c->coll_eitem, 1);
+            free(c->coll_resps); c->coll_resps = NULL;
+        } else {
+            /* free the element allocated for insertion */
+            mc_engine.v1->btree_elem_free(mc_engine.v0, c, c->coll_eitem);
+        }
         break;
       case OPERATION_BOP_UPDATE:
         free(c->coll_eitem);
@@ -2136,6 +2143,62 @@ static int make_bop_elem_response(char *bufptr, eitem_info *einfo)
     return (int)(tmpptr - bufptr);
 }
 
+static ENGINE_ERROR_CODE
+out_bop_trim_response(conn *c, void *elem, uint32_t flags)
+{
+    eitem **elem_array;
+    int   bufsize;
+    int   resplen;
+    char *respbuf; /* response string buffer */
+    char *respptr;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    do {
+        /* allocate response string buffer */
+        bufsize = sizeof(void*) /* an element pointer */
+                + ((2*UINT32_STR_LENG) + 30) /* response head and tail size */
+                + ((MAX_BKEY_LENG*2+2) + (MAX_EFLAG_LENG*2+2) + UINT32_STR_LENG+3); /* response body size */
+        respbuf = (char*)malloc(bufsize);
+        if (respbuf == NULL) {
+            ret = ENGINE_ENOMEM; break;
+        }
+        respptr = respbuf;
+
+        /* save the trimmed element */
+        elem_array = (eitem **)respptr;
+        elem_array[0] = elem;
+        respptr = (char*)&elem_array[1];
+
+        /* make response */
+        mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, elem, &c->einfo);
+        sprintf(respptr, "VALUE %u 1\r\n", htonl(flags));
+        resplen = strlen(respptr);
+        resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
+
+        if ((add_iov(c, respptr, resplen) != 0) ||
+            (add_iov_einfo_value_all(c, &c->einfo) != 0) ||
+            (add_iov(c, "TRIMMED\r\n", 9) != 0) ||
+            (IS_UDP(c->transport) && build_udp_headers(c) != 0))
+        {
+            ret = ENGINE_ENOMEM; break;
+        }
+    } while(0);
+
+    if (ret == ENGINE_SUCCESS) {
+        c->coll_eitem  = elem_array;
+        c->coll_ecount = 1;
+        c->coll_resps  = respbuf;
+        conn_set_state(c, conn_mwrite);
+        c->msgcurr     = 0;
+    } else { /* ENGINE_ENOMEM */
+        mc_engine.v1->btree_elem_release(mc_engine.v0, c, &elem, 1);
+        if (respbuf)
+            free(respbuf);
+        out_string(c, "SERVER_ERROR out of memory writing trim response");
+    }
+    return ret;
+}
+
 static void process_bop_insert_complete(conn *c)
 {
     assert(c->coll_op == OPERATION_BOP_INSERT ||
@@ -2176,34 +2239,7 @@ static void process_bop_insert_complete(conn *c)
             STATS_HITS(c, bop_insert, c->coll_key, c->coll_nkey);
             if (c->coll_getrim && trim_result.elems != NULL) { /* getrim flag */
                 assert(trim_result.count == 1);
-                char  buffer[256];
-                char *respptr = &buffer[0];
-                int   resplen;
-
-                /* return the trimmed element info to the client */
-                sprintf(respptr, "VALUE %u %u\r\n", htonl(trim_result.flags), trim_result.count);
-                resplen = strlen(respptr);
-
-                /* get trimmed element info */
-                mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
-                                            trim_result.elems, &c->einfo);
-                resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
-
-                /* add io vectors */
-                if ((add_iov(c, respptr, resplen) != 0) ||
-                    (add_iov_einfo_value_all(c, &c->einfo) != 0) ||
-                    (add_iov(c, "TRIMMED\r\n", strlen("TRIMMED\r\n")) != 0))
-                {
-                    mc_engine.v1->btree_elem_free(mc_engine.v0, c, trim_result.elems);
-                    if (c->ewouldblock)
-                        c->ewouldblock = false;
-                    out_string(c, "SERVER_ERROR out of memory writing get response");
-                } else {
-                    /* prepare for writing response */
-                    c->coll_eitem = trim_result.elems;
-                    c->coll_ecount = trim_result.count; /* trim_result.count == 1 */
-                    conn_set_state(c, conn_mwrite);
-                }
+                (void)out_bop_trim_response(c, trim_result.elems, trim_result.flags);
             } else {
                 /* no getrim flag or no trimmed element */
                 if (replaced) {
