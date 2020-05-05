@@ -4256,7 +4256,6 @@ static void process_bin_sasl_auth(conn *c)
 
     if (nkey > MAX_SASL_MECH_LEN) {
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, vlen);
-        c->write_and_go = conn_swallow;
         return;
     }
 
@@ -4267,7 +4266,6 @@ static void process_bin_sasl_auth(conn *c)
     struct sasl_tmp *data = calloc(sizeof(struct sasl_tmp) + buffer_size, 1);
     if (!data) {
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
-        c->write_and_go = conn_swallow;
         return;
     }
 
@@ -4538,11 +4536,6 @@ static void process_bin_lop_prepare_nread(conn *c)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         else
             handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
-
-        if (ret != ENGINE_DISCONNECT) {
-            /* swallow the data line */
-            c->write_and_go = conn_swallow;
-        }
     }
 }
 
@@ -4951,11 +4944,6 @@ static void process_bin_sop_prepare_nread(conn *c)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         else
             handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
-
-        if (ret != ENGINE_DISCONNECT) {
-            /* swallow the data line */
-            c->write_and_go = conn_swallow;
-        }
     }
 }
 
@@ -5406,11 +5394,6 @@ static void process_bin_bop_prepare_nread(conn *c)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         else
             handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
-
-        if (ret != ENGINE_DISCONNECT) {
-            /* swallow the data line */
-            c->write_and_go = conn_swallow;
-        }
     }
 }
 
@@ -5631,11 +5614,10 @@ static void process_bin_bop_update_prepare_nread(conn *c)
         /* ret == ENGINE_E2BIG || ret == ENGINE_ENOMEM */
         if (ret == ENGINE_E2BIG)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
+        else if (ret == ENGINE_ENOMEM)
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         else
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
-
-        /* swallow the data line */
-        c->write_and_go = conn_swallow;
+            handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
     }
 }
 
@@ -6091,11 +6073,10 @@ static void process_bin_bop_prepare_nread_keys(conn *c)
         /* ret == ENGINE_EBADVALUE || ret == ENGINE_ENOMEM */
         if (ret == ENGINE_EBADVALUE)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADVALUE, vlen);
-        else
+        else if (ret == ENGINE_ENOMEM)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
-
-        /* swallow the data line */
-        c->write_and_go = conn_swallow;
+        else
+            handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
     }
 }
 #endif
@@ -7201,17 +7182,9 @@ static void process_bin_update(conn *c)
                                  ntohll(req->message.header.request.cas),
                                  c->binary_header.request.vbucket);
         }
-
-        /* swallow the data line */
-        c->write_and_go = conn_swallow;
         break;
     default:
         handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
-
-        if (ret != ENGINE_DISCONNECT) {
-            /* swallow the data line */
-            c->write_and_go = conn_swallow;
-        }
     }
 }
 
@@ -7269,16 +7242,9 @@ static void process_bin_append_prepend(conn *c)
         } else {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         }
-        /* swallow the data line */
-        c->write_and_go = conn_swallow;
         break;
     default:
         handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
-
-        if (ret != ENGINE_DISCONNECT) {
-            /* swallow the data line */
-            c->write_and_go = conn_swallow;
-        }
     }
 }
 
@@ -8370,8 +8336,8 @@ static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt)
         conn_set_state(c, conn_nread);
     } else {
         out_string(c, "SERVER_ERROR out of memory");
-        c->write_and_go = conn_swallow;
         c->sbytes = vlen;
+        c->write_and_go = conn_swallow;
     }
 }
 
@@ -8392,8 +8358,8 @@ static inline void process_mget_command(conn *c, token_t *tokens, const size_t n
         lenkeys > ((numkeys*KEY_MAX_LENGTH) + numkeys-1)) {
         /* ENGINE_EBADVALUE */
         out_string(c, "CLIENT_ERROR bad value");
-        c->write_and_go = conn_swallow;
         c->sbytes = lenkeys + 2;
+        c->write_and_go = conn_swallow;
         return;
     }
     lenkeys += 2;
@@ -8481,8 +8447,8 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
             out_string(c, "SERVER_ERROR out of memory storing object");
         }
         /* swallow the data line */
-        c->write_and_go = conn_swallow;
         c->sbytes = vlen;
+        c->write_and_go = conn_swallow;
 
         /* Avoid stale data persisting in cache because we failed alloc.
          * Unacceptable for SET. Anywhere else too? */
@@ -8495,8 +8461,8 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
-            c->write_and_go = conn_swallow;
             c->sbytes = vlen;
+            c->write_and_go = conn_swallow;
         }
     }
 }
@@ -9812,8 +9778,8 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
-            c->write_and_go = conn_swallow;
             c->sbytes = vlen;
+            c->write_and_go = conn_swallow;
         }
     }
 }
@@ -10232,8 +10198,8 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
-            c->write_and_go = conn_swallow;
             c->sbytes = vlen;
+            c->write_and_go = conn_swallow;
         }
     }
 }
@@ -10909,8 +10875,8 @@ static void process_bop_update_prepare_nread(conn *c, int cmd,
         else                     out_string(c, "SERVER_ERROR out of memory");
 
         /* swallow the data line */
-        c->write_and_go = conn_swallow;
         c->sbytes = vlen;
+        c->write_and_go = conn_swallow;
     }
 }
 
@@ -10952,8 +10918,8 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
-            c->write_and_go = conn_swallow;
             c->sbytes = vlen;
+            c->write_and_go = conn_swallow;
         }
     }
 }
@@ -11043,8 +11009,8 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
         out_string(c, "SERVER_ERROR out of memory");
 
         /* swallow the data line */
-        c->write_and_go = conn_swallow;
         c->sbytes = vlen;
+        c->write_and_go = conn_swallow;
     }
 }
 #endif
@@ -11420,8 +11386,8 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
-            c->write_and_go = conn_swallow;
             c->sbytes = vlen;
+            c->write_and_go = conn_swallow;
         }
     }
 }
@@ -11452,9 +11418,9 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
         /* ret == ENGINE_ENOMEM */
         out_string(c, "SERVER_ERROR out of memory");
 
-        //swallow the data line
-        c->write_and_go = conn_swallow;
+        /* swallow the data line */
         c->sbytes = flen;
+        c->write_and_go = conn_swallow;
     }
 }
 
@@ -11632,8 +11598,8 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         if (numfields == 0) {
             if (lenfields != 0)  {
                 out_string(c, "CLIENT_ERROR bad value");
-                c->write_and_go = conn_swallow;
                 c->sbytes = lenfields + 2;
+                c->write_and_go = conn_swallow;
                 return;
             }
         } else { /* numfields != 0 */
@@ -11645,8 +11611,8 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 numfields > ((lenfields/2) + 1) ||
                 lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1)) {
                 out_string(c, "CLIENT_ERROR bad value");
-                c->write_and_go = conn_swallow;
                 c->sbytes = lenfields + 2;
+                c->write_and_go = conn_swallow;
                 return;
             }
         }
@@ -11703,8 +11669,8 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         if (numfields == 0) {
             if (lenfields != 0)  {
                 out_string(c, "CLIENT_ERROR bad value");
-                c->write_and_go = conn_swallow;
                 c->sbytes = lenfields + 2;
+                c->write_and_go = conn_swallow;
                 return;
             }
         } else { /* numfields != 0 */
@@ -11716,8 +11682,8 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 numfields > ((lenfields/2) + 1) ||
                 lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1)) {
                 out_string(c, "CLIENT_ERROR bad value");
-                c->write_and_go = conn_swallow;
                 c->sbytes = lenfields + 2;
+                c->write_and_go = conn_swallow;
                 return;
             }
         }
@@ -12251,8 +12217,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             lenkeys > ((numkeys*KEY_MAX_LENGTH) + numkeys-1)) {
             /* ENGINE_EBADVALUE */
             out_string(c, "CLIENT_ERROR bad value");
-            c->write_and_go = conn_swallow;
             c->sbytes = lenkeys + 2;
+            c->write_and_go = conn_swallow;
             return;
         }
         lenkeys += 2;
@@ -12261,8 +12227,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             if (numkeys > MAX_BMGET_KEY_COUNT || count > MAX_BMGET_ELM_COUNT) {
                 /* ENGINE_EBADVALUE */
                 out_string(c, "CLIENT_ERROR bad value");
-                c->write_and_go = conn_swallow;
                 c->sbytes = lenkeys;
+                c->write_and_go = conn_swallow;
                 return;
             }
         }
@@ -12272,8 +12238,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             if (numkeys > MAX_SMGET_KEY_COUNT || (offset+count) > MAX_SMGET_REQ_COUNT) {
                 /* ENGINE_EBADVALUE */
                 out_string(c, "CLIENT_ERROR bad value");
-                c->write_and_go = conn_swallow;
                 c->sbytes = lenkeys;
+                c->write_and_go = conn_swallow;
                 return;
             }
         }
