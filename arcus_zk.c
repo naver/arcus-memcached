@@ -1094,18 +1094,13 @@ static int arcus_build_znode_name(char *ensemble_list)
     return 0; // EX_OK
 }
 
-static int arcus_parse_server_mapping(const char *root, char *znode)
+static int arcus_parse_server_mapping(char *znode)
 {
     char *start[4], *end[4]; /* enough pointers for future extension */
-    int num_substrs = 1; /* sevice code */
+    int max_substrs = 4;
     int i, count;
 
-    count = breakup_string(znode, start, end, num_substrs);
-    if (count < num_substrs) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-            "The server mapping znode seems to be invalid. znode=%s\n", znode);
-        return -1;
-    }
+    count = breakup_string(znode, start, end, max_substrs);
     /* Null-terminate substrings */
     for (i = 0; i < count; i++) {
         *end[i] = '\0';
@@ -1118,7 +1113,6 @@ static int arcus_parse_server_mapping(const char *root, char *znode)
                 "Too long service code. service_code=%s\n", arcus_conf.svc);
         return -1;
     }
-
     arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
             "Found the valid server mapping. service_code=%s\n",
             arcus_conf.svc);
@@ -1185,31 +1179,25 @@ static int arcus_check_server_mapping(zhandle_t *zh, const char *root)
         return -1;
     }
 
-    /* zoo_get_children returns ZOK even if no child exist */
-    if (strv.count == 0) {
+    if (strv.count == 1) {
+        rc = arcus_parse_server_mapping(strv.data[0]);
+        if (rc < 0) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to parse server mapping znode.\n");
+        }
+    } else {
+        /* zoo_get_children returns ZOK even if no child exist */
+        /* We assume only one server mapping znode. We do not care that
+         * we have more than one (meaning one server participating in
+         * more than one service in the cluster: not likely though)
+         */
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "The server mapping exists but has no service code."
-                " zpath=%s\n", zpath);
-        return -1;
-    }
-    /* We assume only one server mapping znode. We do not care that
-     * we have more than one (meaning one server participating in
-     * more than one service in the cluster: not likely though)
-     */
-    if (strv.count > 1) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "The server mapping exists but has %d( > 1) mapping znodes."
+                "The server mapping exists but has %d(!= 1) mapping znodes."
                 " zpath=%s\n", strv.count, zpath);
-        return -1;
+        rc = -1;
     }
-    if (arcus_parse_server_mapping(root, strv.data[0]) < 0) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Failed to parse server mapping znode.\n");
-        return -1;
-    }
-
     deallocate_String_vector(&strv);
-    return 0;
+    return rc;
 }
 
 static int arcus_create_ephemeral_znode(zhandle_t *zh, const char *root)
