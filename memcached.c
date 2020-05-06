@@ -3076,6 +3076,116 @@ static void process_mget_complete(conn *c)
     }
 }
 
+#ifdef SUPPORT_MDELETE
+static void process_mdelete_complete(conn *c)
+{
+    assert(c->coll_op == OPERATION_MDELETE);
+    assert(c->coll_strkeys != NULL);
+
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    token_t *key_tokens   = NULL;
+
+    do {
+        key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
+        if (key_tokens == NULL) {
+            ret = ENGINE_ENOMEM;
+            break;
+        }
+
+        bool must_backward_compatible = false;
+        ret = tokenize_sblocks(&c->memblist, c->coll_lenkeys, c->coll_numkeys,
+                               MAX_FIELD_LENG, must_backward_compatible, key_tokens);
+        if (ret != ENGINE_SUCCESS) {
+            break; /* ENGINE_EBADVALUE | ENGINE_ENOMEM */
+        }
+
+        /* check key length */
+        for (int k = 0; k < c->coll_numkeys; k++) {
+            if (key_tokens[k].length > KEY_MAX_LENGTH) {
+                ret = ENGINE_EBADVALUE;
+                break;
+            }
+        }
+
+        if (ret == ENGINE_EBADVALUE) { /* too long key */
+            break;
+        }
+
+        /* do delete operation for each key */
+        for (int k = 0; k < c->coll_numkeys; k++) {
+            char *key = key_tokens[k].value;
+            size_t nkey = key_tokens[k].length;
+
+            ret = mc_engine.v1->remove(mc_engine.v0, c, key, nkey, 0, 0);
+
+            if (add_iov(c, key, nkey) != 0) {
+                ret = ENGINE_ENOMEM;
+                break; /* out of memory */
+            }
+
+            if (ret == ENGINE_SUCCESS) {
+                if (add_iov(c, " DELETED\r\n", 10) != 0) {
+                    ret = ENGINE_ENOMEM;
+                    break; /* out of memory */
+                }
+                STATS_HITS(c, delete, key, nkey);
+            } else if (ret == ENGINE_KEY_ENOENT) {
+                if (add_iov(c, " NOT_FOUND\r\n", 12) != 0) {
+                    ret = ENGINE_ENOMEM;
+                    break; /* out of memory */
+                }
+                /* mdelete responds to requests whether the key exists or not.
+                * Thus, ENGINE_KEY_ENOENT state is not error.
+                */
+                ret = ENGINE_SUCCESS;
+                STATS_MISSES(c, delete, key, nkey);
+            } else if (ret == ENGINE_EWOULDBLOCK) {
+                c->ewouldblock = true;
+                ret = ENGINE_SUCCESS;
+            } else {
+                break;
+            }
+
+            if (settings.verbose > 1) {
+                mc_logger->log(EXTENSION_LOG_DEBUG, c, ">%d deleting key %s\n",
+                               c->sfd, key);
+            }
+        }
+    } while(0);
+
+    if (settings.verbose > 1) {
+        mc_logger->log(EXTENSION_LOG_DEBUG, c, ">%d END\n", c->sfd);
+    }
+
+    if (ret == ENGINE_SUCCESS && add_iov(c, "END\r\n", 5) != 0) {
+        ret = ENGINE_ENOMEM;
+    }
+
+    switch(ret) {
+      case ENGINE_SUCCESS:
+        conn_set_state(c, conn_mwrite);
+        c->msgcurr = 0;
+        break;
+     default:
+        if (ret == ENGINE_EBADVALUE)   out_string(c, "CLIENT_ERROR bad data chunk");
+        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory writing get response");
+        else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
+    }
+
+    /* free token buffer */
+    if (key_tokens != NULL) {
+        token_buff_release(&c->thread->token_buff, key_tokens);
+    }
+    if (ret != ENGINE_SUCCESS) {
+        /* free key string memory blocks */
+        assert(c->coll_strkeys == (void*)&c->memblist);
+        mblck_list_free(&c->thread->mblck_pool, &c->memblist);
+        c->coll_strkeys = NULL;
+    }
+}
+#endif
+
 static void update_stat_cas(conn *c, ENGINE_ERROR_CODE ret)
 {
     switch (ret) {
@@ -3121,6 +3231,9 @@ static void complete_update_ascii(conn *c)
         else if (c->coll_op == OPERATION_BOP_SMGET) process_bop_smget_complete(c);
 #endif
         else if (c->coll_op == OPERATION_MGET) process_mget_complete(c);
+#ifdef SUPPORT_MDELETE
+        else if (c->coll_op == OPERATION_MDELETE) process_mdelete_complete(c);
+#endif
         return;
     }
 
@@ -8325,6 +8438,9 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
 
 static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt)
 {
+#ifdef SUPPORT_MDELETE
+    assert(c->coll_op == OPERATION_MGET || c->coll_op == OPERATION_MDELETE);
+#endif
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     /* allocate memory blocks needed */
@@ -8334,7 +8450,9 @@ static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt)
     if (ret == ENGINE_SUCCESS) {
         c->coll_strkeys = (void*)&c->memblist;
         ritem_set_first(c, CONN_RTYPE_MBLCK, vlen);
+#ifndef SUPPORT_MDELETE
         c->coll_op = OPERATION_MGET;
+#endif
         conn_set_state(c, conn_nread);
     } else {
         out_string(c, "SERVER_ERROR out of memory");
@@ -8368,9 +8486,48 @@ static inline void process_mget_command(conn *c, token_t *tokens, const size_t n
 
     c->coll_numkeys = numkeys;
     c->coll_lenkeys = lenkeys;
+#ifdef SUPPORT_MDELETE
+    c->coll_op = OPERATION_MGET;
+#endif
+    process_prepare_nread_keys(c, lenkeys, numkeys);
+}
+
+#ifdef SUPPORT_MDELETE
+static inline void process_mdelete_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    uint32_t lenkeys = 0, numkeys = 0;
+
+    if ((! safe_strtoul(tokens[COMMAND_TOKEN+1].value, &lenkeys)) ||
+        (! safe_strtoul(tokens[COMMAND_TOKEN+2].value, &numkeys)) ||
+        (lenkeys > (UINT_MAX-2))) {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "CLIENT_ERROR bad command line format");
+        return;
+    }
+
+    /* There are (numkeys-1) space characters in the tokens.
+     * Therefore, numkeys is always smaller than (lenkeys/2)+1 even when all keys are one letter.
+     */
+    if (lenkeys < 1 || numkeys < 1 || numkeys > ((lenkeys/2)+1)) {
+        out_string(c, "CLIENT_ERROR bad value");
+        return;
+    }
+
+    if (numkeys > MAX_MDELETE_KEY_COUNT) {
+        out_string(c, "CLIENT_ERROR bad value");
+        return;
+    }
+
+    /* add trailling \r\n length to lenkeys. */
+    lenkeys += 2;
+
+    c->coll_numkeys = numkeys;
+    c->coll_lenkeys = lenkeys;
+    c->coll_op = OPERATION_MDELETE;
 
     process_prepare_nread_keys(c, lenkeys, numkeys);
 }
+#endif
 
 static void process_update_command(conn *c, token_t *tokens, const size_t ntokens,
                                    ENGINE_STORE_OPERATION store_op, bool handle_cas)
@@ -12736,6 +12893,12 @@ static void process_command(conn *c, char *command, int cmdlen)
     {
         process_delete_command(c, tokens, ntokens);
     }
+#ifdef SUPPORT_MDELETE
+    else if ((ntokens == 4) && (strcmp(tokens[COMMAND_TOKEN].value, "mdelete") == 0))
+    {
+        process_mdelete_command(c, tokens, ntokens);
+    }
+#endif
     else if ((ntokens >= 5 && ntokens <= 13) && (strcmp(tokens[COMMAND_TOKEN].value, "lop") == 0))
     {
         process_lop_command(c, tokens, ntokens);

@@ -76,6 +76,8 @@ sub mem_cmd_is {
         }
     } elsif ($#cmd_pipeline > 1) {
         $rst_type = 3;
+    } elsif ($cmd =~ /^mdelete/) {
+        $rst_type = 4;
     } else {
         $line = scalar <$sock>;
         $resp = $resp . (substr $line, 0, length($line)-2);
@@ -125,6 +127,17 @@ sub mem_cmd_is {
             $line = scalar <$sock>;
             $resp = $resp . (substr $line, 0, length($line)-2);
             if ($count eq 0) {
+                last;
+            }
+            $resp = $resp . "\n";
+        }
+    } elsif ($rst_type eq 4) { #mdelete
+        $count = $#prdct_response + 1;
+        while ($count--) {
+            $line = scalar <$sock>;
+            $resp = $resp . (substr $line, 0, length($line)-2);
+            #mdelete's response always contain trailling CRLF excepts ERROR case
+            if ($count eq 0 && $line =~ /.*ERROR.*/) {
                 last;
             }
             $resp = $resp . "\n";
