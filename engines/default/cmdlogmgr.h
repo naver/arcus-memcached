@@ -46,9 +46,15 @@ enum upd_type {
     UPD_NONE
 };
 
+/* Change the type of roffset from uint32_t to uint64_t.
+ * 1. There is no guarantee that the checkpoint will always succeed,
+ *    the cmdlog record offset can exceed 4GB during retries.
+ * 2. Depending on the memlimit, a checkpoint can occur when offset exceeds 4GB.
+ */
 typedef struct logsn {
     uint32_t filenum;  /* cmdlog file number : 1, 2, ... */
-    uint32_t roffset;  /* cmdlog record offset */
+    uint32_t rsvd32;   /* reserved 4 bytes */
+    uint64_t roffset;  /* cmdlog record offset */
 } LogSN;
 
 /* command log manager entry structure */
