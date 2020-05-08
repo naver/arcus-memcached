@@ -224,6 +224,38 @@ static rel_time_t realtime(const time_t exptime)
     }
 }
 
+/* grow the dynamic buffer of the given connection */
+static bool grow_dynamic_buffer(conn *c, size_t needed)
+{
+    size_t nsize = c->dynamic_buffer.size;
+    size_t available = nsize - c->dynamic_buffer.offset;
+    bool rv = true;
+
+    /* Special case: No buffer -- need to allocate fresh */
+    if (c->dynamic_buffer.buffer == NULL) {
+        nsize = 1024;
+        available = c->dynamic_buffer.size = c->dynamic_buffer.offset = 0;
+    }
+
+    while (needed > available) {
+        assert(nsize > 0);
+        nsize = nsize << 1;
+        available = nsize - c->dynamic_buffer.offset;
+    }
+
+    if (nsize != c->dynamic_buffer.size) {
+        char *ptr = realloc(c->dynamic_buffer.buffer, nsize);
+        if (ptr) {
+            c->dynamic_buffer.buffer = ptr;
+            c->dynamic_buffer.size = nsize;
+        } else {
+            rv = false;
+        }
+    }
+
+    return rv;
+}
+
 static void disable_stats_detail(void)
 {
     settings.detail_enabled = 0;
@@ -3859,8 +3891,19 @@ static void process_bin_get(conn *c)
 
 static void append_bin_stats(const char *key, const uint16_t klen,
                              const char *val, const uint32_t vlen,
-                             conn *c)
+                             const void *cookie)
 {
+    /* value without a key is invalid */
+    if (klen == 0 && vlen > 0) {
+        return;
+    }
+
+    conn *c = (conn*)cookie;
+    size_t needed = vlen + klen + sizeof(protocol_binary_response_header);
+    if (!grow_dynamic_buffer(c, needed)) {
+        return;
+    }
+
     char *buf = c->dynamic_buffer.buffer + c->dynamic_buffer.offset;
     uint32_t bodylen = klen + vlen;
     protocol_binary_response_header header = {
@@ -3885,17 +3928,28 @@ static void append_bin_stats(const char *key, const uint16_t klen,
     }
 
     c->dynamic_buffer.offset += sizeof(header.response) + bodylen;
+    assert(c->dynamic_buffer.offset <= c->dynamic_buffer.size);
 }
 
 /**
  * Append a key-value pair to the stats output buffer. This function assumes
- * that the output buffer is big enough (it will be if you call it through
- * append_stats)
+ * that the output buffer is big enough.
  */
 static void append_ascii_stats(const char *key, const uint16_t klen,
                                const char *val, const uint32_t vlen,
-                               conn *c)
+                               const void *cookie)
 {
+    /* value without a key is invalid */
+    if (klen == 0 && vlen > 0) {
+        return;
+    }
+
+    conn *c = (conn*)cookie;
+    size_t needed =  vlen + klen + 10; // 10 == "STAT = \r\n"
+    if (!grow_dynamic_buffer(c, needed)) {
+        return;
+    }
+
     char *pos = c->dynamic_buffer.buffer + c->dynamic_buffer.offset;
     uint32_t nbytes = 5; /* "END\r\n" or "STAT " */
 
@@ -3916,64 +3970,6 @@ static void append_ascii_stats(const char *key, const uint16_t klen,
     }
 
     c->dynamic_buffer.offset += nbytes;
-}
-
-static bool grow_dynamic_buffer(conn *c, size_t needed)
-{
-    size_t nsize = c->dynamic_buffer.size;
-    size_t available = nsize - c->dynamic_buffer.offset;
-    bool rv = true;
-
-    /* Special case: No buffer -- need to allocate fresh */
-    if (c->dynamic_buffer.buffer == NULL) {
-        nsize = 1024;
-        available = c->dynamic_buffer.size = c->dynamic_buffer.offset = 0;
-    }
-
-    while (needed > available) {
-        assert(nsize > 0);
-        nsize = nsize << 1;
-        available = nsize - c->dynamic_buffer.offset;
-    }
-
-    if (nsize != c->dynamic_buffer.size) {
-        char *ptr = realloc(c->dynamic_buffer.buffer, nsize);
-        if (ptr) {
-            c->dynamic_buffer.buffer = ptr;
-            c->dynamic_buffer.size = nsize;
-        } else {
-            rv = false;
-        }
-    }
-
-    return rv;
-}
-
-static void append_stats(const char *key, const uint16_t klen,
-                         const char *val, const uint32_t vlen,
-                         const void *cookie)
-{
-    /* value without a key is invalid */
-    if (klen == 0 && vlen > 0) {
-        return;
-    }
-
-    conn *c = (conn*)cookie;
-
-    if (c->protocol == binary_prot) {
-        size_t needed = vlen + klen + sizeof(protocol_binary_response_header);
-        if (!grow_dynamic_buffer(c, needed)) {
-            return;
-        }
-        append_bin_stats(key, klen, val, vlen, c);
-    } else {
-        size_t needed = vlen + klen + 10; // 10 == "STAT = \r\n"
-        if (!grow_dynamic_buffer(c, needed)) {
-            return;
-        }
-        append_ascii_stats(key, klen, val, vlen, c);
-    }
-
     assert(c->dynamic_buffer.offset <= c->dynamic_buffer.size);
 }
 
@@ -3993,15 +3989,15 @@ static void process_bin_stat(conn *c)
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     if (nkey == 0) {
         /* request all statistics */
-        ret = mc_engine.v1->get_stats(mc_engine.v0, c, NULL, 0, append_stats);
+        ret = mc_engine.v1->get_stats(mc_engine.v0, c, NULL, 0, append_bin_stats);
         if (ret == ENGINE_SUCCESS) {
-            server_stats(&append_stats, c, false);
+            server_stats(&append_bin_stats, c, false);
         }
     } else if (strncmp(subcommand, "reset", 5) == 0) {
         stats_reset(c);
         mc_engine.v1->reset_stats(mc_engine.v0, c);
     } else if (strncmp(subcommand, "settings", 8) == 0) {
-        process_stat_settings(&append_stats, c);
+        process_stat_settings(&append_bin_stats, c);
     } else if (strncmp(subcommand, "detail", 6) == 0) {
         char *subcmd_pos = subcommand + 6;
         if (settings.allow_detailed) {
@@ -4012,7 +4008,7 @@ static void process_bin_stat(conn *c)
                     write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
                     return;
                 } else {
-                    append_stats("detailed", strlen("detailed"), dump_buf, len, c);
+                    append_bin_stats("detailed", strlen("detailed"), dump_buf, len, c);
                     free(dump_buf);
                 }
             } else if (strncmp(subcmd_pos, " on", 3) == 0) {
@@ -4028,10 +4024,10 @@ static void process_bin_stat(conn *c)
             return;
         }
     } else if (strncmp(subcommand, "aggregate", 9) == 0) {
-        server_stats(&append_stats, c, true);
+        server_stats(&append_bin_stats, c, true);
     } else if (strncmp(subcommand, "topkeys", 7) == 0) {
         if (default_topkeys) {
-            topkeys_stats(default_topkeys, c, get_current_time(), append_stats);
+            topkeys_stats(default_topkeys, c, get_current_time(), append_bin_stats);
         } else {
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
             return;
@@ -4059,7 +4055,7 @@ static void process_bin_stat(conn *c)
             sprintf(str+strlen(str), "PREFIX prefix_items=%u\r\n", prefix_data.prefix_items);
             sprintf(str+strlen(str), "END");
 
-            append_stats("prefix", strlen("prefix"), str, strlen(str), c);
+            append_bin_stats("prefix", strlen("prefix"), str, strlen(str), c);
         }
     } else if (strncmp(subcommand, "noprefix", 8) == 0) {
         prefix_engine_stats prefix_data;
@@ -4076,16 +4072,16 @@ static void process_bin_stat(conn *c)
             sprintf(str+strlen(str), "NOPREFIX tot_prefix_items=%u\r\n", prefix_data.tot_prefix_items);
             sprintf(str+strlen(str), "END");
 
-            append_stats("noprefix", strlen("noprefix"), str, strlen(str), c);
+            append_bin_stats("noprefix", strlen("noprefix"), str, strlen(str), c);
         }
     ************************************/
     } else {
-        ret = mc_engine.v1->get_stats(mc_engine.v0, c, subcommand, nkey, append_stats);
+        ret = mc_engine.v1->get_stats(mc_engine.v0, c, subcommand, nkey, append_bin_stats);
     }
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        append_stats(NULL, 0, NULL, 0, c);
+        append_bin_stats(NULL, 0, NULL, 0, c);
         write_and_free(c, c->dynamic_buffer.buffer, c->dynamic_buffer.offset);
         c->dynamic_buffer.buffer = NULL;
         break;
@@ -8115,9 +8111,9 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens)
     }
 
     if (ntokens == 2) {
-        server_stats(&append_stats, c, false);
+        server_stats(&append_ascii_stats, c, false);
         (void)mc_engine.v1->get_stats(mc_engine.v0, c,
-                                      NULL, 0, &append_stats);
+                                      NULL, 0, &append_ascii_stats);
     } else if (strcmp(subcommand, "reset") == 0) {
         stats_reset(c);
         out_string(c, "RESET");
@@ -8131,7 +8127,7 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens)
         /* Output already generated */
         return;
     } else if (strcmp(subcommand, "settings") == 0) {
-        process_stat_settings(&append_stats, c);
+        process_stat_settings(&append_ascii_stats, c);
     } else if (strcmp(subcommand, "cachedump") == 0) {
         char *buf = NULL;
         unsigned int bytes = 0, id, limit = 0;
@@ -8180,10 +8176,10 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens)
         write_and_free(c, buf, bytes);
         return;
     } else if (strcmp(subcommand, "aggregate") == 0) {
-        server_stats(&append_stats, c, true);
+        server_stats(&append_ascii_stats, c, true);
     } else if (strcmp(subcommand, "topkeys") == 0) {
         if (default_topkeys) {
-            topkeys_stats(default_topkeys, c, get_current_time(), append_stats);
+            topkeys_stats(default_topkeys, c, get_current_time(), append_ascii_stats);
         } else {
             out_string(c, "NOT_SUPPORTED");
             return;
@@ -8216,12 +8212,12 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens)
             ret = ENGINE_KEY_ENOENT;
         } else {
             ret = mc_engine.v1->get_stats(mc_engine.v0, c, buf,
-                                          nb, append_stats);
+                                          nb, append_ascii_stats);
         }
 
         switch (ret) {
         case ENGINE_SUCCESS:
-            append_stats(NULL, 0, NULL, 0, c);
+            append_ascii_stats(NULL, 0, NULL, 0, c);
             write_and_free(c, c->dynamic_buffer.buffer, c->dynamic_buffer.offset);
             c->dynamic_buffer.buffer = NULL;
             break;
@@ -8242,7 +8238,7 @@ static void process_stat(conn *c, token_t *tokens, const size_t ntokens)
     }
 
     /* append terminator and start the transfer */
-    append_stats(NULL, 0, NULL, 0, c);
+    append_ascii_stats(NULL, 0, NULL, 0, c);
 
     if (c->dynamic_buffer.buffer == NULL) {
         out_string(c, "SERVER_ERROR out of memory writing stats");
