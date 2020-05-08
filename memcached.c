@@ -773,7 +773,6 @@ static void conn_coll_eitem_free(conn *c)
             free(c->coll_resps); c->coll_resps = NULL;
         }
         break;
-#if defined(SUPPORT_BOP_MGET) || defined(SUPPORT_BOP_SMGET)
 #ifdef SUPPORT_BOP_MGET
       case OPERATION_BOP_MGET:
         for (int k = 0; k < c->coll_numkeys; k++) {
@@ -790,7 +789,6 @@ static void conn_coll_eitem_free(conn *c)
 #endif
 #ifdef SUPPORT_BOP_SMGET
       case OPERATION_BOP_SMGET:
-#endif
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, c->coll_eitem, c->coll_ecount);
         free(c->coll_eitem);
         break;
@@ -6017,8 +6015,9 @@ static void process_bin_bop_prepare_nread_keys(conn *c)
             elem_rshdr_size = smget_count * (sizeof(uint64_t) + (3*sizeof(uint32_t)));
             kmis_rshdr_size = req->message.body.key_count * sizeof(uint32_t);
             need_size = elem_array_size + kmis_array_size + elem_rshdr_size + kmis_rshdr_size;
-          } else {
+          } else
 #endif
+          {
             int elem_array_size; /* smget element array size */
             int ehit_array_size; /* smget hitted elem array size */
             int emis_array_size; /* element missed keys array size */
@@ -6036,9 +6035,7 @@ static void process_bin_bop_prepare_nread_keys(conn *c)
             emis_rshdr_size = req->message.body.key_count * sizeof(uint32_t);
             need_size = elem_array_size + ehit_array_size + emis_array_size
                       + elem_rshdr_size + emis_rshdr_size;
-#ifdef JHPARK_OLD_SMGET_INTERFACE
           }
-#endif
         }
 #endif
         assert(need_size > 0);
@@ -10957,8 +10954,9 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
         respon_bdy_size = smget_count * ((MAX_BKEY_LENG*2+2)+(MAX_EFLAG_LENG*2+2)+(UINT32_STR_LENG*2)+5); /* result body size */
 
         need_size = elem_array_size + kmis_array_size + respon_hdr_size + respon_bdy_size;
-      } else {
+      } else
 #endif
+      {
         int elem_array_size; /* smget element array size */
         int ehit_array_size; /* smget hitted elem array size */
         int emis_array_size; /* element missed keys array size */
@@ -10973,9 +10971,7 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
                         + (c->coll_numkeys * ((MAX_EFLAG_LENG*2+2) + 5)); /* result body size */
         need_size = elem_array_size + ehit_array_size + emis_array_size
                   + respon_hdr_size + respon_bdy_size;
-#ifdef JHPARK_OLD_SMGET_INTERFACE
      }
-#endif
     }
 #endif
     assert(need_size > 0);
