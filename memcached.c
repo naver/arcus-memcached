@@ -7548,12 +7548,14 @@ static void complete_nread_ascii(conn *c)
         if (!c->ascii_cmd->execute(c->ascii_cmd->cookie, c, 0, NULL,
                                    ascii_response_handler)) {
             conn_set_state(c, conn_closing);
-        } else if (c->dynamic_buffer.buffer != NULL) {
-            write_and_free(c, c->dynamic_buffer.buffer,
-                           c->dynamic_buffer.offset);
-            c->dynamic_buffer.buffer = NULL;
         } else {
-            conn_set_state(c, conn_new_cmd);
+            if (c->dynamic_buffer.buffer != NULL) {
+                write_and_free(c, c->dynamic_buffer.buffer,
+                               c->dynamic_buffer.offset);
+                c->dynamic_buffer.buffer = NULL;
+            } else {
+                conn_set_state(c, conn_new_cmd);
+            }
         }
     } else {
         complete_update_ascii(c);
@@ -8100,7 +8102,7 @@ static void process_stat_settings(ADD_STAT add_stats, void *c)
     }
 }
 
-static void process_stat(conn *c, token_t *tokens, const size_t ntokens)
+static void process_stat_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
     const char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
@@ -12745,7 +12747,7 @@ static void process_command(conn *c, char *command, int cmdlen)
     }
     else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "stats") == 0))
     {
-        process_stat(c, tokens, ntokens);
+        process_stat_command(c, tokens, ntokens);
     }
     else if ((ntokens >= 2 && ntokens <= 4) && (strcmp(tokens[COMMAND_TOKEN].value, "flush_all") == 0))
     {
@@ -12760,7 +12762,8 @@ static void process_command(conn *c, char *command, int cmdlen)
         process_config_command(c, tokens, ntokens);
     }
 #ifdef ENABLE_ZK_INTEGRATION
-    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "zkensemble") == 0)) {
+    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "zkensemble") == 0))
+    {
         process_zkensemble_command(c, tokens, ntokens);
     }
 #endif
