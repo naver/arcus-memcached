@@ -270,6 +270,7 @@ STAT sticky_bytes 0
 STAT bytes 0
 STAT sticky_limit 0
 STAT engine_maxbytes 8589934592
+END
 ```
 
 명령 별 주요 통계를 정리하면 다음과 같다.
@@ -357,6 +358,7 @@ STAT max_element_bytes 16384
 STAT topkeys 0
 STAT logger syslog
 STAT ascii_extension scrub
+END
 ```
 
 | stats              | 설명                                                         |
@@ -408,6 +410,7 @@ STAT items:0:evicted_time 0
 STAT items:0:outofmemory 0
 STAT items:0:tailrepairs 0
 STAT items:0:reclaimed 0
+END
 ```
 
 'items:' 옆에 표기된 숫자가 slab class id이다. 통계 정보의 의미는 다음과 같다.
@@ -451,6 +454,7 @@ STAT 0:mem_requested 262144
 STAT active_slabs 1
 STAT memory_limit 8589934592
 STAT total_malloced 1048576
+END
 ```
 
 콜론(:)앞의 문자는 slab 클래스 번호를 의미한다. 'SM'이라고 표기된 클래스는 작은 크기의 데이터를 관리하는 small manager 클래스이다.
