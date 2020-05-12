@@ -430,6 +430,97 @@ size_t list_to_array(conn **dest, size_t max_items, conn **l)
     return n_items;
 }
 
+#ifdef ADD_BLOCK_CNT
+void set_io_block_cnt(const void *cookie, int count)
+{
+    struct conn *conn = (struct conn *)cookie;
+
+    /*
+    ** There may be a race condition between the engine calling this
+    ** function and the core closing the connection.
+    ** Let's lock the connection structure (this might not be the
+    ** correct one) and re-evaluate.
+    */
+    LIBEVENT_THREAD *thr = conn->thread;
+
+    if (thr == NULL || conn->state == conn_closing) {
+        return;
+    }
+
+    LOCK_THREAD(thr);
+
+    conn->io_block_cnt += count;
+
+    if (thr != conn->thread || conn->state == conn_closing || conn->io_block_cnt == 0){
+        conn->premature_notify_io_complete = true;
+        UNLOCK_THREAD(thr);
+        mc_logger->log(EXTENSION_LOG_DEBUG, NULL, "Premature notify_io_complete\n");
+        return;
+    }
+
+    UNLOCK_THREAD(thr);
+}
+
+void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
+{
+    struct conn *conn = (struct conn *)cookie;
+
+    mc_logger->log(EXTENSION_LOG_DEBUG, NULL,
+            "Got notify from %d, status %x\n", conn->sfd, status);
+
+    /*
+    ** There may be a race condition between the engine calling this
+    ** function and the core closing the connection.
+    ** Let's lock the connection structure (this might not be the
+    ** correct one) and re-evaluate.
+    */
+    LIBEVENT_THREAD *thr = conn->thread;
+
+    if (thr == NULL || conn->state == conn_closing) {
+        return;
+    }
+
+    int notify = 0;
+
+    LOCK_THREAD(thr);
+
+    conn->io_block_cnt -= 1;
+
+    if (thr != conn->thread || conn->state == conn_closing){
+        conn->premature_notify_io_complete = true;
+        UNLOCK_THREAD(thr);
+        mc_logger->log(EXTENSION_LOG_DEBUG, NULL, "Premature notify_io_complete\n");
+        return;
+    }
+
+    if (conn->io_block_cnt == 0) {
+        conn->io_blocked = false;
+
+        /* update to latest status when aiostat was ENGINE_SUCCESS */
+        if (conn->aiostat == ENGINE_SUCCESS) {
+            conn->aiostat = status;
+        }
+
+        if (number_of_pending(conn, thr->pending_io) == 0) {
+            if (thr->pending_io == NULL) {
+                notify = 1;
+            }
+            conn->next = thr->pending_io;
+            thr->pending_io = conn;
+        }
+        int pending = number_of_pending(conn, thr->pending_io);
+        assert(pending == 1);
+    }
+
+    UNLOCK_THREAD(thr);
+
+    /* kick the thread in the butt */
+    if (notify && write(thr->notify_send_fd, "", 1) != 1) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Writing to thread notify pipe: %s", strerror(errno));
+    }
+}
+#else
 void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
 {
     struct conn *conn = (struct conn *)cookie;
@@ -481,6 +572,7 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
                 "Writing to thread notify pipe: %s", strerror(errno));
     }
 }
+#endif
 
 /* Which thread we assigned a connection to most recently. */
 static int last_thread = -1;

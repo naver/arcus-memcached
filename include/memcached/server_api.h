@@ -121,6 +121,15 @@ extern "C" {
          */
         int (*get_thread_index)(const void *cookie);
 
+#ifdef ADD_BLOCK_CNT
+        /**
+         * Set IO complete wait count on the connection.
+         * @param cookie cookie representing the connection
+         * @param count the number waiting to be IO complete
+         */
+        void (*set_io_block_cnt)(const void *cookie, int count);
+#endif
+
         /**
          * Let a connection know that IO has completed.
          * @param cookie cookie representing the connection

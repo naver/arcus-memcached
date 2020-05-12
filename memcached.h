@@ -451,6 +451,9 @@ struct conn {
      */
     bool io_blocked;
     bool premature_notify_io_complete;
+#ifdef ADD_BLOCK_CNT
+    int  io_block_cnt;
+#endif
 };
 
 /* set connection's ewouldblock according to the given return value */

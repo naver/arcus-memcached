@@ -719,6 +719,9 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->ewouldblock = false;
     c->io_blocked = false;
     c->premature_notify_io_complete = false;
+#ifdef ADD_BLOCK_CNT
+    c->io_block_cnt = 0;
+#endif
 
     /* save client ip address in connection object */
     struct sockaddr_in addr;
@@ -897,6 +900,9 @@ static void conn_cleanup(conn *c)
     c->ewouldblock = false;
     c->io_blocked = false;
     c->premature_notify_io_complete = false;
+#ifdef ADD_BLOCK_CNT
+    c->io_block_cnt = 0;
+#endif
 }
 
 void conn_close(conn *c)
@@ -14538,6 +14544,9 @@ static SERVER_HANDLE_V1 *get_server_api(void)
         .server_version = get_server_version,
         .hash = mc_hash,
         .realtime = realtime,
+#ifdef ADD_BLOCK_CNT
+        .set_io_block_cnt = set_io_block_cnt,
+#endif
         .notify_io_complete = notify_io_complete,
         .get_current_time = get_current_time,
 #ifdef NEW_PREFIX_STATS_MANAGEMENT

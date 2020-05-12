@@ -228,6 +228,9 @@ bool   list_contains(struct conn *h, struct conn *n);
 struct conn  *list_remove(struct conn *h, struct conn *n);
 size_t list_to_array(struct conn **dest, size_t max_items, struct conn **l);
 
+#ifdef ADD_BLOCK_CNT
+void set_io_block_cnt(const void *cookie, int count);
+#endif
 void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status);
 int  dispatch_event_add(int thread, struct conn *c);
 void dispatch_conn_new(int sfd, STATE_FUNC init_state, int event_flags,
