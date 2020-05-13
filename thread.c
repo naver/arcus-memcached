@@ -494,6 +494,12 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
     }
 
     if (conn->io_block_cnt == 0) {
+        if (!conn->io_blocked){
+            conn->premature_notify_io_complete = true;
+            UNLOCK_THREAD(thr);
+            mc_logger->log(EXTENSION_LOG_DEBUG, NULL, "Premature notify_io_complete\n");
+            return;
+        }
         conn->io_blocked = false;
 
         /* update to latest status when aiostat was ENGINE_SUCCESS */
