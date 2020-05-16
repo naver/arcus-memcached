@@ -9095,7 +9095,6 @@ typedef struct _item_scan_t {
     struct assoc_scan asscan; /* assoc scan */
     const char *prefix;
     int        nprefix;
-    bool       by_chkpt;
     bool       is_used;
     struct _item_scan_t *next;
 } item_scan_t;
@@ -9153,21 +9152,19 @@ static void do_itscan_free(item_scan_t *sp)
 /*
  * External item scan functions
  */
-void *itscan_open(struct default_engine *engine, const char *prefix, const int nprefix, bool chkpt)
+void *itscan_open(struct default_engine *engine, const char *prefix, const int nprefix,
+                  CB_SCAN_OPEN cb_scan_open)
 {
     item_scan_t *sp = do_itscan_alloc();
     if (sp != NULL) {
         LOCK_CACHE();
         assoc_scan_init(&sp->asscan);
-#ifdef ENABLE_PERSISTENCE
-        if (chkpt) {
-            cmdlog_set_chkpt_scan(&sp->asscan);
+        if (cb_scan_open != NULL) {
+            cb_scan_open(&sp->asscan);
         }
-#endif
         UNLOCK_CACHE();
         sp->prefix = prefix;
         sp->nprefix = nprefix;
-        sp->by_chkpt = chkpt;
         sp->is_used = true;
     }
     return (void*)sp;
@@ -9254,17 +9251,15 @@ void itscan_release(void *scan, void **item_array, elems_result_t *erst_array, i
     UNLOCK_CACHE();
 }
 
-void itscan_close(void *scan, bool success)
+void itscan_close(void *scan, CB_SCAN_CLOSE cb_scan_close, bool success)
 {
     item_scan_t *sp = (item_scan_t *)scan;
 
     LOCK_CACHE();
     assoc_scan_final(&sp->asscan);
-#ifdef ENABLE_PERSISTENCE
-    if (sp->by_chkpt) {
-        cmdlog_reset_chkpt_scan(success);
+    if (cb_scan_close != NULL) {
+        cb_scan_close(success);
     }
-#endif
     UNLOCK_CACHE();
 
     sp->is_used = false;

@@ -96,7 +96,7 @@ void cmdlog_generate_btree_elem_delete_logical(hash_item *it, const bkey_range *
                                                const eflag_filter *efilter, uint32_t offset, uint32_t reqcount);
 void cmdlog_generate_operation_range(bool begin);
 
-void cmdlog_set_chkpt_scan(struct assoc_scan *cs);
+void cmdlog_set_chkpt_scan(void *scanp);
 void cmdlog_reset_chkpt_scan(bool chkpt_success);
 
 /* LogSN : SET_NULL */

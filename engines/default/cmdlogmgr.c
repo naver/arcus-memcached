@@ -674,11 +674,11 @@ void cmdlog_generate_operation_range(bool begin)
     }
 }
 
-void cmdlog_set_chkpt_scan(struct assoc_scan *cs)
+void cmdlog_set_chkpt_scan(void *scanp)
 {
     /* Cache locked */
     assert(chkpt_scanp == NULL);
-    chkpt_scanp = cs;
+    chkpt_scanp = scanp;
 }
 
 void cmdlog_reset_chkpt_scan(bool chkpt_success)

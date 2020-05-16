@@ -25,6 +25,7 @@
 #ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
 #include "mc_snapshot.h"
 #ifdef ENABLE_PERSISTENCE
+#include "cmdlogmgr.h"
 #include "cmdlogrec.h"
 #endif
 
@@ -402,6 +403,8 @@ static void do_snapshot_prepare(snapshot_st *ss,
 static bool do_snapshot_action(snapshot_st *ss)
 {
     struct default_engine *engine = ss->engine;
+    CB_SCAN_OPEN    cb_scan_open = NULL;
+    CB_SCAN_CLOSE   cb_scan_close = NULL;
     void           *shandle; /* scan handle */
     elems_result_t  eresults[SCAN_ITEM_ARRAY_SIZE];
     elems_result_t *erst_array = NULL;
@@ -426,8 +429,13 @@ static bool do_snapshot_action(snapshot_st *ss)
         erst_array = eresults;
     }
 
-    bool chkpt = (ss->mode == MC_SNAPSHOT_MODE_CHKPT ? true : false);
-    shandle = itscan_open(engine, ss->prefix, ss->nprefix, chkpt);
+#ifdef ENABLE_PERSISTENCE
+    if (ss->mode == MC_SNAPSHOT_MODE_CHKPT) {
+        cb_scan_open = &cmdlog_set_chkpt_scan;
+        cb_scan_close = &cmdlog_reset_chkpt_scan;
+    }
+#endif
+    shandle = itscan_open(engine, ss->prefix, ss->nprefix, cb_scan_open);
     if (shandle == NULL) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to get item scan resource.\n");
@@ -467,7 +475,7 @@ static bool do_snapshot_action(snapshot_st *ss)
          * We continue the scan.
          */
     }
-    itscan_close(shandle, snapshot_done);
+    itscan_close(shandle, cb_scan_close, snapshot_done);
 
 done:
     if (erst_array != NULL) {
