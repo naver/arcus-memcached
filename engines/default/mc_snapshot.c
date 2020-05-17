@@ -402,10 +402,9 @@ static void do_snapshot_prepare(snapshot_st *ss,
 
 static bool do_snapshot_action(snapshot_st *ss)
 {
-    struct default_engine *engine = ss->engine;
     CB_SCAN_OPEN    cb_scan_open = NULL;
     CB_SCAN_CLOSE   cb_scan_close = NULL;
-    void           *shandle; /* scan handle */
+    item_scan       scan;
     elems_result_t  eresults[SCAN_ITEM_ARRAY_SIZE];
     elems_result_t *erst_array = NULL;
     void           *item_array[SCAN_ITEM_ARRAY_SIZE];
@@ -435,18 +434,13 @@ static bool do_snapshot_action(snapshot_st *ss)
         cb_scan_close = &cmdlog_reset_chkpt_scan;
     }
 #endif
-    shandle = itscan_open(engine, ss->prefix, ss->nprefix, cb_scan_open);
-    if (shandle == NULL) {
-        logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to get item scan resource.\n");
-        goto done;
-    }
+    item_scan_open(&scan, ss->prefix, ss->nprefix, cb_scan_open);
     while (1) {
         if (ss->reqstop) {
             logger->log(EXTENSION_LOG_INFO, NULL, "Ongoing snapshot recognized stop request.\n");
             break;
         }
-        item_count = itscan_getnext(shandle, item_array, erst_array, item_arrsz);
+        item_count = item_scan_getnext(&scan, item_array, erst_array, item_arrsz);
         if (item_count == -2) { /* FIXME: rethink itscan_getnext() interface */
             /* OUT OF MEMORY */
             logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -464,7 +458,7 @@ static bool do_snapshot_action(snapshot_st *ss)
         }
         if (item_count > 0) {
             int ret = snapshot_func[ss->mode].dump(ss, item_array, item_count, erst_array);
-            itscan_release(shandle, item_array, erst_array, item_count);
+            item_scan_release(&scan, item_array, erst_array, item_count);
             if (ret < 0) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
                             "The snapshot dump function has failed.\n");
@@ -475,7 +469,7 @@ static bool do_snapshot_action(snapshot_st *ss)
          * We continue the scan.
          */
     }
-    itscan_close(shandle, cb_scan_close, snapshot_done);
+    item_scan_close(&scan, cb_scan_close, snapshot_done);
 
 done:
     if (erst_array != NULL) {
