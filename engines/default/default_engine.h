@@ -122,7 +122,6 @@ struct engine_dumper {
    bool            success; /* dump final status: success or fail */
    bool            stop;    /* request to stop dump */
    enum dump_mode  mode;    /* dump mode: key dump is only supported. */
-   uint64_t        visited; /* # of cache item visited */
    uint64_t        dumpped; /* # of cache item dumped */
    time_t          started; /* dump start time */
    time_t          stopped; /* dump stop time */

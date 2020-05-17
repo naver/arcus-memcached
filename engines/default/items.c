@@ -8336,6 +8336,8 @@ ENGINE_ERROR_CODE coll_elem_get_all(hash_item *it, elems_result_t *eresult, bool
     coll_meta_info *info;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
+    eresult->elem_count = 0;
+
     if (lock_hold) LOCK_CACHE();
     do {
         if (!IS_COLL_ITEM(it)) {
@@ -8346,7 +8348,6 @@ ENGINE_ERROR_CODE coll_elem_get_all(hash_item *it, elems_result_t *eresult, bool
             ret = ENGINE_ELEM_ENOENT; break;
         }
         /* init and check result */
-        eresult->elem_count = 0;
         if (eresult->elem_arrsz < info->ccnt) {
             uint32_t new_size = GET_ALIGN_SIZE(info->ccnt, 100);
             if (do_coll_eresult_realloc(eresult, new_size) < 0) {
@@ -8554,6 +8555,111 @@ uint32_t btree_elem_ntotal(btree_elem_item *elem)
 uint8_t  btree_real_nbkey(uint8_t nbkey)
 {
     return (uint8_t)BTREE_REAL_NBKEY(nbkey);
+}
+
+/*
+ * Item Scan Facility
+ */
+/* item scan macros */
+#define ITEM_SCAN_MAX_ITEMS 128
+#define ITEM_SCAN_MAX_ELEMS 1000
+
+void item_scan_open(item_scan *sp, const char *prefix, const int nprefix, CB_SCAN_OPEN cb_scan_open)
+{
+    LOCK_CACHE();
+    assoc_scan_init(&sp->asscan);
+    if (cb_scan_open != NULL) {
+        cb_scan_open(&sp->asscan);
+    }
+    UNLOCK_CACHE();
+    sp->prefix = prefix;
+    sp->nprefix = nprefix;
+    sp->is_used = true;
+}
+
+int item_scan_getnext(item_scan *sp, void **item_array, elems_result_t *erst_array, int item_arrsz)
+{
+    hash_item *it;
+    int item_limit = item_arrsz < ITEM_SCAN_MAX_ITEMS
+                   ? item_arrsz : ITEM_SCAN_MAX_ITEMS;
+    int elem_limit = erst_array ? ITEM_SCAN_MAX_ELEMS : 0;
+    int item_count;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    LOCK_CACHE();
+    item_count = assoc_scan_next(&sp->asscan, (hash_item**)item_array, item_limit, elem_limit);
+    if (item_count > 0) {
+        rel_time_t curtime = svcore->get_current_time();
+        int i, nfound = 0;
+        for (i = 0; i < item_count; i++) {
+            it = (hash_item *)item_array[i];
+            if ((it->iflag & ITEM_INTERNAL) != 0) { /* internal item */
+                item_array[i] = NULL; continue;
+            }
+            if (do_item_isvalid(it, curtime) != true) { /* invalid item */
+                item_array[i] = NULL; continue;
+            }
+            /* Is it the item of the given prefix ? */
+            if (sp->nprefix >= 0 && !assoc_prefix_issame(it->pfxptr, sp->prefix, sp->nprefix)) {
+                item_array[i] = NULL; continue;
+            }
+            /* Found the valid item */
+            if (erst_array != NULL && IS_COLL_ITEM(it)) {
+                ret = coll_elem_get_all(it, &erst_array[nfound], false);
+                if (ret  == ENGINE_ENOMEM) break;
+            }
+            ITEM_REFCOUNT_INCR(it);
+            if (nfound < i) {
+                item_array[nfound] = it;
+            }
+            nfound += 1;
+        }
+        item_count = nfound;
+    } else {
+        /* item_count == 0: not found element */
+        /* item_count <  0: the end of scan */
+    }
+    UNLOCK_CACHE();
+
+    if (ret != ENGINE_SUCCESS) {
+        if (item_count > 0)
+            item_scan_release(sp, item_array, erst_array, item_count);
+        item_count = -2; /* OUT OF MEMORY */
+    }
+    return item_count;
+}
+
+void item_scan_release(item_scan *sp, void **item_array, elems_result_t *erst_array, int item_count)
+{
+    if (erst_array != NULL) {
+        for (int i = 0; i < item_count; i++) {
+            if (erst_array[i].elem_count > 0) {
+                hash_item *it = (hash_item *)item_array[i];
+                assert(IS_COLL_ITEM(it));
+                coll_elem_release(&erst_array[i], GET_ITEM_TYPE(it));
+            }
+        }
+    }
+
+    LOCK_CACHE();
+    for (int i = 0; i < item_count; i++) {
+        do_item_release(item_array[i]);
+    }
+    UNLOCK_CACHE();
+}
+
+void item_scan_close(item_scan *sp, CB_SCAN_CLOSE cb_scan_close, bool success)
+{
+    sp->prefix = NULL;
+    sp->nprefix = 0;
+    sp->is_used = false;
+
+    LOCK_CACHE();
+    assoc_scan_final(&sp->asscan);
+    if (cb_scan_close != NULL) {
+        cb_scan_close(success);
+    }
+    UNLOCK_CACHE();
 }
 
 /*
@@ -8826,7 +8932,7 @@ static void *item_dumper_main(void *arg)
     int        item_count;
     hash_item *item_array[SCAN_ITEM_ARRAY_SIZE];
     hash_item *it;
-    struct assoc_scan scan;
+    item_scan scan;
     int fd, ret = 0;
     int i, nwritten;
     int cur_buflen = 0;
@@ -8859,39 +8965,23 @@ static void *item_dumper_main(void *arg)
         ret = -1; goto done;
     }
 
-    pthread_mutex_lock(&engine->cache_lock);
-
-    assoc_scan_init(&scan);
-    while (true)
-    {
-        item_count = assoc_scan_next(&scan, item_array, array_size, 0);
+    item_scan_open(&scan, dumper->prefix, dumper->nprefix, NULL);
+    while (true) {
+        if (!engine->initialized || dumper->stop) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "Stop the current dump.\n");
+            ret = -1; break;
+        }
+        item_count = item_scan_getnext(&scan, (void**)item_array, NULL, array_size);
         if (item_count < 0) { /* reached to the end */
             break;
         }
-        /* Currently, item_count > 0.
-         * See the internals of assoc_scan_next(). It does not return 0.
-         */
-        memc_curtime = svcore->get_current_time();
-        for (i = 0; i < item_count; i++) {
-            it = item_array[i];
-            if ((it->iflag & ITEM_INTERNAL) == 0 && do_item_isvalid(it, memc_curtime)) {
-                ITEM_REFCOUNT_INCR(it); /* valid user item */
-            } else {
-                item_array[i] = NULL;
-            }
+        if (item_count == 0) { /* No valid item found */
+            continue; /* we continue the scan */
         }
-        pthread_mutex_unlock(&engine->cache_lock);
-
         /* write key string to buffer */
         memc_curtime = svcore->get_current_time();
         for (i = 0; i < item_count; i++) {
-            if ((it = item_array[i]) == NULL) continue;
-            dumper->visited++;
-            /* check prefix name */
-            if (dumper->nprefix >= 0 &&
-                !assoc_prefix_issame(it->pfxptr, dumper->prefix, dumper->nprefix)) {
-                continue; /* NOT the given prefix */
-            }
+            it = item_array[i];
             if ((cur_buflen + dump_space_func(it)) > max_buflen) {
                 nwritten = write(fd, dump_buffer, cur_buflen);
                 if (nwritten != cur_buflen) {
@@ -8907,23 +8997,10 @@ static void *item_dumper_main(void *arg)
             cur_buflen += str_length;
             dumper->dumpped++;
         }
-
-        pthread_mutex_lock(&engine->cache_lock);
-        for (i = 0; i < item_count; i++) {
-            if (item_array[i] != NULL) {
-                do_item_release(item_array[i]);
-            }
-        }
+        item_scan_release(&scan, (void**)item_array, NULL, item_count);
         if (ret != 0) break;
-
-        if (!engine->initialized || dumper->stop) {
-            logger->log(EXTENSION_LOG_INFO, NULL, "Stop the current dump.\n");
-            ret = -1; break;
-        }
     }
-    assoc_scan_final(&scan);
-
-    pthread_mutex_unlock(&engine->cache_lock);
+    item_scan_close(&scan, NULL, (ret==0));
 
     if (ret == 0) {
         int summary_length = 256; /* just, enough memory space size */
@@ -8939,9 +9016,10 @@ static void *item_dumper_main(void *arg)
         }
         if (ret == 0) {
             snprintf(cur_bufptr, summary_length, "DUMP SUMMARY: "
-                     "{ prefix=%s, count=%"PRIu64", total=%"PRIu64" elapsed=%"PRIu64" }\n",
-                     dumper->nprefix > 0 ? dumper->prefix : (dumper->nprefix == 0 ? "<null>" : "<all>"),
-                     dumper->dumpped, dumper->visited, (uint64_t)(time(NULL)-dumper->started));
+                     "{ prefix=%s, count=%"PRIu64", elapsed=%"PRIu64" }\n",
+                     dumper->nprefix > 0 ? dumper->prefix :
+                     (dumper->nprefix == 0 ? "<null>" : "<all>"),
+                     dumper->dumpped, (uint64_t)(time(NULL)-dumper->started));
             cur_buflen += strlen(cur_bufptr);
             nwritten = write(fd, dump_buffer, cur_buflen);
             if (nwritten != cur_buflen) {
@@ -8987,7 +9065,6 @@ ENGINE_ERROR_CODE item_start_dump(struct default_engine *engine,
         dumper->mode = mode;
         dumper->started = time(NULL);
         dumper->stopped = 0;
-        dumper->visited = 0;
         dumper->dumpped = 0;
         dumper->success = false;
         dumper->stop    = false;
@@ -9062,8 +9139,6 @@ void item_stats_dump(struct default_engine *engine,
             len = sprintf(val, "%"PRIu64, (uint64_t)diff);
             add_stat("dumper:last_run", 15, val, len, cookie);
         }
-        len = sprintf(val, "%"PRIu64, dumper->visited);
-        add_stat("dumper:visited", 14, val, len, cookie);
         len = sprintf(val, "%"PRIu64, dumper->dumpped);
         add_stat("dumper:dumped", 13, val, len, cookie);
         if (dumper->nprefix > 0) {
