@@ -590,7 +590,7 @@ void              coll_elem_result_free(elems_result_t *eresult);
 ENGINE_ERROR_CODE coll_elem_get_all(hash_item *it, elems_result_t *eresult, bool lock_hold);
 void              coll_elem_release(elems_result_t *eresult, int type);
 
-#ifdef ENABLE_PERSISTENCE_01_ITEM_SCAN
+#if 0 // ENABLE_PERSISTENCE_01_ITEM_SCAN
 /**
  * item scan
  */

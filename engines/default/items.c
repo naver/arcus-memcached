@@ -9157,7 +9157,7 @@ void item_stats_dump(struct default_engine *engine,
     pthread_mutex_unlock(&dumper->lock);
 }
 
-#ifdef ENABLE_PERSISTENCE_01_ITEM_SCAN
+#if 0 // ENABLE_PERSISTENCE_01_ITEM_SCAN
 /**
  * item scan
  */
