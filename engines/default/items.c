@@ -8597,7 +8597,7 @@ static void *item_dumper_main(void *arg)
     int        item_count;
     hash_item *item_array[SCAN_ITEM_ARRAY_SIZE];
     hash_item *it;
-    struct assoc_scan scan;
+    item_scan scan;
     int fd, ret = 0;
     int i, nwritten;
     int cur_buflen = 0;
@@ -8630,39 +8630,23 @@ static void *item_dumper_main(void *arg)
         ret = -1; goto done;
     }
 
-    pthread_mutex_lock(&engine->cache_lock);
-
-    assoc_scan_init(&scan);
-    while (true)
-    {
-        item_count = assoc_scan_next(&scan, item_array, array_size, 0);
+    item_scan_open(&scan, dumper->prefix, dumper->nprefix, NULL);
+    while (true) {
+        if (!engine->initialized || dumper->stop) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "Stop the current dump.\n");
+            ret = -1; break;
+        }
+        item_count = item_scan_getnext(&scan, (void**)item_array, NULL, array_size);
         if (item_count < 0) { /* reached to the end */
             break;
         }
-        /* Currently, item_count > 0.
-         * See the internals of assoc_scan_next(). It does not return 0.
-         */
-        memc_curtime = svcore->get_current_time();
-        for (i = 0; i < item_count; i++) {
-            it = item_array[i];
-            if ((it->iflag & ITEM_INTERNAL) == 0 && do_item_isvalid(it, memc_curtime)) {
-                ITEM_REFCOUNT_INCR(it); /* valid user item */
-            } else {
-                item_array[i] = NULL;
-            }
+        if (item_count == 0) { /* No valid item found */
+            continue; /* we continue the scan */
         }
-        pthread_mutex_unlock(&engine->cache_lock);
-
         /* write key string to buffer */
         memc_curtime = svcore->get_current_time();
         for (i = 0; i < item_count; i++) {
-            if ((it = item_array[i]) == NULL) continue;
-            dumper->visited++;
-            /* check prefix name */
-            if (dumper->nprefix >= 0 &&
-                !assoc_prefix_issame(it->pfxptr, dumper->prefix, dumper->nprefix)) {
-                continue; /* NOT the given prefix */
-            }
+            it = item_array[i];
             if ((cur_buflen + dump_space_func(it)) > max_buflen) {
                 nwritten = write(fd, dump_buffer, cur_buflen);
                 if (nwritten != cur_buflen) {
@@ -8678,23 +8662,10 @@ static void *item_dumper_main(void *arg)
             cur_buflen += str_length;
             dumper->dumpped++;
         }
-
-        pthread_mutex_lock(&engine->cache_lock);
-        for (i = 0; i < item_count; i++) {
-            if (item_array[i] != NULL) {
-                do_item_release(item_array[i]);
-            }
-        }
+        item_scan_release(&scan, (void**)item_array, NULL, item_count);
         if (ret != 0) break;
-
-        if (!engine->initialized || dumper->stop) {
-            logger->log(EXTENSION_LOG_INFO, NULL, "Stop the current dump.\n");
-            ret = -1; break;
-        }
     }
-    assoc_scan_final(&scan);
-
-    pthread_mutex_unlock(&engine->cache_lock);
+    item_scan_close(&scan, NULL, (ret==0));
 
     if (ret == 0) {
         int summary_length = 256; /* just, enough memory space size */
@@ -8710,9 +8681,10 @@ static void *item_dumper_main(void *arg)
         }
         if (ret == 0) {
             snprintf(cur_bufptr, summary_length, "DUMP SUMMARY: "
-                     "{ prefix=%s, count=%"PRIu64", total=%"PRIu64" elapsed=%"PRIu64" }\n",
-                     dumper->nprefix > 0 ? dumper->prefix : (dumper->nprefix == 0 ? "<null>" : "<all>"),
-                     dumper->dumpped, dumper->visited, (uint64_t)(time(NULL)-dumper->started));
+                     "{ prefix=%s, count=%"PRIu64", elapsed=%"PRIu64" }\n",
+                     dumper->nprefix > 0 ? dumper->prefix :
+                     (dumper->nprefix == 0 ? "<null>" : "<all>"),
+                     dumper->dumpped, (uint64_t)(time(NULL)-dumper->started));
             cur_buflen += strlen(cur_bufptr);
             nwritten = write(fd, dump_buffer, cur_buflen);
             if (nwritten != cur_buflen) {
@@ -8758,7 +8730,6 @@ ENGINE_ERROR_CODE item_start_dump(struct default_engine *engine,
         dumper->mode = mode;
         dumper->started = time(NULL);
         dumper->stopped = 0;
-        dumper->visited = 0;
         dumper->dumpped = 0;
         dumper->success = false;
         dumper->stop    = false;
@@ -8833,8 +8804,6 @@ void item_stats_dump(struct default_engine *engine,
             len = sprintf(val, "%"PRIu64, (uint64_t)diff);
             add_stat("dumper:last_run", 15, val, len, cookie);
         }
-        len = sprintf(val, "%"PRIu64, dumper->visited);
-        add_stat("dumper:visited", 14, val, len, cookie);
         len = sprintf(val, "%"PRIu64, dumper->dumpped);
         add_stat("dumper:dumped", 13, val, len, cookie);
         if (dumper->nprefix > 0) {
