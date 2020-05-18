@@ -44,11 +44,9 @@ static bool gen_logical_btree_delete_log=false; // btree generate logical delete
 #define IS_UPD_ELEM_DELETE(updtype)                                           \
     ((updtype) == UPD_LIST_ELEM_DELETE || (updtype) == UPD_SET_ELEM_DELETE || \
      (updtype) == UPD_MAP_ELEM_DELETE  || (updtype) == UPD_BT_ELEM_DELETE)
-#ifdef ENABLE_PERSISTENCE_03_MACRO
 #define IS_UPD_ELEM_DELETE_DROP(updtype)                                                \
     ((updtype) == UPD_LIST_ELEM_DELETE_DROP || (updtype) == UPD_SET_ELEM_DELETE_DROP || \
      (updtype) == UPD_MAP_ELEM_DELETE_DROP  || (updtype) == UPD_BT_ELEM_DELETE_DROP)
-#endif
 
 typedef struct _group_commit {
     pthread_mutex_t   lock;       /* group commit mutex */
@@ -161,11 +159,7 @@ static log_waiter_t *do_cmdlog_waiter_alloc(void)
 /*
  * External Functions
  */
-#ifdef ENABLE_PERSISTENCE_03_MACRO
 log_waiter_t *cmdlog_waiter_begin(const void *cookie, uint8_t updtype)
-#else
-log_waiter_t *cmdlog_waiter_alloc(const void *cookie, uint8_t updtype)
-#endif
 {
     log_waiter_t *waiter = do_cmdlog_waiter_alloc();
     if (waiter) {
@@ -359,11 +353,7 @@ do_cmdlog_add_commit_waiter(log_waiter_t *waiter)
     logmgr_gl.group_commit.wait_cnt += 1;
 }
 
-#ifdef ENABLE_PERSISTENCE_03_MACRO
 void cmdlog_waiter_end(log_waiter_t *waiter, ENGINE_ERROR_CODE *result)
-#else
-void cmdlog_waiter_free(log_waiter_t *waiter, ENGINE_ERROR_CODE *result)
-#endif
 {
     tls_waiter = NULL; /* clear tls_waiter */
 

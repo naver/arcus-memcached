@@ -30,30 +30,22 @@ enum upd_type {
     UPD_LIST_CREATE,
     UPD_LIST_ELEM_INSERT,
     UPD_LIST_ELEM_DELETE,
-#ifdef ENABLE_PERSISTENCE_03_MACRO
     UPD_LIST_ELEM_DELETE_DROP,
-#endif
     /* set command */
     UPD_SET_CREATE,
     UPD_SET_ELEM_INSERT,
     UPD_SET_ELEM_DELETE,
-#ifdef ENABLE_PERSISTENCE_03_MACRO
     UPD_SET_ELEM_DELETE_DROP,
-#endif
     /* map command */
     UPD_MAP_CREATE,
     UPD_MAP_ELEM_INSERT,
     UPD_MAP_ELEM_DELETE,
-#ifdef ENABLE_PERSISTENCE_03_MACRO
     UPD_MAP_ELEM_DELETE_DROP,
-#endif
     /* btree command */
     UPD_BT_CREATE,
     UPD_BT_ELEM_INSERT,
     UPD_BT_ELEM_DELETE,
-#ifdef ENABLE_PERSISTENCE_03_MACRO
     UPD_BT_ELEM_DELETE_DROP,
-#endif
     /* not command */
     UPD_NONE
 };
@@ -82,13 +74,8 @@ typedef struct _log_waiter {
 } log_waiter_t;
 
 /* external command log manager functions */
-#ifdef ENABLE_PERSISTENCE_03_MACRO
 log_waiter_t      *cmdlog_waiter_begin(const void *cookie, uint8_t updtype);
 void               cmdlog_waiter_end(log_waiter_t *waiter, ENGINE_ERROR_CODE *result);
-#else
-log_waiter_t      *cmdlog_waiter_alloc(const void *cookie, uint8_t updtype);
-void               cmdlog_waiter_free(log_waiter_t *logmgr, ENGINE_ERROR_CODE *result);
-#endif
 log_waiter_t      *cmdlog_get_my_waiter(void);
 ENGINE_ERROR_CODE  cmdlog_waiter_init(struct default_engine *engine);
 void               cmdlog_waiter_final(void);
