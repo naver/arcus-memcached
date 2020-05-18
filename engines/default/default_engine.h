@@ -37,6 +37,7 @@ struct default_engine;
 
 #include "trace.h"
 #include "items.h"
+#include "prefix.h"
 #include "assoc.h"
 #include "slabs.h"
 
@@ -145,6 +146,7 @@ struct default_engine {
     */
    volatile bool initialized;
 
+   struct prefix prefix;
    struct assoc assoc;
    struct slabs slabs;
    struct items items;
