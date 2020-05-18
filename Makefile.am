@@ -133,10 +133,12 @@ BUILT_SOURCES=
 
 # The default storage engine
 default_engine_la_SOURCES= \
-                    engines/default/assoc.c \
-                    engines/default/assoc.h \
                     engines/default/default_engine.c \
                     engines/default/default_engine.h \
+                    engines/default/prefix.c \
+                    engines/default/prefix.h \
+                    engines/default/assoc.c \
+                    engines/default/assoc.h \
                     engines/default/items.c \
                     engines/default/items.h \
                     engines/default/item_clog.c \

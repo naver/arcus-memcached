@@ -212,6 +212,10 @@ default_initialize(ENGINE_HANDLE* handle, const char* config_str)
         se->info.engine_info.features[se->info.engine_info.num_features++].feature = ENGINE_FEATURE_CAS;
     }
 
+    ret = prefix_init(se);
+    if (ret != ENGINE_SUCCESS) {
+        return ret;
+    }
     ret = assoc_init(se);
     if (ret != ENGINE_SUCCESS) {
         return ret;
@@ -237,6 +241,7 @@ default_destroy(ENGINE_HANDLE* handle)
         item_final(se);
         slabs_final(se);
         assoc_final(se);
+        prefix_final(se);
         pthread_mutex_destroy(&se->cache_lock);
         pthread_mutex_destroy(&se->stats.lock);
         pthread_mutex_destroy(&se->slabs.lock);
@@ -1095,7 +1100,7 @@ default_get_prefix_stats(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = assoc_prefix_get_stats(key, nkey, prefix_data);
+    ret = prefix_get_stats(key, nkey, prefix_data);
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
 }
@@ -1588,9 +1593,11 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
       .server = *api,
       .get_server_api = get_server_api,
       .initialized = true,
+      .prefix = {
+         .tot_prefix_items = 0,
+      },
       .assoc = {
          .hashpower = 17, /* (1<<17) => 128K hash size */
-         .tot_prefix_items = 0,
       },
       .slabs = {
          .lock = PTHREAD_MUTEX_INITIALIZER

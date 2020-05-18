@@ -471,7 +471,7 @@ static bool do_item_isvalid(hash_item *it, rel_time_t current_time)
         return false; /* flushed by flush_all */
     }
     /* check if its prefix is invalid */
-    if (assoc_prefix_isvalid(it, current_time) == false) {
+    if (prefix_isvalid(it, current_time) == false) {
         return false;
     }
     return true; /* Yes, it's a valid item */
@@ -1014,7 +1014,7 @@ static ENGINE_ERROR_CODE do_item_link(hash_item *it)
     /* link the item to prefix info */
     size_t stotal = ITEM_stotal(it);
     bool internal_prefix = false;
-    ENGINE_ERROR_CODE ret = assoc_prefix_link(it, stotal, &internal_prefix);
+    ENGINE_ERROR_CODE ret = prefix_link(it, stotal, &internal_prefix);
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
@@ -1058,7 +1058,7 @@ static void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
 
         /* unlink the item from prefix info */
         size_t stotal = ITEM_stotal(it);
-        assoc_prefix_unlink(it, stotal, (cause != ITEM_UNLINK_REPLACE ? true : false));
+        prefix_unlink(it, stotal, (cause != ITEM_UNLINK_REPLACE ? true : false));
 
         /* update item statistics */
         do_item_stat_unlink(it, stotal);
@@ -1389,7 +1389,7 @@ static void do_coll_space_incr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
 
     hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
     do_item_stat_bytes_incr(it, nspace);
-    assoc_prefix_bytes_incr(it->pfxptr, item_type, nspace);
+    prefix_bytes_incr(it->pfxptr, item_type, nspace);
 }
 
 static void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
@@ -1400,7 +1400,7 @@ static void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
 
     hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
     do_item_stat_bytes_decr(it, nspace);
-    assoc_prefix_bytes_decr(it->pfxptr, item_type, nspace);
+    prefix_bytes_decr(it->pfxptr, item_type, nspace);
 }
 
 /* get real maxcount for each collection type */
@@ -6047,7 +6047,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(const char *prefix, const int npr
     rel_time_t oldest_live;
 
     if (nprefix >= 0) { /* flush the given prefix */
-        prefix_t *pt = assoc_prefix_find(prefix, nprefix);
+        prefix_t *pt = prefix_find(prefix, nprefix);
         if (pt == NULL) {
             return ENGINE_PREFIX_ENOENT;
         }
@@ -6096,7 +6096,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(const char *prefix, const int npr
                     itemsp->curMK[i] = itemsp->tails[i];
                     break;
                 }
-                if (nprefix < 0 || assoc_prefix_issame(iter->pfxptr, prefix, nprefix)) {
+                if (nprefix < 0 || prefix_issame(iter->pfxptr, prefix, nprefix)) {
                     next = iter->next;
                     do_item_unlink(iter, ITEM_UNLINK_INVALID);
                     iter = next;
@@ -6113,7 +6113,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(const char *prefix, const int npr
                     itemsp->sticky_curMK[i] = itemsp->sticky_tails[i];
                     break;
                 }
-                if (nprefix < 0 || assoc_prefix_issame(iter->pfxptr, prefix, nprefix)) {
+                if (nprefix < 0 || prefix_issame(iter->pfxptr, prefix, nprefix)) {
                     next = iter->next;
                     do_item_unlink(iter, ITEM_UNLINK_INVALID);
                     iter = next;
@@ -6199,7 +6199,7 @@ void item_stats_global(ADD_STAT add_stat, const void *cookie)
     int len;
 
     LOCK_CACHE();
-    len = sprintf(val, "%"PRIu64, (uint64_t)assoc_prefix_count());
+    len = sprintf(val, "%"PRIu64, (uint64_t)prefix_count());
     add_stat("curr_prefixes", 13, val, len, cookie);
 
     do_item_stat_get(add_stat, cookie);
@@ -8265,7 +8265,7 @@ int item_scan_getnext(item_scan *sp, void **item_array, elems_result_t *erst_arr
                 item_array[i] = NULL; continue;
             }
             /* Is it the item of the given prefix ? */
-            if (sp->nprefix >= 0 && !assoc_prefix_issame(it->pfxptr, sp->prefix, sp->nprefix)) {
+            if (sp->nprefix >= 0 && !prefix_issame(it->pfxptr, sp->prefix, sp->nprefix)) {
                 item_array[i] = NULL; continue;
             }
             /* Found the valid item */
