@@ -103,9 +103,6 @@ extern int genhash_string_hash(const void* p, size_t nkey);
 /* collection meta info offset */
 #define META_OFFSET_IN_ITEM(nkey,nbytes) ((((nkey)+(nbytes)-1)/8+1)*8)
 
-/* max hash key length for calculation hash value */
-#define MAX_HKEY_LEN 250
-
 #ifdef ENABLE_STICKY_ITEM
 /* macros for identifying sticky items */
 #define IS_STICKY_EXPTIME(e) ((e) == (rel_time_t)(-1))
@@ -413,7 +410,19 @@ static uint64_t get_cas_id(void)
 # define DEBUG_REFCNT(it,op) while(0)
 #endif
 
+/* Max hash key length for calculating hash value */
+#define MAX_HKEY_LEN 250
 
+static inline uint32_t GEN_ITEM_KEY_HASH(const char *key, const uint32_t nkey)
+{
+    if (nkey > MAX_HKEY_LEN) {
+        /* The last MAX_HKEY_LEN bytes of the key is used */
+        const char *hkey = key + (nkey-MAX_HKEY_LEN);
+        return svcore->hash(hkey, MAX_HKEY_LEN, 0);
+    } else {
+        return svcore->hash(key, nkey, 0);
+    }
+}
 
 /*
  * Collection Delete Queue Management
@@ -1001,8 +1010,6 @@ static void item_unlink_q(hash_item *it)
 static ENGINE_ERROR_CODE do_item_link(hash_item *it)
 {
     const char *key = item_get_key(it);
-    const char *hkey = (it->nkey > MAX_HKEY_LEN) ? key+(it->nkey-MAX_HKEY_LEN) : key;
-    const uint32_t hnkey = (it->nkey > MAX_HKEY_LEN) ? MAX_HKEY_LEN : it->nkey;
     assert((it->iflag & ITEM_LINKED) == 0);
     assert(it->nbytes < (1024 * 1024));  /* 1MB max size */
 
@@ -1026,7 +1033,7 @@ static ENGINE_ERROR_CODE do_item_link(hash_item *it)
     /* link the item to the hash table */
     it->iflag |= ITEM_LINKED;
     it->time = svcore->get_current_time();
-    it->khash = svcore->hash(hkey, hnkey, 0);
+    it->khash = GEN_ITEM_KEY_HASH(key, it->nkey);
     assoc_insert(it, it->khash);
 
     /* link the item to LRU list */
@@ -1133,11 +1140,7 @@ static void do_item_update(hash_item *it, bool force)
 /** wrapper around assoc_find which does the lazy expiration logic */
 static hash_item *do_item_get(const char *key, const uint32_t nkey, bool do_update)
 {
-    hash_item *it;
-    const char *hkey = (nkey > MAX_HKEY_LEN) ? key+(nkey-MAX_HKEY_LEN) : key;
-    const uint32_t hnkey = (nkey > MAX_HKEY_LEN) ? MAX_HKEY_LEN : nkey;
-
-    it = assoc_find(key, nkey, svcore->hash(hkey, hnkey, 0));
+    hash_item *it = assoc_find(key, nkey, GEN_ITEM_KEY_HASH(key, nkey));
     if (it) {
         rel_time_t current_time = svcore->get_current_time();
         if (do_item_isvalid(it, current_time)) {
@@ -1151,7 +1154,6 @@ static hash_item *do_item_get(const char *key, const uint32_t nkey, bool do_upda
             it = NULL;
         }
     }
-
     if (config->verbose > 2) {
         if (it) {
             logger->log(EXTENSION_LOG_INFO, NULL, "> FOUND KEY %s\n",
