@@ -340,6 +340,13 @@ static void inc_count(int delta)
     pthread_mutex_unlock(&azk_mtx);
 }
 
+static void clear_count(void)
+{
+    pthread_mutex_lock(&azk_mtx);
+    azk_count = 0;
+    pthread_mutex_unlock(&azk_mtx);
+}
+
 static int wait_count(int timeout)
 {
     struct timeval  tv;
@@ -1673,6 +1680,8 @@ int arcus_zk_get_ensemble(char *buf, int size)
 int arcus_zk_rejoin_ensemble()
 {
     int ret = 0;
+
+    clear_count();
 
     pthread_mutex_lock(&zk_lock);
 
