@@ -8572,7 +8572,7 @@ static int item_dump_write_key(char *buffer, hash_item *it, rel_time_t mc_curtim
 #endif
     } else {
         if (it->exptime > mc_curtime) {
-            snprintf(bufptr, 12, " %u\n", it->exptime - mc_curtime);
+            snprintf(bufptr, 13, " %u\n", it->exptime - mc_curtime);
             length += strlen(bufptr);
         } else {
             memcpy(bufptr, " -2\n", 4); /* this case may not occur */
