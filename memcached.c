@@ -1599,7 +1599,9 @@ static inline char *get_ovflaction_str(uint8_t ovflact)
 static void
 handle_unexpected_errorcode_ascii(conn *c, const char *func_name, ENGINE_ERROR_CODE ret)
 {
-    if (ret == ENGINE_DISCONNECT) {
+    if (ret == ENGINE_ENOTSUP) {
+        out_string(c, "NOT_SUPPORTED");
+    } else if (ret == ENGINE_DISCONNECT) {
         conn_set_state(c, conn_closing);
     } else {
         mc_logger->log(EXTENSION_LOG_WARNING, c, "[%s] Unexpected Error: %d\n",
@@ -1657,7 +1659,6 @@ static void process_lop_insert_complete(conn *c)
             else if (ret == ENGINE_EINDEXOOR)    out_string(c, "OUT_OF_RANGE");
             else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
             else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
-            else if (ret == ENGINE_ENOTSUP)      out_string(c, "NOT_SUPPORTED");
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
@@ -1705,7 +1706,6 @@ static void process_sop_insert_complete(conn *c)
             else if (ret == ENGINE_ELEM_EEXISTS) out_string(c, "ELEMENT_EXISTS");
             else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
             else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
-            else if (ret == ENGINE_ENOTSUP)      out_string(c, "NOT_SUPPORTED");
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
@@ -1753,8 +1753,7 @@ static void process_sop_delete_complete(conn *c)
             break;
         default:
             STATS_CMD_NOKEY(c, sop_delete);
-            if (ret == ENGINE_EBADTYPE)     out_string(c, "TYPE_MISMATCH");
-            else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+            if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
@@ -1795,8 +1794,7 @@ static void process_sop_exist_complete(conn *c)
             break;
         default:
             STATS_CMD_NOKEY(c, sop_exist);
-            if (ret == ENGINE_EBADTYPE)     out_string(c, "TYPE_MISMATCH");
-            else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+            if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
@@ -1861,7 +1859,6 @@ static void process_mop_insert_complete(conn *c)
             else if (ret == ENGINE_ELEM_EEXISTS) out_string(c, "ELEMENT_EXISTS");
             else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
             else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
-            else if (ret == ENGINE_ENOTSUP)      out_string(c, "NOT_SUPPORTED");
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
@@ -1904,9 +1901,8 @@ static void process_mop_update_complete(conn *c)
             break;
         default:
             STATS_CMD_NOKEY(c, mop_update);
-            if (ret == ENGINE_EBADTYPE)     out_string(c, "TYPE_MISMATCH");
-            else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
-            else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+            if (ret == ENGINE_EBADTYPE)    out_string(c, "TYPE_MISMATCH");
+            else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
@@ -1974,7 +1970,6 @@ static void process_mop_delete_complete(conn *c)
         if (ret == ENGINE_EBADTYPE)       out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad data chunk");
         else if (ret == ENGINE_ENOMEM)    out_string(c, "SERVER_ERROR out of memory");
-        else if (ret == ENGINE_ENOTSUP)   out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
@@ -2130,7 +2125,6 @@ static void process_mop_get_complete(conn *c)
         if (ret == ENGINE_EBADTYPE)       out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad data chunk");
         else if (ret == ENGINE_ENOMEM)    out_string(c, "SERVER_ERROR out of memory");
-        else if (ret == ENGINE_ENOTSUP)   out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
@@ -2293,7 +2287,6 @@ static void process_bop_insert_complete(conn *c)
             else if (ret == ENGINE_ELEM_EEXISTS) out_string(c, "ELEMENT_EXISTS");
             else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
             else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
-            else if (ret == ENGINE_ENOTSUP)      out_string(c, "NOT_SUPPORTED");
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
@@ -2348,7 +2341,6 @@ static void process_bop_update_complete(conn *c)
         else if (ret == ENGINE_EBADBKEY)  out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_EBADEFLAG) out_string(c, "EFLAG_MISMATCH");
         else if (ret == ENGINE_ENOMEM)    out_string(c, "SERVER_ERROR out of memory");
-        else if (ret == ENGINE_ENOTSUP)   out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
@@ -2535,9 +2527,8 @@ static void process_bop_mget_complete(conn *c)
         break;
       default:
         STATS_CMD_NOKEY(c, bop_mget);
-        if (ret == ENGINE_EBADVALUE)    out_string(c, "CLIENT_ERROR bad data chunk");
-        else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
-        else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+        if (ret == ENGINE_EBADVALUE)   out_string(c, "CLIENT_ERROR bad data chunk");
+        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
@@ -2700,7 +2691,6 @@ static void process_bop_smget_complete_old(conn *c)
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_EBKEYOOR) out_string(c, "OUT_OF_RANGE");
         else if (ret == ENGINE_ENOMEM)   out_string(c, "SERVER_ERROR out of memory");
-        else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
@@ -2910,7 +2900,6 @@ static void process_bop_smget_complete(conn *c)
         else if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_ENOMEM)   out_string(c, "SERVER_ERROR out of memory");
-        else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
 #if 0 // JHPARK_SMGET_OFFSET_HANDLING
         else if (ret == ENGINE_EBKEYOOR) out_string(c, "OUT_OF_RANGE");
 #endif
@@ -3244,9 +3233,6 @@ static void complete_update_ascii(conn *c)
         case ENGINE_NOT_STORED:
             out_string(c, "NOT_STORED");
             break;
-        case ENGINE_ENOTSUP:
-            out_string(c, "NOT_SUPPORTED");
-            break;
         case ENGINE_PREFIX_ENAME:
             out_string(c, "CLIENT_ERROR invalid prefix name");
             break;
@@ -3573,7 +3559,9 @@ static void write_bin_response(conn *c, void *d, int hlen, int keylen, int dlen)
 static void
 handle_unexpected_errorcode_bin(conn *c, const char *func_name, ENGINE_ERROR_CODE ret, int swallow)
 {
-    if (ret == ENGINE_DISCONNECT) {
+    if (ret == ENGINE_ENOTSUP) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
+    } else if (ret == ENGINE_DISCONNECT) {
         conn_set_state(c, conn_closing);
     } else {
         mc_logger->log(EXTENSION_LOG_WARNING, c, "[%s] Unexpected Error: %d\n",
@@ -3665,9 +3653,6 @@ static void complete_incr_bin(conn *c)
         break;
     case ENGINE_NOT_STORED:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_STORED, 0);
-        break;
-    case ENGINE_ENOTSUP:
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
         break;
     case ENGINE_NOT_MY_VBUCKET:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_MY_VBUCKET, 0);
@@ -3761,9 +3746,6 @@ static void complete_update_bin(conn *c)
         break;
     case ENGINE_E2BIG:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, 0);
-        break;
-    case ENGINE_ENOTSUP:
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
         break;
     case ENGINE_NOT_MY_VBUCKET:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_MY_VBUCKET, 0);
@@ -3867,9 +3849,6 @@ static void process_bin_get(conn *c)
                 write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
             }
         }
-        break;
-    case ENGINE_ENOTSUP:
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
         break;
     case ENGINE_NOT_MY_VBUCKET:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_MY_VBUCKET, 0);
@@ -4090,9 +4069,6 @@ static void process_bin_stat(conn *c)
         break;
     case ENGINE_KEY_ENOENT:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
-        break;
-    case ENGINE_ENOTSUP:
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
         break;
     case ENGINE_PREFIX_ENOENT:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_PREFIX_ENOENT, 0);
@@ -7266,10 +7242,8 @@ static void process_bin_flush(conn *c)
 
     if (ret == ENGINE_SUCCESS) {
         write_bin_response(c, NULL, 0, 0, 0);
-    } else if (ret == ENGINE_ENOTSUP) {
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
     } else {
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
+        handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
     STATS_CMD_NOKEY(c, flush);
 }
@@ -7315,23 +7289,14 @@ static void process_bin_flush_prefix(conn *c)
         }
     }
 
-    switch (ret) {
-    case ENGINE_SUCCESS:
+    if (ret == ENGINE_SUCCESS) {
         write_bin_response(c, NULL, 0, 0, 0);
-        break;
-    case ENGINE_PREFIX_ENOENT:
+    } else if (ret == ENGINE_PREFIX_ENOENT) {
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_PREFIX_ENOENT, 0);
-        break;
-    case ENGINE_ENOTSUP:
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
-        break;
-    default:
+    } else {
         handle_unexpected_errorcode_bin(c, __func__, ret, 0);
-        break;
     }
-
     STATS_CMD_NOKEY(c, flush_prefix);
-    return;
 }
 
 static void process_bin_delete(conn *c)
@@ -8226,9 +8191,6 @@ static void process_stat_command(conn *c, token_t *tokens, const size_t ntokens)
         case ENGINE_ENOMEM:
             out_string(c, "SERVER_ERROR out of memory writing stats");
             break;
-        case ENGINE_ENOTSUP:
-            out_string(c, "NOT_SUPPORTED");
-            break;
         case ENGINE_KEY_ENOENT:
             out_string(c, "ERROR no matching stat");
             break;
@@ -8548,8 +8510,6 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
             out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_NOT_STORED)
             out_string(c, "SERVER_ERROR failed to store item");
-        else if (ret == ENGINE_ENOTSUP)
-            out_string(c, "NOT_SUPPORTED");
         else if (ret == ENGINE_EBADTYPE)
             out_string(c, "TYPE_MISMATCH");
         else
@@ -8599,8 +8559,7 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
         out_string(c, "NOT_FOUND");
     } else {
         STATS_CMD_NOKEY(c, delete);
-        if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-        else handle_unexpected_errorcode_ascii(c, __func__, ret);
+        handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
@@ -8640,8 +8599,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
         if (ret == ENGINE_SUCCESS) {
             out_string(c, "OK");
         } else {
-            if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-            else handle_unexpected_errorcode_ascii(c, __func__, ret);
+            handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     } else { /* flush_prefix */
         char *prefix = tokens[PREFIX_TOKEN].value;
@@ -8668,7 +8626,6 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
             out_string(c, "OK");
         } else {
             if (ret == ENGINE_PREFIX_ENOENT) out_string(c, "NOT_FOUND");
-            else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
@@ -8805,13 +8762,9 @@ static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntok
             settings.maxbytes = new_maxbytes;
         }
         UNLOCK_SETTING();
-        if (ret == ENGINE_SUCCESS) {
-            out_string(c, "END");
-        } else if (ret == ENGINE_ENOTSUP) {
-            out_string(c, "NOT_SUPPORTED");
-        } else { /* ENGINE_EBADVALUE */
-            out_string(c, "CLIENT_ERROR bad value");
-        }
+        if (ret == ENGINE_SUCCESS)        out_string(c, "END");
+        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     } else {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -8839,13 +8792,9 @@ static void process_stickylimit_command(conn *c, token_t *tokens, const size_t n
             settings.sticky_limit = new_sticky_limit;
         }
         UNLOCK_SETTING();
-        if (ret == ENGINE_SUCCESS) {
-            out_string(c, "END");
-        } else if (ret == ENGINE_ENOTSUP) {
-            out_string(c, "NOT_SUPPORTED");
-        } else { /* ENGINE_EBADVALUE */
-            out_string(c, "CLIENT_ERROR bad value");
-        }
+        if (ret == ENGINE_SUCCESS)        out_string(c, "END");
+        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     } else {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -8871,13 +8820,9 @@ static void process_scrubcount_command(conn *c, token_t *tokens, const size_t nt
             settings.scrub_count = new_scrub_count;
         }
         UNLOCK_SETTING();
-        if (ret == ENGINE_SUCCESS) {
-            out_string(c, "END");
-        } else if (ret == ENGINE_ENOTSUP) {
-            out_string(c, "NOT_SUPPORTED");
-        } else { /* ENGINE_EBADVALUE */
-            out_string(c, "CLIENT_ERROR bad value");
-        }
+        if (ret == ENGINE_SUCCESS)        out_string(c, "END");
+        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     } else {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -8936,13 +8881,9 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
             }
         }
         UNLOCK_SETTING();
-        if (ret == ENGINE_SUCCESS) {
-            out_string(c, "END");
-        } else if (ret == ENGINE_ENOTSUP) {
-            out_string(c, "NOT_SUPPORTED");
-        } else { /* ENGINE_EBADVALUE */
-            out_string(c, "CLIENT_ERROR bad value");
-        }
+        if (ret == ENGINE_SUCCESS)        out_string(c, "END");
+        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
     else {
         print_invalid_command(c, tokens, ntokens);
@@ -8972,13 +8913,9 @@ static void process_maxelembytes_command(conn *c, token_t *tokens, const size_t 
            settings.max_element_bytes = new_maxelembytes;
         }
         UNLOCK_SETTING();
-        if (ret == ENGINE_SUCCESS) {
-            out_string(c, "END");
-        } else if (ret == ENGINE_ENOTSUP) {
-            out_string(c, "NOT_SUPPORTED");
-        } else { /* ENGINE_EBADVALUE */
-            out_string(c, "CLIENT_ERROR bad value");
-        }
+        if (ret == ENGINE_SUCCESS)        out_string(c, "END");
+        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
     else {
         print_invalid_command(c, tokens, ntokens);
@@ -9174,8 +9111,6 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
                              prefix, nprefix, filepath);
     if (ret == ENGINE_SUCCESS) {
         out_string(c, "OK");
-    } else if (ret == ENGINE_ENOTSUP) {
-        out_string(c, "NOT_SUPPORTED");
     } else if (ret == ENGINE_FAILED) {
         out_string(c, "SERVER_ERROR failed. refer to the reason in server log.");
     } else {
@@ -9733,9 +9668,8 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
         break;
     default:
         STATS_CMD_NOKEY(c, lop_get);
-        if (ret == ENGINE_EBADTYPE)     out_string(c, "TYPE_MISMATCH");
-        else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-        else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_EBADTYPE)    out_string(c, "TYPE_MISMATCH");
+        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -9766,9 +9700,8 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
             stats_prefix_record_lop_insert(key, nkey, false);
         }
         STATS_CMD_NOKEY(c, lop_insert);
-        if (ret == ENGINE_E2BIG)        out_string(c, "CLIENT_ERROR too large value");
-        else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
-        else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+        if (ret == ENGINE_E2BIG)       out_string(c, "CLIENT_ERROR too large value");
+        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
 
         if (ret != ENGINE_DISCONNECT) {
@@ -9800,7 +9733,6 @@ static void process_lop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
         else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
         else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
-        else if (ret == ENGINE_ENOTSUP)      out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -9846,8 +9778,7 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
         break;
     default:
         STATS_CMD_NOKEY(c, lop_delete);
-        if (ret == ENGINE_EBADTYPE)     out_string(c, "TYPE_MISMATCH");
-        else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+        if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -10134,9 +10065,8 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
         break;
     default:
         STATS_CMD_NOKEY(c, sop_get);
-        if (ret == ENGINE_EBADTYPE)     out_string(c, "TYPE_MISMATCH");
-        else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
-        else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_EBADTYPE)    out_string(c, "TYPE_MISMATCH");
+        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -10186,9 +10116,8 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
                 stats_prefix_record_sop_exist(key, nkey, false);
             STATS_CMD_NOKEY(c, sop_exist);
         }
-        if (ret == ENGINE_E2BIG)        out_string(c, "CLIENT_ERROR too large value");
-        else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
-        else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+        if (ret == ENGINE_E2BIG)       out_string(c, "CLIENT_ERROR too large value");
+        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
 
         if (ret != ENGINE_DISCONNECT) {
@@ -10220,7 +10149,6 @@ static void process_sop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
         else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
         else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
-        else if (ret == ENGINE_ENOTSUP)      out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -10522,7 +10450,6 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
         STATS_CMD_NOKEY(c, bop_get);
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
-        else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
         else if (ret == ENGINE_ENOMEM)   out_string(c, "SERVER_ERROR out of memory");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
@@ -10566,7 +10493,6 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
         STATS_CMD_NOKEY(c, bop_count);
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
-        else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -10605,7 +10531,6 @@ static void process_bop_position(conn *c, char *key, size_t nkey,
         STATS_CMD_NOKEY(c, bop_position);
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
-        else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -10716,7 +10641,6 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
         STATS_CMD_NOKEY(c, bop_pwg);
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
-        else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -10831,8 +10755,7 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey,
         break;
     default:
         STATS_CMD_NOKEY(c, bop_gbp);
-        if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
-        else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
+        if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -10906,9 +10829,8 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
             stats_prefix_record_bop_insert(key, nkey, false);
         }
         STATS_CMD_NOKEY(c, bop_insert);
-        if (ret == ENGINE_E2BIG)        out_string(c, "CLIENT_ERROR too large value");
-        else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
-        else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+        if (ret == ENGINE_E2BIG)       out_string(c, "CLIENT_ERROR too large value");
+        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
 
         if (ret != ENGINE_DISCONNECT) {
@@ -11030,7 +10952,6 @@ static void process_bop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
         else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
         else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
-        else if (ret == ENGINE_ENOTSUP)      out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -11081,7 +11002,6 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
         STATS_CMD_NOKEY(c, bop_delete);
         if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
-        else if (ret == ENGINE_ENOTSUP)  out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -11144,7 +11064,6 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
         else if (ret == ENGINE_EBKEYOOR)  out_string(c, "OUT_OF_RANGE");
         else if (ret == ENGINE_EOVERFLOW) out_string(c, "OVERFLOWED");
         else if (ret == ENGINE_ENOMEM)    out_string(c, "SERVER_ERROR out of memory");
-        else if (ret == ENGINE_ENOTSUP)   out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -11373,9 +11292,8 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
         } else if (cmd == OPERATION_MOP_UPDATE) {
             STATS_CMD_NOKEY(c, mop_update);
         }
-        if (ret == ENGINE_E2BIG)        out_string(c, "CLIENT_ERROR too large value");
-        else if (ret == ENGINE_ENOMEM)  out_string(c, "SERVER_ERROR out of memory");
-        else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+        if (ret == ENGINE_E2BIG)       out_string(c, "CLIENT_ERROR too large value");
+        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
 
         if (ret != ENGINE_DISCONNECT) {
@@ -11439,7 +11357,6 @@ static void process_mop_create(conn *c, char *key, size_t nkey, item_attr *attrp
         if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
         else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
         else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
-        else if (ret == ENGINE_ENOTSUP)      out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -12513,8 +12430,7 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
         break;
     default:
         STATS_CMD_NOKEY(c, getattr);
-        if (ret == ENGINE_EBADATTR)     out_string(c, "ATTR_ERROR not found");
-        else if (ret == ENGINE_ENOTSUP) out_string(c, "NOT_SUPPORTED");
+        if (ret == ENGINE_EBADATTR) out_string(c, "ATTR_ERROR not found");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -12635,7 +12551,6 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
         STATS_CMD_NOKEY(c, setattr);
         if (ret == ENGINE_EBADATTR)       out_string(c, "ATTR_ERROR not found");
         else if (ret == ENGINE_EBADVALUE) out_string(c, "ATTR_ERROR bad value");
-        else if (ret == ENGINE_ENOTSUP)   out_string(c, "NOT_SUPPORTED");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
