@@ -424,6 +424,7 @@ static void do_log_buff_complete_dual_write(bool success)
                 logbuff->fque[index].dual_write = false;
             }
             if ((++index) == logbuff->fqsz) index = 0;
+            if (index == logbuff->fbgn) break;
         }
     }
     pthread_mutex_unlock(&log_gl.log_write_lock);
