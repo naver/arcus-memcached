@@ -38,16 +38,12 @@
 /* log file structure */
 typedef struct _log_file {
     char      path[CMDLOG_MAX_FILEPATH_LENGTH+1];
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
     int       prev_fd;
-#endif
     int       fd;
     int       next_fd;
     size_t    size;
     size_t    next_size;
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
     bool      close_wait;
-#endif
 } log_FILE;
 
 /* flush request structure */
@@ -85,9 +81,6 @@ typedef struct _log_flusher {
 
 /* log global structure */
 struct log_global {
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
-    bool            async_mode;
-#endif
     log_FILE        log_file;
     log_BUFFER      log_buffer;
     log_FLUSHER     log_flusher;
@@ -99,9 +92,8 @@ struct log_global {
     pthread_mutex_t log_fsync_lock;
     pthread_mutex_t flush_lsn_lock;
     pthread_mutex_t fsync_lsn_lock;
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
     pthread_cond_t  log_flush_cond;
-#endif
+    bool            async_mode;
     volatile bool   initialized;
 };
 
@@ -201,7 +193,6 @@ static void do_log_flusher_wakeup(log_FLUSHER *flusher)
     pthread_mutex_unlock(&flusher->lock);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
 static void do_log_file_close_waiter_wakeup(log_FILE *file)
 {
     /* already locked with log_flush_lock */
@@ -209,7 +200,6 @@ static void do_log_file_close_waiter_wakeup(log_FILE *file)
         pthread_cond_signal(&log_gl.log_flush_cond);
     }
 }
-#endif
 
 static void do_log_file_write(char *log_ptr, uint32_t log_size, bool dual_write)
 {
@@ -245,7 +235,6 @@ static void do_log_file_write(char *log_ptr, uint32_t log_size, bool dual_write)
     }
 }
 
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
 static void do_log_file_complete_dual_write(void)
 {
     log_gl.log_file.prev_fd   = log_gl.log_file.fd;
@@ -260,54 +249,19 @@ static void do_log_file_complete_dual_write(void)
         do_log_file_close_waiter_wakeup(&log_gl.log_file);
     }
 }
-#else
-static int do_log_file_complete_dual_write(bool success)
-{
-    int prev_fd = -1;
-
-    pthread_mutex_lock(&log_gl.log_fsync_lock);
-    if (success) {
-        prev_fd                 = log_gl.log_file.fd;
-        log_gl.log_file.fd      = log_gl.log_file.next_fd;
-        log_gl.log_file.size    = log_gl.log_file.next_size;
-    } else {
-        prev_fd                 = log_gl.log_file.next_fd;
-    }
-    log_gl.log_file.next_fd = -1;
-    log_gl.log_file.next_size = 0;
-    pthread_mutex_unlock(&log_gl.log_fsync_lock);
-
-    return prev_fd;
-}
-#endif
 
 static uint32_t do_log_buff_flush(bool flush_all)
 {
     log_BUFFER *logbuff = &log_gl.log_buffer;
     uint32_t    nflush = 0;
     bool        dual_write_flag = false;
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
     bool        dual_write_complete_flag = false;
-#else
-    bool        next_fhlsn_flag = false;
-    bool        cleanup_process = false;
-#endif
 
     /* computate flush size */
     pthread_mutex_lock(&log_gl.log_write_lock);
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
-#else
-    if (logbuff->dw_end != -1) {
-        cleanup_process = true;
-    }
-#endif
     if (logbuff->fbgn == logbuff->dw_end) {
         logbuff->dw_end = -1;
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
         dual_write_complete_flag = true;
-#else
-        next_fhlsn_flag = true;
-#endif
     }
     if (logbuff->fbgn != logbuff->fend) {
         nflush = logbuff->fque[logbuff->fbgn].nflush;
@@ -328,7 +282,6 @@ static uint32_t do_log_buff_flush(bool flush_all)
     }
     pthread_mutex_unlock(&log_gl.log_write_lock);
 
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
     if (dual_write_complete_flag) {
         if (log_gl.log_file.next_fd != -1) {
             do_log_file_complete_dual_write();
@@ -338,30 +291,9 @@ static uint32_t do_log_buff_flush(bool flush_all)
         log_gl.nxt_flush_lsn.roffset = 0;
         pthread_mutex_unlock(&log_gl.flush_lsn_lock);
     }
-#else
-    if (next_fhlsn_flag) {
-        pthread_mutex_lock(&log_gl.flush_lsn_lock);
-        log_gl.nxt_flush_lsn.filenum += 1;
-        log_gl.nxt_flush_lsn.roffset = 0;
-        pthread_mutex_unlock(&log_gl.flush_lsn_lock);
-    }
-#endif
 
     if (nflush > 0) {
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
         do_log_file_write(&logbuff->data[logbuff->head], nflush, dual_write_flag);
-#else
-        if (cleanup_process) {
-            /* Cleanup process. (fd was set to next_fd in the previous step)
-             * Skip if requested by old cmdlog file only.
-             */
-            if (dual_write_flag) {
-                do_log_file_write(&logbuff->data[logbuff->head], nflush, false);
-            }
-        } else {
-            do_log_file_write(&logbuff->data[logbuff->head], nflush, dual_write_flag);
-        }
-#endif
 
         /* update nxt_flush_lsn */
         pthread_mutex_lock(&log_gl.flush_lsn_lock);
@@ -573,7 +505,6 @@ void cmdlog_buff_flush(LogSN *upto_lsn)
 void cmdlog_file_sync(void)
 {
     LogSN now_flush_lsn;
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
     log_FILE *logfile = &log_gl.log_file;
     int fd;
     int prev_fd = -1;
@@ -639,43 +570,6 @@ void cmdlog_file_sync(void)
         } while(0);
     }
     pthread_mutex_unlock(&log_gl.log_fsync_lock);
-#else
-
-    /* get current nxt_flush_lsn */
-    cmdlog_get_flush_lsn(&now_flush_lsn);
-
-    /* fsync the log files */
-    pthread_mutex_lock(&log_gl.log_fsync_lock);
-    if (1) {
-        /* fsync curr fd */
-        int ret = disk_fsync(log_gl.log_file.fd);
-        if (ret < 0) {
-            logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "log file fsync error (%d:%s)\n",
-                        errno, strerror(errno));
-            /* [FATAL] untreatable error => abnormal shutdown by assertion */
-        }
-        assert(ret == 0);
-
-        /* fsync next fd */
-        if (log_gl.log_file.next_fd != -1) {
-            ret = disk_fsync(log_gl.log_file.next_fd);
-            if (ret < 0) {
-                logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "log file fsync error (%d:%s)\n",
-                            errno, strerror(errno));
-                /* [FATAL] untreatable error => abnormal shutdown by assertion */
-            }
-            assert(ret == 0);
-        }
-
-        /* update nxt_fsync_lsn */
-        pthread_mutex_lock(&log_gl.fsync_lsn_lock);
-        log_gl.nxt_fsync_lsn = now_flush_lsn;
-        pthread_mutex_unlock(&log_gl.fsync_lsn_lock);
-    }
-    pthread_mutex_unlock(&log_gl.log_fsync_lock);
-#endif
 }
 
 /* FIXME: remove later, if not used */
@@ -704,26 +598,11 @@ void cmdlog_get_fsync_lsn(LogSN *lsn)
 
 void cmdlog_complete_dual_write(bool success)
 {
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
-#else
-    int prev_fd = -1;
-#endif
     pthread_mutex_lock(&log_gl.log_flush_lock);
     if (log_gl.log_file.next_fd != -1) {
         do_log_buff_complete_dual_write(success);
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
-#else
-        prev_fd = do_log_file_complete_dual_write(success);
-#endif
     }
     pthread_mutex_unlock(&log_gl.log_flush_lock);
-
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
-#else
-    if (prev_fd != -1) {
-        (void)disk_close(prev_fd);
-    }
-#endif
 }
 
 int cmdlog_file_open(char *path)
@@ -743,39 +622,24 @@ int cmdlog_file_open(char *path)
             break;
         }
         snprintf(logfile->path, CMDLOG_MAX_FILEPATH_LENGTH, "%s", path);
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
-#else
-        pthread_mutex_lock(&log_gl.log_fsync_lock);
-#endif
         if (logfile->fd == -1) {
             logfile->fd = fd;
         } else {
             /* fd != -1 means that a new cmdlog file is created by checkpoint */
             logfile->next_fd = fd;
         }
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
-#else
-        pthread_mutex_unlock(&log_gl.log_fsync_lock);
-#endif
     } while(0);
     pthread_mutex_unlock(&log_gl.log_flush_lock);
 
     return ret;
 }
 
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
 void cmdlog_file_close(bool chkpt_success)
-#else
-void cmdlog_file_close(bool first_chkpt_fail)
-#endif
 {
     log_FILE *logfile = &log_gl.log_file;
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
     int remove_fd = -1;
-#endif
 
     pthread_mutex_lock(&log_gl.log_flush_lock);
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
     if (chkpt_success) {
         /* wait until the previous file is closed */
         while (logfile->next_fd != -1 || logfile->prev_fd != -1) {
@@ -796,26 +660,8 @@ void cmdlog_file_close(bool first_chkpt_fail)
             logfile->fd = -1;
         }
     }
-#else
-    if (first_chkpt_fail) {
-        if (logfile->fd != -1) {
-            pthread_mutex_lock(&log_gl.log_fsync_lock);
-            (void)disk_close(logfile->fd);
-            logfile->fd = -1;
-            pthread_mutex_unlock(&log_gl.log_fsync_lock);
-        }
-    } else {
-        if (logfile->next_fd != -1) {
-            pthread_mutex_lock(&log_gl.log_fsync_lock);
-            (void)disk_close(logfile->next_fd);
-            logfile->next_fd = -1;
-            pthread_mutex_unlock(&log_gl.log_fsync_lock);
-        }
-    }
-#endif
     pthread_mutex_unlock(&log_gl.log_flush_lock);
 
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
     if (logfile->next_fd != -1) {
         /* only in sync mode and checkpoint failure */
         pthread_mutex_lock(&log_gl.log_fsync_lock);
@@ -828,23 +674,18 @@ void cmdlog_file_close(bool first_chkpt_fail)
     if (remove_fd != -1) {
         (void)disk_close(remove_fd);
     }
-#endif
 }
 
 void cmdlog_file_init(void)
 {
     log_FILE *logfile  = &log_gl.log_file;
     logfile->path[0]   = '\0';
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
     logfile->prev_fd   = -1;
-#endif
     logfile->fd        = -1;
     logfile->next_fd   = -1;
     logfile->size      = 0;
     logfile->next_size = 0;
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
-    logfile->close_wait   = false;
-#endif
+    logfile->close_wait = false;
     logger->log(EXTENSION_LOG_INFO, NULL, "CMDLOG FILE module initialized.\n");
 }
 
@@ -1070,9 +911,7 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
     memset(&log_gl, 0, sizeof(log_gl));
 
     /* log global init */
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
     log_gl.async_mode = engine->config.async_logging;
-#endif
 
     log_gl.nxt_fsync_lsn.filenum = 1;
     log_gl.nxt_fsync_lsn.roffset = 0;
@@ -1084,9 +923,7 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
     pthread_mutex_init(&log_gl.log_fsync_lock, NULL);
     pthread_mutex_init(&log_gl.flush_lsn_lock, NULL);
     pthread_mutex_init(&log_gl.fsync_lsn_lock, NULL);
-#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
     pthread_cond_init(&log_gl.log_flush_cond, NULL);
-#endif
 
     /* log file init */
     cmdlog_file_init();
