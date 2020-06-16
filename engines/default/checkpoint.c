@@ -249,9 +249,14 @@ static int do_checkpoint(chkpt_st *cs)
             ret = CHKPT_ERROR;
         }
 
+#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
+        /* close the current log file when the checkpoint has failed. */
+        cmdlog_file_close((ret == CHKPT_SUCCESS ? true : false));
+#else
         /* close the current log file when the first checkpoint has failed. */
         bool first_chkpt_fail = (ret == CHKPT_ERROR && cs->lasttime == -1);
         cmdlog_file_close(first_chkpt_fail);
+#endif
         if (oldtime != -1) {
             if (do_chkpt_remove_files(cs, oldtime) < 0) {
                 ret = CHKPT_ERROR_FILE_REMOVE;

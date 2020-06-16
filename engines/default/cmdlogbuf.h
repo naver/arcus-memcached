@@ -33,7 +33,11 @@ void cmdlog_get_fsync_lsn(LogSN *lsn);
 
 int               cmdlog_file_open(char *path);
 size_t            cmdlog_file_getsize(void);
+#ifdef ENABLE_PERSISTENCE_03_REFACTOR_FSYNC
+void              cmdlog_file_close(bool chkpt_success);
+#else
 void              cmdlog_file_close(bool first_chkpt_fail);
+#endif
 void              cmdlog_file_init(void);
 void              cmdlog_file_final(void);
 int               cmdlog_file_apply(void);
