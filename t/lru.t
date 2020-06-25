@@ -26,7 +26,7 @@ ok(length($big) < 1024 * 1024, "buffer is less than 1m");
 my $too_big = $big . $big . $big;
 my $len = length($too_big);
 $cmd = "set too_big 0 0 $len"; $val = "$too_big";
-$rst = "SERVER_ERROR object too large for cache"; $msg = "too_big not stored";
+$rst = "CLIENT_ERROR object too large for cache"; $msg = "too_big not stored";
 mem_cmd_is($sock, $cmd, $val, $rst, $msg);
 
 # set the big value

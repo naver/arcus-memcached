@@ -8369,7 +8369,7 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     case ENGINE_E2BIG:
     case ENGINE_ENOMEM:
         if (ret == ENGINE_E2BIG) {
-            out_string(c, "SERVER_ERROR object too large for cache");
+            out_string(c, "CLIENT_ERROR object too large for cache");
         } else {
             out_string(c, "SERVER_ERROR out of memory storing object");
         }
