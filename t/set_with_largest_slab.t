@@ -24,7 +24,7 @@ while ($len < 1024*1028) {
         # Ensure causing a memory overflow doesn't leave stale data.
         $cmd = "set foo_$len 0 0 3"; $rst = "STORED";
         mem_cmd_is($sock, $cmd, "MOO", $rst);
-        $cmd = "set foo_$len 0 0 $len"; $rst = "SERVER_ERROR object too large for cache";
+        $cmd = "set foo_$len 0 0 $len"; $rst = "CLIENT_ERROR object too large for cache";
         mem_cmd_is($sock, $cmd, $val, $rst, "failed to store size $len");
         $cmd = "get foo_$len"; $rst = "END";
         mem_cmd_is($sock, $cmd, "", $rst);
