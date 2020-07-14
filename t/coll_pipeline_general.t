@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 6;
+use Test::More tests => 8;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -40,6 +40,10 @@ datum5
 lop insert lkey2 0 9
 datum6666
 delete lkey2
+
+lop create 0 0 0
+lop insert lkey3 4 pipe
+data
 =cut
 
 my $engine = shift;
@@ -100,6 +104,23 @@ $rst = "RESPONSE 3\n"
      . "ERROR unknown command";
 mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "delete lkey2"; $rst = "DELETED";
+mem_cmd_is($sock, $cmd, "", $rst);
+
+mem_cmd_is($sock, "lop create lkey3 0 0 0", "", "CREATED");
+my $max_pipe_operation = 500;
+
+$cmd = "";
+for (my $i = 0; $i < $max_pipe_operation; $i++) {
+    $cmd .= "lop insert lkey3 0 4 pipe\r\ndata\r\n";
+}
+$cmd .= "lop insert lkey3 0 4\r\ndata\r\n";
+
+$rst = "RESPONSE 500\n";
+for (my $i = 0; $i < $max_pipe_operation; $i++) {
+    $rst .= "STORED\n";
+}
+$rst .= "PIPE_ERROR command overflow\n" . "ERROR unknown command";
+
 mem_cmd_is($sock, $cmd, "", $rst);
 
 # after test
