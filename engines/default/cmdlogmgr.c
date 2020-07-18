@@ -168,6 +168,9 @@ log_waiter_t *cmdlog_waiter_begin(const void *cookie, uint8_t updtype)
       if (IS_UPD_ELEM_DELETE_DROP(updtype))
           waiter->elem_delete_with_drop = true;
       tls_waiter = waiter; /* set tls_waiter */
+    } else {
+      logger->log(EXTENSION_LOG_WARNING, NULL,
+                  "cmdlog waiter begin failed. updtype=%d\n", updtype);
     }
     return waiter;
 }

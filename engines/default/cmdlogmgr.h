@@ -73,6 +73,20 @@ typedef struct _log_waiter {
     const void         *cookie;
 } log_waiter_t;
 
+/* macros for persistence action (FIXME: define the error code) */
+#define PERSISTENCE_ACTION_BEGIN(c,u) \
+    do { \
+        if (config->use_persistence) { \
+            if (cmdlog_waiter_begin((c),(u)) == NULL) \
+                return ENGINE_ENOMEM; \
+        } \
+    } while(0)
+#define PERSISTENCE_ACTION_END(r) \
+    do { \
+        log_waiter_t *waiter = cmdlog_get_my_waiter(); \
+        if (waiter) cmdlog_waiter_end(waiter, &r); \
+    } while(0)
+
 /* external command log manager functions */
 log_waiter_t      *cmdlog_waiter_begin(const void *cookie, uint8_t updtype);
 void               cmdlog_waiter_end(log_waiter_t *waiter, ENGINE_ERROR_CODE *result);

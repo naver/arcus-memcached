@@ -30,21 +30,8 @@
 
 #include "default_engine.h"
 #include "item_clog.h"
-
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogmgr.h"
-
-#define PERSISTENCE_ACTION_BEGIN(c, u) \
-    do { \
-        int ret = persistence_action_begin((c), (u)); \
-        if (ret != ENGINE_SUCCESS) \
-            return ret; \
-    } while(0);
-
-#define PERSISTENCE_ACTION_END(r) \
-    do { \
-        persistence_action_end(&r); \
-    } while(0);
 #endif
 
 //#define SET_DELETE_NO_MERGE
@@ -179,33 +166,6 @@ typedef struct _map_prev_info {
     map_elem_item *prev;
     uint16_t       hidx;
 } map_prev_info;
-
-#ifdef ENABLE_PERSISTENCE
-/*
- * Actions persistence begin & end.
- */
-static inline ENGINE_ERROR_CODE
-persistence_action_begin(const void *cookie, const uint8_t updtype)
-{
-    if (config->use_persistence) {
-        if (cmdlog_waiter_begin(cookie, updtype) == NULL) {
-            logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "cmdlog waiter begin fail. updtype=%d\n", updtype);
-            return ENGINE_ENOMEM; /* FIXME: define error code */
-        }
-    }
-    return ENGINE_SUCCESS;
-}
-
-static inline void
-persistence_action_end(ENGINE_ERROR_CODE *result)
-{
-    log_waiter_t *waiter = cmdlog_get_my_waiter();
-    if (waiter != NULL) {
-        cmdlog_waiter_end(waiter, result);
-    }
-}
-#endif
 
 /*
  * Static functions
