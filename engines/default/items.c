@@ -33,7 +33,6 @@
 
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogmgr.h"
-#include "cmdlogbuf.h"
 
 #define PERSISTENCE_ACTION_BEGIN(c, u) \
     do { \
