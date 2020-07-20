@@ -33,7 +33,8 @@ static struct assoc_scan *chkpt_scanp=NULL; // checkpoint scan pointer
 
 static bool gen_logical_btree_delete_log=false; // btree generate logical delete log
 
-#define NEED_DUAL_WRITE(it) (chkpt_scanp != NULL && (it == NULL || assoc_scan_in_visited_area(chkpt_scanp, it)))
+#define NEED_DUAL_WRITE(it) ((chkpt_scanp != NULL) && \
+                             (it == NULL || assoc_scan_in_visited_area(chkpt_scanp, it)))
 
 /* The size of memory chunk for log waiters */
 #define LOG_WAITER_CHUNK_SIZE (4 * 1024)
@@ -77,12 +78,12 @@ typedef struct _waiter_info {
 struct cmdlog_global {
     log_waiter_info waiter_info;
     group_commit_t  group_commit;
-    bool            async_mode;
     volatile bool   initialized;
 };
 
 /* global data */
 static struct default_engine *engine = NULL;
+static struct engine_config  *config = NULL;
 static EXTENSION_LOGGER_DESCRIPTOR* logger = NULL;
 static struct cmdlog_global logmgr_gl;
 static __thread log_waiter_t *tls_waiter = NULL;
@@ -118,7 +119,8 @@ static int do_cmdlog_waiter_grow(log_waiter_info *info)
     log_waiter_chunk *chunk = (log_waiter_chunk *)malloc(LOG_WAITER_CHUNK_SIZE);
     if (chunk == NULL) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to allocate cmdlog waiter chunk. chunk size : %d\n", LOG_WAITER_CHUNK_SIZE);
+                    "Failed to allocate cmdlog waiter chunk. chunk size : %d\n",
+                    LOG_WAITER_CHUNK_SIZE);
         return -1;
     }
 
@@ -267,10 +269,10 @@ static void *do_cmdlog_gcommit_thread_main(void *arg)
     struct timespec to;
 
     gcommit->running = RUNNING_STARTED;
-    while (1)
-    {
+    while (1) {
         if (gcommit->reqstop) {
-            logger->log(EXTENSION_LOG_INFO, NULL, "Group commit thread recognized stop request.\n");
+            logger->log(EXTENSION_LOG_INFO, NULL,
+                        "Group commit thread recognized stop request.\n");
             break;
         }
 
@@ -309,6 +311,7 @@ static int do_cmdlog_gcommit_thread_start(void)
 {
     pthread_t tid;
     group_commit_t *gcommit = &logmgr_gl.group_commit;
+
     gcommit->running = RUNNING_UNSTARTED;
     /* create group commit thread */
     if (pthread_create(&tid, NULL, do_cmdlog_gcommit_thread_main, NULL) != 0) {
@@ -316,7 +319,6 @@ static int do_cmdlog_gcommit_thread_start(void)
                     "Failed to create group commit thread. error=%s\n", strerror(errno));
         return -1;
     }
-
     /* wait until group commit thread starts */
     while (gcommit->running == RUNNING_UNSTARTED) {
         usleep(5000); /* sleep 5ms */
@@ -332,7 +334,6 @@ static void do_cmdlog_gcommit_thread_stop(void)
     if (gcommit->running == RUNNING_UNSTARTED) {
         return;
     }
-
     while (gcommit->running == RUNNING_STARTED) {
         gcommit->reqstop = true;
         do_cmdlog_gcommit_thread_wakeup(gcommit, true);
@@ -360,7 +361,7 @@ void cmdlog_waiter_end(log_waiter_t *waiter, ENGINE_ERROR_CODE *result)
 {
     tls_waiter = NULL; /* clear tls_waiter */
 
-    if (logmgr_gl.async_mode == false && *result == ENGINE_SUCCESS) {
+    if (config->async_logging == false && *result == ENGINE_SUCCESS) {
         group_commit_t *gcommit = &logmgr_gl.group_commit;
         LogSN now_flush_lsn, now_fsync_lsn;
 
@@ -440,10 +441,10 @@ ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine_ptr)
     ENGINE_ERROR_CODE ret;
 
     engine = engine_ptr;
+    config = &engine->config;
     logger = engine->server.log->get_logger();
 
     memset(&logmgr_gl, 0, sizeof(logmgr_gl));
-    logmgr_gl.async_mode = engine->config.async_logging;
 
     ret = cmdlog_waiter_init(engine);
     if (ret != ENGINE_SUCCESS) {
@@ -536,7 +537,8 @@ void cmdlog_generate_flush_item(const char *prefix, const int nprefix, const tim
     }
 }
 
-void cmdlog_generate_setattr(hash_item *it, const ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
+void cmdlog_generate_setattr(hash_item *it,
+                             const ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
 {
     uint8_t attr_type = 0;
     for (int i = 0; i < attr_cnt; i++) {
