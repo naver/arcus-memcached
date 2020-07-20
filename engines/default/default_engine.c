@@ -127,7 +127,8 @@ static int check_configuration(struct engine_config *conf)
             return -1;
         } else if (access(conf->data_path, F_OK) < 0) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "default engine - No exist snapshot path. path=%s, error=%s\n", conf->data_path, strerror(errno));
+                        "default engine - No exist snapshot path. path=%s, error=%s\n",
+                        conf->data_path, strerror(errno));
             return -1;
         }
         if (conf->logs_path == NULL) {
@@ -136,7 +137,8 @@ static int check_configuration(struct engine_config *conf)
             return -1;
         } else if (access(conf->logs_path, F_OK) < 0) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "default engine - No exist command log path. path=%s, error=%s\n", conf->data_path, strerror(errno));
+                        "default engine - No exist command log path. path=%s, error=%s\n",
+                        conf->data_path, strerror(errno));
             return -1;
         }
         /* adjust checkpoint interval */
@@ -156,20 +158,6 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
             { .key = "use_cas",
               .datatype = DT_BOOL,
               .value.dt_bool = &se->config.use_cas },
-#ifdef ENABLE_PERSISTENCE
-            { .key = "use_persistence",
-              .datatype = DT_BOOL,
-              .value.dt_bool = &se->config.use_persistence },
-            { .key = "data_path",
-              .datatype = DT_STRING,
-              .value.dt_string = &se->config.data_path },
-            { .key = "logs_path",
-              .datatype = DT_STRING,
-              .value.dt_string = &se->config.logs_path },
-            { .key = "async_logging",
-              .datatype = DT_BOOL,
-              .value.dt_bool = &se->config.async_logging },
-#endif
             { .key = "verbose",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.verbose },
@@ -218,6 +206,18 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.max_element_bytes },
 #ifdef ENABLE_PERSISTENCE
+            { .key = "use_persistence",
+              .datatype = DT_BOOL,
+              .value.dt_bool = &se->config.use_persistence },
+            { .key = "data_path",
+              .datatype = DT_STRING,
+              .value.dt_string = &se->config.data_path },
+            { .key = "logs_path",
+              .datatype = DT_STRING,
+              .value.dt_string = &se->config.logs_path },
+            { .key = "async_logging",
+              .datatype = DT_BOOL,
+              .value.dt_bool = &se->config.async_logging },
             { .key = "chkpt_interval_pct_snapshot",
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.chkpt_interval_pct_snapshot },
@@ -1716,12 +1716,6 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
       .cache_lock = PTHREAD_MUTEX_INITIALIZER,
       .config = {
          .use_cas = true,
-#ifdef ENABLE_PERSISTENCE
-         .use_persistence = false,
-         .data_path = NULL,
-         .logs_path = NULL,
-         .async_logging = false, /* default, sync logging */
-#endif
          .verbose = 0,
          .oldest_live = 0,
          .evict_to_free = true,
@@ -1738,6 +1732,14 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .max_map_size = 50000,
          .max_btree_size = 50000,
          .max_element_bytes = DEFAULT_ELEMENT_BYTES,
+#ifdef ENABLE_PERSISTENCE
+         .use_persistence = false,
+         .async_logging = false, /* default, sync logging */
+         .data_path = NULL,
+         .logs_path = NULL,
+         .chkpt_interval_pct_snapshot = 100,
+         .chkpt_interval_min_logsize = 256,
+#endif
          .prefix_delimiter = ':',
        },
       .stats = {

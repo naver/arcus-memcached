@@ -46,12 +46,6 @@ struct default_engine;
  */
 struct engine_config {
    bool   use_cas;
-#ifdef ENABLE_PERSISTENCE
-   bool   use_persistence;
-   char   *data_path;
-   char   *logs_path;
-   bool   async_logging;
-#endif
    size_t verbose;
    rel_time_t oldest_live;
    bool   evict_to_free;
@@ -69,6 +63,10 @@ struct engine_config {
    size_t max_btree_size;
    size_t max_element_bytes;
 #ifdef ENABLE_PERSISTENCE
+   bool   use_persistence;
+   bool   async_logging;
+   char   *data_path;
+   char   *logs_path;
    size_t chkpt_interval_pct_snapshot;
    size_t chkpt_interval_min_logsize;
 #endif
