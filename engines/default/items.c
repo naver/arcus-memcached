@@ -1155,13 +1155,21 @@ static hash_item *do_item_get(const char *key, const uint32_t nkey, bool do_upda
         }
     }
     if (config->verbose > 2) {
-        if (it) {
-            logger->log(EXTENSION_LOG_INFO, NULL, "> FOUND KEY %s\n",
-                        (const char*)item_get_key(it));
+        char keybuf[MAX_HKEY_LEN];
+        if (nkey < MAX_HKEY_LEN) {
+            memcpy(keybuf, key, nkey);
+            keybuf[nkey] = '\0';
         } else {
-            logger->log(EXTENSION_LOG_INFO, NULL, "> NOT FOUND %s\n",
-                        key);
+            memcpy(keybuf, key, MAX_HKEY_LEN-4);
+            keybuf[MAX_HKEY_LEN-4] = '#';
+            keybuf[MAX_HKEY_LEN-3] = '#';
+            keybuf[MAX_HKEY_LEN-2] = '#';
+            keybuf[MAX_HKEY_LEN-1] = '\0';
         }
+
+        logger->log(EXTENSION_LOG_INFO, NULL, "> %s %s\n",
+                    it ? "FOUND KEY" : "NOT FOUND",
+                    keybuf);
     }
     return it;
 }
