@@ -1011,7 +1011,6 @@ static ENGINE_ERROR_CODE do_item_link(hash_item *it)
 {
     const char *key = item_get_key(it);
     assert((it->iflag & ITEM_LINKED) == 0);
-    assert(it->nbytes < (1024 * 1024));  /* 1MB max size */
 
     MEMCACHED_ITEM_LINK(key, it->nkey, it->nbytes);
 
