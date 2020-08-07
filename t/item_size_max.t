@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 7;
+use Test::More tests => 9;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -67,6 +67,19 @@ my $stats = mem_stats($server->sock, ' settings');
 is($stats->{item_size_max}, 33554432);
 $server->stop();
 
+
+# Test sets up to a large size around 2MB.
+$server = get_memcached($engine, '-I 2m');
+my $stats = mem_stats($server->sock, ' settings');
+is($stats->{item_size_max}, 2097152);
+my $added_len = 128; # keylen + item meta size
+my $len = 2 * 1024 * 1024 - $added_len;
+my $val = "B"x$len;
+my $cmd = "set foo_$len 0 0 $len";
+my $rst = "STORED";
+my $msg = "stored size $len";
+mem_cmd_is($server->sock, $cmd, $val, $rst);
+$server->stop();
 
 # after test
 release_memcached($engine, $server);
