@@ -1,4 +1,4 @@
-Admin & Monitoring 명령
+# Chapter 9. Admin & Monitoring 명령
 -----------------------
 
 - FLUSH 명령
