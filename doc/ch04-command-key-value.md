@@ -1,4 +1,4 @@
-# Chapter 2. Simple Key-Value 명령
+# Chapter 4. Simple Key-Value 명령
 ---------------------
 
 Arcus cache server는 memcached 1.4의 key-value 명령을 그대로 지원하며, 

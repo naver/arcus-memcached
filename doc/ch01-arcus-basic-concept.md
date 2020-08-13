@@ -51,7 +51,7 @@ Arcus cache server는 simple key-value 외에 collection 지원으로 다양한 
 
 각 cache item은 expiration time 속성을 가지며,
 이 값의 설정을 통해 expire되지 않는 item 또는 특정 시간 이후에 자동 expire될 item을 지정할 수 있다.
-이에 대한 자세한 설명은 [Item Attribute 설명](/doc/arcus-item-attribute.md)을 참고 바란다.
+이에 대한 자세한 설명은 [Item Attribute 설명](ch03-item-attributes.md)을 참고 바란다.
 
 Arcus cache server는 memory cache이며, 한정된 메모리 공간을 사용하여 데이터를 caching한다.
 메모리 공간이 모두 사용된 상태에서 새로운 item 저장 요청이 들어올 경우,

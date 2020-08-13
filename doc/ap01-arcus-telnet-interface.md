@@ -26,7 +26,7 @@ Escape character is '^]'.
 ```
 
 telnet 명령으로 memcached에 연결한 이후에는 Arcus ASCII 명령을 직접 수행해 볼 수 있다.
-아래에서 그 예들을 든다. Arcus ASCII 명령의 자세한 설명은 [Arcus cache server ascii protocol](/doc/arcus-ascii-protocol.md)을 참고하기 바란다.
+아래에서 그 예들을 든다. Arcus ASCII 명령의 자세한 설명은 [Arcus cache server ascii protocol](ch00-arcus-ascii-protocol.md)을 참고하기 바란다.
 
 
 ### 예제 1.  get/set
