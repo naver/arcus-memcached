@@ -1,4 +1,4 @@
-# Chapter 9. Admin & Monitoring 명령
+# Chapter 11. Admin & Monitoring 명령
 -----------------------
 
 - FLUSH 명령
@@ -418,7 +418,7 @@ END
 | Stats           | 설명                                                         |
 | --------------- | ------------------------------------------------------------ |
 | number          | 해당 클래스에 저장된 아이템의 개수                           |
-| sticky          | sticky로 설정된 아이템의 개수. [basic concept 문서](arcus-basic-concept.md#expiration-eviction-and-sticky) 참조 |
+| sticky          | sticky로 설정된 아이템의 개수. [basic concept 문서](ch01-arcus-basic-concept.md#expiration-eviction-and-sticky) 참조 |
 | age             | LRU 체인에서 가장 오래된 아이템이 생성되고 나서 지난 시간(초) |
 | evicted         | evict된 아이템의 개수                                        |
 | evicted_nonzero | evict된 아이템 중, expired time이 명시적인 양수 값으로 설정되어 있던 아이템의 개수 |

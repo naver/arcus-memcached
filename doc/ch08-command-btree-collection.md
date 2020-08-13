@@ -1,24 +1,24 @@
-# Chapter 6. B+Tree 명령
+# Chapter 8. B+Tree 명령
 -----------
 
 B+tree collection에 관한 명령은 아래와 같다.
 
-- [B+tree collection 생성: bop create](command-btree-collection.md#bop-create-btree-collection-%EC%83%9D%EC%84%B1)
+- [B+tree collection 생성: bop create](ch08-command-btree-collection.md#bop-create-btree-collection-%EC%83%9D%EC%84%B1)
 - B+tree collection 삭제: delete (기존 key-value item의 삭제 명령을 그대로 사용)
 
 B+tree element에 관한 기본 명령은 아래와 같다.
 
-- [B+tree element 삽입/대체: bop insert/upsert](command-btree-collection.md#bop-insertupsert-btree-element-삽입대체)
-- [B+tree element 변경: bop update](command-btree-collection.md#bop-update-btree-element-%EB%B3%80%EA%B2%BD)
-- [B+tree element 삭제: bop delete](command-btree-collection.md#bop-delete-btree-element-삭제)
-- [B+tree element 조회: bop get](command-btree-collection.md#bop-get-btree-element-조회)
-- [B+tree element 개수 계산: bop count](command-btree-collection.md#bop-count-btree-element-개수-계산)
-- [B+tree element 값의 증감: bop incr/decr](command-btree-collection.md#bop-incrdecr-btree-element-값의-증감)
+- [B+tree element 삽입/대체: bop insert/upsert](ch08-command-btree-collection.md#bop-insertupsert-btree-element-삽입대체)
+- [B+tree element 변경: bop update](ch08-command-btree-collection.md#bop-update-btree-element-%EB%B3%80%EA%B2%BD)
+- [B+tree element 삭제: bop delete](ch08-command-btree-collection.md#bop-delete-btree-element-삭제)
+- [B+tree element 조회: bop get](ch08-command-btree-collection.md#bop-get-btree-element-조회)
+- [B+tree element 개수 계산: bop count](ch08-command-btree-collection.md#bop-count-btree-element-개수-계산)
+- [B+tree element 값의 증감: bop incr/decr](ch08-command-btree-collection.md#bop-incrdecr-btree-element-값의-증감)
 
 Arcus cache server는 다수의 b+tree들에 대한 조회 기능을 특별히 제공하며, 이들은 아래와 같다.
 
-- [하나의 명령으로 여러 b+tree들에 대한 조회를 한번에 수행하는 기능:  bop mget](command-btree-collection.md#bop-mget-btree-multiple-get)
-- [여러 b+tree들에서 조회 조건을 만족하는 elements를 sort merge하여 최종 결과를 얻는 기능: bop smget](command-btree-collection.md#bop-smget-btree-sort-merge-get)
+- [하나의 명령으로 여러 b+tree들에 대한 조회를 한번에 수행하는 기능:  bop mget](ch08-command-btree-collection.md#bop-mget-btree-multiple-get)
+- [여러 b+tree들에서 조회 조건을 만족하는 elements를 sort merge하여 최종 결과를 얻는 기능: bop smget](ch08-command-btree-collection.md#bop-smget-btree-sort-merge-get)
 
 Arcus cache server는 bkey 기반의 element 조회 기능 외에도 b+tree position 기반의 element 조회 기능을 제공한다.
 B+tree에서 특정 element의 position이란 b+teee에서의 그 element의 위치 정보로서,
@@ -28,9 +28,9 @@ B+tree position은 0-based index로 표현한다.
 
 Arcus cache server에서 제공하는 b+tree position 관련 명령은 다음과 같다.
 
-- [B+tree에서 특정 bkey의 position을 조회하는 기능 : bop position](command-btree-collection.md#bop-position-btree-position-조회)
-- [B+tree에서 하나의 position 또는 position range에 해당하는 element를 조회하는 기능 : bop gbp(get by position)](command-btree-collection.md#bop-gbp-btree-get-by-position)
-- [B+tree에서 특정 bkey의 position과 element 그리고 그 위치 앞뒤의 element를 함께 조회하는 기능: bop pwg(position with get)](command-btree-collection.md#bop-pwg-btree-find-position-with-get-version-180)
+- [B+tree에서 특정 bkey의 position을 조회하는 기능 : bop position](ch08-command-btree-collection.md#bop-position-btree-position-조회)
+- [B+tree에서 하나의 position 또는 position range에 해당하는 element를 조회하는 기능 : bop gbp(get by position)](ch08-command-btree-collection.md#bop-gbp-btree-get-by-position)
+- [B+tree에서 특정 bkey의 position과 element 그리고 그 위치 앞뒤의 element를 함께 조회하는 기능: bop pwg(position with get)](ch08-command-btree-collection.md#bop-pwg-btree-find-position-with-get-version-180)
 
 B+tree position 기반의 조회가 필요한 예를 하나 들면, ranking 시스템이 있다.
 Ranking 시스템에서는 특정 score를 bkey로 하여 해당 elements를 저장하고,
@@ -47,7 +47,7 @@ bop create <key> <attributes> [noreply]\r\n
 ```
 
 - \<key\> - 대상 item의 key string
-- \<attributes\> - 설정할 item attributes. [Item Attribute 설명](/doc/arcus-item-attribute.md)을 참조 바란다.
+- \<attributes\> - 설정할 item attributes. [Item Attribute 설명](ch03-item-attribute.md)을 참조 바란다.
 - noreply - 명시하면, response string을 전달받지 않는다.
 
 Response string과 그 의미는 아래와 같다.
@@ -77,9 +77,9 @@ bop upsert <key> <bkey> [<eflag>] <bytes> [create <attributes>] [noreply|pipe|ge
 - \<eflag\> - 삽입할 element의 optional flag
 - \<bytes\>와 \<data\> - 삽입할 element의 데이터의 길이와 데이터 그 자체 (최대 4KB)
 - create \<attributes\> - b+tree collection 없을 시에 b+tree 생성 요청.
-                    [Item Attribute 설명](/doc/arcus-item-attribute.md)을 참조 바란다.
+                    [Item Attribute 설명](ch03-item-attributes.md)을 참조 바란다.
 - noreply or pipe - 명시하면, response string을 전달받지 않는다. 
-                    pipe 사용은 [Command Pipelining](/doc/command-pipelining.md)을 참조 바란다.
+                    pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
 - getrim - 새로운 element 추가로 maxcount 제약에 의한 overflow trim이 발생할 경우,
            trim된 element 정보를 가져온다.
 
@@ -126,11 +126,11 @@ bop update <key> <bkey> [<eflag_update>] <bytes> [noreply|pipe]\r\n[<data>\r\n]
 - \<key\> - 대상 item의 key string
 - \<bkey\> - 대상 element의 bkey
 - \<eflag_update\> - eflag update 명시.
-                     [Collection 기본 개념](/doc/arcus-collection-concept.md)에서 eflag update를 참조 바란다.
+                     [Collection 기본 개념](ch02-collection-items.md)에서 eflag update를 참조 바란다.
 - \<bytes\>와 \<data\> - 새로 변경할 데이터의 길이와 데이터 그 자체 (최대 4KB)
                          데이터 변경을 원치 않으면 \<bytes\>를 -1로 하고 \<data\>를 생략하면 된다.         
 - noreply or pipe - 명시하면, response string을 전달받지 않는다. 
-                    pipe 사용은 [Command Pipelining](/doc/command-pipelining.md)을 참조 바란다.
+                    pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
 
 Response string과 그 의미는 아래와 같다.
 
@@ -163,11 +163,11 @@ bop delete <key> <bkey or "bkey range"> [<eflag_filter>] [<count>] [drop] [norep
 - \<bkey or "bkey range"\> - 하나의 bkey 또는 bkey range 조회 조건.
                              Bkey range는 "bkey1..bkey2" 형식으로 표현한다.
 - \<eflag_filter\> - eflag filter 조건.
-                    [Collection 기본 개념](/doc/arcus-collection-concept.md)에서 eflag filter 참조 바란다.
+                    [Collection 기본 개념](ch02-collection-items.md)에서 eflag filter 참조 바란다.
 - \<count\> - 삭제할 elements 개수 지정
 - drop - element 삭제로 인해 empty b+tree가 될 경우, 그 b+tree를 drop할 것인지를 지정한다.
 - noreply or pipe - 명시하면, response string을 전달받지 않는다. 
-                    pipe 사용은 [Command Pipelining](/doc/command-pipelining.md)을 참조 바란다.
+                    pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
 
 Response string과 그 의미는 아래와 같다.
 
@@ -194,7 +194,7 @@ bop get <key> <bkey or "bkey range"> [<eflag_filter>] [[<offset>] <count>] [dele
 - \<bkey or "bkey range"\> - 하나의 bkey 또는 bkey range 조회 조건.
                              Bkey range는 "bkey1..bkey2" 형식으로 표현한다.
 - \<eflag_filter\> - eflag filter 조건.
-                    [Collection 기본 개념](/doc/arcus-collection-concept.md)에서 eflag filter 참조 바란다.
+                    [Collection 기본 개념](ch02-collection-items.md)에서 eflag filter 참조 바란다.
 - [\<offset\>] \<count\> - 조회 조건을 만족하는 elements에서 skip 개수와 실제 조회할 개수
 - delete or drop - element 조회하면서 그 element를 delete할 것인지 그리고 delete로 인해 empty b+tree가 될 경우
                    그 b+tree를 drop할 것인지를 지정한다.
@@ -252,7 +252,7 @@ bop count <key> <bkey or "bkey range"> [<eflag_filter>]\r\n
 - \<bkey or "bkey range"\> - 하나의 bkey 또는 bkey range 조회 조건.
                              Bkey range는 "bkey1..bkey2" 형식으로 표현한다.
 - \<eflag_filter\> - eflag filter 조건.
-                    [Collection 기본 개념](/doc/arcus-collection-concept.md)에서 eflag filter 참조 바란다.
+                    [Collection 기본 개념](ch02-collection-items.md)에서 eflag filter 참조 바란다.
 
 성공 시의 response string은 아래와 같다.
 
@@ -332,7 +332,7 @@ bop mget <lenkeys> <numkeys> <bkey or "bkey range"> [<eflag_filter>] [<offset>] 
 - \<bkey or "bkey range"\> - 하나의 bkey 또는 bkey range 조회 조건.
                              Bkey range는 "bkey1..bkey2" 형식으로 표현한다.
 - \<eflag_filter\> - eflag filter 조건.
-                    [Collection 기본 개념](/doc/arcus-collection-concept.md)에서 eflag filter 참조 바란다.
+                    [Collection 기본 개념](ch02-collection-items.md)에서 eflag filter 참조 바란다.
 - [\<offset\>] \<count\> - 조회 조건을 만족하는 elements에서 skip 개수와 실제 조회할 개수
 
 bop mget 명령은 O(small N) 수행 원칙을 위하여 다음의 제약 사항을 가진다.
@@ -442,7 +442,7 @@ bop smget <lenkeys> <numkeys> <bkey or "bkey range"> [<eflag_filter>] <count> [d
 - \<bkey or "bkey range"\> - 하나의 bkey 또는 bkey range 조회 조건.
                              Bkey range는 "bkey1..bkey2" 형식으로 표현한다.
 - \<eflag_filter\> - eflag filter 조건.
-                    [Collection 기본 개념](/doc/arcus-collection-concept.md)에서 eflag filter 참조 바란다.
+                    [Collection 기본 개념](ch02-collection-items.md)에서 eflag filter 참조 바란다.
 - \<count\> - 조회할 element 개수
 - [duplicate|unique] - smget 동작 방식을 지정한다.
   - 생략되면, 예전 smget 동작을 수행한다.
