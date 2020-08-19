@@ -87,12 +87,12 @@ $ kill -INT <pid>
 ## ASCII Protocol
 
 Please refer to
-[Arcus cache server ascii protocol](/doc/arcus-ascii-protocol.md)
+[Arcus cache server ascii protocol](doc/ch00-arcus-ascii-protocol.md)
 for details on Arcus ASCII commands.
 
 You can use telnet interface to test simply Arcus ASCII commands on Arcus cache server.
 To know the usage of telnet interface,
-refer to [Arcus telnet interface guide](/doc/arcus-telnet-interface.md).
+refer to [Arcus telnet interface guide](doc/ap01-arcus-telnet-interface.md).
 
 ## Issues
 
