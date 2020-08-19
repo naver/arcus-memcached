@@ -1,17 +1,17 @@
-# Chapter 4. SET 명령
+# Chapter 6. SET 명령
 --------
 
 Set collection에 관한 명령은 아래와 같다.
 
-- [Set collection 생성: sop create](command-set-collection.md#sop-create-set-collection-생성)
+- [Set collection 생성: sop create](ch06-command-set-collection.md#sop-create-set-collection-생성)
 - Set collection 삭제: delete (기존 key-value item의 삭제 명령을 그대로 사용)
 
 Set element에 관한 명령은 아래와 같다. 
 
-- [Set element 삽입: sop insert](command-set-collection.md#sop-insert-set-element-삽입)
-- [Set element 삭제: sop delete](command-set-collection.md#sop-delete-set-element-삭제)
-- [Set element 조회: sop get](command-set-collection.md#sop-get-set-element-조회)
-- [Set element 존재유무 검사: sop exist](command-set-collection.md#sop-exist-set-element-존재유무-검사)
+- [Set element 삽입: sop insert](ch06-command-set-collection.md#sop-insert-set-element-삽입)
+- [Set element 삭제: sop delete](ch06-command-set-collection.md#sop-delete-set-element-삭제)
+- [Set element 조회: sop get](ch06-command-set-collection.md#sop-get-set-element-조회)
+- [Set element 존재유무 검사: sop exist](ch06-command-set-collection.md#sop-exist-set-element-존재유무-검사)
 
 ### sop create (Set Collection 생성)
 
@@ -23,7 +23,7 @@ sop create <key> <attributes> [noreply]\r\n
 ```
 
 - \<key\> - 대상 item의 key string
-- \<attributes\> - 설정할 item attributes. [Item Attribute 설명](/doc/arcus-item-attribute.md)을 참조 바란다.
+- \<attributes\> - 설정할 item attributes. [Item Attribute 설명](ch03-arcus-item-attributes.md)을 참조 바란다.
 - noreply - 명시하면, response string을 전달받지 않는다.
 
 Response string과 그 의미는 아래와 같다.
@@ -47,9 +47,9 @@ sop insert <key> <bytes> [create <attributes>] [noreply|pipe]\r\n<data>\r\n
 - \<key\> - 대상 item의 key string
 - \<bytes\> - 삽입할 데이터 길이 (trailing 문자인 "\r\n"을 제외한 길이)
 - create \<attributes\> - set collection 없을 시에 set 생성 요청.
-                    [Item Attribute 설명](/doc/arcus-item-attribute.md)을 참조 바란다.
+                    [Item Attribute 설명](ch03-item-attributes.md)을 참조 바란다.
 - noreply or pipe - 명시하면, response string을 전달받지 않는다. 
-                    pipe 사용은 [Command Pipelining](/doc/command-pipelining.md)을 참조 바란다.
+                    pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
 - \<data\> - 삽입할 데이터 (최대 4KB)
 
 Response string과 그 의미는 아래와 같다.
@@ -78,7 +78,7 @@ sop delete <key> <bytes> [drop] [noreply|pipe]\r\n<data>\r\n
 - \<bytes\> - 삭제할 데이터 길이 (trailing 문자인 "\r\n"을 제외한 길이)
 - drop - element 삭제로 인해 empty set이 될 경우, 그 set을 drop할 것인지를 지정한다.
 - noreply or pipe - 명시하면, response string을 전달받지 않는다. 
-                    pipe 사용은 [Command Pipelining](/doc/command-pipelining.md)을 참조 바란다.
+                    pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
 - \<data\> - 삭제할 데이터 (최대 4KB)
 
 Response string과 그 의미는 아래와 같다.
@@ -142,7 +142,7 @@ sop exist <key> <bytes> [pipe]\r\n<data>\r\n
 - \<key\> - 대상 item의 key string
 - \<bytes\>와 \<data\> - 존재 유무를 검사할 데이터의 길이와 데이터 그 자체 (최대 4KB)
 - pipe - 명시하면, response string을 전달받지 않는다. 
-         [Command Pipelining](/doc/command-pipelining.md)을 참조 바란다.
+         [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
 
 Response string과 그 의미는 아래와 같다.
 

@@ -1,4 +1,4 @@
-# Item Attribute 설명
+# Chapter 3. Item Attribute 설명
 ------------------
 
 Arcus cache server는 collection 기능 지원으로 인해,
@@ -40,7 +40,7 @@ Arcus cache server는 collection 기능 지원으로 인해,
 ```
 
 Arcus cache server는 item 속성들을 조회하거나 변경하는 용도의 getattr 명령과 setattr 명령을 제공한다.
-이들 명령에 대한 자세한 설명은 [Item Attribute 명령](/doc/command-item-attribute.md)을 참고 바란다.
+이들 명령에 대한 자세한 설명은 [Item Attribute 명령](ch10-command-item-attribute.md)을 참고 바란다.
 
 
 Item 속성들 중 정확한 이해를 돕기 위해 추가 설명이 필요한 속성들에 대해 아래에서 자세히 설명한다.
