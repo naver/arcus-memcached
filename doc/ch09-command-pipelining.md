@@ -1,5 +1,4 @@
 # Chapter 9. Command Pipelining
-------------------
 
 Command pipelining은
 “pipe” 키워드를 통해 여러 collection 명령들을 pipelining하여 cache server에 전달하고,

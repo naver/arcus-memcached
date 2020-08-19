@@ -1,5 +1,4 @@
 # Chapter 8. B+Tree 명령
------------
 
 B+tree collection에 관한 명령은 아래와 같다.
 

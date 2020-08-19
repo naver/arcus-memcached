@@ -1,5 +1,4 @@
 # Chapter 11. Admin & Monitoring 명령
------------------------
 
 - FLUSH 명령
 - SCRUB 명령

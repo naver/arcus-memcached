@@ -1,5 +1,4 @@
 # Chapter 10. Item Attribute 명령
--------------------
 
 Item attributes를 조회하는 getattr 명령과 변경하는 setattr 명령을 소개한다.
 
