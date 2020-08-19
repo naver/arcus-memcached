@@ -1,5 +1,4 @@
 # Chapter 6. SET 명령
---------
 
 Set collection에 관한 명령은 아래와 같다.
 

@@ -1,5 +1,4 @@
 # Arcus memcached Ascii Protocol
-==============================
 
 Arcus cache server가 제공하는 명령들에 대한 ascii protocol을 기술한다.
 Arcus cache server의 현재 버전은 1.7.0이며, 이 기준으로 작성한다.
