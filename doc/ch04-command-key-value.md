@@ -5,7 +5,7 @@ Arcus cache server는 memcached 1.4의 key-value 명령을 그대로 지원하�
 이에 추가하여 incr/decr 명령은 그 기능을 확장 지원한다.
 
 Simple key-value 명령들의 요약은 아래와 같다.
-이들 명령들의 자세한 정보는 [memcached 1.4의 기존 ascii protocol](/doc/protocol.txt)를 참고하기 바란다.
+이들 명령들의 자세한 정보는 [memcached 1.4의 기존 ascii protocol](https://github.com/naver/arcus-memcached/blob/master/doc/protocol.txt)를 참고하기 바란다.
 
 ### storage 명령
 
