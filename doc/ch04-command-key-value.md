@@ -1,5 +1,4 @@
 # Chapter 4. Simple Key-Value 명령
----------------------
 
 Arcus cache server는 memcached 1.4의 key-value 명령을 그대로 지원하며, 
 이에 추가하여 incr/decr 명령은 그 기능을 확장 지원한다.
