@@ -73,7 +73,7 @@ B+tree collection에서 사용가능한 bkey 데이터 유형은 아래 두 가�
 - hexadecimal
  
   “0x”로 시작하는 짝수 개의 hexadecimal 문자열로 표현하며, 대소문자 모두 사용 가능하다.
-  Arcus cache server는 두 hexadecimal 문자를 1 byte로 저장하며,
+  ARCUS cache server는 두 hexadecimal 문자를 1 byte로 저장하며,
   1 ~ 31 길이의 variable length byte array로 저장한다.
   
   hexadecimal 표현이 올바른 경우의 저장 바이트 수와 잘못된 경우의 이유는 아래와 같다.

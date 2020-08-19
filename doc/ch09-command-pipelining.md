@@ -57,8 +57,8 @@ RESPONSE 라인에서 \<count\>는 전체 결과 수를 나타내고,
 - “PIPE_ERROR command overflow”	- pipelining 가능한 최대 commands 수인 500개를 초과하였다.
   이 경우, 500개까지의 command들만 하나의 command pipelining으로 처리되고 하나의 response stream으로 리턴된다.
   그 이후의 commands들은 처리되지 않는다.
-- “PIPE_ERROR memory overflow” - Arcus cache server 내부에서 pipelining 처리를 위한
-  메모리 공간이 부족한 상태를 의미한다. Arcus cache server는 500개 commands의 result를 담아둘 공간을
+- “PIPE_ERROR memory overflow” - ARCUS cache server 내부에서 pipelining 처리를 위한
+  메모리 공간이 부족한 상태를 의미한다. ARCUS cache server는 500개 commands의 result를 담아둘 공간을
   미리 확보하여 수행하므로 이 오류가 발생할 가능성은 거의 없다.
   단, 의도하지 않은 이유에 의한 경우를 대비하여 이 오류를 추가해 둔 것이다.
   이 오류가 발생하면, 그 시점에 command pipelining을 중지하고 그 즉시 response stream을 client에 전달한다.

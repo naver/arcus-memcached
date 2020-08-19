@@ -1,11 +1,11 @@
-# Arcus Telnet Interface
+# ARCUS Telnet Interface
 
-Arcus cache server의 동작을 간단히 확인하는 방법으로, telnet interface를 이용할 수 있다.
+ARCUS cache server의 동작을 간단히 확인하는 방법으로, telnet interface를 이용할 수 있다.
 
 ### Telnet 사용법
 
 OS prompt 상에서 아래와 같이 telnet 명령을 실행시킨다.
-telnet 명령의 인자로는 연결하고자 하는 Arcus cache server인 memcached의 IP와 port number를 준다.
+telnet 명령의 인자로는 연결하고자 하는 ARCUS cache server인 memcached의 IP와 port number를 준다.
 
 ```
 $ telnet {memcached-ip} {memcached-port}
@@ -24,8 +24,8 @@ Connected to localhost.localdomain (127.0.0.1).
 Escape character is '^]'.
 ```
 
-telnet 명령으로 memcached에 연결한 이후에는 Arcus ASCII 명령을 직접 수행해 볼 수 있다.
-아래에서 그 예들을 든다. Arcus ASCII 명령의 자세한 설명은 [Arcus cache server ascii protocol](ch00-arcus-ascii-protocol.md)을 참고하기 바란다.
+telnet 명령으로 memcached에 연결한 이후에는 ARCUS ASCII 명령을 직접 수행해 볼 수 있다.
+아래에서 그 예들을 든다. ARCUS ASCII 명령의 자세한 설명은 [ARCUS cache server ascii protocol](ch00-arcus-ascii-protocol.md)을 참고하기 바란다.
 
 
 ### 예제 1.  get/set
