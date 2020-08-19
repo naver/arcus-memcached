@@ -1,12 +1,12 @@
-# Chapter 1. Arcus Basic Concept
+# Chapter 1. ARCUS Basic Concept
 
-Arcus cache server는 하나의 데이터만을 value로 가지는 simple key-value 외에도
+ARCUS cache server는 하나의 데이터만을 value로 가지는 simple key-value 외에도
 여러 데이터를 구조화된 형태로 저장하는 collection을 하나의 value로 가지는
 확장된 key-value 데이터 모델을 제공한다.
 
 ### 기본 제약 사항
 
-Arcus cache server의 key-value 모델은 아래의 기본 제약 사항을 가진다.
+ARCUS cache server의 key-value 모델은 아래의 기본 제약 사항을 가진다.
 
 - 기존 key-value 모델의 제약 사항
   - Key의 최대 크기는 32000 character이다. (arcus-memcached 1.11 이후 버전)
@@ -18,7 +18,7 @@ Arcus cache server의 key-value 모델은 아래의 기본 제약 사항을 가�
 
 ### Cache Key
 
-Cache key는 Arcus cache server에 저장할 데이터를 대표하는 코드이다. Cache key 형식은 아래와 같다.
+Cache key는 ARCUS cache server에 저장할 데이터를 대표하는 코드이다. Cache key 형식은 아래와 같다.
 
 ```
   Cache Key : [<prefix>:]<subkey>
@@ -37,7 +37,7 @@ Subkey는 공백을 포함할 수 없으며, 기본적으로 alphanumeric만을 
 
 ### Cache Item
 
-Arcus cache server는 simple key-value 외에 collection 지원으로 다양한 item 유형을 가진다.
+ARCUS cache server는 simple key-value 외에 collection 지원으로 다양한 item 유형을 가진다.
 
 - simple key-value item - 기존 key-value item
 - collection item
@@ -52,20 +52,20 @@ Arcus cache server는 simple key-value 외에 collection 지원으로 다양한 
 이 값의 설정을 통해 expire되지 않는 item 또는 특정 시간 이후에 자동 expire될 item을 지정할 수 있다.
 이에 대한 자세한 설명은 [Item Attribute 설명](ch03-item-attributes.md)을 참고 바란다.
 
-Arcus cache server는 memory cache이며, 한정된 메모리 공간을 사용하여 데이터를 caching한다.
+ARCUS cache server는 memory cache이며, 한정된 메모리 공간을 사용하여 데이터를 caching한다.
 메모리 공간이 모두 사용된 상태에서 새로운 item 저장 요청이 들어올 경우,
-Arcus cache server는 "out of memory" 오류를 내거나 LRU 기반의 eviction 방식
+ARCUS cache server는 "out of memory" 오류를 내거나 LRU 기반의 eviction 방식
 즉, 가장 오랫동안 접근되지 않은 item을 제거하고 새로운 item 저장을 허용하는 방식을 사용한다.
-이러한 동작 방식은 Arcus cache server의 -M 구동 옵션을 지정 가능하며,
+이러한 동작 방식은 ARCUS cache server의 -M 구동 옵션을 지정 가능하며,
 default로는 LRU 기반의 eviction 방식을 사용한다.
 
 특정 응용에서는 어떤 item이 expire & evict 대상이 되지 않기를 원하는 경우도 있다.
-Arcus cache server는 이러한 item을 sticky item이라 하며, 
+ARCUS cache server는 이러한 item을 sticky item이라 하며, 
 expiration time을 -1로 지정하면, sticky item으로 지원한다.
 Sticky item의 삭제는 전적으로 응용에 의해 관리되어야 함을 주의해야 한다.
 
 Sticky items은 일반적으로 많지 않을 것으로 예상하지만,
-응용의 실수로 인해 sticky item들이 Arcus 서버의 전체 메모리 공간을 차지하게 되는 경우를 방지하기 위하여,
+응용의 실수로 인해 sticky item들이 ARCUS 서버의 전체 메모리 공간을 차지하게 되는 경우를 방지하기 위하여,
 전체 메모리 공간의 일부만이 sticky items에 의해 사용되도록 설정하는 -g(gummed or sticky) 구동 옵션을 제공한다.
 Sticky items의 메모리 공간으로 사용될 메모리 비율이며, 0 ~ 100 범위의 값으로 지정가능하다.
 디폴트인 0은 sticky items을 허용하지 않는다는 것이며,
@@ -73,7 +73,7 @@ Sticky items의 메모리 공간으로 사용될 메모리 비율이며, 0 ~ 100
 
 ### Memory Allocator
 
-Arcus cache server는 item 메모리 공간의 할당과 반환을 효율적으로 관리할 목적으로
+ARCUS cache server는 item 메모리 공간의 할당과 반환을 효율적으로 관리할 목적으로
 두 가지 memory allocator를 사용한다.
 
 **Slab Allocator**
@@ -84,7 +84,7 @@ Slab allocator는 메모리 크기 별로 메모리 공간을 나누어 관리�
 기존 memcached에서 사용되던 대표적인 memory allocator이다.
 
 최대 slab 크기는 현재 1MB이다. 최소 slab 크기 즉, 첫 번째 slab class의 slab 크기와
-그 다음 slab class들의 slab 크기는 아래의 Arcus cache server 구동 옵션으로 설정한다.
+그 다음 slab class들의 slab 크기는 아래의 ARCUS cache server 구동 옵션으로 설정한다.
 
 - \-n \<bytes\> : minimum space allocated from key+value+flags (default: 48)
   - 최소 크기의 slab 크기를 결정한다.
@@ -101,7 +101,7 @@ small memory allocator를 새로 개발하여 사용하고 있다.
 
 ### Slab Class 별 LRU 리스트
 
-Arcus cache server는 slab class 별 LRU 리스트를 유지하고,
+ARCUS cache server는 slab class 별 LRU 리스트를 유지하고,
 eviction 대상 item으로 오랫동안 접근되지 않은 item이 선택될 수 있게 한다.
 
 Small memory allocator 추가로 인해, slab class 별 LRU 리스트에 변동 사항이 있다.
