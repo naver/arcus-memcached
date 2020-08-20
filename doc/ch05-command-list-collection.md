@@ -48,9 +48,9 @@ lop insert <key> <index> <bytes> [create <attributes>] [noreply|pipe]\r\n<data>\
   - -1, -2, -3, ... : list의 뒤에서 시작하여 각 element 위치를 나타냄
 - \<bytes\> - 삽입할 데이터 길이 (trailing 문자인 "\r\n"을 제외한 길이)
 - create \<attributes\> - list collection 없을 시에 list 생성 요청.
-                    [Item Attribute 설명](ch03-item-attributes.md)을 참조 바란다.
-- noreply or pipe - 명시하면, response string을 전달받지 않는다. 
-                    pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
+[Item Attribute 설명](ch03-item-attributes.md)을 참조 바란다.
+- noreply or pipe - 명시하면, response string을 전달받지 않는다.
+pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
 - \<data\> - 삽입할 데이터 (최대 크기는 [기본제약사항](ch01-arcus-basic-concept.md#기본-제약-사항)을 참고)
 
  
@@ -61,8 +61,8 @@ Response string과 그 의미는 아래와 같다.
 - “NOT_FOUND” - key miss
 - “TYPE_MISMATCH” - 해당 item이 list collection이 아님
 - “OVERFLOWED” - overflow 발생
-- “OUT_OF_RANGE” - 삽입 위치가 list의 현재 element index 범위를 넘어섬,
-                   예를 들어, 10개 element가 있는 상태에서 삽입 위치가 20인 경우임
+- “OUT_OF_RANGE” - 삽입 위치가 list의 현재 element index 범위를 넘어섬.
+예를 들어, 10개 element가 있는 상태에서 삽입 위치가 20인 경우임
 - "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 - “CLIENT_ERROR too large value” - 삽입할 데이터가 element value의 최대 크기보다 큼
@@ -87,8 +87,8 @@ lop delete 명령에서 각 인자의 설명은 아래와 같다.
   - 4..2 : 앞의 5번째 element 부터 앞의 3번째 element까지 (backward 순서)
   - -1..0: 마지막 element 부터 첫째 element 까지 (backward 순서)
 - drop - element 삭제로 인해 empty list가 될 경우, 그 list를 drop할 것인지를 지정한다.
-- noreply or pipe - 명시하면, response string을 전달받지 않는다. 
-                    pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
+- noreply or pipe - 명시하면, response string을 전달받지 않는다.
+pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
 
 Response string과 그 의미는 아래와 같다.
 
@@ -110,8 +110,8 @@ lop get <key> <index or "index range"> [delete|drop]\r\n
 
 - \<key\> - 대상 item의 key string
 - \<index or "index range"\> - 조회할 element의 index or index range. "lop delete" 명령의 인자 참조
-- delete or drop - element 조회하면서 그 element를 delete할 것인지
-                   그리고 delete로 인해 empty list가 될 경우 그 list를 drop할 것인지를 지정한다.
+- delete or drop - element 조회하면서 그 element를 delete할 것인지,
+그리고 delete로 인해 empty list가 될 경우 그 list를 drop할 것인지를 지정한다.
 
 성공 시의 response string은 아래와 같다.
 VALUE 라인의 \<count\>는 조회된 element 개수를 의미한다.
