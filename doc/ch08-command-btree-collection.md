@@ -74,7 +74,7 @@ bop upsert <key> <bkey> [<eflag>] <bytes> [create <attributes>] [noreply|pipe|ge
 - \<key\> - 대상 item의 key string
 - \<bkey\> - 삽입할 element의 bkey
 - \<eflag\> - 삽입할 element의 optional flag
-- \<bytes\>와 \<data\> - 삽입할 element의 데이터의 길이와 데이터 그 자체 (최대 4KB)
+- \<bytes\>와 \<data\> - 삽입할 element의 데이터의 길이와 데이터 그 자체 (최대 크기는 [기본제약사항](ch01-arcus-basic-concept.md#기본-제약-사항)을 참고)
 - create \<attributes\> - b+tree collection 없을 시에 b+tree 생성 요청.
                     [Item Attribute 설명](ch03-item-attributes.md)을 참조 바란다.
 - noreply or pipe - 명시하면, response string을 전달받지 않는다. 
@@ -108,7 +108,7 @@ END\r\n
 - "ELEMENT_EXISTS" - 동일 bkey를 가진 element가 존재
 - "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
-- “CLIENT_ERROR too large value” - 삽입할 데이터가 4KB 보다 큼
+- “CLIENT_ERROR too large value” - 삽입할 데이터가 element value의 최대 크기보다 큼
 - “CLIENT_ERROR bad data chunk” - 삽입할 데이터의 길이가 <bytes>와 다르거나 "\r\n"으로 끝나지 않음
 - “SERVER_ERROR out of memory” - 메모리 부족
 
@@ -126,7 +126,7 @@ bop update <key> <bkey> [<eflag_update>] <bytes> [noreply|pipe]\r\n[<data>\r\n]
 - \<bkey\> - 대상 element의 bkey
 - \<eflag_update\> - eflag update 명시.
                      [Collection 기본 개념](ch02-collection-items.md)에서 eflag update를 참조 바란다.
-- \<bytes\>와 \<data\> - 새로 변경할 데이터의 길이와 데이터 그 자체 (최대 4KB)
+- \<bytes\>와 \<data\> - 새로 변경할 데이터의 길이와 데이터 그 자체
                          데이터 변경을 원치 않으면 \<bytes\>를 -1로 하고 \<data\>를 생략하면 된다.         
 - noreply or pipe - 명시하면, response string을 전달받지 않는다. 
                     pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
@@ -144,7 +144,7 @@ Response string과 그 의미는 아래와 같다.
 - “NOTHING_TO_UPDATE” - eflag 변경과 data 변경 중 어느 하나도 명시되지 않은 상태
 - "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
-- “CLIENT_ERROR too large value” - 변경할 데이터가 4KB 보다 큼
+- “CLIENT_ERROR too large value” - 변경할 데이터가 element value의 최대 크기보다 큼
 - “CLIENT_ERROR bad data chunk” - 변경할 데이터의 길이가 <bytes>와 다르거나 "\r\n"으로 끝나지 않음
 - “SERVER_ERROR out of memory” - 메모리 부족
 

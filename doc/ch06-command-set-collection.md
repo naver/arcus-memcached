@@ -49,7 +49,7 @@ sop insert <key> <bytes> [create <attributes>] [noreply|pipe]\r\n<data>\r\n
                     [Item Attribute 설명](ch03-item-attributes.md)을 참조 바란다.
 - noreply or pipe - 명시하면, response string을 전달받지 않는다. 
                     pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
-- \<data\> - 삽입할 데이터 (최대 4KB)
+- \<data\> - 삽입할 데이터 (최대 크기는 [기본제약사항](ch01-arcus-basic-concept.md#기본-제약-사항)을 참고)
 
 Response string과 그 의미는 아래와 같다.
 
@@ -61,7 +61,7 @@ Response string과 그 의미는 아래와 같다.
 - "ELEMENT_EXISTS" - 동일 데이터를 가진 element가 존재. set uniqueness 위배
 - "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
-- “CLIENT_ERROR too large value” - 삽입할 데이터가 4KB 보다 큼
+- “CLIENT_ERROR too large value” - 삽입할 데이터가 element value의 최대 크기보다 큼
 - “CLIENT_ERROR bad data chunk” - 삽입할 데이터 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
 - “SERVER_ERROR out of memory” - 메모리 부족
 
@@ -78,7 +78,7 @@ sop delete <key> <bytes> [drop] [noreply|pipe]\r\n<data>\r\n
 - drop - element 삭제로 인해 empty set이 될 경우, 그 set을 drop할 것인지를 지정한다.
 - noreply or pipe - 명시하면, response string을 전달받지 않는다. 
                     pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
-- \<data\> - 삭제할 데이터 (최대 4KB)
+- \<data\> - 삭제할 데이터
 
 Response string과 그 의미는 아래와 같다.
 
@@ -89,7 +89,7 @@ Response string과 그 의미는 아래와 같다.
 - “TYPE_MISMATCH” - 해당 item이 set collection이 아님
 - "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
-- “CLIENT_ERROR too large value” - 삭제할 데이터가 4KB 보다 큼
+- “CLIENT_ERROR too large value” - 삭제할 데이터가 element value의 최대 크기보다 큼
 - “CLIENT_ERROR bad data chunk” - 삭제할 데이터의 길이가 \<bytes\>와 다르거나 “\r\n”으로 끝나지 않음
 
 ### sop get (Set Element 조회)
@@ -139,7 +139,7 @@ sop exist <key> <bytes> [pipe]\r\n<data>\r\n
 ```
 
 - \<key\> - 대상 item의 key string
-- \<bytes\>와 \<data\> - 존재 유무를 검사할 데이터의 길이와 데이터 그 자체 (최대 4KB)
+- \<bytes\>와 \<data\> - 존재 유무를 검사할 데이터의 길이와 데이터 그 자체
 - pipe - 명시하면, response string을 전달받지 않는다. 
          [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
 
@@ -152,7 +152,7 @@ Response string과 그 의미는 아래와 같다.
 - “UNREADABLE” - 해당 item이 unreadable item임
 - "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
-- “CLIENT_ERROR too large value” : 주어진 데이터가 4KB 보다 큼
+- “CLIENT_ERROR too large value” : 주어진 데이터가 element value의 최대 크기보다 큼
 - “CLIENT_ERROR bad data chunk” : 주어진 데이터의 길이가 \<bytes\>와 다르거나 “\r\n”으로 끝나지 않음
  
 
