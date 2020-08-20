@@ -51,7 +51,8 @@ lop insert <key> <index> <bytes> [create <attributes>] [noreply|pipe]\r\n<data>\
                     [Item Attribute 설명](ch03-item-attributes.md)을 참조 바란다.
 - noreply or pipe - 명시하면, response string을 전달받지 않는다. 
                     pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
-- \<data\> - 삽입할 데이터 (최대 4KB)
+- \<data\> - 삽입할 데이터 (최대 크기는 [기본제약사항](ch01-arcus-basic-concept.md#기본-제약-사항)을 참고)
+
  
 Response string과 그 의미는 아래와 같다.
 
@@ -64,7 +65,7 @@ Response string과 그 의미는 아래와 같다.
                    예를 들어, 10개 element가 있는 상태에서 삽입 위치가 20인 경우임
 - "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
-- “CLIENT_ERROR too large value” - 삽입할 데이터가 4KB 보다 큼
+- “CLIENT_ERROR too large value” - 삽입할 데이터가 element value의 최대 크기보다 큼
 - “CLIENT_ERROR bad data chunk” - 삽입할 데이터 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
 - “SERVER_ERROR out of memory” - 메모리 부족
 
