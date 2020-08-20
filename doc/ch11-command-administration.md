@@ -12,13 +12,13 @@
 
 ### Flush 명령
 
-Arcus cache server는 items을 invalidate 시키기 위한 두 가지 flush 명령을 제공한다.
+ARCUS cache server는 items을 invalidate 시키기 위한 두 가지 flush 명령을 제공한다.
 
 - flush_all : 모든 items을 flush
 - flush_prefix: 특정 prefix의 items들만 flush
 
 Flush 작업은 items을 invalidate시키더라도 그 items이 차지한 메모리 공간을 즉각 반환하지 않는다. 
-대신, Arcus cache server의 global 정보로 flush 수행 시점 정보를 기록해 둠으로써,
+대신, ARCUS cache server의 global 정보로 flush 수행 시점 정보를 기록해 둠으로써,
 그 시점 이전에 존재했던 items은 invalidated items이라는 것을 알 수 있게 한다.
 따라서, item 접근할 때마다 invalidated item인지를 확인하여야 하는 부담이 있지만,
 flush 작업 자체는 O(1) 시간에 그 수행이 완료된다.
@@ -49,14 +49,14 @@ Response string과 그 의미는 아래와 같다.
 
 ### Scrub 명령
 
-Arcus cache server에는 유효하지 않으면서 메모리를 차지하고 있는 items이 존재할 수 있다.
+ARCUS cache server에는 유효하지 않으면서 메모리를 차지하고 있는 items이 존재할 수 있다.
 이 items은 아래 두 유형으로 구분된다.
 
-- Arcus cache server에서 어떤 items이 expired되더라도 그 items은 즉각 제거되지 않으며,
+- ARCUS cache server에서 어떤 items이 expired되더라도 그 items은 즉각 제거되지 않으며,
   flush 명령으로 어떤 items을 invalidate시키더라도 그 items은 즉각 제거되지 않는다.
-  이들 items은 Arcus cache server 내부에 메모리를 차지하면서 계속 존재하고 있다.
+  이들 items은 ARCUS cache server 내부에 메모리를 차지하면서 계속 존재하고 있다.
   어떤 이유이든 이 items에 대한 접근이 발생할 때
-  Arcus cache server는 expired/flushed 상태임을 알게 되며,
+  ARCUS cache server는 expired/flushed 상태임을 알게 되며,
   그 items을 제거함으로써 그 items이 차지한 메모리를 반환한다.
 - Cache cloud를 형성하고 consistent hashing의 key-to-node mapping을 사용하는 환경에서,
   그 cache cloud에 특정 node의 추가나 삭제에 의해 key-to-node remapping이 발생하게 된다.
@@ -86,13 +86,13 @@ Response string과 그 의미는 아래와 같다.
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
 
 참고 사항으로, scrub 명령은 ascii 명령의 extension 기능으로 구현되었기에,
-Arcus cache server 구동 시에 ascii_scrub.so 파일을 dynamic linking 하는
+ARCUS cache server 구동 시에 ascii_scrub.so 파일을 dynamic linking 하는
 구동 옵션을 주어야 scrub 명령을 사용할 수 있다.
 
 
 ### Stats 명령
 
-Arcus cache server의 각종 통계 정보를 조회하거나 그 통계 정보를 reset한다.
+ARCUS cache server의 각종 통계 정보를 조회하거나 그 통계 정보를 reset한다.
 
 ```
 stats [<args>]\r\n
@@ -643,7 +643,7 @@ END
 
 ### Config 명령
 
-Arcus cache server는 특정 configuration에 대해 동적으로 변경하거나 현재의 값을 조회하는 기능을 제공한다.
+ARCUS cache server는 특정 configuration에 대해 동적으로 변경하거나 현재의 값을 조회하는 기능을 제공한다.
 동적으로 변경가능한 configuration들은 현재 아래만 지원한다.
 
 - verbosity
@@ -654,7 +654,7 @@ Arcus cache server는 특정 configuration에 대해 동적으로 변경하거�
 
 **config verbosity**
 
-Arcus cache server의 verbose log level을 동적으로(restart 없이) 변경/조회한다.
+ARCUS cache server의 verbose log level을 동적으로(restart 없이) 변경/조회한다.
 
 ```
 config verbosity [<verbose>]\r\n
@@ -665,25 +665,25 @@ config verbosity [<verbose>]\r\n
 
 **config memlimit**
 
-Arcus cache server 구동 시에 -m 옵션으로 설정된 memory limit을 동적으로(restart 없이) 변경/조회한다.
+ARCUS cache server 구동 시에 -m 옵션으로 설정된 memory limit을 동적으로(restart 없이) 변경/조회한다.
 
 ```
 config memlimit [<memsize>]\r\n
 ```
 
 \<memsize\>는 새로 지정할 memory limit으로 MB 단위로 설정하며,
-Arcus cache server가 현재 사용 중인 메모리 크기인 tatal_malloced 보다 큰 크기로만 설정이 가능하다.
+ARCUS cache server가 현재 사용 중인 메모리 크기인 tatal_malloced 보다 큰 크기로만 설정이 가능하다.
 이 인자가 생략되면 현재 설정되어 있는 memory limit 값을 조회한다.
 
 **config zkfailstop**
 
-Arcus cache server의 automatic failstop 기능을 on 또는 off 한다.
+ARCUS cache server의 automatic failstop 기능을 on 또는 off 한다.
 
 ```
 config zkfailstop [on|off]\r\n
 ```
 
-Network failure 상태에서 정상적인 서비스를 진행하지 못하는 cache server가 cache cloud에 그대로 존재할 경우, 해당 cache server가 담당하고 있는 data 범위에 대한 요청이 모두 실패하고 DB에 부담을 주게 된다. 또한 이후에 ZooKeeper에 재연결 되더라도 old data를 가지고 있을 가능성이 있으며 이로 인해 응용에 오동작을 발생시킬 수 있다. Arcus cache server는 이를 해결하기 위해 ZooKeeper session timeout이 발생할 경우 failed cache server를 cache cloud에서 자동으로 제거하는 automatic failstop 기능을 기본적으로 제공한다.
+Network failure 상태에서 정상적인 서비스를 진행하지 못하는 cache server가 cache cloud에 그대로 존재할 경우, 해당 cache server가 담당하고 있는 data 범위에 대한 요청이 모두 실패하고 DB에 부담을 주게 된다. 또한 이후에 ZooKeeper에 재연결 되더라도 old data를 가지고 있을 가능성이 있으며 이로 인해 응용에 오동작을 발생시킬 수 있다. ARCUS cache server는 이를 해결하기 위해 ZooKeeper session timeout이 발생할 경우 failed cache server를 cache cloud에서 자동으로 제거하는 automatic failstop 기능을 기본적으로 제공한다.
 
 **config hbtimeout**
 
@@ -693,7 +693,7 @@ hbtimeout 값을 변경/조회한다.
 config hbtimeout [<hbtimeout>]\r\n
 ```
 
-Arcus cache server에는 주기적으로 노드의 정상 작동 여부를 확인하는 heartbeat 연산이 존재한다. hbtimeout은 heartbeat 연산의 timeout 시간을 의미한다. hbtimeout으로 설정한 시간이 지나도 heartbeat 연산이 이루어지지 않으면 해당 heartbeat는 timeout된 것으로 간주한다. 최소 50ms, 최대 10000ms로 설정할 수 있으며 디폴트 값은 10000ms이다.
+ARCUS cache server에는 주기적으로 노드의 정상 작동 여부를 확인하는 heartbeat 연산이 존재한다. hbtimeout은 heartbeat 연산의 timeout 시간을 의미한다. hbtimeout으로 설정한 시간이 지나도 heartbeat 연산이 이루어지지 않으면 해당 heartbeat는 timeout된 것으로 간주한다. 최소 50ms, 최대 10000ms로 설정할 수 있으며 디폴트 값은 10000ms이다.
 
 **config hbfailstop**
 
@@ -703,11 +703,11 @@ hbfailstop 값을 변경/조회한다.
 config hbfailstop [hbfailstop]\r\n
 ```
 
-Arcus cache server는 heartbeat 지연이 계속될 경우 서버를 강제 종료할 수 있다. 연속된 timeout이 발생할 때마다 hbtimeout 값을 누적하여 더하고, 누적된 값이 hbfailstop 값을 넘길 경우 failstop을 수행한다. 예를 들어 hbfailstop이 30초, hbtimeout이 10초이면 hbtimeout이 연속으로 3번 발생하였을 경우 failstop이 발생한다. 최소 3000ms, 최대 300000ms로 설정할 수 있으며 디폴트 값은 60000ms이다.
+ARCUS cache server는 heartbeat 지연이 계속될 경우 서버를 강제 종료할 수 있다. 연속된 timeout이 발생할 때마다 hbtimeout 값을 누적하여 더하고, 누적된 값이 hbfailstop 값을 넘길 경우 failstop을 수행한다. 예를 들어 hbfailstop이 30초, hbtimeout이 10초이면 hbtimeout이 연속으로 3번 발생하였을 경우 failstop이 발생한다. 최소 3000ms, 최대 300000ms로 설정할 수 있으며 디폴트 값은 60000ms이다.
 
 **config maxconns**
 
-Arcus cache server 구동 시에 -c 옵션으로 설정된 최대 연결 수를 동적으로(restart 없이) 변경/조회한다.
+ARCUS cache server 구동 시에 -c 옵션으로 설정된 최대 연결 수를 동적으로(restart 없이) 변경/조회한다.
 
 ```
 config maxconns [<maxconn>]\r\n
@@ -737,7 +737,7 @@ config max_<collection>_size [<max_size>]\r\n
 
 **config scrub_count**
 
-Arcus cache server에는 더 이상 유효하지 않은 아이템을 일괄 삭제하는 scrub 명령이 존재한다. config scrub_count 명령은 daemon thread가 scrub 명령을 수행할 때, 한 번의 연산마다 몇 개의 아이템을 지울지를 설정/조회한다. 기본 값은 96이며 최소 32, 최대 320으로 설정할 수 있다.
+ARCUS cache server에는 더 이상 유효하지 않은 아이템을 일괄 삭제하는 scrub 명령이 존재한다. config scrub_count 명령은 daemon thread가 scrub 명령을 수행할 때, 한 번의 연산마다 몇 개의 아이템을 지울지를 설정/조회한다. 기본 값은 96이며 최소 32, 최대 320으로 설정할 수 있다.
 
 ```
 config scrub_count [<scrub_count>]\r\n
@@ -745,7 +745,7 @@ config scrub_count [<scrub_count>]\r\n
 
 ### Command Logging 명령
 
-Arcus cache server에 입력되는 command를 logging 한다.
+ARCUS cache server에 입력되는 command를 logging 한다.
 start 명령을 시작으로 logging이 종료될 때 까지의 모든 command를 기록한다.
 단, 성능유지를 위해 skip되는 command가 있을 수 있으며 stats 명령을 통해 그 수를 확인할 수 있다.
 10MB log 파일 10개를 사용하며, 초과될 경우 자동 종료한다.
@@ -793,7 +793,7 @@ The log file name: /Users/temp/command_11211_20160126_192729_{n}.log //path/file
 
 ### Long query detect 명령
 
-Arcus cache server에서 collection item에 대한 요청 중에는 그 처리 시간이 오래 걸리는 요청이 존재한다.
+ARCUS cache server에서 collection item에 대한 요청 중에는 그 처리 시간이 오래 걸리는 요청이 존재한다.
 이를 detect하기 위한 기능으로 lqdetect 명령을 제공한다.
 start 명령을 시작으로 detection이 종료될 때 까지 long query 가능성이 있는 command에 대하여, 
 그 command 처리에서 접근한 elements 수가 특정 기준 이상인 command를 추출,
@@ -864,7 +864,7 @@ The detection standard : 43                       //standard
 
 ### Key dump 명령
 
-Arcus cache server의 key를 dump 한다.
+ARCUS cache server의 key를 dump 한다.
 
 dump ascii command는 아래와 같다.
 ```
@@ -925,7 +925,7 @@ DUMP SUMMARY: { prefix=<prefix>, count=<count>, total=<total> elapsed=<elapsed> 
 
 ### Zkensemble 명령
 
-Arcus cache server가 연결되어 있는 ZooKeeper ensemble 설정에 대한 명령을 제공한다.
+ARCUS cache server가 연결되어 있는 ZooKeeper ensemble 설정에 대한 명령을 제공한다.
 
 ```
 zkensemble set <ensemble_list>\r\n
@@ -944,7 +944,7 @@ rejoin 명령은 ZK ensemble 과의 연결을 끊고 cache cloud에서 빠져 �
 
 ### Help 명령
 
-Arcus cache server의 acsii command syntax를 조회한다.
+ARCUS cache server의 acsii command syntax를 조회한다.
 
 ```
 help [<subcommand>]\r\n
