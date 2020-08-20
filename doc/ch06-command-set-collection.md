@@ -22,7 +22,7 @@ sop create <key> <attributes> [noreply]\r\n
 ```
 
 - \<key\> - 대상 item의 key string
-- \<attributes\> - 설정할 item attributes. [Item Attribute 설명](ch03-arcus-item-attributes.md)을 참조 바란다.
+- \<attributes\> - 설정할 item attributes. [Item Attribute 설명](ch03-item-attributes.md)을 참조 바란다.
 - noreply - 명시하면, response string을 전달받지 않는다.
 
 Response string과 그 의미는 아래와 같다.
