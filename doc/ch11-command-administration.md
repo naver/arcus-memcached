@@ -274,12 +274,12 @@ END
 
 명령 별 주요 통계를 정리하면 다음과 같다.
 
-- cmd_<command_name>: 해당 명령의 수행 횟수
-- <command_name>_hits: 해당 명령의 key hit 횟수
-- <command_name>_misses: 해당 명령의 key miss 횟수
+- cmd_\<command_name\>: 해당 명령의 수행 횟수
+- \<command_name\>_hits: 해당 명령의 key hit 횟수
+- \<command_name\>_misses: 해당 명령의 key miss 횟수
 - 콜렉션 명령의 key hit 횟수는 따로 제공하지 않으며, 아래 횟수의 합으로 계산할 수 있다.
-  - <collection_name>\_<command_name>\_elem_hits: 콜렉션 명령의 key hit 그리고 element hit 횟수 
-  - <collection_name>\_<command_name>\_none_hits: 콜렉션 명령의 key hit 그러나 element miss 횟수
+  - \<collection_name\>_\<command_name\>_elem_hits: 콜렉션 명령의 key hit 그리고 element hit 횟수
+  - \<collection_name\>_\<command_name\>_none_hits: 콜렉션 명령의 key hit 그러나 element miss 횟수
 
 다음은 그 외의 개별 통계이다. 
 
