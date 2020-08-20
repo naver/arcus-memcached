@@ -1,11 +1,9 @@
 # ARCUS memcached Ascii Protocol
 
-ARCUS cache server가 제공하는 명령들에 대한 ascii protocol을 기술한다.
-ARCUS cache server의 현재 버전은 1.7.0이며, 이 기준으로 작성한다.
-향후 버전이 바뀌면, 그에 따라 수정할 것이다.
-마지막으로, binary protocol은 현재 지원하지 않는 상태이므로, 논의에서 제외한다.
+ARCUS cache server가 제공하는 명령들의 ascii protocol을 기술한다.
+Binary protocol은 현재 지원하지 않으므로, 논의에서 제외한다.
 
-본 내용은 ARCUS cache client 개발자를 주 대상으로 하며,
+본 문서는 ARCUS cache client 개발자를 주 대상으로 하며,
 ARCUS cache server에 관심있는 독자의 경우도 참고할 수 있다.
 
 Collection Support
@@ -29,7 +27,7 @@ ARCUS cache server를 사용함에 있어 필요한 cache key, item, slab 등의
 ARCUS cache server가 제공하는 collection과 element 구조, b+tree key, element flag 등의
 중요 요소들은 [Collection 기본 개념](ch02-collection-items.md)에서 소개한다.
 
-Collection 기능의 제공에 따라 item 속성들이 많이 확장되었으며,
+Collection 기능을 제공함에 따라 item 속성들이 확장되었으며,
 이들은 [Item 속성 설명](ch03-item-attributes.md)에서 자세히 다룬다.
 
 Simple Key-Value 기능
@@ -56,12 +54,10 @@ Item Attributes 기능
 --------------------
 
 Collection 지원으로 인해 item 유형이 다양해 졌으며, 다양한 item 유형에 따라 item attributes도 확장되었다.
-이러한 item attributes를 조회하거나 변경하기 위하여
-[Item Attribute 명령](ch10-command-item-attribute.md)을 제공한다.
+Item attributes를 조회하거나 변경하기 위하여 [Item Attribute 명령](ch10-command-item-attribute.md)을 제공한다.
 
 Admin & Monitoring 기능
 -----------------------
 
-ARCUS cache server의 운영 상에 필요한 기능들은
-[Admin & Monitoring 명령](ch11-command-administration.md)으로 제공한다.
+ARCUS cache server의 운영 상에 필요한 기능들은 [Admin & Monitoring 명령](ch11-command-administration.md)으로 제공한다.
 
