@@ -1020,7 +1020,7 @@ static ENGINE_ERROR_CODE do_item_link(hash_item *it)
     /* link the item to prefix info */
     size_t stotal = ITEM_stotal(it);
     bool internal_prefix = false;
-    ENGINE_ERROR_CODE ret = prefix_link(it, stotal, &internal_prefix);
+    ENGINE_ERROR_CODE ret = prefix_link(it, stotal , &internal_prefix);
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }

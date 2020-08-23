@@ -130,6 +130,7 @@ sub mem_cmd_is {
             $resp = $resp . "\n";
         }
     }
+
     Test::More::is("$resp", "$rst", $msg);
 }
 

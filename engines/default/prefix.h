@@ -39,8 +39,8 @@ typedef struct _prefix_t {
     uint64_t items_bytes[ITEM_TYPE_MAX];
     uint64_t total_count_exclusive;
     uint64_t total_bytes_exclusive;
-    //uint64_t total_count_inclusive; /* NOT yet used */
-    //uint64_t total_bytes_inclusive; /* NOT yet used */
+    uint64_t total_count_inclusive; /* NOT yet used */
+    uint64_t total_bytes_inclusive; /* NOT yet used */
 } prefix_t;
 
 #define PREFIX_IS_RSVD(pfx,npfx) ((npfx) == 5 && strncmp((pfx), "arcus", 5) == 0)
