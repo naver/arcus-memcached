@@ -31,7 +31,7 @@
 #define hashmask(n) (hashsize(n) - 1)
 
 #define DEFAULT_PREFIX_HASHPOWER 10
-#define DEFAULT_PREFIX_MAX_DEPTH 1
+#define DEFAULT_PREFIX_MAX_DEPTH 5
 
 typedef struct
 {
@@ -179,12 +179,11 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
     {
         i = token - key;
         prefix_list[prefix_depth].nprefix = i;
-
         prefix_depth++;
-        // if (prefix_depth >= DEFAULT_PREFIX_MAX_DEPTH)
-        // {
-        //     break;
-        // }
+        if (prefix_depth >= DEFAULT_PREFIX_MAX_DEPTH)
+        {
+            break;
+        }
     }
 
     if (prefix_depth == 0)
@@ -457,12 +456,18 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
             t = localtime(&pt->create_time);
             pos += snprintf(buffer + pos, buflen - pos, format, "<null>",
                             pt->total_count_exclusive,
+                            //
+                            //pt->total_count_inclusive,
+                            //
                             pt->items_count[ITEM_TYPE_KV],
                             pt->items_count[ITEM_TYPE_LIST],
                             pt->items_count[ITEM_TYPE_SET],
                             pt->items_count[ITEM_TYPE_MAP],
                             pt->items_count[ITEM_TYPE_BTREE],
                             pt->total_bytes_exclusive,
+                            //
+                            //pt->total_bytes_inclusive,
+                            //
                             pt->items_bytes[ITEM_TYPE_KV],
                             pt->items_bytes[ITEM_TYPE_LIST],
                             pt->items_bytes[ITEM_TYPE_SET],
@@ -480,12 +485,18 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
                 t = localtime(&pt->create_time);
                 pos += snprintf(buffer + pos, buflen - pos, format, _get_prefix(pt),
                                 pt->total_count_exclusive,
+                                //
+                                //pt->total_count_inclusive,
+                                //
                                 pt->items_count[ITEM_TYPE_KV],
                                 pt->items_count[ITEM_TYPE_LIST],
                                 pt->items_count[ITEM_TYPE_SET],
                                 pt->items_count[ITEM_TYPE_MAP],
                                 pt->items_count[ITEM_TYPE_BTREE],
                                 pt->total_bytes_exclusive,
+                                //
+                                //pt->total_bytes_inclusive,
+                                //
                                 pt->items_bytes[ITEM_TYPE_KV],
                                 pt->items_bytes[ITEM_TYPE_LIST],
                                 pt->items_bytes[ITEM_TYPE_SET],
