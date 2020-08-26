@@ -96,4 +96,4 @@
 ./t/unixsocket.t
 ./t/verbosity.t
 ./t/whitespace.t
-./t/nested-prefix.t
+./t/issue_486.t
