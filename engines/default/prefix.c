@@ -219,6 +219,9 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
             for (int j = i + 1; j < prefix_depth; j++)
             {
                 pt = (prefix_t *)malloc(sizeof(prefix_t) + prefix_list[j].nprefix + 1);
+                pt->child_prefix = NULL;
+                pt->s_next = NULL;
+
                 if (pt == NULL)
                 {
                     for (j = j - 1; j >= i + 1; j--)
@@ -239,6 +242,9 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
                     pt->internal = 1; /* internal prefix */
                 }
                 pt->parent_prefix = (j == 0 ? root_pt : prefix_list[j - 1].pt);
+                pt->s_next = pt->parent_prefix->child_prefix;
+                pt->parent_prefix->child_prefix = pt;
+
                 time(&pt->create_time);
 
                 // registering allocated prefixes to prefix hastable
@@ -300,8 +306,17 @@ void prefix_unlink(hash_item *it, const uint32_t item_size, bool drop_if_empty)
             if (pt->prefix_items > 0 || pt->total_count_exclusive > 0)
                 break; /* NOT empty */
             assert(pt->total_bytes_exclusive == 0);
+            
+            prefix_t *prev_pt = parent_pt->child_prefix;
+
+            if(prev_pt == pt) parent_pt->child_prefix = pt->s_next;
+            else{
+                while(prev_pt->s_next != pt) prev_pt = prev_pt->s_next;
+                prev_pt->s_next = pt->s_next;
+            }
+
             _prefix_delete(_get_prefix(pt), pt->nprefix,
-                           svcore->hash(_get_prefix(pt), pt->nprefix, 0));
+                                svcore->hash(_get_prefix(pt), pt->nprefix, 0));
 
             pt = parent_pt;
         }
@@ -437,8 +452,10 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
          *   - 10 : the count of "%llu" strings.
          *   -  5 : the count of "%02d" strings.
          */
+        
+        //format 출력을 위한 buffer 길이 구하기
         buflen = sizeof(uint32_t)                                    /* length */
-                 + sum_nameleng + num_prefixes * (strlen(format) - 2 /* %s replaced by prefix name */
+                 + sum_nameleng + num_prefixes * (strlen(format) - 2 /* %s replaced by prefix name */ 
                                                   + (12 * (20 - 4))  /* %llu replaced by 20-digit num */
                                                   - (5 * (4 - 2)))   /* %02d replaced by 2-digit num */
                  + sizeof("END\r\n");                                /* tail string */
@@ -456,18 +473,12 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
             t = localtime(&pt->create_time);
             pos += snprintf(buffer + pos, buflen - pos, format, "<null>",
                             pt->total_count_exclusive,
-                            //
-                            //pt->total_count_inclusive,
-                            //
                             pt->items_count[ITEM_TYPE_KV],
                             pt->items_count[ITEM_TYPE_LIST],
                             pt->items_count[ITEM_TYPE_SET],
                             pt->items_count[ITEM_TYPE_MAP],
                             pt->items_count[ITEM_TYPE_BTREE],
                             pt->total_bytes_exclusive,
-                            //
-                            //pt->total_bytes_inclusive,
-                            //
                             pt->items_bytes[ITEM_TYPE_KV],
                             pt->items_bytes[ITEM_TYPE_LIST],
                             pt->items_bytes[ITEM_TYPE_SET],
@@ -485,18 +496,12 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
                 t = localtime(&pt->create_time);
                 pos += snprintf(buffer + pos, buflen - pos, format, _get_prefix(pt),
                                 pt->total_count_exclusive,
-                                //
-                                //pt->total_count_inclusive,
-                                //
                                 pt->items_count[ITEM_TYPE_KV],
                                 pt->items_count[ITEM_TYPE_LIST],
                                 pt->items_count[ITEM_TYPE_SET],
                                 pt->items_count[ITEM_TYPE_MAP],
                                 pt->items_count[ITEM_TYPE_BTREE],
                                 pt->total_bytes_exclusive,
-                                //
-                                //pt->total_bytes_inclusive,
-                                //
                                 pt->items_bytes[ITEM_TYPE_KV],
                                 pt->items_bytes[ITEM_TYPE_LIST],
                                 pt->items_bytes[ITEM_TYPE_SET],

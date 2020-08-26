@@ -27,7 +27,7 @@ flush 작업 자체는 O(1) 시간에 그 수행이 완료된다.
 flush_all 명령은 flush 수행 시점 정보만 기록해 두고, 전체 prefix들의 통계 정보는 그대로 남겨 둔다.
 따라서, flush_all을 수행하더라도  prefix 관련한 통계 정보를 조회할 수 있다.
 해당 prefix에 속한 items이 모두 제거되는 시점에, 그 prefix의 통계 정보는 함께 제거된다.
-반면, flsuh_prefix 명령은 해당 prefix에 대한 flush 수행 시점 정보를 기록해 두면서,
+반면, flush_prefix 명령은 해당 prefix에 대한 flush 수행 시점 정보를 기록해 두면서,
 그 prefix의 통계 정보를 모두 reset시켜 제거한다는 것이 차이가 있다.
 따라서, flush_prefix 수행 이후에는 해당 prefix에 대한 통계 정보를 조회할 수 없게 된다.
 
