@@ -219,8 +219,6 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
             for (int j = i + 1; j < prefix_depth; j++)
             {
                 pt = (prefix_t *)malloc(sizeof(prefix_t) + prefix_list[j].nprefix + 1);
-                pt->child_prefix = NULL;
-                pt->s_next = NULL;
 
                 if (pt == NULL)
                 {
@@ -242,8 +240,6 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
                     pt->internal = 1; /* internal prefix */
                 }
                 pt->parent_prefix = (j == 0 ? root_pt : prefix_list[j - 1].pt);
-                pt->s_next = pt->parent_prefix->child_prefix;
-                pt->parent_prefix->child_prefix = pt;
 
                 time(&pt->create_time);
 
@@ -306,14 +302,6 @@ void prefix_unlink(hash_item *it, const uint32_t item_size, bool drop_if_empty)
             if (pt->prefix_items > 0 || pt->total_count_exclusive > 0)
                 break; /* NOT empty */
             assert(pt->total_bytes_exclusive == 0);
-            
-            prefix_t *prev_pt = parent_pt->child_prefix;
-
-            if(prev_pt == pt) parent_pt->child_prefix = pt->s_next;
-            else{
-                while(prev_pt->s_next != pt) prev_pt = prev_pt->s_next;
-                prev_pt->s_next = pt->s_next;
-            }
 
             _prefix_delete(_get_prefix(pt), pt->nprefix,
                                 svcore->hash(_get_prefix(pt), pt->nprefix, 0));
@@ -496,6 +484,7 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
             {
                 t = localtime(&pt->create_time);
                 pos += snprintf(buffer + pos, buflen - pos, format, _get_prefix(pt),
+                                pt->prefix_items,
                                 pt->total_count_exclusive,
                                 pt->items_count[ITEM_TYPE_KV],
                                 pt->items_count[ITEM_TYPE_LIST],

@@ -31,9 +31,6 @@ typedef struct _prefix_t {
     struct _prefix_t *h_next;  /* prefix hash chain */
     struct _prefix_t *parent_prefix;
 
-    struct _prefix_t *child_prefix; 
-    struct _prefix_t *s_next; /*sibling next */
-
     /* lower prefix count */
     uint32_t prefix_items;
 
