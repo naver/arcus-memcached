@@ -419,7 +419,7 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
     if (nprefix < 0) /* all prefix stats */
     {
         const char *format = "PREFIX %s "
-                             "itm %llu kitm %llu litm %llu sitm %llu mitm %llu bitm %llu " /* total item count */
+                             "pfx %llu itm %llu kitm %llu litm %llu sitm %llu mitm %llu bitm %llu " /* total item count */
                              "tsz %llu ktsz %llu ltsz %llu stsz %llu mtsz %llu btsz %llu " /* total item bytes */
                              "time %04d%02d%02d%02d%02d%02d\r\n";                          /* create time */
         char *buffer;
@@ -456,7 +456,7 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
         //format 출력을 위한 buffer 길이 구하기
         buflen = sizeof(uint32_t)                                    /* length */
                  + sum_nameleng + num_prefixes * (strlen(format) - 2 /* %s replaced by prefix name */ 
-                                                  + (12 * (20 - 4))  /* %llu replaced by 20-digit num */
+                                                  + (13 * (20 - 4))  /* %llu replaced by 20-digit num */
                                                   - (5 * (4 - 2)))   /* %02d replaced by 2-digit num */
                  + sizeof("END\r\n");                                /* tail string */
 
@@ -472,6 +472,7 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
             pt = root_pt;
             t = localtime(&pt->create_time);
             pos += snprintf(buffer + pos, buflen - pos, format, "<null>",
+                            pt->prefix_items,
                             pt->total_count_exclusive,
                             pt->items_count[ITEM_TYPE_KV],
                             pt->items_count[ITEM_TYPE_LIST],
