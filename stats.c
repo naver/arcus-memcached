@@ -99,7 +99,7 @@ struct _prefix_stats {
 
 //#define PREFIX_HASH_SIZE 256
 #define PREFIX_HASH_SIZE 1024
-#define PREFIX_MAX_DEPTH 1
+#define PREFIX_MAX_DEPTH 5
 #define PREFIX_MAX_COUNT 10000
 
 static PREFIX_STATS *prefix_stats[PREFIX_HASH_SIZE];
@@ -189,7 +189,7 @@ int stats_prefix_insert(const char *prefix, const size_t nprefix)
 
 int stats_prefix_delete(const char *prefix, const size_t nprefix)
 {
-    PREFIX_STATS *curr, *prev;
+    PREFIX_STATS *curr, *prev, *next;
     int hidx;
     int ret = -1;
 
@@ -295,7 +295,7 @@ static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey)
 #ifdef NEW_PREFIX_STATS_MANAGEMENT
     return NULL;
 #else
-    if (length > 0) {
+    if (length > 0 && prefix_depth == 1) {
         if (!mc_isvalidname(key, length)) {
             /* Invalid prefix name */
             return NULL;
