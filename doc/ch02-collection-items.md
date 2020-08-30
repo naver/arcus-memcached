@@ -1,5 +1,4 @@
-# Collection Concept
-------------------
+# Chapter 2. Collection Concept
 
 ### Collection 구조와 특징
 
@@ -46,16 +45,16 @@ map의 최상위 hash table 구조, b+tree의 root node 주소가 이에 해당�
 
 Collection 유형에 따른 element 구조는 아래와 같다.
 
-- list/set element : \< data \>
+- list/set element : \<data\>
 
   각 element는 하나의 데이터 만을 가진다.
 
-- map element : \<field(map element key), data \>
+- map element : \<field(map element key), data\>
 
   map에서 각 element를 구분하기 위한 field를 필수적으로 가지며,
   field는 중복을 허용하지 않는다.
   
-- b+tree element : \< bkey(b+tree key), eflag(element flag), data \>
+- b+tree element : \<bkey(b+tree key), eflag(element flag), data\>
 
   b+tree에서 elements를 어떤 기준으로 정렬하기 위한 bkey를 필수적으로 가지며,
   옵션 사항으로 bkey 기반의 scan 시에 특정 element를 filtering하기 위한 eflag를 가질 수 있으며,
@@ -74,7 +73,7 @@ B+tree collection에서 사용가능한 bkey 데이터 유형은 아래 두 가�
 - hexadecimal
  
   “0x”로 시작하는 짝수 개의 hexadecimal 문자열로 표현하며, 대소문자 모두 사용 가능하다.
-  Arcus cache server는 두 hexadecimal 문자를 1 byte로 저장하며,
+  ARCUS cache server는 두 hexadecimal 문자를 1 byte로 저장하며,
   1 ~ 31 길이의 variable length byte array로 저장한다.
   
   hexadecimal 표현이 올바른 경우의 저장 바이트 수와 잘못된 경우의 이유는 아래와 같다.

@@ -1,17 +1,16 @@
-# Chapter 5. MAP 명령
---------
+# Chapter 7. MAP 명령
 
 Map collection에 관한 명령은 아래와 같다.
 
-- [Map collection 생성: mop create](command-map-collection.md#mop-create-map-collection-생성)
+- [Map collection 생성: mop create](ch07-command-map-collection.md#mop-create-map-collection-생성)
 - Map collection 삭제: delete (기존 key-value item의 삭제 명령을 그대로 사용)
 
 Map element에 관한 명령은 아래와 같다. 
 
-- [Map element 삽입: mop insert](command-map-collection.md#mop-insert-map-element-삽입)
-- [Map element 변경: mop update](command-map-collection.md#mop-update-map-element-변경)
-- [Map element 삭제: mop delete](command-map-collection.md#mop-delete-map-element-삭제)
-- [Map element 조회: mop get](command-map-collection.md#mop-get-map-field-element-조회)
+- [Map element 삽입: mop insert](ch07-command-map-collection.md#mop-insert-map-element-삽입)
+- [Map element 변경: mop update](ch07-command-map-collection.md#mop-update-map-element-변경)
+- [Map element 삭제: mop delete](ch07-command-map-collection.md#mop-delete-map-element-삭제)
+- [Map element 조회: mop get](ch07-command-map-collection.md#mop-get-map-field-element-조회)
 
 ### mop create (Map Collection 생성)
 
@@ -23,7 +22,7 @@ mop create <key> <attributes> [noreply]\r\n
 ```
 
 - \<key\> - 대상 item의 key string
-- \<attributes\> - 설정할 item attributes. [Item Attribute 설명](/doc/arcus-item-attribute.md)을 참조 바란다.
+- \<attributes\> - 설정할 item attributes. [Item Attribute 설명](ch03-item-attributes.md)을 참조 바란다.
 - noreply - 명시하면, response string을 전달받지 않는다.
 
 Response string과 그 의미는 아래와 같다.
@@ -48,10 +47,10 @@ mop insert <key> <field> <bytes> [create <attributes>] [noreply|pipe]\r\n<data>\
 - \<field\> - 삽입할 element의 field string
 - \<bytes\> - 삽입할 element의 데이터 길이 (trailing 문자인 "\r\n"을 제외한 길이)
 - create \<attributes\> - 해당 map collection 없을 시에 map 생성 요청.
-                    [Item Attribute 설명](/doc/arcus-item-attribute.md)을 참조 바란다.
-- noreply or pipe - 명시하면, response string을 전달받지 않는다. 
-                    pipe 사용은 [Command Pipelining](/doc/command-pipelining.md)을 참조 바란다.
-- \<data\> - 삽입할 데이터 (최대 4KB)
+[Item Attribute 설명](ch03-item-attributes.md)을 참조 바란다.
+- noreply or pipe - 명시하면, response string을 전달받지 않는다.
+pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
+- \<data\> - 삽입할 데이터 (최대 크기는 [기본제약사항](ch01-arcus-basic-concept.md#기본-제약-사항)을 참고)
 
 Response string과 그 의미는 아래와 같다.
 
@@ -63,7 +62,7 @@ Response string과 그 의미는 아래와 같다.
 - "ELEMENT_EXISTS" - 동일 이름의 field가 이미 존재. map field uniqueness 위배
 - "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
-- “CLIENT_ERROR too large value” - 삽입할 데이터가 4KB 보다 큼
+- “CLIENT_ERROR too large value” - 삽입할 데이터가 element value의 최대 크기보다 큼
 - “CLIENT_ERROR bad data chunk” - 삽입할 데이터 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
 - “CLIENT_ERROR invalid prefix name” - 유효하지(존재하지) 않는 prefix 명
 - “SERVER_ERROR out of memory” - 메모리 부족
@@ -80,9 +79,9 @@ mop update <key> <field> <bytes> [noreply|pipe]\r\n<data>\r\n
 - \<key\> - 대상 item의 key string
 - \<field\> - 대상 element의 field string
 - \<bytes\> - 변경할 데이터 길이 (trailing 문자인 "\r\n"을 제외한 길이)
-- noreply or pipe - 명시하면, response string을 전달받지 않는다. 
-                    pipe 사용은 [Command Pipelining](/doc/command-pipelining.md)을 참조 바란다.
-- \<data\> - 변경할 데이터 자체 (최대 4KB)
+- noreply or pipe - 명시하면, response string을 전달받지 않는다.
+pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
+- \<data\> - 변경할 데이터 자체
 
 Response string과 그 의미는 아래와 같다.
 
@@ -92,7 +91,7 @@ Response string과 그 의미는 아래와 같다.
 - “TYPE_MISMATCH” - 해당 item이 map collection이 아님
 - "NOT_SUPPORTED" - 지원하지 않음
 - “CLIENT_ERROR bad command line format” - protocol syntax 틀림
-- “CLIENT_ERROR too large value” - 삽입할 데이터가 4KB 보다 큼
+- “CLIENT_ERROR too large value” - 삽입할 데이터가 element value의 최대 크기보다 큼
 - “CLIENT_ERROR bad data chunk” - 삽입할 데이터 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
 - “SERVER_ERROR out of memory” - 메모리 부족
 
@@ -106,12 +105,12 @@ mop delete <key> <lenfields> <numfields> [drop] [noreply|pipe]\r\n
 ```
 
 - "space separated fields" - 대상 map의 field list로, 스페이스(' ')로 구분한다.
-                           - 하위 호환성(1.10.X 이하 버전)을 위해 콤마(,)도 지원하지만 권장하지 않는다.
+  - 하위 호환성(1.10.X 이하 버전)을 위해 콤마(,)도 지원하지만 권장하지 않는다.
 - \<key\> - 대상 item의 key string
 - \<lenfields>\과 \<numfields>\ - field list 문자열의 길이와 field 개수를 나타낸다. 0이면 전체 field, element를 의미한다.
 - drop - field, element 삭제로 인해 empty map이 될 경우, 그 map을 drop할 것인지를 지정한다.
-- noreply or pipe - 명시하면, response string을 전달받지 않는다. 
-                    pipe 사용은 [Command Pipelining](/doc/command-pipelining.md)을 참조 바란다.
+- noreply or pipe - 명시하면, response string을 전달받지 않는다.
+pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
 
 Response string과 그 의미는 아래와 같다.
 
@@ -133,11 +132,11 @@ mop get <key> <lenfields> <numfields> [delete|drop]\r\n
 ```
 
 - "space separated fields" - 대상 map의 field list로, 스페이스(' ')로 구분한다.
-                           - 하위 호환성(1.10.X 이하 버전)을 위해 콤마(,)도 지원하지만 권장하지 않는다.
+  - 하위 호환성(1.10.X 이하 버전)을 위해 콤마(,)도 지원하지만 권장하지 않는다.
 - \<key\> - 대상 item의 key string
 - \<lenfields\> 과 \<numfields>\ - field list 문자열의 길이와 field 개수를 나타낸다. 0이면 전체 field, element를 의미한다.
-- delete or drop - field, element 조회하면서 그 field, element를 delete할 것인지
-                   그리고 delete로 인해 empty map이 될 경우 그 map을 drop할 것인지를 지정한다.
+- delete or drop - field, element 조회하면서 그 field, element를 delete할 것인지,
+그리고 delete로 인해 empty map이 될 경우 그 map을 drop할 것인지를 지정한다.
 
 성공 시의 response string은 아래와 같다.
 VALUE 라인의 \<count\>는 조회된 field 개수를 의미한다. 
