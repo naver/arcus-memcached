@@ -1,13 +1,12 @@
-Simple Key-Value 명령
----------------------
+# Chapter 4. Simple Key-Value 명령
 
-Arcus cache server는 memcached 1.4의 key-value 명령을 그대로 지원하며, 
+ARCUS cache server는 memcached 1.4의 key-value 명령을 그대로 지원하며, 
 이에 추가하여 incr/decr 명령은 그 기능을 확장 지원한다.
 
 Simple key-value 명령들의 요약은 아래와 같다.
-이들 명령들의 자세한 정보는 [memcached 1.4의 기존 ascii protocol](/doc/protocol.txt)를 참고하기 바란다.
+이들 명령들의 자세한 정보는 [memcached 1.4의 기존 ascii protocol](https://github.com/naver/arcus-memcached/blob/master/doc/protocol.txt)를 참고하기 바란다.
 
-**storage 명령**
+### storage 명령
 
 set, add, replace, append, prepend, cas 명령이 있으며 syntax는 다음과 같다.
 
@@ -26,7 +25,7 @@ Response string과 그 의미는 아래와 같다.
 - "CLIENT_ERROR" - 클라이언트에서 잘못된 질의를 했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) bad command line format
 - "SERVER ERROR" - 서버 측의 오류로 저장하지 못했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) out of memory
 
-**retrieval 명령**
+### retrieval 명령
 
 하나의 cache item을 조회하는 get, gets 명령이 있으며, syntax는 다음과 같다.
 get 명령은 value만 조회하는 반면 gets 명령은 value와 함께 cas value도 조회한다.
@@ -66,7 +65,7 @@ END\r\n
 
 mget 명령에서 메모리 부족으로 일부 key에 대해서만 정상 조회한 후 실패한 경우, 전체 연산을 서버 에러 처리한다.
 
-**deletion 명령**
+### deletion 명령
 
 delete 명령이 있으며 syntax는 다음과 같다.
 
@@ -80,10 +79,10 @@ Response string과 그 의미는 아래와 같다.
 - "NOT_FOUND" - key miss
 - "CLIENT_ERROR" - 클라이언트에서 잘못된 질의를 했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) bad command line format
 
-**Increment/Decrement 명령**
+### Increment/Decrement 명령
 
 incr, decr 명령이 있으며, syntax는 아래와 같다.
-Arcus cache server는 이 명령을 확장하여,
+ARCUS cache server는 이 명령을 확장하여,
 해당 key가 존재하지 않는 경우에 initial 값을 가지는 새로운 key-value item을 생성한다.
 
 ```
