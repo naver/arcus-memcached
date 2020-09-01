@@ -32,8 +32,6 @@ sub nested_prefix_insert {
     }
 }
 
-#$cmd = "set pname:cname:foo 0 0"
-
 sub nested_item_get_hit {  
     for($size = 0; $size < $prefix_size; $size++){
         $cmd = "get pname$size:foo";
