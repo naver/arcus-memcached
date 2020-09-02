@@ -90,3 +90,4 @@
 ./t/unixsocket.t
 ./t/verbosity.t
 ./t/whitespace.t
+./t/nested_prefix.t

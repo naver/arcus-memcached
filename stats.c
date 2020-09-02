@@ -95,11 +95,23 @@ struct _prefix_stats {
     uint64_t      num_bop_pwg_hits;
     uint64_t      num_bop_gbp_hits;
     PREFIX_STATS *next;
+#ifdef NESTED_PREFIX
+    PREFIX_STATS *parent_stat;
+    uint32_t child_prefixes;
+#endif
 };
 
+#ifdef NESTED_PREFIX
+typedef struct {
+    PREFIX_STATS    *pfs;
+    size_t          nprefix;
+    uint32_t        hash;
+} PREFIX_STATS_elem;
+#endif
 //#define PREFIX_HASH_SIZE 256
 #define PREFIX_HASH_SIZE 1024
 #define PREFIX_MAX_DEPTH 1
+
 #define PREFIX_MAX_COUNT 10000
 
 static PREFIX_STATS *prefix_stats[PREFIX_HASH_SIZE];
@@ -146,6 +158,13 @@ static PREFIX_STATS *do_stats_prefix_insert(const char *prefix, const size_t npr
 {
     PREFIX_STATS *pfs = NULL;
     uint32_t hashval;
+#ifdef NESTED_PREFIX
+    size_t length;
+    char *token = NULL;
+    int i = 0;
+    int prefix_depth = 0;
+    PREFIX_STATS_elem prefix_stats_list[PREFIX_MAX_DEPTH];
+#endif
 
     if (num_prefixes >= PREFIX_MAX_COUNT) {
         /* prefix overflow */
@@ -153,6 +172,91 @@ static PREFIX_STATS *do_stats_prefix_insert(const char *prefix, const size_t npr
         return NULL;
     }
 
+#ifdef NESTED_PREFIX
+    if (nprefix > 0) {
+        while ((token = memchr(prefix + i + 1, prefix_delimiter, nprefix - i - 1)) != NULL) {
+            i = token - prefix;
+            prefix_stats_list[prefix_depth].nprefix = i;
+            prefix_depth++;
+
+            if (prefix_depth >= PREFIX_MAX_DEPTH)
+                break;
+        }
+    }
+
+    if (prefix_depth < PREFIX_MAX_DEPTH)
+        prefix_stats_list[prefix_depth++].nprefix = nprefix;
+
+    for (i = prefix_depth - 1; i >= 0; i--) {
+        hashval = mc_hash(prefix, prefix_stats_list[i].nprefix, 0) % PREFIX_HASH_SIZE;
+        prefix_stats_list[i].hash = hashval;
+        for (pfs = prefix_stats[hashval]; pfs != NULL; pfs = pfs->next) {
+            if ((pfs->prefix_len==prefix_stats_list[i].nprefix) && (prefix_stats_list[i].nprefix==0 ||
+                strncmp(pfs->prefix, prefix, prefix_stats_list[i].nprefix)==0))
+                break;
+        }
+        if (pfs != NULL) break;
+        if (i == 0) {
+            if (!mc_isvalidname(prefix, prefix_stats_list[0].nprefix)) {
+                return NULL;
+            }
+        } else {
+            uint32_t prefix_offset = prefix_stats_list[i - 1].nprefix + 1;
+            if (!mc_isvalidname(prefix + prefix_offset,
+                                prefix_stats_list[i].nprefix - prefix_offset)) {
+                return NULL;
+            }
+        }
+    }
+
+    if (i < (prefix_depth-1)) {
+        if (pfs != NULL && i >= 0)
+            prefix_stats_list[i].pfs = pfs;
+        for (int j = i + 1; j < prefix_depth; j++) {
+            length = prefix_stats_list[j].nprefix;
+            /* build a prefix stats entry */
+            pfs = calloc(sizeof(PREFIX_STATS), 1);
+            if (pfs == NULL){
+                perror("Can't allocate space for stats structure: calloc");
+                return NULL;
+            }
+            pfs->prefix = malloc(length + 1);
+            if (pfs->prefix == NULL) {
+                perror("Can't allocate space for copy of prefix: malloc");
+                free(pfs);
+                return NULL;
+            }
+            if (length > 0)
+                strncpy(pfs->prefix, prefix, length);
+            pfs->prefix[length] = '\0';      /* because strncpy() sucks */
+            pfs->prefix_len = length;
+
+            /* link it to hash table */
+            hashval = mc_hash(prefix, length, 0) % PREFIX_HASH_SIZE;
+            pfs->next = prefix_stats[hashval];
+            prefix_stats[hashval] = pfs;
+            pfs->parent_stat = (j == 0 ? NULL : prefix_stats_list[j-1].pfs);
+
+            prefix_stats_list[j].pfs = pfs;
+
+            /* update prefix stats */
+            if (pfs->parent_stat == NULL) {
+                num_prefixes++;
+                total_prefix_size += (prefix_stats_list[j].nprefix > 0 ? prefix_stats_list[j].nprefix
+                                                                       : strlen(null_prefix_str));
+            } else {
+                pfs->parent_stat->child_prefixes++;
+            }
+
+            if (num_prefixes >= PREFIX_MAX_COUNT) {
+                /* prefix overflow */
+                func_when_prefix_overflow();
+                return NULL;
+            }
+        }
+    }
+#endif
+#if 0 // OLD_CODE
     /* build a prefix stats entry */
     pfs = calloc(sizeof(PREFIX_STATS), 1);
     if (pfs == NULL) {
@@ -179,6 +283,7 @@ static PREFIX_STATS *do_stats_prefix_insert(const char *prefix, const size_t npr
     num_prefixes++;
     total_prefix_size += (nprefix > 0 ? nprefix
                                       : strlen(null_prefix_str));
+#endif
 
     return pfs;
 }
@@ -194,7 +299,7 @@ int stats_prefix_insert(const char *prefix, const size_t nprefix)
     return (pfs != NULL) ? 0 : -1;
 }
 
-#if 0 // OLD_CODE for deleting multi-level prefixes
+#ifdef NESTED_PREFIX // OLD_CODE for deleting multi-level prefixes
 static void do_stats_prefix_delete_children(const char *prefix, const size_t nprefix)
 {
     PREFIX_STATS *curr;
@@ -211,9 +316,7 @@ static void do_stats_prefix_delete_children(const char *prefix, const size_t npr
                 strncmp(curr->prefix, prefix, nprefix) == 0) {
                 if (prev == NULL) prefix_stats[hidx] = curr->next;
                 else              prev->next = curr->next;
-                num_prefixes--;
-                total_prefix_size -= curr->prefix_len;
-
+                curr->parent_stat->child_prefixes--;
                 free(curr->prefix);
                 free(curr);
             } else {
@@ -255,18 +358,24 @@ static int do_stats_prefix_delete(const char *prefix, const size_t nprefix)
         if (curr != NULL) { /* found */
             if (prev == NULL) prefix_stats[hashval] = curr->next;
             else              prev->next = curr->next;
+#ifdef NESTED_PREFIX
+            if (curr->parent_stat == NULL) {
+                num_prefixes--;
+                total_prefix_size -= curr->prefix_len;
+            } else {
+                curr->parent_stat->child_prefixes--;
+            }
+
+            if (curr->child_prefixes > 0)
+                do_stats_prefix_delete_children(prefix, nprefix);
+#else
             num_prefixes--;
             total_prefix_size -= curr->prefix_len;
+#endif
 
             free(curr->prefix);
             free(curr);
             ret = 0;
-
-#if 0 // OLD_CODE for deleting multi-level prefixes
-            if (prefix_has_children) {
-                do_stats_prefix_delete_children(prefix, nprefix);
-            }
-#endif
         }
     }
     return ret;
@@ -323,12 +432,15 @@ static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey)
 #ifdef NEW_PREFIX_STATS_MANAGEMENT
     return NULL;
 #else
+#ifdef NESTED_PREFIX
+#else
     if (length > 0) {
         if (!mc_isvalidname(key, length)) {
             /* Invalid prefix name */
             return NULL;
         }
     }
+#endif
     return do_stats_prefix_insert(key, length);
 #endif
 }
@@ -342,11 +454,20 @@ void stats_prefix_record_get(const char *key, const size_t nkey, const bool is_h
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_gets++;
+        if (is_hit)
+            pfs->num_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_gets++;
         if (is_hit)
             pfs->num_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -359,9 +480,16 @@ void stats_prefix_record_delete(const char *key, const size_t nkey)
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_deletes++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_deletes++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -374,9 +502,16 @@ void stats_prefix_record_set(const char *key, const size_t nkey)
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_sets++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_sets++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -389,9 +524,16 @@ void stats_prefix_record_incr(const char *key, const size_t nkey)
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_incrs++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_incrs++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -404,9 +546,16 @@ void stats_prefix_record_decr(const char *key, const size_t nkey)
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_decrs++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_decrs++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -419,9 +568,16 @@ void stats_prefix_record_lop_create(const char *key, const size_t nkey)
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_lop_creates++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_lop_creates++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -431,11 +587,20 @@ void stats_prefix_record_lop_insert(const char *key, const size_t nkey, const bo
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_lop_inserts++;
+        if (is_hit)
+            pfs->num_lop_insert_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_lop_inserts++;
         if (is_hit)
             pfs->num_lop_insert_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -445,11 +610,20 @@ void stats_prefix_record_lop_delete(const char *key, const size_t nkey, const bo
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_lop_deletes++;
+        if (is_hit)
+            pfs->num_lop_delete_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_lop_deletes++;
         if (is_hit)
             pfs->num_lop_delete_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -459,11 +633,20 @@ void stats_prefix_record_lop_get(const char *key, const size_t nkey, const bool 
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_lop_gets++;
+        if (is_hit)
+            pfs->num_lop_get_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_lop_gets++;
         if (is_hit)
             pfs->num_lop_get_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -476,9 +659,16 @@ void stats_prefix_record_sop_create(const char *key, const size_t nkey)
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_sop_creates++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_sop_creates++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -488,11 +678,20 @@ void stats_prefix_record_sop_insert(const char *key, const size_t nkey, const bo
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_sop_inserts++;
+        if (is_hit)
+            pfs->num_sop_insert_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_sop_inserts++;
         if (is_hit)
             pfs->num_sop_insert_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -502,11 +701,20 @@ void stats_prefix_record_sop_delete(const char *key, const size_t nkey, const bo
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_sop_deletes++;
+        if (is_hit)
+            pfs->num_sop_delete_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_sop_deletes++;
         if (is_hit)
             pfs->num_sop_delete_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -516,11 +724,20 @@ void stats_prefix_record_sop_get(const char *key, const size_t nkey, const bool 
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_sop_gets++;
+        if (is_hit)
+            pfs->num_sop_get_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_sop_gets++;
         if (is_hit)
             pfs->num_sop_get_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -530,11 +747,20 @@ void stats_prefix_record_sop_exist(const char *key, const size_t nkey, const boo
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_sop_exists++;
+        if (is_hit)
+            pfs->num_sop_exist_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_sop_exists++;
         if (is_hit)
             pfs->num_sop_exist_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -547,9 +773,16 @@ void stats_prefix_record_mop_create(const char *key, const size_t nkey)
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_mop_creates++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_mop_creates++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -559,11 +792,20 @@ void stats_prefix_record_mop_insert(const char *key, const size_t nkey, const bo
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_mop_inserts++;
+        if (is_hit)
+            pfs->num_mop_insert_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_mop_inserts++;
         if (is_hit)
             pfs->num_mop_insert_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -573,11 +815,20 @@ void stats_prefix_record_mop_update(const char *key, const size_t nkey, const bo
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_mop_updates++;
+        if (is_hit)
+            pfs->num_mop_update_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_mop_updates++;
         if (is_hit)
             pfs->num_mop_update_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -587,11 +838,20 @@ void stats_prefix_record_mop_delete(const char *key, const size_t nkey, const bo
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_mop_deletes++;
+        if (is_hit)
+            pfs->num_mop_delete_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_mop_deletes++;
         if (is_hit)
             pfs->num_mop_delete_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -601,11 +861,20 @@ void stats_prefix_record_mop_get(const char *key, const size_t nkey, const bool 
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_mop_gets++;
+        if (is_hit)
+            pfs->num_mop_get_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_mop_gets++;
         if (is_hit)
             pfs->num_mop_get_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -618,9 +887,16 @@ void stats_prefix_record_bop_create(const char *key, const size_t nkey)
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_bop_creates++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_bop_creates++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -630,11 +906,20 @@ void stats_prefix_record_bop_insert(const char *key, const size_t nkey, const bo
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_bop_inserts++;
+        if (is_hit)
+            pfs->num_bop_insert_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_bop_inserts++;
         if (is_hit)
             pfs->num_bop_insert_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -644,11 +929,20 @@ void stats_prefix_record_bop_update(const char *key, const size_t nkey, const bo
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_bop_updates++;
+        if (is_hit)
+            pfs->num_bop_update_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_bop_updates++;
         if (is_hit)
             pfs->num_bop_update_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -658,11 +952,20 @@ void stats_prefix_record_bop_delete(const char *key, const size_t nkey, const bo
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_bop_deletes++;
+        if (is_hit)
+            pfs->num_bop_delete_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_bop_deletes++;
         if (is_hit)
             pfs->num_bop_delete_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -672,11 +975,20 @@ void stats_prefix_record_bop_incr(const char *key, const size_t nkey, const bool
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_bop_incrs++;
+        if (is_hit)
+            pfs->num_bop_incr_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_bop_incrs++;
         if (is_hit)
             pfs->num_bop_incr_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -686,11 +998,20 @@ void stats_prefix_record_bop_decr(const char *key, const size_t nkey, const bool
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_bop_decrs++;
+        if (is_hit)
+            pfs->num_bop_decr_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_bop_decrs++;
         if (is_hit)
             pfs->num_bop_decr_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -700,11 +1021,20 @@ void stats_prefix_record_bop_get(const char *key, const size_t nkey, const bool 
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_bop_gets++;
+        if (is_hit)
+            pfs->num_bop_get_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_bop_gets++;
         if (is_hit)
             pfs->num_bop_get_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -714,11 +1044,20 @@ void stats_prefix_record_bop_count(const char *key, const size_t nkey, const boo
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_bop_counts++;
+        if (is_hit)
+            pfs->num_bop_count_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_bop_counts++;
         if (is_hit)
             pfs->num_bop_count_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -728,11 +1067,20 @@ void stats_prefix_record_bop_position(const char *key, const size_t nkey, const 
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_bop_positions++;
+        if (is_hit)
+            pfs->num_bop_position_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_bop_positions++;
         if (is_hit)
             pfs->num_bop_position_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -742,11 +1090,20 @@ void stats_prefix_record_bop_pwg(const char *key, const size_t nkey, const bool 
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_bop_pwgs++;
+        if (is_hit)
+            pfs->num_bop_pwg_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_bop_pwgs++;
         if (is_hit)
             pfs->num_bop_pwg_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -756,11 +1113,20 @@ void stats_prefix_record_bop_gbp(const char *key, const size_t nkey, const bool 
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_bop_gbps++;
+        if (is_hit)
+            pfs->num_bop_gbp_hits++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_bop_gbps++;
         if (is_hit)
             pfs->num_bop_gbp_hits++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -773,9 +1139,16 @@ void stats_prefix_record_getattr(const char *key, const size_t nkey)
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_getattrs++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_getattrs++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -785,9 +1158,16 @@ void stats_prefix_record_setattr(const char *key, const size_t nkey)
 
     LOCK_STATS();
     pfs = stats_prefix_find(key, nkey);
+#ifdef NESTED_PREFIX
+    while (pfs != NULL) {
+        pfs->num_setattrs++;
+        pfs = pfs->parent_stat;
+    }
+#else
     if (pfs) {
         pfs->num_setattrs++;
     }
+#endif
     UNLOCK_STATS();
 }
 
@@ -830,6 +1210,10 @@ char *stats_prefix_dump(int *length)
     pos = 0;
     for (i = 0; i < PREFIX_HASH_SIZE; i++) {
         for (pfs = prefix_stats[i]; NULL != pfs; pfs = pfs->next) {
+#ifdef NESTED_PREFIX
+            if (pfs->parent_stat != NULL)
+                continue;
+#endif
             written = snprintf(buf + pos, size-pos, format,
                            (pfs->prefix_len == 0 ? null_prefix_str : pfs->prefix),
                            pfs->num_gets, pfs->num_hits, pfs->num_sets, pfs->num_deletes,

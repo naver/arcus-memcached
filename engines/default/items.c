@@ -497,6 +497,15 @@ static ENGINE_ERROR_CODE do_item_flush_expired(const char *prefix, const int npr
                     itemsp->curMK[i] = itemsp->tails[i];
                     break;
                 }
+#ifdef NESTED_PREFIX
+                if (nprefix < 0 || prefix_isincluded(iter->pfxptr, prefix, nprefix)) {
+                    next = iter->next;
+                    do_item_unlink(iter, ITEM_UNLINK_INVALID);
+                    iter = next;
+                } else {
+                    iter = iter->next;
+                }
+#else
                 if (nprefix < 0 || prefix_issame(iter->pfxptr, prefix, nprefix)) {
                     next = iter->next;
                     do_item_unlink(iter, ITEM_UNLINK_INVALID);
@@ -504,6 +513,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(const char *prefix, const int npr
                 } else {
                     iter = iter->next;
                 }
+#endif
             }
 #ifdef ENABLE_STICKY_ITEM
             iter = itemsp->sticky_heads[i];
@@ -514,6 +524,15 @@ static ENGINE_ERROR_CODE do_item_flush_expired(const char *prefix, const int npr
                     itemsp->sticky_curMK[i] = itemsp->sticky_tails[i];
                     break;
                 }
+#ifdef NESTED_PREFIX
+                if (nprefix < 0 || prefix_isincluded(iter->pfxptr, prefix, nprefix)) {
+                    next = iter->next;
+                    do_item_unlink(iter, ITEM_UNLINK_INVALID);
+                    iter = next;
+                } else {
+                    iter = iter->next;
+                }
+#else
                 if (nprefix < 0 || prefix_issame(iter->pfxptr, prefix, nprefix)) {
                     next = iter->next;
                     do_item_unlink(iter, ITEM_UNLINK_INVALID);
@@ -521,6 +540,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(const char *prefix, const int npr
                 } else {
                     iter = iter->next;
                 }
+#endif
             }
 #endif
         }
@@ -1041,9 +1061,15 @@ int item_scan_getnext(item_scan *sp, void **item_array, elems_result_t *erst_arr
                 item_array[i] = NULL; continue;
             }
             /* Is it the item of the given prefix ? */
+#ifdef NESTED_PREFIX
+            if (sp->nprefix >= 0 && !prefix_isincluded(it->pfxptr, sp->prefix, sp->nprefix)) {
+                item_array[i] = NULL; continue;
+            }
+#else
             if (sp->nprefix >= 0 && !prefix_issame(it->pfxptr, sp->prefix, sp->nprefix)) {
                 item_array[i] = NULL; continue;
             }
+#endif
             /* Found the valid item */
             if (erst_array != NULL && IS_COLL_ITEM(it)) {
                 ret = coll_elem_get_all(it, &erst_array[nfound], false);
