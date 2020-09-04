@@ -245,6 +245,30 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
     return ENGINE_SUCCESS;
 }
 
+void prefix_replace(hash_item* old_it, hash_item* new_it, const uint32_t old_item_size, const uint32_t new_item_size)
+{
+    prefix_t *pt = old_it->pfxptr;
+    new_it->pfxptr = old_it->pfxptr;
+    old_it->pfxptr = NULL;
+    assert(pt != NULL);
+
+    /* update prefix information */
+    int item_type = GET_ITEM_TYPE(old_it);
+    if (new_item_size != old_item_size) {
+        if (new_item_size > old_item_size) {
+            uint32_t item_size = new_item_size - old_item_size;
+            pt->items_bytes[item_type] += item_size;
+            pt->total_bytes_exclusive += item_size;
+        } else {
+            uint32_t item_size = old_item_size - new_item_size;
+            pt->items_bytes[item_type] -= item_size;
+            pt->total_bytes_exclusive -= item_size;
+        }
+    } else {
+       /* if they have the same item_size do nothing */
+    }
+}
+
 void prefix_unlink(hash_item *it, const uint32_t item_size, bool drop_if_empty)
 {
     prefix_t *pt = it->pfxptr;

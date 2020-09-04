@@ -61,6 +61,7 @@ void              prefix_final(struct default_engine *engine);
 prefix_t *        prefix_find(const char *prefix, const int nprefix);
 ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *internal);
 void              prefix_unlink(hash_item *it, const uint32_t item_size, bool drop_if_empty);
+void              prefix_replace(hash_item* old_it, hash_item* new_it, const uint32_t old_item_size, const uint32_t new_item_size);
 bool              prefix_issame(prefix_t *pt, const char *prefix, const int nprefix);
 void              prefix_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t bytes);
 void              prefix_bytes_decr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t bytes);
