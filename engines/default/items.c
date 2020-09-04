@@ -949,6 +949,68 @@ static void item_link_q(hash_item *it)
     return;
 }
 
+static void item_replace_q(hash_item *old_it, hash_item *new_it)
+{
+    hash_item **head, **tail;
+    assert(old_it->slabs_clsid <= POWER_LARGEST || new_it->slabs_clsid <= POWER_LARGEST);
+
+#ifdef USE_SINGLE_LRU_LIST
+    int clsid = 1;
+#else
+    int clsid = old_it->slabs_clsid;
+    if (IS_COLL_ITEM(old_it) || ITEM_ntotal(old_it) <= MAX_SM_VALUE_LEN ||
+        IS_COLL_ITEM(new_it) || ITEM_ntotal(new_it) <= MAX_SM_VALUE_LEN) {
+        clsid = LRU_CLSID_FOR_SMALL;
+    }
+#endif
+
+#ifdef ENABLE_STICKY_ITEM
+    if (IS_STICKY_EXPTIME(old_it->exptime)) {
+      head = &itemsp->sticky_heads[clsid];
+      tail = &itemsp->sticky_tails[clsid];
+      /* move curMK pointer in LRU */
+      if (itemsp->sticky_curMK[clsid] == old_it)
+          itemsp->sticky_curMK[clsid] = new_it;
+    } else {
+#endif
+      head = &itemsp->heads[clsid];
+      tail = &itemsp->tails[clsid];
+
+      /* replace lowMK, curMK pointer in LRU */
+      if (itemsp->lowMK[clsid] == old_it)
+        itemsp->lowMK[clsid] = new_it;
+      if (itemsp->curMK[clsid] == old_it) {
+        itemsp->curMK[clsid] = new_it;
+        if (itemsp->curMK[clsid] == NULL)
+          itemsp->curMK[clsid] = itemsp->lowMK[clsid];
+      }
+#ifdef ENABLE_STICKY_ITEM
+    }
+#endif
+    /* replace link old_it to new_it */
+    if (*head == old_it) {
+        assert(old_it->prev == 0);
+        *head = new_it;
+    }
+    if (*tail == old_it) {
+        assert(old_it->next == 0);
+        *tail = new_it;
+    }
+
+    assert(old_it->next != old_it);
+    assert(old_it->prev != old_it);
+
+    if (old_it->next) old_it->next->prev = new_it;
+    if (old_it->prev) old_it->prev->next = new_it;
+
+    new_it->next = old_it->next;
+    new_it->prev = old_it->prev;
+
+    old_it->prev = old_it->next = old_it; /* special meaning: unlinked from LRU */
+
+    return;
+}
+
 static void item_unlink_q(hash_item *it)
 {
     hash_item **head, **tail;
