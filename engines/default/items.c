@@ -393,6 +393,33 @@ static inline size_t ITEM_stotal(const hash_item *item)
     return stotal;
 }
 
+static inline void do_item_stat_replace(hash_item *old_it, hash_item *new_it)
+{
+    prefix_t *pt = new_it->pfxptr;
+    size_t old_stotal = ITEM_stotal(old_it);
+    size_t new_stotal = ITEM_stotal(new_it);
+
+    int item_type = GET_ITEM_TYPE(old_it);
+
+    LOCK_STATS();
+    if (new_stotal != old_stotal) {
+        if (new_stotal > old_stotal) {
+            prefix_bytes_incr(pt, item_type, new_stotal - old_stotal);
+        } else {
+            prefix_bytes_decr(pt, item_type, old_stotal - new_stotal);
+        }
+    }
+    /* update item stats imformation */
+#ifdef ENABLE_STICKY_ITEM
+    if (IS_STICKY_EXPTIME(new_it->exptime)) {
+        statsp->sticky_bytes += new_stotal - old_stotal;
+    }
+#endif
+    statsp->curr_bytes += new_stotal - old_stotal;
+    statsp->total_items += 1;
+    UNLOCK_STATS();
+}
+
 /* Get the next CAS id for a new item. */
 static uint64_t get_cas_id(void)
 {
