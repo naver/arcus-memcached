@@ -431,7 +431,9 @@ static ENGINE_ERROR_CODE do_item_store_attach(struct demo_engine *engine,
             do_item_replace(engine, old_it, new_it);
             stored = ENGINE_SUCCESS;
             *cas = dm_item_get_cas(new_it);
+#ifndef RM_ITEM_REFCNT
             do_item_release(engine, new_it);
+#endif
         } else {
             /* SERVER_ERROR out of memory */
             stored = ENGINE_NOT_STORED;
@@ -476,6 +478,18 @@ hash_item *dm_item_alloc(struct demo_engine *engine,
     pthread_mutex_unlock(&engine->cache_lock);
     return it;
 }
+
+#ifdef RM_ITEM_REFCNT
+/*
+ * Frees an item.
+ */
+void dm_item_free(struct demo_engine *engine, hash_item *item)
+{
+    pthread_mutex_lock(&engine->cache_lock);
+    do_item_free(engine, item);
+    pthread_mutex_unlock(&engine->cache_lock);
+}
+#endif
 
 /*
  * Returns an item if it hasn't been marked as expired,

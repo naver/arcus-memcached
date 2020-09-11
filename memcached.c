@@ -679,6 +679,9 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->write_and_go = init_state;
     c->write_and_free = 0;
     c->item = 0;
+#ifdef RM_ITEM_REFCNT
+    c->store_op = 0;
+#endif
 
     c->coll_strkeys = 0;
     c->coll_eitem = 0;
@@ -825,7 +828,16 @@ static void conn_cleanup(conn *c)
     assert(c != NULL);
 
     if (c->item) {
+#ifdef RM_ITEM_REFCNT
+        if (c->store_op == 0) {
+            mc_engine.v1->release(mc_engine.v0, c, c->item);
+        } else {
+            mc_engine.v1->free(mc_engine.v0, c, c->item);
+            c->store_op = 0;
+        }
+#else
         mc_engine.v1->release(mc_engine.v0, c, c->item);
+#endif
         c->item = 0;
     }
 
@@ -3167,7 +3179,11 @@ static void complete_update_ascii(conn *c)
 
     item *it = c->item;
     if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
+#ifdef RM_ITEM_REFCNT
+        mc_engine.v1->free(mc_engine.v0, c, it);
+#else
         mc_engine.v1->release(mc_engine.v0, c, it);
+#endif
         mc_logger->log(EXTENSION_LOG_WARNING, c,
                        "%d: Failed to get item info\n", c->sfd);
         out_string(c, "SERVER_ERROR failed to get item details");
@@ -3257,8 +3273,17 @@ static void complete_update_ascii(conn *c)
         STATS_CMD(c, set, c->hinfo.key, c->hinfo.nkey);
     }
 
+#ifdef RM_ITEM_REFCNT
+    if (ret != ENGINE_SUCCESS ||
+        c->store_op == OPERATION_APPEND || c->store_op == OPERATION_PREPEND) {
+        mc_engine.v1->free(mc_engine.v0, c, c->item);
+    }
+    c->store_op = 0;
+#else
     /* release the c->item reference */
     mc_engine.v1->release(mc_engine.v0, c, c->item);
+#endif
+
     c->item = 0;
 }
 
@@ -3663,7 +3688,11 @@ static void complete_update_bin(conn *c)
 
     item *it = c->item;
     if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
+#ifdef RM_ITEM_REFCNT
+        mc_engine.v1->free(mc_engine.v0, c, it);
+#else
         mc_engine.v1->release(mc_engine.v0, c, it);
+#endif
         mc_logger->log(EXTENSION_LOG_WARNING, c,
                        "%d: Failed to get item info\n", c->sfd);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
@@ -3751,8 +3780,16 @@ static void complete_update_bin(conn *c)
         STATS_CMD(c, set, c->hinfo.key, c->hinfo.nkey);
     }
 
+#ifdef RM_ITEM_REFCNT
+    if (ret != ENGINE_SUCCESS ||
+        c->store_op == OPERATION_APPEND || c->store_op == OPERATION_PREPEND) {
+        mc_engine.v1->free(mc_engine.v0, c, c->item);
+    }
+    c->store_op = 0;
+#else
     /* release the c->item reference */
     mc_engine.v1->release(mc_engine.v0, c, c->item);
+#endif
     c->item = 0;
 }
 
@@ -7082,7 +7119,11 @@ static void process_bin_update(conn *c)
                                  c->binary_header.request.cas);
     if (ret == ENGINE_SUCCESS && !mc_engine.v1->get_item_info(mc_engine.v0,
                                                               c, it, &c->hinfo)) {
+#ifdef RM_ITEM_REFCNT
+        mc_engine.v1->free(mc_engine.v0, c, it);
+#else
         mc_engine.v1->release(mc_engine.v0, c, it);
+#endif
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
         return;
     }
@@ -7156,7 +7197,11 @@ static void process_bin_append_prepend(conn *c)
                                  0, 0, c->binary_header.request.cas);
     if (ret == ENGINE_SUCCESS && !mc_engine.v1->get_item_info(mc_engine.v0,
                                                               c, it, &c->hinfo)) {
+#ifdef RM_ITEM_REFCNT
+        mc_engine.v1->free(mc_engine.v0, c, it);
+#else
         mc_engine.v1->release(mc_engine.v0, c, it);
+#endif
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
         return;
     }
@@ -7434,7 +7479,16 @@ static void reset_cmd_handler(conn *c)
     c->cmd = -1;
     c->substate = bin_no_state;
     if (c->item != NULL) {
+#ifdef RM_ITEM_REFCNT
+        if (c->store_op == 0) {
+            mc_engine.v1->release(mc_engine.v0, c, c->item);
+        } else {
+            mc_engine.v1->free(mc_engine.v0, c, c->item);
+            c->store_op = 0;
+        }
+#else
         mc_engine.v1->release(mc_engine.v0, c, c->item);
+#endif
         c->item = NULL;
     }
 #ifdef DETECT_LONG_QUERY
@@ -8357,7 +8411,11 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     switch (ret) {
     case ENGINE_SUCCESS:
         if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
+#ifdef RM_ITEM_REFCNT
+            mc_engine.v1->free(mc_engine.v0, c, it);
+#else
             mc_engine.v1->release(mc_engine.v0, c, it);
+#endif
             out_string(c, "SERVER_ERROR error getting item data");
             break;
         }
