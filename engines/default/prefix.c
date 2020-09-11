@@ -300,7 +300,7 @@ bool prefix_issame(prefix_t *pt, const char *prefix, const int nprefix)
 void prefix_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t bytes)
 {
     /* It's called when a collection element is inserted */
-    assert(item_type > ITEM_TYPE_KV && item_type < ITEM_TYPE_MAX);
+    assert(item_type < ITEM_TYPE_MAX);
 
     pt->items_bytes[item_type] += bytes;
     pt->total_bytes_exclusive += bytes;
@@ -318,7 +318,7 @@ void prefix_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t 
 void prefix_bytes_decr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t bytes)
 {
     /* It's called when a collection element is removed */
-    assert(item_type > ITEM_TYPE_KV && item_type < ITEM_TYPE_MAX);
+    assert(item_type < ITEM_TYPE_MAX);
 
     pt->items_bytes[item_type] -= bytes;
     pt->total_bytes_exclusive -= bytes;
