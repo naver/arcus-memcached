@@ -406,6 +406,12 @@ AC_ARG_ENABLE(zk-integration,
 if test "x$enable_zk_integration" = "xyes"; then
   AC_DEFINE([ENABLE_ZK_INTEGRATION],[1],[Set to nonzero if you want to make zookeeper integration])
   AC_DEFINE([ENABLE_CLUSTER_AWARE],1,[Set to nonzero if you want to make memcached cluster-aware])
+
+  AC_ARG_WITH(zk-reconfig,
+      [AS_HELP_STRING([--without-zk-reconfig],[Disable zookeeper dynamic reconfiguration])], ,
+      [AC_DEFINE([ENABLE_ZK_RECONFIG],1,[Set to nonzero if you want to use zookeeper dynamic reconfig])]
+  )
+
   tryzookeeperdir=""
   AC_ARG_WITH(zookeeper,
       [  --with-zookeeper=PATH   specify path to zookeeper installation ],
@@ -476,6 +482,8 @@ if test "x$enable_zk_integration" = "xyes"; then
   ])
     fi
   ])
+  AC_DEFINE([THREADED],1,[Enable ZooKeeper multi thread mode])
+
 #  LIBS="$LIBS -lzookeeper_mt"
   if test $ac_cv_zookeeper_dir != "(system)"; then
     if test -d "$ac_cv_zookeeper_dir/lib" ; then
