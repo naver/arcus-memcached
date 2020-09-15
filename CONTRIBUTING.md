@@ -21,10 +21,12 @@ ARCUS-memcached 의 최신 코드는 develop branch에 유지됩니다. 모든 P
 PR 작성 전에 다음 사항을 고려해 주세요.
 - 모든 변경은 develop branch를 기반으로 변경하고, develop branch로 요청 해주세요.
 - 모든 코드 파일에는 라이센스 주석 사본이 있어야 합니다. 기존 파일에서 복사할 수 있습니다.
+- 변경 범위가 큰 이슈일 경우 include/memcached/types.h 파일에 코드 태그를 생성하고 해당 태그를 이용하여 변경 코드들을 감싸주세요.
+- 새로운 기능을 추가하는 경우 해당 기능을 시험하는 unit test를 함께 작성해주세요.
 - PR 전 make test로 수행되는 unit test를 포함한 기본 테스트를 진행 해주세요.
 - 모든 소스 코드는 C coding style 를 기준으로 작성 해주시고, 같은 파일 내의 코드 수정은 파일 내 style을 따라주세요.
 - Commit message 작성은 "Classification: commit message" 형식을 지켜주세요.
-  
+
   |Classification|내용|
   |:-------------|:----|
   |FIX|fix bugx|
