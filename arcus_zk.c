@@ -1859,6 +1859,16 @@ void arcus_zk_destroy(void)
         arcus_conf.ch = NULL;
     }
 #endif
+#ifdef ENABLE_ZK_RECONFIG
+    if (arcus_conf.zk_reconfig) {
+        if (sm_info.zkconfig_data_buffer != NULL) {
+            free(sm_info.zkconfig_data_buffer);
+        }
+        if (sm_info.zkconfig_host_buffer != NULL) {
+            free(sm_info.zkconfig_host_buffer);
+        }
+    }
+#endif
     pthread_mutex_unlock(&zk_lock);
 }
 
