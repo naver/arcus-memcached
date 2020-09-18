@@ -62,6 +62,7 @@ void              assoc_final(struct default_engine *engine);
 
 hash_item *       assoc_find(const char *key, const uint32_t nkey, uint32_t hash);
 int               assoc_insert(hash_item *item, uint32_t hash);
+void              assoc_replace(hash_item *old_it, hash_item *new_it);
 void              assoc_delete(const char *key, const uint32_t nkey, uint32_t hash);
 
 /* assoc scan functions */

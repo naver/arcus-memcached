@@ -209,6 +209,21 @@ int assoc_insert(hash_item *it, uint32_t hash)
     return 1;
 }
 
+void assoc_replace(hash_item *old_it, hash_item *new_it)
+{
+    hash_item **before = _hashitem_before(item_get_key(old_it), old_it->nkey, old_it->khash);
+
+    /* The DTrace probe cannot be triggered as the last instruction
+     * due to possible tail-optimization by the compiler
+     */
+    MEMCACHED_ASSOC_DELETE(key, old_it->nkey, assocp->hash_items);
+    new_it->h_next = old_it->h_next;
+    *before = new_it;
+    (old_it)->h_next = NULL;
+
+    MEMCACHED_ASSOC_INSERT(item_get_key(new_it), new_it->nkey, assocp->hash_items);
+}
+
 void assoc_delete(const char *key, const uint32_t nkey, uint32_t hash)
 {
     hash_item **before = _hashitem_before(key, nkey, hash);

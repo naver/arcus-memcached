@@ -1,3 +1,23 @@
+2020-09-04 [version 1.12.2]
+	* [FEATURE] support item size exceeding 1MB by removing asserts on that.
+	* [FEATURE] remove dual space in the pipe header response string.
+	* [FIX]     prevent memory out-of-range while printing out key on log.
+	* [FIX]     set to CLIENT_ERROR error when E2BIG error occurs.
+	* [FIX]     fix miscalculation of snprintf string size
+	* [FIX]     clear azk_count during zookeeper rejoin process
+	* [FIX]     call the missed release_independent_stats() when shutdown.
+	* [CLEANUP] added a new item_scan facility.
+	* [CLEANUP] separated the prefix module from the assoc module.
+	* [CLEANUP] used the new item_scan facility when dump items.
+	* [CLEANUP] set max_element_bytes config in engine.
+	* [CLEANUP] do logging when hash collision occurs.
+	* [TEST]    add pipe overflow test.
+	* [TEST]    augment the mop get tests.
+	* [DOC]     modify the format for use in ARCUS documentation system.
+	* [DOC]     add detailed descrption for kv response
+	* [DOC]     add description about config command
+	* [OTHER]   do extensive code refactoring.
+
 2020-03-30 [version 1.12.1]
 	* [FIX]     Fixed memory overwrite when tokernize strings in memory blocks.
 	* [FIX]     Added ENGINE_ENOMEM error handling where it is missed.
