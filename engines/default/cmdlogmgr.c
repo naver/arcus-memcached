@@ -26,6 +26,7 @@
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogmgr.h"
 #include "cmdlogbuf.h"
+#include "cmdlogfile.h"
 #include "checkpoint.h"
 #include "item_clog.h"
 

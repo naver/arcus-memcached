@@ -153,6 +153,8 @@ default_engine_la_SOURCES= \
                     engines/default/cmdlogmgr.h \
                     engines/default/cmdlogbuf.c \
                     engines/default/cmdlogbuf.h \
+                    engines/default/cmdlogfile.c \
+                    engines/default/cmdlogfile.h \
                     engines/default/cmdlogrec.c \
                     engines/default/cmdlogrec.h
 default_engine_la_DEPENDENCIES= libmcd_util.la
