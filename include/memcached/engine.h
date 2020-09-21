@@ -240,6 +240,17 @@ extern "C" {
                                       const int flags, const rel_time_t exptime,
                                       const uint64_t cas);
 
+#ifdef RM_ITEM_REFCNT
+        /**
+         * Frees and adds an item to the freelist.
+         *
+         * @param handle the engine handle
+         * @param cookie The cookie provided by the frontend
+         * @param item the item to be freed
+         */
+        void (*free)(ENGINE_HANDLE* handle, const void *cookie, item* item);
+#endif
+
         /**
          * Remove an item.
          *

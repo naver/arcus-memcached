@@ -889,7 +889,11 @@ static hash_item *do_item_alloc(const void *key, const uint32_t nkey,
 
     it->next = it->prev = it; /* special meaning: unlinked from LRU */
     it->h_next = 0;
+#ifdef RM_ITEM_REFCNT
+    it->refcount = 0;
+#else
     it->refcount = 1;     /* the caller will have a reference */
+#endif
     it->refchunk = 0;
     DEBUG_REFCNT(it, '*');
     it->iflag = config->use_cas ? ITEM_WITH_CAS : 0;
@@ -1405,7 +1409,9 @@ static ENGINE_ERROR_CODE do_item_store_attach(hash_item *it, uint64_t *cas,
             do_item_replace(old_it, new_it);
             stored = ENGINE_SUCCESS;
             *cas = item_get_cas(new_it);
+#ifndef RM_ITEM_REFCNT
             do_item_release(new_it);
+#endif
         } else {
             /* SERVER_ERROR out of memory */
             stored = ENGINE_NOT_STORED;
@@ -1461,7 +1467,9 @@ static ENGINE_ERROR_CODE do_add_delta(hash_item *it, const bool incr, const int6
     memcpy(item_get_data(new_it), buf, res);
     do_item_replace(it, new_it);
     *rcas = item_get_cas(new_it);
+#ifndef RM_ITEM_REFCNT
     do_item_release(new_it);       /* release our reference */
+#endif
 
     return ENGINE_SUCCESS;
 }
@@ -5993,6 +6001,18 @@ hash_item *item_alloc(const void *key, const uint32_t nkey,
     return it;
 }
 
+#ifdef RM_ITEM_REFCNT
+/*
+ * Frees and adds an item to the freelist.
+ */
+void item_free(hash_item *item)
+{
+    LOCK_CACHE();
+    do_item_free(item);
+    UNLOCK_CACHE();
+}
+#endif
+
 /*
  * Returns an item if it hasn't been marked as expired,
  * lazy-expiring as needed.
@@ -6082,7 +6102,13 @@ ENGINE_ERROR_CODE item_arithmetic(const void *key, const uint32_t nkey,
                 if (ret == ENGINE_SUCCESS) {
                     *result = initial;
                 }
+#ifdef RM_ITEM_REFCNT
+                else {
+                    do_item_free(it);
+                }
+#else
                 do_item_release(it);
+#endif
             } else {
                 ret = ENGINE_ENOMEM;
             }
@@ -6565,7 +6591,13 @@ ENGINE_ERROR_CODE list_struct_create(const char *key, const uint32_t nkey,
             ret = ENGINE_ENOMEM;
         } else {
             ret = do_item_link(it);
+#ifdef RM_ITEM_REFCNT
+            if (ret != ENGINE_SUCCESS) {
+                do_item_free(it);
+            }
+#else
             do_item_release(it);
+#endif
         }
     }
     UNLOCK_CACHE();
@@ -6624,17 +6656,33 @@ ENGINE_ERROR_CODE list_elem_insert(const char *key, const uint32_t nkey,
             if (ret == ENGINE_SUCCESS) {
                 *created = true;
             } else {
+#ifdef RM_ITEM_REFCNT
+                do_item_free(it);
+#else
                 /* The item is to be released, below */
+#endif
             }
         }
     }
     if (ret == ENGINE_SUCCESS) {
         ret = do_list_elem_insert(it, index, elem, cookie);
+#ifdef RM_ITEM_REFCNT
+        if (*created) {
+            if (ret != ENGINE_SUCCESS)
+                do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        } else {
+            do_item_release(it);
+        }
+#else
         if (ret != ENGINE_SUCCESS && *created) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
+#endif
     }
+#ifdef RM_ITEM_REFCNT
+#else
     if (it != NULL) do_item_release(it);
+#endif
     UNLOCK_CACHE();
     return ret;
 }
@@ -6786,7 +6834,13 @@ ENGINE_ERROR_CODE set_struct_create(const char *key, const uint32_t nkey,
             ret = ENGINE_ENOMEM;
         } else {
             ret = do_item_link(it);
+#ifdef RM_ITEM_REFCNT
+            if (ret != ENGINE_SUCCESS) {
+                do_item_free(it);
+            }
+#else
             do_item_release(it);
+#endif
         }
     }
     UNLOCK_CACHE();
@@ -6844,17 +6898,33 @@ ENGINE_ERROR_CODE set_elem_insert(const char *key, const uint32_t nkey,
             if (ret == ENGINE_SUCCESS) {
                 *created = true;
             } else {
+#ifdef RM_ITEM_REFCNT
+                do_item_free(it);
+#else
                 /* The item is to be released, below */
+#endif
             }
         }
     }
     if (ret == ENGINE_SUCCESS) {
         ret = do_set_elem_insert(it, elem, cookie);
+#ifdef RM_ITEM_REFCNT
+        if (*created) {
+            if (ret != ENGINE_SUCCESS)
+                do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        } else {
+            do_item_release(it);
+        }
+#else
         if (ret != ENGINE_SUCCESS && *created) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
+#endif
     }
+#ifdef RM_ITEM_REFCNT
+#else
     if (it != NULL) do_item_release(it);
+#endif
     UNLOCK_CACHE();
     return ret;
 }
@@ -6981,7 +7051,13 @@ ENGINE_ERROR_CODE btree_struct_create(const char *key, const uint32_t nkey,
             ret = ENGINE_ENOMEM;
         } else {
             ret = do_item_link(it);
+#ifdef RM_ITEM_REFCNT
+            if (ret != ENGINE_SUCCESS) {
+                do_item_free(it);
+            }
+#else
             do_item_release(it);
+#endif
         }
     }
     UNLOCK_CACHE();
@@ -7047,21 +7123,40 @@ ENGINE_ERROR_CODE btree_elem_insert(const char *key, const uint32_t nkey,
             if (ret == ENGINE_SUCCESS) {
                 *created = true;
             } else {
+#ifdef RM_ITEM_REFCNT
+                do_item_free(it);
+#else
                 /* The item is to be released, below */
+#endif
             }
         }
     }
     if (ret == ENGINE_SUCCESS) {
         ret = do_btree_elem_insert(it, elem, replace_if_exist, replaced,
                                    trimmed_elems, trimmed_count, cookie);
+#ifdef RM_ITEM_REFCNT
+        if (trimmed_elems != NULL && *trimmed_elems != NULL) {
+            *trimmed_flags = it->flags;
+        }
+        if (*created) {
+            if (ret != ENGINE_SUCCESS)
+                do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        } else {
+            do_item_release(it);
+        }
+#else
         if (ret != ENGINE_SUCCESS && *created) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
         if (trimmed_elems != NULL && *trimmed_elems != NULL) {
             *trimmed_flags = it->flags;
         }
+#endif
     }
+#ifdef RM_ITEM_REFCNT
+#else
     if (it != NULL) do_item_release(it);
+#endif
     UNLOCK_CACHE();
     return ret;
 }
@@ -9561,7 +9656,13 @@ ENGINE_ERROR_CODE map_struct_create(const char *key, const uint32_t nkey,
             ret = ENGINE_ENOMEM;
         } else {
             ret = do_item_link(it);
+#ifdef RM_ITEM_REFCNT
+            if (ret != ENGINE_SUCCESS) {
+                do_item_free(it);
+            }
+#else
             do_item_release(it);
+#endif
         }
     }
     UNLOCK_CACHE();
@@ -9619,17 +9720,33 @@ ENGINE_ERROR_CODE map_elem_insert(const char *key, const uint32_t nkey,
             if (ret == ENGINE_SUCCESS) {
                 *created = true;
             } else {
+#ifdef RM_ITEM_REFCNT
+                do_item_free(it);
+#else
                 /* The item is to be released, below */
+#endif
             }
         }
     }
     if (ret == ENGINE_SUCCESS) {
         ret = do_map_elem_insert(it, elem, false /* replace_if_exist */, cookie);
+#ifdef RM_ITEM_REFCNT
+        if (*created) {
+            if (ret != ENGINE_SUCCESS)
+                do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        } else {
+            do_item_release(it);
+        }
+#else
         if (ret != ENGINE_SUCCESS && *created) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
+#endif
     }
+#ifdef RM_ITEM_REFCNT
+#else
     if (it != NULL) do_item_release(it);
+#endif
     UNLOCK_CACHE();
     return ret;
 }

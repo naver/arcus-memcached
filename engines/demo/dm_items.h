@@ -63,6 +63,16 @@ hash_item *dm_item_alloc(struct demo_engine *engine,
                       const void *key, size_t nkey, int flags,
                       rel_time_t exptime, int nbytes, const void *cookie);
 
+#ifdef RM_ITEM_REFCNT
+/**
+ * Frees an item
+ *
+ * @param engine handle to the storage engine
+ * @param it the item to release
+ */
+void dm_item_free(struct demo_engine *engine, hash_item *it);
+#endif
+
 /**
  * Get an item from the cache
  *
@@ -122,6 +132,7 @@ char *dm_item_cachedump(struct demo_engine *engine, const unsigned int slabs_cls
 ENGINE_ERROR_CODE dm_item_flush_expired(struct demo_engine *engine,
                                      const char *prefix, const int nprefix,
                                      time_t when, const void* cookie);
+
 
 /**
  * Release our reference to the current item
