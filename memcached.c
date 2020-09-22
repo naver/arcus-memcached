@@ -1020,6 +1020,7 @@ static void ritem_set_first(conn *c, int rtype, int vleng)
         if (c->hinfo.naddnl == 0) {
             c->ritem = (char*)c->hinfo.value;
             c->rlbytes = vleng;
+            c->rltotal = 0;
         } else {
             if (c->hinfo.nvalue > 0) {
                 c->ritem = (char*)c->hinfo.value;
@@ -1039,6 +1040,7 @@ static void ritem_set_first(conn *c, int rtype, int vleng)
         if (c->einfo.naddnl == 0) {
             c->ritem = (char*)c->einfo.value;
             c->rlbytes = vleng;
+            c->rltotal = 0;
         } else {
             if (c->einfo.nvalue > 0) {
                 c->ritem = (char*)c->einfo.value;
@@ -4110,13 +4112,12 @@ static void bin_read_chunk(conn *c, enum bin_substates next_substate, uint32_t c
 {
     assert(c);
     c->substate = next_substate;
-    c->rlbytes = chunk;
 
     /* Ok... do we have room for everything in our buffer? */
     ptrdiff_t offset = c->rcurr + sizeof(protocol_binary_request_header) - c->rbuf;
-    if (c->rlbytes > c->rsize - offset) {
+    if (chunk > c->rsize - offset) {
         size_t nsize = c->rsize;
-        size_t size = c->rlbytes + sizeof(protocol_binary_request_header);
+        size_t size = chunk + sizeof(protocol_binary_request_header);
 
         while (size > nsize) {
             nsize *= 2;
@@ -4155,6 +4156,8 @@ static void bin_read_chunk(conn *c, enum bin_substates next_substate, uint32_t c
 
     /* preserve the header in the buffer.. */
     c->ritem = c->rcurr + sizeof(protocol_binary_request_header);
+    c->rlbytes = chunk;
+    c->rltotal = 0;
     conn_set_state(c, conn_nread);
 }
 
@@ -4271,6 +4274,7 @@ static void process_bin_sasl_auth(conn *c)
     c->item = data;
     c->ritem = data->data + nkey;
     c->rlbytes = vlen;
+    c->rltotal = 0;
     conn_set_state(c, conn_nread);
     c->substate = bin_reading_sasl_auth_data;
 }
@@ -4884,6 +4888,7 @@ static void process_bin_sop_prepare_nread(conn *c)
          } else {
             c->ritem   = ((value_item *)elem)->ptr;
             c->rlbytes = vlen;
+            c->rltotal = 0;
          }
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
@@ -5587,6 +5592,7 @@ static void process_bin_bop_update_prepare_nread(conn *c)
     if (ret == ENGINE_SUCCESS) {
         c->ritem       = ((value_item *)elem)->ptr;
         c->rlbytes     = vlen;
+        c->rltotal     = 0;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_key    = key;
@@ -9327,8 +9333,9 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
             }
         }
     } else {
-        c->rlbytes = nbytes;
         c->ritem = ptr;
+        c->rlbytes = nbytes;
+        c->rltotal = 0;
         c->ascii_cmd = cmd;
         /* NOT SUPPORTED YET! */
         conn_set_state(c, conn_nread);
@@ -10123,6 +10130,7 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
         } else {
             c->ritem = ((value_item *)elem)->ptr;
             c->rlbytes = vlen;
+            c->rltotal = 0;
         }
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
@@ -10806,6 +10814,7 @@ static void process_bop_update_prepare_nread(conn *c, int cmd,
     if (ret == ENGINE_SUCCESS) {
         c->ritem   = ((value_item *)elem)->ptr;
         c->rlbytes = vlen;
+        c->rltotal = 0;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = cmd;
@@ -11303,6 +11312,7 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
         } else {
             c->ritem   = ((value_item *)elem)->ptr;
             c->rlbytes = vlen;
+            c->rltotal = 0;
         }
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
