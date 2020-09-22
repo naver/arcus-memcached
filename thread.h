@@ -23,20 +23,6 @@
 #include "cache.h"
 #include "mc_util.h"
 
-#define LOCK_THREAD(t)                          \
-    if (pthread_mutex_lock(&t->mutex) != 0) {   \
-        abort();                                \
-    }                                           \
-    assert(t->is_locked == false);              \
-    t->is_locked = true;
-
-#define UNLOCK_THREAD(t)                         \
-    assert(t->is_locked == true);                \
-    t->is_locked = false;                        \
-    if (pthread_mutex_unlock(&t->mutex) != 0) {  \
-        abort();                                 \
-    }
-
 /**
  * Stats stored per-thread.
  */
@@ -221,15 +207,12 @@ typedef struct {
     mblck_pool_t mblck_pool;    /* memory block pool */
 } LIBEVENT_THREAD;
 
-// Number of times this connection is in the given pending list
-int    number_of_pending(struct conn *c, struct conn *pending);
 bool   has_cycle(struct conn *c);
-bool   list_contains(struct conn *h, struct conn *n);
-struct conn  *list_remove(struct conn *h, struct conn *n);
 size_t list_to_array(struct conn **dest, size_t max_items, struct conn **l);
 
+bool should_io_blocked(const void *cookie);
 void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status);
-int  dispatch_event_add(int thread, struct conn *c);
+void remove_io_pending(const void *cookie);
 void dispatch_conn_new(int sfd, STATE_FUNC init_state, int event_flags,
                        int read_buffer_size, enum network_transport transport);
 int  is_listen_thread(void);

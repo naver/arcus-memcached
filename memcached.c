@@ -679,6 +679,9 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->write_and_go = init_state;
     c->write_and_free = 0;
     c->item = 0;
+#ifdef RM_ITEM_REFCNT
+    c->store_op = 0;
+#endif
 
     c->coll_strkeys = 0;
     c->coll_eitem = 0;
@@ -825,7 +828,16 @@ static void conn_cleanup(conn *c)
     assert(c != NULL);
 
     if (c->item) {
+#ifdef RM_ITEM_REFCNT
+        if (c->store_op == 0) {
+            mc_engine.v1->release(mc_engine.v0, c, c->item);
+        } else {
+            mc_engine.v1->free(mc_engine.v0, c, c->item);
+            c->store_op = 0;
+        }
+#else
         mc_engine.v1->release(mc_engine.v0, c, c->item);
+#endif
         c->item = 0;
     }
 
@@ -913,14 +925,8 @@ void conn_close(conn *c)
     assert(c->thread);
     perform_callbacks(ON_DISCONNECT, NULL, c);
 
-    LOCK_THREAD(c->thread);
     /* remove from pending-io list */
-    if (settings.verbose > 1 && list_contains(c->thread->pending_io, c)) {
-        mc_logger->log(EXTENSION_LOG_DEBUG, c,
-                       "Current connection was in the pending-io list.. Nuking it\n");
-    }
-    c->thread->pending_io = list_remove(c->thread->pending_io, c);
-    UNLOCK_THREAD(c->thread);
+    remove_io_pending(c);
 
     conn_cleanup(c);
 
@@ -1008,6 +1014,7 @@ static void ritem_set_first(conn *c, int rtype, int vleng)
         if (c->hinfo.naddnl == 0) {
             c->ritem = (char*)c->hinfo.value;
             c->rlbytes = vleng;
+            c->rltotal = 0;
         } else {
             if (c->hinfo.nvalue > 0) {
                 c->ritem = (char*)c->hinfo.value;
@@ -1027,6 +1034,7 @@ static void ritem_set_first(conn *c, int rtype, int vleng)
         if (c->einfo.naddnl == 0) {
             c->ritem = (char*)c->einfo.value;
             c->rlbytes = vleng;
+            c->rltotal = 0;
         } else {
             if (c->einfo.nvalue > 0) {
                 c->ritem = (char*)c->einfo.value;
@@ -3167,7 +3175,11 @@ static void complete_update_ascii(conn *c)
 
     item *it = c->item;
     if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
+#ifdef RM_ITEM_REFCNT
+        mc_engine.v1->free(mc_engine.v0, c, it);
+#else
         mc_engine.v1->release(mc_engine.v0, c, it);
+#endif
         mc_logger->log(EXTENSION_LOG_WARNING, c,
                        "%d: Failed to get item info\n", c->sfd);
         out_string(c, "SERVER_ERROR failed to get item details");
@@ -3257,8 +3269,17 @@ static void complete_update_ascii(conn *c)
         STATS_CMD(c, set, c->hinfo.key, c->hinfo.nkey);
     }
 
+#ifdef RM_ITEM_REFCNT
+    if (ret != ENGINE_SUCCESS ||
+        c->store_op == OPERATION_APPEND || c->store_op == OPERATION_PREPEND) {
+        mc_engine.v1->free(mc_engine.v0, c, c->item);
+    }
+    c->store_op = 0;
+#else
     /* release the c->item reference */
     mc_engine.v1->release(mc_engine.v0, c, c->item);
+#endif
+
     c->item = 0;
 }
 
@@ -3663,7 +3684,11 @@ static void complete_update_bin(conn *c)
 
     item *it = c->item;
     if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
+#ifdef RM_ITEM_REFCNT
+        mc_engine.v1->free(mc_engine.v0, c, it);
+#else
         mc_engine.v1->release(mc_engine.v0, c, it);
+#endif
         mc_logger->log(EXTENSION_LOG_WARNING, c,
                        "%d: Failed to get item info\n", c->sfd);
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
@@ -3751,8 +3776,16 @@ static void complete_update_bin(conn *c)
         STATS_CMD(c, set, c->hinfo.key, c->hinfo.nkey);
     }
 
+#ifdef RM_ITEM_REFCNT
+    if (ret != ENGINE_SUCCESS ||
+        c->store_op == OPERATION_APPEND || c->store_op == OPERATION_PREPEND) {
+        mc_engine.v1->free(mc_engine.v0, c, c->item);
+    }
+    c->store_op = 0;
+#else
     /* release the c->item reference */
     mc_engine.v1->release(mc_engine.v0, c, c->item);
+#endif
     c->item = 0;
 }
 
@@ -4073,13 +4106,12 @@ static void bin_read_chunk(conn *c, enum bin_substates next_substate, uint32_t c
 {
     assert(c);
     c->substate = next_substate;
-    c->rlbytes = chunk;
 
     /* Ok... do we have room for everything in our buffer? */
     ptrdiff_t offset = c->rcurr + sizeof(protocol_binary_request_header) - c->rbuf;
-    if (c->rlbytes > c->rsize - offset) {
+    if (chunk > c->rsize - offset) {
         size_t nsize = c->rsize;
-        size_t size = c->rlbytes + sizeof(protocol_binary_request_header);
+        size_t size = chunk + sizeof(protocol_binary_request_header);
 
         while (size > nsize) {
             nsize *= 2;
@@ -4118,6 +4150,8 @@ static void bin_read_chunk(conn *c, enum bin_substates next_substate, uint32_t c
 
     /* preserve the header in the buffer.. */
     c->ritem = c->rcurr + sizeof(protocol_binary_request_header);
+    c->rlbytes = chunk;
+    c->rltotal = 0;
     conn_set_state(c, conn_nread);
 }
 
@@ -4234,6 +4268,7 @@ static void process_bin_sasl_auth(conn *c)
     c->item = data;
     c->ritem = data->data + nkey;
     c->rlbytes = vlen;
+    c->rltotal = 0;
     conn_set_state(c, conn_nread);
     c->substate = bin_reading_sasl_auth_data;
 }
@@ -4847,6 +4882,7 @@ static void process_bin_sop_prepare_nread(conn *c)
          } else {
             c->ritem   = ((value_item *)elem)->ptr;
             c->rlbytes = vlen;
+            c->rltotal = 0;
          }
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
@@ -5550,6 +5586,7 @@ static void process_bin_bop_update_prepare_nread(conn *c)
     if (ret == ENGINE_SUCCESS) {
         c->ritem       = ((value_item *)elem)->ptr;
         c->rlbytes     = vlen;
+        c->rltotal     = 0;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_key    = key;
@@ -7082,7 +7119,11 @@ static void process_bin_update(conn *c)
                                  c->binary_header.request.cas);
     if (ret == ENGINE_SUCCESS && !mc_engine.v1->get_item_info(mc_engine.v0,
                                                               c, it, &c->hinfo)) {
+#ifdef RM_ITEM_REFCNT
+        mc_engine.v1->free(mc_engine.v0, c, it);
+#else
         mc_engine.v1->release(mc_engine.v0, c, it);
+#endif
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
         return;
     }
@@ -7156,7 +7197,11 @@ static void process_bin_append_prepend(conn *c)
                                  0, 0, c->binary_header.request.cas);
     if (ret == ENGINE_SUCCESS && !mc_engine.v1->get_item_info(mc_engine.v0,
                                                               c, it, &c->hinfo)) {
+#ifdef RM_ITEM_REFCNT
+        mc_engine.v1->free(mc_engine.v0, c, it);
+#else
         mc_engine.v1->release(mc_engine.v0, c, it);
+#endif
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
         return;
     }
@@ -7434,7 +7479,16 @@ static void reset_cmd_handler(conn *c)
     c->cmd = -1;
     c->substate = bin_no_state;
     if (c->item != NULL) {
+#ifdef RM_ITEM_REFCNT
+        if (c->store_op == 0) {
+            mc_engine.v1->release(mc_engine.v0, c, c->item);
+        } else {
+            mc_engine.v1->free(mc_engine.v0, c, c->item);
+            c->store_op = 0;
+        }
+#else
         mc_engine.v1->release(mc_engine.v0, c, c->item);
+#endif
         c->item = NULL;
     }
 #ifdef DETECT_LONG_QUERY
@@ -8357,7 +8411,11 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     switch (ret) {
     case ENGINE_SUCCESS:
         if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
+#ifdef RM_ITEM_REFCNT
+            mc_engine.v1->free(mc_engine.v0, c, it);
+#else
             mc_engine.v1->release(mc_engine.v0, c, it);
+#endif
             out_string(c, "SERVER_ERROR error getting item data");
             break;
         }
@@ -9343,8 +9401,9 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
             }
         }
     } else {
-        c->rlbytes = nbytes;
         c->ritem = ptr;
+        c->rlbytes = nbytes;
+        c->rltotal = 0;
         c->ascii_cmd = cmd;
         /* NOT SUPPORTED YET! */
         conn_set_state(c, conn_nread);
@@ -10139,6 +10198,7 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
         } else {
             c->ritem = ((value_item *)elem)->ptr;
             c->rlbytes = vlen;
+            c->rltotal = 0;
         }
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
@@ -10822,6 +10882,7 @@ static void process_bop_update_prepare_nread(conn *c, int cmd,
     if (ret == ENGINE_SUCCESS) {
         c->ritem   = ((value_item *)elem)->ptr;
         c->rlbytes = vlen;
+        c->rltotal = 0;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = cmd;
@@ -11319,6 +11380,7 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
         } else {
             c->ritem   = ((value_item *)elem)->ptr;
             c->rlbytes = vlen;
+            c->rltotal = 0;
         }
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
@@ -13249,23 +13311,10 @@ bool conn_parse_cmd(conn *c)
      * See also conn_nread.
      */
     if (c->ewouldblock) {
-        LIBEVENT_THREAD *t = c->thread;
-        bool block = false;
-
-        LOCK_THREAD(t);
-        if (c->premature_notify_io_complete) {
-            /* notify_io_complete was called before we got here */
-            c->premature_notify_io_complete = false;
-        } else {
-            event_del(&c->event);
-            c->io_blocked = true;
-            block = true;
-        }
-        UNLOCK_THREAD(t);
         c->ewouldblock = false;
-
-        if (block)
-            return false;
+        if (should_io_blocked(c)) {
+            return false; /* blocked */
+        }
     }
 
     return true;
@@ -13371,23 +13420,19 @@ bool conn_nread(conn *c)
     if (c->rlbytes == 0) {
         complete_nread(c);
 
-        bool block = false;
+        /* complete_nread eventually calls write functions
+         * that may return EWOULDBLOCK and set ewouldblock true.
+         * So, remove the current connection from the event loop
+         * and wait for notify_io_complete event.
+         * See also conn_parse_cmd.
+         */
         if (c->ewouldblock) {
-            LIBEVENT_THREAD *t = c->thread;
-
-            LOCK_THREAD(t);
-            if (c->premature_notify_io_complete) {
-                /* notify_io_complete was called before we got here */
-                c->premature_notify_io_complete = false;
-            } else {
-                event_del(&c->event);
-                c->io_blocked = true;
-                block = true;
-            }
-            UNLOCK_THREAD(t);
             c->ewouldblock = false;
+            if (should_io_blocked(c)) {
+                return false; /* blocked */
+            }
         }
-        return !block;
+        return true;
     }
 
     /* first check if we have leftovers in the conn_read buffer */
