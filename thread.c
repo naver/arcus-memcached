@@ -33,6 +33,22 @@
 
 #define ITEMS_PER_ALLOC 64
 
+#define LOCK_THREAD(t) do {                     \
+    if (pthread_mutex_lock(&t->mutex) != 0) {   \
+        abort();                                \
+    }                                           \
+    assert(t->is_locked == false);              \
+    t->is_locked = true;                        \
+} while(0)
+
+#define UNLOCK_THREAD(t) do {                   \
+    assert(t->is_locked == true);               \
+    t->is_locked = false;                       \
+    if (pthread_mutex_unlock(&t->mutex) != 0) { \
+        abort();                                \
+    }                                           \
+} while(0)
+
 extern volatile sig_atomic_t memcached_shutdown;
 
 /* An item in the connection queue. */
@@ -295,7 +311,7 @@ static void *worker_libevent(void *arg)
     return NULL;
 }
 
-int number_of_pending(conn *c, conn *list)
+static int number_of_pending(conn *c, conn *list)
 {
     int rv = 0;
     for (; list; list = list->next) {
@@ -383,40 +399,18 @@ static void thread_libevent_process(int fd, short which, void *arg)
 
 bool has_cycle(conn *c)
 {
-    if (!c) {
-        return false;
-    }
-    conn *slowNode, *fastNode1, *fastNode2;
-    slowNode = fastNode1 = fastNode2 = c;
-    while (slowNode && (fastNode1 = fastNode2->next) && (fastNode2 = fastNode1->next)) {
-        if (slowNode == fastNode1 || slowNode == fastNode2) {
-            return true;
-        }
-        slowNode = slowNode->next;
-    }
-    return false;
-}
-
-bool list_contains(conn *haystack, conn *needle)
-{
-    for (; haystack; haystack = haystack -> next) {
-        if (needle == haystack) {
-            return true;
+    if (c) {
+        conn *slowNode, *fastNode1, *fastNode2;
+        slowNode = fastNode1 = fastNode2 = c;
+        while (slowNode && (fastNode1 = fastNode2->next)
+                        && (fastNode2 = fastNode1->next)) {
+            if (slowNode == fastNode1 || slowNode == fastNode2) {
+                return true;
+            }
+            slowNode = slowNode->next;
         }
     }
     return false;
-}
-
-conn* list_remove(conn *haystack, conn *needle)
-{
-    if (!haystack) {
-        return NULL;
-    }
-    if (haystack == needle) {
-        return haystack->next;
-    }
-    haystack->next = list_remove(haystack->next, needle);
-    return haystack;
 }
 
 size_t list_to_array(conn **dest, size_t max_items, conn **l)
@@ -428,6 +422,28 @@ size_t list_to_array(conn **dest, size_t max_items, conn **l)
         dest[n_items]->next = NULL;
     }
     return n_items;
+}
+
+static bool list_contains(conn *haystack, conn *needle)
+{
+    for (; haystack; haystack = haystack -> next) {
+        if (needle == haystack) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static conn* list_remove(conn *haystack, conn *needle)
+{
+    if (!haystack) {
+        return NULL;
+    }
+    if (haystack == needle) {
+        return haystack->next;
+    }
+    haystack->next = list_remove(haystack->next, needle);
+    return haystack;
 }
 
 bool should_io_blocked(const void *cookie)
