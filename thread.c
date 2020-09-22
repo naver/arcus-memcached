@@ -363,10 +363,10 @@ static void thread_libevent_process(int fd, short which, void *arg)
         cqi_free(item);
     }
 
-    pthread_mutex_lock(&me->mutex);
+    LOCK_THREAD(me);
     conn* pending = me->pending_io;
     me->pending_io = NULL;
-    pthread_mutex_unlock(&me->mutex);
+    UNLOCK_THREAD(me);
     while (pending) {
         conn *c = pending;
         assert(me == c->thread);
@@ -430,6 +430,26 @@ size_t list_to_array(conn **dest, size_t max_items, conn **l)
     return n_items;
 }
 
+bool should_io_blocked(const void *cookie)
+{
+    struct conn *c = (struct conn *)cookie;
+    LIBEVENT_THREAD *thr = c->thread;
+    bool blocked = false;
+
+    LOCK_THREAD(thr);
+    if (c->premature_notify_io_complete) {
+        /* notify_io_complete was called before we got here */
+        c->premature_notify_io_complete = false;
+    } else {
+        event_del(&c->event);
+        c->io_blocked = true;
+        blocked = true;
+    }
+    UNLOCK_THREAD(thr);
+
+    return blocked;
+}
+
 void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
 {
     struct conn *conn = (struct conn *)cookie;
@@ -450,35 +470,38 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
     }
 
     int notify = 0;
+    int pended = 0;
 
     LOCK_THREAD(thr);
-
-    if (thr != conn->thread || conn->state == conn_closing || !conn->io_blocked){
+    if (thr != conn->thread || conn->state == conn_closing || !conn->io_blocked) {
         conn->premature_notify_io_complete = true;
-        UNLOCK_THREAD(thr);
-        mc_logger->log(EXTENSION_LOG_DEBUG, NULL, "Premature notify_io_complete\n");
-        return;
-    }
-    conn->io_blocked = false;
+    } else {
+        conn->io_blocked = false;
+        conn->aiostat = status;
 
-    conn->aiostat = status;
-
-    if (number_of_pending(conn, thr->pending_io) == 0) {
-        if (thr->pending_io == NULL) {
-            notify = 1;
+        if (number_of_pending(conn, thr->pending_io) == 0) {
+            if (thr->pending_io == NULL) {
+                notify = 1;
+            }
+            conn->next = thr->pending_io;
+            thr->pending_io = conn;
         }
-        conn->next = thr->pending_io;
-        thr->pending_io = conn;
+        pended = number_of_pending(conn, thr->pending_io);
+        assert(pended == 1);
     }
-    int pending = number_of_pending(conn, thr->pending_io);
-    assert(pending == 1);
-
     UNLOCK_THREAD(thr);
 
-    /* kick the thread in the butt */
-    if (notify && write(thr->notify_send_fd, "", 1) != 1) {
-        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Writing to thread notify pipe: %s", strerror(errno));
+    if (notify) {
+        /* kick the thread in the butt */
+        if (write(thr->notify_send_fd, "", 1) != 1) {
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Writing to thread notify pipe: %s", strerror(errno));
+        }
+    } else {
+        if (pended == 0) {
+            mc_logger->log(EXTENSION_LOG_DEBUG, NULL,
+                    "Premature notify_io_complete\n");
+        }
     }
 }
 

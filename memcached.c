@@ -13237,23 +13237,10 @@ bool conn_parse_cmd(conn *c)
      * See also conn_nread.
      */
     if (c->ewouldblock) {
-        LIBEVENT_THREAD *t = c->thread;
-        bool block = false;
-
-        LOCK_THREAD(t);
-        if (c->premature_notify_io_complete) {
-            /* notify_io_complete was called before we got here */
-            c->premature_notify_io_complete = false;
-        } else {
-            event_del(&c->event);
-            c->io_blocked = true;
-            block = true;
-        }
-        UNLOCK_THREAD(t);
         c->ewouldblock = false;
-
-        if (block)
-            return false;
+        if (should_io_blocked(c)) {
+            return false; /* blocked */
+        }
     }
 
     return true;
@@ -13359,23 +13346,19 @@ bool conn_nread(conn *c)
     if (c->rlbytes == 0) {
         complete_nread(c);
 
-        bool block = false;
+        /* complete_nread eventually calls write functions
+         * that may return EWOULDBLOCK and set ewouldblock true.
+         * So, remove the current connection from the event loop
+         * and wait for notify_io_complete event.
+         * See also conn_parse_cmd.
+         */
         if (c->ewouldblock) {
-            LIBEVENT_THREAD *t = c->thread;
-
-            LOCK_THREAD(t);
-            if (c->premature_notify_io_complete) {
-                /* notify_io_complete was called before we got here */
-                c->premature_notify_io_complete = false;
-            } else {
-                event_del(&c->event);
-                c->io_blocked = true;
-                block = true;
-            }
-            UNLOCK_THREAD(t);
             c->ewouldblock = false;
+            if (should_io_blocked(c)) {
+                return false; /* blocked */
+            }
         }
-        return !block;
+        return true;
     }
 
     /* first check if we have leftovers in the conn_read buffer */
