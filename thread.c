@@ -505,6 +505,20 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
     }
 }
 
+void remove_io_pending(const void *cookie)
+{
+    struct conn *c = (struct conn *)cookie;
+    LIBEVENT_THREAD *thr = c->thread;
+
+    LOCK_THREAD(thr);
+    if (settings.verbose > 1 && list_contains(thr->pending_io, c)) {
+        mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                       "Current connection was in the pending-io list.. Nuking it\n");
+    }
+    thr->pending_io = list_remove(thr->pending_io, c);
+    UNLOCK_THREAD(thr);
+}
+
 /* Which thread we assigned a connection to most recently. */
 static int last_thread = -1;
 

@@ -925,14 +925,8 @@ void conn_close(conn *c)
     assert(c->thread);
     perform_callbacks(ON_DISCONNECT, NULL, c);
 
-    LOCK_THREAD(c->thread);
     /* remove from pending-io list */
-    if (settings.verbose > 1 && list_contains(c->thread->pending_io, c)) {
-        mc_logger->log(EXTENSION_LOG_DEBUG, c,
-                       "Current connection was in the pending-io list.. Nuking it\n");
-    }
-    c->thread->pending_io = list_remove(c->thread->pending_io, c);
-    UNLOCK_THREAD(c->thread);
+    remove_io_pending(c);
 
     conn_cleanup(c);
 

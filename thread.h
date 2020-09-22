@@ -230,6 +230,7 @@ size_t list_to_array(struct conn **dest, size_t max_items, struct conn **l);
 
 bool should_io_blocked(const void *cookie);
 void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status);
+void remove_io_pending(const void *cookie);
 int  dispatch_event_add(int thread, struct conn *c);
 void dispatch_conn_new(int sfd, STATE_FUNC init_state, int event_flags,
                        int read_buffer_size, enum network_transport transport);
