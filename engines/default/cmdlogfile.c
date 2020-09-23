@@ -41,7 +41,6 @@ typedef struct _log_file {
     int       next_fd;
     size_t    size;
     size_t    next_size;
-    bool      close_wait;
 } log_FILE;
 
 /* log file global structure */
@@ -141,15 +140,6 @@ static int disk_close(int fd)
 }
 /***************/
 
-static void do_log_file_close_waiter_wakeup(void)
-{
-    log_FILE *logfile = &log_file_gl.log_file;
-    /* already locked with log_flush_lock */
-    if (logfile->close_wait) {
-        pthread_cond_signal(&log_flush_cond);
-    }
-}
-
 void cmdlog_file_write(char *log_ptr, uint32_t log_size, bool dual_write)
 {
     log_FILE *logfile = &log_file_gl.log_file;
@@ -198,9 +188,20 @@ void cmdlog_file_complete_dual_write(void)
         if (log_file_gl.async_mode) {
             (void)disk_close(logfile->prev_fd);
             logfile->prev_fd = -1;
-            do_log_file_close_waiter_wakeup();
         }
     }
+}
+
+bool cmdlog_file_dual_write_finished(void)
+{
+    log_FILE *logfile = &log_file_gl.log_file;
+    bool finished = false;
+    pthread_mutex_lock(&log_flush_lock);
+    if (logfile->next_fd == -1 && logfile->prev_fd == -1) {
+        finished = true;
+    }
+    pthread_mutex_unlock(&log_flush_lock);
+    return finished;
 }
 
 void cmdlog_file_sync(void)
@@ -235,7 +236,6 @@ void cmdlog_file_sync(void)
 
         pthread_mutex_lock(&log_flush_lock);
         logfile->prev_fd = -1;
-        do_log_file_close_waiter_wakeup();
         pthread_mutex_unlock(&log_flush_lock);
     }
 
@@ -302,31 +302,22 @@ int cmdlog_file_open(char *path)
     return ret;
 }
 
-void cmdlog_file_close(bool chkpt_success)
+void cmdlog_file_close(void)
 {
     log_FILE *logfile = &log_file_gl.log_file;
     int remove_fd = -1;
 
     pthread_mutex_lock(&log_flush_lock);
-    if (chkpt_success) {
-        /* wait until the previous file is closed */
-        while (logfile->next_fd != -1 || logfile->prev_fd != -1) {
-            logfile->close_wait = true;
-            pthread_cond_wait(&log_flush_cond, &log_flush_lock);
-            logfile->close_wait = false;
+    if (logfile->next_fd != -1) {
+        logfile->next_size = 0; /* prevent fsync() */
+        if (log_file_gl.async_mode) {
+            remove_fd = logfile->next_fd;
+            logfile->next_fd = -1;
         }
-    } else {
-        if (logfile->next_fd != -1) {
-            logfile->next_size = 0; /* prevent fsync() */
-            if (log_file_gl.async_mode) {
-                remove_fd = logfile->next_fd;
-                logfile->next_fd = -1;
-            }
-        } else { /* the first checkpoint */
-            assert(logfile->fd != -1);
-            remove_fd = logfile->fd;
-            logfile->fd = -1;
-        }
+    } else { /* the first checkpoint */
+        assert(logfile->fd != -1);
+        remove_fd = logfile->fd;
+        logfile->fd = -1;
     }
     pthread_mutex_unlock(&log_flush_lock);
 
@@ -367,7 +358,6 @@ void cmdlog_file_init(struct default_engine* engine)
     logfile->next_fd   = -1;
     logfile->size      = 0;
     logfile->next_size = 0;
-    logfile->close_wait = false;
 
     log_file_gl.initialized = true;
     logger->log(EXTENSION_LOG_INFO, NULL, "CMDLOG FILE module initialized.\n");

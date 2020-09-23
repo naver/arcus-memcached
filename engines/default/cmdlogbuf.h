@@ -23,7 +23,6 @@
 
 /* global log flush mutex */
 extern pthread_mutex_t log_flush_lock;
-extern pthread_cond_t  log_flush_cond;
 
 /* external log buffer functions */
 void cmdlog_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_write);
