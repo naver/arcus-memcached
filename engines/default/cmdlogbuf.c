@@ -83,7 +83,6 @@ struct log_buff_global {
 static EXTENSION_LOGGER_DESCRIPTOR* logger = NULL;
 static struct log_buff_global log_buff_gl;
 pthread_mutex_t log_flush_lock;
-pthread_cond_t  log_flush_cond;
 
 static void do_log_flusher_wakeup(log_FLUSHER *flusher)
 {
@@ -402,7 +401,6 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
 
     /* log global init */
     pthread_mutex_init(&log_flush_lock, NULL);
-    pthread_cond_init(&log_flush_cond, NULL);
 
     /* log file init */
     cmdlog_file_init(engine);
@@ -469,7 +467,6 @@ void cmdlog_buf_final(void)
 
     /* log global final */
     pthread_mutex_destroy(&log_flush_lock);
-    pthread_cond_destroy(&log_flush_cond);
 
     /* log buff global final */
     pthread_mutex_destroy(&log_buff_gl.log_write_lock);

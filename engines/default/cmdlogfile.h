@@ -23,10 +23,11 @@
 /* external log file functions */
 void cmdlog_file_write(char *log_ptr, uint32_t log_size, bool dual_write);
 void cmdlog_file_complete_dual_write(void);
+bool cmdlog_file_dual_write_finished(void);
 void cmdlog_file_sync(void);
 
 int    cmdlog_file_open(char *path);
-void   cmdlog_file_close(bool chkpt_success);
+void   cmdlog_file_close(void);
 void   cmdlog_file_init(struct default_engine* engine);
 void   cmdlog_file_final(void);
 int    cmdlog_file_apply(void);
