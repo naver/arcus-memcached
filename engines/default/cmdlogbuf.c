@@ -168,7 +168,7 @@ static LogSN do_log_buff_write(LogRec *logrec, bool dual_write)
 
     pthread_mutex_lock(&log_buff_gl.log_write_lock);
 
-    /* find the positon to write in log buffer */
+    /* find the position to write in log buffer */
     while (1) {
         if (logbuff->head <= logbuff->tail) {
             assert(logbuff->last == -1);
