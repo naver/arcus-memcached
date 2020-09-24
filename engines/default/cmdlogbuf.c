@@ -365,24 +365,20 @@ size_t cmdlog_get_file_size(void)
 {
     size_t file_size = 0;
 
-    pthread_mutex_lock(&log_flush_lock);
     pthread_mutex_lock(&log_buff_gl.log_write_lock);
     if (log_buff_gl.log_buffer.dw_end == -1) {
         file_size = cmdlog_get_current_file_size();
     }
     pthread_mutex_unlock(&log_buff_gl.log_write_lock);
-    pthread_mutex_unlock(&log_flush_lock);
 
     return file_size;
 }
 
 void cmdlog_complete_dual_write(bool success)
 {
-    pthread_mutex_lock(&log_flush_lock);
     if (cmdlog_get_next_fd() != -1) {
         do_log_buff_complete_dual_write(success);
     }
-    pthread_mutex_unlock(&log_flush_lock);
 }
 
 ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
