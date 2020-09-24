@@ -49,6 +49,7 @@ struct log_file_global {
     LogSN           nxt_fsync_lsn;
     pthread_mutex_t log_fsync_lock;
     pthread_mutex_t fsync_lsn_lock;
+    pthread_mutex_t file_access_lock;
     bool            async_mode;
     volatile bool   initialized;
 };
@@ -155,11 +156,10 @@ void cmdlog_file_write(char *log_ptr, uint32_t log_size, bool dual_write)
     }
     /* FIXME::need error handling */
     assert(nwrite == log_size);
+    pthread_mutex_lock(&log_file_gl.file_access_lock);
     logfile->size += log_size;
 
     if (dual_write && logfile->next_fd != -1) {
-        /* next_fd is guaranteed concurrency by log_flush_lock */
-
         /* The log data is appended */
         nwrite = disk_write(logfile->next_fd, log_ptr, log_size);
         if (nwrite != log_size) {
@@ -172,12 +172,14 @@ void cmdlog_file_write(char *log_ptr, uint32_t log_size, bool dual_write)
         assert(nwrite == log_size);
         logfile->next_size += log_size;
     }
+    pthread_mutex_unlock(&log_file_gl.file_access_lock);
 }
 
 void cmdlog_file_complete_dual_write(void)
 {
     log_FILE *logfile = &log_file_gl.log_file;
 
+    pthread_mutex_lock(&log_file_gl.file_access_lock);
     if (logfile->next_fd != -1) {
         logfile->prev_fd   = logfile->fd;
         logfile->fd        = logfile->next_fd;
@@ -190,17 +192,18 @@ void cmdlog_file_complete_dual_write(void)
             logfile->prev_fd = -1;
         }
     }
+    pthread_mutex_unlock(&log_file_gl.file_access_lock);
 }
 
 bool cmdlog_file_dual_write_finished(void)
 {
     log_FILE *logfile = &log_file_gl.log_file;
     bool finished = false;
-    pthread_mutex_lock(&log_flush_lock);
+    pthread_mutex_lock(&log_file_gl.file_access_lock);
     if (logfile->next_fd == -1 && logfile->prev_fd == -1) {
         finished = true;
     }
-    pthread_mutex_unlock(&log_flush_lock);
+    pthread_mutex_unlock(&log_file_gl.file_access_lock);
     return finished;
 }
 
@@ -216,8 +219,8 @@ void cmdlog_file_sync(void)
     pthread_mutex_lock(&log_file_gl.log_fsync_lock);
 
     /* get current fd info */
-    pthread_mutex_lock(&log_flush_lock);
     cmdlog_get_flush_lsn(&now_flush_lsn);
+    pthread_mutex_lock(&log_file_gl.file_access_lock);
     if (logfile->prev_fd != -1) {
         prev_fd = logfile->prev_fd;
     }
@@ -225,7 +228,7 @@ void cmdlog_file_sync(void)
     if (logfile->next_fd != -1 && logfile->next_size > 0) {
         next_fd = logfile->next_fd;
     }
-    pthread_mutex_unlock(&log_flush_lock);
+    pthread_mutex_unlock(&log_file_gl.file_access_lock);
 
     if (prev_fd != -1) {
         /* If prev_fd is set, the prev file access only the log sync thread,
@@ -234,9 +237,9 @@ void cmdlog_file_sync(void)
         ret = disk_fsync(prev_fd);
         (void)disk_close(prev_fd);
 
-        pthread_mutex_lock(&log_flush_lock);
+        pthread_mutex_lock(&log_file_gl.file_access_lock);
         logfile->prev_fd = -1;
-        pthread_mutex_unlock(&log_flush_lock);
+        pthread_mutex_unlock(&log_file_gl.file_access_lock);
     }
 
     if (LOGSN_IS_GT(&now_flush_lsn, &log_file_gl.nxt_fsync_lsn)) {
@@ -278,7 +281,7 @@ int cmdlog_file_open(char *path)
     log_FILE *logfile = &log_file_gl.log_file;
     int ret = 0;
 
-    pthread_mutex_lock(&log_flush_lock);
+    pthread_mutex_lock(&log_file_gl.file_access_lock);
     /* prepare cmdlog file */
     do {
         int fd = disk_open(path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP);
@@ -297,7 +300,7 @@ int cmdlog_file_open(char *path)
             logfile->next_fd = fd;
         }
     } while(0);
-    pthread_mutex_unlock(&log_flush_lock);
+    pthread_mutex_unlock(&log_file_gl.file_access_lock);
 
     return ret;
 }
@@ -307,7 +310,7 @@ void cmdlog_file_close(void)
     log_FILE *logfile = &log_file_gl.log_file;
     int remove_fd = -1;
 
-    pthread_mutex_lock(&log_flush_lock);
+    pthread_mutex_lock(&log_file_gl.file_access_lock);
     if (logfile->next_fd != -1) {
         logfile->next_size = 0; /* prevent fsync() */
         if (log_file_gl.async_mode) {
@@ -319,15 +322,15 @@ void cmdlog_file_close(void)
         remove_fd = logfile->fd;
         logfile->fd = -1;
     }
-    pthread_mutex_unlock(&log_flush_lock);
+    pthread_mutex_unlock(&log_file_gl.file_access_lock);
 
     if (logfile->next_fd != -1) {
         /* only in sync mode and checkpoint failure */
         pthread_mutex_lock(&log_file_gl.log_fsync_lock);
-        pthread_mutex_lock(&log_flush_lock);
+        pthread_mutex_lock(&log_file_gl.file_access_lock);
         remove_fd = logfile->next_fd;
         logfile->next_fd = -1;
-        pthread_mutex_unlock(&log_flush_lock);
+        pthread_mutex_unlock(&log_file_gl.file_access_lock);
         pthread_mutex_unlock(&log_file_gl.log_fsync_lock);
     }
     if (remove_fd != -1) {
@@ -349,6 +352,7 @@ void cmdlog_file_init(struct default_engine* engine)
 
     pthread_mutex_init(&log_file_gl.log_fsync_lock, NULL);
     pthread_mutex_init(&log_file_gl.fsync_lsn_lock, NULL);
+    pthread_mutex_init(&log_file_gl.file_access_lock, NULL);
 
     /* log file init */
     log_FILE *logfile = &log_file_gl.log_file;
@@ -382,6 +386,7 @@ void cmdlog_file_final(void)
 
     pthread_mutex_destroy(&log_file_gl.log_fsync_lock);
     pthread_mutex_destroy(&log_file_gl.fsync_lsn_lock);
+    pthread_mutex_destroy(&log_file_gl.file_access_lock);
 
     log_file_gl.initialized = false;
     logger->log(EXTENSION_LOG_INFO, NULL, "CMDLOG FILE module destroyed.\n");
@@ -578,15 +583,22 @@ void cmdlog_get_fsync_lsn(LogSN *lsn)
 int cmdlog_get_next_fd(void)
 {
     log_FILE *logfile = &log_file_gl.log_file;
+    int next_fd = -1;
+    pthread_mutex_lock(&log_file_gl.file_access_lock);
+    next_fd = logfile->next_fd;
+    pthread_mutex_unlock(&log_file_gl.file_access_lock);
 
-    return logfile->next_fd;
+    return next_fd;
 }
 
 size_t cmdlog_get_current_file_size(void)
 {
     log_FILE *logfile = &log_file_gl.log_file;
+    int size = 0;
+    pthread_mutex_lock(&log_file_gl.file_access_lock);
+    size = logfile->size;
+    pthread_mutex_unlock(&log_file_gl.file_access_lock);
 
-    /* already locked with log_flush_lock and log_write_lock */
-    return logfile->size;
+    return size;
 }
 #endif
