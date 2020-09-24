@@ -423,7 +423,7 @@ int chkpt_recovery_redo(void)
         logger->log(EXTENSION_LOG_INFO, NULL,
                     "There are no files needed for recovery. "
                     "Do checkpoint to create checkpoint file set.\n");
-        if (do_checkpoint(cs) == CHKPT_ERROR) {
+        if (do_checkpoint(cs) != CHKPT_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Checkpoint failed in chkpt_recovery_redo().\n");
             return -1;
