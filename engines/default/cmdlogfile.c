@@ -573,6 +573,17 @@ int cmdlog_file_apply(void)
     return ret;
 }
 
+size_t cmdlog_file_getsize(void)
+{
+    log_FILE *logfile = &log_file_gl.log_file;
+    size_t size;
+    pthread_mutex_lock(&log_file_gl.file_access_lock);
+    size = logfile->size;
+    pthread_mutex_unlock(&log_file_gl.file_access_lock);
+
+    return size;
+}
+
 void cmdlog_get_fsync_lsn(LogSN *lsn)
 {
     pthread_mutex_lock(&log_file_gl.fsync_lsn_lock);
@@ -589,16 +600,5 @@ int cmdlog_get_next_fd(void)
     pthread_mutex_unlock(&log_file_gl.file_access_lock);
 
     return next_fd;
-}
-
-size_t cmdlog_get_current_file_size(void)
-{
-    log_FILE *logfile = &log_file_gl.log_file;
-    int size = 0;
-    pthread_mutex_lock(&log_file_gl.file_access_lock);
-    size = logfile->size;
-    pthread_mutex_unlock(&log_file_gl.file_access_lock);
-
-    return size;
 }
 #endif

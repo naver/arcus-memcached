@@ -361,19 +361,6 @@ void cmdlog_get_flush_lsn(LogSN *lsn)
     pthread_mutex_unlock(&log_buff_gl.flush_lsn_lock);
 }
 
-size_t cmdlog_get_file_size(void)
-{
-    size_t file_size = 0;
-
-    pthread_mutex_lock(&log_buff_gl.log_write_lock);
-    if (log_buff_gl.log_buffer.dw_end == -1) {
-        file_size = cmdlog_get_current_file_size();
-    }
-    pthread_mutex_unlock(&log_buff_gl.log_write_lock);
-
-    return file_size;
-}
-
 void cmdlog_complete_dual_write(bool success)
 {
     if (cmdlog_get_next_fd() != -1) {
