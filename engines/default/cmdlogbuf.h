@@ -21,9 +21,6 @@
 #include "cmdlogmgr.h"
 #include "cmdlogrec.h"
 
-/* global log flush mutex */
-extern pthread_mutex_t log_flush_lock;
-
 /* external log buffer functions */
 void cmdlog_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_write);
 void cmdlog_buff_flush(LogSN *upto_lsn);

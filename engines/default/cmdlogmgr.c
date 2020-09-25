@@ -494,6 +494,7 @@ void cmdlog_mgr_final(void)
     /* CONSIDER: do last checkpoint before shutdown engine. */
     chkpt_final();
     cmdlog_buf_final();
+    cmdlog_file_final();
     cmdlog_waiter_final();
 
     if (logmgr_gl.initialized == true) {
