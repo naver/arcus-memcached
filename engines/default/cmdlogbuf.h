@@ -28,7 +28,6 @@ void cmdlog_buff_flush(LogSN *upto_lsn);
 /* FIXME: remove later, if not used */
 //void log_get_write_lsn(LogSN *lsn);
 void   cmdlog_get_flush_lsn(LogSN *lsn);
-size_t cmdlog_get_file_size(void);
 
 void              cmdlog_complete_dual_write(bool success);
 ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine *engine);

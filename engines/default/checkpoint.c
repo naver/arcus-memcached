@@ -27,7 +27,6 @@
 #ifdef ENABLE_PERSISTENCE
 #include "checkpoint.h"
 #include "mc_snapshot.h"
-#include "cmdlogbuf.h"
 #include "cmdlogfile.h"
 
 #define CHKPT_MAX_FILENAME_LENGTH  255
@@ -276,7 +275,7 @@ static bool do_checkpoint_needed(chkpt_st *cs)
 {
     struct engine_config *config = cs->config;
     size_t snapshot_file_size = cs->lastsize;
-    size_t cmdlog_file_size   = cmdlog_get_file_size();
+    size_t cmdlog_file_size   = cmdlog_file_getsize();
     size_t min_logsize        = config->chkpt_interval_min_logsize;
     int    pct_snapshot       = config->chkpt_interval_pct_snapshot;
 

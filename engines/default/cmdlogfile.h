@@ -31,9 +31,8 @@ void   cmdlog_file_close(void);
 void   cmdlog_file_init(struct default_engine* engine);
 void   cmdlog_file_final(void);
 int    cmdlog_file_apply(void);
+size_t cmdlog_file_getsize(void);
 
 void   cmdlog_get_fsync_lsn(LogSN *lsn);
 int    cmdlog_get_next_fd(void);
-size_t cmdlog_get_current_file_size(void);
-
 #endif
