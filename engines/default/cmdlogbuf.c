@@ -75,6 +75,7 @@ struct log_buff_global {
     LogSN           nxt_write_lsn;
     LogSN           nxt_flush_lsn;
     pthread_mutex_t log_write_lock;
+    pthread_mutex_t log_flush_lock;
     pthread_mutex_t flush_lsn_lock;
     volatile bool   initialized;
 };
@@ -82,7 +83,6 @@ struct log_buff_global {
 /* global data */
 static EXTENSION_LOGGER_DESCRIPTOR* logger = NULL;
 static struct log_buff_global log_buff_gl;
-pthread_mutex_t log_flush_lock;
 
 static void do_log_flusher_wakeup(log_FLUSHER *flusher)
 {
@@ -197,9 +197,9 @@ static LogSN do_log_buff_write(LogRec *logrec, bool dual_write)
         }
         /* Lack of log buffer space: force flushing data on log buffer */
         pthread_mutex_unlock(&log_buff_gl.log_write_lock);
-        pthread_mutex_lock(&log_flush_lock);
+        pthread_mutex_lock(&log_buff_gl.log_flush_lock);
         (void)do_log_buff_flush(false);
-        pthread_mutex_unlock(&log_flush_lock);
+        pthread_mutex_unlock(&log_buff_gl.log_flush_lock);
         pthread_mutex_lock(&log_buff_gl.log_write_lock);
     }
 
@@ -286,9 +286,9 @@ static void *log_flush_thread_main(void *arg)
             break;
         }
 
-        pthread_mutex_lock(&log_flush_lock);
+        pthread_mutex_lock(&log_buff_gl.log_flush_lock);
         nflush = do_log_buff_flush(false);
-        pthread_mutex_unlock(&log_flush_lock);
+        pthread_mutex_unlock(&log_buff_gl.log_flush_lock);
 
         if (nflush == 0) {
             /* nothing to flush: do 10 ms sleep */
@@ -330,7 +330,7 @@ void cmdlog_buff_flush(LogSN *upto_lsn)
     uint32_t nflush;
 
     do {
-        pthread_mutex_lock(&log_flush_lock);
+        pthread_mutex_lock(&log_buff_gl.log_flush_lock);
         if (LOGSN_IS_LE(&log_buff_gl.nxt_flush_lsn, upto_lsn)) {
             nflush = do_log_buff_flush(true);
             assert(nflush > 0);
@@ -340,7 +340,7 @@ void cmdlog_buff_flush(LogSN *upto_lsn)
         } else {
             nflush = 0;
         }
-        pthread_mutex_unlock(&log_flush_lock);
+        pthread_mutex_unlock(&log_buff_gl.log_flush_lock);
     } while (nflush > 0);
 }
 
@@ -393,10 +393,8 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
     log_buff_gl.nxt_write_lsn = log_buff_gl.nxt_flush_lsn;
 
     pthread_mutex_init(&log_buff_gl.log_write_lock, NULL);
+    pthread_mutex_init(&log_buff_gl.log_flush_lock, NULL);
     pthread_mutex_init(&log_buff_gl.flush_lsn_lock, NULL);
-
-    /* log global init */
-    pthread_mutex_init(&log_flush_lock, NULL);
 
     /* log file init */
     cmdlog_file_init(engine);
@@ -461,11 +459,9 @@ void cmdlog_buf_final(void)
     /* log file final */
     cmdlog_file_final();
 
-    /* log global final */
-    pthread_mutex_destroy(&log_flush_lock);
-
     /* log buff global final */
     pthread_mutex_destroy(&log_buff_gl.log_write_lock);
+    pthread_mutex_destroy(&log_buff_gl.log_flush_lock);
     pthread_mutex_destroy(&log_buff_gl.flush_lsn_lock);
 
     log_buff_gl.initialized = false;
