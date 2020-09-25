@@ -396,9 +396,6 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
     pthread_mutex_init(&log_buff_gl.log_flush_lock, NULL);
     pthread_mutex_init(&log_buff_gl.flush_lsn_lock, NULL);
 
-    /* log file init */
-    cmdlog_file_init(engine);
-
     /* log buffer init */
     log_BUFFER *logbuff = &log_buff_gl.log_buffer;
 
@@ -455,9 +452,6 @@ void cmdlog_buf_final(void)
         free((void*)logbuff->fque);
         logbuff->fque = NULL;
     }
-
-    /* log file final */
-    cmdlog_file_final();
 
     /* log buff global final */
     pthread_mutex_destroy(&log_buff_gl.log_write_lock);

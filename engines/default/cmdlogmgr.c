@@ -451,6 +451,7 @@ ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine_ptr)
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
+    (void)cmdlog_file_init(engine);
     ret = cmdlog_buf_init(engine);
     if (ret != ENGINE_SUCCESS) {
         return ret;
@@ -494,6 +495,7 @@ void cmdlog_mgr_final(void)
     /* CONSIDER: do last checkpoint before shutdown engine. */
     chkpt_final();
     cmdlog_buf_final();
+    cmdlog_file_final();
     cmdlog_waiter_final();
 
     if (logmgr_gl.initialized == true) {
