@@ -344,15 +344,12 @@ void cmdlog_buff_flush(LogSN *upto_lsn)
     } while (nflush > 0);
 }
 
-/* FIXME: remove later, if not used */
-/*
-void log_get_write_lsn(LogSN *lsn)
+void cmdlog_get_write_lsn(LogSN *lsn)
 {
     pthread_mutex_lock(&log_buff_gl.log_write_lock);
     *lsn = log_buff_gl.nxt_write_lsn;
     pthread_mutex_unlock(&log_buff_gl.log_write_lock);
 }
-*/
 
 void cmdlog_get_flush_lsn(LogSN *lsn)
 {
