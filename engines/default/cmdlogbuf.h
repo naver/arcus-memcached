@@ -24,11 +24,11 @@
 /* external log buffer functions */
 void cmdlog_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_write);
 void cmdlog_buff_flush(LogSN *upto_lsn);
+void cmdlog_buff_complete_dual_write(bool success);
 
 void cmdlog_get_write_lsn(LogSN *lsn);
 void cmdlog_get_flush_lsn(LogSN *lsn);
 
-void              cmdlog_complete_dual_write(bool success);
 ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine *engine);
 void              cmdlog_buf_final(void);
 ENGINE_ERROR_CODE cmdlog_buf_flush_thread_start(void);

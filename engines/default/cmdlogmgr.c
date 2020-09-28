@@ -691,7 +691,10 @@ void cmdlog_set_chkpt_scan(void *scanp)
 {
     /* Cache locked */
     assert(chkpt_scanp == NULL);
-    chkpt_scanp = scanp;
+    if (chkpt_get_lasttime() != -1) {
+        /* normal checkpoint by checkpoint thread */
+        chkpt_scanp = scanp;
+    }
 }
 
 void cmdlog_reset_chkpt_scan(bool chkpt_success)
@@ -699,7 +702,7 @@ void cmdlog_reset_chkpt_scan(bool chkpt_success)
     /* Cache locked */
     if (chkpt_scanp != NULL) {
         chkpt_scanp = NULL;
-        cmdlog_complete_dual_write(chkpt_success);
+        cmdlog_buff_complete_dual_write(chkpt_success);
     }
 }
 #endif

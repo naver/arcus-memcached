@@ -344,6 +344,11 @@ void cmdlog_buff_flush(LogSN *upto_lsn)
     } while (nflush > 0);
 }
 
+void cmdlog_buff_complete_dual_write(bool success)
+{
+    do_log_buff_complete_dual_write(success);
+}
+
 void cmdlog_get_write_lsn(LogSN *lsn)
 {
     pthread_mutex_lock(&log_buff_gl.log_write_lock);
@@ -356,13 +361,6 @@ void cmdlog_get_flush_lsn(LogSN *lsn)
     pthread_mutex_lock(&log_buff_gl.flush_lsn_lock);
     *lsn = log_buff_gl.nxt_flush_lsn;
     pthread_mutex_unlock(&log_buff_gl.flush_lsn_lock);
-}
-
-void cmdlog_complete_dual_write(bool success)
-{
-    if (cmdlog_get_next_fd() != -1) {
-        do_log_buff_complete_dual_write(success);
-    }
 }
 
 ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)

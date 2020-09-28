@@ -499,4 +499,9 @@ void chkpt_final(void)
     chkpt_anch.initialized = false;
     logger->log(EXTENSION_LOG_INFO, NULL, "CHECKPOINT module destroyed.\n");
 }
+
+int64_t chkpt_get_lasttime(void)
+{
+    return chkpt_anch.lasttime;
+}
 #endif
