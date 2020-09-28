@@ -34,5 +34,4 @@ int    cmdlog_file_apply(void);
 size_t cmdlog_file_getsize(void);
 
 void   cmdlog_get_fsync_lsn(LogSN *lsn);
-int    cmdlog_get_next_fd(void);
 #endif

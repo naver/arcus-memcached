@@ -28,4 +28,6 @@ ENGINE_ERROR_CODE chkpt_thread_start(void);
 void chkpt_thread_stop(void);
 void chkpt_final(void);
 
+int64_t chkpt_get_lasttime(void);
+
 #endif

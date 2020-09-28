@@ -590,15 +590,4 @@ void cmdlog_get_fsync_lsn(LogSN *lsn)
     *lsn = log_file_gl.nxt_fsync_lsn;
     pthread_mutex_unlock(&log_file_gl.fsync_lsn_lock);
 }
-
-int cmdlog_get_next_fd(void)
-{
-    log_FILE *logfile = &log_file_gl.log_file;
-    int next_fd = -1;
-    pthread_mutex_lock(&log_file_gl.file_access_lock);
-    next_fd = logfile->next_fd;
-    pthread_mutex_unlock(&log_file_gl.file_access_lock);
-
-    return next_fd;
-}
 #endif
