@@ -81,31 +81,29 @@ static int64_t getnowtime(void)
 /* Delete all backup files except last checkpoint file. */
 static bool do_chkpt_sweep_files(chkpt_st *cs)
 {
-    int ret = true;
-    int slen = strlen(CHKPT_SNAPSHOT_PREFIX); /* 9 */
-    int clen = strlen(CHKPT_CMDLOG_PREFIX);   /* 7 */
     DIR *dir;
     struct dirent *ent;
+    int plen; /* file prefix name length */
+    int ret = true;
 
     /* delete snapshot files. */
     if ((dir = opendir(cs->data_path)) == NULL) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to open snapshot directory. path : %s. error : %s.\n",
+                    "Failed to open snapshot directory. path: %s, error: %s\n",
                     cs->data_path, strerror(errno));
         return false;
     }
-
+    plen = strlen(CHKPT_SNAPSHOT_PREFIX); /* 9 */
     while ((ent = readdir(dir)) != NULL) {
         char *ptr = ent->d_name;
-        if (strncmp(CHKPT_SNAPSHOT_PREFIX, ptr, slen) != 0) {
+        if (strncmp(CHKPT_SNAPSHOT_PREFIX, ptr, plen) != 0) {
             continue;
         }
-        ptr += slen;
-        if (cs->lasttime != atoi(ptr)) {
+        if (cs->lasttime != atoi(ptr + plen)) {
             sprintf(cs->snapshot_path, "%s/%s", cs->data_path, ent->d_name);
             if (unlink(cs->snapshot_path) < 0 && errno != ENOENT) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "Failed to remove snapshot file. path : %s. error : %s.\n",
+                            "Failed to sweep snapshot file. path: %s, error: %s\n",
                             cs->snapshot_path, strerror(errno));
                 ret = false; break;
             }
@@ -116,22 +114,21 @@ static bool do_chkpt_sweep_files(chkpt_st *cs)
     /* delete command log files. */
     if ((dir = opendir(cs->logs_path)) == NULL) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to open cmdlog directory. path : %s. error : %s.\n",
+                    "Failed to open cmdlog directory. path: %s, error: %s\n",
                     cs->logs_path, strerror(errno));
         return false;
     }
-
+    plen = strlen(CHKPT_CMDLOG_PREFIX); /* 7 */
     while ((ent = readdir(dir)) != NULL) {
         char *ptr = ent->d_name;
-        if (strncmp(CHKPT_CMDLOG_PREFIX, ptr, clen) != 0) {
+        if (strncmp(CHKPT_CMDLOG_PREFIX, ptr, plen) != 0) {
             continue;
         }
-        ptr += clen;
-        if (cs->lasttime != atoi(ptr)) {
+        if (cs->lasttime != atoi(ptr + plen)) {
             sprintf(cs->cmdlog_path, "%s/%s", cs->logs_path, ent->d_name);
             if (unlink(cs->cmdlog_path) < 0 && errno != ENOENT) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "Failed to remove cmdlog file. path : %s. error : %s.\n",
+                            "Failed to sweep cmdlog file. path: %s, error: %s\n",
                             cs->cmdlog_path, strerror(errno));
                 ret = false; break;
             }
@@ -144,28 +141,32 @@ static bool do_chkpt_sweep_files(chkpt_st *cs)
 /* create files for next checkpoint : snapshot_(newtime), cmdlog_(newtime) */
 static int do_chkpt_create_files(chkpt_st *cs, int64_t newtime)
 {
-    sprintf(cs->snapshot_path, CHKPT_FILE_NAME_FORMAT, cs->data_path, CHKPT_SNAPSHOT_PREFIX, newtime);
-    int fd = open(cs->snapshot_path, O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
+    int fd;
+
+    sprintf(cs->snapshot_path, CHKPT_FILE_NAME_FORMAT,
+            cs->data_path, CHKPT_SNAPSHOT_PREFIX, newtime);
+    fd = open(cs->snapshot_path, O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
     if (fd < 0) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to create file in checkpoint. "
-                    "path : %s, error : %s\n", cs->snapshot_path, strerror(errno));
+                    "Failed to create snapshot file. path: %s, error: %s\n",
+                    cs->snapshot_path, strerror(errno));
         return CHKPT_ERROR;
     }
     close(fd);
 
-    sprintf(cs->cmdlog_path, CHKPT_FILE_NAME_FORMAT, cs->logs_path, CHKPT_CMDLOG_PREFIX, newtime);
+    sprintf(cs->cmdlog_path, CHKPT_FILE_NAME_FORMAT,
+            cs->logs_path, CHKPT_CMDLOG_PREFIX, newtime);
     fd = open(cs->cmdlog_path, O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP);
     if (fd < 0) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to create file in checkpoint. "
-                    "path : %s, error : %s\n", cs->cmdlog_path, strerror(errno));
+                    "Failed to create cmdlog file. path: %s, error: %s\n",
+                    cs->cmdlog_path, strerror(errno));
 
-        /* remove created snapshot file */
+        /* remove the snapshot file created here */
         if (unlink(cs->snapshot_path) < 0 && errno != ENOENT) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "Failed to remove file in checkpoint. "
-                        "path : %s, error : %s\n", cs->snapshot_path, strerror(errno));
+                        "Failed to remove the created file. path: %s, error: %s\n",
+                        cs->snapshot_path, strerror(errno));
             return CHKPT_ERROR_FILE_REMOVE;
         }
         return CHKPT_ERROR;
@@ -178,24 +179,27 @@ static int do_chkpt_create_files(chkpt_st *cs, int64_t newtime)
 /* remove files : snapshot_(oldtime), cmdlog_(oldtime) */
 static int do_chkpt_remove_files(chkpt_st *cs, int64_t oldtime)
 {
-    sprintf(cs->snapshot_path, CHKPT_FILE_NAME_FORMAT, cs->data_path, CHKPT_SNAPSHOT_PREFIX, oldtime);
+    sprintf(cs->snapshot_path, CHKPT_FILE_NAME_FORMAT,
+            cs->data_path, CHKPT_SNAPSHOT_PREFIX, oldtime);
     if (unlink(cs->snapshot_path) < 0 && errno != ENOENT) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to remove file in checkpoint. "
-                    "path : %s, error : %s\n", cs->snapshot_path, strerror(errno));
+                    "Failed to remove snapshot file. path: %s, error: %s\n",
+                    cs->snapshot_path, strerror(errno));
         return -1;
     }
-    sprintf(cs->cmdlog_path, CHKPT_FILE_NAME_FORMAT, cs->logs_path, CHKPT_CMDLOG_PREFIX, oldtime);
+
+    sprintf(cs->cmdlog_path, CHKPT_FILE_NAME_FORMAT,
+            cs->logs_path, CHKPT_CMDLOG_PREFIX, oldtime);
     if (unlink(cs->cmdlog_path) < 0 && errno != ENOENT) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to remove file in checkpoint. "
-                    "path : %s, error : %s\n", cs->cmdlog_path, strerror(errno));
+                    "Failed to remove cmdlog file. path: %s, error: %s\n",
+                    cs->cmdlog_path, strerror(errno));
         return -1;
     }
     return 0;
 }
 
-static int do_chkpt_sleep(chkpt_st *cs, int sleep_sec)
+static int do_chkpt_thread_sleep(chkpt_st *cs, int sleep_sec)
 {
     struct timeval tv;
     struct timespec to;
@@ -213,7 +217,7 @@ static int do_chkpt_sleep(chkpt_st *cs, int sleep_sec)
     return sleep_sec;
 }
 
-static void do_chkpt_wakeup(chkpt_st *cs)
+static void do_chkpt_thread_wakeup(chkpt_st *cs)
 {
     pthread_mutex_lock(&cs->lock);
     if (cs->sleep) {
@@ -296,7 +300,7 @@ static void* chkpt_thread_main(void* arg)
 
     cs->running = RUNNING_STARTED;
     while (1) {
-        elapsed_time += do_chkpt_sleep(cs, 1);
+        elapsed_time += do_chkpt_thread_sleep(cs, 1);
 
         if (cs->reqstop) {
             logger->log(EXTENSION_LOG_INFO, NULL, "Checkpoint thread recognized stop request.\n");
@@ -359,14 +363,14 @@ int chkpt_recovery_analysis(void)
     int snapshot_count = scandir(cs->data_path, &snapshotlist, chkptsnapshotfilter, alphasort);
     if (snapshot_count < 0) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to scan snapshot directory. path : %s. error : %s.\n",
+                    "Failed to scan snapshot directory. path: %s, error: %s\n",
                     cs->data_path, strerror(errno));
         return -1;
     }
 
-    int ret = 0;
     struct dirent *ent;
     int lastidx = snapshot_count -1;
+    int ret = 0;
 
     /* Find valid last snapshot file and get lasttime. */
     while (lastidx >= 0) {
@@ -375,7 +379,7 @@ int chkpt_recovery_analysis(void)
         int snapshot_fd = open(cs->snapshot_path, O_RDONLY);
         if (snapshot_fd < 0) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "Failed to open snapshot file. path : %s. error : %s.\n",
+                        "Failed to open snapshot file. path: %s, error: %s\n",
                         cs->snapshot_path, strerror(errno));
             ret = -1; break;
         }
@@ -404,12 +408,14 @@ int chkpt_recovery_analysis(void)
 int chkpt_recovery_redo(void)
 {
     chkpt_st *cs = &chkpt_anch;
+
     if (cs->lasttime > 0) {
         /* apply snapshot log records. */
         if (mc_snapshot_file_apply(cs->snapshot_path) < 0) {
             return -1;
         }
-        sprintf(cs->cmdlog_path, CHKPT_FILE_NAME_FORMAT, cs->logs_path, CHKPT_CMDLOG_PREFIX, cs->lasttime);
+        sprintf(cs->cmdlog_path, CHKPT_FILE_NAME_FORMAT,
+                cs->logs_path, CHKPT_CMDLOG_PREFIX, cs->lasttime);
         if (cmdlog_file_open(cs->cmdlog_path) < 0) {
             return -1;
         }
@@ -462,10 +468,9 @@ ENGINE_ERROR_CODE chkpt_thread_start(void)
     /* create checkpoint thread */
     if (pthread_create(&tid, NULL, chkpt_thread_main, &chkpt_anch) != 0) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to create checkpoint thread. error=%s.\n", strerror(errno));
+                    "Failed to create checkpoint thread. error=%s\n", strerror(errno));
         return ENGINE_FAILED;
     }
-
     /* wait until checkpoint thread starts */
     while (chkpt_anch.running == RUNNING_UNSTARTED) {
         usleep(5000); /* sleep 5ms */
@@ -479,10 +484,9 @@ void chkpt_thread_stop(void)
     if (chkpt_anch.running == RUNNING_UNSTARTED) {
         return;
     }
-
     while (chkpt_anch.running == RUNNING_STARTED) {
         chkpt_anch.reqstop = true;
-        do_chkpt_wakeup(&chkpt_anch);
+        do_chkpt_thread_wakeup(&chkpt_anch);
         usleep(5000); /* sleep 5ms */
     }
     logger->log(EXTENSION_LOG_INFO, NULL, "Checkpoint thread stopped.\n");
@@ -493,7 +497,6 @@ void chkpt_final(void)
     if (chkpt_anch.initialized == false) {
         return;
     }
-
     pthread_mutex_destroy(&chkpt_anch.lock);
     pthread_cond_destroy(&chkpt_anch.cond);
     chkpt_anch.initialized = false;
