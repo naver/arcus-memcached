@@ -364,13 +364,10 @@ void cmdlog_waiter_end(log_waiter_t *waiter, ENGINE_ERROR_CODE *result)
 
     if (config->async_logging == false && *result == ENGINE_SUCCESS) {
         group_commit_t *gcommit = &logmgr_gl.group_commit;
-        LogSN now_flush_lsn, now_fsync_lsn;
+        LogSN now_fsync_lsn;
 
-        /* flush log records from now_flush_lsn to waiter->lsn */
-        cmdlog_get_flush_lsn(&now_flush_lsn);
-        if (LOGSN_IS_LE(&now_flush_lsn, &waiter->lsn)) {
-            cmdlog_buff_flush(&waiter->lsn);
-        }
+        /* flush log records up to waiter->lsn */
+        cmdlog_buff_flush(&waiter->lsn);
 
         cmdlog_get_fsync_lsn(&now_fsync_lsn);
         if (LOGSN_IS_LE(&now_fsync_lsn, &waiter->lsn)) {

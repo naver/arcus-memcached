@@ -327,21 +327,22 @@ void cmdlog_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_write)
 void cmdlog_buff_flush(LogSN *upto_lsn)
 {
     assert(upto_lsn);
+    LogSN now_flush_lsn;
     uint32_t nflush;
 
-    do {
+    cmdlog_get_flush_lsn(&now_flush_lsn);
+    while (LOGSN_IS_LE(&now_flush_lsn, upto_lsn)) {
+        nflush = 0;
         pthread_mutex_lock(&log_buff_gl.log_flush_lock);
         if (LOGSN_IS_LE(&log_buff_gl.nxt_flush_lsn, upto_lsn)) {
             nflush = do_log_buff_flush(true);
             assert(nflush > 0);
-            if (LOGSN_IS_GT(&log_buff_gl.nxt_flush_lsn, upto_lsn)) {
-                nflush = 0;
-            }
-        } else {
-            nflush = 0;
         }
         pthread_mutex_unlock(&log_buff_gl.log_flush_lock);
-    } while (nflush > 0);
+        if (nflush == 0) break;
+
+        cmdlog_get_flush_lsn(&now_flush_lsn);
+    }
 }
 
 void cmdlog_buff_complete_dual_write(bool success)
