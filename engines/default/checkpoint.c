@@ -230,49 +230,40 @@ static void do_chkpt_thread_wakeup(chkpt_st *cs)
 /* FIXME : Error handling(Disk I/O etc) */
 static int do_checkpoint(chkpt_st *cs)
 {
-    int ret;
     int64_t newtime = getnowtime();
+    int ret;
 
-    do {
-        if ((ret = do_chkpt_create_files(cs, newtime)) != 0) {
-            break;
-        }
+    if ((ret = do_chkpt_create_files(cs, newtime)) != 0) {
+        return ret; /* CHKPT_ERROR or CHKPT_ERROR_FILE_REMOVE */
+    }
 
-        if ((ret = cmdlog_file_open(cs->cmdlog_path)) != 0) {
-            if (do_chkpt_remove_files(cs, newtime) < 0) {
-                ret = CHKPT_ERROR_FILE_REMOVE;
-            }
-            break;
-        }
-
-        if (mc_snapshot_direct(MC_SNAPSHOT_MODE_CHKPT, NULL, -1,
-                               cs->snapshot_path, &cs->lastsize) == ENGINE_SUCCESS) {
+    if ((ret = cmdlog_file_open(cs->cmdlog_path)) != 0) {
+        ret = CHKPT_ERROR;
+    } else {
+        if (mc_snapshot_direct(MC_SNAPSHOT_MODE_CHKPT, NULL, -1, cs->snapshot_path,
+                               &cs->lastsize) == ENGINE_SUCCESS) {
+            ret = CHKPT_SUCCESS;
             cs->prevtime = cs->lasttime;
             cs->lasttime = newtime;
-            ret = CHKPT_SUCCESS;
+            /* We will remove the previous checkpoint files
+             * after those files are closed by log file module.
+             * See cmdlog_file_dual_write_finished().
+             */
         } else {
             ret = CHKPT_ERROR;
-        }
-
-        if (ret == CHKPT_ERROR) {
-            /*
-             * close the current log file when the checkpoint has failed.
-             * don't close the previous log file in this function. see cmdlog_file_sync().
+            /* Close the current log file. Don't close the previous log file.
+             * See cmdlog_file_sync().
              */
             cmdlog_file_close();
-
-            /* remove the checkpoint files, created in this failed checkpoint. */
-            if (do_chkpt_remove_files(cs, newtime) < 0) {
-                ret = CHKPT_ERROR_FILE_REMOVE;
-            }
         }
+    }
 
-        /*
-         * We will remove the previous checkpoint files after those files are closed by file module.
-         * see cmdlog_file_dual_write_finished().
-         */
-    } while(0);
-
+    if (ret != CHKPT_SUCCESS) {
+        /* remove the checkpoint files, created in this failed checkpoint. */
+        if (do_chkpt_remove_files(cs, newtime) < 0) {
+            ret = CHKPT_ERROR_FILE_REMOVE;
+        }
+    }
     return ret;
 }
 
