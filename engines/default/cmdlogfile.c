@@ -50,12 +50,12 @@ struct log_file_global {
     pthread_mutex_t log_fsync_lock;
     pthread_mutex_t fsync_lsn_lock;
     pthread_mutex_t file_access_lock;
-    bool            async_mode;
     volatile bool   initialized;
 };
 
 /* global data */
-static EXTENSION_LOGGER_DESCRIPTOR* logger = NULL;
+static struct engine_config *config = NULL;
+static EXTENSION_LOGGER_DESCRIPTOR *logger = NULL;
 static struct log_file_global log_file_gl;
 
 /*
@@ -187,7 +187,7 @@ void cmdlog_file_complete_dual_write(void)
         logfile->next_fd   = -1;
         logfile->next_size = 0;
 
-        if (log_file_gl.async_mode) {
+        if (config->async_logging) {
             (void)disk_close(logfile->prev_fd);
             logfile->prev_fd = -1;
         }
@@ -250,7 +250,7 @@ void cmdlog_file_sync(void)
                 logger->log(EXTENSION_LOG_WARNING, NULL,
                             "log file fsync error (%d:%s)\n",
                             errno, strerror(errno));
-                if (log_file_gl.async_mode == false) {
+                if (config->async_logging == false) {
                     /* [FATAL] untreatable error => abnormal shutdown by assertion */
                     assert(ret == 0);
                 }
@@ -313,7 +313,7 @@ void cmdlog_file_close(void)
     pthread_mutex_lock(&log_file_gl.file_access_lock);
     if (logfile->next_fd != -1) {
         logfile->next_size = 0; /* prevent fsync() */
-        if (log_file_gl.async_mode) {
+        if (config->async_logging) {
             remove_fd = logfile->next_fd;
             logfile->next_fd = -1;
         }
@@ -340,12 +340,11 @@ void cmdlog_file_close(void)
 
 void cmdlog_file_init(struct default_engine* engine)
 {
+    config = &engine->config;
     logger = engine->server.log->get_logger();
 
     /* log file global init */
     memset(&log_file_gl, 0, sizeof(log_file_gl));
-
-    log_file_gl.async_mode = engine->config.async_logging;
 
     log_file_gl.nxt_fsync_lsn.filenum = 1;
     log_file_gl.nxt_fsync_lsn.roffset = 0;
