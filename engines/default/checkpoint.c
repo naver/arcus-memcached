@@ -91,15 +91,15 @@ static bool do_chkpt_sweep_files(chkpt_st *cs)
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to open snapshot directory. path: %s, error: %s\n",
                     cs->data_path, strerror(errno));
-        return false;
-    }
-    plen = strlen(CHKPT_SNAPSHOT_PREFIX); /* 9 */
-    while ((ent = readdir(dir)) != NULL) {
-        char *ptr = ent->d_name;
-        if (strncmp(CHKPT_SNAPSHOT_PREFIX, ptr, plen) != 0) {
-            continue;
-        }
-        if (cs->lasttime != atoi(ptr + plen)) {
+        ret = false;
+    } else {
+        plen = strlen(CHKPT_SNAPSHOT_PREFIX); /* 9 */
+        while ((ent = readdir(dir)) != NULL) {
+            char *ptr = ent->d_name;
+            if (strncmp(CHKPT_SNAPSHOT_PREFIX, ptr, plen) != 0 ||
+                cs->lasttime == atoi(ptr + plen)) {
+                continue;
+            }
             sprintf(cs->snapshot_path, "%s/%s", cs->data_path, ent->d_name);
             if (unlink(cs->snapshot_path) < 0 && errno != ENOENT) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -108,23 +108,23 @@ static bool do_chkpt_sweep_files(chkpt_st *cs)
                 ret = false; break;
             }
         }
+        closedir(dir);
     }
-    closedir(dir);
 
     /* delete command log files. */
     if ((dir = opendir(cs->logs_path)) == NULL) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to open cmdlog directory. path: %s, error: %s\n",
                     cs->logs_path, strerror(errno));
-        return false;
-    }
-    plen = strlen(CHKPT_CMDLOG_PREFIX); /* 7 */
-    while ((ent = readdir(dir)) != NULL) {
-        char *ptr = ent->d_name;
-        if (strncmp(CHKPT_CMDLOG_PREFIX, ptr, plen) != 0) {
-            continue;
-        }
-        if (cs->lasttime != atoi(ptr + plen)) {
+        ret = false;
+    } else {
+        plen = strlen(CHKPT_CMDLOG_PREFIX); /* 7 */
+        while ((ent = readdir(dir)) != NULL) {
+            char *ptr = ent->d_name;
+            if (strncmp(CHKPT_CMDLOG_PREFIX, ptr, plen) != 0 ||
+                cs->lasttime == atoi(ptr + plen)) {
+                continue;
+            }
             sprintf(cs->cmdlog_path, "%s/%s", cs->logs_path, ent->d_name);
             if (unlink(cs->cmdlog_path) < 0 && errno != ENOENT) {
                 logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -133,8 +133,9 @@ static bool do_chkpt_sweep_files(chkpt_st *cs)
                 ret = false; break;
             }
         }
+        closedir(dir);
     }
-    closedir(dir);
+
     return ret;
 }
 
