@@ -218,11 +218,14 @@ void cmdlog_file_sync(void)
 
     pthread_mutex_lock(&log_file_gl.log_fsync_lock);
 
-    /* get current fd info */
+    /* get current flush lsn */
     cmdlog_get_flush_lsn(&now_flush_lsn);
+
+    /* get current fd info */
     pthread_mutex_lock(&log_file_gl.file_access_lock);
     if (logfile->prev_fd != -1) {
         prev_fd = logfile->prev_fd;
+        logfile->prev_fd = -1;
     }
     fd = logfile->fd;
     if (logfile->next_fd != -1 && logfile->next_size > 0) {
@@ -231,15 +234,8 @@ void cmdlog_file_sync(void)
     pthread_mutex_unlock(&log_file_gl.file_access_lock);
 
     if (prev_fd != -1) {
-        /* If prev_fd is set, the prev file access only the log sync thread,
-         * so log_fsync_lock is not needed to close the prev file.
-         */
-        ret = disk_fsync(prev_fd);
+        (void)disk_fsync(prev_fd);
         (void)disk_close(prev_fd);
-
-        pthread_mutex_lock(&log_file_gl.file_access_lock);
-        logfile->prev_fd = -1;
-        pthread_mutex_unlock(&log_file_gl.file_access_lock);
     }
 
     if (LOGSN_IS_GT(&now_flush_lsn, &log_file_gl.nxt_fsync_lsn)) {
