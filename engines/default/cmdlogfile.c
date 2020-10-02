@@ -144,19 +144,20 @@ static int disk_close(int fd)
 void cmdlog_file_write(char *log_ptr, uint32_t log_size, bool dual_write)
 {
     log_FILE *logfile = &log_file_gl.log_file;
+    ssize_t nwrite;
     assert(logfile->fd != -1);
 
+    pthread_mutex_lock(&log_file_gl.file_access_lock);
     /* The log data is appended */
-    ssize_t nwrite = disk_write(logfile->fd, log_ptr, log_size);
+    nwrite = disk_write(logfile->fd, log_ptr, log_size);
     if (nwrite != log_size) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "log file(%d) write - write(%ld!=%ld) error=(%d:%s)\n",
+                    "curr log file(%d) write - write(%ld!=%ld) error=(%d:%s)\n",
                     logfile->fd, nwrite, (ssize_t)log_size,
                     errno, strerror(errno));
     }
     /* FIXME::need error handling */
     assert(nwrite == log_size);
-    pthread_mutex_lock(&log_file_gl.file_access_lock);
     logfile->size += log_size;
 
     if (dual_write && logfile->next_fd != -1) {
@@ -164,7 +165,7 @@ void cmdlog_file_write(char *log_ptr, uint32_t log_size, bool dual_write)
         nwrite = disk_write(logfile->next_fd, log_ptr, log_size);
         if (nwrite != log_size) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "log file(%d) write - write(%ld!=%ld) error=(%d:%s)\n",
+                        "next log file(%d) write - write(%ld!=%ld) error=(%d:%s)\n",
                         logfile->next_fd, nwrite, (ssize_t)log_size,
                         errno, strerror(errno));
         }
@@ -209,8 +210,8 @@ bool cmdlog_file_dual_write_finished(void)
 
 void cmdlog_file_sync(void)
 {
-    LogSN now_flush_lsn;
     log_FILE *logfile = &log_file_gl.log_file;
+    LogSN now_flush_lsn;
     int fd;
     int prev_fd = -1;
     int next_fd = -1;
@@ -228,7 +229,7 @@ void cmdlog_file_sync(void)
         logfile->prev_fd = -1;
     }
     fd = logfile->fd;
-    if (logfile->next_fd != -1 && logfile->next_size > 0) {
+    if (logfile->next_fd != -1) {
         next_fd = logfile->next_fd;
     }
     pthread_mutex_unlock(&log_file_gl.file_access_lock);
@@ -253,7 +254,7 @@ void cmdlog_file_sync(void)
                 break;
             }
 
-            if (next_fd != -1 && logfile->next_fd != -1) {
+            if (next_fd != -1) {
                 ret = disk_fsync(next_fd);
                 if (ret < 0) {
                     logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -275,18 +276,16 @@ void cmdlog_file_sync(void)
 int cmdlog_file_open(char *path)
 {
     log_FILE *logfile = &log_file_gl.log_file;
-    int ret = 0;
+    int fd, ret = 0;
 
     pthread_mutex_lock(&log_file_gl.file_access_lock);
-    /* prepare cmdlog file */
     do {
-        int fd = disk_open(path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP);
+        fd = disk_open(path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP);
         if (fd < 0) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Failed to open the cmdlog file. path=%s err=%s\n",
                         logfile->path, strerror(errno));
-            ret = -1;
-            break;
+            ret = -1; break;
         }
         snprintf(logfile->path, CMDLOG_MAX_FILEPATH_LENGTH, "%s", path);
         if (logfile->fd == -1) {
@@ -304,34 +303,26 @@ int cmdlog_file_open(char *path)
 void cmdlog_file_close(void)
 {
     log_FILE *logfile = &log_file_gl.log_file;
-    int remove_fd = -1;
+    int remove_fd;
 
+    /* We hold log_fsync_lock to prevent fsync() call
+     * on the file being closed. See cmdlog_file_sync().
+     */
+    pthread_mutex_lock(&log_file_gl.log_fsync_lock);
     pthread_mutex_lock(&log_file_gl.file_access_lock);
     if (logfile->next_fd != -1) {
-        logfile->next_size = 0; /* prevent fsync() */
-        if (config->async_logging) {
-            remove_fd = logfile->next_fd;
-            logfile->next_fd = -1;
-        }
+        remove_fd = logfile->next_fd;
+        logfile->next_fd = -1;
     } else { /* the first checkpoint */
         assert(logfile->fd != -1);
         remove_fd = logfile->fd;
         logfile->fd = -1;
     }
     pthread_mutex_unlock(&log_file_gl.file_access_lock);
+    pthread_mutex_unlock(&log_file_gl.log_fsync_lock);
 
-    if (logfile->next_fd != -1) {
-        /* only in sync mode and checkpoint failure */
-        pthread_mutex_lock(&log_file_gl.log_fsync_lock);
-        pthread_mutex_lock(&log_file_gl.file_access_lock);
-        remove_fd = logfile->next_fd;
-        logfile->next_fd = -1;
-        pthread_mutex_unlock(&log_file_gl.file_access_lock);
-        pthread_mutex_unlock(&log_file_gl.log_fsync_lock);
-    }
-    if (remove_fd != -1) {
-        (void)disk_close(remove_fd);
-    }
+    assert(remove_fd != -1);
+    (void)disk_close(remove_fd);
 }
 
 void cmdlog_file_init(struct default_engine* engine)
