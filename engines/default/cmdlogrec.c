@@ -24,7 +24,6 @@
 #include "default_engine.h"
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogrec.h"
-#include "cmdlogmgr.h"
 
 /* persistence meta data */
 #define PERSISTENCE_ENGINE_NAME   "ARCUS-DEFAULT_ENGINE"

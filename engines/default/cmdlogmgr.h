@@ -18,48 +18,7 @@
 #ifndef CMDLOGMGR_H
 #define CMDLOGMGR_H
 
-enum upd_type {
-    /* key value command */
-    UPD_STORE = 0,
-    UPD_DELETE,
-    UPD_SETATTR_EXPTIME,
-    UPD_SETATTR_EXPTIME_INFO,
-    UPD_SETATTR_EXPTIME_INFO_BKEY,
-    UPD_FLUSH,
-    /* list command */
-    UPD_LIST_CREATE,
-    UPD_LIST_ELEM_INSERT,
-    UPD_LIST_ELEM_DELETE,
-    UPD_LIST_ELEM_DELETE_DROP,
-    /* set command */
-    UPD_SET_CREATE,
-    UPD_SET_ELEM_INSERT,
-    UPD_SET_ELEM_DELETE,
-    UPD_SET_ELEM_DELETE_DROP,
-    /* map command */
-    UPD_MAP_CREATE,
-    UPD_MAP_ELEM_INSERT,
-    UPD_MAP_ELEM_DELETE,
-    UPD_MAP_ELEM_DELETE_DROP,
-    /* btree command */
-    UPD_BT_CREATE,
-    UPD_BT_ELEM_INSERT,
-    UPD_BT_ELEM_DELETE,
-    UPD_BT_ELEM_DELETE_DROP,
-    /* not command */
-    UPD_NONE
-};
-
-/* Change the type of roffset from uint32_t to uint64_t.
- * 1. There is no guarantee that the checkpoint will always succeed,
- *    the cmdlog record offset can exceed 4GB during retries.
- * 2. Depending on the memlimit, a checkpoint can occur when offset exceeds 4GB.
- */
-typedef struct logsn {
-    uint32_t filenum;  /* cmdlog file number : 1, 2, ... */
-    uint32_t rsvd32;   /* reserved 4 bytes */
-    uint64_t roffset;  /* cmdlog record offset */
-} LogSN;
+#include "cmdlogrec.h"
 
 /* command log manager entry structure */
 typedef struct _log_waiter {
@@ -117,19 +76,4 @@ void cmdlog_generate_operation_range(bool begin);
 void cmdlog_set_chkpt_scan(void *scanp);
 void cmdlog_reset_chkpt_scan(bool chkpt_success);
 
-/* LogSN : SET_NULL */
-#define LOGSN_SET_NULL(lsn) \
-        do { (lsn)->filenum = 0; (lsn)->roffset = 0; } while(0)
-
-/* LogSN comparison */
-#define LOGSN_IS_EQ(lsn1, lsn2) ((lsn1)->filenum == (lsn2)->filenum && (lsn1)->roffset == (lsn2)->roffset)
-#define LOGSN_IS_NE(lsn1, lsn2) ((lsn1)->filenum != (lsn2)->filenum || (lsn1)->roffset != (lsn2)->roffset)
-#define LOGSN_IS_LT(lsn1, lsn2) (((lsn1)->filenum <  (lsn2)->filenum) || \
-                                 ((lsn1)->filenum == (lsn2)->filenum && (lsn1)->roffset <  (lsn2)->roffset))
-#define LOGSN_IS_LE(lsn1, lsn2) (((lsn1)->filenum <  (lsn2)->filenum) || \
-                                 ((lsn1)->filenum == (lsn2)->filenum && (lsn1)->roffset <= (lsn2)->roffset))
-#define LOGSN_IS_GT(lsn1, lsn2) (((lsn1)->filenum >  (lsn2)->filenum) || \
-                                 ((lsn1)->filenum == (lsn2)->filenum && (lsn1)->roffset >  (lsn2)->roffset))
-#define LOGSN_IS_GE(lsn1, lsn2) (((lsn1)->filenum >  (lsn2)->filenum) || \
-                                 ((lsn1)->filenum == (lsn2)->filenum && (lsn1)->roffset >= (lsn2)->roffset))
 #endif

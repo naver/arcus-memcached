@@ -18,8 +18,51 @@
 #ifndef MEMCACHED_CMDLOGREC_H
 #define MEMCACHED_CMDLOGREC_H
 
+/*
+ * LSN(log sequence number)
+ */
+
+/* Change the type of roffset from uint32_t to uint64_t.
+ * 1. There is no guarantee that the checkpoint will always succeed,
+ *    the cmdlog record offset can exceed 4GB during retries.
+ * 2. Depending on the memlimit, a checkpoint can occur when offset exceeds 4GB.
+ */
+typedef struct logsn {
+    uint32_t filenum;  /* cmdlog file number : 1, 2, ... */
+    uint32_t rsvd32;   /* reserved 4 bytes */
+    uint64_t roffset;  /* cmdlog record offset */
+} LogSN;
+
+/* LogSN : SET_NULL */
+#define LOGSN_SET_NULL(lsn) \
+        do { (lsn)->filenum = 0; (lsn)->roffset = 0; } while(0)
+
+/* LogSN comparison macros */
+#define LOGSN_IS_EQ(lsn1, lsn2) ((lsn1)->filenum == (lsn2)->filenum && \
+                                 (lsn1)->roffset == (lsn2)->roffset)
+#define LOGSN_IS_NE(lsn1, lsn2) ((lsn1)->filenum != (lsn2)->filenum || \
+                                 (lsn1)->roffset != (lsn2)->roffset)
+#define LOGSN_IS_LT(lsn1, lsn2) (((lsn1)->filenum <  (lsn2)->filenum) || \
+                                 ((lsn1)->filenum == (lsn2)->filenum && \
+                                  (lsn1)->roffset <  (lsn2)->roffset))
+#define LOGSN_IS_LE(lsn1, lsn2) (((lsn1)->filenum <  (lsn2)->filenum) || \
+                                 ((lsn1)->filenum == (lsn2)->filenum && \
+                                  (lsn1)->roffset <= (lsn2)->roffset))
+#define LOGSN_IS_GT(lsn1, lsn2) (((lsn1)->filenum >  (lsn2)->filenum) || \
+                                 ((lsn1)->filenum == (lsn2)->filenum && \
+                                  (lsn1)->roffset >  (lsn2)->roffset))
+#define LOGSN_IS_GE(lsn1, lsn2) (((lsn1)->filenum >  (lsn2)->filenum) || \
+                                 ((lsn1)->filenum == (lsn2)->filenum && \
+                                  (lsn1)->roffset >= (lsn2)->roffset))
+
+/*
+ * Log Record Structures
+ */
+
+/* max log record size */
 #define MAX_LOG_RECORD_SIZE (2 * 1024 * 1024)
 
+/* log record type */
 enum log_type {
     LOG_IT_LINK = 0,
     LOG_IT_UNLINK,
@@ -40,6 +83,55 @@ enum log_type {
     LOG_SNAPSHOT_DONE
 };
 
+/* update type */
+enum upd_type {
+    /* key value command */
+    UPD_STORE = 0,
+    UPD_DELETE,
+    UPD_SETATTR_EXPTIME,
+    UPD_SETATTR_EXPTIME_INFO,
+    UPD_SETATTR_EXPTIME_INFO_BKEY,
+    UPD_FLUSH,
+    /* list command */
+    UPD_LIST_CREATE,
+    UPD_LIST_ELEM_INSERT,
+    UPD_LIST_ELEM_DELETE,
+    UPD_LIST_ELEM_DELETE_DROP,
+    /* set command */
+    UPD_SET_CREATE,
+    UPD_SET_ELEM_INSERT,
+    UPD_SET_ELEM_DELETE,
+    UPD_SET_ELEM_DELETE_DROP,
+    /* map command */
+    UPD_MAP_CREATE,
+    UPD_MAP_ELEM_INSERT,
+    UPD_MAP_ELEM_DELETE,
+    UPD_MAP_ELEM_DELETE_DROP,
+    /* btree command */
+    UPD_BT_CREATE,
+    UPD_BT_ELEM_INSERT,
+    UPD_BT_ELEM_DELETE,
+    UPD_BT_ELEM_DELETE_DROP,
+    /* not command */
+    UPD_NONE
+};
+
+/* log header structure */
+typedef struct _loghdr {
+    uint8_t     logtype;        /* Log type */
+    uint8_t     updtype;        /* update command type */
+    uint8_t     reserved_8[2];
+    uint32_t    body_length;    /* LogRec body length */
+} LogHdr;
+
+/* log record structure */
+typedef struct _logrec {
+    LogHdr      header;
+    char        *body;          /* specific log record data */
+} LogRec;
+
+/* Specific Log Record Structure */
+
 /* key hash item common */
 struct lrec_item_common {
     uint8_t     ittype;         /* item type */
@@ -50,6 +142,7 @@ struct lrec_item_common {
     uint32_t    exptime;        /* expire time */
 };
 
+/* collection meta data */
 struct lrec_coll_meta {
     uint8_t     ovflact;        /* overflow action */
     uint8_t     mflags;         /* sticky, readable, trimmed flags */
@@ -57,22 +150,6 @@ struct lrec_coll_meta {
     uint8_t     reserved_8[1];
     int32_t     mcnt;           /* maximum element count */
 };
-
-/* Log Record Structure */
-
-typedef struct _loghdr {
-    uint8_t     logtype;        /* Log type */
-    uint8_t     updtype;        /* update command type */
-    uint8_t     reserved_8[2];
-    uint32_t    body_length;    /* LogRec body length */
-} LogHdr;
-
-typedef struct _logrec {
-    LogHdr      header;
-    char        *body;          /* specific log record data */
-} LogRec;
-
-/* Specific Log Record Structure */
 
 /* Item Link Log Record */
 typedef struct _IT_link_data {
@@ -381,4 +458,5 @@ hash_item *lrec_get_item_if_collection_link(ITLinkLog *log);
 /* set collection hashitem in snapshot elem log record. */
 void lrec_set_item_in_snapshot_elem(SnapshotElemLog *log, hash_item *it);
 int lrec_check_snapshot_done(SnapshotDoneLog *log);
+
 #endif

@@ -18,7 +18,7 @@
 #ifndef CMDLOGFILE_H
 #define CMDLOGFILE_H
 
-#include "cmdlogmgr.h"
+#include "cmdlogrec.h"
 
 /* external log file functions */
 void cmdlog_file_write(char *log_ptr, uint32_t log_size, bool dual_write);
