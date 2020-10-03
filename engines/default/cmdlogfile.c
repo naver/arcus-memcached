@@ -208,14 +208,14 @@ bool cmdlog_file_dual_write_finished(void)
     return finished;
 }
 
-void cmdlog_file_sync(void)
+int cmdlog_file_sync(void)
 {
     log_FILE *logfile = &log_file_gl.log_file;
     LogSN now_flush_lsn;
     int fd;
     int prev_fd = -1;
     int next_fd = -1;
-    int ret;
+    int ret = 0;
 
     pthread_mutex_lock(&log_file_gl.log_fsync_lock);
 
@@ -247,10 +247,6 @@ void cmdlog_file_sync(void)
                 logger->log(EXTENSION_LOG_WARNING, NULL,
                             "log file fsync error (%d:%s)\n",
                             errno, strerror(errno));
-                if (config->async_logging == false) {
-                    /* [FATAL] untreatable error => abnormal shutdown by assertion */
-                    assert(ret == 0);
-                }
                 break;
             }
 
@@ -271,6 +267,8 @@ void cmdlog_file_sync(void)
         } while(0);
     }
     pthread_mutex_unlock(&log_file_gl.log_fsync_lock);
+
+    return ret;
 }
 
 int cmdlog_file_open(char *path)

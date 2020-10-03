@@ -265,9 +265,10 @@ static void *do_cmdlog_gcommit_thread_main(void *arg)
 {
     group_commit_t *gcommit = &logmgr_gl.group_commit;
     log_waiter_t *waiters = NULL;
-    LogSN now_fsync_lsn;
     struct timeval  tv;
     struct timespec to;
+    LogSN now_fsync_lsn;
+    int ret;
 
     gcommit->running = RUNNING_STARTED;
     while (1) {
@@ -291,7 +292,8 @@ static void *do_cmdlog_gcommit_thread_main(void *arg)
 
             /* synchronize log file after 2ms */
             usleep(2000);
-            cmdlog_file_sync();
+            ret = cmdlog_file_sync();
+            assert(ret == 0);
             cmdlog_get_fsync_lsn(&now_fsync_lsn);
 
             pthread_mutex_lock(&gcommit->lock);

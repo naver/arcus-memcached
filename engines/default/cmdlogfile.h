@@ -24,7 +24,7 @@
 void cmdlog_file_write(char *log_ptr, uint32_t log_size, bool dual_write);
 void cmdlog_file_complete_dual_write(void);
 bool cmdlog_file_dual_write_finished(void);
-void cmdlog_file_sync(void);
+int  cmdlog_file_sync(void);
 
 int    cmdlog_file_open(char *path);
 void   cmdlog_file_close(void);
