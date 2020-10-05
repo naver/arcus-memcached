@@ -23,7 +23,7 @@
 
 /* external log buffer functions */
 void cmdlog_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_write);
-void cmdlog_buff_flush(LogSN *upto_lsn);
+void cmdlog_buff_flush_direct(LogSN *upto_lsn);
 void cmdlog_buff_flush_request(LogSN *upto_lsn);
 void cmdlog_buff_complete_dual_write(bool success);
 
