@@ -56,7 +56,10 @@ typedef struct _log_buffer {
     uint32_t    fqsz;   /* flush request queue size */
     uint32_t    fbgn;   /* the queue index to begin flush */
     uint32_t    fend;   /* the queue index to end flush */
-    int32_t     dw_end; /* the queue index to end dual write */
+
+    /* dual write */
+    int32_t     dw_end;  /* the index of flush request where dual write end */
+    size_t      dw_size; /* the total size of log records to do dual write */
 } log_BUFFER;
 
 /* log flusher structure */
@@ -112,10 +115,13 @@ static uint32_t do_log_buff_flush(bool flush_all)
     uint32_t    nflush = 0;
     bool        dual_write_flag = false;
     bool        dual_write_complete_flag = false;
+    size_t      dual_write_size = 0;
 
     /* computate flush size */
     pthread_mutex_lock(&log_buff_gl.log_write_lock);
     if (logbuff->fbgn == logbuff->dw_end) {
+        dual_write_size = logbuff->dw_size;
+        logbuff->dw_size = 0;
         logbuff->dw_end = -1;
         dual_write_complete_flag = true;
     }
@@ -141,10 +147,11 @@ static uint32_t do_log_buff_flush(bool flush_all)
 
     if (dual_write_complete_flag) {
         cmdlog_file_complete_dual_write();
+        assert(dual_write_size == cmdlog_file_getsize());
 
         pthread_mutex_lock(&log_buff_gl.flush_lsn_lock);
         log_buff_gl.nxt_flush_lsn.filenum += 1;
-        log_buff_gl.nxt_flush_lsn.roffset = 0;
+        log_buff_gl.nxt_flush_lsn.roffset = dual_write_size;
         pthread_mutex_unlock(&log_buff_gl.flush_lsn_lock);
     }
 
@@ -220,6 +227,9 @@ static LogSN do_log_buff_write(LogRec *logrec, bool dual_write)
     /* write log record at the found location of log buffer */
     lrec_write_to_buffer(logrec, &logbuff->data[logbuff->tail]);
     logbuff->tail += total_length;
+    if (dual_write) {
+        logbuff->dw_size += total_length;
+    }
 
     /* update nxt_write_lsn */
     current_lsn = log_buff_gl.nxt_write_lsn;
@@ -269,8 +279,11 @@ static void do_log_buff_complete_dual_write(bool success)
 
         /* update nxt_write_lsn */
         log_buff_gl.nxt_write_lsn.filenum += 1;
-        log_buff_gl.nxt_write_lsn.roffset = 0;
+        log_buff_gl.nxt_write_lsn.roffset = logbuff->dw_size;
     } else {
+        /* clear dual write size */
+        logbuff->dw_size = 0;
+
         /* reset dual_write flag in flush reqeust queue */
         int index = logbuff->fbgn;
         while (logbuff->fque[index].nflush > 0) {
@@ -435,7 +448,10 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
     memset(logbuff->fque, 0, logbuff->fqsz * sizeof(log_FREQ));
     logbuff->fbgn = 0;
     logbuff->fend = 0;
+
+    /* dual write init */
     logbuff->dw_end = -1;
+    logbuff->dw_size = 0;
 
     /* log flush thread init */
     log_FLUSHER *flusher = &log_buff_gl.log_flusher;
