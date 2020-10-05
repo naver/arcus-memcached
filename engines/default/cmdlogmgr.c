@@ -368,15 +368,9 @@ void cmdlog_waiter_end(log_waiter_t *waiter, ENGINE_ERROR_CODE *result)
         group_commit_t *gcommit = &logmgr_gl.group_commit;
         LogSN now_fsync_lsn;
 
-#ifdef ENABLE_PERSISTENCE_03_REQUEST_FLUSH_IN_SYNC
         /* request flush thread to flush log records up to waiter->lsn */
         cmdlog_buff_flush_request(&waiter->lsn);
 
-#else
-        /* flush log records up to waiter->lsn */
-        cmdlog_buff_flush(&waiter->lsn);
-
-#endif
         cmdlog_get_fsync_lsn(&now_fsync_lsn);
         if (LOGSN_IS_LE(&now_fsync_lsn, &waiter->lsn)) {
             /* add waiter to group commit list */

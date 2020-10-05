@@ -74,9 +74,7 @@ struct log_buff_global {
     log_FLUSHER     log_flusher;
     LogSN           nxt_write_lsn;
     LogSN           nxt_flush_lsn;
-#ifdef ENABLE_PERSISTENCE_03_REQUEST_FLUSH_IN_SYNC
     LogSN           upt_flush_lsn; /* waiter's lsn to flush in sync mode */
-#endif
     pthread_mutex_t log_write_lock;
     pthread_mutex_t log_flush_lock;
     pthread_mutex_t flush_lsn_lock;
@@ -96,7 +94,6 @@ static void do_log_flusher_wakeup(log_FLUSHER *flusher)
     pthread_mutex_unlock(&flusher->lock);
 }
 
-#ifdef ENABLE_PERSISTENCE_03_REQUEST_FLUSH_IN_SYNC
 static bool do_log_buff_flush_requested(void)
 {
     /* in sync mode, we have to flush log records as soon as possible */
@@ -109,7 +106,6 @@ static bool do_log_buff_flush_requested(void)
     return flush;
 }
 
-#endif
 static uint32_t do_log_buff_flush(bool flush_all)
 {
     log_BUFFER *logbuff = &log_buff_gl.log_buffer;
@@ -128,20 +124,12 @@ static uint32_t do_log_buff_flush(bool flush_all)
         dual_write_flag = logbuff->fque[logbuff->fbgn].dual_write;
         assert(nflush > 0);
     } else {
-#ifdef ENABLE_PERSISTENCE_03_REQUEST_FLUSH_IN_SYNC
         if (logbuff->fque[logbuff->fend].nflush > 0 &&
             (flush_all || do_log_buff_flush_requested())) {
             nflush = logbuff->fque[logbuff->fend].nflush;
             dual_write_flag = logbuff->fque[logbuff->fend].dual_write;
             if ((++logbuff->fend) == logbuff->fqsz) logbuff->fend = 0;
         }
-#else
-        if (flush_all && logbuff->fque[logbuff->fend].nflush > 0) {
-            nflush = logbuff->fque[logbuff->fend].nflush;
-            dual_write_flag = logbuff->fque[logbuff->fend].dual_write;
-            if ((++logbuff->fend) == logbuff->fqsz) logbuff->fend = 0;
-        }
-#endif
     }
     if (nflush > 0) {
         if (logbuff->head == logbuff->last) {
@@ -371,7 +359,6 @@ void cmdlog_buff_flush(LogSN *upto_lsn)
     }
 }
 
-#ifdef ENABLE_PERSISTENCE_03_REQUEST_FLUSH_IN_SYNC
 void cmdlog_buff_flush_request(LogSN *upto_lsn)
 {
     assert(upto_lsn);
@@ -390,7 +377,6 @@ void cmdlog_buff_flush_request(LogSN *upto_lsn)
     }
 }
 
-#endif
 void cmdlog_buff_complete_dual_write(bool success)
 {
     do_log_buff_complete_dual_write(success);
@@ -419,10 +405,8 @@ ENGINE_ERROR_CODE cmdlog_buf_init(struct default_engine* engine)
     /* log buff global init */
     log_buff_gl.nxt_flush_lsn.filenum = 1;
     log_buff_gl.nxt_flush_lsn.roffset = 0;
-#ifdef ENABLE_PERSISTENCE_03_REQUEST_FLUSH_IN_SYNC
     log_buff_gl.upt_flush_lsn.filenum = 0;
     log_buff_gl.upt_flush_lsn.roffset = 0;
-#endif
     log_buff_gl.nxt_write_lsn = log_buff_gl.nxt_flush_lsn;
 
     pthread_mutex_init(&log_buff_gl.log_write_lock, NULL);
