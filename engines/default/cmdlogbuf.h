@@ -24,6 +24,9 @@
 /* external log buffer functions */
 void cmdlog_buff_write(LogRec *logrec, log_waiter_t *waiter, bool dual_write);
 void cmdlog_buff_flush(LogSN *upto_lsn);
+#ifdef ENABLE_PERSISTENCE_03_REQUEST_FLUSH_IN_SYNC
+void cmdlog_buff_flush_request(LogSN *upto_lsn);
+#endif
 void cmdlog_buff_complete_dual_write(bool success);
 
 void cmdlog_get_write_lsn(LogSN *lsn);
