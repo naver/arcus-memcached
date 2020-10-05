@@ -231,9 +231,6 @@ struct settings {
     bool allow_detailed;    /* detailed stats commands are allowed */
     int reqs_per_event;     /* Maximum number of io to process on each io-event. */
     bool use_cas;
-#ifdef ENABLE_PERSISTENCE
-    bool use_persistence;
-#endif
     enum protocol binding_protocol;
     int backlog;
     size_t item_size_max;   /* Maximum item size, and upper end for slabs */
