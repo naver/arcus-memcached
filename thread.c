@@ -311,17 +311,6 @@ static void *worker_libevent(void *arg)
     return NULL;
 }
 
-static int number_of_pending(conn *c, conn *list)
-{
-    int rv = 0;
-    for (; list; list = list->next) {
-        if (list == c) {
-            rv++;
-        }
-    }
-    return rv;
-}
-
 /*
  * Processes an incoming "handle a new connection" item. This is called when
  * input arrives on the libevent wakeup pipe.
@@ -466,6 +455,17 @@ bool should_io_blocked(const void *cookie)
     return blocked;
 }
 
+static int number_of_pending(conn *c, conn *list)
+{
+    int rv = 0;
+    for (; list; list = list->next) {
+        if (list == c) {
+            rv++;
+        }
+    }
+    return rv;
+}
+
 void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
 {
     struct conn *conn = (struct conn *)cookie;
@@ -495,14 +495,15 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
         conn->io_blocked = false;
         conn->aiostat = status;
 
-        if (number_of_pending(conn, thr->pending_io) == 0) {
+        pended = number_of_pending(conn, thr->pending_io);
+        if (pended == 0) {
             if (thr->pending_io == NULL) {
                 notify = 1;
             }
             conn->next = thr->pending_io;
             thr->pending_io = conn;
+            pended = 1;
         }
-        pended = number_of_pending(conn, thr->pending_io);
         assert(pended == 1);
     }
     UNLOCK_THREAD(thr);
