@@ -2103,6 +2103,7 @@ static void process_mop_get_complete(conn *c)
             STATS_ELEM_HITS(c, mop_get, c->coll_key, c->coll_nkey);
         } else {
             STATS_CMD_NOKEY(c, mop_get);
+            /* Clear the ewouldblock if it's set */
             if (c->ewouldblock)
                 c->ewouldblock = false;
         }
@@ -4699,8 +4700,7 @@ static void process_bin_lop_get(conn *c)
         do {
             bodylen = sizeof(rsp->message.body) + (elem_count * sizeof(uint32_t));
             if ((vlenptr = (uint32_t *)malloc(elem_count * sizeof(uint32_t))) == NULL) {
-                ret = ENGINE_ENOMEM;
-                break;
+                ret = ENGINE_ENOMEM; break;
             }
             for (i = 0; i < elem_count; i++) {
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST,
@@ -4747,6 +4747,7 @@ static void process_bin_lop_get(conn *c)
                 free(vlenptr);
                 vlenptr = NULL;
             }
+            /* Clear the ewouldblock if it's set */
             if (c->ewouldblock)
                 c->ewouldblock = false;
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
@@ -5148,8 +5149,7 @@ static void process_bin_sop_get(conn *c)
         do {
             bodylen = sizeof(rsp->message.body) + (elem_count * sizeof(uint32_t));
             if ((vlenptr = (uint32_t*)malloc(elem_count * sizeof(uint32_t))) == NULL) {
-                ret = ENGINE_ENOMEM;
-                break;
+                ret = ENGINE_ENOMEM; break;
             }
             for (i = 0; i < elem_count; i++) {
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
@@ -5196,6 +5196,7 @@ static void process_bin_sop_get(conn *c)
                 free(vlenptr);
                 vlenptr = NULL;
             }
+            /* Clear the ewouldblock if it's set */
             if (c->ewouldblock)
                 c->ewouldblock = false;
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
@@ -5756,8 +5757,7 @@ static void process_bin_bop_get(conn *c)
         do {
             bodylen = sizeof(rsp->message.body) + (elem_count * (sizeof(uint64_t)+sizeof(uint32_t)));
             if ((bkeyptr = (uint32_t *)malloc(elem_count * sizeof(uint64_t)+sizeof(uint32_t))) == NULL) {
-                ret = ENGINE_ENOMEM;
-                break;
+                ret = ENGINE_ENOMEM; break;
             }
             vlenptr = (uint32_t *)((char*)bkeyptr + (sizeof(uint64_t) * elem_count));
             for (i = 0; i < elem_count; i++) {
@@ -5806,6 +5806,7 @@ static void process_bin_bop_get(conn *c)
                 free(bkeyptr);
                 bkeyptr = NULL;
             }
+            /* Clear the ewouldblock if it's set */
             if (c->ewouldblock)
                 c->ewouldblock = false;
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
@@ -9681,6 +9682,7 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
             STATS_ELEM_HITS(c, lop_get, key, nkey);
         } else {
             STATS_CMD_NOKEY(c, lop_get);
+            /* Clear the ewouldblock if it's set */
             if (c->ewouldblock)
                 c->ewouldblock = false;
         }
@@ -10078,6 +10080,7 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
             STATS_ELEM_HITS(c, sop_get, key, nkey);
         } else {
             STATS_CMD_NOKEY(c, sop_get);
+            /* Clear the ewouldblock if it's set */
             if (c->ewouldblock)
                 c->ewouldblock = false;
         }
@@ -10460,6 +10463,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
             STATS_ELEM_HITS(c, bop_get, key, nkey);
         } else {
             STATS_CMD_NOKEY(c, bop_get);
+            /* Clear the ewouldblock if it's set */
             if (c->ewouldblock)
                 c->ewouldblock = false;
         }
@@ -13236,7 +13240,6 @@ bool conn_parse_cmd(conn *c)
             return false; /* blocked */
         }
     }
-
     return true;
 }
 
