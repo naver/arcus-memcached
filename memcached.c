@@ -711,7 +711,7 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
     c->io_blocked = false;
-    c->premature_notify_io_complete = false;
+    c->premature_io_complete = false;
 
     /* save client ip address in connection object */
     struct sockaddr_in addr;
@@ -898,7 +898,7 @@ static void conn_cleanup(conn *c)
 
     c->ewouldblock = false;
     c->io_blocked = false;
-    c->premature_notify_io_complete = false;
+    c->premature_io_complete = false;
 }
 
 void conn_close(conn *c)

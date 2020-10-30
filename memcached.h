@@ -445,12 +445,12 @@ struct conn {
      * notify_io_complete locks the thread and checks io_blocked.
      * If io_blocked=false, then we know for sure that the worker thread
      * has not removed the connection yet.  So, it sets
-     * premature_notify_io_complete=true.
+     * premature_io_complete=true.
      *
      * See conn_parse_cmd, conn_nread, and notify_io_complete.
      */
     bool io_blocked;
-    bool premature_notify_io_complete;
+    bool premature_io_complete;
 };
 
 /* set connection's ewouldblock according to the given return value */

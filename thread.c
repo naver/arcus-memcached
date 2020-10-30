@@ -453,9 +453,9 @@ bool should_io_blocked(const void *cookie)
     bool blocked = false;
 
     LOCK_THREAD(thr);
-    if (c->premature_notify_io_complete) {
+    if (c->premature_io_complete) {
         /* notify_io_complete was called before we got here */
-        c->premature_notify_io_complete = false;
+        c->premature_io_complete = false;
     } else {
         event_del(&c->event);
         c->io_blocked = true;
@@ -490,7 +490,7 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
 
     LOCK_THREAD(thr);
     if (thr != conn->thread || conn->state == conn_closing || !conn->io_blocked) {
-        conn->premature_notify_io_complete = true;
+        conn->premature_io_complete = true;
     } else {
         conn->io_blocked = false;
         conn->aiostat = status;
