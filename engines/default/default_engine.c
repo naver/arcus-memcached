@@ -36,7 +36,7 @@
  */
 #define ACTION_BEFORE_READ(c, k, l)
 #define ACTION_BEFORE_WRITE(c, k, l)
-#define ACTION_AFTER_WRITE(c, r)
+#define ACTION_AFTER_WRITE(c, e, r)
 
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
@@ -276,7 +276,7 @@ default_item_allocate(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     it = item_alloc(key, nkey, flags, exptime, nbytes, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     if (it != NULL) {
         item_set_cas(it, cas);
         *item = it;
@@ -306,7 +306,7 @@ default_item_delete(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = item_delete(key, nkey, cas, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -351,7 +351,7 @@ default_store(ENGINE_HANDLE* handle, const void *cookie,
 
     ACTION_BEFORE_WRITE(cookie, item_get_key(it), it->nkey);
     ret = item_store(it, cas, operation, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -370,7 +370,7 @@ default_arithmetic(ENGINE_HANDLE* handle, const void* cookie,
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = item_arithmetic(key, nkey, increment, create,
                           delta, initial, flags, exptime, cas, result, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -382,7 +382,7 @@ default_flush(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, NULL, 0);
     ret = item_flush_expired(prefix, nprefix, when, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, get_handle(handle), ret);
     return ret;
 }
 
@@ -401,7 +401,7 @@ default_list_struct_create(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = list_struct_create(key, nkey, attrp, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -415,7 +415,7 @@ default_list_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     elem = list_elem_alloc(nbytes, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, get_handle(handle), ret);
     if (elem != NULL) {
         *eitem = elem;
         ret = ENGINE_SUCCESS;
@@ -451,7 +451,7 @@ default_list_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = list_elem_insert(key, nkey, index, (list_elem_item *)eitem,
                            attrp, created, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -468,7 +468,7 @@ default_list_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = list_elem_delete(key, nkey, from_index, to_index, drop_if_empty,
                            del_count, dropped, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -487,7 +487,7 @@ default_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     else        ACTION_BEFORE_READ(cookie, key, nkey);
     ret = list_elem_get(key, nkey, from_index, to_index, delete, drop_if_empty,
                         eresult, cookie);
-    if (delete) ACTION_AFTER_WRITE(cookie, ret);
+    if (delete) ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -506,7 +506,7 @@ default_set_struct_create(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = set_struct_create(key, nkey, attrp, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -520,7 +520,7 @@ default_set_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     elem = set_elem_alloc(nbytes, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, get_handle(handle), ret);
     if (elem != NULL) {
         *eitem = elem;
         ret = ENGINE_SUCCESS;
@@ -555,7 +555,7 @@ default_set_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = set_elem_insert(key, nkey, (set_elem_item*)eitem,
                           attrp, created, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -573,7 +573,7 @@ default_set_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = set_elem_delete(key, nkey, value, nbytes,
                           drop_if_empty, dropped, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -607,7 +607,7 @@ default_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     else        ACTION_BEFORE_READ(cookie, key, nkey);
     ret = set_elem_get(key, nkey, count, delete, drop_if_empty,
                        eresult, cookie);
-    if (delete) ACTION_AFTER_WRITE(cookie, ret);
+    if (delete) ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -627,7 +627,7 @@ default_map_struct_create(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = map_struct_create(key, nkey, attrp, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -641,7 +641,7 @@ default_map_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     elem = map_elem_alloc(nfield, nbytes, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, get_handle(handle), ret);
     if (elem != NULL) {
         *eitem = elem;
         ret = ENGINE_SUCCESS;
@@ -675,7 +675,7 @@ default_map_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = map_elem_insert(key, nkey, (map_elem_item*)eitem, attrp, created, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -690,7 +690,7 @@ default_map_elem_update(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = map_elem_update(key, nkey, field, value, nbytes, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -707,7 +707,7 @@ default_map_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = map_elem_delete(key, nkey, numfields, flist, drop_if_empty, del_count,
                           dropped, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -726,7 +726,7 @@ default_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     else        ACTION_BEFORE_READ(cookie, key, nkey);
     ret = map_elem_get(key, nkey, numfields, flist, delete, drop_if_empty,
                        eresult, cookie);
-    if (delete) ACTION_AFTER_WRITE(cookie, ret);
+    if (delete) ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -745,7 +745,7 @@ default_btree_struct_create(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = btree_struct_create(key, nkey, attrp, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -760,7 +760,7 @@ default_btree_elem_alloc(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     elem = btree_elem_alloc(nbkey, neflag, nbytes, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, get_handle(handle), ret);
     if (elem != NULL) {
         *eitem = elem;
         ret = ENGINE_SUCCESS;
@@ -811,7 +811,7 @@ default_btree_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
                                 cookie);
         trimmed->elems = trimmed_elems;
     }
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -827,7 +827,7 @@ default_btree_elem_update(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = btree_elem_update(key, nkey, bkrange, eupdate, value, nbytes, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -846,7 +846,7 @@ default_btree_elem_delete(ENGINE_HANDLE* handle, const void* cookie,
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = btree_elem_delete(key, nkey, bkrange, efilter, req_count,
                             drop_if_empty, del_count, opcost, dropped, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -866,7 +866,7 @@ default_btree_elem_arithmetic(ENGINE_HANDLE* handle, const void* cookie,
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = btree_elem_arithmetic(key, nkey, bkrange, increment, create,
                                 delta, initial, eflagp, result, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -886,7 +886,7 @@ default_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     else        ACTION_BEFORE_READ(cookie, key, nkey);
     ret = btree_elem_get(key, nkey, bkrange, efilter, offset, req_count,
                          delete, drop_if_empty, eresult, cookie);
-    if (delete) ACTION_AFTER_WRITE(cookie, ret);
+    if (delete) ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -1039,7 +1039,7 @@ default_setattr(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = item_setattr(key, nkey, attr_ids, attr_count, attr_data, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 

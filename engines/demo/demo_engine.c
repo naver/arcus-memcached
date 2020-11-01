@@ -35,7 +35,7 @@
  */
 #define ACTION_BEFORE_READ(c, k, l)
 #define ACTION_BEFORE_WRITE(c, k, l)
-#define ACTION_AFTER_WRITE(c, r)
+#define ACTION_AFTER_WRITE(c, e, r)
 
 /* mechanism for handling bad vbucket requests */
 #define VBUCKET_GUARD(e, v)
@@ -194,7 +194,7 @@ Demo_item_allocate(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     it = dm_item_alloc(engine, key, nkey, flags, exptime, nbytes, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     if (it != NULL) {
         dm_item_set_cas(it, cas);
         *item = it;
@@ -224,7 +224,7 @@ Demo_item_delete(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     ret = dm_item_delete(engine, key, nkey, cas);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
@@ -263,7 +263,7 @@ Demo_store(ENGINE_HANDLE* handle, const void *cookie,
 
     ACTION_BEFORE_WRITE(cookie, item_get_key(it), it->nkey);
     ret = dm_item_store(engine, it, cas, operation, cookie);
-    ACTION_AFTER_WRITE(cookie, ret);
+    ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
 
