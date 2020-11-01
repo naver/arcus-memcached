@@ -711,7 +711,7 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
     c->io_blocked = false;
-    c->premature_notify_io_complete = false;
+    c->premature_io_complete = false;
 
     /* save client ip address in connection object */
     struct sockaddr_in addr;
@@ -898,7 +898,7 @@ static void conn_cleanup(conn *c)
 
     c->ewouldblock = false;
     c->io_blocked = false;
-    c->premature_notify_io_complete = false;
+    c->premature_io_complete = false;
 }
 
 void conn_close(conn *c)
@@ -2103,6 +2103,7 @@ static void process_mop_get_complete(conn *c)
             STATS_ELEM_HITS(c, mop_get, c->coll_key, c->coll_nkey);
         } else {
             STATS_CMD_NOKEY(c, mop_get);
+            /* Clear the ewouldblock if it's set */
             if (c->ewouldblock)
                 c->ewouldblock = false;
         }
@@ -4699,8 +4700,7 @@ static void process_bin_lop_get(conn *c)
         do {
             bodylen = sizeof(rsp->message.body) + (elem_count * sizeof(uint32_t));
             if ((vlenptr = (uint32_t *)malloc(elem_count * sizeof(uint32_t))) == NULL) {
-                ret = ENGINE_ENOMEM;
-                break;
+                ret = ENGINE_ENOMEM; break;
             }
             for (i = 0; i < elem_count; i++) {
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST,
@@ -4747,6 +4747,7 @@ static void process_bin_lop_get(conn *c)
                 free(vlenptr);
                 vlenptr = NULL;
             }
+            /* Clear the ewouldblock if it's set */
             if (c->ewouldblock)
                 c->ewouldblock = false;
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
@@ -5148,8 +5149,7 @@ static void process_bin_sop_get(conn *c)
         do {
             bodylen = sizeof(rsp->message.body) + (elem_count * sizeof(uint32_t));
             if ((vlenptr = (uint32_t*)malloc(elem_count * sizeof(uint32_t))) == NULL) {
-                ret = ENGINE_ENOMEM;
-                break;
+                ret = ENGINE_ENOMEM; break;
             }
             for (i = 0; i < elem_count; i++) {
                 mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
@@ -5196,6 +5196,7 @@ static void process_bin_sop_get(conn *c)
                 free(vlenptr);
                 vlenptr = NULL;
             }
+            /* Clear the ewouldblock if it's set */
             if (c->ewouldblock)
                 c->ewouldblock = false;
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
@@ -5756,8 +5757,7 @@ static void process_bin_bop_get(conn *c)
         do {
             bodylen = sizeof(rsp->message.body) + (elem_count * (sizeof(uint64_t)+sizeof(uint32_t)));
             if ((bkeyptr = (uint32_t *)malloc(elem_count * sizeof(uint64_t)+sizeof(uint32_t))) == NULL) {
-                ret = ENGINE_ENOMEM;
-                break;
+                ret = ENGINE_ENOMEM; break;
             }
             vlenptr = (uint32_t *)((char*)bkeyptr + (sizeof(uint64_t) * elem_count));
             for (i = 0; i < elem_count; i++) {
@@ -5806,6 +5806,7 @@ static void process_bin_bop_get(conn *c)
                 free(bkeyptr);
                 bkeyptr = NULL;
             }
+            /* Clear the ewouldblock if it's set */
             if (c->ewouldblock)
                 c->ewouldblock = false;
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
@@ -7162,10 +7163,18 @@ static void process_bin_update(conn *c)
          * Anywhere else too?
          */
         if (c->cmd == PROTOCOL_BINARY_CMD_SET) {
-            /* @todo fix this for the ASYNC interface! */
+            /* set temporarily noreply for the ASYNC interface if it isn't set. */
+            bool set_temporary_noreply = false;
+            if (!c->noreply) {
+                c->noreply = true;
+                set_temporary_noreply = true;
+            }
             mc_engine.v1->remove(mc_engine.v0, c, key, nkey,
                                  ntohll(req->message.header.request.cas),
                                  c->binary_header.request.vbucket);
+            if (set_temporary_noreply) {
+                c->noreply = false;
+            }
         }
         break;
     default:
@@ -8436,9 +8445,14 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         c->write_and_go = conn_swallow;
 
         /* Avoid stale data persisting in cache because we failed alloc.
-         * Unacceptable for SET. Anywhere else too? */
+         * Unacceptable for SET. Anywhere else too?
+         */
         if (store_op == OPERATION_SET) {
+            /* set temporarily noreply for the ASYNC interface */
+            assert(c->noreply == false);
+            c->noreply = true;
             mc_engine.v1->remove(mc_engine.v0, c, key, nkey, 0, 0);
+            c->noreply = false;
         }
         break;
     default:
@@ -9755,6 +9769,7 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
             STATS_ELEM_HITS(c, lop_get, key, nkey);
         } else {
             STATS_CMD_NOKEY(c, lop_get);
+            /* Clear the ewouldblock if it's set */
             if (c->ewouldblock)
                 c->ewouldblock = false;
         }
@@ -10152,6 +10167,7 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
             STATS_ELEM_HITS(c, sop_get, key, nkey);
         } else {
             STATS_CMD_NOKEY(c, sop_get);
+            /* Clear the ewouldblock if it's set */
             if (c->ewouldblock)
                 c->ewouldblock = false;
         }
@@ -10534,6 +10550,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
             STATS_ELEM_HITS(c, bop_get, key, nkey);
         } else {
             STATS_CMD_NOKEY(c, bop_get);
+            /* Clear the ewouldblock if it's set */
             if (c->ewouldblock)
                 c->ewouldblock = false;
         }
@@ -13316,7 +13333,6 @@ bool conn_parse_cmd(conn *c)
             return false; /* blocked */
         }
     }
-
     return true;
 }
 
@@ -14296,6 +14312,12 @@ static int get_thread_index(const void *cookie)
     return c->thread->index;
 }
 
+static bool get_noreply(const void *cookie)
+{
+    conn *c = (conn *)cookie;
+    return c->noreply;
+}
+
 static void *new_independent_stats(void)
 {
     return threadlocal_stats_create(settings.num_threads);
@@ -14540,6 +14562,7 @@ static SERVER_HANDLE_V1 *get_server_api(void)
         .get_socket_fd = get_socket_fd,
         .get_client_ip = get_client_ip,
         .get_thread_index = get_thread_index,
+        .get_noreply = get_noreply,
         .server_version = get_server_version,
         .hash = mc_hash,
         .realtime = realtime,

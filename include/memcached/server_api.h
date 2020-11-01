@@ -122,6 +122,15 @@ extern "C" {
         int (*get_thread_index)(const void *cookie);
 
         /**
+         * Retrieve noreply value of the session for the given cookie.
+         *
+         * @param cookie The cookie provided by the frontend
+         *
+         * @return the noreply value of the session for the given cookie.
+         */
+        bool (*get_noreply)(const void *cookie);
+
+        /**
          * Let a connection know that IO has completed.
          * @param cookie cookie representing the connection
          * @param status the status for the io operation
