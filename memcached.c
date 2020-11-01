@@ -7163,10 +7163,18 @@ static void process_bin_update(conn *c)
          * Anywhere else too?
          */
         if (c->cmd == PROTOCOL_BINARY_CMD_SET) {
-            /* @todo fix this for the ASYNC interface! */
+            /* set temporarily noreply for the ASYNC interface if it isn't set. */
+            bool set_temporary_noreply = false;
+            if (!c->noreply) {
+                c->noreply = true;
+                set_temporary_noreply = true;
+            }
             mc_engine.v1->remove(mc_engine.v0, c, key, nkey,
                                  ntohll(req->message.header.request.cas),
                                  c->binary_header.request.vbucket);
+            if (set_temporary_noreply) {
+                c->noreply = false;
+            }
         }
         break;
     default:
@@ -8437,9 +8445,14 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         c->write_and_go = conn_swallow;
 
         /* Avoid stale data persisting in cache because we failed alloc.
-         * Unacceptable for SET. Anywhere else too? */
+         * Unacceptable for SET. Anywhere else too?
+         */
         if (store_op == OPERATION_SET) {
+            /* set temporarily noreply for the ASYNC interface */
+            assert(c->noreply == false);
+            c->noreply = true;
             mc_engine.v1->remove(mc_engine.v0, c, key, nkey, 0, 0);
+            c->noreply = false;
         }
         break;
     default:
@@ -14219,6 +14232,12 @@ static int get_thread_index(const void *cookie)
     return c->thread->index;
 }
 
+static bool get_noreply(const void *cookie)
+{
+    conn *c = (conn *)cookie;
+    return c->noreply;
+}
+
 static void *new_independent_stats(void)
 {
     return threadlocal_stats_create(settings.num_threads);
@@ -14463,6 +14482,7 @@ static SERVER_HANDLE_V1 *get_server_api(void)
         .get_socket_fd = get_socket_fd,
         .get_client_ip = get_client_ip,
         .get_thread_index = get_thread_index,
+        .get_noreply = get_noreply,
         .server_version = get_server_version,
         .hash = mc_hash,
         .realtime = realtime,
