@@ -130,6 +130,14 @@ extern "C" {
          */
         bool (*get_noreply)(const void *cookie);
 
+#ifdef MULTI_NOTIFY_IO_COMPLETE
+        /**
+         * Let a connection know that it must wait for IO completion.
+         * @param cookie cookie representing the connection
+         */
+        void (*waitfor_io_complete)(const void *cookie);
+
+#endif
         /**
          * Let a connection know that IO has completed.
          * @param cookie cookie representing the connection

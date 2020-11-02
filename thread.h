@@ -211,6 +211,9 @@ bool   has_cycle(struct conn *c);
 size_t list_to_array(struct conn **dest, size_t max_items, struct conn **l);
 
 bool should_io_blocked(const void *cookie);
+#ifdef MULTI_NOTIFY_IO_COMPLETE
+void waitfor_io_complete(const void *cookie);
+#endif
 void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status);
 void remove_io_pending(const void *cookie);
 void dispatch_conn_new(int sfd, STATE_FUNC init_state, int event_flags,

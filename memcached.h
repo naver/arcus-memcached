@@ -430,6 +430,39 @@ struct conn {
 
     ENGINE_ERROR_CODE aiostat;
     bool ewouldblock;
+#ifdef MULTI_NOTIFY_IO_COMPLETE
+    /* ewouldblock=true is set when the command returns EWOULDBLOCK.
+     * The worker thread is going to remove the connection from the
+     * event loop and set ewouldblock=false.  But these two events
+     * (set and remove from the event loop) do not happen atomically.
+     * Rarely, notify_io_complete runs before the worker thread removes
+     * the connection from the event loop.  Below, three more variables
+     * deal with these cases...
+     *
+     * io_blocked=true is set when the worker thread actually removes
+     * the connection from the event loop.  The thread locks itself
+     * and then performs these two operations (set and event loop).
+     *
+     * current_io_wait is the number of waiting for IO completion.
+     * waitfor_io_complete() increments the current_io_wait and it must be
+     * called in storage engine before notify_io_complete() is called.
+     *
+     * premature_io_complete is the number of notifying IO completion.
+     * As the waitfor_io_complete() is called before the IO completion,
+     * the notify_io_complete() just decrements the current_io_wait.
+     *
+     * The work thread checks the current_io_wait value at the end of
+     * conn_parse_cmd and conn_nread state. If it is positive value,
+     * the thread blocks the current processing while setting io_blocked=true.
+     * If it is 0(zero), the thread continues the current processing
+     * without any blocking.
+     *
+     * See conn_parse_cmd, conn_nread, waitfor_io_complete, and notify_io_complete.
+     */
+    bool io_blocked;
+    unsigned int current_io_wait;       /* num of current io wait */
+    unsigned int premature_io_complete; /* num of premature io complete */
+#else
     /* ewouldblock=true is set when the command returns EWOULDBLOCK.
      * The worker thread is going to remove the connection from the
      * event loop and set ewouldblock=false.  But these two events
@@ -451,6 +484,7 @@ struct conn {
      */
     bool io_blocked;
     bool premature_io_complete;
+#endif
 };
 
 /* set connection's ewouldblock according to the given return value */
