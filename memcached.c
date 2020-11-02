@@ -711,7 +711,12 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->aiostat = ENGINE_SUCCESS;
     c->ewouldblock = false;
     c->io_blocked = false;
+#ifdef MULTI_NOTIFY_IO_COMPLETE
+    c->current_io_wait = 0;
+    c->premature_io_complete = 0;
+#else
     c->premature_io_complete = false;
+#endif
 
     /* save client ip address in connection object */
     struct sockaddr_in addr;
@@ -898,7 +903,12 @@ static void conn_cleanup(conn *c)
 
     c->ewouldblock = false;
     c->io_blocked = false;
+#ifdef MULTI_NOTIFY_IO_COMPLETE
+    c->current_io_wait = 0;
+    c->premature_io_complete = 0;
+#else
     c->premature_io_complete = false;
+#endif
 }
 
 void conn_close(conn *c)
@@ -1539,8 +1549,13 @@ static void out_string(conn *c, const char *str)
         * It's better not to set the ewouldblock if noreply exists
         * when write operations are performed.
         */
-        if (c->ewouldblock)
+        if (c->ewouldblock) {
             c->ewouldblock = false;
+#ifdef MULTI_NOTIFY_IO_COMPLETE
+            mc_logger->log(EXTENSION_LOG_WARNING, c,
+                    "[FATAL] Unexpected ewouldblock in noreply processing.\n");
+#endif
+        }
         conn_set_state(c, conn_new_cmd);
         return;
     }
@@ -13478,8 +13493,13 @@ bool conn_mwrite(conn *c)
     /* Clear the ewouldblock so that the next read command from
      * the same connection does not falsely block and time out.
      */
-    if (c->ewouldblock)
+    if (c->ewouldblock) {
         c->ewouldblock = false;
+#ifdef MULTI_NOTIFY_IO_COMPLETE
+        mc_logger->log(EXTENSION_LOG_WARNING, c,
+                "[FATAL] Unexpected ewouldblock in conn_mwrite().\n");
+#endif
+    }
 
     switch (transmit(c)) {
     case TRANSMIT_COMPLETE:
@@ -14474,6 +14494,9 @@ static SERVER_HANDLE_V1 *get_server_api(void)
         .server_version = get_server_version,
         .hash = mc_hash,
         .realtime = realtime,
+#ifdef MULTI_NOTIFY_IO_COMPLETE
+        .waitfor_io_complete = waitfor_io_complete,
+#endif
         .notify_io_complete = notify_io_complete,
         .get_current_time = get_current_time,
 #ifdef NEW_PREFIX_STATS_MANAGEMENT

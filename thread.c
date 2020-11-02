@@ -442,6 +442,13 @@ bool should_io_blocked(const void *cookie)
     bool blocked = false;
 
     LOCK_THREAD(thr);
+#ifdef MULTI_NOTIFY_IO_COMPLETE
+    if (c->current_io_wait > 0) {
+        event_del(&c->event);
+        c->io_blocked = true;
+        blocked = true;
+    }
+#else
     if (c->premature_io_complete) {
         /* notify_io_complete was called before we got here */
         c->premature_io_complete = false;
@@ -450,10 +457,30 @@ bool should_io_blocked(const void *cookie)
         c->io_blocked = true;
         blocked = true;
     }
+#endif
     UNLOCK_THREAD(thr);
 
     return blocked;
 }
+
+#ifdef MULTI_NOTIFY_IO_COMPLETE
+void waitfor_io_complete(const void *cookie)
+{
+    struct conn *c = (struct conn *)cookie;
+    LIBEVENT_THREAD *thr = c->thread;
+
+    /* This function must be called before IO completion.
+     * Therefore, the premature_io_complete is always 0.
+     */
+    LOCK_THREAD(thr);
+    if (c->premature_io_complete > 0) {
+        c->premature_io_complete -= 1;
+    } else {
+        c->current_io_wait += 1;
+    }
+    UNLOCK_THREAD(thr);
+}
+#endif
 
 static int number_of_pending(conn *c, conn *list)
 {
@@ -490,6 +517,29 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
 
     LOCK_THREAD(thr);
     if (thr == conn->thread && conn->state != conn_closing) {
+#ifdef MULTI_NOTIFY_IO_COMPLETE
+        if (conn->current_io_wait > 0) {
+            conn->current_io_wait -= 1;
+            if (conn->current_io_wait == 0 && conn->io_blocked) {
+                conn->io_blocked = false;
+                conn->aiostat = status; /* meaning-less status */
+
+                int pended = number_of_pending(conn, thr->pending_io);
+                if (pended == 0) {
+                    if (thr->pending_io == NULL) {
+                        notify_thread = true;
+                    }
+                    conn->next = thr->pending_io;
+                    thr->pending_io = conn;
+                    pended = 1;
+                }
+                assert(pended == 1);
+            }
+        } else {
+            conn->premature_io_complete += 1;
+            premature_notify = true;
+        }
+#else
         if (conn->io_blocked) {
             conn->io_blocked = false;
             conn->aiostat = status;
@@ -508,6 +558,7 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
             conn->premature_io_complete = true;
             premature_notify = true;
         }
+#endif
     }
     UNLOCK_THREAD(thr);
 
@@ -519,8 +570,13 @@ void notify_io_complete(const void *cookie, ENGINE_ERROR_CODE status)
         }
     } else {
         if (premature_notify) {
+#ifdef MULTI_NOTIFY_IO_COMPLETE
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Premature notify_io_complete\n");
+#else
             mc_logger->log(EXTENSION_LOG_DEBUG, NULL,
                     "Premature notify_io_complete\n");
+#endif
         }
     }
 }
