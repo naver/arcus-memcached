@@ -2050,7 +2050,6 @@ out_mop_get_response(conn *c, bool delete, struct elems_result *eresultp)
             free(elem_array);
         if (respbuf)
             free(respbuf);
-        out_string(c, "SERVER_ERROR out of memory writing get response");
     }
     return ret;
 }
@@ -2106,6 +2105,7 @@ static void process_mop_get_complete(conn *c)
             /* Clear the ewouldblock if it's set */
             if (c->ewouldblock)
                 c->ewouldblock = false;
+            out_string(c, "SERVER_ERROR out of memory writing get response");
         }
         break;
     case ENGINE_ELEM_ENOENT:
@@ -9666,7 +9666,6 @@ out_lop_get_response(conn *c, bool delete, struct elems_result *eresultp)
             free(elem_array);
         if (respbuf)
             free(respbuf);
-        out_string(c, "SERVER_ERROR out of memory writing get response");
     }
     return ret;
 }
@@ -9707,6 +9706,7 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
             /* Clear the ewouldblock if it's set */
             if (c->ewouldblock)
                 c->ewouldblock = false;
+            out_string(c, "SERVER_ERROR out of memory writing get response");
         }
         break;
     case ENGINE_ELEM_ENOENT:
@@ -10066,7 +10066,6 @@ out_sop_get_response(conn *c, bool delete, struct elems_result *eresultp)
             free(elem_array);
         if (respbuf)
             free(respbuf);
-        out_string(c, "SERVER_ERROR out of memory writing get response");
     }
     return ret;
 }
@@ -10105,6 +10104,7 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
             /* Clear the ewouldblock if it's set */
             if (c->ewouldblock)
                 c->ewouldblock = false;
+            out_string(c, "SERVER_ERROR out of memory writing get response");
         }
         break;
     case ENGINE_ELEM_ENOENT:
@@ -10446,7 +10446,6 @@ out_bop_get_response(conn *c, bool delete, struct elems_result *eresultp)
             free(elem_array);
         if (respbuf)
             free(respbuf);
-        out_string(c, "SERVER_ERROR out of memory writing get response");
     }
     return ret;
 }
@@ -10488,6 +10487,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
             /* Clear the ewouldblock if it's set */
             if (c->ewouldblock)
                 c->ewouldblock = false;
+            out_string(c, "SERVER_ERROR out of memory writing get response");
         }
         break;
     case ENGINE_ELEM_ENOENT:
