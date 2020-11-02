@@ -374,6 +374,10 @@ void cmdlog_waiter_end(log_waiter_t *waiter, ENGINE_ERROR_CODE *result)
 
         cmdlog_get_fsync_lsn(&now_fsync_lsn);
         if (LOGSN_IS_LE(&now_fsync_lsn, &waiter->lsn)) {
+#ifdef MULTI_NOTIFY_IO_COMPLETE
+            /* Let it know that it must wait for IO completion */
+            engine->server.core->waitfor_io_complete(waiter->cookie);
+#endif
             /* add waiter to group commit list */
             pthread_mutex_lock(&gcommit->lock);
             do_cmdlog_add_commit_waiter(waiter);
