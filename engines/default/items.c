@@ -31,6 +31,9 @@
 #include "default_engine.h"
 #include "item_clog.h"
 
+#define PERSISTENCE_ACTION_BEGIN(a, b)
+#define PERSISTENCE_ACTION_END(a)
+
 //#define SET_DELETE_NO_MERGE
 //#define BTREE_DELETE_NO_MERGE
 
@@ -6045,6 +6048,7 @@ ENGINE_ERROR_CODE item_store(hash_item *item, uint64_t *cas,
                              const void *cookie)
 {
     ENGINE_ERROR_CODE ret;
+    PERSISTENCE_ACTION_BEGIN(cookie, UPD_STORE);
 
     LOCK_CACHE();
     switch (operation) {
@@ -6068,6 +6072,8 @@ ENGINE_ERROR_CODE item_store(hash_item *item, uint64_t *cas,
            ret = ENGINE_NOT_STORED;
     }
     UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -6080,6 +6086,7 @@ ENGINE_ERROR_CODE item_arithmetic(const void *key, const uint32_t nkey,
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
+    PERSISTENCE_ACTION_BEGIN(cookie, UPD_STORE);
 
     LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
@@ -6117,6 +6124,8 @@ ENGINE_ERROR_CODE item_arithmetic(const void *key, const uint32_t nkey,
         }
     }
     UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -6128,6 +6137,7 @@ ENGINE_ERROR_CODE item_delete(const void *key, const uint32_t nkey, uint64_t cas
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
+    PERSISTENCE_ACTION_BEGIN(cookie, UPD_DELETE);
 
     LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
@@ -6143,6 +6153,8 @@ ENGINE_ERROR_CODE item_delete(const void *key, const uint32_t nkey, uint64_t cas
         ret = ENGINE_KEY_ENOENT;
     }
     UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -6242,9 +6254,13 @@ ENGINE_ERROR_CODE item_flush_expired(const char *prefix, const int nprefix,
                                      rel_time_t when, const void *cookie)
 {
     ENGINE_ERROR_CODE ret;
+    PERSISTENCE_ACTION_BEGIN(cookie, UPD_FLUSH);
+
     LOCK_CACHE();
     ret = do_item_flush_expired(prefix, nprefix, when, cookie);
     UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -6579,6 +6595,7 @@ ENGINE_ERROR_CODE list_struct_create(const char *key, const uint32_t nkey,
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
+    PERSISTENCE_ACTION_BEGIN(cookie, UPD_LIST_CREATE);
 
     LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
@@ -6601,6 +6618,8 @@ ENGINE_ERROR_CODE list_struct_create(const char *key, const uint32_t nkey,
         }
     }
     UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -6642,6 +6661,7 @@ ENGINE_ERROR_CODE list_elem_insert(const char *key, const uint32_t nkey,
 {
     hash_item *it = NULL;
     ENGINE_ERROR_CODE ret;
+    PERSISTENCE_ACTION_BEGIN(cookie, UPD_LIST_ELEM_INSERT);
 
     *created = false;
 
@@ -6684,6 +6704,8 @@ ENGINE_ERROR_CODE list_elem_insert(const char *key, const uint32_t nkey,
     if (it != NULL) do_item_release(it);
 #endif
     UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -6721,6 +6743,8 @@ ENGINE_ERROR_CODE list_elem_delete(const char *key, const uint32_t nkey,
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
+    PERSISTENCE_ACTION_BEGIN(cookie, (drop_if_empty ? UPD_LIST_ELEM_DELETE_DROP
+                                                    : UPD_LIST_ELEM_DELETE));
 
     LOCK_CACHE();
     ret = do_list_item_find(key, nkey, DONT_UPDATE, &it);
@@ -6755,6 +6779,8 @@ ENGINE_ERROR_CODE list_elem_delete(const char *key, const uint32_t nkey,
         do_item_release(it);
     }
     UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -6766,6 +6792,10 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
+    if (delete) {
+        PERSISTENCE_ACTION_BEGIN(cookie, (drop_if_empty ? UPD_LIST_ELEM_DELETE_DROP
+                                                        : UPD_LIST_ELEM_DELETE));
+    }
 
     eresult->elem_array = NULL;
     eresult->elem_count = 0;
@@ -6811,6 +6841,10 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
         do_item_release(it);
     }
     UNLOCK_CACHE();
+
+    if (delete) {
+        PERSISTENCE_ACTION_END(ret);
+    }
     return ret;
 }
 
@@ -6822,6 +6856,7 @@ ENGINE_ERROR_CODE set_struct_create(const char *key, const uint32_t nkey,
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
+    PERSISTENCE_ACTION_BEGIN(cookie, UPD_SET_CREATE);
 
     LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
@@ -6844,6 +6879,8 @@ ENGINE_ERROR_CODE set_struct_create(const char *key, const uint32_t nkey,
         }
     }
     UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -6884,6 +6921,7 @@ ENGINE_ERROR_CODE set_elem_insert(const char *key, const uint32_t nkey,
 {
     hash_item *it = NULL;
     ENGINE_ERROR_CODE ret;
+    PERSISTENCE_ACTION_BEGIN(cookie, UPD_SET_ELEM_INSERT);
 
     *created = false;
 
@@ -6926,6 +6964,8 @@ ENGINE_ERROR_CODE set_elem_insert(const char *key, const uint32_t nkey,
     if (it != NULL) do_item_release(it);
 #endif
     UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -6936,6 +6976,9 @@ ENGINE_ERROR_CODE set_elem_delete(const char *key, const uint32_t nkey,
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
+    PERSISTENCE_ACTION_BEGIN(cookie, (drop_if_empty ? UPD_SET_ELEM_DELETE_DROP
+                                                    : UPD_SET_ELEM_DELETE));
+
 
     *dropped = false;
 
@@ -6953,6 +6996,8 @@ ENGINE_ERROR_CODE set_elem_delete(const char *key, const uint32_t nkey,
         do_item_release(it);
     }
     UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -6990,6 +7035,10 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
+    if (delete) {
+        PERSISTENCE_ACTION_BEGIN(cookie, (drop_if_empty ? UPD_SET_ELEM_DELETE_DROP
+                                                        : UPD_SET_ELEM_DELETE));
+    }
 
     eresult->elem_array = NULL;
     eresult->elem_count = 0;
@@ -7028,6 +7077,10 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
         do_item_release(it);
     }
     UNLOCK_CACHE();
+
+    if (delete) {
+        PERSISTENCE_ACTION_END(ret);
+    }
     return ret;
 }
 
@@ -7039,6 +7092,7 @@ ENGINE_ERROR_CODE btree_struct_create(const char *key, const uint32_t nkey,
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
+    PERSISTENCE_ACTION_BEGIN(cookie, UPD_BT_CREATE);
 
     LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
@@ -7061,6 +7115,8 @@ ENGINE_ERROR_CODE btree_struct_create(const char *key, const uint32_t nkey,
         }
     }
     UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -7104,6 +7160,7 @@ ENGINE_ERROR_CODE btree_elem_insert(const char *key, const uint32_t nkey,
 {
     hash_item *it = NULL;
     ENGINE_ERROR_CODE ret;
+    PERSISTENCE_ACTION_BEGIN(cookie, UPD_BT_ELEM_INSERT);
 
     *created = false;
     if (trimmed_elems != NULL) {
@@ -7158,6 +7215,8 @@ ENGINE_ERROR_CODE btree_elem_insert(const char *key, const uint32_t nkey,
     if (it != NULL) do_item_release(it);
 #endif
     UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -7169,6 +7228,7 @@ ENGINE_ERROR_CODE btree_elem_update(const char *key, const uint32_t nkey, const 
     ENGINE_ERROR_CODE ret;
     int bkrtype = do_btree_bkey_range_type(bkrange);
     assert(bkrtype == BKEY_RANGE_TYPE_SIN); /* single bkey */
+    PERSISTENCE_ACTION_BEGIN(cookie, UPD_BT_ELEM_INSERT);
 
     LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DONT_UPDATE, &it);
@@ -7187,6 +7247,8 @@ ENGINE_ERROR_CODE btree_elem_update(const char *key, const uint32_t nkey, const 
         do_item_release(it);
     }
     UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -7199,6 +7261,8 @@ ENGINE_ERROR_CODE btree_elem_delete(const char *key, const uint32_t nkey,
     hash_item *it;
     ENGINE_ERROR_CODE ret;
     int bkrtype = do_btree_bkey_range_type(bkrange);
+    PERSISTENCE_ACTION_BEGIN(cookie, (drop_if_empty ? UPD_BT_ELEM_DELETE_DROP
+                                                    : UPD_BT_ELEM_DELETE));
 
     LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DONT_UPDATE, &it);
@@ -7229,6 +7293,8 @@ ENGINE_ERROR_CODE btree_elem_delete(const char *key, const uint32_t nkey,
         do_item_release(it);
     }
     UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -7243,6 +7309,7 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(const char *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
     int bkrtype = do_btree_bkey_range_type(bkrange);
     assert(bkrtype == BKEY_RANGE_TYPE_SIN); /* single bkey */
+    PERSISTENCE_ACTION_BEGIN(cookie, UPD_BT_ELEM_INSERT);
 
     LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DONT_UPDATE, &it);
@@ -7277,6 +7344,8 @@ ENGINE_ERROR_CODE btree_elem_arithmetic(const char *key, const uint32_t nkey,
         do_item_release(it);
     }
     UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -7291,6 +7360,10 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
     int bkrtype = do_btree_bkey_range_type(bkrange);
     bool potentialbkeytrim;
+    if (delete) {
+        PERSISTENCE_ACTION_BEGIN(cookie, (drop_if_empty ? UPD_BT_ELEM_DELETE_DROP
+                                                        : UPD_BT_ELEM_DELETE));
+    }
 
     eresult->elem_array = NULL;
     eresult->elem_count = 0;
@@ -7348,6 +7421,10 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
         do_item_release(it);
     }
     UNLOCK_CACHE();
+
+    if (delete) {
+        PERSISTENCE_ACTION_END(ret);
+    }
     return ret;
 }
 
@@ -7930,6 +8007,7 @@ ENGINE_ERROR_CODE item_setattr(const void *key, const uint32_t nkey,
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
+    PERSISTENCE_ACTION_BEGIN(cookie, UPD_SETATTR_EXPTIME);
 
     LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
@@ -7945,6 +8023,7 @@ ENGINE_ERROR_CODE item_setattr(const void *key, const uint32_t nkey,
     }
     UNLOCK_CACHE();
 
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -9644,6 +9723,7 @@ ENGINE_ERROR_CODE map_struct_create(const char *key, const uint32_t nkey,
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
+    PERSISTENCE_ACTION_BEGIN(cookie, UPD_MAP_CREATE);
 
     LOCK_CACHE();
     it = do_item_get(key, nkey, DONT_UPDATE);
@@ -9666,6 +9746,8 @@ ENGINE_ERROR_CODE map_struct_create(const char *key, const uint32_t nkey,
         }
     }
     UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -9706,6 +9788,7 @@ ENGINE_ERROR_CODE map_elem_insert(const char *key, const uint32_t nkey,
 {
     hash_item *it = NULL;
     ENGINE_ERROR_CODE ret;
+    PERSISTENCE_ACTION_BEGIN(cookie, UPD_MAP_ELEM_INSERT);
 
     *created = false;
 
@@ -9748,6 +9831,8 @@ ENGINE_ERROR_CODE map_elem_insert(const char *key, const uint32_t nkey,
     if (it != NULL) do_item_release(it);
 #endif
     UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -9757,6 +9842,7 @@ ENGINE_ERROR_CODE map_elem_update(const char *key, const uint32_t nkey,
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
+    PERSISTENCE_ACTION_BEGIN(cookie, UPD_MAP_ELEM_INSERT);
 
     LOCK_CACHE();
     ret = do_map_item_find(key, nkey, DONT_UPDATE, &it);
@@ -9766,6 +9852,8 @@ ENGINE_ERROR_CODE map_elem_update(const char *key, const uint32_t nkey,
         do_item_release(it);
     }
     UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -9777,6 +9865,8 @@ ENGINE_ERROR_CODE map_elem_delete(const char *key, const uint32_t nkey,
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
+    PERSISTENCE_ACTION_BEGIN(cookie, (drop_if_empty ? UPD_MAP_ELEM_DELETE_DROP
+                                                    : UPD_MAP_ELEM_DELETE));
 
     *dropped = false;
 
@@ -9797,6 +9887,8 @@ ENGINE_ERROR_CODE map_elem_delete(const char *key, const uint32_t nkey,
         do_item_release(it);
     }
     UNLOCK_CACHE();
+
+    PERSISTENCE_ACTION_END(ret);
     return ret;
 }
 
@@ -9808,6 +9900,10 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret;
+    if (delete) {
+        PERSISTENCE_ACTION_BEGIN(cookie, (drop_if_empty ? UPD_MAP_ELEM_DELETE_DROP
+                                                        : UPD_MAP_ELEM_DELETE));
+    }
 
     eresult->elem_array = NULL;
     eresult->elem_count = 0;
@@ -9851,6 +9947,10 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
         do_item_release(it);
     }
     UNLOCK_CACHE();
+
+    if (delete) {
+        PERSISTENCE_ACTION_END(ret);
+    }
     return ret;
 }
 
