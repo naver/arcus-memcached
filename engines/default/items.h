@@ -631,21 +631,6 @@ void              coll_elem_result_free(elems_result_t *eresult);
 ENGINE_ERROR_CODE coll_elem_get_all(hash_item *it, elems_result_t *eresult, bool lock_hold);
 void              coll_elem_release(elems_result_t *eresult, int type);
 
-#if 0 // ENABLE_PERSISTENCE_01_ITEM_SCAN
-/**
- * item scan
- */
-/* callback functions */
-typedef void (*CB_SCAN_OPEN)(void *scanp);
-typedef void (*CB_SCAN_CLOSE)(bool success);
-
-void *itscan_open(struct default_engine *engine, const char *prefix, const int nprefix,
-                  CB_SCAN_OPEN cb_scan_open);
-int   itscan_getnext(void *scan, void **item_array, elems_result_t *erst_array, int item_arrsz);
-void  itscan_release(void *scan, void **item_array, elems_result_t *erst_array, int item_count);
-void  itscan_close(void *scan, CB_SCAN_CLOSE cb_scan_close, bool success);
-#endif
-
 /*
  * Item config functions
  */
