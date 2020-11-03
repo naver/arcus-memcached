@@ -20,19 +20,11 @@
 
 #include "cmdlogrec.h"
 
-/* command log manager entry structure */
-typedef struct _log_waiter {
-    struct _log_waiter *wait_next;
-    struct _log_waiter *free_next;
-    LogSN               lsn;
-    uint8_t             updtype;
-    bool                elem_insert_with_create;
-    bool                elem_delete_with_drop;
-    bool                generated_range_clog;
-    const void         *cookie;
-} log_waiter_t;
+/* undefine PERSISTENCE_ACTION macros */
+#undef PERSISTENCE_ACTION_BEGIN
+#undef PERSISTENCE_ACTION_END
 
-/* macros for persistence action (FIXME: define the error code) */
+/* redefine PERSISTENCE_ACTION macros (FIXME: define the error code) */
 #define PERSISTENCE_ACTION_BEGIN(c,u) \
     do { \
         if (config->use_persistence) { \
@@ -45,6 +37,18 @@ typedef struct _log_waiter {
         log_waiter_t *waiter = cmdlog_get_my_waiter(); \
         if (waiter) cmdlog_waiter_end(waiter, &r); \
     } while(0)
+
+/* command log manager entry structure */
+typedef struct _log_waiter {
+    struct _log_waiter *wait_next;
+    struct _log_waiter *free_next;
+    LogSN               lsn;
+    uint8_t             updtype;
+    bool                elem_insert_with_create;
+    bool                elem_delete_with_drop;
+    bool                generated_range_clog;
+    const void         *cookie;
+} log_waiter_t;
 
 /* external command log manager functions */
 log_waiter_t      *cmdlog_waiter_begin(const void *cookie, uint8_t updtype);

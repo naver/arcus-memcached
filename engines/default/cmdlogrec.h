@@ -83,38 +83,9 @@ enum log_type {
     LOG_SNAPSHOT_DONE
 };
 
-/* update type */
-enum upd_type {
-    /* key value command */
-    UPD_STORE = 0,
-    UPD_DELETE,
-    UPD_SETATTR_EXPTIME,
-    UPD_SETATTR_EXPTIME_INFO,
-    UPD_SETATTR_EXPTIME_INFO_BKEY,
-    UPD_FLUSH,
-    /* list command */
-    UPD_LIST_CREATE,
-    UPD_LIST_ELEM_INSERT,
-    UPD_LIST_ELEM_DELETE,
-    UPD_LIST_ELEM_DELETE_DROP,
-    /* set command */
-    UPD_SET_CREATE,
-    UPD_SET_ELEM_INSERT,
-    UPD_SET_ELEM_DELETE,
-    UPD_SET_ELEM_DELETE_DROP,
-    /* map command */
-    UPD_MAP_CREATE,
-    UPD_MAP_ELEM_INSERT,
-    UPD_MAP_ELEM_DELETE,
-    UPD_MAP_ELEM_DELETE_DROP,
-    /* btree command */
-    UPD_BT_CREATE,
-    UPD_BT_ELEM_INSERT,
-    UPD_BT_ELEM_DELETE,
-    UPD_BT_ELEM_DELETE_DROP,
-    /* not command */
-    UPD_NONE
-};
+/* update type
+ * is defined at default_engine.h
+ */
 
 /* log header structure */
 typedef struct _loghdr {
