@@ -8296,7 +8296,7 @@ ENGINE_ERROR_CODE coll_elem_get_all(hash_item *it, elems_result_t *eresult, bool
     return ret;
 }
 
-void coll_elem_release(elems_result_t *eresult, int type)
+void coll_elem_result_release(elems_result_t *eresult, int type)
 {
     switch(type) {
       case ITEM_TYPE_LIST:
@@ -8567,7 +8567,7 @@ void item_scan_release(item_scan *sp, void **item_array, elems_result_t *erst_ar
             if (erst_array[i].elem_count > 0) {
                 hash_item *it = (hash_item *)item_array[i];
                 assert(IS_COLL_ITEM(it));
-                coll_elem_release(&erst_array[i], GET_ITEM_TYPE(it));
+                coll_elem_result_release(&erst_array[i], GET_ITEM_TYPE(it));
             }
         }
     }
