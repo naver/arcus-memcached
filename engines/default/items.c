@@ -1499,32 +1499,18 @@ static void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
 }
 
 /* get real maxcount for each collection type */
+static int32_t do_list_real_maxcount(int32_t maxcount);
+static int32_t do_set_real_maxcount(int32_t maxcount);
+static int32_t do_map_real_maxcount(int32_t maxcount);
+static int32_t do_btree_real_maxcount(int32_t maxcount);
+
 static int32_t do_coll_real_maxcount(hash_item *it, int32_t maxcount)
 {
-    int32_t real_maxcount = maxcount;
-
-    if (IS_LIST_ITEM(it)) {
-        if (maxcount < 0 || maxcount > MAX_LIST_SIZE)
-            real_maxcount = -1;
-        else if (maxcount == 0)
-            real_maxcount = DEFAULT_LIST_SIZE;
-    } else if (IS_SET_ITEM(it)) {
-        if (maxcount < 0 || maxcount > MAX_SET_SIZE)
-            real_maxcount = -1;
-        else if (maxcount == 0)
-            real_maxcount = DEFAULT_SET_SIZE;
-    } else if (IS_MAP_ITEM(it)) {
-        if (maxcount < 0 || maxcount > MAX_MAP_SIZE)
-            real_maxcount = -1;
-        else if (maxcount == 0)
-            real_maxcount = DEFAULT_MAP_SIZE;
-    } else if (IS_BTREE_ITEM(it)) {
-        if (maxcount < 0 || maxcount > MAX_BTREE_SIZE)
-            real_maxcount = -1;
-        else if (maxcount == 0)
-            real_maxcount = DEFAULT_BTREE_SIZE;
-    }
-    return real_maxcount;
+    if (IS_LIST_ITEM(it))       return do_list_real_maxcount(maxcount);
+    else if (IS_SET_ITEM(it))   return do_set_real_maxcount(maxcount);
+    else if (IS_MAP_ITEM(it))   return do_map_real_maxcount(maxcount);
+    else if (IS_BTREE_ITEM(it)) return do_btree_real_maxcount(maxcount);
+    else                        return maxcount;
 }
 
 static inline uint32_t do_list_elem_ntotal(list_elem_item *elem)
@@ -1568,6 +1554,18 @@ static ENGINE_ERROR_CODE do_list_item_find(const void *key, const uint32_t nkey,
     }
 }
 
+static int32_t do_list_real_maxcount(int32_t maxcount)
+{
+    int32_t real_maxcount = maxcount;
+
+    if (maxcount < 0 || maxcount > MAX_LIST_SIZE) {
+        real_maxcount = -1;
+    } else if (maxcount == 0) {
+        real_maxcount = DEFAULT_LIST_SIZE;
+    }
+    return real_maxcount;
+}
+
 static hash_item *do_list_item_alloc(const void *key, const uint32_t nkey,
                                      item_attr *attrp, const void *cookie)
 {
@@ -1584,7 +1582,7 @@ static hash_item *do_list_item_alloc(const void *key, const uint32_t nkey,
 
         /* initialize list meta information */
         list_meta_info *info = (list_meta_info *)item_get_meta(it);
-        info->mcnt = do_coll_real_maxcount(it, attrp->maxcount);
+        info->mcnt = do_list_real_maxcount(attrp->maxcount);
         info->ccnt = 0;
         info->ovflact = (attrp->ovflaction==0 ? OVFL_TAIL_TRIM : attrp->ovflaction);
         info->mflags  = 0;
@@ -1856,6 +1854,18 @@ static ENGINE_ERROR_CODE do_set_item_find(const void *key, const uint32_t nkey,
     }
 }
 
+static int32_t do_set_real_maxcount(int32_t maxcount)
+{
+    int32_t real_maxcount = maxcount;
+
+    if (maxcount < 0 || maxcount > MAX_SET_SIZE) {
+        real_maxcount = -1;
+    } else if (maxcount == 0) {
+        real_maxcount = DEFAULT_SET_SIZE;
+    }
+    return real_maxcount;
+}
+
 static hash_item *do_set_item_alloc(const void *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie)
 {
@@ -1872,7 +1882,7 @@ static hash_item *do_set_item_alloc(const void *key, const uint32_t nkey,
 
         /* initialize set meta information */
         set_meta_info *info = (set_meta_info *)item_get_meta(it);
-        info->mcnt = do_coll_real_maxcount(it, attrp->maxcount);
+        info->mcnt = do_set_real_maxcount(attrp->maxcount);
         info->ccnt = 0;
         info->ovflact = OVFL_ERROR;
         info->mflags  = 0;
@@ -2407,6 +2417,18 @@ static ENGINE_ERROR_CODE do_btree_item_find(const void *key, const uint32_t nkey
     }
 }
 
+static int32_t do_btree_real_maxcount(int32_t maxcount)
+{
+    int32_t real_maxcount = maxcount;
+
+    if (maxcount < 0 || maxcount > MAX_BTREE_SIZE) {
+        real_maxcount = -1;
+    } else if (maxcount == 0) {
+        real_maxcount = DEFAULT_BTREE_SIZE;
+    }
+    return real_maxcount;
+}
+
 static hash_item *do_btree_item_alloc(const void *key, const uint32_t nkey,
                                       item_attr *attrp, const void *cookie)
 {
@@ -2423,7 +2445,7 @@ static hash_item *do_btree_item_alloc(const void *key, const uint32_t nkey,
 
         /* initialize b+tree meta information */
         btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
-        info->mcnt = do_coll_real_maxcount(it, attrp->maxcount);
+        info->mcnt = do_btree_real_maxcount(attrp->maxcount);
         info->ccnt = 0;
         info->ovflact = (attrp->ovflaction==0 ? OVFL_SMALLEST_TRIM : attrp->ovflaction);
         if (forced_btree_ovflact != 0 && forced_action_pfxlen < nkey &&
@@ -9117,6 +9139,18 @@ static ENGINE_ERROR_CODE do_map_item_find(const void *key, const uint32_t nkey,
     }
 }
 
+static int32_t do_map_real_maxcount(int32_t maxcount)
+{
+    int32_t real_maxcount = maxcount;
+
+    if (maxcount < 0 || maxcount > MAX_MAP_SIZE) {
+        real_maxcount = -1;
+    } else if (maxcount == 0) {
+        real_maxcount = DEFAULT_MAP_SIZE;
+    }
+    return real_maxcount;
+}
+
 static hash_item *do_map_item_alloc(const void *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie)
 {
@@ -9133,7 +9167,7 @@ static hash_item *do_map_item_alloc(const void *key, const uint32_t nkey,
 
         /* initialize map meta information */
         map_meta_info *info = (map_meta_info *)item_get_meta(it);
-        info->mcnt = do_coll_real_maxcount(it, attrp->maxcount);
+        info->mcnt = do_map_real_maxcount(attrp->maxcount);
         info->ccnt = 0;
         info->ovflact = OVFL_ERROR;
         info->mflags  = 0;
