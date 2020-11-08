@@ -61,14 +61,14 @@
 #include <stddef.h>
 
 /* max collection element count */
-static uint32_t ARCUS_COLL_SIZE_MIN = 50000;
-static uint32_t ARCUS_COLL_SIZE_MAX = 1000000;
-static uint32_t MAX_LIST_SIZE  = 50000;
-static uint32_t MAX_SET_SIZE   = 50000;
-static uint32_t MAX_MAP_SIZE   = 50000;
-static uint32_t MAX_BTREE_SIZE = 50000;
+static uint32_t MINIMUM_MAX_COLL_SIZE = 50000;
+static uint32_t MAXIMUM_MAX_COLL_SIZE = 1000000;
+static uint32_t DEFAULT_MAX_LIST_SIZE = 50000;
+static uint32_t DEFAULT_MAX_SET_SIZE  = 50000;
+static uint32_t DEFAULT_MAX_MAP_SIZE  = 50000;
+static uint32_t DEFAULT_MAX_BTREE_SIZE = 50000;
 /* max collection element bytes */
-static uint32_t MAX_ELEMENT_BYTES = 16*1024;
+static uint32_t DEFAULT_MAX_ELEMENT_BYTES = 16*1024;
 
 /* Lock for global stats */
 static pthread_mutex_t stats_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -336,11 +336,11 @@ static void settings_init(void)
     settings.backlog = 1024;
     settings.binding_protocol = negotiating_prot;
     settings.item_size_max = 1024 * 1024; /* The famous 1MB upper limit. */
-    settings.max_list_size = MAX_LIST_SIZE;
-    settings.max_set_size = MAX_SET_SIZE;
-    settings.max_map_size = MAX_MAP_SIZE;
-    settings.max_btree_size = MAX_BTREE_SIZE;
-    settings.max_element_bytes = MAX_ELEMENT_BYTES;
+    settings.max_list_size = DEFAULT_MAX_LIST_SIZE;
+    settings.max_set_size = DEFAULT_MAX_SET_SIZE;
+    settings.max_map_size = DEFAULT_MAX_MAP_SIZE;
+    settings.max_btree_size = DEFAULT_MAX_BTREE_SIZE;
+    settings.max_element_bytes = DEFAULT_MAX_ELEMENT_BYTES;
     settings.topkeys = 0;
     settings.require_sasl = false;
     settings.extensions.logger = get_stderr_logger();
@@ -4502,7 +4502,7 @@ static void process_bin_lop_prepare_nread(conn *c)
     eitem *elem;
     ENGINE_ERROR_CODE ret;
 
-    if ((vlen + 2) > MAX_ELEMENT_BYTES) {
+    if ((vlen + 2) > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
     } else {
         ret = mc_engine.v1->list_elem_alloc(mc_engine.v0, c, key, nkey, vlen+2, &elem);
@@ -4876,7 +4876,7 @@ static void process_bin_sop_prepare_nread(conn *c)
     eitem *elem = NULL;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
-    if ((vlen + 2) > MAX_ELEMENT_BYTES) {
+    if ((vlen + 2) > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
     } else {
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
@@ -5348,7 +5348,7 @@ static void process_bin_bop_prepare_nread(conn *c)
     eitem *elem;
     ENGINE_ERROR_CODE ret;
 
-    if ((vlen + 2) > MAX_ELEMENT_BYTES) {
+    if ((vlen + 2) > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
     } else {
         ret = mc_engine.v1->btree_elem_alloc(mc_engine.v0, c, key, nkey,
@@ -5588,7 +5588,7 @@ static void process_bin_bop_update_prepare_nread(conn *c)
     eitem *elem = NULL;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
-    if ((vlen + 2) > MAX_ELEMENT_BYTES) {
+    if ((vlen + 2) > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
     } else {
         if ((elem = (eitem *)malloc(sizeof(value_item) + vlen + 2)) == NULL)
@@ -8917,19 +8917,15 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
         if (ret == ENGINE_SUCCESS) {
             switch (coll_type) {
             case ITEM_TYPE_LIST:
-                MAX_LIST_SIZE = maxsize;
                 settings.max_list_size = maxsize;
                 break;
             case ITEM_TYPE_SET:
-                MAX_SET_SIZE = maxsize;
                 settings.max_set_size = maxsize;
                 break;
             case ITEM_TYPE_MAP:
-                MAX_MAP_SIZE = maxsize;
                 settings.max_map_size = maxsize;
                 break;
             case ITEM_TYPE_BTREE:
-                MAX_BTREE_SIZE = maxsize;
                 settings.max_btree_size = maxsize;
                 break;
             }
@@ -8963,7 +8959,6 @@ static void process_maxelembytes_command(conn *c, token_t *tokens, const size_t 
         LOCK_SETTING();
         ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&new_maxelembytes);
         if (ret == ENGINE_SUCCESS) {
-           MAX_ELEMENT_BYTES = new_maxelembytes;
            settings.max_element_bytes = new_maxelembytes;
         }
         UNLOCK_SETTING();
@@ -9807,7 +9802,7 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
     eitem *elem;
     ENGINE_ERROR_CODE ret;
 
-    if (vlen > MAX_ELEMENT_BYTES) {
+    if (vlen > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
     } else {
         ret = mc_engine.v1->list_elem_alloc(mc_engine.v0, c, key, nkey, vlen, &elem);
@@ -10201,7 +10196,7 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
     eitem *elem = NULL;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
-    if (vlen > MAX_ELEMENT_BYTES) {
+    if (vlen > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
     } else {
         if (cmd == (int)OPERATION_SOP_INSERT) {
@@ -10891,7 +10886,7 @@ static void process_bop_update_prepare_nread(conn *c, int cmd,
     eitem *elem = NULL;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
-    if (vlen > MAX_ELEMENT_BYTES) {
+    if (vlen > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
     } else {
         if ((elem = (eitem *)malloc(sizeof(value_item) + vlen)) == NULL)
@@ -10931,7 +10926,7 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
     eitem *elem;
     ENGINE_ERROR_CODE ret;
 
-    if (vlen > MAX_ELEMENT_BYTES) {
+    if (vlen > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
     } else {
         ret = mc_engine.v1->btree_elem_alloc(mc_engine.v0, c, key, nkey,
@@ -11383,7 +11378,7 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
     eitem *elem = NULL;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
-    if (vlen > MAX_ELEMENT_BYTES) {
+    if (vlen > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
     } else if (cmd == OPERATION_MOP_INSERT) {
         ret = mc_engine.v1->map_elem_alloc(mc_engine.v0, c, key, nkey, field->length, vlen, &elem);
@@ -11644,7 +11639,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 out_string(c, "CLIENT_ERROR bad value");
                 return;
             }
-            if (numfields > MAX_MAP_SIZE ||
+            if (numfields > settings.max_map_size ||
                 numfields > ((lenfields/2) + 1) ||
                 lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1)) {
                 out_string(c, "CLIENT_ERROR bad value");
@@ -11715,7 +11710,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 out_string(c, "CLIENT_ERROR bad value");
                 return;
             }
-            if (numfields > MAX_MAP_SIZE ||
+            if (numfields > settings.max_map_size ||
                 numfields > ((lenfields/2) + 1) ||
                 lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1)) {
                 out_string(c, "CLIENT_ERROR bad value");
@@ -15108,53 +15103,49 @@ int main (int argc, char **argv)
         char *arcus_max_list_size = getenv("ARCUS_MAX_LIST_SIZE");
         if (arcus_max_list_size != NULL) {
             value = atoi(arcus_max_list_size);
-            if (value >= ARCUS_COLL_SIZE_MIN && value <= ARCUS_COLL_SIZE_MAX) {
-                MAX_LIST_SIZE = value;
-                settings.max_list_size = MAX_LIST_SIZE;
-                old_opts += sprintf(old_opts, "max_list_size=%u;", MAX_LIST_SIZE);
+            if (value >= MINIMUM_MAX_COLL_SIZE && value <= MAXIMUM_MAX_COLL_SIZE) {
+                settings.max_list_size = value;
+                old_opts += sprintf(old_opts, "max_list_size=%d;", value);
             } else {
                 mc_logger->log(EXTENSION_LOG_INFO, NULL,
-                        "ARCUS_MAX_LIST_SIZE incorrect value: %u, (Allowable values: %u ~ %u)\n",
-                         value, ARCUS_COLL_SIZE_MIN, ARCUS_COLL_SIZE_MAX);
+                        "Wrong ARCUS_MAX_LIST_SIZE value: %d, (Allowable range: %u ~ %u)\n",
+                         value, MINIMUM_MAX_COLL_SIZE, MAXIMUM_MAX_COLL_SIZE);
             }
         }
         char *arcus_max_set_size = getenv("ARCUS_MAX_SET_SIZE");
         if (arcus_max_set_size != NULL) {
             value = atoi(arcus_max_set_size);
-            if (value >= ARCUS_COLL_SIZE_MIN && value <= ARCUS_COLL_SIZE_MAX) {
-                MAX_SET_SIZE = value;
-                settings.max_set_size = MAX_SET_SIZE;
-                old_opts += sprintf(old_opts, "max_set_size=%u;", MAX_SET_SIZE);
+            if (value >= MINIMUM_MAX_COLL_SIZE && value <= MAXIMUM_MAX_COLL_SIZE) {
+                settings.max_set_size = value;
+                old_opts += sprintf(old_opts, "max_set_size=%d;", value);
             } else {
                 mc_logger->log(EXTENSION_LOG_INFO, NULL,
-                        "ARCUS_MAX_SET_SIZE incorrect value: %u, (Allowable values: %u ~ %u)\n",
-                         value, ARCUS_COLL_SIZE_MIN, ARCUS_COLL_SIZE_MAX);
+                        "Wrong ARCUS_MAX_SET_SIZE value: %d, (Allowable range: %u ~ %u)\n",
+                         value, MINIMUM_MAX_COLL_SIZE, MAXIMUM_MAX_COLL_SIZE);
             }
         }
         char *arcus_max_map_size = getenv("ARCUS_MAX_MAP_SIZE");
         if (arcus_max_map_size != NULL) {
             value = atoi(arcus_max_map_size);
-            if (value >= ARCUS_COLL_SIZE_MIN && value <= ARCUS_COLL_SIZE_MAX) {
-                MAX_MAP_SIZE = value;
-                settings.max_map_size = MAX_MAP_SIZE;
-                old_opts += sprintf(old_opts, "max_map_size=%u;", MAX_MAP_SIZE);
+            if (value >= MINIMUM_MAX_COLL_SIZE && value <= MAXIMUM_MAX_COLL_SIZE) {
+                settings.max_map_size = value;
+                old_opts += sprintf(old_opts, "max_map_size=%d;", value);
             } else {
                 mc_logger->log(EXTENSION_LOG_INFO, NULL,
-                        "ARCUS_MAX_MAP_SIZE incorrect value: %u, (Allowable values: %u ~ %u)\n",
-                         value, ARCUS_COLL_SIZE_MIN, ARCUS_COLL_SIZE_MAX);
+                        "Wrong ARCUS_MAX_MAP_SIZE value: %d, (Allowable range: %u ~ %u)\n",
+                         value, MINIMUM_MAX_COLL_SIZE, MAXIMUM_MAX_COLL_SIZE);
             }
         }
         char *arcus_max_btree_size = getenv("ARCUS_MAX_BTREE_SIZE");
         if (arcus_max_btree_size != NULL) {
             value = atoi(arcus_max_btree_size);
-            if (value >= ARCUS_COLL_SIZE_MIN && value <= ARCUS_COLL_SIZE_MAX) {
-                MAX_BTREE_SIZE = value;
-                settings.max_btree_size = MAX_BTREE_SIZE;
-                old_opts += sprintf(old_opts, "max_btree_size=%u;", MAX_BTREE_SIZE);
+            if (value >= MINIMUM_MAX_COLL_SIZE && value <= MAXIMUM_MAX_COLL_SIZE) {
+                settings.max_btree_size = value;
+                old_opts += sprintf(old_opts, "max_btree_size=%d;", value);
             } else {
                 mc_logger->log(EXTENSION_LOG_INFO, NULL,
-                        "ARCUS_MAX_BTREE_SIZE incorrect value: %u, (Allowable values: %u ~ %u)\n",
-                         value, ARCUS_COLL_SIZE_MIN, ARCUS_COLL_SIZE_MAX);
+                        "Wrong ARCUS_MAX_BTREE_SIZE value: %d, (Allowable range: %u ~ %u)\n",
+                         value, MINIMUM_MAX_COLL_SIZE, MAXIMUM_MAX_COLL_SIZE);
             }
         }
     }
