@@ -68,7 +68,7 @@ static uint32_t MAX_SET_SIZE   = 50000;
 static uint32_t MAX_MAP_SIZE   = 50000;
 static uint32_t MAX_BTREE_SIZE = 50000;
 /* max collection element bytes */
-static uint32_t MAX_ELEMENT_BYTES = 16*1024;
+static uint32_t DEFAULT_MAX_ELEMENT_BYTES = 16*1024;
 
 /* Lock for global stats */
 static pthread_mutex_t stats_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -340,7 +340,7 @@ static void settings_init(void)
     settings.max_set_size = MAX_SET_SIZE;
     settings.max_map_size = MAX_MAP_SIZE;
     settings.max_btree_size = MAX_BTREE_SIZE;
-    settings.max_element_bytes = MAX_ELEMENT_BYTES;
+    settings.max_element_bytes = DEFAULT_MAX_ELEMENT_BYTES;
     settings.topkeys = 0;
     settings.require_sasl = false;
     settings.extensions.logger = get_stderr_logger();
@@ -4502,7 +4502,7 @@ static void process_bin_lop_prepare_nread(conn *c)
     eitem *elem;
     ENGINE_ERROR_CODE ret;
 
-    if ((vlen + 2) > MAX_ELEMENT_BYTES) {
+    if ((vlen + 2) > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
     } else {
         ret = mc_engine.v1->list_elem_alloc(mc_engine.v0, c, key, nkey, vlen+2, &elem);
@@ -4876,7 +4876,7 @@ static void process_bin_sop_prepare_nread(conn *c)
     eitem *elem = NULL;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
-    if ((vlen + 2) > MAX_ELEMENT_BYTES) {
+    if ((vlen + 2) > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
     } else {
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
@@ -5348,7 +5348,7 @@ static void process_bin_bop_prepare_nread(conn *c)
     eitem *elem;
     ENGINE_ERROR_CODE ret;
 
-    if ((vlen + 2) > MAX_ELEMENT_BYTES) {
+    if ((vlen + 2) > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
     } else {
         ret = mc_engine.v1->btree_elem_alloc(mc_engine.v0, c, key, nkey,
@@ -5588,7 +5588,7 @@ static void process_bin_bop_update_prepare_nread(conn *c)
     eitem *elem = NULL;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
-    if ((vlen + 2) > MAX_ELEMENT_BYTES) {
+    if ((vlen + 2) > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
     } else {
         if ((elem = (eitem *)malloc(sizeof(value_item) + vlen + 2)) == NULL)
@@ -8963,7 +8963,6 @@ static void process_maxelembytes_command(conn *c, token_t *tokens, const size_t 
         LOCK_SETTING();
         ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&new_maxelembytes);
         if (ret == ENGINE_SUCCESS) {
-           MAX_ELEMENT_BYTES = new_maxelembytes;
            settings.max_element_bytes = new_maxelembytes;
         }
         UNLOCK_SETTING();
@@ -9733,7 +9732,7 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
     eitem *elem;
     ENGINE_ERROR_CODE ret;
 
-    if (vlen > MAX_ELEMENT_BYTES) {
+    if (vlen > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
     } else {
         ret = mc_engine.v1->list_elem_alloc(mc_engine.v0, c, key, nkey, vlen, &elem);
@@ -10127,7 +10126,7 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
     eitem *elem = NULL;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
-    if (vlen > MAX_ELEMENT_BYTES) {
+    if (vlen > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
     } else {
         if (cmd == (int)OPERATION_SOP_INSERT) {
@@ -10817,7 +10816,7 @@ static void process_bop_update_prepare_nread(conn *c, int cmd,
     eitem *elem = NULL;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
-    if (vlen > MAX_ELEMENT_BYTES) {
+    if (vlen > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
     } else {
         if ((elem = (eitem *)malloc(sizeof(value_item) + vlen)) == NULL)
@@ -10857,7 +10856,7 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
     eitem *elem;
     ENGINE_ERROR_CODE ret;
 
-    if (vlen > MAX_ELEMENT_BYTES) {
+    if (vlen > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
     } else {
         ret = mc_engine.v1->btree_elem_alloc(mc_engine.v0, c, key, nkey,
@@ -11309,7 +11308,7 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
     eitem *elem = NULL;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
-    if (vlen > MAX_ELEMENT_BYTES) {
+    if (vlen > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
     } else if (cmd == OPERATION_MOP_INSERT) {
         ret = mc_engine.v1->map_elem_alloc(mc_engine.v0, c, key, nkey, field->length, vlen, &elem);

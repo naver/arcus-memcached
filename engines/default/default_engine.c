@@ -41,9 +41,9 @@
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
 /* max element bytes */
-static size_t DEFAULT_ELEMENT_BYTES_MAX = 32*1024;
-static size_t DEFAULT_ELEMENT_BYTES_MIN = 1024;
-static size_t DEFAULT_ELEMENT_BYTES = 16*1024;
+static size_t MAX_ELEMENT_BYTES_MIN = 1024;    /* minimum of MAX_ELEMENT_BYTES */
+static size_t MAX_ELEMENT_BYTES_MAX = 32*1024; /* maximum of MAX_ELEMENT_BYTES */
+static size_t MAX_ELEMENT_BYTES_DFT = 16*1024; /* default of MAX_ELEMENT_BYTES */
 
 /*
  * vbucket static functions
@@ -1204,8 +1204,8 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
     else if (strcmp(config_key, "max_element_bytes") == 0) {
         size_t new_maxelembytes = *(size_t*)config_value;
         pthread_mutex_lock(&engine->cache_lock);
-        if (new_maxelembytes >= DEFAULT_ELEMENT_BYTES_MIN &&
-            new_maxelembytes <= DEFAULT_ELEMENT_BYTES_MAX) {
+        if (new_maxelembytes >= MAX_ELEMENT_BYTES_MIN &&
+            new_maxelembytes <= MAX_ELEMENT_BYTES_MAX) {
             engine->config.max_element_bytes = new_maxelembytes;
         } else {
             ret = ENGINE_EBADVALUE;
@@ -1631,7 +1631,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .max_set_size = 50000,
          .max_map_size = 50000,
          .max_btree_size = 50000,
-         .max_element_bytes = DEFAULT_ELEMENT_BYTES,
+         .max_element_bytes = MAX_ELEMENT_BYTES_DFT,
          .prefix_delimiter = ':',
        },
       .stats = {
