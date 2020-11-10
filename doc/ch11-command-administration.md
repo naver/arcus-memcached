@@ -354,6 +354,7 @@ STAT max_set_size 50000
 STAT max_map_size 50000
 STAT max_btree_size 50000
 STAT max_element_bytes 16384
+STAT scrub_count 96
 STAT topkeys 0
 STAT logger syslog
 STAT ascii_extension scrub
@@ -650,7 +651,9 @@ ARCUS cache server는 특정 configuration에 대해 동적으로 변경하거�
 - memlimit
 - zkfailstop
 - maxconns
+- max_collection_size
 - max_element_bytes
+- scrub_count
 
 **config verbosity**
 
@@ -716,14 +719,6 @@ config maxconns [<maxconn>]\r\n
 \<maxconn\>는 새로 지정할 최대 연결 수로서, 현재의 연결 수보다 10% 이상의 큰 값으로만 설정이 가능하다.
 이 인자가 생략되면 현재 설정되어 있는 최대 연결 수 값을 조회한다.
 
-**config max_element_bytes**
-
-Collection element가 가지는 value의 최대 크기를 byte 단위로 설정한다. 기본 설정은 16KB이며 1~32KB까지 설정 가능하다.
-
-```
-config max_element_bytes [<maxbytes>]\r\n
-```
-
 **config max_collection_size**
 
 콜렉션 아이템의 최대 element 수를 조회/변경한다.
@@ -733,11 +728,19 @@ config max_<collection>_size [<max_size>]\r\n
 * <collection>: list|set|btree|map
 ```
 
-기본 설정은 50000개이며 최소 50000개, 최대 1000000개 까지 설정할 수 있다. 기존 값보다 작게 설정할 수 없다. 기본 설정보다 큰 값으로 설정하고 나서, 한 번에 많은 element 들을 조회한다면 조회 응답 속도가 느려질 뿐만 아니라 다른 연산의 응답 속도에도 부정적 영향을 미친다. 따라서, 주의 사항으로, 최대 element 수를 늘리더라도 응용은  한번에 적은 수의 element 만을 조회하는 요청을 반복하는 형태로 구현하여야 한다.
+기본 설정은 50000개이며 최소 10000개, 최대 1000000개 까지 설정할 수 있다. 기존 값보다 작게 설정할 수 없다. 기본 설정보다 큰 값으로 설정하고 나서, 한 번에 많은 element 들을 조회한다면 조회 응답 속도가 느려질 뿐만 아니라 다른 연산의 응답 속도에도 부정적 영향을 미친다. 따라서, 주의 사항으로, 최대 element 수를 늘리더라도 응용은  한번에 적은 수의 element 만을 조회하는 요청을 반복하는 형태로 구현하여야 한다.
+
+**config max_element_bytes**
+
+Collection element가 가지는 value의 최대 크기를 byte 단위로 설정한다. 기본 설정은 16KB이며 1~32KB까지 설정 가능하다.
+
+```
+config max_element_bytes [<maxbytes>]\r\n
+```
 
 **config scrub_count**
 
-ARCUS cache server에는 더 이상 유효하지 않은 아이템을 일괄 삭제하는 scrub 명령이 존재한다. config scrub_count 명령은 daemon thread가 scrub 명령을 수행할 때, 한 번의 연산마다 몇 개의 아이템을 지울지를 설정/조회한다. 기본 값은 96이며 최소 32, 최대 320으로 설정할 수 있다.
+ARCUS cache server에는 더 이상 유효하지 않은 아이템을 일괄 삭제하는 scrub 명령이 존재한다. config scrub_count 명령은 daemon thread가 scrub 명령을 수행할 때, 한 번의 연산마다 몇 개의 아이템을 지울지를 설정/조회한다. 기본 값은 96이며 최소 16, 최대 320으로 설정할 수 있다.
 
 ```
 config scrub_count [<scrub_count>]\r\n

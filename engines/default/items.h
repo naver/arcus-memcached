@@ -32,6 +32,11 @@
 #define DEFAULT_MAP_SIZE   4000
 #define DEFAULT_BTREE_SIZE 4000
 
+/* max element bytes */
+#define MINIMUM_MAX_ELEMENT_BYTES 1024
+#define MAXIMUM_MAX_ELEMENT_BYTES (32*1024)
+#define DEFAULT_MAX_ELEMENT_BYTES (16*1024)
+
 /* item scrub count */
 #define MINIMUM_SCRUB_COUNT 16
 #define MAXIMUM_SCRUB_COUNT 320

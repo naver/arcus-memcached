@@ -40,11 +40,6 @@
 
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
-/* max element bytes */
-#define MINIMUM_MAX_ELEMENT_BYTES 1024
-#define MAXIMUM_MAX_ELEMENT_BYTES (32*1024)
-#define DEFAULT_MAX_ELEMENT_BYTES (16*1024)
-
 /*
  * vbucket static functions
  */
@@ -1290,7 +1285,7 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
         pthread_mutex_unlock(&engine->cache_lock);
     }
     else if (strcmp(config_key, "max_element_bytes") == 0) {
-        uint32_t new_maxelembytes = *(size_t*)config_value;
+        uint32_t new_maxelembytes = *(uint32_t*)config_value;
         pthread_mutex_lock(&engine->cache_lock);
         if (new_maxelembytes >= MINIMUM_MAX_ELEMENT_BYTES &&
             new_maxelembytes <= MAXIMUM_MAX_ELEMENT_BYTES) {

@@ -60,15 +60,16 @@
 #include <stdarg.h>
 #include <stddef.h>
 
-/* max collection element count */
-static uint32_t MINIMUM_MAX_COLL_SIZE = 50000;
-static uint32_t MAXIMUM_MAX_COLL_SIZE = 1000000;
-static uint32_t DEFAULT_MAX_LIST_SIZE = 50000;
-static uint32_t DEFAULT_MAX_SET_SIZE  = 50000;
-static uint32_t DEFAULT_MAX_MAP_SIZE  = 50000;
-static uint32_t DEFAULT_MAX_BTREE_SIZE = 50000;
-/* max collection element bytes */
-static uint32_t DEFAULT_MAX_ELEMENT_BYTES = 16*1024;
+/* max collection size */
+#define MINIMUM_MAX_COLL_SIZE  10000
+#define MAXIMUM_MAX_COLL_SIZE  1000000
+#define DEFAULT_MAX_LIST_SIZE  50000
+#define DEFAULT_MAX_SET_SIZE   50000
+#define DEFAULT_MAX_MAP_SIZE   50000
+#define DEFAULT_MAX_BTREE_SIZE 50000
+
+/* default max element bytes */
+#define DEFAULT_MAX_ELEMENT_BYTES (16*1024)
 
 /* default item scrub count */
 #define DEFAULT_SCRUB_COUNT 96
@@ -8092,6 +8093,7 @@ static void process_stat_settings(ADD_STAT add_stats, void *c)
     APPEND_STAT("max_map_size", "%u", settings.max_map_size);
     APPEND_STAT("max_btree_size", "%u", settings.max_btree_size);
     APPEND_STAT("max_element_bytes", "%u", settings.max_element_bytes);
+    APPEND_STAT("scrub_count", "%u", settings.scrub_count);
     APPEND_STAT("topkeys", "%d", settings.topkeys);
 #ifdef ENABLE_ZK_INTEGRATION
     APPEND_STAT("zk_failstop", "%s", zk_confs.zk_failstop ? "on" : "off");
@@ -8859,33 +8861,6 @@ static void process_stickylimit_command(conn *c, token_t *tokens, const size_t n
 }
 #endif
 
-static void process_scrubcount_command(conn *c, token_t *tokens, const size_t ntokens)
-{
-    char *config_key = tokens[SUBCOMMAND_TOKEN].value;
-    char *config_val = tokens[SUBCOMMAND_TOKEN+1].value;
-    uint32_t new_scrub_count;
-
-    if (ntokens == 3) {
-        char buf[32];
-        sprintf(buf, "scrub_count %u\r\nEND", settings.scrub_count);
-        out_string(c, buf);
-    } else if (ntokens == 4 && safe_strtoul(config_val, &new_scrub_count)) {
-        ENGINE_ERROR_CODE ret;
-        LOCK_SETTING();
-        ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&new_scrub_count);
-        if (ret == ENGINE_SUCCESS) {
-            settings.scrub_count = new_scrub_count;
-        }
-        UNLOCK_SETTING();
-        if (ret == ENGINE_SUCCESS)        out_string(c, "END");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
-        else handle_unexpected_errorcode_ascii(c, __func__, ret);
-    } else {
-        print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
-    }
-}
-
 static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t ntokens,
                                         int coll_type)
 {
@@ -8949,16 +8924,15 @@ static void process_maxelembytes_command(conn *c, token_t *tokens, const size_t 
     assert(c != NULL);
     char *config_key = tokens[SUBCOMMAND_TOKEN].value;
     char *config_val = tokens[SUBCOMMAND_TOKEN+1].value;
-    unsigned int maxelembytes;
+    uint32_t new_maxelembytes;
 
     if (ntokens == 3) {
         char buf[50];
         sprintf(buf, "max_element_bytes %u\r\nEND", settings.max_element_bytes);
         out_string(c, buf);
     }
-    else if (ntokens == 4 && safe_strtoul(config_val, &maxelembytes)) {
+    else if (ntokens == 4 && safe_strtoul(config_val, &new_maxelembytes)) {
         ENGINE_ERROR_CODE ret;
-        size_t new_maxelembytes = (size_t)maxelembytes;
         LOCK_SETTING();
         ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&new_maxelembytes);
         if (ret == ENGINE_SUCCESS) {
@@ -8970,6 +8944,33 @@ static void process_maxelembytes_command(conn *c, token_t *tokens, const size_t 
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
     else {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "CLIENT_ERROR bad command line format");
+    }
+}
+
+static void process_scrubcount_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    char *config_key = tokens[SUBCOMMAND_TOKEN].value;
+    char *config_val = tokens[SUBCOMMAND_TOKEN+1].value;
+    uint32_t new_scrub_count;
+
+    if (ntokens == 3) {
+        char buf[32];
+        sprintf(buf, "scrub_count %u\r\nEND", settings.scrub_count);
+        out_string(c, buf);
+    } else if (ntokens == 4 && safe_strtoul(config_val, &new_scrub_count)) {
+        ENGINE_ERROR_CODE ret;
+        LOCK_SETTING();
+        ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&new_scrub_count);
+        if (ret == ENGINE_SUCCESS) {
+            settings.scrub_count = new_scrub_count;
+        }
+        UNLOCK_SETTING();
+        if (ret == ENGINE_SUCCESS)        out_string(c, "END");
+        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
+    } else {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
     }
@@ -9288,12 +9289,12 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "config sticky_limit [<stickylimit(MB)>]\\r\\n" "\n"
 #endif
         "\t" "config maxconns [<maxconn>]\\r\\n" "\n"
-        "\t" "config scrub_count [<count>]\\r\\n" "\n"
         "\t" "config max_list_size [<maxsize>]\\r\\n" "\n"
         "\t" "config max_set_size [<maxsize>]\\r\\n" "\n"
         "\t" "config max_map_size [<maxsize>]\\r\\n" "\n"
         "\t" "config max_btree_size [<maxsize>]\\r\\n" "\n"
         "\t" "config max_element_bytes [<maxbytes>]\\r\\n" "\n"
+        "\t" "config scrub_count [<count>]\\r\\n" "\n"
 #ifdef ENABLE_ZK_INTEGRATION
         "\t" "config hbtimeout [<hbtimeout>]\\r\\n" "\n"
         "\t" "config hbfailstop [<hbfailstop>]\\r\\n" "\n"
