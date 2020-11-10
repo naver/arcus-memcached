@@ -41,9 +41,9 @@
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
 /* max element bytes */
-static size_t MAX_ELEMENT_BYTES_MIN = 1024;    /* minimum of MAX_ELEMENT_BYTES */
-static size_t MAX_ELEMENT_BYTES_MAX = 32*1024; /* maximum of MAX_ELEMENT_BYTES */
-static size_t MAX_ELEMENT_BYTES_DFT = 16*1024; /* default of MAX_ELEMENT_BYTES */
+#define MINIMUM_MAX_ELEMENT_BYTES 1024
+#define MAXIMUM_MAX_ELEMENT_BYTES (32*1024)
+#define DEFAULT_MAX_ELEMENT_BYTES (16*1024)
 
 /*
  * vbucket static functions
@@ -139,6 +139,14 @@ static int check_configuration(struct engine_config *conf)
                 conf->max_btree_size, MINIMUM_MAX_COLL_SIZE, MAXIMUM_MAX_COLL_SIZE);
         return -1;
     }
+    if (conf->max_element_bytes < MINIMUM_MAX_ELEMENT_BYTES ||
+        conf->max_element_bytes > MAXIMUM_MAX_ELEMENT_BYTES) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                "default engine: max_element_bytes(%u) is out of range(%u~%u).\n",
+                conf->max_element_bytes, MINIMUM_MAX_ELEMENT_BYTES, MAXIMUM_MAX_ELEMENT_BYTES);
+        return -1;
+    }
+
     return 0;
 }
 
@@ -197,8 +205,8 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
               .datatype = DT_UINT32,
               .value.dt_uint32 = &se->config.max_btree_size },
             { .key = "max_element_bytes",
-              .datatype = DT_SIZE,
-              .value.dt_size = &se->config.max_element_bytes },
+              .datatype = DT_UINT32,
+              .value.dt_uint32 = &se->config.max_element_bytes },
             { .key = "ignore_vbucket",
               .datatype = DT_BOOL,
               .value.dt_bool = &se->config.ignore_vbucket },
@@ -1278,10 +1286,10 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
         pthread_mutex_unlock(&engine->cache_lock);
     }
     else if (strcmp(config_key, "max_element_bytes") == 0) {
-        size_t new_maxelembytes = *(size_t*)config_value;
+        uint32_t new_maxelembytes = *(size_t*)config_value;
         pthread_mutex_lock(&engine->cache_lock);
-        if (new_maxelembytes >= MAX_ELEMENT_BYTES_MIN &&
-            new_maxelembytes <= MAX_ELEMENT_BYTES_MAX) {
+        if (new_maxelembytes >= MINIMUM_MAX_ELEMENT_BYTES &&
+            new_maxelembytes <= MAXIMUM_MAX_ELEMENT_BYTES) {
             engine->config.max_element_bytes = new_maxelembytes;
         } else {
             ret = ENGINE_EBADVALUE;
@@ -1707,7 +1715,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .max_set_size = DEFAULT_MAX_SET_SIZE,
          .max_map_size = DEFAULT_MAX_MAP_SIZE,
          .max_btree_size = DEFAULT_MAX_BTREE_SIZE,
-         .max_element_bytes = MAX_ELEMENT_BYTES_DFT,
+         .max_element_bytes = DEFAULT_MAX_ELEMENT_BYTES,
          .prefix_delimiter = ':',
        },
       .stats = {
