@@ -70,6 +70,9 @@ static uint32_t DEFAULT_MAX_BTREE_SIZE = 50000;
 /* max collection element bytes */
 static uint32_t DEFAULT_MAX_ELEMENT_BYTES = 16*1024;
 
+/* default item scrub count */
+#define DEFAULT_SCRUB_COUNT 96
+
 /* Lock for global stats */
 static pthread_mutex_t stats_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -321,7 +324,6 @@ static void settings_init(void)
     settings.maxbytes = 64 * 1024 * 1024; /* default is 64MB */
     settings.maxconns = 1024;         /* to limit connections-related memory to about 5MB */
     settings.sticky_limit = 0;        /* default: 0 MB */
-    settings.scrub_count = 96;        /* scrub item count at once */
     settings.verbose = 0;
     settings.oldest_live = 0;
     settings.evict_to_free = 1;       /* push old items out of cache when memory runs out */
@@ -341,6 +343,7 @@ static void settings_init(void)
     settings.max_map_size = DEFAULT_MAX_MAP_SIZE;
     settings.max_btree_size = DEFAULT_MAX_BTREE_SIZE;
     settings.max_element_bytes = DEFAULT_MAX_ELEMENT_BYTES;
+    settings.scrub_count = DEFAULT_SCRUB_COUNT; /* scrub item count at once */
     settings.topkeys = 0;
     settings.require_sasl = false;
     settings.extensions.logger = get_stderr_logger();
@@ -8860,13 +8863,13 @@ static void process_scrubcount_command(conn *c, token_t *tokens, const size_t nt
 {
     char *config_key = tokens[SUBCOMMAND_TOKEN].value;
     char *config_val = tokens[SUBCOMMAND_TOKEN+1].value;
-    int new_scrub_count;
+    uint32_t new_scrub_count;
 
     if (ntokens == 3) {
         char buf[32];
-        sprintf(buf, "scrub_count %d\r\nEND", settings.scrub_count);
+        sprintf(buf, "scrub_count %u\r\nEND", settings.scrub_count);
         out_string(c, buf);
-    } else if (ntokens == 4 && safe_strtol(config_val, &new_scrub_count)) {
+    } else if (ntokens == 4 && safe_strtoul(config_val, &new_scrub_count)) {
         ENGINE_ERROR_CODE ret;
         LOCK_SETTING();
         ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&new_scrub_count);

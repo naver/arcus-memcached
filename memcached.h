@@ -216,7 +216,6 @@ struct settings {
     int port;
     int udpport;
     size_t sticky_limit;
-    int scrub_count;
     char *inter;
     int verbose;
     rel_time_t oldest_live; /* ignore existing items older than this */
@@ -241,6 +240,7 @@ struct settings {
     uint32_t max_map_size;       /* Maximum elements in map collection */
     uint32_t max_btree_size;     /* Maximum elements in b+tree collection */
     uint32_t max_element_bytes;  /* Maximum element bytes of collections */
+    uint32_t scrub_count;        /* count of scrubbing items at each try */
     int topkeys;            /* Number of top keys to track */
     struct {
         EXTENSION_DAEMON_DESCRIPTOR *daemons;

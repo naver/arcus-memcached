@@ -146,6 +146,13 @@ static int check_configuration(struct engine_config *conf)
                 conf->max_element_bytes, MINIMUM_MAX_ELEMENT_BYTES, MAXIMUM_MAX_ELEMENT_BYTES);
         return -1;
     }
+    if (conf->scrub_count < MINIMUM_SCRUB_COUNT ||
+        conf->scrub_count > MAXIMUM_SCRUB_COUNT) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                "default engine: scrub_count(%u) is out of range(%u~%u).\n",
+                conf->scrub_count, MINIMUM_SCRUB_COUNT, MAXIMUM_SCRUB_COUNT);
+        return -1;
+    }
 
     return 0;
 }
@@ -177,9 +184,6 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.sticky_limit},
 #endif
-            { .key = "scrub_count",
-              .datatype = DT_SIZE,
-              .value.dt_size = &se->config.scrub_count},
             { .key = "preallocate",
               .datatype = DT_BOOL,
               .value.dt_bool = &se->config.preallocate },
@@ -207,6 +211,9 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
             { .key = "max_element_bytes",
               .datatype = DT_UINT32,
               .value.dt_uint32 = &se->config.max_element_bytes },
+            { .key = "scrub_count",
+              .datatype = DT_UINT32,
+              .value.dt_uint32 = &se->config.scrub_count},
             { .key = "ignore_vbucket",
               .datatype = DT_BOOL,
               .value.dt_bool = &se->config.ignore_vbucket },
@@ -1222,9 +1229,6 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
         pthread_mutex_unlock(&engine->cache_lock);
     }
 #endif
-    else if (strcmp(config_key, "scrub_count") == 0) {
-        ret = item_conf_set_scrub_count((int*)config_value);
-    }
     else if (strcmp(config_key, "max_list_size") == 0) {
         int32_t new_maxsize = *(int32_t*)config_value;
         if (new_maxsize < 0 || new_maxsize > MAXIMUM_MAX_COLL_SIZE) {
@@ -1291,6 +1295,17 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
         if (new_maxelembytes >= MINIMUM_MAX_ELEMENT_BYTES &&
             new_maxelembytes <= MAXIMUM_MAX_ELEMENT_BYTES) {
             engine->config.max_element_bytes = new_maxelembytes;
+        } else {
+            ret = ENGINE_EBADVALUE;
+        }
+        pthread_mutex_unlock(&engine->cache_lock);
+    }
+    else if (strcmp(config_key, "scrub_count") == 0) {
+        uint32_t new_scrubcount = *(uint32_t*)config_value;
+        pthread_mutex_lock(&engine->cache_lock);
+        if (new_scrubcount >= MINIMUM_SCRUB_COUNT &&
+            new_scrubcount <= MAXIMUM_SCRUB_COUNT) {
+            engine->config.scrub_count = new_scrubcount;
         } else {
             ret = ENGINE_EBADVALUE;
         }
@@ -1706,7 +1721,6 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .num_threads = 0,
          .maxbytes = 64 * 1024 * 1024,
          .sticky_limit = 0,
-         .scrub_count = 96,
          .preallocate = false,
          .factor = 1.25,
          .chunk_size = 48,
@@ -1716,6 +1730,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .max_map_size = DEFAULT_MAX_MAP_SIZE,
          .max_btree_size = DEFAULT_MAX_BTREE_SIZE,
          .max_element_bytes = DEFAULT_MAX_ELEMENT_BYTES,
+         .scrub_count = DEFAULT_SCRUB_COUNT,
          .prefix_delimiter = ':',
        },
       .stats = {

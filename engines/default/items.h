@@ -32,6 +32,11 @@
 #define DEFAULT_MAP_SIZE   4000
 #define DEFAULT_BTREE_SIZE 4000
 
+/* item scrub count */
+#define MINIMUM_SCRUB_COUNT 16
+#define MAXIMUM_SCRUB_COUNT 320
+#define DEFAULT_SCRUB_COUNT 96
+
 /* update type */
 enum upd_type {
     /* key value command */
@@ -648,7 +653,6 @@ void              coll_elem_result_release(elems_result_t *eresult, int type);
 /*
  * Item config functions
  */
-ENGINE_ERROR_CODE item_conf_set_scrub_count(int *count);
 bool item_conf_get_evict_to_free(void);
 void item_conf_set_evict_to_free(bool value);
 
