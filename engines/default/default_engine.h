@@ -57,10 +57,10 @@ struct engine_config {
    float  factor;
    size_t chunk_size;
    size_t item_size_max;
-   size_t max_list_size;
-   size_t max_set_size;
-   size_t max_map_size;
-   size_t max_btree_size;
+   uint32_t max_list_size;
+   uint32_t max_set_size;
+   uint32_t max_map_size;
+   uint32_t max_btree_size;
    size_t max_element_bytes;
    bool   ignore_vbucket;
    char   prefix_delimiter;
