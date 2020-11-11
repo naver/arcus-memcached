@@ -18,6 +18,30 @@
 #ifndef ITEMS_H
 #define ITEMS_H
 
+/* max collection size */
+#define MINIMUM_MAX_COLL_SIZE  10000
+#define MAXIMUM_MAX_COLL_SIZE  1000000
+#define DEFAULT_MAX_LIST_SIZE  50000
+#define DEFAULT_MAX_SET_SIZE   50000
+#define DEFAULT_MAX_MAP_SIZE   50000
+#define DEFAULT_MAX_BTREE_SIZE 50000
+
+/* default collection size */
+#define DEFAULT_LIST_SIZE  4000
+#define DEFAULT_SET_SIZE   4000
+#define DEFAULT_MAP_SIZE   4000
+#define DEFAULT_BTREE_SIZE 4000
+
+/* max element bytes */
+#define MINIMUM_MAX_ELEMENT_BYTES 1024
+#define MAXIMUM_MAX_ELEMENT_BYTES (32*1024)
+#define DEFAULT_MAX_ELEMENT_BYTES (16*1024)
+
+/* item scrub count */
+#define MINIMUM_SCRUB_COUNT 16
+#define MAXIMUM_SCRUB_COUNT 320
+#define DEFAULT_SCRUB_COUNT 96
+
 /* update type */
 enum upd_type {
     /* key value command */
@@ -634,8 +658,6 @@ void              coll_elem_result_release(elems_result_t *eresult, int type);
 /*
  * Item config functions
  */
-ENGINE_ERROR_CODE item_conf_set_scrub_count(int *count);
-ENGINE_ERROR_CODE item_conf_set_maxcollsize(const int coll_type, int *maxsize);
 bool item_conf_get_evict_to_free(void);
 void item_conf_set_evict_to_free(bool value);
 

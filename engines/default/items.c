@@ -117,10 +117,6 @@ extern int genhash_string_hash(const void* p, size_t nkey);
 #define IS_STICKY_COLLFLG(i) (((i)->mflags & COLL_META_FLAG_STICKY) != 0)
 #endif
 
-/* scan count definitions */
-#define SCRUB_MIN_COUNT 32
-#define SCRUB_MAX_COUNT 320
-
 /* btree position debugging */
 static bool btree_position_debug = false;
 
@@ -129,19 +125,6 @@ static uint64_t      bkey_uint64_min;
 static uint64_t      bkey_uint64_max;
 static unsigned char bkey_binary_min[MIN_BKEY_LENG];
 static unsigned char bkey_binary_max[MAX_BKEY_LENG];
-
-/* maximum collection size  */
-static int32_t COLL_SIZE_LIMIT = 1000000;
-static int32_t MAX_LIST_SIZE   = 50000;
-static int32_t MAX_SET_SIZE    = 50000;
-static int32_t MAX_MAP_SIZE    = 50000;
-static int32_t MAX_BTREE_SIZE  = 50000;
-
-/* default collection size */
-static int32_t DEFAULT_LIST_SIZE  = 4000;
-static int32_t DEFAULT_SET_SIZE   = 4000;
-static int32_t DEFAULT_MAP_SIZE   = 4000;
-static int32_t DEFAULT_BTREE_SIZE = 4000;
 
 /* Temporary Facility */
 /* forced btree overflow action */
@@ -1563,10 +1546,13 @@ static int32_t do_list_real_maxcount(int32_t maxcount)
 {
     int32_t real_maxcount = maxcount;
 
-    if (maxcount < 0 || maxcount > MAX_LIST_SIZE) {
+    if (maxcount < 0) {
+        /* It has the max_list_size that can be increased in the future */
         real_maxcount = -1;
     } else if (maxcount == 0) {
         real_maxcount = DEFAULT_LIST_SIZE;
+    } else if (maxcount > config->max_list_size) {
+        real_maxcount = config->max_list_size;
     }
     return real_maxcount;
 }
@@ -1765,7 +1751,7 @@ static ENGINE_ERROR_CODE do_list_elem_insert(hash_item *it,
                                              const void *cookie)
 {
     list_meta_info *info = (list_meta_info *)item_get_meta(it);
-    int32_t real_mcnt = (info->mcnt == -1 ? MAX_LIST_SIZE : info->mcnt);
+    uint32_t real_mcnt = (info->mcnt > 0 ? info->mcnt : config->max_list_size);
     ENGINE_ERROR_CODE ret;
 
     /* validation check: index value */
@@ -1863,10 +1849,13 @@ static int32_t do_set_real_maxcount(int32_t maxcount)
 {
     int32_t real_maxcount = maxcount;
 
-    if (maxcount < 0 || maxcount > MAX_SET_SIZE) {
+    if (maxcount < 0) {
+        /* It has the max_set_size that can be increased in the future */
         real_maxcount = -1;
     } else if (maxcount == 0) {
         real_maxcount = DEFAULT_SET_SIZE;
+    } else if (maxcount > config->max_set_size) {
+        real_maxcount = config->max_set_size;
     }
     return real_maxcount;
 }
@@ -2361,7 +2350,7 @@ static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem,
                                             const void *cookie)
 {
     set_meta_info *info = (set_meta_info *)item_get_meta(it);
-    int32_t real_mcnt = (info->mcnt == -1 ? MAX_SET_SIZE : info->mcnt);
+    uint32_t real_mcnt = (info->mcnt > 0 ? info->mcnt : config->max_set_size);
     ENGINE_ERROR_CODE ret;
 
 #ifdef ENABLE_STICKY_ITEM
@@ -2426,10 +2415,13 @@ static int32_t do_btree_real_maxcount(int32_t maxcount)
 {
     int32_t real_maxcount = maxcount;
 
-    if (maxcount < 0 || maxcount > MAX_BTREE_SIZE) {
+    if (maxcount < 0) {
+        /* It has the max_btree_size that can be increased in the future */
         real_maxcount = -1;
     } else if (maxcount == 0) {
         real_maxcount = DEFAULT_BTREE_SIZE;
+    } else if (maxcount > config->max_btree_size) {
+        real_maxcount = config->max_btree_size;
     }
     return real_maxcount;
 }
@@ -4272,7 +4264,7 @@ static ENGINE_ERROR_CODE do_btree_overflow_check(btree_meta_info *info, btree_el
     /* info->ccnt >= 1 */
     btree_elem_item *min_bkey_elem = NULL;
     btree_elem_item *max_bkey_elem = NULL;
-    int32_t real_mcnt = (info->mcnt == -1 ? MAX_BTREE_SIZE : info->mcnt);
+    uint32_t real_mcnt = (info->mcnt > 0 ? info->mcnt : config->max_btree_size);
 
     /* step 1: overflow check on max bkey range */
     if (info->maxbkeyrange.len != BKEY_NULL) {
@@ -6521,35 +6513,20 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
     coll_del_queue.head = coll_del_queue.tail = NULL;
     coll_del_queue.size = 0;
 
-    /* adjust maximum collection size */
-    if (config->max_list_size > MAX_LIST_SIZE) {
-        if (config->max_list_size > COLL_SIZE_LIMIT) {
-            config->max_list_size = COLL_SIZE_LIMIT;
-        }
-        MAX_LIST_SIZE = (int32_t)config->max_list_size;
-    }
-    if (config->max_set_size > MAX_SET_SIZE) {
-        if (config->max_set_size > COLL_SIZE_LIMIT) {
-            config->max_set_size = COLL_SIZE_LIMIT;
-        }
-        MAX_SET_SIZE = (int32_t)config->max_set_size;
-    }
-    if (config->max_map_size > MAX_MAP_SIZE) {
-        if (config->max_map_size > COLL_SIZE_LIMIT) {
-            config->max_map_size = COLL_SIZE_LIMIT;
-        }
-        MAX_MAP_SIZE = (int32_t)config->max_map_size;
-    }
-    if (config->max_btree_size > MAX_BTREE_SIZE) {
-        if (config->max_btree_size > COLL_SIZE_LIMIT) {
-            config->max_btree_size = COLL_SIZE_LIMIT;
-        }
-        MAX_BTREE_SIZE = (int32_t)config->max_btree_size;
-    }
-    logger->log(EXTENSION_LOG_INFO, NULL, "maximum list  size = %d\n", MAX_LIST_SIZE);
-    logger->log(EXTENSION_LOG_INFO, NULL, "maximum set   size = %d\n", MAX_SET_SIZE);
-    logger->log(EXTENSION_LOG_INFO, NULL, "maximum map   size = %d\n", MAX_MAP_SIZE);
-    logger->log(EXTENSION_LOG_INFO, NULL, "maximum btree size = %d\n", MAX_BTREE_SIZE);
+    /* check maximum collection size */
+    assert(DEFAULT_LIST_SIZE <= config->max_list_size);
+    assert(DEFAULT_SET_SIZE <= config->max_set_size);
+    assert(DEFAULT_MAP_SIZE <= config->max_map_size);
+    assert(DEFAULT_BTREE_SIZE <= config->max_btree_size);
+
+    logger->log(EXTENSION_LOG_INFO, NULL, "default/maximum list  size = (%u/%u)\n",
+                DEFAULT_LIST_SIZE, config->max_list_size);
+    logger->log(EXTENSION_LOG_INFO, NULL, "default/maximum set   size = (%u/%u)\n",
+                DEFAULT_SET_SIZE, config->max_set_size);
+    logger->log(EXTENSION_LOG_INFO, NULL, "default/maximum map   size = (%u/%u)\n",
+                DEFAULT_MAP_SIZE, config->max_map_size);
+    logger->log(EXTENSION_LOG_INFO, NULL, "default/maximum btree size = (%u/%u)\n",
+                DEFAULT_BTREE_SIZE, config->max_btree_size);
 
     item_clog_init(engine);
 
@@ -7788,22 +7765,16 @@ do_item_getattr(hash_item *it,
         if (info->mcnt > 0) {
             attr_data->maxcount = info->mcnt;
         } else {
-            switch (attr_data->type) {
-              case ITEM_TYPE_LIST:
-                   attr_data->maxcount = MAX_LIST_SIZE;
-                   break;
-              case ITEM_TYPE_SET:
-                   attr_data->maxcount = MAX_SET_SIZE;
-                   break;
-              case ITEM_TYPE_MAP:
-                   attr_data->maxcount = MAX_MAP_SIZE;
-                   break;
-              case ITEM_TYPE_BTREE:
-                   attr_data->maxcount = MAX_BTREE_SIZE;
-                   break;
-              default:
-                   attr_data->maxcount = 0;
-            }
+            if (attr_data->type == ITEM_TYPE_LIST)
+               attr_data->maxcount = (int32_t)config->max_list_size;
+            else if (attr_data->type == ITEM_TYPE_SET)
+               attr_data->maxcount = (int32_t)config->max_set_size;
+            else if (attr_data->type == ITEM_TYPE_MAP)
+               attr_data->maxcount = (int32_t)config->max_map_size;
+            else if (attr_data->type == ITEM_TYPE_BTREE)
+               attr_data->maxcount = (int32_t)config->max_btree_size;
+            else
+               attr_data->maxcount = 0;
         }
         attr_data->ovflaction = info->ovflact;
         attr_data->readable = (((info->mflags & COLL_META_FLAG_READABLE) != 0) ? 1 : 0);
@@ -8344,67 +8315,6 @@ void coll_elem_result_release(elems_result_t *eresult, int type)
 /*
  * Item config functions
  */
-ENGINE_ERROR_CODE item_conf_set_scrub_count(int *count)
-{
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-
-    LOCK_CACHE();
-    if (SCRUB_MIN_COUNT <= *count &&
-        SCRUB_MAX_COUNT >= *count) {
-        config->scrub_count = *count;
-    } else {
-        ret = ENGINE_EBADVALUE;
-    }
-    UNLOCK_CACHE();
-    return ret;
-}
-
-ENGINE_ERROR_CODE item_conf_set_maxcollsize(const int coll_type, int *maxsize)
-{
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-
-    LOCK_CACHE();
-    if (*maxsize < 0 || *maxsize > COLL_SIZE_LIMIT) {
-        *maxsize = COLL_SIZE_LIMIT;
-    }
-    switch (coll_type) {
-      case ITEM_TYPE_LIST:
-           if (*maxsize <= MAX_LIST_SIZE) {
-               ret = ENGINE_EBADVALUE;
-           } else {
-               MAX_LIST_SIZE = *maxsize;
-               config->max_list_size = *maxsize;
-           }
-           break;
-      case ITEM_TYPE_SET:
-           if (*maxsize <= MAX_SET_SIZE) {
-               ret = ENGINE_EBADVALUE;
-           } else {
-               MAX_SET_SIZE = *maxsize;
-               config->max_set_size = *maxsize;
-           }
-           break;
-      case ITEM_TYPE_MAP:
-           if (*maxsize <= MAX_MAP_SIZE) {
-               ret = ENGINE_EBADVALUE;
-           } else {
-               MAX_MAP_SIZE = *maxsize;
-               config->max_map_size = *maxsize;
-           }
-           break;
-      case ITEM_TYPE_BTREE:
-           if (*maxsize <= MAX_BTREE_SIZE) {
-               ret = ENGINE_EBADVALUE;
-           } else {
-               MAX_BTREE_SIZE = *maxsize;
-               config->max_btree_size = *maxsize;
-           }
-           break;
-    }
-    UNLOCK_CACHE();
-    return ret;
-}
-
 bool item_conf_get_evict_to_free(void)
 {
     bool value;
@@ -8640,7 +8550,7 @@ static void *item_scrubber_main(void *arg)
     struct default_engine *engine = arg;
     struct engine_scrubber *scrubber = &engine->scrubber;
     struct assoc_scan scan;
-    hash_item *item_array[SCRUB_MAX_COUNT];
+    hash_item *item_array[MAXIMUM_SCRUB_COUNT];
     int        item_count;
     int        scan_execs = 0; /* the number of scan executions */
     int        scan_break = 1; /* break after N scan executions.
@@ -9148,10 +9058,13 @@ static int32_t do_map_real_maxcount(int32_t maxcount)
 {
     int32_t real_maxcount = maxcount;
 
-    if (maxcount < 0 || maxcount > MAX_MAP_SIZE) {
+    if (maxcount < 0) {
+        /* It has the max_map_size that can be increased in the future */
         real_maxcount = -1;
     } else if (maxcount == 0) {
         real_maxcount = DEFAULT_MAP_SIZE;
+    } else if (maxcount > config->max_map_size) {
+        real_maxcount = config->max_map_size;
     }
     return real_maxcount;
 }
@@ -9729,7 +9642,7 @@ static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
                                             const bool replace_if_exist, const void *cookie)
 {
     map_meta_info *info = (map_meta_info *)item_get_meta(it);
-    int32_t real_mcnt = (info->mcnt == -1 ? MAX_MAP_SIZE : info->mcnt);
+    uint32_t real_mcnt = (info->mcnt > 0 ? info->mcnt : config->max_map_size);
     ENGINE_ERROR_CODE ret;
 
     /* overflow check */

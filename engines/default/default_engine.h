@@ -52,16 +52,16 @@ struct engine_config {
    size_t num_threads;
    size_t maxbytes;
    size_t sticky_limit;
-   size_t scrub_count;
    bool   preallocate;
    float  factor;
    size_t chunk_size;
    size_t item_size_max;
-   size_t max_list_size;
-   size_t max_set_size;
-   size_t max_map_size;
-   size_t max_btree_size;
-   size_t max_element_bytes;
+   uint32_t max_list_size;
+   uint32_t max_set_size;
+   uint32_t max_map_size;
+   uint32_t max_btree_size;
+   uint32_t max_element_bytes;
+   uint32_t scrub_count;
 #ifdef ENABLE_PERSISTENCE
    bool   use_persistence;
    bool   async_logging;

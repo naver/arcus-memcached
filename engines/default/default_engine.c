@@ -47,11 +47,6 @@
 
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
-/* max element bytes */
-static size_t MAX_ELEMENT_BYTES_MIN = 1024;    /* minimum of MAX_ELEMENT_BYTES */
-static size_t MAX_ELEMENT_BYTES_MAX = 32*1024; /* maximum of MAX_ELEMENT_BYTES */
-static size_t MAX_ELEMENT_BYTES_DFT = 16*1024; /* default of MAX_ELEMENT_BYTES */
-
 /*
  * vbucket static functions
  */
@@ -118,6 +113,48 @@ default_get_info(ENGINE_HANDLE* handle)
 
 static int check_configuration(struct engine_config *conf)
 {
+    if (conf->max_list_size < MINIMUM_MAX_COLL_SIZE ||
+        conf->max_list_size > MAXIMUM_MAX_COLL_SIZE) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                "default engine: max_list_size(%u) is out of range(%u~%u).\n",
+                conf->max_list_size, MINIMUM_MAX_COLL_SIZE, MAXIMUM_MAX_COLL_SIZE);
+        return -1;
+    }
+    if (conf->max_set_size < MINIMUM_MAX_COLL_SIZE ||
+        conf->max_set_size > MAXIMUM_MAX_COLL_SIZE) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                "default engine: max_set_size(%u) is out of range(%u~%u).\n",
+                conf->max_set_size, MINIMUM_MAX_COLL_SIZE, MAXIMUM_MAX_COLL_SIZE);
+        return -1;
+    }
+    if (conf->max_map_size < MINIMUM_MAX_COLL_SIZE ||
+        conf->max_map_size > MAXIMUM_MAX_COLL_SIZE) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                "default engine: max_map_size(%u) is out of range(%u~%u).\n",
+                conf->max_map_size, MINIMUM_MAX_COLL_SIZE, MAXIMUM_MAX_COLL_SIZE);
+        return -1;
+    }
+    if (conf->max_btree_size < MINIMUM_MAX_COLL_SIZE ||
+        conf->max_btree_size > MAXIMUM_MAX_COLL_SIZE) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                "default engine: max_btree_size(%u) is out of range(%u~%u).\n",
+                conf->max_btree_size, MINIMUM_MAX_COLL_SIZE, MAXIMUM_MAX_COLL_SIZE);
+        return -1;
+    }
+    if (conf->max_element_bytes < MINIMUM_MAX_ELEMENT_BYTES ||
+        conf->max_element_bytes > MAXIMUM_MAX_ELEMENT_BYTES) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                "default engine: max_element_bytes(%u) is out of range(%u~%u).\n",
+                conf->max_element_bytes, MINIMUM_MAX_ELEMENT_BYTES, MAXIMUM_MAX_ELEMENT_BYTES);
+        return -1;
+    }
+    if (conf->scrub_count < MINIMUM_SCRUB_COUNT ||
+        conf->scrub_count > MAXIMUM_SCRUB_COUNT) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                "default engine: scrub_count(%u) is out of range(%u~%u).\n",
+                conf->scrub_count, MINIMUM_SCRUB_COUNT, MAXIMUM_SCRUB_COUNT);
+        return -1;
+    }
 #ifdef ENABLE_PERSISTENCE
     if (conf->use_persistence) {
         /* check data & logs directory path. */
@@ -145,6 +182,7 @@ static int check_configuration(struct engine_config *conf)
         conf->chkpt_interval_min_logsize = conf->chkpt_interval_min_logsize * 1024 * 1024; /* MB to B */
     }
 #endif
+
     return 0;
 }
 
@@ -175,9 +213,6 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.sticky_limit},
 #endif
-            { .key = "scrub_count",
-              .datatype = DT_SIZE,
-              .value.dt_size = &se->config.scrub_count},
             { .key = "preallocate",
               .datatype = DT_BOOL,
               .value.dt_bool = &se->config.preallocate },
@@ -191,20 +226,23 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
               .datatype = DT_SIZE,
               .value.dt_size = &se->config.item_size_max },
             { .key = "max_list_size",
-              .datatype = DT_SIZE,
-              .value.dt_size = &se->config.max_list_size },
+              .datatype = DT_UINT32,
+              .value.dt_uint32 = &se->config.max_list_size },
             { .key = "max_set_size",
-              .datatype = DT_SIZE,
-              .value.dt_size = &se->config.max_set_size },
+              .datatype = DT_UINT32,
+              .value.dt_uint32 = &se->config.max_set_size },
             { .key = "max_map_size",
-              .datatype = DT_SIZE,
-              .value.dt_size = &se->config.max_map_size },
+              .datatype = DT_UINT32,
+              .value.dt_uint32 = &se->config.max_map_size },
             { .key = "max_btree_size",
-              .datatype = DT_SIZE,
-              .value.dt_size = &se->config.max_btree_size },
+              .datatype = DT_UINT32,
+              .value.dt_uint32 = &se->config.max_btree_size },
             { .key = "max_element_bytes",
-              .datatype = DT_SIZE,
-              .value.dt_size = &se->config.max_element_bytes },
+              .datatype = DT_UINT32,
+              .value.dt_uint32 = &se->config.max_element_bytes },
+            { .key = "scrub_count",
+              .datatype = DT_UINT32,
+              .value.dt_uint32 = &se->config.scrub_count},
 #ifdef ENABLE_PERSISTENCE
             { .key = "use_persistence",
               .datatype = DT_BOOL,
@@ -1294,27 +1332,83 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
         pthread_mutex_unlock(&engine->cache_lock);
     }
 #endif
-    else if (strcmp(config_key, "scrub_count") == 0) {
-        ret = item_conf_set_scrub_count((int*)config_value);
-    }
     else if (strcmp(config_key, "max_list_size") == 0) {
-        ret = item_conf_set_maxcollsize(ITEM_TYPE_LIST, (int*)config_value);
+        int32_t new_maxsize = *(int32_t*)config_value;
+        if (new_maxsize < 0 || new_maxsize > MAXIMUM_MAX_COLL_SIZE) {
+            /* -1 means the engine defined MAXIMUM_MAX_COLL_SIZE */
+            new_maxsize = MAXIMUM_MAX_COLL_SIZE;
+        }
+        /* It can be only increased */
+        pthread_mutex_lock(&engine->cache_lock);
+        if (new_maxsize > engine->config.max_list_size) {
+            engine->config.max_list_size = new_maxsize;
+        } else {
+            ret = ENGINE_EBADVALUE;
+        }
+        pthread_mutex_unlock(&engine->cache_lock);
     }
     else if (strcmp(config_key, "max_set_size") == 0) {
-        ret = item_conf_set_maxcollsize(ITEM_TYPE_SET, (int*)config_value);
+        int32_t new_maxsize = *(int32_t*)config_value;
+        if (new_maxsize < 0 || new_maxsize > MAXIMUM_MAX_COLL_SIZE) {
+            /* -1 means the engine defined MAXIMUM_MAX_COLL_SIZE */
+            new_maxsize = MAXIMUM_MAX_COLL_SIZE;
+        }
+        /* It can be only increased */
+        pthread_mutex_lock(&engine->cache_lock);
+        if (new_maxsize > engine->config.max_set_size) {
+            engine->config.max_set_size = new_maxsize;
+        } else {
+            ret = ENGINE_EBADVALUE;
+        }
+        pthread_mutex_unlock(&engine->cache_lock);
     }
     else if (strcmp(config_key, "max_map_size") == 0) {
-        ret = item_conf_set_maxcollsize(ITEM_TYPE_MAP, (int*)config_value);
+        int32_t new_maxsize = *(int32_t*)config_value;
+        if (new_maxsize < 0 || new_maxsize > MAXIMUM_MAX_COLL_SIZE) {
+            /* -1 means the engine defined MAXIMUM_MAX_COLL_SIZE */
+            new_maxsize = MAXIMUM_MAX_COLL_SIZE;
+        }
+        /* It can be only increased */
+        pthread_mutex_lock(&engine->cache_lock);
+        if (new_maxsize > engine->config.max_map_size) {
+            engine->config.max_map_size = new_maxsize;
+        } else {
+            ret = ENGINE_EBADVALUE;
+        }
+        pthread_mutex_unlock(&engine->cache_lock);
     }
     else if (strcmp(config_key, "max_btree_size") == 0) {
-        ret = item_conf_set_maxcollsize(ITEM_TYPE_BTREE, (int*)config_value);
+        int32_t new_maxsize = *(int32_t*)config_value;
+        if (new_maxsize < 0 || new_maxsize > MAXIMUM_MAX_COLL_SIZE) {
+            /* -1 means the engine defined MAXIMUM_MAX_COLL_SIZE */
+            new_maxsize = MAXIMUM_MAX_COLL_SIZE;
+        }
+        /* It can be only increased */
+        pthread_mutex_lock(&engine->cache_lock);
+        if (new_maxsize > engine->config.max_btree_size) {
+            engine->config.max_btree_size = new_maxsize;
+        } else {
+            ret = ENGINE_EBADVALUE;
+        }
+        pthread_mutex_unlock(&engine->cache_lock);
     }
     else if (strcmp(config_key, "max_element_bytes") == 0) {
-        size_t new_maxelembytes = *(size_t*)config_value;
+        uint32_t new_maxelembytes = *(uint32_t*)config_value;
         pthread_mutex_lock(&engine->cache_lock);
-        if (new_maxelembytes >= MAX_ELEMENT_BYTES_MIN &&
-            new_maxelembytes <= MAX_ELEMENT_BYTES_MAX) {
+        if (new_maxelembytes >= MINIMUM_MAX_ELEMENT_BYTES &&
+            new_maxelembytes <= MAXIMUM_MAX_ELEMENT_BYTES) {
             engine->config.max_element_bytes = new_maxelembytes;
+        } else {
+            ret = ENGINE_EBADVALUE;
+        }
+        pthread_mutex_unlock(&engine->cache_lock);
+    }
+    else if (strcmp(config_key, "scrub_count") == 0) {
+        uint32_t new_scrubcount = *(uint32_t*)config_value;
+        pthread_mutex_lock(&engine->cache_lock);
+        if (new_scrubcount >= MINIMUM_SCRUB_COUNT &&
+            new_scrubcount <= MAXIMUM_SCRUB_COUNT) {
+            engine->config.scrub_count = new_scrubcount;
         } else {
             ret = ENGINE_EBADVALUE;
         }
@@ -1733,16 +1827,16 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .num_threads = 0,
          .maxbytes = 64 * 1024 * 1024,
          .sticky_limit = 0,
-         .scrub_count = 96,
          .preallocate = false,
          .factor = 1.25,
          .chunk_size = 48,
          .item_size_max= 1024 * 1024,
-         .max_list_size = 50000,
-         .max_set_size = 50000,
-         .max_map_size = 50000,
-         .max_btree_size = 50000,
-         .max_element_bytes = MAX_ELEMENT_BYTES_DFT,
+         .max_list_size = DEFAULT_MAX_LIST_SIZE,
+         .max_set_size = DEFAULT_MAX_SET_SIZE,
+         .max_map_size = DEFAULT_MAX_MAP_SIZE,
+         .max_btree_size = DEFAULT_MAX_BTREE_SIZE,
+         .max_element_bytes = DEFAULT_MAX_ELEMENT_BYTES,
+         .scrub_count = DEFAULT_SCRUB_COUNT,
 #ifdef ENABLE_PERSISTENCE
          .use_persistence = false,
          .async_logging = false, /* default, sync logging */
