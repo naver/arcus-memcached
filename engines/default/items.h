@@ -505,6 +505,11 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
                                 struct elems_result *eresult,
                                 const void *cookie);
 
+ENGINE_ERROR_CODE list_coll_getattr(hash_item *it, item_attr *attrp,
+                                    ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
+ENGINE_ERROR_CODE list_coll_setattr(hash_item *it, item_attr *attrp,
+                                    ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
+
 ENGINE_ERROR_CODE set_struct_create(const char *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie);
 
@@ -533,6 +538,11 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
                                const bool delete, const bool drop_if_empty,
                                struct elems_result *eresult,
                                const void *cookie);
+
+ENGINE_ERROR_CODE set_coll_getattr(hash_item *it, item_attr *attrp,
+                                   ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
+ENGINE_ERROR_CODE set_coll_setattr(hash_item *it, item_attr *attrp,
+                                   ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
 
 ENGINE_ERROR_CODE map_struct_create(const char *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie);
@@ -564,6 +574,11 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
                                const bool delete, const bool drop_if_empty,
                                struct elems_result *eresult,
                                const void *cookie);
+
+ENGINE_ERROR_CODE map_coll_getattr(hash_item *it, item_attr *attrp,
+                                   ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
+ENGINE_ERROR_CODE map_coll_setattr(hash_item *it, item_attr *attrp,
+                                   ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
 
 ENGINE_ERROR_CODE btree_struct_create(const char *key, const uint32_t nkey,
                                       item_attr *attrp, const void *cookie);
@@ -639,6 +654,11 @@ ENGINE_ERROR_CODE btree_elem_smget(token_t *key_array, const int key_count,
                                    const bool unique,
                                    smget_result_t *result);
 #endif
+
+ENGINE_ERROR_CODE btree_coll_getattr(hash_item *it, item_attr *attrp,
+                                     ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
+ENGINE_ERROR_CODE btree_coll_setattr(hash_item *it, item_attr *attrp,
+                                     ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
 
 ENGINE_ERROR_CODE item_getattr(const void *key, const uint32_t nkey,
                                ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,

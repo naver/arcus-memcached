@@ -1538,21 +1538,6 @@ static void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
     prefix_bytes_decr(it->pfxptr, item_type, nspace);
 }
 
-/* get real maxcount for each collection type */
-static int32_t do_list_real_maxcount(int32_t maxcount);
-static int32_t do_set_real_maxcount(int32_t maxcount);
-static int32_t do_map_real_maxcount(int32_t maxcount);
-static int32_t do_btree_real_maxcount(int32_t maxcount);
-
-static int32_t do_coll_real_maxcount(hash_item *it, int32_t maxcount)
-{
-    if (IS_LIST_ITEM(it))       return do_list_real_maxcount(maxcount);
-    else if (IS_SET_ITEM(it))   return do_set_real_maxcount(maxcount);
-    else if (IS_MAP_ITEM(it))   return do_map_real_maxcount(maxcount);
-    else if (IS_BTREE_ITEM(it)) return do_btree_real_maxcount(maxcount);
-    else                        return maxcount;
-}
-
 static inline uint32_t do_list_elem_ntotal(list_elem_item *elem)
 {
     return sizeof(list_elem_item) + elem->nbytes;
@@ -6864,6 +6849,64 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
     return ret;
 }
 
+ENGINE_ERROR_CODE list_coll_getattr(hash_item *it, item_attr *attrp,
+                                    ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
+{
+    list_meta_info *info = (list_meta_info *)item_get_meta(it);
+
+    /* check attribute validation */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXBKEYRANGE || attr_ids[i] == ATTR_TRIMMED) {
+            return ENGINE_EBADATTR;
+        }
+    }
+
+    /* get collection attributes */
+    attrp->count = info->ccnt;
+    attrp->maxcount = (info->mcnt > 0) ? info->mcnt : (int32_t)config->max_list_size;
+    attrp->ovflaction = info->ovflact;
+    attrp->readable = ((info->mflags & COLL_META_FLAG_READABLE) != 0) ? 1 : 0;
+    return ENGINE_SUCCESS;
+}
+
+ENGINE_ERROR_CODE list_coll_setattr(hash_item *it, item_attr *attrp,
+                                    ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
+{
+    list_meta_info *info = (list_meta_info *)item_get_meta(it);
+
+    /* check the validity of given attributs */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXCOUNT) {
+            attrp->maxcount = do_list_real_maxcount(attrp->maxcount);
+            if (attrp->maxcount > 0 && attrp->maxcount < info->ccnt) {
+                return ENGINE_EBADVALUE;
+            }
+        } else if (attr_ids[i] == ATTR_OVFLACTION) {
+            if (attrp->ovflaction != OVFL_ERROR &&
+                attrp->ovflaction != OVFL_HEAD_TRIM &&
+                attrp->ovflaction != OVFL_TAIL_TRIM) {
+                return ENGINE_EBADVALUE;
+            }
+        } else if (attr_ids[i] == ATTR_READABLE) {
+            if (attrp->readable != 1) {
+                return ENGINE_EBADVALUE;
+            }
+        }
+    }
+
+    /* set the attributes */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXCOUNT) {
+            info->mcnt = attrp->maxcount;
+        } else if (attr_ids[i] == ATTR_OVFLACTION) {
+            info->ovflact = attrp->ovflaction;
+        } else if (attr_ids[i] == ATTR_READABLE) {
+            info->mflags |= COLL_META_FLAG_READABLE;
+        }
+    }
+    return ENGINE_SUCCESS;
+}
+
 /*
  * SET Interface Functions
  */
@@ -7098,6 +7141,62 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
         PERSISTENCE_ACTION_END(ret);
     }
     return ret;
+}
+
+ENGINE_ERROR_CODE set_coll_getattr(hash_item *it, item_attr *attrp,
+                                   ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
+{
+    set_meta_info *info = (set_meta_info *)item_get_meta(it);
+
+    /* check attribute validation */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXBKEYRANGE || attr_ids[i] == ATTR_TRIMMED) {
+            return ENGINE_EBADATTR;
+        }
+    }
+
+    /* get collection attributes */
+    attrp->count = info->ccnt;
+    attrp->maxcount = (info->mcnt > 0) ? info->mcnt : (int32_t)config->max_set_size;
+    attrp->ovflaction = info->ovflact;
+    attrp->readable = ((info->mflags & COLL_META_FLAG_READABLE) != 0) ? 1 : 0;
+    return ENGINE_SUCCESS;
+}
+
+ENGINE_ERROR_CODE set_coll_setattr(hash_item *it, item_attr *attrp,
+                                   ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
+{
+    set_meta_info *info = (set_meta_info *)item_get_meta(it);
+
+    /* check the validity of given attributs */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXCOUNT) {
+            attrp->maxcount = do_set_real_maxcount(attrp->maxcount);
+            if (attrp->maxcount > 0 && attrp->maxcount < info->ccnt) {
+                return ENGINE_EBADVALUE;
+            }
+        } else if (attr_ids[i] == ATTR_OVFLACTION) {
+            if (attrp->ovflaction != OVFL_ERROR) {
+                return ENGINE_EBADVALUE;
+            }
+        } else if (attr_ids[i] == ATTR_READABLE) {
+            if (attrp->readable != 1) {
+                return ENGINE_EBADVALUE;
+            }
+        }
+    }
+
+    /* set the attributes */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXCOUNT) {
+            info->mcnt = attrp->maxcount;
+        } else if (attr_ids[i] == ATTR_OVFLACTION) {
+            info->ovflact = attrp->ovflaction;
+        } else if (attr_ids[i] == ATTR_READABLE) {
+            info->mflags |= COLL_META_FLAG_READABLE;
+        }
+    }
+    return ENGINE_SUCCESS;
 }
 
 /*
@@ -7725,12 +7824,124 @@ ENGINE_ERROR_CODE btree_elem_smget(token_t *key_array, const int key_count,
 }
 #endif
 
+ENGINE_ERROR_CODE btree_coll_getattr(hash_item *it, item_attr *attrp,
+                                     ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
+{
+    btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
+
+    /* get collection attributes */
+    attrp->count = info->ccnt;
+    attrp->maxcount = (info->mcnt > 0) ? info->mcnt : (int32_t)config->max_btree_size;
+    attrp->ovflaction = info->ovflact;
+    attrp->readable = ((info->mflags & COLL_META_FLAG_READABLE) != 0) ? 1 : 0;
+
+    attrp->trimmed = ((info->mflags & COLL_META_FLAG_TRIMMED) != 0) ? 1 : 0;
+    attrp->maxbkeyrange = info->maxbkeyrange;
+    if (info->ccnt > 0) {
+        btree_elem_item *min_bkey_elem = do_btree_get_first_elem(info->root);
+        btree_elem_item *max_bkey_elem = do_btree_get_last_elem(info->root);
+        do_btree_get_bkey(min_bkey_elem, &attrp->minbkey);
+        do_btree_get_bkey(max_bkey_elem, &attrp->maxbkey);
+    }
+    return ENGINE_SUCCESS;
+}
+
+ENGINE_ERROR_CODE btree_coll_setattr(hash_item *it, item_attr *attrp,
+                                     ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
+{
+    btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
+
+    /* check the validity of given attributs */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXCOUNT) {
+            attrp->maxcount = do_btree_real_maxcount(attrp->maxcount);
+            if (attrp->maxcount > 0 && attrp->maxcount < info->ccnt) {
+                return ENGINE_EBADVALUE;
+            }
+        } else if (attr_ids[i] == ATTR_OVFLACTION) {
+            if (attrp->ovflaction != OVFL_ERROR &&
+                attrp->ovflaction != OVFL_SMALLEST_TRIM &&
+                attrp->ovflaction != OVFL_LARGEST_TRIM &&
+                attrp->ovflaction != OVFL_SMALLEST_SILENT_TRIM &&
+                attrp->ovflaction != OVFL_LARGEST_SILENT_TRIM) {
+                return ENGINE_EBADVALUE;
+            }
+        } else if (attr_ids[i] == ATTR_READABLE) {
+            if (attrp->readable != 1) {
+                return ENGINE_EBADVALUE;
+            }
+        } else if (attr_ids[i] == ATTR_MAXBKEYRANGE) {
+            if (attrp->maxbkeyrange.len != BKEY_NULL && info->ccnt > 0) {
+                /* check bkey type of maxbkeyrange */
+                if ((info->bktype == BKEY_TYPE_UINT64 && attrp->maxbkeyrange.len >  0) ||
+                    (info->bktype == BKEY_TYPE_BINARY && attrp->maxbkeyrange.len == 0)) {
+                    return ENGINE_EBADVALUE;
+                }
+                /* New maxbkeyrange must contain the current bkey range */
+                if ((info->ccnt >= 2) && /* current key range exists */
+                    (attrp->maxbkeyrange.len != info->maxbkeyrange.len ||
+                     BKEY_ISNE(attrp->maxbkeyrange.val, attrp->maxbkeyrange.len,
+                               info->maxbkeyrange.val, info->maxbkeyrange.len))) {
+                    bkey_t curbkeyrange;
+                    btree_elem_item *min_bkey_elem = do_btree_get_first_elem(info->root);
+                    btree_elem_item *max_bkey_elem = do_btree_get_last_elem(info->root);
+                    curbkeyrange.len = attrp->maxbkeyrange.len;
+                    BKEY_DIFF(max_bkey_elem->data, max_bkey_elem->nbkey,
+                              min_bkey_elem->data, min_bkey_elem->nbkey,
+                              curbkeyrange.len, curbkeyrange.val);
+                    if (BKEY_ISGT(curbkeyrange.val, curbkeyrange.len,
+                                  attrp->maxbkeyrange.val, attrp->maxbkeyrange.len)) {
+                        return ENGINE_EBADVALUE;
+                    }
+                }
+            }
+        }
+    }
+
+    /* set the attributes */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXCOUNT) {
+            info->mcnt = attrp->maxcount;
+        } else if (attr_ids[i] == ATTR_OVFLACTION) {
+            if (info->ovflact != attrp->ovflaction) {
+                info->mflags &= ~COLL_META_FLAG_TRIMMED; // clear trimmed
+            }
+            info->ovflact = attrp->ovflaction;
+            _setif_forced_btree_overflow_action(info, item_get_key(it), it->nkey);
+        } else if (attr_ids[i] == ATTR_READABLE) {
+            info->mflags |= COLL_META_FLAG_READABLE;
+        } else if (attr_ids[i] == ATTR_MAXBKEYRANGE) {
+            if (attrp->maxbkeyrange.len == BKEY_NULL) {
+                if (info->maxbkeyrange.len != BKEY_NULL) {
+                    info->maxbkeyrange = attrp->maxbkeyrange;
+                    if (info->ccnt == 0) {
+                        if (info->bktype != BKEY_TYPE_UNKNOWN)
+                            info->bktype = BKEY_TYPE_UNKNOWN;
+                    }
+                }
+            } else { /* attrp->maxbkeyrange.len != BKEY_NULL */
+                if (info->ccnt == 0) {
+                    /* just reset maxbkeyrange with new value */
+                    info->maxbkeyrange = attrp->maxbkeyrange;
+                    if (attrp->maxbkeyrange.len == 0) {
+                        info->bktype = BKEY_TYPE_UINT64;
+                    } else {
+                        info->bktype = BKEY_TYPE_BINARY;
+                    }
+                } else { /* info->ccnt > 0 */
+                    info->maxbkeyrange = attrp->maxbkeyrange;
+                }
+            }
+        }
+    }
+    return ENGINE_SUCCESS;
+}
+
 /*
  * ITEM ATTRIBUTE Interface Functions
  */
 static ENGINE_ERROR_CODE
-do_item_getattr(hash_item *it,
-                ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
+do_item_getattr(hash_item *it, ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
                 item_attr *attr_data)
 {
     /* item flags */
@@ -7753,46 +7964,21 @@ do_item_getattr(hash_item *it,
     }
 
     if (IS_COLL_ITEM(it)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
         attr_data->type = GET_ITEM_TYPE(it);
         assert(attr_data->type < ITEM_TYPE_MAX);
-        /* attribute validation check */
-        if (attr_data->type != ITEM_TYPE_BTREE) {
-            for (int i = 0; i < attr_count; i++) {
-                if (attr_ids[i] == ATTR_MAXBKEYRANGE || attr_ids[i] == ATTR_TRIMMED) {
-                    return ENGINE_EBADATTR;
-                }
-            }
-        }
-        /* get collection attributes */
-        attr_data->count = info->ccnt;
-        if (info->mcnt > 0) {
-            attr_data->maxcount = info->mcnt;
-        } else {
-            if (attr_data->type == ITEM_TYPE_LIST)
-               attr_data->maxcount = (int32_t)config->max_list_size;
-            else if (attr_data->type == ITEM_TYPE_SET)
-               attr_data->maxcount = (int32_t)config->max_set_size;
-            else if (attr_data->type == ITEM_TYPE_MAP)
-               attr_data->maxcount = (int32_t)config->max_map_size;
-            else if (attr_data->type == ITEM_TYPE_BTREE)
-               attr_data->maxcount = (int32_t)config->max_btree_size;
-            else
-               attr_data->maxcount = 0;
-        }
-        attr_data->ovflaction = info->ovflact;
-        attr_data->readable = (((info->mflags & COLL_META_FLAG_READABLE) != 0) ? 1 : 0);
 
-        if (attr_data->type == ITEM_TYPE_BTREE) {
-            btree_meta_info *binfo = (btree_meta_info *)info;
-            attr_data->maxbkeyrange = binfo->maxbkeyrange;
-            attr_data->trimmed = (((binfo->mflags & COLL_META_FLAG_TRIMMED) != 0) ? 1 : 0);
-            if (info->ccnt > 0) {
-                btree_elem_item *min_bkey_elem = do_btree_get_first_elem(binfo->root);
-                do_btree_get_bkey(min_bkey_elem, &attr_data->minbkey);
-                btree_elem_item *max_bkey_elem = do_btree_get_last_elem(binfo->root);
-                do_btree_get_bkey(max_bkey_elem, &attr_data->maxbkey);
-            }
+        ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+        if (attr_data->type == ITEM_TYPE_LIST) {
+            ret = list_coll_getattr(it, attr_data, attr_ids, attr_count);
+        } else if (attr_data->type == ITEM_TYPE_SET) {
+            ret = set_coll_getattr(it, attr_data, attr_ids, attr_count);
+        } else if (attr_data->type == ITEM_TYPE_MAP) {
+            ret = map_coll_getattr(it, attr_data, attr_ids, attr_count);
+        } else if (attr_data->type == ITEM_TYPE_BTREE) {
+            ret = btree_coll_getattr(it, attr_data, attr_ids, attr_count);
+        }
+        if (ret != ENGINE_SUCCESS) {
+            return ret;
         }
     } else {
         attr_data->type = ITEM_TYPE_KV;
@@ -7833,179 +8019,62 @@ ENGINE_ERROR_CODE item_getattr(const void *key, const uint32_t nkey,
 }
 
 static ENGINE_ERROR_CODE
-do_item_setattr_check(hash_item *it,
-                      ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
-                      item_attr *attr_data)
+do_item_setattr(hash_item *it, ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
+                item_attr *attr_data)
 {
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    coll_meta_info *info = NULL;
-    if (IS_COLL_ITEM(it)) {
-        info = (coll_meta_info *)item_get_meta(it);
-    }
+    bool expiretime_flag = false;
 
     for (int i = 0; i < attr_count; i++) {
-        /* Attributes for all items */
-#ifdef ENABLE_STICKY_ITEM
         if (attr_ids[i] == ATTR_EXPIRETIME) {
+#ifdef ENABLE_STICKY_ITEM
             /* do not allow sticky toggling */
             if ((it->exptime == (rel_time_t)-1 && attr_data->exptime != (rel_time_t)-1) ||
                 (it->exptime != (rel_time_t)-1 && attr_data->exptime == (rel_time_t)-1)) {
-                ret = ENGINE_EBADVALUE; break;
+                return ENGINE_EBADVALUE;
             }
-            continue;
-        }
 #endif
-        /* Attributes for collection items */
-        if (info == NULL) continue;
-        if (attr_ids[i] == ATTR_MAXCOUNT) {
-            attr_data->maxcount = do_coll_real_maxcount(it, attr_data->maxcount);
-            if (attr_data->maxcount > 0 && attr_data->maxcount < info->ccnt) {
-                ret = ENGINE_EBADVALUE; break;
-            }
-            continue;
-        }
-        if (attr_ids[i] == ATTR_OVFLACTION) {
-            if (attr_data->ovflaction == OVFL_ERROR) {
-                /* nothing to check */
-            } else if (attr_data->ovflaction == OVFL_HEAD_TRIM ||
-                       attr_data->ovflaction == OVFL_TAIL_TRIM) {
-                if (! IS_LIST_ITEM(it)) {
-                    ret = ENGINE_EBADVALUE; break;
-                }
-            } else if (attr_data->ovflaction == OVFL_SMALLEST_TRIM ||
-                       attr_data->ovflaction == OVFL_LARGEST_TRIM ||
-                       attr_data->ovflaction == OVFL_SMALLEST_SILENT_TRIM ||
-                       attr_data->ovflaction == OVFL_LARGEST_SILENT_TRIM) {
-                if (! IS_BTREE_ITEM(it)) {
-                    ret = ENGINE_EBADVALUE; break;
-                }
-            } else {
-                ret = ENGINE_EBADVALUE; break;
-            }
-            continue;
-        }
-        if (attr_ids[i] == ATTR_READABLE) {
-            if (attr_data->readable != 1) {
-                ret = ENGINE_EBADVALUE; break;
-            }
-            continue;
-        }
-        /* Attributes for only b+tree items */
-        if (!IS_BTREE_ITEM(it)) continue;
-        if (attr_ids[i] == ATTR_MAXBKEYRANGE) {
-            if (attr_data->maxbkeyrange.len != BKEY_NULL && info->ccnt > 0) {
-                btree_meta_info *binfo = (btree_meta_info *)info;
-                /* check bkey type of maxbkeyrange */
-                if ((binfo->bktype == BKEY_TYPE_UINT64 && attr_data->maxbkeyrange.len >  0) ||
-                    (binfo->bktype == BKEY_TYPE_BINARY && attr_data->maxbkeyrange.len == 0)) {
-                    ret = ENGINE_EBADVALUE; break;
-                }
-                /* New maxbkeyrange must contain the current bkey range */
-                if ((binfo->ccnt >= 2) && /* current key range exists */
-                    (attr_data->maxbkeyrange.len != binfo->maxbkeyrange.len ||
-                     BKEY_ISNE(attr_data->maxbkeyrange.val, attr_data->maxbkeyrange.len,
-                               binfo->maxbkeyrange.val, binfo->maxbkeyrange.len))) {
-                    bkey_t curbkeyrange;
-                    btree_elem_item *min_bkey_elem = do_btree_get_first_elem(binfo->root);
-                    btree_elem_item *max_bkey_elem = do_btree_get_last_elem(binfo->root);
-                    curbkeyrange.len = attr_data->maxbkeyrange.len;
-                    BKEY_DIFF(max_bkey_elem->data, max_bkey_elem->nbkey,
-                              min_bkey_elem->data, min_bkey_elem->nbkey,
-                              curbkeyrange.len, curbkeyrange.val);
-                    if (BKEY_ISGT(curbkeyrange.val, curbkeyrange.len,
-                                  attr_data->maxbkeyrange.val, attr_data->maxbkeyrange.len)) {
-                        ret = ENGINE_EBADVALUE; break;
-                    }
-                }
-            }
-            continue;
-        }
-    }
-    return ret;
-}
-
-static void
-do_item_setattr_exec(hash_item *it,
-                     ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
-                     item_attr *attr_data)
-{
-    coll_meta_info *info = NULL;
-    if (IS_COLL_ITEM(it)) {
-        info = (coll_meta_info *)item_get_meta(it);
-    }
-
-    for (int i = 0; i < attr_count; i++) {
-        /* Attributes for all items */
-        if (attr_ids[i] == ATTR_EXPIRETIME) {
             if (it->exptime != attr_data->exptime) {
-                rel_time_t before_exptime = it->exptime;
-                it->exptime = attr_data->exptime;
-                if (before_exptime == 0 && it->exptime != 0) {
-                    /* exptime: 0 => positive value */
-                    /* When change the exptime, we must consider that
-                     * an item, whose exptime is 0, can be below the lowMK of LRU.
-                     * If the exptime of the item is changed to a positive value,
-                     * it might not reclaimed even if it's expired in the future.
-                     * To resolve this, we move it to the top of LRU list.
-                     */
-                    do_item_update(it, true); /* force LRU update */
-                }
+                expiretime_flag = true;
             }
-            continue;
+            break; /* found ATTR_EXPIRETIME */
         }
-        /* Attributes for collection items */
-        if (info == NULL) continue;
-        if (attr_ids[i] == ATTR_MAXCOUNT) {
-            info->mcnt = attr_data->maxcount;
-            continue;
+    }
+
+    /* check and set collection attributes */
+    if (IS_COLL_ITEM(it)) {
+        ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+        if (IS_LIST_ITEM(it)) {
+            ret = list_coll_setattr(it, attr_data, attr_ids, attr_count);
+        } else if (IS_SET_ITEM(it)) {
+            ret = set_coll_setattr(it, attr_data, attr_ids, attr_count);
+        } else if (IS_MAP_ITEM(it)) {
+            ret = map_coll_setattr(it, attr_data, attr_ids, attr_count);
+        } else if (IS_BTREE_ITEM(it)) {
+            ret = btree_coll_setattr(it, attr_data, attr_ids, attr_count);
         }
-        if (attr_ids[i] == ATTR_OVFLACTION) {
-            if (IS_BTREE_ITEM(it)) {
-                btree_meta_info *binfo = (btree_meta_info *)info;
-                if (binfo->ovflact != attr_data->ovflaction) {
-                    binfo->mflags &= ~COLL_META_FLAG_TRIMMED; // clear trimmed
-                }
-            }
-            info->ovflact = attr_data->ovflaction;
-            if (IS_BTREE_ITEM(it)) {
-                _setif_forced_btree_overflow_action((void *)info, item_get_key(it), it->nkey);
-            }
-            continue;
+        if (ret != ENGINE_SUCCESS) {
+            return ret;
         }
-        if (attr_ids[i] == ATTR_READABLE) {
-            info->mflags |= COLL_META_FLAG_READABLE;
-            continue;
-        }
-        /* Attributes for only b+tree items */
-        if (!IS_BTREE_ITEM(it)) continue;
-        if (attr_ids[i] == ATTR_MAXBKEYRANGE) {
-            btree_meta_info *binfo = (btree_meta_info *)info;
-            if (attr_data->maxbkeyrange.len == BKEY_NULL) {
-                if (binfo->maxbkeyrange.len != BKEY_NULL) {
-                    binfo->maxbkeyrange = attr_data->maxbkeyrange;
-                    if (binfo->ccnt == 0) {
-                        if (binfo->bktype != BKEY_TYPE_UNKNOWN)
-                            binfo->bktype = BKEY_TYPE_UNKNOWN;
-                    }
-                }
-            } else { /* attr_data->maxbkeyrange.len != BKEY_NULL */
-                if (binfo->ccnt == 0) {
-                    /* just reset maxbkeyrange with new value */
-                    binfo->maxbkeyrange = attr_data->maxbkeyrange;
-                    if (attr_data->maxbkeyrange.len == 0) {
-                        binfo->bktype = BKEY_TYPE_UINT64;
-                    } else {
-                        binfo->bktype = BKEY_TYPE_BINARY;
-                    }
-                } else { /* binfo->ccnt > 0 */
-                    binfo->maxbkeyrange = attr_data->maxbkeyrange;
-                }
-            }
-            continue;
+    }
+
+    /* set the expiretime */
+    if (expiretime_flag) {
+        rel_time_t before_exptime = it->exptime;
+        it->exptime = attr_data->exptime;
+        if (before_exptime == 0 && it->exptime != 0) {
+            /* exptime: 0 => positive value */
+            /* When change the exptime, we must consider that
+             * an item, whose exptime is 0, can be below the lowMK of LRU.
+             * If the exptime of the item is changed to a positive value,
+             * it might not reclaimed even if it's expired in the future.
+             * To resolve this, we move it to the top of LRU list.
+             */
+            do_item_update(it, true); /* force LRU update */
         }
     }
 
     CLOG_ITEM_SETATTR(it, attr_ids, attr_count);
+    return ENGINE_SUCCESS;
 }
 
 ENGINE_ERROR_CODE item_setattr(const void *key, const uint32_t nkey,
@@ -8021,10 +8090,9 @@ ENGINE_ERROR_CODE item_setattr(const void *key, const uint32_t nkey,
     if (it == NULL) {
         ret = ENGINE_KEY_ENOENT;
     } else {
-        ret = do_item_setattr_check(it, attr_ids, attr_count, attr_data);
-        if (ret == ENGINE_SUCCESS) {
-            /* do setattr operation */
-            do_item_setattr_exec(it, attr_ids, attr_count, attr_data);
+        ret = do_item_setattr(it, attr_ids, attr_count, attr_data);
+        if (ret != ENGINE_SUCCESS) {
+            /* what should we do ? nothing */
         }
         do_item_release(it);
     }
@@ -9915,3 +9983,58 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
     return ret;
 }
 
+ENGINE_ERROR_CODE map_coll_getattr(hash_item *it, item_attr *attrp,
+                                   ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
+{
+    map_meta_info *info = (map_meta_info *)item_get_meta(it);
+
+    /* check attribute validation */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXBKEYRANGE || attr_ids[i] == ATTR_TRIMMED) {
+            return ENGINE_EBADATTR;
+        }
+    }
+
+    /* get collection attributes */
+    attrp->count = info->ccnt;
+    attrp->maxcount = (info->mcnt > 0) ? info->mcnt : (int32_t)config->max_map_size;
+    attrp->ovflaction = info->ovflact;
+    attrp->readable = ((info->mflags & COLL_META_FLAG_READABLE) != 0) ? 1 : 0;
+    return ENGINE_SUCCESS;
+}
+
+ENGINE_ERROR_CODE map_coll_setattr(hash_item *it, item_attr *attrp,
+                                   ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
+{
+    map_meta_info *info = (map_meta_info *)item_get_meta(it);
+
+    /* check the validity of given attributs */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXCOUNT) {
+            attrp->maxcount = do_map_real_maxcount(attrp->maxcount);
+            if (attrp->maxcount > 0 && attrp->maxcount < info->ccnt) {
+                return ENGINE_EBADVALUE;
+            }
+        } else if (attr_ids[i] == ATTR_OVFLACTION) {
+            if (attrp->ovflaction != OVFL_ERROR) {
+                return ENGINE_EBADVALUE;
+            }
+        } else if (attr_ids[i] == ATTR_READABLE) {
+            if (attrp->readable != 1) {
+                return ENGINE_EBADVALUE;
+            }
+        }
+    }
+
+    /* set the attributes */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXCOUNT) {
+            info->mcnt = attrp->maxcount;
+        } else if (attr_ids[i] == ATTR_OVFLACTION) {
+            info->ovflact = attrp->ovflaction;
+        } else if (attr_ids[i] == ATTR_READABLE) {
+            info->mflags |= COLL_META_FLAG_READABLE;
+        }
+    }
+    return ENGINE_SUCCESS;
+}
