@@ -121,12 +121,6 @@ static uint64_t      bkey_uint64_max;
 static unsigned char bkey_binary_min[MIN_BKEY_LENG];
 static unsigned char bkey_binary_max[MAX_BKEY_LENG];
 
-/* Temporary Facility */
-/* forced btree overflow action */
-static char    forced_action_prefix[256];
-static int32_t forced_action_pfxlen = 0;
-static uint8_t forced_btree_ovflact = 0;
-
 /* collection delete queue */
 static item_queue      coll_del_queue;
 static pthread_mutex_t coll_del_lock;
@@ -149,6 +143,69 @@ typedef struct _map_prev_info {
     map_elem_item *prev;
     uint16_t       hidx;
 } map_prev_info;
+
+/* Temporary Facility
+ * forced btree overflow action
+ */
+static char    forced_action_prefix[256];
+static int32_t forced_action_pfxlen = 0;
+static uint8_t forced_btree_ovflact = 0;
+
+static void _check_forced_btree_overflow_action(void)
+{
+    char *envstr;
+    char *envval;
+
+    envstr = getenv("ARCUS_FORCED_BTREE_OVERFLOW_ACTION");
+    if (envstr != NULL) {
+        char *delimiter = memchr(envstr, ':', strlen(envstr));
+        if (delimiter == NULL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: NO prefix delimiter\n");
+            return;
+        }
+        envval = delimiter + 1;
+
+        forced_action_pfxlen = envval - envstr;
+        if (forced_action_pfxlen >= 256) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: Too long prefix name\n");
+            return;
+        }
+        memcpy(forced_action_prefix, envstr, forced_action_pfxlen);
+        forced_action_prefix[forced_action_pfxlen] = '\0';
+
+        if (strcmp(envval, "smallest_trim") == 0)
+            forced_btree_ovflact = OVFL_SMALLEST_TRIM;
+        else if (strcmp(envval, "smallest_silent_trim") == 0)
+            forced_btree_ovflact = OVFL_SMALLEST_SILENT_TRIM;
+        else if (strcmp(envval, "largest_trim") == 0)
+            forced_btree_ovflact = OVFL_LARGEST_TRIM;
+        else if (strcmp(envval, "largest_silent_trim") == 0)
+            forced_btree_ovflact = OVFL_LARGEST_SILENT_TRIM;
+        else if (strcmp(envval, "error") == 0)
+            forced_btree_ovflact = OVFL_ERROR;
+        else {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: Invalid overflow action\n");
+            forced_action_prefix[0] = '\0';
+            return;
+        }
+
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: prefix=%s action=%s\n",
+                    forced_action_prefix, envval);
+    }
+}
+
+static void _setif_forced_btree_overflow_action(btree_meta_info *info,
+                                                const void *key, const uint32_t nkey)
+{
+    if (forced_btree_ovflact != 0 && forced_action_pfxlen < nkey &&
+        memcmp(forced_action_prefix, key, forced_action_pfxlen) == 0) {
+        info->ovflact = forced_btree_ovflact;
+    }
+}
 
 /*
  * Static functions
@@ -2440,10 +2497,6 @@ static hash_item *do_btree_item_alloc(const void *key, const uint32_t nkey,
         info->mcnt = do_btree_real_maxcount(attrp->maxcount);
         info->ccnt = 0;
         info->ovflact = (attrp->ovflaction==0 ? OVFL_SMALLEST_TRIM : attrp->ovflaction);
-        if (forced_btree_ovflact != 0 && forced_action_pfxlen < nkey &&
-            memcmp(forced_action_prefix, key, forced_action_pfxlen) == 0) {
-            info->ovflact = forced_btree_ovflact;
-        }
         info->mflags  = 0;
 #ifdef ENABLE_STICKY_ITEM
         if (IS_STICKY_EXPTIME(attrp->exptime)) info->mflags |= COLL_META_FLAG_STICKY;
@@ -2455,6 +2508,9 @@ static hash_item *do_btree_item_alloc(const void *key, const uint32_t nkey,
         info->maxbkeyrange.len = BKEY_NULL;
         info->root    = NULL;
         assert((hash_item*)COLL_GET_HASH_ITEM(info) == it);
+
+        /* set if forced_btree_overflow_actions is given */
+        _setif_forced_btree_overflow_action(info, key, nkey);
     }
     return it;
 }
@@ -6445,53 +6501,6 @@ void item_stats_reset(void)
     UNLOCK_CACHE();
 }
 
-static void _check_forced_btree_overflow_action(void)
-{
-    char *envstr;
-    char *envval;
-
-    envstr = getenv("ARCUS_FORCED_BTREE_OVERFLOW_ACTION");
-    if (envstr != NULL) {
-        char *delimiter = memchr(envstr, ':', strlen(envstr));
-        if (delimiter == NULL) {
-            logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: NO prefix delimiter\n");
-            return;
-        }
-        envval = delimiter + 1;
-
-        forced_action_pfxlen = envval - envstr;
-        if (forced_action_pfxlen >= 256) {
-            logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: Too long prefix name\n");
-            return;
-        }
-        memcpy(forced_action_prefix, envstr, forced_action_pfxlen);
-        forced_action_prefix[forced_action_pfxlen] = '\0';
-
-        if (strcmp(envval, "smallest_trim") == 0)
-            forced_btree_ovflact = OVFL_SMALLEST_TRIM;
-        else if (strcmp(envval, "smallest_silent_trim") == 0)
-            forced_btree_ovflact = OVFL_SMALLEST_SILENT_TRIM;
-        else if (strcmp(envval, "largest_trim") == 0)
-            forced_btree_ovflact = OVFL_LARGEST_TRIM;
-        else if (strcmp(envval, "largest_silent_trim") == 0)
-            forced_btree_ovflact = OVFL_LARGEST_SILENT_TRIM;
-        else if (strcmp(envval, "error") == 0)
-            forced_btree_ovflact = OVFL_ERROR;
-        else {
-            logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: Invalid overflow action\n");
-            forced_action_prefix[0] = '\0';
-            return;
-        }
-
-        logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: prefix=%s action=%s\n",
-                    forced_action_prefix, envval);
-    }
-}
-
 ENGINE_ERROR_CODE item_init(struct default_engine *engine)
 {
     /* initialize global variables */
@@ -7959,10 +7968,7 @@ do_item_setattr_exec(hash_item *it,
             }
             info->ovflact = attr_data->ovflaction;
             if (IS_BTREE_ITEM(it)) {
-                if (forced_btree_ovflact != 0 && forced_action_pfxlen < it->nkey &&
-                    memcmp(forced_action_prefix, item_get_key(it), forced_action_pfxlen) == 0) {
-                    info->ovflact = forced_btree_ovflact;
-                }
+                _setif_forced_btree_overflow_action((void *)info, item_get_key(it), it->nkey);
             }
             continue;
         }
