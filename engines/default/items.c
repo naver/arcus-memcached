@@ -2,7 +2,7 @@
 /*
  * arcus-memcached - Arcus memory cache server
  * Copyright 2010-2014 NAVER Corp.
- * Copyright 2014-2016 JaM2in Co., Ltd.
+ * Copyright 2014-2020 JaM2in Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,15 +40,6 @@ static void do_item_unlink(hash_item *it, enum item_unlink_cause cause);
 /* used by set and map collection */
 extern int genhash_string_hash(const void* p, size_t nkey);
 
-/* LRU id of small memory items */
-#define LRU_CLSID_FOR_SMALL 0
-
-/* A do_update argument value representing that
- * we should check and reposition items in the LRU list.
- */
-#define DO_UPDATE true
-#define DONT_UPDATE false
-
 /* We only reposition items in the LRU queue if they haven't been repositioned
  * in this many seconds. That saves us from churning on frequently-accessed
  * items.
@@ -59,18 +50,6 @@ extern int genhash_string_hash(const void* p, size_t nkey);
  * harvesting it on a low memory condition.
  */
 #define TAIL_REPAIR_TIME (3 * 3600)
-
-#ifdef ENABLE_STICKY_ITEM
-/* macros for identifying sticky items */
-#define IS_STICKY_EXPTIME(e) ((e) == (rel_time_t)(-1))
-#define IS_STICKY_COLLFLG(i) (((i)->mflags & COLL_META_FLAG_STICKY) != 0)
-#endif
-
-/* collection meta info offset */
-#define META_OFFSET_IN_ITEM(nkey,nbytes) ((((nkey)+(nbytes)-1)/8+1)*8)
-
-/* special address for representing unlinked status */
-#define ADDR_MEANS_UNLINKED  1
 
 /* bkey type */
 #define BKEY_TYPE_UNKNOWN 0
@@ -104,6 +83,25 @@ extern int genhash_string_hash(const void* p, size_t nkey);
 #define BTREE_GET_ELEM_ITEM(node, indx) ((btree_elem_item *)((node)->item[indx]))
 #define BTREE_GET_NODE_ITEM(node, indx) ((btree_indx_node *)((node)->item[indx]))
 
+/* btree element position */
+typedef struct _btree_elem_posi {
+    btree_indx_node *node;
+    uint16_t         indx;
+    /* It is used temporarily in order to check
+     * if the found bkey is equal to from_bkey or to_bkey of given bkey range
+     * in the do_btree_find_first/next/prev functions.
+     */
+    bool             bkeq;
+} btree_elem_posi;
+
+/* btree scan structure */
+typedef struct _btree_scan_info {
+    hash_item       *it;
+    btree_elem_posi  posi;
+    uint32_t         kidx; /* An index in the given key array as a parameter */
+    int32_t          next; /* for free scan link */
+} btree_scan_info;
+
 /* btree position debugging */
 static bool btree_position_debug = false;
 
@@ -112,6 +110,13 @@ static uint64_t      bkey_uint64_min;
 static uint64_t      bkey_uint64_max;
 static unsigned char bkey_binary_min[MIN_BKEY_LENG];
 static unsigned char bkey_binary_max[MAX_BKEY_LENG];
+
+/* item queue */
+typedef struct {
+   hash_item   *head;
+   hash_item   *tail;
+   unsigned int size;
+} item_queue;
 
 /* collection delete queue */
 static item_queue      coll_del_queue;
