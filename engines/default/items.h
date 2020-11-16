@@ -479,6 +479,9 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine);
 
 void              item_final(struct default_engine *engine);
 
+/*
+ * List Collection
+ */
 ENGINE_ERROR_CODE list_struct_create(const char *key, const uint32_t nkey,
                                      item_attr *attrp, const void *cookie);
 
@@ -505,11 +508,16 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
                                 struct elems_result *eresult,
                                 const void *cookie);
 
+uint32_t list_elem_ntotal(list_elem_item *elem);
+
 ENGINE_ERROR_CODE list_coll_getattr(hash_item *it, item_attr *attrp,
                                     ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
 ENGINE_ERROR_CODE list_coll_setattr(hash_item *it, item_attr *attrp,
                                     ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
 
+/*
+ * Set Collection
+ */
 ENGINE_ERROR_CODE set_struct_create(const char *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie);
 
@@ -539,11 +547,16 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
                                struct elems_result *eresult,
                                const void *cookie);
 
+uint32_t set_elem_ntotal(set_elem_item *elem);
+
 ENGINE_ERROR_CODE set_coll_getattr(hash_item *it, item_attr *attrp,
                                    ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
 ENGINE_ERROR_CODE set_coll_setattr(hash_item *it, item_attr *attrp,
                                    ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
 
+/*
+ * Map Collection
+ */
 ENGINE_ERROR_CODE map_struct_create(const char *key, const uint32_t nkey,
                                     item_attr *attrp, const void *cookie);
 
@@ -575,11 +588,16 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
                                struct elems_result *eresult,
                                const void *cookie);
 
+uint32_t map_elem_ntotal(map_elem_item *elem);
+
 ENGINE_ERROR_CODE map_coll_getattr(hash_item *it, item_attr *attrp,
                                    ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
 ENGINE_ERROR_CODE map_coll_setattr(hash_item *it, item_attr *attrp,
                                    ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
 
+/*
+ * B+Tree Collection
+ */
 ENGINE_ERROR_CODE btree_struct_create(const char *key, const uint32_t nkey,
                                       item_attr *attrp, const void *cookie);
 
@@ -655,6 +673,9 @@ ENGINE_ERROR_CODE btree_elem_smget(token_t *key_array, const int key_count,
                                    smget_result_t *result);
 #endif
 
+uint32_t btree_elem_ntotal(btree_elem_item *elem);
+uint8_t  btree_real_nbkey(uint8_t nbkey);
+
 ENGINE_ERROR_CODE btree_coll_getattr(hash_item *it, item_attr *attrp,
                                      ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
 ENGINE_ERROR_CODE btree_coll_setattr(hash_item *it, item_attr *attrp,
@@ -696,14 +717,9 @@ const void* item_get_meta(const hash_item* item);
 bool item_is_valid(hash_item *item);
 
 /*
- * Item and Element size functions
+ * Item size functions
  */
 uint32_t item_ntotal(hash_item *item);
-uint32_t list_elem_ntotal(list_elem_item *elem);
-uint32_t set_elem_ntotal(set_elem_item *elem);
-uint32_t map_elem_ntotal(map_elem_item *elem);
-uint32_t btree_elem_ntotal(btree_elem_item *elem);
-uint8_t  btree_real_nbkey(uint8_t nbkey);
 
 /**
  * Item Scan Facility

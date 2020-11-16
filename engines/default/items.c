@@ -1538,30 +1538,14 @@ static void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
     prefix_bytes_decr(it->pfxptr, item_type, nspace);
 }
 
+/*
+ * LIST collection management
+ */
 static inline uint32_t do_list_elem_ntotal(list_elem_item *elem)
 {
     return sizeof(list_elem_item) + elem->nbytes;
 }
 
-static inline uint32_t do_set_elem_ntotal(set_elem_item *elem)
-{
-    return sizeof(set_elem_item) + elem->nbytes;
-}
-
-static inline uint32_t do_map_elem_ntotal(map_elem_item *elem)
-{
-    return sizeof(map_elem_item) + elem->nfield + elem->nbytes;
-}
-
-static inline uint32_t do_btree_elem_ntotal(btree_elem_item *elem)
-{
-    return sizeof(btree_elem_item_fixed) + BTREE_REAL_NBKEY(elem->nbkey)
-           + elem->neflag + elem->nbytes;
-}
-
-/*
- * LIST collection management
- */
 static ENGINE_ERROR_CODE do_list_item_find(const void *key, const uint32_t nkey,
                                            bool do_update, hash_item **item)
 {
@@ -1856,14 +1840,19 @@ static ENGINE_ERROR_CODE do_list_elem_insert(hash_item *it,
 /*
  * SET collection manangement
  */
+#define SET_GET_HASHIDX(hval, hdepth) \
+        (((hval) & (SET_HASHIDX_MASK << ((hdepth)*4))) >> ((hdepth)*4))
+
 static inline int set_hash_eq(const int h1, const void *v1, size_t vlen1,
                               const int h2, const void *v2, size_t vlen2)
 {
     return (h1 == h2 && vlen1 == vlen2 && memcmp(v1, v2, vlen1) == 0);
 }
 
-#define SET_GET_HASHIDX(hval, hdepth) \
-        (((hval) & (SET_HASHIDX_MASK << ((hdepth)*4))) >> ((hdepth)*4))
+static inline uint32_t do_set_elem_ntotal(set_elem_item *elem)
+{
+    return sizeof(set_elem_item) + elem->nbytes;
+}
 
 static ENGINE_ERROR_CODE do_set_item_find(const void *key, const uint32_t nkey,
                                           bool do_update, hash_item **item)
@@ -2431,6 +2420,12 @@ static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem,
 /*
  * B+TREE collection management
  */
+static inline uint32_t do_btree_elem_ntotal(btree_elem_item *elem)
+{
+    return sizeof(btree_elem_item_fixed) + BTREE_REAL_NBKEY(elem->nbkey)
+           + elem->neflag + elem->nbytes;
+}
+
 static ENGINE_ERROR_CODE do_btree_item_find(const void *key, const uint32_t nkey,
                                             bool do_update, hash_item **item)
 {
@@ -6849,6 +6844,11 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
     return ret;
 }
 
+uint32_t list_elem_ntotal(list_elem_item *elem)
+{
+    return do_list_elem_ntotal(elem);
+}
+
 ENGINE_ERROR_CODE list_coll_getattr(hash_item *it, item_attr *attrp,
                                     ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
 {
@@ -7141,6 +7141,11 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
         PERSISTENCE_ACTION_END(ret);
     }
     return ret;
+}
+
+uint32_t set_elem_ntotal(set_elem_item *elem)
+{
+    return do_set_elem_ntotal(elem);
 }
 
 ENGINE_ERROR_CODE set_coll_getattr(hash_item *it, item_attr *attrp,
@@ -7824,6 +7829,16 @@ ENGINE_ERROR_CODE btree_elem_smget(token_t *key_array, const int key_count,
 }
 #endif
 
+uint32_t btree_elem_ntotal(btree_elem_item *elem)
+{
+    return do_btree_elem_ntotal(elem);
+}
+
+uint8_t  btree_real_nbkey(uint8_t nbkey)
+{
+    return (uint8_t)BTREE_REAL_NBKEY(nbkey);
+}
+
 ENGINE_ERROR_CODE btree_coll_getattr(hash_item *it, item_attr *attrp,
                                      ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
 {
@@ -8469,31 +8484,6 @@ uint32_t item_ntotal(hash_item *item)
     return (uint32_t)ITEM_ntotal(item);
 }
 
-uint32_t list_elem_ntotal(list_elem_item *elem)
-{
-    return do_list_elem_ntotal(elem);
-}
-
-uint32_t set_elem_ntotal(set_elem_item *elem)
-{
-    return do_set_elem_ntotal(elem);
-}
-
-uint32_t map_elem_ntotal(map_elem_item *elem)
-{
-    return do_map_elem_ntotal(elem);
-}
-
-uint32_t btree_elem_ntotal(btree_elem_item *elem)
-{
-    return do_btree_elem_ntotal(elem);
-}
-
-uint8_t  btree_real_nbkey(uint8_t nbkey)
-{
-    return (uint8_t)BTREE_REAL_NBKEY(nbkey);
-}
-
 /*
  * Item Scan Facility
  */
@@ -9097,14 +9087,19 @@ void item_stats_dump(struct default_engine *engine,
 /*
  * MAP collection manangement
  */
+#define MAP_GET_HASHIDX(hval, hdepth) \
+        (((hval) & (MAP_HASHIDX_MASK << ((hdepth)*4))) >> ((hdepth)*4))
+
 static inline int map_hash_eq(const int h1, const void *v1, size_t vlen1,
                               const int h2, const void *v2, size_t vlen2)
 {
     return (h1 == h2 && vlen1 == vlen2 && memcmp(v1, v2, vlen1) == 0);
 }
 
-#define MAP_GET_HASHIDX(hval, hdepth) \
-        (((hval) & (MAP_HASHIDX_MASK << ((hdepth)*4))) >> ((hdepth)*4))
+static inline uint32_t do_map_elem_ntotal(map_elem_item *elem)
+{
+    return sizeof(map_elem_item) + elem->nfield + elem->nbytes;
+}
 
 static ENGINE_ERROR_CODE do_map_item_find(const void *key, const uint32_t nkey,
                                           bool do_update, hash_item **item)
@@ -9981,6 +9976,11 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
         PERSISTENCE_ACTION_END(ret);
     }
     return ret;
+}
+
+uint32_t map_elem_ntotal(map_elem_item *elem)
+{
+    return do_map_elem_ntotal(elem);
 }
 
 ENGINE_ERROR_CODE map_coll_getattr(hash_item *it, item_attr *attrp,
