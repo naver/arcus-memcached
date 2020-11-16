@@ -1,7 +1,7 @@
 /*
  * arcus-memcached - Arcus memory cache server
  * Copyright 2010-2014 NAVER Corp.
- * Copyright 2014-2016 JaM2in Co., Ltd.
+ * Copyright 2014-2020 JaM2in Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -118,6 +118,27 @@ enum elem_delete_cause {
 #define COLL_META_FLAG_READABLE 2
 #define COLL_META_FLAG_STICKY   4
 #define COLL_META_FLAG_TRIMMED  8
+
+/* LRU id of small memory items */
+#define LRU_CLSID_FOR_SMALL 0
+
+/* A do_update argument value representing that
+ * we should check and reposition items in the LRU list.
+ */
+#define DO_UPDATE true
+#define DONT_UPDATE false
+
+#ifdef ENABLE_STICKY_ITEM
+/* macros for identifying sticky items */
+#define IS_STICKY_EXPTIME(e) ((e) == (rel_time_t)(-1))
+#define IS_STICKY_COLLFLG(i) (((i)->mflags & COLL_META_FLAG_STICKY) != 0)
+#endif
+
+/* collection meta info offset */
+#define META_OFFSET_IN_ITEM(nkey,nbytes) ((((nkey)+(nbytes)-1)/8+1)*8)
+
+/* special address for representing unlinked status */
+#define ADDR_MEANS_UNLINKED  1
 
 /* hash item strtucture */
 typedef struct _hash_item {
@@ -292,25 +313,6 @@ typedef struct _btree_meta_info {
     btree_indx_node *root;
 } btree_meta_info;
 
-/* btree element position */
-typedef struct _btree_elem_posi {
-    btree_indx_node *node;
-    uint16_t         indx;
-    /* It is used temporarily in order to check
-     * if the found bkey is equal to from_bkey or to_bkey of given bkey range
-     * in the do_btree_find_first/next/prev functions.
-     */
-    bool             bkeq;
-} btree_elem_posi;
-
-/* btree scan structure */
-typedef struct _btree_scan_info {
-    hash_item       *it;
-    btree_elem_posi  posi;
-    uint32_t         kidx; /* An index in the given key array as a parameter */
-    int32_t          next; /* for free scan link */
-} btree_scan_info;
-
 /* common meta info of list and set */
 typedef struct _coll_meta_info {
     int32_t  mcnt;      /* maximum count */
@@ -344,13 +346,6 @@ struct items {
    unsigned int sticky_sizes[MAX_SLAB_CLASSES];
    itemstats_t  itemstats[MAX_SLAB_CLASSES];
 };
-
-/* item queue */
-typedef struct {
-   hash_item   *head;
-   hash_item   *tail;
-   unsigned int size;
-} item_queue;
 
 /*
  * You should not try to aquire any of the item locks before calling these
@@ -726,14 +721,14 @@ char*       item_get_data(const hash_item* item);
 const void* item_get_meta(const hash_item* item);
 
 /*
- * Check item validity
- */
-bool item_is_valid(hash_item *item);
-
-/*
  * Item size functions
  */
 uint32_t item_ntotal(hash_item *item);
+
+/*
+ * Check item validity
+ */
+bool item_is_valid(hash_item *item);
 
 /**
  * Item Scan Facility

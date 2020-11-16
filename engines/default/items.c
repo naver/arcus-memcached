@@ -2,7 +2,7 @@
 /*
  * arcus-memcached - Arcus memory cache server
  * Copyright 2010-2014 NAVER Corp.
- * Copyright 2014-2016 JaM2in Co., Ltd.
+ * Copyright 2014-2020 JaM2in Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -45,15 +45,6 @@ static void do_item_unlink(hash_item *it, enum item_unlink_cause cause);
 /* used by set and map collection */
 extern int genhash_string_hash(const void* p, size_t nkey);
 
-/* LRU id of small memory items */
-#define LRU_CLSID_FOR_SMALL 0
-
-/* A do_update argument value representing that
- * we should check and reposition items in the LRU list.
- */
-#define DO_UPDATE true
-#define DONT_UPDATE false
-
 /* We only reposition items in the LRU queue if they haven't been repositioned
  * in this many seconds. That saves us from churning on frequently-accessed
  * items.
@@ -64,18 +55,6 @@ extern int genhash_string_hash(const void* p, size_t nkey);
  * harvesting it on a low memory condition.
  */
 #define TAIL_REPAIR_TIME (3 * 3600)
-
-#ifdef ENABLE_STICKY_ITEM
-/* macros for identifying sticky items */
-#define IS_STICKY_EXPTIME(e) ((e) == (rel_time_t)(-1))
-#define IS_STICKY_COLLFLG(i) (((i)->mflags & COLL_META_FLAG_STICKY) != 0)
-#endif
-
-/* collection meta info offset */
-#define META_OFFSET_IN_ITEM(nkey,nbytes) ((((nkey)+(nbytes)-1)/8+1)*8)
-
-/* special address for representing unlinked status */
-#define ADDR_MEANS_UNLINKED  1
 
 /* bkey type */
 #define BKEY_TYPE_UNKNOWN 0
@@ -109,6 +88,25 @@ extern int genhash_string_hash(const void* p, size_t nkey);
 #define BTREE_GET_ELEM_ITEM(node, indx) ((btree_elem_item *)((node)->item[indx]))
 #define BTREE_GET_NODE_ITEM(node, indx) ((btree_indx_node *)((node)->item[indx]))
 
+/* btree element position */
+typedef struct _btree_elem_posi {
+    btree_indx_node *node;
+    uint16_t         indx;
+    /* It is used temporarily in order to check
+     * if the found bkey is equal to from_bkey or to_bkey of given bkey range
+     * in the do_btree_find_first/next/prev functions.
+     */
+    bool             bkeq;
+} btree_elem_posi;
+
+/* btree scan structure */
+typedef struct _btree_scan_info {
+    hash_item       *it;
+    btree_elem_posi  posi;
+    uint32_t         kidx; /* An index in the given key array as a parameter */
+    int32_t          next; /* for free scan link */
+} btree_scan_info;
+
 /* btree position debugging */
 static bool btree_position_debug = false;
 
@@ -118,6 +116,13 @@ static uint64_t      bkey_uint64_max;
 static unsigned char bkey_binary_min[MIN_BKEY_LENG];
 static unsigned char bkey_binary_max[MAX_BKEY_LENG];
 
+/* item queue */
+typedef struct {
+   hash_item   *head;
+   hash_item   *tail;
+   unsigned int size;
+} item_queue;
+
 /* collection delete queue */
 static item_queue      coll_del_queue;
 static pthread_mutex_t coll_del_lock;
@@ -126,12 +131,12 @@ static pthread_t       coll_del_tid; /* thread id */
 static bool            coll_del_sleep = false;
 static volatile bool   coll_del_thread_running = false;
 
-static struct default_engine *ngnptr=NULL;
+static struct default_engine *engine=NULL;
 static struct engine_config *config=NULL; // engine config
 static struct items         *itemsp=NULL;
 static struct engine_stats  *statsp=NULL;
-static SERVER_CORE_API      *svcore=NULL; // server core api
 static SERVER_STAT_API      *svstat=NULL; // server stat api
+static SERVER_CORE_API      *svcore=NULL; // server core api
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
 /* Temporary Facility
@@ -197,6 +202,55 @@ static void _setif_forced_btree_overflow_action(btree_meta_info *info,
     }
 }
 
+/*
+ * Static functions
+ */
+static inline void LOCK_CACHE(void)
+{
+    pthread_mutex_lock(&engine->cache_lock);
+}
+
+static inline void UNLOCK_CACHE(void)
+{
+    pthread_mutex_unlock(&engine->cache_lock);
+}
+
+static inline void TRYLOCK_CACHE(int ntries)
+{
+    int i;
+
+    for (i = 0; i < ntries; i++) {
+        if (pthread_mutex_trylock(&engine->cache_lock) == 0)
+            break;
+        sched_yield();
+    }
+    if (i == ntries) {
+        pthread_mutex_lock(&engine->cache_lock);
+    }
+}
+
+#define ITEM_REFCOUNT_FULL 65535
+#define ITEM_REFCOUNT_MOVE 32768
+
+static inline void ITEM_REFCOUNT_INCR(hash_item *it)
+{
+    it->refcount++;
+    if (it->refcount == ITEM_REFCOUNT_FULL) {
+        it->refchunk += 1;
+        it->refcount -= ITEM_REFCOUNT_MOVE;
+        assert(it->refchunk != 0); /* overflow */
+    }
+}
+
+static inline void ITEM_REFCOUNT_DECR(hash_item *it)
+{
+    it->refcount--;
+    if (it->refcount == 0 && it->refchunk > 0) {
+        it->refchunk -= 1;
+        it->refcount = ITEM_REFCOUNT_MOVE;
+    }
+}
+
 /* warning: don't use these macros with a function, as it evals its arg twice */
 static inline size_t ITEM_ntotal(const hash_item *item)
 {
@@ -225,55 +279,6 @@ static inline size_t ITEM_stotal(const hash_item *item)
         stotal += info->stotal;
     }
     return stotal;
-}
-
-/*
- * Static functions
- */
-static inline void LOCK_CACHE(void)
-{
-    pthread_mutex_lock(&ngnptr->cache_lock);
-}
-
-static inline void UNLOCK_CACHE(void)
-{
-    pthread_mutex_unlock(&ngnptr->cache_lock);
-}
-
-static inline void TRYLOCK_CACHE(int ntries)
-{
-    int i;
-
-    for (i = 0; i < ntries; i++) {
-        if (pthread_mutex_trylock(&ngnptr->cache_lock) == 0)
-            break;
-        sched_yield();
-    }
-    if (i == ntries) {
-        pthread_mutex_lock(&ngnptr->cache_lock);
-    }
-}
-
-#define ITEM_REFCOUNT_FULL 65535
-#define ITEM_REFCOUNT_MOVE 32768
-
-static inline void ITEM_REFCOUNT_INCR(hash_item *it)
-{
-    it->refcount++;
-    if (it->refcount == ITEM_REFCOUNT_FULL) {
-        it->refchunk += 1;
-        it->refcount -= ITEM_REFCOUNT_MOVE;
-        assert(it->refchunk != 0); /* overflow */
-    }
-}
-
-static inline void ITEM_REFCOUNT_DECR(hash_item *it)
-{
-    it->refcount--;
-    if (it->refcount == 0 && it->refchunk > 0) {
-        it->refchunk -= 1;
-        it->refcount = ITEM_REFCOUNT_MOVE;
-    }
 }
 
 static inline void LOCK_STATS(void)
@@ -1174,6 +1179,65 @@ static void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
     }
 }
 
+static void do_item_replace(hash_item *old_it, hash_item *new_it)
+{
+    MEMCACHED_ITEM_REPLACE(item_get_key(old_it), old_it->nkey, old_it->nbytes,
+                           item_get_key(new_it), new_it->nkey, new_it->nbytes);
+
+    assert((old_it->iflag & ITEM_LINKED) != 0);
+
+    CLOG_ITEM_UNLINK(old_it, ITEM_UNLINK_REPLACE);
+
+    /* unlink the item from LUR list */
+    item_unlink_q(old_it);
+
+    /* Allocate a new CAS ID on link. */
+    item_set_cas(new_it, get_cas_id());
+
+    /* link the item to the hash table */
+    new_it->iflag |= ITEM_LINKED;
+    new_it->time = svcore->get_current_time();
+    new_it->khash = old_it->khash;
+
+    /* replace the item from hash table */
+    assoc_replace(old_it, new_it);
+    old_it->iflag &= ~ITEM_LINKED;
+
+    /* update prefix information */
+    prefix_t *pt = old_it->pfxptr;
+    new_it->pfxptr = old_it->pfxptr;
+    old_it->pfxptr = NULL;
+    assert(pt != NULL);
+
+    /* if old_it->iflag has ITEM_INTERNAL */
+    if (old_it->iflag & ITEM_INTERNAL) {
+        new_it->iflag |= ITEM_INTERNAL;
+    }
+
+    /* update prefix info and stats */
+    do_item_stat_replace(old_it, new_it);
+
+    if (IS_COLL_ITEM(old_it)) {
+        /* IMPORTANT NOTE)
+         * The element space statistics has already been decreased.
+         * So, we must not decrease the space statistics any more
+         * even if the elements are freed later.
+         * For that purpose, we set info->stotal to 0 like below.
+         */
+        coll_meta_info *info = (coll_meta_info *)item_get_meta(old_it);
+        info->stotal = 0;
+    }
+
+    /* free the item if no one reference it */
+    if (old_it->refcount == 0) {
+        do_item_free(old_it);
+    }
+
+    /* link the item to LRU list */
+    item_link_q(new_it);
+    CLOG_ITEM_LINK(new_it);
+}
+
 static void do_item_update(hash_item *it, bool force)
 {
     MEMCACHED_ITEM_UPDATE(item_get_key(it), it->nkey, it->nbytes);
@@ -1258,65 +1322,6 @@ static void do_item_release(hash_item *it)
             }
         }
     }
-}
-
-static void do_item_replace(hash_item *old_it, hash_item *new_it)
-{
-    MEMCACHED_ITEM_REPLACE(item_get_key(old_it), old_it->nkey, old_it->nbytes,
-                           item_get_key(new_it), new_it->nkey, new_it->nbytes);
-
-    assert((old_it->iflag & ITEM_LINKED) != 0);
-
-    CLOG_ITEM_UNLINK(old_it, ITEM_UNLINK_REPLACE);
-
-    /* unlink the item from LUR list */
-    item_unlink_q(old_it);
-
-    /* Allocate a new CAS ID on link. */
-    item_set_cas(new_it, get_cas_id());
-
-    /* link the item to the hash table */
-    new_it->iflag |= ITEM_LINKED;
-    new_it->time = svcore->get_current_time();
-    new_it->khash = old_it->khash;
-
-    /* replace the item from hash table */
-    assoc_replace(old_it, new_it);
-    old_it->iflag &= ~ITEM_LINKED;
-
-    /* update prefix information */
-    prefix_t *pt = old_it->pfxptr;
-    new_it->pfxptr = old_it->pfxptr;
-    old_it->pfxptr = NULL;
-    assert(pt != NULL);
-
-    /* if old_it->iflag has ITEM_INTERNAL */
-    if (old_it->iflag & ITEM_INTERNAL) {
-        new_it->iflag |= ITEM_INTERNAL;
-    }
-
-    /* update prefix info and stats */
-    do_item_stat_replace(old_it, new_it);
-
-    if (IS_COLL_ITEM(old_it)) {
-        /* IMPORTANT NOTE)
-         * The element space statistics has already been decreased.
-         * So, we must not decrease the space statistics any more
-         * even if the elements are freed later.
-         * For that purpose, we set info->stotal to 0 like below.
-         */
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(old_it);
-        info->stotal = 0;
-    }
-
-    /* free the item if no one reference it */
-    if (old_it->refcount == 0) {
-        do_item_free(old_it);
-    }
-
-    /* link the item to LRU list */
-    item_link_q(new_it);
-    CLOG_ITEM_LINK(new_it);
 }
 
 /*
@@ -6438,10 +6443,10 @@ void item_stats_reset(void)
     UNLOCK_CACHE();
 }
 
-ENGINE_ERROR_CODE item_init(struct default_engine *engine)
+ENGINE_ERROR_CODE item_init(struct default_engine *engine_ptr)
 {
     /* initialize global variables */
-    ngnptr = engine;
+    engine = engine_ptr;
     config = &engine->config;
     itemsp = &engine->items;
     statsp = &engine->stats;
@@ -6471,15 +6476,15 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
 
     item_clog_init(engine);
 
-    /* check forced btree overflow action */
-    _check_forced_btree_overflow_action();
-
     int ret = pthread_create(&coll_del_tid, NULL, collection_delete_thread, engine);
     if (ret != 0) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Can't create thread: %s\n", strerror(ret));
         return ENGINE_FAILED;
     }
+
+    /* check forced btree overflow action */
+    _check_forced_btree_overflow_action();
 
     /* prepare bkey min & max value */
     bkey_uint64_min = 0;
@@ -6500,12 +6505,13 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
     return ENGINE_SUCCESS;
 }
 
-void item_final(struct default_engine *engine)
+void item_final(struct default_engine *engine_ptr)
 {
     if (itemsp == NULL) {
         return; /* nothing to do */
     }
 
+    assert(engine == engine_ptr);
     if (engine->dumper.running) {
         item_stop_dump(engine);
     }
@@ -8307,12 +8313,13 @@ const void* item_get_meta(const hash_item* item)
         return NULL;
 }
 
-/****
-uint8_t item_get_clsid(const hash_item* item)
+/*
+ * Item size functions
+ */
+uint32_t item_ntotal(hash_item *item)
 {
-    return 0;
+    return (uint32_t)ITEM_ntotal(item);
 }
-****/
 
 /*
  * Check item validity
@@ -8325,14 +8332,6 @@ bool item_is_valid(hash_item* item)
     } else {
         return false;
     }
-}
-
-/*
- * Item and Element size functions
- */
-uint32_t item_ntotal(hash_item *item)
-{
-    return (uint32_t)ITEM_ntotal(item);
 }
 
 /*
