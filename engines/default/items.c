@@ -6844,6 +6844,21 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
     return ret;
 }
 
+/* See do_list_elem_delete. */
+void list_elem_get_all(list_meta_info *info, elems_result_t *eresult)
+{
+    assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
+    list_elem_item *elem;
+
+    elem = do_list_elem_find(info, 0);
+    while (elem != NULL) {
+        elem->refcount++;
+        eresult->elem_array[eresult->elem_count++] = elem;
+        elem = elem->next;
+    }
+    assert(eresult->elem_count == info->ccnt);
+}
+
 uint32_t list_elem_ntotal(list_elem_item *elem)
 {
     return do_list_elem_ntotal(elem);
@@ -7141,6 +7156,74 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
         PERSISTENCE_ACTION_END(ret);
     }
     return ret;
+}
+
+/* See do_set_elem_traverse_dfs and do_set_elem_link. do_set_elem_traverse_dfs
+ * can visit all elements, but only supports get and delete operations.
+ * Do something similar and visit all elements.
+ */
+void set_elem_get_all(set_meta_info *info, elems_result_t *eresult)
+{
+    assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
+    set_hash_node *node;
+    set_elem_item *elem;
+    int cur_depth, i;
+    bool push;
+
+    /* Temporay stack we use to do dfs. Static is ugly but is okay...
+     * This function runs with the cache lock acquired.
+     */
+    static int stack_max = 0;
+    static struct {
+        set_hash_node *node;
+        int idx;
+    } *stack = NULL;
+
+    node = info->root;
+    cur_depth = 0;
+    push = true;
+    while (node != NULL) {
+        if (push) {
+            push = false;
+            if (stack_max <= cur_depth) {
+                stack_max += 16;
+                stack = realloc(stack, sizeof(*stack) * stack_max);
+            }
+            stack[cur_depth].node = node;
+            stack[cur_depth].idx = 0;
+        }
+
+        /* Scan the current node */
+        for (i = stack[cur_depth].idx; i < SET_HASHTAB_SIZE; i++) {
+            if (node->hcnt[i] >= 0) {
+                /* Hash chain.  Insert all elements on the chain into the
+                 * to-be-copied list.
+                 */
+                for (elem = node->htab[i]; elem != NULL; elem = elem->next) {
+                    elem->refcount++;
+                    eresult->elem_array[eresult->elem_count++] = elem;
+                }
+            }
+            else if (node->htab[i] != NULL) {
+                /* Another hash node. Go down */
+                stack[cur_depth].idx = i+1;
+                push = true;
+                node = node->htab[i];
+                cur_depth++;
+                break;
+            }
+        }
+
+        /* Scannned everything in this node. Go up. */
+        if (i >= SET_HASHTAB_SIZE) {
+            cur_depth--;
+            if (cur_depth < 0)
+                node = NULL; /* done */
+            else
+                node = stack[cur_depth].node;
+        }
+    }
+    assert(eresult->elem_count == info->ccnt);
 }
 
 uint32_t set_elem_ntotal(set_elem_item *elem)
@@ -7829,6 +7912,28 @@ ENGINE_ERROR_CODE btree_elem_smget(token_t *key_array, const int key_count,
 }
 #endif
 
+/* Scan the whole btree with the cache lock acquired.
+ * We only build the table of the current elements.
+ * See do_btree_elem_delete and do_btree_multi_elem_unlink.
+ * They show how to traverse the btree.
+ * FIXME. IS THIS STILL RIGHT AFTER THE MERGE? do_btree_multi_elem_unlink is gone.
+ */
+void btree_elem_get_all(btree_meta_info *info, elems_result_t *eresult)
+{
+    assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
+    btree_elem_item *elem;
+    btree_elem_posi  posi;
+
+    elem = do_btree_find_first(info->root, BKEY_RANGE_TYPE_ASC, NULL, &posi, false);
+    while (elem != NULL) {
+        elem->refcount++;
+        eresult->elem_array[eresult->elem_count++] = elem;
+        /* Never have to go backward?  FIXME */
+        elem = do_btree_find_next(&posi, NULL);
+    }
+    assert(eresult->elem_count == info->ccnt);
+}
+
 uint32_t btree_elem_ntotal(btree_elem_item *elem)
 {
     return do_btree_elem_ntotal(elem);
@@ -8169,179 +8274,6 @@ void coll_elem_result_free(elems_result_t *eresult)
     }
 }
 
-/* See do_list_elem_delete. */
-static void do_list_elem_get_all(list_meta_info *info, elems_result_t *eresult)
-{
-    assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
-    list_elem_item *elem;
-
-    elem = do_list_elem_find(info, 0);
-    while (elem != NULL) {
-        elem->refcount++;
-        eresult->elem_array[eresult->elem_count++] = elem;
-        elem = elem->next;
-    }
-    assert(eresult->elem_count == info->ccnt);
-}
-
-/* See do_set_elem_traverse_dfs and do_set_elem_link. do_set_elem_traverse_dfs
- * can visit all elements, but only supports get and delete operations.
- * Do something similar and visit all elements.
- */
-static void do_set_elem_get_all(set_meta_info *info, elems_result_t *eresult)
-{
-    assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
-    set_hash_node *node;
-    set_elem_item *elem;
-    int cur_depth, i;
-    bool push;
-
-    /* Temporay stack we use to do dfs. Static is ugly but is okay...
-     * This function runs with the cache lock acquired.
-     */
-    static int stack_max = 0;
-    static struct {
-        set_hash_node *node;
-        int idx;
-    } *stack = NULL;
-
-    node = info->root;
-    cur_depth = 0;
-    push = true;
-    while (node != NULL) {
-        if (push) {
-            push = false;
-            if (stack_max <= cur_depth) {
-                stack_max += 16;
-                stack = realloc(stack, sizeof(*stack) * stack_max);
-            }
-            stack[cur_depth].node = node;
-            stack[cur_depth].idx = 0;
-        }
-
-        /* Scan the current node */
-        for (i = stack[cur_depth].idx; i < SET_HASHTAB_SIZE; i++) {
-            if (node->hcnt[i] >= 0) {
-                /* Hash chain.  Insert all elements on the chain into the
-                 * to-be-copied list.
-                 */
-                for (elem = node->htab[i]; elem != NULL; elem = elem->next) {
-                    elem->refcount++;
-                    eresult->elem_array[eresult->elem_count++] = elem;
-                }
-            }
-            else if (node->htab[i] != NULL) {
-                /* Another hash node. Go down */
-                stack[cur_depth].idx = i+1;
-                push = true;
-                node = node->htab[i];
-                cur_depth++;
-                break;
-            }
-        }
-
-        /* Scannned everything in this node. Go up. */
-        if (i >= SET_HASHTAB_SIZE) {
-            cur_depth--;
-            if (cur_depth < 0)
-                node = NULL; /* done */
-            else
-                node = stack[cur_depth].node;
-        }
-    }
-    assert(eresult->elem_count == info->ccnt);
-}
-
-/* See do_map_elem_traverse_dfs and do_map_elem_link. do_map_elem_traverse_dfs
- * can visit all elements, but only supports get and delete operations.
- * Do something similar and visit all elements.
- */
-static void do_map_elem_get_all(map_meta_info *info, elems_result_t *eresult)
-{
-    assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
-    map_hash_node *node;
-    map_elem_item *elem;
-    int cur_depth, i;
-    bool push;
-
-    /* Temporay stack we use to do dfs. Static is ugly but is okay...
-     * This function runs with the cache lock acquired.
-     */
-    static int stack_max = 0;
-    static struct {
-        map_hash_node *node;
-        int idx;
-    } *stack = NULL;
-
-    node = info->root;
-    cur_depth = 0;
-    push = true;
-    while (node != NULL) {
-        if (push) {
-            push = false;
-            if (stack_max <= cur_depth) {
-                stack_max += 16;
-                stack = realloc(stack, sizeof(*stack) * stack_max);
-            }
-            stack[cur_depth].node = node;
-            stack[cur_depth].idx = 0;
-        }
-
-        /* Scan the current node */
-        for (i = stack[cur_depth].idx; i < MAP_HASHTAB_SIZE; i++) {
-            if (node->hcnt[i] >= 0) {
-                /* Hash chain.  Insert all elements on the chain into the
-                 * to-be-copied list.
-                 */
-                for (elem = node->htab[i]; elem != NULL; elem = elem->next) {
-                    elem->refcount++;
-                    eresult->elem_array[eresult->elem_count++] = elem;
-                }
-            }
-            else if (node->htab[i] != NULL) {
-                /* Another hash node.  Go down */
-                stack[cur_depth].idx = i+1;
-                push = true;
-                node = node->htab[i];
-                cur_depth++;
-                break;
-            }
-        }
-
-        /* Scannned everything in this node.  Go up. */
-        if (i >= MAP_HASHTAB_SIZE) {
-            cur_depth--;
-            if (cur_depth < 0)
-                node = NULL; /* done */
-            else
-                node = stack[cur_depth].node;
-        }
-    }
-    assert(eresult->elem_count == info->ccnt);
-}
-
-/* Scan the whole btree with the cache lock acquired.
- * We only build the table of the current elements.
- * See do_btree_elem_delete and do_btree_multi_elem_unlink.
- * They show how to traverse the btree.
- * FIXME. IS THIS STILL RIGHT AFTER THE MERGE? do_btree_multi_elem_unlink is gone.
- */
-static void do_btree_elem_get_all(btree_meta_info *info, elems_result_t *eresult)
-{
-    assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
-    btree_elem_item *elem;
-    btree_elem_posi  posi;
-
-    elem = do_btree_find_first(info->root, BKEY_RANGE_TYPE_ASC, NULL, &posi, false);
-    while (elem != NULL) {
-        elem->refcount++;
-        eresult->elem_array[eresult->elem_count++] = elem;
-        /* Never have to go backward?  FIXME */
-        elem = do_btree_find_next(&posi, NULL);
-    }
-    assert(eresult->elem_count == info->ccnt);
-}
-
 #define GET_ALIGN_SIZE(s,a) \
         (((s)%(a)) == 0 ? (s) : (s)+(a)-((s)%(a)))
 ENGINE_ERROR_CODE coll_elem_get_all(hash_item *it, elems_result_t *eresult, bool lock_hold)
@@ -8368,10 +8300,10 @@ ENGINE_ERROR_CODE coll_elem_get_all(hash_item *it, elems_result_t *eresult, bool
             }
         }
         /* get all elements */
-        if (IS_LIST_ITEM(it))       do_list_elem_get_all((list_meta_info*)info, eresult);
-        else if (IS_SET_ITEM(it))   do_set_elem_get_all((set_meta_info*)info, eresult);
-        else if (IS_MAP_ITEM(it))   do_map_elem_get_all((map_meta_info*)info, eresult);
-        else if (IS_BTREE_ITEM(it)) do_btree_elem_get_all((btree_meta_info*)info, eresult);
+        if (IS_LIST_ITEM(it))       list_elem_get_all((list_meta_info*)info, eresult);
+        else if (IS_SET_ITEM(it))   set_elem_get_all((set_meta_info*)info, eresult);
+        else if (IS_MAP_ITEM(it))   map_elem_get_all((map_meta_info*)info, eresult);
+        else if (IS_BTREE_ITEM(it)) btree_elem_get_all((btree_meta_info*)info, eresult);
     } while(0);
     if (lock_hold) UNLOCK_CACHE();
 
@@ -9976,6 +9908,74 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
         PERSISTENCE_ACTION_END(ret);
     }
     return ret;
+}
+
+/* See do_map_elem_traverse_dfs and do_map_elem_link. do_map_elem_traverse_dfs
+ * can visit all elements, but only supports get and delete operations.
+ * Do something similar and visit all elements.
+ */
+void map_elem_get_all(map_meta_info *info, elems_result_t *eresult)
+{
+    assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
+    map_hash_node *node;
+    map_elem_item *elem;
+    int cur_depth, i;
+    bool push;
+
+    /* Temporay stack we use to do dfs. Static is ugly but is okay...
+     * This function runs with the cache lock acquired.
+     */
+    static int stack_max = 0;
+    static struct {
+        map_hash_node *node;
+        int idx;
+    } *stack = NULL;
+
+    node = info->root;
+    cur_depth = 0;
+    push = true;
+    while (node != NULL) {
+        if (push) {
+            push = false;
+            if (stack_max <= cur_depth) {
+                stack_max += 16;
+                stack = realloc(stack, sizeof(*stack) * stack_max);
+            }
+            stack[cur_depth].node = node;
+            stack[cur_depth].idx = 0;
+        }
+
+        /* Scan the current node */
+        for (i = stack[cur_depth].idx; i < MAP_HASHTAB_SIZE; i++) {
+            if (node->hcnt[i] >= 0) {
+                /* Hash chain.  Insert all elements on the chain into the
+                 * to-be-copied list.
+                 */
+                for (elem = node->htab[i]; elem != NULL; elem = elem->next) {
+                    elem->refcount++;
+                    eresult->elem_array[eresult->elem_count++] = elem;
+                }
+            }
+            else if (node->htab[i] != NULL) {
+                /* Another hash node.  Go down */
+                stack[cur_depth].idx = i+1;
+                push = true;
+                node = node->htab[i];
+                cur_depth++;
+                break;
+            }
+        }
+
+        /* Scannned everything in this node.  Go up. */
+        if (i >= MAP_HASHTAB_SIZE) {
+            cur_depth--;
+            if (cur_depth < 0)
+                node = NULL; /* done */
+            else
+                node = stack[cur_depth].node;
+        }
+    }
+    assert(eresult->elem_count == info->ccnt);
 }
 
 uint32_t map_elem_ntotal(map_elem_item *elem)

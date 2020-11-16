@@ -508,6 +508,8 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
                                 struct elems_result *eresult,
                                 const void *cookie);
 
+void list_elem_get_all(list_meta_info *info, elems_result_t *eresult);
+
 uint32_t list_elem_ntotal(list_elem_item *elem);
 
 ENGINE_ERROR_CODE list_coll_getattr(hash_item *it, item_attr *attrp,
@@ -546,6 +548,8 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
                                const bool delete, const bool drop_if_empty,
                                struct elems_result *eresult,
                                const void *cookie);
+
+void set_elem_get_all(set_meta_info *info, elems_result_t *eresult);
 
 uint32_t set_elem_ntotal(set_elem_item *elem);
 
@@ -587,6 +591,8 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
                                const bool delete, const bool drop_if_empty,
                                struct elems_result *eresult,
                                const void *cookie);
+
+void map_elem_get_all(map_meta_info *info, elems_result_t *eresult);
 
 uint32_t map_elem_ntotal(map_elem_item *elem);
 
@@ -672,6 +678,8 @@ ENGINE_ERROR_CODE btree_elem_smget(token_t *key_array, const int key_count,
                                    const bool unique,
                                    smget_result_t *result);
 #endif
+
+void btree_elem_get_all(btree_meta_info *info, elems_result_t *eresult);
 
 uint32_t btree_elem_ntotal(btree_elem_item *elem);
 uint8_t  btree_real_nbkey(uint8_t nbkey);
