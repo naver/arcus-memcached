@@ -31,7 +31,6 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
-#define RM_ITEM_REFCNT
 #define PROXY_SUPPORT
 #define BOP_COUNT_OPTIMIZE
 //#define NEW_PREFIX_STATS_MANAGEMENT

@@ -63,7 +63,6 @@ hash_item *dm_item_alloc(struct demo_engine *engine,
                       const void *key, size_t nkey, int flags,
                       rel_time_t exptime, int nbytes, const void *cookie);
 
-#ifdef RM_ITEM_REFCNT
 /**
  * Frees an item
  *
@@ -71,7 +70,6 @@ hash_item *dm_item_alloc(struct demo_engine *engine,
  * @param it the item to release
  */
 void dm_item_free(struct demo_engine *engine, hash_item *it);
-#endif
 
 /**
  * Get an item from the cache
