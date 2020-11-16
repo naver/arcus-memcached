@@ -35,9 +35,6 @@
 #define PERSISTENCE_ACTION_END(a)
 
 /* Forward Declarations */
-static void item_link_q(hash_item *it);
-static void item_unlink_q(hash_item *it);
-static ENGINE_ERROR_CODE do_item_link(hash_item *it);
 static void do_item_unlink(hash_item *it, enum item_unlink_cause cause);
 
 /* used by set and map collection */
@@ -560,6 +557,108 @@ static uint32_t do_coll_elem_delete_with_count(hash_item *it, uint32_t count)
     return ndeleted;
 }
 
+static void item_link_q(hash_item *it)
+{
+    hash_item **head, **tail;
+    assert(it->slabs_clsid <= POWER_LARGEST);
+
+#ifdef USE_SINGLE_LRU_LIST
+    int clsid = 1;
+#else
+    int clsid = it->slabs_clsid;
+    if (IS_COLL_ITEM(it) || ITEM_ntotal(it) <= MAX_SM_VALUE_LEN) {
+        clsid = LRU_CLSID_FOR_SMALL;
+    }
+#endif
+
+#ifdef ENABLE_STICKY_ITEM
+    if (IS_STICKY_EXPTIME(it->exptime)) {
+        head = &itemsp->sticky_heads[clsid];
+        tail = &itemsp->sticky_tails[clsid];
+        itemsp->sticky_sizes[clsid]++;
+    } else {
+#endif
+        head = &itemsp->heads[clsid];
+        tail = &itemsp->tails[clsid];
+        itemsp->sizes[clsid]++;
+        if (it->exptime > 0) { /* expirable item */
+            if (itemsp->lowMK[clsid] == NULL) {
+                /* set lowMK and curMK pointer in LRU */
+                itemsp->lowMK[clsid] = it;
+                itemsp->curMK[clsid] = it;
+            }
+        }
+#ifdef ENABLE_STICKY_ITEM
+    }
+#endif
+    assert(it != *head);
+    assert((*head && *tail) || (*head == 0 && *tail == 0));
+    it->prev = 0;
+    it->next = *head;
+    if (it->next) it->next->prev = it;
+    *head = it;
+    if (*tail == 0) *tail = it;
+    return;
+}
+
+static void item_unlink_q(hash_item *it)
+{
+    hash_item **head, **tail;
+    assert(it->slabs_clsid <= POWER_LARGEST);
+#ifdef USE_SINGLE_LRU_LIST
+    int clsid = 1;
+#else
+    int clsid = it->slabs_clsid;
+    if (IS_COLL_ITEM(it) || ITEM_ntotal(it) <= MAX_SM_VALUE_LEN) {
+        clsid = LRU_CLSID_FOR_SMALL;
+    }
+#endif
+
+    if (it->prev == it && it->next == it) { /* special meaning: unlinked from LRU */
+        return; /* Already unlinked from LRU list */
+    }
+
+#ifdef ENABLE_STICKY_ITEM
+    if (IS_STICKY_EXPTIME(it->exptime)) {
+        head = &itemsp->sticky_heads[clsid];
+        tail = &itemsp->sticky_tails[clsid];
+        itemsp->sticky_sizes[clsid]--;
+        /* move curMK pointer in LRU */
+        if (itemsp->sticky_curMK[clsid] == it)
+            itemsp->sticky_curMK[clsid] = it->prev;
+    } else {
+#endif
+        head = &itemsp->heads[clsid];
+        tail = &itemsp->tails[clsid];
+        itemsp->sizes[clsid]--;
+        /* move lowMK, curMK pointer in LRU */
+        if (itemsp->lowMK[clsid] == it)
+            itemsp->lowMK[clsid] = it->prev;
+        if (itemsp->curMK[clsid] == it) {
+            itemsp->curMK[clsid] = it->prev;
+            if (itemsp->curMK[clsid] == NULL)
+                itemsp->curMK[clsid] = itemsp->lowMK[clsid];
+        }
+#ifdef ENABLE_STICKY_ITEM
+    }
+#endif
+    if (*head == it) {
+        assert(it->prev == 0);
+        *head = it->next;
+    }
+    if (*tail == it) {
+        assert(it->next == 0);
+        *tail = it->prev;
+    }
+    assert(it->next != it);
+    assert(it->prev != it);
+
+    if (it->next) it->next->prev = it->prev;
+    if (it->prev) it->prev->next = it->next;
+    it->prev = it->next = it; /* special meaning: unlinked from LRU */
+    return;
+}
+
 static bool do_item_isvalid(hash_item *it, rel_time_t current_time)
 {
     /* check if it's expired */
@@ -994,108 +1093,6 @@ static void do_item_free(hash_item *it)
     do_item_mem_free(it, ITEM_ntotal(it));
 }
 
-static void item_link_q(hash_item *it)
-{
-    hash_item **head, **tail;
-    assert(it->slabs_clsid <= POWER_LARGEST);
-
-#ifdef USE_SINGLE_LRU_LIST
-    int clsid = 1;
-#else
-    int clsid = it->slabs_clsid;
-    if (IS_COLL_ITEM(it) || ITEM_ntotal(it) <= MAX_SM_VALUE_LEN) {
-        clsid = LRU_CLSID_FOR_SMALL;
-    }
-#endif
-
-#ifdef ENABLE_STICKY_ITEM
-    if (IS_STICKY_EXPTIME(it->exptime)) {
-        head = &itemsp->sticky_heads[clsid];
-        tail = &itemsp->sticky_tails[clsid];
-        itemsp->sticky_sizes[clsid]++;
-    } else {
-#endif
-        head = &itemsp->heads[clsid];
-        tail = &itemsp->tails[clsid];
-        itemsp->sizes[clsid]++;
-        if (it->exptime > 0) { /* expirable item */
-            if (itemsp->lowMK[clsid] == NULL) {
-                /* set lowMK and curMK pointer in LRU */
-                itemsp->lowMK[clsid] = it;
-                itemsp->curMK[clsid] = it;
-            }
-        }
-#ifdef ENABLE_STICKY_ITEM
-    }
-#endif
-    assert(it != *head);
-    assert((*head && *tail) || (*head == 0 && *tail == 0));
-    it->prev = 0;
-    it->next = *head;
-    if (it->next) it->next->prev = it;
-    *head = it;
-    if (*tail == 0) *tail = it;
-    return;
-}
-
-static void item_unlink_q(hash_item *it)
-{
-    hash_item **head, **tail;
-    assert(it->slabs_clsid <= POWER_LARGEST);
-#ifdef USE_SINGLE_LRU_LIST
-    int clsid = 1;
-#else
-    int clsid = it->slabs_clsid;
-    if (IS_COLL_ITEM(it) || ITEM_ntotal(it) <= MAX_SM_VALUE_LEN) {
-        clsid = LRU_CLSID_FOR_SMALL;
-    }
-#endif
-
-    if (it->prev == it && it->next == it) { /* special meaning: unlinked from LRU */
-        return; /* Already unlinked from LRU list */
-    }
-
-#ifdef ENABLE_STICKY_ITEM
-    if (IS_STICKY_EXPTIME(it->exptime)) {
-        head = &itemsp->sticky_heads[clsid];
-        tail = &itemsp->sticky_tails[clsid];
-        itemsp->sticky_sizes[clsid]--;
-        /* move curMK pointer in LRU */
-        if (itemsp->sticky_curMK[clsid] == it)
-            itemsp->sticky_curMK[clsid] = it->prev;
-    } else {
-#endif
-        head = &itemsp->heads[clsid];
-        tail = &itemsp->tails[clsid];
-        itemsp->sizes[clsid]--;
-        /* move lowMK, curMK pointer in LRU */
-        if (itemsp->lowMK[clsid] == it)
-            itemsp->lowMK[clsid] = it->prev;
-        if (itemsp->curMK[clsid] == it) {
-            itemsp->curMK[clsid] = it->prev;
-            if (itemsp->curMK[clsid] == NULL)
-                itemsp->curMK[clsid] = itemsp->lowMK[clsid];
-        }
-#ifdef ENABLE_STICKY_ITEM
-    }
-#endif
-    if (*head == it) {
-        assert(it->prev == 0);
-        *head = it->next;
-    }
-    if (*tail == it) {
-        assert(it->next == 0);
-        *tail = it->prev;
-    }
-    assert(it->next != it);
-    assert(it->prev != it);
-
-    if (it->next) it->next->prev = it->prev;
-    if (it->prev) it->prev->next = it->next;
-    it->prev = it->next = it; /* special meaning: unlinked from LRU */
-    return;
-}
-
 static ENGINE_ERROR_CODE do_item_link(hash_item *it)
 {
     const char *key = item_get_key(it);
@@ -1176,31 +1173,6 @@ static void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
     }
 }
 
-static void do_item_release(hash_item *it)
-{
-    MEMCACHED_ITEM_REMOVE(item_get_key(it), it->nkey, it->nbytes);
-
-    if (it->refcount != 0) {
-        ITEM_REFCOUNT_DECR(it);
-        DEBUG_REFCNT(it, '-');
-    }
-    if (it->refcount == 0) {
-        if ((it->iflag & ITEM_LINKED) == 0) {
-            do_item_free(it);
-        }
-        else if (it->prev == it && it->next == it) {
-            /* re-link the item into the LRU list */
-            rel_time_t current_time = svcore->get_current_time();
-            if (do_item_isvalid(it, current_time)) {
-                it->time = current_time;
-                item_link_q(it);
-            } else {
-                do_item_unlink(it, ITEM_UNLINK_INVALID);
-            }
-        }
-    }
-}
-
 static void do_item_update(hash_item *it, bool force)
 {
     MEMCACHED_ITEM_UPDATE(item_get_key(it), it->nkey, it->nbytes);
@@ -1260,6 +1232,31 @@ static hash_item *do_item_get(const char *key, const uint32_t nkey, bool do_upda
                     keybuf);
     }
     return it;
+}
+
+static void do_item_release(hash_item *it)
+{
+    MEMCACHED_ITEM_REMOVE(item_get_key(it), it->nkey, it->nbytes);
+
+    if (it->refcount != 0) {
+        ITEM_REFCOUNT_DECR(it);
+        DEBUG_REFCNT(it, '-');
+    }
+    if (it->refcount == 0) {
+        if ((it->iflag & ITEM_LINKED) == 0) {
+            do_item_free(it);
+        }
+        else if (it->prev == it && it->next == it) {
+            /* re-link the item into the LRU list */
+            rel_time_t current_time = svcore->get_current_time();
+            if (do_item_isvalid(it, current_time)) {
+                it->time = current_time;
+                item_link_q(it);
+            } else {
+                do_item_unlink(it, ITEM_UNLINK_INVALID);
+            }
+        }
+    }
 }
 
 static void do_item_replace(hash_item *old_it, hash_item *new_it)
