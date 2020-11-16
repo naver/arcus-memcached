@@ -126,12 +126,12 @@ static pthread_t       coll_del_tid; /* thread id */
 static bool            coll_del_sleep = false;
 static volatile bool   coll_del_thread_running = false;
 
-static struct default_engine *ngnptr=NULL;
+static struct default_engine *engine=NULL;
 static struct engine_config *config=NULL; // engine config
 static struct items         *itemsp=NULL;
 static struct engine_stats  *statsp=NULL;
-static SERVER_CORE_API      *svcore=NULL; // server core api
 static SERVER_STAT_API      *svstat=NULL; // server stat api
+static SERVER_CORE_API      *svcore=NULL; // server core api
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
 /* Temporary Facility
@@ -202,12 +202,12 @@ static void _setif_forced_btree_overflow_action(btree_meta_info *info,
  */
 static inline void LOCK_CACHE(void)
 {
-    pthread_mutex_lock(&ngnptr->cache_lock);
+    pthread_mutex_lock(&engine->cache_lock);
 }
 
 static inline void UNLOCK_CACHE(void)
 {
-    pthread_mutex_unlock(&ngnptr->cache_lock);
+    pthread_mutex_unlock(&engine->cache_lock);
 }
 
 static inline void TRYLOCK_CACHE(int ntries)
@@ -215,12 +215,12 @@ static inline void TRYLOCK_CACHE(int ntries)
     int i;
 
     for (i = 0; i < ntries; i++) {
-        if (pthread_mutex_trylock(&ngnptr->cache_lock) == 0)
+        if (pthread_mutex_trylock(&engine->cache_lock) == 0)
             break;
         sched_yield();
     }
     if (i == ntries) {
-        pthread_mutex_lock(&ngnptr->cache_lock);
+        pthread_mutex_lock(&engine->cache_lock);
     }
 }
 
@@ -6438,10 +6438,10 @@ void item_stats_reset(void)
     UNLOCK_CACHE();
 }
 
-ENGINE_ERROR_CODE item_init(struct default_engine *engine)
+ENGINE_ERROR_CODE item_init(struct default_engine *engine_ptr)
 {
     /* initialize global variables */
-    ngnptr = engine;
+    engine = engine_ptr;
     config = &engine->config;
     itemsp = &engine->items;
     statsp = &engine->stats;
@@ -6471,15 +6471,15 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
 
     item_clog_init(engine);
 
-    /* check forced btree overflow action */
-    _check_forced_btree_overflow_action();
-
     int ret = pthread_create(&coll_del_tid, NULL, collection_delete_thread, engine);
     if (ret != 0) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Can't create thread: %s\n", strerror(ret));
         return ENGINE_FAILED;
     }
+
+    /* check forced btree overflow action */
+    _check_forced_btree_overflow_action();
 
     /* prepare bkey min & max value */
     bkey_uint64_min = 0;
@@ -6500,12 +6500,13 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine)
     return ENGINE_SUCCESS;
 }
 
-void item_final(struct default_engine *engine)
+void item_final(struct default_engine *engine_ptr)
 {
     if (itemsp == NULL) {
         return; /* nothing to do */
     }
 
+    assert(engine == engine_ptr);
     if (engine->dumper.running) {
         item_stop_dump(engine);
     }
