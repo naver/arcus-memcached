@@ -34,23 +34,17 @@
 #define PERSISTENCE_ACTION_BEGIN(a, b)
 #define PERSISTENCE_ACTION_END(a)
 
-//#define SET_DELETE_NO_MERGE
-//#define BTREE_DELETE_NO_MERGE
-
 /* Forward Declarations */
 static void item_link_q(hash_item *it);
 static void item_unlink_q(hash_item *it);
 static ENGINE_ERROR_CODE do_item_link(hash_item *it);
 static void do_item_unlink(hash_item *it, enum item_unlink_cause cause);
 
+/* used by set and map collection */
 extern int genhash_string_hash(const void* p, size_t nkey);
 
-/*
- * We only reposition items in the LRU queue if they haven't been repositioned
- * in this many seconds. That saves us from churning on frequently-accessed
- * items.
- */
-#define ITEM_UPDATE_INTERVAL 60
+/* LRU id of small memory items */
+#define LRU_CLSID_FOR_SMALL 0
 
 /* A do_update argument value representing that
  * we should check and reposition items in the LRU list.
@@ -58,56 +52,60 @@ extern int genhash_string_hash(const void* p, size_t nkey);
 #define DO_UPDATE true
 #define DONT_UPDATE false
 
-/* LRU id of small memory items */
-#define LRU_CLSID_FOR_SMALL 0
+/* We only reposition items in the LRU queue if they haven't been repositioned
+ * in this many seconds. That saves us from churning on frequently-accessed
+ * items.
+ */
+#define ITEM_UPDATE_INTERVAL 60
 
-/* btree item status */
-#define BTREE_ITEM_STATUS_USED   2
-#define BTREE_ITEM_STATUS_UNLINK 1
-#define BTREE_ITEM_STATUS_FREE   0
-
-/* btree scan direction */
-#define BTREE_DIRECTION_PREV 2
-#define BTREE_DIRECTION_NEXT 1
-#define BTREE_DIRECTION_NONE 0
-
-/* bkey type */
-#define BKEY_TYPE_UNKNOWN 0
-#define BKEY_TYPE_UINT64  1
-#define BKEY_TYPE_BINARY  2
-
-/* btree element item or btree node item */
-#define BTREE_GET_ELEM_ITEM(node, indx) ((btree_elem_item *)((node)->item[indx]))
-#define BTREE_GET_NODE_ITEM(node, indx) ((btree_indx_node *)((node)->item[indx]))
-
-/* get bkey real size */
-#define BTREE_REAL_NBKEY(nbkey) ((nbkey)==0 ? sizeof(uint64_t) : (nbkey))
-
-/* overflow type */
-#define OVFL_TYPE_NONE  0
-#define OVFL_TYPE_COUNT 1
-#define OVFL_TYPE_RANGE 2
-
-/* bkey range type */
-#define BKEY_RANGE_TYPE_SIN 1 /* single bkey */
-#define BKEY_RANGE_TYPE_ASC 2 /* ascending bkey range */
-#define BKEY_RANGE_TYPE_DSC 3 /* descending bkey range */
-
-/* special address for representing unlinked status */
-#define ADDR_MEANS_UNLINKED  1
-
-/** How long an object can reasonably be assumed to be locked before
- *     harvesting it on a low memory condition. */
+/* How long an object can reasonably be assumed to be locked before
+ * harvesting it on a low memory condition.
+ */
 #define TAIL_REPAIR_TIME (3 * 3600)
-
-/* collection meta info offset */
-#define META_OFFSET_IN_ITEM(nkey,nbytes) ((((nkey)+(nbytes)-1)/8+1)*8)
 
 #ifdef ENABLE_STICKY_ITEM
 /* macros for identifying sticky items */
 #define IS_STICKY_EXPTIME(e) ((e) == (rel_time_t)(-1))
 #define IS_STICKY_COLLFLG(i) (((i)->mflags & COLL_META_FLAG_STICKY) != 0)
 #endif
+
+/* collection meta info offset */
+#define META_OFFSET_IN_ITEM(nkey,nbytes) ((((nkey)+(nbytes)-1)/8+1)*8)
+
+/* special address for representing unlinked status */
+#define ADDR_MEANS_UNLINKED  1
+
+/* bkey type */
+#define BKEY_TYPE_UNKNOWN 0
+#define BKEY_TYPE_UINT64  1
+#define BKEY_TYPE_BINARY  2
+
+/* get bkey real size */
+#define BTREE_REAL_NBKEY(nbkey) ((nbkey)==0 ? sizeof(uint64_t) : (nbkey))
+
+/* bkey range type */
+#define BKEY_RANGE_TYPE_SIN 1 /* single bkey */
+#define BKEY_RANGE_TYPE_ASC 2 /* ascending bkey range */
+#define BKEY_RANGE_TYPE_DSC 3 /* descending bkey range */
+
+/* btree item status */
+#define BTREE_ITEM_STATUS_USED   2
+#define BTREE_ITEM_STATUS_UNLINK 1
+#define BTREE_ITEM_STATUS_FREE   0
+
+/* overflow type */
+#define OVFL_TYPE_NONE  0
+#define OVFL_TYPE_COUNT 1
+#define OVFL_TYPE_RANGE 2
+
+/* btree scan direction */
+#define BTREE_DIRECTION_PREV 2
+#define BTREE_DIRECTION_NEXT 1
+#define BTREE_DIRECTION_NONE 0
+
+/* btree element item or btree node item */
+#define BTREE_GET_ELEM_ITEM(node, indx) ((btree_elem_item *)((node)->item[indx]))
+#define BTREE_GET_NODE_ITEM(node, indx) ((btree_indx_node *)((node)->item[indx]))
 
 /* btree position debugging */
 static bool btree_position_debug = false;
@@ -133,13 +131,6 @@ static struct engine_stats  *statsp=NULL;
 static SERVER_CORE_API      *svcore=NULL; // server core api
 static SERVER_STAT_API      *svstat=NULL; // server stat api
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
-
-/* map element previous info internally used */
-typedef struct _map_prev_info {
-    map_hash_node *node;
-    map_elem_item *prev;
-    uint16_t       hidx;
-} map_prev_info;
 
 /* Temporary Facility
  * forced btree overflow action
@@ -204,6 +195,36 @@ static void _setif_forced_btree_overflow_action(btree_meta_info *info,
     }
 }
 
+/* warning: don't use these macros with a function, as it evals its arg twice */
+static inline size_t ITEM_ntotal(const hash_item *item)
+{
+    size_t ntotal;
+    if (IS_COLL_ITEM(item)) {
+        ntotal = sizeof(*item) + META_OFFSET_IN_ITEM(item->nkey, item->nbytes);
+        if (IS_LIST_ITEM(item))     ntotal += sizeof(list_meta_info);
+        else if (IS_SET_ITEM(item)) ntotal += sizeof(set_meta_info);
+        else if (IS_MAP_ITEM(item)) ntotal += sizeof(map_meta_info);
+        else /* BTREE_ITEM */       ntotal += sizeof(btree_meta_info);
+    } else {
+        ntotal = sizeof(*item) + item->nkey + item->nbytes;
+    }
+    if (config->use_cas) {
+        ntotal += sizeof(uint64_t);
+    }
+    return ntotal;
+}
+
+static inline size_t ITEM_stotal(const hash_item *item)
+{
+    size_t ntotal = ITEM_ntotal(item);
+    size_t stotal = slabs_space_size(ntotal);
+    if (IS_COLL_ITEM(item)) {
+        coll_meta_info *info = (coll_meta_info *)item_get_meta(item);
+        stotal += info->stotal;
+    }
+    return stotal;
+}
+
 /*
  * Static functions
  */
@@ -252,16 +273,6 @@ static inline void ITEM_REFCOUNT_DECR(hash_item *it)
         it->refcount = ITEM_REFCOUNT_MOVE;
     }
 }
-
-#ifdef ENABLE_STICKY_ITEM
-static inline bool do_item_sticky_overflowed(void)
-{
-    if (statsp->sticky_bytes < config->sticky_limit) {
-        return false;
-    }
-    return true;
-}
-#endif
 
 static inline void LOCK_STATS(void)
 {
@@ -335,6 +346,33 @@ static inline void do_item_stat_unlink(hash_item *it, size_t stotal)
     UNLOCK_STATS();
 }
 
+static inline void do_item_stat_replace(hash_item *old_it, hash_item *new_it)
+{
+    prefix_t *pt = new_it->pfxptr;
+    size_t old_stotal = ITEM_stotal(old_it);
+    size_t new_stotal = ITEM_stotal(new_it);
+
+    int item_type = GET_ITEM_TYPE(old_it);
+
+    LOCK_STATS();
+    if (new_stotal != old_stotal) {
+        if (new_stotal > old_stotal) {
+            prefix_bytes_incr(pt, item_type, new_stotal - old_stotal);
+        } else {
+            prefix_bytes_decr(pt, item_type, old_stotal - new_stotal);
+        }
+    }
+    /* update item stats imformation */
+#ifdef ENABLE_STICKY_ITEM
+    if (IS_STICKY_EXPTIME(new_it->exptime)) {
+        statsp->sticky_bytes += new_stotal - old_stotal;
+    }
+#endif
+    statsp->curr_bytes += new_stotal - old_stotal;
+    statsp->total_items += 1;
+    UNLOCK_STATS();
+}
+
 static inline void do_item_stat_bytes_incr(hash_item *it, size_t stotal)
 {
     LOCK_STATS();
@@ -403,63 +441,50 @@ static inline void do_item_stat_reset(void)
     UNLOCK_STATS();
 }
 
-/* warning: don't use these macros with a function, as it evals its arg twice */
-static inline size_t ITEM_ntotal(const hash_item *item)
-{
-    size_t ntotal;
-    if (IS_COLL_ITEM(item)) {
-        ntotal = sizeof(*item) + META_OFFSET_IN_ITEM(item->nkey, item->nbytes);
-        if (IS_LIST_ITEM(item))     ntotal += sizeof(list_meta_info);
-        else if (IS_SET_ITEM(item)) ntotal += sizeof(set_meta_info);
-        else if (IS_MAP_ITEM(item)) ntotal += sizeof(map_meta_info);
-        else /* BTREE_ITEM */       ntotal += sizeof(btree_meta_info);
-    } else {
-        ntotal = sizeof(*item) + item->nkey + item->nbytes;
-    }
-    if (config->use_cas) {
-        ntotal += sizeof(uint64_t);
-    }
-    return ntotal;
-}
-
-static inline size_t ITEM_stotal(const hash_item *item)
-{
-    size_t ntotal = ITEM_ntotal(item);
-    size_t stotal = slabs_space_size(ntotal);
-    if (IS_COLL_ITEM(item)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(item);
-        stotal += info->stotal;
-    }
-    return stotal;
-}
-
-static inline void do_item_stat_replace(hash_item *old_it, hash_item *new_it)
-{
-    prefix_t *pt = new_it->pfxptr;
-    size_t old_stotal = ITEM_stotal(old_it);
-    size_t new_stotal = ITEM_stotal(new_it);
-
-    int item_type = GET_ITEM_TYPE(old_it);
-
-    LOCK_STATS();
-    if (new_stotal != old_stotal) {
-        if (new_stotal > old_stotal) {
-            prefix_bytes_incr(pt, item_type, new_stotal - old_stotal);
-        } else {
-            prefix_bytes_decr(pt, item_type, old_stotal - new_stotal);
-        }
-    }
-    /* update item stats imformation */
 #ifdef ENABLE_STICKY_ITEM
-    if (IS_STICKY_EXPTIME(new_it->exptime)) {
-        statsp->sticky_bytes += new_stotal - old_stotal;
+static inline bool do_item_sticky_overflowed(void)
+{
+    if (statsp->sticky_bytes < config->sticky_limit) {
+        return false;
     }
+    return true;
+}
 #endif
-    statsp->curr_bytes += new_stotal - old_stotal;
-    statsp->total_items += 1;
-    UNLOCK_STATS();
+
+static void do_coll_space_incr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
+                               const size_t nspace)
+{
+    info->stotal += nspace;
+
+    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
+    do_item_stat_bytes_incr(it, nspace);
+    prefix_bytes_incr(it->pfxptr, item_type, nspace);
 }
 
+static void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
+                               const size_t nspace)
+{
+    assert(info->stotal >= nspace);
+    info->stotal -= nspace;
+
+    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
+    do_item_stat_bytes_decr(it, nspace);
+    prefix_bytes_decr(it->pfxptr, item_type, nspace);
+}
+
+/* Max hash key length for calculating hash value */
+#define MAX_HKEY_LEN 250
+
+static inline uint32_t GEN_ITEM_KEY_HASH(const char *key, const uint32_t nkey)
+{
+    if (nkey > MAX_HKEY_LEN) {
+        /* The last MAX_HKEY_LEN bytes of the key is used */
+        const char *hkey = key + (nkey-MAX_HKEY_LEN);
+        return svcore->hash(hkey, MAX_HKEY_LEN, 0);
+    } else {
+        return svcore->hash(key, nkey, 0);
+    }
+}
 /* Get the next CAS id for a new item. */
 static uint64_t get_cas_id(void)
 {
@@ -476,20 +501,6 @@ static uint64_t get_cas_id(void)
 #else
 # define DEBUG_REFCNT(it,op) while(0)
 #endif
-
-/* Max hash key length for calculating hash value */
-#define MAX_HKEY_LEN 250
-
-static inline uint32_t GEN_ITEM_KEY_HASH(const char *key, const uint32_t nkey)
-{
-    if (nkey > MAX_HKEY_LEN) {
-        /* The last MAX_HKEY_LEN bytes of the key is used */
-        const char *hkey = key + (nkey-MAX_HKEY_LEN);
-        return svcore->hash(hkey, MAX_HKEY_LEN, 0);
-    } else {
-        return svcore->hash(key, nkey, 0);
-    }
-}
 
 /*
  * Collection Delete Queue Management
@@ -902,6 +913,14 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
     return (void *)it;
 }
 
+static void do_item_mem_free(void *item, size_t ntotal)
+{
+    hash_item *it = (hash_item *)item;
+    unsigned int clsid = it->slabs_clsid;
+    it->slabs_clsid = 0; /* to notify the item memory is freed */
+    slabs_free(it, ntotal, clsid);
+}
+
 /*@null@*/
 static hash_item *do_item_alloc(const void *key, const uint32_t nkey,
                                 const uint32_t flags, const rel_time_t exptime,
@@ -953,14 +972,6 @@ static hash_item *do_item_alloc(const void *key, const uint32_t nkey,
     it->exptime = exptime;
     it->pfxptr = NULL;
     return it;
-}
-
-static void do_item_mem_free(void *item, size_t ntotal)
-{
-    hash_item *it = (hash_item *)item;
-    unsigned int clsid = it->slabs_clsid;
-    it->slabs_clsid = 0; /* to notify the item memory is freed */
-    slabs_free(it, ntotal, clsid);
 }
 
 static void do_item_free(hash_item *it)
@@ -1521,27 +1532,6 @@ static ENGINE_ERROR_CODE do_add_delta(hash_item *it, const bool incr, const int6
     return ENGINE_SUCCESS;
 }
 
-static void do_coll_space_incr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
-                               const size_t nspace)
-{
-    info->stotal += nspace;
-
-    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
-    do_item_stat_bytes_incr(it, nspace);
-    prefix_bytes_incr(it->pfxptr, item_type, nspace);
-}
-
-static void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
-                               const size_t nspace)
-{
-    assert(info->stotal >= nspace);
-    info->stotal -= nspace;
-
-    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
-    do_item_stat_bytes_decr(it, nspace);
-    prefix_bytes_decr(it->pfxptr, item_type, nspace);
-}
-
 /*
  * LIST collection management
  */
@@ -1844,6 +1834,8 @@ static ENGINE_ERROR_CODE do_list_elem_insert(hash_item *it,
 /*
  * SET collection manangement
  */
+//#define SET_DELETE_NO_MERGE
+
 #define SET_GET_HASHIDX(hval, hdepth) \
         (((hval) & (SET_HASHIDX_MASK << ((hdepth)*4))) >> ((hdepth)*4))
 
@@ -2424,6 +2416,8 @@ static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem,
 /*
  * B+TREE collection management
  */
+//#define BTREE_DELETE_NO_MERGE
+
 static inline uint32_t do_btree_elem_ntotal(btree_elem_item *elem)
 {
     return sizeof(btree_elem_item_fixed) + BTREE_REAL_NBKEY(elem->nbkey)
@@ -9013,6 +9007,13 @@ void item_stats_dump(struct default_engine *engine,
 /*
  * MAP collection manangement
  */
+/* map element previous info internally used */
+typedef struct _map_prev_info {
+    map_hash_node *node;
+    map_elem_item *prev;
+    uint16_t       hidx;
+} map_prev_info;
+
 #define MAP_GET_HASHIDX(hval, hdepth) \
         (((hval) & (MAP_HASHIDX_MASK << ((hdepth)*4))) >> ((hdepth)*4))
 
