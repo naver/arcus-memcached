@@ -370,13 +370,11 @@ hash_item *item_alloc(const void *key, const uint32_t nkey,
                       const uint32_t flags, rel_time_t exptime,
                       const uint32_t nbytes, const void *cookie);
 
-#ifdef RM_ITEM_REFCNT
 /**
  * Frees and adds an item to the freelist
  * @param it the item to free
  */
 void item_free(hash_item *it);
-#endif
 
 /**
  * Get an item from the cache
