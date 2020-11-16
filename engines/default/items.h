@@ -721,14 +721,14 @@ char*       item_get_data(const hash_item* item);
 const void* item_get_meta(const hash_item* item);
 
 /*
- * Check item validity
- */
-bool item_is_valid(hash_item *item);
-
-/*
  * Item size functions
  */
 uint32_t item_ntotal(hash_item *item);
+
+/*
+ * Check item validity
+ */
+bool item_is_valid(hash_item *item);
 
 /**
  * Item Scan Facility

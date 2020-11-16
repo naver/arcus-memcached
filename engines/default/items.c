@@ -197,36 +197,6 @@ static void _setif_forced_btree_overflow_action(btree_meta_info *info,
     }
 }
 
-/* warning: don't use these macros with a function, as it evals its arg twice */
-static inline size_t ITEM_ntotal(const hash_item *item)
-{
-    size_t ntotal;
-    if (IS_COLL_ITEM(item)) {
-        ntotal = sizeof(*item) + META_OFFSET_IN_ITEM(item->nkey, item->nbytes);
-        if (IS_LIST_ITEM(item))     ntotal += sizeof(list_meta_info);
-        else if (IS_SET_ITEM(item)) ntotal += sizeof(set_meta_info);
-        else if (IS_MAP_ITEM(item)) ntotal += sizeof(map_meta_info);
-        else /* BTREE_ITEM */       ntotal += sizeof(btree_meta_info);
-    } else {
-        ntotal = sizeof(*item) + item->nkey + item->nbytes;
-    }
-    if (config->use_cas) {
-        ntotal += sizeof(uint64_t);
-    }
-    return ntotal;
-}
-
-static inline size_t ITEM_stotal(const hash_item *item)
-{
-    size_t ntotal = ITEM_ntotal(item);
-    size_t stotal = slabs_space_size(ntotal);
-    if (IS_COLL_ITEM(item)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(item);
-        stotal += info->stotal;
-    }
-    return stotal;
-}
-
 /*
  * Static functions
  */
@@ -274,6 +244,36 @@ static inline void ITEM_REFCOUNT_DECR(hash_item *it)
         it->refchunk -= 1;
         it->refcount = ITEM_REFCOUNT_MOVE;
     }
+}
+
+/* warning: don't use these macros with a function, as it evals its arg twice */
+static inline size_t ITEM_ntotal(const hash_item *item)
+{
+    size_t ntotal;
+    if (IS_COLL_ITEM(item)) {
+        ntotal = sizeof(*item) + META_OFFSET_IN_ITEM(item->nkey, item->nbytes);
+        if (IS_LIST_ITEM(item))     ntotal += sizeof(list_meta_info);
+        else if (IS_SET_ITEM(item)) ntotal += sizeof(set_meta_info);
+        else if (IS_MAP_ITEM(item)) ntotal += sizeof(map_meta_info);
+        else /* BTREE_ITEM */       ntotal += sizeof(btree_meta_info);
+    } else {
+        ntotal = sizeof(*item) + item->nkey + item->nbytes;
+    }
+    if (config->use_cas) {
+        ntotal += sizeof(uint64_t);
+    }
+    return ntotal;
+}
+
+static inline size_t ITEM_stotal(const hash_item *item)
+{
+    size_t ntotal = ITEM_ntotal(item);
+    size_t stotal = slabs_space_size(ntotal);
+    if (IS_COLL_ITEM(item)) {
+        coll_meta_info *info = (coll_meta_info *)item_get_meta(item);
+        stotal += info->stotal;
+    }
+    return stotal;
 }
 
 static inline void LOCK_STATS(void)
@@ -1174,6 +1174,65 @@ static void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
     }
 }
 
+static void do_item_replace(hash_item *old_it, hash_item *new_it)
+{
+    MEMCACHED_ITEM_REPLACE(item_get_key(old_it), old_it->nkey, old_it->nbytes,
+                           item_get_key(new_it), new_it->nkey, new_it->nbytes);
+
+    assert((old_it->iflag & ITEM_LINKED) != 0);
+
+    CLOG_ITEM_UNLINK(old_it, ITEM_UNLINK_REPLACE);
+
+    /* unlink the item from LUR list */
+    item_unlink_q(old_it);
+
+    /* Allocate a new CAS ID on link. */
+    item_set_cas(new_it, get_cas_id());
+
+    /* link the item to the hash table */
+    new_it->iflag |= ITEM_LINKED;
+    new_it->time = svcore->get_current_time();
+    new_it->khash = old_it->khash;
+
+    /* replace the item from hash table */
+    assoc_replace(old_it, new_it);
+    old_it->iflag &= ~ITEM_LINKED;
+
+    /* update prefix information */
+    prefix_t *pt = old_it->pfxptr;
+    new_it->pfxptr = old_it->pfxptr;
+    old_it->pfxptr = NULL;
+    assert(pt != NULL);
+
+    /* if old_it->iflag has ITEM_INTERNAL */
+    if (old_it->iflag & ITEM_INTERNAL) {
+        new_it->iflag |= ITEM_INTERNAL;
+    }
+
+    /* update prefix info and stats */
+    do_item_stat_replace(old_it, new_it);
+
+    if (IS_COLL_ITEM(old_it)) {
+        /* IMPORTANT NOTE)
+         * The element space statistics has already been decreased.
+         * So, we must not decrease the space statistics any more
+         * even if the elements are freed later.
+         * For that purpose, we set info->stotal to 0 like below.
+         */
+        coll_meta_info *info = (coll_meta_info *)item_get_meta(old_it);
+        info->stotal = 0;
+    }
+
+    /* free the item if no one reference it */
+    if (old_it->refcount == 0) {
+        do_item_free(old_it);
+    }
+
+    /* link the item to LRU list */
+    item_link_q(new_it);
+    CLOG_ITEM_LINK(new_it);
+}
+
 static void do_item_update(hash_item *it, bool force)
 {
     MEMCACHED_ITEM_UPDATE(item_get_key(it), it->nkey, it->nbytes);
@@ -1258,65 +1317,6 @@ static void do_item_release(hash_item *it)
             }
         }
     }
-}
-
-static void do_item_replace(hash_item *old_it, hash_item *new_it)
-{
-    MEMCACHED_ITEM_REPLACE(item_get_key(old_it), old_it->nkey, old_it->nbytes,
-                           item_get_key(new_it), new_it->nkey, new_it->nbytes);
-
-    assert((old_it->iflag & ITEM_LINKED) != 0);
-
-    CLOG_ITEM_UNLINK(old_it, ITEM_UNLINK_REPLACE);
-
-    /* unlink the item from LUR list */
-    item_unlink_q(old_it);
-
-    /* Allocate a new CAS ID on link. */
-    item_set_cas(new_it, get_cas_id());
-
-    /* link the item to the hash table */
-    new_it->iflag |= ITEM_LINKED;
-    new_it->time = svcore->get_current_time();
-    new_it->khash = old_it->khash;
-
-    /* replace the item from hash table */
-    assoc_replace(old_it, new_it);
-    old_it->iflag &= ~ITEM_LINKED;
-
-    /* update prefix information */
-    prefix_t *pt = old_it->pfxptr;
-    new_it->pfxptr = old_it->pfxptr;
-    old_it->pfxptr = NULL;
-    assert(pt != NULL);
-
-    /* if old_it->iflag has ITEM_INTERNAL */
-    if (old_it->iflag & ITEM_INTERNAL) {
-        new_it->iflag |= ITEM_INTERNAL;
-    }
-
-    /* update prefix info and stats */
-    do_item_stat_replace(old_it, new_it);
-
-    if (IS_COLL_ITEM(old_it)) {
-        /* IMPORTANT NOTE)
-         * The element space statistics has already been decreased.
-         * So, we must not decrease the space statistics any more
-         * even if the elements are freed later.
-         * For that purpose, we set info->stotal to 0 like below.
-         */
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(old_it);
-        info->stotal = 0;
-    }
-
-    /* free the item if no one reference it */
-    if (old_it->refcount == 0) {
-        do_item_free(old_it);
-    }
-
-    /* link the item to LRU list */
-    item_link_q(new_it);
-    CLOG_ITEM_LINK(new_it);
 }
 
 /*
@@ -8307,12 +8307,13 @@ const void* item_get_meta(const hash_item* item)
         return NULL;
 }
 
-/****
-uint8_t item_get_clsid(const hash_item* item)
+/*
+ * Item size functions
+ */
+uint32_t item_ntotal(hash_item *item)
 {
-    return 0;
+    return (uint32_t)ITEM_ntotal(item);
 }
-****/
 
 /*
  * Check item validity
@@ -8325,14 +8326,6 @@ bool item_is_valid(hash_item* item)
     } else {
         return false;
     }
-}
-
-/*
- * Item and Element size functions
- */
-uint32_t item_ntotal(hash_item *item)
-{
-    return (uint32_t)ITEM_ntotal(item);
 }
 
 /*
