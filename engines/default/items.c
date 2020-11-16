@@ -39,26 +39,14 @@
 #include "cmdlogmgr.h"
 #endif
 
-//#define SET_DELETE_NO_MERGE
-//#define BTREE_DELETE_NO_MERGE
-
 /* Forward Declarations */
-static void item_link_q(hash_item *it);
-static void item_unlink_q(hash_item *it);
-static ENGINE_ERROR_CODE do_item_link(hash_item *it);
 static void do_item_unlink(hash_item *it, enum item_unlink_cause cause);
-static inline void do_coll_elem_delete(coll_meta_info *info, int type, uint32_t count);
-static uint32_t do_map_elem_delete(map_meta_info *info,
-                                   const uint32_t count, enum elem_delete_cause cause);
 
+/* used by set and map collection */
 extern int genhash_string_hash(const void* p, size_t nkey);
 
-/*
- * We only reposition items in the LRU queue if they haven't been repositioned
- * in this many seconds. That saves us from churning on frequently-accessed
- * items.
- */
-#define ITEM_UPDATE_INTERVAL 60
+/* LRU id of small memory items */
+#define LRU_CLSID_FOR_SMALL 0
 
 /* A do_update argument value representing that
  * we should check and reposition items in the LRU list.
@@ -66,56 +54,60 @@ extern int genhash_string_hash(const void* p, size_t nkey);
 #define DO_UPDATE true
 #define DONT_UPDATE false
 
-/* LRU id of small memory items */
-#define LRU_CLSID_FOR_SMALL 0
+/* We only reposition items in the LRU queue if they haven't been repositioned
+ * in this many seconds. That saves us from churning on frequently-accessed
+ * items.
+ */
+#define ITEM_UPDATE_INTERVAL 60
 
-/* btree item status */
-#define BTREE_ITEM_STATUS_USED   2
-#define BTREE_ITEM_STATUS_UNLINK 1
-#define BTREE_ITEM_STATUS_FREE   0
-
-/* btree scan direction */
-#define BTREE_DIRECTION_PREV 2
-#define BTREE_DIRECTION_NEXT 1
-#define BTREE_DIRECTION_NONE 0
-
-/* bkey type */
-#define BKEY_TYPE_UNKNOWN 0
-#define BKEY_TYPE_UINT64  1
-#define BKEY_TYPE_BINARY  2
-
-/* btree element item or btree node item */
-#define BTREE_GET_ELEM_ITEM(node, indx) ((btree_elem_item *)((node)->item[indx]))
-#define BTREE_GET_NODE_ITEM(node, indx) ((btree_indx_node *)((node)->item[indx]))
-
-/* get bkey real size */
-#define BTREE_REAL_NBKEY(nbkey) ((nbkey)==0 ? sizeof(uint64_t) : (nbkey))
-
-/* overflow type */
-#define OVFL_TYPE_NONE  0
-#define OVFL_TYPE_COUNT 1
-#define OVFL_TYPE_RANGE 2
-
-/* bkey range type */
-#define BKEY_RANGE_TYPE_SIN 1 /* single bkey */
-#define BKEY_RANGE_TYPE_ASC 2 /* ascending bkey range */
-#define BKEY_RANGE_TYPE_DSC 3 /* descending bkey range */
-
-/* special address for representing unlinked status */
-#define ADDR_MEANS_UNLINKED  1
-
-/** How long an object can reasonably be assumed to be locked before
- *     harvesting it on a low memory condition. */
+/* How long an object can reasonably be assumed to be locked before
+ * harvesting it on a low memory condition.
+ */
 #define TAIL_REPAIR_TIME (3 * 3600)
-
-/* collection meta info offset */
-#define META_OFFSET_IN_ITEM(nkey,nbytes) ((((nkey)+(nbytes)-1)/8+1)*8)
 
 #ifdef ENABLE_STICKY_ITEM
 /* macros for identifying sticky items */
 #define IS_STICKY_EXPTIME(e) ((e) == (rel_time_t)(-1))
 #define IS_STICKY_COLLFLG(i) (((i)->mflags & COLL_META_FLAG_STICKY) != 0)
 #endif
+
+/* collection meta info offset */
+#define META_OFFSET_IN_ITEM(nkey,nbytes) ((((nkey)+(nbytes)-1)/8+1)*8)
+
+/* special address for representing unlinked status */
+#define ADDR_MEANS_UNLINKED  1
+
+/* bkey type */
+#define BKEY_TYPE_UNKNOWN 0
+#define BKEY_TYPE_UINT64  1
+#define BKEY_TYPE_BINARY  2
+
+/* get bkey real size */
+#define BTREE_REAL_NBKEY(nbkey) ((nbkey)==0 ? sizeof(uint64_t) : (nbkey))
+
+/* bkey range type */
+#define BKEY_RANGE_TYPE_SIN 1 /* single bkey */
+#define BKEY_RANGE_TYPE_ASC 2 /* ascending bkey range */
+#define BKEY_RANGE_TYPE_DSC 3 /* descending bkey range */
+
+/* btree item status */
+#define BTREE_ITEM_STATUS_USED   2
+#define BTREE_ITEM_STATUS_UNLINK 1
+#define BTREE_ITEM_STATUS_FREE   0
+
+/* overflow type */
+#define OVFL_TYPE_NONE  0
+#define OVFL_TYPE_COUNT 1
+#define OVFL_TYPE_RANGE 2
+
+/* btree scan direction */
+#define BTREE_DIRECTION_PREV 2
+#define BTREE_DIRECTION_NEXT 1
+#define BTREE_DIRECTION_NONE 0
+
+/* btree element item or btree node item */
+#define BTREE_GET_ELEM_ITEM(node, indx) ((btree_elem_item *)((node)->item[indx]))
+#define BTREE_GET_NODE_ITEM(node, indx) ((btree_indx_node *)((node)->item[indx]))
 
 /* btree position debugging */
 static bool btree_position_debug = false;
@@ -125,12 +117,6 @@ static uint64_t      bkey_uint64_min;
 static uint64_t      bkey_uint64_max;
 static unsigned char bkey_binary_min[MIN_BKEY_LENG];
 static unsigned char bkey_binary_max[MAX_BKEY_LENG];
-
-/* Temporary Facility */
-/* forced btree overflow action */
-static char    forced_action_prefix[256];
-static int32_t forced_action_pfxlen = 0;
-static uint8_t forced_btree_ovflact = 0;
 
 /* collection delete queue */
 static item_queue      coll_del_queue;
@@ -148,12 +134,98 @@ static SERVER_CORE_API      *svcore=NULL; // server core api
 static SERVER_STAT_API      *svstat=NULL; // server stat api
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
-/* map element previous info internally used */
-typedef struct _map_prev_info {
-    map_hash_node *node;
-    map_elem_item *prev;
-    uint16_t       hidx;
-} map_prev_info;
+/* Temporary Facility
+ * forced btree overflow action
+ */
+static char    forced_action_prefix[256];
+static int32_t forced_action_pfxlen = 0;
+static uint8_t forced_btree_ovflact = 0;
+
+static void _check_forced_btree_overflow_action(void)
+{
+    char *envstr;
+    char *envval;
+
+    envstr = getenv("ARCUS_FORCED_BTREE_OVERFLOW_ACTION");
+    if (envstr != NULL) {
+        char *delimiter = memchr(envstr, ':', strlen(envstr));
+        if (delimiter == NULL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: NO prefix delimiter\n");
+            return;
+        }
+        envval = delimiter + 1;
+
+        forced_action_pfxlen = envval - envstr;
+        if (forced_action_pfxlen >= 256) {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: Too long prefix name\n");
+            return;
+        }
+        memcpy(forced_action_prefix, envstr, forced_action_pfxlen);
+        forced_action_prefix[forced_action_pfxlen] = '\0';
+
+        if (strcmp(envval, "smallest_trim") == 0)
+            forced_btree_ovflact = OVFL_SMALLEST_TRIM;
+        else if (strcmp(envval, "smallest_silent_trim") == 0)
+            forced_btree_ovflact = OVFL_SMALLEST_SILENT_TRIM;
+        else if (strcmp(envval, "largest_trim") == 0)
+            forced_btree_ovflact = OVFL_LARGEST_TRIM;
+        else if (strcmp(envval, "largest_silent_trim") == 0)
+            forced_btree_ovflact = OVFL_LARGEST_SILENT_TRIM;
+        else if (strcmp(envval, "error") == 0)
+            forced_btree_ovflact = OVFL_ERROR;
+        else {
+            logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: Invalid overflow action\n");
+            forced_action_prefix[0] = '\0';
+            return;
+        }
+
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: prefix=%s action=%s\n",
+                    forced_action_prefix, envval);
+    }
+}
+
+static void _setif_forced_btree_overflow_action(btree_meta_info *info,
+                                                const void *key, const uint32_t nkey)
+{
+    if (forced_btree_ovflact != 0 && forced_action_pfxlen < nkey &&
+        memcmp(forced_action_prefix, key, forced_action_pfxlen) == 0) {
+        info->ovflact = forced_btree_ovflact;
+    }
+}
+
+/* warning: don't use these macros with a function, as it evals its arg twice */
+static inline size_t ITEM_ntotal(const hash_item *item)
+{
+    size_t ntotal;
+    if (IS_COLL_ITEM(item)) {
+        ntotal = sizeof(*item) + META_OFFSET_IN_ITEM(item->nkey, item->nbytes);
+        if (IS_LIST_ITEM(item))     ntotal += sizeof(list_meta_info);
+        else if (IS_SET_ITEM(item)) ntotal += sizeof(set_meta_info);
+        else if (IS_MAP_ITEM(item)) ntotal += sizeof(map_meta_info);
+        else /* BTREE_ITEM */       ntotal += sizeof(btree_meta_info);
+    } else {
+        ntotal = sizeof(*item) + item->nkey + item->nbytes;
+    }
+    if (config->use_cas) {
+        ntotal += sizeof(uint64_t);
+    }
+    return ntotal;
+}
+
+static inline size_t ITEM_stotal(const hash_item *item)
+{
+    size_t ntotal = ITEM_ntotal(item);
+    size_t stotal = slabs_space_size(ntotal);
+    if (IS_COLL_ITEM(item)) {
+        coll_meta_info *info = (coll_meta_info *)item_get_meta(item);
+        stotal += info->stotal;
+    }
+    return stotal;
+}
 
 /*
  * Static functions
@@ -203,16 +275,6 @@ static inline void ITEM_REFCOUNT_DECR(hash_item *it)
         it->refcount = ITEM_REFCOUNT_MOVE;
     }
 }
-
-#ifdef ENABLE_STICKY_ITEM
-static inline bool do_item_sticky_overflowed(void)
-{
-    if (statsp->sticky_bytes < config->sticky_limit) {
-        return false;
-    }
-    return true;
-}
-#endif
 
 static inline void LOCK_STATS(void)
 {
@@ -286,6 +348,33 @@ static inline void do_item_stat_unlink(hash_item *it, size_t stotal)
     UNLOCK_STATS();
 }
 
+static inline void do_item_stat_replace(hash_item *old_it, hash_item *new_it)
+{
+    prefix_t *pt = new_it->pfxptr;
+    size_t old_stotal = ITEM_stotal(old_it);
+    size_t new_stotal = ITEM_stotal(new_it);
+
+    int item_type = GET_ITEM_TYPE(old_it);
+
+    LOCK_STATS();
+    if (new_stotal != old_stotal) {
+        if (new_stotal > old_stotal) {
+            prefix_bytes_incr(pt, item_type, new_stotal - old_stotal);
+        } else {
+            prefix_bytes_decr(pt, item_type, old_stotal - new_stotal);
+        }
+    }
+    /* update item stats imformation */
+#ifdef ENABLE_STICKY_ITEM
+    if (IS_STICKY_EXPTIME(new_it->exptime)) {
+        statsp->sticky_bytes += new_stotal - old_stotal;
+    }
+#endif
+    statsp->curr_bytes += new_stotal - old_stotal;
+    statsp->total_items += 1;
+    UNLOCK_STATS();
+}
+
 static inline void do_item_stat_bytes_incr(hash_item *it, size_t stotal)
 {
     LOCK_STATS();
@@ -354,63 +443,50 @@ static inline void do_item_stat_reset(void)
     UNLOCK_STATS();
 }
 
-/* warning: don't use these macros with a function, as it evals its arg twice */
-static inline size_t ITEM_ntotal(const hash_item *item)
-{
-    size_t ntotal;
-    if (IS_COLL_ITEM(item)) {
-        ntotal = sizeof(*item) + META_OFFSET_IN_ITEM(item->nkey, item->nbytes);
-        if (IS_LIST_ITEM(item))     ntotal += sizeof(list_meta_info);
-        else if (IS_SET_ITEM(item)) ntotal += sizeof(set_meta_info);
-        else if (IS_MAP_ITEM(item)) ntotal += sizeof(map_meta_info);
-        else /* BTREE_ITEM */       ntotal += sizeof(btree_meta_info);
-    } else {
-        ntotal = sizeof(*item) + item->nkey + item->nbytes;
-    }
-    if (config->use_cas) {
-        ntotal += sizeof(uint64_t);
-    }
-    return ntotal;
-}
-
-static inline size_t ITEM_stotal(const hash_item *item)
-{
-    size_t ntotal = ITEM_ntotal(item);
-    size_t stotal = slabs_space_size(ntotal);
-    if (IS_COLL_ITEM(item)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(item);
-        stotal += info->stotal;
-    }
-    return stotal;
-}
-
-static inline void do_item_stat_replace(hash_item *old_it, hash_item *new_it)
-{
-    prefix_t *pt = new_it->pfxptr;
-    size_t old_stotal = ITEM_stotal(old_it);
-    size_t new_stotal = ITEM_stotal(new_it);
-
-    int item_type = GET_ITEM_TYPE(old_it);
-
-    LOCK_STATS();
-    if (new_stotal != old_stotal) {
-        if (new_stotal > old_stotal) {
-            prefix_bytes_incr(pt, item_type, new_stotal - old_stotal);
-        } else {
-            prefix_bytes_decr(pt, item_type, old_stotal - new_stotal);
-        }
-    }
-    /* update item stats imformation */
 #ifdef ENABLE_STICKY_ITEM
-    if (IS_STICKY_EXPTIME(new_it->exptime)) {
-        statsp->sticky_bytes += new_stotal - old_stotal;
+static inline bool do_item_sticky_overflowed(void)
+{
+    if (statsp->sticky_bytes < config->sticky_limit) {
+        return false;
     }
+    return true;
+}
 #endif
-    statsp->curr_bytes += new_stotal - old_stotal;
-    statsp->total_items += 1;
-    UNLOCK_STATS();
+
+static void do_coll_space_incr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
+                               const size_t nspace)
+{
+    info->stotal += nspace;
+
+    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
+    do_item_stat_bytes_incr(it, nspace);
+    prefix_bytes_incr(it->pfxptr, item_type, nspace);
 }
 
+static void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
+                               const size_t nspace)
+{
+    assert(info->stotal >= nspace);
+    info->stotal -= nspace;
+
+    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
+    do_item_stat_bytes_decr(it, nspace);
+    prefix_bytes_decr(it->pfxptr, item_type, nspace);
+}
+
+/* Max hash key length for calculating hash value */
+#define MAX_HKEY_LEN 250
+
+static inline uint32_t GEN_ITEM_KEY_HASH(const char *key, const uint32_t nkey)
+{
+    if (nkey > MAX_HKEY_LEN) {
+        /* The last MAX_HKEY_LEN bytes of the key is used */
+        const char *hkey = key + (nkey-MAX_HKEY_LEN);
+        return svcore->hash(hkey, MAX_HKEY_LEN, 0);
+    } else {
+        return svcore->hash(key, nkey, 0);
+    }
+}
 /* Get the next CAS id for a new item. */
 static uint64_t get_cas_id(void)
 {
@@ -427,20 +503,6 @@ static uint64_t get_cas_id(void)
 #else
 # define DEBUG_REFCNT(it,op) while(0)
 #endif
-
-/* Max hash key length for calculating hash value */
-#define MAX_HKEY_LEN 250
-
-static inline uint32_t GEN_ITEM_KEY_HASH(const char *key, const uint32_t nkey)
-{
-    if (nkey > MAX_HKEY_LEN) {
-        /* The last MAX_HKEY_LEN bytes of the key is used */
-        const char *hkey = key + (nkey-MAX_HKEY_LEN);
-        return svcore->hash(hkey, MAX_HKEY_LEN, 0);
-    } else {
-        return svcore->hash(key, nkey, 0);
-    }
-}
 
 /*
  * Collection Delete Queue Management
@@ -479,6 +541,127 @@ static hash_item *pop_coll_del_queue(void)
     }
     pthread_mutex_unlock(&coll_del_lock);
     return it;
+}
+
+static uint32_t do_coll_elem_delete_with_count(hash_item *it, uint32_t count)
+{
+    coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
+    uint32_t ndeleted = 0;
+
+    if (info->ccnt > 0) {
+        if (IS_BTREE_ITEM(it)) {
+            ndeleted = btree_elem_delete_with_count((void *)info, count);
+        } else if (IS_SET_ITEM(it)) {
+            ndeleted = set_elem_delete_with_count((void *)info, count);
+        } else if (IS_MAP_ITEM(it)) {
+            ndeleted = map_elem_delete_with_count((void *)info, count);
+        } else if (IS_LIST_ITEM(it)) {
+            ndeleted = list_elem_delete_with_count((void *)info, count);
+        }
+    }
+    return ndeleted;
+}
+
+static void item_link_q(hash_item *it)
+{
+    hash_item **head, **tail;
+    assert(it->slabs_clsid <= POWER_LARGEST);
+
+#ifdef USE_SINGLE_LRU_LIST
+    int clsid = 1;
+#else
+    int clsid = it->slabs_clsid;
+    if (IS_COLL_ITEM(it) || ITEM_ntotal(it) <= MAX_SM_VALUE_LEN) {
+        clsid = LRU_CLSID_FOR_SMALL;
+    }
+#endif
+
+#ifdef ENABLE_STICKY_ITEM
+    if (IS_STICKY_EXPTIME(it->exptime)) {
+        head = &itemsp->sticky_heads[clsid];
+        tail = &itemsp->sticky_tails[clsid];
+        itemsp->sticky_sizes[clsid]++;
+    } else {
+#endif
+        head = &itemsp->heads[clsid];
+        tail = &itemsp->tails[clsid];
+        itemsp->sizes[clsid]++;
+        if (it->exptime > 0) { /* expirable item */
+            if (itemsp->lowMK[clsid] == NULL) {
+                /* set lowMK and curMK pointer in LRU */
+                itemsp->lowMK[clsid] = it;
+                itemsp->curMK[clsid] = it;
+            }
+        }
+#ifdef ENABLE_STICKY_ITEM
+    }
+#endif
+    assert(it != *head);
+    assert((*head && *tail) || (*head == 0 && *tail == 0));
+    it->prev = 0;
+    it->next = *head;
+    if (it->next) it->next->prev = it;
+    *head = it;
+    if (*tail == 0) *tail = it;
+    return;
+}
+
+static void item_unlink_q(hash_item *it)
+{
+    hash_item **head, **tail;
+    assert(it->slabs_clsid <= POWER_LARGEST);
+#ifdef USE_SINGLE_LRU_LIST
+    int clsid = 1;
+#else
+    int clsid = it->slabs_clsid;
+    if (IS_COLL_ITEM(it) || ITEM_ntotal(it) <= MAX_SM_VALUE_LEN) {
+        clsid = LRU_CLSID_FOR_SMALL;
+    }
+#endif
+
+    if (it->prev == it && it->next == it) { /* special meaning: unlinked from LRU */
+        return; /* Already unlinked from LRU list */
+    }
+
+#ifdef ENABLE_STICKY_ITEM
+    if (IS_STICKY_EXPTIME(it->exptime)) {
+        head = &itemsp->sticky_heads[clsid];
+        tail = &itemsp->sticky_tails[clsid];
+        itemsp->sticky_sizes[clsid]--;
+        /* move curMK pointer in LRU */
+        if (itemsp->sticky_curMK[clsid] == it)
+            itemsp->sticky_curMK[clsid] = it->prev;
+    } else {
+#endif
+        head = &itemsp->heads[clsid];
+        tail = &itemsp->tails[clsid];
+        itemsp->sizes[clsid]--;
+        /* move lowMK, curMK pointer in LRU */
+        if (itemsp->lowMK[clsid] == it)
+            itemsp->lowMK[clsid] = it->prev;
+        if (itemsp->curMK[clsid] == it) {
+            itemsp->curMK[clsid] = it->prev;
+            if (itemsp->curMK[clsid] == NULL)
+                itemsp->curMK[clsid] = itemsp->lowMK[clsid];
+        }
+#ifdef ENABLE_STICKY_ITEM
+    }
+#endif
+    if (*head == it) {
+        assert(it->prev == 0);
+        *head = it->next;
+    }
+    if (*tail == it) {
+        assert(it->next == 0);
+        *tail = it->prev;
+    }
+    assert(it->next != it);
+    assert(it->prev != it);
+
+    if (it->next) it->next->prev = it->prev;
+    if (it->prev) it->prev->next = it->next;
+    it->prev = it->next = it; /* special meaning: unlinked from LRU */
+    return;
 }
 
 static bool do_item_isvalid(hash_item *it, rel_time_t current_time)
@@ -527,10 +710,7 @@ static hash_item *do_item_reclaim(hash_item *it,
 #endif
 
     if (IS_COLL_ITEM(it)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        if (info->ccnt > 0) {
-            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 500);
-        }
+        (void)do_coll_elem_delete_with_count(it, 500);
     }
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 
@@ -546,10 +726,7 @@ static void do_item_invalidate(hash_item *it, const unsigned int lruid, bool imm
 
     /* it->refcount == 0 */
     if (immediate && IS_COLL_ITEM(it)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        if (info->ccnt > 0) {
-            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 500);
-        }
+        (void)do_coll_elem_delete_with_count(it, 500);
     }
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 }
@@ -562,10 +739,7 @@ static void do_item_evict(hash_item *it, const unsigned int lruid,
 
     /* unlink the item */
     if (IS_COLL_ITEM(it)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        if (info->ccnt > 0) {
-            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 500);
-        }
+        (void)do_coll_elem_delete_with_count(it, 500);
     }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
@@ -579,10 +753,7 @@ static void do_item_repair(hash_item *it, const unsigned int lruid)
 
     /* unlink the item */
     if (IS_COLL_ITEM(it)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        if (info->ccnt > 0) {
-            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 500);
-        }
+        (void)do_coll_elem_delete_with_count(it, 500);
     }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
@@ -846,6 +1017,14 @@ static void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
     return (void *)it;
 }
 
+static void do_item_mem_free(void *item, size_t ntotal)
+{
+    hash_item *it = (hash_item *)item;
+    unsigned int clsid = it->slabs_clsid;
+    it->slabs_clsid = 0; /* to notify the item memory is freed */
+    slabs_free(it, ntotal, clsid);
+}
+
 /*@null@*/
 static hash_item *do_item_alloc(const void *key, const uint32_t nkey,
                                 const uint32_t flags, const rel_time_t exptime,
@@ -899,14 +1078,6 @@ static hash_item *do_item_alloc(const void *key, const uint32_t nkey,
     return it;
 }
 
-static void do_item_mem_free(void *item, size_t ntotal)
-{
-    hash_item *it = (hash_item *)item;
-    unsigned int clsid = it->slabs_clsid;
-    it->slabs_clsid = 0; /* to notify the item memory is freed */
-    slabs_free(it, ntotal, clsid);
-}
-
 static void do_item_free(hash_item *it)
 {
     assert((it->iflag & ITEM_LINKED) == 0);
@@ -925,108 +1096,6 @@ static void do_item_free(hash_item *it)
     /* so slab size changer can tell later if item is already free or not */
     DEBUG_REFCNT(it, 'F');
     do_item_mem_free(it, ITEM_ntotal(it));
-}
-
-static void item_link_q(hash_item *it)
-{
-    hash_item **head, **tail;
-    assert(it->slabs_clsid <= POWER_LARGEST);
-
-#ifdef USE_SINGLE_LRU_LIST
-    int clsid = 1;
-#else
-    int clsid = it->slabs_clsid;
-    if (IS_COLL_ITEM(it) || ITEM_ntotal(it) <= MAX_SM_VALUE_LEN) {
-        clsid = LRU_CLSID_FOR_SMALL;
-    }
-#endif
-
-#ifdef ENABLE_STICKY_ITEM
-    if (IS_STICKY_EXPTIME(it->exptime)) {
-        head = &itemsp->sticky_heads[clsid];
-        tail = &itemsp->sticky_tails[clsid];
-        itemsp->sticky_sizes[clsid]++;
-    } else {
-#endif
-        head = &itemsp->heads[clsid];
-        tail = &itemsp->tails[clsid];
-        itemsp->sizes[clsid]++;
-        if (it->exptime > 0) { /* expirable item */
-            if (itemsp->lowMK[clsid] == NULL) {
-                /* set lowMK and curMK pointer in LRU */
-                itemsp->lowMK[clsid] = it;
-                itemsp->curMK[clsid] = it;
-            }
-        }
-#ifdef ENABLE_STICKY_ITEM
-    }
-#endif
-    assert(it != *head);
-    assert((*head && *tail) || (*head == 0 && *tail == 0));
-    it->prev = 0;
-    it->next = *head;
-    if (it->next) it->next->prev = it;
-    *head = it;
-    if (*tail == 0) *tail = it;
-    return;
-}
-
-static void item_unlink_q(hash_item *it)
-{
-    hash_item **head, **tail;
-    assert(it->slabs_clsid <= POWER_LARGEST);
-#ifdef USE_SINGLE_LRU_LIST
-    int clsid = 1;
-#else
-    int clsid = it->slabs_clsid;
-    if (IS_COLL_ITEM(it) || ITEM_ntotal(it) <= MAX_SM_VALUE_LEN) {
-        clsid = LRU_CLSID_FOR_SMALL;
-    }
-#endif
-
-    if (it->prev == it && it->next == it) { /* special meaning: unlinked from LRU */
-        return; /* Already unlinked from LRU list */
-    }
-
-#ifdef ENABLE_STICKY_ITEM
-    if (IS_STICKY_EXPTIME(it->exptime)) {
-        head = &itemsp->sticky_heads[clsid];
-        tail = &itemsp->sticky_tails[clsid];
-        itemsp->sticky_sizes[clsid]--;
-        /* move curMK pointer in LRU */
-        if (itemsp->sticky_curMK[clsid] == it)
-            itemsp->sticky_curMK[clsid] = it->prev;
-    } else {
-#endif
-        head = &itemsp->heads[clsid];
-        tail = &itemsp->tails[clsid];
-        itemsp->sizes[clsid]--;
-        /* move lowMK, curMK pointer in LRU */
-        if (itemsp->lowMK[clsid] == it)
-            itemsp->lowMK[clsid] = it->prev;
-        if (itemsp->curMK[clsid] == it) {
-            itemsp->curMK[clsid] = it->prev;
-            if (itemsp->curMK[clsid] == NULL)
-                itemsp->curMK[clsid] = itemsp->lowMK[clsid];
-        }
-#ifdef ENABLE_STICKY_ITEM
-    }
-#endif
-    if (*head == it) {
-        assert(it->prev == 0);
-        *head = it->next;
-    }
-    if (*tail == it) {
-        assert(it->next == 0);
-        *tail = it->prev;
-    }
-    assert(it->next != it);
-    assert(it->prev != it);
-
-    if (it->next) it->next->prev = it->prev;
-    if (it->prev) it->prev->next = it->next;
-    it->prev = it->next = it; /* special meaning: unlinked from LRU */
-    return;
 }
 
 static ENGINE_ERROR_CODE do_item_link(hash_item *it)
@@ -1109,31 +1178,6 @@ static void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
     }
 }
 
-static void do_item_release(hash_item *it)
-{
-    MEMCACHED_ITEM_REMOVE(item_get_key(it), it->nkey, it->nbytes);
-
-    if (it->refcount != 0) {
-        ITEM_REFCOUNT_DECR(it);
-        DEBUG_REFCNT(it, '-');
-    }
-    if (it->refcount == 0) {
-        if ((it->iflag & ITEM_LINKED) == 0) {
-            do_item_free(it);
-        }
-        else if (it->prev == it && it->next == it) {
-            /* re-link the item into the LRU list */
-            rel_time_t current_time = svcore->get_current_time();
-            if (do_item_isvalid(it, current_time)) {
-                it->time = current_time;
-                item_link_q(it);
-            } else {
-                do_item_unlink(it, ITEM_UNLINK_INVALID);
-            }
-        }
-    }
-}
-
 static void do_item_update(hash_item *it, bool force)
 {
     MEMCACHED_ITEM_UPDATE(item_get_key(it), it->nkey, it->nbytes);
@@ -1193,6 +1237,31 @@ static hash_item *do_item_get(const char *key, const uint32_t nkey, bool do_upda
                     keybuf);
     }
     return it;
+}
+
+static void do_item_release(hash_item *it)
+{
+    MEMCACHED_ITEM_REMOVE(item_get_key(it), it->nkey, it->nbytes);
+
+    if (it->refcount != 0) {
+        ITEM_REFCOUNT_DECR(it);
+        DEBUG_REFCNT(it, '-');
+    }
+    if (it->refcount == 0) {
+        if ((it->iflag & ITEM_LINKED) == 0) {
+            do_item_free(it);
+        }
+        else if (it->prev == it && it->next == it) {
+            /* re-link the item into the LRU list */
+            rel_time_t current_time = svcore->get_current_time();
+            if (do_item_isvalid(it, current_time)) {
+                it->time = current_time;
+                item_link_q(it);
+            } else {
+                do_item_unlink(it, ITEM_UNLINK_INVALID);
+            }
+        }
+    }
 }
 
 static void do_item_replace(hash_item *old_it, hash_item *new_it)
@@ -1465,66 +1534,14 @@ static ENGINE_ERROR_CODE do_add_delta(hash_item *it, const bool incr, const int6
     return ENGINE_SUCCESS;
 }
 
-static void do_coll_space_incr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
-                               const size_t nspace)
-{
-    info->stotal += nspace;
-
-    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
-    do_item_stat_bytes_incr(it, nspace);
-    prefix_bytes_incr(it->pfxptr, item_type, nspace);
-}
-
-static void do_coll_space_decr(coll_meta_info *info, ENGINE_ITEM_TYPE item_type,
-                               const size_t nspace)
-{
-    assert(info->stotal >= nspace);
-    info->stotal -= nspace;
-
-    hash_item *it = (hash_item*)COLL_GET_HASH_ITEM(info);
-    do_item_stat_bytes_decr(it, nspace);
-    prefix_bytes_decr(it->pfxptr, item_type, nspace);
-}
-
-/* get real maxcount for each collection type */
-static int32_t do_list_real_maxcount(int32_t maxcount);
-static int32_t do_set_real_maxcount(int32_t maxcount);
-static int32_t do_map_real_maxcount(int32_t maxcount);
-static int32_t do_btree_real_maxcount(int32_t maxcount);
-
-static int32_t do_coll_real_maxcount(hash_item *it, int32_t maxcount)
-{
-    if (IS_LIST_ITEM(it))       return do_list_real_maxcount(maxcount);
-    else if (IS_SET_ITEM(it))   return do_set_real_maxcount(maxcount);
-    else if (IS_MAP_ITEM(it))   return do_map_real_maxcount(maxcount);
-    else if (IS_BTREE_ITEM(it)) return do_btree_real_maxcount(maxcount);
-    else                        return maxcount;
-}
-
+/*
+ * LIST collection management
+ */
 static inline uint32_t do_list_elem_ntotal(list_elem_item *elem)
 {
     return sizeof(list_elem_item) + elem->nbytes;
 }
 
-static inline uint32_t do_set_elem_ntotal(set_elem_item *elem)
-{
-    return sizeof(set_elem_item) + elem->nbytes;
-}
-
-static inline uint32_t do_map_elem_ntotal(map_elem_item *elem)
-{
-    return sizeof(map_elem_item) + elem->nfield + elem->nbytes;
-}
-
-static inline uint32_t do_btree_elem_ntotal(btree_elem_item *elem)
-{
-    return sizeof(btree_elem_item_fixed) + BTREE_REAL_NBKEY(elem->nbkey)
-           + elem->neflag + elem->nbytes;
-}
-
-/*
- * LIST collection management
- */
 static ENGINE_ERROR_CODE do_list_item_find(const void *key, const uint32_t nkey,
                                            bool do_update, hash_item **item)
 {
@@ -1819,14 +1836,21 @@ static ENGINE_ERROR_CODE do_list_elem_insert(hash_item *it,
 /*
  * SET collection manangement
  */
+//#define SET_DELETE_NO_MERGE
+
+#define SET_GET_HASHIDX(hval, hdepth) \
+        (((hval) & (SET_HASHIDX_MASK << ((hdepth)*4))) >> ((hdepth)*4))
+
 static inline int set_hash_eq(const int h1, const void *v1, size_t vlen1,
                               const int h2, const void *v2, size_t vlen2)
 {
     return (h1 == h2 && vlen1 == vlen2 && memcmp(v1, v2, vlen1) == 0);
 }
 
-#define SET_GET_HASHIDX(hval, hdepth) \
-        (((hval) & (SET_HASHIDX_MASK << ((hdepth)*4))) >> ((hdepth)*4))
+static inline uint32_t do_set_elem_ntotal(set_elem_item *elem)
+{
+    return sizeof(set_elem_item) + elem->nbytes;
+}
 
 static ENGINE_ERROR_CODE do_set_item_find(const void *key, const uint32_t nkey,
                                           bool do_update, hash_item **item)
@@ -2394,6 +2418,14 @@ static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem,
 /*
  * B+TREE collection management
  */
+//#define BTREE_DELETE_NO_MERGE
+
+static inline uint32_t do_btree_elem_ntotal(btree_elem_item *elem)
+{
+    return sizeof(btree_elem_item_fixed) + BTREE_REAL_NBKEY(elem->nbkey)
+           + elem->neflag + elem->nbytes;
+}
+
 static ENGINE_ERROR_CODE do_btree_item_find(const void *key, const uint32_t nkey,
                                             bool do_update, hash_item **item)
 {
@@ -2445,10 +2477,6 @@ static hash_item *do_btree_item_alloc(const void *key, const uint32_t nkey,
         info->mcnt = do_btree_real_maxcount(attrp->maxcount);
         info->ccnt = 0;
         info->ovflact = (attrp->ovflaction==0 ? OVFL_SMALLEST_TRIM : attrp->ovflaction);
-        if (forced_btree_ovflact != 0 && forced_action_pfxlen < nkey &&
-            memcmp(forced_action_prefix, key, forced_action_pfxlen) == 0) {
-            info->ovflact = forced_btree_ovflact;
-        }
         info->mflags  = 0;
 #ifdef ENABLE_STICKY_ITEM
         if (IS_STICKY_EXPTIME(attrp->exptime)) info->mflags |= COLL_META_FLAG_STICKY;
@@ -2460,6 +2488,9 @@ static hash_item *do_btree_item_alloc(const void *key, const uint32_t nkey,
         info->maxbkeyrange.len = BKEY_NULL;
         info->root    = NULL;
         assert((hash_item*)COLL_GET_HASH_ITEM(info) == it);
+
+        /* set if forced_btree_overflow_actions is given */
+        _setif_forced_btree_overflow_action(info, key, nkey);
     }
     return it;
 }
@@ -5863,28 +5894,6 @@ scan_next:
 /*
  * Item Management Daemon
  */
-static inline void do_coll_elem_delete(coll_meta_info *info, int type, uint32_t count)
-{
-    assert(info->ccnt > 0);
-
-    switch (type) {
-      case ITEM_TYPE_BTREE:
-           (void)do_btree_elem_delete((void *)info, BKEY_RANGE_TYPE_ASC, NULL,
-                                      NULL, 0, count, NULL, ELEM_DELETE_COLL);
-           break;
-      case ITEM_TYPE_SET:
-           (void)do_set_elem_delete((void *)info, count, ELEM_DELETE_COLL);
-           break;
-      case ITEM_TYPE_MAP:
-           (void)do_map_elem_delete((void *)info, count, ELEM_DELETE_COLL);
-           break;
-      case ITEM_TYPE_LIST:
-           (void)do_list_elem_delete((void *)info, 0, count, ELEM_DELETE_COLL);
-           break;
-      default: break;
-    }
-}
-
 static void coll_del_thread_sleep(void)
 {
     struct timeval  tv;
@@ -5913,9 +5922,8 @@ static void *collection_delete_thread(void *arg)
 {
     struct default_engine *engine = arg;
     hash_item      *it;
-    coll_meta_info *info;
     struct timespec sleep_time = {0, 0};
-    ENGINE_ITEM_TYPE item_type;
+    uint32_t        delete_count;
     int             current_ssl;
     uint32_t        evict_count;
     uint32_t        bg_evict_count = 0;
@@ -5926,21 +5934,18 @@ static void *collection_delete_thread(void *arg)
     while (engine->initialized) {
         it = pop_coll_del_queue();
         if (it != NULL) {
-            item_type = GET_ITEM_TYPE(it);
-
             LOCK_CACHE();
-            info = (coll_meta_info *)item_get_meta(it);
-            while (info->ccnt > 0) {
-                do_coll_elem_delete(info, item_type, 100);
-                if (info->ccnt > 0) {
-                    UNLOCK_CACHE();
-                    if (slabs_space_shortage_level() <= 2) {
-                        sleep_time.tv_nsec = 10000; /* 10 us */
-                        nanosleep(&sleep_time, NULL);
-                    }
-                    LOCK_CACHE();
+            delete_count = do_coll_elem_delete_with_count(it, 100);
+            while (delete_count >= 100) {
+                UNLOCK_CACHE();
+                if (slabs_space_shortage_level() <= 2) {
+                    sleep_time.tv_nsec = 10000; /* 10 us */
+                    nanosleep(&sleep_time, NULL);
                 }
+                LOCK_CACHE();
+                delete_count = do_coll_elem_delete_with_count(it, 100);
             }
+            /* it has become an empty collection. */
             do_item_free(it);
             UNLOCK_CACHE();
             continue;
@@ -6450,53 +6455,6 @@ void item_stats_reset(void)
     UNLOCK_CACHE();
 }
 
-static void _check_forced_btree_overflow_action(void)
-{
-    char *envstr;
-    char *envval;
-
-    envstr = getenv("ARCUS_FORCED_BTREE_OVERFLOW_ACTION");
-    if (envstr != NULL) {
-        char *delimiter = memchr(envstr, ':', strlen(envstr));
-        if (delimiter == NULL) {
-            logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: NO prefix delimiter\n");
-            return;
-        }
-        envval = delimiter + 1;
-
-        forced_action_pfxlen = envval - envstr;
-        if (forced_action_pfxlen >= 256) {
-            logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: Too long prefix name\n");
-            return;
-        }
-        memcpy(forced_action_prefix, envstr, forced_action_pfxlen);
-        forced_action_prefix[forced_action_pfxlen] = '\0';
-
-        if (strcmp(envval, "smallest_trim") == 0)
-            forced_btree_ovflact = OVFL_SMALLEST_TRIM;
-        else if (strcmp(envval, "smallest_silent_trim") == 0)
-            forced_btree_ovflact = OVFL_SMALLEST_SILENT_TRIM;
-        else if (strcmp(envval, "largest_trim") == 0)
-            forced_btree_ovflact = OVFL_LARGEST_TRIM;
-        else if (strcmp(envval, "largest_silent_trim") == 0)
-            forced_btree_ovflact = OVFL_LARGEST_SILENT_TRIM;
-        else if (strcmp(envval, "error") == 0)
-            forced_btree_ovflact = OVFL_ERROR;
-        else {
-            logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: Invalid overflow action\n");
-            forced_action_prefix[0] = '\0';
-            return;
-        }
-
-        logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "ARCUS_FORCED_BTREE_OVERFLOW_ACTION: prefix=%s action=%s\n",
-                    forced_action_prefix, envval);
-    }
-}
-
 ENGINE_ERROR_CODE item_init(struct default_engine *engine)
 {
     /* initialize global variables */
@@ -6860,6 +6818,89 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
     return ret;
 }
 
+uint32_t list_elem_delete_with_count(list_meta_info *info, const uint32_t count)
+{
+    return do_list_elem_delete(info, 0, count, ELEM_DELETE_COLL);
+}
+
+/* See do_list_elem_delete. */
+void list_elem_get_all(list_meta_info *info, elems_result_t *eresult)
+{
+    assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
+    list_elem_item *elem;
+
+    elem = do_list_elem_find(info, 0);
+    while (elem != NULL) {
+        elem->refcount++;
+        eresult->elem_array[eresult->elem_count++] = elem;
+        elem = elem->next;
+    }
+    assert(eresult->elem_count == info->ccnt);
+}
+
+uint32_t list_elem_ntotal(list_elem_item *elem)
+{
+    return do_list_elem_ntotal(elem);
+}
+
+ENGINE_ERROR_CODE list_coll_getattr(hash_item *it, item_attr *attrp,
+                                    ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
+{
+    list_meta_info *info = (list_meta_info *)item_get_meta(it);
+
+    /* check attribute validation */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXBKEYRANGE || attr_ids[i] == ATTR_TRIMMED) {
+            return ENGINE_EBADATTR;
+        }
+    }
+
+    /* get collection attributes */
+    attrp->count = info->ccnt;
+    attrp->maxcount = (info->mcnt > 0) ? info->mcnt : (int32_t)config->max_list_size;
+    attrp->ovflaction = info->ovflact;
+    attrp->readable = ((info->mflags & COLL_META_FLAG_READABLE) != 0) ? 1 : 0;
+    return ENGINE_SUCCESS;
+}
+
+ENGINE_ERROR_CODE list_coll_setattr(hash_item *it, item_attr *attrp,
+                                    ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
+{
+    list_meta_info *info = (list_meta_info *)item_get_meta(it);
+
+    /* check the validity of given attributs */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXCOUNT) {
+            attrp->maxcount = do_list_real_maxcount(attrp->maxcount);
+            if (attrp->maxcount > 0 && attrp->maxcount < info->ccnt) {
+                return ENGINE_EBADVALUE;
+            }
+        } else if (attr_ids[i] == ATTR_OVFLACTION) {
+            if (attrp->ovflaction != OVFL_ERROR &&
+                attrp->ovflaction != OVFL_HEAD_TRIM &&
+                attrp->ovflaction != OVFL_TAIL_TRIM) {
+                return ENGINE_EBADVALUE;
+            }
+        } else if (attr_ids[i] == ATTR_READABLE) {
+            if (attrp->readable != 1) {
+                return ENGINE_EBADVALUE;
+            }
+        }
+    }
+
+    /* set the attributes */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXCOUNT) {
+            info->mcnt = attrp->maxcount;
+        } else if (attr_ids[i] == ATTR_OVFLACTION) {
+            info->ovflact = attrp->ovflaction;
+        } else if (attr_ids[i] == ATTR_READABLE) {
+            info->mflags |= COLL_META_FLAG_READABLE;
+        }
+    }
+    return ENGINE_SUCCESS;
+}
+
 /*
  * SET Interface Functions
  */
@@ -7094,6 +7135,140 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
         PERSISTENCE_ACTION_END(ret);
     }
     return ret;
+}
+
+uint32_t set_elem_delete_with_count(set_meta_info *info, const uint32_t count)
+{
+    return do_set_elem_delete(info, count, ELEM_DELETE_COLL);
+}
+
+/* See do_set_elem_traverse_dfs and do_set_elem_link. do_set_elem_traverse_dfs
+ * can visit all elements, but only supports get and delete operations.
+ * Do something similar and visit all elements.
+ */
+void set_elem_get_all(set_meta_info *info, elems_result_t *eresult)
+{
+    assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
+    set_hash_node *node;
+    set_elem_item *elem;
+    int cur_depth, i;
+    bool push;
+
+    /* Temporay stack we use to do dfs. Static is ugly but is okay...
+     * This function runs with the cache lock acquired.
+     */
+    static int stack_max = 0;
+    static struct {
+        set_hash_node *node;
+        int idx;
+    } *stack = NULL;
+
+    node = info->root;
+    cur_depth = 0;
+    push = true;
+    while (node != NULL) {
+        if (push) {
+            push = false;
+            if (stack_max <= cur_depth) {
+                stack_max += 16;
+                stack = realloc(stack, sizeof(*stack) * stack_max);
+            }
+            stack[cur_depth].node = node;
+            stack[cur_depth].idx = 0;
+        }
+
+        /* Scan the current node */
+        for (i = stack[cur_depth].idx; i < SET_HASHTAB_SIZE; i++) {
+            if (node->hcnt[i] >= 0) {
+                /* Hash chain.  Insert all elements on the chain into the
+                 * to-be-copied list.
+                 */
+                for (elem = node->htab[i]; elem != NULL; elem = elem->next) {
+                    elem->refcount++;
+                    eresult->elem_array[eresult->elem_count++] = elem;
+                }
+            }
+            else if (node->htab[i] != NULL) {
+                /* Another hash node. Go down */
+                stack[cur_depth].idx = i+1;
+                push = true;
+                node = node->htab[i];
+                cur_depth++;
+                break;
+            }
+        }
+
+        /* Scannned everything in this node. Go up. */
+        if (i >= SET_HASHTAB_SIZE) {
+            cur_depth--;
+            if (cur_depth < 0)
+                node = NULL; /* done */
+            else
+                node = stack[cur_depth].node;
+        }
+    }
+    assert(eresult->elem_count == info->ccnt);
+}
+
+uint32_t set_elem_ntotal(set_elem_item *elem)
+{
+    return do_set_elem_ntotal(elem);
+}
+
+ENGINE_ERROR_CODE set_coll_getattr(hash_item *it, item_attr *attrp,
+                                   ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
+{
+    set_meta_info *info = (set_meta_info *)item_get_meta(it);
+
+    /* check attribute validation */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXBKEYRANGE || attr_ids[i] == ATTR_TRIMMED) {
+            return ENGINE_EBADATTR;
+        }
+    }
+
+    /* get collection attributes */
+    attrp->count = info->ccnt;
+    attrp->maxcount = (info->mcnt > 0) ? info->mcnt : (int32_t)config->max_set_size;
+    attrp->ovflaction = info->ovflact;
+    attrp->readable = ((info->mflags & COLL_META_FLAG_READABLE) != 0) ? 1 : 0;
+    return ENGINE_SUCCESS;
+}
+
+ENGINE_ERROR_CODE set_coll_setattr(hash_item *it, item_attr *attrp,
+                                   ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
+{
+    set_meta_info *info = (set_meta_info *)item_get_meta(it);
+
+    /* check the validity of given attributs */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXCOUNT) {
+            attrp->maxcount = do_set_real_maxcount(attrp->maxcount);
+            if (attrp->maxcount > 0 && attrp->maxcount < info->ccnt) {
+                return ENGINE_EBADVALUE;
+            }
+        } else if (attr_ids[i] == ATTR_OVFLACTION) {
+            if (attrp->ovflaction != OVFL_ERROR) {
+                return ENGINE_EBADVALUE;
+            }
+        } else if (attr_ids[i] == ATTR_READABLE) {
+            if (attrp->readable != 1) {
+                return ENGINE_EBADVALUE;
+            }
+        }
+    }
+
+    /* set the attributes */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXCOUNT) {
+            info->mcnt = attrp->maxcount;
+        } else if (attr_ids[i] == ATTR_OVFLACTION) {
+            info->ovflact = attrp->ovflaction;
+        } else if (attr_ids[i] == ATTR_READABLE) {
+            info->mflags |= COLL_META_FLAG_READABLE;
+        }
+    }
+    return ENGINE_SUCCESS;
 }
 
 /*
@@ -7721,12 +7896,162 @@ ENGINE_ERROR_CODE btree_elem_smget(token_t *key_array, const int key_count,
 }
 #endif
 
+uint32_t btree_elem_delete_with_count(btree_meta_info *info, const uint32_t count)
+{
+    return do_btree_elem_delete(info, BKEY_RANGE_TYPE_ASC, NULL, NULL,
+                                0, count, NULL, ELEM_DELETE_COLL);
+}
+
+/* Scan the whole btree with the cache lock acquired.
+ * We only build the table of the current elements.
+ * See do_btree_elem_delete and do_btree_multi_elem_unlink.
+ * They show how to traverse the btree.
+ * FIXME. IS THIS STILL RIGHT AFTER THE MERGE? do_btree_multi_elem_unlink is gone.
+ */
+void btree_elem_get_all(btree_meta_info *info, elems_result_t *eresult)
+{
+    assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
+    btree_elem_item *elem;
+    btree_elem_posi  posi;
+
+    elem = do_btree_find_first(info->root, BKEY_RANGE_TYPE_ASC, NULL, &posi, false);
+    while (elem != NULL) {
+        elem->refcount++;
+        eresult->elem_array[eresult->elem_count++] = elem;
+        /* Never have to go backward?  FIXME */
+        elem = do_btree_find_next(&posi, NULL);
+    }
+    assert(eresult->elem_count == info->ccnt);
+}
+
+uint32_t btree_elem_ntotal(btree_elem_item *elem)
+{
+    return do_btree_elem_ntotal(elem);
+}
+
+uint8_t  btree_real_nbkey(uint8_t nbkey)
+{
+    return (uint8_t)BTREE_REAL_NBKEY(nbkey);
+}
+
+ENGINE_ERROR_CODE btree_coll_getattr(hash_item *it, item_attr *attrp,
+                                     ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
+{
+    btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
+
+    /* get collection attributes */
+    attrp->count = info->ccnt;
+    attrp->maxcount = (info->mcnt > 0) ? info->mcnt : (int32_t)config->max_btree_size;
+    attrp->ovflaction = info->ovflact;
+    attrp->readable = ((info->mflags & COLL_META_FLAG_READABLE) != 0) ? 1 : 0;
+
+    attrp->trimmed = ((info->mflags & COLL_META_FLAG_TRIMMED) != 0) ? 1 : 0;
+    attrp->maxbkeyrange = info->maxbkeyrange;
+    if (info->ccnt > 0) {
+        btree_elem_item *min_bkey_elem = do_btree_get_first_elem(info->root);
+        btree_elem_item *max_bkey_elem = do_btree_get_last_elem(info->root);
+        do_btree_get_bkey(min_bkey_elem, &attrp->minbkey);
+        do_btree_get_bkey(max_bkey_elem, &attrp->maxbkey);
+    }
+    return ENGINE_SUCCESS;
+}
+
+ENGINE_ERROR_CODE btree_coll_setattr(hash_item *it, item_attr *attrp,
+                                     ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
+{
+    btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
+
+    /* check the validity of given attributs */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXCOUNT) {
+            attrp->maxcount = do_btree_real_maxcount(attrp->maxcount);
+            if (attrp->maxcount > 0 && attrp->maxcount < info->ccnt) {
+                return ENGINE_EBADVALUE;
+            }
+        } else if (attr_ids[i] == ATTR_OVFLACTION) {
+            if (attrp->ovflaction != OVFL_ERROR &&
+                attrp->ovflaction != OVFL_SMALLEST_TRIM &&
+                attrp->ovflaction != OVFL_LARGEST_TRIM &&
+                attrp->ovflaction != OVFL_SMALLEST_SILENT_TRIM &&
+                attrp->ovflaction != OVFL_LARGEST_SILENT_TRIM) {
+                return ENGINE_EBADVALUE;
+            }
+        } else if (attr_ids[i] == ATTR_READABLE) {
+            if (attrp->readable != 1) {
+                return ENGINE_EBADVALUE;
+            }
+        } else if (attr_ids[i] == ATTR_MAXBKEYRANGE) {
+            if (attrp->maxbkeyrange.len != BKEY_NULL && info->ccnt > 0) {
+                /* check bkey type of maxbkeyrange */
+                if ((info->bktype == BKEY_TYPE_UINT64 && attrp->maxbkeyrange.len >  0) ||
+                    (info->bktype == BKEY_TYPE_BINARY && attrp->maxbkeyrange.len == 0)) {
+                    return ENGINE_EBADVALUE;
+                }
+                /* New maxbkeyrange must contain the current bkey range */
+                if ((info->ccnt >= 2) && /* current key range exists */
+                    (attrp->maxbkeyrange.len != info->maxbkeyrange.len ||
+                     BKEY_ISNE(attrp->maxbkeyrange.val, attrp->maxbkeyrange.len,
+                               info->maxbkeyrange.val, info->maxbkeyrange.len))) {
+                    bkey_t curbkeyrange;
+                    btree_elem_item *min_bkey_elem = do_btree_get_first_elem(info->root);
+                    btree_elem_item *max_bkey_elem = do_btree_get_last_elem(info->root);
+                    curbkeyrange.len = attrp->maxbkeyrange.len;
+                    BKEY_DIFF(max_bkey_elem->data, max_bkey_elem->nbkey,
+                              min_bkey_elem->data, min_bkey_elem->nbkey,
+                              curbkeyrange.len, curbkeyrange.val);
+                    if (BKEY_ISGT(curbkeyrange.val, curbkeyrange.len,
+                                  attrp->maxbkeyrange.val, attrp->maxbkeyrange.len)) {
+                        return ENGINE_EBADVALUE;
+                    }
+                }
+            }
+        }
+    }
+
+    /* set the attributes */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXCOUNT) {
+            info->mcnt = attrp->maxcount;
+        } else if (attr_ids[i] == ATTR_OVFLACTION) {
+            if (info->ovflact != attrp->ovflaction) {
+                info->mflags &= ~COLL_META_FLAG_TRIMMED; // clear trimmed
+            }
+            info->ovflact = attrp->ovflaction;
+            _setif_forced_btree_overflow_action(info, item_get_key(it), it->nkey);
+        } else if (attr_ids[i] == ATTR_READABLE) {
+            info->mflags |= COLL_META_FLAG_READABLE;
+        } else if (attr_ids[i] == ATTR_MAXBKEYRANGE) {
+            if (attrp->maxbkeyrange.len == BKEY_NULL) {
+                if (info->maxbkeyrange.len != BKEY_NULL) {
+                    info->maxbkeyrange = attrp->maxbkeyrange;
+                    if (info->ccnt == 0) {
+                        if (info->bktype != BKEY_TYPE_UNKNOWN)
+                            info->bktype = BKEY_TYPE_UNKNOWN;
+                    }
+                }
+            } else { /* attrp->maxbkeyrange.len != BKEY_NULL */
+                if (info->ccnt == 0) {
+                    /* just reset maxbkeyrange with new value */
+                    info->maxbkeyrange = attrp->maxbkeyrange;
+                    if (attrp->maxbkeyrange.len == 0) {
+                        info->bktype = BKEY_TYPE_UINT64;
+                    } else {
+                        info->bktype = BKEY_TYPE_BINARY;
+                    }
+                } else { /* info->ccnt > 0 */
+                    info->maxbkeyrange = attrp->maxbkeyrange;
+                }
+            }
+        }
+    }
+    return ENGINE_SUCCESS;
+}
+
 /*
  * ITEM ATTRIBUTE Interface Functions
  */
 static ENGINE_ERROR_CODE
-do_item_getattr(hash_item *it,
-                ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
+do_item_getattr(hash_item *it, ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
                 item_attr *attr_data)
 {
     /* item flags */
@@ -7749,46 +8074,21 @@ do_item_getattr(hash_item *it,
     }
 
     if (IS_COLL_ITEM(it)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
         attr_data->type = GET_ITEM_TYPE(it);
         assert(attr_data->type < ITEM_TYPE_MAX);
-        /* attribute validation check */
-        if (attr_data->type != ITEM_TYPE_BTREE) {
-            for (int i = 0; i < attr_count; i++) {
-                if (attr_ids[i] == ATTR_MAXBKEYRANGE || attr_ids[i] == ATTR_TRIMMED) {
-                    return ENGINE_EBADATTR;
-                }
-            }
-        }
-        /* get collection attributes */
-        attr_data->count = info->ccnt;
-        if (info->mcnt > 0) {
-            attr_data->maxcount = info->mcnt;
-        } else {
-            if (attr_data->type == ITEM_TYPE_LIST)
-               attr_data->maxcount = (int32_t)config->max_list_size;
-            else if (attr_data->type == ITEM_TYPE_SET)
-               attr_data->maxcount = (int32_t)config->max_set_size;
-            else if (attr_data->type == ITEM_TYPE_MAP)
-               attr_data->maxcount = (int32_t)config->max_map_size;
-            else if (attr_data->type == ITEM_TYPE_BTREE)
-               attr_data->maxcount = (int32_t)config->max_btree_size;
-            else
-               attr_data->maxcount = 0;
-        }
-        attr_data->ovflaction = info->ovflact;
-        attr_data->readable = (((info->mflags & COLL_META_FLAG_READABLE) != 0) ? 1 : 0);
 
-        if (attr_data->type == ITEM_TYPE_BTREE) {
-            btree_meta_info *binfo = (btree_meta_info *)info;
-            attr_data->maxbkeyrange = binfo->maxbkeyrange;
-            attr_data->trimmed = (((binfo->mflags & COLL_META_FLAG_TRIMMED) != 0) ? 1 : 0);
-            if (info->ccnt > 0) {
-                btree_elem_item *min_bkey_elem = do_btree_get_first_elem(binfo->root);
-                do_btree_get_bkey(min_bkey_elem, &attr_data->minbkey);
-                btree_elem_item *max_bkey_elem = do_btree_get_last_elem(binfo->root);
-                do_btree_get_bkey(max_bkey_elem, &attr_data->maxbkey);
-            }
+        ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+        if (attr_data->type == ITEM_TYPE_LIST) {
+            ret = list_coll_getattr(it, attr_data, attr_ids, attr_count);
+        } else if (attr_data->type == ITEM_TYPE_SET) {
+            ret = set_coll_getattr(it, attr_data, attr_ids, attr_count);
+        } else if (attr_data->type == ITEM_TYPE_MAP) {
+            ret = map_coll_getattr(it, attr_data, attr_ids, attr_count);
+        } else if (attr_data->type == ITEM_TYPE_BTREE) {
+            ret = btree_coll_getattr(it, attr_data, attr_ids, attr_count);
+        }
+        if (ret != ENGINE_SUCCESS) {
+            return ret;
         }
     } else {
         attr_data->type = ITEM_TYPE_KV;
@@ -7829,182 +8129,62 @@ ENGINE_ERROR_CODE item_getattr(const void *key, const uint32_t nkey,
 }
 
 static ENGINE_ERROR_CODE
-do_item_setattr_check(hash_item *it,
-                      ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
-                      item_attr *attr_data)
+do_item_setattr(hash_item *it, ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
+                item_attr *attr_data)
 {
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
-    coll_meta_info *info = NULL;
-    if (IS_COLL_ITEM(it)) {
-        info = (coll_meta_info *)item_get_meta(it);
-    }
+    bool expiretime_flag = false;
 
     for (int i = 0; i < attr_count; i++) {
-        /* Attributes for all items */
-#ifdef ENABLE_STICKY_ITEM
         if (attr_ids[i] == ATTR_EXPIRETIME) {
+#ifdef ENABLE_STICKY_ITEM
             /* do not allow sticky toggling */
             if ((it->exptime == (rel_time_t)-1 && attr_data->exptime != (rel_time_t)-1) ||
                 (it->exptime != (rel_time_t)-1 && attr_data->exptime == (rel_time_t)-1)) {
-                ret = ENGINE_EBADVALUE; break;
+                return ENGINE_EBADVALUE;
             }
-            continue;
-        }
 #endif
-        /* Attributes for collection items */
-        if (info == NULL) continue;
-        if (attr_ids[i] == ATTR_MAXCOUNT) {
-            attr_data->maxcount = do_coll_real_maxcount(it, attr_data->maxcount);
-            if (attr_data->maxcount > 0 && attr_data->maxcount < info->ccnt) {
-                ret = ENGINE_EBADVALUE; break;
-            }
-            continue;
-        }
-        if (attr_ids[i] == ATTR_OVFLACTION) {
-            if (attr_data->ovflaction == OVFL_ERROR) {
-                /* nothing to check */
-            } else if (attr_data->ovflaction == OVFL_HEAD_TRIM ||
-                       attr_data->ovflaction == OVFL_TAIL_TRIM) {
-                if (! IS_LIST_ITEM(it)) {
-                    ret = ENGINE_EBADVALUE; break;
-                }
-            } else if (attr_data->ovflaction == OVFL_SMALLEST_TRIM ||
-                       attr_data->ovflaction == OVFL_LARGEST_TRIM ||
-                       attr_data->ovflaction == OVFL_SMALLEST_SILENT_TRIM ||
-                       attr_data->ovflaction == OVFL_LARGEST_SILENT_TRIM) {
-                if (! IS_BTREE_ITEM(it)) {
-                    ret = ENGINE_EBADVALUE; break;
-                }
-            } else {
-                ret = ENGINE_EBADVALUE; break;
-            }
-            continue;
-        }
-        if (attr_ids[i] == ATTR_READABLE) {
-            if (attr_data->readable != 1) {
-                ret = ENGINE_EBADVALUE; break;
-            }
-            continue;
-        }
-        /* Attributes for only b+tree items */
-        if (!IS_BTREE_ITEM(it)) continue;
-        if (attr_ids[i] == ATTR_MAXBKEYRANGE) {
-            if (attr_data->maxbkeyrange.len != BKEY_NULL && info->ccnt > 0) {
-                btree_meta_info *binfo = (btree_meta_info *)info;
-                /* check bkey type of maxbkeyrange */
-                if ((binfo->bktype == BKEY_TYPE_UINT64 && attr_data->maxbkeyrange.len >  0) ||
-                    (binfo->bktype == BKEY_TYPE_BINARY && attr_data->maxbkeyrange.len == 0)) {
-                    ret = ENGINE_EBADVALUE; break;
-                }
-                /* New maxbkeyrange must contain the current bkey range */
-                if ((binfo->ccnt >= 2) && /* current key range exists */
-                    (attr_data->maxbkeyrange.len != binfo->maxbkeyrange.len ||
-                     BKEY_ISNE(attr_data->maxbkeyrange.val, attr_data->maxbkeyrange.len,
-                               binfo->maxbkeyrange.val, binfo->maxbkeyrange.len))) {
-                    bkey_t curbkeyrange;
-                    btree_elem_item *min_bkey_elem = do_btree_get_first_elem(binfo->root);
-                    btree_elem_item *max_bkey_elem = do_btree_get_last_elem(binfo->root);
-                    curbkeyrange.len = attr_data->maxbkeyrange.len;
-                    BKEY_DIFF(max_bkey_elem->data, max_bkey_elem->nbkey,
-                              min_bkey_elem->data, min_bkey_elem->nbkey,
-                              curbkeyrange.len, curbkeyrange.val);
-                    if (BKEY_ISGT(curbkeyrange.val, curbkeyrange.len,
-                                  attr_data->maxbkeyrange.val, attr_data->maxbkeyrange.len)) {
-                        ret = ENGINE_EBADVALUE; break;
-                    }
-                }
-            }
-            continue;
-        }
-    }
-    return ret;
-}
-
-static void
-do_item_setattr_exec(hash_item *it,
-                     ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
-                     item_attr *attr_data)
-{
-    coll_meta_info *info = NULL;
-    if (IS_COLL_ITEM(it)) {
-        info = (coll_meta_info *)item_get_meta(it);
-    }
-
-    for (int i = 0; i < attr_count; i++) {
-        /* Attributes for all items */
-        if (attr_ids[i] == ATTR_EXPIRETIME) {
             if (it->exptime != attr_data->exptime) {
-                rel_time_t before_exptime = it->exptime;
-                it->exptime = attr_data->exptime;
-                if (before_exptime == 0 && it->exptime != 0) {
-                    /* exptime: 0 => positive value */
-                    /* When change the exptime, we must consider that
-                     * an item, whose exptime is 0, can be below the lowMK of LRU.
-                     * If the exptime of the item is changed to a positive value,
-                     * it might not reclaimed even if it's expired in the future.
-                     * To resolve this, we move it to the top of LRU list.
-                     */
-                    do_item_update(it, true); /* force LRU update */
-                }
+                expiretime_flag = true;
             }
-            continue;
+            break; /* found ATTR_EXPIRETIME */
         }
-        /* Attributes for collection items */
-        if (info == NULL) continue;
-        if (attr_ids[i] == ATTR_MAXCOUNT) {
-            info->mcnt = attr_data->maxcount;
-            continue;
+    }
+
+    /* check and set collection attributes */
+    if (IS_COLL_ITEM(it)) {
+        ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+        if (IS_LIST_ITEM(it)) {
+            ret = list_coll_setattr(it, attr_data, attr_ids, attr_count);
+        } else if (IS_SET_ITEM(it)) {
+            ret = set_coll_setattr(it, attr_data, attr_ids, attr_count);
+        } else if (IS_MAP_ITEM(it)) {
+            ret = map_coll_setattr(it, attr_data, attr_ids, attr_count);
+        } else if (IS_BTREE_ITEM(it)) {
+            ret = btree_coll_setattr(it, attr_data, attr_ids, attr_count);
         }
-        if (attr_ids[i] == ATTR_OVFLACTION) {
-            if (IS_BTREE_ITEM(it)) {
-                btree_meta_info *binfo = (btree_meta_info *)info;
-                if (binfo->ovflact != attr_data->ovflaction) {
-                    binfo->mflags &= ~COLL_META_FLAG_TRIMMED; // clear trimmed
-                }
-            }
-            info->ovflact = attr_data->ovflaction;
-            if (IS_BTREE_ITEM(it)) {
-                if (forced_btree_ovflact != 0 && forced_action_pfxlen < it->nkey &&
-                    memcmp(forced_action_prefix, item_get_key(it), forced_action_pfxlen) == 0) {
-                    info->ovflact = forced_btree_ovflact;
-                }
-            }
-            continue;
+        if (ret != ENGINE_SUCCESS) {
+            return ret;
         }
-        if (attr_ids[i] == ATTR_READABLE) {
-            info->mflags |= COLL_META_FLAG_READABLE;
-            continue;
-        }
-        /* Attributes for only b+tree items */
-        if (!IS_BTREE_ITEM(it)) continue;
-        if (attr_ids[i] == ATTR_MAXBKEYRANGE) {
-            btree_meta_info *binfo = (btree_meta_info *)info;
-            if (attr_data->maxbkeyrange.len == BKEY_NULL) {
-                if (binfo->maxbkeyrange.len != BKEY_NULL) {
-                    binfo->maxbkeyrange = attr_data->maxbkeyrange;
-                    if (binfo->ccnt == 0) {
-                        if (binfo->bktype != BKEY_TYPE_UNKNOWN)
-                            binfo->bktype = BKEY_TYPE_UNKNOWN;
-                    }
-                }
-            } else { /* attr_data->maxbkeyrange.len != BKEY_NULL */
-                if (binfo->ccnt == 0) {
-                    /* just reset maxbkeyrange with new value */
-                    binfo->maxbkeyrange = attr_data->maxbkeyrange;
-                    if (attr_data->maxbkeyrange.len == 0) {
-                        binfo->bktype = BKEY_TYPE_UINT64;
-                    } else {
-                        binfo->bktype = BKEY_TYPE_BINARY;
-                    }
-                } else { /* binfo->ccnt > 0 */
-                    binfo->maxbkeyrange = attr_data->maxbkeyrange;
-                }
-            }
-            continue;
+    }
+
+    /* set the expiretime */
+    if (expiretime_flag) {
+        rel_time_t before_exptime = it->exptime;
+        it->exptime = attr_data->exptime;
+        if (before_exptime == 0 && it->exptime != 0) {
+            /* exptime: 0 => positive value */
+            /* When change the exptime, we must consider that
+             * an item, whose exptime is 0, can be below the lowMK of LRU.
+             * If the exptime of the item is changed to a positive value,
+             * it might not reclaimed even if it's expired in the future.
+             * To resolve this, we move it to the top of LRU list.
+             */
+            do_item_update(it, true); /* force LRU update */
         }
     }
 
     CLOG_ITEM_SETATTR(it, attr_ids, attr_count);
+    return ENGINE_SUCCESS;
 }
 
 ENGINE_ERROR_CODE item_setattr(const void *key, const uint32_t nkey,
@@ -8020,10 +8200,9 @@ ENGINE_ERROR_CODE item_setattr(const void *key, const uint32_t nkey,
     if (it == NULL) {
         ret = ENGINE_KEY_ENOENT;
     } else {
-        ret = do_item_setattr_check(it, attr_ids, attr_count, attr_data);
-        if (ret == ENGINE_SUCCESS) {
-            /* do setattr operation */
-            do_item_setattr_exec(it, attr_ids, attr_count, attr_data);
+        ret = do_item_setattr(it, attr_ids, attr_count, attr_data);
+        if (ret != ENGINE_SUCCESS) {
+            /* what should we do ? nothing */
         }
         do_item_release(it);
     }
@@ -8085,179 +8264,6 @@ void coll_elem_result_free(elems_result_t *eresult)
     }
 }
 
-/* See do_list_elem_delete. */
-static void do_list_elem_get_all(list_meta_info *info, elems_result_t *eresult)
-{
-    assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
-    list_elem_item *elem;
-
-    elem = do_list_elem_find(info, 0);
-    while (elem != NULL) {
-        elem->refcount++;
-        eresult->elem_array[eresult->elem_count++] = elem;
-        elem = elem->next;
-    }
-    assert(eresult->elem_count == info->ccnt);
-}
-
-/* See do_set_elem_traverse_dfs and do_set_elem_link. do_set_elem_traverse_dfs
- * can visit all elements, but only supports get and delete operations.
- * Do something similar and visit all elements.
- */
-static void do_set_elem_get_all(set_meta_info *info, elems_result_t *eresult)
-{
-    assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
-    set_hash_node *node;
-    set_elem_item *elem;
-    int cur_depth, i;
-    bool push;
-
-    /* Temporay stack we use to do dfs. Static is ugly but is okay...
-     * This function runs with the cache lock acquired.
-     */
-    static int stack_max = 0;
-    static struct {
-        set_hash_node *node;
-        int idx;
-    } *stack = NULL;
-
-    node = info->root;
-    cur_depth = 0;
-    push = true;
-    while (node != NULL) {
-        if (push) {
-            push = false;
-            if (stack_max <= cur_depth) {
-                stack_max += 16;
-                stack = realloc(stack, sizeof(*stack) * stack_max);
-            }
-            stack[cur_depth].node = node;
-            stack[cur_depth].idx = 0;
-        }
-
-        /* Scan the current node */
-        for (i = stack[cur_depth].idx; i < SET_HASHTAB_SIZE; i++) {
-            if (node->hcnt[i] >= 0) {
-                /* Hash chain.  Insert all elements on the chain into the
-                 * to-be-copied list.
-                 */
-                for (elem = node->htab[i]; elem != NULL; elem = elem->next) {
-                    elem->refcount++;
-                    eresult->elem_array[eresult->elem_count++] = elem;
-                }
-            }
-            else if (node->htab[i] != NULL) {
-                /* Another hash node. Go down */
-                stack[cur_depth].idx = i+1;
-                push = true;
-                node = node->htab[i];
-                cur_depth++;
-                break;
-            }
-        }
-
-        /* Scannned everything in this node. Go up. */
-        if (i >= SET_HASHTAB_SIZE) {
-            cur_depth--;
-            if (cur_depth < 0)
-                node = NULL; /* done */
-            else
-                node = stack[cur_depth].node;
-        }
-    }
-    assert(eresult->elem_count == info->ccnt);
-}
-
-/* See do_map_elem_traverse_dfs and do_map_elem_link. do_map_elem_traverse_dfs
- * can visit all elements, but only supports get and delete operations.
- * Do something similar and visit all elements.
- */
-static void do_map_elem_get_all(map_meta_info *info, elems_result_t *eresult)
-{
-    assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
-    map_hash_node *node;
-    map_elem_item *elem;
-    int cur_depth, i;
-    bool push;
-
-    /* Temporay stack we use to do dfs. Static is ugly but is okay...
-     * This function runs with the cache lock acquired.
-     */
-    static int stack_max = 0;
-    static struct {
-        map_hash_node *node;
-        int idx;
-    } *stack = NULL;
-
-    node = info->root;
-    cur_depth = 0;
-    push = true;
-    while (node != NULL) {
-        if (push) {
-            push = false;
-            if (stack_max <= cur_depth) {
-                stack_max += 16;
-                stack = realloc(stack, sizeof(*stack) * stack_max);
-            }
-            stack[cur_depth].node = node;
-            stack[cur_depth].idx = 0;
-        }
-
-        /* Scan the current node */
-        for (i = stack[cur_depth].idx; i < MAP_HASHTAB_SIZE; i++) {
-            if (node->hcnt[i] >= 0) {
-                /* Hash chain.  Insert all elements on the chain into the
-                 * to-be-copied list.
-                 */
-                for (elem = node->htab[i]; elem != NULL; elem = elem->next) {
-                    elem->refcount++;
-                    eresult->elem_array[eresult->elem_count++] = elem;
-                }
-            }
-            else if (node->htab[i] != NULL) {
-                /* Another hash node.  Go down */
-                stack[cur_depth].idx = i+1;
-                push = true;
-                node = node->htab[i];
-                cur_depth++;
-                break;
-            }
-        }
-
-        /* Scannned everything in this node.  Go up. */
-        if (i >= MAP_HASHTAB_SIZE) {
-            cur_depth--;
-            if (cur_depth < 0)
-                node = NULL; /* done */
-            else
-                node = stack[cur_depth].node;
-        }
-    }
-    assert(eresult->elem_count == info->ccnt);
-}
-
-/* Scan the whole btree with the cache lock acquired.
- * We only build the table of the current elements.
- * See do_btree_elem_delete and do_btree_multi_elem_unlink.
- * They show how to traverse the btree.
- * FIXME. IS THIS STILL RIGHT AFTER THE MERGE? do_btree_multi_elem_unlink is gone.
- */
-static void do_btree_elem_get_all(btree_meta_info *info, elems_result_t *eresult)
-{
-    assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
-    btree_elem_item *elem;
-    btree_elem_posi  posi;
-
-    elem = do_btree_find_first(info->root, BKEY_RANGE_TYPE_ASC, NULL, &posi, false);
-    while (elem != NULL) {
-        elem->refcount++;
-        eresult->elem_array[eresult->elem_count++] = elem;
-        /* Never have to go backward?  FIXME */
-        elem = do_btree_find_next(&posi, NULL);
-    }
-    assert(eresult->elem_count == info->ccnt);
-}
-
 #define GET_ALIGN_SIZE(s,a) \
         (((s)%(a)) == 0 ? (s) : (s)+(a)-((s)%(a)))
 ENGINE_ERROR_CODE coll_elem_get_all(hash_item *it, elems_result_t *eresult, bool lock_hold)
@@ -8284,10 +8290,10 @@ ENGINE_ERROR_CODE coll_elem_get_all(hash_item *it, elems_result_t *eresult, bool
             }
         }
         /* get all elements */
-        if (IS_LIST_ITEM(it))       do_list_elem_get_all((list_meta_info*)info, eresult);
-        else if (IS_SET_ITEM(it))   do_set_elem_get_all((set_meta_info*)info, eresult);
-        else if (IS_MAP_ITEM(it))   do_map_elem_get_all((map_meta_info*)info, eresult);
-        else if (IS_BTREE_ITEM(it)) do_btree_elem_get_all((btree_meta_info*)info, eresult);
+        if (IS_LIST_ITEM(it))       list_elem_get_all((list_meta_info*)info, eresult);
+        else if (IS_SET_ITEM(it))   set_elem_get_all((set_meta_info*)info, eresult);
+        else if (IS_MAP_ITEM(it))   map_elem_get_all((map_meta_info*)info, eresult);
+        else if (IS_BTREE_ITEM(it)) btree_elem_get_all((btree_meta_info*)info, eresult);
     } while(0);
     if (lock_hold) UNLOCK_CACHE();
 
@@ -8398,31 +8404,6 @@ bool item_is_valid(hash_item* item)
 uint32_t item_ntotal(hash_item *item)
 {
     return (uint32_t)ITEM_ntotal(item);
-}
-
-uint32_t list_elem_ntotal(list_elem_item *elem)
-{
-    return do_list_elem_ntotal(elem);
-}
-
-uint32_t set_elem_ntotal(set_elem_item *elem)
-{
-    return do_set_elem_ntotal(elem);
-}
-
-uint32_t map_elem_ntotal(map_elem_item *elem)
-{
-    return do_map_elem_ntotal(elem);
-}
-
-uint32_t btree_elem_ntotal(btree_elem_item *elem)
-{
-    return do_btree_elem_ntotal(elem);
-}
-
-uint8_t  btree_real_nbkey(uint8_t nbkey)
-{
-    return (uint8_t)BTREE_REAL_NBKEY(nbkey);
 }
 
 /*
@@ -9028,14 +9009,26 @@ void item_stats_dump(struct default_engine *engine,
 /*
  * MAP collection manangement
  */
+/* map element previous info internally used */
+typedef struct _map_prev_info {
+    map_hash_node *node;
+    map_elem_item *prev;
+    uint16_t       hidx;
+} map_prev_info;
+
+#define MAP_GET_HASHIDX(hval, hdepth) \
+        (((hval) & (MAP_HASHIDX_MASK << ((hdepth)*4))) >> ((hdepth)*4))
+
 static inline int map_hash_eq(const int h1, const void *v1, size_t vlen1,
                               const int h2, const void *v2, size_t vlen2)
 {
     return (h1 == h2 && vlen1 == vlen2 && memcmp(v1, v2, vlen1) == 0);
 }
 
-#define MAP_GET_HASHIDX(hval, hdepth) \
-        (((hval) & (MAP_HASHIDX_MASK << ((hdepth)*4))) >> ((hdepth)*4))
+static inline uint32_t do_map_elem_ntotal(map_elem_item *elem)
+{
+    return sizeof(map_elem_item) + elem->nfield + elem->nbytes;
+}
 
 static ENGINE_ERROR_CODE do_map_item_find(const void *key, const uint32_t nkey,
                                           bool do_update, hash_item **item)
@@ -9914,6 +9907,140 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
     return ret;
 }
 
+uint32_t map_elem_delete_with_count(map_meta_info *info, const uint32_t count)
+{
+    return do_map_elem_delete(info, count, ELEM_DELETE_COLL);
+}
+
+/* See do_map_elem_traverse_dfs and do_map_elem_link. do_map_elem_traverse_dfs
+ * can visit all elements, but only supports get and delete operations.
+ * Do something similar and visit all elements.
+ */
+void map_elem_get_all(map_meta_info *info, elems_result_t *eresult)
+{
+    assert(eresult->elem_arrsz >= info->ccnt && eresult->elem_count == 0);
+    map_hash_node *node;
+    map_elem_item *elem;
+    int cur_depth, i;
+    bool push;
+
+    /* Temporay stack we use to do dfs. Static is ugly but is okay...
+     * This function runs with the cache lock acquired.
+     */
+    static int stack_max = 0;
+    static struct {
+        map_hash_node *node;
+        int idx;
+    } *stack = NULL;
+
+    node = info->root;
+    cur_depth = 0;
+    push = true;
+    while (node != NULL) {
+        if (push) {
+            push = false;
+            if (stack_max <= cur_depth) {
+                stack_max += 16;
+                stack = realloc(stack, sizeof(*stack) * stack_max);
+            }
+            stack[cur_depth].node = node;
+            stack[cur_depth].idx = 0;
+        }
+
+        /* Scan the current node */
+        for (i = stack[cur_depth].idx; i < MAP_HASHTAB_SIZE; i++) {
+            if (node->hcnt[i] >= 0) {
+                /* Hash chain.  Insert all elements on the chain into the
+                 * to-be-copied list.
+                 */
+                for (elem = node->htab[i]; elem != NULL; elem = elem->next) {
+                    elem->refcount++;
+                    eresult->elem_array[eresult->elem_count++] = elem;
+                }
+            }
+            else if (node->htab[i] != NULL) {
+                /* Another hash node.  Go down */
+                stack[cur_depth].idx = i+1;
+                push = true;
+                node = node->htab[i];
+                cur_depth++;
+                break;
+            }
+        }
+
+        /* Scannned everything in this node.  Go up. */
+        if (i >= MAP_HASHTAB_SIZE) {
+            cur_depth--;
+            if (cur_depth < 0)
+                node = NULL; /* done */
+            else
+                node = stack[cur_depth].node;
+        }
+    }
+    assert(eresult->elem_count == info->ccnt);
+}
+
+uint32_t map_elem_ntotal(map_elem_item *elem)
+{
+    return do_map_elem_ntotal(elem);
+}
+
+ENGINE_ERROR_CODE map_coll_getattr(hash_item *it, item_attr *attrp,
+                                   ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
+{
+    map_meta_info *info = (map_meta_info *)item_get_meta(it);
+
+    /* check attribute validation */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXBKEYRANGE || attr_ids[i] == ATTR_TRIMMED) {
+            return ENGINE_EBADATTR;
+        }
+    }
+
+    /* get collection attributes */
+    attrp->count = info->ccnt;
+    attrp->maxcount = (info->mcnt > 0) ? info->mcnt : (int32_t)config->max_map_size;
+    attrp->ovflaction = info->ovflact;
+    attrp->readable = ((info->mflags & COLL_META_FLAG_READABLE) != 0) ? 1 : 0;
+    return ENGINE_SUCCESS;
+}
+
+ENGINE_ERROR_CODE map_coll_setattr(hash_item *it, item_attr *attrp,
+                                   ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt)
+{
+    map_meta_info *info = (map_meta_info *)item_get_meta(it);
+
+    /* check the validity of given attributs */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXCOUNT) {
+            attrp->maxcount = do_map_real_maxcount(attrp->maxcount);
+            if (attrp->maxcount > 0 && attrp->maxcount < info->ccnt) {
+                return ENGINE_EBADVALUE;
+            }
+        } else if (attr_ids[i] == ATTR_OVFLACTION) {
+            if (attrp->ovflaction != OVFL_ERROR) {
+                return ENGINE_EBADVALUE;
+            }
+        } else if (attr_ids[i] == ATTR_READABLE) {
+            if (attrp->readable != 1) {
+                return ENGINE_EBADVALUE;
+            }
+        }
+    }
+
+    /* set the attributes */
+    for (int i = 0; i < attr_cnt; i++) {
+        if (attr_ids[i] == ATTR_MAXCOUNT) {
+            info->mcnt = attrp->maxcount;
+        } else if (attr_ids[i] == ATTR_OVFLACTION) {
+            info->ovflact = attrp->ovflaction;
+        } else if (attr_ids[i] == ATTR_READABLE) {
+            info->mflags |= COLL_META_FLAG_READABLE;
+        }
+    }
+    return ENGINE_SUCCESS;
+}
+
 #ifdef ENABLE_PERSISTENCE
 //#define DEBUG_ITEM_APPLY
 
@@ -10679,5 +10806,4 @@ item_apply_flush(const char *prefix, const int nprefix)
     UNLOCK_CACHE();
     return ret;
 }
-
 #endif
