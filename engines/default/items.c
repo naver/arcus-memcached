@@ -42,9 +42,6 @@ static void item_link_q(hash_item *it);
 static void item_unlink_q(hash_item *it);
 static ENGINE_ERROR_CODE do_item_link(hash_item *it);
 static void do_item_unlink(hash_item *it, enum item_unlink_cause cause);
-static inline void do_coll_elem_delete(coll_meta_info *info, int type, uint32_t count);
-static uint32_t do_map_elem_delete(map_meta_info *info,
-                                   const uint32_t count, enum elem_delete_cause cause);
 
 extern int genhash_string_hash(const void* p, size_t nkey);
 
@@ -533,6 +530,25 @@ static hash_item *pop_coll_del_queue(void)
     return it;
 }
 
+static uint32_t do_coll_elem_delete_with_count(hash_item *it, uint32_t count)
+{
+    coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
+    uint32_t ndeleted = 0;
+
+    if (info->ccnt > 0) {
+        if (IS_BTREE_ITEM(it)) {
+            ndeleted = btree_elem_delete_with_count((void *)info, count);
+        } else if (IS_SET_ITEM(it)) {
+            ndeleted = set_elem_delete_with_count((void *)info, count);
+        } else if (IS_MAP_ITEM(it)) {
+            ndeleted = map_elem_delete_with_count((void *)info, count);
+        } else if (IS_LIST_ITEM(it)) {
+            ndeleted = list_elem_delete_with_count((void *)info, count);
+        }
+    }
+    return ndeleted;
+}
+
 static bool do_item_isvalid(hash_item *it, rel_time_t current_time)
 {
     /* check if it's expired */
@@ -579,10 +595,7 @@ static hash_item *do_item_reclaim(hash_item *it,
 #endif
 
     if (IS_COLL_ITEM(it)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        if (info->ccnt > 0) {
-            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 500);
-        }
+        (void)do_coll_elem_delete_with_count(it, 500);
     }
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 
@@ -598,10 +611,7 @@ static void do_item_invalidate(hash_item *it, const unsigned int lruid, bool imm
 
     /* it->refcount == 0 */
     if (immediate && IS_COLL_ITEM(it)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        if (info->ccnt > 0) {
-            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 500);
-        }
+        (void)do_coll_elem_delete_with_count(it, 500);
     }
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 }
@@ -614,10 +624,7 @@ static void do_item_evict(hash_item *it, const unsigned int lruid,
 
     /* unlink the item */
     if (IS_COLL_ITEM(it)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        if (info->ccnt > 0) {
-            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 500);
-        }
+        (void)do_coll_elem_delete_with_count(it, 500);
     }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
@@ -631,10 +638,7 @@ static void do_item_repair(hash_item *it, const unsigned int lruid)
 
     /* unlink the item */
     if (IS_COLL_ITEM(it)) {
-        coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
-        if (info->ccnt > 0) {
-            do_coll_elem_delete(info, GET_ITEM_TYPE(it), 500);
-        }
+        (void)do_coll_elem_delete_with_count(it, 500);
     }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
@@ -5894,28 +5898,6 @@ scan_next:
 /*
  * Item Management Daemon
  */
-static inline void do_coll_elem_delete(coll_meta_info *info, int type, uint32_t count)
-{
-    assert(info->ccnt > 0);
-
-    switch (type) {
-      case ITEM_TYPE_BTREE:
-           (void)do_btree_elem_delete((void *)info, BKEY_RANGE_TYPE_ASC, NULL,
-                                      NULL, 0, count, NULL, ELEM_DELETE_COLL);
-           break;
-      case ITEM_TYPE_SET:
-           (void)do_set_elem_delete((void *)info, count, ELEM_DELETE_COLL);
-           break;
-      case ITEM_TYPE_MAP:
-           (void)do_map_elem_delete((void *)info, count, ELEM_DELETE_COLL);
-           break;
-      case ITEM_TYPE_LIST:
-           (void)do_list_elem_delete((void *)info, 0, count, ELEM_DELETE_COLL);
-           break;
-      default: break;
-    }
-}
-
 static void coll_del_thread_sleep(void)
 {
     struct timeval  tv;
@@ -5944,9 +5926,8 @@ static void *collection_delete_thread(void *arg)
 {
     struct default_engine *engine = arg;
     hash_item      *it;
-    coll_meta_info *info;
     struct timespec sleep_time = {0, 0};
-    ENGINE_ITEM_TYPE item_type;
+    uint32_t        delete_count;
     int             current_ssl;
     uint32_t        evict_count;
     uint32_t        bg_evict_count = 0;
@@ -5957,21 +5938,18 @@ static void *collection_delete_thread(void *arg)
     while (engine->initialized) {
         it = pop_coll_del_queue();
         if (it != NULL) {
-            item_type = GET_ITEM_TYPE(it);
-
             LOCK_CACHE();
-            info = (coll_meta_info *)item_get_meta(it);
-            while (info->ccnt > 0) {
-                do_coll_elem_delete(info, item_type, 100);
-                if (info->ccnt > 0) {
-                    UNLOCK_CACHE();
-                    if (slabs_space_shortage_level() <= 2) {
-                        sleep_time.tv_nsec = 10000; /* 10 us */
-                        nanosleep(&sleep_time, NULL);
-                    }
-                    LOCK_CACHE();
+            delete_count = do_coll_elem_delete_with_count(it, 100);
+            while (delete_count >= 100) {
+                UNLOCK_CACHE();
+                if (slabs_space_shortage_level() <= 2) {
+                    sleep_time.tv_nsec = 10000; /* 10 us */
+                    nanosleep(&sleep_time, NULL);
                 }
+                LOCK_CACHE();
+                delete_count = do_coll_elem_delete_with_count(it, 100);
             }
+            /* it has become an empty collection. */
             do_item_free(it);
             UNLOCK_CACHE();
             continue;
@@ -6844,6 +6822,11 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
     return ret;
 }
 
+uint32_t list_elem_delete_with_count(list_meta_info *info, const uint32_t count)
+{
+    return do_list_elem_delete(info, 0, count, ELEM_DELETE_COLL);
+}
+
 /* See do_list_elem_delete. */
 void list_elem_get_all(list_meta_info *info, elems_result_t *eresult)
 {
@@ -7156,6 +7139,11 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
         PERSISTENCE_ACTION_END(ret);
     }
     return ret;
+}
+
+uint32_t set_elem_delete_with_count(set_meta_info *info, const uint32_t count)
+{
+    return do_set_elem_delete(info, count, ELEM_DELETE_COLL);
 }
 
 /* See do_set_elem_traverse_dfs and do_set_elem_link. do_set_elem_traverse_dfs
@@ -7911,6 +7899,12 @@ ENGINE_ERROR_CODE btree_elem_smget(token_t *key_array, const int key_count,
     return ret;
 }
 #endif
+
+uint32_t btree_elem_delete_with_count(btree_meta_info *info, const uint32_t count)
+{
+    return do_btree_elem_delete(info, BKEY_RANGE_TYPE_ASC, NULL, NULL,
+                                0, count, NULL, ELEM_DELETE_COLL);
+}
 
 /* Scan the whole btree with the cache lock acquired.
  * We only build the table of the current elements.
@@ -9908,6 +9902,11 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
         PERSISTENCE_ACTION_END(ret);
     }
     return ret;
+}
+
+uint32_t map_elem_delete_with_count(map_meta_info *info, const uint32_t count)
+{
+    return do_map_elem_delete(info, count, ELEM_DELETE_COLL);
 }
 
 /* See do_map_elem_traverse_dfs and do_map_elem_link. do_map_elem_traverse_dfs
