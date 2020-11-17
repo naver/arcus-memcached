@@ -1448,7 +1448,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     /* setting main zk */
     main_zk = zinfo;
 
-    /* check zk root directory and get the serice code */
+    /* check zk root directory and get the service code */
     if (zk_root == NULL) {
         zk_root = "/arcus"; /* set zk root directory */
         if (arcus_check_server_mapping(main_zk->zh, zk_root) != 0) {
