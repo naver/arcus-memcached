@@ -143,6 +143,16 @@ default_engine_la_SOURCES= \
                     engines/default/items.h \
                     engines/default/item_clog.c \
                     engines/default/item_clog.h \
+                    engines/default/item_base.c \
+                    engines/default/item_base.h \
+                    engines/default/coll_list.c \
+                    engines/default/coll_list.h \
+                    engines/default/coll_set.c \
+                    engines/default/coll_set.h \
+                    engines/default/coll_map.c \
+                    engines/default/coll_map.h \
+                    engines/default/coll_btree.c \
+                    engines/default/coll_btree.h \
                     engines/default/slabs.c \
                     engines/default/slabs.h
 default_engine_la_DEPENDENCIES= libmcd_util.la

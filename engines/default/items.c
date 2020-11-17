@@ -34,12 +34,20 @@
 #define PERSISTENCE_ACTION_BEGIN(a, b)
 #define PERSISTENCE_ACTION_END(a)
 
+#ifdef REORGANIZE_ITEM_BASE
+#else
 /* Forward Declarations */
 static void do_item_unlink(hash_item *it, enum item_unlink_cause cause);
+#endif
 
+#ifdef REORGANIZE_ITEM_COLL // SET, MAP
+#else
 /* used by set and map collection */
 extern int genhash_string_hash(const void* p, size_t nkey);
+#endif
 
+#ifdef REORGANIZE_ITEM_BASE
+#else
 /* We only reposition items in the LRU queue if they haven't been repositioned
  * in this many seconds. That saves us from churning on frequently-accessed
  * items.
@@ -50,7 +58,10 @@ extern int genhash_string_hash(const void* p, size_t nkey);
  * harvesting it on a low memory condition.
  */
 #define TAIL_REPAIR_TIME (3 * 3600)
+#endif
 
+#ifdef REORGANIZE_ITEM_COLL // BTREE
+#else
 /* bkey type */
 #define BKEY_TYPE_UNKNOWN 0
 #define BKEY_TYPE_UINT64  1
@@ -110,7 +121,10 @@ static uint64_t      bkey_uint64_min;
 static uint64_t      bkey_uint64_max;
 static unsigned char bkey_binary_min[MIN_BKEY_LENG];
 static unsigned char bkey_binary_max[MAX_BKEY_LENG];
+#endif
 
+#ifdef REORGANIZE_ITEM_BASE
+#else
 /* item queue */
 typedef struct {
    hash_item   *head;
@@ -125,15 +139,21 @@ static pthread_cond_t  coll_del_cond;
 static pthread_t       coll_del_tid; /* thread id */
 static bool            coll_del_sleep = false;
 static volatile bool   coll_del_thread_running = false;
+#endif
 
 static struct default_engine *engine=NULL;
 static struct engine_config *config=NULL; // engine config
 static struct items         *itemsp=NULL;
+#ifdef REORGANIZE_ITEM_BASE
+#else
 static struct engine_stats  *statsp=NULL;
 static SERVER_STAT_API      *svstat=NULL; // server stat api
+#endif
 static SERVER_CORE_API      *svcore=NULL; // server core api
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
+#ifdef REORGANIZE_ITEM_COLL // BTREE
+#else
 /* Temporary Facility
  * forced btree overflow action
  */
@@ -196,7 +216,10 @@ static void _setif_forced_btree_overflow_action(btree_meta_info *info,
         info->ovflact = forced_btree_ovflact;
     }
 }
+#endif
 
+#ifdef REORGANIZE_ITEM_BASE
+#else
 /*
  * Static functions
  */
@@ -1318,6 +1341,7 @@ static void do_item_release(hash_item *it)
         }
     }
 }
+#endif
 
 /*
  * Stores an item in the cache according to the semantics of one of the set
@@ -1524,6 +1548,8 @@ static ENGINE_ERROR_CODE do_add_delta(hash_item *it, const bool incr, const int6
     return ENGINE_SUCCESS;
 }
 
+#ifdef REORGANIZE_ITEM_COLL // LIST
+#else
 /*
  * LIST collection management
  */
@@ -1822,7 +1848,10 @@ static ENGINE_ERROR_CODE do_list_elem_insert(hash_item *it,
     assert(ret == ENGINE_SUCCESS);
     return ret;
 }
+#endif
 
+#ifdef REORGANIZE_ITEM_COLL // SET
+#else
 /*
  * SET collection manangement
  */
@@ -2404,7 +2433,10 @@ static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem,
     CLOG_SET_ELEM_INSERT(info, elem);
     return ENGINE_SUCCESS;
 }
+#endif
 
+#ifdef REORGANIZE_ITEM_COLL // BTREE
+#else
 /*
  * B+TREE collection management
  */
@@ -5880,7 +5912,10 @@ scan_next:
     return ret;
 }
 #endif
+#endif
 
+#ifdef REORGANIZE_ITEM_BASE
+#else
 /*
  * Item Management Daemon
  */
@@ -6000,6 +6035,7 @@ void coll_del_thread_wakeup(void)
     }
     pthread_mutex_unlock(&coll_del_lock);
 }
+#endif
 
 /********************************* ITEM ACCESS *******************************/
 
@@ -6444,15 +6480,24 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine_ptr)
     engine = engine_ptr;
     config = &engine->config;
     itemsp = &engine->items;
+#ifdef REORGANIZE_ITEM_BASE
+#else
     statsp = &engine->stats;
+#endif
     svcore = engine->server.core;
+#ifdef REORGANIZE_ITEM_BASE
+#else
     svstat = engine->server.stat;
+#endif
     logger = engine->server.log->get_logger();
 
+#ifdef REORGANIZE_ITEM_BASE
+#else
     pthread_mutex_init(&coll_del_lock, NULL);
     pthread_cond_init(&coll_del_cond, NULL);
     coll_del_queue.head = coll_del_queue.tail = NULL;
     coll_del_queue.size = 0;
+#endif
 
     /* check maximum collection size */
     assert(DEFAULT_LIST_SIZE <= config->max_list_size);
@@ -6470,14 +6515,30 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine_ptr)
                 DEFAULT_BTREE_SIZE, config->max_btree_size);
 
     item_clog_init(engine);
+#ifdef REORGANIZE_ITEM_BASE
+    if (item_base_init(engine) < 0) {
+        return ENGINE_FAILED;
+    }
+#endif
+#ifdef REORGANIZE_ITEM_COLL
+    item_list_coll_init(engine);
+    item_set_coll_init(engine);
+    item_map_coll_init(engine);
+    item_btree_coll_init(engine);
+#endif
 
+#ifdef REORGANIZE_ITEM_BASE
+#else
     int ret = pthread_create(&coll_del_tid, NULL, collection_delete_thread, engine);
     if (ret != 0) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Can't create thread: %s\n", strerror(ret));
         return ENGINE_FAILED;
     }
+#endif
 
+#ifdef REORGANIZE_ITEM_COLL // BTREE
+#else
     /* check forced btree overflow action */
     _check_forced_btree_overflow_action();
 
@@ -6495,6 +6556,7 @@ ENGINE_ERROR_CODE item_init(struct default_engine *engine_ptr)
         uint64_t val2 = 20;
         assert(UINT64_COMPARE_OP[COMPARE_OP_LT](&val1, &val2) == true);
     }
+#endif
 
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM module initialized.\n");
     return ENGINE_SUCCESS;
@@ -6510,10 +6572,13 @@ void item_final(struct default_engine *engine_ptr)
     if (engine->dumper.running) {
         item_stop_dump(engine);
     }
+#ifdef REORGANIZE_ITEM_BASE
+#else
     if (coll_del_thread_running) {
         coll_del_thread_wakeup();
         pthread_join(coll_del_tid, NULL);
     }
+#endif
 
     /* wait until scrubber thread is finished */
     int sleep_count = 0;
@@ -6537,10 +6602,21 @@ void item_final(struct default_engine *engine_ptr)
                 "Waited %d ms for dumper to be stopped.\n", sleep_count);
     }
 
+#ifdef REORGANIZE_ITEM_BASE
+    item_base_final(engine);
+#endif
+#ifdef REORGANIZE_ITEM_COLL
+    item_list_coll_final(engine);
+    item_set_coll_final(engine);
+    item_map_coll_final(engine);
+    item_btree_coll_final(engine);
+#endif
     item_clog_final(engine);
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM module destroyed.\n");
 }
 
+#ifdef REORGANIZE_ITEM_COLL // LIST
+#else
 /*
  * LIST Interface Functions
  */
@@ -6867,7 +6943,10 @@ ENGINE_ERROR_CODE list_coll_setattr(hash_item *it, item_attr *attrp,
     }
     return ENGINE_SUCCESS;
 }
+#endif
 
+#ifdef REORGANIZE_ITEM_COLL // SET
+#else
 /*
  * SET Interface Functions
  */
@@ -7220,7 +7299,10 @@ ENGINE_ERROR_CODE set_coll_setattr(hash_item *it, item_attr *attrp,
     }
     return ENGINE_SUCCESS;
 }
+#endif
 
+#ifdef REORGANIZE_ITEM_COLL // BTREE
+#else
 /*
  * B+TREE Interface Functions
  */
@@ -7976,6 +8058,7 @@ ENGINE_ERROR_CODE btree_coll_setattr(hash_item *it, item_attr *attrp,
     }
     return ENGINE_SUCCESS;
 }
+#endif
 
 /*
  * ITEM ATTRIBUTE Interface Functions
@@ -8267,6 +8350,8 @@ void item_conf_set_evict_to_free(bool value)
     UNLOCK_CACHE();
 }
 
+#ifdef REORGANIZE_ITEM_BASE
+#else
 /*
  * Item access functions
  */
@@ -8328,6 +8413,7 @@ bool item_is_valid(hash_item* item)
         return false;
     }
 }
+#endif
 
 /*
  * Item Scan Facility
@@ -8929,6 +9015,8 @@ void item_stats_dump(struct default_engine *engine,
     pthread_mutex_unlock(&dumper->lock);
 }
 
+#ifdef REORGANIZE_ITEM_COLL // MAP
+#else
 /*
  * MAP collection manangement
  */
@@ -9946,3 +10034,4 @@ ENGINE_ERROR_CODE map_coll_setattr(hash_item *it, item_attr *attrp,
     }
     return ENGINE_SUCCESS;
 }
+#endif
