@@ -10076,8 +10076,9 @@ item_apply_kv_link(const char *key, const uint32_t nkey,
         if (ret == ENGINE_SUCCESS) {
             /* Override the cas with the master's cas. */
             item_set_cas(new_it, cas);
+        } else {
+            do_item_free(new_it);
         }
-        do_item_release(new_it);
     } else {
         ret = ENGINE_ENOMEM;
         if (old_it) { /* Remove inconsistent hash_item */
@@ -10113,7 +10114,9 @@ item_apply_list_link(const char *key, const uint32_t nkey, item_attr *attrp)
     if (new_it) {
         /* Link the new item into the hash table */
         ret = do_item_link(new_it);
-        do_item_release(new_it);
+        if (ret != ENGINE_SUCCESS) {
+            do_item_free(new_it);
+        }
     } else {
         ret = ENGINE_ENOMEM;
     }
@@ -10152,7 +10155,9 @@ item_apply_set_link(const char *key, const uint32_t nkey, item_attr *attrp)
     if (new_it) {
         /* Link the new item into the hash table */
         ret = do_item_link(new_it);
-        do_item_release(new_it);
+        if (ret != ENGINE_SUCCESS) {
+            do_item_free(new_it);
+        }
     } else {
         ret = ENGINE_ENOMEM;
     }
@@ -10191,7 +10196,9 @@ item_apply_map_link(const char *key, const uint32_t nkey, item_attr *attrp)
     if (new_it) {
         /* Link the new item into the hash table */
         ret = do_item_link(new_it);
-        do_item_release(new_it);
+        if (ret != ENGINE_SUCCESS) {
+            do_item_free(new_it);
+        }
     } else {
         ret = ENGINE_ENOMEM;
     }
@@ -10238,7 +10245,9 @@ item_apply_btree_link(const char *key, const uint32_t nkey, item_attr *attrp)
         }
         /* Link the new item into the hash table */
         ret = do_item_link(new_it);
-        do_item_release(new_it);
+        if (ret != ENGINE_SUCCESS) {
+            do_item_free(new_it);
+        }
     } else {
         ret = ENGINE_ENOMEM;
     }
