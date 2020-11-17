@@ -18,6 +18,13 @@
 #ifndef ITEMS_H
 #define ITEMS_H
 
+#ifdef REORGANIZE_ITEM_BASE
+#include "item_base.h"
+#include "coll_list.h"
+#include "coll_set.h"
+#include "coll_map.h"
+#include "coll_btree.h"
+#else
 /* max collection size */
 #define MINIMUM_MAX_COLL_SIZE  10000
 #define MAXIMUM_MAX_COLL_SIZE  1000000
@@ -346,6 +353,7 @@ struct items {
    unsigned int sticky_sizes[MAX_SLAB_CLASSES];
    itemstats_t  itemstats[MAX_SLAB_CLASSES];
 };
+#endif
 
 /*
  * You should not try to aquire any of the item locks before calling these
@@ -466,12 +474,17 @@ ENGINE_ERROR_CODE item_arithmetic(const void *key, const uint32_t nkey,
 ENGINE_ERROR_CODE item_delete(const void *key, const uint32_t nkey,
                               uint64_t cas, const void *cookie);
 
+#ifdef REORGANIZE_ITEM_BASE
+#else
 void coll_del_thread_wakeup(void);
+#endif
 
 ENGINE_ERROR_CODE item_init(struct default_engine *engine);
 
 void              item_final(struct default_engine *engine);
 
+#ifdef REORGANIZE_ITEM_COLL // LIST
+#else
 /*
  * List Collection
  */
@@ -511,7 +524,10 @@ ENGINE_ERROR_CODE list_coll_getattr(hash_item *it, item_attr *attrp,
                                     ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
 ENGINE_ERROR_CODE list_coll_setattr(hash_item *it, item_attr *attrp,
                                     ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
+#endif
 
+#ifdef REORGANIZE_ITEM_COLL // SET
+#else
 /*
  * Set Collection
  */
@@ -554,7 +570,10 @@ ENGINE_ERROR_CODE set_coll_getattr(hash_item *it, item_attr *attrp,
                                    ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
 ENGINE_ERROR_CODE set_coll_setattr(hash_item *it, item_attr *attrp,
                                    ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
+#endif
 
+#ifdef REORGANIZE_ITEM_COLL // MAP
+#else
 /*
  * Map Collection
  */
@@ -599,7 +618,10 @@ ENGINE_ERROR_CODE map_coll_getattr(hash_item *it, item_attr *attrp,
                                    ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
 ENGINE_ERROR_CODE map_coll_setattr(hash_item *it, item_attr *attrp,
                                    ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
+#endif
 
+#ifdef REORGANIZE_ITEM_COLL // BTREE
+#else
 /*
  * B+Tree Collection
  */
@@ -689,6 +711,7 @@ ENGINE_ERROR_CODE btree_coll_getattr(hash_item *it, item_attr *attrp,
                                      ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
 ENGINE_ERROR_CODE btree_coll_setattr(hash_item *it, item_attr *attrp,
                                      ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
+#endif
 
 ENGINE_ERROR_CODE item_getattr(const void *key, const uint32_t nkey,
                                ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_count,
@@ -711,6 +734,8 @@ void              coll_elem_result_release(elems_result_t *eresult, int type);
 bool item_conf_get_evict_to_free(void);
 void item_conf_set_evict_to_free(bool value);
 
+#ifdef REORGANIZE_ITEM_BASE
+#else
 /*
  * Item access functions
  */
@@ -729,6 +754,7 @@ uint32_t item_ntotal(hash_item *item);
  * Check item validity
  */
 bool item_is_valid(hash_item *item);
+#endif
 
 /**
  * Item Scan Facility
