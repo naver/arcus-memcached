@@ -10042,14 +10042,13 @@ ENGINE_ERROR_CODE map_coll_setattr(hash_item *it, item_attr *attrp,
 #endif
 
 #ifdef ENABLE_PERSISTENCE
-#if 1 // JOON_NEW
+/* Item Apply Macros */
 //#define ITEM_APPLY_LOG_LEVEL EXTENSION_LOG_INFO
 #define ITEM_APPLY_LOG_LEVEL EXTENSION_LOG_DEBUG
 #define PRINT_NKEY(nkey) ((nkey) < 250 ? (nkey) : 250)
-#endif
 
 /*
- * Apply functions by recovery.
+ * Item Apply Funtions
  */
 ENGINE_ERROR_CODE
 item_apply_kv_link(void *engine, const char *key, const uint32_t nkey,
@@ -10818,17 +10817,17 @@ item_apply_setattr_meta_info(void *engine, hash_item *it,
                         PRINT_NKEY(it->nkey), key, it->nkey);
             ret = ENGINE_EBADTYPE; break;
         }
-        if (maxbkeyrange != NULL && (it->iflag & ITEM_IFLAG_BTREE) == 0) {
+        if (maxbkeyrange != NULL && !IS_BTREE_ITEM(it)) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_setattr_meta_info failed."
                         " The item is not a btree. key=%.*s nkey=%u\n",
                         PRINT_NKEY(it->nkey), key, it->nkey);
             ret = ENGINE_EBADTYPE; break;
         }
+        it->exptime = exptime;
         info = (coll_meta_info*)item_get_meta(it);
         info->mcnt = maxcount;
         info->ovflact = ovflact;
         info->mflags = mflags;
-        it->exptime = exptime;
         if (maxbkeyrange) {
             ((btree_meta_info*)info)->maxbkeyrange = *maxbkeyrange;
         }
