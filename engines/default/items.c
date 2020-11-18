@@ -10292,7 +10292,8 @@ item_apply_unlink(void *engine, const char *key, const uint32_t nkey)
         do_item_unlink(it, ITEM_UNLINK_NORMAL); /* must unlink first. */
         do_item_release(it);
     } else {
-        logger->log(EXTENSION_LOG_WARNING, NULL,
+        /* The item might have been reclaimed or evicted */
+        logger->log(EXTENSION_LOG_DEBUG, NULL,
                     "item_apply_unlink failed. not found key=%.*s nkey=%u\n",
                     PRINT_NKEY(nkey), key, nkey);
         ret = ENGINE_KEY_ENOENT;
@@ -10391,18 +10392,19 @@ item_apply_list_elem_delete(void *engine, hash_item *it,
 
         ndeleted = do_list_elem_delete(info, index, count, ELEM_DELETE_NORMAL);
         if (ndeleted == 0) {
-            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_list_elem_delete failed."
+            logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_list_elem_delete failed."
                         " no element deleted. key=%.*s nkey=%u index=%d count=%d\n",
                         PRINT_NKEY(it->nkey), key, it->nkey, index, count);
-            ret = ENGINE_FAILED; break;
-        }
-
-        if (drop_if_empty && info->ccnt == 0) {
-            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+            ret = ENGINE_ELEM_ENOENT; break;
         }
     } while(0);
 
-    if (ret != ENGINE_SUCCESS) { /* Remove inconsistent hash_item */
+    if (ret == ENGINE_SUCCESS || ret == ENGINE_ELEM_ENOENT) {
+        if (drop_if_empty && info->ccnt == 0) {
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        }
+    } else {
+        /* Remove inconsistent hash_item */
         do_item_unlink(it, ITEM_UNLINK_NORMAL);
     }
     UNLOCK_CACHE();
@@ -10476,18 +10478,19 @@ item_apply_set_elem_delete(void *engine, hash_item *it,
         info = (set_meta_info *)item_get_meta(it);
         ret = do_set_elem_delete_with_value(info, value, nbytes, ELEM_DELETE_NORMAL);
         if (ret == ENGINE_ELEM_ENOENT) {
-            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_set_elem_delete failed."
+            logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_set_elem_delete failed."
                         " no element deleted. key=%.*s nkey=%u\n",
                         PRINT_NKEY(it->nkey), key, it->nkey);
             break;
         }
+    } while(0);
 
+    if (ret == ENGINE_SUCCESS || ret == ENGINE_ELEM_ENOENT) {
         if (drop_if_empty && info->ccnt == 0) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
-    } while(0);
-
-    if (ret != ENGINE_SUCCESS) { /* Remove inconsistent hash_item */
+    } else {
+        /* Remove inconsistent hash_item */
         do_item_unlink(it, ITEM_UNLINK_NORMAL);
     }
     UNLOCK_CACHE();
@@ -10568,25 +10571,26 @@ item_apply_map_elem_delete(void *engine, hash_item *it,
 
         info = (map_meta_info *)item_get_meta(it);
         if (info->ccnt == 0) {
-            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_map_elem_delete failed."
+            logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_map_elem_delete failed."
                         " no element.\n");
             ret = ENGINE_ELEM_ENOENT; break;
         }
 
         ndeleted = do_map_elem_delete_with_field(info, 1, &flist, ELEM_DELETE_NORMAL);
         if (ndeleted == 0) {
-            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_map_elem_delete failed."
+            logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_map_elem_delete failed."
                         " no element deleted. key=%.*s nkey=%u field=%.*s nfield=%u\n",
                         PRINT_NKEY(it->nkey), key, it->nkey, nfield, field, nfield);
-            ret = ENGINE_FAILED; break;
-        }
-
-        if (drop_if_empty && info->ccnt == 0) {
-            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+            ret = ENGINE_ELEM_ENOENT; break;
         }
     } while(0);
 
-    if (ret != ENGINE_SUCCESS) { /* Remove inconsistent hash_item */
+    if (ret == ENGINE_SUCCESS || ret == ENGINE_ELEM_ENOENT) {
+        if (drop_if_empty && info->ccnt == 0) {
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        }
+    } else {
+        /* Remove inconsistent hash_item */
         do_item_unlink(it, ITEM_UNLINK_NORMAL);
     }
     UNLOCK_CACHE();
@@ -10673,7 +10677,7 @@ item_apply_btree_elem_delete(void *engine, hash_item *it,
 
         info = (btree_meta_info *)item_get_meta(it);
         if (info->ccnt == 0) {
-            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_btree_elem_delete failed."
+            logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_btree_elem_delete failed."
                         " no element.\n");
             ret = ENGINE_ELEM_ENOENT; break;
         }
@@ -10688,18 +10692,19 @@ item_apply_btree_elem_delete(void *engine, hash_item *it,
         ndeleted = do_btree_elem_delete(info, BKEY_RANGE_TYPE_SIN, &bkrange, NULL,
                                          0, 0, NULL, ELEM_DELETE_NORMAL);
         if (ndeleted == 0) {
-            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_btree_elem_delete failed."
+            logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_btree_elem_delete failed."
                         " no element deleted. key=%.*s nkey=%u bkey=%.*s nbkey=%u\n",
                         PRINT_NKEY(it->nkey), key, it->nkey, nbkey, bkey, nbkey);
-            ret = ENGINE_FAILED; break;
-        }
-
-        if (drop_if_empty && info->ccnt == 0) {
-            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+            ret = ENGINE_ELEM_ENOENT; break;
         }
     } while(0);
 
-    if (ret != ENGINE_SUCCESS) { /* Remove inconsistent has_item */
+    if (ret == ENGINE_SUCCESS || ret == ENGINE_ELEM_ENOENT) {
+        if (drop_if_empty && info->ccnt == 0) {
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        }
+    } else {
+        /* Remove inconsistent hash_item */
         do_item_unlink(it, ITEM_UNLINK_NORMAL);
     }
     UNLOCK_CACHE();
@@ -10734,7 +10739,7 @@ item_apply_btree_elem_delete_logical(void *engine, hash_item *it,
 
         info = (btree_meta_info *)item_get_meta(it);
         if (info->ccnt == 0) {
-            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_btree_elem_delete_logical failed."
+            logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_btree_elem_delete_logical failed."
                         " no element.\n");
             ret = ENGINE_ELEM_ENOENT; break;
         }
@@ -10749,19 +10754,20 @@ item_apply_btree_elem_delete_logical(void *engine, hash_item *it,
         ndeleted = do_btree_elem_delete(info, bkrtype, bkrange, efilter, offset, count,
                                          NULL, ELEM_DELETE_NORMAL);
         if (ndeleted == 0) {
-            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_btree_elem_delete_logical failed."
+            logger->log(EXTENSION_LOG_INFO, NULL, "item_apply_btree_elem_delete_logical failed."
                         " no element deleted. key=%.*s nkey=%u from_bkey=%.*s to_bkey=%.*s",
                         PRINT_NKEY(it->nkey), key, it->nkey,
                         bkrange->from_nbkey, bkrange->from_bkey, bkrange->to_nbkey, bkrange->to_bkey);
-            ret = ENGINE_FAILED; break;
-        }
-
-        if (drop_if_empty && info->ccnt == 0) {
-            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+            ret = ENGINE_ELEM_ENOENT; break;
         }
     } while(0);
 
-    if (ret != ENGINE_SUCCESS) { /* Remove inconsistent has_item */
+    if (ret == ENGINE_SUCCESS || ret == ENGINE_ELEM_ENOENT) {
+        if (drop_if_empty && info->ccnt == 0) {
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        }
+    } else {
+        /* Remove inconsistent hash_item */
         do_item_unlink(it, ITEM_UNLINK_NORMAL);
     }
     UNLOCK_CACHE();
