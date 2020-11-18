@@ -10048,7 +10048,7 @@ ENGINE_ERROR_CODE map_coll_setattr(hash_item *it, item_attr *attrp,
  * Apply functions by recovery.
  */
 ENGINE_ERROR_CODE
-item_apply_kv_link(const char *key, const uint32_t nkey,
+item_apply_kv_link(void *engine, const char *key, const uint32_t nkey,
                    const uint32_t flags, const rel_time_t exptime,
                    const uint32_t nbytes, const char *value, const uint64_t cas)
 {
@@ -10099,7 +10099,7 @@ item_apply_kv_link(const char *key, const uint32_t nkey,
 }
 
 ENGINE_ERROR_CODE
-item_apply_list_link(const char *key, const uint32_t nkey, item_attr *attrp)
+item_apply_list_link(void *engine, const char *key, const uint32_t nkey, item_attr *attrp)
 {
     hash_item *old_it;
     hash_item *new_it;
@@ -10141,7 +10141,7 @@ item_apply_list_link(const char *key, const uint32_t nkey, item_attr *attrp)
 }
 
 ENGINE_ERROR_CODE
-item_apply_set_link(const char *key, const uint32_t nkey, item_attr *attrp)
+item_apply_set_link(void *engine, const char *key, const uint32_t nkey, item_attr *attrp)
 {
     hash_item *old_it;
     hash_item *new_it;
@@ -10183,7 +10183,7 @@ item_apply_set_link(const char *key, const uint32_t nkey, item_attr *attrp)
 }
 
 ENGINE_ERROR_CODE
-item_apply_map_link(const char *key, const uint32_t nkey, item_attr *attrp)
+item_apply_map_link(void *engine, const char *key, const uint32_t nkey, item_attr *attrp)
 {
     hash_item *old_it;
     hash_item *new_it;
@@ -10225,7 +10225,7 @@ item_apply_map_link(const char *key, const uint32_t nkey, item_attr *attrp)
 }
 
 ENGINE_ERROR_CODE
-item_apply_btree_link(const char *key, const uint32_t nkey, item_attr *attrp)
+item_apply_btree_link(void *engine, const char *key, const uint32_t nkey, item_attr *attrp)
 {
     hash_item *old_it;
     hash_item *new_it;
@@ -10275,7 +10275,7 @@ item_apply_btree_link(const char *key, const uint32_t nkey, item_attr *attrp)
 }
 
 ENGINE_ERROR_CODE
-item_apply_unlink(const char *key, const uint32_t nkey)
+item_apply_unlink(void *engine, const char *key, const uint32_t nkey)
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
@@ -10302,7 +10302,7 @@ item_apply_unlink(const char *key, const uint32_t nkey)
 }
 
 ENGINE_ERROR_CODE
-item_apply_list_elem_insert(hash_item *it,
+item_apply_list_elem_insert(void *engine, hash_item *it,
                             const int nelems, const int index,
                             const char *value, const uint32_t nbytes)
 {
@@ -10358,7 +10358,7 @@ item_apply_list_elem_insert(hash_item *it,
 }
 
 ENGINE_ERROR_CODE
-item_apply_list_elem_delete(hash_item *it,
+item_apply_list_elem_delete(void *engine, hash_item *it,
                             const int nelems, const int index, const int count,
                             const bool drop_if_empty)
 {
@@ -10410,7 +10410,7 @@ item_apply_list_elem_delete(hash_item *it,
 }
 
 ENGINE_ERROR_CODE
-item_apply_set_elem_insert(hash_item *it, const char *value, const uint32_t nbytes)
+item_apply_set_elem_insert(void *engine, hash_item *it, const char *value, const uint32_t nbytes)
 {
     const char *key = item_get_key(it);
     set_elem_item *elem;
@@ -10454,7 +10454,7 @@ item_apply_set_elem_insert(hash_item *it, const char *value, const uint32_t nbyt
 }
 
 ENGINE_ERROR_CODE
-item_apply_set_elem_delete(hash_item *it, const char *value, const uint32_t nbytes,
+item_apply_set_elem_delete(void *engine, hash_item *it, const char *value, const uint32_t nbytes,
                            const bool drop_if_empty)
 {
     const char *key = item_get_key(it);
@@ -10495,7 +10495,7 @@ item_apply_set_elem_delete(hash_item *it, const char *value, const uint32_t nbyt
 }
 
 ENGINE_ERROR_CODE
-item_apply_map_elem_insert(hash_item *it,
+item_apply_map_elem_insert(void *engine, hash_item *it,
                            const char *data, const uint32_t nfield, const uint32_t nbytes)
 {
     const char *key = item_get_key(it);
@@ -10541,7 +10541,7 @@ item_apply_map_elem_insert(hash_item *it,
 }
 
 ENGINE_ERROR_CODE
-item_apply_map_elem_delete(hash_item *it,
+item_apply_map_elem_delete(void *engine, hash_item *it,
                            const char *field, const uint32_t nfield,
                            const bool drop_if_empty)
 {
@@ -10596,7 +10596,7 @@ item_apply_map_elem_delete(hash_item *it,
 }
 
 ENGINE_ERROR_CODE
-item_apply_btree_elem_insert(hash_item *it, const char *data, const uint32_t nbkey,
+item_apply_btree_elem_insert(void *engine, hash_item *it, const char *data, const uint32_t nbkey,
                              const uint32_t neflag, const uint32_t nbytes)
 {
     const char *key = item_get_key(it);
@@ -10644,7 +10644,7 @@ item_apply_btree_elem_insert(hash_item *it, const char *data, const uint32_t nbk
 }
 
 ENGINE_ERROR_CODE
-item_apply_btree_elem_delete(hash_item *it, const char *bkey, const uint32_t nbkey,
+item_apply_btree_elem_delete(void *engine, hash_item *it, const char *bkey, const uint32_t nbkey,
                              const bool drop_if_empty)
 {
     const char *key = item_get_key(it);
@@ -10707,7 +10707,7 @@ item_apply_btree_elem_delete(hash_item *it, const char *bkey, const uint32_t nbk
 }
 
 ENGINE_ERROR_CODE
-item_apply_btree_elem_delete_logical(hash_item *it,
+item_apply_btree_elem_delete_logical(void *engine, hash_item *it,
                                      const bkey_range *bkrange,
                                      const eflag_filter *efilter,
                                      const uint32_t offset, const uint32_t reqcount,
@@ -10769,7 +10769,7 @@ item_apply_btree_elem_delete_logical(hash_item *it,
 }
 
 ENGINE_ERROR_CODE
-item_apply_setattr_exptime(const char *key, const uint32_t nkey, rel_time_t exptime)
+item_apply_setattr_exptime(void *engine, const char *key, const uint32_t nkey, rel_time_t exptime)
 {
     hash_item *it;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
@@ -10793,7 +10793,7 @@ item_apply_setattr_exptime(const char *key, const uint32_t nkey, rel_time_t expt
 }
 
 ENGINE_ERROR_CODE
-item_apply_setattr_meta_info(hash_item *it, const uint8_t ovflact, const uint8_t mflags,
+item_apply_setattr_meta_info(void *engine, hash_item *it, const uint8_t ovflact, const uint8_t mflags,
                              rel_time_t exptime, const int32_t mcnt, bkey_t *maxbkeyrange)
 {
     const char *key = item_get_key(it);
@@ -10840,7 +10840,7 @@ item_apply_setattr_meta_info(hash_item *it, const uint8_t ovflact, const uint8_t
 }
 
 ENGINE_ERROR_CODE
-item_apply_flush(const char *prefix, const int nprefix)
+item_apply_flush(void *engine, const char *prefix, const int nprefix)
 {
     ENGINE_ERROR_CODE ret;
 

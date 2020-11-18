@@ -386,7 +386,7 @@ typedef struct _snapshot_done_log {
 } SnapshotDoneLog;
 
 /* Function to initialize log record manager */
-void cmdlog_rec_init(struct default_engine *engine);
+void cmdlog_rec_init(struct default_engine *engine_ptr);
 
 /* Construct Log Record Functions */
 int lrec_construct_snapshot_done(LogRec *logrec);
