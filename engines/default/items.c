@@ -10397,7 +10397,7 @@ item_apply_list_elem_delete(void *engine, hash_item *it,
             ret = ENGINE_FAILED; break;
         }
 
-        if (info->ccnt == 0 && drop_if_empty) {
+        if (drop_if_empty && info->ccnt == 0) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
     } while(0);
@@ -10454,7 +10454,8 @@ item_apply_set_elem_insert(void *engine, hash_item *it, const char *value, const
 }
 
 ENGINE_ERROR_CODE
-item_apply_set_elem_delete(void *engine, hash_item *it, const char *value, const uint32_t nbytes,
+item_apply_set_elem_delete(void *engine, hash_item *it,
+                           const char *value, const uint32_t nbytes,
                            const bool drop_if_empty)
 {
     const char *key = item_get_key(it);
@@ -10481,7 +10482,7 @@ item_apply_set_elem_delete(void *engine, hash_item *it, const char *value, const
             break;
         }
 
-        if (info->ccnt == 0 && drop_if_empty) {
+        if (drop_if_empty && info->ccnt == 0) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
     } while(0);
@@ -10541,7 +10542,8 @@ item_apply_map_elem_insert(void *engine, hash_item *it,
 
 ENGINE_ERROR_CODE
 item_apply_map_elem_delete(void *engine, hash_item *it,
-                           const char *field, const uint32_t nfield, const bool drop_if_empty)
+                           const char *field, const uint32_t nfield,
+                           const bool drop_if_empty)
 {
     const char *key = item_get_key(it);
     map_meta_info *info;
@@ -10579,7 +10581,7 @@ item_apply_map_elem_delete(void *engine, hash_item *it,
             ret = ENGINE_FAILED; break;
         }
 
-        if (info->ccnt == 0 && drop_if_empty) {
+        if (drop_if_empty && info->ccnt == 0) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
     } while(0);
@@ -10692,7 +10694,7 @@ item_apply_btree_elem_delete(void *engine, hash_item *it,
             ret = ENGINE_FAILED; break;
         }
 
-        if (info->ccnt == 0 && drop_if_empty) {
+        if (drop_if_empty && info->ccnt == 0) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
     } while(0);
@@ -10754,7 +10756,7 @@ item_apply_btree_elem_delete_logical(void *engine, hash_item *it,
             ret = ENGINE_FAILED; break;
         }
 
-        if (info->ccnt == 0 && drop_if_empty) {
+        if (drop_if_empty && info->ccnt == 0) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
     } while(0);
