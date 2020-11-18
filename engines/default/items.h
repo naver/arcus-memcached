@@ -831,12 +831,12 @@ ENGINE_ERROR_CODE item_apply_set_elem_insert(void *engine, hash_item *it,
 ENGINE_ERROR_CODE item_apply_set_elem_delete(void *engine, hash_item *it,
                                              const char *value, const uint32_t nbytes, const bool drop_if_empty);
 ENGINE_ERROR_CODE item_apply_map_elem_insert(void *engine, hash_item *it,
-                                             const char *data, const uint32_t nfield, const uint32_t nbytes);
+                                             const char *field, const uint32_t nfield, const uint32_t nbytes);
 ENGINE_ERROR_CODE item_apply_map_elem_delete(void *engine, hash_item *it,
                                              const char *field, const uint32_t nfield,
                                              const bool drop_if_empty);
 ENGINE_ERROR_CODE item_apply_btree_elem_insert(void *engine, hash_item *it,
-                                               const char *data, const uint32_t nbkey,
+                                               const char *bkey, const uint32_t nbkey,
                                                const uint32_t neflag, const uint32_t nbytes);
 ENGINE_ERROR_CODE item_apply_btree_elem_delete(void *engine, hash_item *it,
                                                const char *bkey, const uint32_t nbkey,
@@ -844,13 +844,14 @@ ENGINE_ERROR_CODE item_apply_btree_elem_delete(void *engine, hash_item *it,
 ENGINE_ERROR_CODE item_apply_btree_elem_delete_logical(void *engine, hash_item *it,
                                                        const bkey_range *bkrange,
                                                        const eflag_filter *efilter,
-                                                       const uint32_t offset, const uint32_t reqcount,
+                                                       const uint32_t offset, const uint32_t count,
                                                        const bool drop_if_empty);
 ENGINE_ERROR_CODE item_apply_setattr_exptime(void *engine, const char *key, const uint32_t nkey,
                                              rel_time_t exptime);
 ENGINE_ERROR_CODE item_apply_setattr_meta_info(void *engine, hash_item *it,
                                                const uint8_t ovflact, const uint8_t mflags,
-                                               rel_time_t exptime, const int32_t mcnt, bkey_t *maxbkeyrange);
+                                               rel_time_t exptime, const int32_t maxcount,
+                                               bkey_t *maxbkeyrange);
 ENGINE_ERROR_CODE item_apply_flush(void *engine, const char *prefix, const int nprefix);
 #endif
 

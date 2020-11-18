@@ -10367,7 +10367,7 @@ item_apply_list_elem_delete(void *engine, hash_item *it,
 {
     const char *key = item_get_key(it);
     list_meta_info *info;
-    uint32_t del_count;
+    uint32_t ndeleted;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     logger->log(ITEM_APPLY_LOG_LEVEL, NULL,
@@ -10390,8 +10390,8 @@ item_apply_list_elem_delete(void *engine, hash_item *it,
             ret = ENGINE_EINVAL; break;
         }
 
-        del_count = do_list_elem_delete(info, index, count, ELEM_DELETE_NORMAL);
-        if (del_count == 0) {
+        ndeleted = do_list_elem_delete(info, index, count, ELEM_DELETE_NORMAL);
+        if (ndeleted == 0) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_list_elem_delete failed."
                         " no element deleted. key=%.*s nkey=%u index=%d count=%d\n",
                         PRINT_NKEY(it->nkey), key, it->nkey, index, count);
@@ -10497,7 +10497,7 @@ item_apply_set_elem_delete(void *engine, hash_item *it, const char *value, const
 
 ENGINE_ERROR_CODE
 item_apply_map_elem_insert(void *engine, hash_item *it,
-                           const char *data, const uint32_t nfield, const uint32_t nbytes)
+                           const char *field, const uint32_t nfield, const uint32_t nbytes)
 {
     const char *key = item_get_key(it);
     map_elem_item *elem;
@@ -10505,7 +10505,7 @@ item_apply_map_elem_insert(void *engine, hash_item *it,
 
     logger->log(ITEM_APPLY_LOG_LEVEL, NULL,
                 "item_apply_map_elem_insert. key=%.*s nkey=%u field=%.*s nfield=%u\n",
-                PRINT_NKEY(it->nkey), key, it->nkey, nfield, data, nfield);
+                PRINT_NKEY(it->nkey), key, it->nkey, nfield, field, nfield);
 
     LOCK_CACHE();
     do {
@@ -10521,14 +10521,14 @@ item_apply_map_elem_insert(void *engine, hash_item *it,
                         " element alloc failed. nfield=%d nbytes=%d\n", nfield, nbytes);
             ret = ENGINE_ENOMEM; break;
         }
-        memcpy(elem->data, data, nfield + nbytes);
+        memcpy(elem->data, field, nfield + nbytes);
 
         ret = do_map_elem_insert(it, elem, true /* replace_if_exist */,  NULL);
         if (ret != ENGINE_SUCCESS) {
             do_map_elem_free(elem);
             logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_map_elem_insert failed."
                         " key=%.*s nkey=%u field=%.*s nfield=%u code=%d\n",
-                        PRINT_NKEY(it->nkey), key, it->nkey, nfield, data, nfield, ret);
+                        PRINT_NKEY(it->nkey), key, it->nkey, nfield, field, nfield, ret);
         }
     } while(0);
 
@@ -10542,13 +10542,12 @@ item_apply_map_elem_insert(void *engine, hash_item *it,
 
 ENGINE_ERROR_CODE
 item_apply_map_elem_delete(void *engine, hash_item *it,
-                           const char *field, const uint32_t nfield,
-                           const bool drop_if_empty)
+                           const char *field, const uint32_t nfield, const bool drop_if_empty)
 {
     const char *key = item_get_key(it);
     map_meta_info *info;
     field_t flist;
-    uint32_t del_count;
+    uint32_t ndeleted;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     flist.value = (char*)field;
@@ -10573,8 +10572,8 @@ item_apply_map_elem_delete(void *engine, hash_item *it,
             ret = ENGINE_ELEM_ENOENT; break;
         }
 
-        del_count = do_map_elem_delete_with_field(info, 1, &flist, ELEM_DELETE_NORMAL);
-        if (del_count == 0) {
+        ndeleted = do_map_elem_delete_with_field(info, 1, &flist, ELEM_DELETE_NORMAL);
+        if (ndeleted == 0) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_map_elem_delete failed."
                         " no element deleted. key=%.*s nkey=%u field=%.*s nfield=%u\n",
                         PRINT_NKEY(it->nkey), key, it->nkey, nfield, field, nfield);
@@ -10595,7 +10594,8 @@ item_apply_map_elem_delete(void *engine, hash_item *it,
 }
 
 ENGINE_ERROR_CODE
-item_apply_btree_elem_insert(void *engine, hash_item *it, const char *data, const uint32_t nbkey,
+item_apply_btree_elem_insert(void *engine, hash_item *it,
+                             const char *bkey, const uint32_t nbkey,
                              const uint32_t neflag, const uint32_t nbytes)
 {
     const char *key = item_get_key(it);
@@ -10605,7 +10605,7 @@ item_apply_btree_elem_insert(void *engine, hash_item *it, const char *data, cons
 
     logger->log(ITEM_APPLY_LOG_LEVEL, NULL,
                 "item_apply_btree_elem_insert. key=%.*s nkey=%u bkey=%.*s nbkey=%u\n",
-                PRINT_NKEY(it->nkey), key, it->nkey, nbkey, data, nbkey);
+                PRINT_NKEY(it->nkey), key, it->nkey, nbkey, bkey, nbkey);
 
     LOCK_CACHE();
     do {
@@ -10621,7 +10621,7 @@ item_apply_btree_elem_insert(void *engine, hash_item *it, const char *data, cons
                         " element alloc failed. nbkey=%d neflag=%d nbytes=%d\n", nbkey, neflag, nbytes);
             ret = ENGINE_ENOMEM; break;
         }
-        memcpy(elem->data, data, BTREE_REAL_NBKEY(nbkey) + neflag + nbytes);
+        memcpy(elem->data, bkey, BTREE_REAL_NBKEY(nbkey) + neflag + nbytes);
 
         ret = do_btree_elem_insert(it, elem, true /* replace_if_exist */,
                                    &replaced, NULL, NULL, NULL);
@@ -10629,7 +10629,7 @@ item_apply_btree_elem_insert(void *engine, hash_item *it, const char *data, cons
             do_btree_elem_free(elem);
             logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_btree_elem_insert failed."
                         " key=%.*s nkey=%u d bkey=%.*s nbkey=%u code=%d\n",
-                        PRINT_NKEY(it->nkey), key, it->nkey, nbkey, data, nbkey, ret);
+                        PRINT_NKEY(it->nkey), key, it->nkey, nbkey, bkey, nbkey, ret);
         }
     } while(0);
 
@@ -10642,13 +10642,14 @@ item_apply_btree_elem_insert(void *engine, hash_item *it, const char *data, cons
 }
 
 ENGINE_ERROR_CODE
-item_apply_btree_elem_delete(void *engine, hash_item *it, const char *bkey, const uint32_t nbkey,
+item_apply_btree_elem_delete(void *engine, hash_item *it,
+                             const char *bkey, const uint32_t nbkey,
                              const bool drop_if_empty)
 {
     const char *key = item_get_key(it);
     btree_meta_info *info;
     bkey_range bkrange;
-    uint32_t del_count;
+    uint32_t ndeleted;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     logger->log(ITEM_APPLY_LOG_LEVEL, NULL,
@@ -10683,9 +10684,9 @@ item_apply_btree_elem_delete(void *engine, hash_item *it, const char *bkey, cons
             ret = ENGINE_EBADBKEY; break;
         }
 
-        del_count = do_btree_elem_delete(info, BKEY_RANGE_TYPE_SIN, &bkrange, NULL,
+        ndeleted = do_btree_elem_delete(info, BKEY_RANGE_TYPE_SIN, &bkrange, NULL,
                                          0, 0, NULL, ELEM_DELETE_NORMAL);
-        if (del_count == 0) {
+        if (ndeleted == 0) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_btree_elem_delete failed."
                         " no element deleted. key=%.*s nkey=%u bkey=%.*s nbkey=%u\n",
                         PRINT_NKEY(it->nkey), key, it->nkey, nbkey, bkey, nbkey);
@@ -10709,12 +10710,12 @@ ENGINE_ERROR_CODE
 item_apply_btree_elem_delete_logical(void *engine, hash_item *it,
                                      const bkey_range *bkrange,
                                      const eflag_filter *efilter,
-                                     const uint32_t offset, const uint32_t reqcount,
+                                     const uint32_t offset, const uint32_t count,
                                      const bool drop_if_empty)
 {
     const char *key = item_get_key(it);
     btree_meta_info *info;
-    uint32_t del_count;
+    uint32_t ndeleted;
     int bkrtype = do_btree_bkey_range_type(bkrange);
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
@@ -10744,9 +10745,9 @@ item_apply_btree_elem_delete_logical(void *engine, hash_item *it,
             ret = ENGINE_EBADBKEY; break;
         }
 
-        del_count = do_btree_elem_delete(info, bkrtype, bkrange, efilter, offset, reqcount,
+        ndeleted = do_btree_elem_delete(info, bkrtype, bkrange, efilter, offset, count,
                                          NULL, ELEM_DELETE_NORMAL);
-        if (del_count == 0) {
+        if (ndeleted == 0) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_btree_elem_delete_logical failed."
                         " no element deleted. key=%.*s nkey=%u from_bkey=%.*s to_bkey=%.*s",
                         PRINT_NKEY(it->nkey), key, it->nkey,
@@ -10792,8 +10793,9 @@ item_apply_setattr_exptime(void *engine, const char *key, const uint32_t nkey, r
 }
 
 ENGINE_ERROR_CODE
-item_apply_setattr_meta_info(void *engine, hash_item *it, const uint8_t ovflact, const uint8_t mflags,
-                             rel_time_t exptime, const int32_t mcnt, bkey_t *maxbkeyrange)
+item_apply_setattr_meta_info(void *engine, hash_item *it,
+                             const uint8_t ovflact, const uint8_t mflags,
+                             rel_time_t exptime, const int32_t maxcount, bkey_t *maxbkeyrange)
 {
     const char *key = item_get_key(it);
     coll_meta_info *info;
@@ -10823,7 +10825,7 @@ item_apply_setattr_meta_info(void *engine, hash_item *it, const uint8_t ovflact,
             ret = ENGINE_EBADTYPE; break;
         }
         info = (coll_meta_info*)item_get_meta(it);
-        info->mcnt = mcnt;
+        info->mcnt = maxcount;
         info->ovflact = ovflact;
         info->mflags = mflags;
         it->exptime = exptime;
