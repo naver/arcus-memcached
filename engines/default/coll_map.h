@@ -66,6 +66,18 @@ ENGINE_ERROR_CODE map_coll_getattr(hash_item *it, item_attr *attrp,
 ENGINE_ERROR_CODE map_coll_setattr(hash_item *it, item_attr *attrp,
                                    ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
 #endif
+
+#ifdef REORGANIZE_ITEM_COLL // APPLY MAP
+ENGINE_ERROR_CODE map_apply_item_link(void *engine, const char *key, const uint32_t nkey,
+                                      item_attr *attrp);
+ENGINE_ERROR_CODE map_apply_elem_insert(void *engine, hash_item *it,
+                                        const char *field, const uint32_t nfield,
+                                        const uint32_t nbytes);
+ENGINE_ERROR_CODE map_apply_elem_delete(void *engine, hash_item *it,
+                                        const char *field, const uint32_t nfield,
+                                        const bool drop_if_empty);
+#endif
+
 #ifdef REORGANIZE_ITEM_COLL // MAP
 ENGINE_ERROR_CODE item_map_coll_init(void *engine_ptr);
 void item_map_coll_final(void *engine_ptr);

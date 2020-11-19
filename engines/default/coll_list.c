@@ -670,6 +670,155 @@ ENGINE_ERROR_CODE list_coll_setattr(hash_item *it, item_attr *attrp,
 }
 #endif
 
+#ifdef REORGANIZE_ITEM_COLL // APPLY LIST
+ENGINE_ERROR_CODE list_apply_item_link(void *engine, const char *key, const uint32_t nkey,
+                                       item_attr *attrp)
+{
+    hash_item *old_it;
+    hash_item *new_it;
+    ENGINE_ERROR_CODE ret;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL, "list_apply_item_link. key=%.*s nkey=%u\n",
+                PRINT_NKEY(nkey), key, nkey);
+
+    LOCK_CACHE();
+    old_it = do_item_get(key, nkey, DONT_UPDATE);
+    if (old_it) {
+        /* Remove the old item first. */
+        do_item_unlink(old_it, ITEM_UNLINK_NORMAL);
+        do_item_release(old_it);
+    }
+    new_it = do_list_item_alloc(key, nkey, attrp, NULL); /* cookie is NULL */
+    if (new_it) {
+        /* Link the new item into the hash table */
+        ret = do_item_link(new_it);
+        if (ret != ENGINE_SUCCESS) {
+            do_item_free(new_it);
+        }
+    } else {
+        ret = ENGINE_ENOMEM;
+    }
+    UNLOCK_CACHE();
+
+    if (ret == ENGINE_SUCCESS) {
+        /* The caller wants to know if the old item has been replaced.
+         * This code still indicates success.
+         */
+        if (old_it != NULL) ret = ENGINE_KEY_EEXISTS;
+    } else {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "list_apply_item_link failed. key=%.*s nkey=%u code=%d\n",
+                    PRINT_NKEY(nkey), key, nkey, ret);
+    }
+    return ret;
+}
+
+ENGINE_ERROR_CODE list_apply_elem_insert(void *engine, hash_item *it,
+                                         const int nelems, const int index,
+                                         const char *value, const uint32_t nbytes)
+{
+    const char *key = item_get_key(it);
+    list_meta_info *info;
+    list_elem_item *elem;
+    ENGINE_ERROR_CODE ret;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL,
+                "list_apply_elem_insert. key=%.*s nkey=%u nelems=%d index=%d\n",
+                PRINT_NKEY(it->nkey), key, it->nkey, nelems, index);
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "list_apply_elem_insert failed."
+                        " invalid item.\n");
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+
+        info = (list_meta_info*)item_get_meta(it);
+        if (nelems != -1 && info->ccnt != nelems) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "list_apply_elem_insert failed."
+                        " element count mismatch. ecnt(%d) != nelems(%d)\n",
+                        info->ccnt, nelems);
+            ret = ENGINE_EINVAL; break;
+        }
+
+        elem = do_list_elem_alloc(nbytes, NULL);
+        if (elem == NULL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "list_apply_elem_insert failed."
+                        " element alloc failed. nbytes=%d\n", nbytes);
+            ret = ENGINE_ENOMEM; break;
+        }
+        memcpy(elem->value, value, nbytes);
+
+        ret = do_list_elem_insert(it, index, elem, NULL);
+        if (ret != ENGINE_SUCCESS) {
+            do_list_elem_free(elem);
+            logger->log(EXTENSION_LOG_WARNING, NULL, "list_apply_elem_insert failed."
+                        " key=%.*s nkey=%u index=%d code=%d\n",
+                        PRINT_NKEY(it->nkey), key, it->nkey, index, ret);
+        }
+    } while(0);
+
+    if (ret != ENGINE_SUCCESS) { /* Remove inconsistent hash_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+    }
+    UNLOCK_CACHE();
+
+    return ret;
+}
+
+ENGINE_ERROR_CODE list_apply_elem_delete(void *engine, hash_item *it,
+                                         const int nelems, const int index,
+                                         const int count, const bool drop_if_empty)
+{
+    const char *key = item_get_key(it);
+    list_meta_info *info;
+    uint32_t ndeleted;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL,
+                "list_apply_elem_delete. key=%.*s nkey=%u index=%d, count=%d\n",
+                PRINT_NKEY(it->nkey), key, it->nkey, index, count);
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "list_apply_elem_delete failed."
+                        " invalid item.\n");
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+
+        info = (list_meta_info*)item_get_meta(it);
+        if (info->ccnt != nelems) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "list_apply_elem_delete failed."
+                        "element count mismatch. ecnt(%d) != nelems(%d)",
+                        info->ccnt, nelems);
+            ret = ENGINE_EINVAL; break;
+        }
+
+        ndeleted = do_list_elem_delete(info, index, count, ELEM_DELETE_NORMAL);
+        if (ndeleted == 0) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "list_apply_elem_delete failed."
+                        " no element deleted. key=%.*s nkey=%u index=%d count=%d\n",
+                        PRINT_NKEY(it->nkey), key, it->nkey, index, count);
+            ret = ENGINE_ELEM_ENOENT; break;
+        }
+    } while(0);
+
+    if (ret == ENGINE_SUCCESS || ret == ENGINE_ELEM_ENOENT) {
+        if (drop_if_empty && info->ccnt == 0) {
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        }
+    } else {
+        /* Remove inconsistent hash_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+    }
+    UNLOCK_CACHE();
+
+    return ret;
+}
+#endif
+
 #ifdef REORGANIZE_ITEM_COLL // LIST
 /*
  * External Functions

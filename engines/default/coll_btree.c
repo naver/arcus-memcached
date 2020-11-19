@@ -4403,6 +4403,232 @@ ENGINE_ERROR_CODE btree_coll_setattr(hash_item *it, item_attr *attrp,
 }
 #endif
 
+#ifdef REORGANIZE_ITEM_COLL // APPLY BTREE
+ENGINE_ERROR_CODE btree_apply_item_link(void *engine, const char *key, const uint32_t nkey,
+                                        item_attr *attrp)
+{
+    hash_item *old_it;
+    hash_item *new_it;
+    ENGINE_ERROR_CODE ret;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL, "btree_apply_item_link. key=%.*s nkey=%u\n",
+                PRINT_NKEY(nkey), key, nkey);
+
+    LOCK_CACHE();
+    old_it = do_item_get(key, nkey, DONT_UPDATE);
+    if (old_it) {
+        /* Remove the old item first. */
+        do_item_unlink(old_it, ITEM_UNLINK_NORMAL);
+        do_item_release(old_it);
+    }
+    new_it = do_btree_item_alloc(key, nkey, attrp, NULL); /* cookie is NULL */
+    if (new_it) {
+        /* Copy relevent fields in meta info */
+        btree_meta_info *info = (btree_meta_info*)item_get_meta(new_it);
+        if (attrp->trimmed) {
+            info->mflags |= COLL_META_FLAG_TRIMMED; // set trimmed
+        }
+        if (attrp->maxbkeyrange.len != BKEY_NULL) {
+            info->maxbkeyrange = attrp->maxbkeyrange;
+        }
+        /* Link the new item into the hash table */
+        ret = do_item_link(new_it);
+        if (ret != ENGINE_SUCCESS) {
+            do_item_free(new_it);
+        }
+    } else {
+        ret = ENGINE_ENOMEM;
+    }
+    UNLOCK_CACHE();
+
+    if (ret == ENGINE_SUCCESS) {
+        /* The caller wants to know if the old item has been replaced.
+         * This code still indicates success.
+         */
+        if (old_it != NULL) ret = ENGINE_KEY_EEXISTS;
+    } else {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "btree_apply_item_link failed. key=%.*s nkey=%u code=%d\n",
+                    PRINT_NKEY(nkey), key, nkey, ret);
+    }
+    return ret;
+}
+
+ENGINE_ERROR_CODE btree_apply_elem_insert(void *engine, hash_item *it,
+                                          const char *bkey, const uint32_t nbkey,
+                                          const uint32_t neflag, const uint32_t nbytes)
+{
+    const char *key = item_get_key(it);
+    btree_elem_item *elem;
+    bool replaced;
+    ENGINE_ERROR_CODE ret;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL,
+                "btree_apply_elem_insert. key=%.*s nkey=%u bkey=%.*s nbkey=%u\n",
+                PRINT_NKEY(it->nkey), key, it->nkey, nbkey, bkey, nbkey);
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "btree_apply_elem_insert failed."
+                        " invalid item.\n");
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+
+        elem = do_btree_elem_alloc(nbkey, neflag, nbytes, NULL);
+        if (elem == NULL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "btree_apply_elem_insert failed."
+                        " element alloc failed. nbkey=%d neflag=%d nbytes=%d\n", nbkey, neflag, nbytes);
+            ret = ENGINE_ENOMEM; break;
+        }
+        memcpy(elem->data, bkey, BTREE_REAL_NBKEY(nbkey) + neflag + nbytes);
+
+        ret = do_btree_elem_insert(it, elem, true /* replace_if_exist */,
+                                   &replaced, NULL, NULL, NULL);
+        if (ret != ENGINE_SUCCESS) {
+            do_btree_elem_free(elem);
+            logger->log(EXTENSION_LOG_WARNING, NULL, "btree_apply_elem_insert failed."
+                        " key=%.*s nkey=%u d bkey=%.*s nbkey=%u code=%d\n",
+                        PRINT_NKEY(it->nkey), key, it->nkey, nbkey, bkey, nbkey, ret);
+        }
+    } while(0);
+
+    if (ret != ENGINE_SUCCESS) { /* Remove inconsistent has_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+    }
+    UNLOCK_CACHE();
+
+    return ret;
+}
+
+ENGINE_ERROR_CODE btree_apply_elem_delete(void *engine, hash_item *it,
+                                          const char *bkey, const uint32_t nbkey,
+                                          const bool drop_if_empty)
+{
+    const char *key = item_get_key(it);
+    btree_meta_info *info;
+    bkey_range bkrange;
+    uint32_t ndeleted;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL,
+                "btree_apply_elem_delete. key=%.*s nkey=%u bkey=%.*s nbkey=%u\n",
+                PRINT_NKEY(it->nkey), key, it->nkey, nbkey, bkey, nbkey);
+
+    /* one-element range */
+    memcpy(bkrange.from_bkey, bkey, BTREE_REAL_NBKEY(nbkey));
+    bkrange.from_nbkey = nbkey;
+    /* bkey_range.to_bkey */
+    bkrange.to_nbkey = BKEY_NULL;
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "btree_apply_elem_delete failed."
+                        " invalid item.\n");
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+
+        info = (btree_meta_info *)item_get_meta(it);
+        if (info->ccnt == 0) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "btree_apply_elem_delete failed."
+                        " no element.\n");
+            ret = ENGINE_ELEM_ENOENT; break;
+        }
+        if ((info->bktype == BKEY_TYPE_UINT64 && bkrange.from_nbkey > 0) ||
+            (info->bktype == BKEY_TYPE_BINARY && bkrange.from_nbkey == 0)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "btree_apply_elem_delete failed."
+                        " bkey mismatch. key=%.*s nkey=%u bkey=%.*s nbkey=%u\n",
+                        PRINT_NKEY(it->nkey), key, it->nkey, nbkey, bkey, nbkey);
+            ret = ENGINE_EBADBKEY; break;
+        }
+
+        ndeleted = do_btree_elem_delete(info, BKEY_RANGE_TYPE_SIN, &bkrange, NULL,
+                                         0, 0, NULL, ELEM_DELETE_NORMAL);
+        if (ndeleted == 0) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "btree_apply_elem_delete failed."
+                        " no element deleted. key=%.*s nkey=%u bkey=%.*s nbkey=%u\n",
+                        PRINT_NKEY(it->nkey), key, it->nkey, nbkey, bkey, nbkey);
+            ret = ENGINE_ELEM_ENOENT; break;
+        }
+    } while(0);
+
+    if (ret == ENGINE_SUCCESS || ret == ENGINE_ELEM_ENOENT) {
+        if (drop_if_empty && info->ccnt == 0) {
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        }
+    } else {
+        /* Remove inconsistent hash_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+    }
+    UNLOCK_CACHE();
+
+    return ret;
+}
+
+ENGINE_ERROR_CODE btree_apply_elem_delete_logical(void *engine, hash_item *it,
+                                                  const bkey_range *bkrange,
+                                                  const eflag_filter *efilter,
+                                                  const uint32_t offset, const uint32_t count,
+                                                  const bool drop_if_empty)
+{
+    const char *key = item_get_key(it);
+    btree_meta_info *info;
+    uint32_t ndeleted;
+    int bkrtype = do_btree_bkey_range_type(bkrange);
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL,
+                "btree_apply_elem_delete_logical. key=%.*s nkey=%u\n",
+                PRINT_NKEY(it->nkey), key, it->nkey);
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "btree_apply_elem_delete_logical failed."
+                        " invalid item.\n");
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+
+        info = (btree_meta_info *)item_get_meta(it);
+        if (info->ccnt == 0) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "btree_apply_elem_delete_logical failed."
+                        " no element.\n");
+            ret = ENGINE_ELEM_ENOENT; break;
+        }
+        if ((info->bktype == BKEY_TYPE_UINT64 && bkrange->from_nbkey > 0) ||
+            (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "btree_apply_elem_delete_logical failed."
+                        " bkey mismatch. key=%.*s nkey=%u from_bkey=%.*s\n",
+                        PRINT_NKEY(it->nkey), key, it->nkey, bkrange->from_nbkey, bkrange->from_bkey);
+            ret = ENGINE_EBADBKEY; break;
+        }
+
+        ndeleted = do_btree_elem_delete(info, bkrtype, bkrange, efilter, offset, count,
+                                         NULL, ELEM_DELETE_NORMAL);
+        if (ndeleted == 0) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "btree_apply_elem_delete_logical failed."
+                        " no element deleted. key=%.*s nkey=%u from_bkey=%.*s to_bkey=%.*s",
+                        PRINT_NKEY(it->nkey), key, it->nkey,
+                        bkrange->from_nbkey, bkrange->from_bkey, bkrange->to_nbkey, bkrange->to_bkey);
+            ret = ENGINE_ELEM_ENOENT; break;
+        }
+    } while(0);
+
+    if (ret == ENGINE_SUCCESS || ret == ENGINE_ELEM_ENOENT) {
+        if (drop_if_empty && info->ccnt == 0) {
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        }
+    } else {
+        /* Remove inconsistent hash_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+    }
+    UNLOCK_CACHE();
+
+    return ret;
+}
+#endif
+
 #ifdef REORGANIZE_ITEM_COLL // BTREE
 /*
  * External Functions

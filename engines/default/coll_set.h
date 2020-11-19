@@ -65,6 +65,16 @@ ENGINE_ERROR_CODE set_coll_setattr(hash_item *it, item_attr *attrp,
                                    ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
 #endif
 
+#ifdef REORGANIZE_ITEM_COLL // APPLY SET
+ENGINE_ERROR_CODE set_apply_item_link(void *engine, const char *key, const uint32_t nkey,
+                                      item_attr *attrp);
+ENGINE_ERROR_CODE set_apply_elem_insert(void *engine, hash_item *it,
+                                        const char *value, const uint32_t nbytes);
+ENGINE_ERROR_CODE set_apply_elem_delete(void *engine, hash_item *it,
+                                        const char *value, const uint32_t nbytes,
+                                        const bool drop_if_empty);
+#endif
+
 #ifdef REORGANIZE_ITEM_COLL // SET
 ENGINE_ERROR_CODE item_set_coll_init(void *engine_ptr);
 void item_set_coll_final(void *engine_ptr);
