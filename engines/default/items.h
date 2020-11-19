@@ -872,6 +872,7 @@ void item_stop_dump(struct default_engine *engine);
 void item_stats_dump(struct default_engine *engine,
                      ADD_STAT add_stat, const void *cookie);
 
+#if 0 // OLD_CODE
 #ifdef ENABLE_PERSISTENCE
 /*
  * Apply functions by recovery.
@@ -922,6 +923,7 @@ ENGINE_ERROR_CODE item_apply_setattr_meta_info(void *engine, hash_item *it,
                                                rel_time_t exptime, const int32_t maxcount,
                                                bkey_t *maxbkeyrange);
 ENGINE_ERROR_CODE item_apply_flush(void *engine, const char *prefix, const int nprefix);
+#endif
 #endif
 
 #endif

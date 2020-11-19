@@ -10890,6 +10890,7 @@ void item_final(struct default_engine *engine_ptr)
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM module destroyed.\n");
 }
 
+#if 0 // OLD_CODE
 #ifdef ENABLE_PERSISTENCE
 /* Item Apply Macros */
 //#define ITEM_APPLY_LOG_LEVEL EXTENSION_LOG_INFO
@@ -11711,4 +11712,5 @@ item_apply_flush(void *engine, const char *prefix, const int nprefix)
     UNLOCK_CACHE();
     return ret;
 }
+#endif
 #endif

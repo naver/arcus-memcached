@@ -323,11 +323,11 @@ static ENGINE_ERROR_CODE lrec_it_link_redo(LogRec *logrec)
         attr.readable   = (meta.mflags & COLL_META_FLAG_READABLE ? 1 : 0);
         attr.trimmed    = (meta.mflags & COLL_META_FLAG_TRIMMED ? 1 : 0);
         if (cm.ittype == ITEM_TYPE_LIST) {
-            ret = item_apply_list_link(engine, keyptr, cm.keylen, &attr);
+            ret = list_apply_item_link(engine, keyptr, cm.keylen, &attr);
         } else if (cm.ittype == ITEM_TYPE_SET) {
-            ret = item_apply_set_link(engine, keyptr, cm.keylen, &attr);
+            ret = set_apply_item_link(engine, keyptr, cm.keylen, &attr);
         } else if (cm.ittype == ITEM_TYPE_MAP) {
-            ret = item_apply_map_link(engine, keyptr, cm.keylen, &attr);
+            ret = map_apply_item_link(engine, keyptr, cm.keylen, &attr);
         } else if (cm.ittype == ITEM_TYPE_BTREE) {
             struct lrec_coll_meta meta = body->ptr.meta;
             attr.maxbkeyrange.len = meta.maxbkrlen;
@@ -336,7 +336,7 @@ static ENGINE_ERROR_CODE lrec_it_link_redo(LogRec *logrec)
                 memcpy(attr.maxbkeyrange.val, maxbkrptr, BTREE_REAL_NBKEY(attr.maxbkeyrange.len));
                 keyptr += BTREE_REAL_NBKEY(attr.maxbkeyrange.len);
             }
-            ret = item_apply_btree_link(engine, keyptr, cm.keylen, &attr);
+            ret = btree_apply_item_link(engine, keyptr, cm.keylen, &attr);
         }
     }
 
@@ -459,8 +459,8 @@ static ENGINE_ERROR_CODE lrec_it_setattr_redo(LogRec *logrec)
         }
         hash_item *it = item_get(keyptr, body->keylen);
         if (it) {
-            ret = item_apply_setattr_meta_info(engine, it, body->ovflact, body->mflags,
-                                               body->exptime, body->mcnt, maxbkrptr);
+            ret = item_apply_setattr_collinfo(engine, it, body->exptime, body->mcnt,
+                                              body->ovflact, body->mflags, maxbkrptr);
             if (ret != ENGINE_SUCCESS) {
                 logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_it_setattr_redo failed.\n");
             }
@@ -600,7 +600,7 @@ static ENGINE_ERROR_CODE lrec_list_elem_insert_redo(LogRec *logrec)
         if (EXPIRED_REL_EXPTIME(attr.exptime)) {
             return ENGINE_SUCCESS;
         }
-        ret = item_apply_list_link(engine, keyptr, body->keylen, &attr);
+        ret = list_apply_item_link(engine, keyptr, body->keylen, &attr);
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_list_elem_insert_redo failed. "
                                                      "item allocate failed.\n");
@@ -610,8 +610,8 @@ static ENGINE_ERROR_CODE lrec_list_elem_insert_redo(LogRec *logrec)
     }
 
     if (it) {
-        ret = item_apply_list_elem_insert(engine, it, body->totcnt, body->eindex,
-                                          (keyptr + body->keylen), body->vallen);
+        ret = list_apply_elem_insert(engine, it, body->totcnt, body->eindex,
+                                     (keyptr + body->keylen), body->vallen);
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_list_elem_insert_redo failed.\n");
         }
@@ -667,8 +667,8 @@ static ENGINE_ERROR_CODE lrec_list_elem_delete_redo(LogRec *logrec)
 
     hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
-        ret = item_apply_list_elem_delete(engine, it, body->totcnt, body->eindex, body->delcnt,
-                                          body->drop);
+        ret = list_apply_elem_delete(engine, it, body->totcnt, body->eindex, body->delcnt,
+                                     body->drop);
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_list_elem_delete_redo failed.\n");
         }
@@ -734,7 +734,7 @@ static ENGINE_ERROR_CODE lrec_set_elem_insert_redo(LogRec *logrec)
         if (EXPIRED_REL_EXPTIME(attr.exptime)) {
             return ENGINE_SUCCESS;
         }
-        ret = item_apply_set_link(engine, keyptr, body->keylen, &attr);
+        ret = set_apply_item_link(engine, keyptr, body->keylen, &attr);
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_set_elem_insert_redo failed. "
                                                      "item allocate failed.\n");
@@ -744,7 +744,7 @@ static ENGINE_ERROR_CODE lrec_set_elem_insert_redo(LogRec *logrec)
     }
 
     if (it) {
-        ret = item_apply_set_elem_insert(engine, it, valptr, body->vallen);
+        ret = set_apply_elem_insert(engine, it, valptr, body->vallen);
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_set_elem_insert_redo failed.\n");
         }
@@ -801,7 +801,7 @@ static ENGINE_ERROR_CODE lrec_set_elem_delete_redo(LogRec *logrec)
 
     hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
-        ret = item_apply_set_elem_delete(engine, it, valptr, body->vallen, body->drop);
+        ret = set_apply_elem_delete(engine, it, valptr, body->vallen, body->drop);
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_set_elem_delete_redo failed.\n");
         }
@@ -870,7 +870,7 @@ static ENGINE_ERROR_CODE lrec_map_elem_insert_redo(LogRec *logrec)
         if (EXPIRED_REL_EXPTIME(attr.exptime)) {
             return ENGINE_SUCCESS;
         }
-        ret = item_apply_map_link(engine, keyptr, body->keylen, &attr);
+        ret = map_apply_item_link(engine, keyptr, body->keylen, &attr);
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_map_elem_insert_redo failed. "
                                                      "item allocate failed.\n");
@@ -880,7 +880,7 @@ static ENGINE_ERROR_CODE lrec_map_elem_insert_redo(LogRec *logrec)
     }
 
     if (it) {
-        ret = item_apply_map_elem_insert(engine, it, datptr, body->fldlen, body->vallen);
+        ret = map_apply_elem_insert(engine, it, datptr, body->fldlen, body->vallen);
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_map_elem_insert_redo failed.\n");
         }
@@ -940,7 +940,7 @@ static ENGINE_ERROR_CODE lrec_map_elem_delete_redo(LogRec *logrec)
 
     hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
-        ret = item_apply_map_elem_delete(engine, it, fldptr, body->fldlen, body->drop);
+        ret = map_apply_elem_delete(engine, it, fldptr, body->fldlen, body->drop);
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_map_elem_delete_redo failed.\n");
         }
@@ -1010,7 +1010,7 @@ static ENGINE_ERROR_CODE lrec_bt_elem_insert_redo(LogRec *logrec)
             return ENGINE_SUCCESS;
         }
         attr.maxbkeyrange.len = BKEY_NULL;
-        ret = item_apply_btree_link(engine, keyptr, body->keylen, &attr);
+        ret = btree_apply_item_link(engine, keyptr, body->keylen, &attr);
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_insert_redo failed. "
                                                      "item allocate failed.\n");
@@ -1020,7 +1020,7 @@ static ENGINE_ERROR_CODE lrec_bt_elem_insert_redo(LogRec *logrec)
     }
 
     if (it) {
-        ret = item_apply_btree_elem_insert(engine, it, datptr, body->nbkey, body->neflag, body->vallen);
+        ret = btree_apply_elem_insert(engine, it, datptr, body->nbkey, body->neflag, body->vallen);
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_insert_redo failed.\n");
         }
@@ -1091,7 +1091,7 @@ static ENGINE_ERROR_CODE lrec_bt_elem_delete_redo(LogRec *logrec)
 
     hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
-        ret = item_apply_btree_elem_delete(engine, it, bkeyptr, body->nbkey, body->drop);
+        ret = btree_apply_elem_delete(engine, it, bkeyptr, body->nbkey, body->drop);
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_delete_redo failed.\n");
         }
@@ -1188,9 +1188,9 @@ static ENGINE_ERROR_CODE lrec_bt_elem_delete_logical_redo(LogRec *logrec)
 
     hash_item *it = item_get(keyptr, body->keylen);
     if (it) {
-        ret = item_apply_btree_elem_delete_logical(engine, it, &bkrange,
-                                                   (body->filtering ? &efilter : NULL),
-                                                   body->offset, body->reqcount, body->drop);
+        ret = btree_apply_elem_delete_logical(engine, it, &bkrange,
+                                              (body->filtering ? &efilter : NULL),
+                                              body->offset, body->reqcount, body->drop);
         if (ret != ENGINE_SUCCESS) {
             logger->log(EXTENSION_LOG_WARNING, NULL, "lrec_bt_elem_delete_logical_redo failed.\n");
         }
@@ -1309,13 +1309,13 @@ static ENGINE_ERROR_CODE lrec_snapshot_elem_link_redo(LogRec *logrec)
     char *valptr = body->data;
 
     if (IS_LIST_ITEM(log->it)) {
-        ret = item_apply_list_elem_insert(engine, log->it, -1, -1, valptr, body->nbytes);
+        ret = list_apply_elem_insert(engine, log->it, -1, -1, valptr, body->nbytes);
     } else if (IS_SET_ITEM(log->it)) {
-        ret = item_apply_set_elem_insert(engine, log->it, valptr, body->nbytes);
+        ret = set_apply_elem_insert(engine, log->it, valptr, body->nbytes);
     } else if (IS_MAP_ITEM(log->it)) {
-        ret = item_apply_map_elem_insert(engine, log->it, valptr, body->nekey, body->nbytes);
+        ret = map_apply_elem_insert(engine, log->it, valptr, body->nekey, body->nbytes);
     } else if (IS_BTREE_ITEM(log->it)) {
-        ret = item_apply_btree_elem_insert(engine, log->it, valptr, body->nekey, body->neflag, body->nbytes);
+        ret = btree_apply_elem_insert(engine, log->it, valptr, body->nekey, body->neflag, body->nbytes);
     }
 
     if (ret != ENGINE_SUCCESS) {
