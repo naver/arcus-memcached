@@ -756,6 +756,75 @@ uint32_t item_ntotal(hash_item *item);
 bool item_is_valid(hash_item *item);
 #endif
 
+/*
+ * Apply functions by recovery.
+ */
+ENGINE_ERROR_CODE item_apply_kv_link(void *engine, const char *key, const uint32_t nkey,
+                                     const uint32_t flags, const rel_time_t exptime,
+                                     const uint32_t nbytes, const char *value,
+                                     const uint64_t cas);
+ENGINE_ERROR_CODE item_apply_unlink(void *engine, const char *key, const uint32_t nkey);
+ENGINE_ERROR_CODE item_apply_setattr_exptime(void *engine, const char *key, const uint32_t nkey,
+                                             rel_time_t exptime);
+ENGINE_ERROR_CODE item_apply_setattr_collinfo(void *engine, hash_item *it,
+                                              rel_time_t exptime, const int32_t maxcount,
+                                              const uint8_t ovflact, const uint8_t mflags,
+                                              bkey_t *maxbkeyrange);
+ENGINE_ERROR_CODE item_apply_lru_update(void *engine, const char *key, const uint32_t nkey);
+ENGINE_ERROR_CODE item_apply_flush(void *engine, const char *prefix, const int nprefix);
+
+#ifdef REORGANIZE_ITEM_COLL // APPLY LIST
+#else
+ENGINE_ERROR_CODE list_apply_item_link(void *engine, const char *key, const uint32_t nkey,
+                                       item_attr *attrp);
+ENGINE_ERROR_CODE list_apply_elem_insert(void *engine, hash_item *it,
+                                         const int nelems, const int index,
+                                         const char *value, const uint32_t nbytes);
+ENGINE_ERROR_CODE list_apply_elem_delete(void *engine, hash_item *it,
+                                         const int nelems, const int index,
+                                         const int count, const bool drop_if_empty);
+#endif
+
+#ifdef REORGANIZE_ITEM_COLL // APPLY SET
+#else
+ENGINE_ERROR_CODE set_apply_item_link(void *engine, const char *key, const uint32_t nkey,
+                                      item_attr *attrp);
+ENGINE_ERROR_CODE set_apply_elem_insert(void *engine, hash_item *it,
+                                        const char *value, const uint32_t nbytes);
+ENGINE_ERROR_CODE set_apply_elem_delete(void *engine, hash_item *it,
+                                        const char *value, const uint32_t nbytes,
+                                        const bool drop_if_empty);
+#endif
+
+#ifdef REORGANIZE_ITEM_COLL // APPLY MAP
+#else
+ENGINE_ERROR_CODE map_apply_item_link(void *engine, const char *key, const uint32_t nkey,
+                                      item_attr *attrp);
+ENGINE_ERROR_CODE map_apply_elem_insert(void *engine, hash_item *it,
+                                        const char *field, const uint32_t nfield,
+                                        const uint32_t nbytes);
+ENGINE_ERROR_CODE map_apply_elem_delete(void *engine, hash_item *it,
+                                        const char *field, const uint32_t nfield,
+                                        const bool drop_if_empty);
+#endif
+
+#ifdef REORGANIZE_ITEM_COLL // APPLY BTREE
+#else
+ENGINE_ERROR_CODE btree_apply_item_link(void *engine, const char *key, const uint32_t nkey,
+                                        item_attr *attrp);
+ENGINE_ERROR_CODE btree_apply_elem_insert(void *engine, hash_item *it,
+                                          const char *bkey, const uint32_t nbkey,
+                                          const uint32_t neflag, const uint32_t nbytes);
+ENGINE_ERROR_CODE btree_apply_elem_delete(void *engine, hash_item *it,
+                                          const char *bkey, const uint32_t nbkey,
+                                          const bool drop_if_empty);
+ENGINE_ERROR_CODE btree_apply_elem_delete_logical(void *engine, hash_item *it,
+                                                  const bkey_range *bkrange,
+                                                  const eflag_filter *efilter,
+                                                  const uint32_t offset, const uint32_t count,
+                                                  const bool drop_if_empty);
+#endif
+
 /**
  * Item Scan Facility
  */

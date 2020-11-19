@@ -421,6 +421,13 @@ uint32_t item_ntotal(hash_item *item);
 bool item_is_valid(hash_item* item);
 #endif
 
+#ifdef REORGANIZE_ITEM_BASE // APPLY
+/* Item Apply Macros */
+//#define ITEM_APPLY_LOG_LEVEL EXTENSION_LOG_INFO
+#define ITEM_APPLY_LOG_LEVEL EXTENSION_LOG_DEBUG
+#define PRINT_NKEY(nkey) ((nkey) < 250 ? (nkey) : 250)
+#endif
+
 #ifdef REORGANIZE_ITEM_BASE
 /* item base module: init & final functions */
 int  item_base_init(void *engine_ptr);

@@ -9900,6 +9900,855 @@ ENGINE_ERROR_CODE map_coll_setattr(hash_item *it, item_attr *attrp,
 }
 #endif
 
+
+#ifdef REORGANIZE_ITEM_BASE // APPLY
+#else
+/* Item Apply Macros */
+//#define ITEM_APPLY_LOG_LEVEL EXTENSION_LOG_INFO
+#define ITEM_APPLY_LOG_LEVEL EXTENSION_LOG_DEBUG
+#define PRINT_NKEY(nkey) ((nkey) < 250 ? (nkey) : 250)
+#endif
+
+/*
+ * Item Apply Funtions
+ */
+ENGINE_ERROR_CODE item_apply_kv_link(void *engine, const char *key, const uint32_t nkey,
+                                     const uint32_t flags, const rel_time_t exptime,
+                                     const uint32_t nbytes, const char *value,
+                                     const uint64_t cas)
+{
+    hash_item *old_it;
+    hash_item *new_it;
+    ENGINE_ERROR_CODE ret;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL,
+                "item_apply_kv_link. key=%.*s nkey=%u nbytes=%u\n",
+                PRINT_NKEY(nkey), key, nkey, nbytes);
+
+    LOCK_CACHE();
+    old_it = do_item_get(key, nkey, DONT_UPDATE);
+    new_it = do_item_alloc(key, nkey, flags, exptime, nbytes, NULL); /* cookie is NULL */
+    if (new_it) {
+        /* Assume data is small, and copying with lock held is okay : FIXME */
+        memcpy(item_get_data(new_it), value, nbytes);
+
+        /* Now link the new item into the cache hash table */
+        if (old_it) {
+            do_item_replace(old_it, new_it);
+            do_item_release(old_it);
+            ret = ENGINE_SUCCESS;
+        } else {
+            ret = do_item_link(new_it);
+        }
+        if (ret == ENGINE_SUCCESS) {
+            /* Override the cas with the given cas. */
+            item_set_cas(new_it, cas);
+        } else {
+            do_item_free(new_it);
+        }
+    } else {
+        ret = ENGINE_ENOMEM;
+        if (old_it) { /* Remove inconsistent hash_item */
+            do_item_unlink(old_it, ITEM_UNLINK_NORMAL);
+            do_item_release(old_it);
+        }
+    }
+    UNLOCK_CACHE();
+
+    if (ret != ENGINE_SUCCESS) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "item_apply_kv_link failed. key=%.*s nkey=%u, code=%d\n",
+                    PRINT_NKEY(nkey), key, nkey, ret);
+    }
+    return ret;
+}
+
+ENGINE_ERROR_CODE item_apply_unlink(void *engine, const char *key, const uint32_t nkey)
+{
+    hash_item *it;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL, "item_apply_unlink. key=%.*s nkey=%u\n",
+                PRINT_NKEY(nkey), key, nkey);
+
+    LOCK_CACHE();
+    it = do_item_get(key, nkey, DONT_UPDATE);
+    if (it) {
+        do_item_unlink(it, ITEM_UNLINK_NORMAL); /* must unlink first. */
+        do_item_release(it);
+    } else {
+        /* The item might have been reclaimed or evicted */
+        logger->log(EXTENSION_LOG_DEBUG, NULL,
+                    "item_apply_unlink failed. not found key=%.*s nkey=%u\n",
+                    PRINT_NKEY(nkey), key, nkey);
+        ret = ENGINE_KEY_ENOENT;
+    }
+    UNLOCK_CACHE();
+    /* Does not matter whether the key exists or not.
+     * The caller uses ENOENT for statistics purposes.
+     */
+    return ret;
+}
+
+ENGINE_ERROR_CODE item_apply_setattr_exptime(void *engine, const char *key, const uint32_t nkey,
+                                             rel_time_t exptime)
+{
+    hash_item *it;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL, "item_apply_setattr_exptime. key=%.*s nkey=%u\n",
+                PRINT_NKEY(nkey), key, nkey);
+
+    LOCK_CACHE();
+    it = do_item_get(key, nkey, DONT_UPDATE);
+    if (it) {
+        it->exptime = exptime;
+        do_item_release(it);
+    } else {
+        logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_setattr_exptime failed."
+                    " not found key=%.*s nkey=%u\n",
+                    PRINT_NKEY(nkey), key, nkey);
+        ret = ENGINE_KEY_ENOENT;
+    }
+    UNLOCK_CACHE();
+    return ret;
+}
+
+ENGINE_ERROR_CODE item_apply_setattr_collinfo(void *engine, hash_item *it,
+                                              rel_time_t exptime, const int32_t maxcount,
+                                              const uint8_t ovflact, const uint8_t mflags,
+                                              bkey_t *maxbkeyrange)
+{
+    const char *key = item_get_key(it);
+    coll_meta_info *info;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL, "item_apply_setattr_collinfo. key=%.*s nkey=%u\n",
+                PRINT_NKEY(it->nkey), key, it->nkey);
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_setattr_collinfo failed."
+                        " invalid item. key=%.*s = nkey=%u\n",
+                        PRINT_NKEY(it->nkey), key, it->nkey);
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+        if (!IS_COLL_ITEM(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_setattr_collinfo failed."
+                        " The item is not a collection. key=%.*s nkey=%u\n",
+                        PRINT_NKEY(it->nkey), key, it->nkey);
+            ret = ENGINE_EBADTYPE; break;
+        }
+        if (maxbkeyrange != NULL && !IS_BTREE_ITEM(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "item_apply_setattr_collinfo failed."
+                        " The item is not a btree. key=%.*s nkey=%u\n",
+                        PRINT_NKEY(it->nkey), key, it->nkey);
+            ret = ENGINE_EBADTYPE; break;
+        }
+        it->exptime = exptime;
+        info = (coll_meta_info*)item_get_meta(it);
+        info->mcnt = maxcount;
+        info->ovflact = ovflact;
+        info->mflags = mflags;
+        if (maxbkeyrange) {
+            ((btree_meta_info*)info)->maxbkeyrange = *maxbkeyrange;
+        }
+    } while(0);
+
+    if (ret != ENGINE_SUCCESS) { /* Remove inconsistent has_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+    }
+    UNLOCK_CACHE();
+
+    return ENGINE_SUCCESS;
+}
+
+ENGINE_ERROR_CODE item_apply_lru_update(void *engine, const char *key, const uint32_t nkey)
+{
+    hash_item *it;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL, "item_apply_lru_update. key=%.*s nkey=%u\n",
+                PRINT_NKEY(nkey), key, nkey);
+
+    LOCK_CACHE();
+    it = do_item_get(key, nkey, DONT_UPDATE);
+    if (it) {
+        do_item_update(it, true); /* force the LRU update */
+        do_item_release(it);
+    } else {
+        ret = ENGINE_KEY_ENOENT;
+    }
+    UNLOCK_CACHE();
+    return ret;
+}
+
+ENGINE_ERROR_CODE item_apply_flush(void *engine, const char *prefix, const int nprefix)
+{
+    ENGINE_ERROR_CODE ret;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL, "item_apply_flush. prefix=%s nprefix=%d\n",
+                prefix ? prefix : "<null>", nprefix);
+
+    LOCK_CACHE();
+    ret = do_item_flush_expired(prefix, nprefix, 0 /* right now */, NULL);
+    UNLOCK_CACHE();
+    return ret;
+}
+
+#ifdef REORGANIZE_ITEM_COLL // APPLY LIST
+#else
+ENGINE_ERROR_CODE list_apply_item_link(void *engine, const char *key, const uint32_t nkey,
+                                       item_attr *attrp)
+{
+    hash_item *old_it;
+    hash_item *new_it;
+    ENGINE_ERROR_CODE ret;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL, "list_apply_item_link. key=%.*s nkey=%u\n",
+                PRINT_NKEY(nkey), key, nkey);
+
+    LOCK_CACHE();
+    old_it = do_item_get(key, nkey, DONT_UPDATE);
+    if (old_it) {
+        /* Remove the old item first. */
+        do_item_unlink(old_it, ITEM_UNLINK_NORMAL);
+        do_item_release(old_it);
+    }
+    new_it = do_list_item_alloc(key, nkey, attrp, NULL); /* cookie is NULL */
+    if (new_it) {
+        /* Link the new item into the hash table */
+        ret = do_item_link(new_it);
+        if (ret != ENGINE_SUCCESS) {
+            do_item_free(new_it);
+        }
+    } else {
+        ret = ENGINE_ENOMEM;
+    }
+    UNLOCK_CACHE();
+
+    if (ret == ENGINE_SUCCESS) {
+        /* The caller wants to know if the old item has been replaced.
+         * This code still indicates success.
+         */
+        if (old_it != NULL) ret = ENGINE_KEY_EEXISTS;
+    } else {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "list_apply_item_link failed. key=%.*s nkey=%u code=%d\n",
+                    PRINT_NKEY(nkey), key, nkey, ret);
+    }
+    return ret;
+}
+
+ENGINE_ERROR_CODE list_apply_elem_insert(void *engine, hash_item *it,
+                                         const int nelems, const int index,
+                                         const char *value, const uint32_t nbytes)
+{
+    const char *key = item_get_key(it);
+    list_meta_info *info;
+    list_elem_item *elem;
+    ENGINE_ERROR_CODE ret;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL,
+                "list_apply_elem_insert. key=%.*s nkey=%u nelems=%d index=%d\n",
+                PRINT_NKEY(it->nkey), key, it->nkey, nelems, index);
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "list_apply_elem_insert failed."
+                        " invalid item.\n");
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+
+        info = (list_meta_info*)item_get_meta(it);
+        if (nelems != -1 && info->ccnt != nelems) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "list_apply_elem_insert failed."
+                        " element count mismatch. ecnt(%d) != nelems(%d)\n",
+                        info->ccnt, nelems);
+            ret = ENGINE_EINVAL; break;
+        }
+
+        elem = do_list_elem_alloc(nbytes, NULL);
+        if (elem == NULL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "list_apply_elem_insert failed."
+                        " element alloc failed. nbytes=%d\n", nbytes);
+            ret = ENGINE_ENOMEM; break;
+        }
+        memcpy(elem->value, value, nbytes);
+
+        ret = do_list_elem_insert(it, index, elem, NULL);
+        if (ret != ENGINE_SUCCESS) {
+            do_list_elem_free(elem);
+            logger->log(EXTENSION_LOG_WARNING, NULL, "list_apply_elem_insert failed."
+                        " key=%.*s nkey=%u index=%d code=%d\n",
+                        PRINT_NKEY(it->nkey), key, it->nkey, index, ret);
+        }
+    } while(0);
+
+    if (ret != ENGINE_SUCCESS) { /* Remove inconsistent hash_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+    }
+    UNLOCK_CACHE();
+
+    return ret;
+}
+
+ENGINE_ERROR_CODE list_apply_elem_delete(void *engine, hash_item *it,
+                                         const int nelems, const int index,
+                                         const int count, const bool drop_if_empty)
+{
+    const char *key = item_get_key(it);
+    list_meta_info *info;
+    uint32_t ndeleted;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL,
+                "list_apply_elem_delete. key=%.*s nkey=%u index=%d, count=%d\n",
+                PRINT_NKEY(it->nkey), key, it->nkey, index, count);
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "list_apply_elem_delete failed."
+                        " invalid item.\n");
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+
+        info = (list_meta_info*)item_get_meta(it);
+        if (info->ccnt != nelems) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "list_apply_elem_delete failed."
+                        "element count mismatch. ecnt(%d) != nelems(%d)",
+                        info->ccnt, nelems);
+            ret = ENGINE_EINVAL; break;
+        }
+
+        ndeleted = do_list_elem_delete(info, index, count, ELEM_DELETE_NORMAL);
+        if (ndeleted == 0) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "list_apply_elem_delete failed."
+                        " no element deleted. key=%.*s nkey=%u index=%d count=%d\n",
+                        PRINT_NKEY(it->nkey), key, it->nkey, index, count);
+            ret = ENGINE_ELEM_ENOENT; break;
+        }
+    } while(0);
+
+    if (ret == ENGINE_SUCCESS || ret == ENGINE_ELEM_ENOENT) {
+        if (drop_if_empty && info->ccnt == 0) {
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        }
+    } else {
+        /* Remove inconsistent hash_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+    }
+    UNLOCK_CACHE();
+
+    return ret;
+}
+#endif
+
+#ifdef REORGANIZE_ITEM_COLL // APPLY SET
+#else
+ENGINE_ERROR_CODE set_apply_item_link(void *engine, const char *key, const uint32_t nkey,
+                                      item_attr *attrp)
+{
+    hash_item *old_it;
+    hash_item *new_it;
+    ENGINE_ERROR_CODE ret;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL, "set_apply_item_link. key=%.*s nkey=%u\n",
+                PRINT_NKEY(nkey), key, nkey);
+
+    LOCK_CACHE();
+    old_it = do_item_get(key, nkey, DONT_UPDATE);
+    if (old_it) {
+        /* Remove the old item first. */
+        do_item_unlink(old_it, ITEM_UNLINK_NORMAL);
+        do_item_release(old_it);
+    }
+    new_it = do_set_item_alloc(key, nkey, attrp, NULL); /* cookie is NULL */
+    if (new_it) {
+        /* Link the new item into the hash table */
+        ret = do_item_link(new_it);
+        if (ret != ENGINE_SUCCESS) {
+            do_item_free(new_it);
+        }
+    } else {
+        ret = ENGINE_ENOMEM;
+    }
+    UNLOCK_CACHE();
+
+    if (ret == ENGINE_SUCCESS) {
+        /* The caller wants to know if the old item has been replaced.
+         * This code still indicates success.
+         */
+        if (old_it != NULL) ret = ENGINE_KEY_EEXISTS;
+    } else {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "item_apply_set_link failed. key=%.*s nkey=%u code=%d\n",
+                    PRINT_NKEY(nkey), key, nkey, ret);
+    }
+    return ret;
+}
+
+
+ENGINE_ERROR_CODE set_apply_elem_insert(void *engine, hash_item *it,
+                                        const char *value, const uint32_t nbytes)
+{
+    const char *key = item_get_key(it);
+    set_elem_item *elem;
+    ENGINE_ERROR_CODE ret;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL, "set_apply_elem_insert. key=%.*s nkey=%u\n",
+                PRINT_NKEY(it->nkey), key, it->nkey);
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "set_apply_elem_insert failed."
+                        " invalid item.\n");
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+
+        elem = do_set_elem_alloc(nbytes, NULL);
+        if (elem == NULL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "set_apply_elem_insert failed."
+                        " element alloc failed. nbytes=%d\n", nbytes);
+            ret = ENGINE_ENOMEM; break;
+        }
+        memcpy(elem->value, value, nbytes);
+
+        ret = do_set_elem_insert(it, elem, NULL);
+        if (ret != ENGINE_SUCCESS) {
+            do_set_elem_free(elem);
+            logger->log(EXTENSION_LOG_WARNING, NULL, "set_apply_elem_insert failed."
+                        " key=%.*s nkey=%u code=%d\n",
+                        PRINT_NKEY(it->nkey), key, it->nkey, ret);
+        }
+    } while(0);
+
+    if (ret != ENGINE_SUCCESS) { /* Remove inconsistent hash_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+    }
+    UNLOCK_CACHE();
+
+    return ret;
+}
+
+ENGINE_ERROR_CODE set_apply_elem_delete(void *engine, hash_item *it,
+                                        const char *value, const uint32_t nbytes,
+                                        const bool drop_if_empty)
+{
+    const char *key = item_get_key(it);
+    set_meta_info *info;
+    ENGINE_ERROR_CODE ret;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL, "set_apply_elem_delete. key=%.*s nkey=%u\n",
+                PRINT_NKEY(it->nkey), key, it->nkey);
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "set_apply_elem_delete failed."
+                        " invalid item.\n");
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+
+        info = (set_meta_info *)item_get_meta(it);
+        ret = do_set_elem_delete_with_value(info, value, nbytes, ELEM_DELETE_NORMAL);
+        if (ret == ENGINE_ELEM_ENOENT) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "set_apply_elem_delete failed."
+                        " no element deleted. key=%.*s nkey=%u\n",
+                        PRINT_NKEY(it->nkey), key, it->nkey);
+            break;
+        }
+    } while(0);
+
+    if (ret == ENGINE_SUCCESS || ret == ENGINE_ELEM_ENOENT) {
+        if (drop_if_empty && info->ccnt == 0) {
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        }
+    } else {
+        /* Remove inconsistent hash_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+    }
+    UNLOCK_CACHE();
+
+    return ret;
+}
+#endif
+
+#ifdef REORGANIZE_ITEM_COLL // APPLY MAP
+#else
+ENGINE_ERROR_CODE map_apply_item_link(void *engine, const char *key, const uint32_t nkey,
+                                      item_attr *attrp)
+{
+    hash_item *old_it;
+    hash_item *new_it;
+    ENGINE_ERROR_CODE ret;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL, "map_apply_item_link. key=%.*s nkey=%u\n",
+                PRINT_NKEY(nkey), key, nkey);
+
+    LOCK_CACHE();
+    old_it = do_item_get(key, nkey, DONT_UPDATE);
+    if (old_it) {
+        /* Remove the old item first. */
+        do_item_unlink(old_it, ITEM_UNLINK_NORMAL);
+        do_item_release(old_it);
+    }
+    new_it = do_map_item_alloc(key, nkey, attrp, NULL); /* cookie is NULL */
+    if (new_it) {
+        /* Link the new item into the hash table */
+        ret = do_item_link(new_it);
+        if (ret != ENGINE_SUCCESS) {
+            do_item_free(new_it);
+        }
+    } else {
+        ret = ENGINE_ENOMEM;
+    }
+    UNLOCK_CACHE();
+
+    if (ret == ENGINE_SUCCESS) {
+        /* The caller wants to know if the old item has been replaced.
+         * This code still indicates success.
+         */
+        if (old_it != NULL) ret = ENGINE_KEY_EEXISTS;
+    } else {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "map_apply_item_link failed. key=%.*s nkey=%u code=%d\n",
+                    PRINT_NKEY(nkey), key, nkey, ret);
+    }
+    return ret;
+}
+
+ENGINE_ERROR_CODE map_apply_elem_insert(void *engine, hash_item *it,
+                                        const char *field, const uint32_t nfield,
+                                        const uint32_t nbytes)
+{
+    const char *key = item_get_key(it);
+    map_elem_item *elem;
+    ENGINE_ERROR_CODE ret;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL,
+                "map_apply_elem_insert. key=%.*s nkey=%u field=%.*s nfield=%u\n",
+                PRINT_NKEY(it->nkey), key, it->nkey, nfield, field, nfield);
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "map_apply_elem_insert failed."
+                        " invalid item.\n");
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+
+        elem = do_map_elem_alloc(nfield, nbytes, NULL);
+        if (elem == NULL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "map_apply_elem_insert failed."
+                        " element alloc failed. nfield=%d nbytes=%d\n", nfield, nbytes);
+            ret = ENGINE_ENOMEM; break;
+        }
+        memcpy(elem->data, field, nfield + nbytes);
+
+        ret = do_map_elem_insert(it, elem, true /* replace_if_exist */,  NULL);
+        if (ret != ENGINE_SUCCESS) {
+            do_map_elem_free(elem);
+            logger->log(EXTENSION_LOG_WARNING, NULL, "map_apply_elem_insert failed."
+                        " key=%.*s nkey=%u field=%.*s nfield=%u code=%d\n",
+                        PRINT_NKEY(it->nkey), key, it->nkey, nfield, field, nfield, ret);
+        }
+    } while(0);
+
+    if (ret != ENGINE_SUCCESS) { /* Remove inconsistent has_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+    }
+    UNLOCK_CACHE();
+
+    return ret;
+}
+
+ENGINE_ERROR_CODE map_apply_elem_delete(void *engine, hash_item *it,
+                                        const char *field, const uint32_t nfield,
+                                        const bool drop_if_empty)
+{
+    const char *key = item_get_key(it);
+    map_meta_info *info;
+    field_t flist;
+    uint32_t ndeleted;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    flist.value = (char*)field;
+    flist.length = nfield;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL,
+                "map_apply_elem_delete. key=%.*s nkey=%u field=%.*s nfield=%u\n",
+                PRINT_NKEY(it->nkey), key, it->nkey, nfield, field, nfield);
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "map_apply_elem_delete failed."
+                        " invalid item.\n");
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+
+        info = (map_meta_info *)item_get_meta(it);
+        if (info->ccnt == 0) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "map_apply_elem_delete failed."
+                        " no element.\n");
+            ret = ENGINE_ELEM_ENOENT; break;
+        }
+
+        ndeleted = do_map_elem_delete_with_field(info, 1, &flist, ELEM_DELETE_NORMAL);
+        if (ndeleted == 0) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "map_apply_elem_delete failed."
+                        " no element deleted. key=%.*s nkey=%u field=%.*s nfield=%u\n",
+                        PRINT_NKEY(it->nkey), key, it->nkey, nfield, field, nfield);
+            ret = ENGINE_ELEM_ENOENT; break;
+        }
+    } while(0);
+
+    if (ret == ENGINE_SUCCESS || ret == ENGINE_ELEM_ENOENT) {
+        if (drop_if_empty && info->ccnt == 0) {
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        }
+    } else {
+        /* Remove inconsistent hash_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+    }
+    UNLOCK_CACHE();
+
+    return ret;
+}
+#endif
+
+#ifdef REORGANIZE_ITEM_COLL // APPLY BTREE
+#else
+ENGINE_ERROR_CODE btree_apply_item_link(void *engine, const char *key, const uint32_t nkey,
+                                        item_attr *attrp)
+{
+    hash_item *old_it;
+    hash_item *new_it;
+    ENGINE_ERROR_CODE ret;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL, "btree_apply_item_link. key=%.*s nkey=%u\n",
+                PRINT_NKEY(nkey), key, nkey);
+
+    LOCK_CACHE();
+    old_it = do_item_get(key, nkey, DONT_UPDATE);
+    if (old_it) {
+        /* Remove the old item first. */
+        do_item_unlink(old_it, ITEM_UNLINK_NORMAL);
+        do_item_release(old_it);
+    }
+    new_it = do_btree_item_alloc(key, nkey, attrp, NULL); /* cookie is NULL */
+    if (new_it) {
+        /* Copy relevent fields in meta info */
+        btree_meta_info *info = (btree_meta_info*)item_get_meta(new_it);
+        if (attrp->trimmed) {
+            info->mflags |= COLL_META_FLAG_TRIMMED; // set trimmed
+        }
+        if (attrp->maxbkeyrange.len != BKEY_NULL) {
+            info->maxbkeyrange = attrp->maxbkeyrange;
+        }
+        /* Link the new item into the hash table */
+        ret = do_item_link(new_it);
+        if (ret != ENGINE_SUCCESS) {
+            do_item_free(new_it);
+        }
+    } else {
+        ret = ENGINE_ENOMEM;
+    }
+    UNLOCK_CACHE();
+
+    if (ret == ENGINE_SUCCESS) {
+        /* The caller wants to know if the old item has been replaced.
+         * This code still indicates success.
+         */
+        if (old_it != NULL) ret = ENGINE_KEY_EEXISTS;
+    } else {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "btree_apply_item_link failed. key=%.*s nkey=%u code=%d\n",
+                    PRINT_NKEY(nkey), key, nkey, ret);
+    }
+    return ret;
+}
+
+ENGINE_ERROR_CODE btree_apply_elem_insert(void *engine, hash_item *it,
+                                          const char *bkey, const uint32_t nbkey,
+                                          const uint32_t neflag, const uint32_t nbytes)
+{
+    const char *key = item_get_key(it);
+    btree_elem_item *elem;
+    bool replaced;
+    ENGINE_ERROR_CODE ret;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL,
+                "btree_apply_elem_insert. key=%.*s nkey=%u bkey=%.*s nbkey=%u\n",
+                PRINT_NKEY(it->nkey), key, it->nkey, nbkey, bkey, nbkey);
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "btree_apply_elem_insert failed."
+                        " invalid item.\n");
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+
+        elem = do_btree_elem_alloc(nbkey, neflag, nbytes, NULL);
+        if (elem == NULL) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "btree_apply_elem_insert failed."
+                        " element alloc failed. nbkey=%d neflag=%d nbytes=%d\n", nbkey, neflag, nbytes);
+            ret = ENGINE_ENOMEM; break;
+        }
+        memcpy(elem->data, bkey, BTREE_REAL_NBKEY(nbkey) + neflag + nbytes);
+
+        ret = do_btree_elem_insert(it, elem, true /* replace_if_exist */,
+                                   &replaced, NULL, NULL, NULL);
+        if (ret != ENGINE_SUCCESS) {
+            do_btree_elem_free(elem);
+            logger->log(EXTENSION_LOG_WARNING, NULL, "btree_apply_elem_insert failed."
+                        " key=%.*s nkey=%u d bkey=%.*s nbkey=%u code=%d\n",
+                        PRINT_NKEY(it->nkey), key, it->nkey, nbkey, bkey, nbkey, ret);
+        }
+    } while(0);
+
+    if (ret != ENGINE_SUCCESS) { /* Remove inconsistent has_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+    }
+    UNLOCK_CACHE();
+
+    return ret;
+}
+
+ENGINE_ERROR_CODE btree_apply_elem_delete(void *engine, hash_item *it,
+                                          const char *bkey, const uint32_t nbkey,
+                                          const bool drop_if_empty)
+{
+    const char *key = item_get_key(it);
+    btree_meta_info *info;
+    bkey_range bkrange;
+    uint32_t ndeleted;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL,
+                "btree_apply_elem_delete. key=%.*s nkey=%u bkey=%.*s nbkey=%u\n",
+                PRINT_NKEY(it->nkey), key, it->nkey, nbkey, bkey, nbkey);
+
+    /* one-element range */
+    memcpy(bkrange.from_bkey, bkey, BTREE_REAL_NBKEY(nbkey));
+    bkrange.from_nbkey = nbkey;
+    /* bkey_range.to_bkey */
+    bkrange.to_nbkey = BKEY_NULL;
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "btree_apply_elem_delete failed."
+                        " invalid item.\n");
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+
+        info = (btree_meta_info *)item_get_meta(it);
+        if (info->ccnt == 0) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "btree_apply_elem_delete failed."
+                        " no element.\n");
+            ret = ENGINE_ELEM_ENOENT; break;
+        }
+        if ((info->bktype == BKEY_TYPE_UINT64 && bkrange.from_nbkey > 0) ||
+            (info->bktype == BKEY_TYPE_BINARY && bkrange.from_nbkey == 0)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "btree_apply_elem_delete failed."
+                        " bkey mismatch. key=%.*s nkey=%u bkey=%.*s nbkey=%u\n",
+                        PRINT_NKEY(it->nkey), key, it->nkey, nbkey, bkey, nbkey);
+            ret = ENGINE_EBADBKEY; break;
+        }
+
+        ndeleted = do_btree_elem_delete(info, BKEY_RANGE_TYPE_SIN, &bkrange, NULL,
+                                         0, 0, NULL, ELEM_DELETE_NORMAL);
+        if (ndeleted == 0) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "btree_apply_elem_delete failed."
+                        " no element deleted. key=%.*s nkey=%u bkey=%.*s nbkey=%u\n",
+                        PRINT_NKEY(it->nkey), key, it->nkey, nbkey, bkey, nbkey);
+            ret = ENGINE_ELEM_ENOENT; break;
+        }
+    } while(0);
+
+    if (ret == ENGINE_SUCCESS || ret == ENGINE_ELEM_ENOENT) {
+        if (drop_if_empty && info->ccnt == 0) {
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        }
+    } else {
+        /* Remove inconsistent hash_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+    }
+    UNLOCK_CACHE();
+
+    return ret;
+}
+
+ENGINE_ERROR_CODE btree_apply_elem_delete_logical(void *engine, hash_item *it,
+                                                  const bkey_range *bkrange,
+                                                  const eflag_filter *efilter,
+                                                  const uint32_t offset, const uint32_t count,
+                                                  const bool drop_if_empty)
+{
+    const char *key = item_get_key(it);
+    btree_meta_info *info;
+    uint32_t ndeleted;
+    int bkrtype = do_btree_bkey_range_type(bkrange);
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    logger->log(ITEM_APPLY_LOG_LEVEL, NULL,
+                "btree_apply_elem_delete_logical. key=%.*s nkey=%u\n",
+                PRINT_NKEY(it->nkey), key, it->nkey);
+
+    LOCK_CACHE();
+    do {
+        if (!item_is_valid(it)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "btree_apply_elem_delete_logical failed."
+                        " invalid item.\n");
+            ret = ENGINE_KEY_ENOENT; break;
+        }
+
+        info = (btree_meta_info *)item_get_meta(it);
+        if (info->ccnt == 0) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "btree_apply_elem_delete_logical failed."
+                        " no element.\n");
+            ret = ENGINE_ELEM_ENOENT; break;
+        }
+        if ((info->bktype == BKEY_TYPE_UINT64 && bkrange->from_nbkey > 0) ||
+            (info->bktype == BKEY_TYPE_BINARY && bkrange->from_nbkey == 0)) {
+            logger->log(EXTENSION_LOG_WARNING, NULL, "btree_apply_elem_delete_logical failed."
+                        " bkey mismatch. key=%.*s nkey=%u from_bkey=%.*s\n",
+                        PRINT_NKEY(it->nkey), key, it->nkey, bkrange->from_nbkey, bkrange->from_bkey);
+            ret = ENGINE_EBADBKEY; break;
+        }
+
+        ndeleted = do_btree_elem_delete(info, bkrtype, bkrange, efilter, offset, count,
+                                         NULL, ELEM_DELETE_NORMAL);
+        if (ndeleted == 0) {
+            logger->log(EXTENSION_LOG_INFO, NULL, "btree_apply_elem_delete_logical failed."
+                        " no element deleted. key=%.*s nkey=%u from_bkey=%.*s to_bkey=%.*s",
+                        PRINT_NKEY(it->nkey), key, it->nkey,
+                        bkrange->from_nbkey, bkrange->from_bkey, bkrange->to_nbkey, bkrange->to_bkey);
+            ret = ENGINE_ELEM_ENOENT; break;
+        }
+    } while(0);
+
+    if (ret == ENGINE_SUCCESS || ret == ENGINE_ELEM_ENOENT) {
+        if (drop_if_empty && info->ccnt == 0) {
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
+        }
+    } else {
+        /* Remove inconsistent hash_item */
+        do_item_unlink(it, ITEM_UNLINK_NORMAL);
+    }
+    UNLOCK_CACHE();
+
+    return ret;
+}
+#endif
+
 ENGINE_ERROR_CODE item_init(struct default_engine *engine_ptr)
 {
     /* initialize global variables */
