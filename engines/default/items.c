@@ -6479,147 +6479,6 @@ void item_stats_reset(void)
     UNLOCK_CACHE();
 }
 
-ENGINE_ERROR_CODE item_init(struct default_engine *engine_ptr)
-{
-    /* initialize global variables */
-    engine = engine_ptr;
-    config = &engine->config;
-    itemsp = &engine->items;
-#ifdef REORGANIZE_ITEM_BASE
-#else
-    statsp = &engine->stats;
-#endif
-    svcore = engine->server.core;
-#ifdef REORGANIZE_ITEM_BASE
-#else
-    svstat = engine->server.stat;
-#endif
-    logger = engine->server.log->get_logger();
-
-#ifdef REORGANIZE_ITEM_BASE
-#else
-    pthread_mutex_init(&coll_del_lock, NULL);
-    pthread_cond_init(&coll_del_cond, NULL);
-    coll_del_queue.head = coll_del_queue.tail = NULL;
-    coll_del_queue.size = 0;
-#endif
-
-    /* check maximum collection size */
-    assert(DEFAULT_LIST_SIZE <= config->max_list_size);
-    assert(DEFAULT_SET_SIZE <= config->max_set_size);
-    assert(DEFAULT_MAP_SIZE <= config->max_map_size);
-    assert(DEFAULT_BTREE_SIZE <= config->max_btree_size);
-
-    logger->log(EXTENSION_LOG_INFO, NULL, "default/maximum list  size = (%u/%u)\n",
-                DEFAULT_LIST_SIZE, config->max_list_size);
-    logger->log(EXTENSION_LOG_INFO, NULL, "default/maximum set   size = (%u/%u)\n",
-                DEFAULT_SET_SIZE, config->max_set_size);
-    logger->log(EXTENSION_LOG_INFO, NULL, "default/maximum map   size = (%u/%u)\n",
-                DEFAULT_MAP_SIZE, config->max_map_size);
-    logger->log(EXTENSION_LOG_INFO, NULL, "default/maximum btree size = (%u/%u)\n",
-                DEFAULT_BTREE_SIZE, config->max_btree_size);
-
-    item_clog_init(engine);
-#ifdef REORGANIZE_ITEM_BASE
-    if (item_base_init(engine) < 0) {
-        return ENGINE_FAILED;
-    }
-#endif
-#ifdef REORGANIZE_ITEM_COLL
-    item_list_coll_init(engine);
-    item_set_coll_init(engine);
-    item_map_coll_init(engine);
-    item_btree_coll_init(engine);
-#endif
-
-#ifdef REORGANIZE_ITEM_BASE
-#else
-    int ret = pthread_create(&coll_del_tid, NULL, collection_delete_thread, engine);
-    if (ret != 0) {
-        logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Can't create thread: %s\n", strerror(ret));
-        return ENGINE_FAILED;
-    }
-#endif
-
-#ifdef REORGANIZE_ITEM_COLL // BTREE
-#else
-    /* check forced btree overflow action */
-    _check_forced_btree_overflow_action();
-
-    /* prepare bkey min & max value */
-    bkey_uint64_min = 0;
-    bkey_uint64_max = (uint64_t)((int64_t)-1); /* need check */
-    bkey_binary_min[0] = 0x00;
-    for (int i=0; i < MAX_BKEY_LENG; i++) {
-        bkey_binary_max[i] = 0xFF;
-    }
-
-    /* remove unused function warnings */
-    if (1) {
-        uint64_t val1 = 10;
-        uint64_t val2 = 20;
-        assert(UINT64_COMPARE_OP[COMPARE_OP_LT](&val1, &val2) == true);
-    }
-#endif
-
-    logger->log(EXTENSION_LOG_INFO, NULL, "ITEM module initialized.\n");
-    return ENGINE_SUCCESS;
-}
-
-void item_final(struct default_engine *engine_ptr)
-{
-    if (itemsp == NULL) {
-        return; /* nothing to do */
-    }
-
-    assert(engine == engine_ptr);
-    if (engine->dumper.running) {
-        item_stop_dump(engine);
-    }
-#ifdef REORGANIZE_ITEM_BASE
-#else
-    if (coll_del_thread_running) {
-        coll_del_thread_wakeup();
-        pthread_join(coll_del_tid, NULL);
-    }
-#endif
-
-    /* wait until scrubber thread is finished */
-    int sleep_count = 0;
-    while (engine->scrubber.running) {
-        usleep(1000); // 1ms;
-        sleep_count++;
-    }
-    if (sleep_count > 100) { // waited too long
-        logger->log(EXTENSION_LOG_INFO, NULL,
-                "Waited %d ms for scrubber to be stopped.\n", sleep_count);
-    }
-
-    /* wait until dumper thread is finished. */
-    sleep_count = 0;
-    while (engine->dumper.running) {
-        usleep(1000); // 1ms;
-        sleep_count++;
-    }
-    if (sleep_count > 100) { // waited too long
-        logger->log(EXTENSION_LOG_INFO, NULL,
-                "Waited %d ms for dumper to be stopped.\n", sleep_count);
-    }
-
-#ifdef REORGANIZE_ITEM_BASE
-    item_base_final(engine);
-#endif
-#ifdef REORGANIZE_ITEM_COLL
-    item_list_coll_final(engine);
-    item_set_coll_final(engine);
-    item_map_coll_final(engine);
-    item_btree_coll_final(engine);
-#endif
-    item_clog_final(engine);
-    logger->log(EXTENSION_LOG_INFO, NULL, "ITEM module destroyed.\n");
-}
-
 #ifdef REORGANIZE_ITEM_COLL // LIST
 #else
 /*
@@ -10040,6 +9899,147 @@ ENGINE_ERROR_CODE map_coll_setattr(hash_item *it, item_attr *attrp,
     return ENGINE_SUCCESS;
 }
 #endif
+
+ENGINE_ERROR_CODE item_init(struct default_engine *engine_ptr)
+{
+    /* initialize global variables */
+    engine = engine_ptr;
+    config = &engine->config;
+    itemsp = &engine->items;
+#ifdef REORGANIZE_ITEM_BASE
+#else
+    statsp = &engine->stats;
+#endif
+    svcore = engine->server.core;
+#ifdef REORGANIZE_ITEM_BASE
+#else
+    svstat = engine->server.stat;
+#endif
+    logger = engine->server.log->get_logger();
+
+#ifdef REORGANIZE_ITEM_BASE
+#else
+    pthread_mutex_init(&coll_del_lock, NULL);
+    pthread_cond_init(&coll_del_cond, NULL);
+    coll_del_queue.head = coll_del_queue.tail = NULL;
+    coll_del_queue.size = 0;
+#endif
+
+    /* check maximum collection size */
+    assert(DEFAULT_LIST_SIZE <= config->max_list_size);
+    assert(DEFAULT_SET_SIZE <= config->max_set_size);
+    assert(DEFAULT_MAP_SIZE <= config->max_map_size);
+    assert(DEFAULT_BTREE_SIZE <= config->max_btree_size);
+
+    logger->log(EXTENSION_LOG_INFO, NULL, "default/maximum list  size = (%u/%u)\n",
+                DEFAULT_LIST_SIZE, config->max_list_size);
+    logger->log(EXTENSION_LOG_INFO, NULL, "default/maximum set   size = (%u/%u)\n",
+                DEFAULT_SET_SIZE, config->max_set_size);
+    logger->log(EXTENSION_LOG_INFO, NULL, "default/maximum map   size = (%u/%u)\n",
+                DEFAULT_MAP_SIZE, config->max_map_size);
+    logger->log(EXTENSION_LOG_INFO, NULL, "default/maximum btree size = (%u/%u)\n",
+                DEFAULT_BTREE_SIZE, config->max_btree_size);
+
+    item_clog_init(engine);
+#ifdef REORGANIZE_ITEM_BASE
+    if (item_base_init(engine) < 0) {
+        return ENGINE_FAILED;
+    }
+#endif
+#ifdef REORGANIZE_ITEM_COLL
+    item_list_coll_init(engine);
+    item_set_coll_init(engine);
+    item_map_coll_init(engine);
+    item_btree_coll_init(engine);
+#endif
+
+#ifdef REORGANIZE_ITEM_BASE
+#else
+    int ret = pthread_create(&coll_del_tid, NULL, collection_delete_thread, engine);
+    if (ret != 0) {
+        logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Can't create thread: %s\n", strerror(ret));
+        return ENGINE_FAILED;
+    }
+#endif
+
+#ifdef REORGANIZE_ITEM_COLL // BTREE
+#else
+    /* check forced btree overflow action */
+    _check_forced_btree_overflow_action();
+
+    /* prepare bkey min & max value */
+    bkey_uint64_min = 0;
+    bkey_uint64_max = (uint64_t)((int64_t)-1); /* need check */
+    bkey_binary_min[0] = 0x00;
+    for (int i=0; i < MAX_BKEY_LENG; i++) {
+        bkey_binary_max[i] = 0xFF;
+    }
+
+    /* remove unused function warnings */
+    if (1) {
+        uint64_t val1 = 10;
+        uint64_t val2 = 20;
+        assert(UINT64_COMPARE_OP[COMPARE_OP_LT](&val1, &val2) == true);
+    }
+#endif
+
+    logger->log(EXTENSION_LOG_INFO, NULL, "ITEM module initialized.\n");
+    return ENGINE_SUCCESS;
+}
+
+void item_final(struct default_engine *engine_ptr)
+{
+    if (itemsp == NULL) {
+        return; /* nothing to do */
+    }
+
+    assert(engine == engine_ptr);
+    if (engine->dumper.running) {
+        item_stop_dump(engine);
+    }
+#ifdef REORGANIZE_ITEM_BASE
+#else
+    if (coll_del_thread_running) {
+        coll_del_thread_wakeup();
+        pthread_join(coll_del_tid, NULL);
+    }
+#endif
+
+    /* wait until scrubber thread is finished */
+    int sleep_count = 0;
+    while (engine->scrubber.running) {
+        usleep(1000); // 1ms;
+        sleep_count++;
+    }
+    if (sleep_count > 100) { // waited too long
+        logger->log(EXTENSION_LOG_INFO, NULL,
+                "Waited %d ms for scrubber to be stopped.\n", sleep_count);
+    }
+
+    /* wait until dumper thread is finished. */
+    sleep_count = 0;
+    while (engine->dumper.running) {
+        usleep(1000); // 1ms;
+        sleep_count++;
+    }
+    if (sleep_count > 100) { // waited too long
+        logger->log(EXTENSION_LOG_INFO, NULL,
+                "Waited %d ms for dumper to be stopped.\n", sleep_count);
+    }
+
+#ifdef REORGANIZE_ITEM_BASE
+    item_base_final(engine);
+#endif
+#ifdef REORGANIZE_ITEM_COLL
+    item_list_coll_final(engine);
+    item_set_coll_final(engine);
+    item_map_coll_final(engine);
+    item_btree_coll_final(engine);
+#endif
+    item_clog_final(engine);
+    logger->log(EXTENSION_LOG_INFO, NULL, "ITEM module destroyed.\n");
+}
 
 #ifdef ENABLE_PERSISTENCE
 /* Item Apply Macros */
