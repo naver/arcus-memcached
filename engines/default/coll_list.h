@@ -20,7 +20,6 @@
 
 #include "item_base.h"
 
-#ifdef REORGANIZE_ITEM_COLL // LIST
 /*
  * List Collection
  */
@@ -60,9 +59,7 @@ ENGINE_ERROR_CODE list_coll_getattr(hash_item *it, item_attr *attrp,
                                     ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
 ENGINE_ERROR_CODE list_coll_setattr(hash_item *it, item_attr *attrp,
                                     ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_cnt);
-#endif
 
-#ifdef REORGANIZE_ITEM_COLL // APPLY LIST
 ENGINE_ERROR_CODE list_apply_item_link(void *engine, const char *key, const uint32_t nkey,
                                        item_attr *attrp);
 ENGINE_ERROR_CODE list_apply_elem_insert(void *engine, hash_item *it,
@@ -71,11 +68,8 @@ ENGINE_ERROR_CODE list_apply_elem_insert(void *engine, hash_item *it,
 ENGINE_ERROR_CODE list_apply_elem_delete(void *engine, hash_item *it,
                                          const int nelems, const int index,
                                          const int count, const bool drop_if_empty);
-#endif
 
-#ifdef REORGANIZE_ITEM_COLL // LIST
 ENGINE_ERROR_CODE item_list_coll_init(void *engine_ptr);
 void item_list_coll_final(void *engine_ptr);
-#endif
 
 #endif

@@ -35,18 +35,13 @@
 #include "default_engine.h"
 #include "item_clog.h"
 
-#ifdef REORGANIZE_ITEM_COLL // SET
 static struct default_engine *engine=NULL;
 static struct engine_config  *config=NULL; // engine config
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
-#endif
 
-#ifdef REORGANIZE_ITEM_COLL // SET
 /* used by set and map collection */
 extern int genhash_string_hash(const void* p, size_t nkey);
-#endif
 
-#ifdef REORGANIZE_ITEM_COLL // SET
 /* Cache Lock */
 static inline void LOCK_CACHE(void)
 {
@@ -639,9 +634,7 @@ static ENGINE_ERROR_CODE do_set_elem_insert(hash_item *it, set_elem_item *elem,
     CLOG_SET_ELEM_INSERT(info, elem);
     return ENGINE_SUCCESS;
 }
-#endif
 
-#ifdef REORGANIZE_ITEM_COLL // SET
 /*
  * SET Interface Functions
  */
@@ -994,9 +987,7 @@ ENGINE_ERROR_CODE set_coll_setattr(hash_item *it, item_attr *attrp,
     }
     return ENGINE_SUCCESS;
 }
-#endif
 
-#ifdef REORGANIZE_ITEM_COLL // APPLY SET
 ENGINE_ERROR_CODE set_apply_item_link(void *engine, const char *key, const uint32_t nkey,
                                       item_attr *attrp)
 {
@@ -1124,9 +1115,7 @@ ENGINE_ERROR_CODE set_apply_elem_delete(void *engine, hash_item *it,
 
     return ret;
 }
-#endif
 
-#ifdef REORGANIZE_ITEM_COLL // SET
 /*
  * External Functions
  */
@@ -1145,4 +1134,3 @@ void item_set_coll_final(void *engine_ptr)
 {
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM set module destroyed.\n");
 }
-#endif

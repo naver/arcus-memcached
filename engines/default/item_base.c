@@ -33,7 +33,6 @@
 #include "item_base.h"
 #include "item_clog.h"
 
-#ifdef REORGANIZE_ITEM_BASE
 static struct default_engine *engine=NULL;
 static struct engine_config *config=NULL; // engine config
 static struct items         *itemsp=NULL;
@@ -41,9 +40,7 @@ static struct engine_stats  *statsp=NULL;
 static SERVER_STAT_API      *svstat=NULL; // server stat api
 static SERVER_CORE_API      *svcore=NULL; // server core api
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
-#endif
 
-#ifdef REORGANIZE_ITEM_BASE
 /* We only reposition items in the LRU queue if they haven't been repositioned
  * in this many seconds. That saves us from churning on frequently-accessed
  * items.
@@ -54,9 +51,7 @@ static EXTENSION_LOGGER_DESCRIPTOR *logger;
  * harvesting it on a low memory condition.
  */
 #define TAIL_REPAIR_TIME (3 * 3600)
-#endif
 
-#ifdef REORGANIZE_ITEM_BASE
 /* item queue */
 typedef struct {
    hash_item   *head;
@@ -71,9 +66,7 @@ static pthread_cond_t  coll_del_cond;
 static pthread_t       coll_del_tid; /* thread id */
 static bool            coll_del_sleep = false;
 static volatile bool   coll_del_thread_running = false;
-#endif
 
-#ifdef REORGANIZE_ITEM_BASE
 /*
  * Static functions
  */
@@ -1210,9 +1203,7 @@ void do_item_release(hash_item *it)
         }
     }
 }
-#endif
 
-#ifdef REORGANIZE_ITEM_BASE
 /*
  * Item Management Daemon
  */
@@ -1332,9 +1323,7 @@ void coll_del_thread_wakeup(void)
     }
     pthread_mutex_unlock(&coll_del_lock);
 }
-#endif
 
-#ifdef REORGANIZE_ITEM_BASE
 /*
  * Item access functions
  */
@@ -1396,9 +1385,7 @@ bool item_is_valid(hash_item* item)
         return false;
     }
 }
-#endif
 
-#ifdef REORGANIZE_ITEM_BASE
 /*
  * Initialize change log module
  */
@@ -1437,4 +1424,3 @@ void item_base_final(void *engine_ptr)
     }
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM base module destroyed.\n");
 }
-#endif
