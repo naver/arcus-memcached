@@ -28,12 +28,12 @@
 #include <inttypes.h>
 #include <sys/time.h> /* gettimeofday() */
 
-#include "default_engine.h"
-#include "item_clog.h"
-
+/* Dummy PERSISTENCE_ACTION Macros */
 #define PERSISTENCE_ACTION_BEGIN(a, b)
 #define PERSISTENCE_ACTION_END(a)
 
+#include "default_engine.h"
+#include "item_clog.h"
 #ifdef ENABLE_PERSISTENCE
 /* PERSISTENCE_ACTION macros are redefined */
 #include "cmdlogmgr.h"

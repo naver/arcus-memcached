@@ -28,13 +28,16 @@
 #include <inttypes.h>
 #include <sys/time.h> /* gettimeofday() */
 
+#ifdef REORGANIZE_ITEM_COLL // MAP
+/* Dummy PERSISTENCE_ACTION Macros */
+#define PERSISTENCE_ACTION_BEGIN(a, b)
+#define PERSISTENCE_ACTION_END(a)
+#endif
+
 #include "default_engine.h"
 #include "item_clog.h"
 
 #ifdef REORGANIZE_ITEM_COLL // MAP
-#define PERSISTENCE_ACTION_BEGIN(a, b)
-#define PERSISTENCE_ACTION_END(a)
-
 static struct default_engine *engine=NULL;
 static struct engine_config  *config=NULL; // engine config
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
