@@ -354,11 +354,6 @@ struct items {
 #endif
 
 #ifdef REORGANIZE_ITEM_BASE
-/* cache locking & unlocking */
-void LOCK_CACHE(void);
-void UNLOCK_CACHE(void);
-void TRYLOCK_CACHE(int ntries);
-
 void ITEM_REFCOUNT_INCR(hash_item *it);
 void ITEM_REFCOUNT_DECR(hash_item *it);
 
