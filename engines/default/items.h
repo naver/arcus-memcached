@@ -474,11 +474,6 @@ ENGINE_ERROR_CODE item_arithmetic(const void *key, const uint32_t nkey,
 ENGINE_ERROR_CODE item_delete(const void *key, const uint32_t nkey,
                               uint64_t cas, const void *cookie);
 
-#ifdef REORGANIZE_ITEM_BASE
-#else
-void coll_del_thread_wakeup(void);
-#endif
-
 ENGINE_ERROR_CODE item_init(struct default_engine *engine);
 
 void              item_final(struct default_engine *engine);
