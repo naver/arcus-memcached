@@ -18,48 +18,11 @@
 #ifndef ITEMS_H
 #define ITEMS_H
 
-#ifdef REORGANIZE_ITEM_BASE
 #include "item_base.h"
 #include "coll_list.h"
 #include "coll_set.h"
 #include "coll_map.h"
 #include "coll_btree.h"
-#else
-
-/* Item internal flag (1 byte) : item type and flag */
-/* 1) item type: increasing order (See ENGINE_ITEM_TYPE) */
-#define ITEM_IFLAG_LIST  1   /* list item */
-#define ITEM_IFLAG_SET   2   /* set item */
-#define ITEM_IFLAG_MAP   3   /* map item */
-#define ITEM_IFLAG_BTREE 4   /* b+tree item */
-#define ITEM_IFLAG_COLL  7   /* collection item: list/set/map/b+tree */
-/* 2) item flag: decreasing order */
-#define ITEM_LINKED      32  /* linked to assoc hash table */
-#define ITEM_INTERNAL    64  /* internal cache item */
-#define ITEM_WITH_CAS    128 /* having CAS value */
-
-/* special address for representing unlinked status */
-#define ADDR_MEANS_UNLINKED  1
-
-/* hash item strtucture */
-typedef struct _hash_item {
-    uint16_t refcount;  /* reference count */
-    uint8_t  slabs_clsid;/* which slab class we're in */
-    uint8_t  refchunk;  /* reference chunk */
-    uint32_t flags;     /* Flags associated with the item (in network byte order) */
-    struct _hash_item *next;   /* LRU chain next */
-    struct _hash_item *prev;   /* LRU chain prev */
-    struct _hash_item *h_next; /* hash chain next */
-    rel_time_t time;    /* least recent access */
-    rel_time_t exptime; /* When the item will expire (relative to process startup) */
-    uint8_t  iflag;     /* Internal flags: item type and flag */
-    uint16_t nkey;      /* The total length of the key (in bytes) */
-    uint32_t nbytes;    /* The total length of the data (in bytes) */
-    /* Following fields are used to trade off memory space for performance */
-    uint32_t khash;     /* The hash value of key string */
-    void    *pfxptr;    /* pointer to prefix structure */
-} hash_item;
-#endif
 
 /*
  * You should not try to aquire any of the item locks before calling these
