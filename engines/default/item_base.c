@@ -77,31 +77,14 @@ static volatile bool   coll_del_thread_running = false;
 /*
  * Static functions
  */
-//static inline void LOCK_CACHE(void)
-void LOCK_CACHE(void)
+static inline void LOCK_CACHE(void)
 {
     pthread_mutex_lock(&engine->cache_lock);
 }
 
-//static inline void UNLOCK_CACHE(void)
-void UNLOCK_CACHE(void)
+static inline void UNLOCK_CACHE(void)
 {
     pthread_mutex_unlock(&engine->cache_lock);
-}
-
-//static inline void TRYLOCK_CACHE(int ntries)
-void TRYLOCK_CACHE(int ntries)
-{
-    int i;
-
-    for (i = 0; i < ntries; i++) {
-        if (pthread_mutex_trylock(&engine->cache_lock) == 0)
-            break;
-        sched_yield();
-    }
-    if (i == ntries) {
-        pthread_mutex_lock(&engine->cache_lock);
-    }
 }
 
 #define ITEM_REFCOUNT_FULL 65535

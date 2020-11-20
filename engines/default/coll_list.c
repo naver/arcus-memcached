@@ -41,6 +41,17 @@ static EXTENSION_LOGGER_DESCRIPTOR *logger;
 #endif
 
 #ifdef REORGANIZE_ITEM_COLL // LIST
+/* Cache Lock */
+static inline void LOCK_CACHE(void)
+{
+    pthread_mutex_lock(&engine->cache_lock);
+}
+
+static inline void UNLOCK_CACHE(void)
+{
+    pthread_mutex_unlock(&engine->cache_lock);
+}
+
 /*
  * LIST collection management
  */

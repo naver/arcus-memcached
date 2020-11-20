@@ -223,8 +223,6 @@ static void _setif_forced_btree_overflow_action(btree_meta_info *info,
 }
 #endif
 
-#ifdef REORGANIZE_ITEM_BASE
-#else
 /*
  * Static functions
  */
@@ -252,6 +250,8 @@ static inline void TRYLOCK_CACHE(int ntries)
     }
 }
 
+#ifdef REORGANIZE_ITEM_BASE
+#else
 #define ITEM_REFCOUNT_FULL 65535
 #define ITEM_REFCOUNT_MOVE 32768
 

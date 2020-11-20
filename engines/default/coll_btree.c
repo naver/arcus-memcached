@@ -41,6 +41,17 @@ static EXTENSION_LOGGER_DESCRIPTOR *logger;
 #endif
 
 #ifdef REORGANIZE_ITEM_COLL // BTREE
+/* Cache Lock */
+static inline void LOCK_CACHE(void)
+{
+    pthread_mutex_lock(&engine->cache_lock);
+}
+
+static inline void UNLOCK_CACHE(void)
+{
+    pthread_mutex_unlock(&engine->cache_lock);
+}
+
 /* bkey type */
 #define BKEY_TYPE_UNKNOWN 0
 #define BKEY_TYPE_UINT64  1
