@@ -18,6 +18,11 @@
 #ifndef ITEM_CLOG_H
 #define ITEM_CLOG_H
 
+#ifdef ENABLE_PERSISTENCE
+/* PERSISTENCE_ACTION macros are redefined */
+#include "cmdlogmgr.h"
+#endif
+
 extern bool item_clog_enabled;
 
 /* functions for generate change logs */

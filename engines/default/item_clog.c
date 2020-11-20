@@ -19,9 +19,6 @@
 
 #include "default_engine.h"
 #include "item_clog.h"
-#ifdef ENABLE_PERSISTENCE
-#include "cmdlogmgr.h"
-#endif
 
 bool item_clog_enabled = false;
 

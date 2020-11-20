@@ -34,10 +34,6 @@
 
 #include "default_engine.h"
 #include "item_clog.h"
-#ifdef ENABLE_PERSISTENCE
-/* PERSISTENCE_ACTION macros are redefined */
-#include "cmdlogmgr.h"
-#endif
 
 #ifdef REORGANIZE_ITEM_BASE
 #else
