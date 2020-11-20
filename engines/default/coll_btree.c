@@ -35,13 +35,10 @@
 #include "default_engine.h"
 #include "item_clog.h"
 
-#ifdef REORGANIZE_ITEM_COLL // BTREE
 static struct default_engine *engine=NULL;
 static struct engine_config  *config=NULL; // engine config
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
-#endif
 
-#ifdef REORGANIZE_ITEM_COLL // BTREE
 /* Cache Lock */
 static inline void LOCK_CACHE(void)
 {
@@ -112,9 +109,7 @@ static uint64_t      bkey_uint64_min;
 static uint64_t      bkey_uint64_max;
 static unsigned char bkey_binary_min[MIN_BKEY_LENG];
 static unsigned char bkey_binary_max[MAX_BKEY_LENG];
-#endif
 
-#ifdef REORGANIZE_ITEM_COLL // BTREE
 /* Temporary Facility
  * forced btree overflow action
  */
@@ -177,9 +172,7 @@ static void _setif_forced_btree_overflow_action(btree_meta_info *info,
         info->ovflact = forced_btree_ovflact;
     }
 }
-#endif
 
-#ifdef REORGANIZE_ITEM_COLL // BTREE
 /*
  * B+TREE collection management
  */
@@ -3655,9 +3648,7 @@ scan_next:
     return ret;
 }
 #endif
-#endif
 
-#ifdef REORGANIZE_ITEM_COLL // BTREE
 /*
  * B+TREE Interface Functions
  */
@@ -4413,9 +4404,7 @@ ENGINE_ERROR_CODE btree_coll_setattr(hash_item *it, item_attr *attrp,
     }
     return ENGINE_SUCCESS;
 }
-#endif
 
-#ifdef REORGANIZE_ITEM_COLL // APPLY BTREE
 ENGINE_ERROR_CODE btree_apply_item_link(void *engine, const char *key, const uint32_t nkey,
                                         item_attr *attrp)
 {
@@ -4639,9 +4628,7 @@ ENGINE_ERROR_CODE btree_apply_elem_delete_logical(void *engine, hash_item *it,
 
     return ret;
 }
-#endif
 
-#ifdef REORGANIZE_ITEM_COLL // BTREE
 /*
  * External Functions
  */
@@ -4678,4 +4665,3 @@ void item_btree_coll_final(void *engine_ptr)
 {
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM btree module destroyed.\n");
 }
-#endif

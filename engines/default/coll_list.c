@@ -35,13 +35,10 @@
 #include "default_engine.h"
 #include "item_clog.h"
 
-#ifdef REORGANIZE_ITEM_COLL // LIST
 static struct default_engine *engine=NULL;
 static struct engine_config  *config=NULL; // engine config
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
-#endif
 
-#ifdef REORGANIZE_ITEM_COLL // LIST
 /* Cache Lock */
 static inline void LOCK_CACHE(void)
 {
@@ -351,9 +348,7 @@ static ENGINE_ERROR_CODE do_list_elem_insert(hash_item *it,
     assert(ret == ENGINE_SUCCESS);
     return ret;
 }
-#endif
 
-#ifdef REORGANIZE_ITEM_COLL // LIST
 /*
  * LIST Interface Functions
  */
@@ -680,9 +675,7 @@ ENGINE_ERROR_CODE list_coll_setattr(hash_item *it, item_attr *attrp,
     }
     return ENGINE_SUCCESS;
 }
-#endif
 
-#ifdef REORGANIZE_ITEM_COLL // APPLY LIST
 ENGINE_ERROR_CODE list_apply_item_link(void *engine, const char *key, const uint32_t nkey,
                                        item_attr *attrp)
 {
@@ -829,9 +822,7 @@ ENGINE_ERROR_CODE list_apply_elem_delete(void *engine, hash_item *it,
 
     return ret;
 }
-#endif
 
-#ifdef REORGANIZE_ITEM_COLL // LIST
 /*
  * External Functions
  */
@@ -850,4 +841,3 @@ void item_list_coll_final(void *engine_ptr)
 {
     logger->log(EXTENSION_LOG_INFO, NULL, "ITEM list module destroyed.\n");
 }
-#endif

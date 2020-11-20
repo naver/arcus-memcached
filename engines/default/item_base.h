@@ -22,7 +22,6 @@
 #include <memcached/util.h>
 #include <memcached/visibility.h>
 
-#ifdef REORGANIZE_ITEM_BASE
 /* max collection size */
 #define MINIMUM_MAX_COLL_SIZE  10000
 #define MAXIMUM_MAX_COLL_SIZE  1000000
@@ -351,9 +350,7 @@ struct items {
    unsigned int sticky_sizes[MAX_SLAB_CLASSES];
    itemstats_t  itemstats[MAX_SLAB_CLASSES];
 };
-#endif
 
-#ifdef REORGANIZE_ITEM_BASE
 void ITEM_REFCOUNT_INCR(hash_item *it);
 void ITEM_REFCOUNT_DECR(hash_item *it);
 
@@ -389,13 +386,9 @@ void              do_item_update(hash_item *it, bool force);
 hash_item *do_item_get(const char *key, const uint32_t nkey, bool do_update);
 void       do_item_release(hash_item *it);
 
-#endif
 
-#ifdef REORGANIZE_ITEM_BASE
 void coll_del_thread_wakeup(void);
-#endif
 
-#ifdef REORGANIZE_ITEM_BASE
 /*
  * Item access functions
  */
@@ -414,19 +407,14 @@ uint32_t item_ntotal(hash_item *item);
  * Check item validity
  */
 bool item_is_valid(hash_item* item);
-#endif
 
-#ifdef REORGANIZE_ITEM_BASE // APPLY
 /* Item Apply Macros */
 //#define ITEM_APPLY_LOG_LEVEL EXTENSION_LOG_INFO
 #define ITEM_APPLY_LOG_LEVEL EXTENSION_LOG_DEBUG
 #define PRINT_NKEY(nkey) ((nkey) < 250 ? (nkey) : 250)
-#endif
 
-#ifdef REORGANIZE_ITEM_BASE
 /* item base module: init & final functions */
 int  item_base_init(void *engine_ptr);
 void item_base_final(void *engine_ptr);
-#endif
 
 #endif
