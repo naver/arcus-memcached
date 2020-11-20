@@ -28,11 +28,9 @@
 #include <inttypes.h>
 #include <sys/time.h> /* gettimeofday() */
 
-#ifdef REORGANIZE_ITEM_COLL // LIST
 /* Dummy PERSISTENCE_ACTION Macros */
 #define PERSISTENCE_ACTION_BEGIN(a, b)
 #define PERSISTENCE_ACTION_END(a)
-#endif
 
 #include "default_engine.h"
 #include "item_clog.h"
