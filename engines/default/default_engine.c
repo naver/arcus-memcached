@@ -320,12 +320,6 @@ default_initialize(ENGINE_HANDLE* handle, const char* config_str)
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
-#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
-    ret = mc_snapshot_init(se);
-    if (ret != ENGINE_SUCCESS) {
-        return ret;
-    }
-#endif
 #ifdef ENABLE_PERSISTENCE
     if (se->config.use_persistence) {
         ret = cmdlog_mgr_init(se);
@@ -348,9 +342,6 @@ default_destroy(ENGINE_HANDLE* handle)
         if (se->config.use_persistence) {
             cmdlog_mgr_final();
         }
-#endif
-#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
-        mc_snapshot_final();
 #endif
         item_final(se);
         slabs_final(se);
