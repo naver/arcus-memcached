@@ -299,11 +299,7 @@ default_item_allocate(ENGINE_HANDLE* handle, const void* cookie,
                       const int flags, const rel_time_t exptime,
                       const uint64_t cas)
 {
-    struct default_engine* engine = get_handle(handle);
-    size_t ntotal = sizeof(hash_item) + nkey + nbytes;
-    if (engine->config.use_cas) {
-        ntotal += sizeof(uint64_t);
-    }
+    uint32_t ntotal = item_kv_size(nkey, nbytes);
     unsigned int id = slabs_clsid(ntotal);
     if (id == 0) {
         return ENGINE_E2BIG;
@@ -314,7 +310,7 @@ default_item_allocate(ENGINE_HANDLE* handle, const void* cookie,
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
     it = item_alloc(key, nkey, flags, exptime, nbytes, cookie);
-    ACTION_AFTER_WRITE(cookie, engine, ret);
+    ACTION_AFTER_WRITE(cookie, get_handle(handle), ret);
     if (it != NULL) {
         item_set_cas(it, cas);
         *item = it;

@@ -401,6 +401,7 @@ const void* item_get_meta(const hash_item* item);
 /*
  * Item size functions
  */
+uint32_t item_kv_size(const uint32_t nkey, const uint32_t nbytes);
 uint32_t item_ntotal(hash_item *item);
 
 /*
