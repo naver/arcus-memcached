@@ -104,21 +104,33 @@ void ITEM_REFCOUNT_DECR(hash_item *it)
     }
 }
 
+static inline uint32_t _hash_item_size(const hash_item *item)
+{
+    uint32_t ntotal = sizeof(hash_item);
+    if (item) {
+        if (item->iflag & ITEM_WITH_CAS) {
+            ntotal += sizeof(uint64_t);
+        }
+    } else {
+        if (config->use_cas) {
+            ntotal += sizeof(uint64_t);
+        }
+    }
+    return ntotal;
+}
+
 /* warning: don't use these macros with a function, as it evals its arg twice */
 static inline size_t ITEM_ntotal(const hash_item *item)
 {
-    size_t ntotal;
+    size_t ntotal = _hash_item_size(item);
     if (IS_COLL_ITEM(item)) {
-        ntotal = sizeof(*item) + META_OFFSET_IN_ITEM(item->nkey, item->nbytes);
+        ntotal += META_OFFSET_IN_ITEM(item->nkey, item->nbytes);
         if (IS_LIST_ITEM(item))     ntotal += sizeof(list_meta_info);
         else if (IS_SET_ITEM(item)) ntotal += sizeof(set_meta_info);
         else if (IS_MAP_ITEM(item)) ntotal += sizeof(map_meta_info);
         else /* BTREE_ITEM */       ntotal += sizeof(btree_meta_info);
     } else {
-        ntotal = sizeof(*item) + item->nkey + item->nbytes;
-    }
-    if (item->iflag & ITEM_WITH_CAS) {
-        ntotal += sizeof(uint64_t);
+        ntotal += (item->nkey + item->nbytes);
     }
     return ntotal;
 }
@@ -910,11 +922,7 @@ hash_item *do_item_alloc(const void *key, const uint32_t nkey,
 {
     assert(nkey > 0);
     hash_item *it = NULL;
-    size_t ntotal = sizeof(hash_item) + nkey + nbytes;
-    if (config->use_cas) {
-        ntotal += sizeof(uint64_t);
-    }
-
+    size_t ntotal = item_kv_size(nkey, nbytes);
     unsigned int id = slabs_clsid(ntotal);
     if (id == 0) {
         return NULL;
@@ -1344,11 +1352,7 @@ void item_set_cas(const hash_item* item, uint64_t val)
 
 const void* item_get_key(const hash_item* item)
 {
-    char *ret = (void*)(item + 1);
-    if (item->iflag & ITEM_WITH_CAS) {
-        ret += sizeof(uint64_t);
-    }
-    return ret;
+    return ((char*)item + _hash_item_size(item));
 }
 
 char* item_get_data(const hash_item* item)
@@ -1368,6 +1372,11 @@ const void* item_get_meta(const hash_item* item)
 /*
  * Item size functions
  */
+uint32_t item_kv_size(const uint32_t nkey, const uint32_t nbytes)
+{
+    return (_hash_item_size(NULL) + nkey + nbytes);
+}
+
 uint32_t item_ntotal(hash_item *item)
 {
     return (uint32_t)ITEM_ntotal(item);
