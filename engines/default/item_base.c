@@ -117,7 +117,7 @@ static inline size_t ITEM_ntotal(const hash_item *item)
     } else {
         ntotal = sizeof(*item) + item->nkey + item->nbytes;
     }
-    if (config->use_cas) {
+    if (item->iflag & ITEM_WITH_CAS) {
         ntotal += sizeof(uint64_t);
     }
     return ntotal;
