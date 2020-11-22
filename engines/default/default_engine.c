@@ -1182,7 +1182,7 @@ default_get_stats(ENGINE_HANDLE* handle, const void* cookie,
         item_stats_scrub(engine, add_stat, cookie);
     }
     else if (strncmp(stat_key, "dump", 4) == 0) {
-        item_stats_dump(engine, add_stat, cookie);
+        item_dump_stats(engine, add_stat, cookie);
     }
 #ifdef ENABLE_PERSISTENCE_02_SNAPSHOT_COMMAND
     else if (strncmp(stat_key, "snapshot", 8) == 0) {
@@ -1234,17 +1234,9 @@ default_dump(ENGINE_HANDLE* handle, const void* cookie,
     struct default_engine* engine = get_handle(handle);
 
     if (memcmp(opstr, "start", 5) == 0) {
-        enum dump_mode mode;
-        if (memcmp(modestr, "key", 3) == 0) {
-            mode = DUMP_MODE_KEY;
-        } else {
-            return ENGINE_ENOTSUP;
-        }
-        return item_start_dump(engine, mode, prefix, nprefix, filepath);
-    }
-
-    if (memcmp(opstr, "stop", 4) == 0) {
-        item_stop_dump(engine);
+        return item_dump_start(engine, modestr, prefix, nprefix, filepath);
+    } else if (memcmp(opstr, "stop", 4) == 0) {
+        item_dump_stop(engine);
         return ENGINE_SUCCESS;
     } else {
         return ENGINE_ENOTSUP;

@@ -1367,6 +1367,16 @@ static int item_dump_write_key(char *buffer, hash_item *it, rel_time_t mc_curtim
 typedef int (*DUMP_SPACE_FUNC)(hash_item *it);
 typedef int (*DUMP_WRITE_FUNC)(char *buffer, hash_item *it, rel_time_t mc_curtime);
 
+static void item_dumper_done(void *engine_ptr)
+{
+    struct default_engine *engine = engine_ptr;
+    struct engine_dumper *dumper = &engine->dumper;
+
+    pthread_mutex_lock(&dumper->lock);
+    dumper->running = false;
+    pthread_mutex_unlock(&dumper->lock);
+}
+
 static void *item_dumper_main(void *arg)
 {
     struct default_engine *engine = arg;
@@ -1476,22 +1486,36 @@ static void *item_dumper_main(void *arg)
 
 done:
     dumper->success = (ret == 0 ? true : false);
-    pthread_mutex_lock(&dumper->lock);
     dumper->stopped = time(NULL);
-    dumper->running = false;
-    pthread_mutex_unlock(&dumper->lock);
+    item_dumper_done(engine);
     return NULL;
 }
 
-ENGINE_ERROR_CODE item_start_dump(struct default_engine *engine,
-                                  enum dump_mode mode,
+static enum dump_mode do_item_dump_mode_check(const char *modestr)
+{
+    enum dump_mode mode = DUMP_MODE_MAX;;
+
+    if (memcmp(modestr, "key", 3) == 0) {
+        mode = DUMP_MODE_KEY;
+    }
+    return mode;
+}
+
+ENGINE_ERROR_CODE item_dump_start(struct default_engine *engine,
+                                  const char *modestr,
                                   const char *prefix, const int nprefix,
                                   const char *filepath)
 {
     struct engine_dumper *dumper = &engine->dumper;
     pthread_t tid;
     pthread_attr_t attr;
+    enum dump_mode mode;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    mode = do_item_dump_mode_check(modestr);
+    if (mode == DUMP_MODE_MAX) {
+        return ENGINE_ENOTSUP; /* NOT supported */
+    }
 
     pthread_mutex_lock(&dumper->lock);
     do {
@@ -1540,7 +1564,7 @@ ENGINE_ERROR_CODE item_start_dump(struct default_engine *engine,
     return ret;
 }
 
-void item_stop_dump(struct default_engine *engine)
+void item_dump_stop(struct default_engine *engine)
 {
     struct engine_dumper *dumper = &engine->dumper;
 
@@ -1552,12 +1576,9 @@ void item_stop_dump(struct default_engine *engine)
     pthread_mutex_unlock(&dumper->lock);
 }
 
-void item_stats_dump(struct default_engine *engine,
-                     ADD_STAT add_stat, const void *cookie)
+static void do_item_dump_stats(struct engine_dumper *dumper,
+                               ADD_STAT add_stat, const void *cookie)
 {
-    struct engine_dumper *dumper = &engine->dumper;
-
-    pthread_mutex_lock(&dumper->lock);
     if (dumper->running) {
         add_stat("dumper:status", 13, "running", 7, cookie);
     } else {
@@ -1574,8 +1595,12 @@ void item_stats_dump(struct default_engine *engine,
             add_stat("dumper:mode", 11, "key", 3, cookie);
         } else if (dumper->mode == DUMP_MODE_ITEM) {
             add_stat("dumper:mode", 11, "item", 4, cookie);
+        } else if (dumper->mode == DUMP_MODE_RCOUNT) {
+            add_stat("dumper:mode", 11, "rcount", 4, cookie);
+        } else if (dumper->mode == DUMP_MODE_SNAPSHOT) {
+            add_stat("dumper:mode", 11, "snapshot", 4, cookie);
         } else {
-            add_stat("dumper:mode", 11, "none", 4, cookie);
+            add_stat("dumper:mode", 11, "unknown", 4, cookie);
         }
         if (dumper->stopped != 0) {
             time_t diff = dumper->stopped - dumper->started;
@@ -1597,6 +1622,15 @@ void item_stats_dump(struct default_engine *engine,
             add_stat("dumper:filepath", 15, val, len, cookie);
         }
     }
+}
+
+void item_dump_stats(struct default_engine *engine,
+                     ADD_STAT add_stat, const void *cookie)
+{
+    struct engine_dumper *dumper = &engine->dumper;
+
+    pthread_mutex_lock(&dumper->lock);
+    do_item_dump_stats(dumper, add_stat, cookie);
     pthread_mutex_unlock(&dumper->lock);
 }
 
@@ -1834,7 +1868,7 @@ void item_final(struct default_engine *engine_ptr)
 
     assert(engine == engine_ptr);
     if (engine->dumper.running) {
-        item_stop_dump(engine);
+        item_dump_stop(engine);
     }
 
     /* wait until scrubber thread is finished */
