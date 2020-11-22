@@ -1514,6 +1514,8 @@ ENGINE_ERROR_CODE item_dump_start(struct default_engine *engine,
 
     mode = do_item_dump_mode_check(modestr);
     if (mode == DUMP_MODE_MAX) {
+        logger->log(EXTENSION_LOG_INFO, NULL,
+                    "NOT supported dump mode(%s)\n", modestr);
         return ENGINE_ENOTSUP; /* NOT supported */
     }
 
@@ -1596,11 +1598,11 @@ static void do_item_dump_stats(struct engine_dumper *dumper,
         } else if (dumper->mode == DUMP_MODE_ITEM) {
             add_stat("dumper:mode", 11, "item", 4, cookie);
         } else if (dumper->mode == DUMP_MODE_RCOUNT) {
-            add_stat("dumper:mode", 11, "rcount", 4, cookie);
+            add_stat("dumper:mode", 11, "rcount", 6, cookie);
         } else if (dumper->mode == DUMP_MODE_SNAPSHOT) {
-            add_stat("dumper:mode", 11, "snapshot", 4, cookie);
+            add_stat("dumper:mode", 11, "snapshot", 8, cookie);
         } else {
-            add_stat("dumper:mode", 11, "unknown", 4, cookie);
+            add_stat("dumper:mode", 11, "unknown", 7, cookie);
         }
         if (dumper->stopped != 0) {
             time_t diff = dumper->stopped - dumper->started;
