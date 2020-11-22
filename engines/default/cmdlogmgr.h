@@ -19,6 +19,7 @@
 #define CMDLOGMGR_H
 
 #include "cmdlogrec.h"
+#include "mc_snapshot.h"
 
 /* undefine PERSISTENCE_ACTION macros */
 #undef PERSISTENCE_ACTION_BEGIN

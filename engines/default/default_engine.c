@@ -31,9 +31,6 @@
 #include "default_engine.h"
 #include "memcached/util.h"
 #include "memcached/config_parser.h"
-#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
-#include "mc_snapshot.h"
-#endif
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogmgr.h"
 #endif

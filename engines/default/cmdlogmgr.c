@@ -24,7 +24,6 @@
 
 #include "default_engine.h"
 #ifdef ENABLE_PERSISTENCE
-#include "mc_snapshot.h"
 #include "cmdlogmgr.h"
 #include "cmdlogbuf.h"
 #include "cmdlogfile.h"
