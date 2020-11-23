@@ -45,26 +45,26 @@ struct default_engine;
  * engine configuration
  */
 struct engine_config {
-   bool   use_cas;
-   size_t verbose;
+   size_t     verbose;
    rel_time_t oldest_live;
-   bool   evict_to_free;
-   size_t num_threads;
-   size_t maxbytes;
-   size_t sticky_limit;
-   bool   preallocate;
-   float  factor;
-   size_t chunk_size;
-   size_t item_size_max;
-   uint32_t max_list_size;
-   uint32_t max_set_size;
-   uint32_t max_map_size;
-   uint32_t max_btree_size;
-   uint32_t max_element_bytes;
-   uint32_t scrub_count;
-   bool   ignore_vbucket;
-   char   prefix_delimiter;
-   bool   vb0;
+   bool       use_cas;
+   bool       evict_to_free;
+   char       prefix_delimiter;
+   bool       preallocate;
+   float      factor;
+   size_t     chunk_size;
+   size_t     num_threads;
+   size_t     maxbytes;
+   size_t     sticky_limit;
+   size_t     item_size_max;
+   uint32_t   max_list_size;
+   uint32_t   max_set_size;
+   uint32_t   max_map_size;
+   uint32_t   max_btree_size;
+   uint32_t   max_element_bytes;
+   uint32_t   scrub_count;
+   bool       ignore_vbucket;
+   bool       vb0;
 };
 
 /**
