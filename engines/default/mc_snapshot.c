@@ -22,11 +22,8 @@
 #include <assert.h>
 
 #include "default_engine.h"
-#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
-#include "mc_snapshot.h"
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogmgr.h"
-#endif
 
 #define SNAPSHOT_BUFFER_SIZE (10 * 1024 * 1024)
 #define SCAN_ITEM_ARRAY_SIZE 16
@@ -240,7 +237,6 @@ static int do_snapshot_key_done(snapshot_st *ss)
  */
 static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_count, void *args)
 {
-#ifdef ENABLE_PERSISTENCE
     struct snapshot_buffer *ssb = &ss->buffer;
     elems_result_t *erst_array = (elems_result_t *)args;
     hash_item *it;
@@ -280,14 +276,10 @@ static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_co
         ss->snapped++;
     }
     return ret;
-#else
-    return 0;
-#endif
 }
 
 static int do_snapshot_data_done(snapshot_st *ss)
 {
-#ifdef ENABLE_PERSISTENCE
     struct snapshot_buffer *ssb = &ss->buffer;
     char *bufptr;
     int logsize;
@@ -302,7 +294,6 @@ static int do_snapshot_data_done(snapshot_st *ss)
     bufptr = &ssb->memory[ssb->curlen];
     lrec_write_to_buffer((LogRec*)&log, bufptr);
     ssb->curlen += logsize;
-#endif
     if (do_snapshot_buffer_flush(ss) < 0) {
         return -1;
     }
@@ -375,12 +366,10 @@ static bool do_snapshot_action(snapshot_st *ss)
         erst_array = eresults;
     }
 
-#ifdef ENABLE_PERSISTENCE
     if (ss->mode == MC_SNAPSHOT_MODE_CHKPT) {
         cb_scan_open = &cmdlog_set_chkpt_scan;
         cb_scan_close = &cmdlog_reset_chkpt_scan;
     }
-#endif
     item_scan_open(&scan, ss->prefix, ss->nprefix, cb_scan_open);
     while (1) {
         if (ss->reqstop) {
@@ -697,7 +686,6 @@ void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie)
     pthread_mutex_unlock(&snapshot_anch.lock);
 }
 
-#ifdef ENABLE_PERSISTENCE
 /* Check snapshot file validity by inspecting SnapshotDone log record. */
 int mc_snapshot_check_file_validity(const int fd, size_t *filesize)
 {
@@ -810,6 +798,5 @@ int mc_snapshot_file_apply(const char *filepath)
     close(fd);
     return ret;
 }
-#endif
 
 #endif

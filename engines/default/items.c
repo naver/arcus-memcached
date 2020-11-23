@@ -1538,7 +1538,7 @@ ENGINE_ERROR_CODE item_dump_start(struct default_engine *engine,
         dumper->success = false;
         dumper->stop    = false;
 
-#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
+#ifdef ENABLE_PERSISTENCE
         if (mode == DUMP_MODE_SNAPSHOT) {
             dumper->running = true;
             ret = mc_snapshot_start(MC_SNAPSHOT_MODE_DATA, prefix, nprefix,
@@ -1584,7 +1584,7 @@ void item_dump_stop(struct default_engine *engine)
 
     pthread_mutex_lock(&dumper->lock);
     if (dumper->running) {
-#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
+#ifdef ENABLE_PERSISTENCE
         if (dumper->mode == DUMP_MODE_SNAPSHOT) {
             mc_snapshot_stop();
         }
@@ -1650,7 +1650,7 @@ void item_dump_stats(struct default_engine *engine,
 
     pthread_mutex_lock(&dumper->lock);
     do {
-#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
+#ifdef ENABLE_PERSISTENCE
         if (dumper->mode == DUMP_MODE_SNAPSHOT) {
             mc_snapshot_stats(add_stat, cookie);
             break;

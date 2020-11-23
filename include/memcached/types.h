@@ -31,8 +31,6 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
-//#define ENABLE_PERSISTENCE_01_ITEM_SCAN
-#define ENABLE_PERSISTENCE_02_SNAPSHOT
 #define ENABLE_PERSISTENCE
 
 #define PROXY_SUPPORT
