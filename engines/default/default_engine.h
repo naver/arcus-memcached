@@ -41,38 +41,41 @@ struct default_engine;
 #include "assoc.h"
 #include "slabs.h"
 
+#define MAX_FILEPATH_LENGTH 4096
+#define MAX_FILENAME_LENGTH 256
+
 /**
  * engine configuration
  */
 struct engine_config {
-   bool   use_cas;
-   size_t verbose;
+   size_t     verbose;
    rel_time_t oldest_live;
-   bool   evict_to_free;
-   size_t num_threads;
-   size_t maxbytes;
-   size_t sticky_limit;
-   bool   preallocate;
-   float  factor;
-   size_t chunk_size;
-   size_t item_size_max;
-   uint32_t max_list_size;
-   uint32_t max_set_size;
-   uint32_t max_map_size;
-   uint32_t max_btree_size;
-   uint32_t max_element_bytes;
-   uint32_t scrub_count;
+   bool       use_cas;
+   bool       evict_to_free;
+   char       prefix_delimiter;
+   bool       preallocate;
+   float      factor;
+   size_t     chunk_size;
+   size_t     num_threads;
+   size_t     maxbytes;
+   size_t     sticky_limit;
+   size_t     item_size_max;
+   uint32_t   max_list_size;
+   uint32_t   max_set_size;
+   uint32_t   max_map_size;
+   uint32_t   max_btree_size;
+   uint32_t   max_element_bytes;
+   uint32_t   scrub_count;
 #ifdef ENABLE_PERSISTENCE
-   bool   use_persistence;
-   bool   async_logging;
-   char   *data_path;
-   char   *logs_path;
-   size_t chkpt_interval_pct_snapshot;
-   size_t chkpt_interval_min_logsize;
+   bool       use_persistence;
+   bool       async_logging;
+   char       *data_path;
+   char       *logs_path;
+   size_t     chkpt_interval_pct_snapshot;
+   size_t     chkpt_interval_min_logsize;
 #endif
-   bool   ignore_vbucket;
-   char   prefix_delimiter;
-   bool   vb0;
+   bool       ignore_vbucket;
+   bool       vb0;
 };
 
 /**
@@ -114,7 +117,6 @@ struct engine_scrubber {
 /**
  * cache item dumper
  */
-#define MAX_FILEPATH_LENGTH 256
 struct engine_dumper {
    pthread_mutex_t lock;
    volatile bool   running;

@@ -186,100 +186,55 @@ static int check_configuration(struct engine_config *conf)
 static ENGINE_ERROR_CODE
 initialize_configuration(struct default_engine *se, const char *cfg_str)
 {
+    struct config_item items[] = {
+        { .key = "verbose",           .datatype = DT_SIZE,   .value.dt_size = &se->config.verbose },
+        { .key = "use_cas",           .datatype = DT_BOOL,   .value.dt_bool = &se->config.use_cas },
+        { .key = "eviction",          .datatype = DT_BOOL,   .value.dt_bool = &se->config.evict_to_free },
+        { .key = "prefix_delimiter",  .datatype = DT_CHAR,   .value.dt_char = &se->config.prefix_delimiter },
+        { .key = "preallocate",       .datatype = DT_BOOL,   .value.dt_bool = &se->config.preallocate },
+        { .key = "factor",            .datatype = DT_FLOAT,  .value.dt_float = &se->config.factor },
+        { .key = "chunk_size",        .datatype = DT_SIZE,   .value.dt_size = &se->config.chunk_size },
+        { .key = "num_threads",       .datatype = DT_SIZE,   .value.dt_size = &se->config.num_threads },
+        { .key = "cache_size",        .datatype = DT_SIZE,   .value.dt_size = &se->config.maxbytes },
+#ifdef ENABLE_STICKY_ITEM
+        { .key = "sticky_limit",      .datatype = DT_SIZE,   .value.dt_size = &se->config.sticky_limit},
+#endif
+        { .key = "item_size_max",     .datatype = DT_SIZE,   .value.dt_size = &se->config.item_size_max },
+        { .key = "max_list_size",     .datatype = DT_UINT32, .value.dt_uint32 = &se->config.max_list_size },
+        { .key = "max_set_size",      .datatype = DT_UINT32, .value.dt_uint32 = &se->config.max_set_size },
+        { .key = "max_map_size",      .datatype = DT_UINT32, .value.dt_uint32 = &se->config.max_map_size },
+        { .key = "max_btree_size",    .datatype = DT_UINT32, .value.dt_uint32 = &se->config.max_btree_size },
+        { .key = "max_element_bytes", .datatype = DT_UINT32, .value.dt_uint32 = &se->config.max_element_bytes },
+        { .key = "scrub_count",       .datatype = DT_UINT32, .value.dt_uint32 = &se->config.scrub_count},
+#ifdef ENABLE_PERSISTENCE
+        { .key = "use_persistence",   .datatype = DT_BOOL,   .value.dt_bool = &se->config.use_persistence },
+        { .key = "data_path",         .datatype = DT_STRING, .value.dt_string = &se->config.data_path },
+        { .key = "logs_path",         .datatype = DT_STRING, .value.dt_string = &se->config.logs_path },
+        { .key = "async_logging",     .datatype = DT_BOOL,   .value.dt_bool = &se->config.async_logging },
+        { .key = "chkpt_interval_pct_snapshot",
+          .datatype = DT_SIZE, .value.dt_size = &se->config.chkpt_interval_pct_snapshot },
+        { .key = "chkpt_interval_min_logsize",
+          .datatype = DT_SIZE, .value.dt_size = &se->config.chkpt_interval_min_logsize },
+#endif
+        { .key = "ignore_vbucket",    .datatype = DT_BOOL,   .value.dt_bool = &se->config.ignore_vbucket },
+        { .key = "vb0",               .datatype = DT_BOOL,   .value.dt_bool = &se->config.vb0 },
+        { .key = "config_file",       .datatype = DT_CONFIGFILE },
+        { .key = NULL}
+    };
+
     se->config.vb0 = true;
 
+    /* parse engine config */
     if (cfg_str != NULL) {
-        struct config_item items[] = {
-            { .key = "use_cas",
-              .datatype = DT_BOOL,
-              .value.dt_bool = &se->config.use_cas },
-            { .key = "verbose",
-              .datatype = DT_SIZE,
-              .value.dt_size = &se->config.verbose },
-            { .key = "eviction",
-              .datatype = DT_BOOL,
-              .value.dt_bool = &se->config.evict_to_free },
-            { .key = "num_threads",
-              .datatype = DT_SIZE,
-              .value.dt_size = &se->config.num_threads },
-            { .key = "cache_size",
-              .datatype = DT_SIZE,
-              .value.dt_size = &se->config.maxbytes },
-#ifdef ENABLE_STICKY_ITEM
-            { .key = "sticky_limit",
-              .datatype = DT_SIZE,
-              .value.dt_size = &se->config.sticky_limit},
-#endif
-            { .key = "preallocate",
-              .datatype = DT_BOOL,
-              .value.dt_bool = &se->config.preallocate },
-            { .key = "factor",
-              .datatype = DT_FLOAT,
-              .value.dt_float = &se->config.factor },
-            { .key = "chunk_size",
-              .datatype = DT_SIZE,
-              .value.dt_size = &se->config.chunk_size },
-            { .key = "item_size_max",
-              .datatype = DT_SIZE,
-              .value.dt_size = &se->config.item_size_max },
-            { .key = "max_list_size",
-              .datatype = DT_UINT32,
-              .value.dt_uint32 = &se->config.max_list_size },
-            { .key = "max_set_size",
-              .datatype = DT_UINT32,
-              .value.dt_uint32 = &se->config.max_set_size },
-            { .key = "max_map_size",
-              .datatype = DT_UINT32,
-              .value.dt_uint32 = &se->config.max_map_size },
-            { .key = "max_btree_size",
-              .datatype = DT_UINT32,
-              .value.dt_uint32 = &se->config.max_btree_size },
-            { .key = "max_element_bytes",
-              .datatype = DT_UINT32,
-              .value.dt_uint32 = &se->config.max_element_bytes },
-            { .key = "scrub_count",
-              .datatype = DT_UINT32,
-              .value.dt_uint32 = &se->config.scrub_count},
-#ifdef ENABLE_PERSISTENCE
-            { .key = "use_persistence",
-              .datatype = DT_BOOL,
-              .value.dt_bool = &se->config.use_persistence },
-            { .key = "data_path",
-              .datatype = DT_STRING,
-              .value.dt_string = &se->config.data_path },
-            { .key = "logs_path",
-              .datatype = DT_STRING,
-              .value.dt_string = &se->config.logs_path },
-            { .key = "async_logging",
-              .datatype = DT_BOOL,
-              .value.dt_bool = &se->config.async_logging },
-            { .key = "chkpt_interval_pct_snapshot",
-              .datatype = DT_SIZE,
-              .value.dt_size = &se->config.chkpt_interval_pct_snapshot },
-            { .key = "chkpt_interval_min_logsize",
-              .datatype = DT_SIZE,
-              .value.dt_size = &se->config.chkpt_interval_min_logsize },
-#endif
-            { .key = "ignore_vbucket",
-              .datatype = DT_BOOL,
-              .value.dt_bool = &se->config.ignore_vbucket },
-            { .key = "prefix_delimiter",
-              .datatype = DT_CHAR,
-              .value.dt_char = &se->config.prefix_delimiter },
-            { .key = "vb0",
-              .datatype = DT_BOOL,
-              .value.dt_bool = &se->config.vb0 },
-            { .key = "config_file",
-              .datatype = DT_CONFIGFILE },
-            { .key = NULL}
-        };
         if (se->server.core->parse_config(cfg_str, items, stderr) != 0) {
             return ENGINE_FAILED;
         }
     }
+    /* check engine config */
     if (check_configuration(&se->config) < 0) {
         return ENGINE_FAILED;
     }
+
     if (se->config.vb0) {
         set_vbucket_state(se, 0, VBUCKET_STATE_ACTIVE);
     }
@@ -1757,16 +1712,17 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
       },
       .cache_lock = PTHREAD_MUTEX_INITIALIZER,
       .config = {
-         .use_cas = true,
          .verbose = 0,
          .oldest_live = 0,
+         .use_cas = true,
          .evict_to_free = true,
-         .num_threads = 0,
-         .maxbytes = 64 * 1024 * 1024,
-         .sticky_limit = 0,
+         .prefix_delimiter = ':',
          .preallocate = false,
          .factor = 1.25,
          .chunk_size = 48,
+         .num_threads = 0,
+         .maxbytes = 64 * 1024 * 1024,
+         .sticky_limit = 0,
          .item_size_max= 1024 * 1024,
          .max_list_size = DEFAULT_MAX_LIST_SIZE,
          .max_set_size = DEFAULT_MAX_SET_SIZE,
@@ -1782,7 +1738,6 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .chkpt_interval_pct_snapshot = 100,
          .chkpt_interval_min_logsize = 256,
 #endif
-         .prefix_delimiter = ':',
        },
       .stats = {
          .lock = PTHREAD_MUTEX_INITIALIZER,
