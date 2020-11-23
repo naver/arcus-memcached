@@ -1632,7 +1632,9 @@ void item_dump_stats(struct default_engine *engine,
     struct engine_dumper *dumper = &engine->dumper;
 
     pthread_mutex_lock(&dumper->lock);
-    do_item_dump_stats(dumper, add_stat, cookie);
+    do {
+        do_item_dump_stats(dumper, add_stat, cookie);
+    } while(0);
     pthread_mutex_unlock(&dumper->lock);
 }
 
