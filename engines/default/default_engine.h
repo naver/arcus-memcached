@@ -41,6 +41,9 @@ struct default_engine;
 #include "assoc.h"
 #include "slabs.h"
 
+#define MAX_FILEPATH_LENGTH 4096
+#define MAX_FILENAME_LENGTH 256
+
 /**
  * engine configuration
  */
@@ -106,7 +109,6 @@ struct engine_scrubber {
 /**
  * cache item dumper
  */
-#define MAX_FILEPATH_LENGTH 256
 struct engine_dumper {
    pthread_mutex_t lock;
    volatile bool   running;
