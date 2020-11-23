@@ -682,16 +682,6 @@ extern "C" {
                                   const char *opstr, const char *modestr,
                                   const char *prefix, const int nprefix,
                                   const char *filepath);
-#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT_COMMAND
-
-        /**
-         * Snapshot all cache items.
-         */
-        ENGINE_ERROR_CODE (*snapshot)(ENGINE_HANDLE* handle, const void *cookie,
-                                      const char *opstr, const char *modestr,
-                                      const char *prefix, const int nprefix,
-                                      const char *filepath);
-#endif
 
         /**
          * Any unknown command will be considered engine specific.

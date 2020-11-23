@@ -1538,6 +1538,18 @@ ENGINE_ERROR_CODE item_dump_start(struct default_engine *engine,
         dumper->success = false;
         dumper->stop    = false;
 
+#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
+        if (mode == DUMP_MODE_SNAPSHOT) {
+            dumper->running = true;
+            ret = mc_snapshot_start(MC_SNAPSHOT_MODE_DATA, prefix, nprefix,
+                                    filepath, item_dumper_done);
+            if (ret != ENGINE_SUCCESS) {
+                dumper->running = false;
+            }
+            break;
+        }
+#endif
+
         /* check if filepath is valid ? */
         int fd = open(dumper->filepath, O_WRONLY | O_CREAT | O_TRUNC,
                                          S_IRUSR | S_IWUSR | S_IRGRP);
@@ -1572,6 +1584,11 @@ void item_dump_stop(struct default_engine *engine)
 
     pthread_mutex_lock(&dumper->lock);
     if (dumper->running) {
+#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
+        if (dumper->mode == DUMP_MODE_SNAPSHOT) {
+            mc_snapshot_stop();
+        }
+#endif
         /* stop the dumper */
         dumper->stop = true;
     }
@@ -1632,6 +1649,11 @@ void item_dump_stats(struct default_engine *engine,
     struct engine_dumper *dumper = &engine->dumper;
 
     pthread_mutex_lock(&dumper->lock);
+#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
+    if (dumper->mode == DUMP_MODE_SNAPSHOT)
+        mc_snapshot_stats(add_stat, cookie);
+    else
+#endif
     do_item_dump_stats(dumper, add_stat, cookie);
     pthread_mutex_unlock(&dumper->lock);
 }

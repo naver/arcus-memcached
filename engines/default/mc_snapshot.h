@@ -25,6 +25,8 @@ enum mc_snapshot_mode {
     MC_SNAPSHOT_MODE_MAX
 };
 
+typedef void (*CB_SNAPSHOT_DONE)(void*);
+
 ENGINE_ERROR_CODE mc_snapshot_init(struct default_engine *engine);
 void mc_snapshot_final(void);
 
@@ -34,7 +36,8 @@ ENGINE_ERROR_CODE mc_snapshot_direct(enum mc_snapshot_mode mode,
 
 ENGINE_ERROR_CODE mc_snapshot_start(enum mc_snapshot_mode mode,
                                     const char *prefix, const int nprefix,
-                                    const char *filepath);
+                                    const char *filepath,
+                                    CB_SNAPSHOT_DONE callback);
 void mc_snapshot_stop(void);
 void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie);
 

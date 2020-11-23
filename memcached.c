@@ -9142,72 +9142,6 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
     }
 }
 
-#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT_COMMAND
-static void process_snapshot_command(conn *c, token_t *tokens, const size_t ntokens)
-{
-    char *opstr;
-    char *modestr = NULL;
-    char *filepath = NULL;
-    char *prefix = NULL;
-    int  nprefix = -1; /* all prefixes */
-
-    /* snapshot ascii command
-     * snapshot start <mode> [<prefix>] filepath\r\n
-     * snapshot stop\r\n
-     */
-    opstr = tokens[1].value;
-    if (ntokens == 3) {
-        if (memcmp(opstr, "stop", 4) != 0) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
-        }
-    } else if (ntokens == 5 || ntokens == 6) {
-        if (memcmp(opstr, "start", 5) != 0) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
-        }
-        modestr = tokens[2].value; /* "key" or "data" */
-        if (ntokens == 5) {
-            filepath = tokens[3].value;
-        } else {
-            prefix = tokens[3].value;
-            nprefix = tokens[3].length;
-            if (nprefix > PREFIX_MAX_LENGTH) {
-                out_string(c, "CLIENT_ERROR too long prefix name");
-                return;
-            }
-            if (nprefix == 6 && strncmp(prefix, "<null>", 6) == 0) {
-                /* snapshot null prefix */
-                prefix = NULL;
-                nprefix = 0;
-            }
-            filepath = tokens[4].value;
-        }
-    } else {
-        print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
-        return;
-    }
-
-    ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->snapshot(mc_engine.v0, c, opstr, modestr,
-                                 prefix, nprefix, filepath);
-    if (ret == ENGINE_SUCCESS) {
-        out_string(c, "OK");
-    } else if (ret == ENGINE_DISCONNECT) {
-        c->state = conn_closing;
-    } else if (ret == ENGINE_ENOTSUP) {
-        out_string(c, "NOT_SUPPORTED");
-    } else if (ret == ENGINE_FAILED) {
-        out_string(c, "SERVER_ERROR failed. refer to the reason in server log.");
-    } else {
-        handle_unexpected_errorcode_ascii(c, __func__, ret);
-    }
-}
-#endif
-
 static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     char *type = tokens[COMMAND_TOKEN+1].value;
@@ -9294,9 +9228,6 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "stats detail [on|off|dump]\\r\\n" "\n"
         "\t" "stats scrub\\r\\n" "\n"
         "\t" "stats dump\\r\\n" "\n"
-#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT_COMMAND
-        "\t" "stats snapshot\\r\\n" "\n"
-#endif
         "\t" "stats cachedump <slab_clsid> <limit> [forward|backward [sticky]]\\r\\n" "\n"
         "\t" "stats reset\\r\\n" "\n"
 #ifdef COMMAND_LOGGING
@@ -9316,11 +9247,6 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "dump start <mode> [<prefix>] <filepath>\\r\\n" "\n"
         "\t" "  * <mode> : key" "\n"
         "\t" "dump stop\\r\\n" "\n"
-#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT_COMMAND
-        "\t" "snapshot start <mode> [<prefix>] <filepath>\\r\\n" "\n"
-        "\t" "  * <mode> : key, data" "\n"
-        "\t" "snapshot stop\\r\\n" "\n"
-#endif
 #ifdef ENABLE_ZK_INTEGRATION
         "\n"
         "\t" "zkensemble set <ensemble_list>\\r\\n" "\n"
@@ -12786,12 +12712,6 @@ static void process_command(conn *c, char *command, int cmdlen)
     {
         process_dump_command(c, tokens, ntokens);
     }
-#ifdef ENABLE_PERSISTENCE_02_SNAPSHOT_COMMAND
-    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "snapshot") == 0))
-    {
-        process_snapshot_command(c, tokens, ntokens);
-    }
-#endif
     else if ((ntokens == 2) && (strcmp(tokens[COMMAND_TOKEN].value, "quit") == 0))
     {
         LOCK_STATS();

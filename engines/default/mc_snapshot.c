@@ -26,7 +26,6 @@
 #include "mc_snapshot.h"
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogmgr.h"
-#include "cmdlogrec.h"
 #endif
 
 #define SNAPSHOT_BUFFER_SIZE (10 * 1024 * 1024)
@@ -63,6 +62,7 @@ typedef struct _snapshot_st {
    int      nprefix;    /* prefix name length */
    struct snapshot_file   file;
    struct snapshot_buffer buffer;
+   CB_SNAPSHOT_DONE cb_snapshot_done;
    volatile bool initialized;
 } snapshot_st;
 
@@ -378,7 +378,8 @@ static ENGINE_ERROR_CODE do_snapshot_argcheck(enum mc_snapshot_mode mode)
 static void do_snapshot_prepare(snapshot_st *ss,
                                 enum mc_snapshot_mode mode,
                                 const char *prefix, const int nprefix,
-                                const char *filepath)
+                                const char *filepath,
+                                CB_SNAPSHOT_DONE callback)
 {
     /* prepare snapshot anchor */
     ss->success = false;
@@ -389,6 +390,7 @@ static void do_snapshot_prepare(snapshot_st *ss,
     ss->stopped = 0;
     ss->prefix = (char*)prefix;
     ss->nprefix = nprefix;
+    ss->cb_snapshot_done = callback;
 
     /* prepare snapshot file */
     snprintf(ss->file.path, SNAPSHOT_MAX_FILEPATH_LENGTH, "%s",
@@ -501,7 +503,7 @@ static ENGINE_ERROR_CODE do_snapshot_direct(snapshot_st *ss,
         return ENGINE_FAILED;
     }
 
-    do_snapshot_prepare(ss, mode, prefix, nprefix, filepath);
+    do_snapshot_prepare(ss, mode, prefix, nprefix, filepath, NULL);
 
     ss->running = true;
     pthread_mutex_unlock(&ss->lock);
@@ -536,13 +538,18 @@ static void *do_snapshot_thread_main(void *arg)
     pthread_mutex_lock(&ss->lock);
     ss->running = false;
     pthread_mutex_unlock(&ss->lock);
+    if (ss->cb_snapshot_done) {
+        /* perform the registered callback function */
+        ss->cb_snapshot_done(ss->engine);
+    }
     return NULL;
 }
 
 static ENGINE_ERROR_CODE do_snapshot_start(snapshot_st *ss,
                                            enum mc_snapshot_mode mode,
                                            const char *prefix, const int nprefix,
-                                           const char *filepath)
+                                           const char *filepath,
+                                           CB_SNAPSHOT_DONE callback)
 {
     pthread_t tid;
     pthread_attr_t attr;
@@ -553,7 +560,7 @@ static ENGINE_ERROR_CODE do_snapshot_start(snapshot_st *ss,
         return ENGINE_FAILED;
     }
 
-    do_snapshot_prepare(ss, mode, prefix, nprefix, filepath);
+    do_snapshot_prepare(ss, mode, prefix, nprefix, filepath, callback);
 
     /* start the snapshot thread */
     ss->running = true;
@@ -676,7 +683,8 @@ ENGINE_ERROR_CODE mc_snapshot_direct(enum mc_snapshot_mode mode,
 
 ENGINE_ERROR_CODE mc_snapshot_start(enum mc_snapshot_mode mode,
                                     const char *prefix, const int nprefix,
-                                    const char *filepath)
+                                    const char *filepath,
+                                    CB_SNAPSHOT_DONE callback)
 {
     ENGINE_ERROR_CODE ret;
 
@@ -686,7 +694,8 @@ ENGINE_ERROR_CODE mc_snapshot_start(enum mc_snapshot_mode mode,
     }
 
     pthread_mutex_lock(&snapshot_anch.lock);
-    ret = do_snapshot_start(&snapshot_anch, mode, prefix, nprefix, filepath);
+    ret = do_snapshot_start(&snapshot_anch, mode, prefix, nprefix,
+                            filepath, callback);
     pthread_mutex_unlock(&snapshot_anch.lock);
     return ret;
 }
