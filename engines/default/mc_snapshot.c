@@ -67,6 +67,7 @@ typedef struct _snapshot_st {
 } snapshot_st;
 
 /* global data */
+static struct default_engine *engine = NULL;
 static EXTENSION_LOGGER_DESCRIPTOR *logger = NULL;
 static snapshot_st snapshot_anch;
 
@@ -309,51 +310,6 @@ static int do_snapshot_data_done(snapshot_st *ss)
     return 0;
 }
 
-static int do_snapshot_init(snapshot_st *ss, struct default_engine *engine)
-{
-    pthread_mutex_init(&ss->lock, NULL);
-    ss->engine = (void*)engine;
-    ss->running = false;
-    ss->success = false;
-    ss->reqstop = false;
-    ss->mode = MC_SNAPSHOT_MODE_MAX;
-    ss->snapped = 0;
-    ss->started = 0;
-    ss->stopped = 0;
-
-    /* snapshot prefix */
-    ss->prefix = NULL;
-    ss->nprefix = -1;
-
-    /* snapshot file */
-    ss->file.path[0] = '\0';
-    ss->file.fd = -1;
-
-    /* snapshot buffer */
-    ss->buffer.memory = (char*)malloc(SNAPSHOT_BUFFER_SIZE);
-    if (ss->buffer.memory == NULL) {
-        logger->log(EXTENSION_LOG_INFO, NULL,
-                    "Failed to allocate snapshot buffer.\n");
-        return -1;
-    }
-    ss->buffer.maxlen = SNAPSHOT_BUFFER_SIZE;
-    ss->buffer.curlen = 0;
-    return 0;
-}
-
-static void do_snapshot_final(snapshot_st *ss)
-{
-    if (ss->file.fd != -1) {
-        close(ss->file.fd);
-        ss->file.fd = -1;
-    }
-    if (ss->buffer.memory != NULL) {
-        free(ss->buffer.memory);
-        ss->buffer.memory = NULL;
-    }
-    pthread_mutex_destroy(&ss->lock);
-}
-
 static ENGINE_ERROR_CODE do_snapshot_argcheck(enum mc_snapshot_mode mode)
 {
     /* check snapshot mode */
@@ -362,16 +318,6 @@ static ENGINE_ERROR_CODE do_snapshot_argcheck(enum mc_snapshot_mode mode)
                     "Failed to start snapshot. Given mode(%d) is invalid.\n", (int)mode);
         return ENGINE_EBADVALUE;
     }
-#ifdef ENABLE_PERSISTENCE
-#else
-    if (mode != MC_SNAPSHOT_MODE_KEY) {
-        logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to start snapshot. Given mode(%s) is not yet supported.\n",
-                    snapshot_mode_string[mode]);
-        return ENGINE_ENOTSUP;
-    }
-#endif
-
     return ENGINE_SUCCESS;
 }
 
@@ -636,28 +582,66 @@ static void do_snapshot_stats(snapshot_st *ss, ADD_STAT add_stat, const void *co
 /*
  * External Functions
  */
-ENGINE_ERROR_CODE mc_snapshot_init(struct default_engine *engine)
+ENGINE_ERROR_CODE mc_snapshot_init(void *engine_ptr)
 {
+    snapshot_st *ss = &snapshot_anch;
+
+    engine = (struct default_engine *)engine_ptr;
     logger = engine->server.log->get_logger();
 
-    if (do_snapshot_init(&snapshot_anch, engine) < 0) {
+    pthread_mutex_init(&ss->lock, NULL);
+    ss->engine = (void*)engine;
+    ss->running = false;
+    ss->success = false;
+    ss->reqstop = false;
+    ss->mode = MC_SNAPSHOT_MODE_MAX;
+    ss->snapped = 0;
+    ss->started = 0;
+    ss->stopped = 0;
+
+    /* snapshot prefix */
+    ss->prefix = NULL;
+    ss->nprefix = -1;
+
+    /* snapshot file */
+    ss->file.path[0] = '\0';
+    ss->file.fd = -1;
+
+    /* snapshot buffer */
+    ss->buffer.memory = (char*)malloc(SNAPSHOT_BUFFER_SIZE);
+    if (ss->buffer.memory == NULL) {
+        logger->log(EXTENSION_LOG_INFO, NULL,
+                    "Failed to allocate snapshot buffer.\n");
         return ENGINE_FAILED;
     }
-    snapshot_anch.initialized = true;
+    ss->buffer.maxlen = SNAPSHOT_BUFFER_SIZE;
+    ss->buffer.curlen = 0;
+
+    ss->initialized = true;
     logger->log(EXTENSION_LOG_INFO, NULL, "SNAPSHOT module initialized.\n");
+
     return ENGINE_SUCCESS;
 }
 
 void mc_snapshot_final(void)
 {
-    if (snapshot_anch.initialized == false) {
-        return;
+    snapshot_st *ss = &snapshot_anch;
+
+    if (ss->initialized) {
+        /* stop the current snapshot */
+        mc_snapshot_stop();
+
+        if (ss->file.fd != -1) {
+            close(ss->file.fd);
+            ss->file.fd = -1;
+        }
+        if (ss->buffer.memory != NULL) {
+            free(ss->buffer.memory);
+            ss->buffer.memory = NULL;
+        }
+        pthread_mutex_destroy(&ss->lock);
+        ss->initialized = false;
     }
-
-    mc_snapshot_stop();
-
-    do_snapshot_final(&snapshot_anch);
-    snapshot_anch.initialized = false;
     logger->log(EXTENSION_LOG_INFO, NULL, "SNAPSHOT module destroyed.\n");
 }
 

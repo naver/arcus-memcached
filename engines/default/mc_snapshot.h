@@ -27,7 +27,7 @@ enum mc_snapshot_mode {
 
 typedef void (*CB_SNAPSHOT_DONE)(void*);
 
-ENGINE_ERROR_CODE mc_snapshot_init(struct default_engine *engine);
+ENGINE_ERROR_CODE mc_snapshot_init(void *engine_ptr);
 void mc_snapshot_final(void);
 
 ENGINE_ERROR_CODE mc_snapshot_direct(enum mc_snapshot_mode mode,
