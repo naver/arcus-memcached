@@ -31,11 +31,10 @@
 #define SNAPSHOT_BUFFER_SIZE (10 * 1024 * 1024)
 #define SCAN_ITEM_ARRAY_SIZE 16
 //#define SCAN_ITEM_ARRAY_SIZE 64
-#define SNAPSHOT_MAX_FILEPATH_LENGTH 255
 
 /* snapshot file structure */
 struct snapshot_file {
-    char   path[SNAPSHOT_MAX_FILEPATH_LENGTH+1];
+    char   path[MAX_FILEPATH_LENGTH];
     int    fd;
     size_t size;
 };
@@ -339,7 +338,7 @@ static void do_snapshot_prepare(snapshot_st *ss,
     ss->cb_snapshot_done = callback;
 
     /* prepare snapshot file */
-    snprintf(ss->file.path, SNAPSHOT_MAX_FILEPATH_LENGTH, "%s",
+    snprintf(ss->file.path, MAX_FILEPATH_LENGTH, "%s",
              (filepath != NULL ? filepath : "mc_snapshot"));
     ss->file.fd = -1;
     ss->file.size = 0;

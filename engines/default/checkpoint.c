@@ -29,7 +29,6 @@
 #include "mc_snapshot.h"
 #include "cmdlogfile.h"
 
-#define CHKPT_MAX_FILENAME_LENGTH  255
 #define CHKPT_FILE_NAME_FORMAT     "%s/%s%"PRId64
 #define CHKPT_SNAPSHOT_PREFIX      "snapshot_"
 #define CHKPT_CMDLOG_PREFIX        "cmdlog_"
@@ -52,8 +51,8 @@ typedef struct _chkpt_st {
     int64_t  prevtime;            /* previous checkpoint time */
     int64_t  lasttime;            /* last checkpoint time */
     size_t   lastsize;            /* last snapshot log file size */
-    char     snapshot_path[CHKPT_MAX_FILENAME_LENGTH+1]; /* snapshot file path */
-    char     cmdlog_path[CHKPT_MAX_FILENAME_LENGTH+1];   /* cmdlog file path */
+    char     snapshot_path[MAX_FILEPATH_LENGTH]; /* snapshot file path */
+    char     cmdlog_path[MAX_FILEPATH_LENGTH];   /* cmdlog file path */
     char    *data_path;           /* snapshot directory path */
     char    *logs_path;           /* command log directory path */
     volatile uint8_t running;     /* Is it running, now ? */

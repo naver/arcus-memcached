@@ -29,13 +29,11 @@
 #include "cmdlogrec.h"
 #include "cmdlogbuf.h"
 
-#define CMDLOG_MAX_FILEPATH_LENGTH 255
-
 #define ENABLE_DEBUG 0
 
 /* log file structure */
 typedef struct _log_file {
-    char      path[CMDLOG_MAX_FILEPATH_LENGTH+1];
+    char      path[MAX_FILEPATH_LENGTH];
     int       prev_fd;
     int       fd;
     int       next_fd;
@@ -285,7 +283,7 @@ int cmdlog_file_open(char *path)
                         logfile->path, strerror(errno));
             ret = -1; break;
         }
-        snprintf(logfile->path, CMDLOG_MAX_FILEPATH_LENGTH, "%s", path);
+        snprintf(logfile->path, MAX_FILEPATH_LENGTH, "%s", path);
         if (logfile->fd == -1) {
             logfile->fd = fd;
         } else {
