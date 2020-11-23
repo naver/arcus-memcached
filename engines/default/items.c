@@ -1649,12 +1649,15 @@ void item_dump_stats(struct default_engine *engine,
     struct engine_dumper *dumper = &engine->dumper;
 
     pthread_mutex_lock(&dumper->lock);
+    do {
 #ifdef ENABLE_PERSISTENCE_02_SNAPSHOT
-    if (dumper->mode == DUMP_MODE_SNAPSHOT)
-        mc_snapshot_stats(add_stat, cookie);
-    else
+        if (dumper->mode == DUMP_MODE_SNAPSHOT) {
+            mc_snapshot_stats(add_stat, cookie);
+            break;
+        }
 #endif
-    do_item_dump_stats(dumper, add_stat, cookie);
+        do_item_dump_stats(dumper, add_stat, cookie);
+    } while(0);
     pthread_mutex_unlock(&dumper->lock);
 }
 
