@@ -26,7 +26,6 @@
 #include <unistd.h>
 #include <stddef.h>
 #include <inttypes.h>
-#include <dirent.h>
 
 #include "default_engine.h"
 #include "memcached/util.h"

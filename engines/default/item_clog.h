@@ -134,5 +134,4 @@ void CLOG_GE_ELEM_DELETE_END(coll_meta_info *info,
 void item_clog_init(struct default_engine *engine);
 void item_clog_final(struct default_engine *engine);
 void item_clog_set_enable(bool enable);
-
 #endif
