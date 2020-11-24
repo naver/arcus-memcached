@@ -2490,7 +2490,8 @@ static uint32_t do_btree_elem_count(btree_meta_info *info,
         return 0;
     }
 
-#ifdef BOP_COUNT_OPTIMIZE
+#if 1 // BOP_COUNT_OPTIMIZE
+    /* check if the bkey range is full range */
     if (bkrtype != BKEY_RANGE_TYPE_SIN && efilter == NULL) {
         btree_elem_item *min_bkey_elem = do_btree_get_first_elem(info->root);
         btree_elem_item *max_bkey_elem = do_btree_get_last_elem(info->root);
