@@ -32,7 +32,6 @@ struct iovec {
 #endif
 
 #define PROXY_SUPPORT
-#define BOP_COUNT_OPTIMIZE
 //#define NEW_PREFIX_STATS_MANAGEMENT
 #define SUPPORT_BOP_MGET
 #define SUPPORT_BOP_SMGET
