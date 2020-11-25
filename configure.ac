@@ -213,6 +213,13 @@ if test "x$enable_sticky_item" = "xyes"; then
     AC_DEFINE([ENABLE_STICKY_ITEM],1,[Set to nonzero if you want to include sticky items])
 fi
 
+AC_ARG_ENABLE(persistence,
+  [AS_HELP_STRING([--enable-persistence],[Enable persistence])],
+  [],[enable_persistence=no])
+if test "x$enable_persistence" = "xyes"; then
+    AC_DEFINE([ENABLE_PERSISTENCE],1,[Set to nonzero if you want to include persistence])
+fi
+
 # default engine
 AC_ARG_ENABLE(default-engine,
   [AS_HELP_STRING([--enable-default-engine], [Build-in default engine])])
