@@ -353,6 +353,10 @@ void cmdlog_file_final(void)
 {
     log_FILE *logfile = &log_file_gl.log_file;
 
+    if (log_file_gl.initialized == false) {
+        return;
+    }
+
     /* Don't need to hold log_fsync_lock because this function is called
      * after stopping cmdlog thread. See cmdlog_mgr_final().
      */

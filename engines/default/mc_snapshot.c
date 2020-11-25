@@ -615,21 +615,24 @@ void mc_snapshot_final(void)
 {
     snapshot_st *ss = &snapshot_anch;
 
-    if (ss->initialized) {
-        /* stop the current snapshot */
-        mc_snapshot_stop();
-
-        if (ss->file.fd != -1) {
-            close(ss->file.fd);
-            ss->file.fd = -1;
-        }
-        if (ss->buffer.memory != NULL) {
-            free(ss->buffer.memory);
-            ss->buffer.memory = NULL;
-        }
-        pthread_mutex_destroy(&ss->lock);
-        ss->initialized = false;
+    if (ss->initialized == false) {
+        return;
     }
+
+    /* stop the current snapshot */
+    mc_snapshot_stop();
+
+    if (ss->file.fd != -1) {
+        close(ss->file.fd);
+        ss->file.fd = -1;
+    }
+    if (ss->buffer.memory != NULL) {
+        free(ss->buffer.memory);
+        ss->buffer.memory = NULL;
+    }
+    pthread_mutex_destroy(&ss->lock);
+
+    ss->initialized = false;
     logger->log(EXTENSION_LOG_INFO, NULL, "SNAPSHOT module destroyed.\n");
 }
 
