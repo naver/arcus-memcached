@@ -732,6 +732,13 @@ Demo_set_config(ENGINE_HANDLE* handle, const void* cookie,
     return ENGINE_ENOTSUP;
 }
 
+static ENGINE_ERROR_CODE
+Demo_get_config(ENGINE_HANDLE* handle, const void* cookie,
+                const char* config_type, void* config_value)
+{
+    return ENGINE_ENOTSUP;
+}
+
 /*
  * Unknown Command API
  */
@@ -851,6 +858,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          /* Dump API */
          /* Config API */
          .set_config       = Demo_set_config,
+         .get_config       = Demo_get_config,
          /* Unknown Command API */
          /* Info API */
          .get_item_info    = Demo_get_item_info,

@@ -60,19 +60,6 @@
 #include <stdarg.h>
 #include <stddef.h>
 
-/* max collection size */
-#define MINIMUM_MAX_COLL_SIZE  10000
-#define MAXIMUM_MAX_COLL_SIZE  1000000
-#define DEFAULT_MAX_LIST_SIZE  50000
-#define DEFAULT_MAX_SET_SIZE   50000
-#define DEFAULT_MAX_MAP_SIZE   50000
-#define DEFAULT_MAX_BTREE_SIZE 50000
-
-/* default max element bytes */
-#define DEFAULT_MAX_ELEMENT_BYTES (16*1024)
-
-/* default item scrub count */
-#define DEFAULT_SCRUB_COUNT 96
 
 /* Lock for global stats */
 static pthread_mutex_t stats_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -339,12 +326,12 @@ static void settings_init(void)
     settings.backlog = 1024;
     settings.binding_protocol = negotiating_prot;
     settings.item_size_max = 1024 * 1024; /* The famous 1MB upper limit. */
-    settings.max_list_size = DEFAULT_MAX_LIST_SIZE;
-    settings.max_set_size = DEFAULT_MAX_SET_SIZE;
-    settings.max_map_size = DEFAULT_MAX_MAP_SIZE;
-    settings.max_btree_size = DEFAULT_MAX_BTREE_SIZE;
-    settings.max_element_bytes = DEFAULT_MAX_ELEMENT_BYTES;
-    settings.scrub_count = DEFAULT_SCRUB_COUNT; /* scrub item count at once */
+    settings.max_list_size = 50000; /* DEFAULT_MAX_LIST_SIZE */
+    settings.max_set_size = 50000; /* DEFAULT_MAX_SET_SIZE */
+    settings.max_map_size = 50000; /* DEFAULT_MAX_MAP_SIZE */
+    settings.max_btree_size = 50000; /* DEFAULT_MAX_BTREE_SIZE */
+    settings.max_element_bytes = 16 * 1024; /* DEFAULT_MAX_ELEMENT_BYTES */
+    settings.scrub_count = 96; /* DEFAULT_SCRUB_COUNT */
     settings.topkeys = 0;
     settings.require_sasl = false;
     settings.extensions.logger = get_stderr_logger();
@@ -14600,6 +14587,41 @@ static bool sanitycheck(void)
     return true;
 }
 
+static void settings_reload_engine_config(void)
+{
+    ENGINE_ERROR_CODE ret;
+    uint32_t maxsize;
+    uint32_t maxbytes;
+    uint32_t scrubcount;
+
+    /* Following settings are loaded by getting engine config */
+
+    ret = mc_engine.v1->get_config(mc_engine.v0, NULL, "max_list_size", (void*)&maxsize);
+    if (ret == ENGINE_SUCCESS) {
+        settings.max_list_size = maxsize;
+    }
+    ret = mc_engine.v1->get_config(mc_engine.v0, NULL, "max_set_size", (void*)&maxsize);
+    if (ret == ENGINE_SUCCESS) {
+        settings.max_set_size = maxsize;
+    }
+    ret = mc_engine.v1->get_config(mc_engine.v0, NULL, "max_map_size", (void*)&maxsize);
+    if (ret == ENGINE_SUCCESS) {
+        settings.max_map_size = maxsize;
+    }
+    ret = mc_engine.v1->get_config(mc_engine.v0, NULL, "max_btree_size", (void*)&maxsize);
+    if (ret == ENGINE_SUCCESS) {
+        settings.max_btree_size = maxsize;
+    }
+    ret = mc_engine.v1->get_config(mc_engine.v0, NULL, "max_element_bytes", (void*)&maxbytes);
+    if (ret == ENGINE_SUCCESS) {
+        settings.max_element_bytes = maxbytes;
+    }
+    ret = mc_engine.v1->get_config(mc_engine.v0, NULL, "scrub_count", (void*)&scrubcount);
+    if (ret == ENGINE_SUCCESS) {
+        settings.scrub_count = scrubcount;
+    }
+}
+
 static void close_listen_sockets(void)
 {
     struct conn *conn;
@@ -14992,6 +15014,8 @@ int main (int argc, char **argv)
     }
 
     /* Following code of setting max collection size will be deprecated. */
+#define MINIMUM_MAX_COLL_SIZE  10000
+#define MAXIMUM_MAX_COLL_SIZE  1000000
     if (1) { /* check max collection size from environment variables */
         int value;
 
@@ -15208,6 +15232,9 @@ int main (int argc, char **argv)
         log_engine_details(engine_handle, mc_logger);
     }
     mc_engine.v1 = (ENGINE_HANDLE_V1 *) engine_handle;
+
+    /* reload the configs set by engine internal */
+    settings_reload_engine_config();
 
     if (!(conn_cache = cache_create("conn", sizeof(conn), sizeof(void*),
                                     conn_constructor, conn_destructor))) {

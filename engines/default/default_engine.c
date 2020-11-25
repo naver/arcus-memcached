@@ -1268,6 +1268,66 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
     return ret;
 }
 
+static ENGINE_ERROR_CODE
+default_get_config(ENGINE_HANDLE* handle, const void* cookie,
+                   const char* config_key, void* config_value)
+{
+    struct default_engine* engine = get_handle(handle);
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    if (strcmp(config_key, "memlimit") == 0) {
+        pthread_mutex_lock(&engine->cache_lock);
+        *(size_t*)config_value = engine->config.maxbytes;
+        pthread_mutex_unlock(&engine->cache_lock);
+    }
+#ifdef ENABLE_STICKY_ITEM
+    else if (strcmp(config_key, "sticky_limit") == 0) {
+        pthread_mutex_lock(&engine->cache_lock);
+        *(size_t*)config_value = engine->config.sticky_limit;
+        pthread_mutex_unlock(&engine->cache_lock);
+    }
+#endif
+    else if (strcmp(config_key, "max_list_size") == 0) {
+        pthread_mutex_lock(&engine->cache_lock);
+        *(uint32_t*)config_value = engine->config.max_list_size;
+        pthread_mutex_unlock(&engine->cache_lock);
+    }
+    else if (strcmp(config_key, "max_set_size") == 0) {
+        pthread_mutex_lock(&engine->cache_lock);
+        *(uint32_t*)config_value = engine->config.max_set_size;
+        pthread_mutex_unlock(&engine->cache_lock);
+    }
+    else if (strcmp(config_key, "max_map_size") == 0) {
+        pthread_mutex_lock(&engine->cache_lock);
+        *(uint32_t*)config_value = engine->config.max_map_size;
+        pthread_mutex_unlock(&engine->cache_lock);
+    }
+    else if (strcmp(config_key, "max_btree_size") == 0) {
+        pthread_mutex_lock(&engine->cache_lock);
+        *(uint32_t*)config_value = engine->config.max_btree_size;
+        pthread_mutex_unlock(&engine->cache_lock);
+    }
+    else if (strcmp(config_key, "max_element_bytes") == 0) {
+        pthread_mutex_lock(&engine->cache_lock);
+        *(uint32_t*)config_value = engine->config.max_element_bytes;
+        pthread_mutex_unlock(&engine->cache_lock);
+    }
+    else if (strcmp(config_key, "scrub_count") == 0) {
+        pthread_mutex_lock(&engine->cache_lock);
+        *(uint32_t*)config_value = engine->config.scrub_count;
+        pthread_mutex_unlock(&engine->cache_lock);
+    }
+    else if (strcmp(config_key, "verbosity") == 0) {
+        pthread_mutex_lock(&engine->cache_lock);
+        *(size_t*)config_value = engine->config.verbose;
+        pthread_mutex_unlock(&engine->cache_lock);
+    }
+    else {
+        ret = ENGINE_ENOTSUP;
+    }
+    return ret;
+}
+
 /*
  * Unknown Command API
  */
@@ -1636,6 +1696,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .dump             = default_dump,
          /* Config API */
          .set_config       = default_set_config,
+         .get_config       = default_get_config,
          /* Unknown Command API */
          .unknown_command  = default_unknown_command,
          /* Scrub stale API */

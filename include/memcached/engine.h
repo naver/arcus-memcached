@@ -666,6 +666,20 @@ extern "C" {
                                         const char* config_key, void* config_value);
 
         /**
+         * Get engine config.
+         *
+         * @param handle the engine handle
+         * @param cookie The cookie provided by the frontend
+         * @param config_key config key
+         * @param config_value config value returned
+         *
+         * @return ENGINE_SUCCESS if all goes well.
+         *         ENGINE_ENOTSUP if given config is not supported.
+         */
+        ENGINE_ERROR_CODE (*get_config)(ENGINE_HANDLE* handle, const void* cookie,
+                                        const char* config_key, void* config_value);
+
+        /**
          * Dump cache items from LRU list of slab class.
          */
         char *(*cachedump)(ENGINE_HANDLE* handle, const void *cookie,
