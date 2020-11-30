@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 7;
+use Test::More tests => 5;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -50,10 +50,12 @@ $server->stop();
 ######################################
 
 # Reasonable but unreasonable.
+=pod
 $server = get_memcached($engine, '-I 1049600');
 my $stats = mem_stats($server->sock, ' settings');
 is($stats->{item_size_max}, 1049600);
 $server->stop();
+=cut
 
 # Suffix kilobytes.
 $server = get_memcached($engine, '-I 512k');
@@ -62,15 +64,16 @@ is($stats->{item_size_max}, 524288);
 $server->stop();
 
 # Suffix megabytes.
+=pod
 $server = get_memcached($engine, '-I 32m');
 my $stats = mem_stats($server->sock, ' settings');
 is($stats->{item_size_max}, 33554432);
 $server->stop();
-
+=cut
 
 # Test sets up to a large size around 2MB.
 # Fot the time being, we disable the test below.
-=head
+=pod
 $server = get_memcached($engine, '-I 2m');
 my $stats = mem_stats($server->sock, ' settings');
 is($stats->{item_size_max}, 2097152);
