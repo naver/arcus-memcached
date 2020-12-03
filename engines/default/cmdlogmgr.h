@@ -19,7 +19,7 @@
 #define CMDLOGMGR_H
 
 #include "cmdlogrec.h"
-#include "mc_snapshot.h"
+#include "chkpt_snapshot.h"
 
 #ifdef ENABLE_PERSISTENCE
 /* undefine PERSISTENCE_ACTION macros */

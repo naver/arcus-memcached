@@ -159,8 +159,8 @@ default_engine_la_SOURCES= \
                     engines/default/coll_btree.h \
                     engines/default/slabs.c \
                     engines/default/slabs.h \
-                    engines/default/mc_snapshot.c \
-                    engines/default/mc_snapshot.h \
+                    engines/default/chkpt_snapshot.c \
+                    engines/default/chkpt_snapshot.h \
                     engines/default/checkpoint.c \
                     engines/default/checkpoint.h \
                     engines/default/cmdlogmgr.c \
