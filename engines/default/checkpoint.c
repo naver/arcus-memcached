@@ -26,7 +26,6 @@
 #include "default_engine.h"
 #ifdef ENABLE_PERSISTENCE
 #include "checkpoint.h"
-#include "chkpt_snapshot.h"
 #include "cmdlogfile.h"
 
 #define CHKPT_FILE_NAME_FORMAT     "%s/%s%"PRId64

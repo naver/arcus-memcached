@@ -26,7 +26,6 @@
 #include "default_engine.h"
 #ifdef ENABLE_PERSISTENCE
 #include "cmdlogfile.h"
-#include "cmdlogrec.h"
 #include "cmdlogbuf.h"
 
 #define ENABLE_DEBUG 0

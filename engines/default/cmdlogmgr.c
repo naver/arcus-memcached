@@ -24,11 +24,10 @@
 
 #include "default_engine.h"
 #ifdef ENABLE_PERSISTENCE
+#include "item_clog.h"
 #include "cmdlogmgr.h"
 #include "cmdlogbuf.h"
 #include "cmdlogfile.h"
-#include "checkpoint.h"
-#include "item_clog.h"
 
 static struct assoc_scan *chkpt_scanp=NULL; // checkpoint scan pointer
 

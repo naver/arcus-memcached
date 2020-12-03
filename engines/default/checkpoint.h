@@ -18,6 +18,8 @@
 #ifndef CHECKPOINT_H
 #define CHECKPOINT_H
 
+#include "chkpt_snapshot.h"
+
 #ifdef ENABLE_PERSISTENCE
 /* Recovery Functions */
 int chkpt_recovery_analysis(void);
