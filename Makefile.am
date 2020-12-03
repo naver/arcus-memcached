@@ -35,6 +35,10 @@ endif
 noinst_LTLIBRARIES=libmcd_util.la
 
 
+# Engine configuration file.
+engineconfdir=$(prefix)/conf
+dist_engineconf_DATA=
+
 # Test application to test stuff from C
 testapp_SOURCES = testapp.c
 testapp_DEPENDENCIES= libmcd_util.la
@@ -158,6 +162,7 @@ default_engine_la_SOURCES= \
 default_engine_la_DEPENDENCIES= libmcd_util.la
 default_engine_la_LIBADD= libmcd_util.la $(LIBM)
 default_engine_la_LDFLAGS= -avoid-version -shared -module -no-undefined
+dist_engineconf_DATA+= engines/default/default_engine.conf
 
 # The demo storage engine
 demo_engine_la_SOURCES= \
