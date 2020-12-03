@@ -18,6 +18,7 @@
 #ifndef MEMCACHED_CHECKPOINT_H
 #define MEMCACHED_CHECKPOINT_H
 
+#ifdef ENABLE_PERSISTENCE
 /* Recovery Functions */
 int chkpt_recovery_analysis(void);
 int chkpt_recovery_redo(void);
@@ -29,5 +30,6 @@ void chkpt_thread_stop(void);
 void chkpt_final(void);
 
 int64_t chkpt_get_lasttime(void);
+#endif
 
 #endif

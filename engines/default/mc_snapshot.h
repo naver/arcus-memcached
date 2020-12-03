@@ -18,6 +18,7 @@
 #ifndef MC_SNAPSHOT_H
 #define MC_SNAPSHOT_H
 
+#ifdef ENABLE_PERSISTENCE
 enum mc_snapshot_mode {
     MC_SNAPSHOT_MODE_KEY = 0,
     MC_SNAPSHOT_MODE_DATA,
@@ -43,6 +44,7 @@ void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie);
 
 int mc_snapshot_check_file_validity(const int fd, size_t *filesize);
 int mc_snapshot_file_apply(const char *filepath);
+#endif
 
 #endif
 

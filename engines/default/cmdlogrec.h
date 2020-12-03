@@ -18,6 +18,7 @@
 #ifndef MEMCACHED_CMDLOGREC_H
 #define MEMCACHED_CMDLOGREC_H
 
+#ifdef ENABLE_PERSISTENCE
 /*
  * LSN(log sequence number)
  */
@@ -429,5 +430,6 @@ hash_item *lrec_get_item_if_collection_link(ITLinkLog *log);
 /* set collection hashitem in snapshot elem log record. */
 void lrec_set_item_in_snapshot_elem(SnapshotElemLog *log, hash_item *it);
 int lrec_check_snapshot_done(SnapshotDoneLog *log);
+#endif
 
 #endif

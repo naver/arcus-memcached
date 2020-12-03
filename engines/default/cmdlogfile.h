@@ -20,6 +20,7 @@
 
 #include "cmdlogrec.h"
 
+#ifdef ENABLE_PERSISTENCE
 /* external log file functions */
 void cmdlog_file_write(char *log_ptr, uint32_t log_size, bool dual_write);
 void cmdlog_file_complete_dual_write(void);
@@ -34,4 +35,6 @@ int    cmdlog_file_apply(void);
 size_t cmdlog_file_getsize(void);
 
 void   cmdlog_get_fsync_lsn(LogSN *lsn);
+#endif
+
 #endif

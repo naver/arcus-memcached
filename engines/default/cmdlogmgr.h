@@ -21,6 +21,7 @@
 #include "cmdlogrec.h"
 #include "mc_snapshot.h"
 
+#ifdef ENABLE_PERSISTENCE
 /* undefine PERSISTENCE_ACTION macros */
 #undef PERSISTENCE_ACTION_BEGIN
 #undef PERSISTENCE_ACTION_END
@@ -80,5 +81,6 @@ void cmdlog_generate_operation_range(bool begin);
 
 void cmdlog_set_chkpt_scan(void *scanp);
 void cmdlog_reset_chkpt_scan(bool chkpt_success);
+#endif
 
 #endif
