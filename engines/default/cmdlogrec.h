@@ -15,8 +15,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef MEMCACHED_CMDLOGREC_H
-#define MEMCACHED_CMDLOGREC_H
+#ifndef CMDLOGREC_H
+#define CMDLOGREC_H
 
 #ifdef ENABLE_PERSISTENCE
 /*

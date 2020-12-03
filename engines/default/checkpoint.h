@@ -15,8 +15,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef MEMCACHED_CHECKPOINT_H
-#define MEMCACHED_CHECKPOINT_H
+#ifndef CHECKPOINT_H
+#define CHECKPOINT_H
 
 #ifdef ENABLE_PERSISTENCE
 /* Recovery Functions */
