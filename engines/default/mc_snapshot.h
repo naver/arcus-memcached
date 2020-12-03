@@ -15,35 +15,35 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-#ifndef MC_SNAPSHOT_H
-#define MC_SNAPSHOT_H
+#ifndef CHKPT_SNAPSHOT_H
+#define CHKPT_SNAPSHOT_H
 
 #ifdef ENABLE_PERSISTENCE
-enum mc_snapshot_mode {
-    MC_SNAPSHOT_MODE_KEY = 0,
-    MC_SNAPSHOT_MODE_DATA,
-    MC_SNAPSHOT_MODE_CHKPT,
-    MC_SNAPSHOT_MODE_MAX
+enum chkpt_snapshot_mode {
+    CHKPT_SNAPSHOT_MODE_KEY = 0,
+    CHKPT_SNAPSHOT_MODE_DATA,
+    CHKPT_SNAPSHOT_MODE_CHKPT,
+    CHKPT_SNAPSHOT_MODE_MAX
 };
 
 typedef void (*CB_SNAPSHOT_DONE)(void*);
 
-ENGINE_ERROR_CODE mc_snapshot_init(void *engine_ptr);
-void mc_snapshot_final(void);
+ENGINE_ERROR_CODE chkpt_snapshot_init(void *engine_ptr);
+void chkpt_snapshot_final(void);
 
-ENGINE_ERROR_CODE mc_snapshot_direct(enum mc_snapshot_mode mode,
-                                     const char *prefix, const int nprefix,
-                                     const char *filepath, size_t *filesize);
+ENGINE_ERROR_CODE chkpt_snapshot_direct(enum chkpt_snapshot_mode mode,
+                                        const char *prefix, const int nprefix,
+                                        const char *filepath, size_t *filesize);
 
-ENGINE_ERROR_CODE mc_snapshot_start(enum mc_snapshot_mode mode,
-                                    const char *prefix, const int nprefix,
-                                    const char *filepath,
-                                    CB_SNAPSHOT_DONE callback);
-void mc_snapshot_stop(void);
-void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie);
+ENGINE_ERROR_CODE chkpt_snapshot_start(enum chkpt_snapshot_mode mode,
+                                       const char *prefix, const int nprefix,
+                                       const char *filepath,
+                                       CB_SNAPSHOT_DONE callback);
+void chkpt_snapshot_stop(void);
+void chkpt_snapshot_stats(ADD_STAT add_stat, const void *cookie);
 
-int mc_snapshot_check_file_validity(const int fd, size_t *filesize);
-int mc_snapshot_file_apply(const char *filepath);
+int chkpt_snapshot_check_file_validity(const int fd, size_t *filesize);
+int chkpt_snapshot_file_apply(const char *filepath);
 #endif
 
 #endif

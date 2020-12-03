@@ -239,8 +239,9 @@ static int do_checkpoint(chkpt_st *cs)
     if ((ret = cmdlog_file_open(cs->cmdlog_path)) != 0) {
         ret = CHKPT_ERROR;
     } else {
-        if (mc_snapshot_direct(MC_SNAPSHOT_MODE_CHKPT, NULL, -1, cs->snapshot_path,
-                               &cs->lastsize) == ENGINE_SUCCESS) {
+        if (chkpt_snapshot_direct(CHKPT_SNAPSHOT_MODE_CHKPT, NULL, -1,
+                                  cs->snapshot_path,
+                                  &cs->lastsize) == ENGINE_SUCCESS) {
             ret = CHKPT_SUCCESS;
             cs->prevtime = cs->lasttime;
             cs->lasttime = newtime;
@@ -378,7 +379,7 @@ int chkpt_recovery_analysis(void)
         logger->log(EXTENSION_LOG_INFO, NULL,
                     "Check that %s is valid snapshot file for recovery.\n",
                     cs->snapshot_path);
-        if (mc_snapshot_check_file_validity(snapshot_fd, &cs->lastsize) == 0) {
+        if (chkpt_snapshot_check_file_validity(snapshot_fd, &cs->lastsize) == 0) {
             cs->lasttime = atoll(strchr(ent->d_name, '_') + 1);
             assert(cs->lasttime != 0);
             close(snapshot_fd);
@@ -402,7 +403,7 @@ int chkpt_recovery_redo(void)
 
     if (cs->lasttime > 0) {
         /* apply snapshot log records. */
-        if (mc_snapshot_file_apply(cs->snapshot_path) < 0) {
+        if (chkpt_snapshot_file_apply(cs->snapshot_path) < 0) {
             return -1;
         }
         sprintf(cs->cmdlog_path, CHKPT_FILE_NAME_FORMAT,

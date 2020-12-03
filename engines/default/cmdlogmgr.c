@@ -451,7 +451,7 @@ ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine_ptr)
 
     memset(&logmgr_gl, 0, sizeof(logmgr_gl));
 
-    ret = mc_snapshot_init(engine);
+    ret = chkpt_snapshot_init(engine);
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
@@ -506,7 +506,7 @@ void cmdlog_mgr_final(void)
     cmdlog_file_final();
     cmdlog_waiter_final();
 
-    mc_snapshot_final();
+    chkpt_snapshot_final();
 
     if (logmgr_gl.initialized == true) {
         logmgr_gl.initialized = false;

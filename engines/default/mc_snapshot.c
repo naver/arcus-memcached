@@ -50,7 +50,7 @@ typedef struct _snapshot_st {
    bool     running;    /* Is it running, now ? */
    bool     success;    /* snapshot final status: success or fail */
    bool     reqstop;    /* request to stop snapshot */
-   enum mc_snapshot_mode mode;
+   enum chkpt_snapshot_mode mode;
    uint64_t snapped;    /* # of cache item snapped */
    time_t   started;    /* snapshot start time */
    time_t   stopped;    /* snapshot stop time */
@@ -94,7 +94,7 @@ static int do_snapshot_data_dump(snapshot_st *ss, void **item_array, int item_co
 static int do_snapshot_data_done(snapshot_st *ss);
 
 /* snapshot function array for each snapshot mode */
-SNAPSHOT_FUNC snapshot_func[MC_SNAPSHOT_MODE_MAX] = {
+SNAPSHOT_FUNC snapshot_func[CHKPT_SNAPSHOT_MODE_MAX] = {
     { do_snapshot_key_dump,  do_snapshot_key_done },
     { do_snapshot_data_dump, do_snapshot_data_done },
     { do_snapshot_data_dump, do_snapshot_data_done }
@@ -145,7 +145,7 @@ static void do_snapshot_buffer_reset(snapshot_st *ss)
     ss->buffer.curlen = 0;
 }
 
-/* mode == MC_SNAPSHOT_MODE_KEY
+/* mode == CHKPT_SNAPSHOT_MODE_KEY
  * dump: do_snapshot_key_dump()
  * done: do_snapshot_key_done()
  */
@@ -231,7 +231,7 @@ static int do_snapshot_key_done(snapshot_st *ss)
     return 0;
 }
 
-/* mode == MC_SNAPSHOT_MODE_DATA || mode == MC_SNAPSHOT_MODE_CHKPT
+/* mode == CHKPT_SNAPSHOT_MODE_DATA || mode == CHKPT_SNAPSHOT_MODE_CHKPT
  * dump: do_snapshot_data_dump()
  * done: do_snapshot_data_done()
  */
@@ -300,10 +300,10 @@ static int do_snapshot_data_done(snapshot_st *ss)
     return 0;
 }
 
-static ENGINE_ERROR_CODE do_snapshot_argcheck(enum mc_snapshot_mode mode)
+static ENGINE_ERROR_CODE do_snapshot_argcheck(enum chkpt_snapshot_mode mode)
 {
     /* check snapshot mode */
-    if (mode >= MC_SNAPSHOT_MODE_MAX) {
+    if (mode >= CHKPT_SNAPSHOT_MODE_MAX) {
         logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to start snapshot. Given mode(%d) is invalid.\n", (int)mode);
         return ENGINE_EBADVALUE;
@@ -312,7 +312,7 @@ static ENGINE_ERROR_CODE do_snapshot_argcheck(enum mc_snapshot_mode mode)
 }
 
 static void do_snapshot_prepare(snapshot_st *ss,
-                                enum mc_snapshot_mode mode,
+                                enum chkpt_snapshot_mode mode,
                                 const char *prefix, const int nprefix,
                                 const char *filepath,
                                 CB_SNAPSHOT_DONE callback)
@@ -330,7 +330,7 @@ static void do_snapshot_prepare(snapshot_st *ss,
 
     /* prepare snapshot file */
     snprintf(ss->file.path, MAX_FILEPATH_LENGTH, "%s",
-             (filepath != NULL ? filepath : "mc_snapshot"));
+             (filepath != NULL ? filepath : "chkpt_snapshot"));
     ss->file.fd = -1;
     ss->file.size = 0;
 
@@ -359,14 +359,14 @@ static bool do_snapshot_action(snapshot_st *ss)
         goto done;
     }
 
-    if (ss->mode == MC_SNAPSHOT_MODE_DATA || ss->mode == MC_SNAPSHOT_MODE_CHKPT) {
+    if (ss->mode == CHKPT_SNAPSHOT_MODE_DATA || ss->mode == CHKPT_SNAPSHOT_MODE_CHKPT) {
         for (int i = 0; i < SCAN_ITEM_ARRAY_SIZE; i++) {
             (void)coll_elem_result_init(&eresults[i], 0);
         }
         erst_array = eresults;
     }
 
-    if (ss->mode == MC_SNAPSHOT_MODE_CHKPT) {
+    if (ss->mode == CHKPT_SNAPSHOT_MODE_CHKPT) {
         cb_scan_open = &cmdlog_set_chkpt_scan;
         cb_scan_close = &cmdlog_reset_chkpt_scan;
     }
@@ -425,7 +425,7 @@ done:
 }
 
 static ENGINE_ERROR_CODE do_snapshot_direct(snapshot_st *ss,
-                                            enum mc_snapshot_mode mode,
+                                            enum chkpt_snapshot_mode mode,
                                             const char *prefix, const int nprefix,
                                             const char *filepath)
 {
@@ -480,7 +480,7 @@ static void *do_snapshot_thread_main(void *arg)
 }
 
 static ENGINE_ERROR_CODE do_snapshot_start(snapshot_st *ss,
-                                           enum mc_snapshot_mode mode,
+                                           enum chkpt_snapshot_mode mode,
                                            const char *prefix, const int nprefix,
                                            const char *filepath,
                                            CB_SNAPSHOT_DONE callback)
@@ -515,7 +515,7 @@ static ENGINE_ERROR_CODE do_snapshot_start(snapshot_st *ss,
 
 static void do_snapshot_stop(snapshot_st *ss, bool wait_stop)
 {
-    if (!ss->running || ss->mode == MC_SNAPSHOT_MODE_CHKPT) {
+    if (!ss->running || ss->mode == CHKPT_SNAPSHOT_MODE_CHKPT) {
         return;
     }
 
@@ -570,7 +570,7 @@ static void do_snapshot_stats(snapshot_st *ss, ADD_STAT add_stat, const void *co
 /*
  * External Functions
  */
-ENGINE_ERROR_CODE mc_snapshot_init(void *engine_ptr)
+ENGINE_ERROR_CODE chkpt_snapshot_init(void *engine_ptr)
 {
     snapshot_st *ss = &snapshot_anch;
 
@@ -582,7 +582,7 @@ ENGINE_ERROR_CODE mc_snapshot_init(void *engine_ptr)
     ss->running = false;
     ss->success = false;
     ss->reqstop = false;
-    ss->mode = MC_SNAPSHOT_MODE_MAX;
+    ss->mode = CHKPT_SNAPSHOT_MODE_MAX;
     ss->snapped = 0;
     ss->started = 0;
     ss->stopped = 0;
@@ -611,7 +611,7 @@ ENGINE_ERROR_CODE mc_snapshot_init(void *engine_ptr)
     return ENGINE_SUCCESS;
 }
 
-void mc_snapshot_final(void)
+void chkpt_snapshot_final(void)
 {
     snapshot_st *ss = &snapshot_anch;
 
@@ -620,7 +620,7 @@ void mc_snapshot_final(void)
     }
 
     /* stop the current snapshot */
-    mc_snapshot_stop();
+    chkpt_snapshot_stop();
 
     if (ss->file.fd != -1) {
         close(ss->file.fd);
@@ -636,9 +636,9 @@ void mc_snapshot_final(void)
     logger->log(EXTENSION_LOG_INFO, NULL, "SNAPSHOT module destroyed.\n");
 }
 
-ENGINE_ERROR_CODE mc_snapshot_direct(enum mc_snapshot_mode mode,
-                                     const char *prefix, const int nprefix,
-                                     const char *filepath, size_t *filesize)
+ENGINE_ERROR_CODE chkpt_snapshot_direct(enum chkpt_snapshot_mode mode,
+                                        const char *prefix, const int nprefix,
+                                        const char *filepath, size_t *filesize)
 {
     ENGINE_ERROR_CODE ret;
 
@@ -656,10 +656,10 @@ ENGINE_ERROR_CODE mc_snapshot_direct(enum mc_snapshot_mode mode,
     return ret;
 }
 
-ENGINE_ERROR_CODE mc_snapshot_start(enum mc_snapshot_mode mode,
-                                    const char *prefix, const int nprefix,
-                                    const char *filepath,
-                                    CB_SNAPSHOT_DONE callback)
+ENGINE_ERROR_CODE chkpt_snapshot_start(enum chkpt_snapshot_mode mode,
+                                       const char *prefix, const int nprefix,
+                                       const char *filepath,
+                                       CB_SNAPSHOT_DONE callback)
 {
     ENGINE_ERROR_CODE ret;
 
@@ -675,14 +675,14 @@ ENGINE_ERROR_CODE mc_snapshot_start(enum mc_snapshot_mode mode,
     return ret;
 }
 
-void mc_snapshot_stop(void)
+void chkpt_snapshot_stop(void)
 {
     pthread_mutex_lock(&snapshot_anch.lock);
     do_snapshot_stop(&snapshot_anch, true);
     pthread_mutex_unlock(&snapshot_anch.lock);
 }
 
-void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie)
+void chkpt_snapshot_stats(ADD_STAT add_stat, const void *cookie)
 {
     pthread_mutex_lock(&snapshot_anch.lock);
     do_snapshot_stats(&snapshot_anch, add_stat, cookie);
@@ -690,7 +690,7 @@ void mc_snapshot_stats(ADD_STAT add_stat, const void *cookie)
 }
 
 /* Check snapshot file validity by inspecting SnapshotDone log record. */
-int mc_snapshot_check_file_validity(const int fd, size_t *filesize)
+int chkpt_snapshot_check_file_validity(const int fd, size_t *filesize)
 {
     SnapshotDoneLog log;
     off_t offset;
@@ -712,7 +712,7 @@ int mc_snapshot_check_file_validity(const int fd, size_t *filesize)
     return lrec_check_snapshot_done(&log);
 }
 
-int mc_snapshot_file_apply(const char *filepath)
+int chkpt_snapshot_file_apply(const char *filepath)
 {
     logger->log(EXTENSION_LOG_INFO, NULL,
                 "[RECOVERY - SNAPSHOT] applying snapshot file. path=%s\n", filepath);
