@@ -450,10 +450,6 @@ ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine_ptr)
 
     memset(&logmgr_gl, 0, sizeof(logmgr_gl));
 
-    ret = chkpt_snapshot_init(engine);
-    if (ret != ENGINE_SUCCESS) {
-        return ret;
-    }
     ret = cmdlog_waiter_init(engine);
     if (ret != ENGINE_SUCCESS) {
         return ret;
@@ -464,6 +460,10 @@ ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine_ptr)
         return ret;
     }
     (void)cmdlog_rec_init(engine);
+    ret = chkpt_snapshot_init(engine);
+    if (ret != ENGINE_SUCCESS) {
+        return ret;
+    }
     ret = chkpt_init(engine);
     if (ret != ENGINE_SUCCESS) {
         return ret;
@@ -500,12 +500,11 @@ void cmdlog_mgr_final(void)
     do_cmdlog_gcommit_thread_stop();
 
     /* CONSIDER: do last checkpoint before shutdown engine. */
+    chkpt_snapshot_final();
     chkpt_final();
     cmdlog_buf_final();
     cmdlog_file_final();
     cmdlog_waiter_final();
-
-    chkpt_snapshot_final();
 
     if (logmgr_gl.initialized == true) {
         logmgr_gl.initialized = false;
