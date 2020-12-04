@@ -102,7 +102,8 @@ extern "C" {
     typedef enum {
         OPERATION_GET = 11, /**< Retrieve with get semantics */
         OPERATION_GETS,    /**< Retrieve with gets semantics */
-        OPERATION_MGET     /**< Retrieve with mget semantics */
+        OPERATION_MGET,     /**< Retrieve with mget semantics */
+        OPERATION_MGETS     /**< Retrieve with mgets semantics */
     } ENGINE_RETRIEVE_OPERATION;
 
     /* collection operation */

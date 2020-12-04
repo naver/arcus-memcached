@@ -3041,14 +3041,13 @@ process_get_single(conn *c, char *key, size_t nkey, bool return_cas)
     return ENGINE_SUCCESS;
 }
 
-static void process_mget_complete(conn *c)
+static void process_mget_complete(conn *c, bool return_cas)
 {
-    assert(c->coll_op == OPERATION_MGET);
+    assert(return_cas ? (c->coll_op == OPERATION_MGETS) : (c->coll_op == OPERATION_MGET));
     assert(c->coll_strkeys != NULL);
 
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     token_t *key_tokens;
-    bool return_cas = false;
 
     do {
         key_tokens = (token_t*)token_buff_get(&c->thread->token_buff, c->coll_numkeys);
@@ -3169,7 +3168,8 @@ static void complete_update_ascii(conn *c)
 #ifdef SUPPORT_BOP_SMGET
         else if (c->coll_op == OPERATION_BOP_SMGET) process_bop_smget_complete(c);
 #endif
-        else if (c->coll_op == OPERATION_MGET) process_mget_complete(c);
+        else if (c->coll_op == OPERATION_MGET) process_mget_complete(c, false);
+        else if (c->coll_op == OPERATION_MGETS) process_mget_complete(c, true);
         return;
     }
 
@@ -8290,7 +8290,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
     }
 }
 
-static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt)
+static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt, bool return_cas)
 {
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
@@ -8301,7 +8301,7 @@ static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt)
     if (ret == ENGINE_SUCCESS) {
         c->coll_strkeys = (void*)&c->memblist;
         ritem_set_first(c, CONN_RTYPE_MBLCK, vlen);
-        c->coll_op = OPERATION_MGET;
+        c->coll_op = (return_cas ? OPERATION_MGETS : OPERATION_MGET);
         conn_set_state(c, conn_nread);
     } else {
         out_string(c, "SERVER_ERROR out of memory");
@@ -8310,7 +8310,7 @@ static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt)
     }
 }
 
-static inline void process_mget_command(conn *c, token_t *tokens, const size_t ntokens)
+static inline void process_mget_command(conn *c, token_t *tokens, const size_t ntokens, bool return_cas)
 {
     uint32_t lenkeys, numkeys;
 
@@ -8336,7 +8336,7 @@ static inline void process_mget_command(conn *c, token_t *tokens, const size_t n
     c->coll_numkeys = numkeys;
     c->coll_lenkeys = lenkeys;
 
-    process_prepare_nread_keys(c, lenkeys, numkeys);
+    process_prepare_nread_keys(c, lenkeys, numkeys, return_cas);
 }
 
 static void process_update_command(conn *c, token_t *tokens, const size_t ntokens,
@@ -12615,7 +12615,11 @@ static void process_command(conn *c, char *command, int cmdlen)
     }
     else if ((ntokens == 4) && (strcmp(tokens[COMMAND_TOKEN].value, "mget") == 0))
     {
-        process_mget_command(c, tokens, ntokens);
+        process_mget_command(c, tokens, ntokens, false);
+    }
+    else if ((ntokens == 4) && (strcmp(tokens[COMMAND_TOKEN].value, "mgets") == 0))
+    {
+        process_mget_command(c, tokens, ntokens, true);
     }
     else if ((ntokens == 6 || ntokens == 7) &&
         ((strcmp(tokens[COMMAND_TOKEN].value, "add"    ) == 0 && (comm = (int)OPERATION_ADD)) ||
