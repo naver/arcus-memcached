@@ -934,8 +934,6 @@ ENGINE_ERROR_CODE coll_elem_get_all(hash_item *it, elems_result_t *eresult, bool
     coll_meta_info *info;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
-    eresult->elem_count = 0;
-
     if (lock_hold) LOCK_CACHE();
     do {
         if (!IS_COLL_ITEM(it)) {
@@ -1080,6 +1078,7 @@ void item_scan_release(item_scan *sp, void **item_array, elems_result_t *erst_ar
                 hash_item *it = (hash_item *)item_array[i];
                 assert(IS_COLL_ITEM(it));
                 coll_elem_result_release(&erst_array[i], GET_ITEM_TYPE(it));
+                erst_array[i].elem_count = 0;
             }
         }
     }
