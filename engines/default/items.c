@@ -1047,7 +1047,7 @@ int item_scan_getnext(item_scan *sp, void **item_array, elems_result_t *erst_arr
             /* Found the valid item */
             if (erst_array != NULL && IS_COLL_ITEM(it)) {
                 ret = coll_elem_get_all(it, &erst_array[nfound], false);
-                if (ret  == ENGINE_ENOMEM) break;
+                if (ret == ENGINE_ENOMEM) break;
             }
             ITEM_REFCOUNT_INCR(it);
             if (nfound < i) {
@@ -1057,14 +1057,15 @@ int item_scan_getnext(item_scan *sp, void **item_array, elems_result_t *erst_arr
         }
         item_count = nfound;
     } else {
-        /* item_count == 0: not found element */
+        /* item_count == 0: not found item */
         /* item_count <  0: the end of scan */
     }
     UNLOCK_CACHE();
 
-    if (ret != ENGINE_SUCCESS) {
-        if (item_count > 0)
+    if (ret == ENGINE_ENOMEM) {
+        if (item_count > 0) {
             item_scan_release(sp, item_array, erst_array, item_count);
+        }
         item_count = -2; /* OUT OF MEMORY */
     }
     return item_count;
