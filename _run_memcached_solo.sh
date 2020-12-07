@@ -1,3 +1,5 @@
 #!/bin/sh
 
-./memcached -E .libs/default_engine.so -X .libs/syslog_logger.so -X .libs/ascii_scrub.so $@
+CURRENT_DIR_PATH=`pwd`
+
+ ./memcached -E $CURRENT_DIR_PATH/.libs/default_engine.so -X $CURRENT_DIR_PATH/.libs/syslog_logger.so -X $CURRENT_DIR_PATH/.libs/ascii_scrub.so $@

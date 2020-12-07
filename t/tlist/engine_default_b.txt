@@ -83,6 +83,7 @@
 ./t/maxconns.t
 ./t/mget2.t
 ./t/mget.t
+./t/mgets.t
 ./t/multiversioning.t
 ./t/noreply.t
 ./t/readable_expiretime.t
