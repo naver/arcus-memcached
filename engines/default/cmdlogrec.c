@@ -243,7 +243,7 @@ static void lrec_attr_print(char *data, char *str)
     /* because lrec_attr_info is not aligned, set info with memcpy */
     memcpy(&info, data, sizeof(lrec_attr_info));
     sprintf(str, "(flags=%u, exptime=%u, maxcount=%d, ovflaction=%u, readable=%u)",
-            info.flags, info.exptime, info.maxcount, info.ovflaction,
+            info.flags, CONVERT_REL_EXPTIME(info.exptime), info.maxcount, info.ovflaction,
             (info.mflags & COLL_META_FLAG_READABLE ? 1 : 0));
 }
 
@@ -374,7 +374,7 @@ static void lrec_it_link_print(LogRec *logrec)
     fprintf(stderr, "[BODY  ] keylen=%u | keystr=%.*s | ittype=%s | "
             "flags=%u | exptime=%u | %s | vallen=%u | valstr=%.*s\r\n",
             cm->keylen, (cm->keylen <= 250 ? cm->keylen : 250), keyptr,
-            get_itemtype_text(cm->ittype), htonl(cm->flags), cm->exptime, metastr,
+            get_itemtype_text(cm->ittype), htonl(cm->flags), CONVERT_REL_EXPTIME(cm->exptime), metastr,
             cm->vallen, (cm->vallen-2 <= 250 ? cm->vallen-2 : 250), keyptr + cm->keylen);
 }
 
@@ -487,7 +487,7 @@ static void lrec_it_setattr_print(LogRec *logrec)
       {
         fprintf(stderr, "[BODY  ] keylen=%u | keystr=%.*s | exptime=%u\r\n",
                 log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
-                log->body.exptime);
+                CONVERT_REL_EXPTIME(log->body.exptime));
       }
       break;
       case UPD_SETATTR_EXPTIME_INFO:
@@ -506,7 +506,7 @@ static void lrec_it_setattr_print(LogRec *logrec)
                 "mflags=%u | mcnt=%u | exptime=%u | maxbkeyrange=%s\r\n",
                 log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
                 get_coll_ovflact_text(log->body.ovflact), log->body.mflags, log->body.mcnt,
-                log->body.exptime, metastr);
+                CONVERT_REL_EXPTIME(log->body.exptime), metastr);
       }
       break;
     }
