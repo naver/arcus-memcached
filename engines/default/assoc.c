@@ -123,9 +123,9 @@ static void redistribute(unsigned int bucket)
     assocp->infotable[bucket].curpower = assocp->rootpower;
 
     assocp->redistributed_bucket_cnt++;
-    if (assocp->redistributed_bucket_cnt == hashsize / 2) {
+    if (assocp->redistributed_bucket_cnt == assocp->hashsize / 2) {
         logger->log(EXTENSION_LOG_INFO, NULL, "redistribution completed by 50%.\n");
-    } else if (assocp->redistributed_bucket_cnt == hashsize) {
+    } else if (assocp->redistributed_bucket_cnt == assocp->hashsize) {
         logger->log(EXTENSION_LOG_INFO, NULL, "redistribution finished.\n");
     }
 }
