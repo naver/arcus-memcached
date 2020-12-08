@@ -54,6 +54,7 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
     assocp->rootsize = DEFAULT_ROOTSIZE;
     assocp->roottable = NULL;
     assocp->infotable = NULL;
+    assocp->redistributed_bucket_cnt = 0;
 
     assocp->roottable = calloc(assocp->rootsize, sizeof(void *));
     if (assocp->roottable == NULL) {
@@ -120,6 +121,13 @@ static void redistribute(unsigned int bucket)
          }
     }
     assocp->infotable[bucket].curpower = assocp->rootpower;
+
+    assocp->redistributed_bucket_cnt++;
+    if (assocp->redistributed_bucket_cnt == hashsize / 2) {
+        logger->log(EXTENSION_LOG_INFO, NULL, "redistribution completed by 50%.\n");
+    } else if (assocp->redistributed_bucket_cnt == hashsize) {
+        logger->log(EXTENSION_LOG_INFO, NULL, "redistribution finished.\n");
+    }
 }
 
 hash_item *assoc_find(const char *key, const uint32_t nkey, uint32_t hash)
@@ -180,6 +188,7 @@ static void assoc_expand(void)
         }
         assocp->rootpower++;
     }
+    logger->log(EXTENSION_LOG_INFO, NULL, "hash table is reallocated.\n");
 }
 
 /* Note: this isn't an assoc_update.  The key must not already exist to call this */

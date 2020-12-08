@@ -31,6 +31,7 @@ struct assoc {
     uint32_t hashmask;  /* hash bucket mask */
     uint32_t rootpower; /* how many hash tables we use ? (power of 2) */
     uint32_t rootsize;
+    uint32_t redistributed_bucket_cnt;
 
     /* cache item hash table : an array of hash tables */
     struct table {
