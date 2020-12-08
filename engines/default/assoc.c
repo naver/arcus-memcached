@@ -124,7 +124,7 @@ static void redistribute(unsigned int bucket)
 
     assocp->redistributed_bucket_cnt++;
     if (assocp->redistributed_bucket_cnt == assocp->hashsize / 2) {
-        logger->log(EXTENSION_LOG_INFO, NULL, "redistribution completed by 50%.\n");
+        logger->log(EXTENSION_LOG_INFO, NULL, "redistribution completed by 50%%.\n");
     } else if (assocp->redistributed_bucket_cnt == assocp->hashsize) {
         logger->log(EXTENSION_LOG_INFO, NULL, "redistribution finished.\n");
     }
