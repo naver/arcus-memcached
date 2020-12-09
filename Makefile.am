@@ -139,6 +139,18 @@ BUILT_SOURCES=
 default_engine_la_SOURCES= \
                     engines/default/default_engine.c \
                     engines/default/default_engine.h \
+                    engines/default/chkpt_snapshot.c \
+                    engines/default/chkpt_snapshot.h \
+                    engines/default/checkpoint.c \
+                    engines/default/checkpoint.h \
+                    engines/default/cmdlogmgr.c \
+                    engines/default/cmdlogmgr.h \
+                    engines/default/cmdlogbuf.c \
+                    engines/default/cmdlogbuf.h \
+                    engines/default/cmdlogfile.c \
+                    engines/default/cmdlogfile.h \
+                    engines/default/cmdlogrec.c \
+                    engines/default/cmdlogrec.h \
                     engines/default/prefix.c \
                     engines/default/prefix.h \
                     engines/default/assoc.c \
@@ -158,19 +170,7 @@ default_engine_la_SOURCES= \
                     engines/default/coll_btree.c \
                     engines/default/coll_btree.h \
                     engines/default/slabs.c \
-                    engines/default/slabs.h \
-                    engines/default/chkpt_snapshot.c \
-                    engines/default/chkpt_snapshot.h \
-                    engines/default/checkpoint.c \
-                    engines/default/checkpoint.h \
-                    engines/default/cmdlogmgr.c \
-                    engines/default/cmdlogmgr.h \
-                    engines/default/cmdlogbuf.c \
-                    engines/default/cmdlogbuf.h \
-                    engines/default/cmdlogfile.c \
-                    engines/default/cmdlogfile.h \
-                    engines/default/cmdlogrec.c \
-                    engines/default/cmdlogrec.h
+                    engines/default/slabs.h
 default_engine_la_DEPENDENCIES= libmcd_util.la
 default_engine_la_LIBADD= libmcd_util.la $(LIBM)
 default_engine_la_LDFLAGS= -avoid-version -shared -module -no-undefined
