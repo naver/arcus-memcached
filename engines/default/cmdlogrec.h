@@ -56,6 +56,13 @@ typedef struct logsn {
                                  ((lsn1)->filenum == (lsn2)->filenum && \
                                   (lsn1)->roffset >= (lsn2)->roffset))
 
+/* thread running state (FIXME: proper position) */
+typedef enum {
+    RUNNING_UNSTARTED,
+    RUNNING_STARTED,
+    RUNNING_STOPPED
+} THREAD_RUNNING_STATE;
+
 /*
  * Log Record Structures
  */
