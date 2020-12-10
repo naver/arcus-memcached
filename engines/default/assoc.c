@@ -54,6 +54,7 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
     assocp->rootsize = DEFAULT_ROOTSIZE;
     assocp->roottable = NULL;
     assocp->infotable = NULL;
+    assocp->redistributed_bucket_cnt = 0;
 
     assocp->roottable = calloc(assocp->rootsize, sizeof(void *));
     if (assocp->roottable == NULL) {
@@ -120,6 +121,16 @@ static void redistribute(unsigned int bucket)
          }
     }
     assocp->infotable[bucket].curpower = assocp->rootpower;
+
+    assocp->redistributed_bucket_cnt++;
+    if (assocp->redistributed_bucket_cnt == assocp->hashsize / 2) {
+        logger->log(EXTENSION_LOG_INFO, NULL, "hash table expansion 50%% completed.\n");
+    } else if (assocp->redistributed_bucket_cnt == (assocp->hashsize / 10) * 9) {
+        logger->log(EXTENSION_LOG_INFO, NULL, "hash table expansion 90%% completed.\n");
+    } else if (assocp->redistributed_bucket_cnt == assocp->hashsize) {
+        logger->log(EXTENSION_LOG_INFO, NULL, "hash table expansion 100%% completed.\n");
+        assocp->redistributed_bucket_cnt = 0;
+    }
 }
 
 hash_item *assoc_find(const char *key, const uint32_t nkey, uint32_t hash)
@@ -180,6 +191,14 @@ static void assoc_expand(void)
         }
         assocp->rootpower++;
     }
+
+    if (assocp->redistributed_bucket_cnt != 0) {
+        logger->log(EXTENSION_LOG_INFO, NULL, "hash table expansion stopped before completion. (%lf%% proceeded)",
+                (double)assocp->redistributed_bucket_cnt * 100 / assocp->hashsize);
+        assocp->redistributed_bucket_cnt = 0;
+    }
+    logger->log(EXTENSION_LOG_INFO, NULL, "hash table expansion started(size: %u -> %u).\n",
+            assocp->hashsize * table_count, assocp->hashsize * table_count * 2);
 }
 
 /* Note: this isn't an assoc_update.  The key must not already exist to call this */
