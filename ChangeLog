@@ -1,3 +1,23 @@
+2020-12-16 [version 1.13.0]
+	* [FEATURE] added mgets command
+	* [FEATURE] added persistence function in default engine. (beta)
+	* [FEATURE] added default_engine.conf file to set engine settings.
+	* [IMPROVE] make possible notifying io completion multiple times.
+	* [IMPROVE] reduced the count of calling the number_of_pending().
+	* [IMPROVE] do not increase the refcount when allocate an hash_item.
+	* [IMPROVE] optimized the do_item_replace() function.
+	* [FIX]     set item_count to -2 only ENGINE_ENOMEM in item_scan_getnext().
+	* [FIX]     reset elem_count of erst_array in item_scan_release().
+	* [FIX]     changed the use_cas checking in an existing hash item.
+	* [FIX]     do the blocked io even if preparing coll get response fails.
+	* [FIX]     set rltotal to 0 when read in data to single buffer.
+	* [TEST]    disabled tests about the max item size more than 1mb.
+	* [CLEANUP] added redistribution logs when expand the hash table.
+	* [CLEANUP] set the engine related settings by reloading engine config.
+	* [CLEANUP] added the item apply functions.
+	* [CLEANUP] separated the item module into multiple files.
+	* [CLEANUP] refactored many parts in source code.
+
 2020-09-04 [version 1.12.2]
 	* [FEATURE] support item size exceeding 1MB by removing asserts on that.
 	* [FEATURE] remove dual space in the pipe header response string.
