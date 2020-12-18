@@ -19,9 +19,7 @@
 void stats_prefix_init(char delimiter, void (*cb_when_prefix_overflow)(void));
 void stats_prefix_clear(void);
 int  stats_prefix_count(void);
-#if 1 // NEW_PREFIX_STATS_MANAGEMENT
 int  stats_prefix_insert(const char *prefix, const size_t nprefix);
-#endif
 int  stats_prefix_delete(const char *prefix, const size_t nprefix);
 void stats_prefix_record_get(const char *key, const size_t nkey, const bool is_hit);
 void stats_prefix_record_delete(const char *key, const size_t nkey);

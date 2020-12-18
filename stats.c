@@ -104,7 +104,6 @@ struct _prefix_stats {
 
 static PREFIX_STATS *prefix_stats[PREFIX_HASH_SIZE];
 static void (*func_when_prefix_overflow)(void);
-static int max_prefixes = PREFIX_MAX_COUNT;
 static int num_prefixes = 0;
 static int total_prefix_size = 0;
 static char *null_prefix_str = "<null>";
@@ -143,65 +142,102 @@ int stats_prefix_count()
     return num_prefixes;
 }
 
-#ifdef NEW_PREFIX_STATS_MANAGEMENT
-int stats_prefix_insert(const char *prefix, const size_t nprefix)
+static PREFIX_STATS *do_stats_prefix_insert(const char *prefix, const size_t nprefix)
 {
     PREFIX_STATS *pfs = NULL;
-    uint32_t hashval = mc_hash(prefix, nprefix, 0) % PREFIX_HASH_SIZE;
+    uint32_t hashval;
+
+    if (num_prefixes >= PREFIX_MAX_COUNT) {
+        /* prefix overflow */
+        func_when_prefix_overflow();
+        return NULL;
+    }
+
+    /* build a prefix stats entry */
+    pfs = calloc(sizeof(PREFIX_STATS), 1);
+    if (pfs == NULL) {
+        perror("Can't allocate space for stats structure: calloc");
+        return NULL;
+    }
+    pfs->prefix = malloc(nprefix + 1);
+    if (pfs->prefix == NULL) {
+        perror("Can't allocate space for copy of prefix: malloc");
+        free(pfs);
+        return NULL;
+    }
+    if (nprefix > 0)
+        strncpy(pfs->prefix, prefix, nprefix);
+    pfs->prefix[nprefix] = '\0';      /* because strncpy() sucks */
+    pfs->prefix_len = nprefix;
+
+    /* link it to hash table */
+    hashval = mc_hash(prefix, nprefix, 0) % PREFIX_HASH_SIZE;
+    pfs->next = prefix_stats[hashval];
+    prefix_stats[hashval] = pfs;
+
+    /* update prefix stats */
+    num_prefixes++;
+    total_prefix_size += (nprefix > 0 ? nprefix
+                                      : strlen(null_prefix_str));
+
+    return pfs;
+}
+
+int stats_prefix_insert(const char *prefix, const size_t nprefix)
+{
+    PREFIX_STATS *pfs;
 
     LOCK_STATS();
-    do {
-        if (num_prefixes >= max_prefixes) {
-            /* prefix overflow */
-            func_when_prefix_overflow();
-            break;
-        }
-
-        pfs = calloc(sizeof(PREFIX_STATS), 1);
-        if (pfs == NULL) {
-            perror("Can't allocate space for stats structure: calloc");
-            break;
-        }
-        pfs->prefix = malloc(nprefix + 1);
-        if (pfs->prefix == NULL) {
-            perror("Can't allocate space for copy of prefix: malloc");
-            free(pfs); pfs = NULL;
-            break;
-        }
-
-        if (nprefix > 0)
-            strncpy(pfs->prefix, prefix, nprefix);
-        pfs->prefix[nprefix] = '\0';      /* because strncpy() sucks */
-        pfs->prefix_len = nprefix;
-
-        pfs->next = prefix_stats[hashval];
-        prefix_stats[hashval] = pfs;
-
-        num_prefixes++;
-        total_prefix_size += (nprefix > 0 ? nprefix
-                                          : strlen(null_prefix_str));
-    } while(0);
+    pfs = do_stats_prefix_insert(prefix, nprefix);
     UNLOCK_STATS();
 
     return (pfs != NULL) ? 0 : -1;
 }
+
+#if 0 // OLD_CODE for deleting multi-level prefixes
+static void do_stats_prefix_delete_children(const char *prefix, const size_t nprefix)
+{
+    PREFIX_STATS *curr;
+    PREFIX_STATS *prev, *next;
+
+    // Full scan for sub-prefixies (FIXME)
+    for (int hidx = 0; hidx < PREFIX_HASH_SIZE; hidx++) {
+        prev = NULL;
+        curr = prefix_stats[hidx];
+        while (curr != NULL) {
+            next = curr->next;
+            if (curr->prefix_len > nprefix &&
+                *(curr->prefix + nprefix) == prefix_delimiter &&
+                strncmp(curr->prefix, prefix, nprefix) == 0) {
+                if (prev == NULL) prefix_stats[hidx] = curr->next;
+                else              prev->next = curr->next;
+                num_prefixes--;
+                total_prefix_size -= curr->prefix_len;
+
+                free(curr->prefix);
+                free(curr);
+            } else {
+                prev = curr;
+            }
+            curr = next;
+        }
+    }
+}
 #endif
 
-int stats_prefix_delete(const char *prefix, const size_t nprefix)
+static int do_stats_prefix_delete(const char *prefix, const size_t nprefix)
 {
     PREFIX_STATS *curr, *prev;
-    int hidx;
+    uint32_t hashval = mc_hash(prefix, nprefix, 0) % PREFIX_HASH_SIZE;
     int ret = -1;
 
-    LOCK_STATS();
-    if (nprefix == 0) {
-        hidx = mc_hash(prefix, nprefix, 0) % PREFIX_HASH_SIZE;
+    if (nprefix == 0) { /* delete "<null>" prefix */
         prev = NULL;
-        for (curr = prefix_stats[hidx]; curr != NULL; prev = curr, curr = curr->next) {
+        for (curr = prefix_stats[hashval]; curr != NULL; prev = curr, curr = curr->next) {
             if (curr->prefix_len == 0) break;
         }
         if (curr != NULL) { /* found */
-            if (prev == NULL) prefix_stats[hidx] = curr->next;
+            if (prev == NULL) prefix_stats[hashval] = curr->next;
             else              prev->next = curr->next;
             num_prefixes--;
             total_prefix_size -= strlen(null_prefix_str);
@@ -211,14 +247,13 @@ int stats_prefix_delete(const char *prefix, const size_t nprefix)
             ret = 0;
         }
     } else { /* nprefix > 0 */
-        hidx = mc_hash(prefix, nprefix, 0) % PREFIX_HASH_SIZE;
         prev = NULL;
-        for (curr = prefix_stats[hidx]; curr != NULL; prev = curr, curr = curr->next) {
+        for (curr = prefix_stats[hashval]; curr != NULL; prev = curr, curr = curr->next) {
             if (curr->prefix_len == nprefix && strncmp(curr->prefix, prefix, nprefix) == 0)
                 break;
         }
         if (curr != NULL) { /* found */
-            if (prev == NULL) prefix_stats[hidx] = curr->next;
+            if (prev == NULL) prefix_stats[hashval] = curr->next;
             else              prev->next = curr->next;
             num_prefixes--;
             total_prefix_size -= curr->prefix_len;
@@ -226,31 +261,25 @@ int stats_prefix_delete(const char *prefix, const size_t nprefix)
             free(curr->prefix);
             free(curr);
             ret = 0;
-        }
-#if 0 // OLD_CODE for deleting multi-level prefixes
-        // Full scan for sub-prefixies (we would fix it in future)
-        for (hidx = 0; hidx < PREFIX_HASH_SIZE; hidx++) {
-            prev = NULL;
-            for (curr = prefix_stats[hidx]; curr != NULL; curr = next) {
-                next = curr->next;
-                if ((curr->prefix_len >= nprefix && strncmp(curr->prefix, prefix, nprefix) == 0) &&
-                    (curr->prefix_len == nprefix || *(curr->prefix+nprefix)==prefix_delimiter)) {
-                    if (prev == NULL) prefix_stats[hidx] = curr->next;
-                    else              prev->next = curr->next;
-                    num_prefixes--;
-                    total_prefix_size -= curr->prefix_len;
 
-                    free(curr->prefix);
-                    free(curr);
-                    ret = 0;
-                } else {
-                    prev = curr;
-                }
+#if 0 // OLD_CODE for deleting multi-level prefixes
+            if (prefix_has_children) {
+                do_stats_prefix_delete_children(prefix, nprefix);
             }
-        }
 #endif
+        }
     }
+    return ret;
+}
+
+int stats_prefix_delete(const char *prefix, const size_t nprefix)
+{
+    int ret;
+
+    LOCK_STATS();
+    ret = do_stats_prefix_delete(prefix, nprefix);
     UNLOCK_STATS();
+
     return ret;
 }
 
@@ -300,37 +329,7 @@ static PREFIX_STATS *stats_prefix_find(const char *key, const size_t nkey)
             return NULL;
         }
     }
-
-    if (num_prefixes >= max_prefixes) {
-        /* prefix overflow */
-        func_when_prefix_overflow();
-        return NULL;
-    }
-
-    pfs = calloc(sizeof(PREFIX_STATS), 1);
-    if (pfs == NULL) {
-        perror("Can't allocate space for stats structure: calloc");
-        return NULL;
-    }
-    pfs->prefix = malloc(length + 1);
-    if (pfs->prefix == NULL) {
-        perror("Can't allocate space for copy of prefix: malloc");
-        free(pfs);
-        return NULL;
-    }
-
-    if (length > 0)
-        strncpy(pfs->prefix, key, length);
-    pfs->prefix[length] = '\0';      /* because strncpy() sucks */
-    pfs->prefix_len = length;
-
-    pfs->next = prefix_stats[hashval];
-    prefix_stats[hashval] = pfs;
-
-    num_prefixes++;
-    total_prefix_size += (length > 0 ? length
-                                     : strlen(null_prefix_str));
-    return pfs;
+    return do_stats_prefix_insert(key, length);
 #endif
 }
 
