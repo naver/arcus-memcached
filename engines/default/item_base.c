@@ -1031,7 +1031,7 @@ void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
     if ((it->iflag & ITEM_LINKED) != 0) {
         CLOG_ITEM_UNLINK(it, cause);
 
-        /* unlink the item from LUR list */
+        /* unlink the item from LRU list */
         item_unlink_q(it);
 
         /* unlink the item from hash table */
@@ -1073,7 +1073,7 @@ void do_item_replace(hash_item *old_it, hash_item *new_it)
 
     CLOG_ITEM_UNLINK(old_it, ITEM_UNLINK_REPLACE);
 
-    /* unlink the item from LUR list */
+    /* unlink the item from LRU list */
     item_unlink_q(old_it);
 
     /* Allocate a new CAS ID on link. */
