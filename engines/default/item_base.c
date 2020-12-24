@@ -29,6 +29,7 @@
 #endif
 #include <assert.h>
 #include <sys/time.h> /* gettimeofday() */
+#include <string.h>
 #include "default_engine.h"
 #include "item_base.h"
 #include "item_clog.h"
