@@ -23,13 +23,14 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <time.h>
 #include <sched.h>
 #include <inttypes.h>
 #endif
 #include <assert.h>
-#include <sys/time.h> /* gettimeofday() */
 #include <string.h>
+#include <time.h>
+#include <sys/time.h> /* gettimeofday() */
+#include <pthread.h>
 #include "default_engine.h"
 #include "item_base.h"
 #include "item_clog.h"
