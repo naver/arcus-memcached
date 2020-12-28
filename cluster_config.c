@@ -139,7 +139,7 @@ static int gen_node_continuum(struct cont_item *continuum,
     int  length;
     unsigned int  hh, nn, pp;
     unsigned char digest[16];
-    bool duplicate = 0;
+    int duplicate = 0;
 
     pp = 0;
     for (hh=0; hh<NUM_OF_HASHES; hh++) {
@@ -154,14 +154,16 @@ static int gen_node_continuum(struct cont_item *continuum,
             continuum[pp].sstate = slice_state;
         }
     }
+
     /* sort the continuum and set the slice index */
     qsort(continuum, NUM_NODE_HASHES, sizeof(struct cont_item), compare_cont_item);
-    for (pp=0; pp < NUM_NODE_HASHES; pp++) {
-        if (pp > 0) { /* check duplicate hpoint */
-            if (continuum[pp].hpoint == continuum[pp-1].hpoint)
-                duplicate = 1;
-        }
+
+    /* set slice index while checking duplicate hpoint */
+    continuum[0].sindex = 0;
+    for (pp=1; pp < NUM_NODE_HASHES; pp++) {
         continuum[pp].sindex = pp; /* slice index: 0 ~ 159 */
+        if (continuum[pp].hpoint == continuum[pp-1].hpoint)
+            duplicate = 1;
     }
     return duplicate;
 }
@@ -169,11 +171,6 @@ static int gen_node_continuum(struct cont_item *continuum,
 /*
  * Node item management
  */
-static struct node_item *node_item_new(void)
-{
-    return (struct node_item *)malloc(sizeof(struct node_item));
-}
-
 static struct node_item *node_item_alloc(struct cluster_config *config)
 {
     if (config->free_list) {
@@ -183,7 +180,7 @@ static struct node_item *node_item_alloc(struct cluster_config *config)
         config->free_size -= 1;
         return item;
     }
-    return node_item_new();
+    return NULL;
 }
 
 static void node_item_free(struct cluster_config *config, struct node_item *item)
@@ -197,30 +194,29 @@ static void node_item_free(struct cluster_config *config, struct node_item *item
 static int node_free_list_prepare(struct cluster_config *config, uint32_t count)
 {
     struct node_item *item;
-    uint32_t i, addition;
+    int rc = 0;
 
-    if ((config->free_size + config->num_nodes) >= count) {
-        /* We have enough free node items. Do nothing. */
-        return 0;
+    if ((config->free_size + config->num_nodes) < count) {
+        /* We need to grow the free node list */
+        int addition = count - (config->free_size + config->num_nodes);
+        for (int i = 0; i < addition; i++) {
+            item = (struct node_item *)malloc(sizeof(struct node_item));
+            if (item == NULL) {
+                rc = -1; /* Out of memory */
+                break;
+            }
+            node_item_free(config, item);
+        }
     }
-
-    addition = count - (config->free_size + config->num_nodes);
-    for (i = 0; i < addition; i++) {
-        if ((item = node_item_new()) == NULL)
-            break;
-        node_item_free(config, item);
-    }
-    if (i < addition) { /* out of memory */
-        return -1;
-    }
-    return 0;
+    return rc;
 }
 
 static void node_free_list_destroy(struct cluster_config *config)
 {
     struct node_item *item;
 
-    while ((item = config->free_list) != NULL) {
+    while (config->free_list) {
+        item = config->free_list;
         config->free_list = item->next;
         free(item);
     }
@@ -251,17 +247,13 @@ static struct node_item *node_item_build(struct cluster_config *config,
                                          const char *node_name,
                                          uint8_t node_state, uint8_t slice_state)
 {
-    struct node_item *item;
-
-    if ((item = node_item_alloc(config)) == NULL) {
-        config->logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "Failed to allocate new node_item.\n");
-        return NULL;
-    }
-    node_item_init(item, node_name, node_state, slice_state);
-    if (item->dup_hp) {
-        config->logger->log(EXTENSION_LOG_INFO, NULL,
-                "[CHECK] Duplicate hssh point in %s node.\n", node_name);
+    struct node_item *item = node_item_alloc(config);
+    if (item) {
+        node_item_init(item, node_name, node_state, slice_state);
+        if (item->dup_hp) {
+            config->logger->log(EXTENSION_LOG_INFO, NULL,
+                    "[CHECK] Duplicate hssh point in %s node.\n", node_name);
+        }
     }
     return item;
 }
@@ -381,8 +373,7 @@ nodearray_build_replace(struct cluster_config *config,
 {
     struct node_item **array;
     struct node_item  *item;
-    int nallocs=0;
-    int i, id;
+    int id, nallocs=0;
 
     /* initialize self_id */
     *self_id = -1;
@@ -396,28 +387,27 @@ nodearray_build_replace(struct cluster_config *config,
     array = (struct node_item **)config->old_memory;
     assert(array != NULL);
 
-    for (i=0; i < num_nodes; i++) {
+    for (int i=0; i < num_nodes; i++) {
+        item = NULL;
         if (config->num_nodes > 0) {
             id = nodearray_find(config->nodearray, config->num_nodes, node_strs[i]);
-            if (id < 0) item = NULL;
-            else        item = config->nodearray[id];
+            if (id >= 0) item = config->nodearray[id];
         } else {
-            item = NULL;
             if (strcmp(node_strs[i], config->self_node.ndname) == 0)
                 item = &config->self_node;
         }
         if (item == NULL) {
+            /* Following node_item_build() is always successful.
+             * Because, free node list is prepared in advance.
+             * See hashring_space_prepare()
+             */
             item = node_item_build(config, node_strs[i],
                                    NSTATE_EXISTING, SSTATE_NORMAL);
-            if (item == NULL) break;
+            assert(item != NULL);
             nallocs += 1;
         }
         item->refcnt += 1;
         array[i] = item;
-    }
-    if (i < num_nodes) {
-        nodearray_release(config, array, i);
-        return NULL;
     }
 
     if (num_nodes == config->num_nodes && nallocs == 0) {
