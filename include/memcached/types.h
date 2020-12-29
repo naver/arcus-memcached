@@ -31,6 +31,7 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
+#define STATS_PERSISTENCE
 #define PROXY_SUPPORT
 //#define NEW_PREFIX_STATS_MANAGEMENT
 #define SUPPORT_BOP_MGET

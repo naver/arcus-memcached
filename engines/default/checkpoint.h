@@ -32,6 +32,23 @@ void chkpt_thread_stop(void);
 void chkpt_final(void);
 
 int64_t chkpt_get_lasttime(void);
+
+
+#ifdef STATS_PERSISTENCE
+typedef struct _chkpt_last {
+    double   recovery_elapsed_time_sec;
+    bool     last_chkpt_in_progress;
+    int      last_chkpt_failure_count;
+    int64_t  last_chkpt_start_time;
+    double   last_chkpt_elapsed_time_sec;
+    size_t   last_chkpt_snapshot_filesize_bytes;/* last snapshot log file size */
+    size_t   current_command_log_filesize_bytes;/* current_command_log file size */
+} chkpt_last;
+
+ENGINE_ERROR_CODE chkpt_last_init(void);
+chkpt_last get_chkpt_last(void);
+#endif
+
 #endif
 
 #endif
