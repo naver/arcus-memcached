@@ -63,6 +63,30 @@ typedef struct _chkpt_st {
 static EXTENSION_LOGGER_DESCRIPTOR* logger = NULL;
 static chkpt_st chkpt_anch;
 
+#ifdef STATS_PERSISTENCE
+static chkpt_last chkpt_last_anch;
+
+ENGINE_ERROR_CODE chkpt_last_init(void){
+    chkpt_last_anch.recovery_elapsed_time_sec = 0;
+    chkpt_last_anch.last_chkpt_in_progress = false;
+    chkpt_last_anch.last_chkpt_failure_count = 0;
+    chkpt_last_anch.last_chkpt_start_time = 0;
+    chkpt_last_anch.last_chkpt_elapsed_time_sec = 0;
+    chkpt_last_anch.last_chkpt_snapshot_filesize_bytes = 0;
+    chkpt_last_anch.current_command_log_filesize_bytes = 0;
+    return ENGINE_SUCCESS;
+}
+
+chkpt_last get_chkpt_last(void){
+    chkpt_last *cs = &chkpt_last_anch;
+    chkpt_last cs_obj;
+    memcpy(&cs_obj, cs, sizeof(chkpt_last));
+    cs_obj.last_chkpt_snapshot_filesize_bytes = chkpt_anch.lastsize;
+    chkpt_last_anch.current_command_log_filesize_bytes = cmdlog_file_getsize();
+    return cs_obj;
+}
+#endif
+
 static int64_t getnowtime(void)
 {
     char buf[20] = {0};
@@ -75,6 +99,7 @@ static int64_t getnowtime(void)
     sscanf(buf, "%" SCNd64, &ltime);
     return ltime;
 }
+
 
 /* Delete all backup files except last checkpoint file. */
 static bool do_chkpt_sweep_files(chkpt_st *cs)
@@ -228,6 +253,7 @@ static void do_chkpt_thread_wakeup(chkpt_st *cs)
 /* FIXME : Error handling(Disk I/O etc) */
 static int do_checkpoint(chkpt_st *cs)
 {
+    clock_t starttime = clock();
     int64_t newtime = getnowtime();
     int ret;
 
@@ -244,6 +270,11 @@ static int do_checkpoint(chkpt_st *cs)
             ret = CHKPT_SUCCESS;
             cs->prevtime = cs->lasttime;
             cs->lasttime = newtime;
+
+#ifdef STATS_PERSISTENCE
+            chkpt_last_anch.last_chkpt_start_time =  cs->prevtime;
+#endif
+
             /* We will remove the previous checkpoint files
              * after those files are closed by log file module.
              * See cmdlog_file_dual_write_finished().
@@ -263,6 +294,11 @@ static int do_checkpoint(chkpt_st *cs)
             ret = CHKPT_ERROR_FILE_REMOVE;
         }
     }
+
+#ifdef STATS_PERSISTENCE
+    clock_t endtime = clock();
+    chkpt_last_anch.last_chkpt_elapsed_time_sec =(double)(endtime - starttime)/CLOCKS_PER_SEC;
+#endif
     return ret;
 }
 
@@ -295,6 +331,11 @@ static void* chkpt_thread_main(void* arg)
 
         if (cs->reqstop) {
             logger->log(EXTENSION_LOG_INFO, NULL, "Checkpoint thread recognized stop request.\n");
+
+#ifdef STATS_PERSISTENCE
+            chkpt_last_anch.last_chkpt_in_progress = false;
+#endif
+
             break;
         }
 
@@ -323,6 +364,7 @@ static void* chkpt_thread_main(void* arg)
                 if (ret == CHKPT_SUCCESS) {
                     logger->log(EXTENSION_LOG_INFO, NULL, "Checkpoint has been done.\n");
                 } else {
+                    chkpt_last_anch.last_chkpt_failure_count += 1;
                     logger->log(EXTENSION_LOG_WARNING, NULL, "Failed in checkpoint. "
                                 "Retry checkpoint in 5 seconds.\n");
                     if (ret == CHKPT_ERROR_FILE_REMOVE) need_remove = true;
@@ -348,6 +390,8 @@ static int chkptsnapshotfilter(const struct dirent *ent)
 
 int chkpt_recovery_analysis(void)
 {
+
+    clock_t starttime = clock();
     chkpt_st *cs = &chkpt_anch;
     /* Sort snapshot files in alphabetical order. */
     struct dirent **snapshotlist;
@@ -393,6 +437,10 @@ int chkpt_recovery_analysis(void)
     }
     free(snapshotlist);
 
+#ifdef STATS_PERSISTENCE
+    clock_t endtime = clock();
+    chkpt_last_anch.recovery_elapsed_time_sec = (double)(endtime - starttime)/CLOCKS_PER_SEC;
+#endif
     return ret;
 }
 
@@ -477,6 +525,10 @@ void chkpt_thread_stop(void)
     }
     while (chkpt_anch.running == RUNNING_STARTED) {
         chkpt_anch.reqstop = true;
+
+        chkpt_last_anch.last_chkpt_in_progress = true;
+
+
         do_chkpt_thread_wakeup(&chkpt_anch);
         usleep(5000); /* sleep 5ms */
     }

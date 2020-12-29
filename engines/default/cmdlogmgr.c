@@ -1,6 +1,4 @@
-/* -*- Mode: C; tab-width: 4; c-basic-offset: 4; indent-tabs-mode: nil -*- */
-/*
- * arcus-memcached - Arcus memory cache server
+/* arcus-memcached - Arcus memory cache server
  * Copyright 2019 JaM2in Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -468,6 +466,11 @@ ENGINE_ERROR_CODE cmdlog_mgr_init(struct default_engine* engine_ptr)
     if (ret != ENGINE_SUCCESS) {
         return ret;
     }
+    /*initiate persistence_stats*/
+    ret = chkpt_last_init();
+    if (ret != ENGINE_SUCCESS) {
+         return ret;
+    }
     ret = cmdlog_mgr_recovery();
     if (ret != ENGINE_SUCCESS) {
         return ret;
@@ -714,3 +717,4 @@ void cmdlog_reset_chkpt_scan(bool chkpt_success)
     }
 }
 #endif
+

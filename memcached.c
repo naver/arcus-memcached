@@ -8090,6 +8090,7 @@ static void process_stat_command(conn *c, token_t *tokens, const size_t ntokens)
     }
 
     if (ntokens == 2) {
+        printf("11");
         server_stats(&append_ascii_stats, c, false);
         (void)mc_engine.v1->get_stats(mc_engine.v0, c,
                                       NULL, 0, &append_ascii_stats);
