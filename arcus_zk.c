@@ -1254,6 +1254,11 @@ static int arcus_create_ephemeral_znode(zhandle_t *zh, const char *root)
     return 0;
 }
 
+static char *arcus_get_self_name(void)
+{
+    return arcus_conf.mc_ipport;
+}
+
 static bool sm_check_mc_paused(void)
 {
     bool paused = false;
@@ -1494,8 +1499,8 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
             "ZooKeeper session timeout: %d sec\n", zoo_recv_timeout(main_zk->zh)/1000);
 
 #ifdef ENABLE_CLUSTER_AWARE
-    const char *nodename = arcus_conf.mc_ipport;
-    arcus_conf.ch = cluster_config_init(nodename,
+    const char *self_name = arcus_get_self_name();
+    arcus_conf.ch = cluster_config_init(self_name,
                                         arcus_conf.logger, arcus_conf.verbose);
     assert(arcus_conf.ch);
 
