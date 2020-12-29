@@ -79,7 +79,7 @@ struct cluster_config {
     void              *old_memory;  // old     memory for nodearray and continuum
 
     pthread_mutex_t config_lock;         // config lock
-    pthread_mutex_t lock;                // cluster lock
+    pthread_mutex_t ketama_lock;         // ketama hashring lock
     EXTENSION_LOGGER_DESCRIPTOR *logger; // memcached logger
     int       verbose;                   // log level
     bool      is_valid;                  // is this configuration valid?
@@ -453,7 +453,7 @@ static void hashring_replace(struct cluster_config *config, struct cont_item **c
     uint32_t tmp_memlen;
     uint32_t old_num_nodes;
 
-    pthread_mutex_lock(&config->lock);
+    pthread_mutex_lock(&config->ketama_lock);
     /* save old hash ring info */
     tmp_memory = config->cur_memory;
     tmp_memlen = config->cur_memlen;
@@ -472,7 +472,7 @@ static void hashring_replace(struct cluster_config *config, struct cont_item **c
     config->cur_memlen = config->old_memlen;
     config->old_memory = tmp_memory;
     config->old_memlen = tmp_memlen;
-    pthread_mutex_unlock(&config->lock);
+    pthread_mutex_unlock(&config->ketama_lock);
 
     if (old_num_nodes > 0) {
         nodearray_release(config, config->old_memory, old_num_nodes);
@@ -581,7 +581,7 @@ struct cluster_config *cluster_config_init(const char *node_name,
 
     err = pthread_mutex_init(&config->config_lock, NULL);
     assert(err == 0);
-    err = pthread_mutex_init(&config->lock, NULL);
+    err = pthread_mutex_init(&config->ketama_lock, NULL);
     assert(err == 0);
 
     config->self_id = -1;
@@ -661,7 +661,7 @@ int cluster_config_key_is_mine(struct cluster_config *config,
     uint32_t digest;
     int ret = 0;
 
-    pthread_mutex_lock(&config->lock);
+    pthread_mutex_lock(&config->ketama_lock);
     if (config->is_valid) {
         digest = hash_ketama(key, nkey);
         item = find_global_continuum(config->continuum, config->num_conts, digest);
@@ -671,7 +671,7 @@ int cluster_config_key_is_mine(struct cluster_config *config,
     } else { /* this case must not be happened. */
         ret = -1; /* unknown cluster */
     }
-    pthread_mutex_unlock(&config->lock);
+    pthread_mutex_unlock(&config->ketama_lock);
     return ret;
 }
 
