@@ -85,8 +85,8 @@ chkpt_last get_chkpt_last(void){
     chkpt_last_anch.current_command_log_filesize_bytes = cmdlog_file_getsize();
     return cs_obj;
 }
-#endif
 
+#endif
 static int64_t getnowtime(void)
 {
     char buf[20] = {0};
@@ -99,7 +99,6 @@ static int64_t getnowtime(void)
     sscanf(buf, "%" SCNd64, &ltime);
     return ltime;
 }
-
 
 /* Delete all backup files except last checkpoint file. */
 static bool do_chkpt_sweep_files(chkpt_st *cs)
@@ -253,7 +252,9 @@ static void do_chkpt_thread_wakeup(chkpt_st *cs)
 /* FIXME : Error handling(Disk I/O etc) */
 static int do_checkpoint(chkpt_st *cs)
 {
+#ifdef STATS_PERSISTENCE
     clock_t starttime = clock();
+#endif
     int64_t newtime = getnowtime();
     int ret;
 
@@ -270,11 +271,9 @@ static int do_checkpoint(chkpt_st *cs)
             ret = CHKPT_SUCCESS;
             cs->prevtime = cs->lasttime;
             cs->lasttime = newtime;
-
 #ifdef STATS_PERSISTENCE
             chkpt_last_anch.last_chkpt_start_time =  cs->prevtime;
 #endif
-
             /* We will remove the previous checkpoint files
              * after those files are closed by log file module.
              * See cmdlog_file_dual_write_finished().
@@ -294,7 +293,6 @@ static int do_checkpoint(chkpt_st *cs)
             ret = CHKPT_ERROR_FILE_REMOVE;
         }
     }
-
 #ifdef STATS_PERSISTENCE
     clock_t endtime = clock();
     chkpt_last_anch.last_chkpt_elapsed_time_sec =(double)(endtime - starttime)/CLOCKS_PER_SEC;
@@ -331,11 +329,9 @@ static void* chkpt_thread_main(void* arg)
 
         if (cs->reqstop) {
             logger->log(EXTENSION_LOG_INFO, NULL, "Checkpoint thread recognized stop request.\n");
-
 #ifdef STATS_PERSISTENCE
             chkpt_last_anch.last_chkpt_in_progress = false;
 #endif
-
             break;
         }
 
@@ -364,7 +360,9 @@ static void* chkpt_thread_main(void* arg)
                 if (ret == CHKPT_SUCCESS) {
                     logger->log(EXTENSION_LOG_INFO, NULL, "Checkpoint has been done.\n");
                 } else {
+#ifdef STATS_PERSISTENCE
                     chkpt_last_anch.last_chkpt_failure_count += 1;
+#endif
                     logger->log(EXTENSION_LOG_WARNING, NULL, "Failed in checkpoint. "
                                 "Retry checkpoint in 5 seconds.\n");
                     if (ret == CHKPT_ERROR_FILE_REMOVE) need_remove = true;
@@ -390,8 +388,9 @@ static int chkptsnapshotfilter(const struct dirent *ent)
 
 int chkpt_recovery_analysis(void)
 {
-
+#ifdef STATS_PERSISTENCE
     clock_t starttime = clock();
+#endif
     chkpt_st *cs = &chkpt_anch;
     /* Sort snapshot files in alphabetical order. */
     struct dirent **snapshotlist;
@@ -525,10 +524,9 @@ void chkpt_thread_stop(void)
     }
     while (chkpt_anch.running == RUNNING_STARTED) {
         chkpt_anch.reqstop = true;
-
+#ifdef STATS_PERSISTENCE
         chkpt_last_anch.last_chkpt_in_progress = true;
-
-
+#endif
         do_chkpt_thread_wakeup(&chkpt_anch);
         usleep(5000); /* sleep 5ms */
     }

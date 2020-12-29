@@ -32,9 +32,8 @@ void chkpt_thread_stop(void);
 void chkpt_final(void);
 
 int64_t chkpt_get_lasttime(void);
-
-
 #ifdef STATS_PERSISTENCE
+
 typedef struct _chkpt_last {
     double   recovery_elapsed_time_sec;
     bool     last_chkpt_in_progress;
@@ -47,8 +46,8 @@ typedef struct _chkpt_last {
 
 ENGINE_ERROR_CODE chkpt_last_init(void);
 chkpt_last get_chkpt_last(void);
-#endif
 
+#endif
 #endif
 
 #endif

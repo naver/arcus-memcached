@@ -1,4 +1,5 @@
-/* arcus-memcached - Arcus memory cache server
+/*
+ * arcus-memcached - Arcus memory cache server
  * Copyright 2010-2014 NAVER Corp.
  * Copyright 2014-2016 JaM2in Co., Ltd.
  *
@@ -106,7 +107,6 @@ default_get_info(ENGINE_HANDLE* handle)
     return &get_handle(handle)->info.engine_info;
 }
 
-
 static int check_configuration(struct engine_config *conf)
 {
     if (conf->max_list_size < MINIMUM_MAX_COLL_SIZE ||
@@ -152,7 +152,7 @@ static int check_configuration(struct engine_config *conf)
         return -1;
     }
 #ifdef ENABLE_PERSISTENCE
-    if (conf->use_persistence) {  // 경로들이 적절하게 설정되어있는지 확인만 
+    if (conf->use_persistence) {
         /* check data & logs directory path. */
         if (conf->data_path == NULL) {
             logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -179,16 +179,13 @@ static int check_configuration(struct engine_config *conf)
     }
 #endif
 
-    return 0;   
+    return 0;
 }
-
-
-
 
 static ENGINE_ERROR_CODE
 initialize_configuration(struct default_engine *se, const char *cfg_str)
 {
-    struct config_item items[] = {  // [key, datatype, value]구조체 배열 선언하기 
+    struct config_item items[] = {
         { .key = "verbose",           .datatype = DT_SIZE,   .value.dt_size = &se->config.verbose },
         { .key = "use_cas",           .datatype = DT_BOOL,   .value.dt_bool = &se->config.use_cas },
         { .key = "eviction",          .datatype = DT_BOOL,   .value.dt_bool = &se->config.evict_to_free },
@@ -222,8 +219,7 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
         { .key = "vb0",               .datatype = DT_BOOL,   .value.dt_bool = &se->config.vb0 },
         { .key = "config_file",       .datatype = DT_CONFIGFILE },
         { .key = NULL}
-    };   
-
+    };
 
     se->config.vb0 = true;
 
@@ -233,8 +229,8 @@ initialize_configuration(struct default_engine *se, const char *cfg_str)
             return ENGINE_FAILED;
         }
     }
-    /* check engine config */             // 앞서 config 파일check 에서 에러가 발생했으면 거르기
-    if (check_configuration(&se->config) < 0) {  
+    /* check engine config */
+    if (check_configuration(&se->config) < 0) {
         return ENGINE_FAILED;
     }
 
@@ -1114,7 +1110,6 @@ static void stats_vbucket(struct default_engine *engine,
     }
 }
 
-
 #ifdef STATS_PERSISTENCE
 static void persistence_stats(struct default_engine *engine, 
                               ADD_STAT add_stat, const void *cookie)
@@ -1147,7 +1142,6 @@ static void persistence_stats(struct default_engine *engine,
 }
 
 #endif
-
 static ENGINE_ERROR_CODE
 default_get_stats(ENGINE_HANDLE* handle, const void* cookie,
                   const char* stat_key, int nkey, ADD_STAT add_stat)
@@ -1186,8 +1180,6 @@ default_get_stats(ENGINE_HANDLE* handle, const void* cookie,
     }
     return ret;
 }
-
-
 
 static void
 default_reset_stats(ENGINE_HANDLE* handle, const void *cookie)
@@ -1870,4 +1862,3 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
     *handle = (ENGINE_HANDLE*)&engine->engine;
     return ENGINE_SUCCESS;
 }
-
