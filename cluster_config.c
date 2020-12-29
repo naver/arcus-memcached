@@ -578,16 +578,16 @@ struct cluster_config *cluster_config_init(const char *node_name,
         return NULL;
     }
     self_node_build(config, node_name);
-    config->self_id = 0;
 
     err = pthread_mutex_init(&config->config_lock, NULL);
     assert(err == 0);
     err = pthread_mutex_init(&config->lock, NULL);
     assert(err == 0);
 
+    config->self_id = -1;
+    config->is_valid = false;
     config->logger = logger;
     config->verbose = verbose;
-    config->is_valid = false;
     return config;
 }
 
