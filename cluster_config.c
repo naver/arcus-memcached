@@ -368,15 +368,16 @@ static int node_string_check(char **node_strs, uint32_t num_nodes)
 }
 
 static struct node_item **
-nodearray_build_replace(struct cluster_config *config,
-                        char **node_strs, uint32_t num_nodes, int *self_id)
+nodearray_build_for_replace(struct cluster_config *config,
+                            char **node_strs, uint32_t num_nodes,
+                            bool *is_same, int *self_id)
 {
     struct node_item **array;
     struct node_item  *item;
-    int id, nallocs=0;
+    int id, nfound=0;
 
-    /* initialize self_id */
-    *self_id = -1;
+    /* initialize is_same flag */
+    *is_same = false;
 
     /* prepare space for nodearray and continuum */
     if (hashring_space_prepare(config, num_nodes) < 0) {
@@ -391,28 +392,31 @@ nodearray_build_replace(struct cluster_config *config,
         item = NULL;
         if (config->num_nodes > 0) {
             id = nodearray_find(config->nodearray, config->num_nodes, node_strs[i]);
-            if (id >= 0) item = config->nodearray[id];
-        } else {
-            if (strcmp(node_strs[i], config->self_node.ndname) == 0)
-                item = &config->self_node;
+            if (id >= 0) {
+                item = config->nodearray[id];
+                nfound += 1;
+            }
         }
         if (item == NULL) {
-            /* Following node_item_build() is always successful.
-             * Because, free node list is prepared in advance.
-             * See hashring_space_prepare()
-             */
-            item = node_item_build(config, node_strs[i],
-                                   NSTATE_EXISTING, SSTATE_NORMAL);
-            assert(item != NULL);
-            nallocs += 1;
+            if (strcmp(node_strs[i], config->self_node.ndname) == 0) {
+                item = &config->self_node;
+            } else {
+                /* Following node_item_build() is always successful.
+                 * Because, free node list is prepared in advance.
+                 * See hashring_space_prepare()
+                 */
+                item = node_item_build(config, node_strs[i],
+                                       NSTATE_EXISTING, SSTATE_NORMAL);
+                assert(item != NULL);
+            }
         }
         item->refcnt += 1;
         array[i] = item;
     }
 
-    if (num_nodes == config->num_nodes && nallocs == 0) {
-        *self_id = 0; /* the same cluster */
+    if (num_nodes == config->num_nodes && num_nodes == nfound) {
         nodearray_release(config, array, num_nodes);
+        *is_same = true; /* the same nodearray */
         return NULL;
     }
 
@@ -421,11 +425,7 @@ nodearray_build_replace(struct cluster_config *config,
 
     /* find the self_node */
     *self_id = nodearray_find(array, num_nodes, config->self_node.ndname);
-    if (*self_id < 0) {
-        config->logger->log(EXTENSION_LOG_WARNING, NULL, "cannot find self node\n");
-        nodearray_release(config, array, num_nodes);
-        return NULL;
-    }
+
     return array; /* OK */
 }
 
@@ -617,23 +617,25 @@ int cluster_config_reconfigure(struct cluster_config *config,
     assert(config);
     struct node_item **nodearray;
     struct cont_item **continuum;
+    bool is_same;
     int self_id, ret=0;
 
     if (node_string_check(node_strs, num_nodes) < 0) {
         config->logger->log(EXTENSION_LOG_WARNING, NULL,
-                            "reconfiguration failed: invalid node token exists.\n");
+                            "reconfiguration failed: invalid node token found.\n");
         return -1;
     }
 
     pthread_mutex_lock(&config->config_lock);
-    nodearray = nodearray_build_replace(config, node_strs, num_nodes, &self_id);
+    nodearray = nodearray_build_for_replace(config, node_strs, num_nodes,
+                                            &is_same, &self_id);
     if (nodearray == NULL) {
-        if (self_id < 0) {
+        if (is_same) {
+            /* the same nodearray : do nothing */
+        } else {
             config->logger->log(EXTENSION_LOG_WARNING, NULL,
                                 "reconfiguration failed: nodearray_build\n");
             config->is_valid = false; ret = -1;
-        } else {
-            /* the same cluster : do nothing */
         }
     } else {
         /* build continuuum */
