@@ -196,9 +196,12 @@ static rel_time_t get_current_time(void)
 static rel_time_t realtime(const time_t exptime)
 {
     if (exptime == 0) return 0; /* 0 means never expire */
+    if (exptime < 0) {
 #ifdef ENABLE_STICKY_ITEM
-    if (exptime == -1) return (rel_time_t)(-1);
+        if (exptime == -1) return (rel_time_t)(-1);
 #endif
+        return (rel_time_t)1;
+    }
     /* no. of seconds in 30 days - largest possible delta exptime */
     if (exptime > REALTIME_MAXDELTA) {
         /* if item expiration is at/before the server started, give it an
