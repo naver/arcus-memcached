@@ -26,7 +26,6 @@
 #include <assert.h>
 #include <sched.h>
 #include <inttypes.h>
-#include <sys/time.h> /* gettimeofday() */
 
 /* Dummy PERSISTENCE_ACTION Macros */
 #define PERSISTENCE_ACTION_BEGIN(a, b)

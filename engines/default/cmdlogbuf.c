@@ -21,7 +21,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <sys/time.h>
+#include <sys/time.h> /* gettimeofday() */
 
 #include "default_engine.h"
 #ifdef ENABLE_PERSISTENCE
