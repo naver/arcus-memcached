@@ -1598,6 +1598,9 @@ void item_dump_stop(struct default_engine *engine)
 static void do_item_dump_stats(struct engine_dumper *dumper,
                                ADD_STAT add_stat, const void *cookie)
 {
+    char val[MAX_FILEPATH_LENGTH];
+    int len;
+
     if (dumper->running) {
         add_stat("dumper:status", 13, "running", 7, cookie);
     } else {
@@ -1608,8 +1611,6 @@ static void do_item_dump_stats(struct engine_dumper *dumper,
             add_stat("dumper:success", 14, "false", 5, cookie);
     }
     if (dumper->started != 0) {
-        char val[256];
-        int len;
         if (dumper->mode == DUMP_MODE_KEY) {
             add_stat("dumper:mode", 11, "key", 3, cookie);
         } else if (dumper->mode == DUMP_MODE_ITEM) {
