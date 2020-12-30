@@ -875,7 +875,7 @@ void set_elem_get_all(set_meta_info *info, elems_result_t *eresult)
      * This function runs with the cache lock acquired.
      */
     static int stack_max = 0;
-    static struct {
+    static struct _set_hash_posi {
         set_hash_node *node;
         int idx;
     } *stack = NULL;
@@ -887,8 +887,11 @@ void set_elem_get_all(set_meta_info *info, elems_result_t *eresult)
         if (push) {
             push = false;
             if (stack_max <= cur_depth) {
+                struct _set_hash_posi *tmp;
                 stack_max += 16;
-                stack = realloc(stack, sizeof(*stack) * stack_max);
+                tmp = realloc(stack, sizeof(*stack) * stack_max);
+                assert(tmp != NULL);
+                stack = tmp;
             }
             stack[cur_depth].node = node;
             stack[cur_depth].idx = 0;
