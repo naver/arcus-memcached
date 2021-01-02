@@ -171,7 +171,20 @@ static int gen_node_continuum(struct cont_item *continuum,
 /*
  * Node item management
  */
-static struct node_item *node_item_alloc(struct cluster_config *config)
+static int do_node_string_check(char **node_strs, uint32_t num_nodes)
+{
+    char *buf = NULL;
+    char *tok = NULL;
+
+    for (int i=0; i < num_nodes; i++) {
+        /* filter characters after dash(-) */
+        tok = strtok_r(node_strs[i], "-", &buf);
+        if (tok == NULL) return -1;
+    }
+    return 0;
+}
+
+static struct node_item *do_node_item_alloc(struct cluster_config *config)
 {
     if (config->free_list) {
         /* allocate it from the free node list */
@@ -183,7 +196,7 @@ static struct node_item *node_item_alloc(struct cluster_config *config)
     return NULL;
 }
 
-static void node_item_free(struct cluster_config *config, struct node_item *item)
+static void do_node_item_free(struct cluster_config *config, struct node_item *item)
 {
     /* link it to the free node list */
     item->next = config->free_list;
@@ -191,7 +204,7 @@ static void node_item_free(struct cluster_config *config, struct node_item *item
     config->free_size += 1;
 }
 
-static int node_free_list_prepare(struct cluster_config *config, uint32_t count)
+static int do_node_free_list_prepare(struct cluster_config *config, uint32_t count)
 {
     struct node_item *item;
     int rc = 0;
@@ -205,13 +218,13 @@ static int node_free_list_prepare(struct cluster_config *config, uint32_t count)
                 rc = -1; /* Out of memory */
                 break;
             }
-            node_item_free(config, item);
+            do_node_item_free(config, item);
         }
     }
     return rc;
 }
 
-static void node_free_list_destroy(struct cluster_config *config)
+static void do_node_free_list_destroy(struct cluster_config *config)
 {
     struct node_item *item;
 
@@ -222,8 +235,8 @@ static void node_free_list_destroy(struct cluster_config *config)
     }
 }
 
-static void node_item_init(struct node_item *item, const char *node_name,
-                           uint8_t node_state, uint8_t slice_state)
+static void do_node_item_init(struct node_item *item, const char *node_name,
+                              uint8_t node_state, uint8_t slice_state)
 {
     strncpy(item->ndname, node_name, MAX_NODE_NAME_LENGTH);
     item->nstate = node_state;
@@ -232,10 +245,10 @@ static void node_item_init(struct node_item *item, const char *node_name,
     item->flags = 0;
 }
 
-static void self_node_build(struct cluster_config *config, const char *node_name)
+static void do_self_node_build(struct cluster_config *config, const char *node_name)
 {
     struct node_item *item = &config->self_node;
-    node_item_init(item, node_name, NSTATE_EXISTING, SSTATE_NORMAL);
+    do_node_item_init(item, node_name, NSTATE_EXISTING, SSTATE_NORMAL);
     if (item->dup_hp) {
         config->logger->log(EXTENSION_LOG_INFO, NULL,
                 "[CHECK] Duplicate hash point in self node.\n");
@@ -243,13 +256,13 @@ static void self_node_build(struct cluster_config *config, const char *node_name
     item->refcnt += 1; /* +1 refcnt for self node not to be freed */
 }
 
-static struct node_item *node_item_build(struct cluster_config *config,
-                                         const char *node_name,
-                                         uint8_t node_state, uint8_t slice_state)
+static struct node_item *do_node_item_build(struct cluster_config *config,
+                                            const char *node_name,
+                                            uint8_t node_state, uint8_t slice_state)
 {
-    struct node_item *item = node_item_alloc(config);
+    struct node_item *item = do_node_item_alloc(config);
     if (item) {
-        node_item_init(item, node_name, node_state, slice_state);
+        do_node_item_init(item, node_name, node_state, slice_state);
         if (item->dup_hp) {
             config->logger->log(EXTENSION_LOG_INFO, NULL,
                     "[CHECK] Duplicate hssh point in %s node.\n", node_name);
@@ -258,42 +271,16 @@ static struct node_item *node_item_build(struct cluster_config *config,
     return item;
 }
 
-static int
-nodearray_find(struct node_item **array, uint32_t count, const char *node_name)
-{
-    int left, right, mid, cmp;
-
-    left = 0;
-    right = count-1;
-    while (left <= right) {
-        mid = (left + right) / 2;
-        cmp = strcmp(node_name, array[mid]->ndname);
-        if (cmp == 0) break;
-        if (cmp <  0) right = mid-1;
-        else          left  = mid+1;
-    }
-    return (left <= right ? mid : -1);
-}
-
-static void
-nodearray_release(struct cluster_config *config,
-                  struct node_item **array, uint32_t count)
-{
-    for (int i=0; i < count; i++) {
-        array[i]->refcnt -= 1;
-        if (array[i]->refcnt == 0) {
-            node_item_free(config, array[i]);
-        }
-    }
-}
-
-static int hashring_space_init(struct cluster_config *config, uint32_t num_nodes)
+/*
+ * Hash Ring Space management
+ */
+static int do_hashring_space_init(struct cluster_config *config, uint32_t num_nodes)
 {
     int ret=0;
 
     do {
         /* init free node list */
-        if (node_free_list_prepare(config, num_nodes) < 0) {
+        if (do_node_free_list_prepare(config, num_nodes) < 0) {
             config->logger->log(EXTENSION_LOG_WARNING, NULL,
                                 "Failed to init free node list.\n");
             ret = -1; break;
@@ -318,7 +305,7 @@ static int hashring_space_init(struct cluster_config *config, uint32_t num_nodes
     } while(0);
 
     if (ret != 0) {
-        node_free_list_destroy(config);
+        do_node_free_list_destroy(config);
         if (config->old_memory) {
             free(config->old_memory);
             config->old_memory = NULL;
@@ -327,13 +314,13 @@ static int hashring_space_init(struct cluster_config *config, uint32_t num_nodes
     return ret;
 }
 
-static int hashring_space_prepare(struct cluster_config *config, uint32_t num_nodes)
+static int do_hashring_space_prepare(struct cluster_config *config, uint32_t num_nodes)
 {
     void    *new_memory;
     uint32_t new_memlen;
 
     /* prepare free node list */
-    if (node_free_list_prepare(config, num_nodes) < 0) {
+    if (do_node_free_list_prepare(config, num_nodes) < 0) {
         config->logger->log(EXTENSION_LOG_WARNING, NULL,
                             "Failed to prepare free node list.\n");
         return -1;
@@ -354,23 +341,41 @@ static int hashring_space_prepare(struct cluster_config *config, uint32_t num_no
     return 0;
 }
 
-static int node_string_check(char **node_strs, uint32_t num_nodes)
+/*
+ * Node Array management
+ */
+static int do_nodearray_find(struct node_item **array, uint32_t count,
+                             const char *node_name)
 {
-    char *buf = NULL;
-    char *tok = NULL;
+    int left, right, mid, cmp;
 
-    for (int i=0; i < num_nodes; i++) {
-        /* filter characters after dash(-) */
-        tok = strtok_r(node_strs[i], "-", &buf);
-        if (tok == NULL) return -1;
+    left = 0;
+    right = count-1;
+    while (left <= right) {
+        mid = (left + right) / 2;
+        cmp = strcmp(node_name, array[mid]->ndname);
+        if (cmp == 0) break;
+        if (cmp <  0) right = mid-1;
+        else          left  = mid+1;
     }
-    return 0;
+    return (left <= right ? mid : -1);
+}
+
+static void do_nodearray_release(struct cluster_config *config,
+                                 struct node_item **array, uint32_t count)
+{
+    for (int i=0; i < count; i++) {
+        array[i]->refcnt -= 1;
+        if (array[i]->refcnt == 0) {
+            do_node_item_free(config, array[i]);
+        }
+    }
 }
 
 static struct node_item **
-nodearray_build_for_replace(struct cluster_config *config,
-                            char **node_strs, uint32_t num_nodes,
-                            bool *is_same, int *self_id)
+do_nodearray_build_for_replace(struct cluster_config *config,
+                               char **node_strs, uint32_t num_nodes,
+                               bool *is_same, int *self_id)
 {
     struct node_item **array;
     struct node_item  *item;
@@ -380,7 +385,7 @@ nodearray_build_for_replace(struct cluster_config *config,
     *is_same = false;
 
     /* prepare space for nodearray and continuum */
-    if (hashring_space_prepare(config, num_nodes) < 0) {
+    if (do_hashring_space_prepare(config, num_nodes) < 0) {
         return NULL;
     }
 
@@ -391,7 +396,7 @@ nodearray_build_for_replace(struct cluster_config *config,
     for (int i=0; i < num_nodes; i++) {
         item = NULL;
         if (config->num_nodes > 0) {
-            id = nodearray_find(config->nodearray, config->num_nodes, node_strs[i]);
+            id = do_nodearray_find(config->nodearray, config->num_nodes, node_strs[i]);
             if (id >= 0) {
                 item = config->nodearray[id];
                 nfound += 1;
@@ -401,12 +406,12 @@ nodearray_build_for_replace(struct cluster_config *config,
             if (strcmp(node_strs[i], config->self_node.ndname) == 0) {
                 item = &config->self_node;
             } else {
-                /* Following node_item_build() is always successful.
+                /* Following do_node_item_build() is always successful.
                  * Because, free node list is prepared in advance.
-                 * See hashring_space_prepare()
+                 * See do_hashring_space_prepare()
                  */
-                item = node_item_build(config, node_strs[i],
-                                       NSTATE_EXISTING, SSTATE_NORMAL);
+                item = do_node_item_build(config, node_strs[i],
+                                          NSTATE_EXISTING, SSTATE_NORMAL);
                 assert(item != NULL);
             }
         }
@@ -415,7 +420,7 @@ nodearray_build_for_replace(struct cluster_config *config,
     }
 
     if (num_nodes == config->num_nodes && num_nodes == nfound) {
-        nodearray_release(config, array, num_nodes);
+        do_nodearray_release(config, array, num_nodes);
         *is_same = true; /* the same nodearray */
         return NULL;
     }
@@ -424,13 +429,29 @@ nodearray_build_for_replace(struct cluster_config *config,
     qsort(array, num_nodes, sizeof(struct node_item*), compare_node_item_ptr);
 
     /* find the self_node */
-    *self_id = nodearray_find(array, num_nodes, config->self_node.ndname);
+    *self_id = do_nodearray_find(array, num_nodes, config->self_node.ndname);
 
     return array; /* OK */
 }
 
+static void do_nodearray_print(struct cluster_config *config)
+{
+    struct node_item **nodearray = config->nodearray;
+
+    config->logger->log(EXTENSION_LOG_INFO, NULL, "cluster nodearray: count=%d\n",
+                        config->num_nodes);
+    for (int i=0; i < config->num_nodes; i++) {
+        config->logger->log(EXTENSION_LOG_INFO, NULL,
+                            "node[%d]: name=%s state=%d\n", i,
+                            nodearray[i]->ndname, nodearray[i]->nstate);
+    }
+}
+
+/*
+ * Continuum management
+ */
 static struct cont_item **
-continuum_build(struct cluster_config *config, struct node_item **array, uint32_t count)
+do_continuum_build(struct cluster_config *config, struct node_item **array, uint32_t count)
 {
     struct cont_item **continuum = (struct cont_item **)(array + count);
     int i, j, num_conts=0;
@@ -445,8 +466,25 @@ continuum_build(struct cluster_config *config, struct node_item **array, uint32_
     return continuum;
 }
 
-static void hashring_replace(struct cluster_config *config, struct cont_item **continuum,
-                             struct node_item **nodearray, uint32_t num_nodes, int self_id)
+static void do_continuum_print(struct cluster_config *config)
+{
+    struct cont_item **continuum = config->continuum;
+
+    config->logger->log(EXTENSION_LOG_INFO, NULL, "cluster continuum: count=%d\n",
+                       config->num_conts);
+    for (int i=0; i < config->num_conts; i++) {
+        config->logger->log(EXTENSION_LOG_INFO, NULL,
+                            "continuum[%d]: hpoint=%x nindex=%d sstate=%d\n", i,
+                            continuum[i]->hpoint, continuum[i]->nindex,
+                            continuum[i]->sstate);
+    }
+}
+
+/*
+ * Hash Ring management
+ */
+static void do_hashring_replace(struct cluster_config *config, struct cont_item **continuum,
+                                struct node_item **nodearray, uint32_t num_nodes, int self_id)
 {
     assert((void*)nodearray == config->old_memory);
     void    *tmp_memory;
@@ -475,7 +513,7 @@ static void hashring_replace(struct cluster_config *config, struct cont_item **c
     pthread_mutex_unlock(&config->ketama_lock);
 
     if (old_num_nodes > 0) {
-        nodearray_release(config, config->old_memory, old_num_nodes);
+        do_nodearray_release(config, config->old_memory, old_num_nodes);
     } else {
         for (int i=1; i < config->num_conts; i++) {
             if (continuum[i-1]->hpoint == continuum[i]->hpoint) {
@@ -485,33 +523,6 @@ static void hashring_replace(struct cluster_config *config, struct cont_item **c
                         nodearray[continuum[i]->nindex]->ndname, continuum[i]->sindex);
             }
         }
-    }
-}
-
-static void cluster_config_print_node_list(struct cluster_config *config)
-{
-    struct node_item **nodearray = config->nodearray;
-
-    config->logger->log(EXTENSION_LOG_INFO, NULL, "cluster node list: count=%d\n",
-                        config->num_nodes);
-    for (int i=0; i < config->num_nodes; i++) {
-        config->logger->log(EXTENSION_LOG_INFO, NULL,
-                            "node[%d]: name=%s state=%d\n", i,
-                            nodearray[i]->ndname, nodearray[i]->nstate);
-    }
-}
-
-static void cluster_config_print_continuum(struct cluster_config *config)
-{
-    struct cont_item **continuum = config->continuum;
-
-    config->logger->log(EXTENSION_LOG_INFO, NULL, "cluster continuum: count=%d\n",
-                       config->num_conts);
-    for (int i=0; i < config->num_conts; i++) {
-        config->logger->log(EXTENSION_LOG_INFO, NULL,
-                            "continuum[%d]: hpoint=%x nindex=%d sstate=%d\n", i,
-                            continuum[i]->hpoint, continuum[i]->nindex,
-                            continuum[i]->sstate);
     }
 }
 
@@ -559,6 +570,9 @@ find_local_continuum(struct cont_item *continuum, uint32_t num_conts, uint32_t h
     return highp;
 }
 
+/*
+ * External Functions
+ */
 struct cluster_config *cluster_config_init(const char *node_name,
                                            EXTENSION_LOGGER_DESCRIPTOR *logger,
                                            int verbose)
@@ -573,11 +587,11 @@ struct cluster_config *cluster_config_init(const char *node_name,
         return NULL;
     }
 
-    if (hashring_space_init(config, 10) < 0) {
+    if (do_hashring_space_init(config, 10) < 0) {
         free(config);
         return NULL;
     }
-    self_node_build(config, node_name);
+    do_self_node_build(config, node_name);
 
     err = pthread_mutex_init(&config->config_lock, NULL);
     assert(err == 0);
@@ -595,10 +609,10 @@ void cluster_config_final(struct cluster_config *config)
 {
     if (config != NULL) {
         if (config->nodearray) {
-            nodearray_release(config, config->nodearray, config->num_nodes);
+            do_nodearray_release(config, config->nodearray, config->num_nodes);
             config->nodearray = NULL;
         }
-        node_free_list_destroy(config);
+        do_node_free_list_destroy(config);
         if (config->cur_memory) {
             free(config->cur_memory);
             config->cur_memory = NULL;
@@ -620,34 +634,34 @@ int cluster_config_reconfigure(struct cluster_config *config,
     bool is_same;
     int self_id, ret=0;
 
-    if (node_string_check(node_strs, num_nodes) < 0) {
+    if (do_node_string_check(node_strs, num_nodes) < 0) {
         config->logger->log(EXTENSION_LOG_WARNING, NULL,
                             "reconfiguration failed: invalid node token found.\n");
         return -1;
     }
 
     pthread_mutex_lock(&config->config_lock);
-    nodearray = nodearray_build_for_replace(config, node_strs, num_nodes,
+    nodearray = do_nodearray_build_for_replace(config, node_strs, num_nodes,
                                             &is_same, &self_id);
     if (nodearray == NULL) {
         if (is_same) {
             /* the same nodearray : do nothing */
         } else {
             config->logger->log(EXTENSION_LOG_WARNING, NULL,
-                                "reconfiguration failed: nodearray_build\n");
+                                "reconfiguration failed: do_nodearray_build\n");
             config->is_valid = false; ret = -1;
         }
     } else {
         /* build continuuum */
-        continuum = continuum_build(config, nodearray, num_nodes);
+        continuum = do_continuum_build(config, nodearray, num_nodes);
         /* replace hash ring */
-        hashring_replace(config, continuum, nodearray, num_nodes, self_id);
+        do_hashring_replace(config, continuum, nodearray, num_nodes, self_id);
     }
     pthread_mutex_unlock(&config->config_lock);
 
     if (config->is_valid && config->verbose > 2) {
-        cluster_config_print_node_list(config);
-        cluster_config_print_continuum(config);
+        do_nodearray_print(config);
+        do_continuum_print(config);
     }
     return ret;
 }
