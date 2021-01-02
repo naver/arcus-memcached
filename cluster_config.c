@@ -132,8 +132,7 @@ static int compare_cont_item(const void *t1, const void *t2)
     else                                return  0;
 }
 
-static int gen_node_continuum(struct cont_item *continuum,
-                              const char *node_name, uint8_t slice_state)
+static int gen_node_continuum(struct cont_item *continuum, const char *node_name)
 {
     char buffer[MAX_NODE_NAME_LENGTH+1] = "";
     int  length;
@@ -151,7 +150,6 @@ static int gen_node_continuum(struct cont_item *continuum,
                                  | ((uint32_t) (digest[1 + nn * NUM_PER_HASH] & 0xFF) <<  8)
                                  | (           (digest[0 + nn * NUM_PER_HASH] & 0xFF)      );
             /* continuum[pp].nindex : will be set later */
-            continuum[pp].sstate = slice_state;
         }
     }
 
@@ -235,14 +233,23 @@ static void do_node_free_list_destroy(struct cluster_config *config)
     }
 }
 
+static void do_node_item_set_state(struct node_item *item,
+                                   uint8_t node_state, uint8_t slice_state)
+{
+    item->nstate = node_state;
+    for (int i = 0; i < NUM_NODE_HASHES; i++) {
+        item->hslice[i].sstate = slice_state;
+    }
+}
+
 static void do_node_item_init(struct node_item *item, const char *node_name,
                               uint8_t node_state, uint8_t slice_state)
 {
     strncpy(item->ndname, node_name, MAX_NODE_NAME_LENGTH);
-    item->nstate = node_state;
     item->refcnt = 0;
-    item->dup_hp = gen_node_continuum(item->hslice, item->ndname, slice_state);
+    item->dup_hp = gen_node_continuum(item->hslice, item->ndname);
     item->flags = 0;
+    do_node_item_set_state(item, node_state, slice_state);
 }
 
 static void do_self_node_build(struct cluster_config *config, const char *node_name)
