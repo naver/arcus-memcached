@@ -108,6 +108,7 @@ typedef struct {
     uint32_t        hash;
 } PREFIX_STATS_elem;
 #endif
+
 //#define PREFIX_HASH_SIZE 256
 #define PREFIX_HASH_SIZE 1024
 #define PREFIX_MAX_DEPTH 1
@@ -255,8 +256,7 @@ static PREFIX_STATS *do_stats_prefix_insert(const char *prefix, const size_t npr
             }
         }
     }
-#endif
-#if 0 // OLD_CODE
+#else
     /* build a prefix stats entry */
     pfs = calloc(sizeof(PREFIX_STATS), 1);
     if (pfs == NULL) {
@@ -299,7 +299,7 @@ int stats_prefix_insert(const char *prefix, const size_t nprefix)
     return (pfs != NULL) ? 0 : -1;
 }
 
-#ifdef NESTED_PREFIX // OLD_CODE for deleting multi-level prefixes
+#ifdef NESTED_PREFIX
 static void do_stats_prefix_delete_children(const char *prefix, const size_t nprefix)
 {
     PREFIX_STATS *curr;
