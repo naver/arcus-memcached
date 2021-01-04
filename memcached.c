@@ -9220,6 +9220,9 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "stats dump\\r\\n" "\n"
         "\t" "stats cachedump <slab_clsid> <limit> [forward|backward [sticky]]\\r\\n" "\n"
         "\t" "stats reset\\r\\n" "\n"
+#ifdef ENABLE_PERSISTENCE
+        "\t" "stats persistence\\r\\n" "\n"
+#endif
 #ifdef COMMAND_LOGGING
         "\n"
         "\t" "cmdlog start [<file_path>]\\r\\n" "\n"
