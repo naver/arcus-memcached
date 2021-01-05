@@ -43,7 +43,7 @@ static struct engine_config *config=NULL; // engine config
 static struct prefix        *prefxp=NULL; // engine prefix
 static SERVER_CORE_API      *svcore=NULL; // server core api
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
-static prefix_t *root_pt = NULL; /* root prefix info */
+static prefix_t *null_pt = NULL; /* null prefix info */
 
 ENGINE_ERROR_CODE prefix_init(struct default_engine *engine)
 {
@@ -59,9 +59,9 @@ ENGINE_ERROR_CODE prefix_init(struct default_engine *engine)
     if (prefxp->hashtable == NULL) {
         return ENGINE_ENOMEM;
     }
-    // initialize noprefix stats info
+    // initialize null prefix stats info
     memset(&prefxp->null_prefix_data, 0, sizeof(prefix_t));
-    root_pt = &prefxp->null_prefix_data;
+    null_pt = &prefxp->null_prefix_data;
 
 
     logger->log(EXTENSION_LOG_INFO, NULL, "PREFIX module initialized.\n");
@@ -226,7 +226,7 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
     }
 
     if (prefix_depth == 0) {
-        pt = root_pt;
+        pt = null_pt;
         time(&pt->create_time);
         /* save prefix pointer in hash_item */
         it->pfxptr = pt;
@@ -285,7 +285,7 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
                 if (PREFIX_IS_RSVD(key, pt->nprefix)) {
                     pt->internal = 1; /* internal prefix */
                 }
-                pt->parent_prefix = (j == 0 ? root_pt : prefix_list[j-1].pt);
+                pt->parent_prefix = (j == 0 ? null_pt : prefix_list[j-1].pt);
 #endif
                 time(&pt->create_time);
 
@@ -368,7 +368,7 @@ void prefix_unlink(hash_item *it, const uint32_t item_size, bool drop_if_empty)
 #endif
 
     if (drop_if_empty) {
-        while (pt != NULL && pt != root_pt) {
+        while (pt != NULL && pt != null_pt) {
 #ifdef NESTED_PREFIX
             parent_pt = pt->parent_prefix;
 #else
@@ -495,7 +495,7 @@ bool prefix_isvalid(hash_item *it, rel_time_t current_time)
             return false;
         /* traverse parent prefixes to validate them */
         pt = pt->parent_prefix;
-    } while(pt != NULL && pt != root_pt);
+    } while(pt != NULL && pt != null_pt);
 
     return true;
 }
@@ -549,10 +549,9 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
         uint32_t sum_nameleng = 0; /* sum of prefix name length */
         uint32_t i, buflen, pos;
 
-        /* get # of prefixes and num of prefix names */
-        assert(root_pt != NULL);
-        if (root_pt->total_count_exclusive > 0) {
-            /* Include the valid null prefix (that is root prefix) */
+        /* get # of prefixes and length of prefix names */
+        if (null_pt->total_count_exclusive > 0) {
+            /* Include the null prefix if it is valid */
             num_prefixes += 1;
             sum_nameleng += strlen("<null>");
         }
@@ -591,8 +590,8 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
 
         /* write prefix stats in the buffer */
         pos = sizeof(uint32_t);
-        if (num_prefixes > prefxp->tot_prefix_items) { /* include root prefix */
-            pt = root_pt;
+        if (num_prefixes > prefxp->tot_prefix_items) { /* include null prefix */
+            pt = null_pt;
             t = localtime(&pt->create_time);
 #ifdef NESTED_PREFIX
             assert(pt->prefix_items == 0);
@@ -715,7 +714,7 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
         if (prefix != NULL) {
             pt = _prefix_find(prefix, nprefix, svcore->hash(prefix,nprefix,0));
         } else {
-            pt = root_pt;
+            pt = null_pt;
         }
         if (pt == NULL) {
             return ENGINE_PREFIX_ENOENT;
