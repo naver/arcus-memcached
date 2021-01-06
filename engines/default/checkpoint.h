@@ -32,6 +32,9 @@ void chkpt_thread_stop(void);
 void chkpt_final(void);
 
 int64_t chkpt_get_lasttime(void);
+
+void chkpt_persistence_stats(struct default_engine *engine, ADD_STAT add_stat, const void *cookie);
+
 #endif
 
 #endif
