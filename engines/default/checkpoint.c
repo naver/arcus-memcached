@@ -494,7 +494,7 @@ void chkpt_persistence_stats(struct default_engine *engine, ADD_STAT add_stat, c
          add_statistics(cookie, add_stat, NULL, -1, "logs_path", "%s", conf->logs_path);
          add_statistics(cookie, add_stat, NULL, -1, "async_logging", "%s", conf->async_logging? "true" : "false");
          add_statistics(cookie, add_stat, NULL, -1, "chkpt_interval_pct_snapshot", "%u", conf->chkpt_interval_pct_snapshot);
-         add_statistics(cookie, add_stat, NULL, -1, "chkpt_interval_min_logsize", "%u", conf->chkpt_interval_min_logsize);
+         add_statistics(cookie, add_stat, NULL, -1, "chkpt_interval_min_logsize", "%u", conf->chkpt_interval_min_logsize/1024/1024);
          add_statistics(cookie, add_stat, NULL, -1, "recovery_elapsed_time_sec", "%ld", (long)chkpt_last_stat.recovery_elapsed_time_sec);
          add_statistics(cookie, add_stat, NULL, -1, "last_chkpt_in_progress", "%s",
                         chkpt_last_stat.last_chkpt_in_progress? "true" : "false");
