@@ -178,12 +178,6 @@ extern "C" {
          * @return true if the key is in the right server.
          */
         bool (*is_my_key)(const char *key, size_t nkey);
-
-        /**
-         * Get the index of the ketama hash slice
-         * with the ketama hash value.
-         */
-        int (*ketama_hslice)(const char *key, size_t nkey, uint32_t *hvalue);
 #endif
 
         /**

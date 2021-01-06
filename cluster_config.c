@@ -557,26 +557,6 @@ find_global_continuum(struct cont_item **continuum, uint32_t num_conts, uint32_t
     return (*highp);
 }
 
-static struct cont_item *
-find_local_continuum(struct cont_item *continuum, uint32_t num_conts, uint32_t hvalue)
-{
-    struct cont_item *beginp, *endp, *midp, *highp, *lowp;
-
-    beginp = lowp = continuum;
-    endp = highp = continuum + num_conts;
-    while (lowp < highp)
-    {
-        midp = lowp + (highp - lowp) / 2;
-        if (midp->hpoint < hvalue)
-            lowp = midp + 1;
-        else
-            highp = midp;
-    }
-    if (highp == endp)
-        highp = beginp;
-    return highp;
-}
-
 /*
  * External Functions
  */
@@ -696,14 +676,3 @@ int cluster_config_key_is_mine(struct cluster_config *config,
     return ret;
 }
 
-int cluster_config_ketama_hslice(struct cluster_config *config,
-                                 const char *key, uint32_t nkey, uint32_t *hvalue)
-{
-    assert(config);
-    struct cont_item *item;
-
-    *hvalue = hash_ketama(key, nkey);
-
-    item = find_local_continuum(config->self_node.hslice, NUM_NODE_HASHES, *hvalue);
-    return item->sindex; /* slice index */
-}

@@ -66,7 +66,6 @@ void arcus_zk_get_confs(arcus_zk_confs *confs);
 
 #ifdef ENABLE_CLUSTER_AWARE
 int  arcus_key_is_mine(const char *key, size_t nkey, bool *mine);
-int  arcus_ketama_hslice(const char *key, size_t nkey, uint32_t *hvalue);
 #endif
 
 #endif /* ENABLE_ZK_INTEGRATION */

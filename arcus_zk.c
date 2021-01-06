@@ -1900,11 +1900,6 @@ int arcus_key_is_mine(const char *key, size_t nkey, bool *mine)
     }
     return ret;
 }
-
-int arcus_ketama_hslice(const char *key, size_t nkey, uint32_t *hvalue)
-{
-    return cluster_config_ketama_hslice(arcus_conf.ch, key, nkey, hvalue);
-}
 #endif
 
 static void *sm_state_thread(void *arg)
