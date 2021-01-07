@@ -112,6 +112,7 @@ stats [<args>]\r\n
  scrub              | scrub 수행 상태 조회
  cachedump          | slab class 별 cache key dump
  reset              | 모든 통계 정보를 reset
+ persistence        | Persistence 정보 조회
 ```
 
 stats 명령은 직접 한번씩 수행해 보기를 권하며, 아래에서는 추가 설명이 필요한 부분들만 기술한다.
@@ -641,6 +642,40 @@ ITEM c:bkey1
 ITEM c:bkey2
 END
 ```
+**Persistence 정보 조회**
+
+Persistence의 설정 정보와 수행 결과를 조회한 결과 예는 다음과 같다.
+
+```
+STAT use_persistence on
+STAT data_path /home/test/arcus/data/ARCUS-DB
+STAT logs_path /home/test/arcus/data/ARCUS-DB
+STAT async_logging false
+STAT chkpt_interval_pct_snapshot 100
+STAT chkpt_interval_min_logsize 256
+STAT recovery_elapsed_time_sec 5
+STAT last_chkpt_in_progress true
+STAT last_chkpt_failure_count 0
+STAT last_chkpt_start_time 20201222182102
+STAT last_chkpt_elapsed_time_sec 8
+STAT last_chkpt_snapshot_filesize_bytes 423333
+STAT current_command_log_filesize_bytes 65555
+END
+```
+
+- use_persistence - 현재 Persistence 모드가 on인지 off인지 나타낸다.   
+- data_path - 스냅샷 파일이 생성되는 경로를 나타낸다.   
+- logs_path - 명령 로그 파일이 생성되는 경로를 나타낸다.   
+- async_logging - 명령 로깅의 동작 모드로 동기 로깅 모드면 false, 비동기 로깅 모드면 true로 나타낸다.   
+- chkpt_interval_pct_snapshot - 체크포인트 수행 주기 설정으로, 스냅샷 파일 크기에 대비하여 명령 로그 파일의 추가 증가된 크기 비율을 나타낸다.   
+- chkpt_interval_min_logsize - 체크포인트 수행 주기 설정으로, 체크포인트를 수행할 명령 로그 파일의 최소 크기를 나타낸다.   
+- recovery_elapsed_time_sec - ARCUS 인스턴스 재구동 후, 데이터를 복구하는데 걸리는 시간을 나타낸다. (unit : seconds)   
+- last_chkpt_in_progress - 현재 체크포인트의 수행 여부를 나타낸다.   
+- last_chkpt_failure_count - 이전 체크포인트가 수행되거나 성공될 때까지 몇 번 실패한 것인지를 나타낸다.   
+- last_chkpt_start_time - 이전 체크포인트가 조건이 충족되어 시작한 시간을 나타낸다. (unit : absolute timestamp)   
+- last_chkpt_elapsed_time_sec - 이전 체크포인트 수행하는데 걸린 시간을 나타낸다. (unit : seconds)   
+- last_chkpt_snapshot_filesize_bytes - 이전 체크포인트 스냅샷 파일 크기를 나타낸다. (unit : bytes)   
+- current_command_log_filesize_bytes - 현재 명령 로그 파일 크기를 나타낸다. (unit : bytes)   
 
 ### Config 명령
 
