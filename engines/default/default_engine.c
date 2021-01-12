@@ -1320,6 +1320,39 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
         engine->config.verbose = *(size_t*)config_value;
         pthread_mutex_unlock(&engine->cache_lock);
     }
+#ifdef ENABLE_PERSISTENCE
+#ifdef PERSISTENCE_CONFIG
+    if (engine->config.use_persistence) {
+        if (strcmp(config_key, "chkpt_interval_pct_snapshot") == 0) {
+            size_t new_chkpt_interval_pct_snapshot = *(size_t*)config_value;
+            pthread_mutex_lock(&engine->cache_lock);
+            if (new_chkpt_interval_pct_snapshot > 0 &&
+                new_chkpt_interval_pct_snapshot <= 1000) {
+                engine->config.chkpt_interval_pct_snapshot = new_chkpt_interval_pct_snapshot;
+            } else {
+                ret = ENGINE_EBADVALUE;
+            }
+            pthread_mutex_unlock(&engine->cache_lock);
+        }
+        else if (strcmp(config_key, "chkpt_interval_min_logsize") == 0) {
+            size_t new_chkpt_interval_min_logsize = *(size_t*)config_value;
+            pthread_mutex_lock(&engine->cache_lock);
+            if (new_chkpt_interval_min_logsize > 0) {
+                engine->config.chkpt_interval_min_logsize = new_chkpt_interval_min_logsize * 1024 * 1024;
+            } else {
+                ret = ENGINE_EBADVALUE;
+            }
+            pthread_mutex_unlock(&engine->cache_lock);
+        }
+        else if (strcmp(config_key, "async_logging") == 0) {
+            bool new_async_logging = *(bool*)config_value;
+            pthread_mutex_lock(&engine->cache_lock);
+            engine->config.async_logging = new_async_logging;
+            pthread_mutex_unlock(&engine->cache_lock);
+        }
+    }
+#endif
+#endif
     else {
         ret = ENGINE_ENOTSUP;
     }
@@ -1380,6 +1413,27 @@ default_get_config(ENGINE_HANDLE* handle, const void* cookie,
         *(size_t*)config_value = engine->config.verbose;
         pthread_mutex_unlock(&engine->cache_lock);
     }
+#ifdef ENABLE_PERSISTENCE
+#ifdef PERSISTENCE_CONFIG
+    if (engine->config.use_persistence) {
+        if (strcmp(config_key, "chkpt_interval_pct_snapshot") == 0) {
+            pthread_mutex_lock(&engine->cache_lock);
+            *(size_t*)config_value = engine->config.chkpt_interval_pct_snapshot;
+            pthread_mutex_unlock(&engine->cache_lock);
+        }
+        else if (strcmp(config_key, "chkpt_interval_min_logsize") == 0) {
+            pthread_mutex_lock(&engine->cache_lock);
+            *(size_t*)config_value = engine->config.chkpt_interval_min_logsize/1024/1024;
+            pthread_mutex_unlock(&engine->cache_lock);
+        }
+        else if (strcmp(config_key, "async_logging") == 0) {
+            pthread_mutex_lock(&engine->cache_lock);
+            *(bool*)config_value = engine->config.async_logging;
+            pthread_mutex_unlock(&engine->cache_lock);
+        }
+    }
+#endif
+#endif
     else {
         ret = ENGINE_ENOTSUP;
     }
