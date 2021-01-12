@@ -8964,8 +8964,8 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
         out_string(c, "CLIENT_ERROR bad command line format");
     }
 }
+
 #ifdef ENABLE_PERSISTENCE
-#ifdef PERSISTENCE_CONFIG
 static void process_chkpt_interval_pct_snapshot_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
@@ -8973,8 +8973,10 @@ static void process_chkpt_interval_pct_snapshot_command(conn *c, token_t *tokens
     char *config_val = tokens[SUBCOMMAND_TOKEN+1].value;
     unsigned int chkpt_interval_pct_snapshot;
     ENGINE_ERROR_CODE ret;
+
     if (ntokens == 3) {
-        ret = mc_engine.v1->get_config(mc_engine.v0, NULL, "chkpt_interval_pct_snapshot", (void*)&chkpt_interval_pct_snapshot);
+        ret = mc_engine.v1->get_config(mc_engine.v0, NULL, "chkpt_interval_pct_snapshot",
+                                       (void*)&chkpt_interval_pct_snapshot);
         if (ret == ENGINE_SUCCESS) {
             char buf[50];
             sprintf(buf, "chkpt_interval_pct_snapshot %u\r\nEND", (unsigned int)chkpt_interval_pct_snapshot);
@@ -9000,8 +9002,10 @@ static void process_chkpt_interval_min_logsize_command(conn *c, token_t *tokens,
     char *config_val = tokens[SUBCOMMAND_TOKEN+1].value;
     unsigned int chkpt_interval_min_logsize;
     ENGINE_ERROR_CODE ret;
+
     if (ntokens == 3) {
-        ret = mc_engine.v1->get_config(mc_engine.v0, NULL, "chkpt_interval_min_logsize", (void*)&chkpt_interval_min_logsize);
+        ret = mc_engine.v1->get_config(mc_engine.v0, NULL, "chkpt_interval_min_logsize",
+                                       (void*)&chkpt_interval_min_logsize);
         if (ret == ENGINE_SUCCESS) {
             char buf[50];
             sprintf(buf, "chkpt_interval_min_logsize %u\r\nEND", (unsigned int)chkpt_interval_min_logsize);
@@ -9027,6 +9031,7 @@ static void process_async_logging_command(conn *c, token_t *tokens, const size_t
     char *config_val = tokens[SUBCOMMAND_TOKEN+1].value;
     bool  async_logging;
     ENGINE_ERROR_CODE ret;
+
     if (ntokens == 3) {
         ret = mc_engine.v1->get_config(mc_engine.v0, NULL, "async_logging", (void*)&async_logging);
         if (ret == ENGINE_SUCCESS) {
@@ -9055,7 +9060,6 @@ static void process_async_logging_command(conn *c, token_t *tokens, const size_t
         out_string(c, "CLIENT_ERROR bad command line format");
     }
 }
-#endif
 #endif
 
 static void process_config_command(conn *c, token_t *tokens, const size_t ntokens)
@@ -9112,7 +9116,6 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
         process_verbosity_command(c, tokens, ntokens);
     }
 #ifdef ENABLE_PERSISTENCE
-#ifdef PERSISTENCE_CONFIG
     else if (strcmp(config_key, "chkpt_interval_pct_snapshot") == 0) {
         process_chkpt_interval_pct_snapshot_command(c, tokens, ntokens);
     }
@@ -9122,7 +9125,6 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     else if (strcmp(config_key, "async_logging") == 0) {
         process_async_logging_command(c, tokens, ntokens);
     }
-#endif
 #endif
     else {
         print_invalid_command(c, tokens, ntokens);
@@ -9371,11 +9373,9 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "config zkfailstop [on|off]\\r\\n" "\n"
 #endif
 #ifdef ENABLE_PERSISTENCE
-#ifdef PERSISTENCE_CONFIG
-        "\t" "chkpt_interval_pct_snapshot [<percentage(%)>]\r\n"
-        "\t" "chkpt_interval_min_logsize [<minsize(MB)>]\r\n"
-        "\t" "async_logging [on|off]\r\n"
-#endif
+        "\t" "config chkpt_interval_pct_snapshot [<percentage(%)>]\r\n"
+        "\t" "config chkpt_interval_min_logsize [<minsize(MB)>]\r\n"
+        "\t" "config async_logging [on|off]\r\n"
 #endif
         );
     } else {

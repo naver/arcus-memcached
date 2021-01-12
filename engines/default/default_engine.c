@@ -1321,7 +1321,6 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
         pthread_mutex_unlock(&engine->cache_lock);
     }
 #ifdef ENABLE_PERSISTENCE
-#ifdef PERSISTENCE_CONFIG
     if (engine->config.use_persistence) {
         if (strcmp(config_key, "chkpt_interval_pct_snapshot") == 0) {
             size_t new_chkpt_interval_pct_snapshot = *(size_t*)config_value;
@@ -1351,7 +1350,6 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
             pthread_mutex_unlock(&engine->cache_lock);
         }
     }
-#endif
 #endif
     else {
         ret = ENGINE_ENOTSUP;
@@ -1414,7 +1412,6 @@ default_get_config(ENGINE_HANDLE* handle, const void* cookie,
         pthread_mutex_unlock(&engine->cache_lock);
     }
 #ifdef ENABLE_PERSISTENCE
-#ifdef PERSISTENCE_CONFIG
     if (engine->config.use_persistence) {
         if (strcmp(config_key, "chkpt_interval_pct_snapshot") == 0) {
             pthread_mutex_lock(&engine->cache_lock);
@@ -1432,7 +1429,6 @@ default_get_config(ENGINE_HANDLE* handle, const void* cookie,
             pthread_mutex_unlock(&engine->cache_lock);
         }
     }
-#endif
 #endif
     else {
         ret = ENGINE_ENOTSUP;

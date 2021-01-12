@@ -31,7 +31,6 @@ struct iovec {
 #include <sys/uio.h>
 #endif
 
-#define PERSISTENCE_CONFIG 1
 #define NESTED_PREFIX
 #define PROXY_SUPPORT
 //#define NEW_PREFIX_STATS_MANAGEMENT
