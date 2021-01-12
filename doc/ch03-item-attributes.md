@@ -31,7 +31,7 @@ ARCUS cache server는 collection 기능 지원으로 인해,
 |                |             |                       | “smallest_silent_trim”: b+tree |                         |
 |                |             |                       | “largest_silent_trim”: b+tree  |                         |
 |-----------------------------------------------------------------------------------------------------------------|
-| readable       | collection  | readable/unreable     | “on”, “off”                    | "on"                    |
+| readable       | collection  | readable/unreadable   | “on”, “off”                    | "on"                    |
 |-----------------------------------------------------------------------------------------------------------------|
 | maxbkeyrange   | b+tree only | maximum bkey range    | 8 bytes unsigned integer or    | 0                       |
 |                |             |                       | hexadecimal (max 31 bytes)     |                         |
