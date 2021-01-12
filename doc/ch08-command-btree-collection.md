@@ -48,6 +48,7 @@ bop create <key> <attributes> [noreply]\r\n
 - \<key\> - 대상 item의 key string
 - \<attributes\> - 설정할 item attributes.
 [Item Attribute 설명](ch03-item-attributes.md)을 참조 바란다.
+  - unreadable - 명시하면, readable 속성은 off로 설정됩니다.
 - noreply - 명시하면, response string을 전달받지 않는다.
 
 Response string과 그 의미는 아래와 같다.
@@ -78,6 +79,7 @@ bop upsert <key> <bkey> [<eflag>] <bytes> [create <attributes>] [noreply|pipe|ge
 - \<bytes\>와 \<data\> - 삽입할 element의 데이터의 길이와 데이터 그 자체 (최대 크기는 [기본제약사항](ch01-arcus-basic-concept.md#기본-제약-사항)을 참고)
 - create \<attributes\> - b+tree collection 없을 시에 b+tree 생성 요청.
 [Item Attribute 설명](ch03-item-attributes.md)을 참조 바란다.
+  - unreadable - 명시하면, readable 속성은 off로 설정됩니다.
 - noreply or pipe - 명시하면, response string을 전달받지 않는다.
 pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
 - getrim - 새로운 element 추가로 maxcount 제약에 의한 overflow trim이 발생할 경우,
