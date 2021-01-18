@@ -535,7 +535,7 @@ static void do_snapshot_stop(snapshot_st *ss, bool wait_stop)
 
 static void do_snapshot_stats(snapshot_st *ss, ADD_STAT add_stat, const void *cookie)
 {
-    char val[256];
+    char val[MAX_FILEPATH_LENGTH];
     int  len;
 
     if (ss->running) {
