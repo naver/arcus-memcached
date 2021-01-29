@@ -1819,9 +1819,6 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
       .prefix = {
          .tot_prefix_items = 0,
       },
-      .assoc = {
-         .hashpower = 17, /* (1<<17) => 128K hash size */
-      },
       .slabs = {
          .lock = PTHREAD_MUTEX_INITIALIZER
       },

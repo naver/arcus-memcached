@@ -33,8 +33,6 @@
 #define GET_HASH_BUCKET(hash, mask)        ((hash) & (mask))
 #define GET_HASH_TABIDX(hash, shift, mask) (((hash) >> (shift)) & (mask))
 
-#define DEFAULT_ROOTSIZE 512
-
 static struct engine_config *config=NULL; // engine config
 static struct assoc         *assocp=NULL; // engine assoc
 static SERVER_CORE_API      *svcore=NULL; // server core api
@@ -48,25 +46,31 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
     svcore = engine->server.core;
     logger = engine->server.log->get_logger();
 
+    assocp->hashpower = 17; /* (1<<17) => 128K hash size */
     assocp->hashsize = hashsize(assocp->hashpower);
     assocp->hashmask = hashmask(assocp->hashpower);
-    assocp->rootpower = 0;
-    assocp->rootsize = DEFAULT_ROOTSIZE;
-    assocp->roottable = NULL;
-    assocp->infotable = NULL;
+    assocp->rootpower = 0; /* (1<<0) => 1 hash table */
+    assocp->rootsize = hashsize(assocp->rootpower);
+    assocp->rootmask = hashmask(assocp->rootpower);
+    assocp->roottabsz = 512;
     assocp->redistributed_bucket_cnt = 0;
 
-    assocp->roottable = calloc(assocp->rootsize, sizeof(void *));
+    assocp->roottable = NULL;
+    assocp->infotable = NULL;
+
+    /* hash items and expansion limit */
+    assocp->hash_items = 0;
+    assocp->hash_expansion_limit = (assocp->hashsize * assocp->rootsize * 3) / 2;
+
+    assocp->roottable = calloc(assocp->roottabsz, sizeof(void *));
     if (assocp->roottable == NULL) {
         return ENGINE_ENOMEM;
     }
-
     assocp->roottable[0].hashtable = calloc(assocp->hashsize, sizeof(void*));
     if (assocp->roottable[0].hashtable == NULL) {
         free(assocp->roottable);
         return ENGINE_ENOMEM;
     }
-
     assocp->infotable = calloc(assocp->hashsize, sizeof(struct bucket_info));
     if (assocp->infotable == NULL) {
         free(assocp->roottable[0].hashtable);
@@ -110,7 +114,7 @@ static void redistribute(unsigned int bucket)
          prev = &assocp->roottable[ii].hashtable[bucket];
          while (*prev != NULL) {
              it = *prev;
-             tabidx = GET_HASH_TABIDX(it->khash, assocp->hashpower, hashmask(assocp->rootpower));
+             tabidx = GET_HASH_TABIDX(it->khash, assocp->hashpower, assocp->rootmask);
              if (tabidx == ii) {
                  prev = &it->h_next;
              } else {
@@ -170,35 +174,52 @@ static hash_item** _hashitem_before(const char *key, const uint32_t nkey, uint32
     return pos;
 }
 
+static int assoc_expand_roottable(uint32_t new_roottabsz)
+{
+    struct table *new_roottable;
+
+    new_roottable = realloc(assocp->roottable, sizeof(void*) * new_roottabsz);
+    if (new_roottable == NULL) {
+        return -1;
+    }
+    assocp->roottable = new_roottable;
+    assocp->roottabsz = new_roottabsz;
+    return 0;
+}
+
 /* grows the hashtable to the next power of 2. */
 static void assoc_expand(void)
 {
     hash_item** new_hashtable;
-    uint32_t ii, table_count = hashsize(assocp->rootpower); // 2 ^ n
 
-    if (table_count * 2 > assocp->rootsize) {
-        struct table *reallocated_roottable = realloc(assocp->roottable, sizeof(void*) * assocp->rootsize * 2);
-        if (reallocated_roottable == NULL) {
+    if (assocp->roottabsz < (assocp->rootsize * 2)) {
+        if (assoc_expand_roottable(assocp->roottabsz * 2) < 0) {
             return;
         }
-        assocp->roottable = reallocated_roottable;
-        assocp->rootsize *= 2;
-    }
-    new_hashtable = calloc(assocp->hashsize * table_count, sizeof(void *));
-    if (new_hashtable) {
-        for (ii=0; ii < table_count; ++ii) {
-            assocp->roottable[table_count+ii].hashtable = &new_hashtable[assocp->hashsize*ii];
-        }
-        assocp->rootpower++;
     }
 
+    new_hashtable = calloc(assocp->hashsize * assocp->rootsize, sizeof(void *));
+    if (new_hashtable == NULL) {
+        return;
+    }
+    for (int ii=0; ii < assocp->rootsize; ++ii) {
+        assocp->roottable[assocp->rootsize+ii].hashtable = &new_hashtable[assocp->hashsize*ii];
+    }
+    assocp->rootpower += 1;
+    assocp->rootsize = hashsize(assocp->rootpower);
+    assocp->rootmask = hashmask(assocp->rootpower);
+
+    /* set hash_expansion_limit */
+    assocp->hash_expansion_limit = (assocp->hashsize * assocp->rootsize * 3) / 2;
+
     if (assocp->redistributed_bucket_cnt != 0) {
-        logger->log(EXTENSION_LOG_INFO, NULL, "hash table expansion stopped before completion. (%lf%% proceeded)",
+        logger->log(EXTENSION_LOG_INFO, NULL,
+                "hash table expansion stopped before completion. (%lf%% proceeded)",
                 (double)assocp->redistributed_bucket_cnt * 100 / assocp->hashsize);
         assocp->redistributed_bucket_cnt = 0;
     }
     logger->log(EXTENSION_LOG_INFO, NULL, "hash table expansion started(size: %u -> %u).\n",
-            assocp->hashsize * table_count, assocp->hashsize * table_count * 2);
+            assocp->hashsize * assocp->rootsize / 2, assocp->hashsize * assocp->rootsize);
 }
 
 /* Note: this isn't an assoc_update.  The key must not already exist to call this */
@@ -207,7 +228,8 @@ int assoc_insert(hash_item *it, uint32_t hash)
     uint32_t bucket = GET_HASH_BUCKET(hash, assocp->hashmask);
     uint32_t tabidx;
 
-    assert(assoc_find(item_get_key(it), it->nkey, hash) == 0); /* shouldn't have duplicately named things defined */
+    /* shouldn't have duplicately named things defined */
+    assert(assoc_find(item_get_key(it), it->nkey, hash) == 0);
 
     if (assocp->infotable[bucket].curpower != assocp->rootpower &&
         assocp->infotable[bucket].refcount == 0) {
@@ -221,9 +243,10 @@ int assoc_insert(hash_item *it, uint32_t hash)
     assocp->roottable[tabidx].hashtable[bucket] = it;
 
     assocp->hash_items++;
-    if (assocp->hash_items > (hashsize(assocp->hashpower + assocp->rootpower) * 3) / 2) {
+    if (assocp->hash_items > assocp->hash_expansion_limit) {
         assoc_expand();
     }
+
     MEMCACHED_ASSOC_INSERT(item_get_key(it), it->nkey, assocp->hash_items);
     return 1;
 }

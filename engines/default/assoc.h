@@ -20,17 +20,17 @@
 
 struct bucket_info {
     uint16_t refcount; /* reference count */
-    uint16_t curpower; /* current hash power:
-                        * how many hash tables each hash bucket use ? (power of 2)
-                        */
+    uint16_t curpower; /* current bucket power: how many hash tables exist in bucket ? */
 };
 
 struct assoc {
     uint32_t hashpower; /* how many hash buckets in a hash table ? (power of 2) */
-    uint32_t hashsize;  /* hash table size */
-    uint32_t hashmask;  /* hash bucket mask */
-    uint32_t rootpower; /* how many hash tables we use ? (power of 2) */
-    uint32_t rootsize;
+    uint32_t hashsize;  /* hash table size (constant value) */
+    uint32_t hashmask;  /* hash bucket mask (constant value) */
+    uint32_t rootpower; /* how many hash tables in a root table ? (power of 2) */
+    uint32_t rootsize;  /* hash table count (variable value) */
+    uint32_t rootmask;  /* hash table mask (variable value) */
+    uint32_t roottabsz; /* root table size */
     uint32_t redistributed_bucket_cnt;
 
     /* cache item hash table : an array of hash tables */
@@ -41,8 +41,8 @@ struct assoc {
     /* bucket info table */
     struct bucket_info *infotable;
 
-    /* Number of items in the hash table. */
-    unsigned int hash_items;
+    uint64_t hash_items; /* number of items in all hash tables */
+    uint64_t hash_expansion_limit;
 };
 
 /* assoc scan structure */
