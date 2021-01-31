@@ -33,9 +33,7 @@
 #define GET_HASH_BUCKET(hash, mask)        ((hash) & (mask))
 #define GET_HASH_TABIDX(hash, shift, mask) (((hash) >> (shift)) & (mask))
 
-static struct engine_config *config=NULL; // engine config
 static struct assoc         *assocp=NULL; // engine assoc
-static SERVER_CORE_API      *svcore=NULL; // server core api
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
 #ifdef SLOW_HASH_EXPANSION
@@ -66,9 +64,7 @@ static inline uint32_t CUR_HASH_TABIDX(uint32_t hash, uint32_t bucket)
 ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
 {
     /* initialize global variables */
-    config = &engine->config;
     assocp = &engine->assoc;
-    svcore = engine->server.core;
     logger = engine->server.log->get_logger();
 
     assocp->hashpower = 17; /* (1<<17) => 128K hash size */
@@ -92,22 +88,21 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
     assocp->hash_items = 0;
     assocp->hash_expansion_limit = (assocp->hashsize * assocp->rootsize * 3) / 2;
 
+    assocp->infotable = calloc(assocp->hashsize, sizeof(struct bucket_info));
+    if (assocp->infotable == NULL) {
+        return ENGINE_ENOMEM;
+    }
     assocp->roottable = calloc(assocp->roottabsz, sizeof(void *));
     if (assocp->roottable == NULL) {
+        free(assocp->infotable);
         return ENGINE_ENOMEM;
     }
     assocp->roottable[0].hashtable = calloc(assocp->hashsize, sizeof(void*));
     if (assocp->roottable[0].hashtable == NULL) {
+        free(assocp->infotable);
         free(assocp->roottable);
         return ENGINE_ENOMEM;
     }
-    assocp->infotable = calloc(assocp->hashsize, sizeof(struct bucket_info));
-    if (assocp->infotable == NULL) {
-        free(assocp->roottable[0].hashtable);
-        free(assocp->roottable);
-        return ENGINE_ENOMEM;
-    }
-
     logger->log(EXTENSION_LOG_INFO, NULL, "ASSOC module initialized.\n");
     return ENGINE_SUCCESS;
 }
@@ -117,10 +112,10 @@ void assoc_final(struct default_engine *engine)
     if (assocp == NULL) {
         return; /* nothing to do */
     }
-
     if (assocp->roottable) {
-        if (assocp->roottable[0].hashtable)
+        if (assocp->roottable[0].hashtable) {
             free(assocp->roottable[0].hashtable);
+        }
         for (int ii=0; ii < assocp->rootpower; ++ii) {
             int table_count = hashsize(ii); //2 ^ n
             if (assocp->roottable[table_count].hashtable)
