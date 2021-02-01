@@ -136,20 +136,27 @@ static void redistribute(void)
     hash_item *it;
     uint32_t tabidx;
 
-    prev = &assocp->roottable[assocp->exp_tabidx].hashtable[assocp->exp_bucket];
-    while ((it = *prev) != NULL) {
-         tabidx = (it->khash >> assocp->hashpower) & assocp->rootmask;
-         //tabidx = GET_HASH_TABIDX(it->khash, assocp->hashpower, assocp->rootmask);
-         if (tabidx == assocp->exp_tabidx) {
-             prev = &it->h_next;
-         } else {
-             *prev = it->h_next;
-             it->h_next = assocp->roottable[tabidx].hashtable[assocp->exp_bucket];
-             assocp->roottable[tabidx].hashtable[assocp->exp_bucket] = it;
-         }
+    /* How many buckets should redistribute at a time?
+     * If it is too few, it will longer hashtable expansion and decrease average throughput.
+     * If it is too many, it will shorten hashtable expansion but it can result a throughput drop.
+     */
+    for (uint32_t rdbcnt = 0; rdbcnt < 4; rdbcnt++) {
+        prev = &assocp->roottable[assocp->exp_tabidx].hashtable[assocp->exp_bucket];
+        while ((it = *prev) != NULL) {
+            tabidx = (it->khash >> assocp->hashpower) & assocp->rootmask;
+            //tabidx = GET_HASH_TABIDX(it->khash, assocp->hashpower, assocp->rootmask);
+            if (tabidx == assocp->exp_tabidx) {
+                prev = &it->h_next;
+            } else {
+                *prev = it->h_next;
+                it->h_next = assocp->roottable[tabidx].hashtable[assocp->exp_bucket];
+                assocp->roottable[tabidx].hashtable[assocp->exp_bucket] = it;
+            }
+        }
+        assocp->exp_tabidx += 1;
+        if (assocp->exp_tabidx >= assocp->prevsize) break;
     }
 
-    assocp->exp_tabidx += 1;
     if (assocp->exp_tabidx >= assocp->prevsize) {
         assocp->exp_tabidx = 0;
         /* set the next bucket in backward */
