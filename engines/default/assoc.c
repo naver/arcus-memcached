@@ -287,7 +287,7 @@ static void assoc_expand(void)
 #ifdef SLOW_HASH_EXPANSION
     /* set hash table expansion */
     assocp->expanding = true;
-    assocp->exp_bucket = assocp->prevsize - 1;
+    assocp->exp_bucket = assocp->hashsize - 1;
     assocp->exp_tabidx = 0;
 #else
     if (assocp->redistributed_bucket_cnt != 0) {
