@@ -1296,10 +1296,11 @@ static void sm_check_and_scrub_stale(bool *retry)
 
 static int sm_reload_cache_list_znode(zhandle_t *zh, bool *retry)
 {
-    bool znode_deleted = false;
     struct String_vector strv_cache_list = {0, NULL};
-    int zresult = arcus_read_ZK_children(main_zk->zh,
-                                         arcus_conf.cluster_path,
+    bool znode_deleted = false;
+    int zresult;
+
+    zresult = arcus_read_ZK_children(zh, arcus_conf.cluster_path,
                                          arcus_cache_list_watcher,
                                          &strv_cache_list);
     if (zresult < 0) {
