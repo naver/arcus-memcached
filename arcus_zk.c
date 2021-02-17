@@ -392,7 +392,11 @@ arcus_zk_client_init(zk_info_t *zinfo)
         inc_count(-1);
         return EX_PROTOCOL;
     }
-
+    // "recv" timeout is actually the session timeout
+    // ZK client ping period is recv_timeout / 3.
+    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
+            "ZooKeeper client initialized. (ZK session timeout=%d sec)\n",
+            zoo_recv_timeout(main_zk->zh)/1000);
     return 0;
 }
 
@@ -1207,7 +1211,7 @@ static int arcus_check_server_mapping(zhandle_t *zh, const char *root)
     return rc;
 }
 
-static int arcus_create_ephemeral_znode(zhandle_t *zh, const char *root)
+static int arcus_create_ephemeral_znode(zhandle_t *zh)
 {
     int         rc;
     char        zpath[512];
@@ -1251,6 +1255,17 @@ static int arcus_create_ephemeral_znode(zhandle_t *zh, const char *root)
 
     /* log this join activity in /arcus/cache_server_log */
     arcus_zk_log(main_zk->zh, sm_info.mc_pause? "rejoin" : "join");
+    return 0;
+}
+
+static int arcus_register_cache_instance(zhandle_t *zh)
+{
+    /* create "/cache_list/{svc}/ip:port-hostname" ephemeral znode */
+    if (arcus_create_ephemeral_znode(zh) != 0) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                               "arcus_create_ephemeral_znode() failed.\n");
+        return -1;
+    }
     return 0;
 }
 
@@ -1450,7 +1465,6 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
                                "Failed to initialize zk client\n");
         arcus_exit(NULL, rc);
     }
-
     /* setting main zk */
     main_zk = zinfo;
 
@@ -1478,10 +1492,8 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 
     arcus_conf.init = true;
 
-    /* create "/cache_list/{svc}/ip:port-hostname" ephemeral znode */
-    if (arcus_create_ephemeral_znode(main_zk->zh, zk_root) != 0) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                               "arcus_create_ephemeral_znode() failed.\n");
+    /* register cache instance in ZK */
+    if (arcus_register_cache_instance(main_zk->zh) != 0) {
         arcus_exit(main_zk->zh, EX_PROTOCOL);
     }
 
@@ -1493,11 +1505,6 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
             "Memcached joined Arcus cache cloud for \"%s\" service "
             "(took %ld microsec)\n", arcus_conf.svc, difftime_us);
-
-    // "recv" timeout is actually the session timeout
-    // ZK client ping period is recv_timeout / 3.
-    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
-            "ZooKeeper session timeout: %d sec\n", zoo_recv_timeout(main_zk->zh)/1000);
 
 #ifdef ENABLE_CLUSTER_AWARE
     const char *self_name = arcus_get_self_name();
@@ -1706,33 +1713,21 @@ int arcus_zk_rejoin_ensemble()
 
         /* initialize Arcus ZK stats */
         memset(&azk_stat, 0, sizeof(azk_stat));
-
         memset(&main_zk->myid, 0, sizeof(clientid_t));
-
         assert(main_zk->ensemble_list);
 
         gettimeofday(&start_time, 0);
-
-        ret = arcus_zk_client_init(main_zk);
-        if (ret != 0) {
+        if (arcus_zk_client_init(main_zk) != 0) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                                    "Failed to initialize zk client.\n");
-            break;
+            ret = -1; break;
         }
-
-        /* Use the zk root directory and the service code
-         * acquired during the execution of arcus_zk_init().
-         */
-        assert(zk_root != NULL && arcus_conf.svc != NULL);
-
         /* create "/cache_list/{svc}/ip:port-hostname" ephemeral znode */
-        ret = arcus_create_ephemeral_znode(main_zk->zh, zk_root);
-        if (ret != 0) {
+        if (arcus_create_ephemeral_znode(main_zk->zh) != 0) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                                    "arcus_create_ephemeral_znode() failed.\n");
-            break;
+            ret = -1; break;
         }
-
         gettimeofday(&end_time, 0);
         difftime_us = (end_time.tv_sec*1000000 + end_time.tv_usec) -
                       (start_time.tv_sec*1000000 + start_time.tv_usec);
@@ -1742,13 +1737,7 @@ int arcus_zk_rejoin_ensemble()
                 "Memcached rejoined Arcus cache cloud for \"%s\" service "
                 "(took %ld microsec)\n", arcus_conf.svc, difftime_us);
 
-        // "recv" timeout is actually the session timeout
-        // ZK client ping period is recv_timeout / 3.
-        arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
-                "ZooKeeper session timeout: %d sec\n", zoo_recv_timeout(main_zk->zh)/1000);
-
         assert(arcus_conf.ch);
-
         struct String_vector strv = { 0, NULL };
         /* 2nd argument, NULL means no watcher */
         if (arcus_read_ZK_children(main_zk->zh, arcus_conf.cluster_path, NULL, &strv) <= 0) {
@@ -1756,13 +1745,11 @@ int arcus_zk_rejoin_ensemble()
                     "Failed to read cache list from ZK.\n");
             ret = -1; break;
         }
-
         if (update_cluster_config(&strv) != 0) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to update cluster config.\n");
             ret = -1; break;
         }
-
         deallocate_String_vector(&strv);
 
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -1785,7 +1772,6 @@ int arcus_zk_rejoin_ensemble()
           zookeeper_close(main_zk->zh);
           main_zk->zh = NULL;
         }
-        ret = -1;
     }
     pthread_mutex_unlock(&zk_lock);
 
