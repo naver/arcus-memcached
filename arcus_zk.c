@@ -396,7 +396,7 @@ arcus_zk_client_init(zk_info_t *zinfo)
     // ZK client ping period is recv_timeout / 3.
     arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
             "ZooKeeper client initialized. (ZK session timeout=%d sec)\n",
-            zoo_recv_timeout(main_zk->zh)/1000);
+            zoo_recv_timeout(zinfo->zh)/1000);
     return 0;
 }
 
