@@ -473,6 +473,9 @@ void cmdlog_buf_final(void)
         return;
     }
 
+    /* In async mode, log records may remain in CMDLOG_FLUSH_AUTO_SIZE. */
+    (void)do_log_buff_flush(true);
+
     /* log buffer final */
     log_BUFFER *logbuff = &log_buff_gl.log_buffer;
 
