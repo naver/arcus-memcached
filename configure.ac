@@ -415,7 +415,7 @@ if test "x$enable_zk_integration" = "xyes"; then
   AC_DEFINE([ENABLE_CLUSTER_AWARE],1,[Set to nonzero if you want to make memcached cluster-aware])
 
   AC_ARG_WITH(zk-reconfig,
-      [AS_HELP_STRING([--without-zk-reconfig],[Disable zookeeper dynamic reconfiguration])], ,
+      [AS_HELP_STRING([--with-zk-reconfig],[Enable zookeeper dynamic reconfiguration])],
       [AC_DEFINE([ENABLE_ZK_RECONFIG],1,[Set to nonzero if you want to use zookeeper dynamic reconfig])]
   )
 

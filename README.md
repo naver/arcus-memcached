@@ -57,7 +57,7 @@ To enable it, use `--enable-zk-integration` along with `--with-zookeeper` when r
 
 Note that ZooKeeper dynamic reconfig was included in it.
 So, you must use the ZooKeeper library 3.5.8 or higher version with Arcus modifications.
-If you want to turn off the ZooKeeper dynamic reconfig, add `--without-zk-reconfig` to the above configure options.
+If you want to turn on the ZooKeeper dynamic reconfig, add `--with-zk-reconfig` to the above configure options.
 
 To test arcus-memcached, you can execute `make test`. If any problem exists in compilation, please refer to [compilation FAQ](/doc/compilation_faq.md).
 
