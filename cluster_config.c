@@ -382,17 +382,18 @@ static void do_nodearray_release(struct cluster_config *config,
 static struct node_item **
 do_nodearray_build_for_replace(struct cluster_config *config,
                                char **node_strs, uint32_t num_nodes,
-                               bool *is_same, int *self_id)
+                               int *self_id, int *error)
 {
     struct node_item **array;
     struct node_item  *item;
     int id, nfound=0;
 
-    /* initialize is_same flag */
-    *is_same = false;
+    /* initialize error parameter */
+    *error = 0;
 
     /* prepare space for nodearray and continuum */
     if (do_hashring_space_prepare(config, num_nodes) < 0) {
+        *error = -1;
         return NULL;
     }
 
@@ -428,7 +429,6 @@ do_nodearray_build_for_replace(struct cluster_config *config,
 
     if (num_nodes == config->num_nodes && num_nodes == nfound) {
         do_nodearray_release(config, array, num_nodes);
-        *is_same = true; /* the same nodearray */
         return NULL;
     }
 
@@ -618,8 +618,8 @@ int cluster_config_reconfigure(struct cluster_config *config,
     assert(config);
     struct node_item **nodearray;
     struct cont_item **continuum;
-    bool is_same;
-    int self_id, ret=0;
+    int self_id;
+    int error=0;
 
     if (do_node_string_check(node_strs, num_nodes) < 0) {
         config->logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -629,14 +629,12 @@ int cluster_config_reconfigure(struct cluster_config *config,
 
     pthread_mutex_lock(&config->config_lock);
     nodearray = do_nodearray_build_for_replace(config, node_strs, num_nodes,
-                                            &is_same, &self_id);
+                                               &self_id, &error);
     if (nodearray == NULL) {
-        if (is_same) {
-            /* the same nodearray : do nothing */
-        } else {
+        if (error != 0) {
             config->logger->log(EXTENSION_LOG_WARNING, NULL,
                                 "reconfiguration failed: do_nodearray_build\n");
-            config->is_valid = false; ret = -1;
+            config->is_valid = false;
         }
     } else {
         /* build continuuum */
@@ -650,7 +648,7 @@ int cluster_config_reconfigure(struct cluster_config *config,
         do_nodearray_print(config);
         do_continuum_print(config);
     }
-    return ret;
+    return error;
 }
 
 int cluster_config_key_is_mine(struct cluster_config *config,
