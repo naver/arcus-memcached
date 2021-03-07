@@ -532,7 +532,7 @@ static void do_hashring_replace(struct cluster_config *config, struct cont_item 
 static struct cont_item *
 do_continuum_find(struct cont_item **continuum, uint32_t num_conts, uint32_t hvalue)
 {
-    int left, right, mid;
+    int left, right, mid, found;
 
     left = 0;
     right = num_conts-1;
@@ -547,11 +547,12 @@ do_continuum_find(struct cont_item **continuum, uint32_t num_conts, uint32_t hva
         while (mid > 0 && continuum[mid-1]->hpoint == hvalue) {
             mid -= 1;
         }
-        return continuum[mid];
+        found = mid;
     } else {
         /* That is, continuum[left]->hpoint > hvalue */
-        return (left < num_conts) ? continuum[left] : continuum[0];
+        found = (left < num_conts) ? left : 0;
     }
+    return continuum[found];
 }
 
 /*
