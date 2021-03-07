@@ -534,27 +534,28 @@ static void do_hashring_replace(struct cluster_config *config, struct cont_item 
 }
 
 static struct cont_item *
-find_global_continuum(struct cont_item **continuum, uint32_t num_conts, uint32_t hvalue)
+do_continuum_find(struct cont_item **continuum, uint32_t num_conts, uint32_t hvalue)
 {
-    struct cont_item **beginp, **endp, **midp, **highp, **lowp;
+    int left, right, mid;
 
-    beginp = lowp = continuum;
-    endp = highp = continuum + num_conts;
-    while (lowp < highp)
-    {
-        midp = lowp + (highp - lowp) / 2;
-        if ((*midp)->hpoint < hvalue)
-            lowp = midp + 1;
-        else
-            highp = midp;
+    left = 0;
+    right = num_conts-1;
+    while (left <= right) {
+        mid = (left + right) / 2;
+        if (hvalue == continuum[mid]->hpoint) break; /* found */
+        if (hvalue <  continuum[mid]->hpoint) right = mid-1;
+        else                                  left  = mid+1;
     }
-    if (highp == endp)
-        highp = beginp;
-    /* find the first node if duplicate hash points */
-    while (highp != beginp && (*highp)->hpoint == (*(highp-1))->hpoint) {
-        highp -= 1;
+    if (left <= right) {
+        /* find the first item if hash points are duplicate */
+        while (mid > 0 && continuum[mid-1]->hpoint == hvalue) {
+            mid -= 1;
+        }
+        return continuum[mid];
+    } else {
+        /* That is, continuum[left]->hpoint > hvalue */
+        return (left < num_conts) ? continuum[left] : continuum[0];
     }
-    return (*highp);
 }
 
 /*
@@ -656,14 +657,13 @@ int cluster_config_key_is_mine(struct cluster_config *config,
                                uint32_t *key_id, uint32_t *self_id)
 {
     assert(config && config->continuum);
-    struct cont_item *item;
-    uint32_t digest;
+    uint32_t digest = hash_ketama(key, nkey);
     int ret = 0;
 
     pthread_mutex_lock(&config->ketama_lock);
     if (config->is_valid) {
-        digest = hash_ketama(key, nkey);
-        item = find_global_continuum(config->continuum, config->num_conts, digest);
+        struct cont_item *item;
+        item = do_continuum_find(config->continuum, config->num_conts, digest);
         *mine = (item->nindex == config->self_id ? true : false);
         if ( key_id)  *key_id = item->nindex;
         if (self_id) *self_id = config->self_id;
