@@ -35,21 +35,19 @@
 #define NUM_NODE_HASHES 160
 
 /* node state */
-#define NSTATE_JOINING  0
-#define NSTATE_LEAVING  1
-#define NSTATE_EXISTING 2
+#define NSTATE_NONE     0
+#define NSTATE_EXISTING 1
 
 /* hash slice state: related to node state */
 #define SSTATE_NONE     0
-#define SSTATE_LOCAL    1
-#define SSTATE_NORMAL   2
+#define SSTATE_NORMAL   1
 
 /* continuum item */
 struct cont_item {
     uint32_t hpoint;  // hash point on the ketama continuum
     uint16_t nindex;  // node index (old server index) in node array
     uint8_t  sindex;  // hash slice index: 0 ~ 159
-    uint8_t  sstate;  // hash slice state: 0(none), 1(local), 2(normal)
+    uint8_t  sstate;  // hash slice state: 0(none), 1(normal)
 };
 
 /* node item */
@@ -58,7 +56,7 @@ struct node_item {
     uint16_t nstate;         // node state: 0(joining), 1(leaving), 2(existing)
     uint16_t refcnt;         // reference count
     uint8_t  dup_hp;         // duplicate hash point exist
-    uint8_t  flags;           // node flags
+    uint8_t  flags;          // node flags
     struct node_item *next;  // next pointer
     struct cont_item hslice[NUM_NODE_HASHES]; // my hash continuum
 };
@@ -448,8 +446,7 @@ static void do_nodearray_print(struct cluster_config *config)
     config->logger->log(EXTENSION_LOG_INFO, NULL, "cluster nodearray: count=%d\n",
                         config->num_nodes);
     for (int i=0; i < config->num_nodes; i++) {
-        config->logger->log(EXTENSION_LOG_INFO, NULL,
-                            "node[%d]: name=%s state=%d\n", i,
+        config->logger->log(EXTENSION_LOG_INFO, NULL, "node[%d]: name=%s state=%d\n", i,
                             nodearray[i]->ndname, nodearray[i]->nstate);
     }
 }
@@ -481,9 +478,8 @@ static void do_continuum_print(struct cluster_config *config)
                        config->num_conts);
     for (int i=0; i < config->num_conts; i++) {
         config->logger->log(EXTENSION_LOG_INFO, NULL,
-                            "continuum[%d]: hpoint=%x nindex=%d sstate=%d\n", i,
-                            continuum[i]->hpoint, continuum[i]->nindex,
-                            continuum[i]->sstate);
+                    "continuum[%d]: hpoint=%x nindex=%d sstate=%d\n", i,
+                    continuum[i]->hpoint, continuum[i]->nindex, continuum[i]->sstate);
     }
 }
 
