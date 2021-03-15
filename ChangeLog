@@ -1,3 +1,16 @@
+2021-03-15 [version 1.13.1]
+	* [FEATURE] support nested prefix. (not yet enabled)
+	* [FEATURE] added "stats persistence" command.
+	* [FEATURE] added config command for changing the persistence settings.
+	* [FEATURE] support zookeeper dynamic reconfiguration. (Not default)
+	* [IMPROVE] implemented slow hash table expansion.
+	* [FIX]     resolve compilation in the latest linux version.
+	* [FIX]     expire immediately if the given time is in past.
+	* [FIX]     flushed the log records remaining in buffer in async mode.
+	* [DOC]     added description for persistence stats.
+	* [DOC]     added description for unreadable attribute.
+	* [CLEANUP] refactored arcus_zk and cluster_config modules.
+
 2020-12-16 [version 1.13.0]
 	* [FEATURE] added mgets command
 	* [FEATURE] added persistence function in default engine. (beta)
