@@ -35,6 +35,7 @@
 #include "memcached/extension_loggers.h"
 #ifdef ENABLE_ZK_INTEGRATION
 #include "arcus_zk.h"
+#include "arcus_hb.h"
 #endif
 
 #if defined(ENABLE_SASL) || defined(ENABLE_ISASL)
@@ -7841,6 +7842,8 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
 #ifdef ENABLE_ZK_INTEGRATION
     arcus_zk_stats zk_stats;
     arcus_zk_get_stats(&zk_stats);
+    arcus_hb_stats hb_stats;
+    arcus_hb_get_stats(&hb_stats);
 #endif
 
     LOCK_STATS();
@@ -7853,8 +7856,8 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
     APPEND_STAT("pointer_size", "%d", (int)(8 * sizeof(void *)));
 #ifdef ENABLE_ZK_INTEGRATION
     APPEND_STAT("zk_connected", "%s", zk_stats.zk_connected ? "true" : "false");
-    APPEND_STAT("hb_count", "%"PRIu64, zk_stats.hb_count);
-    APPEND_STAT("hb_latency", "%"PRIu64, zk_stats.hb_latency);
+    APPEND_STAT("hb_count", "%"PRIu64, hb_stats.count);
+    APPEND_STAT("hb_latency", "%"PRIu64, hb_stats.latency);
 #endif
 
 #ifndef __WIN32__
@@ -8012,6 +8015,8 @@ static void process_stat_settings(ADD_STAT add_stats, void *c)
 #ifdef ENABLE_ZK_INTEGRATION
     arcus_zk_confs zk_confs;
     arcus_zk_get_confs(&zk_confs);
+    arcus_hb_confs hb_confs;
+    arcus_hb_get_confs(&hb_confs);
 #endif
     APPEND_STAT("maxbytes", "%llu", (unsigned long long)settings.maxbytes);
     APPEND_STAT("maxconns", "%d", settings.maxconns);
@@ -8063,8 +8068,8 @@ static void process_stat_settings(ADD_STAT add_stats, void *c)
 #ifdef ENABLE_ZK_INTEGRATION
     APPEND_STAT("zk_failstop", "%s", zk_confs.zk_failstop ? "on" : "off");
     APPEND_STAT("zk_timeout", "%u", zk_confs.zk_timeout);
-    APPEND_STAT("hb_timeout", "%u", zk_confs.hb_timeout);
-    APPEND_STAT("hb_failstop", "%u", zk_confs.hb_failstop);
+    APPEND_STAT("hb_timeout", "%u", hb_confs.timeout);
+    APPEND_STAT("hb_failstop", "%u", hb_confs.failstop);
 #endif
 
     for (EXTENSION_DAEMON_DESCRIPTOR *ptr = settings.extensions.daemons;
@@ -8728,10 +8733,10 @@ static void process_hbtimeout_command(conn *c, token_t *tokens, const size_t nto
 
     if (ntokens == 3) {
         char buf[50];
-        sprintf(buf, "hbtimeout %d\r\nEND", arcus_zk_get_hbtimeout());
+        sprintf(buf, "hbtimeout %d\r\nEND", arcus_hb_get_timeout());
         out_string(c, buf);
     } else if (ntokens == 4 && safe_strtoul(tokens[SUBCOMMAND_TOKEN+1].value, &hbtimeout)) {
-        if (arcus_zk_set_hbtimeout((int)hbtimeout) == 0)
+        if (arcus_hb_set_timeout((int)hbtimeout) == 0)
             out_string(c, "END");
         else
             out_string(c, "CLIENT_ERROR bad value");
@@ -8748,10 +8753,10 @@ static void process_hbfailstop_command(conn *c, token_t *tokens, const size_t nt
 
     if (ntokens == 3) {
         char buf[50];
-        sprintf(buf, "hbfailstop %d\r\nEND", arcus_zk_get_hbfailstop());
+        sprintf(buf, "hbfailstop %d\r\nEND", arcus_hb_get_failstop());
         out_string(c, buf);
     } else if (ntokens == 4 && safe_strtoul(tokens[SUBCOMMAND_TOKEN+1].value, &hbfailstop)) {
-        if (arcus_zk_set_hbfailstop((int)hbfailstop) == 0)
+        if (arcus_hb_set_failstop((int)hbfailstop) == 0)
             out_string(c, "END");
         else
             out_string(c, "CLIENT_ERROR bad value");
@@ -15457,9 +15462,17 @@ int main (int argc, char **argv)
     /* Drop privileges no longer needed */
     drop_privileges();
 
+
 #ifdef ENABLE_ZK_INTEGRATION
-    // initialize Arcus ZK cluster connection
+    /* initialize Arcus ZK cluster connection */
     if (arcus_zk_cfg) {
+        /* init mc hearbeat */
+        if (arcus_hb_init(settings.port, mc_logger, shutdown_server) < 0) {
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to initialize arcus heartbeat.\n");
+            exit(EXIT_FAILURE);
+        }
+        /* init zk module */
         arcus_zk_init(arcus_zk_cfg, arcus_zk_to, mc_logger,
                       settings.verbose, settings.maxbytes, settings.port,
 #ifdef PROXY_SUPPORT
@@ -15488,7 +15501,10 @@ int main (int argc, char **argv)
 #ifdef ENABLE_ZK_INTEGRATION
     /* 2) shutdown arcus ZK connection */
     if (arcus_zk_cfg) {
+        /* final zk module */
         arcus_zk_final("graceful shutdown");
+        /* final mc heartbeat */
+        arcus_hb_final();
     }
 #endif
 

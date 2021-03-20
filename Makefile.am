@@ -123,12 +123,14 @@ memcached_SOURCES += $(demo_engine_la_SOURCES)
 endif
 
 if BUILD_ZK_INTEGRATION
-memcached_SOURCES += arcus_zk.h
+memcached_SOURCES += arcus_zk.h arcus_hb.h
 memcached_LDADD += libarcuszk.a -lzookeeper_mt
 noinst_LIBRARIES = libarcuszk.a
-libarcuszk_a_SOURCES = arcus_zk.c arcus_zk.h cluster_config.c cluster_config.h
-# Do not use AM_CFLAGS which includes -pedantic.  We do not want that flag
-# when compiling arcus_zk.c.
+libarcuszk_a_SOURCES = arcus_zk.c arcus_zk.h \
+                       arcus_hb.c arcus_hb.h \
+                       cluster_config.c cluster_config.h
+# Do not use AM_CFLAGS which includes -pedantic.
+# We do not want that flag when compiling arcus_zk.c.
 libarcuszk_a_CFLAGS = @PROFILER_FLAGS@ @ARCUSZK_CFLAGS@
 endif
 

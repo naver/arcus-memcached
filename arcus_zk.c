@@ -84,32 +84,18 @@
 /* Kill server if disconnected from zookeeper for too long */
 //#define ENABLE_SUICIDE_UPON_DISCONNECT 1
 
-// Recv. timeout governs ZK heartbeat period, reconnect timeout
-// as well as ZK session timeout
-//
-// Below sets 30 sec. session timeout, 20 sec Zookeeper ensemble timeout,
-// and 10 second heartbeat period
-#define DEFAULT_ZK_TO   30000   // ZK session timeout in msec (server tick time is 2 sec, min is 4 sec)
-#define MAX_ZK_TO       300     // Max allowable session timeout in sec
-#define MIN_ZK_TO       10      // Min 10 seconds, in line with the current heartbeat timeout
-
-#define ZK_WATCH        1
-#define ZK_NOWATCH      0
-#define SYSLOGD_PORT    514     // UDP syslog port #
-
-/* One heartbeat every 3 seconds. */
-#define HEART_BEAT_PERIOD       3 /* sec */
-/* If consecutive heartbeats fail, consider memcached dead and commit
- * suicide.  If the accumulated latency of consecutive heartbeats is
- * over the following HEART_BEAT_FAILSTOP value, it does fail-stop.
+/* Recv. timeout governs ZK heartbeat period, reconnect timeout
+ * as well as ZK session timeout
+ * Below sets 30 sec. session timeout, 20 sec Zookeeper ensemble timeout,
+ * and 10 second heartbeat period
  */
-#define HEART_BEAT_MIN_FAILSTOP 3000   /* msec */
-#define HEART_BEAT_DFT_FAILSTOP 60000  /* msec */
-#define HEART_BEAT_MAX_FAILSTOP 300000 /* msec */
-/* If hearbeat takes more than timeout msec, consider it failed.  */
-#define HEART_BEAT_MIN_TIMEOUT  50     /* msec */
-#define HEART_BEAT_DFT_TIMEOUT  10000  /* msec */
-#define HEART_BEAT_MAX_TIMEOUT  HEART_BEAT_MAX_FAILSTOP /* msec */
+#define DEFAULT_ZK_TO 30000 /* ZK session timeout in msec (server tick time is 2 sec, min is 4 sec) */
+#define MAX_ZK_TO     300   /* Max allowable session timeout in sec */
+#define MIN_ZK_TO     10    /* Min 10 seconds, in line with the current heartbeat timeout */
+
+#define ZK_WATCH      1
+#define ZK_NOWATCH    0
+#define SYSLOGD_PORT  514     /* UDP syslog port # */
 
 #define MAX_SERVICECODE_LENGTH  128
 #define MAX_HOSTNAME_LENGTH     128
@@ -125,7 +111,6 @@ static const char *zk_root = NULL;
 static const char *zk_map_dir = "cache_server_mapping";
 static const char *zk_log_dir = "cache_server_log";
 static const char *zk_cache_dir = "cache_list";
-static const char *mc_hb_command = "set arcus:zk-ping 1 0 1\r\n1\r\n";
 
 typedef struct {
     char       *ensemble_list; /* ZK ensemble IP:port list */
@@ -145,9 +130,6 @@ static bool zk_connected = false;
  * ZK shutdown is done at the end of arcus_zk_init() to simplify synchronization
  */
 volatile sig_atomic_t arcus_zk_shutdown=0;
-/* This flag is now used to indicate graceful shutdown.  See hb_thread for
- * more comment.
- */
 
 /* placeholder for zookeeper and memcached settings */
 typedef struct {
@@ -157,8 +139,6 @@ typedef struct {
     char    *hostip;            // localhost server IP
     int     port;               // memcached port number
     bool    zk_failstop;        // memcached automatic failstop on/off
-    int     hb_failstop;        // memcached heartbeat failstop
-    int     hb_timeout;         // memcached heartbeat timeout
     int     zk_timeout;         // Zookeeper session timeout
     bool    auto_scrub;         // automactic scrub_stale
     char   *znode_name;         // Ephemeral ZK node name for this mc identification
@@ -191,8 +171,6 @@ arcus_zk_config arcus_conf = {
     .mc_hostnameport    = NULL,
     .hostip         = NULL,
     .zk_failstop    = true,
-    .hb_failstop    = HEART_BEAT_DFT_FAILSTOP,
-    .hb_timeout     = HEART_BEAT_DFT_TIMEOUT,
     .zk_timeout     = DEFAULT_ZK_TO,
     .auto_scrub     = true,
     .znode_name     = NULL,
@@ -219,15 +197,7 @@ arcus_zk_config arcus_conf = {
 /* Arcus ZK stats */
 arcus_zk_stats azk_stat;
 
-// context struct to pass to app_ping
-typedef struct {
-    struct sockaddr_in  addr; // cache this for use in L7 ping routine
-    struct timeval      to;   // mc_hb may block for up to this long (give or take)
-} app_ping_t;
-
-static app_ping_t mc_ping_context;
-
-// static declaration
+/* static forward declaration */
 static void arcus_zk_watcher(zhandle_t *wzh, int type, int state,
                              const char *path, void *cxt);
 #ifdef ENABLE_ZK_RECONFIG
@@ -239,8 +209,6 @@ static void arcus_cache_list_watcher(zhandle_t *zh, int type, int state,
 static void arcus_zk_sync_cb(int rc, const char *name, const void *data);
 static void arcus_zk_log(zhandle_t *zh, const char *);
 static void arcus_exit(zhandle_t *zh, int err);
-
-int mc_hb(void *context);     // memcached self-heartbeat
 
 /* State machine thread.
  * It performs all blocking ZK operations including cluster_config.
@@ -314,14 +282,6 @@ static int             azk_count;
 
 /* zookeeper close synchronization */
 static pthread_mutex_t zk_lock = PTHREAD_MUTEX_INITIALIZER;
-
-/* memcached heartheat thread */
-static volatile bool hb_thread_running = false;
-static bool hb_thread_sleep = false;
-static pthread_mutex_t hb_thread_lock;
-static pthread_cond_t  hb_thread_cond;
-static void *hb_thread(void *arg);
-static int start_hb_thread(app_ping_t *data);
 
 static int
 arcus_memcached_scrub_stale(void)
@@ -696,297 +656,6 @@ arcus_exit(zhandle_t *zh, int err)
         zookeeper_close(zh);
     arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "shutting down\n");
     exit(err);
-}
-
-static void arcus_adjust_ping_timeout(app_ping_t *ping_data, int timeout)
-{
-    /* +50 msec so that the caller can detect the timeout */
-    uint64_t usec = timeout * 1000 + 50000;
-    ping_data->to.tv_sec = usec / 1000000;
-    ping_data->to.tv_usec = usec % 1000000;
-}
-
-static void arcus_prepare_ping_context(app_ping_t *ping_data, int port)
-{
-    /* prepare app_ping context data:
-     * sockaddr for memcached connection in app ping
-     */
-    memset(ping_data, 0, sizeof(app_ping_t));
-    ping_data->addr.sin_family = AF_INET;
-    ping_data->addr.sin_port   = htons(port);
-    /* Use the admin ip (currently localhost) to avoid competing with
-     * regular clients for connections.
-     */
-    ping_data->addr.sin_addr.s_addr = inet_addr(ADMIN_CLIENT_IP);
-
-    arcus_adjust_ping_timeout(ping_data, arcus_conf.hb_timeout);
-}
-
-/* This is L7 application ping callback
- * only one app ping per ZK ping period if successful
- * In this case, we make a TCP connection to self memcached port, and
- * try to set a key.
- *
- * Make sure that successful app heartbeat completes in 2/3 of recv timeout,
- * otherwise it is very possible have expired state in the end.
- * This retries 2 twice at every 1/3 of ZK recv timeout
- */
-int mc_hb(void *context)
-{
-    app_ping_t      *data = (app_ping_t *) context;
-    struct linger   linger;
-    struct timeval  tv_timeo;
-    char            buf[32];
-    int             flags;
-    int             sock;
-    int             err=0;
-
-    /* make a tcp connection to this memcached itself,
-     * and try "set arcus:zk-ping".
-     */
-    sock = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
-    if (sock == -1) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "mc_hb: cannot create a socket (error=%s)\n", strerror(errno));
-        return 0; /* Allow ZK ping by returning 0 even if socket() fails. */
-    }
-
-    flags = 1;
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &flags, sizeof(flags)); /* fast port recycle */
-    setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, &flags, sizeof(flags));
-
-    /* send()/recv() could be blocked forever when all memcached worker threads are deadlocked
-     * while the acceptor thread is still alive.
-     * Blocked in L7 health check, ZK ping fails, then ZK ensemble gives up the connection.
-     * However, as the blocked ZK ping runs on ZK client's I/O thread
-     * the client cannot receive the events from ZK ensemble. So memcached fails to fail-stop.
-     * To prevent this situation we set timeouts to send()/recv().
-     */
-    tv_timeo = data->to;
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv_timeo, sizeof(tv_timeo));
-    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv_timeo, sizeof(tv_timeo));
-
-    linger.l_onoff  = 1;
-    linger.l_linger = 0; /* flush buffers upon close() and send TCP RST */
-    setsockopt(sock, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger));
-
-    arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                           "mc_hb: connecting to memcached at %s:%d...\n",
-                           inet_ntoa(data->addr.sin_addr), arcus_conf.port);
-
-    err = connect(sock, (struct sockaddr *) &data->addr, sizeof(struct sockaddr));
-    if (err) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "mc_hb: cannot connect to local memcached (error=%s)\n", strerror(errno));
-        close(sock);
-        return 0; /* Allow ZK ping by returning 0 even if socket() fails. */
-    }
-
-    /* Try to set a key "arcus:zk-ping"
-     * we need to be careful here. Since we can make a connection, basic
-     * memcached event loop works and system resources are enough. if we can an
-     * error during send()/recv(), it may not be a memcached failure at all.
-     * We may get slab memory shortage for slab class 0 for above key.
-     * For now, we simply return here without ping error or intentional delay
-     */
-    err = send(sock, mc_hb_command, 28, 0);
-    if (err > 0) {
-        // expects "STORED\r\n"
-        err = recv(sock, buf, 8, 0);
-        if (err < 0) {
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "mc_hb: recv failed (error=%s)\n", strerror(errno));
-        }
-    } else {
-        if (err < 0) {
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "mc_hb: send failed (error=%s)\n", strerror(errno));
-        }
-    }
-
-    close(sock);
-    return 0;
-}
-
-static void hb_wakeup(void)
-{
-  pthread_mutex_lock(&hb_thread_lock);
-  if (hb_thread_sleep == true)
-      pthread_cond_signal(&hb_thread_cond);
-  pthread_mutex_unlock(&hb_thread_lock);
-}
-
-static void *hb_thread(void *arg)
-{
-    app_ping_t *ping_data = arg;
-    int cur_hb_failstop = arcus_conf.hb_failstop;
-    int cur_hb_timeout = arcus_conf.hb_timeout;
-    int acc_hb_latency = 0;
-    bool shutdown_by_me = false;
-    struct timeval  tv;
-    struct timespec ts;
-    struct timeval start_time;
-    struct timeval end_time;
-    uint64_t elapsed_msec, start_msec, end_msec;
-
-    arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                           "Heartbeat thread is running.\n");
-
-    /* We consider 3 types of shutdowns.
-     *
-     * 1. control-c
-     * The user wants a graceful shutdown.  The main thread wakes up all
-     * the worker threads and wait for them to terminate.  It also calls
-     * the engine destroy function.  In this case, heartbeat should just stop.
-     * arcus_zk_shutdown = 1 indicates this case.  So, we check that flag
-     * in this function.
-     *
-     * 2. kill -KILL
-     * Something is very wrong, and the user wants to kill the process right
-     * away.  For example, control-c/graceful shutdown might hang due to bugs.
-     * And, the user wants to forcefully kill the process.  There is nothing
-     * we can do here.
-     *
-     * 3. Heartbeat failure
-     * memcached is not working properly.  We attempt to close the ZK session
-     * and then forcefully terminate.  This is NOT a graceful shutdown.  We
-     * do not wait for worker threads to terminate.  We do not call the engine
-     * destroy function.
-     */
-    hb_thread_running = true;
-    while (!arcus_zk_shutdown) {
-        /* If the last hearbeat timed out, do not wait and try another
-         * right away.
-         */
-        if (acc_hb_latency == 0) {
-            /* sleep HEART_BEAT_PERIOD seconds */
-            gettimeofday(&tv, NULL);
-            ts.tv_sec  = tv.tv_sec + HEART_BEAT_PERIOD;
-            ts.tv_nsec = tv.tv_usec*1000;
-            /* sleep with spurious wakeups checking */
-            while (tv.tv_sec < ts.tv_sec && !arcus_zk_shutdown) {
-                pthread_mutex_lock(&hb_thread_lock);
-                hb_thread_sleep = true;
-                pthread_cond_timedwait(&hb_thread_cond, &hb_thread_lock, &ts);
-                hb_thread_sleep = false;
-                pthread_mutex_unlock(&hb_thread_lock);
-                gettimeofday(&tv, NULL);
-            }
-        }
-
-        /* Graceful shutdown was requested while sleeping. */
-        if (arcus_zk_shutdown)
-            break;
-
-        /* check if hb_failstop is changed */
-        if (cur_hb_failstop != arcus_conf.hb_failstop) {
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Heartbeat failstop has changed. old(%d) => new(%d)\n",
-                    cur_hb_failstop, arcus_conf.hb_failstop);
-            cur_hb_failstop = arcus_conf.hb_failstop;
-            acc_hb_latency = 0; /* reset accumulated hb latency */
-        }
-        /* check if hb_timeout is changed */
-        if (cur_hb_timeout != arcus_conf.hb_timeout) {
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Heartbeat timeout has changed. old(%d) => new(%d)\n",
-                    cur_hb_timeout, arcus_conf.hb_timeout);
-            cur_hb_timeout = arcus_conf.hb_timeout;
-            acc_hb_latency = 0; /* reset accumulated hb latency */
-            /* adjust ping timeout */
-            arcus_adjust_ping_timeout(ping_data, cur_hb_timeout);
-        }
-
-        /* Do one ping and measure how long it takes. */
-        gettimeofday(&start_time, NULL);
-        mc_hb((void *)ping_data);
-        gettimeofday(&end_time, NULL);
-
-        /* Graceful shutdown was requested while doing heartbeat.
-         * When worker threads die, there is no one to process heartbeat
-         * request, and we would see a timeout.  Ignore the false alarm.
-         */
-        if (arcus_zk_shutdown)
-            break;
-
-        /* Paranoid.  Check if the clock had gone backwards. */
-        start_msec = start_time.tv_sec * 1000 + start_time.tv_usec / 1000;
-        end_msec = end_time.tv_sec * 1000 + end_time.tv_usec / 1000;
-        if (start_msec <= end_msec) {
-            elapsed_msec = end_msec - start_msec;
-            azk_stat.hb_count += 1;
-            azk_stat.hb_latency += elapsed_msec;
-        } else {
-            elapsed_msec = 0; /* Ignore this heartbeat */
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "hb_thread: Clock has gone backwards? start_msec=%"PRIu64
-                " end_msec=%"PRIu64"\n", start_msec, end_msec);
-        }
-
-        if (elapsed_msec > cur_hb_timeout) {
-            if (cur_hb_failstop > 0) {
-                acc_hb_latency += elapsed_msec;
-            } else {
-                /* Reset the acc_hb_latency */
-                acc_hb_latency = 0;
-            }
-            /* Print a message for every failure to help debugging, postmortem
-             * analysis, etc.
-             */
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Heartbeat failure. hb_timeout=%d hb_latency=%"PRIu64
-                " accumulated_hb_latency=%d\n", cur_hb_timeout,
-                elapsed_msec, acc_hb_latency);
-
-            if (acc_hb_latency > cur_hb_failstop) {
-                /* Do not bother calling memcached.c:shutdown_server.
-                 * Call arcus_zk_final directly.  shutdown_server just sets
-                 * memcached_shutdown = arcus_zk_shutdown = 1 and calls
-                 * arcus_zk_final.  These flags are used for graceful shutdown.
-                 * We do not need them here.  Besides, arcus_zk_final kills
-                 * the process right away, assuming the zookeeper library
-                 * still functions.
-                 */
-                /*
-                  SERVER_HANDLE_V1 *api = arcus_conf.get_server_api();
-                  api->core->shutdown();
-                */
-                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "consecutive heartbeat failures. Shutting down...\n");
-                shutdown_by_me = true;
-                break;
-            }
-        } else {
-            /* Reset the acc_hb_latency */
-            acc_hb_latency = 0;
-        }
-    }
-    hb_thread_running = false;
-
-    if (shutdown_by_me) {
-        arcus_zk_shutdown = 1;
-        arcus_zk_final("Heartbeat failure");
-        arcus_zk_destroy();
-        exit(0);
-    }
-    return NULL;
-}
-
-static int start_hb_thread(app_ping_t *data)
-{
-    pthread_t tid;
-    pthread_attr_t attr;
-    int ret;
-
-    pthread_attr_init(&attr);
-    pthread_mutex_init(&hb_thread_lock, NULL);
-    pthread_cond_init(&hb_thread_cond, NULL);
-
-    if ((ret = pthread_create(&tid, &attr, hb_thread, (void *)data)) != 0) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                               "Cannot create hb thread: %s\n", strerror(ret));
-    }
-    return ret;
 }
 
 static int arcus_build_znode_name(char *ensemble_list)
@@ -1648,7 +1317,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     zinfo->ensemble_list = strdup(ensemble_list);
     assert(zinfo->ensemble_list);
 
-    // save these for later use (restart)
+    /* save these for later use (restart) */
     if (!arcus_conf.init) {
         arcus_conf.port          = port;    // memcached listen port
         arcus_conf.logger        = logger;
@@ -1785,13 +1454,6 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     sm_wakeup(true);
     sm_unlock();
 
-    // start heartbeat thread
-    arcus_prepare_ping_context(&mc_ping_context, arcus_conf.port);
-    if (start_hb_thread(&mc_ping_context) != 0) {
-        /* We need normal shutdown at this time */
-        arcus_zk_shutdown = 1;
-    }
-
     /* Either got SIG* or memcached shutdown process finished */
     if (arcus_zk_shutdown) {
         arcus_zk_final("Interrupted");
@@ -1811,12 +1473,6 @@ void arcus_zk_final(const char *msg)
 
     pthread_mutex_lock(&zk_lock);
     if (main_zk->zh) {
-        /* hb_thread is probably sleeping.  And, if it is in the middle of
-         * doing a ping, it would block for a long time because worker threads
-         * are likely all dead at this point.
-         */
-        /* wake up the heartbeat thread if it's sleeping */
-        hb_wakeup();
         /* wake up the SM state thread if it's sleeping */
         sm_wakeup(false);
 
@@ -1842,8 +1498,6 @@ void arcus_zk_final(const char *msg)
              * aborts all sync_completion's, which then wakes up the blocking
              * watcher thread.  zoo_wget_children returns an error.
              */
-            if (hb_thread_running)
-                continue;
             if (sm_info.state_running)
                 continue;
 #ifdef ENABLE_SUICIDE_UPON_DISCONNECT
@@ -2056,84 +1710,15 @@ bool arcus_zk_get_zkfailstop(void)
     return arcus_conf.zk_failstop;
 }
 
-int arcus_zk_set_hbtimeout(int hbtimeout)
-{
-    int ret=0;
-
-    if (hbtimeout < HEART_BEAT_MIN_TIMEOUT ||
-        hbtimeout > HEART_BEAT_MAX_TIMEOUT)
-    {
-        return -1;
-    }
-
-    pthread_mutex_lock(&arcus_conf.lock);
-    if (arcus_conf.hb_failstop > 0) {
-        /* Check: heartbeat timeout <= heartbeat failstop */
-        if (hbtimeout > arcus_conf.hb_failstop) {
-            ret = -1;
-        }
-    }
-    if (ret == 0) {
-        if (hbtimeout != arcus_conf.hb_timeout) {
-            arcus_conf.hb_timeout = hbtimeout;
-        }
-    }
-    pthread_mutex_unlock(&arcus_conf.lock);
-
-    return ret;
-}
-
-int arcus_zk_get_hbtimeout(void)
-{
-    return arcus_conf.hb_timeout;
-}
-
-int arcus_zk_set_hbfailstop(int hbfailstop)
-{
-    int ret=0;
-
-    if (hbfailstop < HEART_BEAT_MIN_FAILSTOP ||
-        hbfailstop > HEART_BEAT_MAX_FAILSTOP)
-    {
-        if (hbfailstop != 0)
-            return -1;
-    }
-
-    pthread_mutex_lock(&arcus_conf.lock);
-    if (hbfailstop > 0) {
-        /* Check: heartbeat failstop >= heartbeat timeout */
-        if (hbfailstop < arcus_conf.hb_timeout) {
-            ret = -1;
-        }
-    }
-    if (ret == 0) {
-        if (hbfailstop != arcus_conf.hb_failstop) {
-            arcus_conf.hb_failstop = hbfailstop;
-        }
-    }
-    pthread_mutex_unlock(&arcus_conf.lock);
-
-    return ret;
-}
-
-int arcus_zk_get_hbfailstop(void)
-{
-    return arcus_conf.hb_failstop;
-}
-
 void arcus_zk_get_stats(arcus_zk_stats *stats)
 {
     stats->zk_connected = (main_zk != NULL && main_zk->zh != NULL) ? true : false;
-    stats->hb_count = azk_stat.hb_count;
-    stats->hb_latency = azk_stat.hb_latency;
 }
 
 void arcus_zk_get_confs(arcus_zk_confs *confs)
 {
     confs->zk_failstop = arcus_conf.zk_failstop;
     confs->zk_timeout = arcus_conf.zk_timeout;
-    confs->hb_timeout = arcus_conf.hb_timeout;
-    confs->hb_failstop = arcus_conf.hb_failstop;
 }
 
 #ifdef ENABLE_CLUSTER_AWARE
@@ -2373,4 +1958,4 @@ static void sm_wakeup(bool locked)
         sm_unlock();
 }
 
-#endif  // ENABLE_ZK_INTEGRATION
+#endif /* ENABLE_ZK_INTEGRATION */

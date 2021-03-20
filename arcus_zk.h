@@ -26,15 +26,11 @@
 
 typedef struct {
     bool     zk_connected;  // ZooKeeper-memcached connection state
-    uint64_t hb_count;      // heartbeat accumulated count
-    uint64_t hb_latency;    // heartbeat accumulated latency (unit: ms) */
 } arcus_zk_stats;
 
 typedef struct {
     bool     zk_failstop;   // memcached automatic failstop
     uint32_t zk_timeout;    // Zookeeper session timeout (unit: ms)
-    uint32_t hb_timeout;    // memcached heartbeat timeout (unit: ms)
-    uint32_t hb_failstop;   // memcached heartbeat failstop (unit: ms)
 } arcus_zk_confs;
 
 /* Interface between memcached.c and arcus_zk.c */
@@ -57,10 +53,6 @@ int  arcus_zk_rejoin_ensemble(void);
 
 void arcus_zk_set_zkfailstop(bool failstop);
 bool arcus_zk_get_zkfailstop(void);
-int  arcus_zk_set_hbtimeout(int hbtimeout);
-int  arcus_zk_get_hbtimeout(void);
-int  arcus_zk_set_hbfailstop(int hbfailstop);
-int  arcus_zk_get_hbfailstop(void);
 void arcus_zk_get_stats(arcus_zk_stats *stats);
 void arcus_zk_get_confs(arcus_zk_confs *confs);
 
