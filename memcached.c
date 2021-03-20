@@ -8705,7 +8705,7 @@ static void process_zkfailstop_command(conn *c, token_t *tokens, const size_t nt
     assert(c != NULL);
     if (ntokens == 3) {
         char buf[50];
-        sprintf(buf, "zkfailstop %s\r\nEND", arcus_zk_get_zkfailstop() ? "on" : "off");
+        sprintf(buf, "zkfailstop %s\r\nEND", arcus_zk_get_failstop() ? "on" : "off");
         out_string(c, buf);
     } else if (ntokens == 4) {
         const char *config = tokens[COMMAND_TOKEN+2].value;
@@ -8718,7 +8718,7 @@ static void process_zkfailstop_command(conn *c, token_t *tokens, const size_t nt
             out_string(c, "CLIENT_ERROR bad value");
             return;
         }
-        arcus_zk_set_zkfailstop(zkfailstop);
+        arcus_zk_set_failstop(zkfailstop);
         out_string(c, "END");
     } else {
         print_invalid_command(c, tokens, ntokens);

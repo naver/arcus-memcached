@@ -1698,14 +1698,14 @@ int arcus_zk_rejoin_ensemble()
     return ret;
 }
 
-void arcus_zk_set_zkfailstop(bool zkfailstop)
+void arcus_zk_set_failstop(bool failstop)
 {
     pthread_mutex_lock(&arcus_conf.lock);
-    arcus_conf.zk_failstop = zkfailstop;
+    arcus_conf.zk_failstop = failstop;
     pthread_mutex_unlock(&arcus_conf.lock);
 }
 
-bool arcus_zk_get_zkfailstop(void)
+bool arcus_zk_get_failstop(void)
 {
     return arcus_conf.zk_failstop;
 }
