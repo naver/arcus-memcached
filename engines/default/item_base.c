@@ -54,6 +54,11 @@ static EXTENSION_LOGGER_DESCRIPTOR *logger;
  */
 #define TAIL_REPAIR_TIME (3 * 3600)
 
+/* foreground delete count of elements : reclaim, invalidate, evict, repair */
+#define FG_ELEM_DELETE_COUNT 500
+/* background delete count of elements : deletion by background thread */
+#define BG_ELEM_DELETE_COUNT 100
+
 /* item queue */
 typedef struct {
    hash_item   *head;
@@ -594,7 +599,7 @@ static hash_item *do_item_reclaim(hash_item *it,
 #endif
 
     if (IS_COLL_ITEM(it)) {
-        (void)do_coll_elem_delete_with_count(it, 500);
+        (void)do_coll_elem_delete_with_count(it, FG_ELEM_DELETE_COUNT);
     }
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 
@@ -610,7 +615,7 @@ static void do_item_invalidate(hash_item *it, const unsigned int lruid, bool imm
 
     /* it->refcount == 0 */
     if (immediate && IS_COLL_ITEM(it)) {
-        (void)do_coll_elem_delete_with_count(it, 500);
+        (void)do_coll_elem_delete_with_count(it, FG_ELEM_DELETE_COUNT);
     }
     do_item_unlink(it, ITEM_UNLINK_INVALID);
 }
@@ -623,7 +628,7 @@ static void do_item_evict(hash_item *it, const unsigned int lruid,
 
     /* unlink the item */
     if (IS_COLL_ITEM(it)) {
-        (void)do_coll_elem_delete_with_count(it, 500);
+        (void)do_coll_elem_delete_with_count(it, FG_ELEM_DELETE_COUNT);
     }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
@@ -637,7 +642,7 @@ static void do_item_repair(hash_item *it, const unsigned int lruid)
 
     /* unlink the item */
     if (IS_COLL_ITEM(it)) {
-        (void)do_coll_elem_delete_with_count(it, 500);
+        (void)do_coll_elem_delete_with_count(it, FG_ELEM_DELETE_COUNT);
     }
     do_item_unlink(it, ITEM_UNLINK_EVICT);
 }
@@ -1258,15 +1263,15 @@ static void *collection_delete_thread(void *arg)
         it = pop_coll_del_queue();
         if (it != NULL) {
             LOCK_CACHE();
-            delete_count = do_coll_elem_delete_with_count(it, 100);
-            while (delete_count >= 100) {
+            delete_count = do_coll_elem_delete_with_count(it, BG_ELEM_DELETE_COUNT);
+            while (delete_count >= BG_ELEM_DELETE_COUNT) {
                 UNLOCK_CACHE();
                 if (slabs_space_shortage_level() <= 2) {
                     sleep_time.tv_nsec = 10000; /* 10 us */
                     nanosleep(&sleep_time, NULL);
                 }
                 LOCK_CACHE();
-                delete_count = do_coll_elem_delete_with_count(it, 100);
+                delete_count = do_coll_elem_delete_with_count(it, BG_ELEM_DELETE_COUNT);
             }
             /* it has become an empty collection. */
             do_item_free(it);
