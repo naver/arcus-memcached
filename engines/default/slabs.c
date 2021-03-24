@@ -53,7 +53,7 @@ static int RSVD_SLAB_RATIO = 5; /* reserved slab ratio */
  * there might be no ramaining cache items to evict.
  * So, "No more memory" error can occur.
  */
-static int RSVD_NUM_CHUNKS = 8; /* # of reserved chunks */
+static int RSVD_NUM_CHUNKS = 6; /* # of reserved chunks */
 
 /* sm slot head */
 typedef struct _sm_slot {
