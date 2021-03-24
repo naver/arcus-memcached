@@ -47,6 +47,13 @@
 
 static int RSVD_SLAB_COUNT = 4; /* # of reserved slabs */
 static int RSVD_SLAB_RATIO = 5; /* reserved slab ratio */
+/* NOTE) It must be larger than the number of worker threads.
+ * As all worker threads can look up cache items in one slab class
+ * at the same time, if the number of the slab class is too small,
+ * there might be no ramaining cache items to evict.
+ * So, "No more memory" error can occur.
+ */
+static int RSVD_NUM_CHUNKS = 8; /* # of reserved chunks */
 
 /* sm slot head */
 typedef struct _sm_slot {
@@ -1099,6 +1106,9 @@ ENGINE_ERROR_CODE slabs_init(struct default_engine *engine,
         p->size = size;
         p->perslab = config->item_size_max / p->size;
         p->rsvd_slabs = RSVD_SLAB_COUNT;
+        if ((p->perslab * p->rsvd_slabs) < RSVD_NUM_CHUNKS) {
+            p->rsvd_slabs = (RSVD_NUM_CHUNKS-1) / p->perslab + 1;
+        }
         if (config->verbose > 1) {
             fprintf(stderr, "slab class %3d: chunk size %9u perslab %7u\n",
                     i, p->size, p->perslab);
@@ -1111,6 +1121,9 @@ ENGINE_ERROR_CODE slabs_init(struct default_engine *engine,
     p->size = config->item_size_max;
     p->perslab = 1;
     p->rsvd_slabs = RSVD_SLAB_COUNT;
+    if (p->rsvd_slabs < RSVD_NUM_CHUNKS) {
+        p->rsvd_slabs = RSVD_NUM_CHUNKS;
+    }
     if (config->verbose > 1) {
         fprintf(stderr, "slab class %3d: chunk size %9u perslab %7u\n",
                 i, p->size, p->perslab);
