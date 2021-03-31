@@ -501,8 +501,8 @@ void chkpt_persistence_stats(struct default_engine *engine, ADD_STAT add_stat, c
          add_statistics(cookie, add_stat, NULL, -1, "last_chkpt_failure_count", "%d", chkpt_last_stat.last_chkpt_failure_count);
          add_statistics(cookie, add_stat, NULL, -1, "last_chkpt_start_time", "%"PRIu64, chkpt_last_stat.last_chkpt_start_time);
          add_statistics(cookie, add_stat, NULL, -1, "last_chkpt_elapsed_time_sec", "%ld", (long)chkpt_last_stat.last_chkpt_elapsed_time_sec);
-         add_statistics(cookie, add_stat, NULL, -1, "last_chkpt_snapshot_filesize_bytes", "%u", chkpt_anch.lastsize);
-         add_statistics(cookie, add_stat, NULL, -1, "current_command_log_filesize_bytes", "%u", cmdlog_file_getsize());
+         add_statistics(cookie, add_stat, NULL, -1, "last_chkpt_snapshot_filesize_bytes", "%lu", (unsigned long)chkpt_anch.lastsize);
+         add_statistics(cookie, add_stat, NULL, -1, "current_command_log_filesize_bytes", "%lu", (unsigned long)cmdlog_file_getsize());
      }
 }
 ENGINE_ERROR_CODE chkpt_thread_start(void)
