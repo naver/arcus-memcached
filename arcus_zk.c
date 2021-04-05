@@ -201,6 +201,7 @@ arcus_zk_stats azk_stat;
 static void arcus_zk_watcher(zhandle_t *wzh, int type, int state,
                              const char *path, void *cxt);
 #ifdef ENABLE_ZK_RECONFIG
+static int  arcus_check_zk_reconfig_enabled(zhandle_t *zh);
 static void arcus_zkconfig_watcher(zhandle_t *zh, int type, int state,
                                    const char *path, void *ctx);
 #endif
@@ -413,6 +414,26 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
                          "A old session id: 0x%llx\n", (long long) zinfo->myid.client_id);
              zinfo->myid = *id;
         }
+
+#ifdef ENABLE_ZK_RECONFIG
+        if (!arcus_conf.zk_reconfig) {
+            /* enable zookeeper dynamic reconfiguration */
+            if (arcus_check_zk_reconfig_enabled(zinfo->zh) < 0) {
+                /* zoo_getconfig API failed.. (rarely)
+                 * Instead of retry checking, set zk_reconfig to true to make it more safe.
+                 */
+                arcus_conf.zk_reconfig = true;
+            }
+
+            if (arcus_conf.zk_reconfig) {
+                /* Wake up the state machine thread and update zkconfig. */
+                sm_lock();
+                sm_info.request.update_zkconfig = true;
+                sm_wakeup(true);
+                sm_unlock();
+            }
+        }
+#endif
 
         // finally connected to one of ZK ensemble. signal go.
         inc_count(-1);
@@ -891,12 +912,10 @@ static int arcus_check_zk_reconfig_enabled(zhandle_t *zh)
         arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
             "Zookeeper dynamic reconfiguration is disabled.\n");
     } else {
-        arcus_conf.zk_reconfig = false;
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
             "zoo_getconfig() failed. error=%s.\n", zerror(rc));
         return -1;
     }
-
     return 0;
 }
 #endif
@@ -1292,7 +1311,6 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 #endif
                    ENGINE_HANDLE_V1 *engine)
 {
-    zk_info_t      *zinfo;
     int             rc;
     char            zpath[256] = "";
     struct timeval  start_time, end_time;
@@ -1313,9 +1331,9 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 
     memset(&zk_info, 0, sizeof(zk_info_t));
 
-    zinfo = &zk_info;
-    zinfo->ensemble_list = strdup(ensemble_list);
-    assert(zinfo->ensemble_list);
+    main_zk = &zk_info;
+    main_zk->ensemble_list = strdup(ensemble_list);
+    assert(main_zk->ensemble_list);
 
     /* save these for later use (restart) */
     if (!arcus_conf.init) {
@@ -1357,19 +1375,24 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         zoo_set_debug_level(ZOO_LOG_LEVEL_WARN);
     }
 
+    /* Initialize the state machine. */
+    if (sm_init() != 0) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Failed to initialize the state machine. Terminating.\n");
+        arcus_exit(main_zk->zh, EX_CONFIG);
+    }
+
     if (arcus_conf.verbose > 2)
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "zookeeper_init()\n");
 
     gettimeofday(&start_time, 0);
 
-    rc = arcus_zk_client_init(zinfo);
+    rc = arcus_zk_client_init(main_zk);
     if (rc != 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                                "Failed to initialize zk client\n");
         arcus_exit(NULL, rc);
     }
-    /* setting main zk */
-    main_zk = zinfo;
 
     /* check zk root directory and get the service code */
     if (zk_root == NULL) {
@@ -1386,21 +1409,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     arcus_conf.cluster_path = strdup(zpath);
     assert(arcus_conf.cluster_path);
 
-    /* Initialize the state machine. */
-    if (sm_init() != 0) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Failed to initialize the state machine. Terminating.\n");
-        arcus_exit(main_zk->zh, EX_CONFIG);
-    }
-
     arcus_conf.init = true;
-
-#ifdef ENABLE_ZK_RECONFIG
-    /* enable zookeeper dynamic reconfiguration */
-    if (arcus_check_zk_reconfig_enabled(main_zk->zh) != 0) {
-        arcus_exit(main_zk->zh, EX_PROTOCOL);
-    }
-#endif
 
     /* register cache instance in ZK */
     if (arcus_register_cache_instance(main_zk->zh) != 0) {
@@ -1444,11 +1453,6 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
      * Tell it to refresh the hash ring (cluster_config).
      */
     sm_lock();
-#ifdef ENABLE_ZK_RECONFIG
-    if (arcus_conf.zk_reconfig) {
-        sm_info.request.update_zkconfig = true;
-    }
-#endif
     /* Don't care if we just read the list above.  Do it again. */
     sm_info.request.update_cache_list = true;
     sm_wakeup(true);
@@ -1631,12 +1635,6 @@ int arcus_zk_rejoin_ensemble()
             ret = -1; break;
         }
 
-#ifdef ENABLE_ZK_RECONFIG
-        /* enable zookeeper dynamic reconfiguration */
-        if (arcus_check_zk_reconfig_enabled(main_zk->zh) != 0) {
-            ret = -1; break;
-        }
-#endif
         /* create "/cache_list/{svc}/ip:port-hostname" ephemeral znode */
         if (arcus_create_ephemeral_znode(main_zk->zh) != 0) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
@@ -1676,11 +1674,6 @@ int arcus_zk_rejoin_ensemble()
          */
         sm_lock();
         sm_info.mc_pause = false;
-#ifdef ENABLE_ZK_RECONFIG
-        if (arcus_conf.zk_reconfig) {
-            sm_info.request.update_zkconfig = true;
-        }
-#endif
         /* Don't care if we just read the list above.  Do it again. */
         sm_info.request.update_cache_list = true;
         sm_wakeup(true);
