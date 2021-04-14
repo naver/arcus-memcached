@@ -236,7 +236,7 @@ static void *hb_thread_main(void *arg)
      * The user wants a graceful shutdown.  The main thread wakes up all
      * the worker threads and wait for them to terminate.  It also calls
      * the engine destroy function.  In this case, heartbeat should just stop.
-     * arcus_zk_shutdown = 1 indicates this case.  So, we check that flag
+     * hb_thread_stopreq = true indicates this case.  So, we check that flag
      * in this function.
      *
      * 2. kill -KILL
