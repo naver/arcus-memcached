@@ -1186,8 +1186,9 @@ static int get_client_config_data(char *buf, int buff_len, char *host_buf, int64
         /* go to the starting point of the server host string */
         serverp = memchr(startp, ';', length);
         if (!serverp) {
+            /* need to check whether client port is in the zoo.cfg.dynamic file not zoo.cfg file. */
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Failed to get ZK server address from ZK config string.\n");
+                "Invalid ZK config string. missing client port in the zoo.cfg.dynamic file.\n");
             return -1;
         }
         serverp++;
@@ -1212,7 +1213,7 @@ static int get_client_config_data(char *buf, int buff_len, char *host_buf, int64
     versionp = memchr(startp, '=', buff_len);
     if (!versionp) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-            "Failed to get ZK config version from ZK config string.\n");
+            "Invalid ZK config string. missing version in the zoo.cfg.dynamic file.\n");
         return -1;
     }
     versionp++;
@@ -1221,7 +1222,7 @@ static int get_client_config_data(char *buf, int buff_len, char *host_buf, int64
     if ((errno == ERANGE && (*version == LLONG_MAX || *version == LLONG_MIN)) ||
         (errno != 0 && *version == 0)) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-            "Invalid ZK config version string.\n");
+            "Invalid ZK config string. invalid version in the zoo.cfg.dynamic file.\n");
         return -1;
     }
     return 0;
