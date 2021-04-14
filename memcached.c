@@ -147,6 +147,9 @@ static enum try_read_result try_read_udp(conn *c);
 /* stats */
 static void stats_init(void);
 static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate);
+#ifdef ENABLE_ZK_INTEGRATION
+static void process_stat_zookeeper(ADD_STAT add_stats, void *c);
+#endif
 static void process_stat_settings(ADD_STAT add_stats, void *c);
 static void update_stat_cas(conn *c, ENGINE_ERROR_CODE ret);
 
@@ -3989,6 +3992,10 @@ static void process_bin_stat(conn *c)
     } else if (strncmp(subcommand, "reset", 5) == 0) {
         stats_reset(c);
         mc_engine.v1->reset_stats(mc_engine.v0, c);
+#ifdef ENABLE_ZK_INTEGRATION
+    } else if (strncmp(subcommand, "zookeeper", 9) == 0) {
+        process_stat_zookeeper(&append_bin_stats, c);
+#endif
     } else if (strncmp(subcommand, "settings", 8) == 0) {
         process_stat_settings(&append_bin_stats, c);
     } else if (strncmp(subcommand, "detail", 6) == 0) {
@@ -7840,8 +7847,6 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
 #endif
 
 #ifdef ENABLE_ZK_INTEGRATION
-    arcus_zk_stats zk_stats;
-    arcus_zk_get_stats(&zk_stats);
     arcus_hb_stats hb_stats;
     arcus_hb_get_stats(&hb_stats);
 #endif
@@ -7855,7 +7860,6 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
     APPEND_STAT("libevent", "%s", event_get_version());
     APPEND_STAT("pointer_size", "%d", (int)(8 * sizeof(void *)));
 #ifdef ENABLE_ZK_INTEGRATION
-    APPEND_STAT("zk_connected", "%s", zk_stats.zk_connected ? "true" : "false");
     APPEND_STAT("hb_count", "%"PRIu64, hb_stats.count);
     APPEND_STAT("hb_latency", "%"PRIu64, hb_stats.latency);
 #endif
@@ -8009,12 +8013,24 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
     UNLOCK_STATS();
 }
 
+#ifdef ENABLE_ZK_INTEGRATION
+static void process_stat_zookeeper(ADD_STAT add_stats, void *c)
+{
+    assert(add_stats);
+    arcus_zk_stats zk_stats;
+    arcus_zk_confs zk_confs;
+    arcus_zk_get_stats(&zk_stats);
+    arcus_zk_get_confs(&zk_confs);
+
+    APPEND_STAT("zk_connected", "%s", zk_stats.zk_connected ? "true" : "false");
+    APPEND_STAT("zk_failstop", "%s", zk_confs.zk_failstop ? "on" : "off");
+    APPEND_STAT("zk_timeout", "%u", zk_confs.zk_timeout);
+}
+#endif
 static void process_stat_settings(ADD_STAT add_stats, void *c)
 {
     assert(add_stats);
 #ifdef ENABLE_ZK_INTEGRATION
-    arcus_zk_confs zk_confs;
-    arcus_zk_get_confs(&zk_confs);
     arcus_hb_confs hb_confs;
     arcus_hb_get_confs(&hb_confs);
 #endif
@@ -8066,8 +8082,6 @@ static void process_stat_settings(ADD_STAT add_stats, void *c)
     APPEND_STAT("scrub_count", "%u", settings.scrub_count);
     APPEND_STAT("topkeys", "%d", settings.topkeys);
 #ifdef ENABLE_ZK_INTEGRATION
-    APPEND_STAT("zk_failstop", "%s", zk_confs.zk_failstop ? "on" : "off");
-    APPEND_STAT("zk_timeout", "%u", zk_confs.zk_timeout);
     APPEND_STAT("hb_timeout", "%u", hb_confs.timeout);
     APPEND_STAT("hb_failstop", "%u", hb_confs.failstop);
 #endif
@@ -8113,6 +8127,10 @@ static void process_stat_command(conn *c, token_t *tokens, const size_t ntokens)
             process_stats_detail(c, tokens[2].value);
         /* Output already generated */
         return;
+#ifdef ENABLE_ZK_INTEGRATION
+    } else if (strcmp(subcommand, "zookeeper") == 0) {
+        process_stat_zookeeper(&append_ascii_stats, c);
+#endif
     } else if (strcmp(subcommand, "settings") == 0) {
         process_stat_settings(&append_ascii_stats, c);
     } else if (strcmp(subcommand, "cachedump") == 0) {
@@ -9324,6 +9342,9 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "scrub [stale]\\r\\n" "\n"
         "\n"
         "\t" "stats\\r\\n" "\n"
+#ifdef ENABLE_ZK_INTEGRATION
+        "\t" "stats zookeeper\\r\\n" "\n"
+#endif
         "\t" "stats settings\\r\\n" "\n"
         "\t" "stats items\\r\\n" "\n"
         "\t" "stats slabs\\r\\n" "\n"
