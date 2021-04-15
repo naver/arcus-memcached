@@ -1707,11 +1707,17 @@ bool arcus_zk_get_failstop(void)
 void arcus_zk_get_stats(arcus_zk_stats *stats)
 {
     stats->zk_connected = (main_zk != NULL && main_zk->zh != NULL) ? true : false;
+#ifdef ENABLE_ZK_RECONFIG
+    stats->zk_reconfig_version = sm_info.zkconfig_version;
+#endif
 }
 
 void arcus_zk_get_confs(arcus_zk_confs *confs)
 {
     confs->zk_failstop = arcus_conf.zk_failstop;
+#ifdef ENABLE_ZK_RECONFIG
+    confs->zk_reconfig = arcus_conf.zk_reconfig;
+#endif
     confs->zk_timeout = arcus_conf.zk_timeout;
 }
 
