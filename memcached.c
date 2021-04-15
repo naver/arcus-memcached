@@ -8025,6 +8025,12 @@ static void process_stat_zookeeper(ADD_STAT add_stats, void *c)
     APPEND_STAT("zk_connected", "%s", zk_stats.zk_connected ? "true" : "false");
     APPEND_STAT("zk_failstop", "%s", zk_confs.zk_failstop ? "on" : "off");
     APPEND_STAT("zk_timeout", "%u", zk_confs.zk_timeout);
+#ifdef ENABLE_ZK_RECONFIG
+    APPEND_STAT("zk_reconfig", "%s", zk_confs.zk_reconfig ? "on" : "off");
+    if (zk_confs.zk_reconfig) {
+        APPEND_STAT("zk_reconfig_version", "%" PRIx64, zk_stats.zk_reconfig_version);
+    }
+#endif
 }
 #endif
 static void process_stat_settings(ADD_STAT add_stats, void *c)

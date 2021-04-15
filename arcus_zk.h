@@ -26,10 +26,16 @@
 
 typedef struct {
     bool     zk_connected;  // ZooKeeper-memcached connection state
+#ifdef ENABLE_ZK_RECONFIG
+    int64_t  zk_reconfig_version; // Zookeeper dynamic reconfiguration version
+#endif
 } arcus_zk_stats;
 
 typedef struct {
     bool     zk_failstop;   // memcached automatic failstop
+#ifdef ENABLE_ZK_RECONFIG
+    bool     zk_reconfig;   // Zookeeper dynamic reconfiguration
+#endif
     uint32_t zk_timeout;    // Zookeeper session timeout (unit: ms)
 } arcus_zk_confs;
 
