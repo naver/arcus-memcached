@@ -147,10 +147,10 @@ static enum try_read_result try_read_udp(conn *c);
 /* stats */
 static void stats_init(void);
 static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate);
+static void process_stat_settings(ADD_STAT add_stats, void *c);
 #ifdef ENABLE_ZK_INTEGRATION
 static void process_stat_zookeeper(ADD_STAT add_stats, void *c);
 #endif
-static void process_stat_settings(ADD_STAT add_stats, void *c);
 static void update_stat_cas(conn *c, ENGINE_ERROR_CODE ret);
 
 /* defaults */
@@ -3992,12 +3992,12 @@ static void process_bin_stat(conn *c)
     } else if (strncmp(subcommand, "reset", 5) == 0) {
         stats_reset(c);
         mc_engine.v1->reset_stats(mc_engine.v0, c);
+    } else if (strncmp(subcommand, "settings", 8) == 0) {
+        process_stat_settings(&append_bin_stats, c);
 #ifdef ENABLE_ZK_INTEGRATION
     } else if (strncmp(subcommand, "zookeeper", 9) == 0) {
         process_stat_zookeeper(&append_bin_stats, c);
 #endif
-    } else if (strncmp(subcommand, "settings", 8) == 0) {
-        process_stat_settings(&append_bin_stats, c);
     } else if (strncmp(subcommand, "detail", 6) == 0) {
         char *subcmd_pos = subcommand + 6;
         if (settings.allow_detailed) {
@@ -8013,26 +8013,6 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
     UNLOCK_STATS();
 }
 
-#ifdef ENABLE_ZK_INTEGRATION
-static void process_stat_zookeeper(ADD_STAT add_stats, void *c)
-{
-    assert(add_stats);
-    arcus_zk_stats zk_stats;
-    arcus_zk_confs zk_confs;
-    arcus_zk_get_stats(&zk_stats);
-    arcus_zk_get_confs(&zk_confs);
-
-    APPEND_STAT("zk_connected", "%s", zk_stats.zk_connected ? "true" : "false");
-    APPEND_STAT("zk_failstop", "%s", zk_confs.zk_failstop ? "on" : "off");
-    APPEND_STAT("zk_timeout", "%u", zk_confs.zk_timeout);
-#ifdef ENABLE_ZK_RECONFIG
-    APPEND_STAT("zk_reconfig", "%s", zk_confs.zk_reconfig ? "on" : "off");
-    if (zk_confs.zk_reconfig) {
-        APPEND_STAT("zk_reconfig_version", "%" PRIx64, zk_stats.zk_reconfig_version);
-    }
-#endif
-}
-#endif
 static void process_stat_settings(ADD_STAT add_stats, void *c)
 {
     assert(add_stats);
@@ -8107,6 +8087,27 @@ static void process_stat_settings(ADD_STAT add_stats, void *c)
     }
 }
 
+#ifdef ENABLE_ZK_INTEGRATION
+static void process_stat_zookeeper(ADD_STAT add_stats, void *c)
+{
+    assert(add_stats);
+    arcus_zk_stats zk_stats;
+    arcus_zk_confs zk_confs;
+    arcus_zk_get_stats(&zk_stats);
+    arcus_zk_get_confs(&zk_confs);
+
+    APPEND_STAT("zk_connected", "%s", zk_stats.zk_connected ? "true" : "false");
+    APPEND_STAT("zk_failstop", "%s", zk_confs.zk_failstop ? "on" : "off");
+    APPEND_STAT("zk_timeout", "%u", zk_confs.zk_timeout);
+#ifdef ENABLE_ZK_RECONFIG
+    APPEND_STAT("zk_reconfig", "%s", zk_confs.zk_reconfig ? "on" : "off");
+    if (zk_confs.zk_reconfig) {
+        APPEND_STAT("zk_reconfig_version", "%" PRIx64, zk_stats.zk_reconfig_version);
+    }
+#endif
+}
+#endif
+
 static void process_stat_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
@@ -8133,12 +8134,12 @@ static void process_stat_command(conn *c, token_t *tokens, const size_t ntokens)
             process_stats_detail(c, tokens[2].value);
         /* Output already generated */
         return;
+    } else if (strcmp(subcommand, "settings") == 0) {
+        process_stat_settings(&append_ascii_stats, c);
 #ifdef ENABLE_ZK_INTEGRATION
     } else if (strcmp(subcommand, "zookeeper") == 0) {
         process_stat_zookeeper(&append_ascii_stats, c);
 #endif
-    } else if (strcmp(subcommand, "settings") == 0) {
-        process_stat_settings(&append_ascii_stats, c);
     } else if (strcmp(subcommand, "cachedump") == 0) {
         char *buf = NULL;
         unsigned int bytes = 0, id, limit = 0;
@@ -9348,14 +9349,14 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "scrub [stale]\\r\\n" "\n"
         "\n"
         "\t" "stats\\r\\n" "\n"
-#ifdef ENABLE_ZK_INTEGRATION
-        "\t" "stats zookeeper\\r\\n" "\n"
-#endif
         "\t" "stats settings\\r\\n" "\n"
         "\t" "stats items\\r\\n" "\n"
         "\t" "stats slabs\\r\\n" "\n"
         "\t" "stats prefixes\\r\\n" "\n"
         "\t" "stats detail [on|off|dump]\\r\\n" "\n"
+#ifdef ENABLE_ZK_INTEGRATION
+        "\t" "stats zookeeper\\r\\n" "\n"
+#endif
         "\t" "stats scrub\\r\\n" "\n"
         "\t" "stats dump\\r\\n" "\n"
         "\t" "stats cachedump <slab_clsid> <limit> [forward|backward [sticky]]\\r\\n" "\n"
