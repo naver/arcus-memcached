@@ -109,6 +109,7 @@ stats [<args>]\r\n
  slabs              | Slab 통계 정보 조회
  prefixes           | Prefix 별 item 통계 정보 조회
  detail on|off|dump | Prefix 별 수행 명령 통계 정보 조회 및 제어
+ zookeeper          | Zookeeper 정보 조회
  scrub              | scrub 수행 상태 조회
  cachedump          | slab class 별 cache key dump
  reset              | 모든 통계 정보를 reset
@@ -593,7 +594,28 @@ gas와 sas는 item attribute 연산의 통계이다.
 - item attribute 연산 통계
   - gas - getattr 수행 횟수
   - sas - setattr 수행 횟수
-  
+
+**zookeeper 상태 정보**
+
+zookeeper 상태 정보를 보는 명령이다. 다음은 stats zookeeper 실행 결과의 예이다.
+
+```
+STAT zk_connected true
+STAT zk_failstop on
+STAT zk_timeout 30000
+STAT zk_reconfig on
+STAT zk_reconfig_version 100000000
+END
+```
+
+| stats              | 설명                                                         |
+| ------------------ | ------------------------------------------------------------ |
+| zk_connected       | 주키퍼 연결 상태                                             |
+| zk_failstop        | 주키퍼 세션 만료 시 서버 자동 종료 여부                      |
+| zk_timeout         | 주키퍼 세션 타임아웃(msec)                                   |
+| zk_reconfig        | zookeeper dynamic reconfiguration 기능 사용 여부             |
+| zk_reconfig_version| zookeeper dynamic reconfiguration 반영한 버전(16진수)        |
+
 **Scrub 수행 상태**
 
 Scrub 수행 상태를 조회한 결과 예는 다음과 같다.
