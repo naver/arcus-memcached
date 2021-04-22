@@ -416,7 +416,7 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
         }
 
 #ifdef ENABLE_ZK_RECONFIG
-        if (!arcus_conf.zk_reconfig) {
+        if (arcus_conf.init && !arcus_conf.zk_reconfig) {
             /* enable zookeeper dynamic reconfiguration */
             if (arcus_check_zk_reconfig_enabled(zinfo->zh) < 0) {
                 /* zoo_getconfig API failed.. (rarely)
@@ -1376,13 +1376,6 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         zoo_set_debug_level(ZOO_LOG_LEVEL_WARN);
     }
 
-    /* Initialize the state machine. */
-    if (sm_init() != 0) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Failed to initialize the state machine. Terminating.\n");
-        arcus_exit(main_zk->zh, EX_CONFIG);
-    }
-
     if (arcus_conf.verbose > 2)
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "zookeeper_init()\n");
 
@@ -1409,6 +1402,20 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     snprintf(zpath, sizeof(zpath), "%s/%s/%s", zk_root, zk_cache_dir, arcus_conf.svc);
     arcus_conf.cluster_path = strdup(zpath);
     assert(arcus_conf.cluster_path);
+
+    /* Initialize the state machine. */
+    if (sm_init() != 0) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Failed to initialize the state machine. Terminating.\n");
+        arcus_exit(main_zk->zh, EX_CONFIG);
+    }
+
+#ifdef ENABLE_ZK_RECONFIG
+    /* enable zookeeper dynamic reconfiguration */
+    if (arcus_check_zk_reconfig_enabled(main_zk->zh) != 0) {
+        arcus_exit(main_zk->zh, EX_PROTOCOL);
+    }
+#endif
 
     arcus_conf.init = true;
 
@@ -1454,6 +1461,11 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
      * Tell it to refresh the hash ring (cluster_config).
      */
     sm_lock();
+#ifdef ENABLE_ZK_RECONFIG
+    if (arcus_conf.zk_reconfig) {
+        sm_info.request.update_zkconfig = true;
+    }
+#endif
     /* Don't care if we just read the list above.  Do it again. */
     sm_info.request.update_cache_list = true;
     sm_wakeup(true);
