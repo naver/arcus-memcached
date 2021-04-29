@@ -411,6 +411,240 @@ void list_elem_release(list_elem_item **elem_array, const int elem_count)
     UNLOCK_CACHE();
 }
 
+#ifdef ENABLE_LARGE_ITEM
+hash_item *list_large_item_alloc(const void* key, const int nkey,
+                                 item_attr *attrp, uint32_t nbytes,
+                                 const void *cookie)
+{
+    uint32_t total = nbytes;
+    hash_item *it;
+    list_elem_item *elem;
+
+    it = do_list_item_alloc(key, nkey, attrp, cookie);
+    if (it == NULL) {
+        return NULL;
+    }
+
+    list_meta_info *info = (list_meta_info *)item_get_meta(it);
+    it->nbytes = nbytes;
+
+    while (total > 0) {
+        nbytes = (total >= config->max_element_bytes ? config->max_element_bytes : total);
+        elem = do_list_elem_alloc(nbytes, cookie);
+        if (elem == NULL) {
+            do_item_free(it);
+            it = NULL;
+            break;
+        }
+        elem->next = NULL;
+        if (info->tail == NULL) {
+            elem->prev = NULL;
+            info->head = elem;
+            info->tail = elem;
+        } else {
+            elem->prev = info->tail;
+            info->tail->next = elem;
+            info->tail = elem;
+        }
+        info->stotal += sizeof(list_elem_item) + nbytes;
+        info->ccnt++;
+        total -= nbytes;
+    }
+
+    if (it) {
+        assert(total == 0);
+        info->tail->next = NULL;
+        it->iflag &= ~ITEM_IFLAG_LIST;
+    }
+
+    return it;
+}
+
+static list_elem_item *do_elem_delete_crlf(list_elem_item *elem, const void *cookie)
+{
+    assert(elem != NULL);
+    list_elem_item *new_elem;
+    uint32_t nbytes = elem->nbytes - 2; /* CRLF */
+
+    if (nbytes > 0) {
+        new_elem = do_list_elem_alloc(nbytes, cookie);
+        if (new_elem == NULL) {
+            return NULL;
+        }
+
+        memcpy(new_elem->value, elem->value, nbytes);
+        new_elem->prev = elem->prev;
+        if (elem->prev != NULL) {
+            elem->prev->next = new_elem;
+        }
+    } else {
+        new_elem = elem->prev;
+    }
+
+    elem->next = (list_elem_item *)ADDR_MEANS_UNLINKED;
+    do_list_elem_free(elem);
+
+    return new_elem;
+}
+
+/* old_it of this function must be a large kv item */
+ENGINE_ERROR_CODE list_large_item_attach(hash_item *old_it, hash_item *attach_it,
+                                         ENGINE_STORE_OPERATION operation, bool update,
+                                         const void *cookie)
+{
+    assert(old_it != NULL && attach_it != NULL);
+    uint32_t add_stotal = 0;
+    uint32_t add_ccnt = 0;
+    uint32_t add_nbytes = 0;
+    /* new_it->nbytes can be smaller than MIN_LARGE_ITEM_SIZE */
+    list_meta_info *old_info = (list_meta_info *)((char *)item_get_key(old_it) + META_OFFSET_IN_ITEM(old_it->nkey, 2));
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    if (IS_LARGE_ITEM(attach_it->nbytes)) {
+        /* large + large */
+        list_meta_info *attach_info = (list_meta_info *)item_get_meta(attach_it);
+
+        if (operation == OPERATION_APPEND) {
+            old_info->tail = do_elem_delete_crlf(old_info->tail, cookie);
+            if (old_info->tail == NULL) {
+                /* if old item is empty occur to below code */
+                if (old_it->nbytes <= 2) {
+                    old_info->head = attach_info->head;
+                    old_info->ccnt -= 1;
+                } else {
+                    return ENGINE_ENOMEM;
+                }
+            } else {
+                /* if old item has a single element, head re-points to the element */
+                if (old_info->ccnt == 1) {
+                    old_info->head = old_info->tail;
+                }
+                old_info->tail->next = attach_info->head;
+                attach_info->head->prev = old_info->tail;
+            }
+            old_info->tail = attach_info->tail;
+        } else {
+            /* OPERATION_PREPEND */
+            attach_info->tail = do_elem_delete_crlf(attach_info->tail, cookie);
+            if (attach_info->tail == NULL) {
+                return ENGINE_ENOMEM;
+            }
+            assert(attach_info->ccnt > 1);
+
+            old_info->head->prev = attach_info->tail;
+            attach_info->tail->next = old_info->head;
+            old_info->head = attach_info->head;
+        }
+        add_stotal += attach_info->stotal - 2; /* CRLF */
+        add_ccnt += attach_info->ccnt;
+        add_nbytes += attach_it->nbytes - 2; /* CRLF */
+
+        old_info->head->prev = old_info->tail->next = NULL;
+        attach_info->head = attach_info->tail = NULL;
+        attach_info->ccnt = 0;
+    } else {
+        /* large + kv */
+        char *data = item_get_data(attach_it);
+        uint32_t nbytes;
+        uint32_t total = (operation == OPERATION_PREPEND ? attach_it->nbytes - 2 /* CRLF */ : attach_it->nbytes);
+        list_elem_item *elem;
+        list_elem_item *head = NULL;
+        list_elem_item *tail = NULL;
+        add_nbytes = total;
+
+        if (total <= 0) {
+            /* normal terminate because you do not need to create a new element */
+            return ENGINE_SUCCESS;
+        }
+
+        while (total > 0) {
+            nbytes = (total >= config->max_element_bytes ? config->max_element_bytes : total);
+            elem = do_list_elem_alloc(nbytes, cookie);
+            if (elem == NULL) {
+                ret = ENGINE_ENOMEM;
+                break;
+            }
+            memcpy(elem->value, data, nbytes);
+            elem->next = NULL;
+            if (tail == NULL) {
+                elem->prev = NULL;
+                head = elem;
+                tail = elem;
+            } else {
+                elem->prev = tail;
+                tail->next = elem;
+                tail = elem;
+            }
+            data += nbytes;
+            add_stotal += sizeof(list_elem_item) + nbytes;
+            add_ccnt++;
+            total -= nbytes;
+        }
+        assert(total == 0);
+
+        if (ret == ENGINE_SUCCESS) {
+            if (operation == OPERATION_APPEND) {
+                old_info->tail = do_elem_delete_crlf(old_info->tail, cookie);
+                if (old_info->tail == NULL) {
+                    ret = ENGINE_ENOMEM;
+                } else {
+                    old_info->stotal -= 2; /* CRLF */
+                    old_it->nbytes -= 2; /* CRLF */
+                }
+            }
+        }
+
+        if (ret != ENGINE_SUCCESS) {
+            /* free allocated all elements */
+            while (head != NULL) {
+                elem = head->next;
+                elem->next = (list_elem_item *)ADDR_MEANS_UNLINKED;
+                do_list_elem_free(elem);
+                head = elem;
+            }
+            return ret;
+        }
+
+        if (operation == OPERATION_APPEND) {
+            old_info->tail->next = head;
+            head->prev = old_info->tail;
+            old_info->tail = tail;
+            old_info->tail->next = NULL;
+        } else {
+            /* OPERATION_PREPEND */
+            old_info->head->prev = tail;
+            tail->next = old_info->head;
+            old_info->head = head;
+        }
+    }
+    if (ret == ENGINE_SUCCESS) {
+        if (update) {
+            /* unlink for relink to the updated old item */
+            do_item_unlink(old_it, ITEM_UNLINK_REPLACE);
+        }
+        old_info->stotal += add_stotal;
+        old_info->ccnt += add_ccnt;
+        old_it->nbytes += add_nbytes;
+    }
+    return ret;
+}
+
+void list_large_item_free(hash_item *it)
+{
+    list_meta_info *info = (list_meta_info *)item_get_meta(it);
+    list_elem_item *elem = info->head;
+    list_elem_item *next;
+    while (elem != NULL) {
+        next = elem->next;
+        elem->next = (list_elem_item *)ADDR_MEANS_UNLINKED;
+        do_list_elem_free(elem);
+        info->ccnt--;
+        elem = next;
+    }
+    assert(info->ccnt == 0);
+}
+#endif
+
 ENGINE_ERROR_CODE list_elem_insert(const char *key, const uint32_t nkey,
                                    int index, list_elem_item *elem,
                                    item_attr *attrp,

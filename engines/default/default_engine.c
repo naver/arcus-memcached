@@ -317,11 +317,17 @@ default_item_allocate(ENGINE_HANDLE* handle, const void* cookie,
                       const int flags, const rel_time_t exptime,
                       const uint64_t cas)
 {
+#ifndef ENABLE_LARGE_ITEM
     uint32_t ntotal = item_kv_size(nkey, nbytes);
     unsigned int id = slabs_clsid(ntotal);
     if (id == 0) {
         return ENGINE_E2BIG;
     }
+#else
+    if (nbytes > MAX_ITEM_VALUE_LENGTH) {
+        return ENGINE_E2BIG;
+    }
+#endif
 
     hash_item *it;
     ENGINE_ERROR_CODE ret = ENGINE_EINVAL;
@@ -1642,6 +1648,38 @@ default_scrub_stale(ENGINE_HANDLE* handle)
 
 /* Item/Elem Info */
 
+#ifdef ENABLE_LARGE_ITEM
+static bool
+get_large_item_info(hash_item *it, item_info *item_info)
+{
+    list_meta_info *info = (list_meta_info *)item_get_meta(it);
+    list_elem_item *elem = info->head;
+    int count = 0;
+
+    item_info->naddnl = info->ccnt;
+    item_info->nvalue = 0;
+
+    if (item_info->addnl != NULL) {
+        return true;
+    }
+
+    item_info->addnl = (value_item **)malloc(sizeof(value_item *) * item_info->naddnl);
+    if (item_info->addnl == NULL) {
+        return false;
+    }
+
+    while (elem != NULL) {
+        item_info->addnl[count] = (value_item *)((char *)elem + offsetof(list_elem_item, nbytes));
+        item_info->addnl[count]->len = elem->nbytes;
+        count++;
+        elem = elem->next;
+    }
+    assert(count == item_info->naddnl);
+
+    return true;
+}
+#endif
+
 static bool
 get_item_info(ENGINE_HANDLE *handle, const void *cookie,
               const item* item, item_info *item_info)
@@ -1658,7 +1696,15 @@ get_item_info(ENGINE_HANDLE *handle, const void *cookie,
     item_info->naddnl = 0;
     item_info->key = item_get_key(it);
     item_info->value = item_get_data(it);
+#ifdef ENABLE_LARGE_ITEM
+    if (IS_LARGE_ITEM(it->nbytes)) {
+        return get_large_item_info(it, item_info);
+    } else {
+        item_info->addnl = NULL;
+    }
+#else
     item_info->addnl = NULL;
+#endif
     return true;
 }
 

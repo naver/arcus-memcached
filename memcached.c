@@ -3040,6 +3040,12 @@ process_get_single(conn *c, char *key, size_t nkey, bool return_cas)
         /* item_get() has incremented it->refcount for us */
         STATS_HITS(c, get, key, nkey);
         MEMCACHED_COMMAND_GET(c->sfd, key, nkey, c->hinfo.nbytes, c->hinfo.cas);
+#ifdef ENABLE_LARGE_ITEM
+        if (c->hinfo.addnl != NULL) {
+            free(c->hinfo.addnl);
+            c->hinfo.addnl = NULL;
+        }
+#endif
     } else {
         STATS_MISSES(c, get, key, nkey);
         MEMCACHED_COMMAND_GET(c->sfd, key, nkey, -1, 0);
@@ -3282,6 +3288,12 @@ static void complete_update_ascii(conn *c)
     }
     c->store_op = 0;
     c->item = 0;
+#ifdef ENABLE_LARGE_ITEM
+    if (c->hinfo.addnl != NULL) {
+        free(c->hinfo.addnl);
+        c->hinfo.addnl = NULL;
+    }
+#endif
 }
 
 /**

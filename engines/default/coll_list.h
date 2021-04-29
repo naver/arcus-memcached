@@ -20,6 +20,21 @@
 
 #include "item_base.h"
 
+#ifdef ENABLE_LARGE_ITEM
+/*
+ * Large item which made of list structure internally.
+ */
+hash_item *list_large_item_alloc(const void* key, const int nkey,
+                                 item_attr *attrp, uint32_t nbytes,
+                                 const void *cookie);
+
+ENGINE_ERROR_CODE list_large_item_attach(hash_item *it, hash_item *new_it,
+                                         ENGINE_STORE_OPERATION operation, bool update,
+                                         const void *cookie);
+
+void list_large_item_free(hash_item *it);
+#endif
+
 /*
  * List Collection
  */
