@@ -440,11 +440,23 @@ ENGINE_ERROR_CODE item_delete(const void *key, const uint32_t nkey, uint64_t cas
  * Flushes expired items after a flush_all call
  */
 
+#ifdef ENABLE_COMPACT_FLUSH_PREFIX
+#define FLUSH_PREFIX_LOG_INTERVAL   600 /* 600 sec */
+#define FLUSH_PREFIX_LOG_MAXCOUNT   10
+#endif
+
 static ENGINE_ERROR_CODE do_item_flush_expired(const char *prefix, const int nprefix,
                                                rel_time_t when, const void *cookie)
 {
     hash_item *iter, *next;
     rel_time_t oldest_live;
+#ifdef ENABLE_COMPACT_FLUSH_PREFIX
+    static uint32_t fplog_count = 0;
+    static rel_time_t fplog_stime = 0;
+    if (fplog_stime == 0) {
+        fplog_stime = svcore->get_current_time();
+    }
+#endif
 
     if (nprefix >= 0) { /* flush the given prefix */
         prefix_t *pt = prefix_find(prefix, nprefix);
@@ -460,9 +472,29 @@ static ENGINE_ERROR_CODE do_item_flush_expired(const char *prefix, const int npr
         oldest_live = pt->oldest_live;
 
         if (config->verbose) {
+#ifdef ENABLE_COMPACT_FLUSH_PREFIX
+            if (fplog_count < FLUSH_PREFIX_LOG_MAXCOUNT) {
+                logger->log(EXTENSION_LOG_INFO, NULL, "flush prefix=%s when=%u client_ip=%s\n",
+                            (prefix == NULL ? "<null>" : prefix),
+                            when, svcore->get_client_ip(cookie));
+            } else if ((svcore->get_current_time() - fplog_stime) > FLUSH_PREFIX_LOG_INTERVAL) {
+                char str_buffer[64] = { 0 };
+                if (fplog_count > FLUSH_PREFIX_LOG_MAXCOUNT) {
+                    snprintf(str_buffer, 64, "(Previous %u logs suppressed during %u secs)",
+                            (fplog_count-FLUSH_PREFIX_LOG_MAXCOUNT), FLUSH_PREFIX_LOG_INTERVAL);
+                }
+                logger->log(EXTENSION_LOG_INFO, NULL, "flush prefix=%s when=%u client_ip=%s%s\n",
+                            (prefix == NULL ? "<null>" : prefix),
+                            when, svcore->get_client_ip(cookie), str_buffer);
+                fplog_count = 0;
+                fplog_stime = svcore->get_current_time();
+            }
+            fplog_count += 1;
+#else
             logger->log(EXTENSION_LOG_INFO, NULL, "flush prefix=%s when=%u client_ip=%s\n",
                         (prefix == NULL ? "<null>" : prefix),
                         when, svcore->get_client_ip(cookie));
+#endif
         }
     } else { /* flush all */
         if (when == 0) {
