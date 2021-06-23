@@ -3910,9 +3910,6 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
                                                         : UPD_BT_ELEM_DELETE));
     }
 
-    eresult->elem_array = NULL;
-    eresult->elem_count = 0;
-
     LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
@@ -4045,9 +4042,6 @@ ENGINE_ERROR_CODE btree_posi_find_with_get(const char *key, const uint32_t nkey,
     int bkrtype = do_btree_bkey_range_type(bkrange);
     assert(bkrtype == BKEY_RANGE_TYPE_SIN);
 
-    eresult->elem_array = NULL;
-    eresult->elem_count = 0;
-
     LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
@@ -4091,9 +4085,6 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(const char *key, const uint32_t nkey,
     assert(from_posi >= 0 && to_posi >= 0);
     hash_item *it;
     ENGINE_ERROR_CODE ret;
-
-    eresult->elem_array = NULL;
-    eresult->elem_count = 0;
 
     LOCK_CACHE();
     ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);

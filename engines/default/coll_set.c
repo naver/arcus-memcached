@@ -809,9 +809,6 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
                                                         : UPD_SET_ELEM_DELETE));
     }
 
-    eresult->elem_array = NULL;
-    eresult->elem_count = 0;
-
     LOCK_CACHE();
     ret = do_set_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {

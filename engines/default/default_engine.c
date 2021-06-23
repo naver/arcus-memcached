@@ -533,6 +533,9 @@ default_list_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    eresult->elem_array = NULL;
+    eresult->elem_count = 0;
+
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
     else        ACTION_BEFORE_READ(cookie, key, nkey);
     ret = list_elem_get(key, nkey, from_index, to_index, delete, drop_if_empty,
@@ -653,6 +656,9 @@ default_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    eresult->elem_array = NULL;
+    eresult->elem_count = 0;
+
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
     else        ACTION_BEFORE_READ(cookie, key, nkey);
     ret = set_elem_get(key, nkey, count, delete, drop_if_empty,
@@ -771,6 +777,9 @@ default_map_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     struct default_engine *engine = get_handle(handle);
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
+
+    eresult->elem_array = NULL;
+    eresult->elem_count = 0;
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
     else        ACTION_BEFORE_READ(cookie, key, nkey);
@@ -932,6 +941,9 @@ default_btree_elem_get(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    eresult->elem_array = NULL;
+    eresult->elem_count = 0;
+
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
     else        ACTION_BEFORE_READ(cookie, key, nkey);
     ret = btree_elem_get(key, nkey, bkrange, efilter, offset, req_count,
@@ -984,6 +996,9 @@ default_btree_posi_find_with_get(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    eresult->elem_array = NULL;
+    eresult->elem_count = 0;
+
     ACTION_BEFORE_READ(cookie, key, nkey);
     ret = btree_posi_find_with_get(key, nkey, bkrange, order, count,
                                    position, eresult);
@@ -999,6 +1014,9 @@ default_btree_elem_get_by_posi(ENGINE_HANDLE* handle, const void* cookie,
     struct default_engine *engine = get_handle(handle);
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
+
+    eresult->elem_array = NULL;
+    eresult->elem_count = 0;
 
     ACTION_BEFORE_READ(cookie, key, nkey);
     ret = btree_elem_get_by_posi(key, nkey, order, from_posi, to_posi, eresult);

@@ -541,9 +541,6 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
                                                         : UPD_LIST_ELEM_DELETE));
     }
 
-    eresult->elem_array = NULL;
-    eresult->elem_count = 0;
-
     LOCK_CACHE();
     ret = do_list_item_find(key, nkey, DO_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
