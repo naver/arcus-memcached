@@ -1,3 +1,13 @@
+2021-06-28 [version 1.13.2]
+	* [FEATURE] supported zk_reconfig auto enable feature.
+	* [FEATURE] added stats zookeeper command.
+	* [FEATURE] added zk reconfig stats.
+	* [FEATURE] add flush prefix message compact feature
+	* [FIX]     resolve "No more memory" error occurrence.
+	* [FIX]     print checkpoint file size stat in 64bit.
+	* [FIX]     initialized the eresult structure before ACTION_BEFORE_XXX().
+	* [CLEANUP] separate heartbeat implementation into arcus_hb files.
+
 2021-03-15 [version 1.13.1]
 	* [FEATURE] support nested prefix. (not yet enabled)
 	* [FEATURE] added "stats persistence" command.
