@@ -111,4 +111,23 @@ small memory allocator로 부터 메모리 공간을 할당받는
 따라서, 8000 바이트 이하의 메모리 공간에 해당하는
 기존 slab class의 LRU 리스트들은 empty가 상태가 된다.
 
+### Automatic Scrub (added since v1.11.3)
 
+ARCUS 캐시 클러스터에 새로운 캐시 노드를 추가하면, stale 데이터가 발생한다.
+이유는 기존 캐시 노드들에 있던 일부 데이터는 consistent hashing에 의해 새로 추가된 캐시 노드로 담당 노드가 변경되기 때문이다.
+이러한 stale 데이터는 기존 캐시 노드에 남아 있더라도 더 이상 접근되지 않으므로 대부분 문제가 없다.
+하지만, 새로 추가한 캐시 노드가 어떤 이유로 다운되고 ARCUS 캐시 클러스터에서 제거된다면 stale 데이터가 다시 접근될 수 있는 문제가 발생한다.
+결국, 이러한 stale 데이터를 제거하여야 한다.
+
+Expire time이 짧은 stale 데이터는 자동으로 제거되지만, 그렇지 않은 stale 데이터가 항상 존재할 수 있다.
+ARCUS 캐시 클러스터는 새로운 캐시 노드가 추가될 때마다 기존의 캐시 노드들은 모두 30초 후에 자신의 노드에서 stale 데이터를 찾아 제거하는 작업을 자동으로 수행한다.
+이를 automatic scrub 작업이라 한다. 이를 위해, ARCUS 캐시 노드는 캐시 클라이언트와 마찬가지로 키 분배(캐시 데이터 분배)를 위한 consistent hashing 로직을 동일하게 가지며,
+ZooKeeper Watcher를 통해 캐시 노드가 추가된 시점을 확인하면 background thread를 생성하여 자신 노드에 있는 모든 캐시 데이터를 순차 접근하면서 stale 데이터를 찾아 제거한다.
+
+stale 데이터 노출 관점
+- Automatic scrub 작업이 완료될 때까지 새로 추가한 캐시 노드가 다운되지 않는다면 stale 데이터는 노출되지 않는다.
+- Automatic scrub 작업이 완료되기 전에 새로 추가한 캐시 노드가 다운되어 ARCUS 캐시 클러스터에서 제거된다면, stale 데이터가 노출될 수 있다.
+- Automatic scrub 작업은 모든 캐시 데이터를 순차 접근하여 stale 여부를 검사하므로, 일정 시간이 소요된다.
+하지만, Automatic scrub 작업의 완료 전에 새로 추가된 캐시 노드가 다운되는 경우는 극히 드물다.
+
+참고로 명시적으로 수행할 수 있는 `scrub stale` 명령을 제공하고 있다. [Admin 명령](ch03-item-attributes.md)
