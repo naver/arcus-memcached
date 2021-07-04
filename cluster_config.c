@@ -244,6 +244,7 @@ static void do_node_item_init(struct node_item *item, const char *node_name,
                               uint8_t node_state, uint8_t slice_state)
 {
     strncpy(item->ndname, node_name, MAX_NODE_NAME_LENGTH);
+    item->ndname[MAX_NODE_NAME_LENGTH] = '\0'; /* See strncpy() manual */
     item->refcnt = 0;
     item->dup_hp = gen_node_continuum(item->hslice, item->ndname);
     item->flags = 0;
