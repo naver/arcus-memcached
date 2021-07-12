@@ -630,7 +630,7 @@ arcus_zk_log(zhandle_t *zh, const char *action)
     int     rc;
     char    zpath[200] = "";
     char    rcbuf[200] = "";
-    char    sbuf[200] = "";
+    char    sbuf[128] = "";
 
     struct timeval now;
     struct tm      *ltm;
