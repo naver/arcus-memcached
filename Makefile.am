@@ -123,6 +123,7 @@ memcached_SOURCES += $(demo_engine_la_SOURCES)
 endif
 
 if BUILD_ZK_INTEGRATION
+memcached_DEPENDENCIES += libarcuszk.a
 memcached_SOURCES += arcus_zk.h arcus_hb.h
 memcached_LDADD += libarcuszk.a -lzookeeper_mt
 noinst_LIBRARIES = libarcuszk.a
