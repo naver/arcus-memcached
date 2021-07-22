@@ -607,6 +607,12 @@ void dispatch_conn_new(int sfd, STATE_FUNC init_state, int event_flags,
                        int read_buffer_size, enum network_transport transport)
 {
     CQ_ITEM *item = cqi_new();
+    if (item == NULL) {
+        close(sfd);
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                       "Failed to allocate memory for connection object.\n");
+        return;
+    }
     int tid = (last_thread + 1) % settings.num_threads;
 
     LIBEVENT_THREAD *thread = threads + tid;
