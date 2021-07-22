@@ -15405,7 +15405,7 @@ int main (int argc, char **argv)
 
 #ifdef DETECT_LONG_QUERY
     /* initialize long query detection */
-    if (lqdetect_init() == -1) {
+    if (lqdetect_init(mc_logger) == -1) {
         mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Can't allocate long query detection buffer\n");
         exit(EXIT_FAILURE);

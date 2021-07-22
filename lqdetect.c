@@ -78,8 +78,9 @@ static void do_lqdetect_stop(int cause)
     lqdetect.on_detecting = false;
 }
 
-int lqdetect_init()
+int lqdetect_init(EXTENSION_LOGGER_DESCRIPTOR *logger)
 {
+    mc_logger = logger;
     int ii, jj;
     pthread_mutex_init(&lqdetect.lock, NULL);
     lqdetect.on_detecting = false;

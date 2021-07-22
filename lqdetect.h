@@ -47,7 +47,7 @@ struct lq_detect_stats {
     uint32_t standard;
 };
 
-int lqdetect_init(void);
+int lqdetect_init(EXTENSION_LOGGER_DESCRIPTOR *logger);
 void lqdetect_final(void);
 char *lqdetect_buffer_get(int cmd, uint32_t *length, uint32_t *cmdcnt);
 void lqdetect_buffer_release(int bufcnt);
