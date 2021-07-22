@@ -317,11 +317,17 @@ default_item_allocate(ENGINE_HANDLE* handle, const void* cookie,
                       const int flags, const rel_time_t exptime,
                       const uint64_t cas)
 {
+#ifndef ENABLE_LARGE_ITEM
     uint32_t ntotal = item_kv_size(nkey, nbytes);
     unsigned int id = slabs_clsid(ntotal);
     if (id == 0) {
         return ENGINE_E2BIG;
     }
+#else
+    if (nbytes > MAX_ITEM_VALUE_LENGTH) {
+        return ENGINE_E2BIG;
+    }
+#endif
 
     hash_item *it;
     ENGINE_ERROR_CODE ret = ENGINE_EINVAL;
@@ -363,7 +369,20 @@ default_item_delete(ENGINE_HANDLE* handle, const void* cookie,
 static void
 default_item_release(ENGINE_HANDLE* handle, const void *cookie, item* item)
 {
+#ifdef ENABLE_LARGE_ITEM
+    hash_item *it = get_real_item(item);
+    if (IS_LARGE_SIZE(it->nbytes)) {
+        large_pa *pa = (large_pa *)((char *)item_get_key(it) + META_OFFSET_IN_ITEM(it->nkey, 2)
+                     + sizeof(list_meta_info) + sizeof(value_item) + 2);
+        if (pa->addnl != NULL) {
+            free(pa->addnl);
+            pa->addnl = NULL;
+        }
+    }
+    item_release(it);
+#else
     item_release(get_real_item(item));
+#endif
 }
 
 static ENGINE_ERROR_CODE
@@ -399,6 +418,16 @@ default_store(ENGINE_HANDLE* handle, const void *cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+#ifdef ENABLE_LARGE_ITEM
+    if (IS_LARGE_SIZE(it->nbytes)) {
+        large_pa *pa = (large_pa *)((char *)item_get_key(it) + META_OFFSET_IN_ITEM(it->nkey, 2)
+                     + sizeof(list_meta_info) + sizeof(value_item) + 2);
+        if (pa->addnl != NULL) {
+            free(pa->addnl);
+            pa->addnl = NULL;
+        }
+    }
+#endif
     ACTION_BEFORE_WRITE(cookie, item_get_key(it), it->nkey);
     ret = item_store(it, cas, operation, cookie);
     ACTION_AFTER_WRITE(cookie, engine, ret);
@@ -1660,6 +1689,44 @@ default_scrub_stale(ENGINE_HANDLE* handle)
 
 /* Item/Elem Info */
 
+#ifdef ENABLE_LARGE_ITEM
+static bool
+get_large_item_info(hash_item *it, item_info *item_info)
+{
+    int count = 0;
+    list_meta_info *info = (list_meta_info *)item_get_meta(it);
+    list_elem_item *elem = info->head;
+    large_pa *pa = (large_pa *)((char *)item_get_key(it) + META_OFFSET_IN_ITEM(it->nkey, 2)
+                 + sizeof(list_meta_info) + sizeof(value_item) + 2);
+
+    item_info->naddnl = info->ccnt + 1;
+    item_info->nvalue = 0;
+
+    if (pa->addnl != NULL) {
+        return true;
+    }
+
+    pa->addnl = (value_item **)malloc(sizeof(value_item *) * item_info->naddnl);
+    item_info->addnl = pa->addnl;
+    if (item_info->addnl == NULL) {
+        return false;
+    }
+
+    while (elem != NULL) {
+        item_info->addnl[count] = (value_item *)((char *)elem + offsetof(list_elem_item, nbytes));
+        item_info->addnl[count]->len = elem->nbytes;
+        count++;
+        elem = elem->next;
+    }
+    item_info->addnl[count] = (value_item *)((char *)item_get_key(it)
+                            + META_OFFSET_IN_ITEM(it->nkey, 2) + sizeof(list_meta_info));
+    count++;
+    assert(count == item_info->naddnl);
+
+    return true;
+}
+#endif
+
 static bool
 get_item_info(ENGINE_HANDLE *handle, const void *cookie,
               const item* item, item_info *item_info)
@@ -1676,7 +1743,15 @@ get_item_info(ENGINE_HANDLE *handle, const void *cookie,
     item_info->naddnl = 0;
     item_info->key = item_get_key(it);
     item_info->value = item_get_data(it);
+#ifdef ENABLE_LARGE_ITEM
+    if (IS_LARGE_SIZE(it->nbytes)) {
+        return get_large_item_info(it, item_info);
+    } else {
+        item_info->addnl = NULL;
+    }
+#else
     item_info->addnl = NULL;
+#endif
     return true;
 }
 
