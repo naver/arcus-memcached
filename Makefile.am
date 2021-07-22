@@ -173,7 +173,9 @@ default_engine_la_SOURCES= \
                     engines/default/coll_btree.c \
                     engines/default/coll_btree.h \
                     engines/default/slabs.c \
-                    engines/default/slabs.h
+                    engines/default/slabs.h \
+                    engines/default/mem_pool.c \
+                    engines/default/mem_pool.h
 default_engine_la_DEPENDENCIES= libmcd_util.la
 default_engine_la_LIBADD= libmcd_util.la $(LIBM)
 default_engine_la_LDFLAGS= -avoid-version -shared -module -no-undefined
