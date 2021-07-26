@@ -72,6 +72,7 @@
 ./t/item_size_max.t
 ./t/line-lengths.t
 ./t/longkey.t
+./t/long_query_detect_issue.t
 ./t/lru.t
 ./t/maxconns.t
 ./t/mget2.t

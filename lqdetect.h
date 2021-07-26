@@ -7,7 +7,8 @@
 #define DETECT_LONG_QUERY
 #define LONGQ_STAT_STRLEN       300
 #define LONGQ_STANDARD_DEFAULT  4000        /* defulat detect standard */
-#define LONGQ_RANGE_SIZE        (31*2+10*2)
+/* longest range: "<longest bkey>..<longest bkey> efilter" */
+#define LONGQ_RANGE_SIZE        (64*2+16)
 
 #define LONGQ_EXPLICIT_STOP     0    /* stop by user request */
 #define LONGQ_OVERFLOW_STOP     1    /* stop by detected command overflow (buffer or count)*/
