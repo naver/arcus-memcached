@@ -191,6 +191,11 @@ static ENGINE_ERROR_CODE do_item_store_attach(hash_item *it, uint64_t *cas,
                item_get_cas(it) != item_get_cas(old_it)) {
         // CAS much be equal
         stored = ENGINE_KEY_EEXISTS;
+#ifdef ENABLE_LARGE_ITEM
+    } else if (IS_LARGE_SIZE(it->nbytes) || IS_LARGE_SIZE(old_it->nbytes) ||
+               IS_LARGE_SIZE(it->nbytes + old_it->nbytes)) {
+        stored = do_large_item_attach(old_it, it, cas, operation, cookie);
+#endif
     } else {
         /* we have it and old_it here - alloc memory to hold both */
         hash_item *new_it = do_item_alloc(item_get_key(it), it->nkey,
@@ -284,7 +289,15 @@ hash_item *item_alloc(const void *key, const uint32_t nkey,
     hash_item *it;
     LOCK_CACHE();
     /* key can be NULL */
+#ifdef ENABLE_LARGE_ITEM
+    if (IS_LARGE_SIZE(nbytes)) {
+        it = do_large_item_alloc(key, nkey, flags, exptime, nbytes, cookie);
+    } else {
+        it = do_item_alloc(key, nkey, flags, exptime, nbytes, cookie);
+    }
+#else
     it = do_item_alloc(key, nkey, flags, exptime, nbytes, cookie);
+#endif
     UNLOCK_CACHE();
     return it;
 }

@@ -116,6 +116,9 @@ enum elem_delete_cause {
 #define IS_SET_ITEM(it)   (((it)->iflag & ITEM_IFLAG_COLL) == ITEM_IFLAG_SET)
 #define IS_MAP_ITEM(it)   (((it)->iflag & ITEM_IFLAG_COLL) == ITEM_IFLAG_MAP)
 #define IS_BTREE_ITEM(it) (((it)->iflag & ITEM_IFLAG_COLL) == ITEM_IFLAG_BTREE)
+#ifdef ENABLE_LARGE_ITEM
+#define IS_LARGE_SIZE(nbytes) ((nbytes) >= LARGE_ITEM_VALUE_LENGTH)
+#endif
 #define IS_COLL_ITEM(it)  (((it)->iflag & ITEM_IFLAG_COLL) != 0)
 
 /* collection meta flag */
@@ -377,6 +380,16 @@ hash_item *do_item_alloc(const void *key, const uint32_t nkey,
                          const uint32_t flags, const rel_time_t exptime,
                          const uint32_t nbytes, const void *cookie);
 void       do_item_free(hash_item *it);
+
+#ifdef ENABLE_LARGE_ITEM
+/* large item functions */
+hash_item *do_large_item_alloc(const void *key, const uint32_t nkey,
+                               const uint32_t flags, const rel_time_t exptime,
+                               const uint32_t nbytes, const void *cookie);
+ENGINE_ERROR_CODE do_large_item_attach(hash_item *old_it, hash_item *new_it,
+                                       uint64_t *cas, ENGINE_STORE_OPERATION operation,
+                                       const void *cookie);
+#endif
 
 ENGINE_ERROR_CODE do_item_link(hash_item *it);
 void              do_item_unlink(hash_item *it, enum item_unlink_cause cause);
