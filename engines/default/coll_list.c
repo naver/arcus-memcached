@@ -89,12 +89,31 @@ static int32_t do_list_real_maxcount(int32_t maxcount)
     return real_maxcount;
 }
 
+#ifdef ENABLE_LARGE_ITEM
+static hash_item *do_list_item_alloc(const void *key, const uint32_t nkey,
+                                     item_attr *attrp, bool large_item,
+                                     const void *cookie)
+#else
 static hash_item *do_list_item_alloc(const void *key, const uint32_t nkey,
                                      item_attr *attrp, const void *cookie)
+#endif
 {
     uint32_t nbytes = 2; /* "\r\n" */
+#ifdef ENABLE_LARGE_ITEM
+    uint32_t real_nbytes;
+
+    if (large_item) {
+        real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)
+                    + sizeof(list_meta_info) + sizeof(value_item) /* "\r\n" */
+                    - nkey;
+    } else {
+        real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)
+                    + sizeof(list_meta_info) - nkey;
+    }
+#else
     uint32_t real_nbytes = META_OFFSET_IN_ITEM(nkey,nbytes)
                          + sizeof(list_meta_info) - nkey;
+#endif
 
     hash_item *it = do_item_alloc(key, nkey, attrp->flags, attrp->exptime,
                                   real_nbytes, cookie);
@@ -117,6 +136,16 @@ static hash_item *do_list_item_alloc(const void *key, const uint32_t nkey,
         info->stotal  = 0;
         info->head = info->tail = NULL;
         assert((hash_item*)COLL_GET_HASH_ITEM(info) == it);
+#ifdef ENABLE_LARGE_ITEM
+        if (large_item) {
+            value_item *addnl = (value_item *)((char*)item_get_key(it)
+                              + META_OFFSET_IN_ITEM(it->nkey, 2) + sizeof(list_meta_info));
+            if (addnl != NULL) {
+                addnl->len = 2;
+                memcpy(addnl->ptr, "\r\n", 2);
+            }
+        }
+#endif
     }
     return it;
 }
@@ -207,8 +236,13 @@ static ENGINE_ERROR_CODE do_list_elem_link(list_meta_info *info, const int index
     return ENGINE_SUCCESS;
 }
 
+#ifdef ENABLE_LARGE_ITEM
+static void do_list_elem_unlink(list_meta_info *info, list_elem_item *elem,
+                                bool large_item, enum elem_delete_cause cause)
+#else
 static void do_list_elem_unlink(list_meta_info *info, list_elem_item *elem,
                                 enum elem_delete_cause cause)
+#endif
 {
     /* if (elem->next != (list_elem_item *)ADDR_MEANS_UNLINKED) */
     {
@@ -219,7 +253,11 @@ static void do_list_elem_unlink(list_meta_info *info, list_elem_item *elem,
         elem->prev = elem->next = (list_elem_item *)ADDR_MEANS_UNLINKED;
         info->ccnt--;
 
+#ifdef ENABLE_LARGE_ITEM
+        if (info->stotal > 0 && !large_item) { /* apply memory space */
+#else
         if (info->stotal > 0) { /* apply memory space */
+#endif
             size_t stotal = slabs_space_size(do_list_elem_ntotal(elem));
             do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_LIST, stotal);
         }
@@ -230,9 +268,15 @@ static void do_list_elem_unlink(list_meta_info *info, list_elem_item *elem,
     }
 }
 
+#ifdef ENABLE_LARGE_ITEM
+static uint32_t do_list_elem_delete(list_meta_info *info, const int index,
+                                    const uint32_t count, bool large_item,
+                                    enum elem_delete_cause cause)
+#else
 static uint32_t do_list_elem_delete(list_meta_info *info,
                                     const int index, const uint32_t count,
                                     enum elem_delete_cause cause)
+#endif
 {
     list_elem_item *elem;
     list_elem_item *next;
@@ -244,7 +288,11 @@ static uint32_t do_list_elem_delete(list_meta_info *info,
     while (elem != NULL) {
         next = elem->next;
         fcnt++;
+#ifdef ENABLE_LARGE_ITEM
+        do_list_elem_unlink(info, elem, large_item, cause);
+#else
         do_list_elem_unlink(info, elem, cause);
+#endif
         if (count > 0 && fcnt >= count) break;
         elem = next;
     }
@@ -270,7 +318,11 @@ static uint32_t do_list_elem_get(list_meta_info *info,
         tobe = (forward ? elem->next : elem->prev);
         elem->refcount++;
         elem_array[fcnt++] = elem;
+#ifdef ENABLE_LARGE_ITEM
+        if (delete) do_list_elem_unlink(info, elem, false, cause);
+#else
         if (delete) do_list_elem_unlink(info, elem, cause);
+#endif
         if (count > 0 && fcnt >= count) break;
         elem = tobe;
     }
@@ -317,12 +369,20 @@ static ENGINE_ERROR_CODE do_list_elem_insert(hash_item *it,
         if (index == 0 || index == -1) {
             /* delete an element item of opposite side to make room */
             delidx = (index == -1 ? 0 : info->ccnt-1);
+#ifdef ENABLE_LARGE_ITEM
+            delcnt = do_list_elem_delete(info, delidx, 1, false, ELEM_DELETE_TRIM);
+#else
             delcnt = do_list_elem_delete(info, delidx, 1, ELEM_DELETE_TRIM);
+#endif
             assert(delcnt == 1);
         } else {
             /* delete an element item that overflow action indicates */
             delidx = (info->ovflact == OVFL_HEAD_TRIM ? 0 : info->ccnt-1);
+#ifdef ENABLE_LARGE_ITEM
+            delcnt = do_list_elem_delete(info, delidx, 1, false, ELEM_DELETE_TRIM);
+#else
             delcnt = do_list_elem_delete(info, delidx, 1, ELEM_DELETE_TRIM);
+#endif
             assert(delcnt == 1);
             /* adjust list index value */
             if (info->ovflact == OVFL_HEAD_TRIM) {
@@ -364,7 +424,11 @@ ENGINE_ERROR_CODE list_struct_create(const char *key, const uint32_t nkey,
         do_item_release(it);
         ret = ENGINE_KEY_EEXISTS;
     } else {
+#ifdef ENABLE_LARGE_ITEM
+        it = do_list_item_alloc(key, nkey, attrp, false, cookie);
+#else
         it = do_list_item_alloc(key, nkey, attrp, cookie);
+#endif
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
@@ -411,6 +475,217 @@ void list_elem_release(list_elem_item **elem_array, const int elem_count)
     UNLOCK_CACHE();
 }
 
+#ifdef ENABLE_LARGE_ITEM
+hash_item *list_large_item_alloc(const void* key, const int nkey,
+                                 item_attr *attrp, uint32_t nbytes,
+                                 const void *cookie)
+{
+    uint32_t total = nbytes;
+    hash_item *it;
+    list_elem_item *elem;
+
+    it = do_list_item_alloc(key, nkey, attrp, true, cookie);
+    if (it == NULL) {
+        return NULL;
+    }
+
+    list_meta_info *info = (list_meta_info *)item_get_meta(it);
+    it->nbytes = nbytes;
+
+    while (total > 0) {
+        nbytes = (total >= config->max_element_bytes ? config->max_element_bytes : total);
+        elem = do_list_elem_alloc(nbytes, cookie);
+        if (elem == NULL) {
+            do_item_free(it);
+            it = NULL;
+            break;
+        }
+        elem->next = NULL;
+        if (info->tail == NULL) {
+            elem->prev = NULL;
+            info->head = elem;
+            info->tail = elem;
+        } else {
+            elem->prev = info->tail;
+            info->tail->next = elem;
+            info->tail = elem;
+        }
+        info->stotal += sizeof(list_elem_item) + nbytes;
+        info->ccnt++;
+        total -= nbytes;
+    }
+
+    if (it) {
+        assert(total == 0);
+        it->iflag &= ~ITEM_IFLAG_LIST;
+        value_item *CRLF = (value_item *)((char *)item_get_key(it) + META_OFFSET_IN_ITEM(it->nkey, 2)
+                         + sizeof(list_meta_info));
+        CRLF->len = 2;
+        memcpy(CRLF->ptr, "\r\n", 2);
+    }
+
+    return it;
+}
+
+/* The old_it of this function must be a large kv item. */
+ENGINE_ERROR_CODE list_large_item_attach(hash_item *old_it, hash_item *attach_it,
+                                         ENGINE_STORE_OPERATION operation, bool update,
+                                         const void *cookie)
+{
+    assert(old_it != NULL && attach_it != NULL);
+    uint32_t add_stotal = 0;
+    uint32_t add_ccnt = 0;
+    uint32_t add_nbytes = 0;
+    /* new_it->nbytes can be smaller than MIN_LARGE_ITEM_SIZE */
+    list_meta_info *old_info = (list_meta_info *)((char *)item_get_key(old_it)
+                             + META_OFFSET_IN_ITEM(old_it->nkey, 2));
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    if (IS_LARGE_SIZE(attach_it->nbytes)) {
+        /* large + large */
+        list_meta_info *attach_info = (list_meta_info *)item_get_meta(attach_it);
+        if (operation == OPERATION_APPEND) {
+            old_info->tail->next = attach_info->head;
+            attach_info->head->prev = old_info->tail;
+            old_info->tail = attach_info->tail;
+        } else {
+            /* OPERATION_PREPEND */
+            old_info->head->prev = attach_info->tail;
+            attach_info->tail->next = old_info->head;
+            old_info->head = attach_info->head;
+        }
+        add_stotal += attach_info->stotal;
+        add_ccnt += attach_info->ccnt;
+        add_nbytes += attach_it->nbytes;
+
+        attach_info->head = attach_info->tail = NULL;
+        attach_info->ccnt = 0;
+    } else {
+        /* large + kv */
+        char *data = item_get_data(attach_it);
+        uint32_t nbytes;
+        uint32_t total = attach_it->nbytes - 2; /* CRLF */
+        list_elem_item *elem;
+        list_elem_item *head = NULL;
+        list_elem_item *tail = NULL;
+        list_elem_item *new_elem = NULL;
+        list_elem_item *del_elem = NULL;
+        add_nbytes = total;
+
+        if (total <= 0) {
+            /* normal terminate because don't need to create a new element */
+            do_item_unlink(old_it, ITEM_UNLINK_REPLACE);
+            return ENGINE_SUCCESS;
+        }
+
+        /* element merge */
+        if (old_info->tail->nbytes < config->max_element_bytes ||
+            old_info->head->nbytes < config->max_element_bytes) {
+
+            del_elem = (operation == OPERATION_APPEND ? old_info->tail : old_info->head);
+            nbytes = (config->max_element_bytes - del_elem->nbytes > total ? total : config->max_element_bytes - del_elem->nbytes);
+
+            new_elem = do_list_elem_alloc(del_elem->nbytes + nbytes, cookie);
+            if (new_elem == NULL) {
+                return ENGINE_ENOMEM;
+            }
+
+            if (operation == OPERATION_APPEND) {
+                memcpy(new_elem->value, del_elem->value, del_elem->nbytes);
+                memcpy(new_elem->value + del_elem->nbytes, data, nbytes);
+            } else {
+                /* OPERATION_PREPEND */
+                memcpy(new_elem->value, data, nbytes);
+                memcpy(new_elem->value + nbytes, del_elem->value, del_elem->nbytes);
+            }
+
+            data += nbytes;
+            total -= nbytes;
+        }
+
+        while (total > 0) {
+            nbytes = (total >= config->max_element_bytes ? config->max_element_bytes : total);
+            elem = do_list_elem_alloc(nbytes, cookie);
+            if (elem == NULL) {
+                ret = ENGINE_ENOMEM;
+                break;
+            }
+            memcpy(elem->value, data, nbytes);
+            elem->next = NULL;
+            if (tail == NULL) {
+                elem->prev = NULL;
+                head = elem;
+                tail = elem;
+            } else {
+                elem->prev = tail;
+                tail->next = elem;
+                tail = elem;
+            }
+            data += nbytes;
+            add_stotal += sizeof(list_elem_item) + nbytes;
+            add_ccnt++;
+            total -= nbytes;
+        }
+        assert(total == 0);
+
+        if (ret != ENGINE_SUCCESS) {
+            do_list_elem_free(new_elem);
+            /* free allocated all elements */
+            while (head != NULL) {
+                elem = head->next;
+                do_list_elem_free(elem);
+                head = elem;
+            }
+            return ret;
+        }
+
+        if (del_elem != NULL) {
+            if (operation == OPERATION_APPEND) {
+                del_elem->prev->next = new_elem;
+                new_elem->prev = del_elem->prev;
+                old_info->tail = new_elem;
+            } else {
+                /* OPERATION_PREPEND */
+                del_elem->next->prev = new_elem;
+                new_elem->next = del_elem->next;
+                old_info->head = new_elem;
+            }
+            do_list_elem_free(del_elem);
+            add_stotal += nbytes;
+        }
+        if (head != NULL && tail != NULL) {
+            if (operation == OPERATION_APPEND) {
+                old_info->tail->next = head;
+                head->prev = old_info->tail;
+                old_info->tail = tail;
+            } else {
+                /* OPERATION_PREPEND */
+                old_info->head->prev = tail;
+                tail->next = old_info->head;
+                old_info->head = head;
+            }
+        }
+    }
+
+    if (ret == ENGINE_SUCCESS) {
+        if (update) {
+            /* unlink for relink to the updated old item */
+            do_item_unlink(old_it, ITEM_UNLINK_REPLACE);
+        }
+        old_info->head->prev = old_info->tail->next = NULL;
+        old_info->stotal += add_stotal;
+        old_info->ccnt += add_ccnt;
+        old_it->nbytes += add_nbytes;
+    }
+    return ret;
+}
+
+uint32_t large_elem_delete_with_count(list_meta_info *info, const uint32_t count)
+{
+    return do_list_elem_delete(info, 0, count, true, ELEM_DELETE_COLL);
+}
+#endif
+
 ENGINE_ERROR_CODE list_elem_insert(const char *key, const uint32_t nkey,
                                    int index, list_elem_item *elem,
                                    item_attr *attrp,
@@ -425,7 +700,11 @@ ENGINE_ERROR_CODE list_elem_insert(const char *key, const uint32_t nkey,
     LOCK_CACHE();
     ret = do_list_item_find(key, nkey, DONT_UPDATE, &it);
     if (ret == ENGINE_KEY_ENOENT && attrp != NULL) {
+#ifdef ENABLE_LARGE_ITEM
+        it = do_list_item_alloc(key, nkey, attrp, false, cookie);
+#else
         it = do_list_item_alloc(key, nkey, attrp, cookie);
+#endif
         if (it == NULL) {
             ret = ENGINE_ENOMEM;
         } else {
@@ -508,7 +787,11 @@ ENGINE_ERROR_CODE list_elem_delete(const char *key, const uint32_t nkey,
                 count = from_index - to_index + 1;
             }
 
+#ifdef ENABLE_LARGE_ITEM
+            *del_count = do_list_elem_delete(info, index, count, false, ELEM_DELETE_NORMAL);
+#else
             *del_count = do_list_elem_delete(info, index, count, ELEM_DELETE_NORMAL);
+#endif
             if (*del_count > 0) {
                 if (info->ccnt == 0 && drop_if_empty) {
                     do_item_unlink(it, ITEM_UNLINK_NORMAL);
@@ -591,7 +874,11 @@ ENGINE_ERROR_CODE list_elem_get(const char *key, const uint32_t nkey,
 
 uint32_t list_elem_delete_with_count(list_meta_info *info, const uint32_t count)
 {
+#ifdef ENABLE_LARGE_ITEM
+    return do_list_elem_delete(info, 0, count, false, ELEM_DELETE_COLL);
+#else
     return do_list_elem_delete(info, 0, count, ELEM_DELETE_COLL);
+#endif
 }
 
 /* See do_list_elem_delete. */
@@ -689,7 +976,11 @@ ENGINE_ERROR_CODE list_apply_item_link(void *engine, const char *key, const uint
         do_item_unlink(old_it, ITEM_UNLINK_NORMAL);
         do_item_release(old_it);
     }
+#ifdef ENABLE_LARGE_ITEM
+    new_it = do_list_item_alloc(key, nkey, attrp, false, NULL); /* cookie is NULL */
+#else
     new_it = do_list_item_alloc(key, nkey, attrp, NULL); /* cookie is NULL */
+#endif
     if (new_it) {
         /* Link the new item into the hash table */
         ret = do_item_link(new_it);
@@ -797,7 +1088,11 @@ ENGINE_ERROR_CODE list_apply_elem_delete(void *engine, hash_item *it,
             ret = ENGINE_EINVAL; break;
         }
 
+#ifdef ENABLE_LARGE_ITEM
+        ndeleted = do_list_elem_delete(info, index, count, false, ELEM_DELETE_NORMAL);
+#else
         ndeleted = do_list_elem_delete(info, index, count, ELEM_DELETE_NORMAL);
+#endif
         if (ndeleted == 0) {
             logger->log(EXTENSION_LOG_INFO, NULL, "list_apply_elem_delete failed."
                         " no element deleted. key=%.*s nkey=%u index=%d count=%d\n",

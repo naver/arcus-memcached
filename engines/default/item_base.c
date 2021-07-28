@@ -137,7 +137,16 @@ static inline size_t ITEM_ntotal(const hash_item *item)
         else if (IS_MAP_ITEM(item)) ntotal += sizeof(map_meta_info);
         else /* BTREE_ITEM */       ntotal += sizeof(btree_meta_info);
     } else {
+#ifdef ENABLE_LARGE_ITEM
+        if (IS_LARGE_SIZE(item->nbytes)) {
+            ntotal += META_OFFSET_IN_ITEM(item->nkey, 2) + sizeof(list_meta_info)
+                    + sizeof(value_item);
+        } else {
+            ntotal += (item->nkey + item->nbytes);
+        }
+#else
         ntotal += (item->nkey + item->nbytes);
+#endif
     }
     return ntotal;
 }
@@ -146,7 +155,11 @@ static inline size_t ITEM_stotal(const hash_item *item)
 {
     size_t ntotal = ITEM_ntotal(item);
     size_t stotal = slabs_space_size(ntotal);
+#ifdef ENABLE_LARGE_ITEM
+    if (IS_COLL_ITEM(item) || IS_LARGE_SIZE(item->nbytes)) {
+#else
     if (IS_COLL_ITEM(item)) {
+#endif
         coll_meta_info *info = (coll_meta_info *)item_get_meta(item);
         stotal += info->stotal;
     }
@@ -445,7 +458,12 @@ static uint32_t do_coll_elem_delete_with_count(hash_item *it, uint32_t count)
             ndeleted = map_elem_delete_with_count((void *)info, count);
         } else if (IS_LIST_ITEM(it)) {
             ndeleted = list_elem_delete_with_count((void *)info, count);
+#ifdef ENABLE_LARGE_ITEM
+        } else if (IS_LARGE_SIZE(it->nbytes)) {
+            ndeleted = large_elem_delete_with_count((void *)info, count);
+#endif
         }
+
     }
     return ndeleted;
 }
@@ -975,7 +993,11 @@ void do_item_free(hash_item *it)
     assert(it != itemsp->tails[it->slabs_clsid]);
     assert(it->refcount == 0);
 
+#ifdef ENABLE_LARGE_ITEM
+    if (IS_COLL_ITEM(it) || IS_LARGE_SIZE(it->nbytes)) {
+#else
     if (IS_COLL_ITEM(it)) {
+#endif
         coll_meta_info *info = (coll_meta_info *)item_get_meta(it);
         if (info->ccnt > 0) { /* still NOT empty */
             push_coll_del_queue(it);
@@ -987,6 +1009,75 @@ void do_item_free(hash_item *it)
     DEBUG_REFCNT(it, 'F');
     do_item_mem_free(it, ITEM_ntotal(it));
 }
+
+#ifdef ENABLE_LARGE_ITEM
+hash_item *do_large_item_alloc(const void *key, const uint32_t nkey,
+                               const uint32_t flags, const rel_time_t exptime,
+                               const uint32_t nbytes, const void *cookie)
+{
+    assert(nkey > 0);
+    item_attr attrp;
+
+    attrp.flags = flags;
+    attrp.exptime = exptime;
+    attrp.maxcount = 0;
+    attrp.ovflaction = 0;
+    attrp.readable = 1;
+
+    return list_large_item_alloc(key, nkey, &attrp, nbytes - 2 /* CRLF */, cookie);
+}
+
+ENGINE_ERROR_CODE do_large_item_attach(hash_item *old_it, hash_item *it,
+                                       uint64_t *cas, ENGINE_STORE_OPERATION operation,
+                                       const void *cookie)
+{
+    if (old_it->nbytes + it->nbytes > MAX_ITEM_VALUE_LENGTH) {
+        return ENGINE_E2BIG;
+    }
+    ENGINE_ERROR_CODE ret;
+
+    if (IS_LARGE_SIZE(old_it->nbytes)) {
+        ret = list_large_item_attach(old_it, it, operation, true, cookie);
+        if (ret == ENGINE_SUCCESS) {
+            /* link to the updated old item */
+            do_item_link(old_it);
+            *cas = item_get_cas(old_it);
+        }
+    } else {
+        /* new item allocate due to list_large_item_attach function */
+        hash_item *new_it = do_large_item_alloc(item_get_key(old_it), old_it->nkey, old_it->flags,
+                                                old_it->exptime, old_it->nbytes, cookie);
+        if (new_it == NULL) {
+            return ENGINE_ENOMEM;
+        }
+        /* copy old item to allocated new item */
+        char *data = item_get_data(old_it);
+        uint32_t total = old_it->nbytes - 2; /* CRLF */
+        uint32_t nbytes;
+        /* new_it->nbytes can be smaller than MIN_LARGE_ITEM_SIZE */
+        list_meta_info *info = (list_meta_info *)((char *)item_get_key(new_it)
+                             + META_OFFSET_IN_ITEM(new_it->nkey, 2));
+        list_elem_item *elem = info->head;
+
+        while (total > 0) {
+            nbytes = (total >= config->max_element_bytes ? config->max_element_bytes : total);
+            assert(elem != NULL);
+            memcpy(elem->value, data, nbytes);
+            data += nbytes;
+            elem = elem->next;
+            total -= nbytes;
+        }
+        assert(total == 0);
+        ret = list_large_item_attach(new_it, it, operation, false, cookie);
+        if (ret == ENGINE_SUCCESS) {
+            do_item_replace(old_it, new_it);
+            *cas = item_get_cas(new_it);
+        }
+    }
+
+    return ret;
+}
+#endif
 
 //static ENGINE_ERROR_CODE do_item_link(hash_item *it)
 ENGINE_ERROR_CODE do_item_link(hash_item *it)
@@ -1019,7 +1110,13 @@ ENGINE_ERROR_CODE do_item_link(hash_item *it)
 
     /* link the item to LRU list */
     item_link_q(it);
+#ifdef ENABLE_LARGE_ITEM
+    if (!IS_LARGE_SIZE(it->nbytes)) {
+        CLOG_ITEM_LINK(it);
+    }
+#else
     CLOG_ITEM_LINK(it);
+#endif
 
     /* update item statistics */
     do_item_stat_link(it, stotal);
@@ -1036,7 +1133,13 @@ void do_item_unlink(hash_item *it, enum item_unlink_cause cause)
     MEMCACHED_ITEM_UNLINK(key, it->nkey, it->nbytes);
 
     if ((it->iflag & ITEM_LINKED) != 0) {
+#ifdef ENABLE_LARGE_ITEM
+        if (!IS_LARGE_SIZE(it->nbytes)) {
+            CLOG_ITEM_UNLINK(it, cause);
+        }
+#else
         CLOG_ITEM_UNLINK(it, cause);
+#endif
 
         /* unlink the item from LRU list */
         item_unlink_q(it);
@@ -1078,7 +1181,13 @@ void do_item_replace(hash_item *old_it, hash_item *new_it)
 
     assert((old_it->iflag & ITEM_LINKED) != 0);
 
+#ifdef ENABLE_LARGE_ITEM
+    if (!IS_LARGE_SIZE(old_it->nbytes)) {
+        CLOG_ITEM_UNLINK(old_it, ITEM_UNLINK_REPLACE);
+    }
+#else
     CLOG_ITEM_UNLINK(old_it, ITEM_UNLINK_REPLACE);
+#endif
 
     /* unlink the item from LRU list */
     item_unlink_q(old_it);
@@ -1127,7 +1236,13 @@ void do_item_replace(hash_item *old_it, hash_item *new_it)
 
     /* link the item to LRU list */
     item_link_q(new_it);
+#ifdef ENABLE_LARGE_ITEM
+    if (!IS_LARGE_SIZE(new_it->nbytes)) {
+        CLOG_ITEM_LINK(new_it);
+    }
+#else
     CLOG_ITEM_LINK(new_it);
+#endif
 }
 
 //static void do_item_update(hash_item *it, bool force)
@@ -1369,9 +1484,15 @@ char* item_get_data(const hash_item* item)
 
 const void* item_get_meta(const hash_item* item)
 {
+#ifdef ENABLE_LARGE_ITEM
+    if (IS_COLL_ITEM(item) || IS_LARGE_SIZE(item->nbytes))
+        return (void*)((char*)item_get_key(item) +
+                       META_OFFSET_IN_ITEM(item->nkey, 2)); /* "\r\n" */
+#else
     if (IS_COLL_ITEM(item))
         return (void*)((char*)item_get_key(item) +
                        META_OFFSET_IN_ITEM(item->nkey, item->nbytes));
+#endif
     else
         return NULL;
 }
