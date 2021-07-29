@@ -218,7 +218,7 @@ static void create_worker(void *(*func)(void *), void *arg, pthread_t *id)
 static void setup_thread(LIBEVENT_THREAD *me)
 {
     me->type = GENERAL;
-    me->base = event_init();
+    me->base = event_base_new();
     if (! me->base) {
         mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                        "Can't allocate event base\n");
@@ -308,6 +308,7 @@ static void *worker_libevent(void *arg)
     }
     token_buff_destroy(&me->token_buff);
     mblck_pool_destroy(&me->mblck_pool);
+    event_base_free(me->base);
     return NULL;
 }
 
