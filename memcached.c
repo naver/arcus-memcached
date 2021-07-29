@@ -15352,7 +15352,7 @@ int main (int argc, char **argv)
     }
 
     /* initialize main thread libevent instance */
-    main_base = event_init();
+    main_base = event_base_new();
 
     /* initialize other stuff */
     stats_init();
@@ -15572,6 +15572,7 @@ int main (int argc, char **argv)
         free(settings.inter);
     }
 
+    event_base_free(main_base);
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Arcus memcached terminated.\n");
     return EXIT_SUCCESS;
 }
