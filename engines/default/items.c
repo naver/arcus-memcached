@@ -677,9 +677,9 @@ void item_stats(ADD_STAT add_stat, const void *cookie)
         add_statistics(cookie, add_stat, prefix, i, "outofmemory",
                        "%u", itemsp->itemstats[i].outofmemory);
         add_statistics(cookie, add_stat, prefix, i, "tailrepairs",
-                       "%u", itemsp->itemstats[i].tailrepairs);;
+                       "%u", itemsp->itemstats[i].tailrepairs);
         add_statistics(cookie, add_stat, prefix, i, "reclaimed",
-                       "%u", itemsp->itemstats[i].reclaimed);;
+                       "%u", itemsp->itemstats[i].reclaimed);
     }
     UNLOCK_CACHE();
 }
@@ -1539,7 +1539,7 @@ done:
 
 static enum dump_mode do_item_dump_mode_check(const char *modestr)
 {
-    enum dump_mode mode = DUMP_MODE_MAX;;
+    enum dump_mode mode = DUMP_MODE_MAX;
 
     if (memcmp(modestr, "key", 3) == 0) {
         mode = DUMP_MODE_KEY;
