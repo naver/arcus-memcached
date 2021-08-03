@@ -62,7 +62,8 @@ struct cmd_log_global {
     struct cmd_log_buffer buffer;
     struct cmd_log_flush flush;
     struct cmd_log_stats stats;
-    bool on_logging; /* true or false : logging start condition */
+    volatile bool reqstop;
+    volatile bool on_logging; /* true or false : logging start condition */
 };
 struct cmd_log_global cmdlog;
 
@@ -153,7 +154,7 @@ static void *cmdlog_flush_thread()
     int writelen;
     int nwritten;
 
-    while (1)
+    while (!cmdlog.reqstop)
     {
         if (fd < 0) { /* open command log file */
             sprintf(fname, CMDLOG_FILENAME_FORMAT, cmdlog.stats.dirpath,
@@ -227,6 +228,10 @@ static void *cmdlog_flush_thread()
         pthread_mutex_unlock(&cmdlog.lock);
     }
     if (fd > 0) close(fd);
+    if (cmdlog.reqstop) {
+        // cmdlog_final() checks flush thread is terminated
+        cmdlog.stats.state = CMDLOG_NOT_STARTED;
+    }
     return NULL;
 }
 
@@ -251,6 +256,11 @@ void cmdlog_init(int port, EXTENSION_LOGGER_DESCRIPTOR *logger)
 
 void cmdlog_final()
 {
+    while (cmdlog.stats.state == CMDLOG_RUNNING) {
+        cmdlog.reqstop = true;
+        do_cmdlog_flush_wakeup(); /* wake up flush thread */
+        usleep(5000); /* sleep 5ms */
+    }
     pthread_mutex_destroy(&cmdlog.buffer.lock);
     pthread_mutex_destroy(&cmdlog.lock);
     pthread_mutex_destroy(&cmdlog.flush.lock);
@@ -345,15 +355,37 @@ void cmdlog_stop(bool *already_stopped)
     pthread_mutex_unlock(&cmdlog.lock);
 }
 
-struct cmd_log_stats *cmdlog_stats()
+char *cmdlog_stats(void)
 {
-    struct cmd_log_stats *stats = &cmdlog.stats;
+    char *str = (char*)malloc(CMDLOG_INPUT_SIZE);
+    if (str) {
+        char *state_str[5] = { "Not started",                      // CMDLOG_NOT_STARTED
+                               "stopped by explicit request",      // CMDLOG_EXPLICIT_STOP
+                               "stopped by command log overflow",  // CMDLOG_OVERFLOW_STOP
+                               "stopped by disk flush error",      // CMDLOG_FLUSHERR_STOP
+                               "running" };                        // CMDLOG_RUNNING
 
-    if (cmdlog.on_logging) {
-        stats->enddate = getnowdate();
-        stats->endtime = getnowtime();
+        struct cmd_log_stats *stats = &cmdlog.stats;
+        if (cmdlog.on_logging) {
+            stats->enddate = getnowdate();
+            stats->endtime = getnowtime();
+        }
+
+        snprintf(str, CMDLOG_INPUT_SIZE,
+                "\t" "Command logging state : %s" "\n"
+                "\t" "The last running time : %d_%d ~ %d_%d" "\n"
+                "\t" "The number of entered commands : %d" "\n"
+                "\t" "The number of skipped commands : %d" "\n"
+                "\t" "The number of log files : %d" "\n"
+                "\t" "The log file name: %s/command_%d_%d_%d_{n}.log" "\n",
+                (stats->state >= 0 && stats->state <= 4 ?
+                 state_str[stats->state] : "unknown"),
+                stats->bgndate, stats->bgntime, stats->enddate, stats->endtime,
+                stats->entered_commands, stats->skipped_commands,
+                stats->file_count,
+                stats->dirpath, mc_port, stats->bgndate, stats->bgntime);
     }
-    return stats;
+    return str;
 }
 
 bool cmdlog_write(char client_ip[], char* command)
@@ -361,10 +393,9 @@ bool cmdlog_write(char client_ip[], char* command)
     struct tm *ptm;
     struct timeval val;
     struct cmd_log_buffer *buffer = &cmdlog.buffer;
-    const int inputsize = CMDLOG_INPUT_SIZE;
     char inputstr[CMDLOG_INPUT_SIZE];
     int inputlen;
-    int written;
+    int nwritten;
 
     if (! cmdlog.on_logging) {
         return false;
@@ -373,13 +404,13 @@ bool cmdlog_write(char client_ip[], char* command)
     gettimeofday(&val, NULL);
     ptm = localtime(&val.tv_sec);
 
-    written = snprintf(inputstr, inputsize, "%02d:%02d:%02d.%06ld %s %s\n",
+    nwritten = snprintf(inputstr, CMDLOG_INPUT_SIZE, "%02d:%02d:%02d.%06ld %s %s\n",
                        ptm->tm_hour, ptm->tm_min, ptm->tm_sec, (long)val.tv_usec, client_ip, command);
     /* truncated ? */
-    if (written > inputsize) {
-        inputstr[inputsize-4] = '.';
-        inputstr[inputsize-3] = '.';
-        inputstr[inputsize-2] = '\n';
+    if (nwritten > CMDLOG_INPUT_SIZE) {
+        inputstr[CMDLOG_INPUT_SIZE-4] = '.';
+        inputstr[CMDLOG_INPUT_SIZE-3] = '.';
+        inputstr[CMDLOG_INPUT_SIZE-2] = '\n';
     }
     inputlen = strlen(inputstr);
 

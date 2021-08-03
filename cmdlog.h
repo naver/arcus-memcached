@@ -30,12 +30,12 @@
 #define CMDLOG_FLUSHERR_STOP 3  /* stop by flush operation error */
 #define CMDLOG_RUNNING       4  /* running */
 
-/*command log stats structure */
+/* command log stats structure */
 struct cmd_log_stats {
     int bgndate, bgntime;
     int enddate, endtime;
     int file_count;
-    int state;                 /* command log module state */
+    volatile int state;        /* command log module state */
     uint32_t entered_commands; /* number of entered command */
     uint32_t skipped_commands; /* number of skipped command */
     char dirpath[CMDLOG_DIRPATH_LENGTH];
