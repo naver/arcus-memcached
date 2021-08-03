@@ -35,8 +35,8 @@ struct cmd_log_stats {
     int bgndate, bgntime;
     int enddate, endtime;
     int file_count;
-    int stop_cause; /* how stopped */
-    uint32_t entered_commands;   /* number of entered command */
+    int state;                 /* command log module state */
+    uint32_t entered_commands; /* number of entered command */
     uint32_t skipped_commands; /* number of skipped command */
     char dirpath[CMDLOG_DIRPATH_LENGTH];
 };

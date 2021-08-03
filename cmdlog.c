@@ -25,12 +25,13 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <assert.h>
+#include <errno.h>
 
 #include "cmdlog.h"
 
 #define CMDLOG_BUFFER_SIZE  (10 * 1024 * 1024)   /* 10 * MB */
 #define CMDLOG_WRITE_SIZE   (4 * 1024)           /* 4 * KB */
-#define CMDLOG_BUFFER_NUM   10                   /* number of log files */
+#define CMDLOG_FILE_MAXNUM   10                  /* number of log files */
 #define CMDLOG_FILENAME_FORMAT "%s/command_%d_%d_%d_%d.log"
 
 static int mc_port;
@@ -135,7 +136,7 @@ static void do_cmdlog_flush_wakeup()
 static void do_cmdlog_stop(int cause)
 {
     /* cmdlog lock has already been held */
-    cmdlog.stats.stop_cause = cause;
+    cmdlog.stats.state = cause;
     cmdlog.stats.enddate = getnowdate();
     cmdlog.stats.endtime = getnowtime();
     cmdlog.on_logging = false;
@@ -154,17 +155,16 @@ static void *cmdlog_flush_thread()
 
     while (1)
     {
-        if (fd < 0) { /* open log file */
+        if (fd < 0) { /* open command log file */
             sprintf(fname, CMDLOG_FILENAME_FORMAT, cmdlog.stats.dirpath,
                     mc_port, cmdlog.stats.bgndate, cmdlog.stats.bgntime,
                     cmdlog.stats.file_count);
             if ((fd = open(fname, O_WRONLY | O_CREAT | O_APPEND, 0644)) < 0) {
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                               "Can't open command log file: %s\n", fname);
+                               "Can't open command log file: %s, error: %s\n", fname, strerror(errno));
                 err = -1; break;
-            } else {
-                cmdlog.stats.file_count++;
             }
+            cmdlog.stats.file_count++;
         }
 
         pthread_mutex_lock(&buffer->lock);
@@ -215,7 +215,7 @@ static void *cmdlog_flush_thread()
                 pthread_mutex_unlock(&buffer->lock);
             }
             close(fd); fd = -1;
-            if (cmdlog.stats.file_count >= CMDLOG_BUFFER_NUM) {
+            if (cmdlog.stats.file_count >= CMDLOG_FILE_MAXNUM) {
                 break; /* do internal stop: overflow stop */
             }
         }
@@ -301,7 +301,7 @@ int cmdlog_start(char *file_path, bool *already_started)
                 cmdlog.stats.file_count);
         if ((fd = open(fname, O_WRONLY | O_CREAT | O_APPEND, 0644)) < 0) {
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                           "Can't open command log file: %s\n", fname);
+                           "Can't open command log file: %s, error: %s\n", fname, strerror(errno));
             ret = -1; break;
         } else {
             close(fd);
@@ -309,7 +309,7 @@ int cmdlog_start(char *file_path, bool *already_started)
 
         /* enable command logging */
         cmdlog.on_logging = true;
-        cmdlog.stats.stop_cause = CMDLOG_RUNNING;
+        cmdlog.stats.state = CMDLOG_RUNNING;
 
         /* start the flush thread to write command log to disk */
         if (pthread_attr_init(&cmdlog.flush.attr) != 0 ||
@@ -319,11 +319,11 @@ int cmdlog_start(char *file_path, bool *already_started)
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                            "Can't create command log flush thread: %s\n", strerror(ret));
             cmdlog.on_logging = false; // disable it */
-            if (remove(fname) != 0) {
+            if (remove(fname) != 0 && errno != ENOENT) {
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                               "Can't remove command log file: %s\n", fname);
+                               "Can't remove command log file: %s, error: %s\n", fname, strerror(errno));
             }
-            cmdlog.stats.stop_cause = CMDLOG_NOT_STARTED;
+            cmdlog.stats.state = CMDLOG_NOT_STARTED;
             ret = -1; break;
         }
     } while(0);
@@ -361,8 +361,10 @@ bool cmdlog_write(char client_ip[], char* command)
     struct tm *ptm;
     struct timeval val;
     struct cmd_log_buffer *buffer = &cmdlog.buffer;
+    const int inputsize = CMDLOG_INPUT_SIZE;
     char inputstr[CMDLOG_INPUT_SIZE];
     int inputlen;
+    int written;
 
     if (! cmdlog.on_logging) {
         return false;
@@ -371,16 +373,22 @@ bool cmdlog_write(char client_ip[], char* command)
     gettimeofday(&val, NULL);
     ptm = localtime(&val.tv_sec);
 
-    snprintf(inputstr, CMDLOG_INPUT_SIZE, "%02d:%02d:%02d.%06ld %s %s\n",
-             ptm->tm_hour, ptm->tm_min, ptm->tm_sec, (long)val.tv_usec, client_ip, command);
+    written = snprintf(inputstr, inputsize, "%02d:%02d:%02d.%06ld %s %s\n",
+                       ptm->tm_hour, ptm->tm_min, ptm->tm_sec, (long)val.tv_usec, client_ip, command);
+    /* truncated ? */
+    if (written > inputsize) {
+        inputstr[inputsize-4] = '.';
+        inputstr[inputsize-3] = '.';
+        inputstr[inputsize-2] = '\n';
+    }
     inputlen = strlen(inputstr);
 
     pthread_mutex_lock(&buffer->lock);
+    cmdlog.stats.entered_commands += 1;
     if (buffer->head <= buffer->tail && inputlen >= (buffer->size - buffer->tail)) {
         buffer->last = buffer->tail;
         buffer->tail = 0;
     }
-    cmdlog.stats.entered_commands += 1;
     if (buffer->head <= buffer->tail) {
         assert(buffer->last == 0);
         assert(inputlen < (buffer->size - buffer->tail));
