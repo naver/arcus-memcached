@@ -9388,6 +9388,188 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
     }
 }
 
+#ifdef SCAN_COMMAND
+/* keyscan command limits */
+#define SCAN_COUNT_MAX           2000
+#define SCAN_CURSOR_MAX_LENGTH   31
+/* pattern constraints is necessary to prevent string_pattern_match()
+ * from taking a long time to compare string.
+ */
+#define SCAN_PATTERN_MAX_STARCNT 4
+#define SCAN_PATTERN_MAX_LENGTH  64
+static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    /* keyscan command format : keyscan <cursor> [count <count>] [match <pattern>] [type <type>] */
+    char     cursor[SCAN_CURSOR_MAX_LENGTH+1];
+    uint32_t count   = 20;
+    char    *pattern = NULL;
+    char     type    = 'A'; /* all item type */
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    /* read <cursor> */
+    if (tokens[1].length > SCAN_CURSOR_MAX_LENGTH) {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "CLIENT_ERROR bad cursor value");
+        return;
+    }
+    strcpy(cursor, tokens[1].value);
+
+    /* read optional fields (<count>, <pattern>, <type>) */
+    int i = 0;
+    int optcnt = ntokens - 3; /* except (scan, <cursor>, CRLF) */
+    while (optcnt >= 2) {
+        char *optk = tokens[2+i].value;
+        char *optv = tokens[3+i].value;
+        if (strcmp(optk, "count") == 0) {
+            if (!safe_strtoul(optv, &count)) {
+                ret = ENGINE_EINVAL; break;
+            }
+        } else if (strcmp(optk, "match") == 0) {
+            pattern = optv;
+        } else if (strcmp(optk, "type") == 0) {
+            if (strlen(optv) != 1) {
+                ret = ENGINE_EINVAL; break;
+            }
+            type = optv[0];
+        } else {
+            ret = ENGINE_EINVAL; break;
+        }
+        optcnt -= 2;
+        i += 2;
+    }
+    if (ret == ENGINE_EINVAL || optcnt != 0) {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "CLIENT_ERROR bad command line format");
+        return;
+    }
+
+    if (count == 0 || count > SCAN_COUNT_MAX) {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "CLIENT_ERROR bad count value");
+        return;
+    }
+
+    if (pattern) {
+        int starcnt = 0;
+        int patlen = strlen(pattern);
+        if (patlen > SCAN_PATTERN_MAX_LENGTH) {
+            print_invalid_command(c, tokens, ntokens);
+            out_string(c, "CLIENT_ERROR too long pattern string");
+            return;
+        }
+        for (i = 0; i < patlen; i++) {
+            if (pattern[i] == '\\') { /* backslash next is glob (*, ?, \\) ? */
+                if (i == (patlen-1)) break; /* invalid, ex) 'aaa\', '\\\' */
+                if (pattern[i+1] != '*' && pattern[i+1] != '?' && pattern[i+1] != '\\') break; /* invalid */
+                i++; /* skip the next character */
+            }
+            else if (pattern[i] == '*') { /* except normal star(\*) */
+                if (++starcnt > SCAN_PATTERN_MAX_STARCNT) break; /* invalid */
+            }
+        }
+        if (i < patlen) {
+            print_invalid_command(c, tokens, ntokens);
+            out_string(c, "CLIENT_ERROR bad pattern string");
+            return;
+        }
+    }
+
+    ENGINE_ITEM_TYPE ittype;
+    switch (type) {
+        case 'A':
+            ittype = ITEM_TYPE_MAX; /* all item type */
+            break;
+        case 'K':
+            ittype = ITEM_TYPE_KV;
+            break;
+        case 'L':
+            ittype = ITEM_TYPE_LIST;
+            break;
+        case 'S':
+            ittype = ITEM_TYPE_SET;
+            break;
+        case 'M':
+            ittype = ITEM_TYPE_MAP;
+            break;
+        case 'B':
+            ittype = ITEM_TYPE_BTREE;
+            break;
+        default:
+            print_invalid_command(c, tokens, ntokens);
+            out_string(c, "CLIENT_ERROR bad item type");
+            return;
+    }
+
+    int need_size = count + 100; /* may scan more than count in engine. */
+    if (need_size > c->isize) {
+        int new_size = c->isize * 2;
+        while (need_size > new_size) {
+            new_size *= 2;
+        }
+        item **new_list = malloc(sizeof(item *) * new_size);
+        if (new_list == NULL) {
+            out_string(c, "SERVER_ERROR out of memory.");
+            return;
+        }
+        free(c->ilist);
+        c->ilist = new_list;
+        c->isize = new_size;
+    }
+
+    int item_count = 0;
+    /* call engine keyscan API */
+    ret = mc_engine.v1->keyscan(cursor, count, pattern, ittype, c->ilist, c->isize, &item_count);
+    if (ret == ENGINE_SUCCESS) {
+        do {
+            char header[SCAN_CURSOR_MAX_LENGTH + 24];
+            sprintf(header, "KEYS %d %s\r\n", item_count, cursor);
+            if (add_iov(c, header, strlen(header)) != 0) {
+                ret = ENGINE_ENOMEM; break;
+            }
+            for (i = 0; i < item_count; i++) {
+                item *it = (item *)c->ilist[i];
+                if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
+                    ret = ENGINE_ENOMEM; break;
+                }
+                if (add_iov(c, c->hinfo.key, c->hinfo.nkey) != 0 ||
+                    add_iov(c, "\r\n", 2) != 0) {
+                    ret = ENGINE_ENOMEM; break;
+                }
+            }
+            if (ret != ENGINE_SUCCESS) break;
+            if (add_iov(c, "END\r\n", 5) != 0 ||
+                (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+                ret = ENGINE_ENOMEM;
+            }
+        } while (0);
+        if (ret == ENGINE_SUCCESS) {
+            c->icurr = c->ilist;
+            c->ileft = item_count;
+        } else {
+            c->ileft = 0;
+            for (i = 0; i < item_count; i++) {
+                mc_engine.v1->release(mc_engine.v0, c, c->ilist[i]);
+            }
+        }
+    }
+
+    switch (ret) {
+        case ENGINE_SUCCESS:
+            conn_set_state(c, conn_mwrite);
+            c->msgcurr = 0;
+            break;
+        case ENGINE_EINVAL:
+            out_string(c, "CLIENT_ERROR invalid cursor.");
+            break;
+        case ENGINE_ENOMEM:
+            out_string(c, "SERVER_ERROR out of memory.");
+            break;
+        default:
+            handle_unexpected_errorcode_ascii(c, __func__, ret);
+            break;
+    }
+}
+#endif
 #ifdef COMMAND_LOGGING
 static void process_logging_command(conn *c, token_t *tokens, const size_t ntokens)
 {
@@ -12760,6 +12942,12 @@ static void process_command(conn *c, char *command, int cmdlen)
     {
         process_help_command(c, tokens, ntokens);
     }
+#ifdef SCAN_COMMAND
+    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "keyscan") == 0))
+    {
+        process_keyscan_command(c, tokens, ntokens);
+    }
+#endif
 #ifdef COMMAND_LOGGING
     else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "cmdlog") == 0))
     {

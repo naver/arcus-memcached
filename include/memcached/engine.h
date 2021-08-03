@@ -699,6 +699,22 @@ extern "C" {
                                   const char *prefix, const int nprefix,
                                   const char *filepath);
 
+#ifdef SCAN_COMMAND
+        /**
+         * Scan a certain number of items that meet the given conditions.
+         *
+         * @param cursor     scan start point
+         * @param count      the number of items to scan
+         * @param pattern    key string glob pattern
+         * @param type       item's type
+         * @param item_array where to store item
+         * @param item_arrsz the size of item_array
+         * @param item_count the number of matched items
+         */
+        ENGINE_ERROR_CODE (*keyscan)(const char cursor[], const uint32_t count, const char *pattern,
+                                     ENGINE_ITEM_TYPE type, item **item_array, int item_arrsz, int *item_count);
+
+#endif
         /**
          * Any unknown command will be considered engine specific.
          *

@@ -1058,6 +1058,42 @@ void item_scan_open(item_scan *sp, const char *prefix, const int nprefix, CB_SCA
     sp->is_used = true;
 }
 
+#ifdef SCAN_COMMAND
+int item_scan_direct(const char *cursor, ENGINE_ITEM_TYPE type, int req_count, void **item_array, int item_arrsz)
+{
+    hash_item *it;
+    LOCK_CACHE();
+    int item_count = assoc_scan_direct(cursor, req_count, (hash_item**)item_array, item_arrsz);
+    if (item_count > 0) {
+        rel_time_t curtime = svcore->get_current_time();
+        int nfound = 0;
+        for (int i = 0; i < item_count; i++) {
+            it = (hash_item *)item_array[i];
+            if ((it->iflag & ITEM_INTERNAL) != 0) { /* internal item */
+                item_array[i] = NULL; continue;
+            }
+            if (do_item_isvalid(it, curtime) != true) { /* invalid item */
+                item_array[i] = NULL; continue;
+            }
+            if (type != ITEM_TYPE_MAX && GET_ITEM_TYPE(it) != type) { /* no type match */
+                item_array[i] = NULL; continue;
+            }
+            ITEM_REFCOUNT_INCR(it);
+            if (nfound < i) {
+                item_array[nfound] = it;
+            }
+            nfound += 1;
+        }
+        item_count = nfound;
+    } else {
+        /* item_count == 0: not found item */
+        /* item_count <  0: the end of scan or invalid cursor */
+    }
+    UNLOCK_CACHE();
+    return item_count;
+}
+#endif
+
 int item_scan_getnext(item_scan *sp, void **item_array, elems_result_t *erst_array, int item_arrsz)
 {
     hash_item *it;
