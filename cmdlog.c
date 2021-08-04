@@ -29,10 +29,18 @@
 
 #include "cmdlog.h"
 
+#define CMDLOG_INPUT_SIZE 400
 #define CMDLOG_BUFFER_SIZE  (10 * 1024 * 1024)   /* 10 * MB */
 #define CMDLOG_WRITE_SIZE   (4 * 1024)           /* 4 * KB */
 #define CMDLOG_FILE_MAXNUM   10                  /* number of log files */
 #define CMDLOG_FILENAME_FORMAT "%s/command_%d_%d_%d_%d.log"
+
+/* cmdlog state */
+#define CMDLOG_NOT_STARTED   0  /* not started */
+#define CMDLOG_EXPLICIT_STOP 1  /* stop by user request */
+#define CMDLOG_OVERFLOW_STOP 2  /* stop by command log overflow */
+#define CMDLOG_FLUSHERR_STOP 3  /* stop by flush operation error */
+#define CMDLOG_RUNNING       4  /* running */
 
 static int mc_port;
 static EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
