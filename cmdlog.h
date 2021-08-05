@@ -20,23 +20,16 @@
 #include "memcached/extension_loggers.h"
 
 #define COMMAND_LOGGING
-#define CMDLOG_INPUT_SIZE 400
 #define CMDLOG_FILENAME_LENGTH 256 /* filename plus path's length */
 #define CMDLOG_DIRPATH_LENGTH 128 /* directory path's length */
 
-#define CMDLOG_NOT_STARTED   0  /* not started */
-#define CMDLOG_EXPLICIT_STOP 1  /* stop by user request */
-#define CMDLOG_OVERFLOW_STOP 2  /* stop by command log overflow */
-#define CMDLOG_FLUSHERR_STOP 3  /* stop by flush operation error */
-#define CMDLOG_RUNNING       4  /* running */
-
-/*command log stats structure */
+/* command log stats structure */
 struct cmd_log_stats {
     int bgndate, bgntime;
     int enddate, endtime;
     int file_count;
-    int stop_cause; /* how stopped */
-    uint32_t entered_commands;   /* number of entered command */
+    volatile int state;        /* command log module state */
+    uint32_t entered_commands; /* number of entered command */
     uint32_t skipped_commands; /* number of skipped command */
     char dirpath[CMDLOG_DIRPATH_LENGTH];
 };
@@ -45,6 +38,6 @@ void cmdlog_init(int port, EXTENSION_LOGGER_DESCRIPTOR *logger);
 void cmdlog_final(void);
 int cmdlog_start(char *file_path, bool *already_started);
 void cmdlog_stop(bool *already_stopped);
-struct cmd_log_stats *cmdlog_stats(void);
+char *cmdlog_stats(void);
 bool cmdlog_write(char client_ip[], char *command);
 #endif

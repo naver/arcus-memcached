@@ -9472,30 +9472,6 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
 }
 
 #ifdef COMMAND_LOGGING
-static void get_cmdlog_stats(char* str)
-{
-    char *stop_cause_str[5] = {"Not started",                     // CMDLOG_NOT_STARTED
-                               "stopped by explicit request",     // CMDLOG_EXPLICIT_STOP
-                               "stopped by command log overflow", // CMDLOG_OVERFLOW_STOP
-                               "stopped by disk flush error",     // CMDLOG_FLUSHERR_STOP
-                               "running"};                        // CMDLOG_RUNNING
-    struct cmd_log_stats *stats = cmdlog_stats();
-
-    snprintf(str, CMDLOG_INPUT_SIZE,
-            "\t" "Command logging stats : %s" "\n"
-            "\t" "The last running time : %d_%d ~ %d_%d" "\n"
-            "\t" "The number of entered commands : %d" "\n"
-            "\t" "The number of skipped commands : %d" "\n"
-            "\t" "The number of log files : %d" "\n"
-            "\t" "The log file name: %s/command_%d_%d_%d_{n}.log" "\n",
-            (stats->stop_cause >= 0 && stats->stop_cause <= 4 ?
-             stop_cause_str[stats->stop_cause] : "unknown"),
-            stats->bgndate, stats->bgntime, stats->enddate, stats->endtime,
-            stats->entered_commands, stats->skipped_commands,
-            stats->file_count,
-            stats->dirpath, settings.port, stats->bgndate, stats->bgntime);
-}
-
 static void process_logging_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     char *type = tokens[COMMAND_TOKEN+1].value;
@@ -9515,7 +9491,9 @@ static void process_logging_command(conn *c, token_t *tokens, const size_t ntoke
         int ret = cmdlog_start(fpath, &already_check);
         if (already_check) {
             out_string(c, "\tcommand logging already started.\n");
-        } else if (! already_check && ret == 0) {
+            return;
+        }
+        if (ret == 0) {
             out_string(c, "\tcommand logging started.\n");
             cmdlog_in_use = true;
         } else {
@@ -9531,9 +9509,8 @@ static void process_logging_command(conn *c, token_t *tokens, const size_t ntoke
             cmdlog_in_use = false;
         }
     } else if (ntokens > 2 && strcmp(type, "stats") == 0) {
-        char *str = malloc(CMDLOG_INPUT_SIZE * sizeof(char));
+        char *str = cmdlog_stats();
         if (str) {
-            get_cmdlog_stats(str);
             write_and_free(c, str, strlen(str));
         } else {
             out_string(c, "\tcommand logging failed to get stats memory.\n");
