@@ -23,6 +23,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <time.h>
 
 #include <memcached/util.h>
 
@@ -225,5 +226,47 @@ uint64_t mc_ntohll(uint64_t val) {
 
 uint64_t mc_htonll(uint64_t val) {
    return mc_swap64(val);
+}
+
+/* integer represents format : YYYYMMDDHHMMSS (ex. 20210806152049) */
+int64_t getnowdatetime_int(void)
+{
+    char buf[24] = {0};
+    int64_t res;
+    time_t clock = time(0);
+    struct tm *lctime = localtime(&clock);
+
+    /* year(YYYY) month(01-12) day(01-31) hour(00-23) minute(00-59) second(00-61). */
+    strftime(buf, 24, "%Y%m%d%H%M%S", lctime);
+    sscanf(buf, "%" SCNd64, &res);
+    return res;
+}
+
+/* integer represents format : YYYYMMDD (ex. 20210806) */
+int getnowdate_int(void)
+{
+    char buf[16] = {0};
+    int res;
+    time_t clock = time(0);
+    struct tm *lctime = localtime(&clock);
+
+    /* year(YYYY) month(01-12) day(01-31). */
+    strftime(buf, 16, "%Y%m%d", lctime);
+    sscanf(buf, "%d", &res);
+    return res;
+}
+
+/* integer represents format : HHMMSS (ex. 152049) */
+int getnowtime_int(void)
+{
+    char buf[8] = {0};
+    int res;
+    time_t clock = time(0);
+    struct tm *lctime = localtime(&clock);
+
+    /* hour(00-23) minute(00-59) second(00-61). */
+    strftime(buf, 8, "%H%M%S", lctime);
+    sscanf(buf, "%d", &res);
+    return res;
 }
 #endif

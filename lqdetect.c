@@ -5,6 +5,7 @@
 #include <string.h>
 #include <pthread.h>
 #include <sys/time.h>
+#include <memcached/util.h>
 
 #include "lqdetect.h"
 
@@ -38,43 +39,12 @@ struct lq_detect_global {
 struct lq_detect_global lqdetect;
 
 /* lqdetect function */
-static int getnowdate(void)
-{
-    int ldate;
-    time_t clock;
-    struct tm *date;
-
-    clock = time(0);
-    date = localtime(&clock);
-    ldate = date->tm_year * 100000;
-    ldate += (date->tm_mon + 1) * 1000;
-    ldate += date->tm_mday * 10;
-    ldate += date->tm_wday;
-    ldate += 190000000;
-    ldate /= 10;
-    return(ldate);
-}
-
-static int getnowtime(void)
-{
-    int ltime;
-    time_t clock;
-    struct tm *date;
-
-    clock = time(0);
-    date = localtime(&clock);
-    ltime = date->tm_hour * 10000;
-    ltime += date->tm_min * 100;
-    ltime += date->tm_sec;
-    return(ltime);
-}
-
 static void do_lqdetect_stop(int cause)
 {
     /* detect long query lock has already been held */
     lqdetect.stats.stop_cause = cause;
-    lqdetect.stats.enddate = getnowdate();
-    lqdetect.stats.endtime = getnowtime();
+    lqdetect.stats.enddate = getnowdate_int();
+    lqdetect.stats.endtime = getnowtime_int();
     lqdetect.on_detecting = false;
 }
 
@@ -136,8 +106,8 @@ int lqdetect_start(uint32_t lqdetect_standard, bool *already_started)
 
         /* prepare detect long query stats */
         memset(&lqdetect.stats, 0, sizeof(struct lq_detect_stats));
-        lqdetect.stats.bgndate = getnowdate();
-        lqdetect.stats.bgntime = getnowtime();
+        lqdetect.stats.bgndate = getnowdate_int();
+        lqdetect.stats.bgntime = getnowtime_int();
         lqdetect.stats.stop_cause = LONGQ_RUNNING;
         lqdetect.stats.standard = lqdetect_standard;
 

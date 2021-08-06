@@ -41,6 +41,10 @@ MEMCACHED_PUBLIC_API bool safe_strtohexa(const char *str, unsigned char *bin, co
 MEMCACHED_PUBLIC_API void safe_hexatostr(const unsigned char *bin, const int size, char *str);
 MEMCACHED_PUBLIC_API bool mc_isvalidname(const char *str, int len);
 
+MEMCACHED_PUBLIC_API int64_t getnowdatetime_int(void);
+MEMCACHED_PUBLIC_API int     getnowdate_int(void);
+MEMCACHED_PUBLIC_API int     getnowtime_int(void);
+
 #ifndef HAVE_HTONLL
 #define htonll mc_htonll
 #define ntohll mc_ntohll
