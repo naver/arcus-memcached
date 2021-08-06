@@ -26,6 +26,7 @@
 #include <unistd.h>
 #include <assert.h>
 #include <errno.h>
+#include <memcached/util.h>
 
 #include "cmdlog.h"
 
@@ -76,38 +77,6 @@ struct cmd_log_global {
 struct cmd_log_global cmdlog;
 
 
-/* command log function */
-static int getnowdate(void)
-{
-    int ldate;
-    time_t clock;
-    struct tm *date;
-
-    clock = time(0);
-    date = localtime(&clock);
-    ldate = date->tm_year * 100000;
-    ldate += (date->tm_mon + 1) * 1000;
-    ldate += date->tm_mday * 10;
-    ldate += date->tm_wday;
-    ldate += 190000000;
-    ldate /= 10;
-    return(ldate);
-}
-
-static int getnowtime(void)
-{
-    int ltime;
-    time_t clock;
-    struct tm *date;
-
-    clock = time(0);
-    date = localtime(&clock);
-    ltime = date->tm_hour * 10000;
-    ltime += date->tm_min * 100;
-    ltime += date->tm_sec;
-    return(ltime);
-}
-
 static void do_cmdlog_flush_sleep()
 {
     struct timeval tv;
@@ -146,8 +115,8 @@ static void do_cmdlog_stop(int cause)
 {
     /* cmdlog lock has already been held */
     cmdlog.stats.state = cause;
-    cmdlog.stats.enddate = getnowdate();
-    cmdlog.stats.endtime = getnowtime();
+    cmdlog.stats.enddate = getnowdate_int();
+    cmdlog.stats.endtime = getnowtime_int();
     cmdlog.on_logging = false;
 }
 
@@ -307,8 +276,8 @@ int cmdlog_start(char *file_path, bool *already_started)
 
         /* prepare comand logging stats */
         memset(&cmdlog.stats, 0, sizeof(struct cmd_log_stats));
-        cmdlog.stats.bgndate = getnowdate();
-        cmdlog.stats.bgntime = getnowtime();
+        cmdlog.stats.bgndate = getnowdate_int();
+        cmdlog.stats.bgntime = getnowtime_int();
 
         sprintf(cmdlog.stats.dirpath, "%s",
                 (file_path != NULL ? file_path : "command_log"));
@@ -375,8 +344,8 @@ char *cmdlog_stats(void)
 
         struct cmd_log_stats *stats = &cmdlog.stats;
         if (cmdlog.on_logging) {
-            stats->enddate = getnowdate();
-            stats->endtime = getnowtime();
+            stats->enddate = getnowdate_int();
+            stats->endtime = getnowtime_int();
         }
 
         snprintf(str, CMDLOG_INPUT_SIZE,

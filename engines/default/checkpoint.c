@@ -79,18 +79,6 @@ static void chkpt_last_stat_init(void) {
     chkpt_last_stat.last_chkpt_start_time = 0;
     chkpt_last_stat.last_chkpt_elapsed_time_sec = 0;
 }
-static int64_t getnowtime(void)
-{
-    char buf[20] = {0};
-    int64_t ltime;
-    time_t clock = time(0);
-    struct tm *date = localtime(&clock);
-
-    /* year(YYYY) month(01-12) day(01-31) hour(00-23) minute(00-59) second(00-61). */
-    strftime(buf, 20, "%Y%m%d%H%M%S", date);
-    sscanf(buf, "%" SCNd64, &ltime);
-    return ltime;
-}
 
 /* Delete all backup files except last checkpoint file. */
 static bool do_chkpt_sweep_files(chkpt_st *cs)
@@ -245,7 +233,7 @@ static void do_chkpt_thread_wakeup(chkpt_st *cs)
 static int do_checkpoint(chkpt_st *cs)
 {
     logger->log(EXTENSION_LOG_INFO, NULL, "Checkpoint started.\n");
-    int64_t newtime = getnowtime();
+    int64_t newtime = getnowdatetime_int();
     chkpt_last_stat.last_chkpt_in_progress = true;
     chkpt_last_stat.last_chkpt_start_time = newtime;
     time_t start, end;
