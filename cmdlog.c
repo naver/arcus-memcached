@@ -31,9 +31,12 @@
 #include "cmdlog.h"
 
 #define CMDLOG_INPUT_SIZE 400
-#define CMDLOG_BUFFER_SIZE  (10 * 1024 * 1024)   /* 10 * MB */
-#define CMDLOG_WRITE_SIZE   (4 * 1024)           /* 4 * KB */
+#define CMDLOG_BUFFER_SIZE  (10 * 1024 * 1024)   /* 10MB */
+#define CMDLOG_WRITE_SIZE   (4 * 1024)           /* 4KB */
+
+#define CMDLOG_FILE_MAXSIZE (10 * 1024 * 1024)   /* 10MB : log at most CMDLOG_INPUT_SIZE * N commands in one file */
 #define CMDLOG_FILE_MAXNUM   10                  /* number of log files */
+#define CMDLOG_FILENAME_LENGTH CMDLOG_DIRPATH_LENGTH + 128
 #define CMDLOG_FILENAME_FORMAT "%s/command_%d_%d_%d_%d.log"
 
 /* cmdlog state */
@@ -65,6 +68,17 @@ struct cmd_log_flush {
     bool sleep;
 };
 
+/* command log stats structure */
+struct cmd_log_stats {
+    int bgndate, bgntime;
+    int enddate, endtime;
+    int file_count;
+    volatile int state;        /* command log module state */
+    uint32_t entered_commands; /* number of entered command */
+    uint32_t skipped_commands; /* number of skipped command */
+    char dirpath[CMDLOG_DIRPATH_LENGTH];
+};
+
 /* command log global structure */
 struct cmd_log_global {
     pthread_mutex_t lock;
@@ -77,7 +91,7 @@ struct cmd_log_global {
 struct cmd_log_global cmdlog;
 
 
-static void do_cmdlog_flush_sleep()
+static void do_cmdlog_flush_sleep(void)
 {
     struct timeval tv;
     struct timespec to;
@@ -101,7 +115,7 @@ static void do_cmdlog_flush_sleep()
     pthread_mutex_unlock(&cmdlog.flush.lock);
 }
 
-static void do_cmdlog_flush_wakeup()
+static void do_cmdlog_flush_wakeup(void)
 {
     /* wake up flush thread */
     pthread_mutex_lock(&cmdlog.flush.lock);
@@ -120,7 +134,7 @@ static void do_cmdlog_stop(int cause)
     cmdlog.on_logging = false;
 }
 
-static void *cmdlog_flush_thread()
+static void *cmdlog_flush_thread(void)
 {
     struct cmd_log_buffer *buffer = &cmdlog.buffer;
     char fname[CMDLOG_FILENAME_LENGTH];
@@ -130,6 +144,7 @@ static void *cmdlog_flush_thread()
     int err = 0;
     int writelen;
     int nwritten;
+    int nwtotal = 0;
 
     while (!cmdlog.reqstop)
     {
@@ -172,6 +187,7 @@ static void *cmdlog_flush_thread()
                                    nwritten, writelen);
                     err = -1; break;
                 }
+                nwtotal += nwritten;
                 pthread_mutex_lock(&buffer->lock);
                 buffer->head += writelen;
                 pthread_mutex_unlock(&buffer->lock);
@@ -187,12 +203,16 @@ static void *cmdlog_flush_thread()
                                    nwritten, writelen);
                     err = -1; break;
                 }
+                nwtotal += nwritten;
                 pthread_mutex_lock(&buffer->lock);
                 buffer->last = 0;
                 buffer->head = 0;
                 pthread_mutex_unlock(&buffer->lock);
             }
+        }
+        if (nwtotal >= CMDLOG_FILE_MAXSIZE) { /* rotate file */
             close(fd); fd = -1;
+            nwtotal = 0;
             if (cmdlog.stats.file_count >= CMDLOG_FILE_MAXNUM) {
                 break; /* do internal stop: overflow stop */
             }
@@ -231,7 +251,7 @@ void cmdlog_init(int port, EXTENSION_LOGGER_DESCRIPTOR *logger)
     memset(&cmdlog.stats, 0, sizeof(struct cmd_log_stats));
 }
 
-void cmdlog_final()
+void cmdlog_final(void)
 {
     while (cmdlog.stats.state == CMDLOG_RUNNING) {
         cmdlog.reqstop = true;

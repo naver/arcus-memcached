@@ -20,19 +20,7 @@
 #include "memcached/extension_loggers.h"
 
 #define COMMAND_LOGGING
-#define CMDLOG_FILENAME_LENGTH 256 /* filename plus path's length */
 #define CMDLOG_DIRPATH_LENGTH 128 /* directory path's length */
-
-/* command log stats structure */
-struct cmd_log_stats {
-    int bgndate, bgntime;
-    int enddate, endtime;
-    int file_count;
-    volatile int state;        /* command log module state */
-    uint32_t entered_commands; /* number of entered command */
-    uint32_t skipped_commands; /* number of skipped command */
-    char dirpath[CMDLOG_DIRPATH_LENGTH];
-};
 
 void cmdlog_init(int port, EXTENSION_LOGGER_DESCRIPTOR *logger);
 void cmdlog_final(void);
