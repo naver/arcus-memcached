@@ -18,14 +18,8 @@
 #ifndef ASSOC_H
 #define ASSOC_H
 
-#define SLOW_HASH_EXPANSION 1
-
 struct bucket_info {
     uint16_t refcount; /* reference count */
-#ifdef SLOW_HASH_EXPANSION
-#else
-    uint16_t curpower; /* current bucket power: how many hash tables exist in bucket ? */
-#endif
 };
 
 struct assoc {
@@ -35,20 +29,14 @@ struct assoc {
     uint32_t rootpower; /* how many hash tables in a root table ? (power of 2) */
     uint32_t rootsize;  /* hash table count (variable value) */
     uint32_t rootmask;  /* hash table mask (variable value) */
-#ifdef SLOW_HASH_EXPANSION
     uint32_t prevsize;  /* previous rootsize */
     uint32_t prevmask;  /* previous rootmask */
-#endif
     uint32_t roottabsz; /* root table size */
-#ifdef SLOW_HASH_EXPANSION
 
     /* hash table expansion status */
     bool expanding;
     uint32_t exp_bucket;
     uint32_t exp_tabidx;
-#else
-    uint32_t redistributed_bucket_cnt;
-#endif
 
     /* cache item hash table : an array of hash tables */
     struct table {

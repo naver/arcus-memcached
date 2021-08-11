@@ -36,7 +36,6 @@
 static struct assoc         *assocp=NULL; // engine assoc
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 
-#ifdef SLOW_HASH_EXPANSION
 static inline uint32_t CUR_HASH_TABIDX(uint32_t hash, uint32_t bucket)
 {
     if (assocp->expanding) {
@@ -59,7 +58,6 @@ static inline uint32_t CUR_HASH_TABIDX(uint32_t hash, uint32_t bucket)
         return (hash >> assocp->hashpower) & assocp->rootmask;
     }
 }
-#endif
 
 ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
 {
@@ -74,12 +72,8 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
     assocp->rootsize = hashsize(assocp->rootpower);
     assocp->rootmask = hashmask(assocp->rootpower);
     assocp->roottabsz = 512;
-#ifdef SLOW_HASH_EXPANSION
     /* expansion status */
     assocp->expanding = false;
-#else
-    assocp->redistributed_bucket_cnt = 0;
-#endif
 
     assocp->roottable = NULL;
     assocp->infotable = NULL;
@@ -129,7 +123,6 @@ void assoc_final(struct default_engine *engine)
     logger->log(EXTENSION_LOG_INFO, NULL, "ASSOC module destroyed.\n");
 }
 
-#ifdef SLOW_HASH_EXPANSION
 static void redistribute(void)
 {
     hash_item **prev;
@@ -169,52 +162,13 @@ static void redistribute(void)
         }
     }
 }
-#else
-static void redistribute(unsigned int bucket)
-{
-    hash_item *it, **prev;
-    uint32_t tabidx;
-    uint32_t ii, table_count = hashsize(assocp->infotable[bucket].curpower);
-
-    for (ii=0; ii < table_count; ++ii) {
-         prev = &assocp->roottable[ii].hashtable[bucket];
-         while (*prev != NULL) {
-             it = *prev;
-             tabidx = GET_HASH_TABIDX(it->khash, assocp->hashpower, assocp->rootmask);
-             if (tabidx == ii) {
-                 prev = &it->h_next;
-             } else {
-                 *prev = it->h_next;
-                 it->h_next = assocp->roottable[tabidx].hashtable[bucket];
-                 assocp->roottable[tabidx].hashtable[bucket] = it;
-             }
-         }
-    }
-    assocp->infotable[bucket].curpower = assocp->rootpower;
-
-    assocp->redistributed_bucket_cnt++;
-    if (assocp->redistributed_bucket_cnt == assocp->hashsize / 2) {
-        logger->log(EXTENSION_LOG_INFO, NULL, "hash table expansion 50%% completed.\n");
-    } else if (assocp->redistributed_bucket_cnt == (assocp->hashsize / 10) * 9) {
-        logger->log(EXTENSION_LOG_INFO, NULL, "hash table expansion 90%% completed.\n");
-    } else if (assocp->redistributed_bucket_cnt == assocp->hashsize) {
-        logger->log(EXTENSION_LOG_INFO, NULL, "hash table expansion 100%% completed.\n");
-        assocp->redistributed_bucket_cnt = 0;
-    }
-}
-#endif
 
 hash_item *assoc_find(const char *key, const uint32_t nkey, uint32_t hash)
 {
     hash_item *it;
     int depth = 0;
     uint32_t bucket = GET_HASH_BUCKET(hash, assocp->hashmask);
-#ifdef SLOW_HASH_EXPANSION
     uint32_t tabidx = CUR_HASH_TABIDX(hash, bucket);
-#else
-    uint32_t tabidx = GET_HASH_TABIDX(hash, assocp->hashpower,
-                                      hashmask(assocp->infotable[bucket].curpower));
-#endif
 
     it = assocp->roottable[tabidx].hashtable[bucket];
     while (it) {
@@ -235,12 +189,7 @@ static hash_item** _hashitem_before(const char *key, const uint32_t nkey, uint32
 {
     hash_item **pos;
     uint32_t bucket = GET_HASH_BUCKET(hash, assocp->hashmask);
-#ifdef SLOW_HASH_EXPANSION
     uint32_t tabidx = CUR_HASH_TABIDX(hash, bucket);
-#else
-    uint32_t tabidx = GET_HASH_TABIDX(hash, assocp->hashpower,
-                                      hashmask(assocp->infotable[bucket].curpower));
-#endif
 
     pos = &assocp->roottable[tabidx].hashtable[bucket];
     while (*pos && ((nkey != (*pos)->nkey) || memcmp(key, item_get_key(*pos), nkey))) {
@@ -281,29 +230,19 @@ static void assoc_expand(void)
         assocp->roottable[assocp->rootsize+ii].hashtable = &new_hashtable[assocp->hashsize*ii];
     }
     assocp->rootpower += 1;
-#ifdef SLOW_HASH_EXPANSION
     assocp->prevsize = assocp->rootsize;
     assocp->prevmask = assocp->rootmask;
-#endif
     assocp->rootsize = hashsize(assocp->rootpower);
     assocp->rootmask = hashmask(assocp->rootpower);
 
     /* set hash_expansion_limit */
     assocp->hash_expansion_limit = (assocp->hashsize * assocp->rootsize * 3) / 2;
 
-#ifdef SLOW_HASH_EXPANSION
     /* set hash table expansion */
     assocp->expanding = true;
     assocp->exp_bucket = assocp->hashsize - 1;
     assocp->exp_tabidx = 0;
-#else
-    if (assocp->redistributed_bucket_cnt != 0) {
-        logger->log(EXTENSION_LOG_INFO, NULL,
-                "hash table expansion stopped before completion. (%lf%% proceeded)",
-                (double)assocp->redistributed_bucket_cnt * 100 / assocp->hashsize);
-        assocp->redistributed_bucket_cnt = 0;
-    }
-#endif
+
     logger->log(EXTENSION_LOG_INFO, NULL, "hash table expansion started(size: %u -> %u).\n",
             assocp->hashsize * assocp->rootsize / 2, assocp->hashsize * assocp->rootsize);
 }
@@ -312,32 +251,17 @@ static void assoc_expand(void)
 int assoc_insert(hash_item *it, uint32_t hash)
 {
     uint32_t bucket = GET_HASH_BUCKET(hash, assocp->hashmask);
-#ifdef SLOW_HASH_EXPANSION
     uint32_t tabidx = CUR_HASH_TABIDX(hash, bucket);
-#else
-    uint32_t tabidx;
-#endif
 
     /* shouldn't have duplicately named things defined */
     assert(assoc_find(item_get_key(it), it->nkey, hash) == 0);
 
-#ifdef SLOW_HASH_EXPANSION
-#else
-    if (assocp->infotable[bucket].curpower != assocp->rootpower &&
-        assocp->infotable[bucket].refcount == 0) {
-        redistribute(bucket);
-    }
-    tabidx = GET_HASH_TABIDX(hash, assocp->hashpower,
-                             hashmask(assocp->infotable[bucket].curpower));
-#endif
-
-    // inserting actual hash_item to appropriate assoc_t
+    /* inserting actual hash_item to appropriate assoc_t */
     it->h_next = assocp->roottable[tabidx].hashtable[bucket];
     assocp->roottable[tabidx].hashtable[bucket] = it;
 
     assocp->hash_items++;
 
-#ifdef SLOW_HASH_EXPANSION
     if (assocp->expanding) {
         if (assocp->infotable[assocp->exp_bucket].refcount == 0) {
             redistribute();
@@ -347,11 +271,6 @@ int assoc_insert(hash_item *it, uint32_t hash)
             assoc_expand();
         }
     }
-#else
-    if (assocp->hash_items > assocp->hash_expansion_limit) {
-        assoc_expand();
-    }
-#endif
 
     MEMCACHED_ASSOC_INSERT(item_get_key(it), it->nkey, assocp->hash_items);
     return 1;
@@ -457,11 +376,7 @@ int assoc_scan_next(struct assoc_scan *scan, hash_item **item_array,
     {
         if (scan->tabcnt == 0) {
             /* start the scan on the current bucket */
-#ifdef SLOW_HASH_EXPANSION
             scan->tabcnt = assocp->rootsize;
-#else
-            scan->tabcnt = hashsize(assocp->infotable[scan->bucket].curpower);
-#endif
             scan->tabidx = 0;
             assert(scan->tabcnt > 0);
             /* increment bucket's reference count */
@@ -537,12 +452,7 @@ bool assoc_scan_in_visited_area(struct assoc_scan *scan, hash_item *it)
         return true;
     }
     if (bucket == scan->bucket) {
-#ifdef SLOW_HASH_EXPANSION
         tabidx = CUR_HASH_TABIDX(it->khash, bucket);
-#else
-        tabidx = GET_HASH_TABIDX(it->khash, assocp->hashpower,
-                 hashmask(assocp->infotable[bucket].curpower));
-#endif
         if (tabidx < scan->tabidx) {
             return true;
         }
