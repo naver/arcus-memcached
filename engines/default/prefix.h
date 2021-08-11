@@ -31,8 +31,8 @@ typedef struct _prefix_t {
     struct _prefix_t *h_next;  /* prefix hash chain */
     struct _prefix_t *parent_prefix;
 
-    /* lower prefix count */
-    uint32_t prefix_items;
+    /* Number of child prefix items */
+    uint32_t child_prefix_items;
 
     /* the count and bytes of cache items per item type */
     uint64_t total_count_exclusive;
@@ -41,11 +41,10 @@ typedef struct _prefix_t {
     uint64_t total_count_inclusive; /* NOT yet used */
     uint64_t total_bytes_inclusive; /* NOT yet used */
 
-    uint64_t items_count_inclusive[ITEM_TYPE_MAX];
-    uint64_t items_bytes_inclusive[ITEM_TYPE_MAX];
-
     uint64_t items_count_exclusive[ITEM_TYPE_MAX];
     uint64_t items_bytes_exclusive[ITEM_TYPE_MAX];
+    uint64_t items_count_inclusive[ITEM_TYPE_MAX];
+    uint64_t items_bytes_inclusive[ITEM_TYPE_MAX];
 #else
     uint64_t items_count[ITEM_TYPE_MAX];
     uint64_t items_bytes[ITEM_TYPE_MAX];
@@ -59,8 +58,8 @@ struct prefix {
     prefix_t**  hashtable;
     prefix_t    null_prefix_data;
 
-    /* Number of items in the hash table. */
-    unsigned int tot_prefix_items;
+    /* Number of prefix items in hash table */
+    uint32_t total_prefix_items;
 };
 
 /* prefix functions */

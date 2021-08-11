@@ -53,16 +53,16 @@ ENGINE_ERROR_CODE prefix_init(struct default_engine *engine)
     svcore = engine->server.core;
     logger = engine->server.log->get_logger();
 
-    prefxp->tot_prefix_items = 0;
-
+    /* initialize global prefix structure */
     prefxp->hashtable = calloc(hashsize(DEFAULT_PREFIX_HASHPOWER), sizeof(void *));
     if (prefxp->hashtable == NULL) {
         return ENGINE_ENOMEM;
     }
-    // initialize null prefix stats info
     memset(&prefxp->null_prefix_data, 0, sizeof(prefix_t));
-    null_pt = &prefxp->null_prefix_data;
+    prefxp->total_prefix_items = 0;
 
+    /* set the null prefix pointer */
+    null_pt = &prefxp->null_prefix_data;
 
     logger->log(EXTENSION_LOG_INFO, NULL, "PREFIX module initialized.\n");
     return ENGINE_SUCCESS;
@@ -70,11 +70,11 @@ ENGINE_ERROR_CODE prefix_init(struct default_engine *engine)
 
 void prefix_final(struct default_engine *engine)
 {
-    if (prefxp == NULL) {
-        return; /* nothing to do */
-    }
-    if (prefxp->hashtable) {
-        free(prefxp->hashtable);
+    if (prefxp != NULL) {
+        if (prefxp->hashtable != NULL) {
+            free(prefxp->hashtable);
+            prefxp->hashtable = NULL;
+        }
     }
     logger->log(EXTENSION_LOG_INFO, NULL, "PREFIX module destroyed.\n");
 }
@@ -142,16 +142,16 @@ static int _prefix_insert(prefix_t *pt, uint32_t hash)
 
 #ifdef NESTED_PREFIX
     if (pt->parent_prefix != NULL) {
-        pt->parent_prefix->prefix_items++;
-        if (pt->parent_prefix->prefix_items == 1)
+        pt->parent_prefix->child_prefix_items++;
+        if (pt->parent_prefix->child_prefix_items == 1)
             _prefix_inclusive_stats_init(pt->parent_prefix, false);
     } else {
-        prefxp->tot_prefix_items++;
+        prefxp->total_prefix_items++;
     }
 #else
     assert(pt->parent_prefix != NULL);
-    pt->parent_prefix->prefix_items++;
-    prefxp->tot_prefix_items++;
+    pt->parent_prefix->child_prefix_items++;
+    prefxp->total_prefix_items++;
 #endif
     return 1;
 }
@@ -170,16 +170,16 @@ static void _prefix_delete(const char *prefix, const int nprefix, uint32_t hash)
     if (pt) {
 #ifdef NESTED_PREFIX
         if (pt->parent_prefix != NULL) {
-            pt->parent_prefix->prefix_items--;
-            if (pt->parent_prefix->prefix_items == 0)
+            pt->parent_prefix->child_prefix_items--;
+            if (pt->parent_prefix->child_prefix_items == 0)
                 _prefix_inclusive_stats_init(pt->parent_prefix, true);
         } else {
-            prefxp->tot_prefix_items--;
+            prefxp->total_prefix_items--;
         }
 #else
         assert(pt->parent_prefix != NULL);
-        pt->parent_prefix->prefix_items--;
-        prefxp->tot_prefix_items--;
+        pt->parent_prefix->child_prefix_items--;
+        prefxp->total_prefix_items--;
 #endif
         /* unlink and free the prefix structure */
         if (prev_pt) prev_pt->h_next = pt->h_next;
@@ -302,7 +302,7 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
     /* update prefix information */
     int item_type = GET_ITEM_TYPE(it);
 #ifdef NESTED_PREFIX
-    if (pt->prefix_items > 0) {
+    if (pt->child_prefix_items > 0) {
         pt->items_count_inclusive[item_type] += 1;
         pt->items_bytes_inclusive[item_type] += item_size;
         pt->total_count_inclusive += 1;
@@ -341,7 +341,7 @@ void prefix_unlink(hash_item *it, const uint32_t item_size, bool drop_if_empty)
     /* update prefix information */
     int item_type = GET_ITEM_TYPE(it);
 #ifdef NESTED_PREFIX
-    if (pt->prefix_items > 0) {
+    if (pt->child_prefix_items > 0) {
         pt->items_count_inclusive[item_type] -= 1;
         pt->items_bytes_inclusive[item_type] -= item_size;
         pt->total_count_inclusive -= 1;
@@ -374,7 +374,7 @@ void prefix_unlink(hash_item *it, const uint32_t item_size, bool drop_if_empty)
 #else
             prefix_t *parent_pt = pt->parent_prefix;
 #endif
-            if (pt->prefix_items > 0 || pt->total_count_exclusive > 0)
+            if (pt->child_prefix_items > 0 || pt->total_count_exclusive > 0)
                 break; /* NOT empty */
             assert(pt->total_bytes_exclusive == 0);
             _prefix_delete(_get_prefix(pt), pt->nprefix,
@@ -425,7 +425,7 @@ void prefix_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t 
 #ifdef NESTED_PREFIX
     pt->items_bytes_exclusive[item_type] += bytes;
     pt->total_bytes_exclusive += bytes;
-    if (pt->prefix_items > 0) {
+    if (pt->child_prefix_items > 0) {
         pt->items_bytes_inclusive[item_type] += bytes;
         pt->total_bytes_inclusive += bytes;
     }
@@ -459,7 +459,7 @@ void prefix_bytes_decr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t 
 #ifdef NESTED_PREFIX
     pt->items_bytes_exclusive[item_type] -= bytes;
     pt->total_bytes_exclusive -= bytes;
-    if (pt->prefix_items > 0) {
+    if (pt->child_prefix_items > 0) {
         pt->items_bytes_inclusive[item_type] -= bytes;
         pt->total_bytes_inclusive -= bytes;
     }
@@ -510,7 +510,7 @@ static uint32_t do_count_invalid_prefix(void)
     for (i = 0; i < size; i++) {
         pt = prefxp->hashtable[i];
         while (pt) {
-            if (pt->prefix_items == 0 && pt->total_count_exclusive == 0)
+            if (pt->child_prefix_items == 0 && pt->total_count_exclusive == 0)
                 invalid_prefix++;
             pt = pt->h_next;
         }
@@ -521,7 +521,7 @@ static uint32_t do_count_invalid_prefix(void)
 
 uint32_t prefix_count(void)
 {
-    return prefxp->tot_prefix_items;
+    return prefxp->total_prefix_items;
 }
 
 ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *prefix_data)
@@ -545,7 +545,7 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
         char *buffer;
         struct tm *t;
         uint32_t prefix_hsize = hashsize(DEFAULT_PREFIX_HASHPOWER);
-        uint32_t num_prefixes = prefxp->tot_prefix_items;
+        uint32_t num_prefixes = prefxp->total_prefix_items;
         uint32_t sum_nameleng = 0; /* sum of prefix name length */
         uint32_t i, buflen, pos;
 
@@ -590,11 +590,11 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
 
         /* write prefix stats in the buffer */
         pos = sizeof(uint32_t);
-        if (num_prefixes > prefxp->tot_prefix_items) { /* include null prefix */
+        if (num_prefixes > prefxp->total_prefix_items) { /* include null prefix */
             pt = null_pt;
             t = localtime(&pt->create_time);
 #ifdef NESTED_PREFIX
-            assert(pt->prefix_items == 0);
+            assert(pt->child_prefix_items == 0);
             pos += snprintf(buffer+pos, buflen-pos, format, "<null>",
                             pt->total_count_exclusive,
                             pt->items_count_exclusive[ITEM_TYPE_KV],
@@ -608,7 +608,7 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
                             pt->items_bytes_exclusive[ITEM_TYPE_SET],
                             pt->items_bytes_exclusive[ITEM_TYPE_MAP],
                             pt->items_bytes_exclusive[ITEM_TYPE_BTREE],
-                            (uint64_t)pt->prefix_items,
+                            (uint64_t)pt->child_prefix_items,
                             (uint64_t)0,
                             (uint64_t)0,
                             t->tm_year+1900, t->tm_mon+1, t->tm_mday,
@@ -641,7 +641,7 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
                     continue;
                 }
                 t = localtime(&pt->create_time);
-                if (pt->prefix_items > 0) {
+                if (pt->child_prefix_items > 0) {
                     pos += snprintf(buffer+pos, buflen-pos, format, _get_prefix(pt),
                                     pt->total_count_inclusive,
                                     pt->items_count_inclusive[ITEM_TYPE_KV],
@@ -655,7 +655,7 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
                                     pt->items_bytes_inclusive[ITEM_TYPE_SET],
                                     pt->items_bytes_inclusive[ITEM_TYPE_MAP],
                                     pt->items_bytes_inclusive[ITEM_TYPE_BTREE],
-                                    (uint64_t)pt->prefix_items,
+                                    (uint64_t)pt->child_prefix_items,
                                     pt->total_count_inclusive - pt->total_count_exclusive,
                                     pt->total_bytes_inclusive - pt->total_bytes_exclusive,
                                     t->tm_year+1900, t->tm_mon+1, t->tm_mday,
@@ -674,7 +674,7 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
                                     pt->items_bytes_exclusive[ITEM_TYPE_SET],
                                     pt->items_bytes_exclusive[ITEM_TYPE_MAP],
                                     pt->items_bytes_exclusive[ITEM_TYPE_BTREE],
-                                    (uint64_t)pt->prefix_items,
+                                    (uint64_t)pt->child_prefix_items,
                                     (uint64_t)0,
                                     (uint64_t)0,
                                     t->tm_year+1900, t->tm_mon+1, t->tm_mday,
@@ -727,11 +727,11 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
         prefix_stats->hash_items = pt->items_count[ITEM_TYPE_KV];
         prefix_stats->hash_items_bytes = pt->items_bytes[ITEM_TYPE_KV];
 #endif
-        prefix_stats->prefix_items = pt->prefix_items;
+        prefix_stats->prefix_items = pt->child_prefix_items;
         if (prefix != NULL)
-            prefix_stats->tot_prefix_items = pt->prefix_items;
+            prefix_stats->tot_prefix_items = pt->child_prefix_items;
         else
-            prefix_stats->tot_prefix_items = prefxp->tot_prefix_items;
+            prefix_stats->tot_prefix_items = prefxp->total_prefix_items;
     }
     return ENGINE_SUCCESS;
 }

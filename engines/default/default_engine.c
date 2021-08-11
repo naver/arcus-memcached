@@ -1835,7 +1835,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
       .get_server_api = get_server_api,
       .initialized = true,
       .prefix = {
-         .tot_prefix_items = 0,
+         .total_prefix_items = 0,
       },
       .slabs = {
          .lock = PTHREAD_MUTEX_INITIALIZER
