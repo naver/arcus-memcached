@@ -608,9 +608,9 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
                             pt->items_bytes_exclusive[ITEM_TYPE_SET],
                             pt->items_bytes_exclusive[ITEM_TYPE_MAP],
                             pt->items_bytes_exclusive[ITEM_TYPE_BTREE],
-                            pt->prefix_items,
-                            0,
-                            0,
+                            (uint64_t)pt->prefix_items,
+                            (uint64_t)0,
+                            (uint64_t)0,
                             t->tm_year+1900, t->tm_mon+1, t->tm_mday,
                             t->tm_hour, t->tm_min, t->tm_sec);
 #else
@@ -655,7 +655,7 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
                                     pt->items_bytes_inclusive[ITEM_TYPE_SET],
                                     pt->items_bytes_inclusive[ITEM_TYPE_MAP],
                                     pt->items_bytes_inclusive[ITEM_TYPE_BTREE],
-                                    pt->prefix_items,
+                                    (uint64_t)pt->prefix_items,
                                     pt->total_count_inclusive - pt->total_count_exclusive,
                                     pt->total_bytes_inclusive - pt->total_bytes_exclusive,
                                     t->tm_year+1900, t->tm_mon+1, t->tm_mday,
@@ -674,9 +674,9 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
                                     pt->items_bytes_exclusive[ITEM_TYPE_SET],
                                     pt->items_bytes_exclusive[ITEM_TYPE_MAP],
                                     pt->items_bytes_exclusive[ITEM_TYPE_BTREE],
-                                    pt->prefix_items,
-                                    0,
-                                    0,
+                                    (uint64_t)pt->prefix_items,
+                                    (uint64_t)0,
+                                    (uint64_t)0,
                                     t->tm_year+1900, t->tm_mon+1, t->tm_mday,
                                     t->tm_hour, t->tm_min, t->tm_sec);
                 }
