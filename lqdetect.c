@@ -9,8 +9,9 @@
 
 #include "lqdetect.h"
 
-#define LQ_SAVE_CNT   20     /* save key count */
-#define LQ_INPUT_SIZE 500    /* the size of input(time, ip, command, argument) */
+#define LQ_SAVE_CNT    20    /* save key count */
+#define LQ_INPUT_SIZE  500   /* the size of input(time, ip, command, argument) */
+#define LQ_STAT_STRLEN 300   /* max length of stats */
 
 static EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
 static const char *command_str[LQ_CMD_NUM] = {
@@ -36,7 +37,7 @@ struct lq_detect_global {
     struct lq_detect_buffer buffer[LQ_CMD_NUM];
     struct lq_detect_stats stats;
     int overflow_cnt;
-    bool on_detecting;
+    bool on_detect;
     uint16_t refcount; /* lqdetect show reference count */
 };
 struct lq_detect_global lqdetect;
@@ -45,10 +46,10 @@ struct lq_detect_global lqdetect;
 static void do_lqdetect_stop(int cause)
 {
     /* detect long query lock has already been held */
-    lqdetect.stats.stop_cause = cause;
+    lqdetect.stats.state = cause;
     lqdetect.stats.enddate = getnowdate_int();
     lqdetect.stats.endtime = getnowtime_int();
-    lqdetect.on_detecting = false;
+    lqdetect.on_detect = false;
 }
 
 int lqdetect_init(EXTENSION_LOGGER_DESCRIPTOR *logger)
@@ -56,7 +57,7 @@ int lqdetect_init(EXTENSION_LOGGER_DESCRIPTOR *logger)
     mc_logger = logger;
     int ii, jj;
     pthread_mutex_init(&lqdetect.lock, NULL);
-    lqdetect.on_detecting = false;
+    lqdetect.on_detect = false;
 
     memset(lqdetect.buffer, 0, LQ_CMD_NUM * sizeof(struct lq_detect_buffer));
     for(ii = 0; ii < LQ_CMD_NUM; ii++) {
@@ -89,7 +90,7 @@ int lqdetect_start(uint32_t lqdetect_standard, bool *already_started)
 
     pthread_mutex_lock(&lqdetect.lock);
     do {
-        if (lqdetect.on_detecting) {
+        if (lqdetect.on_detect) {
             *already_started = true;
             break;
         }
@@ -111,11 +112,11 @@ int lqdetect_start(uint32_t lqdetect_standard, bool *already_started)
         memset(&lqdetect.stats, 0, sizeof(struct lq_detect_stats));
         lqdetect.stats.bgndate = getnowdate_int();
         lqdetect.stats.bgntime = getnowtime_int();
-        lqdetect.stats.stop_cause = LQ_RUNNING;
+        lqdetect.stats.state = LQ_RUNNING;
         lqdetect.stats.standard = lqdetect_standard;
 
         lqdetect.overflow_cnt = 0;
-        lqdetect.on_detecting = true;
+        lqdetect.on_detect = true;
         ret = 0;
     } while(0);
     pthread_mutex_unlock(&lqdetect.lock);
@@ -126,7 +127,7 @@ int lqdetect_start(uint32_t lqdetect_standard, bool *already_started)
 void lqdetect_stop(bool *already_stopped)
 {
     pthread_mutex_lock(&lqdetect.lock);
-    if (lqdetect.on_detecting == true) {
+    if (lqdetect.on_detect == true) {
         do_lqdetect_stop(LQ_EXPLICIT_STOP);
     } else {
         *already_stopped = true;
@@ -134,35 +135,38 @@ void lqdetect_stop(bool *already_stopped)
     pthread_mutex_unlock(&lqdetect.lock);
 }
 
-void lqdetect_get_stats(char* str)
+char *lqdetect_stats(void)
 {
-    int ii;
-    char *stop_cause_str[3] = {
-        "stopped by explicit request",     // LQ_EXPLICIT_STOP
-        "stopped by long query overflow",  // LQ_OVERFLOW_STOP
-        "running"                          // LQ_RUNNING
-    };
-    struct lq_detect_stats stats = lqdetect.stats;
+    char *str = (char*)malloc(LQ_STAT_STRLEN);
+    if (str) {
+        char *state_str[3] = {
+            "stopped by explicit request",          // LQ_EXPLICIT_STOP
+            "stopped by internal buffer overflow",  // LQ_OVERFLOW_STOP
+            "running"                               // LQ_RUNNING
+        };
+        struct lq_detect_stats stats = lqdetect.stats;
 
-    if (lqdetect.on_detecting) {
-        stats.enddate = 0;
-        stats.endtime = 0;
+        if (lqdetect.on_detect) {
+            stats.enddate = 0;
+            stats.endtime = 0;
+        }
+
+        stats.total_lqcmds = 0;
+        for (int i=0; i < LQ_CMD_NUM; i++) {
+            stats.total_lqcmds += lqdetect.buffer[i].ntotal;
+        }
+
+        snprintf(str, LQ_STAT_STRLEN,
+                "\t" "Long query detection stats : %s" "\n"
+                "\t" "The last running time : %d_%d ~ %d_%d" "\n"
+                "\t" "The number of total long query commands : %d" "\n"
+                "\t" "The detection standard : %u" "\n",
+                (stats.state >= 0 && stats.state <= 2 ?
+                 state_str[stats.state] : "unknown"),
+                stats.bgndate, stats.bgntime, stats.enddate, stats.endtime,
+                stats.total_lqcmds, stats.standard);
     }
-
-    stats.total_lqcmds = 0;
-    for (ii=0; ii < LQ_CMD_NUM; ii++) {
-        stats.total_lqcmds += lqdetect.buffer[ii].ntotal;
-    }
-
-    snprintf(str, LQ_STAT_STRLEN,
-            "\t" "Long query detection stats : %s" "\n"
-            "\t" "The last running time : %d_%d ~ %d_%d" "\n"
-            "\t" "The number of total long query commands : %d" "\n"
-            "\t" "The detection standard : %u" "\n",
-            (stats.stop_cause >= 0 && stats.stop_cause <= 2 ?
-             stop_cause_str[stats.stop_cause] : "unknown"),
-            stats.bgndate, stats.bgntime, stats.enddate, stats.endtime,
-            stats.total_lqcmds, stats.standard);
+    return str;
 }
 
 char *lqdetect_buffer_get(int cmd, uint32_t *length, uint32_t *cmdcnt)
@@ -335,7 +339,7 @@ static bool lqdetect_save_cmd(char client_ip[], char* key,
 
     pthread_mutex_lock(&lqdetect.lock);
     do {
-        if (! lqdetect.on_detecting) {
+        if (! lqdetect.on_detect) {
             ret = false;
             break;
         }

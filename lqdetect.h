@@ -5,7 +5,6 @@
 #include "memcached/util.h"
 
 #define DETECT_LONG_QUERY
-#define LQ_STAT_STRLEN       300
 #define LQ_STANDARD_DEFAULT  4000 /* default detect standard */
 /* longest range: "<longest bkey>..<longest bkey> efilter" */
 #define LQ_RANGE_SIZE        (64*2+16)
@@ -43,8 +42,8 @@ struct lq_detect_argument {
 struct lq_detect_stats {
     int bgndate, bgntime;
     int enddate, endtime;
-    int total_lqcmds; /* number of total long query command */
-    int stop_cause; /* how stopped */
+    int total_lqcmds;     /* number of total long query command */
+    int state;            /* lqdetect state */
     uint32_t standard;
 };
 
@@ -54,7 +53,7 @@ char *lqdetect_buffer_get(int cmd, uint32_t *length, uint32_t *cmdcnt);
 void lqdetect_buffer_release(int bufcnt);
 int lqdetect_start(uint32_t lqdetect_base, bool *already_started);
 void lqdetect_stop(bool *already_stopped);
-void lqdetect_get_stats(char* str);
+char *lqdetect_stats(void);
 
 bool lqdetect_lop_insert(char *client_ip, char *key, int coll_index);
 bool lqdetect_lop_delete(char *client_ip, char *key, uint32_t del_count,

@@ -9706,9 +9706,12 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
     } else if (ntokens > 2 && strcmp(type, "show") == 0) {
         lqdetect_show(c);
     } else if (ntokens > 2 && strcmp(type, "stats") == 0) {
-        char str[LQ_STAT_STRLEN];
-        lqdetect_get_stats(str);
-        out_string(c, str);
+        char *str = lqdetect_stats();
+        if (str) {
+            write_and_free(c, str, strlen(str));
+        } else {
+            out_string(c, "\tlong query detection failed to get stats memory.\n");
+        }
     } else {
         out_string(c,
         "\t" "* Usage: lqdetect [start [standard] | stop | show | stats]" "\n"
