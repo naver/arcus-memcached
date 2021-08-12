@@ -9624,7 +9624,7 @@ static void process_logging_command(conn *c, token_t *tokens, const size_t ntoke
 #ifdef DETECT_LONG_QUERY
 static void lqdetect_show(conn *c)
 {
-    char *shorted_str[LONGQ_COMMAND_NUM] = {
+    char *shorted_str[LQ_CMD_NUM] = {
                             "sop get command entered count :",
                             "mop delete command entered count :",
                             "mop get command entered count :",
@@ -9640,7 +9640,7 @@ static void lqdetect_show(conn *c)
     int ii, ret = 0;
 
     /* create detected long query return string */
-    for (ii = 0; ii < LONGQ_COMMAND_NUM; ii++) {
+    for (ii = 0; ii < LQ_CMD_NUM; ii++) {
         char *data = lqdetect_buffer_get(ii, &length, &cmdcnt);
         c->lq_bufcnt++;
 
@@ -9676,7 +9676,7 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
     bool already_check = false;
 
     if (ntokens > 2 && strcmp(type, "start") == 0) {
-        uint32_t standard = LONGQ_STANDARD_DEFAULT;
+        uint32_t standard = LQ_STANDARD_DEFAULT;
         if (ntokens > 3) {
             if (! safe_strtoul(tokens[SUBCOMMAND_TOKEN+1].value, &standard)) {
                 print_invalid_command(c, tokens, ntokens);
@@ -9706,7 +9706,7 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
     } else if (ntokens > 2 && strcmp(type, "show") == 0) {
         lqdetect_show(c);
     } else if (ntokens > 2 && strcmp(type, "stats") == 0) {
-        char str[LONGQ_STAT_STRLEN];
+        char str[LQ_STAT_STRLEN];
         lqdetect_get_stats(str);
         out_string(c, str);
     } else {
