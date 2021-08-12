@@ -527,6 +527,10 @@ uint32_t prefix_count(void)
 ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *prefix_data)
 {
     prefix_t *pt;
+    struct tm *t;
+    char *buffer;
+    uint32_t buflen;
+    uint32_t pos;
 
     if (nprefix < 0) /* all prefix stats */
     {
@@ -542,25 +546,22 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
                              "tsz %llu ktsz %llu ltsz %llu stsz %llu mtsz %llu btsz %llu " /* total item bytes */
                              "time %04d%02d%02d%02d%02d%02d\r\n"; /* create time */
 #endif
-        char *buffer;
-        struct tm *t;
         uint32_t prefix_hsize = hashsize(DEFAULT_PREFIX_HASHPOWER);
         uint32_t num_prefixes = prefxp->total_prefix_items;
         uint32_t sum_nameleng = 0; /* sum of prefix name length */
-        uint32_t i, buflen, pos;
 
         /* get # of prefixes and length of prefix names */
-        if (null_pt->total_count_exclusive > 0) {
-            /* Include the null prefix if it is valid */
-            num_prefixes += 1;
-            sum_nameleng += strlen("<null>");
-        }
-        for (i = 0; i < prefix_hsize; i++) {
+        for (int i = 0; i < prefix_hsize; i++) {
             pt = prefxp->hashtable[i];
             while (pt) {
                 sum_nameleng += pt->nprefix;
                 pt = pt->h_next;
             }
+        }
+        if (null_pt->total_count_exclusive > 0) {
+            /* Include the null prefix if it is valid */
+            num_prefixes += 1;
+            sum_nameleng += strlen("<null>");
         }
 
         /* Allocate stats buffer: <length, prefix stats list, tail>.
@@ -632,7 +633,7 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
 #endif
             assert(pos < buflen);
         }
-        for (i = 0; i < prefix_hsize; i++) {
+        for (int i = 0; i < prefix_hsize; i++) {
             pt = prefxp->hashtable[i];
             while (pt) {
 #ifdef NESTED_PREFIX
@@ -702,8 +703,8 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
                 pt = pt->h_next;
             }
         }
-        memcpy(buffer+pos, "END\r\n", 6);
-        *(uint32_t*)buffer = pos + 5 - sizeof(uint32_t);
+        pos += snprintf(buffer+pos, buflen-pos, "END\r\n");
+        *(uint32_t*)buffer = pos - sizeof(uint32_t);
 
         *(char**)prefix_data = buffer;
     }
