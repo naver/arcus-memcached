@@ -1178,16 +1178,22 @@ void stats_prefix_record_setattr(const char *key, const size_t nkey)
 char *stats_prefix_dump(int *length)
 {
     const char *format = "PREFIX %s "
-                         "get %llu hit %llu set %llu del %llu inc %llu dec %llu lcs %llu lis %llu lih %llu lds %llu "
-                         "ldh %llu lgs %llu lgh %llu scs %llu sis %llu sih %llu sds %llu sdh %llu sgs %llu sgh %llu "
-                         "ses %llu seh %llu mcs %llu mis %llu mih %llu mus %llu muh %llu mds %llu mdh %llu mgs %llu "
-                         "mgh %llu bcs %llu bis %llu bih %llu bus %llu buh %llu bds %llu bdh %llu bps %llu bph %llu "
-                         "bms %llu bmh %llu bgs %llu bgh %llu bns %llu bnh %llu pfs %llu pfh %llu pgs %llu pgh %llu "
+                         "get %llu hit %llu set %llu del %llu inc %llu "
+                         "dec %llu lcs %llu lis %llu lih %llu lds %llu "
+                         "ldh %llu lgs %llu lgh %llu scs %llu sis %llu "
+                         "sih %llu sds %llu sdh %llu sgs %llu sgh %llu "
+                         "ses %llu seh %llu mcs %llu mis %llu mih %llu "
+                         "mus %llu muh %llu mds %llu mdh %llu mgs %llu "
+                         "mgh %llu bcs %llu bis %llu bih %llu bus %llu "
+                         "buh %llu bds %llu bdh %llu bps %llu bph %llu "
+                         "bms %llu bmh %llu bgs %llu bgh %llu bns %llu "
+                         "bnh %llu pfs %llu pfh %llu pgs %llu pgh %llu "
                          "gps %llu gph %llu gas %llu sas %llu\r\n";
     PREFIX_STATS *pfs;
     char *buf;
-    int i, pos;
-    size_t size = 0, written = 0, total_written = 0;
+    size_t size;
+    int pos = 0;
+    int written;
 
     /*
      * Figure out how big the buffer needs to be. This is the sum of the
@@ -1207,8 +1213,7 @@ char *stats_prefix_dump(int *length)
         return NULL;
     }
 
-    pos = 0;
-    for (i = 0; i < PREFIX_HASH_SIZE; i++) {
+    for (int i = 0; i < PREFIX_HASH_SIZE; i++) {
         for (pfs = prefix_stats[i]; NULL != pfs; pfs = pfs->next) {
 #ifdef NESTED_PREFIX
             if (pfs->parent_stat != NULL)
@@ -1245,21 +1250,19 @@ char *stats_prefix_dump(int *length)
                            pfs->num_bop_gbps, pfs->num_bop_gbp_hits,
                            pfs->num_getattrs, pfs->num_setattrs);
             pos += written;
-            total_written += written;
-            assert(total_written < size);
+            assert(pos < size);
         }
     }
-
     UNLOCK_STATS();
-    memcpy(buf + pos, "END\r\n", 6);
 
-    *length = pos + 5;
+    pos += snprintf(buf + pos, size-pos, "END\r\n");
+    assert(pos < size);
+
+    *length = pos;
     return buf;
 }
 
-
 #ifdef UNIT_TEST
-
 /****************************************************************************
       To run unit tests, compile with $(CC) -DUNIT_TEST stats.c assoc.o
       (need assoc.o to get the hash() function).
@@ -1424,5 +1427,4 @@ main(int argc, char **argv)
     run_test("stats_prefix_record_set", test_prefix_record_set);
     run_test("stats_prefix_dump", test_prefix_dump);
 }
-
 #endif

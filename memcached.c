@@ -4004,13 +4004,12 @@ static void process_bin_stat(conn *c)
             if (strncmp(subcmd_pos, " dump", 5) == 0) {
                 int len;
                 char *dump_buf = stats_prefix_dump(&len);
-                if (dump_buf == NULL || len <= 0) {
+                if (dump_buf == NULL) {
                     write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
                     return;
-                } else {
-                    append_bin_stats("detailed", strlen("detailed"), dump_buf, len, c);
-                    free(dump_buf);
                 }
+                append_bin_stats("detailed", strlen("detailed"), dump_buf, len, c);
+                free(dump_buf);
             } else if (strncmp(subcmd_pos, " on", 3) == 0) {
                 settings.detail_enabled = 1;
             } else if (strncmp(subcmd_pos, " off", 4) == 0) {
@@ -7753,6 +7752,10 @@ inline static void process_stats_detail(conn *c, const char *command)
         else if (strcmp(command, "dump") == 0) {
             int len;
             char *stats = stats_prefix_dump(&len);
+            if (stats == NULL) {
+                out_string(c, "SERVER_ERROR no more memory");
+                return;
+            }
             write_and_free(c, stats, len);
         }
         else {
