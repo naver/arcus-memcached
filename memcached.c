@@ -147,9 +147,9 @@ static enum try_read_result try_read_udp(conn *c);
 /* stats */
 static void stats_init(void);
 static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate);
-static void process_stat_settings(ADD_STAT add_stats, void *c);
+static void process_stats_settings(ADD_STAT add_stats, void *c);
 #ifdef ENABLE_ZK_INTEGRATION
-static void process_stat_zookeeper(ADD_STAT add_stats, void *c);
+static void process_stats_zookeeper(ADD_STAT add_stats, void *c);
 #endif
 static void update_stat_cas(conn *c, ENGINE_ERROR_CODE ret);
 
@@ -3993,10 +3993,10 @@ static void process_bin_stat(conn *c)
         stats_reset(c);
         mc_engine.v1->reset_stats(mc_engine.v0, c);
     } else if (strncmp(subcommand, "settings", 8) == 0) {
-        process_stat_settings(&append_bin_stats, c);
+        process_stats_settings(&append_bin_stats, c);
 #ifdef ENABLE_ZK_INTEGRATION
     } else if (strncmp(subcommand, "zookeeper", 9) == 0) {
-        process_stat_zookeeper(&append_bin_stats, c);
+        process_stats_zookeeper(&append_bin_stats, c);
 #endif
     } else if (strncmp(subcommand, "detail", 6) == 0) {
         char *subcmd_pos = subcommand + 6;
@@ -8060,7 +8060,7 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
     UNLOCK_STATS();
 }
 
-static void process_stat_settings(ADD_STAT add_stats, void *c)
+static void process_stats_settings(ADD_STAT add_stats, void *c)
 {
     assert(add_stats);
 #ifdef ENABLE_ZK_INTEGRATION
@@ -8135,7 +8135,7 @@ static void process_stat_settings(ADD_STAT add_stats, void *c)
 }
 
 #ifdef ENABLE_ZK_INTEGRATION
-static void process_stat_zookeeper(ADD_STAT add_stats, void *c)
+static void process_stats_zookeeper(ADD_STAT add_stats, void *c)
 {
     assert(add_stats);
     arcus_zk_stats zk_stats;
@@ -8155,15 +8155,10 @@ static void process_stat_zookeeper(ADD_STAT add_stats, void *c)
 }
 #endif
 
-static void process_stat_command(conn *c, token_t *tokens, const size_t ntokens)
+static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens)
 {
-    assert(c != NULL);
+    assert(c != NULL && ntokens >= 2);
     const char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
-
-    if (ntokens < 2) {
-        out_string(c, "CLIENT_ERROR bad command line format");
-        return;
-    }
 
     if (ntokens == 2) {
         server_stats(&append_ascii_stats, c, false);
@@ -8182,10 +8177,10 @@ static void process_stat_command(conn *c, token_t *tokens, const size_t ntokens)
         /* Output already generated */
         return;
     } else if (strcmp(subcommand, "settings") == 0) {
-        process_stat_settings(&append_ascii_stats, c);
+        process_stats_settings(&append_ascii_stats, c);
 #ifdef ENABLE_ZK_INTEGRATION
     } else if (strcmp(subcommand, "zookeeper") == 0) {
-        process_stat_zookeeper(&append_ascii_stats, c);
+        process_stats_zookeeper(&append_ascii_stats, c);
 #endif
     } else if (strcmp(subcommand, "cachedump") == 0) {
         process_stats_cachedump(c, tokens, ntokens);
@@ -8193,12 +8188,11 @@ static void process_stat_command(conn *c, token_t *tokens, const size_t ntokens)
     } else if (strcmp(subcommand, "aggregate") == 0) {
         server_stats(&append_ascii_stats, c, true);
     } else if (strcmp(subcommand, "topkeys") == 0) {
-        if (default_topkeys) {
-            topkeys_stats(default_topkeys, c, get_current_time(), append_ascii_stats);
-        } else {
+        if (default_topkeys == NULL) {
             out_string(c, "NOT_SUPPORTED");
             return;
         }
+        topkeys_stats(default_topkeys, c, get_current_time(), append_ascii_stats);
     } else if (strcmp(subcommand, "prefixes") == 0) {
         process_stats_prefix(c, NULL, -1);
         return;
@@ -8226,8 +8220,8 @@ static void process_stat_command(conn *c, token_t *tokens, const size_t ntokens)
             /* no matching stat */
             ret = ENGINE_KEY_ENOENT;
         } else {
-            ret = mc_engine.v1->get_stats(mc_engine.v0, c, buf,
-                                          nb, append_ascii_stats);
+            ret = mc_engine.v1->get_stats(mc_engine.v0, c, buf, nb,
+                                          append_ascii_stats);
         }
 
         switch (ret) {
@@ -12807,7 +12801,7 @@ static void process_command(conn *c, char *command, int cmdlen)
     }
     else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "stats") == 0))
     {
-        process_stat_command(c, tokens, ntokens);
+        process_stats_command(c, tokens, ntokens);
     }
     else if ((ntokens >= 2 && ntokens <= 4) && (strcmp(tokens[COMMAND_TOKEN].value, "flush_all") == 0))
     {
