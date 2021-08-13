@@ -7766,6 +7766,50 @@ inline static void process_stats_detail(conn *c, const char *command)
     }
 }
 
+static void process_stats_cachedump(conn *c, token_t *tokens, const size_t ntokens)
+{
+    char *buf = NULL;
+    unsigned int bytes = 0;
+    unsigned int id;
+    unsigned int limit = 0;
+    bool forward = true;
+    bool sticky = false;
+    bool valid = false;
+
+    do {
+        if (ntokens < 5 || ntokens > 7) break;
+        if (!safe_strtoul(tokens[2].value, &id)) break;
+        if (!safe_strtoul(tokens[3].value, &limit)) break;
+        if (ntokens >= 6) {
+            if (strcmp(tokens[4].value, "forward")==0) forward = true;
+            else if (strcmp(tokens[4].value, "backward")==0) forward = false;
+            else break;
+        }
+        if (ntokens == 7) {
+            if (strcmp(tokens[5].value, "sticky")==0) sticky = true;
+            else break;
+        }
+        valid = true;
+    } while(0);
+
+    if (valid == false) {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "CLIENT_ERROR bad command line format");
+        return;
+    }
+    if (id > POWER_LARGEST) {
+        out_string(c, "CLIENT_ERROR Illegal slab id");
+        return;
+    }
+
+    if (limit == 0)  limit = 50;
+    if (limit > 200) limit = 200;
+
+    buf = mc_engine.v1->cachedump(mc_engine.v0, c, id, limit,
+                                  forward, sticky, &bytes);
+    write_and_free(c, buf, bytes);
+}
+
 static void process_stats_prefix(conn *c, const char *prefix, const int nprefix)
 {
     assert(c != NULL);
@@ -8123,8 +8167,8 @@ static void process_stat_command(conn *c, token_t *tokens, const size_t ntokens)
 
     if (ntokens == 2) {
         server_stats(&append_ascii_stats, c, false);
-        (void)mc_engine.v1->get_stats(mc_engine.v0, c,
-                                      NULL, 0, &append_ascii_stats);
+        (void)mc_engine.v1->get_stats(mc_engine.v0, c, NULL, 0,
+                                      &append_ascii_stats);
     } else if (strcmp(subcommand, "reset") == 0) {
         stats_reset(c);
         out_string(c, "RESET");
@@ -8144,51 +8188,7 @@ static void process_stat_command(conn *c, token_t *tokens, const size_t ntokens)
         process_stat_zookeeper(&append_ascii_stats, c);
 #endif
     } else if (strcmp(subcommand, "cachedump") == 0) {
-        char *buf = NULL;
-        unsigned int bytes = 0, id, limit = 0;
-        bool forward=true, sticky=false;
-
-        if (ntokens < 5 || ntokens > 7) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
-        }
-        if (!safe_strtoul(tokens[2].value, &id) ||
-            !safe_strtoul(tokens[3].value, &limit)) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
-        }
-        if (id > POWER_LARGEST) {
-            out_string(c, "CLIENT_ERROR Illegal slab id");
-            return;
-        }
-
-        if (limit == 0)  limit = 50;
-        if (limit > 200) limit = 200;
-
-        if (ntokens >= 6) {
-            if (strcmp(tokens[4].value, "forward")==0) forward = true;
-            else if (strcmp(tokens[4].value, "backward")==0) forward = false;
-            else {
-                print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
-                return;
-            }
-        }
-
-        if (ntokens == 7) {
-            if (strcmp(tokens[5].value, "sticky")==0) sticky = true;
-            else {
-                print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
-                return;
-            }
-        }
-
-        buf = mc_engine.v1->cachedump(mc_engine.v0, c, id, limit,
-                                      forward, sticky,  &bytes);
-        write_and_free(c, buf, bytes);
+        process_stats_cachedump(c, tokens, ntokens);
         return;
     } else if (strcmp(subcommand, "aggregate") == 0) {
         server_stats(&append_ascii_stats, c, true);
