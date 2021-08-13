@@ -526,18 +526,13 @@ uint32_t prefix_count(void)
 
 char *prefix_dump_stats(int *length)
 {
-#ifdef NESTED_PREFIX
     const char *format = "PREFIX %s "
                          "itm %llu kitm %llu litm %llu sitm %llu mitm %llu bitm %llu " /* total item count */
                          "tsz %llu ktsz %llu ltsz %llu stsz %llu mtsz %llu btsz %llu " /* total item bytes */
-                         "chd %llu citm %llu ctsz %llu "
-                         "time %04d%02d%02d%02d%02d%02d\r\n"; /* create time */
-#else
-    const char *format = "PREFIX %s "
-                         "itm %llu kitm %llu litm %llu sitm %llu mitm %llu bitm %llu " /* total item count */
-                         "tsz %llu ktsz %llu ltsz %llu stsz %llu mtsz %llu btsz %llu " /* total item bytes */
-                         "time %04d%02d%02d%02d%02d%02d\r\n"; /* create time */
+#if 0 // FUTURE: NESTED_PREFIX
+                         "chd %llu citm %llu ctsz %llu " /* child prefixes and items */
 #endif
+                         "time %04d%02d%02d%02d%02d%02d\r\n"; /* create time */
     prefix_t *pt;
     struct tm *t;
     char *buffer;
@@ -563,22 +558,17 @@ char *prefix_dump_stats(int *length)
 
     /* Allocate stats buffer: <length, prefix stats list, tail>.
      * Check the count of "%llu" and "%02d" in the above format string.
-     *   - 10 : the count of "%llu" strings.
+     *   - 12 : the count of "%llu" strings.
      *   -  5 : the count of "%02d" strings.
      */
-#ifdef NESTED_PREFIX
-    buflen = sum_nameleng
-           + num_prefixes * (strlen(format) - 2 /* %s replaced by prefix name */
-                             + (15 * (20 - 4))  /* %llu replaced by 20-digit num */
-                             - ( 5 * ( 4 - 2))) /* %02d replaced by 2-digit num */
-           + sizeof("END\r\n"); /* tail string */
-#else
+#if 0 // FUTURE: NESTED_PREFIX
+    /*   - 15 : the count of "%llu" strings. */
+#endif
     buflen = sum_nameleng
            + num_prefixes * (strlen(format) - 2 /* %s replaced by prefix name */
                              + (12 * (20 - 4))  /* %llu replaced by 20-digit num */
                              - ( 5 * ( 4 - 2))) /* %02d replaced by 2-digit num */
            + sizeof("END\r\n"); /* tail string */
-#endif
     if ((buffer = malloc(buflen)) == NULL) {
         *length = 0;
         return NULL;
@@ -603,9 +593,11 @@ char *prefix_dump_stats(int *length)
                         pt->items_bytes_exclusive[ITEM_TYPE_SET],
                         pt->items_bytes_exclusive[ITEM_TYPE_MAP],
                         pt->items_bytes_exclusive[ITEM_TYPE_BTREE],
+#if 0 // FUTURE
                         (uint64_t)pt->child_prefix_items,
                         (uint64_t)0,
                         (uint64_t)0,
+#endif
                         t->tm_year+1900, t->tm_mon+1, t->tm_mday,
                         t->tm_hour, t->tm_min, t->tm_sec);
 #else
@@ -650,9 +642,11 @@ char *prefix_dump_stats(int *length)
                                 pt->items_bytes_inclusive[ITEM_TYPE_SET],
                                 pt->items_bytes_inclusive[ITEM_TYPE_MAP],
                                 pt->items_bytes_inclusive[ITEM_TYPE_BTREE],
+#if 0 // FUTURE
                                 (uint64_t)pt->child_prefix_items,
                                 pt->total_count_inclusive - pt->total_count_exclusive,
                                 pt->total_bytes_inclusive - pt->total_bytes_exclusive,
+#endif
                                 t->tm_year+1900, t->tm_mon+1, t->tm_mday,
                                 t->tm_hour, t->tm_min, t->tm_sec);
             } else {
@@ -669,9 +663,11 @@ char *prefix_dump_stats(int *length)
                                 pt->items_bytes_exclusive[ITEM_TYPE_SET],
                                 pt->items_bytes_exclusive[ITEM_TYPE_MAP],
                                 pt->items_bytes_exclusive[ITEM_TYPE_BTREE],
+#if 0 // FUTURE
                                 (uint64_t)pt->child_prefix_items,
                                 (uint64_t)0,
                                 (uint64_t)0,
+#endif
                                 t->tm_year+1900, t->tm_mon+1, t->tm_mday,
                                 t->tm_hour, t->tm_min, t->tm_sec);
             }
