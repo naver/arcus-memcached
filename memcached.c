@@ -4031,49 +4031,6 @@ static void process_bin_stat(conn *c)
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
             return;
         }
-    /****** SPEC-OUT FUNCTIONS **********
-    } else if (strncmp(subcommand, "prefix", 6) == 0) {
-        char *prefix = subcommand + 7;
-        int nprefix = nkey - 13;
-
-        if (nprefix < 1 || nprefix > PREFIX_MAX_LENGTH) {
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
-            return;
-        }
-
-        prefix_engine_stats prefix_data;
-        ret = mc_engine.v1->get_prefix_stats(mc_engine.v0, c, prefix, nprefix, &prefix_data);
-
-        if (ret == ENGINE_SUCCESS) {
-            char buffer[1024];
-            char *str = &buffer[0];
-            *str = '\0';
-
-            sprintf(str, "PREFIX hash_items=%"PRIu64"\r\n", prefix_data.hash_items);
-            sprintf(str+strlen(str), "PREFIX hash_items_bytes=%"PRIu64"\r\n", prefix_data.hash_items_bytes);
-            sprintf(str+strlen(str), "PREFIX prefix_items=%u\r\n", prefix_data.prefix_items);
-            sprintf(str+strlen(str), "END");
-
-            append_bin_stats("prefix", strlen("prefix"), str, strlen(str), c);
-        }
-    } else if (strncmp(subcommand, "noprefix", 8) == 0) {
-        prefix_engine_stats prefix_data;
-        ret = mc_engine.v1->get_prefix_stats(mc_engine.v0, c, NULL, 0, &prefix_data);
-
-        if (ret == ENGINE_SUCCESS) {
-            char buffer[1024];
-            char *str = &buffer[0];
-            *str = '\0';
-
-            sprintf(str, "NOPREFIX hash_items=%"PRIu64"\r\n", prefix_data.hash_items);
-            sprintf(str+strlen(str), "NOPREFIX hash_items_bytes=%"PRIu64"\r\n", prefix_data.hash_items_bytes);
-            sprintf(str+strlen(str), "NOPREFIX prefix_items=%u\r\n", prefix_data.prefix_items);
-            sprintf(str+strlen(str), "NOPREFIX tot_prefix_items=%u\r\n", prefix_data.tot_prefix_items);
-            sprintf(str+strlen(str), "END");
-
-            append_bin_stats("noprefix", strlen("noprefix"), str, strlen(str), c);
-        }
-    ************************************/
     } else {
         ret = mc_engine.v1->get_stats(mc_engine.v0, c, subcommand, nkey, append_bin_stats);
     }
@@ -7810,63 +7767,6 @@ static void process_stats_cachedump(conn *c, token_t *tokens, const size_t ntoke
     write_and_free(c, buf, bytes);
 }
 
-#if 0 // OLD_CODE
-static void process_stats_prefix(conn *c, const char *prefix, const int nprefix)
-{
-    assert(c != NULL);
-    ENGINE_ERROR_CODE ret;
-
-    if (nprefix < 0) {
-        char *prefix_data;
-        ret = mc_engine.v1->get_prefix_stats(mc_engine.v0, c, prefix, nprefix, &prefix_data);
-        switch (ret) {
-        case ENGINE_SUCCESS:
-            c->write_and_free = prefix_data;
-            c->wcurr  = prefix_data + sizeof(uint32_t);
-            c->wbytes = *(uint32_t*)prefix_data;
-            conn_set_state(c, conn_write);
-            c->write_and_go = conn_new_cmd;
-            break;
-        case ENGINE_ENOMEM:
-            out_string(c, "SERVER_ERROR no more memory");
-            break;
-        default:
-            handle_unexpected_errorcode_ascii(c, __func__, ret);
-        }
-    } else {
-        /****** SPEC-OUT FUNCTIONS **********
-        prefix_engine_stats prefix_data;
-        if (nprefix > PREFIX_MAX_LENGTH) {
-            out_string(c, "CLIENT_ERROR too long prefix name");
-            return;
-        }
-        ret = mc_engine.v1->get_prefix_stats(mc_engine.v0, c, prefix, nprefix, &prefix_data);
-        switch (ret) {
-        case ENGINE_SUCCESS:
-            {
-            char buffer[1024];
-            char *str = &buffer[0];
-            *str = '\0';
-            sprintf(str, "PREFIX name=%s\r\n", (prefix == NULL ? "<null>" : prefix));
-            sprintf(str+strlen(str), "PREFIX hash_items=%"PRIu64"\r\n", prefix_data.hash_items);
-            sprintf(str+strlen(str), "PREFIX hash_items_bytes=%"PRIu64"\r\n", prefix_data.hash_items_bytes);
-            sprintf(str+strlen(str), "PREFIX prefix_items=%u\r\n", prefix_data.prefix_items);
-            sprintf(str+strlen(str), "PREFIX tot_prefix_items=%u\r\n", prefix_data.tot_prefix_items);
-            sprintf(str+strlen(str), "END");
-            out_string(c, str);
-            }
-            break;
-        case ENGINE_PREFIX_ENOENT:
-            out_string(c, "NOT_FOUND");
-            break;
-        default:
-            handle_unexpected_errorcode_ascii(c, __func__, ret);
-        }
-        ************************************/
-    }
-}
-#endif
-
 static void aggregate_callback(void *in, void *out)
 {
     struct thread_stats *out_thread_stats = out;
@@ -8207,18 +8107,27 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
         }
         write_and_free(c, stats, len);
         return; /* Output already generated */
-    /****** SPEC-OUT FUNCTIONS **********
     } else if (strcmp(subcommand, "prefix") == 0) {
-        if (ntokens < 4) {
-            out_string(c, "CLIENT_ERROR usage: stats prefix <prefix>");
-        } else {
-            process_stats_prefix(c, tokens[2].value, tokens[2].length);
+        /* command: stats prefix <prefix>\r\n */
+        if (ntokens != 4) {
+            print_invalid_command(c, tokens, ntokens);
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
         }
-        return;
-    } else if (strcmp(subcommand, "noprefix") == 0) {
-        process_stats_prefix(c, NULL, 0);
-        return;
-    ************************************/
+        if (tokens[2].length > PREFIX_MAX_LENGTH) {
+            out_string(c, "CLIENT_ERROR too long prefix name");
+            return;
+        }
+        if (strcmp(tokens[2].value, "<null>") == 0) { /* reserved keyword */
+            (void)mc_engine.v1->prefix_get_stats(mc_engine.v0, c, NULL, 0,
+                                                 append_ascii_stats);
+            stats_prefix_get(NULL, 0, append_ascii_stats, c);
+        } else {
+            (void)mc_engine.v1->prefix_get_stats(mc_engine.v0, c,
+                                                 tokens[2].value, tokens[2].length,
+                                                 append_ascii_stats);
+            stats_prefix_get(tokens[2].value, tokens[2].length, append_ascii_stats, c);
+        }
     } else {
         /* getting here means that the subcommand is either engine specific or
            is invalid. query the engine and see. */

@@ -707,32 +707,128 @@ char *prefix_dump_stats(int *length)
 ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix,
                                    ADD_STAT add_stat, const void *cookie)
 {
-    return ENGINE_ENOTSUP;
-    /***
-    {
-        prefix_engine_stats *prefix_stats = (prefix_engine_stats*)prefix_data;
+    prefix_t *pt;
+    struct tm *t;
+    int len;
+    char val[64];
 
-        if (prefix != NULL) {
-            pt = _prefix_find(prefix, nprefix, svcore->hash(prefix,nprefix,0));
-        } else {
-            pt = null_pt;
-        }
-        if (pt == NULL) {
-            return ENGINE_PREFIX_ENOENT;
-        }
-
-#ifdef NESTED_PREFIX
-        prefix_stats->hash_items = pt->items_count_inclusive[ITEM_TYPE_KV];
-        prefix_stats->hash_items_bytes = pt->items_bytes_inclusive[ITEM_TYPE_KV];
-#else
-        prefix_stats->hash_items = pt->items_count[ITEM_TYPE_KV];
-        prefix_stats->hash_items_bytes = pt->items_bytes[ITEM_TYPE_KV];
-#endif
-        prefix_stats->prefix_items = pt->child_prefix_items;
-        if (prefix != NULL)
-            prefix_stats->tot_prefix_items = pt->child_prefix_items;
-        else
-            prefix_stats->tot_prefix_items = prefxp->total_prefix_items;
+    if (prefix != NULL) {
+        pt = _prefix_find(prefix, nprefix, svcore->hash(prefix,nprefix,0));
+    } else {
+        pt = (null_pt->total_count_exclusive > 0) ? null_pt : NULL;
     }
-    ***/
+    if (pt == NULL) {
+        return ENGINE_PREFIX_ENOENT;
+    }
+
+    /* create time */
+    t = localtime(&pt->create_time);
+    len = sprintf(val, "%04d%02d%02d%02d%02d%02d",
+                  t->tm_year+1900, t->tm_mon+1, t->tm_mday,
+                  t->tm_hour, t->tm_min, t->tm_sec);
+    add_stat("create_time", 11, val, len, cookie);
+#ifdef NESTED_PREFIX
+    if (pt->child_prefix_items > 0) {
+        /* item count */
+        len = sprintf(val, "%"PRIu64, pt->total_count_inclusive);
+        add_stat("item_count_total", 16, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_count_inclusive[ITEM_TYPE_KV]);
+        add_stat("item_count_kv", 13, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_count_inclusive[ITEM_TYPE_LIST]);
+        add_stat("item_count_list", 15, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_count_inclusive[ITEM_TYPE_SET]);
+        add_stat("item_count_set", 14, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_count_inclusive[ITEM_TYPE_MAP]);
+        add_stat("item_count_map", 14, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_count_inclusive[ITEM_TYPE_BTREE]);
+        add_stat("item_count_btree", 16, val, len, cookie);
+        /* item bytes */
+        len = sprintf(val, "%"PRIu64, pt->total_bytes_inclusive);
+        add_stat("item_bytes_total", 16, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_bytes_inclusive[ITEM_TYPE_KV]);
+        add_stat("item_bytes_kv", 13, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_bytes_inclusive[ITEM_TYPE_LIST]);
+        add_stat("item_bytes_list", 15, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_bytes_inclusive[ITEM_TYPE_SET]);
+        add_stat("item_bytes_set", 14, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_bytes_inclusive[ITEM_TYPE_MAP]);
+        add_stat("item_bytes_map", 14, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_bytes_inclusive[ITEM_TYPE_BTREE]);
+        add_stat("item_bytes_btree", 16, val, len, cookie);
+#if 0 // FUTURE
+        /* child prefixes */
+        len = sprintf(val, "%"PRIu64, (uint64_t)pt->child_prefix_items);
+        add_stat("child_prefixes", 14, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->total_count_inclusive - pt->total_count_exclusive);
+        add_stat("child_item_count", 16, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->total_bytes_inclusive - pt->total_bytes_exclusive);
+        add_stat("child_item_bytes", 16, val, len, cookie);
+#endif
+    } else {
+        /* item count */
+        len = sprintf(val, "%"PRIu64, pt->total_count_exclusive);
+        add_stat("item_count_total", 16, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_count_exclusive[ITEM_TYPE_KV]);
+        add_stat("item_count_kv", 13, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_count_exclusive[ITEM_TYPE_LIST]);
+        add_stat("item_count_list", 15, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_count_exclusive[ITEM_TYPE_SET]);
+        add_stat("item_count_set", 14, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_count_exclusive[ITEM_TYPE_MAP]);
+        add_stat("item_count_map", 14, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_count_exclusive[ITEM_TYPE_BTREE]);
+        add_stat("item_count_btree", 16, val, len, cookie);
+        /* item bytes */
+        len = sprintf(val, "%"PRIu64, pt->total_bytes_exclusive);
+        add_stat("item_bytes_total", 16, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_bytes_exclusive[ITEM_TYPE_KV]);
+        add_stat("item_bytes_kv", 13, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_bytes_exclusive[ITEM_TYPE_LIST]);
+        add_stat("item_bytes_list", 15, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_bytes_exclusive[ITEM_TYPE_SET]);
+        add_stat("item_bytes_set", 14, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_bytes_exclusive[ITEM_TYPE_MAP]);
+        add_stat("item_bytes_map", 14, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, pt->items_bytes_exclusive[ITEM_TYPE_BTREE]);
+        add_stat("item_bytes_btree", 16, val, len, cookie);
+#if 0 // FUTURE
+        /* child prefixes */
+        len = sprintf(val, "%"PRIu64, (uint64_t)pt->child_prefix_items);
+        add_stat("child_prefixes", 14, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, (uint64_t)0);
+        add_stat("child_item_count", 16, val, len, cookie);
+        len = sprintf(val, "%"PRIu64, (uint64_t)0);
+        add_stat("child_item_bytes", 16, val, len, cookie);
+#endif
+    }
+#else
+    /* item count */
+    len = sprintf(val, "%"PRIu64, pt->total_count_exclusive);
+    add_stat("item_count_total", 16, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, pt->items_count[ITEM_TYPE_KV]);
+    add_stat("item_count_kv", 13, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, pt->items_count[ITEM_TYPE_LIST]);
+    add_stat("item_count_list", 15, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, pt->items_count[ITEM_TYPE_SET]);
+    add_stat("item_count_set", 14, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, pt->items_count[ITEM_TYPE_MAP]);
+    add_stat("item_count_map", 14, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, pt->items_count[ITEM_TYPE_BTREE]);
+    add_stat("item_count_btree", 16, val, len, cookie);
+    /* item bytes */
+    len = sprintf(val, "%"PRIu64, pt->total_bytes_exclusive);
+    add_stat("item_bytes_total", 16, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, pt->items_bytes[ITEM_TYPE_KV]);
+    add_stat("item_bytes_kv", 13, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, pt->items_bytes[ITEM_TYPE_LIST]);
+    add_stat("item_bytes_list", 15, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, pt->items_bytes[ITEM_TYPE_SET]);
+    add_stat("item_bytes_set", 14, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, pt->items_bytes[ITEM_TYPE_MAP]);
+    add_stat("item_bytes_map", 14, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, pt->items_bytes[ITEM_TYPE_BTREE]);
+    add_stat("item_bytes_btree", 16, val, len, cookie);
+#endif
+
+    return ENGINE_SUCCESS;
 }

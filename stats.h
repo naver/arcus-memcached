@@ -55,3 +55,4 @@ void stats_prefix_record_getattr(const char *key, const size_t nkey);
 void stats_prefix_record_setattr(const char *key, const size_t nkey);
 /*@null@*/
 char *stats_prefix_dump(int *length);
+void stats_prefix_get(const char *prefix, const size_t nprefix, ADD_STAT add_stat, void *cookie);

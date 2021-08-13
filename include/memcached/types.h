@@ -385,14 +385,6 @@ extern "C" {
         uint8_t  trimmed;
     } item_attr;
 
-    /* prefix stats of engine */
-    typedef struct {
-        uint64_t hash_items_bytes;
-        uint64_t hash_items;
-        uint32_t prefix_items;
-        uint32_t tot_prefix_items;
-    } prefix_engine_stats;
-
     typedef struct {
         const char *username;
         const char *config;
