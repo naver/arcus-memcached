@@ -711,9 +711,16 @@ Demo_reset_stats(ENGINE_HANDLE* handle, const void *cookie)
     pthread_mutex_unlock(&engine->stats.lock);
 }
 
+static char *
+Demo_prefix_dump_stats(ENGINE_HANDLE* handle, const void* cookie, int *length)
+{
+    *length = -1; /* It means ENGINE_ENOTSUP */
+    return NULL;
+}
+
 static ENGINE_ERROR_CODE
-Demo_get_prefix_stats(ENGINE_HANDLE* handle, const void* cookie,
-                         const void* key, const int nkey, void *prefix_data)
+Demo_prefix_get_stats(ENGINE_HANDLE* handle, const void* cookie,
+                      const void* prefix, const int nprefix, ADD_STAT add_stat)
 {
     return ENGINE_ENOTSUP;
 }
@@ -854,7 +861,8 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          /* Stats API */
          .get_stats        = Demo_get_stats,
          .reset_stats      = Demo_reset_stats,
-         .get_prefix_stats = Demo_get_prefix_stats,
+         .prefix_dump_stats = Demo_prefix_dump_stats,
+         .prefix_get_stats = Demo_prefix_get_stats,
          /* Dump API */
          /* Config API */
          .set_config       = Demo_set_config,

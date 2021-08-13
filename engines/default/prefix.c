@@ -524,98 +524,160 @@ uint32_t prefix_count(void)
     return prefxp->total_prefix_items;
 }
 
-ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *prefix_data)
+char *prefix_dump_stats(int *length)
 {
+#ifdef NESTED_PREFIX
+    const char *format = "PREFIX %s "
+                         "itm %llu kitm %llu litm %llu sitm %llu mitm %llu bitm %llu " /* total item count */
+                         "tsz %llu ktsz %llu ltsz %llu stsz %llu mtsz %llu btsz %llu " /* total item bytes */
+                         "chd %llu citm %llu ctsz %llu "
+                         "time %04d%02d%02d%02d%02d%02d\r\n"; /* create time */
+#else
+    const char *format = "PREFIX %s "
+                         "itm %llu kitm %llu litm %llu sitm %llu mitm %llu bitm %llu " /* total item count */
+                         "tsz %llu ktsz %llu ltsz %llu stsz %llu mtsz %llu btsz %llu " /* total item bytes */
+                         "time %04d%02d%02d%02d%02d%02d\r\n"; /* create time */
+#endif
     prefix_t *pt;
     struct tm *t;
     char *buffer;
-    uint32_t buflen;
-    uint32_t pos;
+    int buflen;
+    int pos = 0;
+    uint32_t prefix_hsize = hashsize(DEFAULT_PREFIX_HASHPOWER);
+    uint32_t num_prefixes = prefxp->total_prefix_items;
+    uint32_t sum_nameleng = 0; /* sum of prefix name length */
 
-    if (nprefix < 0) /* all prefix stats */
-    {
+    /* get # of prefixes and length of prefix names */
+    for (int i = 0; i < prefix_hsize; i++) {
+        pt = prefxp->hashtable[i];
+        while (pt) {
+            sum_nameleng += pt->nprefix;
+            pt = pt->h_next;
+        }
+    }
+    if (null_pt->total_count_exclusive > 0) {
+        /* Include the null prefix if it is valid */
+        num_prefixes += 1;
+        sum_nameleng += strlen("<null>");
+    }
+
+    /* Allocate stats buffer: <length, prefix stats list, tail>.
+     * Check the count of "%llu" and "%02d" in the above format string.
+     *   - 10 : the count of "%llu" strings.
+     *   -  5 : the count of "%02d" strings.
+     */
 #ifdef NESTED_PREFIX
-        const char *format = "PREFIX %s "
-                             "itm %llu kitm %llu litm %llu sitm %llu mitm %llu bitm %llu " /* total item count */
-                             "tsz %llu ktsz %llu ltsz %llu stsz %llu mtsz %llu btsz %llu " /* total item bytes */
-                             "chd %llu citm %llu ctsz %llu "
-                             "time %04d%02d%02d%02d%02d%02d\r\n"; /* create time */
+    buflen = sum_nameleng
+           + num_prefixes * (strlen(format) - 2 /* %s replaced by prefix name */
+                             + (15 * (20 - 4))  /* %llu replaced by 20-digit num */
+                             - ( 5 * ( 4 - 2))) /* %02d replaced by 2-digit num */
+           + sizeof("END\r\n"); /* tail string */
 #else
-        const char *format = "PREFIX %s "
-                             "itm %llu kitm %llu litm %llu sitm %llu mitm %llu bitm %llu " /* total item count */
-                             "tsz %llu ktsz %llu ltsz %llu stsz %llu mtsz %llu btsz %llu " /* total item bytes */
-                             "time %04d%02d%02d%02d%02d%02d\r\n"; /* create time */
+    buflen = sum_nameleng
+           + num_prefixes * (strlen(format) - 2 /* %s replaced by prefix name */
+                             + (12 * (20 - 4))  /* %llu replaced by 20-digit num */
+                             - ( 5 * ( 4 - 2))) /* %02d replaced by 2-digit num */
+           + sizeof("END\r\n"); /* tail string */
 #endif
-        uint32_t prefix_hsize = hashsize(DEFAULT_PREFIX_HASHPOWER);
-        uint32_t num_prefixes = prefxp->total_prefix_items;
-        uint32_t sum_nameleng = 0; /* sum of prefix name length */
+    if ((buffer = malloc(buflen)) == NULL) {
+        *length = 0;
+        return NULL;
+    }
 
-        /* get # of prefixes and length of prefix names */
-        for (int i = 0; i < prefix_hsize; i++) {
-            pt = prefxp->hashtable[i];
-            while (pt) {
-                sum_nameleng += pt->nprefix;
+    /* write prefix stats in the buffer */
+    if (num_prefixes > prefxp->total_prefix_items) { /* include null prefix */
+        pt = null_pt;
+        t = localtime(&pt->create_time);
+#ifdef NESTED_PREFIX
+        assert(pt->child_prefix_items == 0);
+        pos += snprintf(buffer+pos, buflen-pos, format, "<null>",
+                        pt->total_count_exclusive,
+                        pt->items_count_exclusive[ITEM_TYPE_KV],
+                        pt->items_count_exclusive[ITEM_TYPE_LIST],
+                        pt->items_count_exclusive[ITEM_TYPE_SET],
+                        pt->items_count_exclusive[ITEM_TYPE_MAP],
+                        pt->items_count_exclusive[ITEM_TYPE_BTREE],
+                        pt->total_bytes_exclusive,
+                        pt->items_bytes_exclusive[ITEM_TYPE_KV],
+                        pt->items_bytes_exclusive[ITEM_TYPE_LIST],
+                        pt->items_bytes_exclusive[ITEM_TYPE_SET],
+                        pt->items_bytes_exclusive[ITEM_TYPE_MAP],
+                        pt->items_bytes_exclusive[ITEM_TYPE_BTREE],
+                        (uint64_t)pt->child_prefix_items,
+                        (uint64_t)0,
+                        (uint64_t)0,
+                        t->tm_year+1900, t->tm_mon+1, t->tm_mday,
+                        t->tm_hour, t->tm_min, t->tm_sec);
+#else
+        pos += snprintf(buffer+pos, buflen-pos, format, "<null>",
+                        pt->total_count_exclusive,
+                        pt->items_count[ITEM_TYPE_KV],
+                        pt->items_count[ITEM_TYPE_LIST],
+                        pt->items_count[ITEM_TYPE_SET],
+                        pt->items_count[ITEM_TYPE_MAP],
+                        pt->items_count[ITEM_TYPE_BTREE],
+                        pt->total_bytes_exclusive,
+                        pt->items_bytes[ITEM_TYPE_KV],
+                        pt->items_bytes[ITEM_TYPE_LIST],
+                        pt->items_bytes[ITEM_TYPE_SET],
+                        pt->items_bytes[ITEM_TYPE_MAP],
+                        pt->items_bytes[ITEM_TYPE_BTREE],
+                        t->tm_year+1900, t->tm_mon+1, t->tm_mday,
+                        t->tm_hour, t->tm_min, t->tm_sec);
+#endif
+        assert(pos < buflen);
+    }
+    for (int i = 0; i < prefix_hsize; i++) {
+        pt = prefxp->hashtable[i];
+        while (pt) {
+#ifdef NESTED_PREFIX
+            if (pt->parent_prefix != NULL) {
                 pt = pt->h_next;
+                continue;
             }
-        }
-        if (null_pt->total_count_exclusive > 0) {
-            /* Include the null prefix if it is valid */
-            num_prefixes += 1;
-            sum_nameleng += strlen("<null>");
-        }
-
-        /* Allocate stats buffer: <length, prefix stats list, tail>.
-         * Check the count of "%llu" and "%02d" in the above format string.
-         *   - 10 : the count of "%llu" strings.
-         *   -  5 : the count of "%02d" strings.
-         */
-#ifdef NESTED_PREFIX
-        buflen = sizeof(uint32_t) /* length */
-               + sum_nameleng
-               + num_prefixes * (strlen(format) - 2 /* %s replaced by prefix name */
-                                 + (15 * (20 - 4))  /* %llu replaced by 20-digit num */
-                                 - ( 5 * ( 4 - 2))) /* %02d replaced by 2-digit num */
-               + sizeof("END\r\n"); /* tail string */
-#else
-        buflen = sizeof(uint32_t) /* length */
-               + sum_nameleng
-               + num_prefixes * (strlen(format) - 2 /* %s replaced by prefix name */
-                                 + (12 * (20 - 4))  /* %llu replaced by 20-digit num */
-                                 - ( 5 * ( 4 - 2))) /* %02d replaced by 2-digit num */
-               + sizeof("END\r\n"); /* tail string */
-#endif
-
-        if ((buffer = malloc(buflen)) == NULL) {
-            return ENGINE_ENOMEM;
-        }
-
-        /* write prefix stats in the buffer */
-        pos = sizeof(uint32_t);
-        if (num_prefixes > prefxp->total_prefix_items) { /* include null prefix */
-            pt = null_pt;
             t = localtime(&pt->create_time);
-#ifdef NESTED_PREFIX
-            assert(pt->child_prefix_items == 0);
-            pos += snprintf(buffer+pos, buflen-pos, format, "<null>",
-                            pt->total_count_exclusive,
-                            pt->items_count_exclusive[ITEM_TYPE_KV],
-                            pt->items_count_exclusive[ITEM_TYPE_LIST],
-                            pt->items_count_exclusive[ITEM_TYPE_SET],
-                            pt->items_count_exclusive[ITEM_TYPE_MAP],
-                            pt->items_count_exclusive[ITEM_TYPE_BTREE],
-                            pt->total_bytes_exclusive,
-                            pt->items_bytes_exclusive[ITEM_TYPE_KV],
-                            pt->items_bytes_exclusive[ITEM_TYPE_LIST],
-                            pt->items_bytes_exclusive[ITEM_TYPE_SET],
-                            pt->items_bytes_exclusive[ITEM_TYPE_MAP],
-                            pt->items_bytes_exclusive[ITEM_TYPE_BTREE],
-                            (uint64_t)pt->child_prefix_items,
-                            (uint64_t)0,
-                            (uint64_t)0,
-                            t->tm_year+1900, t->tm_mon+1, t->tm_mday,
-                            t->tm_hour, t->tm_min, t->tm_sec);
+            if (pt->child_prefix_items > 0) {
+                pos += snprintf(buffer+pos, buflen-pos, format, _get_prefix(pt),
+                                pt->total_count_inclusive,
+                                pt->items_count_inclusive[ITEM_TYPE_KV],
+                                pt->items_count_inclusive[ITEM_TYPE_LIST],
+                                pt->items_count_inclusive[ITEM_TYPE_SET],
+                                pt->items_count_inclusive[ITEM_TYPE_MAP],
+                                pt->items_count_inclusive[ITEM_TYPE_BTREE],
+                                pt->total_bytes_inclusive,
+                                pt->items_bytes_inclusive[ITEM_TYPE_KV],
+                                pt->items_bytes_inclusive[ITEM_TYPE_LIST],
+                                pt->items_bytes_inclusive[ITEM_TYPE_SET],
+                                pt->items_bytes_inclusive[ITEM_TYPE_MAP],
+                                pt->items_bytes_inclusive[ITEM_TYPE_BTREE],
+                                (uint64_t)pt->child_prefix_items,
+                                pt->total_count_inclusive - pt->total_count_exclusive,
+                                pt->total_bytes_inclusive - pt->total_bytes_exclusive,
+                                t->tm_year+1900, t->tm_mon+1, t->tm_mday,
+                                t->tm_hour, t->tm_min, t->tm_sec);
+            } else {
+                pos += snprintf(buffer+pos, buflen-pos, format, _get_prefix(pt),
+                                pt->total_count_exclusive,
+                                pt->items_count_exclusive[ITEM_TYPE_KV],
+                                pt->items_count_exclusive[ITEM_TYPE_LIST],
+                                pt->items_count_exclusive[ITEM_TYPE_SET],
+                                pt->items_count_exclusive[ITEM_TYPE_MAP],
+                                pt->items_count_exclusive[ITEM_TYPE_BTREE],
+                                pt->total_bytes_exclusive,
+                                pt->items_bytes_exclusive[ITEM_TYPE_KV],
+                                pt->items_bytes_exclusive[ITEM_TYPE_LIST],
+                                pt->items_bytes_exclusive[ITEM_TYPE_SET],
+                                pt->items_bytes_exclusive[ITEM_TYPE_MAP],
+                                pt->items_bytes_exclusive[ITEM_TYPE_BTREE],
+                                (uint64_t)pt->child_prefix_items,
+                                (uint64_t)0,
+                                (uint64_t)0,
+                                t->tm_year+1900, t->tm_mon+1, t->tm_mday,
+                                t->tm_hour, t->tm_min, t->tm_sec);
+            }
 #else
-            pos += snprintf(buffer+pos, buflen-pos, format, "<null>",
+            t = localtime(&pt->create_time);
+            pos += snprintf(buffer+pos, buflen-pos, format, _get_prefix(pt),
                             pt->total_count_exclusive,
                             pt->items_count[ITEM_TYPE_KV],
                             pt->items_count[ITEM_TYPE_LIST],
@@ -632,83 +694,21 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
                             t->tm_hour, t->tm_min, t->tm_sec);
 #endif
             assert(pos < buflen);
+            pt = pt->h_next;
         }
-        for (int i = 0; i < prefix_hsize; i++) {
-            pt = prefxp->hashtable[i];
-            while (pt) {
-#ifdef NESTED_PREFIX
-                if (pt->parent_prefix != NULL) {
-                    pt = pt->h_next;
-                    continue;
-                }
-                t = localtime(&pt->create_time);
-                if (pt->child_prefix_items > 0) {
-                    pos += snprintf(buffer+pos, buflen-pos, format, _get_prefix(pt),
-                                    pt->total_count_inclusive,
-                                    pt->items_count_inclusive[ITEM_TYPE_KV],
-                                    pt->items_count_inclusive[ITEM_TYPE_LIST],
-                                    pt->items_count_inclusive[ITEM_TYPE_SET],
-                                    pt->items_count_inclusive[ITEM_TYPE_MAP],
-                                    pt->items_count_inclusive[ITEM_TYPE_BTREE],
-                                    pt->total_bytes_inclusive,
-                                    pt->items_bytes_inclusive[ITEM_TYPE_KV],
-                                    pt->items_bytes_inclusive[ITEM_TYPE_LIST],
-                                    pt->items_bytes_inclusive[ITEM_TYPE_SET],
-                                    pt->items_bytes_inclusive[ITEM_TYPE_MAP],
-                                    pt->items_bytes_inclusive[ITEM_TYPE_BTREE],
-                                    (uint64_t)pt->child_prefix_items,
-                                    pt->total_count_inclusive - pt->total_count_exclusive,
-                                    pt->total_bytes_inclusive - pt->total_bytes_exclusive,
-                                    t->tm_year+1900, t->tm_mon+1, t->tm_mday,
-                                    t->tm_hour, t->tm_min, t->tm_sec);
-                } else {
-                    pos += snprintf(buffer+pos, buflen-pos, format, _get_prefix(pt),
-                                    pt->total_count_exclusive,
-                                    pt->items_count_exclusive[ITEM_TYPE_KV],
-                                    pt->items_count_exclusive[ITEM_TYPE_LIST],
-                                    pt->items_count_exclusive[ITEM_TYPE_SET],
-                                    pt->items_count_exclusive[ITEM_TYPE_MAP],
-                                    pt->items_count_exclusive[ITEM_TYPE_BTREE],
-                                    pt->total_bytes_exclusive,
-                                    pt->items_bytes_exclusive[ITEM_TYPE_KV],
-                                    pt->items_bytes_exclusive[ITEM_TYPE_LIST],
-                                    pt->items_bytes_exclusive[ITEM_TYPE_SET],
-                                    pt->items_bytes_exclusive[ITEM_TYPE_MAP],
-                                    pt->items_bytes_exclusive[ITEM_TYPE_BTREE],
-                                    (uint64_t)pt->child_prefix_items,
-                                    (uint64_t)0,
-                                    (uint64_t)0,
-                                    t->tm_year+1900, t->tm_mon+1, t->tm_mday,
-                                    t->tm_hour, t->tm_min, t->tm_sec);
-                }
-#else
-                t = localtime(&pt->create_time);
-                pos += snprintf(buffer+pos, buflen-pos, format, _get_prefix(pt),
-                                pt->total_count_exclusive,
-                                pt->items_count[ITEM_TYPE_KV],
-                                pt->items_count[ITEM_TYPE_LIST],
-                                pt->items_count[ITEM_TYPE_SET],
-                                pt->items_count[ITEM_TYPE_MAP],
-                                pt->items_count[ITEM_TYPE_BTREE],
-                                pt->total_bytes_exclusive,
-                                pt->items_bytes[ITEM_TYPE_KV],
-                                pt->items_bytes[ITEM_TYPE_LIST],
-                                pt->items_bytes[ITEM_TYPE_SET],
-                                pt->items_bytes[ITEM_TYPE_MAP],
-                                pt->items_bytes[ITEM_TYPE_BTREE],
-                                t->tm_year+1900, t->tm_mon+1, t->tm_mday,
-                                t->tm_hour, t->tm_min, t->tm_sec);
-#endif
-                assert(pos < buflen);
-                pt = pt->h_next;
-            }
-        }
-        pos += snprintf(buffer+pos, buflen-pos, "END\r\n");
-        *(uint32_t*)buffer = pos - sizeof(uint32_t);
-
-        *(char**)prefix_data = buffer;
     }
-    else /* prefix stats on the given prefix */
+    pos += snprintf(buffer+pos, buflen-pos, "END\r\n");
+    assert(pos < buflen);
+
+    *length = pos;
+    return buffer;
+}
+
+ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix,
+                                   ADD_STAT add_stat, const void *cookie)
+{
+    return ENGINE_ENOTSUP;
+    /***
     {
         prefix_engine_stats *prefix_stats = (prefix_engine_stats*)prefix_data;
 
@@ -734,5 +734,5 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix, void *
         else
             prefix_stats->tot_prefix_items = prefxp->total_prefix_items;
     }
-    return ENGINE_SUCCESS;
+    ***/
 }

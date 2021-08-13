@@ -646,9 +646,11 @@ extern "C" {
         /**
          * Statistical information for each prefix
          */
-        ENGINE_ERROR_CODE (*get_prefix_stats)(ENGINE_HANDLE* handle, const void* cookie,
-                                              const void* key, const int nkey,
-                                              void *prefix_data);
+        char *(*prefix_dump_stats)(ENGINE_HANDLE* handle, const void* cookie, int *length);
+
+        ENGINE_ERROR_CODE (*prefix_get_stats)(ENGINE_HANDLE* handle, const void* cookie,
+                                              const void* prefix, const int nprefix,
+                                              ADD_STAT add_stat);
 
         /**
          * Set engine config.

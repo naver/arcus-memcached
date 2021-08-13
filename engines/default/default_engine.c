@@ -1173,15 +1173,27 @@ default_reset_stats(ENGINE_HANDLE* handle, const void *cookie)
     item_stats_reset();
 }
 
+static char *
+default_prefix_dump_stats(ENGINE_HANDLE* handle, const void* cookie, int *length)
+{
+    struct default_engine* engine = get_handle(handle);
+    char *stats;
+
+    pthread_mutex_lock(&engine->cache_lock);
+    stats = prefix_dump_stats(length);
+    pthread_mutex_unlock(&engine->cache_lock);
+    return stats;
+}
+
 static ENGINE_ERROR_CODE
-default_get_prefix_stats(ENGINE_HANDLE* handle, const void* cookie,
-                         const void* key, const int nkey, void *prefix_data)
+default_prefix_get_stats(ENGINE_HANDLE* handle, const void* cookie,
+                         const void* prefix, const int nprefix, ADD_STAT add_stat)
 {
     struct default_engine* engine = get_handle(handle);
     ENGINE_ERROR_CODE ret;
 
     pthread_mutex_lock(&engine->cache_lock);
-    ret = prefix_get_stats(key, nkey, prefix_data);
+    ret = prefix_get_stats(prefix, nprefix, add_stat, cookie);
     pthread_mutex_unlock(&engine->cache_lock);
     return ret;
 }
@@ -1816,7 +1828,8 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          /* Stats API */
          .get_stats        = default_get_stats,
          .reset_stats      = default_reset_stats,
-         .get_prefix_stats = default_get_prefix_stats,
+         .prefix_dump_stats = default_prefix_dump_stats,
+         .prefix_get_stats = default_prefix_get_stats,
          /* Dump API */
          .cachedump        = default_cachedump,
          .dump             = default_dump,

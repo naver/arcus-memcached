@@ -7810,6 +7810,7 @@ static void process_stats_cachedump(conn *c, token_t *tokens, const size_t ntoke
     write_and_free(c, buf, bytes);
 }
 
+#if 0 // OLD_CODE
 static void process_stats_prefix(conn *c, const char *prefix, const int nprefix)
 {
     assert(c != NULL);
@@ -7864,6 +7865,7 @@ static void process_stats_prefix(conn *c, const char *prefix, const int nprefix)
         ************************************/
     }
 }
+#endif
 
 static void aggregate_callback(void *in, void *out)
 {
@@ -8194,8 +8196,17 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
         }
         topkeys_stats(default_topkeys, c, get_current_time(), append_ascii_stats);
     } else if (strcmp(subcommand, "prefixes") == 0) {
-        process_stats_prefix(c, NULL, -1);
-        return;
+        int len;
+        char *stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, &len);
+        if (stats == NULL) {
+            if (len == -1)
+                out_string(c, "NOT_SUPPORTED");
+            else
+                out_string(c, "SERVER_ERROR no more memory");
+            return;
+        }
+        write_and_free(c, stats, len);
+        return; /* Output already generated */
     /****** SPEC-OUT FUNCTIONS **********
     } else if (strcmp(subcommand, "prefix") == 0) {
         if (ntokens < 4) {
