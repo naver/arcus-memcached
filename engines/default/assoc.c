@@ -236,7 +236,11 @@ static void assoc_expand(void)
     assocp->rootmask = hashmask(assocp->rootpower);
 
     /* set hash_expansion_limit */
-    assocp->hash_expansion_limit = (assocp->hashsize * assocp->rootsize * 3) / 2;
+    if (assocp->rootpower < 15) {
+        assocp->hash_expansion_limit = (assocp->hashsize * assocp->rootsize * 3) / 2;
+    } else { /* assocp->rootpower >= 15 */
+        assocp->hash_expansion_limit = 0; /* do not allow hash expansion any more */
+    }
 
     /* set hash table expansion */
     assocp->expanding = true;
@@ -267,7 +271,8 @@ int assoc_insert(hash_item *it, uint32_t hash)
             redistribute();
         }
     } else {
-        if (assocp->hash_items > assocp->hash_expansion_limit) {
+        if (assocp->hash_expansion_limit != 0 &&
+            assocp->hash_items > assocp->hash_expansion_limit) {
             assoc_expand();
         }
     }
