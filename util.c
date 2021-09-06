@@ -227,6 +227,7 @@ uint64_t mc_ntohll(uint64_t val) {
 uint64_t mc_htonll(uint64_t val) {
    return mc_swap64(val);
 }
+#endif
 
 /* integer represents format : YYYYMMDDHHMMSS (ex. 20210806152049) */
 int64_t getnowdatetime_int(void)
@@ -269,4 +270,3 @@ int getnowtime_int(void)
     sscanf(buf, "%d", &res);
     return res;
 }
-#endif
