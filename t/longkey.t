@@ -12,7 +12,7 @@ my $server = get_memcached($engine);
 my $sock = $server->sock;
 
 #my $ksname = "keyset";
-my $ksname = "a"x32000;
+my $ksname = "a"x16000;
 my $prefix = "longkey";
 my $kcount = 200;
 my @keyarr = ();
@@ -62,7 +62,7 @@ sub prepare_keyset_in_memory {
     my ($keycnt) = @_;
 
     for ($kcnt = 0; $kcnt < $keycnt; $kcnt += 1) {
-        $keylen = 2000 + int(rand(30000));
+        $keylen = 2000 + int(rand(14000));
         $keystr = "$prefix:";
         for ($klen = length($keystr); $klen < $keylen; $klen += 1) {
              $keystr .= chr( int(rand(25) + 65) );

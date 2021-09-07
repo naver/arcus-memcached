@@ -47,7 +47,7 @@
 
 /** Maximum length of a key. */
 //#define KEY_MAX_LENGTH 250
-#define KEY_MAX_LENGTH 32000 /* long key support */
+#define KEY_MAX_LENGTH 16000 /* long key support */
 
 /** Maximum length of a prefix */
 #define PREFIX_MAX_LENGTH 250

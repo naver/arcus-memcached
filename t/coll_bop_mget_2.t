@@ -446,9 +446,9 @@ mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad value");
 $val = "$key1?$key2";
 mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad value");
 
-$cmd = "bop mget 60001 3 0..1000 2";
-$key1 = "a"x30000;
-$key2 = "b"x30000;
+$cmd = "bop mget 30001 3 0..1000 2";
+$key1 = "a"x15000;
+$key2 = "b"x15000;
 $val = "$key1 $key2";
 mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad data chunk");
 $val = "$key1,$key2";
@@ -456,9 +456,9 @@ mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad data chunk");
 $val = "$key1?$key2";
 mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad data chunk");
 
-$cmd = "bop mget 60001 2 0..1000 2";
-$key1 = "a"x30000;
-$key2 = "b"x30000;
+$cmd = "bop mget 30001 2 0..1000 2";
+$key1 = "a"x15000;
+$key2 = "b"x15000;
 $rst =
 "VALUE $key1 NOT_FOUND
 VALUE $key2 NOT_FOUND
@@ -471,39 +471,43 @@ $val = "$key1?$key2";
 mem_cmd_is($sock, $cmd, $val,  "CLIENT_ERROR bad data chunk");
 
 # case) the last char is delimiter in mblock
-$cmd = "bop mget 49139 3 0..1000 2";
-$key1 = "a"x16379;
+$cmd = "bop mget 40949 5 0..1000 2";
+$key1 = "a"x8189;
 $rst =
 "VALUE $key1 NOT_FOUND
 VALUE $key1 NOT_FOUND
 VALUE $key1 NOT_FOUND
+VALUE $key1 NOT_FOUND
+VALUE $key1 NOT_FOUND
 END";
-$val = "$key1 $key1 $key1";
+$val = "$key1 $key1 $key1 $key1 $key1";
 mem_cmd_is($sock, $cmd, $val, $rst);
-$val = "$key1,$key1,$key1";
+$val = "$key1,$key1,$key1,$key1,$key1";
 mem_cmd_is($sock, $cmd, $val, $rst);
-$val = "$key1?$key1?$key1";
+$val = "$key1?$key1?$key1?$key1?$key1";
 mem_cmd_is($sock, $cmd, $val,  "CLIENT_ERROR bad data chunk");
 
 # case) the first char is delimiter in mblock
-$cmd = "bop mget 49140 3 0..1000 2";
-$key1 = "a"x16379;
-$key2 = "b"x16380;
+$cmd = "bop mget 40950 5 0..1000 2";
+$key1 = "a"x8189;
+$key2 = "b"x8190;
 $rst =
 "VALUE $key1 NOT_FOUND
+VALUE $key1 NOT_FOUND
+VALUE $key1 NOT_FOUND
 VALUE $key2 NOT_FOUND
 VALUE $key1 NOT_FOUND
 END";
-$val = "$key1 $key2 $key1";
+$val = "$key1 $key1 $key1 $key2 $key1";
 mem_cmd_is($sock, $cmd, $val, $rst);
-$val = "$key1,$key2,$key1";
+$val = "$key1,$key1,$key1,$key2,$key1";
 mem_cmd_is($sock, $cmd, $val, $rst);
-$val = "$key1?$key2?$key1";
+$val = "$key1?$key1?$key1,$key2?$key1";
 mem_cmd_is($sock, $cmd, $val,  "CLIENT_ERROR bad data chunk");
 
 # case) the same test as the java client unit test
 my $kcnt = 200;
-my $kstr = "a"x30000;
+my $kstr = "a"x15000;
 my $kidx;
 my $klen;
 $rst = "";

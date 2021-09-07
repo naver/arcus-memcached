@@ -97,8 +97,8 @@ do_btree_prepare($key);
 do_btree_efilter($key);
 mem_cmd_is($sock, "delete $key", "", "DELETED");
 
-# KEY_MAX_LENGTH = 32000: long key test
-$key = "B" x 32000;
+# KEY_MAX_LENGTH = 16000: long key test
+$key = "B" x 16000;
 do_btree_prepare($key);
 do_btree_efilter($key);
 mem_cmd_is($sock, "delete $key", "", "DELETED");
