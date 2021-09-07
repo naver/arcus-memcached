@@ -65,7 +65,7 @@ ENGINE_ERROR_CODE assoc_init(struct default_engine *engine)
     assocp = &engine->assoc;
     logger = engine->server.log->get_logger();
 
-    assocp->hashpower = 17; /* (1<<17) => 128K hash size */
+    assocp->hashpower = 16; /* (1<<16) => 64K hash size */
     assocp->hashsize = hashsize(assocp->hashpower);
     assocp->hashmask = hashmask(assocp->hashpower);
     assocp->rootpower = 0; /* (1<<0) => 1 hash table */
