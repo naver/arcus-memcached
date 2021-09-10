@@ -1351,7 +1351,7 @@ default_set_config(ENGINE_HANDLE* handle, const void* cookie,
         pthread_mutex_unlock(&engine->cache_lock);
     }
 #ifdef ENABLE_PERSISTENCE
-    if (engine->config.use_persistence) {
+    else if (engine->config.use_persistence) {
         if (strcmp(config_key, "chkpt_interval_pct_snapshot") == 0) {
             size_t new_chkpt_interval_pct_snapshot = *(size_t*)config_value;
             pthread_mutex_lock(&engine->cache_lock);
@@ -1442,7 +1442,7 @@ default_get_config(ENGINE_HANDLE* handle, const void* cookie,
         pthread_mutex_unlock(&engine->cache_lock);
     }
 #ifdef ENABLE_PERSISTENCE
-    if (engine->config.use_persistence) {
+    else if (engine->config.use_persistence) {
         if (strcmp(config_key, "chkpt_interval_pct_snapshot") == 0) {
             pthread_mutex_lock(&engine->cache_lock);
             *(size_t*)config_value = engine->config.chkpt_interval_pct_snapshot;
