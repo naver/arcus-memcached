@@ -75,6 +75,9 @@ void              assoc_delete(const char *key, const uint32_t nkey, uint32_t ha
 void              assoc_scan_init(struct assoc_scan *scan);
 int               assoc_scan_next(struct assoc_scan *scan, hash_item **item_array,
                                   int array_size, int elem_limit);
+#ifdef SCAN_COMMAND
+int               assoc_scan_direct(const char *cursor, int req_count, hash_item **item_array, int array_size);
+#endif
 bool              assoc_scan_in_visited_area(struct assoc_scan *scan, hash_item *it);
 void              assoc_scan_final(struct assoc_scan *scan);
 

@@ -40,6 +40,8 @@ MEMCACHED_PUBLIC_API bool safe_strtof(const char *str, float *out);
 MEMCACHED_PUBLIC_API bool safe_strtohexa(const char *str, unsigned char *bin, const int size);
 MEMCACHED_PUBLIC_API void safe_hexatostr(const unsigned char *bin, const int size, char *str);
 MEMCACHED_PUBLIC_API bool mc_isvalidname(const char *str, int len);
+MEMCACHED_PUBLIC_API bool string_pattern_match(const char *text, int text_len,
+                                               const char *pattern, int pattern_len);
 
 MEMCACHED_PUBLIC_API int64_t getnowdatetime_int(void);
 MEMCACHED_PUBLIC_API int     getnowdate_int(void);

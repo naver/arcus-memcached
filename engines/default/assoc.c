@@ -442,6 +442,109 @@ int assoc_scan_next(struct assoc_scan *scan, hash_item **item_array,
     return item_count;
 }
 
+#ifdef SCAN_COMMAND
+/* reverse bits algorithm from : http://graphics.stanford.edu/~seander/bithacks.html#ReverseParallel */
+static inline uint32_t reverse_bits(uint32_t v) {
+    uint32_t s = sizeof(v) * 8; // bit size; must be power of 2
+    uint32_t mask = ~0;
+    while ((s >>= 1) > 0)
+    {
+        mask ^= (mask << s);
+        v = ((v >> s) & mask) | ((v << s) & ~mask);
+    }
+    return v;
+}
+
+static void encode_cursor(const char *cursor, uint32_t tabidx, uint32_t bucket)
+{
+    /* cursor format represents tabidx(upper 16bits) and bucket(lower 16bits) */
+    sprintf((char*)cursor, "%u", ((tabidx << assocp->hashpower) | bucket));
+}
+
+static int decode_cursor(const char *cursor, uint32_t *tabidx, uint32_t *bucket)
+{
+    /* cursor format represents tabidx(upper 16bits) and bucket(lower 16bits) */
+    uint32_t csnum;
+    if (!safe_strtoul(cursor, &csnum)) {
+        return -1; /* invalid cursor */
+    }
+    *tabidx = (csnum >> assocp->hashpower);
+    *bucket = (csnum & assocp->hashmask);
+    return 0;
+}
+
+int assoc_scan_direct(const char *cursor, int req_count, hash_item **item_array, int array_size)
+{
+    assert(array_size > 0 && req_count <= array_size);
+    uint32_t tabidx, bucket;
+    if (decode_cursor(cursor, &tabidx, &bucket) < 0) {
+        return -2; /* invalid cursor */
+    }
+    if (tabidx >= assocp->rootsize) {
+        return -2; /* invalid tabidx */
+    }
+    if (bucket >= assocp->hashsize) {
+        encode_cursor(cursor, 0, 0);
+        return -1; /* scan end */
+    }
+
+    bool scan_end = false;
+    int scan_hashs = 0;
+    int item_count = 0;
+    int max_access = req_count * 4;
+    while ((item_count < req_count && scan_hashs < max_access) ||
+           (assocp->expanding && tabidx > assocp->prevmask))
+    {
+        hash_item *next = assocp->roottable[tabidx].hashtable[bucket];
+        while (next != NULL) {
+            if (next->nkey > 0) { /* Not placeholder item */
+                item_array[item_count++] = next; /* user cache item */
+                if (item_count >= array_size) {
+                    /* Never comes here. If not, @array_size is too small and it's wrong.
+                     * This function doesn't set bucket refcount and link placeholder,
+                     * So @array_size should large enough to put all cache items in each bucket(bucket,tabidx).
+                     */
+                    break; /* just skip to scan simply (or do realloc) */
+                }
+            }
+            next = next->h_next;
+        }
+
+        /* tabidx is incremented from the higher order bit.
+         * For example, assuming the current hashtable size is 8, the tabidx bits is changed as follows :
+         * 000 -> 100 -> 010 -> 110 -> 001 -> 101 -> 011 -> 111 -> 000 (end)
+         * The advantage of this strategy is that if the hashtable is expanded between scan iteration calls,
+         * it is easy to visit the expanding buckets simply by incrementing the bits in reverse.
+         * For example, if the next tabidx is 110 and the hashtable is expanded from 8 to 16,
+         * the tabidx is changed as follows :
+         * 110 -> 1110 -> 0001 -> 1001 ... -> 000 (end)
+         */
+        if (assocp->rootmask > 0) {
+            tabidx |= ~assocp->rootmask;
+            tabidx = reverse_bits(tabidx);
+            tabidx++;
+            tabidx = reverse_bits(tabidx);
+        }
+        if (tabidx == 0) { /* scan next bucket */
+            if (++bucket >= assocp->hashsize) { /* the end */
+                scan_end = true; break;
+            }
+        }
+        scan_hashs++;
+    }
+
+    if (scan_end) {
+        if (item_count == 0) { /* NOT found and scan end */
+            item_count = -1;
+        }
+        encode_cursor(cursor, 0, 0);
+    } else {
+        encode_cursor(cursor, tabidx, bucket);
+    }
+    return item_count;
+}
+
+#endif
 bool assoc_scan_in_visited_area(struct assoc_scan *scan, hash_item *it)
 {
     assert(scan->initialized);

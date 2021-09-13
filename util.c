@@ -270,3 +270,62 @@ int getnowtime_int(void)
     sscanf(buf, "%d", &res);
     return res;
 }
+
+/*
+ * glob pattern('?', '*') string match algorithm from :
+ * https://www.codeproject.com/Articles/5163931/Fast-String-Matching-with-Wildcards-Globs-and-Giti
+ *
+ * The execution time of this algorithm is linear in the length of the pattern and string for typical cases.
+ * In the worst case, this algorithm takes quadratic time (to see why, consider pattern
+ * *aaa…aaab with ½n a’s and string aaa…aaa with n a’s, which requires ¼n2 comparisons before failing.)
+ */
+bool string_pattern_match(const char *text, int text_len, const char *pattern, int pattern_len)
+{
+    const char *text_backup = NULL;
+    const char *patt_backup = NULL;
+    int tlen_backup = 0;
+    int plen_backup = 0;
+    while (text_len)
+    {
+        if (*pattern == '\\' && *(pattern+1) == *text) {
+            text++;
+            pattern += 2;
+            text_len--;
+            pattern_len -= 2;
+        }
+        else if (*pattern == '*') {
+            /* new star-loop: backup positions in pattern and text. */
+            text_backup = text;
+            patt_backup = ++pattern;
+            tlen_backup = text_len;
+            plen_backup = --pattern_len;
+        }
+        else if (*pattern == '?' || *pattern == *text) {
+            /* ? match any character or match the current non-NULL character */
+            text++;
+            pattern++;
+            text_len--;
+            pattern_len--;
+        }
+        else {
+            /* if no stars we fail to match */
+            if (patt_backup == NULL) {
+                return false;
+            }
+            /* star-loop: backtrack to the last * by restoring the backup positions
+             * in the pattern and text
+             */
+            text        = ++text_backup;
+            pattern     = patt_backup;
+            text_len    = --tlen_backup;
+            pattern_len = plen_backup;
+        }
+    }
+    /* ignore trailing stars */
+    while (pattern_len && *pattern == '*') {
+        pattern++;
+        pattern_len--;
+    }
+    /* at end of text means success if nothing else is left to match */
+    return (pattern_len == 0);
+}

@@ -207,6 +207,10 @@ typedef void (*CB_SCAN_CLOSE)(bool success);
 /* item scan functions */
 void item_scan_open(item_scan *sp, const char *prefix, const int nprefix, CB_SCAN_OPEN cb_scan_open);
 int  item_scan_getnext(item_scan *sp, void **item_array, elems_result_t *erst_array, int item_arrsz);
+#ifdef SCAN_COMMAND
+int  item_scan_direct(const char *cursor, ENGINE_ITEM_TYPE type, int req_count,
+                      void **item_array, int item_arrsz);
+#endif
 void item_scan_release(item_scan *sp, void **item_array, elems_result_t *erst_array, int item_count);
 void item_scan_close(item_scan *sp, CB_SCAN_CLOSE cb_scan_close, bool success);
 
