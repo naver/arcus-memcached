@@ -39,7 +39,6 @@ struct iovec {
 #define SUPPORT_BOP_SMGET
 #define JHPARK_OLD_SMGET_INTERFACE
 #define MULTI_NOTIFY_IO_COMPLETE
-#define MAX_EFLAG_COMPARE_COUNT 100
 
 #ifdef __cplusplus
 extern "C" {
@@ -278,9 +277,10 @@ extern "C" {
 #define MIN_BKEY_LENG  1
 #define MAX_BKEY_LENG  31
 #define MAX_EFLAG_LENG 31
+#define MAX_FIELD_LENG 250
 #define BKEY_NULL  255
 #define EFLAG_NULL 255
-#define MAX_FIELD_LENG 250
+#define MAX_EFLAG_COMPARE_COUNT 100
 
     /* field list structure */
     typedef struct {

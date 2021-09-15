@@ -13092,10 +13092,10 @@ static int try_read_command(conn *c)
                     return 1;
                 }
                 /* Check KEY_MAX_LENGTH and eflag filter length
-                 *  - KEY_MAX_LENGTH : 32000
+                 *  - KEY_MAX_LENGTH : 16000
                  *  - IN eflag filter : > 6400 (64*100)
                  */
-                if (c->rbytes > ((32+8)*1024)) {
+                if (c->rbytes > ((16+8)*1024)) {
                     if (strncmp(ptr, "get ", 4) && strncmp(ptr, "gets ", 5)) {
                         char buffer[16];
                         memcpy(buffer, ptr, 15); buffer[15] = '\0';
