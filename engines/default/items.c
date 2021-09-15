@@ -600,7 +600,7 @@ char *item_cachedump(unsigned int slabs_clsid, unsigned int limit, const bool fo
     buffer = malloc((size_t)memlimit);
     if (buffer == 0) return NULL;
 
-    keybuf = malloc(32*1024); /* must be larger than KEY_MAX_LENGTH */
+    keybuf = malloc(16*1024); /* must be larger than KEY_MAX_LENGTH */
     if (keybuf == NULL) {
         free(buffer);
         return NULL;
