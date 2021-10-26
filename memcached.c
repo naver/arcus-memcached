@@ -8634,7 +8634,8 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
         delay_flag = (ntokens == (c->noreply ? 5 : 4));
     }
     if (delay_flag) {
-        if (! safe_strtol(tokens[1].value, &exptime) || exptime < 0) {
+        int delay_idx = (flush_all ? 1 : 2);
+        if (! safe_strtol(tokens[delay_idx].value, &exptime) || exptime < 0) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
