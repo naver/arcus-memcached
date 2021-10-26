@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 4001;
+use Test::More tests => 6001;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -52,6 +52,13 @@ sub prefix_flush {
   }
 }
 
+sub prefix_flush_delay {
+  for ($size = 0; $size < $prefix_size; $size++) {
+    $cmd = "flush_prefix pname$size 0"; $rst = "OK";
+    mem_cmd_is($sock, $cmd, "", $rst);
+  }
+}
+
 sub item_get_miss {
   for ($size = 0; $size < $prefix_size; $size++) {
     $cmd = "get pname$size:foo";
@@ -82,6 +89,8 @@ item_get_hit();
 prefix_flush();
 count_prefix_empty();
 item_get_miss();
+prefix_insert();
+prefix_flush_delay();
 
 # after test
 release_memcached($engine, $server);
