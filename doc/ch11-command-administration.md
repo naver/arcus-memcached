@@ -1,25 +1,25 @@
 # Chapter 11. Admin & Monitoring 명령
 
-- FLUSH 명령
-- SCRUB 명령
-- STATS 명령
-- CONFIG 명령
-- CMDLOG 명령
-- LQDETECT 명령
-- KEY DUMP 명령
-- KEYSCAN 명령
-- ZKENSEMBLE 명령
-- HELP 명령
+- [FLUSH 명령](ch11-command-administration.md#flush-명령)
+- [SCRUB 명령](ch11-command-administration.md#scrub-명령)
+- [STATS 명령](ch11-command-administration.md#stats-명령)
+- [CONFIG 명령](ch11-command-administration.md#config-명령)
+- [CMDLOG 명령](ch11-command-administration.md#command-logging-명령)
+- [LQDETECT 명령](ch11-command-administration.md#long-query-detect-명령)
+- [KEY DUMP 명령](ch11-command-administration.md#key-dump-명령)
+- [KEYSCAN 명령](ch11-command-administration.md#keyscan-명령)
+- [ZKENSEMBLE 명령](ch11-command-administration.md#zkensemble-명령)
+- [HELP 명령](ch11-command-administration.md#help-명령)
 
-### Flush 명령
+## Flush 명령
 
-ARCUS cache server는 items을 invalidate 시키기 위한 두 가지 flush 명령을 제공한다.
+ARCUS Cache Server는 items을 invalidate 시키기 위한 두 가지 flush 명령을 제공한다.
 
 - flush_all : 모든 items을 flush
 - flush_prefix: 특정 prefix의 items들만 flush
 
 Flush 작업은 items을 invalidate시키더라도 그 items이 차지한 메모리 공간을 즉각 반환하지 않는다. 
-대신, ARCUS cache server의 global 정보로 flush 수행 시점 정보를 기록해 둠으로써,
+대신, ARCUS Cache Server의 global 정보로 flush 수행 시점 정보를 기록해 둠으로써,
 그 시점 이전에 존재했던 items은 invalidated items이라는 것을 알 수 있게 한다.
 따라서, item 접근할 때마다 invalidated item인지를 확인하여야 하는 부담이 있지만,
 flush 작업 자체는 O(1) 시간에 그 수행이 완료된다.
@@ -27,7 +27,7 @@ flush 작업 자체는 O(1) 시간에 그 수행이 완료된다.
 flush_all 명령은 flush 수행 시점 정보만 기록해 두고, 전체 prefix들의 통계 정보는 그대로 남겨 둔다.
 따라서, flush_all을 수행하더라도  prefix 관련한 통계 정보를 조회할 수 있다.
 해당 prefix에 속한 items이 모두 제거되는 시점에, 그 prefix의 통계 정보는 함께 제거된다.
-반면, flsuh_prefix 명령은 해당 prefix에 대한 flush 수행 시점 정보를 기록해 두면서,
+반면, flush_prefix 명령은 해당 prefix에 대한 flush 수행 시점 정보를 기록해 두면서,
 그 prefix의 통계 정보를 모두 reset시켜 제거한다는 것이 차이가 있다.
 따라서, flush_prefix 수행 이후에는 해당 prefix에 대한 통계 정보를 조회할 수 없게 된다.
 
@@ -44,20 +44,22 @@ flush_prefix <prefix> [<delay>] [noreply]\r\n
 
 Response string과 그 의미는 아래와 같다.
 
-- "OK" - 성공
-- “NOT_FOUND” - prefix miss (flush_prefix 명령인 경우만 해당)
-- CLIENT_ERROR bad command line format”	- protocol syntax 틀림
+| Response String                         | 설명                     |
+|-----------------------------------------|------------------------ |
+| "OK"                                    | 성공
+| "NOT_FOUND"                             | prefix miss (flush_prefix 명령인 경우만 해당)
+| "CLIENT_ERROR bad command line format"	| protocol syntax 틀림
 
-### Scrub 명령
+## Scrub 명령
 
-ARCUS cache server에는 유효하지 않으면서 메모리를 차지하고 있는 items이 존재할 수 있다.
+ARCUS Cache Server에는 유효하지 않으면서 메모리를 차지하고 있는 items이 존재할 수 있다.
 이 items은 아래 두 유형으로 구분된다.
 
-- ARCUS cache server에서 어떤 items이 expired되더라도 그 items은 즉각 제거되지 않으며,
+- ARCUS Cache Server에서 어떤 items이 expired되더라도 그 items은 즉각 제거되지 않으며,
   flush 명령으로 어떤 items을 invalidate시키더라도 그 items은 즉각 제거되지 않는다.
-  이들 items은 ARCUS cache server 내부에 메모리를 차지하면서 계속 존재하고 있다.
+  이들 items은 ARCUS Cache Server 내부에 메모리를 차지하면서 계속 존재하고 있다.
   어떤 이유이든 이 items에 대한 접근이 발생할 때
-  ARCUS cache server는 expired/flushed 상태임을 알게 되며,
+  ARCUS Cache Server는 expired/flushed 상태임을 알게 되며,
   그 items을 제거함으로써 그 items이 차지한 메모리를 반환한다.
 - Cache cloud를 형성하고 consistent hashing의 key-to-node mapping을 사용하는 환경에서,
   그 cache cloud에 특정 node의 추가나 삭제에 의해 key-to-node remapping이 발생하게 된다.
@@ -68,7 +70,7 @@ ARCUS cache server에는 유효하지 않으면서 메모리를 차지하고 있
   따라서, 이러한 stale items은 cache cloud의 node list가 변경될 때마다 제거하여야 한다.
 
 Scrub 기능이란 (1) expired item, flushed item과 같은 invalidated item들을 명시적으로 제거하는 기능과
-(2) cache cloud에서의 key-to-node remapping으로 발생한 stale items들을 명시적으로 제거하는 기능을 의미한다.
+(2) cache cloud에서 key-to-node remapping으로 발생한 stale items들을 명시적으로 제거하는 기능을 의미한다.
 
 이러한 scrub 기능은 daemon thread에 의해 background 작업으로 수행되며,
 한 순간에 하나의 scrub 작업만 수행될 수 있다.
@@ -77,23 +79,26 @@ Scrub 기능이란 (1) expired item, flushed item과 같은 invalidated item들�
 ```
 scrub [stale]\r\n
 ```
+
 - stale - 명시하지 않으면 invalidated item을 제거하고, 명시하면 stale item을 제거한다.
 
 Response string과 그 의미는 아래와 같다.
 
-- “OK” - 성공
-- “BUSY” - 현재 scrub 작업이 수행 중이어서 새로운 scrub 작업을 요청할 수 없음
-- “NOT_SUPPORTED” - 지원되지 않는 scrub 명령
-- “CLIENT_ERROR bad command line format” - protocol syntax 틀림
+| Response String                         | 설명                     |
+|-----------------------------------------|------------------------ |
+| "OK"                                    | 성공
+| "BUSY"                                  | 현재 scrub 작업이 수행 중이어서 새로운 scrub 작업을 요청할 수 없음
+| "NOT_SUPPORTED"                         | 지원되지 않는 scrub 명령
+| "CLIENT_ERROR bad command line format"  | protocol syntax 틀림
 
-참고 사항으로, scrub 명령은 ascii 명령의 extension 기능으로 구현되었기에,
-ARCUS cache server 구동 시에 ascii_scrub.so 파일을 dynamic linking 하는
+참고 사항으로, scrub 명령은 ASCII 명령의 extension 기능으로 구현되었기에,
+ARCUS Cache Server 구동 시에 ascii_scrub.so 파일을 dynamic linking 하는
 구동 옵션을 주어야 scrub 명령을 사용할 수 있다.
 
 
-### Stats 명령
+## Stats 명령
 
-ARCUS cache server의 각종 통계 정보를 조회하거나 그 통계 정보를 reset한다.
+ARCUS Cache Server의 각종 통계 정보를 조회하거나 그 통계 정보를 reset한다.
 
 ```
 stats [<args>]\r\n
@@ -119,7 +124,7 @@ stats [<args>]\r\n
 
 stats 명령은 직접 한번씩 수행해 보기를 권하며, 아래에서는 추가 설명이 필요한 부분들만 기술한다.
 
-**General purpose 정보**
+### General purpose 정보
 
 특정 분류에 국한되지 않은 일반적인 통계를 알기 위한 명령이다. 다음은 stats 명령 결과의 예이다.
 
@@ -322,7 +327,7 @@ END
 | sticky_limit          | sticky item을 저장할 수 있는 최대 메모리 용량(bytes)         |
 | engine_maxbytes       | 엔진에 허용된 최대 저장 용량                                 |
 
-**settings 통계 정보**
+### Settings 통계 정보
 
 각종 설정값에 대한 통계 정보를 보는 명령이다. 다음은 stats settings 실행 결과의 예이다.
 
@@ -385,7 +390,7 @@ END
 | reqs_per_event     | io 이벤트에서 처리할 수 있는 최대 io 연산 수                 |
 | cas_enabled        | cas 연산 허용 여부                                           |
 | tcp_backlog        | tcp의 backlog 큐 크기                                        |
-| binding_protocol   | 사용중인 프로토콜. ascii, binary, auto(negotiating) 세 가지임 |
+| binding_protocol   | 사용중인 프로토콜. ASCII, binary, auto(negotiating) 세 가지임 |
 | auth_enabled_sasl  | sasl 인증 사용 여부                                          |
 | auth_sasl_engine   | sasl 인증에 사용할 엔진                                      |
 | auth_required_sasl | sasl 인증 필수 여부                                          |
@@ -397,9 +402,9 @@ END
 | max_element_bytes  | collection element 데이터의 최대 크기                        |
 | topkeys            | 추적하고 있는 topkey 개수                                    |
 | logger             | 사용 중인 logger extension                                   |
-| ascii_extension    | 사용 중인 ascii protocol extension                           |
+| ascii_extension    | 사용 중인 ASCII protocol extension                           |
 
-**items 통계 정보**
+### Items 통계 정보
 
 item에 대한 slab class 별 통계 정보를 조회하는 명령이다. 다음은 stats items 실행 결과의 예이다.
 
@@ -418,7 +423,7 @@ END
 
 'items:' 옆에 표기된 숫자가 slab class id이다. 통계 정보의 의미는 다음과 같다.
 
-| Stats           | 설명                                                         |
+| stats           | 설명                                                         |
 | --------------- | ------------------------------------------------------------ |
 | number          | 해당 클래스에 저장된 아이템의 개수                           |
 | sticky          | sticky로 설정된 아이템의 개수. [basic concept 문서](ch01-arcus-basic-concept.md#expiration-eviction-and-sticky) 참조 |
@@ -430,7 +435,7 @@ END
 | tailrepairs     | slab allocator를 refcount leak에서 복구한 횟수               |
 | reclaimed       | expired된 아이템의 공간을 사용해 새로운 아이템을 저장한 횟수 |
 
-**slabs 통계 정보**
+### Slabs 통계 정보
 
 각 slab 클래스의 통계 정보와 전체 클래스에 대한 메타 정보를 조회하는 명령이다. 다음은 stats slabs 실행 결과의 예이다.
 
@@ -501,9 +506,7 @@ space_shortage_level이 10 이상으로 올라가면, background에서 아이템
 | memory_limit   | 캐시 서버의 최대 용량(bytes)                    |
 | total_malloced | slab page에 할당된 메모리 공간의 크기 합(bytes) |
 
-
-
-**Prefix 통계 정보**
+### Prefix 통계 정보
 
 모든 prefix들의 item 통계 정보는 "stats prefixes" 명령으로 조회하고,
 모든 prefix들의 연산 통계 정보는 "stats detail dump" 명령으로 조회한다.
@@ -596,7 +599,7 @@ gas와 sas는 item attribute 연산의 통계이다.
   - gas - getattr 수행 횟수
   - sas - setattr 수행 횟수
 
-**zookeeper 상태 정보**
+### Zookeeper 상태 정보
 
 zookeeper 상태 정보를 보는 명령이다. 다음은 stats zookeeper 실행 결과의 예이다.
 
@@ -617,7 +620,7 @@ END
 | zk_reconfig        | zookeeper dynamic reconfiguration 기능 사용 여부             |
 | zk_reconfig_version| zookeeper dynamic reconfiguration 반영한 버전(16진수)        |
 
-**Scrub 수행 상태**
+### Scrub 수행 상태
 
 Scrub 수행 상태를 조회한 결과 예는 다음과 같다.
 
@@ -634,7 +637,7 @@ END
 - visited - 현재 수행중인 또는 이전에 수행된 scrub에서 접근한 item들의 수를 나타낸다.
 - cleaned - 현재 수행중인 또는 이전에 수행된 scrub에서 삭제한 item들의 수를 나타낸다.
 
-**slab class 별 cache key dump**
+### slab class 별 cache key dump
 
 slab class 별 LRU에 달려있는 item들의 cache key들을 dump하기 위하여,
 아래의 stats cachedump 명령을 제공한다.
@@ -665,7 +668,8 @@ ITEM c:bkey1
 ITEM c:bkey2
 END
 ```
-**Persistence 정보 조회**
+
+### Persistence 정보 조회
 
 Persistence의 설정 정보와 수행 결과를 조회한 결과 예는 다음과 같다.
 
@@ -700,22 +704,24 @@ END
 - last_chkpt_snapshot_filesize_bytes - 이전 체크포인트 스냅샷 파일 크기를 나타낸다. (unit : bytes)   
 - current_command_log_filesize_bytes - 현재 명령 로그 파일 크기를 나타낸다. (unit : bytes)   
 
-### Config 명령
+## Config 명령
 
-ARCUS cache server는 특정 configuration에 대해 동적으로 변경하거나 현재의 값을 조회하는 기능을 제공한다.
+ARCUS Cache Server는 특정 configuration에 대해 동적으로 변경하거나 현재의 값을 조회하는 기능을 제공한다.
 동적으로 변경가능한 configuration들은 현재 아래만 지원한다.
 
 - verbosity
 - memlimit
 - zkfailstop
+- hbtimeout
+- hbfailstop
 - maxconns
 - max_collection_size
 - max_element_bytes
 - scrub_count
 
-**config verbosity**
+### Config verbosity
 
-ARCUS cache server의 verbose log level을 동적으로(restart 없이) 변경/조회한다.
+ARCUS Cache Server의 verbose log level을 동적으로(restart 없이) 변경/조회한다.
 
 ```
 config verbosity [<verbose>]\r\n
@@ -724,29 +730,29 @@ config verbosity [<verbose>]\r\n
 \<verbose\>는 새로 지정할 verbose log level 값으로, 허용가능한 범위는 0 ~ 2이다.
 이 인자가 생략되면 현재 설정되어 있는 verbose 값을 조회한다.
 
-**config memlimit**
+### Config memlimit
 
-ARCUS cache server 구동 시에 -m 옵션으로 설정된 memory limit을 동적으로(restart 없이) 변경/조회한다.
+ARCUS Cache Server 구동 시에 -m 옵션으로 설정된 memory limit을 동적으로(restart 없이) 변경/조회한다.
 
 ```
 config memlimit [<memsize>]\r\n
 ```
 
 \<memsize\>는 새로 지정할 memory limit으로 MB 단위로 설정하며,
-ARCUS cache server가 현재 사용 중인 메모리 크기인 tatal_malloced 보다 큰 크기로만 설정이 가능하다.
+ARCUS Cache Server가 현재 사용 중인 메모리 크기인 total_malloced 보다 큰 크기로만 설정이 가능하다.
 이 인자가 생략되면 현재 설정되어 있는 memory limit 값을 조회한다.
 
-**config zkfailstop**
+### Config zkfailstop
 
-ARCUS cache server의 automatic failstop 기능을 on 또는 off 한다.
+ARCUS Cache Server의 automatic failstop 기능을 on 또는 off 한다.
 
 ```
 config zkfailstop [on|off]\r\n
 ```
 
-Network failure 상태에서 정상적인 서비스를 진행하지 못하는 cache server가 cache cloud에 그대로 존재할 경우, 해당 cache server가 담당하고 있는 data 범위에 대한 요청이 모두 실패하고 DB에 부담을 주게 된다. 또한 이후에 ZooKeeper에 재연결 되더라도 old data를 가지고 있을 가능성이 있으며 이로 인해 응용에 오동작을 발생시킬 수 있다. ARCUS cache server는 이를 해결하기 위해 ZooKeeper session timeout이 발생할 경우 failed cache server를 cache cloud에서 자동으로 제거하는 automatic failstop 기능을 기본적으로 제공한다.
+Network failure 상태에서 정상적인 서비스를 진행하지 못하는 cache server가 cache cloud에 그대로 존재할 경우, 해당 cache server가 담당하고 있는 data 범위에 대한 요청이 모두 실패하고 DB에 부담을 주게 된다. 또한 이후에 ZooKeeper에 재연결 되더라도 old data를 가지고 있을 가능성이 있으며 이로 인해 응용에 오동작을 발생시킬 수 있다. ARCUS Cache Server는 이를 해결하기 위해 ZooKeeper session timeout이 발생할 경우 failed cache server를 cache cloud에서 자동으로 제거하는 automatic failstop 기능을 기본적으로 제공한다.
 
-**config hbtimeout**
+### Config hbtimeout
 
 hbtimeout 값을 변경/조회한다.
 
@@ -754,9 +760,9 @@ hbtimeout 값을 변경/조회한다.
 config hbtimeout [<hbtimeout>]\r\n
 ```
 
-ARCUS cache server에는 주기적으로 노드의 정상 작동 여부를 확인하는 heartbeat 연산이 존재한다. hbtimeout은 heartbeat 연산의 timeout 시간을 의미한다. hbtimeout으로 설정한 시간이 지나도 heartbeat 연산이 이루어지지 않으면 해당 heartbeat는 timeout된 것으로 간주한다. 최소 50ms, 최대 10000ms로 설정할 수 있으며 디폴트 값은 10000ms이다.
+ARCUS Cache Server에는 주기적으로 노드의 정상 작동 여부를 확인하는 heartbeat 연산이 존재한다. hbtimeout은 heartbeat 연산의 timeout 시간을 의미한다. hbtimeout으로 설정한 시간이 지나도 heartbeat 연산이 이루어지지 않으면 해당 heartbeat는 timeout된 것으로 간주한다. 최소 50ms, 최대 10000ms로 설정할 수 있으며 디폴트 값은 10000ms이다.
 
-**config hbfailstop**
+### Config hbfailstop
 
 hbfailstop 값을 변경/조회한다.
 
@@ -764,11 +770,11 @@ hbfailstop 값을 변경/조회한다.
 config hbfailstop [hbfailstop]\r\n
 ```
 
-ARCUS cache server는 heartbeat 지연이 계속될 경우 서버를 강제 종료할 수 있다. 연속된 timeout이 발생할 때마다 hbtimeout 값을 누적하여 더하고, 누적된 값이 hbfailstop 값을 넘길 경우 failstop을 수행한다. 예를 들어 hbfailstop이 30초, hbtimeout이 10초이면 hbtimeout이 연속으로 3번 발생하였을 경우 failstop이 발생한다. 최소 3000ms, 최대 300000ms로 설정할 수 있으며 디폴트 값은 60000ms이다.
+ARCUS Cache Server는 heartbeat 지연이 계속될 경우 서버를 강제 종료할 수 있다. 연속된 timeout이 발생할 때마다 hbtimeout 값을 누적하여 더하고, 누적된 값이 hbfailstop 값을 넘길 경우 failstop을 수행한다. 예를 들어 hbfailstop이 30초, hbtimeout이 10초이면 hbtimeout이 연속으로 3번 발생하였을 경우 failstop이 발생한다. 최소 3000ms, 최대 300000ms로 설정할 수 있으며 디폴트 값은 60000ms이다.
 
-**config maxconns**
+### Config maxconns
 
-ARCUS cache server 구동 시에 -c 옵션으로 설정된 최대 연결 수를 동적으로(restart 없이) 변경/조회한다.
+ARCUS Cache Server 구동 시에 -c 옵션으로 설정된 최대 연결 수를 동적으로(restart 없이) 변경/조회한다.
 
 ```
 config maxconns [<maxconn>]\r\n
@@ -777,7 +783,7 @@ config maxconns [<maxconn>]\r\n
 \<maxconn\>는 새로 지정할 최대 연결 수로서, 현재의 연결 수보다 10% 이상의 큰 값으로만 설정이 가능하다.
 이 인자가 생략되면 현재 설정되어 있는 최대 연결 수 값을 조회한다.
 
-**config max_collection_size**
+### Config max_collection_size
 
 콜렉션 아이템의 최대 element 수를 조회/변경한다.
 
@@ -788,7 +794,7 @@ config max_<collection>_size [<max_size>]\r\n
 
 기본 설정은 50000개이며 최소 10000개, 최대 1000000개 까지 설정할 수 있다. 기존 값보다 작게 설정할 수 없다. 기본 설정보다 큰 값으로 설정하고 나서, 한 번에 많은 element 들을 조회한다면 조회 응답 속도가 느려질 뿐만 아니라 다른 연산의 응답 속도에도 부정적 영향을 미친다. 따라서, 주의 사항으로, 최대 element 수를 늘리더라도 응용은  한번에 적은 수의 element 만을 조회하는 요청을 반복하는 형태로 구현하여야 한다.
 
-**config max_element_bytes**
+### Config max_element_bytes
 
 Collection element가 가지는 value의 최대 크기를 byte 단위로 설정한다. 기본 설정은 16KB이며 1~32KB까지 설정 가능하다.
 
@@ -796,17 +802,17 @@ Collection element가 가지는 value의 최대 크기를 byte 단위로 설정�
 config max_element_bytes [<maxbytes>]\r\n
 ```
 
-**config scrub_count**
+### Config scrub_count
 
-ARCUS cache server에는 더 이상 유효하지 않은 아이템을 일괄 삭제하는 scrub 명령이 존재한다. config scrub_count 명령은 daemon thread가 scrub 명령을 수행할 때, 한 번의 연산마다 몇 개의 아이템을 지울지를 설정/조회한다. 기본 값은 96이며 최소 16, 최대 320으로 설정할 수 있다.
+ARCUS Cache Server에는 더 이상 유효하지 않은 아이템을 일괄 삭제하는 scrub 명령이 존재한다. config scrub_count 명령은 daemon thread가 scrub 명령을 수행할 때, 한 번의 연산마다 몇 개의 아이템을 지울지를 설정/조회한다. 기본 값은 96이며 최소 16, 최대 320으로 설정할 수 있다.
 
 ```
 config scrub_count [<scrub_count>]\r\n
 ```
 
-### Command Logging 명령
+## Command Logging 명령
 
-ARCUS cache server에 입력되는 command를 logging 한다.
+ARCUS Cache Server에 입력되는 command를 logging 한다.
 start 명령을 시작으로 logging이 종료될 때 까지의 모든 command를 기록한다.
 단, 성능유지를 위해 skip되는 command가 있을 수 있으며 stats 명령을 통해 그 수를 확인할 수 있다.
 10MB log 파일 10개를 사용하며, 초과될 경우 자동 종료한다.
@@ -817,10 +823,10 @@ cmdlog [start [<log_file_path>] | stop | stats]\r\n
 
 \<log_file_path\>는 logging 정보를 저장할 file의 path이다.
 - path는 생략 가능하며, 생략할 경우 default로 지정된다.
-  - default로 자동 지정할 경우 log file은 memcached구동위치/command_log 디렉터리 안에 생성된다.
+  - default로 자동 지정할 경우 log file은 memcached 구동 위치 / command_log 디렉터리 안에 생성된다.
   - command_log 디렉터리는 자동생성되지 않으며, memcached process가 구동된 위치에 생성해 주어야 한다.
   - 생성되는 log file의 파일명은 command_port_bgndate_bgntime_{n}.log 이다.
-- path는 직접 지정할 경우 절대 path, 상대 path지정이 가능하다. 최종 파일이 생성될 디렉터리까지 지정해 주어야 한다.
+- path는 직접 지정할 경우 절대 path, 상대 path 지정이 가능하다. 최종 파일이 생성될 디렉터리까지 지정해 주어야 한다.
 
 start 명령의 결과로 log file에 출력되는 내용은 아래와 같다.
 
@@ -852,9 +858,9 @@ The number of log files : 1                                          //file_coun
 The log file name: /Users/temp/command_11211_20160126_192729_{n}.log //path/file_name
 ```
 
-### Long query detect 명령
+## Long Query Detect 명령
 
-ARCUS cache server에서 collection item에 대한 요청 중에는 그 처리 시간이 오래 걸리는 요청이 존재한다.
+ARCUS Cache Server에서 collection item에 대한 요청 중에는 그 처리 시간이 오래 걸리는 요청이 존재한다.
 이를 detect하기 위한 기능으로 lqdetect 명령을 제공한다.
 start 명령을 시작으로 detection이 종료될 때 까지 long query 가능성이 있는 command에 대하여, 
 그 command 처리에서 접근한 elements 수가 특정 기준 이상인 command를 추출,
@@ -863,6 +869,7 @@ long query 대상이 되는 모든 command에 대해 20개의 샘플 저장이 �
 저장된 샘플은 show 명령을 통해 확인할 수 있다.
 
 long query detection 대상이 되는 command는 아래와 같다.
+
 ```
 1. sop get
 2. lop insert
@@ -875,9 +882,11 @@ long query detection 대상이 되는 command는 아래와 같다.
 ```
 
 lqdetect command는 아래와 같다.
+
 ```
 lqdetect [start [<detect_standard>] | stop | show | stats]\r\n
 ```
+
 \<detect_standard\>는 long query로 분류하는 기준으로 해당 요청에서 접근하는 elements 수로 나타내며, 어떤 요청에서 detection 기준 이상으로 많은 elements를 접근하는 요청을 long query로 구분한다. 생략 시 default standard는 4000이다.
 
 start 명령으로 detection을 시작할 수 있다.
@@ -916,6 +925,7 @@ bop gbp command entered count : 0
 ```
 
 stats 명령은 가장 최근 수행된(수행 중인) long query detection의 상태를 조회하고 그 결과는 아래와 같다.
+
 ```
 Long query detection stats : running              //stopped by causes(request or overflow) | running
 The last running time : 20160126_175629 ~ 0_0     //bgndata_bgntime ~ enddate_endtime
@@ -923,16 +933,18 @@ The number of total long query commands : 1152    //detected_commands
 The detection standard : 43                       //standard
 ```
 
-### Key dump 명령
+## Key dump 명령
 
-ARCUS cache server의 key를 dump 한다.
+ARCUS Cache Server의 key를 dump 한다.
 
-dump ascii command는 아래와 같다.
+Dump ASCII command는 아래와 같다.
+
 ```
 dump start key [<prefix>] filepath\r\n
 dump stop\r\n
 stats dump\r\n
 ```
+
 dump start명령.
 - 첫번째 인자는 무조건 "key"이다.
   - 현재는 일단 key string만을 dump한다.
@@ -984,7 +996,7 @@ DUMP SUMMARY: { prefix=<prefix>, count=<count>, total=<total> elapsed=<elapsed> 
   - \<total\>은 cache에 있는 전체 key 개수이다.
   - \<elapsed\>는 dump하는 데 소요된 시간(단위: 초) 이다.
 
-### Keyscan 명령
+## Keyscan 명령
 
 특정 조건을 만족하는 아이템들의 키 목록을 얻어올 수 있는 keyscan 기능을 제공한다.
 keyscan 기능은 제한된 시간(5ms) 내에서 아이템들을 스캔하고 응용에게 찾은 키 스트링 목록과
@@ -1012,6 +1024,7 @@ glob style 패턴 문자열을 지정하여 해당 패턴과 일치하는 키 �
 문자열 비교 알고리즘의 worst case 수행 시간이 오래 걸리는 것을 방지하기 위해 패턴 문자열에 길이와 '\*' 입력 개수에 제약을 두었다.
 
 keyscan 명령 응답 syntax는 아래와 같다.
+
 ```
 KEYS <key_count> <cursor>\r\n
 key1\r\n
@@ -1043,17 +1056,20 @@ keykey13
 ```
 
 keyscan 명령 실패 시에 response string 은 다음과 같다.
-- CLIENT_ERROR bad cursor value - cursor 문자열 길이가 32 이상인 경우
-- CLIENT_ERROR bad count value - count 가 0 이거나 2000 보다 큰 경우
-- CLIENT_ERROR bad long pattern string - 패턴 문자열 길이가 65 이상인 경우
-- CLIENT_ERROR bad pattern string - 패턴 문자열에 * 을 5개 이상 주었거나 '\\' 다음에 패턴 문자('\\', '\*', '\?')가 없는 경우
-- CLIENT_ERROR bad item type - type 값을 잘못 준 경우
-- CLIENT_ERROR invalid cursor - cursor 에 숫자가 아닌 값을 준 경우
-- CLIENT_ERROR bad command line format	- protocol syntax 틀림
 
-### Zkensemble 명령
+| Response String                        | 설명                     |
+|----------------------------------------|------------------------ |
+| CLIENT_ERROR bad cursor value          | cursor 문자열 길이가 32 이상인 경우
+| CLIENT_ERROR bad count value           | count 가 0 이거나 2000 보다 큰 경우
+| CLIENT_ERROR bad long pattern string   | 패턴 문자열 길이가 65 이상인 경우
+| CLIENT_ERROR bad pattern string        | 패턴 문자열에 * 을 5개 이상 주었거나 '\\' 다음에 패턴 문자('\\', '\*', '\?')가 없는 경우
+| CLIENT_ERROR bad item type             | type 값을 잘못 준 경우
+| CLIENT_ERROR invalid cursor            | cursor 에 숫자가 아닌 값을 준 경우
+| CLIENT_ERROR bad command line format   | protocol syntax 틀림
 
-ARCUS cache server가 연결되어 있는 ZooKeeper ensemble 설정에 대한 명령을 제공한다.
+## ZKensemble 명령
+
+ARCUS Cache Server가 연결되어 있는 ZooKeeper ensemble 설정에 대한 명령을 제공한다.
 
 ```
 zkensemble set <ensemble_list>\r\n
@@ -1070,9 +1086,9 @@ rejoin 명령은 ZK ensemble 과의 연결을 끊고 cache cloud에서 빠져 �
 - 운영자의 실수로 cache_list에 등록된 cache server의 ephemeral znode가 삭제된 경우
 
 
-### Help 명령
+## Help 명령
 
-ARCUS cache server의 acsii command syntax를 조회한다.
+ARCUS Cache Server의 ASCII command syntax를 조회한다.
 
 ```
 help [<subcommand>]\r\n

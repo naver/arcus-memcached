@@ -36,7 +36,7 @@ Ranking 시스템에서는 특정 score를 bkey로 하여 해당 elements를 저
 조회는 최고/최저 score 기준으로 몇번째 위치 또는 위치의 범위에 해당하는 element를 찾는 경우가 많다.
 
 
-### bop create (B+tree Collection 생성)
+## bop create (B+tree Collection 생성)
 
 B+tree collection을 empty 상태로 생성한다.
 
@@ -53,13 +53,15 @@ bop create <key> <attributes> [noreply]\r\n
 
 Response string과 그 의미는 아래와 같다.
 
-- "CREATED" - 성공
-- "EXISTS" - 동일 key string을 가진 item이 이미 존재
-- "NOT_SUPPORTED" - 지원하지 않음
-- “CLIENT_ERROR bad command line format” - protocol syntax 틀림
-- “SERVER_ERROR out of memory” - 메모리 부족
+| Response String                         | 설명                     |
+|-----------------------------------------|------------------------ |
+| "CREATED"                               | 성공
+| "EXISTS"                                | 동일 key string을 가진 item이 이미 존재
+| "NOT_SUPPORTED"                         | 지원하지 않음
+| "CLIENT_ERROR bad command line format"  | protocol syntax 틀림
+| "SERVER_ERROR out of memory"            | 메모리 부족
 
-### bop insert/upsert (B+Tree Element 삽입/대체)
+## bop insert/upsert (B+Tree Element 삽입/대체)
 
 B+tree collection에 하나의 element를 추가하는 명령으로
 (1) 하나의 element를 삽입하는 bop insert 명령과
@@ -95,26 +97,24 @@ END\r\n
 
 그 외의 response string과 의미는 아래와 같다.
 
-- "STORED" - 성공 (element만 삽입)
-- “CREATED_STORED” - 성공 (collection 생성하고 element 삽입)
-- "REPLACED" : 성공 (element를 대체)
-- “NOT_FOUND” - key miss
-- “TYPE_MISMATCH” - 해당 item이 b+tree colleciton이 아님
-- "BKEY_MISMATCH" - 삽입할 bkey 유형과 대상 b+tree의 bkey 유형이 다름
-- “OVERFLOWED” - overflow 발생
-- “OUT_OF_RANGE” - 새로운 element 삽입이 maxcount 또는 maxbkeyrange 제약을 위배하면서
-그 element의 bkey 값이 overflowaction에 의해 자동 삭제되는 경우이어서 삽입이 실패하는 경우이다.
-예를 들어, smallest_trim 상황에서 새로 삽입할 element의 bkey 값이 b+tree의
-smallest bkey 보다 작으면서 maxcount 개의 elements가 이미 존재하거나
-maxbkeyrange를 벗어나는 경우가 이에 해당된다.
-- "ELEMENT_EXISTS" - 동일 bkey를 가진 element가 존재
-- "NOT_SUPPORTED" - 지원하지 않음
-- “CLIENT_ERROR bad command line format” - protocol syntax 틀림
-- “CLIENT_ERROR too large value” - 삽입할 데이터가 element value의 최대 크기보다 큼
-- “CLIENT_ERROR bad data chunk” - 삽입할 데이터의 길이가 <bytes>와 다르거나 "\r\n"으로 끝나지 않음
-- “SERVER_ERROR out of memory” - 메모리 부족
+| Response String                         | 설명                     |
+|-----------------------------------------|------------------------ |
+| "STORED"                                | 성공 (element만 삽입)
+| "CREATED_STORED"                        | 성공 (collection 생성하고 element 삽입)
+| "REPLACED"                              | 성공 (element를 대체)
+| "NOT_FOUND"                             | key miss
+| "TYPE_MISMATCH"                         | 해당 item이 b+tree colleciton이 아님
+| "BKEY_MISMATCH"                         | 삽입할 bkey 유형과 대상 b+tree의 bkey 유형이 다름
+| "OVERFLOWED"                            | overflow 발생
+| "OUT_OF_RANGE"                          | 새로운 element 삽입이 maxcount 또는 maxbkeyrange 제약을 위배하면서 그 element의 bkey 값이 overflowaction에 의해 자동 삭제되는 경우이어서 삽입이 실패하는 경우이다. 예를 들어, smallest_trim 상황에서 새로 삽입할 element의 bkey 값이 b+tree의 smallest bkey 보다 작으면서 maxcount 개의 elements가 이미 존재하거나 maxbkeyrange를 벗어나는 경우가 이에 해당된다.
+| "ELEMENT_EXISTS"                        | 동일 bkey를 가진 element가 존재
+| "NOT_SUPPORTED"                         | 지원하지 않음
+| "CLIENT_ERROR bad command line format"  | protocol syntax 틀림
+| "CLIENT_ERROR too large value"          | 삽입할 데이터가 element value의 최대 크기보다 큼
+| "CLIENT_ERROR bad data chunk"           | 삽입할 데이터의 길이가 <bytes>와 다르거나 "\r\n"으로 끝나지 않음
+| "SERVER_ERROR out of memory"            | 메모리 부족
 
-### bop update (B+Tree Element 변경)
+## bop update (B+Tree Element 변경)
 
 B+tree collection에서 하나의 element에 대해 eflag 변경 그리고/또는 data 변경을 수행한다.
 현재 다수 elements에 대한 변경 연산은 제공하지 않고 있다.
@@ -134,22 +134,21 @@ pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란
 
 Response string과 그 의미는 아래와 같다.
 
-- "UPDATED" - 성공
-- “NOT_FOUND” - key miss
-- "NOT_FOUND_ELEMENT" - element miss (변경할 element가 없음)
-- “TYPE_MISMATCH” - 해당 item이 b+tree colleciton이 아님
-- "BKEY_MISMATCH" - 명령 인자로 주어진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
-- "EFLAG_MISMATCH" - 해당 element의 eflag 값에 대해 \<eflag_update\>를 적용할 수 없음.
-예를 들어, 변경하고자 하는 eflag가 존재하지 않거나, 존재하더라도 \<eflag_update\>
-조건으로 명시된 부분의 데이터를 가지지 않은 상태이다.
-- “NOTHING_TO_UPDATE” - eflag 변경과 data 변경 중 어느 하나도 명시되지 않은 상태
-- "NOT_SUPPORTED" - 지원하지 않음
-- “CLIENT_ERROR bad command line format” - protocol syntax 틀림
-- “CLIENT_ERROR too large value” - 변경할 데이터가 element value의 최대 크기보다 큼
-- “CLIENT_ERROR bad data chunk” - 변경할 데이터의 길이가 <bytes>와 다르거나 "\r\n"으로 끝나지 않음
-- “SERVER_ERROR out of memory” - 메모리 부족
+| Response String                         | 설명                     |
+|-----------------------------------------|------------------------ |
+| "UPDATED"                               | 성공
+| "NOT_FOUND"                             | key miss
+| "NOT_FOUND_ELEMENT"                     | element miss (변경할 element가 없음)
+| "TYPE_MISMATCH"                         | 해당 item이 b+tree colleciton이 아님
+| "BKEY_MISMATCH"                         | 명령 인자로 주어진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
+| "EFLAG_MISMATCH"                        | 해당 element의 eflag 값에 대해 \<eflag_update\>를 적용할 수 없음. 예를 들어, 변경하고자 하는 eflag가 존재하지 않거나, 존재하더라도 \<eflag_update\> 조건으로 명시된 부분의 데이터를 가지지 않은 상태이다. | "NOTHING_TO_UPDATE" - eflag 변경과 data 변경 중 어느 하나도 명시되지 않은 상태
+| "NOT_SUPPORTED" - 지원하지 않음
+| "CLIENT_ERROR bad command line format"  | protocol syntax 틀림
+| "CLIENT_ERROR too large value"          | 변경할 데이터가 element value의 최대 크기보다 큼
+| "CLIENT_ERROR bad data chunk"           | 변경할 데이터의 길이가 <bytes>와 다르거나 "\r\n"으로 끝나지 않음
+| "SERVER_ERROR out of memory"            | 메모리 부족
 
-### bop delete (B+Tree Element 삭제)
+## bop delete (B+Tree Element 삭제)
 
 b+tree collection에서 하나의 bkey 또는 bkey range 조건과 eflag filter 조건을 만족하는
 N 개의 elements를 삭제한다.
@@ -171,16 +170,18 @@ pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란
 
 Response string과 그 의미는 아래와 같다.
 
-- "DELETED" - 성공 (element만 삭제)
-- “DELETED_DROPPED” - 성공 (element 삭제하고 collection을 drop한 상태)
-- “NOT_FOUND” - key miss
-- “NOT_FOUND_ELEMENT” - element miss (삭제할 element가 없음)
-- “TYPE_MISMATCH” - 해당 item이 b+tree colleciton이 아님
-- "BKEY_MISMATCH" - 명령 인자의 bkey 유형과 대상 b+tree의 bkey 유형이 다름
-- "NOT_SUPPORTED" - 지원하지 않음
-- “CLIENT_ERROR bad command line format” - protocol syntax 틀림
+| Response String                         | 설명                    |
+|-----------------------------------------|------------------------ |
+| "DELETED"                               | 성공 (element만 삭제)
+| "DELETED_DROPPED"                       | 성공 (element 삭제하고 collection을 drop한 상태)
+| "NOT_FOUND"                             | key miss
+| "NOT_FOUND_ELEMENT"                     | element miss (삭제할 element가 없음)
+| "TYPE_MISMATCH"                         | 해당 item이 b+tree colleciton이 아님
+| "BKEY_MISMATCH"                         | 명령 인자의 bkey 유형과 대상 b+tree의 bkey 유형이 다름
+| "NOT_SUPPORTED"                         | 지원하지 않음
+| "CLIENT_ERROR bad command line format"  | protocol syntax 틀림
 
-### bop get (B+Tree Element 조회)
+## bop get (B+Tree Element 조회)
 
 B+tree collection에서 하나의 bkey 또는 bkey range 조건과 eflag filter 조건을 만족하는 
 elements에서 offset 개를 skip한 후 count 개의 elements를 조회한다.
@@ -198,6 +199,18 @@ bop get <key> <bkey or "bkey range"> [<eflag_filter>] [[<offset>] <count>] [dele
 그리고 delete로 인해 empty b+tree가 될 경우 그 b+tree를 drop할 것인지를 지정한다.
 
 성공 시의 response string은 아래와 같다.
+
+```
+VALUE <flags> <count>\r\n
+<bkey> [<eflag>] <bytes> <data>\r\n
+<bkey> [<eflag>] <bytes> <data>\r\n
+<bkey> [<eflag>] <bytes> <data>\r\n
+…
+END|TRIMMED|DELETED|DELETED_DROPPED\r\n
+```  
+
+위 response string에 대한 설명은 다음과 같다.  
+  
 VALUE 라인의 \<count\>는 조회된 element 개수를 나타내며,
 그 다음 라인 부터 조회된 각 element의 bkey, flag, data가 나타낸다.
 마지막 라인은 조회 상래로서 END, TRIMMED, DELETED, DELETED_DROPPED 중 하나를 가진다.
@@ -213,29 +226,21 @@ back-end storage에서 조회되지 않은 나머지 elements를 다시 조회�
 b+tree collection 내부에 trim 발생 여부를 유지하지 않아 TRIMMED와 같은 trim 발생 상태를
 알려주지 않게 된다. 이 경우, trim 발생 여부에 대한 검사는 응용에서 자체적으로 수행해야 한다.
 
-```
-VALUE <flags> <count>\r\n
-<bkey> [<eflag>] <bytes> <data>\r\n
-<bkey> [<eflag>] <bytes> <data>\r\n
-<bkey> [<eflag>] <bytes> <data>\r\n
-…
-END|TRIMMED|DELETED|DELETED_DROPPED\r\n
-```
-
 실패 시의 response string과 그 의미는 아래와 같다.
 
-- “NOT_FOUND” - key miss
-- “NOT_FOUND_ELEMENT” - element miss (조회 조건을 만족하는 element가 없음)
-- “OUT_OF_RANGE” - 조회 조건을 만족하는 element가 없으며,
-또한 주어진 bkey range가 b+tree의 overflowaction에 의해 trim된 bkey 영역과 overlap 되었음을 나타낸다.
-- “TYPE_MISMATCH” - 해당 item이 b+tree collection이 아님
-- “BKEY_MISMATCH” - 명령 인자로 주어진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
-- “UNREADABLE” - 해당 item이 unreadable item임
-- "NOT_SUPPORTED" - 지원하지 않음
-- “CLIENT_ERROR bad command line format” - protocol syntax 틀림
-- “SERVER_ERROR out of memory [writing get response]” - 메모리 부족
+| Response String                                       | 설명                    |
+|-------------------------------------------------------|------------------------ |
+| "NOT_FOUND"                                           | key miss
+| "NOT_FOUND_ELEMENT"                                   | element miss (조회 조건을 만족하는 element가 없음)
+| "OUT_OF_RANGE"                                        | 조회 조건을 만족하는 element가 없으며, 또한 주어진 bkey range가 b+tree의 overflowaction에 의해 trim된 bkey 영역과 overlap 되었음을 나타낸다.
+| "TYPE_MISMATCH"                                       | 해당 item이 b+tree collection이 아님
+| "BKEY_MISMATCH"                                       | 명령 인자로 주어진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
+| "UNREADABLE"                                          | 해당 item이 unreadable item임 
+| "NOT_SUPPORTED"                                       | 지원하지 않음
+| "CLIENT_ERROR bad command line format"                | protocol syntax 틀림
+| "SERVER_ERROR out of memory [writing get response]"   | 메모리 부족
 
-### bop count (B+Tree Element 개수 계산)
+## bop count (B+Tree Element 개수 계산)
 
 b+tree collection에서 하나의 bkey 또는 bkey range 조건과 eflag filter 조건을 만족하는
 elements 개수를 구한다.
@@ -259,16 +264,18 @@ COUNT=<count>
 
 실패 시의 return string과 그 의미는 아래와 같다.
 
-- “NOT_FOUND” - key miss
-- “TYPE_MISMATCH” - 해당 item이 b+tree collection이 아님
-- “BKEY_MISMATCH” - 명령 인자로 주어진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
-- “UNREADABLE” - 해당 item이 unreadable item임
-- "NOT_SUPPORTED" - 지원하지 않음
-- “CLIENT_ERROR bad command line format” - protocol syntax 틀림
+| Response String                          | 설명                    |
+|------------------------------------------|------------------------ |
+| "NOT_FOUND"                              | key miss
+| "TYPE_MISMATCH"                          | 해당 item이 b+tree collection이 아님
+| "BKEY_MISMATCH"                          | 명령 인자로 주어진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
+| "UNREADABLE"                             | 해당 item이 unreadable item임
+| "NOT_SUPPORTED"                          | 지원하지 않음
+| "CLIENT_ERROR bad command line format"   | protocol syntax 틀림
 
-### bop incr/decr (B+Tree Element 값의 증감)
+## bop incr/decr (B+Tree Element 값의 증감)
 
-B+tree collection 특정 하나의 eleement에 있는 데이터를 increment 또는 decrement하고,
+B+tree collection 특정 하나의 element에 있는 데이터를 increment 또는 decrement하고,
 증감된 데이터를 반환한다.
 이 명령은 key-value item에 대한 incr/decr 명령과 유사한 명령으로 
 이 명령을 수행할 b+tree element의 데이터는 증감이 가능한 숫자형 데이터이어야 한다.
@@ -295,22 +302,20 @@ Increment/decrement 수행 후의 데이터 값이다.
 
 실패 시의 response string과 그 의미는 아래와 같다.
 
-- “NOT_FOUND” - key miss
-- “NOT_FOUND_ELEMENT” - element miss
-- “TYPE_MISMATCH” - 해당 item이 b+tree collection이 아님
-- “BKEY_MISMATCH” - 명령 인자로 주언진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
-- “OUT_OF_RANGE” - 새로운 element 삽입이 maxcount 또는 maxbkeyrange 제약을 
-위배하면서 그 element의 bkey 값이 overflowaction에 의해 자동 삭제되는 경우이어서 
-삽입이 실패하는 경우이다. 예를 들어, smallest_trim 상황에서 새로 삽입할 element의 
-bkey 값이 b+tree의 smallest bkey 보다 작으면서 maxcount 개의 elements가 이미 
-존재하거나 maxbkeyrange를 벗어나는 경우가 이에 해당된다.
-- “OVERFLOWED” - overflow 발생
-- "NOT_SUPPORTED" - 지원하지 않음
-- “CLIENT_ERROR cannot increment or decrement non-numeric value” - 해당 element의 데이터가 숫자형이 아님.
-- “CLIENT_ERROR bad command line format” - protocol syntax 틀림
-- “SERVER_ERROR out of memory [writing get response]” - 메모리 부족
+| Response String                                                 | 설명                    |
+|-----------------------------------------------------------------|------------------------ |
+| "NOT_FOUND"                                                     | key miss
+| "NOT_FOUND_ELEMENT"                                             | element miss
+| "TYPE_MISMATCH"                                                 | 해당 item이 b+tree collection이 아님
+| "BKEY_MISMATCH"                                                 | 명령 인자로 주언진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
+| "OUT_OF_RANGE"                                                  | 새로운 element 삽입이 maxcount 또는 maxbkeyrange 제약을 위배하면서 그 element의 bkey 값이 overflowaction에 의해 자동 삭제되는 경우이어서 삽입이 실패하는 경우이다. 예를 들어, smallest_trim 상황에서 새로 삽입할 element의 bkey 값이 b+tree의 smallest bkey 보다 작으면서 maxcount 개의 elements가 이미 존재하거나 maxbkeyrange를 벗어나는 경우가 이에 해당된다.
+| "OVERFLOWED"                                                    | overflow 발생
+| "NOT_SUPPORTED"                                                 | 지원하지 않음
+| "CLIENT_ERROR cannot increment or decrement non-numeric value"  | 해당 element의 데이터가 숫자형이 아님.
+| "CLIENT_ERROR bad command line format"                          | protocol syntax 틀림
+| "SERVER_ERROR out of memory [writing get response]"             | 메모리 부족
 
-### bop mget (B+Tree Multiple Get)
+## bop mget (B+Tree Multiple Get)
 
 여러 b+tree들에 대해 동일 조회 조건(bkey range와 eflag filter)으로 element들을 한꺼번에 조회한다.
 여러 b+tree들에 대한 동일 조회 조건을 사용하므로, 대상 b+tree들은 동일 bkey 유형을 가져야 한다.
@@ -375,13 +380,15 @@ flags와 ecount를 포함하여 조회된 element 정보가 생략된다.
 
 실패 시의 response string과 그 의미는 다음과 같다.
 
-- "NOT_SUPPORTED" - 지원하지 않음
-- “CLIENT_ERROR bad command line format” - protocol syntax 틀림
-- “CLIENT_ERROR bad data chunk”	- space separated key list의 길이가 \<lenkeys\>와 다르거나 “\r\n”으로 끝나지 않음
-- “CLIENT_ERROR bad value” - bop mget 명령의 제약 조건을 위배함.
-- “SERVER_ERROR out of memory [writing get response]” - 메모리 부족
+| Response String                                       | 설명                    |
+|-------------------------------------------------------|------------------------ |
+| "NOT_SUPPORTED"                                       | 지원하지 않음
+| "CLIENT_ERROR bad command line format"                | protocol syntax 틀림
+| "CLIENT_ERROR bad data chunk"	                        | space separated key list의 길이가 \<lenkeys\>와 다르거나 “\r\n”으로 끝나지 않음
+| "CLIENT_ERROR bad value"                              | bop mget 명령의 제약 조건을 위배함.
+| "SERVER_ERROR out of memory [writing get response]"   | 메모리 부족
 
-### bop smget (B+Tree Sort Merge Get)
+## bop smget (B+Tree Sort Merge Get)
 
 여러 b+tree들에서 bkey range 조건과 eflag filter 조건을 모두 만족하는
 elements를 sort merge 형태로 조회하면서 count 개의 elements를 가져온다.
@@ -521,18 +528,19 @@ END|DUPLICATED\r\n
 
 smget 수행의 실패 시의 response string은 다음과 같다.
 
-- “TYPE_MISMATCH” - 어떤 key가 b+tree type이 아님
-- “BKEY_MISMATCH” - smget에 참여된 b+tree들의 bkey 유형이 서로 다름.
-- “OUT_OF_RANGE” - 기존 smget 동작에서만 발생할 수 있는 실패 response string이다.
-- "NOT_SUPPORTED" - 지원하지 않음
-- “CLIENT_ERROR bad command line format” - protocol syntax 틀림
-- “CLIENT_ERROR bad data chunk”	- 주어진 key 리스트에 중복 key가 존재하거나
-주어진 key 리스트의 길이가 \<lenkeys\> 길이와 다르거나 “\r\n”으로 끝나지 않음.
-- “CLIENT_ERROR bad value” - 앞서 기술한 smget 연산의 제약 조건을 위배
-- “SERVER_ERROR out of memory [writing get response]” - 메모리 부족
+| Response String                                      | 설명                    |
+|------------------------------------------------------|------------------------ |  
+| "TYPE_MISMATCH"                                      | 어떤 key가 b+tree type이 아님
+| "BKEY_MISMATCH"                                      | smget에 참여된 b+tree들의 bkey 유형이 서로 다름.
+| "OUT_OF_RANGE"                                       | 기존 smget 동작에서만 발생할 수 있는 실패 response string이다.
+| "NOT_SUPPORTED"                                      | 지원하지 않음
+| "CLIENT_ERROR bad command line format"               | protocol syntax 틀림
+| "CLIENT_ERROR bad data chunk"	                       | 주어진 key 리스트에 중복 key가 존재하거나 주어진 key 리스트의 길이가 \<lenkeys\> 길이와 다르거나 "\r\n"으로 끝나지 않음.
+| "CLIENT_ERROR bad value"                             | 앞서 기술한 smget 연산의 제약 조건을 위배
+| "SERVER_ERROR out of memory [writing get response"   | 메모리 부족
 
 
-### bop position (B+Tree Position 조회)
+## bop position (B+Tree Position 조회)
 
 b+tree collection에서 특정 element의 position을 조회한다.
 Element의 position이란 b+tree에서의 위치 정보로서,
@@ -556,15 +564,17 @@ POSITION=<position>\r\n
 
 실패 시의 response string과 그 의미는 아래와 같다.
 
-- "NOT_FOUND” - key miss
-- “NOT_FOUND_ELEMENT” - element miss
-- “TYPE_MISMATCH” - b+tree collection 아님
-- “BKEY_MISMATCH” - 명령 인자로 주어진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
-- “UNREADABLE” - 해당 item이 unreadable item임
-- "NOT_SUPPORTED" - 지원하지 않음
-- “CLIENT_ERROR bad command line format” - protocol syntax 틀림
+| Response String                          | 설명                    |
+|------------------------------------------|------------------------ |
+| "NOT_FOUND"                              | key miss
+| "NOT_FOUND_ELEMENT"                      | element miss
+| "TYPE_MISMATCH"                          | b+tree collection 아님
+| "BKEY_MISMATCH"                          | 명령 인자로 주어진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
+| "UNREADABLE"                             | 해당 item이 unreadable item임
+| "NOT_SUPPORTED"                          | 지원하지 않음
+| "CLIENT_ERROR bad command line format"   | protocol syntax 틀림
 
-### bop gbp (B+Tree Get By Position)
+## bop gbp (B+Tree Get By Position)
 
 B+tree collection에서 position 기반으로 elements를 조회한다.
 
@@ -592,15 +602,17 @@ END\r\n
 
 실패 시의 response string과 그 의미는 아래와 같다.
 
-- "NOT_FOUND” - key miss
-- “NOT_FOUND_ELEMENT” - element miss
-- “TYPE_MISMATCH” - b+tree collection 아님
-- “UNREADABLE” - 해당 item이 unreadable item임
-- "NOT_SUPPORTED" - 지원하지 않음
-- “CLIENT_ERROR bad command line format” - protocol syntax 틀림
-- “SERVER_ERROR out of memory [writing get response]” - 메모리 부족
+| Response String                                      | 설명                    |
+|------------------------------------------------------|------------------------ |
+| "NOT_FOUND"                                          | key miss
+| "NOT_FOUND_ELEMENT"                                  | element miss
+| "TYPE_MISMATCH"                                      | b+tree collection 아님
+| "UNREADABLE"                                         | 해당 item이 unreadable item임
+| "NOT_SUPPORTED"                                      | 지원하지 않음
+| "CLIENT_ERROR bad command line format"               | protocol syntax 틀림
+| "SERVER_ERROR out of memory [writing get response]"  | 메모리 부족
 
-### bop pwg (B+Tree Find Position with Get [version 1.8.0])
+## bop pwg (B+Tree Find Position with Get [version 1.8.0])
 
 B+tree collection에서 특정 bkey의 position을 조회하면서,
 그 bkey를 가진 element를 포함하여 앞뒤에(양방향) 위치한 element N개 씩을 한번에 조회한다.
@@ -640,12 +652,15 @@ END\r\n
     count는 (5 + 1 + 10) = 16이 되고, index는 5가 된다.
 
 실패 시의 response string과 그 의미는 아래와 같다.
-
-- "NOT_FOUND” - key miss
-- “NOT_FOUND_ELEMENT” - element miss
-- “TYPE_MISMATCH” - b+tree collection 아님
-- “BKEY_MISMATCH” - 명령 인자로 주어진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
-- “UNREADABLE” - 해당 item이 unreadable item임
-- "NOT_SUPPORTED" - 지원하지 않음
-- “CLIENT_ERROR bad command line format” - protocol syntax 틀림
-- “SERVER_ERROR out of memory [writing get response]” - 메모리 부족
+  
+| Response String                                     | 설명                    |
+|-----------------------------------------------------|-------------------------|
+| "NOT_FOUND"                                         | key miss
+| "NOT_FOUND_ELEMENT"                                 | element miss
+| "TYPE_MISMATCH"                                     | b+tree collection 아님
+| "BKEY_MISMATCH"                                     | 명령 인자로 주어진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
+| "UNREADABLE"                                        | 해당 item이 unreadable item임
+| "NOT_SUPPORTED"                                     | 지원하지 않음
+| "CLIENT_ERROR bad command line format"              | protocol syntax 틀림
+| "SERVER_ERROR out of memory [writing get response]" | 메모리 부족
+  

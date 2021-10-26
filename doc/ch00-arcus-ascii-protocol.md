@@ -1,15 +1,15 @@
-# ARCUS memcached Ascii Protocol
+# ARCUS Cache Server ASCII Protocol
 
-ARCUS cache server가 제공하는 명령들의 ascii protocol을 기술한다.
+ARCUS Cache Server가 제공하는 명령들의 ASCII Protocol을 기술한다.
 Binary protocol은 현재 지원하지 않으므로, 논의에서 제외한다.
 
 본 문서는 ARCUS cache client 개발자를 주 대상으로 하며,
-ARCUS cache server에 관심있는 독자의 경우도 참고할 수 있다.
+ARCUS Cache Server에 관심있는 독자의 경우도 참고할 수 있다.
 
 Collection Support
 ------------------
 
-Ascii protocol 관점에서 ARCUS cache server는 기존 memcached 기능 외에 collection 기능을 제공한다.
+ASCII Protocol 관점에서 ARCUS Cache Server는 기존 memcached 기능 외에 collection 기능을 제공한다.
 하나의 data만을 가지는 simple key-value 외에도 여러 data를 구조화된 형태로 저장/조회할 수 있으며,
 제공하는 collection 유형은 아래와 같다.
 
@@ -21,10 +21,10 @@ Ascii protocol 관점에서 ARCUS cache server는 기존 memcached 기능 외에
 Basic Concepts
 --------------
 
-ARCUS cache server를 사용함에 있어 필요한 cache key, item, slab 등의 기본 용어와 개념은
+ARCUS Cache Server를 사용함에 있어 필요한 cache key, item, slab 등의 기본 용어와 개념은
 [ARCUS 기본 개념](ch01-arcus-basic-concept.md)에서 설명하므로, 이를 먼저 읽어보길 권한다.
 
-ARCUS cache server가 제공하는 collection과 element 구조, b+tree key, element flag 등의
+ARCUS Cache Server가 제공하는 collection과 element 구조, b+tree key, element flag 등의
 중요 요소들은 [Collection 기본 개념](ch02-collection-items.md)에서 소개한다.
 
 Collection 기능을 제공함에 따라 item 속성들이 확장되었으며,
@@ -33,8 +33,8 @@ Collection 기능을 제공함에 따라 item 속성들이 확장되었으며,
 Simple Key-Value 기능
 ---------------------
 
-ARCUS cache server는 memcached 1.4 기준의 key-value 명령을 그대로 제공하며, 일부에 대해 확장된 명령을 제공한다.
-따라서, 기존 memcached 1.4에서 사용한 명령들은 ARCUS cache server에서도 그대로 사용 가능하다.
+ARCUS Cache Server는 memcached 1.4 기준의 key-value 명령을 그대로 제공하며, 일부에 대해 확장된 명령을 제공한다.
+따라서, 기존 memcached 1.4에서 사용한 명령들은 ARCUS Cache Server에서도 그대로 사용 가능하다.
 [Key-Value 명령](ch04-command-key-value.md)에서 key-value 유형의 item에 대해 수행가능한 명령들을 소개한다.
 
 Collection 기능
@@ -59,5 +59,4 @@ Item attributes를 조회하거나 변경하기 위하여 [Item Attribute 명령
 Admin & Monitoring 기능
 -----------------------
 
-ARCUS cache server의 운영 상에 필요한 기능들은 [Admin & Monitoring 명령](ch11-command-administration.md)으로 제공한다.
-
+ARCUS Cache Server의 운영 상에 필요한 기능들은 [Admin & Monitoring 명령](ch11-command-administration.md)으로 제공한다.
