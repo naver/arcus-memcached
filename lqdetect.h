@@ -5,14 +5,13 @@
 #include "memcached/util.h"
 
 #define DETECT_LONG_QUERY
-#define LONGQ_STAT_STRLEN       300
-#define LONGQ_STANDARD_DEFAULT  4000        /* defulat detect standard */
+#define LQ_STANDARD_DEFAULT  4000 /* default detect standard */
 /* longest range: "<longest bkey>..<longest bkey> efilter" */
-#define LONGQ_RANGE_SIZE        (64*2+16)
+#define LQ_RANGE_SIZE        (64*2+16)
 
-#define LONGQ_EXPLICIT_STOP     0    /* stop by user request */
-#define LONGQ_OVERFLOW_STOP     1    /* stop by detected command overflow (buffer or count)*/
-#define LONGQ_RUNNING           2    /* long query is running */
+#define LQ_EXPLICIT_STOP     0    /* stop by user request */
+#define LQ_OVERFLOW_STOP     1    /* stop by detected command overflow (buffer or count)*/
+#define LQ_RUNNING           2    /* long query is running */
 
 /* detect long query target command */
 enum lq_detect_command {
@@ -27,11 +26,11 @@ enum lq_detect_command {
     LQCMD_BOP_COUNT,
     LQCMD_BOP_GBP
 };
-#define LONGQ_COMMAND_NUM   (LQCMD_BOP_GBP+1)  /* detectiong command count */
+#define LQ_CMD_NUM (LQCMD_BOP_GBP+1) /* the number of command to detect */
 
 /* lqdetect argument structure */
 struct lq_detect_argument {
-    char range[LONGQ_RANGE_SIZE];
+    char range[LQ_RANGE_SIZE];
     uint32_t overhead;
     uint32_t offset;
     uint32_t count;
@@ -43,8 +42,8 @@ struct lq_detect_argument {
 struct lq_detect_stats {
     int bgndate, bgntime;
     int enddate, endtime;
-    int total_lqcmds; /* number of total long query command */
-    int stop_cause; /* how stopped */
+    int total_lqcmds;     /* number of total long query command */
+    int state;            /* lqdetect state */
     uint32_t standard;
 };
 
@@ -54,7 +53,7 @@ char *lqdetect_buffer_get(int cmd, uint32_t *length, uint32_t *cmdcnt);
 void lqdetect_buffer_release(int bufcnt);
 int lqdetect_start(uint32_t lqdetect_base, bool *already_started);
 void lqdetect_stop(bool *already_stopped);
-void lqdetect_get_stats(char* str);
+char *lqdetect_stats(void);
 
 bool lqdetect_lop_insert(char *client_ip, char *key, int coll_index);
 bool lqdetect_lop_delete(char *client_ip, char *key, uint32_t del_count,
