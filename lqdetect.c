@@ -13,6 +13,25 @@
 #define LQ_INPUT_SIZE  500   /* the size of input(time, ip, command, argument) */
 #define LQ_STAT_STRLEN 300   /* max length of stats */
 
+#define LQ_EXPLICIT_STOP 0   /* stop by user request */
+#define LQ_OVERFLOW_STOP 1   /* stop by detected command overflow (buffer or count) */
+#define LQ_RUNNING       2   /* long query is running */
+
+/* detect long query target command */
+enum lq_detect_command {
+    LQCMD_SOP_GET=0,
+    LQCMD_MOP_DELETE,
+    LQCMD_MOP_GET,
+    LQCMD_LOP_INSERT,
+    LQCMD_LOP_DELETE,
+    LQCMD_LOP_GET,
+    LQCMD_BOP_DELETE,
+    LQCMD_BOP_GET,
+    LQCMD_BOP_COUNT,
+    LQCMD_BOP_GBP
+};
+#define LQ_CMD_NUM (LQCMD_BOP_GBP+1) /* the number of command to detect */
+
 static EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
 static const char *command_str[LQ_CMD_NUM] = {
     "sop get","mop delete", "mop get",
@@ -169,24 +188,46 @@ char *lqdetect_stats(void)
     return str;
 }
 
-char *lqdetect_buffer_get(int cmd, uint32_t *length, uint32_t *cmdcnt)
+field_t *lqdetect_result_get(int *size)
 {
+    int hdrlen = 32;
+    int fldarr_size = LQ_CMD_NUM * 2 * sizeof(field_t);
+    int hdrarr_size = LQ_CMD_NUM * hdrlen; /* command, ntotal */
+    /* field_t and header string array */
+    field_t *fldarr = (field_t*)malloc(fldarr_size + hdrarr_size);
+    if (fldarr == NULL) {
+        return NULL;
+    }
+    char *hdrptr = (char*)fldarr + fldarr_size;
+    int fldcnt = 0;
+
     pthread_mutex_lock(&lqdetect.lock);
-
-    char *data = lqdetect.buffer[cmd].data;
-    *length = lqdetect.buffer[cmd].offset;
-    *cmdcnt = lqdetect.buffer[cmd].ntotal;
+    /* Each result consists of header and body. */
+    for (int i = 0; i < LQ_CMD_NUM; i++) {
+        struct lq_detect_buffer ldb = lqdetect.buffer[i];
+        /* header */
+        fldarr[fldcnt].length = snprintf(hdrptr, hdrlen, "%s : %u\n", command_str[i], ldb.ntotal);
+        fldarr[fldcnt].value = hdrptr;
+        hdrptr += hdrlen;
+        fldcnt++;
+        /* body */
+        if (ldb.ntotal != 0) {
+            fldarr[fldcnt].length = ldb.offset;
+            fldarr[fldcnt].value = ldb.data;
+            fldcnt++;
+        }
+    }
     lqdetect.refcount++;
-
     pthread_mutex_unlock(&lqdetect.lock);
-    return data;
+    *size = fldcnt;
+    return fldarr;
 }
 
-void lqdetect_buffer_release(int bufcnt)
+void lqdetect_result_release(field_t *results)
 {
+    free(results);
     pthread_mutex_lock(&lqdetect.lock);
-    lqdetect.refcount = (lqdetect.refcount-bufcnt) < 0 ?
-                              0 : lqdetect.refcount-bufcnt;
+    lqdetect.refcount--;
     pthread_mutex_unlock(&lqdetect.lock);
 }
 
