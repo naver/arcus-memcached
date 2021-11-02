@@ -9,25 +9,6 @@
 /* longest range: "<longest bkey>..<longest bkey> efilter" */
 #define LQ_RANGE_SIZE        (64*2+16)
 
-#define LQ_EXPLICIT_STOP     0    /* stop by user request */
-#define LQ_OVERFLOW_STOP     1    /* stop by detected command overflow (buffer or count)*/
-#define LQ_RUNNING           2    /* long query is running */
-
-/* detect long query target command */
-enum lq_detect_command {
-    LQCMD_SOP_GET=0,
-    LQCMD_MOP_DELETE,
-    LQCMD_MOP_GET,
-    LQCMD_LOP_INSERT,
-    LQCMD_LOP_DELETE,
-    LQCMD_LOP_GET,
-    LQCMD_BOP_DELETE,
-    LQCMD_BOP_GET,
-    LQCMD_BOP_COUNT,
-    LQCMD_BOP_GBP
-};
-#define LQ_CMD_NUM (LQCMD_BOP_GBP+1) /* the number of command to detect */
-
 /* lqdetect argument structure */
 struct lq_detect_argument {
     char range[LQ_RANGE_SIZE];
@@ -49,8 +30,8 @@ struct lq_detect_stats {
 
 int lqdetect_init(EXTENSION_LOGGER_DESCRIPTOR *logger);
 void lqdetect_final(void);
-char *lqdetect_buffer_get(int cmd, uint32_t *length, uint32_t *cmdcnt);
-void lqdetect_buffer_release(int bufcnt);
+field_t *lqdetect_result_get(int *size);
+void lqdetect_result_release(field_t *results);
 int lqdetect_start(uint32_t lqdetect_base, bool *already_started);
 void lqdetect_stop(bool *already_stopped);
 char *lqdetect_stats(void);

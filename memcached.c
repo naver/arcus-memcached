@@ -671,7 +671,7 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->conn_next = NULL;
 
 #ifdef DETECT_LONG_QUERY
-    c->lq_bufcnt = 0;
+    c->lq_result = NULL;
 #endif
 
     c->write_and_go = init_state;
@@ -841,9 +841,9 @@ static void conn_cleanup(conn *c)
     }
 
 #ifdef DETECT_LONG_QUERY
-    if (c->lq_bufcnt != 0) {
-        lqdetect_buffer_release(c->lq_bufcnt);
-        c->lq_bufcnt = 0;
+    if (c->lq_result) {
+        lqdetect_result_release(c->lq_result);
+        c->lq_result = NULL;
     }
 #endif
 
@@ -7446,9 +7446,9 @@ static void reset_cmd_handler(conn *c)
         c->item = NULL;
     }
 #ifdef DETECT_LONG_QUERY
-    if (c->lq_bufcnt != 0) {
-        lqdetect_buffer_release(c->lq_bufcnt);
-        c->lq_bufcnt = 0;
+    if (c->lq_result) {
+        lqdetect_result_release(c->lq_result);
+        c->lq_result = NULL;
     }
 #endif
     if (c->coll_eitem != NULL) {
@@ -9624,49 +9624,26 @@ static void process_logging_command(conn *c, token_t *tokens, const size_t ntoke
 #ifdef DETECT_LONG_QUERY
 static void lqdetect_show(conn *c)
 {
-    char *shorted_str[LQ_CMD_NUM] = {
-                            "sop get command entered count :",
-                            "mop delete command entered count :",
-                            "mop get command entered count :",
-                            "lop insert command entered count :",
-                            "lop delete command entered count :",
-                            "lop get command entered count :",
-                            "bop delete command entered count :",
-                            "bop get command entered count :",
-                            "bop count command entered count :",
-                            "bop gbp command entered count :"};
-    uint32_t length;
-    uint32_t cmdcnt;
-    int ii, ret = 0;
+    int ret = 0, size = 0;
+    c->lq_result = lqdetect_result_get(&size);
+    if (c->lq_result == NULL) {
+        out_string(c, "SERVER ERROR out of memory");
+        return;
+    }
 
-    /* create detected long query return string */
-    for (ii = 0; ii < LQ_CMD_NUM; ii++) {
-        char *data = lqdetect_buffer_get(ii, &length, &cmdcnt);
-        c->lq_bufcnt++;
-
-        char *count = get_suffix_buffer(c);
-        if (count == NULL) {
-            ret = -1; break;
-        }
-        int count_len = snprintf(count, SUFFIX_SIZE, " %d\n", cmdcnt);
-
-        if (add_iov(c, shorted_str[ii], strlen(shorted_str[ii])) != 0 ||
-            add_iov(c, count, count_len) != 0 ||
-            add_iov(c, data, length) != 0 ||
-            add_iov(c, "\n", 1) != 0)
-        {
+    for (int i = 0; i < size; i++) {
+        if (add_iov(c, c->lq_result[i].value, c->lq_result[i].length) != 0) {
             ret = -1; break;
         }
     }
-    c->suffixcurr = c->suffixlist;
 
     if (ret == 0) {
         conn_set_state(c, conn_mwrite);
         c->msgcurr = 0;
     } else {
         out_string(c, "SERVER ERROR out of memory writing show response");
-        lqdetect_buffer_release(c->lq_bufcnt);
-        c->lq_bufcnt = 0;
+        lqdetect_result_release(c->lq_result);
+        c->lq_result = NULL;
     }
 }
 
@@ -13716,9 +13693,9 @@ bool conn_mwrite(conn *c)
                 c->suffixleft--;
             }
 #ifdef DETECT_LONG_QUERY
-            if (c->lq_bufcnt != 0) {
-                lqdetect_buffer_release(c->lq_bufcnt);
-                c->lq_bufcnt = 0;
+            if (c->lq_result) {
+                lqdetect_result_release(c->lq_result);
+                c->lq_result = NULL;
             }
 #endif
             if (c->coll_eitem != NULL) {

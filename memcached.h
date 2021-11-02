@@ -374,7 +374,7 @@ struct conn {
     int    suffixleft;
 
 #ifdef DETECT_LONG_QUERY
-    int    lq_bufcnt;
+    field_t *lq_result;
 #endif
 
     enum protocol protocol;   /* which protocol this connection speaks */
