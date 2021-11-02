@@ -111,7 +111,7 @@ END\r\n
 | "NOT_SUPPORTED"                         | 지원하지 않음
 | "CLIENT_ERROR bad command line format"  | protocol syntax 틀림
 | "CLIENT_ERROR too large value"          | 삽입할 데이터가 element value의 최대 크기보다 큼
-| "CLIENT_ERROR bad data chunk"           | 삽입할 데이터의 길이가 <bytes>와 다르거나 "\r\n"으로 끝나지 않음
+| "CLIENT_ERROR bad data chunk"           | 삽입할 데이터의 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
 | "SERVER_ERROR out of memory"            | 메모리 부족
 
 ## bop update (B+Tree Element 변경)
@@ -141,11 +141,12 @@ Response string과 그 의미는 아래와 같다.
 | "NOT_FOUND_ELEMENT"                     | element miss (변경할 element가 없음)
 | "TYPE_MISMATCH"                         | 해당 item이 b+tree colleciton이 아님
 | "BKEY_MISMATCH"                         | 명령 인자로 주어진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
-| "EFLAG_MISMATCH"                        | 해당 element의 eflag 값에 대해 \<eflag_update\>를 적용할 수 없음. 예를 들어, 변경하고자 하는 eflag가 존재하지 않거나, 존재하더라도 \<eflag_update\> 조건으로 명시된 부분의 데이터를 가지지 않은 상태이다. | "NOTHING_TO_UPDATE" - eflag 변경과 data 변경 중 어느 하나도 명시되지 않은 상태
-| "NOT_SUPPORTED" - 지원하지 않음
+| "EFLAG_MISMATCH"                        | 해당 element의 eflag 값에 대해 \<eflag_update\>를 적용할 수 없음. 예를 들어, 변경하고자 하는 eflag가 존재하지 않거나, 존재하더라도 \<eflag_update\> 조건으로 명시된 부분의 데이터를 가지지 않은 상태이다.
+| "NOTHING_TO_UPDATE"                     | eflag 변경과 data 변경 중 어느 하나도 명시되지 않은 상태
+| "NOT_SUPPORTED"                         | 지원하지 않음
 | "CLIENT_ERROR bad command line format"  | protocol syntax 틀림
 | "CLIENT_ERROR too large value"          | 변경할 데이터가 element value의 최대 크기보다 큼
-| "CLIENT_ERROR bad data chunk"           | 변경할 데이터의 길이가 <bytes>와 다르거나 "\r\n"으로 끝나지 않음
+| "CLIENT_ERROR bad data chunk"           | 변경할 데이터의 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
 | "SERVER_ERROR out of memory"            | 메모리 부족
 
 ## bop delete (B+Tree Element 삭제)
