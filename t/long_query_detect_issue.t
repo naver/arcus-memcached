@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 106;
+use Test::More tests => 107;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -76,6 +76,20 @@ sub do_btree_efilter {
 
     # bop get
     $cmd = "bop get $kstr $bkrange $efilter 0 100";
+    $rst = "VALUE 0 1\n";
+    for ($eidx = 0; $eidx < 1; $eidx += 1) {
+        my $bkstr = "0x" . sprintf "%062d", $eidx;
+        my $eflag = "0x" . sprintf "%062d", $eidx;
+        my $val   = "element_value_$eidx";
+        my $vleng = length($val);
+        $rst .= "$bkstr $eflag $vleng $val\n"
+    }
+    $rst .= "END";
+    mem_cmd_is($sock, $cmd, "", $rst);
+
+    # bop get (single index)
+    my $bkey = "0x" . "0"x62;
+    $cmd = "bop get $kstr $bkey $efilter 0 100";
     $rst = "VALUE 0 1\n";
     for ($eidx = 0; $eidx < 1; $eidx += 1) {
         my $bkstr = "0x" . sprintf "%062d", $eidx;
