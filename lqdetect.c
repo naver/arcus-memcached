@@ -411,29 +411,27 @@ static bool lqdetect_save_cmd(char client_ip[], char* key,
 static void lqdetect_make_bkeystring(const unsigned char* from_bkey, const unsigned char* to_bkey,
                                      const int from_nbkey, const int to_nbkey,
                                      const eflag_filter *efilter, char *bufptr) {
-    char *tmpptr = bufptr;
-
     /* bkey */
-    if (from_nbkey > 0) {
-        memcpy(tmpptr, "0x", 2); tmpptr += 2;
-        safe_hexatostr(from_bkey, from_nbkey, tmpptr);
-        tmpptr += strlen(tmpptr);
-        if (to_bkey != NULL) {
-            memcpy(tmpptr, "..0x", 4); tmpptr += 4;
-            safe_hexatostr(to_bkey, to_nbkey, tmpptr);
-            tmpptr += strlen(tmpptr);
+    if (from_nbkey > 0) { /* hexadecimal */
+        memcpy(bufptr, "0x", 2); bufptr += 2;
+        safe_hexatostr(from_bkey, from_nbkey, bufptr);
+        bufptr += strlen(bufptr);
+        if (to_nbkey != BKEY_NULL) { /* range */
+            memcpy(bufptr, "..0x", 4); bufptr += 4;
+            safe_hexatostr(to_bkey, to_nbkey, bufptr);
+            bufptr += strlen(bufptr);
         }
-    } else {
-        sprintf(tmpptr, "%"PRIu64"", *(uint64_t*)from_bkey);
-        tmpptr += strlen(tmpptr);
-        if (to_bkey != NULL) {
-            sprintf(tmpptr, "..%"PRIu64"", *(uint64_t*)to_bkey);
-            tmpptr += strlen(tmpptr);
+    } else { /* 64bit unsigned integer */
+        sprintf(bufptr, "%"PRIu64"", *(uint64_t*)from_bkey);
+        bufptr += strlen(bufptr);
+        if (to_nbkey != BKEY_NULL) { /* range */
+            sprintf(bufptr, "..%"PRIu64"", *(uint64_t*)to_bkey);
+            bufptr += strlen(bufptr);
         }
     }
     /* efilter */
     if (efilter != NULL) {
-        strcpy(tmpptr, " efilter");
+        strcpy(bufptr, " efilter");
     }
 }
 
