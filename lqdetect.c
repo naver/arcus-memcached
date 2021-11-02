@@ -5,19 +5,23 @@
 #include <string.h>
 #include <pthread.h>
 #include <sys/time.h>
+#include <assert.h>
 #include <memcached/util.h>
 
 #include "lqdetect.h"
 
-#define LQ_SAVE_CNT    20    /* save key count */
-#define LQ_INPUT_SIZE  500   /* the size of input(time, ip, command, argument) */
-#define LQ_STAT_STRLEN 300   /* max length of stats */
+#define LQ_THRESHOLD_DEFAULT 4000
+#define LQ_QUERY_SIZE  (64*2+64) /* bop get (longest query) : "<longest bkey>..<longest bkey> efilter <offset> <count> delete" */
+#define LQ_SAVE_CNT    20        /* save key count */
+#define LQ_INPUT_SIZE  500       /* the size of input(time, ip, command, argument) */
+#define LQ_STAT_STRLEN 300       /* max length of stats */
 
-#define LQ_EXPLICIT_STOP 0   /* stop by user request */
-#define LQ_OVERFLOW_STOP 1   /* stop by detected command overflow (buffer or count) */
-#define LQ_RUNNING       2   /* long query is running */
+/* lqdetect state */
+#define LQ_EXPLICIT_STOP 0       /* stop by user request */
+#define LQ_OVERFLOW_STOP 1       /* stop by detected command overflow (buffer or count) */
+#define LQ_RUNNING       2       /* long query is running */
 
-/* detect long query target command */
+/* lqdetect command */
 enum lq_detect_command {
     LQCMD_SOP_GET=0,
     LQCMD_MOP_DELETE,
@@ -37,6 +41,22 @@ static const char *command_str[LQ_CMD_NUM] = {
     "sop get","mop delete", "mop get",
     "lop insert", "lop delete", "lop get",
     "bop delete", "bop get", "bop count", "bop gbp"
+};
+
+/* lqdetect stats structure */
+struct lq_detect_stats {
+    int bgndate, bgntime;
+    int enddate, endtime;
+    int total;  /* number of total long query command */
+    int state;  /* lqdetect state */
+    uint32_t threshold;
+};
+
+/* lqdetect argument structure */
+struct lq_detect_argument {
+    char query[LQ_QUERY_SIZE];
+    uint32_t count;
+    uint32_t overhead;
 };
 
 /* lqdetect buffer structure */
@@ -74,39 +94,36 @@ static void do_lqdetect_stop(int cause)
 int lqdetect_init(EXTENSION_LOGGER_DESCRIPTOR *logger)
 {
     mc_logger = logger;
-    int ii, jj;
     pthread_mutex_init(&lqdetect.lock, NULL);
     lqdetect.on_detect = false;
 
     memset(lqdetect.buffer, 0, LQ_CMD_NUM * sizeof(struct lq_detect_buffer));
-    for(ii = 0; ii < LQ_CMD_NUM; ii++) {
+    memset(&lqdetect.stats, 0, sizeof(struct lq_detect_stats));
+    for (int ii = 0; ii < LQ_CMD_NUM; ii++) {
         lqdetect.buffer[ii].data = malloc(LQ_SAVE_CNT * LQ_INPUT_SIZE);
         if (lqdetect.buffer[ii].data == NULL) {
-            for(jj = 0; jj < ii; jj++) {
-                free(lqdetect.buffer[jj].data);
+            while (--ii >= 0) {
+                free(lqdetect.buffer[ii].data);
             }
             return -1;
         }
         memset(lqdetect.arg[ii], 0, LQ_SAVE_CNT * sizeof(struct lq_detect_argument));
     }
-
-    memset(&lqdetect.stats, 0, sizeof(struct lq_detect_stats));
     lqdetect.refcount = 0;
     return 0;
 }
 
 void lqdetect_final()
 {
-    int ii;
-    for(ii = 0; ii < LQ_CMD_NUM; ii++) {
+    for (int ii = 0; ii < LQ_CMD_NUM; ii++) {
         free(lqdetect.buffer[ii].data);
+        lqdetect.buffer[ii].data = NULL;
     }
 }
 
-int lqdetect_start(uint32_t lqdetect_standard, bool *already_started)
+int lqdetect_start(uint32_t threshold, bool *already_started)
 {
-    int ii, ret = 0;
-
+    int ret = 0;
     pthread_mutex_lock(&lqdetect.lock);
     do {
         if (lqdetect.on_detect) {
@@ -121,7 +138,7 @@ int lqdetect_start(uint32_t lqdetect_standard, bool *already_started)
         }
 
         /* prepare detect long query buffer, argument and counts*/
-        for(ii = 0; ii < LQ_CMD_NUM; ii++) {
+        for (int ii = 0; ii < LQ_CMD_NUM; ii++) {
             lqdetect.buffer[ii].ntotal = 0;
             lqdetect.buffer[ii].nsaved = 0;
             lqdetect.buffer[ii].offset = 0;
@@ -132,14 +149,13 @@ int lqdetect_start(uint32_t lqdetect_standard, bool *already_started)
         lqdetect.stats.bgndate = getnowdate_int();
         lqdetect.stats.bgntime = getnowtime_int();
         lqdetect.stats.state = LQ_RUNNING;
-        lqdetect.stats.standard = lqdetect_standard;
+        lqdetect.stats.threshold = (threshold == 0 ? LQ_THRESHOLD_DEFAULT : threshold);
 
         lqdetect.overflow_cnt = 0;
         lqdetect.on_detect = true;
         ret = 0;
     } while(0);
     pthread_mutex_unlock(&lqdetect.lock);
-
     return ret;
 }
 
@@ -170,20 +186,20 @@ char *lqdetect_stats(void)
             stats.endtime = 0;
         }
 
-        stats.total_lqcmds = 0;
+        stats.total = 0;
         for (int i=0; i < LQ_CMD_NUM; i++) {
-            stats.total_lqcmds += lqdetect.buffer[i].ntotal;
+            stats.total += lqdetect.buffer[i].ntotal;
         }
 
         snprintf(str, LQ_STAT_STRLEN,
                 "\t" "Long query detection stats : %s" "\n"
                 "\t" "The last running time : %d_%d ~ %d_%d" "\n"
                 "\t" "The number of total long query commands : %d" "\n"
-                "\t" "The detection standard : %u" "\n",
+                "\t" "The detection threshold : %u" "\n",
                 (stats.state >= 0 && stats.state <= 2 ?
                  state_str[stats.state] : "unknown"),
                 stats.bgndate, stats.bgntime, stats.enddate, stats.endtime,
-                stats.total_lqcmds, stats.standard);
+                stats.total, stats.threshold);
     }
     return str;
 }
@@ -233,7 +249,6 @@ void lqdetect_result_release(field_t *results)
 
 static bool lqdetect_dupcheck(char *key, enum lq_detect_command cmd, struct lq_detect_argument *arg)
 {
-    int ii = 0;
     int count = lqdetect.buffer[cmd].nsaved;
 
     switch (cmd) {
@@ -241,19 +256,11 @@ static bool lqdetect_dupcheck(char *key, enum lq_detect_command cmd, struct lq_d
     case LQCMD_LOP_DELETE:
     case LQCMD_LOP_GET:
     case LQCMD_BOP_GBP:
-        for(ii = 0; ii < count; ii++) {
-            if (strcmp(lqdetect.arg[cmd][ii].range, arg->range) == 0) {
-                return true;
-            }
-        }
-        break;
     case LQCMD_BOP_GET:
     case LQCMD_BOP_COUNT:
     case LQCMD_BOP_DELETE:
-        for(ii = 0; ii < count; ii++) {
-            if ((strcmp(lqdetect.arg[cmd][ii].range, arg->range) == 0) &&
-                (lqdetect.arg[cmd][ii].offset == arg->offset) &&
-                (lqdetect.arg[cmd][ii].count == arg->count)) {
+        for (int ii = 0; ii < count; ii++) {
+            if (strcmp(lqdetect.arg[cmd][ii].query, arg->query) == 0) {
                 return true;
             }
         }
@@ -261,7 +268,7 @@ static bool lqdetect_dupcheck(char *key, enum lq_detect_command cmd, struct lq_d
     case LQCMD_MOP_DELETE:
     case LQCMD_MOP_GET:
     case LQCMD_SOP_GET:
-        for(ii = 0; ii < count; ii++) {
+        for (int ii = 0; ii < count; ii++) {
             if (arg->count == 0) {
                 uint32_t offset = lqdetect.buffer[cmd].keypos[ii];
                 uint32_t cmplen = lqdetect.buffer[cmd].keylen[ii];
@@ -270,18 +277,18 @@ static bool lqdetect_dupcheck(char *key, enum lq_detect_command cmd, struct lq_d
                     return true;
                 }
             } else {
-                if (strcmp(lqdetect.arg[cmd][ii].range, arg->range) == 0) {
+                if (strcmp(lqdetect.arg[cmd][ii].query, arg->query) == 0) {
                     return true;
                 }
             }
         }
         break;
     }
-    lqdetect.arg[cmd][ii] = *arg;
     return false;
 }
 
-static void lqdetect_write(char client_ip[], char *key, enum lq_detect_command cmd)
+static void lqdetect_write(char client_ip[], char *key,
+                           enum lq_detect_command cmd, struct lq_detect_argument *arg)
 {
     struct   tm *ptm;
     struct   timeval val;
@@ -289,7 +296,6 @@ static void lqdetect_write(char client_ip[], char *key, enum lq_detect_command c
     uint32_t offset = buffer->offset;
     uint32_t nsaved = buffer->nsaved;
     char     *bufptr = buffer->data + buffer->offset;
-    struct   lq_detect_argument *arg = &lqdetect.arg[cmd][nsaved];
     uint32_t nwrite;
     uint32_t length;
 
@@ -307,64 +313,11 @@ static void lqdetect_write(char client_ip[], char *key, enum lq_detect_command c
     length -= nwrite;
     bufptr += nwrite;
 
-    switch (cmd) {
-    case LQCMD_LOP_INSERT:
-        snprintf(bufptr, length, "%s %s\n", key, arg->range);
-        break;
-    case LQCMD_MOP_DELETE:
-    case LQCMD_LOP_DELETE:
-        if (arg->delete_or_drop == 2) {
-            snprintf(bufptr, length, "%s %s %s\n", key, arg->range, "drop");
-        } else {
-            snprintf(bufptr, length, "%s %s\n", key, arg->range);
-        }
-        break;
-    case LQCMD_SOP_GET:
-    case LQCMD_MOP_GET:
-    case LQCMD_LOP_GET:
-        if (arg->delete_or_drop != 0) {
-            snprintf(bufptr, length, "%s %s %s\n", key, arg->range,
-                       (arg->delete_or_drop == 2 ? "drop" : "delete"));
-        } else {
-            snprintf(bufptr, length, "%s %s\n", key, arg->range);
-        }
-        break;
-    case LQCMD_BOP_GBP:
-        snprintf(bufptr, length, "%s %s %s\n", key, arg->range, (arg->asc_or_desc == 2 ? "desc" : "asc"));
-        break;
-    case LQCMD_BOP_GET:
-        if (arg->delete_or_drop != 0) {
-            snprintf(bufptr, length, "%s %s %u %u %s\n", key, arg->range,
-                        arg->offset, arg->count, (arg->delete_or_drop == 2 ? "drop" : "delete"));
-        } else {
-            snprintf(bufptr, length, "%s %s %u %u\n", key, arg->range,
-                        arg->offset, arg->count);
-        }
-        break;
-    case LQCMD_BOP_COUNT:
-        snprintf(bufptr, length, "%s %s\n", key, arg->range);
-        break;
-    case LQCMD_BOP_DELETE:
-        if (arg->delete_or_drop == 2) {
-            snprintf(bufptr, length, "%s %s %u %s\n", key, arg->range, arg->count, "drop");
-        } else {
-            snprintf(bufptr, length, "%s %s %u\n", key, arg->range, arg->count);
-        }
-        break;
-    }
-
+    snprintf(bufptr, length, "%s %s\n", key, arg->query);
     nwrite += strlen(bufptr);
     buffer->offset += nwrite;
+    lqdetect.arg[cmd][nsaved] = *arg;
     buffer->nsaved += 1;
-}
-
-static bool lqdetect_discriminant(uint32_t overhead)
-{
-    if (overhead >= lqdetect.stats.standard) {
-        return true;
-    } else {
-        return false;
-    }
 }
 
 static bool lqdetect_save_cmd(char client_ip[], char* key,
@@ -372,12 +325,7 @@ static bool lqdetect_save_cmd(char client_ip[], char* key,
 {
     bool ret = true;
 
-    if (cmd < LQCMD_SOP_GET || cmd > LQCMD_BOP_GBP) {
-        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                       "lqdetect error: entered non target command");
-        return true;
-    }
-
+    assert(cmd >= LQCMD_SOP_GET && cmd <= LQCMD_BOP_GBP);
     pthread_mutex_lock(&lqdetect.lock);
     do {
         if (! lqdetect.on_detect) {
@@ -392,7 +340,7 @@ static bool lqdetect_save_cmd(char client_ip[], char* key,
             break; /* duplication query */
 
         /* write to buffer */
-        lqdetect_write(client_ip, key, cmd);
+        lqdetect_write(client_ip, key, cmd, arg);
 
         /* internal stop */
         if (lqdetect.buffer[cmd].nsaved >= LQ_SAVE_CNT) {
@@ -408,43 +356,41 @@ static bool lqdetect_save_cmd(char client_ip[], char* key,
     return ret;
 }
 
-static void lqdetect_make_bkeystring(const unsigned char* from_bkey, const unsigned char* to_bkey,
-                                     const int from_nbkey, const int to_nbkey,
-                                     const eflag_filter *efilter, char *bufptr) {
+static int lqdetect_make_bkeystring(char *buffer, const bkey_range *bkrange, const eflag_filter *efilter) {
+    char *bufptr = buffer;
     /* bkey */
-    if (from_nbkey > 0) { /* hexadecimal */
+    if (bkrange->from_nbkey > 0) { /* hexadecimal */
         memcpy(bufptr, "0x", 2); bufptr += 2;
-        safe_hexatostr(from_bkey, from_nbkey, bufptr);
+        safe_hexatostr(bkrange->from_bkey, bkrange->from_nbkey, bufptr);
         bufptr += strlen(bufptr);
-        if (to_nbkey != BKEY_NULL) { /* range */
+        if (bkrange->to_nbkey != BKEY_NULL) { /* range */
             memcpy(bufptr, "..0x", 4); bufptr += 4;
-            safe_hexatostr(to_bkey, to_nbkey, bufptr);
+            safe_hexatostr(bkrange->to_bkey, bkrange->to_nbkey, bufptr);
             bufptr += strlen(bufptr);
         }
     } else { /* 64bit unsigned integer */
-        sprintf(bufptr, "%"PRIu64"", *(uint64_t*)from_bkey);
-        bufptr += strlen(bufptr);
-        if (to_nbkey != BKEY_NULL) { /* range */
-            sprintf(bufptr, "..%"PRIu64"", *(uint64_t*)to_bkey);
-            bufptr += strlen(bufptr);
+        const unsigned char* bkptr = bkrange->from_bkey;
+        bufptr += sprintf(bufptr, "%"PRIu64"", *(uint64_t*)bkptr);
+        if (bkrange->to_nbkey != BKEY_NULL) { /* range */
+            bkptr = bkrange->to_bkey;
+            bufptr += sprintf(bufptr, "..%"PRIu64"", *(uint64_t*)bkptr);
         }
     }
     /* efilter */
     if (efilter != NULL) {
         strcpy(bufptr, " efilter");
+        bufptr += strlen(bufptr);
     }
+    return (bufptr - buffer);
 }
 
 bool lqdetect_lop_insert(char *client_ip, char *key, int coll_index)
 {
     uint32_t overhead = coll_index >= 0 ? coll_index+1 : -(coll_index);
-    if (lqdetect_discriminant(overhead)) {
+    if (overhead >= lqdetect.stats.threshold) {
         struct lq_detect_argument argument;
-        char *bufptr = argument.range;
-
-        snprintf(bufptr, 16, "%d", coll_index);
+        snprintf(argument.query, LQ_QUERY_SIZE, "%d", coll_index);
         argument.overhead = overhead;
-
         if (! lqdetect_save_cmd(client_ip, key, LQCMD_LOP_INSERT, &argument)) {
             return false;
         }
@@ -453,17 +399,14 @@ bool lqdetect_lop_insert(char *client_ip, char *key, int coll_index)
 }
 
 bool lqdetect_lop_delete(char *client_ip, char *key, uint32_t del_count,
-                         int32_t from_index, int32_t to_index, const int delete_or_drop)
+                         int32_t from_index, int32_t to_index, const bool drop_if_empty)
 {
     uint32_t overhead = del_count + (from_index >= 0 ? from_index+1 : -(from_index));
-    if (lqdetect_discriminant(overhead)) {
+    if (overhead >= lqdetect.stats.threshold) {
         struct lq_detect_argument argument;
-        char *bufptr = argument.range;
-
-        snprintf(bufptr, 36, "%d..%d", from_index, to_index);
+        snprintf(argument.query, LQ_QUERY_SIZE, "%d..%d%s", from_index, to_index,
+                 drop_if_empty ? " drop" : "");
         argument.overhead = overhead;
-        argument.delete_or_drop = delete_or_drop;
-
         if (! lqdetect_save_cmd(client_ip, key, LQCMD_LOP_DELETE, &argument)) {
             return false;
         }
@@ -472,17 +415,14 @@ bool lqdetect_lop_delete(char *client_ip, char *key, uint32_t del_count,
 }
 
 bool lqdetect_lop_get(char *client_ip, char *key, uint32_t elem_count,
-                      int32_t from_index, int32_t to_index, const int delete_or_drop)
+                      int32_t from_index, int32_t to_index, const bool delete, const bool drop_if_empty)
 {
     uint32_t overhead = elem_count + (from_index >= 0 ? from_index+1 : -(from_index));
-    if (lqdetect_discriminant(overhead)) {
+    if (overhead >= lqdetect.stats.threshold) {
         struct lq_detect_argument argument;
-        char *bufptr = argument.range;
-
-        snprintf(bufptr, 36, "%d..%d", from_index, to_index);
+        snprintf(argument.query, LQ_QUERY_SIZE, "%d..%d%s", from_index, to_index,
+                 drop_if_empty ? " drop" : (delete ? " delete" : ""));
         argument.overhead = overhead;
-        argument.delete_or_drop = delete_or_drop;
-
         if (! lqdetect_save_cmd(client_ip, key, LQCMD_LOP_GET, &argument)) {
             return false;
         }
@@ -491,21 +431,14 @@ bool lqdetect_lop_get(char *client_ip, char *key, uint32_t elem_count,
 }
 
 bool lqdetect_sop_get(char *client_ip, char *key, uint32_t elem_count,
-                      uint32_t count, const int delete_or_drop)
+                      uint32_t count, const bool delete, const bool drop_if_empty)
 {
-    if (lqdetect_discriminant(elem_count)) {
+    if (elem_count >= lqdetect.stats.threshold) {
         struct lq_detect_argument argument;
-        char *bufptr = argument.range;
-
-        if (count == 0) {
-            snprintf(bufptr, 4, "all");
-        } else {
-            snprintf(bufptr, 16, "%u", count);
-        }
+        snprintf(argument.query, LQ_QUERY_SIZE, "%u%s", count,
+                 drop_if_empty ? " drop" : (delete ? " delete" : ""));
         argument.overhead = elem_count;
         argument.count = count;
-        argument.delete_or_drop = delete_or_drop;
-
         if (! lqdetect_save_cmd(client_ip, key, LQCMD_SOP_GET, &argument)) {
             return false;
         }
@@ -514,21 +447,14 @@ bool lqdetect_sop_get(char *client_ip, char *key, uint32_t elem_count,
 }
 
 bool lqdetect_mop_get(char *client_ip, char *key, uint32_t elem_count,
-                      uint32_t coll_numkeys, const int delete_or_drop)
+                      uint32_t coll_numkeys, const bool delete, const bool drop_if_empty)
 {
-    if (lqdetect_discriminant(elem_count)) {
+    if (elem_count >= lqdetect.stats.threshold) {
         struct lq_detect_argument argument;
-        char *bufptr = argument.range;
-
-        if (coll_numkeys == 0) {
-            snprintf(bufptr, 4, "all");
-        } else {
-            snprintf(bufptr, 16, "%u", coll_numkeys);
-        }
+        snprintf(argument.query, LQ_QUERY_SIZE, "%u%s", coll_numkeys,
+                 drop_if_empty ? " drop" : (delete ? " delete" : ""));
         argument.overhead = elem_count;
         argument.count = coll_numkeys;
-        argument.delete_or_drop = delete_or_drop;
-
         if (! lqdetect_save_cmd(client_ip, key, LQCMD_MOP_GET, &argument)) {
             return false;
         }
@@ -537,21 +463,14 @@ bool lqdetect_mop_get(char *client_ip, char *key, uint32_t elem_count,
 }
 
 bool lqdetect_mop_delete(char *client_ip, char *key, uint32_t del_count,
-                         uint32_t coll_numkeys, const int delete_or_drop)
+                         uint32_t coll_numkeys, const bool drop_if_empty)
 {
-    if (lqdetect_discriminant(del_count)) {
+    if (del_count >= lqdetect.stats.threshold) {
         struct lq_detect_argument argument;
-        char *bufptr = argument.range;
-
-        if (coll_numkeys == 0) {
-            snprintf(bufptr, 4, "all");
-        } else {
-            snprintf(bufptr, 16, "%u", coll_numkeys);
-        }
+        snprintf(argument.query, LQ_QUERY_SIZE, "%u%s", coll_numkeys,
+                 drop_if_empty ? " drop" : "");
         argument.overhead = del_count;
         argument.count = coll_numkeys;
-        argument.delete_or_drop = delete_or_drop;
-
         if (! lqdetect_save_cmd(client_ip, key, LQCMD_MOP_DELETE, &argument)) {
             return false;
         }
@@ -560,16 +479,13 @@ bool lqdetect_mop_delete(char *client_ip, char *key, uint32_t del_count,
 }
 
 bool lqdetect_bop_gbp(char *client_ip, char *key, uint32_t elem_count,
-                      uint32_t from_posi, uint32_t to_posi, int order)
+                      uint32_t from_posi, uint32_t to_posi, ENGINE_BTREE_ORDER order)
 {
-    if (lqdetect_discriminant(elem_count)) {
+    if (elem_count >= lqdetect.stats.threshold) {
         struct lq_detect_argument argument;
-        char *bufptr = argument.range;
-
-        snprintf(bufptr, 36, "%u..%u", from_posi, to_posi);
+        snprintf(argument.query, LQ_QUERY_SIZE, "%u..%u %s", from_posi, to_posi,
+                 order == BTREE_ORDER_ASC ? "asc" : "desc");
         argument.overhead = elem_count;
-        argument.asc_or_desc = order;
-
         if (! lqdetect_save_cmd(client_ip, key, LQCMD_BOP_GBP, &argument)) {
             return false;
         }
@@ -579,20 +495,14 @@ bool lqdetect_bop_gbp(char *client_ip, char *key, uint32_t elem_count,
 
 bool lqdetect_bop_get(char *client_ip, char *key, uint32_t access_count,
                       const bkey_range *bkrange, const eflag_filter *efilter,
-                      uint32_t offset, uint32_t count, const int delete_or_drop)
+                      uint32_t offset, uint32_t count, const bool delete, const bool drop_if_empty)
 {
-    if (lqdetect_discriminant(access_count)) {
+    if (access_count >= lqdetect.stats.threshold) {
         struct lq_detect_argument argument;
-        char *bufptr = argument.range;
-
-        lqdetect_make_bkeystring(bkrange->from_bkey, bkrange->to_bkey,
-                                 bkrange->from_nbkey, bkrange->to_nbkey,
-                                 efilter, bufptr);
+        int nwrite = lqdetect_make_bkeystring(argument.query, bkrange, efilter);
+        snprintf(argument.query + nwrite, LQ_QUERY_SIZE - nwrite, " %u %u%s",
+                 offset, count, drop_if_empty ? " drop" : (delete ? " delete" : ""));
         argument.overhead = access_count;
-        argument.offset = offset;
-        argument.count = count;
-        argument.delete_or_drop = delete_or_drop;
-
         if (! lqdetect_save_cmd(client_ip, key, LQCMD_BOP_GET, &argument)) {
             return false;
         }
@@ -603,15 +513,10 @@ bool lqdetect_bop_get(char *client_ip, char *key, uint32_t access_count,
 bool lqdetect_bop_count(char *client_ip, char *key, uint32_t access_count,
                         const bkey_range *bkrange, const eflag_filter *efilter)
 {
-    if (lqdetect_discriminant(access_count)) {
+    if (access_count >= lqdetect.stats.threshold) {
         struct lq_detect_argument argument;
-        char *bufptr = argument.range;
-
-        lqdetect_make_bkeystring(bkrange->from_bkey, bkrange->to_bkey,
-                                 bkrange->from_nbkey, bkrange->to_nbkey,
-                                 efilter, bufptr);
+        lqdetect_make_bkeystring(argument.query, bkrange, efilter);
         argument.overhead = access_count;
-
         if (! lqdetect_save_cmd(client_ip, key, LQCMD_BOP_COUNT, &argument)) {
             return false;
         }
@@ -621,19 +526,15 @@ bool lqdetect_bop_count(char *client_ip, char *key, uint32_t access_count,
 
 bool lqdetect_bop_delete(char *client_ip, char *key, uint32_t access_count,
                          const bkey_range *bkrange, const eflag_filter *efilter,
-                         uint32_t count, const int delete_or_drop)
+                         uint32_t count, const bool drop_if_empty)
 {
-    if (lqdetect_discriminant(access_count)) {
+    if (access_count >= lqdetect.stats.threshold) {
         struct lq_detect_argument argument;
-        char *bufptr = argument.range;
-
-        lqdetect_make_bkeystring(bkrange->from_bkey, bkrange->to_bkey,
-                                 bkrange->from_nbkey, bkrange->to_nbkey,
-                                 efilter, bufptr);
-        argument.overhead = access_count;
+        int nwrite = lqdetect_make_bkeystring(argument.query, bkrange, efilter);
+        snprintf(argument.query + nwrite, LQ_QUERY_SIZE - nwrite, " %u%s",
+                 count, drop_if_empty ? " drop" : "");
         argument.count = count;
-        argument.delete_or_drop = delete_or_drop;
-
+        argument.overhead = access_count;
         if (! lqdetect_save_cmd(client_ip, key, LQCMD_BOP_DELETE, &argument)) {
             return false;
         }
