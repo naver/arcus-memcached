@@ -1,6 +1,6 @@
 # Chapter 3. Item Attribute 설명
 
-ARCUS cache server는 collection 기능 지원으로 인해,
+ARCUS Cache Server는 collection 기능 지원으로 인해,
 기존 key-value item 유형 외에 list, set, map, b+tree item 유형을 가진다.
 각 item 유형에 따라 설정/조회 가능한 속성들(attributes)이 구분되며, 이들의 개요는 아래 표와 같다.
 아래 표는 각 속성이 적용되는 item 유형, 속성의 간단한 설명, 허용가능한 값들과 디폴트 값을 나타낸다.
@@ -38,26 +38,26 @@ ARCUS cache server는 collection 기능 지원으로 인해,
 |-----------------------------------------------------------------------------------------------------------------|
 ```
 
-ARCUS cache server는 item 속성들을 조회하거나 변경하는 용도의 getattr 명령과 setattr 명령을 제공한다.
+ARCUS Cache Server는 item 속성들을 조회하거나 변경하는 용도의 getattr 명령과 setattr 명령을 제공한다.
 이들 명령에 대한 자세한 설명은 [Item Attribute 명령](ch10-command-item-attribute.md)을 참고 바란다.
 
 
 Item 속성들 중 정확한 이해를 돕기 위해 추가 설명이 필요한 속성들에 대해 아래에서 자세히 설명한다.
 
-### flags 속성
+## flags 속성
 
 Flags는 item의 data-specific 정보를 저장하기 위한 목적으로 사용된다.
-예를 들어, ARCUS java client는 어떤 java object를 cache server에 저장할 경우,
+예를 들어, ARCUS java client는 어떤 java object를 Cache Server에 저장할 경우,
 그 java object의 type에 따라 serialization(or marshalling)하여 저장할 data를 만들고, 
-그 java object의 type 정보를 flags 값으로 하여 ARCUS cache server에 요청하여 저장한다.
-Data 조회 시에는 ARCUS cache server로 부터 data와 함께 flags 정보를 함께 얻어와서,
+그 java object의 type 정보를 flags 값으로 하여 ARCUS Cache Server에 요청하여 저장한다.
+Data 조회 시에는 ARCUS Cache Server로 부터 data와 함께 flags 정보를 함께 얻어와서,
 해당 java object의 type에 따라 그 data를 de-serialization(or de-marshalling)하여 java object를 생성한다.
 
-### expiretime 속성
+## expiretime 속성
 
 Item의 expiretime 속성으로 그 item의 expiration time을 초(second) 단위로 설정한다.
 
-ARCUS cache server는 expire 되지 않고 메모리 부족 상황에서도 evict 되지 않는 sticky item 기능을 제공한다.
+ARCUS Cache Server는 expire 되지 않고 메모리 부족 상황에서도 evict 되지 않는 sticky item 기능을 제공한다.
 Sticky item 또한 expiretime 속성으로 지정한다.
 
 - -1 : sticky item으로 설정
@@ -66,7 +66,7 @@ Sticky item 또한 expiretime 속성으로 지정한다.
 - X > (60 * 60 * 24 * 30) : 30일 초과의 값이면, X를 unix time으로 인식하여 expiration time을 설정한다.
 X가 현재 시간보다 작으면 그 즉시 expire되므로 주의하여야 한다.
 
-### maxcount 속성
+## maxcount 속성
 
 Collection item에만 유효한 속성으로, 하나의 collection에 저장할 수 있는 최대 element 수를 규정한다.
 
@@ -79,7 +79,7 @@ Event-driven processing 모델에 따라
 하나의 worker thread가 비동기 방식으로 여러 client requests를 처리해야 하는 상황에서,
 한 request의 처리 비용이 가급적 작아야만 다른 request의 execution latency에 주는 영향을 최소화할 수 있다.
 
-### overflowaction 속성
+## overflowaction 속성
 
 Collection의 maxcount를 초과하여 element 추가하면 overflow가 발생하며, 이 경우 취할 action을 지정한다.
 
@@ -107,9 +107,9 @@ Collection의 maxcount를 초과하여 element 추가하면 overflow가 발생�
 참고로, 아래에 기술하는 maxbkeyrange 속성에 따라 element를 제거하는 경우에도
 overflow action이 참조된다.
 
-### readable 속성
+## readable 속성
 
-ARCUS cache server는 다수 element를 가진 collection을 atomic하게 생성하는 명령을 제공하지 않는다.
+ARCUS Cache Server는 다수 element를 가진 collection을 atomic하게 생성하는 명령을 제공하지 않는다.
 대신, 하나의 element를 추가하는 명령을 반복 수행함으로써 원하는 collection을 만들 수 있다.
 이 경우, 하나의 collection이 완성되기 전의 incomplete collection이 응용에게 노출될 수 있는 문제가 있다.
 예를 들어, 어떤 사용자의 SNS 친구 정보를 set collection 형태로 cache에 저장한다고 가정한다.
@@ -123,7 +123,7 @@ incomplete 친구 정보가 응용에게 노출되게 된다.
 그 collection에 모든 element들을 추가한 후에 마지막으로 readable 속성을 다시 on 상태로 변경함으로써
 complete collection이 응용에 의해 조회될 수 있게 할 수 있다.
 
-### maxbkeyrange 속성
+## maxbkeyrange 속성
   
 B+tree only 속성으로 smallest bkey와 largest bkey의 최대 범위를 규정한다.
 B+tree에 설정된 maxbkeyrange를 위배시키는 새로운 bkey를 가진 element를 삽입하는 경우,

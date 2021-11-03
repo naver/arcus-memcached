@@ -1,6 +1,6 @@
 # Chapter 2. Collection Concept
 
-### Collection 구조와 특징
+## Collection 구조와 특징
 
 Collection 유형과 그 구조 및 특징은 아래와 같다.
 
@@ -41,7 +41,7 @@ Collection meta info는 collection 유형에 따른 속성 정보를 가지며,
 예를 들어, list의 head/tail element 주소, set의 최상위 hash table 주소,
 map의 최상위 hash table 구조, b+tree의 root node 주소가 이에 해당된다.
 
-### Element 구조
+## Element 구조
 
 Collection 유형에 따른 element 구조는 아래와 같다.
 
@@ -60,8 +60,7 @@ Collection 유형에 따른 element 구조는 아래와 같다.
   옵션 사항으로 bkey 기반의 scan 시에 특정 element를 filtering하기 위한 eflag를 가질 수 있으며,
   bkey에 종속되어 단순 저장/조회 용도로 사용되는 data를 가진다.
 
-
-### BKey (B+Tree Key)
+## BKey (B+Tree Key)
 
 B+tree collection에서 사용가능한 bkey 데이터 유형은 아래 두 가지이다.
 
@@ -93,13 +92,13 @@ hexadecimal 유형의 값이면 아래와 같은 lexicographical order로 두 �
 - 두 hexadecimal 중 작은 길이만큼의 비교에서 두 값이 동일하면, 긴 길이의 hexadecimal 값이 크다고 판단한다.
 - 두 hexadecimal의 길이도 같고 각 바이트의 값도 동일하면, 두 hexadecimal 값은 같다라고 판단한다.
 
-### EFlag (Element Flag)
+## EFlag (Element Flag)
 
 eflag는 현재 b+tree element에만 존재하는 필드이다.
 eflag 데이터 유형은 hexadecimal 유형만 가능하며,
 bkey의 hexadecimal 표현과 저장 방식을 그대로 따른다. 
 
-### EFlag Filter
+## EFlag Filter
 
 eflag에 대한 filter 조건은 아래와 같이 표현하며,
 (1) eflag의 전체/부분 값과 특정 값과의 compare 연산이나
@@ -123,7 +122,7 @@ eflag_filter: <fwhere> [<bitwop> <foperand>] <compop> <fvalue>
     \<foperand\>의 길이는 compare 연산을 취한 \<fvalue\>의 길이와 동일하여야 한다.
 - \<compop\> \<fvalue\>  
   - eflag에 대한 compare 연산을 지정한다.
-  - \<compop\>는 "EQ", "NE', "LT", "LE", "GT", "GE" 중의 하나로 compare 연산을 지정하며,
+  - \<compop\>는 "EQ", "NE", "LT", "LE", "GT", "GE" 중의 하나로 compare 연산을 지정하며,
     \<fvalue\>는 compare 연산을 취할 대상 값으로 마찬가지로 hexadecimal로 표현한다.
   - IN 또는 NOT IN 조건을 명시할 수도 있다. 
     IN 조건은 "EQ" 연산과 comma separated hexadecimal values로 명시하면 되고,
@@ -142,7 +141,7 @@ eflag가 생략될 수도 있고 서로 다른 길이의 eflag를 가질 수도 
   (1) eflag_filter 조건의 offset은 5인 경우이거나 
   (2) eflag_filter 조건의 offset은 3이고 length는 4인 경우가 있을 수 있다.
 
-### EFlag Update
+## EFlag Update
 
 Eflag의 전체 또는 부분 값에 update 연산도 가능하며 아래와 같이 표현한다.
 Eflag 전체 변경은 새로운 eflag 값으로 교체하는 것이며,

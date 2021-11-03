@@ -2,7 +2,7 @@
 
 ARCUS cache server의 동작을 간단히 확인하는 방법으로, telnet interface를 이용할 수 있다.
 
-### Telnet 사용법
+## Telnet 사용법
 
 OS prompt 상에서 아래와 같이 telnet 명령을 실행시킨다.
 telnet 명령의 인자로는 연결하고자 하는 ARCUS cache server인 memcached의 IP와 port number를 준다.
@@ -11,7 +11,7 @@ telnet 명령의 인자로는 연결하고자 하는 ARCUS cache server인 memca
 $ telnet {memcached-ip} {memcached-port}
 ```
 
-### Telnet 연결
+## Telnet 연결
 
 Localhost에 11211 포트 번호로 memcached가 구동되어 있다고 가정한다.
 telnet 명령으로 해당 memcached에 연결하기 위해, 
@@ -107,7 +107,7 @@ VALUE 11 3
 END
 ```
 
-### Telnet 종료
+## Telnet 종료
 
 현재의 telnet 연결을 종료하려면, quit 명령을 입력한다.
 
