@@ -1950,7 +1950,7 @@ static void process_mop_delete_complete(conn *c)
 #ifdef DETECT_LONG_QUERY
         if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
             if (! lqdetect_mop_delete(c->client_ip, c->coll_key, del_count,
-                                      c->coll_numkeys, c->coll_drop ? 2 : 1)) {
+                                      c->coll_numkeys, c->coll_drop)) {
                 lqdetect_in_use = false;
             }
         }
@@ -2097,7 +2097,7 @@ static void process_mop_get_complete(conn *c)
 #ifdef DETECT_LONG_QUERY
         if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
             if (! lqdetect_mop_get(c->client_ip, c->coll_key, eresult.elem_count,
-                                   c->coll_numkeys, drop_if_empty ? 2 : (delete ? 1 : 0))) {
+                                   c->coll_numkeys, delete, drop_if_empty)) {
                 lqdetect_in_use = false;
             }
         }
@@ -9653,15 +9653,15 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
     bool already_check = false;
 
     if (ntokens > 2 && strcmp(type, "start") == 0) {
-        uint32_t standard = LQ_STANDARD_DEFAULT;
+        uint32_t threshold = 0;
         if (ntokens > 3) {
-            if (! safe_strtoul(tokens[SUBCOMMAND_TOKEN+1].value, &standard)) {
+            if (! safe_strtoul(tokens[SUBCOMMAND_TOKEN+1].value, &threshold)) {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
                 return;
             }
         }
-        int ret = lqdetect_start(standard, &already_check);
+        int ret = lqdetect_start(threshold, &already_check);
         if (ret == 0) {
             if (already_check) {
                 out_string(c, "\tlong query detection already started.\n");
@@ -9858,8 +9858,7 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_lop_get(c->client_ip, key, eresult.elem_count,
-                               from_index, to_index,
-                               drop_if_empty ? 2 : (delete ? 1 : 0))) {
+                               from_index, to_index, delete, drop_if_empty)) {
             lqdetect_in_use = false;
         }
     }
@@ -9975,7 +9974,7 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_lop_delete(c->client_ip, key, del_count,
-                                  from_index, to_index, drop_if_empty ? 2 : 1)) {
+                                  from_index, to_index, drop_if_empty)) {
             lqdetect_in_use = false;
         }
     }
@@ -10254,7 +10253,7 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_sop_get(c->client_ip, key, eresult.elem_count,
-                               count, drop_if_empty ? 2 : (delete ? 1 : 0))) {
+                               count, delete, drop_if_empty)) {
             lqdetect_in_use = false;
         }
     }
@@ -10633,8 +10632,7 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_bop_get(c->client_ip, key, eresult.opcost_or_eindex,
-                               bkrange, efilter, offset, count,
-                               drop_if_empty ? 2 : (delete ? 1 : 0))) {
+                               bkrange, efilter, offset, count, delete, drop_if_empty)) {
             lqdetect_in_use = false;
         }
     }
@@ -10944,7 +10942,7 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey,
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_bop_gbp(c->client_ip, key, eresult.elem_count,
-                               from_posi, to_posi, order == BTREE_ORDER_ASC ? 1 : 2)) {
+                               from_posi, to_posi, order)) {
             lqdetect_in_use = false;
         }
     }
@@ -11194,8 +11192,7 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
 #ifdef DETECT_LONG_QUERY
     if (lqdetect_in_use && ret == ENGINE_SUCCESS) {
         if (! lqdetect_bop_delete(c->client_ip, key, acc_count,
-                                  bkrange, efilter,
-                                  count, drop_if_empty ? 2 : 1)) {
+                                  bkrange, efilter, count, drop_if_empty)) {
             lqdetect_in_use = false;
         }
     }
