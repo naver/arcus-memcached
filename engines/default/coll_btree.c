@@ -2483,9 +2483,11 @@ static uint32_t do_btree_elem_count(btree_meta_info *info,
     uint32_t tot_found = 0; /* total found count */
     uint32_t tot_access = 0; /* total access count */
 
+    if (opcost) {
+        *opcost = 0;
+    }
+
     if (info->root == NULL) {
-        if (opcost)
-            *opcost = 0;
         return 0;
     }
 
