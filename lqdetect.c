@@ -130,8 +130,14 @@ static void do_lqdetect_write(char client_ip[], char *key,
     uint32_t offset = buffer->offset;
     uint32_t nsaved = buffer->nsaved;
     char     *bufptr = buffer->data + buffer->offset;
-    uint32_t nwrite;
-    uint32_t length;
+    uint32_t nwrite, length, keylen = strlen(key);
+    char keybuf[251];
+
+    if (keylen > 250) { /* long key string */
+        keylen = snprintf(keybuf, sizeof(keybuf), "%.*s...%.*s", 124, key, 123, (key+(keylen - 123)));
+    } else { /* short key string */
+        keylen = snprintf(keybuf, sizeof(keybuf), key);
+    }
 
     gettimeofday(&val, NULL);
     ptm = localtime(&val.tv_sec);
@@ -143,11 +149,11 @@ static void do_lqdetect_write(char client_ip[], char *key,
 
     nwrite = strlen(bufptr);
     buffer->keypos[nsaved] = offset + nwrite;
-    buffer->keylen[nsaved] = strlen(key);
+    buffer->keylen[nsaved] = keylen;
     length -= nwrite;
     bufptr += nwrite;
 
-    snprintf(bufptr, length, "%s %s\n", key, arg->query);
+    snprintf(bufptr, length, "%s %s\n", keybuf, arg->query);
     nwrite += strlen(bufptr);
     buffer->offset += nwrite;
     lqdetect.arg[cmd][nsaved] = *arg;
