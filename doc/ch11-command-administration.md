@@ -872,22 +872,24 @@ long query detection 대상이 되는 command는 아래와 같다.
 
 ```
 1. sop get
-2. lop insert
-3. lop delete
-4. lop get
-5. bop delete
-6. bop get
-7. bop count
-8. bop gbp
+2. mop delete
+3. mop get
+4. lop insert
+5. lop delete
+6. lop get
+7. bop delete
+8. bop get
+9. bop count
+10. bop gbp
 ```
 
 lqdetect command는 아래와 같다.
 
 ```
-lqdetect [start [<detect_standard>] | stop | show | stats]\r\n
+lqdetect [start [<detect_threshold>] | stop | show | stats]\r\n
 ```
 
-\<detect_standard\>는 long query로 분류하는 기준으로 해당 요청에서 접근하는 elements 수로 나타내며, 어떤 요청에서 detection 기준 이상으로 많은 elements를 접근하는 요청을 long query로 구분한다. 생략 시 default standard는 4000이다.
+\<detect_threshold\>는 long query로 분류하는 기준으로 해당 요청에서 접근하는 elements 수로 나타내며, 어떤 요청에서 주어진 threshold 이상으로 많은 elements를 접근하는 요청을 long query로 구분한다. 생략 시 default threshold는 4000이다.
 
 start 명령으로 detection을 시작할 수 있다.
 
@@ -900,37 +902,32 @@ show 명령은 저장된 명령어 샘플을 출력하고 그 결과는 아래�
 format : <time> <client_ip> <count> <command> <arguments>\n
 -----------------------------------------------------------
 
-sop get command entered count : 0
-
-lop insert command entered count : 0
-
-lop delete command entered count : 0
-
-lop get command entered count : 92
+sop get : 0
+mop delete : 0
+mop get : 0
+lop insert : 0
+lop delete : 0
+lop get : 92
 17:56:33.276847 127.0.0.1 <46> lop get arcustest-Collection_List:YN8UCtNaoD4hHnMMwMJq1 0..44
 17:56:33.278116 127.0.0.1 <43> lop get arcustest-Collection_List:orjTteJo7F0bWdXDDGcP0 0..41
 17:56:33.279856 127.0.0.1 <48> lop get arcustest-Collection_List:r7ERYr3IdiD3RO8hLNvI3 0..46
 17:56:33.304063 127.0.0.1 <45> lop get arcustest-Collection_List:0OWKNF3Z17NaTSaDTZG61 0..43
-
-bop delete command entered count : 0
-
-bop get command entered count : 81
+bop delete : 0
+bop get : 81
 17:56:33.142590 127.0.0.1 <47> bop get arcustest-Collection_Btree:0X6mqSiwBx6fEZVLuwKF0 0x626B65795F62797465417272793030..0x626B65795F6279746541727279303530 efilter 0 47
 17:56:33.142762 127.0.0.1 <49> bop get arcustest-Collection_Btree:PiX8strLCv7iWywd1ZuE0 0x626B65795F62797465417272793030..0x626B65795F6279746541727279303530 efilter 0 49
 17:56:33.143326 127.0.0.1 <46> bop get arcustest-Collection_Btree:PiX8strLCv7iWywd1ZuE1 0x626B65795F62797465417272793130..0x626B65795F6279746541727279313530 efilter 0 48
-
-bop count command entered count : 0
-
-bop gbp command entered count : 0
+bop count : 0
+bop gbp : 0
 ```
 
 stats 명령은 가장 최근 수행된(수행 중인) long query detection의 상태를 조회하고 그 결과는 아래와 같다.
 
 ```
 Long query detection stats : running              //stopped by causes(request or overflow) | running
-The last running time : 20160126_175629 ~ 0_0     //bgndata_bgntime ~ enddate_endtime
+The last running time : 20160126_175629 ~ 0_0     //bgndate_bgntime ~ enddate_endtime
 The number of total long query commands : 1152    //detected_commands 
-The detection standard : 43                       //standard
+The detection threshold : 43                      //threshold
 ```
 
 ## Key dump 명령
