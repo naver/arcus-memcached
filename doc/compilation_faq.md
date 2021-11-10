@@ -3,7 +3,7 @@
   - Install tools
 
     ```
-    (CentOS) sudo yum install gcc gcc-c++ autoconf automake libtool pkgconfig cppunit-devel
+    (CentOS) sudo yum install gcc gcc-c++ make autoconf automake libtool pkgconfig cppunit-devel perl-Test-Harness perl-Test-Simple
     (Ubuntu) sudo apt-get install build-essential autoconf automake libtool libcppunit-dev
     (OSX)    brew install autoconf automake libtool pkg-config cppunit
     ```
@@ -13,7 +13,8 @@
     $ wget https://github.com/downloads/libevent/libevent/libevent-2.0.21-stable.tar.gz
     $ tar xfz libevent-2.0.21-stable.tar.gz
     $ pushd libevent-2.0.21-stable
-    $ ./configure
+    $ ./autogen.sh
+    $ ./configure --prefix=/path/to/arcus-directory
     $ make
     $ sudo make install
     $ popd
