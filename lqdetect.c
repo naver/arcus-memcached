@@ -136,7 +136,7 @@ static void do_lqdetect_write(char client_ip[], char *key,
     if (keylen > 250) { /* long key string */
         keylen = snprintf(keybuf, sizeof(keybuf), "%.*s...%.*s", 124, key, 123, (key+(keylen - 123)));
     } else { /* short key string */
-        keylen = snprintf(keybuf, sizeof(keybuf), key);
+        keylen = snprintf(keybuf, sizeof(keybuf), "%s", key);
     }
 
     gettimeofday(&val, NULL);
