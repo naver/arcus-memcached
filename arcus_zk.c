@@ -944,35 +944,34 @@ static int arcus_check_server_mapping(zhandle_t *zh, const char *root)
         return -1;
     }
 
-    /* First check: get children of "/cache_server_mapping/ip:port" */
-    snprintf(zpath, sizeof(zpath), "%s/%s/%s",
-             root, zk_map_dir, arcus_conf.mc_ipport);
-    rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
-    while (rc == ZNONODE) {
-        /* Second check: get children of "/cache_server_mapping/hostname:port" */
+    /* check the cache_server_mapping info. */
+    do {
+        /* 1st check: get children of "/cache_server_mapping/ip:port" */
+        snprintf(zpath, sizeof(zpath), "%s/%s/%s",
+                 root, zk_map_dir, arcus_conf.mc_ipport);
+        rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
+        if (rc != ZNONODE) break;
+
+        /* 2nd check: get children of "/cache_server_mapping/hostname:port" */
         snprintf(zpath, sizeof(zpath), "%s/%s/%s",
                  root, zk_map_dir, arcus_conf.mc_hostnameport);
         rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
-        if (rc == ZNONODE) {
-#ifdef PROXY_SUPPORT
-            if (arcus_conf.proxy) {
-                break; /* skip the below third checking */
-            }
-#endif
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Cannot find the server mapping. zpath=%s error=%d(%s)\n",
-                    zpath, rc, zerror(rc));
+        if (rc != ZNONODE) break;
 
-            /* Third check: get children of "/cache_server_mapping/ip" */
-            snprintf(zpath, sizeof(zpath), "%s/%s/%s",
-                     root, zk_map_dir, arcus_conf.hostip);
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Recheck the server mapping without the port number."
-                    " zpath=%s\n", zpath);
-            rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
+#ifdef PROXY_SUPPORT
+        if (arcus_conf.proxy) {
+            break; /* skip the below third checking */
         }
-        break;
-    }
+#endif
+        /* 3rd check: get children of "/cache_server_mapping/ip" */
+        snprintf(zpath, sizeof(zpath), "%s/%s/%s",
+                 root, zk_map_dir, arcus_conf.hostip);
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Recheck the server mapping without port number. zpath=%s\n",
+                zpath);
+        rc = zoo_get_children(zh, zpath, ZK_NOWATCH, &strv);
+    } while(0);
+
     if (rc != ZOK) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Failed to read the server mapping. zpath=%s error=%d(%s)\n",
