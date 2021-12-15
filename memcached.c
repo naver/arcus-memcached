@@ -1433,7 +1433,7 @@ static int build_udp_headers(conn *c)
     return 0;
 }
 
-static void pipe_response_save(conn *c, const char *str, size_t len)
+static int pipe_response_save(conn *c, const char *str, size_t len)
 {
     if (c->pipe_state == PIPE_STATE_ON) {
         if (c->pipe_count == 0) {
@@ -1449,17 +1449,17 @@ static void pipe_response_save(conn *c, const char *str, size_t len)
             c->pipe_count++;
             if (c->pipe_count >= PIPE_MAX_CMD_COUNT && c->noreply == true) {
                 c->pipe_state = PIPE_STATE_ERR_CFULL; /* pipe count overflow */
-                c->noreply = false; /* stop pipelining */
+                return -1;
             }
             else if ((strncmp(str, "CLIENT_ERROR", 12) == 0) ||
                      (strncmp(str, "SERVER_ERROR", 12) == 0) ||
                      (strncmp(str, "ERROR", 5) == 0)) { /* severe error */
                 c->pipe_state = PIPE_STATE_ERR_BAD; /* bad error in pipelining */
-                c->noreply = false; /* stop pipelining */
+                return -1;
             }
         } else {
             c->pipe_state = PIPE_STATE_ERR_MFULL; /* pipe memory overflow */
-            c->noreply = false; /* stop pipelining */
+            return -1;
         }
     } else {
         /* A response message has come here before pipe error is reset.
@@ -1473,6 +1473,7 @@ static void pipe_response_save(conn *c, const char *str, size_t len)
         c->pipe_state = PIPE_STATE_OFF;
         c->pipe_count = 0;
     }
+    return 0;
 }
 
 static void pipe_response_done(conn *c, bool end_of_pipelining)
@@ -1537,7 +1538,9 @@ static void out_string(conn *c, const char *str)
     }
 
     if (c->pipe_state != PIPE_STATE_OFF) {
-        pipe_response_save(c, str, len);
+        if (pipe_response_save(c, str, len) < 0) { /* PIPE_STATE_ERR.. */
+            c->noreply = false; /* stop pipelining */
+        }
     }
 
     if (c->noreply) {
