@@ -1448,6 +1448,7 @@ static int pipe_response_save(conn *c, const char *str, size_t len)
             c->pipe_resptr = &c->pipe_response[c->pipe_reslen];
             c->pipe_count++;
             if (c->pipe_count >= PIPE_MAX_CMD_COUNT && c->noreply == true) {
+                /* c->noreply == true: There are remaining pipe operations. */
                 c->pipe_state = PIPE_STATE_ERR_CFULL; /* pipe count overflow */
                 return -1;
             }
