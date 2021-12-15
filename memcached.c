@@ -1475,7 +1475,7 @@ static void pipe_response_save(conn *c, const char *str, size_t len)
     }
 }
 
-static void pipe_response_done(conn *c)
+static void pipe_response_done(conn *c, bool end_of_pipelining)
 {
     char headbuf[PIPE_HEAD_RES_SIZE];
     int headlen;
@@ -1507,6 +1507,10 @@ static void pipe_response_done(conn *c)
             sprintf(c->pipe_resptr, "PIPE_ERROR bad error\r\n");
             c->pipe_reslen += 22;
         }
+        if (end_of_pipelining) {
+            c->pipe_state = PIPE_STATE_OFF;
+            c->pipe_count = 0;
+        }
         /* The pipe_state will be cleared
          * after swallowing the remaining data.
          */
@@ -1523,6 +1527,7 @@ static void out_string(conn *c, const char *str)
 {
     assert(c != NULL);
     size_t len = strlen(str);
+    bool original_noreply = c->noreply;
 
     if (settings.verbose > 1) {
         if (c->noreply)
@@ -1561,7 +1566,7 @@ static void out_string(conn *c, const char *str)
     add_msghdr(c);
 
     if (c->pipe_state != PIPE_STATE_OFF) {
-        pipe_response_done(c);
+        pipe_response_done(c, !original_noreply);
         return;
     }
 
