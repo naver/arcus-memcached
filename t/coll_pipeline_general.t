@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 8;
+use Test::More tests => 10;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -121,6 +121,22 @@ for (my $i = 0; $i < $max_pipe_operation; $i++) {
 }
 $rst .= "PIPE_ERROR command overflow\n" . "ERROR unknown command";
 
+mem_cmd_is($sock, $cmd, "", $rst);
+
+# PR#622 TEST : "FIX: clear pipe_state at the end of the pipelining to avoid swallowing the next command."
+# old server swallows the next command after pipelining error
+$cmd = "lop insert lkey3 0 9 pipe\r\ndatum3333\r\n"
+    . "lop insert lkey3 0 9 pipe\r\ndatum4444\r\n"
+    . "lop insert lkey3 0 x";
+$rst = "RESPONSE 3\n"
+    . "STORED\n"
+    . "STORED\n"
+    . "CLIENT_ERROR bad command line format\n"
+    . "PIPE_ERROR bad error";
+mem_cmd_is($sock, $cmd, "", $rst);
+
+$cmd = "lop insert lkey3 0 9\r\ndatum3333";
+$rst = "STORED";
 mem_cmd_is($sock, $cmd, "", $rst);
 
 # after test
