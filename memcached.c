@@ -6868,8 +6868,8 @@ static void dispatch_bin_command(conn *c)
         }
         break;
     case PROTOCOL_BINARY_CMD_GETATTR:
-        if (keylen > 0 && extlen == (sizeof(bkey_t)+24) && bodylen == (keylen + extlen)) {
-            bin_read_key(c, bin_reading_getattr, (sizeof(bkey_t)+24));
+        if (keylen > 0 && extlen == 0 && bodylen == (keylen + extlen)) {
+            bin_read_key(c, bin_reading_getattr, extlen);
         } else {
             protocol_error = 1;
         }
