@@ -690,7 +690,7 @@ static int arcus_build_znode_name(char *ensemble_list)
     char                *sep1=",";
     char                *sep2=":";
     char                myip[50];
-    char                rcbuf[200];
+    char                rcbuf[512];
 
     // Need to figure out local IP. first create a dummy udp socket
     if ((sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP)) == -1) {
