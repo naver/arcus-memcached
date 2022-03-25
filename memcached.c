@@ -7669,7 +7669,7 @@ static bool check_and_handle_pipe_state(conn *c)
         assert(c->pipe_state == PIPE_STATE_ERR_CFULL ||
                c->pipe_state == PIPE_STATE_ERR_MFULL ||
                c->pipe_state == PIPE_STATE_ERR_BAD);
-        if (c->noreply == true) {
+        if (c->noreply) {
             c->noreply = false; /* reset noreply */
         } else  {
             /* The last command of pipelining has come. */
@@ -10113,7 +10113,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
-        if (ntokens == 7 && c->noreply == 0) {
+        if (ntokens == 7 && c->noreply == false) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
@@ -10124,7 +10124,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
-        if ((ntokens == 6 && c->noreply == 0) || (ntokens == 7)) {
+        if ((ntokens == 6 && c->noreply == false) || (ntokens == 7)) {
             if (strcmp(tokens[LOP_KEY_TOKEN+2].value, "drop")==0) {
                 drop_if_empty = true;
             } else {
@@ -10460,7 +10460,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
         int32_t vlen;
 
         set_pipe_noreply_maybe(c, tokens, ntokens);
-        if (ntokens == 7 && c->noreply == 0) {
+        if (ntokens == 7 && c->noreply == false) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
@@ -10476,7 +10476,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
         vlen += 2;
 
-        if ((ntokens == 6 && c->noreply == 0) || (ntokens == 7)) {
+        if ((ntokens == 6 && c->noreply == false) || (ntokens == 7)) {
             if (strcmp(tokens[SOP_KEY_TOKEN+2].value, "drop")==0) {
                 c->coll_drop = true;
             } else {
