@@ -103,10 +103,11 @@
 #endif
 
 /* command pipelining limits */
-#define PIPE_MAX_CMD_COUNT  500
-#define PIPE_HEAD_RES_SIZE  20 /* head response string size */
-#define PIPE_TAIL_RES_SIZE  40 /* tail response string size */
-#define PIPE_MAX_RES_SIZE   ((PIPE_MAX_CMD_COUNT*40)+60) // 60: for head and tail response
+#define PIPE_CMD_MAX_COUNT  500
+#define PIPE_RES_DATA_SIZE  40 /* data string size */
+#define PIPE_RES_HEAD_SIZE  20 /* head string size */
+#define PIPE_RES_TAIL_SIZE  40 /* tail string size */
+#define PIPE_RES_MAX_SIZE   ((PIPE_CMD_MAX_COUNT*PIPE_RES_DATA_SIZE)+PIPE_RES_HEAD_SIZE+PIPE_RES_TAIL_SIZE)
 
 /* command pipelining states */
 #define PIPE_STATE_OFF       0
@@ -392,11 +393,11 @@ struct conn {
     int               pipe_count;
     int               pipe_reslen;
     char             *pipe_resptr;
-    char              pipe_response[PIPE_MAX_RES_SIZE];
+    char              pipe_response[PIPE_RES_MAX_SIZE];
     /*******
-    int               pipe_cmd[PIPE_MAX_CMD_COUNT];
-    ENGINE_ERROR_CODE pipe_res[PIPE_MAX_CMD_COUNT];
-    bool              pipe_cod[PIPE_MAX_CMD_COUNT]; // create or drop
+    int               pipe_cmd[PIPE_CMD_MAX_COUNT];
+    ENGINE_ERROR_CODE pipe_res[PIPE_CMD_MAX_COUNT];
+    bool              pipe_cod[PIPE_CMD_MAX_COUNT]; // create or drop
     *******/
 
     char   client_ip[16];

@@ -1437,17 +1437,16 @@ static int pipe_response_save(conn *c, const char *str, size_t len)
 {
     if (c->pipe_state == PIPE_STATE_ON) {
         if (c->pipe_count == 0) {
-            /* initialize pipe responses */
-            /* response header format : "RESPONSE %d\r\n" */
-            c->pipe_reslen = PIPE_HEAD_RES_SIZE;
+            /* skip the memory of response head string: "RESPONSE %d\r\n" */
+            c->pipe_reslen = PIPE_RES_HEAD_SIZE;
             c->pipe_resptr = &c->pipe_response[c->pipe_reslen];
         }
-        if ((c->pipe_reslen + (len+2)) < (PIPE_MAX_RES_SIZE-40)) {
+        if ((c->pipe_reslen + (len+2)) < (PIPE_RES_MAX_SIZE-PIPE_RES_TAIL_SIZE)) {
             sprintf(c->pipe_resptr, "%s\r\n", str);
             c->pipe_reslen += (len+2);
             c->pipe_resptr = &c->pipe_response[c->pipe_reslen];
             c->pipe_count++;
-            if (c->pipe_count >= PIPE_MAX_CMD_COUNT && c->noreply == true) {
+            if (c->pipe_count >= PIPE_CMD_MAX_COUNT && c->noreply == true) {
                 /* c->noreply == true: There are remaining pipe operations. */
                 c->pipe_state = PIPE_STATE_ERR_CFULL; /* pipe count overflow */
                 return -1;
@@ -1479,18 +1478,17 @@ static int pipe_response_save(conn *c, const char *str, size_t len)
 
 static void pipe_response_done(conn *c, bool end_of_pipelining)
 {
-    char headbuf[PIPE_HEAD_RES_SIZE];
+    char headbuf[PIPE_RES_HEAD_SIZE];
     int headlen;
     int headidx;
 
-    /* pipe head response string */
-    headlen = sprintf(headbuf, "RESPONSE %d", c->pipe_count);
-    assert(headlen > 0);
-    headidx = PIPE_HEAD_RES_SIZE - headlen - 2;
+    /* pipe response head string */
+    headlen = sprintf(headbuf, "RESPONSE %d\r\n", c->pipe_count);
+    assert(headlen > 0 && headlen <= PIPE_RES_HEAD_SIZE);
+    headidx = PIPE_RES_HEAD_SIZE - headlen;
     memcpy(&c->pipe_response[headidx], headbuf, headlen);
-    memcpy(&c->pipe_response[PIPE_HEAD_RES_SIZE-2], "\r\n", 2);
 
-    /* pipe tail response string */
+    /* pipe response tail string */
     if (c->pipe_state == PIPE_STATE_ON) {
         sprintf(c->pipe_resptr, "END\r\n");
         c->pipe_reslen += 5;
