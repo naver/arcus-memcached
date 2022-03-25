@@ -1805,8 +1805,6 @@ static void *sm_state_thread(void *arg)
 #ifdef ENABLE_ZK_RECONFIG
         if (smreq.update_zkconfig) {
             sm_reload_ZK_config(main_zk->zh, &sm_retry);
-            if (arcus_zk_shutdown)
-                break;
         }
 #endif
 
@@ -1816,8 +1814,6 @@ static void *sm_state_thread(void *arg)
                 shutdown_by_me = true; break;
             }
             if (sm_info.mc_pause) continue;
-            if (arcus_zk_shutdown)
-                break;
         }
     }
     sm_info.state_running = false;
