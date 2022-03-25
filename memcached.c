@@ -7599,9 +7599,9 @@ static inline bool set_unique_maybe(conn *c, token_t *tokens, size_t ntokens)
 }
 #endif
 
-static inline bool set_noreply_maybe(conn *c, token_t *tokens, size_t ntokens)
+static inline void set_noreply_maybe(conn *c, token_t *tokens, size_t ntokens)
 {
-    int noreply_index = ntokens - 2;
+    char *token_value = tokens[ntokens-2].value;
 
     /*
       NOTE: this function is not the first place where we are going to
@@ -7610,16 +7610,16 @@ static inline bool set_noreply_maybe(conn *c, token_t *tokens, size_t ntokens)
       malformed line for "noreply" option is not reliable anyway, so
       it can't be helped.
     */
-    if (tokens[noreply_index].value
-        && strcmp(tokens[noreply_index].value, "noreply") == 0) {
+    if (token_value && strcmp(token_value, "noreply") == 0) {
         c->noreply = true;
+    } else {
+        c->noreply = false;
     }
-    return c->noreply;
 }
 
-static inline bool set_pipe_noreply_maybe(conn *c, token_t *tokens, size_t ntokens)
+static inline void set_pipe_noreply_maybe(conn *c, token_t *tokens, size_t ntokens)
 {
-    int noreply_index = ntokens - 2;
+    char *token_value = tokens[ntokens-2].value;
 
     /*
       NOTE: this function is not the first place where we are going to
@@ -7628,21 +7628,24 @@ static inline bool set_pipe_noreply_maybe(conn *c, token_t *tokens, size_t ntoke
       malformed line for "noreply" or "pipe" option is not reliable anyway,
       so it can't be helped.
     */
-    if (tokens[noreply_index].value) {
-        if (strcmp(tokens[noreply_index].value, "noreply") == 0) {
+    if (token_value) {
+        if (strcmp(token_value, "noreply") == 0) {
             c->noreply = true;
-        } else if (strcmp(tokens[noreply_index].value, "pipe") == 0) {
+        } else if (strcmp(token_value, "pipe") == 0) {
             c->noreply = true;
-            if (unlikely(c->pipe_state == PIPE_STATE_OFF))
+            if (c->pipe_state == PIPE_STATE_OFF) /* first pipe */
                 c->pipe_state = PIPE_STATE_ON;
+        } else {
+            c->noreply = false;
         }
+    } else {
+        c->noreply = false;
     }
-    return c->noreply;
 }
 
-static inline bool set_pipe_maybe(conn *c, token_t *tokens, size_t ntokens)
+static inline void set_pipe_maybe(conn *c, token_t *tokens, size_t ntokens)
 {
-    int noreply_index = ntokens - 2;
+    char *token_value = tokens[ntokens-2].value;
 
     /*
       NOTE: this function is not the first place where we are going to
@@ -7651,14 +7654,13 @@ static inline bool set_pipe_maybe(conn *c, token_t *tokens, size_t ntokens)
       malformed line for "pipe" option is not reliable anyway,
       so it can't be helped.
     */
-    if (tokens[noreply_index].value) {
-        if (strcmp(tokens[noreply_index].value, "pipe") == 0) {
-            c->noreply = true;
-            if (unlikely(c->pipe_state == PIPE_STATE_OFF))
-                c->pipe_state = PIPE_STATE_ON;
-        }
+    if (token_value && strcmp(token_value, "pipe") == 0) {
+        c->noreply = true;
+        if (c->pipe_state == PIPE_STATE_OFF) /* first pipe */
+            c->pipe_state = PIPE_STATE_ON;
+    } else {
+        c->noreply = false;
     }
-    return c->noreply;
 }
 
 static bool check_and_handle_pipe_state(conn *c)
@@ -8498,14 +8500,17 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     size_t nkey;
 
     if (ntokens > 3) {
-        bool hold_is_zero = strcmp(tokens[KEY_TOKEN+1].value, "0") == 0;
-        bool sets_noreply = set_noreply_maybe(c, tokens, ntokens);
-        bool valid = (ntokens == 4 && (hold_is_zero || sets_noreply))
-            || (ntokens == 5 && hold_is_zero && sets_noreply);
-        if (!valid) {
+        /* See "delete <key> [<time>] [noreply]\r\n" */
+        bool zero_time = strcmp(tokens[KEY_TOKEN+1].value, "0") == 0;
+        set_noreply_maybe(c, tokens, ntokens);
+
+        if ((ntokens >= 6) ||
+            (ntokens == 5 && (!zero_time || !c->noreply)) ||
+            (ntokens == 4 && (!zero_time && !c->noreply)))
+        {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format.  "
-                       "Usage: delete <key> [noreply]");
+                          "Usage: delete <key> [noreply]");
             return;
         }
     }
