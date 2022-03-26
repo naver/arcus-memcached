@@ -1612,10 +1612,10 @@ static inline char *get_ovflaction_str(uint8_t ovflact)
 static void
 handle_unexpected_errorcode_ascii(conn *c, const char *func_name, ENGINE_ERROR_CODE ret)
 {
-    if (ret == ENGINE_ENOTSUP) {
-        out_string(c, "NOT_SUPPORTED");
-    } else if (ret == ENGINE_DISCONNECT) {
+    if (ret == ENGINE_DISCONNECT) {
         conn_set_state(c, conn_closing);
+    } else if (ret == ENGINE_ENOTSUP) {
+        out_string(c, "NOT_SUPPORTED");
     } else {
         mc_logger->log(EXTENSION_LOG_WARNING, c, "[%s] Unexpected Error: %d\n",
                        func_name, (int)ret);
