@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 10;
+use Test::More tests => 15;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -138,6 +138,53 @@ mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "lop insert lkey3 0 9\r\ndatum3333";
 $rst = "STORED";
 mem_cmd_is($sock, $cmd, "", $rst);
+
+# Failure test of single line command pipelining
+$cmd = "bop insert bkey1 10 1 create 11 0 0 pipe\r\n1\r\n"
+     . "bop insert bkey1 20 1 pipe\r\n2\r\n"
+     . "bop insert bkey1 30 1 pipe\r\n3\r\n"
+     . "bop insert bkey1 40 1 pipe\r\n4\r\n"
+     . "bop insert bkey1 50 1\r\n5";
+$rst = "RESPONSE 5\n"
+     . "CREATED_STORED\n"
+     . "STORED\n"
+     . "STORED\n"
+     . "STORED\n"
+     . "STORED\n"
+     . "END";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey1 0..100";
+$rst = "VALUE 11 5\n"
+     . "10 1 1\n"
+     . "20 1 2\n"
+     . "30 1 3\n"
+     . "40 1 4\n"
+     . "50 1 5\n"
+     . "END";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop incr bkey1 10 10 pipe\r\n"
+     . "bop incr bkey1 20 10 pipe\r\n"
+     . "bop incr bkey1 30 data_10 pipe\r\n"
+     . "bop incr bkey1 40 10 pipe\r\n"
+     . "bop incr bkey1 50 10";
+$rst = "RESPONSE 3\n"
+     . "11\n"
+     . "12\n"
+     . "CLIENT_ERROR bad command line format\n"
+     . "PIPE_ERROR bad error";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "bop get bkey1 0..100";
+$rst = "VALUE 11 5\n"
+     . "10 2 11\n"
+     . "20 2 12\n"
+     . "30 1 3\n"
+     . "40 1 4\n"
+     . "50 1 5\n"
+     . "END";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "delete bkey1"; $rst = "DELETED";
+mem_cmd_is($sock, $cmd, "", $rst);
+
 
 # after test
 release_memcached($engine, $server);

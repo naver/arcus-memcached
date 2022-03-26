@@ -10141,6 +10141,8 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if (check_and_handle_pipe_state(c)) {
             process_lop_delete(c, key, nkey, from_index, to_index, drop_if_empty);
+        } else {
+            conn_set_state(c, conn_new_cmd);
         }
     }
     else if ((ntokens==5 || ntokens==6) && (strcmp(subcommand, "get") == 0))
@@ -11773,6 +11775,8 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
             if (lenfields > 0) {
                 c->sbytes = lenfields;
                 conn_set_state(c, conn_swallow);
+            } else {
+                conn_set_state(c, conn_new_cmd);
             }
         }
     }
@@ -12054,6 +12058,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
                 c->coll_nkey = nkey;
                 c->coll_op   = OPERATION_BOP_UPDATE;
                 process_bop_update_complete(c);
+            } else {
+                conn_set_state(c, conn_new_cmd);
             }
         } else { /* vlen >= 0 */
             vlen += 2;
@@ -12121,6 +12127,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             process_bop_delete(c, key, nkey, &c->coll_bkrange,
                                (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
                                count, drop_if_empty);
+        } else {
+            conn_set_state(c, conn_new_cmd);
         }
     }
     else if ((ntokens >= 6 && ntokens <= 9) && (strcmp(subcommand, "incr") == 0 || strcmp(subcommand, "decr") == 0))
@@ -12177,6 +12185,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         if (check_and_handle_pipe_state(c)) {
             process_bop_arithmetic(c, key, nkey, &c->coll_bkrange, incr,
                                    create, delta, initial, eflagptr);
+        } else {
+            conn_set_state(c, conn_new_cmd);
         }
     }
     else if ((ntokens >= 5 && ntokens <= 13) && (strcmp(subcommand, "get") == 0))
