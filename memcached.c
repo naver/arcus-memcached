@@ -8313,22 +8313,18 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
 
     set_noreply_maybe(c, tokens, ntokens);
 
-    if (tokens[KEY_TOKEN].length > KEY_MAX_LENGTH) {
-        out_string(c, "CLIENT_ERROR bad command line format");
-        return;
-    }
-
     key = tokens[KEY_TOKEN].value;
     nkey = tokens[KEY_TOKEN].length;
-
-    if (! (safe_strtoul(tokens[2].value, (uint32_t *)&flags)
-           && safe_strtol(tokens[3].value, &exptime_int)
-           && safe_strtol(tokens[4].value, (int32_t *)&vlen))) {
-        print_invalid_command(c, tokens, ntokens);
+    if (nkey > KEY_MAX_LENGTH) {
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
-    if (vlen < 0 || vlen > (INT_MAX-2)) {
+
+    if ((! safe_strtoul(tokens[2].value, (uint32_t *)&flags)) ||
+        (! safe_strtol(tokens[3].value, &exptime_int)) ||
+        (! safe_strtol(tokens[4].value, (int32_t *)&vlen)) ||
+        (vlen < 0 || vlen > (INT_MAX-2)))
+    {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
@@ -8354,43 +8350,40 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->allocate(mc_engine.v0, c, &it, key, nkey, vlen,
                                  htonl(flags), realtime(exptime), req_cas_id);
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
+    if (ret == ENGINE_SUCCESS) {
         if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
             mc_engine.v1->free(mc_engine.v0, c, it);
             out_string(c, "SERVER_ERROR error getting item data");
-            break;
+            ret = ENGINE_FAILED; /* FIXME: error type */
+        } else {
+            c->item = it;
+            ritem_set_first(c, CONN_RTYPE_HINFO, vlen);
+            c->store_op = store_op;
+            conn_set_state(c, conn_nread);
         }
-        c->item = it;
-        ritem_set_first(c, CONN_RTYPE_HINFO, vlen);
-        c->store_op = store_op;
-        conn_set_state(c, conn_nread);
-        break;
-    case ENGINE_E2BIG:
-    case ENGINE_ENOMEM:
+    }
+    if (ret != ENGINE_SUCCESS) {
         if (ret == ENGINE_E2BIG) {
             out_string(c, "CLIENT_ERROR object too large for cache");
-        } else {
+        } else if (ret == ENGINE_ENOMEM) {
             out_string(c, "SERVER_ERROR out of memory storing object");
+        } else if (ret == ENGINE_FAILED) {
+            /* out_string() was called above. so, do nothing */
+        } else {
+            handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
-        /* swallow the data line */
-        c->sbytes = vlen;
-        c->write_and_go = conn_swallow;
 
         /* Avoid stale data persisting in cache because we failed alloc.
          * Unacceptable for SET. Anywhere else too?
          */
         if (store_op == OPERATION_SET) {
             /* set temporarily noreply for the ASYNC interface */
+            /* noreply flag is cleared in out_string() if it was set */
             assert(c->noreply == false);
             c->noreply = true;
             mc_engine.v1->remove(mc_engine.v0, c, key, nkey, 0, 0);
             c->noreply = false;
         }
-        break;
-    default:
-        handle_unexpected_errorcode_ascii(c, __func__, ret);
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
