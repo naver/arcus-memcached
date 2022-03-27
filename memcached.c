@@ -8388,7 +8388,11 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
             c->sbytes = vlen;
-            c->write_and_go = conn_swallow;
+            if (c->state == conn_write) {
+                c->write_and_go = conn_swallow;
+            } else { /* conn_new_cmd (by noreply) */
+                conn_set_state(c, conn_swallow);
+            }
         }
     }
 }
@@ -9930,7 +9934,11 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
             c->sbytes = vlen;
-            c->write_and_go = conn_swallow;
+            if (c->state == conn_write) {
+                c->write_and_go = conn_swallow;
+            } else { /* conn_new_cmd (by noreply) */
+                conn_set_state(c, conn_swallow);
+            }
         }
     }
 }
@@ -10347,7 +10355,11 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
             c->sbytes = vlen;
-            c->write_and_go = conn_swallow;
+            if (c->state == conn_write) {
+                c->write_and_go = conn_swallow;
+            } else { /* conn_new_cmd (by noreply) */
+                conn_set_state(c, conn_swallow);
+            }
         }
     }
 }
@@ -11016,7 +11028,11 @@ static void process_bop_update_prepare_nread(conn *c, int cmd,
 
         /* swallow the data line */
         c->sbytes = vlen;
-        c->write_and_go = conn_swallow;
+        if (c->state == conn_write) {
+            c->write_and_go = conn_swallow;
+        } else { /* conn_new_cmd (by noreply) */
+            conn_set_state(c, conn_swallow);
+        }
     }
 }
 
@@ -11058,7 +11074,11 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
             c->sbytes = vlen;
-            c->write_and_go = conn_swallow;
+            if (c->state == conn_write) {
+                c->write_and_go = conn_swallow;
+            } else { /* conn_new_cmd (by noreply) */
+                conn_set_state(c, conn_swallow);
+            }
         }
     }
 }
@@ -11147,6 +11167,7 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
         out_string(c, "SERVER_ERROR out of memory");
 
         /* swallow the data line */
+        assert(c->state == conn_write);
         c->sbytes = vlen;
         c->write_and_go = conn_swallow;
     }
@@ -11521,7 +11542,11 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
             c->sbytes = vlen;
-            c->write_and_go = conn_swallow;
+            if (c->state == conn_write) {
+                c->write_and_go = conn_swallow;
+            } else { /* conn_new_cmd (by noreply) */
+                conn_set_state(c, conn_swallow);
+            }
         }
     }
 }
@@ -11554,7 +11579,11 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
 
         /* swallow the data line */
         c->sbytes = flen;
-        c->write_and_go = conn_swallow;
+        if (c->state == conn_write) {
+            c->write_and_go = conn_swallow;
+        } else { /* conn_new_cmd (by noreply) */
+            conn_set_state(c, conn_swallow);
+        }
     }
 }
 
