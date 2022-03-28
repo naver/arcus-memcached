@@ -3577,10 +3577,10 @@ static void write_bin_response(conn *c, void *d, int hlen, int keylen, int dlen)
 static void
 handle_unexpected_errorcode_bin(conn *c, const char *func_name, ENGINE_ERROR_CODE ret, int swallow)
 {
-    if (ret == ENGINE_ENOTSUP) {
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
-    } else if (ret == ENGINE_DISCONNECT) {
+    if (ret == ENGINE_DISCONNECT) {
         conn_set_state(c, conn_closing);
+    } else if (ret == ENGINE_ENOTSUP) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
     } else {
         mc_logger->log(EXTENSION_LOG_WARNING, c, "[%s] Unexpected Error: %d\n",
                        func_name, (int)ret);
