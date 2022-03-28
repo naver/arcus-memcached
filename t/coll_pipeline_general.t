@@ -113,13 +113,13 @@ $cmd = "";
 for (my $i = 0; $i < $max_pipe_operation; $i++) {
     $cmd .= "lop insert lkey3 0 4 pipe\r\ndata\r\n";
 }
-$cmd .= "lop insert lkey3 0 4\r\ndata\r\n";
+$cmd .= "lop insert lkey3 0 4\r\ndata";
 
 $rst = "RESPONSE 500\n";
 for (my $i = 0; $i < $max_pipe_operation; $i++) {
     $rst .= "STORED\n";
 }
-$rst .= "PIPE_ERROR command overflow\n" . "ERROR unknown command";
+$rst .= "PIPE_ERROR command overflow";
 
 mem_cmd_is($sock, $cmd, "", $rst);
 
