@@ -10065,19 +10065,14 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
         if (rest_ntokens >= 2) {
-            if (strcmp(tokens[read_ntokens].value, "create") != 0) {
+            if (strcmp(tokens[read_ntokens].value, "create") != 0 ||
+                get_coll_create_attr_from_tokens(&tokens[read_ntokens+1], rest_ntokens-1,
+                                                 ITEM_TYPE_LIST, &c->coll_attr_space) != 0) {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
                 return;
             }
-
             c->coll_attrp = &c->coll_attr_space; /* create if not exist */
-            if (get_coll_create_attr_from_tokens(&tokens[read_ntokens+1], rest_ntokens-1,
-                                                 ITEM_TYPE_LIST, c->coll_attrp) != 0) {
-                print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
-                return;
-            }
         } else {
             if (rest_ntokens != 0) {
                 print_invalid_command(c, tokens, ntokens);
@@ -10089,7 +10084,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if (check_and_handle_pipe_state(c)) {
             process_lop_prepare_nread(c, (int)OPERATION_LOP_INSERT, vlen, key, nkey, index);
-        } else {
+        } else { /* pipe error */
             c->sbytes = vlen;
             conn_set_state(c, conn_swallow);
         }
@@ -10102,14 +10097,13 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
         int post_ntokens = 1 + (c->noreply ? 1 : 0);
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
-        c->coll_attrp = &c->coll_attr_space;
         if (get_coll_create_attr_from_tokens(&tokens[read_ntokens], rest_ntokens,
-                                             ITEM_TYPE_LIST, c->coll_attrp) != 0) {
+                                             ITEM_TYPE_LIST, &c->coll_attr_space) != 0) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
-
+        c->coll_attrp = &c->coll_attr_space;
         process_lop_create(c, key, nkey, c->coll_attrp);
     }
     else if ((ntokens >= 5 && ntokens <= 7) && (strcmp(subcommand, "delete") == 0))
@@ -10119,21 +10113,17 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
-        if (ntokens == 7 && c->noreply == false) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
-        }
-
         if (get_list_range_from_str(tokens[LOP_KEY_TOKEN+1].value, &from_index, &to_index)) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
-        if ((ntokens == 6 && c->noreply == false) || (ntokens == 7)) {
-            if (strcmp(tokens[LOP_KEY_TOKEN+2].value, "drop")==0) {
-                drop_if_empty = true;
-            } else {
+        if (ntokens >= 6) {
+            if (ntokens == 7 || c->noreply == false) {
+                drop_if_empty = (strcmp(tokens[LOP_KEY_TOKEN+2].value, "drop") == 0);
+            }
+            if ((ntokens == 6 && (c->noreply == false && drop_if_empty == false)) ||
+                (ntokens == 7 && (c->noreply == false || drop_if_empty == false))) {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
                 return;
@@ -10142,7 +10132,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if (check_and_handle_pipe_state(c)) {
             process_lop_delete(c, key, nkey, from_index, to_index, drop_if_empty);
-        } else {
+        } else { /* pipe error */
             conn_set_state(c, conn_new_cmd);
         }
     }
@@ -10157,7 +10147,6 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
-
         if (ntokens == 6) {
             if (strcmp(tokens[LOP_KEY_TOKEN+2].value, "delete")==0) {
                 delete = true;
@@ -10420,19 +10409,14 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
         if (rest_ntokens >= 2) {
-            if (strcmp(tokens[read_ntokens].value, "create") != 0) {
+            if (strcmp(tokens[read_ntokens].value, "create") != 0 ||
+                get_coll_create_attr_from_tokens(&tokens[read_ntokens+1], rest_ntokens-1,
+                                                 ITEM_TYPE_SET, &c->coll_attr_space) != 0) {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
                 return;
             }
-
             c->coll_attrp = &c->coll_attr_space; /* create if not exist */
-            if (get_coll_create_attr_from_tokens(&tokens[read_ntokens+1], rest_ntokens-1,
-                                                 ITEM_TYPE_SET, c->coll_attrp) != 0) {
-                print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
-                return;
-            }
         } else {
             if (rest_ntokens != 0) {
                 print_invalid_command(c, tokens, ntokens);
@@ -10444,7 +10428,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if (check_and_handle_pipe_state(c)) {
             process_sop_prepare_nread(c, (int)OPERATION_SOP_INSERT, vlen, key, nkey);
-        } else {
+        } else { /* pipe error */
             c->sbytes = vlen;
             conn_set_state(c, conn_swallow);
         }
@@ -10457,14 +10441,13 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
         int post_ntokens = 1 + (c->noreply ? 1 : 0);
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
-        c->coll_attrp = &c->coll_attr_space;
         if (get_coll_create_attr_from_tokens(&tokens[read_ntokens], rest_ntokens,
-                                             ITEM_TYPE_SET, c->coll_attrp) != 0) {
+                                             ITEM_TYPE_SET, &c->coll_attr_space) != 0) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
-
+        c->coll_attrp = &c->coll_attr_space;
         process_sop_create(c, key, nkey, c->coll_attrp);
     }
     else if ((ntokens >= 5 && ntokens <= 7) && (strcmp(subcommand, "delete") == 0))
@@ -10472,13 +10455,6 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
         int32_t vlen;
 
         set_pipe_noreply_maybe(c, tokens, ntokens);
-        if (ntokens == 7 && c->noreply == false) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
-        }
-
-        c->coll_drop = false;
 
         if ((! safe_strtol(tokens[SOP_KEY_TOKEN+1].value, &vlen)) ||
             (vlen < 0 || vlen > (INT_MAX-2))) {
@@ -10488,10 +10464,13 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
         vlen += 2;
 
-        if ((ntokens == 6 && c->noreply == false) || (ntokens == 7)) {
-            if (strcmp(tokens[SOP_KEY_TOKEN+2].value, "drop")==0) {
-                c->coll_drop = true;
-            } else {
+        c->coll_drop = false;
+        if (ntokens >= 6) {
+            if (ntokens == 7 || c->noreply == false) {
+                c->coll_drop = (strcmp(tokens[SOP_KEY_TOKEN+2].value, "drop")==0);
+            }
+            if ((ntokens == 6 && (c->noreply == false && c->coll_drop == false)) ||
+                (ntokens == 7 && (c->noreply == false || c->coll_drop == false))) {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
                 return;
@@ -10500,7 +10479,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if (check_and_handle_pipe_state(c)) {
             process_sop_prepare_nread(c, (int)OPERATION_SOP_DELETE, vlen, key, nkey);
-        } else {
+        } else { /* pipe error */
             c->sbytes = vlen;
             conn_set_state(c, conn_swallow);
         }
@@ -10521,7 +10500,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if (check_and_handle_pipe_state(c)) {
             process_sop_prepare_nread(c, (int)OPERATION_SOP_EXIST, vlen, key, nkey);
-        } else {
+        } else { /* pipe error */
             c->sbytes = vlen;
             conn_set_state(c, conn_swallow);
         }
@@ -10537,7 +10516,6 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
-
         if (ntokens == 6) {
             if (strcmp(tokens[SOP_KEY_TOKEN+2].value, "delete")==0) {
                 delete = true;
@@ -11632,7 +11610,6 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         field.value = tokens[MOP_KEY_TOKEN+1].value;
         field.length = tokens[MOP_KEY_TOKEN+1].length;
-
         if (field.length > MAX_FIELD_LENG) {
             out_string(c, "CLIENT_ERROR too long field name");
             return;
@@ -11651,19 +11628,14 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
         if (rest_ntokens >= 2) {
-            if (strcmp(tokens[read_ntokens].value, "create") != 0) {
+            if (strcmp(tokens[read_ntokens].value, "create") != 0 ||
+                get_coll_create_attr_from_tokens(&tokens[read_ntokens+1], rest_ntokens-1,
+                                                 ITEM_TYPE_MAP, &c->coll_attr_space) != 0) {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
                 return;
             }
-
             c->coll_attrp = &c->coll_attr_space; /* create if not exist */
-            if (get_coll_create_attr_from_tokens(&tokens[read_ntokens+1], rest_ntokens-1,
-                                                 ITEM_TYPE_MAP, c->coll_attrp) != 0) {
-                print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
-                return;
-            }
         } else {
             if (rest_ntokens != 0) {
                 print_invalid_command(c, tokens, ntokens);
@@ -11675,7 +11647,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if (check_and_handle_pipe_state(c)) {
             process_mop_prepare_nread(c, (int)OPERATION_MOP_INSERT, key, nkey, &field, vlen);
-        } else {
+        } else { /* pipe error */
             c->sbytes = vlen;
             conn_set_state(c, conn_swallow);
         }
@@ -11688,14 +11660,13 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         int post_ntokens = 1 + (c->noreply ? 1 : 0);
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
-        c->coll_attrp = &c->coll_attr_space;
         if (get_coll_create_attr_from_tokens(&tokens[read_ntokens], rest_ntokens,
-                                             ITEM_TYPE_MAP, c->coll_attrp) != 0) {
+                                             ITEM_TYPE_MAP, &c->coll_attr_space) != 0) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
-
+        c->coll_attrp = &c->coll_attr_space;
         process_mop_create(c, key, nkey, c->coll_attrp);
     }
     else if ((ntokens >= 6 && ntokens <= 7) && (strcmp(subcommand, "update") == 0))
@@ -11707,7 +11678,6 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         field.value = tokens[MOP_KEY_TOKEN+1].value;
         field.length = tokens[MOP_KEY_TOKEN+1].length;
-
         if (field.length > MAX_FIELD_LENG) {
             out_string(c, "CLIENT_ERROR too long field name");
             return;
@@ -11723,7 +11693,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if (check_and_handle_pipe_state(c)) {
             process_mop_prepare_nread(c, (int)OPERATION_MOP_UPDATE, key, nkey, &field, vlen);
-        } else {
+        } else { /* pipe error */
             c->sbytes = vlen;
             conn_set_state(c, conn_swallow);
         }
@@ -11736,14 +11706,31 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
         if ((! safe_strtoul(tokens[MOP_KEY_TOKEN+1].value, &lenfields)) ||
-            (! safe_strtoul(tokens[MOP_KEY_TOKEN+2].value, &numfields)) ||
-            (lenfields > (UINT_MAX-2))) {
+            (! safe_strtoul(tokens[MOP_KEY_TOKEN+2].value, &numfields))) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
+        if (lenfields > 0) {
+            if (numfields == 0 ||
+                lenfields > (UINT_MAX-2) ||
+                lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1)) {
+                print_invalid_command(c, tokens, ntokens);
+                out_string(c, "CLIENT_ERROR bad value");
+                return;
+            }
+        }
+        if (numfields > 0) {
+            if (lenfields == 0 ||
+                numfields > settings.max_map_size ||
+                numfields > ((lenfields/2) + 1)) {
+                print_invalid_command(c, tokens, ntokens);
+                out_string(c, "CLIENT_ERROR bad value");
+                return;
+            }
+        }
 
-        int read_ntokens = 5;
+        int read_ntokens = MOP_KEY_TOKEN + 3;
         int post_ntokens = 1 + (c->noreply ? 1 : 0);
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
@@ -11753,28 +11740,6 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
             } else {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
-                return;
-            }
-        }
-
-        if (numfields == 0) {
-            if (lenfields != 0)  {
-                out_string(c, "CLIENT_ERROR bad value");
-                c->sbytes = lenfields + 2;
-                c->write_and_go = conn_swallow;
-                return;
-            }
-        } else { /* numfields != 0 */
-            if (lenfields == 0) {
-                out_string(c, "CLIENT_ERROR bad value");
-                return;
-            }
-            if (numfields > settings.max_map_size ||
-                numfields > ((lenfields/2) + 1) ||
-                lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1)) {
-                out_string(c, "CLIENT_ERROR bad value");
-                c->sbytes = lenfields + 2;
-                c->write_and_go = conn_swallow;
                 return;
             }
         }
@@ -11793,7 +11758,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 lenfields += 2;
                 process_mop_prepare_nread_fields(c, (int)OPERATION_MOP_DELETE, key, nkey, lenfields);
             }
-        } else {
+        } else { /* pipe error */
             if (lenfields > 0) {
                 c->sbytes = lenfields;
                 conn_set_state(c, conn_swallow);
@@ -11809,45 +11774,39 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         bool drop_if_empty = false;
 
         if ((! safe_strtoul(tokens[MOP_KEY_TOKEN+1].value, &lenfields)) ||
-            (! safe_strtoul(tokens[MOP_KEY_TOKEN+2].value, &numfields)) ||
-            (lenfields > (UINT_MAX-2))) {
+            (! safe_strtoul(tokens[MOP_KEY_TOKEN+2].value, &numfields))) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
+        if (lenfields > 0) {
+            if (numfields == 0 ||
+                lenfields > (UINT_MAX-2) ||
+                lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1)) {
+                print_invalid_command(c, tokens, ntokens);
+                out_string(c, "CLIENT_ERROR bad value");
+                return;
+            }
+        }
+        if (numfields > 0) {
+            if (lenfields == 0 ||
+                numfields > settings.max_map_size ||
+                numfields > ((lenfields/2) + 1)) {
+                print_invalid_command(c, tokens, ntokens);
+                out_string(c, "CLIENT_ERROR bad value");
+                return;
+            }
+        }
 
-        int read_ntokens = 5;
-        if (ntokens == read_ntokens + 2) {
-            if (strcmp(tokens[read_ntokens].value, "delete")==0) {
+        if (ntokens == 7) {
+            if (strcmp(tokens[MOP_KEY_TOKEN+3].value, "delete")==0) {
                 delete = true;
-            } else if (strcmp(tokens[read_ntokens].value, "drop")==0) {
+            } else if (strcmp(tokens[MOP_KEY_TOKEN+3].value, "drop")==0) {
                 delete = true;
                 drop_if_empty = true;
             } else {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
-                return;
-            }
-        }
-
-        if (numfields == 0) {
-            if (lenfields != 0)  {
-                out_string(c, "CLIENT_ERROR bad value");
-                c->sbytes = lenfields + 2;
-                c->write_and_go = conn_swallow;
-                return;
-            }
-        } else { /* numfields != 0 */
-            if (lenfields == 0) {
-                out_string(c, "CLIENT_ERROR bad value");
-                return;
-            }
-            if (numfields > settings.max_map_size ||
-                numfields > ((lenfields/2) + 1) ||
-                lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1)) {
-                out_string(c, "CLIENT_ERROR bad value");
-                c->sbytes = lenfields + 2;
-                c->write_and_go = conn_swallow;
                 return;
             }
         }
@@ -11910,51 +11869,37 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             }
         }
 
-        nbkey = get_bkey_from_str(tokens[read_ntokens].value, bkey);
-        if (nbkey == -1) {
+        nbkey = get_bkey_from_str(tokens[read_ntokens++].value, bkey);
+        neflag = 0;
+        if (ntokens > 6 && strncmp(tokens[read_ntokens].value, "0x", 2) == 0) {
+            neflag = get_eflag_from_str(tokens[read_ntokens++].value, eflag);
+        }
+        if (nbkey == -1 || neflag == -1) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
-        read_ntokens++;
 
-        neflag = 0;
-        if (ntokens > 6 && strncmp(tokens[read_ntokens].value, "0x", 2) == 0) {
-            neflag = get_eflag_from_str(tokens[read_ntokens].value, eflag);
-            if (neflag == -1) {
-                print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
-                return;
-            }
-            read_ntokens++;
-        }
-
-        if ((! safe_strtol(tokens[read_ntokens].value, &vlen)) ||
+        if ((! safe_strtol(tokens[read_ntokens++].value, &vlen)) ||
             (vlen < 0 || vlen > (INT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
         vlen += 2;
-        read_ntokens += 1;
 
         int post_ntokens = 1 + ((c->noreply || c->coll_getrim) ? 1 : 0);
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
         if (rest_ntokens >= 2) {
-            if (strcmp(tokens[read_ntokens].value, "create") != 0) {
+            if (strcmp(tokens[read_ntokens].value, "create") != 0 ||
+                get_coll_create_attr_from_tokens(&tokens[read_ntokens+1], rest_ntokens-1,
+                                                 ITEM_TYPE_BTREE, &c->coll_attr_space) != 0) {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
                 return;
             }
-
             c->coll_attrp = &c->coll_attr_space; /* create if not exist */
-            if (get_coll_create_attr_from_tokens(&tokens[read_ntokens+1], rest_ntokens-1,
-                                                 ITEM_TYPE_BTREE, c->coll_attrp) != 0) {
-                print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
-                return;
-            }
         } else {
             if (rest_ntokens != 0) {
                 print_invalid_command(c, tokens, ntokens);
@@ -11966,7 +11911,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if (check_and_handle_pipe_state(c)) {
             process_bop_prepare_nread(c, subcommid, key, nkey, bkey, nbkey, eflag, neflag, vlen);
-        } else {
+        } else { /* pipe error */
             c->sbytes = vlen;
             conn_set_state(c, conn_swallow);
         }
@@ -11979,41 +11924,33 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         int post_ntokens = 1 + (c->noreply ? 1 : 0);
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
-        c->coll_attrp = &c->coll_attr_space;
         if (get_coll_create_attr_from_tokens(&tokens[read_ntokens], rest_ntokens,
-                                             ITEM_TYPE_BTREE, c->coll_attrp) != 0) {
+                                             ITEM_TYPE_BTREE, &c->coll_attr_space) != 0) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
-
+        c->coll_attrp = &c->coll_attr_space;
         process_bop_create(c, key, nkey, c->coll_attrp);
     }
     else if ((ntokens >= 6 && ntokens <= 10) && (strcmp(subcommand, "update") == 0))
     {
         int32_t  vlen;
-        int      read_ntokens = BOP_KEY_TOKEN+1;;
-        int      post_ntokens;
-        int      rest_ntokens;
 
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
-        post_ntokens = 1 + (c->noreply ? 1 : 0);
-
-        if (get_bkey_range_from_str(tokens[read_ntokens].value, &c->coll_bkrange)) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
-        }
         /* Only single bkey supported */
-        if (c->coll_bkrange.to_nbkey != BKEY_NULL) {
+        if (get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange) != 0 ||
+            c->coll_bkrange.to_nbkey != BKEY_NULL) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
-        read_ntokens++;
 
-        rest_ntokens = ntokens - read_ntokens - post_ntokens;
+        int read_ntokens = BOP_KEY_TOKEN + 2;
+        int post_ntokens = 1 + (c->noreply ? 1 : 0);
+        int rest_ntokens = ntokens - read_ntokens - post_ntokens;
+
         if (rest_ntokens > 1) {
             uint32_t offset;
             int      length;
@@ -12056,18 +11993,14 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             c->coll_eupdate.neflag = EFLAG_NULL;
         }
 
-        if (rest_ntokens != 1) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
-        }
-
-        if ((! safe_strtol(tokens[read_ntokens].value, &vlen)) ||
+        if ((rest_ntokens != 1) ||
+            (! safe_strtol(tokens[read_ntokens].value, &vlen)) ||
             (vlen < -1 || vlen > (INT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
+
         if (vlen == -1) {
             if (check_and_handle_pipe_state(c)) {
                 if (c->coll_eupdate.neflag == EFLAG_NULL) {
@@ -12080,14 +12013,14 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
                 c->coll_nkey = nkey;
                 c->coll_op   = OPERATION_BOP_UPDATE;
                 process_bop_update_complete(c);
-            } else {
+            } else { /* pipe error */
                 conn_set_state(c, conn_new_cmd);
             }
         } else { /* vlen >= 0 */
             vlen += 2;
             if (check_and_handle_pipe_state(c)) {
                 process_bop_update_prepare_nread(c, (int)OPERATION_BOP_UPDATE, key, nkey, vlen);
-            } else {
+            } else { /* pipe error */
                 c->sbytes = vlen;
                 conn_set_state(c, conn_swallow);
             }
@@ -12106,7 +12039,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             return;
         }
 
-        int read_ntokens = 4;
+        int read_ntokens = BOP_KEY_TOKEN + 2;
         int post_ntokens = 1 + (c->noreply ? 1 : 0);
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
@@ -12132,13 +12065,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
 
         if (rest_ntokens > 0) {
-            if (rest_ntokens == 1) {
-                if (! safe_strtoul(tokens[read_ntokens].value, &count)) {
-                    print_invalid_command(c, tokens, ntokens);
-                    out_string(c, "CLIENT_ERROR bad command line format");
-                    return;
-                }
-            } else {
+            if ((rest_ntokens > 1) ||
+                (! safe_strtoul(tokens[read_ntokens].value, &count))) {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
                 return;
@@ -12149,7 +12077,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             process_bop_delete(c, key, nkey, &c->coll_bkrange,
                                (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
                                count, drop_if_empty);
-        } else {
+        } else { /* pipe error */
             conn_set_state(c, conn_new_cmd);
         }
     }
@@ -12164,24 +12092,15 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
-        if (get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange)) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
-        }
-        if (c->coll_bkrange.to_nbkey != BKEY_NULL) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
-        }
-
-        if (! safe_strtoull(tokens[BOP_KEY_TOKEN+2].value, &delta) || delta < 1) {
+        if ((get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange) != 0) ||
+            (c->coll_bkrange.to_nbkey != BKEY_NULL) ||
+            (! safe_strtoull(tokens[BOP_KEY_TOKEN+2].value, &delta)) || (delta < 1)) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
 
-        int read_ntokens = 5;
+        int read_ntokens = BOP_KEY_TOKEN + 3;
         int post_ntokens = 1 + (c->noreply ? 1 : 0);
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
@@ -12207,7 +12126,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         if (check_and_handle_pipe_state(c)) {
             process_bop_arithmetic(c, key, nkey, &c->coll_bkrange, incr,
                                    create, delta, initial, eflagptr);
-        } else {
+        } else { /* pipe error */
             conn_set_state(c, conn_new_cmd);
         }
     }
@@ -12224,7 +12143,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             return;
         }
 
-        int read_ntokens = 4;
+        int read_ntokens = BOP_KEY_TOKEN + 2;
         int post_ntokens = 1; /* "\r\n" */
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
@@ -12286,7 +12205,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             return;
         }
 
-        int read_ntokens = 4;
+        int read_ntokens = BOP_KEY_TOKEN + 2;
         int post_ntokens = 1; /* "\r\n" */
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
@@ -12339,7 +12258,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             return;
         }
 
-        int read_ntokens = 5;
+        int read_ntokens = BOP_KEY_TOKEN + 3;
 #ifdef JHPARK_OLD_SMGET_INTERFACE
         int post_ntokens = (smgmode > 0 ? 3 : 2); /* "\r\n" */
 #else
@@ -12432,12 +12351,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
     {
         ENGINE_BTREE_ORDER order;
 
-        if (get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange)) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
-        }
-        if (c->coll_bkrange.to_nbkey != BKEY_NULL) {
+        if ((get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange) != 0) ||
+            (c->coll_bkrange.to_nbkey != BKEY_NULL)) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
@@ -12460,12 +12375,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         ENGINE_BTREE_ORDER order;
         uint32_t count = 0;
 
-        if (get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange)) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
-        }
-        if (c->coll_bkrange.to_nbkey != BKEY_NULL) {
+        if ((get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange) != 0) ||
+            (c->coll_bkrange.to_nbkey != BKEY_NULL)) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
