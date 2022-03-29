@@ -1079,7 +1079,15 @@ static bool sm_check_mc_paused(void)
     return paused;
 }
 
-static void sm_check_and_scrub_stale(bool *retry)
+static inline void sm_set_retry_ms(int *final_retry_ms, int local_retry_ms)
+{
+    assert(local_retry_ms > 0);
+    if (*final_retry_ms <= 0 || *final_retry_ms > local_retry_ms) {
+        *final_retry_ms = local_retry_ms;
+    }
+}
+
+static void sm_check_and_scrub_stale(int *retry_ms)
 {
     uint64_t now = time(NULL);
     if (now - sm_info.node_added_time >= arcus_conf.zk_timeout/1000) {
@@ -1091,14 +1099,14 @@ static void sm_check_and_scrub_stale(bool *retry)
         } else {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                                   "Failed to scrub stale data.\n");
-            *retry = true; /* Do retry */
+            sm_set_retry_ms(retry_ms, 100); /* Do retry */
         }
     } else {
-        *retry = true; /* Do retry */
+        sm_set_retry_ms(retry_ms, 100); /* Do retry */
     }
 }
 
-static int sm_reload_cache_list_znode(zhandle_t *zh, bool *retry)
+static int sm_reload_cache_list_znode(zhandle_t *zh, int *retry_ms)
 {
     struct String_vector strv_cache_list = {0, NULL};
     bool znode_deleted = false;
@@ -1110,7 +1118,7 @@ static int sm_reload_cache_list_znode(zhandle_t *zh, bool *retry)
     if (zresult < 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Failed to read cache list from ZK.  Retry...\n");
-        *retry = true;
+        sm_set_retry_ms(retry_ms, 100); /* Do retry */
         sm_lock();
         sm_info.request.update_cache_list = true;
         sm_unlock();
@@ -1146,7 +1154,7 @@ static int sm_reload_cache_list_znode(zhandle_t *zh, bool *retry)
                  sm_info.cluster_node_count > prev_node_count) {
             /* a new node added */
             sm_info.node_added_time = time(NULL);
-            *retry = true;
+            sm_set_retry_ms(retry_ms, 100); /* Do retry */
         }
 #endif
     }
@@ -1165,7 +1173,7 @@ static int sm_reload_cache_list_znode(zhandle_t *zh, bool *retry)
         sm_lock();
         sm_info.mc_pause = true;
         sm_unlock();
-        *retry = true;
+        sm_set_retry_ms(retry_ms, 100); /* Do retry */
     }
     return 0;
 }
@@ -1227,7 +1235,7 @@ static int get_client_config_data(char *buf, int buff_len, char *host_buf, int64
     return 0;
 }
 
-static void sm_reload_ZK_config(zhandle_t *zh, bool *retry)
+static void sm_reload_ZK_config(zhandle_t *zh, int *retry_ms)
 {
     struct Stat zstat;
     char *buf = sm_info.zkconfig_data_buffer;
@@ -1239,7 +1247,7 @@ static void sm_reload_ZK_config(zhandle_t *zh, bool *retry)
     if (zresult < 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Failed to read config from ZK.  Retry...\n");
-        *retry = true;
+        sm_set_retry_ms(retry_ms, 100); /* Do retry */
         sm_lock();
         sm_info.request.update_zkconfig = true;
         sm_unlock();
@@ -1751,12 +1759,23 @@ int arcus_key_is_mine(const char *key, size_t nkey, bool *mine)
 }
 #endif
 
+static void sm_get_timespec(struct timespec *ts, int msec)
+{
+  struct timeval tv;
+  uint64_t now;
+
+  gettimeofday(&tv, NULL);
+  now = ((uint64_t)tv.tv_sec * 1000) + ((uint64_t)tv.tv_usec / 1000);
+  now += msec;
+  ts->tv_sec = now / 1000;
+  ts->tv_nsec = (now % 1000) * 1000000;
+}
+
 static void *sm_state_thread(void *arg)
 {
     struct sm_request smreq;
-    struct timeval  tv;
     struct timespec ts;
-    bool sm_retry = false;
+    int sm_retry_ms = 0;
     bool shutdown_by_me = false;
 
     sm_info.mc_pause = false;
@@ -1769,17 +1788,11 @@ static void *sm_state_thread(void *arg)
             /* Poll if requested.
              * Otherwise, wait till the ZK watcher wakes us up.
              */
-            if (sm_retry) {
-                gettimeofday(&tv, NULL);
-                tv.tv_usec += 100000; /* Wake up in 100 ms.  Magic number.  FIXME */
-                if (tv.tv_usec >= 1000000) {
-                    tv.tv_sec += 1;
-                    tv.tv_usec -= 1000000;
-                }
-                ts.tv_sec = tv.tv_sec;
-                ts.tv_nsec = tv.tv_usec * 1000;
+            if (sm_retry_ms > 0) {
+                /* Wake up in 100 ms.  Magic number.  FIXME */
+                sm_get_timespec(&ts, sm_retry_ms);
                 pthread_cond_timedwait(&sm_info.cond, &sm_info.lock, &ts);
-                sm_retry = false;
+                sm_retry_ms = 0;
                 break;
             }
             pthread_cond_wait(&sm_info.cond, &sm_info.lock);
@@ -1799,18 +1812,18 @@ static void *sm_state_thread(void *arg)
         }
 
         if (sm_info.node_added_time != 0) {
-            sm_check_and_scrub_stale(&sm_retry);
+            sm_check_and_scrub_stale(&sm_retry_ms);
         }
 
 #ifdef ENABLE_ZK_RECONFIG
         if (smreq.update_zkconfig) {
-            sm_reload_ZK_config(main_zk->zh, &sm_retry);
+            sm_reload_ZK_config(main_zk->zh, &sm_retry_ms);
         }
 #endif
 
         /* Read the latest hash ring */
         if (smreq.update_cache_list) {
-            if (sm_reload_cache_list_znode(main_zk->zh, &sm_retry) < 0) {
+            if (sm_reload_cache_list_znode(main_zk->zh, &sm_retry_ms) < 0) {
                 shutdown_by_me = true; break;
             }
             if (sm_info.mc_pause) continue;
