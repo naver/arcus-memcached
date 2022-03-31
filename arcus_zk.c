@@ -369,7 +369,7 @@ arcus_zk_client_init(zk_info_t *zinfo)
                                arcus_conf.zk_timeout, &zinfo->myid, zinfo, 0);
     if (!zinfo->zh) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "zookeeper_init() failed (%s error)\n", strerror(errno));
+                "zookeeper_init() failed: %s\n", strerror(errno));
         return EX_PROTOCOL;
     }
     /* wait until above init callback is called
@@ -443,19 +443,21 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
     }
     else if (state == ZOO_AUTH_FAILED_STATE) {
         // authorization failure
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "Auth failure. shutting down\n");
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                               "Auth failure. shutting down\n");
         arcus_exit(wzh, EX_NOPERM);
     }
     else if (state == ZOO_EXPIRED_SESSION_STATE) {
         if (arcus_conf.zk_failstop) {
             // very likely that memcached process exited and restarted within
             // session timeout
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "Expired state. shutting down\n");
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                                   "Expired state. shutting down\n");
             // send SMS here??
             arcus_exit(wzh, EX_TEMPFAIL);
         } else {
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "Expired state. pausing memcached (zk_failstop: off)\n");
-
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                                   "Expired state. pausing memcached (zk_failstop: off)\n");
             sm_lock();
             sm_info.mc_pause = true;
             sm_wakeup(true);
@@ -552,8 +554,8 @@ arcus_read_ZK_config(zhandle_t *zh, watcher_fn watcher,
     int rc = zoo_wgetconfig(zh, watcher, NULL, buffer, buflen, stat);
     if (rc != ZOK) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-            "Failed to read /zookeeper/config znode: "
-            "error=%d(%s)\n", rc, zerror(rc));
+                "Failed to read /zookeeper/config znode: error=%d(%s)\n",
+                rc, zerror(rc));
         return (rc == ZNONODE ? 0 : -1);
     }
     return 1;
@@ -567,8 +569,8 @@ arcus_read_ZK_children(zhandle_t *zh, const char *zpath, watcher_fn watcher,
     int rc = zoo_wget_children(zh, zpath, watcher, NULL, strv);
     if (rc != ZOK) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-            "Failed to read children(znode list) of zpath=%s: "
-            "error=%d(%s)\n", zpath, rc, zerror(rc));
+                "Failed to read children of zpath=%s: error=%d(%s)\n",
+                zpath, rc, zerror(rc));
         return (rc == ZNONODE ? 0 : -1);
     }
     return 1; /* The caller must free strv */
@@ -661,12 +663,14 @@ arcus_zk_log(zhandle_t *zh, const char *action)
         snprintf(sbuf,  sizeof(sbuf), "%s", action);
         rc = zoo_create(zh, zpath, sbuf, strlen(sbuf), &ZOO_OPEN_ACL_UNSAFE,
                         ZOO_SEQUENCE, rcbuf, sizeof(rcbuf));
-        if (arcus_conf.verbose > 2)
-            arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "znode \"%s\" created\n", rcbuf);
+        if (arcus_conf.verbose > 2) {
+            arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
+                    "znode \"%s\" created\n", rcbuf);
+        }
     }
     if (rc) {
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                "cannot log this acvitiy (%s error)\n", zerror(rc));
+                "cannot log this acvitiy. error=%d(%s)\n", rc, zerror(rc));
     }
 }
 
@@ -731,7 +735,7 @@ static int arcus_build_znode_name(char *ensemble_list)
             inet_ntop(AF_INET, &saddr.sin_addr, rcbuf, sizeof(rcbuf));
             if (arcus_conf.verbose > 2) {
                 arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                    "Trying converted IP of hostname(%s): %s\n", zip, rcbuf);
+                        "Trying converted IP of hostname(%s): %s\n", zip, rcbuf);
             }
         }
 
@@ -751,7 +755,7 @@ static int arcus_build_znode_name(char *ensemble_list)
 
         // if cannot connect immediately, try other ensemble
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Cannot connect to ensemble %s (%s error)\n", zip, strerror(errno));
+                "Cannot connect to ensemble %s: %s\n", zip, strerror(errno));
         zip = strtok_r(NULL, sep1, &hlist); // get next token: separate IP:PORT tuple
     }
     if (!zip) { // failed to connect to all ensemble host. fail
@@ -852,7 +856,7 @@ static int arcus_build_znode_name(char *ensemble_list)
         }
         if (strlen(hostp) > MAX_HOSTNAME_LENGTH) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Too long hostname. hostname=%s\n", hostp);
+                    "Too long hostname. hostname=%s\n", hostp);
             return EX_DATAERR;
         }
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
@@ -906,14 +910,14 @@ static int arcus_check_zk_reconfig_enabled(zhandle_t *zh)
         arcus_conf.zk_reconfig = true;
         sm_info.zkconfig_version = -1;
         arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
-            "Zookeeper dynamic reconfiguration is enabled.\n");
+                "Zookeeper dynamic reconfiguration is enabled.\n");
     } else if (rc == ZNONODE) {
         arcus_conf.zk_reconfig = false;
         arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
-            "Zookeeper dynamic reconfiguration is disabled.\n");
+                "Zookeeper dynamic reconfiguration is disabled.\n");
     } else {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-            "zoo_getconfig() failed. error=%s.\n", zerror(rc));
+                "zoo_getconfig() failed. error=%d(%s).\n", rc, zerror(rc));
         return -1;
     }
     return 0;
@@ -932,7 +936,7 @@ static int arcus_check_server_mapping(zhandle_t *zh, const char *root)
     rc = zoo_async(zh, zpath, arcus_zk_sync_cb, NULL);
     if (rc != ZOK) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "zoo_async() failed: %s\n", zerror(rc));
+                "zoo_async() failed: error=%d(%s)\n", rc, zerror(rc));
         return -1;
     }
     /* wait until above sync callback is called */
@@ -940,7 +944,8 @@ static int arcus_check_server_mapping(zhandle_t *zh, const char *root)
     rc = last_rc;
     if (rc != ZOK) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-            "Failed to synchronize zpath. zpath=%s error=%s\n", zpath, zerror(rc));
+                "Failed to synchronize zpath=%s: error=%d(%s)\n",
+                zpath, rc, zerror(rc));
         return -1;
     }
 
@@ -1021,7 +1026,7 @@ static int arcus_create_ephemeral_znode(zhandle_t *zh)
                     ZOO_EPHEMERAL, NULL, 0);
     if (rc) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "cannot create znode %s (%s error)\n", zpath, zerror(rc));
+                "cannot create znode %s: error=%d(%s)\n", zpath, rc, zerror(rc));
         if (rc == ZNODEEXISTS) {
             arcus_conf.logger->log( EXTENSION_LOG_DETAIL, NULL,
                     "old session still exist. Wait a bit\n");
@@ -1032,7 +1037,8 @@ static int arcus_create_ephemeral_znode(zhandle_t *zh)
     rc = zoo_exists(zh, zpath, 0, &zstat);
     if (rc) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "cannot find %s just created (%s error)\n", zpath, zerror(rc));
+                "cannot find znode %s just created: error=%d(%s)\n",
+                zpath, rc, zerror(rc));
         return -1;
     }
 
@@ -1052,7 +1058,7 @@ static int arcus_register_cache_instance(zhandle_t *zh)
     /* create "/cache_list/{svc}/ip:port-hostname" ephemeral znode */
     if (arcus_create_ephemeral_znode(zh) != 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                               "arcus_create_ephemeral_znode() failed.\n");
+                "arcus_create_ephemeral_znode() failed.\n");
         return -1;
     }
     return 0;
@@ -1071,7 +1077,8 @@ static bool sm_check_mc_paused(void)
         if (main_zk->zh != NULL) {
             zookeeper_close(main_zk->zh);
             main_zk->zh = NULL;
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "zk connection closed\n");
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "zk connection closed by mc_pause.\n");
         }
         paused = true;
     }
@@ -1098,7 +1105,7 @@ static void sm_check_and_scrub_stale(int *retry_ms)
             sm_info.node_added_time = 0;
         } else {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                                  "Failed to scrub stale data.\n");
+                    "Failed to start scrub stale task.\n");
             sm_set_retry_ms(retry_ms, 100); /* Do retry */
         }
     } else {
@@ -1195,7 +1202,8 @@ static int get_client_config_data(char *buf, int buff_len, char *host_buf, int64
         if (!serverp) {
             /* need to check whether client port is in the zoo.cfg.dynamic file not zoo.cfg file. */
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Invalid ZK config string. missing client port in the zoo.cfg.dynamic file.\n");
+                    "Invalid ZK config string. "
+                    "missing client port in the zoo.cfg.dynamic file.\n");
             return -1;
         }
         serverp++;
@@ -1220,7 +1228,7 @@ static int get_client_config_data(char *buf, int buff_len, char *host_buf, int64
     versionp = memchr(startp, '=', buff_len);
     if (!versionp) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-            "Invalid ZK config string. missing version in the zoo.cfg.dynamic file.\n");
+                "Invalid ZK config string. missing version in the zoo.cfg.dynamic file.\n");
         return -1;
     }
     versionp++;
@@ -1229,7 +1237,7 @@ static int get_client_config_data(char *buf, int buff_len, char *host_buf, int64
     if ((errno == ERANGE && (*version == LLONG_MAX || *version == LLONG_MIN)) ||
         (errno != 0 && *version == 0)) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-            "Invalid ZK config string. invalid version in the zoo.cfg.dynamic file.\n");
+                "Invalid ZK config string. invalid version in the zoo.cfg.dynamic file.\n");
         return -1;
     }
     return 0;
@@ -1259,7 +1267,8 @@ static void sm_reload_ZK_config(zhandle_t *zh, int *retry_ms)
         /* arcus_zkconfig_watcher won't be triggered. */
         arcus_conf.zk_reconfig = false;
         arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
-            "ZK config znode does not exist. Zookeeper dynamic reconfiguration is disabled.\n");
+                "ZK config znode does not exist. "
+                "Zookeeper dynamic reconfiguration is disabled.\n");
     } else {
         /* zookeeper config format generated by the zk server.
          * server.1=127.0.0.1:2888:3888:participant;0.0.0.0:2181\n
@@ -1268,13 +1277,12 @@ static void sm_reload_ZK_config(zhandle_t *zh, int *retry_ms)
          */
         if (buff_len <= 0 || buff_len >= MAX_ZK_CONFIG_DATA_LENGTH) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Failed to update ZK servers. unexpected ZK config data length(%d).\n", buff_len);
+                    "Invalid ZK config data length(%d).\n", buff_len);
             return;
         }
-
         if (get_client_config_data(buf, buff_len, host_buf, &version) < 0) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Failed to update ZK servers. invalid ZK config data\n");
+                    "Invalid ZK config data found.\n");
             return;
         }
 
@@ -1282,9 +1290,9 @@ static void sm_reload_ZK_config(zhandle_t *zh, int *retry_ms)
             sm_info.zkconfig_version = version;
         } else if (version != 0 && version > sm_info.zkconfig_version) {
             /* version will be greater than 0 if ZK config data has been synced. */
-
             arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
-                "Updated ZK servers... ZK servers[%s], version[%" PRIx64 "]\n", host_buf, version);
+                    "Updated ZK servers... ZK servers[%s], version[%" PRIx64 "]\n",
+                    host_buf, version);
 
             /* To avoid mass client migration at the same time,
              * sleep a random short period of time before zoo_set_servers().
@@ -1300,12 +1308,15 @@ static void sm_reload_ZK_config(zhandle_t *zh, int *retry_ms)
                  * save the list of servers and try again.
                  */
                 arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to update ZK servers. zoo_set_servers() failed: %s\n", zerror(rc));
+                        "Failed to update ZK servers: error=%d(%s)\n",
+                        rc, zerror(rc));
             }
             sm_info.zkconfig_version = version;
         } else if (version < sm_info.zkconfig_version) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Unexpected ZK config version. zkconfig_version=%" PRIx64 ", version=%" PRIx64 "\n", sm_info.zkconfig_version, version);
+                    "Unexpected ZK config version. "
+                    "zkconfig_version=%" PRIx64 ", version=%" PRIx64 "\n",
+                    sm_info.zkconfig_version, version);
         }
     }
 }
@@ -1333,8 +1344,8 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     }
 
     if (arcus_conf.verbose > 2) {
-        arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                               "arcus_zk_init(%s)\n", ensemble_list);
+        logger->log(EXTENSION_LOG_DEBUG, NULL,
+                    "arcus_zk_init(%s)\n", ensemble_list);
     }
 
     memset(&zk_info, 0, sizeof(zk_info_t));
@@ -1345,13 +1356,13 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 
     /* save these for later use (restart) */
     if (!arcus_conf.init) {
-        arcus_conf.port          = port;    // memcached listen port
-        arcus_conf.logger        = logger;
-        arcus_conf.engine.v1     = engine;
-        arcus_conf.verbose       = verbose;
-        arcus_conf.maxbytes      = maxbytes;
+        arcus_conf.port      = port;    // memcached listen port
+        arcus_conf.logger    = logger;
+        arcus_conf.engine.v1 = engine;
+        arcus_conf.verbose   = verbose;
+        arcus_conf.maxbytes  = maxbytes;
 #ifdef PROXY_SUPPORT
-        arcus_conf.proxy         = proxy;
+        arcus_conf.proxy     = proxy;
 #endif
         // Use the user specified timeout only if it falls within
         // [MIN, MAX).  Otherwise, silently ignore it and use
@@ -1400,8 +1411,8 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
         zk_root = "/arcus"; /* set zk root directory */
         if (arcus_check_server_mapping(main_zk->zh, zk_root) != 0) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                     "Failed to check server mapping for this cache node. "
-                     "(zk_root=%s)\n", zk_root);
+                    "Failed to check server mapping for this cache node. "
+                    "(zk_root=%s)\n", zk_root);
             arcus_exit(main_zk->zh, EX_PROTOCOL);
         }
     }
@@ -1461,7 +1472,8 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     deallocate_String_vector(&strv);
 
     arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-        "Memcached is watching Arcus cache cloud for \"%s\"\n", arcus_conf.cluster_path);
+            "Memcached is watching Arcus cache cloud for \"%s\"\n",
+            arcus_conf.cluster_path);
 #endif
 
     /* Wake up the state machine thread.
@@ -1575,18 +1587,20 @@ int arcus_zk_set_ensemble(char *ensemble_list)
             if (!copy) {
                 /* Should not happen unless the system is really short of memory. */
                 arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to copy the ensemble list. list=%s\n", ensemble_list);
+                        "Failed to copy the ensemble list. list=%s\n", ensemble_list);
                 ret = -1; break;
             }
             int rc = zookeeper_change_ensemble(main_zk->zh, ensemble_list);
             if (rc != ZOK) {
                 free(copy);
                 arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Failed to change the ZooKeeper ensemble list. error=%d(%s)\n", rc, zerror(rc));
+                        "Failed to change the ZooKeeper ensemble list. error=%d(%s)\n",
+                        rc, zerror(rc));
                 ret = -1; break;
             }
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Successfully changed the ZooKeeper ensemble list. list=%s\n", ensemble_list);
+                    "Successfully changed the ZooKeeper ensemble list. list=%s\n",
+                    ensemble_list);
             /* main_zk->ensemble_list is not used after init.
              * Nothing uses it.  So it is okay to just replace the pointer.
              */
@@ -1595,7 +1609,7 @@ int arcus_zk_set_ensemble(char *ensemble_list)
         } while(0);
     } else {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-            "Failed to change the ZooKeeper ensemble list. The handle is invalid.\n");
+                "Failed to change the ZooKeeper ensemble list. Invalid ZK handle.\n");
         ret = -1;
     }
     pthread_mutex_unlock(&zk_lock);
@@ -1610,12 +1624,13 @@ int arcus_zk_get_ensemble(char *buf, int size)
         int rc = zookeeper_get_ensemble_string(main_zk->zh, buf, size);
         if (rc != ZOK) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Failed to get the ZooKeeper ensemble list. error=%d(%s)\n", rc, zerror(rc));
+                    "Failed to get the ZooKeeper ensemble list. error=%d(%s)\n",
+                    rc, zerror(rc));
             ret = -1;
         }
     } else {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-            "Failed to get the ZooKeeper ensemble list. The handle is invalid.\n");
+                "Failed to get the ZooKeeper ensemble list. Invalid ZK handle.\n");
         ret = -1;
     }
     pthread_mutex_unlock(&zk_lock);
@@ -1633,7 +1648,7 @@ int arcus_zk_rejoin_ensemble()
     if (main_zk->zh != NULL) {
         pthread_mutex_unlock(&zk_lock);
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-            "Failed to rejoin ensemble. It's already a member of cloud.\n");
+                "Failed to rejoin ensemble. It's already a member of cloud.\n");
         return -1;
     }
 
@@ -1686,8 +1701,8 @@ int arcus_zk_rejoin_ensemble()
         deallocate_String_vector(&strv);
 
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-            "Memcached is watching Arcus cache cloud for \"%s\"\n", arcus_conf.cluster_path);
-
+                "Memcached is watching Arcus cache cloud for \"%s\"\n",
+                arcus_conf.cluster_path);
 
         /* Wake up the state machine thread.
          * Tell it to refresh the hash ring (cluster_config).
@@ -1874,8 +1889,8 @@ static void *sm_timer_thread(void *arg)
                  * masters.  It is very fragile...  FIXME
                  */
                 arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Disconnected from ZK for too long. Terminating... "
-                    "duration_msec=%"PRIu64"\n", now_msec - start_msec);
+                        "Disconnected from ZK for too long. Terminating... "
+                        "duration_msec=%"PRIu64"\n", now_msec - start_msec);
                 shutdown_by_me = true;
                 break;
                 /* Do we have to kill the slave too?  Or, only the master?
