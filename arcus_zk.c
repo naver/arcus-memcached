@@ -1152,49 +1152,49 @@ static int sm_reload_cache_list_znode(zhandle_t *zh, int *retry_ms)
 }
 
 #ifdef ENABLE_ZK_RECONFIG
-static int get_client_config_data(char *buf, int buff_len, char *host_buf, int64_t *version)
+static int get_client_config_data(char *data_buf, int data_len,
+                                  char *host_buf, int64_t *version)
 {
     char *startp, *endp, *serverp, *versionp, *versionerrp;
-    int length, server_length;
-    int host_buf_length = 0;
+    int length, server_len;
+    int host_len = 0;
 
-    startp = &buf[0];
-    buf[buff_len] = '\0';
-    while ((endp = memchr(startp, '\n', buff_len)) != NULL) {
+    startp = &data_buf[0];
+    data_buf[data_len] = '\0';
+    while ((endp = memchr(startp, '\n', data_len)) != NULL) {
         length = (endp - startp);
 
         /* go to the starting point of the server host string */
         serverp = memchr(startp, ';', length);
         if (!serverp) {
-            /* need to check whether client port is in the zoo.cfg.dynamic file not zoo.cfg file. */
+            /* need to check whether client port is in zoo.cfg.dynamic file not zoo.cfg file. */
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Invalid ZK config string. "
-                    "missing client port in the zoo.cfg.dynamic file.\n");
+                    "Invalid ZK config string. missing client port in zoo.cfg.dynamic file.\n");
             return -1;
         }
         serverp++;
-        server_length = (endp - serverp);
+        server_len = (endp - serverp);
 
         /* make server host list */
-        memcpy(host_buf + host_buf_length, serverp, server_length);
-        host_buf_length += server_length;
-        memcpy(host_buf + host_buf_length, ",", 1);
-        host_buf_length++;
+        memcpy(host_buf + host_len, serverp, server_len);
+        host_len += server_len;
+        memcpy(host_buf + host_len, ",", 1);
+        host_len++;
 
         /* next server id */
         startp += length + 1;
-        buff_len -= length + 1;
+        data_len -= length + 1;
     }
-    /* [host_buf_length-1] is last comma character */
-    if (host_buf_length > 0) {
-        host_buf[host_buf_length-1] = '\0';
+    /* [host_len-1] is last comma character */
+    if (host_len > 0) {
+        host_buf[host_len-1] = '\0';
     }
 
     /* make config version */
-    versionp = memchr(startp, '=', buff_len);
+    versionp = memchr(startp, '=', data_len);
     if (!versionp) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Invalid ZK config string. missing version in the zoo.cfg.dynamic file.\n");
+                "Invalid ZK config string. missing version in zoo.cfg.dynamic file.\n");
         return -1;
     }
     versionp++;
@@ -1203,7 +1203,7 @@ static int get_client_config_data(char *buf, int buff_len, char *host_buf, int64
     if ((errno == ERANGE && (*version == LLONG_MAX || *version == LLONG_MIN)) ||
         (errno != 0 && *version == 0)) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Invalid ZK config string. invalid version in the zoo.cfg.dynamic file.\n");
+                "Invalid ZK config string. invalid version in zoo.cfg.dynamic file.\n");
         return -1;
     }
     return 0;
@@ -1212,13 +1212,13 @@ static int get_client_config_data(char *buf, int buff_len, char *host_buf, int64
 static void sm_reload_ZK_config(zhandle_t *zh, int *retry_ms)
 {
     struct Stat zstat;
-    char *buf = sm_info.zkconfig_data_buffer;
-    int   buff_len = MAX_ZK_CONFIG_DATA_LENGTH;
+    char *data_buf = sm_info.zkconfig_data_buffer;
+    int   data_len = MAX_ZK_CONFIG_DATA_LENGTH;
     char *host_buf = sm_info.zkconfig_host_buffer;
     int64_t version;
 
     int rc = zoo_wgetconfig(zh, arcus_zkconfig_watcher, NULL,
-                                buf, &buff_len, &zstat);
+                                data_buf, &data_len, &zstat);
     if (rc != ZOK) {
       arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
               "Failed to reload /zookeeper/config znode: error=%d(%s)\n",
@@ -1240,12 +1240,12 @@ static void sm_reload_ZK_config(zhandle_t *zh, int *retry_ms)
          * server.2=127.0.0.1:2889:3889:participant;0.0.0.0:2182\n
          * version=10000000d
          */
-        if (buff_len <= 0 || buff_len >= MAX_ZK_CONFIG_DATA_LENGTH) {
+        if (data_len <= 0 || data_len >= MAX_ZK_CONFIG_DATA_LENGTH) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Invalid ZK config data length(%d).\n", buff_len);
+                    "Invalid ZK config data length(%d).\n", data_len);
             return;
         }
-        if (get_client_config_data(buf, buff_len, host_buf, &version) < 0) {
+        if (get_client_config_data(data_buf, data_len, host_buf, &version) < 0) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Invalid ZK config data found.\n");
             return;
