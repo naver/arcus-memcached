@@ -1056,6 +1056,28 @@ static bool sm_check_mc_paused(void)
     return paused;
 }
 
+static inline int
+sm_retry_msec_by_zoo_error(int rc, int default_msec)
+{
+    int retry_msec = default_msec; /* default 100 ms */
+
+    switch(rc) {
+    case ZCONNECTIONLOSS:   /* Connection to the server has been lost */
+    case ZSESSIONEXPIRED:   /* The session has been expired by the server */
+        retry_msec = 1000;
+        break;
+    case ZOPERATIONTIMEOUT: /* Operation timeout */
+    case ZSESSIONMOVED:     /* Session moved to another server, so operation is ignored */
+    case ZNOTHING:          /* (not error) no server responses to process */
+        retry_msec = 100;
+        break;
+    case ZNONODE:           /* Node does not exist */
+        retry_msec = 2000;
+        break;
+    }
+    return retry_msec;
+}
+
 static inline void sm_set_retry_ms(int *final_retry_ms, int local_retry_ms)
 {
     assert(local_retry_ms > 0);
@@ -1098,7 +1120,8 @@ static int sm_reload_cache_list_znode(zhandle_t *zh, int *retry_ms)
       if (rc == ZNONODE) { /* the node does not exist */
         znode_deleted = true;
       } else {
-        sm_set_retry_ms(retry_ms, 100); /* Do retry */
+        int rc_retry_ms = sm_retry_msec_by_zoo_error(rc, 100);
+        sm_set_retry_ms(retry_ms, rc_retry_ms); /* Do retry */
         sm_lock();
         sm_info.request.update_cache_list = true;
         sm_unlock();
@@ -1229,7 +1252,8 @@ static void sm_reload_ZK_config(zhandle_t *zh, int *retry_ms)
         arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
                 "Zookeeper dynamic reconfiguration is disabled.\n");
       } else {
-        sm_set_retry_ms(retry_ms, 100); /* Do retry */
+        int rc_retry_ms = sm_retry_msec_by_zoo_error(rc, 100);
+        sm_set_retry_ms(retry_ms, rc_retry_ms); /* Do retry */
         sm_lock();
         sm_info.request.update_zkconfig = true;
         sm_unlock();
