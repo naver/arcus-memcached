@@ -1088,8 +1088,9 @@ static inline void sm_set_retry_ms(int *final_retry_ms, int local_retry_ms)
 
 static void sm_check_and_scrub_stale(int *retry_ms)
 {
-    uint64_t now = time(NULL);
-    if (now - sm_info.node_added_time >= arcus_conf.zk_timeout/1000) {
+    assert(sm_info.node_added_time > 0);
+    int elapsed = time(NULL) - sm_info.node_added_time;
+    if (elapsed >= (arcus_conf.zk_timeout/1000)) {
        /* remove stale items after zk_timeout have passed
         * since a new node is added to the cluster
         */
@@ -1098,10 +1099,14 @@ static void sm_check_and_scrub_stale(int *retry_ms)
         } else {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to start scrub stale task.\n");
-            sm_set_retry_ms(retry_ms, 100); /* Do retry */
+            sm_set_retry_ms(retry_ms, 1000); /* Do retry in 1 second */
         }
     } else {
-        sm_set_retry_ms(retry_ms, 100); /* Do retry */
+        int wait_msec = arcus_conf.zk_timeout;
+        if (elapsed > 0) {
+            wait_msec -= (elapsed * 1000);
+        }
+        sm_set_retry_ms(retry_ms, wait_msec); /* Do retry */
     }
 }
 
@@ -1150,7 +1155,7 @@ static int sm_reload_cache_list_znode(zhandle_t *zh, int *retry_ms)
                  sm_info.cluster_node_count > prev_node_count) {
             /* a new node added */
             sm_info.node_added_time = time(NULL);
-            sm_set_retry_ms(retry_ms, 100); /* Do retry */
+            sm_set_retry_ms(retry_ms, arcus_conf.zk_timeout) /* Do retry */
         }
 #endif
     }
