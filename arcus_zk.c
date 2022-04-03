@@ -1155,7 +1155,7 @@ static int sm_reload_cache_list_znode(zhandle_t *zh, int *retry_ms)
                  sm_info.cluster_node_count > prev_node_count) {
             /* a new node added */
             sm_info.node_added_time = time(NULL);
-            sm_set_retry_ms(retry_ms, arcus_conf.zk_timeout) /* Do retry */
+            sm_set_retry_ms(retry_ms, arcus_conf.zk_timeout); /* Do retry */
         }
 #endif
     }
