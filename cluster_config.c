@@ -620,6 +620,18 @@ int cluster_config_reconfigure(struct cluster_config *config,
     int self_id;
     int error=0;
 
+    if (num_nodes == 0) { /* empty cluster */
+        config->logger->log(EXTENSION_LOG_WARNING, NULL,
+                            "reconfiguration: empty cluster...\n");
+        pthread_mutex_lock(&config->config_lock);
+        nodearray = (struct node_item **)config->old_memory;
+        continuum = (struct cont_item **)nodearray;
+        self_id = -1;
+        do_hashring_replace(config, continuum, nodearray, num_nodes, self_id);
+        pthread_mutex_unlock(&config->config_lock);
+        return 0;
+    }
+
     if (do_node_string_check(node_strs, num_nodes) < 0) {
         config->logger->log(EXTENSION_LOG_WARNING, NULL,
                             "reconfiguration failed: invalid node token found.\n");

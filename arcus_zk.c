@@ -561,17 +561,15 @@ check_znode_existence(struct String_vector *strv, char *znode_name)
 static int
 update_cluster_config(struct String_vector *strv)
 {
-    if (strv->count == 0) { /* cache_list can be empty. */
-        sm_info.cluster_node_count = 0;
-        return 0;
-    }
-    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "update cluster config...\n");
+    arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
+                           "update cluster config. (count=%d)\n", (int)strv->count);
     if (arcus_conf.verbose > 0) {
         for (int i = 0; i < strv->count; i++) {
-            arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "server[%d] = %s\n",
-                                   i, strv->data[i]);
+            arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
+                                   "server[%d] = %s\n", i, strv->data[i]);
         }
     }
+
     /* reconfigure arcus-memcached cluster */
     if (cluster_config_reconfigure(arcus_conf.ch, strv->data, strv->count) < 0) {
         return -1;
