@@ -547,13 +547,12 @@ arcus_cache_list_watcher(zhandle_t *zh, int type, int state, const char *path, v
 }
 
 static bool
-check_znode_existence(struct String_vector *strv, char *znode_name)
+check_my_znode_existence(void)
 {
-    for (int i = 0; i < strv->count; i++) {
-        if (strcmp(strv->data[i], znode_name) == 0)
-            return true;
+    if (cluster_config_get_self_id(arcus_conf.ch) == -1) {
+        return false;
     }
-    return false;
+    return true;
 }
 
 #ifdef ENABLE_CLUSTER_AWARE
@@ -1134,26 +1133,22 @@ static int sm_reload_cache_list_znode(zhandle_t *zh, int *retry_ms)
         deallocate_String_vector(&sm_info.sv_cache_list);
         sm_info.sv_cache_list = strv_cache_list;
 
-        if (arcus_conf.znode_created) {
-            /* We think checking znode existence is a sort of overhead
-             * since it must be done whenever cache list is updated. FIXME.
-             */
-            if (!check_znode_existence(&strv_cache_list, arcus_conf.znode_name))
-                znode_deleted = true;
-        }
-
 #ifdef ENABLE_CLUSTER_AWARE
-        int prev_node_count = sm_info.cluster_node_count;
         /* update cluster config */
+        int prev_node_count = sm_info.cluster_node_count;
         if (update_cluster_config(&sm_info.sv_cache_list) != 0) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to update cluster config. Will check later.\n");
-        }
-        else if (arcus_conf.auto_scrub &&
-                 sm_info.cluster_node_count > prev_node_count) {
-            /* a new node added */
-            sm_info.node_added_time = time(NULL);
-            sm_set_retry_ms(retry_ms, arcus_conf.zk_timeout); /* Do retry */
+        } else { /* cluster config is updated */
+            if (arcus_conf.znode_created && !check_my_znode_existence()) {
+                znode_deleted = true;
+            }
+            else if (arcus_conf.auto_scrub &&
+                     sm_info.cluster_node_count > prev_node_count) {
+                /* a new node added */
+                sm_info.node_added_time = time(NULL);
+                sm_set_retry_ms(retry_ms, arcus_conf.zk_timeout); /* Do retry */
+            }
         }
 #endif
     }

@@ -30,6 +30,7 @@ void cluster_config_final(struct cluster_config *config);
 
 int cluster_config_reconfigure(struct cluster_config *config,
                                char **node_strs, uint32_t num_nodes);
+int cluster_config_get_self_id(struct cluster_config *config);
 int cluster_config_key_is_mine(struct cluster_config *config,
                                const char *key, uint32_t nkey, bool *mine,
                                uint32_t *key_id, uint32_t *self_id);
