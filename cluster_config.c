@@ -381,6 +381,7 @@ static void do_nodearray_release(struct cluster_config *config,
 static struct node_item **
 do_nodearray_build_for_replace(struct cluster_config *config,
                                char **node_strs, uint32_t num_nodes,
+                               int *num_added, int *num_removed,
                                int *self_id, int *error)
 {
     struct node_item **array;
@@ -425,6 +426,8 @@ do_nodearray_build_for_replace(struct cluster_config *config,
         item->refcnt += 1;
         array[i] = item;
     }
+    if (num_added) *num_added = num_nodes - nfound;
+    if (num_removed) *num_removed = config->num_nodes - nfound;
 
     if (num_nodes == config->num_nodes && num_nodes == nfound) {
         do_nodearray_release(config, array, num_nodes);
@@ -612,7 +615,8 @@ void cluster_config_final(struct cluster_config *config)
 }
 
 int cluster_config_reconfigure(struct cluster_config *config,
-                               char **node_strs, uint32_t num_nodes)
+                               char **node_strs, uint32_t num_nodes,
+                               int *num_added, int *num_removed)
 {
     assert(config);
     struct node_item **nodearray;
@@ -627,6 +631,8 @@ int cluster_config_reconfigure(struct cluster_config *config,
         nodearray = (struct node_item **)config->old_memory;
         continuum = (struct cont_item **)nodearray;
         self_id = -1;
+        if (num_added) *num_added = 0;
+        if (num_removed) *num_removed = config->num_nodes;
         do_hashring_replace(config, continuum, nodearray, num_nodes, self_id);
         pthread_mutex_unlock(&config->config_lock);
         return 0;
@@ -640,6 +646,7 @@ int cluster_config_reconfigure(struct cluster_config *config,
 
     pthread_mutex_lock(&config->config_lock);
     nodearray = do_nodearray_build_for_replace(config, node_strs, num_nodes,
+                                               num_added, num_removed,
                                                &self_id, &error);
     if (nodearray == NULL) {
         if (error != 0) {

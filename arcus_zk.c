@@ -558,7 +558,7 @@ check_my_znode_existence(void)
 #ifdef ENABLE_CLUSTER_AWARE
 /* update cluster config, that is ketama hash ring. */
 static int
-update_cluster_config(struct String_vector *strv)
+update_cluster_config(struct String_vector *strv, int *num_added, int *num_removed)
 {
     arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
                            "update cluster config. (count=%d)\n", (int)strv->count);
@@ -570,7 +570,8 @@ update_cluster_config(struct String_vector *strv)
     }
 
     /* reconfigure arcus-memcached cluster */
-    if (cluster_config_reconfigure(arcus_conf.ch, strv->data, strv->count) < 0) {
+    if (cluster_config_reconfigure(arcus_conf.ch, strv->data, strv->count,
+                                   num_added, num_removed) < 0) {
         return -1;
     }
     sm_info.cluster_node_count = strv->count;
@@ -1135,16 +1136,16 @@ static int sm_reload_cache_list_znode(zhandle_t *zh, int *retry_ms)
 
 #ifdef ENABLE_CLUSTER_AWARE
         /* update cluster config */
-        int prev_node_count = sm_info.cluster_node_count;
-        if (update_cluster_config(&sm_info.sv_cache_list) != 0) {
+        int num_added, num_removed;
+        if (update_cluster_config(&sm_info.sv_cache_list,
+                                  &num_added, &num_removed) != 0) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to update cluster config. Will check later.\n");
         } else { /* cluster config is updated */
             if (arcus_conf.znode_created && !check_my_znode_existence()) {
                 znode_deleted = true;
             }
-            else if (arcus_conf.auto_scrub &&
-                     sm_info.cluster_node_count > prev_node_count) {
+            else if (arcus_conf.auto_scrub && num_added > 0) {
                 /* a new node added */
                 sm_info.node_added_time = time(NULL);
                 sm_set_retry_ms(retry_ms, arcus_conf.zk_timeout); /* Do retry */
@@ -1452,7 +1453,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
                 arcus_conf.cluster_path, rc, zerror(rc));
         arcus_exit(main_zk->zh, EX_CONFIG);
     }
-    if (update_cluster_config(&strv) != 0) {
+    if (update_cluster_config(&strv, NULL, NULL) != 0) {
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Failed to update cluster config. Terminating...\n");
         arcus_exit(main_zk->zh, EX_CONFIG);
@@ -1682,7 +1683,7 @@ int arcus_zk_rejoin_ensemble()
                     arcus_conf.cluster_path, rc, zerror(rc));
             ret = -1; break;
         }
-        if (update_cluster_config(&strv) != 0) {
+        if (update_cluster_config(&strv, NULL, NULL) != 0) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to update cluster config.\n");
             ret = -1; break;
