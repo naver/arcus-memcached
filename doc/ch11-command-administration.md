@@ -1002,7 +1002,7 @@ iteration 방식으로 전체 아이템을 스캔한다.
 keyscan 명령 요청 syntax는 아래와 같다.
 
 ```
-keyscan <cursor> [count <count>] [type <type>] [match <pattern>]\r\n
+scan key <cursor> [count <count>] [match <pattern>] [type <type>]\r\n
 ```
 
 - \<cursor\> - 스캔 시작 위치.  
@@ -1014,11 +1014,11 @@ count 보다 적은 경우는 조건과 불일치한 아이템이 존재하거�
 count 보다 많은 경우는 스캔 동작이 해시테이블의 버켓 단위로 수행하기 때문에 하나의 버켓에 대해 스캔을 시작하면 마지막 지점까지 스캔을 완료하므로 count 보다 많은 수의 아이템을 스캔할 수 있다.  
 이렇게 설계한 이유는 버켓 중간에서 스캔을 중지할 경우 다음 스캔 요청이 들어올 때까지 그 버켓의 상태가 변경되지 않게 유지해야 하는
 복잡성을 제거하여 stateless한 keyscan api를 제공하기 위함이다.
-- \<type\> - 아이템 타입. 각 타입별 지정 값은 다음과 같다. 지정하지 않을 시 'A' 로 설정된다.  
-All type : 'A', KV : 'K', List : 'L', Set : 'S', Map : 'M', Btree : 'B'
 - \<pattern\> - 키 문자열 패턴. 최대 문자열 길이: 64, 최대 '\*' 입력 개수: 4 . 지정하지 않을 시 모든 키 문자열을 조회한다.  
 glob style 패턴 문자열을 지정하여 해당 패턴과 일치하는 키 문자열을 갖는 아이템들을 찾는다. glob 문자는 '\*', '\?', '\\' 을 지원한다.
 문자열 비교 알고리즘의 worst case 수행 시간이 오래 걸리는 것을 방지하기 위해 패턴 문자열에 길이와 '\*' 입력 개수에 제약을 두었다.
+- \<type\> - 아이템 타입. 각 타입별 지정 값은 다음과 같다. 지정하지 않을 시 'A' 로 설정된다.  
+All type : 'A', KV : 'K', List : 'L', Set : 'S', Map : 'M', Btree : 'B'
 
 keyscan 명령 응답 syntax는 아래와 같다.
 
@@ -1038,7 +1038,7 @@ key3\r\n
 keyscan 사용 예시이다.  
 1000개의 아이템을 스캔하여 그 중 KV 타입이고, \*key1\* 패턴과 일치하는 키 목록을 조회한다.
 ```
-keyscan 0 count 1000 type K match *key1*
+scan key 0 count 1000 match *key1* type K
 ```
 
 5개의 키가 조회되었고, 다음 스캔 지점 cursor 값은 8000이다.  
