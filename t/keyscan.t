@@ -63,23 +63,23 @@ foreach $_ ( @scankeys ) {
 }
 
 # FAIL CASES
-$cmd = "keyscan a"; $rst = "CLIENT_ERROR invalid cursor.";
+$cmd = "scan key a"; $rst = "CLIENT_ERROR invalid cursor.";
 mem_cmd_is($sock, $cmd, "", $rst);
 
-$cmd = "keyscan 0 count 2001"; $rst = "CLIENT_ERROR bad count value";
+$cmd = "scan key 0 count 2001"; $rst = "CLIENT_ERROR bad count value";
 mem_cmd_is($sock, $cmd, "", $rst);
 
-$cmd = "keyscan 0 type V"; $rst = "CLIENT_ERROR bad item type";
+$cmd = "scan key 0 type V"; $rst = "CLIENT_ERROR bad item type";
 mem_cmd_is($sock, $cmd, "", $rst);
 
-$cmd = "keyscan 0 match ***asdds\\***"; $rst = "CLIENT_ERROR bad pattern string";
+$cmd = "scan key 0 match ***asdds\\***"; $rst = "CLIENT_ERROR bad pattern string";
 mem_cmd_is($sock, $cmd, "", $rst);
 
-$cmd = "keyscan 0 match \\"; $rst = "CLIENT_ERROR bad pattern string";
+$cmd = "scan key 0 match \\"; $rst = "CLIENT_ERROR bad pattern string";
 mem_cmd_is($sock, $cmd, "", $rst);
 
 my $key = "a" x 65;
-$cmd = "keyscan 0 match $key"; $rst = "CLIENT_ERROR too long pattern string";
+$cmd = "scan key 0 match $key"; $rst = "CLIENT_ERROR too long pattern string";
 mem_cmd_is($sock, $cmd, "", $rst);
 
 # It's difficult to calculate how many tests were run in keyscan()

@@ -1024,7 +1024,7 @@ sub keyscan {
     my $response;
     my @get_keys;
     while (1) {
-        print $sock "keyscan $cursor count $count type $type match $pattern\r\n";
+        print $sock "scan key $cursor count $count match $pattern type $type\r\n";
         $response = <$sock>;
         Test::More::like($response, qr/^KEYS/);
         $response =~ /KEYS (\d+) (\d+)/;
