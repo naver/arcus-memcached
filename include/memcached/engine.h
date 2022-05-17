@@ -264,6 +264,18 @@ extern "C" {
                                     const void* key, const size_t nkey,
                                     uint64_t cas, uint16_t vbucket);
 
+#ifdef SCAN_PREFIX_COMMAND
+        /**
+         * Indicate that a caller who received a prefix no longer needs
+         * it.
+         *
+         * @param handle the engine handle
+         * @param cookie The cookie provided by the frontend
+         * @param item the prefix to be released
+         */
+        void (*prefix_release)(ENGINE_HANDLE* handle, const void *cookie, item* item);
+#endif
+
         /**
          * Indicate that a caller who received an item no longer needs
          * it.
@@ -700,6 +712,21 @@ extern "C" {
                                   const char *filepath);
 
 #ifdef SCAN_COMMAND
+#ifdef SCAN_PREFIX_COMMAND
+        /**
+         * Scan a certain number of prefixes that meet the given conditions.
+         *
+         * @param cursor     scan start point
+         * @param count      the number of prefixes to scan
+         * @param pattern    prefix string glob pattern
+         * @param item_array where to store prefix
+         * @param item_arrsz the size of item_array
+         * @param item_count the number of matched prefixes
+         */
+        ENGINE_ERROR_CODE (*prefixscan)(const char cursor[], const uint32_t count, const char *pattern,
+                                        item **item_array, int item_arrsz, int *item_count);
+#endif
+
         /**
          * Scan a certain number of items that meet the given conditions.
          *
@@ -713,8 +740,8 @@ extern "C" {
          */
         ENGINE_ERROR_CODE (*keyscan)(const char cursor[], const uint32_t count, const char *pattern,
                                      ENGINE_ITEM_TYPE type, item **item_array, int item_arrsz, int *item_count);
-
 #endif
+
         /**
          * Any unknown command will be considered engine specific.
          *
@@ -735,6 +762,23 @@ extern "C" {
          */
         ENGINE_ERROR_CODE (*scrub_stale)(ENGINE_HANDLE* handle);
 
+#ifdef SCAN_PREFIX_COMMAND
+        /**
+         * Get information about a prefix.
+         *
+         * The loader of the module may need the pointers to the actual data within
+         * a prefix. Instead of having to create multiple functions to get each
+         * individual prefix, this function will get all of them.
+         *
+         * @param handle the engine that owns the object
+         * @param cookie connection cookie for this prefix
+         * @param item the prefix to request information about
+         * @param prefix_info
+         * @return true if successful
+         */
+        bool (*get_prefix_info)(ENGINE_HANDLE *handle, const void *cookie,
+                                const item* item, prefix_info *prefix_info);
+#endif
         /**
          * Get information about an item.
          *

@@ -39,15 +39,63 @@ typedef struct {
     uint32_t    hash;
 } prefix_t_list_elem;
 
+#ifdef SCAN_PREFIX_COMMAND
+static struct default_engine *engine=NULL;
+#endif
 static struct engine_config *config=NULL; // engine config
 static struct prefix        *prefxp=NULL; // engine prefix
 static SERVER_CORE_API      *svcore=NULL; // server core api
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 static prefix_t *null_pt = NULL; /* null prefix info */
 
+#ifdef SCAN_PREFIX_COMMAND
+static inline void LOCK_CACHE(void)
+{
+    pthread_mutex_lock(&engine->cache_lock);
+}
+
+static inline void UNLOCK_CACHE(void)
+{
+    pthread_mutex_unlock(&engine->cache_lock);
+}
+
+static inline void PREFIX_REFCOUNT_INCR(prefix_t *pt)
+{
+    if (pt != null_pt) {
+        assert(pt->refcount < UINT16_MAX);
+        pt->refcount++;
+    }
+}
+
+static inline void PREFIX_REFCOUNT_DECR(prefix_t *pt)
+{
+    if (pt != null_pt) {
+        assert(pt->refcount > 0);
+        pt->refcount--;
+    }
+}
+
+void prefix_release(prefix_t *pt)
+{
+    if (pt != null_pt) {
+        LOCK_CACHE();
+        PREFIX_REFCOUNT_DECR(pt);
+        if (pt->refcount == 0 && pt->islinked == 0) {
+            free(pt);
+        }
+        UNLOCK_CACHE();
+    }
+}
+
+ENGINE_ERROR_CODE prefix_init(struct default_engine *engine_ptr)
+#else
 ENGINE_ERROR_CODE prefix_init(struct default_engine *engine)
+#endif
 {
     /* initialize global variables */
+#ifdef SCAN_PREFIX_COMMAND
+    engine = engine_ptr;
+#endif
     config = &engine->config;
     prefxp = &engine->prefix;
     svcore = engine->server.core;
@@ -139,6 +187,9 @@ static int _prefix_insert(prefix_t *pt, uint32_t hash)
     int bucket = hash & hashmask(DEFAULT_PREFIX_HASHPOWER);
     pt->h_next = prefxp->hashtable[bucket];
     prefxp->hashtable[bucket] = pt;
+#ifdef SCAN_PREFIX_COMMAND
+    pt->islinked = 1;
+#endif
 
 #ifdef NESTED_PREFIX
     if (pt->parent_prefix != NULL) {
@@ -184,7 +235,14 @@ static void _prefix_delete(const char *prefix, const int nprefix, uint32_t hash)
         /* unlink and free the prefix structure */
         if (prev_pt) prev_pt->h_next = pt->h_next;
         else         prefxp->hashtable[bucket] = pt->h_next;
+#ifdef SCAN_PREFIX_COMMAND
+        pt->islinked = 0;
+        if (pt->refcount == 0) {
+            free(pt);
+        }
+#else
         free(pt);
+#endif
 
 #ifdef NEW_PREFIX_STATS_MANAGEMENT
         (void)svcore->prefix_stats_delete(prefix, nprefix);
@@ -828,3 +886,56 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix,
 
     return ENGINE_SUCCESS;
 }
+
+#ifdef SCAN_PREFIX_COMMAND
+static int _prefix_scan_direct(const char *cursor, int req_count, void **item_array, int item_arrsz)
+{
+    uint32_t csnum;
+    uint32_t prefix_hsize = hashsize(DEFAULT_PREFIX_HASHPOWER);
+    if (!safe_strtoul(cursor, &csnum)) {
+        return -2; /* invalid cursor */
+    }
+    if (csnum >= prefix_hsize) {
+        sprintf((char*)cursor, "%u", 0);
+        return -1; /* scan end */
+    }
+    int item_count = 0;
+    prefix_t *pt;
+    while (item_count < req_count && csnum < prefix_hsize) {
+        pt = prefxp->hashtable[csnum++];
+        while (pt) {
+            if (!pt->internal && !(pt->child_prefix_items == 0 && pt->total_count_exclusive == 0)) {
+                item_array[item_count++] = pt;
+                PREFIX_REFCOUNT_INCR(pt);
+            }
+            pt = pt->h_next;
+        }
+    }
+    if (csnum >= prefix_hsize) { /* scan end */
+        if (item_count == 0) { /* NOT found */
+            item_count = -1;
+        }
+        sprintf((char*)cursor, "%u", 0);
+    } else {
+        sprintf((char*)cursor, "%u", csnum);
+    }
+    return item_count;
+}
+
+int prefix_scan_direct(const char *cursor, int req_count, void **item_array, int item_arrsz)
+{
+    assert(item_arrsz > 0 && req_count <= item_arrsz);
+    LOCK_CACHE();
+    int item_count = _prefix_scan_direct(cursor, req_count, item_array, item_arrsz);
+    UNLOCK_CACHE();
+    return item_count;
+}
+
+void *prefix_get_name(prefix_t *pt)
+{
+    if (pt) {
+        return _get_prefix(pt);
+    }
+    return NULL;
+}
+#endif

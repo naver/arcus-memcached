@@ -93,3 +93,4 @@
 ./t/whitespace.t
 ./t/nested_prefix.t
 ./t/keyscan.t
+./t/prefixscan.t

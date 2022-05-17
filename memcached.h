@@ -368,6 +368,10 @@ struct conn {
     int    isize;
     item   **icurr;
     int    ileft;
+#ifdef SCAN_PREFIX_COMMAND
+    item   **pcurr;
+    int    pleft;
+#endif
 
     char   **suffixlist;
     int    suffixsize;

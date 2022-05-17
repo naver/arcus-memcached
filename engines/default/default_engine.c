@@ -92,6 +92,14 @@ get_handle(ENGINE_HANDLE* handle)
     return (struct default_engine*)handle;
 }
 
+#ifdef SCAN_PREFIX_COMMAND
+static inline prefix_t*
+get_real_prefix(item* item)
+{
+    return (prefix_t*)item;
+}
+#endif
+
 static inline hash_item*
 get_real_item(item* item)
 {
@@ -360,6 +368,14 @@ default_item_delete(ENGINE_HANDLE* handle, const void* cookie,
     ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
+
+#ifdef SCAN_PREFIX_COMMAND
+static void
+default_prefix_release(ENGINE_HANDLE* handle, const void *cookie, item* item)
+{
+    prefix_release(get_real_prefix(item));
+}
+#endif
 
 static void
 default_item_release(ENGINE_HANDLE* handle, const void *cookie, item* item)
@@ -1229,10 +1245,73 @@ default_dump(ENGINE_HANDLE* handle, const void* cookie,
 }
 
 #ifdef SCAN_COMMAND
+#define SCAN_ITER_COUNT 200
+#ifdef SCAN_PREFIX_COMMAND
+/*
+ * Prefixscan API
+ */
+static ENGINE_ERROR_CODE
+default_prefixscan(const char cursor[], const uint32_t count, const char *pattern,
+                   item **item_array, int item_arrsz, int *item_count)
+{
+    assert(count+100 <= item_arrsz); /* may scan more than count. */
+    int iter_total = 0;
+    int scan_total = 0;
+    int iter_count;
+    int scan_count;
+    int pattern_leng = (pattern ? strlen(pattern) : 0);
+    int max_elapsed = 5000; /* 5 msec */
+    struct timeval begin, end, diff;
+
+    gettimeofday(&begin, NULL);
+    while (iter_total < count) {
+        iter_count = (count-scan_total) < SCAN_ITER_COUNT
+                   ? (count-scan_total) : SCAN_ITER_COUNT;
+        scan_count = prefix_scan_direct(cursor, iter_count,
+                                       (void**)&item_array[scan_total],
+                                       (item_arrsz - scan_total));
+        if (scan_count < 0) { /* reached to the end or invalid cursor */
+            break;
+        }
+        if (pattern) {
+            prefix_t **scan_array = (prefix_t **)&item_array[scan_total];
+            int match_count = 0;
+            for (int i = 0; i < scan_count; i++) {
+                prefix_t *it = scan_array[i];
+                if (string_pattern_match(prefix_get_name(it), it->nprefix, pattern, pattern_leng)) {
+                    if (match_count != i) {
+                        scan_array[match_count] = it;
+                    }
+                    match_count += 1;
+                } else { /* no match */
+                    prefix_release(it);
+                }
+            }
+            scan_count = match_count;
+        }
+        scan_total += scan_count;
+        iter_total += iter_count;
+
+        if (strncmp(cursor, "0", 1) == 0) break; /* reached to the end */
+        gettimeofday(&end, NULL);
+        timersub(&end, &begin, &diff);
+        if (diff.tv_usec >= max_elapsed) break; /* too long scan */
+    }
+    if (scan_count == -2) { /* invalid cursor */
+        for (int i = 0; i < scan_total; i++) {
+            prefix_release(item_array[i]);
+        }
+        return ENGINE_EINVAL;
+    }
+
+    *item_count = scan_total;
+    return ENGINE_SUCCESS;
+}
+#endif
+
 /*
  * Keyscan API
  */
-#define SCAN_ITER_COUNT 200
 static ENGINE_ERROR_CODE
 default_keyscan(const char cursor[], const uint32_t count, const char *pattern,
                 ENGINE_ITEM_TYPE type, item **item_array, int item_arrsz, int *item_count)
@@ -1735,7 +1814,21 @@ default_scrub_stale(ENGINE_HANDLE* handle)
     return (res) ? ENGINE_SUCCESS : ENGINE_FAILED;
 }
 
+#ifdef SCAN_PREFIX_COMMAND
+/* Prefix/Item/Elem Info */
+static bool
+get_prefix_info(ENGINE_HANDLE *handle, const void *cookie,
+                const item* item, prefix_info *prefix_info)
+{
+    prefix_t *it = (prefix_t*)item;
+
+    prefix_info->name = (const char*)prefix_get_name(it);
+    prefix_info->name_length = it->nprefix;
+    return true;
+}
+#else
 /* Item/Elem Info */
+#endif
 
 static bool
 get_item_info(ENGINE_HANDLE *handle, const void *cookie,
@@ -1836,6 +1929,11 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .allocate          = default_item_allocate,
          .free              = default_item_free,
          .remove            = default_item_delete,
+#ifdef SCAN_PREFIX_COMMAND
+         /* Prefix API */
+         .prefix_release    = default_prefix_release,
+         /* Item API */
+#endif
          .release           = default_item_release,
          .get               = default_get,
          .store             = default_store,
@@ -1899,7 +1997,12 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .cachedump        = default_cachedump,
          .dump             = default_dump,
 #ifdef SCAN_COMMAND
+#ifdef SCAN_PREFIX_COMMAND
+         /* Scan API */
+         .prefixscan       = default_prefixscan,
+#else
          /* Keyscan API */
+#endif
          .keyscan          = default_keyscan,
 #endif
          /* Config API */
@@ -1910,6 +2013,9 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          /* Scrub stale API */
          .scrub_stale      = default_scrub_stale,
          /* Info API */
+#ifdef SCAN_PREFIX_COMMAND
+         .get_prefix_info  = get_prefix_info,
+#endif
          .get_item_info    = get_item_info,
          .get_elem_info    = get_elem_info
       },

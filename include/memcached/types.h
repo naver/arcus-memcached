@@ -32,6 +32,9 @@ struct iovec {
 #endif
 
 #define SCAN_COMMAND
+#ifdef SCAN_COMMAND
+#define SCAN_PREFIX_COMMAND
+#endif
 #define NESTED_PREFIX
 #define PROXY_SUPPORT
 //#define NEW_PREFIX_STATS_MANAGEMENT
@@ -220,6 +223,13 @@ extern "C" {
     typedef void item;
     typedef void eitem; /* element item */
 
+#ifdef SCAN_PREFIX_COMMAND
+    typedef struct {
+        const char    *name;  /* Prefix name string */
+        uint8_t name_length; /* Length of prefix name string */
+    } prefix_info;
+#endif
+
     typedef struct {
         uint64_t cas;       /* cas value */
         uint32_t flags;     /**< Flags associated with the item (in network byte order)*/
@@ -393,7 +403,6 @@ extern "C" {
 
     /* Forward declaration of the server handle -- to be filled in later */
     typedef struct server_handle_v1_t SERVER_HANDLE_V1;
-
 #ifdef __cplusplus
 }
 #endif
