@@ -32,9 +32,6 @@ struct iovec {
 #endif
 
 #define SCAN_COMMAND
-#ifdef SCAN_COMMAND
-#define SCAN_COMMAND_GENERALIZE
-#endif
 #define NESTED_PREFIX
 #define PROXY_SUPPORT
 //#define NEW_PREFIX_STATS_MANAGEMENT

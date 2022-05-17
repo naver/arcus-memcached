@@ -9399,11 +9399,7 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
 }
 
 #ifdef SCAN_COMMAND
-#ifdef SCAN_COMMAND_GENERALIZE
 /* scan command limits */
-#else
-/* keyscan command limits */
-#endif
 #define SCAN_COUNT_MAX           2000
 #define SCAN_CURSOR_MAX_LENGTH   31
 /* pattern constraints is necessary to prevent string_pattern_match()
@@ -9413,11 +9409,7 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
 #define SCAN_PATTERN_MAX_LENGTH  64
 static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntokens)
 {
-#ifdef SCAN_COMMAND_GENERALIZE
     /* keyscan command format : scan key <cursor> [count <count>] [match <pattern>] [type <type>] */
-#else
-    /* keyscan command format : keyscan <cursor> [count <count>] [match <pattern>] [type <type>] */
-#endif
     char     cursor[SCAN_CURSOR_MAX_LENGTH+1];
     uint32_t count   = 20;
     char    *pattern = NULL;
@@ -9425,36 +9417,19 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     /* read <cursor> */
-#ifdef SCAN_COMMAND_GENERALIZE
     if (tokens[2].length > SCAN_CURSOR_MAX_LENGTH) {
-#else
-    if (tokens[1].length > SCAN_CURSOR_MAX_LENGTH) {
-#endif
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad cursor value");
         return;
     }
-#ifdef SCAN_COMMAND_GENERALIZE
     strcpy(cursor, tokens[2].value);
-#else
-    strcpy(cursor, tokens[1].value);
-#endif
 
     /* read optional fields (<count>, <pattern>, <type>) */
     int i = 0;
-#ifdef SCAN_COMMAND_GENERALIZE
     int optcnt = ntokens - 4; /* except (scan, key, <cursor>, CRLF) */
-#else
-    int optcnt = ntokens - 3; /* except (scan, <cursor>, CRLF) */
-#endif
     while (optcnt >= 2) {
-#ifdef SCAN_COMMAND_GENERALIZE
         char *optk = tokens[3+i].value;
         char *optv = tokens[4+i].value;
-#else
-        char *optk = tokens[2+i].value;
-        char *optv = tokens[3+i].value;
-#endif
         if (strcmp(optk, "count") == 0) {
             if (!safe_strtoul(optv, &count)) {
                 ret = ENGINE_EINVAL; break;
@@ -9605,7 +9580,6 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
     }
 }
 
-#ifdef SCAN_COMMAND_GENERALIZE
 static void process_prefixscan_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     /* prefixscan command format : scan prefix <cursor> [count <count>] [match <pattern>] */
@@ -9627,7 +9601,7 @@ static void process_scan_command(conn *c, token_t *tokens, const size_t ntokens)
     }
 }
 #endif
-#endif
+
 #ifdef COMMAND_LOGGING
 static void process_logging_command(conn *c, token_t *tokens, const size_t ntokens)
 {
@@ -12924,15 +12898,9 @@ static void process_command(conn *c, char *command, int cmdlen)
         process_help_command(c, tokens, ntokens);
     }
 #ifdef SCAN_COMMAND
-#ifdef SCAN_COMMAND_GENERALIZE
     else if ((ntokens >= 4) && (strcmp(tokens[COMMAND_TOKEN].value, "scan") == 0))
     {
         process_scan_command(c, tokens, ntokens);
-#else
-    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "keyscan") == 0))
-    {
-        process_keyscan_command(c, tokens, ntokens);
-#endif
     }
 #endif
 #ifdef COMMAND_LOGGING
