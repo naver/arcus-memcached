@@ -1017,7 +1017,7 @@ sub stats_prefix_is {
 
 #KEYSCAN
 sub keyscan {
-    my ($sock_opts, $cursor, $count, $type, $pattern) = @_;
+    my ($sock_opts, $cursor, $count, $pattern, $type) = @_;
     my $opts = ref $sock_opts eq "HASH" ? $sock_opts : {};
     my $sock = ref $sock_opts eq "HASH" ? $opts->{sock} : $sock_opts;
 
