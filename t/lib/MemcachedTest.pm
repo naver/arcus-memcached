@@ -1047,12 +1047,16 @@ sub free_port {
     my $type = shift || "tcp";
     my $sock;
     my $port;
+    my $netstat;
     while (!$sock) {
         $port = int(rand(20000)) + 30000;
-        $sock = IO::Socket::INET->new(LocalAddr => '127.0.0.1',
-                                      LocalPort => $port,
-                                      Proto     => $type,
-                                      ReuseAddr => 1);
+        $netstat = `netstat -tnau | grep $port`;
+        if ($netstat eq "") {
+            $sock = IO::Socket::INET->new(LocalAddr => '127.0.0.1',
+                                          LocalPort => $port,
+                                          Proto     => $type,
+                                          ReuseAddr => 1);
+        }
     }
     return $port;
 }
