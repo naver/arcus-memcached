@@ -9599,6 +9599,8 @@ static void process_scan_command(conn *c, token_t *tokens, const size_t ntokens)
         process_prefixscan_command(c, tokens, ntokens);
         return;
     }
+
+    out_string(c, "CLIENT_ERROR bad command line format");
 }
 #endif
 
