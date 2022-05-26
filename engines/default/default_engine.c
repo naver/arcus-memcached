@@ -1238,52 +1238,56 @@ default_keyscan(const char cursor[], const uint32_t count, const char *pattern,
                 ENGINE_ITEM_TYPE type, item **item_array, int item_arrsz, int *item_count)
 {
     assert(count+100 <= item_arrsz); /* may scan more than count. */
-    hash_item **scan_array = (hash_item**)item_array;
+    int iter_total = 0;
+    int scan_total = 0;
     int iter_count;
-    int scan_count = 0;
-    int scan_cost = 0;
-    int get_count = 0;
+    int scan_count;
+    int pattern_leng = (pattern ? strlen(pattern) : 0);
     int max_elapsed = 5000; /* 5 msec */
     struct timeval begin, end, diff;
 
     gettimeofday(&begin, NULL);
-    while (scan_cost < count) {
-        iter_count = (count-scan_cost) < SCAN_ITER_COUNT
-                   ? (count-scan_cost) : SCAN_ITER_COUNT;
-        scan_count = item_scan_direct(cursor, type, iter_count, (void**)scan_array, item_arrsz);
+    while (iter_total < count) {
+        iter_count = (count-scan_total) < SCAN_ITER_COUNT
+                   ? (count-scan_total) : SCAN_ITER_COUNT;
+        scan_count = item_scan_direct(cursor, type, iter_count,
+                                      (void**)&item_array[scan_total],
+                                      (item_arrsz - scan_total));
         if (scan_count < 0) { /* reached to the end or invalid cursor */
             break;
         }
         if (pattern) {
+            hash_item **scan_array = (hash_item **)&item_array[scan_total];
+            int match_count = 0;
             for (int i = 0; i < scan_count; i++) {
-                hash_item *it = (hash_item*)scan_array[i];
-                if (string_pattern_match(item_get_key(it), it->nkey, pattern, strlen(pattern))) { /* match */
-                    item_array[get_count++] = it;
+                hash_item *it = scan_array[i];
+                if (string_pattern_match(item_get_key(it), it->nkey, pattern, pattern_leng)) {
+                    if (match_count != i) {
+                        scan_array[match_count] = it;
+                    }
+                    match_count += 1;
                 } else { /* no match */
                     item_release(it);
-                    scan_count -= 1;
                 }
             }
-        } else {
-            get_count += scan_count;
+            scan_count = match_count;
         }
+        scan_total += scan_count;
+        iter_total += iter_count;
+
         if (strncmp(cursor, "0", 1) == 0) break; /* reached to the end */
         gettimeofday(&end, NULL);
         timersub(&end, &begin, &diff);
         if (diff.tv_usec >= max_elapsed) break; /* too long scan */
-
-        scan_cost += iter_count;
-        scan_array += scan_count;
-        item_arrsz -= scan_count;
     }
     if (scan_count == -2) { /* invalid cursor */
-        for (int i = 0; i < get_count; i++) {
+        for (int i = 0; i < scan_total; i++) {
             item_release(item_array[i]);
         }
         return ENGINE_EINVAL;
     }
 
-    *item_count = get_count;
+    *item_count = scan_total;
     return ENGINE_SUCCESS;
 }
 #endif
