@@ -9530,8 +9530,12 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
     /* call engine keyscan API */
     ret = mc_engine.v1->keyscan(cursor, count, pattern, ittype, c->ilist, c->isize, &item_count);
     if (ret == ENGINE_SUCCESS) {
+        char *header = NULL;
         do {
-            char header[SCAN_CURSOR_MAX_LENGTH + 24];
+            header = (char*)malloc(SCAN_CURSOR_MAX_LENGTH + 24);
+            if (header == NULL) {
+                ret = ENGINE_ENOMEM; break;
+            }
             sprintf(header, "KEYS %d %s\r\n", item_count, cursor);
             if (add_iov(c, header, strlen(header)) != 0) {
                 ret = ENGINE_ENOMEM; break;
@@ -9555,10 +9559,15 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
         if (ret == ENGINE_SUCCESS) {
             c->icurr = c->ilist;
             c->ileft = item_count;
+            c->write_and_free = header;
         } else {
             c->ileft = 0;
             for (i = 0; i < item_count; i++) {
                 mc_engine.v1->release(mc_engine.v0, c, c->ilist[i]);
+            }
+            if (header != NULL) {
+                free(header);
+                header = NULL;
             }
         }
     }
@@ -13682,6 +13691,10 @@ bool conn_mwrite(conn *c)
                 assert(c->coll_strkeys == (void*)&c->memblist);
                 mblck_list_free(&c->thread->mblck_pool, &c->memblist);
                 c->coll_strkeys = NULL;
+            }
+            if (c->write_and_free != NULL) {
+                free(c->write_and_free);
+                c->write_and_free = NULL;
             }
             /* XXX:  I don't know why this wasn't the general case */
             if (c->protocol == binary_prot) {
