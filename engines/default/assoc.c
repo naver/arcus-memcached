@@ -478,14 +478,14 @@ int assoc_scan_direct(const char *cursor, int req_count, hash_item **item_array,
     assert(array_size > 0 && req_count <= array_size);
     uint32_t tabidx, bucket;
     if (decode_cursor(cursor, &tabidx, &bucket) < 0) {
-        return -2; /* invalid cursor */
+        return -1; /* invalid cursor */
     }
     if (tabidx >= assocp->rootsize) {
-        return -2; /* invalid tabidx */
+        return -1; /* invalid tabidx */
     }
     if (bucket >= assocp->hashsize) {
-        encode_cursor(cursor, 0, 0);
-        return -1; /* scan end */
+        encode_cursor(cursor, 0, 0); /* scan end */
+        return 0;
     }
 
     bool scan_end = false;
@@ -534,9 +534,7 @@ int assoc_scan_direct(const char *cursor, int req_count, hash_item **item_array,
     }
 
     if (scan_end) {
-        if (item_count == 0) { /* NOT found and scan end */
-            item_count = -1;
-        }
+        /* item_count : 0 or positive value */
         encode_cursor(cursor, 0, 0);
     } else {
         encode_cursor(cursor, tabidx, bucket);

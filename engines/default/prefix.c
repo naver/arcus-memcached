@@ -893,16 +893,15 @@ static int _prefix_scan_direct(const char *cursor, int req_count, void **item_ar
     uint32_t csnum;
     uint32_t prefix_hsize = hashsize(DEFAULT_PREFIX_HASHPOWER);
     if (!safe_strtoul(cursor, &csnum)) {
-        return -2; /* invalid cursor */
+        return -1; /* invalid cursor */
     }
     if (csnum >= prefix_hsize) {
-        sprintf((char*)cursor, "%u", 0);
-        return -1; /* scan end */
+        sprintf((char*)cursor, "%u", 0); /* scan end */
+        return 0;
     }
     int item_count = 0;
-    prefix_t *pt;
     while (item_count < req_count && csnum < prefix_hsize) {
-        pt = prefxp->hashtable[csnum++];
+        prefix_t *pt = prefxp->hashtable[csnum++];
         while (pt) {
             if (!pt->internal && !(pt->child_prefix_items == 0 && pt->total_count_exclusive == 0)) {
                 item_array[item_count++] = pt;
@@ -912,9 +911,7 @@ static int _prefix_scan_direct(const char *cursor, int req_count, void **item_ar
         }
     }
     if (csnum >= prefix_hsize) { /* scan end */
-        if (item_count == 0) { /* NOT found */
-            item_count = -1;
-        }
+        /* item_count : 0 or positive value */
         sprintf((char*)cursor, "%u", 0);
     } else {
         sprintf((char*)cursor, "%u", csnum);

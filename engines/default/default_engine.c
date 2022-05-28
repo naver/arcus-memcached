@@ -1270,10 +1270,10 @@ default_prefixscan(const char cursor[], const uint32_t count, const char *patter
         scan_count = prefix_scan_direct(cursor, iter_count,
                                        (void**)&item_array[scan_total],
                                        (item_arrsz - scan_total));
-        if (scan_count < 0) { /* reached to the end or invalid cursor */
+        if (scan_count < 0) { /* invalid cursor */
             break;
         }
-        if (pattern) {
+        if (scan_count > 0 && pattern) {
             prefix_t **scan_array = (prefix_t **)&item_array[scan_total];
             int match_count = 0;
             for (int i = 0; i < scan_count; i++) {
@@ -1297,7 +1297,7 @@ default_prefixscan(const char cursor[], const uint32_t count, const char *patter
         timersub(&end, &begin, &diff);
         if (diff.tv_usec >= max_elapsed) break; /* too long scan */
     }
-    if (scan_count == -2) { /* invalid cursor */
+    if (scan_count < 0) { /* invalid cursor */
         for (int i = 0; i < scan_total; i++) {
             prefix_release(item_array[i]);
         }
@@ -1332,10 +1332,10 @@ default_keyscan(const char cursor[], const uint32_t count, const char *pattern,
         scan_count = item_scan_direct(cursor, type, iter_count,
                                       (void**)&item_array[scan_total],
                                       (item_arrsz - scan_total));
-        if (scan_count < 0) { /* reached to the end or invalid cursor */
+        if (scan_count < 0) { /* invalid cursor */
             break;
         }
-        if (pattern) {
+        if (scan_count > 0 && pattern) {
             hash_item **scan_array = (hash_item **)&item_array[scan_total];
             int match_count = 0;
             for (int i = 0; i < scan_count; i++) {
@@ -1359,7 +1359,7 @@ default_keyscan(const char cursor[], const uint32_t count, const char *pattern,
         timersub(&end, &begin, &diff);
         if (diff.tv_usec >= max_elapsed) break; /* too long scan */
     }
-    if (scan_count == -2) { /* invalid cursor */
+    if (scan_count < 0) { /* invalid cursor */
         for (int i = 0; i < scan_total; i++) {
             item_release(item_array[i]);
         }

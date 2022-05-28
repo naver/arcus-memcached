@@ -1062,6 +1062,7 @@ void item_scan_open(item_scan *sp, const char *prefix, const int nprefix, CB_SCA
 int item_scan_direct(const char *cursor, ENGINE_ITEM_TYPE type, int req_count, void **item_array, int item_arrsz)
 {
     hash_item *it;
+
     LOCK_CACHE();
     int item_count = assoc_scan_direct(cursor, req_count, (hash_item**)item_array, item_arrsz);
     if (item_count > 0) {
@@ -1087,9 +1088,11 @@ int item_scan_direct(const char *cursor, ENGINE_ITEM_TYPE type, int req_count, v
         item_count = nfound;
     } else {
         /* item_count == 0: not found item */
-        /* item_count <  0: the end of scan or invalid cursor */
+        /* item_count <  0: invalid cursor */
     }
     UNLOCK_CACHE();
+
+    /* The cursor value is also returned. The "0" string means the end of scan */
     return item_count;
 }
 #endif
