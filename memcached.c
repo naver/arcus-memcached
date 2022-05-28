@@ -659,8 +659,14 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->ritem = 0;
     c->rlbytes = 0;
     c->rltotal = 0; /* used when read with multiple mem blocks */
+#ifdef SCAN_PREFIX_COMMAND
+    c->pcurr = c->ilist;
+#endif
     c->icurr = c->ilist;
     c->suffixcurr = c->suffixlist;
+#ifdef SCAN_PREFIX_COMMAND
+    c->pleft = 0;
+#endif
     c->ileft = 0;
     c->suffixleft = 0;
     c->iovused = 0;
@@ -862,6 +868,13 @@ static void conn_cleanup(conn *c)
             mc_engine.v1->release(mc_engine.v0, c, *(c->icurr));
         }
     }
+#ifdef SCAN_PREFIX_COMMAND
+    else if (c->pleft != 0) {
+        for (; c->pleft > 0; c->pleft--,c->pcurr++) {
+            mc_engine.v1->prefix_release(mc_engine.v0, c, *(c->pcurr));
+        }
+    }
+#endif
 
     if (c->suffixleft != 0) {
         for (; c->suffixleft > 0; c->suffixleft--, c->suffixcurr++) {
@@ -9407,6 +9420,161 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
  */
 #define SCAN_PATTERN_MAX_STARCNT 4
 #define SCAN_PATTERN_MAX_LENGTH  64
+
+static void process_prefixscan_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    /* prefixscan command format : scan prefix <cursor> [count <count>] [match <pattern>] */
+#ifdef SCAN_PREFIX_COMMAND
+    char     cursor[SCAN_CURSOR_MAX_LENGTH+1];
+    uint32_t count   = 20;
+    char    *pattern = NULL;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    /* read <cursor> */
+    if (tokens[2].length > SCAN_CURSOR_MAX_LENGTH) {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "CLIENT_ERROR bad cursor value");
+        return;
+    }
+    strcpy(cursor, tokens[2].value);
+
+    /* read optional fields (<count>, <pattern>) */
+    int i = 0;
+    int optcnt = ntokens - 4; /* except (scan, prefix, <cursor>, CRLF) */
+    while (optcnt >= 2) {
+        char *optk = tokens[3+i].value;
+        char *optv = tokens[4+i].value;
+        if (strcmp(optk, "count") == 0) {
+            if (!safe_strtoul(optv, &count)) {
+                ret = ENGINE_EINVAL; break;
+            }
+        } else if (strcmp(optk, "match") == 0) {
+            pattern = optv;
+        } else {
+            ret = ENGINE_EINVAL; break;
+        }
+        optcnt -= 2;
+        i += 2;
+    }
+    if (ret == ENGINE_EINVAL || optcnt != 0) {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "CLIENT_ERROR bad command line format");
+        return;
+    }
+
+    if (count == 0 || count > SCAN_COUNT_MAX) {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "CLIENT_ERROR bad count value");
+        return;
+    }
+
+    if (pattern) {
+        int starcnt = 0;
+        int patlen = strlen(pattern);
+        if (patlen > SCAN_PATTERN_MAX_LENGTH) {
+            print_invalid_command(c, tokens, ntokens);
+            out_string(c, "CLIENT_ERROR too long pattern string");
+            return;
+        }
+        for (i = 0; i < patlen; i++) {
+            if (pattern[i] == '\\') { /* backslash next is glob (*, ?, \\) ? */
+                if (i == (patlen-1)) break; /* invalid, ex) 'aaa\', '\\\' */
+                if (pattern[i+1] != '*' && pattern[i+1] != '?' && pattern[i+1] != '\\') break; /* invalid */
+                i++; /* skip the next character */
+            }
+            else if (pattern[i] == '*') { /* except normal star(\*) */
+                if (++starcnt > SCAN_PATTERN_MAX_STARCNT) break; /* invalid */
+            }
+        }
+        if (i < patlen) {
+            print_invalid_command(c, tokens, ntokens);
+            out_string(c, "CLIENT_ERROR bad pattern string");
+            return;
+        }
+    }
+
+    int need_size = count + 100; /* may scan more than count in engine. */
+    if (need_size > c->isize) {
+        int new_size = c->isize * 2;
+        while (need_size > new_size) {
+            new_size *= 2;
+        }
+        item **new_list = malloc(sizeof(item *) * new_size);
+        if (new_list == NULL) {
+            out_string(c, "SERVER_ERROR out of memory.");
+            return;
+        }
+        free(c->ilist);
+        c->ilist = new_list;
+        c->isize = new_size;
+    }
+
+    int item_count = 0;
+    /* call engine prefixscan API */
+    ret = mc_engine.v1->prefixscan(cursor, count, pattern, c->ilist, c->isize, &item_count);
+    if (ret == ENGINE_SUCCESS) {
+        char *header = NULL;
+        do {
+            header = (char*)malloc(SCAN_CURSOR_MAX_LENGTH + 28);
+            if (header == NULL) {
+                ret = ENGINE_ENOMEM; break;
+            }
+            sprintf(header, "PREFIXES %d %s\r\n", item_count, cursor);
+            if (add_iov(c, header, strlen(header)) != 0) {
+                ret = ENGINE_ENOMEM; break;
+            }
+            for (i = 0; i < item_count; i++) {
+                item *it = (item *)c->ilist[i];
+                prefix_info pinfo;
+                if (!mc_engine.v1->get_prefix_info(mc_engine.v0, c, it, &pinfo)) {
+                    ret = ENGINE_ENOMEM; break;
+                }
+                if (add_iov(c, pinfo.name, pinfo.name_length) != 0 ||
+                    add_iov(c, "\r\n", 2) != 0) {
+                    ret = ENGINE_ENOMEM; break;
+                }
+            }
+            if (ret != ENGINE_SUCCESS) break;
+            if (add_iov(c, "END\r\n", 5) != 0 ||
+                (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+                ret = ENGINE_ENOMEM;
+            }
+        } while (0);
+        if (ret == ENGINE_SUCCESS) {
+            c->pcurr = c->ilist;
+            c->pleft = item_count;
+            c->write_and_free = header;
+        } else {
+            for (i = 0; i < item_count; i++) {
+                mc_engine.v1->prefix_release(mc_engine.v0, c, c->ilist[i]);
+            }
+            if (header != NULL) {
+                free(header);
+                header = NULL;
+            }
+        }
+    }
+
+    switch (ret) {
+        case ENGINE_SUCCESS:
+            conn_set_state(c, conn_mwrite);
+            c->msgcurr = 0;
+            break;
+        case ENGINE_EINVAL:
+            out_string(c, "CLIENT_ERROR invalid cursor.");
+            break;
+        case ENGINE_ENOMEM:
+            out_string(c, "SERVER_ERROR out of memory.");
+            break;
+        default:
+            handle_unexpected_errorcode_ascii(c, __func__, ret);
+            break;
+    }
+#else
+    return; // TODO: scan prefixes
+#endif
+}
+
 static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     /* keyscan command format : scan key <cursor> [count <count>] [match <pattern>] [type <type>] */
@@ -9587,12 +9755,6 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
             handle_unexpected_errorcode_ascii(c, __func__, ret);
             break;
     }
-}
-
-static void process_prefixscan_command(conn *c, token_t *tokens, const size_t ntokens)
-{
-    /* prefixscan command format : scan prefix <cursor> [count <count>] [match <pattern>] */
-    return; // TODO: scan prefixes
 }
 
 static void process_scan_command(conn *c, token_t *tokens, const size_t ntokens)
@@ -13671,6 +13833,14 @@ bool conn_mwrite(conn *c)
                 c->icurr++;
                 c->ileft--;
             }
+#ifdef SCAN_PREFIX_COMMAND
+            while (c->pleft > 0) {
+                item *it = *(c->pcurr);
+                mc_engine.v1->prefix_release(mc_engine.v0, c, it);
+                c->pcurr++;
+                c->pleft--;
+            }
+#endif
             while (c->suffixleft > 0) {
                 char *suffix = *(c->suffixcurr);
                 cache_free(c->thread->suffix_cache, suffix);
