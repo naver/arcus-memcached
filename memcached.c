@@ -9350,6 +9350,13 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "config chkpt_interval_min_logsize [<minsize(MB)>]\r\n"
         "\t" "config async_logging [on|off]\r\n"
 #endif
+#ifdef SCAN_COMMAND
+        "\n"
+        "\t" "scan key <cursor> [count <count>] [match <pattern>] [type <type>]\\r\\n" "\n"
+#ifdef SCAN_PREFIX_COMMAND
+        "\t" "scan prefix <cursor> [count <count>] [match <pattern>]\\r\\n" "\n"
+#endif
+#endif
         );
     } else {
        out_string(c,
