@@ -890,18 +890,15 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix,
 #ifdef SCAN_PREFIX_COMMAND
 static int _prefix_scan_direct(const char *cursor, int req_count, void **item_array, int item_arrsz)
 {
-    uint32_t csnum;
     uint32_t prefix_hsize = hashsize(DEFAULT_PREFIX_HASHPOWER);
-    if (!safe_strtoul(cursor, &csnum)) {
+    uint32_t bucket;
+    if (!safe_strtoul(cursor, &bucket)) {
         return -1; /* invalid cursor */
     }
-    if (csnum >= prefix_hsize) {
-        sprintf((char*)cursor, "%u", 0); /* scan end */
-        return 0;
-    }
+
     int item_count = 0;
-    while (item_count < req_count && csnum < prefix_hsize) {
-        prefix_t *pt = prefxp->hashtable[csnum++];
+    while (item_count < req_count && bucket < prefix_hsize) {
+        prefix_t *pt = prefxp->hashtable[bucket];
         while (pt) {
             if (!pt->internal && !(pt->child_prefix_items == 0 && pt->total_count_exclusive == 0)) {
                 item_array[item_count++] = pt;
@@ -909,12 +906,13 @@ static int _prefix_scan_direct(const char *cursor, int req_count, void **item_ar
             }
             pt = pt->h_next;
         }
+        bucket++;
     }
-    if (csnum >= prefix_hsize) { /* scan end */
+    if (bucket >= prefix_hsize) { /* scan end */
         /* item_count : 0 or positive value */
         sprintf((char*)cursor, "%u", 0);
     } else {
-        sprintf((char*)cursor, "%u", csnum);
+        sprintf((char*)cursor, "%u", bucket);
     }
     return item_count;
 }
