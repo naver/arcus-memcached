@@ -79,7 +79,7 @@ $cmd = "scan prefix 0 match \\"; $rst = "CLIENT_ERROR bad pattern string";
 mem_cmd_is($sock, $cmd, "", $rst);
 
 my $prefix = "a" x 65;
-$cmd = "scan prefix 0 match $prefix"; $rst = "CLIENT_ERROR too long pattern string";
+$cmd = "scan prefix 0 match $prefix"; $rst = "CLIENT_ERROR bad pattern string";
 mem_cmd_is($sock, $cmd, "", $rst);
 
 # It's difficult to calculate how many tests were run in prefixscan()

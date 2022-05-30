@@ -9420,6 +9420,59 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
  */
 #define SCAN_PATTERN_MAX_STARCNT 4
 #define SCAN_PATTERN_MAX_LENGTH  64
+static bool scan_validate_pattern(char *pattern)
+{
+    int starcnt = 0;
+    int patlen = strlen(pattern);
+    if (patlen <= 0 || patlen > SCAN_PATTERN_MAX_LENGTH) {
+        return false;
+    }
+    int i;
+    for (i = 0; i < patlen; i++) {
+        if (pattern[i] == '\\') { /* backslash next is glob (*, ?, \\) ? */
+            if (i == (patlen-1)) break; /* invalid, ex) 'aaa\', '\\\' */
+            if (pattern[i+1] != '*' && pattern[i+1] != '?' && pattern[i+1] != '\\') break; /* invalid */
+            i++; /* skip the next character */
+        }
+        else if (pattern[i] == '*') { /* except normal star(\*) */
+            if (++starcnt > SCAN_PATTERN_MAX_STARCNT) break; /* invalid */
+        }
+    }
+    if (i < patlen) {
+        return false;
+    }
+    return true;
+}
+
+static bool scan_validate_type(char *type_str, ENGINE_ITEM_TYPE *ittype)
+{
+    if (strlen(type_str) != 1) {
+        return false;
+    }
+    switch (type_str[0]) {
+        case 'A':
+            *ittype = ITEM_TYPE_MAX; /* all item type */
+            break;
+        case 'K':
+            *ittype = ITEM_TYPE_KV;
+            break;
+        case 'L':
+            *ittype = ITEM_TYPE_LIST;
+            break;
+        case 'S':
+            *ittype = ITEM_TYPE_SET;
+            break;
+        case 'M':
+            *ittype = ITEM_TYPE_MAP;
+            break;
+        case 'B':
+            *ittype = ITEM_TYPE_BTREE;
+            break;
+        default:
+            return false;
+    }
+    return true;
+}
 
 static void process_prefixscan_command(conn *c, token_t *tokens, const size_t ntokens)
 {
@@ -9428,7 +9481,6 @@ static void process_prefixscan_command(conn *c, token_t *tokens, const size_t nt
     char     cursor[SCAN_CURSOR_MAX_LENGTH+1];
     uint32_t count   = 20;
     char    *pattern = NULL;
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     /* read <cursor> */
     if (tokens[2].length > SCAN_CURSOR_MAX_LENGTH) {
@@ -9441,56 +9493,39 @@ static void process_prefixscan_command(conn *c, token_t *tokens, const size_t nt
     /* read optional fields (<count>, <pattern>) */
     int i = 0;
     int optcnt = ntokens - 4; /* except (scan, prefix, <cursor>, CRLF) */
+    char *err_response = NULL;
     while (optcnt >= 2) {
         char *optk = tokens[3+i].value;
         char *optv = tokens[4+i].value;
         if (strcmp(optk, "count") == 0) {
-            if (!safe_strtoul(optv, &count)) {
-                ret = ENGINE_EINVAL; break;
+            if (!safe_strtoul(optv, &count) ||
+                count == 0                  ||
+                count > SCAN_COUNT_MAX) {
+                err_response = "CLIENT_ERROR bad count value";
+                break;
             }
         } else if (strcmp(optk, "match") == 0) {
+            if (!scan_validate_pattern(optv)) {
+                err_response = "CLIENT_ERROR bad pattern string";
+                break;
+            }
             pattern = optv;
         } else {
-            ret = ENGINE_EINVAL; break;
+            break;
         }
         optcnt -= 2;
         i += 2;
     }
-    if (ret == ENGINE_EINVAL || optcnt != 0) {
+    if (err_response != NULL) {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, err_response);
+        return;
+    }
+
+    if (optcnt != 0) {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
-    }
-
-    if (count == 0 || count > SCAN_COUNT_MAX) {
-        print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad count value");
-        return;
-    }
-
-    if (pattern) {
-        int starcnt = 0;
-        int patlen = strlen(pattern);
-        if (patlen > SCAN_PATTERN_MAX_LENGTH) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR too long pattern string");
-            return;
-        }
-        for (i = 0; i < patlen; i++) {
-            if (pattern[i] == '\\') { /* backslash next is glob (*, ?, \\) ? */
-                if (i == (patlen-1)) break; /* invalid, ex) 'aaa\', '\\\' */
-                if (pattern[i+1] != '*' && pattern[i+1] != '?' && pattern[i+1] != '\\') break; /* invalid */
-                i++; /* skip the next character */
-            }
-            else if (pattern[i] == '*') { /* except normal star(\*) */
-                if (++starcnt > SCAN_PATTERN_MAX_STARCNT) break; /* invalid */
-            }
-        }
-        if (i < patlen) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad pattern string");
-            return;
-        }
     }
 
     int need_size = count + 100; /* may scan more than count in engine. */
@@ -9511,7 +9546,7 @@ static void process_prefixscan_command(conn *c, token_t *tokens, const size_t nt
 
     int item_count = 0;
     /* call engine prefixscan API */
-    ret = mc_engine.v1->prefixscan(cursor, count, pattern, c->ilist, c->isize, &item_count);
+    ENGINE_ERROR_CODE ret = mc_engine.v1->prefixscan(cursor, count, pattern, c->ilist, c->isize, &item_count);
     if (ret == ENGINE_SUCCESS) {
         char *header = NULL;
         do {
@@ -9581,8 +9616,7 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
     char     cursor[SCAN_CURSOR_MAX_LENGTH+1];
     uint32_t count   = 20;
     char    *pattern = NULL;
-    char     type    = 'A'; /* all item type */
-    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    ENGINE_ITEM_TYPE ittype = ITEM_TYPE_MAX; /* all item type */
 
     /* read <cursor> */
     if (tokens[2].length > SCAN_CURSOR_MAX_LENGTH) {
@@ -9595,87 +9629,44 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
     /* read optional fields (<count>, <pattern>, <type>) */
     int i = 0;
     int optcnt = ntokens - 4; /* except (scan, key, <cursor>, CRLF) */
+    char *err_response = NULL;
     while (optcnt >= 2) {
         char *optk = tokens[3+i].value;
         char *optv = tokens[4+i].value;
         if (strcmp(optk, "count") == 0) {
-            if (!safe_strtoul(optv, &count)) {
-                ret = ENGINE_EINVAL; break;
+            if (!safe_strtoul(optv, &count) ||
+                count == 0                  ||
+                count > SCAN_COUNT_MAX) {
+                err_response = "CLIENT_ERROR bad count value";
+                break;
             }
         } else if (strcmp(optk, "match") == 0) {
+            if (!scan_validate_pattern(optv)) {
+                err_response = "CLIENT_ERROR bad pattern string";
+                break;
+            }
             pattern = optv;
         } else if (strcmp(optk, "type") == 0) {
-            if (strlen(optv) != 1) {
-                ret = ENGINE_EINVAL; break;
+            if (!scan_validate_type(optv, &ittype)) {
+                err_response = "CLIENT_ERROR bad item type";
+                break;
             }
-            type = optv[0];
         } else {
-            ret = ENGINE_EINVAL; break;
+            break;
         }
         optcnt -= 2;
         i += 2;
     }
-    if (ret == ENGINE_EINVAL || optcnt != 0) {
+    if (err_response != NULL) {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, err_response);
+        return;
+    }
+
+    if (optcnt != 0) {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
-    }
-
-    if (count == 0 || count > SCAN_COUNT_MAX) {
-        print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad count value");
-        return;
-    }
-
-    if (pattern) {
-        int starcnt = 0;
-        int patlen = strlen(pattern);
-        if (patlen > SCAN_PATTERN_MAX_LENGTH) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR too long pattern string");
-            return;
-        }
-        for (i = 0; i < patlen; i++) {
-            if (pattern[i] == '\\') { /* backslash next is glob (*, ?, \\) ? */
-                if (i == (patlen-1)) break; /* invalid, ex) 'aaa\', '\\\' */
-                if (pattern[i+1] != '*' && pattern[i+1] != '?' && pattern[i+1] != '\\') break; /* invalid */
-                i++; /* skip the next character */
-            }
-            else if (pattern[i] == '*') { /* except normal star(\*) */
-                if (++starcnt > SCAN_PATTERN_MAX_STARCNT) break; /* invalid */
-            }
-        }
-        if (i < patlen) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad pattern string");
-            return;
-        }
-    }
-
-    ENGINE_ITEM_TYPE ittype;
-    switch (type) {
-        case 'A':
-            ittype = ITEM_TYPE_MAX; /* all item type */
-            break;
-        case 'K':
-            ittype = ITEM_TYPE_KV;
-            break;
-        case 'L':
-            ittype = ITEM_TYPE_LIST;
-            break;
-        case 'S':
-            ittype = ITEM_TYPE_SET;
-            break;
-        case 'M':
-            ittype = ITEM_TYPE_MAP;
-            break;
-        case 'B':
-            ittype = ITEM_TYPE_BTREE;
-            break;
-        default:
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad item type");
-            return;
     }
 
     int need_size = count + 100; /* may scan more than count in engine. */
@@ -9696,7 +9687,7 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
 
     int item_count = 0;
     /* call engine keyscan API */
-    ret = mc_engine.v1->keyscan(cursor, count, pattern, ittype, c->ilist, c->isize, &item_count);
+    ENGINE_ERROR_CODE ret = mc_engine.v1->keyscan(cursor, count, pattern, ittype, c->ilist, c->isize, &item_count);
     if (ret == ENGINE_SUCCESS) {
         char *header = NULL;
         do {
@@ -9771,6 +9762,7 @@ static void process_scan_command(conn *c, token_t *tokens, const size_t ntokens)
         return;
     }
 
+    print_invalid_command(c, tokens, ntokens);
     out_string(c, "CLIENT_ERROR bad command line format");
 }
 #endif

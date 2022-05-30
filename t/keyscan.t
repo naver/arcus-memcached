@@ -79,7 +79,7 @@ $cmd = "scan key 0 match \\"; $rst = "CLIENT_ERROR bad pattern string";
 mem_cmd_is($sock, $cmd, "", $rst);
 
 my $key = "a" x 65;
-$cmd = "scan key 0 match $key"; $rst = "CLIENT_ERROR too long pattern string";
+$cmd = "scan key 0 match $key"; $rst = "CLIENT_ERROR bad pattern string";
 mem_cmd_is($sock, $cmd, "", $rst);
 
 # It's difficult to calculate how many tests were run in keyscan()

@@ -1059,8 +1059,7 @@ keyscan 명령 실패 시에 response string 은 다음과 같다.
 |----------------------------------------|------------------------ |
 | CLIENT_ERROR bad cursor value          | cursor 문자열 길이가 32 이상인 경우
 | CLIENT_ERROR bad count value           | count 가 0 이거나 2000 보다 큰 경우
-| CLIENT_ERROR bad long pattern string   | 패턴 문자열 길이가 65 이상인 경우
-| CLIENT_ERROR bad pattern string        | 패턴 문자열에 * 을 5개 이상 주었거나 '\\' 다음에 패턴 문자('\\', '\*', '\?')가 없는 경우
+| CLIENT_ERROR bad pattern string        | 패턴 문자열 길이가 65 이상이거나 패턴 문자열에 * 을 5개 이상 주었거나 '\\' 다음에 패턴 문자('\\', '\*', '\?')가 없는 경우
 | CLIENT_ERROR bad item type             | type 값을 잘못 준 경우
 | CLIENT_ERROR invalid cursor            | cursor 에 숫자가 아닌 값을 준 경우
 | CLIENT_ERROR bad command line format   | protocol syntax 틀림
@@ -1128,8 +1127,7 @@ prefixscan 명령 실패 시에 response string 은 다음과 같다.
 |----------------------------------------|------------------------ |
 | CLIENT_ERROR bad cursor value          | cursor 문자열 길이가 32 이상인 경우
 | CLIENT_ERROR bad count value           | count 가 0 이거나 2000 보다 큰 경우
-| CLIENT_ERROR bad long pattern string   | 패턴 문자열 길이가 65 이상인 경우
-| CLIENT_ERROR bad pattern string        | 패턴 문자열에 * 을 5개 이상 주었거나 '\\' 다음에 패턴 문자('\\', '\*', '\?')가 없는 경우
+| CLIENT_ERROR bad pattern string        | 패턴 문자열 길이가 65 이상이거나 패턴 문자열에 * 을 5개 이상 주었거나 '\\' 다음에 패턴 문자('\\', '\*', '\?')가 없는 경우
 | CLIENT_ERROR invalid cursor            | cursor 에 숫자가 아닌 값을 준 경우
 | CLIENT_ERROR bad command line format   | protocol syntax 틀림
 
