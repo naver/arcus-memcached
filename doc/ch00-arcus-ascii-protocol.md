@@ -56,7 +56,11 @@ Item Attributes 기능
 Collection 지원으로 인해 item 유형이 다양해 졌으며, 다양한 item 유형에 따라 item attributes도 확장되었다.
 Item attributes를 조회하거나 변경하기 위하여 [Item Attribute 명령](ch10-command-item-attribute.md)을 제공한다.
 
+Scan 기능
+--------------------
+조건에 맞는 item 혹은 prefix 목록을 가져오는 기능으로 [Scan 명령](ch11-command-scan.md)을 제공한다.
+
 Admin & Monitoring 기능
 -----------------------
 
-ARCUS Cache Server의 운영 상에 필요한 기능들은 [Admin & Monitoring 명령](ch11-command-administration.md)으로 제공한다.
+ARCUS Cache Server의 운영 상에 필요한 기능들은 [Admin & Monitoring 명령](ch12-command-administration.md)으로 제공한다.

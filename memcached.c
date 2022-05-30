@@ -9281,6 +9281,15 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "getattr <key> [<attribute name> ...]\\r\\n" "\n"
         "\t" "setattr <key> <name>=<value> [<name>=value> ...]\\r\\n" "\n"
         );
+#ifdef SCAN_COMMAND
+    } else if (ntokens > 2 && strcmp(type, "scan") == 0) {
+        out_string(c,
+        "\t" "scan key <cursor> [count <count>] [match <pattern>] [type <type>]\\r\\n" "\n"
+#ifdef SCAN_PREFIX_COMMAND
+        "\t" "scan prefix <cursor> [count <count>] [match <pattern>]\\r\\n" "\n"
+#endif
+        );
+#endif
     } else if (ntokens > 2 && strcmp(type, "admin") == 0) {
         out_string(c,
         "\t" "flush_all [<delay>] [noreply]\\r\\n" "\n"
@@ -9352,9 +9361,15 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
 #endif
         );
     } else {
+#ifdef SCAN_COMMAND
+       out_string(c,
+       "\t" "* Usage: help [kv | list | set | map | btree | attr | scan | admin ]" "\n"
+       );
+#else
        out_string(c,
        "\t" "* Usage: help [kv | list | set | map | btree | attr | admin ]" "\n"
        );
+#endif
     }
 }
 
