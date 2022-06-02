@@ -900,10 +900,7 @@ static int _prefix_scan_direct(const char *cursor, int req_count, void **item_ar
     while (item_count < req_count && bucket < prefix_hsize) {
         prefix_t *pt = prefxp->hashtable[bucket];
         while (pt) {
-            if (!pt->internal && !(pt->child_prefix_items == 0 && pt->total_count_exclusive == 0)) {
-                item_array[item_count++] = pt;
-                PREFIX_REFCOUNT_INCR(pt);
-            }
+            item_array[item_count++] = pt;
             pt = pt->h_next;
         }
         bucket++;
@@ -922,7 +919,30 @@ int prefix_scan_direct(const char *cursor, int req_count, void **item_array, int
     assert(item_arrsz > 0 && req_count <= item_arrsz);
     LOCK_CACHE();
     int item_count = _prefix_scan_direct(cursor, req_count, item_array, item_arrsz);
+    if (item_count > 0) {
+        int nfound = 0;
+        for (int i = 0; i < item_count; i++) {
+            prefix_t *it = (prefix_t *)item_array[i];
+            if (it->internal) { /* internal prefix */
+                item_array[i] = NULL; continue;
+            }
+            if (it->child_prefix_items == 0 && it->total_count_exclusive == 0) { /* invalid prefix */
+                item_array[i] = NULL; continue;
+            }
+            PREFIX_REFCOUNT_INCR(it);
+            if (nfound < i) {
+                item_array[nfound] = it;
+            }
+            nfound += 1;
+        }
+        item_count = nfound;
+    } else {
+        /* item_count == 0: not found item */
+        /* item_count <  0: invalid cursor */
+    }
     UNLOCK_CACHE();
+
+    /* The cursor value is also returned. The "0" string means the end of scan */
     return item_count;
 }
 
