@@ -39,7 +39,7 @@ static EXTENSION_LOGGER_DESCRIPTOR *logger;
 static inline uint32_t CUR_HASH_TABIDX(uint32_t hash, uint32_t bucket)
 {
     if (assocp->expanding) {
-        /* Note that hash table buckets are expanded in backward */
+        /* Note that hash table buckets are expanded in backward order */
         if (bucket < assocp->exp_bucket) { /* NOT yet expanded */
             return (hash >> assocp->hashpower) & assocp->prevmask;
         }
@@ -488,11 +488,10 @@ int assoc_scan_direct(const char *cursor, int req_count, hash_item **item_array,
         return 0;
     }
 
-    bool scan_end = false;
-    int scan_hashs = 0;
     int item_count = 0;
-    int max_access = req_count * 4;
-    while ((item_count < req_count && scan_hashs < max_access) ||
+    int hash_count = 0;
+    int hash_limit = req_count * 4; /* max count of hash chains to scan */
+    while ((item_count < req_count && hash_count < hash_limit) ||
            (assocp->expanding && tabidx > assocp->prevmask))
     {
         hash_item *next = assocp->roottable[tabidx].hashtable[bucket];
@@ -526,14 +525,14 @@ int assoc_scan_direct(const char *cursor, int req_count, hash_item **item_array,
             tabidx = reverse_bits(tabidx);
         }
         if (tabidx == 0) { /* scan next bucket */
-            if (++bucket >= assocp->hashsize) { /* the end */
-                scan_end = true; break;
+            if (++bucket >= assocp->hashsize) { /* the end of scan */
+                break;
             }
         }
-        scan_hashs++;
+        hash_count++;
     }
 
-    if (scan_end) {
+    if (bucket >= assocp->hashsize) { /* the end of scan */
         /* item_count : 0 or positive value */
         encode_cursor(cursor, 0, 0);
     } else {

@@ -897,7 +897,9 @@ static int _prefix_scan_direct(const char *cursor, int req_count, void **item_ar
     }
 
     int item_count = 0;
-    while (item_count < req_count && bucket < prefix_hsize) {
+    int hash_count = 0;
+    int hash_limit = req_count * 4; /* max count of hash chains to scan */
+    while (item_count < req_count && hash_count < hash_limit) {
         prefix_t *pt = prefxp->hashtable[bucket];
         while (pt) {
             if (!pt->internal && !(pt->child_prefix_items == 0 && pt->total_count_exclusive == 0)) {
@@ -906,9 +908,12 @@ static int _prefix_scan_direct(const char *cursor, int req_count, void **item_ar
             }
             pt = pt->h_next;
         }
-        bucket++;
+        if (++bucket >= prefix_hsize) { /* the end of scan */
+            break;
+        }
+        hash_count++;
     }
-    if (bucket >= prefix_hsize) { /* scan end */
+    if (bucket >= prefix_hsize) { /* the end of scan */
         /* item_count : 0 or positive value */
         sprintf((char*)cursor, "%u", 0);
     } else {
