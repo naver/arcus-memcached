@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 22;
+use Test::More tests => 25;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -120,6 +120,12 @@ f6 6 datum6
 f7 6 datum7
 f8 6 datum8
 END";
+mem_cmd_is($sock, $cmd, $val, $rst);
+$cmd = "mop delete mkey1 0 0"; $rst = "DELETED";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "mop delete mkey1 0 0"; $rst = "NOT_FOUND_ELEMENT";
+mem_cmd_is($sock, $cmd, "", $rst);
+$cmd = "mop insert mkey1 f1 6"; $val = "datum1"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "mop delete mkey1 0 0 drop"; $rst = "DELETED_DROPPED";
 mem_cmd_is($sock, $cmd, "", $rst);
