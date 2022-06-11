@@ -213,6 +213,17 @@ extern "C" {
          */
         void (*destroy)(ENGINE_HANDLE* handle);
 
+#ifdef SCAN_COMMAND
+        /**
+         * Indicate that a caller who received a prefix no longer needs it.
+         *
+         * @param handle the engine handle
+         * @param cookie The cookie provided by the frontend
+         * @param item the prefix to be released
+         */
+        void (*prefix_release)(ENGINE_HANDLE* handle, const void *cookie, item* item);
+#endif
+
         /*
          * Item operations.
          */
@@ -263,18 +274,6 @@ extern "C" {
         ENGINE_ERROR_CODE (*remove)(ENGINE_HANDLE* handle, const void* cookie,
                                     const void* key, const size_t nkey,
                                     uint64_t cas, uint16_t vbucket);
-
-#ifdef SCAN_PREFIX_COMMAND
-        /**
-         * Indicate that a caller who received a prefix no longer needs
-         * it.
-         *
-         * @param handle the engine handle
-         * @param cookie The cookie provided by the frontend
-         * @param item the prefix to be released
-         */
-        void (*prefix_release)(ENGINE_HANDLE* handle, const void *cookie, item* item);
-#endif
 
         /**
          * Indicate that a caller who received an item no longer needs
@@ -712,7 +711,6 @@ extern "C" {
                                   const char *filepath);
 
 #ifdef SCAN_COMMAND
-#ifdef SCAN_PREFIX_COMMAND
         /**
          * Scan a certain number of prefixes that meet the given conditions.
          *
@@ -725,7 +723,6 @@ extern "C" {
          */
         ENGINE_ERROR_CODE (*prefixscan)(const char cursor[], const uint32_t count, const char *pattern,
                                         item **item_array, int item_arrsz, int *item_count);
-#endif
 
         /**
          * Scan a certain number of items that meet the given conditions.
@@ -762,7 +759,7 @@ extern "C" {
          */
         ENGINE_ERROR_CODE (*scrub_stale)(ENGINE_HANDLE* handle);
 
-#ifdef SCAN_PREFIX_COMMAND
+#ifdef SCAN_COMMAND
         /**
          * Get information about a prefix.
          *

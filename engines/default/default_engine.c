@@ -92,7 +92,7 @@ get_handle(ENGINE_HANDLE* handle)
     return (struct default_engine*)handle;
 }
 
-#ifdef SCAN_PREFIX_COMMAND
+#ifdef SCAN_COMMAND
 static inline prefix_t*
 get_real_prefix(item* item)
 {
@@ -314,10 +314,20 @@ default_destroy(ENGINE_HANDLE* handle)
     }
 }
 
+#ifdef SCAN_COMMAND
+/*
+ * Prefix API
+ */
+static void
+default_prefix_release(ENGINE_HANDLE* handle, const void *cookie, item* item)
+{
+    prefix_release(get_real_prefix(item));
+}
+#endif
+
 /*
  * Item API
  */
-
 static ENGINE_ERROR_CODE
 default_item_allocate(ENGINE_HANDLE* handle, const void* cookie,
                       item **item,
@@ -368,14 +378,6 @@ default_item_delete(ENGINE_HANDLE* handle, const void* cookie,
     ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }
-
-#ifdef SCAN_PREFIX_COMMAND
-static void
-default_prefix_release(ENGINE_HANDLE* handle, const void *cookie, item* item)
-{
-    prefix_release(get_real_prefix(item));
-}
-#endif
 
 static void
 default_item_release(ENGINE_HANDLE* handle, const void *cookie, item* item)
@@ -1246,7 +1248,6 @@ default_dump(ENGINE_HANDLE* handle, const void* cookie,
 
 #ifdef SCAN_COMMAND
 #define SCAN_ITER_COUNT 200
-#ifdef SCAN_PREFIX_COMMAND
 /*
  * Prefixscan API
  */
@@ -1307,7 +1308,6 @@ default_prefixscan(const char cursor[], const uint32_t count, const char *patter
     *item_count = scan_total;
     return ENGINE_SUCCESS;
 }
-#endif
 
 /*
  * Keyscan API
@@ -1814,8 +1814,10 @@ default_scrub_stale(ENGINE_HANDLE* handle)
     return (res) ? ENGINE_SUCCESS : ENGINE_FAILED;
 }
 
-#ifdef SCAN_PREFIX_COMMAND
-/* Prefix/Item/Elem Info */
+/*
+ * Info API
+ */
+#ifdef SCAN_COMMAND
 static bool
 get_prefix_info(ENGINE_HANDLE *handle, const void *cookie,
                 const item* item, prefix_info *prefix_info)
@@ -1826,8 +1828,6 @@ get_prefix_info(ENGINE_HANDLE *handle, const void *cookie,
     prefix_info->name_length = it->nprefix;
     return true;
 }
-#else
-/* Item/Elem Info */
 #endif
 
 static bool
@@ -1925,15 +1925,14 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .get_info          = default_get_info,
          .initialize        = default_initialize,
          .destroy           = default_destroy,
+#ifdef SCAN_COMMAND
+         /* Prefix API */
+         .prefix_release    = default_prefix_release,
+#endif
          /* Item API */
          .allocate          = default_item_allocate,
          .free              = default_item_free,
          .remove            = default_item_delete,
-#ifdef SCAN_PREFIX_COMMAND
-         /* Prefix API */
-         .prefix_release    = default_prefix_release,
-         /* Item API */
-#endif
          .release           = default_item_release,
          .get               = default_get,
          .store             = default_store,
@@ -1997,12 +1996,8 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .cachedump        = default_cachedump,
          .dump             = default_dump,
 #ifdef SCAN_COMMAND
-#ifdef SCAN_PREFIX_COMMAND
          /* Scan API */
          .prefixscan       = default_prefixscan,
-#else
-         /* Keyscan API */
-#endif
          .keyscan          = default_keyscan,
 #endif
          /* Config API */
@@ -2013,7 +2008,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          /* Scrub stale API */
          .scrub_stale      = default_scrub_stale,
          /* Info API */
-#ifdef SCAN_PREFIX_COMMAND
+#ifdef SCAN_COMMAND
          .get_prefix_info  = get_prefix_info,
 #endif
          .get_item_info    = get_item_info,

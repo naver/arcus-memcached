@@ -659,12 +659,12 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->ritem = 0;
     c->rlbytes = 0;
     c->rltotal = 0; /* used when read with multiple mem blocks */
-#ifdef SCAN_PREFIX_COMMAND
+#ifdef SCAN_COMMAND
     c->pcurr = c->ilist;
 #endif
     c->icurr = c->ilist;
     c->suffixcurr = c->suffixlist;
-#ifdef SCAN_PREFIX_COMMAND
+#ifdef SCAN_COMMAND
     c->pleft = 0;
 #endif
     c->ileft = 0;
@@ -868,7 +868,7 @@ static void conn_cleanup(conn *c)
             mc_engine.v1->release(mc_engine.v0, c, *(c->icurr));
         }
     }
-#ifdef SCAN_PREFIX_COMMAND
+#ifdef SCAN_COMMAND
     else if (c->pleft != 0) {
         for (; c->pleft > 0; c->pleft--,c->pcurr++) {
             mc_engine.v1->prefix_release(mc_engine.v0, c, *(c->pcurr));
@@ -9285,9 +9285,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
     } else if (ntokens > 2 && strcmp(type, "scan") == 0) {
         out_string(c,
         "\t" "scan key <cursor> [count <count>] [match <pattern>] [type <type>]\\r\\n" "\n"
-#ifdef SCAN_PREFIX_COMMAND
         "\t" "scan prefix <cursor> [count <count>] [match <pattern>]\\r\\n" "\n"
-#endif
         );
 #endif
     } else if (ntokens > 2 && strcmp(type, "admin") == 0) {
@@ -9492,7 +9490,6 @@ static bool scan_validate_type(char *type_str, ENGINE_ITEM_TYPE *ittype)
 static void process_prefixscan_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     /* prefixscan command format : scan prefix <cursor> [count <count>] [match <pattern>] */
-#ifdef SCAN_PREFIX_COMMAND
     char     cursor[SCAN_CURSOR_MAX_LENGTH+1];
     uint32_t count   = 20;
     char    *pattern = NULL;
@@ -9620,9 +9617,6 @@ static void process_prefixscan_command(conn *c, token_t *tokens, const size_t nt
             handle_unexpected_errorcode_ascii(c, __func__, ret);
             break;
     }
-#else
-    return; // TODO: scan prefixes
-#endif
 }
 
 static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntokens)
@@ -13840,7 +13834,7 @@ bool conn_mwrite(conn *c)
                 c->icurr++;
                 c->ileft--;
             }
-#ifdef SCAN_PREFIX_COMMAND
+#ifdef SCAN_COMMAND
             while (c->pleft > 0) {
                 item *it = *(c->pcurr);
                 mc_engine.v1->prefix_release(mc_engine.v0, c, it);

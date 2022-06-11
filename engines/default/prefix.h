@@ -21,12 +21,12 @@
 #include <memcached/types.h>
 
 typedef struct _prefix_t {
-#ifdef SCAN_PREFIX_COMMAND
+#ifdef SCAN_COMMAND
     uint16_t refcount; /* reference count */
 #endif
     uint8_t  nprefix;  /* the length of prefix name */
     uint8_t  internal; /* is internal prefix ? 1 or 0 */
-#ifdef SCAN_PREFIX_COMMAND
+#ifdef SCAN_COMMAND
     uint8_t  islinked; /* is linked to prefix hash table ? 1 or 0 */
 #else
     uint16_t dummy16;
@@ -85,11 +85,11 @@ uint32_t          prefix_count(void);
 char *            prefix_dump_stats(int *length);
 ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix,
                                    ADD_STAT add_stat, const void *cookie);
-#ifdef SCAN_PREFIX_COMMAND
-void *            prefix_get_name(prefix_t *pt);
-void              prefix_release(prefix_t *pt);
+#ifdef SCAN_COMMAND
 int               prefix_scan_direct(const char *cursor, int req_count,
                                      void **item_array, int item_arrsz);
+void              prefix_release(prefix_t *pt);
+void *            prefix_get_name(prefix_t *pt);
 #endif
 
 #endif

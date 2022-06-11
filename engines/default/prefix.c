@@ -39,16 +39,14 @@ typedef struct {
     uint32_t    hash;
 } prefix_t_list_elem;
 
-#ifdef SCAN_PREFIX_COMMAND
 static struct default_engine *engine=NULL;
-#endif
 static struct engine_config *config=NULL; // engine config
 static struct prefix        *prefxp=NULL; // engine prefix
 static SERVER_CORE_API      *svcore=NULL; // server core api
 static EXTENSION_LOGGER_DESCRIPTOR *logger;
 static prefix_t *null_pt = NULL; /* null prefix info */
 
-#ifdef SCAN_PREFIX_COMMAND
+#ifdef SCAN_COMMAND
 static inline void LOCK_CACHE(void)
 {
     pthread_mutex_lock(&engine->cache_lock);
@@ -74,28 +72,12 @@ static inline void PREFIX_REFCOUNT_DECR(prefix_t *pt)
         pt->refcount--;
     }
 }
-
-void prefix_release(prefix_t *pt)
-{
-    if (pt != null_pt) {
-        LOCK_CACHE();
-        PREFIX_REFCOUNT_DECR(pt);
-        if (pt->refcount == 0 && pt->islinked == 0) {
-            free(pt);
-        }
-        UNLOCK_CACHE();
-    }
-}
+#endif
 
 ENGINE_ERROR_CODE prefix_init(struct default_engine *engine_ptr)
-#else
-ENGINE_ERROR_CODE prefix_init(struct default_engine *engine)
-#endif
 {
     /* initialize global variables */
-#ifdef SCAN_PREFIX_COMMAND
     engine = engine_ptr;
-#endif
     config = &engine->config;
     prefxp = &engine->prefix;
     svcore = engine->server.core;
@@ -187,7 +169,7 @@ static int _prefix_insert(prefix_t *pt, uint32_t hash)
     int bucket = hash & hashmask(DEFAULT_PREFIX_HASHPOWER);
     pt->h_next = prefxp->hashtable[bucket];
     prefxp->hashtable[bucket] = pt;
-#ifdef SCAN_PREFIX_COMMAND
+#ifdef SCAN_COMMAND
     pt->islinked = 1;
 #endif
 
@@ -235,7 +217,7 @@ static void _prefix_delete(const char *prefix, const int nprefix, uint32_t hash)
         /* unlink and free the prefix structure */
         if (prev_pt) prev_pt->h_next = pt->h_next;
         else         prefxp->hashtable[bucket] = pt->h_next;
-#ifdef SCAN_PREFIX_COMMAND
+#ifdef SCAN_COMMAND
         pt->islinked = 0;
         if (pt->refcount == 0) {
             free(pt);
@@ -887,7 +869,7 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix,
     return ENGINE_SUCCESS;
 }
 
-#ifdef SCAN_PREFIX_COMMAND
+#ifdef SCAN_COMMAND
 static int _prefix_scan_direct(const char *cursor, int req_count, void **item_array, int item_arrsz)
 {
     uint32_t prefix_hsize = hashsize(DEFAULT_PREFIX_HASHPOWER);
@@ -929,6 +911,18 @@ int prefix_scan_direct(const char *cursor, int req_count, void **item_array, int
     int item_count = _prefix_scan_direct(cursor, req_count, item_array, item_arrsz);
     UNLOCK_CACHE();
     return item_count;
+}
+
+void prefix_release(prefix_t *pt)
+{
+    if (pt != null_pt) {
+        LOCK_CACHE();
+        PREFIX_REFCOUNT_DECR(pt);
+        if (pt->refcount == 0 && pt->islinked == 0) {
+            free(pt);
+        }
+        UNLOCK_CACHE();
+    }
 }
 
 void *prefix_get_name(prefix_t *pt)

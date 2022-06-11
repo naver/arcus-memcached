@@ -32,9 +32,6 @@ struct iovec {
 #endif
 
 #define SCAN_COMMAND
-#ifdef SCAN_COMMAND
-#define SCAN_PREFIX_COMMAND
-#endif
 #define NESTED_PREFIX
 #define PROXY_SUPPORT
 //#define NEW_PREFIX_STATS_MANAGEMENT
@@ -223,7 +220,7 @@ extern "C" {
     typedef void item;
     typedef void eitem; /* element item */
 
-#ifdef SCAN_PREFIX_COMMAND
+#ifdef SCAN_COMMAND
     typedef struct {
         const char    *name;  /* Prefix name string */
         uint8_t name_length; /* Length of prefix name string */

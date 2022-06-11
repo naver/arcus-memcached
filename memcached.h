@@ -365,12 +365,12 @@ struct conn {
     int    msgbytes;  /* number of bytes in current msg */
 
     item   **ilist;   /* list of items to write out */
-    int    isize;
-    item   **icurr;
-    int    ileft;
-#ifdef SCAN_PREFIX_COMMAND
-    item   **pcurr;
-    int    pleft;
+    int    isize;     /* size of ilist(item list) */
+    item   **icurr;   /* item current position in ilist */
+    int    ileft;     /* item count left for writing out */
+#ifdef SCAN_COMMAND
+    item   **pcurr;   /* prefix current position in ilist */
+    int    pleft;     /* prefix count left for writing out */
 #endif
 
     char   **suffixlist;
