@@ -74,11 +74,12 @@ sub when {
 # Disabling the defaults since it conflicts with a running instance.
 # when('no arguments', '', 11211, 11211);
 ### [ARCUS] CHANGED FOLLOWING TEST ###
-# Because of 11212 bind error in hudson server environment.
+# Because of 11212, 11222 bind error in hudson server environment.
 #when('specifying tcp port', '-p 11212', 11212, -1);
+#when('specifying udp port', '-U 11222', 11222, 11222);
 when('specifying tcp port', '-p 11292', 11292, -1);
+when('specifying udp port', '-U 11293', 11293, 11293);
 ######################################
-when('specifying udp port', '-U 11222', 11222, 11222);
 when('specifying tcp ephemeral port', '-p -1', 0, -1);
 when('specifying udp ephemeral port', '-U -1', 0, 0);
 when('tcp port disabled', '-p 0', -1, -1);
