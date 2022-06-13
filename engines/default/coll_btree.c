@@ -4203,18 +4203,7 @@ ENGINE_ERROR_CODE btree_elem_smget(token_t *key_array, const int key_count,
         btree_scan_buf[i].next = (i < (offset+count)) ? (i+1) : -1;
     }
 
-    /* initialize smget result structure */
-    assert(result->elem_array != NULL);
-    result->trim_elems = (eitem *)&result->elem_array[count];
-    result->elem_kinfo = (smget_ehit_t *)&result->elem_array[count + key_count];
-    result->miss_kinfo = (smget_emis_t *)&result->elem_kinfo[count];
-    result->trim_kinfo = result->miss_kinfo;
-    result->elem_count = 0;
-    result->miss_count = 0;
-    result->trim_count = 0;
-    result->elem_arrsz = count;
-    result->keys_arrsz = key_count;
-    result->duplicated = false;
+    /* set the ascending field of smget result */
     result->ascending = (bkrtype != BKEY_RANGE_TYPE_DSC ? true : false);
 
     LOCK_CACHE();

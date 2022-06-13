@@ -1087,6 +1087,20 @@ default_btree_elem_smget(ENGINE_HANDLE* handle, const void* cookie,
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
+    /* initialize smget result structure */
+    assert(result->elem_array != NULL);
+    result->trim_elems = (eitem *)&result->elem_array[count];
+    result->elem_kinfo = (smget_ehit_t *)&result->elem_array[count + kcount];
+    result->miss_kinfo = (smget_emis_t *)&result->elem_kinfo[count];
+    result->trim_kinfo = result->miss_kinfo;
+    result->elem_count = 0;
+    result->miss_count = 0;
+    result->trim_count = 0;
+    result->elem_arrsz = count;
+    result->keys_arrsz = kcount;
+    result->duplicated = false;
+    /* result->ascending: not yet unknown */
+
     ret = btree_elem_smget(karray, kcount, bkrange, efilter,
                            offset, count, unique, result);
     return ret;
