@@ -51,15 +51,18 @@ my @scankeys = keyscan($sock, "0", 2000, "*", "A");
 Test::More::is(scalar(@scankeys), scalar(@keyarr1));
 my %keyset = map { $_ => 1 } @keyarr1;
 foreach $_ ( @scankeys ) {
-    Test::More::ok(exists($keyset{$_}));
+    print("$_\n");
+    my ($key) = split(' ', $_);
+    Test::More::ok(exists($keyset{$key}));
 }
 
 @scankeys = keyscan($sock, "0", 2000, "?\\?\\\\\\**a", "K");
 Test::More::is(scalar(@scankeys), scalar(@keyarr2));
 %keyset = map { $_ => 1 } @keyarr2;
 foreach $_ ( @scankeys ) {
-    print "$_\n";
-    Test::More::ok(exists($keyset{$_}));
+    print("$_\n");
+    my ($key) = split(' ', $_);
+    Test::More::ok(exists($keyset{$key}));
 }
 
 # FAIL CASES

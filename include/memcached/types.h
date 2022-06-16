@@ -21,6 +21,7 @@
 #include <sys/types.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <time.h>
 
 #ifdef __WIN32__
 struct iovec {
@@ -221,9 +222,12 @@ extern "C" {
     typedef void eitem; /* element item */
 
 #ifdef SCAN_COMMAND
-    typedef struct {
-        const char    *name;  /* Prefix name string */
+    typedef struct _prefix_info {
+        const char    *name; /* Prefix name string */
         uint8_t name_length; /* Length of prefix name string */
+        uint64_t total_item_count; /* Total item count of prefix */
+        uint64_t total_item_bytes; /* Total item bytes of prefix */
+        struct tm create_time;     /* Create time of prefix */
     } prefix_info;
 #endif
 
@@ -231,6 +235,7 @@ extern "C" {
         uint64_t cas;       /* cas value */
         uint32_t flags;     /**< Flags associated with the item (in network byte order)*/
         rel_time_t exptime; /**< When the item will expire (relative to process startup) */
+        uint8_t type;       /** type of item */
         uint8_t clsid;      /** class id for the object */
         uint16_t nkey;      /**< The total length of the key (in bytes) */
         uint32_t nbytes;    /**< The total length of the data (in bytes) */

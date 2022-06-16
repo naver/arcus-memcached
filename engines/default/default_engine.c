@@ -1840,6 +1840,19 @@ get_prefix_info(ENGINE_HANDLE *handle, const void *cookie,
 
     prefix_info->name = (const char*)prefix_get_name(it);
     prefix_info->name_length = it->nprefix;
+#ifdef NESTED_PREFIX
+    if (it->child_prefix_items > 0) {
+        prefix_info->total_item_count = it->total_count_inclusive;
+        prefix_info->total_item_bytes = it->total_bytes_inclusive;
+    } else {
+        prefix_info->total_item_count = it->total_count_exclusive;
+        prefix_info->total_item_bytes = it->total_bytes_exclusive;
+    }
+#else
+    prefix_info->total_item_count = it->total_count_exclusive;
+    prefix_info->total_item_bytes = it->total_bytes_exclusive;
+#endif
+    localtime_r(&it->create_time, &prefix_info->create_time);
     return true;
 }
 #endif
@@ -1853,6 +1866,7 @@ get_item_info(ENGINE_HANDLE *handle, const void *cookie,
     item_info->cas = item_get_cas(it);
     item_info->flags = it->flags;
     item_info->exptime = it->exptime;
+    item_info->type = GET_ITEM_TYPE(it);
     item_info->clsid = it->slabs_clsid;
     item_info->nkey = it->nkey;
     item_info->nbytes = it->nbytes;

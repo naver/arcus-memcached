@@ -51,15 +51,18 @@ my @scanprefixes = prefixscan($sock, "0", 2000, "*");
 Test::More::is(scalar(@scanprefixes), scalar(@prefixarr1));
 my %prefixset = map { $_ => 1 } @prefixarr1;
 foreach $_ ( @scanprefixes ) {
-    Test::More::ok(exists($prefixset{$_}));
+    print("$_\n");
+    my ($key) = split(' ', $_);
+    Test::More::ok(exists($prefixset{$key}));
 }
 
 @scanprefixes = prefixscan($sock, "0", 2000, "*a");
 Test::More::is(scalar(@scanprefixes), scalar(@prefixarr2));
 %prefixset = map { $_ => 1 } @prefixarr2;
 foreach $_ ( @scanprefixes ) {
-    print "$_\n";
-    Test::More::ok(exists($prefixset{$_}));
+    print("$_\n");
+    my ($key) = split(' ', $_);
+    Test::More::ok(exists($prefixset{$key}));
 }
 
 # FAIL CASES
