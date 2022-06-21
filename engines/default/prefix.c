@@ -870,6 +870,11 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix,
 }
 
 #ifdef SCAN_COMMAND
+static bool _prefix_isempty(prefix_t *pt)
+{
+    return pt->child_prefix_items == 0 && pt->total_count_exclusive == 0;
+}
+
 static int _prefix_scan_direct(const char *cursor, int req_count, void **item_array, int item_arrsz)
 {
     uint32_t prefix_hsize = hashsize(DEFAULT_PREFIX_HASHPOWER);
@@ -877,14 +882,22 @@ static int _prefix_scan_direct(const char *cursor, int req_count, void **item_ar
     if (!safe_strtoul(cursor, &bucket)) {
         return -1; /* invalid cursor */
     }
+    if (bucket >= prefix_hsize) {
+        sprintf((char*)cursor, "%u", 0); /* scan end */
+        return 0;
+    }
 
     int item_count = 0;
     int hash_count = 0;
     int hash_limit = req_count * 4; /* max count of hash chains to scan */
     while (item_count < req_count && hash_count < hash_limit) {
+        if (bucket == 0 && !_prefix_isempty(null_pt)) {
+            item_array[item_count++] = null_pt;
+            PREFIX_REFCOUNT_INCR(null_pt);
+        }
         prefix_t *pt = prefxp->hashtable[bucket];
         while (pt) {
-            if (!pt->internal && !(pt->child_prefix_items == 0 && pt->total_count_exclusive == 0)) {
+            if (!pt->internal && !_prefix_isempty(pt)) {
                 item_array[item_count++] = pt;
                 PREFIX_REFCOUNT_INCR(pt);
             }
