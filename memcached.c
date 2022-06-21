@@ -9596,7 +9596,7 @@ static void process_prefixscan_command(conn *c, token_t *tokens, const size_t nt
                     ret = ENGINE_ENOMEM; break;
                 }
                 sprintf(attrptr, " %llu %llu %04d%02d%02d%02d%02d%02d\r\n",
-                        pinfo.total_item_count, pinfo.total_item_bytes,
+                        (unsigned long long)pinfo.total_item_count, (unsigned long long)pinfo.total_item_bytes,
                         pinfo.create_time.tm_year+1900, pinfo.create_time.tm_mon+1, pinfo.create_time.tm_mday,
                         pinfo.create_time.tm_hour, pinfo.create_time.tm_min, pinfo.create_time.tm_sec);
                 if (add_iov(c, pinfo.name, pinfo.name_length) != 0 ||
