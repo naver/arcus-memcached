@@ -1610,6 +1610,16 @@ static inline char *get_item_type_str(uint8_t type)
     else                               return "unknown";
 }
 
+static inline char get_item_type_char(uint8_t type)
+{
+    if (type == ITEM_TYPE_KV)          return 'K';
+    else if (type == ITEM_TYPE_LIST)   return 'L';
+    else if (type == ITEM_TYPE_SET)    return 'S';
+    else if (type == ITEM_TYPE_MAP)    return 'M';
+    else if (type == ITEM_TYPE_BTREE)  return 'B';
+    else                               return 'A';
+}
+
 static inline char *get_ovflaction_str(uint8_t ovflact)
 {
     if (ovflact == OVFL_HEAD_TRIM)          return "head_trim";
@@ -9487,6 +9497,12 @@ static bool scan_validate_type(char *type_str, ENGINE_ITEM_TYPE *ittype)
     return true;
 }
 
+#define KEYSCAN_RESPONSE_HEADER_MAX_LENGTH SCAN_CURSOR_MAX_LENGTH + 24
+#define KEYSCAN_RESPONSE_ATTR_MAX_LENGTH 18
+
+#define PREFIXSCAN_RESPONSE_HEADER_MAX_LENGTH SCAN_CURSOR_MAX_LENGTH + 28
+#define PREFIXSCAN_RESPONSE_ATTR_MAX_LENGTH 64
+
 static void process_prefixscan_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     /* prefixscan command format : scan prefix <cursor> [count <count>] [match <pattern>] */
@@ -9560,26 +9576,34 @@ static void process_prefixscan_command(conn *c, token_t *tokens, const size_t nt
     /* call engine prefixscan API */
     ENGINE_ERROR_CODE ret = mc_engine.v1->prefixscan(cursor, count, pattern, c->ilist, c->isize, &item_count);
     if (ret == ENGINE_SUCCESS) {
-        char *header = NULL;
+        char *response = NULL;
         do {
-            header = (char*)malloc(SCAN_CURSOR_MAX_LENGTH + 28);
-            if (header == NULL) {
+            response = (char*)malloc(PREFIXSCAN_RESPONSE_HEADER_MAX_LENGTH +
+                                     (PREFIXSCAN_RESPONSE_ATTR_MAX_LENGTH * item_count));
+            if (response == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
+            char *header = response;
             sprintf(header, "PREFIXES %d %s\r\n", item_count, cursor);
             if (add_iov(c, header, strlen(header)) != 0) {
                 ret = ENGINE_ENOMEM; break;
             }
+            char *attrptr = response + PREFIXSCAN_RESPONSE_HEADER_MAX_LENGTH;
             for (i = 0; i < item_count; i++) {
                 item *it = (item *)c->ilist[i];
                 prefix_info pinfo;
                 if (!mc_engine.v1->get_prefix_info(mc_engine.v0, c, it, &pinfo)) {
                     ret = ENGINE_ENOMEM; break;
                 }
+                sprintf(attrptr, " %llu %llu %04d%02d%02d%02d%02d%02d\r\n",
+                        pinfo.total_item_count, pinfo.total_item_bytes,
+                        pinfo.create_time.tm_year+1900, pinfo.create_time.tm_mon+1, pinfo.create_time.tm_mday,
+                        pinfo.create_time.tm_hour, pinfo.create_time.tm_min, pinfo.create_time.tm_sec);
                 if (add_iov(c, pinfo.name, pinfo.name_length) != 0 ||
-                    add_iov(c, "\r\n", 2) != 0) {
+                    add_iov(c, attrptr, strlen(attrptr)) != 0) {
                     ret = ENGINE_ENOMEM; break;
                 }
+                attrptr += PREFIXSCAN_RESPONSE_ATTR_MAX_LENGTH;
             }
             if (ret != ENGINE_SUCCESS) break;
             if (add_iov(c, "END\r\n", 5) != 0 ||
@@ -9590,14 +9614,14 @@ static void process_prefixscan_command(conn *c, token_t *tokens, const size_t nt
         if (ret == ENGINE_SUCCESS) {
             c->pcurr = c->ilist;
             c->pleft = item_count;
-            c->write_and_free = header;
+            c->write_and_free = response;
         } else {
             for (i = 0; i < item_count; i++) {
                 mc_engine.v1->prefix_release(mc_engine.v0, c, c->ilist[i]);
             }
-            if (header != NULL) {
-                free(header);
-                header = NULL;
+            if (response != NULL) {
+                free(response);
+                response = NULL;
             }
         }
     }
@@ -9698,25 +9722,31 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
     /* call engine keyscan API */
     ENGINE_ERROR_CODE ret = mc_engine.v1->keyscan(cursor, count, pattern, ittype, c->ilist, c->isize, &item_count);
     if (ret == ENGINE_SUCCESS) {
-        char *header = NULL;
+        char *response = NULL;
         do {
-            header = (char*)malloc(SCAN_CURSOR_MAX_LENGTH + 24);
-            if (header == NULL) {
+            response = (char*)malloc(KEYSCAN_RESPONSE_HEADER_MAX_LENGTH +
+                                     (KEYSCAN_RESPONSE_ATTR_MAX_LENGTH * item_count));
+            if (response == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
+            char *header = response;
             sprintf(header, "KEYS %d %s\r\n", item_count, cursor);
             if (add_iov(c, header, strlen(header)) != 0) {
                 ret = ENGINE_ENOMEM; break;
             }
+            char *attrptr = response + KEYSCAN_RESPONSE_HEADER_MAX_LENGTH;
             for (i = 0; i < item_count; i++) {
                 item *it = (item *)c->ilist[i];
                 if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
                     ret = ENGINE_ENOMEM; break;
                 }
+                sprintf(attrptr, " %c %d\r\n",
+                        get_item_type_char(c->hinfo.type), c->hinfo.exptime);
                 if (add_iov(c, c->hinfo.key, c->hinfo.nkey) != 0 ||
-                    add_iov(c, "\r\n", 2) != 0) {
+                    add_iov(c, attrptr, strlen(attrptr)) != 0) {
                     ret = ENGINE_ENOMEM; break;
                 }
+                attrptr += KEYSCAN_RESPONSE_ATTR_MAX_LENGTH;
             }
             if (ret != ENGINE_SUCCESS) break;
             if (add_iov(c, "END\r\n", 5) != 0 ||
@@ -9727,15 +9757,15 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
         if (ret == ENGINE_SUCCESS) {
             c->icurr = c->ilist;
             c->ileft = item_count;
-            c->write_and_free = header;
+            c->write_and_free = response;
         } else {
             c->ileft = 0;
             for (i = 0; i < item_count; i++) {
                 mc_engine.v1->release(mc_engine.v0, c, c->ilist[i]);
             }
-            if (header != NULL) {
-                free(header);
-                header = NULL;
+            if (response != NULL) {
+                free(response);
+                response = NULL;
             }
         }
     }

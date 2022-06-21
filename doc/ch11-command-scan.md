@@ -34,9 +34,9 @@ scan key 명령 응답 syntax는 아래와 같다.
 
 ```
 KEYS <key_count> <cursor>\r\n
-key1\r\n
-key2\r\n
-key3\r\n
+key1 <type> <expiretime>\r\n
+key2 <type> <expiretime>\r\n
+key3 <type> <expiretime>\r\n
 ...
 ```
 
@@ -44,6 +44,11 @@ key3\r\n
 \<key_count\>는 조건과 일치한 아이템 개수로 두 번째 줄부터 키 문자열이 \<key_count\> 개 만큼 나온다.
 \<cursor\>는 스캔할 다음 지점으로 이어서 스캔할 경우 이 값을 그대로 주어 scan key 호출하면 된다.
 이 값이 0 이 나오면 전체 아이템을 스캔 완료했음을 나타낸다. 따라서 응용은 0이 나올때까지 반복 호출하면 된다.
+
+두 번째 줄부터 scan된 key 목록이 나온다.
+\<type\> - 아이템 타입. 각 타입별 지정 값은 다음과 같다.
+KV : 'K', List : 'L', Set : 'S', Map : 'M', Btree : 'B'
+\<expiretime\>은 아이템 만료 시간을 나타낸다.
 
 scan key 사용 예시이다.
 1000개의 아이템을 스캔하여 그 중 KV 타입이고, \*key1\* 패턴과 일치하는 키 목록을 조회한다.
@@ -55,11 +60,11 @@ scan key 0 count 1000 match *key1* type K
 0이 아니므로 전체 아이템을 스캔하지 못했음을 의미한다. 0이 나올때까지 응답받은 cursor 를 주어 scan key 를 반복 호출하면 된다.
 ```
 KEYS 5 8000\r\n
-akey12
-bkey13
-ccckey14
-cckey16
-keykey13
+akey12 K 0\r\n
+bkey13 K 10\r\n
+ccckey14 K 0\r\n
+cckey16 K 0\r\n
+keykey13 K 3600\r\n
 ```
 
 scan key 명령 실패 시에 response string 은 다음과 같다.
@@ -102,9 +107,9 @@ scan prefix 명령 응답 syntax는 아래와 같다.
 
 ```
 PREFIXES <prefix_count> <cursor>\r\n
-prefix1\r\n
-prefix2\r\n
-prefix3\r\n
+prefix1 <item_count> <item_bytes> <create_time>\r\n
+prefix2 <item_count> <item_bytes> <create_time>\r\n
+prefix3 <item_count> <item_bytes> <create_time>\r\n
 ...
 ```
 
@@ -113,21 +118,26 @@ prefix3\r\n
 \<cursor\>는 스캔할 다음 지점으로 이어서 스캔할 경우 이 값을 그대로 주어 scan prefix 호출하면 된다.
 이 값이 0 이 나오면 전체 Prefix를 스캔 완료했음을 나타낸다. 따라서 응용은 0이 나올때까지 반복 호출하면 된다.
 
+두 번째 줄부터 scan된 prefix 목록이 나온다.
+\<item_count\>는 해당 prefix의 아이템 개수를 나타낸다.
+\<item_bytes\>는 해당 prefix의 아이템들이 차지하는 메모리 용량을 byte 단위로 나타낸다.
+\<create_time\>은 해당 prefix가 생성된 시간을 나타낸다.
+
 scan prefix 사용 예시이다.
 1000개의 Prefix를 스캔하여 그 중 \*prefix1\* 패턴과 일치하는 Prefix 목록을 조회한다.
 ```
 scan prefix 0 count 1000 match *prefix1*
 ```
 
-5개의 키가 조회되었고, 다음 스캔 지점 cursor 값은 8000이다.
+5개의 키가 조회되었고, 다음 스캔 지점 cursor 값은 8이다.
 0이 아니므로 전체 Prefix를 스캔하지 못했음을 의미한다. 0이 나올때까지 응답받은 cursor 를 주어 scan prefix 를 반복 호출하면 된다.
 ```
-PREFIXES 5 8000\r\n
-aprefix12
-bprefix13
-cccprefix14
-ccprefix16
-prefixprefix13
+PREFIXES 5 8\r\n
+aprefix12 1 96 20220621095219\r\n
+bprefix13 12 2016 20220621095219\r\n
+cccprefix14 25 2704 20220621095219\r\n
+ccprefix16 2 256 20220621095219\r\n
+prefixprefix13 3 288 20220621095219\r\n
 ```
 
 scan prefix 명령 실패 시에 response string 은 다음과 같다.
