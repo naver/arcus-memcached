@@ -1838,8 +1838,13 @@ get_prefix_info(ENGINE_HANDLE *handle, const void *cookie,
 {
     prefix_t *it = (prefix_t*)item;
 
-    prefix_info->name = (const char*)prefix_get_name(it);
-    prefix_info->name_length = it->nprefix;
+    if (it->nprefix > 0) {
+        prefix_info->name = (const char*)prefix_get_name(it);
+        prefix_info->name_length = it->nprefix;
+    } else {
+        prefix_info->name = "<null>";
+        prefix_info->name_length = 6;
+    }
 #ifdef NESTED_PREFIX
     if (it->child_prefix_items > 0) {
         prefix_info->total_item_count = it->total_count_inclusive;

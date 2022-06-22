@@ -20,6 +20,10 @@ my @prefixarr2 = ();
 
 # SET ITEMS
 $prefix = "aaaaaab";
+$cmd = "set $prefix 0 0 $vlen"; $rst = "STORED";
+mem_cmd_is($sock, $cmd, $val, $rst);
+push(@prefixarr1, "<null>");
+$prefix = "aaaaaab";
 $cmd = "set $prefix:$prefix 0 0 $vlen"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 push(@prefixarr1, $prefix);
@@ -47,7 +51,7 @@ mem_cmd_is($sock, $cmd, "", $rst);
 push(@prefixarr1, $prefix);
 
 # PREFIXSCAN
-my @scanprefixes = prefixscan($sock, "0", 2000, "*");
+my @scanprefixes = prefixscan($sock, "0", 1, "*");
 Test::More::is(scalar(@scanprefixes), scalar(@prefixarr1));
 my %prefixset = map { $_ => 1 } @prefixarr1;
 foreach $_ ( @scanprefixes ) {
@@ -56,7 +60,7 @@ foreach $_ ( @scanprefixes ) {
     Test::More::ok(exists($prefixset{$key}));
 }
 
-@scanprefixes = prefixscan($sock, "0", 2000, "*a");
+@scanprefixes = prefixscan($sock, "0", 1, "*a");
 Test::More::is(scalar(@scanprefixes), scalar(@prefixarr2));
 %prefixset = map { $_ => 1 } @prefixarr2;
 foreach $_ ( @scanprefixes ) {
