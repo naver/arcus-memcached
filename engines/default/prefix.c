@@ -129,34 +129,118 @@ static prefix_t *_prefix_find(const char *prefix, const int nprefix, uint32_t ha
 static void _prefix_inclusive_stats_init(prefix_t* pt, bool isleaf)
 {
     if (isleaf) {
-        pt->items_count_inclusive[ITEM_TYPE_KV] = 0;
-        pt->items_bytes_inclusive[ITEM_TYPE_KV] = 0;
-        pt->items_count_inclusive[ITEM_TYPE_LIST] = 0;
-        pt->items_bytes_inclusive[ITEM_TYPE_LIST] = 0;
-        pt->items_count_inclusive[ITEM_TYPE_SET] = 0;
-        pt->items_bytes_inclusive[ITEM_TYPE_SET] = 0;
-        pt->items_count_inclusive[ITEM_TYPE_MAP] = 0;
-        pt->items_bytes_inclusive[ITEM_TYPE_MAP] = 0;
-        pt->items_count_inclusive[ITEM_TYPE_BTREE] = 0;
-        pt->items_bytes_inclusive[ITEM_TYPE_BTREE] = 0;
+        for (int i = 0; i < ITEM_TYPE_MAX; i++) {
+            pt->items_count_inclusive[i] = 0;
+            pt->items_bytes_inclusive[i] = 0;
+        }
         pt->total_count_inclusive = 0;
         pt->total_bytes_inclusive = 0;
     } else {
-        pt->items_count_inclusive[ITEM_TYPE_KV] = pt->items_count_exclusive[ITEM_TYPE_KV];
-        pt->items_bytes_inclusive[ITEM_TYPE_KV] = pt->items_bytes_exclusive[ITEM_TYPE_KV];
-        pt->items_count_inclusive[ITEM_TYPE_LIST] = pt->items_count_exclusive[ITEM_TYPE_LIST];
-        pt->items_bytes_inclusive[ITEM_TYPE_LIST] = pt->items_bytes_exclusive[ITEM_TYPE_LIST];
-        pt->items_count_inclusive[ITEM_TYPE_SET] = pt->items_count_exclusive[ITEM_TYPE_SET];
-        pt->items_bytes_inclusive[ITEM_TYPE_SET] = pt->items_bytes_exclusive[ITEM_TYPE_SET];
-        pt->items_count_inclusive[ITEM_TYPE_MAP] = pt->items_count_exclusive[ITEM_TYPE_MAP];
-        pt->items_bytes_inclusive[ITEM_TYPE_MAP] = pt->items_bytes_exclusive[ITEM_TYPE_MAP];
-        pt->items_count_inclusive[ITEM_TYPE_BTREE] = pt->items_count_exclusive[ITEM_TYPE_BTREE];
-        pt->items_bytes_inclusive[ITEM_TYPE_BTREE] = pt->items_bytes_exclusive[ITEM_TYPE_BTREE];
+        for (int i = 0; i < ITEM_TYPE_MAX; i++) {
+            pt->items_count_inclusive[i] = pt->items_count_exclusive[i];
+            pt->items_bytes_inclusive[i] = pt->items_bytes_exclusive[i];
+        }
         pt->total_count_inclusive = pt->total_count_exclusive;
         pt->total_bytes_inclusive = pt->total_count_exclusive;
     }
 }
 #endif
+
+static void _prefix_item_count_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
+                                    const uint32_t item_size)
+{
+    pt->items_count_exclusive[item_type] += 1;
+    pt->items_bytes_exclusive[item_type] += item_size;
+    pt->total_count_exclusive += 1;
+    pt->total_bytes_exclusive += item_size;
+
+#ifdef NESTED_PREFIX
+    if (pt->child_prefix_items > 0) {
+        pt->items_count_inclusive[item_type] += 1;
+        pt->items_bytes_inclusive[item_type] += item_size;
+        pt->total_count_inclusive += 1;
+        pt->total_bytes_inclusive += item_size;
+    }
+
+    prefix_t *parent_pt = pt->parent_prefix;
+    while (parent_pt != NULL) {
+        parent_pt->items_count_inclusive[item_type] += 1;
+        parent_pt->items_bytes_inclusive[item_type] += item_size;
+        parent_pt->total_count_inclusive += 1;
+        parent_pt->total_bytes_inclusive += item_size;
+        parent_pt = parent_pt->parent_prefix;
+    }
+#endif
+}
+
+static void _prefix_item_count_decr(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
+                                    const uint32_t item_size)
+{
+    pt->items_count_exclusive[item_type] -= 1;
+    pt->items_bytes_exclusive[item_type] -= item_size;
+    pt->total_count_exclusive -= 1;
+    pt->total_bytes_exclusive -= item_size;
+
+#ifdef NESTED_PREFIX
+    if (pt->child_prefix_items > 0) {
+        pt->items_count_inclusive[item_type] -= 1;
+        pt->items_bytes_inclusive[item_type] -= item_size;
+        pt->total_count_inclusive -= 1;
+        pt->total_bytes_inclusive -= item_size;
+    }
+
+    prefix_t *parent_pt = pt->parent_prefix;
+    while (parent_pt != NULL) {
+        parent_pt->items_count_inclusive[item_type] -= 1;
+        parent_pt->items_bytes_inclusive[item_type] -= item_size;
+        parent_pt->total_count_inclusive -= 1;
+        parent_pt->total_bytes_inclusive -= item_size;
+        parent_pt = parent_pt->parent_prefix;
+    }
+#endif
+}
+
+static void _prefix_item_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
+                                    const uint32_t item_bytes)
+{
+    pt->items_bytes_exclusive[item_type] += item_bytes;
+    pt->total_bytes_exclusive += item_bytes;
+
+#ifdef NESTED_PREFIX
+    if (pt->child_prefix_items > 0) {
+        pt->items_bytes_inclusive[item_type] += item_bytes;
+        pt->total_bytes_inclusive += item_bytes;
+    }
+
+    prefix_t *parent_pt = pt->parent_prefix;
+    while (parent_pt != NULL) {
+        parent_pt->items_bytes_inclusive[item_type] += item_bytes;
+        parent_pt->total_bytes_inclusive += item_bytes;
+        parent_pt = parent_pt->parent_prefix;
+    }
+#endif
+}
+
+static void _prefix_item_bytes_decr(prefix_t *pt, ENGINE_ITEM_TYPE item_type,
+                                    const uint32_t item_bytes)
+{
+    pt->items_bytes_exclusive[item_type] -= item_bytes;
+    pt->total_bytes_exclusive -= item_bytes;
+
+#ifdef NESTED_PREFIX
+    if (pt->child_prefix_items > 0) {
+        pt->items_bytes_inclusive[item_type] -= item_bytes;
+        pt->total_bytes_inclusive -= item_bytes;
+    }
+
+    prefix_t *parent_pt = pt->parent_prefix;
+    while (parent_pt != NULL) {
+        parent_pt->items_bytes_inclusive[item_type] -= item_bytes;
+        parent_pt->total_bytes_inclusive -= item_bytes;
+        parent_pt = parent_pt->parent_prefix;
+    }
+#endif
+}
 
 static int _prefix_insert(prefix_t *pt, uint32_t hash)
 {
@@ -339,34 +423,8 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
     }
     assert(pt != NULL);
 
-    /* update prefix information */
-    int item_type = GET_ITEM_TYPE(it);
-#ifdef NESTED_PREFIX
-    if (pt->child_prefix_items > 0) {
-        pt->items_count_inclusive[item_type] += 1;
-        pt->items_bytes_inclusive[item_type] += item_size;
-        pt->total_count_inclusive += 1;
-        pt->total_bytes_inclusive += item_size;
-    }
-    pt->items_count_exclusive[item_type] += 1;
-    pt->items_bytes_exclusive[item_type] += item_size;
-    pt->total_count_exclusive += 1;
-    pt->total_bytes_exclusive += item_size;
-
-    prefix_t *parent_pt = pt->parent_prefix;
-    while (parent_pt != NULL) {
-        parent_pt->items_count_inclusive[item_type] += 1;
-        parent_pt->items_bytes_inclusive[item_type] += item_size;
-        parent_pt->total_count_inclusive += 1;
-        parent_pt->total_bytes_inclusive += item_size;
-        parent_pt = parent_pt->parent_prefix;
-    }
-#else
-    pt->items_count[item_type] += 1;
-    pt->items_bytes[item_type] += item_size;
-    pt->total_count_exclusive += 1;
-    pt->total_bytes_exclusive += item_size;
-#endif
+    /* update item stats in prefix */
+    _prefix_item_count_incr(pt, GET_ITEM_TYPE(it), item_size);
 
     *internal = (pt->internal ? true : false);
     return ENGINE_SUCCESS;
@@ -378,42 +436,12 @@ void prefix_unlink(hash_item *it, const uint32_t item_size, bool drop_if_empty)
     it->pfxptr = NULL;
     assert(pt != NULL);
 
-    /* update prefix information */
-    int item_type = GET_ITEM_TYPE(it);
-#ifdef NESTED_PREFIX
-    if (pt->child_prefix_items > 0) {
-        pt->items_count_inclusive[item_type] -= 1;
-        pt->items_bytes_inclusive[item_type] -= item_size;
-        pt->total_count_inclusive -= 1;
-        pt->total_bytes_inclusive -= item_size;
-    }
-    pt->items_count_exclusive[item_type] -= 1;
-    pt->items_bytes_exclusive[item_type] -= item_size;
-    pt->total_count_exclusive -= 1;
-    pt->total_bytes_exclusive -= item_size;
-
-    prefix_t *parent_pt = pt->parent_prefix;
-    while (parent_pt != NULL) {
-        parent_pt->items_count_inclusive[item_type] -= 1;
-        parent_pt->items_bytes_inclusive[item_type] -= item_size;
-        parent_pt->total_count_inclusive -= 1;
-        parent_pt->total_bytes_inclusive -= item_size;
-        parent_pt = parent_pt->parent_prefix;
-    }
-#else
-    pt->items_count[item_type] -= 1;
-    pt->items_bytes[item_type] -= item_size;
-    pt->total_count_exclusive -= 1;
-    pt->total_bytes_exclusive -= item_size;
-#endif
+    /* update item stats in prefix */
+    _prefix_item_count_decr(pt, GET_ITEM_TYPE(it), item_size);
 
     if (drop_if_empty) {
         while (pt != NULL && pt != null_pt) {
-#ifdef NESTED_PREFIX
-            parent_pt = pt->parent_prefix;
-#else
             prefix_t *parent_pt = pt->parent_prefix;
-#endif
             if (pt->child_prefix_items > 0 || pt->total_count_exclusive > 0)
                 break; /* NOT empty */
             assert(pt->total_bytes_exclusive == 0);
@@ -461,68 +489,14 @@ void prefix_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t 
 {
     /* It's called when a collection element is inserted */
     assert(item_type < ITEM_TYPE_MAX);
-
-#ifdef NESTED_PREFIX
-    pt->items_bytes_exclusive[item_type] += bytes;
-    pt->total_bytes_exclusive += bytes;
-    if (pt->child_prefix_items > 0) {
-        pt->items_bytes_inclusive[item_type] += bytes;
-        pt->total_bytes_inclusive += bytes;
-    }
-
-    prefix_t *parent_pt = pt->parent_prefix;
-    while (parent_pt != NULL) {
-        parent_pt->items_bytes_inclusive[item_type] += bytes;
-        parent_pt->total_bytes_inclusive += bytes;
-        parent_pt = parent_pt->parent_prefix;
-    }
-#else
-    pt->items_bytes[item_type] += bytes;
-    pt->total_bytes_exclusive += bytes;
-#if 0 // might be used later
-    if (1) {
-        prefix_t *curr_pt = pt->parent_prefix;
-        while (curr_pt != NULL) {
-            curr_pt->total_bytes_inclusive += bytes;
-            curr_pt = curr_pt->parent_prefix;
-        }
-    }
-#endif
-#endif
+    _prefix_item_bytes_incr(pt, item_type, bytes);
 }
 
 void prefix_bytes_decr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t bytes)
 {
     /* It's called when a collection element is removed */
     assert(item_type < ITEM_TYPE_MAX);
-
-#ifdef NESTED_PREFIX
-    pt->items_bytes_exclusive[item_type] -= bytes;
-    pt->total_bytes_exclusive -= bytes;
-    if (pt->child_prefix_items > 0) {
-        pt->items_bytes_inclusive[item_type] -= bytes;
-        pt->total_bytes_inclusive -= bytes;
-    }
-
-    prefix_t *parent_pt = pt->parent_prefix;
-    while (parent_pt != NULL) {
-        parent_pt->items_bytes_inclusive[item_type] -= bytes;
-        parent_pt->total_bytes_inclusive -= bytes;
-        parent_pt = parent_pt->parent_prefix;
-    }
-#else
-    pt->items_bytes[item_type] -= bytes;
-    pt->total_bytes_exclusive -= bytes;
-#if 0 // might be used later
-    if (1) {
-        prefix_t *curr_pt = pt->parent_prefix;
-        while (curr_pt != NULL) {
-            curr_pt->total_bytes_inclusive -= bytes;
-            curr_pt = curr_pt->parent_prefix;
-        }
-    }
-#endif
-#endif
+    _prefix_item_bytes_decr(pt, item_type, bytes);
 }
 
 bool prefix_isvalid(hash_item *it, rel_time_t current_time)
@@ -618,7 +592,6 @@ char *prefix_dump_stats(int *length)
     if (num_prefixes > prefxp->total_prefix_items) { /* include null prefix */
         pt = null_pt;
         t = localtime(&pt->create_time);
-#ifdef NESTED_PREFIX
         assert(pt->child_prefix_items == 0);
         pos += snprintf(buffer+pos, buflen-pos, format, "<null>",
                         pt->total_count_exclusive,
@@ -633,42 +606,25 @@ char *prefix_dump_stats(int *length)
                         pt->items_bytes_exclusive[ITEM_TYPE_SET],
                         pt->items_bytes_exclusive[ITEM_TYPE_MAP],
                         pt->items_bytes_exclusive[ITEM_TYPE_BTREE],
-                        /* FUTURE
+                        /* FUTURE: NESTED_PREFIX
                         (uint64_t)pt->child_prefix_items,
                         (uint64_t)0,
                         (uint64_t)0,
                         */
                         t->tm_year+1900, t->tm_mon+1, t->tm_mday,
                         t->tm_hour, t->tm_min, t->tm_sec);
-#else
-        pos += snprintf(buffer+pos, buflen-pos, format, "<null>",
-                        pt->total_count_exclusive,
-                        pt->items_count[ITEM_TYPE_KV],
-                        pt->items_count[ITEM_TYPE_LIST],
-                        pt->items_count[ITEM_TYPE_SET],
-                        pt->items_count[ITEM_TYPE_MAP],
-                        pt->items_count[ITEM_TYPE_BTREE],
-                        pt->total_bytes_exclusive,
-                        pt->items_bytes[ITEM_TYPE_KV],
-                        pt->items_bytes[ITEM_TYPE_LIST],
-                        pt->items_bytes[ITEM_TYPE_SET],
-                        pt->items_bytes[ITEM_TYPE_MAP],
-                        pt->items_bytes[ITEM_TYPE_BTREE],
-                        t->tm_year+1900, t->tm_mon+1, t->tm_mday,
-                        t->tm_hour, t->tm_min, t->tm_sec);
-#endif
         assert(pos < buflen);
     }
     for (int i = 0; i < prefix_hsize; i++) {
         pt = prefxp->hashtable[i];
         while (pt) {
 #ifdef NESTED_PREFIX
-            if (pt->parent_prefix != NULL) {
+            if (pt->parent_prefix != NULL) { /* skip child prefixes */
                 pt = pt->h_next;
                 continue;
             }
-            t = localtime(&pt->create_time);
             if (pt->child_prefix_items > 0) {
+                t = localtime(&pt->create_time);
                 pos += snprintf(buffer+pos, buflen-pos, format, _get_prefix(pt),
                                 pt->total_count_inclusive,
                                 pt->items_count_inclusive[ITEM_TYPE_KV],
@@ -682,53 +638,39 @@ char *prefix_dump_stats(int *length)
                                 pt->items_bytes_inclusive[ITEM_TYPE_SET],
                                 pt->items_bytes_inclusive[ITEM_TYPE_MAP],
                                 pt->items_bytes_inclusive[ITEM_TYPE_BTREE],
-                                /* FUTURE
+                                /* FUTURE: NESTED_PREFIX
                                 (uint64_t)pt->child_prefix_items,
                                 pt->total_count_inclusive - pt->total_count_exclusive,
                                 pt->total_bytes_inclusive - pt->total_bytes_exclusive,
                                 */
                                 t->tm_year+1900, t->tm_mon+1, t->tm_mday,
                                 t->tm_hour, t->tm_min, t->tm_sec);
-            } else {
-                pos += snprintf(buffer+pos, buflen-pos, format, _get_prefix(pt),
-                                pt->total_count_exclusive,
-                                pt->items_count_exclusive[ITEM_TYPE_KV],
-                                pt->items_count_exclusive[ITEM_TYPE_LIST],
-                                pt->items_count_exclusive[ITEM_TYPE_SET],
-                                pt->items_count_exclusive[ITEM_TYPE_MAP],
-                                pt->items_count_exclusive[ITEM_TYPE_BTREE],
-                                pt->total_bytes_exclusive,
-                                pt->items_bytes_exclusive[ITEM_TYPE_KV],
-                                pt->items_bytes_exclusive[ITEM_TYPE_LIST],
-                                pt->items_bytes_exclusive[ITEM_TYPE_SET],
-                                pt->items_bytes_exclusive[ITEM_TYPE_MAP],
-                                pt->items_bytes_exclusive[ITEM_TYPE_BTREE],
-                                /* FUTURE
-                                (uint64_t)pt->child_prefix_items,
-                                (uint64_t)0,
-                                (uint64_t)0,
-                                */
-                                t->tm_year+1900, t->tm_mon+1, t->tm_mday,
-                                t->tm_hour, t->tm_min, t->tm_sec);
+                assert(pos < buflen);
+                pt = pt->h_next;
+                continue;
             }
-#else
+#endif
             t = localtime(&pt->create_time);
             pos += snprintf(buffer+pos, buflen-pos, format, _get_prefix(pt),
                             pt->total_count_exclusive,
-                            pt->items_count[ITEM_TYPE_KV],
-                            pt->items_count[ITEM_TYPE_LIST],
-                            pt->items_count[ITEM_TYPE_SET],
-                            pt->items_count[ITEM_TYPE_MAP],
-                            pt->items_count[ITEM_TYPE_BTREE],
+                            pt->items_count_exclusive[ITEM_TYPE_KV],
+                            pt->items_count_exclusive[ITEM_TYPE_LIST],
+                            pt->items_count_exclusive[ITEM_TYPE_SET],
+                            pt->items_count_exclusive[ITEM_TYPE_MAP],
+                            pt->items_count_exclusive[ITEM_TYPE_BTREE],
                             pt->total_bytes_exclusive,
-                            pt->items_bytes[ITEM_TYPE_KV],
-                            pt->items_bytes[ITEM_TYPE_LIST],
-                            pt->items_bytes[ITEM_TYPE_SET],
-                            pt->items_bytes[ITEM_TYPE_MAP],
-                            pt->items_bytes[ITEM_TYPE_BTREE],
+                            pt->items_bytes_exclusive[ITEM_TYPE_KV],
+                            pt->items_bytes_exclusive[ITEM_TYPE_LIST],
+                            pt->items_bytes_exclusive[ITEM_TYPE_SET],
+                            pt->items_bytes_exclusive[ITEM_TYPE_MAP],
+                            pt->items_bytes_exclusive[ITEM_TYPE_BTREE],
+                            /* FUTURE: NESTED_PREFIX
+                            (uint64_t)pt->child_prefix_items,
+                            (uint64_t)0,
+                            (uint64_t)0,
+                            */
                             t->tm_year+1900, t->tm_mon+1, t->tm_mday,
                             t->tm_hour, t->tm_min, t->tm_sec);
-#endif
             assert(pos < buflen);
             pt = pt->h_next;
         }
@@ -791,7 +733,7 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix,
         add_stat("item_bytes_map", 14, val, len, cookie);
         len = sprintf(val, "%"PRIu64, pt->items_bytes_inclusive[ITEM_TYPE_BTREE]);
         add_stat("item_bytes_btree", 16, val, len, cookie);
-#if 0 // FUTURE
+#if 0 // FUTURE: NESTED_PREFIX
         /* child prefixes */
         len = sprintf(val, "%"PRIu64, (uint64_t)pt->child_prefix_items);
         add_stat("child_prefixes", 14, val, len, cookie);
@@ -800,72 +742,44 @@ ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix,
         len = sprintf(val, "%"PRIu64, pt->total_bytes_inclusive - pt->total_bytes_exclusive);
         add_stat("child_item_bytes", 16, val, len, cookie);
 #endif
-    } else {
-        /* item count */
-        len = sprintf(val, "%"PRIu64, pt->total_count_exclusive);
-        add_stat("item_count_total", 16, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, pt->items_count_exclusive[ITEM_TYPE_KV]);
-        add_stat("item_count_kv", 13, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, pt->items_count_exclusive[ITEM_TYPE_LIST]);
-        add_stat("item_count_list", 15, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, pt->items_count_exclusive[ITEM_TYPE_SET]);
-        add_stat("item_count_set", 14, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, pt->items_count_exclusive[ITEM_TYPE_MAP]);
-        add_stat("item_count_map", 14, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, pt->items_count_exclusive[ITEM_TYPE_BTREE]);
-        add_stat("item_count_btree", 16, val, len, cookie);
-        /* item bytes */
-        len = sprintf(val, "%"PRIu64, pt->total_bytes_exclusive);
-        add_stat("item_bytes_total", 16, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, pt->items_bytes_exclusive[ITEM_TYPE_KV]);
-        add_stat("item_bytes_kv", 13, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, pt->items_bytes_exclusive[ITEM_TYPE_LIST]);
-        add_stat("item_bytes_list", 15, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, pt->items_bytes_exclusive[ITEM_TYPE_SET]);
-        add_stat("item_bytes_set", 14, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, pt->items_bytes_exclusive[ITEM_TYPE_MAP]);
-        add_stat("item_bytes_map", 14, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, pt->items_bytes_exclusive[ITEM_TYPE_BTREE]);
-        add_stat("item_bytes_btree", 16, val, len, cookie);
-#if 0 // FUTURE
-        /* child prefixes */
-        len = sprintf(val, "%"PRIu64, (uint64_t)pt->child_prefix_items);
-        add_stat("child_prefixes", 14, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, (uint64_t)0);
-        add_stat("child_item_count", 16, val, len, cookie);
-        len = sprintf(val, "%"PRIu64, (uint64_t)0);
-        add_stat("child_item_bytes", 16, val, len, cookie);
-#endif
+        return ENGINE_SUCCESS;
     }
-#else
+#endif
     /* item count */
     len = sprintf(val, "%"PRIu64, pt->total_count_exclusive);
     add_stat("item_count_total", 16, val, len, cookie);
-    len = sprintf(val, "%"PRIu64, pt->items_count[ITEM_TYPE_KV]);
+    len = sprintf(val, "%"PRIu64, pt->items_count_exclusive[ITEM_TYPE_KV]);
     add_stat("item_count_kv", 13, val, len, cookie);
-    len = sprintf(val, "%"PRIu64, pt->items_count[ITEM_TYPE_LIST]);
+    len = sprintf(val, "%"PRIu64, pt->items_count_exclusive[ITEM_TYPE_LIST]);
     add_stat("item_count_list", 15, val, len, cookie);
-    len = sprintf(val, "%"PRIu64, pt->items_count[ITEM_TYPE_SET]);
+    len = sprintf(val, "%"PRIu64, pt->items_count_exclusive[ITEM_TYPE_SET]);
     add_stat("item_count_set", 14, val, len, cookie);
-    len = sprintf(val, "%"PRIu64, pt->items_count[ITEM_TYPE_MAP]);
+    len = sprintf(val, "%"PRIu64, pt->items_count_exclusive[ITEM_TYPE_MAP]);
     add_stat("item_count_map", 14, val, len, cookie);
-    len = sprintf(val, "%"PRIu64, pt->items_count[ITEM_TYPE_BTREE]);
+    len = sprintf(val, "%"PRIu64, pt->items_count_exclusive[ITEM_TYPE_BTREE]);
     add_stat("item_count_btree", 16, val, len, cookie);
     /* item bytes */
     len = sprintf(val, "%"PRIu64, pt->total_bytes_exclusive);
     add_stat("item_bytes_total", 16, val, len, cookie);
-    len = sprintf(val, "%"PRIu64, pt->items_bytes[ITEM_TYPE_KV]);
+    len = sprintf(val, "%"PRIu64, pt->items_bytes_exclusive[ITEM_TYPE_KV]);
     add_stat("item_bytes_kv", 13, val, len, cookie);
-    len = sprintf(val, "%"PRIu64, pt->items_bytes[ITEM_TYPE_LIST]);
+    len = sprintf(val, "%"PRIu64, pt->items_bytes_exclusive[ITEM_TYPE_LIST]);
     add_stat("item_bytes_list", 15, val, len, cookie);
-    len = sprintf(val, "%"PRIu64, pt->items_bytes[ITEM_TYPE_SET]);
+    len = sprintf(val, "%"PRIu64, pt->items_bytes_exclusive[ITEM_TYPE_SET]);
     add_stat("item_bytes_set", 14, val, len, cookie);
-    len = sprintf(val, "%"PRIu64, pt->items_bytes[ITEM_TYPE_MAP]);
+    len = sprintf(val, "%"PRIu64, pt->items_bytes_exclusive[ITEM_TYPE_MAP]);
     add_stat("item_bytes_map", 14, val, len, cookie);
-    len = sprintf(val, "%"PRIu64, pt->items_bytes[ITEM_TYPE_BTREE]);
+    len = sprintf(val, "%"PRIu64, pt->items_bytes_exclusive[ITEM_TYPE_BTREE]);
     add_stat("item_bytes_btree", 16, val, len, cookie);
+#if 0 // FUTURE: NESTED_PREFIX
+    /* child prefixes */
+    len = sprintf(val, "%"PRIu64, (uint64_t)pt->child_prefix_items);
+    add_stat("child_prefixes", 14, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)0);
+    add_stat("child_item_count", 16, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)0);
+    add_stat("child_item_bytes", 16, val, len, cookie);
 #endif
-
     return ENGINE_SUCCESS;
 }
 

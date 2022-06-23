@@ -41,20 +41,18 @@ typedef struct _prefix_t {
     /* Number of child prefix items */
     uint32_t child_prefix_items;
 
-    /* the count and bytes of cache items per item type */
+    /* count and bytes of cache items per item type */
     uint64_t total_count_exclusive;
     uint64_t total_bytes_exclusive;
-#ifdef NESTED_PREFIX
-    uint64_t total_count_inclusive; /* NOT yet used */
-    uint64_t total_bytes_inclusive; /* NOT yet used */
-
     uint64_t items_count_exclusive[ITEM_TYPE_MAX];
     uint64_t items_bytes_exclusive[ITEM_TYPE_MAX];
+
+#ifdef NESTED_PREFIX
+    /* includes cache items that belong to child prefixes */
+    uint64_t total_count_inclusive; /* NOT yet used */
+    uint64_t total_bytes_inclusive; /* NOT yet used */
     uint64_t items_count_inclusive[ITEM_TYPE_MAX];
     uint64_t items_bytes_inclusive[ITEM_TYPE_MAX];
-#else
-    uint64_t items_count[ITEM_TYPE_MAX];
-    uint64_t items_bytes[ITEM_TYPE_MAX];
 #endif
 } prefix_t;
 
