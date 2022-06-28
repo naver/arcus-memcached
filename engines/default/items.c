@@ -759,22 +759,7 @@ do_item_getattr(hash_item *it, ENGINE_ITEM_ATTR *attr_ids, const uint32_t attr_c
 {
     /* item flags */
     attr_data->flags = it->flags;
-
-    /* human readable expiretime */
-    if (it->exptime == 0) {
-        attr_data->exptime = it->exptime;
-#ifdef ENABLE_STICKY_ITEM
-    } else if (it->exptime == (rel_time_t)-1) {
-        attr_data->exptime = it->exptime;
-#endif
-    } else {
-        rel_time_t current_time = svcore->get_current_time();
-        if (it->exptime <= current_time) {
-            attr_data->exptime = (rel_time_t)-2;
-        } else {
-            attr_data->exptime = it->exptime - current_time;
-        }
-    }
+    attr_data->exptime = it->exptime;
 
     if (IS_COLL_ITEM(it)) {
         attr_data->type = GET_ITEM_TYPE(it);

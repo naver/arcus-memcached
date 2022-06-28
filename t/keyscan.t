@@ -20,29 +20,29 @@ my @keyarr2 = ();
 
 # SET ITEMS
 $key = "aa\\*aaa";
-$cmd = "set $key 0 0 $vlen"; $rst = "STORED";
+$cmd = "set $key 0 1000 $vlen"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 push(@keyarr1, $key);
 $key = "bb\\*aab";
-$cmd = "set $key 0 0 $vlen"; $rst = "STORED";
+$cmd = "set $key 0 1000 $vlen"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 push(@keyarr1, $key);
 $key = "c?\\*aaba";
-$cmd = "set $key 0 0 $vlen"; $rst = "STORED";
+$cmd = "set $key 0 1000 $vlen"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 push(@keyarr1, $key);
 push(@keyarr2, $key);
 $key = "d?\\*abba";
-$cmd = "set $key 0 0 $vlen"; $rst = "STORED";
+$cmd = "set $key 0 1000 $vlen"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 push(@keyarr1, $key);
 push(@keyarr2, $key);
 $key = "a?\\*aaaaa";
-$cmd = "bop create $key 0 0 3"; $rst = "CREATED";
+$cmd = "bop create $key 0 1000 3"; $rst = "CREATED";
 mem_cmd_is($sock, $cmd, "", $rst);
 push(@keyarr1, $key);
 $key = "a?\\*aaaa";
-$cmd = "sop create $key 0 0 3"; $rst = "CREATED";
+$cmd = "sop create $key 0 1000 3"; $rst = "CREATED";
 mem_cmd_is($sock, $cmd, "", $rst);
 push(@keyarr1, $key);
 
