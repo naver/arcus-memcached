@@ -222,6 +222,27 @@ static rel_time_t realtime(const time_t exptime)
     }
 }
 
+/*
+ * given time value is relative to current time.
+ * return delta from current unix time.
+ */
+static rel_time_t human_readable_time(const rel_time_t exptime)
+{
+    if (exptime == 0) {
+        return exptime;
+#ifdef ENABLE_STICKY_ITEM
+    } else if (exptime == (rel_time_t)-1) {
+        return exptime;
+#endif
+    } else {
+        if (exptime <= current_time) {
+            return (rel_time_t)-2;
+        } else {
+            return exptime - current_time;
+        }
+    }
+}
+
 /* grow the dynamic buffer of the given connection */
 static bool grow_dynamic_buffer(conn *c, size_t needed)
 {
@@ -6493,7 +6514,7 @@ static void process_bin_getattr(conn *c)
 
         protocol_binary_response_getattr* rsp = (protocol_binary_response_getattr*)c->wbuf;
         rsp->message.body.flags      = attr_data.flags;
-        rsp->message.body.expiretime = htonl(attr_data.exptime);
+        rsp->message.body.expiretime = htonl(human_readable_time(attr_data.exptime));
         rsp->message.body.type       = attr_data.type;
         if (attr_data.type == ITEM_TYPE_LIST || attr_data.type == ITEM_TYPE_SET ||
             attr_data.type == ITEM_TYPE_BTREE) {
@@ -9741,7 +9762,8 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
                     ret = ENGINE_ENOMEM; break;
                 }
                 sprintf(attrptr, " %c %d\r\n",
-                        get_item_type_char(c->hinfo.type), c->hinfo.exptime);
+                        get_item_type_char(c->hinfo.type),
+                        human_readable_time(c->hinfo.exptime));
                 if (add_iov(c, c->hinfo.key, c->hinfo.nkey) != 0 ||
                     add_iov(c, attrptr, strlen(attrptr)) != 0) {
                     ret = ENGINE_ENOMEM; break;
@@ -12669,7 +12691,7 @@ static size_t attr_to_printable_buffer(char *ptr, ENGINE_ITEM_ATTR attr_id, item
     else if (attr_id == ATTR_FLAGS)
         sprintf(ptr, "ATTR flags=%u\r\n", htonl(attr_datap->flags));
     else if (attr_id == ATTR_EXPIRETIME)
-        sprintf(ptr, "ATTR expiretime=%d\r\n", (int32_t)attr_datap->exptime);
+        sprintf(ptr, "ATTR expiretime=%d\r\n", (int32_t)human_readable_time(attr_datap->exptime));
     else if (attr_id == ATTR_COUNT)
         sprintf(ptr, "ATTR count=%d\r\n", attr_datap->count);
     else if (attr_id == ATTR_MAXCOUNT)
