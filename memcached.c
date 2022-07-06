@@ -14387,6 +14387,8 @@ static void usage(void)
     printf("-I            Override the size of each slab page. Adjusts max item size\n"
            "              (default: 1mb, min: 1k, max: 128m)\n");
     printf("-E <engine>   Engine to load, must be given (for example, -E .libs/default_engine.so)\n");
+    printf("-e <config>   Engine config to load, -e option has higher priority than\n"
+           "              the other options. (for example, -e config_file=</path>\n");
     printf("-q            Disable detailed stats commands\n");
 #ifdef SASL_ENABLED
     printf("-S            Require SASL authentication\n");
