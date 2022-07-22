@@ -658,6 +658,8 @@ extern "C" {
          * Statistical information for each prefix
          */
         char *(*prefix_dump_stats)(ENGINE_HANDLE* handle, const void* cookie, int *length);
+        char *(*prefix_dump_stats_argu)(ENGINE_HANDLE* handle, const void* cookie,
+                 int *length, token_t *tokens, const size_t ntokens);
 
         ENGINE_ERROR_CODE (*prefix_get_stats)(ENGINE_HANDLE* handle, const void* cookie,
                                               const void* prefix, const int nprefix,

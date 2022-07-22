@@ -8149,17 +8149,69 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
         }
         topkeys_stats(default_topkeys, c, get_current_time(), append_ascii_stats);
     } else if (strcmp(subcommand, "prefixes") == 0) {
-        int len;
-        char *stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, &len);
-        if (stats == NULL) {
-            if (len == -1)
-                out_string(c, "NOT_SUPPORTED");
-            else
-                out_string(c, "SERVER_ERROR no more memory");
-            return;
+        if (ntokens == 3) {
+             int len;
+             char *stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, &len);
+             if (stats == NULL) {
+                 if (len == -1)
+                     out_string(c, "NOT_SUPPORTED");
+                 else
+                     out_string(c, "SERVER_ERROR no more memory");
+                 return;
+             }
+             write_and_free(c, stats, len);
+             return; /* Output already generated */
+         }
+         else if (ntokens == 4) {  /* command: stats prefix <stats_type> */
+             if (!strcmp(tokens[2].value, "item")) {
+                 int len;
+                 char *stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, &len);
+                 if (stats == NULL) {
+                     if (len == -1)
+                         out_string(c, "NOT_SUPPORTED");
+                     else
+                         out_string(c, "SERVER_ERROR no more memory");
+                     return;
+                 }
+                 write_and_free(c, stats, len);
+                 return; /* Output already generated */
+             }
+             if (!strcmp(tokens[2].value, "operation")) {
+                 int len;
+                 char *stats = stats_prefix_dump(&len);
+                 if (stats == NULL) {
+                     out_string(c, "SERVER_ERROR no more memory");
+                     return;
+                 }
+                 write_and_free(c, stats, len);
+                 return;
+             }
+         }
+         else {  /* command: stats prefix <stats_type> <prefix1> [<prefix2> ...] */
+             if (!strcmp(tokens[2].value, "item")) {
+                 int len;
+                 char *stats = mc_engine.v1->prefix_dump_stats_argu(mc_engine.v0, c, &len, tokens, ntokens);
+                 if (stats == NULL) {
+                     if (len == -1)
+                         out_string(c, "NOT_SUPPORTED");
+                     else
+                         out_string(c, "SERVER_ERROR no more memory");
+                     return;
+                 }
+                 write_and_free(c, stats, len);
+                 return; /* Output already generated */
+             }
+             if (!strcmp(tokens[2].value, "operation")) {
+                 int len;
+                 char *stats = stats_prefix_dump_argu(&len, tokens, ntokens);
+                 if (stats == NULL) {
+                     out_string(c, "SERVER_ERROR no more memory");
+                     return;
+                 }
+                 write_and_free(c, stats, len);
+                 return; /* Output already generated */
+             }
         }
-        write_and_free(c, stats, len);
-        return; /* Output already generated */
     } else if (strcmp(subcommand, "prefix") == 0) {
         /* command: stats prefix <prefix>\r\n */
         if (ntokens != 4) {

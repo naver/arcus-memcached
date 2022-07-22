@@ -1218,6 +1218,19 @@ default_prefix_dump_stats(ENGINE_HANDLE* handle, const void* cookie, int *length
     return stats;
 }
 
+static char *
+ default_prefix_dump_stats_argu(ENGINE_HANDLE* handle, const void* cookie,
+     int *length, token_t *tokens, const size_t ntokens)
+ {
+     struct default_engine* engine = get_handle(handle);
+     char *stats;
+
+     pthread_mutex_lock(&engine->cache_lock);
+     stats = prefix_dump_stats_argu(length, tokens, ntokens);
+     pthread_mutex_unlock(&engine->cache_lock);
+     return stats;
+ }
+
 static ENGINE_ERROR_CODE
 default_prefix_get_stats(ENGINE_HANDLE* handle, const void* cookie,
                          const void* prefix, const int nprefix, ADD_STAT add_stat)
@@ -2024,6 +2037,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .get_stats        = default_get_stats,
          .reset_stats      = default_reset_stats,
          .prefix_dump_stats = default_prefix_dump_stats,
+         .prefix_dump_stats_argu = default_prefix_dump_stats_argu,
          .prefix_get_stats = default_prefix_get_stats,
          /* Dump API */
          .cachedump        = default_cachedump,

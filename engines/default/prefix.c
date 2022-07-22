@@ -682,6 +682,76 @@ char *prefix_dump_stats(int *length)
     return buffer;
 }
 
+char *prefix_dump_stats_argu(int *length, token_t *tokens, const size_t ntokens) {
+     const char *format = "PREFIX %s "
+                          "itm %llu kitm %llu litm %llu sitm %llu mitm %llu bitm %llu " /* total item count */
+                          "tsz %llu ktsz %llu ltsz %llu stsz %llu mtsz %llu btsz %llu " /* total item bytes */
+ #if 0 // FUTURE: NESTED_PREFIX
+                          "chd %llu citm %llu ctsz %llu " /* child prefixes and items */
+ #endif
+                          "time %04d%02d%02d%02d%02d%02d\r\n"; /* create time */
+     prefix_t *pt;
+     struct tm *t;
+     char *buffer;
+     int buflen;
+     int pos = 0;
+
+     uint32_t num_prefixes = ntokens - 4;
+     uint32_t sum_nameleng = 0; /* sum of prefix name length */
+     for(int i=3; i<ntokens-1; i++)
+         sum_nameleng += tokens[i].length;
+     buflen = sum_nameleng + num_prefixes * (strlen(format) - 2
+         + (12 * (20 - 4)) - (5 * (4 - 2)))  /* %llu > 20-digit, %02d > 2-digit */
+         + sizeof("END\r\n");
+     if ((buffer = malloc(buflen)) == NULL) {
+         *length = 0;
+         return NULL;
+     }
+
+     for(int i=3; i<ntokens-1; i++) {
+         char *prefix = tokens[i].value;
+         int nprefix = tokens[i].length;
+         if (!strcmp(prefix, "<null>")) {
+             prefix = NULL;
+             nprefix = 0;
+         }
+         if (prefix != NULL)
+             pt = _prefix_find(prefix, nprefix, svcore->hash(prefix, nprefix, 0));
+         else
+             pt = (null_pt->total_count_exclusive > 0) ? null_pt : NULL;
+         if (pt == NULL)
+             continue;
+
+         t = localtime(&pt->create_time);
+         pos += snprintf(buffer+pos, buflen-pos, format,
+             prefix == NULL ? "<null>" :_get_prefix(pt),
+             pt->total_count_exclusive,
+             pt->items_count_exclusive[ITEM_TYPE_KV],
+             pt->items_count_exclusive[ITEM_TYPE_LIST],
+             pt->items_count_exclusive[ITEM_TYPE_SET],
+             pt->items_count_exclusive[ITEM_TYPE_MAP],
+             pt->items_count_exclusive[ITEM_TYPE_BTREE],
+             pt->total_bytes_exclusive,
+             pt->items_bytes_exclusive[ITEM_TYPE_KV],
+             pt->items_bytes_exclusive[ITEM_TYPE_LIST],
+             pt->items_bytes_exclusive[ITEM_TYPE_SET],
+             pt->items_bytes_exclusive[ITEM_TYPE_MAP],
+             pt->items_bytes_exclusive[ITEM_TYPE_BTREE],
+             /* FUTURE: NESTED_PREFIX
+             (uint64_t)pt->child_prefix_items,
+             (uint64_t)0,
+             (uint64_t)0,
+             */
+             t->tm_year+1900, t->tm_mon+1, t->tm_mday,
+             t->tm_hour, t->tm_min, t->tm_sec);
+         assert(pos < buflen);
+     }
+     pos += snprintf(buffer+pos, buflen-pos, "END\r\n");
+     assert(pos < buflen);
+     *length = pos;
+     return buffer;
+ }
+
 ENGINE_ERROR_CODE prefix_get_stats(const char *prefix, const int nprefix,
                                    ADD_STAT add_stat, const void *cookie)
 {

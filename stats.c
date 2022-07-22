@@ -1262,6 +1262,98 @@ char *stats_prefix_dump(int *length)
     return buf;
 }
 
+char *stats_prefix_dump_argu(int *length, token_t *tokens, const size_t ntokens)
+ {
+     const char *format = "PREFIX %s "
+                          "get %llu hit %llu set %llu del %llu inc %llu "
+                          "dec %llu lcs %llu lis %llu lih %llu lds %llu "
+                          "ldh %llu lgs %llu lgh %llu scs %llu sis %llu "
+                          "sih %llu sds %llu sdh %llu sgs %llu sgh %llu "
+                          "ses %llu seh %llu mcs %llu mis %llu mih %llu "
+                          "mus %llu muh %llu mds %llu mdh %llu mgs %llu "
+                          "mgh %llu bcs %llu bis %llu bih %llu bus %llu "
+                          "buh %llu bds %llu bdh %llu bps %llu bph %llu "
+                          "bms %llu bmh %llu bgs %llu bgh %llu bns %llu "
+                          "bnh %llu pfs %llu pfh %llu pgs %llu pgh %llu "
+                          "gps %llu gph %llu gas %llu sas %llu\r\n";
+
+     PREFIX_STATS *pfs;
+     char *buf;
+     size_t size;
+     int pos = 0;
+     uint32_t hashval;
+
+     LOCK_STATS();
+     int prefix_total_len = 0;
+     for(int i=3; i<ntokens-1; i++)
+         prefix_total_len += tokens[i].length;
+     size = strlen(format) + prefix_total_len +
+            (ntokens - 4) * (strlen(format) - 2 /* %s */
+                            + 54 * (20 - 4)) /* %llu replaced by 20-digit num */
+                            + sizeof("END\r\n");
+     buf = malloc(size);
+     if (buf == NULL) {
+         perror("Can't allocate stats response: malloc");
+         UNLOCK_STATS();
+         return NULL;
+     }
+
+     for(int i=3; i<ntokens-1; i++) {
+         char *prefix = tokens[i].value;
+         int nprefix = tokens[i].length;
+         if (!strcmp(prefix, null_prefix_str)) {
+             prefix = NULL;
+             nprefix = 0;
+         }
+         hashval = mc_hash(prefix, nprefix, 0) % PREFIX_HASH_SIZE;
+         for (pfs = prefix_stats[hashval]; pfs != NULL; pfs = pfs->next) {
+             if ((pfs->prefix_len==nprefix) &&
+                 (nprefix==0 || strncmp(pfs->prefix, prefix, nprefix)==0))
+                 break;
+         }
+         if (!pfs) continue;
+
+         pos += snprintf(buf + pos, size-pos, format,
+             (pfs->prefix_len == 0 ? null_prefix_str : pfs->prefix),
+             pfs->num_gets, pfs->num_hits, pfs->num_sets, pfs->num_deletes,
+             pfs->num_incrs, pfs->num_decrs,
+             pfs->num_lop_creates,
+             pfs->num_lop_inserts, pfs->num_lop_insert_hits,
+             pfs->num_lop_deletes, pfs->num_lop_delete_hits,
+             pfs->num_lop_gets, pfs->num_lop_get_hits,
+             pfs->num_sop_creates,
+             pfs->num_sop_inserts, pfs->num_sop_insert_hits,
+             pfs->num_sop_deletes, pfs->num_sop_delete_hits,
+             pfs->num_sop_gets, pfs->num_sop_get_hits,
+             pfs->num_sop_exists, pfs->num_sop_exist_hits,
+             pfs->num_mop_creates,
+             pfs->num_mop_inserts, pfs->num_mop_insert_hits,
+             pfs->num_mop_updates, pfs->num_mop_update_hits,
+             pfs->num_mop_deletes, pfs->num_mop_delete_hits,
+             pfs->num_mop_gets, pfs->num_mop_get_hits,
+             pfs->num_bop_creates,
+             pfs->num_bop_inserts, pfs->num_bop_insert_hits,
+             pfs->num_bop_updates, pfs->num_bop_update_hits,
+             pfs->num_bop_deletes, pfs->num_bop_delete_hits,
+             pfs->num_bop_incrs, pfs->num_bop_incr_hits,
+             pfs->num_bop_decrs, pfs->num_bop_decr_hits,
+             pfs->num_bop_gets, pfs->num_bop_get_hits,
+             pfs->num_bop_counts, pfs->num_bop_count_hits,
+             pfs->num_bop_positions, pfs->num_bop_position_hits,
+             pfs->num_bop_pwgs, pfs->num_bop_pwg_hits,
+             pfs->num_bop_gbps, pfs->num_bop_gbp_hits,
+             pfs->num_getattrs, pfs->num_setattrs);
+         assert(pos < size);
+     }
+     UNLOCK_STATS();
+
+     pos += snprintf(buf + pos, size-pos, "END\r\n");
+     assert(pos < size);
+
+     *length = pos;
+     return buf;
+ }
+
 void stats_prefix_get(const char *prefix, const size_t nprefix,
                       ADD_STAT add_stat, void *cookie)
 {
