@@ -4055,7 +4055,7 @@ static void process_bin_stat(conn *c)
         if (settings.allow_detailed) {
             if (strncmp(subcmd_pos, " dump", 5) == 0) {
                 int len;
-                char *dump_buf = stats_prefix_dump(&len);
+                char *dump_buf = stats_prefix_dump(NULL, 0, &len);
                 if (dump_buf == NULL) {
                     write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
                     return;
@@ -7762,7 +7762,7 @@ inline static void process_stats_detail(conn *c, const char *command)
         }
         else if (strcmp(command, "dump") == 0) {
             int len;
-            char *stats = stats_prefix_dump(&len);
+            char *stats = stats_prefix_dump(NULL, 0, &len);
             if (stats == NULL) {
                 out_string(c, "SERVER_ERROR no more memory");
                 return;
@@ -8152,7 +8152,19 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
         topkeys_stats(default_topkeys, c, get_current_time(), append_ascii_stats);
     } else if (strcmp(subcommand, "prefixes") == 0) {
         int len;
-        char *stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, &len);
+        char *stats;
+        token_t *prefixes = ntokens > 4 ? &tokens[3] : NULL;
+        size_t nprefixes = ntokens > 4 ? ntokens-4 : 0;
+
+        if (ntokens == 3 || (ntokens >= 4 && strcmp(tokens[2].value, "item") == 0)) {
+            stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, prefixes, nprefixes, &len);
+        } else if (ntokens >= 4 && strcmp(tokens[2].value, "operation") == 0) {
+            stats = stats_prefix_dump(prefixes, nprefixes, &len);
+        } else {
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+
         if (stats == NULL) {
             if (len == -1)
                 out_string(c, "NOT_SUPPORTED");
@@ -13279,6 +13291,7 @@ static int try_read_command(conn *c)
                  *  - IN eflag filter : > 6400 (64*100)
                  */
                 if (c->rbytes > ((16+8)*1024)) {
+                    /* The length of "stats prefixes" command cannot exceed 24 KB. */
                     if (strncmp(ptr, "get ", 4) && strncmp(ptr, "gets ", 5)) {
                         char buffer[16];
                         memcpy(buffer, ptr, 15); buffer[15] = '\0';
