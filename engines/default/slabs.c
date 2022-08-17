@@ -1501,6 +1501,12 @@ static void do_slabs_stats(ADD_STAT add_stats, const void *cookie)
     add_statistics(cookie, add_stats, NULL, -1, "total_malloced", "%llu", (unsigned long long)slabsp->mem_malloced);
 }
 
+/*@null@*/
+static void do_slabs_stats_basic(ADD_STAT add_stats, const void *cookie)
+{
+    add_statistics(cookie, add_stats, NULL, -1, "engine_malloced", "%llu", (unsigned long long)slabsp->mem_malloced);
+}
+
 static ENGINE_ERROR_CODE do_slabs_set_memlimit(size_t memlimit)
 {
     if (slabsp->mem_base != NULL) {
@@ -1556,6 +1562,13 @@ void slabs_stats(ADD_STAT add_stats, const void *c)
 {
     pthread_mutex_lock(&slabsp->lock);
     do_slabs_stats(add_stats, c);
+    pthread_mutex_unlock(&slabsp->lock);
+}
+
+void slabs_stats_basic(ADD_STAT add_stats, const void *c)
+{
+    pthread_mutex_lock(&slabsp->lock);
+    do_slabs_stats_basic(add_stats, c);
     pthread_mutex_unlock(&slabsp->lock);
 }
 

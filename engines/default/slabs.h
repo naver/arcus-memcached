@@ -99,6 +99,9 @@ void  slabs_free(void *ptr, size_t size, unsigned int id);
 /** Fill buffer with stats */ /*@null@*/
 void  slabs_stats(ADD_STAT add_stats, const void *c);
 
+/** Fill buffer with stats */ /*@null@*/
+void  slabs_stats_basic(ADD_STAT add_stats, const void *c);
+
 /** Adjust the stats for memory requested */
 void  slabs_adjust_mem_requested(unsigned int id, size_t old, size_t ntotal);
 
