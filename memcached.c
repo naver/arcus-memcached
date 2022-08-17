@@ -3044,16 +3044,17 @@ process_get_single(conn *c, char *key, size_t nkey, bool return_cas)
         }
         int suffix_len = snprintf(suffix, SUFFIX_SIZE, " %u %u\r\n",
                                   htonl(c->hinfo.flags), c->hinfo.nbytes - 2);
+        /* suffix_len < SUFFIX_SIZE because the length of nbytes string is smaller than 10. */
 
         /* rebuild cas value */
         if (return_cas) {
+            suffix_len -= 2; /* remove "\r\n" from suffix string */
             cas_val = get_suffix_buffer(c);
             if (cas_val == NULL) {
                 mc_engine.v1->release(mc_engine.v0, c, it);
                 return ENGINE_ENOMEM;
             }
             cas_len = snprintf(cas_val, SUFFIX_SIZE, " %"PRIu64"\r\n", c->hinfo.cas);
-            suffix_len -= 2; /* remove "\r\n" from suffix string */
         }
 
         /* Construct the response. Each hit adds three elements to the
