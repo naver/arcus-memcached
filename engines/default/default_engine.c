@@ -1170,6 +1170,7 @@ default_get_stats(ENGINE_HANDLE* handle, const void* cookie,
 
     if (stat_key == NULL) {
         item_stats_global(add_stat, cookie);
+        slabs_stats_basic(add_stat, cookie);
     }
     else if (strncmp(stat_key, "items", 5) == 0) {
         item_stats(add_stat, cookie);
