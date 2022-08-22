@@ -1208,13 +1208,14 @@ default_reset_stats(ENGINE_HANDLE* handle, const void *cookie)
 }
 
 static char *
-default_prefix_dump_stats(ENGINE_HANDLE* handle, const void* cookie, int *length)
+default_prefix_dump_stats(ENGINE_HANDLE* handle, const void* cookie,
+    token_t *tokens, const size_t ntokens, int *length)
 {
     struct default_engine* engine = get_handle(handle);
     char *stats;
 
     pthread_mutex_lock(&engine->cache_lock);
-    stats = prefix_dump_stats(length);
+    stats = prefix_dump_stats(tokens, ntokens, length);
     pthread_mutex_unlock(&engine->cache_lock);
     return stats;
 }

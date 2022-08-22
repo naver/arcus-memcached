@@ -1171,11 +1171,45 @@ void stats_prefix_record_setattr(const char *key, const size_t nkey)
     UNLOCK_STATS();
 }
 
+static int do_stats_prefix_write_buffer(char *buffer, const size_t buflen,
+                                         const char *format, const PREFIX_STATS *pfs) {
+    int ret = snprintf(buffer, buflen, format,
+        (pfs->prefix_len == 0 ? null_prefix_str : pfs->prefix),
+        pfs->num_gets, pfs->num_hits, pfs->num_sets, pfs->num_deletes,
+        pfs->num_incrs, pfs->num_decrs,
+        pfs->num_lop_creates,
+        pfs->num_lop_inserts, pfs->num_lop_insert_hits,
+        pfs->num_lop_deletes, pfs->num_lop_delete_hits,
+        pfs->num_lop_gets, pfs->num_lop_get_hits,
+        pfs->num_sop_creates,
+        pfs->num_sop_inserts, pfs->num_sop_insert_hits,
+        pfs->num_sop_deletes, pfs->num_sop_delete_hits,
+        pfs->num_sop_gets, pfs->num_sop_get_hits,
+        pfs->num_sop_exists, pfs->num_sop_exist_hits,
+        pfs->num_mop_creates,
+        pfs->num_mop_inserts, pfs->num_mop_insert_hits,
+        pfs->num_mop_updates, pfs->num_mop_update_hits,
+        pfs->num_mop_deletes, pfs->num_mop_delete_hits,
+        pfs->num_mop_gets, pfs->num_mop_get_hits,
+        pfs->num_bop_creates,
+        pfs->num_bop_inserts, pfs->num_bop_insert_hits,
+        pfs->num_bop_updates, pfs->num_bop_update_hits,
+        pfs->num_bop_deletes, pfs->num_bop_delete_hits,
+        pfs->num_bop_incrs, pfs->num_bop_incr_hits,
+        pfs->num_bop_decrs, pfs->num_bop_decr_hits,
+        pfs->num_bop_gets, pfs->num_bop_get_hits,
+        pfs->num_bop_counts, pfs->num_bop_count_hits,
+        pfs->num_bop_positions, pfs->num_bop_position_hits,
+        pfs->num_bop_pwgs, pfs->num_bop_pwg_hits,
+        pfs->num_bop_gbps, pfs->num_bop_gbp_hits,
+        pfs->num_getattrs, pfs->num_setattrs);
+    return ret;
+}
 /*
  * Returns stats in textual form suitable for writing to a client.
  */
 /*@null@*/
-char *stats_prefix_dump(int *length)
+char *stats_prefix_dump(token_t *tokens, const size_t ntokens, int *length)
 {
     const char *format = "PREFIX %s "
                          "get %llu hit %llu set %llu del %llu inc %llu "
@@ -1193,7 +1227,8 @@ char *stats_prefix_dump(int *length)
     char *buf;
     size_t size;
     int pos = 0;
-    int written;
+    int prefix_name_size;
+    int nprefixes;
 
     /*
      * Figure out how big the buffer needs to be. This is the sum of the
@@ -1202,8 +1237,18 @@ char *stats_prefix_dump(int *length)
      * plus space for the "END" at the end.
      */
     LOCK_STATS();
-    size = strlen(format) + total_prefix_size +
-           num_prefixes * (strlen(format) - 2 /* %s */
+    if (tokens != NULL) {
+        nprefixes = ntokens;
+        prefix_name_size = 0;
+        for (int i=0; i<nprefixes; i++)
+            prefix_name_size += tokens[i].length;
+    } else {
+        prefix_name_size = total_prefix_size;
+        nprefixes = num_prefixes;
+    }
+
+    size = strlen(format) + prefix_name_size +
+           nprefixes * (strlen(format) - 2 /* %s */
                            + 54 * (20 - 4)) /* %llu replaced by 20-digit num */
                            + sizeof("END\r\n");
     buf = malloc(size);
@@ -1213,44 +1258,36 @@ char *stats_prefix_dump(int *length)
         return NULL;
     }
 
-    for (int i = 0; i < PREFIX_HASH_SIZE; i++) {
-        for (pfs = prefix_stats[i]; NULL != pfs; pfs = pfs->next) {
+    if (tokens == NULL) {  // all-prefixes
+        for (int i = 0; i < PREFIX_HASH_SIZE; i++) {
+            for (pfs = prefix_stats[i]; NULL != pfs; pfs = pfs->next) {
 #ifdef NESTED_PREFIX
-            if (pfs->parent_stat != NULL)
-                continue;
+                if (pfs->parent_stat != NULL)
+                    continue;
 #endif
-            written = snprintf(buf + pos, size-pos, format,
-                           (pfs->prefix_len == 0 ? null_prefix_str : pfs->prefix),
-                           pfs->num_gets, pfs->num_hits, pfs->num_sets, pfs->num_deletes,
-                           pfs->num_incrs, pfs->num_decrs,
-                           pfs->num_lop_creates,
-                           pfs->num_lop_inserts, pfs->num_lop_insert_hits,
-                           pfs->num_lop_deletes, pfs->num_lop_delete_hits,
-                           pfs->num_lop_gets, pfs->num_lop_get_hits,
-                           pfs->num_sop_creates,
-                           pfs->num_sop_inserts, pfs->num_sop_insert_hits,
-                           pfs->num_sop_deletes, pfs->num_sop_delete_hits,
-                           pfs->num_sop_gets, pfs->num_sop_get_hits,
-                           pfs->num_sop_exists, pfs->num_sop_exist_hits,
-                           pfs->num_mop_creates,
-                           pfs->num_mop_inserts, pfs->num_mop_insert_hits,
-                           pfs->num_mop_updates, pfs->num_mop_update_hits,
-                           pfs->num_mop_deletes, pfs->num_mop_delete_hits,
-                           pfs->num_mop_gets, pfs->num_mop_get_hits,
-                           pfs->num_bop_creates,
-                           pfs->num_bop_inserts, pfs->num_bop_insert_hits,
-                           pfs->num_bop_updates, pfs->num_bop_update_hits,
-                           pfs->num_bop_deletes, pfs->num_bop_delete_hits,
-                           pfs->num_bop_incrs, pfs->num_bop_incr_hits,
-                           pfs->num_bop_decrs, pfs->num_bop_decr_hits,
-                           pfs->num_bop_gets, pfs->num_bop_get_hits,
-                           pfs->num_bop_counts, pfs->num_bop_count_hits,
-                           pfs->num_bop_positions, pfs->num_bop_position_hits,
-                           pfs->num_bop_pwgs, pfs->num_bop_pwg_hits,
-                           pfs->num_bop_gbps, pfs->num_bop_gbp_hits,
-                           pfs->num_getattrs, pfs->num_setattrs);
-            pos += written;
-            assert(pos < size);
+                pos += do_stats_prefix_write_buffer(buf+pos, size-pos, format, pfs);
+                assert(pos < size);
+            }
+        }
+    } else {  // specific prefixes
+        uint32_t hashval;
+        for (int i=0; i<nprefixes; i++) {
+            char *prefix = tokens[i].value;
+            int prefix_len = tokens[i].length;
+            if (strcmp(prefix, null_prefix_str) == 0) {
+                prefix = NULL;
+                prefix_len = 0;
+            }
+            hashval = mc_hash(prefix, prefix_len, 0) % PREFIX_HASH_SIZE;
+            for (pfs = prefix_stats[hashval]; pfs != NULL; pfs = pfs->next) {
+                if ((pfs->prefix_len == prefix_len) &&
+                    (prefix_len == 0 || strncmp(pfs->prefix, prefix, prefix_len) == 0))
+                    break;
+            }
+            if (pfs) {
+                pos += do_stats_prefix_write_buffer(buf+pos, size-pos, format, pfs);
+                assert(pos < size);
+            }
         }
     }
     UNLOCK_STATS();

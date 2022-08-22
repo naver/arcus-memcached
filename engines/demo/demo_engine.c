@@ -712,7 +712,8 @@ Demo_reset_stats(ENGINE_HANDLE* handle, const void *cookie)
 }
 
 static char *
-Demo_prefix_dump_stats(ENGINE_HANDLE* handle, const void* cookie, int *length)
+Demo_prefix_dump_stats(ENGINE_HANDLE* handle, const void* cookie,
+    token_t *tokens, const size_t ntokens, int *length)
 {
     *length = -1; /* It means ENGINE_ENOTSUP */
     return NULL;
