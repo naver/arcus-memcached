@@ -8152,19 +8152,33 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
         topkeys_stats(default_topkeys, c, get_current_time(), append_ascii_stats);
     } else if (strcmp(subcommand, "prefixes") == 0) {
         int len;
+        char *stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, NULL, 0, &len);
+        if (stats == NULL) {
+            if (len == -1)
+                out_string(c, "NOT_SUPPORTED");
+            else
+                out_string(c, "SERVER_ERROR no more memory");
+            return;
+        }
+        write_and_free(c, stats, len);
+        return; /* Output already generated */
+    } else if (strcmp(subcommand, "prefixlist") == 0) {
+        int len;
         char *stats;
         token_t *prefixes = ntokens > 4 ? &tokens[3] : NULL;
         size_t nprefixes = ntokens > 4 ? ntokens-4 : 0;
 
-        if (ntokens == 3 || (ntokens >= 4 && strcmp(tokens[2].value, "item") == 0)) {
+        if (ntokens < 4) {
+            out_string(c, "CLIENT_ERROR subcommand(item|operation) is required");
+            return;
+        } else if (strcmp(tokens[2].value, "item") == 0) {
             stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, prefixes, nprefixes, &len);
-        } else if (ntokens >= 4 && strcmp(tokens[2].value, "operation") == 0) {
+        } else if (strcmp(tokens[2].value, "operation") == 0) {
             stats = stats_prefix_dump(prefixes, nprefixes, &len);
         } else {
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
-
         if (stats == NULL) {
             if (len == -1)
                 out_string(c, "NOT_SUPPORTED");
