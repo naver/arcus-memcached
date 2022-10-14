@@ -1174,39 +1174,77 @@ static int sm_reload_cache_list_znode(zhandle_t *zh, int *retry_ms)
 }
 
 #ifdef ENABLE_ZK_RECONFIG
+static int get_zk_client_ipport(char *startp, char *endp, char *buf) {
+    char *clientp, *ip_addrp, *portp, *colonp;
+    int ip_addr_len, port_len;
+    int length = 0;
+
+    clientp = memchr(startp, ';', endp - startp);
+    if (!clientp) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Invalid ZK config string. missing client port in zoo.cfg.dynamic file.\n");
+        return -1;
+    }
+    clientp++;
+
+    colonp = memchr(clientp, ':', endp - clientp);
+    if (colonp && strncmp(clientp, "0.0.0.0", colonp - clientp) != 0
+               && strncmp(clientp, "127.0.0.1", colonp - clientp) != 0) {
+        memcpy(buf, clientp, endp - clientp);
+        return endp - clientp;
+    }
+    portp = colonp ? (colonp + 1) : clientp;
+    port_len = endp - portp;
+
+    ip_addrp = memchr(startp, '=', clientp - startp);
+    if (!ip_addrp) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Invalid ZK config string. missing server ip in zoo.cfg.dynamic file.\n");
+        return -1;
+    }
+    do {
+        ip_addrp++;
+    } while (ip_addrp[0] == ' ' && ip_addrp < clientp);
+
+    colonp = memchr(ip_addrp, ':', clientp - ip_addrp);
+    if (!colonp) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+            "Invalid ZK config string. missing zk port in zoo.cfg.dynamic file.\n");
+        return -1;
+    }
+    ip_addr_len = colonp - ip_addrp + 1;  // ip_addr + colon(:)
+
+    memcpy(buf + length, ip_addrp, ip_addr_len);
+    length += ip_addr_len;
+    memcpy(buf + length, portp, port_len);
+    length += port_len;
+
+    return length;
+}
+
 static int get_client_config_data(char *data_buf, int data_len,
                                   char *host_buf, int64_t *version)
 {
-    char *startp, *endp, *serverp, *versionp, *versionerrp;
-    int length, server_len;
+    char *startp, *endp, *versionp, *versionerrp;
+    int len;
     int host_len = 0;
 
     startp = &data_buf[0];
     data_buf[data_len] = '\0';
     while ((endp = memchr(startp, '\n', data_len)) != NULL) {
-        length = (endp - startp);
-
-        /* go to the starting point of the server host string */
-        serverp = memchr(startp, ';', length);
-        if (!serverp) {
-            /* need to check whether client port is in zoo.cfg.dynamic file not zoo.cfg file. */
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Invalid ZK config string. missing client port in zoo.cfg.dynamic file.\n");
+        len = get_zk_client_ipport(startp, endp, host_buf + host_len);
+        if (len <= 0) {
             return -1;
         }
-        serverp++;
-        server_len = (endp - serverp);
-
-        /* make server host list */
-        memcpy(host_buf + host_len, serverp, server_len);
-        host_len += server_len;
+        host_len += len;
         memcpy(host_buf + host_len, ",", 1);
         host_len++;
 
         /* next server id */
-        startp += length + 1;
-        data_len -= length + 1;
+        data_len -= (endp - startp) + 1;
+        startp = endp + 1;
     }
+
     /* [host_len-1] is last comma character */
     if (host_len > 0) {
         host_buf[host_len-1] = '\0';
