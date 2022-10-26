@@ -1188,8 +1188,7 @@ static int get_zk_client_ipport(char *startp, char *endp, char *buf) {
     clientp++;
 
     colonp = memchr(clientp, ':', endp - clientp);
-    if (colonp && strncmp(clientp, "0.0.0.0", colonp - clientp) != 0
-               && strncmp(clientp, "127.0.0.1", colonp - clientp) != 0) {
+    if (colonp && strncmp(clientp, "0.0.0.0", colonp - clientp) != 0) {
         memcpy(buf, clientp, endp - clientp);
         return endp - clientp;
     }
