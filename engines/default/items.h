@@ -43,12 +43,6 @@ hash_item *item_alloc(const void *key, const uint32_t nkey,
                       const uint32_t nbytes, const void *cookie);
 
 /**
- * Frees and adds an item to the freelist
- * @param it the item to free
- */
-void item_free(hash_item *it);
-
-/**
  * Get an item from the cache
  *
  * @param key the key for the item to get

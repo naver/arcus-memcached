@@ -252,15 +252,6 @@ extern "C" {
                                       const uint64_t cas);
 
         /**
-         * Frees and adds an item to the freelist.
-         *
-         * @param handle the engine handle
-         * @param cookie The cookie provided by the frontend
-         * @param item the item to be freed
-         */
-        void (*free)(ENGINE_HANDLE* handle, const void *cookie, item* item);
-
-        /**
          * Remove an item.
          *
          * @param handle the engine handle

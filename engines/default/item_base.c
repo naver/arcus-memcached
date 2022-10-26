@@ -952,7 +952,7 @@ hash_item *do_item_alloc(const void *key, const uint32_t nkey,
 
     it->next = it->prev = it; /* special meaning: unlinked from LRU */
     it->h_next = 0;
-    it->refcount = 0;
+    it->refcount = 1;     /* the caller will have a reference */
     it->refchunk = 0;
     DEBUG_REFCNT(it, '*');
     it->iflag = config->use_cas ? ITEM_WITH_CAS : 0;

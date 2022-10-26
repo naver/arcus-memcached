@@ -64,14 +64,6 @@ hash_item *dm_item_alloc(struct demo_engine *engine,
                       rel_time_t exptime, int nbytes, const void *cookie);
 
 /**
- * Frees an item
- *
- * @param engine handle to the storage engine
- * @param it the item to release
- */
-void dm_item_free(struct demo_engine *engine, hash_item *it);
-
-/**
  * Get an item from the cache
  *
  * @param engine handle to the storage engine

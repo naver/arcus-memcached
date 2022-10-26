@@ -213,6 +213,7 @@ static ENGINE_ERROR_CODE do_item_store_attach(hash_item *it, uint64_t *cas,
             do_item_replace(old_it, new_it);
             stored = ENGINE_SUCCESS;
             *cas = item_get_cas(new_it);
+            do_item_release(new_it);
         } else {
             /* SERVER_ERROR out of memory */
             stored = ENGINE_NOT_STORED;
@@ -268,6 +269,7 @@ static ENGINE_ERROR_CODE do_add_delta(hash_item *it, const bool incr, const int6
     memcpy(item_get_data(new_it), buf, res);
     do_item_replace(it, new_it);
     *rcas = item_get_cas(new_it);
+    do_item_release(new_it);
 
     return ENGINE_SUCCESS;
 }
@@ -287,16 +289,6 @@ hash_item *item_alloc(const void *key, const uint32_t nkey,
     it = do_item_alloc(key, nkey, flags, exptime, nbytes, cookie);
     UNLOCK_CACHE();
     return it;
-}
-
-/*
- * Frees and adds an item to the freelist.
- */
-void item_free(hash_item *item)
-{
-    LOCK_CACHE();
-    do_item_free(item);
-    UNLOCK_CACHE();
 }
 
 /*
@@ -391,9 +383,8 @@ ENGINE_ERROR_CODE item_arithmetic(const void *key, const uint32_t nkey,
                 ret = do_item_store_add(it, cas, cookie);
                 if (ret == ENGINE_SUCCESS) {
                     *result = initial;
-                } else {
-                    do_item_free(it);
                 }
+                do_item_release(it);
             } else {
                 ret = ENGINE_ENOMEM;
             }
@@ -1767,9 +1758,8 @@ ENGINE_ERROR_CODE item_apply_kv_link(void *engine, const char *key, const uint32
         if (ret == ENGINE_SUCCESS) {
             /* Override the cas with the given cas. */
             item_set_cas(new_it, cas);
-        } else {
-            do_item_free(new_it);
         }
+        do_item_release(new_it);
     } else {
         ret = ENGINE_ENOMEM;
         if (old_it) { /* Remove inconsistent hash_item */
