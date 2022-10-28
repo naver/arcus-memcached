@@ -735,9 +735,7 @@ ENGINE_ERROR_CODE map_struct_create(const char *key, const uint32_t nkey,
             ret = ENGINE_ENOMEM;
         } else {
             ret = do_item_link(it);
-            if (ret != ENGINE_SUCCESS) {
-                do_item_free(it);
-            }
+            do_item_release(it);
         }
     }
     UNLOCK_CACHE();
@@ -797,20 +795,17 @@ ENGINE_ERROR_CODE map_elem_insert(const char *key, const uint32_t nkey,
             ret = do_item_link(it);
             if (ret == ENGINE_SUCCESS) {
                 *created = true;
-            } else {
-                do_item_free(it);
             }
         }
     }
     if (ret == ENGINE_SUCCESS) {
         ret = do_map_elem_insert(it, elem, false /* replace_if_exist */, cookie);
-        if (*created) {
-            if (ret != ENGINE_SUCCESS) {
-                do_item_unlink(it, ITEM_UNLINK_NORMAL);
-            }
-        } else {
-            do_item_release(it);
+        if (ret != ENGINE_SUCCESS && *created) {
+            do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
+    }
+    if (it) {
+        do_item_release(it);
     }
     UNLOCK_CACHE();
 
@@ -1091,9 +1086,7 @@ ENGINE_ERROR_CODE map_apply_item_link(void *engine, const char *key, const uint3
     if (new_it) {
         /* Link the new item into the hash table */
         ret = do_item_link(new_it);
-        if (ret != ENGINE_SUCCESS) {
-            do_item_free(new_it);
-        }
+        do_item_release(new_it);
     } else {
         ret = ENGINE_ENOMEM;
     }
