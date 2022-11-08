@@ -1459,6 +1459,12 @@ static int build_udp_headers(conn *c)
     return 0;
 }
 
+static void pipe_state_clear(conn *c)
+{
+    c->pipe_state = PIPE_STATE_OFF;
+    c->pipe_count = 0;
+}
+
 static int pipe_response_save(conn *c, const char *str, size_t len)
 {
     if (c->pipe_state == PIPE_STATE_ON) {
@@ -1495,9 +1501,7 @@ static int pipe_response_save(conn *c, const char *str, size_t len)
         mc_logger->log(EXTENSION_LOG_INFO, c,
                        "%d: response message before pipe error is reset. %s\n",
                        c->sfd, str);
-        /* clear pipe_state: the end of pipe */
-        c->pipe_state = PIPE_STATE_OFF;
-        c->pipe_count = 0;
+        pipe_state_clear(c);
     }
     return 0;
 }
@@ -1519,9 +1523,7 @@ static void pipe_response_done(conn *c, bool end_of_pipelining)
         sprintf(c->pipe_resptr, "END\r\n");
         c->pipe_reslen += 5;
 
-        /* clear pipe_state: the end of pipe */
-        c->pipe_state = PIPE_STATE_OFF;
-        c->pipe_count = 0;
+        pipe_state_clear(c);
     } else {
         if (c->pipe_state == PIPE_STATE_ERR_CFULL) {
             sprintf(c->pipe_resptr, "PIPE_ERROR command overflow\r\n");
@@ -1534,8 +1536,7 @@ static void pipe_response_done(conn *c, bool end_of_pipelining)
             c->pipe_reslen += 22;
         }
         if (end_of_pipelining) {
-            c->pipe_state = PIPE_STATE_OFF;
-            c->pipe_count = 0;
+            pipe_state_clear(c);
         }
         /* The pipe_state will be cleared
          * after swallowing the remaining data.
@@ -7689,9 +7690,7 @@ static bool check_and_handle_pipe_state(conn *c)
             c->noreply = false; /* reset noreply */
         } else  {
             /* The last command of pipelining has come. */
-            /* clear pipe_state: the end of pipe */
-            c->pipe_state = PIPE_STATE_OFF;
-            c->pipe_count = 0;
+            pipe_state_clear(c);
         }
         return false;
     }
