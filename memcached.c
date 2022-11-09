@@ -4378,6 +4378,8 @@ static void process_bin_lop_create(conn *c)
     assert(c->ewouldblock == false);
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
+    c->coll_key = key;
+    c->coll_nkey = nkey;
 
     /* fix byteorder in the request */
     protocol_binary_request_lop_create* req = binary_get_request(c);
@@ -4442,6 +4444,8 @@ static void process_bin_lop_prepare_nread(conn *c)
 
     char *key = binary_get_key(c);
     uint32_t nkey = c->binary_header.request.keylen;
+    c->coll_key = key;
+    c->coll_nkey = nkey;
     uint32_t vlen = 0;
 
     if (nkey + c->binary_header.request.extlen <= c->binary_header.request.bodylen) {
@@ -4485,8 +4489,6 @@ static void process_bin_lop_prepare_nread(conn *c)
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = OPERATION_LOP_INSERT;
-        c->coll_key    = key;
-        c->coll_nkey   = nkey;
         c->coll_index  = req->message.body.index;
         if (req->message.body.create) {
             c->coll_attrp = &c->coll_attr_space; /* create if not exist */
@@ -4578,6 +4580,8 @@ static void process_bin_lop_delete(conn *c)
     assert(c->ewouldblock == false);
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
+    c->coll_key = key;
+    c->coll_nkey = nkey;
 
     /* fix byteorder in the request */
     protocol_binary_request_lop_delete* req = binary_get_request(c);
@@ -4700,6 +4704,8 @@ static void process_bin_lop_get(conn *c)
     struct elems_result eresult;
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
+    c->coll_key = key;
+    c->coll_nkey = nkey;
     ENGINE_ERROR_CODE ret;
 
     /* fix byteorder in the request */
@@ -4765,6 +4771,8 @@ static void process_bin_sop_create(conn *c)
     assert(c->ewouldblock == false);
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
+    c->coll_key = key;
+    c->coll_nkey = nkey;
 
     /* fix byteorder in the request */
     protocol_binary_request_sop_create* req = binary_get_request(c);
@@ -4821,6 +4829,8 @@ static void process_bin_sop_prepare_nread(conn *c)
            c->cmd == PROTOCOL_BINARY_CMD_SOP_EXIST);
     char *key = binary_get_key(c);
     uint32_t nkey = c->binary_header.request.keylen;
+    c->coll_key = key;
+    c->coll_nkey = nkey;
     uint32_t vlen = 0;
 
     if (nkey + c->binary_header.request.extlen <= c->binary_header.request.bodylen) {
@@ -4871,8 +4881,6 @@ static void process_bin_sop_prepare_nread(conn *c)
          }
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
-        c->coll_key    = key;
-        c->coll_nkey   = nkey;
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
             protocol_binary_request_sop_insert* req = binary_get_request(c);
             if (req->message.body.create) {
@@ -5152,6 +5160,8 @@ static void process_bin_sop_get(conn *c)
     struct elems_result eresult;
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
+    c->coll_key = key;
+    c->coll_nkey = nkey;
     ENGINE_ERROR_CODE ret;
 
     /* fix byteorder in the request */
@@ -5214,6 +5224,8 @@ static void process_bin_bop_create(conn *c)
     assert(c->ewouldblock == false);
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
+    c->coll_key = key;
+    c->coll_nkey = nkey;
 
     /* fix byteorder in the request */
     protocol_binary_request_bop_create* req = binary_get_request(c);
@@ -5280,6 +5292,8 @@ static void process_bin_bop_prepare_nread(conn *c)
            c->cmd == PROTOCOL_BINARY_CMD_BOP_UPSERT);
     char *key = binary_get_key(c);
     uint32_t nkey = c->binary_header.request.keylen;
+    c->coll_key = key;
+    c->coll_nkey = nkey;
     uint32_t vlen = 0;
 
     if (nkey + c->binary_header.request.extlen <= c->binary_header.request.bodylen) {
@@ -5343,8 +5357,6 @@ static void process_bin_bop_prepare_nread(conn *c)
         c->coll_ecount = 1;
         c->coll_op     = (c->cmd == PROTOCOL_BINARY_CMD_BOP_INSERT ? OPERATION_BOP_INSERT
                                                                    : OPERATION_BOP_UPSERT);
-        c->coll_key    = key;
-        c->coll_nkey   = nkey;
         if (req->message.body.create) {
             c->coll_attrp = &c->coll_attr_space; /* create if not exist */
             c->coll_attrp->flags    = req->message.body.flags;
@@ -5503,6 +5515,8 @@ static void process_bin_bop_update_prepare_nread(conn *c)
     assert(c->cmd == PROTOCOL_BINARY_CMD_BOP_UPDATE);
     char *key = binary_get_key(c);
     uint32_t nkey = c->binary_header.request.keylen;
+    c->coll_key = key;
+    c->coll_nkey = nkey;
     uint32_t vlen = 0;
     int real_nbkey;
 
@@ -5550,8 +5564,6 @@ static void process_bin_bop_update_prepare_nread(conn *c)
     if (req->message.body.novalue) {
         c->coll_eitem  = NULL;
         c->coll_ecount = 0;
-        c->coll_key    = key;
-        c->coll_nkey   = nkey;
         c->coll_op     = OPERATION_BOP_UPDATE;
         process_bin_bop_update_complete(c);
         return;
@@ -5574,8 +5586,6 @@ static void process_bin_bop_update_prepare_nread(conn *c)
         c->rltotal     = 0;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
-        c->coll_key    = key;
-        c->coll_nkey   = nkey;
         c->coll_op     = OPERATION_BOP_UPDATE;
         conn_set_state(c, conn_nread);
         c->substate = bin_reading_bop_update_nread_complete;
@@ -5600,6 +5610,8 @@ static void process_bin_bop_delete(conn *c)
     assert(c->ewouldblock == false);
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
+    c->coll_key = key;
+    c->coll_nkey = nkey;
 
     /* fix byteorder in the request */
     protocol_binary_request_bop_delete* req = binary_get_request(c);
@@ -5741,6 +5753,8 @@ static void process_bin_bop_get(conn *c)
     struct elems_result eresult;
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
+    c->coll_key = key;
+    c->coll_nkey = nkey;
     ENGINE_ERROR_CODE ret;
 
     /* fix byteorder in the request */
@@ -5829,6 +5843,8 @@ static void process_bin_bop_count(conn *c)
     assert(c->cmd == PROTOCOL_BINARY_CMD_BOP_COUNT);
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
+    c->coll_key = key;
+    c->coll_nkey = nkey;
 
     /* fix byteorder in the request */
     protocol_binary_request_bop_count* req = binary_get_request(c);
@@ -5905,6 +5921,8 @@ static void process_bin_bop_prepare_nread_keys(conn *c)
 
     char *key = binary_get_key(c);
     uint32_t nkey = c->binary_header.request.keylen;
+    c->coll_key = key;
+    c->coll_nkey = nkey;
     size_t vlen = 0;
 
     if (nkey + c->binary_header.request.extlen <= c->binary_header.request.bodylen) {
@@ -10162,8 +10180,6 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = OPERATION_LOP_INSERT;
-        c->coll_key    = key;
-        c->coll_nkey   = nkey;
         c->coll_index  = index;
         conn_set_state(c, conn_nread);
     } else {
@@ -10288,6 +10304,8 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
+    c->coll_key = key;
+    c->coll_nkey = nkey;
 
     if ((ntokens >= 6 && ntokens <= 13) && (strcmp(subcommand,"insert") == 0))
     {
@@ -10564,8 +10582,6 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = cmd;
-        c->coll_key    = key;
-        c->coll_nkey   = nkey;
         conn_set_state(c, conn_nread);
     } else {
         if (cmd == (int)OPERATION_SOP_INSERT) {
@@ -10633,6 +10649,8 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
+    c->coll_key = key;
+    c->coll_nkey = nkey;
 
     if ((ntokens >= 5 && ntokens <= 12) && (strcmp(subcommand,"insert") == 0))
     {
@@ -11237,8 +11255,6 @@ static void process_bop_update_prepare_nread(conn *c, int cmd,
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = cmd;
-        c->coll_key    = key;
-        c->coll_nkey   = nkey;
         conn_set_state(c, conn_nread);
     } else {
         if (settings.detail_enabled) {
@@ -11281,8 +11297,6 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = cmd; /* OPERATION_BOP_INSERT | OPERATION_BOP_UPSERT */
-        c->coll_key    = key;
-        c->coll_nkey   = nkey;
         conn_set_state(c, conn_nread);
     } else {
         if (settings.detail_enabled) {
@@ -11744,8 +11758,6 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = cmd;
-        c->coll_key    = key;
-        c->coll_nkey   = nkey;
         c->coll_field  = *field;
         conn_set_state(c, conn_nread);
     } else {
@@ -11786,8 +11798,6 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
         ritem_set_first(c, CONN_RTYPE_MBLCK, flen);
         c->coll_ecount = 1;
         c->coll_op = cmd;
-        c->coll_key  = key;
-        c->coll_nkey = nkey;
         c->coll_lenkeys = flen;
         conn_set_state(c, conn_nread);
     } else {
@@ -11845,6 +11855,9 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
+    c->coll_key = key;
+    c->coll_nkey = nkey;
+
     if ((ntokens >= 6 && ntokens <= 13) && (strcmp(subcommand,"insert") == 0))
     {
         field_t field;
@@ -11993,8 +12006,6 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if (check_and_handle_pipe_state(c)) {
             if (lenfields == 0 && numfields == 0) {
-                c->coll_key     = key;
-                c->coll_nkey    = nkey;
                 c->coll_lenkeys = lenfields;
                 c->coll_op      = OPERATION_MOP_DELETE;
                 process_mop_delete_complete(c);
@@ -12060,8 +12071,6 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         c->coll_drop = drop_if_empty;
 
         if (lenfields == 0 && numfields == 0) {
-            c->coll_key     = key;
-            c->coll_nkey    = nkey;
             c->coll_lenkeys = lenfields;
             c->coll_op      = OPERATION_MOP_GET;
             process_mop_get_complete(c);
@@ -12089,6 +12098,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
+    c->coll_key = key;
+    c->coll_nkey = nkey;
 
     if ((ntokens >= 6 && ntokens <= 14) &&
         ((strcmp(subcommand,"insert") == 0 && (subcommid = (int)OPERATION_BOP_INSERT)) ||
@@ -12253,8 +12264,6 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
                     out_string(c, "NOTHING_TO_UPDATE");
                     return;
                 }
-                c->coll_key  = key;
-                c->coll_nkey = nkey;
                 c->coll_op   = OPERATION_BOP_UPDATE;
                 process_bop_update_complete(c);
             } else { /* pipe error */
