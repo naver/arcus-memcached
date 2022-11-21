@@ -681,7 +681,7 @@ static int arcus_build_znode_name(char *ensemble_list)
             // Must be hostname, not IP. Convert hostname to IP first
             zkhost = gethostbyname(zip);
             if (!zkhost) {
-                arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Invalid IP/hostname in arg: %s\n", zip);
                 // get next token: separate IP:PORT tuple
                 zip = strtok_r(NULL, sep1, &hlist);
@@ -762,7 +762,7 @@ static int arcus_build_znode_name(char *ensemble_list)
             // Must be hostname, not IP. Convert hostname to IP first
             proxy_host = gethostbyname(proxy_ip);
             if (!proxy_host) {
-                arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
+                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Invalid proxy IP/hostname in arg: %s\n", proxy_ip);
                 return EX_UNAVAILABLE;
             }
@@ -1357,14 +1357,11 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
                     " -z{ensemble_list} must not be empty\n");
         arcus_exit(NULL, EX_USAGE);
     }
-
-    if (arcus_conf.verbose > 2) {
-        logger->log(EXTENSION_LOG_DEBUG, NULL,
-                    "arcus_zk_init(%s)\n", ensemble_list);
-    }
+    logger->log(EXTENSION_LOG_INFO, NULL,
+                "arcus_zk_init(ensemble=%s, zk_timeout=%d)\n",
+                ensemble_list, zk_to);
 
     memset(&zk_info, 0, sizeof(zk_info_t));
-
     main_zk = &zk_info;
     main_zk->ensemble_list = strdup(ensemble_list);
     assert(main_zk->ensemble_list);
@@ -1408,9 +1405,6 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     } else {                             // default
         zoo_set_debug_level(ZOO_LOG_LEVEL_WARN);
     }
-
-    if (arcus_conf.verbose > 2)
-        arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "zookeeper_init()\n");
 
     gettimeofday(&start_time, 0);
 
