@@ -105,6 +105,13 @@
  * Therefore, config data of about 26 ZK servers can be stored.
  */
 #define MAX_ZK_CONFIG_DATA_LENGTH  (16 * 1024)
+struct _zk_reconfig {
+    char data_buffer[MAX_ZK_CONFIG_DATA_LENGTH];
+    char host_buffer[MAX_ZK_CONFIG_DATA_LENGTH/2]; /* half space is enough */
+    int64_t version; /* current ZK config version */
+    bool    enabled; /* dynamic reconfig is enabled in ZK ? */
+    bool    needed;  /* dynamic reconfig is needed by arcus ? */
+} zk_reconfig;
 #endif
 
 static const char *zk_root = NULL;
@@ -144,9 +151,6 @@ typedef struct {
     char   *znode_name;         // Ephemeral ZK node name for this mc identification
     int     znode_ver;          // Ephemeral ZK node version
     bool    znode_created;      // Ephemeral ZK node is created ?
-#ifdef ENABLE_ZK_RECONFIG
-    bool    zk_reconfig;        // Zookeeper dynamic reconfiguration is enabled ?
-#endif
     int     verbose;            // verbose output
     size_t  maxbytes;           // mc -M option
     EXTENSION_LOGGER_DESCRIPTOR *logger; // mc logger
@@ -176,9 +180,6 @@ arcus_zk_config arcus_conf = {
     .znode_name     = NULL,
     .znode_ver      = -1,
     .znode_created  = false,
-#ifdef ENABLE_ZK_RECONFIG
-    .zk_reconfig    = false,
-#endif
     .verbose        = -1,
     .port           = -1,
     .maxbytes       = -1,
@@ -234,17 +235,6 @@ struct sm {
 
     /* Current # of nodes in cluster */
     int cluster_node_count;
-
-#ifdef ENABLE_ZK_RECONFIG
-    /* zk config data buffer */
-    char *zkconfig_data_buffer;
-
-    /* zk config host buffer */
-    char *zkconfig_host_buffer;
-
-    /* Current zk config version */
-    int64_t zkconfig_version;
-#endif
 
     /* the time a new node was added to the cluster */
     volatile uint64_t node_added_time;
@@ -416,16 +406,15 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
         }
 
 #ifdef ENABLE_ZK_RECONFIG
-        if (arcus_conf.init && !arcus_conf.zk_reconfig) {
-            /* enable zookeeper dynamic reconfiguration */
+        if (arcus_conf.init && zk_reconfig.needed && !zk_reconfig.enabled) {
+            /* check if ZK dynamic reconfig is enabled ? */
             if (arcus_check_zk_reconfig_enabled(zinfo->zh) < 0) {
                 /* zoo_getconfig API failed.. (rarely)
                  * Instead of retry checking, set zk_reconfig to true to make it more safe.
                  */
-                arcus_conf.zk_reconfig = true;
+                zk_reconfig.enabled = true;
             }
-
-            if (arcus_conf.zk_reconfig) {
+            if (zk_reconfig.enabled) {
                 /* Wake up the state machine thread and update zkconfig. */
                 sm_lock();
                 sm_info.request.update_zkconfig = true;
@@ -875,12 +864,12 @@ static int arcus_check_zk_reconfig_enabled(zhandle_t *zh)
 
     int rc = zoo_getconfig(zh, ZK_NOWATCH, buf, &len, &zstat);
     if (rc == ZOK && len > 0) {
-        arcus_conf.zk_reconfig = true;
-        sm_info.zkconfig_version = -1;
+        zk_reconfig.enabled = true;
+        zk_reconfig.version = -1;
         arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
                 "Zookeeper dynamic reconfiguration is enabled.\n");
     } else if (rc == ZNONODE) {
-        arcus_conf.zk_reconfig = false;
+        zk_reconfig.enabled = false;
         arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
                 "Zookeeper dynamic reconfiguration is disabled.\n");
     } else {
@@ -1174,7 +1163,8 @@ static int sm_reload_cache_list_znode(zhandle_t *zh, int *retry_ms)
 }
 
 #ifdef ENABLE_ZK_RECONFIG
-static int get_zk_client_ipport(char *startp, char *endp, char *buf) {
+static int get_zk_client_ipport(char *startp, char *endp, char *buf)
+{
     char *clientp, *ip_addrp, *portp, *colonp;
     int ip_addr_len, port_len;
     int length = 0;
@@ -1271,9 +1261,9 @@ static int get_client_config_data(char *data_buf, int data_len,
 static void sm_reload_ZK_config(zhandle_t *zh, int *retry_ms)
 {
     struct Stat zstat;
-    char *data_buf = sm_info.zkconfig_data_buffer;
+    char *data_buf = zk_reconfig.data_buffer;
     int   data_len = MAX_ZK_CONFIG_DATA_LENGTH;
-    char *host_buf = sm_info.zkconfig_host_buffer;
+    char *host_buf = zk_reconfig.host_buffer;
     int64_t version;
 
     int rc = zoo_wgetconfig(zh, arcus_zkconfig_watcher, NULL,
@@ -1284,7 +1274,7 @@ static void sm_reload_ZK_config(zhandle_t *zh, int *retry_ms)
               rc, zerror(rc));
       if (rc == ZNONODE) {
         /* arcus_zkconfig_watcher won't be triggered. */
-        arcus_conf.zk_reconfig = false;
+        zk_reconfig.enabled = false;
         arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
                 "Zookeeper dynamic reconfiguration is disabled.\n");
       } else {
@@ -1311,9 +1301,9 @@ static void sm_reload_ZK_config(zhandle_t *zh, int *retry_ms)
             return;
         }
 
-        if (sm_info.zkconfig_version == -1) {
-            sm_info.zkconfig_version = version;
-        } else if (version != 0 && version > sm_info.zkconfig_version) {
+        if (zk_reconfig.version == -1) {
+            zk_reconfig.version = version;
+        } else if (version != 0 && version > zk_reconfig.version) {
             /* version will be greater than 0 if ZK config data has been synced. */
             arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
                     "Updated ZK servers... ZK servers[%s], version[%" PRIx64 "]\n",
@@ -1336,12 +1326,12 @@ static void sm_reload_ZK_config(zhandle_t *zh, int *retry_ms)
                         "Failed to update ZK servers: error=%d(%s)\n",
                         rc, zerror(rc));
             }
-            sm_info.zkconfig_version = version;
-        } else if (version < sm_info.zkconfig_version) {
+            zk_reconfig.version = version;
+        } else if (version < zk_reconfig.version) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Unexpected ZK config version. "
-                    "zkconfig_version=%" PRIx64 ", version=%" PRIx64 "\n",
-                    sm_info.zkconfig_version, version);
+                    "zk_reconfig.version=%" PRIx64 ", version=%" PRIx64 "\n",
+                    zk_reconfig.version, version);
         }
     }
 }
@@ -1454,9 +1444,15 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     }
 
 #ifdef ENABLE_ZK_RECONFIG
-    /* enable zookeeper dynamic reconfiguration */
-    if (arcus_check_zk_reconfig_enabled(main_zk->zh) != 0) {
-        arcus_exit(main_zk->zh, EX_PROTOCOL);
+    /* Initialize zk_reconfig */
+    zk_reconfig.version = -1;
+    zk_reconfig.enabled = false;
+    zk_reconfig.needed = true;
+    if (zk_reconfig.needed) {
+        /* check if ZK dynamic reconfig is enabled ? */
+        if (arcus_check_zk_reconfig_enabled(main_zk->zh) != 0) {
+            arcus_exit(main_zk->zh, EX_PROTOCOL);
+        }
     }
 #endif
 
@@ -1507,7 +1503,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
      */
     sm_lock();
 #ifdef ENABLE_ZK_RECONFIG
-    if (arcus_conf.zk_reconfig) {
+    if (zk_reconfig.enabled) {
         sm_info.request.update_zkconfig = true;
     }
 #endif
@@ -1590,14 +1586,6 @@ void arcus_zk_destroy(void)
     if (arcus_conf.ch != NULL) {
         cluster_config_final(arcus_conf.ch);
         arcus_conf.ch = NULL;
-    }
-#endif
-#ifdef ENABLE_ZK_RECONFIG
-    if (sm_info.zkconfig_data_buffer != NULL) {
-        free(sm_info.zkconfig_data_buffer);
-    }
-    if (sm_info.zkconfig_host_buffer != NULL) {
-        free(sm_info.zkconfig_host_buffer);
     }
 #endif
     pthread_mutex_unlock(&zk_lock);
@@ -1765,21 +1753,20 @@ bool arcus_zk_get_failstop(void)
     return arcus_conf.zk_failstop;
 }
 
+void arcus_zk_get_confs(arcus_zk_confs *confs)
+{
+    confs->zk_timeout = arcus_conf.zk_timeout;
+    confs->zk_failstop = arcus_conf.zk_failstop;
+}
+
 void arcus_zk_get_stats(arcus_zk_stats *stats)
 {
     stats->zk_connected = (main_zk != NULL && main_zk->zh != NULL) ? true : false;
 #ifdef ENABLE_ZK_RECONFIG
-    stats->zk_reconfig_version = sm_info.zkconfig_version;
+    stats->zk_reconfig_needed = zk_reconfig.needed;
+    stats->zk_reconfig_enabled = zk_reconfig.enabled;
+    stats->zk_reconfig_version = zk_reconfig.version;
 #endif
-}
-
-void arcus_zk_get_confs(arcus_zk_confs *confs)
-{
-    confs->zk_failstop = arcus_conf.zk_failstop;
-#ifdef ENABLE_ZK_RECONFIG
-    confs->zk_reconfig = arcus_conf.zk_reconfig;
-#endif
-    confs->zk_timeout = arcus_conf.zk_timeout;
 }
 
 #ifdef ENABLE_CLUSTER_AWARE
@@ -1951,27 +1938,6 @@ static int sm_init(void)
     /* clear sm_info structure */
     memset(&sm_info, 0, sizeof(sm_info));
 
-#ifdef ENABLE_ZK_RECONFIG
-    sm_info.zkconfig_version = -1;
-    sm_info.zkconfig_data_buffer = malloc(MAX_ZK_CONFIG_DATA_LENGTH);
-    if (sm_info.zkconfig_data_buffer == NULL) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Failed to allocate zkconfig data buffer.\n");
-        return -1;
-    }
-
-    /* The ZK server address is displayed twice in the zkconfig data,
-     * so only needs half the size.
-     */
-    sm_info.zkconfig_host_buffer = malloc(MAX_ZK_CONFIG_DATA_LENGTH/2);
-    if (sm_info.zkconfig_host_buffer == NULL) {
-        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Failed to allocate zkconfig host buffer.\n");
-        free(sm_info.zkconfig_data_buffer);
-        sm_info.zkconfig_data_buffer = NULL;
-        return -1;
-    }
-#endif
     pthread_mutex_init(&sm_info.lock, NULL);
     pthread_cond_init(&sm_info.cond, NULL);
 

@@ -8081,17 +8081,18 @@ static void process_stats_settings(ADD_STAT add_stats, void *c)
 static void process_stats_zookeeper(ADD_STAT add_stats, void *c)
 {
     assert(add_stats);
-    arcus_zk_stats zk_stats;
     arcus_zk_confs zk_confs;
-    arcus_zk_get_stats(&zk_stats);
+    arcus_zk_stats zk_stats;
     arcus_zk_get_confs(&zk_confs);
+    arcus_zk_get_stats(&zk_stats);
 
-    APPEND_STAT("zk_connected", "%s", zk_stats.zk_connected ? "true" : "false");
-    APPEND_STAT("zk_failstop", "%s", zk_confs.zk_failstop ? "on" : "off");
     APPEND_STAT("zk_timeout", "%u", zk_confs.zk_timeout);
+    APPEND_STAT("zk_failstop", "%s", zk_confs.zk_failstop ? "on" : "off");
+    APPEND_STAT("zk_connected", "%s", zk_stats.zk_connected ? "true" : "false");
 #ifdef ENABLE_ZK_RECONFIG
-    APPEND_STAT("zk_reconfig", "%s", zk_confs.zk_reconfig ? "on" : "off");
-    if (zk_confs.zk_reconfig) {
+    APPEND_STAT("zk_reconfig_needed", "%s", zk_stats.zk_reconfig_needed ? "on" : "off");
+    if (zk_stats.zk_reconfig_needed) {
+        APPEND_STAT("zk_reconfig_enabled", "%s", zk_stats.zk_reconfig_enabled ? "on" : "off");
         APPEND_STAT("zk_reconfig_version", "%" PRIx64, zk_stats.zk_reconfig_version);
     }
 #endif

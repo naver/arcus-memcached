@@ -25,19 +25,18 @@
 #ifdef ENABLE_ZK_INTEGRATION
 
 typedef struct {
-    bool     zk_connected;  // ZooKeeper-memcached connection state
-#ifdef ENABLE_ZK_RECONFIG
-    int64_t  zk_reconfig_version; // Zookeeper dynamic reconfiguration version
-#endif
-} arcus_zk_stats;
+    uint32_t zk_timeout;  // Zookeeper session timeout (unit: ms)
+    bool     zk_failstop; // memcached automatic failstop
+} arcus_zk_confs;
 
 typedef struct {
-    bool     zk_failstop;   // memcached automatic failstop
+    bool     zk_connected;  // ZooKeeper-memcached connection state
 #ifdef ENABLE_ZK_RECONFIG
-    bool     zk_reconfig;   // Zookeeper dynamic reconfiguration
+    bool     zk_reconfig_needed;  // ZK dynamic reconfig is needed?
+    bool     zk_reconfig_enabled; // ZK dynamic reconfig enabled in ZK?
+    int64_t  zk_reconfig_version; // ZK dynamic reconfig version
 #endif
-    uint32_t zk_timeout;    // Zookeeper session timeout (unit: ms)
-} arcus_zk_confs;
+} arcus_zk_stats;
 
 /* Interface between memcached.c and arcus_zk.c */
 
@@ -59,8 +58,8 @@ int  arcus_zk_rejoin_ensemble(void);
 
 void arcus_zk_set_failstop(bool failstop);
 bool arcus_zk_get_failstop(void);
-void arcus_zk_get_stats(arcus_zk_stats *stats);
 void arcus_zk_get_confs(arcus_zk_confs *confs);
+void arcus_zk_get_stats(arcus_zk_stats *stats);
 
 #ifdef ENABLE_CLUSTER_AWARE
 int  arcus_key_is_mine(const char *key, size_t nkey, bool *mine);
