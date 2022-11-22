@@ -1258,6 +1258,49 @@ static int get_client_config_data(char *data_buf, int data_len,
     return 0;
 }
 
+static int arcus_zoo_set_servers(const char *hosts)
+{
+    int ret = 0;
+
+    pthread_mutex_lock(&zk_lock);
+    do {
+        if (main_zk->zh == NULL) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to change the ZooKeeper ensemble list. Invalid ZK handle.\n");
+            ret = -1; break;
+        }
+        char *copy = strdup(hosts);
+        if (!copy) {
+            /* Should not happen unless the system is really short of memory. */
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to copy the ensemble list. list=%s\n", hosts);
+            ret = -1; break;
+        }
+        /* To avoid mass client migration at the same time,
+        * sleep a random short period of time before zoo_set_servers().
+        */
+        srand(time(NULL));
+        usleep(rand() % 1000); /* 0~1000 usec. */
+        int rc = zoo_set_servers(main_zk->zh, hosts);
+        if (rc != ZOK) {
+            free(copy);
+            /* Some internal errors may occur, retry at next event.
+            * If need more complete error handling,
+            * save the list of servers and try again.
+            */
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to update ZK servers: error=%d(%s)\n",
+                    rc, zerror(rc));
+            ret = -1; break;
+        }
+        char *old_ensemble = main_zk->ensemble_list;
+        main_zk->ensemble_list = copy;
+        free(old_ensemble);
+    } while (0);
+    pthread_mutex_unlock(&zk_lock);
+    return ret;
+}
+
 static void sm_reload_ZK_config(zhandle_t *zh, int *retry_ms)
 {
     struct Stat zstat;
@@ -1309,22 +1352,8 @@ static void sm_reload_ZK_config(zhandle_t *zh, int *retry_ms)
                     "Updated ZK servers... ZK servers[%s], version[%" PRIx64 "]\n",
                     host_buf, version);
 
-            /* To avoid mass client migration at the same time,
-             * sleep a random short period of time before zoo_set_servers().
-             */
-            srand(time(NULL));
-            usleep(rand() % 1000); /* 0~1000 usec. */
-
-            /* set server host list to zookeeper library */
-            int rc = zoo_set_servers(zh, host_buf);
-            if (rc != ZOK) {
-                /* Some internal errors may occur, retry at next event.
-                 * If need more complete error handling,
-                 * save the list of servers and try again.
-                 */
-                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "Failed to update ZK servers: error=%d(%s)\n",
-                        rc, zerror(rc));
+            if (arcus_zoo_set_servers(host_buf) != 0) {
+                return;
             }
             zk_reconfig.version = version;
         } else if (version < zk_reconfig.version) {
