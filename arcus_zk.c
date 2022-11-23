@@ -1397,7 +1397,7 @@ static int arcus_check_domain_name(char *ensemble_list)
         while (zkhost->h_addr_list[addr_cnt]) {
             addr_cnt++;
         }
-        ret = addr_cnt > 1 ? 1 : 0;
+        ret = (addr_cnt >= 3) ? 1 : 0;
     } while (0);
 
     free(copy);
