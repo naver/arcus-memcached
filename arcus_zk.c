@@ -1366,7 +1366,9 @@ static void sm_reload_ZK_config(zhandle_t *zh, int *retry_ms)
 }
 #endif
 
-static int arcus_check_domain_name(char *ensemble_list) {
+#ifdef ENABLE_ZK_RECONFIG
+static int arcus_check_domain_name(char *ensemble_list)
+{
     char *copy, *token, *save_ptr;
     struct hostent *zkhost;
     int ret;
@@ -1401,6 +1403,7 @@ static int arcus_check_domain_name(char *ensemble_list) {
     free(copy);
     return ret;
 }
+#endif
 
 void arcus_zk_init(char *ensemble_list, int zk_to,
                    EXTENSION_LOGGER_DESCRIPTOR *logger,
