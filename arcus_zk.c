@@ -1685,6 +1685,31 @@ int arcus_zk_set_ensemble(char *ensemble_list)
                     rc, zerror(rc));
             ret = -1; break;
         }
+        int is_domain_name = arcus_check_domain_name(main_zk->ensemble_list);
+        if (is_domain_name < 0) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to check if ensemble list is domain name. list=%s\n",
+                    ensemble_list);
+            free(copy);
+            ret = -1; break;
+        }
+        zk_reconfig.needed = (is_domain_name == 0);
+        if (zk_reconfig.needed) {
+            /* check if ZK dynamic reconfig is enabled ? */
+            if (arcus_check_zk_reconfig_enabled(main_zk->zh) < 0) {
+                /* zoo_getconfig API failed.. (rarely)
+                 * Instead of retry checking, set zk_reconfig to true to make it more safe.
+                 */
+                zk_reconfig.enabled = true;
+            }
+            if (zk_reconfig.enabled) {
+                /* Wake up the state machine thread and update zkconfig. */
+                sm_lock();
+                sm_info.request.update_zkconfig = true;
+                sm_wakeup(true);
+                sm_unlock();
+            }
+        }
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Successfully changed the ZooKeeper ensemble list. list=%s\n",
                 ensemble_list);
