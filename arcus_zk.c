@@ -1588,38 +1588,36 @@ void arcus_zk_destroy(void)
 int arcus_zk_set_ensemble(char *ensemble_list)
 {
     int ret = 0;
+
     pthread_mutex_lock(&zk_lock);
-    if (main_zk->zh) {
-        do {
-            char *copy = strdup(ensemble_list);
-            if (!copy) {
-                /* Should not happen unless the system is really short of memory. */
-                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "Failed to copy the ensemble list. list=%s\n", ensemble_list);
-                ret = -1; break;
-            }
-            int rc = zookeeper_change_ensemble(main_zk->zh, ensemble_list);
-            if (rc != ZOK) {
-                free(copy);
-                arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "Failed to change the ZooKeeper ensemble list. error=%d(%s)\n",
-                        rc, zerror(rc));
-                ret = -1; break;
-            }
+    do {
+        if (main_zk->zh == NULL) {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Successfully changed the ZooKeeper ensemble list. list=%s\n",
-                    ensemble_list);
-            /* main_zk->ensemble_list is not used after init.
-             * Nothing uses it.  So it is okay to just replace the pointer.
-             */
-            free(main_zk->ensemble_list);
-            main_zk->ensemble_list = copy;
-        } while(0);
-    } else {
+                    "Failed to change the ZooKeeper ensemble list. Invalid ZK handle.\n");
+            ret = -1; break;
+        }
+        char *copy = strdup(ensemble_list);
+        if (!copy) {
+            /* Should not happen unless the system is really short of memory. */
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to copy the ensemble list. list=%s\n", ensemble_list);
+            ret = -1; break;
+        }
+        int rc = zookeeper_change_ensemble(main_zk->zh, ensemble_list);
+        if (rc != ZOK) {
+            free(copy);
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to change the ZooKeeper ensemble list. error=%d(%s)\n",
+                    rc, zerror(rc));
+            ret = -1; break;
+        }
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Failed to change the ZooKeeper ensemble list. Invalid ZK handle.\n");
-        ret = -1;
-    }
+                "Successfully changed the ZooKeeper ensemble list. list=%s\n",
+                ensemble_list);
+        char *old_ensemble = main_zk->ensemble_list;
+        main_zk->ensemble_list = copy;
+        free(old_ensemble);
+    } while(0);
     pthread_mutex_unlock(&zk_lock);
     return ret;
 }
