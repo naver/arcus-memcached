@@ -1337,6 +1337,42 @@ static void sm_reload_ZK_config(zhandle_t *zh, int *retry_ms)
 }
 #endif
 
+static int arcus_check_domain_name(char *ensemble_list) {
+    char *copy, *token, *save_ptr;
+    struct hostent *zkhost;
+    int ret;
+
+    copy = strdup(ensemble_list);
+    if (copy == NULL) {
+        return -1;
+    }
+
+    do {
+        if (strchr(copy, ',')) {
+            ret = 0; break;
+        }
+
+        token = strtok_r(ensemble_list, ":", &save_ptr);
+        if (inet_aton(token, NULL)) {
+            ret = 0; break;
+        }
+
+        zkhost = gethostbyname(token);
+        if (!zkhost) {
+            ret = 0; break;
+        }
+
+        int addr_cnt = 0;
+        while (zkhost->h_addr_list[addr_cnt]) {
+            addr_cnt++;
+        }
+        ret = addr_cnt > 1 ? 1 : 0;
+    } while (0);
+
+    free(copy);
+    return ret;
+}
+
 void arcus_zk_init(char *ensemble_list, int zk_to,
                    EXTENSION_LOGGER_DESCRIPTOR *logger,
                    int verbose, size_t maxbytes, int port,
@@ -1439,9 +1475,15 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 
 #ifdef ENABLE_ZK_RECONFIG
     /* Initialize zk_reconfig */
-    zk_reconfig.version = -1;
+    int is_domain_name = arcus_check_domain_name(main_zk->ensemble_list);
+    if (is_domain_name < 0) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Failed to initialize the zk reconfig. Terminating.\n");
+        arcus_exit(main_zk->zh, EX_SOFTWARE);
+    }
+    zk_reconfig.needed = (is_domain_name == 0);
     zk_reconfig.enabled = false;
-    zk_reconfig.needed = true;
+    zk_reconfig.version = -1;
     if (zk_reconfig.needed) {
         /* check if ZK dynamic reconfig is enabled ? */
         if (arcus_check_zk_reconfig_enabled(main_zk->zh) != 0) {
