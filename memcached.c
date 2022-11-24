@@ -9405,15 +9405,24 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
 #endif
         );
     } else {
+        char *cmd_types[] = { "kv", "list", "set", "map", "btree", "attr",
 #ifdef SCAN_COMMAND
-       out_string(c,
-       "\t" "* Usage: help [kv | list | set | map | btree | attr | scan | admin ]" "\n"
-       );
-#else
-       out_string(c,
-       "\t" "* Usage: help [kv | list | set | map | btree | attr | admin ]" "\n"
-       );
+                              "scan",
 #endif
+                              "admin", NULL };
+        int cmd_index;
+        char buffer[256];
+        char *ptr = &buffer[0];
+
+        ptr += sprintf(ptr, "\tUsage: help [");
+        cmd_index = 0;
+        while (cmd_types[cmd_index]) {
+            ptr += sprintf(ptr, "%s | ", cmd_types[cmd_index]);
+            cmd_index += 1;
+        }
+        ptr -= 3; // remove the last " | " string
+        ptr += sprintf(ptr, "]\n");
+        out_string(c, buffer);
     }
 }
 
