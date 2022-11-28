@@ -1,3 +1,43 @@
+2022-11-28 [version 1.13.4]
+	* [FEATURE]  Added "stats prefixlist" command.
+	* [FEATURE]  Added "scan prefix" command.
+	* [FEATURE]  Added "scan key" command.
+	* [FIX]      Increase the refcount when allocate a hash_item.
+	* [FIX]      Get valid connect string from dynamic reconfig.
+	* [FIX]      checked correctly whether new nodes are added in
+	             cache_list change.
+	* [FIX]      the swallow processing when 2 line command has noreply.
+	* [FIX]      thread state transition in single-line cmd pipelining.
+	* [FIX]      expand array size of rcbuf to prevent the string from
+	             being truncated.
+	* [FIX]      clear pipe_state at the end of the pipelining to avoid
+	             swallowing the next command.
+	* [FIX]      fixed -Wformat-security compile error.
+	* [FIX]      uninitialized opcost variable when lqdetect bop count.
+	* [FIX]      wrong bkey range check in lqdetect_make_bkeystring().
+	* [FIX]      fix a persistence code bug in config command.
+	* [FIX]      wait til cmdlog flush thread terminate in cmdlog_final().
+	* [FIX]      fixed the range argument overflow in long query detection.
+	* [FIX]      missing to set logger in lqdetect.
+	* [FIX]      handled memory allocation failure for connection object.  
+	* [FIX]      the compilation errors in CentOS 8.
+	* [ENHANCE]  Add some stats to default stats command for monitoring.
+	* [ENHANCE]  optimized my znode existence checking in arcus_zk.
+	* [INTERNAL] Not to use already used port.
+	* [INTERNAL] sm_retry_ms setting for starting scrub stale operation
+	* [INTERNAL] diversified retry_ms setting when zoo_wget_children() failed.
+	* [INTERNAL] changed the boolean sm_retry to the integer sm_retry_ms.
+	* [INTERNAL] consider the increased maximum key length in lqdetect.
+	* [INTERNAL] reduced the max key length. 32000 => 16000.
+	* [INTERNAL] changed the initial size of assoc hash table. 128K => 64K
+	* [INTERNAL] No longer expand the hash table if it is fully expanded.
+	* [INTERNAL] removed child stats from "stats prefixes" response.
+	* [INTERNAL] replaced event_init() to event_base_new().
+	* [TEST]     Changed port number to avoid "Address already in use" error.
+	* [TEST]     added pipeline test case of swallowing normal data issue.
+	* [DOC]      added automatic scrub feature explanation.
+	* [CLEANUP]  refactored a lot of codes and docs.
+
 2021-10-26 [version 1.13.3]
 	* [FIX] wrong parsing of delay option in flush_prefix command.
 
