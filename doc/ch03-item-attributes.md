@@ -146,3 +146,5 @@ maxbkeyrange와 overflowaction에 의해 자동으로 제거된다.
 maxbkeyrange 설정은 bkey의 데이터 유형에 맞게 설정하여야 하며,
 maxbkeyrange 설정이 생략되거나 명시적으로 0을 줄 경우의 default 값은
 bkey 데이터 유형에 무관하게 unlimited maxbkeyrange를 의미한다.
+
+maxbkeyrange는 bkey와 동일하게 8 bytes unsinged integer 유형과 hexadecimal 유형의 값으로 설정할 수 있다. 허용하는 값의 자세한 사항은 [BKey(B+Tree Key)](ch02-collection-items.md#bkey-btree-key)를 참고하기 바란다.
