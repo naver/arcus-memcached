@@ -1449,7 +1449,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 #endif
         /* Use the user specified timeout only if it falls within [MIN, MAX].
          * Otherwise, silently ignore it and use the default value.
-         */ 
+         */
         if (zk_to >= MIN_ZK_TO && zk_to <= MAX_ZK_TO) {
             arcus_conf.zk_timeout = zk_to*1000; // msec conversion
         }
