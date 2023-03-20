@@ -90,7 +90,7 @@
  * and 10 second heartbeat period
  */
 #define DEFAULT_ZK_TO 30000 /* ZK session timeout in msec (server tick time is 2 sec, min is 4 sec) */
-#define MAX_ZK_TO     300   /* Max allowable session timeout in sec */
+#define MAX_ZK_TO     2000  /* Max allowable session timeout in sec */
 #define MIN_ZK_TO     10    /* Min 10 seconds, in line with the current heartbeat timeout */
 
 #define ZK_WATCH      1
@@ -1447,11 +1447,17 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 #ifdef PROXY_SUPPORT
         arcus_conf.proxy     = proxy;
 #endif
-        // Use the user specified timeout only if it falls within
-        // [MIN, MAX).  Otherwise, silently ignore it and use
-        // the default value.
-        if (zk_to >= MIN_ZK_TO && zk_to < MAX_ZK_TO)
-            arcus_conf.zk_timeout = zk_to*1000; // msec conversion
+        if (zk_to < MIN_ZK_TO) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "ZK session timeout is converted to MIN_ZK_TO(%d) secs.\n",
+                    MIN_ZK_TO);
+            arcus_conf.zk_timeout = MIN_ZK_TO*1000; // msec conversion
+        } else if (zk_to > MAX_ZK_TO) {
+            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "ZK session timeout is converted to MAX_ZK_TO(%d) secs.\n",
+                    MAX_ZK_TO);
+            arcus_conf.zk_timeout = MAX_ZK_TO*1000; // msec conversion
+        }
     }
 
     /* initialize Arcus ZK stats */
