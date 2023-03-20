@@ -1447,16 +1447,11 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
 #ifdef PROXY_SUPPORT
         arcus_conf.proxy     = proxy;
 #endif
-        if (zk_to < MIN_ZK_TO) {
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "ZK session timeout is converted to MIN_ZK_TO(%d) secs.\n",
-                    MIN_ZK_TO);
-            arcus_conf.zk_timeout = MIN_ZK_TO*1000; // msec conversion
-        } else if (zk_to > MAX_ZK_TO) {
-            arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "ZK session timeout is converted to MAX_ZK_TO(%d) secs.\n",
-                    MAX_ZK_TO);
-            arcus_conf.zk_timeout = MAX_ZK_TO*1000; // msec conversion
+        /* Use the user specified timeout only if it falls within [MIN, MAX].
+         * Otherwise, silently ignore it and use the default value.
+         */ 
+        if (zk_to >= MIN_ZK_TO && zk_to <= MAX_ZK_TO) {
+            arcus_conf.zk_timeout = zk_to*1000; // msec conversion
         }
     }
 
