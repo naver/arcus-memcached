@@ -376,9 +376,12 @@ arcus_zk_client_init(zk_info_t *zinfo)
     }
     // "recv" timeout is actually the session timeout
     // ZK client ping period is recv_timeout / 3.
+    if (arcus_conf.zk_timeout != zoo_recv_timeout(zinfo->zh)) {
+        arcus_conf.zk_timeout = zoo_recv_timeout(zinfo->zh);
+    }
     arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
             "ZooKeeper client initialized. (ZK session timeout=%d sec)\n",
-            zoo_recv_timeout(zinfo->zh)/1000);
+            arcus_conf.zk_timeout/1000);
     return 0;
 }
 
@@ -1963,7 +1966,7 @@ static void *sm_timer_thread(void *arg)
 
             if (start_msec == 0)
                 start_msec = now_msec;
-            if ((now_msec - start_msec) >= DEFAULT_ZK_TO/3 - 1000) {
+            if ((now_msec - start_msec) >= arcus_conf.zk_timeout/3 - 1000) {
                 /* We need to die slightly before our session times out
                  * in ZK ensemble.  Otherwise, we might end up with multiple
                  * masters.  It is very fragile...  FIXME
