@@ -11,10 +11,15 @@ chomp $version;
 #my $version = '1.4.2-30-gf966dba';
 #my $version = '1.4.3-rc1';
 #my $version = '1.4.3';
-unless ($version =~ m/^\d+\.\d+\.\d+/) {
-    write_file('m4/version.m4', "m4_define([VERSION_NUMBER], [UNKNOWN])\n");
-    exit;
-}
+
+#unless ($version =~ m/^\d+\.\d+\.\d+/) {
+#    write_file('m4/version.m4', "m4_define([VERSION_NUMBER], [UNKNOWN])\n");
+#    exit;
+#}
+my $unknown_version_message = "Can't find recent tag from current commit.
+If you forked the repository, the tag might not be included.
+You need to fetch tags from upstream repository.";
+$version =~ m/^\d+\.\d+\.\d+/ or die $unknown_version_message;
 
 my @version_tokens = split /-/, $version;
 if (scalar @version_tokens > 2) {
