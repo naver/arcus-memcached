@@ -128,7 +128,7 @@ bop update <key> <bkey> [<eflag_update>] <bytes> [noreply|pipe]\r\n[<data>\r\n]
 - \<bkey\> - 대상 element의 bkey
 - \<eflag_update\> - eflag update 명시.
 [Collection 기본 개념](ch02-collection-items.md)에서 eflag update를 참조 바란다.
-- \<bytes\>와 \<data\> - 새로 변경할 데이터의 길이와 데이터 그 자체. 데이터 변경을 원치 않으면 \<bytes\>를 -1로 하고 \<data\>를 생략하면 된다.         
+- \<bytes\>와 \<data\> - 새로 변경할 데이터의 길이와 데이터 그 자체. 데이터 변경을 원치 않으면 \<bytes\>를 -1로 하고 \<data\>를 생략하면 된다.
 - noreply or pipe - 명시하면, response string을 전달받지 않는다.
 pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
 
@@ -184,7 +184,7 @@ Response string과 그 의미는 아래와 같다.
 
 ## bop get (B+Tree Element 조회)
 
-B+tree collection에서 하나의 bkey 또는 bkey range 조건과 eflag filter 조건을 만족하는 
+B+tree collection에서 하나의 bkey 또는 bkey range 조건과 eflag filter 조건을 만족하는
 elements에서 offset 개를 skip한 후 count 개의 elements를 조회한다.
 
 ```
@@ -208,20 +208,20 @@ VALUE <flags> <count>\r\n
 <bkey> [<eflag>] <bytes> <data>\r\n
 …
 END|TRIMMED|DELETED|DELETED_DROPPED\r\n
-```  
+```
 
-위 response string에 대한 설명은 다음과 같다.  
-  
+위 response string에 대한 설명은 다음과 같다.
+
 VALUE 라인의 \<count\>는 조회된 element 개수를 나타내며,
 그 다음 라인 부터 조회된 각 element의 bkey, flag, data가 나타낸다.
-마지막 라인은 조회 상래로서 END, TRIMMED, DELETED, DELETED_DROPPED 중 하나를 가진다.
+마지막 라인은 조회 상태로서 END, TRIMMED, DELETED, DELETED_DROPPED 중 하나를 가진다.
 END, DELEETED, DELEETD_DROPPED은 각각
 element 조회만 수행한 상태, element 조회하고 삭제한 상태,
 element 조회 및 삭제한 후 empty b+tree collection도 drop한 상태를 의미한다.
 TRIMMED는 특별한 의미로서, element 조회만 수행한 상태이면서
 element 조회 조건이 b+tree의 overflowaction으로 trim된 bkey 영역과 overlap 되었음을 나타낸다.
 이를 통해, 조회 조건을 만족하지만 overflow trim으로 조회되지 않은 elements가 있을 수 있음을
-해당 응용이 알 수 있게 한다. 그러면, 해당 응용은 필요시, 
+해당 응용이 알 수 있게 한다. 그러면, 해당 응용은 필요시,
 back-end storage에서 조회되지 않은 나머지 elements를 다시 조회할 수 있다.
 참고로, overflow action으로 smallest_silent_trim 또는 largest_silent_trim을 사용한다면,
 b+tree collection 내부에 trim 발생 여부를 유지하지 않아 TRIMMED와 같은 trim 발생 상태를
@@ -236,7 +236,7 @@ b+tree collection 내부에 trim 발생 여부를 유지하지 않아 TRIMMED와
 | "OUT_OF_RANGE"                                        | 조회 조건을 만족하는 element가 없으며, 또한 주어진 bkey range가 b+tree의 overflowaction에 의해 trim된 bkey 영역과 overlap 되었음을 나타낸다.
 | "TYPE_MISMATCH"                                       | 해당 item이 b+tree collection이 아님
 | "BKEY_MISMATCH"                                       | 명령 인자로 주어진 bkey 유형과 대상 b+tree의 bkey 유형이 다름
-| "UNREADABLE"                                          | 해당 item이 unreadable item임 
+| "UNREADABLE"                                          | 해당 item이 unreadable item임
 | "NOT_SUPPORTED"                                       | 지원하지 않음
 | "CLIENT_ERROR bad command line format"                | protocol syntax 틀림
 | "SERVER_ERROR out of memory [writing get response]"   | 메모리 부족
@@ -278,7 +278,7 @@ COUNT=<count>
 
 B+tree collection 특정 하나의 element에 있는 데이터를 increment 또는 decrement하고,
 증감된 데이터를 반환한다.
-이 명령은 key-value item에 대한 incr/decr 명령과 유사한 명령으로 
+이 명령은 key-value item에 대한 incr/decr 명령과 유사한 명령으로
 이 명령을 수행할 b+tree element의 데이터는 증감이 가능한 숫자형 데이터이어야 한다.
 
 ```
@@ -339,7 +339,7 @@ bop mget 명령은 O(small N) 수행 원칙을 위하여 다음의 제약 사항
 - key list에 지정 가능한 최대 key 수는 200이다.
 - count의 최대 값은 50이다.
 
- 
+
 성공 시의 response string은 다음과 같다.
 
 ```
@@ -401,7 +401,7 @@ smget 동작은 조회 범위와 어떤 b+tree의 trim 영역과의 겹침에 �
 
 1) 기존 smget 동작 (1.8.X 이하 버전에서 동작하던 방식)
    - smget 조회 조건을 만족하는 첫번째 element가 trim된 b+tree가 하나라도 존재하면 OUT_OF_RANGE 응답을 보낸다.
-     이 경우, 응용은 모든 key에 대해 백엔드 저장소인 DB에서 elements 조회한 후에 
+     이 경우, 응용은 모든 key에 대해 백엔드 저장소인 DB에서 elements 조회한 후에
      응용에서 sort-merge 작업을 수행하여야 한다.
    - OUT_OF_RANGE가 없는 상황에서 smget을 수행하면서
      조회 조건을 만족하는 두번째 이후의 element가 trim된 b+tree를 만나게 되면,
@@ -420,7 +420,7 @@ smget 동작은 조회 범위와 어떤 b+tree의 trim 영역과의 겹침에 �
      원하는 개수의 elements를 찾을 때까지 smget을 계속 진행한다.
      따라서, 응용에서는 trimmed keys에 한하여
      백엔드 저장소인 DB에서 trim된 elements를 조회하여 최종 smget 결과에 반영할 수 있다.
-   - bkey에 대한 unique 조회 기능을 지원한다. 
+   - bkey에 대한 unique 조회 기능을 지원한다.
      중복 bkey를 허용하여 조회하는 duplcate 조회 외에
      중복 bkey를 제거하고 unique bkey만을 조회하는 unique 조회를 지원한다.
    - 조회 조건에 offset 기능을 제거한다.
@@ -429,7 +429,7 @@ smget 동작은 조회 범위와 어떤 b+tree의 trim 영역과의 겹침에 �
 양수의 offset을 사용하는 smget에서 missed keys가 존재하고
 missed keys에 대한 DB 조회가 offset으로 skip된 element를 가지는 경우,
 응용에서 정확한 offset 처리가 불가능해지기 때문이다.
-이전의 조회 결과에 이어서 추가로 조회하고자 하는 경우, 
+이전의 조회 결과에 이어서 추가로 조회하고자 하는 경우,
 이전에 조회된 bkey 값을 바탕으로 bkey range를 재조정하여 사용할 수 있다.
 
 ```
@@ -479,7 +479,7 @@ END|DUPLICATED|TRIMMED|DUPLICATRED_TRIMMED\r\n
 - MISSED_KEYS 부분: smget 조회에 참여하지 못한 key list와 그 원인을 나타낸다.
   - \<key\>는 smget에 참여하지 못한 key string이다.
 - 마지막 라인은 smget response string의 마지막을 나타낸다.
-  - END: 조회 결과에 중복 bkey가 없음 
+  - END: 조회 결과에 중복 bkey가 없음
   - DUPLICATED: 조회 결과에 중복 bkey가 있음.
   - TRIMMED: 조회 범위가 trim 영역과 겹치는 b+tree를 발견한 상태이다.
   - DUPLICATED_TRIMMED: DUPLICATED와 TRIMMED 의미를 모두 가진다.
@@ -523,14 +523,14 @@ END|DUPLICATED\r\n
   - \<bkey\>는 trim 직전에 있던 마지막 bkey 이다.
   - Timmed keys 정보는 bkey 기준으로 정렬된다.
 - 마지막 라인은 smget response string의 마지막을 나타낸다.
-  - END: 조회 결과에 중복 bkey가 없음 
+  - END: 조회 결과에 중복 bkey가 없음
   - DUPLICATED: 조회 결과에 중복 bkey가 있음.
 
 
 smget 수행의 실패 시의 response string은 다음과 같다.
 
 | Response String                                      | 설명                    |
-|------------------------------------------------------|------------------------ |  
+|------------------------------------------------------|------------------------ |
 | "TYPE_MISMATCH"                                      | 어떤 key가 b+tree type이 아님
 | "BKEY_MISMATCH"                                      | smget에 참여된 b+tree들의 bkey 유형이 서로 다름.
 | "OUT_OF_RANGE"                                       | 기존 smget 동작에서만 발생할 수 있는 실패 response string이다.
@@ -653,7 +653,7 @@ END\r\n
     count는 (5 + 1 + 10) = 16이 되고, index는 5가 된다.
 
 실패 시의 response string과 그 의미는 아래와 같다.
-  
+
 | Response String                                     | 설명                    |
 |-----------------------------------------------------|-------------------------|
 | "NOT_FOUND"                                         | key miss
@@ -664,4 +664,4 @@ END\r\n
 | "NOT_SUPPORTED"                                     | 지원하지 않음
 | "CLIENT_ERROR bad command line format"              | protocol syntax 틀림
 | "SERVER_ERROR out of memory [writing get response]" | 메모리 부족
-  
+
