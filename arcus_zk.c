@@ -100,6 +100,17 @@
 #define MAX_SERVICECODE_LENGTH  128
 #define MAX_HOSTNAME_LENGTH     128
 
+#define STR_INNER(x) #x
+#define STR(x) STR_INNER(x)
+
+#ifndef ZOO_VERSION
+#ifdef ZOO_INHOUSE_VERSION
+#define ZOO_VERSION STR(ZOO_MAJOR_VERSION) "." STR(ZOO_MINOR_VERSION) "." STR(ZOO_PATCH_VERSION) "-p" STR(ZOO_INHOUSE_VERSION)
+#else
+#define ZOO_VERSION STR(ZOO_MAJOR_VERSION) "." STR(ZOO_MINOR_VERSION) "." STR(ZOO_PATCH_VERSION)
+#endif
+#endif
+
 #ifdef ENABLE_ZK_RECONFIG
 /* The maximum config data size per ZK server is 600.
  * Therefore, config data of about 26 ZK servers can be stored.
@@ -145,6 +156,7 @@ typedef struct {
     char    *mc_hostnameport;   // this memcached hostname:port string
     char    *hostip;            // localhost server IP
     int     port;               // memcached port number
+    char    *zk_version;
     bool    zk_failstop;        // memcached automatic failstop on/off
     int     zk_timeout;         // Zookeeper session timeout
     bool    auto_scrub;         // automactic scrub_stale
@@ -176,6 +188,7 @@ arcus_zk_config arcus_conf = {
     .hostip         = NULL,
     .zk_failstop    = true,
     .zk_timeout     = DEFAULT_ZK_TO,
+    .zk_version     = ZOO_VERSION,
     .auto_scrub     = true,
     .znode_name     = NULL,
     .znode_ver      = -1,
@@ -1825,6 +1838,7 @@ bool arcus_zk_get_failstop(void)
 
 void arcus_zk_get_confs(arcus_zk_confs *confs)
 {
+    confs->zk_version = arcus_conf.zk_version;
     confs->zk_timeout = arcus_conf.zk_timeout;
     confs->zk_failstop = arcus_conf.zk_failstop;
 }
