@@ -14157,48 +14157,46 @@ static int server_socket(int port, enum network_transport transport,
                 perror("setsockopt");
         }
 
+        char addr_buf[INET6_ADDRSTRLEN];
+        const void *addr = (next->ai_family == AF_INET) ?
+                           (const void*)(&((struct sockaddr_in*)next->ai_addr)->sin_addr) :
+                           (const void*)(&((struct sockaddr_in6*)next->ai_addr)->sin6_addr);
+        inet_ntop(next->ai_family, addr, addr_buf, sizeof(addr_buf));
+
         if (bind(sfd, next->ai_addr, next->ai_addrlen) == -1) {
-            if (errno != EADDRINUSE) {
-                perror("bind()");
-                safe_close(sfd);
-                freeaddrinfo(ai);
-                return 1;
-            }
-            char addr_buf[INET6_ADDRSTRLEN];
-            const void *addr = (next->ai_family == AF_INET) ?
-                               (const void*)(&((struct sockaddr_in*)next->ai_addr)->sin_addr) :
-                               (const void*)(&((struct sockaddr_in6*)next->ai_addr)->sin6_addr);
-            inet_ntop(next->ai_family, addr, addr_buf, sizeof(addr_buf));
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                           "%s:%d already in use\n", addr_buf, port);
+                           "bind() error(%s:%d): %s\n", addr_buf, port, strerror(errno));
             safe_close(sfd);
-            continue;
-        } else {
-            success++;
-            if (!IS_UDP(transport) && listen(sfd, settings.backlog) == -1) {
-                perror("listen()");
-                safe_close(sfd);
-                freeaddrinfo(ai);
-                return 1;
-            }
-            if (portnumber_file != NULL &&
-                (next->ai_addr->sa_family == AF_INET ||
-                 next->ai_addr->sa_family == AF_INET6)) {
-                union {
-                    struct sockaddr_in in;
-                    struct sockaddr_in6 in6;
-                } my_sockaddr;
-                socklen_t len = sizeof(my_sockaddr);
-                if (getsockname(sfd, (struct sockaddr*)&my_sockaddr, &len)==0) {
-                    if (next->ai_addr->sa_family == AF_INET) {
-                        fprintf(portnumber_file, "%s INET: %u\n",
-                                IS_UDP(transport) ? "UDP" : "TCP",
-                                ntohs(my_sockaddr.in.sin_port));
-                    } else {
-                        fprintf(portnumber_file, "%s INET6: %u\n",
-                                IS_UDP(transport) ? "UDP" : "TCP",
-                                ntohs(my_sockaddr.in6.sin6_port));
-                    }
+            freeaddrinfo(ai);
+            return 1;
+        }
+        if (!IS_UDP(transport) && listen(sfd, settings.backlog) == -1) {
+            vperror("listen(%s:%d)", addr_buf, port);
+            safe_close(sfd);
+            freeaddrinfo(ai);
+            return 1;
+        }
+
+        success++;
+        mc_logger->log(EXTENSION_LOG_INFO, NULL,
+                       "%s:%d start to listen\n", addr_buf, port);
+        if (portnumber_file != NULL &&
+            (next->ai_addr->sa_family == AF_INET ||
+             next->ai_addr->sa_family == AF_INET6)) {
+            union {
+                struct sockaddr_in in;
+                struct sockaddr_in6 in6;
+            } my_sockaddr;
+            socklen_t len = sizeof(my_sockaddr);
+            if (getsockname(sfd, (struct sockaddr*)&my_sockaddr, &len)==0) {
+                if (next->ai_addr->sa_family == AF_INET) {
+                    fprintf(portnumber_file, "%s INET: %u\n",
+                            IS_UDP(transport) ? "UDP" : "TCP",
+                            ntohs(my_sockaddr.in.sin_port));
+                } else {
+                    fprintf(portnumber_file, "%s INET6: %u\n",
+                            IS_UDP(transport) ? "UDP" : "TCP",
+                            ntohs(my_sockaddr.in6.sin6_port));
                 }
             }
         }
