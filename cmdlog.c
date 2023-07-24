@@ -134,7 +134,7 @@ static void do_cmdlog_stop(int cause)
     cmdlog.on_logging = false;
 }
 
-static void *cmdlog_flush_thread()
+static void *cmdlog_flush_thread(void *arg)
 {
     struct cmd_log_buffer *buffer = &cmdlog.buffer;
     char fname[CMDLOG_FILENAME_LENGTH];

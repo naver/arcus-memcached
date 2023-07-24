@@ -89,7 +89,7 @@ static struct cmdlog_global logmgr_gl;
 static __thread log_waiter_t *tls_waiter = NULL;
 
 /* Recovery Function */
-static ENGINE_ERROR_CODE cmdlog_mgr_recovery()
+static ENGINE_ERROR_CODE cmdlog_mgr_recovery(void)
 {
     /* find and set the last completed snapshot info. */
     int ret = chkpt_recovery_analysis();

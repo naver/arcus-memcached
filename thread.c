@@ -638,7 +638,7 @@ void dispatch_conn_new(int sfd, STATE_FUNC init_state, int event_flags,
 /*
  * Returns true if this is the thread that listens for new TCP connections.
  */
-int is_listen_thread()
+int is_listen_thread(void)
 {
 #ifdef __WIN32__
     pthread_t tid = pthread_self();
