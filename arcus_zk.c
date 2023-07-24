@@ -1825,6 +1825,7 @@ bool arcus_zk_get_failstop(void)
 
 void arcus_zk_get_confs(arcus_zk_confs *confs)
 {
+    confs->zk_libversion = zoo_version_str();
     confs->zk_timeout = arcus_conf.zk_timeout;
     confs->zk_failstop = arcus_conf.zk_failstop;
 }

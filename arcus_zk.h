@@ -25,8 +25,9 @@
 #ifdef ENABLE_ZK_INTEGRATION
 
 typedef struct {
-    uint32_t zk_timeout;  // Zookeeper session timeout (unit: ms)
-    bool     zk_failstop; // memcached automatic failstop
+    const char  *zk_libversion; // Zookeeper client version
+    uint32_t    zk_timeout;     // Zookeeper session timeout (unit: ms)
+    bool        zk_failstop;    // memcached automatic failstop
 } arcus_zk_confs;
 
 typedef struct {
