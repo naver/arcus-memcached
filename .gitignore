@@ -52,3 +52,9 @@ Makefile.in
 TAGS
 cscope.out
 tags
+
+# MacOS
+.DS_Store
+
+# Visual Stuido Code
+.vscode
