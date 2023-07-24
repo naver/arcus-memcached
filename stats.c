@@ -1450,7 +1450,7 @@ static void test_equals_ull(char *what, uint64_t a, uint64_t b) { test_count++; 
 static void test_notequals_ptr(char *what, void *a, void *b) { test_count++; if (a == b) fail(what); }
 static void test_notnull_ptr(char *what, void *a) { test_count++; if (a == NULL) fail(what); }
 
-static void test_prefix_find()
+static void test_prefix_find(void)
 {
     PREFIX_STATS *pfs1, *pfs2;
 
@@ -1470,7 +1470,7 @@ static void test_prefix_find()
     test_notequals_ptr("find of shorter prefix", pfs1, pfs2);
 }
 
-static void test_prefix_record_get()
+static void test_prefix_record_get(void)
 {
     PREFIX_STATS *pfs;
 
@@ -1489,7 +1489,7 @@ static void test_prefix_record_get()
     test_equals_ull("hit count after get #4", 1, pfs->num_hits);
 }
 
-static void test_prefix_record_delete()
+static void test_prefix_record_delete(void)
 {
     PREFIX_STATS *pfs;
 
@@ -1503,7 +1503,7 @@ static void test_prefix_record_delete()
     test_equals_ull("delete count after delete #2", 1, pfs->num_deletes);
 }
 
-static void test_prefix_record_set()
+static void test_prefix_record_set(void)
 {
     PREFIX_STATS *pfs;
 
@@ -1517,7 +1517,7 @@ static void test_prefix_record_set()
     test_equals_ull("set count after set #2", 1, pfs->num_sets);
 }
 
-static void test_prefix_dump()
+static void test_prefix_dump(void)
 {
     int hashval = mc_hash("abc", 3, 0) % PREFIX_HASH_SIZE;
     char tmp[500];

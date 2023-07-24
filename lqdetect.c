@@ -256,7 +256,7 @@ int lqdetect_init(EXTENSION_LOGGER_DESCRIPTOR *logger)
     return 0;
 }
 
-void lqdetect_final()
+void lqdetect_final(void)
 {
     for (int ii = 0; ii < LQ_CMD_NUM; ii++) {
         free(lqdetect.buffer[ii].data);

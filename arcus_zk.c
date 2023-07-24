@@ -1721,7 +1721,7 @@ int arcus_zk_get_ensemble(char *buf, int size)
     return ret;
 }
 
-int arcus_zk_rejoin_ensemble()
+int arcus_zk_rejoin_ensemble(void)
 {
     int ret = 0;
 
