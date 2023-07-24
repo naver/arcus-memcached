@@ -527,7 +527,7 @@ static ENGINE_HANDLE_V1 *start_your_engines(const char *engine, const char* cfg,
     return &mock_engine.me;
 }
 
-static void destroy_engine() {
+static void destroy_engine(void) {
     if (handle_v1) {
         handle_v1->destroy(handle);
         handle_v1 = NULL;
