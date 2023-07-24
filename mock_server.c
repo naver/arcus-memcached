@@ -58,7 +58,7 @@ static int mock_get_socket_fd(const void *cookie) {
     return c->sfd;
 }
 
-static const char *mock_get_server_version() {
+static const char *mock_get_server_version(void) {
     return "mock server";
 }
 

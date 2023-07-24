@@ -134,7 +134,7 @@ void stats_prefix_init(char delimiter, void (*cb_when_prefix_overflow)(void))
  * Cleans up all our previously collected stats. NOTE: the stats lock is
  * assumed to be held when this is called.
  */
-void stats_prefix_clear()
+void stats_prefix_clear(void)
 {
     PREFIX_STATS *curr, *next;
 
@@ -150,7 +150,7 @@ void stats_prefix_clear()
     total_prefix_size = 0;
 }
 
-int stats_prefix_count()
+int stats_prefix_count(void)
 {
     return num_prefixes;
 }
@@ -1584,8 +1584,8 @@ static void run_test(char *what, void (*func)(void))
 }
 
 /* In case we're compiled in thread mode */
-void mt_stats_lock() { }
-void mt_stats_unlock() { }
+void mt_stats_lock(void) { }
+void mt_stats_unlock(void) { }
 
 main(int argc, char **argv)
 {

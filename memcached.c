@@ -66,22 +66,22 @@
 static pthread_mutex_t stats_lock = PTHREAD_MUTEX_INITIALIZER;
 
 
-void LOCK_STATS() {
+void LOCK_STATS(void) {
     pthread_mutex_lock(&stats_lock);
 }
 
-void UNLOCK_STATS() {
+void UNLOCK_STATS(void) {
     pthread_mutex_unlock(&stats_lock);
 }
 
 /* Lock for global settings */
 static pthread_mutex_t setting_lock = PTHREAD_MUTEX_INITIALIZER;
 
-void LOCK_SETTING() {
+void LOCK_SETTING(void) {
     pthread_mutex_lock(&setting_lock);
 }
 
-void UNLOCK_SETTING() {
+void UNLOCK_SETTING(void) {
     pthread_mutex_unlock(&setting_lock);
 }
 
