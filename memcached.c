@@ -8086,6 +8086,7 @@ static void process_stats_zookeeper(ADD_STAT add_stats, void *c)
     arcus_zk_get_confs(&zk_confs);
     arcus_zk_get_stats(&zk_stats);
 
+    APPEND_STAT("zk_libversion", "%s", zk_confs.zk_libversion);
     APPEND_STAT("zk_timeout", "%u", zk_confs.zk_timeout);
     APPEND_STAT("zk_failstop", "%s", zk_confs.zk_failstop ? "on" : "off");
     APPEND_STAT("zk_connected", "%s", zk_stats.zk_connected ? "true" : "false");
