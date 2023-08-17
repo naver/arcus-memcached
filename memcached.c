@@ -13574,8 +13574,19 @@ bool conn_listening(conn *c)
             UNLOCK_STATS();
 
             if (settings.verbose > 0) {
-                mc_logger->log(EXTENSION_LOG_INFO, c,
-                               "Too many open connections (maxconns)\n");
+                static uint32_t rejected_conn_log_count = 0;
+                static rel_time_t rejected_conn_log_stime = 0;
+                static const int REJECTED_CONN_CHK_INTERVAL = 60; /*check interval*/
+                rel_time_t elapsed = get_current_time() - rejected_conn_log_stime;
+                rejected_conn_log_count++;
+                if(elapsed > REJECTED_CONN_CHK_INTERVAL){
+                    mc_logger->log(EXTENSION_LOG_INFO, c,
+                               "Too many open connections (maxconns) "
+                               "(Total %u logs occured during %u secs)\n",
+                               rejected_conn_log_count, elapsed);
+                    rejected_conn_log_stime += elapsed;
+                    rejected_conn_log_count = 0;
+                }
             }
             safe_close(sfd);
             return false;
