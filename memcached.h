@@ -435,6 +435,9 @@ struct conn {
 
     ENGINE_ERROR_CODE aiostat;
     bool ewouldblock;
+
+    const void *terse;      /* Used for containing single message of command */
+    STATE_FUNC next_state;  /* Used for containing next state */
 #ifdef MULTI_NOTIFY_IO_COMPLETE
     /* ewouldblock=true is set when the command returns EWOULDBLOCK.
      * The worker thread is going to remove the connection from the

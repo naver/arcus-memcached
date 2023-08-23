@@ -128,6 +128,13 @@ static bool cmdlog_in_use = false;
 static bool lqdetect_in_use = false;
 #endif
 
+
+#if INTPTR_MAX == INT64_MAX
+    #define __built_size(n) n > 0 ? 1 << (64 - __builtin_clzll(n)) : 1
+#else
+    #define __built_size(n) n > 0 ? 1 << (32 - __builtin_clz(n)) : 1
+#endif
+
 /*
  * forward declarations
  */
@@ -141,7 +148,10 @@ enum try_read_result {
     READ_MEMORY_ERROR      /** failed to allocate more memory */
 };
 
-static enum try_read_result try_read_network(conn *c);
+void init_cmd_setting(conn *c);
+bool add_dynamic_buffer(conn *c, const void *message, size_t len);
+
+static enum try_read_result try_read_tcp(conn *c);
 static enum try_read_result try_read_udp(conn *c);
 
 /* stats */
@@ -160,8 +170,8 @@ static void settings_init(void);
 static void event_handler(const int fd, const short which, void *arg);
 static bool update_event(conn *c, const int new_flags);
 static void complete_nread(conn *c);
-static void process_command(conn *c, char *command, int cmdlen);
-static void write_and_free(conn *c, char *buf, int bytes);
+static void process_command_ascii(conn *c, char *command, int cmdlen);
+static void process_command_binary(conn *c);
 static int ensure_iov_space(conn *c);
 static int add_iov(conn *c, const void *buf, int len);
 static int add_msghdr(conn *c);
@@ -241,38 +251,6 @@ static rel_time_t human_readable_time(const rel_time_t exptime)
             return exptime - current_time;
         }
     }
-}
-
-/* grow the dynamic buffer of the given connection */
-static bool grow_dynamic_buffer(conn *c, size_t needed)
-{
-    size_t nsize = c->dynamic_buffer.size;
-    size_t available = nsize - c->dynamic_buffer.offset;
-    bool rv = true;
-
-    /* Special case: No buffer -- need to allocate fresh */
-    if (c->dynamic_buffer.buffer == NULL) {
-        nsize = 1024;
-        available = c->dynamic_buffer.size = c->dynamic_buffer.offset = 0;
-    }
-
-    while (needed > available) {
-        assert(nsize > 0);
-        nsize = nsize << 1;
-        available = nsize - c->dynamic_buffer.offset;
-    }
-
-    if (nsize != c->dynamic_buffer.size) {
-        char *ptr = realloc(c->dynamic_buffer.buffer, nsize);
-        if (ptr) {
-            c->dynamic_buffer.buffer = ptr;
-            c->dynamic_buffer.size = nsize;
-        } else {
-            rv = false;
-        }
-    }
-
-    return rv;
 }
 
 static void disable_stats_detail(void)
@@ -492,6 +470,16 @@ static bool conn_reset_buffersize(conn *c)
             ret = false;
         }
     }
+    if(c->dynamic_buffer.size != DATA_BUFFER_SIZE){
+        void *ptr = malloc(DATA_BUFFER_SIZE);
+        if(ptr != NULL){
+            free((void *)c->dynamic_buffer.buffer);
+            c->dynamic_buffer.buffer = ptr;
+            c->dynamic_buffer.size = DATA_BUFFER_SIZE;
+        } else {
+            ret = false;
+        }
+    }
 
     if (c->wsize != DATA_BUFFER_SIZE) {
         void *ptr = malloc(DATA_BUFFER_SIZE);
@@ -570,6 +558,7 @@ static int conn_constructor(void *buffer, void *unused1, int unused2)
 
     if (!conn_reset_buffersize(c)) {
         free(c->rbuf);
+        free(c->dynamic_buffer.buffer);
         free(c->wbuf);
         free(c->ilist);
         free(c->suffixlist);
@@ -598,6 +587,7 @@ static void conn_destructor(void *buffer, void *unused)
     (void)unused;
     conn *c = buffer;
     free(c->rbuf);
+    free(c->dynamic_buffer.buffer);
     free(c->wbuf);
     free(c->ilist);
     free(c->suffixlist);
@@ -1248,13 +1238,13 @@ static int add_iov(conn *c, const void *buf, int len)
 static int add_iov_hinfo_value_all(conn *c, item_info *hinfo)
 {
     if (hinfo->nvalue > 0) {
-        if (add_iov(c, hinfo->value, hinfo->nvalue) != 0)
+        if (add_dynamic_buffer(c, hinfo->value, hinfo->nvalue))
             return -1;
     }
     if (hinfo->naddnl > 0) {
         value_item **addnl = hinfo->addnl;
         for (int i = 0; i < hinfo->naddnl; i++) {
-            if (add_iov(c, addnl[i]->ptr, addnl[i]->len) != 0)
+            if (add_dynamic_buffer(c, addnl[i]->ptr, addnl[i]->len))
                 return -1;
         }
     }
@@ -1266,21 +1256,21 @@ static int add_iov_hinfo_value_some(conn *c, item_info *hinfo, int length)
     int i, iosize;
 
     if (hinfo->naddnl == 0)  {
-        return add_iov(c, hinfo->value, length);
+        return add_dynamic_buffer(c, hinfo->value, length);
     }
 
     /* hinfo->naddnl > 0 */
     if (hinfo->nvalue > 0) {
         iosize = length < hinfo->nvalue
                ? length : hinfo->nvalue;
-        if (add_iov(c, hinfo->value, iosize) != 0)
+        if (add_dynamic_buffer(c, hinfo->value, iosize))
             return -1;
         length -= iosize;
     }
     for (i = 0; i < hinfo->naddnl && length > 0; i++) {
         iosize = length < hinfo->addnl[i]->len
                ? length : hinfo->addnl[i]->len;
-        if (add_iov(c, hinfo->addnl[i]->ptr, iosize) != 0)
+        if (add_dynamic_buffer(c, hinfo->addnl[i]->ptr, iosize))
             return -1;
         length -= iosize;
     }
@@ -1290,13 +1280,13 @@ static int add_iov_hinfo_value_some(conn *c, item_info *hinfo, int length)
 static int add_iov_einfo_value_all(conn *c, eitem_info *einfo)
 {
     if (einfo->nvalue > 0) {
-        if (add_iov(c, einfo->value, einfo->nvalue) != 0)
+        if (add_dynamic_buffer(c, einfo->value, einfo->nvalue))
             return -1;
     }
     if (einfo->naddnl > 0) {
         value_item **addnl = einfo->addnl;
         for (int i = 0; i < einfo->naddnl; i++) {
-            if (add_iov(c, addnl[i]->ptr, addnl[i]->len) != 0)
+            if (add_dynamic_buffer(c, addnl[i]->ptr, addnl[i]->len))
                 return -1;
         }
     }
@@ -1308,21 +1298,21 @@ static int add_iov_einfo_value_some(conn *c, eitem_info *einfo, int length)
     int i, iosize;
 
     if (einfo->naddnl == 0)  {
-        return add_iov(c, einfo->value, length);
+        return add_dynamic_buffer(c, einfo->value, length);
     }
 
     /* einfo->naddnl > 0 */
     if (einfo->nvalue > 0) {
         iosize = length < einfo->nvalue
                ? length : einfo->nvalue;
-        if (add_iov(c, einfo->value, iosize) != 0)
+        if (add_dynamic_buffer(c, einfo->value, iosize))
             return -1;
         length -= iosize;
     }
     for (i = 0; i < einfo->naddnl && length > 0; i++) {
         iosize = length < einfo->addnl[i]->len
                ? length : einfo->addnl[i]->len;
-        if (add_iov(c, einfo->addnl[i]->ptr, iosize) != 0)
+        if (add_dynamic_buffer(c, einfo->addnl[i]->ptr, iosize))
             return -1;
         length -= iosize;
     }
@@ -1611,7 +1601,50 @@ static void out_string(conn *c, const char *str)
     c->wcurr = c->wbuf;
 
     conn_set_state(c, conn_write);
+}
+
+void init_cmd_setting(conn *c){
     c->write_and_go = conn_new_cmd;
+    c->next_state = conn_write;
+    c->dynamic_buffer.offset = 0;
+
+    if(c->dynamic_buffer.size != DATA_BUFFER_SIZE){
+        void *ptr = realloc(c->dynamic_buffer.buffer, DATA_BUFFER_SIZE);
+        if(ptr != NULL) {
+            c->dynamic_buffer.buffer = ptr;
+            c->dynamic_buffer.size = DATA_BUFFER_SIZE;
+        }
+    }
+}
+
+bool add_dynamic_buffer(conn *c, const void *message, size_t len)
+{
+    size_t sz = __built_size(c->dynamic_buffer.offset + len - 1);
+    if(sz > c->dynamic_buffer.size) {
+        void *ptr = realloc(c->dynamic_buffer.buffer, sz);
+        if(ptr == NULL) return true;
+        c->dynamic_buffer.size = sz;
+        c->dynamic_buffer.buffer = ptr;
+    }
+    memcpy((char *)c->dynamic_buffer.buffer
+                 + c->dynamic_buffer.offset, message, len);
+    c->dynamic_buffer.offset += len;
+    return false;
+}
+
+static void clear_result(conn *c)
+{
+    if(c->terse != NULL) out_string(c, c->terse);
+    else conn_set_state(c, c->next_state);
+
+    if((c->terse == NULL || c->pipe_state != PIPE_STATE_OFF)
+        && c->dynamic_buffer.offset > 0) {
+        add_iov(c, c->dynamic_buffer.buffer,
+                   c->dynamic_buffer.offset);
+    }
+
+    c->dynamic_buffer.offset = 0;
+    c->terse = NULL;
 }
 
 static inline char *get_item_type_str(uint8_t type)
@@ -1650,13 +1683,13 @@ static void
 handle_unexpected_errorcode_ascii(conn *c, const char *func_name, ENGINE_ERROR_CODE ret)
 {
     if (ret == ENGINE_DISCONNECT) {
-        conn_set_state(c, conn_closing);
+        c->next_state = conn_closing;
     } else if (ret == ENGINE_ENOTSUP) {
-        out_string(c, "NOT_SUPPORTED");
+        c->terse = "NOT_SUPPORTED";
     } else {
         mc_logger->log(EXTENSION_LOG_WARNING, c, "[%s] Unexpected Error: %d\n",
                        func_name, (int)ret);
-        out_string(c, "SERVER_ERROR internal");
+        c->terse = "SERVER_ERROR internal";
     }
 }
 
@@ -1674,7 +1707,7 @@ static void process_lop_insert_complete(conn *c)
 
     if (einfo_check_ascii_tail_string(&c->einfo) != 0) { /* check "\r\n" */
         ret = ENGINE_EINVAL;
-        out_string(c, "CLIENT_ERROR bad data chunk");
+        c->terse = "CLIENT_ERROR bad data chunk";
     } else {
         bool created;
         ret = mc_engine.v1->list_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
@@ -1695,20 +1728,20 @@ static void process_lop_insert_complete(conn *c)
         switch (ret) {
         case ENGINE_SUCCESS:
             STATS_HITS(c, lop_insert, c->coll_key, c->coll_nkey);
-            if (created) out_string(c, "CREATED_STORED");
-            else         out_string(c, "STORED");
+            if (created) c->terse = "CREATED_STORED";
+            else         c->terse = "STORED";
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISSES(c, lop_insert, c->coll_key, c->coll_nkey);
-            out_string(c, "NOT_FOUND");
+            c->terse = "NOT_FOUND";
             break;
         default:
             STATS_CMD_NOKEY(c, lop_insert);
-            if (ret == ENGINE_EBADTYPE)          out_string(c, "TYPE_MISMATCH");
-            else if (ret == ENGINE_EOVERFLOW)    out_string(c, "OVERFLOWED");
-            else if (ret == ENGINE_EINDEXOOR)    out_string(c, "OUT_OF_RANGE");
-            else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
-            else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
+            if (ret == ENGINE_EBADTYPE)          c->terse = "TYPE_MISMATCH";
+            else if (ret == ENGINE_EOVERFLOW)    c->terse = "OVERFLOWED";
+            else if (ret == ENGINE_EINDEXOOR)    c->terse = "OUT_OF_RANGE";
+            else if (ret == ENGINE_PREFIX_ENAME) c->terse = "CLIENT_ERROR invalid prefix name";
+            else if (ret == ENGINE_ENOMEM)       c->terse = "SERVER_ERROR out of memory";
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
@@ -1729,7 +1762,7 @@ static void process_sop_insert_complete(conn *c)
 
     if (einfo_check_ascii_tail_string(&c->einfo) != 0) { /* check "\r\n" */
         ret = ENGINE_EINVAL;
-        out_string(c, "CLIENT_ERROR bad data chunk");
+        c->terse = "CLIENT_ERROR bad data chunk";
     } else {
         bool created;
         ret = mc_engine.v1->set_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
@@ -1742,20 +1775,20 @@ static void process_sop_insert_complete(conn *c)
         switch (ret) {
         case ENGINE_SUCCESS:
             STATS_HITS(c, sop_insert, c->coll_key, c->coll_nkey);
-            if (created) out_string(c, "CREATED_STORED");
-            else         out_string(c, "STORED");
+            if (created) c->terse = "CREATED_STORED";
+            else         c->terse = "STORED";
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISSES(c, sop_insert, c->coll_key, c->coll_nkey);
-            out_string(c, "NOT_FOUND");
+            c->terse = "NOT_FOUND";
             break;
         default:
             STATS_CMD_NOKEY(c, sop_insert);
-            if (ret == ENGINE_EBADTYPE)          out_string(c, "TYPE_MISMATCH");
-            else if (ret == ENGINE_EOVERFLOW)    out_string(c, "OVERFLOWED");
-            else if (ret == ENGINE_ELEM_EEXISTS) out_string(c, "ELEMENT_EXISTS");
-            else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
-            else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
+            if (ret == ENGINE_EBADTYPE)          c->terse = "TYPE_MISMATCH";
+            else if (ret == ENGINE_EOVERFLOW)    c->terse = "OVERFLOWED";
+            else if (ret == ENGINE_ELEM_EEXISTS) c->terse = "ELEMENT_EXISTS";
+            else if (ret == ENGINE_PREFIX_ENAME) c->terse = "CLIENT_ERROR invalid prefix name";
+            else if (ret == ENGINE_ENOMEM)       c->terse = "SERVER_ERROR out of memory";
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
@@ -1773,7 +1806,7 @@ static void process_sop_delete_complete(conn *c)
     value_item *value = (value_item *)c->coll_eitem;
 
     if (strncmp(&value->ptr[value->len-2], "\r\n", 2) != 0) {
-        out_string(c, "CLIENT_ERROR bad data chunk");
+        c->terse = "CLIENT_ERROR bad data chunk";
     } else {
         bool dropped;
         ENGINE_ERROR_CODE ret;
@@ -1790,20 +1823,20 @@ static void process_sop_delete_complete(conn *c)
         switch (ret) {
         case ENGINE_SUCCESS:
             STATS_ELEM_HITS(c, sop_delete, c->coll_key, c->coll_nkey);
-            if (dropped) out_string(c, "DELETED_DROPPED");
-            else         out_string(c, "DELETED");
+            if (dropped) c->terse = "DELETED_DROPPED";
+            else         c->terse = "DELETED";
             break;
         case ENGINE_ELEM_ENOENT:
             STATS_NONE_HITS(c, sop_delete, c->coll_key, c->coll_nkey);
-            out_string(c, "NOT_FOUND_ELEMENT");
+            c->terse = "NOT_FOUND_ELEMENT";
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISSES(c, sop_delete, c->coll_key, c->coll_nkey);
-            out_string(c, "NOT_FOUND");
+            c->terse = "NOT_FOUND";
             break;
         default:
             STATS_CMD_NOKEY(c, sop_delete);
-            if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
+            if (ret == ENGINE_EBADTYPE) c->terse = "TYPE_MISMATCH";
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
@@ -1819,7 +1852,7 @@ static void process_sop_exist_complete(conn *c)
     value_item *value = (value_item *)c->coll_eitem;
 
     if (strncmp(&value->ptr[value->len-2], "\r\n", 2) != 0) {
-        out_string(c, "CLIENT_ERROR bad data chunk");
+        c->terse = "CLIENT_ERROR bad data chunk";
     } else {
         bool exist;
         ENGINE_ERROR_CODE ret;
@@ -1833,18 +1866,18 @@ static void process_sop_exist_complete(conn *c)
         switch (ret) {
         case ENGINE_SUCCESS:
             STATS_HITS(c, sop_exist, c->coll_key, c->coll_nkey);
-            if (exist) out_string(c, "EXIST");
-            else       out_string(c, "NOT_EXIST");
+            if (exist) c->terse = "EXIST";
+            else       c->terse = "NOT_EXIST";
             break;
         case ENGINE_KEY_ENOENT:
         case ENGINE_UNREADABLE:
             STATS_MISSES(c, sop_exist, c->coll_key, c->coll_nkey);
-            if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
-            else                          out_string(c, "UNREADABLE");
+            if (ret == ENGINE_KEY_ENOENT) c->terse = "NOT_FOUND";
+            else                          c->terse = "UNREADABLE";
             break;
         default:
             STATS_CMD_NOKEY(c, sop_exist);
-            if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
+            if (ret == ENGINE_EBADTYPE) c->terse = "TYPE_MISMATCH";
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
@@ -1882,7 +1915,7 @@ static void process_mop_insert_complete(conn *c)
 
     if (einfo_check_ascii_tail_string(&c->einfo) != 0) { /* check "\r\n" */
         ret = ENGINE_EINVAL;
-        out_string(c, "CLIENT_ERROR bad data chunk");
+        c->terse = "CLIENT_ERROR bad data chunk";
     } else {
         bool created;
         ret = mc_engine.v1->map_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
@@ -1895,20 +1928,20 @@ static void process_mop_insert_complete(conn *c)
         switch (ret) {
         case ENGINE_SUCCESS:
             STATS_HITS(c, mop_insert, c->coll_key, c->coll_nkey);
-            if (created) out_string(c, "CREATED_STORED");
-            else         out_string(c, "STORED");
+            if (created) c->terse = "CREATED_STORED";
+            else         c->terse = "STORED";
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISSES(c, mop_insert, c->coll_key, c->coll_nkey);
-            out_string(c, "NOT_FOUND");
+            c->terse = "NOT_FOUND";
             break;
         default:
             STATS_CMD_NOKEY(c, mop_insert);
-            if (ret == ENGINE_EBADTYPE)          out_string(c, "TYPE_MISMATCH");
-            else if (ret == ENGINE_EOVERFLOW)    out_string(c, "OVERFLOWED");
-            else if (ret == ENGINE_ELEM_EEXISTS) out_string(c, "ELEMENT_EXISTS");
-            else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
-            else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
+            if (ret == ENGINE_EBADTYPE)          c->terse = "TYPE_MISMATCH";
+            else if (ret == ENGINE_EOVERFLOW)    c->terse = "OVERFLOWED";
+            else if (ret == ENGINE_ELEM_EEXISTS) c->terse = "ELEMENT_EXISTS";
+            else if (ret == ENGINE_PREFIX_ENAME) c->terse = "CLIENT_ERROR invalid prefix name";
+            else if (ret == ENGINE_ENOMEM)       c->terse = "SERVER_ERROR out of memory";
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
@@ -1926,7 +1959,7 @@ static void process_mop_update_complete(conn *c)
     value_item *value = (value_item *)c->coll_eitem;
 
     if (strncmp(&value->ptr[value->len-2], "\r\n", 2) != 0) {
-        out_string(c, "CLIENT_ERROR bad data chunk");
+        c->terse = "CLIENT_ERROR bad data chunk";
     } else {
         ENGINE_ERROR_CODE ret;
         ret = mc_engine.v1->map_elem_update(mc_engine.v0, c, c->coll_key, c->coll_nkey,
@@ -1939,20 +1972,20 @@ static void process_mop_update_complete(conn *c)
         switch (ret) {
         case ENGINE_SUCCESS:
             STATS_ELEM_HITS(c, mop_update, c->coll_key, c->coll_nkey);
-            out_string(c, "UPDATED");
+            c->terse = "UPDATED";
             break;
         case ENGINE_ELEM_ENOENT:
             STATS_NONE_HITS(c, mop_update, c->coll_key, c->coll_nkey);
-            out_string(c, "NOT_FOUND_ELEMENT");
+            c->terse = "NOT_FOUND_ELEMENT";
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISSES(c, mop_update, c->coll_key, c->coll_nkey);
-            out_string(c, "NOT_FOUND");
+            c->terse = "NOT_FOUND";
             break;
         default:
             STATS_CMD_NOKEY(c, mop_update);
-            if (ret == ENGINE_EBADTYPE)    out_string(c, "TYPE_MISMATCH");
-            else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
+            if (ret == ENGINE_EBADTYPE)    c->terse = "TYPE_MISMATCH";
+            else if (ret == ENGINE_ENOMEM) c->terse = "SERVER_ERROR out of memory";
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
@@ -2004,22 +2037,22 @@ static void process_mop_delete_complete(conn *c)
     switch (ret) {
     case ENGINE_SUCCESS:
         STATS_ELEM_HITS(c, mop_delete, c->coll_key, c->coll_nkey);
-        if (dropped) out_string(c, "DELETED_DROPPED");
-        else         out_string(c, "DELETED");
+        if (dropped) c->terse = "DELETED_DROPPED";
+        else         c->terse = "DELETED";
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, mop_delete, c->coll_key, c->coll_nkey);
-        out_string(c, "NOT_FOUND_ELEMENT");
+        c->terse = "NOT_FOUND_ELEMENT";
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, mop_delete, c->coll_key, c->coll_nkey);
-        out_string(c, "NOT_FOUND");
+        c->terse = "NOT_FOUND";
         break;
     default:
         STATS_CMD_NOKEY(c, mop_delete);
-        if (ret == ENGINE_EBADTYPE)       out_string(c, "TYPE_MISMATCH");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad data chunk");
-        else if (ret == ENGINE_ENOMEM)    out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_EBADTYPE)       c->terse = "TYPE_MISMATCH";
+        else if (ret == ENGINE_EBADVALUE) c->terse = "CLIENT_ERROR bad data chunk";
+        else if (ret == ENGINE_ENOMEM)    c->terse = "SERVER_ERROR out of memory";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
@@ -2059,7 +2092,7 @@ out_mop_get_response(conn *c, bool delete, struct elems_result *eresultp)
 
         /* make response head */
         sprintf(respptr, "VALUE %u %u\r\n", htonl(eresultp->flags), elem_count);
-        if (add_iov(c, respptr, strlen(respptr)) != 0) {
+        if (add_dynamic_buffer(c, respptr, strlen(respptr))) {
             ret = ENGINE_ENOMEM; break;
         }
         respptr += strlen(respptr);
@@ -2069,7 +2102,7 @@ out_mop_get_response(conn *c, bool delete, struct elems_result *eresultp)
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP,
                                         elem_array[i], &c->einfo);
             resplen = make_mop_elem_response(respptr, &c->einfo);
-            if ((add_iov(c, respptr, resplen) != 0) ||
+            if ((add_dynamic_buffer(c, respptr, resplen)) ||
                 (add_iov_einfo_value_all(c, &c->einfo) != 0))
             {
                 ret = ENGINE_ENOMEM; break;
@@ -2084,8 +2117,7 @@ out_mop_get_response(conn *c, bool delete, struct elems_result *eresultp)
         } else {
             sprintf(respptr, "END\r\n");
         }
-        if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+        if (add_dynamic_buffer(c, respptr, strlen(respptr))) {
             ret = ENGINE_ENOMEM; break;
         }
     } while(0);
@@ -2095,7 +2127,7 @@ out_mop_get_response(conn *c, bool delete, struct elems_result *eresultp)
         c->coll_ecount = elem_count;
         c->coll_resps  = respbuf;
         c->coll_op     = OPERATION_MOP_GET;
-        conn_set_state(c, conn_mwrite);
+        c->next_state = conn_mwrite;
         c->msgcurr     = 0;
     } else { /* ENGINE_ENOMEM */
         mc_engine.v1->map_elem_release(mc_engine.v0, c, elem_array, elem_count);
@@ -2155,24 +2187,24 @@ static void process_mop_get_complete(conn *c)
             STATS_ELEM_HITS(c, mop_get, c->coll_key, c->coll_nkey);
         } else {
             STATS_CMD_NOKEY(c, mop_get);
-            out_string(c, "SERVER_ERROR out of memory writing get response");
+            c->terse = "SERVER_ERROR out of memory writing get response";
         }
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, mop_get, c->coll_key, c->coll_nkey);
-        out_string(c, "NOT_FOUND_ELEMENT");
+        c->terse = "NOT_FOUND_ELEMENT";
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, mop_get, c->coll_key, c->coll_nkey);
-        if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
-        else                          out_string(c, "UNREADABLE");
+        if (ret == ENGINE_KEY_ENOENT) c->terse = "NOT_FOUND";
+        else                          c->terse = "UNREADABLE";
         break;
     default:
         STATS_CMD_NOKEY(c, mop_get);
-        if (ret == ENGINE_EBADTYPE)       out_string(c, "TYPE_MISMATCH");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad data chunk");
-        else if (ret == ENGINE_ENOMEM)    out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_EBADTYPE)       c->terse = "TYPE_MISMATCH";
+        else if (ret == ENGINE_EBADVALUE) c->terse = "CLIENT_ERROR bad data chunk";
+        else if (ret == ENGINE_ENOMEM)    c->terse = "SERVER_ERROR out of memory";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
@@ -2247,10 +2279,9 @@ out_bop_trim_response(conn *c, void *elem, uint32_t flags)
         resplen = strlen(respptr);
         resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
 
-        if ((add_iov(c, respptr, resplen) != 0) ||
+        if ((add_dynamic_buffer(c, respptr, resplen)) ||
             (add_iov_einfo_value_all(c, &c->einfo) != 0) ||
-            (add_iov(c, "TRIMMED\r\n", 9) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0))
+            (add_dynamic_buffer(c, "TRIMMED\r\n", 9)))
         {
             ret = ENGINE_ENOMEM; break;
         }
@@ -2260,13 +2291,13 @@ out_bop_trim_response(conn *c, void *elem, uint32_t flags)
         c->coll_eitem  = elem_array;
         c->coll_ecount = 1;
         c->coll_resps  = respbuf;
-        conn_set_state(c, conn_mwrite);
+        c->next_state = conn_mwrite;
         c->msgcurr     = 0;
     } else { /* ENGINE_ENOMEM */
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, &elem, 1);
         if (respbuf)
             free(respbuf);
-        out_string(c, "SERVER_ERROR out of memory writing trim response");
+        c->terse = "SERVER_ERROR out of memory writing trim response";
     }
     return ret;
 }
@@ -2283,7 +2314,7 @@ static void process_bop_insert_complete(conn *c)
         /* release the btree element */
         mc_engine.v1->btree_elem_free(mc_engine.v0, c, c->coll_eitem);
         c->coll_eitem = NULL;
-        out_string(c, "CLIENT_ERROR bad data chunk");
+        c->terse = "CLIENT_ERROR bad data chunk";
     } else {
         eitem_result trim_result; // contain the info of an element trimmed by maxcount overflow
         bool created;
@@ -2315,26 +2346,26 @@ static void process_bop_insert_complete(conn *c)
             } else {
                 /* no getrim flag or no trimmed element */
                 if (replaced) {
-                    out_string(c, "REPLACED");
+                    c->terse = "REPLACED";
                 } else {
-                    if (created) out_string(c, "CREATED_STORED");
-                    else         out_string(c, "STORED");
+                    if (created) c->terse = "CREATED_STORED";
+                    else         c->terse = "STORED";
                 }
             }
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISSES(c, bop_insert, c->coll_key, c->coll_nkey);
-            out_string(c, "NOT_FOUND");
+            c->terse = "NOT_FOUND";
             break;
         default:
             STATS_CMD_NOKEY(c, bop_insert);
-            if (ret == ENGINE_EBADTYPE)          out_string(c, "TYPE_MISMATCH");
-            else if (ret == ENGINE_EBADBKEY)     out_string(c, "BKEY_MISMATCH");
-            else if (ret == ENGINE_EOVERFLOW)    out_string(c, "OVERFLOWED");
-            else if (ret == ENGINE_EBKEYOOR)     out_string(c, "OUT_OF_RANGE");
-            else if (ret == ENGINE_ELEM_EEXISTS) out_string(c, "ELEMENT_EXISTS");
-            else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
-            else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
+            if (ret == ENGINE_EBADTYPE)          c->terse = "TYPE_MISMATCH";
+            else if (ret == ENGINE_EBADBKEY)     c->terse = "BKEY_MISMATCH";
+            else if (ret == ENGINE_EOVERFLOW)    c->terse = "OVERFLOWED";
+            else if (ret == ENGINE_EBKEYOOR)     c->terse = "OUT_OF_RANGE";
+            else if (ret == ENGINE_ELEM_EEXISTS) c->terse = "ELEMENT_EXISTS";
+            else if (ret == ENGINE_PREFIX_ENAME) c->terse = "CLIENT_ERROR invalid prefix name";
+            else if (ret == ENGINE_ENOMEM)       c->terse = "SERVER_ERROR out of memory";
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
@@ -2350,7 +2381,7 @@ static void process_bop_update_complete(conn *c)
     if (c->coll_eitem != NULL) {
         value_item *value = (value_item *)c->coll_eitem;
         if (strncmp(&value->ptr[value->len-2], "\r\n", 2) != 0) {
-            out_string(c, "CLIENT_ERROR bad data chunk");
+            c->terse = "CLIENT_ERROR bad data chunk";
             free((void*)c->coll_eitem);
             c->coll_eitem = NULL;
             return;
@@ -2373,22 +2404,22 @@ static void process_bop_update_complete(conn *c)
     switch (ret) {
     case ENGINE_SUCCESS:
         STATS_ELEM_HITS(c, bop_update, c->coll_key, c->coll_nkey);
-        out_string(c, "UPDATED");
+        c->terse = "UPDATED";
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, bop_update, c->coll_key, c->coll_nkey);
-        out_string(c, "NOT_FOUND_ELEMENT");
+        c->terse = "NOT_FOUND_ELEMENT";
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, bop_update, c->coll_key, c->coll_nkey);
-        out_string(c, "NOT_FOUND");
+        c->terse = "NOT_FOUND";
         break;
     default:
         STATS_CMD_NOKEY(c, bop_update);
-        if (ret == ENGINE_EBADTYPE)       out_string(c, "TYPE_MISMATCH");
-        else if (ret == ENGINE_EBADBKEY)  out_string(c, "BKEY_MISMATCH");
-        else if (ret == ENGINE_EBADEFLAG) out_string(c, "EFLAG_MISMATCH");
-        else if (ret == ENGINE_ENOMEM)    out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_EBADTYPE)       c->terse = "TYPE_MISMATCH";
+        else if (ret == ENGINE_EBADBKEY)  c->terse = "BKEY_MISMATCH";
+        else if (ret == ENGINE_EBADEFLAG) c->terse = "EFLAG_MISMATCH";
+        else if (ret == ENGINE_ENOMEM)    c->terse = "SERVER_ERROR out of memory";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
@@ -2427,9 +2458,9 @@ process_bop_mget_single(conn *c, const char *key, size_t nkey,
                              htonl(eresultp->flags), eresultp->elem_count);
             resplen = strlen(respptr);
 
-            if ((add_iov(c, "VALUE ", 6) != 0) ||
-                (add_iov(c, key, nkey) != 0) ||
-                (add_iov(c, respptr, resplen) != 0)) {
+            if ((add_dynamic_buffer(c, "VALUE ", 6)) ||
+                (add_dynamic_buffer(c, key, nkey)) ||
+                (add_dynamic_buffer(c, respptr, resplen))) {
                 ret = ENGINE_ENOMEM; break;
             }
             respptr += resplen;
@@ -2441,7 +2472,7 @@ process_bop_mget_single(conn *c, const char *key, size_t nkey,
                 resplen = strlen(respptr);
                 resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
 
-                if ((add_iov(c, respptr, resplen) != 0) ||
+                if ((add_dynamic_buffer(c, respptr, resplen)) ||
                     (add_iov_einfo_value_all(c, &c->einfo) != 0)) {
                     ret = ENGINE_ENOMEM; break;
                 }
@@ -2485,9 +2516,9 @@ process_bop_mget_single(conn *c, const char *key, size_t nkey,
         }
         if (ret == ENGINE_SUCCESS) {
             resplen = strlen(respptr);
-            if ((add_iov(c, "VALUE ", 6) != 0) ||
-                (add_iov(c, key, nkey) != 0) ||
-                (add_iov(c, respptr, resplen) != 0)) {
+            if ((add_dynamic_buffer(c, "VALUE ", 6)) ||
+                (add_dynamic_buffer(c, key, nkey)) ||
+                (add_dynamic_buffer(c, respptr, resplen))) {
                 ret = ENGINE_ENOMEM;
             }
             respptr += resplen;
@@ -2535,8 +2566,7 @@ static void process_bop_mget_complete(conn *c)
         }
         if (k == c->coll_numkeys) {
             sprintf(resultptr, "END\r\n");
-            if ((add_iov(c, resultptr, strlen(resultptr)) != 0) ||
-                (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+            if (add_dynamic_buffer(c, resultptr, strlen(resultptr))) {
                 ret = ENGINE_ENOMEM;
             }
         }
@@ -2570,13 +2600,13 @@ static void process_bop_mget_complete(conn *c)
             }
         }
         c->coll_op = OPERATION_BOP_MGET;
-        conn_set_state(c, conn_mwrite);
+        c->next_state = conn_mwrite;
         c->msgcurr = 0;
         break;
     default:
         STATS_CMD_NOKEY(c, bop_mget);
-        if (ret == ENGINE_EBADVALUE)   out_string(c, "CLIENT_ERROR bad data chunk");
-        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_EBADVALUE)   c->terse = "CLIENT_ERROR bad data chunk";
+        else if (ret == ENGINE_ENOMEM) c->terse = "SERVER_ERROR out of memory";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
@@ -2615,7 +2645,7 @@ out_bop_smget_old_response(conn *c, token_t *key_tokens,
 
     do {
         sprintf(respptr, "VALUE %u\r\n", elem_count);
-        if (add_iov(c, respptr, strlen(respptr)) != 0) {
+        if (add_dynamic_buffer(c, respptr, strlen(respptr))) {
             ret = ENGINE_ENOMEM; break;
         }
         respptr += strlen(respptr);
@@ -2627,8 +2657,8 @@ out_bop_smget_old_response(conn *c, token_t *key_tokens,
             resplen = strlen(respptr);
             resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
             kidx = kfnd_array[i];
-            if ((add_iov(c, key_tokens[kidx].value, key_tokens[kidx].length) != 0) ||
-                (add_iov(c, respptr, resplen) != 0) ||
+            if ((add_dynamic_buffer(c, key_tokens[kidx].value, key_tokens[kidx].length)) ||
+                (add_dynamic_buffer(c, respptr, resplen)) ||
                 (add_iov_einfo_value_all(c, &c->einfo) != 0))
             {
                 ret = ENGINE_ENOMEM; break;
@@ -2638,7 +2668,7 @@ out_bop_smget_old_response(conn *c, token_t *key_tokens,
         if (ret == ENGINE_ENOMEM) break;
 
         sprintf(respptr, "MISSED_KEYS %u\r\n", kmis_count);
-        if (add_iov(c, respptr, strlen(respptr)) != 0) {
+        if (add_dynamic_buffer(c, respptr, strlen(respptr))) {
             ret = ENGINE_ENOMEM; break;
         }
         respptr += strlen(respptr);
@@ -2647,8 +2677,8 @@ out_bop_smget_old_response(conn *c, token_t *key_tokens,
             for (i = 0; i < kmis_count; i++) {
                 /* the last key string does not have delimiter character */
                 kidx = kmis_array[i];
-                if ((add_iov(c, key_tokens[kidx].value, key_tokens[kidx].length) != 0) ||
-                    (add_iov(c, "\r\n", 2) != 0)) {
+                if ((add_dynamic_buffer(c, key_tokens[kidx].value, key_tokens[kidx].length)) ||
+                    (add_dynamic_buffer(c, "\r\n", 2))) {
                     ret = ENGINE_ENOMEM; break;
                 }
             }
@@ -2660,8 +2690,7 @@ out_bop_smget_old_response(conn *c, token_t *key_tokens,
         } else {
             sprintf(respptr, (duplicated ? "DUPLICATED\r\n" : "END\r\n"));
         }
-        if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+        if (add_dynamic_buffer(c, respptr, strlen(respptr))) {
             ret = ENGINE_ENOMEM; break;
         }
     } while(0);
@@ -2671,11 +2700,11 @@ out_bop_smget_old_response(conn *c, token_t *key_tokens,
         /* c->coll_eitem  = (void *)elem_array; */
         c->coll_ecount = elem_count;
         c->coll_op     = OPERATION_BOP_SMGET;
-        conn_set_state(c, conn_mwrite);
+        c->next_state = conn_mwrite;
         c->msgcurr     = 0;
     } else {
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
-        out_string(c, "SERVER_ERROR out of memory writing get response");
+        c->terse = "SERVER_ERROR out of memory writing get response";
     }
     return ret;
 }
@@ -2734,11 +2763,11 @@ static void process_bop_smget_complete_old(conn *c)
         break;
     default:
         STATS_CMD_NOKEY(c, bop_smget);
-        if (ret == ENGINE_EBADVALUE)     out_string(c, "CLIENT_ERROR bad data chunk");
-        else if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
-        else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
-        else if (ret == ENGINE_EBKEYOOR) out_string(c, "OUT_OF_RANGE");
-        else if (ret == ENGINE_ENOMEM)   out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_EBADVALUE)     c->terse = "CLIENT_ERROR bad data chunk";
+        else if (ret == ENGINE_EBADTYPE) c->terse = "TYPE_MISMATCH";
+        else if (ret == ENGINE_EBADBKEY) c->terse = "BKEY_MISMATCH";
+        else if (ret == ENGINE_EBKEYOOR) c->terse = "OUT_OF_RANGE";
+        else if (ret == ENGINE_ENOMEM)   c->terse = "SERVER_ERROR out of memory";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
@@ -2801,7 +2830,7 @@ out_bop_smget_response(conn *c, token_t *key_tokens, smget_result_t *smresp)
          * It makes incompatible with the clients of lower version.
          */
         sprintf(respptr, "ELEMENTS %u\r\n", smresp->elem_count);
-        if (add_iov(c, respptr, strlen(respptr)) != 0) {
+        if (add_dynamic_buffer(c, respptr, strlen(respptr))) {
             ret = ENGINE_ENOMEM; break;
         }
         respptr += strlen(respptr);
@@ -2813,8 +2842,8 @@ out_bop_smget_response(conn *c, token_t *key_tokens, smget_result_t *smresp)
             resplen = strlen(respptr);
             resplen += make_bop_elem_response(respptr + resplen, &c->einfo);
             kidx = smresp->elem_kinfo[i].kidx;
-            if ((add_iov(c, key_tokens[kidx].value, key_tokens[kidx].length) != 0) ||
-                (add_iov(c, respptr, resplen) != 0) ||
+            if ((add_dynamic_buffer(c, key_tokens[kidx].value, key_tokens[kidx].length)) ||
+                (add_dynamic_buffer(c, respptr, resplen)) ||
                 (add_iov_einfo_value_all(c, &c->einfo) != 0))
             {
                 ret = ENGINE_ENOMEM; break;
@@ -2824,7 +2853,7 @@ out_bop_smget_response(conn *c, token_t *key_tokens, smget_result_t *smresp)
         if (ret == ENGINE_ENOMEM) break;
 
         sprintf(respptr, "MISSED_KEYS %u\r\n", smresp->miss_count);
-        if (add_iov(c, respptr, strlen(respptr)) != 0) {
+        if (add_dynamic_buffer(c, respptr, strlen(respptr))) {
             ret = ENGINE_ENOMEM; break;
         }
         respptr += strlen(respptr);
@@ -2835,8 +2864,8 @@ out_bop_smget_response(conn *c, token_t *key_tokens, smget_result_t *smresp)
                 /* the last key string does not have delimiter character */
                 kidx = smresp->miss_kinfo[i].kidx;
                 str = get_smget_miss_response(smresp->miss_kinfo[i].code);
-                if ((add_iov(c, key_tokens[kidx].value, key_tokens[kidx].length) != 0) ||
-                    (add_iov(c, str, strlen(str)) != 0)) {
+                if ((add_dynamic_buffer(c, key_tokens[kidx].value, key_tokens[kidx].length)) ||
+                    (add_dynamic_buffer(c, str, strlen(str)))) {
                     ret = ENGINE_ENOMEM; break;
                 }
             }
@@ -2844,7 +2873,7 @@ out_bop_smget_response(conn *c, token_t *key_tokens, smget_result_t *smresp)
         }
 
         sprintf(respptr, "TRIMMED_KEYS %u\r\n", smresp->trim_count);
-        if (add_iov(c, respptr, strlen(respptr)) != 0) {
+        if (add_dynamic_buffer(c, respptr, strlen(respptr))) {
             ret = ENGINE_ENOMEM; break;
         }
         respptr += strlen(respptr);
@@ -2855,8 +2884,8 @@ out_bop_smget_response(conn *c, token_t *key_tokens, smget_result_t *smresp)
                                             smresp->trim_elems[i], &c->einfo);
                 resplen = make_smget_trim_response(respptr, &c->einfo);
                 kidx = smresp->trim_kinfo[i].kidx;
-                if ((add_iov(c, key_tokens[kidx].value, key_tokens[kidx].length) != 0) ||
-                    (add_iov(c, respptr, resplen) != 0)) {
+                if ((add_dynamic_buffer(c, key_tokens[kidx].value, key_tokens[kidx].length)) ||
+                    (add_dynamic_buffer(c, respptr, resplen))) {
                     ret = ENGINE_ENOMEM; break;
                 }
                 respptr += resplen;
@@ -2865,8 +2894,7 @@ out_bop_smget_response(conn *c, token_t *key_tokens, smget_result_t *smresp)
         }
 
         sprintf(respptr, (smresp->duplicated ? "DUPLICATED\r\n" : "END\r\n"));
-        if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+        if (add_dynamic_buffer(c, respptr, strlen(respptr))) {
             ret = ENGINE_ENOMEM; break;
         }
     } while(0);
@@ -2876,12 +2904,12 @@ out_bop_smget_response(conn *c, token_t *key_tokens, smget_result_t *smresp)
         /* c->coll_eitem  = (void *)elem_array; */
         c->coll_ecount = smresp->elem_count+smresp->trim_count;
         c->coll_op     = OPERATION_BOP_SMGET;
-        conn_set_state(c, conn_mwrite);
+        c->next_state = conn_mwrite;
         c->msgcurr     = 0;
     } else {
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, smresp->elem_array,
                                          smresp->elem_count+smresp->trim_count);
-        out_string(c, "SERVER_ERROR out of memory writing get response");
+        c->terse = "SERVER_ERROR out of memory writing get response";
     }
     return ret;
 }
@@ -2944,12 +2972,12 @@ static void process_bop_smget_complete(conn *c)
         break;
     default:
         STATS_CMD_NOKEY(c, bop_smget);
-        if (ret == ENGINE_EBADVALUE)     out_string(c, "CLIENT_ERROR bad data chunk");
-        else if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
-        else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
-        else if (ret == ENGINE_ENOMEM)   out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_EBADVALUE)     c->terse = "CLIENT_ERROR bad data chunk";
+        else if (ret == ENGINE_EBADTYPE) c->terse = "TYPE_MISMATCH";
+        else if (ret == ENGINE_EBADBKEY) c->terse = "BKEY_MISMATCH";
+        else if (ret == ENGINE_ENOMEM)   c->terse = "SERVER_ERROR out of memory";
 #if 0 // JHPARK_SMGET_OFFSET_HANDLING
-        else if (ret == ENGINE_EBKEYOOR) out_string(c, "OUT_OF_RANGE");
+        else if (ret == ENGINE_EBKEYOOR) c->terse = "OUT_OF_RANGE";
 #endif
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
@@ -3054,10 +3082,10 @@ process_get_single(conn *c, char *key, size_t nkey, bool return_cas)
          * outgoing data list:
          *   VALUE <key> <falgs> <bytes>[ <cas>]\r\n" + "<data>\r\n"
          */
-        if (add_iov(c, "VALUE ", 6) != 0 ||
-            add_iov(c, c->hinfo.key, c->hinfo.nkey) != 0 ||
-            add_iov(c, suffix, suffix_len) != 0 ||
-            (return_cas && add_iov(c, cas_val, cas_len) != 0) ||
+        if (add_dynamic_buffer(c, "VALUE ", 6) ||
+            add_dynamic_buffer(c, c->hinfo.key, c->hinfo.nkey) ||
+            add_dynamic_buffer(c, suffix, suffix_len) ||
+            (return_cas && add_dynamic_buffer(c, cas_val, cas_len)) ||
             add_iov_hinfo_value_all(c, &c->hinfo) != 0)
         {
             mc_engine.v1->release(mc_engine.v0, c, it);
@@ -3145,8 +3173,7 @@ static void process_mget_complete(conn *c, bool return_cas)
          * reliable to add END\r\n to the buffer, because it might not end
          * in \r\n. So we send SERVER_ERROR instead.
          */
-        if ((add_iov(c, "END\r\n", 5) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+        if (add_dynamic_buffer(c, "END\r\n", 5)) {
             /* Releasing items on ilist and freeing suffixes will be
              * performed later by calling out_string() function.
              * See conn_write() and conn_mwrite() state.
@@ -3156,11 +3183,11 @@ static void process_mget_complete(conn *c, bool return_cas)
     } while(0);
 
     if (ret == ENGINE_SUCCESS) {
-        conn_set_state(c, conn_mwrite);
+        c->next_state = conn_mwrite;
         c->msgcurr = 0;
     } else {
-        if (ret == ENGINE_EBADVALUE)   out_string(c, "CLIENT_ERROR bad data chunk");
-        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory writing get response");
+        if (ret == ENGINE_EBADVALUE)   c->terse = "CLIENT_ERROR bad data chunk";
+        else if (ret == ENGINE_ENOMEM) c->terse = "SERVER_ERROR out of memory writing get response";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 
@@ -3230,13 +3257,13 @@ static void complete_update_ascii(conn *c)
         mc_engine.v1->release(mc_engine.v0, c, it);
         mc_logger->log(EXTENSION_LOG_WARNING, c,
                        "%d: Failed to get item info\n", c->sfd);
-        out_string(c, "SERVER_ERROR failed to get item details");
+        c->terse = "SERVER_ERROR failed to get item details";
         return;
     }
 
     ENGINE_ERROR_CODE ret;
     if (hinfo_check_ascii_tail_string(&c->hinfo) != 0) { /* check "\r\n" */
-        out_string(c, "CLIENT_ERROR bad data chunk");
+        c->terse = "CLIENT_ERROR bad data chunk";
         ret = ENGINE_EBADVALUE;
     } else {
         ret = mc_engine.v1->store(mc_engine.v0, c, it, &c->cas, c->store_op, 0);
@@ -3271,40 +3298,40 @@ static void complete_update_ascii(conn *c)
 
         switch (ret) {
         case ENGINE_SUCCESS:
-            out_string(c, "STORED");
+            c->terse = "STORED";
             break;
         case ENGINE_KEY_EEXISTS:
-            out_string(c, "EXISTS");
+            c->terse = "EXISTS";
             break;
         case ENGINE_KEY_ENOENT:
-            out_string(c, "NOT_FOUND");
+            c->terse = "NOT_FOUND";
             break;
         case ENGINE_NOT_STORED:
-            out_string(c, "NOT_STORED");
+            c->terse = "NOT_STORED";
             break;
         case ENGINE_PREFIX_ENAME:
-            out_string(c, "CLIENT_ERROR invalid prefix name");
+            c->terse = "CLIENT_ERROR invalid prefix name";
             break;
         case ENGINE_ENOMEM:
-            out_string(c, "SERVER_ERROR out of memory");
+            c->terse = "SERVER_ERROR out of memory";
             break;
         case ENGINE_EINVAL:
-            out_string(c, "CLIENT_ERROR invalid arguments");
+            c->terse = "CLIENT_ERROR invalid arguments";
             break;
         case ENGINE_E2BIG:
-            out_string(c, "CLIENT_ERROR value too big");
+            c->terse = "CLIENT_ERROR value too big";
             break;
         case ENGINE_EACCESS:
-            out_string(c, "CLIENT_ERROR access control violation");
+            c->terse = "CLIENT_ERROR access control violation";
             break;
         case ENGINE_NOT_MY_VBUCKET:
-            out_string(c, "SERVER_ERROR not my vbucket");
+            c->terse = "SERVER_ERROR not my vbucket";
             break;
         case ENGINE_EBADTYPE:
-            out_string(c, "TYPE_MISMATCH");
+            c->terse = "TYPE_MISMATCH";
             break;
         case ENGINE_FAILED:
-            out_string(c, "SERVER_ERROR failure");
+            c->terse = "SERVER_ERROR failure";
             break;
         default:
             handle_unexpected_errorcode_ascii(c, __func__, ret);
@@ -3435,15 +3462,6 @@ static void add_bin_header(conn *c, uint16_t err, uint8_t hdr_len, uint16_t key_
     protocol_binary_response_header* header;
     assert(c);
 
-    c->msgcurr = 0;
-    c->msgused = 0;
-    c->iovused = 0;
-    if (add_msghdr(c) != 0) {
-        /* XXX:  out_string is inappropriate here */
-        out_string(c, "SERVER_ERROR out of memory");
-        return;
-    }
-
     header = (protocol_binary_response_header *)c->wbuf;
 
     header->response.magic = (uint8_t)PROTOCOL_BINARY_RES;
@@ -3468,7 +3486,7 @@ static void add_bin_header(conn *c, uint16_t err, uint8_t hdr_len, uint16_t key_
         }
     }
 
-    add_iov(c, c->wbuf, sizeof(header->response));
+    add_dynamic_buffer(c, c->wbuf, sizeof(header->response));
 }
 
 static void write_bin_packet(conn *c, protocol_binary_response_status err, int swallow)
@@ -3577,9 +3595,9 @@ static void write_bin_packet(conn *c, protocol_binary_response_status err, int s
 
     add_bin_header(c, err, 0, 0, len);
     if (len > 0) {
-        add_iov(c, buffer, len);
+        add_dynamic_buffer(c, buffer, len);
     }
-    conn_set_state(c, conn_mwrite);
+    c->next_state = conn_mwrite;
     if (swallow > 0) {
         c->sbytes = swallow;
         c->write_and_go = conn_swallow;
@@ -3595,12 +3613,12 @@ static void write_bin_response(conn *c, void *d, int hlen, int keylen, int dlen)
         c->cmd == PROTOCOL_BINARY_CMD_GETK) {
         add_bin_header(c, 0, hlen, keylen, dlen);
         if (dlen > 0) {
-            add_iov(c, d, dlen);
+            add_dynamic_buffer(c, d, dlen);
         }
-        conn_set_state(c, conn_mwrite);
+        c->next_state = conn_mwrite;
         c->write_and_go = conn_new_cmd;
     } else {
-        conn_set_state(c, conn_new_cmd);
+        c->next_state = conn_new_cmd;
     }
 }
 
@@ -3608,7 +3626,7 @@ static void
 handle_unexpected_errorcode_bin(conn *c, const char *func_name, ENGINE_ERROR_CODE ret, int swallow)
 {
     if (ret == ENGINE_DISCONNECT) {
-        conn_set_state(c, conn_closing);
+        c->next_state = conn_closing;
     } else if (ret == ENGINE_ENOTSUP) {
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
     } else {
@@ -3859,20 +3877,21 @@ static void process_bin_get(conn *c)
             bodylen += nkey;
             keylen = nkey;
         }
+        c->cas = c->hinfo.cas;
         add_bin_header(c, 0, sizeof(rsp->message.body), keylen, bodylen);
-        rsp->message.header.response.cas = htonll(c->hinfo.cas);
+        rsp->message.header.response.cas = htonll(c->cas);
 
         // add the flags
         rsp->message.body.flags = c->hinfo.flags;
-        add_iov(c, &rsp->message.body, sizeof(rsp->message.body));
+        add_dynamic_buffer(c, &rsp->message.body, sizeof(rsp->message.body));
 
         if (c->cmd == PROTOCOL_BINARY_CMD_GETK) {
-            add_iov(c, c->hinfo.key, nkey);
+            add_dynamic_buffer(c, c->hinfo.key, nkey);
         }
 
         /* Add the data minus the CRLF */
         add_iov_hinfo_value_some(c, &c->hinfo, c->hinfo.nbytes - 2);
-        conn_set_state(c, conn_mwrite);
+        c->next_state = conn_mwrite;
         /* Remember this command so we can garbage collect it later */
         c->item = it;
         break;
@@ -3882,15 +3901,15 @@ static void process_bin_get(conn *c)
         MEMCACHED_COMMAND_GET(c->sfd, key, nkey, -1, 0);
 
         if (c->noreply) {
-            conn_set_state(c, conn_new_cmd);
+            c->next_state = conn_new_cmd;
         } else {
             if (c->cmd == PROTOCOL_BINARY_CMD_GETK) {
                 char *ofs = c->wbuf + sizeof(protocol_binary_response_header);
                 add_bin_header(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT,
                         0, nkey, nkey);
                 memcpy(ofs, key, nkey);
-                add_iov(c, ofs, nkey);
-                conn_set_state(c, conn_mwrite);
+                add_dynamic_buffer(c, ofs, nkey);
+                c->next_state = conn_mwrite;
             } else {
                 write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
             }
@@ -3925,11 +3944,11 @@ static void append_bin_stats(const char *key, const uint16_t klen,
 
     conn *c = (conn*)cookie;
     size_t needed = vlen + klen + sizeof(protocol_binary_response_header);
-    if (!grow_dynamic_buffer(c, needed)) {
+    if (add_dynamic_buffer(c, "", needed)) {
         return;
     }
 
-    char *buf = c->dynamic_buffer.buffer + c->dynamic_buffer.offset;
+    char *buf = (char *)c->dynamic_buffer.buffer + c->dynamic_buffer.offset - needed;
     uint32_t bodylen = klen + vlen;
     protocol_binary_response_header header = {
         .response.magic = (uint8_t)PROTOCOL_BINARY_RES,
@@ -3952,7 +3971,7 @@ static void append_bin_stats(const char *key, const uint16_t klen,
         }
     }
 
-    c->dynamic_buffer.offset += sizeof(header.response) + bodylen;
+    c->dynamic_buffer.offset -= (needed - sizeof(header.response) - bodylen);
     assert(c->dynamic_buffer.offset <= c->dynamic_buffer.size);
 }
 
@@ -3971,11 +3990,9 @@ static void append_ascii_stats(const char *key, const uint16_t klen,
 
     conn *c = (conn*)cookie;
     size_t needed =  vlen + klen + 10; // 10 == "STAT = \r\n"
-    if (!grow_dynamic_buffer(c, needed)) {
-        return;
-    }
+    if (add_dynamic_buffer(c,  "", needed)) return;
 
-    char *pos = c->dynamic_buffer.buffer + c->dynamic_buffer.offset;
+    char *pos = ((char *)c->dynamic_buffer.buffer) + (c->dynamic_buffer.offset - needed);
     uint32_t nbytes = 5; /* "END\r\n" or "STAT " */
 
     if (klen == 0 && vlen == 0) {
@@ -3993,8 +4010,7 @@ static void append_ascii_stats(const char *key, const uint16_t klen,
         memcpy(pos + nbytes, "\r\n", 2);
         nbytes += 2;
     }
-
-    c->dynamic_buffer.offset += nbytes;
+    c->dynamic_buffer.offset -= (needed - nbytes);
     assert(c->dynamic_buffer.offset <= c->dynamic_buffer.size);
 }
 
@@ -4067,8 +4083,6 @@ static void process_bin_stat(conn *c)
     switch (ret) {
     case ENGINE_SUCCESS:
         append_bin_stats(NULL, 0, NULL, 0, c);
-        write_and_free(c, c->dynamic_buffer.buffer, c->dynamic_buffer.offset);
-        c->dynamic_buffer.buffer = NULL;
         break;
     case ENGINE_ENOMEM:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
@@ -4114,7 +4128,7 @@ static void bin_read_chunk(conn *c, enum bin_substates next_substate, uint32_t c
                     mc_logger->log(EXTENSION_LOG_WARNING, c,
                         "%d: Failed to grow buffer. closing connection\n", c->sfd);
                 }
-                conn_set_state(c, conn_closing);
+                c->next_state = conn_closing;
                 return;
             }
 
@@ -4137,7 +4151,7 @@ static void bin_read_chunk(conn *c, enum bin_substates next_substate, uint32_t c
     c->ritem = c->rcurr + sizeof(protocol_binary_request_header);
     c->rlbytes = chunk;
     c->rltotal = 0;
-    conn_set_state(c, conn_nread);
+    c->next_state = conn_nread;
 }
 
 static void bin_read_key(conn *c, enum bin_substates next_substate, int extra)
@@ -4254,7 +4268,7 @@ static void process_bin_sasl_auth(conn *c)
     c->ritem = data->data + nkey;
     c->rlbytes = vlen;
     c->rltotal = 0;
-    conn_set_state(c, conn_nread);
+    c->next_state = conn_nread;
     c->substate = bin_reading_sasl_auth_data;
 }
 
@@ -4330,9 +4344,9 @@ static void process_bin_complete_sasl_auth(conn *c)
     case SASL_CONTINUE:
         add_bin_header(c, PROTOCOL_BINARY_RESPONSE_AUTH_CONTINUE, 0, 0, outlen);
         if (outlen > 0) {
-            add_iov(c, out, outlen);
+            add_dynamic_buffer(c, out, outlen);
         }
-        conn_set_state(c, conn_mwrite);
+        c->next_state = conn_mwrite;
         c->write_and_go = conn_new_cmd;
         break;
     default:
@@ -4499,7 +4513,7 @@ static void process_bin_lop_prepare_nread(conn *c)
         } else {
             c->coll_attrp = NULL;
         }
-        conn_set_state(c, conn_nread);
+        c->next_state = conn_nread;
         c->substate = bin_reading_lop_nread_complete;
     } else {
         if (settings.detail_enabled) {
@@ -4660,10 +4674,10 @@ out_bin_lop_get_response(conn *c, bool delete, struct elems_result *eresultp)
         // add the flags and count
         rsp->message.body.flags = eresultp->flags;
         rsp->message.body.count = htonl(elem_count);
-        add_iov(c, &rsp->message.body, sizeof(rsp->message.body));
+        add_dynamic_buffer(c, &rsp->message.body, sizeof(rsp->message.body));
 
         // add value lengths
-        add_iov(c, (char*)vlenptr, elem_count*sizeof(uint32_t));
+        add_dynamic_buffer(c, (char*)vlenptr, elem_count*sizeof(uint32_t));
 
         /* Add the data without CRLF */
         for (int i = 0; i < elem_count; i++) {
@@ -4681,7 +4695,7 @@ out_bin_lop_get_response(conn *c, bool delete, struct elems_result *eresultp)
         c->coll_ecount = elem_count;
         c->coll_resps  = (char *)vlenptr;
         c->coll_op     = OPERATION_LOP_GET;
-        conn_set_state(c, conn_mwrite);
+        c->next_state = conn_mwrite;
     } else {
         mc_engine.v1->list_elem_release(mc_engine.v0, c, elem_array, elem_count);
         if (elem_array != NULL) {
@@ -4904,7 +4918,7 @@ static void process_bin_sop_prepare_nread(conn *c)
         } else { /* PROTOCOL_BINARY_CMD_SOP_EXIST */
             c->coll_op     = OPERATION_SOP_EXIST;
         }
-        conn_set_state(c, conn_nread);
+        c->next_state = conn_nread;
         c->substate = bin_reading_sop_nread_complete;
     } else {
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
@@ -5116,10 +5130,10 @@ out_bin_sop_get_response(conn *c, bool delete, struct elems_result *eresultp)
         // add the flags and count
         rsp->message.body.flags = eresultp->flags;
         rsp->message.body.count = htonl(elem_count);
-        add_iov(c, &rsp->message.body, sizeof(rsp->message.body));
+        add_dynamic_buffer(c, &rsp->message.body, sizeof(rsp->message.body));
 
         // add value lengths
-        add_iov(c, (char*)vlenptr, elem_count*sizeof(uint32_t));
+        add_dynamic_buffer(c, (char*)vlenptr, elem_count*sizeof(uint32_t));
 
         /* Add the data without CRLF */
         for (int i = 0; i < elem_count; i++) {
@@ -5137,7 +5151,7 @@ out_bin_sop_get_response(conn *c, bool delete, struct elems_result *eresultp)
         c->coll_ecount = elem_count;
         c->coll_resps  = (char *)vlenptr;
         c->coll_op     = OPERATION_SOP_GET;
-        conn_set_state(c, conn_mwrite);
+        c->next_state = conn_mwrite;
     } else {
         mc_engine.v1->set_elem_release(mc_engine.v0, c, elem_array, elem_count);
         if (elem_array != NULL) {
@@ -5366,7 +5380,7 @@ static void process_bin_bop_prepare_nread(conn *c)
         } else {
             c->coll_attrp = NULL;
         }
-        conn_set_state(c, conn_nread);
+        c->next_state = conn_nread;
         c->substate = bin_reading_bop_nread_complete;
     } else {
         if (settings.detail_enabled) {
@@ -5587,7 +5601,7 @@ static void process_bin_bop_update_prepare_nread(conn *c)
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = OPERATION_BOP_UPDATE;
-        conn_set_state(c, conn_nread);
+        c->next_state = conn_nread;
         c->substate = bin_reading_bop_update_nread_complete;
     } else {
         if (settings.detail_enabled) {
@@ -5709,10 +5723,10 @@ out_bin_bop_get_response(conn *c, bool delete, struct elems_result *eresultp)
         // add the flags and count
         rsp->message.body.flags = eresultp->flags;
         rsp->message.body.count = htonl(elem_count);
-        add_iov(c, &rsp->message.body, sizeof(rsp->message.body));
+        add_dynamic_buffer(c, &rsp->message.body, sizeof(rsp->message.body));
 
         // add bkey data and value lengths
-        add_iov(c, (char*)bkeyptr, elem_count*(sizeof(uint64_t)+sizeof(uint32_t)));
+        add_dynamic_buffer(c, (char*)bkeyptr, elem_count*(sizeof(uint64_t)+sizeof(uint32_t)));
 
         /* Add the data without CRLF */
         for (int i = 0; i < elem_count; i++) {
@@ -5730,7 +5744,7 @@ out_bin_bop_get_response(conn *c, bool delete, struct elems_result *eresultp)
         c->coll_ecount = elem_count;
         c->coll_resps  = (char *)bkeyptr;
         c->coll_op     = OPERATION_BOP_GET;
-        conn_set_state(c, conn_mwrite);
+        c->next_state = conn_mwrite;
     } else {
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
         if (elem_array != NULL) {
@@ -6057,7 +6071,7 @@ static void process_bin_bop_prepare_nread_keys(conn *c)
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 0;
         c->coll_op = (c->cmd==PROTOCOL_BINARY_CMD_BOP_MGET ? OPERATION_BOP_MGET : OPERATION_BOP_SMGET);
-        conn_set_state(c, conn_nread);
+        c->next_state = conn_nread;
         c->substate = bin_reading_bop_nread_keys_complete;
     } else {
         /* ret == ENGINE_EBADVALUE || ret == ENGINE_ENOMEM */
@@ -6182,10 +6196,10 @@ static void process_bin_bop_smget_complete_old(conn *c)
         // add the flags and count
         rsp->message.body.elem_count = htonl(elem_count);
         rsp->message.body.miss_count = htonl(kmis_count);
-        add_iov(c, &rsp->message.body, sizeof(rsp->message.body));
+        add_dynamic_buffer(c, &rsp->message.body, sizeof(rsp->message.body));
 
         // add value lengths
-        if (add_iov(c, (char*)bkeyptr, real_elem_hdr_size+real_kmis_hdr_size) != 0) {
+        if (add_dynamic_buffer(c, (char*)bkeyptr, real_elem_hdr_size+real_kmis_hdr_size)) {
             ret = ENGINE_ENOMEM;
         }
 
@@ -6202,8 +6216,8 @@ static void process_bin_bop_smget_complete_old(conn *c)
         /* Add the found key */
         if (ret == ENGINE_SUCCESS) {
             for (i = 0; i < elem_count; i++) {
-                if (add_iov(c, key_tokens[kfnd_array[i]].value,
-                               key_tokens[kfnd_array[i]].length) != 0) {
+                if (add_dynamic_buffer(c, key_tokens[kfnd_array[i]].value,
+                               key_tokens[kfnd_array[i]].length)) {
                     ret = ENGINE_ENOMEM; break;
                 }
             }
@@ -6211,8 +6225,8 @@ static void process_bin_bop_smget_complete_old(conn *c)
         /* Add the missed key */
         if (ret == ENGINE_SUCCESS) {
             for (i = 0; i < kmis_count; i++) {
-                if (add_iov(c, key_tokens[kmis_array[i]].value,
-                               key_tokens[kmis_array[i]].length) != 0) {
+                if (add_dynamic_buffer(c, key_tokens[kmis_array[i]].value,
+                               key_tokens[kmis_array[i]].length)) {
                     ret = ENGINE_ENOMEM; break;
                 }
             }
@@ -6224,7 +6238,7 @@ static void process_bin_bop_smget_complete_old(conn *c)
             STATS_OKS_NOKEY(c, bop_smget);
             c->coll_ecount = elem_count;
             c->coll_op     = OPERATION_BOP_SMGET;
-            conn_set_state(c, conn_mwrite);
+            c->next_state = conn_mwrite;
         } else {
             STATS_CMD_NOKEY(c, bop_smget);
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
@@ -6364,10 +6378,10 @@ static void process_bin_bop_smget_complete(conn *c)
         rsp->message.body.elem_count = htonl(smres.elem_count);
         rsp->message.body.miss_count = htonl(smres.miss_count);
         rsp->message.body.trim_count = htonl(smres.trim_count);
-        add_iov(c, &rsp->message.body, sizeof(rsp->message.body));
+        add_dynamic_buffer(c, &rsp->message.body, sizeof(rsp->message.body));
 
         // add value lengths
-        if (add_iov(c, (char*)bkeyptr, real_elem_hdr_size+real_emis_hdr_size) != 0) {
+        if (add_dynamic_buffer(c, (char*)bkeyptr, real_elem_hdr_size+real_emis_hdr_size)) {
             ret = ENGINE_ENOMEM;
         }
 
@@ -6384,8 +6398,8 @@ static void process_bin_bop_smget_complete(conn *c)
         /* Add the found key */
         if (ret == ENGINE_SUCCESS) {
             for (i = 0; i < smres.elem_count; i++) {
-                if (add_iov(c, key_tokens[smres.elem_kinfo[i].kidx].value,
-                               key_tokens[smres.elem_kinfo[i].kidx].length) != 0) {
+                if (add_dynamic_buffer(c, key_tokens[smres.elem_kinfo[i].kidx].value,
+                               key_tokens[smres.elem_kinfo[i].kidx].length)) {
                     ret = ENGINE_ENOMEM; break;
                 }
             }
@@ -6393,8 +6407,8 @@ static void process_bin_bop_smget_complete(conn *c)
         /* Add the missed key */
         if (ret == ENGINE_SUCCESS) {
             for (i = 0; i < smres.miss_count; i++) {
-                if (add_iov(c, key_tokens[smres.miss_kinfo[i].kidx].value,
-                               key_tokens[smres.miss_kinfo[i].kidx].length) != 0) {
+                if (add_dynamic_buffer(c, key_tokens[smres.miss_kinfo[i].kidx].value,
+                               key_tokens[smres.miss_kinfo[i].kidx].length)) {
                     ret = ENGINE_ENOMEM; break;
                 }
             }
@@ -6402,8 +6416,8 @@ static void process_bin_bop_smget_complete(conn *c)
         /* Add the trimmed key */
         if (ret == ENGINE_SUCCESS) {
             for (i = 0; i < smres.trim_count; i++) {
-                if (add_iov(c, key_tokens[smres.trim_kinfo[i].kidx].value,
-                               key_tokens[smres.trim_kinfo[i].kidx].length) != 0) {
+                if (add_dynamic_buffer(c, key_tokens[smres.trim_kinfo[i].kidx].value,
+                               key_tokens[smres.trim_kinfo[i].kidx].length)) {
                     ret = ENGINE_ENOMEM; break;
                 }
             }
@@ -6415,7 +6429,7 @@ static void process_bin_bop_smget_complete(conn *c)
             STATS_OKS_NOKEY(c, bop_smget);
             c->coll_ecount = smres.elem_count+smres.trim_count;
             c->coll_op     = OPERATION_BOP_SMGET;
-            conn_set_state(c, conn_mwrite);
+            c->next_state = conn_mwrite;
         } else {
             STATS_CMD_NOKEY(c, bop_smget);
             mc_engine.v1->btree_elem_release(mc_engine.v0, c, smres.elem_array,
@@ -6663,7 +6677,7 @@ static bool binary_response_handler(const void *key, uint16_t keylen,
     conn *c = (conn*)cookie;
     /* Look at append_bin_stats */
     size_t needed = keylen + extlen + bodylen + sizeof(protocol_binary_response_header);
-    if (!grow_dynamic_buffer(c, needed)) {
+    if (add_dynamic_buffer(c, "", needed)) {
         if (settings.verbose > 0) {
             mc_logger->log(EXTENSION_LOG_INFO, c,
                     "<%d ERROR: Failed to allocate memory for response\n", c->sfd);
@@ -6671,7 +6685,7 @@ static bool binary_response_handler(const void *key, uint16_t keylen,
         return false;
     }
 
-    char *buf = c->dynamic_buffer.buffer + c->dynamic_buffer.offset;
+    char *buf = (char *)c->dynamic_buffer.buffer + c->dynamic_buffer.offset - needed;
     protocol_binary_response_header header = {
         .response.magic = (uint8_t)PROTOCOL_BINARY_RES,
         .response.opcode = c->binary_header.request.opcode,
@@ -6701,7 +6715,6 @@ static bool binary_response_handler(const void *key, uint16_t keylen,
         memcpy(buf, body, bodylen);
     }
 
-    c->dynamic_buffer.offset += needed;
 
     return true;
 }
@@ -6717,15 +6730,13 @@ static void process_bin_unknown_packet(conn *c)
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        write_and_free(c, c->dynamic_buffer.buffer, c->dynamic_buffer.offset);
-        c->dynamic_buffer.buffer = NULL;
         break;
     case ENGINE_ENOTSUP:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_UNKNOWN_COMMAND, 0);
         break;
     default:
         /* FATAL ERROR, shut down connection */
-        conn_set_state(c, conn_closing);
+        c->next_state = conn_closing;
     }
 }
 
@@ -6899,7 +6910,7 @@ static void dispatch_bin_command(conn *c)
             write_bin_response(c, NULL, 0, 0, 0);
             c->write_and_go = conn_closing;
             if (c->noreply) {
-                conn_set_state(c, conn_closing);
+                c->next_state = conn_closing;
             }
         } else {
             protocol_error = 1;
@@ -7144,7 +7155,7 @@ static void process_bin_update(conn *c)
 
         c->item = it;
         ritem_set_first(c, CONN_RTYPE_HINFO, vlen);
-        conn_set_state(c, conn_nread);
+        c->next_state = conn_nread;
         c->substate = bin_read_set_value;
         break;
     case ENGINE_E2BIG:
@@ -7220,7 +7231,7 @@ static void process_bin_append_prepend(conn *c)
 
         c->item = it;
         ritem_set_first(c, CONN_RTYPE_HINFO, vlen);
-        conn_set_state(c, conn_nread);
+        c->next_state = conn_nread;
         c->substate = bin_read_set_value;
         break;
     case ENGINE_E2BIG:
@@ -7365,6 +7376,8 @@ static void complete_nread_binary(conn *c)
     assert(c != NULL);
     assert(c->cmd >= 0);
 
+    init_cmd_setting(c);
+
     switch (c->substate) {
     case bin_reading_set_header:
         if (c->cmd == PROTOCOL_BINARY_CMD_APPEND ||
@@ -7476,6 +7489,57 @@ static void complete_nread_binary(conn *c)
     }
 }
 
+static void process_command_binary(conn *c){
+    protocol_binary_request_header* req;
+    req = (protocol_binary_request_header*)c->rcurr;
+
+    init_cmd_setting(c);
+
+    if (settings.verbose > 1) {
+        /* Dump the packet before we convert it to host order */
+        char buffer[1024];
+        ssize_t nw;
+        nw = bytes_to_output_string(buffer, sizeof(buffer), c->sfd,
+                                    true, "Read binary protocol data:",
+                                    (const char*)req->bytes,
+                                    sizeof(req->bytes));
+        if (nw != -1) {
+            mc_logger->log(EXTENSION_LOG_DEBUG, c, "%s", buffer);
+        }
+    }
+
+    c->binary_header = *req;
+    c->binary_header.request.keylen = ntohs(req->request.keylen);
+    c->binary_header.request.bodylen = ntohl(req->request.bodylen);
+    c->binary_header.request.vbucket = ntohs(req->request.vbucket);
+    c->binary_header.request.cas = ntohll(req->request.cas);
+
+    if (c->binary_header.request.magic != PROTOCOL_BINARY_REQ) {
+        if (settings.verbose) {
+            if (c->binary_header.request.magic != PROTOCOL_BINARY_RES) {
+                mc_logger->log(EXTENSION_LOG_INFO, c,
+                        "%d: Invalid magic:  %x\n", c->sfd,
+                        c->binary_header.request.magic);
+            } else {
+                mc_logger->log(EXTENSION_LOG_INFO, c,
+                        "%d: ERROR: Unsupported response packet received: %u\n",
+                        c->sfd, (unsigned int)c->binary_header.request.opcode);
+            }
+        }
+        c->next_state = conn_closing;
+        return;
+    }
+
+    c->cmd = c->binary_header.request.opcode;
+    c->keylen = c->binary_header.request.keylen;
+    c->opaque = c->binary_header.request.opaque;
+    /* clear the returned cas value */
+    c->cas = 0;
+
+    dispatch_bin_command(c);
+
+}
+
 static void reset_cmd_handler(conn *c)
 {
     c->ascii_cmd = NULL;
@@ -7512,35 +7576,26 @@ static bool ascii_response_handler(const void *cookie,
                                    int nbytes, const char *dta)
 {
     conn *c = (conn*)cookie;
-    if (!grow_dynamic_buffer(c, nbytes)) {
+    if (add_dynamic_buffer(c, dta, nbytes)) {
         if (settings.verbose > 0) {
             mc_logger->log(EXTENSION_LOG_INFO, c,
                     "<%d ERROR: Failed to allocate memory for response\n", c->sfd);
         }
         return false;
     }
-
-    char *buf = c->dynamic_buffer.buffer + c->dynamic_buffer.offset;
-    memcpy(buf, dta, nbytes);
-    c->dynamic_buffer.offset += nbytes;
     return true;
 }
 
 static void complete_nread_ascii(conn *c)
 {
+    init_cmd_setting(c);
+
     if (c->ascii_cmd != NULL) {
         if (!c->ascii_cmd->execute(c->ascii_cmd->cookie, c, 0, NULL,
                                    ascii_response_handler)) {
-            conn_set_state(c, conn_closing);
-        } else {
-            if (c->dynamic_buffer.buffer != NULL) {
-                write_and_free(c, c->dynamic_buffer.buffer,
-                               c->dynamic_buffer.offset);
-                c->dynamic_buffer.buffer = NULL;
-            } else {
-                conn_set_state(c, conn_new_cmd);
-            }
+            c->next_state = conn_closing;
         }
+        else if(c->dynamic_buffer.buffer == NULL) c->next_state = conn_new_cmd;
     } else {
         complete_update_ascii(c);
     }
@@ -7556,6 +7611,7 @@ static void complete_nread(conn *c)
     } else {
         complete_nread_binary(c);
     }
+    clear_result(c);
 }
 
 #define COMMAND_TOKEN 0
@@ -7588,20 +7644,6 @@ print_invalid_command(conn *c, token_t *tokens, const size_t ntokens)
         for (i = 0; i < (ntokens-2); i++) {
             tokens[i].value[tokens[i].length] = '\0';
         }
-    }
-}
-
-/* set up a connection to write a buffer then free it, used for stats */
-static void write_and_free(conn *c, char *buf, int bytes)
-{
-    if (buf) {
-        c->write_and_free = buf;
-        c->wcurr = buf;
-        c->wbytes = bytes;
-        conn_set_state(c, conn_write);
-        c->write_and_go = conn_new_cmd;
-    } else {
-        out_string(c, "SERVER_ERROR out of memory writing stats");
     }
 }
 
@@ -7708,7 +7750,8 @@ static bool check_and_handle_pipe_state(conn *c)
             c->noreply = false; /* reset noreply */
         } else  {
             /* The last command of pipelining has come. */
-            pipe_state_clear(c);
+            c->pipe_state = PIPE_STATE_OFF;
+            c->pipe_count = 0;
         }
         return false;
     }
@@ -7740,26 +7783,26 @@ inline static void process_stats_detail(conn *c, const char *command)
     if (settings.allow_detailed) {
         if (strcmp(command, "on") == 0) {
             settings.detail_enabled = 1;
-            out_string(c, "OK");
+            c->terse = "OK";
         }
         else if (strcmp(command, "off") == 0) {
             settings.detail_enabled = 0;
-            out_string(c, "OK");
+            c->terse = "OK";
         }
         else if (strcmp(command, "dump") == 0) {
             int len;
             char *stats = stats_prefix_dump(NULL, 0, &len);
             if (stats == NULL) {
-                out_string(c, "SERVER_ERROR no more memory");
+                c->terse = "SERVER_ERROR no more memory";
                 return;
             }
-            write_and_free(c, stats, len);
+            add_dynamic_buffer(c, stats, len);
         }
         else {
-            out_string(c, "CLIENT_ERROR usage: stats detail on|off|dump");
+            c->terse = "CLIENT_ERROR usage: stats detail on|off|dump";
         }
     } else {
-        out_string(c, "CLIENT_ERROR detailed stats disabled");
+        c->terse = "CLIENT_ERROR detailed stats disabled";
     }
 }
 
@@ -7791,11 +7834,11 @@ static void process_stats_cachedump(conn *c, token_t *tokens, const size_t ntoke
 
     if (valid == false) {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
         return;
     }
     if (id > POWER_LARGEST) {
-        out_string(c, "CLIENT_ERROR Illegal slab id");
+        c->terse = "CLIENT_ERROR Illegal slab id";
         return;
     }
 
@@ -7804,7 +7847,7 @@ static void process_stats_cachedump(conn *c, token_t *tokens, const size_t ntoke
 
     buf = mc_engine.v1->cachedump(mc_engine.v0, c, id, limit,
                                   forward, sticky, &bytes);
-    write_and_free(c, buf, bytes);
+    add_dynamic_buffer(c, buf, bytes);
 }
 
 static void aggregate_callback(void *in, void *out)
@@ -8111,7 +8154,7 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
                                       &append_ascii_stats);
     } else if (strcmp(subcommand, "reset") == 0) {
         stats_reset(c);
-        out_string(c, "RESET");
+        c->terse = "RESET";
         return;
     } else if (strcmp(subcommand, "detail") == 0) {
         /* NOTE: how to tackle detail with binary? */
@@ -8134,7 +8177,7 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
         server_stats(&append_ascii_stats, c, true);
     } else if (strcmp(subcommand, "topkeys") == 0) {
         if (default_topkeys == NULL) {
-            out_string(c, "NOT_SUPPORTED");
+            c->terse = "NOT_SUPPORTED";
             return;
         }
         topkeys_stats(default_topkeys, c, get_current_time(), append_ascii_stats);
@@ -8143,12 +8186,12 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
         char *stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, NULL, 0, &len);
         if (stats == NULL) {
             if (len == -1)
-                out_string(c, "NOT_SUPPORTED");
+                c->terse = "NOT_SUPPORTED";
             else
-                out_string(c, "SERVER_ERROR no more memory");
+                c->terse = "SERVER_ERROR no more memory";
             return;
         }
-        write_and_free(c, stats, len);
+        add_dynamic_buffer(c, stats, len);
         return; /* Output already generated */
     } else if (strcmp(subcommand, "prefixlist") == 0) {
         int len;
@@ -8157,34 +8200,34 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
         size_t nprefixes = ntokens > 4 ? ntokens-4 : 0;
 
         if (ntokens < 4) {
-            out_string(c, "CLIENT_ERROR subcommand(item|operation) is required");
+            c->terse = "CLIENT_ERROR subcommand(item|operation) is required";
             return;
         } else if (strcmp(tokens[2].value, "item") == 0) {
             stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, prefixes, nprefixes, &len);
         } else if (strcmp(tokens[2].value, "operation") == 0) {
             stats = stats_prefix_dump(prefixes, nprefixes, &len);
         } else {
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         if (stats == NULL) {
             if (len == -1)
-                out_string(c, "NOT_SUPPORTED");
+                c->terse = "NOT_SUPPORTED";
             else
-                out_string(c, "SERVER_ERROR no more memory");
+                c->terse = "SERVER_ERROR no more memory";
             return;
         }
-        write_and_free(c, stats, len);
+        add_dynamic_buffer(c, stats, len);
         return; /* Output already generated */
     } else if (strcmp(subcommand, "prefix") == 0) {
         /* command: stats prefix <prefix>\r\n */
         if (ntokens != 4) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         if (tokens[2].length > PREFIX_MAX_LENGTH) {
-            out_string(c, "CLIENT_ERROR too long prefix name");
+            c->terse = "CLIENT_ERROR too long prefix name";
             return;
         }
         if (strcmp(tokens[2].value, "<null>") == 0) { /* reserved keyword */
@@ -8216,14 +8259,12 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
         switch (ret) {
         case ENGINE_SUCCESS:
             append_ascii_stats(NULL, 0, NULL, 0, c);
-            write_and_free(c, c->dynamic_buffer.buffer, c->dynamic_buffer.offset);
-            c->dynamic_buffer.buffer = NULL;
             break;
         case ENGINE_ENOMEM:
-            out_string(c, "SERVER_ERROR out of memory writing stats");
+            c->terse = "SERVER_ERROR out of memory writing stats";
             break;
         case ENGINE_KEY_ENOENT:
-            out_string(c, "ERROR no matching stat");
+            c->terse = "ERROR no matching stat";
             break;
         default:
             handle_unexpected_errorcode_ascii(c, __func__, ret);
@@ -8236,10 +8277,7 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
     append_ascii_stats(NULL, 0, NULL, 0, c);
 
     if (c->dynamic_buffer.buffer == NULL) {
-        out_string(c, "SERVER_ERROR out of memory writing stats");
-    } else {
-        write_and_free(c, c->dynamic_buffer.buffer, c->dynamic_buffer.offset);
-        c->dynamic_buffer.buffer = NULL;
+        c->terse = "SERVER_ERROR out of memory writing stats";
     }
 }
 
@@ -8286,9 +8324,9 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
          * See conn_write() and conn_mwrite() state.
          */
         if (ret == ENGINE_EINVAL)
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
         else /* ret == ENGINE_ENOMEM */
-            out_string(c, "SERVER_ERROR out of memory writing get response");
+            c->terse = "SERVER_ERROR out of memory writing get response";
         return;
     }
 
@@ -8300,11 +8338,10 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
      * reliable to add END\r\n to the buffer, because it might not end
      * in \r\n. So we send SERVER_ERROR instead.
      */
-    if ((add_iov(c, "END\r\n", 5) != 0) ||
-        (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
-        out_string(c, "SERVER_ERROR out of memory writing get response");
+    if (add_dynamic_buffer(c, "END\r\n", 5)) {
+        c->terse = "SERVER_ERROR out of memory writing get response";
     } else {
-        conn_set_state(c, conn_mwrite);
+        c->next_state = conn_mwrite;
         c->msgcurr = 0;
     }
 }
@@ -8321,9 +8358,9 @@ static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt, bo
         c->coll_strkeys = (void*)&c->memblist;
         ritem_set_first(c, CONN_RTYPE_MBLCK, vlen);
         c->coll_op = (return_cas ? OPERATION_MGETS : OPERATION_MGET);
-        conn_set_state(c, conn_nread);
+        c->next_state = conn_nread;
     } else {
-        out_string(c, "SERVER_ERROR out of memory");
+        c->terse = "SERVER_ERROR out of memory";
         c->sbytes = vlen;
         c->write_and_go = conn_swallow;
     }
@@ -8337,7 +8374,7 @@ static inline void process_mget_command(conn *c, token_t *tokens, const size_t n
         (! safe_strtoul(tokens[COMMAND_TOKEN+2].value, &numkeys)) ||
         (lenkeys > (UINT_MAX-2)) || (lenkeys == 0) || (numkeys == 0)) {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
         return;
     }
 
@@ -8345,7 +8382,7 @@ static inline void process_mget_command(conn *c, token_t *tokens, const size_t n
         numkeys > ((lenkeys/2) + 1) ||
         lenkeys > ((numkeys*KEY_MAX_LENGTH) + numkeys-1)) {
         /* ENGINE_EBADVALUE */
-        out_string(c, "CLIENT_ERROR bad value");
+        c->terse = "CLIENT_ERROR bad value";
         c->sbytes = lenkeys + 2;
         c->write_and_go = conn_swallow;
         return;
@@ -8376,7 +8413,7 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     key = tokens[KEY_TOKEN].value;
     nkey = tokens[KEY_TOKEN].length;
     if (nkey > KEY_MAX_LENGTH) {
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
         return;
     }
 
@@ -8386,7 +8423,7 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         (vlen < 0 || vlen > (INT_MAX-2)))
     {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
         return;
     }
     vlen += 2;
@@ -8398,7 +8435,7 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     if (handle_cas) {
         if (!safe_strtoull(tokens[5].value, &req_cas_id)) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
     }
@@ -8413,20 +8450,22 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     if (ret == ENGINE_SUCCESS) {
         if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
             mc_engine.v1->release(mc_engine.v0, c, it);
-            out_string(c, "SERVER_ERROR error getting item data");
+            c->terse = "SERVER_ERROR error getting item data";
             ret = ENGINE_FAILED; /* FIXME: error type */
         } else {
             c->item = it;
             ritem_set_first(c, CONN_RTYPE_HINFO, vlen);
             c->store_op = store_op;
-            conn_set_state(c, conn_nread);
+            c->next_state = conn_nread;
         }
     }
     if (ret != ENGINE_SUCCESS) {
         if (ret == ENGINE_E2BIG) {
-            out_string(c, "CLIENT_ERROR object too large for cache");
+
+            c->terse = "CLIENT_ERROR object too large for cache";
         } else if (ret == ENGINE_ENOMEM) {
-            out_string(c, "SERVER_ERROR out of memory storing object");
+
+            c->terse = "SERVER_ERROR out of memory storing object";
         } else if (ret == ENGINE_FAILED) {
             /* out_string() was called above. so, do nothing */
         } else {
@@ -8448,10 +8487,10 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
             c->sbytes = vlen;
-            if (c->state == conn_write) {
+            if (c->next_state == conn_write) {
                 c->write_and_go = conn_swallow;
             } else { /* conn_new_cmd (by noreply) */
-                conn_set_state(c, conn_swallow);
+                c->next_state = conn_swallow;
             }
         }
     }
@@ -8471,11 +8510,11 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
     key = tokens[KEY_TOKEN].value;
     nkey = tokens[KEY_TOKEN].length;
     if (nkey > KEY_MAX_LENGTH) {
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
         return;
     }
     if (!safe_strtoull(tokens[2].value, &delta)) {
-        out_string(c, "CLIENT_ERROR invalid numeric delta argument");
+        c->terse = "CLIENT_ERROR invalid numeric delta argument";
         return;
     }
 
@@ -8489,7 +8528,7 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
                && safe_strtol(tokens[4].value, &exptime_int)
                && safe_strtoull(tokens[5].value, &init_value))) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         create = true;
@@ -8509,8 +8548,8 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
                                    htonl(flags), realtime(exptime_int),
                                    &cas, &result, 0);
     CONN_CHECK_AND_SET_EWOULDBLOCK(ret, c);
-
-    char temp[INCR_MAX_STORAGE_LEN];
+    char *temp = (char *)malloc(INCR_MAX_STORAGE_LEN);
+    c->write_and_free = temp;
     switch (ret) {
     case ENGINE_SUCCESS:
         if (incr) {
@@ -8518,8 +8557,8 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
         } else {
             STATS_HITS(c, decr, key, nkey);
         }
-        snprintf(temp, sizeof(temp), "%"PRIu64, result);
-        out_string(c, temp);
+        snprintf(temp, INCR_MAX_STORAGE_LEN, "%"PRIu64, result);
+        c->terse = temp;
         break;
     case ENGINE_KEY_ENOENT:
         if (incr) {
@@ -8527,7 +8566,7 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
         } else {
             STATS_MISSES(c, decr, key, nkey);
         }
-        out_string(c, "NOT_FOUND");
+        c->terse = "NOT_FOUND";
         break;
     default:
         if (incr) {
@@ -8536,15 +8575,15 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
             STATS_CMD_NOKEY(c, decr);
         }
         if (ret == ENGINE_EINVAL)
-            out_string(c, "CLIENT_ERROR cannot increment or decrement non-numeric value");
+            c->terse = "CLIENT_ERROR cannot increment or decrement non-numeric value";
         else if (ret == ENGINE_PREFIX_ENAME)
-            out_string(c, "CLIENT_ERROR invalid prefix name");
+            c->terse = "CLIENT_ERROR invalid prefix name";
         else if (ret == ENGINE_ENOMEM)
-            out_string(c, "SERVER_ERROR out of memory");
+            c->terse = "SERVER_ERROR out of memory";
         else if (ret == ENGINE_NOT_STORED)
-            out_string(c, "SERVER_ERROR failed to store item");
+            c->terse = "SERVER_ERROR failed to store item";
         else if (ret == ENGINE_EBADTYPE)
-            out_string(c, "TYPE_MISMATCH");
+            c->terse = "TYPE_MISMATCH";
         else
             handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
@@ -8566,8 +8605,8 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
             (ntokens == 4 && (!zero_time && !c->noreply)))
         {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format.  "
-                          "Usage: delete <key> [noreply]");
+            c->terse = "CLIENT_ERROR bad command line format.  "
+                          "Usage: delete <key> [noreply]";
             return;
         }
     }
@@ -8575,7 +8614,7 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     key = tokens[KEY_TOKEN].value;
     nkey = tokens[KEY_TOKEN].length;
     if (nkey > KEY_MAX_LENGTH) {
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
         return;
     }
 
@@ -8589,10 +8628,10 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     /* For some reason the SLAB_INCR tries to access this... */
     if (ret == ENGINE_SUCCESS) {
         STATS_HITS(c, delete, key, nkey);
-        out_string(c, "DELETED");
+        c->terse = "DELETED";
     } else if (ret == ENGINE_KEY_ENOENT) {
         STATS_MISSES(c, delete, key, nkey);
-        out_string(c, "NOT_FOUND");
+        c->terse = "NOT_FOUND";
     } else {
         STATS_CMD_NOKEY(c, delete);
         handle_unexpected_errorcode_ascii(c, __func__, ret);
@@ -8614,7 +8653,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
     } else {
         /* flush_prefix <prefix> [<delay>] [noreply]\r\n */
         if (tokens[PREFIX_TOKEN].length > PREFIX_MAX_LENGTH) {
-            out_string(c, "CLIENT_ERROR too long prefix name");
+            c->terse = "CLIENT_ERROR too long prefix name";
             return;
         }
         delay_flag = (ntokens == (c->noreply ? 5 : 4));
@@ -8623,7 +8662,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
         int delay_idx = (flush_all ? 1 : 2);
         if (! safe_strtol(tokens[delay_idx].value, &exptime) || exptime < 0) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
     }
@@ -8634,7 +8673,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
 
         STATS_CMD_NOKEY(c, flush);
         if (ret == ENGINE_SUCCESS) {
-            out_string(c, "OK");
+            c->terse = "OK";
         } else {
             handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
@@ -8660,9 +8699,9 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
 
         STATS_CMD_NOKEY(c, flush_prefix);
         if (ret == ENGINE_SUCCESS) {
-            out_string(c, "OK");
+            c->terse = "OK";
         } else {
-            if (ret == ENGINE_PREFIX_ENOENT) out_string(c, "NOT_FOUND");
+            if (ret == ENGINE_PREFIX_ENOENT) c->terse = "NOT_FOUND";
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
     }
@@ -8673,9 +8712,10 @@ static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntok
     int new_max;
 
     if (ntokens == 3) {
-        char buf[32];
+        char *buf = (char *)malloc(32);
+        c->write_and_free = buf;
         sprintf(buf, "maxconns %d\r\nEND", settings.maxconns);
-        out_string(c, buf);
+        c->terse = buf;
     } else if (ntokens == 4 && safe_strtol(tokens[SUBCOMMAND_TOKEN+1].value, &new_max)) {
         struct rlimit rlim;
         int curr_conns;
@@ -8690,24 +8730,24 @@ static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntok
         curr_conns = mc_stats.curr_conns;
         UNLOCK_STATS();
         if (new_max + extra_nfiles < (int)(curr_conns * 1.1) || new_max + extra_nfiles > 1000000) {
-            out_string(c, "CLIENT_ERROR the value is out of range");
+            c->terse = "CLIENT_ERROR the value is out of range";
             return;
         }
         if (getrlimit(RLIMIT_NOFILE, &rlim) != 0) {
-            out_string(c, "SERVER_ERROR failed to get RLIMIT_NOFILE");
+            c->terse = "SERVER_ERROR failed to get RLIMIT_NOFILE";
             return;
         }
         if ((rlim.rlim_cur != RLIM_INFINITY) && (new_max + extra_nfiles > (int)rlim.rlim_cur)) {
-            out_string(c, "SERVER_ERROR cannot change to the maxconns over the soft limit");
+            c->terse = "SERVER_ERROR cannot change to the maxconns over the soft limit";
             return;
         }
         LOCK_SETTING();
         settings.maxconns = new_max;
         UNLOCK_SETTING();
-        out_string(c, "END");
+        c->terse = "END";
     } else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
     }
 }
 
@@ -8716,9 +8756,10 @@ static void process_zkfailstop_command(conn *c, token_t *tokens, const size_t nt
 {
     assert(c != NULL);
     if (ntokens == 3) {
-        char buf[50];
+        char *buf = (char *)malloc(50);
+        c->write_and_free = buf;
         sprintf(buf, "zkfailstop %s\r\nEND", arcus_zk_get_failstop() ? "on" : "off");
-        out_string(c, buf);
+        c->terse = buf;
     } else if (ntokens == 4) {
         const char *config = tokens[COMMAND_TOKEN+2].value;
         bool zkfailstop;
@@ -8727,14 +8768,14 @@ static void process_zkfailstop_command(conn *c, token_t *tokens, const size_t nt
         else if (strcmp(config, "off") == 0)
             zkfailstop = false;
         else {
-            out_string(c, "CLIENT_ERROR bad value");
+            c->terse = "CLIENT_ERROR bad value";
             return;
         }
         arcus_zk_set_failstop(zkfailstop);
-        out_string(c, "END");
+        c->terse = "END";
     } else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
     }
 }
 
@@ -8744,17 +8785,18 @@ static void process_hbtimeout_command(conn *c, token_t *tokens, const size_t nto
     unsigned int hbtimeout;
 
     if (ntokens == 3) {
-        char buf[50];
+        char *buf = (char *)malloc(50);
+        c->write_and_free = buf;
         sprintf(buf, "hbtimeout %d\r\nEND", arcus_hb_get_timeout());
-        out_string(c, buf);
+        c->terse = buf;
     } else if (ntokens == 4 && safe_strtoul(tokens[SUBCOMMAND_TOKEN+1].value, &hbtimeout)) {
         if (arcus_hb_set_timeout((int)hbtimeout) == 0)
-            out_string(c, "END");
+            c->terse = "END";
         else
-            out_string(c, "CLIENT_ERROR bad value");
+            c->terse = "CLIENT_ERROR bad value";
     } else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
     }
 }
 
@@ -8764,17 +8806,18 @@ static void process_hbfailstop_command(conn *c, token_t *tokens, const size_t nt
     unsigned int hbfailstop;
 
     if (ntokens == 3) {
-        char buf[50];
+        char *buf = (char *)malloc(50);
+        c->write_and_free = buf;
         sprintf(buf, "hbfailstop %d\r\nEND", arcus_hb_get_failstop());
-        out_string(c, buf);
+        c->terse = buf;
     } else if (ntokens == 4 && safe_strtoul(tokens[SUBCOMMAND_TOKEN+1].value, &hbfailstop)) {
         if (arcus_hb_set_failstop((int)hbfailstop) == 0)
-            out_string(c, "END");
+            c->terse = "END";
         else
-            out_string(c, "CLIENT_ERROR bad value");
+            c->terse = "CLIENT_ERROR bad value";
     } else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
     }
 }
 #endif
@@ -8787,9 +8830,10 @@ static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntok
     unsigned int mlimit;
 
     if (ntokens == 3) {
-        char buf[50];
+        char *buf = (char *)malloc(50);
+        c->write_and_free = buf;
         sprintf(buf, "memlimit %u\r\nEND", (int)(settings.maxbytes / (1024 * 1024)));
-        out_string(c, buf);
+        c->terse = buf;
     } else if (ntokens == 4 && safe_strtoul(config_val, &mlimit)) {
         ENGINE_ERROR_CODE ret;
         size_t new_maxbytes = (size_t)mlimit * 1024 * 1024;
@@ -8799,12 +8843,12 @@ static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntok
             settings.maxbytes = new_maxbytes;
         }
         UNLOCK_SETTING();
-        if (ret == ENGINE_SUCCESS)        out_string(c, "END");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        if (ret == ENGINE_SUCCESS)        c->terse = "END";
+        else if (ret == ENGINE_EBADVALUE) c->terse = "CLIENT_ERROR bad value";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     } else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
     }
 }
 
@@ -8817,9 +8861,10 @@ static void process_stickylimit_command(conn *c, token_t *tokens, const size_t n
     unsigned int sticky_limit;
 
     if (ntokens == 3) {
-        char buf[50];
+        char *buf = (char *)malloc(50);
+        c->write_and_free = buf;
         sprintf(buf, "sticky_limit %u\r\nEND", (int)(settings.sticky_limit / (1024 * 1024)));
-        out_string(c, buf);
+        c->terse = buf;
     } else if (ntokens == 4 && safe_strtoul(config_val, &sticky_limit)) {
         ENGINE_ERROR_CODE ret;
         size_t new_sticky_limit = (size_t)sticky_limit * 1024 * 1024;
@@ -8829,12 +8874,12 @@ static void process_stickylimit_command(conn *c, token_t *tokens, const size_t n
             settings.sticky_limit = new_sticky_limit;
         }
         UNLOCK_SETTING();
-        if (ret == ENGINE_SUCCESS)        out_string(c, "END");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        if (ret == ENGINE_SUCCESS)        c->terse = "END";
+        else if (ret == ENGINE_EBADVALUE) c->terse = "CLIENT_ERROR bad value";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     } else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
     }
 }
 #endif
@@ -8848,7 +8893,8 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
     int32_t maxsize;
 
     if (ntokens == 3) {
-        char buf[50];
+        char *buf = (char *)malloc(50);
+        c->write_and_free = buf;
         switch (coll_type) {
         case ITEM_TYPE_LIST:
             sprintf(buf, "max_list_size %u\r\nEND", settings.max_list_size);
@@ -8863,7 +8909,7 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
             sprintf(buf, "max_btree_size %u\r\nEND", settings.max_btree_size);
             break;
         }
-        out_string(c, buf);
+        c->terse = buf;
     }
     else if (ntokens == 4 && safe_strtol(config_val, &maxsize)) {
         ENGINE_ERROR_CODE ret;
@@ -8887,13 +8933,13 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
             }
         }
         UNLOCK_SETTING();
-        if (ret == ENGINE_SUCCESS)        out_string(c, "END");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        if (ret == ENGINE_SUCCESS)        c->terse = "END";
+        else if (ret == ENGINE_EBADVALUE) c->terse = "CLIENT_ERROR bad value";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
     else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
     }
 }
 
@@ -8905,9 +8951,10 @@ static void process_maxelembytes_command(conn *c, token_t *tokens, const size_t 
     uint32_t new_maxelembytes;
 
     if (ntokens == 3) {
-        char buf[50];
+        char *buf = (char *)malloc(50);
+        c->write_and_free = buf;
         sprintf(buf, "max_element_bytes %u\r\nEND", settings.max_element_bytes);
-        out_string(c, buf);
+        c->terse = buf;
     }
     else if (ntokens == 4 && safe_strtoul(config_val, &new_maxelembytes)) {
         ENGINE_ERROR_CODE ret;
@@ -8917,13 +8964,13 @@ static void process_maxelembytes_command(conn *c, token_t *tokens, const size_t 
            settings.max_element_bytes = new_maxelembytes;
         }
         UNLOCK_SETTING();
-        if (ret == ENGINE_SUCCESS)        out_string(c, "END");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        if (ret == ENGINE_SUCCESS)        c->terse = "END";
+        else if (ret == ENGINE_EBADVALUE) c->terse = "CLIENT_ERROR bad value";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
     else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
     }
 }
 
@@ -8934,9 +8981,10 @@ static void process_scrubcount_command(conn *c, token_t *tokens, const size_t nt
     uint32_t new_scrub_count;
 
     if (ntokens == 3) {
-        char buf[32];
+        char *buf = (char *)malloc(32);
+        c->write_and_free = buf;
         sprintf(buf, "scrub_count %u\r\nEND", settings.scrub_count);
-        out_string(c, buf);
+        c->terse = buf;
     } else if (ntokens == 4 && safe_strtoul(config_val, &new_scrub_count)) {
         ENGINE_ERROR_CODE ret;
         LOCK_SETTING();
@@ -8945,12 +8993,12 @@ static void process_scrubcount_command(conn *c, token_t *tokens, const size_t nt
             settings.scrub_count = new_scrub_count;
         }
         UNLOCK_SETTING();
-        if (ret == ENGINE_SUCCESS)        out_string(c, "END");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        if (ret == ENGINE_SUCCESS)        c->terse = "END";
+        else if (ret == ENGINE_EBADVALUE) c->terse = "CLIENT_ERROR bad value";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     } else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
     }
 }
 
@@ -8962,23 +9010,27 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
     unsigned int level;
 
     if (ntokens == 3) {
-        char buf[50];
+        char *buf = (char *)malloc(50);
+        c->write_and_free = buf;
         sprintf(buf, "verbosity %d\r\nEND", settings.verbose);
-        out_string(c, buf);
+        c->terse = buf;
     } else if (ntokens == 4 && safe_strtoul(config_val, &level)) {
         if (level > MAX_VERBOSITY_LEVEL) {
-            out_string(c, "SERVER_ERROR cannot change the verbosity over the limit");
+            c->terse = "SERVER_ERROR cannot change the verbosity over the limit";
             return;
         }
         LOCK_SETTING();
         mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&level);
         settings.verbose = level;
-        perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
+        for (struct engine_event_handler *h = engine_event_handlers[ON_LOG_LEVEL];
+            h; h = h->next) {
+            h->cb(NULL, ON_LOG_LEVEL, NULL, h->cb_data);
+        }
         UNLOCK_SETTING();
-        out_string(c, "END");
+        c->terse = "END";
     } else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
     }
 }
 
@@ -8995,20 +9047,21 @@ static void process_chkpt_interval_pct_snapshot_command(conn *c, token_t *tokens
         ret = mc_engine.v1->get_config(mc_engine.v0, NULL, "chkpt_interval_pct_snapshot",
                                        (void*)&chkpt_interval_pct_snapshot);
         if (ret == ENGINE_SUCCESS) {
-            char buf[50];
+            char *buf = (char *)malloc(50);
+            c->write_and_free = buf;
             sprintf(buf, "chkpt_interval_pct_snapshot %u\r\nEND", (unsigned int)chkpt_interval_pct_snapshot);
-            out_string(c, buf);
+            c->terse = buf;
         } else {
-            out_string(c, "NOT_SUPPORTED");
+            c->terse = "NOT_SUPPORTED";
         }
     } else if (ntokens == 4 && safe_strtoul(config_val, &chkpt_interval_pct_snapshot)) {
         ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&chkpt_interval_pct_snapshot);
-        if (ret == ENGINE_SUCCESS)        out_string(c, "END");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        if (ret == ENGINE_SUCCESS)        c->terse = "END";
+        else if (ret == ENGINE_EBADVALUE) c->terse = "CLIENT_ERROR bad value";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     } else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
     }
 }
 
@@ -9024,20 +9077,21 @@ static void process_chkpt_interval_min_logsize_command(conn *c, token_t *tokens,
         ret = mc_engine.v1->get_config(mc_engine.v0, NULL, "chkpt_interval_min_logsize",
                                        (void*)&chkpt_interval_min_logsize);
         if (ret == ENGINE_SUCCESS) {
-            char buf[50];
+            char *buf = (char *)malloc(50);
+            c->write_and_free = buf;
             sprintf(buf, "chkpt_interval_min_logsize %u\r\nEND", (unsigned int)chkpt_interval_min_logsize);
-            out_string(c, buf);
+            c->terse = buf;
         } else {
-            out_string(c, "NOT_SUPPORTED");
+            c->terse = "NOT_SUPPORTED";
         }
     } else if (ntokens == 4 && safe_strtoul(config_val, &chkpt_interval_min_logsize)) {
         ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&chkpt_interval_min_logsize);
-        if (ret == ENGINE_SUCCESS)        out_string(c, "END");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        if (ret == ENGINE_SUCCESS)        c->terse = "END";
+        else if (ret == ENGINE_EBADVALUE) c->terse = "CLIENT_ERROR bad value";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     } else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
     }
 }
 
@@ -9052,11 +9106,12 @@ static void process_async_logging_command(conn *c, token_t *tokens, const size_t
     if (ntokens == 3) {
         ret = mc_engine.v1->get_config(mc_engine.v0, NULL, "async_logging", (void*)&async_logging);
         if (ret == ENGINE_SUCCESS) {
-            char buf[50];
+            char *buf = (char *)malloc(50);
+            c->write_and_free = buf;
             sprintf(buf, "async_logging %s\r\nEND", (bool)async_logging ? "on" : "off");
-            out_string(c, buf);
+            c->terse = buf;
         } else {
-            out_string(c, "NOT_SUPPORTED");
+            c->terse = "NOT_SUPPORTED";
         }
     } else if (ntokens == 4) {
         bool new_async_logging;
@@ -9065,16 +9120,16 @@ static void process_async_logging_command(conn *c, token_t *tokens, const size_t
         else if (strcmp(config_val, "off") == 0)
             new_async_logging = false;
         else {
-            out_string(c, "CLIENT_ERROR bad value");
+            c->terse = "CLIENT_ERROR bad value";
             return;
         }
         ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&new_async_logging);
-        if (ret == ENGINE_SUCCESS)        out_string(c, "END");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        if (ret == ENGINE_SUCCESS)        c->terse = "END";
+        else if (ret == ENGINE_EBADVALUE) c->terse = "CLIENT_ERROR bad value";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     } else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
     }
 }
 #endif
@@ -9085,7 +9140,7 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
 
     if (ntokens < 3 || ntokens > 4) {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
         return;
     }
 
@@ -9145,7 +9200,7 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
 #endif
     else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
     }
 }
 
@@ -9156,25 +9211,26 @@ static void process_zkensemble_command(conn *c, token_t *tokens, const size_t nt
     bool valid = false;
 
     if (arcus_zk_cfg == NULL) {
-        out_string(c, "ERROR not using ZooKeeper");
+        c->terse = "ERROR not using ZooKeeper";
         return;
     }
 
     if (ntokens == 3) {
         if (strcmp(subcommand, "get") == 0) {
-            char buf[1024];
+            char *buf = (char *)malloc(1024);
+            c->write_and_free = buf;
             if (arcus_zk_get_ensemble(buf, sizeof(buf)-16) != 0) {
-                out_string(c, "ERROR failed to get the ensemble address");
+                c->terse = "ERROR failed to get the ensemble address";
             } else {
                 strcat(buf, "\r\n\n");
-                out_string(c, buf);
+                c->terse = buf;
             }
             valid = true;
         } else if (strcmp(subcommand, "rejoin") == 0) {
             if (arcus_zk_rejoin_ensemble() != 0) {
-                out_string(c, "ERROR failed to rejoin ensemble");
+                c->terse = "ERROR failed to rejoin ensemble";
             } else {
-                out_string(c, "Successfully rejoined");
+                c->terse = "Successfully rejoined";
             }
             valid = true;
         }
@@ -9184,16 +9240,16 @@ static void process_zkensemble_command(conn *c, token_t *tokens, const size_t nt
              * host1:port1,host2:port2,...
              */
             if (arcus_zk_set_ensemble(tokens[SUBCOMMAND_TOKEN+1].value) != 0) {
-                out_string(c, "ERROR failed to set the new ensemble address (check logs)");
+                c->terse = "ERROR failed to set the new ensemble address (check logs)";
             } else {
-                out_string(c, "OK");
+                c->terse = "OK";
             }
             valid = true;
         }
     }
     if (valid == false) {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
     }
 }
 #endif
@@ -9226,7 +9282,7 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
                 prefix = tokens[3].value;
                 nprefix = tokens[3].length;
                 if (nprefix > PREFIX_MAX_LENGTH) {
-                    out_string(c, "CLIENT_ERROR too long prefix name");
+                    c->terse = "CLIENT_ERROR too long prefix name";
                     return;
                 }
                 if (nprefix == 6 && strncmp(prefix, "<null>", 6) == 0) {
@@ -9241,7 +9297,7 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
     }
     if (valid == false) {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
         return;
     }
 
@@ -9249,9 +9305,9 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
     ret = mc_engine.v1->dump(mc_engine.v0, c, subcommand, modestr,
                              prefix, nprefix, filepath);
     if (ret == ENGINE_SUCCESS) {
-        out_string(c, "OK");
+        c->terse = "OK";
     } else if (ret == ENGINE_FAILED) {
-        out_string(c, "SERVER_ERROR failed. refer to the reason in server log.");
+        c->terse = "SERVER_ERROR failed. refer to the reason in server log.";
     } else {
         handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
@@ -9262,7 +9318,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
     char *type = tokens[COMMAND_TOKEN+1].value;
 
     if (ntokens > 2 && strcmp(type, "kv") == 0) {
-        out_string(c,
+        c->terse =
         "\t" "set|add|replace <key> <flags> <exptime> <bytes> [noreply]\\r\\n<data>\\r\\n" "\n"
         "\t" "append|prepend <key> <flags> <exptime> <bytes> [noreply]\\r\\n<data>\\r\\n" "\n"
         "\t" "cas <key> <flags> <exptime> <bytes> <cas unique> [noreply]\\r\\n<data>\\r\\n" "\n"
@@ -9270,39 +9326,35 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "gets <key>[ <key> ...]\\r\\n" "\n"
         "\t" "mget <lenkeys> <numkeys>\\r\\n<\"space separated keys\">\\r\\n" "\n"
         "\t" "incr|decr <key> <delta> [<flags> <exptime> <initial>] [noreply]\\r\\n" "\n"
-        "\t" "delete <key> [<time>] [noreply]\\r\\n" "\n"
-        );
+        "\t" "delete <key> [<time>] [noreply]\\r\\n" "\n";
     } else if (ntokens > 2 && strcmp(type, "list") == 0) {
-        out_string(c,
+        c->terse =
         "\t" "lop create <key> <attributes> [noreply]\\r\\n" "\n"
         "\t" "lop insert <key> <index> <bytes> [create <attributes>] [noreply|pipe]\\r\\n<data>\\r\\n" "\n"
         "\t" "lop delete <key> <index or range> [drop] [noreply|pipe]\\r\\n" "\n"
         "\t" "lop get <key> <index or range> [delete|drop]\\r\\n" "\n"
         "\n"
-        "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
-        );
+        "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n";
     } else if (ntokens > 2 && strcmp(type, "set") == 0) {
-        out_string(c,
+        c->terse =
         "\t" "sop create <key> <attributes> [noreply]\\r\\n" "\n"
         "\t" "sop insert <key> <bytes> [create <attributes>] [noreply|pipe]\\r\\n<data>\\r\\n" "\n"
         "\t" "sop delete <key> <bytes> [drop] [noreply|pipe]\\r\\n<data>\\r\\n" "\n"
         "\t" "sop get <key> <count> [delete|drop]\\r\\n" "\n"
         "\t" "sop exist <key> <bytes> [pipe]\\r\\n<data>\\r\\n" "\n"
         "\n"
-        "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
-        );
+        "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n";
     } else if (ntokens > 2 && strcmp(type, "map") == 0) {
-        out_string(c,
+        c->terse =
         "\t" "mop create <key> <attributes> [noreply]\\r\\n" "\n"
         "\t" "mop insert <key> <field> <bytes> [create <attributes>] [noreply|pipe]\\r\\n<data>\\r\\n" "\n"
         "\t" "mop update <key> <field> <bytes> [noreply|pipe]\\r\\n<data>\\r\\n" "\n"
         "\t" "mop delete <key> <lenfields> <numfields> [drop] [noreply|pipe]\\r\\n[<\"space separated fields\">]\\r\\n" "\n"
         "\t" "mop get <key> <lenfields> <numfields> [delete|drop]\\r\\n[<\"space separated fields\">]\\r\\n" "\n"
         "\n"
-        "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
-        );
+        "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n";
     } else if (ntokens > 2 && strcmp(type, "btree") == 0) {
-        out_string(c,
+        c->terse =
         "\t" "bop create <key> <attributes> [noreply]\\r\\n" "\n"
         "\t" "bop insert|upsert <key> <bkey> [<eflag>] <bytes> [create <attributes>] [noreply|pipe|getrim]\\r\\n<data>\\r\\n" "\n"
         "\t" "bop update <key> <bkey> [<eflag_update>] <bytes> [noreply|pipe]\\r\\n<data>\\r\\n" "\n"
@@ -9321,22 +9373,19 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "* <eflag_filter> : <fwhere> [<bitwop> <foperand>] <compop> <fvalue>" "\n"
         "\t" "                 : <fwhere> [<bitwop> <foperand>] EQ|NE <comma separated fvalue list>" "\n"
         "\t" "* <bitwop> : &, |, ^" "\n"
-        "\t" "* <compop> : EQ, NE, LT, LE, GT, GE" "\n"
-        );
+        "\t" "* <compop> : EQ, NE, LT, LE, GT, GE" "\n";
     } else if (ntokens > 2 && strcmp(type, "attr") == 0) {
-        out_string(c,
+        c->terse =
         "\t" "getattr <key> [<attribute name> ...]\\r\\n" "\n"
-        "\t" "setattr <key> <name>=<value> [<name>=value> ...]\\r\\n" "\n"
-        );
+        "\t" "setattr <key> <name>=<value> [<name>=value> ...]\\r\\n" "\n";
 #ifdef SCAN_COMMAND
     } else if (ntokens > 2 && strcmp(type, "scan") == 0) {
-        out_string(c,
+        c->terse =
         "\t" "scan key <cursor> [count <count>] [match <pattern>] [type <type>]\\r\\n" "\n"
-        "\t" "scan prefix <cursor> [count <count>] [match <pattern>]\\r\\n" "\n"
-        );
+        "\t" "scan prefix <cursor> [count <count>] [match <pattern>]\\r\\n" "\n";
 #endif
     } else if (ntokens > 2 && strcmp(type, "admin") == 0) {
-        out_string(c,
+        c->terse =
         "\t" "flush_all [<delay>] [noreply]\\r\\n" "\n"
         "\t" "flush_prefix <prefix> [<delay>] [noreply]\\r\\n" "\n"
         "\n"
@@ -9404,7 +9453,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "config chkpt_interval_min_logsize [<minsize(MB)>]\r\n"
         "\t" "config async_logging [on|off]\r\n"
 #endif
-        );
+        ;
     } else {
         char *cmd_types[] = { "kv", "list", "set", "map", "btree", "attr",
 #ifdef SCAN_COMMAND
@@ -9412,7 +9461,8 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
 #endif
                               "admin", NULL };
         int cmd_index;
-        char buffer[256];
+        char *buffer = (char *)malloc(256);
+        c->write_and_free = buffer;
         char *ptr = &buffer[0];
 
         ptr += sprintf(ptr, "\tUsage: help [");
@@ -9423,7 +9473,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         }
         ptr -= 3; // remove the last " | " string
         ptr += sprintf(ptr, "]\n");
-        out_string(c, buffer);
+        c->terse = buffer;
     }
 }
 
@@ -9435,7 +9485,7 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
 
     if (ntokens > 0) {
         if (ntokens == MAX_TOKENS) {
-            out_string(c, "ERROR too many arguments");
+            c->terse = "ERROR too many arguments";
             return;
         }
         if (tokens[ntokens - 1].length == 0) {
@@ -9444,7 +9494,7 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
     }
     /* ntokens must be larger than 0 in order to avoid segfault in the next for statement. */
     if (ntokens == 0) {
-        out_string(c, "ERROR no arguments");
+        c->terse = "ERROR no arguments";
         return;
     }
 
@@ -9454,21 +9504,15 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
         }
     }
     if (cmd == NULL) {
-        out_string(c, "ERROR no matching command");
+        c->terse = "ERROR no matching command";
         return;
     }
     if (nbytes == 0) {
         if (!cmd->execute(cmd->cookie, c, ntokens, tokens,
                           ascii_response_handler)) {
-            conn_set_state(c, conn_closing);
-        } else {
-            if (c->dynamic_buffer.buffer != NULL) {
-                write_and_free(c, c->dynamic_buffer.buffer,
-                               c->dynamic_buffer.offset);
-                c->dynamic_buffer.buffer = NULL;
-            } else {
-                conn_set_state(c, conn_new_cmd);
-            }
+            c->next_state = conn_closing;
+        } else if (c->dynamic_buffer.buffer == NULL){
+            c->next_state = conn_new_cmd;
         }
     } else {
         c->ritem = ptr;
@@ -9476,7 +9520,7 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
         c->rltotal = 0;
         c->ascii_cmd = cmd;
         /* NOT SUPPORTED YET! */
-        conn_set_state(c, conn_nread);
+        c->next_state = conn_nread;
     }
 }
 
@@ -9559,7 +9603,7 @@ static void process_prefixscan_command(conn *c, token_t *tokens, const size_t nt
     /* read <cursor> */
     if (tokens[2].length > SCAN_CURSOR_MAX_LENGTH) {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad cursor value");
+        c->terse = "CLIENT_ERROR bad cursor value";
         return;
     }
     strcpy(cursor, tokens[2].value);
@@ -9592,13 +9636,13 @@ static void process_prefixscan_command(conn *c, token_t *tokens, const size_t nt
     }
     if (err_response != NULL) {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, err_response);
+        c->terse = err_response;
         return;
     }
 
     if (optcnt != 0) {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
         return;
     }
 
@@ -9610,7 +9654,7 @@ static void process_prefixscan_command(conn *c, token_t *tokens, const size_t nt
         }
         item **new_list = malloc(sizeof(item *) * new_size);
         if (new_list == NULL) {
-            out_string(c, "SERVER_ERROR out of memory.");
+            c->terse = "SERVER_ERROR out of memory.";
             return;
         }
         free(c->ilist);
@@ -9631,7 +9675,7 @@ static void process_prefixscan_command(conn *c, token_t *tokens, const size_t nt
             }
             char *header = response;
             sprintf(header, "PREFIXES %d %s\r\n", item_count, cursor);
-            if (add_iov(c, header, strlen(header)) != 0) {
+            if (add_dynamic_buffer(c, header, strlen(header))) {
                 ret = ENGINE_ENOMEM; break;
             }
             char *attrptr = response + PREFIXSCAN_RESPONSE_HEADER_MAX_LENGTH;
@@ -9645,43 +9689,38 @@ static void process_prefixscan_command(conn *c, token_t *tokens, const size_t nt
                         (unsigned long long)pinfo.total_item_count, (unsigned long long)pinfo.total_item_bytes,
                         pinfo.create_time.tm_year+1900, pinfo.create_time.tm_mon+1, pinfo.create_time.tm_mday,
                         pinfo.create_time.tm_hour, pinfo.create_time.tm_min, pinfo.create_time.tm_sec);
-                if (add_iov(c, pinfo.name, pinfo.name_length) != 0 ||
-                    add_iov(c, attrptr, strlen(attrptr)) != 0) {
+                if (add_dynamic_buffer(c, pinfo.name, pinfo.name_length) ||
+                    add_dynamic_buffer(c, attrptr, strlen(attrptr))) {
                     ret = ENGINE_ENOMEM; break;
                 }
                 attrptr += PREFIXSCAN_RESPONSE_ATTR_MAX_LENGTH;
             }
             if (ret != ENGINE_SUCCESS) break;
-            if (add_iov(c, "END\r\n", 5) != 0 ||
-                (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+            if (add_dynamic_buffer(c, "END\r\n", 5)) {
                 ret = ENGINE_ENOMEM;
             }
         } while (0);
         if (ret == ENGINE_SUCCESS) {
             c->pcurr = c->ilist;
             c->pleft = item_count;
-            c->write_and_free = response;
         } else {
             for (i = 0; i < item_count; i++) {
                 mc_engine.v1->prefix_release(mc_engine.v0, c, c->ilist[i]);
             }
-            if (response != NULL) {
-                free(response);
-                response = NULL;
-            }
         }
+        free(response);
     }
 
     switch (ret) {
         case ENGINE_SUCCESS:
-            conn_set_state(c, conn_mwrite);
+            c->next_state = conn_mwrite;
             c->msgcurr = 0;
             break;
         case ENGINE_EINVAL:
-            out_string(c, "CLIENT_ERROR invalid cursor.");
+            c->terse = "CLIENT_ERROR invalid cursor.";
             break;
         case ENGINE_ENOMEM:
-            out_string(c, "SERVER_ERROR out of memory.");
+            c->terse = "SERVER_ERROR out of memory.";
             break;
         default:
             handle_unexpected_errorcode_ascii(c, __func__, ret);
@@ -9700,7 +9739,7 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
     /* read <cursor> */
     if (tokens[2].length > SCAN_CURSOR_MAX_LENGTH) {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad cursor value");
+        c->terse = "CLIENT_ERROR bad cursor value";
         return;
     }
     strcpy(cursor, tokens[2].value);
@@ -9738,13 +9777,13 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
     }
     if (err_response != NULL) {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, err_response);
+        c->terse = err_response;
         return;
     }
 
     if (optcnt != 0) {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
         return;
     }
 
@@ -9756,7 +9795,7 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
         }
         item **new_list = malloc(sizeof(item *) * new_size);
         if (new_list == NULL) {
-            out_string(c, "SERVER_ERROR out of memory.");
+            c->terse = "SERVER_ERROR out of memory.";
             return;
         }
         free(c->ilist);
@@ -9777,7 +9816,7 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
             }
             char *header = response;
             sprintf(header, "KEYS %d %s\r\n", item_count, cursor);
-            if (add_iov(c, header, strlen(header)) != 0) {
+            if (add_dynamic_buffer(c, header, strlen(header))) {
                 ret = ENGINE_ENOMEM; break;
             }
             char *attrptr = response + KEYSCAN_RESPONSE_HEADER_MAX_LENGTH;
@@ -9789,44 +9828,39 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
                 sprintf(attrptr, " %c %d\r\n",
                         get_item_type_char(c->hinfo.type),
                         human_readable_time(c->hinfo.exptime));
-                if (add_iov(c, c->hinfo.key, c->hinfo.nkey) != 0 ||
-                    add_iov(c, attrptr, strlen(attrptr)) != 0) {
+                if (add_dynamic_buffer(c, c->hinfo.key, c->hinfo.nkey) ||
+                    add_dynamic_buffer(c, attrptr, strlen(attrptr))) {
                     ret = ENGINE_ENOMEM; break;
                 }
                 attrptr += KEYSCAN_RESPONSE_ATTR_MAX_LENGTH;
             }
             if (ret != ENGINE_SUCCESS) break;
-            if (add_iov(c, "END\r\n", 5) != 0 ||
-                (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+            if (add_dynamic_buffer(c, "END\r\n", 5)) {
                 ret = ENGINE_ENOMEM;
             }
         } while (0);
         if (ret == ENGINE_SUCCESS) {
             c->icurr = c->ilist;
             c->ileft = item_count;
-            c->write_and_free = response;
         } else {
             c->ileft = 0;
             for (i = 0; i < item_count; i++) {
                 mc_engine.v1->release(mc_engine.v0, c, c->ilist[i]);
             }
-            if (response != NULL) {
-                free(response);
-                response = NULL;
-            }
         }
+        free(response);
     }
 
     switch (ret) {
         case ENGINE_SUCCESS:
-            conn_set_state(c, conn_mwrite);
+            c->next_state = conn_mwrite;
             c->msgcurr = 0;
             break;
         case ENGINE_EINVAL:
-            out_string(c, "CLIENT_ERROR invalid cursor.");
+            c->terse = "CLIENT_ERROR invalid cursor.";
             break;
         case ENGINE_ENOMEM:
-            out_string(c, "SERVER_ERROR out of memory.");
+            c->terse = "SERVER_ERROR out of memory.";
             break;
         default:
             handle_unexpected_errorcode_ascii(c, __func__, ret);
@@ -9849,7 +9883,7 @@ static void process_scan_command(conn *c, token_t *tokens, const size_t ntokens)
     }
 
     print_invalid_command(c, tokens, ntokens);
-    out_string(c, "CLIENT_ERROR bad command line format");
+    c->terse = "CLIENT_ERROR bad command line format";
 }
 #endif
 
@@ -9863,7 +9897,7 @@ static void process_logging_command(conn *c, token_t *tokens, const size_t ntoke
         char *fpath = NULL;
         if (ntokens > 3) {
             if (tokens[SUBCOMMAND_TOKEN+1].length > CMDLOG_DIRPATH_LENGTH) {
-                out_string(c, "\tcommand logging failed to start, path exceeds 128.\n");
+                c->terse = "\tcommand logging failed to start, path exceeds 128.\n";
                 cmdlog_in_use = false;
                 return;
             }
@@ -9872,33 +9906,33 @@ static void process_logging_command(conn *c, token_t *tokens, const size_t ntoke
 
         int ret = cmdlog_start(fpath, &already_check);
         if (already_check) {
-            out_string(c, "\tcommand logging already started.\n");
+            c->terse = "\tcommand logging already started.\n";
             return;
         }
         if (ret == 0) {
-            out_string(c, "\tcommand logging started.\n");
+            c->terse = "\tcommand logging started.\n";
             cmdlog_in_use = true;
         } else {
-            out_string(c, "\tcommand logging failed to start.\n");
+            c->terse = "\tcommand logging failed to start.\n";
             cmdlog_in_use = false;
         }
     } else if (ntokens > 2 && strcmp(type, "stop") == 0) {
         cmdlog_stop(&already_check);
         if (already_check) {
-            out_string(c, "\tcommand logging already stopped.\n");
+            c->terse = "\tcommand logging already stopped.\n";
         } else {
-            out_string(c, "\tcommand logging stopped.\n");
+            c->terse = "\tcommand logging stopped.\n";
             cmdlog_in_use = false;
         }
     } else if (ntokens > 2 && strcmp(type, "stats") == 0) {
         char *str = cmdlog_stats();
         if (str) {
-            write_and_free(c, str, strlen(str));
+            add_dynamic_buffer(c, str, strlen(str));
         } else {
-            out_string(c, "\tcommand logging failed to get stats memory.\n");
+            c->terse = "\tcommand logging failed to get stats memory.\n";
         }
     } else {
-        out_string(c, "\t* Usage: cmdlog [start [path] | stop | stats]\n");
+        c->terse = "\t* Usage: cmdlog [start [path] | stop | stats]\n";
     }
 }
 #endif
@@ -9909,21 +9943,21 @@ static void lqdetect_show(conn *c)
     int ret = 0, size = 0;
     c->lq_result = lqdetect_result_get(&size);
     if (c->lq_result == NULL) {
-        out_string(c, "SERVER ERROR out of memory");
+        c->terse = "SERVER ERROR out of memory";
         return;
     }
 
     for (int i = 0; i < size; i++) {
-        if (add_iov(c, c->lq_result[i].value, c->lq_result[i].length) != 0) {
+        if (add_dynamic_buffer(c, c->lq_result[i].value, c->lq_result[i].length)) {
             ret = -1; break;
         }
     }
 
     if (ret == 0) {
-        conn_set_state(c, conn_mwrite);
+        c->next_state = conn_mwrite;
         c->msgcurr = 0;
     } else {
-        out_string(c, "SERVER ERROR out of memory writing show response");
+        c->terse = "SERVER ERROR out of memory writing show response";
         lqdetect_result_release(c->lq_result);
         c->lq_result = NULL;
     }
@@ -9939,27 +9973,27 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
         if (ntokens > 3) {
             if (! safe_strtoul(tokens[SUBCOMMAND_TOKEN+1].value, &threshold)) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
         }
         int ret = lqdetect_start(threshold, &already_check);
         if (ret == 0) {
             if (already_check) {
-                out_string(c, "\tlong query detection already started.\n");
+                c->terse = "\tlong query detection already started.\n";
             } else {
-                out_string(c, "\tlong query detection started.\n");
+                c->terse = "\tlong query detection started.\n";
                 lqdetect_in_use = true;
             }
         } else {
-            out_string(c, "\tlong query detection failed to start.\n");
+            c->terse = "\tlong query detection failed to start.\n";
         }
     } else if (ntokens > 2 && strcmp(type, "stop") == 0) {
         lqdetect_stop(&already_check);
         if (already_check) {
-            out_string(c, "\tlong query detection already stopped.\n");
+            c->terse = "\tlong query detection already stopped.\n";
         } else {
-            out_string(c, "\tlong query detection stopped.\n");
+            c->terse = "\tlong query detection stopped.\n";
             lqdetect_in_use = false;
         }
     } else if (ntokens > 2 && strcmp(type, "show") == 0) {
@@ -9967,14 +10001,13 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
     } else if (ntokens > 2 && strcmp(type, "stats") == 0) {
         char *str = lqdetect_stats();
         if (str) {
-            write_and_free(c, str, strlen(str));
+            add_dynamic_buffer(c, str, strlen(str));
         } else {
-            out_string(c, "\tlong query detection failed to get stats memory.\n");
+            c->terse = "\tlong query detection failed to get stats memory.\n";
         }
     } else {
-        out_string(c,
-        "\t" "* Usage: lqdetect [start [standard] | stop | show | stats]" "\n"
-        );
+        c->terse =
+        "\t" "* Usage: lqdetect [start [standard] | stop | show | stats]" "\n";
     }
 }
 #endif
@@ -10072,7 +10105,7 @@ out_lop_get_response(conn *c, bool delete, struct elems_result *eresultp)
 
         /* make response head */
         sprintf(respptr, "VALUE %u %u\r\n", htonl(eresultp->flags), elem_count);
-        if (add_iov(c, respptr, strlen(respptr)) != 0) {
+        if (add_dynamic_buffer(c, respptr, strlen(respptr))) {
             ret = ENGINE_ENOMEM; break;
         }
         respptr += strlen(respptr);
@@ -10082,7 +10115,7 @@ out_lop_get_response(conn *c, bool delete, struct elems_result *eresultp)
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST,
                                         elem_array[i], &c->einfo);
             sprintf(respptr, "%u ", c->einfo.nbytes-2);
-            if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
+            if ((add_dynamic_buffer(c, respptr, strlen(respptr))) ||
                 (add_iov_einfo_value_all(c, &c->einfo) != 0))
             {
                 ret = ENGINE_ENOMEM; break;
@@ -10097,8 +10130,7 @@ out_lop_get_response(conn *c, bool delete, struct elems_result *eresultp)
         } else {
             sprintf(respptr, "END\r\n");
         }
-        if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+        if (add_dynamic_buffer(c, respptr, strlen(respptr))) {
             ret = ENGINE_ENOMEM; break;
         }
     } while(0);
@@ -10108,7 +10140,7 @@ out_lop_get_response(conn *c, bool delete, struct elems_result *eresultp)
         c->coll_ecount = elem_count;
         c->coll_resps  = respbuf;
         c->coll_op     = OPERATION_LOP_GET;
-        conn_set_state(c, conn_mwrite);
+        c->next_state = conn_mwrite;
         c->msgcurr     = 0;
     } else { /* ENGINE_ENOMEM */
         assert(elem_array != NULL);
@@ -10153,23 +10185,23 @@ static void process_lop_get(conn *c, char *key, size_t nkey,
             STATS_ELEM_HITS(c, lop_get, key, nkey);
         } else {
             STATS_CMD_NOKEY(c, lop_get);
-            out_string(c, "SERVER_ERROR out of memory writing get response");
+            c->terse = "SERVER_ERROR out of memory writing get response";
         }
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, lop_get, key, nkey);
-        out_string(c, "NOT_FOUND_ELEMENT");
+        c->terse = "NOT_FOUND_ELEMENT";
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, lop_get, key, nkey);
-        if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
-        else                          out_string(c, "UNREADABLE");
+        if (ret == ENGINE_KEY_ENOENT) c->terse = "NOT_FOUND";
+        else                          c->terse = "UNREADABLE";
         break;
     default:
         STATS_CMD_NOKEY(c, lop_get);
-        if (ret == ENGINE_EBADTYPE)    out_string(c, "TYPE_MISMATCH");
-        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_EBADTYPE)    c->terse = "TYPE_MISMATCH";
+        else if (ret == ENGINE_ENOMEM) c->terse = "SERVER_ERROR out of memory";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -10192,23 +10224,23 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
         c->coll_ecount = 1;
         c->coll_op     = OPERATION_LOP_INSERT;
         c->coll_index  = index;
-        conn_set_state(c, conn_nread);
+        c->next_state = conn_nread;
     } else {
         if (settings.detail_enabled) {
             stats_prefix_record_lop_insert(key, nkey, false);
         }
         STATS_CMD_NOKEY(c, lop_insert);
-        if (ret == ENGINE_E2BIG)       out_string(c, "CLIENT_ERROR too large value");
-        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_E2BIG)       c->terse = "CLIENT_ERROR too large value";
+        else if (ret == ENGINE_ENOMEM) c->terse = "SERVER_ERROR out of memory";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
             c->sbytes = vlen;
-            if (c->state == conn_write) {
+            if (c->next_state == conn_write) {
                 c->write_and_go = conn_swallow;
             } else { /* conn_new_cmd (by noreply) */
-                conn_set_state(c, conn_swallow);
+                c->next_state = conn_swallow;
             }
         }
     }
@@ -10228,13 +10260,13 @@ static void process_lop_create(conn *c, char *key, size_t nkey, item_attr *attrp
     switch (ret) {
     case ENGINE_SUCCESS:
         STATS_OKS(c, lop_create, key, nkey);
-        out_string(c, "CREATED");
+        c->terse = "CREATED";
         break;
     default:
         STATS_CMD_NOKEY(c, lop_create);
-        if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
-        else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
-        else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_KEY_EEXISTS)       c->terse = "EXISTS";
+        else if (ret == ENGINE_PREFIX_ENAME) c->terse = "CLIENT_ERROR invalid prefix name";
+        else if (ret == ENGINE_ENOMEM)       c->terse = "SERVER_ERROR out of memory";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -10267,20 +10299,20 @@ static void process_lop_delete(conn *c, char *key, size_t nkey,
     switch (ret) {
     case ENGINE_SUCCESS:
         STATS_ELEM_HITS(c, lop_delete, key, nkey);
-        if (dropped) out_string(c, "DELETED_DROPPED");
-        else         out_string(c, "DELETED");
+        if (dropped) c->terse = "DELETED_DROPPED";
+        else         c->terse = "DELETED";
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, lop_delete, key, nkey);
-        out_string(c, "NOT_FOUND_ELEMENT");
+        c->terse = "NOT_FOUND_ELEMENT";
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, lop_delete, key, nkey);
-        out_string(c, "NOT_FOUND");
+        c->terse = "NOT_FOUND";
         break;
     default:
         STATS_CMD_NOKEY(c, lop_delete);
-        if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
+        if (ret == ENGINE_EBADTYPE) c->terse = "TYPE_MISMATCH";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -10312,7 +10344,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
     size_t nkey = tokens[LOP_KEY_TOKEN].length;
 
     if (nkey > KEY_MAX_LENGTH) {
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
         return;
     }
     c->coll_key = key;
@@ -10328,7 +10360,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
             (! safe_strtol(tokens[LOP_KEY_TOKEN+2].value, &vlen)) ||
             (vlen < 0 || vlen > (INT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         vlen += 2;
@@ -10342,14 +10374,14 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
                 get_coll_create_attr_from_tokens(&tokens[read_ntokens+1], rest_ntokens-1,
                                                  ITEM_TYPE_LIST, &c->coll_attr_space) != 0) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
             c->coll_attrp = &c->coll_attr_space; /* create if not exist */
         } else {
             if (rest_ntokens != 0) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
             c->coll_attrp = NULL;
@@ -10359,7 +10391,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
             process_lop_prepare_nread(c, (int)OPERATION_LOP_INSERT, vlen, key, nkey, index);
         } else { /* pipe error */
             c->sbytes = vlen;
-            conn_set_state(c, conn_swallow);
+            c->next_state = conn_swallow;
         }
     }
     else if ((ntokens >= 7 && ntokens <= 10) && (strcmp(subcommand, "create") == 0))
@@ -10373,7 +10405,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
         if (get_coll_create_attr_from_tokens(&tokens[read_ntokens], rest_ntokens,
                                              ITEM_TYPE_LIST, &c->coll_attr_space) != 0) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         c->coll_attrp = &c->coll_attr_space;
@@ -10388,7 +10420,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if (get_list_range_from_str(tokens[LOP_KEY_TOKEN+1].value, &from_index, &to_index)) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         if (ntokens >= 6) {
@@ -10398,7 +10430,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
             if ((ntokens == 6 && (c->noreply == false && drop_if_empty == false)) ||
                 (ntokens == 7 && (c->noreply == false || drop_if_empty == false))) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
         }
@@ -10406,7 +10438,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
         if (check_and_handle_pipe_state(c)) {
             process_lop_delete(c, key, nkey, from_index, to_index, drop_if_empty);
         } else { /* pipe error */
-            conn_set_state(c, conn_new_cmd);
+            c->next_state = conn_new_cmd;
         }
     }
     else if ((ntokens==5 || ntokens==6) && (strcmp(subcommand, "get") == 0))
@@ -10417,7 +10449,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if (get_list_range_from_str(tokens[LOP_KEY_TOKEN+1].value, &from_index, &to_index)) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         if (ntokens == 6) {
@@ -10428,7 +10460,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
                 drop_if_empty = true;
             } else {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
         }
@@ -10438,7 +10470,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
     else
     {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
     }
 }
 
@@ -10464,7 +10496,7 @@ out_sop_get_response(conn *c, bool delete, struct elems_result *eresultp)
 
         /* make response head */
         sprintf(respptr, "VALUE %u %u\r\n", htonl(eresultp->flags), elem_count);
-        if (add_iov(c, respptr, strlen(respptr)) != 0) {
+        if (add_dynamic_buffer(c, respptr, strlen(respptr))) {
             ret = ENGINE_ENOMEM; break;
         }
         respptr += strlen(respptr);
@@ -10474,7 +10506,7 @@ out_sop_get_response(conn *c, bool delete, struct elems_result *eresultp)
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET,
                                         elem_array[i], &c->einfo);
             sprintf(respptr, "%u ", c->einfo.nbytes-2);
-            if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
+            if ((add_dynamic_buffer(c, respptr, strlen(respptr))) ||
                 (add_iov_einfo_value_all(c, &c->einfo) != 0))
             {
                 ret = ENGINE_ENOMEM; break;
@@ -10489,8 +10521,7 @@ out_sop_get_response(conn *c, bool delete, struct elems_result *eresultp)
         } else {
             sprintf(respptr, "END\r\n");
         }
-        if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+        if (add_dynamic_buffer(c, respptr, strlen(respptr))) {
             ret = ENGINE_ENOMEM; break;
         }
     } while(0);
@@ -10500,7 +10531,7 @@ out_sop_get_response(conn *c, bool delete, struct elems_result *eresultp)
         c->coll_ecount = elem_count;
         c->coll_resps  = respbuf;
         c->coll_op     = OPERATION_SOP_GET;
-        conn_set_state(c, conn_mwrite);
+        c->next_state = conn_mwrite;
         c->msgcurr     = 0;
     } else { /* ENGINE_ENOMEM */
         mc_engine.v1->set_elem_release(mc_engine.v0, c, elem_array, elem_count);
@@ -10543,23 +10574,23 @@ static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
             STATS_ELEM_HITS(c, sop_get, key, nkey);
         } else {
             STATS_CMD_NOKEY(c, sop_get);
-            out_string(c, "SERVER_ERROR out of memory writing get response");
+            c->terse = "SERVER_ERROR out of memory writing get response";
         }
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, sop_get, key, nkey);
-        out_string(c, "NOT_FOUND_ELEMENT");
+        c->terse = "NOT_FOUND_ELEMENT";
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, sop_get, key, nkey);
-        if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
-        else                          out_string(c, "UNREADABLE");
+        if (ret == ENGINE_KEY_ENOENT) c->terse = "NOT_FOUND";
+        else                          c->terse = "UNREADABLE";
         break;
     default:
         STATS_CMD_NOKEY(c, sop_get);
-        if (ret == ENGINE_EBADTYPE)    out_string(c, "TYPE_MISMATCH");
-        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_EBADTYPE)    c->terse = "TYPE_MISMATCH";
+        else if (ret == ENGINE_ENOMEM) c->terse = "SERVER_ERROR out of memory";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -10593,7 +10624,7 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = cmd;
-        conn_set_state(c, conn_nread);
+        c->next_state = conn_nread;
     } else {
         if (cmd == (int)OPERATION_SOP_INSERT) {
             if (settings.detail_enabled)
@@ -10608,17 +10639,17 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
                 stats_prefix_record_sop_exist(key, nkey, false);
             STATS_CMD_NOKEY(c, sop_exist);
         }
-        if (ret == ENGINE_E2BIG)       out_string(c, "CLIENT_ERROR too large value");
-        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_E2BIG) c->terse = "CLIENT_ERROR too large value";
+        else if (ret == ENGINE_ENOMEM) c->terse = "SERVER_ERROR out of memory";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
             c->sbytes = vlen;
-            if (c->state == conn_write) {
+            if (c->next_state == conn_write) {
                 c->write_and_go = conn_swallow;
             } else { /* conn_new_cmd (by noreply) */
-                conn_set_state(c, conn_swallow);
+                c->next_state = conn_swallow;
             }
         }
     }
@@ -10638,13 +10669,13 @@ static void process_sop_create(conn *c, char *key, size_t nkey, item_attr *attrp
     switch (ret) {
     case ENGINE_SUCCESS:
         STATS_OKS(c, sop_create, key, nkey);
-        out_string(c, "CREATED");
+        c->terse = "CREATED";
         break;
     default:
         STATS_CMD_NOKEY(c, sop_create);
-        if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
-        else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
-        else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_KEY_EEXISTS)       c->terse = "EXISTS";
+        else if (ret == ENGINE_PREFIX_ENAME) c->terse = "CLIENT_ERROR invalid prefix name";
+        else if (ret == ENGINE_ENOMEM)       c->terse = "SERVER_ERROR out of memory";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -10657,7 +10688,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
     size_t nkey = tokens[SOP_KEY_TOKEN].length;
 
     if (nkey > KEY_MAX_LENGTH) {
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
         return;
     }
     c->coll_key = key;
@@ -10672,7 +10703,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
         if ((! safe_strtol(tokens[SOP_KEY_TOKEN+1].value, &vlen)) ||
             (vlen < 0 || vlen > (INT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         vlen += 2;
@@ -10686,14 +10717,14 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
                 get_coll_create_attr_from_tokens(&tokens[read_ntokens+1], rest_ntokens-1,
                                                  ITEM_TYPE_SET, &c->coll_attr_space) != 0) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
             c->coll_attrp = &c->coll_attr_space; /* create if not exist */
         } else {
             if (rest_ntokens != 0) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
             c->coll_attrp = NULL;
@@ -10703,7 +10734,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
             process_sop_prepare_nread(c, (int)OPERATION_SOP_INSERT, vlen, key, nkey);
         } else { /* pipe error */
             c->sbytes = vlen;
-            conn_set_state(c, conn_swallow);
+            c->next_state = conn_swallow;
         }
     }
     else if ((ntokens >= 7 && ntokens <= 10) && (strcmp(subcommand, "create") == 0))
@@ -10717,7 +10748,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
         if (get_coll_create_attr_from_tokens(&tokens[read_ntokens], rest_ntokens,
                                              ITEM_TYPE_SET, &c->coll_attr_space) != 0) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         c->coll_attrp = &c->coll_attr_space;
@@ -10732,7 +10763,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
         if ((! safe_strtol(tokens[SOP_KEY_TOKEN+1].value, &vlen)) ||
             (vlen < 0 || vlen > (INT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         vlen += 2;
@@ -10745,7 +10776,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
             if ((ntokens == 6 && (c->noreply == false && c->coll_drop == false)) ||
                 (ntokens == 7 && (c->noreply == false || c->coll_drop == false))) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
         }
@@ -10754,7 +10785,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
             process_sop_prepare_nread(c, (int)OPERATION_SOP_DELETE, vlen, key, nkey);
         } else { /* pipe error */
             c->sbytes = vlen;
-            conn_set_state(c, conn_swallow);
+            c->next_state = conn_swallow;
         }
     }
     else if ((ntokens==5 || ntokens==6) && strcmp(subcommand, "exist") == 0)
@@ -10766,7 +10797,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
         if ((! safe_strtol(tokens[SOP_KEY_TOKEN+1].value, &vlen)) ||
             (vlen < 0 || vlen > (INT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         vlen += 2;
@@ -10775,7 +10806,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
             process_sop_prepare_nread(c, (int)OPERATION_SOP_EXIST, vlen, key, nkey);
         } else { /* pipe error */
             c->sbytes = vlen;
-            conn_set_state(c, conn_swallow);
+            c->next_state = conn_swallow;
         }
     }
     else if ((ntokens==5 || ntokens==6) && (strcmp(subcommand, "get") == 0))
@@ -10786,7 +10817,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if (! safe_strtoul(tokens[SOP_KEY_TOKEN+1].value, &count)) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         if (ntokens == 6) {
@@ -10797,7 +10828,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
                 drop_if_empty = true;
             } else {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
         }
@@ -10807,7 +10838,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
     else
     {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
     }
 }
 
@@ -10834,7 +10865,7 @@ out_bop_get_response(conn *c, bool delete, struct elems_result *eresultp)
 
         /* make response head */
         sprintf(respptr, "VALUE %u %u\r\n", htonl(eresultp->flags), elem_count);
-        if (add_iov(c, respptr, strlen(respptr)) != 0) {
+        if (add_dynamic_buffer(c, respptr, strlen(respptr))) {
             ret = ENGINE_ENOMEM; break;
         }
         respptr += strlen(respptr);
@@ -10844,7 +10875,7 @@ out_bop_get_response(conn *c, bool delete, struct elems_result *eresultp)
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                         elem_array[i], &c->einfo);
             resplen = make_bop_elem_response(respptr, &c->einfo);
-            if ((add_iov(c, respptr, resplen) != 0) ||
+            if ((add_dynamic_buffer(c, respptr, resplen)) ||
                 (add_iov_einfo_value_all(c, &c->einfo) != 0))
             {
                 ret = ENGINE_ENOMEM; break;
@@ -10859,8 +10890,7 @@ out_bop_get_response(conn *c, bool delete, struct elems_result *eresultp)
         } else {
             sprintf(respptr, "%s\r\n", (eresultp->trimmed ? "TRIMMED" : "END"));
         }
-        if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+        if (add_dynamic_buffer(c, respptr, strlen(respptr))) {
             ret = ENGINE_ENOMEM; break;
         }
     } while(0);
@@ -10870,7 +10900,7 @@ out_bop_get_response(conn *c, bool delete, struct elems_result *eresultp)
         c->coll_ecount = elem_count;
         c->coll_resps  = respbuf;
         c->coll_op     = OPERATION_BOP_GET;
-        conn_set_state(c, conn_mwrite);
+        c->next_state = conn_mwrite;
         c->msgcurr     = 0;
     } else { /* ENGINE_ENOMEM */
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
@@ -10915,26 +10945,26 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
             STATS_ELEM_HITS(c, bop_get, key, nkey);
         } else {
             STATS_CMD_NOKEY(c, bop_get);
-            out_string(c, "SERVER_ERROR out of memory writing get response");
+            c->terse = "SERVER_ERROR out of memory writing get response";
         }
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, bop_get, key, nkey);
-        out_string(c, "NOT_FOUND_ELEMENT");
+        c->terse = "NOT_FOUND_ELEMENT";
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_EBKEYOOR:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, bop_get, key, nkey);
-        if (ret == ENGINE_KEY_ENOENT)    out_string(c, "NOT_FOUND");
-        else if (ret == ENGINE_EBKEYOOR) out_string(c, "OUT_OF_RANGE");
-        else                             out_string(c, "UNREADABLE");
+        if (ret == ENGINE_KEY_ENOENT)    c->terse = "NOT_FOUND";
+        else if (ret == ENGINE_EBKEYOOR) c->terse = "OUT_OF_RANGE";
+        else                             c->terse = "UNREADABLE";
         break;
     default:
         STATS_CMD_NOKEY(c, bop_get);
-        if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
-        else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
-        else if (ret == ENGINE_ENOMEM)   out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_EBADTYPE)      c->terse = "TYPE_MISMATCH";
+        else if (ret == ENGINE_EBADBKEY) c->terse = "BKEY_MISMATCH";
+        else if (ret == ENGINE_ENOMEM)   c->terse = "SERVER_ERROR out of memory";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -10942,7 +10972,8 @@ static void process_bop_get(conn *c, char *key, size_t nkey,
 static void process_bop_count(conn *c, char *key, size_t nkey,
                               const bkey_range *bkrange, const eflag_filter *efilter)
 {
-    char buffer[32];
+    char *buffer = (char *)malloc(32);
+    c->write_and_free = buffer;
     uint32_t elem_count;
     uint32_t opcost; /* operation cost */
 
@@ -10965,18 +10996,18 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
     case ENGINE_SUCCESS:
         STATS_HITS(c, bop_count, key, nkey);
         sprintf(buffer, "COUNT=%u", elem_count);
-        out_string(c, buffer);
+        c->terse = buffer;
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, bop_count, key, nkey);
-        if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
-        else                          out_string(c, "UNREADABLE");
+        if (ret == ENGINE_KEY_ENOENT) c->terse = "NOT_FOUND";
+        else                          c->terse = "UNREADABLE";
         break;
     default:
         STATS_CMD_NOKEY(c, bop_count);
-        if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
-        else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
+        if (ret == ENGINE_EBADTYPE)      c->terse = "TYPE_MISMATCH";
+        else if (ret == ENGINE_EBADBKEY) c->terse = "BKEY_MISMATCH";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -10984,7 +11015,8 @@ static void process_bop_count(conn *c, char *key, size_t nkey,
 static void process_bop_position(conn *c, char *key, size_t nkey,
                                  const bkey_range *bkrange, ENGINE_BTREE_ORDER order)
 {
-    char buffer[32];
+    char *buffer = (char *)malloc(32);
+    c->write_and_free = buffer;
     int position;
 
     ENGINE_ERROR_CODE ret;
@@ -10999,22 +11031,22 @@ static void process_bop_position(conn *c, char *key, size_t nkey,
     case ENGINE_SUCCESS:
         STATS_ELEM_HITS(c, bop_position, key, nkey);
         sprintf(buffer, "POSITION=%d", position);
-        out_string(c, buffer);
+        c->terse = buffer;
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, bop_position, key, nkey);
-        out_string(c, "NOT_FOUND_ELEMENT");
+        c->terse = "NOT_FOUND_ELEMENT";
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, bop_position, key, nkey);
-        if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
-        else                          out_string(c, "UNREADABLE");
+        if (ret == ENGINE_KEY_ENOENT) c->terse = "NOT_FOUND";
+        else                          c->terse = "UNREADABLE";
         break;
     default:
         STATS_CMD_NOKEY(c, bop_position);
-        if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
-        else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
+        if (ret == ENGINE_EBADTYPE)      c->terse = "TYPE_MISMATCH";
+        else if (ret == ENGINE_EBADBKEY) c->terse = "BKEY_MISMATCH";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -11043,7 +11075,7 @@ out_bop_pwg_response(conn *c, int position, struct elems_result *eresultp)
         /* make response head */
         sprintf(respptr, "VALUE %d %u %u %u\r\n", position, htonl(eresultp->flags), elem_count,
                                                   eresultp->opcost_or_eindex);
-        if (add_iov(c, respptr, strlen(respptr)) != 0) {
+        if (add_dynamic_buffer(c, respptr, strlen(respptr))) {
             ret = ENGINE_ENOMEM; break;
         }
         respptr += strlen(respptr);
@@ -11053,7 +11085,7 @@ out_bop_pwg_response(conn *c, int position, struct elems_result *eresultp)
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                         elem_array[i], &c->einfo);
             resplen = make_bop_elem_response(respptr, &c->einfo);
-            if ((add_iov(c, respptr, resplen) != 0) ||
+            if ((add_dynamic_buffer(c, respptr, resplen)) ||
                 (add_iov_einfo_value_all(c, &c->einfo) != 0))
             {
                 ret = ENGINE_ENOMEM; break;
@@ -11063,8 +11095,7 @@ out_bop_pwg_response(conn *c, int position, struct elems_result *eresultp)
         if (ret == ENGINE_ENOMEM) break;
 
         /* make response tail */
-        if ((add_iov(c, "END\r\n", 5) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+        if (add_dynamic_buffer(c, "END\r\n", 5)) {
             ret = ENGINE_ENOMEM; break;
         }
     } while(0);
@@ -11074,7 +11105,7 @@ out_bop_pwg_response(conn *c, int position, struct elems_result *eresultp)
         c->coll_ecount = elem_count;
         c->coll_resps  = respbuf;
         c->coll_op     = OPERATION_BOP_PWG;
-        conn_set_state(c, conn_mwrite);
+        c->next_state = conn_mwrite;
         c->msgcurr     = 0;
     } else { /* ENGINE_ENOMEM */
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
@@ -11082,7 +11113,7 @@ out_bop_pwg_response(conn *c, int position, struct elems_result *eresultp)
             free(elem_array);
         if (respbuf)
             free(respbuf);
-        out_string(c, "SERVER_ERROR out of memory writing get response");
+        c->terse = "SERVER_ERROR out of memory writing get response";
     }
     return ret;
 }
@@ -11113,18 +11144,18 @@ static void process_bop_pwg(conn *c, char *key, size_t nkey, const bkey_range *b
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, bop_pwg, key, nkey);
-        out_string(c, "NOT_FOUND_ELEMENT");
+        c->terse = "NOT_FOUND_ELEMENT";
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, bop_pwg, key, nkey);
-        if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
-        else                          out_string(c, "UNREADABLE");
+        if (ret == ENGINE_KEY_ENOENT) c->terse = "NOT_FOUND";
+        else                          c->terse = "UNREADABLE";
         break;
     default:
         STATS_CMD_NOKEY(c, bop_pwg);
-        if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
-        else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
+        if (ret == ENGINE_EBADTYPE)      c->terse = "TYPE_MISMATCH";
+        else if (ret == ENGINE_EBADBKEY) c->terse = "BKEY_MISMATCH";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -11152,7 +11183,7 @@ out_bop_gbp_response(conn *c, struct elems_result *eresultp)
 
         /* make response head */
         sprintf(respptr, "VALUE %u %u\r\n", htonl(eresultp->flags), elem_count);
-        if (add_iov(c, respptr, strlen(respptr)) != 0) {
+        if (add_dynamic_buffer(c, respptr, strlen(respptr))) {
             ret = ENGINE_ENOMEM; break;
         }
         respptr += strlen(respptr);
@@ -11162,7 +11193,7 @@ out_bop_gbp_response(conn *c, struct elems_result *eresultp)
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE,
                                         elem_array[i], &c->einfo);
             resplen = make_bop_elem_response(respptr, &c->einfo);
-            if ((add_iov(c, respptr, resplen) != 0) ||
+            if ((add_dynamic_buffer(c, respptr, resplen)) ||
                 (add_iov_einfo_value_all(c, &c->einfo) != 0))
             {
                 ret = ENGINE_ENOMEM; break;
@@ -11172,8 +11203,7 @@ out_bop_gbp_response(conn *c, struct elems_result *eresultp)
         if (ret == ENGINE_ENOMEM) break;
 
         /* make response tail */
-        if ((add_iov(c, "END\r\n", 5) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+        if (add_dynamic_buffer(c, "END\r\n", 5)) {
             ret = ENGINE_ENOMEM; break;
         }
     } while(0);
@@ -11183,7 +11213,7 @@ out_bop_gbp_response(conn *c, struct elems_result *eresultp)
         c->coll_ecount = elem_count;
         c->coll_resps  = respbuf;
         c->coll_op     = OPERATION_BOP_GBP;
-        conn_set_state(c, conn_mwrite);
+        c->next_state = conn_mwrite;
         c->msgcurr     = 0;
     } else { /* ENGINE_ENOMEM */
         mc_engine.v1->btree_elem_release(mc_engine.v0, c, elem_array, elem_count);
@@ -11191,7 +11221,7 @@ out_bop_gbp_response(conn *c, struct elems_result *eresultp)
             free(elem_array);
         if (respbuf)
             free(respbuf);
-        out_string(c, "SERVER_ERROR out of memory writing get response");
+        c->terse = "SERVER_ERROR out of memory writing get response";
     }
     return ret;
 }
@@ -11229,17 +11259,17 @@ static void process_bop_gbp(conn *c, char *key, size_t nkey,
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, bop_gbp, key, nkey);
-        out_string(c, "NOT_FOUND_ELEMENT");
+        c->terse = "NOT_FOUND_ELEMENT";
         break;
     case ENGINE_KEY_ENOENT:
     case ENGINE_UNREADABLE:
         STATS_MISSES(c, bop_gbp, key, nkey);
-        if (ret == ENGINE_KEY_ENOENT) out_string(c, "NOT_FOUND");
-        else                          out_string(c, "UNREADABLE");
+        if (ret == ENGINE_KEY_ENOENT) c->terse = "NOT_FOUND";
+        else                          c->terse = "UNREADABLE";
         break;
     default:
         STATS_CMD_NOKEY(c, bop_gbp);
-        if (ret == ENGINE_EBADTYPE) out_string(c, "TYPE_MISMATCH");
+        if (ret == ENGINE_EBADTYPE) c->terse = "TYPE_MISMATCH";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -11266,21 +11296,21 @@ static void process_bop_update_prepare_nread(conn *c, int cmd,
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = cmd;
-        conn_set_state(c, conn_nread);
+        c->next_state = conn_nread;
     } else {
         if (settings.detail_enabled) {
             stats_prefix_record_bop_update(key, nkey, false);
         }
         STATS_CMD_NOKEY(c, bop_update);
-        if (ret == ENGINE_E2BIG) out_string(c, "CLIENT_ERROR too large value");
-        else                     out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_E2BIG) c->terse = "CLIENT_ERROR too large value";
+        else c->terse = "SERVER_ERROR out of memory";
 
         /* swallow the data line */
         c->sbytes = vlen;
-        if (c->state == conn_write) {
+        if (c->next_state == conn_write) {
             c->write_and_go = conn_swallow;
         } else { /* conn_new_cmd (by noreply) */
-            conn_set_state(c, conn_swallow);
+            c->next_state = conn_swallow;
         }
     }
 }
@@ -11308,23 +11338,23 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = cmd; /* OPERATION_BOP_INSERT | OPERATION_BOP_UPSERT */
-        conn_set_state(c, conn_nread);
+        c->next_state = conn_nread;
     } else {
         if (settings.detail_enabled) {
             stats_prefix_record_bop_insert(key, nkey, false);
         }
         STATS_CMD_NOKEY(c, bop_insert);
-        if (ret == ENGINE_E2BIG)       out_string(c, "CLIENT_ERROR too large value");
-        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_E2BIG) c->terse = "CLIENT_ERROR too large value";
+        else if (ret == ENGINE_ENOMEM) c->terse = "SERVER_ERROR out of memory";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
             c->sbytes = vlen;
-            if (c->state == conn_write) {
+            if (c->next_state == conn_write) {
                 c->write_and_go = conn_swallow;
             } else { /* conn_new_cmd (by noreply) */
-                conn_set_state(c, conn_swallow);
+                c->next_state = conn_swallow;
             }
         }
     }
@@ -11400,7 +11430,7 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 0;
         c->coll_op = cmd;
-        conn_set_state(c, conn_nread);
+        c->next_state = conn_nread;
     } else {
 #ifdef SUPPORT_BOP_MGET
         if (cmd == OPERATION_BOP_MGET)
@@ -11411,10 +11441,10 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
             STATS_CMD_NOKEY(c, bop_smget);
 #endif
         /* ret == ENGINE_ENOMEM */
-        out_string(c, "SERVER_ERROR out of memory");
+        c->terse = "SERVER_ERROR out of memory";
 
         /* swallow the data line */
-        assert(c->state == conn_write);
+        assert(c->next_state == conn_write);
         c->sbytes = vlen;
         c->write_and_go = conn_swallow;
     }
@@ -11435,13 +11465,13 @@ static void process_bop_create(conn *c, char *key, size_t nkey, item_attr *attrp
     switch (ret) {
     case ENGINE_SUCCESS:
         STATS_OKS(c, bop_create, key, nkey);
-        out_string(c, "CREATED");
+        c->terse = "CREATED";
         break;
     default:
         STATS_CMD_NOKEY(c, bop_create);
-        if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
-        else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
-        else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_KEY_EEXISTS)       c->terse = "EXISTS";
+        else if (ret == ENGINE_PREFIX_ENAME) c->terse = "CLIENT_ERROR invalid prefix name";
+        else if (ret == ENGINE_ENOMEM)       c->terse = "SERVER_ERROR out of memory";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -11476,21 +11506,21 @@ static void process_bop_delete(conn *c, char *key, size_t nkey,
     switch (ret) {
     case ENGINE_SUCCESS:
         STATS_ELEM_HITS(c, bop_delete, key, nkey);
-        if (dropped) out_string(c, "DELETED_DROPPED");
-        else         out_string(c, "DELETED");
+        if (dropped) c->terse = "DELETED_DROPPED";
+        else         c->terse = "DELETED";
         break;
     case ENGINE_ELEM_ENOENT:
         STATS_NONE_HITS(c, bop_delete, key, nkey);
-        out_string(c, "NOT_FOUND_ELEMENT");
+        c->terse = "NOT_FOUND_ELEMENT";
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, bop_delete, key, nkey);
-        out_string(c, "NOT_FOUND");
+        c->terse = "NOT_FOUND";
         break;
     default:
         STATS_CMD_NOKEY(c, bop_delete);
-        if (ret == ENGINE_EBADTYPE)      out_string(c, "TYPE_MISMATCH");
-        else if (ret == ENGINE_EBADBKEY) out_string(c, "BKEY_MISMATCH");
+        if (ret == ENGINE_EBADTYPE)      c->terse = "TYPE_MISMATCH";
+        else if (ret == ENGINE_EBADBKEY) c->terse = "BKEY_MISMATCH";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -11502,7 +11532,8 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
 {
     assert(c->ewouldblock == false);
     uint64_t result;
-    char temp[INCR_MAX_STORAGE_LEN];
+    char *temp = (char *)malloc(INCR_MAX_STORAGE_LEN);
+    c->write_and_free = temp;
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->btree_elem_arithmetic(mc_engine.v0, c, key, nkey,
@@ -11522,8 +11553,8 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
         } else {
             STATS_ELEM_HITS(c, bop_decr, key, nkey);
         }
-        snprintf(temp, sizeof(temp), "%"PRIu64, result);
-        out_string(c, temp);
+        snprintf(temp, INCR_MAX_STORAGE_LEN, "%"PRIu64, result);
+        c->terse = temp;
         break;
     case ENGINE_ELEM_ENOENT:
         if (incr) {
@@ -11531,7 +11562,7 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
         } else {
             STATS_NONE_HITS(c, bop_decr, key, nkey);
         }
-        out_string(c, "NOT_FOUND_ELEMENT");
+        c->terse = "NOT_FOUND_ELEMENT";
         break;
     case ENGINE_KEY_ENOENT:
         if (incr) {
@@ -11539,7 +11570,7 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
         } else {
             STATS_MISSES(c, bop_decr, key, nkey);
         }
-        out_string(c, "NOT_FOUND");
+        c->terse = "NOT_FOUND";
         break;
     default:
         if (incr) {
@@ -11547,12 +11578,12 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
         } else {
             STATS_CMD_NOKEY(c, bop_decr);
         }
-        if (ret == ENGINE_EINVAL) out_string(c, "CLIENT_ERROR cannot increment or decrement non-numeric value");
-        else if (ret == ENGINE_EBADTYPE)  out_string(c, "TYPE_MISMATCH");
-        else if (ret == ENGINE_EBADBKEY)  out_string(c, "BKEY_MISMATCH");
-        else if (ret == ENGINE_EBKEYOOR)  out_string(c, "OUT_OF_RANGE");
-        else if (ret == ENGINE_EOVERFLOW) out_string(c, "OVERFLOWED");
-        else if (ret == ENGINE_ENOMEM)    out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_EINVAL) c->terse = "CLIENT_ERROR cannot increment or decrement non-numeric value";
+        else if (ret == ENGINE_EBADTYPE)  c->terse = "TYPE_MISMATCH";
+        else if (ret == ENGINE_EBADBKEY)  c->terse = "BKEY_MISMATCH";
+        else if (ret == ENGINE_EBKEYOOR)  c->terse = "OUT_OF_RANGE";
+        else if (ret == ENGINE_EOVERFLOW) c->terse = "OVERFLOWED";
+        else if (ret == ENGINE_ENOMEM)    c->terse = "SERVER_ERROR out of memory";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -11770,7 +11801,7 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
         c->coll_ecount = 1;
         c->coll_op     = cmd;
         c->coll_field  = *field;
-        conn_set_state(c, conn_nread);
+        c->next_state = conn_nread;
     } else {
         if (settings.detail_enabled) {
             stats_prefix_record_mop_insert(key, nkey, false);
@@ -11780,17 +11811,17 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
         } else if (cmd == OPERATION_MOP_UPDATE) {
             STATS_CMD_NOKEY(c, mop_update);
         }
-        if (ret == ENGINE_E2BIG)       out_string(c, "CLIENT_ERROR too large value");
-        else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_E2BIG)        c->terse = "CLIENT_ERROR too large value";
+        else if (ret == ENGINE_ENOMEM)  c->terse = "SERVER_ERROR out of memory";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
 
         if (ret != ENGINE_DISCONNECT) {
             /* swallow the data line */
             c->sbytes = vlen;
-            if (c->state == conn_write) {
+            if (c->next_state == conn_write) {
                 c->write_and_go = conn_swallow;
             } else { /* conn_new_cmd (by noreply) */
-                conn_set_state(c, conn_swallow);
+                c->next_state = conn_swallow;
             }
         }
     }
@@ -11810,7 +11841,7 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
         c->coll_ecount = 1;
         c->coll_op = cmd;
         c->coll_lenkeys = flen;
-        conn_set_state(c, conn_nread);
+        c->next_state = conn_nread;
     } else {
         if (cmd == OPERATION_MOP_DELETE) {
             STATS_CMD_NOKEY(c, mop_delete);
@@ -11818,15 +11849,10 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
             STATS_CMD_NOKEY(c, mop_get);
         }
         /* ret == ENGINE_ENOMEM */
-        out_string(c, "SERVER_ERROR out of memory");
-
+        c->terse = "SERVER_ERROR out of memory";
+        c->next_state = conn_swallow;
         /* swallow the data line */
         c->sbytes = flen;
-        if (c->state == conn_write) {
-            c->write_and_go = conn_swallow;
-        } else { /* conn_new_cmd (by noreply) */
-            conn_set_state(c, conn_swallow);
-        }
     }
 }
 
@@ -11844,13 +11870,13 @@ static void process_mop_create(conn *c, char *key, size_t nkey, item_attr *attrp
     switch (ret) {
     case ENGINE_SUCCESS:
         STATS_OKS(c, mop_create, key, nkey);
-        out_string(c, "CREATED");
+        c->terse = "CREATED";
         break;
     default:
         STATS_CMD_NOKEY(c, mop_create);
-        if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
-        else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
-        else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
+        if (ret == ENGINE_KEY_EEXISTS)       c->terse = "EXISTS";
+        else if (ret == ENGINE_PREFIX_ENAME) c->terse = "CLIENT_ERROR invalid prefix name";
+        else if (ret == ENGINE_ENOMEM)       c->terse = "SERVER_ERROR out of memory";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -11863,7 +11889,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
     size_t nkey = tokens[MOP_KEY_TOKEN].length;
 
     if (nkey > KEY_MAX_LENGTH) {
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
         return;
     }
     c->coll_key = key;
@@ -11879,14 +11905,14 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         field.value = tokens[MOP_KEY_TOKEN+1].value;
         field.length = tokens[MOP_KEY_TOKEN+1].length;
         if (field.length > MAX_FIELD_LENG) {
-            out_string(c, "CLIENT_ERROR too long field name");
+            c->terse = "CLIENT_ERROR too long field name";
             return;
         }
 
         if ((! safe_strtol(tokens[MOP_KEY_TOKEN+2].value, &vlen)) ||
             (vlen < 0 || vlen > (INT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         vlen += 2;
@@ -11900,14 +11926,14 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 get_coll_create_attr_from_tokens(&tokens[read_ntokens+1], rest_ntokens-1,
                                                  ITEM_TYPE_MAP, &c->coll_attr_space) != 0) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
             c->coll_attrp = &c->coll_attr_space; /* create if not exist */
         } else {
             if (rest_ntokens != 0) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
             c->coll_attrp = NULL;
@@ -11917,7 +11943,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
             process_mop_prepare_nread(c, (int)OPERATION_MOP_INSERT, key, nkey, &field, vlen);
         } else { /* pipe error */
             c->sbytes = vlen;
-            conn_set_state(c, conn_swallow);
+            c->next_state = conn_swallow;
         }
     }
     else if ((ntokens >= 7 && ntokens <= 10) && (strcmp(subcommand, "create") == 0))
@@ -11931,7 +11957,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         if (get_coll_create_attr_from_tokens(&tokens[read_ntokens], rest_ntokens,
                                              ITEM_TYPE_MAP, &c->coll_attr_space) != 0) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         c->coll_attrp = &c->coll_attr_space;
@@ -11947,14 +11973,14 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         field.value = tokens[MOP_KEY_TOKEN+1].value;
         field.length = tokens[MOP_KEY_TOKEN+1].length;
         if (field.length > MAX_FIELD_LENG) {
-            out_string(c, "CLIENT_ERROR too long field name");
+            c->terse = "CLIENT_ERROR too long field name";
             return;
         }
 
         if ((! safe_strtol(tokens[MOP_KEY_TOKEN+2].value, &vlen)) ||
             (vlen < 0 || vlen > (INT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         vlen += 2;
@@ -11963,7 +11989,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
             process_mop_prepare_nread(c, (int)OPERATION_MOP_UPDATE, key, nkey, &field, vlen);
         } else { /* pipe error */
             c->sbytes = vlen;
-            conn_set_state(c, conn_swallow);
+            c->next_state = conn_swallow;
         }
     }
     else if ((ntokens >= 6 && ntokens <= 8) && (strcmp(subcommand, "delete") == 0))
@@ -11976,7 +12002,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         if ((! safe_strtoul(tokens[MOP_KEY_TOKEN+1].value, &lenfields)) ||
             (! safe_strtoul(tokens[MOP_KEY_TOKEN+2].value, &numfields))) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         if (lenfields > 0) {
@@ -11984,7 +12010,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 lenfields > (UINT_MAX-2) ||
                 lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1)) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad value");
+                c->terse = "CLIENT_ERROR bad value";
                 return;
             }
         }
@@ -11993,7 +12019,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 numfields > settings.max_map_size ||
                 numfields > ((lenfields/2) + 1)) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad value");
+                c->terse = "CLIENT_ERROR bad value";
                 return;
             }
         }
@@ -12007,7 +12033,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 drop_if_empty = true;
             } else {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
         }
@@ -12027,9 +12053,9 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         } else { /* pipe error */
             if (lenfields > 0) {
                 c->sbytes = lenfields;
-                conn_set_state(c, conn_swallow);
+                c->next_state = conn_swallow;
             } else {
-                conn_set_state(c, conn_new_cmd);
+                c->next_state = conn_new_cmd;
             }
         }
     }
@@ -12042,7 +12068,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         if ((! safe_strtoul(tokens[MOP_KEY_TOKEN+1].value, &lenfields)) ||
             (! safe_strtoul(tokens[MOP_KEY_TOKEN+2].value, &numfields))) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         if (lenfields > 0) {
@@ -12050,7 +12076,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 lenfields > (UINT_MAX-2) ||
                 lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1)) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad value");
+                c->terse = "CLIENT_ERROR bad value";
                 return;
             }
         }
@@ -12059,7 +12085,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 numfields > settings.max_map_size ||
                 numfields > ((lenfields/2) + 1)) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad value");
+                c->terse = "CLIENT_ERROR bad value";
                 return;
             }
         }
@@ -12072,7 +12098,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 drop_if_empty = true;
             } else {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
         }
@@ -12093,7 +12119,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
     else
     {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
     }
 }
 
@@ -12106,7 +12132,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
     int subcommid;
 
     if (nkey > KEY_MAX_LENGTH) {
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
         return;
     }
     c->coll_key = key;
@@ -12142,14 +12168,14 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
         if (nbkey == -1 || neflag == -1) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
 
         if ((! safe_strtol(tokens[read_ntokens++].value, &vlen)) ||
             (vlen < 0 || vlen > (INT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         vlen += 2;
@@ -12162,14 +12188,14 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
                 get_coll_create_attr_from_tokens(&tokens[read_ntokens+1], rest_ntokens-1,
                                                  ITEM_TYPE_BTREE, &c->coll_attr_space) != 0) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
             c->coll_attrp = &c->coll_attr_space; /* create if not exist */
         } else {
             if (rest_ntokens != 0) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
             c->coll_attrp = NULL;
@@ -12179,7 +12205,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             process_bop_prepare_nread(c, subcommid, key, nkey, bkey, nbkey, eflag, neflag, vlen);
         } else { /* pipe error */
             c->sbytes = vlen;
-            conn_set_state(c, conn_swallow);
+            c->next_state = conn_swallow;
         }
     }
     else if ((ntokens >= 7 && ntokens <= 10) && (strcmp(subcommand, "create") == 0))
@@ -12193,7 +12219,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         if (get_coll_create_attr_from_tokens(&tokens[read_ntokens], rest_ntokens,
                                              ITEM_TYPE_BTREE, &c->coll_attr_space) != 0) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         c->coll_attrp = &c->coll_attr_space;
@@ -12209,7 +12235,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         if (get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange) != 0 ||
             c->coll_bkrange.to_nbkey != BKEY_NULL) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
 
@@ -12223,14 +12249,14 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             if (rest_ntokens > 2) {
                 if (! safe_strtoul(tokens[read_ntokens].value, &offset) || offset >= MAX_EFLAG_LENG) {
                     print_invalid_command(c, tokens, ntokens);
-                    out_string(c, "CLIENT_ERROR bad command line format");
+                    c->terse = "CLIENT_ERROR bad command line format";
                     return;
                 }
                 c->coll_eupdate.fwhere = (uint8_t)offset;
                 c->coll_eupdate.bitwop = get_bitwise_op_from_str(tokens[read_ntokens+1].value);
                 if (c->coll_eupdate.bitwop == BITWISE_OP_MAX) {
                     print_invalid_command(c, tokens, ntokens);
-                    out_string(c, "CLIENT_ERROR bad command line format");
+                    c->terse = "CLIENT_ERROR bad command line format";
                     return;
                 }
                 read_ntokens += 2;
@@ -12242,13 +12268,13 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
                 length = get_eflag_from_str(tokens[read_ntokens].value, c->coll_eupdate.eflag);
                 if (length < 0) {
                     print_invalid_command(c, tokens, ntokens);
-                    out_string(c, "CLIENT_ERROR bad command line format");
+                    c->terse = "CLIENT_ERROR bad command line format";
                     return;
                 }
             } else {
                 if (! safe_strtol(tokens[read_ntokens].value, &length) || length != 0) {
                     print_invalid_command(c, tokens, ntokens);
-                    out_string(c, "CLIENT_ERROR bad command line format");
+                    c->terse = "CLIENT_ERROR bad command line format";
                     return;
                 }
             }
@@ -12263,7 +12289,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             (! safe_strtol(tokens[read_ntokens].value, &vlen)) ||
             (vlen < -1 || vlen > (INT_MAX-2))) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
 
@@ -12272,13 +12298,13 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
                 if (c->coll_eupdate.neflag == EFLAG_NULL) {
                     /* Nothing to update */
                     //out_string(c, "CLIENT_ERROR nothing to update");
-                    out_string(c, "NOTHING_TO_UPDATE");
+                    c->terse = "NOTHING_TO_UPDATE";
                     return;
                 }
                 c->coll_op   = OPERATION_BOP_UPDATE;
                 process_bop_update_complete(c);
             } else { /* pipe error */
-                conn_set_state(c, conn_new_cmd);
+                c->next_state = conn_new_cmd;
             }
         } else { /* vlen >= 0 */
             vlen += 2;
@@ -12286,7 +12312,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
                 process_bop_update_prepare_nread(c, (int)OPERATION_BOP_UPDATE, key, nkey, vlen);
             } else { /* pipe error */
                 c->sbytes = vlen;
-                conn_set_state(c, conn_swallow);
+                c->next_state = conn_swallow;
             }
         }
     }
@@ -12299,7 +12325,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if (get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange)) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
 
@@ -12312,7 +12338,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
                                                        &c->coll_efilter);
             if (used_ntokens == -1) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
             read_ntokens += used_ntokens;
@@ -12332,7 +12358,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             if ((rest_ntokens > 1) ||
                 (! safe_strtoul(tokens[read_ntokens].value, &count))) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
         }
@@ -12342,7 +12368,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
                                (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter),
                                count, drop_if_empty);
         } else { /* pipe error */
-            conn_set_state(c, conn_new_cmd);
+            c->next_state = conn_new_cmd;
         }
     }
     else if ((ntokens >= 6 && ntokens <= 9) && (strcmp(subcommand, "incr") == 0 || strcmp(subcommand, "decr") == 0))
@@ -12360,7 +12386,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             (c->coll_bkrange.to_nbkey != BKEY_NULL) ||
             (! safe_strtoull(tokens[BOP_KEY_TOKEN+2].value, &delta)) || (delta < 1)) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
 
@@ -12371,14 +12397,14 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         if (rest_ntokens > 0) {
             if (! safe_strtoull(tokens[BOP_KEY_TOKEN+3].value, &initial)) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
             if (rest_ntokens > 1) {
                 int neflag = get_eflag_from_str(tokens[BOP_KEY_TOKEN+4].value, eflagspc.val);
                 if (neflag == -1) {
                     print_invalid_command(c, tokens, ntokens);
-                    out_string(c, "CLIENT_ERROR bad command line format");
+                    c->terse = "CLIENT_ERROR bad command line format";
                     return;
                 }
                 eflagspc.len = neflag;
@@ -12391,7 +12417,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             process_bop_arithmetic(c, key, nkey, &c->coll_bkrange, incr,
                                    create, delta, initial, eflagptr);
         } else { /* pipe error */
-            conn_set_state(c, conn_new_cmd);
+            c->next_state = conn_new_cmd;
         }
     }
     else if ((ntokens >= 5 && ntokens <= 13) && (strcmp(subcommand, "get") == 0))
@@ -12403,7 +12429,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if (get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange)) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
 
@@ -12416,7 +12442,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
                                                        &c->coll_efilter);
             if (used_ntokens == -1) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
             read_ntokens += used_ntokens;
@@ -12439,19 +12465,19 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             if (rest_ntokens == 1) {
                 if (! safe_strtoul(tokens[read_ntokens].value, &count)) {
                     print_invalid_command(c, tokens, ntokens);
-                    out_string(c, "CLIENT_ERROR bad command line format");
+                    c->terse = "CLIENT_ERROR bad command line format";
                     return;
                 }
             } else if (rest_ntokens == 2) {
                 if ((! safe_strtoul(tokens[read_ntokens].value, &offset)) ||
                     (! safe_strtoul(tokens[read_ntokens+1].value, &count))) {
                     print_invalid_command(c, tokens, ntokens);
-                    out_string(c, "CLIENT_ERROR bad command line format");
+                    c->terse = "CLIENT_ERROR bad command line format";
                     return;
                 }
             } else {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
         }
@@ -12465,7 +12491,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
     {
         if (get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange)) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
 
@@ -12478,7 +12504,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
                                                        &c->coll_efilter);
             if (used_ntokens == -1) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
             rest_ntokens -= used_ntokens;
@@ -12488,7 +12514,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if (rest_ntokens != 0) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
 
@@ -12512,13 +12538,13 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             (! safe_strtoul(tokens[BOP_KEY_TOKEN+1].value, &numkeys)) ||
             (lenkeys > (UINT_MAX-2)) || (lenkeys == 0) || (numkeys == 0)) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
 
         if (get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+2].value, &c->coll_bkrange)) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
 
@@ -12535,7 +12561,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
                                                        &c->coll_efilter);
             if (used_ntokens == -1) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
             read_ntokens += used_ntokens;
@@ -12546,21 +12572,21 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if (rest_ntokens > 1) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
 
         if (rest_ntokens == 0) {
             if (! safe_strtoul(tokens[read_ntokens].value, &count) || count == 0) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
         } else { /* rest_ntokens == 1 */
             if ((! safe_strtoul(tokens[read_ntokens].value, &offset)) ||
                 (! safe_strtoul(tokens[read_ntokens+1].value, &count))) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
         }
@@ -12569,7 +12595,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         if (numkeys > ((lenkeys/2) + 1) ||
             lenkeys > ((numkeys*KEY_MAX_LENGTH) + numkeys-1)) {
             /* ENGINE_EBADVALUE */
-            out_string(c, "CLIENT_ERROR bad value");
+            c->terse = "CLIENT_ERROR bad value";
             c->sbytes = lenkeys + 2;
             c->write_and_go = conn_swallow;
             return;
@@ -12579,7 +12605,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         if (subcommid == OPERATION_BOP_MGET) {
             if (numkeys > MAX_BMGET_KEY_COUNT || count > MAX_BMGET_ELM_COUNT) {
                 /* ENGINE_EBADVALUE */
-                out_string(c, "CLIENT_ERROR bad value");
+                c->terse = "CLIENT_ERROR bad value";
                 c->sbytes = lenkeys;
                 c->write_and_go = conn_swallow;
                 return;
@@ -12590,7 +12616,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         if (subcommid == OPERATION_BOP_SMGET) {
             if (numkeys > MAX_SMGET_KEY_COUNT || (offset+count) > MAX_SMGET_REQ_COUNT) {
                 /* ENGINE_EBADVALUE */
-                out_string(c, "CLIENT_ERROR bad value");
+                c->terse = "CLIENT_ERROR bad value";
                 c->sbytes = lenkeys;
                 c->write_and_go = conn_swallow;
                 return;
@@ -12618,7 +12644,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         if ((get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange) != 0) ||
             (c->coll_bkrange.to_nbkey != BKEY_NULL)) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
 
@@ -12628,7 +12654,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             order = BTREE_ORDER_DESC;
         } else {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
 
@@ -12642,7 +12668,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         if ((get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange) != 0) ||
             (c->coll_bkrange.to_nbkey != BKEY_NULL)) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
 
@@ -12652,18 +12678,18 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             order = BTREE_ORDER_DESC;
         } else {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
 
         if (ntokens == 7) {
             if (! safe_strtoul(tokens[BOP_KEY_TOKEN+3].value, &count)) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
+                c->terse = "CLIENT_ERROR bad command line format";
                 return;
             }
             if (count > 100) { /* max limit on count: 100 */
-                out_string(c, "CLIENT_ERROR too large count value");
+                c->terse = "CLIENT_ERROR too large count value";
                 return;
             }
         }
@@ -12681,13 +12707,13 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             order = BTREE_ORDER_DESC;
         } else {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
 
         if (get_position_range_from_str(tokens[BOP_KEY_TOKEN+2].value, &from_posi, &to_posi)) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
 
@@ -12696,7 +12722,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
     else
     {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
     }
 }
 
@@ -12786,7 +12812,7 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
     size_t nkey = tokens[KEY_TOKEN].length;
 
     if (nkey > KEY_MAX_LENGTH) {
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
         return;
     }
 
@@ -12827,7 +12853,8 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
     switch (ret) {
     case ENGINE_SUCCESS:
         {
-        char buffer[1024];
+        char *buffer = (char *)malloc(1024);
+        c->write_and_free = buffer;
         char *str = &buffer[0];
         char *ptr = str; *ptr = '\0';
 
@@ -12855,16 +12882,16 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
             }
         }
         sprintf(ptr, "END");
-        out_string(c, str);
+        c->terse = str;
         }
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, getattr, key, nkey);
-        out_string(c, "NOT_FOUND");
+        c->terse = "NOT_FOUND";
         break;
     default:
         STATS_CMD_NOKEY(c, getattr);
-        if (ret == ENGINE_EBADATTR) out_string(c, "ATTR_ERROR not found");
+        if (ret == ENGINE_EBADATTR) c->terse = "ATTR_ERROR not found";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
@@ -12877,7 +12904,7 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
     size_t nkey = tokens[KEY_TOKEN].length;
 
     if (nkey > KEY_MAX_LENGTH) {
-        out_string(c, "CLIENT_ERROR bad command line format");
+        c->terse = "CLIENT_ERROR bad command line format";
         return;
     }
 
@@ -12891,7 +12918,7 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
     for (i = KEY_TOKEN+1; i < ntokens-1; i++) {
         if ((equal = strchr(tokens[i].value, '=')) == NULL) {
             print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
+            c->terse = "CLIENT_ERROR bad command line format";
             return;
         }
         *equal = '\0';
@@ -12975,21 +13002,21 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
     switch (ret) {
     case ENGINE_SUCCESS:
         STATS_HITS(c, setattr, key, nkey);
-        out_string(c, "OK");
+        c->terse = "OK";
         break;
     case ENGINE_KEY_ENOENT:
         STATS_MISSES(c, setattr, key, nkey);
-        out_string(c, "NOT_FOUND");
+        c->terse = "NOT_FOUND";
         break;
     default:
         STATS_CMD_NOKEY(c, setattr);
-        if (ret == ENGINE_EBADATTR)       out_string(c, "ATTR_ERROR not found");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "ATTR_ERROR bad value");
+        if (ret == ENGINE_EBADATTR)       c->terse = "ATTR_ERROR not found";
+        else if (ret == ENGINE_EBADVALUE) c->terse = "ATTR_ERROR bad value";
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
 }
 
-static void process_command(conn *c, char *command, int cmdlen)
+static void process_command_ascii(conn *c, char *command, int cmdlen)
 {
     /* One more token is reserved in tokens strucure
      * for keeping the length of untokenized command.
@@ -13000,6 +13027,7 @@ static void process_command(conn *c, char *command, int cmdlen)
 
     assert(c != NULL);
     MEMCACHED_PROCESS_COMMAND_START(c->sfd, c->rcurr, c->rbytes);
+    init_cmd_setting(c);
 
     if (settings.verbose > 1) {
         mc_logger->log(EXTENSION_LOG_DEBUG, c,
@@ -13011,13 +13039,6 @@ static void process_command(conn *c, char *command, int cmdlen)
      * directly into it, then continue in nread_complete().
      */
 
-    c->msgcurr = 0;
-    c->msgused = 0;
-    c->iovused = 0;
-    if (add_msghdr(c) != 0) {
-        out_string(c, "SERVER_ERROR out of memory preparing response");
-        return;
-    }
 
 #ifdef COMMAND_LOGGING
     if (cmdlog_in_use) {
@@ -13122,7 +13143,7 @@ static void process_command(conn *c, char *command, int cmdlen)
 #endif
     else if ((ntokens == 2) && (strcmp(tokens[COMMAND_TOKEN].value, "version") == 0))
     {
-        out_string(c, "VERSION " VERSION);
+        c->terse = "VERSION " VERSION;
     }
     else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "dump") == 0))
     {
@@ -13133,7 +13154,7 @@ static void process_command(conn *c, char *command, int cmdlen)
         LOCK_STATS();
         mc_stats.quit_conns++;
         UNLOCK_STATS();
-        conn_set_state(c, conn_closing);
+        c->next_state = conn_closing;
     }
     else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "help") == 0))
     {
@@ -13162,7 +13183,7 @@ static void process_command(conn *c, char *command, int cmdlen)
         if (settings.extensions.ascii != NULL) {
             process_extension_command(c, tokens, ntokens);
         } else {
-            out_string(c, "ERROR unknown command");
+            c->terse = "ERROR unknown command";
         }
     }
 }
@@ -13208,59 +13229,14 @@ static int try_read_command(conn *c)
             }
         }
 #endif
-        protocol_binary_request_header* req;
-        req = (protocol_binary_request_header*)c->rcurr;
-
-        if (settings.verbose > 1) {
-            /* Dump the packet before we convert it to host order */
-            char buffer[1024];
-            ssize_t nw;
-            nw = bytes_to_output_string(buffer, sizeof(buffer), c->sfd,
-                                        true, "Read binary protocol data:",
-                                        (const char*)req->bytes,
-                                        sizeof(req->bytes));
-            if (nw != -1) {
-                mc_logger->log(EXTENSION_LOG_DEBUG, c, "%s", buffer);
-            }
-        }
-
-        c->binary_header = *req;
-        c->binary_header.request.keylen = ntohs(req->request.keylen);
-        c->binary_header.request.bodylen = ntohl(req->request.bodylen);
-        c->binary_header.request.vbucket = ntohs(req->request.vbucket);
-        c->binary_header.request.cas = ntohll(req->request.cas);
-
-        if (c->binary_header.request.magic != PROTOCOL_BINARY_REQ) {
-            if (settings.verbose) {
-                if (c->binary_header.request.magic != PROTOCOL_BINARY_RES) {
-                    mc_logger->log(EXTENSION_LOG_INFO, c,
-                            "%d: Invalid magic:  %x\n", c->sfd,
-                            c->binary_header.request.magic);
-                } else {
-                    mc_logger->log(EXTENSION_LOG_INFO, c,
-                            "%d: ERROR: Unsupported response packet received: %u\n",
-                            c->sfd, (unsigned int)c->binary_header.request.opcode);
-                }
-            }
-            conn_set_state(c, conn_closing);
-            return -1;
-        }
-
         c->msgcurr = 0;
         c->msgused = 0;
         c->iovused = 0;
         if (add_msghdr(c) != 0) {
             out_string(c, "SERVER_ERROR out of memory");
-            return 0;
+            c->write_and_go = conn_waiting;
         }
-
-        c->cmd = c->binary_header.request.opcode;
-        c->keylen = c->binary_header.request.keylen;
-        c->opaque = c->binary_header.request.opaque;
-        /* clear the returned cas value */
-        c->cas = 0;
-
-        dispatch_bin_command(c);
+        else process_command_binary(c);
 
         c->rbytes -= sizeof(c->binary_header);
         c->rcurr += sizeof(c->binary_header);
@@ -13315,7 +13291,14 @@ static int try_read_command(conn *c)
 
         assert(cont <= (c->rcurr + c->rbytes));
 
-        process_command(c, c->rcurr, el - c->rcurr);
+        c->msgcurr = 0;
+        c->msgused = 0;
+        c->iovused = 0;
+        if (add_msghdr(c) != 0) {
+            out_string(c, "SERVER_ERROR out of memory preparing response");
+            c->write_and_go = conn_waiting;
+        }
+        else process_command_ascii(c, c->rcurr, el - c->rcurr);
 
         c->rbytes -= (cont - c->rcurr);
         c->rcurr = cont;
@@ -13323,6 +13306,7 @@ static int try_read_command(conn *c)
         assert(c->rcurr <= (c->rbuf + c->rsize));
     }
 
+    clear_result(c);
     return 1;
 }
 
@@ -13373,7 +13357,7 @@ static enum try_read_result try_read_udp(conn *c)
  *
  * @return enum try_read_result
  */
-static enum try_read_result try_read_network(conn *c)
+static enum try_read_result try_read_tcp(conn *c)
 {
     assert(c != NULL);
     enum try_read_result gotdata = READ_NO_DATA_RECEIVED;
@@ -13622,7 +13606,7 @@ bool conn_waiting(conn *c)
 
 bool conn_read(conn *c)
 {
-    int res = IS_UDP(c->transport) ? try_read_udp(c) : try_read_network(c);
+    int res = IS_UDP(c->transport) ? try_read_udp(c) : try_read_tcp(c);
     switch (res) {
     case READ_NO_DATA_RECEIVED:
         conn_set_state(c, conn_waiting);
@@ -13637,6 +13621,7 @@ bool conn_read(conn *c)
         /* State already set by try_read_network */
         break;
     }
+
 
     return true;
 }
@@ -13975,7 +13960,6 @@ bool conn_mwrite(conn *c)
     case TRANSMIT_SOFT_ERROR:
         return false;
     }
-
     return true;
 }
 
