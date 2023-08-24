@@ -900,6 +900,11 @@ static void conn_cleanup(conn *c)
         c->write_and_free = 0;
     }
 
+    if (c->hdrbuf) {
+        free(c->hdrbuf);
+        c->hdrbuf = NULL;
+    }
+
     if (c->sasl_conn) {
         sasl_dispose(&c->sasl_conn);
         c->sasl_conn = NULL;
@@ -1429,17 +1434,14 @@ static int build_udp_headers(conn *c)
     assert(c != NULL);
     unsigned char *hdr;
 
-    if (c->msgused > c->hdrsize) {
-        void *new_hdrbuf;
-        if (c->hdrbuf)
-            new_hdrbuf = realloc(c->hdrbuf, c->msgused * 2 * UDP_HEADER_SIZE);
-        else
-            new_hdrbuf = malloc(c->msgused * 2 * UDP_HEADER_SIZE);
-        if (! new_hdrbuf)
-            return -1;
-        c->hdrbuf = (unsigned char *)new_hdrbuf;
-        c->hdrsize = c->msgused * 2;
-    }
+    if(c->hdrbuf)
+        hdr = realloc(c->hdrbuf, c->msgused * UDP_HEADER_SIZE);
+    else
+        hdr = malloc(c->msgused * UDP_HEADER_SIZE);
+    if (!hdr)
+        return -1;
+    c->hdrbuf = hdr;
+    c->hdrsize = c->msgused;
 
     hdr = c->hdrbuf;
     for (int i = 0; i < c->msgused; i++) {
@@ -2084,8 +2086,7 @@ out_mop_get_response(conn *c, bool delete, struct elems_result *eresultp)
         } else {
             sprintf(respptr, "END\r\n");
         }
-        if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+        if (add_iov(c, respptr, strlen(respptr)) != 0) {
             ret = ENGINE_ENOMEM; break;
         }
     } while(0);
@@ -2249,8 +2250,7 @@ out_bop_trim_response(conn *c, void *elem, uint32_t flags)
 
         if ((add_iov(c, respptr, resplen) != 0) ||
             (add_iov_einfo_value_all(c, &c->einfo) != 0) ||
-            (add_iov(c, "TRIMMED\r\n", 9) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0))
+            (add_iov(c, "TRIMMED\r\n", 9) != 0))
         {
             ret = ENGINE_ENOMEM; break;
         }
@@ -2535,8 +2535,7 @@ static void process_bop_mget_complete(conn *c)
         }
         if (k == c->coll_numkeys) {
             sprintf(resultptr, "END\r\n");
-            if ((add_iov(c, resultptr, strlen(resultptr)) != 0) ||
-                (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+            if (add_iov(c, resultptr, strlen(resultptr)) != 0) {
                 ret = ENGINE_ENOMEM;
             }
         }
@@ -2660,8 +2659,7 @@ out_bop_smget_old_response(conn *c, token_t *key_tokens,
         } else {
             sprintf(respptr, (duplicated ? "DUPLICATED\r\n" : "END\r\n"));
         }
-        if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+        if (add_iov(c, respptr, strlen(respptr)) != 0) {
             ret = ENGINE_ENOMEM; break;
         }
     } while(0);
@@ -2865,8 +2863,7 @@ out_bop_smget_response(conn *c, token_t *key_tokens, smget_result_t *smresp)
         }
 
         sprintf(respptr, (smresp->duplicated ? "DUPLICATED\r\n" : "END\r\n"));
-        if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+        if (add_iov(c, respptr, strlen(respptr)) != 0) {
             ret = ENGINE_ENOMEM; break;
         }
     } while(0);
@@ -3145,8 +3142,7 @@ static void process_mget_complete(conn *c, bool return_cas)
          * reliable to add END\r\n to the buffer, because it might not end
          * in \r\n. So we send SERVER_ERROR instead.
          */
-        if ((add_iov(c, "END\r\n", 5) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+        if (add_iov(c, "END\r\n", 5) != 0) {
             /* Releasing items on ilist and freeing suffixes will be
              * performed later by calling out_string() function.
              * See conn_write() and conn_mwrite() state.
@@ -8300,8 +8296,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
      * reliable to add END\r\n to the buffer, because it might not end
      * in \r\n. So we send SERVER_ERROR instead.
      */
-    if ((add_iov(c, "END\r\n", 5) != 0) ||
-        (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+    if (add_iov(c, "END\r\n", 5) != 0) {
         out_string(c, "SERVER_ERROR out of memory writing get response");
     } else {
         conn_set_state(c, conn_mwrite);
@@ -9652,8 +9647,7 @@ static void process_prefixscan_command(conn *c, token_t *tokens, const size_t nt
                 attrptr += PREFIXSCAN_RESPONSE_ATTR_MAX_LENGTH;
             }
             if (ret != ENGINE_SUCCESS) break;
-            if (add_iov(c, "END\r\n", 5) != 0 ||
-                (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+            if (add_iov(c, "END\r\n", 5) != 0) {
                 ret = ENGINE_ENOMEM;
             }
         } while (0);
@@ -9796,8 +9790,7 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
                 attrptr += KEYSCAN_RESPONSE_ATTR_MAX_LENGTH;
             }
             if (ret != ENGINE_SUCCESS) break;
-            if (add_iov(c, "END\r\n", 5) != 0 ||
-                (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+            if (add_iov(c, "END\r\n", 5) != 0) {
                 ret = ENGINE_ENOMEM;
             }
         } while (0);
@@ -10097,8 +10090,7 @@ out_lop_get_response(conn *c, bool delete, struct elems_result *eresultp)
         } else {
             sprintf(respptr, "END\r\n");
         }
-        if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+        if (add_iov(c, respptr, strlen(respptr)) != 0) {
             ret = ENGINE_ENOMEM; break;
         }
     } while(0);
@@ -10489,8 +10481,7 @@ out_sop_get_response(conn *c, bool delete, struct elems_result *eresultp)
         } else {
             sprintf(respptr, "END\r\n");
         }
-        if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+        if (add_iov(c, respptr, strlen(respptr)) != 0) {
             ret = ENGINE_ENOMEM; break;
         }
     } while(0);
@@ -10859,8 +10850,7 @@ out_bop_get_response(conn *c, bool delete, struct elems_result *eresultp)
         } else {
             sprintf(respptr, "%s\r\n", (eresultp->trimmed ? "TRIMMED" : "END"));
         }
-        if ((add_iov(c, respptr, strlen(respptr)) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+        if (add_iov(c, respptr, strlen(respptr)) != 0) {
             ret = ENGINE_ENOMEM; break;
         }
     } while(0);
@@ -11063,8 +11053,7 @@ out_bop_pwg_response(conn *c, int position, struct elems_result *eresultp)
         if (ret == ENGINE_ENOMEM) break;
 
         /* make response tail */
-        if ((add_iov(c, "END\r\n", 5) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+        if (add_iov(c, "END\r\n", 5) != 0) {
             ret = ENGINE_ENOMEM; break;
         }
     } while(0);
@@ -11172,8 +11161,7 @@ out_bop_gbp_response(conn *c, struct elems_result *eresultp)
         if (ret == ENGINE_ENOMEM) break;
 
         /* make response tail */
-        if ((add_iov(c, "END\r\n", 5) != 0) ||
-            (IS_UDP(c->transport) && build_udp_headers(c) != 0)) {
+        if (add_iov(c, "END\r\n", 5) != 0) {
             ret = ENGINE_ENOMEM; break;
         }
     } while(0);
