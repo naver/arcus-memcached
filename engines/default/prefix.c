@@ -688,9 +688,10 @@ char *prefix_dump_stats(token_t *tokens, const size_t ntokens, int *length)
             } else {
                 pt = _prefix_find(prefix, nprefix, svcore->hash(prefix, nprefix, 0));
             }
-            if (pt)
+            if (pt) {
                 pos += _prefix_stats_write_buffer(buffer+pos, buflen-pos, format, pt, false);
                 assert(pos < buflen);
+            }
         }
     }
     pos += snprintf(buffer+pos, buflen-pos, "END\r\n");
