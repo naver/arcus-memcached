@@ -1573,7 +1573,7 @@ static void do_btree_node_merge(btree_meta_info *info, btree_elem_posi *path,
                 }
             }
         } else { /* cur_node_count > 1 */
-            btree_elem_posi  upth[BTREE_MAX_DEPTH] = { 0 }; /* upper node path */
+            btree_elem_posi  upth[BTREE_MAX_DEPTH] = {{ 0 }}; /* upper node path */
             btree_elem_posi  s_posi;
             int tot_unlink_cnt = 0;
             int cur_unlink_cnt = 0;
