@@ -166,7 +166,9 @@ static void redistribute(void)
 hash_item *assoc_find(const char *key, const uint32_t nkey, uint32_t hash)
 {
     hash_item *it;
+#ifdef ENABLE_DTRACE
     int depth = 0;
+#endif
     uint32_t bucket = GET_HASH_BUCKET(hash, assocp->hashmask);
     uint32_t tabidx = CUR_HASH_TABIDX(hash, bucket);
 
@@ -177,7 +179,9 @@ hash_item *assoc_find(const char *key, const uint32_t nkey, uint32_t hash)
             break; /* found */
         }
         it = it->h_next;
+#ifdef ENABLE_DTRACE
         ++depth;
+#endif
     }
     MEMCACHED_ASSOC_FIND(key, nkey, depth);
     return it;
