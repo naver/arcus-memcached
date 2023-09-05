@@ -854,7 +854,7 @@ void *do_item_mem_alloc(const size_t ntotal, const unsigned int clsid,
         }
         if (it != NULL) {
             if (config->verbose > 1) {
-                logger->log(EXTENSION_LOG_INFO, NULL,
+                logger->log(EXTENSION_LOG_DEBUG, NULL,
                         "Succeed to allocate an item in %d retries of eviction.\n",
                         (201-tries));
             }
@@ -1186,7 +1186,7 @@ hash_item *do_item_get(const char *key, const uint32_t nkey, bool do_update)
             keybuf[MAX_HKEY_LEN-1] = '\0';
         }
 
-        logger->log(EXTENSION_LOG_INFO, NULL, "> %s %s\n",
+        logger->log(EXTENSION_LOG_DETAIL, NULL, "> %s %s\n",
                     it ? "FOUND KEY" : "NOT FOUND",
                     keybuf);
     }
@@ -1295,7 +1295,7 @@ static void *collection_delete_thread(void *arg)
             if (bg_evict_start == false) {
                 /*****
                 if (config->verbose > 1) {
-                    logger->log(EXTENSION_LOG_INFO, NULL, "background evict: start\n");
+                    logger->log(EXTENSION_LOG_DEBUG, NULL, "background evict: start\n");
                 }
                 *****/
                 bg_evict_start = true;
@@ -1304,7 +1304,7 @@ static void *collection_delete_thread(void *arg)
             bg_evict_count += evict_count;
             if (bg_evict_count >= 10000000) {
                 if (config->verbose > 1) {
-                    logger->log(EXTENSION_LOG_INFO, NULL, "background evict: count=%u\n",
+                    logger->log(EXTENSION_LOG_DEBUG, NULL, "background evict: count=%u\n",
                                                            bg_evict_count);
                 }
                 bg_evict_count = 0;
@@ -1315,7 +1315,7 @@ static void *collection_delete_thread(void *arg)
             if (bg_evict_start == true) {
                 /*****
                 if (config->verbose > 1) {
-                    logger->log(EXTENSION_LOG_INFO, NULL, "background evict: stop count=%u\n",
+                    logger->log(EXTENSION_LOG_DEBUG, NULL, "background evict: stop count=%u\n",
                                                            bg_evict_count);
                 }
                 *****/
