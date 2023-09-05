@@ -396,13 +396,13 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
     if (state == ZOO_CONNECTED_STATE) {
         const clientid_t *id = zoo_client_id(wzh);
         zk_info_t *zinfo = cxt;
-        if (arcus_conf.verbose > 2) {
+        if (arcus_conf.verbose > 1) {
             arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
                                    "ZK ensemble connected. session id: 0x%llx\n",
                                    (long long) zinfo->myid.client_id);
         }
         if (zinfo->myid.client_id == 0 || zinfo->myid.client_id != id->client_id) {
-            if (arcus_conf.verbose > 2)
+            if (arcus_conf.verbose > 1)
                  arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
                          "A old session id: 0x%llx\n", (long long) zinfo->myid.client_id);
              zinfo->myid = *id;
@@ -575,7 +575,7 @@ update_cluster_config(struct String_vector *strv, int *num_added, int *num_remov
 static void
 arcus_zk_sync_cb(int rc, const char *name, const void *data)
 {
-    if (arcus_conf.verbose > 2) {
+    if (arcus_conf.verbose > 1) {
         arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "arcus_zk_sync cb\n");
     }
     // signal cond var
@@ -611,7 +611,7 @@ arcus_zk_log(zhandle_t *zh, const char *action)
         // if this "date" directory does not exist, create one
         rc = zoo_create(zh, zpath, NULL, 0, &ZOO_OPEN_ACL_UNSAFE,
                         0, rcbuf, sizeof(rcbuf));
-        if (rc == ZOK && arcus_conf.verbose > 2) {
+        if (rc == ZOK && arcus_conf.verbose > 1) {
             arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
                     "znode %s does not exist. created\n", rcbuf);
         }
@@ -623,7 +623,7 @@ arcus_zk_log(zhandle_t *zh, const char *action)
         snprintf(sbuf,  sizeof(sbuf), "%s", action);
         rc = zoo_create(zh, zpath, sbuf, strlen(sbuf), &ZOO_OPEN_ACL_UNSAFE,
                         ZOO_SEQUENCE, rcbuf, sizeof(rcbuf));
-        if (arcus_conf.verbose > 2) {
+        if (arcus_conf.verbose > 1) {
             arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
                     "znode \"%s\" created\n", rcbuf);
         }
@@ -676,7 +676,7 @@ static int arcus_build_znode_name(char *ensemble_list)
         if (inet_aton(zip, &inaddr)) {
             // just use the IP
             saddr.sin_addr = inaddr;
-            if (arcus_conf.verbose > 2) {
+            if (arcus_conf.verbose > 1) {
                 arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
                         "Trying ensemble IP: %s\n", zip);
             }
@@ -693,7 +693,7 @@ static int arcus_build_znode_name(char *ensemble_list)
             memcpy((char *)&saddr.sin_addr,
                    zkhost->h_addr_list[0], zkhost->h_length);
             inet_ntop(AF_INET, &saddr.sin_addr, rcbuf, sizeof(rcbuf));
-            if (arcus_conf.verbose > 2) {
+            if (arcus_conf.verbose > 1) {
                 arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
                         "Trying converted IP of hostname(%s): %s\n", zip, rcbuf);
             }
@@ -706,7 +706,7 @@ static int arcus_build_znode_name(char *ensemble_list)
         rc = connect(sock, (struct sockaddr*) &saddr, sizeof(struct sockaddr_in));
         fcntl(sock, F_SETFL, flags);
         if (rc == 0) { // connect immediately
-            if (arcus_conf.verbose > 2) {
+            if (arcus_conf.verbose > 1) {
                 arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
                         "connected to ensemble \"%s\" syslogd UDP port\n", zip);
             }
@@ -757,7 +757,7 @@ static int arcus_build_znode_name(char *ensemble_list)
         proxy_port = strtok(NULL, sep2);
 
         if (inet_aton(proxy_ip, &inaddr)) {
-            if (arcus_conf.verbose > 2) {
+            if (arcus_conf.verbose > 1) {
                 arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
                         "Proxy IP: %s\n", proxy_ip);
             }
@@ -1849,7 +1849,7 @@ int arcus_key_is_mine(const char *key, size_t nkey, bool *mine)
     ret = cluster_config_key_is_mine(arcus_conf.ch, key, nkey, mine,
                                      &key_id, &self_id);
     if (ret == 0) {
-        if (arcus_conf.verbose > 2) {
+        if (arcus_conf.verbose > 1) {
             arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
                     "key=%s, self_id=%d, key_id=%d, mine=%s\n",
                     key, self_id, key_id, ((*mine) ? "true" : "false"));

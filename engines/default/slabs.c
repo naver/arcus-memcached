@@ -749,7 +749,7 @@ static void do_smmgr_01pct_check_and_move_right(void)
 
         if (config->verbose > 1) {
             if (sm_anchor.free_limit_space > 0 && space_adjusted >= (sm_anchor.free_limit_space/10)) {
-                logger->log(EXTENSION_LOG_INFO, NULL,
+                logger->log(EXTENSION_LOG_DEBUG, NULL,
                             "Large free_avail_space reduction(%llu): small=%llu, avail=%llu, chunk=%llu "
                             "That was caused by the change of the last 1%% clsid of used space(%d => %d).\n",
                             (unsigned long long)space_adjusted,

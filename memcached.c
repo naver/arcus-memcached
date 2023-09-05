@@ -13523,10 +13523,8 @@ static enum transmit_result transmit(conn *c)
         }
         if (res == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
             if (!update_event(c, EV_WRITE | EV_PERSIST)) {
-                if (settings.verbose > 0) {
-                    mc_logger->log(EXTENSION_LOG_WARNING, c,
-                                   "Couldn't update event in transmit.\n");
-                }
+                mc_logger->log(EXTENSION_LOG_WARNING, c,
+                               "Couldn't update event in transmit.\n");
                 conn_set_state(c, conn_closing);
                 return TRANSMIT_HARD_ERROR;
             }
@@ -13622,10 +13620,8 @@ bool conn_listening(conn *c)
 bool conn_waiting(conn *c)
 {
     if (!update_event(c, EV_READ | EV_PERSIST)) {
-        if (settings.verbose > 0) {
-            mc_logger->log(EXTENSION_LOG_WARNING, c,
-                           "Couldn't update event in conn_waiting.\n");
-        }
+        mc_logger->log(EXTENSION_LOG_WARNING, c,
+                       "Couldn't update event in conn_waiting.\n");
         conn_set_state(c, conn_closing);
         return true;
     }
@@ -13693,10 +13689,8 @@ bool conn_new_cmd(conn *c)
                because that should be possible ;-)
             */
             if (!update_event(c, EV_WRITE | EV_PERSIST)) {
-                if (settings.verbose > 0) {
-                    mc_logger->log(EXTENSION_LOG_WARNING, c,
-                                   "Couldn't update event in conn_new_cmd.\n");
-                }
+                mc_logger->log(EXTENSION_LOG_WARNING, c,
+                               "Couldn't update event in conn_new_cmd.\n");
                 conn_set_state(c, conn_closing);
                 return true;
             }
@@ -13743,10 +13737,8 @@ bool conn_swallow(conn *c)
     }
     if (res == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
         if (!update_event(c, EV_READ | EV_PERSIST)) {
-            if (settings.verbose > 0) {
-                mc_logger->log(EXTENSION_LOG_WARNING, c,
-                               "Couldn't update event in conn_swallow.\n");
-            }
+            mc_logger->log(EXTENSION_LOG_WARNING, c,
+                           "Couldn't update event in conn_swallow.\n");
             conn_set_state(c, conn_closing);
             return true;
         }
@@ -13841,10 +13833,8 @@ bool conn_nread(conn *c)
     }
     if (res == -1 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
         if (!update_event(c, EV_READ | EV_PERSIST)) {
-            if (settings.verbose > 0) {
-                mc_logger->log(EXTENSION_LOG_WARNING, c,
-                               "Couldn't update event in conn_nread.\n");
-            }
+            mc_logger->log(EXTENSION_LOG_WARNING, c,
+                           "Couldn't update event in conn_nread.\n");
             conn_set_state(c, conn_closing);
             return true;
         }
@@ -13974,10 +13964,8 @@ bool conn_mwrite(conn *c)
             }
             conn_set_state(c, c->write_and_go);
         } else {
-            if (settings.verbose > 0) {
-                mc_logger->log(EXTENSION_LOG_WARNING, c,
-                        "Unexpected state %s\n", state_text(c->state));
-            }
+            mc_logger->log(EXTENSION_LOG_WARNING, c,
+                    "Unexpected state %s\n", state_text(c->state));
             conn_set_state(c, conn_closing);
         }
         break;
