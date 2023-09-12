@@ -160,6 +160,7 @@ static void settings_init(void);
 static void event_handler(const int fd, const short which, void *arg);
 static bool update_event(conn *c, const int new_flags);
 static void complete_nread(conn *c);
+static void process_command_binary(conn *c, char *command);
 static void process_command(conn *c, char *command, int cmdlen);
 static void write_and_free(conn *c, char *buf, int bytes);
 static int ensure_iov_space(conn *c);
@@ -898,6 +899,11 @@ static void conn_cleanup(conn *c)
     if (c->write_and_free) {
         free(c->write_and_free);
         c->write_and_free = 0;
+    }
+
+    if (c->hdrbuf) {
+        free(c->hdrbuf);
+        c->hdrbuf = NULL;
     }
 
     if (c->sasl_conn) {
@@ -7476,6 +7482,63 @@ static void complete_nread_binary(conn *c)
     }
 }
 
+static void process_command_binary(conn *c, char *command)
+{
+    protocol_binary_request_header* req;
+    req = (protocol_binary_request_header*)command;
+
+    if (settings.verbose > 1) {
+        /* Dump the packet before we convert it to host order */
+        char buffer[1024];
+        size_t nw;
+        nw = bytes_to_output_string(buffer, sizeof(buffer), c->sfd,
+                                    true, "Read binary protocol data:",
+                                    (const char*)req->bytes,
+                                    sizeof(req->bytes));
+        if (nw != -1) {
+            mc_logger->log(EXTENSION_LOG_DEBUG, c, "%s", buffer);
+        }
+    }
+
+    c->binary_header = *req;
+    c->binary_header.request.keylen = ntohs(req->request.keylen);
+    c->binary_header.request.bodylen = ntohl(req->request.bodylen);
+    c->binary_header.request.vbucket = ntohs(req->request.vbucket);
+    c->binary_header.request.cas = ntohll(req->request.cas);
+
+    if (c->binary_header.request.magic != PROTOCOL_BINARY_REQ) {
+        if (settings.verbose) {
+            if (c->binary_header.request.magic != PROTOCOL_BINARY_RES) {
+                mc_logger->log(EXTENSION_LOG_INFO, c,
+                        "%d: Invalid magic:  %x\n", c->sfd,
+                        c->binary_header.request.magic);
+            } else {
+                mc_logger->log(EXTENSION_LOG_INFO, c,
+                        "%d: ERROR: Unsupported response packet received: %u\n",
+                        c->sfd, (unsigned int)c->binary_header.request.opcode);
+            }
+        }
+        conn_set_state(c, conn_closing);
+        return;
+    }
+
+    c->msgcurr = 0;
+    c->msgused = 0;
+    c->iovused = 0;
+    if (add_msghdr(c) != 0) {
+        out_string(c, "SERVER_ERROR out of memory preparing response");
+        return;
+    }
+
+    c->cmd = c->binary_header.request.opcode;
+    c->keylen = c->binary_header.request.keylen;
+    c->opaque = c->binary_header.request.opaque;
+    /* clear the returned cas value */
+    c->cas = 0;
+
+    dispatch_bin_command(c);
+}
+
 static void reset_cmd_handler(conn *c)
 {
     c->ascii_cmd = NULL;
@@ -13208,59 +13271,7 @@ static int try_read_command(conn *c)
             }
         }
 #endif
-        protocol_binary_request_header* req;
-        req = (protocol_binary_request_header*)c->rcurr;
-
-        if (settings.verbose > 1) {
-            /* Dump the packet before we convert it to host order */
-            char buffer[1024];
-            ssize_t nw;
-            nw = bytes_to_output_string(buffer, sizeof(buffer), c->sfd,
-                                        true, "Read binary protocol data:",
-                                        (const char*)req->bytes,
-                                        sizeof(req->bytes));
-            if (nw != -1) {
-                mc_logger->log(EXTENSION_LOG_DEBUG, c, "%s", buffer);
-            }
-        }
-
-        c->binary_header = *req;
-        c->binary_header.request.keylen = ntohs(req->request.keylen);
-        c->binary_header.request.bodylen = ntohl(req->request.bodylen);
-        c->binary_header.request.vbucket = ntohs(req->request.vbucket);
-        c->binary_header.request.cas = ntohll(req->request.cas);
-
-        if (c->binary_header.request.magic != PROTOCOL_BINARY_REQ) {
-            if (settings.verbose) {
-                if (c->binary_header.request.magic != PROTOCOL_BINARY_RES) {
-                    mc_logger->log(EXTENSION_LOG_INFO, c,
-                            "%d: Invalid magic:  %x\n", c->sfd,
-                            c->binary_header.request.magic);
-                } else {
-                    mc_logger->log(EXTENSION_LOG_INFO, c,
-                            "%d: ERROR: Unsupported response packet received: %u\n",
-                            c->sfd, (unsigned int)c->binary_header.request.opcode);
-                }
-            }
-            conn_set_state(c, conn_closing);
-            return -1;
-        }
-
-        c->msgcurr = 0;
-        c->msgused = 0;
-        c->iovused = 0;
-        if (add_msghdr(c) != 0) {
-            out_string(c, "SERVER_ERROR out of memory");
-            return 0;
-        }
-
-        c->cmd = c->binary_header.request.opcode;
-        c->keylen = c->binary_header.request.keylen;
-        c->opaque = c->binary_header.request.opaque;
-        /* clear the returned cas value */
-        c->cas = 0;
-
-        dispatch_bin_command(c);
+        process_command_binary(c, c->rcurr);
 
         c->rbytes -= sizeof(c->binary_header);
         c->rcurr += sizeof(c->binary_header);
