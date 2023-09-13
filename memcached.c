@@ -1621,6 +1621,108 @@ static void out_string(conn *c, const char *str)
     c->write_and_go = conn_new_cmd;
 }
 
+static void out_errmsg(conn *c, const char *str)
+{
+    assert(c != NULL);
+    struct msghdr *msg = c->msglist;
+    int leftover = 0;
+    size_t len = strlen(str);
+    assert((len + 10) < c->wsize);
+
+    memset(msg, 0, sizeof(struct msghdr));
+
+    c->wcurr = c->wbuf;
+    c->iovused = 0;
+    c->wbytes = 0;
+    msg->msg_iov = c->iov;
+
+    if (IS_UDP(c->transport)) {
+        /* Build a UDP header for an error message */
+        memset(c->wcurr, 0, UDP_HEADER_SIZE);
+        msg->msg_iov[msg->msg_iovlen].iov_base = (void *)c->wcurr;
+        msg->msg_iov[msg->msg_iovlen].iov_len = UDP_HEADER_SIZE;
+        c->wcurr[0] = c->request_id / 256;
+        c->wcurr[1] = c->request_id % 256;
+        c->wcurr += UDP_HEADER_SIZE;
+        c->wbytes += UDP_HEADER_SIZE;
+        c->iovused++;
+        msg->msg_iovlen++;
+    }
+
+    if (c->pipe_state != PIPE_STATE_OFF) {
+         /*
+         * When currently using pipe,
+         * Add an error message
+         * behind completed messages in the buffer.
+         */
+        char headbuf[PIPE_RES_HEAD_SIZE];
+        int headlen;
+        int headidx;
+
+        /* Construct a head message about the number of completed messages */
+        headlen = sprintf(headbuf, "RESPONSE %d\r\n", c->pipe_count);
+        assert(headlen > 0 && headlen <= PIPE_RES_HEAD_SIZE);
+        headidx = PIPE_RES_HEAD_SIZE - headlen;
+        memcpy(&c->pipe_response[headidx], headbuf, headlen);
+
+        if ((c->pipe_reslen + (len+24)) < (PIPE_RES_MAX_SIZE-PIPE_RES_TAIL_SIZE)) {
+            /* The buffer has enough space to put an error message */
+            sprintf(c->pipe_resptr, "%s\r\n"
+                                    "PIPE_ERROR bad error\r\n", str);
+            c->pipe_reslen += len + 24;
+        }
+        else {
+            /* An error message is too long to put in the buffer. */
+            sprintf(c->pipe_resptr, "PIPE_ERROR memory overflow\r\n");
+            c->pipe_reslen += 28;
+        }
+
+        c->wcurr = &c->pipe_response[headidx];
+        len = c->pipe_reslen - headidx;
+
+        c->pipe_state = PIPE_STATE_OFF;
+        c->pipe_count = 0;
+        c->noreply = false;
+    }
+    else {
+        memcpy(c->wcurr, str, len);
+        memcpy(c->wcurr + len, "\r\n", 2);
+        len += 2;
+    }
+
+    if (c->request_addr_size > 0) {
+        /* Client udp socket address. */
+        /* This is needed for UDP protocol to send messages. */
+        msg->msg_name = &c->request_addr;
+        msg->msg_namelen = c->request_addr_size;
+    }
+
+    c->wbytes += len;
+    c->msgused = 1;
+    c->msgbytes = c->wbytes;
+
+    do {
+         /*
+         * Limit about UDP packets,
+         * and the first payloads of TCP replies.
+         * Split the data into UDP_MAX_PAYLOAD_SIZE.
+         */
+        if(len > UDP_MAX_PAYLOAD_SIZE) {
+            leftover = len - UDP_MAX_PAYLOAD_SIZE;
+            len = UDP_MAX_PAYLOAD_SIZE;
+        }
+        else leftover = 0;
+        msg->msg_iov[msg->msg_iovlen].iov_base = (void *)c->wcurr;
+        msg->msg_iov[msg->msg_iovlen].iov_len = len;
+        c->wcurr += len;
+        len = leftover;
+        c->iovused++;
+        msg->msg_iovlen++;
+    } while(leftover > 0);
+
+    conn_set_state(c, conn_write);
+}
+
 static inline char *get_item_type_str(uint8_t type)
 {
     if (type == ITEM_TYPE_KV)          return "kv";
@@ -13358,7 +13460,7 @@ static enum try_read_result try_read_udp(conn *c)
 
         /* If this is a multi-packet request, drop it. */
         if (buf[4] != 0 || buf[5] != 1) {
-            out_string(c, "NOT_SUPPORTED");
+            out_errmsg(c, "NOT_SUPPORTED");
             c->write_and_go = conn_waiting;
             return READ_INVALID_DATA;
         }
@@ -13415,7 +13517,7 @@ static enum try_read_result try_read_network(conn *c)
                             "Couldn't realloc input buffer\n");
                 }
                 c->rbytes = 0; /* ignore what we read */
-                out_string(c, "SERVER_ERROR out of memory reading request");
+                out_errmsg(c, "SERVER_ERROR out of memory reading request");
                 c->write_and_go = conn_closing;
                 return READ_MEMORY_ERROR;
             }
