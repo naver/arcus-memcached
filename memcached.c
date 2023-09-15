@@ -3444,11 +3444,8 @@ static void add_bin_header(conn *c, uint16_t err, uint8_t hdr_len, uint16_t key_
     c->msgcurr = 0;
     c->msgused = 0;
     c->iovused = 0;
-    if (add_msghdr(c) != 0) {
-        /* XXX:  out_string is inappropriate here */
-        out_string(c, "SERVER_ERROR out of memory");
-        return;
-    }
+    int ret = add_msghdr(c);
+    assert(ret == 0);
 
     header = (protocol_binary_response_header *)c->wbuf;
 
@@ -3480,88 +3477,89 @@ static void add_bin_header(conn *c, uint16_t err, uint8_t hdr_len, uint16_t key_
 static void write_bin_packet(conn *c, protocol_binary_response_status err, int swallow)
 {
     ssize_t len;
-    char buffer[1024] = { [sizeof(buffer) - 1] = '\0' };
+    char *buffer = c->wbuf + sizeof(protocol_binary_response_header);
+    const int MAX_BUF_SIZE = c->wsize - sizeof(protocol_binary_response_header);
 
     switch (err) {
     case PROTOCOL_BINARY_RESPONSE_SUCCESS:
         len = 0;
         break;
     case PROTOCOL_BINARY_RESPONSE_ENOMEM:
-        len = snprintf(buffer, sizeof(buffer), "Out of memory");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Out of memory");
         break;
     case PROTOCOL_BINARY_RESPONSE_UNKNOWN_COMMAND:
-        len = snprintf(buffer, sizeof(buffer), "Unknown command");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Unknown command");
         break;
     case PROTOCOL_BINARY_RESPONSE_KEY_ENOENT:
-        len = snprintf(buffer, sizeof(buffer), "Not found");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Not found");
         break;
     case PROTOCOL_BINARY_RESPONSE_EINVAL:
-        len = snprintf(buffer, sizeof(buffer), "Invalid arguments");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Invalid arguments");
         break;
     case PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS:
-        len = snprintf(buffer, sizeof(buffer), "Data exists for key");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Data exists for key");
         break;
     case PROTOCOL_BINARY_RESPONSE_E2BIG:
-        len = snprintf(buffer, sizeof(buffer), "Too large");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Too large");
         break;
     case PROTOCOL_BINARY_RESPONSE_DELTA_BADVAL:
-        len = snprintf(buffer, sizeof(buffer),
+        len = snprintf(buffer, MAX_BUF_SIZE,
                        "Non-numeric server-side value for incr or decr");
         break;
     case PROTOCOL_BINARY_RESPONSE_NOT_STORED:
-        len = snprintf(buffer, sizeof(buffer), "Not stored");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Not stored");
         break;
     case PROTOCOL_BINARY_RESPONSE_EBADTYPE:
-        len = snprintf(buffer, sizeof(buffer), "Not supported operation, bad type");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Not supported operation, bad type");
         break;
     case PROTOCOL_BINARY_RESPONSE_EOVERFLOW:
-        len = snprintf(buffer, sizeof(buffer), "Data structure full");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Data structure full");
         break;
     case PROTOCOL_BINARY_RESPONSE_EBADVALUE:
-        len = snprintf(buffer, sizeof(buffer), "Bad value");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Bad value");
         break;
     case PROTOCOL_BINARY_RESPONSE_EINDEXOOR:
-        len = snprintf(buffer, sizeof(buffer), "Index out of range");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Index out of range");
         break;
     case PROTOCOL_BINARY_RESPONSE_EBKEYOOR:
-        len = snprintf(buffer, sizeof(buffer), "Bkey out of range");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Bkey out of range");
         break;
     case PROTOCOL_BINARY_RESPONSE_ELEM_ENOENT:
-        len = snprintf(buffer, sizeof(buffer), "Not found element");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Not found element");
         break;
     case PROTOCOL_BINARY_RESPONSE_ELEM_EEXISTS:
-        len = snprintf(buffer, sizeof(buffer), "Element already exists");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Element already exists");
         break;
     case PROTOCOL_BINARY_RESPONSE_EBADATTR:
-        len = snprintf(buffer, sizeof(buffer), "Attribute not found");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Attribute not found");
         break;
     case PROTOCOL_BINARY_RESPONSE_EBADBKEY:
-        len = snprintf(buffer, sizeof(buffer), "Bkey mismatch");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Bkey mismatch");
         break;
     case PROTOCOL_BINARY_RESPONSE_EBADEFLAG:
-        len = snprintf(buffer, sizeof(buffer), "Eflag mismatch");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Eflag mismatch");
         break;
     case PROTOCOL_BINARY_RESPONSE_UNREADABLE:
-        len = snprintf(buffer, sizeof(buffer), "Unreadable item");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Unreadable item");
         break;
     case PROTOCOL_BINARY_RESPONSE_PREFIX_ENAME:
-        len = snprintf(buffer, sizeof(buffer), "Invalid prefix name");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Invalid prefix name");
         break;
     case PROTOCOL_BINARY_RESPONSE_PREFIX_ENOENT:
-        len = snprintf(buffer, sizeof(buffer), "Prefix not found");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Prefix not found");
         break;
     case PROTOCOL_BINARY_RESPONSE_AUTH_ERROR:
-        len = snprintf(buffer, sizeof(buffer), "Auth failure");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Auth failure");
         break;
     case PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED:
-        len = snprintf(buffer, sizeof(buffer), "Not supported");
+        len = snprintf(buffer, MAX_BUF_SIZE, "Not supported");
         break;
     case PROTOCOL_BINARY_RESPONSE_NOT_MY_VBUCKET:
-        len = snprintf(buffer, sizeof(buffer),
+        len = snprintf(buffer, MAX_BUF_SIZE,
                        "I'm not responsible for this vbucket");
         break;
     default:
-        len = snprintf(buffer, sizeof(buffer), "UNHANDLED ERROR (%d)", err);
+        len = snprintf(buffer, MAX_BUF_SIZE, "UNHANDLED ERROR (%d)", err);
         mc_logger->log(EXTENSION_LOG_WARNING, c,
                        ">%d UNHANDLED ERROR: %d\n", c->sfd, err);
     }
@@ -3569,7 +3567,7 @@ static void write_bin_packet(conn *c, protocol_binary_response_status err, int s
     /* Allow the engine to pass extra error information */
     if (mc_engine.v1->errinfo != NULL) {
         size_t elen = mc_engine.v1->errinfo(mc_engine.v0, c, buffer + len + 2,
-                                            sizeof(buffer) - len - 3);
+                                            MAX_BUF_SIZE - len - 3);
         if (elen > 0) {
             memcpy(buffer + len, ": ", 2);
             len += elen + 2;
@@ -7525,10 +7523,8 @@ static void process_command_binary(conn *c, char *command)
     c->msgcurr = 0;
     c->msgused = 0;
     c->iovused = 0;
-    if (add_msghdr(c) != 0) {
-        out_string(c, "SERVER_ERROR out of memory preparing response");
-        return;
-    }
+    int ret = add_msghdr(c);
+    assert(ret == 0);
 
     c->cmd = c->binary_header.request.opcode;
     c->keylen = c->binary_header.request.keylen;
@@ -13412,7 +13408,11 @@ static enum try_read_result try_read_network(conn *c)
                             "Couldn't realloc input buffer\n");
                 }
                 c->rbytes = 0; /* ignore what we read */
-                out_string(c, "SERVER_ERROR out of memory reading request");
+                if (c->protocol == binary_prot) {
+                    write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+                } else {
+                    out_string(c, "SERVER_ERROR out of memory reading request");
+                }
                 c->write_and_go = conn_closing;
                 return READ_MEMORY_ERROR;
             }
