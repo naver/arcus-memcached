@@ -138,8 +138,7 @@ enum try_read_result {
     READ_DATA_RECEIVED,
     READ_NO_DATA_RECEIVED,
     READ_ERROR,            /** an error occured (on the socket) (or client closed connection) */
-    READ_MEMORY_ERROR,     /** failed to allocate more memory */
-    READ_INVALID_DATA,     /** received a invalid data */
+    READ_MEMORY_ERROR      /** failed to allocate more memory */
 };
 
 static enum try_read_result try_read_network(conn *c);
@@ -13358,9 +13357,7 @@ static enum try_read_result try_read_udp(conn *c)
 
         /* If this is a multi-packet request, drop it. */
         if (buf[4] != 0 || buf[5] != 1) {
-            out_string(c, "NOT_SUPPORTED");
-            c->write_and_go = conn_waiting;
-            return READ_INVALID_DATA;
+            return READ_NO_DATA_RECEIVED;
         }
 
         /* Don't care about any of the rest of the header. */
@@ -13643,7 +13640,6 @@ bool conn_read(conn *c)
         conn_set_state(c, conn_closing);
         break;
     case READ_MEMORY_ERROR: /* Failed to allocate more memory */
-    case READ_INVALID_DATA: /* Received a invalid data */
         /* State already set by try_read_network */
         break;
     }
