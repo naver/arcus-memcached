@@ -160,8 +160,8 @@ static void settings_init(void);
 static void event_handler(const int fd, const short which, void *arg);
 static bool update_event(conn *c, const int new_flags);
 static void complete_nread(conn *c);
-static void process_command_binary(conn *c, char *command);
-static void process_command(conn *c, char *command, int cmdlen);
+static int try_read_command_binary(conn *c);
+static int try_read_command_ascii(conn *c);
 static void write_and_free(conn *c, char *buf, int bytes);
 static int ensure_iov_space(conn *c);
 static int add_iov(conn *c, const void *buf, int len);
@@ -7480,10 +7480,28 @@ static void complete_nread_binary(conn *c)
     }
 }
 
-static void process_command_binary(conn *c, char *command)
+static int try_read_command_binary(conn *c)
 {
+    /* Do we have the complete packet header? */
+    if (c->rbytes < sizeof(c->binary_header)) {
+        /* need more data! */
+        return 0;
+    }
+
+#ifdef NEED_ALIGN
+    if (((long)(c->rcurr)) % 8 != 0) {
+        /* must realign input buffer */
+        memmove(c->rbuf, c->rcurr, c->rbytes);
+        c->rcurr = c->rbuf;
+        if (settings.verbose > 1) {
+            mc_logger->log(EXTENSION_LOG_DEBUG, c,
+                    "%d: Realign input buffer\n", c->sfd);
+        }
+    }
+#endif
+
     protocol_binary_request_header* req;
-    req = (protocol_binary_request_header*)command;
+    req = (protocol_binary_request_header*)c->rcurr;
 
     if (settings.verbose > 1) {
         /* Dump the packet before we convert it to host order */
@@ -7517,7 +7535,7 @@ static void process_command_binary(conn *c, char *command)
             }
         }
         conn_set_state(c, conn_closing);
-        return;
+        return 1;
     }
 
     c->msgcurr = 0;
@@ -7533,6 +7551,13 @@ static void process_command_binary(conn *c, char *command)
     c->cas = 0;
 
     dispatch_bin_command(c);
+
+    c->rbytes -= sizeof(c->binary_header);
+    c->rcurr += sizeof(c->binary_header);
+
+    assert(c->rcurr <= (c->rbuf + c->rsize));
+
+    return 1;
 }
 
 static void reset_cmd_handler(conn *c)
@@ -13048,7 +13073,7 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
     }
 }
 
-static void process_command(conn *c, char *command, int cmdlen)
+static void process_command_ascii(conn *c, char *command, int cmdlen)
 {
     /* One more token is reserved in tokens strucure
      * for keeping the length of untokenized command.
@@ -13057,7 +13082,6 @@ static void process_command(conn *c, char *command, int cmdlen)
     size_t ntokens;
     int comm;
 
-    assert(c != NULL);
     MEMCACHED_PROCESS_COMMAND_START(c->sfd, c->rcurr, c->rbytes);
 
     if (settings.verbose > 1) {
@@ -13226,6 +13250,68 @@ static void process_command(conn *c, char *command, int cmdlen)
     }
 }
 
+static int try_read_command_ascii(conn *c)
+{
+    char *el, *cont;
+
+    if (c->rbytes == 0)
+        return 0;
+
+    el = memchr(c->rcurr, '\n', c->rbytes);
+    if (!el) {
+        if (c->rbytes > 1024) {
+            /*
+             * We didn't have a '\n' in the first k. This _has_ to be a
+             * large multiget, if not we should just nuke the connection.
+             */
+            char *ptr = c->rcurr;
+            while (*ptr == ' ') { /* ignore leading whitespaces */
+                ++ptr;
+            }
+            if (ptr - c->rcurr > 100) {
+                mc_logger->log(EXTENSION_LOG_WARNING, c,
+                    "%d: Too many leading whitespaces(%d). Close the connection.\n",
+                    c->sfd, (int)(ptr - c->rcurr));
+                conn_set_state(c, conn_closing);
+                return 1;
+            }
+            /* Check KEY_MAX_LENGTH and eflag filter length
+             *  - KEY_MAX_LENGTH : 16000
+             *  - IN eflag filter : > 6400 (64*100)
+             */
+            if (c->rbytes > ((16+8)*1024)) {
+                /* The length of "stats prefixes" command cannot exceed 24 KB. */
+                if (strncmp(ptr, "get ", 4) && strncmp(ptr, "gets ", 5)) {
+                    char buffer[16];
+                    memcpy(buffer, ptr, 15); buffer[15] = '\0';
+                    mc_logger->log(EXTENSION_LOG_WARNING, c,
+                        "%d: Too long ascii command(%s). Close the connection. client_ip: %s\n",
+                        c->sfd, buffer, c->client_ip);
+                    conn_set_state(c, conn_closing);
+                    return 1;
+                }
+            }
+        }
+        return 0;
+    }
+    cont = el + 1;
+    if ((el - c->rcurr) > 1 && *(el - 1) == '\r') {
+        el--;
+    }
+    *el = '\0';
+
+    assert(cont <= (c->rcurr + c->rbytes));
+
+    process_command_ascii(c, c->rcurr, el - c->rcurr);
+
+    c->rbytes -= (cont - c->rcurr);
+    c->rcurr = cont;
+
+    assert(c->rcurr <= (c->rbuf + c->rsize));
+
+    return 1;
+}
+
 /*
  * if we have a complete line in the buffer, process it.
  */
@@ -13250,84 +13336,9 @@ static int try_read_command(conn *c)
     }
 
     if (c->protocol == binary_prot) {
-        /* Do we have the complete packet header? */
-        if (c->rbytes < sizeof(c->binary_header)) {
-            /* need more data! */
-            return 0;
-        }
-
-#ifdef NEED_ALIGN
-        if (((long)(c->rcurr)) % 8 != 0) {
-            /* must realign input buffer */
-            memmove(c->rbuf, c->rcurr, c->rbytes);
-            c->rcurr = c->rbuf;
-            if (settings.verbose > 1) {
-                mc_logger->log(EXTENSION_LOG_DEBUG, c,
-                        "%d: Realign input buffer\n", c->sfd);
-            }
-        }
-#endif
-        process_command_binary(c, c->rcurr);
-
-        c->rbytes -= sizeof(c->binary_header);
-        c->rcurr += sizeof(c->binary_header);
+        return try_read_command_binary(c);
     } else {
-        char *el, *cont;
-
-        if (c->rbytes == 0)
-            return 0;
-
-        el = memchr(c->rcurr, '\n', c->rbytes);
-        if (!el) {
-            if (c->rbytes > 1024) {
-                /*
-                 * We didn't have a '\n' in the first k. This _has_ to be a
-                 * large multiget, if not we should just nuke the connection.
-                 */
-                char *ptr = c->rcurr;
-                while (*ptr == ' ') { /* ignore leading whitespaces */
-                    ++ptr;
-                }
-                if (ptr - c->rcurr > 100) {
-                    mc_logger->log(EXTENSION_LOG_WARNING, c,
-                        "%d: Too many leading whitespaces(%d). Close the connection.\n",
-                        c->sfd, (int)(ptr - c->rcurr));
-                    conn_set_state(c, conn_closing);
-                    return 1;
-                }
-                /* Check KEY_MAX_LENGTH and eflag filter length
-                 *  - KEY_MAX_LENGTH : 16000
-                 *  - IN eflag filter : > 6400 (64*100)
-                 */
-                if (c->rbytes > ((16+8)*1024)) {
-                    /* The length of "stats prefixes" command cannot exceed 24 KB. */
-                    if (strncmp(ptr, "get ", 4) && strncmp(ptr, "gets ", 5)) {
-                        char buffer[16];
-                        memcpy(buffer, ptr, 15); buffer[15] = '\0';
-                        mc_logger->log(EXTENSION_LOG_WARNING, c,
-                            "%d: Too long ascii command(%s). Close the connection. client_ip: %s\n",
-                            c->sfd, buffer, c->client_ip);
-                        conn_set_state(c, conn_closing);
-                        return 1;
-                    }
-                }
-            }
-            return 0;
-        }
-        cont = el + 1;
-        if ((el - c->rcurr) > 1 && *(el - 1) == '\r') {
-            el--;
-        }
-        *el = '\0';
-
-        assert(cont <= (c->rcurr + c->rbytes));
-
-        process_command(c, c->rcurr, el - c->rcurr);
-
-        c->rbytes -= (cont - c->rcurr);
-        c->rcurr = cont;
-
-        assert(c->rcurr <= (c->rbuf + c->rsize));
+        return try_read_command_ascii(c);
     }
 
     return 1;
