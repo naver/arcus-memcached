@@ -14534,18 +14534,6 @@ static void remove_pidfile(const char *pid_file)
     }
 }
 
-#ifndef HAVE_SIGIGNORE
-static int sigignore(int sig)
-{
-    struct sigaction sa = { .sa_handler = SIG_IGN, .sa_flags = 0 };
-
-    if (sigemptyset(&sa.sa_mask) == -1 || sigaction(sig, &sa, 0) == -1) {
-        return -1;
-    }
-    return 0;
-}
-#endif /* !HAVE_SIGIGNORE */
-
 static void sigterm_handler(int sig)
 {
     assert(sig == SIGTERM || sig == SIGINT);
@@ -15626,7 +15614,7 @@ int main (int argc, char **argv)
     /* daemonize if requested */
     /* if we want to ensure our ability to dump core, don't chdir to / */
     if (do_daemonize) {
-        if (sigignore(SIGHUP) == -1) {
+        if (signal(SIGHUP, SIG_IGN) == SIG_ERR) {
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to ignore SIGHUP: %s", strerror(errno));
         }
@@ -15692,7 +15680,7 @@ int main (int argc, char **argv)
      * ignore SIGPIPE signals; we can use errno == EPIPE if we
      * need that information
      */
-    if (sigignore(SIGPIPE) == -1) {
+    if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
         mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                 "failed to ignore SIGPIPE; sigaction");
         exit(EX_OSERR);
