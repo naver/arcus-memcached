@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+      branches: [ "master" ]
+  pull_request:
+      branches: [ "develop" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    - name: Install ARCUS Dependencies
+      run: sudo apt-get install -qq build-essential autoconf automake libtool libcppunit-dev python-setuptools python-dev ant
+    - name: Cache ARCUS Directory
+      id: arcus-cache
+      uses: actions/cache@v3.3.2
+      with:
+        path: ~/arcus
+        key: ${{runner.os}}-arcus
+    - name: Install ARCUS
+      if: steps.arcus-cache.outputs.cache-hit != 'true'
+      run: |
+        set -e
+
+        # clone
+        git clone --recursive https://github.com/naver/arcus.git $HOME/arcus
+
+        # build dependencies
+        cd ~/arcus/scripts && ./build.sh
+
+    - name: Build Arcus Server
+      run: |
+          ./config/autorun.sh
+          ./configure --enable-zk-integration --with-zk-reconfig --with-libevent=${HOME}/arcus --with-zookeeper=${HOME}/arcus
+          make
+    - name: Test ARCUS Server
+      run: make test
