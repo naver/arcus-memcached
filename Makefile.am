@@ -90,7 +90,9 @@ memcached_SOURCES = \
                     cmdlog.h \
                     lqdetect.c \
                     lqdetect.h \
-                    trace.h
+                    trace.h \
+                    protocol_util.h \
+                    protocol_util.c
 memcached_LDFLAGS =-R '$(libdir)'
 memcached_CFLAGS = @PROFILER_FLAGS@ ${AM_CFLAGS}
 memcached_DEPENDENCIES = libmcd_util.la
