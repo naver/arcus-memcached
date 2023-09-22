@@ -8,7 +8,7 @@
     (OSX)    brew install autoconf automake libtool pkg-config cppunit
     ```
   - Install libevent
-  
+
     ```
     $ wget https://github.com/downloads/libevent/libevent/libevent-2.0.21-stable.tar.gz
     $ tar xfz libevent-2.0.21-stable.tar.gz
@@ -20,6 +20,23 @@
     $ popd
     ```
   - Install [arcus-zookeeper](https://github.com/naver/arcus-zookeeper)
+- tag 정보가 없어 autorun.sh 가 실패하는 경우
+
+    ```
+    fatal: No names found, cannot describe anything.
+    Can't find recent tag from current commit.
+    If you forked the repository, the tag might not be included.
+    You need to fetch tags from upstream repository. at config/version.pl line 22.
+    Failed to run config/version.pl
+    ```
+    git clone이 아닌 직접 파일을 다운로드했거나 fork를 한 저장소로부터 처음 설치한 경우에 위의 에러가 발생한다.
+
+    설치된 폴더를 git에 연결하고, repository로부터 tag 정보를 가져와야 한다.
+    ```
+    $ git init
+    $ git remote add upstream https://github.com/naver/arcus-memcached.git
+    $ git fetch upstream --tags
+    ```
 
 ## Test
 - 개별 테스트를 수행하는 방법
@@ -45,7 +62,7 @@
   # Install CPAN
   (CentOS) sudo yum install cpan
   (Ubuntu) sudo apt-get install libpath-tiny-perl
-  
+
   # Install Test::More
   cpan Test::More
   ```
