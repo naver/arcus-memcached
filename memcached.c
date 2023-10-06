@@ -1035,55 +1035,50 @@ static void conn_shrink(conn *c)
     }
 }
 
-static void ritem_set_first(conn *c, int rtype, int vleng)
+static void ritem_set_first(conn *c)
 {
-    c->rtype = rtype;
-
     if (c->rtype == CONN_RTYPE_MBLCK) {
         c->membk = MBLCK_GET_HEADBLK(&c->memblist);
         c->ritem = MBLCK_GET_BODYPTR(c->membk);
-        c->rlbytes = vleng < MBLCK_GET_BODYLEN(&c->memblist)
-                   ? vleng : MBLCK_GET_BODYLEN(&c->memblist);
-        c->rltotal = vleng;
+        c->rlbytes = c->rltotal < MBLCK_GET_BODYLEN(&c->memblist)
+                   ? c->rltotal : MBLCK_GET_BODYLEN(&c->memblist);
     }
     else if (c->rtype == CONN_RTYPE_HINFO) {
         if (c->hinfo.naddnl == 0) {
             c->ritem = (char*)c->hinfo.value;
-            c->rlbytes = vleng;
+            c->rlbytes = c->rltotal;
             c->rltotal = 0;
         } else {
             if (c->hinfo.nvalue > 0) {
                 c->ritem = (char*)c->hinfo.value;
-                c->rlbytes = vleng < c->hinfo.nvalue
-                           ? vleng : c->hinfo.nvalue;
+                c->rlbytes = c->rltotal < c->hinfo.nvalue
+                           ? c->rltotal : c->hinfo.nvalue;
                 c->rindex = 0;
             } else {
                 c->ritem = c->hinfo.addnl[0]->ptr;
-                c->rlbytes = vleng < c->hinfo.addnl[0]->len
-                           ? vleng : c->hinfo.addnl[0]->len;
+                c->rlbytes = c->rltotal < c->hinfo.addnl[0]->len
+                           ? c->rltotal : c->hinfo.addnl[0]->len;
                 c->rindex = 1;
             }
-            c->rltotal = vleng;
         }
     }
     else if (c->rtype == CONN_RTYPE_EINFO) {
         if (c->einfo.naddnl == 0) {
             c->ritem = (char*)c->einfo.value;
-            c->rlbytes = vleng;
+            c->rlbytes = c->rltotal;
             c->rltotal = 0;
         } else {
             if (c->einfo.nvalue > 0) {
                 c->ritem = (char*)c->einfo.value;
-                c->rlbytes = vleng < c->einfo.nvalue
-                           ? vleng : c->einfo.nvalue;
+                c->rlbytes = c->rltotal < c->einfo.nvalue
+                           ? c->rltotal : c->einfo.nvalue;
                 c->rindex = 0;
             } else {
                 c->ritem = c->einfo.addnl[0]->ptr;
-                c->rlbytes = vleng < c->einfo.addnl[0]->len
-                           ? vleng : c->einfo.addnl[0]->len;
+                c->rlbytes = c->rltotal < c->einfo.addnl[0]->len
+                           ? c->rltotal : c->einfo.addnl[0]->len;
                 c->rindex = 1;
             }
-            c->rltotal = vleng;
         }
     }
 }
@@ -4489,7 +4484,8 @@ static void process_bin_lop_prepare_nread(conn *c)
     }
     if (ret == ENGINE_SUCCESS) {
         mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &c->einfo);
-        ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
+        c->rtype = CONN_RTYPE_EINFO;
+        c->rltotal = vlen;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = OPERATION_LOP_INSERT;
@@ -4877,7 +4873,8 @@ static void process_bin_sop_prepare_nread(conn *c)
     if (ret == ENGINE_SUCCESS) {
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, elem, &c->einfo);
-            ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
+            c->rtype = CONN_RTYPE_EINFO;
+            c->rltotal = vlen;
          } else {
             c->ritem   = ((value_item *)elem)->ptr;
             c->rlbytes = vlen;
@@ -5356,7 +5353,8 @@ static void process_bin_bop_prepare_nread(conn *c)
             memcpy((void*)c->einfo.eflag, req->message.body.eflag, c->einfo.neflag);
         }
 
-        ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
+        c->rtype = CONN_RTYPE_EINFO;
+        c->rltotal = vlen;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = (c->cmd == PROTOCOL_BINARY_CMD_BOP_INSERT ? OPERATION_BOP_INSERT
@@ -6057,7 +6055,8 @@ static void process_bin_bop_prepare_nread_keys(conn *c)
 
     if (ret == ENGINE_SUCCESS) {
         c->coll_strkeys = (void*)&c->memblist;
-        ritem_set_first(c, CONN_RTYPE_MBLCK, vlen);
+        c->rtype = CONN_RTYPE_MBLCK;
+        c->rltotal = vlen;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 0;
         c->coll_op = (c->cmd==PROTOCOL_BINARY_CMD_BOP_MGET ? OPERATION_BOP_MGET : OPERATION_BOP_SMGET);
@@ -7147,7 +7146,8 @@ static void process_bin_update(conn *c)
         }
 
         c->item = it;
-        ritem_set_first(c, CONN_RTYPE_HINFO, vlen);
+        c->rtype = CONN_RTYPE_HINFO;
+        c->rltotal = vlen;
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
         break;
@@ -7223,7 +7223,8 @@ static void process_bin_append_prepend(conn *c)
             assert(0);
 
         c->item = it;
-        ritem_set_first(c, CONN_RTYPE_HINFO, vlen);
+        c->rtype = CONN_RTYPE_HINFO;
+        c->rltotal = vlen;
         conn_set_state(c, conn_nread);
         c->substate = bin_read_set_value;
         break;
@@ -8403,7 +8404,8 @@ static void process_prepare_nread_keys(conn *c, uint32_t vlen, uint32_t kcnt, bo
     }
     if (ret == ENGINE_SUCCESS) {
         c->coll_strkeys = (void*)&c->memblist;
-        ritem_set_first(c, CONN_RTYPE_MBLCK, vlen);
+        c->rtype = CONN_RTYPE_MBLCK;
+        c->rltotal = vlen;
         c->coll_op = (return_cas ? OPERATION_MGETS : OPERATION_MGET);
         conn_set_state(c, conn_nread);
     } else {
@@ -8501,7 +8503,8 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
             ret = ENGINE_FAILED; /* FIXME: error type */
         } else {
             c->item = it;
-            ritem_set_first(c, CONN_RTYPE_HINFO, vlen);
+            c->rtype = CONN_RTYPE_HINFO;
+            c->rltotal = vlen;
             c->store_op = store_op;
             conn_set_state(c, conn_nread);
         }
@@ -10271,7 +10274,8 @@ static void process_lop_prepare_nread(conn *c, int cmd, size_t vlen,
     }
     if (ret == ENGINE_SUCCESS) {
         mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, elem, &c->einfo);
-        ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
+        c->rtype = CONN_RTYPE_EINFO;
+        c->rltotal = vlen;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = OPERATION_LOP_INSERT;
@@ -10668,7 +10672,8 @@ static void process_sop_prepare_nread(conn *c, int cmd, size_t vlen, char *key, 
     if (ret == ENGINE_SUCCESS) {
         if (cmd == (int)OPERATION_SOP_INSERT) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, elem, &c->einfo);
-            ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
+            c->rtype = CONN_RTYPE_EINFO;
+            c->rltotal = vlen;
         } else {
             c->ritem = ((value_item *)elem)->ptr;
             c->rlbytes = vlen;
@@ -11388,7 +11393,8 @@ static void process_bop_prepare_nread(conn *c, int cmd, char *key, size_t nkey,
         memcpy((void*)c->einfo.score, bkey, (c->einfo.nscore==0 ? sizeof(uint64_t) : c->einfo.nscore));
         if (c->einfo.neflag > 0)
             memcpy((void*)c->einfo.eflag, eflag, c->einfo.neflag);
-        ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
+        c->rtype = CONN_RTYPE_EINFO;
+        c->rltotal = vlen;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = cmd; /* OPERATION_BOP_INSERT | OPERATION_BOP_UPSERT */
@@ -11480,7 +11486,8 @@ static void process_bop_prepare_nread_keys(conn *c, int cmd, uint32_t vlen, uint
     }
     if (ret == ENGINE_SUCCESS) {
         c->coll_strkeys = (void*)&c->memblist;
-        ritem_set_first(c, CONN_RTYPE_MBLCK, vlen);
+        c->rtype = CONN_RTYPE_MBLCK;
+        c->rltotal = vlen;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 0;
         c->coll_op = cmd;
@@ -11844,7 +11851,8 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
     if (ret == ENGINE_SUCCESS) {
         if (cmd == OPERATION_MOP_INSERT) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem, &c->einfo);
-            ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
+            c->rtype = CONN_RTYPE_EINFO;
+            c->rltotal = vlen;
         } else {
             c->ritem   = ((value_item *)elem)->ptr;
             c->rlbytes = vlen;
@@ -11890,7 +11898,8 @@ static void process_mop_prepare_nread_fields(conn *c, int cmd, char *key, size_t
     }
     if (ret == ENGINE_SUCCESS) {
         c->coll_strkeys = (void*)&c->memblist;
-        ritem_set_first(c, CONN_RTYPE_MBLCK, flen);
+        c->rtype = CONN_RTYPE_MBLCK;
+        c->rltotal = flen;
         c->coll_ecount = 1;
         c->coll_op = cmd;
         c->coll_lenkeys = flen;
@@ -13677,6 +13686,10 @@ bool conn_parse_cmd(conn *c)
             return false; /* blocked */
         }
     }
+
+    if (c->state == conn_nread) {
+        ritem_set_first(c);
+    }
     return true;
 }
 
@@ -13775,7 +13788,6 @@ bool conn_nread(conn *c)
 
     if (c->rlbytes == 0) {
         complete_nread(c);
-
         /* complete_nread eventually calls write functions
          * that may return EWOULDBLOCK and set ewouldblock true.
          * So, remove the current connection from the event loop
@@ -13788,6 +13800,12 @@ bool conn_nread(conn *c)
                 return false; /* blocked */
             }
         }
+
+        if (c->state == conn_nread) {
+            ritem_set_first(c);
+        }
+        else c->rtype = CONN_RTYPE_NONE;
+
         return true;
     }
 
