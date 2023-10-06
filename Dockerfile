@@ -5,7 +5,7 @@ ARG \
 
 FROM centos:7 AS builder
 RUN yum update -y
-RUN yum install -y gcc gcc-c++ make m4 perl autoconf automake libtool pkgconfig cppunit-devel ant which git
+RUN yum install -y gcc gcc-c++ make m4 perl-core autoconf automake libtool pkgconfig cppunit-devel ant which git net-tools cpan
 ARG libevent_version zookeeper_version configure_options
 ## Libevent
 WORKDIR /tmp

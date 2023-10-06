@@ -8,34 +8,22 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
       with:
         fetch-depth: 0
-    - name: Install ARCUS Dependencies
-      run: sudo apt-get install -qq build-essential autoconf automake libtool libcppunit-dev python-setuptools python-dev ant
-    - name: Cache ARCUS Directory
-      id: arcus-cache
-      uses: actions/cache@v3.3.2
+    - name: Set Docker Buildx
+      uses: docker/setup-buildx-action@v3.0.0
+    - name: Build Arcus Server Image
+      uses: docker/build-push-action@v5.0.0
       with:
-        path: ~/arcus
-        key: ${{runner.os}}-arcus
-    - name: Install ARCUS
-      if: steps.arcus-cache.outputs.cache-hit != 'true'
-      run: |
-        set -e
-
-        # clone
-        git clone --recursive https://github.com/naver/arcus.git $HOME/arcus
-
-        # build dependencies
-        cd ~/arcus/scripts && ./build.sh
-
-    - name: Build Arcus Server
-      run: |
-          ./config/autorun.sh
-          ./configure --enable-zk-integration --with-zk-reconfig --with-libevent=${HOME}/arcus --with-zookeeper=${HOME}/arcus
-          make
-    - name: Test ARCUS Server
-      run: make test
+        context: .
+        push: false
+        load: true
+        tags: arcus-memcached
+        target: builder
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    - name: Run Arcus Server Test
+      run: docker run arcus-memcached make test
