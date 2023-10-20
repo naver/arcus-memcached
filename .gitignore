@@ -24,6 +24,8 @@
 /config/Doxyfile-api
 /configure
 /depcomp
+/deps/*
+!/deps/*.tar.gz
 /doc/doxy
 /doc/doxy-api
 /doc/engine-interface.txt
