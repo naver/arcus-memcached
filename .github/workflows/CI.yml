@@ -8,30 +8,22 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
       with:
         fetch-depth: 0
-    - name: Install ARCUS Dependencies
-      run: sudo apt-get install -qq build-essential autoconf automake libtool libcppunit-dev python-setuptools python-dev ant
+    - name: Install Arcus Server Dependency Packages
+      run: sudo apt-get install -qq build-essential autoconf automake libtool
     - name: Cache ARCUS Directory
       id: arcus-cache
       uses: actions/cache@v3.3.2
       with:
         path: ~/arcus
         key: ${{runner.os}}-arcus
-    - name: Install ARCUS
+    - name: Install Arcus Server Dependency Libraries
       if: steps.arcus-cache.outputs.cache-hit != 'true'
-      run: |
-        set -e
-
-        # clone
-        git clone --recursive https://github.com/naver/arcus.git $HOME/arcus
-
-        # build dependencies
-        cd ~/arcus/scripts && ./build.sh
-
+      run: ./deps/install.sh $HOME/arcus
     - name: Build Arcus Server
       run: |
           ./config/autorun.sh
