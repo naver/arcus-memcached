@@ -11,6 +11,7 @@
 .dirstamp
 /.libs/
 /aclocal.m4
+/arcus-memcached-*.tar.gz
 /autom4te.cache
 /compile
 /config.guess

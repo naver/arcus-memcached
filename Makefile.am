@@ -251,7 +251,7 @@ default_engine_dtrace.lo: $(default_engine_la_OBJECTS)
 
 SUBDIRS = doc
 DIST_DIRS = scripts
-EXTRA_DIST = doc scripts t memcached.spec memcached_dtrace.d m4/version.m4
+EXTRA_DIST = doc scripts t memcached.spec memcached_dtrace.d m4/version.m4 rfc1321
 
 MOSTLYCLEANFILES = *.gcov *.gcno *.gcda *.tcov
 
