@@ -1,0 +1,7 @@
+VERSION ?= develop
+
+build:
+	- docker buildx create --name project-v3-builder
+	docker buildx use project-v3-builder
+	- docker buildx build --push --platform=linux/arm64,linux/amd64 --tag jam2in/arcus-memcached:${VERSION} --progress tty .
+	- docker buildx rm project-v3-builder
