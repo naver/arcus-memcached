@@ -8,6 +8,7 @@ BEGIN {
 
     my @exempted = qw(Makefile.am win32/Makefile.mingw m4/c99-backport.m4);
     push(@exempted, glob("*/Makefile.am"));
+    push(@exempted, glob("Makefile.docker"));
     push(@exempted, glob("ChangeLog*"));
     push(@exempted, glob("README.md*"));
     push(@exempted, glob("CONTRIBUTING.md*"));
