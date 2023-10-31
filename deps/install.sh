@@ -42,6 +42,7 @@ build_and_install() {
 
 ## If the path was not given, ask for prior consent about installation to system path.
 if [ -n "$1" ]; then
+    set -- $(mkdir -p $1 && cd $1 && pwd)
     prefix="--prefix=$1"
 else
     echo "There is no argument given for the installation path."

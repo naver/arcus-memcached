@@ -26,6 +26,7 @@
 /depcomp
 /deps/*
 !/deps/*.tar.gz
+!/deps/install.sh
 /doc/doxy
 /doc/doxy-api
 /doc/engine-interface.txt
