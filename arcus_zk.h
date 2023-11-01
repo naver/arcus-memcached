@@ -32,6 +32,7 @@ typedef struct {
 
 typedef struct {
     bool     zk_connected;  // ZooKeeper-memcached connection state
+    bool     zk_ready;      // cache-list znode created?
 #ifdef ENABLE_ZK_RECONFIG
     bool     zk_reconfig_needed;  // ZK dynamic reconfig is needed?
     bool     zk_reconfig_enabled; // ZK dynamic reconfig enabled in ZK?

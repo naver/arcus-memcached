@@ -1833,6 +1833,7 @@ void arcus_zk_get_confs(arcus_zk_confs *confs)
 void arcus_zk_get_stats(arcus_zk_stats *stats)
 {
     stats->zk_connected = (main_zk != NULL && main_zk->zh != NULL) ? true : false;
+    stats->zk_ready = arcus_conf.znode_created && !sm_info.mc_pause;
 #ifdef ENABLE_ZK_RECONFIG
     stats->zk_reconfig_needed = zk_reconfig.needed;
     stats->zk_reconfig_enabled = zk_reconfig.enabled;
