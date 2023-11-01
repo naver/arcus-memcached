@@ -8174,6 +8174,7 @@ static void process_stats_zookeeper(ADD_STAT add_stats, void *c)
     APPEND_STAT("zk_timeout", "%u", zk_confs.zk_timeout);
     APPEND_STAT("zk_failstop", "%s", zk_confs.zk_failstop ? "on" : "off");
     APPEND_STAT("zk_connected", "%s", zk_stats.zk_connected ? "true" : "false");
+    APPEND_STAT("zk_ready", "%s", zk_stats.zk_ready ? "true" : "false");
 #ifdef ENABLE_ZK_RECONFIG
     APPEND_STAT("zk_reconfig_needed", "%s", zk_stats.zk_reconfig_needed ? "on" : "off");
     if (zk_stats.zk_reconfig_needed) {
@@ -13240,6 +13241,18 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
         process_lqdetect_command(c, tokens, ntokens);
     }
 #endif
+    else if ((ntokens == 2) && (strcmp(tokens[COMMAND_TOKEN].value, "ready") == 0))
+    {
+        char *response = "READY";
+#ifdef ENABLE_ZK_INTEGRATION
+        if (arcus_zk_cfg) {
+            arcus_zk_stats zk_stats;
+            arcus_zk_get_stats(&zk_stats);
+            if (!zk_stats.zk_ready) response = "NOT_READY";
+        }
+#endif
+        out_string(c, response);
+    }
     else /* no matching command */
     {
         if (settings.extensions.ascii != NULL) {
