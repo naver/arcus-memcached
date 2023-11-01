@@ -48,7 +48,7 @@ Item 속성들 중 정확한 이해를 돕기 위해 추가 설명이 필요한 
 
 Flags는 item의 data-specific 정보를 저장하기 위한 목적으로 사용된다.
 예를 들어, ARCUS java client는 어떤 java object를 Cache Server에 저장할 경우,
-그 java object의 type에 따라 serialization(or marshalling)하여 저장할 data를 만들고, 
+그 java object의 type에 따라 serialization(or marshalling)하여 저장할 data를 만들고,
 그 java object의 type 정보를 flags 값으로 하여 ARCUS Cache Server에 요청하여 저장한다.
 Data 조회 시에는 ARCUS Cache Server로 부터 data와 함께 flags 정보를 함께 얻어와서,
 해당 java object의 type에 따라 그 data를 de-serialization(or de-marshalling)하여 java object를 생성한다.
@@ -61,7 +61,7 @@ ARCUS Cache Server는 expire 되지 않고 메모리 부족 상황에서도 evic
 Sticky item 또한 expiretime 속성으로 지정한다.
 
 - -1 : sticky item으로 설정
-- 0	: never expired item으로 설정, 그러나 메모리 부족 시에 evict될 수 있다.
+- 0 : never expired item으로 설정, 그러나 메모리 부족 시에 evict될 수 있다.
 - X <= (60 * 60 * 24 * 30) : 30일 이하의 값이면, "현재 시간 + X(초)"로 expiration time이 설정된다.
 - X > (60 * 60 * 24 * 30) : 30일 초과의 값이면, X를 unix time으로 인식하여 expiration time을 설정한다.
 X가 현재 시간보다 작으면 그 즉시 expire되므로 주의하여야 한다.
@@ -86,7 +86,7 @@ Collection의 maxcount를 초과하여 element 추가하면 overflow가 발생�
 - "error"
   - 모든 collection 유형에 설정 가능한 속성이다.
   - set과 map collection의 default overflow action이다.
-  - 새로운 element 추가를 허용하지 않고 overflow 오류를 리턴한다. 
+  - 새로운 element 추가를 허용하지 않고 overflow 오류를 리턴한다.
 - "head_trim", "tail_trim"
   - list collection에만 설정 가능한 overflow action이다.
   - list collection의 default overflow action은 "tail_trim"이다.
@@ -117,14 +117,14 @@ ARCUS Cache Server는 다수 element를 가진 collection을 atomic하게 생성
 incomplete 친구 정보가 응용에게 노출되게 된다.
 이러한 문제를 방지하기 위해 collection 생성에 대해 read atomicity를 제공하는 기능이 필요하며,
 이 기능의 구현을 위해 readable 속성을 제공한다.
-  
+
 처음 empty collection 생성 시에 readable 속성을 off 상태로 설정해서
 그 collection에 대한 조회 요청은 UNREADABLE 오류를 발생시키게 하고,
 그 collection에 모든 element들을 추가한 후에 마지막으로 readable 속성을 다시 on 상태로 변경함으로써
 complete collection이 응용에 의해 조회될 수 있게 할 수 있다.
 
 ## maxbkeyrange 속성
-  
+
 B+tree only 속성으로 smallest bkey와 largest bkey의 최대 범위를 규정한다.
 B+tree에 설정된 maxbkeyrange를 위배시키는 새로운 bkey를 가진 element를 삽입하는 경우,
 b+tree의 overflow action 정책에 따라 오류를 내거나
@@ -142,7 +142,7 @@ maxbkeyrange는 2일치에 해당하는 값인 172880(2 * 24 * 60 * 60)으로 �
 이러한 지정으로, 새로운 data가 추가될 때마다 b+tree에서 2일치가 지난 data는
 maxbkeyrange와 overflowaction에 의해 자동으로 제거된다.
 만약, 이런 기능이 없다면, 응용에서 오래된(2일이 지난) data를 직접 제거하는 작업을 수행해야 한다.
-  
+
 maxbkeyrange 설정은 bkey의 데이터 유형에 맞게 설정하여야 하며,
 maxbkeyrange 설정이 생략되거나 명시적으로 0을 줄 경우의 default 값은
 bkey 데이터 유형에 무관하게 unlimited maxbkeyrange를 의미한다.

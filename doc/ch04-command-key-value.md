@@ -1,6 +1,6 @@
 # Chapter 4. Simple Key-Value 명령
 
-ARCUS Cache Server는 memcached 1.4의 key-value 명령을 그대로 지원하며, 
+ARCUS Cache Server는 memcached 1.4의 key-value 명령을 그대로 지원하며,
 이에 추가하여 incr/decr 명령은 그 기능을 확장 지원한다.
 
 Simple key-value 명령들의 요약은 아래와 같다.

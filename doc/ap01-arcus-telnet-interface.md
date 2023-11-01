@@ -14,7 +14,7 @@ $ telnet {memcached-ip} {memcached-port}
 ## Telnet 연결
 
 Localhost에 11211 포트 번호로 memcached가 구동되어 있다고 가정한다.
-telnet 명령으로 해당 memcached에 연결하기 위해, 
+telnet 명령으로 해당 memcached에 연결하기 위해,
 OS prompt 상에서 아래의 명령을 수행한다.
 
 ```

@@ -8,7 +8,7 @@
     (OSX)    brew install autoconf automake libtool pkg-config cppunit
     ```
   - Install libevent
-  
+
     ```
     $ wget https://github.com/downloads/libevent/libevent/libevent-2.0.21-stable.tar.gz
     $ tar xfz libevent-2.0.21-stable.tar.gz
@@ -45,7 +45,7 @@
   # Install CPAN
   (CentOS) sudo yum install cpan
   (Ubuntu) sudo apt-get install libpath-tiny-perl
-  
+
   # Install Test::More
   cpan Test::More
   ```

@@ -17,11 +17,11 @@ Command pipelining 가능한 명령은 아래와 같으며, 단순 response stri
 * sop 명령들 - sop insert/delete/exist
 * mop 명령들 - mop insert/delete/update
 * bop 명령들 - bop insert/upsert/delete/update/incr/decr
- 
+
 Command pipelining 수행 예로,
 특정 list의 tail 쪽으로 10개 elements를 추가하고자 한다면,
 아래와 같이 lop insert 명령을 연속하여 cache server로 보내면 된다.
-첫 번째 명령부터 마지막 바로 이전 명령까지는 모두 “pipe” 인자를 사용하여 연결하여야 하고, 
+첫 번째 명령부터 마지막 바로 이전 명령까지는 모두 “pipe” 인자를 사용하여 연결하여야 하고,
 마지막 명령에서는 “pipe” 인자를 생략함으로써 pipelining의 끝임을 표현하여야 한다.
 
 ```
@@ -54,7 +54,7 @@ RESPONSE 라인에서 \<count\>는 전체 결과 수를 나타내고,
 마지막 라인은 pipelining 수행 상태를 나타내며, 아래 중의 하나를 가진다.
 
 - "END" - pipelining 연산이 정상 수행됨
-- “PIPE_ERROR command overflow”	- pipelining 가능한 최대 commands 수인 500개를 초과하였다.
+- “PIPE_ERROR command overflow” - pipelining 가능한 최대 commands 수인 500개를 초과하였다.
   이 경우, 500개까지의 command들만 하나의 command pipelining으로 처리되고 하나의 response stream으로 리턴된다.
   그 이후의 commands들은 처리되지 않는다.
 - “PIPE_ERROR memory overflow” - ARCUS cache server 내부에서 pipelining 처리를 위한
