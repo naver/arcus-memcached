@@ -385,7 +385,7 @@ flags와 ecount를 포함하여 조회된 element 정보가 생략된다.
 |-------------------------------------------------------|------------------------ |
 | "NOT_SUPPORTED"                                       | 지원하지 않음
 | "CLIENT_ERROR bad command line format"                | protocol syntax 틀림
-| "CLIENT_ERROR bad data chunk"	                        | space separated key list의 길이가 \<lenkeys\>와 다르거나 “\r\n”으로 끝나지 않음
+| "CLIENT_ERROR bad data chunk"                         | space separated key list의 길이가 \<lenkeys\>와 다르거나 “\r\n”으로 끝나지 않음
 | "CLIENT_ERROR bad value"                              | bop mget 명령의 제약 조건을 위배함.
 | "SERVER_ERROR out of memory [writing get response]"   | 메모리 부족
 
@@ -536,7 +536,7 @@ smget 수행의 실패 시의 response string은 다음과 같다.
 | "OUT_OF_RANGE"                                       | 기존 smget 동작에서만 발생할 수 있는 실패 response string이다.
 | "NOT_SUPPORTED"                                      | 지원하지 않음
 | "CLIENT_ERROR bad command line format"               | protocol syntax 틀림
-| "CLIENT_ERROR bad data chunk"	                       | 주어진 key 리스트에 중복 key가 존재하거나 주어진 key 리스트의 길이가 \<lenkeys\> 길이와 다르거나 "\r\n"으로 끝나지 않음.
+| "CLIENT_ERROR bad data chunk"                        | 주어진 key 리스트에 중복 key가 존재하거나 주어진 key 리스트의 길이가 \<lenkeys\> 길이와 다르거나 "\r\n"으로 끝나지 않음.
 | "CLIENT_ERROR bad value"                             | 앞서 기술한 smget 연산의 제약 조건을 위배
 | "SERVER_ERROR out of memory [writing get response"   | 메모리 부족
 
@@ -664,4 +664,3 @@ END\r\n
 | "NOT_SUPPORTED"                                     | 지원하지 않음
 | "CLIENT_ERROR bad command line format"              | protocol syntax 틀림
 | "SERVER_ERROR out of memory [writing get response]" | 메모리 부족
-

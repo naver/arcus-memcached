@@ -43,7 +43,7 @@ ARCUS Cache Server는 simple key-value 외에 collection 지원으로 다양한 
 - collection item
   - list item - 데이터들의 linked list을 value로 가지는 item
   - set item - 유일한 데이터들의 집합을 value로 가지는 item
-  - map item - \<field, value\>쌍으로 구성된 데이터 집합을 value로 가지는 item 
+  - map item - \<field, value\>쌍으로 구성된 데이터 집합을 value로 가지는 item
   - b+tree item - b+tree key 기반으로 정렬된 데이터 집합을 value로 가지는 item
 
 ## Expiration, Eviction, and Sticky
@@ -60,7 +60,7 @@ ARCUS Cache Server는 "out of memory" 오류를 내거나 LRU 기반의 eviction
 default로는 LRU 기반의 eviction 방식을 사용한다.
 
 특정 응용에서는 어떤 item이 expire & evict 대상이 되지 않기를 원하는 경우도 있다.
-ARCUS Cache Server는 이러한 item을 sticky item이라 하며, 
+ARCUS Cache Server는 이러한 item을 sticky item이라 하며,
 expiration time을 -1로 지정하면, sticky item으로 지원한다.
 Sticky item의 삭제는 전적으로 응용에 의해 관리되어야 함을 주의해야 한다.
 
@@ -90,7 +90,7 @@ Slab allocator는 메모리 크기 별로 메모리 공간을 나누어 관리�
   - 최소 크기의 slab 크기를 결정한다.
 - \-f \<factor\> : chunk size growth factor (default: 1.25)
   - Slab class 별로 slab 크기의 증가 정도를 지정하며, 1.0보다 큰 값으로 지정해야 한다.
-  
+
 ### Small Memory Allocator
 
 Collection 지원으로 인해 작은 메모리 공간의 할당과 반환 요청이 많아졌다.

@@ -57,7 +57,7 @@ lop insert <key> <index> <bytes> [create <attributes>] [noreply|pipe]\r\n<data>\
 pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
 - \<data\> - 삽입할 데이터 (최대 크기는 [기본제약사항](ch01-arcus-basic-concept.md#기본-제약-사항)을 참고)
 
- 
+
 Response string과 그 의미는 아래와 같다.
 
 | Response String                          | 설명                     |
@@ -139,13 +139,13 @@ END|DELETED|DELETED_DROPPED\r\n
 
 | Response String                                        | 설명                     |
 |--------------------------------------------------------|------------------------ |
-| “NOT_FOUND”	                                           | key miss
-| “NOT_FOUND_ELEMENT”	                                   | element miss (index or index range에 해당하는 element가 없음)
-| “TYPE_MISMATCH”	                                       | 해당 item이 list collection이 아님
+| “NOT_FOUND”                                            | key miss
+| “NOT_FOUND_ELEMENT”                                    | element miss (index or index range에 해당하는 element가 없음)
+| “TYPE_MISMATCH”                                        | 해당 item이 list collection이 아님
 | “UNREADABLE”                                           | 해당 item이 unreadable item임
 | "NOT_SUPPORTED"                                        | 지원하지 않음
 | “CLIENT_ERROR bad command line format”                 | protocol syntax 틀림
-| "SERVER_ERROR out of memory [writing get response]”	   | 메모리 부족
+| "SERVER_ERROR out of memory [writing get response]”    | 메모리 부족
 
 <!-- reference list -->
 [item-attribute]: ch03-item-attributes.md "Chapter 3. Item Attribute 설명"

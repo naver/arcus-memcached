@@ -17,7 +17,7 @@ ARCUS Cache Server는 items을 invalidate 시키기 위한 두 가지 flush 명�
 - flush_all : 모든 items을 flush
 - flush_prefix: 특정 prefix의 items들만 flush
 
-Flush 작업은 items을 invalidate시키더라도 그 items이 차지한 메모리 공간을 즉각 반환하지 않는다. 
+Flush 작업은 items을 invalidate시키더라도 그 items이 차지한 메모리 공간을 즉각 반환하지 않는다.
 대신, ARCUS Cache Server의 global 정보로 flush 수행 시점 정보를 기록해 둠으로써,
 그 시점 이전에 존재했던 items은 invalidated items이라는 것을 알 수 있게 한다.
 따라서, item 접근할 때마다 invalidated item인지를 확인하여야 하는 부담이 있지만,
@@ -47,7 +47,7 @@ Response string과 그 의미는 아래와 같다.
 |-----------------------------------------|------------------------ |
 | "OK"                                    | 성공
 | "NOT_FOUND"                             | prefix miss (flush_prefix 명령인 경우만 해당)
-| "CLIENT_ERROR bad command line format"	| protocol syntax 틀림
+| "CLIENT_ERROR bad command line format"  | protocol syntax 틀림
 
 ## Scrub 명령
 
@@ -288,7 +288,7 @@ END
   - \<collection_name\>_\<command_name\>_elem_hits: 콜렉션 명령의 key hit 그리고 element hit 횟수
   - \<collection_name\>_\<command_name\>_none_hits: 콜렉션 명령의 key hit 그러나 element miss 횟수
 
-다음은 그 외의 개별 통계이다. 
+다음은 그 외의 개별 통계이다.
 
 | stats                 | 설명                                                         |
 | --------------------- | ------------------------------------------------------------ |
@@ -540,14 +540,14 @@ PREFIX <null> get 2 hit 2 set 2 del 0
        bcs 0 bis 0 bih 0 bus 0 buh 0 bds 0 bdh 0 bps 0 bph 0 bms 0 bmh 0 bgs 0 bgh 0 bns 0 bnh 0
        pfs 0 pfh 0 pgs 0 pgh 0
        gas 0 sas 0
-PREFIX a get 5 hit 5 set 5 del 0 
+PREFIX a get 5 hit 5 set 5 del 0
        lcs 0 lis 0 lih 0 lds 0 ldh 0 lgs 0 lgh 0
        scs 0 sis 0 sih 0 sds 0 sdh 0 sgs 0 sgh 0 ses 0 seh 0
        mcs 0 mis 0 mih 0 mus 0 muh 0 mds 0 mdh 0 mgs 0 mgh 0
        bcs 0 bis 0 bih 0 bus 0 buh 0 bds 0 bdh 0 bps 0 bph 0 bms 0 bmh 0 bgs 0 bgh 0 bns 0 bnh 0
        pfs 0 pfh 0 pgs 0 pgh 0
        gas 0 sas 0
-PREFIX b get 2 hit 2 set 2 del 0 
+PREFIX b get 2 hit 2 set 2 del 0
        lcs 0 lis 0 lih 0 lds 0 ldh 0 lgs 0 lgh 0
        scs 0 sis 0 sih 0 sds 0 sdh 0 sgs 0 sgh 0 ses 0 seh 0
        mcs 0 mis 0 mih 0 mus 0 muh 0 mds 0 mdh 0 mgs 0 mgh 0
@@ -645,8 +645,8 @@ slab class 별 LRU에 달려있는 item들의 cache key들을 dump하기 위하�
 stats cachedump <slab_clsid> <limit> [ forward | backward [sticky] ]\r\n
 ```
 
-- \<slab_clsid\>	- dump 대상 LRU를 지정하기 위한 slab class id이다.
-- \<limit\>	- dump하고자 하는 item 개수로서 0 ~ 200 범위에서 지정이 가능하다.
+- \<slab_clsid\> - dump 대상 LRU를 지정하기 위한 slab class id이다.
+- \<limit\> - dump하고자 하는 item 개수로서 0 ~ 200 범위에서 지정이 가능하다.
 0이면 default로 50개로 지정되며, 200 초과이면 200개만 dump한다.
 해당 LRU의 head 또는 tail에서 시작하여 limit 개 item들의 cache key들을 dump한다.
 - forward or backward - LRU의 head 또는 tail 중에 어디에서 dump를 시작할 것인지를 지정한다.
@@ -689,19 +689,19 @@ STAT current_command_log_filesize_bytes 65555
 END
 ```
 
-- use_persistence - 현재 Persistence 모드가 on인지 off인지 나타낸다.   
-- data_path - 스냅샷 파일이 생성되는 경로를 나타낸다.   
-- logs_path - 명령 로그 파일이 생성되는 경로를 나타낸다.   
-- async_logging - 명령 로깅의 동작 모드로 동기 로깅 모드면 false, 비동기 로깅 모드면 true로 나타낸다.   
-- chkpt_interval_pct_snapshot - 체크포인트 수행 주기 설정으로, 스냅샷 파일 크기에 대비하여 명령 로그 파일의 추가 증가된 크기 비율을 나타낸다.   
-- chkpt_interval_min_logsize - 체크포인트 수행 주기 설정으로, 체크포인트를 수행할 명령 로그 파일의 최소 크기를 나타낸다.   
-- recovery_elapsed_time_sec - ARCUS 인스턴스 재구동 후, 데이터를 복구하는데 걸리는 시간을 나타낸다. (unit : seconds)   
-- last_chkpt_in_progress - 현재 체크포인트의 수행 여부를 나타낸다.   
-- last_chkpt_failure_count - 이전 체크포인트가 수행되거나 성공될 때까지 몇 번 실패한 것인지를 나타낸다.   
-- last_chkpt_start_time - 이전 체크포인트가 조건이 충족되어 시작한 시간을 나타낸다. (unit : absolute timestamp)   
-- last_chkpt_elapsed_time_sec - 이전 체크포인트 수행하는데 걸린 시간을 나타낸다. (unit : seconds)   
-- last_chkpt_snapshot_filesize_bytes - 이전 체크포인트 스냅샷 파일 크기를 나타낸다. (unit : bytes)   
-- current_command_log_filesize_bytes - 현재 명령 로그 파일 크기를 나타낸다. (unit : bytes)   
+- use_persistence - 현재 Persistence 모드가 on인지 off인지 나타낸다.
+- data_path - 스냅샷 파일이 생성되는 경로를 나타낸다.
+- logs_path - 명령 로그 파일이 생성되는 경로를 나타낸다.
+- async_logging - 명령 로깅의 동작 모드로 동기 로깅 모드면 false, 비동기 로깅 모드면 true로 나타낸다.
+- chkpt_interval_pct_snapshot - 체크포인트 수행 주기 설정으로, 스냅샷 파일 크기에 대비하여 명령 로그 파일의 추가 증가된 크기 비율을 나타낸다.
+- chkpt_interval_min_logsize - 체크포인트 수행 주기 설정으로, 체크포인트를 수행할 명령 로그 파일의 최소 크기를 나타낸다.
+- recovery_elapsed_time_sec - ARCUS 인스턴스 재구동 후, 데이터를 복구하는데 걸리는 시간을 나타낸다. (unit : seconds)
+- last_chkpt_in_progress - 현재 체크포인트의 수행 여부를 나타낸다.
+- last_chkpt_failure_count - 이전 체크포인트가 수행되거나 성공될 때까지 몇 번 실패한 것인지를 나타낸다.
+- last_chkpt_start_time - 이전 체크포인트가 조건이 충족되어 시작한 시간을 나타낸다. (unit : absolute timestamp)
+- last_chkpt_elapsed_time_sec - 이전 체크포인트 수행하는데 걸린 시간을 나타낸다. (unit : seconds)
+- last_chkpt_snapshot_filesize_bytes - 이전 체크포인트 스냅샷 파일 크기를 나타낸다. (unit : bytes)
+- current_command_log_filesize_bytes - 현재 명령 로그 파일 크기를 나타낸다. (unit : bytes)
 
 ## Config 명령
 
@@ -861,7 +861,7 @@ The log file name: /Users/temp/command_11211_20160126_192729_{n}.log //path/file
 
 ARCUS Cache Server에서 collection item에 대한 요청 중에는 그 처리 시간이 오래 걸리는 요청이 존재한다.
 이를 detect하기 위한 기능으로 lqdetect 명령을 제공한다.
-start 명령을 시작으로 detection이 종료될 때 까지 long query 가능성이 있는 command에 대하여, 
+start 명령을 시작으로 detection이 종료될 때 까지 long query 가능성이 있는 command에 대하여,
 그 command 처리에서 접근한 elements 수가 특정 기준 이상인 command를 추출,
 command 별로 detect된 명령어 20개를 샘플로 저장한다.
 long query 대상이 되는 모든 command에 대해 20개의 샘플 저장이 완료되면 자동 종료한다.
@@ -925,7 +925,7 @@ stats 명령은 가장 최근 수행된(수행 중인) long query detection의 �
 ```
 Long query detection stats : running              //stopped by causes(request or overflow) | running
 The last running time : 20160126_175629 ~ 0_0     //bgndate_bgntime ~ enddate_endtime
-The number of total long query commands : 1152    //detected_commands 
+The number of total long query commands : 1152    //detected_commands
 The detection threshold : 43                      //threshold
 ```
 
@@ -972,7 +972,7 @@ DUMP SUMMARY: { prefix=<prefix>, count=<count>, total=<total> elapsed=<elapsed> 
 위의 결과에서 각 의미는 아래와 같다.
 - key dump 결과 부분
   - \<type\>은 item type으로 1 character로 표시한다.
-     - "K" : kv 
+     - "K" : kv
      - "L" : list
      - "S" : set
      - "M" : map

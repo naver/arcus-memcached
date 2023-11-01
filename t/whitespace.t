@@ -12,7 +12,6 @@ BEGIN {
     push(@exempted, glob("ChangeLog*"));
     push(@exempted, glob("README.md*"));
     push(@exempted, glob("CONTRIBUTING.md*"));
-    push(@exempted, glob("doc/*.md"));
     push(@exempted, glob("doc/*.xml"));
     push(@exempted, glob("doc/xml2rfc/*.xsl"));
     push(@exempted, glob("m4/*backport*m4"));

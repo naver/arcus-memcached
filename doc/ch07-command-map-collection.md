@@ -5,7 +5,7 @@ Map collection에 관한 명령은 아래와 같다.
 - [Map collection 생성: mop create](ch07-command-map-collection.md#mop-create-map-collection-생성)
 - Map collection 삭제: delete (기존 key-value item의 삭제 명령을 그대로 사용)
 
-Map element에 관한 명령은 아래와 같다. 
+Map element에 관한 명령은 아래와 같다.
 
 - [Map element 삽입: mop insert](ch07-command-map-collection.md#mop-insert-map-element-삽입)
 - [Map element 변경: mop update](ch07-command-map-collection.md#mop-update-map-element-변경)
@@ -149,7 +149,7 @@ mop get <key> <lenfields> <numfields> [delete|drop]\r\n
 그리고 delete로 인해 empty map이 될 경우 그 map을 drop할 것인지를 지정한다.
 
 성공 시의 response string은 아래와 같다.
-VALUE 라인의 \<count\>는 조회된 field 개수를 의미한다. 
+VALUE 라인의 \<count\>는 조회된 field 개수를 의미한다.
 마지막 라인은 END, DELETED, DELETED_DROPPED 중의 하나를 가지며
 각각 field 조회만 수행한 상태, field 조회하고 삭제한 상태,
 field 조회 및 삭제하고 map을 drop한 상태를 의미한다.
@@ -173,5 +173,4 @@ END|DELETED|DELETED_DROPPED\r\n
 | "UNREADABLE"                                         | 해당 item이 unreadable item임
 | "NOT_SUPPORTED"                                      | 지원하지 않음
 | "CLIENT_ERROR bad command line format"               | protocol syntax 틀림
-| "SERVER_ERROR out of memory [writing get response]"	 | 메모리 부족
-
+| "SERVER_ERROR out of memory [writing get response]" | 메모리 부족

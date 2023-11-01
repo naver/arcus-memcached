@@ -5,7 +5,7 @@ Set collection에 관한 명령은 아래와 같다.
 - [Set collection 생성: sop create](ch06-command-set-collection.md#sop-create-set-collection-생성)
 - Set collection 삭제: delete (기존 key-value item의 삭제 명령을 그대로 사용)
 
-Set element에 관한 명령은 아래와 같다. 
+Set element에 관한 명령은 아래와 같다.
 
 - [Set element 삽입: sop insert](ch06-command-set-collection.md#sop-insert-set-element-삽입)
 - [Set element 삭제: sop delete](ch06-command-set-collection.md#sop-delete-set-element-삭제)
@@ -114,7 +114,7 @@ sop get <key> <count> [delete|drop]\r\n
 그리고 delete로 인해 empty set이 될 경우 그 set을 drop할 것인지를 지정한다.
 
 성공 시의 response string은 아래와 같다.
-VALUE 라인의 \<count\>는 조회된 element 개수를 의미한다. 
+VALUE 라인의 \<count\>는 조회된 element 개수를 의미한다.
 마지막 라인은 END, DELETED, DELETED_DROPPED 중의 하나를 가지며
 각각 element 조회만 수행한 상태, element 조회하고 삭제한 상태,
 element 조회 및 삭제하고 set을 drop한 상태를 의미한다.
@@ -132,13 +132,13 @@ END|DELETED|DELETED_DROPPED\r\n
 
 | Response String                                      | 설명                    |
 |------------------------------------------------------|------------------------ |
-| "NOT_FOUND"	                                         | key miss
-| "NOT_FOUND_ELEMENT"	                                 | element miss (element가 존재하지 않는 상태임)
-| "TYPE_MISMATCH"	                                     | 해당 item이 set collection이 아님
+| "NOT_FOUND"                                          | key miss
+| "NOT_FOUND_ELEMENT"                                  | element miss (element가 존재하지 않는 상태임)
+| "TYPE_MISMATCH"                                      | 해당 item이 set collection이 아님
 | "UNREADABLE"                                         | 해당 item이 unreadable item임
 | "NOT_SUPPORTED"                                      | 지원하지 않음
 | "CLIENT_ERROR bad command line format"               | protocol syntax 틀림
-| "SERVER_ERROR out of memory [writing get response]"	 | 메모리 부족
+| "SERVER_ERROR out of memory [writing get response]"  | 메모리 부족
 
 ## sop exist (Set Element 존재유무 검사)
 
@@ -159,12 +159,10 @@ Response string과 그 의미는 아래와 같다.
 |------------------------------------------|------------------------ |
 | "EXIST"                                  | 성공 (주어진 데이터가 set에 존재)
 | "NOT_EXIST"                              | 성공 (주어진 데이터가 set에 존재하지 않음)
-| "NOT_FOUND"	                             | key miss
-| "TYPE_MISMATCH"	                         | 해당 item이 set collection이 아님
+| "NOT_FOUND"                              | key miss
+| "TYPE_MISMATCH"                          | 해당 item이 set collection이 아님
 | "UNREADABLE"                             | 해당 item이 unreadable item임
 | "NOT_SUPPORTED"                          | 지원하지 않음
 | "CLIENT_ERROR bad command line format"   | protocol syntax 틀림
 | "CLIENT_ERROR too large value"           | 주어진 데이터가 element value의 최대 크기보다 큼
 | "CLIENT_ERROR bad data chunk"            | 주어진 데이터의 길이가 \<bytes\>와 다르거나 “\r\n”으로 끝나지 않음
- 
-
