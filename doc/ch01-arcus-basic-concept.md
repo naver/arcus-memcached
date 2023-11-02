@@ -4,7 +4,7 @@ ARCUS Cache Server는 하나의 데이터만을 value로 가지는 simple key-va
 여러 데이터를 구조화된 형태로 저장하는 collection을 하나의 value로 가지는
 확장된 key-value 데이터 모델을 제공한다.
 
-## 기본 제약 사항
+## Basic constraints
 
 ARCUS Cache Server의 key-value 모델은 아래의 기본 제약 사항을 가진다.
 
@@ -130,4 +130,4 @@ stale 데이터 노출 관점
 - Automatic scrub 작업은 모든 캐시 데이터를 순차 접근하여 stale 여부를 검사하므로, 일정 시간이 소요된다.
 하지만, Automatic scrub 작업의 완료 전에 새로 추가된 캐시 노드가 다운되는 경우는 극히 드물다.
 
-참고로 명시적으로 수행할 수 있는 `scrub stale` 명령을 제공하고 있다. [Scrub 명령](ch12-command-administration.md#scrub-명령)
+참고로 명시적으로 수행할 수 있는 `scrub stale` 명령을 제공하고 있다. [Scrub 명령](ch12-command-administration.md#scrub)

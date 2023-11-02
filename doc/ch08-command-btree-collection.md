@@ -2,22 +2,22 @@
 
 B+tree collection에 관한 명령은 아래와 같다.
 
-- [B+tree collection 생성: bop create](ch08-command-btree-collection.md#bop-create-btree-collection-%EC%83%9D%EC%84%B1)
+- [B+tree collection 생성: bop create](#bop-create)
 - B+tree collection 삭제: delete (기존 key-value item의 삭제 명령을 그대로 사용)
 
 B+tree element에 관한 기본 명령은 아래와 같다.
 
-- [B+tree element 삽입/대체: bop insert/upsert](ch08-command-btree-collection.md#bop-insertupsert-btree-element-삽입대체)
-- [B+tree element 변경: bop update](ch08-command-btree-collection.md#bop-update-btree-element-%EB%B3%80%EA%B2%BD)
-- [B+tree element 삭제: bop delete](ch08-command-btree-collection.md#bop-delete-btree-element-삭제)
-- [B+tree element 조회: bop get](ch08-command-btree-collection.md#bop-get-btree-element-조회)
-- [B+tree element 개수 계산: bop count](ch08-command-btree-collection.md#bop-count-btree-element-개수-계산)
-- [B+tree element 값의 증감: bop incr/decr](ch08-command-btree-collection.md#bop-incrdecr-btree-element-값의-증감)
+- [B+tree element 삽입/대체: bop insert/upsert](#bop-insertupsert)
+- [B+tree element 변경: bop update](#bop-update)
+- [B+tree element 삭제: bop delete](#bop-delete)
+- [B+tree element 조회: bop get](#bop-get)
+- [B+tree element 개수 계산: bop count](#bop-count)
+- [B+tree element 값의 증감: bop incr/decr](#bop-incrdecr)
 
 ARCUS cache server는 다수의 b+tree들에 대한 조회 기능을 특별히 제공하며, 이들은 아래와 같다.
 
-- [하나의 명령으로 여러 b+tree들에 대한 조회를 한번에 수행하는 기능:  bop mget](ch08-command-btree-collection.md#bop-mget-btree-multiple-get)
-- [여러 b+tree들에서 조회 조건을 만족하는 elements를 sort merge하여 최종 결과를 얻는 기능: bop smget](ch08-command-btree-collection.md#bop-smget-btree-sort-merge-get)
+- [하나의 명령으로 여러 b+tree들에 대한 조회를 한번에 수행하는 기능:  bop mget](#bop-mget)
+- [여러 b+tree들에서 조회 조건을 만족하는 elements를 sort merge하여 최종 결과를 얻는 기능: bop smget](#bop-smget)
 
 ARCUS cache server는 bkey 기반의 element 조회 기능 외에도 b+tree position 기반의 element 조회 기능을 제공한다.
 B+tree에서 특정 element의 position이란 b+teee에서의 그 element의 위치 정보로서,
@@ -27,16 +27,16 @@ B+tree position은 0-based index로 표현한다.
 
 ARCUS cache server에서 제공하는 b+tree position 관련 명령은 다음과 같다.
 
-- [B+tree에서 특정 bkey의 position을 조회하는 기능 : bop position](ch08-command-btree-collection.md#bop-position-btree-position-조회)
-- [B+tree에서 하나의 position 또는 position range에 해당하는 element를 조회하는 기능 : bop gbp(get by position)](ch08-command-btree-collection.md#bop-gbp-btree-get-by-position)
-- [B+tree에서 특정 bkey의 position과 element 그리고 그 위치 앞뒤의 element를 함께 조회하는 기능: bop pwg(position with get)](ch08-command-btree-collection.md#bop-pwg-btree-find-position-with-get-version-180)
+- [B+tree에서 특정 bkey의 position을 조회하는 기능 : bop position](#bop-position)
+- [B+tree에서 하나의 position 또는 position range에 해당하는 element를 조회하는 기능 : bop gbp(get by position)](#bop-gbp)
+- [B+tree에서 특정 bkey의 position과 element 그리고 그 위치 앞뒤의 element를 함께 조회하는 기능: bop pwg(position with get)](#bop-pwg)
 
 B+tree position 기반의 조회가 필요한 예를 하나 들면, ranking 시스템이 있다.
 Ranking 시스템에서는 특정 score를 bkey로 하여 해당 elements를 저장하고,
 조회는 최고/최저 score 기준으로 몇번째 위치 또는 위치의 범위에 해당하는 element를 찾는 경우가 많다.
 
 
-## bop create (B+tree Collection 생성)
+## bop create
 
 B+tree collection을 empty 상태로 생성한다.
 
@@ -61,7 +61,7 @@ Response string과 그 의미는 아래와 같다.
 | "CLIENT_ERROR bad command line format"  | protocol syntax 틀림
 | "SERVER_ERROR out of memory"            | 메모리 부족
 
-## bop insert/upsert (B+Tree Element 삽입/대체)
+## bop insert/upsert
 
 B+tree collection에 하나의 element를 추가하는 명령으로
 (1) 하나의 element를 삽입하는 bop insert 명령과
@@ -78,7 +78,7 @@ bop upsert <key> <bkey> [<eflag>] <bytes> [create <attributes>] [noreply|pipe|ge
 - \<key\> - 대상 item의 key string
 - \<bkey\> - 삽입할 element의 bkey
 - \<eflag\> - 삽입할 element의 optional flag
-- \<bytes\>와 \<data\> - 삽입할 element의 데이터의 길이와 데이터 그 자체 (최대 크기는 [기본제약사항](ch01-arcus-basic-concept.md#기본-제약-사항)을 참고)
+- \<bytes\>와 \<data\> - 삽입할 element의 데이터의 길이와 데이터 그 자체 (최대 크기는 [기본제약사항](ch01-arcus-basic-concept.md#basic-constraints)을 참고)
 - create \<attributes\> - b+tree collection 없을 시에 b+tree 생성 요청.
 [Item Attribute 설명](ch03-item-attributes.md)을 참조 바란다.
   - unreadable - 명시하면, readable 속성은 off로 설정됩니다.
@@ -114,7 +114,7 @@ END\r\n
 | "CLIENT_ERROR bad data chunk"           | 삽입할 데이터의 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
 | "SERVER_ERROR out of memory"            | 메모리 부족
 
-## bop update (B+Tree Element 변경)
+## bop update
 
 B+tree collection에서 하나의 element에 대해 eflag 변경 그리고/또는 data 변경을 수행한다.
 현재 다수 elements에 대한 변경 연산은 제공하지 않고 있다.
@@ -149,7 +149,7 @@ Response string과 그 의미는 아래와 같다.
 | "CLIENT_ERROR bad data chunk"           | 변경할 데이터의 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
 | "SERVER_ERROR out of memory"            | 메모리 부족
 
-## bop delete (B+Tree Element 삭제)
+## bop delete
 
 b+tree collection에서 하나의 bkey 또는 bkey range 조건과 eflag filter 조건을 만족하는
 N 개의 elements를 삭제한다.
@@ -182,7 +182,7 @@ Response string과 그 의미는 아래와 같다.
 | "NOT_SUPPORTED"                         | 지원하지 않음
 | "CLIENT_ERROR bad command line format"  | protocol syntax 틀림
 
-## bop get (B+Tree Element 조회)
+## bop get
 
 B+tree collection에서 하나의 bkey 또는 bkey range 조건과 eflag filter 조건을 만족하는
 elements에서 offset 개를 skip한 후 count 개의 elements를 조회한다.
@@ -241,7 +241,7 @@ b+tree collection 내부에 trim 발생 여부를 유지하지 않아 TRIMMED와
 | "CLIENT_ERROR bad command line format"                | protocol syntax 틀림
 | "SERVER_ERROR out of memory [writing get response]"   | 메모리 부족
 
-## bop count (B+Tree Element 개수 계산)
+## bop count
 
 b+tree collection에서 하나의 bkey 또는 bkey range 조건과 eflag filter 조건을 만족하는
 elements 개수를 구한다.
@@ -274,7 +274,7 @@ COUNT=<count>
 | "NOT_SUPPORTED"                          | 지원하지 않음
 | "CLIENT_ERROR bad command line format"   | protocol syntax 틀림
 
-## bop incr/decr (B+Tree Element 값의 증감)
+## bop incr/decr
 
 B+tree collection 특정 하나의 element에 있는 데이터를 increment 또는 decrement하고,
 증감된 데이터를 반환한다.
@@ -316,7 +316,7 @@ Increment/decrement 수행 후의 데이터 값이다.
 | "CLIENT_ERROR bad command line format"                          | protocol syntax 틀림
 | "SERVER_ERROR out of memory [writing get response]"             | 메모리 부족
 
-## bop mget (B+Tree Multiple Get)
+## bop mget
 
 여러 b+tree들에 대해 동일 조회 조건(bkey range와 eflag filter)으로 element들을 한꺼번에 조회한다.
 여러 b+tree들에 대한 동일 조회 조건을 사용하므로, 대상 b+tree들은 동일 bkey 유형을 가져야 한다.
@@ -389,7 +389,7 @@ flags와 ecount를 포함하여 조회된 element 정보가 생략된다.
 | "CLIENT_ERROR bad value"                              | bop mget 명령의 제약 조건을 위배함.
 | "SERVER_ERROR out of memory [writing get response]"   | 메모리 부족
 
-## bop smget (B+Tree Sort Merge Get)
+## bop smget
 
 여러 b+tree들에서 bkey range 조건과 eflag filter 조건을 모두 만족하는
 elements를 sort merge 형태로 조회하면서 count 개의 elements를 가져온다.
@@ -541,7 +541,7 @@ smget 수행의 실패 시의 response string은 다음과 같다.
 | "SERVER_ERROR out of memory [writing get response"   | 메모리 부족
 
 
-## bop position (B+Tree Position 조회)
+## bop position
 
 b+tree collection에서 특정 element의 position을 조회한다.
 Element의 position이란 b+tree에서의 위치 정보로서,
@@ -575,7 +575,7 @@ POSITION=<position>\r\n
 | "NOT_SUPPORTED"                          | 지원하지 않음
 | "CLIENT_ERROR bad command line format"   | protocol syntax 틀림
 
-## bop gbp (B+Tree Get By Position)
+## bop gbp
 
 B+tree collection에서 position 기반으로 elements를 조회한다.
 
@@ -613,7 +613,8 @@ END\r\n
 | "CLIENT_ERROR bad command line format"               | protocol syntax 틀림
 | "SERVER_ERROR out of memory [writing get response]"  | 메모리 부족
 
-## bop pwg (B+Tree Find Position with Get [version 1.8.0])
+## bop pwg
+Available since 1.8.0
 
 B+tree collection에서 특정 bkey의 position을 조회하면서,
 그 bkey를 가진 element를 포함하여 앞뒤에(양방향) 위치한 element N개 씩을 한번에 조회한다.
