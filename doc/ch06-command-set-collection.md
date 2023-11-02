@@ -2,17 +2,17 @@
 
 Set collection에 관한 명령은 아래와 같다.
 
-- [Set collection 생성: sop create](ch06-command-set-collection.md#sop-create-set-collection-생성)
+- [Set collection 생성: sop create](#sop-create)
 - Set collection 삭제: delete (기존 key-value item의 삭제 명령을 그대로 사용)
 
 Set element에 관한 명령은 아래와 같다.
 
-- [Set element 삽입: sop insert](ch06-command-set-collection.md#sop-insert-set-element-삽입)
-- [Set element 삭제: sop delete](ch06-command-set-collection.md#sop-delete-set-element-삭제)
-- [Set element 조회: sop get](ch06-command-set-collection.md#sop-get-set-element-조회)
-- [Set element 존재유무 검사: sop exist](ch06-command-set-collection.md#sop-exist-set-element-존재유무-검사)
+- [Set element 삽입: sop insert](#sop-insert)
+- [Set element 삭제: sop delete](#sop-delete)
+- [Set element 조회: sop get](#sop-get)
+- [Set element 존재유무 검사: sop exist](#sop-exist)
 
-## sop create (Set Collection 생성)
+## sop create
 
 Set collection을 empty 상태로 생성한다.
 
@@ -36,7 +36,7 @@ Response string과 그 의미는 아래와 같다.
 | "CLIENT_ERROR bad command line format"   | protocol syntax 틀림
 | "SERVER_ERROR out of memory"             | 메모리 부족
 
-## sop insert (Set Element 삽입)
+## sop insert
 
 Set collection에 하나의 element를 삽입한다.
 Set collection을 생성하면서 하나의 element를 삽입할 수도 있다.
@@ -53,7 +53,7 @@ sop insert <key> <bytes> [create <attributes>] [noreply|pipe]\r\n<data>\r\n
   - unreadable - 명시하면, readable 속성은 off로 설정됩니다.
 - noreply or pipe - 명시하면, response string을 전달받지 않는다.
 pipe 사용은 [Command Pipelining](ch09-command-pipelining.md)을 참조 바란다.
-- \<data\> - 삽입할 데이터 (최대 크기는 [기본제약사항](ch01-arcus-basic-concept.md#기본-제약-사항)을 참고)
+- \<data\> - 삽입할 데이터 (최대 크기는 [기본제약사항](ch01-arcus-basic-concept.md#basic-constraints)을 참고)
 
 Response string과 그 의미는 아래와 같다.
 
@@ -71,7 +71,7 @@ Response string과 그 의미는 아래와 같다.
 | "CLIENT_ERROR bad data chunk"            | 삽입할 데이터 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
 | "SERVER_ERROR out of memory"             | 메모리 부족
 
-## sop delete (Set Element 삭제)
+## sop delete
 
 Set collection에서 하나의 element를 삭제한다.
 
@@ -100,7 +100,7 @@ Response string과 그 의미는 아래와 같다.
 | "CLIENT_ERROR too large value"          | 삭제할 데이터가 element value의 최대 크기보다 큼
 | "CLIENT_ERROR bad data chunk"           | 삭제할 데이터의 길이가 \<bytes\>와 다르거나 “\r\n”으로 끝나지 않음
 
-## sop get (Set Element 조회)
+## sop get
 
 Set collection에서 N 개의 elements를 조회한다.
 
@@ -140,7 +140,7 @@ END|DELETED|DELETED_DROPPED\r\n
 | "CLIENT_ERROR bad command line format"               | protocol syntax 틀림
 | "SERVER_ERROR out of memory [writing get response]"  | 메모리 부족
 
-## sop exist (Set Element 존재유무 검사)
+## sop exist
 
 Set collection에 특정 element의 존재 유무를 검사한다.
 

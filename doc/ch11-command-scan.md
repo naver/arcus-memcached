@@ -1,9 +1,9 @@
 # Chapter 11. Scan 명령
 
-- [SCAN KEY 명령](ch11-command-scan.md#scan-key-명령)
-- [SCAN PREFIX 명령](ch11-command-scan.md#scan-prefix-명령)
+- [SCAN KEY 명령](#scan-key)
+- [SCAN PREFIX 명령](#scan-prefix)
 
-## Scan key 명령
+## Scan key
 
 특정 조건을 만족하는 아이템들의 키 목록을 얻어올 수 있는 scan key 기능을 제공한다.
 scan key 기능은 제한된 시간(5ms) 내에서 아이템들을 스캔하고 응용에게 찾은 키 스트링 목록과
@@ -78,7 +78,7 @@ scan key 명령 실패 시에 response string 은 다음과 같다.
 | CLIENT_ERROR invalid cursor            | cursor 에 숫자가 아닌 값을 준 경우
 | CLIENT_ERROR bad command line format   | protocol syntax 틀림
 
-## Scan prefix 명령
+## Scan prefix
 
 특정 조건을 만족하는 Prefix 목록을 얻어올 수 있는 scan prefix 기능을 제공한다.
 scan prefix 기능은 제한된 시간(5ms) 내에서 Prefix들을 스캔하고 응용에게 찾은 Prefix 목록과

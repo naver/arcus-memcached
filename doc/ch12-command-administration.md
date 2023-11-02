@@ -1,16 +1,16 @@
 # Chapter 12. Admin & Monitoring 명령
 
-- [FLUSH 명령](ch12-command-administration.md#flush-명령)
-- [SCRUB 명령](ch12-command-administration.md#scrub-명령)
-- [STATS 명령](ch12-command-administration.md#stats-명령)
-- [CONFIG 명령](ch12-command-administration.md#config-명령)
-- [CMDLOG 명령](ch12-command-administration.md#command-logging-명령)
-- [LQDETECT 명령](ch12-command-administration.md#long-query-detect-명령)
-- [KEY DUMP 명령](ch12-command-administration.md#key-dump-명령)
-- [ZKENSEMBLE 명령](ch12-command-administration.md#zkensemble-명령)
-- [HELP 명령](ch12-command-administration.md#help-명령)
+- [FLUSH 명령](#flush)
+- [SCRUB 명령](#scrub)
+- [STATS 명령](#stats)
+- [CONFIG 명령](#config)
+- [CMDLOG 명령](#command-logging)
+- [LQDETECT 명령](#long-query-detect)
+- [KEY DUMP 명령](#key-dump)
+- [ZKENSEMBLE 명령](#zkensemble)
+- [HELP 명령](#help)
 
-## Flush 명령
+## Flush
 
 ARCUS Cache Server는 items을 invalidate 시키기 위한 두 가지 flush 명령을 제공한다.
 
@@ -49,7 +49,7 @@ Response string과 그 의미는 아래와 같다.
 | "NOT_FOUND"                             | prefix miss (flush_prefix 명령인 경우만 해당)
 | "CLIENT_ERROR bad command line format"  | protocol syntax 틀림
 
-## Scrub 명령
+## Scrub
 
 ARCUS Cache Server에는 유효하지 않으면서 메모리를 차지하고 있는 items이 존재할 수 있다.
 이 items은 아래 두 유형으로 구분된다.
@@ -95,7 +95,7 @@ ARCUS Cache Server 구동 시에 ascii_scrub.so 파일을 dynamic linking 하는
 구동 옵션을 주어야 scrub 명령을 사용할 수 있다.
 
 
-## Stats 명령
+## Stats
 
 ARCUS Cache Server의 각종 통계 정보를 조회하거나 그 통계 정보를 reset한다.
 
@@ -703,7 +703,7 @@ END
 - last_chkpt_snapshot_filesize_bytes - 이전 체크포인트 스냅샷 파일 크기를 나타낸다. (unit : bytes)
 - current_command_log_filesize_bytes - 현재 명령 로그 파일 크기를 나타낸다. (unit : bytes)
 
-## Config 명령
+## Config
 
 ARCUS Cache Server는 특정 configuration에 대해 동적으로 변경하거나 현재의 값을 조회하는 기능을 제공한다.
 동적으로 변경가능한 configuration들은 현재 아래만 지원한다.
@@ -809,7 +809,7 @@ ARCUS Cache Server에는 더 이상 유효하지 않은 아이템을 일괄 삭�
 config scrub_count [<scrub_count>]\r\n
 ```
 
-## Command Logging 명령
+## Command Logging
 
 ARCUS Cache Server에 입력되는 command를 logging 한다.
 start 명령을 시작으로 logging이 종료될 때 까지의 모든 command를 기록한다.
@@ -857,7 +857,7 @@ The number of log files : 1                                          //file_coun
 The log file name: /Users/temp/command_11211_20160126_192729_{n}.log //path/file_name
 ```
 
-## Long Query Detect 명령
+## Long Query Detect
 
 ARCUS Cache Server에서 collection item에 대한 요청 중에는 그 처리 시간이 오래 걸리는 요청이 존재한다.
 이를 detect하기 위한 기능으로 lqdetect 명령을 제공한다.
@@ -929,7 +929,7 @@ The number of total long query commands : 1152    //detected_commands
 The detection threshold : 43                      //threshold
 ```
 
-## Key dump 명령
+## Key dump
 
 ARCUS Cache Server의 key를 dump 한다.
 
@@ -992,7 +992,7 @@ DUMP SUMMARY: { prefix=<prefix>, count=<count>, total=<total> elapsed=<elapsed> 
   - \<total\>은 cache에 있는 전체 key 개수이다.
   - \<elapsed\>는 dump하는 데 소요된 시간(단위: 초) 이다.
 
-## ZKensemble 명령
+## ZKensemble
 
 ARCUS Cache Server가 연결되어 있는 ZooKeeper ensemble 설정에 대한 명령을 제공한다.
 
@@ -1011,7 +1011,7 @@ rejoin 명령은 ZK ensemble 과의 연결을 끊고 cache cloud에서 빠져 �
 - 운영자의 실수로 cache_list에 등록된 cache server의 ephemeral znode가 삭제된 경우
 
 
-## Help 명령
+## Help
 
 ARCUS Cache Server의 ASCII command syntax를 조회한다.
 
