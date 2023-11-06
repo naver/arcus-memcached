@@ -37,9 +37,23 @@ Other Linux distributions have not been tested.
 
 **Dependencies**
 
-arcus-memcached has the following dependencies. Make sure to install them.
+Install tools for building by using package manager in linux system.
+  ```
+    (CentOS) sudo yum install gcc make which libtool
+    (Ubuntu) sudo apt-get install build-essential libtool
+  ```
+
+Also, arcus-memcached has the following library dependencies.
 - [libevent](http://libevent.org/) - An event notification library
 - [arcus-zookeeper](https://github.com/naver/arcus-zookeeper) - Zookeeper c library with Arcus modification
+
+To install them easily, run the command below from the git-cloned source code.
+```
+$ ./deps/install.sh [installation path]
+```
+If the installation path was not given, dependencies will be installed in the system path(/usr/local).
+
+Therefore, giving the installation path preferably is recommended.
 
 **Compile**
 
