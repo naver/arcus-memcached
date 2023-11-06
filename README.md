@@ -73,7 +73,7 @@ Note that ZooKeeper dynamic reconfig was included in it.
 So, you must use the ZooKeeper library 3.5.8 or higher version with Arcus modifications.
 If you want to turn on the ZooKeeper dynamic reconfig, add `--with-zk-reconfig` to the above configure options.
 
-To test arcus-memcached, you can execute `make test`. If any problem exists in compilation, please refer to [compilation FAQ](/doc/compilation_faq.md).
+To test arcus-memcached, you can execute `make test`. If any problem exists in compilation, please refer to [compilation FAQ](docs/compilation_faq.md).
 
 ## Run
 
@@ -104,12 +104,12 @@ $ kill -INT <pid>
 ## ASCII Protocol
 
 Please refer to
-[Arcus cache server ascii protocol](doc/ch00-arcus-ascii-protocol.md)
+[Arcus cache server ascii protocol](docs/ascii-protocol/README.md)
 for details on Arcus ASCII commands.
 
 You can use telnet interface to test simply Arcus ASCII commands on Arcus cache server.
 To know the usage of telnet interface,
-refer to [Arcus telnet interface guide](doc/ap01-arcus-telnet-interface.md).
+refer to [Arcus telnet interface guide](docs/ascii-protocol/ch99-appendix.md).
 
 ## Issues
 
