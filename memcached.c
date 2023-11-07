@@ -193,6 +193,7 @@ static rel_time_t get_current_time(void)
 }
 
 #define REALTIME_MAXDELTA 60*60*24*30
+#define MAX_RELATIVE_TIME 0x7FFFFFFF
 /*
  * given time value that's either unix time or delta from current unix time,
  * return unix time. Use the fact that delta can't exceed one month
@@ -215,9 +216,14 @@ static rel_time_t realtime(const time_t exptime)
            underflow and wrap around to some large value way in the
            future, effectively making items expiring in the past
            really expiring never */
-        if (exptime <= process_started)
+        if (exptime <= process_started) {
             return (rel_time_t)1;
-        return (rel_time_t)(exptime - process_started);
+        }
+        time_t expiration = exptime - process_started;
+        if (expiration > MAX_RELATIVE_TIME) { // rel_time_t overflow
+            return (rel_time_t)MAX_RELATIVE_TIME;
+        }
+        return (rel_time_t)expiration;
     } else {
         return (rel_time_t)(exptime + current_time);
     }
@@ -8450,8 +8456,7 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     char *key;
     size_t nkey;
     unsigned int flags;
-    int32_t exptime_int=0;
-    time_t exptime;
+    int64_t exptime=0;
     int vlen;
     uint64_t req_cas_id=0;
     item *it;
@@ -8466,7 +8471,7 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     }
 
     if ((! safe_strtoul(tokens[2].value, (uint32_t *)&flags)) ||
-        (! safe_strtol(tokens[3].value, &exptime_int)) ||
+        (! safe_strtoll(tokens[3].value, &exptime)) ||
         (! safe_strtol(tokens[4].value, (int32_t *)&vlen)) ||
         (vlen < 0 || vlen > (INT_MAX-2)))
     {
@@ -8475,9 +8480,6 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         return;
     }
     vlen += 2;
-
-    /* Ubuntu 8.04 breaks when I pass exptime to safe_strtol */
-    exptime = exptime_int;
 
     // does cas value exist?
     if (handle_cas) {
@@ -8566,12 +8568,12 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
 
     bool create = false;
     unsigned int flags  = 0;
-    int32_t exptime_int = 0;
+    int64_t exptime = 0;
     uint64_t init_value = 0;
 
     if (ntokens >= 7) {
         if (! (safe_strtoul(tokens[3].value, (uint32_t *)&flags)
-               && safe_strtol(tokens[4].value, &exptime_int)
+               && safe_strtoll(tokens[4].value, &exptime)
                && safe_strtoull(tokens[5].value, &init_value))) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
@@ -8591,7 +8593,7 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
 
     ret = mc_engine.v1->arithmetic(mc_engine.v0, c, key, nkey,
                                    incr, create, delta, init_value,
-                                   htonl(flags), realtime(exptime_int),
+                                   htonl(flags), realtime(exptime),
                                    &cas, &result, 0);
     CONN_CHECK_AND_SET_EWOULDBLOCK(ret, c);
 
@@ -8687,7 +8689,7 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
 static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens, bool flush_all)
 {
     assert(c->ewouldblock == false);
-    int32_t exptime = 0; /* default delay value */
+    int64_t exptime = 0; /* default delay value */
     bool delay_flag;
     ENGINE_ERROR_CODE ret;
 
@@ -8706,7 +8708,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
     }
     if (delay_flag) {
         int delay_idx = (flush_all ? 1 : 2);
-        if (! safe_strtol(tokens[delay_idx].value, &exptime) || exptime < 0) {
+        if (! safe_strtoll(tokens[delay_idx].value, &exptime) || exptime < 0) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
@@ -10069,7 +10071,7 @@ static inline int get_coll_create_attr_from_tokens(token_t *tokens, const int nt
 {
     assert(coll_type==ITEM_TYPE_LIST || coll_type==ITEM_TYPE_SET ||
            coll_type==ITEM_TYPE_MAP || coll_type==ITEM_TYPE_BTREE);
-    int32_t exptime_int;
+    int64_t exptime;
 
     /* create attributes: flags, exptime, maxcount, ovflaction, unreadable */
     /* support arcus 1.5 backward compatibility. */
@@ -10082,11 +10084,11 @@ static inline int get_coll_create_attr_from_tokens(token_t *tokens, const int nt
 
     /* exptime */
     if (ntokens >= 2) {
-        if (! safe_strtol(tokens[1].value, &exptime_int)) return -1;
+        if (! safe_strtoll(tokens[1].value, &exptime)) return -1;
     } else {
-        exptime_int = 0; /* default value */
+        exptime = 0; /* default value */
     }
-    attrp->exptime = realtime(exptime_int);
+    attrp->exptime = realtime(exptime);
 
     /* maxcount */
     if (ntokens >= 3) {
@@ -12983,13 +12985,13 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
         name = tokens[i].value; value = equal + 1;
 
         if (strcmp(name, "expiretime")==0) {
-            int32_t exptime_int;
+            int64_t exptime;
             attr_ids[attr_count++] = ATTR_EXPIRETIME;
-            if (! safe_strtol(value, &exptime_int)) {
+            if (! safe_strtoll(value, &exptime)) {
                 ret = ENGINE_EBADVALUE;
                 break;
             }
-            attr_data.exptime = realtime(exptime_int);
+            attr_data.exptime = realtime(exptime);
         } else if (strcmp(name, "maxcount")==0) {
             attr_ids[attr_count++] = ATTR_MAXCOUNT;
             if (! safe_strtol(value, &attr_data.maxcount)) {
