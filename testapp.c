@@ -952,7 +952,7 @@ static off_t storage_command(char*buf,
                              const void* dta,
                              size_t dtalen,
                              uint32_t flags,
-                             uint32_t exp) {
+                             int64_t exp) {
     /* all of the storage commands use the same command layout */
     protocol_binary_request_set *request = (void*)buf;
     assert(bufsz > sizeof(*request) + keylen + dtalen);
@@ -961,13 +961,13 @@ static off_t storage_command(char*buf,
     request->message.header.request.magic = PROTOCOL_BINARY_REQ;
     request->message.header.request.opcode = cmd;
     request->message.header.request.keylen = htons(keylen);
-    request->message.header.request.extlen = 8;
-    request->message.header.request.bodylen = htonl(keylen + 8 + dtalen);
+    request->message.header.request.extlen = 16;
+    request->message.header.request.bodylen = htonl(keylen + 16 + dtalen);
     request->message.header.request.opaque = 0xdeadbeef;
     request->message.body.flags = flags;
     request->message.body.expiration = exp;
 
-    off_t key_offset = sizeof(protocol_binary_request_no_extras) + 8;
+    off_t key_offset = sizeof(protocol_binary_request_no_extras) + 16;
 
     memcpy(buf + key_offset, key, keylen);
     if (dta != NULL) {
@@ -1007,7 +1007,7 @@ static off_t raw_command(char* buf,
     return sizeof(*request) + keylen + dtalen;
 }
 
-static off_t flush_command(char* buf, size_t bufsz, uint8_t cmd, uint32_t exptime, bool use_extra) {
+static off_t flush_command(char* buf, size_t bufsz, uint8_t cmd, int64_t exptime, bool use_extra) {
     protocol_binary_request_flush *request = (void*)buf;
     assert(bufsz > sizeof(*request));
 
@@ -1017,10 +1017,10 @@ static off_t flush_command(char* buf, size_t bufsz, uint8_t cmd, uint32_t exptim
 
     off_t size = sizeof(protocol_binary_request_no_extras);
     if (use_extra) {
-        request->message.header.request.extlen = 4;
-        request->message.body.expiration = htonl(exptime);
-        request->message.header.request.bodylen = htonl(4);
-        size += 4;
+        request->message.header.request.extlen = 8;
+        request->message.body.expiration = htonll(exptime);
+        request->message.header.request.bodylen = htonl(8);
+        size += 8;
     }
 
     request->message.header.request.opaque = 0xdeadbeef;
@@ -1035,7 +1035,7 @@ static off_t arithmetic_command(char* buf,
                                 size_t keylen,
                                 uint64_t delta,
                                 uint64_t initial,
-                                uint32_t exp) {
+                                int64_t exp) {
     protocol_binary_request_incr *request = (void*)buf;
     assert(bufsz > sizeof(*request) + keylen);
 
@@ -1043,14 +1043,14 @@ static off_t arithmetic_command(char* buf,
     request->message.header.request.magic = PROTOCOL_BINARY_REQ;
     request->message.header.request.opcode = cmd;
     request->message.header.request.keylen = htons(keylen);
-    request->message.header.request.extlen = 20;
-    request->message.header.request.bodylen = htonl(keylen + 20);
+    request->message.header.request.extlen = 24;
+    request->message.header.request.bodylen = htonl(keylen + 24);
     request->message.header.request.opaque = 0xdeadbeef;
     request->message.body.delta = htonll(delta);
     request->message.body.initial = htonll(initial);
-    request->message.body.expiration = htonl(exp);
+    request->message.body.expiration = htonll(exp);
 
-    off_t key_offset = sizeof(protocol_binary_request_no_extras) + 20;
+    off_t key_offset = sizeof(protocol_binary_request_no_extras) + 24;
 
     memcpy(buf + key_offset, key, keylen);
     return key_offset + keylen;

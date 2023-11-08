@@ -23,7 +23,7 @@ use constant CMD_APPEND       => 0x0E;
 use constant CMD_PREPEND      => 0x0F;
 use constant REQ_PKT_FMT      => "CCnCCnNNNN";
 use constant RES_PKT_FMT      => "CCnCCnNNNN";
-use constant INCRDECR_PKT_FMT => "NNNNN";
+use constant INCRDECR_PKT_FMT => "NNNNQ>";
 use constant MIN_RECV_BYTES   => length(pack(RES_PKT_FMT));
 
 
@@ -80,7 +80,7 @@ sub udp_set_test {
         $req = "set $key $flags $exp $val_len\r\n$value\r\n";
     } elsif ($protocol == ::IS_BINARY) {
         my $key_len = length($key);
-        my $extra = pack "NN",$flags,$exp;
+        my $extra = pack "NQ>N",$flags,$exp;
         my $extra_len = length($extra);
         my $total_len = $val_len + $extra_len + $key_len;
         $req = pack(::REQ_PKT_FMT, ::BIN_REQ_MAGIC, ::CMD_SET, $key_len, $extra_len, 0, 0, $total_len, 0, 0, 0);

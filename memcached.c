@@ -3633,7 +3633,7 @@ static void complete_incr_bin(conn *c)
     /* fix byteorder in the request */
     req->message.body.delta = ntohll(req->message.body.delta);
     req->message.body.initial = ntohll(req->message.body.initial);
-    req->message.body.expiration = ntohl(req->message.body.expiration);
+    req->message.body.expiration = ntohll(req->message.body.expiration);
     char *key = binary_get_key(c);
     size_t nkey = c->binary_header.request.keylen;
     bool incr = (c->cmd == PROTOCOL_BINARY_CMD_INCREMENT ||
@@ -3658,7 +3658,7 @@ static void complete_incr_bin(conn *c)
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->arithmetic(mc_engine.v0,
                                    c, key, nkey, incr,
-                                   req->message.body.expiration != 0xffffffff,
+                                   req->message.body.expiration != 0xffffffffffffffff,
                                    req->message.body.delta,
                                    req->message.body.initial,
                                    0, /* flags */
@@ -4387,7 +4387,7 @@ static void process_bin_lop_create(conn *c)
 
     /* fix byteorder in the request */
     protocol_binary_request_lop_create* req = binary_get_request(c);
-    req->message.body.exptime  = ntohl(req->message.body.exptime);
+    req->message.body.exptime  = ntohll(req->message.body.exptime);
     req->message.body.maxcount = ntohl(req->message.body.maxcount);
 
     if (settings.verbose > 1) {
@@ -4395,7 +4395,7 @@ static void process_bin_lop_create(conn *c)
         for (int ii = 0; ii < nkey; ++ii) {
             fprintf(stderr, "%c", key[ii]);
         }
-        fprintf(stderr, " flags(%u) exptime(%d) maxcount(%d) ovflaction(%s) readable(%d)\n",
+        fprintf(stderr, " flags(%u) exptime(%"PRId64") maxcount(%d) ovflaction(%s) readable(%d)\n",
                 req->message.body.flags, req->message.body.exptime, req->message.body.maxcount,
                 get_ovflaction_str(req->message.body.ovflaction), req->message.body.readable);
     }
@@ -4463,7 +4463,7 @@ static void process_bin_lop_prepare_nread(conn *c)
     protocol_binary_request_lop_insert* req = binary_get_request(c);
     req->message.body.index = ntohl(req->message.body.index);
     if (req->message.body.create) {
-        req->message.body.exptime  = ntohl(req->message.body.exptime);
+        req->message.body.exptime  = ntohll(req->message.body.exptime);
         req->message.body.maxcount = ntohl(req->message.body.maxcount);
     }
 
@@ -4780,7 +4780,7 @@ static void process_bin_sop_create(conn *c)
 
     /* fix byteorder in the request */
     protocol_binary_request_sop_create* req = binary_get_request(c);
-    req->message.body.exptime  = ntohl(req->message.body.exptime);
+    req->message.body.exptime  = ntohll(req->message.body.exptime);
     req->message.body.maxcount = ntohl(req->message.body.maxcount);
 
     if (settings.verbose > 1) {
@@ -4788,7 +4788,7 @@ static void process_bin_sop_create(conn *c)
         for (int ii = 0; ii < nkey; ++ii) {
             fprintf(stderr, "%c", key[ii]);
         }
-        fprintf(stderr, " flags(%u) exptime(%d) maxcount(%d) ovflaction(%s) readable(%d)\n",
+        fprintf(stderr, " flags(%u) exptime(%"PRId64") maxcount(%d) ovflaction(%s) readable(%d)\n",
                 req->message.body.flags, req->message.body.exptime, req->message.body.maxcount,
                 "error", req->message.body.readable);
     }
@@ -4888,7 +4888,7 @@ static void process_bin_sop_prepare_nread(conn *c)
         if (c->cmd == PROTOCOL_BINARY_CMD_SOP_INSERT) {
             protocol_binary_request_sop_insert* req = binary_get_request(c);
             if (req->message.body.create) {
-                req->message.body.exptime  = ntohl(req->message.body.exptime);
+                req->message.body.exptime  = ntohll(req->message.body.exptime);
                 req->message.body.maxcount = ntohl(req->message.body.maxcount);
             }
             c->coll_op     = OPERATION_SOP_INSERT;
@@ -5233,7 +5233,7 @@ static void process_bin_bop_create(conn *c)
 
     /* fix byteorder in the request */
     protocol_binary_request_bop_create* req = binary_get_request(c);
-    req->message.body.exptime  = ntohl(req->message.body.exptime);
+    req->message.body.exptime  = ntohll(req->message.body.exptime);
     req->message.body.maxcount = ntohl(req->message.body.maxcount);
 
     if (settings.verbose > 1) {
@@ -5241,7 +5241,7 @@ static void process_bin_bop_create(conn *c)
         for (int ii = 0; ii < nkey; ++ii) {
             fprintf(stderr, "%c", key[ii]);
         }
-        fprintf(stderr, " flags(%u) exptime(%d) maxcount(%d) ovflaction(%s) readable(%d)\n",
+        fprintf(stderr, " flags(%u) exptime(%"PRId64") maxcount(%d) ovflaction(%s) readable(%d)\n",
                 req->message.body.flags, req->message.body.exptime, req->message.body.maxcount,
                 get_ovflaction_str(req->message.body.ovflaction), req->message.body.readable);
     }
@@ -5317,7 +5317,7 @@ static void process_bin_bop_prepare_nread(conn *c)
         //*(uint64_t*)req->message.body.bkey = ntohll(*(uint64_t*)req->message.body.bkey);
     }
     if (req->message.body.create) {
-        req->message.body.exptime  = ntohl(req->message.body.exptime);
+        req->message.body.exptime  = ntohll(req->message.body.exptime);
         req->message.body.maxcount = ntohl(req->message.body.maxcount);
     }
 
@@ -6754,7 +6754,6 @@ static void dispatch_bin_command(conn *c)
         handle_binary_protocol_error(c);
         return;
     }
-
     switch (c->cmd) {
     case PROTOCOL_BINARY_CMD_SETQ:
         c->cmd = PROTOCOL_BINARY_CMD_SET;
@@ -6829,14 +6828,14 @@ static void dispatch_bin_command(conn *c)
         }
         break;
     case PROTOCOL_BINARY_CMD_FLUSH:
-        if (keylen == 0 && bodylen == extlen && (extlen == 0 || extlen == 4)) {
+        if (keylen == 0 && bodylen == extlen && (extlen == 0 || extlen == 8)) {
             bin_read_key(c, bin_read_flush_exptime, extlen);
         } else {
             protocol_error = 1;
         }
         break;
     case PROTOCOL_BINARY_CMD_FLUSH_PREFIX:
-        if (keylen > 0 && bodylen == extlen && (extlen == 0 || extlen == 4)) {
+        if (keylen > 0 && bodylen == extlen && (extlen == 0 || extlen == 8)) {
             bin_read_key(c, bin_read_flush_prefix_exptime, extlen);
         } else {
             protocol_error = 1;
@@ -6852,8 +6851,8 @@ static void dispatch_bin_command(conn *c)
     case PROTOCOL_BINARY_CMD_SET: /* FALLTHROUGH */
     case PROTOCOL_BINARY_CMD_ADD: /* FALLTHROUGH */
     case PROTOCOL_BINARY_CMD_REPLACE:
-        if (extlen == 8 && keylen != 0 && bodylen >= (keylen + 8)) {
-            bin_read_key(c, bin_reading_set_header, 8);
+        if (extlen == 16 && keylen != 0 && bodylen >= (keylen + 16)) {
+            bin_read_key(c, bin_reading_set_header, 16);
         } else {
             protocol_error = 1;
         }
@@ -6877,8 +6876,8 @@ static void dispatch_bin_command(conn *c)
         break;
     case PROTOCOL_BINARY_CMD_INCREMENT:
     case PROTOCOL_BINARY_CMD_DECREMENT:
-        if (keylen > 0 && extlen == 20 && bodylen == (keylen + extlen)) {
-            bin_read_key(c, bin_reading_incr_header, 20);
+        if (keylen > 0 && extlen == 24 && bodylen == (keylen + extlen)) {
+            bin_read_key(c, bin_reading_incr_header, 24);
         } else {
             protocol_error = 1;
         }
@@ -6924,15 +6923,15 @@ static void dispatch_bin_command(conn *c)
         }
         break;
     case PROTOCOL_BINARY_CMD_LOP_CREATE:
-        if (keylen > 0 && extlen == 16 && bodylen == (keylen + extlen)) {
-            bin_read_key(c, bin_reading_lop_create, 16);
+        if (keylen > 0 && extlen == 24 && bodylen == (keylen + extlen)) {
+            bin_read_key(c, bin_reading_lop_create, 24);
         } else {
             protocol_error = 1;
         }
         break;
     case PROTOCOL_BINARY_CMD_LOP_INSERT:
-        if (keylen > 0 && extlen == 20 && bodylen > (keylen + extlen)) {
-            bin_read_key(c, bin_reading_lop_prepare_nread, 20);
+        if (keylen > 0 && extlen == 24 && bodylen > (keylen + extlen)) {
+            bin_read_key(c, bin_reading_lop_prepare_nread, 24);
         } else {
             protocol_error = 1;
         }
@@ -6952,15 +6951,15 @@ static void dispatch_bin_command(conn *c)
         }
         break;
     case PROTOCOL_BINARY_CMD_SOP_CREATE:
-        if (keylen > 0 && extlen == 16 && bodylen == (keylen + extlen)) {
-            bin_read_key(c, bin_reading_sop_create, 16);
+        if (keylen > 0 && extlen == 24 && bodylen == (keylen + extlen)) {
+            bin_read_key(c, bin_reading_sop_create, 24);
         } else {
             protocol_error = 1;
         }
         break;
     case PROTOCOL_BINARY_CMD_SOP_INSERT:
-        if (keylen > 0 && extlen == 16 && bodylen > (keylen + extlen)) {
-            bin_read_key(c, bin_reading_sop_prepare_nread, 16);
+        if (keylen > 0 && extlen == 24 && bodylen > (keylen + extlen)) {
+            bin_read_key(c, bin_reading_sop_prepare_nread, 24);
         } else {
             protocol_error = 1;
         }
@@ -6987,8 +6986,8 @@ static void dispatch_bin_command(conn *c)
         }
         break;
     case PROTOCOL_BINARY_CMD_BOP_CREATE:
-        if (keylen > 0 && extlen == 16 && bodylen == (keylen + extlen)) {
-            bin_read_key(c, bin_reading_bop_create, 16);
+        if (keylen > 0 && extlen == 20 && bodylen == (keylen + extlen)) {
+            bin_read_key(c, bin_reading_bop_create, 20);
         } else {
             protocol_error = 1;
         }
@@ -7243,11 +7242,11 @@ static void process_bin_append_prepend(conn *c)
 static void process_bin_flush(conn *c)
 {
     protocol_binary_request_flush* req = binary_get_request(c);
-    time_t exptime = 0;
+    int64_t exptime = 0;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     if (c->binary_header.request.extlen == sizeof(req->message.body)) {
-        exptime = ntohl(req->message.body.expiration);
+        exptime = ntohll(req->message.body.expiration);
         if (exptime < 0) {
             ret = ENGINE_EINVAL;
         }

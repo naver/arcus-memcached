@@ -55,7 +55,7 @@ use constant CMD_PREPENDQ   => 0x1A;
 # the same format, since they _could_ differ in the future.
 use constant REQ_PKT_FMT      => "CCnCCnNNNN";
 use constant RES_PKT_FMT      => "CCnCCnNNNN";
-use constant INCRDECR_PKT_FMT => "NNNNN";
+use constant INCRDECR_PKT_FMT => "NNNNQ>";
 use constant MIN_RECV_BYTES   => length(pack(RES_PKT_FMT));
 use constant REQ_MAGIC        => 0x80;
 use constant RES_MAGIC        => 0x81;
@@ -255,7 +255,7 @@ $mc->silent_mutation(::CMD_ADDQ, 'silentadd', 'silentaddval');
 # diag "Silent replace.";
 {
     my $key = "silentreplace";
-    my $extra = pack "NN", 829, 0;
+    my $extra = pack "NQ>N", 829, 0;
     $empty->($key);
     # $mc->send_silent(::CMD_REPLACEQ, $key, 'somevalue', 7278552, $extra, 0);
     # $empty->($key);
@@ -415,7 +415,7 @@ $mc->silent_mutation(::CMD_ADDQ, 'silentadd', 'silentaddval');
         my $k = "test_key_$i";
         my $v = 'x' x $i;
         # diag "Trying $i $k";
-        my $extra = pack "NN", 82, 0;
+        my $extra = pack "NQ>N", 82, 0;
         my $data = $mc->build_command(::CMD_SETQ, $k, $v, 0, $extra, 0);
         $data .= $mc->build_command(::CMD_SETQ, "alt_$k", "blah", 0, $extra, 0);
         if (length($data) > 2024) {
@@ -539,7 +539,7 @@ sub silent_mutation {
     my ($cmd, $key, $value) = @_;
 
     $empty->($key);
-    my $extra = pack "NN", 82, 0;
+    my $extra = pack "NQ>N", 82, 0;
     $mc->send_silent($cmd, $key, $value, 7278552, $extra, 0);
     $check->($key, 82, $value);
 }
@@ -707,7 +707,7 @@ sub flush {
 sub add {
     my $self = shift;
     my ($key, $val, $flags, $expire) = @_;
-    my $extra_header = pack "NN", $flags, $expire;
+    my $extra_header = pack "NQ>N", $flags, $expire;
     my $cas = 0;
     return $self->_do_command(::CMD_ADD, $key, $val, $extra_header, $cas);
 }
@@ -715,7 +715,7 @@ sub add {
 sub set {
     my $self = shift;
     my ($key, $val, $flags, $expire, $cas) = @_;
-    my $extra_header = pack "NN", $flags, $expire;
+    my $extra_header = pack "NQ>N", $flags, $expire;
     return $self->_do_command(::CMD_SET, $key, $val, $extra_header, $cas);
 }
 
@@ -728,7 +728,7 @@ sub _append_prepend {
 sub replace {
     my $self = shift;
     my ($key, $val, $flags, $expire) = @_;
-    my $extra_header = pack "NN", $flags, $expire;
+    my $extra_header = pack "NQ>N", $flags, $expire;
     my $cas = 0;
     return $self->_do_command(::CMD_REPLACE, $key, $val, $extra_header, $cas);
 }

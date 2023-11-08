@@ -343,10 +343,10 @@ extern "C"
         struct {
             protocol_binary_request_header header;
             struct {
-                uint32_t expiration;
+                int64_t expiration;
             } body;
         } message;
-        uint8_t bytes[sizeof(protocol_binary_request_header) + 4];
+        uint8_t bytes[sizeof(protocol_binary_request_header) + 8];
     } protocol_binary_request_flush;
 
     typedef protocol_binary_request_flush protocol_binary_request_flush_prefix;
@@ -366,10 +366,10 @@ extern "C"
             protocol_binary_request_header header;
             struct {
                 uint32_t flags;
-                uint32_t expiration;
+                int64_t expiration;
             } body;
         } message;
-        uint8_t bytes[sizeof(protocol_binary_request_header) + 8];
+        uint8_t bytes[sizeof(protocol_binary_request_header) + 16];
     } protocol_binary_request_set;
     typedef protocol_binary_request_set protocol_binary_request_add;
     typedef protocol_binary_request_set protocol_binary_request_replace;
@@ -405,10 +405,10 @@ extern "C"
             struct {
                 uint64_t delta;
                 uint64_t initial;
-                uint32_t expiration;
+                int64_t expiration;
             } body;
         } message;
-        uint8_t bytes[sizeof(protocol_binary_request_header) + 20];
+        uint8_t bytes[sizeof(protocol_binary_request_header) + 24];
     } protocol_binary_request_incr;
     typedef protocol_binary_request_incr protocol_binary_request_decr;
 
@@ -531,7 +531,7 @@ extern "C"
             protocol_binary_request_header header;
             struct {
                 uint32_t flags;
-                int32_t  exptime;
+                int64_t  exptime;
                 int32_t  maxcount;
                 uint8_t  ovflaction;
                 uint8_t  readable;
@@ -539,7 +539,7 @@ extern "C"
                 uint8_t  reserved2;
             } body;
         } message;
-        uint8_t bytes[sizeof(protocol_binary_request_header) + 16];
+        uint8_t bytes[sizeof(protocol_binary_request_header) + 24];
     } protocol_binary_request_lop_create;
 
     typedef union {
@@ -548,7 +548,7 @@ extern "C"
             struct {
                 int32_t  index;
                 uint32_t flags;
-                int32_t  exptime;
+                int64_t  exptime;
                 int32_t  maxcount;
                 uint8_t  create;
                 uint8_t  reserved1;
@@ -556,7 +556,7 @@ extern "C"
                 uint8_t  reserved3;
             } body;
         } message;
-        uint8_t bytes[sizeof(protocol_binary_request_header) + 20];
+        uint8_t bytes[sizeof(protocol_binary_request_header) + 24];
     } protocol_binary_request_lop_insert;
 
     typedef union {
@@ -613,7 +613,7 @@ extern "C"
             protocol_binary_request_header header;
             struct {
                 uint32_t flags;
-                int32_t  exptime;
+                int64_t  exptime;
                 int32_t  maxcount;
                 uint8_t  ovflaction;
                 uint8_t  readable;
@@ -621,7 +621,7 @@ extern "C"
                 uint8_t  reserved2;
             } body;
         } message;
-        uint8_t bytes[sizeof(protocol_binary_request_header) + 16];
+        uint8_t bytes[sizeof(protocol_binary_request_header) + 24];
     } protocol_binary_request_sop_create;
 
     typedef union {
@@ -629,7 +629,7 @@ extern "C"
             protocol_binary_request_header header;
             struct {
                 uint32_t flags;
-                int32_t  exptime;
+                int64_t  exptime;
                 int32_t  maxcount;
                 uint8_t  create;
                 uint8_t  reserved1;
@@ -637,7 +637,7 @@ extern "C"
                 uint8_t  reserved3;
             } body;
         } message;
-        uint8_t bytes[sizeof(protocol_binary_request_header) + 16];
+        uint8_t bytes[sizeof(protocol_binary_request_header) + 24];
     } protocol_binary_request_sop_insert;
 
     typedef union {
@@ -703,7 +703,7 @@ extern "C"
             protocol_binary_request_header header;
             struct {
                 uint32_t flags;
-                int32_t  exptime;
+                int64_t  exptime;
                 int32_t  maxcount;
                 uint8_t  ovflaction;
                 uint8_t  readable;
@@ -711,7 +711,7 @@ extern "C"
                 uint8_t  reserved2;
             } body;
         } message;
-        uint8_t bytes[sizeof(protocol_binary_request_header) + 16];
+        uint8_t bytes[sizeof(protocol_binary_request_header) + 20];
     } protocol_binary_request_bop_create;
 
     typedef union {
@@ -723,7 +723,7 @@ extern "C"
                 uint8_t  eflag[MAX_EFLAG_LENG];
                 uint8_t  neflag;
                 uint32_t flags;
-                int32_t  exptime;
+                int64_t  exptime;
                 int32_t  maxcount;
                 uint8_t  create;
                 uint8_t  reserved1;
@@ -732,7 +732,7 @@ extern "C"
             } body;
         } message;
         uint8_t bytes[sizeof(protocol_binary_request_header) +
-                      MAX_BKEY_LENG+1 + MAX_EFLAG_LENG+1 + 16];
+                      MAX_BKEY_LENG+1 + MAX_EFLAG_LENG+1 + 24];
     } protocol_binary_request_bop_insert;
 
     typedef union {
