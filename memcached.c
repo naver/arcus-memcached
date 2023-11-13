@@ -7728,7 +7728,7 @@ static inline void set_noreply_maybe(conn *c, token_t *tokens, size_t ntokens)
 
     /*
       NOTE: this function is not the first place where we are going to
-      send the reply.  We could send it instead from process_command()
+      send the reply.  We could send it instead from process_command_ascii()
       if the request line has wrong number of tokens.  However parsing
       malformed line for "noreply" option is not reliable anyway, so
       it can't be helped.
@@ -7746,7 +7746,7 @@ static inline void set_pipe_noreply_maybe(conn *c, token_t *tokens, size_t ntoke
 
     /*
       NOTE: this function is not the first place where we are going to
-      send the reply.  We could send it instead from process_command()
+      send the reply.  We could send it instead from process_command_ascii()
       if the request line has wrong number of tokens.  However parsing
       malformed line for "noreply" or "pipe" option is not reliable anyway,
       so it can't be helped.
@@ -7772,7 +7772,7 @@ static inline void set_pipe_maybe(conn *c, token_t *tokens, size_t ntokens)
 
     /*
       NOTE: this function is not the first place where we are going to
-      send the reply.  We could send it instead from process_command()
+      send the reply.  We could send it instead from process_command_ascii()
       if the request line has wrong number of tokens.  However parsing
       malformed line for "pipe" option is not reliable anyway,
       so it can't be helped.
