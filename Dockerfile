@@ -28,7 +28,7 @@ CMD [\
 # for arcus-operator
 FROM base
 RUN yum update -y
-RUN yum install -y bind-utils
+RUN yum install -y bind-utils nc
 RUN yum clean all -y
 ENV MEMCACHED_DIR /arcus-memcached
 ENV PATH ${PATH}:${MEMCACHED_DIR}
