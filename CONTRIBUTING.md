@@ -13,7 +13,7 @@ Contribution은 GitHub pull requests 방식을 사용해 주시기 바랍니다.
 ARCUS-memcached 와 관련된 모든 사항(questing, bug report, feature proposal 등)을 자유롭게 issue로 등록 해 주세요.
 새로운 issue를 생성하기 전 아래 사항을 고려해 주세요.
 - 생성하려는 issue가 이미 해결 되었는지 확인 하세요.
-- build가 실패했다면, [Travis build status](https://travis-ci.org/naver/arcus-memcached) 를 보고 현재 빌드 상태를 확인하세요.
+- build가 실패했다면, [GitHub Actions CI status](https://github.com/naver/arcus-memcached/actions/workflows/CI.yml) 를 보고 현재 빌드 상태를 확인하세요.
 - 문제가 해결되지 않으면, 최대한 자세하게 설명 해주세요. 더 많은 정보를 제공할수록 빠른 해결이 가능합니다.
 
 ## Pull Requests
