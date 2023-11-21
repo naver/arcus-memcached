@@ -49,11 +49,11 @@ Also, arcus-memcached has the following library dependencies.
 
 To install them easily, run the command below from the git-cloned source code.
 ```
-$ ./deps/install.sh [installation path]
+$ ./deps/install.sh [<arcus_install_path>]
 ```
-If the installation path was not given, dependencies will be installed in the system path(/usr/local).
+If the *arcus_install_path* was not given, dependencies will be installed in the system path(/usr/local).
 
-Therefore, giving the installation path preferably is recommended.
+Therefore, giving the *arcus_install_path* preferably is recommended.
 
 **Compile**
 
@@ -61,7 +61,7 @@ To build arcus-memcached from the git-cloned source code,
 
 ```
 $ ./config/autorun.sh
-$ ./configure [--with-libevent=<libevent_install_path>]
+$ ./configure [--prefix=<arcus_install_path>] [--with-libevent=<libevent_install_path>]
 $ make
 $ make install
 ```
@@ -73,7 +73,7 @@ Note that ZooKeeper dynamic reconfig was included in it.
 So, you must use the ZooKeeper library 3.5.8 or higher version with Arcus modifications.
 If you want to turn on the ZooKeeper dynamic reconfig, add `--with-zk-reconfig` to the above configure options.
 
-To test arcus-memcached, you can execute `make test`. If any problem exists in compilation, please refer to [compilation FAQ](docs/compilation_faq.md).
+To test arcus-memcached, you can execute `make test`. If any problem exists in compilation, please refer to [compilation FAQ](docs/install.md).
 
 ## Run
 
