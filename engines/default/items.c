@@ -586,16 +586,9 @@ char *item_cachedump(unsigned int slabs_clsid, unsigned int limit, const bool fo
     hash_item *it;
     unsigned int len;
     unsigned int shown = 0;
-    char *keybuf;
 
     buffer = malloc((size_t)memlimit);
     if (buffer == 0) return NULL;
-
-    keybuf = malloc(16*1024); /* must be larger than KEY_MAX_LENGTH */
-    if (keybuf == NULL) {
-        free(buffer);
-        return NULL;
-    }
 
     LOCK_CACHE();
     if (sticky) {
@@ -605,21 +598,17 @@ char *item_cachedump(unsigned int slabs_clsid, unsigned int limit, const bool fo
         it = (forward ? itemsp->heads[slabs_clsid]
                       : itemsp->tails[slabs_clsid]);
     }
-    while (it != NULL && (limit == 0 || shown < limit)) {
-        /* Copy the key since it may not be null-terminated in the struct */
-        strncpy(keybuf, item_get_key(it), it->nkey);
-        keybuf[it->nkey] = 0x00; /* terminate */
-
+    while (it != NULL) {
+        if (limit != 0 && shown >= limit) break;
         if (bufcurr + it->nkey + 100 > memlimit) break;
-        len = sprintf(buffer + bufcurr, "ITEM %s [acctime=%u, exptime=%d]\r\n",
-                      keybuf, it->time, (int32_t)it->exptime);
+        const char *key = item_get_key(it);
+        len = sprintf(buffer + bufcurr, "ITEM %.*s [acctime=%u, exptime=%d]\r\n",
+                      it->nkey, key, it->time, (int32_t)it->exptime);
         bufcurr += len;
         shown++;
         it = (forward ? it->next : it->prev);
     }
     UNLOCK_CACHE();
-
-    free(keybuf);
 
     len = sprintf(buffer + bufcurr, "END [curtime=%u]\r\n",
                   svcore->get_current_time());
