@@ -12574,9 +12574,9 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         uint32_t count, offset = 0;
         uint32_t lenkeys, numkeys;
 #ifdef JHPARK_OLD_SMGET_INTERFACE
-        int smgmode = set_smget_mode_maybe(c, tokens, ntokens);
+        int smgmode = subcommid == OPERATION_BOP_SMGET ? set_smget_mode_maybe(c, tokens, ntokens) : 0;
 #else
-        bool unique = set_unique_maybe(c, tokens, ntokens);
+        bool unique = subcommid == OPERATION_BOP_SMGET ? set_unique_maybe(c, tokens, ntokens) : false;
 #endif
 
         if ((! safe_strtoul(tokens[BOP_KEY_TOKEN].value, &lenkeys)) ||
@@ -12622,7 +12622,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
 
         if (rest_ntokens == 0) {
-            if (! safe_strtoul(tokens[read_ntokens].value, &count) || count == 0) {
+            if (! safe_strtoul(tokens[read_ntokens].value, &count)) {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
                 return;
@@ -12638,7 +12638,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         /* validation checking on arguments */
         if (numkeys > ((lenkeys/2) + 1) ||
-            lenkeys > ((numkeys*KEY_MAX_LENGTH) + numkeys-1)) {
+            lenkeys > ((numkeys*KEY_MAX_LENGTH) + numkeys-1) ||
+            count == 0) {
             /* ENGINE_EBADVALUE */
             out_string(c, "CLIENT_ERROR bad value");
             c->sbytes = lenkeys + 2;

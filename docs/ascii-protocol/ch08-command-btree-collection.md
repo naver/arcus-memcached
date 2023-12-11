@@ -337,7 +337,7 @@ bop mget <lenkeys> <numkeys> <bkey or "bkey range"> [<eflag_filter>] [<offset>] 
 
 bop mget 명령은 O(small N) 수행 원칙을 위하여 다음의 제약 사항을 가진다.
 - key list에 지정 가능한 최대 key 수는 200이다.
-- count의 최대 값은 50이다.
+- count의 최솟값은 1, 최댓값은 50이다.
 
 
 성공 시의 response string은 다음과 같다.
@@ -452,7 +452,7 @@ Bkey range는 "bkey1..bkey2" 형식으로 표현한다.
 
 bop smget 명령은 O(small N) 수행 원칙을 위하여 다음의 제약 사항을 가진다.
 - key list에 지정 가능한 최대 key 수는 10000이다.
-- count의 최대 값은 2000이다.
+- count의 최솟값은 1, 최댓값은 2000이다.
 
 기존 smget 동작에서 성공 시의 response string은 다음과 같다.
 
