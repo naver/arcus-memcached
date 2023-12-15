@@ -53,8 +53,19 @@ bool load_engine(const char *soname,
     ENGINE_ERROR_CODE error = (*my_create.create)(1, get_server_api, &engine);
 
     if (error != ENGINE_SUCCESS || engine == NULL) {
-        logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Failed to create instance. Error code: %d\n", error);
+        switch (error) {
+            case ENGINE_EBADTYPE:
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Do not match core and engine version\n");
+                break;
+            case ENGINE_ENOMEM:
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to allocate memory\n");
+                break;
+            default:
+                logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Failed to create instance. Error code: %d\n", error);
+        }
         dlclose(handle);
         return false;
     }

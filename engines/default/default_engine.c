@@ -1939,6 +1939,9 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
     if (interface != 1 || api == NULL) {
         return ENGINE_ENOTSUP;
     }
+    if (strcmp(api->core->server_version(), VERSION) != 0) {
+        return ENGINE_EBADTYPE;
+    }
 
     struct default_engine *engine = malloc(sizeof(*engine));
     if (engine == NULL) {
