@@ -12594,14 +12594,19 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
 
         int read_ntokens = BOP_KEY_TOKEN + 3;
+        int post_ntokens = 1; /* "\r\n" */
 #ifdef JHPARK_OLD_SMGET_INTERFACE
-        int post_ntokens = (smgmode > 0 ? 3 : 2); /* "\r\n" */
+        if (smgmode > 0) {
+            post_ntokens += 1;
+        }
 #else
-        int post_ntokens = (unique ? 3 : 2); /* "\r\n" */
+        if (unique) {
+            post_ntokens += 1;
+        }
 #endif
         int rest_ntokens = ntokens - read_ntokens - post_ntokens;
 
-        if (rest_ntokens >= 3) {
+        if (rest_ntokens > 3) {
             int used_ntokens = get_efilter_from_tokens(&tokens[read_ntokens], rest_ntokens,
                                                        &c->coll_efilter);
             if (used_ntokens == -1) {
@@ -12615,25 +12620,12 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             c->coll_efilter.ncompval = 0;
         }
 
-        if (rest_ntokens > 1) {
+        if ((rest_ntokens < 1) || (rest_ntokens > 2) ||
+            (rest_ntokens > 1 && !safe_strtoul(tokens[read_ntokens++].value, &offset)) ||
+            (rest_ntokens > 0 && !safe_strtoul(tokens[read_ntokens++].value, &count))) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
-        }
-
-        if (rest_ntokens == 0) {
-            if (! safe_strtoul(tokens[read_ntokens].value, &count)) {
-                print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
-                return;
-            }
-        } else { /* rest_ntokens == 1 */
-            if ((! safe_strtoul(tokens[read_ntokens].value, &offset)) ||
-                (! safe_strtoul(tokens[read_ntokens+1].value, &count))) {
-                print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad command line format");
-                return;
-            }
         }
 
         /* validation checking on arguments */
