@@ -12567,7 +12567,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
                           (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter));
     }
 #if defined(SUPPORT_BOP_MGET) || defined(SUPPORT_BOP_SMGET)
-    else if ((ntokens >= 7 && ntokens <= 13) &&
+    else if ((ntokens >= 7 && ntokens <= 14) &&
              ((strcmp(subcommand, "mget") == 0  && (subcommid = (int)OPERATION_BOP_MGET)) ||
               (strcmp(subcommand, "smget") == 0 && (subcommid = (int)OPERATION_BOP_SMGET)) ))
     {
