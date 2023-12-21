@@ -4,7 +4,7 @@ RUN yum install -y make libtool which git
 # Copy all files from the repository not included in .dockerignore to /src in the image.
 COPY . /src
 WORKDIR /src
-RUN ./deps/install.sh /arcus
+RUN ./deps/install.sh /arcus || (tail ./deps/install.log; exit 1)
 RUN ./config/autorun.sh
 RUN ./configure --prefix=/arcus --enable-zk-integration
 RUN make && make install
