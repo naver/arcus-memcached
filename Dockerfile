@@ -19,11 +19,6 @@ ENTRYPOINT ["memcached",\
  "-u", "root",\
  "-D", ":",\
  "-r"]
-CMD [\
- "-v",\
- "-p", "11211",\
- "-m", "100",\
- "-c", "100"]
 
 # for arcus-operator
 FROM base
