@@ -13,7 +13,7 @@ chomp $version;
 #my $version = '1.4.3';
 
 unless ($version =~ m/^\d+\.\d+\.\d+/) {
-    write_file('m4/version.m4', "m4_define([VERSION_NUMBER], [1.13.4-unknown])\n");
+    write_file('m4/version.m4', "m4_define([VERSION_NUMBER], [1.13.5-unknown])\n");
     exit;
 }
 

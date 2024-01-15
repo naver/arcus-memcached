@@ -1,3 +1,35 @@
+# 2024-01-17 [version 1.13.5]
+## 🐣 New Features
+* Add `ready` command Add ready command to verify that the cache server can receive requests. In Zookeeper clustering, the cache node becomes ready state after creating its cache_list znode. #707
+## 🔧 Enhancements
+* Fix compile warnings on RHEL8 and Ubuntu.
+* Add Dockerfile.
+* Changed the MAX_ZK_TO value from 300 to 2000 secs.
+* Use `<latest-release>-unknown` version when git describe fails.
+* Add zk_version to `stats zookeeper` response.
+* Summarize rejected connection log message occured frequently.
+* Modify mismatches between log level and verbose.
+* Check dependencies in the prefix path before the default path. #699
+* Compare core version and engine version when create_instance().
+## 🐛 Bug Fixes
+* Set `arcus_conf.zk_timeout` to the negotiated timeout with ZK server.
+* Terminate the process if any address already in use. #665
+* Convert string of exptime to int64_t in ASCII protocol. #711
+* Fix bop mget/smget parsing logics. #722 #724 #725
+* Do not use `out_string()` in binary protocol.
+* Fix a memory leak possible in UDP and binary protocol.
+## 📝 Documentation
+* Fix typo and remove whitespace.
+* Edit maxbkeyrange document.
+* Add texts for dependencies installation.
+* Restructure markdown documentation directory.
+## ✅ Testing
+* Use Github Actions instead of Travis for CI test.
+* Make possible to test `t/issue_67.t` even in root user.
+* Exclude all Makefiles from whitespace test.
+## ⬆️ Dependency Upgrades
+* Modify to have dependency libraries(libevent and zookeeper-client-c) and add dependency libraries install script.
+
 2022-11-28 [version 1.13.4]
 	* [FEATURE]  Added "stats prefixlist" command.
 	* [FEATURE]  Added "scan prefix" command.
@@ -19,7 +51,7 @@
 	* [FIX]      wait til cmdlog flush thread terminate in cmdlog_final().
 	* [FIX]      fixed the range argument overflow in long query detection.
 	* [FIX]      missing to set logger in lqdetect.
-	* [FIX]      handled memory allocation failure for connection object.  
+	* [FIX]      handled memory allocation failure for connection object.
 	* [FIX]      the compilation errors in CentOS 8.
 	* [ENHANCE]  Add some stats to default stats command for monitoring.
 	* [ENHANCE]  optimized my znode existence checking in arcus_zk.
@@ -244,12 +276,12 @@
 	* [Enhancement] Enhanced set performance by using prefix pointer
 	                when check invalid items.
 	* [Internal] Managed engine source code with separate engine directories.
-	* [Internal] Added the demo engine for use as a reference engine. 
+	* [Internal] Added the demo engine for use as a reference engine.
 	* [Internal] Performed the preparation task for long key support.
 	* [Internal] Performed ZK operation outside of zk watcher with a separate thread.
 	* [Internal] Added/used a scan facility to scan items in hash table.
 	* [Internal] Modified the ketama hash ring structure more usefully.
-	* [Other] Extensive minor enhancements. 
+	* [Other] Extensive minor enhancements.
 	* [Other] Extensive code refactoring.
 
 2016-05-22 [version 1.9.5]
@@ -294,15 +326,15 @@
 2015-10-26 [version 1.9.0]
 	* Hash table expansion by worker threads. Don't create a daemon thread.
 	* Compute element access overhead in bop delete/count/get/mget.
-	* Swallow the remaining data when command pipeling fails. 
+	* Swallow the remaining data when command pipeling fails.
 	* Do more delicate synchronization when close ZK.
-	* Support command logging. 
+	* Support command logging.
 	* Link the detached items into LRU top only if they are valid.
 	* New smget interface
 	  - Continue smget even if some bkeys of a key are trimmed in bkey range.
 	    - Missed keys are returned with the cause.
 		  (NOT_FOUND, UNREADABLE, OUT_OF_RANGE).
-		- Trimmed keys are returned with the last bkey before trim. 
+		- Trimmed keys are returned with the last bkey before trim.
 	  - Support unique smget that remove duplicate bkeys as an option.
 	* Set/get maximum collection size with config command.
 
@@ -328,7 +360,7 @@
 	* Extensive code refactoring.
 	* Comment out "tap protocol" code.
 	* New EWOULDBLOCK and notify_io_complete handling.
-	* Clarify item unlink and element delete causes. 
+	* Clarify item unlink and element delete causes.
 
 2014-12-30 [version 1.8.2]
 	* Reduce "too many evictions" occurrences.
@@ -343,8 +375,8 @@
 2014-06-12 [version 1.7.1]
 	* Fix the memory corruption by integer overflow of list index.
 
-2014-05-15 
+2014-05-15
 	* arcus-memcached is opened. (Apache License 2.0)
 
-2014-04-30 
+2014-04-30
 	* arcus-memcached: version 1.7.0 release
