@@ -74,7 +74,7 @@ bool safe_strtoul(const char *str, uint32_t *out) {
     errno = 0;
 
     l = strtoul(str, &endptr, 10);
-    if (errno == ERANGE) {
+    if (errno == ERANGE || l > UINT32_MAX) {
         return false;
     }
 
@@ -100,7 +100,7 @@ bool safe_strtol(const char *str, int32_t *out) {
     *out = 0;
     char *endptr;
     long l = strtol(str, &endptr, 10);
-    if (errno == ERANGE)
+    if (errno == ERANGE || l < INT32_MIN || l > INT32_MAX)
         return false;
     if (isspace(*endptr) || (*endptr == '\0' && endptr != str)) {
         *out = l;
