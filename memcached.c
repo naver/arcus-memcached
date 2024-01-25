@@ -15180,10 +15180,9 @@ int main (int argc, char **argv)
         case 'm':
             cache_memory_limit = atoi(optarg);
             settings.maxbytes = (size_t)cache_memory_limit * 1024 * 1024;
-            if (cache_memory_limit < 0 || settings.maxbytes < settings.sticky_limit) {
+            if (cache_memory_limit <= 0) {
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "The value of memory limit must be"
-                    " greater than 0 and sticky_limit.\n");
+                    "The value of memory limit must be greater than 0.\n");
                 return 1;
             }
             old_opts += sprintf(old_opts, "cache_size=%llu;",
@@ -15197,10 +15196,9 @@ int main (int argc, char **argv)
         case 'g':
             sticky_memory_limit = atoi(optarg);
             settings.sticky_limit = (size_t)sticky_memory_limit * 1024 * 1024;
-            if (sticky_memory_limit < 0 || settings.sticky_limit > settings.maxbytes) {
+            if (sticky_memory_limit <= 0) {
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "The value of sticky(gummed) memory limit must be"
-                    " greater than 0 and less than memlimit.\n");
+                    "The value of sticky(gummed) memory limit must be greater than 0.\n");
                 return 1;
             }
             old_opts += sprintf(old_opts, "sticky_limit=%llu;",
@@ -15234,7 +15232,7 @@ int main (int argc, char **argv)
             break;
         case 'R':
             settings.reqs_per_event = atoi(optarg);
-            if (settings.reqs_per_event == 0) {
+            if (settings.reqs_per_event <= 0) {
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Number of requests per event must be greater than 0\n");
                 return 1;
@@ -15257,7 +15255,7 @@ int main (int argc, char **argv)
            break;
         case 'n':
             settings.chunk_size = atoi(optarg);
-            if (settings.chunk_size == 0) {
+            if (settings.chunk_size <= 0) {
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                         "Chunk size must be greater than 0\n");
                 return 1;
@@ -15579,6 +15577,12 @@ int main (int argc, char **argv)
     }
     if (settings.udpport != 0) {
         nfiles += settings.num_threads * 2;
+    }
+
+    if (settings.maxbytes < settings.sticky_limit) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+            "The value of memory limit cannot be smaller than sticky_limit.\n");
+        return 1;
     }
 
     if (settings.maxconns <= nfiles) {
