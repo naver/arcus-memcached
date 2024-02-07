@@ -1348,7 +1348,7 @@ static int hinfo_check_ascii_tail_string(item_info *hinfo)
     }
 }
 
-static void hinfo_set_ascii_tail_string(item_info *hinfo)
+static void hinfo_append_ascii_tail_string(item_info *hinfo)
 {
     if (hinfo->naddnl == 0) {
         memcpy((char*)hinfo->value + hinfo->nbytes - 2, "\r\n", 2);
@@ -1394,7 +1394,7 @@ static int einfo_check_ascii_tail_string(eitem_info *einfo)
     }
 }
 
-static void einfo_set_ascii_tail_string(eitem_info *einfo)
+static void einfo_append_ascii_tail_string(eitem_info *einfo)
 {
     if (einfo->naddnl == 0) {
         memcpy((char*)einfo->value + einfo->nbytes - 2, "\r\n", 2);
@@ -3723,8 +3723,8 @@ static void complete_update_bin(conn *c)
         return;
     }
     /* We don't actually receive the trailing two characters in the bin
-     * protocol, so we're going to just set them here */
-    hinfo_set_ascii_tail_string(&c->hinfo); /* set "\r\n" */
+     * protocol, so we're going to just append them here */
+    hinfo_append_ascii_tail_string(&c->hinfo); /* append "\r\n" */
 
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->store(mc_engine.v0, c, it, &c->cas, c->store_op,
@@ -4515,9 +4515,9 @@ static void process_bin_lop_insert_complete(conn *c)
     assert(c->coll_eitem != NULL);
 
     /* We don't actually receive the trailing two characters in the bin
-     * protocol, so we're going to just set them here */
+     * protocol, so we're going to just append them here */
     mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_LIST, c->coll_eitem, &c->einfo);
-    einfo_set_ascii_tail_string(&c->einfo); /* set "\r\n" */
+    einfo_append_ascii_tail_string(&c->einfo); /* append "\r\n" */
 
     bool created;
     ENGINE_ERROR_CODE ret;
@@ -4928,9 +4928,9 @@ static void process_bin_sop_insert_complete(conn *c)
     assert(c->coll_eitem != NULL);
 
     /* We don't actually receive the trailing two characters in the bin
-     * protocol, so we're going to just set them here */
+     * protocol, so we're going to just append them here */
     mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_SET, c->coll_eitem, &c->einfo);
-    einfo_set_ascii_tail_string(&c->einfo); /* set "\r\n" */
+    einfo_append_ascii_tail_string(&c->einfo); /* append "\r\n" */
 
     bool created;
 
@@ -4980,7 +4980,7 @@ static void process_bin_sop_delete_complete(conn *c)
     assert(c->coll_eitem != NULL);
 
     /* We don't actually receive the trailing two characters in the bin
-     * protocol, so we're going to just set them here */
+     * protocol, so we're going to just append them here */
     value_item *value = (value_item *)c->coll_eitem;
     memcpy(value->ptr + value->len - 2, "\r\n", 2);
 
@@ -5026,7 +5026,7 @@ static void process_bin_sop_exist_complete(conn *c)
     assert(c->coll_eitem != NULL);
 
     /* We don't actually receive the trailing two characters in the bin
-     * protocol, so we're going to just set them here */
+     * protocol, so we're going to just append them here */
     value_item *value = (value_item *)c->coll_eitem;
     memcpy(value->ptr + value->len - 2, "\r\n", 2);
 
@@ -5383,9 +5383,9 @@ static void process_bin_bop_insert_complete(conn *c)
     assert(c->coll_eitem != NULL);
 
     /* We don't actually receive the trailing two characters in the bin
-     * protocol, so we're going to just set them here */
+     * protocol, so we're going to just append them here */
     mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_BTREE, c->coll_eitem, &c->einfo);
-    einfo_set_ascii_tail_string(&c->einfo); /* set "\r\n" */
+    einfo_append_ascii_tail_string(&c->einfo); /* append "\r\n" */
 
     bool created;
     bool replaced;
