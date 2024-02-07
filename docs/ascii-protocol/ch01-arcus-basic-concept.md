@@ -96,8 +96,8 @@ Slab allocator는 메모리 크기 별로 메모리 공간을 나누어 관리�
 Collection 지원으로 인해 작은 메모리 공간의 할당과 반환 요청이 많아졌다.
 이러한 작은 메모리 공간을 효율적으로 관리하기 위하여
 small memory allocator를 새로 개발하여 사용하고 있다.
-8000 바이트 이하의 메모리 공간은 small memory allocator가 담당하며,
-8000 바이트 초과의 메모리 공간은 기존 slab allocator가 담당한다.
+48KB 이하의 메모리 공간은 small memory allocator가 담당하며,
+48KB 초과의 메모리 공간은 기존 slab allocator가 담당한다.
 
 ## Slab Class 별 LRU 리스트
 
@@ -108,7 +108,7 @@ Small memory allocator 추가로 인해, slab class 별 LRU 리스트에 변동 
 특별히, 0번 slab class를 두어 small memory allocator가 사용하고 있으며,
 small memory allocator로 부터 메모리 공간을 할당받는
 작은 크기의 key-value items과 collection items은 0번 LRU 리스트에 연결된다.
-따라서, 8000 바이트 이하의 메모리 공간에 해당하는
+따라서, 48KB 이하의 메모리 공간에 해당하는
 기존 slab class의 LRU 리스트들은 empty가 상태가 된다.
 
 ## Automatic Scrub (added since v1.11.3)
