@@ -396,11 +396,10 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
     if (state == ZOO_CONNECTED_STATE) {
         const clientid_t *id = zoo_client_id(wzh);
         zk_info_t *zinfo = cxt;
-        if (arcus_conf.verbose > 1) {
-            arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
-                                   "ZK ensemble connected. session id: 0x%llx\n",
-                                   (long long) zinfo->myid.client_id);
-        }
+        arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
+                               "ZOO_SESSION_EVENT Connected. server=%s, session_id=%#llx\n",
+                               zoo_get_current_server(wzh),
+                               (long long) id->client_id);
         if (zinfo->myid.client_id == 0 || zinfo->myid.client_id != id->client_id) {
             if (arcus_conf.verbose > 1)
                  arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL,
@@ -436,7 +435,7 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
     else if (state == ZOO_AUTH_FAILED_STATE) {
         // authorization failure
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                               "Auth failure. shutting down\n");
+                               "ZOO_SESSION_EVENT Auth failed. shutting down\n");
         arcus_exit(wzh, EX_NOPERM);
     }
     else if (state == ZOO_EXPIRED_SESSION_STATE) {
@@ -444,12 +443,12 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
             // very likely that memcached process exited and restarted within
             // session timeout
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                                   "Expired state. shutting down\n");
+                                   "ZOO_SESSION_EVENT Expired. shutting down\n");
             // send SMS here??
             arcus_exit(wzh, EX_TEMPFAIL);
         } else {
             arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
-                                   "Expired state. pausing memcached (zk_failstop: off)\n");
+                                   "ZOO_SESSION_EVENT Expired. pausing memcached (zk_failstop: off)\n");
             sm_lock();
             sm_info.mc_pause = true;
             sm_wakeup(true);
@@ -464,7 +463,7 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
          * and if that's the case, we let heartbeat timeout algorithm decide
          * what to do.
          */
-        arcus_conf.logger->log(EXTENSION_LOG_DEBUG, NULL, "CONNECTING.... \n");
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL, "ZOO_SESSION_EVENT Connecting.\n");
 #ifdef ENABLE_SUICIDE_UPON_DISCONNECT
         /* The server is disconnected from ZK.  But we do not know how much
          * time has elapsed from the last successful ZK ping.  A connection
