@@ -483,20 +483,26 @@ arcus_zk_watcher(zhandle_t *wzh, int type, int state, const char *path, void *cx
 static void
 arcus_zkconfig_watcher(zhandle_t *zh, int type, int state, const char *path, void *ctx)
 {
-    if (path != NULL && strcmp(path, ZOO_CONFIG_NODE) == 0) {
-        /* The ZK library has two threads of its own.  The completion thread
-         * calls watcher functions.
-         *
-         * Do not do operations that may block or fail in the watcher context.
-         */
+    if (type == ZOO_CHANGED_EVENT) {
         arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
-                "EVENT from ZK config: state=%d, path=%s\n",
+                "ZOO_CHANGED_EVENT from ZK config: state=%d, path=%s\n",
                 state, (path ? path : "null"));
+    } else if (type == ZOO_SESSION_EVENT) {
+        /* ZOO_SESSION_EVENT is handled by arcus_zk_watcher.
+         * Set the update flag when receiving a connected event.
+         */
+        if (state != ZOO_CONNECTED_STATE) return;
+    } else {
+        /* Unexpected event(ZOO_DELETED_EVENT or ZOO_NOTWATCHING_EVENT) has occurred */
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Unexpected event(%d) gotten by cache_list_watcher: state=%d path=%s\n",
+                type, state, (path ? path : "null"));
     }
 
+    /* In ZK watcher context, don't do anything that may block or fail. */
     /* Just wake up the sm thread and update the zk server list.
      * This may be a false positive (session event or others).
-     * But it is harmless.
+     * But it is harmless or must be treated like changed event.
      */
     sm_lock();
     sm_info.request.update_zkconfig = true;
@@ -510,26 +516,25 @@ static void
 arcus_cache_list_watcher(zhandle_t *zh, int type, int state, const char *path, void *ctx)
 {
     if (type == ZOO_CHILD_EVENT) {
-        /* The ZK library has two threads of its own.  The completion thread
-         * calls watcher functions.
-         *
-         * Do not do operations that may block or fail in the watcher context.
-         */
         arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL,
                 "ZOO_CHILD_EVENT from ZK cache list: state=%d, path=%s\n",
                 state, (path ? path : "null"));
+    } else if (type == ZOO_SESSION_EVENT) {
+        /* ZOO_SESSION_EVENT is handled by arcus_zk_watcher.
+         * Set the update flag when receiving a connected event.
+         */
+        if (state != ZOO_CONNECTED_STATE) return;
     } else {
-        /* an unexpected event has been occurred */
+        /* Unexpected event(ZOO_DELETED_EVENT or ZOO_NOTWATCHING_EVENT) has occurred */
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Unexpected event(%d) gotten by cache_list_watcher: state=%d path=%s\n",
                 type, state, (path ? path : "null"));
     }
 
+    /* In ZK watcher context, don't do anything that may block or fail. */
     /* Just wake up the sm thread and update the hash ring.
      * This may be a false positive (session event or others).
-     * But it is harmless.
-     *
-     * Should we do this only in ZOO_CHILD_EVENT ? FIXME.
+     * But it is harmless or must be treated like child event.
      */
     sm_lock();
     sm_info.request.update_cache_list = true;
