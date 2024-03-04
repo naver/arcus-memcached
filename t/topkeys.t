@@ -7,11 +7,15 @@ use lib "$Bin/lib";
 use MemcachedTest;
 
 my $engine = shift;
-my $server = get_memcached($engine);
-my $sock = $server->sock;
+my $server;
+my $sock;
 my $cmd;
 my $val;
 my $rst;
+
+delete $ENV{"MEMCACHED_TOP_KEYS"};
+$server = get_memcached($engine);
+$sock = $server->sock;
 
 $cmd = "stats topkeys"; $rst = "NOT_SUPPORTED";
 mem_cmd_is($sock, $cmd, "", $rst, "No topkeys without command line option.");
