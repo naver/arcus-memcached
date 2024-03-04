@@ -628,11 +628,12 @@ ENGINE_ERROR_CODE tokenize_sblocks(mblck_list_t *blist, int keylen, int keycnt,
  */
 
 /* event handlers structure */
-static struct engine_event_handler {
+struct engine_event_handler {
     EVENT_CALLBACK cb;
     const void *cb_data;
     struct engine_event_handler *next;
-} *engine_event_handlers[MAX_ENGINE_EVENT_TYPE + 1];
+};
+static struct engine_event_handler *engine_event_handlers[MAX_ENGINE_EVENT_TYPE + 1];
 
 /*
  * Register a callback.

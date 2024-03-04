@@ -17,7 +17,7 @@
 #ifndef MC_UTIL_H
 #define MC_UTIL_H
 
-#include <memcached/engine.h>
+#include <memcached/callback.h>
 #include <memcached/extension.h>
 
 /* length of string representing 4 bytes integer is 10 */
