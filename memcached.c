@@ -114,8 +114,6 @@ static struct event_base *main_base;
 struct thread_stats *default_thread_stats;
 topkeys_t *default_topkeys = NULL;
 
-static struct engine_event_handler *engine_event_handlers[MAX_ENGINE_EVENT_TYPE + 1];
-
 #ifdef ENABLE_ZK_INTEGRATION
 static char *arcus_zk_cfg = NULL;
 #endif
@@ -440,31 +438,6 @@ void safe_close(int sfd)
             mc_stats.curr_conns--;
             UNLOCK_STATS();
         }
-    }
-}
-
-// Register a callback.
-static void register_callback(ENGINE_HANDLE *eh,
-                              ENGINE_EVENT_TYPE type,
-                              EVENT_CALLBACK cb, const void *cb_data)
-{
-    struct engine_event_handler *h =
-        calloc(sizeof(struct engine_event_handler), 1);
-
-    assert(h);
-    h->cb = cb;
-    h->cb_data = cb_data;
-    h->next = engine_event_handlers[type];
-    engine_event_handlers[type] = h;
-}
-
-// Perform all callbacks of a given type for the given connection.
-static void perform_callbacks(ENGINE_EVENT_TYPE type,
-                              const void *data, const void *c)
-{
-    for (struct engine_event_handler *h = engine_event_handlers[type];
-         h; h = h->next) {
-        h->cb(c, type, data, h->cb_data);
     }
 }
 

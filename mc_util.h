@@ -17,6 +17,7 @@
 #ifndef MC_UTIL_H
 #define MC_UTIL_H
 
+#include <memcached/engine.h>
 #include <memcached/extension.h>
 
 /* length of string representing 4 bytes integer is 10 */
@@ -94,5 +95,12 @@ ENGINE_ERROR_CODE tokenize_mblocks(mblck_list_t *blist, int keylen, int keycnt,
 ENGINE_ERROR_CODE tokenize_sblocks(mblck_list_t *blist, int keylen, int keycnt,
                                    int maxklen, bool must_backward_compatible,
                                    token_t *tokens);
+
+/* event callback functions */
+void register_callback(ENGINE_HANDLE *eh,
+                       ENGINE_EVENT_TYPE type,
+                       EVENT_CALLBACK cb, const void *cb_data);
+void perform_callbacks(ENGINE_EVENT_TYPE type,
+                       const void *data, const void *c);
 
 #endif

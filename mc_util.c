@@ -622,3 +622,43 @@ ENGINE_ERROR_CODE tokenize_sblocks(mblck_list_t *blist, int keylen, int keycnt,
     return tokenize_mblocks(blist, keylen-2, keycnt, maxklen,
                             must_backward_compatible, tokens);
 }
+
+/*
+ * event callback functions
+ */
+
+/* event handlers structure */
+static struct engine_event_handler {
+    EVENT_CALLBACK cb;
+    const void *cb_data;
+    struct engine_event_handler *next;
+} *engine_event_handlers[MAX_ENGINE_EVENT_TYPE + 1];
+
+/*
+ * Register a callback.
+ */
+void register_callback(ENGINE_HANDLE *eh,
+                       ENGINE_EVENT_TYPE type,
+                       EVENT_CALLBACK cb, const void *cb_data)
+{
+    struct engine_event_handler *h =
+        calloc(sizeof(struct engine_event_handler), 1);
+
+    assert(h);
+    h->cb = cb;
+    h->cb_data = cb_data;
+    h->next = engine_event_handlers[type];
+    engine_event_handlers[type] = h;
+}
+
+/*
+ * Perform all callbacks of a given type for the given connection.
+ */
+void perform_callbacks(ENGINE_EVENT_TYPE type,
+                       const void *data, const void *c)
+{
+    for (struct engine_event_handler *h = engine_event_handlers[type];
+         h; h = h->next) {
+        h->cb(c, type, data, h->cb_data);
+    }
+}
