@@ -3212,16 +3212,13 @@ static void complete_update_ascii(conn *c)
     }
 
     item *it = c->item;
+    ENGINE_ERROR_CODE ret;
     if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
-        mc_engine.v1->release(mc_engine.v0, c, it);
         mc_logger->log(EXTENSION_LOG_WARNING, c,
                        "%d: Failed to get item info\n", c->sfd);
-        out_string(c, "SERVER_ERROR failed to get item details");
-        return;
-    }
-
-    ENGINE_ERROR_CODE ret;
-    if (hinfo_check_ascii_tail_string(&c->hinfo) != 0) { /* check "\r\n" */
+        out_string(c, "SERVER_ERROR out of memory for getting item info");
+        ret = ENGINE_ENOMEM;
+    } else if (hinfo_check_ascii_tail_string(&c->hinfo) != 0) { /* check "\r\n" */
         out_string(c, "CLIENT_ERROR bad data chunk");
         ret = ENGINE_EBADVALUE;
     } else {
@@ -3705,87 +3702,86 @@ static void complete_update_bin(conn *c)
     assert(c != NULL);
 
     item *it = c->item;
+    ENGINE_ERROR_CODE ret;
     if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
-        mc_engine.v1->release(mc_engine.v0, c, it);
         mc_logger->log(EXTENSION_LOG_WARNING, c,
                        "%d: Failed to get item info\n", c->sfd);
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
-        return;
-    }
-    /* We don't actually receive the trailing two characters in the bin
-     * protocol, so we're going to just append them here */
-    hinfo_append_ascii_tail_string(&c->hinfo); /* append "\r\n" */
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+        ret = ENGINE_ENOMEM;
+    } else {
+        /* We don't actually receive the trailing two characters in the bin
+         * protocol, so we're going to just append them here */
+        hinfo_append_ascii_tail_string(&c->hinfo); /* append "\r\n" */
 
-    ENGINE_ERROR_CODE ret;
-    ret = mc_engine.v1->store(mc_engine.v0, c, it, &c->cas, c->store_op,
-                              c->binary_header.request.vbucket);
-    CONN_CHECK_AND_SET_EWOULDBLOCK(ret, c);
+        ret = mc_engine.v1->store(mc_engine.v0, c, it, &c->cas, c->store_op,
+                                  c->binary_header.request.vbucket);
+        CONN_CHECK_AND_SET_EWOULDBLOCK(ret, c);
 #ifdef ENABLE_DTRACE
-    switch (c->cmd) {
-    case OPERATION_ADD:
-        MEMCACHED_COMMAND_ADD(c->sfd, c->hinfo.key, c->hinfo.nkey,
-                              (ret == ENGINE_SUCCESS) ? c->hinfo.nbytes : -1, c->cas);
-        break;
-    case OPERATION_REPLACE:
-        MEMCACHED_COMMAND_REPLACE(c->sfd, c->hinfo.key, c->hinfo.nkey,
+        switch (c->cmd) {
+        case OPERATION_ADD:
+            MEMCACHED_COMMAND_ADD(c->sfd, c->hinfo.key, c->hinfo.nkey,
                                   (ret == ENGINE_SUCCESS) ? c->hinfo.nbytes : -1, c->cas);
-        break;
-    case OPERATION_APPEND:
-        MEMCACHED_COMMAND_APPEND(c->sfd, c->hinfo.key, c->hinfo.nkey,
-                                 (ret == ENGINE_SUCCESS) ? c->hinfo.nbytes : -1, c->cas);
-        break;
-    case OPERATION_PREPEND:
-        MEMCACHED_COMMAND_PREPEND(c->sfd, c->hinfo.key, c->hinfo.nkey,
+            break;
+        case OPERATION_REPLACE:
+            MEMCACHED_COMMAND_REPLACE(c->sfd, c->hinfo.key, c->hinfo.nkey,
+                                      (ret == ENGINE_SUCCESS) ? c->hinfo.nbytes : -1, c->cas);
+            break;
+        case OPERATION_APPEND:
+            MEMCACHED_COMMAND_APPEND(c->sfd, c->hinfo.key, c->hinfo.nkey,
+                                     (ret == ENGINE_SUCCESS) ? c->hinfo.nbytes : -1, c->cas);
+            break;
+        case OPERATION_PREPEND:
+            MEMCACHED_COMMAND_PREPEND(c->sfd, c->hinfo.key, c->hinfo.nkey,
+                                      (ret == ENGINE_SUCCESS) ? c->hinfo.nbytes : -1, c->cas);
+            break;
+        case OPERATION_SET:
+            MEMCACHED_COMMAND_SET(c->sfd, c->hinfo.key, c->hinfo.nkey,
                                   (ret == ENGINE_SUCCESS) ? c->hinfo.nbytes : -1, c->cas);
-        break;
-    case OPERATION_SET:
-        MEMCACHED_COMMAND_SET(c->sfd, c->hinfo.key, c->hinfo.nkey,
-                              (ret == ENGINE_SUCCESS) ? c->hinfo.nbytes : -1, c->cas);
-        break;
-    }
+            break;
+        }
 #endif
 
-    switch (ret) {
-    case ENGINE_SUCCESS:
-        write_bin_response(c, NULL, 0, 0, 0);
-        break;
-    case ENGINE_KEY_EEXISTS:
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS, 0);
-        break;
-    case ENGINE_KEY_ENOENT:
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
-        break;
-    case ENGINE_NOT_STORED:
-        /* FIXME: check below code, later. */
-        if (c->store_op == OPERATION_ADD) {
+        switch (ret) {
+        case ENGINE_SUCCESS:
+            write_bin_response(c, NULL, 0, 0, 0);
+            break;
+        case ENGINE_KEY_EEXISTS:
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS, 0);
-        } else if (c->store_op == OPERATION_REPLACE) {
+            break;
+        case ENGINE_KEY_ENOENT:
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
-        } else {
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_STORED, 0);
+            break;
+        case ENGINE_NOT_STORED:
+            /* FIXME: check below code, later. */
+            if (c->store_op == OPERATION_ADD) {
+                write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_EEXISTS, 0);
+            } else if (c->store_op == OPERATION_REPLACE) {
+                write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_KEY_ENOENT, 0);
+            } else {
+                write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_STORED, 0);
+            }
+            break;
+        case ENGINE_PREFIX_ENAME:
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_PREFIX_ENAME, 0);
+            break;
+        case ENGINE_ENOMEM:
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+            break;
+        case ENGINE_EINVAL:
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
+            break;
+        case ENGINE_E2BIG:
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, 0);
+            break;
+        case ENGINE_NOT_MY_VBUCKET:
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_MY_VBUCKET, 0);
+            break;
+        case ENGINE_EBADTYPE:
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
+            break;
+        default:
+            handle_unexpected_errorcode_bin(c, __func__, ret, 0);
         }
-        //write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_STORED, 0);
-        break;
-    case ENGINE_PREFIX_ENAME:
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_PREFIX_ENAME, 0);
-        break;
-    case ENGINE_ENOMEM:
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
-        break;
-    case ENGINE_EINVAL:
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINVAL, 0);
-        break;
-    case ENGINE_E2BIG:
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, 0);
-        break;
-    case ENGINE_NOT_MY_VBUCKET:
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_MY_VBUCKET, 0);
-        break;
-    case ENGINE_EBADTYPE:
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EBADTYPE, 0);
-        break;
-    default:
-        handle_unexpected_errorcode_bin(c, __func__, ret, 0);
     }
 
     if (c->store_op == OPERATION_CAS) {
@@ -3829,7 +3825,7 @@ static void process_bin_get(conn *c)
             mc_engine.v1->release(mc_engine.v0, c, it);
             mc_logger->log(EXTENSION_LOG_WARNING, c,
                            "%d: Failed to get item info\n", c->sfd);
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
             break;
         }
 
@@ -7104,41 +7100,43 @@ static void process_bin_update(conn *c)
                                  req->message.body.flags,
                                  realtime(req->message.body.expiration),
                                  c->binary_header.request.cas);
-    if (ret == ENGINE_SUCCESS && !mc_engine.v1->get_item_info(mc_engine.v0,
-                                                              c, it, &c->hinfo)) {
-        mc_engine.v1->release(mc_engine.v0, c, it);
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
-        return;
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
-        if (c->cmd == PROTOCOL_BINARY_CMD_ADD)
-            c->store_op = OPERATION_ADD;
-        else if (c->cmd == PROTOCOL_BINARY_CMD_SET)
-            c->store_op = OPERATION_SET;
-        else if (c->cmd == PROTOCOL_BINARY_CMD_REPLACE)
-            c->store_op = OPERATION_REPLACE;
-        else
-            assert(0);
-
-        if (c->binary_header.request.cas != 0) {
-            c->store_op = OPERATION_CAS;
-        }
-
-        c->item = it;
-        ritem_set_first(c, CONN_RTYPE_HINFO, vlen);
-        conn_set_state(c, conn_nread);
-        c->substate = bin_read_set_value;
-        break;
-    case ENGINE_E2BIG:
-    case ENGINE_ENOMEM:
-        if (ret == ENGINE_E2BIG) {
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
-        } else {
+    if (ret == ENGINE_SUCCESS) {
+        if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
+            mc_engine.v1->release(mc_engine.v0, c, it);
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
-        }
+            ret = ENGINE_ENOMEM;
+        } else {
+            if (c->cmd == PROTOCOL_BINARY_CMD_ADD)
+                c->store_op = OPERATION_ADD;
+            else if (c->cmd == PROTOCOL_BINARY_CMD_SET)
+                c->store_op = OPERATION_SET;
+            else if (c->cmd == PROTOCOL_BINARY_CMD_REPLACE)
+                c->store_op = OPERATION_REPLACE;
+            else
+                assert(0);
 
+            if (c->binary_header.request.cas != 0) {
+                c->store_op = OPERATION_CAS;
+            }
+
+            c->item = it;
+            ritem_set_first(c, CONN_RTYPE_HINFO, vlen);
+            conn_set_state(c, conn_nread);
+            c->substate = bin_read_set_value;
+        }
+    } else {
+        switch (ret) {
+        case ENGINE_E2BIG:
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
+            break;
+        case ENGINE_ENOMEM:
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
+            break;
+        default:
+            handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
+        }
+    }
+    if (ret != ENGINE_SUCCESS) {
         /*
          * Avoid stale data persisting in cache because we failed alloc.
          * Unacceptable for SET (but only if cas matches).
@@ -7158,9 +7156,6 @@ static void process_bin_update(conn *c)
                 c->noreply = false;
             }
         }
-        break;
-    default:
-        handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
     }
 }
 
@@ -7186,37 +7181,34 @@ static void process_bin_append_prepend(conn *c)
     ENGINE_ERROR_CODE ret;
     ret = mc_engine.v1->allocate(mc_engine.v0, c, &it, key, nkey, vlen+2,
                                  0, 0, c->binary_header.request.cas);
-    if (ret == ENGINE_SUCCESS && !mc_engine.v1->get_item_info(mc_engine.v0,
-                                                              c, it, &c->hinfo)) {
-        mc_engine.v1->release(mc_engine.v0, c, it);
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_EINTERNAL, 0);
-        return;
-    }
-
-    switch (ret) {
-    case ENGINE_SUCCESS:
-        if (c->cmd == PROTOCOL_BINARY_CMD_APPEND)
-            c->store_op = OPERATION_APPEND;
-        else if (c->cmd == PROTOCOL_BINARY_CMD_PREPEND)
-            c->store_op = OPERATION_PREPEND;
-        else
-            assert(0);
-
-        c->item = it;
-        ritem_set_first(c, CONN_RTYPE_HINFO, vlen);
-        conn_set_state(c, conn_nread);
-        c->substate = bin_read_set_value;
-        break;
-    case ENGINE_E2BIG:
-    case ENGINE_ENOMEM:
-        if (ret == ENGINE_E2BIG) {
-            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
-        } else {
+    if (ret == ENGINE_SUCCESS) {
+        if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
+            mc_engine.v1->release(mc_engine.v0, c, it);
             write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
+        } else {
+            if (c->cmd == PROTOCOL_BINARY_CMD_APPEND)
+                c->store_op = OPERATION_APPEND;
+            else if (c->cmd == PROTOCOL_BINARY_CMD_PREPEND)
+                c->store_op = OPERATION_PREPEND;
+            else
+                assert(0);
+
+            c->item = it;
+            ritem_set_first(c, CONN_RTYPE_HINFO, vlen);
+            conn_set_state(c, conn_nread);
+            c->substate = bin_read_set_value;
         }
-        break;
-    default:
-        handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
+    } else {
+        switch (ret) {
+        case ENGINE_E2BIG:
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_E2BIG, vlen);
+            break;
+        case ENGINE_ENOMEM:
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
+            break;
+        default:
+            handle_unexpected_errorcode_bin(c, __func__, ret, vlen);
+        }
     }
 }
 
@@ -8475,25 +8467,24 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         if (!mc_engine.v1->get_item_info(mc_engine.v0, c, it, &c->hinfo)) {
             mc_engine.v1->release(mc_engine.v0, c, it);
             out_string(c, "SERVER_ERROR error getting item data");
-            ret = ENGINE_FAILED; /* FIXME: error type */
+            ret = ENGINE_ENOMEM;
         } else {
             c->item = it;
             ritem_set_first(c, CONN_RTYPE_HINFO, vlen);
             c->store_op = store_op;
             conn_set_state(c, conn_nread);
         }
-    }
-    if (ret != ENGINE_SUCCESS) {
+    } else {
         if (ret == ENGINE_E2BIG) {
             out_string(c, "CLIENT_ERROR object too large for cache");
         } else if (ret == ENGINE_ENOMEM) {
             out_string(c, "SERVER_ERROR out of memory storing object");
-        } else if (ret == ENGINE_FAILED) {
-            /* out_string() was called above. so, do nothing */
         } else {
             handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
+    }
 
+    if (ret != ENGINE_SUCCESS) {
         /* Avoid stale data persisting in cache because we failed alloc.
          * Unacceptable for SET. Anywhere else too?
          */
