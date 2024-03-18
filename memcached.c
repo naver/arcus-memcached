@@ -4053,8 +4053,13 @@ static void process_bin_stat(conn *c)
     switch (ret) {
     case ENGINE_SUCCESS:
         append_bin_stats(NULL, 0, NULL, 0, c);
-        write_and_free(c, c->dynamic_buffer.buffer, c->dynamic_buffer.offset);
-        c->dynamic_buffer.buffer = NULL;
+        if (c->dynamic_buffer.buffer != NULL) {
+            write_and_free(c, c->dynamic_buffer.buffer,
+                              c->dynamic_buffer.offset);
+            c->dynamic_buffer.buffer = NULL;
+        } else {
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+        }
         break;
     case ENGINE_ENOMEM:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
@@ -6703,8 +6708,13 @@ static void process_bin_unknown_packet(conn *c)
 
     switch (ret) {
     case ENGINE_SUCCESS:
-        write_and_free(c, c->dynamic_buffer.buffer, c->dynamic_buffer.offset);
-        c->dynamic_buffer.buffer = NULL;
+        if (c->dynamic_buffer.buffer != NULL) {
+            write_and_free(c, c->dynamic_buffer.buffer,
+                              c->dynamic_buffer.offset);
+            c->dynamic_buffer.buffer = NULL;
+        } else {
+            write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, 0);
+        }
         break;
     case ENGINE_ENOTSUP:
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_UNKNOWN_COMMAND, 0);
@@ -7656,15 +7666,12 @@ print_invalid_command(conn *c, token_t *tokens, const size_t ntokens)
 /* set up a connection to write a buffer then free it, used for stats */
 static void write_and_free(conn *c, char *buf, int bytes)
 {
-    if (buf) {
-        c->write_and_free = buf;
-        c->wcurr = buf;
-        c->wbytes = bytes;
-        conn_set_state(c, conn_write);
-        c->write_and_go = conn_new_cmd;
-    } else {
-        out_string(c, "SERVER_ERROR out of memory writing stats");
-    }
+    assert(buf != NULL);
+    c->write_and_free = buf;
+    c->wcurr = buf;
+    c->wbytes = bytes;
+    conn_set_state(c, conn_write);
+    c->write_and_go = conn_new_cmd;
 }
 
 #ifdef JHPARK_OLD_SMGET_INTERFACE
@@ -7866,7 +7873,11 @@ static void process_stats_cachedump(conn *c, token_t *tokens, const size_t ntoke
 
     buf = mc_engine.v1->cachedump(mc_engine.v0, c, id, limit,
                                   forward, sticky, &bytes);
-    write_and_free(c, buf, bytes);
+    if (buf != NULL) {
+        write_and_free(c, buf, bytes);
+    } else {
+        out_string(c, "SERVER_ERROR out of memory writing stats");
+    }
 }
 
 static void aggregate_callback(void *in, void *out)
@@ -8279,8 +8290,12 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
         switch (ret) {
         case ENGINE_SUCCESS:
             append_ascii_stats(NULL, 0, NULL, 0, c);
-            write_and_free(c, c->dynamic_buffer.buffer, c->dynamic_buffer.offset);
-            c->dynamic_buffer.buffer = NULL;
+            if (c->dynamic_buffer.buffer != NULL) {
+                write_and_free(c, c->dynamic_buffer.buffer, c->dynamic_buffer.offset);
+                c->dynamic_buffer.buffer = NULL;
+            } else {
+                out_string(c, "SERVER_ERROR out of memory writing stats");
+            }
             break;
         case ENGINE_ENOMEM:
             out_string(c, "SERVER_ERROR out of memory writing stats");
