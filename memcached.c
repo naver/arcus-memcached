@@ -14524,6 +14524,17 @@ static void remove_pidfile(const char *pid_file)
     }
 }
 
+static void shutdown_server(void)
+{
+    memcached_shutdown = 1;
+
+#ifdef ENABLE_ZK_INTEGRATION
+    if (arcus_zk_cfg) {
+        arcus_zk_shutdown = 1;
+    }
+#endif
+}
+
 static void sigterm_handler(int sig)
 {
     assert(sig == SIGTERM || sig == SIGINT);
@@ -14533,13 +14544,7 @@ static void sigterm_handler(int sig)
                        "memcached shutdown by signal(%s)\n",
                        (sig == SIGINT ? "SIGINT" : "SIGTERM"));
     }
-    memcached_shutdown = 1;
-
-#ifdef ENABLE_ZK_INTEGRATION
-    if (arcus_zk_cfg) {
-        arcus_zk_shutdown = 1;
-    }
-#endif
+    shutdown_server();
 }
 
 static int install_sigterm_handler(void)
@@ -14813,20 +14818,6 @@ static bool is_my_key(const char *key, size_t nkey)
     return true;
 }
 #endif
-
-static void shutdown_server(void)
-{
-    if (settings.verbose) {
-        mc_logger->log(EXTENSION_LOG_INFO, NULL, "memcached shutdown by api\n");
-    }
-    memcached_shutdown = 1;
-
-#ifdef ENABLE_ZK_INTEGRATION
-    if (arcus_zk_cfg) {
-        arcus_zk_shutdown = 1;
-    }
-#endif
-}
 
 static EXTENSION_LOGGER_DESCRIPTOR* get_logger(void)
 {
