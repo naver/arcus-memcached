@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 48;
+use Test::More tests => 57;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -63,6 +63,7 @@ for my $prot (::IS_ASCII,::IS_BINARY) {
     udp_set_test($prot,45,"bval$prot","abcd" x 1024,0,0);
     udp_get_test($prot,45,"aval$prot","1",::ENTRY_EXISTS);
     udp_get_test($prot,45,"404$prot","1",::ENTRY_MISSING);
+    udp_get_test($prot,45,"bval$prot","abcd" x 1024,::ENTRY_EXISTS);
     udp_incr_decr_test($prot,45,"aval$prot","1","incr",1);
     udp_incr_decr_test($prot,45,"aval$prot","1","decr",2);
     udp_delete_test($prot,45,"aval$prot");
