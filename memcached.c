@@ -86,6 +86,7 @@ void UNLOCK_SETTING(void) {
 }
 
 volatile sig_atomic_t memcached_shutdown=0;
+volatile rel_time_t shutdown_time=0;
 
 /*
  * We keep the current time of day in a global variable that's updated by a
@@ -14342,7 +14343,8 @@ static void clock_handler(const int fd, const short which, void *arg)
     struct timeval t = {.tv_sec = 1, .tv_usec = 0};
     static bool initialized = false;
 
-    if (memcached_shutdown) {
+    if (shutdown_time != 0 && shutdown_time <= current_time) {
+        memcached_shutdown = 1;
         if (settings.verbose > 0) {
             mc_logger->log(EXTENSION_LOG_INFO, NULL,
                     "Main thread is now terminating from clock handler.\n");
@@ -14541,13 +14543,23 @@ static void remove_pidfile(const char *pid_file)
 
 static void shutdown_server(void)
 {
-    memcached_shutdown = 1;
+    if (shutdown_time) {
+        /* The shutdown api has already been called and is waiting.
+         * Since you called the api again, it looks like you want to shutdown immediately.
+         * Do not wait until the previously set shutdown_time.
+         */
+        shutdown_time = current_time;
+        return;
+    }
 
+    int shutdown_delay = 0;
 #ifdef ENABLE_ZK_INTEGRATION
     if (arcus_zk_cfg) {
         arcus_zk_shutdown = 1;
+        arcus_zk_final("graceful shutdown");
     }
 #endif
+    shutdown_time = current_time + shutdown_delay;
 }
 
 static void sigterm_handler(int sig)
