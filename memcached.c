@@ -15106,6 +15106,7 @@ int main (int argc, char **argv)
 
 #ifdef ENABLE_ZK_INTEGRATION
     int  arcus_zk_to=0;
+    int  arcus_zk_sd=-1;
 #ifdef PROXY_SUPPORT
     char *arcus_proxy_cfg = NULL;
 #endif
@@ -15164,6 +15165,7 @@ int main (int argc, char **argv)
 #ifdef ENABLE_ZK_INTEGRATION
           "z:"  /* Arcus Zookeeper */
           "o:"  /* Arcus Zookeeper session timeout option (sec) */
+          "Z:"  /* Arcus Zookeeper shutdown delay (sec) */
 #ifdef PROXY_SUPPORT
           "x:"  /* Proxy server ip:port */
 #endif
@@ -15399,6 +15401,9 @@ int main (int argc, char **argv)
             break;
         case 'o': /* Arcus Zookeeper session timeout */
             arcus_zk_to = atoi(optarg); // this value is in seconds
+            break;
+        case 'Z': /* Arcus Zookeeper shutdown delay */
+            arcus_zk_sd = atoi(optarg); // this value is in seconds
             break;
 #ifdef PROXY_SUPPORT
         case 'x': /* configure for proxy server */
@@ -15805,7 +15810,7 @@ int main (int argc, char **argv)
             exit(EXIT_FAILURE);
         }
         /* init zk module */
-        arcus_zk_init(arcus_zk_cfg, arcus_zk_to, mc_logger,
+        arcus_zk_init(arcus_zk_cfg, arcus_zk_to, arcus_zk_sd, mc_logger,
                       settings.verbose, settings.maxbytes, settings.port,
 #ifdef PROXY_SUPPORT
                       arcus_proxy_cfg,

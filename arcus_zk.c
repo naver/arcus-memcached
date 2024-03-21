@@ -1414,7 +1414,7 @@ static int arcus_check_domain_name(char *ensemble_list)
 }
 #endif
 
-void arcus_zk_init(char *ensemble_list, int zk_to,
+void arcus_zk_init(char *ensemble_list, int zk_to, int zk_sd,
                    EXTENSION_LOGGER_DESCRIPTOR *logger,
                    int verbose, size_t maxbytes, int port,
 #ifdef PROXY_SUPPORT
@@ -1458,6 +1458,9 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
          */
         if (zk_to >= MIN_ZK_TO && zk_to <= MAX_ZK_TO) {
             arcus_conf.zk_timeout = zk_to*1000; // msec conversion
+        }
+        if (zk_sd >= 0) {
+            arcus_conf.shutdown_delay = zk_sd;
         }
     }
 

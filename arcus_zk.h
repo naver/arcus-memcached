@@ -45,7 +45,7 @@ typedef struct {
 
 extern volatile sig_atomic_t arcus_zk_shutdown;
 
-void arcus_zk_init(char *ensemble_list, int zk_to,
+void arcus_zk_init(char *ensemble_list, int zk_to, int zk_sd,
                    EXTENSION_LOGGER_DESCRIPTOR *logger,
                    int verbose, size_t maxbytes, int port,
 #ifdef PROXY_SUPPORT
