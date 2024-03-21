@@ -14557,6 +14557,9 @@ static void shutdown_server(void)
     if (arcus_zk_cfg) {
         arcus_zk_shutdown = 1;
         arcus_zk_final("graceful shutdown");
+        arcus_zk_confs zk_confs;
+        arcus_zk_get_confs(&zk_confs);
+        shutdown_delay = zk_confs.shutdown_delay;
     }
 #endif
     shutdown_time = current_time + shutdown_delay;

@@ -147,6 +147,7 @@ typedef struct {
     int     port;               // memcached port number
     bool    zk_failstop;        // memcached automatic failstop on/off
     int     zk_timeout;         // Zookeeper session timeout
+    int     shutdown_delay;     // Graceful shutdown waits for some time after znode removal (unit: s)
     bool    auto_scrub;         // automactic scrub_stale
     char   *znode_name;         // Ephemeral ZK node name for this mc identification
     int     znode_ver;          // Ephemeral ZK node version
@@ -176,6 +177,7 @@ arcus_zk_config arcus_conf = {
     .hostip         = NULL,
     .zk_failstop    = true,
     .zk_timeout     = DEFAULT_ZK_TO,
+    .shutdown_delay = -1,
     .auto_scrub     = true,
     .znode_name     = NULL,
     .znode_ver      = -1,
@@ -1831,6 +1833,8 @@ void arcus_zk_get_confs(arcus_zk_confs *confs)
 {
     confs->zk_libversion = zoo_version_str();
     confs->zk_timeout = arcus_conf.zk_timeout;
+    confs->shutdown_delay = arcus_conf.shutdown_delay < 0
+        ? (arcus_conf.zk_timeout / 1000) : arcus_conf.shutdown_delay;
     confs->zk_failstop = arcus_conf.zk_failstop;
 }
 
