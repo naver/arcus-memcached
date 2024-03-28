@@ -28,6 +28,7 @@ typedef struct {
     const char  *zk_libversion; // Zookeeper client version
     uint32_t    zk_timeout;     // Zookeeper session timeout (unit: ms)
     bool        zk_failstop;    // memcached automatic failstop
+    int         shutdown_delay; // Graceful shutdown waits for some time after znode removal (unit: s)
 } arcus_zk_confs;
 
 typedef struct {
@@ -44,7 +45,7 @@ typedef struct {
 
 extern volatile sig_atomic_t arcus_zk_shutdown;
 
-void arcus_zk_init(char *ensemble_list, int zk_to,
+void arcus_zk_init(char *ensemble_list, int zk_to, int zk_sd,
                    EXTENSION_LOGGER_DESCRIPTOR *logger,
                    int verbose, size_t maxbytes, int port,
 #ifdef PROXY_SUPPORT
