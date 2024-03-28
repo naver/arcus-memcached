@@ -76,11 +76,15 @@
 /** Initial number of sendmsg() argument structures to allocate. */
 #define MSG_LIST_INITIAL 10
 
+/** Initial size of list of items being read. */
+#define RITEM_LIST_INITIAL 1
+
 /** High water marks for buffer shrinking */
 #define READ_BUFFER_HIGHWAT 8192
 #define ITEM_LIST_HIGHWAT 400
 #define IOV_LIST_HIGHWAT 600
 #define MSG_LIST_HIGHWAT 100
+#define RITEM_LIST_HIGHWAT 400
 
 /* Binary protocol stuff */
 #define MIN_BIN_PKT_LENGTH 16
@@ -261,12 +265,6 @@ typedef bool (*STATE_FUNC)(conn *);
 /**
  * The structure representing a connection into memcached.
  */
-/* rtype in connection */
-#define CONN_RTYPE_NONE  0
-#define CONN_RTYPE_MBLCK 1
-#define CONN_RTYPE_HINFO 2
-#define CONN_RTYPE_EINFO 3
-
 struct conn {
     int    sfd;
     short  nevents;
@@ -290,13 +288,16 @@ struct conn {
     STATE_FUNC   write_and_go;
     void        *write_and_free; /** free this memory after finishing writing */
 
-    int         rtype;  /* CONN_RTYPE_XXXXX */
-    int         rindex; /* used when rtype is HINFO or EINFO */
-    char       *ritem;  /** when we read in an item's value, it goes here */
-    uint32_t    rlbytes;
+    /** data for nread state */
+    struct iovec    *rlist;   /** list to read data except commands if needed */
+    uint32_t         rlcurr;  /** element in rlist[] being read now */
+    uint32_t         rlsize;  /** total allocated size of rlist */
+    uint32_t         rlused;  /** number of elements used in rlist[] */
+
+    char            *ritem;   /** data pointer being read currently */
+    uint32_t         rlbytes; /** data length being read currently */
+
     /* use memory blocks */
-    uint32_t    rltotal;    /* Used when read data with memory block */
-    mblck_node_t *membk;    /* current memory block pointer */
     mblck_list_t  memblist; /* (key or field) string memory block list */
 
     /* hash item and elem item info */
