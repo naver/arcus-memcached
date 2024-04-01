@@ -8089,6 +8089,11 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
     APPEND_STAT("limit_maxconns", "%d", settings.maxconns);
     APPEND_STAT("threads", "%d", settings.num_threads);
     APPEND_STAT("conn_yields", "%"PRIu64, thread_stats.conn_yields);
+#ifdef STATS_TCP_RETRANS
+    if (IS_TCP(c->transport)) {
+        APPEND_STAT("tcp_retrans", "%ld", stats_tcp_retrans());
+    }
+#endif
     UNLOCK_STATS();
 }
 
