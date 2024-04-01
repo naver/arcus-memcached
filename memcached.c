@@ -13059,8 +13059,7 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
 
     ntokens = tokenize_command(command, cmdlen, tokens, MAX_TOKENS);
 
-    if ((ntokens >= 3) && ((strcmp(tokens[COMMAND_TOKEN].value, "get" ) == 0) ||
-                           (strcmp(tokens[COMMAND_TOKEN].value, "bget") == 0)))
+    if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "get") == 0))
     {
         process_get_command(c, tokens, ntokens, false);
     }
