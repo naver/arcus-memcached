@@ -4188,9 +4188,14 @@ static void process_bin_sasl_auth(conn *c)
     uint32_t nkey = c->binary_header.request.keylen;
     uint32_t vlen = 0;
 
+    bool protocol_error = false;
     if (nkey <= c->binary_header.request.bodylen) {
         vlen = c->binary_header.request.bodylen - nkey;
+        if (vlen > (INT_MAX-2)) protocol_error = true;
     } else {
+        protocol_error = true;
+    }
+    if (protocol_error) {
         handle_binary_protocol_error(c);
         return;
     }
@@ -4233,9 +4238,14 @@ static void process_bin_complete_sasl_auth(conn *c)
     uint32_t nkey = c->binary_header.request.keylen;
     uint32_t vlen = 0;
 
+    bool protocol_error = false;
     if (nkey <= c->binary_header.request.bodylen) {
         vlen = c->binary_header.request.bodylen - nkey;
+        if (vlen > (INT_MAX-2)) protocol_error = true;
     } else {
+        protocol_error = true;
+    }
+    if (protocol_error) {
         handle_binary_protocol_error(c);
         return;
     }
@@ -4412,9 +4422,14 @@ static void process_bin_lop_prepare_nread(conn *c)
     c->coll_nkey = nkey;
     uint32_t vlen = 0;
 
+    bool protocol_error = false;
     if (nkey + c->binary_header.request.extlen <= c->binary_header.request.bodylen) {
         vlen = c->binary_header.request.bodylen - (nkey + c->binary_header.request.extlen);
+        if (vlen > (INT_MAX-2)) protocol_error = true;
     } else {
+        protocol_error = true;
+    }
+    if (protocol_error) {
         handle_binary_protocol_error(c);
         return;
     }
@@ -4797,9 +4812,14 @@ static void process_bin_sop_prepare_nread(conn *c)
     c->coll_nkey = nkey;
     uint32_t vlen = 0;
 
+    bool protocol_error = false;
     if (nkey + c->binary_header.request.extlen <= c->binary_header.request.bodylen) {
         vlen = c->binary_header.request.bodylen - (nkey + c->binary_header.request.extlen);
+        if (vlen > (INT_MAX-2)) protocol_error = true;
     } else {
+        protocol_error = true;
+    }
+    if (protocol_error) {
         handle_binary_protocol_error(c);
         return;
     }
@@ -5260,9 +5280,14 @@ static void process_bin_bop_prepare_nread(conn *c)
     c->coll_nkey = nkey;
     uint32_t vlen = 0;
 
+    bool protocol_error = false;
     if (nkey + c->binary_header.request.extlen <= c->binary_header.request.bodylen) {
         vlen = c->binary_header.request.bodylen - (nkey + c->binary_header.request.extlen);
+        if (vlen > (INT_MAX-2)) protocol_error = true;
     } else {
+        protocol_error = true;
+    }
+    if (protocol_error) {
         handle_binary_protocol_error(c);
         return;
     }
@@ -5484,9 +5509,14 @@ static void process_bin_bop_update_prepare_nread(conn *c)
     uint32_t vlen = 0;
     int real_nbkey;
 
+    bool protocol_error = false;
     if (nkey + c->binary_header.request.extlen <= c->binary_header.request.bodylen) {
         vlen = c->binary_header.request.bodylen - (nkey + c->binary_header.request.extlen);
+        if (vlen > (INT_MAX-2)) protocol_error = true;
     } else {
+        protocol_error = true;
+    }
+    if (protocol_error) {
         handle_binary_protocol_error(c);
         return;
     }
@@ -5889,9 +5919,14 @@ static void process_bin_bop_prepare_nread_keys(conn *c)
     c->coll_nkey = nkey;
     size_t vlen = 0;
 
+    bool protocol_error = false;
     if (nkey + c->binary_header.request.extlen <= c->binary_header.request.bodylen) {
         vlen = c->binary_header.request.bodylen - (nkey + c->binary_header.request.extlen);
+        if (vlen > (INT_MAX-2)) protocol_error = true;
     } else {
+        protocol_error = true;
+    }
+    if (protocol_error) {
         handle_binary_protocol_error(c);
         return;
     }
@@ -7050,9 +7085,14 @@ static void process_bin_update(conn *c)
     req->message.body.flags = req->message.body.flags;
     req->message.body.expiration = ntohl(req->message.body.expiration);
 
+    bool protocol_error = false;
     if (nkey + c->binary_header.request.extlen <= c->binary_header.request.bodylen) {
         vlen = c->binary_header.request.bodylen - (nkey + c->binary_header.request.extlen);
+        if (vlen > (INT_MAX-2)) protocol_error = true;
     } else {
+        protocol_error = true;
+    }
+    if (protocol_error) {
         handle_binary_protocol_error(c);
         return;
     }
@@ -7156,9 +7196,14 @@ static void process_bin_append_prepend(conn *c)
     uint32_t nkey = c->binary_header.request.keylen;
     uint32_t vlen = 0;
 
+    bool protocol_error = false;
     if (nkey <= c->binary_header.request.bodylen) {
         vlen = c->binary_header.request.bodylen - nkey;
+        if (vlen > (INT_MAX-2)) protocol_error = true;
     } else {
+        protocol_error = true;
+    }
+    if (protocol_error) {
         handle_binary_protocol_error(c);
         return;
     }
