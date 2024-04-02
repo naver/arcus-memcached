@@ -96,6 +96,7 @@ volatile sig_atomic_t memcached_shutdown=0;
  * sizeof(time_t) > sizeof(unsigned int).
  */
 volatile rel_time_t current_time;
+volatile rel_time_t shutdown_time;
 static time_t process_started; /* when the process was started */
 
 /** exported globals **/
@@ -10067,6 +10068,31 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
 }
 #endif
 
+static void process_shutdown_command(conn *c, token_t *tokens, size_t ntokens)
+{
+    int64_t delay;
+    if (ntokens == 2) {
+        delay = 2;
+    } else if (! safe_strtoll(tokens[1].value, &delay) || delay < 0) {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "CLIENT_ERROR bad command line format");
+        return;
+    }
+
+    // Should I support shutdown by unix time?
+    // shutdown_time = realtime(delay);
+    shutdown_time = current_time + delay;
+    mc_logger->log(EXTENSION_LOG_WARNING, c,
+                   "shutdown scheduled for %ds\n", (int)delay);
+#ifdef ENABLE_ZK_INTEGRATION
+    arcus_zk_shutdown = 1;
+    arcus_zk_final("shutdown command");
+    // arcus_hb_final();
+    // arcus_zk_destroy();
+#endif
+    out_string(c, "OK");
+}
+
 static inline int get_coll_create_attr_from_tokens(token_t *tokens, const int ntokens,
                                                    int coll_type, item_attr *attrp)
 {
@@ -13243,6 +13269,10 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
 #endif
         out_string(c, response);
     }
+    else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "shutdown") == 0))
+    {
+        process_shutdown_command(c, tokens, ntokens);
+    }
     else /* no matching command */
     {
         if (settings.extensions.ascii != NULL) {
@@ -14345,6 +14375,10 @@ static void clock_handler(const int fd, const short which, void *arg)
 {
     struct timeval t = {.tv_sec = 1, .tv_usec = 0};
     static bool initialized = false;
+
+    if (shutdown_time > 0 && current_time >= shutdown_time) {
+        memcached_shutdown = 1;
+    }
 
     if (memcached_shutdown) {
         if (settings.verbose > 0) {
