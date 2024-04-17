@@ -42,8 +42,6 @@ typedef struct {
 
 /* Interface between memcached.c and arcus_zk.c */
 
-extern volatile sig_atomic_t arcus_zk_shutdown;
-
 void arcus_zk_init(char *ensemble_list, int zk_to,
                    EXTENSION_LOGGER_DESCRIPTOR *logger,
                    int verbose, size_t maxbytes, int port,

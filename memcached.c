@@ -14546,12 +14546,6 @@ static void remove_pidfile(const char *pid_file)
 static void shutdown_server(void)
 {
     memcached_shutdown = 1;
-
-#ifdef ENABLE_ZK_INTEGRATION
-    if (arcus_zk_cfg) {
-        arcus_zk_shutdown = 1;
-    }
-#endif
 }
 
 static void sigterm_handler(int sig)
