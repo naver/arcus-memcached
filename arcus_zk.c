@@ -136,7 +136,7 @@ static bool zk_connected = false;
 /* this is to indicate if we get shutdown signal during ZK initialization
  * ZK shutdown is done at the end of arcus_zk_init() to simplify synchronization
  */
-volatile sig_atomic_t arcus_zk_shutdown=0;
+static volatile sig_atomic_t arcus_zk_shutdown=0;
 
 /* placeholder for zookeeper and memcached settings */
 typedef struct {
@@ -1587,13 +1587,6 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
     sm_info.request.update_cache_list = true;
     sm_wakeup(true);
     sm_unlock();
-
-    /* Either got SIG* or memcached shutdown process finished */
-    if (arcus_zk_shutdown) {
-        arcus_zk_final("Interrupted");
-        arcus_zk_destroy();
-        arcus_exit(main_zk->zh, EX_OSERR);
-    }
 }
 
 /* Close the ZK connection and die. Do not do anything that may
@@ -1602,7 +1595,7 @@ void arcus_zk_init(char *ensemble_list, int zk_to,
  */
 void arcus_zk_final(const char *msg)
 {
-    assert(arcus_zk_shutdown == 1);
+    arcus_zk_shutdown = 1;
     arcus_conf.logger->log(EXTENSION_LOG_INFO, NULL, "arcus_zk_final(%s)\n", msg);
 
     pthread_mutex_lock(&zk_lock);
@@ -1938,7 +1931,6 @@ static void *sm_state_thread(void *arg)
 
     deallocate_String_vector(&sm_info.sv_cache_list);
     if (shutdown_by_me) {
-        arcus_zk_shutdown = 1;
         arcus_zk_final("SM state failure");
         arcus_zk_destroy();
         exit(0);
@@ -1997,7 +1989,6 @@ static void *sm_timer_thread(void *arg)
     sm_info.timer_running = false;
 
     if (shutdown_by_me) {
-        arcus_zk_shutdown = 1;
         arcus_zk_final("SM timer failure");
         arcus_zk_destroy();
         exit(0);
