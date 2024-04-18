@@ -886,21 +886,7 @@ static void conn_cleanup(conn *c)
     }
 
     c->engine_storage = NULL;
-    /* disconnect it from the conn_list of a thread in charge */
-    if (c->conn_prev != NULL) {
-        c->conn_prev->conn_next = c->conn_next;
-    } else {
-        assert(c->thread->conn_list == c);
-        c->thread->conn_list = c->conn_next;
-    }
-    if (c->conn_next != NULL) {
-        c->conn_next->conn_prev = c->conn_prev;
-    }
-    c->thread = NULL;
-    assert(c->next == NULL);
     c->ascii_cmd = NULL;
-    c->sfd = -1;
-
     c->ewouldblock = false;
     c->io_blocked = false;
 #ifdef MULTI_NOTIFY_IO_COMPLETE
@@ -939,6 +925,18 @@ void conn_close(conn *c)
     remove_io_pending(c);
 
     conn_cleanup(c);
+    /* disconnect it from the conn_list of a thread in charge */
+    if (c->conn_prev != NULL) {
+        c->conn_prev->conn_next = c->conn_next;
+    } else {
+        assert(c->thread->conn_list == c);
+        c->thread->conn_list = c->conn_next;
+    }
+    if (c->conn_next != NULL) {
+        c->conn_next->conn_prev = c->conn_prev;
+    }
+    c->thread = NULL;
+    assert(c->next == NULL);
 
     /*
      * The contract with the object cache is that we should return the
@@ -13554,10 +13552,7 @@ static enum transmit_result transmit(conn *c)
             //perror("Failed to write, and not due to blocking");
         }
 
-        if (IS_UDP(c->transport))
-            conn_set_state(c, conn_read);
-        else
-            conn_set_state(c, conn_closing);
+        conn_set_state(c, conn_closing);
         return TRANSMIT_HARD_ERROR;
     } else {
         return TRANSMIT_COMPLETE;
@@ -13990,6 +13985,7 @@ bool conn_closing(conn *c)
 {
     if (IS_UDP(c->transport)) {
         conn_cleanup(c);
+        conn_set_state(c, conn_read);
     } else {
         conn_close(c);
     }
