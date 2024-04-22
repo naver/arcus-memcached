@@ -1246,7 +1246,7 @@ static int add_iov_hinfo_ascii(conn *c, item_info *hinfo)
 {
     assert(c->protocol == ascii_prot);
     if (hinfo->nvalue > 0) {
-        if(add_iov(c, hinfo->value, hinfo->nvalue) != 0)
+        if (add_iov(c, hinfo->value, hinfo->nvalue) != 0)
             return -1;
     }
     for (int i = 0; i < hinfo->naddnl; i++) {
@@ -2576,7 +2576,7 @@ out_bop_smget_old_response(conn *c, token_t *key_tokens,
                            uint32_t elem_count, uint32_t kmis_count,
                            bool trimmed, bool duplicated)
 {
-    char *respptr = ((char*)kmis_array + (c->coll_numkeys * sizeof(uint32_t)));
+    char *respptr = (char*)kmis_array + (c->coll_numkeys * sizeof(uint32_t));
     int   resplen;
     int   i, kidx;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
@@ -13605,7 +13605,7 @@ bool conn_listening(conn *c)
                 static const int REJECTED_CONN_CHK_INTERVAL = 60; /*check interval*/
                 rel_time_t elapsed = get_current_time() - rejected_conn_log_stime;
                 rejected_conn_log_count++;
-                if(elapsed > REJECTED_CONN_CHK_INTERVAL){
+                if (elapsed > REJECTED_CONN_CHK_INTERVAL){
                     mc_logger->log(EXTENSION_LOG_INFO, c,
                                "Too many open connections (maxconns) "
                                "(Total %u logs occured during %u secs)\n",
@@ -13771,9 +13771,7 @@ bool conn_swallow(conn *c)
     }
 
     conn_set_state(c, conn_closing);
-
     return true;
-
 }
 
 bool conn_nread(conn *c)
@@ -14221,9 +14219,7 @@ static int server_socket(int port, enum network_transport transport,
         }
 
         if (IS_UDP(transport)) {
-            int c;
-
-            for (c = 0; c < settings.num_threads; c++) {
+            for (int c = 0; c < settings.num_threads; c++) {
                 /* this is guaranteed to hit all threads because we round-robin */
                 dispatch_conn_new(sfd, conn_read, EV_READ | EV_PERSIST,
                                   UDP_READ_BUFFER_SIZE, transport);
@@ -15213,7 +15209,7 @@ int main (int argc, char **argv)
             perform_callbacks(ON_LOG_LEVEL, NULL, NULL);
             break;
         case 'l':
-            settings.inter= strdup(optarg);
+            settings.inter = strdup(optarg);
             break;
         case 'd':
             do_daemonize = true;
