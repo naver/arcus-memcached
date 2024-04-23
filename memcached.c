@@ -85,6 +85,7 @@ void UNLOCK_SETTING(void) {
     pthread_mutex_unlock(&setting_lock);
 }
 
+static pthread_mutex_t shutdown_lock = PTHREAD_MUTEX_INITIALIZER;
 volatile sig_atomic_t memcached_shutdown=0;
 
 /*
@@ -14541,7 +14542,11 @@ static void remove_pidfile(const char *pid_file)
 
 static void shutdown_server(void)
 {
-    memcached_shutdown = 1;
+    pthread_mutex_lock(&shutdown_lock);
+    if (memcached_shutdown == 0) {
+        memcached_shutdown = 1;
+    }
+    pthread_mutex_unlock(&shutdown_lock);
 }
 
 static void sigterm_handler(int sig)
@@ -15824,7 +15829,9 @@ int main (int argc, char **argv)
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Listen sockets closed.\n");
 
     /* 4) shutdown all threads */
+    pthread_mutex_lock(&shutdown_lock);
     memcached_shutdown = 2;
+    pthread_mutex_unlock(&shutdown_lock);
     threads_shutdown();
     release_independent_stats(default_thread_stats);
     if (default_topkeys) {
