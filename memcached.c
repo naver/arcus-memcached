@@ -87,6 +87,8 @@ void UNLOCK_SETTING(void) {
 
 static pthread_mutex_t shutdown_lock = PTHREAD_MUTEX_INITIALIZER;
 volatile sig_atomic_t memcached_shutdown=0;
+volatile int32_t shutdown_delay=0;
+volatile bool dynamic_shutdown=false;
 
 /*
  * We keep the current time of day in a global variable that's updated by a
@@ -10068,6 +10070,41 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
 }
 #endif
 
+static void process_shutdown_command(conn *c, token_t *tokens, size_t ntokens)
+{
+    int32_t delay;
+
+    if (memcached_shutdown > 0 && shutdown_delay < 1000) {
+        out_string(c, "DENIED");
+        return;
+    }
+
+    if (ntokens == 2) {
+        delay = 2;
+        dynamic_shutdown = true;
+    } else {
+        if (! safe_strtol(tokens[1].value, &delay)) {
+            print_invalid_command(c, tokens, ntokens);
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        } else if (delay < 0 || delay > 600) {
+            print_invalid_command(c, tokens, ntokens);
+            out_string(c, "CLIENT_ERROR invalid arguments");
+            return;
+        }
+        dynamic_shutdown = false;
+    }
+    mc_logger->log(EXTENSION_LOG_WARNING, c,
+                   "shutdown scheduled (time=%d, dynamic=%d)\n", (int)delay, dynamic_shutdown);
+    shutdown_delay = delay * 1000;
+    pthread_mutex_lock(&shutdown_lock);
+    if (memcached_shutdown == 0) {
+        memcached_shutdown = 1;
+    }
+    pthread_mutex_unlock(&shutdown_lock);
+    out_string(c, "OK");
+}
+
 static inline int get_coll_create_attr_from_tokens(token_t *tokens, const int ntokens,
                                                    int coll_type, item_attr *attrp)
 {
@@ -13244,6 +13281,10 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
 #endif
         out_string(c, response);
     }
+    else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "shutdown") == 0))
+    {
+        process_shutdown_command(c, tokens, ntokens);
+    }
     else /* no matching command */
     {
         if (settings.extensions.ascii != NULL) {
@@ -14546,6 +14587,8 @@ static void remove_pidfile(const char *pid_file)
 
 static void shutdown_server(void)
 {
+    shutdown_delay = 0;
+    dynamic_shutdown = false;
     pthread_mutex_lock(&shutdown_lock);
     if (memcached_shutdown == 0) {
         memcached_shutdown = 1;
@@ -15832,7 +15875,28 @@ int main (int argc, char **argv)
     close_listen_sockets();
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Listen sockets closed.\n");
 
-    /* 4) shutdown all threads */
+    /* 4) wait until existing clients close */
+    unsigned int prev_conns = UINT_MAX;
+    while (shutdown_delay > 0) {
+        if (dynamic_shutdown) {
+            LOCK_STATS();
+            if (mc_stats.curr_conns > 0 && mc_stats.curr_conns < prev_conns) {
+                prev_conns = mc_stats.curr_conns;
+            } else {
+                mc_logger->log(EXTENSION_LOG_INFO, NULL,
+                    "Client connections haven't been reduced. "
+                    "Shuts down %dms earlier than scheduled time.\n",
+                    shutdown_delay);
+                shutdown_delay = 0;
+            }
+            UNLOCK_STATS();
+            if (shutdown_delay <= 0) break;
+        }
+        usleep(200000); /* sleep 200ms */
+        shutdown_delay -= 200;
+    }
+
+    /* 5) shutdown all threads */
     pthread_mutex_lock(&shutdown_lock);
     memcached_shutdown = 2;
     pthread_mutex_unlock(&shutdown_lock);
@@ -15843,7 +15907,7 @@ int main (int argc, char **argv)
     }
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Worker threads terminated.\n");
 
-    /* 5) destroy data structures */
+    /* 6) destroy data structures */
 #ifdef COMMAND_LOGGING
     cmdlog_final(); /* finalize command logging */
 #endif
@@ -15854,7 +15918,7 @@ int main (int argc, char **argv)
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Memcached engine destroyed.\n");
 
 #ifdef ENABLE_ZK_INTEGRATION
-    /* 6) destroy cluster config structure */
+    /* 7) destroy cluster config structure */
     if (arcus_zk_cfg) {
         arcus_zk_destroy();
         free(arcus_zk_cfg);
