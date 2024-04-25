@@ -1021,3 +1021,51 @@ help [<subcommand>]\r\n
 
 \<subcommand\>로는 kv, lop, sop, mop, bop, stats, flush, config, etc가 있으며,
 \<subcommand\>가 생략되면, help 명령에서 사용가능한 subcommand 목록이 출력된다.
+
+## ready
+
+ARCUS Cache Server가 요청을 처리할 수 있는 상태인지 확인한다.
+
+```
+ready\r\n
+```
+
+Response string과 그 의미는 아래와 같다.
+
+| Resposne String | 설명 |
+| - | - |
+| "READY" | 요청 처리 가능한 상태 |
+| "NOT_READY" | 요청 처리가 준비되지 않은 상태 |
+
+- 독립 실행(standalone) 모드로 구동(`-z` 옵션 생략)한 경우, 즉시 READY 상태가 된다.
+- 클러스터 모드로 구동(`-z` 옵션 사용)한 경우, ZooKeeper에 자신의 캐시 노드 정보를 등록하고 나면 READY 상태가 된다.
+
+## shutdown
+
+ARCUS Cache Server를 우아하게 종료한다.
+1. ZooKeeper 연결을 종료하여 자신의 캐시 노드 정보를 제거하고 Listen socket을 닫는다.
+2. ZooKeeper에 연결된 클라이언트는 캐시 노드 정보가 제거된 event를 받아 캐시 서버와 연결을 종료하므로,
+클라이언트가 자연스럽게 종료될 때까지 대기한다.
+3. 클라이언트 연결 수가 줄어들지 않거나, 정해진 시간이 지나고 나면 프로세스를 종료한다.
+
+```
+shutdown [<seconds>]\r\n
+```
+- `<seconds>` - 프로세스 종료 전 대기 시간을 설정한다.
+  - 생략하면, 200ms 단위로 클라이언트 연결 감소를 확인하며 감소가 없으면 즉시 종료한다. 최대 2초 동안 감소가 완료되지 않으면 강제 종료한다.
+  - 지정하면, 지정한 시간까지 대기 후 종료한다. 지정된 기간이 짧으면 클라이언트 연결이 모두 끊어지기 전에 강제 종료할 수 있다.
+  - seconds의 최솟값은 0, 최댓값은 600이다.
+
+Response string과 그 의미는 아래와 같다.
+
+| Resposne String | 설명 |
+| - | - |
+| "OK" | 성공 |
+| "DENIED" | 거부됨 |
+| "CLIENT_ERROR bad command line format" | protocol syntax 틀림 |
+| "CLIENT_ERROR invalid arguments" | 유효하지 않은 인자 |
+
+- 이미 shutdown 명령이 동작 중인 상태에서 새로운 shutdown 명령을 수신하는 경우 가장 최근에 수신한 명령을 기준으로 종료 시간이 설정된다.
+- 단, 아래 조건을 모두 만족하는 경우 새로운 shutdown 요청이 거부되고 `DENIED` 응답을 반환한다.
+  - 이미 shutdown 요청 수신하여 종료 대기 중
+  - 기존 shutdown 요청에 의한 종료 시간이 1초 이내로 남은 상태
