@@ -296,7 +296,6 @@ struct conn {
     uint32_t    rlbytes;
     /* use memory blocks */
     uint32_t    rltotal;    /* Used when read data with memory block */
-    mblck_node_t *membk;    /* current memory block pointer */
     mblck_list_t  memblist; /* (key or field) string memory block list */
 
     /* hash item and elem item info */
