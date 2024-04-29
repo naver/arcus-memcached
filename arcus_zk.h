@@ -61,6 +61,7 @@ bool arcus_zk_get_failstop(void);
 void arcus_zk_get_confs(arcus_zk_confs *confs);
 void arcus_zk_get_stats(arcus_zk_stats *stats);
 
+bool arcus_zk_initalized(void);
 #ifdef ENABLE_CLUSTER_AWARE
 int  arcus_key_is_mine(const char *key, size_t nkey, bool *mine);
 #endif
