@@ -1838,6 +1838,11 @@ void arcus_zk_get_stats(arcus_zk_stats *stats)
 #endif
 }
 
+bool arcus_zk_initalized(void)
+{
+    return main_zk != NULL;
+}
+
 #ifdef ENABLE_CLUSTER_AWARE
 int arcus_key_is_mine(const char *key, size_t nkey, bool *mine)
 {

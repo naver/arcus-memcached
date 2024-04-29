@@ -9246,7 +9246,7 @@ static void process_zkensemble_command(conn *c, token_t *tokens, const size_t nt
     char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
     bool valid = false;
 
-    if (arcus_zk_cfg == NULL) {
+    if (!arcus_zk_initalized()) {
         out_string(c, "ERROR not using ZooKeeper");
         return;
     }
@@ -13271,7 +13271,7 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
     {
         char *response = "READY";
 #ifdef ENABLE_ZK_INTEGRATION
-        if (arcus_zk_cfg) {
+        if (arcus_zk_initalized()) {
             arcus_zk_stats zk_stats;
             arcus_zk_get_stats(&zk_stats);
             if (!zk_stats.zk_ready) response = "NOT_READY";
@@ -15418,7 +15418,7 @@ int main (int argc, char **argv)
         case 'z': /* configure for Arcus zookeeper cluster */
                   /* host_list in the form of
                      -z 10.0.0.1:2181,10.0.0.2:2181,10.0.0.3:2181 */
-            arcus_zk_cfg = strdup(optarg);
+            arcus_zk_cfg = optarg;
             break;
         case 'o': /* Arcus Zookeeper session timeout */
             arcus_zk_to = atoi(optarg); // this value is in seconds
@@ -15913,7 +15913,6 @@ int main (int argc, char **argv)
     /* 7) destroy cluster config structure */
     if (arcus_zk_cfg) {
         arcus_zk_destroy();
-        free(arcus_zk_cfg);
     }
 #endif
 
