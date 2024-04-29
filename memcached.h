@@ -574,7 +574,7 @@ conn *conn_new(const int sfd, STATE_FUNC init_state, const int event_flags,
 extern int daemonize(int nochdir, int noclose);
 #endif
 
-#include "stats.h"
+#include "stats_prefix.h"
 #include "trace.h"
 #include "hash.h"
 #include <memcached/util.h>
