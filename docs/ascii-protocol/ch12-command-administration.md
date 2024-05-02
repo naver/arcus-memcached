@@ -817,7 +817,9 @@ start 명령을 시작으로 logging이 종료될 때 까지의 모든 command�
 10MB log 파일 10개를 사용하며, 초과될 경우 자동 종료한다.
 
 ```
-cmdlog [start [<log_file_path>] | stop | stats]\r\n
+cmdlog start [<log_file_path>]\r\n
+cmdlog stop\r\n
+cmdlog stats\r\n
 ```
 
 \<log_file_path\>는 logging 정보를 저장할 file의 path이다.
@@ -825,7 +827,9 @@ cmdlog [start [<log_file_path>] | stop | stats]\r\n
   - default로 자동 지정할 경우 log file은 memcached 구동 위치 / command_log 디렉터리 안에 생성된다.
   - command_log 디렉터리는 자동생성되지 않으며, memcached process가 구동된 위치에 생성해 주어야 한다.
   - 생성되는 log file의 파일명은 command_port_bgndate_bgntime_{n}.log 이다.
-- path는 직접 지정할 경우 절대 path, 상대 path 지정이 가능하다. 최종 파일이 생성될 디렉터리까지 지정해 주어야 한다.
+- path는 직접 지정할 경우 최종 파일이 생성될 디렉터리까지 지정해 주어야 한다.
+  - 절대 경로와 상대 경로 지정이 모두 가능하다.
+  - 상대 경로이면 memcached process가 구동된 위치에서의 상대 경로이다.
 
 start 명령의 결과로 log file에 출력되는 내용은 아래와 같다.
 
@@ -885,7 +889,10 @@ long query detection 대상이 되는 command는 아래와 같다.
 lqdetect command는 아래와 같다.
 
 ```
-lqdetect [start [<detect_threshold>] | stop | show | stats]\r\n
+lqdetect start [<detect_threshold>]\r\n
+lqdetect stop\r\n
+lqdetect show\r\n
+lqdetect stats\r\n
 ```
 
 \<detect_threshold\>는 long query로 분류하는 기준으로 해당 요청에서 접근하는 elements 수로 나타내며, 어떤 요청에서 주어진 threshold 이상으로 많은 elements를 접근하는 요청을 long query로 구분한다. 생략 시 default threshold는 4000이다.
@@ -936,7 +943,7 @@ ARCUS Cache Server의 key를 dump 한다.
 Dump ASCII command는 아래와 같다.
 
 ```
-dump start key [<prefix>] filepath\r\n
+dump start key [<prefix>] <dump_file_path>\r\n
 dump stop\r\n
 stats dump\r\n
 ```
@@ -949,10 +956,9 @@ dump start명령.
   - 생략하면, 모든 key string을 dump한다.
   - "\<null\>"을 주면, prefix가 없는 key string을 dump한다.
   - 어떤 prefix를 주면, 그 prefix의 모든 key string을 dump한다.
-- 세번째 인자는 \<file path\>이다.
-  - 반드시 명시해야 한다.
-  - 절대 path로 줄 수도 있으며, 상대 path도 가능하다.
-  - 상대 path이면 memcached process가 구동된 위치에서의 상대 path이다.
+- 세번째 인자는 \<dump_file_path\>이다.
+  - 반드시 명시해야 하며, 절대 경로와 상대 경로 지정이 모두 가능하다.
+  - 상대 경로이면 memcached process가 구동된 위치에서의 상대 경로이다.
 
 dump stop은 혹시나 dump 작업이 너무 오려 걸려
 중지하고 싶을 경우에 사용할 수 있다.
