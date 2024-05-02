@@ -13642,7 +13642,7 @@ bool conn_listening(conn *c)
                 static const int REJECTED_CONN_CHK_INTERVAL = 60; /*check interval*/
                 rel_time_t elapsed = get_current_time() - rejected_conn_log_stime;
                 rejected_conn_log_count++;
-                if (elapsed > REJECTED_CONN_CHK_INTERVAL){
+                if (elapsed > REJECTED_CONN_CHK_INTERVAL) {
                     mc_logger->log(EXTENSION_LOG_INFO, c,
                                "Too many open connections (maxconns) "
                                "(Total %u logs occured during %u secs)\n",

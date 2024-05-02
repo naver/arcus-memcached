@@ -3,17 +3,17 @@
 
 #include "memcached.h"
 
-static void display(const char *name, size_t size) {
+static void display(const char *name, size_t size)
+{
     printf("%s\t%d\n", name, (int)size);
 }
 
-int main(int argc, char **argv) {
-
+int main(int argc, char **argv)
+{
     display("Thread stats", sizeof(struct thread_stats));
     display("Global stats", sizeof(struct mc_stats));
     display("Settings", sizeof(struct settings));
-    display("Libevent thread",
-            sizeof(LIBEVENT_THREAD));
+    display("Libevent thread", sizeof(LIBEVENT_THREAD));
     display("Connection", sizeof(conn));
 
     printf("----------------------------------------\n");
