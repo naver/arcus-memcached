@@ -205,6 +205,11 @@ struct mc_stats {
     unsigned int  conn_structs;
 };
 
+union mc_engine {
+    ENGINE_HANDLE *v0;
+    ENGINE_HANDLE_V1 *v1;
+};
+
 #define MAX_VERBOSITY_LEVEL 2
 
 /* When adding a setting, be sure to update process_stat_settings */
@@ -252,6 +257,7 @@ struct settings {
 
 extern struct settings settings;
 extern EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
+extern union mc_engine mc_engine;
 
 typedef struct conn conn;
 typedef bool (*STATE_FUNC)(conn *);
