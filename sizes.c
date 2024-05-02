@@ -21,5 +21,14 @@ int main(int argc, char **argv)
     display("libevent thread cumulative", sizeof(LIBEVENT_THREAD));
     display("Thread stats cumulative\t", sizeof(struct thread_stats));
 
+    printf("----------------------------------------\n");
+
+    display("hash item info\t", sizeof(item_info));
+    display("elem item info\t", sizeof(eitem_info));
+    display("item attributes\t", sizeof(item_attr));
+    display("eflag filter\t", sizeof(eflag_filter));
+    display("eflag update\t", sizeof(eflag_update));
+    display("Pipe reponse buffer", PIPE_RES_MAX_SIZE);
+
     return 0;
 }
