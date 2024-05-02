@@ -35,7 +35,8 @@
 #define CMDLOG_WRITE_SIZE   (4 * 1024)           /* 4KB */
 
 #define CMDLOG_FILE_MAXSIZE (10 * 1024 * 1024)   /* 10MB : log at most CMDLOG_INPUT_SIZE * N commands in one file */
-#define CMDLOG_FILE_MAXNUM   10                  /* number of log files */
+#define CMDLOG_FILE_MAXNUM   10                  /* # of cmdlog files */
+#define CMDLOG_DIRPATH_LENGTH  128               /* directory path's length */
 #define CMDLOG_FILENAME_LENGTH CMDLOG_DIRPATH_LENGTH + 128
 #define CMDLOG_FILENAME_FORMAT "%s/command_%d_%d_%d_%d.log"
 
@@ -281,6 +282,12 @@ int cmdlog_start(char *file_path, bool *already_started)
         if (cmdlog.on_logging) {
             *already_started = true;
             break;
+        }
+        /* check the length of file_path */
+        if (file_path != NULL && strlen(file_path) > CMDLOG_DIRPATH_LENGTH) {
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                           "Too long cmdlog file path.\n");
+            ret = -1; break;
         }
         /* prepare command logging buffer */
         if (cmdlog.buffer.data == NULL) {

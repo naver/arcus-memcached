@@ -9943,22 +9943,16 @@ static void process_scan_command(conn *c, token_t *tokens, const size_t ntokens)
 #endif
 
 #ifdef COMMAND_LOGGING
-static void process_logging_command(conn *c, token_t *tokens, const size_t ntokens)
+static void process_cmdlog_command(conn *c, token_t *tokens, const size_t ntokens)
 {
-    char *type = tokens[COMMAND_TOKEN+1].value;
+    char *type = tokens[SUBCOMMAND_TOKEN].value;
     bool already_check = false;
 
     if (ntokens > 2 && strcmp(type, "start") == 0) {
         char *fpath = NULL;
         if (ntokens > 3) {
-            if (tokens[SUBCOMMAND_TOKEN+1].length > CMDLOG_DIRPATH_LENGTH) {
-                out_string(c, "\tcommand logging failed to start, path exceeds 128.\n");
-                cmdlog_in_use = false;
-                return;
-            }
             fpath = tokens[SUBCOMMAND_TOKEN+1].value;
         }
-
         int ret = cmdlog_start(fpath, &already_check);
         if (already_check) {
             out_string(c, "\tcommand logging already started.\n");
@@ -13258,7 +13252,7 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
 #ifdef COMMAND_LOGGING
     else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "cmdlog") == 0))
     {
-        process_logging_command(c, tokens, ntokens);
+        process_cmdlog_command(c, tokens, ntokens);
     }
 #endif
 #ifdef DETECT_LONG_QUERY

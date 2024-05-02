@@ -20,7 +20,6 @@
 #include "memcached/extension_loggers.h"
 
 #define COMMAND_LOGGING
-#define CMDLOG_DIRPATH_LENGTH 128 /* directory path's length */
 
 void cmdlog_init(int port, EXTENSION_LOGGER_DESCRIPTOR *logger);
 void cmdlog_final(void);
