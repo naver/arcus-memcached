@@ -9457,7 +9457,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
 #endif
 #ifdef DETECT_LONG_QUERY
         "\n"
-        "\t" "lqdetect start [<detect_standard>]\\r\\n" "\n"
+        "\t" "lqdetect start [<detect_threshold>]\\r\\n" "\n"
         "\t" "lqdetect stop\\r\\n" "\n"
         "\t" "lqdetect show\\r\\n" "\n"
         "\t" "lqdetect stats\\r\\n" "\n"
@@ -9987,34 +9987,9 @@ static void process_cmdlog_command(conn *c, token_t *tokens, const size_t ntoken
 #endif
 
 #ifdef DETECT_LONG_QUERY
-static void lqdetect_show(conn *c)
-{
-    int ret = 0, size = 0;
-    c->lq_result = lqdetect_result_get(&size);
-    if (c->lq_result == NULL) {
-        out_string(c, "SERVER ERROR out of memory");
-        return;
-    }
-
-    for (int i = 0; i < size; i++) {
-        if (add_iov(c, c->lq_result[i].value, c->lq_result[i].length) != 0) {
-            ret = -1; break;
-        }
-    }
-
-    if (ret == 0) {
-        conn_set_state(c, conn_mwrite);
-        c->msgcurr = 0;
-    } else {
-        out_string(c, "SERVER ERROR out of memory writing show response");
-        lqdetect_result_release(c->lq_result);
-        c->lq_result = NULL;
-    }
-}
-
 static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
 {
-    char *type = tokens[COMMAND_TOKEN+1].value;
+    char *type = tokens[SUBCOMMAND_TOKEN].value;
     bool already_check = false;
 
     if (ntokens > 2 && strcmp(type, "start") == 0) {
@@ -10046,7 +10021,25 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
             lqdetect_in_use = false;
         }
     } else if (ntokens > 2 && strcmp(type, "show") == 0) {
-        lqdetect_show(c);
+        int size, i;
+        c->lq_result = lqdetect_result_get(&size);
+        if (c->lq_result == NULL) {
+            out_string(c, "SERVER ERROR out of memory");
+            return;
+        }
+        for (i = 0; i < size; i++) {
+            if (add_iov(c, c->lq_result[i].value, c->lq_result[i].length) != 0) {
+                break;
+            }
+        }
+        if (i < size) {
+            lqdetect_result_release(c->lq_result);
+            c->lq_result = NULL;
+            out_string(c, "SERVER ERROR out of memory writing show response");
+            return;
+        }
+        conn_set_state(c, conn_mwrite);
+        c->msgcurr = 0;
     } else if (ntokens > 2 && strcmp(type, "stats") == 0) {
         char *str = lqdetect_stats();
         if (str) {
@@ -10056,7 +10049,7 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
         }
     } else {
         out_string(c,
-        "\t" "* Usage: lqdetect [start [standard] | stop | show | stats]" "\n"
+        "\t" "* Usage: lqdetect [start [threshold] | stop | show | stats]" "\n"
         );
     }
 }
