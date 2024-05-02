@@ -105,11 +105,7 @@ static time_t process_started; /* when the process was started */
 struct settings settings;
 struct mc_stats mc_stats;
 EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
-
-static union {
-    ENGINE_HANDLE *v0;
-    ENGINE_HANDLE_V1 *v1;
-} mc_engine;
+union mc_engine mc_engine;
 
 /** file scope variables **/
 static conn *listen_conn = NULL;
