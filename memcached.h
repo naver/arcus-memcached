@@ -388,7 +388,8 @@ struct conn {
     /* command pipelining processing fields */
     int               pipe_state;
     int               pipe_count;
-    int               pipe_reslen;
+    int               pipe_errlen; /* error response length */
+    int               pipe_reslen; /* total response length */
     char              pipe_resbuf[PIPE_RES_MAX_SIZE];
     /*******
     int               pipe_cmd[PIPE_CMD_MAX_COUNT];

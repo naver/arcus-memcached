@@ -1443,20 +1443,23 @@ static int pipe_response_save(conn *c, const char *str, size_t len)
         if (c->pipe_count == 0) {
             /* skip the memory of response head string: "RESPONSE %d\r\n" */
             c->pipe_reslen = PIPE_RES_HEAD_SIZE;
+            c->pipe_errlen = 0;
         }
         if ((c->pipe_reslen + (len+2)) < (PIPE_RES_MAX_SIZE-PIPE_RES_TAIL_SIZE)) {
             sprintf(c->pipe_resbuf + c->pipe_reslen, "%s\r\n", str);
             c->pipe_reslen += (len+2);
             c->pipe_count++;
+
+            if ((strncmp(str, "CLIENT_ERROR", 12) == 0) ||
+                (strncmp(str, "SERVER_ERROR", 12) == 0) ||
+                (strncmp(str, "ERROR", 5) == 0)) { /* severe error */
+                c->pipe_errlen = (len+2);
+                c->pipe_state = PIPE_STATE_ERR_BAD; /* bad error in pipelining */
+                return -1;
+            }
             if (c->pipe_count >= PIPE_CMD_MAX_COUNT && c->noreply == true) {
                 /* c->noreply == true: There are remaining pipe operations. */
                 c->pipe_state = PIPE_STATE_ERR_CFULL; /* pipe count overflow */
-                return -1;
-            }
-            else if ((strncmp(str, "CLIENT_ERROR", 12) == 0) ||
-                     (strncmp(str, "SERVER_ERROR", 12) == 0) ||
-                     (strncmp(str, "ERROR", 5) == 0)) { /* severe error */
-                c->pipe_state = PIPE_STATE_ERR_BAD; /* bad error in pipelining */
                 return -1;
             }
         } else {
@@ -1468,9 +1471,13 @@ static int pipe_response_save(conn *c, const char *str, size_t len)
          * means that the previous pipelined commands were not properly swallowed.
          * For now, force resets the previous pipelining.
          */
+        char *pipe_errstr = c->pipe_resbuf + c->pipe_reslen - c->pipe_errlen;
         mc_logger->log(EXTENSION_LOG_INFO, c,
-                       "[%s] A new response before pipe error is reset. %s\n",
-                       c->client_ip, str);
+                       "[%s] A new response before pipe error is reset.\n"
+                       "pipe response count = %d\n"
+                       "pipe error response = %s"
+                       "new response of cmd = %s\n",
+                       c->client_ip, c->pipe_count, pipe_errstr, str);
         pipe_state_clear(c);
     }
     return 0;
@@ -1494,16 +1501,22 @@ static void pipe_response_done(conn *c, bool end_of_pipelining)
         c->pipe_reslen += 5;
         pipe_state_clear(c); /* the end of pipelining */
     } else {
+        char *str;
+        int   len;
         if (c->pipe_state == PIPE_STATE_ERR_CFULL) {
-            sprintf(c->pipe_resbuf + c->pipe_reslen, "PIPE_ERROR command overflow\r\n");
-            c->pipe_reslen += 29;
+            str = "PIPE_ERROR command overflow\r\n";
+            len = 29;
         } else if (c->pipe_state == PIPE_STATE_ERR_MFULL) {
-            sprintf(c->pipe_resbuf + c->pipe_reslen, "PIPE_ERROR memory overflow\r\n");
-            c->pipe_reslen += 28;
+            str = "PIPE_ERROR memory overflow\r\n";
+            len = 28;
         } else { /* PIPE_STATE_ERR_BAD */
-            sprintf(c->pipe_resbuf + c->pipe_reslen, "PIPE_ERROR bad error\r\n");
-            c->pipe_reslen += 22;
+            str = "PIPE_ERROR bad error\r\n";
+            len = 22;
         }
+        sprintf(c->pipe_resbuf + c->pipe_reslen, str);
+        c->pipe_reslen += len;
+        c->pipe_errlen += len;
+
         if (end_of_pipelining) {
             pipe_state_clear(c);
         }
