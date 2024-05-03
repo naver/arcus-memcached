@@ -389,8 +389,7 @@ struct conn {
     int               pipe_state;
     int               pipe_count;
     int               pipe_reslen;
-    char             *pipe_resptr;
-    char              pipe_response[PIPE_RES_MAX_SIZE];
+    char              pipe_resbuf[PIPE_RES_MAX_SIZE];
     /*******
     int               pipe_cmd[PIPE_CMD_MAX_COUNT];
     ENGINE_ERROR_CODE pipe_res[PIPE_CMD_MAX_COUNT];
