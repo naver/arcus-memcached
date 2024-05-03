@@ -47,6 +47,8 @@
 #define CMDLOG_FLUSHERR_STOP 3  /* stop by flush operation error */
 #define CMDLOG_RUNNING       4  /* running */
 
+bool cmdlog_in_use = false; /* true or false : logging start condition */
+
 static int mc_port;
 static EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
 
@@ -87,7 +89,6 @@ struct cmd_log_global {
     struct cmd_log_flush flush;
     struct cmd_log_stats stats;
     volatile bool reqstop;
-    volatile bool on_logging; /* true or false : logging start condition */
 };
 struct cmd_log_global cmdlog;
 
@@ -132,7 +133,7 @@ static void do_cmdlog_stop(int cause)
     cmdlog.stats.state = cause;
     cmdlog.stats.enddate = getnowdate_int();
     cmdlog.stats.endtime = getnowtime_int();
-    cmdlog.on_logging = false;
+    cmdlog_in_use = false;
 }
 
 static void *cmdlog_flush_thread(void *arg)
@@ -168,7 +169,7 @@ static void *cmdlog_flush_thread(void *arg)
 
         if (buffer->head <= cur_tail) {
             assert(cur_last == 0);
-            if (cmdlog.on_logging) {
+            if (cmdlog_in_use) {
                 if ((cur_tail - buffer->head) < CMDLOG_WRITE_SIZE) {
                     do_cmdlog_flush_sleep(); /* flush thread sleeps 50ms. */
                     continue;
@@ -220,7 +221,7 @@ static void *cmdlog_flush_thread(void *arg)
         }
     }
 
-    if (cmdlog.on_logging) { /* do internal stop */
+    if (cmdlog_in_use) { /* do internal stop */
         pthread_mutex_lock(&cmdlog.lock);
         do_cmdlog_stop(err == -1 ? CMDLOG_FLUSHERR_STOP : CMDLOG_OVERFLOW_STOP);
         pthread_mutex_unlock(&cmdlog.lock);
@@ -238,7 +239,7 @@ void cmdlog_init(int port, EXTENSION_LOGGER_DESCRIPTOR *logger)
     mc_port = port;
     mc_logger = logger;
 
-    cmdlog.on_logging = false;
+    cmdlog_in_use = false;
     pthread_mutex_init(&cmdlog.lock, NULL);
 
     pthread_mutex_init(&cmdlog.buffer.lock, NULL);
@@ -279,7 +280,7 @@ int cmdlog_start(char *file_path, bool *already_started)
 
     pthread_mutex_lock(&cmdlog.lock);
     do {
-        if (cmdlog.on_logging) {
+        if (cmdlog_in_use) {
             *already_started = true;
             break;
         }
@@ -322,7 +323,7 @@ int cmdlog_start(char *file_path, bool *already_started)
         }
 
         /* enable command logging */
-        cmdlog.on_logging = true;
+        cmdlog_in_use = true;
         cmdlog.stats.state = CMDLOG_RUNNING;
 
         /* start the flush thread to write command log to disk */
@@ -332,7 +333,7 @@ int cmdlog_start(char *file_path, bool *already_started)
         {
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                            "Can't create command log flush thread: %s\n", strerror(ret));
-            cmdlog.on_logging = false; // disable it */
+            cmdlog_in_use = false; // disable it */
             if (remove(fname) != 0 && errno != ENOENT) {
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                                "Can't remove command log file: %s, error: %s\n", fname, strerror(errno));
@@ -351,7 +352,7 @@ void cmdlog_stop(bool *already_stopped)
     *already_stopped = false;
 
     pthread_mutex_lock(&cmdlog.lock);
-    if (cmdlog.on_logging == true) {
+    if (cmdlog_in_use == true) {
         do_cmdlog_stop(CMDLOG_EXPLICIT_STOP);
     } else {
         *already_stopped = true;
@@ -370,7 +371,7 @@ char *cmdlog_stats(void)
                                "running" };                        // CMDLOG_RUNNING
 
         struct cmd_log_stats *stats = &cmdlog.stats;
-        if (cmdlog.on_logging) {
+        if (cmdlog_in_use) {
             stats->enddate = getnowdate_int();
             stats->endtime = getnowtime_int();
         }
@@ -392,7 +393,7 @@ char *cmdlog_stats(void)
     return str;
 }
 
-bool cmdlog_write(char client_ip[], char* command)
+void cmdlog_write(char client_ip[], char* command)
 {
     struct tm *ptm;
     struct timeval val;
@@ -401,8 +402,8 @@ bool cmdlog_write(char client_ip[], char* command)
     int inputlen;
     int nwritten;
 
-    if (! cmdlog.on_logging) {
-        return false;
+    if (! cmdlog_in_use) {
+        return;
     }
 
     gettimeofday(&val, NULL);
@@ -443,6 +444,4 @@ bool cmdlog_write(char client_ip[], char* command)
         do_cmdlog_flush_wakeup(); /* wake up flush thread */
     }
     pthread_mutex_unlock(&buffer->lock);
-
-    return true;
 }

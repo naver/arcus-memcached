@@ -121,10 +121,6 @@ topkeys_t *default_topkeys = NULL;
 static char *arcus_zk_cfg = NULL;
 #endif
 
-#ifdef COMMAND_LOGGING
-static bool cmdlog_in_use = false;
-#endif
-
 #ifdef DETECT_LONG_QUERY
 static bool lqdetect_in_use = false;
 #endif
@@ -9970,10 +9966,8 @@ static void process_cmdlog_command(conn *c, token_t *tokens, const size_t ntoken
         }
         if (ret == 0) {
             out_string(c, "\tcommand logging started.\n");
-            cmdlog_in_use = true;
         } else {
             out_string(c, "\tcommand logging failed to start.\n");
-            cmdlog_in_use = false;
         }
     } else if (ntokens > 2 && strcmp(type, "stop") == 0) {
         cmdlog_stop(&already_check);
@@ -9981,7 +9975,6 @@ static void process_cmdlog_command(conn *c, token_t *tokens, const size_t ntoken
             out_string(c, "\tcommand logging already stopped.\n");
         } else {
             out_string(c, "\tcommand logging stopped.\n");
-            cmdlog_in_use = false;
         }
     } else if (ntokens > 2 && strcmp(type, "stats") == 0) {
         char *str = cmdlog_stats();
@@ -13129,9 +13122,7 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
 
 #ifdef COMMAND_LOGGING
     if (cmdlog_in_use) {
-        if (cmdlog_write(c->client_ip, command) == false) {
-            cmdlog_in_use = false;
-        }
+        cmdlog_write(c->client_ip, command);
     }
 #endif
 
