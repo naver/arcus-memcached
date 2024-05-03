@@ -21,10 +21,12 @@
 
 #define COMMAND_LOGGING
 
+extern bool cmdlog_in_use;
+
 void cmdlog_init(int port, EXTENSION_LOGGER_DESCRIPTOR *logger);
 void cmdlog_final(void);
 int cmdlog_start(char *file_path, bool *already_started);
 void cmdlog_stop(bool *already_stopped);
 char *cmdlog_stats(void);
-bool cmdlog_write(char client_ip[], char *command);
+void cmdlog_write(char client_ip[], char *command);
 #endif
