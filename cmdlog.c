@@ -402,10 +402,6 @@ void cmdlog_write(char client_ip[], char* command)
     int inputlen;
     int nwritten;
 
-    if (! cmdlog_in_use) {
-        return;
-    }
-
     gettimeofday(&val, NULL);
     ptm = localtime(&val.tv_sec);
 

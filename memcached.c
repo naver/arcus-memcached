@@ -1509,7 +1509,7 @@ static void pipe_response_done(conn *c, bool end_of_pipelining)
             str = "PIPE_ERROR bad error\r\n";
             len = 22;
         }
-        sprintf(c->pipe_resbuf + c->pipe_reslen, str);
+        sprintf(c->pipe_resbuf + c->pipe_reslen, "%s", str);
         c->pipe_reslen += len;
         c->pipe_errlen += len;
 
