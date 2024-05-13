@@ -98,7 +98,7 @@ static void do_cmdlog_flush_sleep(void)
     struct timeval tv;
     struct timespec to;
 
-    /* 50 mili second sleep */
+    /* 50 milli seconds sleep */
     pthread_mutex_lock(&cmdlog.flush.lock);
 
     gettimeofday(&tv, NULL);
@@ -302,7 +302,7 @@ int cmdlog_start(char *file_path, bool *already_started)
         cmdlog.buffer.tail = 0;
         cmdlog.buffer.last = 0;
 
-        /* prepare comand logging stats */
+        /* prepare command logging stats */
         memset(&cmdlog.stats, 0, sizeof(struct cmd_log_stats));
         cmdlog.stats.bgndate = getnowdate_int();
         cmdlog.stats.bgntime = getnowtime_int();
