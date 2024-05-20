@@ -42,10 +42,9 @@
 
 /* cmdlog state */
 #define CMDLOG_NOT_STARTED   0  /* not started */
-#define CMDLOG_EXPLICIT_STOP 1  /* stop by user request */
-#define CMDLOG_OVERFLOW_STOP 2  /* stop by command log overflow */
-#define CMDLOG_FLUSHERR_STOP 3  /* stop by flush operation error */
-#define CMDLOG_RUNNING       4  /* running */
+#define CMDLOG_OVERFLOW_STOP 1  /* stop by command log overflow */
+#define CMDLOG_FLUSHERR_STOP 2  /* stop by flush operation error */
+#define CMDLOG_RUNNING       3  /* running */
 
 bool cmdlog_in_use = false; /* true or false : logging start condition */
 
@@ -127,10 +126,9 @@ static void do_cmdlog_flush_wakeup(void)
     pthread_mutex_unlock(&cmdlog.flush.lock);
 }
 
-static void do_cmdlog_stop(int cause)
+static void do_cmdlog_stop(void)
 {
     /* cmdlog lock has already been held */
-    cmdlog.stats.state = cause;
     cmdlog.stats.enddate = getnowdate_int();
     cmdlog.stats.endtime = getnowtime_int();
     cmdlog_in_use = false;
@@ -143,7 +141,7 @@ static void *cmdlog_flush_thread(void *arg)
     uint32_t cur_tail;
     uint32_t cur_last;
     int fd = -1;
-    int err = 0;
+    int stop_state = CMDLOG_NOT_STARTED;
     int writelen;
     int nwritten;
     int nwtotal = 0;
@@ -157,7 +155,7 @@ static void *cmdlog_flush_thread(void *arg)
             if ((fd = open(fname, O_WRONLY | O_CREAT | O_APPEND, 0644)) < 0) {
                 mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                                "Can't open command log file: %s, error: %s\n", fname, strerror(errno));
-                err = -1; break;
+                stop_state = CMDLOG_FLUSHERR_STOP; break;
             }
             cmdlog.stats.file_count++;
         }
@@ -187,7 +185,7 @@ static void *cmdlog_flush_thread(void *arg)
                     mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                                    "write command log error: nwritten(%d) != writelen(%d)\n",
                                    nwritten, writelen);
-                    err = -1; break;
+                    stop_state = CMDLOG_FLUSHERR_STOP; break;
                 }
                 nwtotal += nwritten;
                 pthread_mutex_lock(&buffer->lock);
@@ -203,7 +201,7 @@ static void *cmdlog_flush_thread(void *arg)
                     mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                                    "write command log error: nwritten(%d) != writelen(%d)\n",
                                    nwritten, writelen);
-                    err = -1; break;
+                    stop_state = CMDLOG_FLUSHERR_STOP; break;
                 }
                 nwtotal += nwritten;
                 pthread_mutex_lock(&buffer->lock);
@@ -216,21 +214,19 @@ static void *cmdlog_flush_thread(void *arg)
             close(fd); fd = -1;
             nwtotal = 0;
             if (cmdlog.stats.file_count >= CMDLOG_FILE_MAXNUM) {
-                break; /* do internal stop: overflow stop */
+                stop_state = CMDLOG_OVERFLOW_STOP; break; /* do internal stop: overflow stop */
             }
         }
     }
 
-    if (cmdlog_in_use) { /* do internal stop */
-        pthread_mutex_lock(&cmdlog.lock);
-        do_cmdlog_stop(err == -1 ? CMDLOG_FLUSHERR_STOP : CMDLOG_OVERFLOW_STOP);
-        pthread_mutex_unlock(&cmdlog.lock);
-    }
     if (fd > 0) close(fd);
-    if (cmdlog.reqstop) {
-        // cmdlog_final() checks flush thread is terminated
-        cmdlog.stats.state = CMDLOG_NOT_STARTED;
+
+    pthread_mutex_lock(&cmdlog.lock);
+    if (cmdlog_in_use) {
+        do_cmdlog_stop();
     }
+    cmdlog.stats.state = stop_state;
+    pthread_mutex_unlock(&cmdlog.lock);
     return NULL;
 }
 
@@ -283,6 +279,12 @@ int cmdlog_start(char *file_path, bool *already_started)
         if (cmdlog_in_use) {
             *already_started = true;
             break;
+        }
+        /* check the previous cmdlog flush thread state */
+        if (cmdlog.stats.state == CMDLOG_RUNNING) {
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                           "The previous cmdlog flush thread has not been finished yet.\n");
+            ret = -1; break;
         }
         /* check the length of file_path */
         if (file_path != NULL && strlen(file_path) > CMDLOG_DIRPATH_LENGTH) {
@@ -353,7 +355,7 @@ void cmdlog_stop(bool *already_stopped)
 
     pthread_mutex_lock(&cmdlog.lock);
     if (cmdlog_in_use == true) {
-        do_cmdlog_stop(CMDLOG_EXPLICIT_STOP);
+        do_cmdlog_stop();
     } else {
         *already_stopped = true;
     }
@@ -365,7 +367,6 @@ char *cmdlog_stats(void)
     char *str = (char*)malloc(CMDLOG_INPUT_SIZE);
     if (str) {
         char *state_str[5] = { "Not started",                      // CMDLOG_NOT_STARTED
-                               "stopped by explicit request",      // CMDLOG_EXPLICIT_STOP
                                "stopped by command log overflow",  // CMDLOG_OVERFLOW_STOP
                                "stopped by disk flush error",      // CMDLOG_FLUSHERR_STOP
                                "running" };                        // CMDLOG_RUNNING
