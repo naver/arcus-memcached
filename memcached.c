@@ -9501,6 +9501,8 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "config chkpt_interval_min_logsize [<minsize(MB)>]\r\n"
         "\t" "config async_logging [on|off]\r\n"
 #endif
+        "\n"
+        "\t" "ready\\r\\n" "\n"
         );
     } else {
         char *cmd_types[] = { "kv", "list", "set", "map", "btree", "attr",

@@ -1028,24 +1028,6 @@ help [<subcommand>]\r\n
 \<subcommand\>로는 kv, lop, sop, mop, bop, stats, flush, config, etc가 있으며,
 \<subcommand\>가 생략되면, help 명령에서 사용가능한 subcommand 목록이 출력된다.
 
-## ready
-
-ARCUS Cache Server가 요청을 처리할 수 있는 상태인지 확인한다.
-
-```
-ready\r\n
-```
-
-Response string과 그 의미는 아래와 같다.
-
-| Resposne String | 설명 |
-| - | - |
-| "READY" | 요청 처리 가능한 상태 |
-| "NOT_READY" | 요청 처리가 준비되지 않은 상태 |
-
-- 독립 실행(standalone) 모드로 구동(`-z` 옵션 생략)한 경우, 즉시 READY 상태가 된다.
-- 클러스터 모드로 구동(`-z` 옵션 사용)한 경우, ZooKeeper에 자신의 캐시 노드 정보를 등록하고 나면 READY 상태가 된다.
-
 ## shutdown
 
 ARCUS Cache Server를 우아하게 종료한다.
