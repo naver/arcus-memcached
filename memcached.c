@@ -9503,6 +9503,8 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
 #endif
         "\n"
         "\t" "ready\\r\\n" "\n"
+        "\n"
+        "\t" "shutdown [seconds]\\r\\n" "\n"
         );
     } else {
         char *cmd_types[] = { "kv", "list", "set", "map", "btree", "attr",
