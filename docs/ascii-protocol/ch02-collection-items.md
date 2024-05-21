@@ -71,7 +71,7 @@ B+tree collection에서 사용가능한 bkey 데이터 유형은 아래 두 가�
 
 - hexadecimal
 
-  “0x”로 시작하는 짝수 개의 hexadecimal 문자열로 표현하며, 대소문자 모두 사용 가능하다.
+  "0x"로 시작하는 짝수 개의 hexadecimal 문자열로 표현하며, 대소문자 모두 사용 가능하다.
   ARCUS cache server는 두 hexadecimal 문자를 1 byte로 저장하며,
   1 ~ 31 길이의 variable length byte array로 저장한다.
 
@@ -117,7 +117,7 @@ eflag_filter: <fwhere> [<bitwop> <foperand>] <compop> <fvalue>
   - 생략 가능하며, eflag에 대한 bitwise 연산을 지정한다.
   - bitwise 연산이 지정되면 이 연산의 결과가 compare 연산의 대상이 되며,
     생략된다면 eflag 값 자체가 compare 연산의 대상이 된다.
-  - \<bitwop\>는 “&”(bitwise and), “|”(bitwise or), “^”(bitwise xor) 중의 하나로 bitwise 연산을 지정한다.
+  - \<bitwop\>는 "&"(bitwise and), "|"(bitwise or), "^"(bitwise xor) 중의 하나로 bitwise 연산을 지정한다.
   - \<foperand\>는 bitwise 연산을 취할 operand로 hexadecimal로 표현한다.
     \<foperand\>의 길이는 compare 연산을 취한 \<fvalue\>의 길이와 동일하여야 한다.
 - \<compop\> \<fvalue\>
@@ -133,7 +133,7 @@ eflag_filter: <fwhere> [<bitwop> <foperand>] <compop> <fvalue>
 하지만 응용이 필요하다면, 하나의 b+tree에 소속된 elements 이더라도
 eflag가 생략될 수도 있고 서로 다른 길이의 eflag를 가질 수도 있다.
 이 경우, 아래와 같이 eflag filtering이 애매모호해 질 수 있다.
-이 상황에서는 filter 조건의 비교 연산이 “NE”이면 true로 판별하고, 그 외의 비교 연산이면 false로 판별한다.
+이 상황에서는 filter 조건의 비교 연산이 "NE"이면 true로 판별하고, 그 외의 비교 연산이면 false로 판별한다.
 
 - eflag가 없는 element에 eflag_filter 조건이 주어질 수 있다.
 - eflag가 있지만 eflag_filter 조건에서 명시된 offset과 length의 데이터를 가지지 않을 수 있다.
@@ -156,7 +156,7 @@ eflag_update: [<fwhere> <bitwop>] <fvalue>
   - \<fwhere>은 eflag에서 부분 변경할 데이터의 시작 offset을 바이트 단위로 나타내며,
     이 경우, 부분 변경할 데이터의 length는 뒤에 명시되는 \<fvalue\>의 length로 결정된다.
   - \<bitwop\>는 부분 변경할 데이터에 대한 취할 bitwise 연산으로,
-    “&”(bitwise and), “|”(bitwise or), “^”(bitwise xor) 중의 하나로 지정할 수 있다.
+    "&"(bitwise and), "|"(bitwise or), "^"(bitwise xor) 중의 하나로 지정할 수 있다.
 - \<fvalue\>
   - 변경할 new value를 나타낸다.
   - 앞서 기술한 \<fwhere\>과 \<bitwop\>가 생략되면, eflag의 전체 데이터를 \<fvalue\>로 변경한다.

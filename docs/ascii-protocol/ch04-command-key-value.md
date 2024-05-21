@@ -47,7 +47,7 @@ mget <lenkeys> <numkeys>\r\n
 mgets <lenkeys> <numkeys>\r\n
 <"space separated keys">\r\n
 ```
-- \<”space separated keys”\> - key list로, 스페이스(' ')로 구분한다.
+- \<"space separated keys"\> - key list로, 스페이스(' ')로 구분한다.
 - \<lenkeys\>과 \<numkeys> - key list 문자열의 길이와 key 개수를 나타낸다.
 
 retrieval 명령이 정상 수행되었을 경우, Response string은 아래와 같이 구성된다.
