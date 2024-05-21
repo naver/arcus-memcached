@@ -324,11 +324,11 @@ Increment/decrement 수행 후의 데이터 값이다.
 
 ```
 bop mget <lenkeys> <numkeys> <bkey or "bkey range"> [<eflag_filter>] [<offset>] <count>\r\n
-<”space separated keys”>\r\n
+<"space separated keys">\r\n
 * <eflag_filter> : <fwhere> [<bitwop> <foperand>] <compop> <fvalue>
 ```
 
-- \<”space separated keys”\> - 대상 b+tree들의 key list로, 스페이스(' ')로 구분한다.
+- \<"space separated keys"\> - 대상 b+tree들의 key list로, 스페이스(' ')로 구분한다.
      - 하위 호환성(1.10.X 이하 버전)을 위해 콤마(,)도 지원하지만 권장하지 않는다.
 - \<lenkeys\>과 \<numkeys> - key list 문자열의 길이와 key 개수를 나타낸다.
 - \<bkey or "bkey range"\> - 하나의 bkey 또는 bkey range 조회 조건. Bkey range는 "bkey1..bkey2" 형식으로 표현한다.
@@ -385,7 +385,7 @@ flags와 ecount를 포함하여 조회된 element 정보가 생략된다.
 |-------------------------------------------------------|------------------------ |
 | "NOT_SUPPORTED"                                       | 지원하지 않음
 | "CLIENT_ERROR bad command line format"                | protocol syntax 틀림
-| "CLIENT_ERROR bad data chunk"                         | space separated key list의 길이가 \<lenkeys\>와 다르거나 “\r\n”으로 끝나지 않음
+| "CLIENT_ERROR bad data chunk"                         | space separated key list의 길이가 \<lenkeys\>와 다르거나 "\r\n"으로 끝나지 않음
 | "CLIENT_ERROR bad value"                              | bop mget 명령의 제약 조건을 위배함.
 | "SERVER_ERROR out of memory [writing get response]"   | 메모리 부족
 
@@ -414,7 +414,7 @@ bop smget <lenkeys> <numkeys> <bkey or "bkey range"> [<eflag_filter>] <count> du
 * <eflag_filter> : <fwhere> [<bitwop> <foperand>] <compop> <fvalue>
 ```
 
-- \<”space separated keys”\> - 대상 b+tree들의 key list로, 스페이스(' ')로 구분한다.
+- \<"space separated keys"\> - 대상 b+tree들의 key list로, 스페이스(' ')로 구분한다.
      - 하위 호환성(1.10.X 이하 버전)을 위해 콤마(,)도 지원하지만 권장하지 않는다.
 - \<lenkeys\>과 \<numkeys> - key list 문자열의 길이와 key 개수를 나타낸다.
 - \<bkey or "bkey range"\> - 하나의 bkey 또는 bkey range 조회 조건.

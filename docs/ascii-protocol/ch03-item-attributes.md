@@ -23,15 +23,15 @@ ARCUS Cache Server는 collection 기능 지원으로 인해,
 |-----------------------------------------------------------------------------------------------------------------|
 | maxcount       | collection  | maximum # of elements | 4 bytes unsigned integer       | 4000                    |
 |-----------------------------------------------------------------------------------------------------------------|
-| overflowaction | collection  | overflow action       | “error”: all collections       | list: "tail_trim"       |
-|                |             |                       | “head_trim”: list              | set: "error"            |
-|                |             |                       | “tail_trim”: list              | map: "error"            |
-|                |             |                       | “smallest_trim”: b+tree        | b+tree: "smallest_trim" |
-|                |             |                       | “largest_trim”: b+tree         |                         |
-|                |             |                       | “smallest_silent_trim”: b+tree |                         |
-|                |             |                       | “largest_silent_trim”: b+tree  |                         |
+| overflowaction | collection  | overflow action       | "error": all collections       | list: "tail_trim"       |
+|                |             |                       | "head_trim": list              | set: "error"            |
+|                |             |                       | "tail_trim": list              | map: "error"            |
+|                |             |                       | "smallest_trim": b+tree        | b+tree: "smallest_trim" |
+|                |             |                       | "largest_trim": b+tree         |                         |
+|                |             |                       | "smallest_silent_trim": b+tree |                         |
+|                |             |                       | "largest_silent_trim": b+tree  |                         |
 |-----------------------------------------------------------------------------------------------------------------|
-| readable       | collection  | readable/unreadable   | “on”, “off”                    | "on"                    |
+| readable       | collection  | readable/unreadable   | "on", "off"                    | "on"                    |
 |-----------------------------------------------------------------------------------------------------------------|
 | maxbkeyrange   | b+tree only | maximum bkey range    | 8 bytes unsigned integer or    | 0                       |
 |                |             |                       | hexadecimal (max 31 bytes)     |                         |

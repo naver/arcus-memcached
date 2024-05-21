@@ -98,7 +98,7 @@ Response string과 그 의미는 아래와 같다.
 | "NOT_SUPPORTED"                         | 지원하지 않음
 | "CLIENT_ERROR bad command line format"  | protocol syntax 틀림
 | "CLIENT_ERROR too large value"          | 삭제할 데이터가 element value의 최대 크기보다 큼
-| "CLIENT_ERROR bad data chunk"           | 삭제할 데이터의 길이가 \<bytes\>와 다르거나 “\r\n”으로 끝나지 않음
+| "CLIENT_ERROR bad data chunk"           | 삭제할 데이터의 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
 
 ## sop get
 
@@ -165,4 +165,4 @@ Response string과 그 의미는 아래와 같다.
 | "NOT_SUPPORTED"                          | 지원하지 않음
 | "CLIENT_ERROR bad command line format"   | protocol syntax 틀림
 | "CLIENT_ERROR too large value"           | 주어진 데이터가 element value의 최대 크기보다 큼
-| "CLIENT_ERROR bad data chunk"            | 주어진 데이터의 길이가 \<bytes\>와 다르거나 “\r\n”으로 끝나지 않음
+| "CLIENT_ERROR bad data chunk"            | 주어진 데이터의 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
