@@ -722,6 +722,8 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     /* save client ip address in connection object */
     struct sockaddr_in addr;
     socklen_t addrlen = sizeof(addr);
+    /* even if getpeername is successful, there is no guarantee of initialization */
+    memset(&addr, 0, sizeof(addr));
     if (getpeername(c->sfd, (struct sockaddr*)&addr, &addrlen) != 0) {
         if (init_state == conn_new_cmd) {
             mc_logger->log(EXTENSION_LOG_WARNING, c,
@@ -13619,7 +13621,6 @@ bool conn_listening(conn *c)
 
     if (curr_conns >= settings.maxconns) {
         /* Allow admin connection even if # of connections is over maxconns */
-        getpeername(sfd, (struct sockaddr*)&addr, &addrlen);
         struct sockaddr_in *sin = (struct sockaddr_in *)&addr;
         if (strcmp(inet_ntoa(sin->sin_addr), ADMIN_CLIENT_IP) != 0 ||
             curr_conns >= settings.maxconns + ADMIN_MAX_CONNECTIONS)
