@@ -465,7 +465,7 @@ static ENGINE_ERROR_CODE do_item_flush_expired(const char *prefix, const int npr
             } else if ((svcore->get_current_time() - fplog_stime) > FLUSH_PREFIX_LOG_INTERVAL) {
                 char str_buffer[64] = { 0 };
                 if (fplog_count > FLUSH_PREFIX_LOG_MAXCOUNT) {
-                    snprintf(str_buffer, 64, "(Previous %u logs suppressed during %u secs)",
+                    snprintf(str_buffer, 64, "(Previous %u logs suppressed during %d secs)",
                             (fplog_count-FLUSH_PREFIX_LOG_MAXCOUNT), FLUSH_PREFIX_LOG_INTERVAL);
                 }
                 logger->log(EXTENSION_LOG_INFO, NULL, "flush prefix=%s when=%u client_ip=%s%s\n",

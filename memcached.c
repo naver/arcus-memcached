@@ -4440,7 +4440,7 @@ static void process_bin_lop_prepare_nread(conn *c)
         for (int ii = 0; ii < nkey; ++ii) {
             fprintf(stderr, "%c", key[ii]);
         }
-        fprintf(stderr, " Index(%d) NBytes(%d)", req->message.body.index, vlen);
+        fprintf(stderr, " Index(%d) NBytes(%u)", req->message.body.index, vlen);
         if (req->message.body.create) {
             fprintf(stderr, " %s", "Create");
         }
@@ -4828,7 +4828,7 @@ static void process_bin_sop_prepare_nread(conn *c)
         for (int ii = 0; ii < nkey; ++ii) {
             fprintf(stderr, "%c", key[ii]);
         }
-        fprintf(stderr, " NBytes(%d)", vlen);
+        fprintf(stderr, " NBytes(%u)", vlen);
         fprintf(stderr, "\n");
     }
 
@@ -5150,7 +5150,7 @@ static void process_bin_sop_get(conn *c)
         for (int ii = 0; ii < nkey; ++ii) {
             fprintf(stderr, "%c", key[ii]);
         }
-        fprintf(stderr, " Count(%d) Delete(%s)\n", req_count,
+        fprintf(stderr, " Count(%u) Delete(%s)\n", req_count,
                 (req->message.body.delete ? "true" : "false"));
     }
 
@@ -5305,7 +5305,7 @@ static void process_bin_bop_prepare_nread(conn *c)
         for (int ii = 0; ii < nkey; ++ii) {
             fprintf(stderr, "%c", key[ii]);
         }
-        fprintf(stderr, " NBKey(%d) NEFlag(%d) NBytes(%d)",
+        fprintf(stderr, " NBKey(%u) NEFlag(%u) NBytes(%u)",
                 req->message.body.nbkey, req->message.body.neflag, vlen);
         if (req->message.body.create) {
             fprintf(stderr, " %s", "Create");
@@ -5543,7 +5543,7 @@ static void process_bin_bop_update_prepare_nread(conn *c)
         for (int ii = 0; ii < nkey; ++ii) {
             fprintf(stderr, "%c", key[ii]);
         }
-        fprintf(stderr, " NBKey(%d) NEFlag(%d) NBytes(%d)",
+        fprintf(stderr, " NBKey(%u) NEFlag(%u) NBytes(%u)",
                 req->message.body.nbkey, req->message.body.neflag, vlen);
         fprintf(stderr, "\n");
     }
@@ -7107,7 +7107,7 @@ static void process_bin_update(conn *c)
 
         if (nw != -1) {
             if (snprintf(buffer + nw, sizeof(buffer) - nw,
-                         " Value len is %d\n", vlen)) {
+                         " Value len is %u\n", vlen)) {
                 mc_logger->log(EXTENSION_LOG_DEBUG, c, "%s", buffer);
             }
         }
@@ -8871,7 +8871,7 @@ static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntok
 
     if (ntokens == 3) {
         char buf[50];
-        sprintf(buf, "memlimit %u\r\nEND", (int)(settings.maxbytes / (1024 * 1024)));
+        sprintf(buf, "memlimit %u\r\nEND", (unsigned int)(settings.maxbytes / (1024 * 1024)));
         out_string(c, buf);
     } else if (ntokens == 4 && safe_strtoul(config_val, &mlimit)) {
         ENGINE_ERROR_CODE ret;
@@ -8901,7 +8901,7 @@ static void process_stickylimit_command(conn *c, token_t *tokens, const size_t n
 
     if (ntokens == 3) {
         char buf[50];
-        sprintf(buf, "sticky_limit %u\r\nEND", (int)(settings.sticky_limit / (1024 * 1024)));
+        sprintf(buf, "sticky_limit %u\r\nEND", (unsigned int)(settings.sticky_limit / (1024 * 1024)));
         out_string(c, buf);
     } else if (ntokens == 4 && safe_strtoul(config_val, &sticky_limit)) {
         ENGINE_ERROR_CODE ret;
@@ -12850,7 +12850,7 @@ static size_t attr_to_printable_buffer(char *ptr, ENGINE_ITEM_ATTR attr_id, item
         }
     }
     else if (attr_id == ATTR_TRIMMED)
-        sprintf(ptr, "ATTR trimmed=%u\r\n", (attr_datap->trimmed != 0 ? 1 : 0));
+        sprintf(ptr, "ATTR trimmed=%d\r\n", (attr_datap->trimmed != 0 ? 1 : 0));
 
     return strlen(ptr);
 }

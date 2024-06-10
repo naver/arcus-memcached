@@ -816,7 +816,7 @@ static int _prefix_scan_direct(const char *cursor, int req_count, void **item_ar
         return -1; /* invalid cursor */
     }
     if (bucket >= prefix_hsize) {
-        sprintf((char*)cursor, "%u", 0); /* scan end */
+        sprintf((char*)cursor, "%u", 0U); /* scan end */
         return 0;
     }
 
@@ -843,7 +843,7 @@ static int _prefix_scan_direct(const char *cursor, int req_count, void **item_ar
     }
     if (bucket >= prefix_hsize) { /* the end of scan */
         /* item_count : 0 or positive value */
-        sprintf((char*)cursor, "%u", 0);
+        sprintf((char*)cursor, "%u", 0U);
     } else {
         sprintf((char*)cursor, "%u", bucket);
     }
