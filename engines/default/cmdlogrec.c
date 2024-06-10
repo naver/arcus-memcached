@@ -242,7 +242,7 @@ static void lrec_attr_print(char *data, char *str)
     lrec_attr_info info;
     /* because lrec_attr_info is not aligned, set info with memcpy */
     memcpy(&info, data, sizeof(lrec_attr_info));
-    sprintf(str, "(flags=%u, exptime=%u, maxcount=%d, ovflaction=%u, readable=%u)",
+    sprintf(str, "(flags=%u, exptime=%u, maxcount=%d, ovflaction=%u, readable=%d)",
             info.flags, CONVERT_REL_EXPTIME(info.exptime), info.maxcount, info.ovflaction,
             (info.mflags & COLL_META_FLAG_READABLE ? 1 : 0));
 }
@@ -358,7 +358,7 @@ static void lrec_it_link_print(LogRec *logrec)
         sprintf(metastr, "cas=%"PRIu64, body->ptr.cas);
     } else {
         struct lrec_coll_meta *meta = (struct lrec_coll_meta*)&body->ptr.meta;
-        int leng = sprintf(metastr, "ovflact=%s | mflags=%u | mcnt=%u",
+        int leng = sprintf(metastr, "ovflact=%s | mflags=%u | mcnt=%d",
                            get_coll_ovflact_text(meta->ovflact), meta->mflags, meta->mcnt);
 
         if (cm->ittype == ITEM_TYPE_BTREE && meta->maxbkrlen != BKEY_NULL) {
@@ -503,7 +503,7 @@ static void lrec_it_setattr_print(LogRec *logrec)
         }
 
         fprintf(stderr, "[BODY  ] keylen=%u | keystr=%.*s | ovflact=%s | "
-                "mflags=%u | mcnt=%u | exptime=%u | maxbkeyrange=%s\r\n",
+                "mflags=%u | mcnt=%d | exptime=%u | maxbkeyrange=%s\r\n",
                 log->body.keylen, (log->body.keylen <= 250 ? log->body.keylen : 250), keyptr,
                 get_coll_ovflact_text(log->body.ovflact), log->body.mflags, log->body.mcnt,
                 CONVERT_REL_EXPTIME(log->body.exptime), metastr);

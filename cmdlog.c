@@ -380,8 +380,8 @@ char *cmdlog_stats(void)
         snprintf(str, CMDLOG_INPUT_SIZE,
                 "\t" "Command logging state : %s" "\n"
                 "\t" "The last running time : %d_%d ~ %d_%d" "\n"
-                "\t" "The number of entered commands : %d" "\n"
-                "\t" "The number of skipped commands : %d" "\n"
+                "\t" "The number of entered commands : %u" "\n"
+                "\t" "The number of skipped commands : %u" "\n"
                 "\t" "The number of log files : %d" "\n"
                 "\t" "The log file name: %s/command_%d_%d_%d_{n}.log" "\n",
                 (stats->state >= 0 && stats->state <= 4 ?
