@@ -13,6 +13,8 @@ FROM centos:7 AS base
 COPY --from=builder /arcus /arcus
 ENV PATH ${PATH}:/arcus/bin
 
+EXPOSE 11211/tcp
+
 ENTRYPOINT ["memcached",\
  "-E", "/arcus/lib/default_engine.so",\
  "-X", "/arcus/lib/ascii_scrub.so",\
