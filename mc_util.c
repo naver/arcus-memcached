@@ -350,13 +350,13 @@ static int check_sblock_tail_string(mblck_list_t *sblcks, int length)
 {
     mblck_node_t *blckptr;
     char         *dataptr;
-    uint32_t      bodylen = MBLCK_GET_BODYLEN(sblcks);
+    uint32_t      bodylen = MBLCK_BDLEN(sblcks);
     uint32_t      lastlen;
     uint32_t      numblks;
 
     /* check the last "\r\n" string */
-    blckptr = MBLCK_GET_TAILBLK(sblcks);
-    dataptr = MBLCK_GET_BODYPTR(blckptr);
+    blckptr = MBLCK_TAIL(sblcks);
+    dataptr = DATA_MBLCK(blckptr);
     lastlen = (length % bodylen) > 0
             ? (length % bodylen) : bodylen;
 
@@ -364,12 +364,12 @@ static int check_sblock_tail_string(mblck_list_t *sblcks, int length)
         return -1; /* invalid strings */
     }
     if ((--lastlen) == 0) {
-        numblks = MBLCK_GET_NUMBLKS(sblcks);
-        blckptr = MBLCK_GET_HEADBLK(sblcks);
+        numblks = MBLCK_COUNT(sblcks);
+        blckptr = MBLCK_HEAD(sblcks);
         for (int i = 1; i < numblks-1; i++) {
-             blckptr = MBLCK_GET_NEXTBLK(blckptr);
+             blckptr = NEXT_MBLCK(blckptr);
         }
-        dataptr = MBLCK_GET_BODYPTR(blckptr);
+        dataptr = DATA_MBLCK(blckptr);
         lastlen = bodylen;
     }
     if (*(dataptr + lastlen - 1) != '\r') {
@@ -430,7 +430,7 @@ static ENGINE_ERROR_CODE concat_segmented_tokens(mblck_list_t *blist, token_t *t
     char         *dataptr;
     char         *saveptr;
     token_t      *tok_ptr;
-    uint32_t      bodylen = MBLCK_GET_BODYLEN(blist);
+    uint32_t      bodylen = MBLCK_BDLEN(blist);
     uint32_t      numblks = 1;
     uint32_t      datalen = 0;
     uint32_t      complen, i;
@@ -458,8 +458,8 @@ static ENGINE_ERROR_CODE concat_segmented_tokens(mblck_list_t *blist, token_t *t
     }
 
     /* build the complete strings with new mblock */
-    blckptr = MBLCK_GET_HEADBLK(&newblcks);
-    dataptr = MBLCK_GET_BODYPTR(blckptr);
+    blckptr = MBLCK_HEAD(&newblcks);
+    dataptr = DATA_MBLCK(blckptr);
     datalen = 0;
 
     for (i = 0; i < nsegtok; i++) {
@@ -467,8 +467,8 @@ static ENGINE_ERROR_CODE concat_segmented_tokens(mblck_list_t *blist, token_t *t
         complen = segtoks[i].length + tok_ptr->length;
 
         if ((datalen + complen) > bodylen) {
-            blckptr = MBLCK_GET_NEXTBLK(blckptr);
-            dataptr = MBLCK_GET_BODYPTR(blckptr);
+            blckptr = NEXT_MBLCK(blckptr);
+            dataptr = DATA_MBLCK(blckptr);
             datalen = 0;
         }
 
@@ -499,7 +499,7 @@ ENGINE_ERROR_CODE tokenize_mblocks(mblck_list_t *blist, int keylen, int keycnt,
     assert(keylen > 0 && keycnt > 0 && tokens != NULL);
     mblck_node_t *blckptr;
     char         *dataptr;
-    uint32_t bodylen = MBLCK_GET_BODYLEN(blist);
+    uint32_t bodylen = MBLCK_BDLEN(blist);
     uint32_t numblks = ((keylen - 1) / bodylen) + 1;
     uint32_t lastlen = (keylen % bodylen) > 0
                      ? (keylen % bodylen) : bodylen;
@@ -521,8 +521,8 @@ do_again:
     nsegtok = 0;
     /* get the first block */
     chkblks = 1;
-    blckptr = MBLCK_GET_HEADBLK(blist);
-    dataptr = MBLCK_GET_BODYPTR(blckptr);
+    blckptr = MBLCK_HEAD(blist);
+    dataptr = DATA_MBLCK(blckptr);
     datalen = (chkblks < numblks) ? bodylen : lastlen;
 
     while (ntokens < keycnt) {
@@ -562,8 +562,8 @@ do_again:
 
         /* get the next block */
         chkblks += 1;
-        blckptr = MBLCK_GET_NEXTBLK(blckptr);
-        dataptr = MBLCK_GET_BODYPTR(blckptr);
+        blckptr = NEXT_MBLCK(blckptr);
+        dataptr = DATA_MBLCK(blckptr);
         datalen = (chkblks < numblks) ? bodylen : lastlen;
 
         if (segmented_blck == false)

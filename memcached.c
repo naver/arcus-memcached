@@ -1007,10 +1007,10 @@ static void ritem_set_first(conn *c, int rtype, int vleng)
     c->rtype = rtype;
 
     if (c->rtype == CONN_RTYPE_MBLCK) {
-        c->membk = MBLCK_GET_HEADBLK(&c->memblist);
-        c->ritem = MBLCK_GET_BODYPTR(c->membk);
-        c->rlbytes = vleng < MBLCK_GET_BODYLEN(&c->memblist)
-                   ? vleng : MBLCK_GET_BODYLEN(&c->memblist);
+        c->membk = MBLCK_HEAD(&c->memblist);
+        c->ritem = DATA_MBLCK(c->membk);
+        c->rlbytes = vleng < MBLCK_BDLEN(&c->memblist)
+                   ? vleng : MBLCK_BDLEN(&c->memblist);
         c->rltotal = vleng;
     }
     else if (c->rtype == CONN_RTYPE_HINFO) {
@@ -1060,10 +1060,10 @@ static void ritem_set_next(conn *c)
     assert(c->rltotal > 0);
 
     if (c->rtype == CONN_RTYPE_MBLCK) {
-        c->membk = MBLCK_GET_NEXTBLK(c->membk);
-        c->ritem = MBLCK_GET_BODYPTR(c->membk);
-        c->rlbytes = c->rltotal < MBLCK_GET_BODYLEN(&c->memblist)
-                   ? c->rltotal : MBLCK_GET_BODYLEN(&c->memblist);
+        c->membk = NEXT_MBLCK(c->membk);
+        c->ritem = DATA_MBLCK(c->membk);
+        c->rlbytes = c->rltotal < MBLCK_BDLEN(&c->memblist)
+                   ? c->rltotal : MBLCK_BDLEN(&c->memblist);
     }
     else if (c->rtype == CONN_RTYPE_HINFO) {
         c->ritem = c->hinfo.addnl[c->rindex]->ptr;

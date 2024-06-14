@@ -62,14 +62,14 @@ typedef struct _mblck_pool {
 /*
  * memory block macros
  */
-#define MBLCK_GET_HEADBLK(l) ((l)->head)
-#define MBLCK_GET_TAILBLK(l) ((l)->tail)
-#define MBLCK_GET_NUMBLKS(l) ((l)->blck_cnt)
-#define MBLCK_GET_BODYLEN(l) ((l)->body_len)
-#define MBLCK_GET_ITEMCNT(l) ((l)->item_cnt)
-#define MBLCK_GET_ITEMLEN(l) ((l)->item_len)
-#define MBLCK_GET_NEXTBLK(b) ((b)->next)
-#define MBLCK_GET_BODYPTR(b) ((b)->data)
+#define MBLCK_HEAD(l) ((l)->head)
+#define MBLCK_TAIL(l) ((l)->tail)
+// #define MBLCK_ICNT(l) ((l)->item_cnt)
+// #define MBLCK_ILEN(l) ((l)->item_len)
+#define MBLCK_COUNT(l) ((l)->blck_cnt)
+#define MBLCK_BDLEN(l) ((l)->body_len)
+#define NEXT_MBLCK(b) ((b)->next)
+#define DATA_MBLCK(b) ((b)->data)
 
 /* memory block functions */
 int  mblck_pool_create(mblck_pool_t *pool, uint32_t blck_len, uint32_t blck_cnt);
