@@ -1,15 +1,5 @@
 # Chapter 12. Admin & Monitoring 명령
 
-- [FLUSH 명령](#flush)
-- [SCRUB 명령](#scrub)
-- [STATS 명령](#stats)
-- [CONFIG 명령](#config)
-- [CMDLOG 명령](#command-logging)
-- [LQDETECT 명령](#long-query-detect)
-- [KEY DUMP 명령](#key-dump)
-- [ZKENSEMBLE 명령](#zkensemble)
-- [HELP 명령](#help)
-
 ## Flush
 
 ARCUS Cache Server는 items을 invalidate 시키기 위한 두 가지 flush 명령을 제공한다.

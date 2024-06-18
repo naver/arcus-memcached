@@ -1,15 +1,6 @@
 # Chapter 5. LIST 명령
 
-List collection에 관한 명령은 아래와 같다.
-
-- [List collection 생성: lop create](#lop-create)
-- List collection 삭제: delete (기존 key-value item의 삭제 명령을 그대로 사용)
-
-List element에 관한 명령은 아래와 같다.
-
-- [List element 삽입: lop insert](#lop-insert)
-- [List element 삭제: lop delete](#lop-delete)
-- [List element 조회: lop get](#lop-get)
+List item 삭제 시 key-value와 동일한 `delete` 명령을 사용한다.
 
 ## lop create
 

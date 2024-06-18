@@ -1,23 +1,6 @@
 # Chapter 8. B+Tree 명령
 
-B+tree collection에 관한 명령은 아래와 같다.
-
-- [B+tree collection 생성: bop create](#bop-create)
-- B+tree collection 삭제: delete (기존 key-value item의 삭제 명령을 그대로 사용)
-
-B+tree element에 관한 기본 명령은 아래와 같다.
-
-- [B+tree element 삽입/대체: bop insert/upsert](#bop-insertupsert)
-- [B+tree element 변경: bop update](#bop-update)
-- [B+tree element 삭제: bop delete](#bop-delete)
-- [B+tree element 조회: bop get](#bop-get)
-- [B+tree element 개수 계산: bop count](#bop-count)
-- [B+tree element 값의 증감: bop incr/decr](#bop-incrdecr)
-
-ARCUS cache server는 다수의 b+tree들에 대한 조회 기능을 특별히 제공하며, 이들은 아래와 같다.
-
-- [하나의 명령으로 여러 b+tree들에 대한 조회를 한번에 수행하는 기능:  bop mget](#bop-mget)
-- [여러 b+tree들에서 조회 조건을 만족하는 elements를 sort merge하여 최종 결과를 얻는 기능: bop smget](#bop-smget)
+B+tree item 삭제 시 key-value와 동일한 `delete` 명령을 사용한다.
 
 ARCUS cache server는 bkey 기반의 element 조회 기능 외에도 b+tree position 기반의 element 조회 기능을 제공한다.
 B+tree에서 특정 element의 position이란 b+teee에서의 그 element의 위치 정보로서,
@@ -25,16 +8,9 @@ bkey들의 정렬(ASC or DESC) 기준으로 봐서 몇 번째 위치한 element�
 B+tree position은 0-based index로 표현한다.
 예를 들어, b+tree에 N개의 elements가 있다면 0부터 N-1까지의 index로 나타낸다.
 
-ARCUS cache server에서 제공하는 b+tree position 관련 명령은 다음과 같다.
-
-- [B+tree에서 특정 bkey의 position을 조회하는 기능 : bop position](#bop-position)
-- [B+tree에서 하나의 position 또는 position range에 해당하는 element를 조회하는 기능 : bop gbp(get by position)](#bop-gbp)
-- [B+tree에서 특정 bkey의 position과 element 그리고 그 위치 앞뒤의 element를 함께 조회하는 기능: bop pwg(position with get)](#bop-pwg)
-
 B+tree position 기반의 조회가 필요한 예를 하나 들면, ranking 시스템이 있다.
 Ranking 시스템에서는 특정 score를 bkey로 하여 해당 elements를 저장하고,
 조회는 최고/최저 score 기준으로 몇번째 위치 또는 위치의 범위에 해당하는 element를 찾는 경우가 많다.
-
 
 ## bop create
 

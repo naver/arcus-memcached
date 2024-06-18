@@ -1,8 +1,5 @@
 # Chapter 11. Scan 명령
 
-- [SCAN KEY 명령](#scan-key)
-- [SCAN PREFIX 명령](#scan-prefix)
-
 ## Scan key
 
 특정 조건을 만족하는 아이템들의 키 목록을 얻어올 수 있는 scan key 기능을 제공한다.

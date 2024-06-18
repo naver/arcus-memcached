@@ -1,16 +1,6 @@
 # Chapter 6. SET 명령
 
-Set collection에 관한 명령은 아래와 같다.
-
-- [Set collection 생성: sop create](#sop-create)
-- Set collection 삭제: delete (기존 key-value item의 삭제 명령을 그대로 사용)
-
-Set element에 관한 명령은 아래와 같다.
-
-- [Set element 삽입: sop insert](#sop-insert)
-- [Set element 삭제: sop delete](#sop-delete)
-- [Set element 조회: sop get](#sop-get)
-- [Set element 존재유무 검사: sop exist](#sop-exist)
+Set item 삭제 시 key-value와 동일한 `delete` 명령을 사용한다.
 
 ## sop create
 
