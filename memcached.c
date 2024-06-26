@@ -11826,7 +11826,7 @@ static inline int get_efilter_from_tokens(token_t *tokens, const int ntokens, ef
 
 static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, field_t *field, size_t vlen)
 {
-    assert(cmd == (int)OPERATION_MOP_INSERT || (int)OPERATION_MOP_UPDATE);
+    assert(cmd == (int)OPERATION_MOP_INSERT || cmd == (int)OPERATION_MOP_UPDATE);
     eitem *elem = NULL;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
@@ -11855,12 +11855,15 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
         c->coll_field  = *field;
         conn_set_state(c, conn_nread);
     } else {
-        if (settings.detail_enabled) {
-            stats_prefix_record_mop_insert(key, nkey, false);
-        }
         if (cmd == OPERATION_MOP_INSERT) {
+            if (settings.detail_enabled) {
+                stats_prefix_record_mop_insert(key, nkey, false);
+            }
             STATS_CMD_NOKEY(c, mop_insert);
         } else if (cmd == OPERATION_MOP_UPDATE) {
+            if (settings.detail_enabled) {
+                stats_prefix_record_mop_update(key, nkey, false);
+            }
             STATS_CMD_NOKEY(c, mop_update);
         }
         if (ret == ENGINE_E2BIG)       out_string(c, "CLIENT_ERROR too large value");
