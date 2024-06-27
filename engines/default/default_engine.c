@@ -736,14 +736,17 @@ default_map_elem_release(ENGINE_HANDLE* handle, const void *cookie,
 static ENGINE_ERROR_CODE
 default_map_elem_insert(ENGINE_HANDLE* handle, const void* cookie,
                         const void* key, const int nkey, eitem *eitem,
-                        item_attr *attrp, bool *created, uint16_t vbucket)
+                        const bool replace_if_exist, item_attr *attrp,
+                        bool *replaced, bool *created, uint16_t vbucket)
 {
     struct default_engine *engine = get_handle(handle);
     ENGINE_ERROR_CODE ret;
     VBUCKET_GUARD(engine, vbucket);
 
     ACTION_BEFORE_WRITE(cookie, key, nkey);
-    ret = map_elem_insert(key, nkey, (map_elem_item*)eitem, attrp, created, cookie);
+    ret = map_elem_insert(key, nkey, (map_elem_item*)eitem,
+                          replace_if_exist, attrp,
+                          replaced, created, cookie);
     ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;
 }

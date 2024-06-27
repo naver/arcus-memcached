@@ -37,6 +37,7 @@
 ./t/coll_mop_delete.t
 ./t/coll_mop_get.t
 ./t/coll_mop_insert.t
+./t/coll_mop_upsert.t
 ./t/coll_mop_update.t
 ./t/coll_pipeline_general.t
 ./t/coll_pipeline_sop_exist.t
