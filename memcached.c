@@ -762,6 +762,7 @@ static void conn_coll_eitem_free(conn *c)
         break;
       /* mop */
       case OPERATION_MOP_INSERT:
+      case OPERATION_MOP_UPSERT:
         mc_engine.v1->map_elem_free(mc_engine.v0, c, c->coll_eitem);
         break;
       case OPERATION_MOP_UPDATE:
@@ -1841,7 +1842,8 @@ static int make_mop_elem_response(char *bufptr, eitem_info *einfo)
 
 static void process_mop_insert_complete(conn *c)
 {
-    assert(c->coll_op == OPERATION_MOP_INSERT);
+    assert(c->coll_op == OPERATION_MOP_INSERT ||
+           c->coll_op == OPERATION_MOP_UPSERT);
     assert(c->coll_eitem != NULL);
     ENGINE_ERROR_CODE ret;
 
@@ -1855,8 +1857,11 @@ static void process_mop_insert_complete(conn *c)
         out_string(c, "CLIENT_ERROR bad data chunk");
     } else {
         bool created;
+        bool replaced;
+        bool replace_if_exist = (c->coll_op == OPERATION_MOP_UPSERT ? true : false);
         ret = mc_engine.v1->map_elem_insert(mc_engine.v0, c, c->coll_key, c->coll_nkey,
-                                            c->coll_eitem, c->coll_attrp, &created, 0);
+                                            c->coll_eitem, replace_if_exist, c->coll_attrp,
+                                            &replaced, &created, 0);
         CONN_CHECK_AND_SET_EWOULDBLOCK(ret, c);
         if (settings.detail_enabled) {
             stats_prefix_record_mop_insert(c->coll_key, c->coll_nkey, (ret==ENGINE_SUCCESS));
@@ -1865,8 +1870,12 @@ static void process_mop_insert_complete(conn *c)
         switch (ret) {
         case ENGINE_SUCCESS:
             STATS_HITS(c, mop_insert, c->coll_key, c->coll_nkey);
-            if (created) out_string(c, "CREATED_STORED");
-            else         out_string(c, "STORED");
+            if (replaced) {
+                out_string(c, "REPLACED");
+            } else {
+                if (created) out_string(c, "CREATED_STORED");
+                else         out_string(c, "STORED");
+            }
             break;
         case ENGINE_KEY_ENOENT:
             STATS_MISSES(c, mop_insert, c->coll_key, c->coll_nkey);
@@ -3167,7 +3176,8 @@ static void complete_update_ascii(conn *c)
         else if (c->coll_op == OPERATION_SOP_INSERT) process_sop_insert_complete(c);
         else if (c->coll_op == OPERATION_SOP_DELETE) process_sop_delete_complete(c);
         else if (c->coll_op == OPERATION_SOP_EXIST) process_sop_exist_complete(c);
-        else if (c->coll_op == OPERATION_MOP_INSERT) process_mop_insert_complete(c);
+        else if (c->coll_op == OPERATION_MOP_INSERT ||
+                 c->coll_op == OPERATION_MOP_UPSERT) process_mop_insert_complete(c);
         else if (c->coll_op == OPERATION_MOP_UPDATE) process_mop_update_complete(c);
         else if (c->coll_op == OPERATION_MOP_DELETE) process_mop_delete_complete(c);
         else if (c->coll_op == OPERATION_MOP_GET) process_mop_get_complete(c);
@@ -11828,13 +11838,15 @@ static inline int get_efilter_from_tokens(token_t *tokens, const int ntokens, ef
 
 static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, field_t *field, size_t vlen)
 {
-    assert(cmd == (int)OPERATION_MOP_INSERT || cmd == (int)OPERATION_MOP_UPDATE);
+    assert(cmd == (int)OPERATION_MOP_INSERT ||
+           cmd == (int)OPERATION_MOP_UPSERT ||
+           cmd == (int)OPERATION_MOP_UPDATE);
     eitem *elem = NULL;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     if (vlen > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
-    } else if (cmd == OPERATION_MOP_INSERT) {
+    } else if (cmd == OPERATION_MOP_INSERT || cmd == OPERATION_MOP_UPSERT) {
         ret = mc_engine.v1->map_elem_alloc(mc_engine.v0, c, key, nkey, field->length, vlen, &elem);
     } else {
         if ((elem = (eitem *)malloc(sizeof(value_item) + vlen)) == NULL)
@@ -11843,7 +11855,7 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
             ((value_item*)elem)->len = vlen;
     }
     if (ret == ENGINE_SUCCESS) {
-        if (cmd == OPERATION_MOP_INSERT) {
+        if (cmd == OPERATION_MOP_INSERT || cmd == OPERATION_MOP_UPSERT) {
             mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem, &c->einfo);
             ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
         } else {
@@ -11857,12 +11869,12 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
         c->coll_field  = *field;
         conn_set_state(c, conn_nread);
     } else {
-        if (cmd == OPERATION_MOP_INSERT) {
+        if (cmd == OPERATION_MOP_INSERT || cmd == OPERATION_MOP_UPSERT) {
             if (settings.detail_enabled) {
                 stats_prefix_record_mop_insert(key, nkey, false);
             }
             STATS_CMD_NOKEY(c, mop_insert);
-        } else if (cmd == OPERATION_MOP_UPDATE) {
+        } else { /* OPERATION_MOP_UPDATE */
             if (settings.detail_enabled) {
                 stats_prefix_record_mop_update(key, nkey, false);
             }
@@ -11949,6 +11961,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
     char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
     char *key = tokens[MOP_KEY_TOKEN].value;
     size_t nkey = tokens[MOP_KEY_TOKEN].length;
+    int subcommid;
 
     if (nkey > KEY_MAX_LENGTH) {
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -11957,7 +11970,9 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
     c->coll_key = key;
     c->coll_nkey = nkey;
 
-    if ((ntokens >= 6 && ntokens <= 13) && (strcmp(subcommand,"insert") == 0))
+    if ((ntokens >= 6 && ntokens <= 13) &&
+        ((strcmp(subcommand,"insert") == 0 && (subcommid = (int)OPERATION_MOP_INSERT)) ||
+         (strcmp(subcommand,"upsert") == 0 && (subcommid = (int)OPERATION_MOP_UPSERT)) ))
     {
         field_t field;
         int32_t vlen;
@@ -12002,7 +12017,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         }
 
         if (check_and_handle_pipe_state(c)) {
-            process_mop_prepare_nread(c, (int)OPERATION_MOP_INSERT, key, nkey, &field, vlen);
+            process_mop_prepare_nread(c, subcommid, key, nkey, &field, vlen);
         } else { /* pipe error */
             c->sbytes = vlen;
             conn_set_state(c, conn_swallow);

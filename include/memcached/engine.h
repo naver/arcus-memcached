@@ -452,7 +452,9 @@ extern "C" {
                                              const void* key,
                                              const int nkey,
                                              eitem *eitem,
+                                             const bool replace_if_exist,
                                              item_attr *attrp,
+                                             bool *replaced,
                                              bool *created,
                                              uint16_t vbucket);
         ENGINE_ERROR_CODE (*map_elem_update)(ENGINE_HANDLE* handle,

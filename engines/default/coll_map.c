@@ -330,7 +330,8 @@ static void do_map_elem_replace(map_meta_info *info,
 }
 
 static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *elem,
-                                          const bool replace_if_exist, const void *cookie)
+                                          const bool replace_if_exist, bool *replaced,
+                                          const void *cookie)
 {
     assert(info->root != NULL);
     map_hash_node *node = info->root;
@@ -373,6 +374,7 @@ static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *el
             pinfo.prev = prev;
             pinfo.hidx = hidx;
             do_map_elem_replace(info, &pinfo, elem);
+            if (replaced) *replaced = true;
             return ENGINE_SUCCESS;
         } else {
             return ENGINE_ELEM_EEXISTS;
@@ -387,6 +389,12 @@ static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *el
     }
 #endif
 
+    /* overflow check */
+    assert(info->ovflact == OVFL_ERROR);
+    if (info->ccnt >= (info->mcnt > 0 ? info->mcnt : config->max_map_size)) {
+        return ENGINE_EOVERFLOW;
+    }
+
     if (node->hcnt[hidx] >= MAP_MAX_HASHCHAIN_SIZE) {
         map_hash_node *n_node = do_map_node_alloc(node->hdepth+1, cookie);
         if (n_node == NULL) {
@@ -398,6 +406,8 @@ static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *el
         node = n_node;
         hidx = MAP_GET_HASHIDX(elem->hval, node->hdepth);
     }
+
+    CLOG_MAP_ELEM_INSERT(info, NULL, elem);
 
     elem->next = node->htab[hidx];
     node->htab[hidx] = elem;
@@ -678,17 +688,11 @@ static uint32_t do_map_elem_get(map_meta_info *info,
 }
 
 static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
-                                            const bool replace_if_exist, const void *cookie)
+                                            const bool replace_if_exist, bool *replaced,
+                                            const void *cookie)
 {
     map_meta_info *info = (map_meta_info *)item_get_meta(it);
-    uint32_t real_mcnt = (info->mcnt > 0 ? info->mcnt : config->max_map_size);
     ENGINE_ERROR_CODE ret;
-
-    /* overflow check */
-    assert(info->ovflact == OVFL_ERROR);
-    if (info->ccnt >= real_mcnt) {
-        return ENGINE_EOVERFLOW;
-    }
 
     /* create the root hash node if it does not exist */
     bool new_root_flag = false;
@@ -702,7 +706,7 @@ static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
     }
 
     /* insert the element */
-    ret = do_map_elem_link(info, elem, replace_if_exist, cookie);
+    ret = do_map_elem_link(info, elem, replace_if_exist, replaced, cookie);
     if (ret != ENGINE_SUCCESS) {
         if (new_root_flag) {
             do_map_node_unlink(info, NULL, 0);
@@ -710,7 +714,6 @@ static ENGINE_ERROR_CODE do_map_elem_insert(hash_item *it, map_elem_item *elem,
         return ret;
     }
 
-    CLOG_MAP_ELEM_INSERT(info, NULL, elem);
     return ENGINE_SUCCESS;
 }
 
@@ -776,14 +779,16 @@ void map_elem_release(map_elem_item **elem_array, const int elem_count)
 }
 
 ENGINE_ERROR_CODE map_elem_insert(const char *key, const uint32_t nkey,
-                                  map_elem_item *elem, item_attr *attrp,
-                                  bool *created, const void *cookie)
+                                  map_elem_item *elem, const bool replace_if_exist,
+                                  item_attr *attrp, bool *replaced, bool *created,
+                                  const void *cookie)
 {
     hash_item *it = NULL;
     ENGINE_ERROR_CODE ret;
     PERSISTENCE_ACTION_BEGIN(cookie, UPD_MAP_ELEM_INSERT);
 
     *created = false;
+    *replaced = false;
 
     LOCK_CACHE();
     ret = do_map_item_find(key, nkey, DONT_UPDATE, &it);
@@ -799,7 +804,7 @@ ENGINE_ERROR_CODE map_elem_insert(const char *key, const uint32_t nkey,
         }
     }
     if (ret == ENGINE_SUCCESS) {
-        ret = do_map_elem_insert(it, elem, false /* replace_if_exist */, cookie);
+        ret = do_map_elem_insert(it, elem, replace_if_exist, replaced, cookie);
         if (ret != ENGINE_SUCCESS && *created) {
             do_item_unlink(it, ITEM_UNLINK_NORMAL);
         }
@@ -1111,6 +1116,7 @@ ENGINE_ERROR_CODE map_apply_elem_insert(void *engine, hash_item *it,
 {
     const char *key = item_get_key(it);
     map_elem_item *elem;
+    bool replaced;
     ENGINE_ERROR_CODE ret;
 
     logger->log(ITEM_APPLY_LOG_LEVEL, NULL,
@@ -1133,7 +1139,7 @@ ENGINE_ERROR_CODE map_apply_elem_insert(void *engine, hash_item *it,
         }
         memcpy(elem->data, field, nfield + nbytes);
 
-        ret = do_map_elem_insert(it, elem, true /* replace_if_exist */,  NULL);
+        ret = do_map_elem_insert(it, elem, true /* replace_if_exist */, &replaced, NULL);
         if (ret != ENGINE_SUCCESS) {
             do_map_elem_free(elem);
             logger->log(EXTENSION_LOG_WARNING, NULL, "map_apply_elem_insert failed."
