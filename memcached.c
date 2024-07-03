@@ -11836,18 +11836,14 @@ static inline int get_efilter_from_tokens(token_t *tokens, const int ntokens, ef
     return token_count;
 }
 
-static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, field_t *field, size_t vlen)
+static void process_mop_update_prepare_nread(conn *c, int cmd, char *key, size_t nkey, field_t *field, size_t vlen)
 {
-    assert(cmd == (int)OPERATION_MOP_INSERT ||
-           cmd == (int)OPERATION_MOP_UPSERT ||
-           cmd == (int)OPERATION_MOP_UPDATE);
+    assert(cmd == (int)OPERATION_MOP_UPDATE);
     eitem *elem = NULL;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
     if (vlen > settings.max_element_bytes) {
         ret = ENGINE_E2BIG;
-    } else if (cmd == OPERATION_MOP_INSERT || cmd == OPERATION_MOP_UPSERT) {
-        ret = mc_engine.v1->map_elem_alloc(mc_engine.v0, c, key, nkey, field->length, vlen, &elem);
     } else {
         if ((elem = (eitem *)malloc(sizeof(value_item) + vlen)) == NULL)
             ret = ENGINE_ENOMEM;
@@ -11855,31 +11851,56 @@ static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, 
             ((value_item*)elem)->len = vlen;
     }
     if (ret == ENGINE_SUCCESS) {
-        if (cmd == OPERATION_MOP_INSERT || cmd == OPERATION_MOP_UPSERT) {
-            mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem, &c->einfo);
-            ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
-        } else {
-            c->ritem   = ((value_item *)elem)->ptr;
-            c->rlbytes = vlen;
-            c->rltotal = 0;
-        }
+        c->ritem   = ((value_item *)elem)->ptr;
+        c->rlbytes = vlen;
+        c->rltotal = 0;
         c->coll_eitem  = (void *)elem;
         c->coll_ecount = 1;
         c->coll_op     = cmd;
         c->coll_field  = *field;
         conn_set_state(c, conn_nread);
     } else {
-        if (cmd == OPERATION_MOP_INSERT || cmd == OPERATION_MOP_UPSERT) {
-            if (settings.detail_enabled) {
-                stats_prefix_record_mop_insert(key, nkey, false);
-            }
-            STATS_CMD_NOKEY(c, mop_insert);
-        } else { /* OPERATION_MOP_UPDATE */
-            if (settings.detail_enabled) {
-                stats_prefix_record_mop_update(key, nkey, false);
-            }
-            STATS_CMD_NOKEY(c, mop_update);
+        if (settings.detail_enabled) {
+            stats_prefix_record_mop_update(key, nkey, false);
         }
+        STATS_CMD_NOKEY(c, mop_update);
+        if (ret == ENGINE_E2BIG) out_string(c, "CLIENT_ERROR too large value");
+        else                     out_string(c, "SERVER_ERROR out of memory");
+
+        /* swallow the data line */
+        c->sbytes = vlen;
+        if (c->state == conn_write) {
+            c->write_and_go = conn_swallow;
+        } else { /* conn_new_cmd (by noreply) */
+            conn_set_state(c, conn_swallow);
+        }
+    }
+}
+
+static void process_mop_prepare_nread(conn *c, int cmd, char *key, size_t nkey, field_t *field, size_t vlen)
+{
+    assert(cmd == (int)OPERATION_MOP_INSERT || cmd == (int)OPERATION_MOP_UPSERT);
+    eitem *elem = NULL;
+    ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+    if (vlen > settings.max_element_bytes) {
+        ret = ENGINE_E2BIG;
+    } else {
+        ret = mc_engine.v1->map_elem_alloc(mc_engine.v0, c, key, nkey, field->length, vlen, &elem);
+    }
+    if (ret == ENGINE_SUCCESS) {
+        mc_engine.v1->get_elem_info(mc_engine.v0, c, ITEM_TYPE_MAP, elem, &c->einfo);
+        ritem_set_first(c, CONN_RTYPE_EINFO, vlen);
+        c->coll_eitem  = (void *)elem;
+        c->coll_ecount = 1;
+        c->coll_op     = cmd;
+        c->coll_field  = *field;
+        conn_set_state(c, conn_nread);
+    } else {
+        if (settings.detail_enabled) {
+            stats_prefix_record_mop_insert(key, nkey, false);
+        }
+        STATS_CMD_NOKEY(c, mop_insert);
         if (ret == ENGINE_E2BIG)       out_string(c, "CLIENT_ERROR too large value");
         else if (ret == ENGINE_ENOMEM) out_string(c, "SERVER_ERROR out of memory");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
@@ -12063,7 +12084,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         vlen += 2;
 
         if (check_and_handle_pipe_state(c)) {
-            process_mop_prepare_nread(c, (int)OPERATION_MOP_UPDATE, key, nkey, &field, vlen);
+            process_mop_update_prepare_nread(c, (int)OPERATION_MOP_UPDATE, key, nkey, &field, vlen);
         } else { /* pipe error */
             c->sbytes = vlen;
             conn_set_state(c, conn_swallow);
