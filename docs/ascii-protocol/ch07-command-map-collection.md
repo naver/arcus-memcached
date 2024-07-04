@@ -7,7 +7,7 @@ Map collection에 관한 명령은 아래와 같다.
 
 Map element에 관한 명령은 아래와 같다.
 
-- [Map element 삽입: mop insert](#mop-insert)
+- [Map element 삽입: mop insert/upsert](#mop-insertupsert)
 - [Map element 변경: mop update](#mop-update)
 - [Map element 삭제: mop delete](#mop-delete)
 - [Map element 조회: mop get](#mop-get)
@@ -36,13 +36,17 @@ Response string과 그 의미는 아래와 같다.
 | "CLIENT_ERROR bad command line format" | protocol syntax 틀림
 | "SERVER_ERROR out of memory"           | 메모리 부족
 
-## mop insert
+## mop insert/upsert
 
-Map collection에 하나의 field, element를 삽입한다.
-Map collection을 생성하면서 \<field, value\>로 구성된 하나의 element를 삽입할 수도 있다.
+Map collection에 \<field, value\>로 구성된 하나의 element를 추가하는 명령으로
+(1) 하나의 element를 삽입하는 mop insert 명령과
+(2) 현재 삽입하는 field를 가진 element가 없으면 현재의 element를 삽입하고
+그 field를 가진 element가 있으면 현재의 element로 대체시키는 mop upsert 명령이 있다.
+이들 명령 수행에서 Map collection을 생성하면서 하나의 element를 삽입할 수도 있다.
 
 ```
 mop insert <key> <field> <bytes> [create <attributes>] [noreply|pipe]\r\n<data>\r\n
+mop upsert <key> <field> <bytes> [create <attributes>] [noreply|pipe]\r\n<data>\r\n
 * <attributes>: <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]
 ```
 
@@ -62,6 +66,7 @@ Response string과 그 의미는 아래와 같다.
 |-----------------------------------------|------------------------ |
 | "STORED"                                | 성공 (field, element 삽입)
 | "CREATED_STORED"                        | 성공 (collection 생성하고 field, element 삽입)
+| "REPLACED"                              | 성공 (element를 대체)
 | "NOT_FOUND"                             | key miss
 | "TYPE_MISMATCH"                         | 해당 item이 map collection이 아님
 | "OVERFLOWED"                            | overflow 발생
