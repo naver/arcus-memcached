@@ -2209,8 +2209,6 @@ static ENGINE_ERROR_CODE do_btree_elem_link(btree_meta_info *info, btree_elem_it
     int ovfl_type = OVFL_TYPE_NONE;
     ENGINE_ERROR_CODE res;
 
-    if (replaced) *replaced = false;
-
     assert(info->root->ndepth < BTREE_MAX_DEPTH);
     res = do_btree_find_insposi(info->root, elem->data, elem->nbkey, path);
     if (res == ENGINE_SUCCESS) {
@@ -3724,6 +3722,8 @@ ENGINE_ERROR_CODE btree_elem_insert(const char *key, const uint32_t nkey,
     PERSISTENCE_ACTION_BEGIN(cookie, UPD_BT_ELEM_INSERT);
 
     *created = false;
+    *replaced = false;
+
     if (trimmed_elems != NULL) {
         /* initialize as no trimmed element */
         *trimmed_elems = NULL;
