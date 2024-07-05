@@ -5,7 +5,6 @@ Item attributes를 조회하는 getattr 명령과 변경하는 setattr 명령을
 ARCUS에서 어떤 item attributes를 제공하는 지를 알고자 한다면,
 [Item Attibute 설명](ch03-item-attributes.md)을 참고 바란다.
 
-
 ## getattr (Item Attribute 조회)
 
 Item attributes를 조회하는 getattr 명령은 아래와 같다.
@@ -30,12 +29,11 @@ END\r\n
 
 실패 시의 response string과 그 의미는 아래와 같다.
 
-| Response String                         | 설명                     |
-|-----------------------------------------|------------------------ |
-| "NOT_FOUND"                             | key miss
-| "ATTR_ERROR not found"                  | 인자로 지정한 attribute가 존재하지 않거나 해당 item 유형에서 지원되지 않는 attribute임.
-| "CLIENT_ERROR bad command line format"  | protocol syntax 틀림
-
+| Response String                        | 설명                                                                                    |
+| -------------------------------------- | --------------------------------------------------------------------------------------- |
+| "NOT_FOUND"                            | key miss                                                                                |
+| "ATTR_ERROR not found"                 | 인자로 지정한 attribute가 존재하지 않거나 해당 item 유형에서 지원되지 않는 attribute임. |
+| "CLIENT_ERROR bad command line format" | protocol syntax 틀림                                                                    |
 
 ## setattr (Item Attribute 변경)
 
@@ -52,10 +50,10 @@ setattr <key> <name>=<value> [<name>=<value> ...]\r\n
 
 이 명령의 response string과 그 의미는 아래와 같다.
 
-| Response String                         | 설명                     |
-|-----------------------------------------|------------------------ |
-| "OK"                                    | 성공
-| "NOT_FOUND"                             | key miss
-| "ATTR_ERROR not found"                  | 인자로 지정한 attribute가 존재하지 않거나 해당 item 유형에서 지원되지 않는 attribute임.
-| "ATTR_ERROR bad value"                  | 해당 attribute에 대해 새로 변경하고자 하는 value가 allowed value가 아님.
-| "CLIENT_ERROR bad command line format"  | protocol syntax 틀림
+| Response String                        | 설명                                                                                    |
+| -------------------------------------- | --------------------------------------------------------------------------------------- |
+| "OK"                                   | 성공                                                                                    |
+| "NOT_FOUND"                            | key miss                                                                                |
+| "ATTR_ERROR not found"                 | 인자로 지정한 attribute가 존재하지 않거나 해당 item 유형에서 지원되지 않는 attribute임. |
+| "ATTR_ERROR bad value"                 | 해당 attribute에 대해 새로 변경하고자 하는 value가 allowed value가 아님.                |
+| "CLIENT_ERROR bad command line format" | protocol syntax 틀림                                                                    |

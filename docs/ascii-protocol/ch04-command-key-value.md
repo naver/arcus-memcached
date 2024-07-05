@@ -17,15 +17,15 @@ cas <key> <flags> <exptime> <bytes> <cas unique> [noreply]\r\n<data>\r\n
 
 Response string과 그 의미는 아래와 같다.
 
-| Response String      | 설명                     |
-|----------------------|------------------------ |
-| "STORED"             | 성공
-| "NOT_STORED"         | 연산 조건에 부합하지 않아 저장에 실패 함. ex) 이미 존재하는 key에 대해 add 연산,  존재하지 않는 key에 대해 replace, append, prepend 연산.
-| "NOT_FOUND"          | cas 연산의 key miss.
-| "EXISTS"             | cas 연산의 응답으로, 해당 아이템이 클라이언트의 마지막 fetch 이후 수정된 적이 있음을 뜻함.
-| "TYPE_MISMATCH"      | 해당 아이템이 key-value 타입이 아님.
-| "CLIENT_ERROR"       | 클라이언트에서 잘못된 질의를 했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) bad command line format
-| "SERVER ERROR"       | 서버 측의 오류로 저장하지 못했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) out of memory
+| Response String | 설명                                                                                                                                     |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| "STORED"        | 성공                                                                                                                                     |
+| "NOT_STORED"    | 연산 조건에 부합하지 않아 저장에 실패 함. ex) 이미 존재하는 key에 대해 add 연산, 존재하지 않는 key에 대해 replace, append, prepend 연산. |
+| "NOT_FOUND"     | cas 연산의 key miss.                                                                                                                     |
+| "EXISTS"        | cas 연산의 응답으로, 해당 아이템이 클라이언트의 마지막 fetch 이후 수정된 적이 있음을 뜻함.                                               |
+| "TYPE_MISMATCH" | 해당 아이템이 key-value 타입이 아님.                                                                                                     |
+| "CLIENT_ERROR"  | 클라이언트에서 잘못된 질의를 했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) bad command line format                 |
+| "SERVER ERROR"  | 서버 측의 오류로 저장하지 못했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) out of memory                            |
 
 ## retrieval 명령
 
@@ -47,6 +47,7 @@ mget <lenkeys> <numkeys>\r\n
 mgets <lenkeys> <numkeys>\r\n
 <"space separated keys">\r\n
 ```
+
 - \<"space separated keys"\> - key list로, 스페이스(' ')로 구분한다.
 - \<lenkeys\>과 \<numkeys> - key list 문자열의 길이와 key 개수를 나타낸다.
 
@@ -65,11 +66,10 @@ END\r\n
 
 실패시 string은 아래와 같다.
 
-
-| Response String      | 설명                     |
-|----------------------|------------------------ |
-| "CLIENT_ERROR"       | 클라이언트에서 잘못된 질의를 했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) bad command line format
-| "SERVER ERROR"       | 서버 측의 오류로 조회하지 못했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) out of memory writing get response
+| Response String | 설명                                                                                                                               |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| "CLIENT_ERROR"  | 클라이언트에서 잘못된 질의를 했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) bad command line format           |
+| "SERVER ERROR"  | 서버 측의 오류로 조회하지 못했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) out of memory writing get response |
 
 mget 명령에서 메모리 부족으로 일부 key에 대해서만 정상 조회한 후 실패한 경우, 전체 연산을 서버 에러 처리한다.
 
@@ -83,11 +83,11 @@ delete <key> [noreply]\r\n
 
 Response string과 그 의미는 아래와 같다.
 
-| Response String      | 설명                     |
-|----------------------|------------------------ |
-| "DELETED"            | 성공
-| "NOT_FOUND"          | key miss
-| "CLIENT_ERROR"       | 클라이언트에서 잘못된 질의를 했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) bad command line format
+| Response String | 설명                                                                                                                     |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| "DELETED"       | 성공                                                                                                                     |
+| "NOT_FOUND"     | key miss                                                                                                                 |
+| "CLIENT_ERROR"  | 클라이언트에서 잘못된 질의를 했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) bad command line format |
 
 ## Increment/Decrement 명령
 
@@ -104,9 +104,28 @@ decr <key> <delta> [<flags> <exptime> <initial>] [noreply]\r\n
 
 실패시 Response string과 의미는 아래와 같다.
 
-| Response String      | 설명                     |
-|----------------------|------------------------ |
-| "NOT_FOUND"          | key miss
-| "TYPE_MISMATCH"      | 해당 아이템이 key-value 타입이 아님
-| "CLIENT_ERROR"       | 클라이언트에서 잘못된 질의를 했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) invalid numeric delta argument, cannot increment or decrement non-numeric value
-| "SERVER ERROR"       | 서버 측의 오류로 연산하지 못했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) out of memory
+| Response String | 설명                                                                                                                                                                             |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "NOT_FOUND"     | key miss                                                                                                                                                                         |
+| "TYPE_MISMATCH" | 해당 아이템이 key-value 타입이 아님                                                                                                                                              |
+| "CLIENT_ERROR"  | 클라이언트에서 잘못된 질의를 했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) invalid numeric delta argument, cannot increment or decrement non-numeric value |
+| "SERVER ERROR"  | 서버 측의 오류로 연산하지 못했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) out of memory                                                                    |
+
+## touch (Item의 expiretime 변경)
+
+key에 해당하는 item을 fetch 하지 않고 expiretime을 재설정하는 명령은 아래와 같다. 이 명령은 모든 item 타입에 대해 적용이 가능하다.
+
+```
+touch <key> <exptime> [noreply]\r\n
+```
+
+- \<key\> - 대상 item의 key string
+- \<exptime\> - 재설정할 expiretime 값
+
+이 명령의 response string과 그 의미는 아래와 같다.
+
+| Response String          | 설명                            |
+| ------------------------ | ------------------------------- |
+| "TOUCHED"                | 성공                            |
+| "NOT_FOUND"              | key miss                        |
+| "CLIENT_ERROR bad value" | exptime 값이 유효하지 않은 경우 |

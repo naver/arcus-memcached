@@ -13085,6 +13085,53 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
     }
 }
 
+static void process_touch_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    assert(c != NULL);
+    assert(c->ewouldblock == false);
+    char *key = tokens[KEY_TOKEN].value;
+    size_t nkey = tokens[KEY_TOKEN].length;
+
+    if (nkey > KEY_MAX_LENGTH) {
+        out_string(c, "CLIENT_ERROR bad command line format");
+        return;
+    }
+
+    ENGINE_ERROR_CODE ret;
+    item_attr attr_data;
+    ENGINE_ITEM_ATTR attr_id = ATTR_EXPIRETIME;
+    int64_t exptime;
+
+    set_noreply_maybe(c, tokens, ntokens);
+
+    if (! safe_strtoll(tokens[KEY_TOKEN+1].value, &exptime)) {
+        ret = ENGINE_EBADVALUE;
+    } else {
+        attr_data.exptime = realtime(exptime);
+        ret = mc_engine.v1->setattr(mc_engine.v0, c, key, nkey,
+                                    &attr_id, 1, &attr_data, 0);
+        CONN_CHECK_AND_SET_EWOULDBLOCK(ret, c);
+        if (settings.detail_enabled) {
+            stats_prefix_record_setattr(key, nkey);
+        }
+    }
+
+    switch (ret) {
+    case ENGINE_SUCCESS:
+        STATS_HITS(c, setattr, key, nkey);
+        out_string(c, "TOUCHED");
+        break;
+    case ENGINE_KEY_ENOENT:
+        STATS_MISSES(c, setattr, key, nkey);
+        out_string(c, "NOT_FOUND");
+        break;
+    default:
+        STATS_CMD_NOKEY(c, setattr);
+        if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        else handle_unexpected_errorcode_ascii(c, __func__, ret);
+    }
+}
+
 static void process_command_ascii(conn *c, char *command, int cmdlen)
 {
     /* One more token is reserved in tokens strucure
@@ -13205,6 +13252,10 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
     else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "config") == 0))
     {
         process_config_command(c, tokens, ntokens);
+    }
+    else if ((ntokens >= 4 && ntokens <= 5) && (strcmp(tokens[COMMAND_TOKEN].value, "touch") == 0))
+    {
+        process_touch_command(c, tokens, ntokens);
     }
 #ifdef ENABLE_ZK_INTEGRATION
     else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "zkensemble") == 0))
