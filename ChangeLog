@@ -1,3 +1,33 @@
+# 2024-07-11 [version 1.14.0]
+## 🐣 New Features
+* Remove an unused command `bget`. #749
+* Add `shutdown` command. #752
+* Add `mop upsert` command. #772
+## 🔧 Enhancements
+* Enhance arcus_zk_watcher log messages.
+* Set the update flag only when `ZOO_CONNECTED_STATE`. #735
+* Reduce `add_iov()` work for TCP connections. #737
+* Refactor the method of building UDP headers.
+* Limit a value length from exceeding INT_MAX in binary protocol.
+* Enhance log message when new respones before pipe error reset.
+* Fix a clang static analyzer issue.
+## 🐛 Bug Fixes
+* Modify mismatched error types when `get_item_info()` failed.
+* Fix the wrong `write_and_free` error handling in binary protocol.
+* Fix problems about not released items and an assertion in UDP.
+* Wait till the previous cmdlog flush thread ends.
+* Correct wrong actions in `process_mop_prepare_nread()`.
+## 📝 Documentation
+* Remove old `bop smget` documentation.
+* Correct small memory allocator threshold.
+* Create Issue/PR templates.
+* Update the description of `cmdlog`, `lqdetect`, `dump` commands.
+* Add `mop upsert` document.
+## ✅ Testing
+* Add a distributed packet test about long key in UDP.
+## ⬆️ Dependency Upgrades
+* Update Docker base image from `centos:7` to `rockylinux:8`.
+
 # 2024-01-17 [version 1.13.5]
 ## 🐣 New Features
 * Add `ready` command Add ready command to verify that the cache server can receive requests. In Zookeeper clustering, the cache node becomes ready state after creating its cache_list znode. #707
