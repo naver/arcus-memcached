@@ -15,7 +15,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-/* stats */
+/* stats_prefix */
 void stats_prefix_init(char delimiter, void (*cb_when_prefix_overflow)(void));
 void stats_prefix_clear(void);
 int  stats_prefix_count(void);
