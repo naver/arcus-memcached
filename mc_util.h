@@ -68,6 +68,7 @@ typedef struct _mblck_pool {
 #define MBLCK_GET_BODYLEN(l) ((l)->body_len)
 #define MBLCK_GET_ITEMCNT(l) ((l)->item_cnt)
 #define MBLCK_GET_ITEMLEN(l) ((l)->item_len)
+#define MBLCK_GET_TOTALSZ(l) ((l)->item_cnt * (l)->item_len)
 #define MBLCK_GET_NEXTBLK(b) ((b)->next)
 #define MBLCK_GET_BODYPTR(b) ((b)->data)
 
