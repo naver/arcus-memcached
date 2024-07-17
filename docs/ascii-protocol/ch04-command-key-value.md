@@ -73,6 +73,41 @@ END\r\n
 
 mget 명령에서 메모리 부족으로 일부 key에 대해서만 정상 조회한 후 실패한 경우, 전체 연산을 서버 에러 처리한다.
 
+## gat/gats (get and touch)
+
+gat, gats 명령은 get, gets와 동일하게 조회하면서 exptime을 재설정한다.
+두 명령은 collection item에 대해서는 동작하지 않는다.
+
+```
+gat <exptime> <key>\r\n
+gats <exptime> <key>\r\n
+```
+
+- \<exptime\> - 재설정할 expiretime 값 이다.
+- \<key\> - 대상 item의 key string 복수개의 key를 공백을 두고 지정할 수 있다.
+
+gat, gats 명령의 응답은 get, gets 명령의 응답과 동일하다.
+
+정상 수행되었을 경우, Response string은 아래와 같이 구성된다.
+
+- key hit된 아이템 정보를 모두 출력
+- key miss된 아이템은 별도 response 없이 생략
+- 응답의 끝에 "END\r\n" 출력
+
+```
+VALUE <key> <flags> <bytes> [<cas unique>]\r\n
+<data block>\r\n\
+...
+END\r\n
+```
+
+실패시 string은 아래와 같다.
+
+| Response String      | 설명                     |
+|----------------------|------------------------ |
+| "CLIENT_ERROR"       | 클라이언트에서 잘못된 질의를 했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) bad command line format
+| "SERVER_ERROR"       | 서버 측의 오류로 조회하지 못했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) out of memory writing get response
+
 ## deletion 명령
 
 delete 명령이 있으며 syntax는 다음과 같다.

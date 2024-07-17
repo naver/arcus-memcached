@@ -2977,7 +2977,7 @@ static char *get_suffix_buffer(conn *c)
 }
 
 static ENGINE_ERROR_CODE
-process_get_single(conn *c, char *key, size_t nkey, bool return_cas)
+process_get_single(conn *c, char *key, size_t nkey, bool return_cas, int64_t *exptime)
 {
     item *it;
     char *cas_val = NULL;
@@ -3018,6 +3018,26 @@ process_get_single(conn *c, char *key, size_t nkey, bool return_cas)
                 return ENGINE_ENOMEM;
             }
             cas_len = snprintf(cas_val, SUFFIX_SIZE, " %"PRIu64"\r\n", c->hinfo.cas);
+        }
+
+        /* if gat command touch exptime */
+        if (exptime != NULL) {
+            ENGINE_ITEM_ATTR attr_id = ATTR_EXPIRETIME;
+            item_attr attr_data;
+
+            attr_data.exptime = realtime(*exptime);
+            ret = mc_engine.v1->setattr(mc_engine.v0, c, key, nkey,
+                                        &attr_id, 1, &attr_data, 0);
+            CONN_CHECK_AND_SET_EWOULDBLOCK(ret, c);
+            if (settings.detail_enabled) {
+                stats_prefix_record_setattr(key, nkey);
+            }
+            if (ret != ENGINE_SUCCESS) {
+                STATS_MISSES(c, setattr, key, nkey);
+                mc_engine.v1->release(mc_engine.v0, c, it);
+                return ENGINE_SUCCESS;
+            }
+            STATS_HITS(c, setattr, key, nkey);
         }
 
         /* Construct the response. Each hit adds three elements to the
@@ -3087,7 +3107,7 @@ static void process_mget_complete(conn *c, bool return_cas)
         /* do get operation for each key */
         for (int k = 0; k < c->coll_numkeys; k++) {
             ret = process_get_single(c, key_tokens[k].value, key_tokens[k].length,
-                                     return_cas);
+                                     return_cas, NULL);
             if (ret != ENGINE_SUCCESS) {
                 break; /* ret == ENGINE_ENOMEM*/
             }
@@ -8512,11 +8532,22 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
 }
 
 /* ntokens is overwritten here... shrug.. */
-static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens, bool return_cas)
+static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens, bool return_cas, bool should_touch)
 {
     assert(c != NULL);
+
     token_t *key_token = &tokens[KEY_TOKEN];
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+    int64_t exptime = 0;
+
+    if (should_touch) {
+        // For get and touch commands, use first token as exptime
+        if (!safe_strtoll(tokens[1].value, &exptime)) {
+            out_string(c, "CLIENT_ERROR invalid exptime argument");
+            return;
+        }
+        key_token++;
+    }
 
     do {
         while (key_token->length != 0) {
@@ -8525,7 +8556,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
             }
             /* do get operation for each key */
             ret = process_get_single(c, key_token->value, key_token->length,
-                                     return_cas);
+                                     return_cas, should_touch ? &exptime : NULL);
             if (ret != ENGINE_SUCCESS) {
                 break; /* ret == ENGINE_ENOMEM */
             }
@@ -9554,6 +9585,8 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "cas <key> <flags> <exptime> <bytes> <cas unique> [noreply]\\r\\n<data>\\r\\n" "\n"
         "\t" "get <key>[ <key> ...]\\r\\n" "\n"
         "\t" "gets <key>[ <key> ...]\\r\\n" "\n"
+        "\t" "gat <exptime> <key>[ <key> ...]\\r\\n" "\n"
+        "\t" "gats <exptime> <key>[ <key> ...]\\r\\n" "\n"
         "\t" "mget <lenkeys> <numkeys>\\r\\n<\"space separated keys\">\\r\\n" "\n"
         "\t" "incr|decr <key> <delta> [<flags> <exptime> <initial>] [noreply]\\r\\n" "\n"
         "\t" "delete <key> [noreply]\\r\\n" "\n"
@@ -13371,11 +13404,19 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
 
     if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "get") == 0))
     {
-        process_get_command(c, tokens, ntokens, false);
+        process_get_command(c, tokens, ntokens, false, false);
     }
     else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "gets") == 0))
     {
-        process_get_command(c, tokens, ntokens, true);
+        process_get_command(c, tokens, ntokens, true, false);
+    }
+    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "gat") == 0))
+    {
+        process_get_command(c, tokens, ntokens, false, true);
+    }
+    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "gats") == 0))
+    {
+        process_get_command(c, tokens, ntokens, true, true);
     }
     else if ((ntokens == 4) && (strcmp(tokens[COMMAND_TOKEN].value, "mget") == 0))
     {
