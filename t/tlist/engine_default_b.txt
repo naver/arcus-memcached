@@ -102,3 +102,4 @@
 ./t/nested_prefix.t
 ./t/keyscan.t
 ./t/prefixscan.t
+./t/touch.t
