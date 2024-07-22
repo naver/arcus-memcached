@@ -668,10 +668,6 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->conn_prev = NULL;
     c->conn_next = NULL;
 
-#ifdef DETECT_LONG_QUERY
-    c->lq_result = NULL;
-#endif
-
     c->write_and_go = init_state;
     c->write_and_free = 0;
     c->item = 0;
@@ -832,13 +828,6 @@ static void conn_cleanup(conn *c)
         mc_engine.v1->release(mc_engine.v0, c, c->item);
         c->item = 0;
     }
-
-#ifdef DETECT_LONG_QUERY
-    if (c->lq_result) {
-        lqdetect_result_release(c->lq_result);
-        c->lq_result = NULL;
-    }
-#endif
 
     if (c->coll_eitem != NULL) {
         conn_coll_eitem_free(c);
@@ -7580,12 +7569,6 @@ static void reset_cmd_handler(conn *c)
         mc_engine.v1->release(mc_engine.v0, c, c->item);
         c->item = NULL;
     }
-#ifdef DETECT_LONG_QUERY
-    if (c->lq_result) {
-        lqdetect_result_release(c->lq_result);
-        c->lq_result = NULL;
-    }
-#endif
     if (c->coll_eitem != NULL) {
         conn_coll_eitem_free(c);
         c->coll_eitem = NULL;
@@ -10024,25 +10007,13 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
             out_string(c, "\tlong query detection stopped.\n");
         }
     } else if (ntokens > 2 && strcmp(type, "show") == 0) {
-        int size, i;
-        c->lq_result = lqdetect_result_get(&size);
-        if (c->lq_result == NULL) {
-            out_string(c, "SERVER ERROR out of memory");
-            return;
-        }
-        for (i = 0; i < size; i++) {
-            if (add_iov(c, c->lq_result[i].value, c->lq_result[i].length) != 0) {
-                break;
-            }
-        }
-        if (i < size) {
-            lqdetect_result_release(c->lq_result);
-            c->lq_result = NULL;
+        int size;
+        char *str = lqdetect_result_get(&size);
+        if (str) {
+            write_and_free(c, str, size);
+        } else {
             out_string(c, "SERVER ERROR out of memory writing show response");
-            return;
         }
-        conn_set_state(c, conn_mwrite);
-        c->msgcurr = 0;
     } else if (ntokens > 2 && strcmp(type, "stats") == 0) {
         char *str = lqdetect_stats();
         if (str) {
@@ -13953,12 +13924,6 @@ bool conn_mwrite(conn *c)
                 c->suffixcurr++;
                 c->suffixleft--;
             }
-#ifdef DETECT_LONG_QUERY
-            if (c->lq_result) {
-                lqdetect_result_release(c->lq_result);
-                c->lq_result = NULL;
-            }
-#endif
             if (c->coll_eitem != NULL) {
                 conn_coll_eitem_free(c);
                 c->coll_eitem = NULL;

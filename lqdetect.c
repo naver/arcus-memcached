@@ -78,7 +78,6 @@ struct lq_detect_global {
     struct lq_detect_buffer buffer[LQ_CMD_NUM];
     struct lq_detect_stats stats;
     int overflow_cnt;
-    uint16_t refcount; /* lqdetect show reference count */
 };
 struct lq_detect_global lqdetect;
 
@@ -240,7 +239,6 @@ int lqdetect_init(EXTENSION_LOGGER_DESCRIPTOR *logger)
         }
         memset(lqdetect.arg[ii], 0, LQ_SAVE_CNT * sizeof(struct lq_detect_argument));
     }
-    lqdetect.refcount = 0;
     return 0;
 }
 
@@ -259,12 +257,6 @@ int lqdetect_start(uint32_t threshold, bool *already_started)
     do {
         if (lqdetect_in_use) {
             *already_started = true;
-            break;
-        }
-
-        /* if lqdetect showing, start is fail */
-        if (lqdetect.refcount != 0) {
-            ret = -1;
             break;
         }
 
@@ -335,47 +327,31 @@ char *lqdetect_stats(void)
     return str;
 }
 
-field_t *lqdetect_result_get(int *size)
+char *lqdetect_result_get(int *size)
 {
     int hdrlen = 32;
-    int fldarr_size = LQ_CMD_NUM * 2 * sizeof(field_t);
-    int hdrarr_size = LQ_CMD_NUM * hdrlen; /* command, ntotal */
-    /* field_t and header string array */
-    field_t *fldarr = (field_t*)malloc(fldarr_size + hdrarr_size);
-    if (fldarr == NULL) {
-        return NULL;
-    }
-    char *hdrptr = (char*)fldarr + fldarr_size;
-    int fldcnt = 0;
+    int bytes = hdrlen * LQ_CMD_NUM;
+    char *str;
 
     pthread_mutex_lock(&lqdetect.lock);
-    /* Each result consists of header and body. */
     for (int i = 0; i < LQ_CMD_NUM; i++) {
-        struct lq_detect_buffer ldb = lqdetect.buffer[i];
-        /* header */
-        fldarr[fldcnt].length = snprintf(hdrptr, hdrlen, "%s : %u\n", command_str[i], ldb.ntotal);
-        fldarr[fldcnt].value = hdrptr;
-        hdrptr += hdrlen;
-        fldcnt++;
-        /* body */
-        if (ldb.ntotal != 0) {
-            fldarr[fldcnt].length = ldb.offset;
-            fldarr[fldcnt].value = ldb.data;
-            fldcnt++;
-        }
+        bytes += lqdetect.buffer[i].offset;
     }
-    lqdetect.refcount++;
+    str = (char*)malloc(bytes);
+    if (str != NULL) {
+        int offset = 0;
+        for (int i = 0; i < LQ_CMD_NUM; i++) {
+            struct lq_detect_buffer ldb = lqdetect.buffer[i];
+            offset += snprintf(str + offset, bytes - offset, "%s : %u\n", command_str[i], ldb.ntotal);
+            if (ldb.ntotal != 0) {
+                offset += snprintf(str + offset, bytes - offset, "%s", ldb.data);
+            }
+        }
+        *size = offset;
+    }
     pthread_mutex_unlock(&lqdetect.lock);
-    *size = fldcnt;
-    return fldarr;
-}
 
-void lqdetect_result_release(field_t *results)
-{
-    free(results);
-    pthread_mutex_lock(&lqdetect.lock);
-    lqdetect.refcount--;
-    pthread_mutex_unlock(&lqdetect.lock);
+    return str;
 }
 
 void lqdetect_lop_insert(char *client_ip, char *key, int coll_index)
