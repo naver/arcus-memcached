@@ -103,6 +103,8 @@ typedef struct topkeys {
     int max_keys;
 } topkeys_t;
 
+extern topkeys_t *default_topkeys;
+
 topkeys_t *topkeys_init(int max_keys);
 void topkeys_free(topkeys_t *topkeys);
 topkey_item_t *topkeys_item_get_or_create(topkeys_t *tk,

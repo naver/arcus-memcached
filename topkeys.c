@@ -7,6 +7,8 @@
 #include <memcached/genhash.h>
 #include "topkeys.h"
 
+topkeys_t *default_topkeys = NULL;
+
 static topkey_item_t *topkey_item_init(const void *key, int nkey, rel_time_t ctime)
 {
     topkey_item_t *item = calloc(sizeof(topkey_item_t) + nkey, 1);

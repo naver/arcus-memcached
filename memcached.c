@@ -111,7 +111,6 @@ union mc_engine mc_engine;
 static conn *listen_conn = NULL;
 static struct event_base *main_base;
 struct thread_stats *default_thread_stats;
-topkeys_t *default_topkeys = NULL;
 
 #ifdef ENABLE_ZK_INTEGRATION
 static char *arcus_zk_cfg = NULL;

@@ -504,7 +504,6 @@ struct conn {
  */
 /* The external variables used in below macros */
 extern struct thread_stats *default_thread_stats;
-extern topkeys_t *default_topkeys;
 
 #define MY_THREAD_STATS(c) (&default_thread_stats[(c)->thread->index])
 
