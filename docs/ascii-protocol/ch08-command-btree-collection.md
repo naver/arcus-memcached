@@ -92,7 +92,7 @@ Trimmed element 정보가 리턴되는 경우, 그 response string은 아래와 
 ```
 VALUE <flags> <count>\r\n
 <bkey> [<eflag>] <bytes> <data>\r\n
-END\r\n
+TRIMMED\r\n
 ```
 
 그 외의 response string과 의미는 아래와 같다.
