@@ -8652,7 +8652,8 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     size_t nkey;
 
     if (ntokens > 3) {
-        /* See "delete <key> [<time>] [noreply]\r\n" */
+        /* "delete <key> [<time>] [noreply]\r\n" is deprecated */
+        /* However, only zero time is allowed */
         bool zero_time = strcmp(tokens[KEY_TOKEN+1].value, "0") == 0;
         set_noreply_maybe(c, tokens, ntokens);
 
@@ -9365,7 +9366,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "gets <key>[ <key> ...]\\r\\n" "\n"
         "\t" "mget <lenkeys> <numkeys>\\r\\n<\"space separated keys\">\\r\\n" "\n"
         "\t" "incr|decr <key> <delta> [<flags> <exptime> <initial>] [noreply]\\r\\n" "\n"
-        "\t" "delete <key> [<time>] [noreply]\\r\\n" "\n"
+        "\t" "delete <key> [noreply]\\r\\n" "\n"
         );
     } else if (ntokens > 2 && strcmp(type, "list") == 0) {
         out_string(c,
