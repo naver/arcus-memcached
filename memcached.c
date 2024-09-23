@@ -2453,7 +2453,7 @@ process_bop_mget_single(conn *c, const char *key, size_t nkey,
             ret = ENGINE_SUCCESS;
         }
         else {
-            /* ENGINE_ENOMEM or ENGINE_DISCONNECT or SERVER error */
+            /* ENGINE_ENOMEM or ENGINE_DISCONNECT or SERVER_ERROR */
             STATS_CMD_NOKEY(c, bop_get);
         }
         if (ret == ENGINE_SUCCESS) {
@@ -10028,7 +10028,7 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
         int size, i;
         c->lq_result = lqdetect_result_get(&size);
         if (c->lq_result == NULL) {
-            out_string(c, "SERVER ERROR out of memory");
+            out_string(c, "SERVER_ERROR out of memory");
             return;
         }
         for (i = 0; i < size; i++) {
@@ -10039,7 +10039,7 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
         if (i < size) {
             lqdetect_result_release(c->lq_result);
             c->lq_result = NULL;
-            out_string(c, "SERVER ERROR out of memory writing show response");
+            out_string(c, "SERVER_ERROR out of memory writing show response");
             return;
         }
         conn_set_state(c, conn_mwrite);
