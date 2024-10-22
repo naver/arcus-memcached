@@ -1,14 +1,13 @@
+#include "lqdetect.h"
+
 #include <stdio.h>
-#include <stdint.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
 #include <pthread.h>
 #include <sys/time.h>
 #include <assert.h>
-#include <memcached/util.h>
 
-#include "lqdetect.h"
+#include "memcached/util.h"
 
 #define LQ_THRESHOLD_DEFAULT 4000
 #define LQ_QUERY_SIZE  (64*2+64) /* bop get (longest query) : "<longest bkey>..<longest bkey> efilter <offset> <count> delete" */

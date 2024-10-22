@@ -61,6 +61,7 @@
 #include <stdarg.h>
 #include <stddef.h>
 
+#include "lqdetect.h"
 
 /* Lock for global stats */
 static pthread_mutex_t stats_lock = PTHREAD_MUTEX_INITIALIZER;

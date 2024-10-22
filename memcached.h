@@ -32,7 +32,6 @@
 #include "topkeys.h"
 #include "mc_util.h"
 #include "cmdlog.h"
-#include "lqdetect.h"
 #include "engine_loader.h"
 #include "sasl_defs.h"
 
