@@ -28,5 +28,5 @@ void cmdlog_final(void);
 int cmdlog_start(char *file_path, bool *already_started);
 void cmdlog_stop(bool *already_stopped);
 char *cmdlog_stats(void);
-void cmdlog_write(char client_ip[], char *command);
+void cmdlog_write(char *client_ip, char *command);
 #endif

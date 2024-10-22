@@ -394,7 +394,7 @@ char *cmdlog_stats(void)
     return str;
 }
 
-void cmdlog_write(char client_ip[], char* command)
+void cmdlog_write(char *client_ip, char *command)
 {
     struct tm *ptm;
     struct timeval val;
