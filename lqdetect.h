@@ -1,8 +1,11 @@
 #ifndef LQDETECT_H
 #define LQDETECT_H
 
-#include "memcached/extension_loggers.h"
-#include "memcached/util.h"
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "memcached/types.h"
+#include "memcached/extension.h"
 
 #define DETECT_LONG_QUERY
 
