@@ -121,7 +121,7 @@ static bool do_command_dupcheck(char *key, enum lq_detect_command cmd, struct lq
     return false;
 }
 
-static void do_lqdetect_write(char client_ip[], char *key,
+static void do_lqdetect_write(char *client_ip, char *key,
                               enum lq_detect_command cmd, struct lq_detect_argument *arg)
 {
     struct   tm *ptm;
@@ -169,7 +169,7 @@ static void do_lqdetect_stop(int cause)
     lqdetect_in_use = false;
 }
 
-static void do_lqdetect_save_cmd(char client_ip[], char* key,
+static void do_lqdetect_save_cmd(char *client_ip, char* key,
                                  enum lq_detect_command cmd, struct lq_detect_argument *arg)
 {
     assert(cmd >= LQCMD_SOP_GET && cmd <= LQCMD_BOP_GBP);
