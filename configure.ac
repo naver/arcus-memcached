@@ -17,16 +17,6 @@ then
 fi
 
 dnl **********************************************************************
-dnl Checks for clock_gettime function.
-dnl
-dnl if clock_gettime is available, define USE_CLOCK_GETTIME 1
-dnl else define USE_GETTIMEOFDAY 1
-dnl **********************************************************************
-AC_CHECK_LIB(rt, clock_gettime,
-        AC_DEFINE(USE_CLOCK_GETTIME, 1, [Defined if clock_gettime is available in libc]),
-        AC_DEFINE(USE_GETTIMEOFDAY, 1, [Defined if clock_gettime is not available in libc]))
-
-dnl **********************************************************************
 dnl DETECT_ICC ([ACTION-IF-YES], [ACTION-IF-NO])
 dnl
 dnl check if this is the Intel ICC compiler, and if so run the ACTION-IF-YES
