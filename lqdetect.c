@@ -122,15 +122,14 @@ static void do_lqdetect_write(char *client_ip, char *key,
     struct   tm *ptm;
     struct   timeval val;
     struct   lq_detect_buffer *buffer = &lqdetect.buffer[cmd];
-    uint32_t offset = buffer->offset;
     uint32_t nsaved = buffer->nsaved;
-    char     *bufptr = buffer->data + buffer->offset;
-    uint32_t nwrite, length, keylen = strlen(key);
+    uint32_t length, keylen = strlen(key);
     char keybuf[251];
     char *keyptr = key;
 
     if (keylen > 250) { /* long key string */
-        keylen = snprintf(keybuf, sizeof(keybuf), "%.*s...%.*s", 124, key, 123, (key+(keylen - 123)));
+        keylen = snprintf(keybuf, sizeof(keybuf), "%.*s...%.*s",
+                          124, key, 123, (key + keylen - 123));
         keyptr = keybuf;
     }
 
@@ -140,21 +139,19 @@ static void do_lqdetect_write(char *client_ip, char *key,
 
     gettimeofday(&val, NULL);
     ptm = localtime(&val.tv_sec);
-    length = ((nsaved+1) * LQ_INPUT_SIZE) - offset - 1;
 
-    snprintf(bufptr, length, "%02d:%02d:%02d.%06ld %s <%u> %s ",
-        ptm->tm_hour, ptm->tm_min, ptm->tm_sec, (long)val.tv_usec, client_ip,
-        arg->overhead, command_str[cmd]);
-
-    nwrite = strlen(bufptr);
-    buffer->keypos[nsaved] = offset + nwrite;
+    length = ((nsaved+1) * LQ_INPUT_SIZE);
+    snprintf(buffer->data + buffer->offset, length - buffer->offset,
+             "%02d:%02d:%02d.%06ld %s <%u> %s ",
+             ptm->tm_hour, ptm->tm_min, ptm->tm_sec, (long)val.tv_usec,
+             client_ip, arg->overhead, command_str[cmd]);
+    buffer->offset += strlen(buffer->data + buffer->offset);
+    buffer->keypos[nsaved] = buffer->offset;
     buffer->keylen[nsaved] = keylen;
-    length -= nwrite;
-    bufptr += nwrite;
 
-    snprintf(bufptr, length, "%s %s\n", keyptr, arg->query);
-    nwrite += strlen(bufptr);
-    buffer->offset += nwrite;
+    snprintf(buffer->data + buffer->offset, length - buffer->offset,
+             "%s %s\n", keyptr, arg->query);
+    buffer->offset += strlen(buffer->data + buffer->offset);
     lqdetect.arg[cmd][nsaved] = *arg;
     buffer->nsaved += 1;
 }
