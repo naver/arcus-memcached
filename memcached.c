@@ -61,6 +61,7 @@
 #include <stdarg.h>
 #include <stddef.h>
 
+#include "cmdlog.h"
 #include "lqdetect.h"
 
 /* Lock for global stats */
