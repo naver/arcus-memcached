@@ -15,20 +15,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include "cmdlog.h"
+
 #include <stdio.h>
-#include <stdint.h>
 #include <pthread.h>
 #include <stdlib.h>
-#include <stdbool.h>
 #include <string.h>
 #include <sys/time.h>
 #include <fcntl.h>
-#include <unistd.h>
 #include <assert.h>
 #include <errno.h>
-#include <memcached/util.h>
 
-#include "cmdlog.h"
+#include "memcached/util.h"
 
 #define CMDLOG_INPUT_SIZE 400
 #define CMDLOG_BUFFER_SIZE  (10 * 1024 * 1024)   /* 10MB */

@@ -17,7 +17,9 @@
 #ifndef CMDLOG_H
 #define CMDLOG_H
 
-#include "memcached/extension_loggers.h"
+#include <stdbool.h>
+
+#include "memcached/extension.h"
 
 #define COMMAND_LOGGING
 
