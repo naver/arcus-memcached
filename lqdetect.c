@@ -85,37 +85,28 @@ static bool do_command_dupcheck(char *key, enum lq_detect_command cmd, struct lq
     int count = lqdetect.buffer[cmd].nsaved;
 
     switch (cmd) {
-    case LQCMD_LOP_INSERT:
-    case LQCMD_LOP_DELETE:
-    case LQCMD_LOP_GET:
-    case LQCMD_BOP_GBP:
-    case LQCMD_BOP_GET:
-    case LQCMD_BOP_COUNT:
-    case LQCMD_BOP_DELETE:
-        for (int ii = 0; ii < count; ii++) {
-            if (strcmp(lqdetect.arg[cmd][ii].query, arg->query) == 0) {
-                return true;
-            }
-        }
-        break;
     case LQCMD_MOP_DELETE:
     case LQCMD_MOP_GET:
     case LQCMD_SOP_GET:
+        if (arg->count != 0) {
+            break;
+        }
         for (int ii = 0; ii < count; ii++) {
-            if (arg->count == 0) {
-                uint32_t offset = lqdetect.buffer[cmd].keypos[ii];
-                uint32_t cmplen = lqdetect.buffer[cmd].keylen[ii];
-                if (cmplen == strlen(key) &&
-                    memcmp(lqdetect.buffer[cmd].data+offset, key, cmplen) == 0) {
-                    return true;
-                }
-            } else {
-                if (strcmp(lqdetect.arg[cmd][ii].query, arg->query) == 0) {
-                    return true;
-                }
+            uint32_t offset = lqdetect.buffer[cmd].keypos[ii];
+            uint32_t cmplen = lqdetect.buffer[cmd].keylen[ii];
+            if (cmplen == strlen(key) &&
+                memcmp(lqdetect.buffer[cmd].data+offset, key, cmplen) == 0) {
+                return true;
             }
         }
+        return false;
+    default:
         break;
+    }
+    for (int ii = 0; ii < count; ii++) {
+        if (strcmp(lqdetect.arg[cmd][ii].query, arg->query) == 0) {
+            return true;
+        }
     }
     return false;
 }
