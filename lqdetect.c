@@ -80,9 +80,10 @@ struct lq_detect_global {
 };
 struct lq_detect_global lqdetect;
 
-static bool do_command_dupcheck(char *key, enum lq_detect_command cmd, struct lq_detect_argument *arg)
+static bool is_command_duplicated(char *key, int keylen, enum lq_detect_command cmd, struct lq_detect_argument *arg)
 {
     int count = lqdetect.buffer[cmd].nsaved;
+    struct lq_detect_buffer *buf = &lqdetect.buffer[cmd];
 
     switch (cmd) {
     case LQCMD_LOP_INSERT:
@@ -102,15 +103,10 @@ static bool do_command_dupcheck(char *key, enum lq_detect_command cmd, struct lq
     case LQCMD_MOP_GET:
     case LQCMD_SOP_GET:
         for (int ii = 0; ii < count; ii++) {
-            if (arg->count == 0) {
-                uint32_t offset = lqdetect.buffer[cmd].keypos[ii];
-                uint32_t cmplen = lqdetect.buffer[cmd].keylen[ii];
-                if (cmplen == strlen(key) &&
-                    memcmp(lqdetect.buffer[cmd].data+offset, key, cmplen) == 0) {
-                    return true;
-                }
-            } else {
-                if (strcmp(lqdetect.arg[cmd][ii].query, arg->query) == 0) {
+            if (strcmp(lqdetect.arg[cmd][ii].query, arg->query) == 0) {
+                if (arg->count > 0) return true;
+                if (buf->keylen[ii] == keylen &&
+                    memcmp(buf->data + buf->keypos[ii], key, keylen) == 0) {
                     return true;
                 }
             }
@@ -131,11 +127,15 @@ static void do_lqdetect_write(char *client_ip, char *key,
     char     *bufptr = buffer->data + buffer->offset;
     uint32_t nwrite, length, keylen = strlen(key);
     char keybuf[251];
+    char *keyptr = key;
 
     if (keylen > 250) { /* long key string */
         keylen = snprintf(keybuf, sizeof(keybuf), "%.*s...%.*s", 124, key, 123, (key+(keylen - 123)));
-    } else { /* short key string */
-        keylen = snprintf(keybuf, sizeof(keybuf), "%s", key);
+        keyptr = keybuf;
+    }
+
+    if (is_command_duplicated(keyptr, keylen, cmd, arg) == true) {
+        return;
     }
 
     gettimeofday(&val, NULL);
@@ -152,7 +152,7 @@ static void do_lqdetect_write(char *client_ip, char *key,
     length -= nwrite;
     bufptr += nwrite;
 
-    snprintf(bufptr, length, "%s %s\n", keybuf, arg->query);
+    snprintf(bufptr, length, "%s %s\n", keyptr, arg->query);
     nwrite += strlen(bufptr);
     buffer->offset += nwrite;
     lqdetect.arg[cmd][nsaved] = *arg;
@@ -175,8 +175,7 @@ static void do_lqdetect_save_cmd(char *client_ip, char* key,
     pthread_mutex_lock(&lqdetect.lock);
     if (lqdetect_in_use) {
         lqdetect.buffer[cmd].ntotal++;
-        if (lqdetect.buffer[cmd].nsaved < LQ_SAVE_CNT &&
-            do_command_dupcheck(key, cmd, arg) == false) {
+        if (lqdetect.buffer[cmd].nsaved < LQ_SAVE_CNT) {
             /* write to buffer */
             do_lqdetect_write(client_ip, key, cmd, arg);
             /* internal stop */

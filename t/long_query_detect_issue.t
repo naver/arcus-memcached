@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 107;
+use Test::More tests => 125;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -102,6 +102,63 @@ sub do_btree_efilter {
     mem_cmd_is($sock, $cmd, "", $rst);
 }
 
+sub do_sop_prepare {
+    my $long_key = "A" x 251;
+
+    mem_cmd_is($sock, "sop insert skey1 5 create 0 0 5", "datum", "CREATED_STORED");
+    mem_cmd_is($sock, "sop insert skey2 5 create 0 0 5", "datum", "CREATED_STORED");
+    mem_cmd_is($sock, "sop insert $long_key 5 create 0 0 5", "datum", "CREATED_STORED");
+}
+
+sub do_sop_get {
+    my $idx;
+    my $long_key = "A" x 251;
+
+    $rst = "VALUE 0 1\n"
+         . "5 datum\n"
+         . "END";
+    for ($idx = 1; $idx < 3; $idx += 1) {
+        mem_cmd_is($sock, "sop get skey1 $idx", "", $rst);
+    }
+    mem_cmd_is($sock, "sop get skey1 0", "", $rst);
+    for ($idx = 0; $idx < 3; $idx += 1) {
+        mem_cmd_is($sock, "sop get skey2 $idx", "", $rst);
+    }
+    $rst = "VALUE 0 1\n"
+         . "5 datum\n"
+         . "END";
+    mem_cmd_is($sock, "sop get $long_key 0", "", $rst);
+    mem_cmd_is($sock, "sop get $long_key 0", "", $rst);
+}
+
+sub do_lqdetect_show {
+    my $idx;
+    my $substring;
+    my $line;
+    my $long_key = "A" x 124 + "..." + "A" x 123;
+
+    print $sock "lqdetect show\r\n";
+    $line = scalar <$sock>;
+    print $line;
+    for ($idx = 1; $idx < 3; $idx += 1) {
+        $line = scalar <$sock>;
+        $substring = "sop get skey1 $idx";
+        like($line, qr/$substring/, "lqdetect show $substring");
+    }
+    $line = scalar <$sock>;
+    $substring = "sop get skey1 0";
+    like($line, qr/$substring/, "lqdetect show $substring");
+    $line = scalar <$sock>;
+    $substring = "sop get skey2 0";
+    like($line, qr/$substring/, "lqdetect show $substring");
+    $line = scalar <$sock>;
+    $substring = "sop get "+ $long_key + " 0";
+    like($line, qr/$substring/, "lqdetect show $substring");
+    $line = scalar <$sock>;
+    $substring = "mop delete : 0";
+    like($line, qr/$substring/, "lqdetect show $substring");
+}
+
 # do test
 my $key = "AA";
 my $line;
@@ -116,5 +173,16 @@ $line = scalar <$sock>;
 $line = scalar <$sock>;
 mem_cmd_is($sock, "delete $key", "", "DELETED");
 
+$rst = "long query detection started";
+print $sock "lqdetect start 1\r\n";
+$line = scalar <$sock>;
+like($line, qr/$rst/, "lqdetect start");
+$line = scalar <$sock>;
+do_sop_prepare();
+do_sop_get();
+do_lqdetect_show();
+print $sock "lqdetect stop\r\n";
+$line = scalar <$sock>;
+$line = scalar <$sock>;
 # after test
 release_memcached($engine, $server);
