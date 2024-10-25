@@ -40,7 +40,7 @@ my $rst;
 ## STAT cas_misses 0
 ## STAT cas_hits 0
 ## STAT cas_badval 0
-## STAT auth_cmds 0
+## STAT cmd_auth 0
 ## STAT auth_errors 0
 ## STAT auth_unknowns 0
 ## STAT bytes_read 7
@@ -95,7 +95,7 @@ my $rst;
 ## STAT cmd_bop_decr 0
 ## STAT cmd_getattr 0
 ## STAT cmd_setattr 0
-## STAT auth_cmds 0
+## STAT cmd_auth 0
 ## STAT auth_errors 0
 ## STAT get_hits 0
 ## STAT get_misses 0
