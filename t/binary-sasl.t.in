@@ -268,7 +268,7 @@ $empty->('x');
 
 {
     my %stats = $mc->stats('');
-    is ($stats{'auth_cmds'}, 2, "auth commands counted");
+    is ($stats{'cmd_auth'}, 2, "auth commands counted");
     is ($stats{'auth_errors'}, 1, "auth errors correct");
 }
 
