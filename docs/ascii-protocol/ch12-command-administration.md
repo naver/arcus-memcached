@@ -179,7 +179,7 @@ STAT cmd_bop_incr 0
 STAT cmd_bop_decr 0
 STAT cmd_getattr 0
 STAT cmd_setattr 0
-STAT auth_cmds 0
+STAT cmd_auth 0
 STAT auth_errors 0
 STAT get_hits 0
 STAT get_misses 0
@@ -306,7 +306,7 @@ END
 | reject_connections    | 클라이언트와의 연결을 거절한 횟수                            |
 | total_connections     | 서버 구동 이후 누적 connection 총합                          |
 | connection_structures | 서버가 할당한 connection 구조체 개수                         |
-| auth_cmds             | sasl 인증 횟수                                               |
+| cmd_auth              | sasl 인증 횟수                                               |
 | auth_errors           | sasl 인증 실패 횟수                                          |
 | cas_badval            | 키는 찾았으나 cas 값이 맞지 않은 요청의 횟수                 |
 | bytes_read            | 서버가 네트워크에서 읽은 데이터 용량 총합(bytes)             |
