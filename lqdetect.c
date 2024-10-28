@@ -363,10 +363,10 @@ void lqdetect_lop_insert(char *client_ip, char *key, int coll_index)
     }
 }
 
-void lqdetect_lop_delete(char *client_ip, char *key, uint32_t del_count,
+void lqdetect_lop_delete(char *client_ip, char *key, uint32_t access_count,
                          int32_t from_index, int32_t to_index, const bool drop_if_empty)
 {
-    uint32_t overhead = del_count + (from_index >= 0 ? from_index+1 : -(from_index));
+    uint32_t overhead = access_count + (from_index >= 0 ? from_index+1 : -(from_index));
     if (overhead >= lqdetect.stats.threshold) {
         struct lq_detect_argument argument;
         snprintf(argument.query, LQ_QUERY_SIZE, "%d..%d%s", from_index, to_index,
@@ -376,10 +376,10 @@ void lqdetect_lop_delete(char *client_ip, char *key, uint32_t del_count,
     }
 }
 
-void lqdetect_lop_get(char *client_ip, char *key, uint32_t elem_count,
+void lqdetect_lop_get(char *client_ip, char *key, uint32_t access_count,
                       int32_t from_index, int32_t to_index, const bool delete, const bool drop_if_empty)
 {
-    uint32_t overhead = elem_count + (from_index >= 0 ? from_index+1 : -(from_index));
+    uint32_t overhead = access_count + (from_index >= 0 ? from_index+1 : -(from_index));
     if (overhead >= lqdetect.stats.threshold) {
         struct lq_detect_argument argument;
         snprintf(argument.query, LQ_QUERY_SIZE, "%d..%d%s", from_index, to_index,
@@ -389,53 +389,53 @@ void lqdetect_lop_get(char *client_ip, char *key, uint32_t elem_count,
     }
 }
 
-void lqdetect_sop_get(char *client_ip, char *key, uint32_t elem_count,
+void lqdetect_sop_get(char *client_ip, char *key, uint32_t access_count,
                       uint32_t count, const bool delete, const bool drop_if_empty)
 {
-    if (elem_count >= lqdetect.stats.threshold) {
+    if (access_count >= lqdetect.stats.threshold) {
         struct lq_detect_argument argument;
         snprintf(argument.query, LQ_QUERY_SIZE, "%u%s", count,
                  drop_if_empty ? " drop" : (delete ? " delete" : ""));
-        argument.overhead = elem_count;
+        argument.overhead = access_count;
         argument.count = count;
         do_lqdetect_save_cmd(client_ip, key, LQCMD_SOP_GET, &argument);
     }
 }
 
-void lqdetect_mop_get(char *client_ip, char *key, uint32_t elem_count,
+void lqdetect_mop_get(char *client_ip, char *key, uint32_t access_count,
                       uint32_t coll_numkeys, const bool delete, const bool drop_if_empty)
 {
-    if (elem_count >= lqdetect.stats.threshold) {
+    if (access_count >= lqdetect.stats.threshold) {
         struct lq_detect_argument argument;
         snprintf(argument.query, LQ_QUERY_SIZE, "%u%s", coll_numkeys,
                  drop_if_empty ? " drop" : (delete ? " delete" : ""));
-        argument.overhead = elem_count;
+        argument.overhead = access_count;
         argument.count = coll_numkeys;
         do_lqdetect_save_cmd(client_ip, key, LQCMD_MOP_GET, &argument);
     }
 }
 
-void lqdetect_mop_delete(char *client_ip, char *key, uint32_t del_count,
+void lqdetect_mop_delete(char *client_ip, char *key, uint32_t access_count,
                          uint32_t coll_numkeys, const bool drop_if_empty)
 {
-    if (del_count >= lqdetect.stats.threshold) {
+    if (access_count >= lqdetect.stats.threshold) {
         struct lq_detect_argument argument;
         snprintf(argument.query, LQ_QUERY_SIZE, "%u%s", coll_numkeys,
                  drop_if_empty ? " drop" : "");
-        argument.overhead = del_count;
+        argument.overhead = access_count;
         argument.count = coll_numkeys;
         do_lqdetect_save_cmd(client_ip, key, LQCMD_MOP_DELETE, &argument);
     }
 }
 
-void lqdetect_bop_gbp(char *client_ip, char *key, uint32_t elem_count,
+void lqdetect_bop_gbp(char *client_ip, char *key, uint32_t access_count,
                       uint32_t from_posi, uint32_t to_posi, ENGINE_BTREE_ORDER order)
 {
-    if (elem_count >= lqdetect.stats.threshold) {
+    if (access_count >= lqdetect.stats.threshold) {
         struct lq_detect_argument argument;
         snprintf(argument.query, LQ_QUERY_SIZE, "%u..%u %s", from_posi, to_posi,
                  order == BTREE_ORDER_ASC ? "asc" : "desc");
-        argument.overhead = elem_count;
+        argument.overhead = access_count;
         do_lqdetect_save_cmd(client_ip, key, LQCMD_BOP_GBP, &argument);
     }
 }
