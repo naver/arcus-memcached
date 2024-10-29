@@ -11,6 +11,7 @@
 
 #define LQ_THRESHOLD_DEFAULT 4000
 #define LQ_QUERY_SIZE  (64*2+64) /* bop get (longest query) : "<longest bkey>..<longest bkey> efilter <offset> <count> delete" */
+#define LQ_KEY_SIZE    250       /* the max size of key string */
 #define LQ_SAVE_CNT    20        /* save key count */
 #define LQ_INPUT_SIZE  500       /* the size of input(time, ip, command, argument) */
 #define LQ_STAT_STRLEN 300       /* max length of stats */
@@ -56,6 +57,7 @@ struct lq_detect_stats {
 /* lqdetect argument structure */
 struct lq_detect_argument {
     char query[LQ_QUERY_SIZE];
+    char key[LQ_KEY_SIZE+1];
     uint32_t count;
     uint32_t overhead;
 };
@@ -66,8 +68,6 @@ struct lq_detect_buffer {
     uint32_t offset;
     uint32_t ntotal;
     uint32_t nsaved;
-    uint32_t keypos[LQ_SAVE_CNT];
-    uint32_t keylen[LQ_SAVE_CNT];
 };
 
 /* lqdetect global structure */
@@ -80,10 +80,9 @@ struct lq_detect_global {
 };
 struct lq_detect_global lqdetect;
 
-static bool is_command_duplicated(char *key, int keylen, enum lq_detect_command cmd, struct lq_detect_argument *arg)
+static bool is_command_duplicated(char *key, enum lq_detect_command cmd, struct lq_detect_argument *arg)
 {
     int nsaved = lqdetect.buffer[cmd].nsaved;
-    struct lq_detect_buffer *buf = &lqdetect.buffer[cmd];
 
     switch (cmd) {
     case LQCMD_LOP_INSERT:
@@ -105,11 +104,13 @@ static bool is_command_duplicated(char *key, int keylen, enum lq_detect_command 
         for (int ii = 0; ii < nsaved; ii++) {
             if (strcmp(lqdetect.arg[cmd][ii].query, arg->query) == 0) {
                 if (arg->count > 0) return true;
-                if (buf->keylen[ii] == keylen &&
-                    memcmp(buf->data + buf->keypos[ii], key, keylen) == 0) {
+                if (strcmp(lqdetect.arg[cmd][ii].key, key) == 0) {
                     return true;
                 }
             }
+        }
+        if (arg->count == 0) {
+            snprintf(arg->key, sizeof(arg->key), "%s", key);
         }
         break;
     }
@@ -123,34 +124,28 @@ static void do_lqdetect_write(char *client_ip, char *key,
     struct   timeval val;
     struct   lq_detect_buffer *buffer = &lqdetect.buffer[cmd];
     uint32_t nsaved = buffer->nsaved;
-    uint32_t length, keylen = strlen(key);
-    char keybuf[251];
+    uint32_t length = ((nsaved+1) * LQ_INPUT_SIZE);
+    int keylen = strlen(key);
+    char keybuf[LQ_KEY_SIZE+1];
     char *keyptr = key;
 
     if (keylen > 250) { /* long key string */
-        keylen = snprintf(keybuf, sizeof(keybuf), "%.*s...%.*s",
+        snprintf(keybuf, sizeof(keybuf), "%.*s...%.*s",
                           124, key, 123, (key + keylen - 123));
         keyptr = keybuf;
     }
 
-    if (is_command_duplicated(keyptr, keylen, cmd, arg) == true) {
+    if (is_command_duplicated(keyptr, cmd, arg)) {
         return;
     }
 
     gettimeofday(&val, NULL);
     ptm = localtime(&val.tv_sec);
 
-    length = ((nsaved+1) * LQ_INPUT_SIZE);
     snprintf(buffer->data + buffer->offset, length - buffer->offset,
-             "%02d:%02d:%02d.%06ld %s <%u> %s ",
+             "%02d:%02d:%02d.%06ld %s <%u> %s %s %s\n",
              ptm->tm_hour, ptm->tm_min, ptm->tm_sec, (long)val.tv_usec,
-             client_ip, arg->overhead, command_str[cmd]);
-    buffer->offset += strlen(buffer->data + buffer->offset);
-    buffer->keypos[nsaved] = buffer->offset;
-    buffer->keylen[nsaved] = keylen;
-
-    snprintf(buffer->data + buffer->offset, length - buffer->offset,
-             "%s %s\n", keyptr, arg->query);
+             client_ip, arg->overhead, command_str[cmd], keyptr, arg->query);
     buffer->offset += strlen(buffer->data + buffer->offset);
     lqdetect.arg[cmd][nsaved] = *arg;
     buffer->nsaved += 1;
@@ -165,7 +160,7 @@ static void do_lqdetect_stop(int cause)
     lqdetect_in_use = false;
 }
 
-static void do_lqdetect_save_cmd(char *client_ip, char* key,
+static void do_lqdetect_save_cmd(char *client_ip, char *key,
                                  enum lq_detect_command cmd, struct lq_detect_argument *arg)
 {
     assert(cmd >= LQCMD_SOP_GET && cmd <= LQCMD_BOP_GBP);
