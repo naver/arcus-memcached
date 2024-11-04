@@ -895,7 +895,7 @@ lqdetect show\r\n
 lqdetect stats\r\n
 ```
 
-\<detect_threshold\>는 long query로 분류하는 기준으로 해당 요청에서 접근하는 elements 수로 나타내며, 어떤 요청에서 주어진 threshold 이상으로 많은 elements를 접근하는 요청을 long query로 구분한다. 생략 시 default threshold는 4000이다.
+\<detect_threshold\>는 long query로 분류하는 기준으로 해당 요청에서 접근하는 elements 수로 나타내며, 어떤 요청에서 주어진 threshold 이상으로 많은 elements를 접근하는 요청을 long query로 구분한다. 0으로 지정하거나 생략 시 default threshold는 4000으로 지정됩니다.
 
 start 명령으로 detection을 시작할 수 있다.
 
