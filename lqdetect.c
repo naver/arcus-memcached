@@ -82,7 +82,7 @@ struct lq_detect_global lqdetect;
 
 static bool is_command_duplicated(char *key, int keylen, enum lq_detect_command cmd, struct lq_detect_argument *arg)
 {
-    int count = lqdetect.buffer[cmd].nsaved;
+    int nsaved = lqdetect.buffer[cmd].nsaved;
     struct lq_detect_buffer *buf = &lqdetect.buffer[cmd];
 
     switch (cmd) {
@@ -93,7 +93,7 @@ static bool is_command_duplicated(char *key, int keylen, enum lq_detect_command 
     case LQCMD_BOP_GET:
     case LQCMD_BOP_COUNT:
     case LQCMD_BOP_DELETE:
-        for (int ii = 0; ii < count; ii++) {
+        for (int ii = 0; ii < nsaved; ii++) {
             if (strcmp(lqdetect.arg[cmd][ii].query, arg->query) == 0) {
                 return true;
             }
@@ -102,7 +102,7 @@ static bool is_command_duplicated(char *key, int keylen, enum lq_detect_command 
     case LQCMD_MOP_DELETE:
     case LQCMD_MOP_GET:
     case LQCMD_SOP_GET:
-        for (int ii = 0; ii < count; ii++) {
+        for (int ii = 0; ii < nsaved; ii++) {
             if (strcmp(lqdetect.arg[cmd][ii].query, arg->query) == 0) {
                 if (arg->count > 0) return true;
                 if (buf->keylen[ii] == keylen &&
@@ -470,7 +470,6 @@ void lqdetect_bop_delete(char *client_ip, char *key, uint32_t access_count,
         int nwrite = do_make_bkeystring(argument.query, bkrange, efilter);
         snprintf(argument.query + nwrite, LQ_QUERY_SIZE - nwrite, " %u%s",
                  count, drop_if_empty ? " drop" : "");
-        argument.count = count;
         argument.overhead = access_count;
         do_lqdetect_save_cmd(client_ip, key, LQCMD_BOP_DELETE, &argument);
     }
