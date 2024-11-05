@@ -132,7 +132,7 @@ static int compare_cont_item(const void *t1, const void *t2)
 
 static int gen_node_continuum(struct cont_item *continuum, const char *node_name)
 {
-    char buffer[MAX_NODE_NAME_LENGTH+1] = "";
+    char buffer[MAX_NODE_NAME_LENGTH+4] = "";
     int  length;
     unsigned int  hh, nn, pp;
     unsigned char digest[16];
@@ -140,7 +140,7 @@ static int gen_node_continuum(struct cont_item *continuum, const char *node_name
 
     pp = 0;
     for (hh=0; hh<NUM_OF_HASHES; hh++) {
-        length = snprintf(buffer, MAX_NODE_NAME_LENGTH, "%s-%u", node_name, hh);
+        length = snprintf(buffer, sizeof(buffer), "%s-%u", node_name, hh);
         hash_md5(buffer, length, digest);
         for (nn=0; nn<NUM_PER_HASH; nn++, pp++) {
             continuum[pp].hpoint = ((uint32_t) (digest[3 + nn * NUM_PER_HASH] & 0xFF) << 24)
