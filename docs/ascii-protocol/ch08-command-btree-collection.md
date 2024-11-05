@@ -403,7 +403,7 @@ elements를 sort merge 형태로 조회하면서 count 개의 elements를 가져
   - 조회 조건을 만족하는 첫 번째 element가 trim되어 있는 key (`OUT_OF_RANGE` 상태)
 - smget 조회 조건을 만족하는 elements를 조회하였지만 b+tree trim으로 추가의 element 조회가 불가능한 key를 trimmed keys로 분류한다.
 따라서, 응용에서는 trimmed keys에 대하여 백엔드 저장소인 DB에서 trim된 elements를 조회하여 최종 smget 결과에 반영해야 한다.
-- 중복 bkey를 허용하여 조회하는 duplcate 조회와 중복 bkey를 제거하고 unique bkey만을 조회하는 unique 조회를 지원한다.
+- 중복 bkey를 허용하여 조회하는 duplicate 조회와 중복 bkey를 제거하고 unique bkey만을 조회하는 unique 조회를 지원한다.
 
 이전의 조회 결과에 이어서 추가로 조회하고자 하는 경우,
 이전에 조회된 bkey 값을 바탕으로 bkey range를 재조정하여 사용할 수 있다.
