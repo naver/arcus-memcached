@@ -638,7 +638,7 @@ END
 
 ### slab class 별 cache key dump
 
-slab class 별 LRU에 달려있는 item들의 cache key들을 dump하기 위하여,
+slab class 별 LRU에 달려있는 item들의 cache key, 마지막 접근 시간과 만료 시간을 dump하기 위하여,
 아래의 stats cachedump 명령을 제공한다.
 
 ```
@@ -658,15 +658,16 @@ sticky가 지정되면 sticky LRU에서 dump하고, 지정되지 않으면 non-s
 Cachedump 결과의 예는 아래와 같다.
 
 ```
-ITEM a:bkey2
-ITEM a:bkey1
-ITEM b:bkey3
-ITEM b:bkey1
-ITEM b:bkey2
-ITEM c:bkey1
-ITEM c:bkey2
-END
+ITEM key4 [acctime=216, exptime=0]
+ITEM key3 [acctime=192, exptime=0]
+ITEM key2 [acctime=184, exptime=0]
+ITEM key1 [acctime=176, exptime=0]
+END [curtime=227]
 ```
+
+- curtime은 현재 시간 (캐시 서버의 구동 직후부터 현재까지 흐른 시간을 초 단위로 나타냄)
+- acctime은 마지막 접근이 발생한 시점의 curtime
+- exptime은 잔여 만료 시간을 초 단위로 나타냅니다. 0은 만료되지 않음을 나타냅니다.
 
 ### Persistence 정보 조회
 
