@@ -669,6 +669,7 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->next = NULL;
     c->conn_prev = NULL;
     c->conn_next = NULL;
+    c->authenticated = false;
 
     c->write_and_go = init_state;
     c->write_and_free = 0;
@@ -4121,6 +4122,8 @@ static void init_sasl_conn(conn *c)
 {
     assert(c);
 
+    c->authenticated = false;
+
     if (!c->sasl_conn) {
         int result=sasl_server_new("memcached",
                                    NULL, NULL, NULL, NULL,
@@ -4291,6 +4294,7 @@ static void process_bin_complete_sasl_auth(conn *c)
 
     switch (result) {
     case SASL_OK:
+        c->authenticated = true;
         write_bin_response(c, "Authenticated", 0, 0, strlen("Authenticated"));
         auth_data_t data;
         get_auth_data(c, &data);
@@ -4327,11 +4331,7 @@ static bool authenticated(conn *c)
         rv = true;
         break;
     default:
-        if (c->sasl_conn) {
-            const void *uname = NULL;
-            sasl_getprop(c->sasl_conn, SASL_USERNAME, &uname);
-            rv = uname != NULL;
-        }
+        rv = c->authenticated;
     }
 
     if (settings.verbose > 1) {
