@@ -275,6 +275,7 @@ struct conn {
     int    sfd;
     short  nevents;
     sasl_conn_t *sasl_conn;
+    bool sasl_started;
     bool authenticated;
     STATE_FUNC   state;
     enum bin_substates substate;
