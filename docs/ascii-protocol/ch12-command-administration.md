@@ -667,7 +667,7 @@ END [curtime=227]
 
 - curtime은 현재 시간 (캐시 서버의 구동 직후부터 현재까지 흐른 시간을 초 단위로 나타냄)
 - acctime은 마지막 접근이 발생한 시점의 curtime
-- exptime은 잔여 만료 시간을 초 단위로 나타냅니다. 0은 만료되지 않음을 나타냅니다.
+- exptime은 item이 생성된 curtime과 만료 시간을 더한 값을 초 단위로 나타냅니다. 0은 만료되지 않음을 나타냅니다.
 
 ### Persistence 정보 조회
 
