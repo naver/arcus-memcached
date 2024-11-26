@@ -15862,9 +15862,6 @@ int main (int argc, char **argv)
 #ifdef COMMAND_LOGGING
     cmdlog_final(); /* finalize command logging */
 #endif
-#ifdef DETECT_LONG_QUERY
-    lqdetect_final(); /* finalize long query detection */
-#endif
     mc_engine.v1->destroy(mc_engine.v0);
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Memcached engine destroyed.\n");
 
