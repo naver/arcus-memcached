@@ -13290,7 +13290,7 @@ static int try_read_command_ascii(conn *c)
              */
             if (c->rbytes > ((16+8)*1024)) {
                 /* The length of "stats prefixes" command cannot exceed 24 KB. */
-                if (strncmp(ptr, "get ", 4) && strncmp(ptr, "gets ", 5)) {
+                if (strncmp(ptr, "get ", 4) || strncmp(ptr, "gets ", 5)) {
                     char buffer[16];
                     memcpy(buffer, ptr, 15); buffer[15] = '\0';
                     mc_logger->log(EXTENSION_LOG_WARNING, c,
