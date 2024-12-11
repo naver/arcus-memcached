@@ -8207,7 +8207,7 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
         return;
     } else if (strcmp(subcommand, "detail") == 0) {
         /* NOTE: how to tackle detail with binary? */
-        if (ntokens < 4)
+        if (ntokens != 4)
             process_stats_detail(c, "");  /* outputs the error message */
         else
             process_stats_detail(c, tokens[2].value);
@@ -8232,7 +8232,13 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
         topkeys_stats(default_topkeys, c, get_current_time(), append_ascii_stats);
     } else if (strcmp(subcommand, "prefixes") == 0) {
         int len;
-        char *stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, NULL, 0, &len);
+        char *stats;
+
+        if (ntokens != 3) {
+            out_string(c, "CLIENT_ERROR usage: stats prefixes");
+            return;
+        }
+        stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, NULL, 0, &len);
         if (stats == NULL) {
             if (len == -1)
                 out_string(c, "NOT_SUPPORTED");
