@@ -1217,19 +1217,6 @@ default_prefix_dump_stats(ENGINE_HANDLE* handle, const void* cookie,
     return stats;
 }
 
-static ENGINE_ERROR_CODE
-default_prefix_get_stats(ENGINE_HANDLE* handle, const void* cookie,
-                         const void* prefix, const int nprefix, ADD_STAT add_stat)
-{
-    struct default_engine* engine = get_handle(handle);
-    ENGINE_ERROR_CODE ret;
-
-    pthread_mutex_lock(&engine->cache_lock);
-    ret = prefix_get_stats(prefix, nprefix, add_stat, cookie);
-    pthread_mutex_unlock(&engine->cache_lock);
-    return ret;
-}
-
 /*
  * Dump API
  */
@@ -2025,7 +2012,6 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .get_stats        = default_get_stats,
          .reset_stats      = default_reset_stats,
          .prefix_dump_stats = default_prefix_dump_stats,
-         .prefix_get_stats = default_prefix_get_stats,
          /* Dump API */
          .cachedump        = default_cachedump,
          .dump             = default_dump,

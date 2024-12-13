@@ -16,7 +16,7 @@ my $builddir = getcwd;
              mem_get_is mem_gets mem_gets_is mem_stats mem_cmd_val_is mem_cmd_is
              getattr_is lop_get_is sop_get_is mop_get_is bop_get_is bop_gbp_is bop_pwg_is bop_smget_is
              bop_ext_get_is bop_ext_smget_is bop_new_smget_is bop_old_smget_is
-             stats_prefixes_is stats_noprefix_is stats_prefix_is keyscan prefixscan
+             stats_prefixes_is stats_noprefix_is keyscan prefixscan
              supports_sasl free_port);
 
 sub sleep {
@@ -979,33 +979,6 @@ sub stats_noprefix_is {
         my $subline = substr $line, 7, length($line) - 9;
 
         unless($subline =~ /^hash_items_bytes/ or $subline =~ /^name/) {
-            push(@res_array, $subline);
-        }
-
-        $line = scalar <$sock>;
-    }
-    my $response = join(" ", @res_array);
-    Test::More::is($response, $expected, $msg);
-}
-
-# DELETE_BY_PREFIX
-sub stats_prefix_is {
-    # works on single-line values only.  no newlines in value.
-    my ($sock_opts, $prefix, $val, $msg) = @_;
-    my $opts = ref $sock_opts eq "HASH" ? $sock_opts : {};
-    my $sock = ref $sock_opts eq "HASH" ? $opts->{sock} : $sock_opts;
-
-    $msg ||= "stats prefix $prefix";
-
-    print $sock "stats prefix $prefix\r\n";
-    my $expected = $val;
-    my @res_array = ();
-    my $line = scalar <$sock>;
-
-    while ($line =~ /^PREFIX/) {
-        my $subline = substr $line, 7, length($line) - 9;
-
-        unless($subline =~ /^hash_items_bytes/ or $subline =~ /^name/ or $subline =~ /^tot_prefix_items/) {
             push(@res_array, $subline);
         }
 

@@ -714,13 +714,6 @@ Demo_prefix_dump_stats(ENGINE_HANDLE* handle, const void* cookie,
     return NULL;
 }
 
-static ENGINE_ERROR_CODE
-Demo_prefix_get_stats(ENGINE_HANDLE* handle, const void* cookie,
-                      const void* prefix, const int nprefix, ADD_STAT add_stat)
-{
-    return ENGINE_ENOTSUP;
-}
-
 /*
  * Dump API
  */
@@ -860,7 +853,6 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .get_stats        = Demo_get_stats,
          .reset_stats      = Demo_reset_stats,
          .prefix_dump_stats = Demo_prefix_dump_stats,
-         .prefix_get_stats = Demo_prefix_get_stats,
          /* Dump API */
          /* Config API */
          .set_config       = Demo_set_config,

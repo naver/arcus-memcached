@@ -8274,27 +8274,6 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
         }
         write_and_free(c, stats, len);
         return; /* Output already generated */
-    } else if (strcmp(subcommand, "prefix") == 0) {
-        /* command: stats prefix <prefix>\r\n */
-        if (ntokens != 4) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
-        }
-        if (tokens[2].length > PREFIX_MAX_LENGTH) {
-            out_string(c, "CLIENT_ERROR too long prefix name");
-            return;
-        }
-        if (strcmp(tokens[2].value, "<null>") == 0) { /* reserved keyword */
-            (void)mc_engine.v1->prefix_get_stats(mc_engine.v0, c, NULL, 0,
-                                                 append_ascii_stats);
-            stats_prefix_get(NULL, 0, append_ascii_stats, c);
-        } else {
-            (void)mc_engine.v1->prefix_get_stats(mc_engine.v0, c,
-                                                 tokens[2].value, tokens[2].length,
-                                                 append_ascii_stats);
-            stats_prefix_get(tokens[2].value, tokens[2].length, append_ascii_stats, c);
-        }
     } else {
         /* getting here means that the subcommand is either engine specific or
            is invalid. query the engine and see. */
