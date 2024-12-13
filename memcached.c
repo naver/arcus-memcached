@@ -13669,7 +13669,6 @@ bool conn_read(conn *c)
         /* State already set by try_read_network */
         break;
     }
-
     return true;
 }
 
@@ -13701,26 +13700,25 @@ bool conn_new_cmd(conn *c)
     --c->nevents;
     if (c->nevents >= 0) {
         reset_cmd_handler(c);
-    } else {
-        STATS_ADD(c, conn_yields, 1);
-        if (c->rbytes > 0) {
-            /* We have already read in data into the input buffer,
-               so libevent will most likely not signal read events
-               on the socket (unless more data is available. As a
-               hack we should just put in a request to write data,
-               because that should be possible ;-)
-            */
-            if (!update_event(c, EV_WRITE | EV_PERSIST)) {
-                mc_logger->log(EXTENSION_LOG_WARNING, c,
-                               "Couldn't update event in conn_new_cmd.\n");
-                conn_set_state(c, conn_closing);
-                return true;
-            }
-        }
-        return false;
+        return true;
     }
 
-    return true;
+    STATS_ADD(c, conn_yields, 1);
+    if (c->rbytes > 0) {
+        /* We have already read in data into the input buffer,
+           so libevent will most likely not signal read events
+           on the socket (unless more data is available. As a
+           hack we should just put in a request to write data,
+           because that should be possible ;-)
+        */
+        if (!update_event(c, EV_WRITE | EV_PERSIST)) {
+            mc_logger->log(EXTENSION_LOG_WARNING, c,
+                           "Couldn't update event in conn_new_cmd.\n");
+            conn_set_state(c, conn_closing);
+            return true;
+        }
+    }
+    return false;
 }
 
 bool conn_swallow(conn *c)
