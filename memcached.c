@@ -5544,7 +5544,7 @@ static void process_bin_bop_update_prepare_nread(conn *c)
     c->coll_bkrange.from_nbkey = req->message.body.nbkey;
     c->coll_bkrange.to_nbkey   = BKEY_NULL;
     /* build elem update */
-    c->coll_eupdate.fwhere = req->message.body.fwhere;
+    c->coll_eupdate.offset = req->message.body.offset;
     c->coll_eupdate.bitwop = req->message.body.bitwop;
     c->coll_eupdate.neflag = req->message.body.neflag;
     if (req->message.body.neflag > 0) {
@@ -9393,9 +9393,9 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "bop gbp <key> <order> <position or \"position range\">\\r\\n" "\n"
         "\n"
         "\t" "* <attributes> : <flags> <exptime> <maxcount> [<ovflaction>] [unreadable]" "\n"
-        "\t" "* <eflag_update> : [<fwhere> <bitwop>] <fvalue>" "\n"
-        "\t" "* <eflag_filter> : <fwhere> [<bitwop> <foperand>] <compop> <fvalue>" "\n"
-        "\t" "                 : <fwhere> [<bitwop> <foperand>] EQ|NE <comma separated fvalue list>" "\n"
+        "\t" "* <eflag_update> : [<offset> <bitwop>] <value>" "\n"
+        "\t" "* <eflag_filter> : <offset> [<bitwop> <bitwvalue>] <compop> <compvalue>" "\n"
+        "\t" "                 : <offset> [<bitwop> <bitwvalue>] EQ|NE <comma separated compvalue list>" "\n"
         "\t" "* <bitwop> : &, |, ^" "\n"
         "\t" "* <compop> : EQ, NE, LT, LE, GT, GE" "\n"
         );
@@ -11739,7 +11739,7 @@ static inline int get_efilter_from_tokens(token_t *tokens, const int ntokens, ef
         if (! safe_strtoul(tokens[0].value, &offset) || offset >= MAX_EFLAG_LENG) {
             return -1;
         }
-        efilter->fwhere = (uint8_t)offset;
+        efilter->offset = (uint8_t)offset;
         token_count = 1;
 
         if (ntokens >= 5 && strncmp(tokens[4].value, "0x", 2) == 0) {
@@ -12298,7 +12298,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
                     out_string(c, "CLIENT_ERROR bad command line format");
                     return;
                 }
-                c->coll_eupdate.fwhere = (uint8_t)offset;
+                c->coll_eupdate.offset = (uint8_t)offset;
                 c->coll_eupdate.bitwop = get_bitwise_op_from_str(tokens[read_ntokens+1].value);
                 if (c->coll_eupdate.bitwop == BITWISE_OP_MAX) {
                     print_invalid_command(c, tokens, ntokens);

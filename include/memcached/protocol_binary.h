@@ -743,7 +743,7 @@ extern "C"
                 uint8_t  nbkey;
                 uint8_t  eflag[MAX_EFLAG_LENG];
                 uint8_t  neflag;
-                uint8_t  fwhere;
+                uint8_t  offset;
                 uint8_t  bitwop;
                 uint8_t  novalue;
                 uint8_t  reserved[5];

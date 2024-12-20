@@ -1181,7 +1181,7 @@ static ENGINE_ERROR_CODE lrec_bt_elem_delete_logical_redo(LogRec *logrec)
         memcpy(efilter.compval, compvalptr, body->compvcnt*body->ncompval);
         efilter.ncompval = body->ncompval;
         efilter.compvcnt = body->compvcnt;
-        efilter.fwhere   = body->fwhere;
+        efilter.offset   = body->f_offset;
         efilter.bitwop   = body->bitwop;
         efilter.compop   = body->compop;
     }
@@ -1240,8 +1240,8 @@ static void lrec_bt_elem_delete_logical_print(LogRec *logrec)
                 memcpy(tmpptr, ",0x", 3); tmpptr += 3;
             }
         }
-        sprintf(efilterstr, "(fwhere=%u, bitwop=%u, bitwval=0x%s, compop=%u, compval(count=%u)=0x%s)",
-                log->body.fwhere, log->body.bitwop, (log->body.nbitwval > 0 ? bitwvalstr : "NULL"),
+        sprintf(efilterstr, "(f_offset=%u, bitwop=%u, bitwval=0x%s, compop=%u, compval(count=%u)=0x%s)",
+                log->body.f_offset, log->body.bitwop, (log->body.nbitwval > 0 ? bitwvalstr : "NULL"),
                 log->body.compop, log->body.compvcnt, compvalstr);
     } else {
         sprintf(efilterstr, "NULL");
@@ -1794,7 +1794,7 @@ int lrec_construct_btree_elem_delete_logical(LogRec *logrec, hash_item *it,
         log->body.nbitwval = efilter->nbitwval;
         log->body.ncompval = efilter->ncompval;
         log->body.compvcnt = efilter->compvcnt;
-        log->body.fwhere   = efilter->fwhere;
+        log->body.f_offset = efilter->offset;
         log->body.bitwop   = efilter->bitwop;
         log->body.compop   = efilter->compop;
     }

@@ -360,7 +360,7 @@ typedef struct _Btree_elem_delete_logical_data {
     uint8_t  nbitwval;   /* bitwise value length */
     uint8_t  ncompval;   /* compare value length */
     uint8_t  compvcnt;   /* # of compare values */
-    uint8_t  fwhere;     /* filter offset */
+    uint8_t  f_offset;   /* filter offset */
     uint8_t  bitwop;     /* bitwise operation */
     uint8_t  compop;     /* compare operation */
     uint32_t offset;     /* element offset */

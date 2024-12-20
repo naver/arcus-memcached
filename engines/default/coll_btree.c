@@ -1028,12 +1028,12 @@ static btree_elem_item *do_btree_find_prev(btree_elem_posi *posi,
 static inline bool do_btree_elem_filter(btree_elem_item *elem, const eflag_filter *efilter)
 {
     assert(efilter != NULL);
-    if (efilter->fwhere >= elem->neflag || efilter->ncompval > (elem->neflag-efilter->fwhere)) {
+    if (efilter->offset >= elem->neflag || efilter->ncompval > (elem->neflag-efilter->offset)) {
         return (efilter->compop == COMPARE_OP_NE ? true : false);
     }
 
     unsigned char result[MAX_EFLAG_LENG];
-    unsigned char *operand = elem->data + BTREE_REAL_NBKEY(elem->nbkey) + efilter->fwhere;
+    unsigned char *operand = elem->data + BTREE_REAL_NBKEY(elem->nbkey) + efilter->offset;
 
     if (efilter->nbitwval > 0) {
         (*BINARY_BITWISE_OP[efilter->bitwop])(operand, efilter->bitwval, efilter->nbitwval, result);
@@ -1748,7 +1748,7 @@ static ENGINE_ERROR_CODE do_btree_elem_update(btree_meta_info *info,
 
     /* check eflag update validation check */
     if (eupdate != NULL && eupdate->neflag > 0 && eupdate->bitwop < BITWISE_OP_MAX) {
-        if (eupdate->fwhere >= elem->neflag || eupdate->neflag > (elem->neflag-eupdate->fwhere)) {
+        if (eupdate->offset >= elem->neflag || eupdate->neflag > (elem->neflag-eupdate->offset)) {
             return ENGINE_EBADEFLAG;
         }
     }
@@ -1762,7 +1762,7 @@ static ENGINE_ERROR_CODE do_btree_elem_update(btree_meta_info *info,
         /* do in-place update */
         if (eupdate != NULL) {
             if (eupdate->bitwop < BITWISE_OP_MAX) {
-                ptr = elem->data + real_nbkey + eupdate->fwhere;
+                ptr = elem->data + real_nbkey + eupdate->offset;
                 (*BINARY_BITWISE_OP[eupdate->bitwop])(ptr, eupdate->eflag, eupdate->neflag, ptr);
             } else {
                 if (eupdate->neflag > 0) {
@@ -1801,7 +1801,7 @@ static ENGINE_ERROR_CODE do_btree_elem_update(btree_meta_info *info,
                 memcpy(new_elem->data + real_nbkey, elem->data + real_nbkey, elem->neflag);
             }
             if (eupdate != NULL) {
-                ptr = new_elem->data + real_nbkey + eupdate->fwhere;
+                ptr = new_elem->data + real_nbkey + eupdate->offset;
                 (*BINARY_BITWISE_OP[eupdate->bitwop])(ptr, eupdate->eflag, eupdate->neflag, ptr);
             }
         } else {

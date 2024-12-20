@@ -121,7 +121,7 @@ B+tree collection에서 하나의 element에 대해 eflag 변경 그리고/또�
 
 ```
 bop update <key> <bkey> [<eflag_update>] <bytes> [noreply|pipe]\r\n[<data>\r\n]
-* eflag_update : [<fwhere> <bitwop>] <fvalue>
+* eflag_update : [<offset> <bitwop>] <value>
 ```
 
 - \<key\> - 대상 item의 key string
@@ -156,7 +156,7 @@ N 개의 elements를 삭제한다.
 
 ```
 bop delete <key> <bkey or "bkey range"> [<eflag_filter>] [<count>] [drop] [noreply|pipe]\r\n
-* <eflag_filter> : <fwhere> [<bitwop> <foperand>] <compop> <fvalue>
+* <eflag_filter> : <offset> [<bitwop> <bitwvalue>] <compop> <compvalue>
 ```
 
 - \<key\> - 대상 item의 key string
@@ -189,7 +189,7 @@ elements에서 offset 개를 skip한 후 count 개의 elements를 조회한다.
 
 ```
 bop get <key> <bkey or "bkey range"> [<eflag_filter>] [[<offset>] <count>] [delete|drop]\r\n
-* <eflag_filter> : <fwhere> [<bitwop> <foperand>] <compop> <fvalue>
+* <eflag_filter> : <offset> [<bitwop> <bitwvalue>] <compop> <compvalue>
 ```
 
 - \<key\> - 대상 item의 key string
@@ -248,7 +248,7 @@ elements 개수를 구한다.
 
 ```
 bop count <key> <bkey or "bkey range"> [<eflag_filter>]\r\n
-* <eflag_filter> : <fwhere> [<bitwop> <foperand>] <compop> <fvalue>
+* <eflag_filter> : <offset> [<bitwop> <bitwvalue>] <compop> <compvalue>
 ```
 
 - \<key\> - 대상 item의 key string
@@ -325,7 +325,7 @@ Increment/decrement 수행 후의 데이터 값이다.
 ```
 bop mget <lenkeys> <numkeys> <bkey or "bkey range"> [<eflag_filter>] [<offset>] <count>\r\n
 <"space separated keys">\r\n
-* <eflag_filter> : <fwhere> [<bitwop> <foperand>] <compop> <fvalue>
+* <eflag_filter> : <offset> [<bitwop> <bitwvalue>] <compop> <compvalue>
 ```
 
 - \<"space separated keys"\> - 대상 b+tree들의 key list로, 스페이스(' ')로 구분한다.
@@ -411,7 +411,7 @@ elements를 sort merge 형태로 조회하면서 count 개의 elements를 가져
 ```
 bop smget <lenkeys> <numkeys> <bkey or "bkey range"> [<eflag_filter>] <count> duplicate|unique\r\n
 <"space separated keys">\r\n
-* <eflag_filter> : <fwhere> [<bitwop> <foperand>] <compop> <fvalue>
+* <eflag_filter> : <offset> [<bitwop> <bitwvalue>] <compop> <compvalue>
 ```
 
 - \<"space separated keys"\> - 대상 b+tree들의 key list로, 스페이스(' ')로 구분한다.
