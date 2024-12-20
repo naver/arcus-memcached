@@ -42,13 +42,13 @@ sub do_btree_efilter {
     $bkrange = "0x" . "0"x62 . ".." . "0x" . "F"x62;
 
     # prepare for making efilter.
-    my $foperand = "0x" . "F"x62;
-    my $fvallist = "0x" . sprintf "%062d", 1;
+    my $bitwvalue = "0x" . "F"x62;
+    my $compvallist = "0x" . sprintf "%062d", 1;
     for ($eidx = 2; $eidx <= 100; $eidx += 1) {
-        $fvallist .= ",0x" . sprintf "%062d", $eidx;
+        $compvallist .= ",0x" . sprintf "%062d", $eidx;
     }
     # longest efilter case 1
-    $efilter = "0 & $foperand EQ $fvallist";
+    $efilter = "0 & $bitwvalue EQ $compvallist";
 
     # bop count
     $cmd = "bop count $kstr $bkrange $efilter"; $rst = "COUNT=99";
@@ -68,7 +68,7 @@ sub do_btree_efilter {
     mem_cmd_is($sock, $cmd, "", $rst);
 
     # longest efilter case 2
-    $efilter = "0 & $foperand NE $fvallist";
+    $efilter = "0 & $bitwvalue NE $compvallist";
 
     # bop count
     $cmd = "bop count $kstr $bkrange $efilter"; $rst = "COUNT=1";

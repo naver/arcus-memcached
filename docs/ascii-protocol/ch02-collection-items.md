@@ -102,28 +102,27 @@ bkey의 hexadecimal 표현과 저장 방식을 그대로 따른다.
 
 eflag에 대한 filter 조건은 아래와 같이 표현하며,
 (1) eflag의 전체/부분 값과 특정 값과의 compare 연산이나
-(2) eflag의 전체/부분 값에 대해 어떤 operand로 bitwise 연산을 취한 후의 결과와 특정 값과의 compare 연산이다.
+(2) eflag의 전체/부분 값에 대해 bitwise 연산을 취한 결과와 특정 값과의 compare 연산이다.
 
 ```
-eflag_filter: <fwhere> [<bitwop> <foperand>] <compop> <fvalue>
+eflag_filter: <offset> [<bitwop> <bitwvalue>] <compop> <compvalue>
 ```
 
-- \<fwhere\>
+- \<offset\>
   - eflag 값에서 bitwise/compare 연산을 취할 시작 offset을 바이트 단위로 나타낸다.
-    bitwise/compare 연산을 취할 데이터의 length는 \<fvalue\>의 length로 한다.
-    예를 들어, eflag 전체 데이터를 선택한다면, \<fwhere\>는 0이어야 하고
-    \<fvalue\>의 length는 eflag 전체 데이터의 length와 동일하여야 한다.
-- [\<bitwop\> \<foperand\>]
+    offset과 bitwise/compare 연산을 취할 데이터 length의 합은 eflag 데이터의 length보다 작거나 같아야 한다.
+    예를 들어, eflag 전체 데이터와 비교한다면, \<offset\>은 0이어야 \<compvalue\>의 length는 eflag 전체 데이터의 length와 동일하여야 한다.
+- [\<bitwop\> \<bitwvalue\>]
   - 생략 가능하며, eflag에 대한 bitwise 연산을 지정한다.
   - bitwise 연산이 지정되면 이 연산의 결과가 compare 연산의 대상이 되며,
     생략된다면 eflag 값 자체가 compare 연산의 대상이 된다.
   - \<bitwop\>는 "&"(bitwise and), "|"(bitwise or), "^"(bitwise xor) 중의 하나로 bitwise 연산을 지정한다.
-  - \<foperand\>는 bitwise 연산을 취할 operand로 hexadecimal로 표현한다.
-    \<foperand\>의 길이는 compare 연산을 취한 \<fvalue\>의 길이와 동일하여야 한다.
-- \<compop\> \<fvalue\>
+  - \<bitwvalue\>는 bitwise 연산을 취할 값으로 hexadecimal로 표현한다.
+    \<bitwvalue\>의 길이는 compare 연산을 취할 \<compvalue\>의 길이와 동일하여야 한다.
+- \<compop\> \<compvalue\>
   - eflag에 대한 compare 연산을 지정한다.
   - \<compop\>는 "EQ", "NE", "LT", "LE", "GT", "GE" 중의 하나로 compare 연산을 지정하며,
-    \<fvalue\>는 compare 연산을 취할 대상 값으로 마찬가지로 hexadecimal로 표현한다.
+    \<compvalue\>는 compare 연산을 취할 대상 값으로 마찬가지로 hexadecimal로 표현한다.
   - IN 또는 NOT IN 조건을 명시할 수도 있다.
     IN 조건은 "EQ" 연산과 comma separated hexadecimal values로 명시하면 되고,
     NOT IN 조건은 "NE" 연산과 comma separated hexadecimal values로 명시하면 된다.
@@ -148,22 +147,22 @@ Eflag 전체 변경은 새로운 eflag 값으로 교체하는 것이며,
 부분 변경은 eflag의 부분 데이터에 대해 bitwise 연산을 취한 결과로 교체한다.
 
 ```
-eflag_update: [<fwhere> <bitwop>] <fvalue>
+eflag_update: [<offset> <bitwop>] <value>
 ```
 
-- [\<fwhere\> \<bitwop\>]
+- [\<offset\> \<bitwop\>]
   - eflag를 부분 변경할 경우만 지정한다.
-  - \<fwhere>은 eflag에서 부분 변경할 데이터의 시작 offset을 바이트 단위로 나타내며,
-    이 경우, 부분 변경할 데이터의 length는 뒤에 명시되는 \<fvalue\>의 length로 결정된다.
+  - \<offset>은 eflag에서 부분 변경할 데이터의 시작 offset을 바이트 단위로 나타내며,
+    이 경우, 부분 변경할 데이터의 length는 뒤에 명시되는 \<value\>의 length로 결정된다.
   - \<bitwop\>는 부분 변경할 데이터에 대한 취할 bitwise 연산으로,
     "&"(bitwise and), "|"(bitwise or), "^"(bitwise xor) 중의 하나로 지정할 수 있다.
-- \<fvalue\>
+- \<value\>
   - 변경할 new value를 나타낸다.
-  - 앞서 기술한 \<fwhere\>과 \<bitwop\>가 생략되면, eflag의 전체 데이터를 \<fvalue\>로 변경한다.
-    부분 변경을 위한 \<fwhere\>과 \<bitwop\>가 지정되면
-    \<fvalue\>는 eflag 부분 데이터에 대해 bitwise 연산을 취할 operand로 사용되며,
+  - 앞서 기술한 \<offset\>과 \<bitwop\>가 생략되면, eflag의 전체 데이터를 \<value\>로 변경한다.
+    부분 변경을 위한 \<offset\>과 \<bitwop\>가 지정되면
+    \<value\>는 eflag 부분 데이터에 대해 bitwise 연산을 취할 데이터로 사용되며,
     bitwise 연산의 결과가 eflag의 new value로 변경된다.
 
 
 기존 eflag 값을 delete하여 eflag가 없는 상태로 변경할 수 있다.
-이를 위해서는 \<fwhere\>과 \<bitwop\>를 생략하고 \<fvalue\> 값으로 0을 주면 된다.
+이를 위해서는 \<offset\>과 \<bitwop\>를 생략하고 \<value\> 값으로 0을 주면 된다.
