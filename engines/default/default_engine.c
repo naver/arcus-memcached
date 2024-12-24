@@ -1259,7 +1259,7 @@ default_prefixscan(const char cursor[], const uint32_t count, const char *patter
     int iter_total = 0;
     int scan_total = 0;
     int iter_count;
-    int scan_count;
+    int scan_count = 0;
     int pattern_leng = (pattern ? strlen(pattern) : 0);
     int max_elapsed = 5000; /* 5 msec */
     struct timeval begin, end, diff;
