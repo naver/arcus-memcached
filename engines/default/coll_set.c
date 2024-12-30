@@ -219,7 +219,6 @@ static void do_set_node_link(set_meta_info *info,
 
         par_node->htab[par_hidx] = node;
         par_node->hcnt[par_hidx] = -1; /* child hash node */
-        par_node->tot_elem_cnt -= num_found;
         par_node->tot_hash_cnt += 1;
     }
 
@@ -288,11 +287,14 @@ static ENGINE_ERROR_CODE do_set_elem_link(set_meta_info *info, set_elem_item *el
     set_hash_node *node = info->root;
     set_elem_item *find;
     int hidx = -1;
+    set_hash_node *parents[100];
+    int cur_depth = 0;
 
     /* set hash value */
     elem->hval = genhash_string_hash(elem->value, elem->nbytes);
 
     while (node != NULL) {
+        parents[cur_depth++] = node;
         hidx = SET_GET_HASHIDX(elem->hval, node->hdepth);
         if (node->hcnt[hidx] >= 0) /* set element hash chain */
             break;
@@ -325,6 +327,10 @@ static ENGINE_ERROR_CODE do_set_elem_link(set_meta_info *info, set_elem_item *el
     node->htab[hidx] = elem;
     node->hcnt[hidx] += 1;
     node->tot_elem_cnt += 1;
+
+    for (int i = 0; i < cur_depth-1; i++) {
+        parents[i]->tot_elem_cnt++;
+    }
 
     info->ccnt++;
 
@@ -396,10 +402,18 @@ static ENGINE_ERROR_CODE do_set_elem_traverse_delete(set_meta_info *info, set_ha
         set_hash_node *child_node = node->htab[hidx];
         ret = do_set_elem_traverse_delete(info, child_node, hval, val, vlen);
         if (ret == ENGINE_SUCCESS) {
-            if (child_node->tot_hash_cnt == 0 &&
-                child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
+            int64_t sum_of_children = 0;
+            for (int i = 0; i < SET_HASHTAB_SIZE; i++) {
+                if (node->hcnt[i] == -1) {
+                    set_hash_node *child = (set_hash_node *)node->htab[i];
+                    sum_of_children += child->tot_elem_cnt;
+                }
+            }
+            int64_t local_elem_cnt = (int64_t)node->tot_elem_cnt - sum_of_children;
+            if (child_node->tot_hash_cnt == 0 && local_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
                 do_set_node_unlink(info, node, hidx);
             }
+            node->tot_elem_cnt -= 1;
         }
     } else {
         ret = ENGINE_ELEM_ENOENT;
@@ -487,11 +501,16 @@ static uint32_t do_set_elem_traverse_fast(set_meta_info *info,
 #endif
 
 static int do_set_elem_traverse_dfs(set_meta_info *info, set_hash_node *node,
-                                    const uint32_t count, const bool delete,
-                                    set_elem_item **elem_array)
+                                    const uint32_t offset, const uint32_t count, const bool delete,
+                                    set_elem_item **elem_array, uint32_t *skip_cnt)
 {
     int hidx;
     int fcnt = 0; /* found count */
+
+    if (offset && (*skip_cnt) + node->tot_elem_cnt <= offset) {
+        (*skip_cnt) += node->tot_elem_cnt;
+        return 0;
+    }
 
     if (node->tot_hash_cnt > 0) {
         set_hash_node *child_node;
@@ -499,14 +518,26 @@ static int do_set_elem_traverse_dfs(set_meta_info *info, set_hash_node *node,
         for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
             if (node->hcnt[hidx] == -1) {
                 child_node = (set_hash_node *)node->htab[hidx];
+                if (offset && ((*skip_cnt + child_node->tot_elem_cnt) <= offset)) {
+                    (*skip_cnt) += child_node->tot_elem_cnt;
+                    continue;
+                }
                 rcnt = (count > 0 ? (count - fcnt) : 0);
-                fcnt += do_set_elem_traverse_dfs(info, child_node, rcnt, delete,
-                                            (elem_array==NULL ? NULL : &elem_array[fcnt]));
+                fcnt += do_set_elem_traverse_dfs(info, child_node, offset, rcnt, delete,
+                                            (elem_array==NULL ? NULL : &elem_array[fcnt]), skip_cnt);
                 if (delete) {
+                    int sum_of_children = 0;
+                    for (int i = 0; i < SET_HASHTAB_SIZE; i++) {
+                        if (node->hcnt[i] == -1) {
+                            set_hash_node *child = (set_hash_node *)node->htab[i];
+                            sum_of_children += (int)child->tot_elem_cnt;
+                        }
+                    }
+                    int local_elem_cnt = node->tot_elem_cnt - sum_of_children;
                     if  (child_node->tot_hash_cnt == 0 &&
-                         child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
+                         local_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
                          do_set_node_unlink(info, node, hidx);
-                     }
+                    }
                 }
                 if (count > 0 && fcnt >= count)
                     return fcnt;
@@ -517,8 +548,17 @@ static int do_set_elem_traverse_dfs(set_meta_info *info, set_hash_node *node,
 
     for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
         if (node->hcnt[hidx] > 0) {
+            if (offset && ((*skip_cnt + node->hcnt[hidx]) <= offset)) {
+                (*skip_cnt) += node->hcnt[hidx];
+                continue;
+            }
             set_elem_item *elem = node->htab[hidx];
             while (elem != NULL) {
+                if (offset && (*skip_cnt < offset)) {
+                    *skip_cnt += 1;
+                    elem = (delete ? node->htab[hidx] : elem->next);
+                    continue;
+                }
                 if (elem_array) {
                     elem->refcount++;
                     elem_array[fcnt] = elem;
@@ -561,7 +601,7 @@ static uint32_t do_set_elem_delete(set_meta_info *info, const uint32_t count,
     assert(cause == ELEM_DELETE_COLL);
     uint32_t fcnt = 0;
     if (info->root != NULL) {
-        fcnt = do_set_elem_traverse_dfs(info, info->root, count, true, NULL);
+        fcnt = do_set_elem_traverse_dfs(info, info->root, 0, count, true, NULL, NULL);
         if (info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
             do_set_node_unlink(info, NULL, 0);
         }
@@ -569,7 +609,7 @@ static uint32_t do_set_elem_delete(set_meta_info *info, const uint32_t count,
     return fcnt;
 }
 
-static uint32_t do_set_elem_get(set_meta_info *info,
+static uint32_t do_set_elem_get(set_meta_info *info, const uint32_t offset,
                                 const uint32_t count, const bool delete,
                                 set_elem_item **elem_array)
 {
@@ -579,7 +619,8 @@ static uint32_t do_set_elem_get(set_meta_info *info,
     if (delete) {
         CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, count, ELEM_DELETE_NORMAL);
     }
-    fcnt = do_set_elem_traverse_dfs(info, info->root, count, delete, elem_array);
+    uint32_t skip_cnt = 0;
+    fcnt = do_set_elem_traverse_dfs(info, info->root, offset, count, delete, elem_array, &skip_cnt);
     if (delete && info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
         do_set_node_unlink(info, NULL, 0);
     }
@@ -792,7 +833,7 @@ ENGINE_ERROR_CODE set_elem_exist(const char *key, const uint32_t nkey,
 }
 
 ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
-                               const uint32_t count,
+                               const uint32_t offset, const uint32_t count,
                                const bool delete, const bool drop_if_empty,
                                struct elems_result *eresult,
                                const void *cookie)
@@ -812,7 +853,7 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
             if ((info->mflags & COLL_META_FLAG_READABLE) == 0) {
                 ret = ENGINE_UNREADABLE; break;
             }
-            if (info->ccnt <= 0) {
+            if (info->ccnt <= 0 || offset >= info->ccnt) {
                 ret = ENGINE_ELEM_ENOENT; break;
             }
             if (count == 0 || info->ccnt < count) {
@@ -823,7 +864,7 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
             if (eresult->elem_array == NULL) {
                 ret = ENGINE_ENOMEM; break;
             }
-            eresult->elem_count = do_set_elem_get(info, count, delete,
+            eresult->elem_count = do_set_elem_get(info, offset, count, delete,
                                                   (set_elem_item**)(eresult->elem_array));
             assert(eresult->elem_count > 0);
             if (info->ccnt == 0 && drop_if_empty) {

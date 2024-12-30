@@ -47,7 +47,7 @@ ENGINE_ERROR_CODE set_elem_exist(const char *key, const uint32_t nkey,
                                  bool *exist);
 
 ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
-                               const uint32_t count,
+                               const uint32_t offset, const uint32_t count,
                                const bool delete, const bool drop_if_empty,
                                struct elems_result *eresult,
                                const void *cookie);

@@ -661,7 +661,7 @@ default_set_elem_exist(ENGINE_HANDLE* handle, const void* cookie,
 static ENGINE_ERROR_CODE
 default_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
                      const void* key, const int nkey,
-                     const uint32_t count,
+                     const uint32_t offset, const uint32_t count,
                      const bool delete, const bool drop_if_empty,
                      struct elems_result *eresult, uint16_t vbucket)
 {
@@ -674,7 +674,7 @@ default_set_elem_get(ENGINE_HANDLE* handle, const void* cookie,
 
     if (delete) ACTION_BEFORE_WRITE(cookie, key, nkey);
     else        ACTION_BEFORE_READ(cookie, key, nkey);
-    ret = set_elem_get(key, nkey, count, delete, drop_if_empty,
+    ret = set_elem_get(key, nkey, offset, count, delete, drop_if_empty,
                        eresult, cookie);
     if (delete) ACTION_AFTER_WRITE(cookie, engine, ret);
     return ret;

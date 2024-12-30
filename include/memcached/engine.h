@@ -420,7 +420,7 @@ extern "C" {
 
         ENGINE_ERROR_CODE (*set_elem_get)(ENGINE_HANDLE* handle, const void* cookie,
                                           const void* key, const int nkey,
-                                          const uint32_t count,
+                                          const uint32_t offset, const uint32_t count,
                                           const bool delete, const bool drop_if_empty,
                                           struct elems_result *eresult, uint16_t vbucket);
 

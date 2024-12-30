@@ -5167,7 +5167,7 @@ static void process_bin_sop_get(conn *c)
                 (req->message.body.delete ? "true" : "false"));
     }
 
-    ret = mc_engine.v1->set_elem_get(mc_engine.v0, c, key, nkey, req_count,
+    ret = mc_engine.v1->set_elem_get(mc_engine.v0, c, key, nkey, 0, req_count,
                                      (bool)req->message.body.delete,
                                      (bool)req->message.body.drop,
                                      &eresult, c->binary_header.request.vbucket);
@@ -10589,14 +10589,14 @@ out_sop_get_response(conn *c, bool delete, struct elems_result *eresultp)
     return ret;
 }
 
-static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t count,
-                            bool delete, bool drop_if_empty)
+static void process_sop_get(conn *c, char *key, size_t nkey, uint32_t offset,
+                            uint32_t count, bool delete, bool drop_if_empty)
 {
     assert(c->ewouldblock == false);
     struct elems_result eresult;
     ENGINE_ERROR_CODE ret;
 
-    ret = mc_engine.v1->set_elem_get(mc_engine.v0, c, key, nkey,
+    ret = mc_engine.v1->set_elem_get(mc_engine.v0, c, key, nkey, offset,
                                      count, delete, drop_if_empty,
                                      &eresult, 0);
     CONN_CHECK_AND_SET_EWOULDBLOCK(ret, c);
@@ -10853,34 +10853,47 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
             conn_set_state(c, conn_swallow);
         }
     }
-    else if ((ntokens==5 || ntokens==6) && (strcmp(subcommand, "get") == 0))
+    else if ((ntokens >= 5 && ntokens <= 7) && (strcmp(subcommand, "get") == 0))
     {
+        uint32_t offset = 0;
+        uint32_t count = 0;
         bool delete = false;
         bool drop_if_empty = false;
-        uint32_t count = 0;
 
-        if (! safe_strtoul(tokens[SOP_KEY_TOKEN+1].value, &count)) {
-            print_invalid_command(c, tokens, ntokens);
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
+        int read_ntokens = SOP_KEY_TOKEN + 1;
+        int post_ntokens = 1;
+        int rest_ntokens = ntokens - read_ntokens - post_ntokens;
+
+        if (rest_ntokens > 0) {
+            if (strcmp(tokens[read_ntokens+rest_ntokens-1].value, "delete")==0 ||
+                strcmp(tokens[read_ntokens+rest_ntokens-1].value, "drop")==0) {
+                delete = true;
+                if (strlen(tokens[read_ntokens+rest_ntokens-1].value) == 4)
+                    drop_if_empty = true;
+                rest_ntokens -= 1;
+            }
         }
-        if (ntokens == 6) {
-            if (strcmp(tokens[SOP_KEY_TOKEN+2].value, "delete")==0) {
-                delete = true;
-            } else if (strcmp(tokens[SOP_KEY_TOKEN+2].value, "drop")==0) {
-                delete = true;
-                drop_if_empty = true;
-            } else {
+        if (rest_ntokens == 1) {
+            if (! safe_strtoul(tokens[read_ntokens].value, &count)) {
                 print_invalid_command(c, tokens, ntokens);
                 out_string(c, "CLIENT_ERROR bad command line format");
                 return;
             }
+        } else if (rest_ntokens == 2) {
+            if ((! safe_strtoul(tokens[read_ntokens].value, &offset)) ||
+                (! safe_strtoul(tokens[read_ntokens+1].value, &count))) {
+                print_invalid_command(c, tokens, ntokens);
+                out_string(c, "CLIENT_ERROR bad command line format");
+                return;
+            }
+        } else {
+            print_invalid_command(c, tokens, ntokens);
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
         }
-
-        process_sop_get(c, key, nkey, count, delete, drop_if_empty);
+        process_sop_get(c, key, nkey, offset, count, delete, drop_if_empty);
     }
-    else
-    {
+    else {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
     }
