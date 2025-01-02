@@ -32,7 +32,6 @@
 #include "topkeys.h"
 #include "mc_util.h"
 #include "engine_loader.h"
-#include "sasl_defs.h"
 
 /* This is the address we use for admin purposes.  For example, doing stats
  * and heart beats from arcus_zk.
@@ -274,7 +273,7 @@ typedef bool (*STATE_FUNC)(conn *);
 struct conn {
     int    sfd;
     short  nevents;
-    sasl_conn_t *sasl_conn;
+    void *sasl_conn;
     bool sasl_started;
     bool authenticated;
     STATE_FUNC   state;
