@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "sasl_defs.h"
+
 #ifdef HAVE_SASL_CB_GETCONF
 /* The locations we may search for a SASL config file if the user didn't
  * specify one in the environment variable SASL_CONF_PATH

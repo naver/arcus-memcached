@@ -63,6 +63,7 @@
 
 #include "cmdlog.h"
 #include "lqdetect.h"
+#include "sasl_defs.h"
 
 /* Lock for global stats */
 static pthread_mutex_t stats_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -868,7 +869,7 @@ static void conn_cleanup(conn *c)
     }
 
     if (c->sasl_conn) {
-        sasl_dispose(&c->sasl_conn);
+        sasl_dispose((sasl_conn_t**)&c->sasl_conn);
         c->sasl_conn = NULL;
     }
 
@@ -4128,7 +4129,7 @@ static void init_sasl_conn(conn *c)
     if (!c->sasl_conn) {
         int result=sasl_server_new("memcached",
                                    NULL, NULL, NULL, NULL,
-                                   NULL, 0, &c->sasl_conn);
+                                   NULL, 0, (sasl_conn_t**)&c->sasl_conn);
         if (result != SASL_OK) {
             if (settings.verbose) {
                 mc_logger->log(EXTENSION_LOG_INFO, c,
