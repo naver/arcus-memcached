@@ -493,30 +493,19 @@ static int do_set_elem_traverse_dfs(set_meta_info *info, set_hash_node *node,
     int hidx;
     int fcnt = 0; /* found count */
 
-    if (node->tot_hash_cnt > 0) {
-        set_hash_node *child_node;
-        int rcnt; /* request count */
-        for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
-            if (node->hcnt[hidx] == -1) {
-                child_node = (set_hash_node *)node->htab[hidx];
-                rcnt = (count > 0 ? (count - fcnt) : 0);
-                fcnt += do_set_elem_traverse_dfs(info, child_node, rcnt, delete,
-                                            (elem_array==NULL ? NULL : &elem_array[fcnt]));
-                if (delete) {
-                    if  (child_node->tot_hash_cnt == 0 &&
-                         child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
-                         do_set_node_unlink(info, node, hidx);
-                     }
-                }
-                if (count > 0 && fcnt >= count)
-                    return fcnt;
-            }
-        }
-    }
-    assert(count == 0 || fcnt < count);
-
     for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
-        if (node->hcnt[hidx] > 0) {
+        if (node->hcnt[hidx] == -1) {
+            set_hash_node *child_node = (set_hash_node *)node->htab[hidx];
+            int rcnt = (count > 0 ? (count - fcnt) : 0);
+            fcnt += do_set_elem_traverse_dfs(info, child_node, rcnt, delete,
+                                            (elem_array==NULL ? NULL : &elem_array[fcnt]));
+            if (delete) {
+                if (child_node->tot_hash_cnt == 0 &&
+                    child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
+                    do_set_node_unlink(info, node, hidx);
+                }
+            }
+        } else if (node->hcnt[hidx] > 0) {
             set_elem_item *elem = node->htab[hidx];
             while (elem != NULL) {
                 if (elem_array) {
@@ -530,8 +519,8 @@ static int do_set_elem_traverse_dfs(set_meta_info *info, set_hash_node *node,
                 if (count > 0 && fcnt >= count) break;
                 elem = (delete ? node->htab[hidx] : elem->next);
             }
-            if (count > 0 && fcnt >= count) break;
         }
+        if (count > 0 && fcnt >= count) break;
     }
     return fcnt;
 }

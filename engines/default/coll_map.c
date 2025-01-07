@@ -497,30 +497,19 @@ static int do_map_elem_traverse_dfs_bycnt(map_meta_info *info, map_hash_node *no
     int hidx;
     int fcnt = 0; /* found count */
 
-    if (node->tot_hash_cnt > 0) {
-        map_hash_node *child_node;
-        int rcnt; /* request count */
-        for (hidx = 0; hidx < MAP_HASHTAB_SIZE; hidx++) {
-            if (node->hcnt[hidx] == -1) {
-                child_node = (map_hash_node *)node->htab[hidx];
-                rcnt = (count > 0 ? (count - fcnt) : 0);
-                fcnt += do_map_elem_traverse_dfs_bycnt(info, child_node, rcnt, delete,
-                                            (elem_array==NULL ? NULL : &elem_array[fcnt]), cause);
-                if (delete) {
-                    if  (child_node->tot_hash_cnt == 0 &&
-                         child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
-                         do_map_node_unlink(info, node, hidx);
-                     }
-                }
-                if (count > 0 && fcnt >= count)
-                    return fcnt;
-            }
-        }
-    }
-    assert(count == 0 || fcnt < count);
-
     for (hidx = 0; hidx < MAP_HASHTAB_SIZE; hidx++) {
-        if (node->hcnt[hidx] > 0) {
+        if (node->hcnt[hidx] == -1) {
+            map_hash_node *child_node = (map_hash_node *)node->htab[hidx];
+            int rcnt = (count > 0 ? (count - fcnt) : 0);
+            fcnt += do_map_elem_traverse_dfs_bycnt(info, child_node, rcnt, delete,
+                                                  (elem_array==NULL ? NULL : &elem_array[fcnt]), cause);
+            if (delete) {
+                if (child_node->tot_hash_cnt == 0 &&
+                    child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
+                    do_map_node_unlink(info, node, hidx);
+                }
+            }
+        } else if (node->hcnt[hidx] > 0) {
             map_elem_item *elem = node->htab[hidx];
             while (elem != NULL) {
                 if (elem_array) {
@@ -532,8 +521,8 @@ static int do_map_elem_traverse_dfs_bycnt(map_meta_info *info, map_hash_node *no
                 if (count > 0 && fcnt >= count) break;
                 elem = (delete ? node->htab[hidx] : elem->next);
             }
-            if (count > 0 && fcnt >= count) break;
         }
+        if (count > 0 && fcnt >= count) break;
     }
     return fcnt;
 }
