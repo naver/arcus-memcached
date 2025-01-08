@@ -71,6 +71,15 @@ static inline uint32_t do_set_elem_ntotal(set_elem_item *elem)
     return sizeof(set_elem_item) + elem->nbytes;
 }
 
+static inline bool is_leaf_node(set_hash_node *node)
+{
+    for (int hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
+        if (node->hcnt[hidx] == -1)
+            return false;
+    }
+    return true;
+}
+
 static ENGINE_ERROR_CODE do_set_item_find(const void *key, const uint32_t nkey,
                                           bool do_update, hash_item **item)
 {
@@ -146,7 +155,6 @@ static set_hash_node *do_set_node_alloc(uint8_t hash_depth, const void *cookie)
 
         node->refcount    = 0;
         node->hdepth      = hash_depth;
-        node->tot_hash_cnt = 0;
         node->tot_elem_cnt = 0;
         memset(node->hcnt, 0, SET_HASHTAB_SIZE*sizeof(uint16_t));
         memset(node->htab, 0, SET_HASHTAB_SIZE*sizeof(void*));
@@ -201,9 +209,6 @@ static void do_set_node_link(set_meta_info *info,
         info->root = node;
     } else {
         set_elem_item *elem;
-        int num_elems = par_node->hcnt[par_hidx];
-        int num_found =0;
-
         while (par_node->htab[par_hidx] != NULL) {
             elem = par_node->htab[par_hidx];
             par_node->htab[par_hidx] = elem->next;
@@ -212,15 +217,11 @@ static void do_set_node_link(set_meta_info *info,
             elem->next = node->htab[hidx];
             node->htab[hidx] = elem;
             node->hcnt[hidx] += 1;
-            num_found++;
+            node->tot_elem_cnt += 1;
         }
-        assert(num_found == num_elems);
-        node->tot_elem_cnt = num_found;
-
+        assert(node->tot_elem_cnt == par_node->hcnt[par_hidx]);
         par_node->htab[par_hidx] = node;
         par_node->hcnt[par_hidx] = -1; /* child hash node */
-        par_node->tot_elem_cnt -= num_found;
-        par_node->tot_hash_cnt += 1;
     }
 
     if (1) { /* apply memory space */
@@ -237,7 +238,6 @@ static void do_set_node_unlink(set_meta_info *info,
     if (par_node == NULL) {
         node = info->root;
         info->root = NULL;
-        assert(node->tot_hash_cnt == 0);
         assert(node->tot_elem_cnt == 0);
     } else {
         assert(par_node->hcnt[par_hidx] == -1); /* child hash node */
@@ -246,7 +246,6 @@ static void do_set_node_unlink(set_meta_info *info,
         int hidx, fcnt = 0;
 
         node = (set_hash_node *)par_node->htab[par_hidx];
-        assert(node->tot_hash_cnt == 0);
 
         for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
             assert(node->hcnt[hidx] >= 0);
@@ -268,8 +267,6 @@ static void do_set_node_unlink(set_meta_info *info,
 
         par_node->htab[par_hidx] = head;
         par_node->hcnt[par_hidx] = fcnt;
-        par_node->tot_elem_cnt += fcnt;
-        par_node->tot_hash_cnt -= 1;
     }
 
     if (info->stotal > 0) { /* apply memory space */
@@ -326,6 +323,13 @@ static ENGINE_ERROR_CODE do_set_elem_link(set_meta_info *info, set_elem_item *el
     node->hcnt[hidx] += 1;
     node->tot_elem_cnt += 1;
 
+    set_hash_node *par_node = info->root;
+    while (par_node != node) {
+        par_node->tot_elem_cnt += 1;
+        hidx = SET_GET_HASHIDX(elem->hval, par_node->hdepth);
+        assert(par_node->hcnt[hidx] == -1);
+        par_node = par_node->htab[hidx];
+    }
     info->ccnt++;
 
     if (1) { /* apply memory space */
@@ -396,10 +400,11 @@ static ENGINE_ERROR_CODE do_set_elem_traverse_delete(set_meta_info *info, set_ha
         set_hash_node *child_node = node->htab[hidx];
         ret = do_set_elem_traverse_delete(info, child_node, hval, val, vlen);
         if (ret == ENGINE_SUCCESS) {
-            if (child_node->tot_hash_cnt == 0 &&
-                child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
+            if (child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)
+                && is_leaf_node(child_node)) {
                 do_set_node_unlink(info, node, hidx);
             }
+            node->tot_elem_cnt -= 1;
         }
     } else {
         ret = ENGINE_ELEM_ENOENT;
@@ -431,7 +436,7 @@ static ENGINE_ERROR_CODE do_set_elem_delete_with_value(set_meta_info *info,
         int hval = genhash_string_hash(val, vlen);
         ret = do_set_elem_traverse_delete(info, info->root, hval, val, vlen);
         if (ret == ENGINE_SUCCESS) {
-            if (info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
+            if (info->root->tot_elem_cnt == 0) {
                 do_set_node_unlink(info, NULL, 0);
             }
         }
@@ -497,13 +502,15 @@ static int do_set_elem_traverse_dfs(set_meta_info *info, set_hash_node *node,
         if (node->hcnt[hidx] == -1) {
             set_hash_node *child_node = (set_hash_node *)node->htab[hidx];
             int rcnt = (count > 0 ? (count - fcnt) : 0);
-            fcnt += do_set_elem_traverse_dfs(info, child_node, rcnt, delete,
-                                            (elem_array==NULL ? NULL : &elem_array[fcnt]));
+            int ecnt = do_set_elem_traverse_dfs(info, child_node, rcnt, delete,
+                                                (elem_array==NULL ? NULL : &elem_array[fcnt]));
+            fcnt += ecnt;
             if (delete) {
-                if (child_node->tot_hash_cnt == 0 &&
-                    child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)) {
+                if (child_node->tot_elem_cnt < (SET_MAX_HASHCHAIN_SIZE/2)
+                    && is_leaf_node(child_node)) {
                     do_set_node_unlink(info, node, hidx);
                 }
+                node->tot_elem_cnt -= ecnt;
             }
         } else if (node->hcnt[hidx] > 0) {
             set_elem_item *elem = node->htab[hidx];
@@ -551,7 +558,7 @@ static uint32_t do_set_elem_delete(set_meta_info *info, const uint32_t count,
     uint32_t fcnt = 0;
     if (info->root != NULL) {
         fcnt = do_set_elem_traverse_dfs(info, info->root, count, true, NULL);
-        if (info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
+        if (info->root->tot_elem_cnt == 0) {
             do_set_node_unlink(info, NULL, 0);
         }
     }
@@ -569,7 +576,7 @@ static uint32_t do_set_elem_get(set_meta_info *info,
         CLOG_ELEM_DELETE_BEGIN((coll_meta_info*)info, count, ELEM_DELETE_NORMAL);
     }
     fcnt = do_set_elem_traverse_dfs(info, info->root, count, delete, elem_array);
-    if (delete && info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
+    if (delete && info->root->tot_elem_cnt == 0) {
         do_set_node_unlink(info, NULL, 0);
     }
     if (delete) {
