@@ -96,7 +96,7 @@ datum2
 bop update bkey2 0x20 1 | 0xFF -1
 bop update bkey2 0x0020 1 | 0xFF -1
 bop update bkey2 0x0040 4 | 0xFF -1
-bop update bkey2 0x0040 32 | 0xFF -1
+bop update bkey2 0x0040 64 | 0xFF -1
 
 delete bkey1
 delete bkey2
@@ -325,7 +325,7 @@ $cmd = "bop update bkey2 0x0020 1 | 0xFF -1"; $rst = "EFLAG_MISMATCH";
 mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop update bkey2 0x0040 4 | 0xFF -1"; $rst = "EFLAG_MISMATCH";
 mem_cmd_is($sock, $cmd, "", $rst);
-$cmd = "bop update bkey2 0x0040 32 | 0xFF -1"; $rst = "CLIENT_ERROR bad command line format";
+$cmd = "bop update bkey2 0x0040 64 | 0xFF -1"; $rst = "CLIENT_ERROR bad command line format";
 mem_cmd_is($sock, $cmd, "", $rst);
 
 # Finalize

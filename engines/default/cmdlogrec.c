@@ -353,7 +353,7 @@ static void lrec_it_link_print(LogRec *logrec)
     struct lrec_item_common *cm = (struct lrec_item_common*)&body->cm;
     char *keyptr = body->data;
 
-    char metastr[180];
+    char metastr[MAX_BKEY_LENG*2 + 90];
     if (cm->ittype == ITEM_TYPE_KV) {
         sprintf(metastr, "cas=%"PRIu64, body->ptr.cas);
     } else {
@@ -1042,8 +1042,8 @@ static void lrec_bt_elem_insert_print(LogRec *logrec)
     unsigned char *eflagptr = bkeyptr + real_nbkey;
     char *attrptr = (char*)(eflagptr + log->body.neflag + log->body.vallen);
 
-    char bkeystr[90];
-    char eflagstr[90];
+    char bkeystr[MAX_BKEY_LENG*2 + 20];
+    char eflagstr[MAX_EFLAG_LENG*2 + 20];
     char attrstr[180];
     lrec_bkey_print(log->body.nbkey, bkeyptr, bkeystr);
     if (log->body.neflag > 0) {
@@ -1110,7 +1110,7 @@ static void lrec_bt_elem_delete_print(LogRec *logrec)
     char *keyptr = log->body.data;
     unsigned char *bkeyptr = (unsigned char*)(keyptr + log->body.keylen);
 
-    char bkeystr[90];
+    char bkeystr[MAX_BKEY_LENG*2 + 20];
     lrec_bkey_print(log->body.nbkey, bkeyptr, bkeystr);
     lrec_header_print(&log->header);
     fprintf(stderr, "[BODY  ] keylen=%u | keystr=%.*s | bkey=%s | drop=%s\r\n",
@@ -1210,8 +1210,8 @@ static void lrec_bt_elem_delete_logical_print(LogRec *logrec)
     char *fbkeyptr = keyptr + log->body.keylen;
     char *tbkeyptr = fbkeyptr + BTREE_REAL_NBKEY(log->body.from_nbkey);
 
-    char fbkeystr[90];
-    char tbkeystr[90];
+    char fbkeystr[MAX_BKEY_LENG*2 + 20];
+    char tbkeystr[MAX_BKEY_LENG*2 + 20];
     lrec_bkey_print(log->body.from_nbkey, (unsigned char *)fbkeyptr, fbkeystr);
     lrec_bkey_print(log->body.to_nbkey, (unsigned char*)tbkeyptr, tbkeystr);
 
@@ -1337,8 +1337,8 @@ static void lrec_snapshot_elem_link_print(LogRec *logrec)
                 body->nekey, body->nekey, valptr,
                 body->nbytes, (body->nbytes-2 <= 250 ? body->nbytes-2 : 250), (valptr + body->nekey));
     } else if (log->header.updtype == UPD_BT_ELEM_INSERT) {
-        char bkeystr[90];
-        char eflagstr[90];
+        char bkeystr[MAX_BKEY_LENG*2 + 20];
+        char eflagstr[MAX_EFLAG_LENG*2 + 20];
         unsigned char *bkeyptr = (unsigned char*)valptr;
         unsigned char *eflagptr = (unsigned char*)(valptr + BTREE_REAL_NBKEY(body->nekey));
         lrec_bkey_print(body->nekey, bkeyptr, bkeystr);

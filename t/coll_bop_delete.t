@@ -24,7 +24,7 @@ bop delete bkey1 0..0xFF: CLIENT_ERROR bad command line format
 bop delete bkey1 0x00..0xFFF: CLIENT_ERROR bad command line format
 bop delete bkey1 0x11..0xFFFF: NOT_FOUND_ELEMENT
 bop delete bkey1 0x00..0xFF 1 EQ 0x05: NOT_FOUND_ELEMENT
-bop delete bkey1 0x00..0xFF 32 EQ 0x05: CLIENT_ERROR bad command line format
+bop delete bkey1 0x00..0xFF 64 EQ 0x05: CLIENT_ERROR bad command line format
 bop delete bkey1 0x00..0xFF 1 XX 0x05: CLIENT_ERROR bad command line format
 bop delete bkey1 0x00..0xFF 0 & 0xFFFFFF EQ 0x03: CLIENT_ERROR bad command line format
 bop delete bkey1 0x00..0xFF 0 & 0xFFFFFF EQ 0x030303: NOT_FOUND_ELEMENT
@@ -115,7 +115,7 @@ $cmd = "bop delete bkey1 0x11..0xFFFF"; $rst = "NOT_FOUND_ELEMENT";
 mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop delete bkey1 0x00..0xFF 1 EQ 0x05"; $rst = "NOT_FOUND_ELEMENT";
 mem_cmd_is($sock, $cmd, "", $rst);
-$cmd = "bop delete bkey1 0x00..0xFF 32 EQ 0x05"; $rst = "CLIENT_ERROR bad command line format";
+$cmd = "bop delete bkey1 0x00..0xFF 64 EQ 0x05"; $rst = "CLIENT_ERROR bad command line format";
 mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "bop delete bkey1 0x00..0xFF 1 XX 0x05"; $rst = "CLIENT_ERROR bad command line format";
 mem_cmd_is($sock, $cmd, "", $rst);
