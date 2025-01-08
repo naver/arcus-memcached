@@ -236,8 +236,7 @@ typedef struct _set_hash_node {
     uint16_t refcount;
     uint8_t  slabs_clsid;         /* which slab class we're in */
     uint8_t  hdepth;
-    uint16_t tot_elem_cnt;
-    uint16_t tot_hash_cnt;
+    uint32_t tot_elem_cnt;
     int16_t  hcnt[SET_HASHTAB_SIZE];
     void    *htab[SET_HASHTAB_SIZE];
 } set_hash_node;
