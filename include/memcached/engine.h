@@ -654,6 +654,11 @@ extern "C" {
             token_t *tokenes, const size_t ntokens, int *length);
 
         /**
+         * Get number of prefixes in engine
+         */
+        int (*prefix_count)(ENGINE_HANDLE* handle, const void* cookie);
+
+        /**
          * Set engine config.
          *
          * @param handle the engine handle
