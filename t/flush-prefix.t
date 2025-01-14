@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 6001;
+use Test::More tests => 502;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -14,7 +14,23 @@ my $val;
 my $rst;
 my $size;
 my $count;
-my $prefix_size = 1000;
+my $prefix_size = 50;
+my $big_prefix_size = 100;
+
+sub prefix_limit_test {
+  for ($size = 0; $size < $big_prefix_size; $size++) {
+    $cmd = "set pname$size:foo 0 0 6"; $val = "fooval"; $rst = "STORED";
+    mem_cmd_is($sock, $cmd, $val, $rst);
+  }
+
+  $cmd = "stats detail dump"; $rst = "DENIED too many prefixes";
+  mem_cmd_is($sock, $cmd, "", $rst);
+
+  for ($size = 0; $size < $big_prefix_size; $size++) {
+    $cmd = "flush_prefix pname$size"; $rst = "OK";
+    mem_cmd_is($sock, $cmd, "", $rst);
+  }
+}
 
 sub prefix_insert {
   for ($size = 0; $size < $prefix_size; $size++) {
@@ -83,6 +99,7 @@ sub count_prefix_empty {
 
 $cmd = "stats detail on"; $rst = "OK";
 mem_cmd_is($sock, $cmd, "", $rst);
+prefix_limit_test();
 prefix_insert();
 count_prefix_exist();
 item_get_hit();

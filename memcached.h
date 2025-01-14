@@ -244,6 +244,7 @@ struct settings {
     uint32_t max_btree_size;     /* Maximum elements in b+tree collection */
     uint32_t max_element_bytes;  /* Maximum element bytes of collections */
     uint32_t scrub_count;        /* count of scrubbing items at each try */
+    uint32_t max_stats_prefixes; /* Maximum prefixes to view stats */
     int topkeys;            /* Number of top keys to track */
     struct {
         EXTENSION_DAEMON_DESCRIPTOR *daemons;

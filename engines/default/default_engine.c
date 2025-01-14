@@ -1217,6 +1217,18 @@ default_prefix_dump_stats(ENGINE_HANDLE* handle, const void* cookie,
     return stats;
 }
 
+static int
+default_prefix_count(ENGINE_HANDLE* handle, const void* cookie)
+{
+    struct default_engine* engine = get_handle(handle);
+    int prefix_cnt;
+
+    pthread_mutex_lock(&engine->cache_lock);
+    prefix_cnt = prefix_count();
+    pthread_mutex_unlock(&engine->cache_lock);
+    return prefix_cnt;
+}
+
 /*
  * Dump API
  */
@@ -2012,6 +2024,7 @@ create_instance(uint64_t interface, GET_SERVER_API get_server_api,
          .get_stats        = default_get_stats,
          .reset_stats      = default_reset_stats,
          .prefix_dump_stats = default_prefix_dump_stats,
+         .prefix_count     = default_prefix_count,
          /* Dump API */
          .cachedump        = default_cachedump,
          .dump             = default_dump,

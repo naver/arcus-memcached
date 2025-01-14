@@ -535,7 +535,11 @@ static uint32_t do_count_invalid_prefix(void)
 
 uint32_t prefix_count(void)
 {
-    return prefxp->total_prefix_items;
+    int prefix_cnt = prefxp->total_prefix_items;
+    if (null_pt->total_count_exclusive > 0) {
+        prefix_cnt += 1;
+    }
+    return prefix_cnt;
 }
 
 static int _prefix_stats_write_buffer(char *buffer, const size_t buflen,

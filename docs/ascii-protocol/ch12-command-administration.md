@@ -362,6 +362,7 @@ STAT max_map_size 50000
 STAT max_btree_size 50000
 STAT max_element_bytes 16384
 STAT scrub_count 96
+STAT max_stats_prefixes 50
 STAT topkeys 0
 STAT logger syslog
 STAT ascii_extension scrub
@@ -399,6 +400,7 @@ END
 | max_map_size       | map collection의 최대 element 갯수                           |
 | max_btree_size     | btree collection의 최대 element 갯수                         |
 | max_element_bytes  | collection element 데이터의 최대 크기                        |
+| max_stats_prefixes | prefix stat 정보를 조회하는 명령이 가능한 prefix 최대 개수       |
 | topkeys            | 추적하고 있는 topkey 개수                                    |
 | logger             | 사용 중인 logger extension                                   |
 | ascii_extension    | 사용 중인 ASCII protocol extension                           |
@@ -514,6 +516,13 @@ space_shortage_level이 10 이상으로 올라가면, background에서 아이템
 
 모든 prefix들의 item 통계 정보의 결과 예는 아래와 같다.
 \<null\> prefix 통계는 prefix를 가지지 않는 items 통계이다.
+
+예외 사항으로 prefix들의 통계 정보를 조회할 때, 조회되는 개수가 설정된 "max_stats_prefixes" 값(기본값: 50)을 초과하면 조회가 불가능하다.
+필요한 경우, "stats prefixlist" 명령을 사용하여 특정 prefix의 정보를 선택적으로 조회하거나 "config max_stats_prefixes \<value\>" 명령어로 제한 개수 변경이 가능하다.
+
+| Response String | 설명 |
+| --------------- | ---- |
+| "DENIED too many prefixes" | 조회하려는 prefix 개수가 제한을 초과함 |
 
 ```
 PREFIX <null> itm 2 kitm 1 litm 1 sitm 0 mitm 0 bitm 0 tsz 144 ktsz 64 ltsz 80 stsz 0 mtsz 0 btsz 0 time 20121105152422
@@ -718,6 +727,7 @@ ARCUS Cache Server는 특정 configuration에 대해 동적으로 변경하거�
 - max_collection_size
 - max_element_bytes
 - scrub_count
+- max_stats_prefixes
 
 ### Config verbosity
 
@@ -808,6 +818,14 @@ ARCUS Cache Server에는 더 이상 유효하지 않은 아이템을 일괄 삭�
 
 ```
 config scrub_count [<scrub_count>]\r\n
+```
+
+### Config max_stats_prefixes
+
+ARCUS Cache Server에서 한번에 조회할 수 있는 prefix stat의 최대 개수를 변경/조회 한다.
+\<value\> 인자가 생략되면 현재 설정되어 있는 prefix stat의 최대 개수를 조회한다.
+```
+config max_stats_prefixes [<value>]\r\n
 ```
 
 ## Command Logging

@@ -359,6 +359,7 @@ static void settings_init(void)
     settings.max_btree_size = 50000; /* DEFAULT_MAX_BTREE_SIZE */
     settings.max_element_bytes = 16 * 1024; /* DEFAULT_MAX_ELEMENT_BYTES */
     settings.scrub_count = 96; /* DEFAULT_SCRUB_COUNT */
+    settings.max_stats_prefixes = 50;
     settings.topkeys = 0;
     settings.require_sasl = false;
     settings.extensions.logger = get_stderr_logger();
@@ -7835,6 +7836,10 @@ inline static void process_stats_detail(conn *c, const char *command)
             out_string(c, "OK");
         }
         else if (strcmp(command, "dump") == 0) {
+            if (stats_prefix_count() > settings.max_stats_prefixes) {
+                out_string(c, "DENIED too many prefixes");
+                return;
+            }
             int len;
             char *stats = stats_prefix_dump(NULL, 0, &len);
             if (stats == NULL) {
@@ -8148,6 +8153,7 @@ static void process_stats_settings(ADD_STAT add_stats, void *c)
     APPEND_STAT("max_btree_size", "%u", settings.max_btree_size);
     APPEND_STAT("max_element_bytes", "%u", settings.max_element_bytes);
     APPEND_STAT("scrub_count", "%u", settings.scrub_count);
+    APPEND_STAT("max_stats_prefixes", "%u", settings.max_stats_prefixes);
     APPEND_STAT("topkeys", "%d", settings.topkeys);
 #ifdef ENABLE_ZK_INTEGRATION
     APPEND_STAT("hb_timeout", "%u", hb_confs.timeout);
@@ -8239,6 +8245,10 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
             out_string(c, "CLIENT_ERROR usage: stats prefixes");
             return;
         }
+        if (mc_engine.v1->prefix_count(mc_engine.v0, c) > settings.max_stats_prefixes) {
+            out_string(c, "DENIED too many prefixes");
+            return;
+        }
         stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, NULL, 0, &len);
         if (stats == NULL) {
             if (len == -1)
@@ -8259,8 +8269,19 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
             out_string(c, "CLIENT_ERROR subcommand(item|operation) is required");
             return;
         } else if (strcmp(tokens[2].value, "item") == 0) {
+            if ((prefixes == NULL &&
+                mc_engine.v1->prefix_count(mc_engine.v0, c) > settings.max_stats_prefixes) ||
+                nprefixes > settings.max_stats_prefixes) {
+                out_string(c, "DENIED too many prefixes");
+                return;
+            }
             stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, prefixes, nprefixes, &len);
         } else if (strcmp(tokens[2].value, "operation") == 0) {
+            if ((prefixes == NULL && stats_prefix_count() > settings.max_stats_prefixes) ||
+                nprefixes > settings.max_stats_prefixes) {
+                out_string(c, "DENIED too many prefixes");
+                return;
+            }
             stats = stats_prefix_dump(prefixes, nprefixes, &len);
         } else {
             out_string(c, "CLIENT_ERROR bad command line format");
@@ -9031,6 +9052,26 @@ static void process_scrubcount_command(conn *c, token_t *tokens, const size_t nt
     }
 }
 
+static void process_maxstatsprefixes_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    char *config_val = tokens[SUBCOMMAND_TOKEN+1].value;
+    uint32_t new_max_stats_prefixes;
+
+    if (ntokens == 3) {
+        char buf[50];
+        sprintf(buf, "max_stats_prefixes %u\r\nEND", settings.max_stats_prefixes);
+        out_string(c, buf);
+    } else if (ntokens == 4 && safe_strtoul(config_val, &new_max_stats_prefixes)) {
+        LOCK_SETTING();
+        settings.max_stats_prefixes = new_max_stats_prefixes;
+        UNLOCK_SETTING();
+        out_string(c, "END");
+    } else {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "CLIENT_ERROR bad command line format");
+    }
+}
+
 static void process_verbosity_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
@@ -9189,6 +9230,9 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     }
     else if (strcmp(config_key, "scrub_count") == 0) {
         process_scrubcount_command(c, tokens, ntokens);
+    }
+    else if (strcmp(config_key, "max_stats_prefixes") == 0) {
+        process_maxstatsprefixes_command(c, tokens, ntokens);
     }
 #ifdef ENABLE_ZK_INTEGRATION
     else if (strcmp(config_key, "zkfailstop") == 0) {
@@ -9471,6 +9515,7 @@ static void process_help_command(conn *c, token_t *tokens, const size_t ntokens)
         "\t" "config max_btree_size [<maxsize>]\\r\\n" "\n"
         "\t" "config max_element_bytes [<maxbytes>]\\r\\n" "\n"
         "\t" "config scrub_count [<count>]\\r\\n" "\n"
+        "\t" "config max_stats_prefixes [<value>]\\r\\n" "\n"
 #ifdef ENABLE_ZK_INTEGRATION
         "\t" "config hbtimeout [<hbtimeout>]\\r\\n" "\n"
         "\t" "config hbfailstop [<hbfailstop>]\\r\\n" "\n"
