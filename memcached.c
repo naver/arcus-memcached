@@ -7693,6 +7693,46 @@ static void write_and_free(conn *c, char *buf, int bytes)
     c->write_and_go = conn_new_cmd;
 }
 
+static bool authenticated_ascii(conn *c, token_t *tokens, const size_t ntokens)
+{
+    if (c->authenticated) {
+        return true;
+    }
+
+    if ((ntokens >= 5) &&
+        (strcmp(tokens[COMMAND_TOKEN].value, "bop") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "lop") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "mop") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "sop") == 0)) {
+        return (strncmp(tokens[KEY_TOKEN+1].value, "arcus:", 6) == 0);
+    }
+    if ((ntokens >= 3) &&
+        (strcmp(tokens[COMMAND_TOKEN].value, "get") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "set") == 0)) {
+        return (strncmp(tokens[KEY_TOKEN].value, "arcus:", 6) == 0);
+    }
+    if ((ntokens >= 2) &&
+        (strcmp(tokens[COMMAND_TOKEN].value, "dump") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "cmdlog") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "config") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "flush_all") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "flush_prefix") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "getattr") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "help") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "lqdetect") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "quit") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "ready") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "scan") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "setattr") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "shutdown") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "stats") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "version") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "zkensmeble") == 0)) {
+        return true;
+    }
+    return false;
+}
+
 #ifdef JHPARK_OLD_SMGET_INTERFACE
 static inline int set_smget_mode_maybe(conn *c, token_t *tokens, size_t ntokens)
 {
@@ -13092,6 +13132,11 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
 
     ntokens = tokenize_command(command, cmdlen, tokens, MAX_TOKENS);
 
+    if (settings.require_sasl && !authenticated_ascii(c, tokens, ntokens)) {
+        out_string(c, "CLIENT_ERROR unauthenticated");
+        return;
+    }
+
     if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "get") == 0))
     {
         process_get_command(c, tokens, ntokens, false);
@@ -15061,7 +15106,6 @@ int main (int argc, char **argv)
     int cache_memory_limit = 0;
     int sticky_memory_limit = 0;
 
-    bool protocol_specified = false;
     bool tcp_specified = false;
     bool udp_specified = false;
 
@@ -15274,7 +15318,6 @@ int main (int argc, char **argv)
             settings.backlog = atoi(optarg);
             break;
         case 'B':
-            protocol_specified = true;
             if (strcmp(optarg, "auto") == 0) {
                 settings.binding_protocol = negotiating_prot;
             } else if (strcmp(optarg, "binary") == 0) {
@@ -15396,23 +15439,6 @@ int main (int argc, char **argv)
         settings.topkeys = atoi(topkeys_env);
         if (settings.topkeys < 0) {
             settings.topkeys = 0;
-        }
-    }
-
-    if (settings.require_sasl) {
-        if (!protocol_specified) {
-            settings.binding_protocol = binary_prot;
-        } else {
-            if (settings.binding_protocol == negotiating_prot) {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "ERROR: You cannot use auto-negotiating protocol while requiring SASL.\n");
-                exit(EX_USAGE);
-            }
-            if (settings.binding_protocol == ascii_prot) {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "ERROR: You cannot use only ASCII protocol while requiring SASL.\n");
-                exit(EX_USAGE);
-            }
         }
     }
 
