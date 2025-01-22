@@ -1255,6 +1255,7 @@ char *stats_prefix_dump(token_t *tokens, const size_t ntokens, int *length)
     if (buf == NULL) {
         perror("Can't allocate stats response: malloc");
         UNLOCK_STATS();
+        *length = 0;
         return NULL;
     }
 
