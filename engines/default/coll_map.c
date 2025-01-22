@@ -151,8 +151,8 @@ static map_hash_node *do_map_node_alloc(uint8_t hash_depth, const void *cookie)
 
         node->refcount    = 0;
         node->hdepth      = hash_depth;
-        node->tot_hash_cnt = 0;
-        node->tot_elem_cnt = 0;
+        node->cur_hash_cnt = 0;
+        node->cur_elem_cnt = 0;
         memset(node->hcnt, 0, MAP_HASHTAB_SIZE*sizeof(uint16_t));
         memset(node->htab, 0, MAP_HASHTAB_SIZE*sizeof(void*));
     }
@@ -222,12 +222,12 @@ static void do_map_node_link(map_meta_info *info,
             num_found ++;
         }
         assert(num_found  == num_elems);
-        node->tot_elem_cnt = num_found ;
+        node->cur_elem_cnt = num_found ;
 
         par_node->htab[par_hidx] = node;
         par_node->hcnt[par_hidx] = -1; /* child hash node */
-        par_node->tot_elem_cnt -= num_found ;
-        par_node->tot_hash_cnt += 1;
+        par_node->cur_elem_cnt -= num_found ;
+        par_node->cur_hash_cnt += 1;
     }
 
     if (1) { /* apply memory space */
@@ -244,8 +244,8 @@ static void do_map_node_unlink(map_meta_info *info,
     if (par_node == NULL) {
         node = info->root;
         info->root = NULL;
-        assert(node->tot_hash_cnt == 0);
-        assert(node->tot_elem_cnt == 0);
+        assert(node->cur_hash_cnt == 0);
+        assert(node->cur_elem_cnt == 0);
     } else {
         assert(par_node->hcnt[par_hidx] == -1); /* child hash node */
         map_elem_item *head = NULL;
@@ -253,7 +253,7 @@ static void do_map_node_unlink(map_meta_info *info,
         int hidx, fcnt = 0;
 
         node = (map_hash_node *)par_node->htab[par_hidx];
-        assert(node->tot_hash_cnt == 0);
+        assert(node->cur_hash_cnt == 0);
 
         for (hidx = 0; hidx < MAP_HASHTAB_SIZE; hidx++) {
             assert(node->hcnt[hidx] >= 0);
@@ -270,13 +270,13 @@ static void do_map_node_unlink(map_meta_info *info,
                 assert(node->hcnt[hidx] == 0);
             }
         }
-        assert(fcnt == node->tot_elem_cnt);
-        node->tot_elem_cnt = 0;
+        assert(fcnt == node->cur_elem_cnt);
+        node->cur_elem_cnt = 0;
 
         par_node->htab[par_hidx] = head;
         par_node->hcnt[par_hidx] = fcnt;
-        par_node->tot_elem_cnt += fcnt;
-        par_node->tot_hash_cnt -= 1;
+        par_node->cur_elem_cnt += fcnt;
+        par_node->cur_hash_cnt -= 1;
     }
 
     if (info->stotal > 0) { /* apply memory space */
@@ -412,7 +412,7 @@ static ENGINE_ERROR_CODE do_map_elem_link(map_meta_info *info, map_elem_item *el
     elem->next = node->htab[hidx];
     node->htab[hidx] = elem;
     node->hcnt[hidx] += 1;
-    node->tot_elem_cnt += 1;
+    node->cur_elem_cnt += 1;
 
     info->ccnt++;
 
@@ -433,7 +433,7 @@ static void do_map_elem_unlink(map_meta_info *info,
     else              node->htab[hidx] = elem->next;
     elem->next = (map_elem_item *)ADDR_MEANS_UNLINKED;
     node->hcnt[hidx] -= 1;
-    node->tot_elem_cnt -= 1;
+    node->cur_elem_cnt -= 1;
     info->ccnt--;
 
     CLOG_MAP_ELEM_DELETE(info, elem, cause);
@@ -459,8 +459,8 @@ static bool do_map_elem_traverse_dfs_byfield(map_meta_info *info, map_hash_node 
         map_hash_node *child_node = node->htab[hidx];
         ret = do_map_elem_traverse_dfs_byfield(info, child_node, hval, field, delete, elem_array);
         if (ret && delete) {
-            if (child_node->tot_hash_cnt == 0 &&
-                child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
+            if (child_node->cur_hash_cnt == 0 &&
+                child_node->cur_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
                 do_map_node_unlink(info, node, hidx);
             }
         }
@@ -504,8 +504,8 @@ static int do_map_elem_traverse_dfs_bycnt(map_meta_info *info, map_hash_node *no
             fcnt += do_map_elem_traverse_dfs_bycnt(info, child_node, rcnt, delete,
                                                   (elem_array==NULL ? NULL : &elem_array[fcnt]), cause);
             if (delete) {
-                if (child_node->tot_hash_cnt == 0 &&
-                    child_node->tot_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
+                if (child_node->cur_hash_cnt == 0 &&
+                    child_node->cur_elem_cnt < (MAP_MAX_HASHCHAIN_SIZE/2)) {
                     do_map_node_unlink(info, node, hidx);
                 }
             }
@@ -545,7 +545,7 @@ static uint32_t do_map_elem_delete_with_field(map_meta_info *info, const int num
                 }
             }
         }
-        if (info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
+        if (info->root->cur_hash_cnt == 0 && info->root->cur_elem_cnt == 0) {
             do_map_node_unlink(info, NULL, 0);
         }
         CLOG_ELEM_DELETE_END((coll_meta_info*)info, cause);
@@ -638,7 +638,7 @@ static uint32_t do_map_elem_delete(map_meta_info *info, const uint32_t count,
     uint32_t fcnt = 0;
     if (info->root != NULL) {
         fcnt = do_map_elem_traverse_dfs_bycnt(info, info->root, count, true, NULL, cause);
-        if (info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
+        if (info->root->cur_hash_cnt == 0 && info->root->cur_elem_cnt == 0) {
             do_map_node_unlink(info, NULL, 0);
         }
     }
@@ -667,7 +667,7 @@ static uint32_t do_map_elem_get(map_meta_info *info,
             }
         }
     }
-    if (delete && info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
+    if (delete && info->root->cur_hash_cnt == 0 && info->root->cur_elem_cnt == 0) {
         do_map_node_unlink(info, NULL, 0);
     }
     if (delete) {

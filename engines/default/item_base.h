@@ -260,8 +260,8 @@ typedef struct _map_hash_node {
     uint16_t refcount;
     uint8_t  slabs_clsid;         /* which slab class we're in */
     uint8_t  hdepth;
-    uint16_t tot_elem_cnt;
-    uint16_t tot_hash_cnt;
+    uint16_t cur_elem_cnt;
+    uint16_t cur_hash_cnt;
     int16_t  hcnt[MAP_HASHTAB_SIZE];
     void    *htab[MAP_HASHTAB_SIZE];
 } map_hash_node;
