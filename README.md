@@ -122,12 +122,12 @@ https://github.com/naver/arcus-memcached/issues
 In addition to those who had contributed to the original memcached,
 the following people at NAVER have contributed to arcus-memcached.
 
-JunHyun Park <junhyun.park@navercorp.com>; <jhpark816@gmail.com>  
-HyongYoub Kim <hyongyoub.kim@navercorp.com>  
-YeaSol Kim (ngleader) <sol.k@navercorp.com>; <ngleader@gmail.com>  
-HoonMin Kim (harebox) <hoonmin.kim@navercorp.com>; <harebox@gmail.com>  
-SeongHwan Jeong (scryner) <scryner@nhnent.com>  
-Chang Song <chang.song@navercorp.com>  
+- JunHyun Park <junhyun.park@navercorp.com>; <jhpark816@gmail.com>
+- HyongYoub Kim <hyongyoub.kim@navercorp.com>
+- YeaSol Kim (ngleader) <sol.k@navercorp.com>; <ngleader@gmail.com>
+- HoonMin Kim (harebox) <hoonmin.kim@navercorp.com>; <harebox@gmail.com>
+- SeongHwan Jeong (scryner) <scryner@nhnent.com>
+- Chang Song <chang.song@navercorp.com>
 
 ## License
 
