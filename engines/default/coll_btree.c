@@ -1824,27 +1824,21 @@ static ENGINE_ERROR_CODE do_btree_elem_update(btree_meta_info *info,
 }
 
 #ifdef BTREE_DELETE_NO_MERGE
-static int do_btree_elem_delete_fast(btree_meta_info *info,
-                                     btree_elem_posi *path, const uint32_t count)
+static int do_btree_elem_delete_fast(btree_meta_info *info, const uint32_t count)
 {
     btree_indx_node *node;
     btree_elem_item *elem;
     int i, delcnt=0;
-    int cur_depth;
+    int cur_depth = 0;
 
     if (info->root == NULL) {
         return 0;
     }
     assert(info->root->ndepth < BTREE_MAX_DEPTH);
 
-    if (path[0].node == NULL) {
-        path[0].node = do_btree_get_first_leaf(info->root, path);
-        cur_depth = 0;
-    } else {
-        cur_depth = path[0].indx; /* it's used to keep btree depth on delete */
-    }
-
-    node = path[cur_depth].node;
+    btree_elem_posi path[BTREE_MAX_DEPTH];
+    path[0].node = do_btree_get_first_leaf(info->root, path);
+    node = path[0].node;
     while (node != NULL) {
         /* delete element items or lower nodes */
         if (node->ndepth == 0) { /* leaf node */
@@ -1858,27 +1852,41 @@ static int do_btree_elem_delete_fast(btree_meta_info *info,
                 }
             }
         } else {
-            for (i = 0; i < node->used_count; i++) {
-                do_btree_node_free(node->item[i]);
+            if (node == path[node->ndepth].node) {
+                for (i = 1; i < node->used_count; i++)
+                    do_btree_node_free(node->item[i]);
+            }
+            else {
+                for (i = 0; i < node->used_count; i++)
+                    do_btree_node_free(node->item[i]);
             }
         }
-        delcnt += node->used_count;
+        if (node->ndepth != 0 && node == path[node->ndepth].node) {
+            delcnt += node->used_count - 1;
+            node->used_count = 1;
+        } else {
+            delcnt += node->used_count;
+            node->used_count = 0;
+        }
 
         /* get the next node */
         node = node->next;
+        path[cur_depth].node->next = node;
         if (node == NULL && cur_depth < info->root->ndepth) {
             cur_depth += 1;
             node = path[cur_depth].node;
         }
 
         /* check if current deletion should be stopped */
-        if (count > 0 && delcnt >= count) {
-            path[cur_depth].node = node;
-            path[0].indx = cur_depth;
+        if (count > 0 && delcnt >= count)
             break;
-        }
     }
-    if (node == NULL) {
+    if (node == NULL && cur_depth == info->root->ndepth) {
+        for (cur_depth = 1; cur_depth <= info->root->ndepth; cur_depth++) {
+            do_btree_node_free(path[cur_depth].node->item[0]);
+        }
+        do_btree_node_free(info->root);
+        delcnt += info->root->ndepth + 1;
         info->root = NULL;
         info->ccnt = 0;
         if (info->stotal > 0) {
