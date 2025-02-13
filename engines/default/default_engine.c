@@ -255,6 +255,8 @@ default_initialize(ENGINE_HANDLE* handle, const char* config_str)
     struct default_engine* se = get_handle(handle);
     logger = se->server.log->get_logger();
 
+    srand(time(NULL));
+
     ENGINE_ERROR_CODE ret = initialize_configuration(se, config_str);
     if (ret != ENGINE_SUCCESS) {
         return ret;
