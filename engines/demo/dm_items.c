@@ -28,7 +28,6 @@
 
 #include "demo_engine.h"
 
-//#define SET_DELETE_NO_MERGE
 //#define BTREE_DELETE_NO_MERGE
 
 /* item unlink cause */

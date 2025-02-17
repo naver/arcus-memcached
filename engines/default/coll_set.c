@@ -55,7 +55,6 @@ static inline void UNLOCK_CACHE(void)
 /*
  * SET collection manangement
  */
-//#define SET_DELETE_NO_MERGE
 
 #define SET_GET_HASHIDX(hval, hdepth) \
         (((hval) & (SET_HASHIDX_MASK << ((hdepth)*4))) >> ((hdepth)*4))
@@ -446,51 +445,6 @@ static ENGINE_ERROR_CODE do_set_elem_delete_with_value(set_meta_info *info,
     return ret;
 }
 
-#ifdef SET_DELETE_NO_MERGE
-static uint32_t do_set_elem_traverse_fast(set_meta_info *info,
-                                          set_hash_node *node, const uint32_t count)
-{
-    int hidx;
-    int fcnt = 0;
-
-    /* node has child node */
-    if (node->tot_hash_cnt > 0) {
-        for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
-            if (node->hcnt[hidx] == -1) {
-                set_hash_node *childnode = (set_hash_node *)node->htab[hidx];
-                fcnt += do_set_elem_traverse_fast(info, childnode,
-                                                  (count == 0 ? 0 : (count - fcnt)));
-
-                if (childnode->tot_hash_cnt == 0 && childnode->tot_elem_cnt == 0) {
-                    node->htab[hidx] = NULL;
-                    node->hcnt[hidx] = 0;
-                    do_set_node_free(childnode);
-                    node->tot_hash_cnt -= 1;
-                }
-                if (count > 0 && fcnt >= count) {
-                    return fcnt;
-                }
-            }
-        }
-    }
-    for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
-        if (node->hcnt[hidx] > 0) {
-            set_elem_item *elem;
-            while ((elem = node->htab[hidx]) != NULL) {
-                node->htab[hidx] = elem->next;
-                elem->next = (set_elem_item *)ADDR_MEANS_UNLINKED;
-                if (elem->refcount == 0)
-                    do_set_elem_free(elem);
-            }
-            fcnt += node->hcnt[hidx];
-            node->tot_elem_cnt -= node->hcnt[hidx];
-            node->hcnt[hidx] = 0;
-        }
-    }
-    return fcnt;
-}
-#endif
-
 static int do_set_elem_traverse_dfs(set_meta_info *info, set_hash_node *node,
                                     const uint32_t count, const bool delete,
                                     set_elem_item **elem_array)
@@ -531,25 +485,6 @@ static int do_set_elem_traverse_dfs(set_meta_info *info, set_hash_node *node,
     }
     return fcnt;
 }
-
-#ifdef SET_DELETE_NO_MERGE
-static uint32_t do_set_elem_delete_fast(set_meta_info *info, const uint32_t count)
-{
-    uint32_t fcnt = 0;
-    if (info->root != NULL) {
-        fcnt = do_set_elem_traverse_fast(info, info->root, count);
-        if (info->root->tot_hash_cnt == 0 && info->root->tot_elem_cnt == 0) {
-            do_set_node_free(info->root);
-            info->root = NULL;
-            info->ccnt = 0;
-            if (info->stotal > 0) { /* apply memory space */
-                do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_SET, info->stotal);
-            }
-        }
-    }
-    return fcnt;
-}
-#endif
 
 static uint32_t do_set_elem_delete(set_meta_info *info, const uint32_t count,
                                    enum elem_delete_cause cause)
