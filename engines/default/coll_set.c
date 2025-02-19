@@ -532,6 +532,37 @@ static int do_set_elem_traverse_dfs(set_meta_info *info, set_hash_node *node,
     return fcnt;
 }
 
+static int do_set_elem_traverse_sampling(set_meta_info *info, set_hash_node *node,
+                                         uint32_t remain, const uint32_t count,
+                                         set_elem_item **elem_array)
+{
+    int hidx;
+    int fcnt = 0; /* found count */
+
+    for (hidx = 0; hidx < SET_HASHTAB_SIZE; hidx++) {
+        if (node->hcnt[hidx] == -1) {
+            set_hash_node *child_node = (set_hash_node *)node->htab[hidx];
+            fcnt += do_set_elem_traverse_sampling(info, child_node, remain,
+                                                  count - fcnt, &elem_array[fcnt]);
+            remain -= child_node->tot_elem_cnt;
+        } else if (node->hcnt[hidx] > 0) {
+            set_elem_item *elem = node->htab[hidx];
+            while (elem != NULL) {
+                if ((rand() % remain) < (count - fcnt)) {
+                    elem->refcount++;
+                    elem_array[fcnt] = elem;
+                    fcnt++;
+                    if (fcnt >= count) break;
+                }
+                remain -= 1;
+                elem = elem->next;
+            }
+        }
+        if (fcnt >= count) break;
+    }
+    return fcnt;
+}
+
 static set_elem_item *do_set_elem_at_offset(set_meta_info *info, set_hash_node *node,
                                             uint32_t offset, const bool delete)
 {
@@ -601,7 +632,7 @@ static uint32_t do_set_elem_traverse_rand(set_meta_info *info,
             assert(found != NULL);
             elem_array[fcnt++] = found;
         }
-    } else { /* Use hash table */
+    } else if (count <= info->ccnt / 10) { /* Use hash table */
         hash_table offset_ht;
         if (!hash_init(&offset_ht, count))
             return 0;
@@ -615,6 +646,17 @@ static uint32_t do_set_elem_traverse_rand(set_meta_info *info,
             }
         }
         hash_free(&offset_ht);
+    } else { /* Use sampling */
+        fcnt = do_set_elem_traverse_sampling(info, info->root, info->ccnt,
+                                             count, elem_array);
+        for (int i = fcnt - 1; i > 0; i--) {
+            int rand_idx = rand() % (i + 1);
+            if (rand_idx != i) {
+                set_elem_item *temp = elem_array[i];
+                elem_array[i] = elem_array[rand_idx];
+                elem_array[rand_idx] = temp;
+            }
+        }
     }
     return fcnt;
 }
