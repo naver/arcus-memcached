@@ -84,6 +84,7 @@
 #define BIN_PKT_HDR_WORDS (MIN_BIN_PKT_LENGTH/sizeof(uint32_t))
 
 #define MAX_MGET_KEY_COUNT 10000
+#define MAX_SOP_GET_COUNT 1000
 
 #ifdef SUPPORT_BOP_MGET
 /* In bop mget, max limit on the number of given keys */

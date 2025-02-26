@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 83007;
+use Test::More tests => 83005;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -76,7 +76,6 @@ $rst = "ATTR count=2849
 ATTR maxcount=$default_set_size
 END";
 mem_cmd_is($sock, $cmd, "", $rst);
-assert_sop_get("skey 2849", $flags, 2849, 0, 2848);
 assert_sop_get("skey 0",    $flags, 2849, 0, 2848);
 $cmd = "sop exist skey 6"; $val="datum6"; $rst = "EXIST";
 mem_cmd_is($sock, $cmd, $val, $rst);
@@ -102,7 +101,7 @@ $rst = "ATTR count=10
 ATTR maxcount=$maximum_set_size
 END";
 mem_cmd_is($sock, $cmd, "", $rst);
-sop_get_is($sock, "skey 10", $flags, 10,
+sop_get_is($sock, "skey 0", $flags, 10,
            "datum0,datum1,datum2,datum3,datum4,datum5,datum6,datum7,datum8,datum9");
 $cmd = "sop delete skey 6"; $val="datum1"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, $val, $rst);
@@ -118,7 +117,7 @@ $cmd = "sop delete skey 6"; $val="datum3"; $rst = "NOT_FOUND_ELEMENT";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "sop delete skey 7"; $val="datum10"; $rst = "NOT_FOUND_ELEMENT";
 mem_cmd_is($sock, $cmd, $val, $rst);
-sop_get_is($sock, "skey 10 delete", $flags, 5,
+sop_get_is($sock, "skey 0 delete", $flags, 5,
            "datum0,datum2,datum4,datum6,datum8");
 $cmd = "sop insert skey 6"; $val="datum3"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
@@ -134,8 +133,7 @@ $rst = "ATTR count=50000
 ATTR maxcount=$maximum_set_size
 END";
 mem_cmd_is($sock, $cmd, "", $rst);
-assert_sop_get("skey 50000", $flags, 50000, 0, 49999);
-assert_sop_get("skey 0",     $flags, 50000, 0, 49999);
+assert_sop_get("skey 0", $flags, 50000, 0, 49999);
 $cmd = "sop delete skey 6"; $val="datum4"; $rst = "DELETED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "sop delete skey 7"; $val="datum44"; $rst = "DELETED";
@@ -182,7 +180,7 @@ mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "sop exist skey 10"; $val="datum26666"; $rst = "EXIST";
 mem_cmd_is($sock, $cmd, $val, $rst);
 sop_delete("skey", 40000, 49999);
-assert_sop_get("skey 20000 drop", $flags, 20000, 10000, 29999);
+assert_sop_get("skey 0 drop", $flags, 20000, 10000, 29999);
 $cmd = "get skey"; $rst = "END";
 mem_cmd_is($sock, $cmd, "", $rst);
 
@@ -278,7 +276,7 @@ $cmd = "sop insert skey 6"; $val = "datum4"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "sop insert skey 6"; $val = "datum5"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-sop_get_is($sock, "skey 5", $flags, 5,
+sop_get_is($sock, "skey 0", $flags, 5,
            "datum1,datum2,datum3,datum4,datum5");
 $cmd = "sop insert skey 6"; $val = "datum6"; $rst = "OVERFLOWED";
 mem_cmd_is($sock, $cmd, $val, $rst);
@@ -388,7 +386,7 @@ $cmd = "sop insert skey 6"; $val = "datum3"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "setattr skey expiretime=2"; $rst = "OK";
 mem_cmd_is($sock, $cmd, "", $rst);
-sop_get_is($sock, "skey 5",  $flags, 3, "datum1,datum2,datum3");
+sop_get_is($sock, "skey 0",  $flags, 3, "datum1,datum2,datum3");
 sleep(2.1);
 $cmd = "sop get skey 5"; $rst = "NOT_FOUND";
 mem_cmd_is($sock, $cmd, "", $rst);
@@ -404,7 +402,7 @@ $cmd = "sop insert skey 6"; $val = "datum2"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "sop insert skey 6"; $val = "datum3"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-sop_get_is($sock, "skey 5",  $flags, 3, "datum1,datum2,datum3");
+sop_get_is($sock, "skey 0",  $flags, 3, "datum1,datum2,datum3");
 $cmd = "flush_all"; $rst = "OK";
 mem_cmd_is($sock, $cmd, "", $rst);
 $cmd = "sop get skey 5"; $rst = "NOT_FOUND";
