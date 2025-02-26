@@ -10950,6 +10950,10 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
+        if (count > MAX_SOP_GET_COUNT) {
+            out_string(c, "DENIED too many count");
+            return;
+        }
         if (ntokens == 6) {
             if (strcmp(tokens[SOP_KEY_TOKEN+2].value, "delete")==0) {
                 delete = true;
