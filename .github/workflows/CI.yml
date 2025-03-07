@@ -10,14 +10,14 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
     - name: Install Arcus Server Dependency Packages
       run: sudo apt-get install -qq build-essential autoconf automake libtool
     - name: Cache ARCUS Directory
       id: arcus-cache
-      uses: actions/cache@v3.3.2
+      uses: actions/cache@v4
       with:
         path: ~/arcus
         key: ${{runner.os}}-arcus
