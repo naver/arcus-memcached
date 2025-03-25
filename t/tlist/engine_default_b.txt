@@ -76,6 +76,7 @@
 ./t/issue_68.t
 ./t/issue_70.t
 ./t/issue_arcus_151.t
+./t/issue_arcus_655.t
 ./t/issue_ee_599.t
 ./t/item_size_max.t
 ./t/line-lengths.t
