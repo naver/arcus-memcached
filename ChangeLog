@@ -1,64 +1,67 @@
 # 2024-07-11 [version 1.14.0]
 ## 🐣 New Features
-* Remove an unused command `bget`. #749
-* Add `shutdown` command. #752
-* Add `mop upsert` command. #772
+  - Remove an unused command `bget`. #749
+  - Add `shutdown` command. #752
+  - Add `mop upsert` command. #772
 ## 🔧 Enhancements
-* Enhance arcus_zk_watcher log messages.
-* Set the update flag only when `ZOO_CONNECTED_STATE`. #735
-* Reduce `add_iov()` work for TCP connections. #737
-* Refactor the method of building UDP headers.
-* Limit a value length from exceeding INT_MAX in binary protocol.
-* Enhance log message when new respones before pipe error reset.
-* Fix a clang static analyzer issue.
+  - Enhance arcus_zk_watcher log messages.
+  - Set the update flag only when `ZOO_CONNECTED_STATE`. #735
+  - Reduce `add_iov()` work for TCP connections. #737
+  - Refactor the method of building UDP headers.
+  - Limit a value length from exceeding INT_MAX in binary protocol.
+  - Enhance log message when new respones before pipe error reset.
+  - Fix a clang static analyzer issue.
 ## 🐛 Bug Fixes
-* Modify mismatched error types when `get_item_info()` failed.
-* Fix the wrong `write_and_free` error handling in binary protocol.
-* Fix problems about not released items and an assertion in UDP.
-* Wait till the previous cmdlog flush thread ends.
-* Correct wrong actions in `process_mop_prepare_nread()`.
+  - Modify mismatched error types when `get_item_info()` failed.
+  - Fix the wrong `write_and_free` error handling in binary protocol.
+  - Fix problems about not released items and an assertion in UDP.
+  - Wait till the previous cmdlog flush thread ends.
+  - Correct wrong actions in `process_mop_prepare_nread()`.
 ## 📝 Documentation
-* Remove old `bop smget` documentation.
-* Correct small memory allocator threshold.
-* Create Issue/PR templates.
-* Update the description of `cmdlog`, `lqdetect`, `dump` commands.
-* Add `mop upsert` document.
+  - Remove old `bop smget` documentation.
+  - Correct small memory allocator threshold.
+  - Create Issue/PR templates.
+  - Update the description of `cmdlog`, `lqdetect`, `dump` commands.
+  - Add `mop upsert` document.
 ## ✅ Testing
-* Add a distributed packet test about long key in UDP.
+  - Add a distributed packet test about long key in UDP.
 ## ⬆️ Dependency Upgrades
-* Update Docker base image from `centos:7` to `rockylinux:8`.
+  - Update Docker base image from `centos:7` to `rockylinux:8`.
 
 # 2024-01-17 [version 1.13.5]
 ## 🐣 New Features
-* Add `ready` command Add ready command to verify that the cache server can receive requests. In Zookeeper clustering, the cache node becomes ready state after creating its cache_list znode. #707
+  - Add `ready` command Add ready command to verify that the cache server
+    can receive requests. In Zookeeper clustering, the cache node becomes
+    ready state after creating its cache_list znode. #707
 ## 🔧 Enhancements
-* Fix compile warnings on RHEL8 and Ubuntu.
-* Add Dockerfile.
-* Changed the MAX_ZK_TO value from 300 to 2000 secs.
-* Use `<latest-release>-unknown` version when git describe fails.
-* Add zk_version to `stats zookeeper` response.
-* Summarize rejected connection log message occured frequently.
-* Modify mismatches between log level and verbose.
-* Check dependencies in the prefix path before the default path. #699
-* Compare core version and engine version when create_instance().
+  - Fix compile warnings on RHEL8 and Ubuntu.
+  - Add Dockerfile.
+  - Changed the MAX_ZK_TO value from 300 to 2000 secs.
+  - Use `<latest-release>-unknown` version when git describe fails.
+  - Add zk_version to `stats zookeeper` response.
+  - Summarize rejected connection log message occured frequently.
+  - Modify mismatches between log level and verbose.
+  - Check dependencies in the prefix path before the default path. #699
+  - Compare core version and engine version when create_instance().
 ## 🐛 Bug Fixes
-* Set `arcus_conf.zk_timeout` to the negotiated timeout with ZK server.
-* Terminate the process if any address already in use. #665
-* Convert string of exptime to int64_t in ASCII protocol. #711
-* Fix bop mget/smget parsing logics. #722 #724 #725
-* Do not use `out_string()` in binary protocol.
-* Fix a memory leak possible in UDP and binary protocol.
+  - Set `arcus_conf.zk_timeout` to the negotiated timeout with ZK server.
+  - Terminate the process if any address already in use. #665
+  - Convert string of exptime to int64_t in ASCII protocol. #711
+  - Fix bop mget/smget parsing logics. #722 #724 #725
+  - Do not use `out_string()` in binary protocol.
+  - Fix a memory leak possible in UDP and binary protocol.
 ## 📝 Documentation
-* Fix typo and remove whitespace.
-* Edit maxbkeyrange document.
-* Add texts for dependencies installation.
-* Restructure markdown documentation directory.
+  - Fix typo and remove whitespace.
+  - Edit maxbkeyrange document.
+  - Add texts for dependencies installation.
+  - Restructure markdown documentation directory.
 ## ✅ Testing
-* Use Github Actions instead of Travis for CI test.
-* Make possible to test `t/issue_67.t` even in root user.
-* Exclude all Makefiles from whitespace test.
+  - Use Github Actions instead of Travis for CI test.
+  - Make possible to test `t/issue_67.t` even in root user.
+  - Exclude all Makefiles from whitespace test.
 ## ⬆️ Dependency Upgrades
-* Modify to have dependency libraries(libevent and zookeeper-client-c) and add dependency libraries install script.
+  - Modify to have dependency libraries(libevent and zookeeper-client-c) and
+    add dependency libraries install script.
 
 2022-11-28 [version 1.13.4]
 	* [FEATURE]  Added "stats prefixlist" command.
