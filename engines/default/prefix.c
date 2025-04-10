@@ -546,10 +546,11 @@ static int _prefix_stats_write_buffer(char *buffer, const size_t buflen,
                                        const char *format, prefix_t *pt,
                                        const bool inclusive) {
 
-    int ret;
+    int ret = 0;
     struct tm *t;
     t = localtime(&pt->create_time);
     if (inclusive) {
+#ifdef NESTED_PREFIX
         ret = snprintf(buffer, buflen, format,
             pt == null_pt ? "<null>" : _get_prefix(pt),
             pt->total_count_inclusive,
@@ -571,6 +572,7 @@ static int _prefix_stats_write_buffer(char *buffer, const size_t buflen,
             */
             t->tm_year+1900, t->tm_mon+1, t->tm_mday,
             t->tm_hour, t->tm_min, t->tm_sec);
+#endif
     } else {
         ret = snprintf(buffer, buflen, format,
             pt == null_pt ? "<null>" : _get_prefix(pt),
