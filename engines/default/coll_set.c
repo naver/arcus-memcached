@@ -126,10 +126,10 @@ static inline bool is_leaf_node(set_hash_node *node)
 }
 
 static ENGINE_ERROR_CODE do_set_item_find(const void *key, const uint32_t nkey,
-                                          bool do_update, hash_item **item)
+                                          bool lru_update, hash_item **item)
 {
     *item = NULL;
-    hash_item *it = do_item_get(key, nkey, do_update);
+    hash_item *it = do_item_get(key, nkey, lru_update);
     if (it == NULL) {
         return ENGINE_KEY_ENOENT;
     }
@@ -869,7 +869,7 @@ ENGINE_ERROR_CODE set_elem_exist(const char *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 
     LOCK_CACHE();
-    ret = do_set_item_find(key, nkey, DO_UPDATE, &it);
+    ret = do_set_item_find(key, nkey, LRU_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         set_meta_info *info = (set_meta_info *)item_get_meta(it);
         do {
@@ -901,7 +901,7 @@ ENGINE_ERROR_CODE set_elem_get(const char *key, const uint32_t nkey,
     }
 
     LOCK_CACHE();
-    ret = do_set_item_find(key, nkey, DO_UPDATE, &it);
+    ret = do_set_item_find(key, nkey, LRU_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         set_meta_info *info = (set_meta_info *)item_get_meta(it);
         do {

@@ -1156,8 +1156,8 @@ void do_item_update(hash_item *it, bool force)
 }
 
 /** wrapper around assoc_find which does the lazy expiration logic */
-//static hash_item *do_item_get(const char *key, const uint32_t nkey, bool do_update)
-hash_item *do_item_get(const char *key, const uint32_t nkey, bool do_update)
+//static hash_item *do_item_get(const char *key, const uint32_t nkey, bool lru_update)
+hash_item *do_item_get(const char *key, const uint32_t nkey, bool lru_update)
 {
     hash_item *it = assoc_find(key, nkey, GEN_ITEM_KEY_HASH(key, nkey));
     if (it) {
@@ -1165,7 +1165,7 @@ hash_item *do_item_get(const char *key, const uint32_t nkey, bool do_update)
         if (do_item_isvalid(it, current_time)) {
             ITEM_REFCOUNT_INCR(it);
             DEBUG_REFCNT(it, '+');
-            if (do_update) {
+            if (lru_update) {
                 do_item_update(it, false);
             }
         } else {

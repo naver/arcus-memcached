@@ -77,10 +77,10 @@ static inline uint32_t do_map_elem_ntotal(map_elem_item *elem)
 }
 
 static ENGINE_ERROR_CODE do_map_item_find(const void *key, const uint32_t nkey,
-                                          bool do_update, hash_item **item)
+                                          bool lru_update, hash_item **item)
 {
     *item = NULL;
-    hash_item *it = do_item_get(key, nkey, do_update);
+    hash_item *it = do_item_get(key, nkey, lru_update);
     if (it == NULL) {
         return ENGINE_KEY_ENOENT;
     }
@@ -877,7 +877,7 @@ ENGINE_ERROR_CODE map_elem_get(const char *key, const uint32_t nkey,
     }
 
     LOCK_CACHE();
-    ret = do_map_item_find(key, nkey, DO_UPDATE, &it);
+    ret = do_map_item_find(key, nkey, LRU_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         map_meta_info *info = (map_meta_info *)item_get_meta(it);
         do {

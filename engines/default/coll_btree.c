@@ -184,10 +184,10 @@ static inline uint32_t do_btree_elem_ntotal(btree_elem_item *elem)
 }
 
 static ENGINE_ERROR_CODE do_btree_item_find(const void *key, const uint32_t nkey,
-                                            bool do_update, hash_item **item)
+                                            bool lru_update, hash_item **item)
 {
     *item = NULL;
-    hash_item *it = do_item_get(key, nkey, do_update);
+    hash_item *it = do_item_get(key, nkey, lru_update);
     if (it == NULL) {
         return ENGINE_KEY_ENOENT;
     }
@@ -3016,7 +3016,7 @@ do_btree_smget_scan_sort_old(token_t *key_array, const int key_count,
     *missed_key_count = 0;
 
     for (k = 0; k < key_count; k++) {
-        ret = do_btree_item_find(key_array[k].value, key_array[k].length, DO_UPDATE, &it);
+        ret = do_btree_item_find(key_array[k].value, key_array[k].length, LRU_UPDATE, &it);
         if (ret != ENGINE_SUCCESS) {
             if (ret == ENGINE_KEY_ENOENT) { /* key missed */
                 missed_key_array[*missed_key_count] = k;
@@ -3212,7 +3212,7 @@ do_btree_smget_scan_sort(token_t *key_array, const int key_count,
 
     for (k = 0; k < key_count; k++) {
         kidx = k;
-        ret = do_btree_item_find(key_array[k].value, key_array[k].length, DO_UPDATE, &it);
+        ret = do_btree_item_find(key_array[k].value, key_array[k].length, LRU_UPDATE, &it);
         if (ret != ENGINE_SUCCESS) {
             if (ret == ENGINE_KEY_ENOENT) { /* key missed */
                 do_btree_smget_add_miss(smres, kidx, ENGINE_KEY_ENOENT);
@@ -3908,7 +3908,7 @@ ENGINE_ERROR_CODE btree_elem_get(const char *key, const uint32_t nkey,
     }
 
     LOCK_CACHE();
-    ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
+    ret = do_btree_item_find(key, nkey, LRU_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
         do {
@@ -3976,7 +3976,7 @@ ENGINE_ERROR_CODE btree_elem_count(const char *key, const uint32_t nkey,
     int bkrtype = do_btree_bkey_range_type(bkrange);
 
     LOCK_CACHE();
-    ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
+    ret = do_btree_item_find(key, nkey, LRU_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
         do {
@@ -4004,7 +4004,7 @@ ENGINE_ERROR_CODE btree_posi_find(const char *key, const uint32_t nkey, const bk
     assert(bkrtype == BKEY_RANGE_TYPE_SIN);
 
     LOCK_CACHE();
-    ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
+    ret = do_btree_item_find(key, nkey, LRU_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
         do {
@@ -4040,7 +4040,7 @@ ENGINE_ERROR_CODE btree_posi_find_with_get(const char *key, const uint32_t nkey,
     assert(bkrtype == BKEY_RANGE_TYPE_SIN);
 
     LOCK_CACHE();
-    ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
+    ret = do_btree_item_find(key, nkey, LRU_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         btree_meta_info *info = (btree_meta_info *)item_get_meta(it);
         do {
@@ -4084,7 +4084,7 @@ ENGINE_ERROR_CODE btree_elem_get_by_posi(const char *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 
     LOCK_CACHE();
-    ret = do_btree_item_find(key, nkey, DO_UPDATE, &it);
+    ret = do_btree_item_find(key, nkey, LRU_UPDATE, &it);
     if (ret == ENGINE_SUCCESS) {
         uint32_t rqcount;
         bool     forward;

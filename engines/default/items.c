@@ -299,7 +299,7 @@ hash_item *item_get(const void *key, const uint32_t nkey)
 {
     hash_item *it;
     LOCK_CACHE();
-    it = do_item_get(key, nkey, DO_UPDATE);
+    it = do_item_get(key, nkey, LRU_UPDATE);
     UNLOCK_CACHE();
     return it;
 }
@@ -780,7 +780,7 @@ ENGINE_ERROR_CODE item_getattr(const void *key, const uint32_t nkey,
     ENGINE_ERROR_CODE ret;
 
     LOCK_CACHE();
-    it = do_item_get(key, nkey, DO_UPDATE);
+    it = do_item_get(key, nkey, LRU_UPDATE);
     if (it == NULL) {
         ret = ENGINE_KEY_ENOENT;
     } else {

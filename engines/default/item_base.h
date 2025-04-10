@@ -126,10 +126,10 @@ enum elem_delete_cause {
 /* LRU id of small memory items */
 #define LRU_CLSID_FOR_SMALL 0
 
-/* A do_update argument value representing that
+/* A lru_update argument value representing that
  * we should check and reposition items in the LRU list.
  */
-#define DO_UPDATE true
+#define LRU_UPDATE true
 #define DONT_UPDATE false
 
 #ifdef ENABLE_STICKY_ITEM
@@ -382,7 +382,7 @@ void              do_item_unlink(hash_item *it, enum item_unlink_cause cause);
 void              do_item_replace(hash_item *old_it, hash_item *new_it);
 void              do_item_update(hash_item *it, bool force);
 
-hash_item *do_item_get(const char *key, const uint32_t nkey, bool do_update);
+hash_item *do_item_get(const char *key, const uint32_t nkey, bool lru_update);
 void       do_item_release(hash_item *it);
 
 
