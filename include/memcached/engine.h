@@ -651,7 +651,7 @@ extern "C" {
          * Statistical information for each prefix
          */
         char *(*prefix_dump_stats)(ENGINE_HANDLE* handle, const void* cookie,
-            token_t *tokenes, const size_t ntokens, int *length);
+            token_t *tokens, const size_t ntokens, int *length);
 
         /**
          * Get number of prefixes in engine

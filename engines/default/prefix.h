@@ -80,7 +80,7 @@ void              prefix_bytes_incr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, co
 void              prefix_bytes_decr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t bytes);
 bool              prefix_isvalid(hash_item *it, rel_time_t current_time);
 uint32_t          prefix_count(void);
-char *            prefix_dump_stats(token_t *tokenes, const size_t ntokens, int *length);
+char *            prefix_dump_stats(token_t *tokens, const size_t ntokens, int *length);
 #ifdef SCAN_COMMAND
 int               prefix_scan_direct(const char *cursor, int req_count,
                                      void **item_array, int item_arrsz);
