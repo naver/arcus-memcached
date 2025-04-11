@@ -102,11 +102,17 @@
 	* [TEST]     added pipeline test case of swallowing normal data issue.
 	* [DOC]      added automatic scrub feature explanation.
 	* [CLEANUP]  refactored a lot of codes and docs.
+	* Unstable Items
+	  * Abnormal behavior when count is 0 with offset in bop mget/smget
 
-2021-10-26 [version 1.13.3]
+2021-10-26 [version 1.13.3] - UNSTABLE
 	* [FIX] wrong parsing of delay option in flush_prefix command.
+	* Unstable Items
+	  * Abnormal behavior when inserting an element while creating a
+	    collection that expires immediately
+	  * Abnormal behavior when count is 0 with offset in bop mget/smget
 
-2021-06-28 [version 1.13.2]
+2021-06-28 [version 1.13.2] - UNSTABLE
 	* [FEATURE] supported zk_reconfig auto enable feature.
 	* [FEATURE] added stats zookeeper command.
 	* [FEATURE] added zk reconfig stats.
@@ -115,8 +121,12 @@
 	* [FIX]     print checkpoint file size stat in 64bit.
 	* [FIX]     initialized the eresult structure before ACTION_BEFORE_XXX().
 	* [CLEANUP] separate heartbeat implementation into arcus_hb files.
+	* Unstable Items
+	  * Abnormal behavior when inserting an element while creating a
+	    collection that expires immediately
+	  * Abnormal behavior when count is 0 with offset in bop mget/smget
 
-2021-03-15 [version 1.13.1]
+2021-03-15 [version 1.13.1] - UNSTABLE
 	* [FEATURE] support nested prefix. (not yet enabled)
 	* [FEATURE] added "stats persistence" command.
 	* [FEATURE] added config command for changing the persistence settings.
@@ -128,8 +138,12 @@
 	* [DOC]     added description for persistence stats.
 	* [DOC]     added description for unreadable attribute.
 	* [CLEANUP] refactored arcus_zk and cluster_config modules.
+	* Unstable Items
+	  * Abnormal behavior when inserting an element while creating a
+	    collection that expires immediately
+	  * Abnormal behavior when count is 0 with offset in bop mget/smget
 
-2020-12-16 [version 1.13.0]
+2020-12-16 [version 1.13.0] - UNSTABLE
 	* [FEATURE] added mgets command
 	* [FEATURE] added persistence function in default engine. (beta)
 	* [FEATURE] added default_engine.conf file to set engine settings.
@@ -148,6 +162,10 @@
 	* [CLEANUP] added the item apply functions.
 	* [CLEANUP] separated the item module into multiple files.
 	* [CLEANUP] refactored many parts in source code.
+	* Unstable Items
+	  * Abnormal behavior when inserting an element while creating a
+	    collection that expires immediately
+	  * Abnormal behavior when count is 0 with offset in bop mget/smget
 
 2020-09-04 [version 1.12.2]
 	* [FEATURE] support item size exceeding 1MB by removing asserts on that.
@@ -168,6 +186,8 @@
 	* [DOC]     add detailed descrption for kv response
 	* [DOC]     add description about config command
 	* [OTHER]   do extensive code refactoring.
+	* Unstable Items
+	  * Abnormal behavior when count is 0 with offset in bop mget/smget
 
 2020-03-30 [version 1.12.1]
 	* [FIX]     Fixed memory overwrite when tokernize strings in memory blocks.
@@ -175,6 +195,8 @@
 	* [DOC]     Provided the more specific explanation about stats command.
 	* [DOC]     Added a compilation FAQ page.
 	* [TEST]    Added tests for verifying binary bkey OUT_OF_RANGE response.
+	* Unstable Items
+	  * Abnormal behavior when count is 0 with offset in bop mget/smget
 
 2020-03-16 [version 1.12.0]
 	* [FEATURE] Changed max_element_bytes(4KB=>16KB) and set configurable.
