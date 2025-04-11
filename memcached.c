@@ -15636,7 +15636,7 @@ int main (int argc, char **argv)
 
     if (settings.maxconns <= nfiles) {
         mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                "Configuratioin error. \n"
+                "Configuration error. \n"
                 "You specified %d connections, but the system will use at "
                 "least %d\nconnection structures to start.\n",
                 settings.maxconns, nfiles);

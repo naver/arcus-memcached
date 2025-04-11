@@ -2003,7 +2003,7 @@ static uint32_t do_btree_elem_delete(btree_meta_info *info,
             if (info->stotal > 0) { /* apply memory space */
                 /* The btree might have been unlinked from hash table.
                  * If then, the btree doesn't have prefix info and has stotal of 0.
-                 * So, do not need to descrese space total info.
+                 * So, do not need to decrease space total info.
                  */
                 assert(tot_space <= info->stotal);
                 do_coll_space_decr((coll_meta_info *)info, ITEM_TYPE_BTREE, tot_space);
