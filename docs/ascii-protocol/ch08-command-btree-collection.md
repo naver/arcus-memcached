@@ -482,7 +482,7 @@ smget 수행의 실패 시의 response string은 다음과 같다.
 | "CLIENT_ERROR bad command line format"               | protocol syntax 틀림
 | "CLIENT_ERROR bad data chunk"                        | 주어진 key 리스트에 중복 key가 존재하거나 주어진 key 리스트의 길이가 \<lenkeys\> 길이와 다르거나 "\r\n"으로 끝나지 않음.
 | "CLIENT_ERROR bad value"                             | 앞서 기술한 smget 연산의 제약 조건을 위배
-| "SERVER_ERROR out of memory [writing get response"   | 메모리 부족
+| "SERVER_ERROR out of memory [writing get response]"  | 메모리 부족
 
 
 ## bop position
