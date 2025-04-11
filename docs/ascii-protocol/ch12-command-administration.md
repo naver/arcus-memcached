@@ -395,10 +395,10 @@ END
 | auth_sasl_engine   | sasl 인증에 사용할 엔진                                      |
 | auth_required_sasl | sasl 인증 필수 여부                                          |
 | item_size_max      | 아이템의 최대 사이즈                                         |
-| max_list_size      | list collection의 최대 element 갯수                          |
-| max_set_size       | set collection의 최대 element 갯수                           |
-| max_map_size       | map collection의 최대 element 갯수                           |
-| max_btree_size     | btree collection의 최대 element 갯수                         |
+| max_list_size      | list collection의 최대 element 개수                          |
+| max_set_size       | set collection의 최대 element 개수                           |
+| max_map_size       | map collection의 최대 element 개수                           |
+| max_btree_size     | btree collection의 최대 element 개수                         |
 | max_element_bytes  | collection element 데이터의 최대 크기                        |
 | max_stats_prefixes | prefix stat 정보를 조회하는 명령이 가능한 prefix 최대 개수       |
 | topkeys            | 추적하고 있는 topkey 개수                                    |
@@ -1065,7 +1065,7 @@ shutdown [<seconds>]\r\n
 
 Response string과 그 의미는 아래와 같다.
 
-| Resposne String | 설명 |
+| Response String | 설명 |
 | - | - |
 | "OK" | 성공 |
 | "DENIED" | 거부됨 |
