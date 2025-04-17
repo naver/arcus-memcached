@@ -147,11 +147,11 @@ sub sop_insert {
 
 # stats nested prefix invalid name test
 # $cmd = "set -pname:cpname:foo 0 0 6"; $val = "fooval";
-# $rst = "CLIENT_ERROR invalid prefix name";
+# $rst = "INVALID bad prefix name";
 # mem_cmd_is($sock, $cmd, $val, $rst);
 
 # $cmd = "set pname:-cpname:foo 0 0 6"; $val = "fooval";
-# $rst = "CLIENT_ERROR invalid prefix name";
+# $rst = "INVALID bad prefix name";
 # mem_cmd_is($sock, $cmd, $val, $rst);
 
 # stats prefix flush test

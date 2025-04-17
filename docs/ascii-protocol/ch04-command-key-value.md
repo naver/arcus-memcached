@@ -26,6 +26,7 @@ Response string과 그 의미는 아래와 같다.
 | "TYPE_MISMATCH"      | 해당 아이템이 key-value 타입이 아님.
 | "CLIENT_ERROR"       | 클라이언트에서 잘못된 질의를 했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) bad command line format
 | "SERVER_ERROR"       | 서버 측의 오류로 저장하지 못했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) out of memory
+| "INVALID"            | 정의된 제약 조건을 벗어나 무효 처리되었음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) bad prefix name
 
 ## retrieval 명령
 
@@ -70,6 +71,7 @@ END\r\n
 |----------------------|------------------------ |
 | "CLIENT_ERROR"       | 클라이언트에서 잘못된 질의를 했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) bad command line format
 | "SERVER_ERROR"       | 서버 측의 오류로 조회하지 못했음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) out of memory writing get response
+| "INVALID"            | 정의된 제약 조건을 벗어나 무효 처리되었음을 의미. 이어 나오는 문자열을 통해 오류의 원인을 파악 가능. 예) bad argument
 
 mget 명령에서 메모리 부족으로 일부 key에 대해서만 정상 조회한 후 실패한 경우, 전체 연산을 서버 에러 처리한다.
 

@@ -83,7 +83,7 @@ mem_cmd_is($sock, $cmd, "", $rst);
 
 $cmd = "set text 0 0 2"; $val = "hi"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
-$cmd = "incr text 1"; $rst = "CLIENT_ERROR cannot increment or decrement non-numeric value";
+$cmd = "incr text 1"; $rst = "INVALID incr or decr on non-numeric value";
 $msg = "hi - 1 = 0";
 mem_cmd_is($sock, $cmd, "", $rst, $msg);
 

@@ -522,7 +522,7 @@ space_shortage_level이 10 이상으로 올라가면, background에서 아이템
 
 | Response String | 설명 |
 | --------------- | ---- |
-| "DENIED too many prefixes" | 조회하려는 prefix 개수가 제한을 초과함 |
+| "INVALID too many prefixes" | 조회하려는 prefix 개수가 제한을 초과함 |
 
 ```
 PREFIX <null> itm 2 kitm 1 litm 1 sitm 0 mitm 0 bitm 0 tsz 144 ktsz 64 ltsz 80 stsz 0 mtsz 0 btsz 0 time 20121105152422
