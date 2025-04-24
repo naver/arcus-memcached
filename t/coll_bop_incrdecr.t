@@ -108,7 +108,7 @@ END";
 mem_cmd_is($sock, $cmd, "", $rst);
 
 $cmd = "bop incr bkey1 0x0050 10";
-$rst = "CLIENT_ERROR cannot increment or decrement non-numeric value";
+$rst = "INVALID incr or decr on non-numeric value";
 mem_cmd_is($sock, $cmd, "", $rst, "a + 10 = 0");
 
 $cmd = "bop get bkey1 0x0050";
@@ -230,7 +230,7 @@ mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 0x0140 20"; $val = "18446744073709551616"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 
-$rst = "CLIENT_ERROR cannot increment or decrement non-numeric value";
+$rst = "INVALID incr or decr on non-numeric value";
 $cmd = "bop incr bkey1 0x0100 1";
 mem_cmd_is($sock, $cmd, "", $rst, "incr1 on empty");
 $cmd = "bop decr bkey1 0x0100 1";
@@ -252,7 +252,7 @@ mem_cmd_is($sock, $cmd, "", $rst, "decr 1 on 18446744073709551615");
 $cmd = "bop decr bkey1 0x0130 1"; $rst = "18446744073709551613";
 mem_cmd_is($sock, $cmd, "", $rst, "decr 1 on 18446744073709551614");
 
-$rst = "CLIENT_ERROR cannot increment or decrement non-numeric value";
+$rst = "INVALID incr or decr on non-numeric value";
 $cmd = "bop incr bkey1 0x0140 1";
 mem_cmd_is($sock, $cmd, "", $rst, "incr 1 on 18446744073709551616");
 $cmd = "bop decr bkey1 0x0140 1";

@@ -430,21 +430,21 @@ $cmd = "bop mget 600291 2 0..1000 2";
 $key1 = "a"x300145;
 $key2 = "b"x300145;
 $val = "$key1 $key2";
-mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad value");
+mem_cmd_is($sock, $cmd, $val, "INVALID bad argument");
 $val = "$key1,$key2";
-mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad value");
+mem_cmd_is($sock, $cmd, $val, "INVALID bad argument");
 $val = "$key1?$key2";
-mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad value");
+mem_cmd_is($sock, $cmd, $val, "INVALID bad argument");
 
 $cmd = "bop mget 66001 2 0..1000 2";
 $key1 = "a"x33000;
 $key2 = "b"x33000;
 $val = "$key1 $key2";
-mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad value");
+mem_cmd_is($sock, $cmd, $val, "INVALID bad argument");
 $val = "$key1,$key2";
-mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad value");
+mem_cmd_is($sock, $cmd, $val, "INVALID bad argument");
 $val = "$key1?$key2";
-mem_cmd_is($sock, $cmd, $val, "CLIENT_ERROR bad value");
+mem_cmd_is($sock, $cmd, $val, "INVALID bad argument");
 
 $cmd = "bop mget 30001 3 0..1000 2";
 $key1 = "a"x15000;

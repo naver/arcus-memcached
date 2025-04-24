@@ -1673,7 +1673,7 @@ static void process_lop_insert_complete(conn *c)
             if (ret == ENGINE_EBADTYPE)          out_string(c, "TYPE_MISMATCH");
             else if (ret == ENGINE_EOVERFLOW)    out_string(c, "OVERFLOWED");
             else if (ret == ENGINE_EINDEXOOR)    out_string(c, "OUT_OF_RANGE");
-            else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
+            else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "INVALID bad prefix name");
             else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
@@ -1720,7 +1720,7 @@ static void process_sop_insert_complete(conn *c)
             if (ret == ENGINE_EBADTYPE)          out_string(c, "TYPE_MISMATCH");
             else if (ret == ENGINE_EOVERFLOW)    out_string(c, "OVERFLOWED");
             else if (ret == ENGINE_ELEM_EEXISTS) out_string(c, "ELEMENT_EXISTS");
-            else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
+            else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "INVALID bad prefix name");
             else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
@@ -1881,7 +1881,7 @@ static void process_mop_insert_complete(conn *c)
             if (ret == ENGINE_EBADTYPE)          out_string(c, "TYPE_MISMATCH");
             else if (ret == ENGINE_EOVERFLOW)    out_string(c, "OVERFLOWED");
             else if (ret == ENGINE_ELEM_EEXISTS) out_string(c, "ELEMENT_EXISTS");
-            else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
+            else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "INVALID bad prefix name");
             else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
@@ -2301,7 +2301,7 @@ static void process_bop_insert_complete(conn *c)
             else if (ret == ENGINE_EOVERFLOW)    out_string(c, "OVERFLOWED");
             else if (ret == ENGINE_EBKEYOOR)     out_string(c, "OUT_OF_RANGE");
             else if (ret == ENGINE_ELEM_EEXISTS) out_string(c, "ELEMENT_EXISTS");
-            else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
+            else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "INVALID bad prefix name");
             else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
             else handle_unexpected_errorcode_ascii(c, __func__, ret);
         }
@@ -3245,7 +3245,7 @@ static void complete_update_ascii(conn *c)
             out_string(c, "NOT_STORED");
             break;
         case ENGINE_PREFIX_ENAME:
-            out_string(c, "CLIENT_ERROR invalid prefix name");
+            out_string(c, "INVALID bad prefix name");
             break;
         case ENGINE_ENOMEM:
             out_string(c, "SERVER_ERROR out of memory");
@@ -7877,7 +7877,7 @@ inline static void process_stats_detail(conn *c, const char *command)
         }
         else if (strcmp(command, "dump") == 0) {
             if (stats_prefix_count() > settings.max_stats_prefixes) {
-                out_string(c, "DENIED too many prefixes");
+                out_string(c, "INVALID too many prefixes");
                 return;
             }
             int len;
@@ -8286,7 +8286,7 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
             return;
         }
         if (mc_engine.v1->prefix_count(mc_engine.v0, c) > settings.max_stats_prefixes) {
-            out_string(c, "DENIED too many prefixes");
+            out_string(c, "INVALID too many prefixes");
             return;
         }
         stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, NULL, 0, &len);
@@ -8312,14 +8312,14 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
             if ((prefixes == NULL &&
                 mc_engine.v1->prefix_count(mc_engine.v0, c) > settings.max_stats_prefixes) ||
                 nprefixes > settings.max_stats_prefixes) {
-                out_string(c, "DENIED too many prefixes");
+                out_string(c, "INVALID too many prefixes");
                 return;
             }
             stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, prefixes, nprefixes, &len);
         } else if (strcmp(tokens[2].value, "operation") == 0) {
             if ((prefixes == NULL && stats_prefix_count() > settings.max_stats_prefixes) ||
                 nprefixes > settings.max_stats_prefixes) {
-                out_string(c, "DENIED too many prefixes");
+                out_string(c, "INVALID too many prefixes");
                 return;
             }
             stats = stats_prefix_dump(prefixes, nprefixes, &len);
@@ -8487,7 +8487,7 @@ static inline void process_mget_command(conn *c, token_t *tokens, const size_t n
         numkeys > ((lenkeys/2) + 1) ||
         lenkeys > ((numkeys*KEY_MAX_LENGTH) + numkeys-1)) {
         /* ENGINE_EBADVALUE */
-        out_string(c, "CLIENT_ERROR bad value");
+        out_string(c, "INVALID bad argument");
         c->sbytes = lenkeys + 2;
         c->write_and_go = conn_swallow;
         return;
@@ -8673,9 +8673,9 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
             STATS_CMD_NOKEY(c, decr);
         }
         if (ret == ENGINE_EINVAL)
-            out_string(c, "CLIENT_ERROR cannot increment or decrement non-numeric value");
+            out_string(c, "INVALID incr or decr on non-numeric value");
         else if (ret == ENGINE_PREFIX_ENAME)
-            out_string(c, "CLIENT_ERROR invalid prefix name");
+            out_string(c, "INVALID bad prefix name");
         else if (ret == ENGINE_ENOMEM)
             out_string(c, "SERVER_ERROR out of memory");
         else if (ret == ENGINE_NOT_STORED)
@@ -8865,7 +8865,7 @@ static void process_zkfailstop_command(conn *c, token_t *tokens, const size_t nt
         else if (strcmp(config, "off") == 0)
             zkfailstop = false;
         else {
-            out_string(c, "CLIENT_ERROR bad value");
+            out_string(c, "INVALID bad argument");
             return;
         }
         arcus_zk_set_failstop(zkfailstop);
@@ -8889,7 +8889,7 @@ static void process_hbtimeout_command(conn *c, token_t *tokens, const size_t nto
         if (arcus_hb_set_timeout((int)hbtimeout) == 0)
             out_string(c, "END");
         else
-            out_string(c, "CLIENT_ERROR bad value");
+            out_string(c, "INVALID bad argument");
     } else {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -8909,7 +8909,7 @@ static void process_hbfailstop_command(conn *c, token_t *tokens, const size_t nt
         if (arcus_hb_set_failstop((int)hbfailstop) == 0)
             out_string(c, "END");
         else
-            out_string(c, "CLIENT_ERROR bad value");
+            out_string(c, "INVALID bad argument");
     } else {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -8938,7 +8938,7 @@ static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntok
         }
         UNLOCK_SETTING();
         if (ret == ENGINE_SUCCESS)        out_string(c, "END");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        else if (ret == ENGINE_EBADVALUE) out_string(c, "INVALID bad argument");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     } else {
         print_invalid_command(c, tokens, ntokens);
@@ -8968,7 +8968,7 @@ static void process_stickylimit_command(conn *c, token_t *tokens, const size_t n
         }
         UNLOCK_SETTING();
         if (ret == ENGINE_SUCCESS)        out_string(c, "END");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        else if (ret == ENGINE_EBADVALUE) out_string(c, "INVALID bad argument");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     } else {
         print_invalid_command(c, tokens, ntokens);
@@ -9026,7 +9026,7 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
         }
         UNLOCK_SETTING();
         if (ret == ENGINE_SUCCESS)        out_string(c, "END");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        else if (ret == ENGINE_EBADVALUE) out_string(c, "INVALID bad argument");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
     else {
@@ -9056,7 +9056,7 @@ static void process_maxelembytes_command(conn *c, token_t *tokens, const size_t 
         }
         UNLOCK_SETTING();
         if (ret == ENGINE_SUCCESS)        out_string(c, "END");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        else if (ret == ENGINE_EBADVALUE) out_string(c, "INVALID bad argument");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
     else {
@@ -9084,7 +9084,7 @@ static void process_scrubcount_command(conn *c, token_t *tokens, const size_t nt
         }
         UNLOCK_SETTING();
         if (ret == ENGINE_SUCCESS)        out_string(c, "END");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        else if (ret == ENGINE_EBADVALUE) out_string(c, "INVALID bad argument");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     } else {
         print_invalid_command(c, tokens, ntokens);
@@ -9162,7 +9162,7 @@ static void process_chkpt_interval_pct_snapshot_command(conn *c, token_t *tokens
     } else if (ntokens == 4 && safe_strtoul(config_val, &chkpt_interval_pct_snapshot)) {
         ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&chkpt_interval_pct_snapshot);
         if (ret == ENGINE_SUCCESS)        out_string(c, "END");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        else if (ret == ENGINE_EBADVALUE) out_string(c, "INVALID bad argument");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     } else {
         print_invalid_command(c, tokens, ntokens);
@@ -9191,7 +9191,7 @@ static void process_chkpt_interval_min_logsize_command(conn *c, token_t *tokens,
     } else if (ntokens == 4 && safe_strtoul(config_val, &chkpt_interval_min_logsize)) {
         ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&chkpt_interval_min_logsize);
         if (ret == ENGINE_SUCCESS)        out_string(c, "END");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        else if (ret == ENGINE_EBADVALUE) out_string(c, "INVALID bad argument");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     } else {
         print_invalid_command(c, tokens, ntokens);
@@ -9223,12 +9223,12 @@ static void process_async_logging_command(conn *c, token_t *tokens, const size_t
         else if (strcmp(config_val, "off") == 0)
             new_async_logging = false;
         else {
-            out_string(c, "CLIENT_ERROR bad value");
+            out_string(c, "INVALID bad argument");
             return;
         }
         ret = mc_engine.v1->set_config(mc_engine.v0, c, config_key, (void*)&new_async_logging);
         if (ret == ENGINE_SUCCESS)        out_string(c, "END");
-        else if (ret == ENGINE_EBADVALUE) out_string(c, "CLIENT_ERROR bad value");
+        else if (ret == ENGINE_EBADVALUE) out_string(c, "INVALID bad argument");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     } else {
         print_invalid_command(c, tokens, ntokens);
@@ -10399,7 +10399,7 @@ static void process_lop_create(conn *c, char *key, size_t nkey, item_attr *attrp
     default:
         STATS_CMD_NOKEY(c, lop_create);
         if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
-        else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
+        else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "INVALID bad prefix name");
         else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
@@ -10804,7 +10804,7 @@ static void process_sop_create(conn *c, char *key, size_t nkey, item_attr *attrp
     default:
         STATS_CMD_NOKEY(c, sop_create);
         if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
-        else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
+        else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "INVALID bad prefix name");
         else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
@@ -10951,7 +10951,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
             return;
         }
         if (count > MAX_SOP_GET_COUNT) {
-            out_string(c, "DENIED too many count");
+            out_string(c, "INVALID too large count");
             return;
         }
         if (ntokens == 6) {
@@ -11596,7 +11596,7 @@ static void process_bop_create(conn *c, char *key, size_t nkey, item_attr *attrp
     default:
         STATS_CMD_NOKEY(c, bop_create);
         if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
-        else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
+        else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "INVALID bad prefix name");
         else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
@@ -11701,7 +11701,7 @@ static void process_bop_arithmetic(conn *c, char *key, size_t nkey, bkey_range *
         } else {
             STATS_CMD_NOKEY(c, bop_decr);
         }
-        if (ret == ENGINE_EINVAL) out_string(c, "CLIENT_ERROR cannot increment or decrement non-numeric value");
+        if (ret == ENGINE_EINVAL)         out_string(c, "INVALID incr or decr on non-numeric value");
         else if (ret == ENGINE_EBADTYPE)  out_string(c, "TYPE_MISMATCH");
         else if (ret == ENGINE_EBADBKEY)  out_string(c, "BKEY_MISMATCH");
         else if (ret == ENGINE_EBKEYOOR)  out_string(c, "OUT_OF_RANGE");
@@ -12008,7 +12008,7 @@ static void process_mop_create(conn *c, char *key, size_t nkey, item_attr *attrp
     default:
         STATS_CMD_NOKEY(c, mop_create);
         if (ret == ENGINE_KEY_EEXISTS)       out_string(c, "EXISTS");
-        else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "CLIENT_ERROR invalid prefix name");
+        else if (ret == ENGINE_PREFIX_ENAME) out_string(c, "INVALID bad prefix name");
         else if (ret == ENGINE_ENOMEM)       out_string(c, "SERVER_ERROR out of memory");
         else handle_unexpected_errorcode_ascii(c, __func__, ret);
     }
@@ -12146,7 +12146,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 lenfields > (UINT_MAX-2) ||
                 lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1)) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad value");
+                out_string(c, "INVALID bad argument");
                 return;
             }
         }
@@ -12155,7 +12155,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 numfields > settings.max_map_size ||
                 numfields > ((lenfields/2) + 1)) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad value");
+                out_string(c, "INVALID bad argument");
                 return;
             }
         }
@@ -12212,7 +12212,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 lenfields > (UINT_MAX-2) ||
                 lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1)) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad value");
+                out_string(c, "INVALID bad argument");
                 return;
             }
         }
@@ -12221,7 +12221,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
                 numfields > settings.max_map_size ||
                 numfields > ((lenfields/2) + 1)) {
                 print_invalid_command(c, tokens, ntokens);
-                out_string(c, "CLIENT_ERROR bad value");
+                out_string(c, "INVALID bad argument");
                 return;
             }
         }
@@ -12724,7 +12724,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             lenkeys > ((numkeys*KEY_MAX_LENGTH) + numkeys-1) ||
             count == 0) {
             /* ENGINE_EBADVALUE */
-            out_string(c, "CLIENT_ERROR bad value");
+            out_string(c, "INVALID bad argument");
             c->sbytes = lenkeys + 2;
             c->write_and_go = conn_swallow;
             return;
@@ -12734,7 +12734,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         if (subcommid == OPERATION_BOP_MGET) {
             if (numkeys > MAX_BMGET_KEY_COUNT || count > MAX_BMGET_ELM_COUNT) {
                 /* ENGINE_EBADVALUE */
-                out_string(c, "CLIENT_ERROR bad value");
+                out_string(c, "INVALID bad argument");
                 c->sbytes = lenkeys;
                 c->write_and_go = conn_swallow;
                 return;
@@ -12745,7 +12745,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         if (subcommid == OPERATION_BOP_SMGET) {
             if (numkeys > MAX_SMGET_KEY_COUNT || (offset+count) > MAX_SMGET_REQ_COUNT) {
                 /* ENGINE_EBADVALUE */
-                out_string(c, "CLIENT_ERROR bad value");
+                out_string(c, "INVALID bad argument");
                 c->sbytes = lenkeys;
                 c->write_and_go = conn_swallow;
                 return;
@@ -12818,7 +12818,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
                 return;
             }
             if (count > 100) { /* max limit on count: 100 */
-                out_string(c, "CLIENT_ERROR too large count value");
+                out_string(c, "INVALID too large count");
                 return;
             }
         }

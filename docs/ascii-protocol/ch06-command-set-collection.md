@@ -69,6 +69,7 @@ Response string과 그 의미는 아래와 같다.
 | "CLIENT_ERROR bad command line format"   | protocol syntax 틀림
 | "CLIENT_ERROR too large value"           | 삽입할 데이터가 element value의 최대 크기보다 큼
 | "CLIENT_ERROR bad data chunk"            | 삽입할 데이터 길이가 \<bytes\>와 다르거나 "\r\n"으로 끝나지 않음
+| "INVALID bad prefix name"                | 유효하지(존재하지) 않는 prefix 명
 | "SERVER_ERROR out of memory"             | 메모리 부족
 
 ## sop delete
@@ -141,7 +142,7 @@ END|DELETED|DELETED_DROPPED\r\n
 | "TYPE_MISMATCH"                                      | 해당 item이 set collection이 아님
 | "UNREADABLE"                                         | 해당 item이 unreadable item임
 | "NOT_SUPPORTED"                                      | 지원하지 않음
-| "DENIED too many count"                              | count 제약 개수를 초과함
+| "INVALID too many count"                             | count 제약 개수를 초과함
 | "CLIENT_ERROR bad command line format"               | protocol syntax 틀림
 | "SERVER_ERROR out of memory [writing get response]"  | 메모리 부족
 

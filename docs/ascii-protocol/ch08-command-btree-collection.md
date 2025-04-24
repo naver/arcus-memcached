@@ -312,7 +312,7 @@ Increment/decrement 수행 후의 데이터 값이다.
 | "OUT_OF_RANGE"                                                  | 새로운 element 삽입이 maxcount 또는 maxbkeyrange 제약을 위배하면서 그 element의 bkey 값이 overflowaction에 의해 자동 삭제되는 경우이어서 삽입이 실패하는 경우이다. 예를 들어, smallest_trim 상황에서 새로 삽입할 element의 bkey 값이 b+tree의 smallest bkey 보다 작으면서 maxcount 개의 elements가 이미 존재하거나 maxbkeyrange를 벗어나는 경우가 이에 해당된다.
 | "OVERFLOWED"                                                    | overflow 발생
 | "NOT_SUPPORTED"                                                 | 지원하지 않음
-| "CLIENT_ERROR cannot increment or decrement non-numeric value"  | 해당 element의 데이터가 숫자형이 아님.
+| "INVALID incr or decr on non-numeric value"                     | 해당 element의 데이터가 숫자형이 아님.
 | "CLIENT_ERROR bad command line format"                          | protocol syntax 틀림
 | "SERVER_ERROR out of memory [writing get response]"             | 메모리 부족
 
@@ -386,7 +386,7 @@ flags와 ecount를 포함하여 조회된 element 정보가 생략된다.
 | "NOT_SUPPORTED"                                       | 지원하지 않음
 | "CLIENT_ERROR bad command line format"                | protocol syntax 틀림
 | "CLIENT_ERROR bad data chunk"                         | space separated key list의 길이가 \<lenkeys\>와 다르거나 "\r\n"으로 끝나지 않음
-| "CLIENT_ERROR bad value"                              | bop mget 명령의 제약 조건을 위배함.
+| "INVALID bad argument"                                | bop mget 명령의 제약 조건을 위배함.
 | "SERVER_ERROR out of memory [writing get response]"   | 메모리 부족
 
 ## bop smget
@@ -481,7 +481,8 @@ smget 수행의 실패 시의 response string은 다음과 같다.
 | "NOT_SUPPORTED"                                      | 지원하지 않음
 | "CLIENT_ERROR bad command line format"               | protocol syntax 틀림
 | "CLIENT_ERROR bad data chunk"                        | 주어진 key 리스트에 중복 key가 존재하거나 주어진 key 리스트의 길이가 \<lenkeys\> 길이와 다르거나 "\r\n"으로 끝나지 않음.
-| "CLIENT_ERROR bad value"                             | 앞서 기술한 smget 연산의 제약 조건을 위배
+| "INVALID bad prefix name"                            | 유효하지(존재하지) 않는 prefix 명
+| "INVALID bad argument"                               | 앞서 기술한 smget 연산의 제약 조건을 위배
 | "SERVER_ERROR out of memory [writing get response]"  | 메모리 부족
 
 
@@ -609,3 +610,4 @@ END\r\n
 | "NOT_SUPPORTED"                                     | 지원하지 않음
 | "CLIENT_ERROR bad command line format"              | protocol syntax 틀림
 | "SERVER_ERROR out of memory [writing get response]" | 메모리 부족
+| "INVALID too large count"                           | count 제약 개수를 초과함
