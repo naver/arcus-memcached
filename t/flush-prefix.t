@@ -23,7 +23,7 @@ sub prefix_limit_test {
     mem_cmd_is($sock, $cmd, $val, $rst);
   }
 
-  $cmd = "stats detail dump"; $rst = "DENIED too many prefixes";
+  $cmd = "stats detail dump"; $rst = "CLIENT_ERROR invalid: too many prefixes";
   mem_cmd_is($sock, $cmd, "", $rst);
 
   for ($size = 0; $size < $big_prefix_size; $size++) {

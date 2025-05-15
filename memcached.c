@@ -7877,7 +7877,7 @@ inline static void process_stats_detail(conn *c, const char *command)
         }
         else if (strcmp(command, "dump") == 0) {
             if (stats_prefix_count() > settings.max_stats_prefixes) {
-                out_string(c, "DENIED too many prefixes");
+                out_string(c, "CLIENT_ERROR invalid: too many prefixes");
                 return;
             }
             int len;
@@ -8286,7 +8286,7 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
             return;
         }
         if (mc_engine.v1->prefix_count(mc_engine.v0, c) > settings.max_stats_prefixes) {
-            out_string(c, "DENIED too many prefixes");
+            out_string(c, "CLIENT_ERROR invalid: too many prefixes");
             return;
         }
         stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, NULL, 0, &len);
@@ -8312,14 +8312,14 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
             if ((prefixes == NULL &&
                 mc_engine.v1->prefix_count(mc_engine.v0, c) > settings.max_stats_prefixes) ||
                 nprefixes > settings.max_stats_prefixes) {
-                out_string(c, "DENIED too many prefixes");
+                out_string(c, "CLIENT_ERROR invalid: too many prefixes");
                 return;
             }
             stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, prefixes, nprefixes, &len);
         } else if (strcmp(tokens[2].value, "operation") == 0) {
             if ((prefixes == NULL && stats_prefix_count() > settings.max_stats_prefixes) ||
                 nprefixes > settings.max_stats_prefixes) {
-                out_string(c, "DENIED too many prefixes");
+                out_string(c, "CLIENT_ERROR invalid: too many prefixes");
                 return;
             }
             stats = stats_prefix_dump(prefixes, nprefixes, &len);
@@ -10951,7 +10951,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
             return;
         }
         if (count > MAX_SOP_GET_COUNT) {
-            out_string(c, "DENIED too many count");
+            out_string(c, "CLIENT_ERROR invalid: too many count");
             return;
         }
         if (ntokens == 6) {
