@@ -12137,19 +12137,22 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if ((! safe_strtoul(tokens[MOP_KEY_TOKEN+1].value, &lenfields)) ||
             (! safe_strtoul(tokens[MOP_KEY_TOKEN+2].value, &numfields)) ||
-            (lenfields > (UINT_MAX-2)) || (lenfields == 0 && numfields > 0) ||
-            (lenfields > 0 && numfields == 0)) {
+            (lenfields > (UINT_MAX-2)) ||
+            ((lenfields == 0 || numfields == 0) && lenfields != numfields)) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
-        if (lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1) ||
-            numfields > settings.max_map_size ||
-            numfields > ((lenfields/2) + 1)) {
-            out_string(c, "CLIENT_ERROR bad value");
-            c->sbytes = lenfields + 2;
-            c->write_and_go = conn_swallow;
-            return;
+
+        if (numfields > 0) {
+            if (lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1) ||
+                numfields > settings.max_map_size ||
+                numfields > ((lenfields/2) + 1)) {
+                out_string(c, "CLIENT_ERROR bad value");
+                c->sbytes = lenfields + 2;
+                c->write_and_go = conn_swallow;
+                return;
+            }
         }
 
         int read_ntokens = MOP_KEY_TOKEN + 3;
@@ -12195,19 +12198,22 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         if ((! safe_strtoul(tokens[MOP_KEY_TOKEN+1].value, &lenfields)) ||
             (! safe_strtoul(tokens[MOP_KEY_TOKEN+2].value, &numfields)) ||
-            (lenfields > (UINT_MAX-2)) || (lenfields == 0 && numfields > 0) ||
-            (lenfields > 0 && numfields == 0)) {
+            (lenfields > (UINT_MAX-2)) ||
+            ((lenfields == 0 || numfields == 0) && lenfields != numfields)) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
             return;
         }
-        if (lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1) ||
-            numfields > settings.max_map_size ||
-            numfields > ((lenfields/2) + 1)) {
-            out_string(c, "CLIENT_ERROR bad value");
-            c->sbytes = lenfields + 2;
-            c->write_and_go = conn_swallow;
-            return;
+
+        if (numfields > 0) {
+            if (lenfields > ((numfields*MAX_FIELD_LENG) + numfields-1) ||
+                numfields > settings.max_map_size ||
+                numfields > ((lenfields/2) + 1)) {
+                out_string(c, "CLIENT_ERROR bad value");
+                c->sbytes = lenfields + 2;
+                c->write_and_go = conn_swallow;
+                return;
+            }
         }
 
         if (ntokens == 7) {
