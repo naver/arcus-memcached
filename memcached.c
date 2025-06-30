@@ -7694,6 +7694,7 @@ static void write_and_free(conn *c, char *buf, int bytes)
     c->write_and_go = conn_new_cmd;
 }
 
+#ifdef ASCII_SASL
 static bool authenticated_ascii(conn *c, token_t *tokens, const size_t ntokens)
 {
     if (c->authenticated) {
@@ -7733,6 +7734,7 @@ static bool authenticated_ascii(conn *c, token_t *tokens, const size_t ntokens)
     }
     return false;
 }
+#endif
 
 #ifdef JHPARK_OLD_SMGET_INTERFACE
 static inline int set_smget_mode_maybe(conn *c, token_t *tokens, size_t ntokens)
@@ -13171,10 +13173,12 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
 
     ntokens = tokenize_command(command, cmdlen, tokens, MAX_TOKENS);
 
+#ifdef ASCII_SASL
     if (settings.require_sasl && !authenticated_ascii(c, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthenticated");
         return;
     }
+#endif
 
     if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "get") == 0))
     {
@@ -15145,6 +15149,10 @@ int main (int argc, char **argv)
     int cache_memory_limit = 0;
     int sticky_memory_limit = 0;
 
+#ifdef ASCII_SASL
+#else
+    bool protocol_specified = false;
+#endif
     bool tcp_specified = false;
     bool udp_specified = false;
 
@@ -15357,6 +15365,10 @@ int main (int argc, char **argv)
             settings.backlog = atoi(optarg);
             break;
         case 'B':
+#ifdef ASCII_SASL
+#else
+            protocol_specified = true;
+#endif
             if (strcmp(optarg, "auto") == 0) {
                 settings.binding_protocol = negotiating_prot;
             } else if (strcmp(optarg, "binary") == 0) {
@@ -15480,6 +15492,26 @@ int main (int argc, char **argv)
             settings.topkeys = 0;
         }
     }
+
+#ifdef ASCII_SASL
+#else
+    if (settings.require_sasl) {
+        if (!protocol_specified) {
+            settings.binding_protocol = binary_prot;
+        } else {
+            if (settings.binding_protocol == negotiating_prot) {
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "ERROR: You cannot use auto-negotiating protocol while requiring SASL.\n");
+                exit(EX_USAGE);
+            }
+            if (settings.binding_protocol == ascii_prot) {
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                        "ERROR: You cannot use only ASCII protocol while requiring SASL.\n");
+                exit(EX_USAGE);
+            }
+        }
+    }
+#endif
 
     if (udp_specified && settings.udpport != 0 && !tcp_specified) {
         settings.port = settings.udpport;
