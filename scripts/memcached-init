@@ -34,15 +34,29 @@ set -e
 
 case "$1" in
     start)
-        echo -n "Starting $DESC: "
-        start-stop-daemon --start --quiet --exec $DAEMONBOOTSTRAP
-        echo "$NAME."
+        if [ -f "$PIDFILE" ]; then
+            pid=$(cat "$PIDFILE")
+            if kill -0 "$pid" 2>/dev/null; then
+                echo "Already running with PID: $pid"
+                exit 1
+            fi
+            rm -f "$PIDFILE"
+        fi
+        nohup $DAEMONBOOTSTRAP > /dev/null 2>&1 &
+        daemon_pid=$!
+        echo "$daemon_pid" > "$PIDFILE" & echo "Started with PID: $daemon_pid"
         ;;
     stop)
-        echo -n "Stopping $DESC: "
-        start-stop-daemon --stop --quiet --oknodo --pidfile $PIDFILE --exec $DAEMON
-        echo "$NAME."
-        rm -f $PIDFILE
+        if [ -f "$PIDFILE" ]; then
+            pid=$(cat "$PIDFILE")
+            if kill -0 "$pid" 2>/dev/null; then
+                kill "$pid"
+                echo "Stopped with PID: $pid"
+            fi
+            rm -f "$PIDFILE"
+        else
+            echo "PID file not found: $PIDFILE"
+        fi
         ;;
 
     restart|force-reload)
@@ -51,12 +65,17 @@ case "$1" in
     #   option to the "reload" entry above. If not, "force-reload" is
     #   just the same as "restart".
     #
-        echo -n "Restarting $DESC: "
-        start-stop-daemon --stop --quiet --oknodo --pidfile $PIDFILE
-        rm -f $PIDFILE
+        if [ -f "$PIDFILE" ]; then
+            pid=$(cat "$PIDFILE")
+            if kill -0 "$pid" 2>/dev/null; then
+                kill "$pid"
+            fi
+            rm -f "$PIDFILE"
+        fi
         sleep 1
-        start-stop-daemon --start --quiet --exec $DAEMONBOOTSTRAP
-        echo "$NAME."
+        nohup $DAEMONBOOTSTRAP > /dev/null 2>&1 &
+        daemon_pid=$!
+        echo "$daemon_pid" > "$PIDFILE" & echo "Restarted with PID: $daemon_pid"
         ;;
     *)
         N=/etc/init.d/$NAME
