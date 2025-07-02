@@ -11,7 +11,7 @@ chomp $version;
 #my $version = '1.4.2-30-gf966dba';
 #my $version = '1.4.3-rc1';
 #my $version = '1.4.3';
-my $default_version = '1.14.0-unknown';
+my $default_version = '1.14.1-unknown';
 
 unless ($version =~ m/^\d+\.\d+\.\d+/) {
     write_file('m4/version.m4', "m4_define([VERSION_NUMBER], [$default_version])\n");

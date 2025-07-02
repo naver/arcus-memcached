@@ -1,3 +1,21 @@
+# 2025-07-02 [version 1.14.1]
+## 🐣 New Features
+  - Return random elements from `sop get`.
+  - Limit the count of elems get from set structure.
+## ⚙️ Internal Changes
+  - Add max_stats_prefixes limit to `stats prefixes`, `stats detail dump` command.
+  - Remove `stats prefix` command.
+  - Change DFS traverse order in set and map.
+## 🐛 Bug Fixes
+  - Fix `SERVER ERROR` response to `SERVER_ERROR`.
+## 📝 Documentation
+  - Set unstable version to ChangeLog.
+  - Update ChangeLog format.
+  - Fix cachedump description.
+  - Fix response string when trimmed result in bop insert.
+## ✅ Testing
+  - Upgrade CI actions version (v3 => v4).
+
 # 2024-07-11 [version 1.14.0]
 ## 🐣 New Features
   - Remove an unused command `bget`. #749
