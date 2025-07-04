@@ -288,8 +288,8 @@ extern "C" {
      * bkey and eflag
      */
 #define MIN_BKEY_LENG  1
-#define MAX_BKEY_LENG  31
-#define MAX_EFLAG_LENG 31
+#define MAX_BKEY_LENG  63
+#define MAX_EFLAG_LENG 63
 #define MAX_FIELD_LENG 250
 #define BKEY_NULL  255
 #define EFLAG_NULL 255

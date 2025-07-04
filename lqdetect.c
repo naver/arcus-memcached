@@ -10,7 +10,7 @@
 #include "memcached/util.h"
 
 #define LQ_THRESHOLD_DEFAULT 4000
-#define LQ_QUERY_SIZE  (64*2+64) /* bop get (longest query) : "<longest bkey>..<longest bkey> efilter <offset> <count> delete" */
+#define LQ_QUERY_SIZE  (MAX_BKEY_LENG*2*2+64) /* bop get (longest query) : "<longest bkey>..<longest bkey> efilter <offset> <count> delete" */
 #define LQ_KEY_SIZE    250       /* the max size of key string */
 #define LQ_SAVE_CNT    20        /* save key count */
 #define LQ_INPUT_SIZE  500       /* the size of input(time, ip, command, argument) */
