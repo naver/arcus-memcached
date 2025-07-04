@@ -4153,6 +4153,30 @@ static void get_auth_data(const void *cookie, auth_data_t *data)
 }
 
 #ifdef SASL_ENABLED
+#ifdef ASCII_SASL
+static void ascii_list_sasl_mechs(conn *c)
+{
+    init_sasl_conn(c);
+    const char *result_string = NULL;
+    int result=sasl_listmech(c->sasl_conn, NULL,
+                             "SASL_MECH ", /* What to prepend the string with */
+                             " ",          /* What to separate mechanisms with */
+                             "",           /* What to append to the string */
+                             &result_string, NULL,
+                             NULL);
+    if (result == SASL_OK) {
+        out_string(c, result_string);
+    } else {
+        /* Perhaps there's a better error for this... */
+        if (settings.verbose) {
+            mc_logger->log(EXTENSION_LOG_INFO, c,
+                     "%d: Failed to list SASL mechanisms.\n", c->sfd);
+        }
+        out_string(c, "AUTH_ERROR failed to get SASL mechanisms");
+    }
+}
+#endif
+
 static void bin_list_sasl_mechs(conn *c)
 {
     init_sasl_conn(c);
@@ -10115,6 +10139,22 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
 }
 #endif
 
+#ifdef SASL_ENABLED
+#ifdef ASCII_SASL
+static void process_sasl_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
+
+    if (ntokens == 3 && strcmp(subcommand, "mech") == 0) {
+        ascii_list_sasl_mechs(c);
+    } else {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "CLIENT_ERROR bad command line format");
+    }
+}
+#endif
+#endif
+
 static void process_shutdown_command(conn *c, token_t *tokens, size_t ntokens)
 {
     int32_t delay;
@@ -13319,6 +13359,14 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
 #endif
         out_string(c, response);
     }
+#ifdef SASL_ENABLED
+#ifdef ASCII_SASL
+    else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "sasl") == 0))
+    {
+        process_sasl_command(c, tokens, ntokens);
+    }
+#endif
+#endif
     else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "shutdown") == 0))
     {
         process_shutdown_command(c, tokens, ntokens);
