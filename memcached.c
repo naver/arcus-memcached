@@ -63,7 +63,6 @@
 
 #include "cmdlog.h"
 #include "lqdetect.h"
-#include "sasl_defs.h"
 
 /* Lock for global stats */
 static pthread_mutex_t stats_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -673,6 +672,7 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->conn_next = NULL;
     c->sasl_started = false;
     c->authenticated = false;
+    c->sasl_auth_data = NULL;
 
     c->write_and_go = init_state;
     c->write_and_free = 0;
@@ -870,8 +870,13 @@ static void conn_cleanup(conn *c)
     }
 
     if (c->sasl_conn) {
-        sasl_dispose((sasl_conn_t**)&c->sasl_conn);
+        sasl_dispose(&c->sasl_conn);
         c->sasl_conn = NULL;
+    }
+
+    if (c->sasl_auth_data) {
+        free(c->sasl_auth_data);
+        c->sasl_auth_data = NULL;
     }
 
     c->engine_storage = NULL;
@@ -4130,7 +4135,7 @@ static void init_sasl_conn(conn *c)
     if (!c->sasl_conn) {
         int result=sasl_server_new("memcached",
                                    NULL, NULL, NULL, NULL,
-                                   NULL, 0, (sasl_conn_t**)&c->sasl_conn);
+                                   NULL, 0, &c->sasl_conn);
         if (result != SASL_OK) {
             if (settings.verbose) {
                 mc_logger->log(EXTENSION_LOG_INFO, c,
@@ -4201,12 +4206,6 @@ static void bin_list_sasl_mechs(conn *c)
 }
 #endif
 
-struct sasl_tmp {
-    int ksize;
-    int vsize;
-    char data[]; /* data + ksize == value */
-};
-
 static void process_bin_sasl_auth(conn *c)
 {
     assert(c->binary_header.request.extlen == 0);
@@ -4234,19 +4233,16 @@ static void process_bin_sasl_auth(conn *c)
     char *key = binary_get_key(c);
     assert(key);
 
-    size_t buffer_size = sizeof(struct sasl_tmp) + nkey + vlen + 2;
-    struct sasl_tmp *data = calloc(sizeof(struct sasl_tmp) + buffer_size, 1);
-    if (!data) {
+    memcpy(c->sasl_mech, key, nkey);
+    c->sasl_mech[nkey] = '\0';
+    c->sasl_auth_data_len = vlen;
+    c->sasl_auth_data = malloc(vlen + 2);
+    if (!c->sasl_auth_data) {
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_ENOMEM, vlen);
         return;
     }
 
-    data->ksize = nkey;
-    data->vsize = vlen;
-    memcpy(data->data, key, nkey);
-
-    c->item = data;
-    c->ritem = data->data + nkey;
+    c->ritem = c->sasl_auth_data;
     c->rlbytes = vlen;
     c->rltotal = 0;
     conn_set_state(c, conn_nread);
@@ -4258,7 +4254,7 @@ static void process_bin_complete_sasl_auth(conn *c)
     const char *out = NULL;
     unsigned int outlen = 0;
 
-    assert(c->item);
+    assert(c->sasl_auth_data);
     init_sasl_conn(c);
 
     uint32_t nkey = c->binary_header.request.keylen;
@@ -4276,23 +4272,18 @@ static void process_bin_complete_sasl_auth(conn *c)
         return;
     }
 
-    struct sasl_tmp *stmp = c->item;
-    char mech[nkey+1];
-    memcpy(mech, stmp->data, nkey);
-    mech[nkey] = 0x00;
-
     if (settings.verbose) {
         mc_logger->log(EXTENSION_LOG_DEBUG, c,
-                "%d: mech: ``%s'' with %d bytes of data\n", c->sfd, mech, vlen);
+                "%d: mech: ``%s'' with %d bytes of data\n", c->sfd, c->sasl_mech, vlen);
     }
 
-    const char *challenge = vlen == 0 ? NULL : (stmp->data + nkey);
+    const char *challenge = vlen == 0 ? NULL : c->sasl_auth_data;
 
     int result=-1;
 
     switch (c->cmd) {
     case PROTOCOL_BINARY_CMD_SASL_AUTH:
-        result = sasl_server_start(c->sasl_conn, mech, challenge, vlen,
+        result = sasl_server_start(c->sasl_conn, c->sasl_mech, challenge, vlen,
                                    &out, &outlen);
         c->sasl_started = (result == SASL_OK || result == SASL_CONTINUE);
         break;
@@ -4319,8 +4310,8 @@ static void process_bin_complete_sasl_auth(conn *c)
         break;
     }
 
-    free(c->item);
-    c->item = NULL;
+    free(c->sasl_auth_data);
+    c->sasl_auth_data = NULL;
     c->ritem = NULL;
 
     if (settings.verbose) {
