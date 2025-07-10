@@ -3163,6 +3163,104 @@ static void update_stat_cas(conn *c, ENGINE_ERROR_CODE ret)
     }
 }
 
+static void init_sasl_conn(conn *c)
+{
+    assert(c);
+
+    c->authenticated = false;
+
+    if (!c->sasl_conn) {
+        int result=sasl_server_new("memcached",
+                                   NULL, NULL, NULL, NULL,
+                                   NULL, 0, &c->sasl_conn);
+        if (result != SASL_OK) {
+            if (settings.verbose) {
+                mc_logger->log(EXTENSION_LOG_INFO, c,
+                         "%d: Failed to initialize SASL conn.\n", c->sfd);
+            }
+            c->sasl_conn = NULL;
+        }
+    }
+}
+
+static void get_auth_data(const void *cookie, auth_data_t *data)
+{
+    conn *c = (conn*)cookie;
+    if (c->sasl_conn) {
+        sasl_getprop(c->sasl_conn, SASL_USERNAME, (void*)&data->username);
+#ifdef ENABLE_ISASL
+        sasl_getprop(c->sasl_conn, ISASL_CONFIG, (void*)&data->config);
+#endif
+    }
+}
+
+#ifdef ASCII_SASL
+static void process_sasl_auth_complete(conn *c)
+{
+    const char *out = NULL;
+    unsigned int outlen = 0;
+
+    assert(c->sasl_auth_data);
+    init_sasl_conn(c);
+
+    int result;
+    const char *challenge = c->sasl_auth_data_len == 0 ? NULL : c->sasl_auth_data;
+
+    if (c->sasl_mech[0] != '\0') {
+        result = sasl_server_start(c->sasl_conn, c->sasl_mech, challenge, c->sasl_auth_data_len,
+                                   &out, &outlen);
+        c->sasl_started = (result == SASL_OK || result == SASL_CONTINUE);
+    } else if (c->sasl_started) {
+        result = sasl_server_step(c->sasl_conn, challenge, c->sasl_auth_data_len, &out, &outlen);
+    } else {
+        if (settings.verbose) {
+            mc_logger->log(EXTENSION_LOG_WARNING, c,
+                           "%d: SASL_STEP called but sasl_server_start "
+                           "not called for this connection!\n", c->sfd);
+        }
+        result = SASL_FAIL;
+    }
+
+    free(c->sasl_auth_data);
+    c->sasl_auth_data = NULL;
+    c->ritem = NULL;
+
+    if (settings.verbose) {
+        mc_logger->log(EXTENSION_LOG_INFO, c,
+                       "%d: sasl result code:  %d\n", c->sfd, result);
+    }
+
+    if (result == SASL_OK) {
+        c->authenticated = true;
+        out_string(c, "SASL_OK");
+        auth_data_t data;
+        get_auth_data(c, &data);
+        perform_callbacks(ON_AUTH, (const void*)&data, c);
+        STATS_CMD_NOKEY(c, auth);
+    } else if (result == SASL_CONTINUE) {
+        char *suffix = get_suffix_buffer(c);
+        if (suffix == NULL) {
+            out_string(c, "SERVER_ERROR out of memory");
+            return;
+        }
+        int suffix_len = snprintf(suffix, SUFFIX_SIZE, "%u\r\n", outlen);
+
+        if (add_iov(c, "SASL_CONTINUE ", 14) != 0 ||
+            add_iov(c, suffix, suffix_len) != 0 ||
+            add_iov(c, out, outlen) != 0 ||
+            add_iov(c, "\r\n", 2) != 0) {
+            out_string(c, "SERVER_ERROR out of memory");
+        } else {
+            conn_set_state(c, conn_mwrite);
+        }
+        c->suffixcurr = c->suffixlist;
+    } else {
+        out_string(c, "AUTH_ERROR");
+        STATS_ERRORS_NOKEY(c, auth);
+    }
+}
+#endif
+
 static void complete_update_ascii(conn *c)
 {
     assert(c != NULL);
@@ -3194,6 +3292,13 @@ static void complete_update_ascii(conn *c)
         else if (c->coll_op == OPERATION_MGETS) process_mget_complete(c, true);
         return;
     }
+
+#ifdef ASCII_SASL
+    if (c->sasl_auth_data != NULL) {
+        process_sasl_auth_complete(c);
+        return;
+    }
+#endif
 
     item *it = c->item;
     ENGINE_ERROR_CODE ret;
@@ -4126,37 +4231,6 @@ static void handle_binary_protocol_error(conn *c)
     c->write_and_go = conn_closing;
 }
 
-static void init_sasl_conn(conn *c)
-{
-    assert(c);
-
-    c->authenticated = false;
-
-    if (!c->sasl_conn) {
-        int result=sasl_server_new("memcached",
-                                   NULL, NULL, NULL, NULL,
-                                   NULL, 0, &c->sasl_conn);
-        if (result != SASL_OK) {
-            if (settings.verbose) {
-                mc_logger->log(EXTENSION_LOG_INFO, c,
-                         "%d: Failed to initialize SASL conn.\n", c->sfd);
-            }
-            c->sasl_conn = NULL;
-        }
-    }
-}
-
-static void get_auth_data(const void *cookie, auth_data_t *data)
-{
-    conn *c = (conn*)cookie;
-    if (c->sasl_conn) {
-        sasl_getprop(c->sasl_conn, SASL_USERNAME, (void*)&data->username);
-#ifdef ENABLE_ISASL
-        sasl_getprop(c->sasl_conn, ISASL_CONFIG, (void*)&data->config);
-#endif
-    }
-}
-
 #ifdef SASL_ENABLED
 #ifdef ASCII_SASL
 static void ascii_list_sasl_mechs(conn *c)
@@ -4179,6 +4253,39 @@ static void ascii_list_sasl_mechs(conn *c)
         }
         out_string(c, "AUTH_ERROR failed to get SASL mechanisms");
     }
+}
+
+static void process_ascii_sasl_auth(conn *c, token_t *tokens, const size_t ntokens)
+{
+    int read_ntokens = 2;
+
+    if (ntokens > 4) {
+        if (tokens[read_ntokens].length > MAX_SASL_MECH_LEN) {
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+        memcpy(c->sasl_mech, tokens[read_ntokens].value, tokens[read_ntokens].length);
+        c->sasl_mech[tokens[read_ntokens].length] = '\0';
+        read_ntokens++;
+    } else {
+        c->sasl_mech[0] = '\0';
+    }
+
+    if (! safe_strtoul(tokens[read_ntokens++].value, &c->sasl_auth_data_len)) {
+        out_string(c, "CLIENT_ERROR bad command line format");
+        return;
+    }
+
+    c->sasl_auth_data = malloc(c->sasl_auth_data_len + 2);
+    if (!c->sasl_auth_data) {
+        out_string(c, "SERVER_ERROR out of memory");
+        return;
+    }
+
+    c->ritem = c->sasl_auth_data;
+    c->rlbytes = c->sasl_auth_data_len + 2;
+    c->rltotal = 0;
+    conn_set_state(c, conn_nread);
 }
 #endif
 
@@ -7739,6 +7846,7 @@ static bool authenticated_ascii(conn *c, token_t *tokens, const size_t ntokens)
          strcmp(tokens[COMMAND_TOKEN].value, "lqdetect") == 0 ||
          strcmp(tokens[COMMAND_TOKEN].value, "quit") == 0 ||
          strcmp(tokens[COMMAND_TOKEN].value, "ready") == 0 ||
+         strcmp(tokens[COMMAND_TOKEN].value, "sasl") == 0 ||
          strcmp(tokens[COMMAND_TOKEN].value, "scan") == 0 ||
          strcmp(tokens[COMMAND_TOKEN].value, "setattr") == 0 ||
          strcmp(tokens[COMMAND_TOKEN].value, "shutdown") == 0 ||
@@ -10138,6 +10246,8 @@ static void process_sasl_command(conn *c, token_t *tokens, const size_t ntokens)
 
     if (ntokens == 3 && strcmp(subcommand, "mech") == 0) {
         ascii_list_sasl_mechs(c);
+    } else if ((ntokens == 4 || ntokens == 5) && strcmp(subcommand, "auth") == 0) {
+        process_ascii_sasl_auth(c, tokens, ntokens);
     } else {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
