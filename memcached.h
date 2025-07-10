@@ -280,7 +280,7 @@ struct conn {
     bool sasl_started;
     bool authenticated;
     char sasl_mech[MAX_SASL_MECH_LEN+1];
-    int sasl_auth_data_len;
+    uint32_t sasl_auth_data_len;
     char *sasl_auth_data;
     STATE_FUNC   state;
     enum bin_substates substate;
