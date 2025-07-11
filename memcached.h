@@ -33,6 +33,7 @@
 #include "mc_util.h"
 #include "engine_loader.h"
 #include "sasl_defs.h"
+#include "stats.h"
 
 /* This is the address we use for admin purposes.  For example, doing stats
  * and heart beats from arcus_zk.
@@ -188,6 +189,10 @@ enum network_transport {
     tcp_transport,
     udp_transport
 };
+
+#ifdef STATS_TCP_RETRANS
+#define IS_TCP(x) (x == tcp_transport)
+#endif
 
 #define IS_UDP(x) (x == udp_transport)
 
