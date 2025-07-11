@@ -15835,7 +15835,11 @@ int main (int argc, char **argv)
     }
 
 #ifdef SASL_ENABLED
-    init_sasl();
+#ifdef ENABLE_ZK_INTEGRATION
+    init_sasl(arcus_zk_cfg, getenv("ARCUS_ACL_GROUP"));
+#else
+    init_sasl(NULL, NULL);
+#endif
 #endif /* SASL */
 
     /* daemonize if requested */
@@ -16041,6 +16045,10 @@ int main (int argc, char **argv)
     /* 1) remove the PID file if we're a daemon */
     if (do_daemonize)
         remove_pidfile(pid_file);
+
+#ifdef SASL_ENABLED
+    shutdown_sasl();
+#endif
 
 #ifdef ENABLE_ZK_INTEGRATION
     /* 2) shutdown arcus ZK connection */
