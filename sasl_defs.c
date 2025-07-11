@@ -5,6 +5,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+static char *sasldb_zookeeper_host;
+static char *sasldb_zookeeper_path;
+
 #ifdef HAVE_SASL_CB_GETCONF
 /* The locations we may search for a SASL config file if the user didn't
  * specify one in the environment variable SASL_CONF_PATH
@@ -137,6 +140,29 @@ static int sasl_log(void *context, int level, const char *message)
 
     return SASL_OK;
 }
+
+static int sasl_getopt(void *context __attribute__((unused)),
+                       const char *plugin_name __attribute__((unused)),
+                       const char *option,
+                       const char **result, unsigned *len)
+{
+    if (strcmp(option, "mech_list") == 0) {
+        *result = "scram-sha-256";
+        if (len) *len = (unsigned)strlen(*result);
+        return SASL_OK;
+    }
+    if (strcmp(option, "db_zookeeper_host") == 0) {
+        *result = sasldb_zookeeper_host;
+        if (len) *len = (unsigned)strlen(*result);
+        return SASL_OK;
+    }
+    if (strcmp(option, "db_zookeeper_path") == 0) {
+        *result = sasldb_zookeeper_path;
+        if (len) *len = (unsigned)strlen(*result);
+        return SASL_OK;
+    }
+    return SASL_FAIL;
+}
 #endif
 
 static sasl_callback_t sasl_callbacks[] = {
@@ -146,6 +172,7 @@ static sasl_callback_t sasl_callbacks[] = {
 
 #ifdef ENABLE_SASL
    { SASL_CB_LOG, (int(*)(void))sasl_log, NULL },
+   { SASL_CB_GETOPT, (int(*)(void))sasl_getopt, NULL },
 #endif
 
 #ifdef HAVE_SASL_CB_GETCONF
@@ -155,7 +182,7 @@ static sasl_callback_t sasl_callbacks[] = {
    { SASL_CB_LIST_END, NULL, NULL }
 };
 
-void init_sasl(void) {
+void init_sasl(char *zookeeper_host, char *acl_group) {
 #ifdef ENABLE_SASL_PWDB
     memcached_sasl_pwdb = getenv("MEMCACHED_SASL_PWDB");
     if (memcached_sasl_pwdb == NULL) {
@@ -169,6 +196,23 @@ void init_sasl(void) {
     }
 #endif
 
+    if (zookeeper_host != NULL) {
+        sasldb_zookeeper_host = strdup(zookeeper_host);
+        if (sasldb_zookeeper_host == NULL) {
+            fprintf(stderr, "Error allocating memory for sasldb_zookeeper_host.\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+    if (acl_group != NULL) {
+        size_t len = 12 + strlen(acl_group);
+        sasldb_zookeeper_path = malloc(len);
+        if (sasldb_zookeeper_path == NULL) {
+            fprintf(stderr, "Error allocating memory for sasldb_zookeeper_path.\n");
+            exit(EXIT_FAILURE);
+        }
+        snprintf(sasldb_zookeeper_path, len, "/arcus-acl/%s", acl_group);
+    }
+
     if (sasl_server_init(sasl_callbacks, "memcached") != SASL_OK) {
         fprintf(stderr, "Error initializing sasl.\n");
         exit(EXIT_FAILURE);
@@ -177,4 +221,16 @@ void init_sasl(void) {
             fprintf(stderr, "Initialized SASL.\n");
         }
     }
+}
+
+void shutdown_sasl(void) {
+    if (sasldb_zookeeper_host != NULL) {
+        free(sasldb_zookeeper_host);
+        sasldb_zookeeper_host = NULL;
+    }
+    if (sasldb_zookeeper_path != NULL) {
+        free(sasldb_zookeeper_path);
+        sasldb_zookeeper_path = NULL;
+    }
+    sasl_done();
 }

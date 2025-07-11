@@ -13,20 +13,20 @@
 #if defined(HAVE_SASL_SASL_H) && defined(ENABLE_SASL)
 
 #include <sasl/sasl.h>
-void init_sasl(void);
-#define shutdown_sasl()
+void init_sasl(char *zookeeper_host, char *acl_group);
+void shutdown_sasl(void);
 
 #elif defined(ENABLE_ISASL)
 
 #include "isasl.h"
-void init_sasl(void);
+void init_sasl(char *zookeeper_host, char *acl_group);
 void shutdown_sasl(void);
 #else /* End of SASL support */
 
 typedef void* sasl_conn_t;
 
 #define shutdown_sasl()
-#define init_sasl() {}
+#define init_sasl(a, b) {}
 #define sasl_dispose(x) {}
 #define sasl_server_new(a, b, c, d, e, f, g, h) 1
 #define sasl_listmech(a, b, c, d, e, f, g, h) 1
