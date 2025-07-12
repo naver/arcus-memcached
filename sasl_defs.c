@@ -155,7 +155,8 @@ static sasl_callback_t sasl_callbacks[] = {
    { SASL_CB_LIST_END, NULL, NULL }
 };
 
-void init_sasl(void) {
+void init_sasl(void)
+{
 #ifdef ENABLE_SASL_PWDB
     memcached_sasl_pwdb = getenv("MEMCACHED_SASL_PWDB");
     if (memcached_sasl_pwdb == NULL) {
@@ -172,13 +173,14 @@ void init_sasl(void) {
     if (sasl_server_init(sasl_callbacks, "memcached") != SASL_OK) {
         fprintf(stderr, "Error initializing sasl.\n");
         exit(EXIT_FAILURE);
-    } else {
-        if (settings.verbose) {
-            fprintf(stderr, "Initialized SASL.\n");
-        }
+    }
+
+    if (settings.verbose) {
+        fprintf(stderr, "Initialized SASL.\n");
     }
 }
 
-void shutdown_sasl(void) {
+void shutdown_sasl(void)
+{
     sasl_done();
 }
