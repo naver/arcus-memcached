@@ -65,8 +65,8 @@ int sasl_server_step(sasl_conn_t *conn,
 int sasl_getprop(sasl_conn_t *conn, int propnum,
                  const void **pvalue);
 
-#define SASL_OK       0
-#define SASL_CONTINUE 1
+#define SASL_CONTINUE  1
+#define SASL_OK        0
 #define SASL_FAIL     -1        /* generic failure */
 #define SASL_NOMEM    -2        /* memory shortage failure */
 #define SASL_BADPARAM -7        /* invalid parameter supplied */
