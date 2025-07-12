@@ -14,7 +14,7 @@
 
 #include <sasl/sasl.h>
 void init_sasl(void);
-#define shutdown_sasl()
+void shutdown_sasl(void);
 
 #elif defined(ENABLE_ISASL)
 

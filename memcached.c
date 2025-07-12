@@ -16052,6 +16052,10 @@ int main (int argc, char **argv)
     }
 #endif
 
+#ifdef SASL_ENABLED
+    shutdown_sasl();
+#endif /* SASL */
+
     /* 3) close listen sockes not to accept new connections */
     close_listen_sockets();
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Listen sockets closed.\n");

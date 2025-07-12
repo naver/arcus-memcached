@@ -26,6 +26,8 @@ typedef struct user_db_entry {
 
 void sasl_dispose(sasl_conn_t **pconn);
 
+void sasl_done(void);
+
 int sasl_server_init(const sasl_callback_t *callbacks,
                      const char *appname);
 
