@@ -178,3 +178,7 @@ void init_sasl(void) {
         }
     }
 }
+
+void shutdown_sasl(void) {
+    sasl_done();
+}

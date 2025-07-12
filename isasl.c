@@ -228,7 +228,7 @@ static void* check_isasl_db_thread(void* arg)
     return NULL;
 }
 
-void shutdown_sasl(void)
+void sasl_done(void)
 {
    pthread_mutex_lock(&sasl_db_thread_lock);
    run_sasl_db_thread = false;
