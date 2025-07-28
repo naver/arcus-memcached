@@ -15927,10 +15927,6 @@ int main (int argc, char **argv)
         }
     }
 
-#ifdef SASL_ENABLED
-    init_sasl();
-#endif /* SASL */
-
     /* daemonize if requested */
     /* if we want to ensure our ability to dump core, don't chdir to / */
     if (do_daemonize) {
@@ -15944,6 +15940,12 @@ int main (int argc, char **argv)
             exit(EXIT_FAILURE);
         }
     }
+
+#ifdef SASL_ENABLED
+    if (settings.require_sasl) {
+        init_sasl();
+    }
+#endif
 
     /* lock paged memory if needed */
     if (lock_memory) {
@@ -16145,10 +16147,6 @@ int main (int argc, char **argv)
     }
 #endif
 
-#ifdef SASL_ENABLED
-    shutdown_sasl();
-#endif /* SASL */
-
     /* 3) close listen sockes not to accept new connections */
     close_listen_sockets();
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Listen sockets closed.\n");
@@ -16192,6 +16190,12 @@ int main (int argc, char **argv)
 #ifdef DETECT_LONG_QUERY
     lqdetect_final(); /* finalize long query detection */
 #endif
+#ifdef SASL_ENABLED
+    if (settings.require_sasl) {
+        shutdown_sasl();
+    }
+#endif
+
     mc_engine.v1->destroy(mc_engine.v0);
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "Memcached engine destroyed.\n");
 

@@ -133,6 +133,9 @@ noinst_LIBRARIES = libarcuszk.a
 libarcuszk_a_SOURCES = arcus_zk.c arcus_zk.h \
                        arcus_hb.c arcus_hb.h \
                        cluster_config.c cluster_config.h
+if ENABLE_SASL
+libarcuszk_a_SOURCES += sasl_auxprop.c sasl_auxprop.h
+endif
 # Do not use AM_CFLAGS which includes -pedantic.
 # We do not want that flag when compiling arcus_zk.c.
 libarcuszk_a_CFLAGS = @PROFILER_FLAGS@ @ARCUSZK_CFLAGS@
