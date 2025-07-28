@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "sasl_auxprop.h"
 
 #ifdef HAVE_SASL_CB_GETCONF
 /* The locations we may search for a SASL config file if the user didn't
@@ -104,6 +105,27 @@ static int sasl_getconf(void *context, const char **path)
 #endif
 
 #ifdef ENABLE_SASL
+#ifdef ENABLE_ZK_INTEGRATION
+static int sasl_getopt(void *context __attribute__((unused)),
+                       const char *plugin_name __attribute__((unused)),
+                       const char *option,
+                       const char **result, unsigned *len)
+{
+    if (strcmp(option, "auxprop_plugin") == 0) {
+        *result = "arcus";
+        if (len) *len = (unsigned)strlen(*result);
+        return SASL_OK;
+    }
+    if (strcmp(option, "mech_list") == 0) {
+        *result = "scram-sha-256";
+        if (len) *len = (unsigned)strlen(*result);
+        return SASL_OK;
+    }
+
+    return SASL_FAIL;
+}
+#endif
+
 static int sasl_log(void *context, int level, const char *message)
 {
     bool log = true;
@@ -139,7 +161,7 @@ static int sasl_log(void *context, int level, const char *message)
 }
 #endif
 
-static sasl_callback_t sasl_callbacks[] = {
+static sasl_callback_t sasl_callbacks[5] = {
 #ifdef ENABLE_SASL_PWDB
    { SASL_CB_SERVER_USERDB_CHECKPASS, (int(*)(void))sasl_server_userdb_checkpass, NULL },
 #endif
@@ -170,10 +192,29 @@ void init_sasl(void)
     }
 #endif
 
+#if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
+    bool use_acl_zookeeper = getenv("ARCUS_ACL_ZOOKEEPER") != NULL;
+    if (use_acl_zookeeper) {
+        sasl_callback_t *cb = sasl_callbacks;
+        while (cb->id != SASL_CB_LIST_END) cb++;
+        cb[0] = (sasl_callback_t){ SASL_CB_GETOPT, (sasl_callback_ft)&sasl_getopt, NULL };
+        cb[1] = (sasl_callback_t){ SASL_CB_LIST_END, NULL, NULL };
+    }
+#endif
+
     if (sasl_server_init(sasl_callbacks, "memcached") != SASL_OK) {
         fprintf(stderr, "Error initializing sasl.\n");
         exit(EXIT_FAILURE);
     }
+
+#if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
+    if (use_acl_zookeeper) {
+        if (sasl_auxprop_add_plugin("arcus", &arcus_auxprop_plug_init) != SASL_OK) {
+            fprintf(stderr, "Error to SASL auxprop plugin.\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+#endif
 
     if (settings.verbose) {
         fprintf(stderr, "Initialized SASL.\n");
