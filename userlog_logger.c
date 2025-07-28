@@ -48,7 +48,7 @@ static const char *get_name(void) {
 #define LOGDIRECTORY          "./ARCUSlog"
 #define DATE_LEN              16          // by Syslog format
 #define DEFAULT_RATELIMIT     200         // 200 default log rate limit burst per interval
-#define DEFAULT_INTERVAL      5           // 5  default log rate limit interval(second)
+#define DEFAULT_INTERVAL      5           // 5 default log rate limit interval(second)
 #define LOGLIMIT_MAX_INTERVAL 60          // Maximum log rate limit interval
 #define LOGLIMIT_MAX_BURST    50000       // Maximum log rate limit burst per interval
 
@@ -61,8 +61,8 @@ static char hname_pid[100];         // hostname + pid for prefix
 static int  hname_len;              // length of hname_pid
 static int  prefix_len;             // length of date_time + hname_pid
 static time_t prev_time;            // save the previous time
-static int    msg_cnt;              // # of inputed messages in the interval
-static int    drop_cnt;             // # of messages to be dropped in a  second
+static int    msg_cnt;              // # of inputted messages in the interval
+static int    drop_cnt;             // # of messages to be dropped in a second
 static bool   drop_mode;            // indicate the DROP mode when over RATE_LIMIT
 static bool   reduction_mode;       // duplication reduction or not. user setting or default(=False)
 static int    samelog_cnt;
@@ -75,12 +75,12 @@ static unsigned int loglimit_burst;    // log rate limit burst per interval. use
 static void do_make_logname(int filenum, char *ret_name)
 {
     /* log file name : DIR-NAME + "/" + DEFAULT-NAME + sequence no(0~4) + date + ".log" */
-    if (ret_name == NULL || filenum < 0 || filenum > NUM_LOGFILE)  return;
+    if (ret_name == NULL || filenum < 0 || filenum > NUM_LOGFILE) return;
     struct tm *day;
     time_t clock = time(0);
     day = localtime(&clock);
-    sprintf(ret_name, "%s/%s%d_%04d%02d%02d", LOGDIRECTORY, DEFAULT_LOGFILE_NAME, filenum,
-                         day->tm_year+1900,day->tm_mon+1,day->tm_mday);
+    sprintf(ret_name, "%s/%s%d_%04d%02d%02d", LOGDIRECTORY, DEFAULT_LOGFILE_NAME,
+            filenum, day->tm_year + 1900, day->tm_mon + 1, day->tm_mday);
 }
 
 static void do_make_prefix(char *ret_string, time_t clock)
@@ -102,11 +102,11 @@ static void do_print_msg(char *head_str, int head_len, char *body_str, int body_
 
 static void do_print_dup(char *time_str, int dup_cnt)
 {
-    if ( dup_cnt == 1) {  // The Syslog do like this.
+    if (dup_cnt == 1) {  // The Syslog do like this.
         fprintf(current_fp, "%s%s", time_str, prev_log);
         current_flength += prefix_len + prev_len;
     } else {
-        fprintf(current_fp,"%slast messages repeated %d times\n", time_str, dup_cnt);
+        fprintf(current_fp, "%slast messages repeated %d times\n", time_str, dup_cnt);
         current_flength += prefix_len + 35;
     }
     fflush(current_fp);
@@ -120,7 +120,8 @@ static void do_process_dup(char *time_str, int dup_cnt)
 
 static void do_save_log(char *log_buf, int len)
 {
-    memcpy(prev_log, log_buf, len);  prev_log[len] = 0;
+    memcpy(prev_log, log_buf, len);
+    prev_log[len] = 0;
     prev_len = len;
 }
 
@@ -129,46 +130,44 @@ static void do_userlog(char *body_buf, int len)
     char prefix_buf[200];
     double time_diff;
     time_t cur_time = time(0);
-    if ( loglimit_interval == 0 ) { // 1. No Log Rate Limiting. Process all logs regardless of speed.
-        if ( reduction_mode == false ) { // 1.1 No Reduction. The simplest case.
+    if (loglimit_interval == 0) { // 1. No Log Rate Limiting. Process all logs regardless of speed.
+        if (reduction_mode == false) { // 1.1 No Reduction. The simplest case.
             do_make_prefix(prefix_buf, cur_time);
             do_print_msg(prefix_buf, prefix_len, body_buf, len);
-        }
-        else {     // 1.2 Reduction-mode.
-            if ( (len!=prev_len) || strcmp(body_buf, prev_log)!=0 ) {
+        } else {                       // 1.2 Reduction-mode.
+            if ((len != prev_len) || strcmp(body_buf, prev_log) != 0) {
                 // Two log messages are different. Print the count and the previous time,
                 // then restart the count.
-                if ( samelog_cnt > 1 ) do_process_dup(prevtime_str, samelog_cnt-1);
+                if (samelog_cnt > 1) do_process_dup(prevtime_str, samelog_cnt - 1);
                 do_make_prefix(prevtime_str, cur_time);
                 do_print_msg(prevtime_str, prefix_len, body_buf, len);
                 do_save_log(body_buf, len);
-            }
-            else {   // The current log 'body_buf' and the previous log are same
+            } else {              // The current log 'body_buf' and the previous log are same
                 samelog_cnt++;    // Just increase the count and save the time
                 do_make_prefix(prevtime_str, cur_time);
             }
         }
-    }
-    else {     // 2. Check Log Rate Limit
+    } else {     // 2. Check Log Rate Limit
         time_diff = difftime(cur_time, prev_time);
         do_make_prefix(prefix_buf, cur_time);
-        if ( time_diff <= (double)loglimit_interval ) { // check interval and burst rate.
-            if ( drop_mode == false ) {  // not yet reach the limit
-                if ( reduction_mode == false )
+        if (time_diff <= (double)loglimit_interval) { // check interval and burst rate.
+            if (drop_mode == false) {  // not yet reach the limit
+                if (reduction_mode == false) {
                     do_print_msg(prefix_buf, prefix_len, body_buf, len);
-                else {   // The most complex case : Reduction-ON, Log Limit-ON
-                    if ( (len!=prev_len) || strcmp(body_buf, prev_log)!=0 ) {
-                        if ( samelog_cnt > 1 ) do_process_dup(prevtime_str, samelog_cnt-1);
+                } else {        // The most complex case : Reduction-ON, Log Limit-ON
+                    if ((len != prev_len) || strcmp(body_buf, prev_log) != 0) {
+                        if (samelog_cnt > 1) do_process_dup(prevtime_str, samelog_cnt - 1);
                         do_print_msg(prefix_buf, prefix_len, body_buf, len);
                         do_save_log(body_buf, len);
-                    }
-                    else    // The current log 'body_buf' and the previous log are same
+                    } else {    // The current log 'body_buf' and the previous log are same
                         samelog_cnt++;
-                    memcpy(prevtime_str, prefix_buf, prefix_len);  prevtime_str[prefix_len] = 0;
+                    }
+                    memcpy(prevtime_str, prefix_buf, prefix_len);
+                    prevtime_str[prefix_len] = 0;
                 }
                 msg_cnt++;
-                if ( msg_cnt >= loglimit_burst ) { // if duplicates remains, print that.
-                    if ( samelog_cnt > 1 ) do_process_dup(prevtime_str, samelog_cnt-1);
+                if (msg_cnt >= loglimit_burst) { // if duplicates remains, print that.
+                    if (samelog_cnt > 1) do_process_dup(prevtime_str, samelog_cnt - 1);
                     char *tmpstr = " user_logger begins to drop messages due to rate-limiting\n";
                     do_print_msg(prefix_buf, prefix_len, tmpstr, 60);
                     drop_mode = true;
@@ -178,37 +177,37 @@ static void do_userlog(char *body_buf, int len)
                 drop_cnt++;  // Increase the dropped log, regardless of Reduction-mode.
             }
         } else {   // 'loglimit_interval' seconds passed.
-            if ( drop_mode == true ) {   // Start a new interval regardless of Reduction-mode.
-                if ( drop_cnt > 0 ) {
+            if (drop_mode == true) {   // Start a new interval regardless of Reduction-mode.
+                if (drop_cnt > 0) {
                     fprintf(current_fp, "%s user_logger lost %d messages due to rate-limiting (%d)\n",
-                                   prefix_buf, drop_cnt, loglimit_burst);
+                            prefix_buf, drop_cnt, loglimit_burst);
                     fflush(current_fp);
                     current_flength += prefix_len + 55;
                     drop_cnt = 0;
                 }       // We have to consider the special case that drop_mode=true && drop_cnt=0
                 do_print_msg(prefix_buf, prefix_len, body_buf, len);
                 drop_mode = false;
-                if ( reduction_mode == true ) {
+                if (reduction_mode == true) {
                     samelog_cnt = 1;
                     do_save_log(body_buf, len);
                 }
-            }
-            else {   // Normal status.
-                if ( reduction_mode == false )
+            } else {   // Normal status.
+                if (reduction_mode == false)
                     do_print_msg(prefix_buf, prefix_len, body_buf, len);
                 else {
-                    if ( (len!=prev_len) || strcmp(body_buf, prev_log)!=0 ) {
-                        if ( samelog_cnt > 1 ) do_process_dup(prevtime_str, samelog_cnt-1);
+                    if ((len != prev_len) || strcmp(body_buf, prev_log) != 0) {
+                        if (samelog_cnt > 1) do_process_dup(prevtime_str, samelog_cnt - 1);
                         do_print_msg(prefix_buf, prefix_len, body_buf, len);
                         do_save_log(body_buf, len);
-                    }
-                    else   // The current log 'body_buf' and the previous log are same
+                    } else {  // The current log 'body_buf' and the previous log are same
                         samelog_cnt++;
+                    }
                 }
             }
             msg_cnt = 1;
             prev_time = cur_time;
-            memcpy(prevtime_str, prefix_buf, prefix_len);  prevtime_str[prefix_len] = 0;
+            memcpy(prevtime_str, prefix_buf, prefix_len);
+            prevtime_str[prefix_len] = 0;
         }
     }
 }
@@ -219,7 +218,6 @@ static void logger_log(EXTENSION_LOG_LEVEL severity,
 {
     (void)client_cookie;
     if (severity >= current_log_level) {
-
         char log_buf[2048];
         va_list ap;
         va_start(ap, fmt);
@@ -232,7 +230,7 @@ static void logger_log(EXTENSION_LOG_LEVEL severity,
         if (current_flength >= MAX_LOGFILE_SIZE) {
             fclose(current_fp);
             current_file++;
-            if ( current_file == NUM_LOGFILE)  current_file = 0;
+            if (current_file == NUM_LOGFILE) current_file = 0;
             remove(logfile_name[current_file]);    // To maintain the total # of log files
             do_make_logname(current_file, logfile_name[current_file]);
             current_fp = fopen(logfile_name[current_file], "w");
@@ -271,56 +269,56 @@ EXTENSION_ERROR_CODE memcached_extensions_initialize(const char *config,
 
     /* userlog codes */
     char buf[50];
-    if ( mkdir(LOGDIRECTORY, 0744) == -1 ) {
+    if (mkdir(LOGDIRECTORY, 0744) == -1) {
         if (errno != EEXIST) {
             fprintf(stderr, "\n FATAL error : can't make log Directory: %s\n", LOGDIRECTORY);
             return EXTENSION_FATAL;
         }
     }
     do_make_logname(0, logfile_name[0]);
-    if ( (current_fp = fopen(logfile_name[0], "w")) == NULL ) {
+    if ((current_fp = fopen(logfile_name[0], "w")) == NULL) {
         fprintf(stderr, "\n FATAL error : can't make log file: %s\n", logfile_name[0]);
         return EXTENSION_FATAL;
     }
     current_file = 0;
     current_flength = 0;
-    if ( gethostname(buf, sizeof(buf)-1) != 0 )   buf[0] = 0;
+    if (gethostname(buf, sizeof(buf)-1) != 0) buf[0] = 0;
     sprintf(hname_pid, "%s memcached[%d]: ", buf, getpid());
     hname_len = strlen(hname_pid);
     prefix_len = DATE_LEN + hname_len;
     pthread_mutex_init(&log_lock, NULL);
     // User option
     char *env;
-    unsigned int  env_value;
+    unsigned int env_value;
     loglimit_interval = DEFAULT_INTERVAL;
     env = getenv("UserLogRateLimitInterval");
-    if ( env != NULL ) {
-        if ( strlen(env) == 1 && env[0] == '0' )
+    if (env != NULL) {
+        if (strlen(env) == 1 && env[0] == '0') {
             loglimit_interval = 0;
-        else {
-            env_value = (unsigned int) atoi(env);
-            if ( env_value > 0 && env_value <= LOGLIMIT_MAX_INTERVAL )
+        } else {
+            env_value = (unsigned int)atoi(env);
+            if (env_value > 0 && env_value <= LOGLIMIT_MAX_INTERVAL)
                 loglimit_interval = env_value;
         }
     }
-    if ( loglimit_interval != 0 ) {
+    if (loglimit_interval != 0) {
         prev_time = time(0);
         msg_cnt = 0;
         drop_cnt = 0;
         drop_mode = false;
         loglimit_burst = DEFAULT_RATELIMIT;
         env = getenv("UserLogRateLimitBurst");
-        if ( env != NULL ) {
-            env_value = (unsigned int) atoi(env);
-            if ( env_value > 0 && env_value <= LOGLIMIT_MAX_BURST )
+        if (env != NULL) {
+            env_value = (unsigned int)atoi(env);
+            if (env_value > 0 && env_value <= LOGLIMIT_MAX_BURST)
                 loglimit_burst = env_value;
         }
     }
     reduction_mode = false;
     env = getenv("UserLogReduction");
-    if ( env != NULL && strcmp(env, "on") == 0 )
+    if (env != NULL && strcmp(env, "on") == 0)
         reduction_mode = true;
-    if ( reduction_mode == true ) {  // default is false
+    if (reduction_mode == true) {  // default is false
         samelog_cnt = 1;
         prev_log[0] = 0;
         prev_len = 0;
