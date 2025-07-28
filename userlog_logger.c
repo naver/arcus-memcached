@@ -218,6 +218,7 @@ static void logger_log(EXTENSION_LOG_LEVEL severity,
 {
     (void)client_cookie;
     if (severity >= current_log_level) {
+        static rel_time_t last_time_log_open_failed = 0;
         char log_buf[2048];
         va_list ap;
         va_start(ap, fmt);
@@ -225,6 +226,22 @@ static void logger_log(EXTENSION_LOG_LEVEL severity,
         va_end(ap);
 
         pthread_mutex_lock(&log_lock);
+        if (current_fp == NULL) {
+            if (last_time_log_open_failed < sapi->core->get_current_time()) { // 1 sec elapsed
+                current_fp = fopen(logfile_name[current_file], "w");
+                if (current_fp == NULL) {
+                    last_time_log_open_failed = sapi->core->get_current_time();
+                    fprintf(stderr, "\n FATAL error : can't open user log file: %s\n",
+                            logfile_name[current_file]);
+                    pthread_mutex_unlock(&log_lock);
+                    return;
+                }
+            } else {
+               pthread_mutex_unlock(&log_lock);
+               return;
+            }
+        }
+
         do_userlog(log_buf, len); // userlog codes
 
         if (current_flength >= MAX_LOGFILE_SIZE) {
@@ -236,6 +253,7 @@ static void logger_log(EXTENSION_LOG_LEVEL severity,
             current_fp = fopen(logfile_name[current_file], "w");
             current_flength = 0;
             if (current_fp == NULL) {
+                last_time_log_open_failed = sapi->core->get_current_time();
                 fprintf(stderr, "\n FATAL error : can't open user log file: %s\n", logfile_name[current_file]);
                 pthread_mutex_unlock(&log_lock);
                 return;
