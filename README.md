@@ -49,11 +49,11 @@ Also, arcus-memcached has the following library dependencies.
 
 To install them easily, run the command below from the git-cloned source code.
 ```
-$ ./deps/install.sh [<arcus_install_path>]
+$ ./deps/install.sh [<libs_install_path>]
 ```
-If the *arcus_install_path* was not given, dependencies will be installed in the system path(/usr/local).
+If the *libs_install_path* was not given, dependencies will be installed in the system path(/usr/local).
 
-Therefore, giving the *arcus_install_path* preferably is recommended.
+Therefore, giving the *libs_install_path* preferably is recommended.
 
 **Compile**
 
@@ -61,7 +61,7 @@ To build arcus-memcached from the git-cloned source code,
 
 ```
 $ ./config/autorun.sh
-$ ./configure [--prefix=<arcus_install_path>] [--with-libevent=<libevent_install_path>]
+$ ./configure [--prefix=<arcus_install_path>] [--with-libevent=<libs_install_path>]
 $ make
 $ make install
 ```
