@@ -112,6 +112,8 @@ AM_PROG_CC_C_O
 AC_PROG_INSTALL
 AC_C_BIGENDIAN
 
+AC_CHECK_HEADERS_ONCE(link.h dlfcn.h inttypes.h umem.h priv.h sysexits.h sys/wait.h sys/socket.h netinet/in.h netdb.h unistd.h sys/un.h sys/stat.h sys/resource.h sys/uio.h netinet/tcp.h pwd.h sys/mman.h syslog.h)
+
 AC_ARG_ENABLE(sasl,
   [AS_HELP_STRING([--enable-sasl],[Enable SASL authentication])])
 AC_ARG_ENABLE(isasl,
@@ -146,8 +148,6 @@ unsigned long val = SASL_CB_GETCONF;
                      [Set to nonzero if your SASL implementation supports SASL_CB_GETCONF])])
 ])
 
-AC_CHECK_HEADERS_ONCE(link.h dlfcn.h inttypes.h umem.h priv.h sasl/sasl.h sysexits.h sys/wait.h sys/socket.h netinet/in.h netdb.h unistd.h sys/un.h sys/stat.h sys/resource.h sys/uio.h netinet/tcp.h pwd.h sys/mman.h syslog.h)
-
 AM_CONDITIONAL(BUILD_SYSLOG_LOGGER, test "x$ac_cv_header_syslog_h" = "xyes")
 
 if test "x$enable_isasl" = "xyes"; then
@@ -157,14 +157,87 @@ if test "x$enable_isasl" = "xyes"; then
       AC_MSG_ERROR([You can't specify isasl and sasl at the same time])
   fi
 elif test "x$enable_sasl" = "xyes"; then
-  AC_PATH_PROG(ac_cv_saslpasswd2, saslpasswd2, ,/usr/sbin:/usr/bin:/usr/local/bin:/usr/opt/bin/:/opt/bin)
-  AC_C_DETECT_SASL_CB_GETCONF
   AC_DEFINE([ENABLE_SASL],1,[Set to nonzero if you want to include SASL])
-  AC_SEARCH_LIBS([sasl_server_init], [sasl2 sasl], [],
-    [
-      AC_MSG_ERROR([Failed to locate the library containing sasl_server_init])
-    ])
 
+  trysasldir=""
+  AC_ARG_WITH(sasl,
+    [  --with-sasl=PATH        specify path to sasl installation ],
+    [
+      if test "x$withval" != "xno" ; then
+        trysasldir=$withval
+      fi
+    ]
+  )
+
+  AC_CACHE_CHECK([for sasl directory], ac_cv_sasl_dir, [
+    saved_LIBS="$LIBS"
+    saved_LDFLAGS="$LDFLAGS"
+    saved_CPPFLAGS="$CPPFLAGS"
+    sasl_found=no
+    for sasldir in $trysasldir $prefix "" /usr/local ; do
+      LDFLAGS="$saved_LDFLAGS"
+      CPPFLAGS="$saved_CPPFLAGS"
+
+      # Skip the directory if it isn't there.
+      if test ! -z "$sasldir" -a ! -d "$sasldir" ; then
+         continue;
+      fi
+      if test ! -z "$sasldir" ; then
+        if test -d "$sasldir/lib" ; then
+          LDFLAGS="-L$sasldir/lib $LDFLAGS"
+        else
+          LDFLAGS="-L$sasldir $LDFLAGS"
+        fi
+        if test -d "$sasldir/include" ; then
+          CPPFLAGS="-I$sasldir/include $CPPFLAGS"
+        else
+          CPPFLAGS="-I$sasldir $CPPFLAGS"
+        fi
+      fi
+
+      if test ! -z "$sasldir" ; then
+        ac_cv_sasl_dir=$sasldir
+      else
+        ac_cv_sasl_dir="(system)"
+      fi
+
+      AC_SEARCH_LIBS(sasl_server_init, sasl2, [
+        sasl_found=yes
+      ],[
+        sasl_found=no
+      ])
+
+      if test $sasl_found = yes ; then
+        AC_C_DETECT_SASL_CB_GETCONF
+        break
+      fi
+    done
+    LIBS="$saved_LIBS"
+    LDFLAGS="$saved_LDFLAGS"
+    CPPFLAGS="$saved_CPPFLAGS"
+    if test $sasl_found = no ; then
+      AC_MSG_ERROR([
+
+        If it's already installed, specify its path using --with-sasl=/dir/
+      ])
+    fi
+  ])
+
+  if test $ac_cv_sasl_dir != "(system)"; then
+    if test -d "$ac_cv_sasl_dir/lib" ; then
+      LDFLAGS="-L$ac_cv_sasl_dir/lib $LDFLAGS"
+      sasl_libdir="$ac_cv_sasl_dir/lib"
+    else
+      LDFLAGS="-L$ac_cv_sasl_dir $LDFLAGS"
+      sasl_libdir="$ac_cv_sasl_dir"
+    fi
+      if test -d "$ac_cv_sasl_dir/include" ; then
+      CPPFLAGS="-I$ac_cv_sasl_dir/include $CPPFLAGS"
+    else
+      CPPFLAGS="-I$ac_cv_sasl_dir $CPPFLAGS"
+    fi
+  fi
+  AC_PATH_PROG(ac_cv_saslpasswd2, saslpasswd2, ,/usr/sbin:/usr/bin:/usr/local/bin:/usr/opt/bin/:/opt/bin)
   AS_IF([test "x$enable_sasl_pwdb" = "xyes"],
         [AC_DEFINE([ENABLE_SASL_PWDB], 1,
                    [Set to nonzero if you want to enable a SASL pwdb])])

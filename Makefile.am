@@ -109,6 +109,7 @@ endif
 
 if ENABLE_SASL
 memcached_SOURCES += sasl_defs.c
+memcached_LDADD += -lsasl2
 endif
 
 if ENABLE_ISASL
@@ -229,7 +230,7 @@ syslog_logger_la_SOURCES = syslog_logger.c
 syslog_logger_la_LDFLAGS = -avoid-version -shared -module -no-undefined
 
 # A logger using user log file
-userlog_logger_la_SOURCES = userlog_logger.c 
+userlog_logger_la_SOURCES = userlog_logger.c
 userlog_logger_la_LDFLAGS = -avoid-version -shared -module -no-undefined
 
 basic_engine_testsuite_la_SOURCES= basic_engine_testsuite.c
