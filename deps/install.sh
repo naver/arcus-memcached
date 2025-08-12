@@ -6,6 +6,7 @@ trap "stop_build_and_install" ERR
 deps_path=$(dirname $0)
 libevent="libevent-2.1.12-stable"
 zookeeper="arcus-zookeeper-3.5.9-p3"
+cyrussasl="cyrus-sasl-2.1.28"
 
 ## Error handling
 stop_build_and_install() {
@@ -67,6 +68,7 @@ echo "---------------------------------------------------"
 ## Install dependencies
 build_and_install $libevent "$prefix --disable-openssl"
 build_and_install $zookeeper $prefix
+build_and_install $cyrussasl $prefix
 
 popd > /dev/null
 
