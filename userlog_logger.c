@@ -30,6 +30,8 @@
 #include <stdlib.h>
 #include "protocol_extension.h"
 
+#define NEW_DO_USERLOG 1
+
 static EXTENSION_LOG_LEVEL current_log_level = EXTENSION_LOG_WARNING;
 SERVER_HANDLE_V1 *sapi;
 
@@ -60,12 +62,15 @@ static int  current_flength;        // current file length
 static char hname_pid[100];         // hostname + pid for prefix
 static int  hname_len;              // length of hname_pid
 static int  prefix_len;             // length of date_time + hname_pid
+#ifdef NEW_DO_USERLOG
+#else
 static time_t prev_time;            // save the previous time
 static int    msg_cnt;              // # of inputted messages in the interval
 static int    drop_cnt;             // # of messages to be dropped in a second
 static bool   drop_mode;            // indicate the DROP mode when over RATE_LIMIT
-static bool   reduction_mode;       // duplication reduction or not. user setting or default(=False)
 static int    samelog_cnt;
+#endif
+static bool   reduction_mode;       // duplication reduction or not. user setting or default(=False)
 static char   prevtime_str[200];
 static char   prev_log[2048];
 static int    prev_len;
@@ -112,11 +117,14 @@ static void do_print_dup(char *time_str, int dup_cnt)
     fflush(current_fp);
 }
 
+#ifdef NEW_DO_USERLOG
+#else
 static void do_process_dup(char *time_str, int dup_cnt)
 {
     do_print_dup(time_str, dup_cnt);
     samelog_cnt = 1;
 }
+#endif
 
 static void do_save_log(char *log_buf, int len)
 {
@@ -125,6 +133,94 @@ static void do_save_log(char *log_buf, int len)
     prev_len = len;
 }
 
+#ifdef NEW_DO_USERLOG
+static void do_print_drop_begin_message(time_t cur_time)
+{
+    char *tmpstr = " user_logger begins to drop messages due to rate-limiting\n";
+    do_make_prefix(prevtime_str, cur_time);
+    do_print_msg(prevtime_str, prefix_len, tmpstr, 60);
+}
+
+static void do_print_drop_stat_message(time_t cur_time, int drop_cnt)
+{
+    char tmpbuf[128];
+    int tmplen = sprintf(tmpbuf, " user_logger lost %d messages due to rate-limiting (%d)\n",
+                         drop_cnt, loglimit_burst);
+    do_make_prefix(prevtime_str, cur_time);
+    do_print_msg(prevtime_str, prefix_len, tmpbuf, tmplen);
+}
+
+static bool do_userlog_internal(time_t cur_time, char *body_buf, int len)
+{
+    if (reduction_mode) {
+        static time_t samelog_time = 0;
+        static int samelog_cnt = 0;
+        if (len == prev_len && memcmp(body_buf, prev_log, len) == 0) {
+            samelog_time = cur_time;
+            samelog_cnt++; // Just increase the count and save the time
+            return false;
+        }
+
+        // Two log messages are different. Print the count and the previous time,
+        // then restart the count.
+        if (samelog_cnt > 0) {
+            do_make_prefix(prevtime_str, samelog_time);
+            do_print_dup(prevtime_str, samelog_cnt);
+            samelog_cnt = 0;
+        }
+        do_save_log(body_buf, len);
+    }
+
+    do_make_prefix(prevtime_str, cur_time);
+    do_print_msg(prevtime_str, prefix_len, body_buf, len);
+    return true;
+}
+
+static void do_userlog_basic(char *body_buf, int len)
+{
+    time_t cur_time = time(0);
+    (void)do_userlog_internal(cur_time, body_buf, len);
+}
+
+static void do_userlog_ratelimit(char *body_buf, int len)
+{
+    static bool drop_mode = false;
+    static int drop_cnt = 0;
+    static int msg_cnt = 0;
+    static time_t prev_time = 0;
+    time_t cur_time = time(0);
+    double time_diff = difftime(cur_time, prev_time);
+
+    if (time_diff > (double)loglimit_interval) {
+        if (drop_mode) {
+            if (drop_cnt > 0) {
+                do_print_drop_stat_message(cur_time, drop_cnt);
+                drop_cnt = 0;
+            }
+            drop_mode = false;
+        }
+        prev_time = cur_time;
+        msg_cnt = 0;
+    } else {
+        if (drop_mode) {
+            drop_cnt++;
+            return;
+        }
+    }
+
+    if (do_userlog_internal(cur_time, body_buf, len)) {
+        msg_cnt++;
+        if (msg_cnt >= loglimit_burst) { // if duplicates remains, print that.
+            do_print_drop_begin_message(cur_time);
+            drop_cnt = 0;
+            drop_mode = true;
+        }
+    }
+}
+#endif
+
+#ifdef NEW_DO_USERLOG
+#else
 static void do_userlog(char *body_buf, int len)
 {
     char prefix_buf[200];
@@ -211,6 +307,7 @@ static void do_userlog(char *body_buf, int len)
         }
     }
 }
+#endif
 
 static void logger_log(EXTENSION_LOG_LEVEL severity,
                        const void* client_cookie,
@@ -242,7 +339,15 @@ static void logger_log(EXTENSION_LOG_LEVEL severity,
             }
         }
 
+#ifdef NEW_DO_USERLOG
+        if (loglimit_interval == 0) {
+            do_userlog_basic(log_buf, len);
+        } else {
+            do_userlog_ratelimit(log_buf, len);
+        }
+#else
         do_userlog(log_buf, len); // userlog codes
+#endif
 
         if (current_flength >= MAX_LOGFILE_SIZE) {
             fclose(current_fp);
@@ -320,10 +425,13 @@ EXTENSION_ERROR_CODE memcached_extensions_initialize(const char *config,
         }
     }
     if (loglimit_interval != 0) {
+#ifdef NEW_DO_USERLOG
+#else
         prev_time = time(0);
         msg_cnt = 0;
         drop_cnt = 0;
         drop_mode = false;
+#endif
         loglimit_burst = DEFAULT_RATELIMIT;
         env = getenv("UserLogRateLimitBurst");
         if (env != NULL) {
@@ -337,7 +445,10 @@ EXTENSION_ERROR_CODE memcached_extensions_initialize(const char *config,
     if (env != NULL && strcmp(env, "on") == 0)
         reduction_mode = true;
     if (reduction_mode == true) {  // default is false
+#ifdef NEW_DO_USERLOG
+#else
         samelog_cnt = 1;
+#endif
         prev_log[0] = 0;
         prev_len = 0;
         prevtime_str[0] = 0;
