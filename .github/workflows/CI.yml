@@ -27,7 +27,7 @@ jobs:
     - name: Build Arcus Server
       run: |
           ./config/autorun.sh
-          ./configure --enable-zk-integration --with-zk-reconfig --with-libevent=${HOME}/arcus --with-zookeeper=${HOME}/arcus
+          ./configure --enable-zk-integration --with-zk-reconfig --enable-sasl --with-libevent=${HOME}/arcus --with-zookeeper=${HOME}/arcus --with-sasl=${HOME}/arcus
           make
     - name: Test ARCUS Server
       run: make test
