@@ -59,9 +59,9 @@ static FILE *current_fp;
 static int  current_flength;        // current file length
 static char hname_pid[100];         // hostname + pid for prefix
 static int  hname_len;              // length of hname_pid
-static int  prefix_len;             // length of date_time + hname_pid
+static char   prefix_buf[200];
+static int    prefix_len;           // length of date_time + hname_pid
 static bool   reduction_mode;       // duplication reduction or not. user setting or default(=False)
-static char   prevtime_str[200];
 static char   prev_log[2048];
 static int    prev_len;
 static unsigned int loglimit_interval; // log rate limit time interval. user setting or default value
@@ -117,8 +117,8 @@ static void do_save_log(char *log_buf, int len)
 static void do_print_drop_begin_message(time_t cur_time)
 {
     char *tmpstr = " user_logger begins to drop messages due to rate-limiting\n";
-    do_make_prefix(prevtime_str, cur_time);
-    do_print_msg(prevtime_str, prefix_len, tmpstr, 60);
+    do_make_prefix(prefix_buf, cur_time);
+    do_print_msg(prefix_buf, prefix_len, tmpstr, 60);
 }
 
 static void do_print_drop_stat_message(time_t cur_time, int drop_cnt)
@@ -126,8 +126,8 @@ static void do_print_drop_stat_message(time_t cur_time, int drop_cnt)
     char tmpbuf[128];
     int tmplen = sprintf(tmpbuf, " user_logger lost %d messages due to rate-limiting (%d)\n",
                          drop_cnt, loglimit_burst);
-    do_make_prefix(prevtime_str, cur_time);
-    do_print_msg(prevtime_str, prefix_len, tmpbuf, tmplen);
+    do_make_prefix(prefix_buf, cur_time);
+    do_print_msg(prefix_buf, prefix_len, tmpbuf, tmplen);
 }
 
 static bool do_userlog_internal(time_t cur_time, char *body_buf, int len)
@@ -144,15 +144,15 @@ static bool do_userlog_internal(time_t cur_time, char *body_buf, int len)
         // Two log messages are different. Print the count and the previous time,
         // then restart the count.
         if (samelog_cnt > 0) {
-            do_make_prefix(prevtime_str, samelog_time);
-            do_print_dup(prevtime_str, samelog_cnt);
+            do_make_prefix(prefix_buf, samelog_time);
+            do_print_dup(prefix_buf, samelog_cnt);
             samelog_cnt = 0;
         }
         do_save_log(body_buf, len);
     }
 
-    do_make_prefix(prevtime_str, cur_time);
-    do_print_msg(prevtime_str, prefix_len, body_buf, len);
+    do_make_prefix(prefix_buf, cur_time);
+    do_print_msg(prefix_buf, prefix_len, body_buf, len);
     return true;
 }
 
@@ -325,7 +325,7 @@ EXTENSION_ERROR_CODE memcached_extensions_initialize(const char *config,
     if (reduction_mode == true) {  // default is false
         prev_log[0] = 0;
         prev_len = 0;
-        prevtime_str[0] = 0;
+        prefix_buf[0] = 0;
     }
     /* end of userlog codes */
 
