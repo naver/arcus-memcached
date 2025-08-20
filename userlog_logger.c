@@ -320,9 +320,8 @@ EXTENSION_ERROR_CODE memcached_extensions_initialize(const char *config,
     }
     reduction_mode = false;
     env = getenv("UserLogReduction");
-    if (env != NULL && strcmp(env, "on") == 0)
+    if (env != NULL && strcmp(env, "on") == 0) {
         reduction_mode = true;
-    if (reduction_mode == true) {  // default is false
         prev_log[0] = 0;
         prev_len = 0;
         prefix_buf[0] = 0;
