@@ -1,15 +1,17 @@
 FROM rockylinux:8 AS builder
 RUN yum update -y
-RUN yum install -y make libtool which git
+RUN yum install -y make libtool which git openssl-devel
 # Copy all files from the repository not included in .dockerignore to /src in the image.
 COPY . /src
 WORKDIR /src
 RUN ./deps/install.sh /arcus || (tail ./deps/install.log; exit 1)
 RUN ./config/autorun.sh
-RUN ./configure --prefix=/arcus --enable-zk-integration
+RUN ./configure --prefix=/arcus --enable-zk-integration --enable-sasl
 RUN make && make install
 
 FROM rockylinux:8 AS base
+RUN yum update -y
+RUN yum install -y openssl-devel
 COPY --from=builder /arcus /arcus
 ENV PATH=${PATH}:/arcus/bin
 
@@ -24,7 +26,6 @@ ENTRYPOINT ["memcached",\
 
 # for arcus-operator
 FROM base
-RUN yum update -y
 RUN yum install -y bind-utils nc
 RUN yum clean all -y
 ENV MEMCACHED_DIR=/arcus-memcached
