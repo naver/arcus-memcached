@@ -206,9 +206,14 @@ static int _arcus_getdata(const char *user,
                           char *out, const size_t max_out,
                           size_t *out_len)
 {
-    int ret = SASL_NOUSER;
     char key[sizeof(group_zpath) + USERNAME_MAXLEN + PROPNAME_MAXLEN];
-    snprintf(key, sizeof(key), "%s/%s/%s", group_zpath, user, propName);
+    if (propName) {
+        snprintf(key, sizeof(key), "%s/%s/%s", group_zpath, user, propName);
+    } else {
+        snprintf(key, sizeof(key), "%s/%s", group_zpath, user);
+    }
+
+    int ret = SASL_NOUSER;
     unsigned long index = hash_function(key) % SASL_TABLE_SIZE;
     struct sasl_entry *entry;
 
@@ -381,6 +386,11 @@ int arcus_auxprop_plug_init(const sasl_utils_t *utils,
     }
 
     return SASL_OK;
+}
+
+int arcus_getdata(const char *user, char *out, const size_t max_out)
+{
+    return _arcus_getdata(user, NULL, out, max_out, NULL);
 }
 
 #endif /* ENABLE_ZK_INTEGRATION */

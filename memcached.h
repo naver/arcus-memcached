@@ -279,6 +279,7 @@ struct conn {
     sasl_conn_t *sasl_conn;
     bool sasl_started;
     bool authenticated;
+    uint16_t authorized;
     char sasl_mech[MAX_SASL_MECH_LEN+1];
     uint32_t sasl_auth_data_len;
     char *sasl_auth_data;

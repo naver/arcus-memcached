@@ -399,9 +399,24 @@ extern "C" {
         uint8_t  trimmed;
     } item_attr;
 
+    /* Command authorization flags (bitmask) */
+#define AUTHZ_NONE  0x0000
+#define AUTHZ_KV    0x0001
+#define AUTHZ_LIST  0x0002
+#define AUTHZ_SET   0x0004
+#define AUTHZ_MAP   0x0008
+#define AUTHZ_BTREE 0x0010
+#define AUTHZ_SCAN  0x0020
+#define AUTHZ_FLUSH 0x0040
+#define AUTHZ_ATTR  0x0080
+#define AUTHZ_ADMIN 0x0100
+#define AUTHZ_FAIL  0x8000
+#define AUTHZ_ALL   0x7FFF
+
     typedef struct {
         const char *username;
         const char *config;
+        const uint16_t *authz_flag;
     } auth_data_t;
 
     /* Forward declaration of the server handle -- to be filled in later */

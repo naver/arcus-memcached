@@ -13,6 +13,8 @@ int arcus_auxprop_plug_init(const sasl_utils_t *utils,
                             sasl_auxprop_plug_t **plug,
                             const char *plugname);
 
+int arcus_getdata(const char *user, char *out, const size_t max_out);
+
 #endif /* ENABLE_ZK_INTEGRATION */
 #endif /* ENABLE_SASL */
 
