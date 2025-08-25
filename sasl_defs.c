@@ -124,6 +124,36 @@ static int sasl_getopt(void *context __attribute__((unused)),
 
     return SASL_FAIL;
 }
+
+static void arcus_sasl_authz(const void *cookie,
+                             ENGINE_EVENT_TYPE type,
+                             const void *event_data,
+                             const void *cb_data)
+{
+    conn *c = (conn *)cookie;
+    auth_data_t *data = (auth_data_t *)event_data;
+    char value[1024];
+
+    if (arcus_getdata(data->username, value, sizeof(value)) == SASL_OK) {
+        char *saveptr;
+        char *token = strtok_r(value, ",", &saveptr);
+        c->authorized = AUTHZ_NONE;
+        while (token != NULL) {
+            if      (strcmp(token, "kv")    == 0) c->authorized |= AUTHZ_KV;
+            else if (strcmp(token, "list")  == 0) c->authorized |= AUTHZ_LIST;
+            else if (strcmp(token, "set")   == 0) c->authorized |= AUTHZ_SET;
+            else if (strcmp(token, "map")   == 0) c->authorized |= AUTHZ_MAP;
+            else if (strcmp(token, "btree") == 0) c->authorized |= AUTHZ_BTREE;
+            else if (strcmp(token, "scan")  == 0) c->authorized |= AUTHZ_SCAN;
+            else if (strcmp(token, "flush") == 0) c->authorized |= AUTHZ_FLUSH;
+            else if (strcmp(token, "attr")  == 0) c->authorized |= AUTHZ_ATTR;
+            else if (strcmp(token, "admin") == 0) c->authorized |= AUTHZ_ADMIN;
+            token = strtok_r(NULL, ",", &saveptr);
+        }
+    } else {
+        c->authorized = AUTHZ_FAIL;
+    }
+}
 #endif
 
 static int sasl_log(void *context, int level, const char *message)
@@ -213,6 +243,7 @@ void init_sasl(void)
             fprintf(stderr, "Error to SASL auxprop plugin.\n");
             exit(EXIT_FAILURE);
         }
+        register_callback(NULL, ON_AUTH, arcus_sasl_authz, NULL);
     }
 #endif
 

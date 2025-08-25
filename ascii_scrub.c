@@ -85,6 +85,12 @@ static bool execute_command(const void *cmd_cookie, const void *cookie,
         return response_handler(cookie, 29, "SERVER_ERROR internal error\r\n");
     }
 
+    auth_data_t data;
+    server->core->get_auth_data(cookie, &data);
+    if ((*data.authz_flag & AUTHZ_ADMIN) == 0) {
+        return response_handler(cookie, 28, "CLIENT_ERROR unauthorized\r\n");
+    }
+
     if (argc == 2 && strcmp(argv[1].value, "stale") == 0) {
         request.request.opcode = PROTOCOL_BINARY_CMD_SCRUB_STALE;
     }
