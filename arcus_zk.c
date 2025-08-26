@@ -1402,7 +1402,7 @@ static int arcus_check_domain_name(char *ensemble_list)
             ret = 0; break;
         }
 
-        token = strtok_r(ensemble_list, ":", &save_ptr);
+        token = strtok_r(copy, ":", &save_ptr);
         if (inet_aton(token, NULL)) {
             ret = 0; break;
         }
