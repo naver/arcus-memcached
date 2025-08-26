@@ -654,6 +654,7 @@ static int arcus_build_znode_name(char *ensemble_list)
     struct in_addr      inaddr;
     struct sockaddr_in  saddr, myaddr;
     struct hostent      *zkhost, *hp;
+    char                *ensemble_list_copy;
     char                *zip, *hlist;
     char                *sep1=",";
     char                *sep2=":";
@@ -670,8 +671,16 @@ static int arcus_build_znode_name(char *ensemble_list)
     saddr.sin_family = AF_INET;
     saddr.sin_port   = htons(SYSLOGD_PORT); // what if this is not open? XXX
 
+    ensemble_list_copy = strdup(ensemble_list);
+    if (!ensemble_list_copy) {
+        arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
+                "strdup() failed\n");
+        close(sock); sock = -1;
+        return EX_OSERR;
+    }
+
     // loop through all ensemble IP in case ensemble failure
-    zip = strtok_r(ensemble_list, sep1, &hlist); // separate IP:PORT tuple
+    zip = strtok_r(ensemble_list_copy, sep1, &hlist); // separate IP:PORT tuple
     while (zip)
     {
         zip = strtok(zip, sep2); // extract the first IP
@@ -722,6 +731,7 @@ static int arcus_build_znode_name(char *ensemble_list)
                 "Cannot connect to ensemble %s: %s\n", zip, strerror(errno));
         zip = strtok_r(NULL, sep1, &hlist); // get next token: separate IP:PORT tuple
     }
+    free(ensemble_list_copy);
     if (!zip) { // failed to connect to all ensemble host. fail
         arcus_conf.logger->log(EXTENSION_LOG_WARNING, NULL,
                 "not able to connect any Ensemble server\n");
