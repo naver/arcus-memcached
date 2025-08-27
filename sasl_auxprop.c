@@ -47,7 +47,7 @@ static unsigned long hash_function(const char *str)
 }
 
 static bool _table_insert(struct sasl_entry **table, const char *key,
-                          const char* value, size_t value_len)
+                          const char* value, int value_len)
 {
     if (value_len < 0) {
         return false;
