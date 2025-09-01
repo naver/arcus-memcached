@@ -85,9 +85,7 @@ static bool execute_command(const void *cmd_cookie, const void *cookie,
         return response_handler(cookie, 29, "SERVER_ERROR internal error\r\n");
     }
 
-    auth_data_t data;
-    server->core->get_auth_data(cookie, &data);
-    if ((*data.authz_flag & AUTHZ_ADMIN) == 0) {
+    if (!server->core->check_ascii_auth(cookie, NULL, AUTHZ_ADMIN)) {
         return response_handler(cookie, 28, "CLIENT_ERROR unauthorized\r\n");
     }
 

@@ -7848,16 +7848,20 @@ static void write_and_free(conn *c, char *buf, int bytes)
     c->write_and_go = conn_new_cmd;
 }
 
-#ifdef ASCII_SASL
-static bool check_ascii_auth(conn *c, const char *key, const uint16_t auth_flag)
+static bool check_ascii_auth(const void *cookie, const char *key, const uint16_t auth_flag)
 {
+    conn *c = (conn*)cookie;
+
+    if (!settings.require_sasl) {
+        return true;
+    }
+
     if ((c->authenticated && (c->authorized & auth_flag) != 0) ||
         (key != NULL && strncmp(key, "arcus:", 6) == 0)) {
         return true;
     }
     return false;
 }
-#endif
 
 #ifdef JHPARK_OLD_SMGET_INTERFACE
 static inline int set_smget_mode_maybe(conn *c, token_t *tokens, size_t ntokens)
@@ -8520,12 +8524,10 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     int64_t exptime = 0;
 
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, key_token->value, AUTHZ_KV)) {
+    if (!check_ascii_auth(c, key_token->value, AUTHZ_KV)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     if (should_touch) {
         // For get and touch commands, use first token as exptime
@@ -8618,12 +8620,10 @@ static inline void process_mget_command(conn *c, token_t *tokens, const size_t n
 {
     uint32_t lenkeys, numkeys;
 
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, NULL, AUTHZ_KV)) {
+    if (!check_ascii_auth(c, NULL, AUTHZ_KV)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     if ((! safe_strtoul(tokens[COMMAND_TOKEN+1].value, &lenkeys)) ||
         (! safe_strtoul(tokens[COMMAND_TOKEN+2].value, &numkeys)) ||
@@ -8662,12 +8662,10 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     uint64_t req_cas_id=0;
     item *it;
 
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, key, AUTHZ_KV)) {
+    if (!check_ascii_auth(c, key, AUTHZ_KV)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     set_noreply_maybe(c, tokens, ntokens);
 
@@ -8758,12 +8756,10 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
     char *key = tokens[KEY_TOKEN].value;
     size_t nkey = tokens[KEY_TOKEN].length;
 
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, key, AUTHZ_KV)) {
+    if (!check_ascii_auth(c, key, AUTHZ_KV)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     set_noreply_maybe(c, tokens, ntokens);
 
@@ -8853,12 +8849,10 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     char *key = tokens[KEY_TOKEN].value;
     size_t nkey = tokens[KEY_TOKEN].length;
 
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, key, AUTHZ_KV)) {
+    if (!check_ascii_auth(c, key, AUTHZ_KV)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     if (ntokens > 3) {
         /* "delete <key> [<time>] [noreply]\r\n" is deprecated */
@@ -8909,12 +8903,10 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
     bool delay_flag;
     ENGINE_ERROR_CODE ret;
 
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, NULL, AUTHZ_FLUSH)) {
+    if (!check_ascii_auth(c, NULL, AUTHZ_FLUSH)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     set_noreply_maybe(c, tokens, ntokens);
 
@@ -9413,12 +9405,10 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
 {
     char *config_key = tokens[SUBCOMMAND_TOKEN].value;
 
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, NULL, AUTHZ_ADMIN)) {
+    if (!check_ascii_auth(c, NULL, AUTHZ_ADMIN)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     if (ntokens < 3 || ntokens > 4) {
         print_invalid_command(c, tokens, ntokens);
@@ -9495,12 +9485,10 @@ static void process_zkensemble_command(conn *c, token_t *tokens, const size_t nt
     char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
     bool valid = false;
 
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, NULL, AUTHZ_ADMIN)) {
+    if (!check_ascii_auth(c, NULL, AUTHZ_ADMIN)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     if (!arcus_zk_initalized()) {
         out_string(c, "ERROR not using ZooKeeper");
@@ -9554,12 +9542,10 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
     int  nprefix = -1; /* all prefixes */
     bool valid = false;
 
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, NULL, AUTHZ_ADMIN)) {
+    if (!check_ascii_auth(c, NULL, AUTHZ_ADMIN)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     /* dump ascii command
      * dump start <mode> [<prefix>] filepath\r\n
@@ -10202,12 +10188,10 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
 
 static void process_scan_command(conn *c, token_t *tokens, const size_t ntokens)
 {
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, NULL, AUTHZ_SCAN)) {
+    if (!check_ascii_auth(c, NULL, AUTHZ_SCAN)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     /* keyscan command format : scan key <cursor> [count <count>] [match <pattern>] [type <type>] */
     if (strcmp(tokens[1].value, "key") == 0) {
@@ -10232,12 +10216,10 @@ static void process_cmdlog_command(conn *c, token_t *tokens, const size_t ntoken
     char *type = tokens[SUBCOMMAND_TOKEN].value;
     bool already_check = false;
 
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, NULL, AUTHZ_ADMIN)) {
+    if (!check_ascii_auth(c, NULL, AUTHZ_ADMIN)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     if (ntokens > 2 && strcmp(type, "start") == 0) {
         char *fpath = NULL;
@@ -10280,12 +10262,10 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
     char *type = tokens[SUBCOMMAND_TOKEN].value;
     bool already_check = false;
 
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, NULL, AUTHZ_ADMIN)) {
+    if (!check_ascii_auth(c, NULL, AUTHZ_ADMIN)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     if (ntokens > 2 && strcmp(type, "start") == 0) {
         uint32_t threshold = 0;
@@ -10358,12 +10338,10 @@ static void process_shutdown_command(conn *c, token_t *tokens, size_t ntokens)
 {
     int32_t delay;
 
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, NULL, AUTHZ_ADMIN)) {
+    if (!check_ascii_auth(c, NULL, AUTHZ_ADMIN)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     if (memcached_shutdown > 0 && shutdown_delay < 1000) {
         out_string(c, "DENIED");
@@ -10723,12 +10701,10 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
     char *key = tokens[LOP_KEY_TOKEN].value;
     size_t nkey = tokens[LOP_KEY_TOKEN].length;
 
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, key, AUTHZ_LIST)) {
+    if (!check_ascii_auth(c, key, AUTHZ_LIST)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     if (nkey > KEY_MAX_LENGTH) {
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -11072,12 +11048,10 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
     char *key = tokens[SOP_KEY_TOKEN].value;
     size_t nkey = tokens[SOP_KEY_TOKEN].length;
 
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, key, AUTHZ_SET)) {
+    if (!check_ascii_auth(c, key, AUTHZ_SET)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     if (nkey > KEY_MAX_LENGTH) {
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -12284,12 +12258,10 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
     size_t nkey = tokens[MOP_KEY_TOKEN].length;
     int subcommid;
 
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, key, AUTHZ_MAP)) {
+    if (!check_ascii_auth(c, key, AUTHZ_MAP)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     if (nkey > KEY_MAX_LENGTH) {
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -12526,12 +12498,10 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
     size_t nkey = tokens[BOP_KEY_TOKEN].length;
     int subcommid;
 
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, key, AUTHZ_BTREE)) {
+    if (!check_ascii_auth(c, key, AUTHZ_BTREE)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     if (nkey > KEY_MAX_LENGTH) {
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -13206,12 +13176,10 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
     char   *key = tokens[KEY_TOKEN].value;
     size_t nkey = tokens[KEY_TOKEN].length;
 
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, key, AUTHZ_ATTR)) {
+    if (!check_ascii_auth(c, key, AUTHZ_ATTR)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     if (nkey > KEY_MAX_LENGTH) {
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -13304,12 +13272,10 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
     char *key = tokens[KEY_TOKEN].value;
     size_t nkey = tokens[KEY_TOKEN].length;
 
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, key, AUTHZ_ATTR)) {
+    if (!check_ascii_auth(c, key, AUTHZ_ATTR)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     if (nkey > KEY_MAX_LENGTH) {
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -13431,12 +13397,10 @@ static void process_touch_command(conn *c, token_t *tokens, const size_t ntokens
     char *key = tokens[KEY_TOKEN].value;
     size_t nkey = tokens[KEY_TOKEN].length;
 
-#ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, key, AUTHZ_KV)) {
+    if (!check_ascii_auth(c, key, AUTHZ_KV)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
-#endif
 
     if (nkey > KEY_MAX_LENGTH) {
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -15295,6 +15259,7 @@ static SERVER_HANDLE_V1 *get_server_api(void)
 {
     static SERVER_CORE_API core_api = {
         .get_auth_data = get_auth_data,
+        .check_ascii_auth = check_ascii_auth,
         .store_engine_specific = store_engine_specific,
         .get_engine_specific = get_engine_specific,
         .get_socket_fd = get_socket_fd,

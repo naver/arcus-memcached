@@ -72,6 +72,18 @@ extern "C" {
         void (*get_auth_data)(const void *cookie, auth_data_t *data);
 
         /**
+         * Check whether the connection is allowed for ASCII protocol access
+         * based on its authentication state and the provided key.
+         *
+         * @param cookie The connection to check
+         * @param key Optional key string used in the check
+         * @param auth_flag Authorization flag considered for access
+         * @return true if access is allowed, false otherwise
+         */
+        bool (*check_ascii_auth)(const void *cookie, const char *key,
+                                 const uint16_t auth_flag);
+
+        /**
          * Store engine-specific session data on the given cookie.
          *
          * The engine interface allows for a single item to be
