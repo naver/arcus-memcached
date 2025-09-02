@@ -156,6 +156,11 @@ extern "C" {
         const char* (*get_name)(const void *cmd_cookie);
 
         /**
+         * Get the permissions required to execute the command.
+         */
+        uint16_t (*get_auth_flag)(void);
+
+        /**
          * Called by the server to determine if the command in argc, argv should
          * be process by this handler.
          *

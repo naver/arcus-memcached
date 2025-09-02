@@ -16,6 +16,7 @@
  */
 
 static const char *get_name(const void *cmd_cookie);
+static uint16_t get_auth_flag(void);
 static bool accept_command(const void *cmd_cookie, void *cookie,
                            int argc, token_t *argv, size_t *ndata,
                            char **ptr);
@@ -28,6 +29,7 @@ static void abort_command(const void *cmd_cookie, const void *cookie);
 
 static EXTENSION_ASCII_PROTOCOL_DESCRIPTOR noop_descriptor = {
     .get_name = get_name,
+    .get_auth_flag = get_auth_flag,
     .accept = accept_command,
     .execute = execute_command,
     .abort = abort_command,
@@ -36,6 +38,7 @@ static EXTENSION_ASCII_PROTOCOL_DESCRIPTOR noop_descriptor = {
 
 static EXTENSION_ASCII_PROTOCOL_DESCRIPTOR echo_descriptor = {
     .get_name = get_name,
+    .get_auth_flag = get_auth_flag,
     .accept = accept_command,
     .execute = execute_command,
     .abort = abort_command,
@@ -48,6 +51,11 @@ static const char *get_name(const void *cmd_cookie) {
     } else {
         return "echo";
     }
+}
+
+static uint16_t get_auth_flag(void)
+{
+    return AUTHZ_NONE;
 }
 
 static bool accept_command(const void *cmd_cookie, void *cookie,

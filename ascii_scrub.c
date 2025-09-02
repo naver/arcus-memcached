@@ -22,6 +22,7 @@
 #include "protocol_extension.h"
 
 static const char *get_name(const void *cmd_cookie);
+static uint16_t get_auth_flag(void);
 static bool accept_command(const void *cmd_cookie, void *cookie,
                            int argc, token_t *argv, size_t *ndata,
                            char **ptr);
@@ -34,6 +35,7 @@ static void abort_command(const void *cmd_cookie, const void *cookie);
 
 static EXTENSION_ASCII_PROTOCOL_DESCRIPTOR scrub_descriptor = {
     .get_name = get_name,
+    .get_auth_flag = get_auth_flag,
     .accept = accept_command,
     .execute = execute_command,
     .abort = abort_command,
@@ -44,6 +46,11 @@ GET_SERVER_API server_api;
 
 static const char *get_name(const void *cmd_cookie) {
     return "scrub";
+}
+
+static uint16_t get_auth_flag(void)
+{
+    return AUTHZ_ADMIN;
 }
 
 static bool accept_command(const void *cmd_cookie, void *cookie,
@@ -83,12 +90,6 @@ static bool execute_command(const void *cmd_cookie, const void *cookie,
     ENGINE_HANDLE_V1 *v1 = (ENGINE_HANDLE_V1*)server->engine;
     if (v1 == NULL) {
         return response_handler(cookie, 29, "SERVER_ERROR internal error\r\n");
-    }
-
-    auth_data_t data;
-    server->core->get_auth_data(cookie, &data);
-    if ((*data.authz_flag & AUTHZ_ADMIN) == 0) {
-        return response_handler(cookie, 28, "CLIENT_ERROR unauthorized\r\n");
     }
 
     if (argc == 2 && strcmp(argv[1].value, "stale") == 0) {

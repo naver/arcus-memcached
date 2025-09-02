@@ -237,7 +237,6 @@ static void mock_perform_callbacks(ENGINE_EVENT_TYPE type,
 SERVER_HANDLE_V1 *get_mock_server_api(void)
 {
     static SERVER_CORE_API core_api = {
-        .get_auth_data = mock_get_auth_data,
         .store_engine_specific = mock_store_engine_specific,
         .get_engine_specific = mock_get_engine_specific,
         .get_socket_fd = mock_get_socket_fd,
@@ -376,4 +375,3 @@ void destroy_mock_event_callbacks(void) {
         mock_event_handlers[i] = NULL;
     }
 }
-

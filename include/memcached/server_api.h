@@ -62,16 +62,6 @@ extern "C" {
         int (*parse_config)(const char *str, struct config_item items[], FILE *error);
 
         /**
-         * Get the auth data for the connection associated with the
-         * given cookie.
-         *
-         * @param cookie The cookie provided by the frontend
-         * @param data Pointer to auth_data_t structure for returning the values
-         *
-         */
-        void (*get_auth_data)(const void *cookie, auth_data_t *data);
-
-        /**
          * Store engine-specific session data on the given cookie.
          *
          * The engine interface allows for a single item to be
