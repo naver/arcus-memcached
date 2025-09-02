@@ -672,7 +672,7 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->conn_next = NULL;
     c->sasl_started = false;
     c->authenticated = false;
-    c->authorized = AUTHZ_ALL;
+    c->authorized = AUTHZ_NONE;
     c->sasl_auth_data = NULL;
 
     c->write_and_go = init_state;
@@ -7851,8 +7851,9 @@ static void write_and_free(conn *c, char *buf, int bytes)
 #ifdef ASCII_SASL
 static bool check_ascii_auth(conn *c, const char *key, const uint16_t auth_flag)
 {
-    if ((c->authenticated && (c->authorized & auth_flag) != 0) ||
-        (key != NULL && strncmp(key, "arcus:", 6) == 0)) {
+    if ((c->authorized & auth_flag) == auth_flag) {
+        return true;
+    } else if (key != NULL && strncmp(key, "arcus:", 6) == 0) {
         return true;
     }
     return false;
@@ -9820,7 +9821,7 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
         return;
     }
 #ifdef ASCII_SASL
-    if (settings.require_sasl && !c->authenticated) {
+    if (settings.require_sasl && !check_ascii_auth(c, NULL, cmd->get_auth_flag())) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
@@ -15294,7 +15295,6 @@ static void set_log_level(EXTENSION_LOG_LEVEL severity)
 static SERVER_HANDLE_V1 *get_server_api(void)
 {
     static SERVER_CORE_API core_api = {
-        .get_auth_data = get_auth_data,
         .store_engine_specific = store_engine_specific,
         .get_engine_specific = get_engine_specific,
         .get_socket_fd = get_socket_fd,
