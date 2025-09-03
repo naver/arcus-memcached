@@ -139,11 +139,11 @@ static void arcus_sasl_authz(const void *cookie,
         char *token = strtok_r(value, ",", &saveptr);
         c->authorized = AUTHZ_NONE;
         while (token != NULL) {
-            if      (strcmp(token, "kv")    == 0) c->authorized |= AUTHZ_KV;
-            else if (strcmp(token, "list")  == 0) c->authorized |= AUTHZ_LIST;
-            else if (strcmp(token, "set")   == 0) c->authorized |= AUTHZ_SET;
-            else if (strcmp(token, "map")   == 0) c->authorized |= AUTHZ_MAP;
-            else if (strcmp(token, "btree") == 0) c->authorized |= AUTHZ_BTREE;
+            if      (strcmp(token, "kv")    == 0) c->authorized |= AUTHZ_KV | AUTHZ_DELETE;
+            else if (strcmp(token, "list")  == 0) c->authorized |= AUTHZ_LIST | AUTHZ_DELETE;
+            else if (strcmp(token, "set")   == 0) c->authorized |= AUTHZ_SET | AUTHZ_DELETE;
+            else if (strcmp(token, "map")   == 0) c->authorized |= AUTHZ_MAP | AUTHZ_DELETE;
+            else if (strcmp(token, "btree") == 0) c->authorized |= AUTHZ_BTREE | AUTHZ_DELETE;
             else if (strcmp(token, "scan")  == 0) c->authorized |= AUTHZ_SCAN;
             else if (strcmp(token, "flush") == 0) c->authorized |= AUTHZ_FLUSH;
             else if (strcmp(token, "attr")  == 0) c->authorized |= AUTHZ_ATTR;

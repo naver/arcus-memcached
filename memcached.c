@@ -8855,7 +8855,7 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     size_t nkey = tokens[KEY_TOKEN].length;
 
 #ifdef ASCII_SASL
-    if (settings.require_sasl && !check_ascii_auth(c, key, AUTHZ_KV)) {
+    if (settings.require_sasl && !check_ascii_auth(c, key, AUTHZ_DELETE)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
     }
