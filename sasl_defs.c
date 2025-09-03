@@ -191,6 +191,15 @@ static int sasl_log(void *context, int level, const char *message)
 }
 #endif
 
+static void default_sasl_authz(const void *cookie,
+                               ENGINE_EVENT_TYPE type,
+                               const void *event_data,
+                               const void *cb_data)
+{
+    conn *c = (conn *)cookie;
+    c->authorized = AUTHZ_ALL;
+}
+
 static sasl_callback_t sasl_callbacks[5] = {
 #ifdef ENABLE_SASL_PWDB
    { SASL_CB_SERVER_USERDB_CHECKPASS, (int(*)(void))sasl_server_userdb_checkpass, NULL },
@@ -244,7 +253,11 @@ void init_sasl(void)
             exit(EXIT_FAILURE);
         }
         register_callback(NULL, ON_AUTH, arcus_sasl_authz, NULL);
+    } else {
+        register_callback(NULL, ON_AUTH, default_sasl_authz, NULL);
     }
+#else
+    register_callback(NULL, ON_AUTH, default_sasl_authz, NULL);
 #endif
 
     if (settings.verbose) {
