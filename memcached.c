@@ -4308,6 +4308,13 @@ static void process_ascii_sasl_auth(conn *c, token_t *tokens, const size_t ntoke
         return;
     }
 
+    if (!settings.require_sasl) {
+        out_string(c, "SASL_OK");
+        c->sbytes = c->sasl_auth_data_len + 2;
+        c->write_and_go = conn_swallow;
+        return;
+    }
+
     c->sasl_auth_data = malloc(c->sasl_auth_data_len + 2);
     if (!c->sasl_auth_data) {
         out_string(c, "SERVER_ERROR out of memory");
