@@ -3287,7 +3287,9 @@ static void process_sasl_auth_complete(conn *c)
         }
         c->suffixcurr = c->suffixlist;
     } else {
-        out_string(c, "AUTH_ERROR");
+        char temp[512];
+        snprintf(temp, sizeof(temp), "AUTH_ERROR %s", sasl_errstring(result, NULL, NULL));
+        out_string(c, temp);
         STATS_ERRORS_NOKEY(c, auth);
     }
 }
