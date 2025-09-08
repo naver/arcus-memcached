@@ -277,6 +277,7 @@ struct conn {
     int    sfd;
     short  nevents;
     sasl_conn_t *sasl_conn;
+    const char *sasl_username;
     bool sasl_started;
     bool authenticated;
     uint16_t authorized;
