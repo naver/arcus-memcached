@@ -417,7 +417,6 @@ extern "C" {
     typedef struct {
         const char *username;
         const char *config;
-        const uint16_t *authz_flag;
     } auth_data_t;
 
     /* Forward declaration of the server handle -- to be filled in later */
