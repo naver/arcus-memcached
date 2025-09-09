@@ -4083,22 +4083,24 @@ static void append_ascii_stats(const char *key, const uint16_t klen,
     }
 
     char *pos = c->dynamic_buffer.buffer + c->dynamic_buffer.offset;
-    uint32_t nbytes = 5; /* "END\r\n" or "STAT " */
+    uint32_t nbytes;
 
-    if (klen == 0 && vlen == 0) {
-        memcpy(pos, "END\r\n", 5);
-    } else {
+    if (klen > 0) {
         memcpy(pos, "STAT ", 5);
+        nbytes = 5;
         memcpy(pos + nbytes, key, klen);
         nbytes += klen;
-        if (vlen != 0) {
+        if (vlen > 0) {
             pos[nbytes] = ' ';
-            ++nbytes;
+            nbytes += 1;
             memcpy(pos + nbytes, val, vlen);
             nbytes += vlen;
         }
         memcpy(pos + nbytes, "\r\n", 2);
         nbytes += 2;
+    } else { /* klen == 0 && vlen == 0 */
+        memcpy(pos, "END\r\n", 5);
+        nbytes = 5;
     }
 
     c->dynamic_buffer.offset += nbytes;
