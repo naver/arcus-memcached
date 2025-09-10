@@ -8474,9 +8474,9 @@ static void process_stats_prefixlist(conn *c, token_t *tokens, const size_t ntok
         out_string(c, "CLIENT_ERROR subcommand(item|operation) is required");
         return;
     } else if (strcmp(tokens[2].value, "item") == 0) {
-		int chunk_len = 0;
-		char *chunk_stats;
-    	token_t *remained_prefix = prefixes != NULL ? &prefixes[nprefixes] : NULL;
+        int chunk_len = 0;
+        char *chunk_stats;
+        token_t *remained_prefix = prefixes != NULL ? &prefixes[nprefixes] : NULL;
 
         if ((prefixes == NULL &&
             mc_engine.v1->prefix_count(mc_engine.v0, c) > settings.max_stats_prefixes) ||
@@ -8515,8 +8515,8 @@ static void process_stats_prefixlist(conn *c, token_t *tokens, const size_t ntok
             out_string(c, "CLIENT_ERROR invalid: too many prefixes");
             return;
         }
-		stats = stats_prefix_dump(prefixes, nprefixes, &len);
-	} else {
+        stats = stats_prefix_dump(prefixes, nprefixes, &len);
+    } else {
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
