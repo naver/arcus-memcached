@@ -143,6 +143,10 @@ static void process_stats_settings(ADD_STAT add_stats, void *c);
 static void process_stats_zookeeper(ADD_STAT add_stats, void *c);
 #endif
 static void update_stat_cas(conn *c, ENGINE_ERROR_CODE ret);
+static void process_stats_prefixes(conn *c, const size_t ntokens);
+static void process_stats_prefixlist(conn *c, token_t *tokens, const size_t ntokens);
+static void process_stats_engine(conn *c, token_t *tokens, const size_t ntokens);
+static void write_ascii_stats_buffer(conn *c);
 
 /* defaults */
 static void settings_init(void);
@@ -8402,67 +8406,32 @@ static void process_stats_zookeeper(ADD_STAT add_stats, void *c)
 }
 #endif
 
-static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens)
+static void process_stats_prefixes(conn *c, const size_t ntokens)
 {
-    assert(c != NULL && ntokens >= 2);
-    const char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
+    int len;
+    char *stats;
 
-    if (ntokens == 2) {
-        server_stats(&append_ascii_stats, c, false);
-        (void)mc_engine.v1->get_stats(mc_engine.v0, c, NULL, 0,
-                                      &append_ascii_stats);
-    } else if (strcmp(subcommand, "reset") == 0) {
-        stats_reset(c);
-        out_string(c, "RESET");
+    if (ntokens != 3) {
+        out_string(c, "CLIENT_ERROR usage: stats prefixes");
         return;
-    } else if (strcmp(subcommand, "detail") == 0) {
-        /* NOTE: how to tackle detail with binary? */
-        if (ntokens != 4)
-            process_stats_detail(c, "");  /* outputs the error message */
-        else
-            process_stats_detail(c, tokens[2].value);
-        /* Output already generated */
+    }
+    if (mc_engine.v1->prefix_count(mc_engine.v0, c) > settings.max_stats_prefixes) {
+        out_string(c, "CLIENT_ERROR invalid: too many prefixes");
         return;
-    } else if (strcmp(subcommand, "settings") == 0) {
-        process_stats_settings(&append_ascii_stats, c);
-#ifdef ENABLE_ZK_INTEGRATION
-    } else if (strcmp(subcommand, "zookeeper") == 0) {
-        process_stats_zookeeper(&append_ascii_stats, c);
-#endif
-    } else if (strcmp(subcommand, "cachedump") == 0) {
-        process_stats_cachedump(c, tokens, ntokens);
-        return;
-    } else if (strcmp(subcommand, "aggregate") == 0) {
-        server_stats(&append_ascii_stats, c, true);
-    } else if (strcmp(subcommand, "topkeys") == 0) {
-        if (default_topkeys == NULL) {
+    }
+    stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, NULL, 0, &len);
+    if (stats == NULL) {
+        if (len == -1)
             out_string(c, "NOT_SUPPORTED");
-            return;
-        }
-        topkeys_stats(default_topkeys, c, get_current_time(), append_ascii_stats);
-    } else if (strcmp(subcommand, "prefixes") == 0) {
-        int len;
-        char *stats;
+        else
+            out_string(c, "SERVER_ERROR no more memory");
+        return;
+    }
+    write_and_free(c, stats, len);
+}
 
-        if (ntokens != 3) {
-            out_string(c, "CLIENT_ERROR usage: stats prefixes");
-            return;
-        }
-        if (mc_engine.v1->prefix_count(mc_engine.v0, c) > settings.max_stats_prefixes) {
-            out_string(c, "CLIENT_ERROR invalid: too many prefixes");
-            return;
-        }
-        stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, NULL, 0, &len);
-        if (stats == NULL) {
-            if (len == -1)
-                out_string(c, "NOT_SUPPORTED");
-            else
-                out_string(c, "SERVER_ERROR no more memory");
-            return;
-        }
-        write_and_free(c, stats, len);
-        return; /* Output already generated */
-    } else if (strcmp(subcommand, "prefixlist") == 0) {
+static void process_stats_prefixlist(conn *c, token_t *tokens, const size_t ntokens)
+{
         int len;
         char *stats;
         token_t *prefixes = ntokens > 4 ? &tokens[3] : NULL;
@@ -8498,32 +8467,26 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
             return;
         }
         write_and_free(c, stats, len);
-        return; /* Output already generated */
+}
+
+static void process_stats_engine(conn *c, token_t *tokens, const size_t ntokens)
+{
+    ENGINE_ERROR_CODE ret;
+    int nb;
+    char buf[1024];
+
+    nb = detokenize(&tokens[1], ntokens - 2, buf, 1024);
+    if (nb <= 0) {
+        /* no matching stat */
+        ret = ENGINE_KEY_ENOENT;
     } else {
-        /* getting here means that the subcommand is either engine specific or
-           is invalid. query the engine and see. */
-        ENGINE_ERROR_CODE ret;
-        int nb;
-        char buf[1024];
+        ret = mc_engine.v1->get_stats(mc_engine.v0, c, buf, nb,
+                                      &append_ascii_stats);
+    }
 
-        nb = detokenize(&tokens[1], ntokens - 2, buf, 1024);
-        if (nb <= 0) {
-            /* no matching stat */
-            ret = ENGINE_KEY_ENOENT;
-        } else {
-            ret = mc_engine.v1->get_stats(mc_engine.v0, c, buf, nb,
-                                          append_ascii_stats);
-        }
-
-        switch (ret) {
+    switch (ret) {
         case ENGINE_SUCCESS:
-            append_ascii_stats(NULL, 0, NULL, 0, c);
-            if (c->dynamic_buffer.buffer != NULL) {
-                write_and_free(c, c->dynamic_buffer.buffer, c->dynamic_buffer.offset);
-                c->dynamic_buffer.buffer = NULL;
-            } else {
-                out_string(c, "SERVER_ERROR out of memory writing stats");
-            }
+            write_ascii_stats_buffer(c);
             break;
         case ENGINE_ENOMEM:
             out_string(c, "SERVER_ERROR out of memory writing stats");
@@ -8534,11 +8497,11 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
         default:
             handle_unexpected_errorcode_ascii(c, __func__, ret);
             break;
-        }
-        return;
     }
+}
 
-    /* append terminator and start the transfer */
+static void write_ascii_stats_buffer(conn *c)
+{
     append_ascii_stats(NULL, 0, NULL, 0, c);
 
     if (c->dynamic_buffer.buffer == NULL) {
@@ -8546,6 +8509,54 @@ static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens
     } else {
         write_and_free(c, c->dynamic_buffer.buffer, c->dynamic_buffer.offset);
         c->dynamic_buffer.buffer = NULL;
+    }
+}
+
+static void process_stats_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    assert(c != NULL && ntokens >= 2);
+    const char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
+
+    if (ntokens == 2) {
+        server_stats(&append_ascii_stats, c, false);
+        (void)mc_engine.v1->get_stats(mc_engine.v0, c, NULL, 0,
+                                      &append_ascii_stats);
+        write_ascii_stats_buffer(c);
+    } else if (strcmp(subcommand, "reset") == 0) {
+        stats_reset(c);
+        out_string(c, "RESET");
+    } else if (strcmp(subcommand, "detail") == 0) {
+        /* NOTE: how to tackle detail with binary? */
+        /* outputs the error message if ntokens`s invalid. */
+        process_stats_detail(c, ntokens != 4 ? "" : tokens[2].value);
+    } else if (strcmp(subcommand, "settings") == 0) {
+        process_stats_settings(&append_ascii_stats, c);
+        write_ascii_stats_buffer(c);
+#ifdef ENABLE_ZK_INTEGRATION
+    } else if (strcmp(subcommand, "zookeeper") == 0) {
+        process_stats_zookeeper(&append_ascii_stats, c);
+        write_ascii_stats_buffer(c);
+#endif
+    } else if (strcmp(subcommand, "cachedump") == 0) {
+        process_stats_cachedump(c, tokens, ntokens);
+    } else if (strcmp(subcommand, "aggregate") == 0) {
+        server_stats(&append_ascii_stats, c, true);
+        write_ascii_stats_buffer(c);
+    } else if (strcmp(subcommand, "topkeys") == 0) {
+        if (default_topkeys != NULL) {
+            topkeys_stats(default_topkeys, c, get_current_time(), append_ascii_stats);
+            write_ascii_stats_buffer(c);
+        } else {
+            out_string(c, "NOT_SUPPORTED");
+        }
+    } else if (strcmp(subcommand, "prefixes") == 0) {
+        process_stats_prefixes(c, ntokens);
+    } else if (strcmp(subcommand, "prefixlist") == 0) {
+        process_stats_prefixlist(c, tokens, ntokens);
+    } else {
+        /* getting here means that the subcommand is either engine specific or
+           is invalid. query the engine and see. */
+        process_stats_engine(c, tokens, ntokens);
     }
 }
 
