@@ -8465,17 +8465,19 @@ static void process_stats_prefixes(conn *c, const size_t ntokens)
 
 static void process_stats_prefixlist(conn *c, token_t *tokens, const size_t ntokens)
 {
-    int len = 0, chunk_len = 0;
+    int len = 0;
     char *stats = NULL;
-    char *chunk_stats;
     token_t *prefixes = ntokens > 4 ? &tokens[3] : NULL;
     size_t nprefixes = ntokens > 4 ? ntokens-4 : 0;
-    token_t *remained_prefix = prefixes != NULL ? &prefixes[nprefixes] : NULL;
 
     if (ntokens < 4) {
         out_string(c, "CLIENT_ERROR subcommand(item|operation) is required");
         return;
     } else if (strcmp(tokens[2].value, "item") == 0) {
+		int chunk_len = 0;
+		char *chunk_stats;
+    	token_t *remained_prefix = prefixes != NULL ? &prefixes[nprefixes] : NULL;
+
         if ((prefixes == NULL &&
             mc_engine.v1->prefix_count(mc_engine.v0, c) > settings.max_stats_prefixes) ||
             nprefixes > settings.max_stats_prefixes ||
@@ -8509,36 +8511,12 @@ static void process_stats_prefixlist(conn *c, token_t *tokens, const size_t ntok
         } while (remained_prefix && remained_prefix->value != NULL);
     } else if (strcmp(tokens[2].value, "operation") == 0) {
         if ((prefixes == NULL && stats_prefix_count() > settings.max_stats_prefixes) ||
-                nprefixes > settings.max_stats_prefixes ||
-                count_tokens(tokens, MAX_TOKENS) - 3 > settings.max_stats_prefixes) {
+                nprefixes > settings.max_stats_prefixes) {
             out_string(c, "CLIENT_ERROR invalid: too many prefixes");
             return;
         }
-
-        do {
-            chunk_stats = stats_prefix_dump(prefixes, nprefixes, &chunk_len);
-
-            /* If the command string hasn`t been fully processed, get the next set of tokens. */
-            remained_prefix = &prefixes[nprefixes];
-            if (remained_prefix && remained_prefix->value != NULL) {
-                nprefixes = tokenize_command(remained_prefix->value, (remained_prefix+1)->length, tokens, MAX_TOKENS) - 1;
-                prefixes = &tokens[0];
-
-                /* Exclude END\r\n. */
-                chunk_len -= 5;
-            }
-
-            /* Add chunk to total. */
-            if ((stats = realloc(stats, len + chunk_len + 1)) == NULL) {
-                out_string(c, "SERVER_ERROR out of memory writing stats");
-                return;
-            }
-            memcpy(stats + len, chunk_stats, chunk_len);
-            len += chunk_len;
-
-            free(chunk_stats);
-        } while (remained_prefix && remained_prefix->value != NULL);
-    } else {
+		stats = stats_prefix_dump(prefixes, nprefixes, &len);
+	} else {
         out_string(c, "CLIENT_ERROR bad command line format");
         return;
     }
