@@ -3256,10 +3256,10 @@ static void process_sasl_auth_complete(conn *c)
     c->sasl_username = data.username;
 
     if (result == SASL_OK) {
-        // check authorization by performing the auth callback.
-        perform_callbacks(ON_AUTH, (const void*)&data, c);
-        c->authenticated = (c->authorized != AUTHZ_FAIL);
-        if (!c->authenticated) {
+        c->authorized = arcus_sasl_authz(c->sasl_username);
+        if (c->authorized != AUTHZ_FAIL) {
+            c->authenticated = true;
+        } else {
             result = SASL_FAIL;
             if (settings.verbose) {
                 mc_logger->log(EXTENSION_LOG_WARNING, c,
@@ -3270,6 +3270,7 @@ static void process_sasl_auth_complete(conn *c)
 
     if (result == SASL_OK) {
         out_string(c, "SASL_OK");
+        perform_callbacks(ON_AUTH, (const void*)&data, c);
         STATS_CMD_NOKEY(c, auth);
         mc_logger->log(EXTENSION_LOG_INFO, c,
                        "SECURITY_EVENT client=%s user=%s authentication succeeded\n",
@@ -4472,6 +4473,23 @@ static void process_bin_complete_sasl_auth(conn *c)
     c->sasl_auth_data = NULL;
     c->ritem = NULL;
 
+    auth_data_t data;
+    get_auth_data(c, &data);
+    c->sasl_username = data.username;
+
+    if (result == SASL_OK) {
+        c->authorized = arcus_sasl_authz(c->sasl_username);
+        if (c->authorized != AUTHZ_FAIL) {
+            c->authenticated = true;
+        } else {
+            result = SASL_FAIL;
+            if (settings.verbose) {
+                mc_logger->log(EXTENSION_LOG_WARNING, c,
+                               "%d: Authorization failed due to unavailable username\n", c->sfd);
+            }
+        }
+    }
+
     if (settings.verbose) {
         mc_logger->log(EXTENSION_LOG_INFO, c,
                        "%d: sasl result code:  %d\n", c->sfd, result);
@@ -4481,8 +4499,6 @@ static void process_bin_complete_sasl_auth(conn *c)
     case SASL_OK:
         c->authenticated = true;
         write_bin_response(c, "Authenticated", 0, 0, strlen("Authenticated"));
-        auth_data_t data;
-        get_auth_data(c, &data);
         perform_callbacks(ON_AUTH, (const void*)&data, c);
         STATS_CMD_NOKEY(c, auth);
         break;
