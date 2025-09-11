@@ -6,6 +6,10 @@
 #include <string.h>
 #include "sasl_auxprop.h"
 
+#if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
+static bool use_acl_zookeeper = false;
+#endif
+
 #ifdef HAVE_SASL_CB_GETCONF
 /* The locations we may search for a SASL config file if the user didn't
  * specify one in the environment variable SASL_CONF_PATH
@@ -124,36 +128,6 @@ static int sasl_getopt(void *context __attribute__((unused)),
 
     return SASL_FAIL;
 }
-
-static void arcus_sasl_authz(const void *cookie,
-                             ENGINE_EVENT_TYPE type,
-                             const void *event_data,
-                             const void *cb_data)
-{
-    conn *c = (conn *)cookie;
-    auth_data_t *data = (auth_data_t *)event_data;
-    char value[1024];
-
-    if (arcus_getdata(data->username, value, sizeof(value)) == SASL_OK) {
-        char *saveptr;
-        char *token = strtok_r(value, ",", &saveptr);
-        c->authorized = AUTHZ_NONE;
-        while (token != NULL) {
-            if      (strcmp(token, "kv")    == 0) c->authorized |= AUTHZ_KV | AUTHZ_DELETE;
-            else if (strcmp(token, "list")  == 0) c->authorized |= AUTHZ_LIST | AUTHZ_DELETE;
-            else if (strcmp(token, "set")   == 0) c->authorized |= AUTHZ_SET | AUTHZ_DELETE;
-            else if (strcmp(token, "map")   == 0) c->authorized |= AUTHZ_MAP | AUTHZ_DELETE;
-            else if (strcmp(token, "btree") == 0) c->authorized |= AUTHZ_BTREE | AUTHZ_DELETE;
-            else if (strcmp(token, "scan")  == 0) c->authorized |= AUTHZ_SCAN;
-            else if (strcmp(token, "flush") == 0) c->authorized |= AUTHZ_FLUSH;
-            else if (strcmp(token, "attr")  == 0) c->authorized |= AUTHZ_ATTR;
-            else if (strcmp(token, "admin") == 0) c->authorized |= AUTHZ_ADMIN;
-            token = strtok_r(NULL, ",", &saveptr);
-        }
-    } else {
-        c->authorized = AUTHZ_FAIL;
-    }
-}
 #endif
 
 static int sasl_log(void *context, int level, const char *message)
@@ -191,13 +165,36 @@ static int sasl_log(void *context, int level, const char *message)
 }
 #endif
 
-static void default_sasl_authz(const void *cookie,
-                               ENGINE_EVENT_TYPE type,
-                               const void *event_data,
-                               const void *cb_data)
+uint16_t arcus_sasl_authz(const char *username)
 {
-    conn *c = (conn *)cookie;
-    c->authorized = AUTHZ_ALL;
+    uint16_t ret = AUTHZ_ALL;
+
+#if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
+    if (use_acl_zookeeper) {
+        char value[1024];
+        if (arcus_getdata(username, value, sizeof(value)) == SASL_OK) {
+            char *saveptr;
+            char *token = strtok_r(value, ",", &saveptr);
+            ret = AUTHZ_NONE;
+            while (token != NULL) {
+                if      (strcmp(token, "kv")    == 0) ret |= AUTHZ_KV | AUTHZ_DELETE;
+                else if (strcmp(token, "list")  == 0) ret |= AUTHZ_LIST | AUTHZ_DELETE;
+                else if (strcmp(token, "set")   == 0) ret |= AUTHZ_SET | AUTHZ_DELETE;
+                else if (strcmp(token, "map")   == 0) ret |= AUTHZ_MAP | AUTHZ_DELETE;
+                else if (strcmp(token, "btree") == 0) ret |= AUTHZ_BTREE | AUTHZ_DELETE;
+                else if (strcmp(token, "scan")  == 0) ret |= AUTHZ_SCAN;
+                else if (strcmp(token, "flush") == 0) ret |= AUTHZ_FLUSH;
+                else if (strcmp(token, "attr")  == 0) ret |= AUTHZ_ATTR;
+                else if (strcmp(token, "admin") == 0) ret |= AUTHZ_ADMIN;
+                token = strtok_r(NULL, ",", &saveptr);
+            }
+        } else {
+            ret = AUTHZ_FAIL;
+        }
+    }
+#endif
+
+    return ret;
 }
 
 static sasl_callback_t sasl_callbacks[5] = {
@@ -232,7 +229,7 @@ void init_sasl(void)
 #endif
 
 #if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
-    bool use_acl_zookeeper = getenv("ARCUS_ACL_ZOOKEEPER") != NULL;
+    use_acl_zookeeper = (getenv("ARCUS_ACL_ZOOKEEPER") != NULL);
     if (use_acl_zookeeper) {
         sasl_callback_t *cb = sasl_callbacks;
         while (cb->id != SASL_CB_LIST_END) cb++;
@@ -252,12 +249,7 @@ void init_sasl(void)
             fprintf(stderr, "Error to SASL auxprop plugin.\n");
             exit(EXIT_FAILURE);
         }
-        register_callback(NULL, ON_AUTH, arcus_sasl_authz, NULL);
-    } else {
-        register_callback(NULL, ON_AUTH, default_sasl_authz, NULL);
     }
-#else
-    register_callback(NULL, ON_AUTH, default_sasl_authz, NULL);
 #endif
 
     if (settings.verbose) {

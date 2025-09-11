@@ -4,6 +4,8 @@
 // Longest one I could find was ``9798-U-RSA-SHA1-ENC''
 #define MAX_SASL_MECH_LEN 32
 
+uint16_t arcus_sasl_authz(const char *username);
+
 #if defined(ENABLE_SASL)
 
 #include <sasl/sasl.h>
