@@ -146,6 +146,7 @@ static void update_stat_cas(conn *c, ENGINE_ERROR_CODE ret);
 static void process_stats_prefixes(conn *c, const size_t ntokens);
 static void process_stats_prefixlist(conn *c, token_t *tokens, const size_t ntokens);
 static void process_stats_engine(conn *c, token_t *tokens, const size_t ntokens);
+static size_t count_remained_tokens(const token_t *tokens);
 static void write_ascii_stats_buffer(conn *c);
 
 /* defaults */
@@ -8457,8 +8458,8 @@ static void process_stats_prefixlist(conn *c, token_t *tokens, const size_t ntok
     int len;
     char *stats;
     token_t *prefixes = ntokens > 4 ? &tokens[3] : NULL;
-    size_t nprefixes = ntokens > 4 ? ntokens-4 : 0;
-    size_t prefix_cnt = nprefixes;
+    size_t nprefixes = ntokens > 4 ? ntokens - 4 : 0;
+    size_t nremained = count_remained_tokens(&tokens[nprefixes + 3]);
 
     if (ntokens < 4) {
         out_string(c, "CLIENT_ERROR subcommand(item|operation) is required");
@@ -8466,13 +8467,13 @@ static void process_stats_prefixlist(conn *c, token_t *tokens, const size_t ntok
     }
 
     if (strcmp(tokens[2].value, "item") == 0) {
-        if (prefix_cnt == 0) {
-            prefix_cnt = mc_engine.v1->prefix_count(mc_engine.v0, c);
+        if (nprefixes == 0) {
+            nprefixes = mc_engine.v1->prefix_count(mc_engine.v0, c);
         }
         item_cmd = true; /* item command */
     } else if (strcmp(tokens[2].value, "operation") == 0) {
-        if (prefix_cnt == 0) {
-            prefix_cnt = stats_prefix_count();
+        if (nprefixes == 0) {
+            nprefixes = stats_prefix_count();
         }
         item_cmd = false; /* operation command */
     } else {
@@ -8480,16 +8481,34 @@ static void process_stats_prefixlist(conn *c, token_t *tokens, const size_t ntok
         return;
     }
 
-    if (prefix_cnt > settings.max_stats_prefixes) {
+    if (nprefixes + nremained > settings.max_stats_prefixes) {
         out_string(c, "CLIENT_ERROR invalid: too many prefixes");
         return;
     }
 
-    if (item_cmd == true) { /* item */
-        stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, prefixes, nprefixes, &len);
-    } else {                /* operation */
-        stats = stats_prefix_dump(prefixes, nprefixes, &len);
+    if (nremained > 0) {
+        token_t *temp = (token_t *)malloc(sizeof(token_t) * (nprefixes + nremained + 1));
+        if (temp != NULL) {
+            memcpy(temp, prefixes, sizeof(token_t) * nprefixes);
+            tokenize_command(prefixes[nprefixes].value, prefixes[nprefixes + 1].length,
+                             temp + nprefixes, nremained + 1);
+            prefixes = temp;
+        } else {
+            out_string(c, "SERVER_ERROR no more memory");
+            return;
+        }
     }
+
+    if (item_cmd == true) { /* item */
+        stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, prefixes, nprefixes + nremained, &len);
+    } else {                /* operation */
+        stats = stats_prefix_dump(prefixes, nprefixes + nremained, &len);
+    }
+
+    if (nremained > 0) {
+        free(prefixes);
+    }
+
     if (stats != NULL) {
         write_and_free(c, stats, len);
     } else {
@@ -8529,6 +8548,27 @@ static void process_stats_engine(conn *c, token_t *tokens, const size_t ntokens)
             handle_unexpected_errorcode_ascii(c, __func__, ret);
             break;
     }
+}
+
+static size_t count_remained_tokens(const token_t *remained)
+{
+    assert(remained != NULL);
+    if (remained->value == NULL || remained->length != 0) return 0;
+
+    size_t count = 0;
+    const char *s = remained->value;
+    const char *e = s + (remained+1)->length;
+
+    while (s < e) {
+        if(*s == ' ') {
+            s++;
+        } else {
+            count++;
+            while (s < e && *s != ' ') s++;
+        }
+    }
+
+    return count;
 }
 
 static void write_ascii_stats_buffer(conn *c)
@@ -13801,7 +13841,8 @@ static int try_read_command_ascii(conn *c)
              */
             if (c->rbytes > ((16+8)*1024)) {
                 /* The length of "stats prefixes" command cannot exceed 24 KB. */
-                if (strncmp(ptr, "get ", 4) && strncmp(ptr, "gets ", 5)) {
+                if (strncmp(ptr, "get ", 4) && strncmp(ptr, "gets ", 5) &&
+                    strncmp(ptr, "stats prefixlist ", 17)) {
                     char buffer[16];
                     memcpy(buffer, ptr, 15); buffer[15] = '\0';
                     mc_logger->log(EXTENSION_LOG_WARNING, c,
