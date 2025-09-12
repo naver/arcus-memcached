@@ -13588,6 +13588,7 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
     {
         process_get_command(c, tokens, ntokens, true, false);
     }
+#if 0
     else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "gat") == 0))
     {
         process_get_command(c, tokens, ntokens, false, true);
@@ -13596,6 +13597,7 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
     {
         process_get_command(c, tokens, ntokens, true, true);
     }
+#endif
     else if ((ntokens == 4) && (strcmp(tokens[COMMAND_TOKEN].value, "mget") == 0))
     {
         process_mget_command(c, tokens, ntokens, false);
