@@ -73,7 +73,7 @@ END\r\n
 
 mget 명령에서 메모리 부족으로 일부 key에 대해서만 정상 조회한 후 실패한 경우, 전체 연산을 서버 에러 처리한다.
 
-## gat/gats (get and touch)
+## gat/gats (get and touch) *(향후 릴리즈 예정)*
 
 gat, gats 명령은 get, gets와 동일하게 조회하면서 exptime을 재설정한다.
 두 명령은 collection item에 대해서는 동작하지 않는다.
