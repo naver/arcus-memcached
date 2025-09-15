@@ -8435,54 +8435,65 @@ static void process_stats_prefixes(conn *c, const size_t ntokens)
         out_string(c, "CLIENT_ERROR invalid: too many prefixes");
         return;
     }
+
     stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, NULL, 0, &len);
-    if (stats == NULL) {
+    if (stats != NULL) {
+        write_and_free(c, stats, len);
+    } else {
         if (len == -1)
             out_string(c, "NOT_SUPPORTED");
         else
             out_string(c, "SERVER_ERROR no more memory");
-        return;
     }
-    write_and_free(c, stats, len);
 }
 
 static void process_stats_prefixlist(conn *c, token_t *tokens, const size_t ntokens)
 {
-        int len;
-        char *stats;
-        token_t *prefixes = ntokens > 4 ? &tokens[3] : NULL;
-        size_t nprefixes = ntokens > 4 ? ntokens-4 : 0;
+    bool item_cmd;
+    int len;
+    char *stats;
+    token_t *prefixes = ntokens > 4 ? &tokens[3] : NULL;
+    size_t nprefixes = ntokens > 4 ? ntokens-4 : 0;
+    size_t prefix_cnt = nprefixes;
 
-        if (ntokens < 4) {
-            out_string(c, "CLIENT_ERROR subcommand(item|operation) is required");
-            return;
-        } else if (strcmp(tokens[2].value, "item") == 0) {
-            if ((prefixes == NULL &&
-                mc_engine.v1->prefix_count(mc_engine.v0, c) > settings.max_stats_prefixes) ||
-                nprefixes > settings.max_stats_prefixes) {
-                out_string(c, "CLIENT_ERROR invalid: too many prefixes");
-                return;
-            }
-            stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, prefixes, nprefixes, &len);
-        } else if (strcmp(tokens[2].value, "operation") == 0) {
-            if ((prefixes == NULL && stats_prefix_count() > settings.max_stats_prefixes) ||
-                nprefixes > settings.max_stats_prefixes) {
-                out_string(c, "CLIENT_ERROR invalid: too many prefixes");
-                return;
-            }
-            stats = stats_prefix_dump(prefixes, nprefixes, &len);
-        } else {
-            out_string(c, "CLIENT_ERROR bad command line format");
-            return;
+    if (ntokens < 4) {
+        out_string(c, "CLIENT_ERROR subcommand(item|operation) is required");
+        return;
+    }
+
+    if (strcmp(tokens[2].value, "item") == 0) {
+        if (prefix_cnt == 0) {
+            prefix_cnt = mc_engine.v1->prefix_count(mc_engine.v0, c);
         }
-        if (stats == NULL) {
-            if (len == -1)
-                out_string(c, "NOT_SUPPORTED");
-            else
-                out_string(c, "SERVER_ERROR no more memory");
-            return;
+        item_cmd = true; /* item command */
+    } else if (strcmp(tokens[2].value, "operation") == 0) {
+        if (prefix_cnt == 0) {
+            prefix_cnt = stats_prefix_count();
         }
+        item_cmd = false; /* operation command */
+    } else {
+        out_string(c, "CLIENT_ERROR bad command line format");
+        return;
+    }
+
+    if (prefix_cnt > settings.max_stats_prefixes) {
+        out_string(c, "CLIENT_ERROR invalid: too many prefixes");
+        return;
+    }
+
+    if (item_cmd == true) { /* item */
+        stats = mc_engine.v1->prefix_dump_stats(mc_engine.v0, c, prefixes, nprefixes, &len);
+    } else {                /* operation */
+        stats = stats_prefix_dump(prefixes, nprefixes, &len);
+    }
+    if (stats != NULL) {
         write_and_free(c, stats, len);
+    } else {
+        if (len == -1)
+            out_string(c, "NOT_SUPPORTED");
+        else
+            out_string(c, "SERVER_ERROR no more memory");
+    }
 }
 
 static void process_stats_engine(conn *c, token_t *tokens, const size_t ntokens)
