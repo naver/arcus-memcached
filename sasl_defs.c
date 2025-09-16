@@ -210,7 +210,7 @@ static sasl_callback_t sasl_callbacks[5] = {
    { SASL_CB_GETCONF, (int(*)(void))sasl_getconf, NULL },
 #else
 #ifdef HAVE_SASL_CB_GETCONFPATH
-   { SASL_CB_GETCONFPATH, (sasl_callback_ft)sasl_getconf, NULL },
+   { SASL_CB_GETCONFPATH, (int(*)(void))sasl_getconf, NULL },
 #endif
 #endif
 
