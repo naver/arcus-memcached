@@ -148,6 +148,29 @@ unsigned long val = SASL_CB_GETCONF;
                      [Set to nonzero if your SASL implementation supports SASL_CB_GETCONF])])
 ])
 
+dnl **********************************************************************
+dnl DETECT_SASL_CB_GETCONFPATH
+dnl
+dnl check if we can use SASL_CB_GETCONFPATH
+dnl **********************************************************************
+AC_DEFUN([AC_C_DETECT_SASL_CB_GETCONFPATH],
+[
+    AC_CACHE_CHECK([for SASL_CB_GETCONFPATH],
+        [ac_cv_c_sasl_cb_getconfpath],
+        [AC_TRY_COMPILE(
+            [
+#include <sasl/sasl.h>
+            ], [
+unsigned long val = SASL_CB_GETCONFPATH;
+            ],
+            [ ac_cv_c_sasl_cb_getconfpath=yes ],
+            [ ac_cv_c_sasl_cb_getconfpath=no ])
+        ])
+    AS_IF([test "$ac_cv_c_sasl_cb_getconfpath" = "yes"],
+          [AC_DEFINE([HAVE_SASL_CB_GETCONFPATH], 1,
+                     [Set to nonzero if your SASL implementation supports SASL_CB_GETCONFPATH])])
+])
+
 AM_CONDITIONAL(BUILD_SYSLOG_LOGGER, test "x$ac_cv_header_syslog_h" = "xyes")
 
 if test "x$enable_isasl" = "xyes"; then
@@ -209,6 +232,7 @@ elif test "x$enable_sasl" = "xyes"; then
 
       if test $sasl_found = yes ; then
         AC_C_DETECT_SASL_CB_GETCONF
+        AC_C_DETECT_SASL_CB_GETCONFPATH
         break
       fi
     done
