@@ -16136,8 +16136,8 @@ int main (int argc, char **argv)
     }
 
 #ifdef SASL_ENABLED
-    if (settings.require_sasl) {
-        init_sasl();
+    if (settings.require_sasl && init_sasl() != 0) {
+        exit(EXIT_FAILURE);
     }
 #endif
 
