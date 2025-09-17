@@ -3212,6 +3212,10 @@ static void init_sasl_conn(conn *c)
 static void get_auth_data(const void *cookie, auth_data_t *data)
 {
     conn *c = (conn*)cookie;
+
+    data->username = "";
+    data->config = "";
+
     if (c->sasl_conn) {
         sasl_getprop(c->sasl_conn, SASL_USERNAME, (void*)&data->username);
 #ifdef ENABLE_ISASL
