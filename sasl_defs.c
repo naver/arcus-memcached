@@ -35,17 +35,18 @@ static int sasl_server_userdb_checkpass(sasl_conn_t *conn,
 {
     size_t unmlen = strlen(user);
     if ((passlen + unmlen) > (MAX_ENTRY_LEN - 4)) {
-        fprintf(stderr,
-                "WARNING: Failed to authenticate <%s> due to too long password (%u)\n",
-                user, passlen);
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                       "WARNING: Failed to authenticate <%s> due to too long password (%u)\n",
+                       user, passlen);
         return SASL_NOAUTHZ;
     }
 
     FILE *pwfile = fopen(memcached_sasl_pwdb, "r");
     if (pwfile == NULL) {
         if (settings.verbose) {
-            vperror("WARNING: Failed to open sasl database <%s>",
-                    memcached_sasl_pwdb);
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                           "WARNING: Failed to open sasl database <%s>",
+                           memcached_sasl_pwdb);
         }
         return SASL_NOAUTHZ;
     }
@@ -73,9 +74,7 @@ static int sasl_server_userdb_checkpass(sasl_conn_t *conn,
         return SASL_OK;
     }
 
-    if (settings.verbose) {
-        fprintf(stderr, "INFO: User <%s> failed to authenticate\n", user);
-    }
+    mc_logger->log(EXTENSION_LOG_WARNING, NULL, "WARNING: User <%s> failed to authenticate\n", user);
 
     return SASL_NOAUTHZ;
 }
@@ -97,9 +96,9 @@ static int sasl_getconf(void *context, const char **path)
 
     if (settings.verbose) {
         if (*path != NULL) {
-            fprintf(stderr, "Reading configuration from: <%s>\n", *path);
+            mc_logger->log(EXTENSION_LOG_INFO, NULL, "Reading configuration from: <%s>\n", *path);
         } else {
-            fprintf(stderr, "Failed to locate a config path\n");
+            mc_logger->log(EXTENSION_LOG_INFO, NULL, "Failed to locate a config path\n");
         }
 
     }
@@ -158,7 +157,7 @@ static int sasl_log(void *context, int level, const char *message)
     }
 
     if (log) {
-        fprintf(stderr, "SASL (severity %d): %s\n", level, message);
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL, "SASL (severity %d): %s\n", level, message);
     }
 
     return SASL_OK;
@@ -197,68 +196,61 @@ uint16_t arcus_sasl_authz(const char *username)
     return ret;
 }
 
-static sasl_callback_t sasl_callbacks[5] = {
-#ifdef ENABLE_SASL_PWDB
-   { SASL_CB_SERVER_USERDB_CHECKPASS, (int(*)(void))sasl_server_userdb_checkpass, NULL },
-#endif
+static sasl_callback_t sasl_callbacks[5];
 
-#ifdef ENABLE_SASL
-   { SASL_CB_LOG, (int(*)(void))sasl_log, NULL },
-#endif
-
-#ifdef HAVE_SASL_CB_GETCONF
-   { SASL_CB_GETCONF, (int(*)(void))sasl_getconf, NULL },
-#else
-#ifdef HAVE_SASL_CB_GETCONFPATH
-   { SASL_CB_GETCONFPATH, (int(*)(void))sasl_getconf, NULL },
-#endif
-#endif
-
-   { SASL_CB_LIST_END, NULL, NULL }
-};
-
-void init_sasl(void)
+int init_sasl(void)
 {
+    int i = 0;
+#ifdef ENABLE_SASL
+    sasl_callbacks[i++] = (sasl_callback_t){ SASL_CB_LOG, (int(*)(void))sasl_log, NULL };
+
 #ifdef ENABLE_SASL_PWDB
     memcached_sasl_pwdb = getenv("MEMCACHED_SASL_PWDB");
     if (memcached_sasl_pwdb == NULL) {
-       if (settings.verbose) {
-          fprintf(stderr,
-                  "INFO: MEMCACHED_SASL_PWDB not specified. "
-                  "Internal passwd database disabled\n");
-       }
-       sasl_callbacks[0].id = SASL_CB_LIST_END;
-       sasl_callbacks[0].proc = NULL;
+        if (settings.verbose) {
+            mc_logger->log(EXTENSION_LOG_INFO, NULL,
+                           "INFO: MEMCACHED_SASL_PWDB not specified. "
+                           "Internal passwd database disabled\n");
+        }
+    } else {
+        sasl_callbacks[i++] = (sasl_callback_t){ SASL_CB_SERVER_USERDB_CHECKPASS, (int(*)(void))sasl_server_userdb_checkpass, NULL };
     }
-#endif
-
-#if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
+#elif defined(ENABLE_ZK_INTEGRATION)
     use_acl_zookeeper = (getenv("ARCUS_ACL_ZOOKEEPER") != NULL);
     if (use_acl_zookeeper) {
-        sasl_callback_t *cb = sasl_callbacks;
-        while (cb->id != SASL_CB_LIST_END) cb++;
-        cb[0] = (sasl_callback_t){ SASL_CB_GETOPT, (sasl_callback_ft)&sasl_getopt, NULL };
-        cb[1] = (sasl_callback_t){ SASL_CB_LIST_END, NULL, NULL };
+        sasl_callbacks[i++] = (sasl_callback_t){ SASL_CB_GETOPT, (int(*)(void))&sasl_getopt, NULL };
     }
 #endif
 
+#ifdef HAVE_SASL_CB_GETCONF
+    sasl_callbacks[i++] = (sasl_callback_t){ SASL_CB_GETCONF, (int(*)(void))sasl_getconf, NULL },
+#else
+#ifdef HAVE_SASL_CB_GETCONFPATH
+    sasl_callbacks[i++] = (sasl_callback_t){ SASL_CB_GETCONFPATH, (int(*)(void))sasl_getconf, NULL },
+#endif
+#endif
+
+#endif
+    sasl_callbacks[i] = (sasl_callback_t){ SASL_CB_LIST_END, NULL, NULL };
+
     if (sasl_server_init(sasl_callbacks, "memcached") != SASL_OK) {
-        fprintf(stderr, "Error initializing sasl.\n");
-        exit(EXIT_FAILURE);
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL, "Error initializing sasl.\n");
+        return -1;
     }
 
 #if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
     if (use_acl_zookeeper) {
         if (sasl_auxprop_add_plugin("arcus", &arcus_auxprop_plug_init) != SASL_OK) {
-            fprintf(stderr, "Error to SASL auxprop plugin.\n");
-            exit(EXIT_FAILURE);
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL, "Error to SASL auxprop plugin.\n");
+            return -1;
         }
     }
 #endif
 
     if (settings.verbose) {
-        fprintf(stderr, "Initialized SASL.\n");
+        mc_logger->log(EXTENSION_LOG_INFO, NULL, "Initialized SASL.\n");
     }
+    return 0;
 }
 
 void shutdown_sasl(void)
