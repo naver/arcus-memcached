@@ -1,3 +1,29 @@
+# 2025-09-22 [version 1.15.0]
+## 🐣 New Features
+  - Add `ARCUS_CACHE_HOSTNAME_OVERWRITE` environment variable.
+  - Add `touch` command.
+  - Add  userlog extension.
+  - Add `sasl` command to ascii protocol.
+  - Implement a SASL auxprop plugin for Zookeeper-based ACL.
+## ⚙️ Internal Changes
+  - Add sasl related fields to `conn` and remove `sasl_tmp`.
+  - Add `--with-sasl` to configure option.
+  - Add cyrus-sasl to dependency installation script.
+  - Add command authorization support.
+  - Add `get_auth_flag()` to `EXTENSION_ASCII_PROTOCOL_DESCRIPTOR`.
+  - Remove `get_auth_data()` from `SERVER_CORE_API`.
+  - Always respond with `SASL_OK` when `require_sasl` is false in `sasl auth` command.
+  - Add audit log.
+  - Refactored `process_stats_command()` on memcached.c.
+  - Fix SASL_CB_GETCONF(PATH) detection.
+  - Return the result instead of exit() on init_sasl() failure.
+## 📝 Documentation
+  - clarify lib install path in compilation guide.
+  - Add {reason} message to CLIENT/SERVER_ERROR responses.
+  - Add scheduled release keyword to the gat command.
+## ✅ Testing
+  - Add `--enable-sasl` to configure option.
+
 # 2025-07-02 [version 1.14.1]
 ## 🐣 New Features
   - Return random elements from `sop get`.
