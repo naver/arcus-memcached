@@ -18,7 +18,7 @@
   - Fix SASL_CB_GETCONF(PATH) detection.
   - Return the result instead of exit() on init_sasl() failure.
 ## 📝 Documentation
-  - clarify lib install path in compilation guide.
+  - Clarify lib install path in compilation guide.
   - Add {reason} message to CLIENT/SERVER_ERROR responses.
   - Add scheduled release keyword to the gat command.
 ## ✅ Testing
