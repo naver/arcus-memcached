@@ -3298,12 +3298,22 @@ static void process_sasl_auth_complete(conn *c)
         c->suffixcurr = c->suffixlist;
     } else {
         char temp[512];
+#ifdef ENABLE_SASL
         snprintf(temp, sizeof(temp), "AUTH_ERROR %s", sasl_errstring(result, NULL, NULL));
+#else
+        snprintf(temp, sizeof(temp), "AUTH_ERROR");
+#endif
         out_string(c, temp);
         STATS_ERRORS_NOKEY(c, auth);
+#ifdef ENABLE_SASL
         mc_logger->log(EXTENSION_LOG_WARNING, c,
                        "SECURITY_EVENT client=%s user=%s authentication failed(%s)\n",
                        c->client_ip, c->sasl_username, sasl_errstring(result, NULL, NULL));
+#else
+        mc_logger->log(EXTENSION_LOG_WARNING, c,
+                       "SECURITY_EVENT client=%s user=%s authentication failed\n",
+                       c->client_ip, c->sasl_username);
+#endif
     }
 }
 #endif
