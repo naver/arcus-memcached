@@ -12,6 +12,10 @@ int init_sasl(void);
 void shutdown_sasl(void);
 uint16_t arcus_sasl_authz(const char *username);
 
+#if defined(ENABLE_ZK_INTEGRATION)
+void reload_sasl(void);
+#endif
+
 #elif defined(ENABLE_ISASL)
 
 #include "isasl.h"

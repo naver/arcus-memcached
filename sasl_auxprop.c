@@ -393,5 +393,12 @@ int arcus_getdata(const char *user, char *out, const size_t max_out)
     return _arcus_getdata(user, NULL, out, max_out, NULL);
 }
 
+void arcus_auxprop_wakeup(void)
+{
+    pthread_mutex_lock(&acl_thread_lock);
+    pthread_cond_signal(&acl_thread_cond);
+    pthread_mutex_unlock(&acl_thread_lock);
+}
+
 #endif /* ENABLE_ZK_INTEGRATION */
 #endif /* ENABLE_SASL */

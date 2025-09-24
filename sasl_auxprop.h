@@ -15,6 +15,8 @@ int arcus_auxprop_plug_init(const sasl_utils_t *utils,
 
 int arcus_getdata(const char *user, char *out, const size_t max_out);
 
+void arcus_auxprop_wakeup(void);
+
 #endif /* ENABLE_ZK_INTEGRATION */
 #endif /* ENABLE_SASL */
 

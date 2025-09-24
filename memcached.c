@@ -10434,6 +10434,11 @@ static void process_sasl_command(conn *c, token_t *tokens, const size_t ntokens)
 
     if (ntokens == 3 && strcmp(subcommand, "mech") == 0) {
         ascii_list_sasl_mechs(c);
+#if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
+    } else if (ntokens == 3 && strcmp(subcommand, "reload") == 0) {
+        reload_sasl();
+        out_string(c, "OK");
+#endif
     } else if ((ntokens == 4 || ntokens == 5) && strcmp(subcommand, "auth") == 0) {
         process_ascii_sasl_auth(c, tokens, ntokens);
     } else {

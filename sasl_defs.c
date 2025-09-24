@@ -127,6 +127,13 @@ static int sasl_getopt(void *context __attribute__((unused)),
 
     return SASL_FAIL;
 }
+
+void reload_sasl(void)
+{
+    if (use_acl_zookeeper) {
+        arcus_auxprop_wakeup();
+    }
+}
 #endif
 
 static int sasl_log(void *context, int level, const char *message)
