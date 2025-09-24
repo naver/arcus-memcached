@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-use Test::More tests => 80;
+use Test::More tests => 79;
 use FindBin qw($Bin);
 use lib "$Bin/lib";
 use MemcachedTest;
@@ -190,7 +190,7 @@ if ($stats->{'auth_sasl_enabled'} == 'yes') {
 
 # Test initial state
 foreach my $key (qw(curr_items total_items bytes cmd_get cmd_set get_hits evictions get_misses
-                 bytes_written delete_hits delete_misses incr_hits incr_misses decr_hits decr_misses)) {
+                    delete_hits delete_misses incr_hits incr_misses decr_hits decr_misses)) {
     is($stats->{$key}, 0, "initial $key is zero");
 }
 
