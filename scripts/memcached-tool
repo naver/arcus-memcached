@@ -74,8 +74,8 @@ if ($mode eq 'dump') {
         while (<$sock>) {
             last if /^END/;
             # return format looks like this
-            # ITEM foo [6 b; 1176415152 s]
-            if (/^ITEM (\S+) \[.* (\d+) s\]/) {
+            # ITEM foo [acctime=22, exptime=0]
+            if (/^ITEM (\S+) \[.*?exptime=(\d+)\]/) {
                 $keyexp{$1} = $2;
             }
         }
