@@ -34,7 +34,7 @@ ARCUS Cache Server는 collection 기능 지원으로 인해,
 | readable       | collection  | readable/unreadable   | "on", "off"                    | "on"                    |
 |-----------------------------------------------------------------------------------------------------------------|
 | maxbkeyrange   | b+tree only | maximum bkey range    | 8 bytes unsigned integer or    | 0                       |
-|                |             |                       | hexadecimal (max 31 bytes)     |                         |
+|                |             |                       | hexadecimal (max 63 bytes)     |                         |
 |-----------------------------------------------------------------------------------------------------------------|
 ```
 
