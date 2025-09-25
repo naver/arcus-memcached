@@ -79,6 +79,10 @@ memcached_SOURCES = \
                     hash.h \
                     memcached.c\
                     memcached.h \
+                    proto_ascii.c \
+                    proto_ascii.h \
+                    proto_bin.c \
+                    proto_bin.h \
                     sasl_defs.h \
                     stats_prefix.c \
                     stats_prefix.h \
