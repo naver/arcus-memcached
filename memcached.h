@@ -382,7 +382,6 @@ struct conn {
 
     char   **suffixlist;
     int    suffixsize;
-    char   **suffixcurr;
     int    suffixleft;
 
     enum protocol protocol;   /* which protocol this connection speaks */
