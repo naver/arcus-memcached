@@ -1084,7 +1084,7 @@ sub get_memcached {
 }
 
 sub new_memcached {
-    my ($args, $passed_port) = @_;
+    my ($args, $passed_port, $engine) = @_;
     my $port = $passed_port || free_port();
     my $host = '127.0.0.1';
 
@@ -1099,15 +1099,21 @@ sub new_memcached {
         croak("Failed to connect to specified memcached server.") unless $conn;
     }
 
-    my $udpport = free_port("udp");
+    my $udpport = 0;
     $args .= " -p $port";
     if (supports_udp()) {
+        $udpport = free_port("udp");
         $args .= " -U $udpport";
     }
     if ($< == 0) {
         $args .= " -u root";
     }
-    $args .= " -E $builddir/.libs/default_engine.so";
+
+    if ($engine) {
+        $args .= " -E $builddir/.libs/$engine\_engine.so";
+    } else {
+        $args .= " -E $builddir/.libs/default_engine.so";
+    }
 
     my $exe = "$builddir/memcached";
     croak("memcached binary doesn't exist.  Haven't run 'make' ?\n") unless -e $exe;
@@ -1129,77 +1135,7 @@ sub new_memcached {
 
         return Memcached::Handle->new(pid  => $childpid,
                                       conn => $conn,
-                                      domainsocket => $filename,
-                                      host => $host,
-                                      port => $port);
-    }
-
-    # try to connect / find open port, only if we're not using unix domain
-    # sockets
-
-    for (1..20) {
-        my $conn = IO::Socket::INET->new(PeerAddr => "127.0.0.1:$port");
-        if ($conn) {
-            return Memcached::Handle->new(pid  => $childpid,
-                                          conn => $conn,
-                                          udpport => $udpport,
-                                          host => $host,
-                                          port => $port);
-        }
-        select undef, undef, undef, 0.10;
-    }
-    croak("Failed to startup/connect to memcached server.");
-}
-
-sub new_memcached_engine {
-    my ($engine, $args, $passed_port) = @_;
-    my $port = $passed_port || free_port();
-    my $host = '127.0.0.1';
-
-    if ($ENV{T_MEMD_USE_DAEMON}) {
-        my ($host, $port) = ($ENV{T_MEMD_USE_DAEMON} =~ m/^([^:]+):(\d+)$/);
-        my $conn = IO::Socket::INET->new(PeerAddr => "$host:$port");
-        if ($conn) {
-            return Memcached::Handle->new(conn => $conn,
-                                          host => $host,
-                                          port => $port);
-        }
-        croak("Failed to connect to specified memcached server.") unless $conn;
-    }
-
-    my $udpport = free_port("udp");
-    $args .= " -p $port";
-    if (supports_udp()) {
-        $args .= " -U $udpport";
-    }
-    if ($< == 0) {
-        $args .= " -u root";
-    }
-    $args .= " -E $builddir/.libs/$engine\_engine.so";
-
-    my $exe = "$builddir/memcached";
-    croak("memcached binary doesn't exist.  Haven't run 'make' ?\n") unless -e $exe;
-    croak("memcached binary not executable\n") unless -x _;
-
-    my $childpid = fork();
-
-    unless ($childpid) {
-        exec "$builddir/timedrun 600 $exe $args";
-        exit; # never gets here.
-    }
-
-    # unix domain sockets
-    if ($args =~ /-s (\S+)/) {
-        sleep 1;
-        my $filename = $1;
-        my $conn = IO::Socket::UNIX->new(Peer => $filename) ||
-            croak("Failed to connect to unix domain socket: $! '$filename'");
-
-        return Memcached::Handle->new(pid  => $childpid,
-                                      conn => $conn,
-                                      domainsocket => $filename,
-                                      host => $host,
-                                      port => $port);
+                                      domainsocket => $filename);
     }
 
     # try to connect / find open port, only if we're not using unix domain
