@@ -117,40 +117,6 @@ static bool is_command_duplicated(char *key, enum lq_detect_command cmd, struct 
     return false;
 }
 
-static void do_lqdetect_write(char *client_ip, char *key,
-                              enum lq_detect_command cmd, struct lq_detect_argument *arg)
-{
-    struct   tm *ptm;
-    struct   timeval val;
-    struct   lq_detect_buffer *buffer = &lqdetect.buffer[cmd];
-    uint32_t nsaved = buffer->nsaved;
-    uint32_t length = ((nsaved+1) * LQ_INPUT_SIZE);
-    int keylen = strlen(key);
-    char keybuf[LQ_KEY_SIZE+1];
-    char *keyptr = key;
-
-    if (keylen > 250) { /* long key string */
-        snprintf(keybuf, sizeof(keybuf), "%.*s...%.*s",
-                          124, key, 123, (key + keylen - 123));
-        keyptr = keybuf;
-    }
-
-    if (is_command_duplicated(keyptr, cmd, arg)) {
-        return;
-    }
-
-    gettimeofday(&val, NULL);
-    ptm = localtime(&val.tv_sec);
-
-    snprintf(buffer->data + buffer->offset, length - buffer->offset,
-             "%02d:%02d:%02d.%06ld %s <%u> %s %s %s\n",
-             ptm->tm_hour, ptm->tm_min, ptm->tm_sec, (long)val.tv_usec,
-             client_ip, arg->overhead, command_str[cmd], keyptr, arg->query);
-    buffer->offset += strlen(buffer->data + buffer->offset);
-    lqdetect.arg[cmd][nsaved] = *arg;
-    buffer->nsaved += 1;
-}
-
 static void do_lqdetect_stop(int cause)
 {
     /* detect long query lock has already been held */
@@ -160,8 +126,48 @@ static void do_lqdetect_stop(int cause)
     lqdetect_in_use = false;
 }
 
+static void do_lqdetect_write(char *client_ip, char *key,
+                              enum lq_detect_command cmd,
+                              struct lq_detect_argument *arg)
+{
+    char keybuf[LQ_KEY_SIZE+1];
+    char *keyptr = key;
+    int keylen = strlen(key);
+
+    if (keylen > 250) { /* long key string */
+        snprintf(keybuf, sizeof(keybuf), "%.*s...%.*s",
+                          124, key, 123, (key + keylen - 123));
+        keyptr = keybuf;
+    }
+
+    if (is_command_duplicated(keyptr, cmd, arg) != true) {
+        struct timeval val;
+        struct tm *ptm;
+        struct lq_detect_buffer *buffer = &lqdetect.buffer[cmd];
+        uint32_t allow_length = (buffer->nsaved+1) * LQ_INPUT_SIZE;
+
+        gettimeofday(&val, NULL);
+        ptm = localtime(&val.tv_sec);
+
+        snprintf(buffer->data + buffer->offset, allow_length - buffer->offset,
+                 "%02d:%02d:%02d.%06ld %s <%u> %s %s %s\n",
+                 ptm->tm_hour, ptm->tm_min, ptm->tm_sec, (long)val.tv_usec,
+                 client_ip, arg->overhead, command_str[cmd], keyptr, arg->query);
+        buffer->offset += strlen(buffer->data + buffer->offset);
+        lqdetect.arg[cmd][buffer->nsaved] = *arg;
+        buffer->nsaved += 1;
+        if (buffer->nsaved >= LQ_SAVE_CNT) {
+            lqdetect.overflow_cnt++;
+            if (lqdetect.overflow_cnt >= LQ_CMD_NUM) {
+                do_lqdetect_stop(LQ_OVERFLOW_STOP); /* internal stop */
+            }
+        }
+    }
+}
+
 static void do_lqdetect_save_cmd(char *client_ip, char *key,
-                                 enum lq_detect_command cmd, struct lq_detect_argument *arg)
+                                 enum lq_detect_command cmd,
+                                 struct lq_detect_argument *arg)
 {
     assert(cmd >= LQCMD_SOP_GET && cmd <= LQCMD_BOP_GBP);
     pthread_mutex_lock(&lqdetect.lock);
@@ -170,13 +176,6 @@ static void do_lqdetect_save_cmd(char *client_ip, char *key,
         if (lqdetect.buffer[cmd].nsaved < LQ_SAVE_CNT) {
             /* write to buffer */
             do_lqdetect_write(client_ip, key, cmd, arg);
-            /* internal stop */
-            if (lqdetect.buffer[cmd].nsaved >= LQ_SAVE_CNT) {
-                lqdetect.overflow_cnt++;
-                if (lqdetect.overflow_cnt >= LQ_CMD_NUM) {
-                    do_lqdetect_stop(LQ_OVERFLOW_STOP);
-                }
-            }
         }
     }
     pthread_mutex_unlock(&lqdetect.lock);
@@ -210,7 +209,10 @@ static int do_make_bkeystring(char *buffer, const bkey_range *bkrange, const efl
     return (bufptr - buffer);
 }
 
-/* external functions */
+/**********************/
+/* External Functions */
+/**********************/
+
 int lqdetect_init(EXTENSION_LOGGER_DESCRIPTOR *logger)
 {
     mc_logger = logger;
@@ -285,15 +287,15 @@ void lqdetect_stop(bool *already_stopped)
 
 char *lqdetect_stats(void)
 {
+    char *state_str[3] = {
+        "stopped by explicit request",          // LQ_EXPLICIT_STOP
+        "stopped by internal buffer overflow",  // LQ_OVERFLOW_STOP
+        "running"                               // LQ_RUNNING
+    };
+    struct lq_detect_stats stats = lqdetect.stats;
+
     char *str = (char*)malloc(LQ_STAT_STRLEN);
     if (str) {
-        char *state_str[3] = {
-            "stopped by explicit request",          // LQ_EXPLICIT_STOP
-            "stopped by internal buffer overflow",  // LQ_OVERFLOW_STOP
-            "running"                               // LQ_RUNNING
-        };
-        struct lq_detect_stats stats = lqdetect.stats;
-
         if (lqdetect_in_use) {
             stats.enddate = 0;
             stats.endtime = 0;
@@ -327,8 +329,9 @@ char *lqdetect_result_get(int *size)
     for (int i = 0; i < LQ_CMD_NUM; i++) {
         length += lqdetect.buffer[i].offset;
     }
+
     str = (char*)malloc(length);
-    if (str != NULL) {
+    if (str) {
         for (int i = 0; i < LQ_CMD_NUM; i++) {
             struct lq_detect_buffer *ldb = &lqdetect.buffer[i];
             offset += snprintf(str + offset, length - offset, "%s : %u\n", command_str[i], ldb->ntotal);

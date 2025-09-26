@@ -11,12 +11,13 @@
 
 extern bool lqdetect_in_use;
 
-int lqdetect_init(EXTENSION_LOGGER_DESCRIPTOR *logger);
+int  lqdetect_init(EXTENSION_LOGGER_DESCRIPTOR *logger);
 void lqdetect_final(void);
-char *lqdetect_result_get(int *size);
-int lqdetect_start(uint32_t threshold, bool *already_started);
+
+int  lqdetect_start(uint32_t threshold, bool *already_started);
 void lqdetect_stop(bool *already_stopped);
 char *lqdetect_stats(void);
+char *lqdetect_result_get(int *size);
 
 void lqdetect_lop_insert(char *client_ip, char *key, int coll_index);
 void lqdetect_lop_delete(char *client_ip, char *key, uint32_t del_count,
