@@ -11,7 +11,7 @@
 
 #define LQ_THRESHOLD_DEFAULT 4000
 #define LQ_QUERY_SIZE  (64*2+64) /* bop get (longest query) : "<longest bkey>..<longest bkey> efilter <offset> <count> delete" */
-#define LQ_KEY_SIZE    250       /* the max size of key string */
+#define LQ_KEY_SIZE    255       /* the max size of key string */
 #define LQ_SAVE_CNT    20        /* save key count */
 #define LQ_INPUT_SIZE  500       /* the size of input(time, ip, command, argument) */
 #define LQ_STAT_STRLEN 300       /* max length of stats */
@@ -34,12 +34,12 @@ enum lq_detect_command {
     LQCMD_BOP_COUNT,
     LQCMD_BOP_GBP
 };
-#define LQ_CMD_NUM (LQCMD_BOP_GBP+1) /* the number of command to detect */
+#define LQCMD_COUNT (LQCMD_BOP_GBP+1) /* Number of long query detection target commands */
 
 bool lqdetect_in_use = false;
 
 static EXTENSION_LOGGER_DESCRIPTOR *mc_logger;
-static const char *command_str[LQ_CMD_NUM] = {
+static const char *command_str[LQCMD_COUNT] = {
     "sop get","mop delete", "mop get",
     "lop insert", "lop delete", "lop get",
     "bop delete", "bop get", "bop count", "bop gbp"
@@ -73,10 +73,10 @@ struct lq_detect_buffer {
 /* lqdetect global structure */
 struct lq_detect_global {
     pthread_mutex_t lock;
-    struct lq_detect_argument arg[LQ_CMD_NUM][LQ_SAVE_CNT];
-    struct lq_detect_buffer buffer[LQ_CMD_NUM];
+    struct lq_detect_argument arg[LQCMD_COUNT][LQ_SAVE_CNT];
+    struct lq_detect_buffer buffer[LQCMD_COUNT];
     struct lq_detect_stats stats;
-    int overflow_cnt;
+    uint32_t overflowed_cmd_count;
 };
 struct lq_detect_global lqdetect;
 
@@ -134,9 +134,10 @@ static void do_lqdetect_write(char *client_ip, char *key,
     char *keyptr = key;
     int keylen = strlen(key);
 
-    if (keylen > 250) { /* long key string */
+    if (keylen > LQ_KEY_SIZE) { /* long key string */
+        int plen = (LQ_KEY_SIZE-3)/2; /* partial length */
         snprintf(keybuf, sizeof(keybuf), "%.*s...%.*s",
-                          124, key, 123, (key + keylen - 123));
+                         plen, key, plen, (key + keylen - plen));
         keyptr = keybuf;
     }
 
@@ -157,8 +158,8 @@ static void do_lqdetect_write(char *client_ip, char *key,
         lqdetect.arg[cmd][buffer->nsaved] = *arg;
         buffer->nsaved += 1;
         if (buffer->nsaved >= LQ_SAVE_CNT) {
-            lqdetect.overflow_cnt++;
-            if (lqdetect.overflow_cnt >= LQ_CMD_NUM) {
+            lqdetect.overflowed_cmd_count += 1;
+            if (lqdetect.overflowed_cmd_count >= LQCMD_COUNT) {
                 do_lqdetect_stop(LQ_OVERFLOW_STOP); /* internal stop */
             }
         }
@@ -181,7 +182,10 @@ static void do_lqdetect_save_cmd(char *client_ip, char *key,
     pthread_mutex_unlock(&lqdetect.lock);
 }
 
-static int do_make_bkeystring(char *buffer, const bkey_range *bkrange, const eflag_filter *efilter) {
+static int do_make_bkeystring(char *buffer,
+                              const bkey_range *bkrange,
+                              const eflag_filter *efilter)
+{
     char *bufptr = buffer;
     /* bkey */
     if (bkrange->from_nbkey > 0) { /* hexadecimal */
@@ -219,9 +223,9 @@ int lqdetect_init(EXTENSION_LOGGER_DESCRIPTOR *logger)
     pthread_mutex_init(&lqdetect.lock, NULL);
     lqdetect_in_use = false;
 
-    memset(lqdetect.buffer, 0, LQ_CMD_NUM * sizeof(struct lq_detect_buffer));
+    memset(lqdetect.buffer, 0, LQCMD_COUNT * sizeof(struct lq_detect_buffer));
     memset(&lqdetect.stats, 0, sizeof(struct lq_detect_stats));
-    for (int ii = 0; ii < LQ_CMD_NUM; ii++) {
+    for (int ii = 0; ii < LQCMD_COUNT; ii++) {
         lqdetect.buffer[ii].data = malloc(LQ_SAVE_CNT * LQ_INPUT_SIZE);
         if (lqdetect.buffer[ii].data == NULL) {
             while (--ii >= 0) {
@@ -236,7 +240,7 @@ int lqdetect_init(EXTENSION_LOGGER_DESCRIPTOR *logger)
 
 void lqdetect_final(void)
 {
-    for (int ii = 0; ii < LQ_CMD_NUM; ii++) {
+    for (int ii = 0; ii < LQCMD_COUNT; ii++) {
         free(lqdetect.buffer[ii].data);
         lqdetect.buffer[ii].data = NULL;
     }
@@ -253,7 +257,7 @@ int lqdetect_start(uint32_t threshold, bool *already_started)
         }
 
         /* prepare detect long query buffer, argument and counts*/
-        for (int ii = 0; ii < LQ_CMD_NUM; ii++) {
+        for (int ii = 0; ii < LQCMD_COUNT; ii++) {
             lqdetect.buffer[ii].ntotal = 0;
             lqdetect.buffer[ii].nsaved = 0;
             lqdetect.buffer[ii].offset = 0;
@@ -266,7 +270,7 @@ int lqdetect_start(uint32_t threshold, bool *already_started)
         lqdetect.stats.state = LQ_RUNNING;
         lqdetect.stats.threshold = (threshold == 0 ? LQ_THRESHOLD_DEFAULT : threshold);
 
-        lqdetect.overflow_cnt = 0;
+        lqdetect.overflowed_cmd_count = 0;
         lqdetect_in_use = true;
         ret = 0;
     } while(0);
@@ -302,7 +306,7 @@ char *lqdetect_stats(void)
         }
 
         stats.total = 0;
-        for (int i=0; i < LQ_CMD_NUM; i++) {
+        for (int i=0; i < LQCMD_COUNT; i++) {
             stats.total += lqdetect.buffer[i].ntotal;
         }
 
@@ -322,17 +326,17 @@ char *lqdetect_stats(void)
 char *lqdetect_result_get(int *size)
 {
     int offset = 0;
-    int length = 32 * LQ_CMD_NUM; // header length
+    int length = 32 * LQCMD_COUNT; // header length
     char *str;
 
     pthread_mutex_lock(&lqdetect.lock);
-    for (int i = 0; i < LQ_CMD_NUM; i++) {
+    for (int i = 0; i < LQCMD_COUNT; i++) {
         length += lqdetect.buffer[i].offset;
     }
 
     str = (char*)malloc(length);
     if (str) {
-        for (int i = 0; i < LQ_CMD_NUM; i++) {
+        for (int i = 0; i < LQCMD_COUNT; i++) {
             struct lq_detect_buffer *ldb = &lqdetect.buffer[i];
             offset += snprintf(str + offset, length - offset, "%s : %u\n", command_str[i], ldb->ntotal);
             if (ldb->ntotal > 0) {
