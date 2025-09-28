@@ -18,7 +18,7 @@
 
 /* lqdetect state */
 #define LQ_EXPLICIT_STOP 0       /* stop by user request */
-#define LQ_OVERFLOW_STOP 1       /* stop by detected command overflow (buffer or count) */
+#define LQ_OVERFLOW_STOP 1       /* stop by internal overflow (buffer or count) */
 #define LQ_RUNNING       2       /* long query is running */
 
 /* lqdetect command */
@@ -49,8 +49,8 @@ static const char *command_str[LQCMD_COUNT] = {
 struct lq_detect_stats {
     int bgndate, bgntime;
     int enddate, endtime;
-    int total;  /* number of total long query command */
-    int state;  /* lqdetect state */
+    int total_lqs;  /* number of total long queries */
+    int state;      /* lqdetect state */
     uint32_t threshold;
 };
 
@@ -249,14 +249,12 @@ void lqdetect_final(void)
 int lqdetect_start(uint32_t threshold, bool *already_started)
 {
     int ret = 0;
-    pthread_mutex_lock(&lqdetect.lock);
-    do {
-        if (lqdetect_in_use) {
-            *already_started = true;
-            break;
-        }
 
-        /* prepare detect long query buffer, argument and counts*/
+    pthread_mutex_lock(&lqdetect.lock);
+    if (lqdetect_in_use) {
+        *already_started = true;
+    } else {
+        /* prepare detect long query buffer, argument and counts */
         for (int ii = 0; ii < LQCMD_COUNT; ii++) {
             lqdetect.buffer[ii].ntotal = 0;
             lqdetect.buffer[ii].nsaved = 0;
@@ -272,9 +270,9 @@ int lqdetect_start(uint32_t threshold, bool *already_started)
 
         lqdetect.overflowed_cmd_count = 0;
         lqdetect_in_use = true;
-        ret = 0;
-    } while(0);
+    }
     pthread_mutex_unlock(&lqdetect.lock);
+
     return ret;
 }
 
@@ -292,9 +290,9 @@ void lqdetect_stop(bool *already_stopped)
 char *lqdetect_stats(void)
 {
     char *state_str[3] = {
-        "stopped by explicit request",          // LQ_EXPLICIT_STOP
-        "stopped by internal buffer overflow",  // LQ_OVERFLOW_STOP
-        "running"                               // LQ_RUNNING
+        "stopped by explicit request",   // LQ_EXPLICIT_STOP
+        "stopped by internal overflow",  // LQ_OVERFLOW_STOP
+        "running"                        // LQ_RUNNING
     };
     struct lq_detect_stats stats = lqdetect.stats;
 
@@ -305,20 +303,20 @@ char *lqdetect_stats(void)
             stats.endtime = 0;
         }
 
-        stats.total = 0;
+        stats.total_lqs = 0;
         for (int i=0; i < LQCMD_COUNT; i++) {
-            stats.total += lqdetect.buffer[i].ntotal;
+            stats.total_lqs += lqdetect.buffer[i].ntotal;
         }
 
         snprintf(str, LQ_STAT_STRLEN,
-                "\t" "Long query detection stats : %s" "\n"
+                "\t" "Long query detection state : %s" "\n"
                 "\t" "The last running time : %d_%d ~ %d_%d" "\n"
-                "\t" "The number of total long query commands : %d" "\n"
-                "\t" "The detection threshold : %u" "\n",
+                "\t" "The number of total long queries : %d" "\n"
+                "\t" "Long query detection threshold : %u" "\n",
                 (stats.state >= 0 && stats.state <= 2 ?
                  state_str[stats.state] : "unknown"),
                 stats.bgndate, stats.bgntime, stats.enddate, stats.endtime,
-                stats.total, stats.threshold);
+                stats.total_lqs, stats.threshold);
     }
     return str;
 }
@@ -333,14 +331,13 @@ char *lqdetect_result_get(int *size)
     for (int i = 0; i < LQCMD_COUNT; i++) {
         length += lqdetect.buffer[i].offset;
     }
-
     str = (char*)malloc(length);
     if (str) {
         for (int i = 0; i < LQCMD_COUNT; i++) {
-            struct lq_detect_buffer *ldb = &lqdetect.buffer[i];
-            offset += snprintf(str + offset, length - offset, "%s : %u\n", command_str[i], ldb->ntotal);
-            if (ldb->ntotal > 0) {
-                offset += snprintf(str + offset, length - offset, "%s", ldb->data);
+            struct lq_detect_buffer *buffer = &lqdetect.buffer[i];
+            offset += snprintf(str + offset, length - offset, "%s : %u\n", command_str[i], buffer->ntotal);
+            if (buffer->ntotal > 0) {
+                offset += snprintf(str + offset, length - offset, "%s", buffer->data);
             }
         }
     }
