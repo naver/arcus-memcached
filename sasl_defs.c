@@ -10,17 +10,6 @@
 static bool use_acl_zookeeper = false;
 #endif
 
-#if defined(HAVE_SASL_CB_GETCONF) || defined(HAVE_SASL_CB_GETCONFPATH)
-/* The locations we may search for a SASL config file if the user didn't
- * specify one in the environment variable SASL_CONF_PATH
- */
-const char * const locations[] = {
-    "/etc/sasl/memcached.conf",
-    "/etc/sasl2/memcached.conf",
-    NULL
-};
-#endif
-
 #ifdef ENABLE_SASL_PWDB
 #define MAX_ENTRY_LEN 256
 
@@ -77,33 +66,6 @@ static int sasl_server_userdb_checkpass(sasl_conn_t *conn,
     mc_logger->log(EXTENSION_LOG_WARNING, NULL, "WARNING: User <%s> failed to authenticate\n", user);
 
     return SASL_NOAUTHZ;
-}
-#endif
-
-#if defined(HAVE_SASL_CB_GETCONF) || defined(HAVE_SASL_CB_GETCONFPATH)
-static int sasl_getconf(void *context, const char **path)
-{
-    *path = getenv("SASL_CONF_PATH");
-
-    if (*path == NULL) {
-        for (int i = 0; locations[i] != NULL; ++i) {
-            if (access(locations[i], F_OK) == 0) {
-                *path = locations[i];
-                break;
-            }
-        }
-    }
-
-    if (settings.verbose) {
-        if (*path != NULL) {
-            mc_logger->log(EXTENSION_LOG_INFO, NULL, "Reading configuration from: <%s>\n", *path);
-        } else {
-            mc_logger->log(EXTENSION_LOG_INFO, NULL, "Failed to locate a config path\n");
-        }
-
-    }
-
-    return (*path != NULL) ? SASL_OK : SASL_FAIL;
 }
 #endif
 
@@ -228,15 +190,6 @@ int init_sasl(void)
         sasl_callbacks[i++] = (sasl_callback_t){ SASL_CB_GETOPT, (int(*)(void))&sasl_getopt, NULL };
     }
 #endif
-
-#ifdef HAVE_SASL_CB_GETCONF
-    sasl_callbacks[i++] = (sasl_callback_t){ SASL_CB_GETCONF, (int(*)(void))sasl_getconf, NULL },
-#else
-#ifdef HAVE_SASL_CB_GETCONFPATH
-    sasl_callbacks[i++] = (sasl_callback_t){ SASL_CB_GETCONFPATH, (int(*)(void))sasl_getconf, NULL },
-#endif
-#endif
-
 #endif
     sasl_callbacks[i] = (sasl_callback_t){ SASL_CB_LIST_END, NULL, NULL };
 
