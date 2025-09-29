@@ -386,3 +386,20 @@ int sasl_getprop(sasl_conn_t *conn, int propnum,
 
     return SASL_OK;
 }
+
+const char *sasl_errstring(int saslerr,
+                           const char *langlist __attribute__((unused)),
+                           const char **outlang)
+{
+    if (outlang) *outlang="en-us";
+
+    switch (saslerr) {
+        case SASL_CONTINUE: return "another step is needed in authentication";
+        case SASL_OK:       return "successful result";
+        case SASL_FAIL:     return "generic failure";
+        case SASL_NOMEM:    return "no memory available";
+        case SASL_BADPARAM: return "invalid parameter supplied";
+        case SASL_NOUSER:   return "user not found";
+        default:            return "undefined error!";
+    }
+}

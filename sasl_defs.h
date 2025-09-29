@@ -36,6 +36,7 @@ typedef void* sasl_conn_t;
 #define sasl_server_start(a, b, c, d, e, f) 1
 #define sasl_server_step(a, b, c, d, e) 1
 #define sasl_getprop(a, b, c) {}
+#define sasl_errstring(a, b, c) ""
 
 #define SASL_CONTINUE  1
 #define SASL_OK        0
