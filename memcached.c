@@ -4294,6 +4294,11 @@ static void handle_binary_protocol_error(conn *c)
 #ifdef ASCII_SASL
 static void ascii_list_sasl_mechs(conn *c)
 {
+    if (!settings.require_sasl) {
+        out_string(c, "NOT_SUPPORTED");
+        return;
+    }
+
     init_sasl_conn(c);
     const char *result_string = NULL;
     int result=sasl_listmech(c->sasl_conn, NULL,
@@ -4336,7 +4341,7 @@ static void process_ascii_sasl_auth(conn *c, token_t *tokens, const size_t ntoke
     }
 
     if (!settings.require_sasl) {
-        out_string(c, "SASL_OK");
+        out_string(c, "NOT_SUPPORTED");
         c->sbytes = c->sasl_auth_data_len + 2;
         c->write_and_go = conn_swallow;
         return;
@@ -4357,6 +4362,11 @@ static void process_ascii_sasl_auth(conn *c, token_t *tokens, const size_t ntoke
 
 static void bin_list_sasl_mechs(conn *c)
 {
+    if (!settings.require_sasl) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, 0);
+        return;
+    }
+
     init_sasl_conn(c);
     const char *result_string = NULL;
     unsigned int string_length = 0;
@@ -4395,6 +4405,11 @@ static void process_bin_sasl_auth(conn *c)
     }
     if (protocol_error) {
         handle_binary_protocol_error(c);
+        return;
+    }
+
+    if (!settings.require_sasl) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_NOT_SUPPORTED, vlen);
         return;
     }
 
@@ -10436,6 +10451,11 @@ static void process_sasl_command(conn *c, token_t *tokens, const size_t ntokens)
         ascii_list_sasl_mechs(c);
 #if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
     } else if (ntokens == 3 && strcmp(subcommand, "reload") == 0) {
+        if (!settings.require_sasl) {
+          out_string(c, "NOT_SUPPORTED");
+          return;
+        }
+
         reload_sasl();
         out_string(c, "OK");
 #endif
