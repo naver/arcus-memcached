@@ -65,6 +65,10 @@ int sasl_server_step(sasl_conn_t *conn,
 int sasl_getprop(sasl_conn_t *conn, int propnum,
                  const void **pvalue);
 
+const char *sasl_errstring(int saslerr,
+                           const char *langlist __attribute__((unused)),
+                           const char **outlang);
+
 #define SASL_CONTINUE  1
 #define SASL_OK        0
 #define SASL_FAIL     -1        /* generic failure */
