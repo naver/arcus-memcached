@@ -17,6 +17,19 @@ const char *sasl_engine_string(void)
 #endif
 }
 
+void sasl_get_auth_data(sasl_conn_t *conn, auth_data_t *data)
+{
+    data->username = "";
+    data->config = "";
+
+    if (conn) {
+        sasl_getprop(conn, SASL_USERNAME, (void*)&data->username);
+#ifdef ENABLE_ISASL
+        sasl_getprop(conn, ISASL_CONFIG, (void*)&data->config);
+#endif
+    }
+}
+
 #if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
 static bool use_acl_zookeeper = false;
 #endif
