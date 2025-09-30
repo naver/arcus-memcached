@@ -3209,7 +3209,7 @@ static void init_sasl_conn(conn *c)
     }
 }
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
 static void process_sasl_auth_complete(conn *c)
 {
     const char *out = NULL;
@@ -3325,7 +3325,7 @@ static void complete_update_ascii(conn *c)
         return;
     }
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (c->sasl_auth_data != NULL) {
         process_sasl_auth_complete(c);
         return;
@@ -4266,7 +4266,6 @@ static void handle_binary_protocol_error(conn *c)
 }
 
 #ifdef SASL_ENABLED
-#ifdef ASCII_SASL
 static void ascii_list_sasl_mechs(conn *c)
 {
     if (!settings.require_sasl) {
@@ -4333,7 +4332,6 @@ static void process_ascii_sasl_auth(conn *c, token_t *tokens, const size_t ntoke
     c->rltotal = 0;
     conn_set_state(c, conn_nread);
 }
-#endif
 
 static void bin_list_sasl_mechs(conn *c)
 {
@@ -7887,7 +7885,7 @@ static void write_and_free(conn *c, char *buf, int bytes)
     c->write_and_go = conn_new_cmd;
 }
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
 static bool check_ascii_auth(conn *c, const uint16_t auth_flag, const char *key,
                              token_t *tokens, const size_t ntokens)
 {
@@ -8589,7 +8587,7 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
     int64_t exptime = 0;
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_KV, key_token->value, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -8687,7 +8685,7 @@ static inline void process_mget_command(conn *c, token_t *tokens, const size_t n
 {
     uint32_t lenkeys, numkeys;
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_KV, NULL, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -8731,7 +8729,7 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     uint64_t req_cas_id=0;
     item *it;
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_KV, key, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -8827,7 +8825,7 @@ static void process_arithmetic_command(conn *c, token_t *tokens, const size_t nt
     char *key = tokens[KEY_TOKEN].value;
     size_t nkey = tokens[KEY_TOKEN].length;
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_KV, key, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -8922,7 +8920,7 @@ static void process_delete_command(conn *c, token_t *tokens, const size_t ntoken
     char *key = tokens[KEY_TOKEN].value;
     size_t nkey = tokens[KEY_TOKEN].length;
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_DELETE, key, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -8978,7 +8976,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
     bool delay_flag;
     ENGINE_ERROR_CODE ret;
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_FLUSH, NULL, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -9482,7 +9480,7 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
 {
     char *config_key = tokens[SUBCOMMAND_TOKEN].value;
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_ADMIN, NULL, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -9564,7 +9562,7 @@ static void process_zkensemble_command(conn *c, token_t *tokens, const size_t nt
     char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
     bool valid = false;
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_ADMIN, NULL, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -9623,7 +9621,7 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
     int  nprefix = -1; /* all prefixes */
     bool valid = false;
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_ADMIN, NULL, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -9888,7 +9886,7 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
         out_string(c, "ERROR no matching command");
         return;
     }
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, cmd->get_auth_flag(), NULL, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -10271,7 +10269,7 @@ static void process_keyscan_command(conn *c, token_t *tokens, const size_t ntoke
 
 static void process_scan_command(conn *c, token_t *tokens, const size_t ntokens)
 {
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_SCAN, NULL, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -10301,7 +10299,7 @@ static void process_cmdlog_command(conn *c, token_t *tokens, const size_t ntoken
     char *type = tokens[SUBCOMMAND_TOKEN].value;
     bool already_check = false;
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_ADMIN, NULL, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -10349,7 +10347,7 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
     char *type = tokens[SUBCOMMAND_TOKEN].value;
     bool already_check = false;
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_ADMIN, NULL, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -10406,7 +10404,6 @@ static void process_lqdetect_command(conn *c, token_t *tokens, size_t ntokens)
 #endif
 
 #ifdef SASL_ENABLED
-#ifdef ASCII_SASL
 static void process_sasl_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
@@ -10431,13 +10428,12 @@ static void process_sasl_command(conn *c, token_t *tokens, const size_t ntokens)
     }
 }
 #endif
-#endif
 
 static void process_shutdown_command(conn *c, token_t *tokens, size_t ntokens)
 {
     int32_t delay;
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_ADMIN, NULL, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -10802,7 +10798,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
     char *key = tokens[LOP_KEY_TOKEN].value;
     size_t nkey = tokens[LOP_KEY_TOKEN].length;
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_LIST, key, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -11151,7 +11147,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
     char *key = tokens[SOP_KEY_TOKEN].value;
     size_t nkey = tokens[SOP_KEY_TOKEN].length;
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_SET, key, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -12363,7 +12359,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
     size_t nkey = tokens[MOP_KEY_TOKEN].length;
     int subcommid;
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_MAP, key, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -12605,7 +12601,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
     size_t nkey = tokens[BOP_KEY_TOKEN].length;
     int subcommid;
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_BTREE, key, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -13285,7 +13281,7 @@ static void process_getattr_command(conn *c, token_t *tokens, const size_t ntoke
     char   *key = tokens[KEY_TOKEN].value;
     size_t nkey = tokens[KEY_TOKEN].length;
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_ATTR, key, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -13383,7 +13379,7 @@ static void process_setattr_command(conn *c, token_t *tokens, const size_t ntoke
     char *key = tokens[KEY_TOKEN].value;
     size_t nkey = tokens[KEY_TOKEN].length;
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_ATTR, key, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -13510,7 +13506,7 @@ static void process_touch_command(conn *c, token_t *tokens, const size_t ntokens
     char *key = tokens[KEY_TOKEN].value;
     size_t nkey = tokens[KEY_TOKEN].length;
 
-#ifdef ASCII_SASL
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_KV, key, tokens, ntokens)) {
         out_string(c, "CLIENT_ERROR unauthorized");
         return;
@@ -13748,12 +13744,10 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
         out_string(c, response);
     }
 #ifdef SASL_ENABLED
-#ifdef ASCII_SASL
     else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "sasl") == 0))
     {
         process_sasl_command(c, tokens, ntokens);
     }
-#endif
 #endif
     else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "shutdown") == 0))
     {
@@ -15584,10 +15578,6 @@ int main (int argc, char **argv)
     int cache_memory_limit = 0;
     int sticky_memory_limit = 0;
 
-#ifdef ASCII_SASL
-#else
-    bool protocol_specified = false;
-#endif
     bool tcp_specified = false;
     bool udp_specified = false;
 
@@ -15800,10 +15790,6 @@ int main (int argc, char **argv)
             settings.backlog = atoi(optarg);
             break;
         case 'B':
-#ifdef ASCII_SASL
-#else
-            protocol_specified = true;
-#endif
             if (strcmp(optarg, "auto") == 0) {
                 settings.binding_protocol = negotiating_prot;
             } else if (strcmp(optarg, "binary") == 0) {
@@ -15927,26 +15913,6 @@ int main (int argc, char **argv)
             settings.topkeys = 0;
         }
     }
-
-#ifdef ASCII_SASL
-#else
-    if (settings.require_sasl) {
-        if (!protocol_specified) {
-            settings.binding_protocol = binary_prot;
-        } else {
-            if (settings.binding_protocol == negotiating_prot) {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "ERROR: You cannot use auto-negotiating protocol while requiring SASL.\n");
-                exit(EX_USAGE);
-            }
-            if (settings.binding_protocol == ascii_prot) {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                        "ERROR: You cannot use only ASCII protocol while requiring SASL.\n");
-                exit(EX_USAGE);
-            }
-        }
-    }
-#endif
 
     if (udp_specified && settings.udpport != 0 && !tcp_specified) {
         settings.port = settings.udpport;
