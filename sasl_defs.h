@@ -1,6 +1,10 @@
 #ifndef SASL_DEFS_H
 #define SASL_DEFS_H 1
 
+#include <stdint.h>
+const char *sasl_engine_string(void);
+uint16_t arcus_sasl_authz(const char *username);
+
 #if defined(ENABLE_SASL)
 
 #include <sasl/sasl.h>
@@ -8,8 +12,6 @@
 
 int init_sasl(void);
 void shutdown_sasl(void);
-uint16_t arcus_sasl_authz(const char *username);
-const char *sasl_engine_string(void);
 void sasl_get_auth_data(sasl_conn_t *conn, auth_data_t *data);
 
 #if defined(ENABLE_ZK_INTEGRATION)
@@ -23,31 +25,8 @@ void reload_sasl(void);
 
 int init_sasl(void);
 void shutdown_sasl(void);
-uint16_t arcus_sasl_authz(const char *username);
-const char *sasl_engine_string(void);
 void sasl_get_auth_data(sasl_conn_t *conn, auth_data_t *data);
 
-#else /* End of SASL support */
-
-typedef void* sasl_conn_t;
-
-#define shutdown_sasl()
-#define init_sasl() 0
-#define arcus_sasl_authz(a) 0
-#define sasl_engine_string() "none"
-#define sasl_get_auth_data(a, b) {}
-#define sasl_dispose(x) {}
-#define sasl_server_new(a, b, c, d, e, f, g, h) 1
-#define sasl_listmech(a, b, c, d, e, f, g, h) 1
-#define sasl_server_start(a, b, c, d, e, f) 1
-#define sasl_server_step(a, b, c, d, e) 1
-#define sasl_getprop(a, b, c) {}
-#define sasl_errstring(a, b, c) ""
-
-#define SASL_CONTINUE  1
-#define SASL_OK        0
-#define SASL_FAIL     -1
-
-#endif /* sasl compat */
+#endif /* End of SASL support */
 
 #endif /* SASL_DEFS_H */

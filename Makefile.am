@@ -77,8 +77,9 @@ memcached_SOURCES = \
                     daemon.c \
                     hash.c \
                     hash.h \
-                    memcached.c\
+                    memcached.c \
                     memcached.h \
+                    sasl_defs.c \
                     sasl_defs.h \
                     stats_prefix.c \
                     stats_prefix.h \
@@ -108,12 +109,11 @@ memcached_SOURCES += solaris_priv.c
 endif
 
 if ENABLE_SASL
-memcached_SOURCES += sasl_defs.c
 memcached_LDADD += -lsasl2
 endif
 
 if ENABLE_ISASL
-memcached_SOURCES += sasl_defs.c isasl.c isasl.h
+memcached_SOURCES += isasl.c isasl.h
 endif
 
 if INCLUDE_DEFAULT_ENGINE
