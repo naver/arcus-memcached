@@ -8374,19 +8374,8 @@ static void process_stats_settings(ADD_STAT add_stats, void *c)
     APPEND_STAT("tcp_backlog", "%d", settings.backlog);
     APPEND_STAT("binding_protocol", "%s",
                 prot_text(settings.binding_protocol));
-#ifdef SASL_ENABLED
-    APPEND_STAT("auth_enabled_sasl", "%s", "yes");
-#else
-    APPEND_STAT("auth_enabled_sasl", "%s", "no");
-#endif
 
-#ifdef ENABLE_ISASL
-    APPEND_STAT("auth_sasl_engine", "%s", "isasl");
-#elif defined(ENABLE_SASL)
-    APPEND_STAT("auth_sasl_engine", "%s", "cyrus");
-#else
-    APPEND_STAT("auth_sasl_engine", "%s", "none");
-#endif
+    APPEND_STAT("auth_sasl_engine", "%s", sasl_engine_string());
     APPEND_STAT("auth_required_sasl", "%s", settings.require_sasl ? "yes" : "no");
     APPEND_STAT("item_size_max", "%llu", settings.item_size_max);
     APPEND_STAT("max_list_size", "%u", settings.max_list_size);

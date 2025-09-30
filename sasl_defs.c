@@ -6,6 +6,17 @@
 #include <string.h>
 #include "sasl_auxprop.h"
 
+const char *sasl_engine_string(void)
+{
+#if defined(ENABLE_SASL)
+    return "cyrus";
+#elif defined (ENABLE_ISASL)
+    return "isasl";
+#else
+    return "none"; // unreachable, maybe
+#endif
+}
+
 #if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
 static bool use_acl_zookeeper = false;
 #endif
