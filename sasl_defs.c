@@ -18,6 +18,7 @@ const char *sasl_engine_string(void)
 #endif
 }
 
+#if defined(ENABLE_SASL) || defined(ENABLE_ISASL)
 void sasl_get_auth_data(sasl_conn_t *conn, auth_data_t *data)
 {
     data->username = "";
@@ -30,6 +31,7 @@ void sasl_get_auth_data(sasl_conn_t *conn, auth_data_t *data)
 #endif
     }
 }
+#endif
 
 #if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
 static bool use_acl_zookeeper = false;
@@ -190,6 +192,7 @@ uint16_t arcus_sasl_authz(const char *username)
     return ret;
 }
 
+#if defined(ENABLE_SASL) || defined(ENABLE_ISASL)
 static sasl_callback_t sasl_callbacks[5];
 
 int init_sasl(void)
@@ -242,3 +245,4 @@ void shutdown_sasl(void)
 {
     sasl_done();
 }
+#endif
