@@ -32,7 +32,6 @@
 #include "topkeys.h"
 #include "mc_util.h"
 #include "engine_loader.h"
-#include "sasl_defs.h"
 
 /* This is the address we use for admin purposes.  For example, doing stats
  * and heart beats from arcus_zk.
@@ -146,8 +145,10 @@ enum bin_substates {
     bin_reading_incr_header,
     bin_read_flush_exptime,
     bin_read_flush_prefix_exptime,
+#if defined(ENABLE_SASL) || defined(ENABLE_ISASL)
     bin_reading_sasl_auth,
     bin_reading_sasl_auth_data,
+#endif
     bin_reading_getattr,
     bin_reading_setattr,
     bin_reading_lop_create,
@@ -238,7 +239,6 @@ struct settings {
     enum protocol binding_protocol;
     int backlog;
     size_t item_size_max;   /* Maximum item size, and upper end for slabs */
-    bool sasl;              /* SASL on/off */
     bool require_sasl;      /* require SASL auth */
     uint32_t max_list_size;      /* Maximum elements in list collection */
     uint32_t max_set_size;       /* Maximum elements in set collection */
@@ -273,10 +273,14 @@ typedef bool (*STATE_FUNC)(conn *);
 #define CONN_RTYPE_HINFO 2
 #define CONN_RTYPE_EINFO 3
 
+// Longest one I could find was ``9798-U-RSA-SHA1-ENC''
+#define MAX_SASL_MECH_LEN 32
+
 struct conn {
     int    sfd;
     short  nevents;
-    sasl_conn_t *sasl_conn;
+#if defined(ENABLE_SASL) || defined(ENABLE_ISASL)
+    void *sasl_conn;
     const char *sasl_username;
     bool sasl_started;
     bool authenticated;
@@ -284,6 +288,7 @@ struct conn {
     char sasl_mech[MAX_SASL_MECH_LEN+1];
     uint32_t sasl_auth_data_len;
     char *sasl_auth_data;
+#endif
     STATE_FUNC   state;
     enum bin_substates substate;
     struct event event;

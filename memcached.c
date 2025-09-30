@@ -41,6 +41,7 @@
 #if defined(ENABLE_SASL) || defined(ENABLE_ISASL)
 #define SASL_ENABLED
 #endif
+#include "sasl_defs.h"
 
 #define ZK_CONNECTIONS 1
 
@@ -674,11 +675,13 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->next = NULL;
     c->conn_prev = NULL;
     c->conn_next = NULL;
+#ifdef SASL_ENABLED
     c->sasl_username = "";
     c->sasl_started = false;
     c->authenticated = false;
     c->authorized = AUTHZ_NONE;
     c->sasl_auth_data = NULL;
+#endif
 
     c->write_and_go = init_state;
     c->write_and_free = 0;
@@ -875,8 +878,9 @@ static void conn_cleanup(conn *c)
         c->write_and_free = 0;
     }
 
+#ifdef SASL_ENABLED
     if (c->sasl_conn) {
-        sasl_dispose(&c->sasl_conn);
+        sasl_dispose((sasl_conn_t **)&c->sasl_conn);
         c->sasl_conn = NULL;
     }
 
@@ -884,6 +888,7 @@ static void conn_cleanup(conn *c)
         free(c->sasl_auth_data);
         c->sasl_auth_data = NULL;
     }
+#endif
 
     c->engine_storage = NULL;
     c->ascii_cmd = NULL;
@@ -3189,6 +3194,7 @@ static void update_stat_cas(conn *c, ENGINE_ERROR_CODE ret)
     }
 }
 
+#ifdef SASL_ENABLED
 static void init_sasl_conn(conn *c)
 {
     assert(c);
@@ -3198,7 +3204,7 @@ static void init_sasl_conn(conn *c)
     if (!c->sasl_conn) {
         int result=sasl_server_new("memcached",
                                    NULL, NULL, NULL, NULL,
-                                   NULL, 0, &c->sasl_conn);
+                                   NULL, 0, (sasl_conn_t **)&c->sasl_conn);
         if (result != SASL_OK) {
             if (settings.verbose) {
                 mc_logger->log(EXTENSION_LOG_INFO, c,
@@ -3209,7 +3215,6 @@ static void init_sasl_conn(conn *c)
     }
 }
 
-#ifdef SASL_ENABLED
 static void process_sasl_auth_complete(conn *c)
 {
     const char *out = NULL;
@@ -4360,7 +4365,6 @@ static void bin_list_sasl_mechs(conn *c)
     }
     write_bin_response(c, (char*)result_string, 0, 0, string_length);
 }
-#endif
 
 static void process_bin_sasl_auth(conn *c)
 {
@@ -4544,6 +4548,7 @@ static bool authenticated(conn *c)
     }
     return rv;
 }
+#endif
 
 static void process_bin_lop_create(conn *c)
 {
@@ -6939,11 +6944,13 @@ static void dispatch_bin_command(conn *c)
     int keylen = c->binary_header.request.keylen;
     uint32_t bodylen = c->binary_header.request.bodylen;
 
+#ifdef SASL_ENABLED
     if (settings.require_sasl && !authenticated(c)) {
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
         c->write_and_go = conn_closing;
         return;
     }
+#endif
 
     MEMCACHED_PROCESS_COMMAND_START(c->sfd, c->rcurr, c->rbytes);
     c->noreply = true;
@@ -7604,12 +7611,14 @@ static void complete_nread_binary(conn *c)
     case bin_read_flush_prefix_exptime:
         process_bin_flush_prefix(c);
         break;
+#ifdef SASL_ENABLED
     case bin_reading_sasl_auth:
         process_bin_sasl_auth(c);
         break;
     case bin_reading_sasl_auth_data:
         process_bin_complete_sasl_auth(c);
         break;
+#endif
     case bin_reading_getattr:
         process_bin_getattr(c);
         break;
@@ -15850,12 +15859,13 @@ int main (int argc, char **argv)
             settings.allow_detailed = false;
             break;
         case 'S': /* set Sasl authentication to true. Default is false */
-#ifndef SASL_ENABLED
+#ifdef SASL_ENABLED
+            settings.require_sasl = true;
+#else
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "This server is not built with SASL support.\n");
             exit(EX_USAGE);
 #endif
-            settings.require_sasl = true;
             break;
         case 'X' :
             {
