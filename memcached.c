@@ -3209,21 +3209,6 @@ static void init_sasl_conn(conn *c)
     }
 }
 
-static void get_auth_data(const void *cookie, auth_data_t *data)
-{
-    conn *c = (conn*)cookie;
-
-    data->username = "";
-    data->config = "";
-
-    if (c->sasl_conn) {
-        sasl_getprop(c->sasl_conn, SASL_USERNAME, (void*)&data->username);
-#ifdef ENABLE_ISASL
-        sasl_getprop(c->sasl_conn, ISASL_CONFIG, (void*)&data->config);
-#endif
-    }
-}
-
 #ifdef ASCII_SASL
 static void process_sasl_auth_complete(conn *c)
 {
@@ -3256,7 +3241,7 @@ static void process_sasl_auth_complete(conn *c)
     c->ritem = NULL;
 
     auth_data_t data;
-    get_auth_data(c, &data);
+    sasl_get_auth_data(c->sasl_conn, &data);
     c->sasl_username = data.username;
 
     if (result == SASL_OK) {
@@ -4493,7 +4478,7 @@ static void process_bin_complete_sasl_auth(conn *c)
     c->ritem = NULL;
 
     auth_data_t data;
-    get_auth_data(c, &data);
+    sasl_get_auth_data(c->sasl_conn, &data);
     c->sasl_username = data.username;
 
     if (result == SASL_OK) {
