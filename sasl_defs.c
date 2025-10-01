@@ -116,13 +116,6 @@ static int sasl_getopt(void *context __attribute__((unused)),
 
     return SASL_FAIL;
 }
-
-void reload_sasl(void)
-{
-    if (use_acl_zookeeper) {
-        arcus_auxprop_wakeup();
-    }
-}
 #endif
 
 static int sasl_log(void *context, int level, const char *message)
@@ -244,5 +237,16 @@ int init_sasl(void)
 void shutdown_sasl(void)
 {
     sasl_done();
+}
+
+int reload_sasl(void)
+{
+#if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
+    if (use_acl_zookeeper) {
+        arcus_auxprop_wakeup();
+        return 0;
+    }
+#endif
+    return -1;
 }
 #endif
