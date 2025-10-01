@@ -9654,12 +9654,12 @@ static void* init_sasl_thread(void *arg)
     return NULL;
 }
 
-static void process_require_sasl_command(conn *c, token_t *tokens, const size_t ntokens)
+static void process_auth_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
     if (ntokens == 3) {
         char buf[50];
-        sprintf(buf, "require_sasl %s\r\nEND", settings.require_sasl ? "on" : "off");
+        sprintf(buf, "auth %s\r\nEND", settings.require_sasl ? "on" : "off");
         out_string(c, buf);
     } else if (ntokens == 4) {
         const char *config = tokens[COMMAND_TOKEN+2].value;
@@ -9758,8 +9758,8 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     }
 #endif
 #ifdef SASL_ENABLED
-    else if (strcmp(config_key, "require_sasl") == 0) {
-        process_require_sasl_command(c, tokens, ntokens);
+    else if (strcmp(config_key, "auth") == 0) {
+        process_auth_command(c, tokens, ntokens);
     }
 #endif
     else {
@@ -10622,14 +10622,24 @@ static void process_sasl_command(conn *c, token_t *tokens, const size_t ntokens)
 
     if (ntokens == 3 && strcmp(subcommand, "mech") == 0) {
         ascii_list_sasl_mechs(c);
-    } else if (ntokens == 3 && strcmp(subcommand, "reload") == 0) {
+    } else if ((ntokens == 4 || ntokens == 5) && strcmp(subcommand, "auth") == 0) {
+        process_ascii_sasl_auth(c, tokens, ntokens);
+    } else {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "CLIENT_ERROR bad command line format");
+    }
+}
+
+static void process_reload_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
+
+    if (strcmp(subcommand, "auth") == 0) {
         if (settings.require_sasl && reload_sasl() == 0) {
             out_string(c, "OK");
         } else {
             out_string(c, "NOT_SUPPORTED");
         }
-    } else if ((ntokens == 4 || ntokens == 5) && strcmp(subcommand, "auth") == 0) {
-        process_ascii_sasl_auth(c, tokens, ntokens);
     } else {
         print_invalid_command(c, tokens, ntokens);
         out_string(c, "CLIENT_ERROR bad command line format");
@@ -13955,6 +13965,10 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
     else if ((ntokens >= 3) && (strcmp(tokens[COMMAND_TOKEN].value, "sasl") == 0))
     {
         process_sasl_command(c, tokens, ntokens);
+    }
+    else if ((ntokens == 3) && (strcmp(tokens[COMMAND_TOKEN].value, "reload") == 0))
+    {
+        process_reload_command(c, tokens, ntokens);
     }
 #endif
     else if ((ntokens >= 2) && (strcmp(tokens[COMMAND_TOKEN].value, "shutdown") == 0))
