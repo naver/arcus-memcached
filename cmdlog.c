@@ -228,6 +228,79 @@ static void *cmdlog_flush_thread(void *arg)
     return NULL;
 }
 
+static int do_cmdlog_start(char *file_path)
+{
+    char fname[CMDLOG_FILENAME_LENGTH];
+    int fd = -1;
+    int err_ret = 0;  /* for creating log flush thread */
+
+    /* check the previous cmdlog flush thread state */
+    if (cmdlog.stats.state == CMDLOG_RUNNING) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "The previous cmdlog flush thread has not been finished yet.\n");
+        return -1;
+    }
+    /* check the length of file_path */
+    if (file_path != NULL && strlen(file_path) > CMDLOG_DIRPATH_LENGTH) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Too long cmdlog file path.\n");
+        return -1;
+    }
+    /* prepare command logging buffer */
+    if (cmdlog.buffer.data == NULL) {
+        if ((cmdlog.buffer.data = malloc(CMDLOG_BUFFER_SIZE)) == NULL) {
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Can't allocate command log buffer\n");
+            return -1;
+        }
+    }
+    cmdlog.buffer.head = 0;
+    cmdlog.buffer.tail = 0;
+    cmdlog.buffer.last = 0;
+
+    /* prepare command logging stats */
+    memset(&cmdlog.stats, 0, sizeof(struct cmd_log_stats));
+    cmdlog.stats.bgndate = getnowdate_int();
+    cmdlog.stats.bgntime = getnowtime_int();
+
+    sprintf(cmdlog.stats.dirpath, "%s",
+            (file_path != NULL ? file_path : "command_log"));
+
+    /* open log file */
+    sprintf(fname, CMDLOG_FILENAME_FORMAT, cmdlog.stats.dirpath,
+            mc_port, cmdlog.stats.bgndate, cmdlog.stats.bgntime,
+            cmdlog.stats.file_count);
+    if ((fd = open(fname, O_WRONLY | O_CREAT | O_APPEND, 0644)) < 0) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Can't open command log file: %s, error: %s\n", fname, strerror(errno));
+        return -1;
+    } else {
+        close(fd);
+    }
+
+    /* enable command logging */
+    cmdlog_in_use = true;
+    cmdlog.stats.state = CMDLOG_RUNNING;
+
+    /* start the flush thread to write command log to disk */
+    if (pthread_attr_init(&cmdlog.flush.attr) != 0 ||
+        pthread_attr_setdetachstate(&cmdlog.flush.attr, PTHREAD_CREATE_DETACHED) != 0 ||
+        (err_ret = pthread_create(&cmdlog.flush.tid, &cmdlog.flush.attr, cmdlog_flush_thread, NULL)) != 0)
+    {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Can't create command log flush thread: %s\n", strerror(err_ret));
+        cmdlog_in_use = false; // disable it */
+        if (remove(fname) != 0 && errno != ENOENT) {
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "Can't remove command log file: %s, error: %s\n", fname, strerror(errno));
+        }
+        cmdlog.stats.state = CMDLOG_NOT_STARTED;
+        return -1;
+    }
+
+    return 0;
+}
+
 void cmdlog_init(int port, EXTENSION_LOGGER_DESCRIPTOR *logger)
 {
     mc_port = port;
@@ -266,84 +339,16 @@ void cmdlog_final(void)
 
 int cmdlog_start(char *file_path, bool *already_started)
 {
-    char fname[CMDLOG_FILENAME_LENGTH];
     int ret = 0;
-    int fd = -1;
-
     *already_started = false;
 
     pthread_mutex_lock(&cmdlog.lock);
-    do {
-        if (cmdlog_in_use) {
-            *already_started = true;
-            break;
-        }
-        /* check the previous cmdlog flush thread state */
-        if (cmdlog.stats.state == CMDLOG_RUNNING) {
-            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                           "The previous cmdlog flush thread has not been finished yet.\n");
-            ret = -1; break;
-        }
-        /* check the length of file_path */
-        if (file_path != NULL && strlen(file_path) > CMDLOG_DIRPATH_LENGTH) {
-            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                           "Too long cmdlog file path.\n");
-            ret = -1; break;
-        }
-        /* prepare command logging buffer */
-        if (cmdlog.buffer.data == NULL) {
-            if ((cmdlog.buffer.data = malloc(CMDLOG_BUFFER_SIZE)) == NULL) {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                               "Can't allocate command log buffer\n");
-                ret = -1; break;
-            }
-        }
-        cmdlog.buffer.head = 0;
-        cmdlog.buffer.tail = 0;
-        cmdlog.buffer.last = 0;
-
-        /* prepare command logging stats */
-        memset(&cmdlog.stats, 0, sizeof(struct cmd_log_stats));
-        cmdlog.stats.bgndate = getnowdate_int();
-        cmdlog.stats.bgntime = getnowtime_int();
-
-        sprintf(cmdlog.stats.dirpath, "%s",
-                (file_path != NULL ? file_path : "command_log"));
-
-        /* open log file */
-        sprintf(fname, CMDLOG_FILENAME_FORMAT, cmdlog.stats.dirpath,
-                mc_port, cmdlog.stats.bgndate, cmdlog.stats.bgntime,
-                cmdlog.stats.file_count);
-        if ((fd = open(fname, O_WRONLY | O_CREAT | O_APPEND, 0644)) < 0) {
-            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                           "Can't open command log file: %s, error: %s\n", fname, strerror(errno));
-            ret = -1; break;
-        } else {
-            close(fd);
-        }
-
-        /* enable command logging */
-        cmdlog_in_use = true;
-        cmdlog.stats.state = CMDLOG_RUNNING;
-
-        /* start the flush thread to write command log to disk */
-        if (pthread_attr_init(&cmdlog.flush.attr) != 0 ||
-            pthread_attr_setdetachstate(&cmdlog.flush.attr, PTHREAD_CREATE_DETACHED) != 0 ||
-            (ret = pthread_create(&cmdlog.flush.tid, &cmdlog.flush.attr, cmdlog_flush_thread, NULL)) != 0)
-        {
-            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                           "Can't create command log flush thread: %s\n", strerror(ret));
-            cmdlog_in_use = false; // disable it */
-            if (remove(fname) != 0 && errno != ENOENT) {
-                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                               "Can't remove command log file: %s, error: %s\n", fname, strerror(errno));
-            }
-            cmdlog.stats.state = CMDLOG_NOT_STARTED;
-            ret = -1; break;
-        }
-    } while(0);
+    if (cmdlog_in_use) {
+        *already_started = true;
+    } else {
+        ret = do_cmdlog_start(file_path);
+    }
     pthread_mutex_unlock(&cmdlog.lock);
-
     return ret;
 }
 
@@ -352,7 +357,7 @@ void cmdlog_stop(bool *already_stopped)
     *already_stopped = false;
 
     pthread_mutex_lock(&cmdlog.lock);
-    if (cmdlog_in_use == true) {
+    if (cmdlog_in_use) {
         do_cmdlog_stop();
     } else {
         *already_stopped = true;
@@ -416,11 +421,13 @@ void cmdlog_write(char *client_ip, char *command)
 
     pthread_mutex_lock(&buffer->lock);
     cmdlog.stats.entered_commands += 1;
+    /* If wrap-around required, write tail to last. */
     if (buffer->head <= buffer->tail && inputlen >= (buffer->size - buffer->tail)) {
         buffer->last = buffer->tail;
         buffer->tail = 0;
     }
-    if (buffer->head <= buffer->tail) {
+
+    if (buffer->head <= buffer->tail) {  /* wrap-around don`t occur */
         assert(buffer->last == 0);
         assert(inputlen < (buffer->size - buffer->tail));
         memcpy(buffer->data + buffer->tail, inputstr, inputlen);
@@ -428,7 +435,7 @@ void cmdlog_write(char *client_ip, char *command)
         if ((buffer->tail - buffer->head) >= CMDLOG_WRITE_SIZE) {
             do_cmdlog_flush_wakeup(); /* wake up flush thread */
         }
-    } else { /* buffer->head > buffer->tail */
+    } else { /* wrap-around occur */
         assert(buffer->last > 0);
         if (inputlen < (buffer->head - buffer->tail)) {
             memcpy(buffer->data + buffer->tail, inputstr, inputlen);
