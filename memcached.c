@@ -1017,11 +1017,11 @@ static void ritem_set_first(conn *c, int rtype, int vleng)
     c->rtype = rtype;
 
     if (c->rtype == CONN_RTYPE_MBLCK) {
-        c->membk = MBLCK_GET_HEADBLK(&c->memblist);
-        c->ritem = MBLCK_GET_BODYPTR(c->membk);
+        c->ritem = MBLCK_GET_BODYPTR(MBLCK_GET_HEADBLK(&c->memblist));
         c->rlbytes = vleng < MBLCK_GET_BODYLEN(&c->memblist)
                    ? vleng : MBLCK_GET_BODYLEN(&c->memblist);
         c->rltotal = vleng;
+        c->rindex = 0;
     }
     else if (c->rtype == CONN_RTYPE_HINFO) {
         if (c->hinfo.naddnl == 0) {
@@ -1069,24 +1069,22 @@ static void ritem_set_next(conn *c)
 {
     assert(c->rltotal > 0);
 
+    value_item *ritem = NULL;
+
     if (c->rtype == CONN_RTYPE_MBLCK) {
-        c->membk = MBLCK_GET_NEXTBLK(c->membk);
-        c->ritem = MBLCK_GET_BODYPTR(c->membk);
-        c->rlbytes = c->rltotal < MBLCK_GET_BODYLEN(&c->memblist)
-                   ? c->rltotal : MBLCK_GET_BODYLEN(&c->memblist);
+        ritem = MBLCK_GET_ADDLIST(&c->memblist)[c->rindex];
+    } else if (c->rtype == CONN_RTYPE_HINFO) {
+        ritem = c->hinfo.addnl[c->rindex];
+    } else if (c->rtype == CONN_RTYPE_EINFO) {
+        ritem = c->einfo.addnl[c->rindex];
+    } else {
+        /* Invalid rtype */
+        return;
     }
-    else if (c->rtype == CONN_RTYPE_HINFO) {
-        c->ritem = c->hinfo.addnl[c->rindex]->ptr;
-        c->rlbytes = c->rltotal < c->hinfo.addnl[c->rindex]->len
-                   ? c->rltotal : c->hinfo.addnl[c->rindex]->len;
-        c->rindex += 1;
-    }
-    else if (c->rtype == CONN_RTYPE_EINFO) {
-        c->ritem = c->einfo.addnl[c->rindex]->ptr;
-        c->rlbytes = c->rltotal < c->einfo.addnl[c->rindex]->len
-                   ? c->rltotal : c->einfo.addnl[c->rindex]->len;
-        c->rindex += 1;
-    }
+
+    c->ritem = ritem->ptr;
+    c->rlbytes = c->rltotal < ritem->len ? c->rltotal : ritem->len;
+    c->rindex += 1;
 }
 
 /**
