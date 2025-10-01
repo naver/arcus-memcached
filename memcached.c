@@ -663,7 +663,6 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->pcurr = c->ilist;
 #endif
     c->icurr = c->ilist;
-    c->suffixcurr = c->suffixlist;
 #ifdef SCAN_COMMAND
     c->pleft = 0;
 #endif
@@ -870,10 +869,9 @@ static void conn_cleanup(conn *c)
     }
 #endif
 
-    if (c->suffixleft != 0) {
-        for (; c->suffixleft > 0; c->suffixleft--, c->suffixcurr++) {
-            cache_free(c->thread->suffix_cache, *(c->suffixcurr));
-        }
+    while (c->suffixleft > 0) {
+        c->suffixleft--;
+        cache_free(c->thread->suffix_cache, c->suffixlist[c->suffixleft]);
     }
 
     if (c->write_and_free) {
@@ -3131,7 +3129,6 @@ static void process_mget_complete(conn *c, bool return_cas)
          * To release the items and free the suffixes, the below code is needed.
          */
         c->icurr = c->ilist;
-        c->suffixcurr = c->suffixlist;
 
         if (ret != ENGINE_SUCCESS) {
             /* Releasing items on ilist and freeing suffixes will be
@@ -3286,7 +3283,6 @@ static void process_sasl_auth_complete(conn *c)
         } else {
             conn_set_state(c, conn_mwrite);
         }
-        c->suffixcurr = c->suffixlist;
     } else {
         char temp[512];
         snprintf(temp, sizeof(temp), "AUTH_ERROR %s", sasl_errstring(result, NULL, NULL));
@@ -8795,7 +8791,6 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
      * To release the items and free the suffixes, the below code is needed.
      */
     c->icurr = c->ilist;
-    c->suffixcurr = c->suffixlist;
 
     if (ret != ENGINE_SUCCESS) {
         /* Releasing items on ilist and freeing suffixes will be
@@ -14642,10 +14637,8 @@ bool conn_mwrite(conn *c)
             }
 #endif
             while (c->suffixleft > 0) {
-                char *suffix = *(c->suffixcurr);
-                cache_free(c->thread->suffix_cache, suffix);
-                c->suffixcurr++;
                 c->suffixleft--;
+                cache_free(c->thread->suffix_cache, c->suffixlist[c->suffixleft]);
             }
             if (c->coll_eitem != NULL) {
                 conn_coll_eitem_free(c);
