@@ -679,10 +679,8 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
     c->sasl_username = "";
     c->sasl_started = false;
     if (settings.require_sasl) {
-        c->authenticated = false;
         c->authorized = AUTHZ_NONE;
     } else {
-        c->authenticated = true;
         c->authorized = AUTHZ_ALL;
     }
     c->sasl_auth_data = NULL;
@@ -3204,7 +3202,7 @@ static void init_sasl_conn(conn *c)
 {
     assert(c);
 
-    c->authenticated = false;
+    c->authorized = AUTHZ_NONE;
 
     if (!c->sasl_conn) {
         int result=sasl_server_new("memcached",
@@ -3256,9 +3254,7 @@ static void process_sasl_auth_complete(conn *c)
 
     if (result == SASL_OK) {
         c->authorized = arcus_sasl_authz(c->sasl_username);
-        if (c->authorized != AUTHZ_FAIL) {
-            c->authenticated = true;
-        } else {
+        if (c->authorized == AUTHZ_FAIL) {
             result = SASL_FAIL;
             if (settings.verbose) {
                 mc_logger->log(EXTENSION_LOG_WARNING, c,
@@ -4520,9 +4516,7 @@ static void process_bin_complete_sasl_auth(conn *c)
 
     if (result == SASL_OK) {
         c->authorized = arcus_sasl_authz(c->sasl_username);
-        if (c->authorized != AUTHZ_FAIL) {
-            c->authenticated = true;
-        } else {
+        if (c->authorized == AUTHZ_FAIL) {
             result = SASL_FAIL;
             if (settings.verbose) {
                 mc_logger->log(EXTENSION_LOG_WARNING, c,
