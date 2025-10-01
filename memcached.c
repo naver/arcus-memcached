@@ -678,8 +678,13 @@ conn *conn_new(const int sfd, STATE_FUNC init_state,
 #ifdef SASL_ENABLED
     c->sasl_username = "";
     c->sasl_started = false;
-    c->authenticated = false;
-    c->authorized = AUTHZ_NONE;
+    if (settings.require_sasl) {
+        c->authenticated = false;
+        c->authorized = AUTHZ_NONE;
+    } else {
+        c->authenticated = true;
+        c->authorized = AUTHZ_ALL;
+    }
     c->sasl_auth_data = NULL;
 #endif
 
@@ -9485,6 +9490,49 @@ static void process_async_logging_command(conn *c, token_t *tokens, const size_t
 }
 #endif
 
+#ifdef SASL_ENABLED
+
+static pthread_mutex_t require_sasl_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static void* init_sasl_thread(void *arg)
+{
+    pthread_mutex_lock(&require_sasl_lock);
+    if (settings.require_sasl == false && init_sasl() == 0) {
+        settings.require_sasl = true;
+    }
+    pthread_mutex_unlock(&require_sasl_lock);
+    return NULL;
+}
+
+static void process_require_sasl_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    assert(c != NULL);
+    if (ntokens == 3) {
+        char buf[50];
+        sprintf(buf, "require_sasl %s\r\nEND", settings.require_sasl ? "on" : "off");
+        out_string(c, buf);
+    } else if (ntokens == 4) {
+        const char *config = tokens[COMMAND_TOKEN+2].value;
+        if (strcmp(config, "on") == 0) {
+            pthread_t tid;
+            int ret = pthread_create(&tid, NULL, init_sasl_thread, NULL);
+            if (ret != 0) {
+                out_string(c, "SERVER_ERROR failed to create thread");
+            } else {
+                out_string(c, "END");
+            }
+        } else if (strcmp(config, "off") == 0) {
+                out_string(c, "NOT_SUPPORTED");
+        } else {
+            out_string(c, "CLIENT_ERROR bad value");
+        }
+    } else {
+        print_invalid_command(c, tokens, ntokens);
+        out_string(c, "CLIENT_ERROR bad command line format");
+    }
+}
+#endif
+
 static void process_config_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     char *config_key = tokens[SUBCOMMAND_TOKEN].value;
@@ -9557,6 +9605,11 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     }
     else if (strcmp(config_key, "async_logging") == 0) {
         process_async_logging_command(c, tokens, ntokens);
+    }
+#endif
+#ifdef SASL_ENABLED
+    else if (strcmp(config_key, "require_sasl") == 0) {
+        process_require_sasl_command(c, tokens, ntokens);
     }
 #endif
     else {
