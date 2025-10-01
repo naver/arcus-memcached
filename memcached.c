@@ -3301,6 +3301,28 @@ static void process_sasl_auth_complete(conn *c)
                        c->client_ip, c->sasl_username, sasl_errstring(result, NULL, NULL));
     }
 }
+
+static bool check_bin_auth(conn *c, const uint16_t auth_flag, const char *key)
+{
+    bool authorized = false;
+
+    if ((c->authorized & auth_flag) == auth_flag) {
+        authorized = true;
+    } else if (key != NULL && strncmp(key, "arcus:", 6) == 0) {
+        authorized = true;
+    }
+
+    if (!authorized || c->sasl_username[0] == '*') {
+        /* If the username starts with '*', it indicates a user account.
+           user accounts also log authorized commands. */
+        mc_logger->log(EXTENSION_LOG_INFO, c,
+                       "SECURITY_EVENT client=%s user=%s cmd=%d %s\n",
+                       c->client_ip, c->sasl_username, c->cmd,
+                       authorized ? "authorized" : "unauthorized");
+    }
+
+    return authorized;
+}
 #endif
 
 static void complete_update_ascii(conn *c)
@@ -3932,6 +3954,14 @@ static void process_bin_get(conn *c)
     char* key = binary_get_key(c);
     size_t nkey = c->binary_header.request.keylen;
 
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_KV, key)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
+
     if (settings.verbose > 1) {
         char buffer[1024];
         if (key_to_printable_buffer(buffer, sizeof(buffer), c->sfd, true,
@@ -4501,17 +4531,14 @@ static void process_bin_complete_sasl_auth(conn *c)
         }
     }
 
-    if (settings.verbose) {
-        mc_logger->log(EXTENSION_LOG_INFO, c,
-                       "%d: sasl result code:  %d\n", c->sfd, result);
-    }
-
     switch (result) {
     case SASL_OK:
-        c->authenticated = true;
         write_bin_response(c, "Authenticated", 0, 0, strlen("Authenticated"));
         perform_callbacks(ON_AUTH, (const void*)&data, c);
         STATS_CMD_NOKEY(c, auth);
+        mc_logger->log(EXTENSION_LOG_INFO, c,
+                       "SECURITY_EVENT client=%s user=%s authentication succeeded\n",
+                       c->client_ip, c->sasl_username);
         break;
     case SASL_CONTINUE:
         add_bin_header(c, PROTOCOL_BINARY_RESPONSE_AUTH_CONTINUE, 0, 0, outlen);
@@ -4522,36 +4549,12 @@ static void process_bin_complete_sasl_auth(conn *c)
         c->write_and_go = conn_new_cmd;
         break;
     default:
-        if (settings.verbose) {
-            mc_logger->log(EXTENSION_LOG_INFO, c,
-                           "%d: Unknown sasl response:  %d\n", c->sfd, result);
-        }
         write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
         STATS_ERRORS_NOKEY(c, auth);
+        mc_logger->log(EXTENSION_LOG_WARNING, c,
+                       "SECURITY_EVENT client=%s user=%s authentication failed(%s)\n",
+                       c->client_ip, c->sasl_username, sasl_errstring(result, NULL, NULL));
     }
-}
-
-static bool authenticated(conn *c)
-{
-    bool rv = false;
-
-    switch (c->cmd) {
-    case PROTOCOL_BINARY_CMD_SASL_LIST_MECHS: /* FALLTHROUGH */
-    case PROTOCOL_BINARY_CMD_SASL_AUTH:       /* FALLTHROUGH */
-    case PROTOCOL_BINARY_CMD_SASL_STEP:       /* FALLTHROUGH */
-    case PROTOCOL_BINARY_CMD_VERSION:         /* FALLTHROUGH */
-        rv = true;
-        break;
-    default:
-        rv = c->authenticated;
-    }
-
-    if (settings.verbose > 1) {
-        mc_logger->log(EXTENSION_LOG_DEBUG, c,
-                "%d: authenticated() in cmd 0x%02x is %s\n",
-                c->sfd, c->cmd, rv ? "true" : "false");
-    }
-    return rv;
 }
 #endif
 
@@ -4563,6 +4566,14 @@ static void process_bin_lop_create(conn *c)
     int  nkey = c->binary_header.request.keylen;
     c->coll_key = key;
     c->coll_nkey = nkey;
+
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_LIST, key)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
 
     /* fix byteorder in the request */
     protocol_binary_request_lop_create* req = binary_get_request(c);
@@ -4630,6 +4641,14 @@ static void process_bin_lop_prepare_nread(conn *c)
     c->coll_key = key;
     c->coll_nkey = nkey;
     uint32_t vlen = 0;
+
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_LIST, key)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
 
     bool protocol_error = false;
     if (nkey + c->binary_header.request.extlen <= c->binary_header.request.bodylen) {
@@ -4771,6 +4790,14 @@ static void process_bin_lop_delete(conn *c)
     c->coll_key = key;
     c->coll_nkey = nkey;
 
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_LIST, key)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
+
     /* fix byteorder in the request */
     protocol_binary_request_lop_delete* req = binary_get_request(c);
     req->message.body.from_index = ntohl(req->message.body.from_index);
@@ -4896,6 +4923,14 @@ static void process_bin_lop_get(conn *c)
     c->coll_nkey = nkey;
     ENGINE_ERROR_CODE ret;
 
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_LIST, key)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
+
     /* fix byteorder in the request */
     protocol_binary_request_lop_get* req = binary_get_request(c);
     int from_index = ntohl(req->message.body.from_index);
@@ -4962,6 +4997,14 @@ static void process_bin_sop_create(conn *c)
     c->coll_key = key;
     c->coll_nkey = nkey;
 
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_SET, key)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
+
     /* fix byteorder in the request */
     protocol_binary_request_sop_create* req = binary_get_request(c);
     req->message.body.exptime  = ntohl(req->message.body.exptime);
@@ -5020,6 +5063,14 @@ static void process_bin_sop_prepare_nread(conn *c)
     c->coll_key = key;
     c->coll_nkey = nkey;
     uint32_t vlen = 0;
+
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_SET, key)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
 
     bool protocol_error = false;
     if (nkey + c->binary_header.request.extlen <= c->binary_header.request.bodylen) {
@@ -5357,6 +5408,14 @@ static void process_bin_sop_get(conn *c)
     c->coll_nkey = nkey;
     ENGINE_ERROR_CODE ret;
 
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_SET, key)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
+
     /* fix byteorder in the request */
     protocol_binary_request_sop_get* req = binary_get_request(c);
     uint32_t req_count = ntohl(req->message.body.count);
@@ -5419,6 +5478,14 @@ static void process_bin_bop_create(conn *c)
     int  nkey = c->binary_header.request.keylen;
     c->coll_key = key;
     c->coll_nkey = nkey;
+
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_BTREE, key)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
 
     /* fix byteorder in the request */
     protocol_binary_request_bop_create* req = binary_get_request(c);
@@ -5488,6 +5555,14 @@ static void process_bin_bop_prepare_nread(conn *c)
     c->coll_key = key;
     c->coll_nkey = nkey;
     uint32_t vlen = 0;
+
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_BTREE, key)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
 
     bool protocol_error = false;
     if (nkey + c->binary_header.request.extlen <= c->binary_header.request.bodylen) {
@@ -5816,6 +5891,14 @@ static void process_bin_bop_delete(conn *c)
     c->coll_key = key;
     c->coll_nkey = nkey;
 
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_BTREE, key)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
+
     /* fix byteorder in the request */
     protocol_binary_request_bop_delete* req = binary_get_request(c);
     bkey_range   *bkrange = &req->message.body.bkrange;
@@ -5960,6 +6043,14 @@ static void process_bin_bop_get(conn *c)
     c->coll_nkey = nkey;
     ENGINE_ERROR_CODE ret;
 
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_BTREE, key)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
+
     /* fix byteorder in the request */
     protocol_binary_request_bop_get* req = binary_get_request(c);
     bkey_range   *bkrange = &req->message.body.bkrange;
@@ -6049,6 +6140,14 @@ static void process_bin_bop_count(conn *c)
     c->coll_key = key;
     c->coll_nkey = nkey;
 
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_BTREE, key)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
+
     /* fix byteorder in the request */
     protocol_binary_request_bop_count* req = binary_get_request(c);
     bkey_range   *bkrange = &req->message.body.bkrange;
@@ -6127,6 +6226,15 @@ static void process_bin_bop_prepare_nread_keys(conn *c)
     c->coll_key = key;
     c->coll_nkey = nkey;
     size_t vlen = 0;
+
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_BTREE, key)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
+
 
     bool protocol_error = false;
     if (nkey + c->binary_header.request.extlen <= c->binary_header.request.bodylen) {
@@ -6691,6 +6799,14 @@ static void process_bin_getattr(conn *c)
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
 
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_ATTR, key)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
+
     if (settings.verbose > 1) {
         fprintf(stderr, "<%d GETATTR ", c->sfd);
         for (int ii = 0; ii < nkey; ++ii) {
@@ -6763,6 +6879,14 @@ static void process_bin_setattr(conn *c)
     assert(c->ewouldblock == false);
     char *key = binary_get_key(c);
     int  nkey = c->binary_header.request.keylen;
+
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_ATTR, key)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
 
     item_attr attr_data;
     ENGINE_ITEM_ATTR attr_ids[ATTR_END];
@@ -6948,14 +7072,6 @@ static void dispatch_bin_command(conn *c)
     int extlen = c->binary_header.request.extlen;
     int keylen = c->binary_header.request.keylen;
     uint32_t bodylen = c->binary_header.request.bodylen;
-
-#ifdef SASL_ENABLED
-    if (settings.require_sasl && !authenticated(c)) {
-        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
-        c->write_and_go = conn_closing;
-        return;
-    }
-#endif
 
     MEMCACHED_PROCESS_COMMAND_START(c->sfd, c->rcurr, c->rbytes);
     c->noreply = true;
@@ -7292,6 +7408,14 @@ static void process_bin_update(conn *c)
     uint32_t nkey = c->binary_header.request.keylen;
     uint32_t vlen = 0;
 
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_KV, key)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
+
     /* fix byteorder in the request */
     req->message.body.flags = req->message.body.flags;
     req->message.body.expiration = ntohl(req->message.body.expiration);
@@ -7407,6 +7531,14 @@ static void process_bin_append_prepend(conn *c)
     uint32_t nkey = c->binary_header.request.keylen;
     uint32_t vlen = 0;
 
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_KV, key)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
+
     bool protocol_error = false;
     if (nkey <= c->binary_header.request.bodylen) {
         vlen = c->binary_header.request.bodylen - nkey;
@@ -7463,6 +7595,14 @@ static void process_bin_flush(conn *c)
     time_t exptime = 0;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
 
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_FLUSH, NULL)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
+
     if (c->binary_header.request.extlen == sizeof(req->message.body)) {
         exptime = ntohl(req->message.body.expiration);
         if (exptime < 0) {
@@ -7495,6 +7635,14 @@ static void process_bin_flush_prefix(conn *c)
     size_t nprefix = c->binary_header.request.keylen;
     time_t exptime = 0;
     ENGINE_ERROR_CODE ret = ENGINE_SUCCESS;
+
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_FLUSH, NULL)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
 
     if (c->binary_header.request.extlen == sizeof(req->message.body)) {
         exptime = ntohl(req->message.body.expiration);
@@ -7545,6 +7693,14 @@ static void process_bin_delete(conn *c)
     protocol_binary_request_delete* req = binary_get_request(c);
     char* key = binary_get_key(c);
     size_t nkey = c->binary_header.request.keylen;
+
+#ifdef SASL_ENABLED
+    if (settings.require_sasl && !check_bin_auth(c, AUTHZ_DELETE, key)) {
+        write_bin_packet(c, PROTOCOL_BINARY_RESPONSE_AUTH_ERROR, 0);
+        c->write_and_go = conn_closing;
+        return;
+    }
+#endif
 
     if (settings.verbose > 1) {
         char buffer[1024];
