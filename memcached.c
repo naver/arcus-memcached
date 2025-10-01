@@ -15219,7 +15219,6 @@ static void save_pid(const pid_t pid, const char *pid_file)
     if (pid_file == NULL) {
         return;
     }
-
     if ((fp = fopen(pid_file, "w")) == NULL) {
         mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Could not open the pid file %s for writing: %s\n",
@@ -15228,6 +15227,7 @@ static void save_pid(const pid_t pid, const char *pid_file)
     }
 
     fprintf(fp,"%ld\n", (long)pid);
+
     if (fclose(fp) == -1) {
         mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                 "Could not close the pid file %s: %s\n",
@@ -15237,12 +15237,10 @@ static void save_pid(const pid_t pid, const char *pid_file)
 
 static void remove_pidfile(const char *pid_file)
 {
-    if (pid_file != NULL) {
-        if (unlink(pid_file) != 0) {
-            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
-                    "Could not remove the pid file %s: %s\n",
-                    pid_file, strerror(errno));
-        }
+    if (pid_file != NULL && unlink(pid_file) != 0) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "Could not remove the pid file %s: %s\n",
+                pid_file, strerror(errno));
     }
 }
 
@@ -15286,16 +15284,15 @@ static int install_sigterm_handler(void)
  */
 static int enable_large_pages(void)
 {
+    int ret = 0;
 #if defined(HAVE_GETPAGESIZES) && defined(HAVE_MEMCNTL)
-    int ret = -1;
     size_t sizes[32];
     int avail = getpagesizes(sizes, 32);
     if (avail != -1) {
         size_t max = sizes[0];
         struct memcntl_mha arg = {0};
-        int ii;
 
-        for (ii = 1; ii < avail; ++ii) {
+        for (int ii = 1; ii < avail; ++ii) {
             if (max < sizes[ii]) {
                 max = sizes[ii];
             }
@@ -15306,22 +15303,19 @@ static int enable_large_pages(void)
         arg.mha_cmd = MHA_MAPSIZE_BSSBRK;
 
         if (memcntl(0, 0, MC_HAT_ADVISE, (caddr_t)&arg, 0, 0) == -1) {
+            ret = -1;
             mc_logger->log(EXTENSION_LOG_WARNING, NULL,
                     "Failed to set large pages: %s\nWill use default page size\n",
                     strerror(errno));
-        } else {
-            ret = 0;
         }
     } else {
+        ret = -1;
         mc_logger->log(EXTENSION_LOG_WARNING, NULL,
             "Failed to get supported pagesizes: %s\nWill use default page size\n",
             strerror(errno));
     }
-
-    return ret;
-#else
-    return 0;
 #endif
+    return ret;
 }
 
 static const char* get_server_version(void)
@@ -15729,7 +15723,6 @@ static void settings_reload_engine_config(void)
     uint32_t scrubcount;
 
     /* Following settings are loaded by getting engine config */
-
     ret = mc_engine.v1->get_config(mc_engine.v0, NULL, "max_list_size", (void*)&maxsize);
     if (ret == ENGINE_SUCCESS) {
         settings.max_list_size = maxsize;
