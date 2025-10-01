@@ -12,11 +12,9 @@ uint16_t arcus_sasl_authz(const char *username);
 
 int init_sasl(void);
 void shutdown_sasl(void);
+int reload_sasl(void);
 void sasl_get_auth_data(sasl_conn_t *conn, auth_data_t *data);
 
-#if defined(ENABLE_ZK_INTEGRATION)
-void reload_sasl(void);
-#endif
 
 #elif defined(ENABLE_ISASL)
 
@@ -25,6 +23,7 @@ void reload_sasl(void);
 
 int init_sasl(void);
 void shutdown_sasl(void);
+int reload_sasl(void);
 void sasl_get_auth_data(sasl_conn_t *conn, auth_data_t *data);
 
 #endif /* End of SASL support */
