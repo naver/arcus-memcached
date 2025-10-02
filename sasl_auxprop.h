@@ -4,8 +4,12 @@
 #ifdef ENABLE_SASL
 #ifdef ENABLE_ZK_INTEGRATION
 
+#include "memcached/extension.h"
+
 #include <sasl/sasl.h>
 #include <sasl/saslplug.h>
+
+void arcus_auxprop_init_logger(EXTENSION_LOGGER_DESCRIPTOR *logger);
 
 int arcus_auxprop_plug_init(const sasl_utils_t *utils,
                             int max_version,
