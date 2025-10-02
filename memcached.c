@@ -9647,7 +9647,7 @@ static pthread_mutex_t require_sasl_lock = PTHREAD_MUTEX_INITIALIZER;
 static void* init_sasl_thread(void *arg)
 {
     pthread_mutex_lock(&require_sasl_lock);
-    if (settings.require_sasl == false && init_sasl() == 0) {
+    if (settings.require_sasl == false && init_sasl(mc_logger) == 0) {
         settings.require_sasl = true;
     }
     pthread_mutex_unlock(&require_sasl_lock);
@@ -16310,7 +16310,7 @@ int main (int argc, char **argv)
     }
 
 #ifdef SASL_ENABLED
-    if (settings.require_sasl && init_sasl() != 0) {
+    if (settings.require_sasl && init_sasl(mc_logger) != 0) {
         exit(EXIT_FAILURE);
     }
 #endif

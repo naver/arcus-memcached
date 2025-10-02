@@ -19,6 +19,8 @@
 #define PROPNAME_MAXLEN 32
 #define VALUE_MAXLEN 8192 /* from Cyrus SASL's sasldb auxprop plugin */
 
+static EXTENSION_LOGGER_DESCRIPTOR *mc_logger = NULL;
+
 static const char *ensemble_list;
 static char group_zpath[16 + GROUP_MAXLEN];
 
@@ -95,12 +97,14 @@ static struct sasl_entry** get_arcus_acl_table(void)
 
     table = calloc(SASL_TABLE_SIZE, sizeof(struct sasl_entry *));
     if (!table) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL, "ACL table alloc failed.\n");
         return NULL;
     }
 
     zh = zookeeper_init(ensemble_list, NULL, 10000, NULL, NULL, 0);
     if (!zh) {
         free(table);
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL, "ACL zookeeper init failed.\n");
         return NULL;
     }
 
@@ -108,6 +112,8 @@ static struct sasl_entry** get_arcus_acl_table(void)
     if (ret != ZOK) {
         free(table);
         zookeeper_close(zh);
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+            "ACL zoo_get_children(%s) failed: %s\n", group_zpath, zerror(ret));
         return NULL;
     }
 
@@ -116,6 +122,8 @@ static struct sasl_entry** get_arcus_acl_table(void)
         value_len = sizeof(value);
         ret = zoo_get(zh, user_zpath, 0, value, &value_len, NULL);
         if (ret != ZOK) {
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "ACL zoo_get(%s) failed: %s\n", user_zpath, zerror(ret));
             break;
         }
         if (!_table_insert(table, user_zpath, value, value_len)) {
@@ -125,6 +133,8 @@ static struct sasl_entry** get_arcus_acl_table(void)
 
         ret = zoo_get_children(zh, user_zpath, 0, &props);
         if (ret != ZOK) {
+            mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                "ACL zoo_get_children(%s) failed: %s\n", user_zpath, zerror(ret));
             break;
         }
 
@@ -133,6 +143,8 @@ static struct sasl_entry** get_arcus_acl_table(void)
             value_len = sizeof(value);
             ret = zoo_get(zh, prop_zpath, 0, value, &value_len, NULL);
             if (ret != ZOK) {
+                mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+                    "ACL zoo_get(%s) failed: %s\n", prop_zpath, zerror(ret));
                 break;
             }
             if (!_table_insert(table, prop_zpath, value, value_len)) {
@@ -165,6 +177,8 @@ static void* acl_refresh_thread(void *arg)
     srand(ts.tv_sec);
     ts.tv_sec += rand() % REFRESH_PERIOD;
 
+    mc_logger->log(EXTENSION_LOG_INFO, NULL, "ACL refresh thread is running.\n");
+
     acl_thread_running = true;
     while (!acl_thread_stopreq) {
         ts.tv_sec += REFRESH_PERIOD;
@@ -177,17 +191,17 @@ static void* acl_refresh_thread(void *arg)
             break;
         }
 
+        mc_logger->log(EXTENSION_LOG_INFO, NULL, "ACL refresh started.\n");
         new_table = get_arcus_acl_table();
-        if (new_table == NULL) {
-            continue;
+        if (new_table != NULL) {
+            pthread_mutex_lock(&g_sasltable_lock);
+            old_table = g_sasltable;
+            g_sasltable = new_table;
+            pthread_mutex_unlock(&g_sasltable_lock);
+
+            _table_free(old_table);
         }
-
-        pthread_mutex_lock(&g_sasltable_lock);
-        old_table = g_sasltable;
-        g_sasltable = new_table;
-        pthread_mutex_unlock(&g_sasltable_lock);
-
-        _table_free(old_table);
+        mc_logger->log(EXTENSION_LOG_INFO, NULL, "ACL refresh %s.\n", new_table ? "completed" : "failed");
     }
 
     pthread_mutex_lock(&g_sasltable_lock);
@@ -198,6 +212,8 @@ static void* acl_refresh_thread(void *arg)
     _table_free(old_table);
 
     acl_thread_running = false;
+    mc_logger->log(EXTENSION_LOG_INFO, NULL, "ACL refresh thread is stopped.\n");
+
     return NULL;
 }
 
@@ -331,6 +347,11 @@ static void arcus_auxprop_free(void *glob_context,
     }
 }
 
+void arcus_auxprop_init_logger(EXTENSION_LOGGER_DESCRIPTOR *logger)
+{
+    mc_logger = logger;
+}
+
 static sasl_auxprop_plug_t arcus_auxprop_plugin = {
     .name = "arcus",
     .features = 0,
@@ -356,22 +377,27 @@ int arcus_auxprop_plug_init(const sasl_utils_t *utils,
     *out_version = SASL_AUXPROP_PLUG_VERSION;
     *plug = &arcus_auxprop_plugin;
 
+    if (mc_logger == NULL) {
+        utils->log(utils->conn, SASL_LOG_ERR, "mc_logger is not set");
+        return SASL_FAIL;
+    }
+
     ensemble_list = getenv("ARCUS_ACL_ZOOKEEPER");
     if (ensemble_list == NULL) {
-        utils->log(utils->conn, SASL_LOG_ERR, "ARCUS_ACL_ZOOKEEPER environment is not set");
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL, "ARCUS_ACL_ZOOKEEPER environment is not set\n");
         return SASL_FAIL;
     }
 
     const char *acl_group = getenv("ARCUS_ACL_GROUP");
     if (acl_group == NULL) {
-        utils->log(utils->conn, SASL_LOG_ERR, "ARCUS_ACL_GROUP environment is not set");
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL, "ARCUS_ACL_GROUP environment is not set\n");
         return SASL_FAIL;
     }
     snprintf(group_zpath, sizeof(group_zpath), "/arcus_acl/%s", acl_group);
 
     g_sasltable = get_arcus_acl_table();
     if (!g_sasltable) {
-        utils->log(utils->conn, SASL_LOG_ERR, "Failed to initialize SASL table");
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL, "Failed to initialize SASL table\n");
         return SASL_FAIL;
     }
 
@@ -381,7 +407,7 @@ int arcus_auxprop_plug_init(const sasl_utils_t *utils,
 
     int ret = pthread_create(&tid, NULL, acl_refresh_thread, NULL);
     if (ret != 0) {
-        utils->log(utils->conn, SASL_LOG_ERR, "Failed to create ACL refresh thread");
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL, "Failed to create ACL refresh thread\n");
         return SASL_FAIL;
     }
 
