@@ -9764,7 +9764,7 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
 #endif
     else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        out_string(c, "ERROR unknown command");
     }
 }
 
@@ -9819,7 +9819,7 @@ static void process_zkensemble_command(conn *c, token_t *tokens, const size_t nt
     }
     if (valid == false) {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        out_string(c, "ERROR unknown command");
     }
 }
 #endif
@@ -9874,7 +9874,7 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
     }
     if (valid == false) {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        out_string(c, "ERROR unknown command");
         return;
     }
 
@@ -10095,6 +10095,7 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
         }
     }
     if (cmd == NULL) {
+        print_invalid_command(c, tokens, ntokens);
         out_string(c, "ERROR unknown command");
         return;
     }
@@ -10501,7 +10502,7 @@ static void process_scan_command(conn *c, token_t *tokens, const size_t ntokens)
     }
 
     print_invalid_command(c, tokens, ntokens);
-    out_string(c, "CLIENT_ERROR bad command line format");
+    out_string(c, "ERROR unknown command");
 }
 #endif
 
@@ -11150,7 +11151,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
     else
     {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        out_string(c, "ERROR unknown command");
     }
 }
 
@@ -11527,7 +11528,7 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
     else
     {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        out_string(c, "ERROR unknown command");
     }
 }
 
@@ -12807,7 +12808,7 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
     else
     {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        out_string(c, "ERROR unknown command");
     }
 }
 
@@ -13410,7 +13411,7 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
     else
     {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        out_string(c, "ERROR unknown command");
     }
 }
 
@@ -13980,6 +13981,7 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
         if (settings.extensions.ascii != NULL) {
             process_extension_command(c, tokens, ntokens);
         } else {
+            print_invalid_command(c, tokens, ntokens);
             out_string(c, "ERROR unknown command");
         }
     }
