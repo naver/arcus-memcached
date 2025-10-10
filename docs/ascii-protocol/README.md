@@ -63,4 +63,4 @@ Scan 기능
 Admin & Monitoring 기능
 -----------------------
 
-ARCUS Cache Server의 운영 상에 필요한 기능들은 [Admin & Monitoring 명령](ch12-command-administration.md)으로 제공한다.
+ARCUS Cache Server의 운영 상에 필요한 기능들은 [Admin & Monitoring 명령](ch13-command-administration.md)으로 제공한다.
