@@ -174,13 +174,13 @@ mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 0 10"; $val = "222222222222";
 $rst =
 "CLIENT_ERROR bad data chunk
-ERROR no matching command";
+ERROR unknown command";
 mem_cmd_is($sock, $cmd, $val, $rst);
 
 $cmd = "set kvkey 0 10"; $val = "0000000000";
 $rst =
-"ERROR no matching command
-ERROR no matching command";
+"ERROR unknown command
+ERROR unknown command";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 0 10"; $val = "0000000000"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
@@ -188,8 +188,8 @@ $cmd = "set kvkey 0 0 10 10"; $val = "0000000000"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "set kvkey 0 0 10 10 10"; $val = "0000000000";
 $rst =
-"ERROR no matching command
-ERROR no matching command";
+"ERROR unknown command
+ERROR unknown command";
 mem_cmd_is($sock, $cmd, $val, $rst);
 
 $cmd = "bop insert bkey1 10 5 create 11 0 0"; $val = "datum"; $rst = "CREATED_STORED";
@@ -205,30 +205,30 @@ mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 17 5"; $val = "7777777";
 $rst =
 "CLIENT_ERROR bad data chunk
-ERROR no matching command";
+ERROR unknown command";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 18 5"; $val = "88888888";
 $rst =
 "CLIENT_ERROR bad data chunk
-ERROR no matching command";
+ERROR unknown command";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 19 5"; $val = "999999999";
 $rst =
 "CLIENT_ERROR bad data chunk
-ERROR no matching command";
+ERROR unknown command";
 mem_cmd_is($sock, $cmd, $val, $rst);
 
 $cmd = "bop insert bkey1 21"; $val = "0000000000";
 $rst =
 "CLIENT_ERROR bad command line format
-ERROR no matching command";
+ERROR unknown command";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 22 10"; $val = "0000000000"; $rst = "STORED";
 mem_cmd_is($sock, $cmd, $val, $rst);
 $cmd = "bop insert bkey1 23 10 10"; $val = "0000000000";
 $rst =
 "CLIENT_ERROR bad command line format
-ERROR no matching command";
+ERROR unknown command";
 mem_cmd_is($sock, $cmd, $val, $rst);
 
 # Finalize

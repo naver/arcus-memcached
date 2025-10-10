@@ -10095,7 +10095,7 @@ static void process_extension_command(conn *c, token_t *tokens, size_t ntokens)
         }
     }
     if (cmd == NULL) {
-        out_string(c, "ERROR no matching command");
+        out_string(c, "ERROR unknown command");
         return;
     }
 #ifdef SASL_ENABLED
@@ -13975,7 +13975,7 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
     {
         process_shutdown_command(c, tokens, ntokens);
     }
-    else /* no matching command */
+    else /* unknown command */
     {
         if (settings.extensions.ascii != NULL) {
             process_extension_command(c, tokens, ntokens);
