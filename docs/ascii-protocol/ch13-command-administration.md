@@ -1,4 +1,4 @@
-# Chapter 12. Admin & Monitoring 명령
+# Chapter 13. Admin & Monitoring 명령
 
 - [FLUSH 명령](#flush)
 - [SCRUB 명령](#scrub)
@@ -9,6 +9,8 @@
 - [KEY DUMP 명령](#key-dump)
 - [ZKENSEMBLE 명령](#zkensemble)
 - [HELP 명령](#help)
+- [SHUTODWN 명령](#shutdown)
+- [RELOAD 명령](#reload)
 
 ## Flush
 
@@ -728,6 +730,7 @@ ARCUS Cache Server는 특정 configuration에 대해 동적으로 변경하거�
 - max_element_bytes
 - scrub_count
 - max_stats_prefixes
+- auth
 
 ### Config verbosity
 
@@ -826,6 +829,14 @@ ARCUS Cache Server에서 한번에 조회할 수 있는 prefix stat의 최대 �
 \<value\> 인자가 생략되면 현재 설정되어 있는 prefix stat의 최대 개수를 조회한다.
 ```
 config max_stats_prefixes [<value>]\r\n
+```
+
+### Config auth
+
+ARCUS Cache Server에 새로 맺어지는 연결에 대해 인증 과정을 수행하고, 부여된 권한에 따라 수행 가능한 명령을 제한한다. 현재 off => on 변경만 지원하며, 서버 재구동 없이 `-S` 구동 옵션을 설정하는 것과 같은 동작을 수행한다.
+
+```
+config auth [on]\r\n
 ```
 
 ## Command Logging
@@ -1076,3 +1087,21 @@ Response string과 그 의미는 아래와 같다.
 - 단, 아래 조건을 모두 만족하는 경우 새로운 shutdown 요청이 거부되고 `DENIED` 응답을 반환한다.
   - 이미 shutdown 요청 수신하여 종료 대기 중
   - 기존 shutdown 요청에 의한 종료 시간이 1초 이내로 남은 상태
+
+## reload
+
+ARCUS Cache Server가 사용하는 외부 데이터를 다시 가져온다. 현재 reload 가능한 항목은 아래와 같다.
+
+```
+reload auth\r\n
+```
+
+- `reload auth`: SASL 인증 기능이 활성화된 상태이고, ZooKeeper에 저장된 인증 정보를 사용 중인 경우에 한해 유효. ZooKeeper에 저장된 최신 정보 기준으로 인증/권한 정보 재캐싱
+
+Response string과 그 의미는 아래와 같다.
+
+| Response String | 설명 |
+| - | - |
+| "OK" | 성공 |
+| "NOT_SUPPORTED" | 해당 항목에 대한 reload 지원하지 않음 |
+| "CLIENT_ERROR bad command line format" | protocol syntax 틀림 or 관련 기능이 disabled 상태 |
