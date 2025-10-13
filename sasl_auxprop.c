@@ -22,6 +22,7 @@
 static EXTENSION_LOGGER_DESCRIPTOR *mc_logger = NULL;
 
 static const char *ensemble_list;
+// 16: buffer for "/arcus_acl", "/" separator, "\0" terminator, etc.
 static char group_zpath[16 + GROUP_MAXLEN];
 
 struct sasl_entry {
@@ -241,8 +242,9 @@ static int _arcus_getdata(const char *user,
             entry = entry->next;
         }
 
-        if (entry && entry->value_len <= max_out) {
+        if (entry && entry->value_len < max_out) {
             memcpy(out, entry->value, entry->value_len);
+            out[entry->value_len] = '\0';
             if (out_len) *out_len = entry->value_len;
             ret = SASL_OK;
         }
