@@ -30,27 +30,15 @@
 - ACL group 하위 사용자 생성/제거
 
 arcusctl 사용하여 ACL group 정보를 ZooKeeper에 저장/조회할 수 있다.
-아래는 2개의 ACL group(userGroup01, userGroup02)을 포함하는 znode 예시이다.
+아래는 2개의 ACL group(prod, dev)을 포함하는 znode 예시이다.
 
-- userGroup01의 alice와 userGroup02의 alice는 서로 연관이 없는 별도의 계정이다. 각자의 고유한 비밀번호와 권한을 갖는다.
-- `*`으로 시작하는 사용자 계정(bob)은, 서버에 연결해서 수행하는 모든 명령 이력을 감사 로그로 기록한다.
+- `/arcus_acl/<group>` 하위 znode는 ZooKeeper ACL을 설정하여 권한을 가진 경우에만 수정할 수 있도록 한다.
+- `/arcus_acl/<group>/<username>`에는 해당 user의 권한 정보를 보관한다.
+- `/arcus_acl/<group>/<username>/authPassword`에는 해당 user의 비밀번호를 암호화된 형태로 보관한다.
+- `*`으로 시작하는 사용자 계정(`*myadmin`, `*testadmin`)은, 서버에 연결해서 수행하는 모든 명령 이력을 감사 로그로 기록한다.
 
-```
-/arcus_acl
-/arcus_acl/userGroup01
-/arcus_acl/userGroup01/alice              : kv,list,attr,flush
-/arcus_acl/userGroup01/alice/authPassword : SCRAM-SHA-256$4096:zYKWe/t...
-/arcus_acl/userGroup01/*bob               : attr,flush,admin
-/arcus_acl/userGroup01/*bob/authPassword  : SCRAM-SHA-256$...
-/arcus_acl/userGroup02
-/arcus_acl/userGroup02/alice              : btree,attr
-/arcus_acl/userGroup02/alice/authPassword : SCRAM-SHA-256$4096:Wx8F+2m...
-```
+<img width="2422" height="1353" alt="image" src="https://github.com/user-attachments/assets/6ecbe90e-688a-4f48-827f-f253e19d2e2a" />
 
-- `/arcus_acl`: 다수의 ACL group znode가 포함되는 최상위 znode
-- `/arcus_acl/userGroup01`: userGroup01 이름을 갖는 ACL group
-- `/arcus_acl/userGroup01/alice`: userGroup01에 속한 alice 사용자의 권한 정보
-- `/arcus_acl/userGroup01/alice/authPassword`: userGroup01에 속한 alice 사용자의 암호화된 비밀번호
 
 ## Cache Server
 
