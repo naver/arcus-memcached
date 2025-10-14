@@ -341,6 +341,10 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
     // prefix discovering: we don't even know prefix existence at this time
     while ((token = memchr(key+i+1, config->prefix_delimiter, nkey-i-1)) != NULL) {
         i = token - key;
+        if (i > PREFIX_MAX_LENGTH) {
+            return ENGINE_PREFIX_ENAME;
+        }
+
         prefix_list[prefix_depth].nprefix = i;
 
         prefix_depth++;

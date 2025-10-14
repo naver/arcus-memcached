@@ -41,6 +41,9 @@ struct iovec {
 #define JHPARK_OLD_SMGET_INTERFACE
 #define MULTI_NOTIFY_IO_COMPLETE
 
+/** Maximum length of a prefix */
+#define PREFIX_MAX_LENGTH 250
+
 #ifdef __cplusplus
 extern "C" {
 #endif
