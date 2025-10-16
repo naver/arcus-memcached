@@ -9209,7 +9209,7 @@ static void process_flush_command(conn *c, token_t *tokens, const size_t ntokens
     }
 }
 
-static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntokens)
+static void process_config_maxconns_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     int new_max;
 
@@ -9253,7 +9253,7 @@ static void process_maxconns_command(conn *c, token_t *tokens, const size_t ntok
 }
 
 #ifdef ENABLE_ZK_INTEGRATION
-static void process_zkfailstop_command(conn *c, token_t *tokens, const size_t ntokens)
+static void process_config_zkfailstop_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
     if (ntokens == 3) {
@@ -9279,7 +9279,7 @@ static void process_zkfailstop_command(conn *c, token_t *tokens, const size_t nt
     }
 }
 
-static void process_hbtimeout_command(conn *c, token_t *tokens, const size_t ntokens)
+static void process_config_hbtimeout_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
     unsigned int hbtimeout;
@@ -9299,7 +9299,7 @@ static void process_hbtimeout_command(conn *c, token_t *tokens, const size_t nto
     }
 }
 
-static void process_hbfailstop_command(conn *c, token_t *tokens, const size_t ntokens)
+static void process_config_hbfailstop_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
     unsigned int hbfailstop;
@@ -9320,7 +9320,7 @@ static void process_hbfailstop_command(conn *c, token_t *tokens, const size_t nt
 }
 #endif
 
-static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntokens)
+static void process_config_memlimit_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
     char *config_key = tokens[SUBCOMMAND_TOKEN].value;
@@ -9350,7 +9350,7 @@ static void process_memlimit_command(conn *c, token_t *tokens, const size_t ntok
 }
 
 #ifdef ENABLE_STICKY_ITEM
-static void process_stickylimit_command(conn *c, token_t *tokens, const size_t ntokens)
+static void process_config_stickylimit_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
     char *config_key = tokens[SUBCOMMAND_TOKEN].value;
@@ -9380,7 +9380,7 @@ static void process_stickylimit_command(conn *c, token_t *tokens, const size_t n
 }
 #endif
 
-static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t ntokens,
+static void process_config_maxcollsize_command(conn *c, token_t *tokens, const size_t ntokens,
                                         int coll_type)
 {
     assert(c != NULL && coll_type != ITEM_TYPE_KV);
@@ -9438,7 +9438,7 @@ static void process_maxcollsize_command(conn *c, token_t *tokens, const size_t n
     }
 }
 
-static void process_maxelembytes_command(conn *c, token_t *tokens, const size_t ntokens)
+static void process_config_maxelembytes_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
     char *config_key = tokens[SUBCOMMAND_TOKEN].value;
@@ -9468,7 +9468,7 @@ static void process_maxelembytes_command(conn *c, token_t *tokens, const size_t 
     }
 }
 
-static void process_scrubcount_command(conn *c, token_t *tokens, const size_t ntokens)
+static void process_config_scrubcount_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     char *config_key = tokens[SUBCOMMAND_TOKEN].value;
     char *config_val = tokens[SUBCOMMAND_TOKEN+1].value;
@@ -9495,7 +9495,7 @@ static void process_scrubcount_command(conn *c, token_t *tokens, const size_t nt
     }
 }
 
-static void process_maxstatsprefixes_command(conn *c, token_t *tokens, const size_t ntokens)
+static void process_config_maxstatsprefixes_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     char *config_val = tokens[SUBCOMMAND_TOKEN+1].value;
     uint32_t new_max_stats_prefixes;
@@ -9515,7 +9515,7 @@ static void process_maxstatsprefixes_command(conn *c, token_t *tokens, const siz
     }
 }
 
-static void process_verbosity_command(conn *c, token_t *tokens, const size_t ntokens)
+static void process_config_verbosity_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
     char *config_key = tokens[SUBCOMMAND_TOKEN].value;
@@ -9544,7 +9544,7 @@ static void process_verbosity_command(conn *c, token_t *tokens, const size_t nto
 }
 
 #ifdef ENABLE_PERSISTENCE
-static void process_chkpt_interval_pct_snapshot_command(conn *c, token_t *tokens, const size_t ntokens)
+static void process_config_chkpt_interval_pct_snapshot_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
     char *config_key = tokens[SUBCOMMAND_TOKEN].value;
@@ -9573,7 +9573,7 @@ static void process_chkpt_interval_pct_snapshot_command(conn *c, token_t *tokens
     }
 }
 
-static void process_chkpt_interval_min_logsize_command(conn *c, token_t *tokens, const size_t ntokens)
+static void process_config_chkpt_interval_min_logsize_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
     char *config_key = tokens[SUBCOMMAND_TOKEN].value;
@@ -9602,7 +9602,7 @@ static void process_chkpt_interval_min_logsize_command(conn *c, token_t *tokens,
     }
 }
 
-static void process_async_logging_command(conn *c, token_t *tokens, const size_t ntokens)
+static void process_config_async_logging_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
     char *config_key = tokens[SUBCOMMAND_TOKEN].value;
@@ -9654,7 +9654,7 @@ static void* init_sasl_thread(void *arg)
     return NULL;
 }
 
-static void process_auth_command(conn *c, token_t *tokens, const size_t ntokens)
+static void process_config_auth_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     assert(c != NULL);
     if (ntokens == 3) {
@@ -9701,65 +9701,65 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
     }
 
     if (strcmp(config_key, "maxconns") == 0) {
-        process_maxconns_command(c, tokens, ntokens);
+        process_config_maxconns_command(c, tokens, ntokens);
     }
     else if (strcmp(config_key, "memlimit") == 0) {
-        process_memlimit_command(c, tokens, ntokens);
+        process_config_memlimit_command(c, tokens, ntokens);
     }
     else if (strcmp(config_key, "max_list_size") == 0) {
-        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_LIST);
+        process_config_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_LIST);
     }
     else if (strcmp(config_key, "max_set_size") == 0) {
-        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_SET);
+        process_config_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_SET);
     }
     else if (strcmp(config_key, "max_map_size") == 0) {
-        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_MAP);
+        process_config_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_MAP);
     }
     else if (strcmp(config_key, "max_btree_size") == 0) {
-        process_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_BTREE);
+        process_config_maxcollsize_command(c, tokens, ntokens, ITEM_TYPE_BTREE);
     }
     else if (strcmp(config_key, "max_element_bytes") == 0) {
-        process_maxelembytes_command(c, tokens, ntokens);
+        process_config_maxelembytes_command(c, tokens, ntokens);
     }
     else if (strcmp(config_key, "scrub_count") == 0) {
-        process_scrubcount_command(c, tokens, ntokens);
+        process_config_scrubcount_command(c, tokens, ntokens);
     }
     else if (strcmp(config_key, "max_stats_prefixes") == 0) {
-        process_maxstatsprefixes_command(c, tokens, ntokens);
+        process_config_maxstatsprefixes_command(c, tokens, ntokens);
     }
 #ifdef ENABLE_ZK_INTEGRATION
     else if (strcmp(config_key, "zkfailstop") == 0) {
-        process_zkfailstop_command(c, tokens, ntokens);
+        process_config_zkfailstop_command(c, tokens, ntokens);
     }
     else if (strcmp(config_key, "hbtimeout") == 0) {
-        process_hbtimeout_command(c, tokens, ntokens);
+        process_config_hbtimeout_command(c, tokens, ntokens);
     }
     else if (strcmp(config_key, "hbfailstop") == 0) {
-        process_hbfailstop_command(c, tokens, ntokens);
+        process_config_hbfailstop_command(c, tokens, ntokens);
     }
 #endif
 #ifdef ENABLE_STICKY_ITEM
     else if (strcmp(config_key, "sticky_limit") == 0) {
-        process_stickylimit_command(c, tokens, ntokens);
+        process_config_stickylimit_command(c, tokens, ntokens);
     }
 #endif
     else if (strcmp(config_key, "verbosity") == 0) {
-        process_verbosity_command(c, tokens, ntokens);
+        process_config_verbosity_command(c, tokens, ntokens);
     }
 #ifdef ENABLE_PERSISTENCE
     else if (strcmp(config_key, "chkpt_interval_pct_snapshot") == 0) {
-        process_chkpt_interval_pct_snapshot_command(c, tokens, ntokens);
+        process_config_chkpt_interval_pct_snapshot_command(c, tokens, ntokens);
     }
     else if (strcmp(config_key, "chkpt_interval_min_logsize") == 0) {
-        process_chkpt_interval_min_logsize_command(c, tokens, ntokens);
+        process_config_chkpt_interval_min_logsize_command(c, tokens, ntokens);
     }
     else if (strcmp(config_key, "async_logging") == 0) {
-        process_async_logging_command(c, tokens, ntokens);
+        process_config_async_logging_command(c, tokens, ntokens);
     }
 #endif
 #ifdef SASL_ENABLED
     else if (strcmp(config_key, "auth") == 0) {
-        process_auth_command(c, tokens, ntokens);
+        process_config_auth_command(c, tokens, ntokens);
     }
 #endif
     else {
