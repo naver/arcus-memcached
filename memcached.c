@@ -9505,6 +9505,10 @@ static void process_config_maxstatsprefixes_command(conn *c, token_t *tokens, co
         sprintf(buf, "max_stats_prefixes %u\r\nEND", settings.max_stats_prefixes);
         out_string(c, buf);
     } else if (ntokens == 4 && safe_strtoul(config_val, &new_max_stats_prefixes)) {
+        if (new_max_stats_prefixes > STATS_PREFIXES_HARD_LIMIT) {
+            out_string(c, "CLIENT_ERROR cannot change the max_stats_prefixes over the hard limit(100)");
+            return;
+        }
         LOCK_SETTING();
         settings.max_stats_prefixes = new_max_stats_prefixes;
         UNLOCK_SETTING();

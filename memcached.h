@@ -207,6 +207,7 @@ union mc_engine {
     ENGINE_HANDLE_V1 *v1;
 };
 
+#define STATS_PREFIXES_HARD_LIMIT 100
 #define MAX_VERBOSITY_LEVEL 2
 
 /* When adding a setting, be sure to update process_stat_settings */
