@@ -14,7 +14,50 @@
 - 특정 type의 item을 조회/수정할 수 있는 권한: `kv`, `list`, `set`, `map`, `btree`
 - Item attribute 관련 명령의 수행 권한: `attr`
 - Flush 계열 명령의 수행 권한: `flush`
+- Scan 명령의 수행 권한: `scan`
 - 설정/운영 관련 명령의 수행 권한: `admin`
+
+권한이 없는 명령을 수행하려 하면 `CLIENT_ERROR unauthorized` 응답을 반환한다.
+ascii protocol 기준 각 권한 별 수행 가능한 명령 세부 목록은 아래와 같다.
+
+| command | `(none)` | `kv` | `list` | `set` | `map` | `btree` | `attr` | `scan` | `flush` | `admin` |
+| - | - | - | - | - | - | - | - | - | - | - |
+| `version` | O | O | O | O | O | O | O | O | O | O |
+| `ready` | O | O | O | O | O | O | O | O | O | O |
+| [`quit`](../ascii-protocol/ch99-appendix.md#telnet-종료) | O | O | O | O | O | O | O | O | O | O |
+| [`help`](../ascii-protocol/ch13-command-administration.md#help) | O | O | O | O | O | O | O | O | O | O |
+| [`stats`](../ascii-protocol/ch13-command-administration.md#stats) | O | O | O | O | O | O | O | O | O | O |
+| [`sasl`](../ascii-protocol/ch12-command-sasl.md) | O | O | O | O | O | O | O | O | O | O |
+| [`get`](../ascii-protocol/ch04-command-key-value.md#retrieval-명령) | | O | | | | | | | | |
+| [`gets`](../ascii-protocol/ch04-command-key-value.md#retrieval-명령) | | O | | | | | | | | |
+| [`mget`](../ascii-protocol/ch04-command-key-value.md#retrieval-명령) | | O | | | | | | | | |
+| [`mgets`](../ascii-protocol/ch04-command-key-value.md#retrieval-명령) | | O | | | | | | | | |
+| [`add`](../ascii-protocol/ch04-command-key-value.md#retrieval-명령) | | O | | | | | | | | |
+| [`set`](../ascii-protocol/ch04-command-key-value.md#retrieval-명령) | | O | | | | | | | | |
+| [`replace`](../ascii-protocol/ch04-command-key-value.md#retrieval-명령) | | O | | | | | | | | |
+| [`prepend`](../ascii-protocol/ch04-command-key-value.md#retrieval-명령) | | O | | | | | | | | |
+| [`append`](../ascii-protocol/ch04-command-key-value.md#retrieval-명령) | | O | | | | | | | | |
+| [`cas`](../ascii-protocol/ch04-command-key-value.md#retrieval-명령) | | O | | | | | | | | |
+| [`incr`](../ascii-protocol/ch04-command-key-value.md#incrementdecrement-명령) | | O | | | | | | | | |
+| [`decr`](../ascii-protocol/ch04-command-key-value.md#incrementdecrement-명령) | | O | | | | | | | | |
+| [`delete`](../ascii-protocol/ch04-command-key-value.md#deletion-명령) | | O | O | O | O | O | | | | |
+| [`lop`](../ascii-protocol/ch05-command-list-collection.md) | | | O | | | | | | | |
+| [`sop`](../ascii-protocol/ch05-command-set-collection.md) | | | | O | | | | | | |
+| [`mop`](../ascii-protocol/ch05-command-map-collection.md) | | | | | O | | | | | |
+| [`bop`](../ascii-protocol/ch05-command-btree-collection.md) | | | | | | O | | | | |
+| [`getattr`](../ascii-protocol/ch10-command-item-attribute.md#getattr-item-attribute-조회) | | | | | | | O | | | |
+| [`setattr`](../ascii-protocol/ch10-command-item-attribute.md#setattr-item-attribute-변경) | | | | | | | O | | | |
+| [`touch`](../ascii-protocol/ch04-command-key-value.md#touch-item의-expiretime-변경) | | | | | | | O | | | |
+| [`scan`](../ascii-protocol/ch11-command-scan.md) | | | | | | | | O | | |
+| [`flush_all`](../ascii-protocol/ch13-command-administration.md#flush) | | | | | | | | | O | |
+| [`flush_prefix`](../ascii-protocol/ch13-command-administration.md#flush) | | | | | | | | | O | |
+| [`config`](../ascii-protocol/ch13-command-administration.md#config) | | | | | | | | | | O |
+| [`zkensemble`](../ascii-protocol/ch13-command-administration.md#zkensemble) | | | | | | | | | | O |
+| [`dump`](../ascii-protocol/ch13-command-administration.md#key-dump) | | | | | | | | | | O |
+| [`cmdlog`](../ascii-protocol/ch13-command-administration.md#command-logging) | | | | | | | | | | O |
+| [`lqdetect`](../ascii-protocol/ch13-command-administration.md#long-query-detect) | | | | | | | | | | O |
+| [`reload`](../ascii-protocol/ch13-command-administration.md#reload) | | | | | | | | | | O |
+| [`shutdown`](../ascii-protocol/ch13-command-administration.md#shutdown) | | | | | | | | | | O |
 
 ### ACL Group
 
