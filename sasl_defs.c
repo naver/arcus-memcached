@@ -174,6 +174,7 @@ uint16_t arcus_sasl_authz(const char *username)
                 else if (strcmp(token, "flush") == 0) ret |= AUTHZ_FLUSH;
                 else if (strcmp(token, "attr")  == 0) ret |= AUTHZ_ATTR;
                 else if (strcmp(token, "admin") == 0) ret |= AUTHZ_ADMIN;
+                else if (strcmp(token, "logall") == 0) ret |= AUTHZ_LOGALL;
                 token = strtok_r(NULL, ",", &saveptr);
             }
         } else {

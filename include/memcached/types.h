@@ -414,8 +414,9 @@ extern "C" {
 #define AUTHZ_FLUSH  0x0080
 #define AUTHZ_ATTR   0x0100
 #define AUTHZ_ADMIN  0x0200
+#define AUTHZ_LOGALL 0x4000
 #define AUTHZ_FAIL   0x8000
-#define AUTHZ_ALL    0x7FFF
+#define AUTHZ_ALL    0x3FFF
 
     typedef struct {
         const char *username;

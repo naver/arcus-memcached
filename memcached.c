@@ -3309,9 +3309,7 @@ static bool check_bin_auth(conn *c, const uint16_t auth_flag, const char *key)
         authorized = true;
     }
 
-    if (!authorized || c->sasl_username[0] == '*') {
-        /* If the username starts with '*', it indicates a user account.
-           user accounts also log authorized commands. */
+    if (!authorized || c->authorized & AUTHZ_LOGALL) {
         mc_logger->log(EXTENSION_LOG_INFO, c,
                        "SECURITY_EVENT client=%s user=%s cmd=%d %s\n",
                        c->client_ip, c->sasl_username, c->cmd,
@@ -8062,9 +8060,7 @@ static bool check_ascii_auth(conn *c, const uint16_t auth_flag, const char *key,
         authorized = true;
     }
 
-    if (!authorized || c->sasl_username[0] == '*') {
-        /* If the username starts with '*', it indicates a user account.
-           user accounts also log authorized commands. */
+    if (!authorized || c->authorized & AUTHZ_LOGALL) {
         assert(ntokens >= 2);
         /* make single string */
         for (int i = 0; i < (ntokens-2); i++) {
