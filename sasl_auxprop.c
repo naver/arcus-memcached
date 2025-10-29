@@ -13,7 +13,7 @@
 
 /* cache table's size */
 #define SASL_TABLE_SIZE 16
-#define REFRESH_PERIOD 24 * 60 * 60 /* sec */
+#define REFRESH_PERIOD 12 * 60 * 60 /* sec */
 #define GROUP_MAXLEN 32
 #define USERNAME_MAXLEN 32
 #define PROPNAME_MAXLEN 32
@@ -176,13 +176,14 @@ static void* acl_refresh_thread(void *arg)
 
     clock_gettime(CLOCK_REALTIME, &ts);
     srand(ts.tv_sec);
-    ts.tv_sec += rand() % REFRESH_PERIOD;
 
     mc_logger->log(EXTENSION_LOG_INFO, NULL, "ACL refresh thread is running.\n");
 
     acl_thread_running = true;
     while (!acl_thread_stopreq) {
-        ts.tv_sec += REFRESH_PERIOD;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += REFRESH_PERIOD + (rand() % REFRESH_PERIOD);
+
         pthread_mutex_lock(&acl_thread_lock);
         if (!acl_thread_stopreq) {
             pthread_cond_timedwait(&acl_thread_cond, &acl_thread_lock, &ts);

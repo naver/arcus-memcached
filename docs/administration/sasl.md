@@ -110,7 +110,7 @@ ARCUS_ACL_ZOOKEEPER="127.0.0.1:2181" ARCUS_ACL_GROUP="prod"\
 이 경우 `ARCUS_ACL_ZOOKEEPER`, `ARCUS_ACL_GROUP` 환경변수는 설정된 상태여야 정상 동작한다.
 반대로, SASL 인증을 동적으로 비활성화하는 기능은 제공하지 않는다.
 
-ARCUS Cache Server는 ZooKeeper에 저장된 인증/권한 정보를 가져와서 캐싱하여 사용하며, 24시간 주기로 갱신한다.
+ARCUS Cache Server는 ZooKeeper에 저장된 인증/권한 정보를 가져와서 캐싱하여 사용하며, 마지막 캐싱 시점으로부터 12-24시간 사이 랜덤한 시간이 지난 뒤 캐싱 작업을 재수행한다.
 따라서 ACL 사용자 정보를 추가/수정/제거하는 경우 캐시에 반영되어 사용되기까지 최대 24시간이 소요될 수 있다.
 필요 시 빠른 반영을 위해 `reload auth` 명령을 제공한다.
 
