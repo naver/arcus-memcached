@@ -7,6 +7,10 @@
 #include <string.h>
 #include "sasl_auxprop.h"
 
+#if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
+static bool use_acl_zookeeper = false;
+#endif
+
 const char *sasl_engine_string(void)
 {
 #if defined(ENABLE_SASL)
@@ -31,10 +35,26 @@ void sasl_get_auth_data(sasl_conn_t *conn, auth_data_t *data)
 #endif
     }
 }
-#endif
 
-#if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
-static bool use_acl_zookeeper = false;
+char *sasl_get_auth_group(void)
+{
+#ifdef ENABLE_ZK_INTEGRATION
+    if (use_acl_zookeeper) {
+        return arcus_auxprop_get_group();
+    }
+#endif
+    return NULL;
+}
+
+int sasl_set_auth_group(char *group_name)
+{
+#ifdef ENABLE_ZK_INTEGRATION
+    if (use_acl_zookeeper) {
+        return arcus_auxprop_set_group(group_name);
+    }
+#endif
+    return -1;
+}
 #endif
 
 #ifdef ENABLE_SASL_PWDB

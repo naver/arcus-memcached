@@ -9726,6 +9726,30 @@ static void process_config_auth_command(conn *c, token_t *tokens, const size_t n
         out_string(c, "CLIENT_ERROR bad command line format");
     }
 }
+
+static void process_config_auth_group_command(conn *c, token_t *tokens, const size_t ntokens)
+{
+    assert(c != NULL);
+    char *config_val = tokens[SUBCOMMAND_TOKEN+1].value;
+
+    if (ntokens == 3) {
+        char buf[50];
+        char *group_name = sasl_get_auth_group();
+        if (group_name) {
+            sprintf(buf, "auth_group %s\r\nEND", group_name);
+            out_string(c, buf);
+            free(group_name);
+        } else {
+            out_string(c, "SERVER_ERROR internal");
+        }
+    } else if (ntokens == 4) {
+        if (sasl_set_auth_group(config_val) == 0) {
+            out_string(c, "END");
+        } else {
+            out_string(c, "SERVER_ERROR internal");
+        }
+    }
+}
 #endif
 
 static void process_config_command(conn *c, token_t *tokens, const size_t ntokens)
@@ -9805,6 +9829,9 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
 #ifdef SASL_ENABLED
     else if (strcmp(config_key, "auth") == 0) {
         process_config_auth_command(c, tokens, ntokens);
+    }
+    else if (strcmp(config_key, "auth_group") == 0) {
+        process_config_auth_group_command(c, tokens, ntokens);
     }
 #endif
     else {

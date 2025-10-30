@@ -20,6 +20,8 @@ int arcus_auxprop_plug_init(const sasl_utils_t *utils,
 int arcus_getdata(const char *user, char *out, const size_t max_out);
 
 void arcus_auxprop_wakeup(void);
+char *arcus_auxprop_get_group(void);
+int arcus_auxprop_set_group(char *group_name);
 
 #endif /* ENABLE_ZK_INTEGRATION */
 #endif /* ENABLE_SASL */

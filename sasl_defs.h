@@ -15,6 +15,8 @@ int init_sasl(EXTENSION_LOGGER_DESCRIPTOR *logger);
 void shutdown_sasl(void);
 int reload_sasl(void);
 void sasl_get_auth_data(sasl_conn_t *conn, auth_data_t *data);
+char *sasl_get_auth_group(void);
+int sasl_set_auth_group(char *group_name);
 
 
 #elif defined(ENABLE_ISASL)
@@ -27,6 +29,8 @@ int init_sasl(EXTENSION_LOGGER_DESCRIPTOR *logger);
 void shutdown_sasl(void);
 int reload_sasl(void);
 void sasl_get_auth_data(sasl_conn_t *conn, auth_data_t *data);
+char *sasl_get_auth_group(void);
+int sasl_set_auth_group(char *group_name);
 
 #endif /* End of SASL support */
 
