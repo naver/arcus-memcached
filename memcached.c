@@ -14059,16 +14059,15 @@ static int try_read_command_ascii(conn *c)
              *  - KEY_MAX_LENGTH(16000) + IN eflag filter(64*100) : 24KB
              *  - prefixlist max length : max prefix count(100) * MAX_PREFIX_LENGTH(250) : 25KB
              */
-            if (c->rbytes > (26*1024)) {
-                if (strncmp(ptr, "get ", 4) && strncmp(ptr, "gets ", 5)) {
-                    char buffer[16];
-                    memcpy(buffer, ptr, 15); buffer[15] = '\0';
-                    mc_logger->log(EXTENSION_LOG_WARNING, c,
-                        "%d: Too long ascii command(%s). Close the connection. client_ip: %s\n",
-                        c->sfd, buffer, c->client_ip);
-                    conn_set_state(c, conn_closing);
-                    return 1;
-                }
+            if ((c->rbytes > (26*1024)) &&
+                (strncmp(ptr, "get ", 4) != 0 && strncmp(ptr, "gets ", 5) != 0)) {
+                char buffer[32];
+                memcpy(buffer, ptr, 31); buffer[31] = '\0';
+                mc_logger->log(EXTENSION_LOG_WARNING, c,
+                    "%d: Too long ascii command(%s). Close the connection. client_ip: %s\n",
+                    c->sfd, buffer, c->client_ip);
+                conn_set_state(c, conn_closing);
+                return 1;
             }
         }
         return 0;
