@@ -30,5 +30,9 @@ void cmdlog_final(void);
 int cmdlog_start(char *file_path, bool *already_started);
 void cmdlog_stop(bool *already_stopped);
 char *cmdlog_stats(void);
-void cmdlog_write(char *client_ip, char *command);
+void cmdlog_write(char *client_ip, token_t *tokens, size_t ntokens);
+bool is_cmdlog_filter_match(const token_t *cmd, const token_t *subcmd, const token_t *key, size_t ntokens);
+int cmdlog_filter_add(const token_t *cmd, const token_t *subcmd, const token_t *key);
+int cmdlog_filter_remove(int idx, bool remove_all);
+char *cmdlog_filter_list(void);
 #endif

@@ -869,6 +869,7 @@ start 명령을 시작으로 logging이 종료될 때 까지의 모든 command�
 cmdlog start [<log_file_path>]\r\n
 cmdlog stop\r\n
 cmdlog stats\r\n
+cmdlog filter <args>\r\n
 ```
 
 \<log_file_path\>는 logging 정보를 저장할 file의 path이다.
@@ -908,6 +909,44 @@ The number of entered commands : 146783                              //entered_c
 The number of skipped commands : 0                                   //skipped_commands
 The number of log files : 1                                          //file_count
 The log file name: /Users/temp/command_11211_20160126_192729_{n}.log //path/file_name
+```
+
+filter 명령은 특정 command와 key만 logging 하도록 필터링할 수 있다.
+command는 exact matching, key는 glob matching 방식으로 필터링 한다.
+단, 성능 보장을 위해 key의 최대 길이를 1000자로 제한하고 있다.
+
+```
+add { command <cmd> [subcmd] | key <key> | command <cmd> [subcmd] key <key> }
+remove { all | <idx> }
+list
+```
+
+filter add 명령은 필터링할 명령어와 키 조합을 필터 목록에 추가한다.
+`mget`, `mgets`, `bop mget`, `bop smget` 명령은 key를 필터로 사용하지 않는다.
+`get`, `gets` 명령은 다수의 key에 대해 필터와 일치하는지 전부 검사한다.
+response string은 아래와 같다.
+
+| Response String                  | 설명                                                                  |
+| -------------------------------- | --------------------------------------------------------------------- |
+| OK                               | 성공                                                                  |
+| SERVER_ERROR filter list is full | 존재하는 필터 수가 이미 최대치이므로 더 추가할 수 없음                |
+| CLIENT_ERROR invalid parameters  | 인자로 입력한 command나 key가 유효하지 않은 문자거나 최대 길이를 넘음 |
+
+filter remove 명령은 필터 리스트에서 특정 인덱스의 필터를 삭제한다.
+인덱스 대신 all을 입력하면 존재하던 모든 필터를 삭제한다. response string은 아래와 같다.
+
+| Response String                  | 설명                                                 |
+| -------------------------------- | ---------------------------------------------------- |
+| OK                               | 성공                                                 |
+| CLIENT_ERROR invalid parameters  | 인자로 입력한 인덱스가 유효하지 않거나 존재하지 않음             |
+
+filter list 명령은 존재하는 필터 목록을 출력한다.
+
+```
+(3 / 10)
+0. command = add, key = 123
+1. key = kvkey:12
+2. command = bop insert
 ```
 
 <a id="long-query-detect"></a>
