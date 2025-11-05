@@ -291,6 +291,9 @@ static void stats_init(void)
     mc_stats.rejected_conns = 0;
     mc_stats.quit_conns = 0;
     mc_stats.curr_conns = mc_stats.total_conns = mc_stats.conn_structs = 0;
+    mc_stats.accepting_conns = true;
+    mc_stats.listen_disabled_num = 0;
+    mc_stats.time_in_listen_disabled_us = 0;
 
     /* make the time we started always be 2 seconds before we really
        did, so time(0) - time.started is never zero.  if so, things
@@ -306,6 +309,8 @@ static void stats_reset(const void *cookie)
     mc_stats.rejected_conns = 0;
     mc_stats.quit_conns = 0;
     mc_stats.total_conns = 0;
+    mc_stats.listen_disabled_num = 0;
+    mc_stats.time_in_listen_disabled_us = 0;
     stats_prefix_clear();
     UNLOCK_STATS();
     threadlocal_stats_reset(default_thread_stats);
@@ -8354,6 +8359,9 @@ static void server_stats(ADD_STAT add_stats, conn *c, bool aggregate)
     APPEND_STAT("reject_connections", "%u", mc_stats.rejected_conns);
     APPEND_STAT("total_connections", "%u", mc_stats.total_conns);
     APPEND_STAT("connection_structures", "%u", mc_stats.conn_structs);
+    APPEND_STAT("accepting_connections", "%u", mc_stats.accepting_conns)
+    APPEND_STAT("listen_disabled_connections", "%"PRIu64, mc_stats.listen_disabled_num);
+    APPEND_STAT("time_in_listen_disabled_us", "%"PRIu64, mc_stats.time_in_listen_disabled_us);
     APPEND_STAT("cmd_get", "%"PRIu64, thread_stats.cmd_get);
     APPEND_STAT("cmd_set", "%"PRIu64, thread_stats.cmd_set);
     APPEND_STAT("cmd_incr", "%"PRIu64, thread_stats.cmd_incr);
@@ -14297,7 +14305,9 @@ bool conn_listening(conn *c)
 {
     int sfd, flags = 1;
     struct sockaddr_storage addr;
+    struct timeval tv;
     socklen_t addrlen = sizeof(addr);
+    static uint64_t listen_disabled_start_time = 0;
 
     if ((sfd = accept(c->sfd, (struct sockaddr *)&addr, &addrlen)) == -1) {
         if (errno == EMFILE) {
@@ -14305,6 +14315,14 @@ bool conn_listening(conn *c)
                 mc_logger->log(EXTENSION_LOG_INFO, c,
                                "Too many open connections\n");
             }
+            LOCK_STATS();
+            mc_stats.listen_disabled_num++;
+            if (mc_stats.accepting_conns) {
+                mc_stats.accepting_conns = false;
+                gettimeofday(&tv, NULL);
+                listen_disabled_start_time = (uint64_t)tv.tv_sec * 1000000 + tv.tv_usec;
+            }
+            UNLOCK_STATS();
         } else if (errno != EAGAIN && errno != EWOULDBLOCK) {
             mc_logger->log(EXTENSION_LOG_WARNING, c,
                     "Failed to accept new client: %s\n", strerror(errno));
@@ -14315,6 +14333,12 @@ bool conn_listening(conn *c)
 
     LOCK_STATS();
     int curr_conns = mc_stats.curr_conns++;
+    if (!mc_stats.accepting_conns) {
+        mc_stats.accepting_conns = true;
+        gettimeofday(&tv, NULL);
+        uint64_t duration = (uint64_t)tv.tv_sec * 1000000 + tv.tv_usec - listen_disabled_start_time;
+        mc_stats.time_in_listen_disabled_us += duration;
+    }
     UNLOCK_STATS();
 
     if (curr_conns >= settings.maxconns) {

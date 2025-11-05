@@ -144,6 +144,9 @@ STAT quit_connections 0
 STAT reject_connections 0
 STAT total_connections 3
 STAT connection_structures 3
+STAT accepting_connections 1
+STAT listen_disabled_connections 0
+STAT time_in_listen_disabled_us 0
 STAT cmd_get 0
 STAT cmd_set 0
 STAT cmd_incr 0
@@ -278,6 +281,8 @@ STAT sticky_bytes 0
 STAT bytes 0
 STAT sticky_limit 0
 STAT engine_maxbytes 8589934592
+STAT hash_bytes 524288
+STAT hash_is_expanding 0
 END
 ```
 
@@ -292,41 +297,46 @@ END
 
 다음은 그 외의 개별 통계이다.
 
-| stats                 | 설명                                                         |
-| --------------------- | ------------------------------------------------------------ |
-| pid                   | 캐시 노드의 프로세스 id                                      |
-| uptime                | 캐시 서버를 구동한 시간(초)                                  |
-| time                  | 현재 시간 (unix time)                                        |
-| version               | 현재 arcus-memcached 버전                                    |
-| libevent              | 사용중인 libevent 버전                                       |
-| pointer_size          | 포인터의 크기(bit 단위)                                      |
-| rusage_user           | 프로세스의 누적 user time.                                   |
-| rusage_system         | 프로세스의 누적 system time.                                 |
-| daemon_connections    | 서버가 사용하는 daemon connection 개수                       |
-| curr_connections      | 현재 열려있는 connection 개수                                |
-| quit_connections      | 클라이언트가 quit 명령을 이용해 연결을 끊은 횟수             |
-| reject_connections    | 클라이언트와의 연결을 거절한 횟수                            |
-| total_connections     | 서버 구동 이후 누적 connection 총합                          |
-| connection_structures | 서버가 할당한 connection 구조체 개수                         |
-| cmd_auth              | sasl 인증 횟수                                               |
-| auth_errors           | sasl 인증 실패 횟수                                          |
-| cas_badval            | 키는 찾았으나 cas 값이 맞지 않은 요청의 횟수                 |
-| bytes_read            | 서버가 네트워크에서 읽은 데이터 용량 총합(bytes)             |
-| bytes_written         | 서버가 네트워크에 쓴 데이터 용량 총합(bytes)                 |
-| limit_maxbytes        | 서버에 허용된 최대 메모리 용량(bytes)                        |
-| threads               | worker thread 개수                                           |
-| conn_yields           | 이벤트당 최대 요청 수의 제한                                 |
-| curr_prefixes         | 현재 저장된 prefix 개수                                      |
-| reclaimed             | expired된 아이템의 공간을 사용해 새로운 아이템을 저장한 횟수 |
-| evictions             | eviction 횟수                                                |
-| outofmemorys          | outofmemory (메모리가 부족한 상황에서 eviction이 허용되지 않거나 실패) 발생 횟수 |
-| sticky_items          | 현재 sticky 아이템의 개수                                    |
-| curr_items            | 현재 서버에 저장된 아이템의 개수                             |
-| total_items           | 서버 구동 후 저장한 아이템의 누적 개수                       |
-| sticky_bytes          | sticky 아이템이 차지하는 메모리 용량(bytes)                  |
-| bytes                 | 현재 사용중인 메모리 용량(bytes)                             |
-| sticky_limit          | sticky item을 저장할 수 있는 최대 메모리 용량(bytes)         |
-| engine_maxbytes       | 엔진에 허용된 최대 저장 용량                                 |
+| stats                   | 설명                                                      |
+|-------------------------|---------------------------------------------------------|
+| pid                     | 캐시 노드의 프로세스 id                                          |
+| uptime                  | 캐시 서버를 구동한 시간(초)                                        |
+| time                    | 현재 시간 (unix time)                                       |
+| version                 | 현재 arcus-memcached 버전                                   |
+| libevent                | 사용중인 libevent 버전                                        |
+| pointer_size            | 포인터의 크기(bit 단위)                                         |
+| rusage_user             | 프로세스의 누적 user time.                                     |
+| rusage_system           | 프로세스의 누적 system time.                                   |
+| daemon_connections      | 서버가 사용하는 daemon connection 개수                           |
+| curr_connections        | 현재 열려있는 connection 개수                                   |
+| quit_connections        | 클라이언트가 quit 명령을 이용해 연결을 끊은 횟수                           |
+| reject_connections      | 클라이언트와의 연결을 거절한 횟수                                      |
+| total_connections       | 서버 구동 이후 누적 connection 총합                               |
+| connection_structures   | 서버가 할당한 connection 구조체 개수                               |
+| accepting_conns         | 연결 가능 상태                                                |
+| listen_disabled_num     | 새로운 연결이 거부되었던 수                                         |
+| time_in_listen_disabled | 새로운 연결을 맺지 못한 시간                                        |
+| cmd_auth                | sasl 인증 횟수                                              |
+| auth_errors             | sasl 인증 실패 횟수                                           |
+| cas_badval              | 키는 찾았으나 cas 값이 맞지 않은 요청의 횟수                             |
+| bytes_read              | 서버가 네트워크에서 읽은 데이터 용량 총합(bytes)                          |
+| bytes_written           | 서버가 네트워크에 쓴 데이터 용량 총합(bytes)                            |
+| limit_maxbytes          | 서버에 허용된 최대 메모리 용량(bytes)                                |
+| threads                 | worker thread 개수                                        |
+| conn_yields             | 이벤트당 최대 요청 수의 제한                                        |
+| curr_prefixes           | 현재 저장된 prefix 개수                                        |
+| reclaimed               | expired된 아이템의 공간을 사용해 새로운 아이템을 저장한 횟수                   |
+| evictions               | eviction 횟수                                             |
+| outofmemorys            | outofmemory (메모리가 부족한 상황에서 eviction이 허용되지 않거나 실패) 발생 횟수 |
+| sticky_items            | 현재 sticky 아이템의 개수                                       |
+| curr_items              | 현재 서버에 저장된 아이템의 개수                                      |
+| total_items             | 서버 구동 후 저장한 아이템의 누적 개수                                  |
+| sticky_bytes            | sticky 아이템이 차지하는 메모리 용량(bytes)                          |
+| bytes                   | 현재 사용중인 메모리 용량(bytes)                                   |
+| sticky_limit            | sticky item을 저장할 수 있는 최대 메모리 용량(bytes)                  |
+| engine_maxbytes         | 엔진에 허용된 최대 저장 용량                                        |
+| hash_bytes              | 해시 테이블이 사용중인 메모리 용량(bytes)                              |
+| hash_is_expanding       | 해시 테이블의 확장 여부                                           |
 
 ### Settings 통계 정보
 

@@ -200,6 +200,9 @@ struct mc_stats {
     unsigned int  rejected_conns; /* number of times I reject a client */
     unsigned int  total_conns;
     unsigned int  conn_structs;
+    bool          accepting_conns;
+    unsigned int  listen_disabled_num;
+    unsigned int  time_in_listen_disabled_us;
 };
 
 union mc_engine {

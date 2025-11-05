@@ -255,6 +255,17 @@ static void assoc_expand(void)
             assocp->hashsize * assocp->rootsize / 2, assocp->hashsize * assocp->rootsize);
 }
 
+void assoc_stats(ADD_STAT add_stat, const void *cookie)
+{
+    char val[128];
+    int len;
+
+    len = sprintf(val, "%"PRIu64, (uint64_t)assocp->hashsize * (uint64_t)assocp->rootsize * sizeof(hash_item *));
+    add_stat("hash_bytes", 10, val, len, cookie);
+    len = sprintf(val, "%"PRIu64, (uint64_t)assocp->expanding);
+    add_stat("hash_is_expanding", 17, val, len, cookie);
+}
+
 /* Note: this isn't an assoc_update.  The key must not already exist to call this */
 int assoc_insert(hash_item *it, uint32_t hash)
 {

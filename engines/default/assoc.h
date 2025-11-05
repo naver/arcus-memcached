@@ -71,6 +71,8 @@ int               assoc_insert(hash_item *item, uint32_t hash);
 void              assoc_replace(hash_item *old_it, hash_item *new_it);
 void              assoc_delete(const char *key, const uint32_t nkey, uint32_t hash);
 
+void              assoc_stats(ADD_STAT add_stat, const void *c);
+
 /* assoc scan functions */
 void              assoc_scan_init(struct assoc_scan *scan);
 int               assoc_scan_next(struct assoc_scan *scan, hash_item **item_array,
@@ -80,5 +82,4 @@ int               assoc_scan_direct(const char *cursor, int req_count, hash_item
 #endif
 bool              assoc_scan_in_visited_area(struct assoc_scan *scan, hash_item *it);
 void              assoc_scan_final(struct assoc_scan *scan);
-
 #endif

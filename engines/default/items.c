@@ -628,6 +628,7 @@ void item_stats_global(ADD_STAT add_stat, const void *cookie)
     add_stat("curr_prefixes", 13, val, len, cookie);
 
     do_item_stat_get(add_stat, cookie);
+    assoc_stats(add_stat, cookie);
     UNLOCK_CACHE();
 }
 
