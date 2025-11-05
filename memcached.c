@@ -10655,13 +10655,96 @@ static void process_scan_command(conn *c, token_t *tokens, const size_t ntokens)
 #endif
 
 #ifdef COMMAND_LOGGING
+static void process_cmdlog_filter(conn *c, token_t *tokens, const size_t ntokens)
+{
+    const char *subcommand;
+    int ret = 0;
+
+    CHECK_NTOKENS(ntokens, 4, 9);
+
+    subcommand = tokens[2].value;
+
+    if (strcmp(subcommand, "add") == 0) {
+        token_t *fcmd = NULL;
+        token_t *fsub = NULL;
+        token_t *fkey = NULL;
+        int read_ntokens = 3;
+
+        CHECK_NTOKENS(ntokens, 6, 9);
+
+        if (strcmp(tokens[read_ntokens].value, "command") == 0) {
+            fcmd = &tokens[++read_ntokens];
+            read_ntokens++;
+
+            if (ntokens == 7 || ntokens == 9) {
+                fsub = &tokens[read_ntokens];
+                read_ntokens++;
+            }
+        }
+
+        if (read_ntokens < ntokens - 2 && strcmp(tokens[read_ntokens].value, "key") == 0) {
+            fkey = &tokens[++read_ntokens];
+            read_ntokens++;
+        }
+
+        if ((read_ntokens != ntokens - 1) || (fcmd == NULL && fkey == NULL)) {
+            print_invalid_command(c, tokens, ntokens);
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+
+        ret = cmdlog_filter_add(fcmd, fsub, fkey);
+
+        if (ret > 0) {
+            out_string(c, "OK");
+        } else if (ret == 0) {
+            out_string(c, "SERVER_ERROR filter list is full");
+        } else {
+            out_string(c, "CLIENT_ERROR invalid parameters");
+        }
+    } else if (strcmp(subcommand, "remove") == 0) {
+        int idx = 0;
+        bool remove_all = false;
+
+        CHECK_NTOKENS_EQ(ntokens, 5);
+
+        if (strcmp(tokens[3].value, "all") == 0) {
+            remove_all = true;
+        } else if (!safe_strtol(tokens[3].value, &idx)) {
+            idx = -1;
+        }
+
+        ret = cmdlog_filter_remove(idx, remove_all);
+
+        if (ret == 0) {
+            out_string(c, "OK");
+        } else {
+            out_string(c, "CLIENT_ERROR invalid parameters");
+        }
+    } else if (strcmp(subcommand, "list") == 0) {
+        char *ret_str;
+
+        CHECK_NTOKENS_EQ(ntokens, 4);
+
+        ret_str = cmdlog_filter_list();
+
+        if (ret_str) {
+            write_and_free(c, ret_str, strlen(ret_str));
+        } else {
+            out_string(c, "SERVER_ERROR out of memory");
+        }
+    } else {
+        out_string(c, "ERROR unknown command");
+    }
+}
+
 static void process_cmdlog_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     char *subcommand;
     bool already_check = false;
 
-    if (ntokens < 3 || ntokens > 4) {
-        out_string(c, "\t* Usage: cmdlog [start [path] | stop | stats]\n");
+    if (ntokens < 3) {
+        out_string(c, "\t* Usage: cmdlog {start [path] | stop | stats | filter {add | remove | list} }\n");
         return;
     }
 
@@ -10674,7 +10757,7 @@ static void process_cmdlog_command(conn *c, token_t *tokens, const size_t ntoken
 
     subcommand = tokens[SUBCOMMAND_TOKEN].value;
 
-    if (strcmp(subcommand, "start") == 0) {
+    if (ntokens <= 4 && strcmp(subcommand, "start") == 0) {
         char *fpath = NULL;
         if (ntokens == 4) {
             fpath = tokens[SUBCOMMAND_TOKEN+1].value;
@@ -10703,8 +10786,10 @@ static void process_cmdlog_command(conn *c, token_t *tokens, const size_t ntoken
         } else {
             out_string(c, "\tcommand logging failed to get stats memory.\n");
         }
+    } else if (ntokens > 3 && strcmp(subcommand, "filter") == 0) {
+        process_cmdlog_filter(c, tokens, ntokens);
     } else {
-        out_string(c, "\t* Usage: cmdlog [start [path] | stop | stats]\n");
+        out_string(c, "\t* Usage: cmdlog {start [path] | stop | stats | filter {add | remove | list} }\n");
     }
 }
 #endif
@@ -14012,6 +14097,9 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
     size_t ntokens;
     char *cmd;
     int clen;
+    int cidx = 0;
+    int sidx = -1;
+    int kidx = -1;
     bool unknown_command = false;
 
     MEMCACHED_PROCESS_COMMAND_START(c->sfd, c->rcurr, c->rbytes);
@@ -14034,14 +14122,7 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
         return;
     }
 
-#ifdef COMMAND_LOGGING
-    if (cmdlog_in_use) {
-        cmdlog_write(c->client_ip, command);
-    }
-#endif
-
     ntokens = tokenize_command(command, cmdlen, tokens, MAX_TOKENS);
-
     if (ntokens < 2 || tokens[COMMAND_TOKEN].length < 3) {
         out_string(c, "ERROR unknown command");
         return;
@@ -14052,14 +14133,19 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
 
     if (cmd[0] == 'g') {
         if (clen == 3 && strcmp(cmd, "get") == 0) {
+            kidx = 1;
             process_get_command(c, tokens, ntokens, false, false);
         } else if (clen == 4 && strcmp(cmd, "gets") == 0) {
+            kidx = 1;
             process_get_command(c, tokens, ntokens, true, false);
         } else if (clen == 3 && strcmp(cmd, "gat") == 0) {
+            kidx = 2;
             process_get_command(c, tokens, ntokens, false, true);
         } else if (clen == 4 && strcmp(cmd, "gats") == 0) {
+            kidx = 2;
             process_get_command(c, tokens, ntokens, true, true);
         } else if (clen == 7 && strcmp(cmd, "getattr") == 0) {
+            kidx = 1;
             process_getattr_command(c, tokens, ntokens);
         } else {
             unknown_command = true;
@@ -14074,66 +14160,83 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
         }
     } else if (cmd[0] == 's' && cmd[1] == 'e') {
         if (strcmp(cmd, "set") == 0) {
+            kidx = 1;
             process_update_command(c, tokens, ntokens, OPERATION_SET, false);
         } else if (strcmp(cmd, "setattr") == 0) {
+            kidx = 1;
             process_setattr_command(c, tokens, ntokens);
         } else {
             unknown_command = true;
         }
     } else if (cmd[0] == 't') {
         if (strcmp(cmd, "touch") == 0) {
+            kidx = 1;
             process_touch_command(c, tokens, ntokens);
         } else {
             unknown_command = true;
         }
     } else if (cmd[1] == 'o' && cmd[2] == 'p') {
         if (strcmp(cmd, "bop") == 0) {
+            sidx = 1;
+            if (strcmp(tokens[SUBCOMMAND_TOKEN].value, "mget") == 0 || strcmp(tokens[SUBCOMMAND_TOKEN].value, "smget") == 0) kidx = -1;
+            else kidx = 2;
             process_bop_command(c, tokens, ntokens);
         } else if (strcmp(cmd, "mop") == 0) {
+            sidx = 1; kidx = 2;
             process_mop_command(c, tokens, ntokens);
         } else if (strcmp(cmd, "sop") == 0) {
+            sidx = 1; kidx = 2;
             process_sop_command(c, tokens, ntokens);
         } else if (strcmp(cmd, "lop") == 0) {
+            sidx = 1; kidx = 2;
             process_lop_command(c, tokens, ntokens);
         } else {
             unknown_command = true;
         }
     } else if (cmd[0] == 'a') {
         if (strcmp(cmd, "add") == 0) {
+            kidx = 1;
             process_update_command(c, tokens, ntokens, OPERATION_ADD, false);
         } else if (strcmp(cmd, "append") == 0) {
+            kidx = 1;
             process_update_command(c, tokens, ntokens, OPERATION_APPEND, false);
         } else {
             unknown_command = true;
         }
     } else if (cmd[0] == 'p') {
         if (strcmp(cmd, "prepend") == 0) {
+            kidx = 1;
             process_update_command(c, tokens, ntokens, OPERATION_PREPEND, false);
         } else {
             unknown_command = true;
         }
     } else if (cmd[0] == 'c' && cmd[1] == 'a') {
         if (strcmp(cmd, "cas") == 0) {
+            kidx = 1;
             process_update_command(c, tokens, ntokens, OPERATION_CAS, true);
         } else {
             unknown_command = true;
         }
     } else if (cmd[0] == 'r' && cmd[2] == 'p') {
         if (strcmp(cmd, "replace") == 0) {
+            kidx = 1;
             process_update_command(c, tokens, ntokens, OPERATION_REPLACE, false);
         } else {
             unknown_command = true;
         }
     } else if (cmd[0] == 'i') {
         if (strcmp(cmd, "incr") == 0) {
+            kidx = 1;
             process_arithmetic_command(c, tokens, ntokens, 1);
         } else {
             unknown_command = true;
         }
     } else if (cmd[0] == 'd' && cmd[1] == 'e') {
         if (strcmp(cmd, "delete") == 0) {
+            kidx = 1;
             process_delete_command(c, tokens, ntokens);
         } else if (strcmp(cmd, "decr") == 0) {
+            kidx = 1;
             process_arithmetic_command(c, tokens, ntokens, 0);
         } else {
             unknown_command = true;
@@ -14152,31 +14255,38 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
         }
 #ifdef SASL_ENABLED
         else if (strcmp(cmd, "sasl") == 0) {
+            sidx = 1;
             process_sasl_command(c, tokens, ntokens);
         } else if (strcmp(cmd, "reload") == 0) {
+            sidx = 1;
             process_reload_command(c, tokens, ntokens);
         }
 #endif
 #ifdef SCAN_COMMAND
         else if (strcmp(cmd, "scan") == 0) {
+            sidx = 1;
             process_scan_command(c, tokens, ntokens);
         }
 #endif
 #ifdef COMMAND_LOGGING
         else if (strcmp(cmd, "cmdlog") == 0) {
+            sidx = 1;
             process_cmdlog_command(c, tokens, ntokens);
         }
 #endif
 #ifdef DETECT_LONG_QUERY
         else if (strcmp(cmd, "lqdetect") == 0) {
+            sidx = 1;
             process_lqdetect_command(c, tokens, ntokens);
         }
 #endif
         else if (strcmp(cmd, "config") == 0) {
+            sidx = 1;
             process_config_command(c, tokens, ntokens);
         }
 #ifdef ENABLE_ZK_INTEGRATION
         else if (strcmp(cmd, "zkensemble") == 0) {
+            sidx = 1;
             process_zkensemble_command(c, tokens, ntokens);
         }
 #endif
@@ -14184,6 +14294,7 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
             CHECK_NTOKENS_EQ(ntokens, 2);
             out_string(c, "VERSION " VERSION);
         } else if (strcmp(cmd, "dump") == 0) {
+            sidx = 1;
             process_dump_command(c, tokens, ntokens);
         } else if (strcmp(cmd, "quit") == 0) {
             CHECK_NTOKENS_EQ(ntokens, 2);
@@ -14218,6 +14329,18 @@ static void process_command_ascii(conn *c, char *command, int cmdlen)
             out_string(c, "ERROR unknown command");
         }
     }
+
+#ifdef COMMAND_LOGGING
+    if (cmdlog_in_use) {
+        token_t *cmd = &tokens[cidx];
+        token_t *subcmd = sidx > 0 ? &tokens[sidx] : NULL;
+        token_t *key = kidx > 0 ? &tokens[kidx] : NULL;
+
+        if (is_cmdlog_filter_match(cmd, subcmd, key, ntokens)) {
+            cmdlog_write(c->client_ip, tokens, ntokens);
+        }
+    }
+#endif
 }
 
 static int try_read_command_ascii(conn *c)

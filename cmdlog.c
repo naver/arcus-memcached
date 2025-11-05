@@ -38,6 +38,10 @@
 #define CMDLOG_FILENAME_LENGTH CMDLOG_DIRPATH_LENGTH + 128
 #define CMDLOG_FILENAME_FORMAT "%s/command_%d_%d_%d_%d.log"
 
+#define CMDLOG_FILTER_MAXNUM 10
+#define CMDLOG_FILTER_CMD_MAXLEN 30
+#define CMDLOG_FILTER_KEY_MAXLEN 1000
+
 /* cmdlog state */
 #define CMDLOG_NOT_STARTED   0  /* not started */
 #define CMDLOG_OVERFLOW_STOP 1  /* stop by command log overflow */
@@ -57,6 +61,13 @@ struct cmd_log_buffer {
     uint32_t head;
     uint32_t tail;
     uint32_t last;
+};
+
+/* command log filter structure */
+struct cmd_log_filter {
+    char command[CMDLOG_FILTER_CMD_MAXLEN + 1];
+    char subcommand[CMDLOG_FILTER_CMD_MAXLEN + 1];
+    char key[CMDLOG_FILTER_KEY_MAXLEN + 1];
 };
 
 /*command log flush structure */
@@ -85,6 +96,8 @@ struct cmd_log_global {
     struct cmd_log_buffer buffer;
     struct cmd_log_flush flush;
     struct cmd_log_stats stats;
+    struct cmd_log_filter filters[CMDLOG_FILTER_MAXNUM];
+    int nfilters;
     volatile bool reqstop;
 };
 struct cmd_log_global cmdlog;
@@ -397,27 +410,34 @@ char *cmdlog_stats(void)
     return str;
 }
 
-void cmdlog_write(char *client_ip, char *command)
+void cmdlog_write(char *client_ip, token_t *tokens, size_t ntokens)
 {
     struct tm *ptm;
     struct timeval val;
     struct cmd_log_buffer *buffer = &cmdlog.buffer;
     char inputstr[CMDLOG_INPUT_SIZE];
     int inputlen;
-    int nwritten;
 
     gettimeofday(&val, NULL);
     ptm = localtime(&val.tv_sec);
 
-    nwritten = snprintf(inputstr, CMDLOG_INPUT_SIZE, "%02d:%02d:%02d.%06ld %s %s\n",
-                       ptm->tm_hour, ptm->tm_min, ptm->tm_sec, (long)val.tv_usec, client_ip, command);
-    /* truncated ? */
-    if (nwritten > CMDLOG_INPUT_SIZE) {
-        inputstr[CMDLOG_INPUT_SIZE-4] = '.';
-        inputstr[CMDLOG_INPUT_SIZE-3] = '.';
-        inputstr[CMDLOG_INPUT_SIZE-2] = '\n';
+    inputlen = snprintf(inputstr, CMDLOG_INPUT_SIZE, "%02d:%02d:%02d.%06ld %s ",
+                        ptm->tm_hour, ptm->tm_min, ptm->tm_sec, (long)val.tv_usec, client_ip);
+
+    for (int i = 0; i < ntokens - 1; i++) {
+        inputlen += snprintf(inputstr + inputlen, CMDLOG_INPUT_SIZE - inputlen, "%s", tokens[i].value);
+        if (i < ntokens - 2) inputstr[inputlen++] = ' ';
+
+        if (inputlen >= CMDLOG_INPUT_SIZE) {
+            inputstr[CMDLOG_INPUT_SIZE-4] = '.';
+            inputstr[CMDLOG_INPUT_SIZE-3] = '.';
+            inputlen = CMDLOG_INPUT_SIZE - 2;
+            break;
+        }
+
     }
-    inputlen = strlen(inputstr);
+    inputstr[inputlen++] = '\n';
+    inputstr[inputlen] = '\0';
 
     pthread_mutex_lock(&buffer->lock);
     cmdlog.stats.entered_commands += 1;
@@ -446,4 +466,131 @@ void cmdlog_write(char *client_ip, char *command)
         do_cmdlog_flush_wakeup(); /* wake up flush thread */
     }
     pthread_mutex_unlock(&buffer->lock);
+}
+
+bool is_cmdlog_filter_match(const token_t *cmd, const token_t *subcmd, const token_t *key, size_t ntokens)
+{
+    int mkey_idx = 0;
+    bool multi_key = false;
+    bool matched = false;
+
+    if (cmdlog.nfilters == 0) {
+        return true;
+    }
+
+    if (ntokens < 2) {
+        return false;
+    }
+
+    pthread_mutex_lock(&cmdlog.lock);
+    for (int i = 0; i < cmdlog.nfilters; ++i) {
+        struct cmd_log_filter *filter = &cmdlog.filters[i];
+
+        if (filter->command[0] == '\0') {
+            matched = true;
+        } else if (filter->subcommand[0] == '\0') {
+            matched = strcmp(cmd->value, filter->command) == 0 ? true : false;
+        } else if (subcmd) {
+            matched = strcmp(cmd->value, filter->command) == 0 && strcmp(subcmd->value, filter->subcommand) == 0 ?
+                      true : false;
+        } else {
+            continue;
+        }
+
+        if (matched) {
+            if (filter->key[0] == '\0') {
+                matched = true;
+            } else if (key) {
+                do {
+                    matched = string_pattern_match(key[mkey_idx].value, key[mkey_idx].length, filter->key, strlen(filter->key)) ?
+                        true : false;
+                    if (matched == false && multi_key) mkey_idx++;
+                } while (matched == false && multi_key && mkey_idx < ntokens - 1);
+            } else {
+                matched = false;
+            }
+        }
+
+        if (matched) break;
+    }
+    pthread_mutex_unlock(&cmdlog.lock);
+
+    return matched;
+}
+
+int cmdlog_filter_add(const token_t *cmd, const token_t *subcmd, const token_t *key)
+{
+    if (cmdlog.nfilters >= CMDLOG_FILTER_MAXNUM) {
+        return 0;
+    }
+
+    if ((cmd && cmd->length > CMDLOG_FILTER_CMD_MAXLEN) ||
+        (subcmd && subcmd->length > CMDLOG_FILTER_CMD_MAXLEN) ||
+        (key && key->length > CMDLOG_FILTER_KEY_MAXLEN)) {
+        return -1;
+    }
+
+    pthread_mutex_lock(&cmdlog.lock);
+    strcpy(cmdlog.filters[cmdlog.nfilters].command, cmd ? cmd->value : "");
+    strcpy(cmdlog.filters[cmdlog.nfilters].subcommand, subcmd ? subcmd->value : "");
+    strcpy(cmdlog.filters[cmdlog.nfilters].key, key ? key->value : "");
+    cmdlog.nfilters++;
+    pthread_mutex_unlock(&cmdlog.lock);
+
+    return 1;
+}
+
+int cmdlog_filter_remove(int idx, bool remove_all)
+{
+    if (remove_all == false && (idx < 0 || idx >= cmdlog.nfilters)) {
+        return -1;
+    }
+
+    pthread_mutex_lock(&cmdlog.lock);
+    if (remove_all) {
+        cmdlog.nfilters = 0;
+    } else {
+        for (int i = idx; i < cmdlog.nfilters - 1; ++i) {
+            cmdlog.filters[i] = cmdlog.filters[i + 1];
+        }
+        cmdlog.nfilters--;
+    }
+    pthread_mutex_unlock(&cmdlog.lock);
+
+    return 0;
+}
+
+char *cmdlog_filter_list(void)
+{
+    char *buf = (char *)malloc((cmdlog.nfilters + 1) * CMDLOG_INPUT_SIZE);
+    int nwritten = 0;
+
+    if (!buf) {
+        return NULL;
+    }
+
+    pthread_mutex_lock(&cmdlog.lock);
+    nwritten = snprintf(buf, CMDLOG_INPUT_SIZE, "\t(%d / %d)\n", cmdlog.nfilters, CMDLOG_FILTER_MAXNUM);
+    for (int i = 0; i < cmdlog.nfilters; ++i) {
+        struct cmd_log_filter *filter = &cmdlog.filters[i];
+
+        nwritten += snprintf(buf + nwritten, CMDLOG_INPUT_SIZE, "\t%d. ", i);
+        if (filter->command[0] != '\0') {
+            nwritten += snprintf(buf + nwritten, CMDLOG_INPUT_SIZE - nwritten, "command = %s%s%s",
+                                 filter->command,
+                                 filter->subcommand[0] != '\0' ? " " : "",
+                                 filter->subcommand[0] != '\0' ? filter->subcommand : "");
+        }
+
+        if (filter->key[0] != '\0') {
+            nwritten += snprintf(buf + nwritten, CMDLOG_INPUT_SIZE - nwritten, "%skey = %s",
+                                 filter->command[0] != '\0' ? ", " : "",
+                                 filter->key);
+        }
+
+        nwritten += snprintf(buf + nwritten, CMDLOG_INPUT_SIZE - nwritten, "\n");
+    }
+    pthread_mutex_unlock(&cmdlog.lock);
+
+    return buf;
 }
