@@ -350,8 +350,9 @@ static void arcus_auxprop_free(void *glob_context,
     }
 }
 
-void arcus_auxprop_init_logger(EXTENSION_LOGGER_DESCRIPTOR *logger)
+void arcus_auxprop_init(const char *zk_addr, EXTENSION_LOGGER_DESCRIPTOR *logger)
 {
+    ensemble_list = zk_addr;
     mc_logger = logger;
 }
 
@@ -382,12 +383,6 @@ int arcus_auxprop_plug_init(const sasl_utils_t *utils,
 
     if (mc_logger == NULL) {
         utils->log(utils->conn, SASL_LOG_ERR, "mc_logger is not set");
-        return SASL_FAIL;
-    }
-
-    ensemble_list = getenv("ARCUS_ACL_ZOOKEEPER");
-    if (ensemble_list == NULL) {
-        mc_logger->log(EXTENSION_LOG_WARNING, NULL, "ARCUS_ACL_ZOOKEEPER environment is not set\n");
         return SASL_FAIL;
     }
 

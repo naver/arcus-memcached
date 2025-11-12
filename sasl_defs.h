@@ -11,7 +11,7 @@ uint16_t arcus_sasl_authz(const char *username);
 #include "memcached/extension.h"
 #include "memcached/types.h"
 
-int init_sasl(EXTENSION_LOGGER_DESCRIPTOR *logger);
+int init_sasl(char *zk_addr, EXTENSION_LOGGER_DESCRIPTOR *logger);
 void shutdown_sasl(void);
 int reload_sasl(void);
 void sasl_get_auth_data(sasl_conn_t *conn, auth_data_t *data);
@@ -23,7 +23,7 @@ void sasl_get_auth_data(sasl_conn_t *conn, auth_data_t *data);
 #include "memcached/extension.h"
 #include "memcached/types.h"
 
-int init_sasl(EXTENSION_LOGGER_DESCRIPTOR *logger);
+int init_sasl(char *zk_addr, EXTENSION_LOGGER_DESCRIPTOR *logger);
 void shutdown_sasl(void);
 int reload_sasl(void);
 void sasl_get_auth_data(sasl_conn_t *conn, auth_data_t *data);

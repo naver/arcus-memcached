@@ -34,7 +34,7 @@ void sasl_get_auth_data(sasl_conn_t *conn, auth_data_t *data)
 #endif
 
 #if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
-static bool use_acl_zookeeper = false;
+static const char *ensemble_list;
 #endif
 
 #ifdef ENABLE_SASL_PWDB
@@ -158,7 +158,7 @@ uint16_t arcus_sasl_authz(const char *username)
     uint16_t ret = AUTHZ_ALL;
 
 #if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
-    if (use_acl_zookeeper) {
+    if (ensemble_list) {
         char value[1024];
         if (arcus_getdata(username, value, sizeof(value)) == SASL_OK) {
             char *saveptr;
@@ -189,7 +189,7 @@ uint16_t arcus_sasl_authz(const char *username)
 #if defined(ENABLE_SASL) || defined(ENABLE_ISASL)
 static sasl_callback_t sasl_callbacks[5];
 
-int init_sasl(EXTENSION_LOGGER_DESCRIPTOR *logger)
+int init_sasl(char *zk_addr, EXTENSION_LOGGER_DESCRIPTOR *logger)
 {
     int i = 0;
 #ifdef ENABLE_SASL
@@ -207,8 +207,8 @@ int init_sasl(EXTENSION_LOGGER_DESCRIPTOR *logger)
         sasl_callbacks[i++] = (sasl_callback_t){ SASL_CB_SERVER_USERDB_CHECKPASS, (int(*)(void))sasl_server_userdb_checkpass, NULL };
     }
 #elif defined(ENABLE_ZK_INTEGRATION)
-    use_acl_zookeeper = (getenv("ARCUS_ACL_ZOOKEEPER") != NULL);
-    if (use_acl_zookeeper) {
+    ensemble_list = zk_addr;
+    if (ensemble_list) {
         sasl_callbacks[i++] = (sasl_callback_t){ SASL_CB_GETOPT, (int(*)(void))&sasl_getopt, NULL };
     }
 #endif
@@ -221,8 +221,8 @@ int init_sasl(EXTENSION_LOGGER_DESCRIPTOR *logger)
     }
 
 #if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
-    if (use_acl_zookeeper) {
-        arcus_auxprop_init_logger(logger);
+    if (ensemble_list) {
+        arcus_auxprop_init(ensemble_list, logger);
         if (sasl_auxprop_add_plugin("arcus", &arcus_auxprop_plug_init) != SASL_OK) {
             mc_logger->log(EXTENSION_LOG_WARNING, NULL, "Error to SASL auxprop plugin.\n");
             return -1;
@@ -244,7 +244,7 @@ void shutdown_sasl(void)
 int reload_sasl(void)
 {
 #if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
-    if (use_acl_zookeeper) {
+    if (ensemble_list) {
         arcus_auxprop_wakeup();
         return 0;
     }

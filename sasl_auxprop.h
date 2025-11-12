@@ -9,7 +9,7 @@
 #include <sasl/sasl.h>
 #include <sasl/saslplug.h>
 
-void arcus_auxprop_init_logger(EXTENSION_LOGGER_DESCRIPTOR *logger);
+void arcus_auxprop_init(const char *zk_addr, EXTENSION_LOGGER_DESCRIPTOR *logger);
 
 int arcus_auxprop_plug_init(const sasl_utils_t *utils,
                             int max_version,
