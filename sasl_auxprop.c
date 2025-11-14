@@ -350,10 +350,39 @@ static void arcus_auxprop_free(void *glob_context,
     }
 }
 
-void arcus_auxprop_init(const char *zk_addr, EXTENSION_LOGGER_DESCRIPTOR *logger)
+int arcus_auxprop_init(const char *zk_addr, const char *svc,
+                       EXTENSION_LOGGER_DESCRIPTOR *logger)
 {
+    zhandle_t *zh;
+    char zpath[256];
+    char buf[GROUP_MAXLEN];
+    int len = GROUP_MAXLEN;
+    int ret;
+
     ensemble_list = zk_addr;
     mc_logger = logger;
+
+    zh = zookeeper_init(ensemble_list, NULL, 10000, NULL, NULL, 0);
+    if (!zh) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL, "ACL zookeeper init failed.\n");
+        return -1;
+    }
+
+    snprintf(zpath, sizeof(zpath), "/arcus_acl_mapping/%s", svc);
+    ret = zoo_get(zh, zpath, 0, buf, &len, NULL);
+    if (ret != ZOK) {
+        mc_logger->log(EXTENSION_LOG_WARNING, NULL,
+            "ACL zoo_get(%s) failed: %s\n", zpath, zerror(ret));
+        zookeeper_close(zh);
+        return -1;
+    }
+    buf[len] = '\0';
+
+    snprintf(group_zpath, sizeof(group_zpath), "/arcus_acl/%s", buf);
+    mc_logger->log(EXTENSION_LOG_INFO, NULL, "ACL group_zpath: %s\n", group_zpath);
+    zookeeper_close(zh);
+
+    return 0;
 }
 
 static sasl_auxprop_plug_t arcus_auxprop_plugin = {
@@ -385,13 +414,6 @@ int arcus_auxprop_plug_init(const sasl_utils_t *utils,
         utils->log(utils->conn, SASL_LOG_ERR, "mc_logger is not set");
         return SASL_FAIL;
     }
-
-    const char *acl_group = getenv("ARCUS_ACL_GROUP");
-    if (acl_group == NULL) {
-        mc_logger->log(EXTENSION_LOG_WARNING, NULL, "ARCUS_ACL_GROUP environment is not set\n");
-        return SASL_FAIL;
-    }
-    snprintf(group_zpath, sizeof(group_zpath), "/arcus_acl/%s", acl_group);
 
     g_sasltable = get_arcus_acl_table();
     if (!g_sasltable) {

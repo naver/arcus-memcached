@@ -189,7 +189,7 @@ uint16_t arcus_sasl_authz(const char *username)
 #if defined(ENABLE_SASL) || defined(ENABLE_ISASL)
 static sasl_callback_t sasl_callbacks[5];
 
-int init_sasl(char *zk_addr, EXTENSION_LOGGER_DESCRIPTOR *logger)
+int init_sasl(char *zk_addr, char *svc, EXTENSION_LOGGER_DESCRIPTOR *logger)
 {
     int i = 0;
 #ifdef ENABLE_SASL
@@ -222,7 +222,9 @@ int init_sasl(char *zk_addr, EXTENSION_LOGGER_DESCRIPTOR *logger)
 
 #if defined(ENABLE_SASL) && defined(ENABLE_ZK_INTEGRATION)
     if (ensemble_list) {
-        arcus_auxprop_init(ensemble_list, logger);
+        if (arcus_auxprop_init(ensemble_list, svc, logger) != 0) {
+            return -1;
+        }
         if (sasl_auxprop_add_plugin("arcus", &arcus_auxprop_plug_init) != SASL_OK) {
             mc_logger->log(EXTENSION_LOG_WARNING, NULL, "Error to SASL auxprop plugin.\n");
             return -1;

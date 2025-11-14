@@ -9701,11 +9701,14 @@ static void* init_sasl_thread(void *arg)
 {
 #ifdef ENABLE_ZK_INTEGRATION
     char *acl_zookeeper = arcus_zk_cfg;
+    char *svc = arcus_zk_get_servicecode();
 #else
     char *acl_zookeeper = NULL;
+    char *svc = NULL;
 #endif
     pthread_mutex_lock(&require_sasl_lock);
-    if (settings.require_sasl == false && init_sasl(acl_zookeeper, mc_logger) == 0) {
+    if (settings.require_sasl == false &&
+        init_sasl(acl_zookeeper, svc, mc_logger) == 0) {
         settings.require_sasl = true;
     }
     pthread_mutex_unlock(&require_sasl_lock);
@@ -16402,17 +16405,6 @@ int main (int argc, char **argv)
         }
     }
 
-#ifdef SASL_ENABLED
-#ifdef ENABLE_ZK_INTEGRATION
-    char *acl_zookeeper = arcus_zk_cfg;
-#else
-    char *acl_zookeeper = NULL;
-#endif
-    if (settings.require_sasl && init_sasl(acl_zookeeper, mc_logger) != 0) {
-        exit(EXIT_FAILURE);
-    }
-#endif
-
     /* lock paged memory if needed */
     if (lock_memory) {
 #ifdef HAVE_MLOCKALL
@@ -16584,6 +16576,20 @@ int main (int argc, char **argv)
                       arcus_proxy_cfg,
 #endif
                       mc_engine.v1);
+    }
+#endif
+
+#ifdef SASL_ENABLED
+#ifdef ENABLE_ZK_INTEGRATION
+    char *acl_zookeeper = arcus_zk_cfg;
+    char *svc = arcus_zk_get_servicecode();
+#else
+    char *acl_zookeeper = NULL;
+    char *svc = NULL;
+#endif
+    if (settings.require_sasl &&
+        init_sasl(acl_zookeeper, svc, mc_logger) != 0) {
+        exit(EXIT_FAILURE);
     }
 #endif
 

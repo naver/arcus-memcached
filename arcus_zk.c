@@ -1820,6 +1820,11 @@ int arcus_zk_rejoin_ensemble(void)
     return ret;
 }
 
+char *arcus_zk_get_servicecode(void)
+{
+    return arcus_conf.svc;
+}
+
 void arcus_zk_set_failstop(bool failstop)
 {
     pthread_mutex_lock(&arcus_conf.lock);

@@ -56,6 +56,8 @@ int  arcus_zk_set_ensemble(char *ensemble_list);
 int  arcus_zk_get_ensemble(char *buf, int size);
 int  arcus_zk_rejoin_ensemble(void);
 
+char *arcus_zk_get_servicecode(void);
+
 void arcus_zk_set_failstop(bool failstop);
 bool arcus_zk_get_failstop(void);
 void arcus_zk_get_confs(arcus_zk_confs *confs);
