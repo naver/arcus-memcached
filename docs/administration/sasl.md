@@ -69,21 +69,16 @@ ARCUS Cache Server 빌드 시 configure option으로 `--enable-sasl` 지정 시 
 
 ### Running
 
-ZooKeeper에 저장된 인증/권한 정보를 ARCUS Cache Server에서 사용하기 위하여 아래와 같이 환경변수를 설정해야 한다.
-
-- `ARCUS_ACL_ZOOKEEPER`: ACL group 정보가 저장된 ZooKeeper 주소
-- `ARCUS_ACL_GROUP`: ACL group 이름
-
-Cache Server 구동 시 `-S` 옵션을 지정하여 클라이언트 연결에 대한 SASL 인증을 요구할 수 있으며, 실행 명령 예시는 아래와 같다.
+Cache Server 구동 시 `-z` 옵션과 `-S` 옵션을 함께 지정하여 클라이언트 연결에 대한 SASL 인증을 요구할 수 있다.
 
 ```
-ARCUS_ACL_ZOOKEEPER="127.0.0.1:2181" ARCUS_ACL_GROUP="prod"\
- $INSTALL_PATH/bin/memcached ... -S
+$INSTALL_PATH/bin/memcached ... -z 127.0.0.1:2181 -S
 ```
 
 `-S` 옵션 지정하지 않고 구동하더라도 동적으로 SASL 인증을 활성화하기 위한 `config auth on` 기능을 제공한다.
-이 경우 `ARCUS_ACL_ZOOKEEPER`, `ARCUS_ACL_GROUP` 환경변수는 설정된 상태여야 정상 동작한다.
 반대로, SASL 인증을 동적으로 비활성화하는 기능은 제공하지 않는다.
+
+SASL 인증 활성화 시 `-z` 옵션으로 지정한 ZooKeeper의 `/arcus_acl_mapping/<service_code>` znode value를 조회하여 ACL Group을 결정한다.
 
 ARCUS Cache Server는 ZooKeeper에 저장된 인증/권한 정보를 가져와서 캐싱하여 사용하며, 마지막 캐싱 시점으로부터 12-24시간 사이 랜덤한 시간이 지난 뒤 캐싱 작업을 재수행한다.
 따라서 ACL 사용자 정보를 추가/수정/제거하는 경우 캐시에 반영되어 사용되기까지 최대 24시간이 소요될 수 있다.
