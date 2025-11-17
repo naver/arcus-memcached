@@ -1,4 +1,4 @@
-## arcus-memcached : Arcus Memory Cache Server
+# arcus-memcached : Arcus Memory Cache Server
 [![CI](https://github.com/naver/arcus-memcached/actions/workflows/CI.yml/badge.svg?branch=develop)](https://github.com/naver/arcus-memcached/actions/workflows/CI.yml)
 [![Coverage Status](https://coveralls.io/repos/github/naver/arcus-memcached/badge.svg?branch=develop)](https://coveralls.io/github/naver/arcus-memcached)
 
