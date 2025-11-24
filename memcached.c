@@ -11091,9 +11091,16 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
     c->coll_key = key;
     c->coll_nkey = nkey;
 
-    if ((ntokens >= 6 && ntokens <= 13) && (strcmp(subcommand,"insert") == 0))
+    if (subcommand[0] == 'i' && strcmp(subcommand, "insert") == 0)
+    //if ((ntokens >= 6 && ntokens <= 13) && (strcmp(subcommand,"insert") == 0))
     {
         int32_t index, vlen;
+
+        if (ntokens < 6 || ntokens > 13) {
+            print_invalid_command(c, tokens, ntokens);
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
 
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
@@ -11135,8 +11142,15 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
             conn_set_state(c, conn_swallow);
         }
     }
-    else if ((ntokens >= 7 && ntokens <= 10) && (strcmp(subcommand, "create") == 0))
+    else if (subcommand[0] == 'c' && (strcmp(subcommand, "create") == 0))
+    //else if ((ntokens >= 7 && ntokens <= 10) && (strcmp(subcommand, "create") == 0))
     {
+        if (ntokens < 7 || ntokens > 10) {
+            print_invalid_command(c, tokens, ntokens);
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
+
         set_noreply_maybe(c, tokens, ntokens);
 
         int read_ntokens = LOP_KEY_TOKEN+1;
@@ -11152,10 +11166,17 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
         c->coll_attrp = &c->coll_attr_space;
         process_lop_create(c, key, nkey, c->coll_attrp);
     }
-    else if ((ntokens >= 5 && ntokens <= 7) && (strcmp(subcommand, "delete") == 0))
+    else if (subcommand[0] == 'd' && (strcmp(subcommand, "delete") == 0))
+    //else if ((ntokens >= 5 && ntokens <= 7) && (strcmp(subcommand, "delete") == 0))
     {
         int32_t from_index, to_index;
         bool drop_if_empty = false;
+
+        if (ntokens < 5 || ntokens > 7) {
+            print_invalid_command(c, tokens, ntokens);
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
 
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
@@ -11182,11 +11203,18 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
             conn_set_state(c, conn_new_cmd);
         }
     }
-    else if ((ntokens==5 || ntokens==6) && (strcmp(subcommand, "get") == 0))
+    else if (subcommand[0] == 'g' && (strcmp(subcommand, "get") == 0))
+    //else if ((ntokens==5 || ntokens==6) && (strcmp(subcommand, "get") == 0))
     {
         int32_t from_index, to_index;
         bool delete = false;
         bool drop_if_empty = false;
+
+        if (ntokens < 5 || ntokens > 6) {
+            print_invalid_command(c, tokens, ntokens);
+            out_string(c, "CLIENT_ERROR bad command line format");
+            return;
+        }
 
         if (get_list_range_from_str(tokens[LOP_KEY_TOKEN+1].value, &from_index, &to_index)) {
             print_invalid_command(c, tokens, ntokens);
@@ -11211,7 +11239,7 @@ static void process_lop_command(conn *c, token_t *tokens, const size_t ntokens)
     else
     {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        out_string(c, "ERROR unknown command");
     }
 }
 
