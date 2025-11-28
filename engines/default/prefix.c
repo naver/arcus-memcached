@@ -266,8 +266,6 @@ static int _prefix_insert(prefix_t *pt, uint32_t hash)
         prefxp->total_prefix_items++;
     }
 #else
-    assert(pt->parent_prefix != NULL);
-    pt->parent_prefix->child_prefix_items++;
     prefxp->total_prefix_items++;
 #endif
     return 1;
@@ -294,8 +292,6 @@ static void _prefix_delete(const char *prefix, const int nprefix, uint32_t hash)
             prefxp->total_prefix_items--;
         }
 #else
-        assert(pt->parent_prefix != NULL);
-        pt->parent_prefix->child_prefix_items--;
         prefxp->total_prefix_items--;
 #endif
         /* unlink and free the prefix structure */
@@ -332,23 +328,28 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
 {
     const char *key = item_get_key(it);
     uint32_t   nkey = it->nkey;
+    char *token;
     int prefix_depth = 0;
     int i = 0;
-    char *token;
+    int pfx_list_size =
+#ifdef NESTED_PREFIX
+        DEFAULT_PREFIX_MAX_DEPTH;
+#else
+        1;
+#endif
+    prefix_t_list_elem prefix_list[pfx_list_size];
     prefix_t *pt = NULL;
-    prefix_t_list_elem prefix_list[DEFAULT_PREFIX_MAX_DEPTH];
 
     // prefix discovering: we don't even know prefix existence at this time
-    while ((token = memchr(key+i+1, config->prefix_delimiter, nkey-i-1)) != NULL) {
+    while ((token = memchr(key + i + 1, config->prefix_delimiter, nkey - i - 1)) != NULL) {
         i = token - key;
         if (i > PREFIX_MAX_LENGTH) {
             return ENGINE_PREFIX_ENAME;
         }
 
-        prefix_list[prefix_depth].nprefix = i;
+        prefix_list[prefix_depth++].nprefix = i;
 
-        prefix_depth++;
-        if (prefix_depth >= DEFAULT_PREFIX_MAX_DEPTH) {
+        if (prefix_depth >= pfx_list_size) {
             break;
         }
     }
@@ -359,39 +360,33 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
         /* save prefix pointer in hash_item */
         it->pfxptr = pt;
     } else {
-        for (i = prefix_depth-1; i >= 0; i--) {
+        for (i = prefix_depth - 1; i >= 0; i--) {
             prefix_list[i].hash = svcore->hash(key, prefix_list[i].nprefix, 0);
             pt = _prefix_find(key, prefix_list[i].nprefix, prefix_list[i].hash);
-            if (pt != NULL) break;
-#ifdef NESTED_PREFIX
+            if (pt != NULL) {
+                break;
+            }
+
             if (i == 0) {
                 if (!mc_isvalidname(key, prefix_list[0].nprefix)) {
                     return ENGINE_PREFIX_ENAME; /* Invalid prefix name */
                 }
             } else {
                 uint32_t prefix_offset = prefix_list[i - 1].nprefix + 1;
-                if (!mc_isvalidname(key + prefix_offset,
-                                    prefix_list[i].nprefix - prefix_offset)) {
+                if (!mc_isvalidname(key + prefix_offset, prefix_list[i].nprefix - prefix_offset)) {
                     return ENGINE_PREFIX_ENAME; /* Invalid prefix name */
                 }
             }
-#endif
         }
-        if (i < (prefix_depth-1)) {
-#ifdef NESTED_PREFIX
-#else
-            if (prefix_depth == 1) {
-                if (!mc_isvalidname(key, prefix_list[0].nprefix)) {
-                    return ENGINE_PREFIX_ENAME; /* Invalid prefix name */
-                }
-            }
-#endif
-            // need building prefixes
+
+        /* need building prefixes */
+        if (i < prefix_depth - 1) {
             if (pt != NULL && i >= 0) {
-                prefix_list[i].pt = pt; // i >= 0
+                prefix_list[i].pt = pt;
             }
+
             for (int j = i + 1; j < prefix_depth; j++) {
-                pt = (prefix_t*)malloc(sizeof(prefix_t) + prefix_list[j].nprefix + 1);
+                pt = (prefix_t *)malloc(sizeof(prefix_t) + prefix_list[j].nprefix + 1);
                 if (pt == NULL) {
                     for (j = j - 1; j >= i + 1; j--) {
                         assert(prefix_list[j].pt != NULL);
@@ -399,25 +394,21 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
                     }
                     return ENGINE_ENOMEM;
                 }
-                // building a prefix_t
+                /* building a prefix_t */
                 memset(pt, 0, sizeof(prefix_t));
                 memcpy(pt + 1, key, prefix_list[j].nprefix);
-                memcpy((char*)pt+sizeof(prefix_t)+prefix_list[j].nprefix, "\0", 1);
+                memcpy((char *)pt + sizeof(prefix_t) + prefix_list[j].nprefix, "\0", 1);
                 pt->nprefix = prefix_list[j].nprefix;
-#ifdef NESTED_PREFIX
+                /* check if it is internal prefix */
                 if (PREFIX_IS_RSVD(key, prefix_list[0].nprefix)) {
-                    pt->internal = 1; /* internal prefix */
+                    pt->internal = 1;
                 }
-                pt->parent_prefix = (j == 0 ? NULL : prefix_list[j-1].pt);
-#else
-                if (PREFIX_IS_RSVD(key, pt->nprefix)) {
-                    pt->internal = 1; /* internal prefix */
-                }
-                pt->parent_prefix = (j == 0 ? null_pt : prefix_list[j-1].pt);
+#ifdef NESTED_PREFIX
+                pt->parent_prefix = (j == 0 ? NULL : prefix_list[j - 1].pt);
 #endif
                 time(&pt->create_time);
 
-                // registering allocated prefixes to prefix hastable
+                /* registering allocated prefixes to prefix hastable */
                 _prefix_insert(pt, prefix_list[j].hash);
                 prefix_list[j].pt = pt;
             }
@@ -425,12 +416,13 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
         /* save prefix pointer in hash_item */
         it->pfxptr = pt;
     }
-    assert(pt != NULL);
 
+    assert(pt != NULL);
     /* update item stats in prefix */
     _prefix_item_count_incr(pt, GET_ITEM_TYPE(it), item_size);
 
     *internal = (pt->internal ? true : false);
+
     return ENGINE_SUCCESS;
 }
 
@@ -445,13 +437,22 @@ void prefix_unlink(hash_item *it, const uint32_t item_size, bool drop_if_empty)
 
     if (drop_if_empty) {
         while (pt != NULL && pt != null_pt) {
-            prefix_t *parent_pt = pt->parent_prefix;
-            if (pt->child_prefix_items > 0 || pt->total_count_exclusive > 0)
+            bool has_items = pt->total_count_exclusive > 0;
+            bool has_children = false;
+            prefix_t *next_pt = NULL;
+
+#ifdef NESTED_PREFIX
+            has_children = pt->child_prefix_items > 0;
+            next_pt = pt->parent_prefix;
+#endif
+            if (has_items || has_children) {
                 break; /* NOT empty */
+            }
+
             assert(pt->total_bytes_exclusive == 0);
             _prefix_delete(_get_prefix(pt), pt->nprefix,
                            svcore->hash(_get_prefix(pt), pt->nprefix, 0));
-            pt = parent_pt;
+            pt = next_pt;
         }
     }
 }
@@ -512,8 +513,12 @@ bool prefix_isvalid(hash_item *it, rel_time_t current_time)
             it->time <= pt->oldest_live)
             return false;
         /* traverse parent prefixes to validate them */
+#ifdef NESTED_PREFIX
         pt = pt->parent_prefix;
-    } while(pt != NULL && pt != null_pt);
+#else
+        pt = NULL;
+#endif
+    } while (pt != NULL && pt != null_pt);
 
     return true;
 }
@@ -528,8 +533,12 @@ static uint32_t do_count_invalid_prefix(void)
     for (i = 0; i < size; i++) {
         pt = prefxp->hashtable[i];
         while (pt) {
-            if (pt->child_prefix_items == 0 && pt->total_count_exclusive == 0)
-                invalid_prefix++;
+            if (pt->total_count_exclusive == 0) {
+#ifdef NESTED_PREFIX
+                if (pt->child_prefix_items == 0)
+#endif
+                    invalid_prefix++;
+            }
             pt = pt->h_next;
         }
     }
@@ -593,7 +602,6 @@ static int _prefix_stats_write_buffer(char *buffer, const size_t buflen,
             pt->items_bytes_exclusive[ITEM_TYPE_MAP],
             pt->items_bytes_exclusive[ITEM_TYPE_BTREE],
             /* FUTURE: NESTED_PREFIX
-            (uint64_t)pt->child_prefix_items,
             (uint64_t)0,
             (uint64_t)0,
             */
@@ -665,7 +673,6 @@ char *prefix_dump_stats(token_t *tokens, const size_t ntokens, int *length)
         /* write prefix stats in the buffer */
         if (num_prefixes > prefxp->total_prefix_items) { /* include null prefix */
             pt = null_pt;
-            assert(pt->child_prefix_items == 0);
             pos += _prefix_stats_write_buffer(buffer+pos, buflen-pos, format, pt, false);
             assert(pos < buflen);
         }
@@ -714,7 +721,11 @@ char *prefix_dump_stats(token_t *tokens, const size_t ntokens, int *length)
 #ifdef SCAN_COMMAND
 static bool _prefix_isempty(prefix_t *pt)
 {
-    return pt->child_prefix_items == 0 && pt->total_count_exclusive == 0;
+#ifdef NESTED_PREFIX
+        return pt->child_prefix_items == 0 && pt->total_count_exclusive == 0;
+#else
+        return pt->total_count_exclusive == 0;
+#endif
 }
 
 static int _prefix_scan_direct(const char *cursor, int req_count, void **item_array, int item_arrsz)
