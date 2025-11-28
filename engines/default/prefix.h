@@ -36,10 +36,6 @@ typedef struct _prefix_t {
     time_t     create_time;
 
     struct _prefix_t *h_next;  /* prefix hash chain */
-    struct _prefix_t *parent_prefix;
-
-    /* Number of child prefix items */
-    uint32_t child_prefix_items;
 
     /* count and bytes of cache items per item type */
     uint64_t total_count_exclusive;
@@ -48,6 +44,10 @@ typedef struct _prefix_t {
     uint64_t items_bytes_exclusive[ITEM_TYPE_MAX];
 
 #ifdef NESTED_PREFIX
+    struct _prefix_t *parent_prefix;
+    /* Number of child prefix items */
+    uint32_t child_prefix_items;
+
     /* includes cache items that belong to child prefixes */
     uint64_t total_count_inclusive; /* NOT yet used */
     uint64_t total_bytes_inclusive; /* NOT yet used */

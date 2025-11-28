@@ -116,7 +116,11 @@ static inline void *_get_prefix(prefix_t *prefix)
 
 static inline bool _prefix_isempty(prefix_t *pt)
 {
+#ifdef NESTED_PREFIX
     return pt->child_prefix_items == 0 && pt->total_count_exclusive == 0;
+#else
+    return pt->total_count_exclusive == 0;
+#endif
 }
 
 static prefix_t *_prefix_find(const char *prefix, const int nprefix, uint32_t hash)
@@ -271,8 +275,6 @@ static int _prefix_insert(prefix_t *pt, uint32_t hash)
         prefxp->total_prefix_items++;
     }
 #else
-    assert(pt->parent_prefix != NULL);
-    pt->parent_prefix->child_prefix_items++;
     prefxp->total_prefix_items++;
 #endif
     return 1;
@@ -299,8 +301,6 @@ static void _prefix_delete(const char *prefix, const int nprefix, uint32_t hash)
             prefxp->total_prefix_items--;
         }
 #else
-        assert(pt->parent_prefix != NULL);
-        pt->parent_prefix->child_prefix_items--;
         prefxp->total_prefix_items--;
 #endif
         /* unlink and free the prefix structure */
@@ -418,7 +418,6 @@ ENGINE_ERROR_CODE prefix_link(hash_item *it, const uint32_t item_size, bool *int
                 if (PREFIX_IS_RSVD(key, pt->nprefix)) {
                     pt->internal = 1; /* internal prefix */
                 }
-                pt->parent_prefix = (j == 0 ? null_pt : prefix_list[j-1].pt);
 #endif
                 time(&pt->create_time);
 
@@ -448,16 +447,22 @@ void prefix_unlink(hash_item *it, const uint32_t item_size, bool drop_if_empty)
     /* update item stats in prefix */
     _prefix_item_count_decr(pt, GET_ITEM_TYPE(it), item_size);
 
-    if (drop_if_empty) {
-        while (pt != NULL && pt != null_pt) {
-            prefix_t *parent_pt = pt->parent_prefix;
-            if (!_prefix_isempty(pt))
-                break;
-            assert(pt->total_bytes_exclusive == 0);
+    if (drop_if_empty && pt != null_pt) {
+#ifdef NESTED_PREFIX
+        prefix_t *parent_pt = pt->parent_prefix;
+#endif
+        if (_prefix_isempty(pt)) {
             _prefix_delete(_get_prefix(pt), pt->nprefix,
                            svcore->hash(_get_prefix(pt), pt->nprefix, 0));
-            pt = parent_pt;
         }
+#ifdef NESTED_PREFIX
+        while (parent_pt != NULL && _prefix_isempty(pt)) {
+            pt = parent_pt;
+            parent_pt = pt->parent_prefix;
+            _prefix_delete(_get_prefix(pt), pt->nprefix,
+                           svcore->hash(_get_prefix(pt), pt->nprefix, 0));
+        }
+#endif
     }
 }
 
@@ -511,14 +516,21 @@ void prefix_bytes_decr(prefix_t *pt, ENGINE_ITEM_TYPE item_type, const uint32_t 
 bool prefix_isvalid(hash_item *it, rel_time_t current_time)
 {
     prefix_t *pt = it->pfxptr;
-    do {
+    if (pt->oldest_live != 0 &&
+        pt->oldest_live <= current_time &&
+        it->time <= pt->oldest_live)
+        return false;
+
+#ifdef NESTED_PREFIX
+    /* traverse parent prefixes to validate them */
+    while (pt->parent_prefix != NULL) {
+        pt = pt->parent_prefix;
         if (pt->oldest_live != 0 &&
             pt->oldest_live <= current_time &&
             it->time <= pt->oldest_live)
             return false;
-        /* traverse parent prefixes to validate them */
-        pt = pt->parent_prefix;
-    } while(pt != NULL && pt != null_pt);
+    }
+#endif
 
     return true;
 }
@@ -597,11 +609,6 @@ static int _prefix_stats_write_buffer(char *buffer, const size_t buflen,
             pt->items_bytes_exclusive[ITEM_TYPE_SET],
             pt->items_bytes_exclusive[ITEM_TYPE_MAP],
             pt->items_bytes_exclusive[ITEM_TYPE_BTREE],
-            /* FUTURE: NESTED_PREFIX
-            (uint64_t)pt->child_prefix_items,
-            (uint64_t)0,
-            (uint64_t)0,
-            */
             t->tm_year+1900, t->tm_mon+1, t->tm_mday,
             t->tm_hour, t->tm_min, t->tm_sec);
     }
@@ -670,7 +677,6 @@ char *prefix_dump_stats(token_t *tokens, const size_t ntokens, int *length)
         /* write prefix stats in the buffer */
         if (num_prefixes > prefxp->total_prefix_items) { /* include null prefix */
             pt = null_pt;
-            assert(pt->child_prefix_items == 0);
             pos += _prefix_stats_write_buffer(buffer+pos, buflen-pos, format, pt, false);
             assert(pos < buflen);
         }
