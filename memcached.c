@@ -72,6 +72,13 @@
         return; \
     }
 
+#define CHECK_NTOKENS_EQ(ntokens, num) \
+    if (ntokens != num) { \
+        print_invalid_command(c, tokens, ntokens); \
+        out_string(c, "CLIENT_ERROR bad command line format"); \
+        return; \
+    }
+
 /* Lock for global stats */
 static pthread_mutex_t stats_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -9832,7 +9839,7 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
 #endif
     else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        out_string(c, "ERROR unknown command");
     }
 }
 
@@ -9840,7 +9847,6 @@ static void process_config_command(conn *c, token_t *tokens, const size_t ntoken
 static void process_zkensemble_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
-    bool valid = false;
 
 #ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_ADMIN, NULL, tokens, ntokens)) {
@@ -9854,40 +9860,42 @@ static void process_zkensemble_command(conn *c, token_t *tokens, const size_t nt
         return;
     }
 
-    if (ntokens == 3) {
-        if (strcmp(subcommand, "get") == 0) {
-            char buf[1024];
-            if (arcus_zk_get_ensemble(buf, sizeof(buf)-16) != 0) {
-                out_string(c, "ERROR failed to get the ensemble address");
-            } else {
-                strcat(buf, "\r\n\n");
-                out_string(c, buf);
-            }
-            valid = true;
-        } else if (strcmp(subcommand, "rejoin") == 0) {
-            if (arcus_zk_rejoin_ensemble() != 0) {
-                out_string(c, "ERROR failed to rejoin ensemble");
-            } else {
-                out_string(c, "Successfully rejoined");
-            }
-            valid = true;
-        }
-    } else if (ntokens == 4) {
-        if (strcmp(subcommand, "set") == 0) {
-            /* The ensemble is a comma separated list of host:port addresses.
-             * host1:port1,host2:port2,...
-             */
-            if (arcus_zk_set_ensemble(tokens[SUBCOMMAND_TOKEN+1].value) != 0) {
-                out_string(c, "ERROR failed to set the new ensemble address (check logs)");
-            } else {
-                out_string(c, "OK");
-            }
-            valid = true;
+    if (strcmp(subcommand, "get") == 0) {
+        char buf[1024];
+
+        CHECK_NTOKENS_EQ(ntokens, 3);
+
+        if (arcus_zk_get_ensemble(buf, sizeof(buf)-16) != 0) {
+            out_string(c, "ERROR failed to get the ensemble address");
+        } else {
+            strcat(buf, "\r\n\n");
+            out_string(c, buf);
         }
     }
-    if (valid == false) {
+    else if (strcmp(subcommand, "set") == 0) {
+        /* The ensemble is a comma separated list of host:port addresses.
+         * host1:port1,host2:port2,...
+         */
+        CHECK_NTOKENS_EQ(ntokens, 4);
+
+        if (arcus_zk_set_ensemble(tokens[SUBCOMMAND_TOKEN+1].value) != 0) {
+            out_string(c, "ERROR failed to set the new ensemble address (check logs)");
+        } else {
+            out_string(c, "OK");
+        }
+    }
+    else if (strcmp(subcommand, "rejoin") == 0) {
+        CHECK_NTOKENS_EQ(ntokens, 3);
+
+        if (arcus_zk_rejoin_ensemble() != 0) {
+            out_string(c, "ERROR failed to rejoin ensemble");
+        } else {
+            out_string(c, "Successfully rejoined");
+        }
+    }
+    else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        out_string(c, "ERROR unknown command");
     }
 }
 #endif
@@ -9899,7 +9907,6 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
     char *filepath;
     char *prefix = NULL;
     int  nprefix = -1; /* all prefixes */
-    bool valid = false;
 
 #ifdef SASL_ENABLED
     if (settings.require_sasl && !check_ascii_auth(c, AUTHZ_ADMIN, NULL, tokens, ntokens)) {
@@ -9913,36 +9920,35 @@ static void process_dump_command(conn *c, token_t *tokens, const size_t ntokens)
      *   <mode> : key
      * dump stop\r\n
      */
-    if (ntokens == 3) {
-        if (memcmp(subcommand, "stop", 4) == 0) {
-            modestr = filepath = NULL;
-            valid = true;
-        }
-    } else if (ntokens == 5 || ntokens == 6) {
-        if (memcmp(subcommand, "start", 5) == 0) {
-            modestr = tokens[2].value;
-            if (ntokens == 5) {
-                filepath = tokens[3].value;
-            } else {
-                prefix = tokens[3].value;
-                nprefix = tokens[3].length;
-                if (nprefix > PREFIX_MAX_LENGTH) {
-                    out_string(c, "CLIENT_ERROR too long prefix name");
-                    return;
-                }
-                if (nprefix == 6 && strncmp(prefix, "<null>", 6) == 0) {
-                    /* dump null prefix */
-                    prefix = NULL;
-                    nprefix = 0;
-                }
-                filepath = tokens[4].value;
+    if (memcmp(subcommand, "start", 5) == 0) {
+        CHECK_NTOKENS(ntokens, 5, 6);
+
+        modestr = tokens[2].value;
+        if (ntokens == 5) {
+            filepath = tokens[3].value;
+        } else {
+            prefix = tokens[3].value;
+            nprefix = tokens[3].length;
+            if (nprefix > PREFIX_MAX_LENGTH) {
+                out_string(c, "CLIENT_ERROR too long prefix name");
+                return;
             }
-            valid = true;
+            if (nprefix == 6 && strncmp(prefix, "<null>", 6) == 0) {
+                /* dump null prefix */
+                prefix = NULL;
+                nprefix = 0;
+            }
+            filepath = tokens[4].value;
         }
     }
-    if (valid == false) {
+    else if (memcmp(subcommand, "stop", 4) == 0) {
+        CHECK_NTOKENS_EQ(ntokens, 3);
+
+        modestr = filepath = NULL;
+    }
+    else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        out_string(c, "ERROR unknown command");
         return;
     }
 
@@ -10569,7 +10575,7 @@ static void process_scan_command(conn *c, token_t *tokens, const size_t ntokens)
     }
 
     print_invalid_command(c, tokens, ntokens);
-    out_string(c, "CLIENT_ERROR bad command line format");
+    out_string(c, "ERROR unknown command");
 }
 #endif
 
@@ -10688,13 +10694,15 @@ static void process_sasl_command(conn *c, token_t *tokens, const size_t ntokens)
 {
     char *subcommand = tokens[SUBCOMMAND_TOKEN].value;
 
-    if (ntokens == 3 && strcmp(subcommand, "mech") == 0) {
+    if (strcmp(subcommand, "mech") == 0) {
+        CHECK_NTOKENS_EQ(ntokens, 3);
         ascii_list_sasl_mechs(c);
-    } else if ((ntokens == 4 || ntokens == 5) && strcmp(subcommand, "auth") == 0) {
+    } else if (strcmp(subcommand, "auth") == 0) {
+        CHECK_NTOKENS(ntokens, 4, 5);
         process_ascii_sasl_auth(c, tokens, ntokens);
     } else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        out_string(c, "ERROR unknown command");
     }
 }
 
@@ -10710,7 +10718,7 @@ static void process_reload_command(conn *c, token_t *tokens, const size_t ntoken
         }
     } else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        out_string(c, "ERROR unknown command");
     }
 }
 #endif
@@ -11450,9 +11458,10 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
     c->coll_key = key;
     c->coll_nkey = nkey;
 
-    if ((ntokens >= 5 && ntokens <= 12) && (strcmp(subcommand,"insert") == 0))
-    {
+    if (strcmp(subcommand,"insert") == 0) {
         int32_t vlen;
+
+        CHECK_NTOKENS(ntokens, 5, 12);
 
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
@@ -11493,8 +11502,9 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
             conn_set_state(c, conn_swallow);
         }
     }
-    else if ((ntokens >= 7 && ntokens <= 10) && (strcmp(subcommand, "create") == 0))
-    {
+    else if (strcmp(subcommand, "create") == 0) {
+        CHECK_NTOKENS(ntokens, 7, 10);
+
         set_noreply_maybe(c, tokens, ntokens);
 
         int read_ntokens = SOP_KEY_TOKEN+1;
@@ -11510,9 +11520,10 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
         c->coll_attrp = &c->coll_attr_space;
         process_sop_create(c, key, nkey, c->coll_attrp);
     }
-    else if ((ntokens >= 5 && ntokens <= 7) && (strcmp(subcommand, "delete") == 0))
-    {
+    else if (strcmp(subcommand, "delete") == 0) {
         int32_t vlen;
+
+        CHECK_NTOKENS(ntokens, 5, 7);
 
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
@@ -11544,9 +11555,10 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
             conn_set_state(c, conn_swallow);
         }
     }
-    else if ((ntokens==5 || ntokens==6) && strcmp(subcommand, "exist") == 0)
-    {
+    else if (strcmp(subcommand, "exist") == 0) {
         int32_t vlen;
+
+        CHECK_NTOKENS(ntokens, 5, 6);
 
         set_pipe_maybe(c, tokens, ntokens);
 
@@ -11565,11 +11577,12 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
             conn_set_state(c, conn_swallow);
         }
     }
-    else if ((ntokens==5 || ntokens==6) && (strcmp(subcommand, "get") == 0))
-    {
+    else if (strcmp(subcommand, "get") == 0) {
         bool delete = false;
         bool drop_if_empty = false;
         uint32_t count = 0;
+
+        CHECK_NTOKENS(ntokens, 5, 6);
 
         if (! safe_strtoul(tokens[SOP_KEY_TOKEN+1].value, &count)) {
             print_invalid_command(c, tokens, ntokens);
@@ -11595,10 +11608,9 @@ static void process_sop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         process_sop_get(c, key, nkey, count, delete, drop_if_empty);
     }
-    else
-    {
+    else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        out_string(c, "ERROR unknown command");
     }
 }
 
@@ -12662,12 +12674,12 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
     c->coll_key = key;
     c->coll_nkey = nkey;
 
-    if ((ntokens >= 6 && ntokens <= 13) &&
-        ((strcmp(subcommand,"insert") == 0 && (subcommid = (int)OPERATION_MOP_INSERT)) ||
-         (strcmp(subcommand,"upsert") == 0 && (subcommid = (int)OPERATION_MOP_UPSERT)) ))
-    {
+    if ((strcmp(subcommand,"insert") == 0 && (subcommid = (int)OPERATION_MOP_INSERT)) ||
+        (strcmp(subcommand,"upsert") == 0 && (subcommid = (int)OPERATION_MOP_UPSERT))) {
         field_t field;
         int32_t vlen;
+
+        CHECK_NTOKENS(ntokens, 6, 13);
 
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
@@ -12715,8 +12727,9 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
             conn_set_state(c, conn_swallow);
         }
     }
-    else if ((ntokens >= 7 && ntokens <= 10) && (strcmp(subcommand, "create") == 0))
-    {
+    else if (strcmp(subcommand, "create") == 0) {
+        CHECK_NTOKENS(ntokens, 7, 10);
+
         set_noreply_maybe(c, tokens, ntokens);
 
         int read_ntokens = MOP_KEY_TOKEN+1;
@@ -12732,10 +12745,11 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
         c->coll_attrp = &c->coll_attr_space;
         process_mop_create(c, key, nkey, c->coll_attrp);
     }
-    else if ((ntokens >= 6 && ntokens <= 7) && (strcmp(subcommand, "update") == 0))
-    {
+    else if (strcmp(subcommand, "update") == 0) {
         field_t field;
         int32_t vlen;
+
+        CHECK_NTOKENS(ntokens, 6, 7);
 
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
@@ -12761,10 +12775,11 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
             conn_set_state(c, conn_swallow);
         }
     }
-    else if ((ntokens >= 6 && ntokens <= 8) && (strcmp(subcommand, "delete") == 0))
-    {
+    else if (strcmp(subcommand, "delete") == 0) {
         uint32_t lenfields, numfields;
         bool drop_if_empty = false;
+
+        CHECK_NTOKENS(ntokens, 6, 8);
 
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
@@ -12823,11 +12838,12 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
             }
         }
     }
-    else if ((ntokens >= 6 && ntokens <= 7) && (strcmp(subcommand, "get") == 0))
-    {
+    else if (strcmp(subcommand, "get") == 0) {
         uint32_t lenfields, numfields;
         bool delete = false;
         bool drop_if_empty = false;
+
+        CHECK_NTOKENS(ntokens, 6, 7);
 
         if ((! safe_strtoul(tokens[MOP_KEY_TOKEN+1].value, &lenfields)) ||
             (! safe_strtoul(tokens[MOP_KEY_TOKEN+2].value, &numfields)) ||
@@ -12875,10 +12891,9 @@ static void process_mop_command(conn *c, token_t *tokens, const size_t ntokens)
             process_mop_prepare_nread_fields(c, (int)OPERATION_MOP_GET, key, nkey, lenfields);
         }
     }
-    else
-    {
+    else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        out_string(c, "ERROR unknown command");
     }
 }
 
@@ -12904,15 +12919,14 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
     c->coll_key = key;
     c->coll_nkey = nkey;
 
-    if ((ntokens >= 6 && ntokens <= 14) &&
-        ((strcmp(subcommand,"insert") == 0 && (subcommid = (int)OPERATION_BOP_INSERT)) ||
-         (strcmp(subcommand,"upsert") == 0 && (subcommid = (int)OPERATION_BOP_UPSERT)) ))
-    {
+    if ((strcmp(subcommand,"insert") == 0 && (subcommid = (int)OPERATION_BOP_INSERT)) ||
+        (strcmp(subcommand,"upsert") == 0 && (subcommid = (int)OPERATION_BOP_UPSERT))) {
         unsigned char bkey[MAX_BKEY_LENG];
         unsigned char eflag[MAX_EFLAG_LENG];
         int      nbkey, neflag;
         int32_t  vlen;
-        int      read_ntokens = BOP_KEY_TOKEN+1;
+
+        CHECK_NTOKENS(ntokens, 6, 14);
 
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
@@ -12926,6 +12940,8 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
                 c->coll_getrim = true;
             }
         }
+
+        int read_ntokens = BOP_KEY_TOKEN + 1;
 
         nbkey = get_bkey_from_str(tokens[read_ntokens++].value, bkey);
         neflag = 0;
@@ -12974,8 +12990,9 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             conn_set_state(c, conn_swallow);
         }
     }
-    else if ((ntokens >= 7 && ntokens <= 10) && (strcmp(subcommand, "create") == 0))
-    {
+    else if (strcmp(subcommand, "create") == 0) {
+        CHECK_NTOKENS(ntokens, 7, 10);
+
         set_noreply_maybe(c, tokens, ntokens);
 
         int read_ntokens = BOP_KEY_TOKEN+1;
@@ -12991,9 +13008,10 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         c->coll_attrp = &c->coll_attr_space;
         process_bop_create(c, key, nkey, c->coll_attrp);
     }
-    else if ((ntokens >= 6 && ntokens <= 10) && (strcmp(subcommand, "update") == 0))
-    {
+    else if (strcmp(subcommand, "update") == 0) {
         int32_t  vlen;
+
+        CHECK_NTOKENS(ntokens, 6, 10);
 
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
@@ -13082,10 +13100,11 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             }
         }
     }
-    else if ((ntokens >= 5 && ntokens <= 13) && (strcmp(subcommand, "delete") == 0))
-    {
+    else if (strcmp(subcommand, "delete") == 0) {
         uint32_t count = 0;
         bool     drop_if_empty = false;
+
+        CHECK_NTOKENS(ntokens, 5, 13);
 
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
@@ -13137,14 +13156,15 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             conn_set_state(c, conn_new_cmd);
         }
     }
-    else if ((ntokens >= 6 && ntokens <= 9) && (strcmp(subcommand, "incr") == 0 || strcmp(subcommand, "decr") == 0))
-    {
+    else if (strcmp(subcommand, "incr") == 0 || strcmp(subcommand, "decr") == 0) {
         uint64_t delta;
         uint64_t initial = 0;
         bool     incr = (strcmp(subcommand, "incr") == 0 ? true : false);
         bool     create = false;;
         eflag_t  eflagspc;
         eflag_t *eflagptr = NULL;
+
+        CHECK_NTOKENS(ntokens, 6, 9);
 
         set_pipe_noreply_maybe(c, tokens, ntokens);
 
@@ -13186,12 +13206,13 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
             conn_set_state(c, conn_new_cmd);
         }
     }
-    else if ((ntokens >= 5 && ntokens <= 13) && (strcmp(subcommand, "get") == 0))
-    {
+    else if (strcmp(subcommand, "get") == 0) {
         uint32_t offset = 0;
         uint32_t count  = 0;
         bool delete = false;
         bool drop_if_empty = false;
+
+        CHECK_NTOKENS(ntokens, 5, 13);
 
         if (get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange)) {
             print_invalid_command(c, tokens, ntokens);
@@ -13253,8 +13274,9 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
                         offset, count,
                         delete, drop_if_empty);
     }
-    else if ((ntokens >= 5 && ntokens <= 10) && (strcmp(subcommand, "count") == 0))
-    {
+    else if (strcmp(subcommand, "count") == 0) {
+        CHECK_NTOKENS(ntokens, 5, 10);
+
         if (get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange)) {
             print_invalid_command(c, tokens, ntokens);
             out_string(c, "CLIENT_ERROR bad command line format");
@@ -13288,10 +13310,10 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
                           (c->coll_efilter.ncompval==0 ? NULL : &c->coll_efilter));
     }
 #if defined(SUPPORT_BOP_MGET) || defined(SUPPORT_BOP_SMGET)
-    else if ((ntokens >= 7 && ntokens <= 14) &&
-             ((strcmp(subcommand, "mget") == 0  && (subcommid = (int)OPERATION_BOP_MGET)) ||
-              (strcmp(subcommand, "smget") == 0 && (subcommid = (int)OPERATION_BOP_SMGET)) ))
-    {
+    else if ((strcmp(subcommand, "mget") == 0  && (subcommid = (int)OPERATION_BOP_MGET)) ||
+             (strcmp(subcommand, "smget") == 0 && (subcommid = (int)OPERATION_BOP_SMGET))) {
+        CHECK_NTOKENS(ntokens, 7, 14);
+
         uint32_t count, offset = 0;
         uint32_t lenkeys, numkeys;
 #ifdef JHPARK_OLD_SMGET_INTERFACE
@@ -13396,9 +13418,10 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
         process_bop_prepare_nread_keys(c, subcommid, lenkeys, numkeys);
     }
 #endif
-    else if ((ntokens == 6) && (strcmp(subcommand, "position") == 0))
-    {
+    else if (strcmp(subcommand, "position") == 0) {
         ENGINE_BTREE_ORDER order;
+
+        CHECK_NTOKENS_EQ(ntokens, 6);
 
         if ((get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange) != 0) ||
             (c->coll_bkrange.to_nbkey != BKEY_NULL)) {
@@ -13419,10 +13442,11 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         process_bop_position(c, key, nkey, &c->coll_bkrange, order);
     }
-    else if ((ntokens == 6 || ntokens == 7) && (strcmp(subcommand, "pwg") == 0))
-    {
+    else if (strcmp(subcommand, "pwg") == 0) {
         ENGINE_BTREE_ORDER order;
         uint32_t count = 0;
+
+        CHECK_NTOKENS(ntokens, 6, 7);
 
         if ((get_bkey_range_from_str(tokens[BOP_KEY_TOKEN+1].value, &c->coll_bkrange) != 0) ||
             (c->coll_bkrange.to_nbkey != BKEY_NULL)) {
@@ -13455,10 +13479,11 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         process_bop_pwg(c, key, nkey, &c->coll_bkrange, order, count);
     }
-    else if ((ntokens == 6) && (strcmp(subcommand, "gbp") == 0))
-    {
+    else if (strcmp(subcommand, "gbp") == 0) {
         uint32_t from_posi, to_posi;
         ENGINE_BTREE_ORDER order;
+
+        CHECK_NTOKENS_EQ(ntokens, 6);
 
         if (strcmp(tokens[BOP_KEY_TOKEN+1].value, "asc") == 0) {
             order = BTREE_ORDER_ASC;
@@ -13478,10 +13503,9 @@ static void process_bop_command(conn *c, token_t *tokens, const size_t ntokens)
 
         process_bop_gbp(c, key, nkey, order, from_posi, to_posi);
     }
-    else
-    {
+    else {
         print_invalid_command(c, tokens, ntokens);
-        out_string(c, "CLIENT_ERROR bad command line format");
+        out_string(c, "ERROR unknown command");
     }
 }
 
